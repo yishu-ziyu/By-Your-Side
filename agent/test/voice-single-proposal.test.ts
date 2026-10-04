@@ -76,7 +76,6 @@ return decision;},
       session,
       fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn(),setPageTarget:vi.fn(),call:vi.fn()},
-      consent:{list:()=>[],cancelAll:vi.fn(),decide:vi.fn()},
       dispose:vi.fn(),handleMessage:vi.fn(),
     };
 
@@ -554,22 +553,6 @@ describe('第三轮必修1：reply 守卫失败关闭（模型不自律也编不
 
     expect(deliveriesOf(h.emitted)).toHaveLength(3);
     expect(session.startTask).not.toHaveBeenCalled();
-  });
-});
-
-describe('第三轮必修4：reply 轮与旧闲置闲聊路径的授权行为一致',()=>{
-  it('闲置态让旧授权失效；运行中的只读回答不动待确认',async()=>{
-    const h=harness();await h.manager.ensureDefault();const session=h.session();
-    const consent=h.runtimes.get('default')!.runtime.consent;
-    session.prepareVoiceTurn.mockResolvedValue(freeReply('嗨，晚上好。'));
-    await h.manager.routeVoiceInput('default','嗨，晚上好。',null,()=>true,{requestId:'turn-idle-consent',voiceId:'v',turn:1,runId:null});
-    expect(consent.cancelAll).toHaveBeenCalledTimes(1);
-    h.event('default',{kind:'agent_start'});
-    const runId=h.manager.getTaskProgress('default')!.runId!;
-    consent.cancelAll.mockClear();
-    await h.manager.routeVoiceInput('default','你好。',null,()=>true,{requestId:'turn-running-consent',voiceId:'v',turn:2,runId});
-    expect(consent.cancelAll).not.toHaveBeenCalled();
-    expect(deliveriesOf(h.emitted)).toHaveLength(2);
   });
 });
 

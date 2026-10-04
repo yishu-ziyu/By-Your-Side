@@ -63,7 +63,7 @@ it('跨会话接手等待原主 Agent 的操作完成，并按页阻止移交期
 it('原会话正在由用户接管时，不移交页面',async()=>{
   const {s,a}=await setup();const {WorkerTabControl}=await import('../src/background/worker-tab-control.js');
   const c=new WorkerTabControl();
-  await expect(c.manage({action:'claim',tabId:2,expectedConversationId:'B'},a,()=>{},async()=>{throw Error('页面现在归你');})).rejects.toThrow(/页面现在归你/);
+  await expect(c.manage({action:'claim',tabId:2,expectedConversationId:'B'},a,async()=>{throw Error('页面现在归你');})).rejects.toThrow(/页面现在归你/);
   expect((await s.getTabResource(2))?.conversationId).toBe('B');
 });
 

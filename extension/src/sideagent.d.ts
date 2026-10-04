@@ -103,8 +103,6 @@ interface SideAgentCursor {
     options?: MarkOptions,
     observedNode?: Node | Range,
   ): void;
-  /** 拿住目标：飞到 (x,y) 进入持久按住态（不弹回、不 park），名牌变双键；scroll/resize 按 target 锚点跟随 */
-  hold?(x: number, y: number, actions: Array<{ id: "confirm" | "cancel"; label: string }>, target?: string): void;
   /** 松开：摘掉按住姿态、名牌恢复成员名，随后照常 park */
   releaseHold?(): void;
   /** 清除全部 mark 标注 */

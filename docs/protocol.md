@@ -62,7 +62,7 @@ server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_
 worker 事件带自己的 `sessionId`，面板把它们显示在所属用户会话的团队状态中。`abort` 只中止指定用户会话；停止单个 worker 只撤销该成员。`takeover` / `handback` 保留会话与标签绑定：接管先阻止目标页新写入，等待已在途短动作到安全停止点，再暂停该页全部协作者。其他会话的独立页继续。交还为各成员读取绑定页的新快照；关闭或读取失败的页面保持暂停，不把当前活动页替代进去。
 
 
-`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。`tool_end.declined`：用户在授权卡上点了「拒绝」，没执行但不是失败，账本不留待办。读取/打开卡可带后台算出的 `trustSite`，`consent_decision.trust` 批准成功后信任该域名（[确认](browser-confirmation.md)）。`tool_end.repeatRefused`：重复已成功的写入被闸门拦下，没执行、不算失败、不留待办。点击效果证据含点击窗口内页面发出的非 GET 请求（不含打点、预检、安全报告），只写方法、主机与路径，只说明页面有反应、不说明业务成功（[验收](evals/20261004-honest-completion.md)）。任务视图里带 `awaitingConfirmation` 的项是被拦下、等页面确认的点击；它不妨碍别的会话接手这一页，接手时旧确认一并收起。
+`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。`tool_end.repeatRefused`：重复已成功的写入被闸门拦下，没执行、不算失败、不留待办。点击效果证据含点击窗口内页面发出的非 GET 请求（不含打点、预检、安全报告），只写方法、主机与路径，只说明页面有反应、不说明业务成功（[验收](evals/20261004-honest-completion.md)）。
 
 ### 工具调用（RPC）
 
@@ -135,8 +135,6 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 `hover` 派发真实 CDP `mouseMoved`，触发原生 CSS 悬停状态；返回 `{hovered:true}` 仅表示移动执行成功。Agent 仍需观察是否出现预期入口。`click` 同样只确认事件执行，不证明编辑器打开或任务完成。接管期间 `hover` 和其他写操作一样被控制闸门拦截。
 
-已确认表单的字段/来源约束见[表单与批准边界](browser-confirmation.md#已确认表单要求)。
-
 网页下载事件、按链接下载、查询/取消及完成判据见[下载说明](downloads.md)。
 
 `mark` 可选 `through: "@N"`：同一行的结束 ref，一个框从 `target` 圈到它（用于「名称 + 数值」这类成对内容，先后顺序不限）。两者都必须是同一张快照的 ref；不在同一行、不在同一页面或不是 ref 时报错并记为未执行。框随两端之间的内容重排而重画。名牌依次试框的右、上、下、左，选第一处不压页面文字、图片或控件的位置；四处都压字时沿框的上沿、下沿往右找空白。
@@ -145,11 +143,7 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 ## 安全
 
-原生弹窗暂停网页脚本时，accept_dialog/dismiss_dialog 的逐次批准绑定后台原生事件身份、弹窗内容、标签页、任务及精确参数，不执行网页脚本建立指纹。同内容新弹窗也需新批准。其他网页调用先返回弹窗阻塞提示。时间格式预检与子框规则见[页面读数](page-readouts.md)。双击/按键遇原生弹窗返回dialog并中断后续输入；双击未派发完整序列时doubleClicked=false，按键尚未派发时pressed=false。普通可打印字符使用带text的keyDown，控制键仍使用rawKeyDown。
-
-## 默认逐次确认
-
-所有潜在网页副作用需可信侧栏单次批准；完整参数、页面身份与取消绑定，以及验收限制见[浏览器逐次确认](browser-confirmation.md)。
+网页操作不弹批准卡（2026-10-04 起，见[网页操作不再逐次确认](browser-confirmation.md)）。原生弹窗暂停网页脚本时，用 dialog_info 查询，再 accept_dialog/dismiss_dialog。时间格式预检与子框规则见[页面读数](page-readouts.md)。双击/按键遇原生弹窗返回dialog并中断后续输入；双击未派发完整序列时doubleClicked=false，按键尚未派发时pressed=false。普通可打印字符使用带text的keyDown，控制键仍使用rawKeyDown。
 
 - 仅绑定 127.0.0.1；token 校验；Origin 校验。
 - 任何网页尝试连接 localhost WS 都会因 Origin/token 不符被拒。
@@ -183,4 +177,3 @@ EverOS 桥接已于 2026-10-01 移出主线，原说明见[历史](history/20261
 
 原@ref、唯一CSS、标签权限仍生效。多个匹配、过期ref、无效属性立即失败；等待跨文档时拒绝结果。状态查询的模型正文只返回所请求属性与检查证据，默认全文读取不截断。browser_run可直接await browser.read_element使用同一参数和权限路径。
 
-要求字段提交前的检查顺序与原目标定位规则见[表单要求](browser-confirmation.md#已确认表单要求)；明确拒绝与定位后不确定的效果分别报告，不把后者误写成未执行。

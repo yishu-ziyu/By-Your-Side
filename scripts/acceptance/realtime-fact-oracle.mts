@@ -1,7 +1,7 @@
 /** Offline collection rules only. Language/evidence agreement requires a separate human reading. */
 export interface FactEvent { seq: number; at: number; channel: string; data: Record<string, any> }
 
-export type FactScenario = 'A' | 'B' | 'C' | 'D';
+export type FactScenario = 'A' | 'C' | 'D';
 
 export const isPageRead = (name:string) => ['snapshot','observe_page','read_element','read_elements'].includes(name);
 
@@ -188,11 +188,10 @@ export function assessFactRun(scenario:FactScenario, events:FactEvent[], probe:F
   const writes=calls.filter(c=>['fill','type_text','press_key','click'].includes(c.name));
   const firstAction=events.find(e=>e.channel==='extension-out'&&['fill','click','type_text','press_key','scroll','navigate','switch_tab'].includes(e.data.name));
   const injections=events.filter(e=>e.channel==='injection');
-  const held=outputs.some(o=>o.result.executionFact==='not_executed'&&JSON.stringify(o.result.content??'').includes('Held click'));
   const dropped=injections.some(e=>e.data.kind==='drop-write-result');
   const unknown=outputs.find(o=>o.result.executionFact==='unknown');
   const readFailed=outputs.some(o=>o.result.ok===false&&String(o.result.error).includes('TEST_INJECTED_READ_FAILURE'));
-  const coverage=!!calls.length&&(scenario==='A'?writes.some(c=>c.name==='fill'):scenario==='B'?held:scenario==='C'?dropped&&!!unknown:readFailed);
+  const coverage=!!calls.length&&(scenario==='A'?writes.some(c=>c.name==='fill'):scenario==='C'?dropped&&!!unknown:readFailed);
   const sideEffects=probe ? probe.saved+probe.submitted+probe.deleted : null;
   const repeated=!!probe&&(scenario==='A'||scenario==='C')&&(probe.writes.length>1||!!unknown&&writes.some(c=>c.seq>unknown.seq));
 

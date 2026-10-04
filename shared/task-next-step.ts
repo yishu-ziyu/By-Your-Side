@@ -141,7 +141,7 @@ export function nextStepInstruction(decision: TaskNextStep): string {
     case 'restart_checkpoint': return '原任务保留在重启检查点，等待用户明确继续，不自动执行。';
     case 'failure_limit': return '已达到重复失败边界，停止重试，说明卡点并请用户决定。';
     case 'unknown_with_baseline': return '旧操作结果未知；可能重复造成后果的操作（点击、填写、按键、页面脚本、POST 等）已暂停，读页、滚动圈画、打开或切换页面、GET 取数、存文件、处理原生弹窗照常。用 resolve_unknown_result 核查一次；核查不能确认就不要再查，也不要重做或换工具绕过，把这一项作为没确认的部分如实告诉用户。';
-    case 'unknown_without_baseline': return '旧操作结果未知，且已无法再核查（缺少写入前的页面读数，或已经核查过一次）：不要再调用 resolve_unknown_result，也不要重做或换工具绕过。可能重复造成后果的操作（点击、填写、按键、页面脚本、POST 等）已暂停；读页、滚动圈画、打开或切换页面、GET 取数、存文件、处理原生弹窗照常，不必为这些再问用户。做完其余独立步骤后，如实告诉用户这一步没确认、没有重复执行。若未决项是低风险 fill，可定位当前字段并调用 confirm_blocked_write：它会核对当前值，必要时只为这一项向用户确认一次；保存/发送/支付/删除等仍须可靠回执或用户决定。';
+    case 'unknown_without_baseline': return '旧操作结果未知，且已无法再核查（缺少写入前的页面读数，或已经核查过一次）：不要再调用 resolve_unknown_result，也不要重做或换工具绕过。可能重复造成后果的操作（点击、填写、按键、页面脚本、POST 等）已暂停；读页、滚动圈画、打开或切换页面、GET 取数、存文件、处理原生弹窗照常，不必为这些再问用户。做完其余独立步骤后，如实告诉用户这一步没确认、没有重复执行，由用户在对话里决定是否继续。';
     case 'in_flight': return '仍有浏览器步骤在执行，等待真实回执后再交付，不能提前结束。';
     case 'runtime_error': return '运行遇到错误，保留已有事实，只能如实交付部分结果。';
     case 'tool_failed': return '存在失败步骤；依据新观察修正目标或换方法，复用原待办 id。不能盲试同一失败；无法恢复时明确交付部分结果。';
@@ -209,7 +209,7 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
     const observedAfter = typeof snapshot.lastReadAt === 'number' && item.evidence?.observedAt !== undefined && snapshot.lastReadAt > item.evidence.observedAt;
 
     if (snapshot.restartRecovery || (!worker && !observedAfter)) {
-      if (snapshot.restartRecovery && name === 'fill') throw new Error(`「${item.description}」已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请定位当前字段并用 confirm_blocked_write 核对/确认一次恢复。`);
+      if (snapshot.restartRecovery && name === 'fill') throw new Error(`「${item.description}」已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请停下告诉用户，由用户在对话里决定是否重填。`);
 
       throw new RepeatRefusedError(`「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
     }

@@ -55,9 +55,8 @@ Timing: seconds_* are from the Enter keypress in the panel. first_output = first
 tool chip or thinking in the panel (seconds_to_first_status = first status line).
 seconds_total = last panel change once the panel is idle (not running, send button not in stop mode, not streaming).
 A timed-out task is stopped with the panel's stop button before evidence is collected.
-Confirmations: consent cards get 允许一次 unless they mention submit/buy/post/send/pay/delete or POST
-(then 拒绝). Held destructive clicks: ordinary deletes/removals are confirmed (确认); anything that
-submits/buys/pays/posts/sends/publishes is cancelled (取消).
+Confirmations: since 2026-10-04 web actions run without approval cards or held clicks, so the harness
+answers nothing on the user's behalf; `confirmations` stays empty for new runs (older transcripts keep theirs).
 
 Robustness: a Chrome or CDP failure fails only that job; setup errors are retried (--retries, default 2);
 a load gate waits while the 1-min loadavg > --max-load (default 2x cores); after 2 quota errors the run

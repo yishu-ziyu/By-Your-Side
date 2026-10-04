@@ -1,4 +1,4 @@
-name: Security confirmation
+name: Quality
 on:
   pull_request:
   workflow_dispatch:
@@ -27,14 +27,3 @@ jobs:
           DOCS_BASE: ${{ github.event.pull_request.base.sha }}
         run: npm run check:docs -- --base "$DOCS_BASE"
       - run: npm run build
-      - run: npx --no-install playwright install --with-deps chromium
-      - name: Locate Chrome for Testing
-        run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
-      - run: node --import tsx scripts/acceptance/security-confirmation.mts --headless
-      - run: node --import tsx scripts/acceptance/real-path/security-confirmation.mts --headless
-      - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: security-confirmation-evidence
-          path: out/security-confirmation/
-          if-no-files-found: warn

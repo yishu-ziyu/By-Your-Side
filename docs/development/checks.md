@@ -42,7 +42,7 @@ npm run check                # 文档、边界、类型、测试、构建
 
 验收脚本预计超过 200 行时，先在 `scripts/probes/` 写不超过 50 行的小实验，只证明一句技术前提，结果写进验收文件「技术前提」。成立才写验收脚本；不成立就改方案，不先搭验收。小实验用独立观测（如服务器计数），退出码 0 为成立、1 为不成立；`npx tsx scripts/probes/<名>.mts` 运行。它不是产品验收，不能冒充真实路径通过。
 
-示例 `readonly-return-getter.mts`：开启副作用拒绝后，返回网页已有对象仍会在序列化时发出 POST，2 秒复现 #22 原方案的否定结论。`click-request-gesture.mts` 否定了用 `hasUserGesture` 归因点击请求（点击后的后台请求也为 true），改用时间窗口；`trusted-domain-psl.mts` 证明 tldts 把 github.io 子站分开、把各语言维基归为一个域名。
+示例 `readonly-return-getter.mts`：开启副作用拒绝后，返回网页已有对象仍会在序列化时发出 POST，2 秒复现 #22 原方案的否定结论。`click-request-gesture.mts` 否定了用 `hasUserGesture` 归因点击请求（点击后的后台请求也为 true），改用时间窗口。
 
 ## 调试入口
 
@@ -72,6 +72,6 @@ npm run check                # 文档、边界、类型、测试、构建
 
 评测环境分类以[浏览器证据](../testing/eval-environment.md)为准；报表和复核页不得把普通任务失败移出分母。
 
-安全候选PR额外执行strict确认策略/台账与输入回归、typecheck、完整npm test、文档同步及构建；验收边界见[安全记录](../evals/20261003-security-confirmation.md)。lockfile补齐缺失的Linux ppc64可选esbuild条目，不升级依赖。
+PR 的 `Quality` 工作流执行 typecheck、完整 npm test、模块边界、文档同步及构建（原安全确认验收步骤已随批准卡于 10-04 删除）。lockfile补齐缺失的Linux ppc64可选esbuild条目，不升级依赖。
 
 2026-10-03 的 lint 基线校正只取已合并 `2f95cbf` 的 input/index/page-events 三份原文件计数；未使用本轮工作树增加预算。本轮新增诊断仍须修复。原版本与计数证据在 `out/issue-42/merged-lint-baseline.json`。

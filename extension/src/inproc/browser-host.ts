@@ -147,12 +147,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
-    if (message.type === "consent_list") {
-      connection?.send({ type: "consent_list", conversationId: message.conversationId, requests: [] });
-
-      return;
-    }
-
     if (message.type === "task_action") {
       const request: TaskActionRequest = message.request;
       const detail = "还没有配置模型：打开右上角「更多 → 模型与语音」选择服务商。";

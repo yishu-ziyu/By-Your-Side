@@ -29,9 +29,6 @@ const iso = (ms) => new Date(ms).toISOString();
 
 export const slugOf = (model) => model.replace(/[^a-z0-9.-]+/gi, "_");
 
-// Words that mean submit / buy / post / send: any confirmation mentioning these is denied.
-const DANGEROUS = /提交|购买|买|支付|付款|下单|结算|发布|发表|发帖|发送|评论|删除|清空|注销|submit|buy|purchase|pay|checkout|order|post|publish|send|tweet|comment|delete|remove/i;
-
 const PANEL_PROBE = `(() => {
   const txt = (el) => (el?.innerText ?? "").trim();
   const q = (s) => document.querySelector(s);
@@ -41,9 +38,8 @@ const PANEL_PROBE = `(() => {
     chips: [...d.querySelectorAll(".chip")].map((c) => ({ label: txt(c.querySelector(".chip-label")) || txt(c), detail: txt(c.querySelector(".chip-detail")), cls: c.className })),
     thinking: [...d.querySelectorAll(".thinking")].map(txt).join("\\n").slice(0, 2000),
   }));
-  const consents = [...document.querySelectorAll("#consent-requests .consent-card:not(.consent-complete)")].map((c, i) => ({ i, id: c.dataset.requestId ?? "", text: txt(c), buttons: [...c.querySelectorAll("button")].map((b) => b.textContent.trim()) }));
   const artifacts = [...document.querySelectorAll(".artifact-card")].map((c) => txt(c.querySelector(".artifact-name")) + " · " + txt(c.querySelector(".artifact-meta")));
-  return { msgs, runs, consents, artifacts,
+  return { msgs, runs, artifacts,
     connected: q("#status-dot")?.classList.contains("on") ?? false,
     running: q("#status-pill")?.classList.contains("running") ?? false,
     abortVisible: q("#send-btn")?.classList.contains("stopping") ?? false,
@@ -182,7 +178,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     };
 
     let firstOut = null, lastChange = Date.now(), lastSig = "", ended = null, lastTraceRead = 0;
-    const deniedHeld = new Set(), handledConsent = new Set();
     const deadline = rec._t0 + capMs;
     let snap;
 
@@ -211,44 +206,12 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       if (!firstOut && (afterUser.some((m) => m.text) || snap.runs.some((r) => r.chips.length || r.thinking))) { firstOut = now; rec.timestamps.first_visible_output = iso(now); }
 
-      // consent cards: allow once unless it smells like submit/buy/post
-      for (const c of snap.consents) {
-        const k = c.id || c.text.slice(0, 200);
-
-        if (handledConsent.has(k)) continue;
-        handledConsent.add(k);
-        const allow = !(DANGEROUS.test(c.text) || /\bPOST\b/.test(c.text));
-        const label = allow ? "允许一次" : "拒绝";
-        await evalIn(ps, `(()=>{const c=document.querySelectorAll('#consent-requests .consent-card:not(.consent-complete)')[${c.i}];const b=c&&[...c.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(b){b.click();return true}return false})()`).catch(() => false);
-        rec.confirmations.push({ at: iso(now), t: t(now), kind: "consent_card", text: c.text.slice(0, 400), decision: allow ? "allow_once" : "deny" });
-        addStep(now, "harness", `consent ${allow ? "allowed" : "denied"}: ${c.text.slice(0, 120)}`);
-      }
-
       // diagnostics, read incrementally every ~1.5 s
       if (now - lastTraceRead > 1500) {
         lastTraceRead = now;
         const got = await evalIn(ps, traceSince(traceKey)).catch(() => null);
 
         if (got) { traceKey = got.last; trace.push(...parseLines(got.lines)); }
-      }
-
-      // held (destructive) clicks: confirm ordinary deletes/removals on the page, but never confirm
-      // anything that submits / buys / pays / posts / sends / publishes (then cancel via the panel).
-      const startArgs = new Map(trace.filter((e) => e.type === "tool_execution_start").map((e) => [e.data?.toolCallId, e.data?.args]));
-
-      for (const e of trace) {
-        if (e.type === "tool_execution_end" && /Held click/.test(JSON.stringify(e.data?.result ?? "")) && !deniedHeld.has(e.data?.toolCallId)) {
-          deniedHeld.add(e.data?.toolCallId);
-          const argsText = String(JSON.stringify(startArgs.get(e.data?.toolCallId) ?? e.data?.args ?? {}) ?? "");
-          const heldText = argsText + " " + String(JSON.stringify(e.data?.result?.content?.[0]?.text ?? "") ?? "");
-          const neverConfirm = /提交|购买|支付|付款|下单|结算|发布|发表|发帖|发送|submit|buy|purchase|pay|checkout|order|post|publish|send|tweet/i.test(argsText);
-          const reply = neverConfirm ? "取消" : "确认";
-          await rp.click(ps, "#input");
-          await rp.typeText(ps, reply);
-          await rp.pressEnter(ps);
-          rec.confirmations.push({ at: iso(now), t: t(now), kind: "held_click", text: heldText.slice(0, 300), decision: neverConfirm ? "deny (sent 取消)" : "confirm (sent 确认)" });
-          addStep(now, "harness", `held click ${neverConfirm ? "denied" : "confirmed"}: ${argsText.slice(0, 120)}`);
-        }
       }
 
       const settled = trace.some((e) => e.type === "agent_settled" && Date.parse(e.time) >= rec._t0 - 1000);

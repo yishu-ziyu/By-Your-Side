@@ -1,4 +1,4 @@
-import type { ApprovalDispatchGuard } from "./input.js";
+import type { DispatchGuard } from "./input.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
@@ -39,8 +39,8 @@ export interface ScreenshotResult {
  * 不藏的话 agent 会在自己的截图里看到一个页面上并不存在的发光箭头，把它当页面元素去理解甚至去点。
  * 幕帘失败（页面禁止注入、导航换文档）绝不能弄失败截图本身。
  */
-async function curtain(tabId: number, hidden: boolean, beforeDispatch?: ApprovalDispatchGuard, onDispatch?: () => void): Promise<void> {
-  // Revoked approval must escape the best-effort injection error handling.
+async function curtain(tabId: number, hidden: boolean, beforeDispatch?: DispatchGuard, onDispatch?: () => void): Promise<void> {
+  // A revoked dispatch (stop/takeover) must escape the best-effort injection error handling.
   if (hidden) {
     await beforeDispatch?.();
     beforeDispatch?.checkNow?.();
@@ -370,7 +370,7 @@ export async function screenshot(
     scale?: "css" | "raw";
   } = {},
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<ScreenshotResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 

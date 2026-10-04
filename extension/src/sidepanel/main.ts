@@ -64,7 +64,6 @@ import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRu
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
 import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
-import { ConsentPanel } from "./consent.js";
 
 const TOKEN_KEY = "sideagent_token";
 
@@ -120,7 +119,6 @@ app.innerHTML = `
     </div>
   </header>
   <button id="conversation-background" type="button" hidden></button>
-  <div id="consent-requests" aria-label="请求授权" hidden></div>
   <div id="task-strip" aria-label="当前会话与结果">
     <div id="task-result-card" hidden>
       <div id="task-result-primary"></div>
@@ -394,16 +392,6 @@ const BOOT_DECISION_TIMEOUT_MS = 6_000;
 const BOOT_CREATE_FALLBACK_MS = 4_000;
 
 const conversations = new Map<string, ConversationSummary>();
-
-const consentPanel = new ConsentPanel(
-  document.getElementById("consent-requests")!,
-  () => selectedConversationId,
-  id => conversations.get(id)?.title ?? "其他会话",
-  id => selectConversation(id),
-  message => send(message),
-);
-
-window.addEventListener("pagehide", () => consentPanel.dispose());
 
 const receiptMessages = new Map<string, HTMLElement>();
 
@@ -724,7 +712,6 @@ function selectConversation(id: string, notify = true): void {
   renderTaskStrip();
   taskBar.reset();
   queryTaskView();
-  consentPanel.refresh();
 
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
   port?.postMessage({ kind: "sync", conversationId: id, afterSeq: lastHistorySeq } satisfies PanelToBg);
@@ -3844,7 +3831,7 @@ function onToolStart(
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; declined?: true; repeatRefused?: true }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; repeatRefused?: true }): void {
   const run = currentRun ?? lastRun;
 
   if (run) {
@@ -3867,7 +3854,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (!entry) return;
   // 用户拒绝授权的那一步照你的意思没做：不画成失败。
-  const failed = ev.isError && !ev.declined && !ev.repeatRefused;
+  const failed = ev.isError && !ev.repeatRefused;
   entry.dot.className = `chip-dot ${chipState(true, failed)}`;
   // B：收束——蓝边底色按 --m-move 退回常态
   entry.chip.classList.remove("running");
@@ -3887,8 +3874,6 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   if (failed) entry.chip.classList.add("error");
 
   const label = entry.chip.querySelector(".chip-label");
-
-  if (ev.declined && label) label.textContent = `${label.textContent}（你没有允许）`;
 
   if (ev.repeatRefused && label) label.textContent = `${label.textContent}（已做过，没再重复）`;
   const text = ev.resultText ?? "";
@@ -4358,8 +4343,6 @@ function handleServerMessage(raw: string): void {
 
   if (!msg) return;
 
-  if (consentPanel.receive(msg)) return;
-
   if (msg.type === "voice") { voiceUI.receive(msg);
 
  return; }
@@ -4542,7 +4525,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_") && !envelope.msg.type.startsWith("consent_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result"
+      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result"
       // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 放行进内层，
       // 由内层只收目录、不收模型。live 复现：225 条 models=163 在这里被整条丢弃。
       && envelope.msg.type !== "model_info") return;
@@ -4618,7 +4601,6 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind !== "conn") return;
   // 连接状态
   transportConnected = envelope.state === "connected";
-  consentPanel.setConnected(transportConnected);
   renderConversations();
 
   if (envelope.state === "connected") {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksConfirmBeforeSubmit, asksUser, claimsUnfinished, pageAwaitsEmailStep } from "../src/goal-check.js";
+import { asksUser, claimsUnfinished, pageAwaitsEmailStep } from "../src/goal-check.js";
 
 // 例句取自 2026-09-27 智谱真实验收的回答原文（out/acceptance/memory-proactive/）。
 describe("目标核对：助手在问用户时一律等用户，不自动接着做", () => {
@@ -13,16 +13,6 @@ describe("目标核对：助手在问用户时一律等用户，不自动接着�
   it("把能自己做的事甩给用户、或已做完：不算在问", () => {
     expect(asksUser("订阅已提交成功！页面显示确认邮件已发到 yishu.test@gmail.com，去邮箱点一下里面的确认链接就完成订阅了。")).toBe(false);
     expect(asksUser("搞定！我打开了 Gmail 里的确认邮件，点进 \"Confirm subscription\" 链接，页面现在显示 Subscribed。")).toBe(false);
-  });
-});
-
-describe("用户原话要求提交前确认：宿主据此拿住提交类点击", () => {
-  it("常见说法都认得", () => {
-    for (const t of ["帮我订阅这个页面的邮件，提交前让我确认。", "请帮我填写当前页面的表单，提交前让我确认。", "填好先给我看一下", "发送前问我一下", "Fill the form but ask me before you submit"]) expect(asksConfirmBeforeSubmit(t), t).toBe(true);
-  });
-
-  it("没提这个条件的不拦", () => {
-    for (const t of ["帮我订阅这个页面的邮件", "直接提交吧", "我之前让你订阅过哪些邮件列表？", "现在应该到了，你再去看看"]) expect(asksConfirmBeforeSubmit(t), t).toBe(false);
   });
 });
 

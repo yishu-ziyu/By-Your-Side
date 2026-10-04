@@ -12,7 +12,7 @@ import {isWriteTool} from '../../shared/control.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';
 import {isResultMetaTool} from '../../shared/task-results.js';
 import {decideTaskNextStep} from '../../shared/task-next-step.js';
-import {plainStep, toolAction} from '../../shared/user-facing.js';
+import {toolAction} from '../../shared/user-facing.js';
 import {TaskReadback} from './task-readback.js';
 import {RECOVERY_INPUT_MAX,type TaskRecoveryInput} from '../../shared/task-recovery.js';
 import {pageRecoveryKey,attachmentRecoveryKey,mergeTaskMaterials} from './task-recovery.js';
@@ -110,24 +110,6 @@ export class TaskProgress {
     if (omittedRemaining) facts.omittedRemaining = omittedRemaining;
 
     return facts;
-  }
-  /**
-   * 「结果未知」全部来自被拦下、等用户在页面上确认的点击时，返回这些点击（人话说明）和其余没了结的项数；否则 null。
-   * 只用来把补在回答后的那句话说对：它们没失败，也不是结果未知，是在等用户。
-   */
-  awaitingConfirmationOnly(): { items: Array<{ id: string; description: string }>; others: number } | null {
-    const executionItems = this.results.list();
-    const plan = this.goals.snapshot();
-    const items = plan ? [...plan.goals, ...executionItems.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionItems))] : executionItems;
-    const open = items.filter((item) => ["pending", "blocked", "unknown"].includes(item.status) && !('tool' in item && isSupersededUnknown(item, executionItems)));
-    const unknown = open.filter((item) => item.status === "unknown");
-    const awaiting = unknown.filter((item) => 'tool' in item && !!item.evidence && 'awaitingConfirmation' in item.evidence && item.evidence.awaitingConfirmation);
-
-    if (!awaiting.length || awaiting.length !== unknown.length) return null;
-    // 其余没了结的执行项（失败、受阻）要另说；模型列的目标（如「点发送」）要等用户确认后才算数，按同一件事处理。
-    const others = open.filter((item) => 'tool' in item && !awaiting.includes(item)).length;
-
-    return { items: awaiting.map((item) => ({ id: item.id, description: plainStep(item.description) })), others };
   }
   private startUrl: string | null = null;
   private goalPage: { title: string; url: string } | null = null;
@@ -479,16 +461,10 @@ if(page)this.recoveryInput.page=page;
         if (!e.isError && e.executionFact === "executed") this.noteRunSource(pendingNav);
       }
 
-      // 用户拒绝授权：这一步按用户的意思不做了。不算失败，也不留成待办。
-      // 重复一步已成功的写入被拦下同理：原步骤已成功，这次没执行，不算失败（10-04 北极星 N2）。
-      if (!this.aborted && (e.declined || e.repeatRefused)) {
-        // 被拦下的重复不覆盖上一步的成败：之前真失败过的一步仍要如实报告。
-        if (e.declined) {
-          this.lastAction = { action: started.action, failed: false, at: this.clock() };
-          this.lastBrowserFailed = false;
-        }
-
-        this.results.noteDeclined({ toolCallId: e.toolCallId, member, runId: this.runId });
+      // 重复一步已成功的写入被拦下：原步骤已成功，这次没执行，不算失败，也不留成待办（10-04 北极星 N2）。
+      // 被拦下的重复不覆盖上一步的成败：之前真失败过的一步仍要如实报告。
+      if (!this.aborted && e.repeatRefused) {
+        this.results.noteRepeatRefused({ toolCallId: e.toolCallId, member, runId: this.runId });
 
         return;
       }
@@ -543,7 +519,6 @@ if(page)this.recoveryInput.page=page;
     return outcome;
   }
   /** 用户确认后的受支持恢复：旧未知保留，新建（或复用）一条独立结果项并标记取代。 */
-  recordConfirmedRecovery(input: import('./task-results.js').ConfirmedRecoveryRecord) { return this.results.recordConfirmedRecovery(input); }
   snapshot(): TaskProgressSnapshot {
     const phases = [...this.members.values()];
     let state: TaskProgressSnapshot['state'];

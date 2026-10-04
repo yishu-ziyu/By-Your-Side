@@ -71,9 +71,6 @@ export function resumeAvailability(view: TaskView | null, checkpointUnavailable:
 
   if (view.state === "aborted") return { available: false, reason: "任务已停止，这个入口不会把它复活" };
 
-  // 剩下的只是等你在页面上确认的动作：去页面上点，不给「继续」重跑。
-  if (view.state === "idle" && awaitingOnly(view)) return { available: false, reason: "在页面上点确认或取消就行" };
-
   // 模型已在回答里说明哪些没做完：接下来要你补信息或换页面，直接在输入框回复，不给「继续」重跑。
   if (declaredUnfinished(view).length) return { available: false, reason: "回答里已说明没做完的部分，直接回复就行" };
 
@@ -112,13 +109,6 @@ function declaredUnfinished(view: TaskView): string[] {
   return view.state === "idle" ? view.latestDelivery?.unfinished ?? [] : [];
 }
 
-/** 「结果未知」的项全是被拦下、等用户在页面上确认的点击（模型列的目标要等用户确认后才算数，按同一件事处理）。 */
-function awaitingOnly(view: TaskView): boolean {
-  const unknown = view.outstanding.filter((item) => item.status === "unknown");
-
-  return unknown.length > 0 && unknown.every((item) => item.awaitingConfirmation) && view.outstanding.every((item) => item.status !== "blocked");
-}
-
 /**
  * 最近一次目标核对的结论（标准 8）：判做完 → 没有剩余；说了还差什么 → 就是它；没核对过或没说 → null，交给后面的来源。
  * 来源顺序与过往任务摘要相同：核对的「还差」→ 模型自己交代的未完成项 → 计划目标。
@@ -154,13 +144,6 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   const verb = view.state === "interrupted" || view.state === "aborted" ? "还没做" : "没做成";
   const phrase = (head: string, items: string[]) => `${head}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
   const notDone = (items: string[]) => phrase(verb, items);
-
-  // 剩下的只是等你在页面上确认的动作：它没失败，模型怎么描述都一样，说清在等你。
-  if (view.state === "idle" && awaitingOnly(view)) {
-    const held = view.outstanding.find((item) => item.awaitingConfirmation)!;
-
-    return `等你在页面上确认：${clipText(plainStep(held.description), 24)}`;
-  }
 
   const told = checkedRemaining(view) ?? (declared.length ? declared : view.latestDelivery?.unfinished?.length ? view.latestDelivery.unfinished : null);
 

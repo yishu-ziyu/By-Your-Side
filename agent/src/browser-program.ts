@@ -637,10 +637,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           : name === "saveFile" && options.saveFile ? (isSaveFileParams(params) ? await options.saveFile(params) : rejectSaveFileParams())
           : await options.call(canonical as ToolName, callParams, id);
 
-        if (result && typeof result === "object" && "held" in result && result.held) {
-          throw stop("Held click: waiting for user confirmation. This program is stopped; do not issue further actions");
-        }
-
         guard();
         let value = result;
 

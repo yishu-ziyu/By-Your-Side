@@ -2892,55 +2892,6 @@ details.disc[open] > summary::before { transform: rotate(90deg); }
 .observe-card { margin-top: 10px; padding: 11px 12px; border-radius: var(--radius-card, 10px); border: 1px solid var(--content-border, rgba(0,0,0,.06)); background: var(--content-bg); }
 .observe-card p { margin: 0 0 8px; font-size: 12px; line-height: 1.6; }
 
-/* 一次性网络请求授权，沿用侧栏信息层级。 */
-#consent-requests {
-  flex: 0 0 auto;
-  min-height: min(180px, 45vh);
-  max-height: min(48vh, 420px);
-  overflow-y: auto;
-  padding: 8px 14px;
-}
-.consent-card {
-  margin-bottom: 8px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--text);
-}
-.consent-card h2 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
-.consent-target { margin: 0 0 8px; font-size: 12px; overflow-wrap: anywhere; }
-.consent-card summary { cursor: pointer; font-size: 12px; color: var(--text-2); }
-.consent-card pre { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
-.consent-status { margin: 8px 0; color: var(--text-2); font-size: 12px; line-height: 1.5; }
-.consent-actions { display: flex; justify-content: flex-end; gap: 8px; position: sticky; bottom: 0; padding-top: 8px; background: var(--surface); }
-.consent-actions button, .consent-other {
-  min-height: 36px;
-  padding: 7px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-}
-.consent-actions .consent-allow { background: var(--accent); border-color: var(--accent); color: #fff; }
-/* “以后这个网站不再问”：文字较长，单独占一行，次要样式，不抢“允许一次”。 */
-.consent-actions:has(.consent-trust) { flex-wrap: wrap; }
-.consent-actions .consent-trust { flex-basis: 100%; color: var(--text-secondary); font-size: 12px; }
-.consent-actions button:disabled { opacity: .55; cursor: default; }
-.consent-actions button:focus-visible, .consent-card summary:focus-visible, .consent-other:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-.consent-other { width: 100%; margin-bottom: 6px; text-align: left; }
-#consent-requests[data-pending="false"] { min-height: 0; }
-.consent-complete { display: flex; align-items: center; gap: 8px; padding: 6px 0; margin: 0; border: 0; background: transparent; font-size: 12px; }
-.consent-complete p { flex: 1; margin: 0; color: var(--text-2); }
-.consent-complete button { border: 0; background: none; color: var(--text-2); cursor: pointer; padding: 6px; font: inherit; }
-.consent-complete button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
 /* 常规回执默认一行，原要求和目标留在可展开详情中。 */
 .msg.receipt { font-size: 12px; color: var(--text-2); }
 .msg.receipt summary { cursor: pointer; overflow-wrap: anywhere; }

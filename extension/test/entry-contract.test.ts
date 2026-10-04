@@ -2,7 +2,6 @@
  * 入口行为契约：同一组协议消息，分别经过本机伴随进程（ConversationManager）与扩展内 agent（extension/src/inproc/browser-host.ts）。
  *
  * 两边都用同一个脚本化本地模型和同一个假浏览器，只比较协议上看得到的结果：
- * - 等待确认的点击，交给模型的回执不能说已经点了；
  * - 其他会话的消息不能改变正在执行任务的归属；
  * - 同一 requestId 重复投递只启动一次；
  * - 指向过期任务的修订被拒绝，也不进入模型输入。
@@ -136,11 +135,11 @@ class ScriptedModel {
   get holding(): boolean { return this.held !== null; }
 }
 
-/** 假浏览器：click 一律被拦下等确认；其余读操作给一页最小内容。 */
+/** 假浏览器：click 照常执行；其余读操作给一页最小内容。 */
 interface BrowserReply { data: StreamValue; executionFact: "executed" | "not_executed" }
 
 function browserReply(name: string): BrowserReply {
-  if (name === "click") return { data: { clicked: false, held: true }, executionFact: "not_executed" };
+  if (name === "click") return { data: { clicked: true }, executionFact: "executed" };
 
   if (name === "snapshot") return { data: { text: '@3 button "保存"', tabId: 1, url: "http://127.0.0.1/note", title: "备注" }, executionFact: "executed" };
 
@@ -280,17 +279,6 @@ describe.each(entries)("入口契约：%s", (_name, build) => {
     entry = null;
     vi.restoreAllMocks();
   });
-
-  it("等待确认的点击，交给模型的回执不说已经点了", async () => {
-    const script = new ScriptedModel();
-    entry = await build(script);
-    entry.send({ type: "task_action", conversationId: entry.conversationId, request: request(entry, { requestId: "held-1" }) });
-
-    const seen = await until(() => script.calls.flat().find(m => m.role === "toolResult"), "模型收到点击回执");
-    const reply = seen.text;
-    expect(reply).not.toMatch(/^Clicked/);
-    expect(reply).toMatch(/held|wait|confirm|等待|确认/i);
-  }, 20_000);
 
   it("其他会话的消息不改变正在执行任务的归属", async () => {
     const script = new ScriptedModel();

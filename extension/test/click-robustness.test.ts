@@ -69,17 +69,6 @@ describe("click & mark robustness", () => {
     await expect(click({ target: "#invalid-rect" })).rejects.not.toThrow(/reading 'x'/);
   });
 
-  it("归档 / Archive 目标会触发 held 拦阻进入就地确认", async () => {
-    installChrome({ domRect: { x: 100, y: 200, width: 80, height: 32 } });
-    const { click } = await import("../src/background/exec/input.js");
-
-    const resZh = await click({ target: "#archive-btn", label: "归档会话" });
-    expect(resZh).toEqual({ clicked: false, held: true });
-
-    const resEn = await click({ target: "#archive-btn-en", label: "Archive" });
-    expect(resEn).toEqual({ clicked: false, held: true });
-  });
-
   it("mark 定位失败还没画任何东西：记为未执行，不能变成结果未知而锁住重画", async () => {
     installChrome({ domError: "ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。" });
     const { mark } = await import("../src/background/exec/input.js");

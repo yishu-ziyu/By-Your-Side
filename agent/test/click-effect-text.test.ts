@@ -43,11 +43,4 @@ describe("click 回执带效果证据", () => {
     const out = await text({ clicked: true });
     expect(out).toContain("This confirms event dispatch only");
   });
-
-  it("被拦下的点击不声称任何页面反应", async () => {
-    const out = await text({ clicked: false, held: true });
-    expect(out).toContain("Held click");
-    expect(out).not.toContain("Page reacted");
-    expect(out).not.toContain("Nothing on the page changed");
-  });
 });

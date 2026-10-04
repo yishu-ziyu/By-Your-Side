@@ -14,8 +14,8 @@ import type {TranslationDisplayState} from '../../shared/page-translation.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationReceipt, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
-import {createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool, unconfirmedResultMessage, type ConfirmedRecoveryRecord} from "./task-results.js";
-import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultItem, type TaskResultRegistration} from "../../shared/task-results.js";
+import {createTaskResultsTool, createVerifyUnknownResultTool, unconfirmedResultMessage} from "./task-results.js";
+import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
@@ -64,7 +64,7 @@ import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { followUpContinuesTask } from "./follow-up-intent.js";
-import { asksConfirmBeforeSubmit, asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -302,11 +302,8 @@ export class BrowserAgentSession {
     register: (items: TaskResultRegistration[]) => void;
     stopAfterFailures?: () => void;
     verify: (input: {id: string; expect: string; observation: {toolCallId: string; tool: string; text: string; at: number; target: string | null; tabId: number | null}}) => {ok: boolean; reason?: string};
-    confirmWrite?: (input: {id: string; tool: string; target: string; value: string; description: string; tabId: number; documentId: string}) => Promise<{allowed: boolean; reason?: string}>;
-    recordConfirmedRecovery?: (input: ConfirmedRecoveryRecord) => TaskResultItem | null;
     /** T06：交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
     deliveryFacts?: () => DeliveryFactInput;
-    awaitingConfirmationOnly?: () => { items: Array<{ id: string; description: string }>; others: number } | null;
   } | null = null;
   private readonly taskEvidence = new TaskEvidence();
   private goalToolHost(): GoalToolHost {
@@ -856,7 +853,6 @@ if(required.includes(key))candidates.set(key,attachment);
         },
         // 没列目标计划时没有“用户目标清单”可对照：不附完成/未完成事实，也不拿动作回执冒充完成。
         getDeliveryFacts: () => resultHost?.conversationSnapshot()?.goalPlan?.coverage === 'verified' ? resultHost.taskResultsHost?.deliveryFacts?.() ?? null : null,
-        getAwaitingConfirmation: () => resultHost?.taskResultsHost?.awaitingConfirmationOnly?.() ?? null,
         getPageChanges: () => resultHost?.pageChangeFacts() ?? null,
         hasUnfinishedWork: () => {
           const snapshot = resultHost?.taskResultsHost?.getSnapshot();
@@ -914,33 +910,6 @@ if(required.includes(key))candidates.set(key,attachment);
               const facts = resultHost.deliveryFactsSnapshot();
               resultHost.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text:unconfirmedResultMessage(item),unfinished:[item.description.slice(0, 200)],...(facts?{facts}:{})});
             },
-          }), createConfirmBlockedWriteTool({
-            getSnapshot: () => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线");
-
- return resultHost.taskResultsHost.getSnapshot(); },
-            read: async input => {
-              if (!resultHost?.isToolActive("read_element")) throw new Error("read_element 当前不可用，无法核对。");
-              const params=input.tabId===undefined?{target:input.target,properties:["displayValue"]}:{target:input.target,tabId:input.tabId,properties:["displayValue"]};
-              const data = await rpc.call("read_element", params) as {value?: string; properties?: {displayValue?: string}; tabId?: number; documentId?:string};
-
-              return {displayValue: data.properties?.displayValue, value: data.value, tabId: data.tabId, documentId:data.documentId};
-            },
-            confirm: input => {
-              if (!resultHost?.taskResultsHost?.confirmWrite) throw new Error("确认通道尚未接线");
-
-              return resultHost.taskResultsHost.confirmWrite(input);
-            },
-            executeWrite: async input => {
-              if (!resultHost?.isToolActive(input.tool)) throw new Error(`${input.tool} 当前不可用，未执行确认重设。`);
-              await rpc.call(input.tool as Parameters<typeof rpc.call>[0], {target: input.target, value: input.value, tabId:input.tabId});
-            },
-            record: input => {
-              if (!resultHost?.taskResultsHost?.recordConfirmedRecovery) throw new Error("任务结果尚未接线");
-
-              return resultHost.taskResultsHost.recordConfirmedRecovery(input);
-            },
-            persist: () => { if (resultHost?.taskResultsHost) resultHost.persistTaskResults?.(resultHost.taskResultsHost.getSnapshot()); },
-            emit: callbacks.emit,
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
           ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
@@ -2468,8 +2437,8 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
       persistedUserTurns || "(legacy checkpoint: no task-scoped inputs; do not replay unrelated requests from conversation history, ask when the original requirement is unclear)",
       "Treat the fresh page observation below as current truth; do not assume the pre-restart page state still exists.",
       "The user may have edited fields on this page while the task was stopped. Those visible values are the user's current decisions: do not overwrite them to satisfy the earlier instruction, keep them, and report any conflict instead of resolving it silently.",
-      "Previous login/account assumptions and old approvals are not reusable. Check the currently visible account before account-sensitive actions; ask the user when it cannot be established.",
-      "Never repeat a satisfied result. Never repeat or bypass an unknown write. For a low-risk fill whose latest required value is clear, use confirm_blocked_write when the old result is unknown OR when it succeeded before restart but the fresh page no longer has that value. This is the bounded recovery path, not a replay: it preserves old evidence, checks current state, and asks the user only if one exact reset is still needed. Other unknown writes still require reliable evidence or a user decision.",
+      "Previous login/account assumptions are not reusable. Check the currently visible account before account-sensitive actions; ask the user when it cannot be established.",
+      "Never repeat a satisfied result. Never repeat or bypass an unknown write: verify it with reliable page evidence, or stop and tell the user what is uncertain so they can decide in chat.",
       "Use task_goals inspect to review pending USER goals and retained source materials. If coverage is unplanned, define the actual goals first. Reuse source text through capture_page_material; current page references must come from this fresh observation. A failed obsolete method does not erase a user goal. Verify the requested state before final delivery.",
     ].join("\n");
 
@@ -3030,7 +2999,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             isError: event.isError,
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
-            ...(event.isError && this.rpc?.wasDeclined(event.toolCallId) ? { declined: true as const } : {}),
             ...(event.isError && this.rpc?.wasRepeatRefused?.(event.toolCallId) ? { repeatRefused: true as const } : {}),
           });
           this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);
@@ -3095,33 +3063,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           break;
       }
     });
-  }
-
-  /** 出站点击补宿主参数：这个任务的原话要求提交前确认时带上 confirmSubmit（见 extension 的 isSubmitLabel）。 */
-  decorateToolParams(name: string, params: Parameters<ToolRpc["call"]>[1]): Parameters<ToolRpc["call"]>[1] {
-    if (name !== "click" && name !== "double_click") return params;
-    const requirements = this.conversationSnapshot()?.recoveryInput?.requirements ?? (this.activeGoal ? [this.activeGoal] : []);
-
-    return requirements.some(asksConfirmBeforeSubmit) ? { ...params, confirmSubmit: true } : params;
-  }
-
-  /** 规则只由宿主附加，模型不能传入空规则或伪造值的来源证明。 */
-  async decorateExecutionParams(name: string, params: Parameters<ToolRpc["call"]>[1]): Promise<Parameters<ToolRpc["call"]>[1]> {
-    const decorated = this.decorateToolParams(name, params);
-
-    if (!this.memoryRuntime || !["click", "double_click", "fill", "type_text", "select_option", "press_key", "js", "fetch", "cdp", "key_down", "mouse_down", "mouse_up", "paste", "html5_drag", "drag"].includes(name)) return decorated;
-
-    const value = typeof params.value === "string" ? params.value : typeof params.text === "string" ? params.text : typeof params.values === "string" ? params.values : "";
-    const policy = await this.memoryRuntime.formPolicy(this.conversationSnapshot()?.recoveryInput?.requirements ?? [], value);
-
-    const snapshot = this.conversationSnapshot();
-
-    // 这些写入已在 assertTaskResultExecution 核验复制来源，不强迫用户再手打原文。
-    const verifiedCopy = ["fill", "type_text"].includes(name) && isCopyRequest(snapshot?.recoveryInput?.requirements ?? [])
-      && snapshot?.goalPlan?.goals.some(goal => goal.kind === "field" && goal.status !== "satisfied") === true;
-
-    return { ...decorated, ...policy, userValueProvided: policy.userValueProvided || verifiedCopy,
-      userValueHostname: verifiedCopy ? undefined : policy.userValueHostname };
   }
 
   /** 这一轮给用户的话：最后的正文；没有正文时（用交付工具说的）取这一轮最新的正式交付。 */
@@ -3224,14 +3165,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const lastReply = this.runReplyText(event.messages);
       const pageText = page ? String(page.text ?? "") : "";
 
-      // 有点击被拿住、正等用户在页面上确认：一定是等用户，不能让助手「接着做」（它会去点确认键或重做那一下）。
-      const awaitingConfirm = (snapshot?.results ?? []).some(item => item.status === "unknown" && !!item.evidence?.awaitingConfirmation);
-
-      if (awaitingConfirm) {
-        verdict = { status: "needs_user", remaining: "在页面上确认提交" };
-      } else if (pageAwaitsEmailStep(pageText)) {
-        // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去（09-27 Kimi 这样问了就停住）；
-        // 真正要用户拍板的提交、删除由扩展拿住，不靠这里。
+      if (pageAwaitsEmailStep(pageText)) {
+        // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去（09-27 Kimi 这样问了就停住）。
         // 点名是哪个网站的确认邮件：收件箱里常有别的网站的同类邮件（09-27 Kimi 点了另一个列表的确认链接）。
         const site = snapshot?.goalPage ? (snapshot.goalPage.title.split(/\s[—–|-]\s/)[0]!.trim() || new URL(snapshot.goalPage.url).hostname) : "";
         verdict = { status: "continue", remaining: site ? `去邮箱找「${site.slice(0, 40)}」的确认邮件，点里面的确认链接（别点其他网站的）` : "去邮箱打开确认邮件，点里面的确认链接" };

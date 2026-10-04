@@ -171,7 +171,7 @@ it('反例二：「只粘贴，不保存」不新增保存审批、不生成保�
   expect(wire).not.toContain('capsuleCanCloseAction');
   // 宿主没有派发任何保存/提交类动作，也没有新增确认/审批流
   expect(h.rpc.call.mock.calls.map((c: unknown[]) => c[0])).toEqual(['fill']);
-  expect(h.messages.some(m => m.type === 'consent_request' || m.type === 'task_control')).toBe(false);
+  expect(h.messages.some(m => m.type === 'task_control')).toBe(false);
   // 语音通道保留：模型仍能按原话说明「未保存」
   await h.awaitCreate();
   h.continuationCreated('a1');

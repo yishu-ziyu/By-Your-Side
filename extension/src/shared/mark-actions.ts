@@ -1,5 +1,5 @@
 /**
- * 就地确认按钮：解析 mark.actions、点下去对应的用户文本、危险词判定。
+ * 标注上的确认/取消按钮：解析 mark.actions、点下去对应的用户文本、按危险词推导默认按钮。
  * 纯函数，可单测。视觉是光标名牌上的双键（手拿住目标，键跟手走）。
  */
 import type { MarkAction, MarkActionId } from "../../../shared/protocol.js";
@@ -57,20 +57,6 @@ export function isDestructiveLabel(text: string): boolean {
   return false;
 }
 
-const SUBMIT_ZH = /^(提交|订阅|注册|报名|立即订阅|立即注册|确认提交|下单|订票|预订|立即购买|购买|确认订单)/;
-
-const SUBMIT_EN = /^(submit|sign ?up|subscribe|register|join|place order|book|reserve|buy|checkout|confirm purchase)(\s|$|!|\.)/i;
-
-/**
- * 已知提交类控件默认先停下等确认，不依赖用户是否事先要求。
- * 词表仅是辅助识别，不能证明任意网页的业务副作用。
- */
-export function isSubmitLabel(text: string): boolean {
-  const t = text.trim().replace(/\s+/g, " ");
-
-  return !!t && (SUBMIT_ZH.test(t) || SUBMIT_EN.test(t));
-}
-
 export function confirmLabelForDestructive(text: string): string {
   const t = text.trim();
 
@@ -83,8 +69,6 @@ export function confirmLabelForDestructive(text: string): string {
   if (t.startsWith("归档") || /^archive/i.test(t)) return "归档";
 
   if (/^(delete|remove)\b/i.test(t)) return "Delete";
-
-  if (isSubmitLabel(t)) return "提交";
 
   return "删除";
 }
@@ -122,15 +106,4 @@ export function resolveImplicitMarkActions(label?: string, actions?: unknown): M
   }
 
   return undefined;
-}
-
-/** 侧栏里这句话算放行刚才拦住的那一下。 */
-export function isAffirmativeReply(text: string): boolean {
-  // 「可以，提交吧」「没问题」这类明确的同意也算（2026-09-27：用户常这么回，原来只认「确认」时会卡在页面确认上）。
-  return /^(确认|是的?|继续|好的?|可以|行|没问题|(?:确认|可以|好的?)?[，,]?\s*提交吧?|yes|ok|okay|confirm|go ahead|submit(?: it)?)\s*[。.!！]?$/i.test(text.trim());
-}
-
-/** 侧栏里这句话算撤销刚才拦住的那一下（与点名牌「取消」同效）。 */
-export function isCancelReply(text: string): boolean {
-  return /^(取消|算了|不用了?|不要|别|否|no|nope|cancel)\s*[。.!！]?$/i.test(text.trim());
 }

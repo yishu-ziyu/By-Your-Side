@@ -528,14 +528,6 @@ describe("B2 视觉等待后重新确认目标", () => {
     expect(() => dom.click(".edit")).toThrow(/匹配 2 个元素/);
     expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
   });
-
-  it("仅坐标无法证明对象时不把操作标成已确认安全，危险名仍走确认边界", async () => {
-    installPage();
-    const { click } = await import("../src/background/exec/input.js");
-    const held = await click({ point: [50, 40], label: "删除项目" });
-    expect(held).toEqual({ clicked: false, held: true });
-    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
-  });
 });
 
 describe("B2 命中身份：执行实际 confirm/hitTest，禁止祖先放行", () => {

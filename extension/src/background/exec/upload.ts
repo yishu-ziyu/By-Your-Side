@@ -22,7 +22,7 @@ import { notExecuted } from "./input.js";
 const MAX_FILES = 8;
 
 /** 用对象 id 执行函数（this = 目标元素）；调用方负责释放对象。 */
-async function callWithObject<T>(tabId: number, objectId: string, declaration: string, args: unknown[] = [], beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}}): Promise<T> {
+async function callWithObject<T>(tabId: number, objectId: string, declaration: string, args: unknown[] = [], beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<T> {
   const result = await sendCommand<{
     result?: { value?: T };
     exceptionDetails?: { exception?: { description?: string }; text?: string };
@@ -45,7 +45,7 @@ export async function setFilesOnObjectId(
   tabId: number,
   objectId: string,
   paths: string[],
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}},
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<Array<{ name: string; size: number }>> {
   const clearing = paths.length === 0;
 
@@ -114,11 +114,11 @@ export async function setFilesOnObjectId(
         throw new Error("清空后读回仍有文件，未生效。");
       }
       return list;
-    }`, [clearing], beforeDispatch?.afterEffect ?? beforeDispatch);
+    }`, [clearing], beforeDispatch);
   } catch (error) {
     throw Object.assign(new Error(`上传流程已开始，结果未知：${error instanceof Error ? error.message : String(error)}`), {executionFact: "unknown"});
   } finally {
-    // Release only our temporary listeners, even after approval is revoked.
+    // Release only our temporary listeners, even after the dispatch is revoked.
     await callWithObject<true>(tabId, objectId, `function() {
       const el = this;
       if (el.__bysUploadOnInput) el.removeEventListener("input", el.__bysUploadOnInput);
@@ -134,7 +134,7 @@ export async function setFilesOnBackendNodeId(
   tabId: number,
   backendNodeId: number,
   paths: string[],
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}},
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<Array<{ name: string; size: number }>> {
   const executionContextId=await isolatedReadContext(tabId);
   const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId,executionContextId });
@@ -152,7 +152,7 @@ export async function setFilesOnBackendNodeId(
 export async function uploadFile(
   params: ToolContract["upload_file"]["params"],
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}},
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["upload_file"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 

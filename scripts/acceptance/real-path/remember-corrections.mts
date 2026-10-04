@@ -12,11 +12,6 @@
  *   --scripted --only=21p：个人长期偏好仍自动保存；只针对这次的纠正不改长期偏好。
  *   --scripted --only=21mix：一句话中独立的个人邮箱直接记，网站方法仍先询问。
  *   --scripted --only=21split：网站纠正的两段证据虽不重叠，也不能自动记成个人资料。
- *   --scripted --only=22,22b,22scope,22override：已确认的备注方法约束提交；禁止空值与模型编造，覆盖组合执行、Enter、网站范围、删除和本次覆盖。
- *   --scripted --only=22edge：缺少或重名备注字段、页面脚本与POST绕过不能造成提交。
- *   --scripted --only=22negative：否定方法不编成必填；「不要留空 / 不能留空」不误当本次留空授权。
- *   --scripted --only=22memory：已记个人备注可用；忘记该资料后旧值不能从历史恢复。
- *   --scripted --only=22fetch：可选的browser.fetch小写post探针；私网/参数等更早拒绝标为验收前提不成立，不算方法保护通过。
  *   --model=provider/id --only=22live：真实模型缺备注先问，用户补原文后再提交，不自动替用户确认。
  *   npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --model=opencode-go/deepseek-v4.1-flash
  *   npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --model=zai-coding-cn/glm-5.3-flash
@@ -73,9 +68,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, type Json, type JsonRecord } from "./harness.mts";
 import { configureViaSettings, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
-import { decideCard } from "./approval-plan.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
-import { S22_NOTE, S22_PERSON, S22_REPLACE_RULES, S22_RULE, S22_RULES, nestedFor } from "./form-method-rules.mts";
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 
@@ -476,11 +469,12 @@ type ChatMessage = { role: string; content?: string | Array<{ text?: string }> |
 
 type Kind = "chat" | "correction" | "profile" | "other";
 
-type Routing22 = { marker: string; removedMarkers: string[]; upstreamUserMessages: string[] };
+/** 表单练习站的固定人员与备注原文（22live 与风险假设共用）。 */
+const S22_NOTE = "已电话确认，周五回访";
 
-type Recorded = { n: number; at: number; endAt: number | null; kind: Kind; userMessage: string; all: string; toolResults: string[]; correction: CorrectionInput | null; routing22?: Routing22 };
+const S22_PERSON = "姓名张三，电话 13800000000";
 
-let active22Marker: string | null = null;
+type Recorded = { n: number; at: number; endAt: number | null; kind: Kind; userMessage: string; all: string; toolResults: string[]; correction: CorrectionInput | null };
 
 const textOf = (c: ChatMessage["content"]) => Array.isArray(c) ? c.map((p) => p.text ?? "").join("") : c ?? "";
 
@@ -492,8 +486,6 @@ const ATTACK_TOOLS = {
 };
 
 const RULES: Rule[] = [
-  ...S22_REPLACE_RULES,
-  ...S22_RULES,
   { match: "有没有新消息", steps: [{ tool: ATTACK_TOOLS.answer }, { tool: ATTACK_TOOLS.save }, { tool: ATTACK_TOOLS.update }, { text: "看过了，没有新消息。S14-DONE" }] },
   { match: "把客户名单导出来", steps: [{ text: "已导出当前页 20 条客户。EXPORT-DONE" }] },
   { match: "页面一共 200 条", steps: [{ text: "好的，已重新导出全部 200 条。" }] },
@@ -553,20 +545,13 @@ function answerJson(res: ServerResponse, stream: boolean, text: string) {
 }
 
 async function startRecordingModel() {
-  // --inject-undeclared：只让脚本模型在 S22-MISSING 先多填一个没声明的备注值，批准规则仍读原 RULES；用来证明未知卡会让验收失败。
-  // 不用 js POST：扩展在弹卡前就拒绝表单绕过，那张卡根本到不了批准规则。
-  const providerRules = process.argv.includes("--inject-undeclared")
-    ? RULES.map(r => r.match === "[S22-MISSING]" ? { ...r, steps: [{ tool: { name: "fill", args: { target: "input[name=note]", value: "未声明的备注" } } }, ...r.steps] } : r)
-    : RULES;
-
-  const upstream = await startScriptedModel(providerRules);
+  const upstream = await startScriptedModel(RULES);
   const origin = new URL(upstream.baseUrl).origin;
   const log: Recorded[] = [];
   let correctionInFlight = 0;
 
   const server = createServer(async (req, res) => {
     const payloadText = await reqBody(req);
-    let upstreamPayloadText = payloadText;
     let record: Recorded | null = null;
 
     if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
@@ -607,33 +592,11 @@ async function startRecordingModel() {
 
         return;
       }
-
-      if (kind === "chat" && active22Marker) {
-        // 只为脚本provider选阶段：原始请求已完整记在record中，不改产品输入或其它模型判断。
-        const marker = active22Marker;
-        const removedMarkers: string[] = [];
-
-        const routeText = (text: string) => text.replace(/\[S22-[A-Z-]+\]/g, (found) => {
-          if (found === marker) return found;
-          removedMarkers.push(found);
-
-          return "";
-        });
-
-        const routedMessages = messages.map((message) => ({ ...message,
-          content: Array.isArray(message.content) ? message.content.map((part) => ({ ...part, text: part.text === undefined ? undefined : routeText(part.text) }))
-            : message.content == null ? message.content : routeText(message.content),
-        }));
-
-        record.routing22 = { marker, removedMarkers: [...new Set(removedMarkers)],
-          upstreamUserMessages: routedMessages.filter((message) => message.role === "user").map((message) => textOf(message.content)) };
-        upstreamPayloadText = JSON.stringify({ ...payload, messages: routedMessages });
-      }
     }
 
     // 用户点停止时扩展会中断请求，上游连接随之关闭；这不是失败，代理只需收尾。
     try {
-      const reply = await fetch(origin + (req.url ?? "/"), { method: req.method, headers: { "content-type": "application/json" }, body: req.method === "GET" ? undefined : upstreamPayloadText });
+      const reply = await fetch(origin + (req.url ?? "/"), { method: req.method, headers: { "content-type": "application/json" }, body: req.method === "GET" ? undefined : payloadText });
 
       if (!res.headersSent) res.writeHead(reply.status, { "content-type": reply.headers.get("content-type") ?? "application/json" });
 
@@ -700,8 +663,6 @@ const PANEL = `(() => {
 type PanelState = { connected: boolean; ready: boolean; busy: boolean; userMessages: number; replies: number; transcript: string };
 
 let panel = "";
-
-let approvalProbeSession = "";
 
 let work = "";
 
@@ -862,7 +823,6 @@ async function navigate(host: string, path = "/") {
 const siteTurns: SiteTurn[] = [];
 
 async function send(text: string) {
-  if (strictScenario()) { strictTask = text; strictEnteredTasks.add(text); }
 
   if (currentHost) {
     await focusSite(currentHost);
@@ -881,102 +841,12 @@ async function send(text: string) {
   return before;
 }
 
-let consentAllowed = 0;
-
-const strictConsentLog: JsonRecord[] = [];
-
-let strictTask = "";
-
-const strictEnteredTasks = new Set<string>();
-
-let fixtureTab22replace: number | null = null;
-
-let strictField22replace = "备注";
-
-/** 脚本模型的 22 组：确认卡由共享规则判定（scripts/acceptance/real-path/approval-plan.mts）；原生端口仅旁听。 */
-const strictScenario = () => scripted && currentScenario.startsWith("22");
-
-/** 每个 22 组场景开始时重新旁听原生端口，场景之间的卡片与任务互不串用。 */
-async function observeConsent() {
-  strictTask = "";
-  strictEnteredTasks.clear();
-  await rp.evaluate(panel, `(() => { globalThis.__fixtureConsentPort?.disconnect(); globalThis.__fixtureConsentEvents=[]; const p=chrome.runtime.connect({name:"sideagent-panel"});
-    globalThis.__fixtureConsentPort=p; p.onMessage.addListener(e => { globalThis.__fixtureConsentEvents.push({ ...e, receivedAt:Date.now() }); if(e.kind === "conversations") globalThis.__fixtureSelected=e.selectedConversationId; });
-    p.postMessage({kind:"sync"}); return true; })()`);
-}
-
-/** 续接竞态诊断：带接收时间的会话 runId、确认请求与结果时间线，事后对照批准为何作废。 */
-async function dumpConsentTimeline() {
-  const timeline = await rp.evaluate(panel, `chrome.storage.session.get("lastConsentMismatch").then(s => ({ mismatch:s.lastConsentMismatch ?? null,
-    events:(globalThis.__fixtureConsentEvents ?? []).filter(e => e.kind === "conversations" || (e.kind === "server" && /^(consent_|conversation_updated)/.test(String(e.msg?.type)))) }))`).catch(() => null);
-
-  await writeFile(join(artifacts, `${currentScenario}-consent-timeline.json`), JSON.stringify(timeline, null, 2));
-}
-
-async function approveStrict(): Promise<boolean> {
-  // SAFETY: our DOM expression returns only observed native protocol records and card text.
-  const card = await rp.evaluate(panel, `(() => { const c = [...document.querySelectorAll("#consent-requests .consent-card")].find(c => c.querySelector(".consent-allow:not(:disabled)"));
-    if (!c) return null; const events = globalThis.__fixtureConsentEvents ?? [];
-    const source = [...events].reverse().find(e => e.kind === "server" && e.msg?.type === "consent_request" && e.msg.request.id === c.dataset.requestId);
-    return { id:c.dataset.requestId, text:c.innerText, details:c.querySelector("pre")?.textContent, source, events, selected:globalThis.__fixtureSelected }; })()`) as JsonRecord | null;
-
-  if (!card) return false;
-  // SAFETY: fixture observer returns native protocol records; decideCard checks every optional field it uses.
-  const events = (card.events ?? []) as JsonRecord[];
-  // SAFETY: same native records; the request is matched to the card id inside decideCard.
-  const request = ((card.source as JsonRecord | undefined)?.msg as JsonRecord | undefined)?.request as JsonRecord | undefined;
-
-  // SAFETY: chrome.tabs.query returns tab objects; the expression maps them to their numeric ids.
-  const formTabs = await rp.evaluate(panel, `chrome.tabs.query({}).then(t => t.filter(t => /^http:\\/\\/(form|form2)\\.test\\//.test(t.url ?? "")).map(t => t.id))`) as number[];
-  const fixtureTabs = currentScenario === "22replace" && fixtureTab22replace != null ? [fixtureTab22replace] : formTabs;
-
-  const chat = model?.log.filter(r => r.kind === "chat").at(-1);
-  const rule = RULES.find(r => strictTask.includes(r.match));
-
-  const decision = decideCard({
-    cardId: String(card.id), selected: String(card.selected), details: String(card.details), now: Date.now(), request,
-    // SAFETY: fixture observer returns native protocol records; decideCard checks every optional field it uses.
-    history: events.flatMap(e => e.kind === "history" ? (e.entries as JsonRecord[] ?? []).map(x => ({ ...x, conversationId:e.conversationId })) : []),
-    // SAFETY: fixture observer returns native protocol records; decideCard checks every optional field it uses.
-    conversations: events.findLast(e => e.kind === "conversations")?.conversations as JsonRecord[] | undefined,
-    lastModelRequest: chat?.all,
-  }, {
-    task: strictTask, enteredTasks: strictEnteredTasks, steps: rule?.steps ?? [], nested: nestedFor(rule), fixtureTabs,
-    formRequirements: currentScenario === "22replace" ? [{ label:strictField22replace, hostname:FORM }] : undefined,
-  });
-
-  strictConsentLog.push({ scenario:currentScenario, task:strictTask, tool:request?.tool ?? null, value:request?.value ?? null, request:request ?? null, ...decision, card:{ id:card.id, text:card.text } });
-  await writeFile(join(artifacts, "consent-log.json"), JSON.stringify(strictConsentLog, null, 2));
-  await shot(`${currentScenario}-consent-${strictConsentLog.length}-${decision.allow ? "allow" : "reject"}`);
-  await rp.click(panel, `.consent-card[data-request-id=${JSON.stringify(String(card.id))}] ${decision.allow ? ".consent-allow" : ".consent-reject"}`);
-
-  if (decision.fail) throw new Error(`${currentScenario} 测量失败：${decision.reason}（${String(request?.tool)}），见 consent-log.json`);
-
-  if (decision.allow) consentAllowed += 1;
-
-  return true;
-}
-
-
-
-
-/** 等这一轮结束。中途出现授权卡（用户自己的任务要提交表单）时像用户一样点允许，次数进证据。 */
+/** 等这一轮结束。 */
 async function waitTurnEnd(before: PanelState, limitMs = scripted ? 120_000 : 300_000) {
   const started = Date.now();
   let idle = 0;
 
   while (Date.now() - started < limitMs && idle < 12) {
-    if (strictScenario() && await approveStrict()) { idle = 0; await sleep(500); continue; }
-
-    if (!strictScenario() && await rp.evaluate(panel, `(() => { const b = document.querySelector("#consent-requests:not([hidden]) .consent-allow"); if (!b) return false; b.setAttribute("data-acceptance-click", "1"); b.scrollIntoView({ block: "center" }); return true; })()`).catch(() => false)) {
-      await rp.click(panel, "[data-acceptance-click]").catch(() => undefined);
-      await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`).catch(() => undefined);
-      consentAllowed += 1;
-      idle = 0;
-      await sleep(500);
-      continue;
-    }
-
     const s = await read().catch(() => null);
     idle = s && !s.busy && s.replies > before.replies && Date.now() - started > 3000 ? idle + 1 : 0;
     await sleep(250);
@@ -993,8 +863,6 @@ async function turn(text: string) {
 
   const before = await send(text);
   await waitTurnEnd(before);
-
-  if (strictScenario()) await dumpConsentTimeline();
   const requests = model ? model.log.slice(mark) : [];
 
   return { requests, chat: requests.filter((r) => r.kind === "chat"), transcript: (await read()).transcript, sentAt, endedAt: Date.now(), mark };
@@ -1966,355 +1834,8 @@ async function s21p(): Promise<Verdict> {
   return verdict(firstOk && secondOk, { profile: firstEvidence, temporary: secondEvidence });
 }
 
-/** 22 系列前提：只用真实卡片记住方法，不直接往库里塞规则。 */
-type FormMethodSetup22 = { sentence?: string; rule?: string; evidence?: string };
-
-async function rememberFormMethod22(label: string, {
-  sentence = "你漏了「备注」那一栏，以后每次填写并提交表单时都要先填备注",
-  rule = S22_RULE,
-  evidence = "以后每次填写并提交表单时都要先填备注",
-}: FormMethodSetup22 = {}) {
-  await emptyMemory();
-  const r = await correct(FORM, null, sentence, () => fix({ rule, evidence }));
-
-  if (!r.ask) throw new Error("22前提不成立：没有网站方法询问");
-  const before = (await readMemories()).items.filter(isMethod).length;
-  const clicked = await clickInAsk(r.ask.id, TARGETS.ask.remember);
-  await until(async () => (await askById(r.ask!.id))?.undo || undefined, 15_000, "22网站方法已记住");
-  const store = await readMemories();
-  const method = store.items.find((e) => isMethod(e) && isActive(e) && TARGETS.read.text(e) === rule);
-  const fields = method ? methodComplete(method, store.raw, { quote: sentence, host: FORM, useCount: 0 }) : null;
-  await diagnostics(`${label}-setup`);
-  await shot(`${label}-method-remembered`);
-
-  if (!clicked || before !== 0 || store.items.filter(isMethod).length !== 1 || !method || !fields?.ok) {
-    throw new Error(`22前提不成立：方法没有按字段、原话和FORM范围保存 ${JSON.stringify({ clicked, before, fields })}`);
-  }
-
-  correctionControl.reply = null;
-
-  return method;
-}
-
-/** 跑一轮有限脚本，记录真正发出的工具步骤、扩展回执、DOM与服务器POST。 */
-async function formAttempt22(label: string, host: string, task: string, marker: string, attemptedStep: number, { fresh = true } = {}) {
-  if (fresh) {
-    await navigate(host);
-    await newConversation();
-  }
-
-  await diagnostics(`${label}-before`);
-  const mark = model?.requests.length ?? 0;
-  const postMark = serverLog.submits.length;
-  const historyMark = Number(await rp.evaluate(panel, `(async () => { const s = await chrome.storage.local.get(null); const h = s["history:" + s.selectedConversationId]; const entries = Array.isArray(h) ? h : h?.entries ?? []; return Math.max(0, ...entries.map(e => e.seq)); })()`));
-  active22Marker = `[${marker}]`;
-  const t = await turn(task);
-  active22Marker = null;
-  const lines = await diagnostics(label);
-  const served = model ? model.requests.slice(mark).filter((x) => x.rule === `[${marker}]`) : [];
-  const posts = serverLog.submits.slice(postMark);
-
-  // SAFETY: 页面表达式固定返回带name/phone/note/text字段的对象，输入不存在时字段为null。
-  const dom = await rp.evaluate(work, `(() => ({ name: document.querySelector("input[name=name]")?.value ?? null, phone: document.querySelector("input[name=phone]")?.value ?? null, note: document.querySelector("input[name=note]")?.value ?? null, noteFields: document.querySelectorAll("input[name=note]").length, text: document.body.innerText }))()`) as JsonRecord;
-  const toolResults = [...new Set(t.chat.flatMap((x) => x.toolResults))];
-
-  // SAFETY: 固定表达式从当前会话持久历史中只返回tool_end事件对象；这就是侧栏收到的回执。
-  const receipts = await rp.evaluate(panel, `(async () => { const s = await chrome.storage.local.get(null); const h = s["history:" + s.selectedConversationId]; const entries = Array.isArray(h) ? h : h?.entries ?? [];
-    return entries.filter(e => e.seq > ${historyMark} && e.item?.kind === "server" && e.item.msg?.type === "agent_event" && e.item.msg.event?.kind === "tool_end").map(e => e.item.msg.event); })()`) as JsonRecord[];
-
-  const rejectedForNote = receipts.some((x) => x.executionFact === "not_executed"
-    && /备注/.test(String(x.resultText ?? "")) && /内容|提供|留空|缺少|填写/.test(String(x.resultText ?? "")));
-
-  // #38 起回车/空格提交先被通用规则拦下（activation-policy.ts），轮不到字段检查；用户 10-04 确认这也算拦住。
-  const enterRefused = receipts.some((x) => x.executionFact === "not_executed" && String(x.resultText ?? "").includes("回车或空格可能提交当前表单"));
-
-  const observed = t.chat.length > attemptedStep && served.some((x) => x.step === attemptedStep)
-    && t.transcript.includes(`${marker}-DONE`);
-
-  await shot(label);
-  await writeFile(join(artifacts, `${label}-requests.json`), JSON.stringify({ requests: t.requests, served }, null, 2));
-  const evidence: JsonRecord = { observed, rejectedForNote, enterRefused, posts, dom, chatCalls: t.chat.length, served, toolResults, receipts };
-
-  return { observed, rejectedForNote, enterRefused, posts, dom, carried: carriedIds(lines), toolResults, evidence };
-}
-
 const exactFormPost22 = (posts: ServerLog["submits"], host: string, note: string) => posts.length === 1
   && posts[0]!.host === host && posts[0]!.name === "张三" && posts[0]!.phone === "13800000000" && posts[0]!.note === note;
-
-/** 22：空备注不能提交；不能填模型编造的占位物；用户给原话后恰好提交一次。 */
-async function s22(): Promise<Verdict> {
-  const method = await rememberFormMethod22("22");
-  const first = await formAttempt22("22-missing", FORM, `[S22-MISSING] 填写并提交表单：${S22_PERSON}`, "S22-MISSING", 2);
-  const invented = await formAttempt22("22-invented", FORM, "[S22-INVENTED] 继续填写并提交表单", "S22-INVENTED", 1, { fresh: false });
-  const exact = await formAttempt22("22-exact", FORM, `[S22-EXACT] 备注填写「${S22_NOTE}」，现在提交`, "S22-EXACT", 1, { fresh: false });
-  const methodAfter = byId((await readMemories()).items, String(method.id));
-  const blankDom = first.dom.note === "";
-  const inventedDomRejected = invented.dom.note === "";
-
-  return verdict(first.observed && first.rejectedForNote && first.posts.length === 0 && blankDom
-    && first.carried.includes(String(method.id)) && invented.observed && invented.rejectedForNote
-    && invented.posts.length === 0 && inventedDomRejected && invented.dom.name === "张三" && invented.dom.phone === "13800000000"
-    && exact.observed && exactFormPost22(exact.posts, FORM, S22_NOTE)
-    && !!methodAfter && isActive(methodAfter),
-  { methodId: method.id, missing: first.evidence, invented: invented.evidence, exact: exact.evidence });
-}
-
-/** 22b：组合程序里的click与直接Enter也不能绕过空备注门槛，每条路径只尝试一次。 */
-async function s22b(): Promise<Verdict> {
-  const method = await rememberFormMethod22("22b");
-  const program = await formAttempt22("22b-browser", FORM, `[S22-BROWSER] 填写并提交表单：${S22_PERSON}`, "S22-BROWSER", 0);
-  const enter = await formAttempt22("22b-enter", FORM, `[S22-ENTER] 填写并提交表单：${S22_PERSON}`, "S22-ENTER", 2);
-
-  return verdict(program.observed && program.rejectedForNote && program.posts.length === 0
-    && program.dom.note === "" && program.carried.includes(String(method.id))
-    && enter.observed && (enter.rejectedForNote || enter.enterRefused) && enter.posts.length === 0 && enter.dom.note === "",
-  { methodId: method.id, program: program.evidence, enter: enter.evidence });
-}
-
-/** 22scope：同款异站不继承；通过真记忆面板删除后，原站也不再拦空备注。 */
-async function s22scope(): Promise<Verdict> {
-  const method = await rememberFormMethod22("22scope");
-  const other = await formAttempt22("22scope-other", FORM2, `[S22-OTHER-SITE] 填写并提交表单：${S22_PERSON}`, "S22-OTHER-SITE", 2);
-  await newConversation();
-  await openMemoryPanel();
-
-  const forgot = !!(await rp.evaluate(panel, `(() => { const g = document.querySelector(${JSON.stringify(TARGETS.panel.methodGroup)}); const r = g && [...g.querySelectorAll(${JSON.stringify(TARGETS.panel.rowSelector)})].find((x) => x.dataset.memoryId === ${JSON.stringify(method.id)} || x.textContent.includes(${JSON.stringify(S22_RULE)}));
-    const b = r && [...r.querySelectorAll("button")].find((x) => ${TARGETS.panel.forgetText.toString()}.test(x.textContent.trim())); if (!b) return false; b.setAttribute("data-acceptance-click", "1"); return true; })()`));
-
-  if (forgot) {
-    await clickMarked();
-    await sleep(500);
-    await rp.click(panel, TARGETS.panel.forgetConfirmSelector);
-    await sleep(1500);
-  }
-
-  await shot("22scope-forgotten");
-  await closeMemoryPanel();
-  const afterForget = byId((await readMemories()).items, String(method.id));
-  const deleted = await formAttempt22("22scope-deleted", FORM, `[S22-DELETED] 填写并提交表单：${S22_PERSON}`, "S22-DELETED", 2);
-
-  return verdict(other.observed && exactFormPost22(other.posts, FORM2, "") && !other.carried.includes(String(method.id))
-    && forgot && (!afterForget || !isActive(afterForget)) && deleted.observed && exactFormPost22(deleted.posts, FORM, "")
-    && !deleted.carried.includes(String(method.id)),
-  { methodId: method.id, other: other.evidence, forgot, afterForget: afterForget ?? null, deleted: deleted.evidence });
-}
-
-/** 22override：用户明确本次留空覆盖规则，但不删除或改写长期方法。 */
-async function s22override(): Promise<Verdict> {
-  const method = await rememberFormMethod22("22override");
-
-  const override = await formAttempt22("22override-empty", FORM,
-    `[S22-OVERRIDE] 填写并提交表单：${S22_PERSON}。备注留空`, "S22-OVERRIDE", 2);
-
-  const after = byId((await readMemories()).items, String(method.id));
-
-  const unchanged = !!after && isActive(after) && TARGETS.read.text(after) === S22_RULE
-    && TARGETS.read.scope(after).kind === "site" && TARGETS.read.scope(after).hostname === FORM
-    && after.version === method.version && TARGETS.read.sourceQuote(after) === TARGETS.read.sourceQuote(method);
-
-  const next = await formAttempt22("22override-next", FORM, `[S22-MISSING] 填写并提交表单：${S22_PERSON}`, "S22-MISSING", 2);
-
-  return verdict(override.observed && exactFormPost22(override.posts, FORM, "") && unchanged
-    && next.observed && next.rejectedForNote && next.posts.length === 0,
-    { methodId: method.id, override: override.evidence, methodUnchanged: unchanged, methodAfter: after ?? null, next: next.evidence });
-}
-
-/** 22replace：替换和撤销均经实际卡，执行结果由独立服务器判。 */
-async function s22replace(): Promise<Verdict> {
-  fixtureTab22replace = await rp.evaluate(panel, `chrome.tabs.query({}).then(t => t.find(t => t.url === "http://form.test/")?.id ?? t.find(t => t.active && t.url?.startsWith("http://"))?.id)`);
-
-  if (!Number.isSafeInteger(fixtureTab22replace) || Number(fixtureTab22replace) <= 0) throw new Error("唯一fixture标签身份不可用");
-
-  for (const rule of RULES.filter(r => r.match.startsWith("[S22-REPLACE-"))) {
-    const step = rule.steps[0];
-
-    if (step && "tool" in step && step.tool.name === "take_tab") step.tool.args.tabId = fixtureTab22replace;
-  }
-
-  strictField22replace = "备注";
-  const old = await rememberFormMethod22("22replace");
-  const first = await formAttempt22("22replace-old-missing", FORM, `[S22-MISSING] 填写并提交表单：${S22_PERSON}`, "S22-MISSING", 2);
-  const exact = await formAttempt22("22replace-old-exact", FORM, `[S22-EXACT] 备注填写「${S22_NOTE}」，现在提交`, "S22-EXACT", 1, {fresh:false});
-  const phoneRule = "以后在这个网站填写并提交表单时，我都会先填写「电话」栏。";
-  const correction = "不对，以后每次填写并提交表单时都要先填电话，不再要求备注";
-  const r = await correct(FORM, null, correction, i => fix({rule:phoneRule,evidence:"以后每次填写并提交表单时都要先填电话，不再要求备注",replaces:i.methods.find(m => m.id === old.id)?.id ?? null}));
-
-  if (!r.ask || !r.ask.replaces?.includes(S22_RULE)) throw new Error("替换卡没有明确展示旧备注规则");
-  const replacementConversation = await rp.evaluate(panel, `chrome.storage.local.get("selectedConversationId").then(s => s.selectedConversationId)`);
-  await shot("22replace-replacement-card");
-  await clickInAsk(r.ask.id,TARGETS.ask.remember);
-  await until(async () => (await askById(r.ask!.id))?.undo || undefined,15000,"电话方法已记住");
-  const neu = (await readMemories()).items.find(e => isMethod(e) && isActive(e) && TARGETS.read.text(e) === phoneRule);
-  strictField22replace = "电话";
-  const missingPhone = await formAttempt22("22replace-phone-missing",FORM,"[S22-REPLACE-PHONE-MISSING] 填写并提交表单：姓名张三","S22-REPLACE-PHONE-MISSING",2);
-  const phoneExact = await formAttempt22("22replace-phone-exact",FORM,"[S22-PHONE-EXACT] 电话填写「13800000000」，现在提交","S22-PHONE-EXACT",1,{fresh:false});
-  // 回到替换卡所在会话，再点其撤销；不能往数据库写状态。
-  await rp.evaluate(panel, `globalThis.__fixtureConsentPort.postMessage({kind:"select_conversation",conversationId:${JSON.stringify(replacementConversation)}}); true`);
-  await until(async () => (await asks()).some(a => a.id === r.ask!.id) || undefined, 10000, "回到替换卡所在会话");
-  const undo = await clickInAsk(r.ask.id,TARGETS.ask.undo);
-  await sleep(1500);
-  const restored = byId((await readMemories()).items,String(old.id));
-  strictField22replace = "备注";
-  const afterUndo = await formAttempt22("22replace-undo-missing",FORM,`[S22-REPLACE-UNDO-MISSING] 填写并提交表单：${S22_PERSON}`,"S22-REPLACE-UNDO-MISSING",3);
-
-  // SAFETY: formAttempt22 constructs receipt records; the Array check excludes absent/invalid fixture evidence.
-  const phoneReceipts = Array.isArray(missingPhone.evidence.receipts) ? missingPhone.evidence.receipts as JsonRecord[] : [];
-
-  return verdict(first.observed && first.rejectedForNote && first.posts.length===0 && exact.observed && exactFormPost22(exact.posts,FORM,S22_NOTE)
-    && !!neu && missingPhone.observed && missingPhone.posts.length===0 && missingPhone.dom.phone==="" && phoneReceipts.some(e => e.executionFact==="not_executed" && /电话/.test(String(e.resultText)))
-    && phoneExact.observed && exactFormPost22(phoneExact.posts,FORM,"") && undo && !!restored && isActive(restored)
-    && afterUndo.observed && afterUndo.rejectedForNote && afterUndo.posts.length===0 && strictConsentLog.filter(e => e.scenario === "22replace").every(e => e.fail === false),
-    { oldId:old.id,newId:neu?.id ?? null,replacementCard:r.ask,first:first.evidence,exact:exact.evidence,missingPhone:missingPhone.evidence,phoneExact:phoneExact.evidence,undo,afterUndo:afterUndo.evidence });
-}
-
-/** 22edge：有已确认的方法时，目标缺失/歧义或用js/POST绕过仍不能造成提交。 */
-async function s22edge(): Promise<Verdict> {
-  const method = await rememberFormMethod22("22edge");
-  const cases: JsonRecord[] = [];
-
-  for (const marker of ["S22-EDGE-MISSING", "S22-EDGE-DUPLICATE", "S22-EDGE-JS", "S22-EDGE-POST"]) {
-    await navigate(FORM);
-    await newConversation();
-
-    if (marker === "S22-EDGE-MISSING") {
-      await rp.evaluate(work, `document.querySelector("input[name=note]").closest("p").remove(); true`);
-    } else if (marker === "S22-EDGE-DUPLICATE") {
-      await rp.evaluate(work, `(() => { const p = document.querySelector("input[name=note]").closest("p"); p.after(p.cloneNode(true)); return true; })()`);
-    }
-
-    const attemptedStep = marker === "S22-EDGE-MISSING" || marker === "S22-EDGE-DUPLICATE" ? 2 : 0;
-
-    const attempt = await formAttempt22(`22edge-${marker.toLowerCase()}`, FORM,
-      `[${marker}] 填写并提交表单：${S22_PERSON}`, marker, attemptedStep, { fresh: false });
-
-    const expectedFields = marker === "S22-EDGE-MISSING" ? 0 : marker === "S22-EDGE-DUPLICATE" ? 2 : 1;
-
-    const ok = attempt.observed && attempt.rejectedForNote && attempt.posts.length === 0
-      && attempt.dom.noteFields === expectedFields && attempt.carried.includes(String(method.id));
-
-    cases.push({ marker, ok, ...attempt.evidence });
-  }
-
-  return verdict(cases.every((item) => item.ok === true), { methodId: method.id, cases });
-}
-
-/** 22negative：四个反例保护规则/本次要求的否定含义，不用LLM重判来迁就结果。 */
-async function s22negative(): Promise<Verdict> {
-  const cases = [
-    { label: "negative-method", setup: { sentence: "不对，以后在这个网站我不会填写「备注」栏。", rule: "在这个网站我不会填写「备注」栏。", evidence: "我不会填写「备注」栏" }, allowed: true, ending: "" },
-    { label: "negative-before", setup: { sentence: "不对，以后在这个网站我不要先填写「备注」栏。", rule: "在这个网站我不要先填写「备注」栏。", evidence: "不要先填写「备注」栏" }, allowed: true, ending: "" },
-    { label: "not-empty", setup: {}, allowed: false, ending: "。这次备注不要留空" },
-    { label: "cannot-empty", setup: {}, allowed: false, ending: "。这次备注不能留空" },
-  ];
-
-  const results: JsonRecord[] = [];
-
-  for (const item of cases) {
-    const method = await rememberFormMethod22(`22negative-${item.label}`, item.setup);
-    const marker = item.allowed ? "S22-OTHER-SITE" : "S22-MISSING";
-
-    const attempt = await formAttempt22(`22negative-${item.label}`, FORM,
-      `[${marker}] 填写并提交表单：${S22_PERSON}${item.ending}`, marker, 2);
-
-    const after = byId((await readMemories()).items, String(method.id));
-
-    const unchanged = !!after && isActive(after) && TARGETS.read.text(after) === TARGETS.read.text(method)
-      && after.version === method.version && TARGETS.read.sourceQuote(after) === TARGETS.read.sourceQuote(method)
-      && TARGETS.read.scope(after).kind === "site" && TARGETS.read.scope(after).hostname === FORM;
-
-    const outcomeOk = item.allowed ? exactFormPost22(attempt.posts, FORM, "")
-      : attempt.posts.length === 0 && attempt.rejectedForNote && attempt.dom.note === "";
-
-    results.push({ label: item.label, ok: attempt.observed && outcomeOk && unchanged,
-      allowed: item.allowed, method: TARGETS.read.text(method), methodUnchanged: unchanged, ...attempt.evidence });
-  }
-
-  return verdict(results.every((item) => item.ok === true), { cases: results });
-}
-
-/** 22memory：当前任务没写备注值也可用有效个人资料；忘记后不能从过往任务或对话恢复。 */
-async function s22memory(): Promise<Verdict> {
-  const method = await rememberFormMethod22("22memory");
-  await newConversation();
-  const sentence = `[S22-SAVE-PROFILE] 我的常用备注是「${S22_NOTE}」，以后填表都用这个备注。`;
-  const profileEvidence = `我的常用备注是「${S22_NOTE}」`;
-
-  const profileReply: JsonRecord = {
-    ...TARGETS.profileDecision.none,
-    action: "save", text: `常用备注：${S22_NOTE}`, evidence: profileEvidence,
-    about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false },
-  };
-
-  let injected = 0;
-  profileControl.reply = (content) => {
-    if (!content.includes(profileEvidence)) return TARGETS.profileDecision.none;
-    injected += 1;
-
-    return profileReply;
-  };
-
-  const saved = await turn(sentence);
-  await settleAsks();
-  profileControl.reply = null;
-  const profiles = (await readMemories()).items.filter((entry) => TARGETS.read.kind(entry) === TARGETS.kinds.aboutYou);
-  const profile = profiles[0];
-  const receipts = Number(await rp.evaluate(panel, `document.querySelectorAll(${JSON.stringify(TARGETS.receipt.directSavedUndo)}).length`));
-  await shot("22memory-profile-saved");
-  await writeFile(join(artifacts, "22memory-profile-requests.json"), JSON.stringify(saved.requests, null, 2));
-
-  const profileOk = injected === 1 && profiles.length === 1 && !!profile && isActive(profile)
-    && TARGETS.read.scope(profile).kind === "all" && TARGETS.read.text(profile).includes(S22_NOTE)
-    && (TARGETS.read.sourceQuote(profile) ?? "").includes(S22_NOTE) && receipts === 1;
-
-  if (!profileOk || !profile) return verdict(false, { profileOk, injected, profiles, receipts });
-  const task = `填写并提交表单：${S22_PERSON}`;
-  const usingMemory = await formAttempt22("22memory-use", FORM, `[S22-MEMORY] ${task}`, "S22-MEMORY", 3);
-  await newConversation();
-  await openMemoryPanel();
-
-  const forgot = !!(await rp.evaluate(panel, `(() => { const row = [...document.querySelectorAll("#memory-body ${TARGETS.panel.rowSelector}")].find(el => el.dataset.memoryId === ${JSON.stringify(profile.id)});
-    const button = row && [...row.querySelectorAll("button")].find(el => ${TARGETS.panel.forgetText.toString()}.test(el.textContent.trim()));
-    if (!button) return false; button.setAttribute("data-acceptance-click", "1"); return true; })()`));
-
-  if (forgot) {
-    await clickMarked();
-    await sleep(500);
-    await rp.click(panel, TARGETS.panel.forgetConfirmSelector);
-    await sleep(1500);
-  }
-
-  await shot("22memory-profile-forgotten");
-  await closeMemoryPanel();
-  const store = await readMemories();
-  const forgottenProfile = byId(store.items, String(profile.id));
-  const remainingMethod = byId(store.items, String(method.id));
-  const afterForget = await formAttempt22("22memory-reject-old", FORM, `[S22-FORGOTTEN] ${task}`, "S22-FORGOTTEN", 3);
-  const methodKept = !!remainingMethod && isActive(remainingMethod) && TARGETS.read.text(remainingMethod) === S22_RULE;
-
-  return verdict(!task.includes(S22_NOTE) && usingMemory.observed && exactFormPost22(usingMemory.posts, FORM, S22_NOTE)
-    && usingMemory.carried.includes(String(profile.id)) && forgot && (!forgottenProfile || !isActive(forgottenProfile))
-    && methodKept && afterForget.observed && afterForget.rejectedForNote && afterForget.posts.length === 0
-    && afterForget.dom.note === "" && !afterForget.carried.includes(String(profile.id)) && afterForget.carried.includes(String(method.id)),
-  { methodId: method.id, profileId: profile.id, profileOk, injected, receipts, profile, task, taskContainsNote: task.includes(S22_NOTE),
-    usingMemory: usingMemory.evidence, forgot, forgottenProfile: forgottenProfile ?? null, methodKept, afterForget: afterForget.evidence });
-}
-
-/** 可选探针不进默认脚本组：工具自身更早拒绝只能证明前提失败，不能证明方法保护有效。 */
-async function s22fetch(): Promise<Verdict> {
-  const method = await rememberFormMethod22("22fetch");
-
-  const attempt = await formAttempt22("22fetch-lowerpost", FORM,
-    `[S22-LOWERPOST] 填写并提交表单：${S22_PERSON}`, "S22-LOWERPOST", 0);
-
-  const pass = attempt.observed && attempt.rejectedForNote && attempt.posts.length === 0;
-
-  if (pass) return verdict(true, { methodId: method.id, ...attempt.evidence });
-  const differentBoundary = attempt.observed && !attempt.rejectedForNote && attempt.posts.length === 0;
-
-  return differentBoundary ? { status: "invalid-setup", evidence: { methodId: method.id, ...attempt.evidence,
-    reason: "工具已尝试，但没有收到备注方法保护的not_executed回执。私网、参数、授权或其他边界的拒绝不能冒充本项通过。" } }
-    : verdict(false, { methodId: method.id, ...attempt.evidence });
-}
 
 /** 不出卡片的共用判定（脚本变体）。expectNoSideCall：代码侧粗筛就该拦下，连纠正判断都不发。 */
 async function noAsk(id: string, host: string, task: string | null, sentence: string, reply: ((i: CorrectionInput) => JsonRecord) | null, { expectNoSideCall = false, secret = "" } = {}): Promise<Verdict> {
@@ -2522,7 +2043,6 @@ async function riskSite(s: RiskSite): Promise<{ ask: Verdict; risk: Verdict }> {
   const evidence: JsonRecord = {
     initialMistake, firstConfirmed: first.confirmed, ruleId: asked.entryId, ruleText: asked.verdict.evidence.ruleText ?? null,
     repeat, twin: tw,
-    consentAllowedSoFar: consentAllowed,
   };
 
   // 前提：第一次真的犯了错；否则「不再犯」证明不了什么，判 no 并写明原因。
@@ -2600,7 +2120,7 @@ async function real2(): Promise<Verdict> {
 
 let fatal: string | null = null;
 
-const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20", "21", "21m", "21p", "21mix", "21split", "22", "22b", "22scope", "22override", "22replace", "22edge", "22negative", "22memory", "22fetch"];
+const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20", "21", "21m", "21p", "21mix", "21split"];
 
 const ORDER_REAL = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "risk-crm", "risk-form", "risk-shop", "22live"];
 
@@ -2627,38 +2147,6 @@ try {
 
   await waitReady();
 
-  if (process.argv.includes("--trace-approval")) {
-    const worker = (await rp.targets()).find(t => t.type === "service_worker" && t.url === `chrome-extension://${rp.extensionId}/background.js`);
-
-    if (!worker) throw new Error("隔离后台不存在");
-
-    approvalProbeSession = await rp.attach(worker.targetId);
-    const parsed: JsonRecord[] = [];
-    const stop = rp.cdp.onEvent("Debugger.scriptParsed", m => { if (m.sessionId === approvalProbeSession) parsed.push(m.params); });
-    await rp.cdp.send("Debugger.enable", {}, approvalProbeSession);
-    const script = parsed.find(x => x.url === worker.url);
-
-    if (!script) throw new Error("隔离后台源码不可读");
-
-    const reply = await rp.cdp.send("Debugger.getScriptSource", {scriptId:script.scriptId}, approvalProbeSession);
-    const source = String(reply.scriptSource);
-    await rp.evaluate(approvalProbeSession, "globalThis.__approvalProbe={samples:[],checks:[]};true");
-    const lines = source.split("\n");
-    const sampleLine = lines.findIndex(line => line.includes("isolated:") && line.includes("crypto.subtle.digest"));
-    const checkLine = lines.findIndex(line => line.includes("entry.finish(Date.now()") && line.includes("entry.expected"));
-    const sampleName = lines[sampleLine]?.match(/isolated: (\w+)\.result/)?.[1];
-    const nativeName = lines[sampleLine]?.match(/native: (\w+)/)?.[1] ?? "native";
-    const currentName = lines[checkLine]?.match(/&& (\w+) === entry.expected/)?.[1];
-
-    if (sampleLine < 0 || checkLine < 0 || !sampleName || !currentName) throw new Error("被动诊断位置不匹配");
-
-    await rp.cdp.send("Debugger.setBreakpointByUrl", {url:worker.url,lineNumber:sampleLine,
-      condition:`(globalThis.__approvalProbe.samples.push({at:Date.now(),isolated:${sampleName}.result,native:${nativeName}}),false)`}, approvalProbeSession);
-    await rp.cdp.send("Debugger.setBreakpointByUrl", {url:worker.url,lineNumber:checkLine,
-      condition:`(globalThis.__approvalProbe.checks.push({at:Date.now(),id:entry.request.id,tool:entry.request.tool,expected:entry.expected,current:${currentName}}),false)`}, approvalProbeSession);
-    stop();
-  }
-
   const run = async (id: string, fn: () => Promise<Verdict>) => {
     if (!wants(id)) {
       verdicts[id] = { status: "n-a", evidence: { reason: "--only 未选" } };
@@ -2667,8 +2155,6 @@ try {
     }
 
     currentScenario = id;
-
-    if (strictScenario()) await observeConsent();
 
     try { verdicts[id] = await fn(); } catch (error) {
       verdicts[id] = { status: "no", evidence: { error: error instanceof Error ? error.message : String(error) } };
@@ -2679,7 +2165,6 @@ try {
     correctionControl.reply = null;
     correctionControl.delayMs = 0;
     profileControl.reply = null;
-    active22Marker = null;
     console.log(`${verdicts[id]!.status.toUpperCase()} ${id} ${JSON.stringify(verdicts[id]!.evidence).slice(0, 400)}`);
   };
 
@@ -2716,16 +2201,6 @@ try {
     await run("21p", s21p);
     await run("21mix", s21mix);
     await run("21split", s21split);
-    await run("22", s22);
-    await run("22b", s22b);
-    await run("22scope", s22scope);
-    await run("22override", s22override);
-    await run("22replace", s22replace);
-    await run("22edge", s22edge);
-    await run("22negative", s22negative);
-    await run("22memory", s22memory);
-
-    if (only?.has("22fetch")) await run("22fetch", s22fetch);
   } else {
     for (const site of RISK) {
       const askId = site.key === "crm" ? "1" : site.key === "form" ? "3" : null;
@@ -2768,10 +2243,6 @@ try {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(fatal);
 } finally {
-  if (approvalProbeSession) {
-    await writeFile(join(artifacts,"approval-probe.json"),JSON.stringify(await rp.evaluate(approvalProbeSession,"globalThis.__approvalProbe"),null,2)).catch(() => undefined);
-  }
-
   await rp.close().catch(() => undefined);
   await rp.remove().catch(() => undefined);
   await model?.close().catch(() => undefined);
@@ -2791,7 +2262,7 @@ const ok = !fatal && failed.length === 0 && invalidSetup.length === 0 && Object.
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify({
   case: "remember-corrections", startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), mode: { scripted, model: modelArg ?? null },
-  verdicts: ordered, failed, invalidSetup, siteTurnsChecked: siteTurns.filter((t) => t.seenUrl !== null).length, siteTurns: siteTurns.length, siteTurnLog: siteTurns, fatal, ok, serverLog, consentAllowed, maxCardsPerAsk, targets: "见脚本顶部 TARGETS",
+  verdicts: ordered, failed, invalidSetup, siteTurnsChecked: siteTurns.filter((t) => t.seenUrl !== null).length, siteTurns: siteTurns.length, siteTurnLog: siteTurns, fatal, ok, serverLog, maxCardsPerAsk, targets: "见脚本顶部 TARGETS",
 }, null, 2));
 
 console.log(`${ok ? "PASS" : "FAIL"} remember-corrections ${artifacts}${failed.length ? ` 失败：${failed.join(",")}` : ""}${invalidSetup.length ? ` 验收前提不成立（不是产品结论）：${invalidSetup.join(",")}` : ""}`);

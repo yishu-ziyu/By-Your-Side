@@ -1,6 +1,6 @@
 /**
  * 这次操作有什么副作用：按具体请求判定，不只看工具名。
- * ControlGate 仍是最终执行闸门；本模块只回答要不要走闸门 / 要不要授权票据。
+ * ControlGate 仍是最终执行闸门；本模块只回答要不要走闸门。
  * 不从 control.ts 导入，避免循环依赖。
  */
 
@@ -9,7 +9,6 @@ export type EffectClass = "read" | "write" | "unknown";
 export interface EffectDecision {
   class: EffectClass;
   requiresControlGate: boolean;
-  needsConsent: boolean;
   reason: string;
 }
 
@@ -35,9 +34,6 @@ function hasBody(params?: Record<string, unknown>): boolean {
   return typeof params?.body === "string" && params.body.length > 0;
 }
 
-/** 空 allowlist：不为任意 POST 搜索接口批量免确认。 */
-export const READ_POST_CAPABILITIES: readonly string[] = [];
-
 export function classifyToolEffect(name: string, params?: Record<string, unknown>): EffectDecision {
   if (name === "fetch") {
     const method = methodOf(params);
@@ -46,7 +42,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       return {
         class: "write",
         requiresControlGate: true,
-        needsConsent: true,
         reason: "fetch POST（或带 body）可能改变服务端状态，不能当只读。",
       };
     }
@@ -54,7 +49,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     return {
       class: "unknown",
       requiresControlGate: true,
-      needsConsent: false,
       reason: "GET 名字不能证明业务无副作用；带着登录态的请求仍走控制闸门。",
     };
   }
@@ -63,7 +57,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     return {
       class: "write",
       requiresControlGate: true,
-      needsConsent: false,
       reason: "通用页面 JS 不能用正则证明只读。",
     };
   }
@@ -72,7 +65,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     return {
       class: "write",
       requiresControlGate: true,
-      needsConsent: false,
       reason: "通用 CDP escape hatch 是 power tool：不做 read/write 分类，全部按写操作走控制闸门。",
     };
   }
@@ -81,7 +73,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     return {
       class: "write",
       requiresControlGate: true,
-      needsConsent: false,
       reason: "文件上传改变页面状态，按写操作处理。",
     };
   }
@@ -90,7 +81,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     return {
       class: "write",
       requiresControlGate: true,
-      needsConsent: false,
       reason: "处理网页 JS dialog 会解除页面阻塞并可能继续业务流，按写操作处理；不等于危险业务授权。",
     };
   }
@@ -102,7 +92,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     return {
       class: submits ? "write" : "write",
       requiresControlGate: true,
-      needsConsent: false,
       reason: submits ? "回车/提交可能提交表单。" : "键盘输入按写操作处理。",
     };
   }
@@ -111,7 +100,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     return {
       class: "read",
       requiresControlGate: false,
-      needsConsent: false,
       reason: "声明式只读。",
     };
   }
@@ -119,17 +107,12 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
   return {
     class: "unknown",
     requiresControlGate: true,
-    needsConsent: false,
     reason: `未知工具 ${name}，按有副作用处理。`,
   };
 }
 
 export function requiresControlGate(name: string, params?: Record<string, unknown>): boolean {
   return classifyToolEffect(name, params).requiresControlGate;
-}
-
-export function needsConsentTicket(name: string, params?: Record<string, unknown>): boolean {
-  return classifyToolEffect(name, params).needsConsent;
 }
 
 /**

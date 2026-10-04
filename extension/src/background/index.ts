@@ -1,10 +1,3 @@
-import { readDialogApprovalState } from "./page-events.js";
-import {nativeApprovalState} from "./native-approval-state.js";
-import { ActivationConsent } from "./activation-consent.js";
-import { readCurrentDocument } from "./exec/page-readiness.js";
-import { TRUSTED_SITES_KEY, TRUSTABLE_READ_TOOLS, parseTrustedSites, trustSiteFor } from "../../../shared/trusted-sites.js";
-import { redactCredentialText } from "../../../shared/untrusted.js";
-import { assertActivationAllowed, requiresActivationConsent } from "./activation-policy.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
@@ -51,7 +44,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, drag, hover, clearMarks, dropPendingClicks, hasPendingClick, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
+import { click, doubleClick, drag, hover, clearMarks, cancelMarkHold, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
 import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./clipboard-bridge.js";
 
 // macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
@@ -68,16 +61,13 @@ import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-eve
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
 import { fileChooserSetFiles } from "./exec/file-chooser.js";
 import { downloadUrl, downloadStat, downloadCancel, downloadDelete } from "./exec/download.js";
-import { normalizeFetchRequest } from "../../../shared/fetch.js";
-import { assertCheckedFormPrimitive } from "./exec/form-method-boundary.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
-import { isAffirmativeReply, isCancelReply, isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
-import { isHeldClickResult } from "../shared/held-clicks.js";
+import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, shareTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { pageOperation, pageOperationExecutionFact, takeoverTab, handbackTab } from "./exec/page-operation.js";
 import { readElement } from "./exec/read-element.js";
@@ -104,11 +94,9 @@ import {
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
 const handlers: Record<ToolName, Handler> = {
-  fetch: async (p) => { if (normalizeFetchRequest(p).method === "POST") await assertCheckedFormPrimitive(p);
-
- return fetchUrl(p); },
+  fetch: (p) => fetchUrl(p),
   network: (p, sid) => network(p, sid),
-  worker_tabs: (p, sid) => workerTabControl.manage(p, sid, withdrawPendingClicks, async keys => {
+  worker_tabs: (p, sid) => workerTabControl.manage(p, sid, async keys => {
 
     for (const key of keys) { const who = parseExecutionKey(key); const owner = controller(who.conversationId); await owner.ready;
 
@@ -126,34 +114,19 @@ const handlers: Record<ToolName, Handler> = {
   close_tab: (p, sid) => closeTab(p, sid),
   navigate: (p, sid) => navigate(p, sid),
   snapshot: (p, sid) => snapshot(p, sid),
-  // fromUserConfirm 只由扩展在用户确认后重放时设置；从外面来的调用一律去掉，不能借它绕过「不点助手自己的按钮」。
-  click: (p, sid) => click({ ...p, fromUserConfirm: undefined }, sid),
-  double_click: (p, sid) => doubleClick({ ...p, fromUserConfirm: undefined }, sid),
-  drag: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return drag(p, sid); },
+  click: (p, sid) => click(p, sid),
+  double_click: (p, sid) => doubleClick(p, sid),
+  drag: (p, sid) => drag(p, sid),
   wheel: (p, sid) => wheel(p, sid),
-  mouse_down: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return mouseDown(p, sid); },
-  mouse_up: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return mouseUp(p, sid); },
-  key_down: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return keyDown(p, sid); },
+  mouse_down: (p, sid) => mouseDown(p, sid),
+  mouse_up: (p, sid) => mouseUp(p, sid),
+  key_down: (p, sid) => keyDown(p, sid),
   key_up: (p, sid) => keyUp(p, sid),
   release_held_inputs: (_p, sid) => releaseHeldInputs(sid),
-  paste: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return paste(p, sid); },
-  html5_drag: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return html5DragAndDrop(p, sid); },
+  paste: (p, sid) => paste(p, sid),
+  html5_drag: (p, sid) => html5DragAndDrop(p, sid),
   upload_file: (p, sid) => uploadFile(p, sid),
-  cdp: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return cdp(p, sid); },
+  cdp: (p, sid) => cdp(p, sid),
   arm_event: (p, sid) => armEvent(p, sid),
   wait_event: (p, sid) => waitEvent(p, sid),
   disarm_event: (p, sid) => disarmEvent(p, sid),
@@ -172,9 +145,7 @@ const handlers: Record<ToolName, Handler> = {
   type_text: (p, sid) => typeText(p, sid),
   press_key: (p, sid) => pressKey(p, sid),
   scroll: (p, sid) => scroll(p, sid),
-  js: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
-
- return evaluateJs(p, sid); },
+  js: (p, sid) => evaluateJs(p, sid),
   observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
   screenshot: (p, sid) => screenshot(p, sid),
   ask_user_to_point: (p, sid) => askUserToPoint(p, sid),
@@ -378,50 +349,6 @@ void (async () => {
 
 function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
-/** 被拿住等确认的点击是哪一次 tool_call（按会话）：用户确认后补点了，要按这个编号告诉宿主。 */
-const heldCallIds = new Map<string, string>();
-const activationConsent = new ActivationConsent(msg => broadcast({kind:"server",msg}), undefined, site => void addTrustedSite(site));
-
-/** 受信任网站列表（见 shared/trusted-sites.ts）。每次现读，设置页移除后立即生效。 */
-async function trustedSites(): Promise<string[]> {
-  return parseTrustedSites((await chrome.storage.local.get(TRUSTED_SITES_KEY))[TRUSTED_SITES_KEY]);
-}
-
-/** 只由确认卡“以后这个网站不再问”经 ActivationConsent 调用；域名由后台在发卡时算出。 */
-async function addTrustedSite(site: string): Promise<void> {
-  const sites = await trustedSites();
-
-  if (!sites.includes(site)) await chrome.storage.local.set({ [TRUSTED_SITES_KEY]: [...sites, site] });
-}
-
-/** 诊断：确认时重读的绑定上下文与发起时不同，只记下变了哪些顶层字段（参数与页面状态只记是否变化），供验收复盘偶发作废；不影响判定。 */
-function recordContextMismatch(requestTool: string, expected: string, current: string): void {
-  const fields = (text: string) => new Map(Object.entries(JSON.parse(text)).map(([k, v]) => [k, JSON.stringify(v)]));
-
-  try {
-    const before = fields(expected);
-    const after = fields(current);
-    const changed = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k));
-    const values = changed.flatMap(k => ["params", "state"].includes(k) ? [] : [[k, { before: before.get(k) ?? null, after: after.get(k) ?? null }]]);
-
-    void chrome.storage.session.set({ lastConsentMismatch: { at: Date.now(), tool: requestTool, changed, values: Object.fromEntries(values) } });
-  } catch { /* 诊断失败不影响确认判定 */ }
-}
-
-/**
- * 用户确认（名牌「确认」或侧栏回「确认 / 可以，提交吧」）：由扩展按原参数补上拿住的那一下，
- * 再告诉宿主那次调用已执行，账本才不会一直停在「结果未知」、挡住后面的操作（09-27 Kimi 实测提交后去不了邮箱）。
- */
-async function confirmHeldClick(): Promise<void> {
-  const callId = heldCallIds.get(key());
-  const outcome = await resolveHeldClick("confirm", key());
-
-  if (!callId) return;
-  heldCallIds.delete(key());
-
-  if (outcome.clicked) uplink.sendClientMessage({ type: "held_click_result", conversationId, id: callId, ok: true });
-}
-
 const getWorkingTabId = (sid: string = LEAD_SESSION_ID) => workingTabForKey(key(sid));
 const setSessionClaimBlocked = (sid: string, blocked: boolean) => blockKey(key(sid), blocked);
 
@@ -1346,7 +1273,6 @@ return;}
       return; // tool_call 不转发面板
     }
 
-    if (msg.type === "consent_list") msg = {...msg,requests:[...msg.requests,...activationConsent.list()]};
     if (msg.type === "status" || msg.type === "agent_event" || msg.type === "team_status") {
       broadcastVisibleServer(msg);
     } else {
@@ -1354,7 +1280,6 @@ return;}
     }
   },
   onConnState(state, transport, detail) {
-    if (state !== "connected") activationConsent.cancel();
     void controlReady.then(() => handleConnState(state, transport, detail));
   },
 };
@@ -1375,85 +1300,9 @@ async function executeToolCall(
 ): Promise<void> {
   await controlReady;
   params = structuredClone(params);
-  let activationApproved = false;
-  let approvedPageEffectStarted = false;
-  let approvedContext = "";
-  let approvedUntil = 0;
-  let approvedCancellationVersion = -1;
-  let approvedGateGeneration = -1;
-  let consentTab: number | null = null;
-  let trustedRead: { tabId: number; documentId: string } | null = null;
-  const checkCurrentConsent = () => {
-    checkIdentity();
-
-    if (activationApproved && consentTab !== null) {
-      const bound = JSON.parse(approvedContext);
-
-      if (bound.dialogState && readDialogApprovalState(consentTab) !== bound.dialogState) throw Object.assign(new Error("批准的原生弹窗已关闭或被替换，操作未执行。"),{executionFact:"not_executed"});
-    }
-
-    if (activationApproved && (Date.now() >= approvedUntil || activationConsent.version !== approvedCancellationVersion || gate.gen !== approvedGateGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid)))) throw Object.assign(new Error("确认已作废，操作未执行。"),{executionFact:"not_executed"});
-  };
-  const afterApprovedEffect = Object.assign(async () => {
-    checkCurrentConsent();
-    const bound = JSON.parse(approvedContext);
-    if (consentTab !== null && (await readCurrentDocument(consentTab))?.documentId !== bound.documentId) throw Object.assign(new Error("批准的页面已离开，后续操作未执行。"),{executionFact:"not_executed"});
-    checkCurrentConsent();
-  },{checkNow:checkCurrentConsent});
-  const beforeApprovedDispatch = Object.assign(async () => {
-    if (!activationApproved) return;
-    if (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil) throw Object.assign(new Error("确认已过期、页面或任务已变化，操作未执行。"),{executionFact:"not_executed"});
-    checkCurrentConsent();
-  }, {checkNow:checkCurrentConsent,afterEffect:afterApprovedEffect,noteEffect:()=>{approvedPageEffectStarted=true;}});
-  const captureApprovalContext = async () => {
-    checkIdentity();
-    const tabId = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
-
-    if (consentTab !== null && tabId !== consentTab) throw new Error("工作页面已变化，操作未执行。");
-    const dialogState = tabId == null ? null : readDialogApprovalState(tabId);
-
-    if (name === "accept_dialog" || name === "dismiss_dialog") {
-      if (tabId == null || !dialogState) throw new Error("没有待处理的原生弹窗，操作未执行。");
-      const tab = await chrome.tabs.get(tabId);
-      checkIdentity();
-
-      if (readDialogApprovalState(tabId) !== dialogState) throw new Error("原生弹窗已变化，操作未执行。");
-
-      return JSON.stringify({cancellationVersion:activationConsent.version,runId:conversationSummaries.find(c=>c.id===conversationId)?.runId,epoch:executionEpochs.get(sid),gen:gate.gen,tabId,url:tab.url,dialogState,params});
-    }
-
-    if (dialogState) throw new Error("页面有待处理的原生弹窗。请先查询 dialog_info，再批准 accept_dialog 或 dismiss_dialog；本次网页操作未执行。");
-    // Bind only after our already-requested presence paint has settled.
-    // Its closed-shadow class changes must not invalidate an otherwise unchanged page.
-    if (tabId != null) await glowPage(key(sid), tabId);
-    checkIdentity();
-    const page = tabId == null ? null : await readCurrentDocument(tabId);
-    if (tabId != null && !page) throw new Error("无法绑定当前页面，操作未执行。");
-    let state = "";
-    if (tabId != null) {
-      const [sample] = await chrome.scripting.executeScript({target:{tabId},world:"ISOLATED",func:()=>{
-        // ISOLATED world state cannot be forged by page scripts. Mutation epoch
-        // catches replace-and-restore attacks even when markup/text are identical.
-        const host = globalThis as typeof globalThis & {__sideagentApprovalState?:{epoch:number;observer:MutationObserver;document:Document}};
-        let state = host.__sideagentApprovalState;
-        if (!state || state.document !== document) {
-          state = {epoch:0,document,observer:null as unknown as MutationObserver};
-          const current = state;
-          state.observer = new MutationObserver(records=>{if(records.length) current.epoch++;});
-          state.observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
-          host.__sideagentApprovalState = state;
-        }
-        if (state.observer.takeRecords().length) state.epoch++;
-        return JSON.stringify({url:location.href,epoch:state.epoch,markup:document.documentElement?.outerHTML,fields:[...document.querySelectorAll("input,textarea,select")].map(el=>{const field=el as HTMLInputElement;return [field.name,field.type,field.value,field.checked];})});
-      }});
-      if (!sample || sample.documentId !== page?.documentId || typeof sample.result !== "string") throw new Error("页面在核对时发生变化，操作未执行。");
-      const native = await nativeApprovalState(tabId);
-      const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({isolated:sample.result,native})));
-      state = Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("");
-    }
-    checkIdentity();
-    return JSON.stringify({cancellationVersion:activationConsent.version,runId:conversationSummaries.find(c=>c.id===conversationId)?.runId,epoch:executionEpochs.get(sid),gen:gate.gen,tabId,documentId:page?.documentId,state,params});
-  };
+  // 页面输入一旦派发，后面的“未执行”失败也只能算结果未知。
+  let pageEffectStarted = false;
+  const beforeDispatch = Object.assign(async () => {}, { checkNow: () => checkIdentity(), noteEffect: () => { pageEffectStarted = true; } });
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
@@ -1472,14 +1321,14 @@ async function executeToolCall(
     if (error && typeof error === "object" && "executionFact" in error) {
       const reported = (error as { executionFact?: import("../../../shared/protocol.js").ToolExecutionFact }).executionFact;
 
-      if (reported) executionFact = approvedPageEffectStarted && reported === "not_executed" ? "unknown" : reported;
+      if (reported) executionFact = pageEffectStarted && reported === "not_executed" ? "unknown" : reported;
     }
   };
 
   const attachFact = (error: unknown): void => {
     if (!error || typeof error !== "object") return;
     const existing = (error as { executionFact?: string }).executionFact;
-    if (approvedPageEffectStarted && existing === "not_executed") { Object.assign(error,{executionFact:"unknown"}); return; }
+    if (pageEffectStarted && existing === "not_executed") { Object.assign(error,{executionFact:"unknown"}); return; }
 
     if (existing === "not_executed" || existing === "unknown" || existing === "executed") return;
 
@@ -1488,26 +1337,25 @@ async function executeToolCall(
 
   try {
     checkIdentity();
-    assertActivationAllowed(name, params);
     const guardedHandlers: Record<string,Handler> = {
-      arm_event:(p,s)=>armEvent(p,s,beforeApprovedDispatch),
-      screenshot:(p,s)=>screenshot(p,s,beforeApprovedDispatch),
-      hover:(p,s)=>hover(p,s,beforeApprovedDispatch),
-      scroll:(p,s)=>scroll(p,s,beforeApprovedDispatch),
-      mark:(p,s)=>mark(p,s,beforeApprovedDispatch),
-      clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeApprovedDispatch),
-      switch_tab:(p,s)=>switchTab(p,s,beforeApprovedDispatch),
-      navigate:(p,s)=>navigate(p,s,beforeApprovedDispatch),
-      open_tab:(p,s)=>openTab(p,s,beforeApprovedDispatch),
-      close_tab:(p,s)=>closeTab(p,s,beforeApprovedDispatch),
-      download_url:(p,s)=>downloadUrl(p,s,beforeApprovedDispatch),
-      download_cancel:(p,s)=>downloadCancel(p,s,beforeApprovedDispatch),
-      upload_file:(p,s)=>uploadFile(p,s,beforeApprovedDispatch),
-      file_chooser_set_files:(p,s)=>fileChooserSetFiles(p,s,beforeApprovedDispatch),
-      accept_dialog:(p,s)=>acceptDialog(p,s,beforeApprovedDispatch),
-      dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeApprovedDispatch),
-      page_translation:(p,s)=>pageTranslation(p,s,beforeApprovedDispatch),
-      fetch:p=>fetchUrl(p,{beforeDispatch:beforeApprovedDispatch}),
+      arm_event:(p,s)=>armEvent(p,s,beforeDispatch),
+      screenshot:(p,s)=>screenshot(p,s,beforeDispatch),
+      hover:(p,s)=>hover(p,s,beforeDispatch),
+      scroll:(p,s)=>scroll(p,s,beforeDispatch),
+      mark:(p,s)=>mark(p,s,beforeDispatch),
+      clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeDispatch),
+      switch_tab:(p,s)=>switchTab(p,s,beforeDispatch),
+      navigate:(p,s)=>navigate(p,s,beforeDispatch),
+      open_tab:(p,s)=>openTab(p,s,beforeDispatch),
+      close_tab:(p,s)=>closeTab(p,s,beforeDispatch),
+      download_url:(p,s)=>downloadUrl(p,s,beforeDispatch),
+      download_cancel:(p,s)=>downloadCancel(p,s,beforeDispatch),
+      upload_file:(p,s)=>uploadFile(p,s,beforeDispatch),
+      file_chooser_set_files:(p,s)=>fileChooserSetFiles(p,s,beforeDispatch),
+      accept_dialog:(p,s)=>acceptDialog(p,s,beforeDispatch),
+      dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeDispatch),
+      page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
+      fetch:p=>fetchUrl(p,{beforeDispatch}),
     };
     const handler = name === "observe_page"
       ? (p: Record<string,unknown>) => voiceRelay.observe(conversationId,p.token,p.mode)
@@ -1533,61 +1381,10 @@ async function executeToolCall(
 
       if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
 
-      // Strict approval does not replace existing confirmed-form constraints.
-      if (name === "js" || name === "paste" || (name === "fetch" && normalizeFetchRequest(params).method === "POST")) {
-        await assertCheckedFormPrimitive(params, key(sid));
-      }
-      // 受信任网站上的读取与开新标签不弹卡（docs/evals/20261004-trusted-read-sites.md）；不受信任时卡上提供“以后不再问”。
-      let trustBypass = false;
-      let cardTrustSite: string | undefined;
-
-      if (requiresActivationConsent(name, params) && (name === "open_tab" || TRUSTABLE_READ_TOOLS.has(name))) {
-        const readTab = name === "open_tab" ? null : Number.isSafeInteger(params.tabId) ? Number(params.tabId) : await getWorkingTabId(sid);
-        const tabUrl = readTab == null ? undefined : (await chrome.tabs.get(readTab).catch(() => null))?.url;
-        const site = trustSiteFor(name, name === "open_tab" ? String(params.url ?? "") : undefined, tabUrl);
-
-        if (site && (await trustedSites()).includes(site)) {
-          const doc = readTab == null ? null : await readCurrentDocument(readTab);
-
-          if (readTab == null) trustBypass = true;
-          else if (doc) {
-            trustBypass = true;
-            trustedRead = { tabId: readTab, documentId: doc.documentId };
-          }
-        } else if (site) cardTrustSite = site;
-      }
-
-      if (requiresActivationConsent(name, params) && !trustBypass) {
-        const cancellationVersion = activationConsent.version;
-        approvedCancellationVersion = cancellationVersion;
-        approvedGateGeneration = gate.gen;
-        const currentRun = runId ?? conversationSummaries.find(c=>c.id===conversationId)?.runId;
-        if (!currentRun) throw new Error("没有进行中的任务可确认，操作未执行。");
-        consentTab = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
-        if (consentTab == null && !["open_tab","fetch","download_url","download_delete"].includes(name)) throw new Error("没有可绑定的工作页面，操作未执行。");
-        approvedContext = await captureApprovalContext();
-        const preview = redactCredentialText(JSON.stringify(params));
-        if (preview.length > 65536) throw new Error("动作参数超过可完整展示的上限，操作未执行。");
-        approvedUntil = Date.now() + 20_000;
-        const consentInput: Parameters<typeof activationConsent.request>[0] = {conversationId,runId:currentRun,controlVersion:gate.gen,goal:conversationSummaries.find(c=>c.id===conversationId)?.title ?? "当前任务",tool:name,target:String(params.target ?? params.url ?? "当前页面").slice(0,500),value:preview,context:approvedContext,cancellationVersion};
-
-        if (cardTrustSite) consentInput.trustSite = cardTrustSite;
-        activationApproved = await activationConsent.request(consentInput,async () => {
-          const current = await captureApprovalContext();
-
-          if (current !== approvedContext) recordContextMismatch(name, approvedContext, current);
-
-          return current;
-        });
-        if (!activationApproved) throw new Error("本次操作未获准或确认已作废，操作未执行。");
-        checkIdentity();
-        if (gate.gen !== operationGeneration) throw new Error("页面控制权已变化，操作未执行。");
-      }
       return gate.run(id, name, async () => {
-        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         if (name === "page_operation") {
           try {
-            const r = await pageOperation(params as any, key(sid), {beforeWrite:beforeApprovedDispatch,canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid)) && (!activationApproved || (Date.now() < approvedUntil && activationConsent.version === approvedCancellationVersion))});
+            const r = await pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))});
             executionFact = "executed";
 
             return r;
@@ -1603,7 +1400,6 @@ async function executeToolCall(
         checkIdentity();
 
         if(gate.gen!==operationGeneration||workerTabControl.isStopped(key(sid)))throw new Error('操作所属控制轮次已失效，操作未执行。');
-        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         // 进入具体动作执行，后续异常可能产生副作用
         executionFact = "unknown";
 
@@ -1613,7 +1409,6 @@ async function executeToolCall(
             ? await readElement(params as unknown as import('../../../shared/protocol.js').ToolContract['read_element']['params'],key(sid),()=>{
               checkIdentity();
 
-              beforeApprovedDispatch.checkNow();
               if(gate.gen!==operationGeneration||gate.isSessionBlocked(sid)||workerTabControl.isStopped(key(sid)))throw new Error('READBACK_CANCELLED');
             })
             : name === 'wheel'
@@ -1623,7 +1418,7 @@ async function executeToolCall(
                 if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
                   throw new Error('操作所属控制轮次已失效，后续输入未执行。');
                 }
-              },beforeApprovedDispatch)
+              },beforeDispatch)
               : name === 'ask_user_to_point'
                 ? await askUserToPoint(params, key(sid), () => {
                   checkIdentity();
@@ -1631,26 +1426,8 @@ async function executeToolCall(
                   if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
                     throw new Error('点选所属任务已停止、被接管或发生变化。');
                   }
-                },beforeApprovedDispatch)
-                : activationApproved && name === 'click'
-                  ? await click({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
-                  : activationApproved && name === 'double_click'
-                    ? await doubleClick({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
-                    : activationApproved && name === 'fill' ? await fill(params as any,key(sid),beforeApprovedDispatch)
-                    : activationApproved && name === 'select_option' ? await selectOption(params as any,key(sid),beforeApprovedDispatch)
-                    : activationApproved && name === 'type_text' ? await typeText(params as any,key(sid),beforeApprovedDispatch)
-                    : activationApproved && name === 'press_key' ? await pressKey(params as any,key(sid),beforeApprovedDispatch)
-                    : activationApproved && name === 'key_down' ? await keyDown(params as any,key(sid),beforeApprovedDispatch)
-                    : activationApproved && name === 'paste' ? await paste(params as any,key(sid),beforeApprovedDispatch)
-                    : name === "js" && activationApproved
-                ? await evaluateJs(params as any,key(sid),beforeApprovedDispatch)
+                },beforeDispatch)
                 : await handler(params, key(sid));
-
-          // 信任免批的读取：读取期间页面换了文档（可能已到别的网站），结果丢弃，不交给模型。
-          if (trustedRead && (await readCurrentDocument(trustedRead.tabId))?.documentId !== trustedRead.documentId) {
-            executionFact = "not_executed";
-            throw Object.assign(new Error("读取期间页面已换成别的页面，结果已丢弃，请重新读取。"), { executionFact: "not_executed" as const });
-          }
 
           executionFact = "executed";
 
@@ -1667,16 +1444,7 @@ async function executeToolCall(
     // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
     if (name === "mark") noteMarkDrawn(conversationId);
     else if (name === "clear_marks") noteMarksCleared(conversationId);
-    // 被拦成等用户确认的点击没有派发任何鼠标事件：回执按未执行上报，账本不能据此判完成。
-    result = {
-      type: "tool_result",
-      id,
-      ok: true,
-      data,
-      executionFact: isHeldClickResult(name, data) ? "not_executed" : "executed",
-    };
-
-    if (isHeldClickResult(name, data)) heldCallIds.set(key(sid), id);
+    result = { type: "tool_result", id, ok: true, data, executionFact: "executed" };
   } catch (e) {
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
@@ -1739,7 +1507,6 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
   const fallbackStatus = lastStatus;
 
-  for (const sid of new Set([LEAD_SESSION_ID, ...statusBySession.keys()])) dropPendingClicks(key(sid));
   void stopTrailReplay(key());
   team.snapshotAndFreeze(members);
   team.beginDrain();
@@ -1945,7 +1712,7 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   emitLocalStatus("idle");
   emitTeam();
 
-  for (const sid of sessions) { dropPendingClicks(key(sid)); setSessionClaimBlocked(sid, false); }
+  for (const sid of sessions) setSessionClaimBlocked(sid, false);
 
   void hidePresence(sessions.map(key));
 
@@ -2200,11 +1967,6 @@ function attachPanel(port: chrome.runtime.Port) {
 
         if (!client || typeof client.type !== "string") break;
 
-        if (client.type === "consent_decision" && client.requestId.startsWith("activation-")) {
-          activationConsent.decide(client.requestId,client.allow,client.trust===true);
-          break;
-        }
-        if (["user_message","steer","abort","takeover","handback"].includes(client.type)) activationConsent.cancel();
         // set_mode 先落本地模式状态（供标注追踪判定），再照常转发给 agent
         if (client.type === "set_mode") {
           const mode = client.mode;
@@ -2247,21 +2009,7 @@ function attachPanel(port: chrome.runtime.Port) {
 
           void stopTrailReplay(key());
 
-          // 侧栏回「确认 / 可以，提交吧」与点名牌「确认」同效：有拿住的点击就由扩展直接补上这一下，再把话交给助手。
-          // 只 arm 不够：那次点击在宿主账本里是「结果未知」，模型不能重做它（2026-09-27 智谱实测连错三次卡住）。
-          let heldConfirmed: Promise<unknown> = Promise.resolve();
-
-          if (isAffirmativeReply(client.text)) {
-            if (hasPendingClick(key())) heldConfirmed = confirmHeldClick().catch(() => undefined);
-            // 无 pending 时这句话只进入对话，不能批准未来提交。
-          } else if (isCancelReply(client.text)) {
-            // 侧栏打「取消」与点名牌「取消」同效：清 pending、松开拿住的手、收起标注
-            void resolveHeldClick("cancel", key()).catch(() => {
-              /* 清理失败不挡住把「取消」送进对话 */
-            });
-          }
-
-          void heldConfirmed.then(() => attachPageContext(client)).then((enriched) => {
+          void attachPageContext(client).then((enriched) => {
             // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，
             // original 保留原始消息（含选区上下文）供用户明确重试。
             const original:ClientMessage = wireClient.type==='task_action'
@@ -2282,7 +2030,6 @@ function attachPanel(port: chrome.runtime.Port) {
       }
 
       case "control":
-        activationConsent.cancel();
         if (msg.action === "takeover") {
           // 本地按钮先关写入口，不等宿主往返；pause 仍发给 Agent 排空任务。
           void handleTakeover(msg.tabId, undefined, msg.tabId == null);
@@ -2404,19 +2151,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
 
   if (msg.type !== "mark_action" || !isMarkActionId(msg.action)) return;
   const action = msg.action;
-  // 网页的 MAIN world 可以伪造 overlay bridge 事件；页面按钮不能铸造业务授权。
-  if (action === "confirm" && sender.tab) {
-    sendResponse({ ok: false, error: "请在扩展侧栏输入确认，本次未执行。" });
-    emitNotice("请在侧栏输入「确认」批准刚才停下的操作。");
-    return;
-  }
   void (async () => {
-    try {
-      if (action === "confirm") await confirmHeldClick();
-      else await resolveHeldClick(action, key());
-    } catch {
-      /* 放行失败不挡住把「确认/取消」送进对话 */
-    }
+    // 名牌「取消」收起标注、松开停在目标上的手；清理失败不挡住把话送进对话。
+    if (action === "cancel") await cancelMarkHold(key()).catch(() => {});
 
     const text = markActionUserText(action);
     const outgoing = await attachPageContext({ type: "user_message", text });
@@ -2443,7 +2180,7 @@ async function importReading(record: ReadingRecord): Promise<void> {
 }
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
-voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{activationConsent.cancel();const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
+voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
 
 return {context:enriched.context,attachments:enriched.attachments};},
 restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {

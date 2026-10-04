@@ -12,7 +12,6 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { IsolatedExtension } from "./isolated-extension.mts";
-import { toolAction } from "../../shared/user-facing.js";
 
 if (!process.argv.includes("--headless")) throw new Error("Required: --headless");
 
@@ -93,16 +92,12 @@ let callSequence = 0;
 
 const runId = "page-readouts-run";
 
-const approvals: JsonValue[] = [];
-
-const seenApprovals = new Set<string>();
-
 const check = (condition: boolean | string | null | undefined, message: string, evidence?: JsonValue) => {
   if (!condition) throw new Error(`${message}${evidence === undefined ? "" : ` :: ${JSON.stringify(evidence).slice(0, 1500)}`}`);
 };
 
 // This is auxiliary executor acceptance, not offscreen-agent product acceptance.
-// The scripted host supplies task identity; only the real sidepanel approves.
+// The scripted host supplies task identity; actions run without approval cards.
 const callTool = async (name: string, params: ToolParams) => {
   if (live) return iso!.tool(name, params, "main");
 
@@ -122,36 +117,10 @@ const callTool = async (name: string, params: ToolParams) => {
     const result = await iso!.swEval("globalThis.__readoutResult") as { ok?: boolean; error?: string; data?: any } | null;
 
     if (result) return result;
-    // SAFETY: this expression reads pending cards built by ConsentPanel, which
-    // assigns requestId and renders each request's details in a pre element.
-    const cards = await iso!.evalIn(panel, `Array.from(document.querySelectorAll('.consent-card:not(.consent-complete)')).filter(c=>c.querySelector('.consent-allow:not(:disabled)')).map(c=>({id:c.dataset.requestId,details:c.querySelector('pre')?.textContent}))`) as Array<{ id: string; details: string }>;
-
-    for (const card of cards) {
-      // SAFETY: __saSecurityProbe is the local acceptance hook; its requests are
-      // ActivationConsent.list()'s production write-consent display records.
-      const probe = await iso!.swEval("globalThis.__saSecurityProbe()") as { requests?: Array<{ id: string; runId: string; conversationId: string; tool: string; purpose?: string }> };
-      const request = probe.requests?.find(request => request.id === card.id);
-      let displayed: JsonValue;
-
-      try { displayed = JSON.parse(card.details.split("\n\n")[1] ?? "null"); } catch { displayed = null; }
-
-      const matching = request?.runId === runId && request.conversationId === "default" && request.purpose === "activation" && request.tool === name
-        && card.details.split("\n")[0] === `动作：${toolAction(name)}` && JSON.stringify(displayed) === JSON.stringify(exactParams)
-        && !seenApprovals.has(card.id);
-
-      approvals.push({ callId, runId, taskId: "default", tool: name, params: exactParams, requestId: card.id, details: card.details, decision: matching ? "allow_once" : "reject_unknown" });
-      const selector = `.consent-card[data-request-id=${JSON.stringify(card.id)}] ${matching ? ".consent-allow" : ".consent-reject"}`;
-
-      await iso!.evalIn(panel, `document.querySelector(${JSON.stringify(selector)})?.click();true`);
-
-      if (!matching) throw new Error(`Unknown/mismatched confirmation card rejected: ${card.id}`);
-      seenApprovals.add(card.id);
-    }
-
     await new Promise(resolve => setTimeout(resolve, 50));
   }
 
-  throw new Error(`Fixture tool/approval timed out: ${callId} ${name}`);
+  throw new Error(`Fixture tool timed out: ${callId} ${name}`);
 };
 
 const tool = async (name: string, params: ToolParams) => {
@@ -165,7 +134,7 @@ const tool = async (name: string, params: ToolParams) => {
 /** The real agent `fill` tool definition, wired straight to the isolated executor. */
 const agentFill = async (target: string, value: string): Promise<string> => {
   const rpc = { call: async (name: string, params: ToolParams) => tool(name, params) };
-  // SAFETY: createBrowserTools only calls rpc.call on this path (no execution scope, no consent);
+  // SAFETY: createBrowserTools only calls rpc.call on this path (no execution scope);
   // the optional ToolRpc members are all guarded with `?.`.
   const tools = createBrowserTools(rpc as never);
   const fill = tools.find(t => t.name === "fill")!;
@@ -485,7 +454,7 @@ try {
   // SAFETY: cleanup is either IsolatedExtension.close()'s {status} or the NOT_STARTED sentinel.
   const cleanStatus = (cleanup as { status?: string }).status;
   const ok = !fatal && executed.length > 0 && executed.every(c => c.status === "PASS") && cleanStatus === "PASS" && dailyDistUnchanged;
-  const result = { ok, runKind: selected.size ? "filtered" : live ? "full+live" : "full", cases, approvals, cleanup, dailyDistUnchanged, modelRequests: 0 };
+  const result = { ok, runKind: selected.size ? "filtered" : live ? "full+live" : "full", cases, cleanup, dailyDistUnchanged, modelRequests: 0 };
 
   if (fatal) Object.assign(result, { fatal });
   await writeFile(join(out, "result.json"), JSON.stringify(result, null, 2));

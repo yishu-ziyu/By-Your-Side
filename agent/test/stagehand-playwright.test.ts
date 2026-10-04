@@ -525,36 +525,6 @@ describe("browser_run api:'playwright' 控制闸门", () => {
     expect(harnessed.page.calls.filter(call => call.name === "fill")).toHaveLength(0);
   });
 
-  it("does not let a caught held click continue the program", async () => {
-    const page = createPage();
-
-    const rpc = new ToolRpc(frame => {
-      if (frame.name === "list_tabs") { queueMicrotask(() => rpc.handleResult(frame.id, true, { tabs: [{ id: 12, working: true, active: true, windowId: 1, title: "t", url: "https://x/" }] }));
-
- return; }
-
-      if (frame.name === "click") { queueMicrotask(() => rpc.handleResult(frame.id, true, { clicked: false, held: true }));
-
- return; }
-
-      void page.extension(frame.name, frame.params).then(
-        data => rpc.handleResult(frame.id, true, data),
-        error => rpc.handleResult(frame.id, false, undefined, String(error)),
-      );
-    });
-
-    rpc.setPageTarget(undefined, 12);
-
-    const tool = createBrowserTools(rpc, undefined, undefined, () => true, { epoch: () => 0, canWrite: () => true })
-      .find(candidate => candidate.name === "browser_run")!;
-
-    await expect(tool.execute("accept", {
-      api: "playwright",
-      code: "try { await page.getByRole('button',{name:'提交'}).click(); } catch {} await page.getByLabel('姓名',{exact:true}).fill('SHOULD_NOT_WRITE'); return 'done';",
-    }, undefined, undefined, {} as never)).rejects.toThrow(/held|等待用户确认/iu);
-    expect(page.calls.filter(call => call.name === "fill")).toHaveLength(0);
-  });
-
   it("keeps the pinned tab when the user switches the active tab mid-program", async () => {
     const harnessed = harness("playwright", step => { if (step.name === "sleep" && step.phase === "start") harnessed.switchUserTab(99); });
 

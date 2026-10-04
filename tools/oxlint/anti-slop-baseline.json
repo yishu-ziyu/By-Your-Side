@@ -68,9 +68,6 @@
     "anti-slop(no-unsafe-dictionary-type)": 3,
     "anti-slop(require-safety-comment-for-type-assertion)": 3
   },
-  "agent/src/consent-ticket.ts": {
-    "anti-slop(no-unsafe-dictionary-type)": 3
-  },
   "agent/src/conversation-manager.ts": {
     "anti-slop(no-array-filter-map)": 2,
     "anti-slop(no-chained-type-assertions)": 1,
@@ -116,14 +113,6 @@
   "agent/src/fetch-batch.ts": {
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-parameters)": 1
-  },
-  "agent/src/fetch-consent.ts": {
-    "anti-slop(no-conditional-empty-object-spread)": 2,
-    "anti-slop(no-known-value-widening)": 2,
-    "anti-slop(no-runtime-typeof)": 2,
-    "anti-slop(no-unsafe-dictionary-type)": 4,
-    "anti-slop(require-safety-comment-for-type-assertion)": 2,
-    "unicorn(no-useless-spread)": 1
   },
   "agent/src/fetch-result.ts": {
     "anti-slop(no-known-value-widening)": 1
@@ -405,10 +394,6 @@
     "anti-slop(no-runtime-typeof)": 15,
     "anti-slop(no-unsafe-dictionary-type)": 1
   },
-  "agent/src/write-confirm.ts": {
-    "anti-slop(no-array-filter-map)": 1,
-    "unicorn(no-useless-spread)": 1
-  },
   "agent/test/browser-capability-authorization.test.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-unknown-parameters)": 1,
@@ -475,14 +460,6 @@
     "anti-slop(no-unsafe-dictionary-type)": 1,
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
-  "agent/test/consent-protocol.test.ts": {
-    "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-safety-comment-for-type-assertion)": 3
-  },
-  "agent/test/consent-ticket.test.ts": {
-    "anti-slop(no-known-value-widening)": 2,
-    "anti-slop(no-unsafe-dictionary-type)": 2
-  },
   "agent/test/continuous-steering.test.ts": {
     "anti-slop(no-chained-type-assertions)": 3,
     "anti-slop(no-known-value-widening)": 1,
@@ -536,13 +513,6 @@
   },
   "agent/test/fast-task.test.ts": {
     "anti-slop(no-unsafe-dictionary-type)": 1
-  },
-  "agent/test/fetch-consent.test.ts": {
-    "anti-slop(no-conditional-empty-object-spread)": 2,
-    "anti-slop(no-known-value-widening)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 4,
-    "anti-slop(require-safety-comment-for-type-assertion)": 19,
-    "eslint(no-unused-vars)": 1
   },
   "agent/test/fetch-pages.test.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 1
@@ -834,10 +804,6 @@
   },
   "agent/test/task-answer-goals.test.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 7
-  },
-  "agent/test/task-confirmed-recovery.test.ts": {
-    "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-safety-comment-for-type-assertion)": 23
   },
   "agent/test/task-dispatcher.test.ts": {
     "anti-slop(no-chained-type-assertions)": 2,
@@ -1320,11 +1286,6 @@
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-shape-in-symbol-names)": 5
   },
-  "extension/src/shared/held-clicks.ts": {
-    "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-safety-comment-for-type-assertion)": 1
-  },
   "extension/src/shared/keymap.ts": {
     "anti-slop(no-known-value-widening)": 2,
     "anti-slop(no-runtime-typeof)": 1
@@ -1361,11 +1322,6 @@
     "anti-slop(no-known-value-widening)": 7,
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(require-safety-comment-for-type-assertion)": 2
-  },
-  "extension/src/sidepanel/consent.ts": {
-    "anti-slop(no-array-filter-map)": 1,
-    "anti-slop(no-conditional-empty-object-spread)": 1,
-    "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "extension/src/sidepanel/delivery-facts-view.ts": {
     "anti-slop(no-known-value-widening)": 2,
@@ -2406,11 +2362,6 @@
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1
-  },
-  "shared/consent.ts": {
-    "anti-slop(no-runtime-typeof)": 3,
-    "anti-slop(no-unknown-parameters)": 2,
-    "anti-slop(require-safety-comment-for-type-assertion)": 2
   },
   "shared/control.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 6,

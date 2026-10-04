@@ -132,14 +132,13 @@ describe("页面脚本结果未知时 browser_run 的逐步放行", () => {
     }
   }, 30_000);
 
-  it("3. 带 body 的 POST 取数照旧停下，也不去占用户确认", async () => {
+  it("3. 带 body 的 POST 取数照旧停下", async () => {
     const h = await lead();
 
     try {
       await leaveUnknownScript(h);
       await expect(h.run({ code: 'return await browser.fetch({url:"http://video.test/api/save", method:"POST", body:"x=1"});' })).rejects.toThrow(/当前写入已暂停/);
       expect(h.frames.map(frame => frame.name)).toEqual(["js"]);
-      expect(JSON.stringify(h.messages)).not.toMatch(/consent/i);
     } finally {
       h.runtime.dispose();
     }

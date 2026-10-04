@@ -26,23 +26,7 @@ describe("Write receipt loss causal chain", () => {
     expect(book.list()[0]!.status).toBe("satisfied");
   });
 
-  it("held 拦阻（成功返回但没派发）不算完成：写作项转未知，重新登记也洗不掉", () => {
-    const book = new TaskResultBook();
-    book.register([{ id: "send-msg", description: "点发送", tool: "click", target: "#send" }]);
-
-    // 点击被拦成等用户确认：工具没失败，但没有任何鼠标事件派发
-    book.noteStart({ toolCallId: "held-1", name: "click", target: "#send", member: "main", runId: "run-1" });
-    book.noteEnd({ toolCallId: "held-1", name: "click", target: "#send", member: "main", runId: "run-1", failed: false, executionFact: "not_executed" });
-
-    expect(book.list()[0]!.status).toBe("unknown");
-    expect(book.state()).not.toBe("satisfied");
-
-    // 观望期间模型不能靠重新登记把它变回"待做"来重试点击
-    book.register([{ id: "send-msg", description: "点发送", tool: "click", target: "#send" }]);
-    expect(book.list()[0]!.status).toBe("unknown");
-  });
-
-  it("只读工具没有真正执行时退回待做，不判完成", () => {
+  it("工具没有真正执行时退回待做，不判完成", () => {
     const book = new TaskResultBook();
     book.register([{ id: "read-page", description: "读页面", tool: "snapshot", target: null }]);
 

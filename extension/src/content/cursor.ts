@@ -5,7 +5,7 @@
  * 内部滚动容器不会改 window.scroll，必须在 scroll 捕获期按锚定元素的最新
  * getBoundingClientRect 重算。resize / visualViewport 同路径重算 mark 与拿住态光标；
  * 高亮只在 viewport 尺寸变化时收起（滚动不拆瞬时层）。
- * 就地确认（C 案）：危险 click 被拦或 mark 带 actions 时，光标飞到目标拿住（hold），
+ * 就地确认（C 案）：mark 带 actions 时，光标飞到目标拿住（hold），
  * 持久按住不 park，名牌保持成员色并内嵌「确认红 / 取消灰」双键；松开走 releaseHold。
  * 默认实例（名牌 "SideAgent"）供单任务使用；for(id) 返回实例专属光标（名册上的人），
  * 为多任务并行准备的渲染层——每个并行 Agent 一个名字和颜色。
@@ -21,7 +21,7 @@
  * 生命周期：MV3 扩展 reload 会销毁 isolated world 但留下 DOM host。启动时若本 world
  * 还没有 cursor API，按 data-sideagent-overlay 清掉旧 host 再创建。
  */
-import { isMarkActionId, parseMarkActions, resolveImplicitMarkActions } from "../shared/mark-actions.js";
+import { isMarkActionId, resolveImplicitMarkActions } from "../shared/mark-actions.js";
 import { markLabelPlacement } from "../shared/mark-label.js";
 import type { MarkAction } from "../../../shared/protocol.js";
 import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
@@ -1850,13 +1850,6 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         schedulePark(inst);
       },
 
-      hold(x: number, y: number, actions: MarkAction[], target?: string): void {
-        const parsed = parseMarkActions(actions);
-
-        if (!parsed) return;
-        holdInst(getInstance(id), x, y, parsed, target);
-      },
-
       releaseHold(): void {
         const inst = instances.get(id);
 
@@ -1958,7 +1951,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       ): void {
         const inst = getInstance(id);
         const mark = spawnMark(inst, rect, label, target, options, observedNode);
-        // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
+        // 就地确认：键不在框外，光标飞到目标拿住，双键长在名牌上
         const parsed = resolveImplicitMarkActions(label, actions);
 
         if (parsed) {

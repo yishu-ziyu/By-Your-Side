@@ -111,23 +111,11 @@ export const HOOK_EXPRESSION = `(() => {
     };
     if (typeof handleAbort === "function") globalThis.__saAbortTeam = handleAbort;
     globalThis.__saSendClient = function (msg) { return outgoing.sendClientMessage(msg); };
-    // 隔离验收观察真实面板的授权选择，不记录请求正文或其它用户消息。
-    if (!globalThis.__saConsentClientHook) {
-      const sendClient = outgoing.sendClientMessage.bind(outgoing);
-      globalThis.__saConsentClientFrames = [];
-      outgoing.sendClientMessage = function (msg) {
-        if (msg && (msg.type === "consent_decision" || msg.type === "consent_list")) {
-          globalThis.__saConsentClientFrames.push(msg);
-        }
-        return sendClient(msg);
-      };
-      globalThis.__saConsentClientHook = true;
-    }
     if (typeof workerTabControl !== "undefined" && !globalThis.__saClaimHook) {
       const manage = workerTabControl.manage.bind(workerTabControl);
-      workerTabControl.manage = function (params, key, discard, canTake) {
+      workerTabControl.manage = function (params, key, canTake) {
         let checks = 0;
-        return manage(params, key, discard, async function (keys) {
+        return manage(params, key, async function (keys) {
           if (canTake) await canTake(keys);
           if (params.action === "claim" && globalThis.__saPauseClaim && ++checks === 2) {
             globalThis.__saClaimPaused = true;
@@ -143,8 +131,6 @@ export const HOOK_EXPRESSION = `(() => {
     globalThis.__saSetSecurityHost = function (summary) {
       if (!rawTransport || !rawTransport.handlers) throw new Error("missing real host handlers");
       const original = rawTransport.handlers.onServerMessage.bind(rawTransport.handlers);
-      // UI message-order fixture only; this cannot mint or revive a background grant.
-      globalThis.__saConsentListForAcceptance = requests => { original({type:"consent_list",conversationId:summary.id,requests}); return true; };
       rawTransport.handlers.onServerMessage = function (msg) { if (msg.type === "tool_call") original(msg); };
       rawTransport.handlers.onConnState = function () {};
       original({type:"conversation_list",conversations:[summary]});
@@ -152,7 +138,7 @@ export const HOOK_EXPRESSION = `(() => {
       return true;
     };
     globalThis.__saConnectForAcceptance = function () { if (typeof callbacks !== "undefined") callbacks.onConnState("connected", "inproc"); };
-    globalThis.__saSecurityProbe = function () { return {selected:typeof selectedConversationId!=="undefined"?selectedConversationId:null,summaries:typeof conversationSummaries!=="undefined"?conversationSummaries:null,panels:typeof connectedPanels!=="undefined"?connectedPanels.size:null,requests:typeof activationConsent!=="undefined"?activationConsent.list():null}; };
+    globalThis.__saSecurityProbe = function () { return {selected:typeof selectedConversationId!=="undefined"?selectedConversationId:null,summaries:typeof conversationSummaries!=="undefined"?conversationSummaries:null,panels:typeof connectedPanels!=="undefined"?connectedPanels.size:null}; };
     globalThis.__saHandleServer = function (msg) {
       incoming(typeof msg === "string" ? msg : JSON.stringify(msg));
       return { ok: true };

@@ -34,7 +34,7 @@ export class WorkerTabControl {
     return job;
   }
 
-  async manage(params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }, leadKey: string, discardPendingClicks: (key: string) => void = () => {}, canTake: (keys: string[]) => Promise<void> = async () => {}) {
+  async manage(params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }, leadKey: string, canTake: (keys: string[]) => Promise<void> = async () => {}) {
     const lead = parseExecutionKey(leadKey);
 
     if (!isLeadSession(lead.sessionId)) throw new Error("只有父 Agent 可以管理 worker 页面");
@@ -43,10 +43,8 @@ export class WorkerTabControl {
       if (!params.workerId || isLeadSession(params.workerId) || params.workerId.includes("::")) throw new Error("无效的 worker 身份");
       const workerKey = executionKey(lead.conversationId, params.workerId);
       this.stopped.add(workerKey);
-      discardPendingClicks(workerKey);
       await chrome.storage.session.set({ [`stoppedWorker:${workerKey}`]: true });
       await Promise.allSettled(this.inflight.get(workerKey) ?? []);
-      discardPendingClicks(workerKey);
 
       return { tabIds: await reclaimWorkerTabs(leadKey, workerKey), workers: [] };
     }
@@ -82,7 +80,6 @@ export class WorkerTabControl {
       try {
         await canTake([...previous, leadKey]);
         await Promise.allSettled(previous.flatMap(key => [...(this.inflight.get(key) ?? [])]));
-        previous.forEach(discardPendingClicks);
         await canTake([...previous, leadKey]);
         await claimGlobalTab(tabId, leadKey, expected);
       } finally {

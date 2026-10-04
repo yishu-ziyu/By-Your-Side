@@ -1,4 +1,4 @@
-/** Four bounded cases using the existing isolated product-journey runner. No production behavior overrides. */
+/** Three bounded cases (the held-click case B was removed with held clicks on 2026-10-04) using the existing isolated product-journey runner. No production behavior overrides. */
 import {appendFileSync,existsSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync,spawn} from 'node:child_process';
@@ -7,7 +7,6 @@ import {assessFactRun,finalReply,isPageRead,type FactEvent,type FactScenario,typ
 
 const phrases:Record<FactScenario,string>={
  A:'请把当前页面的代号填写为星河，不要保存也不要提交。',
- B:'请点击当前页面的删除草稿按钮，如果需要确认就停下来等我，不要绕过确认。',
  C:'请把当前页面的代号填写为星河，不要保存也不要提交。',
  D:'请读取当前页面，告诉我页面上的核对码是什么，不要猜测。',
 };
@@ -44,7 +43,7 @@ return;
  }
 
  const root=resolve(`out/acceptance/realtime-fact-consumption-${Date.now()}`);mkdirSync(root,{recursive:true});
- const schedule=(['A','B','C','D'] as const).flatMap(scenario=>[1,2].map(attempt=>({scenario,attempt})));
+ const schedule=(['A','C','D'] as const).flatMap(scenario=>[1,2].map(attempt=>({scenario,attempt})));
  writeFileSync(join(root,'budget.json'),JSON.stringify({maxRuns:8,timeoutMs:90000,schedule,humanAcceptance:'NOT_RUN'},null,2));
  console.log(`FACT_EVIDENCE_ROOT ${root}`);
  const baseline=sourceHashes();writeFileSync(join(root,'source-hashes.json'),JSON.stringify(baseline,null,2));

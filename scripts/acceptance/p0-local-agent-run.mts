@@ -71,12 +71,6 @@ const variant = argOf('--variant') ?? '';
 
 if (variant && !['corrupt-checkpoint', 'accept-kill'].includes(variant)) throw new Error(`未知 --variant：${variant}`);
 
-// 写入确认：真实面板卡片上的选择（allow=模拟用户允许一次，deny=拒绝）；off 不动。
-const writeConsentArg = argOf('--write-consent') ?? 'off';
-
-if (!['off', 'allow', 'deny'].includes(writeConsentArg)) throw new Error(`未知 --write-consent：${writeConsentArg}（可用 off | allow | deny）`);
-
-const writeConsent = writeConsentArg as 'off' | 'allow' | 'deny';
 
 // ── 构建指纹（与 scripts/eval/p0.mts 相同口径）──────────────────────
 
@@ -150,9 +144,9 @@ class Recorder {
   push(kind: string, data: Record<string, unknown> = {}): void { this.events.push({at: Date.now(), kind, ...data}); }
 }
 
-const KEEP_CLIENT = new Set(['hello', 'user_message', 'steer', 'task_action', 'abort', 'takeover', 'handback', 'consent_decision', 'page_event', 'task_control_result']);
+const KEEP_CLIENT = new Set(['hello', 'user_message', 'steer', 'task_action', 'abort', 'takeover', 'handback', 'page_event', 'task_control_result']);
 
-const _KEEP_SERVER = new Set(['hello_ok', 'hello_error', 'conversation_list', 'conversation_created', 'conversation_updated', 'status', 'task_control_result', 'model_info', 'consent_list', 'consent_request', 'team_status']);
+const _KEEP_SERVER = new Set(['hello_ok', 'hello_error', 'conversation_list', 'conversation_created', 'conversation_updated', 'status', 'task_control_result', 'model_info', 'team_status']);
 
 const KEEP_AGENT_KINDS = new Set(['agent_start', 'agent_end', 'error', 'notice', 'tool_start', 'tool_end', 'tool_observation', 'tool_late_result', 'user_delivery', 'user_delivery_stream', 'text_delta', 'thinking_delta', 'turn_start', 'turn_end']);
 
@@ -677,56 +671,6 @@ class Case {
   /** 沿真实面板通道重发同一条客户端消息（同 requestId），用于幂等重发检查。 */
   async resendPanelClient(msg: unknown): Promise<void> {
     await this.iso!.evalIn(this.panelTarget!, `(()=>{window.probePort=window.probePort??chrome.runtime.connect({name:'sideagent-panel'});window.probePort.postMessage({kind:'client',msg:${JSON.stringify(msg)}});return true;})()`);
-  }
-
-  /**
-   * 真实面板确认卡片上的选择：--write-consent allow/deny 时由驱动作为模拟用户点卡片按钮
-   * （卡片不可用时退回同一条面板通道），并把看到的请求与决定记入 trace。
-   */
-  watchWriteConsents(mode: 'allow' | 'deny'): () => void {
-    let stopped = false;
-    const seen = new Set<string>();
-
-    const loop = async () => {
-      while (!stopped) {
-        try {
-          for (const event of [...this.recorder.events]) {
-            if (event.kind !== 'server_msg') continue;
-            const msg = (event as any).msg;
-
-            if (msg?.type !== 'consent_request' || msg.request?.kind !== 'write') continue;
-            const request = msg.request as {id: string; conversationId: string};
-
-            if (seen.has(request.id)) continue;
-            seen.add(request.id);
-            this.recorder.push('write_consent_seen', {request: msg.request});
-            const allow = mode === 'allow';
-            let clicked = false;
-
-            for (let attempt = 0; attempt < 4 && !clicked; attempt += 1) {
-              if (attempt) await sleep(400);
-              clicked = await this.clickConsentButton(request.id, allow ? '.consent-allow' : '.consent-reject');
-            }
-
-            this.recorder.push('write_consent_decision', {requestId: request.id, allow, via: clicked ? 'panel-card' : 'panel-port'});
-
-            if (!clicked) await this.resendPanelClient({type: 'consent_decision', conversationId: request.conversationId, requestId: request.id, allow}).catch(() => {});
-          }
-        } catch { /* 面板可能正在重开 */ }
-
-        await sleep(400);
-      }
-    };
-
-    void loop();
-
-    return () => { stopped = true; };
-  }
-
-  async clickConsentButton(requestId: string, selector: string): Promise<boolean> {
-    if (!this.panelTarget) return false;
-
-    return await this.iso!.evalIn(this.panelTarget, `(()=>{const card=[...document.querySelectorAll('.consent-card')].find(el=>el.dataset.requestId===${JSON.stringify(requestId)});const btn=card&&card.querySelector(${JSON.stringify(selector)});if(btn instanceof HTMLButtonElement&&!btn.disabled){btn.click();return true;}return false;})()`).catch(() => false) as boolean;
   }
 
   /** 从某条日志位置起的 snapshot 工具启动事件（恢复读页的唯一标识）。 */
@@ -1711,13 +1655,7 @@ async function runCase(id: string): Promise<void> {
     await c.openPanel();
     c.check('隔离扩展已连上宿主', await c.awaitHostConnected(), '面板通道触发重连后仍未建立连接');
     console.log(`  环境就绪 fixture=${c.fixture.origin} profile=${c.iso.profile}`);
-    const stopWriteConsents = writeConsent === 'off' ? undefined : c.watchWriteConsents(writeConsent);
-
-    try {
-      await implementation(c);
-    } finally {
-      stopWriteConsents?.();
-    }
+    await implementation(c);
   } catch (error) {
     infrastructureError = error instanceof Error ? `${error.message}\n${error.stack}` : String(error);
     c.check('场景执行未抛出意外错误', false, infrastructureError.split('\n')[0]);

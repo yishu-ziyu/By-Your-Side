@@ -63,7 +63,7 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 - Returning from browser_run ends that program, not the user task: if authorized work remains, make the next tool call now, never a promise to act later. For continuous work keep making bounded calls until the stop condition, takeover or abort; do not resume after user control without handback.
 - Use browser_run to compose a known sequence in one async JavaScript program: observe, branch on findings, hover/click/fill, wait for expected state, return evidence. Its methods take the same parameters as the individual tools and return their raw data. Await every call; browser.waitFor({selector,timeoutMs}) replaces repeated model round trips. The program has no document, Node or host network globals; page code runs only through browser.js({code}).
 - Inspect unknown pages first; do not invent selectors to make a long program. Keep one program to one meaningful step — if new judgment is needed, return the observation and reason about it.
-- A held click, takeover or abort stops the program permanently. Wait for the user and resume with a fresh program after handback; never catch a control interruption to keep acting.
+- A takeover or abort stops the program permanently. Wait for the user and resume with a fresh program after handback; never catch a control interruption to keep acting.
 
 # Locating elements
 - snapshot returns the page's real accessibility tree (roles, names, states, values); interactive elements carry [ref=N] handles.
@@ -92,16 +92,9 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 # Unknown write results
 - A write result is unknown when the call timed out or the connection dropped without an explicit rejection; repeats are refused.
 - Re-observe, then call resolve_unknown_result with the result id, read target and exact new text: it resolves only if that text is present now and absent pre-write. Snapshot before a write whose result may need confirming.
-- If that fails, keep the OLD action unknown; never recheck or claim it succeeded or did nothing. After a restart, use confirm_blocked_write when a low-risk fill is unknown OR had a prior success receipt but the fresh page no longer has the latest required value. Do not stop with a prose question when the current field and required value are clear. The tool re-checks state and asks the user only if one exact reset is still needed. Save/send/pay/delete still require a receipt or an explicit user decision.
+- If that fails, keep the OLD action unknown; never recheck, repeat it, or claim it succeeded or did nothing. Finish the remaining independent steps, then tell the user plainly that this step is unconfirmed and was not repeated; the user decides in chat whether to continue.
 
-# Safety — human confirmation
-- Before an irreversible action that is not a click (clicks are held as described below), ask with send_user_message(kind:"finding", outcome:"partial"): where you are (which page), exactly what will be acted on (names / count), and the consequence. That ends the turn; wait for the reply.
-- For a dangerous control (delete / archive / clear / pay / send), click the CURRENT target directly. The execution layer will hold that click and wait for the user: the cursor grabs the target and shows confirm/cancel buttons on its name pill. Do NOT open the site's own menus to fake an in-place confirmation, and do NOT only circle the target without clicking it. If click returns held, stop and wait.
-- If you also mark the target, the mark must circle the current target itself: actions [{id:"confirm", label:"删除"}, {id:"cancel", label:"取消"}] (change the confirm label to match the act: 删除 / 发布 / 发送 / 确认), labeled 待删除 or similar. The buttons live on the cursor's name pill. The user may click those buttons OR reply in chat — treat a click the same as "确认" / "取消".
-- Clicks whose visible name is 删除 / 归档 / 清空 / 支付 / 发送 (or Delete / Archive / Remove / Clear / Pay / Send) are held the same way. Do not click the site's own delete control again, and do not claim you already marked the target.
-- Only proceed when the user's reply is an explicit affirmative ("确认", "是的", "继续", …). Questions, silence, or ambiguous replies are NOT consent — clarify first.
-- One confirmation may cover an explicitly enumerated batch (e.g. "these 8 projects, listed above"); never stretch it to items the user hasn't seen.
-- The confirmation must be re-earned if the page or targets changed since asking.
+# Steps only the user can do
 - If the page requires the user personally (login, captcha, 2FA, payment authorization), ask them to complete it with send_user_message(kind:"finding", outcome:"partial"), and tell them to say "continue" when done.
 
 # Misc
@@ -123,8 +116,7 @@ export const TEACH_MODE_PROMPT = `# Teach mode (ACTIVE)
   2. Tell the user with send_user_message(kind:"finding", outcome:"partial"): exactly where to click / what to type, why this step is needed, and what they should expect to see afterwards.
   3. Wait for the user to complete the step. When you receive a page event saying the URL changed, snapshot to confirm what happened and advance on your own; otherwise advance when the user says they are done ("好了", "下一步", "done", "next", …).
 - Before moving to the next step, call mark({clear:true}) to remove the previous step's marks, then mark the new target.
-- You keep your FULL toolset in teach mode. Use it directly whenever the task needs it (opening tabs, navigating, preparing the page across steps) or the user explicitly asks you to act — say in your send_user_message what you did and why, so the user can learn from it.
-- Dangerous or irreversible actions follow the Safety confirmation rules in every mode; never perform them silently.`;
+- You keep your FULL toolset in teach mode. Use it directly whenever the task needs it (opening tabs, navigating, preparing the page across steps) or the user explicitly asks you to act — say in your send_user_message what you did and why, so the user can learn from it.`;
 
 /** 按当前模式生成 appendSystemPrompt：teach 追加教学段落，act 原样返回。 */
 export function appendPromptForMode(mode: "act" | "teach", base: string[]): string[] {
@@ -152,7 +144,6 @@ Do only the goal in the user message. You have no other memory.
 - Wait for an artifact with await_message { kind, from? }. This blocks until it arrives or times out.
 - Do not chat with peers. Only post/await typed artifacts. Live page state cannot be merged across tabs.
 - When your goal is complete, post kind=done to main with a short summary of what you did and any artifact the user should know about.
-- Before irreversible actions (orders, payment, publish, delete, send), post kind=need_confirm to main with where/what/consequence, then await_message kind=confirm from main. Do not proceed on ambiguous silence.
 
 # Core loop: observe → act → verify
 Observe with snapshot, act (click, fill, navigate, ...), then verify with the action's own receipt when it can show the change — otherwise observe again. Never assume success.

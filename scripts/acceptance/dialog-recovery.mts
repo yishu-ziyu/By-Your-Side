@@ -4,7 +4,6 @@ import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
-import {toolAction} from '../../shared/user-facing.js';
 import type {Json, JsonRecord} from './real-path/harness.mts';
 import type {IsolatedExtension} from './isolated-extension.mts';
 
@@ -14,9 +13,9 @@ const repo = resolve(import.meta.dirname, '../..');
 
 const out = join(repo, 'out/dialog-recovery', new Date().toISOString().replace(/[:.]/g, '-'));
 
-const suiteVersion = 'dialog-recovery-9-case-v3';
+const suiteVersion = 'dialog-recovery-7-case-v4';
 
-const expectedCases = 9;
+const expectedCases = 7;
 
 const quietWindowMs = 1000;
 
@@ -91,7 +90,6 @@ window.fixtureState=state;
 
 const calls: JsonRecord[] = [], evidence: JsonRecord[] = [];
 
-const seenRequests = new Set<string>();
 
 let iso: IsolatedExtension | undefined, page = '', panel = '', tabId = 0;
 
@@ -164,50 +162,14 @@ try {
  return record(result);
   };
 
-  const call = async (name:string, params:JsonRecord, decision?:'允许一次'|'拒绝'):Promise<JsonRecord> => {
+  const call = async (name:string, params:JsonRecord, followDialog = false):Promise<JsonRecord> => {
     await start(name,params);
+    const before = Date.now();
+    const result = await settled();
 
-    if (decision) {
-      const cards = await until(async()=> {
-        const value = await pageJson(panel, `Array.from(document.querySelectorAll('.consent-card:not(.consent-complete)')).filter(c=>c.querySelector('.consent-allow:not(:disabled)')).map(c=>({id:c.dataset.requestId,details:c.querySelector('pre')?.textContent}))`,2000);
-
-        return Array.isArray(value) && value.length ? value : undefined;
-      },8000,'real consent card');
-
-      const card = record(cards[0]);
-      const probe = record(await swJson('globalThis.__saSecurityProbe()'));
-      const request = Array.isArray(probe.requests) ? probe.requests.map(record).find(r=>r.id === card.id) : undefined;
-      const requestId = String(card.id ?? '');
-      const details = String(card.details ?? '');
-      let displayed: Json = null;
-
-      try {displayed = JSON.parse(details.split('\n\n')[1] ?? 'null');} catch {displayed = null;}
-
-      const matches = cards.length === 1 && card.id === requestId && requestId.length > 0 && !seenRequests.has(requestId)
-        && request?.runId === 'dialog-run' && request.conversationId === 'default' && request.purpose === 'activation' && request.tool === name
-        && card.details === details && details.split('\n')[0] === `动作：${toolAction(name)}` && JSON.stringify(displayed) === JSON.stringify(params);
-
-      currentCall.requestId = card.id; currentCall.details = card.details;
-
-      if (!matches) {
-        for (const unknownCard of cards.map(record)) {
-          const selector = `.consent-card[data-request-id=${JSON.stringify(unknownCard.id)}] .consent-reject`;
-          await pageJson(panel, `document.querySelector(${JSON.stringify(selector)})?.click();true`);
-        }
-
-        currentCall.decision = 'reject_unknown';
-        throw new Error('Unknown/mismatched pending consent card rejected');
-      }
-
-      seenRequests.add(String(card.id));
-      assert.equal(await iso!.swEval('globalThis.__dialogSettled',2000),null,'must not execute before sidebar decision');
-      currentCall.decision = decision;
-      const before = Date.now();
-      const selector = `.consent-card[data-request-id=${JSON.stringify(requestId)}] ${decision === '允许一次' ? '.consent-allow' : '.consent-reject'}`;
-      await pageJson(panel,`document.querySelector(${JSON.stringify(selector)})?.click();true`);
-      const result = await settled();
-      currentCall.afterDecisionMs = Date.now()-before;
-      assert.ok(Number(currentCall.afterDecisionMs)<15000,'approved call must return within bounded total budget');
+    if (followDialog) {
+      currentCall.elapsedMs = Date.now()-before;
+      assert.ok(Number(currentCall.elapsedMs)<15000,'call must return within bounded total budget');
       const triggerCall = currentCall;
 
       if (result.ok && ['click','double_click','press_key'].includes(name) && data(result).dialog) {
@@ -225,10 +187,9 @@ try {
         currentCall = triggerCall;
       }
 
-      return result;
     }
 
-    return settled();
+    return result;
   };
 
   const dialogStatus = async()=> {
@@ -244,14 +205,14 @@ try {
     const params: JsonRecord = {tabId};
 
     if (text !== undefined) params.promptText = text;
-    const handled = await call(accept?'accept_dialog':'dismiss_dialog',params,'允许一次');
+    const handled = await call(accept?'accept_dialog':'dismiss_dialog',params,true);
     assert.equal(handled.ok,true); assert.equal(data(handled)[accept?'accepted':'dismissed'],true);
     const closed = await dialogStatus(); assert.equal(data(closed).dialog,null);
     await until(()=>events[`${kind}-completed`]===1?true:undefined,4000,'exactly one page completion');
     const before = await readPage();
     assert.deepEqual(record(before.state).last,{kind,answer:accept ? text ?? true : false});
     const value = `recovered-${kind}`;
-    const filled = await call('fill',{tabId,target:'#after',value},'允许一次');
+    const filled = await call('fill',{tabId,target:'#after',value},true);
     assert.equal(filled.ok,true);
     await until(()=>events.input===evidence.filter(e=>e.recovered).length+1?true:undefined,4000,'one fill input event');
     const after = await readPage(); assert.equal(after.value,value);
@@ -259,13 +220,6 @@ try {
 
     return {handled,closed,page:after,events:{...events},recovered:true};
   };
-
-  currentCase = 'deny-click-no-effects';
-  const denied = await call('click',{tabId,target:'#confirm'},'拒绝');
-  assert.equal(denied.executionFact,'not_executed');
-  assert.equal(data(await dialogStatus()).dialog,null);
-  assert.deepEqual((await readPage()).state,{opened:0,completed:0,inputs:0,last:null});
-  assert.deepEqual(events,{}); evidence.push({case:currentCase,result:denied,page:await readPage(),events:{...events}});
 
   // These triggers use real input events, not injected JavaScript dialog calls.
   for (const scenario of [
@@ -280,7 +234,7 @@ try {
       assert.equal(await pageJson(page, 'document.activeElement?.id'), 'after', 'previous recovery fill must retain focus');
     }
 
-    const trigger = await call(scenario.tool,{tabId,...(scenario.target?{target:scenario.target}:{key:scenario.key})},'允许一次');
+    const trigger = await call(scenario.tool,{tabId,...(scenario.target?{target:scenario.target}:{key:scenario.key})},true);
     assert.equal(trigger.ok,true);
     assert.equal(record(data(trigger).dialog).type,scenario.accept?'prompt':'confirm');
     assert.equal(record(data(trigger).dialog).message,`${scenario.kind} fixture`);
@@ -291,16 +245,9 @@ try {
 
     if (scenario.accept) assert.equal(record(data(status).dialog).defaultPrompt,'default value');
     await until(()=>events[`${scenario.kind}-opened`]===1?true:undefined,4000,'one actual input trigger');
-    assert.equal(events[`${scenario.kind}-completed`]??0,0,'page remains waiting until approved dialog handling');
+    assert.equal(events[`${scenario.kind}-completed`]??0,0,'page remains waiting until the dialog is handled');
 
     if (scenario.kind==='confirm') {
-      // Separate boundary: refusing dialog handling cannot silently cancel/accept it.
-      currentCase = 'deny-dialog-keeps-page-blocked';
-      const refused = await call('dismiss_dialog',{tabId},'拒绝');
-      assert.equal(refused.executionFact,'not_executed');
-      const stillOpen = await dialogStatus(); assert.equal(record(data(stillOpen).dialog).message,'confirm fixture');
-      assert.equal(events['confirm-completed']??0,0);
-      evidence.push({case:currentCase,result:refused,dialog_status:stillOpen,events:{...events}});
       currentCase = `${scenario.tool}-${scenario.kind}-recover`;
     }
 
@@ -315,12 +262,12 @@ try {
     evidence.push({case:currentCase,trigger,dialog_status:status,...recovered});
   }
 
-  assert.equal(evidence.length,6,'original six paths remain distinct');
+  assert.equal(evidence.length,4,'four recovery paths remain distinct');
   const originalState = (await readPage()).state;
 
   const boundaryFill = async(value:string) => {
     const previousInputs = events.input;
-    const filled = await call('fill',{tabId,target:'#after',value},'允许一次');
+    const filled = await call('fill',{tabId,target:'#after',value},true);
     assert.equal(filled.ok,true);
     await until(()=>events.input === previousInputs+1 ? true : undefined,4000,'one boundary recovery fill event');
     assert.equal((await readPage()).value,value);
@@ -330,14 +277,14 @@ try {
   };
 
   currentCase = 'double-click-mousedown-interruption';
-  const mouseTrigger = await call('double_click',{tabId,target:'#mousedowndialog'},'允许一次');
+  const mouseTrigger = await call('double_click',{tabId,target:'#mousedowndialog'},true);
   assert.equal(mouseTrigger.ok,true);
   assert.equal(data(mouseTrigger).doubleClicked,false,'mousedown alone is not a completed double click');
   assert.equal(record(data(mouseTrigger).dialog).message,'mousedown fixture');
   const mouseOpen = await dialogStatus();
   assert.equal(record(data(mouseOpen).dialog).type,'confirm');
   assert.equal(record(data(mouseOpen).dialog).message,'mousedown fixture');
-  const mouseHandled = await call('dismiss_dialog',{tabId},'允许一次');
+  const mouseHandled = await call('dismiss_dialog',{tabId},true);
   assert.equal(mouseHandled.ok,true); assert.equal(data(mouseHandled).dismissed,true);
   assert.equal(data(await dialogStatus()).dialog,null);
   await until(()=>events['mouse-completed'] === 1 ? true : undefined,4000,'one interrupted mouse completion');
@@ -350,12 +297,11 @@ try {
   evidence.push({case:currentCase,trigger:mouseTrigger,dialog_status:mouseOpen,handled:mouseHandled,fill:mouseFill,page:mousePage,quietWindowMs,events:{...events}});
 
   currentCase = 'chain-dialog-preserves-next-pending';
-  const chainTrigger = await call('click',{tabId,target:'#chain'},'允许一次');
+  const chainTrigger = await call('click',{tabId,target:'#chain'},true);
   assert.equal(chainTrigger.ok,true);
   assert.equal(record(data(chainTrigger).dialog).message,'chain A fixture');
   const statusA = await dialogStatus(); assert.equal(record(data(statusA).dialog).message,'chain A fixture');
-  const handledA = await call('accept_dialog',{tabId},'允许一次');
-  const requestA = currentCall.requestId;
+  const handledA = await call('accept_dialog',{tabId},true);
   assert.equal(handledA.ok,true); assert.equal(data(handledA).accepted,true);
 
   const statusB = await until(async()=> {
@@ -367,10 +313,8 @@ try {
   assert.equal(record(data(statusB).dialog).type,'prompt');
   assert.equal(record(data(statusB).dialog).defaultPrompt,'chain default');
   await until(()=>events['chain-B-opened'] === 1 ? true : undefined,4000,'chain reaches second actual dialog');
-  assert.equal(events['chain-completed'] ?? 0,0,'A approval cannot approve B');
-  const handledB = await call('accept_dialog',{tabId,promptText:'exact chain value'},'允许一次');
-  const requestB = currentCall.requestId;
-  assert.notEqual(requestA,requestB,'B requires a new precisely matched consent card');
+  assert.equal(events['chain-completed'] ?? 0,0,'handling A does not complete B');
+  const handledB = await call('accept_dialog',{tabId,promptText:'exact chain value'},true);
   assert.equal(handledB.ok,true); assert.equal(data(handledB).accepted,true);
   assert.equal(data(await dialogStatus()).dialog,null);
   await until(()=>events['chain-completed'] === 1 ? true : undefined,4000,'one full chain completion');
@@ -378,16 +322,16 @@ try {
   const chainPage = await pageJson(page,'window.boundaryState.chain');
   assert.deepEqual(chainPage,{opened:1,completed:1,answerA:true,answerB:'exact chain value'});
   assert.equal(events['chain-opened'],1); assert.equal(events['chain-A-completed'],1); assert.equal(events['chain-B-opened'],1);
-  evidence.push({case:currentCase,trigger:chainTrigger,dialogA:statusA,dialogB:statusB,handledA,handledB,requestA,requestB,fill:chainFill,page:chainPage,events:{...events}});
+  evidence.push({case:currentCase,trigger:chainTrigger,dialogA:statusA,dialogB:statusB,handledA,handledB,fill:chainFill,page:chainPage,events:{...events}});
 
   currentCase = 'ordinary-letter-key-releases';
   const previousInputs = events.input;
-  const seeded = await call('fill',{tabId,target:'#after',value:''},'允许一次');
+  const seeded = await call('fill',{tabId,target:'#after',value:''},true);
   assert.equal(seeded.ok,true);
   await until(()=>events.input === previousInputs+1 ? true : undefined,4000,'seed fill emits once');
   assert.equal((await readPage()).value,'');
   assert.equal(await pageJson(page,'document.activeElement?.id'),'after');
-  const typed = await call('press_key',{tabId,key:'a'},'允许一次');
+  const typed = await call('press_key',{tabId,key:'a'},true);
   assert.equal(typed.ok,true); assert.equal(data(typed).pressed,true);
   await until(()=>events['letter-keyup'] === 1 && events.input === previousInputs+2 ? true : undefined,4000,'ordinary key produces input and keyup');
   await quietWindow();

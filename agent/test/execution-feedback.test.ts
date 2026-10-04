@@ -44,11 +44,9 @@ describe('执行反馈分类', () => {
     expect(String(mismatched?.facts.detail ?? '')).toContain('不一致');
   });
 
-  it('unknown 不写成成功；not_executed 区分等待确认与未执行', () => {
+  it('unknown 不写成成功；not_executed 记为没有执行', () => {
     const unknown = classifyDirectExecutionFeedback({ ...base, executionFact: 'unknown' });
     expect(unknown).toMatchObject({ kind: 'unknown', text: '结果待确认', bounce: false, capsuleCanCloseAction: false });
-    const held = classifyDirectExecutionFeedback({ ...base, executionFact: 'not_executed', data: { held: true } });
-    expect(held).toMatchObject({ kind: 'pending', text: '等你确认', bounce: false });
     const refused = classifyDirectExecutionFeedback({ ...base, executionFact: 'not_executed' });
     expect(refused).toMatchObject({ kind: 'failure', text: '没有执行', bounce: false });
   });

@@ -20,7 +20,7 @@ const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   browser_request: "发送网络请求", artifacts: "生成文件", saveFile: "保存文件", remember_user_preference: "记住偏好", user_memory: "查看记忆",
   spawn_worker: "安排助手", list_workers: "查看助手", stop_worker: "让助手停下", post: "发送消息", await_message: "等待助手结果", share_tab: "安排同页协作",
   take_tab: "接手页面", worker_tabs: "调整页面归属", task_goals: "核对目标", task_status: "核对进度", record_task_results: "整理剩余步骤",
-  resolve_unknown_result: "核对结果", confirm_blocked_write: "请你确认", send_user_message: "整理回答",
+  resolve_unknown_result: "核对结果", send_user_message: "整理回答",
 }));
 
 /** 工具名翻成动作；没登记的工具不露原名，说「处理这一步」。 */

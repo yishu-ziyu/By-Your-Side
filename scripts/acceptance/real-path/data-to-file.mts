@@ -628,21 +628,11 @@ try {
   if (!(await until(async () => (await read()).userMessages > before.userMessages || undefined, 5_000, "消息发出").catch(() => false))) await rp.click(panel, "#send-btn");
   await until(async () => (await read()).userMessages > before.userMessages || undefined, 10_000, "消息发出");
 
-  // 等这一轮结束；同时记下卡片第一次出现的时刻。授权卡像用户一样点允许，次数进证据。
+  // 等这一轮结束；同时记下文件卡片第一次出现的时刻。
   let cardSeenAt: number | null = null;
   let idle = 0;
-  let consentAllowed = 0;
 
   while (Date.now() - sentAt < TURN_LIMIT_MS && idle < 12) {
-    if (await rp.evaluate(panel, `(() => { const b = document.querySelector("#consent-requests:not([hidden]) .consent-allow"); if (!b) return false; b.setAttribute("data-acceptance-click", "1"); b.scrollIntoView({ block: "center" }); return true; })()`).catch(() => false)) {
-      await rp.click(panel, "[data-acceptance-click]").catch(() => undefined);
-      await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`).catch(() => undefined);
-      consentAllowed += 1;
-      idle = 0;
-      await sleep(500);
-      continue;
-    }
-
     const s = await read().catch(() => null);
 
     if (s && cardSeenAt === null && s.cards.some((c) => !c.deleted)) cardSeenAt = Date.now();
@@ -658,7 +648,6 @@ try {
 
   evidence.elapsedMs = endedAt - sentAt;
   evidence.finished = finished;
-  evidence.consentAllowed = consentAllowed;
   evidence.cardSeenAfterMs = cardSeenAt === null ? null : cardSeenAt - sentAt;
   evidence.cards = after.cards;
   evidence.lastReply = after.lastReply.slice(0, 600);

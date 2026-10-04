@@ -1,26 +1,14 @@
-/** #22 real offscreen Agent → real sidebar approval. Only the local model is scripted.
+/** #22 real offscreen Agent → real sidebar, no approval cards (removed 2026-10-04). Only the local model is scripted.
  * Failures fixed before production: unsafe getter/serialization posts or changes DOM;
  * CPU/Promise hangs; missing capability masquerades as PASS; failed read locks fill;
- * ordinary JS timeout loses its unknown-write lock. No fallback or injected grants.
+ * ordinary JS timeout loses its unknown-write lock. No fallback.
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type Json, type JsonRecord } from "./harness.mts";
+import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
-import { toolAction } from "../../../shared/user-facing.js";
-import type { ConsentRequest } from "../../../shared/consent.js";
-
-// CDP tab queries return a numeric id or undefined. Keep the original number-only check.
-function isTabId(value: Json): value is number {
-  return typeof value === "number";
-}
-
-// JSON.parse already establishes JSON values; this boundary only admits non-array objects.
-function isParsedParams(value: Json): value is JsonRecord {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 requireHeadless();
 
@@ -91,12 +79,6 @@ const evidence: unknown[] = [];
 
 const failures: string[] = [];
 
-const approvals: Array<{ at: number; id: string; request: ConsentRequest; params: JsonRecord; decision: string; commits: number }> = [];
-
-const seen = new Set<string>();
-
-const activeCard = ".consent-card:not(.consent-complete)";
-
 try {
   rp = await launchRealPath();
   const browser = rp;
@@ -105,10 +87,6 @@ try {
   await browser.cdp.send("Page.navigate", { url: origin }, work);
   panel = await browser.attach(await browser.openSidePanel());
   const sidebar = panel;
-  // Passive only. All decisions below click the actual sidebar card.
-  await browser.evaluate(sidebar, `(()=>{window.__consentSourceEvents=[];window.__consentObserver=chrome.runtime.connect({name:'sideagent-panel'});window.__consentObserver.onMessage.addListener(wire=>{const msg=wire?.msg;if(wire?.kind==='server'&&['consent_request','consent_list','consent_result'].includes(msg?.type))window.__consentSourceEvents.push({at:Date.now(),message:msg});});return true})()`);
-  const fixtureTabId = await browser.evaluate(sidebar, `new Promise(resolve=>chrome.tabs.query({},tabs=>resolve(tabs.find(tab=>tab.url===${JSON.stringify(origin + "/")})?.id)))`);
-  assert.equal(isTabId(fixtureTabId), true);
   await browser.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sidebar);
   await until(async () => await browser.evaluate(sidebar, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "real sidebar ready");
   await browser.click(sidebar, "#header-more");
@@ -142,55 +120,6 @@ try {
     await browser.typeText(sidebar, userTask);
     await browser.pressEnter(sidebar);
     await until(async () => {
-      const card = await browser.evaluate(sidebar, `(()=>{const c=document.querySelector(${JSON.stringify(activeCard)});return c?.querySelector(".consent-allow:not(:disabled)")?{id:c.dataset.requestId,details:c.querySelector("pre")?.textContent}:null})()`);
-
-      if (card && !seen.has(card.id)) {
-        // SAFETY: The evaluated expression returns null or a native ConsentRequest plus a boolean; the next assertion checks the live card identity.
-        const source = await browser.evaluate(sidebar, `(()=>{const events=window.__consentSourceEvents??[];const e=events.findLast(e=>(e.message.type==='consent_request'&&e.message.request.id===${JSON.stringify(card.id)})||(e.message.type==='consent_list'&&e.message.requests.some(r=>r.id===${JSON.stringify(card.id)})));if(!e)return null;const request=e.message.type==='consent_request'?e.message.request:e.message.requests.find(r=>r.id===${JSON.stringify(card.id)});return {request,terminal:events.some(e=>e.message.type==='consent_result'&&e.message.requestId===request.id)}})()`) as { request: ConsentRequest; terminal: boolean } | null;
-        assert.ok(source && !source.terminal && source.request.id === card.id, "card must have a live native source");
-        const request = source.request;
-        const tool = request.kind === "write" ? request.tool : "fetch";
-        const shown = card.details.split("\n\n")[1] ?? "";
-        let params: JsonRecord = {};
-        let parsed = false;
-
-        try {
-          const value: Json = JSON.parse(shown);
-
-          if (isParsedParams(value)) { params = value; parsed = true; }
-        } catch { /* Unknown cards are rejected below, never approved. */ }
-
-        const exact = (keys: string[]) => Object.keys(params).every(key => keys.includes(key));
-        const tab = params.tabId === undefined || params.tabId === fixtureTabId;
-
-        const activation = request.kind === "write" && request.purpose === "activation" && tab && parsed && shown === request.value
-          && card.details.split("\n")[0] === `动作：${toolAction(tool)}`;
-
-        const read = activation && (
-          tool === "snapshot" && exact(["tabId", "decision"]) && (params.decision === undefined || params.decision === true && params.tabId === fixtureTabId)
-          || tool === "read_element" && exact(["tabId", "target"]) && ["#text", "#evidence"].includes(String(params.target))
-        );
-
-        const code = activation && tool === (plan.ordinary ? "js" : "read_script") && exact(["code", "tabId"]) && plan.keys.some(key => params.code === scripts[key]);
-
-        // Empty host policies are allowed only for this explicit user-provided value.
-        const policy = (params.formRequirements === undefined || Array.isArray(params.formRequirements) && params.formRequirements.length === 0)
-          && (params.userValueProvided === undefined || params.userValueProvided === false || params.userValueProvided === true)
-          && (params.userValueHostname === undefined || params.userValueHostname === "127.0.0.1");
-
-        const fill = activation && !plan.ordinary && tool === "fill" && params.target === "#evidence" && params.value === plan.value && policy
-          && exact(["target", "value", "tabId", "formRequirements", "userValueProvided", "userValueHostname"]);
-
-        const allow = !!(read || code || fill);
-        seen.add(card.id);
-        approvals.push({ at: Date.now(), id: card.id, request, params, decision: allow ? "allow exact fixture parameters" : "reject unexpected action", commits });
-        const selector = `${activeCard}[data-request-id=${JSON.stringify(card.id)}]`;
-        await browser.click(sidebar, `${selector} ${allow ? ".consent-allow" : ".consent-reject"}`);
-
-        if (!allow) failures.push(`${plan.mark}: unexpected consent ${tool} ${JSON.stringify(params)}`);
-        await until(async () => await browser.evaluate(sidebar, `!document.querySelector(${JSON.stringify(selector)})?.querySelector(".consent-allow:not(:disabled)")`) || undefined, 15_000, "approval consumed");
-      }
-
       return await browser.evaluate(sidebar, `document.querySelector("#messages")?.textContent.includes(${JSON.stringify(`【${plan.mark}结束】`)}) && !document.querySelector("#status-pill")?.classList.contains("running")`) || undefined;
     }, plan.ordinary ? 100_000 : 90_000, `${plan.mark} real Agent completion`);
     await sleep(500);
@@ -238,18 +167,18 @@ try {
         for (const key of failuresExpected) {
           const { call, receipt } = receiptFor(key);
           assert.ok(/error|fail|拒绝|失败|超时|side.effect|timed out|terminated|not.supported|不支持/i.test(JSON.stringify(receipt.content)), `${key} needs explicit read failure`);
-          const approved = approvals.find(a => a.at >= start && a.request.kind === "write" && a.request.tool === "read_script" && a.params.code === scripts[key]);
-          assert.ok(approved, `${key} must pass the actual sidebar`);
           // SAFETY: The same inspected request bodies contain OpenAI-compatible messages; only the tool role and call id are read.
-          const received = relevant.find(entry => (entry.payload as { messages?: Array<{ role: string; tool_call_id?: string }> }).messages?.some(m => m.role === "tool" && m.tool_call_id === call.id));
-          assert.ok(received && received.at - approved.at < 5000, `${key} must finish without waiting for 30-second RPC timeout`);
+          const carries = (entry: { payload: unknown }) => !!(entry.payload as { messages?: Array<{ role: string; tool_call_id?: string }> }).messages?.some(m => m.role === "tool" && m.tool_call_id === call.id);
+          const received = relevant.find(carries);
+          // The request just before the receipt is the one whose reply issued this call.
+          const asked = received ? relevant.findLast(entry => entry.at <= received.at && !carries(entry)) : undefined;
+          assert.ok(received && asked && received.at - asked.at < 5000, `${key} must finish without waiting for 30-second RPC timeout`);
         }
 
         if (plan.keys.some(key => key === "title")) {
           for (const [key, expected] of [["title", TITLE], ["text", TEXT]] as const) {
             const result = JSON.stringify(receiptFor(key).receipt.content);
             assert.ok(result.includes(expected) && !/error|fail|拒绝|失败|超时/i.test(result), `independent ${key} primitive must be returned by read_script, not snapshot`);
-            assert.ok(approvals.some(a => a.at >= start && a.request.kind === "write" && a.request.tool === "read_script" && a.params.code === scripts[key]), `${key} must pass actual sidebar approval`);
           }
         }
       } else {
@@ -273,8 +202,7 @@ try {
 } finally {
   const finalPage = rp && work ? await rp.evaluate(work, '({title:document.title,text:document.querySelector("#text")?.textContent,evidence:document.querySelector("#evidence")?.value})').catch(() => "unavailable") : "unavailable";
   const panelText = rp && panel ? await rp.evaluate(panel, "document.body.innerText").catch(() => "unavailable") : "unavailable";
-  const consentEvents = rp && panel ? await rp.evaluate(panel, "window.__consentSourceEvents").catch(() => []) : [];
-  await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model", evidence, failures, approvals, consentEvents, finalPage, commits, error, panelText, modelRequests: model.requests, payloads, chromeStderr: rp?.chromeStderr() }, null, 2));
+  await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model", evidence, failures, finalPage, commits, error, panelText, modelRequests: model.requests, payloads, chromeStderr: rp?.chromeStderr() }, null, 2));
   await rp?.close();
   await rp?.remove();
   await model.close();

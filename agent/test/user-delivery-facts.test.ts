@@ -148,7 +148,7 @@ describe("TaskProgress.deliveryFacts", () => {
     expect(h.p.deliveryFacts().sources).toEqual([]);
   });
 
-  it("旧检查点无目标计划时沿用动作事实，被取代的未知不再阻塞", () => {
+  it("旧检查点无目标计划时沿用动作事实", () => {
     const h = progressHarness();
     h.p.goals.clear(); // Legacy checkpoint compatibility; new requests project goals.
     h.p.registerResults([{ id: "r-fill", description: "填写姓名", tool: "fill", target: "#name" }]);
@@ -160,11 +160,6 @@ describe("TaskProgress.deliveryFacts", () => {
     const before = h.p.deliveryFacts();
     expect(before.delivered).toContain("填写姓名");
     expect(before.remaining).toContainEqual({ id: "r-submit", description: "提交订单", status: "unknown" });
-    const recovered = h.p.recordConfirmedRecovery({ supersedes: "r-submit", description: "当前订单状态已核对", tool: "read_element", target: null, member: "main", runId: h.runId, toolCallId: "c3", satisfied: true });
-    expect(recovered).not.toBeNull();
-    const after = h.p.deliveryFacts();
-    expect(after.remaining.map((item) => item.id)).not.toContain("r-submit");
-    expect(after.delivered).toContain("当前订单状态已核对");
   });
 
   it("没有目标计划时仍保留用户要求，不以空动作账本冒充完成", () => {

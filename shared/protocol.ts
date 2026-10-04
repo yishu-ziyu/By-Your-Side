@@ -12,7 +12,6 @@ import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 import { isTaskView } from "./task-view.js";
-import { isConsentRequest, type ConsentStatus, type ConsentRequest } from "./consent.js";
 import { isSkillInputs, isSkillCandidate, validSkillId } from "./skill.js";
 
 export const PROTOCOL_VERSION = 1;
@@ -182,8 +181,6 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_restore"; requestId: string; id: string; expectedVersion: number }
   /** 回答纠正后的询问（memory_ask）：remember 保存那条做法；once 不保存，同一对话里不再问同一条。规则文字只取后台记下的那份，面板不能改写。 */
   | { type: "memory_ask_answer"; requestId: string; askId: string; answer: "remember" | "once" }
-  /** 被拿住的点击经用户确认后，扩展已按原参数补上：id 是原 tool_call 的编号，宿主据此把账本里那一下从「未知」改为已执行。 */
-  | { type: "held_click_result"; id: string; ok: boolean }
   /** 过往任务：列出，或删一条（id 为 null 时全部清空）。 */
   | { type: "task_history_list"; requestId: string }
   | { type: "task_history_forget"; requestId: string; id: string | null }
@@ -234,10 +231,6 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
   | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
-  /** 授权选择：只允许现有请求的 id，参数与票据都在伴随进程手里（见 agent/src/fetch-consent.ts）。 */
-  | { type: "consent_decision"; requestId: string; allow: boolean; /** 同时信任卡上的 trustSite（只对带 trustSite 的读取/打开卡生效）。 */ trust?: true }
-  /** 问一次本会话还在等待的授权请求（用于面板重连/重开时恢复卡片）。 */
-  | { type: "consent_list" }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact });
 
 export interface ConversationEnvelope { conversationId?: string }
@@ -266,12 +259,6 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | ReadingEvent
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
-  /** 有请求在等用户选择：目标、method、headers（敏感值已打码）与 body 原文，只展示这一次。 */
-  | { type: "consent_request"; request: ConsentRequest }
-  /** 一次确认的结局：allowed 只表示「已允许本次请求」，不代表已经发送或成功。 */
-  | { type: "consent_result"; requestId: string; status: ConsentStatus; message: string }
-  /** 本会话仍在等待的授权请求；按请求即时的期限，不被这次查询延长。 */
-  | { type: "consent_list"; requests: ConsentRequest[] }
   | VoiceServerMessage
   /** action=ask 是 memory_ask_answer 的结果：remember 成功时带 entry（新存的那条；alreadySaved 时是早已存在的同一条，这次没写入，不给撤销），once 成功时不带。 */
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
@@ -316,7 +303,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 用户在授权卡上拒绝了这一步：没执行，但不是失败。 */ declined?: true; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
@@ -455,9 +442,6 @@ export interface SwitchTabVerification {
  *   "@N" / "loc=css:..." / "loc=role:…[name=…]" / "loc=href:..." / "xpath=" / "text=" / 原生 CSS
  * click 也可用 point: [x, y] 视口坐标代替 target。
  */
-/** 仅宿主从用户已确认方法附加；模型工具参数不提供这些字段。 */
-export interface RequiredFormField { label: string; hostname?: string }
-
 export interface ToolContract {
   page_translation: { params: import('./page-translation.js').TranslationCommand; data: import('./page-translation.js').TranslationReceipt };
   /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回伴随进程，不回侧栏。 */
@@ -526,13 +510,12 @@ export interface ToolContract {
       clickCount?: number;
       force?: boolean;
       label?: string;
-      formRequirements?: RequiredFormField[];
     };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。
      *  dialog = 点击后页面弹出了原生对话框（点击已送达，页面等对话框处理）；此时不等效果采样。 */
-    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { clicked: false; held: true };
+    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
   };
-  /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2；destructive 目标同样先拿住等确认。 */
+  /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2。 */
   double_click: {
     params: {
       tabId?: number;
@@ -543,14 +526,13 @@ export interface ToolContract {
       clickCount?: number;
       force?: boolean;
       label?: string;
-      formRequirements?: RequiredFormField[];
     };
-    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; held: true } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
+    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
   };
-  /** 真实拖拽：from/to 各为 target 或视口 point；mousePressed→有界 mouseMoved 序列→release；destructive 源同样先拿住等确认。 */
+  /** 真实拖拽：from/to 各为 target 或视口 point；mousePressed→有界 mouseMoved 序列→release。 */
   drag: {
     params: { tabId?: number; from: { target?: string; point?: [number, number] }; to: { target?: string; point?: [number, number] }; label?: string };
-    data: { dragged: true; effect?: import('./effect.js').EffectReport } | { dragged: false; held: true };
+    data: { dragged: true; effect?: import('./effect.js').EffectReport };
   };
   /** CAP-02B：真实 mouseWheel；坐标来自 point/target(+position) 或会话指针。 */
   wheel: {
@@ -761,22 +743,20 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue } };
+  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {
       tabId?: number;
       target: string;
-      formRequirements?: RequiredFormField[];
-      userValueProvided?: boolean; userValueHostname?: string;
       values: string | { value?: string; label?: string; index?: number } | Array<string | { value?: string; label?: string; index?: number }> | null;
       expectedDocumentId?: string;
       expectedBackendNodeId?: number;
     };
     data: { selected: string[]; labels: string[] };
   };
-  type_text: { params: { tabId?: number; text: string; formRequirements?: RequiredFormField[]; userValueProvided?: boolean }; data: { typed: true } };
-  press_key: { params: { tabId?: number; key: string; formRequirements?: RequiredFormField[] }; data: { pressed: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
+  type_text: { params: { tabId?: number; text: string; }; data: { typed: true } };
+  press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
@@ -832,8 +812,6 @@ export interface ToolContract {
 }
 
 // ── 编解码守卫 ─────────────────────────────────────────────────────
-
-const CONSENT_STATUSES: ReadonlySet<string> = new Set(["allowed", "rejected", "expired", "cancelled"]);
 
 /** 协议里的可选说明文字（错误原因等）。 */
 function isShortText(value: unknown): value is string {
@@ -895,8 +873,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       if (msg.type === "memory_update" && (!validMemoryText(msg.text) || !isMemoryScope(msg.scope))) return null;
     }
 
-    if (msg.type === "held_click_result" && (!validRequestId(msg.id) || (msg.ok !== true && msg.ok !== false))) return null;
-
     if (msg.type === "task_history_list" && !validRequestId(msg.requestId)) return null;
 
     if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
@@ -946,10 +922,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "set_mode" && msg.mode !== "teach" && msg.mode !== "act") return null;
 
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
-
-    if (msg.type === "consent_decision") return validRequestId(msg.requestId) && typeof msg.allow === "boolean" && (msg.trust === undefined || msg.trust === true) ? msg : null;
-
-    if (msg.type === "consent_list") return msg;
 
     if (msg.type === "page_event") {
       if (msg.event !== "url_changed" || typeof msg.url !== "string") return null;
@@ -1049,19 +1021,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
 
     if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
-
-    if (msg.type === "consent_request") {
-      return isConsentRequest(msg.request) && msg.request.conversationId === msg.conversationId ? msg : null;
-    }
-
-    if (msg.type === "consent_result") {
-      return validRequestId(msg.requestId) && CONSENT_STATUSES.has(msg.status)
-        && typeof msg.message === "string" && msg.message.length > 0 && msg.message.length <= 500 ? msg : null;
-    }
-
-    if (msg.type === "consent_list") {
-      return Array.isArray(msg.requests) && msg.requests.every(isConsentRequest) ? msg : null;
-    }
 
     if (msg.type === "voice") return isVoiceServerMessage(msg) ? msg : null;
 

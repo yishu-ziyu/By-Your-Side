@@ -157,7 +157,7 @@ export class SkillLearningTrace {
  return; }
 
     if (event.name === "click") {
-      if (!SAFE_CLICK.test(anchor.name) || (event.result as { held?: boolean })?.held) { this.invalid = true;
+      if (!SAFE_CLICK.test(anchor.name)) { this.invalid = true;
 
  return; }
 

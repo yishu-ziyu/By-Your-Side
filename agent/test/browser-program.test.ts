@@ -68,12 +68,6 @@ describe("browser programs", () => {
     expect(call).toHaveBeenCalledTimes(1);
   });
 
-  it("stops queued unawaited actions after a held click", async () => {
-    const call = vi.fn().mockResolvedValue({ clicked: false, held: true });
-    await expect(runBrowserProgram({ code: 'await Promise.allSettled([browser.click({target:"#delete"}),browser.fill({target:"#b",value:"x"})]); return "done";', call })).rejects.toThrow(/held/i);
-    expect(call).toHaveBeenCalledTimes(1);
-  });
-
   it("cancels during a wait without a later browser action", async () => {
     const controller = new AbortController();
     const call = vi.fn();

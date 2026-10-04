@@ -2,10 +2,9 @@
  * 2026-09-26 实拍发现的 10 个界面问题：按用户路径逐条复现并在同一步截图，改前改后各跑一次对照。
  *
  *   npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=before|after [--only=main,voice-nokey,...]
- *   npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=after --only=real-confirm --real-model=stepfun/step-3.7-flash
  *
  * 每组一个隔离的无窗口 Chrome，只装扩展（demo 组另注册伴随进程）。模型是本机脚本模型（scripted-model.mts），
- * 像用户一样在设置页选「自定义地址」填写；real-confirm 组用本机已配置的真实模型，只看「等确认时这一轮会不会结束」。
+ * 像用户一样在设置页选「自定义地址」填写。2026-10-04 起网页操作不再弹批准卡、不再拿住点击，原第 2/3（授权卡）、4/5（页面待确认）与 real-confirm 组已删除。
  * 语音组的 key 从本机 ~/.sideagent/stepfun-api.key 读出，在设置页「实时语音」里填写，不打印、不落盘。
  *
  * 产物：out/acceptance/ux-fixes/<phase>/ 下每步一张侧栏或页面截图，summary.json 记下每步侧栏文字、页面浮层文字和判据。
@@ -14,8 +13,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type Json, type JsonRecord } from "./harness.mts";
-import { configureViaSettings, loadModelPlan } from "./inproc-config.mts";
+import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type Json, type JsonRecord } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
 
 requireHeadless();
@@ -24,8 +22,6 @@ const phase = process.argv.find((a) => a.startsWith("--phase="))?.slice(8) ?? "a
 
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 
-const realModel = process.argv.find((a) => a.startsWith("--real-model="))?.slice(13);
-
 const artifacts = join(REPO, "out/acceptance/ux-fixes", phase);
 
 await mkdir(artifacts, { recursive: true });
@@ -33,8 +29,6 @@ await mkdir(artifacts, { recursive: true });
 const page = (title: string, body: string) => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title></head><body style="font:16px/1.8 -apple-system,'PingFang SC',sans-serif;margin:32px 40px">${body}</body></html>`;
 
 const COMPOSE_TYPO = "各位好：我们明天下午三点在会议是开会，讨论新版本的上线计画，请大家准时参加，不要迟道。";
-
-const COMPOSE_FIXED = "各位好：我们明天下午三点在会议室开会，讨论新版本的上线计划，请大家准时参加，不要迟到。";
 
 // 页面内容取自 everyday-baseline.mts 的真实路径练习页。
 const PAGES = new Map<string, string>(Object.entries({
@@ -77,22 +71,9 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const RULES: Rule[] = [
   { match: "报错演示", steps: [{ status: 503, body: JSON.stringify({ message: "upstream overloaded (scripted)" }) }] },
-  { match: "提交到服务器", steps: [
-    { tool: { name: "fetch", args: { url: "https://report.example.com/api/weekly", method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "draft=%E4%BB%8A%E5%A4%A9%E7%9A%84%E5%91%A8%E6%8A%A5" } } },
-    { text: "你没有允许，这次提交没有发出。" },
-  ] },
   { match: "我指给你", steps: [
     { tool: { name: "ask_user_to_point", args: { message: "请在页面上点一下你说的那一项" } } },
     { text: "你点的是「剩余额度 $12.40」。" },
-  ] },
-  { match: "改错字", steps: [
-    { tool: { name: "fill", args: { target: "#draft", value: COMPOSE_FIXED } } },
-    { tool: { name: "click", args: { target: "#save", label: "发送" } } },
-    { text: "改了 3 处错字（会议是→会议室、计画→计划、迟道→迟到）。「发送」等你在页面上确认后才会发出。" },
-  ] },
-  { match: "开头改成", steps: [
-    { tool: { name: "fill", args: { target: "#draft", value: "各位同事好：明天下午三点开会。" } } },
-    { text: "草稿开头已经改好。" },
   ] },
   { match: "很长的任务", steps: [{ text: "三家资料已经汇总。", delayMs: 60_000 }] },
   { match: "这两个数字", steps: [{ text: "说明远程让资深的人更专注，却让新人成长慢了一倍多：专注时间多了 12 小时，新人独立交付却晚了 8 周。" }] },
@@ -389,21 +370,6 @@ async function mainGroup() {
     check("1 模型出错时用平常话、及时出现", errorMs !== null && errorMs <= 10_000 && !/\{"message"|任务状态：仅交付部分结果/.test(err), { errorShownMs: errorMs, attemptsMs: attempts.map((a) => a - attempts[0]!), sentMs });
     await s.newConversation();
 
-    // 2+3：请求授权，拒绝。
-    await s.navigate("/note");
-    await s.send("把「今天的周报」提交到服务器。");
-    await until(async () => (await rp.evaluate(s.panel, `!document.querySelector("#consent-requests").hidden && !!document.querySelector(".consent-reject")`)) || undefined, 30_000, "授权卡");
-    await rp.evaluate(s.panel, `document.querySelector("#consent-requests details")?.setAttribute("open", ""); true`);
-    await sleep(600);
-    const card = await s.shotPanel("02-consent-card");
-    check("2 授权进行中不露工具名", !/\bfetch\b/.test(card), leaksIn(card));
-    check("3 授权卡发送内容可读", !/%E4%BB/.test(card) && /今天的周报/.test(card), card.match(/发送内容[\s\S]{0,60}/)?.[0] ?? "");
-    await rp.click(s.panel, ".consent-reject");
-    await s.waitIdle();
-    const denied = await s.shotPanel("03-consent-denied");
-    check("3 拒绝后不说失败、不给继续", !/执行失败|仍有步骤执行失败|没做成|继续/.test(denied.split("把「今天的周报」提交到服务器。").pop() ?? ""), leaksIn(denied));
-    await s.newConversation();
-
     // 2：请用户指一下。
     await s.navigate("/quota");
     await s.send("剩余额度那一项，我指给你。");
@@ -417,45 +383,6 @@ async function mainGroup() {
     await s.clickAt(s.work, balance.x, balance.y);
     await s.waitIdle();
     await s.shotPanel("02-point-done");
-    await s.newConversation();
-
-    // 4：发送键被拦下后这一轮结束；5：留着待确认时另开会话操作同一页。
-    await s.navigate("/compose");
-    await s.send("帮我改错字，然后点发送。");
-    await s.waitIdle();
-    await sleep(1500);
-    const afterRun = await s.shotPage("04-confirm-after-run");
-    await s.shotPanel("04-confirm-panel");
-    // 按钮要在「发送」键旁边看得见，才算留给了用户（停在角落的隐藏名牌不算）。
-    // SAFETY: 页面脚本返回元素中心点 { x, y }。
-    const save = await rp.evaluate(s.work, `(() => { const r = document.querySelector("#save").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`) as { x: number; y: number };
-    const box = await s.overlayBox("发送", "BUTTON").catch(() => null);
-    const confirmShown = !!box && box.w > 0 && Math.hypot(box.x + box.w / 2 - save.x, box.y + box.h / 2 - save.y) < 300;
-    const savesBefore = saves;
-    let confirmed = false;
-
-    if (confirmShown) {
-      if (box) {
-        await s.clickAt(s.work, box.x + box.w / 2, box.y + box.h / 2);
-        await until(async () => saves > savesBefore || undefined, 10_000, "表单提交").catch(() => {});
-        confirmed = saves > savesBefore;
-      }
-    }
-
-    check("4 这一轮结束后页面上仍能确认并发出", confirmShown && confirmed, { overlay: afterRun, confirmBox: box, save, confirmed });
-
-    // 5：重新走一遍，留着待确认不点，再新开会话操作同一页。
-    await s.navigate("/compose");
-    await s.newConversation();
-    await s.send("帮我改错字，然后点发送。");
-    await s.waitIdle();
-    await s.newConversation();
-    await s.send("把草稿开头改成「各位同事好」。");
-    await s.waitIdle();
-    const busy = await s.shotPanel("05-tab-busy");
-    const draft = await rp.evaluate(s.work, `document.querySelector("#draft")?.value ?? null`);
-    await s.shotPage("05-tab-busy-page");
-    check("5 新会话能在留着待确认的页面上操作", String(draft).startsWith("各位同事好") && !/执行失败|页面没有变化/.test(busy), { draft, leaks: leaksIn(busy) });
     await s.newConversation();
 
     // 9a：接管时小伙伴 M 与「详情」。
@@ -665,40 +592,6 @@ async function voiceGroup(kind: "nokey" | "mic" | "conn" | "ready") {
   }
 }
 
-// ── 真实模型：页面上等确认时，这一轮会不会结束 ─────────────────────
-
-async function realConfirmGroup() {
-  if (!realModel) throw new Error("real-confirm 需要 --real-model=provider/id");
-  const rp = await launchRealPath({ withoutNativeHost: true });
-
-  try {
-    const s = await session(rp, "/compose");
-    await until(async () => (await s.readPanel()).connected || undefined, 60_000, "侧栏就绪", 500);
-    const plan = await loadModelPlan(realModel);
-    const run = await configureViaSettings(rp, s.panel, plan);
-    await rp.cdp.send("Target.closeTarget", { targetId: run.settingsTargetId });
-    await rp.cdp.send("Page.bringToFront", {}, s.work);
-    await s.send("帮我改错字，然后点发送。");
-    const ms = await s.waitIdle(300_000);
-    await sleep(1500);
-    const overlay = await s.shotPage("04-real-confirm-after-run");
-    const text = await s.shotPanel("04-real-confirm-panel");
-    const pending = overlay.includes("发送") && overlay.includes("取消");
-    const draft = await rp.evaluate(s.work, `document.querySelector("#draft")?.value ?? null`);
-    // 展开执行过程，逐步记下每一步的名字和回执，看「发送」是怎么处理的。
-    await rp.evaluate(s.panel, `document.querySelector("#messages .run-steps > summary")?.click(); true`);
-    await sleep(500);
-    const steps = await rp.evaluate(s.panel, `(async () => { const out = []; for (const chip of document.querySelectorAll("#messages .run-steps .chip")) { chip.click(); await new Promise((r) => setTimeout(r, 150)); const detail = chip.closest(".run-body")?.querySelector(".chip-detail, .tool-detail"); out.push({ label: chip.innerText.trim(), detail: detail?.innerText.trim().slice(0, 400) ?? null }); chip.click(); } return out; })()`);
-    await s.shotPanel("04-real-confirm-steps");
-    const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
-    await writeFile(join(artifacts, "real-confirm-traces.jsonl"), exported.traces);
-    check("4 真实模型：等确认时这一轮已结束（记录，不作判据）", true, { turnMs: ms, pendingConfirmVisible: pending, overlay, draft, saves, steps, answer: text.slice(-400) });
-  } finally {
-    await rp.close();
-    await rp.remove();
-  }
-}
-
 const GROUPS = new Map<string, () => Promise<void>>(Object.entries({
   main: mainGroup,
   demo: demoGroup,
@@ -706,10 +599,9 @@ const GROUPS = new Map<string, () => Promise<void>>(Object.entries({
   "voice-mic": () => voiceGroup("mic"),
   "voice-conn": () => voiceGroup("conn"),
   "voice-ready": () => voiceGroup("ready"),
-  "real-confirm": realConfirmGroup,
 }));
 
-const selected = only ?? [...GROUPS.keys()].filter((g) => g !== "real-confirm");
+const selected = only ?? [...GROUPS.keys()];
 
 const errors: Record<string, string> = {};
 

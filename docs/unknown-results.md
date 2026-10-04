@@ -9,5 +9,6 @@
 - 谁会上锁：只有 `commitsHarm` 的调用结果不确定时才记成「结果不确定」。它比 `repeatsHarm` 多一个 `accept_dialog`：确认弹窗可能就是「确定付款」那一下，但弹窗只能确认一次，所以它本身不被锁拦。GET `fetch` 出错或超时只是取数失败。
 - 确定没执行（扩展回 `executionFact: "not_executed"`）的不上锁：派发前的目标核对失败（被覆盖、已失效、找不到）、`fill` 目标不可填或下拉框没有该选项（页面函数先核对再聚焦写入）、脚本编译失败、断连或超时后扩展补报未执行。
 - 核查一次：`resolve_unknown_result` 对同一项只核查一次，查不清就标记 `checkFailed`、保持不确定，不再进入 `verify_unknown`；模型再要核查同一项时宿主不读页面，直接交付「这一步结果查不清、没有重复执行、请你看一眼」并结束本轮（诊断记录 `unconfirmed_result_stop`）。
+- 之后怎么办：用户在对话里回复决定是否继续；没有恢复确认卡（`confirm_blocked_write` 于 2026-10-04 删除，见[网页操作不再逐次确认](browser-confirmation.md)），锁照旧挡住重复。
 
 点击后页面弹出原生 alert/confirm/prompt 时，派发输入的 CDP 命令会被对话框挡住；`click` 一收到 `Page.javascriptDialogOpening` 就返回 `{clicked:true, dialog:{type,message}}`，不等满超时。`browser_run` 逐个子调用按同一规则判定，见[组合执行](browser-program.md#控制与权限)；验收见 [20261001-unknown-lock-scope](evals/20261001-unknown-lock-scope.md)。

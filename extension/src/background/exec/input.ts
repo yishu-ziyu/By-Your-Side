@@ -1,11 +1,9 @@
-import {isolatedReadContext} from "../isolated-read-context.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
 import {replaceEditableText} from "../../shared/editable-text.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
-import { LEAD_SESSION_ID, type RequiredFormField, type ToolContract } from "../../../../shared/protocol.js";
-import { inspectRequiredFormFields, type FormFieldGuardInput } from "./form-field-guard.js";
+import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
@@ -15,13 +13,7 @@ import { axBackendNodeFor, isAxRef } from "../axstate.js";
 import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
-import {
-  confirmLabelForDestructive,
-  isDestructiveLabel,
-  isSubmitLabel,
-  resolveImplicitMarkActions,
-} from "../../shared/mark-actions.js";
-import { HeldClicks } from "../../shared/held-clicks.js";
+import { resolveImplicitMarkActions } from "../../shared/mark-actions.js";
 import { getMarkMotion } from "../mode.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, collectEffect } from "./effect.js";
@@ -41,7 +33,8 @@ import {
   type PasteContent,
 } from "../../../../shared/pointer-input.js";
 
-export type ApprovalDispatchGuard = (() => Promise<void>) & {checkNow?: () => void; noteEffect?: () => void; afterEffect?: (() => Promise<void>) & {checkNow?: () => void}};
+/** 派发前的核对：checkNow 同步复查任务身份，noteEffect 记下页面输入已经发出。 */
+export type DispatchGuard = (() => Promise<void>) & {checkNow?: () => void; noteEffect?: () => void};
 
 export type {
   ClipboardBridge,
@@ -198,7 +191,7 @@ export async function callOnBackendNode<T>(
   args?: unknown[],
   executionContextId?: number,
   expectedDocumentId?: string,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<T> {
   const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode",
     executionContextId !== undefined ? { backendNodeId, executionContextId } : { backendNodeId });
@@ -231,7 +224,7 @@ export async function callOnBackendNode<T>(
 }
 
 /** AX ref → 元素视口包围盒（scrollIntoView + getBoundingClientRect）。 */
-async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false, beforeDispatch?: ApprovalDispatchGuard, nativeTimeHost = false): Promise<DomRect> {
+async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false, beforeDispatch?: DispatchGuard, nativeTimeHost = false): Promise<DomRect> {
   const rect = await callOnBackendNode<DomRect | undefined>(
     tabId,
     backendNodeId,
@@ -256,7 +249,7 @@ function filledResult(range: InputRangeReadout | null | undefined): ToolContract
 }
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
-async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: ApprovalDispatchGuard): Promise<InputRangeReadout | null | undefined> {
+async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: DispatchGuard): Promise<InputRangeReadout | null | undefined> {
   // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报（#22/#27）。
   const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null }>(
     tabId,
@@ -313,7 +306,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
   return outcome?.range;
 }
 
-async function ensureDomOps(tabId: number, beforeDispatch?: ApprovalDispatchGuard): Promise<void> {
+async function ensureDomOps(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   await chrome.scripting.executeScript({
@@ -323,7 +316,7 @@ async function ensureDomOps(tabId: number, beforeDispatch?: ApprovalDispatchGuar
   });
 }
 
-export async function ensureCursor(tabId: number, beforeDispatch?: ApprovalDispatchGuard): Promise<void> {
+export async function ensureCursor(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   await chrome.scripting.executeScript({
@@ -339,7 +332,7 @@ export async function callDom<Args extends unknown[], Result>(
   func: (...args: Args) => Result,
   args: Args,
   documentId?:string,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<Awaited<Result>> {
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
@@ -523,47 +516,7 @@ type ClickParams = {
   /** 绕过指针拦截/命中核对仍派发（force）。 */
   force?: boolean;
   label?: string;
-  /** 只在 held 台账里出现：确认后要重放的动作类型；click 调用本身不带。 */
-  kind?: "double_click";
-  /** 宿主加的：用户要求提交前确认，这一任务里提交类按钮先拿住等确认。 */
-  confirmSubmit?: boolean;
-  /** 宿主从当前有效方法中提取的明确字段要求；不接模型自报。 */
-  formRequirements?: RequiredFormField[];
-  /** 扩展内部：用户点了确认后重放拿住的那一下；模型发来的参数里不会有（见 click 入口）。 */
-  fromUserConfirm?: boolean;
 };
-
-async function guardRequiredFormFields(tabId: number, input: FormFieldGuardInput): Promise<void> {
-  if (!input.requirements.length) return;
-
-  try {
-    let refusal: string | null;
-
-    const backendNodeId = input.target ? axBackendNodeFor(tabId, parseRef(input.target)) : undefined;
-
-    if (backendNodeId !== undefined) {
-      try {
-        refusal = await callOnBackendNode<string | null>(tabId, backendNodeId,
-          `function(input) { return (${inspectRequiredFormFields.toString()})(input, this); }`, [input], await isolatedReadContext(tabId));
-      } catch (error) {
-        if (!isDebuggerUnavailable(error)) throw error;
-        await ensureDomOps(tabId);
-        refusal = await callDom(tabId, inspectRequiredFormFields, [input]);
-      }
-    } else {
-      if (input.target) await ensureDomOps(tabId);
-      refusal = await callDom(tabId, inspectRequiredFormFields, [input]);
-    }
-
-    if (refusal !== null) throw new FillRefused(refusal || "无法核对要求字段，操作未执行。请重新读取页面并询问用户内容。");
-  } catch (error) {
-    throw notExecuted(error);
-  }
-}
-
-async function guardSubmitPoint(tabId: number, params: ClickParams, point: [number, number]): Promise<void> {
-  await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", point });
-}
 
 type DragEndpoint = {
   target?: string;
@@ -576,10 +529,7 @@ export type DragParams = {
   from: DragEndpoint;
   to: DragEndpoint;
   label?: string;
-  kind?: "drag";
 };
-
-type HoldParams = (ClickParams | DragParams) & { confirmationDocumentId?: string; confirmationExpiresAt?: number };
 
 /** 跟随打开的新标签页：url 只在读到时才带上。 */
 type OpenedTab = { tabId: number; url?: string };
@@ -595,35 +545,7 @@ type KeyEventParams = {
   text?: string;
 };
 
-type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog } | { clicked: false; held: true };
-
-/** held/arm 台账抽成纯数据层（shared/held-clicks.ts），决策逻辑可单测。 */
-const heldClicks = new HeldClicks<HoldParams>(LEAD_SESSION_ID);
-
-export function armDestructiveClick(sessionId: string = LEAD_SESSION_ID): void {
-  heldClicks.arm(sessionId);
-}
-
-/** 这个会话有没有拿住、正等用户确认的点击。 */
-export function hasPendingClick(sessionId: string = LEAD_SESSION_ID): boolean {
-  return heldClicks.hasPending(sessionId);
-}
-
-export function dropPendingClicks(sessionId: string = LEAD_SESSION_ID): void {
-  heldClicks.drop(sessionId);
-}
-
-/**
- * 页面交给另一个会话时，旧会话留在页面上的「确认 / 取消」一并收起：
- * 台账里的待放行动作已经作废，留着按钮只会让用户点了没反应。
- */
-export function withdrawPendingClicks(sessionId: string): void {
-  const had = heldClicks.hasPending(sessionId);
-  heldClicks.drop(sessionId);
-
-  if (!had) return;
-  void clearMarks(sessionId).catch(() => {}).then(() => releaseHold(sessionId)).catch(() => {});
-}
+type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog };
 
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   try {
@@ -783,135 +705,20 @@ export async function hideUserControlBanners(tabId?: number, owner?: string): Pr
   await renderControlBanner(tabId);
 }
 
-export async function resolveHeldClick(
-  action: "confirm" | "cancel",
-  sessionId: string = LEAD_SESSION_ID,
-): Promise<{ clicked: boolean }> {
-  const decision = heldClicks.resolve(action, sessionId);
-
-  if (decision.kind === "cancelled") {
-    const sid = decision.sessionId ?? sessionId;
-
-    try {
-      await clearMarks(sid);
-    } catch {
-      /* 没有标注可清 */
-    }
-
-    await releaseHold(sid);
-    await releaseHeldInputs(sid);
-
-    return { clicked: false };
-  }
-
-  if (decision.kind === "armOnce") {
-    // 没有待确认的实际参数，不给未来动作放行。
-    return { clicked: false };
-  }
-
-  // 确认：先松开拿住态，再由同一只手按台账里记录的动作真实派发
-  await releaseHold(decision.sessionId);
-
+/** 名牌「取消」：收起标注，松开停在目标上的手。 */
+export async function cancelMarkHold(sessionId: string = LEAD_SESSION_ID): Promise<void> {
   try {
-    const stored = decision.params;
-    if (!stored.confirmationDocumentId || !stored.confirmationExpiresAt || Date.now() >= stored.confirmationExpiresAt)
-      throw notExecuted(new Error("确认已过期或缺少页面身份，本次未执行。"));
-    await assertSameDocument(stored.tabId!, stored.confirmationDocumentId);
-
-    if ("from" in stored) {
-      await drag(stored, decision.sessionId);
-    } else if (stored.kind === "double_click") {
-      const result = await doubleClick({ ...stored, fromUserConfirm: true }, decision.sessionId);
-      if (!result.doubleClicked) return { clicked: false };
-    } else {
-      const result = await click({ ...stored, fromUserConfirm: true }, decision.sessionId);
-      if (!result.clicked) return { clicked: false };
-    }
-
-    return { clicked: true };
-  } finally {
-    heldClicks.drop(decision.sessionId);
-  }
-}
-
-/** destructive 目标：拿住不派发，把「确认后要重放的动作」记进台账，视觉锚（框/名牌双键）照旧。 */
-async function holdForConfirmation(
-  tab: chrome.tabs.Tab,
-  sessionId: string,
-  name: string,
-  stored: HoldParams,
-  visual: { target?: string; targetRect?: DomRect; point?: [number, number] },
-): Promise<void> {
-  const documentId = await assertObservedDocument(tab.id!, sessionId);
-  if (!documentId) throw notExecuted(new Error("无法绑定当前页面的确认，本次未执行。请接管页面完成。"));
-  heldClicks.hold(sessionId, { ...stored, tabId: tab.id!, confirmationDocumentId: documentId, confirmationExpiresAt: Date.now() + 60_000 });
-  await maybeActivateTab(tab, sessionId);
-  const tabId = tab.id!;
-  const cid = cursorId(sessionId);
-  const confirmLabel = confirmLabelForDestructive(name);
-
-  const actions = [
-    { id: "confirm" as const, label: confirmLabel },
-    { id: "cancel" as const, label: "取消" },
-  ];
-
-  // C 案：框（mark）留作视觉锚；键不在框外——cursor.mark 带 actions 时
-  // 光标自己飞到目标拿住，双键长在名牌上（与模型自绘 mark 同一形态，只有一套键）。
-  try {
-    if (visual.target) {
-      await mark({ target: visual.target, label: "待确认", actions }, sessionId);
-    } else if (visual.targetRect) {
-      await ensureCursor(tabId);
-      await callDom(
-        tabId,
-        (
-          r: DomRect,
-          l: string,
-          id: string,
-          a: Array<{ id: "confirm" | "cancel"; label: string }>,
-        ) => {
-          const cursor = window.__sideagent?.cursor?.for(id);
-
-          if (!cursor?.mark) throw new Error("cursor 未注入");
-          cursor.mark(r, l, undefined, a);
-        },
-        [visual.targetRect, "待确认", cid, actions],
-      );
-    } else if (visual.point) {
-      // 只有坐标没有元素：画不出框，手仍飞过去拿住（锚点取该位置的元素）
-      await ensureCursor(tabId);
-      await callDom(
-        tabId,
-        (x: number, y: number, id: string, a: Array<{ id: "confirm" | "cancel"; label: string }>) => {
-          const cursor = window.__sideagent?.cursor?.for(id);
-
-          if (!cursor?.hold) throw new Error("cursor 未注入");
-          cursor.hold(x, y, a);
-        },
-        [visual.point[0], visual.point[1], cid, actions],
-      );
-    }
+    await clearMarks(sessionId);
   } catch {
-    /* 画不出标注也先不派发：侧栏打「确认」仍可放行 */
+    /* 没有标注可清 */
   }
+
+  await releaseHold(sessionId);
 }
 
-async function nameOfClickTarget(
-  tabId: number,
-  params: ClickParams,
-): Promise<string> {
-  const labeled = params.label?.trim() ?? "";
-  const onPage = String((await pageNameOfClickTarget(tabId, params)) ?? "");
-
-  // 要不要先等用户确认，看页面上这个元素自己的名字：模型写的 label 只是说明，
-  // 「点击发送按钮」这样的描述不能让「发送」键绕过确认（2026-09-26 真实模型 5 次里 3 次这样直接发出）。
-  if (isDestructiveLabel(onPage)) return onPage;
-
-  // 用户要求提交前确认时同理：按页面上的「SIGN UP」判断，不按模型写的「填完后点按钮」。
-  if (isSubmitLabel(onPage)) return onPage;
-
-  if (isDestructiveLabel(labeled) || isSubmitLabel(labeled)) return labeled;
-  return onPage;
+/** 光标名牌上显示的目标名：先取页面上元素自己的名字，读不到再用模型写的 label。 */
+async function nameOfClickTarget(tabId: number, params: ClickParams): Promise<string> {
+  return (await pageNameOfClickTarget(tabId, params)) || (params.label?.trim() ?? "");
 }
 
 async function pageNameOfClickTarget(
@@ -963,7 +770,7 @@ async function pageNameOfClickTarget(
 async function resolvePointerTarget(
   tabId: number,
   params: ClickParams,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ point: [number, number]; targetRect?: DomRect }> {
   try {
     return await locatePointerTarget(tabId, params, beforeDispatch);
@@ -975,7 +782,7 @@ async function resolvePointerTarget(
 async function locatePointerTarget(
   tabId: number,
   params: ClickParams,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ point: [number, number]; targetRect?: DomRect }> {
   const target = params.target;
   let point = params.point;
@@ -1128,7 +935,7 @@ function isPrePressTargetError(e: unknown): boolean {
 async function confirmPointerTarget(
   tabId: number,
   target: string,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ point: [number, number]; targetRect: DomRect }> {
   try {
     return await checkPointerTarget(tabId, target, beforeDispatch);
@@ -1140,7 +947,7 @@ async function confirmPointerTarget(
 async function checkPointerTarget(
   tabId: number,
   target: string,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ point: [number, number]; targetRect: DomRect }> {
   const ref = parseRef(target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
@@ -1335,7 +1142,7 @@ async function callPointGuard(
 export async function hover(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ hovered: true }> {
   await beforeDispatch?.();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -1386,28 +1193,11 @@ export async function click(
     }
   })());
 
-  // Refuse missing required fields before pointer positioning can scroll the page.
-  await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", target: params.target, point: params.point });
+  const { point } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
-  const { point, targetRect } = await resolvePointerTarget(tabId, params, beforeDispatch);
+  if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
-  if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
-
-  await guardSubmitPoint(tabId, params, point);
   const name = await nameOfClickTarget(tabId, params);
-  const wasArmed = params.fromUserConfirm === true;
-
-  const needsConfirm = isDestructiveLabel(name) || isSubmitLabel(name);
-
-  if (needsConfirm && !wasArmed) {
-    await holdForConfirmation(tab, sessionId, name, { ...params }, { target: params.target, targetRect, point });
-
-    return { clicked: false, held: true };
-  }
-
-  if (needsConfirm && wasArmed) {
-    heldClicks.drop(sessionId);
-  }
 
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId, beforeDispatch);
@@ -1473,7 +1263,6 @@ export async function click(
 
       const pressing = (async () => {
         for (let n = 1; n <= clickCount; n++) {
-          await guardSubmitPoint(tabId, params, [x, y]);
           await beforeDispatch?.();
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mousePressed",
@@ -1542,7 +1331,6 @@ export async function click(
       if (target && button === "left" && clickCount === 1 && !force) {
         await ensureDomOps(tabId, beforeDispatch);
         const fallbackToken = await beginEffect(tabId, { point: [x, y] });
-        await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", target });
         await beforeDispatch?.();
         await callDom(
           tabId,
@@ -1589,10 +1377,9 @@ export async function click(
 
 type DoubleClickResult =
   | { doubleClicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog }
-  | { doubleClicked: false; dialog: OpenedDialog }
-  | { doubleClicked: false; held: true };
+  | { doubleClicked: false; dialog: OpenedDialog };
 
-type DragResult = { dragged: true; effect?: EffectReport } | { dragged: false; held: true };
+type DragResult = { dragged: true; effect?: EffectReport };
 
 /**
  * 真实双击：与 click 同一解析/确认/命中核对/effect 管线，CDP clickCount 1→2。
@@ -1601,7 +1388,7 @@ type DragResult = { dragged: true; effect?: EffectReport } | { dragged: false; h
 export async function doubleClick(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<DoubleClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1620,27 +1407,10 @@ export async function doubleClick(
     }
   })());
 
-  // Refuse missing required fields before pointer positioning can scroll the page.
-  await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", target: params.target, point: params.point });
+  const { point } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
-  const { point, targetRect } = await resolvePointerTarget(tabId, params, beforeDispatch);
-
-  if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
-  await guardSubmitPoint(tabId, params, point);
+  if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
   const name = await nameOfClickTarget(tabId, params);
-  const wasArmed = params.fromUserConfirm === true;
-
-  const needsConfirm = isDestructiveLabel(name) || isSubmitLabel(name);
-
-  if (needsConfirm && !wasArmed) {
-    await holdForConfirmation(tab, sessionId, name, { ...params, kind: "double_click" }, { target: params.target, targetRect, point });
-
-    return { doubleClicked: false, held: true };
-  }
-
-  if (needsConfirm && wasArmed) {
-    heldClicks.drop(sessionId);
-  }
 
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
@@ -1695,7 +1465,6 @@ export async function doubleClick(
 
       const effectToken = await effectPending;
       const btnMask = pressedButtonsMask(button);
-      await guardSubmitPoint(tabId, params, [x, y]);
       await beforeDispatch?.();
       const dialogWatch = watchDialog(tabId);
       let interrupted = false;
@@ -1708,7 +1477,7 @@ export async function doubleClick(
 
       const sequenceGuard = Object.assign(async () => {
         checkSequence();
-        await (nativeInputs % 2 ? beforeDispatch?.afterEffect : beforeDispatch)?.();
+        await beforeDispatch?.();
         checkSequence();
       }, {checkNow:checkSequence,noteEffect:() => {
         nativeInputs++;
@@ -1736,7 +1505,6 @@ export async function doubleClick(
         },sequenceGuard);
 
         if (interrupted) return undefined;
-        await guardSubmitPoint(tabId, params, [x, y]);
         await beforeDispatch?.();
         await sendCommand(tabId, "Input.dispatchMouseEvent", {
           type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 2, modifiers,
@@ -1831,18 +1599,6 @@ export async function drag(
 
   const name = params.label?.trim()
     || (params.from.target ? await nameOfClickTarget(tabId, { target: params.from.target }) : "");
-
-  const wasArmed = heldClicks.isArmed(sessionId);
-
-  if (isDestructiveLabel(name) && !wasArmed) {
-    await holdForConfirmation(tab, sessionId, name, { ...params, kind: "drag" }, { target: params.from.target, targetRect: from.targetRect, point: from.point });
-
-    return { dragged: false, held: true };
-  }
-
-  if (isDestructiveLabel(name) && wasArmed) {
-    heldClicks.drop(sessionId);
-  }
 
   await maybeActivateTab(tab, sessionId);
 
@@ -1958,7 +1714,7 @@ export async function drag(
 }
 
 export async function fill(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
@@ -1984,11 +1740,6 @@ export async function fill(
   if(params.expectedBackendNodeId!==undefined && backendNodeId!==params.expectedBackendNodeId) {
     throw notExecuted(new Error('原 AX 对象身份无法核对，填写未执行。'));
   }
-
-  const formGuard: FormFieldGuardInput = { requirements: params.formRequirements ?? [], action: "fill",
-    target: params.target, userValueProvided: params.userValueProvided, userValueHostname: params.userValueHostname };
-
-  await guardRequiredFormFields(tabId, formGuard);
 
   // 操作前在 scrollIntoView 之后取目标包围盒，动作边框持续到操作返回。
   let targetRect: DomRect | undefined;
@@ -2032,8 +1783,6 @@ export async function fill(
     if (targetRect) {
       if (!beforeDispatch) await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
     }
-
-    await guardRequiredFormFields(tabId, formGuard);
 
     // 2. 真实填充操作
     if(params.expectedDocumentId) {
@@ -2131,9 +1880,6 @@ export async function selectOption(
     tabId?: number;
     expectedDocumentId?: string;
     expectedBackendNodeId?: number;
-    formRequirements?: RequiredFormField[];
-    userValueProvided?: boolean;
-    userValueHostname?: string;
   },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
@@ -2161,11 +1907,6 @@ export async function selectOption(
   if (params.expectedBackendNodeId !== undefined && backendNodeId !== params.expectedBackendNodeId) {
     throw notExecuted(new Error("原 AX 对象身份无法核对，选择未执行。"));
   }
-
-  const formGuard: FormFieldGuardInput = { requirements: params.formRequirements ?? [], action: "fill",
-    target: params.target, userValueProvided: params.userValueProvided, userValueHostname: params.userValueHostname };
-
-  await guardRequiredFormFields(tabId, formGuard);
 
   if (backendNodeId !== undefined) {
     try {
@@ -2220,7 +1961,6 @@ export async function selectOption(
   }
 
   await ensureDomOps(tabId, beforeDispatch);
-  await guardRequiredFormFields(tabId, formGuard);
 
   await beforeDispatch?.();
   return await callDom(
@@ -2238,7 +1978,7 @@ export async function selectOption(
 }
 
 export async function typeText(
-  params: { text: string; tabId?: number; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string },
+  params: { text: string; tabId?: number; },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ typed: true }> {
@@ -2248,8 +1988,6 @@ export async function typeText(
   await assertObservedDocument(tab.id, sessionId);
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
-  await guardRequiredFormFields(tab.id, { requirements: params.formRequirements ?? [], action: "type",
-    userValueProvided: params.userValueProvided, userValueHostname: params.userValueHostname });
   await beforeDispatch?.();
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
 
@@ -2257,9 +1995,9 @@ export async function typeText(
 }
 
 export async function pressKey(
-  params: { key: string; tabId?: number; formRequirements?: RequiredFormField[] },
+  params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ pressed: true; dialog?: OpenedDialog } | { pressed: false; dialog: OpenedDialog }> {
   const info = resolveKey(params.key);
 
@@ -2293,22 +2031,6 @@ export async function pressKey(
 
   if (info.text !== undefined) rawKeyDown.text = info.text;
 
-  if (info.key === "Enter") {
-    await guardRequiredFormFields(tab.id, { requirements: params.formRequirements ?? [], action: "enter",
-      modifiedEnter: (info.modifiers | heldMods) !== 0 });
-  } else if (info.text !== undefined || rawKeyDown.commands?.includes("paste")) {
-    try {
-      await guardRequiredFormFields(tab.id, { requirements: params.formRequirements ?? [], action: "type",
-        userValueProvided: false });
-    } catch (error) {
-      if (error instanceof FillRefused) {
-        throw new FillRefused(`${error.message} 请改用 fill 一次填写用户提供的完整原话，不要逐键填写或粘贴。`);
-      }
-
-      throw error;
-    }
-  }
-
   await beforeDispatch?.();
   const keyboardTabId = tab.id;
   const dialogWatch = watchDialog(keyboardTabId);
@@ -2322,7 +2044,7 @@ export async function pressKey(
 
   const sequenceGuard = Object.assign(async () => {
     checkSequence();
-    await (nativeInputs === 1 ? beforeDispatch?.afterEffect : beforeDispatch)?.();
+    await beforeDispatch?.();
     checkSequence();
   }, {checkNow:checkSequence,noteEffect:() => {
     nativeInputs++;
@@ -2377,7 +2099,7 @@ export async function wheel(
   },
   sessionId: string = LEAD_SESSION_ID,
   checkCurrent: () => void = () => {},
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ wheeled: true; point: [number, number]; ackMs: number; attempts: number }> {
   await beforeDispatch?.();
   checkCurrent();
@@ -2422,15 +2144,12 @@ export async function wheel(
   let phase = "mouseMoved";
   let acknowledged = false;
 
-  const guardFor = (afterPrimary: boolean) => {
-    const approved = afterPrimary ? beforeDispatch?.afterEffect ?? beforeDispatch : beforeDispatch;
-    return Object.assign(async () => { checkCurrent(); await approved?.(); checkCurrent(); }, {checkNow: () => { checkCurrent(); approved?.checkNow?.(); }});
-  };
-  const send = async (event: Record<string, unknown>, timeout: number, afterPrimary = false) => {
+  const guardFor = () => Object.assign(async () => { checkCurrent(); await beforeDispatch?.(); checkCurrent(); }, {checkNow: () => { checkCurrent(); beforeDispatch?.checkNow?.(); }});
+  const send = async (event: Record<string, unknown>, timeout: number) => {
     checkCurrent();
     await assertSameDocument(tabId, documentId);
     checkCurrent();
-    await sendCommand(tabId, "Input.dispatchMouseEvent", event, guardFor(afterPrimary), timeout);
+    await sendCommand(tabId, "Input.dispatchMouseEvent", event, guardFor(), timeout);
     acknowledged = true;
     checkCurrent();
   };
@@ -2444,7 +2163,7 @@ export async function wheel(
     await send({ type: "mouseWheel", x, y, deltaX, deltaY, modifiers, pointerType: "mouse" }, ACK_MS);
     const ackMs = Date.now() - started;
     phase = "trailing wheel";
-    await send({ type: "mouseWheel", x, y, deltaX: 0, deltaY: 0, modifiers, pointerType: "mouse" }, ACK_MS, true);
+    await send({ type: "mouseWheel", x, y, deltaX: 0, deltaY: 0, modifiers, pointerType: "mouse" }, ACK_MS);
     heldOf(sessionId).pointer = [x, y];
 
     return { wheeled: true, point: [x, y], ackMs, attempts: 1 };
@@ -2941,7 +2660,7 @@ export async function html5DragAndDrop(
 export async function scroll(
   params: { dy?: number; toBottom?: boolean; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ atBottom: boolean }> {
   await beforeDispatch?.();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -2998,7 +2717,7 @@ export async function mark(
     motion?: "grow" | "boil";
   },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: ApprovalDispatchGuard,
+  beforeDispatch?: DispatchGuard,
 ): Promise<{ marked: true }> {
   await beforeDispatch?.();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -3130,7 +2849,7 @@ export async function mark(
 }
 
 /** clear_marks 工具：清除全部 mark 标注。受限页面本来就画不上标注，静默成功。 */
-export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: number, beforeDispatch?: ApprovalDispatchGuard): Promise<{ cleared: true }> {
+export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: number, beforeDispatch?: DispatchGuard): Promise<{ cleared: true }> {
   await beforeDispatch?.();
   const tab = await resolveWorkingTab(tabId, sessionId);
 

@@ -93,15 +93,6 @@ await check('action text lives in status entry not cursor',()=>window.roots[0].q
 await page.evaluate(()=>window.__sideagent.cursor.endAction('one','unknown'));
 await page.waitForTimeout(1800);
 await check('unknown outcome remains visible',()=>window.roots[0].querySelector('.xpage').textContent.includes('结果待确认'));
-await page.evaluate(()=>window.__sideagent.cursor.hold(450,140,[{id:'confirm',label:'确认'},{id:'cancel',label:'取消'}],'h1'));
-await page.waitForTimeout(300);
-await check('only approval shows local buttons',()=>{const c=window.roots[0].querySelector('.cursor.holding');
-
-return !!c&&getComputedStyle(c.querySelector('.label')).display==='flex'&&c.querySelectorAll('button').length===2});
-await page.screenshot({path:out+'/confirmation.png'});
-await page.evaluate(()=>window.roots[0].querySelector('.hold-action.confirm').focus());
-await page.keyboard.press('Enter');
-await check('keyboard approval sends real handler message',()=>window.sent.at(-1).type==='mark_action'&&window.sent.at(-1).action==='confirm');
 await page.evaluate(()=>{window.__sideagent.cursor.releaseHold();window.__sideagent.cursor.hide();window.__sideagent.cursor.setStatus({state:'done'})});
 await page.waitForTimeout(1700);
 await check('end hint expires',()=>window.__sideagent.crossPageState()===null);

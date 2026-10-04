@@ -62,7 +62,6 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
       }
 
       const next = redirectUrl(response, request.url);
-      if (next && opts?.beforeDispatch) throw new Error("重定向目标未经单独展示批准，请以新URL重新请求；首请求已发送，结果未知。");
 
       if (next) {
         hops += 1;

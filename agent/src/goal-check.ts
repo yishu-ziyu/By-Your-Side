@@ -71,11 +71,6 @@ export function claimsUnfinished(reply: string): boolean {
   return /还没(能|有)?(完成|点|收到|送达|到|确认|提交)|没能|未能|尚未(完成|收到|送达|确认)|没有(完成|收到|送达)|not (yet )?(done|finished|arrived|received|confirmed)|couldn'?t|could not|has(n'?t| not) arrived/i.test(reply);
 }
 
-/** 用户原话里要求「提交前让我确认」这类条件。命中时宿主让扩展把提交类点击先拿住等确认。 */
-export function asksConfirmBeforeSubmit(text: string): boolean {
-  return /(提交|发送|发出|订阅|报名|注册|下单|付款|支付).{0,6}前.{0,10}(确认|问我|问一下|让我看|给我看|过目)|先(让我|给我|跟我)?(确认|看一下|看看|过目)|确认(后|之后|以后)再(提交|发送|订阅|报名)|before (you )?(submit|send|sign|subscribe)|(let me|i want to) (confirm|review|check)[^.]{0,20}(first|before)|ask me before|confirm with me/i.test(text);
-}
-
 /** 核对模型的回答：status 必须是四种之一，remaining、cause 可缺省。 */
 function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "blocked"; remaining?: string; cause?: unknown; correction?: string } {
   if (!value || typeof value !== "object") return false;

@@ -439,7 +439,6 @@ describe('A05-08 接续请求去重与视图补取（真实 ConversationManager 
       },
       fleet: { teamView: () => null, isGroupHeld: () => false, reset: vi.fn(), setTabCoordinator: vi.fn(), list: () => [] },
       rpc: { rejectAll: vi.fn() },
-      consent: { cancelAll: vi.fn(), bindContext: vi.fn(), list: () => [] },
       dispose: vi.fn(),
       handleMessage: vi.fn(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

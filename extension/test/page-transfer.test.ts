@@ -77,7 +77,7 @@ it("旧工作指针已离开该页时，原所有者在移交窗口内的显式�
   let oldOwnerRun: unknown;
   let oldOwnerDirect: unknown;
 
-  const info = await control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, () => {}, async () => {
+  const info = await control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, async () => {
     // 第 2 次权限复核发生在排空之后、归属写入之前——原反例正是在这里放行了旧所有者的关闭。
     if (++checks !== 2) return;
     oldOwnerRun = await control.run(lead, async () => {
@@ -128,7 +128,7 @@ it("移交一个页面时，同一会话的另一页仍可操作", async () => {
   let otherPage: string | undefined;
   let otherPageError: unknown;
 
-  await control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, () => {}, async () => {
+  await control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, async () => {
     if (otherPage !== undefined || otherPageError !== undefined) return;
     otherPage = await control.run(lead, async () => {
       await state.guardToolAccess("fill", lead, 2);
@@ -154,7 +154,7 @@ it("工作指针仍在待交页的原所有者，在别的页仍可完成操作�
   let samePageGuard: unknown;
   let samePageSwitch: unknown;
 
-  await control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, () => {}, async () => {
+  await control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, async () => {
     if (otherGuard !== undefined) return;
     // run(A) 不按成员整体拦截：同一会话的非交接页照常进入执行。
     otherGuard = await control.run(lead, async () => {
@@ -192,7 +192,7 @@ it("两个会话同时接手同一页时只有一个成功，围栏随交接释�
 
   const gate = new Promise<void>((resolve) => { release = resolve; });
 
-  const first = control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, () => {}, async () => { await gate; });
+  const first = control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, async () => { await gate; });
   await tick();
   const second = await control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, c).then(() => "ok", (error: unknown) => String(error));
   expect(second).toMatch(/正在.*接手|正在移交/);
@@ -214,7 +214,7 @@ it("接手失败、权限变化或页面中途关闭都释放围栏，不留下�
   const { state, control, lead } = await setup();
   const b = state.executionKey("B", "main");
 
-  await expect(control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, () => {}, async () => { throw new Error("页面现在归你"); }))
+  await expect(control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, async () => { throw new Error("页面现在归你"); }))
     .rejects.toThrow(/页面现在归你/);
   expect((await state.getTabResource(1))?.conversationId).toBe("A");
   expect(await state.isTabTransferring(1)).toBe(false);
@@ -223,7 +223,7 @@ it("接手失败、权限变化或页面中途关闭都释放围栏，不留下�
   await expect(control.manage({ action: "claim", tabId: 9, expectedConversationId: "A" }, b)).rejects.toThrow(/No tab/);
   expect(await state.isTabTransferring(9)).toBe(false);
 
-  await expect(control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, () => {}, async () => {
+  await expect(control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, async () => {
     tabs.delete(1);
     removedListener?.(1);
     await tick();

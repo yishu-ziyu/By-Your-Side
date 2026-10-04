@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { requiresControlGate, needsConsentTicket } from "../../shared/effect-policy.js";
+import { requiresControlGate } from "../../shared/effect-policy.js";
 import { WRITE_TOOL_SET, WRITE_TOOLS } from "../../shared/control.js";
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
 import {
@@ -161,14 +161,13 @@ describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之
     expect(decideCdpCommandParams(undefined).allowed).toBe(true);
   });
 
-  it("新能力全部是写闸门、在 WRITE_TOOLS ∩ TOOL_NAMES 内、不需求 consent", () => {
+  it("新能力全部是写闸门、在 WRITE_TOOLS ∩ TOOL_NAMES 内", () => {
     const names: string[] = ["cdp", "upload_file", "double_click", "drag"];
     const toolNames = TOOL_NAMES as readonly string[];
     const writeTools = WRITE_TOOLS as readonly string[];
 
     for (const name of names) {
       expect(requiresControlGate(name)).toBe(true);
-      expect(needsConsentTicket(name)).toBe(false);
       expect(WRITE_TOOL_SET.has(name as ToolName)).toBe(true);
       expect(toolNames).toContain(name);
       expect(writeTools).toContain(name);

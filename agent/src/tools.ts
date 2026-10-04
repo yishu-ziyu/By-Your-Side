@@ -17,10 +17,8 @@ import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
-import { needsConsentTicket, requiresControlGate } from "../../shared/effect-policy.js";
-import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
+import { requiresControlGate } from "../../shared/effect-policy.js";
 import { RepeatRefusedError } from "../../shared/task-next-step.js";
-import type { ConsentOutcome } from "./fetch-consent.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type ProgramStep } from "./browser-program.js";
 import { saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
@@ -129,24 +127,10 @@ const MODEL_TOOL_OF: Record<string, string> = {
 
 export const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
 
-/**
- * 需要用户确认的工具（今天只有会改服务端状态的 fetch）走这个回调：
- * 未接线 = 没有侧栏入口，直接拒绝；接线了就在等用户选择前不发任何 RPC。
- */
-export type ConsumeConsent = (
-  name: string,
-  params: Record<string, unknown>,
-  opts: { signal?: AbortSignal },
-) => ConsentOutcome | boolean | Promise<ConsentOutcome | boolean>;
-
-function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
-  return typeof result === "boolean" ? { allowed: result } : result;
-}
-
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger; /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger; /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   const files = execution?.files;
   // 扩展里没有本机伴随进程：调用必然失败的工具（本机文件、剪贴板、上传授权）不列给模型，有真实 fs 的本机循环照常提供。
@@ -206,7 +190,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     };
 
     assertNotAborted();
-    // 进入这一步时的执行闸门状态；等用户确认之后再复核一次，避免 TOCTOU。
+    // 进入这一步时的执行闸门状态。
     const staleStep = () => gated && (!execution!.canWrite(scope?.toolCallId) || epoch !== execution!.epoch());
 
     if (staleStep()) {
@@ -214,7 +198,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。");
     }
 
-    // 需要确认的请求：先等用户选择，获准后才发 RPC。参数用获准的副本，不再读外部对象。
     let callParams = rpc.resolvePageParams?.(name, params, sid) ?? params;
 
     const assertCall = (target: Record<string, unknown>) => {
@@ -227,36 +210,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }
     };
 
-    if (needsConsentTicket(name, params)) {
-      const consumeConsent = execution?.consumeConsent;
-
-      if (!consumeConsent) {
-        rejectCall();
-        throw new Error(CONSENT_REQUIRED_ERROR);
-      }
-
-      // 明知会被执行闸门拒绝的请求，不拿去占用户的确认。
-      assertCall(callParams);
-      const outcome = consentOutcome(await consumeConsent(name, params, { signal }));
-
-      if (!outcome.allowed) {
-        if (outcome.declined && sdkId) rpc.markCallDeclined?.(sdkId);
-        else rejectCall();
-        throw new Error(outcome.reason ?? CONSENT_REQUIRED_ERROR);
-      }
-
-      if (outcome.params) callParams = outcome.params;
-
-      if (staleStep()) {
-        rejectCall();
-        throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。");
-      }
-
-      // 等用户点完可能已经有新的执行事实到达，再核一次。
-      assertCall(callParams);
-    } else {
-      assertCall(callParams);
-    }
+    assertCall(callParams);
 
     if (name === "js") {
       try { assertGenericJsAllowed(); }
@@ -469,7 +423,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch, window, document or Blob); page JavaScript belongs inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/' + (unavailableInRuntime.has("paste") ? '' : 'paste/') + 'html5Drag' + (unavailableInRuntime.has("upload_file") ? '' : ', and browser.uploadFile({target,paths})') + '; browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
+      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch, window, document or Blob); page JavaScript belongs inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/' + (unavailableInRuntime.has("paste") ? '' : 'paste/') + 'html5Drag' + (unavailableInRuntime.has("upload_file") ? '' : ', and browser.uploadFile({target,paths})') + '; browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -649,13 +603,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("click", params)) as ToolContract["click"]["data"];
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
 
-        if ("held" in data && data.held) {
-          return textResult(
-            `Held click on ${what}. The cursor is holding the target with confirm/cancel buttons on its name pill. Wait for the user. Do not click the site's own delete control again, and do not claim you already marked it.`,
-            data,
-          );
-        }
-
         const dialog = "dialog" in data ? data.dialog : undefined;
 
         // 点击弹出了原生对话框：点击已送达，页面在等对话框（读页会卡住），先接受或取消它。
@@ -678,7 +625,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "double_click",
       label: "Double click",
-      description: 'Double-click an element in the working tab using REAL browser input (CDP clickCount 1→2), never synthetic DOM events. Provide target ("@N" ref, "loc=css:...", raw CSS, xpath=..., text=...) or point [x,y]. Destructive targets require user confirmation first, exactly like click. The result reports effect evidence when measurable and explicitly says when only input dispatch is confirmed.',
+      description: 'Double-click an element in the working tab using REAL browser input (CDP clickCount 1→2), never synthetic DOM events. Provide target ("@N" ref, "loc=css:...", raw CSS, xpath=..., text=...) or point [x,y]. The result reports effect evidence when measurable and explicitly says when only input dispatch is confirmed.',
       parameters: Type.Object({
         target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:...", raw CSS, xpath=..., or text=...' })),
         point: Type.Optional(viewportPoint({ description: "Viewport [x, y] coordinates" })),
@@ -701,14 +648,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("double_click", params)) as ToolContract["double_click"]["data"];
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
 
-        if ("held" in data && data.held) {
-          return textResult(
-            `Held double-click on ${what}. The cursor is holding the target with confirm/cancel buttons on its name pill. Wait for the user.`,
-            data,
-          );
-        }
-
-        if ("dialog" in data && data.dialog) return textResult(`${data.doubleClicked ? "Native double-click input dispatched" : "Double-click interrupted before its full input sequence"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. Query dialog_info and request a separate approval to handle it.`, data);
+        if ("dialog" in data && data.dialog) return textResult(`${data.doubleClicked ? "Native double-click input dispatched" : "Double-click interrupted before its full input sequence"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. Query dialog_info, then use accept_dialog or dismiss_dialog as the user asked.`, data);
 
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
@@ -723,7 +663,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "drag",
       label: "Drag",
-      description: 'Drag with the real browser pointer: press at from, move along a bounded path, release at to. from/to each take target ("@N", "loc=css:...", raw CSS, xpath=..., text=...) or viewport point [x,y]. Works for sortable lists, sliders, cards and pointer-driven canvases; never dispatches synthetic DOM drag events. Destructive source targets require user confirmation first. Effect evidence is measured at the drop point.',
+      description: 'Drag with the real browser pointer: press at from, move along a bounded path, release at to. from/to each take target ("@N", "loc=css:...", raw CSS, xpath=..., text=...) or viewport point [x,y]. Works for sortable lists, sliders, cards and pointer-driven canvases; never dispatches synthetic DOM drag events. Effect evidence is measured at the drop point.',
       parameters: Type.Object({
         from: Type.Object({
           target: Type.Optional(Type.String({ description: 'Source locator (@N / loc=css: / CSS / xpath= / text=)' })),
@@ -737,10 +677,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("drag", params)) as ToolContract["drag"]["data"];
-
-        if ("held" in data && data.held) {
-          return textResult("Held drag. The cursor is holding the source with confirm/cancel buttons on its name pill. Wait for the user.", data);
-        }
 
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const from = params.from.target ?? (params.from.point ? `(${params.from.point[0]}, ${params.from.point[1]})` : "?");
@@ -811,7 +747,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "key_down",
       label: "Key down",
-      description: 'Disabled by the strict host boundary. Use press_key for a complete key pair or ask the user to take over.',
+      description: 'Press and hold a key (e.g. "Shift", "ControlOrMeta", "a"). Pair with key_up or release_held_inputs. Prefer press_key for ordinary typing chords.',
       parameters: Type.Object({
         key: Type.String({ minLength: 1, maxLength: 64 }),
       }),
@@ -839,7 +775,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "release_held_inputs",
       label: "Release held inputs",
-      description: "Disabled for model calls: held state is implicit. Internal stop cleanup releases inputs; use complete press_key pairs.",
+      description: "Release all keys and mouse buttons still held for this session (safe after cancel/error).",
       parameters: Type.Object({}),
       execute: async (_id) => {
         const data = (await call("release_held_inputs", {})) as ToolContract["release_held_inputs"]["data"];
@@ -1013,7 +949,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "accept_dialog",
       label: "Accept JS dialog",
-      description: "Accept the current webpage alert/confirm/prompt (optional promptText). Returns accepted:false when none. Does NOT click browser permission/device prompts. Confirm/prompt is not business authorization for dangerous ops.",
+      description: "Accept the current webpage alert/confirm/prompt (optional promptText). Returns accepted:false when none. Does NOT click browser permission/device prompts.",
       parameters: Type.Object({
         promptText: Type.Optional(Type.String({ maxLength: 4000 })),
       }),
@@ -1169,7 +1105,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("press_key", params)) as ToolContract["press_key"]["data"];
 
-        if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. Query dialog_info and request a separate approval to handle it.`, data);
+        if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. Query dialog_info, then use accept_dialog or dismiss_dialog as the user asked.`, data);
 
         return textResult(`Pressed ${params.key}.`, data);
       },

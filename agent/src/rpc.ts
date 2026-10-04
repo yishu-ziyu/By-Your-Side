@@ -59,7 +59,7 @@ interface DispatchedCall {
   name: ToolName;
   sessionId?: string;
   startedAt: number;
-  state: "preparing" | "sent" | "timed_out" | "disconnected" | "resolved" | "rejected" | "declined" | "repeat_refused";
+  state: "preparing" | "sent" | "timed_out" | "disconnected" | "resolved" | "rejected" | "repeat_refused";
   fact?: ToolExecutionFact;
   /** 缺省页可能变化的调用：发出时的设置序号与出站参数，供回执比对新旧。 */
   targetSeq?: number;
@@ -122,9 +122,7 @@ export class ToolRpc {
   private pageTargets = new Map<string, { tabId: number | null; seq: number }>();
   private pageTargetSeq = 0;
 
-  /** 出站前由会话补的宿主参数（例如用户要求提交前确认时给点击带上 confirmSubmit）；模型不能自己设。 */
   beforeCall?: () => Promise<void>;
-  decorateParams?: (name: ToolName, params: Parameters<ToolRpc["call"]>[1], sessionId?: string) => Parameters<ToolRpc["call"]>[1] | Promise<Parameters<ToolRpc["call"]>[1]>;
 
   constructor(send?: RpcSend) {
     this.sendFn = send ?? null;
@@ -250,17 +248,6 @@ export class ToolRpc {
     if (entry && entry.state === "preparing") entry.state = "rejected";
   }
 
-  /** 用户在授权卡上点了「拒绝」：动作前被拒，且是用户的选择。 */
-  markCallDeclined(id: string): void {
-    const entry = this.dispatched.get(id);
-
-    if (entry && entry.state === "preparing") entry.state = "declined";
-  }
-
-  wasDeclined(id: string): boolean {
-    return this.dispatched.get(id)?.state === "declined";
-  }
-
   /** 重复一步已成功的写入被执行闸门拦下：没执行，也不是失败。 */
   markCallRepeatRefused(id: string): void {
     const entry = this.dispatched.get(id);
@@ -309,16 +296,7 @@ export class ToolRpc {
     // 缺省页在出站这一刻落进参数：之后用户切到别的页也不会改这次调用的目标。
     let outParams = this.resolvePageParams(name, params, sessionId);
 
-    try {
-      if (this.decorateParams) {
-        const decorated = this.decorateParams(name, outParams, sessionId);
-        outParams = decorated instanceof Promise ? await decorated : decorated;
-      }
-
-      if (signal?.aborted) throw new Error("操作已取消，尚未执行");
-    } catch (error) {
-      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { executionFact: "not_executed" as const });
-    }
+    if (signal?.aborted) throw Object.assign(new Error("操作已取消，尚未执行"), { executionFact: "not_executed" as const });
 
     const prepared = sdkId ? this.dispatched.get(sdkId) : undefined;
 
@@ -445,7 +423,7 @@ export class ToolRpc {
     for (const [key, entry] of this.dispatched) {
       if (pendingIds.has(key) || pendingIds.has(entry.id)) continue;
 
-      if (entry.state === "resolved" || entry.state === "rejected" || entry.state === "declined" || entry.state === "repeat_refused") droppable.push(key);
+      if (entry.state === "resolved" || entry.state === "rejected" || entry.state === "repeat_refused") droppable.push(key);
     }
 
     for (const key of droppable) {
@@ -514,19 +492,6 @@ export class ToolRpc {
       err.executionFact = fact;
       entry.reject(err);
     }
-
-    return true;
-  }
-
-  /**
-   * 被拿住等确认的点击，用户确认后由扩展补上了：按原调用身份发一条晚到回执，账本把那一下从「未知」改为已执行。
-   * 只认已正常返回（拿住）的那次调用；找不到就忽略。
-   */
-  confirmHeldResult(id: string, ok: boolean): boolean {
-    const disp = this.dispatched.get(id);
-
-    if (!disp || disp.state !== "resolved" || (disp.name !== "click" && disp.name !== "double_click")) return false;
-    this.fireLateResult({ id, toolCallId: disp.sdkId, name: disp.name, sessionId: disp.sessionId, ok, data: undefined, error: ok ? undefined : "用户确认后补点没有完成", executionFact: ok ? "executed" : "not_executed" });
 
     return true;
   }

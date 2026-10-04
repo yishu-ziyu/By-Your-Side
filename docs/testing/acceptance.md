@@ -6,19 +6,11 @@
 
 Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 为扩展宿主显式注入临时文件文档，覆盖记忆、待判断记忆和任务记录的真实锁与提交授权校验；生产仍使用 IndexedDB。不得以没有 IndexedDB 的 Node 环境跳过记忆钩子或放宽原协议断言。
 
-记忆误分类定点：`npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=21,21m,21p,21mix,21split`；合法误分类、缺失/畸形分类、个人/临时/混合消息、分离片段反例、确认前后写入和同站/异站带回，证据见[验收](../evals/20261003-memory-classification.md)。真实模型仍通过同脚本 `--model=...` 定点核对。提交前字段规则用 `--scripted --only=22,22b,22scope,22override,22edge,22negative,22memory`，核对服务器零POST、用户原文续办及范围/删除/临时覆盖（含“备注留空”，不用固定说“这次”），见[验收](../evals/20261003-method-form-enforcement.md)。`--model=... --only=22live`验证缺内容先问、用户补原文后仅一次提交；`--scripted --only=22fetch`另查小写POST（前提受阻不算通过）。
-
-记忆替换与撤销：`node --import tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=22replace`。实际侧栏记住、替换、撤销后，在新会话检查缺字段零提交和补原文精确一次提交。日常构建哈希须保持一致。
-
-22 组（脚本模型）确认卡共用 `scripts/acceptance/real-path/approval-plan.mts`：模型发起的卡须与当前任务脚本步骤逐项相同（扩展补充的标签页、字段规则等参数除外），且每个要写入的文字值在卡上原样可见（10-04 起卡上不再显示整段原始参数），宿主只可读练习站页面或接管练习站标签页；其余拒绝并记测量失败，逐卡存 `consent-log.json`。故意越权的脚本步骤照常放行，由服务器计数检验扩展防线。改规则后先跑 `npx tsx scripts/acceptance/real-path/approval-plan.replay.mts` 用 10-03 存档卡重放；`--inject-undeclared` 让脚本模型多填一个未声明的备注值，必须以测量失败结束。见[验收](../evals/20261004-shared-approval-plan.md)。脚本模型替代提供方，不替代扩展或服务器；见[验收](../evals/20261003-memory-rule-replacement.md)。
+记忆误分类定点：`npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=21,21m,21p,21mix,21split`；合法误分类、缺失/畸形分类、个人/临时/混合消息、分离片段反例、确认前后写入和同站/异站带回，证据见[验收](../evals/20261003-memory-classification.md)。真实模型仍通过同脚本 `--model=...` 定点核对。`--model=... --only=22live`验证模型按记住的方法缺内容先问、用户补原文后仅一次提交。脚本模型的 22 组（提交前字段核对）已随该核对于 10-04 删除。
 
 ## 正式入口
 
-安全逐次确认：`node --import tsx scripts/acceptance/real-path/security-confirmation.mts --headless` 经真实设置页、offscreen agent 和侧栏请求/选择，按完整动作参数及新 requestId 核对 click。宿主任务观察会请求 snapshot({tabId,decision:true})，目标核验还会请求 snapshot/read_element；夹具只批准当前练习页的精确读取，逐卡留存参数与服务器提交计数，未知动作即失败。辅助执行器反例见 `scripts/acceptance/security-confirmation.mts`，不得替代前述日常入口。
-
-无输入字段的练习页点击仅接受宿主附加的空formRequirements与userValueProvided:false；非空规则、值来源true或额外参数均失败，不修改生产字段约束。
-
-- `node --import tsx scripts/acceptance/real-path/north-star-research.mts --headless --scripted`：博客、维基、X、Flomo 四站隔离基线；N1 正常、N2 慢保存重试（10-04 起判定：拦下的重复不算失败、保存点击认出 POST，见[验收](../evals/20261004-honest-completion.md)）、N3 拒绝写入，产物在 `out/acceptance/real-path/*-north-star/`；增加[信任网站验收](../evals/20261004-trusted-read-sites.md)：N4 首轮按钮信任、第二词只确认写入，N5 陌生站拒绝零请求，N6 设置移除后恢复读取卡（N5/N6 预置 storage 仅为准备捷径）；支持 `--only=N1,N2,N3,N4,N5,N6`、`--rejudge=<产物目录>` 及 `--self-test-judges` 反例重判，信任场景仅用脚本模型，产物含确认卡与设置页截图，`--model=provider/id` 另需真实模型授权（[标准](../evals/20261004-north-star-cross-site.md)）。
+- `node --import tsx scripts/acceptance/real-path/north-star-research.mts --headless --scripted`：博客、维基、X、Flomo 四站隔离基线；N1 正常一词（全程零张批准卡、Flomo 恰好一条且正文一致、在维基搜索框按回车提交表单），N2 慢保存重试（拦下的重复不算失败、保存点击认出 POST，见[验收](../evals/20261004-honest-completion.md)），见[去掉批准卡验收](../evals/20261004-remove-approvals.md)；支持 `--only=N1,N2`、`--rejudge=<产物目录>` 及 `--self-test-judges` 反例重判，产物在 `out/acceptance/real-path/*-north-star/`，`--model=provider/id` 另需真实模型授权（[标准](../evals/20261004-north-star-cross-site.md)）。
 - `npm run accept:browser`：浏览器主链。
 - `npm run accept:capability`：浏览器能力对齐。
 - `npm run accept:real-path`：一次跑完全部真实路径用例（见下节），汇总写 `out/acceptance/real-path/summary-<时间>.json`；`-- --only=a,b` 为过滤轮，恒不算整轮通过。
@@ -67,10 +59,9 @@ npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark --v
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=barge-in --model=zai-coding-cn/glm-5.3-flash # 长回答念到一半插话：旧回答停声、不抢话，新问题照常回答
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录
 npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=after [--only=main,demo,voice-nokey,voice-mic,voice-conn,voice-ready] # 09-26 实拍的 10 个界面问题，每步截图
-npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only=real-confirm --real-model=stepfun/step-3.7-flash # 真实模型：等页面确认时这一轮会不会结束
 ```
 
-`ux-fixes.mts` 只装扩展，模型换成本机脚本模型 `real-path/scripted-model.mts`（OpenAI 兼容，按任务原话里的关键词回写好的正文、工具调用或错误码），像用户一样在设置页选「自定义地址」填写，所以工具调用、宿主核验、账本和页面标注都是产品自己在跑。判据只看用户看得到的东西：侧栏文字里不得出现工具名、元素编号、内部占位、原始错误和账本口吻，页面上的确认按钮要在「发送」键旁边看得见且点了真的提交。语音组填真 key 或一把服务端不认的 key 看连不上的样子；`demo` 组原靠注册伴随进程取得技能存储看示范记录；本机模式退役后驱动不再注册，扩展里没有技能存储、示范入口隐藏，这一组要等技能接进扩展后改写。产物在 `out/acceptance/ux-fixes/<phase>/`。
+`ux-fixes.mts` 只装扩展，模型换成本机脚本模型 `real-path/scripted-model.mts`（OpenAI 兼容，按任务原话里的关键词回写好的正文、工具调用或错误码），像用户一样在设置页选「自定义地址」填写，所以工具调用、宿主核验、账本和页面标注都是产品自己在跑。判据只看用户看得到的东西：侧栏文字里不得出现工具名、元素编号、内部占位、原始错误和账本口吻（10-04 起授权卡与页面待确认两组已删除）。语音组填真 key 或一把服务端不认的 key 看连不上的样子；`demo` 组原靠注册伴随进程取得技能存储看示范记录；本机模式退役后驱动不再注册，扩展里没有技能存储、示范入口隐藏，这一组要等技能接进扩展后改写。产物在 `out/acceptance/ux-fixes/<phase>/`。
 
 `real-path/harness.mts` 是共用驱动：隔离的无窗口 Chrome、真侧栏、只装扩展（从当前源码构建到临时目录，agent 跑在 offscreen 文档里，不注册本机伴随进程）、真模型或脚本模型。不碰日常 Chrome 和 `extension/dist`。每条用例只看结果（页面、练习站收到的请求、侧栏状态、日常数据目录），产物在 `out/acceptance/real-path/<时间>-<用例>/`。`launchRealPath({ microphoneWav })` 用 WAV 充当麦克风（只放一遍），语音模型和断句都是真的。`withoutNativeHost` 参数保留只为兼容，传不传都一样；`close()` 返回的 `hostPids` 恒为空。验收文件：`docs/evals/20260923-real-path-first-case.md`、`docs/evals/20260923-repo-cleanup.md`。
 
@@ -114,6 +105,6 @@ npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only
 
 真实路径的临时Linux Chrome沿用隔离验收的`--no-sandbox`参数，适配禁止非特权namespace的CI runner；不改变日常浏览器或产品权限。启动失败保留Chrome stderr及spawn错误，调试端口等待不延长。
 
-原生弹窗专项：`node --import tsx scripts/acceptance/dialog-recovery.mts --headless` 隔离构建当前源码，经真实侧栏逐次批准核对原生 confirm/prompt 与恢复；证据在 `out/dialog-recovery/`，不是供应商模型整链路。时间框定点：`page-readouts.mts --headless --only=range` 核对原生子框、非法格式保值和原范围警告，本地夹具每次通过真实侧栏批准，保存完整参数；`--live` 的授权上下文尚待适配。
+原生弹窗专项：`node --import tsx scripts/acceptance/dialog-recovery.mts --headless` 隔离构建当前源码，核对原生 confirm/prompt 与恢复（10-04 起不再经批准卡，7 例）；证据在 `out/dialog-recovery/`，不是供应商模型整链路。时间框定点：`page-readouts.mts --headless --only=range` 核对原生子框、非法格式保值和原范围警告，本地夹具直接执行、不再经批准卡；`--live` 尚待适配。
 
 #22只读脚本专案后置：`readonly-script.mts --headless`仅草拟未来专用工具的验收契约，产品工具尚未实现、脚本未运行，不作为发布入口。求值标记不能覆盖返回对象序列化的实际副作用，见[实验失败](../research/20261003-readonly-js.md)；后置安排不阻塞其他功能。

@@ -17,7 +17,6 @@
     "@sideagent/agent": "file:../agent",
     "dompurify": "3.4.16",
     "lucide": "1.39.0",
-    "marked": "18.0.11",
-    "tldts": "7.4.16"
+    "marked": "18.0.11"
   }
 }

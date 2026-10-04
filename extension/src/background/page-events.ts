@@ -57,10 +57,6 @@ import {
 
 const ledger = createPageEventLedger();
 
-let dialogSequence = 0;
-
-const dialogIdentities = new Map<number, number>();
-
 const enabled = new Set<number>();
 
 const armTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -168,7 +164,6 @@ async function onDebuggerEvent(tabId: number, method: string, params: Record<str
     const defaultPrompt = typeof params.defaultPrompt === "string" ? params.defaultPrompt : undefined;
 
     setPendingDialog(ledger, { type, message, tabId, defaultPrompt, openedAt: Date.now() });
-    dialogIdentities.set(tabId, ++dialogSequence);
 
     for (const notify of [...(dialogWatchers.get(tabId) ?? [])]) notify({ type, message, ...(defaultPrompt === undefined ? {} : { defaultPrompt }) });
 
@@ -177,7 +172,6 @@ async function onDebuggerEvent(tabId: number, method: string, params: Record<str
 
   if (method === "Page.javascriptDialogClosed") {
     clearPendingDialog(ledger, tabId);
-    dialogIdentities.delete(tabId);
 
     return;
   }
@@ -530,14 +524,6 @@ export function watchDialog(tabId: number): DialogWatch {
   };
 }
 
-/** Native event identity: readable even while the dialog pauses page scripts. */
-export function readDialogApprovalState(tabId: number): string | null {
-  const dialog = pendingDialog(ledger, tabId);
-  const identity = dialogIdentities.get(tabId);
-
-  return dialog && identity !== undefined ? JSON.stringify({ identity, dialog }) : null;
-}
-
 export function readDialogInfo(tabId: number) {
   const dialog = pendingDialog(ledger, tabId);
 
@@ -575,7 +561,6 @@ export async function handleJsDialog(
 
   if (pendingDialog(ledger, tabId) === dialog) {
     clearPendingDialog(ledger, tabId);
-    dialogIdentities.delete(tabId);
   }
 
   return {

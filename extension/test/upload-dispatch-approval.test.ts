@@ -9,7 +9,7 @@ vi.mock('../src/background/exec/effect.js',()=>({beginEffect:vi.fn(),collectEffe
 vi.mock('../src/background/exec/input.js',()=>({notExecuted:(error:Error)=>Object.assign(error,{executionFact:'not_executed'})}));
 import {setFilesOnObjectId,setFilesOnBackendNodeId} from '../src/background/exec/upload.js';
 afterEach(()=>vi.clearAllMocks());
-describe('file upload approval at dispatch',()=>{
+describe('file upload dispatch guard',()=>{
   it.each([false,true])('cancellation after setup blocks files/events and cleans listeners (clear=%s)',async clear=>{
     let revoked=false;const writes:string[]=[];
     const guard=Object.assign(async()=>{if(revoked)throw Object.assign(new Error('revoked'),{executionFact:'not_executed'});},{checkNow:()=>{}});
@@ -26,23 +26,7 @@ describe('file upload approval at dispatch',()=>{
     expect(writes.some(write=>write==='DOM.setFileInputFiles'||write.includes('el.files =')||write.includes('dispatchEvent'))).toBe(false);
     expect(writes.some(write=>write.includes('removeEventListener')&&!write.includes('dispatchEvent'))).toBe(true);
   });
-  it('completes fixed-target events after its own approved file mutation',async()=>{
-    let changed=false,events=0;
-    const phase=Object.assign(async()=>{}, {checkNow:()=>{}});
-    const primary=Object.assign(async()=>{if(changed)throw new Error('full context changed');},{checkNow:()=>{},afterEffect:phase});
-    mocks.sendCommand.mockImplementation(async(_tab:number,method:string,args:Record<string,unknown>,dispatch?:typeof primary)=>{
-      await dispatch?.();dispatch?.checkNow?.();
-      if(method==='DOM.setFileInputFiles'){changed=true;return {};}
-      if(method==='Runtime.callFunctionOn'){
-        if(String(args.functionDeclaration).includes('dispatchEvent')){events++;return {result:{value:[{name:'allowed.txt',size:3}]}};}
-        return {result:{value:true}};
-      }
-      return {};
-    });
-    await expect(setFilesOnObjectId(12,'fixed-node',['/tmp/allowed.txt'],primary)).resolves.toEqual([{name:'allowed.txt',size:3}]);
-    expect(changed).toBe(true);expect(events).toBe(1);
-  });
-  it('releases the resolved chooser object even when approval is revoked',async()=>{
+  it('releases the resolved chooser object even when the dispatch is revoked',async()=>{
     const methods:string[]=[];
     const guard=Object.assign(async()=>{throw Object.assign(new Error('revoked'),{executionFact:'not_executed'});},{checkNow:()=>{}});
     mocks.sendCommand.mockImplementation(async(_tab:number,method:string,args:unknown,dispatch?:typeof guard)=>{

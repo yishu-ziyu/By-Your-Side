@@ -119,15 +119,3 @@ it("移交取消尚未开始的共享页队列写入", async () => {
   finish(); await first; await denied; await release;
   expect(write).not.toHaveBeenCalled();
 });
-
-it("移交撤销原 worker 的待确认点击，不留下可迟到执行的确认", async () => {
-  const { control, lead, worker } = await setup();
-  const { HeldClicks } = await import("../src/shared/held-clicks.js");
-  const ledger = new HeldClicks<{ target: string }>(lead);
-  ledger.hold(worker, { target: "#submit" });
-  ledger.arm(worker);
-  await control.manage({ action: "release", workerId: "writer" }, lead, key => ledger.drop(key));
-  expect(ledger.hasPending(worker)).toBe(false);
-  expect(ledger.isArmed(worker)).toBe(false);
-  expect(ledger.resolve("confirm", lead).kind).not.toBe("dispatch");
-});

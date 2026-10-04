@@ -164,16 +164,6 @@ describe('记账下沉：执行事实驱动账本', () => {
     expect(p.snapshot().executionAuditComplete).toBe(true);
   });
 
-  it('被拦下的点击仍按未执行上报，不当作完成', async () => {
-    const p = setup();
-    const gate = await executionGate(p);
-    start(p, 'call-1', 'click', {target: '#delete'});
-    end(p, 'call-1', 'click', {executionFact: 'not_executed'});
-    expect(itemsOf(p)[0]).toMatchObject({status: 'unknown'});
-    expect(p.snapshot().executionState).toBe('unknown');
-    expect(() => gate('click', {target: '#delete'})).toThrow(/执行结果未知/);
-  });
-
   it('脚本与页面归属保留执行回执，滚动不产生持久写入项', () => {
     const p = setup();
     start(p, 'call-1', 'js', {});

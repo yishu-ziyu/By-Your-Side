@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBrowserTools, modelToolOf } from "../src/tools.js";
 import { createFleetTools } from "../src/fleet.js";
-import { createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool } from "../src/task-results.js";
+import { createTaskResultsTool, createVerifyUnknownResultTool } from "../src/task-results.js";
 import { createSendUserMessageTool } from "../src/user-delivery.js";
 import { createArtifactsTool } from "../src/artifacts-tool.js";
 import { createCapturePageMaterialTool, createTaskGoalsTool } from "../src/task-goal-tool.js";
@@ -27,7 +27,7 @@ const execute = (tools: { name: string; execute: Function }[], name: string, par
 
 /**
  * 合成组件范围：只拼接组件工厂的输出（浏览器 + 账本/交付/记忆 + 团队），
- * 不含 session.ts 按会话挂载的 Lead 专属工具（capture_page_material/task_goals/confirm_blocked_write 等）。
+ * 不含 session.ts 按会话挂载的 Lead 专属工具（capture_page_material/task_goals 等）。
  * 它只守组件级预算，不代表真实会话 active 清单——真实清单见本文件「真实会话 active 清单」用例。
  */
 function componentSurface(workerCount: number): string[] {
@@ -70,7 +70,7 @@ describe("合成组件工具语义（非真实会话清单）", () => {
   });
 
   it("系统提示词不超过 16,000 字符", () => {
-    // 2026-09-18 用户裁决上调：P0 confirm_blocked_write 指引（+170）在旧 15,000 上越线至 15168。
+    // 2026-09-18 用户裁决上调：当时的恢复确认指引（+170）在旧 15,000 上越线至 15168。
     // 新值保留头部空间，但模型面仍是有界预算；继续加提示词内容需在此预算内裁剪仲裁。
     expect(SYSTEM_PROMPT.length).toBeLessThanOrEqual(16_000);
   });
@@ -102,15 +102,6 @@ function sourceInventory(workerMounted: boolean): string[] {
     createTaskGoalsTool(() => ({} as never)),
     createTaskResultsTool({ getSnapshot: () => ({} as never), register: () => {} }),
     createVerifyUnknownResultTool({ getSnapshot: () => ({} as never), read: async () => ({}), verify: () => ({ ok: false }) }),
-    createConfirmBlockedWriteTool({
-      getSnapshot: () => ({} as never),
-      read: async () => ({}),
-      confirm: async () => ({ allowed: false }),
-      executeWrite: async () => {},
-      record: () => null,
-      persist: () => {},
-      emit: () => {},
-    }),
     createSendUserMessageTool({ conversationId: "default", getRunId: () => null, emit: () => {} }),
     createArtifactsTool({ emit: () => {} }),
   ].map((t) => t.name);
@@ -291,7 +282,7 @@ describe('新任务自动记账工具面（真实 Pi、本地模型、无浏览�
       await h.prompt();
       const input=h.inputs.at(-1)!;
       expect(input.tools?.map(t=>t.name)).not.toContain('record_task_results');
-      expect(input.tools?.map(t=>t.name)).toEqual(expect.arrayContaining(['task_goals','capture_page_material','resolve_unknown_result','confirm_blocked_write','send_user_message']));
+      expect(input.tools?.map(t=>t.name)).toEqual(expect.arrayContaining(['task_goals','capture_page_material','resolve_unknown_result','send_user_message']));
       expect(input.systemPrompt).not.toContain('record_task_results');
       expect(input.tools?.find(t=>t.name==='resolve_unknown_result')?.description).not.toContain('record_task_results');
 

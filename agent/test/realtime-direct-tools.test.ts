@@ -134,7 +134,6 @@ it('preserves an unknown write from host tool_end through the Realtime socket',a
 
 it.each([
   {fact:'executed',fail:false,name:'fill',data:{}},
-  {fact:'not_executed',fail:false,name:'click',data:{held:true}},
   {fact:'not_executed',fail:true,name:'fill',data:{}},
 ] as const)('carries $fact on $name (reject=$fail) from actual host events',async({fact,fail,name,data})=>{
   const f=hostFixture(fact,fail,data);f.begin();
@@ -146,8 +145,7 @@ it.each([
   expect(result.executionFact).toBe(fact);
   expect(result).not.toHaveProperty('verification');
 
-  if(name==='click')expect(result.content[0].text).toContain('Held click');
-  else if(!fail)expect(result.content[0].text).toBe('Filled @4.');
+  if(!fail)expect(result.content[0].text).toBe('Filled @4.');
 });
 
 it('does not infer execution from successful return when the fact is missing',async()=>{

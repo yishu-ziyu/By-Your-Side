@@ -1,4 +1,4 @@
-// 前提：同一任务里，扩展能在博客页读、开新标签到维基读，再开新标签在笔记站写并提交一次。判据由练习站服务器独立给出：维基被读、笔记站恰好收到 1 次提交且内容一致；否则 exit 1。确认卡一律点允许，卡片内容核对属于正式验收。
+// 前提：同一任务里，扩展能在博客页读、开新标签到维基读，再开新标签在笔记站写并提交一次。判据由练习站服务器独立给出：维基被读、笔记站恰好收到 1 次提交且内容一致；否则 exit 1。
 import { createServer } from "node:http";
 import { launchRealPath, requireHeadless, siteAddress, sleep, until } from "../acceptance/real-path/harness.mts";
 import { configureViaSettings } from "../acceptance/real-path/inproc-config.mts";
@@ -39,11 +39,7 @@ try {
   await configureViaSettings(rp, panel, { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "k" } }, { baseUrl: model.baseUrl });
   const blog = await rp.cdp.send("Target.createTarget", { url: "http://blog.test/post" }); await rp.cdp.send("Target.activateTarget", { targetId: blog.targetId }); await sleep(800);
   await rp.click(panel, "#input"); await rp.typeText(panel, "跨站前提：查 Model Context Protocol 并记到笔记"); await rp.pressEnter(panel);
-  await until(async () => {
-    await rp.evaluate(panel, `document.querySelector("#consent-requests:not([hidden]) .consent-allow:not(:disabled)")?.click()`);
-
-    return (await rp.evaluate(panel, `document.querySelector('#messages')?.innerText.includes('跨站完成')`)) || undefined;
-  }, 90000, "任务结束", 500);
+  await until(async () => (await rp.evaluate(panel, `document.querySelector('#messages')?.innerText.includes('跨站完成')`)) || undefined, 90000, "任务结束", 500);
   ok = hits.includes("GET wiki.test/MCP") && notes.length === 1 && notes[0] === "content=MCP 是一种开放协议。";
 } catch (e) { console.error(e); } finally { console.log(JSON.stringify({ ok, hits, notes })); await rp.close(); await rp.remove(); await model.close(); site.close(); }
 

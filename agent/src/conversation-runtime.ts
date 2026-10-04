@@ -1,7 +1,6 @@
 import { LEAD_SESSION_ID, isLeadSession, type ClientMessage, type ServerMessage, type TeamView, type TeamMemberHandback } from "../../shared/protocol.js";
 import { fromTeamMemberHandback } from "../../shared/control.js";
 import { createFleetTools, Fleet } from "./fleet.js";
-import { FetchConsentBroker } from "./fetch-consent.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
@@ -21,8 +20,6 @@ export async function createConversationRuntime(
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
-  // 每会话一个授权等待区：多个待确认请求同时在场也互不覆盖，票据由它发行与消费。
-  const consent = new FetchConsentBroker({ conversationId, emit: sendCurrent });
 
   const fleet = new Fleet({
     rpc,
@@ -43,8 +40,6 @@ export async function createConversationRuntime(
     },
   });
 
-  fleet.bindConsentBroker(consent);
-
   let toolSession: BrowserAgentSession | undefined;
 
   const session = await BrowserAgentSession.create(
@@ -61,7 +56,7 @@ export async function createConversationRuntime(
         options?.onModelFailover?.(from, to);
         void toolSession?.availableModels().then(models => sendCurrent({ type: "model_info", model: to, models }));
       },
-      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => fleet.releaseIdleForeignTab(tabId), isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), consumeConsent: (_name, params, opts) => consent.request(params, opts), learning: { active: () => toolSession?.isLearningSkillRun() ?? false, observe: event => toolSession?.observeSkillEvidence(event) }, get uploadLedger() { return toolSession?.uploadLedger; }, files: () => toolSession?.fileStore() }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
+      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => fleet.releaseIdleForeignTab(tabId), isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), learning: { active: () => toolSession?.isLearningSkillRun() ?? false, observe: event => toolSession?.observeSkillEvidence(event) }, get uploadLedger() { return toolSession?.uploadLedger; }, files: () => toolSession?.fileStore() }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
 
  return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
     },
@@ -69,8 +64,6 @@ export async function createConversationRuntime(
 
   toolSession = session;
   rpc.beforeCall = () => session.flushPersistence();
-  // 用户在任务里设的条件由宿主兜住：要求提交前确认时，这个会话里（含助手）的点击都带上 confirmSubmit，扩展先拿住提交类按钮。
-  rpc.decorateParams = (name, params) => session.decorateExecutionParams(name, params);
   fleet.attachLead(session);
   // 协作工具按需挂载：没有 worker 时模型只看到常驻工具，请到人（或拿到同伴工件）后再出现。
   fleet.onMembersChange = (count) => session.setTeamToolsMounted(count > 0);
@@ -275,7 +268,7 @@ export async function createConversationRuntime(
     }
   };
 
-  return { session, fleet, rpc, consent, handleMessage, dispose() { consent.dispose(); fleet.dispose(); session.dispose(); } };
+  return { session, fleet, rpc, handleMessage, dispose() { fleet.dispose(); session.dispose(); } };
 }
 
 function handbackPagesFromMessage(msg: Extract<ClientMessage, { type: "handback" }>) {

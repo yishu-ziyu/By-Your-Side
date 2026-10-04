@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   confirmLabelForDestructive,
-  isAffirmativeReply,
-  isSubmitLabel,
-  isCancelReply,
   isDestructiveLabel,
   isMarkActionId,
   markActionUserText,
@@ -119,61 +116,5 @@ describe("resolveImplicitMarkActions", () => {
     expect(resolveImplicitMarkActions("更多")).toBeUndefined();
     expect(resolveImplicitMarkActions("")).toBeUndefined();
     expect(resolveImplicitMarkActions(undefined)).toBeUndefined();
-  });
-});
-
-describe("isSubmitLabel：用户要求提交前确认时要拿住的按钮", () => {
-  it("提交 / 订阅 / 注册 / Sign up / Subscribe 算提交类", () => {
-    for (const t of ["SIGN UP", "Sign up", "Subscribe", "Submit", "提交", "立即订阅", "注册"]) expect(isSubmitLabel(t), t).toBe(true);
-  });
-
-  it("确认邮件里的链接、普通按钮不算", () => {
-    for (const t of ["Confirm subscription", "Track package", "Your email", "更多", "Subscribers list"]) expect(isSubmitLabel(t), t).toBe(false);
-  });
-});
-
-describe("isAffirmativeReply", () => {
-  it("确认 / 是 / 继续 算放行", () => {
-    expect(isAffirmativeReply("确认")).toBe(true);
-    expect(isAffirmativeReply("是")).toBe(true);
-    expect(isAffirmativeReply("继续")).toBe(true);
-    expect(isAffirmativeReply("yes")).toBe(true);
-  });
-
-  it("「可以，提交吧」「没问题」这类明确同意也算放行（用户常这么回）", () => {
-    for (const t of ["可以", "可以，提交吧", "确认，提交吧", "提交吧", "没问题", "go ahead"]) expect(isAffirmativeReply(t), t).toBe(true);
-  });
-
-  it("含糊回复不算放行", () => {
-    expect(isAffirmativeReply("可以先别提交吗")).toBe(false);
-    expect(isAffirmativeReply("嗯")).toBe(false);
-    expect(isAffirmativeReply("好吧")).toBe(false);
-    expect(isAffirmativeReply("取消")).toBe(false);
-  });
-});
-
-describe("isCancelReply", () => {
-  it("取消 / 算了 / 不要 / no 算撤销", () => {
-    for (const t of ["取消", "取消。", "算了", "不用了", "不要", "别", "否", "no", "nope", "cancel"]) {
-      expect(isCancelReply(t), t).toBe(true);
-    }
-  });
-
-  it("放行词与普通句子不算撤销", () => {
-    for (const t of ["确认", "继续", "yes", "取消掉那个红色按钮", "好的", ""]) {
-      expect(isCancelReply(t), t).toBe(false);
-    }
-  });
-
-  it("取消与确认互不重叠", () => {
-    expect(isAffirmativeReply("取消")).toBe(false);
-    expect(isCancelReply("确认")).toBe(false);
-  });
-});
-
-describe("booking and purchase submissions", () => {
-  it("recognises known irreversible submission labels", () => {
-    for (const label of ["订票", "预订", "立即购买", "确认订单", "Book now", "Reserve", "Buy now", "Checkout", "Confirm purchase"])
-      expect(isSubmitLabel(label), label).toBe(true);
   });
 });

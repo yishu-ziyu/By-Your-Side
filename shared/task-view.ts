@@ -17,7 +17,7 @@ export const TASK_VIEW_STATES = ["none", "running", "paused", "interrupted", "id
 
 export interface TaskViewPage { tabId: number; urlHash: string }
 
-export interface TaskViewResultItem { id: string; description: string; status: TaskResultItemStatus; /** 被拦下、正等用户在页面上确认（没派发） */ awaitingConfirmation?: true }
+export interface TaskViewResultItem { id: string; description: string; status: TaskResultItemStatus; }
 
 export interface TaskView {
   conversationId: string;
@@ -99,9 +99,7 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   // 未列计划时的占位目标不是用户目标清单：只看执行记录，占位目标不算未完成项（与 nextStepIgnoringPlaceholder 同口径）。
   const rawResults = snapshot.goalPlan?.coverage === 'verified' ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
 
-  const results = rawResults.map((item): TaskViewResultItem => (item.status === 'unknown' && !!item.evidence && 'awaitingConfirmation' in item.evidence && item.evidence.awaitingConfirmation
-    ? { id: item.id, description: item.description, status: item.status, awaitingConfirmation: true }
-    : { id: item.id, description: item.description, status: item.status }));
+  const results = rawResults.map((item): TaskViewResultItem => ({ id: item.id, description: item.description, status: item.status }));
 
   const outstanding=results.filter((item,i)=>OPEN_STATUSES.has(item.status)&&!('tool' in rawResults[i]!&&isSupersededUnknown(rawResults[i] as import('./task-results.js').TaskResultItem,executionResults)));
 
@@ -167,7 +165,7 @@ export function isTaskView(value: unknown): value is TaskView {
     // SAFETY: 下面逐个字段核对类型，不信任断言本身。
     const item = x as TaskViewResultItem;
 
-    return typeof item.id === "string" && typeof item.description === "string" && TASK_RESULT_ITEM_STATUSES.includes(item.status) && (item.awaitingConfirmation === undefined || item.awaitingConfirmation === true);
+    return typeof item.id === "string" && typeof item.description === "string" && TASK_RESULT_ITEM_STATUSES.includes(item.status);
   };
 
   if (!Array.isArray(v.results) || !v.results.every(itemOk)) return false;

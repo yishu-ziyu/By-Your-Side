@@ -30,7 +30,7 @@ export interface TaskResultEvidence {
   effectful?: true;
   /** SHA-256 of the original fill value. Raw field contents are not copied into the result ledger. */
   valueHash?: string;
-  /** 动作被拦下、正等用户在页面上确认（没派发）。等确认的会话不再算占着页面。 */
+  /** 旧版本存档字段（2026-10-04 起不再产生，也不再使用）：只为旧任务记录仍能读入。 */
   awaitingConfirmation?: true;
 }
 
@@ -88,7 +88,7 @@ export function resultLocksWhenUnknown(item:{tool:string;evidence?:{effectful?:b
   return commitsHarm(item.tool)||item.tool==='fetch'&&item.evidence?.effectful===true;
 }
 
-export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message", "resolve_unknown_result", "confirm_blocked_write"] as const;
+export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message", "resolve_unknown_result"] as const;
 
 /** 只有这些真实只读工具回执可以充当解除未决的页面证据。read_elements 是宿主按选择器的有界多元素读回，与 read_element 同级。 */
 export const RESULT_VERIFY_READ_TOOLS = ["read_element", "read_elements", "snapshot"] as const;

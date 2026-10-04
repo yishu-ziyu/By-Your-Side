@@ -44,12 +44,6 @@ describe("browser recovery tool feedback", () => {
     expect(result.content).toEqual([expect.objectContaining({ text: expect.stringContaining("explicit return") })]);
   });
 
-  it("keeps held click confirmation separate from ordinary execution feedback", async () => {
-    const { run } = setup({ held: true });
-    const result = await run("click", { target: "#delete" });
-    expect(result.content).toEqual([expect.objectContaining({ text: expect.stringContaining("Wait for the user") })]);
-  });
-
   it("marks truncation on large string extraction results", async () => {
     const { run } = setup({ value: "x".repeat(25_000) });
     const result = await run("js", { code: "document.body.innerText" });

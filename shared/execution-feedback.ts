@@ -130,11 +130,6 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
 
   if (input.toolCallId) base.toolCallId = input.toolCallId;
 
-  // 工具被拦下等用户确认：不是失败，也不是成功；让用户看到等待入口，语音照常解释。
-  if (input.executionFact === 'not_executed' && asRecord(input.data)?.held === true) {
-    return { ...base, channel: 'capsule', kind: 'pending', text: '等你确认', bounce: false, capsuleCanCloseAction: false };
-  }
-
   if (input.executionFact !== 'executed') {
     const unknown = input.executionFact === 'unknown';
 
