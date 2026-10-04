@@ -114,6 +114,35 @@ function programMethods(offer: { saveFile: boolean }): string[] {
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
+/** Page/web globals models reach for inside the sandbox; QuickJS has none of them. */
+const PAGE_GLOBALS = new Set(["window", "document", "Blob", "File", "FileReader", "fetch", "XMLHttpRequest", "location", "history", "localStorage", "sessionStorage", "navigator", "setTimeout", "setInterval", "console", "alert", "URL", "atob", "btoa", "DOMParser", "TextEncoder", "TextDecoder", "performance"]);
+
+/**
+ * Turn the sandbox's bare errors into the next step the model can take: a page global names browser.js/saveFile/sleep,
+ * an unknown browser.x names the real methods. Anything else (including the model's own typos) passes through unchanged.
+ */
+function explainProgramError(text: string, code: string, methods: readonly string[]): string {
+  const missing = /^'(\w+)' is not defined$/.exec(text)?.[1];
+
+  if (missing && PAGE_GLOBALS.has(missing)) {
+    const save = methods.includes("saveFile") ? ", save text with await browser.saveFile({filename, content})," : ",";
+
+    return `browser_run has no page globals such as ${missing}: run page code with await browser.js({code: "..."})${save} and wait with await browser.sleep({ms}).`;
+  }
+
+  if (text === "not a function") {
+    const unknown = [...code.matchAll(/\bbrowser\.(\w+)\s*\(/g)].map(m => m[1]!).find(name => !methods.includes(name));
+
+    if (unknown) {
+      const canonical = methods.filter(name => !(name in RPC_ALIASES));
+
+      return `browser.${unknown} is not a browser method. Available: ${[...new Set(canonical)].join(", ")}.`;
+    }
+  }
+
+  return text;
+}
+
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 /** 用户程序体；playwright 模式先注入官方兼容层与 RawPage/RawContext 适配。 */
@@ -597,7 +626,10 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       throw new Error(`Browser call parameters must be JSON: ${message(error)}`);
     }
 
-    if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Browser parameters must be an object");
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+      throw new Error(`browser.${name} takes one object of named fields, e.g. browser.${name}({...}); got ${Array.isArray(params) ? "array" : typeof params}`);
+    }
+
     const deferred = vm.newPromise();
     pending.add(deferred);
     chain = chain.then(async () => {
@@ -688,7 +720,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   try {
     const bootstrap = vm.evalCode(`{
       const call=globalThis.__browserCall; delete globalThis.__browserCall;
-      globalThis.browser=Object.freeze(Object.fromEntries(${JSON.stringify(METHODS)}.map(name=>[name, async (params={})=>JSON.parse(await call(name,JSON.stringify(params)))])));
+      globalThis.browser=Object.freeze(Object.fromEntries(${JSON.stringify(METHODS)}.map(name=>[name, async (params)=>JSON.parse(await call(name,JSON.stringify(params??{})))])));
     }`);
 
     vm.unwrapResult(bootstrap).dispose();
@@ -702,7 +734,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     if (evaluated.error) {
       const error = vm.dump(evaluated.error);
       evaluated.error.dispose();
-      throw new Error(stopped || error.message || String(error));
+      throw new Error(stopped || (error.message ? explainProgramError(error.message, options.code, METHODS) : String(error)));
     }
 
     program = evaluated.value;
@@ -715,7 +747,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (jobs.error) {
         const error = vm.dump(jobs.error);
         jobs.error.dispose();
-        throw new Error(stopped || error.message || String(error));
+        throw new Error(stopped || (error.message ? explainProgramError(error.message, options.code, METHODS) : String(error)));
       }
 
       const state = vm.getPromiseState(program);
@@ -734,7 +766,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (state.type === "rejected") {
         const error = vm.dump(state.error);
         state.error.dispose();
-        throw new Error(stopped || error.message || String(error));
+        throw new Error(stopped || (error.message ? explainProgramError(error.message, options.code, METHODS) : String(error)));
       }
 
       await pause(10);

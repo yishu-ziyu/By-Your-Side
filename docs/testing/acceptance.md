@@ -44,6 +44,7 @@ npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless    # 打字
 npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless  # 圈画动效默认值与右击切换
 npx tsx scripts/acceptance/real-path/companion-toggle.mts --headless    # 「更多 → 显示小伙伴 M」关掉、重开侧栏仍关、再打开
 npx tsx scripts/acceptance/real-path/sidebar-header.mts --headless      # 只装扩展、本机假模型：顶部一行会话导航，任务条在输入框上方收起/展开，断线时才露连接状态，M 不挡按钮
+npx tsx scripts/acceptance/real-path/script-friction.mts --headless     # 只装扩展、本机脚本模型：snapshot 后页面刷新，js 与 CSS 点击照常执行；js saveAs 存的文件与页面数据逐字相同（[标准](../evals/20261004-script-friction.md)）
 npx tsx scripts/acceptance/real-path/model-failover.mts --headless      # 只装扩展、本机脚本模型：主模型连上后不出字，快速模型在 25 秒内接手回答，侧栏显示切换（[标准](../evals/20261004-model-failover.md)）
 npx tsx scripts/acceptance/real-path/plain-text-streaming.mts --headless # 只装扩展、本机假模型：直接写的正文逐段出字、调工具后收进执行过程、停止/出错/插话/历史不重复；设置里 MiniMax 能选 M3.1-Flash-Preview
 npx tsx scripts/acceptance/real-path/memory-proactive.mts --headless --model=kimi-coding/kimi-for-coding --fast-model=kimi-coding/kimi-for-coding-highspeed  # 只装扩展、真实模型、本机假订阅站与假 Gmail：自动记邮箱与撤销、新对话直接用、提交前拦、提交后自己去邮箱确认、任务跨轮、过往任务、后台重启后记忆还在；换 --model 跑每家

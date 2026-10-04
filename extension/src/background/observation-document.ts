@@ -7,11 +7,7 @@ const keyOf = (tabId: number, member: string) => `${tabId}:${member}`;
 
 const stale = () => Object.assign(new Error('页面文档已变化，旧目标未执行。请重新 snapshot 或 read_element 核对当前页面和目标。'),{code:'STALE_DOCUMENT'});
 
-export async function withObservedDocument<T>(tabId: number, member: string, read: () => Promise<T>): Promise<T> {
-  return (await withObservedDocumentIdentity(tabId, member, read)).value;
-}
-
-/** Same guard as withObservedDocument, but also returns the exact document identity that was read. */
+/** Reads once and records the document it read; a document swap during the read throws instead of publishing it. */
 export async function withObservedDocumentIdentity<T>(tabId: number, member: string, read: () => Promise<T>, check=()=>{}): Promise<{value:T;documentId:string|null}> {
   check();
   const before = await readCurrentDocument(tabId);
@@ -33,11 +29,15 @@ export function recordObservedDocument(tabId: number, member: string, documentId
   observed.set(keyOf(tabId, member), documentId);
 }
 
-export async function assertObservedDocument(tabId: number, member: string): Promise<string | null> {
+/**
+ * Only an @N ref belongs to the snapshot's document. Selectors, text, coordinates, page js and cdp act on
+ * whatever page is current, so a reload/navigation after the last snapshot refuses only @N targets.
+ */
+export async function assertObservedDocument(tabId: number, member: string, targets: ReadonlyArray<string | undefined>): Promise<string | null> {
   const current = await readCurrentDocument(tabId);
   const expected = observed.get(keyOf(tabId, member));
 
-  if (expected && current?.documentId !== expected) throw stale();
+  if (expected && current?.documentId !== expected && targets.some(target => target?.startsWith("@"))) throw stale();
 
   return current?.documentId ?? null;
 }

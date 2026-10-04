@@ -21,7 +21,7 @@ import { requiresControlGate } from "../../shared/effect-policy.js";
 import { RepeatRefusedError } from "../../shared/task-next-step.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type ProgramStep } from "./browser-program.js";
-import { saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
+import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
 import { authorizeUploadPaths, type TaskUploadLedger } from "./upload-paths.js";
 import { hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
 import { runtimeUnavailableTools } from "./runtime-capabilities.js";
@@ -423,7 +423,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch, window, document or Blob); page JavaScript belongs inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/' + (unavailableInRuntime.has("paste") ? '' : 'paste/') + 'html5Drag' + (unavailableInRuntime.has("upload_file") ? '' : ', and browser.uploadFile({target,paths})') + '; browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
+      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/' + (unavailableInRuntime.has("paste") ? '' : 'paste/') + 'html5Drag' + (unavailableInRuntime.has("upload_file") ? '' : ', and browser.uploadFile({target,paths})') + '; browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -1194,13 +1194,35 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "js",
       label: "Run JavaScript",
       description:
-        "Evaluate a JavaScript expression in the working tab and get its value. Invoke functions explicitly: (() => { return document.title; })(). A bare () => {...} only creates a function and does not execute its body. Prefer one invoked IIFE that extracts everything you need over multiple round trips.",
+        "Evaluate a JavaScript expression in the working tab's page (window, document, fetch are available) and get its value. Invoke functions explicitly: (() => { return document.title; })(). A bare () => {...} only creates a function and does not execute its body. Prefer one invoked IIFE that extracts everything you need over multiple round trips." +
+        (files ? ' saveAs:"name.ext" saves the returned string (other values as JSON text) as a conversation file (same rules and side-panel card as artifacts) and returns only {filename, chars, lines}; use it for large page data instead of retyping it.' : ""),
       promptGuidelines: ["Wrap code in a single IIFE that returns a JSON-serializable value."],
       parameters: Type.Object({
         code: Type.String({ description: "JavaScript to evaluate; use an IIFE with a return value" }),
+        ...(files ? { saveAs: Type.Optional(Type.String({ description: 'Save the return value as this conversation file, e.g. "subtitles.txt"; you get only {filename, chars, lines}' })) } : {}),
       }),
       execute: async (_id, params) => {
-        const data = (await call("js", params)) as ToolContract["js"]["data"];
+        // SAFETY: saveAs 只在有文件区时进入参数 schema，类型是可选字符串，Pi 已按 schema 校验。
+        const { saveAs, ...pageParams } = params as typeof params & { saveAs?: string };
+
+        if (saveAs !== undefined) {
+          // 文件区与文件名在跑脚本之前核对：存不了就不动页面。
+          const store = files?.();
+
+          if (!store) throw new Error("这个会话没有文件区，saveAs 不可用，脚本未运行。");
+          assertArtifactFilename(saveAs.trim());
+          const data = (await call("js", pageParams)) as ToolContract["js"]["data"];
+
+          if (data.value === undefined || data.value === null || data.value === "") throw new Error(`脚本已运行但没有返回值，${saveAs.trim()} 没有保存。请让 IIFE 显式 return 要保存的数据。`);
+          const content = typeof data.value === "string" ? data.value : JSON.stringify(data.value);
+          const { filename, chars, lines } = saveFileFromProgram(store, { filename: saveAs, content });
+          await store.flush?.();
+          const receipt = { filename, chars, lines };
+
+          return textResult(JSON.stringify(receipt), receipt);
+        }
+
+        const data = (await call("js", pageParams)) as ToolContract["js"]["data"];
 
         const rendered = data.value === undefined
           ? "JavaScript returned undefined. No observable value was returned; this does not confirm a page change. For extraction, use one IIFE with an explicit return of JSON-serializable findings. For hover-only controls, use hover, then observe the page."

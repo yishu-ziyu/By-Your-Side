@@ -1,4 +1,3 @@
-import {assertObservedDocument} from "../observation-document.js";
 import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
@@ -40,10 +39,10 @@ export async function evaluateJs(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await assertCompiles(tab.id, params.code);
 
   await beforeExecute?.();
+
   const res = await sendCommand<CdpEvalResult>(tab.id, "Runtime.evaluate", {
     expression: params.code,
     awaitPromise: true,

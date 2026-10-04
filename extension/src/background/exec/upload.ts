@@ -71,6 +71,7 @@ export async function setFilesOnObjectId(
   }`, [paths.length], beforeDispatch);
 
   await beforeDispatch?.();
+
   try {
     await callWithObject<true>(tabId, objectId, `function() {
       const el = this;
@@ -157,7 +158,7 @@ export async function uploadFile(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.target]);
   const tabId = tab.id;
 
   const paths = params.paths;

@@ -15,7 +15,6 @@ import {
   decideCdpMethod,
 } from "../../../../shared/cdp-method-policy.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
-import { assertObservedDocument } from "../observation-document.js";
 import { sendCommand } from "../debugger.js";
 import { getWorkingTabId } from "../state.js";
 import { oneLine } from "../util.js";
@@ -61,7 +60,6 @@ export async function cdp(
   const tab = await chrome.tabs.get(workingId).catch(() => null);
 
   if (!tab) throw notExecuted(new Error("工作标签页已关闭，cdp 未执行"));
-  await assertObservedDocument(workingId, sessionId);
 
   const timeoutMs = params.timeoutMs ?? 10_000;
 

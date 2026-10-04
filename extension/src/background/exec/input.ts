@@ -1148,7 +1148,7 @@ export async function hover(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.target]);
   const { point: [x, y] } = await resolvePointerTarget(tab.id, params, beforeDispatch);
   await maybeActivateTab(tab, sessionId, beforeDispatch);
   const cid = cursorId(sessionId);
@@ -1177,7 +1177,7 @@ export async function click(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.target]);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
   const target = params.target;
@@ -1393,7 +1393,7 @@ export async function doubleClick(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.target]);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
 
@@ -1576,7 +1576,7 @@ export async function drag(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.from?.target, params.to?.target]);
 
   if (!params.from || !params.to || (!params.from.target && !params.from.point) || (!params.to.target && !params.to.point)) {
     throw notExecuted(new Error("drag 需要 from 与 to（各为 target 或 point），未执行"));
@@ -1727,7 +1727,7 @@ export async function fill(
     catch(error) { throw notExecuted(error); }
   }
 
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.target]);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
   await beforeDispatch?.();
@@ -1896,7 +1896,7 @@ export async function selectOption(
     }
   }
 
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.target]);
   const tabId = tab.id;
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId, beforeDispatch);
@@ -1985,7 +1985,6 @@ export async function typeText(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
   await beforeDispatch?.();
@@ -2005,7 +2004,6 @@ export async function pressKey(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
@@ -2106,7 +2104,7 @@ export async function wheel(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  const documentId = await assertObservedDocument(tab.id, sessionId);
+  const documentId = await assertObservedDocument(tab.id, sessionId, [params.target]);
   checkCurrent();
   await maybeActivateTab(tab, sessionId, beforeDispatch);
   let point = params.point;
@@ -2191,7 +2189,7 @@ export async function mouseDown(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.target]);
   await maybeActivateTab(tab, sessionId);
   let point = params.point;
 
@@ -2244,7 +2242,6 @@ export async function mouseUp(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await maybeActivateTab(tab, sessionId);
   const button: MouseButton = params.button ?? "left";
   const clickCount = Math.max(1, Math.floor(params.clickCount ?? 1));
@@ -2284,7 +2281,6 @@ export async function keyDown(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
   const heldMods = modifierMaskFor(sessionId, tab.id);
@@ -2324,7 +2320,6 @@ export async function keyUp(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await maybeActivateTab(tab, sessionId);
   const heldMods = modifierMaskFor(sessionId, tab.id) & ~keyModifierMask(info);
 
@@ -2417,7 +2412,6 @@ export async function paste(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
@@ -2523,7 +2517,7 @@ export async function html5DragAndDrop(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
+  await assertObservedDocument(tab.id, sessionId, [params.from?.target, params.to?.target]);
 
   if (!params.from || !params.to || (!params.from.target && !params.from.point) || (!params.to.target && !params.to.point)) {
     throw notExecuted(new Error("html5DragAndDrop 需要 from 与 to；未执行"));
@@ -2666,7 +2660,6 @@ export async function scroll(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertObservedDocument(tab.id, sessionId);
   await ensureDomOps(tab.id, beforeDispatch);
 
   if (params.toBottom) {
@@ -2723,7 +2716,7 @@ export async function mark(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  const observedDocument = await assertObservedDocument(tab.id, sessionId);
+  const observedDocument = await assertObservedDocument(tab.id, sessionId, [params.target, params.through]);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
 

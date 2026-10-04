@@ -131,7 +131,9 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 `click`/`hover`/`fill` 的 `target` 接受：`"@N"`（最近 snapshot 的 ref）、`"loc=css:..."`（snapshot 给出的稳定定位串）、原生 CSS 选择器；`click`/`hover` 另接受 `point:[x,y]` 视口坐标。
 
-ref 编号随节点保持稳定，但必须出现在最新快照中；新快照替换可用引用集合。无效、失效、未找到或匹配多个元素时明确报错并要求重新定位，不猜测另一个目标。Playwright 的 `:has-text()` 和 `loc=h3...` 不受支持。
+ref 编号随节点保持稳定，但必须出现在最新快照中；新快照替换可用引用集合。无效、失效、未找到或匹配多个元素时明确报错并要求重新定位，不猜测另一个目标。
+
+页面在上次 snapshot 之后刷新或跳转（文档变了）时，只有指向旧快照的 `@N` 回 `STALE_DOCUMENT`（「页面文档已变化，旧目标未执行」）；CSS、`loc=`、xpath/text/role 定位串、`point` 坐标、无目标的键盘输入、`js` 和 `cdp` 都在当前页面直接执行。一次操作进行中文档被替换（如点击、滚轮、截图途中）仍按原规则拒绝或报告。Playwright 的 `:has-text()` 和 `loc=h3...` 不受支持。
 
 `hover` 派发真实 CDP `mouseMoved`，触发原生 CSS 悬停状态；返回 `{hovered:true}` 仅表示移动执行成功。Agent 仍需观察是否出现预期入口。`click` 同样只确认事件执行，不证明编辑器打开或任务完成。接管期间 `hover` 和其他写操作一样被控制闸门拦截。
 
