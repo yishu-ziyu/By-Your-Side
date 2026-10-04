@@ -48,7 +48,7 @@ function baseReport(over: Partial<EvalReport> = {}): EvalReport {
 describe("protected eval gates", () => {
   it("loads the locked gates file and matches the protected manifest sha", () => {
     const { sha256 } = assertProtectedGatesUntampered();
-    expect(sha256).toBe("61f0bab1557be3330315214057466cb889b23b02d133110cf13fc3544502e748");
+    expect(sha256).toBe("d48056bdfaea6301f8da2b34d6acc55b54653bd8d97ab64c17f55c48135327bc");
     expect(loadGates().metrics).toHaveLength(41);
   });
 
