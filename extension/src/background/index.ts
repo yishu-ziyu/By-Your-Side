@@ -381,6 +381,20 @@ const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid)
 const heldCallIds = new Map<string, string>();
 const activationConsent = new ActivationConsent(msg => broadcast({kind:"server",msg}));
 
+/** 诊断：确认时重读的绑定上下文与发起时不同，只记下变了哪些顶层字段（参数与页面状态只记是否变化），供验收复盘偶发作废；不影响判定。 */
+function recordContextMismatch(requestTool: string, expected: string, current: string): void {
+  const fields = (text: string) => new Map(Object.entries(JSON.parse(text)).map(([k, v]) => [k, JSON.stringify(v)]));
+
+  try {
+    const before = fields(expected);
+    const after = fields(current);
+    const changed = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k));
+    const values = changed.flatMap(k => ["params", "state"].includes(k) ? [] : [[k, { before: before.get(k) ?? null, after: after.get(k) ?? null }]]);
+
+    void chrome.storage.session.set({ lastConsentMismatch: { at: Date.now(), tool: requestTool, changed, values: Object.fromEntries(values) } });
+  } catch { /* 诊断失败不影响确认判定 */ }
+}
+
 /**
  * 用户确认（名牌「确认」或侧栏回「确认 / 可以，提交吧」）：由扩展按原参数补上拿住的那一下，
  * 再告诉宿主那次调用已执行，账本才不会一直停在「结果未知」、挡住后面的操作（09-27 Kimi 实测提交后去不了邮箱）。
@@ -1521,7 +1535,13 @@ async function executeToolCall(
         const preview = redactCredentialText(JSON.stringify(params));
         if (preview.length > 65536) throw new Error("动作参数超过可完整展示的上限，操作未执行。");
         approvedUntil = Date.now() + 20_000;
-        activationApproved = await activationConsent.request({conversationId,runId:currentRun,controlVersion:gate.gen,goal:conversationSummaries.find(c=>c.id===conversationId)?.title ?? "当前任务",tool:name,target:String(params.target ?? params.url ?? "当前页面").slice(0,500),value:preview,context:approvedContext,cancellationVersion},captureApprovalContext);
+        activationApproved = await activationConsent.request({conversationId,runId:currentRun,controlVersion:gate.gen,goal:conversationSummaries.find(c=>c.id===conversationId)?.title ?? "当前任务",tool:name,target:String(params.target ?? params.url ?? "当前页面").slice(0,500),value:preview,context:approvedContext,cancellationVersion},async () => {
+          const current = await captureApprovalContext();
+
+          if (current !== approvedContext) recordContextMismatch(name, approvedContext, current);
+
+          return current;
+        });
         if (!activationApproved) throw new Error("本次操作未获准或确认已作废，操作未执行。");
         checkIdentity();
         if (gate.gen !== operationGeneration) throw new Error("页面控制权已变化，操作未执行。");

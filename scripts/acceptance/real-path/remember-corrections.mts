@@ -901,8 +901,16 @@ async function observeConsent() {
   strictTask = "";
   strictEnteredTasks.clear();
   await rp.evaluate(panel, `(() => { globalThis.__fixtureConsentPort?.disconnect(); globalThis.__fixtureConsentEvents=[]; const p=chrome.runtime.connect({name:"sideagent-panel"});
-    globalThis.__fixtureConsentPort=p; p.onMessage.addListener(e => { globalThis.__fixtureConsentEvents.push(e); if(e.kind === "conversations") globalThis.__fixtureSelected=e.selectedConversationId; });
+    globalThis.__fixtureConsentPort=p; p.onMessage.addListener(e => { globalThis.__fixtureConsentEvents.push({ ...e, receivedAt:Date.now() }); if(e.kind === "conversations") globalThis.__fixtureSelected=e.selectedConversationId; });
     p.postMessage({kind:"sync"}); return true; })()`);
+}
+
+/** 续接竞态诊断：带接收时间的会话 runId、确认请求与结果时间线，事后对照批准为何作废。 */
+async function dumpConsentTimeline() {
+  const timeline = await rp.evaluate(panel, `chrome.storage.session.get("lastConsentMismatch").then(s => ({ mismatch:s.lastConsentMismatch ?? null,
+    events:(globalThis.__fixtureConsentEvents ?? []).filter(e => e.kind === "conversations" || (e.kind === "server" && /^(consent_|conversation_updated)/.test(String(e.msg?.type)))) }))`).catch(() => null);
+
+  await writeFile(join(artifacts, `${currentScenario}-consent-timeline.json`), JSON.stringify(timeline, null, 2));
 }
 
 async function approveStrict(): Promise<boolean> {
@@ -985,6 +993,8 @@ async function turn(text: string) {
 
   const before = await send(text);
   await waitTurnEnd(before);
+
+  if (strictScenario()) await dumpConsentTimeline();
   const requests = model ? model.log.slice(mark) : [];
 
   return { requests, chat: requests.filter((r) => r.kind === "chat"), transcript: (await read()).transcript, sentAt, endedAt: Date.now(), mark };

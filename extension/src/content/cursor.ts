@@ -190,6 +190,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
           inset 0 0 36px 4px color-mix(in srgb, var(--c) 34%, transparent);
       }
       .edge.on { opacity: 1; animation: edge-breathe 2.6s ease-in-out infinite; }
+      /* 新建即点亮：淡入由样式起点完成，不靠下一帧再改 class（后台页的下一帧可能很晚，晚到的改动会让已发出的确认判为页面已变）。 */
+      @starting-style { .edge.on { opacity: 0; } }
       @keyframes edge-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
       @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge.on { animation: none; } }
       .cursor.rest { opacity: .86; }
@@ -1463,8 +1465,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     }
 
     edge.style.setProperty("--c", cursorColor(first));
-    const target = edge;
-    requestAnimationFrame(() => { if (glowing.size) target.classList.add("on"); });
+    edge.classList.add("on");
   }
 
   let crossPillSession = "";
