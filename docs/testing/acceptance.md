@@ -18,7 +18,7 @@ Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 为扩�
 
 无输入字段的练习页点击仅接受宿主附加的空formRequirements与userValueProvided:false；非空规则、值来源true或额外参数均失败，不修改生产字段约束。
 
-- `node --import tsx scripts/acceptance/real-path/north-star-research.mts --headless --scripted`：博客、维基、X、Flomo 四站隔离基线；N1 正常、N2 慢保存重试（10-04 起判定：拦下的重复不算失败、保存点击认出 POST，见[验收](../evals/20261004-honest-completion.md)）、N3 拒绝写入，产物在 `out/acceptance/real-path/*-north-star/`；支持 `--only=N1,N2,N3`、`--rejudge=<产物目录>`，`--model=provider/id` 另需真实模型授权（[标准](../evals/20261004-north-star-cross-site.md)）。
+- `node --import tsx scripts/acceptance/real-path/north-star-research.mts --headless --scripted`：博客、维基、X、Flomo 四站隔离基线；N1 正常、N2 慢保存重试（10-04 起判定：拦下的重复不算失败、保存点击认出 POST，见[验收](../evals/20261004-honest-completion.md)）、N3 拒绝写入，产物在 `out/acceptance/real-path/*-north-star/`；增加[信任网站验收](../evals/20261004-trusted-read-sites.md)：N4 首轮按钮信任、第二词只确认写入，N5 陌生站拒绝零请求，N6 设置移除后恢复读取卡（N5/N6 预置 storage 仅为准备捷径）；支持 `--only=N1,N2,N3,N4,N5,N6`、`--rejudge=<产物目录>` 及 `--self-test-judges` 反例重判，信任场景仅用脚本模型，产物含确认卡与设置页截图，`--model=provider/id` 另需真实模型授权（[标准](../evals/20261004-north-star-cross-site.md)）。
 - `npm run accept:browser`：浏览器主链。
 - `npm run accept:capability`：浏览器能力对齐。
 - `npm run accept:real-path`：一次跑完全部真实路径用例（见下节），汇总写 `out/acceptance/real-path/summary-<时间>.json`；`-- --only=a,b` 为过滤轮，恒不算整轮通过。
