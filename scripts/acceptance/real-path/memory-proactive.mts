@@ -283,7 +283,6 @@ try {
 
     await rp.click(panel, "#memory-open");
     await sleep(500);
-    await rp.click(panel, "#seg-memory");
     await until(async () => (await rp.evaluate(panel, `(() => { const t = document.querySelector("#memory-body")?.innerText ?? ""; return !t.includes("正在读取") && t.includes("过往任务") ? t : ""; })()`)) || undefined, 15_000, "记忆抽屉读完");
     await sleep(800);
 

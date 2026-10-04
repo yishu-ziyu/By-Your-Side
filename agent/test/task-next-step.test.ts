@@ -106,7 +106,6 @@ describe('P0.3 next-step decision from production progress',()=>{
     const wrapper=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
     wrapper.bindConversationContext(()=>h.progress.snapshot());
     expect(()=>wrapper.assertTaskResultExecution('js',{code:'something different'})).toThrow();
-    expect(()=>wrapper.assertWorkerWriteAllowed('fill',{target:'#other'})).toThrow();
     expect(()=>wrapper.assertTaskResultExecution('snapshot',{})).not.toThrow();
   });
   it('ignores explicitly stale run events and resets evidence for a new user task',()=>{
@@ -187,7 +186,6 @@ describe('P0.3 next-step decision from production progress',()=>{
     const wrapper=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
     wrapper.bindConversationContext(()=>h.progress.snapshot());
     expect(()=>wrapper.assertTaskResultExecution('click',{target:'#timeout'})).toThrow();
-    expect(()=>wrapper.assertWorkerWriteAllowed('click',{target:'#timeout'})).toThrow();
     h.progress.abort();
     expect(()=>wrapper.assertTaskResultExecution('scroll',{})).toThrow();
     const saved=task();saved.step('fetch',{method:'POST',body:'{}'},true,'unknown');
@@ -266,7 +264,7 @@ describe('P0.3 production loop exits and projections',()=>{
 
     const manager=new ConversationManager(async()=>({
       session:{modelName:()=> 'fixture',isStreaming:()=>false,isHeld:()=>false,composeUserDelivery},
-      fleet:{teamView:()=>null,list:()=>[]},rpc:{rejectAll:vi.fn()},dispose:vi.fn(),
+      control:{teamView:()=>null,list:()=>[]},rpc:{rejectAll:vi.fn()},dispose:vi.fn(),
     } as any),()=>{});
 
     await manager.ensureDefault();(manager as any).progress.set('default',h.progress);

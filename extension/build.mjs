@@ -61,9 +61,8 @@ const browserSwaps = {
     swap(/^\.\/realtime-browser-tool-defs\.js$/, path.join(root, "src/inproc/voice/tool-defs.ts"), true);
     swap(/^\.\/config\.js$/, path.join(shims, "config.ts"), true);
     swap(/^ws$/, path.join(shims, "ws.ts"), false);
-    // 任务核心（agent/src）里只在本机才用的两个模块：诊断记录写文件；AgentSession 会话循环。
+    // 任务核心（agent/src）里只在本机才用的模块：诊断记录写文件。
     swap(/^\.\/run-trace\.js$/, path.join(shims, "run-trace.ts"), true);
-    swap(/^\.\/node-agent-loop\.js$/, path.join(shims, "node-agent-loop.ts"), true);
     swap(/^node:crypto$/, path.join(shims, "node-crypto.ts"), false);
     swap(/^node:fs(\/promises)?$/, path.join(shims, "node-fs.ts"), false);
     swap(/^node:path$/, path.join(shims, "node-path.ts"), false);
@@ -96,9 +95,6 @@ await esbuild.build({
     "content-effect": "src/content/effect.ts",
     "content-cursor": "src/content/cursor.ts",
     "content-ask": "src/content/ask.ts",
-    "content-point": "src/content/point.ts",
-    "content-record": "src/content/record.ts",
-    "content-observe": "src/content/observe.ts",
   },
 });
 
@@ -126,8 +122,6 @@ await copyFile(path.join(root, "../node_modules/@jitl/quickjs-wasmfile-release-s
 await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true });
 
 await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: true });
-
-await cp(path.join(root, "assets/companion"), path.join(dist, "companion"), { recursive: true });
 
 // 设置页的音色试听样本（scripts/voice/voice-samples.mts 用真实接口录制）。
 await cp(path.join(root, "assets/voices"), path.join(dist, "voices"), { recursive: true });

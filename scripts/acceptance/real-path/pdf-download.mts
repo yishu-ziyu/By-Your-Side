@@ -129,25 +129,7 @@ try {
     checks.push({ name: "invalid-does-not-lock-next-download", pass: afterInvalid.equals(pdf) });
   const diagnostics = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "diagnostics"));
   await writeFile(join(out, "traces.jsonl"), diagnostics.traces);
-  // 从实际回执取得宿主签发的编号，再让模型调用公开查询工具；不用猜 Chrome id。
   const events = diagnostics.traces.split("\n").filter(Boolean).map(line => JSON.parse(line));
-  const slowId = events.find(e => e.type === "tool_execution_end" && e.data?.result?.details?.suggestedFilename === "slow.pdf")?.data.result.details.downloadId;
-
-  if (!slowId) throw new Error("延迟下载没有返回宿主下载编号。");
-    rules.push({ match: "查询文件状态", steps: [{ tool: { name: "download_stat", args: { downloadId: slowId } } }, { text: "已查询下载结果。" }] });
-    await run("查询文件状态", "query");
-  const afterQuery = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "query-diagnostics"));
-  await writeFile(join(out, "query-traces.jsonl"), afterQuery.traces);
-  const queryEvents = afterQuery.traces.split("\n").filter(Boolean).map(line => JSON.parse(line));
-  const queried = queryEvents.find(e => e.type === "tool_execution_end" && e.data?.toolName === "download_stat" && e.data?.result?.details?.downloadId === slowId)?.data.result.details;
-  checks.push({ name: "query-same-download", pass: queried?.completed === true && queried?.bytes === pdf.length && requests.filter(p => p === "/slow.pdf").length === 1 });
-  rules.push({ match: "取消已完成文件", steps: [{ tool: { name: "download_cancel", args: { downloadId: slowId } } }, { text: "该文件已经下载完成。" }] });
-  await run("取消已完成文件", "cancel-complete");
-  const afterCancel = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "cancel-diagnostics"));
-  await writeFile(join(out, "cancel-traces.jsonl"), afterCancel.traces);
-  const cancelEvents = afterCancel.traces.split("\n").filter(Boolean).map(line => JSON.parse(line));
-  const cancelled = cancelEvents.find(e => e.type === "tool_execution_end" && e.data?.toolName === "download_cancel" && e.data?.result?.details?.downloadId === slowId)?.data.result.details;
-  checks.push({ name: "complete-is-not-cancelled", pass: cancelled?.completed === true && cancelled?.cancelled === false && (await readFile(join(rp.dirs.downloads, "slow.pdf"))).equals(pdf) });
   const interrupted = events.some(e => e.type === "tool_execution_end" && e.data?.toolName === "download_url" && JSON.stringify(e.data.result).includes("Download failed for"));
   checks.push({ name: "chrome-reports-interruption", pass: interrupted && requests.includes("/broken.pdf") });
     const rejected = events.some(e => e.type === "tool_execution_end" && e.data?.toolName === "download_url" && e.data?.isError === true && JSON.stringify(e.data.result).includes("下载链接必须是 HTTP 或 HTTPS 地址，操作未执行。"));
@@ -163,4 +145,4 @@ finally {
 
 console.log(out, checks);
 
-if (error || checks.length !== (live ? 3 : 9) || checks.some(c => !c.pass)) process.exitCode = 1;
+if (error || checks.length !== (live ? 3 : 7) || checks.some(c => !c.pass)) process.exitCode = 1;

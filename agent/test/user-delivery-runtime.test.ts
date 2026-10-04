@@ -213,7 +213,7 @@ describe("delivery closure", () => {
 
       const session = verifyAnswerDelivery ? { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, verifyAnswerDelivery, abort: () => { streaming = false; } } : { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, abort: () => { streaming = false; } };
 
-      return { session, fleet: { teamView: () => null, isGroupHeld: () => false, abortTeam: () => {}, reset: () => {} }, rpc: { rejectAll: () => {} }, handleMessage: (m: any) => { if (m.type === "user_message") publish({ kind: "agent_start" }); }, dispose: () => {} } as any;
+      return { session, control: { teamView: () => null, isGroupHeld: () => false, abortTeam: () => {}, reset: () => {} }, rpc: { rejectAll: () => {} }, handleMessage: (m: any) => { if (m.type === "user_message") publish({ kind: "agent_start" }); }, dispose: () => {} } as any;
     }, m => messages.push(m));
 
     return { manager, messages, compose, event: (e: any) => publish(e), resolve: (text: string) => answer(text) };

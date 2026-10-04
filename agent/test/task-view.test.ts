@@ -254,7 +254,7 @@ describe("manager 集成：task_view 随真实状态变化下发与重放", () =
 
       return {
         session: { modelName: () => "test/model", availableModels: async () => [], available: true, abort: () => {}, isHeld: () => false, isStreaming: () => false },
-        fleet: { teamView: () => null, isGroupHeld: () => false, list: () => [], reset: () => {}, abortTeam: () => {} },
+        control: { teamView: () => null, isGroupHeld: () => false, list: () => [], reset: () => {}, abortTeam: () => {} },
         rpc: { rejectAll: () => {} }, dispose: () => {}, handleMessage: () => {},
       } as never;
     }, (m) => emitted.push(m));

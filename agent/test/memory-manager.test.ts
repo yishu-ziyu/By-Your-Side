@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 import { ConversationManager } from "../src/conversation-manager.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 
 const roots: string[] = [];
 
@@ -27,7 +27,7 @@ async function harness() {
       isHeld: () => false,
       isStreaming: () => false,
     },
-    fleet: {
+    control: {
       teamView: () => null,
       list: () => [],
       isGroupHeld: () => false,

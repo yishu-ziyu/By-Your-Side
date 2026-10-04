@@ -1,9 +1,6 @@
 import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from "quickjs-emscripten";
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
 import { HOST_PAGE_PROBES } from "../../shared/effect-policy.js";
-import { buildPlaywrightProgram } from "./stagehand-bridge.js";
-import { hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
-import { runtimeUnavailableTools } from "./runtime-capabilities.js";
 import { isSaveFileParams, rejectSaveFileParams, type SaveFileParams, type SavedFileReceipt } from "./artifacts-tool.js";
 
 export interface ProgramStep {
@@ -19,16 +16,7 @@ export interface ProgramStep {
 
 interface ProgramOptions {
   code: string;
-  /** "ego" = 现有 browser.* 程序；"playwright" = 官方兼容层，额外提供 page/context。 */
-  api?: "ego" | "playwright";
-  /** 任务缺省页；playwright 模式第一步读到的绑定页以它为准（没有则用 list_tabs 的 working 页）。 */
-  pageTabId?: number | null;
   call(name: ToolName, params: Record<string, unknown>, stepId?: string, origin?: "readonly-poll"): Promise<unknown>;
-  /**
-   * 上传 RPC 派发前的同源授权：把 fileId/paths 规范化为本任务已授权的 realpath。
-   * 与 tools.ts call 边界共用同一 authorizeUploadPaths 结果；失败则不调用 options.call。
-   */
-  authorizeUpload?(refs: readonly string[]): string[];
   signal?: AbortSignal;
   id?: string;
   timeoutMs?: number;
@@ -43,7 +31,6 @@ interface ProgramOptions {
 /** browser.* 的 camelCase 别名：程序里用 EGO 风格名字，账本仍记规范 RPC 名。 */
 export const RPC_ALIASES: Record<string, string> = {
   doubleClick: "double_click",
-  uploadFile: "upload_file",
   armEvent: "arm_event",
   waitEvent: "wait_event",
   disarmEvent: "disarm_event",
@@ -51,17 +38,6 @@ export const RPC_ALIASES: Record<string, string> = {
   acceptDialog: "accept_dialog",
   dismissDialog: "dismiss_dialog",
   dialogInfo: "dialog_info",
-  fileChooserSetFiles: "file_chooser_set_files",
-  downloadStat: "download_stat",
-  downloadCancel: "download_cancel",
-  downloadDelete: "download_delete",
-  mouseDown: "mouse_down",
-  mouseUp: "mouse_up",
-  keyDown: "key_down",
-  keyUp: "key_up",
-  releaseHeldInputs: "release_held_inputs",
-  html5Drag: "html5_drag",
-  html5DragAndDrop: "html5_drag",
   selectOption: "select_option",
 };
 
@@ -81,32 +57,22 @@ export const BROWSER_PROGRAM_HELPERS = [
   { name: "waitEvent", summary: "消费已 arm 的 token；须先 arm 再动作再 wait", composed: "wait_event" },
   { name: "disarmEvent", summary: "取消尚未消费的 arm", composed: "disarm_event" },
   { name: "consumeEvents", summary: "读清本页缓冲事件", composed: "consume_events" },
-  { name: "downloadSaveAs", summary: "等待页面下载完成后复制到绝对路径（非 fetch）", composed: "download_stat + 宿主 fs" },
   { name: "saveFile", summary: "saveFile({filename,content}) 把程序手上的文本存成本会话文件（与 artifacts 同一文件区、同一张侧栏卡片），返回 {filename,chars,lines,overwritten}，内容不回到上下文", composed: "宿主会话文件区" },
 ] as const;
 
-/**
- * 这个运行形态里真能用的 helper：扩展里没有本机文件，downloadSaveAs 不列；
- * saveFile 只在宿主接了本会话文件区时列。描述与白名单都从这里取。
- */
+/** saveFile 只在宿主接了本会话文件区时列；描述与白名单都从这里取。 */
 export function availableProgramHelpers(offer: { saveFile: boolean }) {
-  const unavailable = runtimeUnavailableTools();
-
-  return BROWSER_PROGRAM_HELPERS.filter(h => h.name === "saveFile" ? offer.saveFile : h.name === "downloadSaveAs" ? !unavailable.has("download_save_as") : true);
+  return BROWSER_PROGRAM_HELPERS.filter(h => h.name !== "saveFile" || offer.saveFile);
 }
 
-/** 程序里可用的 camelCase 别名：对应工具在这个运行形态不可用时一并去掉。 */
+/** 程序里可用的 camelCase 别名。 */
 export function availableRpcAliases(): string[] {
-  const unavailable = runtimeUnavailableTools();
-
-  return Object.keys(RPC_ALIASES).filter(alias => !unavailable.has(RPC_ALIASES[alias]!));
+  return Object.keys(RPC_ALIASES);
 }
 
 function programMethods(offer: { saveFile: boolean }): string[] {
-  const unavailable = runtimeUnavailableTools();
-
   return [
-    ...TOOL_NAMES.filter(name => name !== "worker_tabs" && !unavailable.has(name)),
+    ...TOOL_NAMES.filter(name => name !== "worker_tabs"),
     ...availableRpcAliases(),
     ...availableProgramHelpers(offer).map(h => h.name),
   ];
@@ -145,16 +111,8 @@ function explainProgramError(text: string, code: string, methods: readonly strin
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-/** 用户程序体；playwright 模式先注入官方兼容层与 RawPage/RawContext 适配。 */
+/** 用户程序体。 */
 function programSource(options: ProgramOptions): string {
-  if (options.api === "playwright") {
-    return buildPlaywrightProgram({
-      code: options.code,
-      pageTabId: typeof options.pageTabId === "number" ? options.pageTabId : null,
-      platform: process.platform,
-    });
-  }
-
   return `(async()=>{const value=await(async()=>{\n${options.code}\n})();return JSON.stringify(value===undefined?null:value);})()`;
 }
 
@@ -398,22 +356,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     return options.call("arm_event", callParams, stepId);
   }
 
-  async function downloadSaveAs(params: Record<string, unknown>, stepId: string): Promise<unknown> {
-    guard();
-    const downloadId = String(params.downloadId ?? "");
-    const path = String(params.path ?? "");
-    const sub = nextSubId(stepId);
-
-    const result = await hostDownloadSaveAs({
-      downloadId,
-      path,
-      timeoutMs: typeof params.timeoutMs === "number" ? params.timeoutMs : undefined,
-      stat: async () => options.call("download_stat", { downloadId }, sub()) as Promise<DownloadStatLike>,
-    });
-
-    return result;
-  }
-
   /** waitForLoad：等当前这次文档到达 domcontentloaded/load；旧文档 complete 不能在文档替换后冒充就绪。 */
   async function waitForLoad(params: Record<string, unknown>, stepId: string): Promise<unknown> {
     const state = params.state === undefined || params.state === "load" ? "load"
@@ -646,17 +588,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       try {
         guard();
         const canonical = RPC_ALIASES[name] ?? name;
-        let callParams = params;
-
-        if (canonical === "upload_file" || canonical === "file_chooser_set_files") {
-          // RPC 派发前授权：别名/Playwright/chooser 不能带着未授权路径出沙箱。
-          if (!options.authorizeUpload) {
-            throw new Error("本任务没有可上传的文件授权记录，未执行。");
-          }
-
-          const refs = Array.isArray(params.paths) ? (params.paths as unknown[]).map(String) : [];
-          callParams = { ...params, paths: options.authorizeUpload(refs) };
-        }
 
         const result = actualResult = name === "sleep" ? await sleep(Number(params.ms ?? 0))
           : name === "waitFor" || name === "waitForElement" ? await waitFor(params, id)
@@ -665,9 +596,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           : name === "waitForNetworkIdle" ? await waitForNetworkIdle(params, id)
           : name === "scrollToBottomUntil" ? await scrollToBottomUntil(params, id)
           : name === "armEvent" ? await armEvent(params, id)
-          : name === "downloadSaveAs" ? await downloadSaveAs(params, id)
           : name === "saveFile" && options.saveFile ? (isSaveFileParams(params) ? await options.saveFile(params) : rejectSaveFileParams())
-          : await options.call(canonical as ToolName, callParams, id);
+          : await options.call(canonical as ToolName, params, id);
 
         guard();
         let value = result;
@@ -726,9 +656,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     vm.unwrapResult(bootstrap).dispose();
     guard();
     const source = programSource(options);
-    // The trusted facade is substantially larger than user code. Its initial evaluation
-    // yields at list_tabs before entering user code; subsequent jobs retain the 100ms limit.
-    cpuDeadline = Date.now() + (options.api === "playwright" ? 1000 : 100);
+    cpuDeadline = Date.now() + 100;
     const evaluated = vm.evalCode(source, "browser-program.js");
 
     if (evaluated.error) {

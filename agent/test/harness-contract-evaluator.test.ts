@@ -19,7 +19,7 @@ let streaming=false;let held=false;
 
  const manager=new ConversationManager(async(_id,sink)=>{emit=sink;
 
-return {session,rpc,fleet:{teamView:()=>null,isGroupHeld:()=>held,reset:vi.fn(),abortTeam:vi.fn()},handleMessage:vi.fn(),dispose:()=>{}} as any;},m=>messages.push(m));
+return {session,rpc,control:{teamView:()=>null,isGroupHeld:()=>held,reset:vi.fn(),abortTeam:vi.fn()},handleMessage:vi.fn(),dispose:()=>{}} as any;},m=>messages.push(m));
 
 cleanup.push(()=>manager.dispose());
  const route=(text:string,stillCurrent=()=>true)=>manager.routeVoiceInput('default',text,null,stillCurrent,{requestId:'request-one',voiceId:'voice-one',turn:1,runId:manager.getTaskProgress('default')?.runId??null,input:{context:{tabId:7,url:'https://fixture.test',title:'当前页面'},observation:{token:'test-grant',tabId:7}}});

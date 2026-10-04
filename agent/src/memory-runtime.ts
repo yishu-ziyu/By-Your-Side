@@ -10,8 +10,7 @@ import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextSelection } from "./memory-context.js";
 import { isRelevantMemory } from "./memory-relevance.js";
-import { isUserCorrection } from "./experience.js";
-import { CORRECTION_ASK_PROMPT, CorrectionParseError, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
+import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
 interface ActiveUserTurn {
   epoch: number;
@@ -250,7 +249,6 @@ interface MemoryToolResult {
 }
 
 export class MemoryRuntime {
-  onUsed?: (entries: MemoryEntry[]) => void;
   /** 决定记录：写进诊断记录（设置页可导出）。只写编号、种类、规则与结论，不写用户原话。 */
   onRecord?: (type: "memory_decision" | "memory_context" | "memory_ask_decision", data: MemoryRecord) => void;
   private epoch = 0;
@@ -820,7 +818,6 @@ export class MemoryRuntime {
     const experiences = selection.entries.map(item => item.entry).filter(entry => entry.experience);
 
     if (experiences.length) {
-      this.onUsed?.(experiences);
       this.emit({ kind: "memory", action: "used", entries: experiences, message: `本轮使用了 ${experiences.length} 条记忆`, ...await this.rev() });
     }
 
@@ -881,7 +878,6 @@ export class MemoryRuntime {
     if (!this.current(turn)) return [];
 
     if (entries.length) {
-      this.onUsed?.(entries);
       this.emit({ kind: "memory", action: "used", entries, message: `本轮使用了 ${entries.length} 条记忆`, ...await this.rev() });
     }
 

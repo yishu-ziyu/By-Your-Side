@@ -1,14 +1,11 @@
 import { LEAD_SESSION_ID, isLeadSession, type ClientMessage, type ServerMessage, type TeamView, type TeamMemberHandback } from "../../shared/protocol.js";
-import { fromTeamMemberHandback } from "../../shared/control.js";
-import { createFleetTools, Fleet } from "./fleet.js";
+import { fromTeamMemberHandback, type ActiveMemberInput } from "../../shared/control.js";
+import { createTakeTabTool, TabControl } from "./tab-control.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
-import { frozenMembersFromTakeover } from "./team-handoff.js";
-import type { ExperienceStore } from "./experience.js";
 import type { MemoryStore } from "./memory-store.js";
 import type { TaskHistoryStore } from "./task-history.js";
-import type { SkillStore } from "./skill-store.js";
 
 const log = (message: string) => console.error(`[sideagent] ${message}`);
 
@@ -16,30 +13,12 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
+  options?: Pick<SessionCreateOptions, "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
 
-  const fleet = new Fleet({
-    rpc,
-    modelPattern,
-    sink: {
-      emit: (event, sessionId) => {
-        const message: Extract<ServerMessage, { type: "agent_event" }> = { type: "agent_event", event };
-
-        if (sessionId && !isLeadSession(sessionId)) message.sessionId = sessionId;
-        sendCurrent(message);
-      },
-      setStatus: (state, sessionId) => {
-        const message: Extract<ServerMessage, { type: "status" }> = { type: "status", state };
-
-        if (sessionId && !isLeadSession(sessionId)) message.sessionId = sessionId;
-        sendCurrent(message);
-      },
-    },
-  });
-
+  const control = new TabControl(rpc);
   let toolSession: BrowserAgentSession | undefined;
 
   const session = await BrowserAgentSession.create(
@@ -56,18 +35,15 @@ export async function createConversationRuntime(
         options?.onModelFailover?.(from, to);
         void toolSession?.availableModels().then(models => sendCurrent({ type: "model_info", model: to, models }));
       },
-      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => fleet.releaseIdleForeignTab(tabId), isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), learning: { active: () => toolSession?.isLearningSkillRun() ?? false, observe: event => toolSession?.observeSkillEvidence(event) }, get uploadLedger() { return toolSession?.uploadLedger; }, files: () => toolSession?.fileStore() }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
+      customTools: [...createBrowserTools(rpc, undefined, tabId => control.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => control.releaseIdleForeignTab(tabId), epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), files: () => toolSession?.fileStore() }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
 
- return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
+ return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), createTakeTabTool(control)],
     },
   );
 
   toolSession = session;
   rpc.beforeCall = () => session.flushPersistence();
-  fleet.attachLead(session);
-  // 协作工具按需挂载：没有 worker 时模型只看到常驻工具，请到人（或拿到同伴工件）后再出现。
-  fleet.onMembersChange = (count) => session.setTeamToolsMounted(count > 0);
-  session.setTeamToolsMounted(fleet.size > 0);
+  control.attachLead(session);
 
   if (!session.available) {
     log("模型凭据未配置，会话暂不可用（连接面板后会收到设置指引）");
@@ -90,12 +66,6 @@ export async function createConversationRuntime(
   const handleMessage = (msg: ClientMessage): void => {
     switch (msg.type) {
       case "user_message":
-        if (session.isHeld()) {
-          session.sendUserMessage(msg.text, msg.context, msg.attachments);
-          break;
-        }
-
-        if (!session.isStreaming()) fleet.reset();
         session.sendUserMessage(
           msg.text,
           msg.context,
@@ -107,10 +77,10 @@ export async function createConversationRuntime(
         break;
       case "abort":
         session.abort();
-        fleet.abortTeam();
+        control.abortTeam();
         sendCurrent({ type: "status", state: "idle" });
         {
-          const aborted = fleet.teamView();
+          const aborted = control.teamView();
 
           if (aborted) sendCurrent({ type: "team_status", team: aborted });
         }
@@ -119,7 +89,7 @@ export async function createConversationRuntime(
       case "takeover": {
         const frozen = frozenMembersFromTakeover(msg);
 
-        if (frozen.length === 0 && !session.isHeld() && !fleet.isGroupHeld()) {
+        if (frozen.length === 0 && !session.isHeld() && !control.isGroupHeld()) {
           sendCurrent({
             type: "control_result",
             requestId: msg.requestId,
@@ -134,7 +104,7 @@ export async function createConversationRuntime(
         let team;
 
         try {
-          team = fleet.holdActiveGroup(frozen.length > 0 ? frozen : undefined, {
+          team = control.holdActiveGroup(frozen.length > 0 ? frozen : undefined, {
             groupId: msg.groupId,
             generation: msg.generation,
           });
@@ -171,7 +141,7 @@ export async function createConversationRuntime(
       }
 
       case "handback": {
-        const held = session.isHeld() || fleet.isGroupHeld();
+        const held = session.isHeld() || control.isGroupHeld();
 
         if (!held) {
           sendCurrent({
@@ -195,7 +165,7 @@ export async function createConversationRuntime(
             ok: false,
             state: "user",
             reason: "没有可用的交还页面。",
-            team: fleet.teamView() ?? undefined,
+            team: control.teamView() ?? undefined,
           });
           break;
         }
@@ -225,7 +195,7 @@ export async function createConversationRuntime(
           }
         };
 
-        void fleet
+        void control
           .continueMembers(pages, { groupId: msg.groupId, generation: msg.generation }, publishProgress)
           .then((result) => {
             if (!acknowledged) {
@@ -246,20 +216,9 @@ export async function createConversationRuntime(
         break;
       }
 
-      case "set_mode":
-        void session.setMode(msg.mode);
-        break;
       case "set_model":
         void handleSetModel(msg.model);
         break;
-      case "page_event": {
-        const target =
-          isLeadSession(msg.sessionId) ? session : fleet.get(msg.sessionId!);
-
-        target?.notifyPageEvent(msg.url);
-        break;
-      }
-
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error, msg.executionFact);
         break;
@@ -268,7 +227,14 @@ export async function createConversationRuntime(
     }
   };
 
-  return { session, fleet, rpc, handleMessage, dispose() { fleet.dispose(); session.dispose(); } };
+  return { session, control, rpc, handleMessage, dispose() { session.dispose(); } };
+}
+
+function frozenMembersFromTakeover(msg: Extract<ClientMessage, { type: "takeover" }>): ActiveMemberInput[] {
+  return (msg.members ?? []).map((member) => ({
+    sessionId: member.sessionId, role: member.role, activity: member.activity ?? "running",
+    tabId: member.tabId, title: member.title, url: member.url,
+  }));
 }
 
 function handbackPagesFromMessage(msg: Extract<ClientMessage, { type: "handback" }>) {

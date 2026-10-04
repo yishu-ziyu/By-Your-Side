@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { tabOwnerIdle } from "../src/conversation-manager.js";
-import { Fleet } from "../src/fleet.js";
+import { TabControl } from "../src/tab-control.js";
 import { TaskProgress } from "../src/task-progress.js";
 import { createBrowserTools } from "../src/tools.js";
 import type { ToolRpc } from "../src/rpc.js";
@@ -23,8 +23,8 @@ function markTool(rpc: ToolRpc, releaseIdleTab: () => Promise<boolean>) {
   return tools.find((tool) => tool.name === "mark")!;
 }
 
-function fleetOf(rpc: ToolRpc): Fleet {
-  return new Fleet({ rpc, sink: { emit: vi.fn(), setStatus: vi.fn() } });
+function fleetOf(rpc: ToolRpc): TabControl {
+  return new TabControl(rpc);
 }
 
 // SAFETY: mark 的 execute 不读取第五个参数（扩展上下文）。
@@ -51,7 +51,7 @@ describe("旧会话占着的标签页", () => {
     expect(call).toHaveBeenCalledOnce();
   });
 
-  it("Fleet 只在对方空闲时认领，认领时带上原归属防止抢到别人刚接手的页", async () => {
+  it("TabControl 只在对方空闲时认领，认领时带上原归属防止抢到别人刚接手的页", async () => {
     const calls: TabParams[] = [];
 
     const fleet = fleetOf(rpcOf(async (_name, params) => {

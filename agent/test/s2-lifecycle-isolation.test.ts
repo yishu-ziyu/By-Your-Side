@@ -38,7 +38,7 @@ function managerHarness() {
 
     return {
       session, rpc: {rejectAll: vi.fn()},
-      fleet: {reset: vi.fn(), isGroupHeld: () => paused, teamView: () => null, list: () => []},
+      control: {reset: vi.fn(), isGroupHeld: () => paused, teamView: () => null, list: () => []},
       handleMessage: vi.fn(), dispose: () => {},
     } as any;
   }, message => emitted.push(message));

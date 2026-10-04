@@ -52,7 +52,7 @@ function runtime(reader:()=>TaskProgressSnapshot|null,emit:(message:ServerMessag
     availableModels:vi.fn(async()=>[]),abort:vi.fn(),classifyVoiceInput:vi.fn()};
 
   return {session,resume,start,handleMessage:vi.fn(),dispose:vi.fn(),rpc:{call:vi.fn(),rejectAll:vi.fn()},
-    fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[],abortTeam:vi.fn()}};
+    control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[],abortTeam:vi.fn()}};
 }
 
 describe('real program-step checkpoint identities',()=>{

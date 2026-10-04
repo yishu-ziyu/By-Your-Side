@@ -83,18 +83,6 @@ it("主 Agent 可查看跨会话归属，普通 worker 不能管理，未停止�
   expect(await state.getTabResource(1)).toMatchObject({ collaborators: [worker] });
 });
 
-it("保留其他协作者，旧独占页和 SW 重启后的迟到 worker 也能正确处理", async () => {
-  const { state, control, lead, worker } = await setup();
-  await state.shareTab({ tabId: 1, collaborators: ["reviewer"] }, worker);
-  await control.manage({ action: "release", workerId: "writer" }, lead);
-  expect(await state.getTabResource(1)).toMatchObject({ mode: "shared", collaborators: [lead, state.executionKey("A", "reviewer")] });
-  vi.resetModules();
-  const { WorkerTabControl } = await import("../src/background/worker-tab-control.js");
-  await expect(new WorkerTabControl().run(worker, vi.fn())).rejects.toThrow(/worker 已停止/);
-  const reloaded = await import("../src/background/state.js");
-  await expect(reloaded.resolveWorkingTab(2, lead)).resolves.toMatchObject({ id: 2 });
-});
-
 it("迁移只有旧工作指针、没有资源表的遗留页面", async () => {
   stored.workingTabs = { "A::old-worker": 7 };
   const { state, control, lead } = await setup();

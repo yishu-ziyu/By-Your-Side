@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
 import { TASK_HISTORY_FILE, TaskHistoryStore } from "../src/task-history.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 
 const roots: string[] = [];
 

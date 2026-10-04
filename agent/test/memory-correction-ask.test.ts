@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryRuntime } from "../src/memory-runtime.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 import { InProcessLock, type DocumentPersistence } from "../src/document-persistence.js";
 import type { AgentUiEvent, PageContext, ServerMessage } from "../../shared/protocol.js";
 import { ConversationManager } from "../src/conversation-manager.js";
@@ -477,7 +477,7 @@ describe("the panel's answer message", () => {
     await f.say(correction);
     const askId = f.asks()[0]!.askId;
     const emitted: ServerMessage[] = [];
-    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, fleet: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
+    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, control: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
     // SAFETY: 这条路由只用到 session.answerMemoryAsk 与会话列表需要的几个读取方法。
     const manager = new ConversationManager(async () => runtime as never, message => emitted.push(message), undefined, f.store);
     await manager.ensureDefault();
@@ -506,7 +506,7 @@ describe("the panel's answer message", () => {
     const askId = f.asks()[0]!.askId;
     await store.update({ id: old.id, expectedVersion: 1, text: "以后在这个网站导出，我只导前两页", scope: old.scope });
     const emitted: ServerMessage[] = [];
-    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, fleet: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
+    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, control: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
 
     const sink = (message: ServerMessage) => {
       emitted.push(message);
@@ -528,7 +528,7 @@ describe("the panel's answer message", () => {
     const f = await fixture();
     await f.say(correction);
     const emitted: ServerMessage[] = [];
-    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, fleet: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
+    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, control: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
     // SAFETY: 这条路由只用到 session.answerMemoryAsk 与会话列表需要的几个读取方法。
     const manager = new ConversationManager(async () => runtime as never, message => emitted.push(message), undefined, f.store);
     await manager.ensureDefault();
@@ -544,7 +544,7 @@ describe("the panel's answer message", () => {
     await f.say(correction);
     const askId = f.asks()[0]!.askId;
     const emitted: ServerMessage[] = [];
-    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, fleet: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
+    const runtime = { session: { answerMemoryAsk: (id: string, answer: "remember" | "once") => f.runtime.answerAsk(id, answer), modelName: () => "test/model", isHeld: () => false, isStreaming: () => false }, control: { teamView: () => null, list: () => [] }, dispose: vi.fn() };
     // SAFETY: 这条路由只用到 session.answerMemoryAsk 与会话列表需要的几个读取方法。
     const manager = new ConversationManager(async () => runtime as never, message => emitted.push(message), undefined, f.store);
     await manager.ensureDefault();

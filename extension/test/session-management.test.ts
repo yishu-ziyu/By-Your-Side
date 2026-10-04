@@ -57,7 +57,7 @@ it('resumes through the actual panel task_action relay without replacing the ori
 
   return {session:{available:true,modelName:()=> 'fixture',isStreaming:()=>false,isHeld:()=>false,
    readPersistedTaskResults:()=>before,persistTaskResults:vi.fn(),startTask:start,resumeInterruptedTask:resume},
-   fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
+   control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
    rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:vi.fn()} as any;
  },message=>wire.callbacks.onServerMessage(message));
 
@@ -140,43 +140,6 @@ describe("control and worker restart boundaries", () => {
   vi.resetModules(); await import("../src/background/index.js"); await settle();
   p = panel(); p.onMessage.emit({kind:"sync",conversationId:"B",afterSeq:0}); await settle();
   expect(p.postMessage.mock.calls.map(c=>c[0]).some(m=>m.kind==="history" && m.conversationId==="B" && JSON.stringify(m).includes("persist B"))).toBe(true);
- });
-});
-
-describe("persisted runtime mode recovery", () => {
- it("does not overwrite restored teach mode with empty extension storage during hello", async () => {
-  const p = panel();
-  wire.callbacks.onServerMessage({type:"hello_ok",version:2}); await settle();
-  wire.callbacks.onServerMessage({type:"conversation_list",conversations:[{...summary("default"),mode:"teach"},summary("B")]}); await settle();
-  p.onMessage.emit({kind:"sync",conversationId:"default",afterSeq:0}); await settle();
-  expect(wire.sent.filter(m=>m.type==="set_mode")).toEqual([]);
-  expect(storage.agentMode).toBe("teach");
-  expect(storage["agentMode:B"]).toBe("act");
-  expect(p.postMessage.mock.calls.map(c=>c[0]).filter(m=>m.kind==="mode" && m.conversationId==="default").at(-1)?.mode).toBe("teach");
- });
- it("keeps an explicit user mode change scoped and persistent after restoration", async () => {
-  const p = panel();
-  wire.callbacks.onServerMessage({type:"conversation_list",conversations:[{...summary("default"),mode:"teach"},summary("B")]}); await settle();
-  p.onMessage.emit({kind:"client",msg:{type:"set_mode",conversationId:"B",mode:"teach"}}); await settle();
-  expect(storage.agentMode).toBe("teach");
-  expect(storage["agentMode:B"]).toBe("teach");
-  expect(wire.sent.filter(m=>m.type==="set_mode")).toEqual([{type:"set_mode",conversationId:"B",mode:"teach"}]);
- });
-});
-
-describe("mode hydration ordering", () => {
- it("keeps a runtime mode update when an older empty storage read finishes later", async () => {
-  const {getMode, setMode} = await import("../src/background/mode.js");
-  const session = (globalThis as any).chrome.storage.session;
-  const originalGet = session.get;
-  let release!: (value: SessionItems) => void;
-  session.get = (key: string) => key === "agentMode:slow" ? new Promise(resolve => {release=resolve;}) : originalGet(key);
-  const pending = getMode("slow");
-  await setMode("teach", "slow");
-  release({});
-  expect(await pending).toBe("teach");
-  expect(await getMode("slow")).toBe("teach");
-  session.get = originalGet;
  });
 });
 

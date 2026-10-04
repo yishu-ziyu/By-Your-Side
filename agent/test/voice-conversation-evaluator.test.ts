@@ -22,7 +22,7 @@ if(message.type==='agent_event'&&message.event.kind==='agent_end')running=false;
   const runtime:any={session:{modelName:()=> 'test',availableModels:async()=>[],available:true,isStreaming:()=>running,isHeld:()=>false,
    classifyVoiceInput:vi.fn(async(text:string)=>({steps:[{action:'chat',text,target:null}]})),
    startTask:vi.fn(()=>publish({type:'agent_event',event:{kind:'agent_start'}})),abort:vi.fn()},
-   fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn()},rpc:{rejectAll:vi.fn()},dispose:()=>{},
+   control:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn()},rpc:{rejectAll:vi.fn()},dispose:()=>{},
    handleMessage:(message:any)=>{if(message.type==='user_message')publish({type:'agent_event',event:{kind:'agent_start'}});}};
 
   runtimes.set(id,{runtime,publish});

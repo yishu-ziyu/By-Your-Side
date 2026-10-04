@@ -23,24 +23,6 @@ describe("parseClientMessage", () => {
     expect(parseClientMessage("")).toBeNull();
   });
 
-  it("parses a valid set_mode frame", () => {
-    expect(parseClientMessage(JSON.stringify({ type: "set_mode", mode: "teach" }))).toEqual({
-      type: "set_mode",
-      mode: "teach",
-    });
-    expect(parseClientMessage(JSON.stringify({ type: "set_mode", mode: "act" }))).toEqual({
-      type: "set_mode",
-      mode: "act",
-    });
-  });
-
-  it("rejects set_mode frames with an invalid mode", () => {
-    expect(parseClientMessage(JSON.stringify({ type: "set_mode" }))).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: "set_mode", mode: "TEACH" }))).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: "set_mode", mode: 1 }))).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: "set_mode", mode: null }))).toBeNull();
-  });
-
   it("parses a valid set_model frame", () => {
     expect(parseClientMessage(JSON.stringify({ type: "set_model", model: "kimi-coding/kimi-for-coding" }))).toEqual({
       type: "set_model",
@@ -69,21 +51,6 @@ describe("parseClientMessage", () => {
         JSON.stringify({ type: "page_event", event: "url_changed", url: "https://a.b", sessionId: "wiki" }),
       ),
     ).toEqual({ type: "page_event", event: "url_changed", url: "https://a.b", sessionId: "wiki" });
-  });
-
-  it("rejects page_event with empty sessionId", () => {
-    expect(
-      parseClientMessage(
-        JSON.stringify({ type: "page_event", event: "url_changed", url: "https://a.b", sessionId: "" }),
-      ),
-    ).toBeNull();
-  });
-
-  it("rejects malformed page_event frames", () => {
-    expect(parseClientMessage(JSON.stringify({ type: "page_event" }))).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: "page_event", event: "dom_changed", url: "https://a.b" }))).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: "page_event", event: "url_changed" }))).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: "page_event", event: "url_changed", url: 42 }))).toBeNull();
   });
 
   it("parses a valid user_message frame with page context", () => {

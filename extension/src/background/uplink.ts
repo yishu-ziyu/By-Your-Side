@@ -1,12 +1,9 @@
 /**
  * 上行连接管理：background service worker ⇆ 扩展内 agent（offscreen 文档，见 ../inproc/）。
- * 本机伴随进程（Native Messaging）已随本机模式退役；offscreen 文档建不起来且配了 token 时，
- * 才回退 WebSocket 调试通道（只给测试用，见 connectWs）。
- * 认证失败（hello_error）时停止自动重连，等面板更新配置后触发 retry()。
+ * 本机伴随进程与 WebSocket 调试通道都已删除；offscreen 文档建不起来时按退避重试。
+ * 认证失败（hello_error）时停止自动重连，等面板触发 retry()。
  */
 import {
-  DEFAULT_HOST,
-  DEFAULT_PORT,
   PROTOCOL_VERSION,
   STORAGE_SCHEMA_VERSION,
   parseServerMessage,
@@ -18,8 +15,6 @@ import {
   INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
 
-const TOKEN_KEY = "sideagent_token";
-
 export interface UplinkHandlers {
   onServerMessage(msg: ServerMessage): void;
   onConnState(state: ConnState, transport: TransportKind | undefined, detail?: string): void;
@@ -28,7 +23,6 @@ export interface UplinkHandlers {
 export class Uplink {
   private readonly handlers: UplinkHandlers;
   private inprocPort: chrome.runtime.Port | null = null;
-  private ws: WebSocket | null = null;
   private transport: TransportKind | null = null;
   private retryAttempt = 0;
   private authFailed = false;
@@ -54,7 +48,7 @@ export class Uplink {
     void this.connectInproc();
   }
 
-  /** 面板请求重连（如更新了 ws token）。 */
+  /** 面板请求重连。 */
   retry(): void {
     this.authFailed = false;
     this.retryAttempt = 0;
@@ -71,12 +65,6 @@ export class Uplink {
 
         return true;
       }
-
-      if (this.transport === "ws" && this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify(msg));
-
-        return true;
-      }
     } catch {
       return false;
     }
@@ -86,19 +74,12 @@ export class Uplink {
 
   private teardown(): void {
     try {
-      this.ws?.close();
-    } catch {
-      /* 忽略 */
-    }
-
-    try {
       this.inprocPort?.disconnect();
     } catch {
       /* 忽略 */
     }
 
     this.inprocPort = null;
-    this.ws = null;
     this.transport = null;
   }
 
@@ -168,9 +149,8 @@ export class Uplink {
       this.connecting = false;
       const detail = `扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`;
 
-      // 配了 ws 调试 token 才走调试通道；否则按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），
-      // 不能停在「未连接」等用户重载扩展。
-      await this.connectWs(detail);
+      // 按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），不能停在「未连接」等用户重载扩展。
+      this.handleDisconnect(detail);
 
       return;
     }
@@ -209,59 +189,6 @@ export class Uplink {
     this.inprocPort?.postMessage({ type: "inproc_voice", configured });
   }
 
-  /**
-   * WebSocket 调试回退：只给测试用。accept:journeys、P0 本地运行把 Node 里的会话管理接到隔离扩展上，
-   * 靠这条通道（脚本先让 offscreen 文档建不起来、再写 token）。这些检查改到扩展里跑之后删除，见 docs/STATUS.md。
-   */
-  private async connectWs(reason: string): Promise<void> {
-    if (this.authFailed) return;
-
-    if (this.transport !== null) return;
-    const stored = await chrome.storage.local.get(TOKEN_KEY);
-
-    if (this.transport !== null) return;
-    const token = typeof stored[TOKEN_KEY] === "string" ? stored[TOKEN_KEY] : "";
-
-    if (!token) {
-      this.handleDisconnect(reason);
-
-      return;
-    }
-
-    let ws: WebSocket;
-
-    try {
-      ws = new WebSocket(`ws://${DEFAULT_HOST}:${DEFAULT_PORT}`);
-    } catch {
-      this.handleDisconnect(reason);
-
-      return;
-    }
-
-    this.ws = ws;
-    this.transport = "ws";
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION }));
-    };
-
-    ws.onmessage = (e) => {
-      if (typeof e.data === "string") this.handleRaw(e.data);
-    };
-
-    ws.onclose = () => {
-      if (this.ws !== ws) return;
-      this.handleDisconnect(`ws 调试通道断开（${reason}）`);
-    };
-
-    ws.onerror = () => {
-      try {
-        ws.close();
-      } catch {
-        /* 忽略 */
-      }
-    };
-  }
 }
 
 function isKeepalive(raw: unknown): raw is { type: "inproc_keepalive" } {

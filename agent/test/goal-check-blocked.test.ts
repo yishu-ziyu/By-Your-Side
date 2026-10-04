@@ -240,7 +240,8 @@ describe("goal check: blocked by a cause outside the assistant and the user", ()
 
       expect(goalChecks(h.emitted).map(event => event.status)).toEqual(["continue", "blocked"]);
       expect(deliveries(h.emitted)).toHaveLength(2);
-      expect(ends(h.emitted)).toBe(1);
+      // 10-04 起回答先交付、这一轮先结束；催续是看得见的后续一轮，再结束一次。
+      expect(ends(h.emitted)).toBe(2);
       expect(h.received).toHaveLength(6);
       // 只有被催的那一次升档；受阻不再升。
       expect(h.trace().filter(line => line.type === "effort_change").map(line => line.data.signal)).toEqual(["goal_unfinished"]);

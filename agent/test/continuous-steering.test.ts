@@ -11,7 +11,6 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { BrowserAgentSession, STEER_CONTRACT_NOTE } from "../src/session.js";
 import { TaskActionRejected } from "../src/task-dispatcher.js";
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
@@ -120,7 +119,6 @@ function textOf(message: { content?: unknown }): string {
  */
 async function realSteeringSession() {
   const dir = mkdtempSync(join(tmpdir(), "sideagent-steering-"));
-  const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
   const calls: Array<{ messages: Array<{ role: string; text: string }> }> = [];
   const held: ManualStream[] = [];
 
@@ -146,11 +144,11 @@ async function realSteeringSession() {
     return pipe;
   };
 
-  runtime.registerNativeProvider({
-    id: model.provider, name: "Steering probe",
-    auth: { apiKey: { name: "Local", resolve: async () => ({ auth: {} }) } },
-    getModels: () => [model], stream, streamSimple: stream,
-  } as never);
+  // 扩展内会话循环的模型端口：主循环走 streamSimple，旁路判断（记忆等）一律回空正文。
+  const models = {
+    getModel: () => model, getAvailable: async () => [model], streamSimple: stream,
+    completeSimple: async () => assistant([{ type: "text", text: "{}" }], "stop"),
+  };
 
   const rpc = {
     call: vi.fn(async () => ({ text: "本地表单内容" })),
@@ -164,7 +162,7 @@ async function realSteeringSession() {
   const session = await BrowserAgentSession.create(rpc as never, {
     emit: event => emitted.push(event),
     setStatus: vi.fn(),
-  }, { modelRuntime: runtime, modelPattern: PROBE_MODEL } as never);
+  }, { loop: { models, cwd: dir }, modelPattern: PROBE_MODEL } as never);
 
   return {
     session, calls, emitted, held,

@@ -3,7 +3,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {MEMORY_STORE_FILE, MemoryStore} from '../src/memory-store.js';
-import {FileDocument} from '../src/document-file.js';
+import {FileDocument} from './fixtures/file-document.js';
 
 const dirs:string[]=[];
 

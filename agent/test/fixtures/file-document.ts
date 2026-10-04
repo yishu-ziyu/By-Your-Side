@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { DocumentPersistence } from "./document-persistence.js";
+import type { DocumentPersistence } from "../../src/document-persistence.js";
 
 const LOCK_WAIT_MS = 10_000;
 

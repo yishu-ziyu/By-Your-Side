@@ -6,20 +6,15 @@
  * Adapted in part from citrolabs/ego-lite@dca7003349c5f7132189ba00547cbbd7ff8e597e (MIT).
  * Copyright (c) 2026 CitroLabs — see extension/src/background/page-events.ts for full notice.
  */
-import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
+import { LEAD_SESSION_ID, type DownloadReceipt, type ToolContract } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
-import {
-  cancelDownloadRecord,
-  deleteDownloadRecord,
-  getDownloadRecord,
-} from "../page-events.js";
 
 /** URL 下载不经过 Page.downloadWillBegin，按 Chrome 返回的精确 id 跟踪，避免按 URL 串到另一笔下载。 */
 const directDownloads = new Map<string, { chromeId: number; tabId: number; sessionId: string; url: string }>();
 
 class DownloadNotStarted extends Error { readonly executionFact = "not_executed" as const; }
 
-async function directStat(downloadId: string, sessionId: string): Promise<ToolContract["download_stat"]["data"] | null> {
+async function directStat(downloadId: string, sessionId: string): Promise<DownloadReceipt | null> {
   const record = directDownloads.get(downloadId);
 
   if (!record) return null;
@@ -30,7 +25,7 @@ async function directStat(downloadId: string, sessionId: string): Promise<ToolCo
   if (!item) throw new Error("Chrome 中已找不到这次下载记录。");
   const completed = item.state === "complete";
 
-  const stat: ToolContract["download_stat"]["data"] = {
+  const stat: DownloadReceipt = {
     downloadId, tabId: record.tabId, url: record.url,
     suggestedFilename: item.filename.split(/[\\/]/).at(-1) || new URL(record.url).pathname.split("/").at(-1) || "download",
     path: completed ? item.filename : null, failure: item.error ?? null, completed, cancelled: item.error === "USER_CANCELED",
@@ -76,81 +71,5 @@ export async function downloadUrl(params: ToolContract["download_url"]["params"]
   return stat;
 }
 
-export async function downloadStat(
-  params: ToolContract["download_stat"]["params"],
-  sessionId: string = LEAD_SESSION_ID,
-): Promise<ToolContract["download_stat"]["data"]> {
-  const direct = await directStat(params.downloadId, sessionId);
 
-  if (direct) return direct;
-  const download = getDownloadRecord(params.downloadId);
 
-  const stat: ToolContract["download_stat"]["data"] = {
-    downloadId: download.downloadId,
-    tabId: download.tabId,
-    url: download.url,
-    suggestedFilename: download.suggestedFilename,
-    path: download.completed ? download.path ?? null : null,
-    failure: download.failure,
-    completed: download.completed,
-    cancelled: download.cancelled,
-  };
-
-  if (download.completed && download.bytes !== undefined) stat.bytes = download.bytes;
-
-  if (download.danger) stat.danger = download.danger;
-
-  return stat;
-}
-
-export async function downloadCancel(
-  params: ToolContract["download_cancel"]["params"],
-  sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<ToolContract["download_cancel"]["data"]> {
-  const direct = directDownloads.get(params.downloadId);
-
-  if (direct) {
-    if (direct.sessionId !== sessionId) throw new Error("该下载编号不属于当前会话。");
-    const before = await directStat(params.downloadId, sessionId);
-
-    if (before && !before.completed && !before.failure) {
-      await beforeDispatch?.();
-      beforeDispatch?.checkNow?.();
-      try { await chrome.downloads.cancel(direct.chromeId); }
-      catch (error) {
-        const after = await directStat(params.downloadId, sessionId);
-
-        if (!after?.completed) throw error;
-      }
-    }
-
-    const stat = await directStat(params.downloadId, sessionId);
-
-    if (!stat) throw new Error("下载记录不可用。");
-
-    return { cancelled: stat.cancelled, completed: stat.completed, downloadId: params.downloadId, failure: stat.failure };
-  }
-
-  const download = await cancelDownloadRecord(params.downloadId, beforeDispatch);
-
-  return { cancelled: download.cancelled, completed: download.completed, downloadId: download.downloadId, failure: download.failure };
-}
-
-export async function downloadDelete(
-  params: ToolContract["download_delete"]["params"],
-  sessionId: string = LEAD_SESSION_ID,
-): Promise<ToolContract["download_delete"]["data"]> {
-  const direct = directDownloads.get(params.downloadId);
-
-  if (direct) {
-    if (direct.sessionId !== sessionId) throw new Error("该下载编号不属于当前会话。");
-    directDownloads.delete(params.downloadId);
-
-    return { deleted: true, downloadId: params.downloadId };
-  }
-
-  deleteDownloadRecord(params.downloadId);
-
-  return { deleted: true, downloadId: params.downloadId };
-}

@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 
 const roots: string[] = [];
 

@@ -6,7 +6,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBrowserTools } from "../src/tools.js";
 import { runBrowserProgram } from "../src/browser-program.js";
-import { REALTIME_BROWSER_TOOL_NAMES } from "../src/realtime-browser-tools.js";
 import type { ElementPosition, MouseButton } from "../../shared/pointer-input.js";
 
 /**
@@ -95,78 +94,31 @@ describe("CAP-02B 正式入口接线", () => {
     });
   });
 
-  it("wheel / key_down 经正式工具派发到扩展 RPC 名", async () => {
-    const { rpc, tools } = harness();
-    await execute(tools, "wheel", { point: [100, 200], deltaX: 0, deltaY: 120 });
-    await execute(tools, "key_down", { key: "Shift" });
-    expect(rpc.call.mock.calls.find((c) => c[0] === "wheel")![1]).toMatchObject({
-      point: [100, 200],
-      deltaY: 120,
-    });
-    expect(rpc.call.mock.calls.find((c) => c[0] === "key_down")![1]).toMatchObject({ key: "Shift" });
-  });
-
-  it("browser_run camelCase 别名派发规范 RPC（含 button/position）", async () => {
+  it("browser_run 的 click 别名原样传递 button/position；已删除的按住类输入不再可用", async () => {
     const call = vi.fn(async (name: string, _params: InputPrimitiveParams = {}, _id?: string) => {
       if (name === "click") return { clicked: true };
-
-      if (name === "wheel") return { wheeled: true, point: [5, 6] };
-
-      if (name === "key_down") return { down: true, key: "ControlOrMeta" };
-
-      if (name === "mouse_down") return { down: true, point: [5, 6], button: "left" };
-
-      if (name === "release_held_inputs") return { releasedKeys: ["ControlOrMeta"], releasedButtons: ["left"] };
       throw new Error(`unexpected ${name}`);
     });
 
     const result = await runBrowserProgram({
       code: `
         const c = await browser.click({ target: "#a", button: "middle", position: { x: 1, y: 2 } });
-        const w = await browser.wheel({ point: [5, 6], deltaY: 40 });
-        const k = await browser.keyDown({ key: "ControlOrMeta" });
-        const m = await browser.mouseDown({ point: [5, 6] });
-        const r = await browser.releaseHeldInputs({});
-        return { c, w, k, m, r };
+        return { c, wheel: typeof browser.wheel, keyDown: typeof browser.keyDown, mouseDown: typeof browser.mouseDown, release: typeof browser.releaseHeldInputs, html5: typeof browser.html5Drag, paste: typeof browser.paste };
       `,
       call,
     });
 
-    expect(call.mock.calls.map((c) => c[0])).toEqual([
-      "click",
-      "wheel",
-      "key_down",
-      "mouse_down",
-      "release_held_inputs",
-    ]);
-    expect(call.mock.calls[0]?.[1]).toMatchObject({
-      target: "#a",
-      button: "middle",
-      position: { x: 1, y: 2 },
-    });
-    expect(result.value).toMatchObject({
-      w: { wheeled: true },
-      k: { down: true },
-      r: { releasedKeys: ["ControlOrMeta"] },
-    });
+    expect(call.mock.calls.map((c) => c[0])).toEqual(["click"]);
+    expect(call.mock.calls[0]?.[1]).toMatchObject({ target: "#a", button: "middle", position: { x: 1, y: 2 } });
+    expect(result.value).toMatchObject({ c: { clicked: true }, wheel: "undefined", keyDown: "undefined", mouseDown: "undefined", release: "undefined", html5: "undefined", paste: "undefined" });
   });
 
-  it("html5_drag / paste 经工具表可达；不进入 Realtime 固定工具表", async () => {
+  it("已删除的输入原语不在工具表里", async () => {
     const { tools } = harness();
     const names = tools.map((t) => t.name);
 
-    for (const name of [
-      "wheel",
-      "mouse_down",
-      "mouse_up",
-      "key_down",
-      "key_up",
-      "release_held_inputs",
-      "paste",
-      "html5_drag",
-    ]) {
-      expect(names).toContain(name);
-      expect(REALTIME_BROWSER_TOOL_NAMES as readonly string[]).not.toContain(name);
+    for (const name of ["wheel", "mouse_down", "mouse_up", "key_down", "key_up", "release_held_inputs", "paste", "html5_drag", "drag", "cdp"]) {
+      expect(names).not.toContain(name);
     }
   });
 });

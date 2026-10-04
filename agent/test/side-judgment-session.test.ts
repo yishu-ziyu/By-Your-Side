@@ -25,7 +25,7 @@ import { TaskProgress } from "../src/task-progress.js";
 import { createBrowserTools } from "../src/tools.js";
 import { ReadingRequests } from "../src/reading.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import type { ReadingEvent } from "../../shared/reading.js";
 

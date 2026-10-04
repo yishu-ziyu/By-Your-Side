@@ -68,7 +68,7 @@ it('reading and handoff do not send, steer or abort the main task, and transfer 
 
   const factory=vi.fn(async()=>{const runtime={session:{modelName:()=> 'test/model', answerReading:vi.fn(async(t:ReadingTranscript,_s:AbortSignal,onText:(s:string)=>void)=>{expect(t.turns[0]?.question).toBe('解释');onText('answer');
 
-return 'answer';}),importReading:vi.fn(async()=>{}),startTask:vi.fn(),abort:vi.fn()},fleet:{teamView:()=>null},handleMessage:vi.fn()};
+return 'answer';}),importReading:vi.fn(async()=>{}),startTask:vi.fn(),abort:vi.fn()},control:{teamView:()=>null},handleMessage:vi.fn()};
 
 runtimes.push(runtime);
 

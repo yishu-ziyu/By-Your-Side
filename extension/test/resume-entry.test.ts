@@ -332,23 +332,6 @@ describe('A05-08 呈现时序与请求去重', () => {
 describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', () => {
   interface FakePort { name: string; sent: unknown[]; disconnectCalls: number; onMessage: { addListener: () => void }; onDisconnect: { addListener: () => void }; postMessage: (m: unknown) => void; disconnect: () => void; }
 
-  class FakeWebSocket {
-    static OPEN = 1;
-    static CONNECTING = 0;
-    static CLOSED = 3;
-    static instances: FakeWebSocket[] = [];
-    readyState = FakeWebSocket.CONNECTING;
-    sent: string[] = [];
-    onopen: (() => void) | null = null;
-    onmessage: ((event: { data: string }) => void) | null = null;
-    onclose: (() => void) | null = null;
-    onerror: (() => void) | null = null;
-    constructor(public url: string) { FakeWebSocket.instances.push(this); }
-    send(data: string): void { this.sent.push(data); }
-    open(): void { this.readyState = FakeWebSocket.OPEN; this.onopen?.(); }
-    close(): void { if (this.readyState === FakeWebSocket.CLOSED) return; this.readyState = FakeWebSocket.CLOSED; this.onclose?.(); }
-  }
-
   function inprocPort(): FakePort {
     return {
       name: 'sideagent-inproc', sent: [], disconnectCalls: 0,
@@ -358,7 +341,7 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
     };
   }
 
-  /** offscreen 文档能否建起来由 offscreenAvailable 决定；建不起来且有 token 时走 ws 调试回退。 */
+  /** offscreen 文档能否建起来由 offscreen.available 决定；建不起来时按退避重试。 */
   function stubChrome(ports: FakePort[], offscreen: { available: boolean }) {
     vi.stubGlobal('chrome', {
       runtime: {
@@ -371,40 +354,32 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
       },
       offscreen: { Reason: { WORKERS: 'WORKERS' }, createDocument: async () => { if (!offscreen.available) throw new Error('offscreen 不可用'); } },
       // de381b0 起 Uplink.start 会监听设置变化（改模型时推给扩展内 agent）；这里不测那条路径，只补上入口。
-      storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) }, onChanged: { addListener: () => {} } },
+      storage: { local: { get: async () => ({}) }, onChanged: { addListener: () => {} } },
     });
   }
 
   it('旧连接留下的重连定时器不会把已建立的新传输拆掉', async () => {
     const ports: FakePort[] = [];
     const offscreen = { available: false };
-    vi.stubGlobal('WebSocket', FakeWebSocket);
     stubChrome(ports, offscreen);
     const states: string[] = [];
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: (state) => { states.push(state); } });
-    FakeWebSocket.instances = [];
-    uplink.start();
-
-    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
-    const first = FakeWebSocket.instances[0]!;
-    first.open();
-    first.close(); // 旧连接断开 → 留下 1s 后的重连定时器
-    // 新连接从另一条通道先建立（生产里 panel retry / 扩展内 agent）
+    uplink.start(); // offscreen 建不起来 → 留下 1s 后的重连定时器
+    // 开始连接与连接失败各报一次 connecting：等到失败那次，重连定时器已经留下。
+    await vi.waitFor(() => expect(states.filter(state => state === 'connecting')).toHaveLength(2));
+    // 新连接先建立（生产里 panel retry / offscreen 恢复）
     offscreen.available = true;
     uplink.start();
     await vi.waitFor(() => expect(ports).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 1250));
-    // 定时器到点时不得拆掉活连接，也不得再开第二条通道。
+    // 定时器到点时不得拆掉活连接，也不得再开第二条连接。
     expect(ports[0]!.disconnectCalls).toBe(0);
     expect(ports).toHaveLength(1);
-    expect(FakeWebSocket.instances).toHaveLength(1);
-    expect(states).toContain('connecting');
     expect(uplink.sendClientMessage({ type: 'conversation_list' } as ClientMessage)).toBe(true);
   }, 10_000);
 
   it('显式 retry 仍然重连：先有意拆掉活连接再建立新的', async () => {
     const ports: FakePort[] = [];
-    vi.stubGlobal('WebSocket', FakeWebSocket);
     stubChrome(ports, { available: true });
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: () => {} });
     uplink.start();
@@ -437,7 +412,7 @@ describe('A05-08 接续请求去重与视图补取（真实 ConversationManager 
         available: true, modelName: () => 'fixture/model', isStreaming: () => false, isHeld: () => false,
         readPersistedTaskResults: () => before, persistTaskResults: vi.fn(), resumeInterruptedTask: resume, waitForStop: async () => {},
       },
-      fleet: { teamView: () => null, isGroupHeld: () => false, reset: vi.fn(), setTabCoordinator: vi.fn(), list: () => [] },
+      control: { teamView: () => null, isGroupHeld: () => false, reset: vi.fn(), setTabCoordinator: vi.fn(), list: () => [] },
       rpc: { rejectAll: vi.fn() },
       dispose: vi.fn(),
       handleMessage: vi.fn(),

@@ -3,17 +3,16 @@
  * 与 shared/protocol.ts（扩展 ⇆ 伴随进程）不同，本文件只是 panel 与 background 之间的
  * 转发约定，走 chrome.runtime Port。
  */
-import type { AgentMode, Attachment, ClientMessage, ServerMessage } from "../../shared/protocol.js";
+import type { Attachment, ClientMessage, ServerMessage } from "../../shared/protocol.js";
 import type { PendingAsk } from "./shared/ask-selection.js";
-import type { DemoStep } from "../../shared/demo-record.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
 
 /** 伴随进程连接状态（background 维护，面板只展示）。 */
 export type ConnState = "connecting" | "connected" | "disconnected";
 
-/** 上行传输：扩展内 agent（默认）或 ws（只给测试用的调试回退）。 */
-export type TransportKind = "inproc" | "ws";
+/** 上行传输：只有扩展内 agent。 */
+export type TransportKind = "inproc";
 
 /** 侧栏能够回放的伴随进程消息；执行调用和握手/模型元数据不进入历史。 */
 export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" | "agent_event" | "team_status" }>;
@@ -39,12 +38,8 @@ export type PanelToBg =
   | { kind: "control"; action: "takeover" | "handback"; conversationId?: string; tabId?: number }
   /** 面板（重）打开，请求同步状态；afterSeq 存在时只补发更新的可见历史。 */
   | { kind: "sync"; afterSeq?: number; conversationId?: string }
-  /** 连接配置已变更（如 ws 调试模式更新了 token），请重连。 */
+  /** 请重连。 */
   | { kind: "retry" }
-  /** 示范录制开关；录制在 background 进行，面板只发指令、收结果。 */
-  | { kind: "demo"; action: "start" | "stop" | "dismiss"; conversationId?: string }
-  /** 观察开关与候选处置；默认关，打开才采（只采骨架）。 */
-  | { kind: "observe"; action: "on" | "off" | "list" | "dismiss" | "accept"; conversationId?: string; signature?: string; hostname?: string }
   /** 端口存活探测：service worker 被 Chrome 停掉后，面板手里的端口不一定会收到断开事件。 */
   | { kind: "ping" };
 
@@ -58,8 +53,6 @@ type BgToPanelPayload =
   | { kind: "pong" }
   /** 连接状态变化。 */
   | { kind: "conn"; state: ConnState; transport?: TransportKind; detail?: string }
-  /** 当前 Agent 运行模式（教学模式开关状态同步）。 */
-  | { kind: "mode"; mode: AgentMode }
   /** 面板关闭期间积累的、按 seq 排序的可见历史。 */
   | { kind: "history"; entries: PanelHistoryEntry[]; replay?: boolean }
   /** 选中即问：划词或右键把一段正文交给侧栏，不自动发送。 */
@@ -71,7 +64,5 @@ type BgToPanelPayload =
    * 已交给传输层，不表示伴随进程已处理或任务已完成。
    */
   | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
-  /** 示范录制状态与已记步骤（步骤只在这里可见，不写历史、不落盘）。 */
-  | { kind: "demo"; recording: boolean; tabId?: number; steps: DemoStep[]; truncated: boolean }
-  /** 观察状态与候选：候选是"你常这样做"的证据，是否生成技能由用户点头。 */
-  | { kind: "observe"; observing: boolean; candidates: import("../../shared/observe.js").ObservedPattern[]; patterns: number };
+  /** 一次同步回放结束：面板据此核对旧端口上的消息是否丢了。 */
+  | { kind: "synced" };

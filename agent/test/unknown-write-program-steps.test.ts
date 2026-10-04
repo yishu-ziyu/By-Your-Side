@@ -20,7 +20,8 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ServerMessage } from "../../shared/protocol.js";
 import { TaskProgress } from "../src/task-progress.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
+import { PROBE_PATTERN, scriptedModels } from "./fixtures/scripted-loop.js";
 
 const dirs: string[] = [];
 
@@ -59,7 +60,7 @@ async function lead() {
       frames.push(msg);
       queueMicrotask(() => reply?.(msg));
     } else progress.observe(msg);
-  }, undefined, { memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
+  }, PROBE_PATTERN, { loop: { models: scriptedModels(), cwd: "/tmp" }, memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
 
   reply = frame => {
     if (frame.name === "js" && frame.params.code === "return 1") runtime.rpc.handleResult(frame.id, false, undefined, "SyntaxError: Illegal return statement（脚本未运行，页面没有变化）", "not_executed");

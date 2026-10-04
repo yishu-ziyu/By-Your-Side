@@ -15,7 +15,7 @@ function harness(){
    steerCurrentTask:vi.fn(async()=>{}),
   };
 
-  const runtime={session,fleet:{reset:vi.fn(),teamView:()=>null,isGroupHeld:()=>false,list:()=>[]},rpc:{rejectAll:()=>{}},dispose:()=>{},handleMessage:()=>{},
+  const runtime={session,control:{reset:vi.fn(),teamView:()=>null,isGroupHeld:()=>false,list:()=>[]},rpc:{rejectAll:()=>{}},dispose:()=>{},handleMessage:()=>{},
    finish:()=>{running=false;emit({type:'status',state:'idle'});emit({type:'agent_event',event:{kind:'agent_end'}});},emit,
   };
 
@@ -46,7 +46,6 @@ it('keeps A running, starts independent B, queues C, then starts C when B finish
  h.runtimes.get(bid).finish();
  await vi.waitFor(()=>expect(h.runtimes.get(cid)?.session.startTask).toHaveBeenCalledOnce());
  expect(h.manager.getTaskProgress('default')?.runId).toBe(run);
- expect(h.runtimes.get('default').fleet.reset).toHaveBeenCalledOnce();
 });
 
 it('waits for the source page, preserves queued corrections, and cancels only the selected waiter',async()=>{

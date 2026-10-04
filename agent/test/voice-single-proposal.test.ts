@@ -74,7 +74,7 @@ return decision;},
 
     const runtime:any={
       session,
-      fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn(),list:()=>[]},
+      control:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn(),setPageTarget:vi.fn(),call:vi.fn()},
       dispose:vi.fn(),handleMessage:vi.fn(),
     };

@@ -3,7 +3,7 @@
  * 每个用例仍各自留证在 out/acceptance/real-path/<时间>-<用例>/；这里只汇总退出码与耗时。
  *
  *   npm run accept:real-path
- *   npm run accept:real-path -- --only=codename-no-save,point-then-mark
+ *   npm run accept:real-path -- --only=codename-no-save,data-to-file
  *
  * 任一用例失败则整体退出码为 1。被 --only 过滤掉的用例记为未跑，不算通过。
  */

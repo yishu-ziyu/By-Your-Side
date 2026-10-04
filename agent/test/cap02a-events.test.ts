@@ -3,11 +3,7 @@
  * 反例：阻塞式先 wait 再 click 会死锁；arm 必须立即返回 token。
  */
 import { describe, expect, it, vi } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { runBrowserProgram } from "../src/browser-program.js";
-import { hostDownloadSaveAs, assertAbsoluteSavePath } from "../src/download-artifacts.js";
 
 describe("CAP-02A arm/wait 串行队列", () => {
   it("armEvent 立即返回 token，不阻塞后续 click；再 waitEvent 消费", async () => {
@@ -89,60 +85,6 @@ describe("CAP-02A arm/wait 串行队列", () => {
     });
 
     expect(result.value).toMatchObject({ type: "download", token: expect.stringMatching(/^evt_download_/) });
-  });
-});
-
-describe("CAP-02A download 宿主 saveAs", () => {
-  it("Chrome 报完成后把文件复制到绝对路径；拒绝相对路径", async () => {
-    expect(() => assertAbsoluteSavePath("relative.bin")).toThrow(/absolute/);
-    const dir = mkdtempSync(join(tmpdir(), "bys-cap02a-"));
-    writeFileSync(join(dir, "report.pdf"), "PDFDATA");
-    const dest = join(tmpdir(), `bys-cap02a-save-${Date.now()}.pdf`);
-
-    try {
-      const saved = await hostDownloadSaveAs({
-        downloadId: "dl_1",
-        path: dest,
-        timeoutMs: 2000,
-        stat: async () => ({
-          downloadId: "dl_1",
-          tabId: 9,
-          url: "blob:https://example/x",
-          suggestedFilename: "report.pdf",
-          path: join(dir, "report.pdf"),
-          failure: null,
-          completed: true,
-          cancelled: false,
-        }),
-      });
-
-      expect(saved.bytes).toBe(7);
-      expect(saved.path).toBe(dest);
-      expect(saved.tabId).toBe(9);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(dest, { force: true });
-    }
-  });
-
-  it("failure/cancel 不得 saveAs 成功", async () => {
-    await expect(
-      hostDownloadSaveAs({
-        downloadId: "dl_2",
-        path: join(tmpdir(), "x.bin"),
-        timeoutMs: 200,
-        stat: async () => ({
-          downloadId: "dl_2",
-          tabId: 1,
-          url: "https://x",
-          suggestedFilename: "x.bin",
-          path: null,
-          failure: "canceled",
-          completed: false,
-          cancelled: true,
-        }),
-      }),
-    ).rejects.toThrow(/canceled|failed/i);
   });
 });
 

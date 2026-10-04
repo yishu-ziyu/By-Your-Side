@@ -5,7 +5,6 @@ import {TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
 import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
-import {displayNameFor} from '../../shared/cast.js';
 import type {UserInputOptions} from "./session.js";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
 import {isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
@@ -20,11 +19,6 @@ import type { ConversationPersistence } from "./conversation-persistence.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed } from "./memory-runtime.js";
-import type { SkillStore } from "./skill-store.js";
-import { compileSkill, validateCompiledSkill } from "./skill-compile.js";
-import { normalizeSkillHost } from "../../shared/skill.js";
-import type { SkillRunOutcome } from "./skill-runner.js";
-import { bindSkillInputs } from "../../shared/skill.js";
 import { TaskProgress } from "./task-progress.js";
 import type { TaskProgressSnapshot, UserDeliveryFacts, VoiceRouteContext, VoiceRouteResult, VoiceTarget } from "../../shared/voice.js";
 import { projectTaskView } from "../../shared/task-view.js";
@@ -45,19 +39,6 @@ import {resultHasWriteEffect} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
-
-type MemberRevision = Awaited<ReturnType<Runtime['fleet']['reviseSharedRequirement']>>;
-
-function memberRevisionNotice(members: MemberRevision): string {
-  const names = (ids: string[]) => ids.map(id => displayNameFor(id)).join('、');
-
-  return [
-    members.notified.length ? `${names(members.notified)}已收到新要求` : '',
-    members.queued.length ? `${names(members.queued)}已保存修改，恢复后处理` : '',
-    members.skipped.length ? `${names(members.skipped)}已结束，未重新启动` : '',
-    members.failed.length ? `${names(members.failed.map(item => item.id))}未收到修改，旧任务已停止` : '',
-  ].filter(Boolean).join('；');
-}
 
 /** Recognize explicit control language, preserving any separately stated amendment. */
 function continuationInput(text:string):{amendment?:string}|null {
@@ -127,7 +108,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     private readonly emit: (message: ServerMessage) => void,
     private readonly store?: ConversationPersistence,
     private readonly memoryStore?: MemoryStore,
-    private readonly skillStore?: SkillStore,
     readonly dispatcher = new TaskDispatcher(),
   ) {this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);
     this.taskQueue=new TaskQueue({directory:dispatcher.store.directory?join(dispatcher.store.directory,'requirements'):undefined,maxRunning:2,maxWaiting:8,
@@ -607,8 +587,6 @@ return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snaps
       this.progress.get(conversationId)?.observe(message);
       this.emit(message);
 
-      if (kind === "finding" && runId) void this.entries.get(conversationId)?.runtime.session.completeSkillLearning?.(runId);
-
       return delivery;
     } catch {
       return null;
@@ -782,7 +760,7 @@ return { kind: "silent" };}
 
     return null;
   }
-  /** 文字新消息是否接着做上一个没做完的任务。只在确有没做完的任务、且能按补充续接时才花一次快速模型判断。 */
+  /** 文字新消息是否接着做上一个没做完的任务：只在确有没做完的任务时按简单规则判断，不调模型。 */
   private async continuesOpenTask(request:TaskActionRequest,snapshot:TaskProgressSnapshot,entry:ConversationEntry):Promise<boolean>{
     if(request.source!=='text'||request.action!=='start'||request.forkedFrom||!request.text?.trim())return false;
 
@@ -792,14 +770,11 @@ return { kind: "silent" };}
     if(!view.resumable)return false;
     const session=entry.runtime.session;
 
-    if(typeof session.followUpContinuesTask!=='function'||!session.available||session.isStreaming())return false;
-    const unfinished=view.goalStatus?.remaining?[view.goalStatus.remaining]:view.latestDelivery?.unfinished?.length?view.latestDelivery.unfinished:view.outstanding.map(item=>item.description);
+    if(!session.available||session.isStreaming())return false;
     const lastReply=[...(snapshot.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
 
-    const decided=await session.followUpContinuesTask({goal:snapshot.goal,unfinished,lastReply},request.text,AbortSignal.timeout(12_000)).catch(()=>null);
-
-    // 判断不了（慢模型超时等）时：任务正等用户回话，这句多半就是回答，按接着做（09-27 阶跃判断超时，回的邮箱被当成了新任务）。
-    return decided??(view.goalStatus?.status==='waiting'||asksUser(lastReply));
+    // 不另调模型判断：任务正等用户回话（核对说「等用户」或助手最后在问用户），这句就按接着做（09-27 回的邮箱被当成了新任务）。
+    return view.goalStatus?.status==='waiting'||asksUser(lastReply);
   }
   /** 过往任务：宿主在 host-core 里接上；没有就不记。 */
   taskHistory?: TaskHistoryStore;
@@ -1191,7 +1166,6 @@ return receipt;
           throw new TaskActionRejected(`任务未能保存到本地，尚未接收、没有启动：${error instanceof Error?error.message:String(error)}`);
         }
 
-        entry.runtime.fleet.reset();
         this.taskQueue.bindRun(request.conversationId,acceptedRunId);
 
         if(entry.summary.title==='新会话')entry.summary.title=title;
@@ -1209,7 +1183,7 @@ return receipt;
       if(request.action==='pause'||request.action==='resume'||request.action==='abort'){
         if(!request.expectedRunId)throw new TaskActionRejected('当前没有可控制的任务。');
 
-        if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.fleet.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经终止，不能继续原任务。':'原任务没有暂停，未执行交还。');
+        if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.control.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经终止，不能继续原任务。':'原任务没有暂停，未执行交还。');
 
         if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
         this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
@@ -1245,7 +1219,6 @@ return receipt;
         this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
         await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
         entry.runtime.session.queueSteerForResume(request.text??'',request.context,request.attachments);
-        const members = await entry.runtime.fleet.reviseSharedRequirement?.(request.text??'',request.context,request.attachments);
 
         if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
           this.progress.get(request.conversationId)?.reviseResults();
@@ -1253,10 +1226,7 @@ return receipt;
           await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
         }
 
-        const memberNote = members ? memberRevisionNotice(members) : '';
-        const heldMembers = memberNote ? `；${memberNote}` : '';
-
-        return {status:'accepted',runId:originRun??null,message:`修改已保存，继续后生效：${request.text??'所选资料'}${heldMembers}`};
+        return {status:'accepted',runId:originRun??null,message:`修改已保存，继续后生效：${request.text??'所选资料'}`};
       }
 
       if (!request.expectedRunId || snapshot.runId !== request.expectedRunId || !['running','idle'].includes(snapshot.state) || !entry.runtime.session.isStreaming()) {
@@ -1278,23 +1248,13 @@ return receipt;
         throw error;
       }
 
-      // 共同要求变了：正在跑的成员先挡住在途写入，再拿到新要求，避免它们继续按旧要求写。
-      const beforeMembers=this.getTaskProgress(request.conversationId);
-
-      const members = beforeMembers?.runId===originRun&&beforeMembers.state==='running'
-        &&(beforeMembers.controlVersion??0)===(snapshot.controlVersion??0)
-        ?await entry.runtime.fleet.reviseSharedRequirement?.(request.text!,request.context,request.attachments):undefined;
-
       if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
         this.progress.get(request.conversationId)?.reviseResults();
         this.progress.get(request.conversationId)?.recordUserTurn(request.text??'',request.requestId);
         await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
       }
 
-      const memberNote = members ? memberRevisionNotice(members) : '';
-      const note = memberNote?`；${memberNote}`:'';
-
-      return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}${note}`};
+      return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}`};
     },{deferredResume:request.action==='resume'&&['interrupted','idle','error'].includes(this.getTaskProgress(request.conversationId)?.state??'')});
 
     this.emitReceipt(receipt);
@@ -1302,8 +1262,8 @@ return receipt;
     return receipt;
   }
   list(): ConversationSummary[] { return [...this.entries.values()].map(({ summary }) => ({ ...summary })); }
-  private epochs(runtime:Runtime):Record<string,number>{
-    return Object.fromEntries([['main',runtime.session.executionEpoch?.()??0],...(runtime.fleet.list?.()??[]).map(w=>[w.id,runtime.fleet.get(w.id)?.executionEpoch?.()??0])]);
+  private epochs(runtime:Runtime){
+    return {main:runtime.session.executionEpoch?.()??0};
   }
 
   private create(id: string, title: string, restored?: ConversationSummary): Promise<ConversationEntry> {
@@ -1384,6 +1344,9 @@ return receipt;
         this.pumpTasks();
       }
 
+      // 目标核对在交付之后才出结论：任务已空闲时按新结论重记这条过往任务（同一 runId 覆盖）。
+      if (message.type === 'agent_event' && message.event.kind === 'goal_check' && message.event.status !== 'continue' && isLeadSession(message.sessionId) && progress.snapshot().state === 'idle') this.recordTaskHistory(id);
+
       if (message.type === 'agent_event' && message.event.kind === 'agent_start') this.emit({type:'conversation_updated',conversationId:id,conversation:{...summary}});
 
       if (message.type === "status") {
@@ -1401,18 +1364,17 @@ return receipt;
       if (message.type === "status" || message.type === "model_info") this.store?.save(this.list());
     }, summary).then((runtime) => {
       summary.model = runtime.session.modelName();
-      runtime.fleet.setTabCoordinator?.(async (owner, members) => {
+      runtime.control.setTabCoordinator?.(async (owner, members) => {
         const source = this.entries.get(owner)?.runtime;
 
         if (!source) return; // 已结束的运行时：扩展仍会检查归属并排空旧操作。
-        const sessions = members.map(member => member === "main" ? source.session : source.fleet.get(member));
 
-        if (sessions.some(session => session?.isHeld())) throw new Error("页面现在归你，操作未执行");
-        // 跨会话只停旧成员：这里再发旧 run 的 release 会被身份闸门拒收（错误盖掉新会话接手），
-        // 也会把页面交回旧父 Agent。页面归属由接手方的 claim 与排空动作收敛。
-        await source.fleet.stopMembersForForeignTakeover(members);
+        if (source.session.isHeld()) throw new Error("页面现在归你，操作未执行");
+        // 跨会话只停旧会话：这里再发旧 run 的 release 会被身份闸门拒收（错误盖掉新会话接手）。
+        // 页面归属由接手方的 claim 与排空动作收敛。
+        await source.control.stopMembersForForeignTakeover(members);
       });
-      runtime.fleet.setIdleOwnerCheck?.(owner => this.conversationIdle(owner));
+      runtime.control.setIdleOwnerCheck?.(owner => this.conversationIdle(owner));
       const entry = { summary, runtime };
       let restoredResults: TaskProgressSnapshot | null | undefined;
 
@@ -1443,7 +1405,6 @@ return receipt;
       else if (summary.checkpoint !== 'unavailable') delete summary.checkpoint;
       runtime.session.bindTaskResults?.({
         getSnapshot: () => progress.snapshot(),
-        goals: progress.goals,
         stopAfterFailures: () => { progress.stopAfterFailures(); runtime.session.persistTaskResults?.(progress.snapshot()); },
         register: items => {
           if (!progress.snapshot().runId || progress.snapshot().state === "aborted") throw new Error("当前没有可登记结果的任务");
@@ -1464,7 +1425,6 @@ return receipt;
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
       // 纠正询问的网站：用户不在网页上时，取这个任务最近碰过的网页。
       runtime.session.bindVisitedUrls?.(() => this.progress.get(id)?.visitedUrls() ?? []);
-      runtime.fleet.bindConversationContext?.(() => this.getTaskProgress(id));
       this.entries.set(id, entry);
       this.store?.save(this.list());
       this.pending.delete(id);
@@ -1563,15 +1523,6 @@ return;}
 
 return;}
 
-    if(message.type==='page_event'){
-      const tabId=entry.runtime.rpc.getPageTarget?.(message.sessionId)??this.taskPages.get(id);
-      const progress=this.progress.get(id)!;
-
-      if(isLeadSession(message.sessionId))progress.invalidatePage(tabId,message.url);
-      else progress.invalidatePage();
-      entry.runtime.session.persistTaskResults?.(progress.snapshot());
-    }
-
     if((message.type==='takeover'||message.type==='handback'||message.type==='abort')&&!message.taskRequestId){
       this.controlVersions.set(id,(this.controlVersions.get(id)??0)+1);
     }
@@ -1581,7 +1532,7 @@ return;}
       const snapshot=this.getTaskProgress(id)!;
 
       const valid=this.controls.permits(id,message.taskRequestId,action,snapshot.runId??null)
-        &&(action==='abort'||action==='pause'&&['running','paused'].includes(snapshot.state)||action==='resume'&&(entry.runtime.session.isHeld()||entry.runtime.fleet.isGroupHeld()));
+        &&(action==='abort'||action==='pause'&&['running','paused'].includes(snapshot.state)||action==='resume'&&(entry.runtime.session.isHeld()||entry.runtime.control.isGroupHeld()));
 
       if(!valid){
         if(message.type==='abort')this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:false});
@@ -1592,10 +1543,9 @@ return;}
 
 
       if(message.type==='abort'){
-        const sessions=[entry.runtime.session,...entry.runtime.fleet.list().map(w=>entry.runtime.fleet.get(w.id)).filter((s):s is NonNullable<typeof s>=>!!s)];
         this.progress.get(id)?.abort();entry.runtime.handleMessage(message);
 
-        try{await Promise.all(sessions.map(s=>s.waitForStop()));this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:true});}
+        try{await entry.runtime.session.waitForStop();this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:true});}
         catch{this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:false});}
 
         return;
@@ -1637,14 +1587,6 @@ return;}
       return;
     }
 
-    if (message.type === "skill_compile" || message.type === "skill_forget" || message.type === "skill_list"
-      || message.type === "skill_run" || message.type === "skill_note" || message.type === "skill_rollback"
-      || message.type === "skill_candidate_save" || message.type === "skill_candidate_dismiss") {
-      await this.handleSkillMessage(message, id);
-
-      return;
-    }
-
     if(message.type==='user_message'){
       const checkpoint=this.getTaskProgress(id);
 
@@ -1681,8 +1623,6 @@ return;
 
     if (message.type === "user_message" && entry.summary.title === "新会话") entry.summary.title = message.text.trim().slice(0, 36) || "新会话";
 
-    if (message.type === "set_mode") entry.summary.mode = message.mode;
-
     if (message.type === "user_message") {
       const progress = this.progress.get(id);
       const before = progress?.snapshot().runId ?? null;
@@ -1709,7 +1649,7 @@ return;
 
     try{entry.runtime.handleMessage(message);}catch(error){this.pendingStarts.delete(id);throw error;}
 
-    if (message.type === "user_message" || message.type === "set_mode") {
+    if (message.type === "user_message") {
       entry.summary.updatedAt = Date.now();
       this.store?.save(this.list());
       this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...entry.summary } });
@@ -1801,171 +1741,6 @@ return;
     }
   }
 
-  /**
-   * 示范编译：确定性编译 + 校验，落一份技能。
-   * 失败如实回报（编译不出来就说清楚），不产出半成品。
-   */
-  private async handleSkillMessage(
-    message: Extract<ClientMessage, { type: "skill_compile" | "skill_forget" | "skill_list" | "skill_run" | "skill_note" | "skill_rollback" | "skill_candidate_save" | "skill_candidate_dismiss" }>,
-    conversationId: string,
-  ): Promise<void> {
-    const action = message.type === "skill_candidate_save" ? "candidate_save"
-      : message.type === "skill_candidate_dismiss" ? "candidate_dismiss"
-      : message.type === "skill_compile" ? "compile"
-      : message.type === "skill_forget" ? "forget"
-      : message.type === "skill_list" ? "list"
-      : message.type === "skill_note" ? "note"
-      : message.type === "skill_rollback" ? "rollback"
-      : "run";
-
-    try {
-      if (!this.skillStore) throw new Error("技能存储不可用");
-
-      if (message.type === "skill_candidate_save") {
-        const skill = await this.skillStore.saveCandidate(message.id, message.sourceRunId);
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill });
-
-        return;
-      }
-
-      if (message.type === "skill_candidate_dismiss") {
-        await this.skillStore.dismissCandidate(message.id, message.sourceRunId);
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true });
-
-        return;
-      }
-
-      if (message.type === "skill_list") {
-        // 技能只在同一站点复用；面板问"这一页有什么技能"时按 hostname 过滤。
-        const skills = message.hostname ? await this.skillStore.findByHost(message.hostname) : await this.skillStore.list();
-        const runs: Record<string, import("../../shared/skill.js").SkillRun[]> = {};
-
-        for (const skill of skills) runs[skill.id] = await this.skillStore.listRuns(skill.id);
-        const candidates = await this.skillStore.listCandidates(message.hostname);
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skills, runs, candidates });
-
-        return;
-      }
-
-      if (message.type === "skill_note") {
-        const updated = await this.skillStore.addNote(message.id, message.note);
-
-        if (!updated) throw new Error("没有这份技能");
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill: updated });
-
-        return;
-      }
-
-      if (message.type === "skill_rollback") {
-        const current = await this.skillStore.get(message.id);
-
-        if (!current) throw new Error("没有这份技能");
-
-        if (message.expectedVersion !== undefined && message.expectedVersion !== current.version) throw new Error("这份技能刚被改过，先看一眼再回退。");
-        const restored = await this.skillStore.rollback(message.id);
-
-        if (!restored) throw new Error("没有可回退的上一版");
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill: restored });
-
-        return;
-      }
-
-      if (message.type === "skill_run") {
-        const skill = await this.skillStore.get(message.id);
-
-        if (!skill) throw new Error("没有这份技能");
-
-        if (message.expectedVersion !== undefined && message.expectedVersion !== skill.version) throw new Error("这份技能刚被改过，先看一眼再跑。");
-        const entry = this.entries.get(conversationId);
-
-        if (!entry) throw new Error("会话还没准备好");
-
-        if (entry.runtime.session.isStreaming()) throw new Error("现在有任务在跑，等它结束再跑技能。");
-
-        if ((entry.summary.mode ?? "act") !== "act") throw new Error("请先切到操作模式，再执行技能。");
-
-        if (entry.runtime.session.isHeld()) throw new Error("页面现在归你，请先结束或交还原任务。");
-
-        if (this.dispatcher.get(conversationId, message.requestId)) throw new Error("这条技能请求已有任务记录，请查看原结果；没有重放。");
-        // Parameter validation happens before even querying the current tab.
-        const inputs = bindSkillInputs(skill, message.inputs);
-        // A new task must acknowledge the previous run identity just like normal
-        // panel input. Capture it before awaiting Chrome so a concurrent change rejects.
-        const previousRunId = this.getTaskProgress(conversationId)?.runId ?? null;
-        const active = await entry.runtime.rpc.call("get_active_tab", {}) as { tab: { id: number; title: string; url: string } | null };
-
-        if (!active.tab) throw new Error("没有当前页面，技能未执行。");
-        const context = { tabId: active.tab.id, title: active.tab.title, url: active.tab.url };
-        let resolveRun!: (run: SkillRunOutcome) => void;
-        const completed = new Promise<SkillRunOutcome>(resolve => { resolveRun = resolve; });
-
-        // Manual execution uses the same durable task acceptance and registered tools
-        // as normal input; it no longer has a private RPC route around the control gates.
-        const receipt = await this.dispatchTaskAction({ requestId: message.requestId, conversationId, source: "text", action: "start", expectedRunId: previousRunId,
-          text: `运行已保存的技能「${skill.name}」，使用这次填写的材料。`, context }, () => true,
-          { selectedSkill: { id: skill.id, expectedVersion: skill.version, inputs, allowStale: message.allowStale, onResult: resolveRun } });
-
-        if (receipt.status !== "accepted") throw new Error(receipt.message);
-        const outcome = await completed;
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill, run: outcome });
-
-        return;
-      }
-
-      if (message.type === "skill_forget") {
-        const removed = await this.skillStore.forget(message.id);
-
-        if (!removed) throw new Error("没有这份技能");
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id });
-
-        return;
-      }
-
-      let redo = message.updateId ? await this.skillStore.get(message.updateId) : undefined;
-
-      if (message.updateId && !redo) throw new Error("要更新的技能已经不在了");
-
-      if (redo && message.expectedVersion !== undefined && redo.version !== message.expectedVersion) throw new Error("这份技能刚被改过，先看一眼再重新示范。");
-
-      // 技能按站点作用域；在别的站点重新示范不能覆盖它，那就新建一份。
-      if (redo && redo.hostname !== normalizeSkillHost(message.hostname)) redo = undefined;
-
-      const compiled = compileSkill({
-        id: redo?.id ?? `skill-${randomUUID().replace(/-/g, "").slice(0, 16)}`,
-        demoId: message.demoId,
-        intent: message.intent,
-        hostname: message.hostname,
-        steps: message.steps,
-      });
-
-      const invalid = validateCompiledSkill(compiled);
-
-      if (invalid) throw new Error(invalid);
-
-      // 重新示范同一个技能：内容替换、版本 +1，旧版本进归档（回退用），线索继续挂在身上。
-      const skill = redo
-        ? await this.skillStore.update(redo.id, {
-            steps: compiled.steps, inputs: compiled.inputs, check: compiled.check,
-            program: compiled.program, name: compiled.name, intent: compiled.intent,
-          })
-        : compiled;
-
-      if (!skill) throw new Error("技能更新失败");
-
-      if (!redo) await this.skillStore.put(skill);
-      this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill });
-    } catch (error) {
-      this.emit({
-        type: "skill_result",
-        conversationId,
-        requestId: message.requestId,
-        action,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
   replayState(emit: (message: ServerMessage) => void): void {
     for(const job of this.taskQueue.list())if(job.request.originConversationId)emit({type:'agent_event',conversationId:job.request.originConversationId,event:{kind:'notice',message:job.receipt.message,receipt:job.receipt}});
 
@@ -1983,8 +1758,7 @@ return;
       this.emitTaskView(summary.id, true);
       void runtime.session.availableModels().then((models) => emit({ type: "model_info", conversationId: summary.id, model: runtime.session.modelName(), models }));
 
-      for (const worker of runtime.fleet.list()) emit({ type: "status", conversationId: summary.id, sessionId: worker.id, state: runtime.fleet.get(worker.id)?.isHeld() ? "user" : worker.streaming ? "running" : "idle" });
-      const team = runtime.fleet.teamView();
+      const team = runtime.control.teamView();
 
       if (team) emit({ type: "team_status", conversationId: summary.id, team });
     }
@@ -2013,9 +1787,9 @@ return;
       this.pendingStarts.delete(summary.id);this.checkpointResumes.delete(summary.id);
       runtime.rpc.rejectAll(new Error("Extension disconnected"));
 
-      if (!runtime.session.isHeld() && !runtime.fleet.isGroupHeld()) {
+      if (!runtime.session.isHeld() && !runtime.control.isGroupHeld()) {
         runtime.session.abort();
-        runtime.fleet.abortTeam();
+        runtime.control.abortTeam();
       }
     }
   }

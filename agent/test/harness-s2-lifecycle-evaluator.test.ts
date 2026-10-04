@@ -43,7 +43,7 @@ const startTask=vi.fn(()=>sink({type:'agent_event',event:{kind:'agent_start'}}))
 
   const manager=new ConversationManager(async(_id,emit)=>{sink=emit;
 
-return {session,rpc:{rejectAll:vi.fn()},fleet:{reset:vi.fn(),isGroupHeld:()=>paused,teamView:()=>null},dispose:()=>{}} as any;},()=>{});
+return {session,rpc:{rejectAll:vi.fn()},control:{reset:vi.fn(),isGroupHeld:()=>paused,teamView:()=>null},dispose:()=>{}} as any;},()=>{});
 
 cleanup.push(()=>manager.dispose());await manager.ensureDefault();
   await manager.dispatchTaskAction({requestId:'start',conversationId:'default',source:'text',action:'start',expectedRunId:null,text:'观察X再标注，保持只处理当前页。'});started=true;paused=held;

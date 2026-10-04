@@ -16,7 +16,8 @@ import type { ServerMessage } from "../../shared/protocol.js";
 import { createBrowserTools } from "../src/tools.js";
 import { ToolRpc } from "../src/rpc.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
+import { PROBE_PATTERN, scriptedModels } from "./fixtures/scripted-loop.js";
 
 const dirs: string[] = [];
 
@@ -54,7 +55,7 @@ async function lead() {
   const dir = mkdtempSync(join(tmpdir(), "bys-save-file-"));
   dirs.push(dir);
   const messages: ServerMessage[] = [];
-  const runtime = await createConversationRuntime("default", msg => messages.push(msg), undefined, { memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
+  const runtime = await createConversationRuntime("default", msg => messages.push(msg), PROBE_PATTERN, { loop: { models: scriptedModels(), cwd: "/tmp" }, memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
   // 生产会话把 Pi 循环放在私有字段 session 里；这里只读它注册的工具与清单。
   const inner = runtime.session["session"];
 
@@ -149,21 +150,6 @@ describe("browser.saveFile（生产装配的 Lead 会话）", () => {
       await expect(run({ code: 'await browser.sleep({ms:2000}); return await browser.saveFile({filename:"late.txt", content:"x"});' }, controller.signal)).rejects.toThrow(/abort/i);
       expect(artifactEvents()).toEqual([]);
       await expect(artifacts({ command: "get", filename: "late.txt" })).rejects.toThrow(/找不到/);
-    } finally {
-      runtime.dispose();
-    }
-  }, 30_000);
-
-  it("本机循环（Node 托管）仍提供 download_save_as、downloadSaveAs、spawn_worker 与分派助手的提示词", async () => {
-    const { runtime, inner } = await lead();
-
-    try {
-      expect(inner.getActiveToolNames()).toContain("download_save_as");
-      expect(inner.getToolDefinition("browser_run")!.description).toContain("downloadSaveAs");
-      expect(inner.getActiveToolNames()).toContain("spawn_worker");
-      const state: { systemPrompt?: string; messages: unknown[] } = inner.agent.state;
-      expect(state.systemPrompt).toContain("# Parallel workers");
-      expect(state.systemPrompt).toContain("spawn_worker");
     } finally {
       runtime.dispose();
     }

@@ -18,7 +18,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 import { ConversationManager } from "../src/conversation-manager.js";
 import type { MemoryDecision } from "../src/memory-decision.js";
 import type { MemoryEntry } from "../../shared/memory.js";
@@ -303,7 +303,7 @@ describe("document revision", () => {
 
     const runtime = {
       session: { modelName: () => "test/model", availableModels: async () => [], abort: vi.fn(), isHeld: () => false, isStreaming: () => false },
-      fleet: { teamView: () => null, list: () => [], isGroupHeld: () => false, abortTeam: vi.fn() },
+      control: { teamView: () => null, list: () => [], isGroupHeld: () => false, abortTeam: vi.fn() },
       rpc: { rejectAll: vi.fn() },
       handleMessage: vi.fn((_message: ClientMessage) => {}),
       dispose: vi.fn(),

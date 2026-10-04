@@ -113,18 +113,10 @@ interface SideAgentCursor {
 
 interface SideAgentNamespace {
   refs?: Map<number, Element>;
-  point?: {
-    start(id: string, message: string, timeoutMs: number): Promise<import("../../shared/point-selection.js").PointSelection>;
-    cancel(id: string): void;
-  };
   snapshot?: (scope?: string) => string;
   dom?: SideAgentDomOps;
   /** 动作效果证据（按需注入 content-effect.js 后可用） */
   effect?: SideAgentEffect;
-  /** 示范录制（按需注入 content-record.js 后可用） */
-  record?: SideAgentRecord;
-  /** 被动观察（按需注入 content-observe.js 后可用）；只记骨架，不加任何可见痕迹 */
-  observe?: { start(): { ok: true }; stop(): { ok: true }; active(): boolean };
   cursor?: SideAgentCursor;
   /** overlay 自检：默认光标是否已 hide（生产路径不用） */
   cursorHidden?: () => boolean;
@@ -197,16 +189,6 @@ interface SideAgentNamespace {
     boilFrameCount: number;
     labelText: string;
   }>;
-}
-
-interface SideAgentRecord {
-  /** 开始记录用户自己的页面动作；重复调用无副作用。seed 用于导航后接着记 */
-  start(seed?: { steps?: import("../../shared/demo-record.js").DemoStep[]; elapsedMs?: number }): { ok: true };
-  /** 停止记录并上行最后一批步骤；count 为页面侧真实记下的步数 */
-  stop(): { ok: true; count: number };
-  recording(): boolean;
-  /** 自检：只读的录制状态，验收脚本用；不影响录制 */
-  selfCheck(): { recording: boolean; count: number; truncated: boolean; lastKind: string | null };
 }
 
 interface Window {

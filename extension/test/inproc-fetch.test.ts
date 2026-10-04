@@ -78,15 +78,4 @@ describe('extension fetch without local storage', () => {
     expect(progress.snapshot().results?.some(item=>item.status==='unknown')).toBe(false);
     expect(progress.snapshot().nextStep?.allowWrites).toBe(true);
   });
-
-  it.each([{savePath:'doc.html'}, {pages:{from:1,to:2}}])('rejects file-only options before making a request: %j', async options => {
-    const rpc = {call:vi.fn(async () => reply('MDN'))};
-
-    // SAFETY: fetch 工具只调用 rpc.call，且会在调用前拒绝这些选项；上下文同样不被读取。
-    const tool = createBrowserTools(rpc as any).find(tool => tool.name === 'fetch')!;
-
-    // SAFETY: 选项在发请求前即被拒绝，执行上下文不被读取。
-    await expect(tool.execute('unsupported', {url:reply('').url+'?page={page}',...options}, undefined, undefined, {} as any)).rejects.toThrow();
-    expect(rpc.call).not.toHaveBeenCalled();
-  });
 });

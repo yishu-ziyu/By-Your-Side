@@ -19,7 +19,7 @@ function managerHarness(){
       session:{modelName:()=>'test/model',availableModels:async()=>[],available:true,abort:vi.fn(),isHeld:()=>false,isStreaming:()=>false,persistTaskResults:vi.fn(),
         classifyVoiceInput:vi.fn(async(text:string)=>({steps:[{action:'chat',text,target:null}]})),
         startTask:vi.fn((text:string)=>{emit({type:'agent_event',conversationId:id,event:{kind:'agent_start'}});emit({type:'status',state:'running'});})},
-      fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn()},
+      control:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn()},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:vi.fn(),
     };
 

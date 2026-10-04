@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 import { TASK_HISTORY_FILE, TaskHistoryStore } from "../src/task-history.js";
 
 const roots: string[] = [];

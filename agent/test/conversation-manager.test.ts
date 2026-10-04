@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConversationManager } from "../src/conversation-manager.js";
-import { Fleet } from "../src/fleet.js";
+import { TabControl } from "../src/tab-control.js";
 import { TaskActionRejected } from "../src/task-dispatcher.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 
@@ -24,7 +24,7 @@ function harness() {
     const runtime = {
       session: { modelName: () => "test/model", availableModels: async () => [], available:true, abort: vi.fn(), isHeld: () => false, isStreaming:()=>streaming,
         startTask:vi.fn((text:string)=>{history.push(text);observe({type:'agent_event',event:{kind:'agent_start'}});observe({type:'status',state:'running'});}) },
-      fleet: { teamView: () => null, isGroupHeld: () => false, abortTeam: vi.fn(), reset:vi.fn() },
+      control: { teamView: () => null, isGroupHeld: () => false, abortTeam: vi.fn() },
       rpc: { rejectAll: vi.fn() }, dispose: vi.fn(),
       handleMessage: vi.fn((message: ClientMessage) => {
         if (message.type === "user_message") { history.push(message.text); observe({ type: "status", state: "running" }); }
@@ -38,7 +38,7 @@ function harness() {
     return runtime;
   });
 
-  return { manager: new ConversationManager(factory as never, (message) => emitted.push(message), undefined, undefined, undefined, undefined), emitted, runtimes, factory };
+  return { manager: new ConversationManager(factory as never, (message) => emitted.push(message), undefined, undefined, undefined), emitted, runtimes, factory };
 }
 
 describe("independent conversation runtimes", () => {
@@ -54,7 +54,7 @@ describe("independent conversation runtimes", () => {
     await manager.handleMessage({ type: "user_message", conversationId: b.id, text: "B context" });
     await manager.handleMessage({ type: "abort", conversationId: b.id });
     expect(a.runtime.session.abort).not.toHaveBeenCalled();
-    expect(a.runtime.fleet.abortTeam).not.toHaveBeenCalled();
+    expect(a.runtime.control.abortTeam).not.toHaveBeenCalled();
     expect(a.runtime.dispose).not.toHaveBeenCalled();
     a.emit({ type: "agent_event", event: { kind: "text_delta", delta: "late A result" } });
     expect(emitted.at(-1)).toEqual({ type: "agent_event", conversationId: "default", event: { kind: "text_delta", delta: "late A result" } });
@@ -63,15 +63,12 @@ describe("independent conversation runtimes", () => {
     expect(runtimes.get(b.id)!.history).toEqual(["B context"]);
   });
 
-  it("mode and summary changes remain local, duplicate create is idempotent", async () => {
+  it("summary changes remain local, duplicate create is idempotent", async () => {
     const { manager, factory } = harness();
     await manager.ensureDefault();
     const original = manager.list()[0];
     await Promise.all([manager.handleMessage({ type: "conversation_create", requestId: "same" }), manager.handleMessage({ type: "conversation_create", requestId: "same" })]);
-    const b = manager.list().find((s) => s.id !== "default")!;
-    await manager.handleMessage({ type: "set_mode", conversationId: b.id, mode: "teach" });
     expect(manager.list()[0]).toEqual(original);
-    expect(manager.get(b.id)?.summary.mode).toBe("teach");
     expect(factory).toHaveBeenCalledTimes(2);
     await expect(manager.handleMessage({ type: "abort", conversationId: "unknown" })).rejects.toThrow("CONVERSATION_NOT_FOUND");
   });
@@ -80,7 +77,7 @@ describe("independent conversation runtimes", () => {
     let resolve!: (runtime: any) => void;
     let emitA!: (message: ServerMessage) => void;
     const messages: ServerMessage[] = [];
-    const runtime = { session: { modelName: () => "model" }, fleet: { teamView: () => null } };
+    const runtime = { session: { modelName: () => "model" }, control: { teamView: () => null } };
 
     const manager = new ConversationManager((_id, emit) => { emitA = emit;
 
@@ -94,21 +91,21 @@ describe("independent conversation runtimes", () => {
   });
 });
 
-it('主 Agent 跨会话接手只停本会话成员，不发旧 run release；用户接管优先', async () => {
+it('主 Agent 跨会话接手只停原会话，不发旧 run release；用户接管优先', async () => {
   const coordinators = new Map<string, (owner: string, members: string[]) => Promise<void>>();
-  const sessions = new Map<string, { session: any; fleet: Fleet; rpc: { call: any } }>();
+  const sessions = new Map<string, { session: any; control: TabControl; rpc: { call: any } }>();
   let held = false;
 
   const factory = async (id: string) => {
     const rpc = { call: vi.fn(async () => ({})), pendingSessionIds: () => [] };
-    const fleet = new Fleet({ rpc: rpc as never, sink: { emit: vi.fn(), setStatus: vi.fn() } });
+    const control = new TabControl(rpc as never);
     const session = { modelName: () => 'test', executionEpoch: () => 0, isHeld: () => held, yieldTab: vi.fn(async () => {}) };
-    fleet.attachLead(session as never);
-    const original = fleet.setTabCoordinator.bind(fleet);
-    fleet.setTabCoordinator = (fn: (owner: string, members: string[]) => Promise<void>) => { coordinators.set(id, fn); original(fn); };
+    control.attachLead(session as never);
+    const original = control.setTabCoordinator.bind(control);
+    control.setTabCoordinator = (fn: (owner: string, members: string[]) => Promise<void>) => { coordinators.set(id, fn); original(fn); };
 
-    const runtime = { session, fleet, rpc: { rejectAll: vi.fn() } };
-    sessions.set(id, { session, fleet, rpc });
+    const runtime = { session, control, rpc: { rejectAll: vi.fn() } };
+    sessions.set(id, { session, control, rpc });
 
     return runtime;
   };
@@ -119,15 +116,9 @@ it('主 Agent 跨会话接手只停本会话成员，不发旧 run release；用
   const b = manager.list().find(c=>c.id!=='default')!.id;
   const take = coordinators.get(b)!;
   const source = sessions.get('default')!;
-  const writer = { isHeld: () => false, abort: vi.fn(), waitForStop: vi.fn(async () => {}), dispose: vi.fn() };
-  const unrelated = { isHeld: () => false, abort: vi.fn(), waitForStop: vi.fn(async () => {}), dispose: vi.fn() };
-  (source.fleet as unknown as { workers: Map<string, unknown> }).workers.set('writer', writer);
-  (source.fleet as unknown as { workers: Map<string, unknown> }).workers.set('unrelated', unrelated);
 
-  // ghost 是旧页面上早已停止的历史成员：不能因为找不到它就挡住新会话接手。
-  await take('default',['writer','ghost']);
-  expect(writer.abort).toHaveBeenCalledOnce();
-  expect(unrelated.abort).not.toHaveBeenCalled();
+  // ghost 是旧页面上早已停止的历史成员：不能因为找不到它就挡住新会话接手，也不能误停主会话。
+  await take('default',['ghost']);
   expect(source.rpc.call).not.toHaveBeenCalled();
   expect(source.session.yieldTab).not.toHaveBeenCalled();
 

@@ -1,5 +1,4 @@
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
-import { CollaborationProgress, renderCollaboration } from "./collaboration-progress.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -17,11 +16,7 @@ import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, Play, SlidersHorizontal } from "lucide";
-import { describeSteps, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
-import { skillHealth, skillRunSummary, skillStepsText, sensitiveSkillInput, type Skill, type SkillRun, type SkillCandidate } from "../../../shared/skill.js";
-import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
-import { describeAnchor } from "../../../shared/skill.js";
+import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
 import { ChevronDown, ArrowDown } from "lucide";
 import {
   StepChain,
@@ -32,14 +27,10 @@ import {
   finishedRunTitle,
   spokenDuration,
   loaderSubtitle,
-  workerEventRunPolicy,
   isLiveViewportPinned,
   liveViewportOverflows,
 } from "./steps.js";
-import { cursorColor } from "../shared/palette.js";
-import { LEAD_COLOR, displayColor, displayNameFor, personFor } from "../../../shared/cast.js";
-import { mountGrok, mountKenney, type GrokHandle } from "../shared/grok-bot.js";
-import { mountCompanion } from "./companion.js";
+import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
 import {
   humanizeModelError,
@@ -48,7 +39,7 @@ import { mountModelPicker } from "./model-picker.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -59,15 +50,10 @@ import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
-import { DEFAULT_MARK_MOTION, isMarkMotion, MARK_MOTION_KEY, type MarkMotion } from "../shared/mark-motion.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
 import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
-
-const TOKEN_KEY = "sideagent_token";
-
-const TEACH_MODE_KEY = "sideagent_teach_mode";
 
 const PLACEHOLDER_IDLE = "说说你想完成什么…";
 
@@ -104,8 +90,7 @@ app.innerHTML = `
     <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
-      <button id="record-toggle" type="button" title="你亲手做一遍，AI 记录为可复用的技能" aria-pressed="false"><span>示范给 AI</span></button>
-      <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span>技能与记忆</span></button>
+      <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span>记忆</span></button>
       <hr />
         <button id="model-btn" type="button" title="切换模型" aria-label="切换当前模型" hidden aria-haspopup="listbox" aria-expanded="false">
           <span id="model-mark" class="model-mark" hidden></span>
@@ -115,7 +100,6 @@ app.innerHTML = `
         </button>
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
       <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
-      <button id="companion-toggle" type="button" aria-pressed="true"><span>显示小伙伴 M</span></button>
     </div>
   </header>
   <button id="conversation-background" type="button" hidden></button>
@@ -127,26 +111,15 @@ app.innerHTML = `
   </div>
   <div id="conversation-menu" role="menu" hidden></div>
   <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
-  <section id="memory-drawer" role="dialog" aria-label="技能与记忆" aria-modal="false" hidden>
+  <section id="memory-drawer" role="dialog" aria-label="记忆" aria-modal="false" hidden>
     <div class="memory-drawer-head">
       <div>
-        <h2 id="memory-title">技能与记忆</h2>
-        <p id="knowledge-sub">技能与记忆，都在这儿</p>
+        <h2 id="memory-title">记忆</h2>
       </div>
       <button id="memory-close" type="button">关闭</button>
     </div>
-    <div id="knowledge-seg" role="tablist">
-      <button type="button" id="seg-skills" role="tab" aria-selected="true">技能</button>
-      <button type="button" id="seg-memory" role="tab" aria-selected="false">记忆</button>
-      <button type="button" id="observe-toggle" aria-pressed="false" title="观察：只记骨架，不记你输入的内容"></button>
-      <span id="observe-hint"></span>
-    </div>
     <div id="knowledge-body">
-      <div id="skill-pane" hidden>
-        <div id="observe-candidates"></div>
-        <div id="skill-list"></div>
-      </div>
-      <div id="memory-body" hidden></div>
+      <div id="memory-body"></div>
     </div>
   </section>
   <div id="messages">
@@ -184,19 +157,6 @@ app.innerHTML = `
       </div>
     </div>
     <input type="file" id="file-input" accept="image/*" multiple hidden />
-    <div id="demo-strip" hidden>
-      <div id="demo-head">
-        <span id="demo-title"></span>
-        <button type="button" id="demo-stop" hidden>结束示范</button>
-        <button type="button" id="demo-close" title="收起这份示范记录">✕</button>
-      </div>
-      <ol id="demo-steps"></ol>
-      <div id="demo-actions">
-        <input id="demo-intent" type="text" maxlength="200" placeholder="一句话说明你要的是什么，例如：把未跟进的客户整理成表" />
-        <button type="button" id="demo-compile">编译成脚本</button>
-      </div>
-      <div id="demo-skill" hidden></div>
-    </div>
     <div id="task-bar-root"></div>
     <div id="composer" class="composer-glass-dock">
       <div id="page-pill" class="morphing-page-pill" title="当前活动标签页（点击展开检查面板）">
@@ -213,10 +173,6 @@ app.innerHTML = `
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
         <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button>
-        <select id="teach-toggle" aria-label="操作方式" title="选择由 AI 操作，或由 AI 指导你操作">
-          <option value="act">帮我操作</option>
-          <option value="teach">指导我操作</option>
-        </select>
         <span id="composer-spacer"></span>
         <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
         <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
@@ -229,32 +185,13 @@ app.innerHTML = `
   </div>
   <div id="composer-menu" popover="auto"><button id="voice-diagnostics-open" type="button">语音诊断</button></div>
   <div id="model-popover" hidden></div>
-  <div id="setup" hidden>
-    <h2>By Your Side 设置</h2>
-    <p class="hint">开发检查用的调试通道：把检查脚本给出的 token 粘贴到下面。正常使用无需本页。</p>
-    <input id="token-input" type="text" placeholder="token" autocomplete="off" />
-    <div id="setup-err" class="err"></div>
-    <button id="setup-save" type="button">保存并连接</button>
-  </div>
 `;
 
-/**
- * 宿主没有记忆、技能存储时（只装扩展），不给只会报「存储不可用」的入口：
- * 「示范给 AI」要把示范编译成技能，「技能与记忆」要读这两个存储。旧宿主不报时按有处理。
- */
-function applyHostFeatures(features: { memory: boolean; skills: boolean } | undefined): void {
-  const skills = features?.skills ?? true;
+/** 宿主没有记忆存储时，不给只会报「存储不可用」的入口。旧宿主不报时按有处理。 */
+function applyHostFeatures(features: { memory: boolean } | undefined): void {
   const memory = features?.memory ?? true;
-  document.getElementById("record-toggle")!.hidden = !skills;
-  document.getElementById("memory-open")!.hidden = !skills && !memory;
-  document.querySelector<HTMLElement>("#header-menu hr")!.hidden = !skills && !memory;
-  // 只装扩展时有记忆、没有技能：抽屉只留「记忆」，不出现空的技能页和观察开关。
-  document.getElementById("seg-skills")!.hidden = !skills;
-  document.getElementById("observe-toggle")!.hidden = !skills;
-  document.getElementById("observe-hint")!.hidden = !skills;
-  document.querySelector("#memory-open span")!.textContent = skills ? (memory ? "技能与记忆" : "技能") : "记忆";
-
-  if (!skills && memory) knowledgeSegment = "memory";
+  document.getElementById("memory-open")!.hidden = !memory;
+  document.querySelector<HTMLElement>("#header-menu hr")!.hidden = !memory;
 }
 
 // 原生 popover 负责外部点击和 Escape；各入口复用已有行为。
@@ -299,26 +236,6 @@ sendBtn.disabled = true;
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 
 
-const teachToggle = document.getElementById("teach-toggle") as HTMLSelectElement;
-
-const recordToggle = document.getElementById("record-toggle") as HTMLButtonElement;
-
-const demoStrip = document.getElementById("demo-strip") as HTMLDivElement;
-
-const demoTitle = document.getElementById("demo-title") as HTMLSpanElement;
-
-const demoSteps = document.getElementById("demo-steps") as HTMLOListElement;
-
-const demoClose = document.getElementById("demo-close") as HTMLButtonElement;
-
-const demoActions = document.getElementById("demo-actions") as HTMLDivElement;
-
-const demoIntent = document.getElementById("demo-intent") as HTMLInputElement;
-
-const demoCompile = document.getElementById("demo-compile") as HTMLButtonElement;
-
-const demoSkill = document.getElementById("demo-skill") as HTMLDivElement;
-
 const modelBtn = document.getElementById("model-btn") as HTMLButtonElement;
 
 const modelMark = document.getElementById("model-mark") as HTMLElement;
@@ -328,14 +245,6 @@ const modelName = document.getElementById("model-name")!;
 const modelReasoningTag = document.getElementById("model-reasoning-tag") as HTMLElement;
 
 const modelPopover = document.getElementById("model-popover")!;
-
-const setupEl = document.getElementById("setup")!;
-
-const tokenInput = document.getElementById("token-input") as HTMLInputElement;
-
-const setupErr = document.getElementById("setup-err")!;
-
-const setupSave = document.getElementById("setup-save") as HTMLButtonElement;
 
 // 附件瓷贴与动作菜单 DOM
 const attachmentsStrip = document.getElementById("attachments-strip") as HTMLElement;
@@ -673,7 +582,6 @@ function resetConversationRender(): void {
   resumeEntry.clear();
   renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
-  companion.onTakeover(false);
 }
 
 function selectConversation(id: string, notify = true): void {
@@ -700,10 +608,6 @@ function selectConversation(id: string, notify = true): void {
     if (askCiteEl) askCiteEl.hidden = true;
     attachments.restore([], id);
     restoringDraft = false;
-    const summary = conversations.get(id);
-
-    if (summary) applyMode(summary.mode, false);
-    clearDemoView();
     modelPicker.reset();
     void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));
   }
@@ -1530,6 +1434,7 @@ function openMemoryDrawer(inspection: MemoryInspection | null = null): void {
   memoryOpen.setAttribute("aria-expanded", "true");
   renderMemoryDrawer();
   requestMemoryList();
+  memoryClose.focus();
 }
 
 function closeMemoryDrawer(): void {
@@ -1542,7 +1447,7 @@ function closeMemoryDrawer(): void {
   headerMore.focus();
 }
 
-memoryOpen.onclick = () => memoryDrawer.hidden ? void openKnowledge(knowledgeSegment) : closeMemoryDrawer();
+memoryOpen.onclick = () => memoryDrawer.hidden ? openMemoryDrawer() : closeMemoryDrawer();
 
 memoryClose.onclick = closeMemoryDrawer;
 
@@ -1705,8 +1610,6 @@ if (morphSend) morphSend.appendChild(icon(ArrowUp));
 
 if (morphStop) morphStop.appendChild(icon(Square));
 
-recordToggle.prepend(icon(Play));
-
 memoryOpen.prepend(icon(Database));
 
 document.getElementById("reading-settings-btn")!.prepend(icon(BookOpen));
@@ -1819,644 +1722,6 @@ if (typeof chrome !== "undefined" && chrome.tabs) {
 
 void refreshActiveTabPill();
 
-const companion = mountCompanion({
-  appEl: app,
-  composerEl,
-  inputEl,
-  messagesEl,
-  pagePillEl: pagePill,
-});
-
-// ── 小伙伴 M 显示开关：存 chrome.storage.local，面板重开保持；默认显示 ──
-const COMPANION_VISIBLE_KEY = "sideagent_companion_visible";
-
-// SAFETY: #companion-toggle 在上面的面板模板里写死为 <button>。
-const companionToggle = document.getElementById("companion-toggle") as HTMLButtonElement;
-
-function applyCompanionVisible(visible: boolean): void {
-  app.dataset.companion = visible ? "on" : "off";
-  companionToggle.setAttribute("aria-pressed", String(visible));
-}
-
-void chrome.storage.local.get(COMPANION_VISIBLE_KEY).then((stored) => applyCompanionVisible(stored[COMPANION_VISIBLE_KEY] !== false));
-
-companionToggle.addEventListener("click", () => {
-  const visible = app.dataset.companion === "off";
-
-  applyCompanionVisible(visible);
-  void chrome.storage.local.set({ [COMPANION_VISIBLE_KEY]: visible });
-});
-
-// ── 教学模式开关 ───────────────────────────────────────────────────
-// 开关状态存 chrome.storage.local（面板重开恢复显示）；运行时权威在 background
-// （chrome.storage.session），background 推来的 mode 消息会反向收敛本地存储。
-
-let markMotion: MarkMotion = DEFAULT_MARK_MOTION;
-
-let teachMode = false;
-
-function renderTeachToggle(): void {
-  teachToggle.classList.toggle("on", teachMode);
-  teachToggle.value = teachMode ? "teach" : "act";
-  const motionLabel = markMotion === "boil" ? "持续微抖" : "生长定格";
-  teachToggle.title = teachMode
-    ? `教学模式已开启（手绘动效：${motionLabel}，右击切换）：Agent 只标注引导，由你手动操作（选择“帮我操作”关闭）`
-    : `教学模式：Agent 只标注引导，由你手动操作（选择“指导我操作”开启，右击切换手绘动效：${motionLabel}）`;
-}
-
-function applyMode(mode: AgentMode, persist: boolean): void {
-  teachMode = mode === "teach";
-  renderTeachToggle();
-
-  if (persist) void chrome.storage.local.set({ [TEACH_MODE_KEY]: teachMode });
-}
-
-void chrome.storage.local.get([TEACH_MODE_KEY, MARK_MOTION_KEY]).then((stored) => {
-  const motion = stored[MARK_MOTION_KEY];
-  markMotion = isMarkMotion(motion) ? motion : DEFAULT_MARK_MOTION;
-  applyMode(stored[TEACH_MODE_KEY] === true ? "teach" : "act", false);
-});
-
-teachToggle.onchange = () => {
-  applyMode(teachToggle.value === "teach" ? "teach" : "act", true);
-  send({ type: "set_mode", mode: teachMode ? "teach" : "act" });
-};
-
-teachToggle.oncontextmenu = (ev) => {
-  ev.preventDefault();
-  markMotion = markMotion === "grow" ? "boil" : "grow";
-  void chrome.storage.local.set({ [MARK_MOTION_KEY]: markMotion });
-  renderTeachToggle();
-};
-
-const knowledgeDrawer = document.getElementById("memory-drawer") as HTMLElement;
-
-const segSkills = document.getElementById("seg-skills") as HTMLButtonElement;
-
-const segMemory = document.getElementById("seg-memory") as HTMLButtonElement;
-
-const skillPane = document.getElementById("skill-pane") as HTMLDivElement;
-
-const skillList = document.getElementById("skill-list") as HTMLDivElement;
-
-const observeToggle = document.getElementById("observe-toggle") as HTMLButtonElement;
-
-const observeHint = document.getElementById("observe-hint") as HTMLSpanElement;
-
-const observeCandidates = document.getElementById("observe-candidates") as HTMLDivElement;
-
-let knowledgeSegment: "skills" | "memory" = "skills";
-
-let observing = false;
-
-let observedPatterns = 0;
-
-let observedCandidates: ObservedPattern[] = [];
-
-let redoSkillId: string | null = null;
-
-let redoSkillVersion: number | null = null;
-
-let skillRequest = "";
-
-let skillEntries: Array<{ skill: Skill; runs: SkillRun[] }> = [];
-
-let learnedCandidates: SkillCandidate[] = [];
-
-// ── 知识抽屉：技能与记忆一个入口（方案一：摘要 + 展开） ──────────────
-// 默认只露「名字 + 事实行 + 一个主按钮」；凭证、步骤、脚本、其余动作收进一次展开。
-
-/** 打开抽屉：分段决定看哪一半；两边各自按需拉数据。 */
-async function openKnowledge(segment: "skills" | "memory"): Promise<void> {
-  memoryDrawer.hidden = false;
-  memoryShade.hidden = false;
-  memoryOpen.setAttribute("aria-expanded", "true");
-  setKnowledgeSegment(segment);
-  memoryClose.focus();
-}
-
-function setKnowledgeSegment(segment: "skills" | "memory"): void {
-  knowledgeSegment = segment;
-  segSkills.setAttribute("aria-selected", String(segment === "skills"));
-  segMemory.setAttribute("aria-selected", String(segment === "memory"));
-  skillPane.hidden = segment !== "skills";
-  memoryBody.hidden = segment !== "memory";
-
-  if (segment === "skills") {
-    // 先按手上的数据画一次（多半是空态），别让抽屉在等到回复前是一片空白
-    renderObserve();
-    renderSkills();
-    void refreshSkills();
-
-    return;
-  }
-
-  renderMemoryDrawer();
-  requestMemoryList();
-}
-
-async function refreshSkills(): Promise<void> {
-  const conversationId = selectedConversationId;
-  const hostname = await currentHostname();
-
-  if (conversationId !== selectedConversationId) return;
-  skillRequest = crypto.randomUUID();
-  const skillList: Extract<ClientMessage, { type: "skill_list" }> = { type: "skill_list", conversationId, requestId: skillRequest };
-
-  if (hostname) skillList.hostname = hostname;
-  send(skillList);
-  port?.postMessage({ kind: "observe", action: "list", conversationId: selectedConversationId } satisfies PanelToBg);
-}
-
-/** 当前活动页的站点：技能按站点列，不看别的站。 */
-async function currentHostname(): Promise<string> {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-
-    return tab?.url ? new URL(tab.url).hostname : "";
-  } catch {
-    return "";
-  }
-}
-
-function renderObserve(): void {
-  observeToggle.textContent = observing ? `观察：开 · 已记 ${observedPatterns} 段` : "观察：关";
-  observeToggle.setAttribute("aria-pressed", String(observing));
-  observeToggle.title = observing
-    ? "只记骨架：点了哪些对象、同一站点的一串动作。不记你输入的内容；敏感站点与密码字段直接跳过。"
-    : "打开后我才会观察你的操作，从中找出你可能常做的事，再问你要不要以后替你跑。";
-  observeHint.textContent = observing ? "只记骨架" : "打开后才会看你常做的事";
-  observeCandidates.replaceChildren();
-
-  for (const pattern of observedCandidates) {
-    const card = document.createElement("div");
-    card.className = "observe-card";
-    const text = document.createElement("p");
-    text.textContent = describePattern(pattern, anchor => describeAnchor(anchor));
-    const detail = document.createElement("details");
-    detail.className = "disc";
-    const summary = document.createElement("summary");
-    summary.textContent = "看它记下的这几步";
-    const body = document.createElement("div");
-    body.className = "disc-body";
-    const list = document.createElement("ol");
-
-    for (const anchor of pattern.anchors) {
-      const li = document.createElement("li");
-      li.textContent = describeAnchor(anchor);
-      list.appendChild(li);
-    }
-
-    body.appendChild(list);
-    detail.append(summary, body);
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
-    const accept = document.createElement("button");
-    accept.type = "button";
-    accept.className = "btn primary";
-    accept.textContent = "以后替我跑";
-    accept.onclick = () => {
-      accept.disabled = true;
-      skillRequestId = crypto.randomUUID();
-      send({
-        type: "skill_compile",
-        requestId: skillRequestId,
-        intent: defaultIntent(pattern, anchor => describeAnchor(anchor)),
-        hostname: pattern.hostname,
-        demoId: `observed-${pattern.hostname}-${pattern.signature.slice(0, 24)}`,
-        steps: pattern.anchors.map((anchor, index) => ({ at: index * 1000, kind: "click" as const, anchor, page: `https://${pattern.hostname}/` })),
-      });
-      port?.postMessage({ kind: "observe", action: "accept", conversationId: selectedConversationId, signature: pattern.signature, hostname: pattern.hostname } satisfies PanelToBg);
-    };
-
-    const dismiss = document.createElement("button");
-    dismiss.type = "button";
-    dismiss.className = "btn ghost";
-    dismiss.textContent = "不用";
-    dismiss.onclick = () => {
-      port?.postMessage({ kind: "observe", action: "dismiss", conversationId: selectedConversationId, signature: pattern.signature, hostname: pattern.hostname } satisfies PanelToBg);
-      observedCandidates = observedCandidates.filter(p => !(p.signature === pattern.signature && p.hostname === pattern.hostname));
-      renderObserve();
-    };
-
-    actions.append(accept, dismiss);
-    card.append(text, detail, actions);
-    observeCandidates.appendChild(card);
-  }
-}
-
-/** 技能行：摘要 + 展开。过期的技能主按钮变短，点下去先就地确认。 */
-function renderSkills(): void {
-  const editing = skillList.querySelector<HTMLFormElement>(".skill-run-inputs");
-
-  if (editing) {
-    // A late list refresh must not discard values the user has begun typing.
-    // Keep the existing row and its handlers; a changed version disables execution.
-    const current = skillEntries.find(entry => entry.skill.id === editing.dataset.skillId)?.skill;
-
-    if (!current || String(current.version) !== editing.dataset.skillVersion) {
-      const submit = editing.querySelector<HTMLButtonElement>('button[type="submit"]');
-
-      if (submit) { submit.disabled = true; submit.textContent = "做法已变化，请重新打开后核对"; }
-    }
-
-    return;
-  }
-
-  skillList.replaceChildren();
-
-  for (const candidate of learnedCandidates) {
-    const card = document.createElement("div");
-    card.className = "observe-card";
-    card.dataset.skillCandidate = candidate.skill.id;
-    const title = document.createElement("p");
-    title.textContent = `${candidate.skill.name.replace(/\{\{([^{}]+)\}\}/g, "〔$1〕")} · 待你确认保存`;
-    const facts = document.createElement("p");
-    facts.className = "row-facts";
-    facts.textContent = `${candidate.evidence.actionCount} 步已执行并核对结果；尚未启用，不保存输入内容。`;
-    const detail = document.createElement("details");
-    detail.className = "disc";
-    const summary = document.createElement("summary"); summary.textContent = "查看做法与完成条件";
-    const body = document.createElement("div"); body.className = "disc-body";
-
-    for (const text of [...skillStepsText(candidate.skill), candidate.skill.check.text]) {
-      const line = document.createElement("p"); line.textContent = text; body.appendChild(line);
-    }
-
-    detail.append(summary, body);
-    const actions = document.createElement("div"); actions.className = "row-actions";
-    const save = document.createElement("button"); save.type = "button"; save.className = "btn primary"; save.textContent = "保存这份做法";
-    const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.className = "btn ghost"; dismiss.textContent = "不用保存";
-
-    const decide = (type: "skill_candidate_save" | "skill_candidate_dismiss") => {
-      skillRequest = crypto.randomUUID(); save.disabled = true; dismiss.disabled = true;
-
-      if (!send({ type, requestId: skillRequest, id: candidate.skill.id, sourceRunId: candidate.sourceRunId })) {
-        save.disabled = false; dismiss.disabled = false;
-      }
-    };
-
-    save.onclick = () => decide("skill_candidate_save"); dismiss.onclick = () => decide("skill_candidate_dismiss");
-    actions.append(save, dismiss); card.append(title, facts, detail, actions); skillList.appendChild(card);
-  }
-
-  if (skillEntries.length === 0 && learnedCandidates.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "memory-quiet";
-    empty.textContent = transportConnected
-      ? "这一页还没有技能。亲手做一遍再填一句话编译；或者打开观察，让它自己看出你常做的事。"
-      : "还没连上伴随进程，技能与观察暂时读不到。";
-    skillList.appendChild(empty);
-
-    return;
-  }
-
-  for (const { skill, runs } of skillEntries) {
-    const health = skillHealth(runs);
-    const row = document.createElement("div");
-    row.className = "row";
-    const head = document.createElement("div");
-    head.className = "row-head";
-    const name = document.createElement("span");
-    name.className = "row-name";
-    name.textContent = skill.name;
-    const facts = document.createElement("span");
-    facts.className = health.stale ? "row-facts stale" : "row-facts";
-    facts.textContent = [skillRunSummary(runs), skill.version > 1 ? `第 ${skill.version} 版` : ""].filter(Boolean).join(" · ");
-    head.append(name, facts);
-
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
-    const runBtn = document.createElement("button");
-    runBtn.type = "button";
-    runBtn.className = "btn primary";
-    runBtn.textContent = "照上次那样跑";
-    runBtn.onclick = () => {
-      if (!health.stale) { startSkillRun(skill, runBtn);
-
- return; }
-
-      // 可能过期：不直接跑，先就地确认，不弹原生对话框（那会卡住整个面板）
-      runBtn.textContent = "可能过期，仍然要跑？";
-
-      if (!row.querySelector(".stale-confirm")) {
-        const confirmRow = document.createElement("div");
-        confirmRow.className = "row-actions stale-confirm";
-        const yes = document.createElement("button");
-        yes.type = "button";
-        yes.className = "btn";
-        yes.textContent = "确认跑一次";
-        yes.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; startSkillRun(skill, runBtn, undefined, true); };
-
-        const no = document.createElement("button");
-        no.type = "button";
-        no.className = "btn ghost";
-        no.textContent = "算了";
-        no.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; };
-
-        confirmRow.append(yes, no);
-        row.appendChild(confirmRow);
-      }
-    };
-
-    actions.appendChild(runBtn);
-
-    const detail = document.createElement("details");
-    detail.className = "disc";
-    const summary = document.createElement("summary");
-    summary.textContent = "凭证、步骤与其余动作";
-    const body = document.createElement("div");
-    body.className = "disc-body";
-
-    if (skill.notes?.length) {
-      const notes = document.createElement("p");
-      notes.className = "check";
-      notes.textContent = `你说过不对的地方：${skill.notes.map((note: { text: string }) => note.text).join("；")}`;
-      body.appendChild(notes);
-    }
-
-    if (skill.check.text) {
-      const check = document.createElement("p");
-      check.className = "check";
-      check.textContent = `完成凭证：${skill.check.text}`;
-      body.appendChild(check);
-    }
-
-    if (skill.weakSteps || skill.droppedSteps) {
-      const weak = document.createElement("p");
-      weak.className = "check";
-      weak.textContent = skill.weakSteps
-        ? `有 ${skill.weakSteps} 步没记到对象名：跑的时候认不出来就跳过，不会因此停下。`
-        : `有 ${skill.droppedSteps} 步没记到对象名，已跳过。`;
-      body.appendChild(weak);
-    }
-
-    const steps = document.createElement("ol");
-
-    for (const line of skillStepsText(skill)) {
-      const li = document.createElement("li");
-      li.textContent = line;
-      steps.appendChild(li);
-    }
-
-    const script = document.createElement("pre");
-    script.textContent = skill.program;
-    body.append(steps, script);
-
-    const secondary = document.createElement("div");
-    secondary.className = "row-actions";
-    const redo = document.createElement("button");
-    redo.type = "button";
-    redo.className = "btn";
-    redo.textContent = "重新示范";
-    redo.title = "就按新做法再做一遍：内容替换、版本加一，旧版本留着可回退";
-    redo.onclick = () => {
-      redoSkillId = skill.id;
-      redoSkillVersion = skill.version;
-      knowledgeDrawer.hidden = true;
-      port?.postMessage({ kind: "demo", action: "start", conversationId: selectedConversationId } satisfies PanelToBg);
-      addMsg("msg", `重新示范：现在你亲手做一遍（会覆盖「${skill.name}」，旧版本留着）。做完点「做完了」，再点「编译成脚本」。`);
-    };
-
-    const noteBox = document.createElement("div");
-    noteBox.className = "skill-note-box";
-    noteBox.hidden = true;
-    const noteInput = document.createElement("input");
-    noteInput.type = "text";
-    noteInput.maxLength = 200;
-    noteInput.placeholder = "哪里不对？一句话，下次重新示范时提醒你";
-    const noteSend = document.createElement("button");
-    noteSend.type = "button";
-    noteSend.className = "btn";
-    noteSend.textContent = "记下";
-    noteSend.onclick = () => {
-      const text = noteInput.value.trim();
-
-      if (!text) return;
-      noteBox.hidden = true;
-      noteInput.value = "";
-      addMsg("msg", `记下了：下次重新示范「${skill.name}」时会提醒你这条。`);
-      skillRequest = crypto.randomUUID();
-      send({ type: "skill_note", requestId: skillRequest, id: skill.id, note: text });
-      window.setTimeout(() => void refreshSkills(), 700);
-    };
-
-    noteBox.append(noteInput, noteSend);
-    const noteBtn = document.createElement("button");
-    noteBtn.type = "button";
-    noteBtn.className = "btn ghost";
-    noteBtn.textContent = "这次不太对";
-    noteBtn.onclick = () => { noteBox.hidden = !noteBox.hidden;
-
- if (!noteBox.hidden) noteInput.focus(); };
-
-    const rollback = document.createElement("button");
-    rollback.type = "button";
-    rollback.className = "btn ghost";
-    rollback.textContent = "回到上一版";
-    rollback.disabled = skill.version <= 1;
-    rollback.onclick = () => {
-      rollback.disabled = true;
-      addMsg("msg", `正在回到「${skill.name}」的上一版…`);
-      skillRequest = crypto.randomUUID();
-      send({ type: "skill_rollback", requestId: skillRequest, id: skill.id, expectedVersion: skill.version });
-      window.setTimeout(() => void refreshSkills(), 700);
-    };
-
-    const forget = document.createElement("button");
-    forget.type = "button";
-    forget.className = "btn ghost";
-    forget.textContent = "忘掉";
-    forget.onclick = () => {
-      skillRequest = crypto.randomUUID();
-      send({ type: "skill_forget", requestId: skillRequest, id: skill.id });
-    };
-
-    secondary.append(redo, noteBtn, rollback, forget);
-    body.append(secondary, noteBox);
-    detail.append(summary, body);
-    row.append(head, actions, detail);
-    skillList.appendChild(row);
-  }
-}
-
-function startSkillRun(skill: Skill, button: HTMLButtonElement, inputs?: Record<string, string>, allowStale = false): void {
-  const keys = Object.keys(skill.inputs);
-
-  if (keys.length && inputs === undefined) {
-    const row = button.closest(".row");
-
-    if (!row || row.querySelector(".skill-run-inputs")) return;
-    const form = document.createElement("form"); form.className = "skill-run-inputs disc-body";
-    form.dataset.skillId = skill.id; form.dataset.skillVersion = String(skill.version);
-    const fields = new Map<string, HTMLInputElement>();
-    const hint = document.createElement("p"); hint.textContent = "这次用什么材料？修改只对本次生效。"; form.appendChild(hint);
-
-    for (const key of keys) {
-      const label = document.createElement("label"); label.textContent = key;
-      const input = document.createElement("input");
-      const sensitive = sensitiveSkillInput(skill, key);
-      input.type = sensitive ? "password" : "text"; input.autocomplete = "off"; input.maxLength = 8000;
-      input.value = sensitive ? "" : skill.inputs[key]!; input.required = sensitive || !input.value;
-      label.appendChild(input); form.appendChild(label); fields.set(key, input);
-    }
-
-    const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn primary"; submit.textContent = "用这些材料执行";
-    const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "btn ghost"; cancel.textContent = "取消"; cancel.onclick = () => { form.remove(); renderSkills(); };
-
-    form.append(submit, cancel);
-    form.onsubmit = event => {
-      event.preventDefault();
-      const values = Object.fromEntries([...fields].map(([key, input]) => [key, input.value]));
-      fields.forEach(input => { input.value = ""; }); form.remove(); startSkillRun(skill, button, values, allowStale);
-    };
-
-    row.appendChild(form); fields.values().next().value?.focus();
-
- return;
-  }
-
-  button.disabled = true;
-  button.textContent = "跑着…";
-  skillRequest = crypto.randomUUID();
-
-  if (!send({ type: "skill_run", requestId: skillRequest, id: skill.id, expectedVersion: skill.version, inputs, allowStale })) {
-    button.disabled = false; button.textContent = "照上次那样跑";
-  }
-}
-
-segSkills.onclick = () => setKnowledgeSegment("skills");
-
-segMemory.onclick = () => setKnowledgeSegment("memory");
-
-observeToggle.onclick = () => {
-  port?.postMessage({ kind: "observe", action: observing ? "off" : "on", conversationId: selectedConversationId } satisfies PanelToBg);
-};
-
-// ── 示范录制（看我做） ─────────────────────────────────────────────
-// 记录在 background 进行；面板只发开关指令、把已记步骤讲清楚。
-// 默认只显示步骤与完成情况，脚本代码以后折叠在「代码」里，不铺在脸上。
-
-let demoState: { recording: boolean; steps: DemoStep[]; truncated: boolean } = { recording: false, steps: [], truncated: false };
-
-let skillRequestId = "";
-
-function renderDemo(): void {
-  const { recording, steps, truncated } = demoState;
-  recordToggle.classList.toggle("on", recording);
-  recordToggle.classList.toggle("recording", recording);
-  recordToggle.setAttribute("aria-pressed", String(recording));
-  recordToggle.querySelector("span")!.textContent = recording ? "结束示范" : "示范给 AI";
-  document.getElementById("demo-stop")!.hidden = !recording;
-  recordToggle.title = recording
-    ? `${recordingHint(steps, truncated)}；做完点这里结束`
-    : "看我做一次：你亲手做一遍，我先只看不动手";
-  demoStrip.hidden = !recording && steps.length === 0;
-
-  if (demoStrip.hidden) return;
-  demoTitle.textContent = recording ? recordingHint(steps, truncated) : `示范结束：记下 ${steps.length} 步${truncated ? "（中途已达上限）" : ""}`;
-  demoSteps.replaceChildren(...describeSteps(steps).map((line) => {
-    const li = document.createElement("li");
-    li.textContent = line;
-
-    return li;
-  }));
-  demoSteps.lastElementChild?.scrollIntoView({ block: "nearest" });
-  demoActions.hidden = recording;
-}
-
-/** 编译入口：把这一份示范 + 你的一句话交给伴随进程编译成技能。 */
-demoCompile.onclick = () => {
-  const steps = demoState.steps;
-
-  if (!steps.length) return;
-  const host = hostnameOf(steps);
-
-  if (!host) { addMsg("msg error", "这份示范没有可用的站点信息，换个普通网页再试。");
-
- return; }
-
-  demoCompile.disabled = true;
-  demoCompile.textContent = "编译中…";
-  skillRequestId = crypto.randomUUID();
-
-  const compile: Extract<ClientMessage, { type: "skill_compile" }> = {
-    type: "skill_compile",
-    requestId: skillRequestId,
-    intent: demoIntent.value,
-    hostname: host,
-    demoId: `${selectedConversationId}-${steps.length}-${steps[0]?.at ?? 0}`,
-    steps,
-  };
-
-  if (redoSkillId) {
-    compile.updateId = redoSkillId;
-
-    if (redoSkillVersion !== null) compile.expectedVersion = redoSkillVersion;
-  }
-
-  send(compile);
-};
-
-function hostnameOf(steps: DemoStep[]): string | null {
-  for (const step of steps) {
-    if (!step.page) continue;
-
-    try { return new URL(step.page).hostname; } catch { /* 跳过坏地址 */ }
-  }
-
-  return null;
-}
-
-/** 编译结果卡：默认只讲步骤与完成凭证，脚本折起来。 */
-function renderSkillResult(skill: Skill): void {
-  demoSkill.hidden = false;
-  demoSkill.replaceChildren();
-  const title = document.createElement("div");
-  title.className = "demo-skill-title";
-  title.textContent = skill.version > 1 ? `已更新：${skill.name}（第 ${skill.version} 版）` : `已编译：${skill.name}`;
-  const list = document.createElement("ol");
-
-  for (const line of skillStepsText(skill)) {
-    const li = document.createElement("li");
-    li.textContent = line;
-    list.appendChild(li);
-  }
-
-  const check = document.createElement("p");
-  check.className = "demo-skill-check";
-  check.textContent = `完成凭证：${skill.check.text}`;
-  const note = document.createElement("p");
-  note.className = "demo-skill-check";
-  note.textContent = skill.weakSteps
-    ? `示范里有 ${skill.weakSteps} 步没记到对象名：跑的时候认不出来就跳过，不会因此停下。`
-    : skill.droppedSteps ? `示范里有 ${skill.droppedSteps} 步没记到对象名，已跳过。` : "";
-  note.hidden = !skill.weakSteps && !skill.droppedSteps;
-  const detail = document.createElement("details");
-  const summary = document.createElement("summary");
-  summary.textContent = "看脚本";
-  const pre = document.createElement("pre");
-  pre.textContent = skill.program;
-  detail.append(summary, pre);
-  demoSkill.append(title, list, note, check, detail);
-}
-
-recordToggle.onclick = () => {
-  const action = demoState.recording ? "stop" : "start";
-  port?.postMessage({ kind: "demo", action, conversationId: selectedConversationId } satisfies PanelToBg);
-};
-
-document.getElementById("demo-stop")!.onclick = () => recordToggle.click();
-
-demoClose.onclick = () => {
-  port?.postMessage({ kind: "demo", action: "dismiss", conversationId: selectedConversationId } satisfies PanelToBg);
-  demoState = { recording: false, steps: [], truncated: false };
-  demoIntent.value = "";
-  demoSkill.hidden = true;
-  demoSkill.replaceChildren();
-  renderDemo();
-};
-
 // ── 模型选择器 ─────────────────────────────────────────────────────
 // 模型入口收在顶部更多菜单，选择面板在菜单触发器下方展开。
 // 数据源是 agent 下发的 hello_ok.models / model_info；选择后发 set_model，
@@ -2540,26 +1805,10 @@ const orbByHost = new WeakMap<HTMLElement, OrbHandle>();
 /** 用户发消息时刻：run 计时的起点（块体懒创建，先记时间戳）。 */
 let runStartAt = 0;
 
-interface WorkerLane {
-  root: HTMLDetailsElement;
-  body: HTMLElement;
-  chainEl: HTMLElement;
-  chain: StepChain;
-  chipGroup: ChipGroup | null;
-  lastLine: HTMLElement;
-  face: HTMLElement;
-  status: HTMLElement;
-  waiting: boolean;
-  grok: GrokHandle | null;
-  awaiting: Set<string>;
-}
-
 /** 当前 run 的"执行步骤"聚合块。 */
 interface RunHost {
   orbMark: HTMLSpanElement;
   orbActivity: RunOrbActivity;
-  collaboration: CollaborationProgress;
-  collaborationEl: HTMLElement;
   root: HTMLDetailsElement;
   body: HTMLElement;
   iconBox: HTMLElement;
@@ -2576,7 +1825,6 @@ interface RunHost {
   lastToolShort: string | null;
   /** 当前 chip 分组；思考块插入后另起一组。 */
   chipGroup: ChipGroup | null;
-  workers: Map<string, WorkerLane>;
   /** 这一轮动过页面（标注、开标签、填写等）；只读回合结束后不留过程行。 */
   changedPage: boolean;
 }
@@ -2760,9 +2008,6 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
 
   appendToMessages(div);
 
-  if (!applyingHistory) {
-    companion.onSend(div);
-  }
 
   scrollToEnd();
 
@@ -3025,17 +2270,12 @@ function ensureRun(): NonNullable<typeof currentRun> {
   chevron.className = "run-chevron";
   chevron.appendChild(icon(ChevronDown));
   summary.append(iconBox, title, chainEl, timeEl, chevron);
-  const collaborationEl = document.createElement("div");
-  collaborationEl.className = "run-collaboration";
-  collaborationEl.hidden = true;
-
   const body = document.createElement("div");
   body.className = "run-body";
   runBodyPinned = true;
   bindLiveViewport(body, (next) => {
     runBodyPinned = next;
   });
-  body.append(collaborationEl);
   const reveal = document.createElement("div");
   reveal.className = "run-reveal";
   reveal.append(body);
@@ -3062,135 +2302,12 @@ function ensureRun(): NonNullable<typeof currentRun> {
     timer,
     lastToolShort: null,
     chipGroup: null,
-    workers: new Map(),
     orbActivity: new RunOrbActivity(),
     orbMark,
-    collaboration: new CollaborationProgress(),
-    collaborationEl,
     changedPage: false,
   };
 
-  if (!applyingHistory) companion.onStepStart(root);
-
   return currentRun;
-}
-
-function castAsset(file: string): string {
-  return typeof chrome !== "undefined" && chrome.runtime?.getURL
-    ? chrome.runtime.getURL(`cast/${file}`)
-    : `cast/${file}`;
-}
-
-function paintLaneFace(lane: WorkerLane, id: string): void {
-  const person = personFor(id);
-
-  if (!person) return;
-  lane.grok?.destroy();
-  lane.grok = null;
-  const kenney = (lane.waiting && person.kenneyWait) || person.kenney;
-
-  if (kenney) {
-    mountKenney(lane.face, castAsset(kenney.body), castAsset(kenney.face), 32);
-
-    return;
-  }
-
-  lane.grok = mountGrok(lane.face, person, 32);
-  lane.grok.setWaiting(lane.waiting);
-}
-
-function setLaneWaiting(lane: WorkerLane, id: string, waiting: boolean): void {
-  if (lane.waiting === waiting) return;
-  lane.waiting = waiting;
-  const person = personFor(id);
-  lane.status.textContent = waiting ? (person?.waitLine ?? "") : "";
-  lane.status.hidden = !waiting;
-  paintLaneFace(lane, id);
-}
-
-function ensureWorkerLane(id: string, run: RunHost): WorkerLane {
-  const existing = run.workers.get(id);
-
-  if (existing) return existing;
-  const person = personFor(id);
-  const root = document.createElement("details");
-  root.className = "worker-lane";
-  root.open = true;
-  root.style.setProperty("--worker-c", cursorColor(id));
-  const summary = document.createElement("summary");
-  const face = document.createElement("span");
-  face.className = "worker-face";
-  const meta = document.createElement("div");
-  meta.className = "worker-meta";
-  const idrow = document.createElement("div");
-  idrow.className = "worker-idrow";
-  const name = document.createElement("span");
-  name.className = "worker-name";
-  name.textContent = displayNameFor(id);
-  const status = document.createElement("span");
-  status.className = "worker-status";
-  status.hidden = true;
-  idrow.append(name, status);
-  const chainEl = document.createElement("span");
-  chainEl.className = "worker-chain";
-  meta.append(idrow, chainEl);
-  summary.append(face, meta);
-  const body = document.createElement("div");
-  body.className = "worker-body";
-  const lastLine = document.createElement("div");
-  lastLine.className = "worker-last";
-  lastLine.hidden = true;
-  body.appendChild(lastLine);
-  const reveal = document.createElement("div");
-  reveal.className = "run-reveal";
-  reveal.append(body);
-  root.append(summary, reveal);
-  run.body.appendChild(root);
-
-  const lane: WorkerLane = {
-    root,
-    body,
-    chainEl,
-    chain: new StepChain(),
-    chipGroup: null,
-    lastLine,
-    face,
-    status,
-    waiting: false,
-    grok: null,
-    awaiting: new Set(),
-  };
-
-  if (person) paintLaneFace(lane, id);
-  run.workers.set(id, lane);
-
-  return lane;
-}
-
-/**
- * 工人事件进哪条车道。图已 idle 时只复用刚收掉的块，绝不 ensureRun（否则「处理中」空转）。
- */
-function laneForWorker(id: string): { lane: WorkerLane; run: RunHost; live: boolean } | null {
-  const policy = workerEventRunPolicy({
-    hasCurrentRun: currentRun != null,
-    graphRunning: running,
-    hasLastRun: lastRun != null,
-  });
-
-  if (policy === "drop") return null;
-
-  if (policy === "reuse-last") {
-    const run = lastRun;
-
-    if (!run) return null;
-    const lane = run.workers.get(id);
-
-    return lane ? { lane, run, live: false } : null;
-  }
-
-  const run = policy === "current" && currentRun ? currentRun : ensureRun();
-
-  return { lane: ensureWorkerLane(id, run), run, live: true };
 }
 
 const sessionRun = new Map<string, AgentRunState>();
@@ -3308,7 +2425,6 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
 
   if (flags.userHasPage !== lastUserHasPage) {
     lastUserHasPage = flags.userHasPage;
-    companion.onTakeover(flags.userHasPage);
   }
 
   takeoverBtn.hidden = !flags.takeoverVisible;
@@ -3418,13 +2534,9 @@ function finishRun(): void {
 
     if (lastRun === run) lastRun = null;
 
-    if (!applyingHistory) companion.onRunFinish();
-
     return;
   }
 
-  run.collaboration.finish();
-  renderCollaboration(run.collaborationEl, run.collaboration);
   run.root.classList.add("done");
   run.orbActivity.finish();
   syncRunOrb(run);
@@ -3442,7 +2554,6 @@ function finishRun(): void {
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
 
-  if (!applyingHistory) companion.onRunFinish();
   scrollToEnd();
 }
 
@@ -3717,77 +2828,40 @@ function toggleChipDetail(entry: ToolChipEntry): void {
   scrollToEnd();
 }
 
-const BOOKKEEPING_TOOLS = new Set(["send_user_message", "task_goals"]);
+const BOOKKEEPING_TOOLS = new Set(["send_user_message"]);
 
 /** 用户能在页面上看到后果的动作；滚动、悬停、事件监听只是为了读页。 */
-const PAGE_VIEWING_TOOLS = new Set(["scroll", "wheel", "hover", "arm_event", "wait_event", "disarm_event"]);
+const PAGE_VIEWING_TOOLS = new Set(["scroll", "hover", "arm_event", "wait_event", "disarm_event"]);
 
 function changesPage(name: string): boolean {
   return isWriteTool(name) && !PAGE_VIEWING_TOOLS.has(name);
 }
 
-function onToolStart(
-  ev: { toolCallId: string; name: string; params: Record<string, unknown> },
-  sessionId?: string,
-): void {
+function onToolStart(ev: { toolCallId: string; name: string; params: Record<string, unknown> }): void {
   const action = describeTool(ev.name, ev.params);
+  const run = ensureRun();
+  closeBlocks();
 
-  if (ev.name === "await_message") {
-    action.full = (currentRun ?? lastRun)?.collaboration.waitingFor(ev.params.from) ?? action.full;
+  // 交付回答是助手的内部记账，不算用户看得懂的一步。
+  if (BOOKKEEPING_TOOLS.has(ev.name)) {
+    run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
+    syncRunOrb(run);
+
+    return;
   }
 
-  if (ev.name === "post" && ev.params.to === "main" && ev.params.kind === "done") {
-    const output = sessionId ? (currentRun ?? lastRun)?.collaboration.members.get(sessionId)?.output : null;
-    action.full = `交回${output ?? "结果"}给主助手`;
-  }
+  addChainStep(action.short);
+  run.lastToolShort = action.short;
 
-  let run: RunHost;
-  let group: ChipGroup;
-  let live = true;
+  if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
+  const group = run.chipGroup;
 
-  if (sessionId && !isLeadSession(sessionId)) {
-    const found = laneForWorker(sessionId);
-
-    if (!found) return;
-    found.lane.chain.push(action.short);
-    found.lane.chainEl.textContent = found.lane.chain.render();
-
-    if (!found.lane.chipGroup) found.lane.chipGroup = buildChipGroup(found.lane.body, found.lane.lastLine);
-    group = found.lane.chipGroup;
-    run = found.run;
-    live = found.live;
-
-    if (live) run.lastToolShort = `${displayNameFor(sessionId)} · ${action.short}`;
-
-    if (ev.name === "await_message") {
-      found.lane.awaiting.add(ev.toolCallId);
-      setLaneWaiting(found.lane, sessionId, true);
-    }
-  } else {
-    run = ensureRun();
-    closeBlocks();
-
-    // 交付回答、核对目标清单是助手的内部记账，不算用户看得懂的一步。
-    if (BOOKKEEPING_TOOLS.has(ev.name)) {
-      run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
-      syncRunOrb(run);
-
-      return;
-    }
-
-    addChainStep(action.short);
-    run.lastToolShort = action.short;
-
-    if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
-    group = run.chipGroup;
-  }
-
-  run.orbActivity.observe({ kind: "tool_start", ...ev }, sessionId ?? "main");
+  run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
   syncRunOrb(run);
 
   if (changesPage(ev.name)) run.changedPage = true;
 
-  if (live && orbStateRuns(run.orbActivity.state(lastUserHasPage))) run.titleEl.textContent = `正在${action.full}`;
+  if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) run.titleEl.textContent = `正在${action.full}`;
 
   const chip = document.createElement("button");
   chip.type = "button";
@@ -3839,16 +2913,6 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     syncRunOrb(run);
   }
 
-  for (const run of [currentRun, lastRun]) {
-    if (!run) continue;
-
-    for (const [id, lane] of run.workers) {
-      if (lane.awaiting.delete(ev.toolCallId)) {
-        setLaneWaiting(lane, id, lane.awaiting.size > 0);
-      }
-    }
-  }
-
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
 
@@ -3883,56 +2947,6 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   // 详情正展开着这个 chip 时实时补上结果
   if (entry.group.expanded === entry) renderChipDetail(entry);
 
-  if (!applyingHistory) companion.onStepDone();
-  scrollToEnd();
-}
-
-function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
-  const found = laneForWorker(sessionId);
-
-  if (!found) return;
-  const { lane, run } = found;
-
-  if (ev.kind === "error" || ev.kind === "agent_end" || ev.kind === "run_stopped") { run.orbActivity.observe(ev, sessionId); syncRunOrb(run); }
-
-  if (run.collaboration.apply(sessionId, ev)) renderCollaboration(run.collaborationEl, run.collaboration);
-
-  switch (ev.kind) {
-    case "worker_task": {
-      const chip = ev.spawnToolCallId ? toolChips.get(ev.spawnToolCallId)?.chip : null;
-      const label = chip?.querySelector(".chip-label");
-
-      if (label) label.textContent = `请了 ${displayNameFor(sessionId)} · ${ev.task}`;
-      break;
-    }
-
-    case "text_delta": {
-      lane.lastLine.hidden = false;
-      lane.lastLine.textContent = ((lane.lastLine.textContent ?? "") + ev.delta).slice(-280);
-      break;
-    }
-
-    case "thinking_delta":
-      break;
-    case "tool_start":
-      onToolStart(ev, sessionId);
-      break;
-    case "tool_end":
-      onToolEnd(ev);
-      break;
-    case "agent_end":
-      lane.root.open = false;
-      lane.root.classList.add("done");
-      break;
-    case "notice":
-    case "error":
-      lane.lastLine.hidden = false;
-      lane.lastLine.textContent = ev.kind === "error" ? humanizeModelError(ev.message) : ev.message;
-      break;
-    default:
-      break;
-  }
-
   scrollToEnd();
 }
 
@@ -3951,19 +2965,12 @@ function groupProcessReceipts(): void {
 }
 
 function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
-  if (sessionId && !isLeadSession(sessionId)) {
-    handleWorkerEvent(sessionId, ev);
-
-    return;
-  }
+  // 并行助手已删除：非主会话的事件不再出现，出现也不渲染。
+  if (sessionId && !isLeadSession(sessionId)) return;
 
   const progressRun = currentRun ?? lastRun;
 
   if (progressRun && (ev.kind === "error" || ev.kind === "agent_end" || ev.kind === "run_stopped")) { progressRun.orbActivity.observe(ev); syncRunOrb(progressRun); }
-
-  if (progressRun && progressRun.collaboration.apply("main", ev)) {
-    renderCollaboration(progressRun.collaborationEl, progressRun.collaboration);
-  }
 
   switch (ev.kind) {
     case "memory":
@@ -4198,11 +3205,6 @@ function scheduleDeliveryVisible(bubble: HTMLElement, receivedAt: number): void 
 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
 
-function clearDemoView(): void {
-  demoState = { recording: false, steps: [], truncated: false };
-  renderDemo();
-}
-
 function send(msg: ClientMessage): boolean {
   if (!port || !transportConnected) return false;
   const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } };
@@ -4359,67 +3361,6 @@ function handleServerMessage(raw: string): void {
     return;
   }
 
-  if (msg.type === "skill_result") {
-    if (msg.conversationId && msg.conversationId !== selectedConversationId) return;
-
-    if (msg.action === "list" && msg.ok) {
-      if (msg.requestId !== skillRequest) return;
-      skillEntries = (msg.skills ?? []).map(skill => ({ skill, runs: msg.runs?.[skill.id] ?? [] }));
-      learnedCandidates = msg.candidates ?? [];
-      renderSkills();
-
-      return;
-    }
-
-    if (msg.action === "candidate_save" || msg.action === "candidate_dismiss") {
-      if (msg.requestId !== skillRequest) return;
-      addMsg(msg.ok ? "msg" : "msg error", !msg.ok ? `没有保存更改：${msg.error}` : msg.action === "candidate_save" ? "做法已保存，下次同类任务会先检查能否直接复用。" : "这份做法不会保存，也不会自动执行。");
-      void refreshSkills();
-
- return;
-    }
-
-    if (msg.action === "run" && msg.requestId === skillRequest) {
-      if (!msg.ok || !msg.run) { addMsg("msg error", `这次没跑成：${msg.error ?? "未知原因"}`); void refreshSkills();
-
- return; }
-
-      const outcome = msg.run;
-      addMsg(outcome.ok ? "msg" : "msg error", outcome.ok
-        ? `照上次那样跑完了：${outcome.steps} 步 · ${Math.max(0.1, outcome.elapsedMs / 1000).toFixed(1)} 秒。`
-          + (outcome.skipped?.length ? `第 ${outcome.skipped.join("、")} 步没认出来，已跳过。` : "")
-        : `跑到第 ${outcome.failedStep ?? "?"} 步停下了：${outcome.error ?? ""}`);
-      void refreshSkills(); // 刷新事实行：跑过几次、上次结果
-
-      return;
-    }
-
-    if ((msg.action === "note" || msg.action === "rollback") && msg.requestId === skillRequest) {
-      if (!msg.ok) { addMsg("msg error", `没做成：${msg.error ?? "未知原因"}`);
-
- return; }
-
-      addMsg("msg", msg.action === "note"
-        ? `已确认记下：下次重新示范「${msg.skill?.name ?? "这份技能"}」时会提醒你。`
-        : `已回到上一版：${msg.skill?.name ?? ""}（现在是第 ${msg.skill?.version ?? "?"} 版）`);
-      void refreshSkills();
-
-      return;
-    }
-
-    if (msg.action === "forget" && msg.ok) { void refreshSkills();
-
- return; }
-
-    demoCompile.disabled = false;
-    demoCompile.textContent = "编译成脚本";
-
-    if (msg.ok && msg.skill) { renderSkillResult(msg.skill); redoSkillId = null; redoSkillVersion = null; }
-    else if (msg.requestId === skillRequestId) addMsg("msg error", `编译没成：${msg.error ?? "未知原因"}`);
-
-    return;
-  }
-
   if (msg.type === "conversation_created" || msg.type === "conversation_updated") {
     upsertConversation(msg.conversation);
 
@@ -4467,13 +3408,13 @@ function handleServerMessage(raw: string): void {
       setStatus("on", "已连接");
       applyHostFeatures(msg.features);
       modelPicker.apply(msg.model, msg.models);
-      setupEl.hidden = true;
       break;
     case "model_info":
       modelPicker.update(msg.model, msg.models);
       break;
     case "hello_error":
-      showSetup(msg.error);
+      addMsg("msg error", msg.error);
+      setStatus("off", "未连接");
       break;
     case "status":
       setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
@@ -4555,31 +3496,9 @@ function handleBgMessage(envelope: BgToPanel): void {
     return;
   }
 
-  if (envelope.kind === "mode") {
-    // background 是运行时权威：以其为准并收敛本地存储
-    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
-    applyMode(envelope.mode, false);
-
-    return;
-  }
-
-  if (envelope.kind === "observe") {
-    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
-    observing = envelope.observing;
-    observedCandidates = envelope.candidates;
-    observedPatterns = envelope.patterns;
-    renderObserve();
-
-    return;
-  }
-
-  if (envelope.kind === "demo") {
-    // 同步回放总以 demo 收尾（background syncPanel）：此时历史已补齐，可以判断旧端口上的消息是否丢了。
+  if (envelope.kind === "synced") {
+    // 同步回放总以 synced 收尾（background syncPanel）：此时历史已补齐，可以判断旧端口上的消息是否丢了。
     restoreLostSend();
-
-    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
-    demoState = { recording: envelope.recording, steps: envelope.steps, truncated: envelope.truncated };
-    renderDemo();
 
     return;
   }
@@ -4635,7 +3554,6 @@ function handleBgMessage(envelope: BgToPanel): void {
       addMsg("msg notice", envelope.detail);
     }
 
-    if (envelope.detail?.includes("token")) showSetup(envelope.detail);
   }
 }
 
@@ -4711,20 +3629,8 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
   // 实时增量与历史都走此入口。批次处理完后，只恢复仍在运行的主球；
   // 完成块已由 finishRun 收束，不会在回放时重新转动。
   if (currentRun && !restoring) syncRunOrb(currentRun);
-  const replay = !historyPrimed && fresh.length > 1;
   historyPrimed = true;
   updateStarterVisibility();
-
-  if (!replay) {
-    const lastUser = [...fresh].reverse().find((e) => e.item.kind === "user");
-
-    if (lastUser) {
-      const bubble = messagesEl.querySelector(".msg.user:last-of-type");
-
-      if (bubble) companion.onSend(bubble as HTMLElement);
-    }
-  }
-
   scrollToEnd(false);
 }
 
@@ -4812,31 +3718,6 @@ function scheduleReconnect(): void {
 }
 
 // ── 设置界面与输入区 ───────────────────────────────────────────────
-
-function showSetup(error?: string): void {
-  setupEl.hidden = false;
-  setupErr.textContent = error ?? "";
-  void chrome.storage.local.get(TOKEN_KEY).then((stored) => {
-    const saved = stored[TOKEN_KEY];
-    tokenInput.value = typeof saved === "string" ? saved : "";
-  });
-  setStatus("off", "未连接");
-}
-
-setupSave.onclick = () => {
-  const t = tokenInput.value.trim();
-
-  if (!t) {
-    setupErr.textContent = "请输入 token";
-
-    return;
-  }
-
-  void chrome.storage.local.set({ [TOKEN_KEY]: t });
-  setupEl.hidden = true;
-  const retry: PanelToBg = { kind: "retry" };
-  port?.postMessage(retry);
-};
 
 function autoResize(): void {
   inputEl.style.height = "auto";

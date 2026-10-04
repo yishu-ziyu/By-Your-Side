@@ -103,7 +103,7 @@ function harness() {
 
     const runtime = {
       session,
-      fleet: { reset: vi.fn(), setTabCoordinator: vi.fn(), list: () => [], get: () => undefined, bindConversationContext: vi.fn() },
+      control: { reset: vi.fn(), setTabCoordinator: vi.fn(), list: () => [], get: () => undefined, bindConversationContext: vi.fn() },
       dispose: vi.fn(),
       handleMessage: (message: ClientMessage) => {
         if (message.type === "user_message") {

@@ -201,8 +201,11 @@ describe("model_request diagnostics reconstruct what the model actually received
       expect(promptChunks).toHaveLength(Number(promptChunks[0]!.data.total));
       const toolChunks = lines.filter(line => line.type === "tools_manifest");
       expect(toolChunks).toHaveLength(Number(toolChunks[0]!.data.total));
-      // 真实提示词与工具说明加起来超过一段，分段确实被用到。
-      expect(promptChunks.length + toolChunks.length).toBeGreaterThan(2);
+
+      // 分段按全文长度计：每段不超过 16,000 字，拼回即原文。2026-10-04 删掉不用的工具与提示词段后，
+      // 这次会话的提示词和工具说明各自落在一段里（此前合计超过两段）。
+      for (const chunk of [...promptChunks, ...toolChunks]) expect(String(chunk.data.text).length).toBeLessThanOrEqual(16_000);
+      expect(promptChunks.length + toolChunks.length).toBeGreaterThanOrEqual(2);
 
       expect(raw.every(line => Buffer.byteLength(line, "utf8") + 1 <= 256 * 1024)).toBe(true);
       expect(raw.some(line => line.includes(PNG_BASE64.slice(0, 40)))).toBe(false);
@@ -239,7 +242,8 @@ describe("read-only runs that used tools are goal-checked; pure chat is not", ()
     expect(h.judged).toHaveLength(0);
 
     h.start("在YouTube里面找到前两首歌。", flomo);
-    await until(() => ended(h.emitted) === 2, "the read-only run after the goal check");
+    // 10-04 起回答先交付（第 2 次结束），核对随后判「没做完」，催续作为后续一轮再结束一次（第 3 次）。
+    await until(() => ended(h.emitted) === 3, "the read-only run and its goal-check continuation");
 
     return h;
   }

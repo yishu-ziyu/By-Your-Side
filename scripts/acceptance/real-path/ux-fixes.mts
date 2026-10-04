@@ -3,7 +3,7 @@
  *
  *   npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=before|after [--only=main,voice-nokey,...]
  *
- * 每组一个隔离的无窗口 Chrome，只装扩展（demo 组另注册伴随进程）。模型是本机脚本模型（scripted-model.mts），
+ * 每组一个隔离的无窗口 Chrome，只装扩展。模型是本机脚本模型（scripted-model.mts），
  * 像用户一样在设置页选「自定义地址」填写。2026-10-04 起网页操作不再弹批准卡、不再拿住点击，原第 2/3（授权卡）、4/5（页面待确认）与 real-confirm 组已删除。
  * 语音组的 key 从本机 ~/.sideagent/stepfun-api.key 读出，在设置页「实时语音」里填写，不打印、不落盘。
  *
@@ -71,10 +71,6 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const RULES: Rule[] = [
   { match: "报错演示", steps: [{ status: 503, body: JSON.stringify({ message: "upstream overloaded (scripted)" }) }] },
-  { match: "我指给你", steps: [
-    { tool: { name: "ask_user_to_point", args: { message: "请在页面上点一下你说的那一项" } } },
-    { text: "你点的是「剩余额度 $12.40」。" },
-  ] },
   { match: "很长的任务", steps: [{ text: "三家资料已经汇总。", delayMs: 60_000 }] },
   { match: "这两个数字", steps: [{ text: "说明远程让资深的人更专注，却让新人成长慢了一倍多：专注时间多了 12 小时，新人独立交付却晚了 8 周。" }] },
 ];
@@ -370,36 +366,6 @@ async function mainGroup() {
     check("1 模型出错时用平常话、及时出现", errorMs !== null && errorMs <= 10_000 && !/\{"message"|任务状态：仅交付部分结果/.test(err), { errorShownMs: errorMs, attemptsMs: attempts.map((a) => a - attempts[0]!), sentMs });
     await s.newConversation();
 
-    // 2：请用户指一下。
-    await s.navigate("/quota");
-    await s.send("剩余额度那一项，我指给你。");
-    await until(async () => (await s.overlayText()).some((t) => t.includes("点一下")) || undefined, 30_000, "页面上的选择提示");
-    await sleep(800);
-    const pointing = await s.shotPanel("02-point-running");
-    await s.shotPage("02-point-page");
-    check("2 选择过程行不露工具名", !/ask_user_to_point/.test(pointing), pointing.match(/正在[^\n]*/g) ?? []);
-    // SAFETY: 页面脚本返回元素中心点 { x, y }。
-    const balance = await rp.evaluate(s.work, `(() => { const r = document.querySelector("#balance").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`) as { x: number; y: number };
-    await s.clickAt(s.work, balance.x, balance.y);
-    await s.waitIdle();
-    await s.shotPanel("02-point-done");
-    await s.newConversation();
-
-    // 9a：接管时小伙伴 M 与「详情」。
-    await s.navigate("/companies");
-    await s.send("这是一个很长的任务：把三家供应商的资料汇总成表。");
-    await until(async () => (await rp.evaluate(s.panel, `!document.querySelector("#takeover-btn").hidden`)) || undefined, 20_000, "接管按钮");
-    await sleep(1500);
-    await rp.click(s.panel, "#takeover-btn");
-    await until(async () => /页面归你|已暂停/.test((await s.readPanel()).text) || undefined, 15_000, "接管生效");
-    await sleep(1200);
-    await s.shotPanel("09a-takeover-panel");
-    const covered = await rp.evaluate(s.panel, COVERED_BUTTONS);
-    check("9a 小伙伴 M 不挡按钮", Array.isArray(covered) && covered.length === 0, covered);
-    await rp.click(s.panel, "#send-btn").catch(() => {});
-    await sleep(1500);
-    await s.newConversation();
-
     // 10：只装扩展时的「更多」菜单与技能与记忆。
     await s.openMenu();
     await sleep(400);
@@ -414,23 +380,6 @@ async function mainGroup() {
       await sleep(1500);
       await s.shotPanel("10b-memory");
       await rp.evaluate(s.panel, `document.querySelector("#memory-close")?.click(); true`);
-    }
-
-    if (entries.includes("示范给 AI")) {
-      await s.openMenu();
-      await rp.click(s.panel, "#record-toggle");
-      await s.navigate("/note");
-      await rp.click(s.work, "#draft");
-      await rp.typeText(s.work, "；本周完成：设置页改版");
-      await sleep(600);
-      await rp.click(s.panel, "#demo-stop");
-      await sleep(800);
-      await rp.click(s.panel, "#demo-intent");
-      await rp.typeText(s.panel, "把本周完成事项写进草稿");
-      await rp.click(s.panel, "#demo-compile");
-      await sleep(3000);
-      await rp.evaluate(s.panel, `document.querySelector("#demo-strip").scrollIntoView({ block: "end" }); true`);
-      await s.shotPanel("10c-demo-compile");
     }
 
     check("10 只装扩展时不提供只会失败的技能与记忆入口", !entries.includes("技能与记忆") && !entries.includes("示范给 AI"), { entries, menu: menu.length });
@@ -486,52 +435,6 @@ async function cardBox(rp: RealPath, work: string) {
   const { model } = (await rp.cdp.send("DOM.getBoxModel", { nodeId: found }, work)) as { model: { border: number[] } };
 
   return { y: model.border[1]!, bottom: model.border[5]! };
-}
-
-/** 侧栏里被小伙伴 M 盖住的可见按钮。 */
-const COVERED_BUTTONS = `(() => {
-  const host = document.querySelector("#pix-companion");
-  if (!host) return [];
-  const r = host.getBoundingClientRect();
-  if (!r.width) return [];
-  const hits = [];
-  for (const b of document.querySelectorAll("button, summary, a")) {
-    if (host.contains(b) || !b.getClientRects().length || b.closest("[hidden]") || b.closest("#header-menu")) continue;
-    const t = b.getBoundingClientRect();
-    const ix = Math.min(r.right, t.right) - Math.max(r.left, t.left);
-    const iy = Math.min(r.bottom, t.bottom) - Math.max(r.top, t.top);
-    if (ix > 2 && iy > 2) hits.push((b.innerText || b.getAttribute("aria-label") || b.id).trim().slice(0, 20));
-  }
-  return hits;
-})()`;
-
-// ── 示范组：注册伴随进程（技能存储可用），看「编译成脚本」是否被 M 挡住 ──────
-
-async function demoGroup() {
-  const rp = await launchRealPath();
-
-  try {
-    const s = await session(rp, "/note");
-    await until(async () => (await s.readPanel()).connected || undefined, 90_000, "侧栏连上伴随进程", 500);
-    await sleep(1500);
-    await s.openMenu();
-    await rp.click(s.panel, "#record-toggle");
-    await sleep(800);
-    await rp.click(s.work, "#draft");
-    await rp.typeText(s.work, "；本周完成：设置页改版");
-    await rp.click(s.work, "h1");
-    await sleep(600);
-    await rp.click(s.panel, "#demo-stop");
-    await sleep(1000);
-    await rp.evaluate(s.panel, `document.querySelector("#demo-strip").scrollIntoView({ block: "end" }); true`);
-    await sleep(400);
-    await s.shotPanel("09b-demo-strip");
-    const covered = await rp.evaluate(s.panel, COVERED_BUTTONS);
-    check("9b 示范结束后小伙伴 M 不挡「编译成脚本」", Array.isArray(covered) && covered.length === 0, covered);
-  } finally {
-    await rp.close();
-    await rp.remove();
-  }
 }
 
 // ── 语音组 ──────────────────────────────────────────────────
@@ -594,7 +497,6 @@ async function voiceGroup(kind: "nokey" | "mic" | "conn" | "ready") {
 
 const GROUPS = new Map<string, () => Promise<void>>(Object.entries({
   main: mainGroup,
-  demo: demoGroup,
   "voice-nokey": () => voiceGroup("nokey"),
   "voice-mic": () => voiceGroup("mic"),
   "voice-conn": () => voiceGroup("conn"),

@@ -24,7 +24,6 @@ export type ControlOwner = "agent" | "user";
 /** 接管期间禁止落地的浏览器写操作。至少覆盖完成标准列出的那些。 */
 export const WRITE_TOOLS = [
   "worker_tabs",
-  "page_operation",
   "page_translation",
   "open_tab",
   "switch_tab",
@@ -32,9 +31,6 @@ export const WRITE_TOOLS = [
   "navigate",
   "click",
   "double_click",
-  "drag",
-  "upload_file",
-  "cdp",
   "hover",
   "fill",
   "type_text",
@@ -43,40 +39,16 @@ export const WRITE_TOOLS = [
   "js",
   "mark",
   "clear_marks",
-  "ask_user_to_point",
   "arm_event",
   "wait_event",
   "disarm_event",
   "accept_dialog",
   "dismiss_dialog",
-  "file_chooser_set_files",
-  "download_cancel",
   "download_url",
-  "download_delete",
-  "wheel",
-  "mouse_down",
-  "mouse_up",
-  "key_down",
-  "key_up",
-  "release_held_inputs",
-  "paste",
-  "html5_drag",
   "select_option",
 ] as const satisfies readonly ToolName[];
 
 export const WRITE_TOOL_SET: ReadonlySet<ToolName> = new Set(WRITE_TOOLS);
-
-/**
- * 只在有 worker 时才挂载给 Lead 的协作工具。
- * spawn_worker 常驻（否则永远请不到人）；take_tab 也常驻——它管的是跨会话的页面所有权，
- * 且从 S1 起「写能力不完整时通用 JS 一并拒绝」的闸门依赖它，不跟着 worker 数量变。
- */
-export const TEAM_COORDINATION_TOOLS: ReadonlySet<string> = new Set([
-  "post",
-  "await_message",
-  "list_workers",
-  "stop_worker",
-]);
 
 export const USER_BLOCKED_ERROR = "页面现在归你，操作未执行";
 

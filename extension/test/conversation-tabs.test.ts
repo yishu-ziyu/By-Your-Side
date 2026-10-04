@@ -126,37 +126,6 @@ describe("conversation tab ownership", () => {
     expect((await execTabs.listTabs(b)).tabs.map((tab) => tab.id)).toEqual([1, 2, 3]);
   });
 
-  it("显式共享登记全部同会话成员，关闭页时清理全部绑定", async () => {
-    const state = await import("../src/background/state.js");
-    const lead = state.executionKey("A", "main");
-    const writer = state.executionKey("A", "writer");
-    await state.setWorkingTab(1, lead);
-    await state.shareTab({ tabId: 1, collaborators: ["writer"] }, lead);
-    expect(await state.findSessionsForTab(1)).toEqual([lead, writer]);
-    await expect(state.shareTab({ tabId: 1, collaborators: [state.executionKey("B", "writer")] }, lead)).rejects.toThrow(/同一会话/);
-    removedListener?.(1);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(await state.findSessionsForTab(1)).toEqual([]);
-  });
-
-  it("停止单个 worker 会撤销 writer，其他协作者仍保留", async () => {
-    const state = await import("../src/background/state.js");
-    const lead = state.executionKey("A", "main");
-    const writer = state.executionKey("A", "writer");
-    const reviewer = state.executionKey("A", "reviewer");
-    await state.setWorkingTab(1, lead);
-    await state.shareTab({ tabId: 1, collaborators: ["writer", "reviewer"] }, lead);
-    const result = await state.shareTab({ tabId: 1, collaborators: [], remove: ["writer"] }, lead);
-    expect(result.collaborators.sort()).toEqual(["main", "reviewer"]);
-    expect(await state.getWorkingTabId(writer)).toBeNull();
-    expect(await state.getWorkingTabId(reviewer)).toBe(1);
-    expect((await state.getTabResource(1))?.mode).toBe("shared");
-    await state.shareTab({ tabId: 1, collaborators: [], remove: ["reviewer"] }, lead);
-    expect(await state.getTabResource(1)).toMatchObject({ mode: "exclusive", collaborators: [lead] });
-    await expect(state.guardToolAccess("fill", lead)).resolves.toBeUndefined();
-    await expect(state.guardToolAccess("navigate", lead)).resolves.toBeUndefined();
-  });
-
   it("切换工作页保留旧页归属，并复用同会话原生标签组", async () => {
     const state = await import("../src/background/state.js");
     const a = state.executionKey("A", "main");

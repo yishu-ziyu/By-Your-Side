@@ -98,7 +98,7 @@ async function harness() {
       assertCall: (name, params, id) => wrapper.assertTaskResultExecution(name, params, id),
     });
 
-    return { session: wrapper, rpc, fleet: { teamView: () => null, isGroupHeld: () => false }, dispose: vi.fn() } as any;
+    return { session: wrapper, rpc, control: { teamView: () => null, isGroupHeld: () => false }, dispose: vi.fn() } as any;
   }, message => messages.push(message));
 
   await manager.ensureDefault();

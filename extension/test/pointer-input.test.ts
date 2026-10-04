@@ -7,11 +7,7 @@ import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
 import { buildSync } from "esbuild";
 import {
-  createIsolatedClipboardBridge,
-  normalizePasteContent,
-  pasteChord,
   pointInElementRect,
-  pointerDragProvesHtml5DataTransfer,
   pressedButtonsMask,
   type MouseButton,
 } from "../../shared/pointer-input.js";
@@ -29,26 +25,6 @@ type CdpMouseParams = {
   deltaX?: number;
   deltaY?: number;
   pointerType?: "mouse";
-};
-
-/** CDP Input.dispatchKeyEvent 载荷；字段与 exec/input.ts 派发按键事件时构造的参数一致。 */
-type CdpKeyParams = {
-  type: string;
-  key?: string;
-  code?: string;
-  windowsVirtualKeyCode?: number;
-  modifiers?: number;
-  text?: string;
-  commands?: string[];
-};
-
-/** CDP Input.dispatchDragEvent 载荷；字段与 exec/input.ts 派发拖拽事件时构造的参数一致。 */
-type CdpDragParams = {
-  type: string;
-  x?: number;
-  y?: number;
-  data?: unknown;
-  modifiers?: number;
 };
 
 /** chrome.debugger.onEvent 监听器；与 @types/chrome 的 (source: DebuggerSession, method, params?) 回调同型。 */
@@ -99,51 +75,6 @@ beforeEach(() => {
   mocks.resolveWorkingTab.mockResolvedValue({ id: 101, active: true });
   mocks.getWorkingTabId.mockResolvedValue(101);
   mocks.isAxRef.mockReturnValue(false);
-});
-
-// A lost mouse/key reply is not a pre-dispatch refusal. Preserve the transport
-// fact so the caller cannot retry a possibly held button as a fresh action.
-it.each(["mouseDown", "keyDown"] as const)("%s preserves an unknown delivery fact", async name => {
-  installPage({});
-  mocks.sendCommand.mockRejectedValue(Object.assign(new Error("reply lost after input"), { executionFact: "unknown" }));
-  const input = await import("../src/background/exec/input.js");
-
-  const result = name === "mouseDown"
-    ? input.mouseDown({ point: [30, 40] }, "main")
-    : input.keyDown({ key: "Shift" }, "main");
-
-  await expect(result).rejects.toMatchObject({ executionFact: "unknown" });
-});
-
-it("unknown key-down retains the key for cleanup on its original tab", async () => {
-  installPage({});
-  const input = await import("../src/background/exec/input.js");
-  mocks.sendCommand.mockRejectedValueOnce(Object.assign(new Error("lost down reply"), { executionFact: "unknown" }));
-  await input.keyDown({ key: "Shift" }, "main").catch(() => {});
-  mocks.getWorkingTabId.mockResolvedValue(202);
-  mocks.sendCommand.mockResolvedValue({});
-  await expect(input.releaseHeldInputs("main")).resolves.toMatchObject({ releasedKeys: ["Shift"] });
-  expect(mocks.sendCommand.mock.calls.some(([tab, method, params]) => tab === 101 && method === "Input.dispatchKeyEvent" && params.type === "keyUp")).toBe(true);
-});
-
-it("failed cleanup does not report released and retains the pending release", async () => {
-  installPage({});
-  const input = await import("../src/background/exec/input.js");
-  await input.keyDown({ key: "Shift" }, "main");
-  mocks.sendCommand.mockRejectedValueOnce(Object.assign(new Error("lost release reply"), { executionFact: "unknown" }));
-  await expect(input.releaseHeldInputs("main")).rejects.toMatchObject({ executionFact: "unknown" });
-  mocks.sendCommand.mockResolvedValue({});
-  await expect(input.releaseHeldInputs("main")).resolves.toMatchObject({ releasedKeys: ["Shift"] });
-});
-
-it("an unacknowledged explicit keyUp remains eligible for cleanup", async () => {
-  installPage({});
-  const input = await import("../src/background/exec/input.js");
-  await input.keyDown({ key: "Shift" }, "main");
-  mocks.sendCommand.mockRejectedValueOnce(Object.assign(new Error("keyUp reply lost"), { executionFact: "unknown" }));
-  await input.keyUp({ key: "Shift" }, "main").catch(() => {});
-  mocks.sendCommand.mockResolvedValue({});
-  await expect(input.releaseHeldInputs("main")).resolves.toMatchObject({ releasedKeys: ["Shift"] });
 });
 
 class FakeMouseEvent {
@@ -281,6 +212,7 @@ function installPage(targets: Record<string, FakeEl>) {
       // 载荷与背景侧 callDom<Args, Result> 的调用契约一致：func 与 args 成对（callDom 第三参必填），注入函数返回值原样回传。
       executeScript: vi.fn(async <Args extends unknown[], Result>(details: { files?: string[]; func?: (...args: Args) => Result; args?: Args }) => {
         if (details.func?.toString().includes("readyState")) return [{ frameId: 0, documentId: "fixture-101", result: {url:"https://fixture.invalid/",readyState:"complete"} }];
+
         if (details.files) return [{ frameId: 0, result: undefined }];
 
         return [{
@@ -328,14 +260,7 @@ function mouseCalls(): CdpMouseParams[] {
     .map((c) => c[2] as CdpMouseParams);
 }
 
-function keyCalls(): CdpKeyParams[] {
-  // SAFETY: 按方法名过滤后，mock 记录的第三参就是生产 sendCommand(tabId, "Input.dispatchKeyEvent", params) 派发的按键载荷。
-  return mocks.sendCommand.mock.calls
-    .filter((c) => c[1] === "Input.dispatchKeyEvent")
-    .map((c) => c[2] as CdpKeyParams);
-}
-
-describe("纯函数：按钮 / 元素内偏移 / paste 载荷", () => {
+describe("纯函数：按钮 / 元素内偏移", () => {
   it("中键 buttons 掩码为 4，右键为 2", () => {
     expect(pressedButtonsMask("middle")).toBe(4);
     expect(pressedButtonsMask("right")).toBe(2);
@@ -348,20 +273,6 @@ describe("纯函数：按钮 / 元素内偏移 / paste 载荷", () => {
     expect(pointInElementRect({ x: 10, y: 20, width: 100, height: 40 })).toEqual([60, 40]);
   });
 
-  it("paste 载荷只接受 text 与可选 html", () => {
-    expect(normalizePasteContent("hi")).toEqual({ text: "hi" });
-    expect(normalizePasteContent({ text: "a", html: "<b>a</b>" })).toEqual({ text: "a", html: "<b>a</b>" });
-    expect(() => normalizePasteContent({ text: "a", foo: 1 })).toThrow(/未知字段/);
-  });
-
-  it("指针拖不能证明 HTML5 DataTransfer（反例恒成立）", () => {
-    expect(pointerDragProvesHtml5DataTransfer()).toBe(false);
-  });
-
-  it("mac 上 pasteChord 为 Meta+V", () => {
-    expect(pasteChord("MacIntel")).toBe("Meta+V");
-    expect(pasteChord("Win32")).toBe("Control+V");
-  });
 });
 
 describe("反例：旧 click 固定左键不能打开仅 contextmenu 菜单", () => {
@@ -396,51 +307,6 @@ describe("反例：旧 click 固定左键不能打开仅 contextmenu 菜单", ()
   });
 });
 
-describe("真实 wheel：派发 mouseWheel，不用 scrollTop=", () => {
-  it("在指针位置派发水平/垂直 delta", async () => {
-    installPage({ "#a": makeEl("a", { x: 0, y: 0, width: 10, height: 10 }) });
-    const { wheel, click } = await import("../src/background/exec/input.js");
-    await click({ point: [120, 80] });
-    await wheel({ deltaX: 40, deltaY: -90 });
-    const w = mouseCalls().find((c) => c.type === "mouseWheel");
-    expect(w).toMatchObject({ type: "mouseWheel", x: 120, y: 80, deltaX: 40, deltaY: -90 });
-    expect(mocks.sendCommand.mock.calls.some((c) => String(c[1]).includes("scrollTop"))).toBe(false);
-  });
-
-  it("工作页在后台时明确不执行，不派发任何滚轮事件", async () => {
-    installPage({ "#a": makeEl("a", { x: 0, y: 0, width: 10, height: 10 }) });
-    const { wheel } = await import("../src/background/exec/input.js");
-    const script = vi.mocked(chrome.scripting.executeScript);
-    const base = script.getMockImplementation()!;
-    script.mockImplementation((details: any) => details.func?.toString().includes("visibilityState")
-      ? Promise.resolve([{frameId:0,documentId:"fixture-101",result:"hidden"}]) as any
-      : (base as any)(details));
-    await expect(wheel({ point: [20, 20], deltaY: 50 })).rejects.toMatchObject({ executionFact: "not_executed" });
-    expect(mouseCalls()).toHaveLength(0);
-  });
-
-  it("两个相邻容器用不同 point 滚，坐标互不相同", async () => {
-    const left = makeEl("left", { x: 0, y: 0, width: 100, height: 100 });
-    const right = makeEl("right", { x: 200, y: 0, width: 100, height: 100 });
-    installPage({ "#left": left, "#right": right });
-    const { wheel } = await import("../src/background/exec/input.js");
-    await wheel({ target: "#left", deltaY: 50 });
-    await wheel({ target: "#right", deltaX: 30 });
-    const wheels = mouseCalls().filter((c) => c.type === "mouseWheel");
-    // 一次 wheel = 两次 mouseWheel：主 delta（真实滚动量）+ 零 delta 收尾。
-    // Chromium 的 mouseWheel 是 blocking 命令，DOM wheel 事件要等零 delta 收尾才出现，
-    // 缺了收尾页面上根本收不到事件（隔离无头实测过）。两次调用故为 4 条。
-    expect(wheels).toHaveLength(4);
-    const [leftPrimary, leftTrailing, rightPrimary, rightTrailing] = wheels;
-    expect(leftPrimary).toMatchObject({ x: 50, y: 50, deltaX: 0, deltaY: 50 });
-    expect(leftTrailing).toMatchObject({ x: 50, y: 50, deltaX: 0, deltaY: 0 });
-    expect(rightPrimary).toMatchObject({ x: 250, y: 50, deltaX: 30, deltaY: 0 });
-    expect(rightTrailing).toMatchObject({ x: 250, y: 50, deltaX: 0, deltaY: 0 });
-    // 不以 scrollTop= 冒充真实 wheel
-    expect(mocks.sendCommand.mock.calls.some((c) => String(c[1]).includes("scrollTop"))).toBe(false);
-  });
-});
-
 describe("按住 Shift/ControlOrMeta 与取消松键", () => {
   it("ControlOrMeta 在 mac 解析为 Meta", () => {
     expect(resolveKey("ControlOrMeta+V", "MacIntel")).toMatchObject({
@@ -451,131 +317,5 @@ describe("按住 Shift/ControlOrMeta 与取消松键", () => {
       code: "KeyV",
       modifiers: 2,
     });
-  });
-
-  it("keyDown Shift 后 click 携带 modifiers=8", async () => {
-    const el = makeEl("t", { x: 0, y: 0, width: 40, height: 40 });
-    installPage({ "#t": el });
-    const { keyDown, click, releaseHeldInputs } = await import("../src/background/exec/input.js");
-    await keyDown({ key: "Shift" });
-    await click({ target: "#t" });
-    const pressed = mouseCalls().find((c) => c.type === "mousePressed");
-    expect(pressed?.modifiers).toBe(8);
-    await releaseHeldInputs();
-    const ups = keyCalls().filter((c) => c.type === "keyUp" && c.key === "Shift");
-    expect(ups.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("动作中取消后 releaseHeldInputs 松开已按下的鼠标键", async () => {
-    installPage({ "#t": makeEl("t", { x: 0, y: 0, width: 20, height: 20 }) });
-    const { mouseDown, releaseHeldInputs } = await import("../src/background/exec/input.js");
-    await mouseDown({ point: [5, 5], button: "left" });
-    const before = mouseCalls().filter((c) => c.type === "mousePressed").length;
-    expect(before).toBe(1);
-    const released = await releaseHeldInputs();
-    expect(released.releasedButtons).toEqual(["left"]);
-    const up = mouseCalls().filter((c) => c.type === "mouseReleased");
-    expect(up.length).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe("HTML5 drag/drop：pointer 不够；intercept 或缺口如实", () => {
-  it("反例：仅 pointer drag 的 CDP 序列不含 dispatchDragEvent", async () => {
-    const src = makeEl("src", { x: 0, y: 0, width: 40, height: 40 });
-    const dst = makeEl("dst", { x: 100, y: 0, width: 40, height: 40 });
-    installPage({ "#src": src, "#dst": dst });
-    const { drag } = await import("../src/background/exec/input.js");
-    await drag({ from: { target: "#src" }, to: { target: "#dst" } });
-    expect(mocks.sendCommand.mock.calls.some((c) => c[1] === "Input.dispatchDragEvent")).toBe(false);
-    expect(pointerDragProvesHtml5DataTransfer()).toBe(false);
-  });
-
-  it("无 dragIntercepted 载荷时 html5DragAndDrop 返回 gap，不假装成功", async () => {
-    const src = makeEl("src", { x: 0, y: 0, width: 40, height: 40 });
-    const dst = makeEl("dst", { x: 100, y: 0, width: 40, height: 40 });
-    installPage({ "#src": src, "#dst": dst });
-    const { html5DragAndDrop } = await import("../src/background/exec/input.js");
-    const result = await html5DragAndDrop({ from: { target: "#src" }, to: { target: "#dst" } });
-    expect(result).toMatchObject({ dragged: false, gap: "no_intercept_payload" });
-  });
-
-  it("收到 intercept 载荷后派发 dragEnter/dragOver/drop", async () => {
-    const src = makeEl("src", { x: 0, y: 0, width: 40, height: 40 });
-    const dst = makeEl("dst", { x: 100, y: 0, width: 40, height: 40 });
-    const { debuggerEvents } = installPage({ "#src": src, "#dst": dst });
-    mocks.sendCommand.mockImplementation(async (tabId, method) => {
-      if (method === "Input.setInterceptDrags") {
-        queueMicrotask(() => {
-          for (const fn of debuggerEvents) {
-            fn({ tabId }, "Input.dragIntercepted", {
-              data: { items: [{ mimeType: "text/plain", data: "card-1" }], dragOperationsMask: 1 },
-            });
-          }
-        });
-      }
-
-      return {};
-    });
-    const { html5DragAndDrop } = await import("../src/background/exec/input.js");
-    const result = await html5DragAndDrop({ from: { target: "#src" }, to: { target: "#dst" } });
-    expect(result).toEqual({ dragged: true, path: "intercept" });
-
-    // SAFETY: 按方法名过滤后第三参即生产 sendCommand(tabId, "Input.dispatchDragEvent", params) 的拖拽载荷；type 为 dragEnter/dragOver/drop 事件名。
-    const dragTypes = mocks.sendCommand.mock.calls
-      .filter((c) => c[1] === "Input.dispatchDragEvent")
-      .map((c) => (c[2] as CdpDragParams).type);
-
-    expect(dragTypes).toEqual(["dragEnter", "dragOver", "drop"]);
-  });
-});
-
-describe("富文本 paste：隔离剪贴板 + 原生快捷键；无桥 BLOCKED", () => {
-  it("无桥时 BLOCKED，不派发按键", async () => {
-    installPage({ "#e": makeEl("e", { x: 0, y: 0, width: 10, height: 10 }) });
-    const { paste, setClipboardBridge, PASTE_HOST_BLOCKED } = await import("../src/background/exec/input.js");
-    setClipboardBridge(null);
-    await expect(paste({ content: { text: "x", html: "<table></table>" } })).rejects.toThrow(/BLOCKED/);
-    expect(PASTE_HOST_BLOCKED).toMatch(/BLOCKED/);
-    expect(keyCalls()).toHaveLength(0);
-  });
-
-  it("隔离桥：写入 text+html，Meta+V，再恢复；并发变化不覆盖", async () => {
-    installPage({ "#e": makeEl("e", { x: 0, y: 0, width: 10, height: 10 }) });
-    const bridge = createIsolatedClipboardBridge();
-    bridge.mutateExternal("user-original", "<p>orig</p>");
-    const before = bridge.peek();
-    expect(before.text).toBe("user-original");
-
-    const mod = await import("../src/background/exec/input.js");
-    mod.setClipboardBridge(bridge);
-
-    const html = '<table><tr><td>Name</td></tr></table><a href="https://ex.test">link</a>';
-    const result = await mod.paste({ content: { text: "Name", html } });
-    expect(result.pasted).toBe(true);
-    expect(result.clipboard).toBe("restored");
-    expect(bridge.peek().text).toBe("user-original");
-    expect(bridge.peek().html).toBe("<p>orig</p>");
-
-    const keys = keyCalls();
-    expect(keys.some((k) => k.type === "rawKeyDown" && k.code === "KeyV" && k.modifiers === 4)).toBe(true);
-    // 副作用（按键）与业务状态（剪贴板恢复）分开断言
-    expect(keys.length).toBeGreaterThanOrEqual(2);
-
-    // 并发：粘贴期间剪贴板被改 → finish 返回 changed，不恢复覆盖
-    const bridge2 = createIsolatedClipboardBridge();
-    bridge2.mutateExternal("keep-me");
-    mod.setClipboardBridge({
-      async beginTemporary(content) {
-        return bridge2.beginTemporary(content);
-      },
-      async finish(expected) {
-        bridge2.mutateExternal("user-typed-during-paste");
-
-        return bridge2.finish(expected);
-      },
-    });
-    const r2 = await mod.paste({ content: "tmp" });
-    expect(r2.clipboard).toBe("changed");
-    expect(bridge2.peek().text).toBe("user-typed-during-paste");
   });
 });

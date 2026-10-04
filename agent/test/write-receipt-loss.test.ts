@@ -300,15 +300,3 @@ describe("R3 page evidence recovery", () => {
     expect(p.snapshot().executionState).toBe("unknown");
   });
 });
-
-describe("worker shares the same pending-write guard", () => {
-  it("blocks writes but allows reads while a lead result is unknown", async () => {
-    const p = progressFixture();
-    p.observe({ type: "agent_event", event: { kind: "tool_start", toolCallId: "c1", name: "click", params: { target: "#append" } } });
-    p.observe({ type: "agent_event", event: { kind: "tool_end", toolCallId: "c1", name: "click", isError: true, resultText: "lost", executionFact: "unknown" } });
-    const worker: any = new (BrowserAgentSession as any)(null, null, { emit: () => {}, setStatus: () => {} }, null, null);
-    worker.bindConversationContext(() => p.snapshot());
-    expect(() => worker.assertWorkerWriteAllowed("click", { target: "#other" })).toThrow(/尚未确认结果/);
-    expect(() => worker.assertWorkerWriteAllowed("snapshot", {})).not.toThrow();
-  });
-});

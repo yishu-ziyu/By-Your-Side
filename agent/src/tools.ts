@@ -11,8 +11,7 @@ import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
 import { formatEffectReport } from "../../shared/effect.js";
-import { fetchDownloadsDir, formatFetchReply, type FetchReply } from "./fetch-result.js";
-import { fetchPages } from "./fetch-batch.js";
+import { formatFetchReply, type FetchReply } from "./fetch-result.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
@@ -22,11 +21,6 @@ import { RepeatRefusedError } from "../../shared/task-next-step.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type ProgramStep } from "./browser-program.js";
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
-import { authorizeUploadPaths, type TaskUploadLedger } from "./upload-paths.js";
-import { hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
-import { runtimeUnavailableTools } from "./runtime-capabilities.js";
-import type { SkillEvidence } from "./skill-learning.js";
-import { POINT_SELECTION_TIMEOUT_MS } from "../../shared/point-selection.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
 
@@ -130,11 +124,9 @@ export const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger; /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   const files = execution?.files;
-  // 扩展里没有本机伴随进程：调用必然失败的工具（本机文件、剪贴板、上传授权）不列给模型，有真实 fs 的本机循环照常提供。
-  const unavailableInRuntime = runtimeUnavailableTools();
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
   /** screenshot forUser：把这张图存进本会话文件区，侧栏显示成回答里的图片卡片；做不到时如实告诉模型用户没看到。 */
@@ -157,8 +149,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   // 依赖集合复用 WRITE_TOOLS（按模型可见名去重）；每次问真实 canExecute，不看 JS 内容或提示词。
   const unavailableWriteTools = (): ToolName[] =>
     canExecute ? [...new Set(WRITE_TOOLS.map((name) => modelToolOf(name)))].filter((name) =>
-      // 运行形态里本就没有的工具不算「被禁用」：它不是用户收回的权限，不能因此关掉通用页面 JS。
-      !unavailableInRuntime.has(name) && !canExecute(name as ToolName) && !execution?.isToolHiddenByMode?.(name)) as ToolName[] : [];
+      !canExecute(name as ToolName)) as ToolName[] : [];
 
   const assertGenericJsAllowed = () => {
     const missing = unavailableWriteTools();
@@ -198,7 +189,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。");
     }
 
-    let callParams = rpc.resolvePageParams?.(name, params, sid) ?? params;
+    const callParams = rpc.resolvePageParams?.(name, params, sid) ?? params;
 
     const assertCall = (target: Record<string, unknown>) => {
       try {
@@ -222,42 +213,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
     }
 
-    // 上传来源校验在共同调用边界：独立工具、browser.upload_file/uploadFile、Playwright setInputFiles 都经此关。
-    // 失败记 not_executed（外层 markCallRejected），禁止先派发再补审。
-    if (name === "upload_file" || name === "file_chooser_set_files") {
-      try {
-        const refs = Array.isArray(callParams.paths) ? (callParams.paths as unknown[]).map(String) : [];
-        callParams = { ...callParams, paths: authorizeUploadPaths(refs, { ledger: execution?.uploadLedger }) };
-      } catch (error) {
-        rejectCall();
-        throw error;
-      }
-    }
-
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
       await takeTab(typeof callParams.tabId === "number" ? callParams.tabId : undefined);
-    }
-
-    let target: ToolContract["read_element"]["data"] | undefined;
-    const learning = execution?.learning;
-
-    if (learning?.active() && (name === "fill" || name === "click") && typeof callParams.target === "string") {
-      // Observe the actual target, not a model-authored description. This is optional
-      // learning evidence; failure disables learning without inventing an anchor.
-      try {
-        if (canExecute && !canExecute("read_element")) throw new Error("目标观察不可用");
-        const readParams = typeof callParams.tabId === "number" ? { target: callParams.target, tabId: callParams.tabId } : { target: callParams.target };
-        target = await call("read_element", readParams, programId, `${sdkId ?? "skill-observation"}/anchor`) as ToolContract["read_element"]["data"];
-      } catch {
-        learning.observe({ toolCallId: sdkId ?? "", name, params: {}, error: "未取得稳定目标证据，不生成技能" });
-      }
-
-      // The read above is an await boundary: recheck control and task state before writing.
-      assertNotAborted();
-
-      if (staleStep()) { rejectCall(); throw new Error("用户已修改要求，旧步骤未执行。"); }
-
-      assertCall(callParams);
     }
 
     // 获准或页面移交的 await 返回后，取消信号仍可能先于 RPC 到达。
@@ -300,22 +257,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }
     };
 
-    try {
-      const result = await invokeReleasingIdleOwner(gated ? epoch : undefined);
-      const verify = origin !== "readonly-poll" ? learning?.observe({ toolCallId: sdkId ?? "", name, params: callParams, result, target }) : undefined;
-
-      if (name === "snapshot" && verify) {
-        // One bounded, read-only observation using the same tool/control chain.
-        // An absent/stale result node disables learning, never fails the user's snapshot.
-        try { await call("read_element", { ...verify }, programId, `${sdkId ?? "skill"}/proof`, undefined, 1500); }
-        catch { /* failed read already cleared the learning proof */ }
-      }
-
-      return result;
-    } catch (error) {
-      learning?.observe({ toolCallId: sdkId ?? "", name, params: {}, origin, error: error instanceof Error ? error.message : String(error) });
-      throw error;
-    }
+    return invokeReleasingIdleOwner(gated ? epoch : undefined);
   };
 
   return call;
@@ -324,24 +266,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   const call = makeCall(undefined);
 
   const makeDefinitions = (call: ReturnType<typeof makeCall>, _scope: ExecutionScope | undefined) => [
-    defineTool({
-      name: "ask_user_to_point",
-      label: "请你指出元素",
-      description: "Ask the USER to point to one element on the working page when their reference is ambiguous or they explicitly offer to point. Shows a hover outline and waits up to 90 seconds for their physical click; the selection does NOT activate the page control. Call this tool instead of merely writing a request to point. Pass a short instruction in the user's language. A selected receipt provides the exact target for the user's already-requested next step (e.g. mark); pointing does NOT grant permission to click, submit or save. On cancelled or timed_out, report that fact and STOP this attempted selection: never guess the target, reuse a previous choice, or automatically reopen the picker. Main-document DOM only; frames and custom shadow controls are not supported in this version. Do not call from a background worker or when the user has taken control.",
-      parameters: Type.Object({ tabId: Type.Optional(Type.Number()), message: Type.Optional(Type.String({ maxLength: 300 })) }),
-      execute: async (_id, params) => {
-        // SAFETY: call 原样回传扩展对 ask_user_to_point 的响应体，其形状由 ToolContract 与扩展执行器共同约定。
-        const result = await call("ask_user_to_point", params, undefined, undefined, undefined, POINT_SELECTION_TIMEOUT_MS + 10_000) as ToolContract["ask_user_to_point"]["data"];
-
-        const explanation = result.status === "selected"
-          ? "The user selected this element; no page control was activated. Use only for the requested operation."
-          : result.status === "timed_out" ? "No selection: waiting timed out. Do not guess or reopen automatically."
-            : result.reason === "user" ? "The user cancelled selection with Escape. Do not mark or guess a target."
-              : "Selection was cancelled because the task or page changed. Do not continue the old operation.";
-
-        return textResult(`${explanation}\n${wrapPageContent(redactCredentialText(JSON.stringify(result)), {})}`, result);
-      },
-    }),
     defineTool({
       name: "page_translation",
       label: "翻译网页",
@@ -361,19 +285,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal,
           // Only removes our own placeholders: outside the step gate and the task ledger, so it still runs after a stop.
           {settle: async command => { await rpc.call('page_translation', {...command}, 5_000, sid); }});
-
-        return textResult(JSON.stringify(result), result);
-      },
-    }),
-    defineTool({
-      name: "page_operation",
-      label: "Write and verify field",
-      description: "Safely edit a field on a shared page with collaborators. If you are the only agent on this page, use fill, not this tool — it will refuse and waste retries. The executor serializes the complete re-locate, expected-value check, focus, fill and readback. Use a stable CSS target from a fresh snapshot, never old coordinates. Read expectedValue first. Failure reports any mutation; never assume rollback. Do not hold the page while thinking or waiting for messages.",
-      parameters: Type.Object({
-        tabId: Type.Optional(Type.Number()), target: Type.String(), expectedValue: Type.String(), value: Type.String(),
-      }),
-      execute: async (_id, params) => {
-        const result = await call("page_operation", params);
 
         return textResult(JSON.stringify(result), result);
       },
@@ -423,22 +334,17 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/' + (unavailableInRuntime.has("paste") ? '' : 'paste/') + 'html5Drag' + (unavailableInRuntime.has("upload_file") ? '' : ', and browser.uploadFile({target,paths})') + '; browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
+      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
-        api: Type.Optional(Type.Union([Type.Literal("ego"), Type.Literal("playwright")], { description: 'Default "ego" (browser.* tools only). "playwright" adds the official compatibility layer\'s page/context objects; existing programs keep working unchanged.' })),
       }),
       execute: async (id, params, signal, onUpdate) => {
         // 组合调用一旦开始，整体结果就不再是“确定未执行”。
         rpc.noteToolFact?.(id, "unknown");
-        const api = params.api === "playwright" ? "playwright" : "ego";
-        // playwright 模式在发起这一刻锁定任务缺省页；程序第一步还会用 list_tabs 读一次绑定页。
-        const pageTabId = api === "playwright" ? rpc.getPageTarget?.(sid) ?? null : null;
 
-        const result = await runBrowserProgram({ code: params.code, api, pageTabId,
+        const result = await runBrowserProgram({ code: params.code,
           call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
-          authorizeUpload: (refs) => authorizeUploadPaths(refs, { ledger: execution?.uploadLedger }),
           saveFile: files ? async (args) => {
             const store = files();
 
@@ -660,182 +566,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
 
-    defineTool({
-      name: "drag",
-      label: "Drag",
-      description: 'Drag with the real browser pointer: press at from, move along a bounded path, release at to. from/to each take target ("@N", "loc=css:...", raw CSS, xpath=..., text=...) or viewport point [x,y]. Works for sortable lists, sliders, cards and pointer-driven canvases; never dispatches synthetic DOM drag events. Effect evidence is measured at the drop point.',
-      parameters: Type.Object({
-        from: Type.Object({
-          target: Type.Optional(Type.String({ description: 'Source locator (@N / loc=css: / CSS / xpath= / text=)' })),
-          point: Type.Optional(viewportPoint({ description: "Viewport [x, y] coordinates" })),
-        }, { description: "Drag source: exactly one of target/point" }),
-        to: Type.Object({
-          target: Type.Optional(Type.String({ description: 'Drop locator (@N / loc=css: / CSS / xpath= / text=)' })),
-          point: Type.Optional(viewportPoint({ description: "Viewport [x, y] coordinates" })),
-        }, { description: "Drop destination: exactly one of target/point" }),
-        label: Type.Optional(Type.String({ description: "Short human-readable description of the drag" })),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("drag", params)) as ToolContract["drag"]["data"];
 
-        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
-        const from = params.from.target ?? (params.from.point ? `(${params.from.point[0]}, ${params.from.point[1]})` : "?");
-        const to = params.to.target ?? (params.to.point ? `(${params.to.point[0]}, ${params.to.point[1]})` : "?");
 
-        if (effectText) return textResult(`Dragged ${from} → ${to}.${effectText}`, data);
 
-        return textResult(`Dragged ${from} → ${to}. Input sequence dispatched; observe the page to verify the intended state change.`, data);
-      },
-    }),
 
-    defineTool({
-      name: "wheel",
-      label: "Mouse wheel",
-      description:
-        "Dispatch a real CDP mouseWheel at point, target(+optional position), or the session pointer. deltaX/deltaY are CSS-pixel scroll deltas. Does not set scrollTop= by script.",
-      parameters: Type.Object({
-        deltaX: Type.Optional(Type.Number()),
-        deltaY: Type.Optional(Type.Number()),
-        point: Type.Optional(viewportPoint()),
-        target: Type.Optional(Type.String()),
-        position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
-        label: Type.Optional(Type.String()),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("wheel", params)) as ToolContract["wheel"]["data"];
-        const ack = data.ackMs != null ? `；手势 ACK ${data.ackMs}ms` : "";
-        const tries = data.attempts > 1 ? `；重试 ${data.attempts} 次后确认` : "";
 
-        return textResult(`Wheeled at (${data.point[0]}, ${data.point[1]})${ack}${tries}。`, data);
-      },
-    }),
 
-    defineTool({
-      name: "mouse_down",
-      label: "Mouse down",
-      description: "Press and hold a mouse button at point/target. Pair with mouse_up or release_held_inputs. Held across calls until released.",
-      parameters: Type.Object({
-        button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")])),
-        clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
-        point: Type.Optional(viewportPoint()),
-        target: Type.Optional(Type.String()),
-        position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("mouse_down", params)) as ToolContract["mouse_down"]["data"];
 
-        return textResult(`Mouse ${data.button} down at (${data.point[0]}, ${data.point[1]}).`, data);
-      },
-    }),
 
-    defineTool({
-      name: "mouse_up",
-      label: "Mouse up",
-      description: "Release a mouse button at point or the session pointer.",
-      parameters: Type.Object({
-        button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")])),
-        clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
-        point: Type.Optional(viewportPoint()),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("mouse_up", params)) as ToolContract["mouse_up"]["data"];
-
-        return textResult(`Mouse ${data.button} up at (${data.point[0]}, ${data.point[1]}).`, data);
-      },
-    }),
-
-    defineTool({
-      name: "key_down",
-      label: "Key down",
-      description: 'Press and hold a key (e.g. "Shift", "ControlOrMeta", "a"). Pair with key_up or release_held_inputs. Prefer press_key for ordinary typing chords.',
-      parameters: Type.Object({
-        key: Type.String({ minLength: 1, maxLength: 64 }),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("key_down", params)) as ToolContract["key_down"]["data"];
-
-        return textResult(`Key down: ${data.key}.`, data);
-      },
-    }),
-
-    defineTool({
-      name: "key_up",
-      label: "Key up",
-      description: "Release a previously held key.",
-      parameters: Type.Object({
-        key: Type.String({ minLength: 1, maxLength: 64 }),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("key_up", params)) as ToolContract["key_up"]["data"];
-
-        return textResult(`Key up: ${data.key}.`, data);
-      },
-    }),
-
-    defineTool({
-      name: "release_held_inputs",
-      label: "Release held inputs",
-      description: "Release all keys and mouse buttons still held for this session (safe after cancel/error).",
-      parameters: Type.Object({}),
-      execute: async (_id) => {
-        const data = (await call("release_held_inputs", {})) as ToolContract["release_held_inputs"]["data"];
-
-        return textResult(
-          `Released keys [${data.releasedKeys.join(", ") || "none"}], buttons [${data.releasedButtons.join(", ") || "none"}].`,
-          data,
-        );
-      },
-    }),
-
-    defineTool({
-      name: "paste",
-      label: "Paste",
-      description:
-        "Native paste of text and optional html via the host clipboard bridge, then ControlOrMeta+V. Without a clipboard bridge this fails as BLOCKED — do not invent success via innerHTML or synthetic paste events. Does not read the user's real clipboard.",
-      parameters: Type.Object({
-        content: Type.Union([
-          Type.String({ minLength: 0, maxLength: 100_000 }),
-          Type.Object({
-            text: Type.String({ minLength: 0, maxLength: 100_000 }),
-            html: Type.Optional(Type.String({ maxLength: 200_000 })),
-          }),
-        ]),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("paste", params)) as ToolContract["paste"]["data"];
-
-        return textResult(`Pasted (clipboard ${data.clipboard}).`, data);
-      },
-    }),
-
-    defineTool({
-      name: "html5_drag",
-      label: "HTML5 drag and drop",
-      description:
-        "HTML5 DataTransfer drag (intercept + dispatchDragEvent). Pointer-only drag is a different tool. If no intercept payload is available the receipt reports gap and must not be treated as success.",
-      parameters: Type.Object({
-        from: Type.Object({
-          target: Type.Optional(Type.String()),
-          point: Type.Optional(viewportPoint()),
-          position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
-        }),
-        to: Type.Object({
-          target: Type.Optional(Type.String()),
-          point: Type.Optional(viewportPoint()),
-          position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
-        }),
-        label: Type.Optional(Type.String()),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("html5_drag", params)) as ToolContract["html5_drag"]["data"];
-
-        if ("gap" in data && data.dragged === false) {
-          return textResult(`HTML5 drag gap (${data.gap}): ${data.detail}. Do not report success.`, data);
-        }
-
-        return textResult(`HTML5 drag completed via ${(data as { path: string }).path}.`, data);
-      },
-    }),
 
     defineTool({
       name: "select_option",
@@ -877,42 +615,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
 
-    defineTool({
-      name: "upload_file",
-      label: "Upload file",
-      description: 'Set files on exactly one <input type=file> WITHOUT opening the OS file picker. Prefer task fileIds from the current task grant; absolute paths are accepted only when they resolve to the same grant record (user-provided or this-task artifacts under ~/.sideagent/uploads/ or ~/.sideagent/downloads/). Historical files in those directories are not authorized. Empty paths clears the input. target takes the same locator forms as click and must resolve to exactly one file input. The receipt lists the files actually applied, read back from the page after the upload — that list, not the command return, is the evidence. 上传文件必须走 upload_file；raw CDP 不能调用 DOM.setFileInputFiles，也不能读取任意磁盘文件。',
-      parameters: Type.Object({
-        target: Type.String({ description: 'File input locator ("@N", "loc=css:...", raw CSS, xpath=..., text=...)' }),
-        paths: Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { minItems: 0, maxItems: 8, description: "Task fileIds and/or absolute paths that resolve to this task's upload grant; empty clears the input" }),
-      }),
-      execute: async (_id, params) => {
-        // 授权在共同 call 边界完成；此处只负责派发与读回文案。
-        const data = (await call("upload_file", { target: params.target, paths: params.paths })) as ToolContract["upload_file"]["data"];
 
-        if (data.files.length === 0) return textResult("Cleared the file input (0 files read back).", data);
-        const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ");
-
-        return textResult(`Uploaded ${data.files.length} file(s) and read them back from the input: ${list}.`, data);
-      },
-    }),
-
-    defineTool({
-      name: "cdp",
-      label: "Raw CDP",
-      description: 'Raw CDP allows only a fixed read-only observation subset on the CURRENT working tab: Page.getLayoutMetrics, Page.getFrameTree, DOM.getDocument, DOM.describeNode, DOM.getAttributes, DOM.getBoxModel, DOM.getContentQuads, DOM.getNodeForLocation, DOM.querySelector, DOM.querySelectorAll. 上传文件必须走 upload_file；raw CDP 不能调用 DOM.setFileInputFiles，也不能读取任意磁盘文件。DOM.setFileInputFiles, Runtime.*, Input.*, Emulation.*, file read/write, and any other unlisted method are unsupported and refused before touching the browser. Other tabId/sessionId/targetId values are refused. Prefer dedicated tools; verify page state afterwards. Results are bounded (truncated flag when cut).',
-      parameters: Type.Object({
-        method: Type.String({ minLength: 3, maxLength: 120, description: 'CDP method, e.g. "Page.getLayoutMetrics" or "DOM.getDocument"' }),
-        params: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "CDP params object (no sessionId/targetId — the working tab session is implied)" })),
-        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 30000, description: "Default 10000" })),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("cdp", params)) as ToolContract["cdp"]["data"];
-        const raw = typeof data.result === "string" ? data.result : JSON.stringify(data.result, null, 2);
-        const rendered = truncate(raw ?? "null", MAX_JS_RESULT_CHARS);
-
-        return textResult(data.truncated ? `${rendered}\n(CDP result was truncated by the size bound)` : rendered, data);
-      },
-    }),
 
     defineTool({
       name: "arm_event",
@@ -972,22 +675,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
 
-    defineTool({
-      name: "file_chooser_set_files",
-      label: "Set file chooser files",
-      description: "After arm_event(filechooser)+click+wait_event, set authorized files on the intercepted chooser. Paths must be this-task grants (same ledger as upload_file). Receipt may include an immediate JS dialog.",
-      parameters: Type.Object({
-        chooserId: Type.String({ minLength: 3, maxLength: 80 }),
-        paths: Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { minItems: 0, maxItems: 8 }),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("file_chooser_set_files", params)) as ToolContract["file_chooser_set_files"]["data"];
-        const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ") || "(cleared)";
-        const dialog = data.dialog ? ` Dialog opened: ${data.dialog.type} — ${data.dialog.message}` : "";
-
-        return textResult(`Chooser set files: ${list}.${dialog}`, data);
-      },
-    }),
 
     defineTool({
       name: "download_url",
@@ -1001,68 +688,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         return textResult(downloadReceipt(data), data);
       },
     }),
-    defineTool({
-      name: "download_stat",
-      label: "Check download",
-      description: "Check a host-issued downloadId. Only completed=true confirms Chrome saved the file; do not invent IDs or repeat a still-running download.",
-      parameters: Type.Object({ downloadId: Type.String({ minLength: 3, maxLength: 80 }) }),
-      execute: async (_id, params) => {
-        // SAFETY: download_stat RPC 的返回结构由 ToolContract 与扩展处理器一致定义。
-        const data = await call("download_stat", params) as ToolContract["download_stat"]["data"];
 
-        return textResult(downloadReceipt(data), data);
-      },
-    }),
-    defineTool({
-      name: "download_save_as",
-      label: "Save download",
-      description: "After wait_event(download), wait for the page-generated download to finish and copy it to an absolute path (creates parents). Not fetch(GET). Requires the downloadId from wait_event.",
-      parameters: Type.Object({
-        downloadId: Type.String({ minLength: 3, maxLength: 80 }),
-        path: Type.String({ minLength: 2, maxLength: 1024, description: "Absolute destination path" }),
-        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000 })),
-      }),
-      execute: async (_id, params) => {
-        const data = await hostDownloadSaveAs({
-          downloadId: params.downloadId,
-          path: params.path,
-          timeoutMs: params.timeoutMs,
-          stat: async () => call("download_stat", { downloadId: params.downloadId }) as Promise<DownloadStatLike>,
-        });
 
-        return textResult(`Saved download to ${data.path} (${data.bytes} B).`, data);
-      },
-    }),
-
-    defineTool({
-      name: "download_cancel",
-      label: "Cancel download",
-      description: "Cancel an in-progress page download by downloadId from wait_event. A download Chrome already finished is not cancelled; the receipt says which.",
-      parameters: Type.Object({
-        downloadId: Type.String({ minLength: 3, maxLength: 80 }),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("download_cancel", params)) as ToolContract["download_cancel"]["data"];
-
-        if (data.completed) return textResult(`Download ${data.downloadId} had already finished; nothing was cancelled.`, data);
-
-        return textResult(data.cancelled ? `Cancelled download ${data.downloadId}.` : `Download ${data.downloadId} was not cancelled (failure: ${data.failure ?? "none"}).`, data);
-      },
-    }),
-
-    defineTool({
-      name: "download_delete",
-      label: "Forget download",
-      description: "Forget a download record. The file Chrome saved in the user's download folder is left untouched.",
-      parameters: Type.Object({
-        downloadId: Type.String({ minLength: 3, maxLength: 80 }),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("download_delete", params)) as ToolContract["download_delete"]["data"];
-
-        return textResult(`Forgot download ${data.downloadId}; the saved file was not deleted.`, data);
-      },
-    }),
 
     defineTool({
       name: "fill",
@@ -1131,43 +758,17 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fetch",
       label: "Fetch URL with the browser's login state",
       description:
-        "Fetch a URL with the browser's logged-in state (cookies), without touching the page. Only GET and POST; local/private addresses are refused. Use it to read structured data through the site's own API instead of scraping a snapshot: fields keep the site's real names. Large responses (>4000 chars) are saved under ~/.sideagent/downloads/ and only a status line plus a short preview enters the context; pass savePath to choose the file name. For a numeric page range use pages:{from,to,step?} with a {page} placeholder in the url (or POST body): one call fetches the pages in order, saves one file per page, and returns a compact receipt with only the first page's preview. pages is a companion-process feature of this tool only; inside browser_run, call browser.fetch once per page and combine the results in the program. In the extension-only runtime, responses are instead returned inline up to 16000 characters with an explicit truncation notice; savePath and pages are unavailable and rejected before sending requests. Prefer snapshot/read_element for reading the current document; never run a documentation code example just to explain it. The saved file is the user's own data and is not redacted; anything shown in context is treated as untrusted page content.",
+        "Fetch a URL with the browser's logged-in state (cookies), without touching the page. Only GET and POST; local/private addresses are refused. Use it to read structured data through the site's own API instead of scraping a snapshot: fields keep the site's real names. Responses are returned inline up to 16000 characters with an explicit truncation notice; for several pages, call browser.fetch once per page inside browser_run and combine the results there (save large results with browser.saveFile). Prefer snapshot/read_element for reading the current document; never run a documentation code example just to explain it. Anything shown in context is treated as untrusted page content.",
       parameters: Type.Object({
-        url: Type.String({ description: "Full http(s) URL, including query parameters; use {page} as the page placeholder" }),
+        url: Type.String({ description: "Full http(s) URL, including query parameters" }),
         method: Type.Optional(Type.Union([Type.Literal("GET"), Type.Literal("POST")], { description: "Default GET" })),
         headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: "Extra request headers; Cookie is set by the browser" })),
-        body: Type.Optional(Type.String({ description: "POST body (string); {page} is substituted here too" })),
-        savePath: Type.Optional(Type.String({ description: "Companion process only; rejected in the extension-only runtime. File name under ~/.sideagent/downloads/ (no directories); with pages it is the base name and -p<page> is inserted before the extension" })),
-        pages: Type.Optional(Type.Object({
-          from: Type.Integer({ description: "First page number" }),
-          to: Type.Integer({ description: "Last page number (inclusive)" }),
-          step: Type.Optional(Type.Integer({ description: "Page step, default 1; at most 20 pages per call" })),
-        }, { description: "Companion process only; rejected in the extension-only runtime. Fetch a numeric page range in one call; requires {page} in url or body" })),
+        body: Type.Optional(Type.String({ description: "POST body (string)" })),
       }),
       execute: async (_id, params) => {
-        if (!fetchDownloadsDir() && (params.savePath !== undefined || params.pages !== undefined)) {
-          rpc.markCallRejected?.(_id);
-          throw new Error("扩展内不支持 fetch 的 savePath/pages，请求未发送。请去掉这些参数读取内容，或在当前页面用 snapshot/read_element 读取所需章节。");
-        }
-
-        const grantArtifact = (path: string) => {
-          execution?.uploadLedger?.grant({ path, source: "task_artifact" });
-        };
-
-        if (params.pages) {
-          const batch = await fetchPages(
-            { url: params.url, method: params.method, headers: params.headers, body: params.body, savePath: params.savePath, pages: params.pages },
-            (request) => call("fetch", request) as Promise<FetchReply>,
-          );
-
-          for (const path of batch.data.saved) grantArtifact(path);
-
-          return textResult(wrapPageContent(batch.text, { url: params.url }), batch.data);
-        }
-
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
 
-        return textResult(formatFetchReply(data as FetchReply, params.savePath, undefined, true, grantArtifact), data);
+        return textResult(formatFetchReply(data as FetchReply), data);
       },
     }),
 
@@ -1232,6 +833,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
 
+
     defineTool({
       name: "mark",
       label: "Mark elements",
@@ -1265,7 +867,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         return textResult(`Marked ${params.target}.`, data);
       },
     }),
-
     defineTool({
       name: "screenshot",
       label: "Screenshot",
@@ -1310,7 +911,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }),
   ];
 
-  const definitions = makeDefinitions(call, undefined).filter(tool => !unavailableInRuntime.has(tool.name));
+  const definitions = makeDefinitions(call, undefined);
 
   return execution ? definitions.map(tool => ({ ...tool, execute: async (...args: Parameters<ToolDefinition["execute"]>) => {
     rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);

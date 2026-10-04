@@ -57,7 +57,7 @@ function managerFixture(){
     return {
       session:{available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>streaming,
         persistTaskResults:persist,abort,availableModels:async()=>[],waitForStop:async()=>{}},
-      fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),abortTeam:vi.fn(),list:()=>[]},
+      control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),abortTeam:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),
       handleMessage:(message:any)=>{if(message.type==='user_message'){streaming=true;emit({type:'agent_event',event:{kind:'agent_start'}});}
 

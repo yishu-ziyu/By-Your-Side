@@ -24,7 +24,7 @@ const image={id:'acceptance-image',type:'image' as const,name:'fixture.png',mime
 function runtimeFor(session:BrowserAgentSession){
   return {
     session,
-    fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),bindConversationContext:vi.fn(),list:()=>[]},
+    control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),bindConversationContext:vi.fn(),list:()=>[]},
     rpc:{rejectAll:vi.fn()},
     dispose:vi.fn(),
     handleMessage:vi.fn(),
@@ -46,7 +46,7 @@ function managerOver(store:ConversationStore,dispatcher:TaskDispatcher,opts:{fai
     sessions.set(id,{session,startTask,file:sessionManager.getSessionFile()!});
 
     return runtimeFor(session);
-  },()=>{},store,undefined,undefined,dispatcher);
+  },()=>{},store,undefined,dispatcher);
 
   return {manager,sessions};
 }

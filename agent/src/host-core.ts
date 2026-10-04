@@ -8,7 +8,6 @@ import type { ConversationPersistence } from "./conversation-persistence.js";
 import { ConversationManager } from "./conversation-manager.js";
 import type { MemoryStore } from "./memory-store.js";
 import type { TaskHistoryStore } from "./task-history.js";
-import type { SkillStore } from "./skill-store.js";
 import type { BrowserAgentSession } from "./session.js";
 import { TaskDispatcher } from "./task-dispatcher.js";
 import { VoiceService } from "./voice-service.js";
@@ -25,7 +24,6 @@ export interface HostCoreOptions {
   memoryStore?: MemoryStore;
   /** 过往任务（每个动手做过的任务结束时一条摘要）；不给就不记。 */
   taskHistory?: TaskHistoryStore;
-  skillStore?: SkillStore;
   dispatcher?: TaskDispatcher;
   /** 语音密钥与会话工厂；不给时用本机默认（读 ~/.sideagent 的密钥、ws 连接）。 */
   voiceKey?: ConstructorParameters<typeof VoiceService>[2];
@@ -70,7 +68,6 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     (msg) => { voice?.observe(msg); toClient(msg); },
     options.store,
     options.memoryStore,
-    options.skillStore,
     options.dispatcher ?? new TaskDispatcher(),
   );
 
@@ -141,7 +138,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     },
     sendHelloOk(conn) {
       void session.availableModels().then((models) => {
-        conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION, features: { memory: !!options.memoryStore, skills: !!options.skillStore }, ...options.helloExtras?.() });
+        conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION, features: { memory: !!options.memoryStore }, ...options.helloExtras?.() });
         conn.send({ type: "conversation_list", conversations: conversations.list() });
         conversations.replayState((msg) => conn.send(msg));
       });

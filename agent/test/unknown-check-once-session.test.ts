@@ -24,7 +24,7 @@ import type { ModelPort } from "../src/agent-loop.js";
 import { ConversationManager } from "../src/conversation-manager.js";
 import { createConversationRuntime } from "../src/conversation-runtime.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 import type { ServerMessage, ToolExecutionFact } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 

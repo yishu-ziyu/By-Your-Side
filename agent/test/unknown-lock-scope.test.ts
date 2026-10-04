@@ -25,7 +25,8 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ServerMessage, ToolExecutionFact } from "../../shared/protocol.js";
 import { TaskProgress } from "../src/task-progress.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
+import { PROBE_PATTERN, scriptedModels } from "./fixtures/scripted-loop.js";
 
 const dirs: string[] = [];
 
@@ -57,7 +58,7 @@ async function lead(special: (frame: Frame) => Reply | null = () => null) {
     } else progress.observe(msg);
   };
 
-  const runtime = await createConversationRuntime("default", sink, undefined, { memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
+  const runtime = await createConversationRuntime("default", sink, PROBE_PATTERN, { loop: { models: scriptedModels(), cwd: "/tmp" }, memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
 
   reply = frame => {
     const scripted = special(frame);

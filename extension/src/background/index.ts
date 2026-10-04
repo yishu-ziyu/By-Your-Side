@@ -44,41 +44,24 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, drag, hover, clearMarks, cancelMarkHold, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
-import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./clipboard-bridge.js";
-
-// macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
-if (isDarwinClipboardHostPlatform()) {
-  setClipboardBridge(createDarwinClipboardBridge(() => helloSnapshot?.clipboardPort));
-}
-
-(globalThis as typeof globalThis & { __saClipboardBridge?: () => ReturnType<typeof getClipboardBridge> }).__saClipboardBridge =
-  () => getClipboardBridge();
-
-import { uploadFile } from "./exec/upload.js";
-import { cdp } from "./exec/cdp.js";
+import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
-import { fileChooserSetFiles } from "./exec/file-chooser.js";
-import { downloadUrl, downloadStat, downloadCancel, downloadDelete } from "./exec/download.js";
+import { downloadUrl } from "./exec/download.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
-import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
-import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, shareTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
-import { pageOperation, pageOperationExecutionFact, takeoverTab, handbackTab } from "./exec/page-operation.js";
+import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
+import { takeoverTab, handbackTab } from "./page-operation-queue.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
-import { askUserToPoint } from "./exec/point.js";
 import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
 import { workerTabControl } from "./worker-tab-control.js";
-import { conversationForRecordingTab, demoSession, dismissDemo, isRecording, receiveSteps, resumeDemoIfRecording, startDemo, stopDemo, type DemoSession } from "./demo.js";
-import { applyObserveAction, injectObserver, isObserving, listCandidates, patternCount, recordRun } from "./observe.js";
 import {
   clearCursorStatus,
   clearAmbientCursorStatus,
@@ -91,6 +74,9 @@ import {
   type CursorStatusState,
 } from "./cursor-status.js";
 
+// 已删除功能留下的旧存储：观察曾在后台悄悄记页面骨架，启动时一并清掉（幂等）。
+void Promise.resolve().then(() => chrome.storage.local.remove(["sideagent_observe", "sideagent_observed_patterns", "sideagent_teach_mode", "sideagent_companion_visible", "sideagent_token"])).catch(() => {});
+
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
 const handlers: Record<ToolName, Handler> = {
@@ -102,8 +88,6 @@ const handlers: Record<ToolName, Handler> = {
 
  if (owner.isUserHeld(who.sessionId)) throw new Error("页面现在归你，操作未执行"); }
   }),
-  share_tab: (p, sid) => shareTab(p, sid),
-  page_operation: (p, sid) => pageOperation(p, sid),
   page_translation: (p, sid) => pageTranslation(p, sid),
   read_element: (p, sid) => readElement(p, sid),
   read_elements: (p, sid) => readElements(p, sid),
@@ -116,17 +100,6 @@ const handlers: Record<ToolName, Handler> = {
   snapshot: (p, sid) => snapshot(p, sid),
   click: (p, sid) => click(p, sid),
   double_click: (p, sid) => doubleClick(p, sid),
-  drag: (p, sid) => drag(p, sid),
-  wheel: (p, sid) => wheel(p, sid),
-  mouse_down: (p, sid) => mouseDown(p, sid),
-  mouse_up: (p, sid) => mouseUp(p, sid),
-  key_down: (p, sid) => keyDown(p, sid),
-  key_up: (p, sid) => keyUp(p, sid),
-  release_held_inputs: (_p, sid) => releaseHeldInputs(sid),
-  paste: (p, sid) => paste(p, sid),
-  html5_drag: (p, sid) => html5DragAndDrop(p, sid),
-  upload_file: (p, sid) => uploadFile(p, sid),
-  cdp: (p, sid) => cdp(p, sid),
   arm_event: (p, sid) => armEvent(p, sid),
   wait_event: (p, sid) => waitEvent(p, sid),
   disarm_event: (p, sid) => disarmEvent(p, sid),
@@ -134,11 +107,7 @@ const handlers: Record<ToolName, Handler> = {
   accept_dialog: (p, sid) => acceptDialog(p, sid),
   dismiss_dialog: (p, sid) => dismissDialog(p, sid),
   dialog_info: (p, sid) => dialogInfo(p, sid),
-  file_chooser_set_files: (p, sid) => fileChooserSetFiles(p, sid),
-  download_stat: (p, sid) => downloadStat(p, sid),
   download_url: (p, sid) => downloadUrl(p, sid),
-  download_cancel: (p, sid) => downloadCancel(p, sid),
-  download_delete: (p, sid) => downloadDelete(p, sid),
   hover: (p, sid) => hover(p, sid),
   fill: (p, sid) => fill(p, sid),
   select_option: (p, sid) => selectOption(p, sid),
@@ -148,7 +117,6 @@ const handlers: Record<ToolName, Handler> = {
   js: (p, sid) => evaluateJs(p, sid),
   observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
   screenshot: (p, sid) => screenshot(p, sid),
-  ask_user_to_point: (p, sid) => askUserToPoint(p, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (p, sid) => clearMarks(sid, p.tabId),
 };
@@ -189,9 +157,9 @@ const transport = new Uplink({
 
    if (msg.type === "conversation_list") { conversationSummaries = msg.conversations;
 
- for (const conversation of msg.conversations) { void setConversationTitle(conversation.id, conversation.title); controller(conversation.id).restoreMode(conversation.mode); } }
+ for (const conversation of msg.conversations) { void setConversationTitle(conversation.id, conversation.title); } }
 
-   if (msg.type === "conversation_updated" || msg.type === "conversation_created") { conversationSummaries = [...conversationSummaries.filter(c => c.id !== msg.conversation.id), msg.conversation]; void setConversationTitle(msg.conversation.id, msg.conversation.title); controller(msg.conversation.id).restoreMode(msg.conversation.mode); }
+   if (msg.type === "conversation_updated" || msg.type === "conversation_created") { conversationSummaries = [...conversationSummaries.filter(c => c.id !== msg.conversation.id), msg.conversation]; void setConversationTitle(msg.conversation.id, msg.conversation.title); }
 
    if (msg.type === "conversation_created") { voiceRelay.selectionChanged(msg.conversation.id); selectedConversationId = msg.conversation.id; setVisibleConversationId(selectedConversationId); void chrome.storage.local.set({ selectedConversationId }); controller(msg.conversation.id); }
 
@@ -802,120 +770,6 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
 /** T03：每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
 const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();
 
-// ── 示范录制：用户亲手做一遍，系统只看不做 ──────────────────────────
-
-function demoStatus() {
-  const s = demoSession(conversationId);
-
-  if (!s) return { recording: false as const, steps: [] as DemoSession["steps"], truncated: false };
-
-  return { recording: !s.stopped, tabId: s.tabId, steps: s.steps, truncated: s.truncated };
-}
-
-function emitDemo(): void {
-  broadcast({ kind: "demo", ...demoStatus() } satisfies BgToPanel);
-}
-
-/** 示范进行中，写类工具一律拒绝：这段时间页面归用户。 */
-function demoRefusal(name: ToolName): string | undefined {
-  if (!isRecording(conversationId)) return undefined;
-
-  if (!WRITE_TOOL_SET.has(name)) return undefined;
-
-  return "示范录制中：现在由你操作页面，Agent 未执行这次操作。";
-}
-
-/**
- * 观察开关与候选处置。动作语义全在 observe.ts（含 accept 消费候选），这里只负责广播最新状态。
- */
-async function handleObserveControl(action: "on" | "off" | "list" | "dismiss" | "accept", signature?: string, hostname?: string): Promise<void> {
-  await applyObserveAction(action, signature, hostname);
-  await emitObserve();
-}
-
-async function emitObserve(): Promise<void> {
-  const observing = await isObserving();
-  const list = await listCandidates();
-  // patterns 是"手上攒了多少段骨架"：刚开始观察时用户看不到候选（门槛是三次跨两天），
-  // 但这个数字能让他确认真的在记，而不是以为坏了。
-  broadcast({ kind: "observe", observing, candidates: list, patterns: await patternCount() } satisfies BgToPanel);
-}
-
-async function handleDemoControl(action: "start" | "stop" | "dismiss"): Promise<void> {
-  if (action === "dismiss") { dismissDemo(conversationId); emitDemo();
-
- return; }
-
-  if (action === "start") {
-    if (isRecording(conversationId)) { emitDemo();
-
- return; }
-
-    // 示范的是"用户此刻在看的这一页"：有任务绑定就用绑定页，没有就用当前活动页。
-    const tabId = (await getWorkingTabId()) ?? (await getActiveTab()).tab?.id ?? undefined;
-
-    if (tabId == null) { emitNotice("没有可示范的页面：先打开你要操作的网页。", "error");
-
- return; }
-
-    const page = await chrome.tabs.get(tabId).catch(() => null);
-
-    if (!page || !/^https?:/i.test(page.url ?? "")) { emitNotice("这一页不能示范：请切到普通的 http/https 网页再点「看我做」。", "error");
-
- return; }
-
-    const title = page.title ?? "";
-    const started = await startDemo(conversationId, tabId);
-
-    if (!started.ok) { emitNotice(`示范没能开始：${started.error ?? "页面不可注入"}`, "error");
-
- return; }
-
-    emitNotice(`示范开始：现在你亲手做一遍，做完点「做完了」。正在记录这一页${title ? `（${title}）` : ""}。`);
-    emitDemo();
-
-    return;
-  }
-
-  const session = await stopDemo(conversationId);
-
-  if (!session) { emitDemo();
-
- return; }
-
-  if (!session.steps.length) emitNotice("示范结束：这一步都没记到。若你操作的是另一个标签页或另一个窗口，换个页面再试。");
-  else emitNotice(`示范结束：记下 ${session.steps.length} 步。${session.truncated ? "（中途已达上限，后面的动作没记）" : ""}`);
-  emitDemo();
-}
-
-/** 观察：页面侧上行的一次 run（只有骨架）。不记输入值，敏感站点与敏感字段在页面侧已经丢掉。 */
-chrome.runtime.onMessage.addListener((raw: unknown) => {
-  if (!raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "sideagent:observed-run") return;
-  const run = (raw as { run?: unknown }).run;
-
-  if (!run || typeof run !== "object") return;
-  const { hostname, anchors, at } = run as { hostname?: unknown; anchors?: unknown; at?: unknown };
-
-  if (typeof hostname !== "string" || !Array.isArray(anchors) || typeof at !== "number") return;
-  void recordRun({ hostname, anchors: anchors as never, at });
-});
-
-/** 示范录制：页面侧上行的一批步骤，只认属于本会话的那一页。 */
-chrome.runtime.onMessage.addListener((raw: unknown, sender) => {
-  if (!raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "sideagent:demo-step") return;
-  const tabId = sender.tab?.id;
-
-  if (tabId == null) return;
-
-  // 示范页未必有任务绑定，按"谁在录这个标签页"归属，不查 tab→session 绑定。
-  if (conversationForRecordingTab(tabId) !== conversationId) return;
-  const msg = raw as { steps?: unknown; truncated?: unknown };
-
-  if (!Array.isArray(msg.steps)) return;
-  receiveSteps(conversationId, msg.steps as Parameters<typeof receiveSteps>[1], msg.truncated === true);
-  emitDemo();
-});
-
 function teamHeld(): boolean {
   const phase = team.view()?.phase;
 
@@ -1086,17 +940,6 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
   emitLocalStatus("user");
   void showUserControlGuarded(pending.tabId);
   emitTeam();
-}
-
-/** 把当前模式同步给单个面板（接入与 sync 时调用）。 */
-function postMode(port: chrome.runtime.Port): void {
-  void getMode(conversationId).then((mode) => {
-    try {
-      port.postMessage({ kind: "mode", mode } satisfies BgToPanel);
-    } catch {
-      /* 面板刚好断开 */
-    }
-  });
 }
 
 /** 新任务不能沿用上一轮的已中止控制视图；交还仍是同一个 run。 */
@@ -1349,9 +1192,6 @@ async function executeToolCall(
       open_tab:(p,s)=>openTab(p,s,beforeDispatch),
       close_tab:(p,s)=>closeTab(p,s,beforeDispatch),
       download_url:(p,s)=>downloadUrl(p,s,beforeDispatch),
-      download_cancel:(p,s)=>downloadCancel(p,s,beforeDispatch),
-      upload_file:(p,s)=>uploadFile(p,s,beforeDispatch),
-      file_chooser_set_files:(p,s)=>fileChooserSetFiles(p,s,beforeDispatch),
       accept_dialog:(p,s)=>acceptDialog(p,s,beforeDispatch),
       dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeDispatch),
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
@@ -1369,9 +1209,6 @@ async function executeToolCall(
 
     const execute = async () => {
       checkIdentity();
-      const refusedByDemo = demoRefusal(name);
-
-      if (refusedByDemo) throw new Error(refusedByDemo);
 
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
       await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
@@ -1382,20 +1219,6 @@ async function executeToolCall(
       if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
 
       return gate.run(id, name, async () => {
-        if (name === "page_operation") {
-          try {
-            const r = await pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))});
-            executionFact = "executed";
-
-            return r;
-          } catch (error) {
-            // 结构化事实：page_operation 自带 changed 标志，未改页即可重试，改过一律未知。
-            executionFact = pageOperationExecutionFact(error);
-            attachFact(error);
-            throw error;
-          }
-        }
-
         await assertBrowserDecision(key(sid),name,params);
         checkIdentity();
 
@@ -1411,23 +1234,7 @@ async function executeToolCall(
 
               if(gate.gen!==operationGeneration||gate.isSessionBlocked(sid)||workerTabControl.isStopped(key(sid)))throw new Error('READBACK_CANCELLED');
             })
-            : name === 'wheel'
-              ? await wheel(params as import('../../../shared/protocol.js').ToolContract['wheel']['params'], key(sid), () => {
-                checkIdentity();
-
-                if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
-                  throw new Error('操作所属控制轮次已失效，后续输入未执行。');
-                }
-              },beforeDispatch)
-              : name === 'ask_user_to_point'
-                ? await askUserToPoint(params, key(sid), () => {
-                  checkIdentity();
-
-                  if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
-                    throw new Error('点选所属任务已停止、被接管或发生变化。');
-                  }
-                },beforeDispatch)
-                : await handler(params, key(sid));
+            : await handler(params, key(sid));
 
           executionFact = "executed";
 
@@ -1441,9 +1248,6 @@ async function executeToolCall(
 
     const data = name === "worker_tabs" ? await execute() : await workerTabControl.run(key(sid), execute);
 
-    // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
-    if (name === "mark") noteMarkDrawn(conversationId);
-    else if (name === "clear_marks") noteMarksCleared(conversationId);
     result = { type: "tool_result", id, ok: true, data, executionFact: "executed" };
   } catch (e) {
     rememberFact(e);
@@ -1887,24 +1691,7 @@ void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((
   /* 老版本 Chrome 无此 API：图标行为不变 */
 });
 
-// 步骤完成自动感知：teach 模式 + 有待完成标注时，working tab 的 URL 变化
-// （chrome.tabs.onUpdated 的 changeInfo.url，SPA pushState 也会触发）视为
-// 用户可能已完成当前步骤 → 清标注 + 通知 agent。agent 未连接时 sendClientMessage 静默丢弃。
-// 必须在 SW 顶层注册，SW 重启后依然生效。
-chrome.tabs.onActivated.addListener(({ tabId }) => {
-  // 观察只跟"用户正在看的那一页"：换页就把观察脚本带过去，换走就把上一个停掉。
-  void (async () => { if (await isObserving()) await injectObserver(tabId); })();
-});
-
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  // 观察：导航完成后在新页继续；关着就什么都不做。
-  if (changeInfo.status === "complete") void (async () => { if (await isObserving()) await injectObserver(tabId); })();
-
-  // 示范跨页时要续录：内容脚本随导航消失，页面加载完成后把它喂回去接着记。
-  if (changeInfo.status === "complete" && conversationForRecordingTab(tabId) === conversationId) {
-    void resumeDemoIfRecording(tabId);
-  }
-
   void (async () => {
     await controlReady;
 
@@ -1915,24 +1702,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     }
   })();
 
-  if (!changeInfo.url) return;
-  const url = changeInfo.url;
-  void (async () => {
-    const bindings = (await findSessionsForTab(tabId)).filter(k => parseExecutionKey(k).conversationId === conversationId);
-
-    if (!bindings.length) return;
-    const mode = await getMode(conversationId);
-
-    if (!consumeTeachUrlChange(mode, conversationId)) return;
-
-    for (const binding of bindings) {
-      const sid = parseExecutionKey(binding).sessionId;
-
-      try { await clearMarks(binding); } catch { /* 页面可能已卸载 */ }
-
-      uplink.sendClientMessage({type:"page_event",event:"url_changed",url,sessionId:sid});
-    }
-  })();
 });
 
 function attachPanel(port: chrome.runtime.Port) {
@@ -1956,8 +1725,6 @@ function attachPanel(port: chrome.runtime.Port) {
     if ((requested ?? selectedAtReceipt) !== conversationId) return;
 
     switch (msg.kind) {
-      case "demo": void handleDemoControl(msg.action); break;
-      case "observe": void handleObserveControl(msg.action, msg.signature, msg.hostname); break;
       case "client": {
         const wireClient = msg.msg;
 
@@ -1966,12 +1733,6 @@ function attachPanel(port: chrome.runtime.Port) {
           : wireClient;
 
         if (!client || typeof client.type !== "string") break;
-
-        // set_mode 先落本地模式状态（供标注追踪判定），再照常转发给 agent
-        if (client.type === "set_mode") {
-          const mode = client.mode;
-          void setMode(mode, conversationId).then(() => broadcast({ kind: "mode", mode }));
-        }
 
         // user_message / steer 先附页面上下文再上行（异步，失败时原样发送）
         if (client.type === "abort") {
@@ -2067,7 +1828,6 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
             port.postMessage({ kind: "ask_selection", ask } satisfies BgToPanel);
           }
         });
-        postMode(port as chrome.runtime.Port);
 
         if (lastHelloOk) {
           const helloReplay: Extract<ServerMessage, { type: "hello_ok" }> = { type: "hello_ok", version: lastHelloOk.version, model: lastHelloOk.model };
@@ -2101,7 +1861,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         const lastView = lastTaskViews.get(conversationId);
 
         if (lastView) port.postMessage({ kind: "server", msg: { type: "task_view", view: lastView } } satisfies BgToPanel);
-        port.postMessage({kind:"demo", ...demoStatus()} satisfies BgToPanel);
+        port.postMessage({ kind: "synced" } satisfies BgToPanel);
 }
 
 /** 光标名牌上的确认/取消键：点删除/取消 → 与侧栏打「确认」「取消」同一条 user_message。 */
@@ -2182,10 +1942,7 @@ async function importReading(record: ReadingRecord): Promise<void> {
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
 voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
 
-return {context:enriched.context,attachments:enriched.attachments};},
-restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {
-  void setMode(mode, conversationId).then(() => broadcast({kind:"mode",mode}));
-}, ready: Promise.all([controlReady, historyReady]) };
+return {context:enriched.context,attachments:enriched.attachments};}, ready: Promise.all([controlReady, historyReady]) };
 
 
 }

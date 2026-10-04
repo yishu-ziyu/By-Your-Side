@@ -65,10 +65,6 @@ describe('P0 restart checkpoints',()=>{
     const wrapper=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
     wrapper.bindConversationContext(()=>snapshot);
     expect(()=>wrapper.assertTaskResultExecution('fill',{target:'#name',value:'repeat'})).toThrow('已有成功回执');
-    const workerSnapshot={...snapshot,results:snapshot.results?.filter(item=>item.id==='done'),resultState:'satisfied' as const};
-    const worker=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
-    worker.bindConversationContext(()=>workerSnapshot);
-    expect(()=>worker.assertWorkerWriteAllowed('fill',{target:'#name',value:'repeat'})).toThrow('已有成功回执');
   });
 
   it('reads the current page before prompting the restored session and keeps the original checkpoint in the prompt',async()=>{
@@ -168,7 +164,7 @@ describe('P0 restart checkpoints',()=>{
           available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>streaming,
           readPersistedTaskResults:()=>persisted,resumeInterruptedTask,persistTaskResults:vi.fn(),
         },
-        fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
+        control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
         rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage,
       } as any;
     },message=>emitted.push(message),store as any);
@@ -222,7 +218,7 @@ describe('P0 restart checkpoints',()=>{
           available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>streaming,
           readPersistedTaskResults:()=>persisted,resumeInterruptedTask,persistTaskResults:vi.fn(),classifyVoiceInput,
         },
-        fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
+        control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
         rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:vi.fn(),
       } as any;
     },()=>{});
@@ -248,7 +244,7 @@ describe('P0 restart checkpoints',()=>{
         available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>false,
         readPersistedTaskResults:()=>persisted,persistTaskResults:vi.fn(),classifyVoiceInput,
       },
-      fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
+      control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:runtimeHandle,
     } as any),()=>{});
 
@@ -273,7 +269,7 @@ describe('P0 restart checkpoints',()=>{
         available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>false,
         readPersistedTaskResults:()=>persisted,resumeInterruptedTask,persistTaskResults:vi.fn(),
       },
-      fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
+      control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:runtimeHandle,
     } as any),message=>emitted.push(message));
 
@@ -303,7 +299,7 @@ describe('P0 restart checkpoints',()=>{
         available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>false,
         readPersistedTaskResults:()=>persisted,resumeInterruptedTask:vi.fn(async()=>{}),persistTaskResults:vi.fn(),
       },
-      fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
+      control:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:runtimeHandle,
     } as any),()=>{});
 

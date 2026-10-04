@@ -5,13 +5,11 @@ import { CLAIM_BLOCKED_ERROR, FOREIGN_TAB_ERROR } from "../../../shared/control.
 import {
   applyTabBinding,
   bindExclusiveResource,
-  executionKey,
   mayAccessResource,
   mayClaimReplacementTab,
   parseExecutionKey,
   resourceForTab,
   sessionsForTab,
-  shareResource,
   type TabBindingMap,
   type TabResource,
   type TabResourceMap,
@@ -346,63 +344,7 @@ export async function setWorkingTab(id: number | null, key: string = LEAD_SESSIO
   if (id != null) await ensureConversationGroup(id, parseExecutionKey(keyOf(key)).conversationId);
 }
 
-function collaboratorKey(ownerKey: string, collaborator: string): string {
-  const ownerConversationId = parseExecutionKey(ownerKey).conversationId;
-
-  if (collaborator.includes("::")) {
-    const parsed = parseExecutionKey(collaborator);
-
-    if (parsed.conversationId !== ownerConversationId) throw new Error("标签页只能与同一会话的执行成员共享");
-
-    return collaborator;
-  }
-
-  return executionKey(ownerConversationId, collaborator);
-}
-
-export async function shareTab(
-  params: { tabId: number; collaborators: string[]; remove?: string[] },
-  ownerKey: string = LEAD_SESSION_ID,
-): Promise<{ tabId: number; collaborators: string[] }> {
-  const tab = await chrome.tabs.get(params.tabId);
-
-  if (tab.id == null) throw new Error("标签页无效");
-  const owner = keyOf(ownerKey);
-  assertTabNotTransferring(params.tabId, owner);
-  const additions = params.collaborators.map((member) => collaboratorKey(owner, member));
-  const removals = new Set((params.remove ?? []).map((member) => collaboratorKey(owner, member)));
-  removals.delete(owner);
-
-  const resource = await mutateState(async () => {
-    const current = await effectiveResource(params.tabId);
-    assertResourceAccess(current, owner);
-    let resources = shareResource(await loadResources(), params.tabId, owner, additions);
-    let nextResource = resources[String(params.tabId)]!;
-    const collaborators = nextResource.collaborators.filter((key) => !removals.has(key));
-    nextResource = {
-      ...nextResource,
-      mode: collaborators.length === 1 ? "exclusive" : "shared",
-      collaborators,
-    };
-    resources = { ...resources, [String(params.tabId)]: nextResource };
-    let map = await loadMap();
-
-    for (const key of nextResource.collaborators) map = applyTabBinding(map, key, params.tabId);
-
-    for (const key of removals) if (map[key] === params.tabId) map = applyTabBinding(map, key, null);
-    await persist(map, resources);
-
-    return nextResource;
-  });
-
-  await ensureConversationGroup(params.tabId, resource.conversationId);
-
-  return { tabId: params.tabId, collaborators: resource.collaborators.map((key) => parseExecutionKey(key).sessionId) };
-}
-
-const SHARED_UNSAFE_TOOLS = new Set(["page_translation", "open_tab", "switch_tab", "close_tab", "navigate", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll", "js", "mark", "clear_marks", "ask_user_to_point"]);
-
-/** controller 在每个工具执行前调用；共享页写入只能走完整 page_operation。 */
+/** controller 在每个工具执行前调用：页面归属与移交中的拦截。 */
 export async function guardToolAccess(name: string, key: string, explicitTabId?: number): Promise<void> {
   if (name === "worker_tabs" || name === "list_tabs" || name === "get_active_tab") return;
 
@@ -414,10 +356,6 @@ export async function guardToolAccess(name: string, key: string, explicitTabId?:
   assertTabNotTransferring(tabId, normalized);
   const resource = await effectiveResource(tabId);
   assertResourceAccess(resource, normalized);
-
-  if (resource?.mode === "shared" && SHARED_UNSAFE_TOOLS.has(name)) {
-    throw new Error("共享页上的该写操作不安全；请使用 page_operation 完成定位、核对、输入和读回");
-  }
 }
 
 /** 显式 tabId → 已认领页 → 当前会话可认领的空闲页。 */

@@ -122,12 +122,12 @@ export async function managerHarness(){
 
   return {
    session:h.wrapper,
-   fleet:{reset:vi.fn(),isGroupHeld:()=>false,teamView:()=>null,list:()=>[],get:()=>undefined,abortTeam:vi.fn(),reviseSharedRequirement:vi.fn(async()=>({notified:[],queued:[],skipped:[],failed:[]}))},
+   control:{reset:vi.fn(),isGroupHeld:()=>false,teamView:()=>null,list:()=>[],get:()=>undefined,abortTeam:vi.fn(),reviseSharedRequirement:vi.fn(async()=>({notified:[],queued:[],skipped:[],failed:[]}))},
    rpc:h.rpc,
    handleMessage:vi.fn(),
    dispose:vi.fn(),
   } as never;
- },(message)=>emitted.push(message),undefined,undefined,undefined,new TaskDispatcher());
+ },(message)=>emitted.push(message),undefined,undefined,new TaskDispatcher());
 
  const entry=await manager.ensureDefault();
  const h=harness!;

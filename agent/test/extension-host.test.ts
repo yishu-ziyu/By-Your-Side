@@ -68,13 +68,13 @@ describe("ExtensionHost 组合规则", () => {
     expect(seen).toEqual(["first"]);
   });
 
-  it("真实的产品上下文钩子：启用 task_goals 时在提示词前加执行约定、后加产品上下文", async () => {
+  it("真实的产品上下文钩子：在提示词后加产品上下文，不再加目标规划的执行约定", async () => {
     const context = new ProductContext();
-    const { value } = host([context.extension()], ["task_goals", "snapshot"]);
+    const { value } = host([context.extension()], ["snapshot"]);
     const prompt = await value.beforeAgentStart("圈出保存", "BASE PROMPT");
 
-    expect(prompt.startsWith("# 执行约定\n")).toBe(true);
-    expect(prompt).toContain("\n\nBASE PROMPT\n\n# Product conversation context\n");
+    expect(prompt.startsWith("BASE PROMPT\n\n# Product conversation context\n")).toBe(true);
+    expect(prompt).not.toContain("task_goals");
   });
 
   it("真实的失败策略钩子：同一操作失败到上限时中止本轮", async () => {

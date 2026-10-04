@@ -49,7 +49,7 @@ async function setup(readFails = false) {
 
     return {
       session: wrapped,
-      fleet: {reset() {}, isGroupHeld: () => false},
+      control: {reset() {}, isGroupHeld: () => false},
       rpc: {rejectAll() {}},
       dispose() {},
     } as any;

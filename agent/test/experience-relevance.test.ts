@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { MemoryRuntime } from "../src/memory-runtime.js";
 import { isRelevantExperience, isRelevantMemory } from "../src/memory-relevance.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
-import { FileDocument } from "../src/document-file.js";
+import { FileDocument } from "./fixtures/file-document.js";
 
 const roots: string[] = [];
 

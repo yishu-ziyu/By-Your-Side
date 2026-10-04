@@ -15,7 +15,7 @@ export class ConversationStore {
       if (!Array.isArray(value)) return [];
 
       return value.filter((entry): entry is ConversationSummary => entry && validConversationId(entry.id) && typeof entry.title === "string" && typeof entry.createdAt === "number" && typeof entry.updatedAt === "number" && (entry.mode === "act" || entry.mode === "teach"))
-        .map((entry) => ({ ...entry, state: "idle" })); // a restart never resumes old external actions
+        .map((entry) => ({ ...entry, mode: "act", state: "idle" })); // a restart never resumes old external actions
     } catch { return []; }
   }
   save(summaries: ConversationSummary[]): void {

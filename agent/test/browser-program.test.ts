@@ -118,10 +118,10 @@ describe("browser programs", () => {
     expect(result.images).toEqual([{ type: "image", data: "AAA", mimeType: "image/png" }]);
   });
 
-  it("exposes camelCase real-input aliases and routes them to canonical RPC names", async () => {
+  it("exposes the doubleClick alias routed to its canonical RPC name; deleted inputs are gone", async () => {
     const call = vi.fn(async () => ({ doubleClicked: true }));
     const result = await runBrowserProgram({ code: 'return { dbl: await browser.doubleClick({target:"#a"}), upload: typeof browser.uploadFile, cdp: typeof browser.cdp, drag: typeof browser.drag };', call });
-    expect(result.value).toMatchObject({ dbl: { doubleClicked: true }, upload: "function", cdp: "function", drag: "function" });
+    expect(result.value).toMatchObject({ dbl: { doubleClicked: true }, upload: "undefined", cdp: "undefined", drag: "undefined" });
     expect(call).toHaveBeenCalledWith("double_click", { target: "#a" }, "program/1");
   });
 

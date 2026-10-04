@@ -14,7 +14,7 @@ let streaming=false;let answer:(text:string)=>void=()=>{};
 
 if(e.kind==='agent_end'||e.kind==='error')streaming=false;emit({type:'agent_event',event:e});};
 
-  return {session:{available:true,modelName:()=> 'test',isStreaming:()=>streaming,isHeld:()=>false,startTask:()=>publish({kind:'agent_start',deliveryMode:'explicit'}),classifyVoiceInput:async(text:string)=>({steps:[{action,text,target:null}]}),answerVoiceObservation:async()=> '当前页面有竹海工作坊活动邀请，正文尚未打开。',composeUserDelivery:compose,abort:()=>{streaming=false;}},fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:()=>{},reset:()=>{}},rpc:{rejectAll:()=>{},call:async()=>({tabId:1,url:'https://fixture.test',title:'收件箱',text:'竹海工作坊活动邀请',imageBase64:'AQ==',documentId:'doc-one',capturedAt:100,scope:'viewport'})},handleMessage:(m:any)=>{if(m.type==='user_message')publish({kind:'agent_start'});},dispose:()=>{}} as any;
+  return {session:{available:true,modelName:()=> 'test',isStreaming:()=>streaming,isHeld:()=>false,startTask:()=>publish({kind:'agent_start',deliveryMode:'explicit'}),classifyVoiceInput:async(text:string)=>({steps:[{action,text,target:null}]}),answerVoiceObservation:async()=> '当前页面有竹海工作坊活动邀请，正文尚未打开。',composeUserDelivery:compose,abort:()=>{streaming=false;}},control:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:()=>{},reset:()=>{}},rpc:{rejectAll:()=>{},call:async()=>({tabId:1,url:'https://fixture.test',title:'收件箱',text:'竹海工作坊活动邀请',imageBase64:'AQ==',documentId:'doc-one',capturedAt:100,scope:'viewport'})},handleMessage:(m:any)=>{if(m.type==='user_message')publish({kind:'agent_start'});},dispose:()=>{}} as any;
  },m=>messages.push(m));
 
  return {manager,messages,compose,event:(e:any)=>publish(e),resolve:(text:string)=>answer(text)};

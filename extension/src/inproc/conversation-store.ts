@@ -43,7 +43,7 @@ function openDb(): Promise<IDBDatabase> {
 function validSummaries(value: ConversationSummary[] | undefined): ConversationSummary[] {
   if (!Array.isArray(value)) return [];
 
-  return value.filter(isConversationSummary).map((entry) => ({ ...entry, state: "idle" }));
+  return value.filter(isConversationSummary).map((entry) => ({ ...entry, mode: "act", state: "idle" }));
 }
 
 export async function openConversationStore(log: (message: string) => void): Promise<ConversationPersistence> {

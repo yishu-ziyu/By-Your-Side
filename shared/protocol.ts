@@ -12,7 +12,6 @@ import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 import { isTaskView } from "./task-view.js";
-import { isSkillInputs, isSkillCandidate, validSkillId } from "./skill.js";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -46,8 +45,8 @@ export function normalizeSessionId(sessionId?: string | null): string {
   return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId!;
 }
 
-/** Agent 运行模式：act = 直接操作页面；teach = 教学倾向增强（默认引导用户手动操作，能力不裁剪）。 */
-export type AgentMode = "act" | "teach";
+/** Agent 运行模式：只有 act（直接操作页面）；旧记录里的 teach 读入时按 act 处理。 */
+export type AgentMode = "act";
 
 // ── 客户端（扩展）→ 服务端（伴随进程） ──────────────────────────────
 
@@ -184,21 +183,6 @@ export type ClientMessage = ConversationEnvelope & (
   /** 过往任务：列出，或删一条（id 为 null 时全部清空）。 */
   | { type: "task_history_list"; requestId: string }
   | { type: "task_history_forget"; requestId: string; id: string | null }
-  /** 示范录制编译成技能；steps 是示范期间用户自己的动作记录。
-   *  updateId 存在时是"重新示范同一个技能"：内容替换、版本 +1，旧版本归档。 */
-  | { type: "skill_compile"; requestId: string; intent: string; hostname: string; demoId: string; steps: import('./demo-record.js').DemoStep[]; updateId?: string; expectedVersion?: number }
-  /** 忘记一份技能：删掉之后不再被检索到 */
-  | { type: "skill_forget"; requestId: string; id: string }
-  /** 列出某个站点上的技能（hostname 为空则列全部） */
-  | { type: "skill_list"; requestId: string; hostname?: string }
-  /** 按技能跑一遍：不叫模型，跑完写运行记录 */
-  | { type: "skill_run"; requestId: string; id: string; expectedVersion?: number; inputs?: Record<string, string>; allowStale?: boolean }
-  | { type: "skill_candidate_save"; requestId: string; id: string; sourceRunId: string }
-  | { type: "skill_candidate_dismiss"; requestId: string; id: string; sourceRunId: string }
-  /** 记一条修订线索（"这次不太对"），不改做法，下次重新示范时提醒 */
-  | { type: "skill_note"; requestId: string; id: string; note: string }
-  /** 回到上一版 */
-  | { type: "skill_rollback"; requestId: string; id: string; expectedVersion?: number }
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
@@ -228,9 +212,7 @@ export type ClientMessage = ConversationEnvelope & (
       groupId?: string;
       generation?: number;
     }
-  | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
-  | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact });
 
 export interface ConversationEnvelope { conversationId?: string }
@@ -253,7 +235,7 @@ export interface ModelOption {
 }
 
 /** 宿主能提供的可选功能：没有存储的功能，侧栏不给入口。 */
-export interface HostFeatures { memory: boolean; skills: boolean }
+export interface HostFeatures { memory: boolean }
 
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | ReadingEvent
@@ -264,11 +246,10 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
-  | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback" | "candidate_save" | "candidate_dismiss"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; candidates?: import('./skill.js').SkillCandidate[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
-  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 本伴随进程的剪贴板服务端口（127.0.0.1）；没有服务时省略 */ clipboardPort?: number; /** 这个宿主有没有记忆、技能存储（只装扩展时都没有）；缺省按有处理 */ features?: HostFeatures }
+  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 本伴随进程的剪贴板服务端口（127.0.0.1）；没有服务时省略 */ clipboardPort?: number; /** 这个宿主有没有记忆存储；缺省按有处理 */ features?: HostFeatures }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }
@@ -342,8 +323,6 @@ export const TOOL_NAMES = [
   "fetch",
   "network",
   "worker_tabs",
-  "share_tab",
-  "page_operation",
   "page_translation",
   "read_element",
   "read_elements",
@@ -363,13 +342,9 @@ export const TOOL_NAMES = [
   "js",
   "screenshot",
   "observe_page",
-  "ask_user_to_point",
   "mark",
   "clear_marks",
   "double_click",
-  "drag",
-  "upload_file",
-  "cdp",
   /** CAP-02A：宿主签发 token 的事件订阅（popup/download/filechooser）。 */
   "arm_event",
   "wait_event",
@@ -378,25 +353,43 @@ export const TOOL_NAMES = [
   "accept_dialog",
   "dismiss_dialog",
   "dialog_info",
-  "file_chooser_set_files",
-  "download_stat",
   "download_url",
-  "download_cancel",
-  "download_delete",
-  /** CAP-02B：扩展侧输入原语的正式 RPC（右键/偏移/wheel/按住/paste/HTML5 DnD）。 */
-  "wheel",
-  "mouse_down",
-  "mouse_up",
-  "key_down",
-  "key_up",
-  "release_held_inputs",
-  "paste",
-  "html5_drag",
   /** CAP-02C：原生 select 的 value/label/index、多选、清空（≠ 单值 fill）。 */
   "select_option",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
+
+/** read_element 读到的表单控件属性：语音填写读回据 type/autocomplete 判断是不是密码、验证码类保护字段。 */
+export interface AnchorSource {
+  tag?: string | null;
+  role?: string | null;
+  type?: string | null;
+  name?: string | null;
+  id?: string | null;
+  placeholder?: string | null;
+  ariaLabel?: string | null;
+  label?: string | null;
+  text?: string | null;
+  title?: string | null;
+  alt?: string | null;
+  ancestorText?: string | null;
+  autocomplete?: string | null;
+}
+
+/** Chrome 下载回执：完成与否只看 chrome.downloads。 */
+export interface DownloadReceipt {
+  downloadId: string;
+  tabId: number;
+  url: string;
+  suggestedFilename: string;
+  path: string | null;
+  failure: string | null;
+  completed: boolean;
+  cancelled: boolean;
+  bytes?: number;
+  danger?: string;
+}
 
 /** 就地确认按钮（长在拿住目标的光标名牌上）。id 决定点下去发给 Agent 的文本（confirm→确认，cancel→取消）。 */
 export type MarkActionId = "confirm" | "cancel";
@@ -469,11 +462,9 @@ export interface ToolContract {
     };
   };
   worker_tabs: { params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }; data: { tabId?: number; tabIds?: number[]; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] } };
-  share_tab: { params: { tabId: number; collaborators: string[]; remove?: string[] }; data: { tabId: number; collaborators: string[] } };
-  page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
     params: { tabId?: number; target: string; /** Host-only adjunct read; never exposed in provider schemas. */ readback?: {documentId:string;deadline:number;nodeIdentity?: {kind:'ax';backendNodeId:number}} } & import('./element-state.js').ElementReadOptions;
-    data: { tabId: number; target: string; tagName: string; textContent: string; editableText?: string; value?: string; scopeLabels?:string[]; documentId?: string; nodeIdentity?: {kind:'ax';backendNodeId:number}; anchorSource?: import('./demo-record.js').AnchorSource; /** Shown text ends in an ellipsis and the element's title/aria value completes it (shared/page-readout.ts). */ fullText?: string; /** Native time/date/number/range input: the page's own range and the browser's verdict on the value. */ inputRange?: import('./page-readout.js').InputRange & { problem?: import('./page-readout.js').RangeProblem }; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+    data: { tabId: number; target: string; tagName: string; textContent: string; editableText?: string; value?: string; scopeLabels?:string[]; documentId?: string; nodeIdentity?: {kind:'ax';backendNodeId:number}; anchorSource?: AnchorSource; /** Shown text ends in an ellipsis and the element's title/aria value completes it (shared/page-readout.ts). */ fullText?: string; /** Native time/date/number/range input: the page's own range and the browser's verdict on the value. */ inputRange?: import('./page-readout.js').InputRange & { problem?: import('./page-readout.js').RangeProblem }; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
   };
   /** 宿主自己读取一个选择器命中的全部元素（有界），供目标核验取证；不改页面，不能由模型替代提供。 */
   read_elements: {
@@ -528,101 +519,6 @@ export interface ToolContract {
       label?: string;
     };
     data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
-  };
-  /** 真实拖拽：from/to 各为 target 或视口 point；mousePressed→有界 mouseMoved 序列→release。 */
-  drag: {
-    params: { tabId?: number; from: { target?: string; point?: [number, number] }; to: { target?: string; point?: [number, number] }; label?: string };
-    data: { dragged: true; effect?: import('./effect.js').EffectReport };
-  };
-  /** CAP-02B：真实 mouseWheel；坐标来自 point/target(+position) 或会话指针。 */
-  wheel: {
-    params: {
-      tabId?: number;
-      deltaX?: number;
-      deltaY?: number;
-      point?: [number, number];
-      target?: string;
-      position?: import('./pointer-input.js').ElementPosition;
-      label?: string;
-    };
-    /**
-     * wheeled:true 只在整段手势（mouseMoved → 主 mouseWheel → 零 delta 收尾）的
-     * blocking ACK 全部在预算内返回时出现。任何一步 ACK 超时都直接抛错、不返回成功包，
-     * 也不得以 scrollTop= 或合成事件冒充。ackMs/attempts 供验收判据核对真实性。
-     */
-    data: { wheeled: true; point: [number, number]; ackMs: number; attempts: number };
-  };
-  mouse_down: {
-    params: {
-      tabId?: number;
-      button?: import('./pointer-input.js').MouseButton;
-      clickCount?: number;
-      point?: [number, number];
-      target?: string;
-      position?: import('./pointer-input.js').ElementPosition;
-    };
-    data: { down: true; point: [number, number]; button: import('./pointer-input.js').MouseButton };
-  };
-  mouse_up: {
-    params: {
-      tabId?: number;
-      button?: import('./pointer-input.js').MouseButton;
-      clickCount?: number;
-      point?: [number, number];
-    };
-    data: { up: true; point: [number, number]; button: import('./pointer-input.js').MouseButton };
-  };
-  key_down: {
-    params: { tabId?: number; key: string };
-    data: { down: true; key: string };
-  };
-  key_up: {
-    params: { tabId?: number; key: string };
-    data: { up: true; key: string };
-  };
-  /** 松开本会话仍按住的键与鼠标键（取消/异常安全路径）。 */
-  release_held_inputs: {
-    params: Record<string, never>;
-    data: { releasedKeys: string[]; releasedButtons: import('./pointer-input.js').MouseButton[] };
-  };
-  /**
-   * 富文本粘贴：经剪贴板桥写入 text/html 再 ControlOrMeta+V。
-   * 无桥时扩展侧 BLOCKED；禁止合成 paste/innerHTML 冒充成功。
-   */
-  paste: {
-    params: { tabId?: number; content: import('./pointer-input.js').PasteContent };
-    data: { pasted: true; clipboard: import('./pointer-input.js').ClipboardFinishStatus };
-  };
-  /**
-   * HTML5 DataTransfer 拖放。无 intercept 载荷时 data.gap，不得报成功。
-   * syntheticData 仅测试桩，正式路径勿默认使用。
-   */
-  html5_drag: {
-    params: {
-      tabId?: number;
-      from: { target?: string; point?: [number, number]; position?: import('./pointer-input.js').ElementPosition };
-      to: { target?: string; point?: [number, number]; position?: import('./pointer-input.js').ElementPosition };
-      label?: string;
-      syntheticData?: {
-        items: Array<{ mimeType: string; data: string; title?: string }>;
-        files?: string[];
-        dragOperationsMask?: number;
-      };
-    };
-    data:
-      | { dragged: true; path: "intercept" | "synthetic-data"; effect?: import('./effect.js').EffectReport }
-      | { dragged: false; gap: "no_intercept_payload"; detail: string };
-  };
-  /** 给唯一 <input[type=file]> 设置授权路径（DOM.setFileInputFiles），以读回的 files 列表为证；不点系统文件选择器。 */
-  upload_file: {
-    params: { tabId?: number; target: string; paths: string[] };
-    data: { uploaded: true; files: Array<{ name: string; size: number }>; documentId?: string };
-  };
-  /** 通用 CDP escape hatch：只绑当前 working tab，按 power tool 全走写闸门；越权 method 拒绝；结果有界截断。
-   * （ToolContract 键名与 TOOL_NAMES、扩展 handlers、WRITE_TOOLS 同步扩展：double_click / drag / upload_file / cdp / CAP-02A 事件面 / CAP-02B 输入原语。） */
-  cdp: {
-    params: { tabId?: number; method: string; params?: Record<string, unknown>; timeoutMs?: number };
-    data: { result: unknown; truncated: boolean };
   };
   /**
    * CAP-02A：在触发动作前 arm 事件。返回宿主签发的 token（模型不可伪造）。
@@ -688,55 +584,10 @@ export interface ToolContract {
     params: { tabId?: number };
     data: { dialog: null | { type: string; message: string; tabId: number; url?: string; defaultPrompt?: string } };
   };
-  /**
-   * 动态 file chooser：对已 wait 到的 chooser 设文件。路径须经宿主 TaskUploadLedger 授权；
-   * 禁止经 raw cdp DOM.setFileInputFiles 绕过。上传后若立刻弹 JS dialog，回执含 dialog。
-   */
-  file_chooser_set_files: {
-    params: { tabId?: number; chooserId: string; paths: string[] };
-    data: {
-      set: true;
-      multiple: boolean;
-      files: Array<{ name: string; size: number }>;
-      dialog?: { type: string; message: string; tabId: number; url?: string };
-    };
-  };
-  /**
-   * 宿主侧 download.saveAs（非 extension RPC）：等待下载完成后复制到获准绝对路径。
-   * browser_run helper / tools.ts 实现；不把 fetch(GET) 当下载。
-   */
-  download_save_as: {
-    params: { downloadId: string; path: string; timeoutMs?: number };
-    data: { saved: true; path: string; bytes: number; suggestedFilename: string; url: string; tabId: number };
-  };
-  download_stat: {
-    params: { downloadId: string };
-    data: {
-      downloadId: string;
-      tabId: number;
-      url: string;
-      suggestedFilename: string;
-      path: string | null;
-      failure: string | null;
-      completed: boolean;
-      cancelled: boolean;
-      bytes?: number;
-      danger?: string;
-    };
-  };
   /** 直接保存 HTTP(S) 链接，绕过 PDF 阅读器；完成只认 Chrome 下载状态。 */
   download_url: {
     params: { url: string; filename?: string; timeoutMs?: number; tabId?: number };
-    data: ToolContract["download_stat"]["data"];
-  };
-  download_cancel: {
-    params: { downloadId: string };
-    /** cancelled 只在 Chrome 报 USER_CANCELED 时为 true；已下完的不会被取消。 */
-    data: { cancelled: boolean; completed: boolean; downloadId: string; failure: string | null };
-  };
-  download_delete: {
-    params: { downloadId: string };
-    data: { deleted: true; downloadId: string };
+    data: DownloadReceipt;
   };
   /** 真实鼠标移动；hovered 仅表示事件已派发，页面变化需另行观察。 */
   hover: {
@@ -803,8 +654,6 @@ export interface ToolContract {
       } | null;
     };
   };
-  /** 等待用户指出主文档里的元素；选择本身不激活网页控件。 */
-  ask_user_to_point: { params: { tabId?: number; message?: string }; data: import("./point-selection.js").PointSelectionReceipt };
   /** 在元素处画持久标注（描边框+名牌），锚定文档坐标，滚动不漂移；through 为同一行的结束 ref，一个框从 target 圈到它 */
   mark: { params: { tabId?: number; target: string; through?: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
   /** 清除全部 mark 标注 */
@@ -877,57 +726,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
 
-    if (msg.type === "skill_compile") {
-      if (!validRequestId(msg.requestId) || typeof msg.intent !== "string" || msg.intent.length > 500) return null;
-
-      if (typeof msg.hostname !== "string" || typeof msg.demoId !== "string") return null;
-
-      if (!Array.isArray(msg.steps) || msg.steps.length < 1 || msg.steps.length > 200) return null;
-    }
-
-    if (msg.type === "skill_forget" && (!validRequestId(msg.requestId) || typeof msg.id !== "string")) return null;
-
-    if (msg.type === "skill_list" && (!validRequestId(msg.requestId) || (msg.hostname !== undefined && typeof msg.hostname !== "string"))) return null;
-
-    if (msg.type === "skill_run") {
-      if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
-
-      if (msg.expectedVersion !== undefined && !Number.isInteger(msg.expectedVersion)) return null;
-
-      if (msg.inputs !== undefined && !isSkillInputs(msg.inputs)) return null;
-
-      if (msg.allowStale !== undefined && typeof msg.allowStale !== "boolean") return null;
-    }
-
-    if (msg.type === "skill_candidate_save" || msg.type === "skill_candidate_dismiss") {
-      if (!validRequestId(msg.requestId) || !validSkillId(msg.id) || typeof msg.sourceRunId !== "string" || !msg.sourceRunId || msg.sourceRunId.length > 128) return null;
-    }
-
-    if (msg.type === "skill_note") {
-      if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
-
-      if (typeof msg.note !== "string" || !msg.note.trim() || msg.note.length > 300) return null;
-    }
-
-    if (msg.type === "skill_rollback") {
-      if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
-
-      if (msg.expectedVersion !== undefined && !Number.isInteger(msg.expectedVersion)) return null;
-    }
-
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
 
     if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
 
-    if (msg.type === "set_mode" && msg.mode !== "teach" && msg.mode !== "act") return null;
-
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
-
-    if (msg.type === "page_event") {
-      if (msg.event !== "url_changed" || typeof msg.url !== "string") return null;
-
-      if (!validOptionalSessionId(msg.sessionId)) return null;
-    }
 
     if (
       (msg.type === "user_message" || msg.type === "steer") &&
@@ -1087,21 +890,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
 
-    if (msg.type === "skill_result") {
-      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["compile", "forget", "list", "run", "note", "rollback", "candidate_save", "candidate_dismiss"].includes(msg.action)) return null;
-
-      if (msg.ok && (msg.action === "compile" || msg.action === "run" || msg.action === "note" || msg.action === "rollback") && (!msg.skill || typeof msg.skill.program !== "string" || !Array.isArray(msg.skill.steps))) return null;
-
-      if (msg.ok && msg.action === "forget" && typeof msg.deletedId !== "string") return null;
-
-      if (msg.ok && msg.action === "list" && (!Array.isArray(msg.skills) || (msg.runs !== undefined && typeof msg.runs !== "object"))) return null;
-
-      if (msg.candidates !== undefined && (!Array.isArray(msg.candidates) || msg.candidates.length > 30 || !msg.candidates.every(isSkillCandidate))) return null;
-
-      if (msg.ok && msg.action === "candidate_save" && (!msg.skill || !validSkillId(msg.skill.id))) return null;
-
-      if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
-    }
 
     if (msg.type === "agent_event" && msg.event?.kind === "worker_task") {
       const e = msg.event;
@@ -1317,7 +1105,8 @@ export function isConversationSummary(value: unknown): value is ConversationSumm
 
   return validConversationId(item.id) && typeof item.title === "string" && item.title.length <= 120 &&
     Number.isFinite(item.createdAt) && Number.isFinite(item.updatedAt) && isAgentRunState(item.state) &&
-    (item.mode === "act" || item.mode === "teach") && (item.model === undefined || typeof item.model === "string")
+    // 旧记录可能是已删除的 teach 模式：照样认，读入方按 act 处理。
+    (item.mode === "act" || (item.mode as string) === "teach") && (item.model === undefined || typeof item.model === "string")
     && (item.runId === undefined || item.runId === null || taskId(item.runId))
     && (item.checkpoint === undefined || item.checkpoint === "interrupted" || item.checkpoint === "unavailable");
 }

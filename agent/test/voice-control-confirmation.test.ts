@@ -66,12 +66,12 @@ function setup() {
 
     return {
       session,
-      fleet: {isGroupHeld: () => false, reset: () => {}, teamView: () => null, list: () => []},
+      control: {isGroupHeld: () => false, reset: () => {}, teamView: () => null, list: () => []},
       rpc: {rejectAll: () => {}},
       handleMessage: (message: ServerMessage) => { if ((message as {type: string}).type === "abort") session.abort(); },
       dispose: () => {},
     } as never;
-  }, (message) => { emitted.push(message); }, undefined, undefined, undefined, dispatcher);
+  }, (message) => { emitted.push(message); }, undefined, undefined, dispatcher);
 
   return {
     manager, dispatcher, received, emitted,

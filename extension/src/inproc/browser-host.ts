@@ -86,7 +86,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         // 不另设备用模型：主模型挂起或出错时换设置里的快速模型（withModelFailover）。
         return createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
         loop: { models: modelPort, cwd: "/", session: data.session },
-        artifactPersistence: data.files, mode: summary?.mode,
+        artifactPersistence: data.files,
         memoryStore,
         taskHistory,
         });

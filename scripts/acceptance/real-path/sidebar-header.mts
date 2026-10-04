@@ -45,13 +45,10 @@ const LAYOUT = `(() => {
     brandShown: shown(q("#brand")) || shown(q("#logo")),
     statusPillShown: shown(q("#status-pill")),
     statusText: q("#status-text")?.textContent ?? "",
-    modeInComposer: !!q("#composer #teach-toggle"),
+    modeToggleGone: !q("#teach-toggle"),
     taskBar: shown(q(".task-bar")) ? { box: box(q(".task-bar")), text: q(".task-bar").innerText.replace(/\\s+/g, " ").trim(), expanded: q(".task-bar").hasAttribute("data-expanded") } : null,
     composer: box(q("#composer")),
     messagesTop: box(q("#messages"))?.top ?? null,
-    companion: (() => { const m = q("#pix-companion"); if (!m || !m.getClientRects().length) return null; const r = m.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), cls: m.className, style: m.getAttribute("style") }; })(),
-    /** 被小伙伴 M 盖住中心点的按钮。 */
-    covered: [...document.querySelectorAll("#app button")].filter((b) => b.getClientRects().length && getComputedStyle(b).visibility !== "hidden").flatMap((b) => { const r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return hit && !b.contains(hit) && hit.closest("#pix-companion") ? [b.id || b.className] : []; }),
   };
 })()`;
 
@@ -63,12 +60,10 @@ type Layout = {
   brandShown: boolean;
   statusPillShown: boolean;
   statusText: string;
-  modeInComposer: boolean;
+  modeToggleGone: boolean;
   taskBar: { box: { top: number; bottom: number; height: number } | null; text: string; expanded: boolean } | null;
   composer: { top: number; bottom: number; height: number } | null;
   messagesTop: number | null;
-  companion: { top: number; bottom: number; left: number; right: number; cls: string; style: string | null } | null;
-  covered: string[];
 };
 
 const checks: Array<{ item: string; pass: boolean; detail: Json }> = [];
@@ -134,7 +129,7 @@ try {
   const idle = await shot("1-idle");
   check("空闲：顶部一行，不再有第二个品牌", !!idle.topbar && idle.topbar.height <= 40 && !idle.brandShown, { topbar: idle.topbar, text: idle.topbarText });
   check("空闲：连上时不显示连接状态", !idle.statusPillShown, { statusText: idle.statusText });
-  check("空闲：操作方式在输入框里", idle.modeInComposer, null);
+  check("空闲：没有「操作方式」切换（指导模式已删除）", idle.modeToggleGone, null);
   check("空闲：顶部底色接 Chrome 标题栏", idle.topbarBg === "rgb(255, 255, 255)", { bg: idle.topbarBg });
 
   // 2. 执行中：收起、展开。
@@ -149,7 +144,6 @@ try {
   check("执行中：收起时一行，写状态", !!bar && !bar.expanded && (bar.box?.height ?? 99) <= 36 && /正在执行/.test(bar.text), { text: bar?.text ?? null, height: bar?.box?.height ?? null });
   const panelText = String(await rp.evaluate(panel, `document.querySelector("#app").innerText`));
   check("执行中：任务页就是当前页时，网站名只在输入框上方出现一次", (panelText.match(/127\.0\.0\.1/g) ?? []).length === 1, { hits: (panelText.match(/127\.0\.0\.1/g) ?? []).length });
-  check("执行中：小伙伴 M 不挡按钮", running.covered.length === 0, { covered: running.covered, companion: running.companion });
   await rp.click(panel, ".tb-expand");
   await sleep(300);
   const expanded = await shot("3-running-expanded");

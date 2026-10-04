@@ -61,12 +61,22 @@ if (left.cost <= 0 || left.model_calls <= 0 || left.audio_minutes <= 0) {
   process.exit(0);
 }
 
-try {
-  const { runLiveSuite } = await import("./live-suite.mts");
-  const result = await runLiveSuite();
-  console.log(JSON.stringify(result, null, 2));
-  process.exit(result.ok ? 0 : 1);
-} catch (error) {
-  console.error(error instanceof Error ? error.stack ?? error.message : error);
-  process.exit(1);
-}
+// 原 live-suite 在 Node 里直接跑任务核心（扩展外路径），2026-10-04 随扩展外路径一起删除
+// （docs/evals/20261004-cut-unused.md）。真实模型的产品路径验收改走 accept:real-path；这里如实报 BLOCKED，不报 PASS。
+const report: EvalReport = {
+  profile,
+  run_id: "live-blocked-no-suite",
+  started_at: new Date().toISOString(),
+  observations: loadGates().metrics.map((m) => ({
+    id: m.id,
+    missing: true,
+    blocked_reason: "no in-extension live suite yet; the out-of-extension live suite was deleted",
+  })),
+  human_review: { signed: false },
+};
+
+const result = verifyReport(report);
+
+console.log(JSON.stringify({ verdict: result.verdict, reason: result.reason }, null, 2));
+
+process.exit(0);
