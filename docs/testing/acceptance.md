@@ -12,37 +12,18 @@ Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 为扩�
 
 - `node --import tsx scripts/acceptance/real-path/north-star-research.mts --headless --scripted`：博客、维基、X、Flomo 四站隔离基线；N1 正常一词（全程零张批准卡、Flomo 恰好一条且正文一致、在维基搜索框按回车提交表单），N2 慢保存重试（拦下的重复不算失败、保存点击认出 POST，见[验收](../evals/20261004-honest-completion.md)），见[去掉批准卡验收](../evals/20261004-remove-approvals.md)；支持 `--only=N1,N2`、`--rejudge=<产物目录>` 及 `--self-test-judges` 反例重判，产物在 `out/acceptance/real-path/*-north-star/`，`--model=provider/id` 另需真实模型授权（[标准](../evals/20261004-north-star-cross-site.md)）。
 - `npm run accept:browser`：浏览器主链。
-- `npm run accept:capability`：浏览器能力对齐。
 - `npm run accept:real-path`：一次跑完全部真实路径用例（见下节），汇总写 `out/acceptance/real-path/summary-<时间>.json`；`-- --only=a,b` 为过滤轮，恒不算整轮通过。
-- `npm run accept:journeys -- --suite smoke|sample|baseline|full`：12 个完整任务模板，真实侧栏 + 真模型 + 独立判定器；结果在 `eval/runs/journeys-*`。
-- `npm run accept:isolated`：QA-01 v2 隔离无头验收，默认不调用模型、不需凭据；CI 工作流 `.github/workflows/e2e.yml` 只跑其中 2026-09-23 在 macOS 整轮全绿的 9 个场景（F1–F5、F4b、C1、S1、S2）作回归门槛；目前仅手动触发，待 Linux 首次通过后再挂到 PR。
+- `accept:journeys`、`accept:isolated`、`accept:capability` 与 P0 本地运行在 Node 里托管任务核心或直接调工具层，测的多是已删除的工具，于 10-04 随扩展外路径删除（[删减验收](../evals/20261004-cut-unused.md)）；CI 工作流 `.github/workflows/e2e.yml` 改跑几条真实路径用例，仅手动触发，未在 Linux 跑过。
 - `npx tsx scripts/acceptance/page-readouts.mts --headless [--live]`：截断文字的完整值与范围输入框的读数、越界填写回执，零模型请求（[规则](../page-readouts.md)）。
 - `npx tsx scripts/acceptance/real-path/answer-selfcheck.mts --headless [--live]`：只装扩展，默认脚本主模型故意给出错误草稿，真实 GLM 快速模型核对；`--live` 改用真实 GLM 主模型。覆盖错误合计 CSV、错误日期文件、缺项/价格/来源及正确结果，下载文件留证。快速模型按设置页同一格式写入隔离扩展存储；需本机已配置 GLM 凭据，产物在 `out/acceptance/answer-selfcheck/`。固定页面检查不代替 #35 的完整产品评测（[标准](../evals/20261002-answer-selfcheck.md)）。
-- `npx tsx scripts/acceptance/real-path/pdf-download.mts --headless [--live|--arxiv]`：默认脚本模型走真实 PDF 阅读器和 Chrome 下载，覆盖字节、中断、延迟查询、非法地址与完成后取消；`--live` 用真实 GLM，`--arxiv` 复现 #25 的 arXiv 论文地址。产物在 `out/acceptance/pdf-download/`（[标准](../evals/20261002-pdf-download.md)）。
+- `npx tsx scripts/acceptance/real-path/pdf-download.mts --headless [--live|--arxiv]`：默认脚本模型走真实 PDF 阅读器和 Chrome 下载，覆盖字节、中断、延迟下载与非法地址；`--live` 用真实 GLM，`--arxiv` 复现 #25 的 arXiv 论文地址。产物在 `out/acceptance/pdf-download/`（[标准](../evals/20261002-pdf-download.md)）。
 - `npm run eval:integration -- --headless`：发布集成评测。
-- `npm run eval:live`：需要真实供应商或真实环境的评测。
-
-## QA-01 任务书 v2 隔离无头验收（browser-capability-integration-v2）
-
-```bash
-# 整轮（留证用这个）
-npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless
-
-# 只跑指定场景（迭代用，约 8 秒；整轮约 7 分钟）
-ONLY=C5 npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless
-npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless --only=S1,S2
-```
-
-场景 ID：`F1 F2 F3 F4 F4b F5 C1 C2 C3 C4 C5 S1 S2 S3`，零模型请求（原 S4–S7 走真实 Jev，已随 Jev 于 10-01 删除；`C6` 富文本粘贴原走单独通道 `browser-capability-paste.mts`，依赖本机伴随进程的剪贴板服务，已随本机模式删除）。
-
-无头窗口从不聚焦，产品按设计不把工作页切到前台，所以工作页默认是隐藏状态。C2 先验证隐藏页上的滚轮被快速拒绝、页面没收到事件，再把页切到前台（模拟用户切回窗口）验证落点。
+- `npm run eval:live`：需要真实供应商或真实环境的评测；原 Node 托管的评测套件已删除，有预算时也如实报 BLOCKED，真实模型的产品路径改用 real-path 的 `--live`。
 
 ## 真实路径用例（real-path）
 
 ```bash
 npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless    # 打字让 Agent 填表且不保存
-npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless  # 圈画动效默认值与右击切换
-npx tsx scripts/acceptance/real-path/companion-toggle.mts --headless    # 「更多 → 显示小伙伴 M」关掉、重开侧栏仍关、再打开
 npx tsx scripts/acceptance/real-path/sidebar-header.mts --headless      # 只装扩展、本机假模型：顶部一行会话导航，任务条在输入框上方收起/展开，断线时才露连接状态，M 不挡按钮
 npx tsx scripts/acceptance/real-path/script-friction.mts --headless     # 只装扩展、本机脚本模型：snapshot 后页面刷新，js 与 CSS 点击照常执行；js saveAs 存的文件与页面数据逐字相同（[标准](../evals/20261004-script-friction.md)）
 npx tsx scripts/acceptance/real-path/model-failover.mts --headless      # 只装扩展、本机脚本模型：主模型连上后不出字，快速模型在 25 秒内接手回答，侧栏显示切换（[标准](../evals/20261004-model-failover.md)）
@@ -50,7 +31,7 @@ npx tsx scripts/acceptance/real-path/plain-text-streaming.mts --headless # 只�
 npx tsx scripts/acceptance/real-path/memory-proactive.mts --headless --model=kimi-coding/kimi-for-coding --fast-model=kimi-coding/kimi-for-coding-highspeed  # 只装扩展、真实模型、本机假订阅站与假 Gmail：自动记邮箱与撤销、新对话直接用、提交前拦、提交后自己去邮箱确认、任务跨轮、过往任务、后台重启后记忆还在；换 --model 跑每家
 npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash --suite=sitegeist # Sitegeist 宣传的 5 类任务：多页汇总、导出 CSV、改错字、提取会议、做小工具
 npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless # 语音问页面内容（say 合成的 WAV 当麦克风）
-npx tsx scripts/acceptance/real-path/point-then-mark.mts --headless    # 用户点选、Esc 取消、侧栏停止
+npx tsx scripts/acceptance/real-path/answer-before-goal-check.mts --headless # 回答交付与回到空闲不等目标核对（核对被扣 5 秒）
 npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless    # 一项做不到：未完成行写用户原话、无「继续」、步骤清单平铺
 npx tsx scripts/acceptance/real-path/offline-send-and-model-menu.mts --headless # 只装扩展、本机假模型：模型菜单未知模型无能力标签（#2）；带引用草稿在后台 worker 停机 / 扩展内 agent 崩溃时发送（#4）
 npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 只装扩展，设置页到圈画交付

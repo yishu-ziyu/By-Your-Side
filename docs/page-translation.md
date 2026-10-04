@@ -2,7 +2,7 @@
 
 [返回协议](protocol.md) · [使用说明](guides/usage.md)
 
-用户说“把这页翻译成中文”时，主模型调用 `page_translation` 的 `translate`；配了快速模型时，先由快速模型判断意图，是就直接调用同一个工具，不经主模型（[`agent/src/translate-intent.ts`](../agent/src/translate-intent.ts)，见[使用说明](guides/usage.md#快速模型与即时动作)）。agent 里的 `runPageTranslation`（[`agent/src/page-translation.ts`](../agent/src/page-translation.ts)）负责分批和调用模型；页面一侧只提供 `begin`、`collect`、`apply` 三个动作（[`extension/src/shared/page-translation.ts`](../extension/src/shared/page-translation.ts)），准确类型见 [`shared/page-translation.ts`](../shared/page-translation.ts)。
+用户说“把这页翻译成中文”时，主模型调用 `page_translation` 的 `translate`（快速模型先猜意图的快捷路径已于 10-04 删除，见[使用说明](guides/usage.md#快速模型)）。agent 里的 `runPageTranslation`（[`agent/src/page-translation.ts`](../agent/src/page-translation.ts)）负责分批和调用模型；页面一侧只提供 `begin`、`collect`、`apply` 三个动作（[`extension/src/shared/page-translation.ts`](../extension/src/shared/page-translation.ts)），准确类型见 [`shared/page-translation.ts`](../shared/page-translation.ts)。
 
 ## 分批与顺序
 

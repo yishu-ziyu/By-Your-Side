@@ -15,7 +15,7 @@ return (await browser.snapshot()).text;
 
 这里的选择器只对应本地验收夹具。真实页面的目标必须先观察得到，不能直接套用。
 
-- `browser` 的方法来自 `shared/protocol.ts` 的 `TOOL_NAMES`，排除内部 `worker_tabs`，另有 camelCase 别名与宿主组合 helper（`BROWSER_PROGRAM_HELPERS`，含 `waitFor` / `sleep` / `saveFile`）；以 `agent/src/browser-program.ts` 的 `programMethods` 为准，参数与独立工具一致，返回原始数据。只装扩展时，依赖本机伴随进程的工具及其别名、helper（`download_save_as`/`downloadSaveAs`、`upload_file`/`uploadFile`、`file_chooser_set_files`/`fileChooserSetFiles`、`paste`）不在程序里，也不写进工具描述。例如 `snapshot()` 返回 `{text}`，`js({code})` 返回 `{value}`。
+- `browser` 的方法来自 `shared/protocol.ts` 的 `TOOL_NAMES`，排除内部 `worker_tabs`，另有 camelCase 别名与宿主组合 helper（`BROWSER_PROGRAM_HELPERS`，含 `waitFor` / `sleep` / `saveFile`）；以 `agent/src/browser-program.ts` 的 `programMethods` 为准，参数与独立工具一致，返回原始数据。已删除的工具（本机文件、上传、剪贴板、原始 CDP、拖拽与按住类输入、下载查询/取消/删除）连同别名不在程序里，也不写进工具描述；`api:"playwright"` 兼容层已删除（[删减验收](evals/20261004-cut-unused.md)）。例如 `snapshot()` 返回 `{text}`，`js({code})` 返回 `{value}`。
 - `browser.waitFor({selector, timeoutMs})` 等待唯一、可见且未禁用的原生 CSS 目标。默认 5 秒，最多 30 秒；通过现有 `js` RPC 轮询，只读页面，不修改页面状态。
 - `browser.sleep({ms})` 最多等待 10 秒，可中断。正常业务优先等状态，不用猜测睡眠时长。
 - 方法参数是一个对象；不传或传 `null` 按 `{}`。传数字、字符串等位置参数时报 `browser.sleep takes one object of named fields…`；调用不存在的方法时报 `browser.x is not a browser method`，并列出可用的规范方法名（不含 camelCase 别名）。
@@ -36,7 +36,7 @@ return await browser.saveFile({ filename: "subtitles.txt", content: value.join("
 - 返回 `{filename, chars, lines, overwritten}`；`content` 须是非空字符串。正文不进模型上下文，程序步骤（侧栏与诊断记录）只记文件名与字数。
 - 只用页面 `js` 取数时不必进程序：`js({code, saveAs:"subtitles.txt"})` 把返回值（字符串原样，其他值存成 JSON 文本）按同一规则存成本会话文件，模型只拿到 `{filename, chars, lines}`；文件名先核对，不合规时脚本不运行。没有文件区的会话不列这个参数。
 - 程序沙箱里没有 `window`、`document`、`Blob`、`fetch`、`setTimeout` 等页面全局；程序里写到它们时，报错直接说改用 `browser.js({code})`、`browser.saveFile`、`browser.sleep({ms})`，不是裸的 “is not defined”。自己写错的变量名照原样报。
-- 只有带交付的主会话有文件区；worker 的程序里没有这个方法。程序在保存前被停止时不落盘。
+- 只有带交付的主会话有文件区；没有文件区的会话里没有这个方法。程序在保存前被停止时不落盘。
 
 ## 控制与权限
 

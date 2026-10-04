@@ -43,4 +43,4 @@ npm run build
 
 旧的本机伴随进程（原 `npm run install:host`、`~/.sideagent/` 下的配置与 Key 文件、Jev 显示加速与通用浏览器循环）已于 2026-10-01 删除，不再作为使用方式提供；见[退役验收](../evals/20261001-retire-native-and-dead-code.md)。原安装步骤见本文件 2026-10-01 之前的 Git 历史。
 
-2026-10-02 核对：扩展清单介绍已改为侧栏阅读与网页操作；清单没有 `nativeMessaging` 权限，扩展源码没有 `connectNative` / `sendNativeMessage` 调用。日常启动由后台创建 offscreen 文档，在扩展内运行 Agent。仍有一条旧评测用的本机 WebSocket 回退：只有 offscreen 创建失败且存储中存在调试口令时才连接；它尚未删除，迁移待办见[当前状态](../STATUS.md)。因此，本机模式退役不等于所有本机调试连接代码均已移除。
+2026-10-02 核对：扩展清单介绍已改为侧栏阅读与网页操作；清单没有 `nativeMessaging` 权限，扩展源码没有 `connectNative` / `sendNativeMessage` 调用。日常启动由后台创建 offscreen 文档，在扩展内运行 Agent。旧评测用的本机 WebSocket 回退与侧栏调试口令页已于 2026-10-04 删除（[删减验收](../evals/20261004-cut-unused.md)）；offscreen 创建失败时只按退避重试。构建不再拷贝小伙伴 M 的素材，也不再打包示范录制、观察与点选的页面脚本；不新增权限，重新构建并重新加载即可。

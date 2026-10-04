@@ -46,7 +46,7 @@ npm run check                # 文档、边界、类型、测试、构建
 
 ## 调试入口
 
-本机伴随进程入口（`npm run dev:agent` 的 WebSocket 调试模式、Native Messaging 宿主）已随本机模式退役删除。扩展的 `nativeMessaging` 权限与连接尝试也已删除。只给测试用、待这些检查改到扩展里跑后删除的两件（见 [STATUS](../STATUS.md)）：Node 会话循环 `agent/src/node-agent-loop.ts`（`eval:live`、用户旅程、P0 在 Node 里托管会话；原语音 v23 两套检查依赖 Jev 播报闸门，已随 Jev 删除），以及扩展的 WebSocket 调试回退——`accept:journeys` 与 P0 本地运行先让 offscreen 文档建不起来、再写 token，扩展才回退到这条通道。
+本机伴随进程入口、Native Messaging 宿主、Node 会话循环与扩展的 WebSocket 调试回退都已删除（10-01、10-04，[删减验收](../evals/20261004-cut-unused.md)）；测试与真实路径用例只走扩展内的会话循环（测试用 `agent/test/fixtures/scripted-loop.ts` 的本地模型端口）。
 
 `npm run reload:ext` 需要 Chrome 的远程调试入口，且必须在明确的加载范围内执行；配置和构建存在不证明运行版已经采用。
 

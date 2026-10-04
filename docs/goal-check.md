@@ -2,11 +2,11 @@
 
 [文档导航](README.md) · [记忆、过往任务与任务跨轮](memory-and-tasks.md) · [协议](protocol.md) · [模型与思考档](model-effort.md)
 
-本页是目标核对的权威说明；用户可见行为见[使用说明](guides/usage.md#会话页面和记忆)。实现在 [`goal-check.ts`](../agent/src/goal-check.ts)（判断）与 [`session.ts`](../agent/src/session.ts) 的 `checkGoalThenFinish`（处理结论）；验收见 [20261001 答非所问](evals/20261001-offtopic-reply-diagnostics.md)、[20261002 受阻不再催](evals/20261002-goal-check-blocked.md)。
+本页是目标核对的权威说明；用户可见行为见[使用说明](guides/usage.md#会话页面和记忆)。实现在 [`goal-check.ts`](../agent/src/goal-check.ts)（判断）与 [`session.ts`](../agent/src/session.ts) 的 `checkGoalAfterDelivery`（处理结论）；验收见 [20261001 答非所问](evals/20261001-offtopic-reply-diagnostics.md)、[20261002 受阻不再催](evals/20261002-goal-check-blocked.md)、[20261004 交付后核对](evals/20261004-cut-unused.md)。
 
 ## 规则
 
-Lead 会话一轮结束（`agent_end`，非停止、接管、出错；本任务用过工具或最后在问用户）时，先用快速模型核对结果是否满足用户要求（`goal-check.ts`，18 秒超时）。用过工具指 `GOAL_CHECK_BOOKKEEPING_TOOLS`（交付、记忆、目标记账）以外的：读页问答也核对，纯聊天不核。
+Lead 会话一轮结束（`agent_end`，非停止、接管、出错；本任务用过工具或最后在问用户）时，宿主先照常收尾——交付最终正文、状态回到空闲、发 `agent_end`——再用快速模型核对结果是否满足用户要求（`goal-check.ts`，18 秒超时）。10-04 起核对不再拖住回答（此前交付要等核对，中位多等 2.2 秒、最长 12 秒）。核对期间用户停止、接管、补充或另发任务，这次核对作废。用过工具指 `GOAL_CHECK_BOOKKEEPING_TOOLS`（交付、记忆、目标记账）以外的：读页问答也核对，纯聊天不核。
 
 10-02 起核对同时检查答复与文本文件：数字与日期是否一致、合计是否等于分项、计数口径是否统一、来源和数据日期是否匹配请求、明确要求的数量/格式/逐项来源是否满足。文件存在不再单独作为完成依据。主模型在生成前按同样要求自检，计数优先取结构化数据并在程序中计算。
 
@@ -16,7 +16,7 @@ Lead 会话一轮结束（`agent_end`，非停止、接管、出错；本任务�
 
 核对发现具体错误时给 `continue` 和 `correction`（最多 800 字）。宿主把诊断作为数据交回主模型，要求对照来源修正答复及已有文件，并向用户说明纠正；诊断不新增动作授权。仍沿用最多两次续做，之后未解决项留给用户。流式显示不变，纠正后有新答复不代表错误草稿未曾出现。
 
-结论 `done / needs_user / continue / blocked`：`continue` 时宿主不收尾，直接追加一轮 `[GOAL CHECK]` 提示让助手接着做（每任务最多 2 次，带用户这次原话和本任务已失败的做法——工具报错或打开页面没加载完，工具名 + 原因前 120 字、遇页面原文标记截断，同样做法只留一次、最多 6 条——要求换做法，并保留用户设的条件和安全规则）；否则照常收尾。
+结论 `done / needs_user / continue / blocked`：`continue` 时宿主等会话真正空闲，再发一轮 `[GOAL CHECK]` 提示作为看得见的后续一轮接着做（每任务最多 2 次，带用户这次原话和本任务已失败的做法——工具报错或打开页面没加载完，工具名 + 原因前 120 字、遇页面原文标记截断，同样做法只留一次、最多 6 条——要求换做法，并保留用户设的条件和安全规则）；其余结论只更新「还差…」那一行，已结束且符合条件的过往任务按新结论重记。
 
 `blocked`（10-02 起）指做不成的原因在助手和用户之外——站点连不上、要的页面或数据不存在、服务端拒绝——且最后回答已说明：宿主不催续做、不升思考档，按部分完成收尾；核对模型另给 `cause:"unreachable"|"missing"|"refused"`（只进诊断记录），`remaining` 由宿主按类别写成人话（`shared/user-facing.ts` `plainBlockedReason`，如「网站现在连不上，稍后可以让我再试」，认不出类别时写「网站那边出了问题，这次做不成」）。
 
@@ -24,4 +24,4 @@ Lead 会话一轮结束（`agent_end`，非停止、接管、出错；本任务�
 
 结论以 `agent_event{kind:"goal_check",status,remaining?}` 发出，进度快照记为 `goalCheck`，任务视图投影为 `goalStatus{status:"done"|"waiting"|"open"|"blocked",remaining}`；非 `done` 使任务 `resumable`，任务条据此写「等你：…」「还差：…」或「没做成：<原因>」，做完不留。
 
-核对失败只在诊断记录里留 `goal_check{status:"unavailable",reason?}`，不影响收尾。宿主催的续做开始时保留 `continue` 结论（用户插话后的开始不保留），之后存了新文件就作废；侧栏停下/结束那行按「核对的还差 → 模型列的未完成 → 计划目标」取，没核对过的计划目标写「还没确认完成」。验收见[回答自检](evals/20261002-answer-selfcheck.md)。
+核对失败只在诊断记录里留 `goal_check{status:"unavailable",reason?}`。宿主催的续做开始时保留 `continue` 结论（用户插话后的开始不保留），之后存了新文件就作废；侧栏停下/结束那行按「核对的还差 → 模型列的未完成 → 计划目标」取，没核对过的计划目标写「还没确认完成」。验收见[回答自检](evals/20261002-answer-selfcheck.md)。
