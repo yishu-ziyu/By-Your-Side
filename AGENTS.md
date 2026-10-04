@@ -63,6 +63,7 @@ Explore broadly. Implement simply. Abstract late.
 
 - 规则超过 4 条就拆成几项任务。
 - 还有问题没答上，就先不实现。
+- 验收脚本预计超过 200 行时，先用不超过 50 行的[前提小实验](docs/development/checks.md#前提小实验)证明技术前提，成立后再写验收。
 
 ```markdown
 # 任务: <一句话，用户能观察到的结果>

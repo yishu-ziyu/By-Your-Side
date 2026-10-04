@@ -38,6 +38,12 @@ npm run check                # 文档、边界、类型、测试、构建
 
 隔离 worktree 复用依赖时，不能把整个 node_modules 直接指回主工作区：其中 @sideagent 的相对链接会让内部包解析回主源码，浏览器 shim 也可能失效。应在 worktree 建本地依赖目录，复用第三方包，把 @sideagent/agent 与 extension 链回本 worktree；无须改产品构建逻辑。
 
+## 前提小实验
+
+验收脚本预计超过 200 行时，先在 `scripts/probes/` 写不超过 50 行的小实验，只证明一句技术前提，结果写进验收文件「技术前提」。成立才写验收脚本；不成立就改方案，不先搭验收。小实验用独立观测（如服务器计数），退出码 0 为成立、1 为不成立；`npx tsx scripts/probes/<名>.mts` 运行。它不是产品验收，不能冒充真实路径通过。
+
+示例 `readonly-return-getter.mts`：开启副作用拒绝后，返回网页已有对象仍会在序列化时发出 POST，2 秒复现 #22 原方案的否定结论。
+
 ## 调试入口
 
 本机伴随进程入口（`npm run dev:agent` 的 WebSocket 调试模式、Native Messaging 宿主）已随本机模式退役删除。扩展的 `nativeMessaging` 权限与连接尝试也已删除。只给测试用、待这些检查改到扩展里跑后删除的两件（见 [STATUS](../STATUS.md)）：Node 会话循环 `agent/src/node-agent-loop.ts`（`eval:live`、用户旅程、P0 在 Node 里托管会话；原语音 v23 两套检查依赖 Jev 播报闸门，已随 Jev 删除），以及扩展的 WebSocket 调试回退——`accept:journeys` 与 P0 本地运行先让 offscreen 文档建不起来、再写 token，扩展才回退到这条通道。
