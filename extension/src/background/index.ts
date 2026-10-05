@@ -260,6 +260,22 @@ chrome.runtime.onConnect.addListener(port => {
 });
 
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+ if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "page_stop_click") return;
+ const tabId = sender.tab?.id;
+ void (async () => {
+  for (const c of controllers.values()) {
+   if (tabId != null && await c.worksOn(tabId)) { c.pauseFromPage(tabId); sendResponse({ok:true});
+
+ return; }
+  }
+
+  sendResponse({ok:false,error:"NOT_WORKING_HERE"});
+ })();
+
+ return true;
+});
+
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "handback_click") return;
  void (async () => {
   const owner = sender.tab?.id == null ? undefined : getControlBannerOwner(sender.tab.id);
@@ -2009,6 +2025,9 @@ function sendUserText(text: string, context: import("../../../shared/protocol.js
 }
 
 return { importReading, sendUserText, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
+// 页面右上角「停下」：只认本会话正在操作的那一页；和侧栏「接管」走同一条路。
+worksOn: async (tabId: number) => !gate.isUser() && await getWorkingTabId() === tabId,
+pauseFromPage: (tabId: number) => { void handleTakeover(tabId); requestPanelControl("pause", tabId); },
 voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
 
 return {context:enriched.context,attachments:enriched.attachments};}, ready: Promise.all([controlReady, historyReady]) };

@@ -186,8 +186,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         position: absolute; inset: 0; pointer-events: none;
         opacity: 0; transition: opacity 420ms ease;
         box-shadow:
-          inset 0 0 0 2px color-mix(in srgb, var(--c) 70%, transparent),
-          inset 0 0 36px 4px color-mix(in srgb, var(--c) 34%, transparent);
+          inset 0 0 0 1px color-mix(in srgb, var(--c) 28%, transparent),
+          inset 0 0 32px 2px color-mix(in srgb, var(--c) 16%, transparent);
       }
       .edge.on { opacity: 1; animation: edge-breathe 2.6s ease-in-out infinite; }
       /* 新建即点亮：淡入由样式起点完成，不靠下一帧再改 class（后台页的下一帧可能很晚，晚到的改动会让已发出的确认判为页面已变）。 */
@@ -206,7 +206,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       .cursor svg {
         position: absolute; display: block; overflow: visible;
         left: ${(-CURSOR_TIP.x * SCALE).toFixed(1)}px; top: ${(-CURSOR_TIP.y * SCALE).toFixed(1)}px;
-        filter: drop-shadow(0 0 1px #fff) drop-shadow(0 2px 6px rgba(15,23,42,.55));
+        filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 3px rgba(20,20,19,.32));
       }
       .cursor path.fill { fill: var(--c); }
       .cursor path.halo { fill: none; }
@@ -221,24 +221,28 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         transition: opacity 160ms ease;
         pointer-events: none;
       }
-      .cursor.acting .label {
-        background: #172033; color: #fff; border-left: 3px solid var(--c);
-        padding: 4px 8px; border-radius: 10px;
+      /* 光标旁的话：白底轻卡，左上角收尖，像从光标说出来；左边一颗小光球是我们的记号。 */
+      .cursor.acting .label, .cursor.stating .label {
+        display: inline-flex; align-items: center; gap: 7px;
+        background: #ffffff; color: #141413;
+        border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px;
+        padding: 6px 12px 6px 9px;
         width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
-        font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
+        font: 400 13px/1.45 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        letter-spacing: 0; white-space: normal; overflow-wrap: anywhere;
         text-shadow: none; opacity: 1;
+        box-shadow: 0 4px 14px rgba(20,20,19,.10);
       }
+      .orb-dot {
+        flex: none; width: 10px; height: 10px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%);
+        box-shadow: 0 0 6px rgba(129,140,248,.45);
+        animation: orb-breathe 2.4s ease-in-out infinite;
+      }
+      @keyframes orb-breathe { 50% { transform: scale(.82); opacity: .75; } }
+      @media (prefers-reduced-motion: reduce) { .orb-dot { animation: none; } }
       .action-text { display: block; }
-      .agent-name { display: block; color: #d5dbea; font-size: 9.5px; font-weight: 500; }
-      .agent-name:empty { display: none; }
-      /* 状态层：等待 / 读页面 / 完成 / 失败。与动作名牌同一块，左侧色条按状态上色 */
-      .cursor.stating .label {
-        background: #172033; color: #fff; border-left: 3px solid var(--s, #2d4a86);
-        padding: 4px 8px; border-radius: 10px;
-        width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
-        font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
-        text-shadow: none; opacity: 1;
-      }
+      .agent-name { display: none; }
       .cursor.rest.stating .label { opacity: 1; }
       /* 拿住：名牌保持成员色，内嵌确认红 / 取消灰双键（C 案） */
       .cursor.holding .label {
@@ -298,6 +302,19 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       .xface .kn { position:relative; display:block; background:var(--body) center / contain no-repeat; }
       .xface .kn i { position:absolute; left:18%; right:18%; top:24%; bottom:30%; background:var(--face) center / contain no-repeat; }
       .xmain { white-space: nowrap; flex-shrink: 0; font-weight: 500; }
+      /* 右上角只管停：小光球、名字、一个「停下」。 */
+      .xbar {
+        display: inline-flex; align-items: center; gap: 8px; float: right;
+        background: #ffffff; border: 1px solid rgba(20,20,19,.08); border-radius: 999px;
+        padding: 5px 5px 5px 11px; box-shadow: 0 2px 8px rgba(20,20,19,.06);
+      }
+      .xbar .xmain { font-weight: 400; color: #5f5e58; }
+      .xpage .xbar .xstop {
+        width: auto; padding: 3px 12px; border-radius: 999px; box-shadow: none;
+        background: #ffffff; border: 1px solid rgba(20,20,19,.14); color: #141413; font: inherit;
+      }
+      .xpage .xbar .xstop:hover:not(:disabled) { background: #f0eee6; }
+      .xpage .xbar .xstop:disabled { color: #77756d; cursor: default; }
       .xsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #5f5e58; }
       .xarrow { margin-left: auto; }
       .xlist { margin-top: 6px; padding: 5px; border: 1px solid #e3e1d9; border-radius: 12px; background: #ffffff; max-height: 240px; overflow-y:auto; }
@@ -331,8 +348,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       }
       .highlight.action-target {
         animation: none; background: transparent; mix-blend-mode: normal;
-        border-width: 3px;
-        box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px #172033;
+        border-width: 2px; box-shadow: none;
       }
       /* 操作完成：先留一小会儿让人看清点了哪，再消退 */
       .highlight.action-target.fading {
@@ -640,7 +656,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     if (!inst.action) return;
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
     const size = inst.labelSize ??= { width: label.offsetWidth, height: label.offsetHeight };
-    const p = cursorLabelPosition(inst.pos, size, { width: window.innerWidth, height: window.innerHeight }, inst.action.rect);
+    const p = cursorLabelPosition(inst.pos, size, { width: window.innerWidth, height: window.innerHeight });
     label.style.left = `${p.x - inst.pos.x}px`;
     label.style.top = `${p.y - inst.pos.y}px`;
   }
@@ -658,13 +674,16 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   /** 名牌正文渲染：动作与状态共用同一块牌子。 */
   function paintLabel(inst: Instance, main: string, sub: string): void {
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    const orb = document.createElement("span");
+    orb.className = "orb-dot";
+    orb.setAttribute("aria-hidden", "true");
     const line = document.createElement("span");
     line.className = "action-text";
     line.textContent = main;
     const name = document.createElement("span");
     name.className = "agent-name";
     name.textContent = sub;
-    label.replaceChildren(line, name);
+    label.replaceChildren(orb, line, name);
     inst.labelSize = undefined;
     positionActionLabel(inst);
   }
@@ -699,7 +718,10 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const verb = { click: "点", fill: "填", hover: "看" }[action.kind];
     const name = action.name.length > 6 ? `${action.name.slice(0, 5)}…` : action.name;
 
-    const text = action.phase === "active" ? (name ? `我在${verb}「${name}」` : { click: "我在点这里", fill: "我在填这一栏", hover: "我在看这里" }[action.kind])
+    // 按钮名加引号免得和动词连读（「我在点「查询车票」」）；栏名本身就是名词，不加。
+    const target = action.kind === "click" ? `「${name}」` : name;
+
+    const text = action.phase === "active" ? (name ? `我在${verb}${target}` : { click: "我在点这里", fill: "我在填这一栏", hover: "我在看这里" }[action.kind])
       : action.phase === "failed" ? `没${verb}成`
       : action.phase === "unknown" ? "结果待确认"
       : `${verb}好了`;
@@ -1290,21 +1312,26 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const controlShadow = controlHost.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
+      /* 页面归你时：和「停下」同一个位置、同一种胶囊；光球变灰表示助手停着。 */
       .bar {
-        position: absolute; left: 12px; top: 12px;
-        display: inline-flex; align-items: center; gap: 10px;
-        width: max-content; max-width: calc(100vw - 24px);
+        position: absolute; right: 20px; top: 20px;
+        display: inline-flex; align-items: center; gap: 8px;
+        width: max-content; max-width: calc(100vw - 40px);
         pointer-events: none;
-        background: #fff; color: #1c1f24;
-        border-radius: 10px; padding: 8px 10px;
-        box-shadow: 0 8px 24px rgba(15,23,42,.12), 0 0 0 .5px rgba(15,23,42,.12);
-        font: 600 13px/1.3 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        background: #fff; color: #141413;
+        border: 1px solid rgba(20,20,19,.08); border-radius: 999px; padding: 5px 5px 5px 11px;
+        box-shadow: 0 2px 8px rgba(20,20,19,.06);
+        font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
         opacity: 0; transform: translateY(-6px);
         transition: opacity 160ms ease, transform 160ms ease;
       }
       /* 隐藏后仍在原处：不能接住点击，否则用户和 Agent 都点不到底下的网页。 */
       .bar.on { opacity: 1; transform: none; pointer-events: auto; }
-      .bar b { font-weight: 600; white-space: nowrap; }
+      .bar::before {
+        content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); filter: grayscale(1); opacity: .55;
+      }
+      .bar b { font-weight: 400; color: #5f5e58; white-space: nowrap; }
       .bar .sub { color: #7c828b; font: 500 11px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; white-space: nowrap; }
       .bar .stack { display: flex; margin-left: 1px; }
       .bar .avatar {
@@ -1316,10 +1343,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       }
       .bar .avatar:first-child { margin-left: 0; }
       .bar button {
-        font: 600 12px/1 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-        border: 0; border-radius: 8px; padding: 7px 10px;
-        background: #1c1f24; color: #fff; cursor: pointer;
+        font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        border: 1px solid rgba(20,20,19,.14); border-radius: 999px; padding: 3px 12px;
+        background: #fff; color: #141413; cursor: pointer;
       }
+      .bar button:hover:not(:disabled) { background: #f0eee6; }
       .bar button:disabled { opacity: .55; cursor: default; }
     `;
     controlBar = document.createElement("div");
@@ -1366,7 +1394,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     if (status) status.textContent = view?.status || "现在归你";
     const subText = view?.sub?.trim() ?? "";
 
-    if (subText) {
+    const members = view?.members ?? [];
+    // 只有一位助手时「1 个已暂停」和头像都是重复信息；多位时才列出。
+    const team = members.length > 1;
+
+    if (subText && team) {
       if (!sub) {
         sub = document.createElement("span");
         sub.className = "sub";
@@ -1378,9 +1410,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       sub?.remove();
     }
 
-    const members = view?.members ?? [];
-
-    if (members.length > 0) {
+    if (team) {
       if (!stack) {
         stack = document.createElement("div");
         stack.className = "stack";
@@ -1583,6 +1613,16 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const wasOpen = crossPill.querySelector("button")?.getAttribute("aria-expanded") === "true";
     const hadFocus = crossPill.contains(shadow?.activeElement ?? null);
     crossPill.replaceChildren();
+
+    // 只有本页这一位助手：右上角只管「停下」，正在做什么由光标旁那句话说，不在这里重复。
+    if (members.length === 1 && members[0]!.local) {
+      crossPill.onkeydown = null;
+      crossPill.append(stopBar());
+      crossPill.classList.add("on");
+
+      return;
+    }
+
     const trigger = memberButton(members[0]!);
 
     if (members.length > 1) {
@@ -1622,6 +1662,36 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     }
 
     if (hadFocus) trigger.focus();
+  }
+
+  function stopBar(): HTMLDivElement {
+    const bar = document.createElement("div");
+    bar.className = "xbar";
+    const orb = document.createElement("span");
+    orb.className = "orb-dot";
+    orb.setAttribute("aria-hidden", "true");
+    const name = document.createElement("span");
+    name.className = "xmain";
+    name.textContent = "By Your Side";
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "xstop";
+    stop.textContent = "停下";
+    stop.onclick = (ev) => {
+      ev.stopPropagation();
+      stop.disabled = true;
+      stop.textContent = "正在停";
+
+      try {
+        chrome.runtime.sendMessage({ type: "page_stop_click" }, (res: { ok?: boolean } | undefined) => {
+          if (chrome.runtime.lastError || res?.ok !== true) { stop.disabled = false; stop.textContent = "停下"; }
+        });
+      } catch { /* 自检页没有扩展运行时。 */ }
+    };
+
+    bar.append(orb, name, stop);
+
+    return bar;
   }
 
   function hideCrossPill(): void {
