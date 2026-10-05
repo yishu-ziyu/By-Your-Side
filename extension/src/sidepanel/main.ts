@@ -73,8 +73,14 @@ let currentCitationSource: Promise<CitationContext | null> | null = null;
 
 let replayingHistory = false;
 
-/** 这一轮带给助手的记忆：先攒着，这一轮结束（agent_end）时画在回答下方。 */
+/** 这一轮带给助手的记忆：先攒着，这一轮结束（agent_end）时放进回答首句。 */
 let pendingUsedLine: MemoryUsedLine | null = null;
+
+/** 定稿回答 → 它的那一行。正文重渲染会冲掉插进去的节点，再挂复制按钮时放回。 */
+const usedLineByAnswer = new WeakMap<HTMLElement, MemoryUsedLine>();
+
+/** 这一轮结束时回答还没定稿（或没有回答）：先独立显示一行，回答定稿后搬进去。 */
+let floatingUsedLine: MemoryUsedLine | null = null;
 
 /** 「用了 N 条记忆」里各条按钮发出的请求，各自等自己的结果。 */
 const usedLineHandlers = new Map<string, (result: { ok: boolean; entry?: MemoryEntry; entries?: MemoryEntry[]; error?: string }) => void>();
@@ -83,6 +89,7 @@ let citationRequestPending = false;
 
 function attachAnswerActions(answer: HTMLElement): void {
   attachCopyActions(answer);
+  adoptUsedLine(answer);
   const source = answerSources.get(answer);
 
   if (source) void source.then(context => attachSourceCitations(answer, context));
@@ -634,6 +641,7 @@ function resetConversationRender(): void {
   deliveredBubbles.clear();
   receiptMessages.clear();
   pendingUsedLine = null;
+  floatingUsedLine = null;
   leadDeliveryMode = null;
   currentLeadDraft = null;
   currentLeadDraftDetails = null;
@@ -2183,17 +2191,27 @@ function addMsg(cls: string, text: string): HTMLElement {
   return div;
 }
 
-// ── 回答下方「用了 N 条记忆 ›」：展开列出这一轮带给助手的每一条，可「忘掉」或「这里别用」 ──
+// ── 回答首句末尾「用了 N 条记忆 ›」：展开后插在首句与正文之间，每条可「忘掉」或「这里别用」 ──
 type UsedItem = ({ kind: "entry"; entry: MemoryEntry; removed?: MemoryEntry[] } | { kind: "task"; task: TaskHistoryEntry })
   & { state: "used" | "forgotten" | "not-here"; pending: boolean; error: string };
 
-type MemoryUsedLine = { el: HTMLElement; items: Map<string, UsedItem>; hostname: string | null; open: boolean };
+type MemoryUsedLine = {
+  cite: HTMLButtonElement; el: HTMLElement; items: Map<string, UsedItem>; hostname: string | null;
+  open: boolean; showAll: boolean; answer: HTMLElement | null;
+};
+
+/** 展开后先列几条，其余收在「另有 N 条」里。 */
+const USED_VISIBLE = 3;
 
 const usedItemKey = (item: UsedItem): string => item.kind === "entry" ? `entry:${item.entry.id}` : `task:${item.task.id}`;
 
 /** 同一轮里多次带记忆（重试、助手又查了记忆）并成一行，同一条只算一次。 */
 function noteMemoryUsed(event: Extract<AgentUiEvent, { kind: "memory" }>): void {
-  const line = pendingUsedLine ?? { el: document.createElement("div"), items: new Map<string, UsedItem>(), hostname: null, open: false };
+  const line = pendingUsedLine ?? {
+    cite: document.createElement("button"), el: document.createElement("div"), items: new Map<string, UsedItem>(),
+    hostname: null, open: false, showAll: false, answer: null,
+  };
+
   pendingUsedLine = line;
   line.hostname = event.hostname ?? line.hostname;
 
@@ -2206,35 +2224,104 @@ function noteMemoryUsed(event: Extract<AgentUiEvent, { kind: "memory" }>): void 
   renderUsedLine(line);
 }
 
+/** 最后一条用户消息之后、消息流里的最后一个回答。 */
+function latestAnswer(): HTMLElement | null {
+  for (let node = messagesEl.lastElementChild; node && !node.matches(".msg.user"); node = node.previousElementSibling) {
+    if (node instanceof HTMLElement && node.matches(".msg.assistant")) return node;
+  }
+
+  return null;
+}
+
 function flushMemoryUsedLine(): void {
   const line = pendingUsedLine;
   pendingUsedLine = null;
 
   if (!line || !line.items.size) return;
+  const answer = latestAnswer();
+
+  // 复制按钮在最终稿放完后才挂：有它说明正文不会再整段重渲染。
+  if (answer?.querySelector(".answer-actions")) {
+    placeUsedLine(line, answer);
+
+    return;
+  }
+
+  floatingUsedLine = line;
   messagesEl.appendChild(line.el);
   scrollToEnd();
 }
 
+/** 回答定稿（或重渲染后重新挂复制按钮）时调用：把这一轮的那一行放进首句。 */
+function adoptUsedLine(answer: HTMLElement): void {
+  const line = usedLineByAnswer.get(answer) ?? (floatingUsedLine && answer === latestAnswer() ? floatingUsedLine : null);
+
+  if (line) placeUsedLine(line, answer);
+}
+
+function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
+  if (floatingUsedLine === line) floatingUsedLine = null;
+  line.answer = answer;
+  usedLineByAnswer.set(answer, line);
+
+  const first = answer.firstElementChild;
+  let head: HTMLElement;
+
+  // 首段是段落或标题就接在句尾；是列表、代码块等就单独起一行放在最前。
+  if (first instanceof HTMLElement && /^(P|H[1-6])$/.test(first.tagName)) {
+    head = first;
+  } else {
+    head = document.createElement("p");
+    head.className = "memory-used-cite-row";
+    answer.prepend(head);
+  }
+
+  head.append(line.cite);
+  head.after(line.el);
+  renderUsedLine(line);
+}
+
+const USED_GLYPHS: Record<"past" | "profile" | "method", string> = {
+  past: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="5" cy="5" r="4"/><path d="M5 2.8V5l1.5 1"/></svg>',
+  profile: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="5" cy="3.3" r="1.8"/><path d="M1.6 9c.4-1.9 1.8-2.9 3.4-2.9S8 7.1 8.4 9"/></svg>',
+  method: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 2.5h6M2 5h4M2 7.5h5"/></svg>',
+};
+
 function renderUsedLine(line: MemoryUsedLine): void {
   line.el.className = "memory-used-line";
   line.el.dataset.memoryUsedLine = String(line.items.size);
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "memory-used-toggle";
-  toggle.setAttribute("aria-expanded", String(line.open));
-  toggle.append(`用了 ${line.items.size} 条记忆 `);
+  const cite = line.cite;
+  cite.type = "button";
+  cite.className = "memory-used-toggle";
+  cite.setAttribute("aria-expanded", String(line.open));
   const chevron = document.createElement("span");
   chevron.className = "memory-used-chevron";
   chevron.textContent = "›";
-  toggle.appendChild(chevron);
-  toggle.onclick = () => { line.open = !line.open; renderUsedLine(line); };
+  cite.replaceChildren(`用了 ${line.items.size} 条记忆 `, chevron);
+  cite.onclick = () => { line.open = !line.open; renderUsedLine(line); };
 
   const list = document.createElement("ul");
   list.className = "memory-used-list";
   list.hidden = !line.open;
+  const items = Array.from(line.items.values());
+  const shown = line.showAll ? items : items.slice(0, USED_VISIBLE);
 
-  for (const item of line.items.values()) list.appendChild(renderUsedItem(line, item));
-  line.el.replaceChildren(toggle, list);
+  for (const item of shown) list.appendChild(renderUsedItem(line, item));
+
+  if (shown.length < items.length) {
+    const more = document.createElement("li");
+    more.className = "memory-used-more";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `另有 ${items.length - shown.length} 条`;
+    button.onclick = () => { line.showAll = true; renderUsedLine(line); };
+
+    more.appendChild(button);
+    list.appendChild(more);
+  }
+
+  // 还没放进回答时，灰字和列表一起独立成行。
+  line.el.replaceChildren(...(line.answer ? [] : [cite]), list);
 }
 
 function usedButton(label: string, action: string, item: UsedItem, onClick: () => void): HTMLButtonElement {
@@ -2254,11 +2341,16 @@ function renderUsedItem(line: MemoryUsedLine, item: UsedItem): HTMLElement {
   row.dataset.usedKind = item.kind;
   row.dataset.usedId = item.kind === "entry" ? item.entry.id : item.task.id;
   row.dataset.state = item.state;
-  const text = document.createElement("p");
+  const glyph = document.createElement("span");
+  glyph.className = "memory-used-glyph";
+  glyph.setAttribute("aria-hidden", "true");
+  glyph.innerHTML = USED_GLYPHS[item.kind === "entry" ? item.entry.kind : "past"];
+  const text = document.createElement("span");
   text.className = "memory-used-text";
-  // 过往任务显示摘要（做成了什么），没有摘要时显示原话目标。
+  // 过往任务显示摘要（做成了什么），没有摘要时显示原话目标。一行放不下就截断，悬停看全文。
   text.textContent = item.kind === "entry" ? item.entry.text : item.task.summary || item.task.goal;
-  const actions = document.createElement("div");
+  text.title = text.textContent;
+  const actions = document.createElement("span");
   actions.className = "memory-used-actions";
   const rerender = () => { if (line.el.isConnected || line === pendingUsedLine) renderUsedLine(line); };
 
@@ -2270,14 +2362,14 @@ function renderUsedItem(line: MemoryUsedLine, item: UsedItem): HTMLElement {
   } else {
     const note = document.createElement("span");
     note.className = "memory-used-note";
-    note.textContent = item.state === "forgotten" ? "已忘掉，之后不再用" : `在 ${line.hostname} 不用`;
+    note.textContent = item.state === "forgotten" ? "已忘掉" : `在 ${line.hostname} 不用`;
     actions.append(note, usedButton("撤销", "undo", item, () => runUsedAction(item, "undo", rerender, line.hostname ?? undefined)));
   }
 
-  row.append(text, actions);
+  row.append(glyph, text, actions);
 
   if (item.error) {
-    const error = document.createElement("p");
+    const error = document.createElement("span");
     error.className = "memory-used-error";
     error.textContent = item.error;
     row.appendChild(error);
