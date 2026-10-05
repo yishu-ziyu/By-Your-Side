@@ -13,7 +13,7 @@ const CATCH_UP_MS = 1200;
 
 const FRAME_MS = 32;
 
-export const FADE_MS = 500;
+export const FADE_MS = 300;
 
 type Batch = { from: number; to: number; at: number };
 

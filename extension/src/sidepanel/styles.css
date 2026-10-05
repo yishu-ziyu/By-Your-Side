@@ -379,7 +379,6 @@ html, body {
   transition: border-color var(--m-quick) var(--e-swift);
 }
 /* 对话滚到顶栏下面时才出现分隔线，区分顶栏与内容。 */
-#app.messages-scrolled #topbar { border-bottom-color: var(--glass-border-subtle); }
 
 /* Normal connectivity stays quiet; failure and active execution remain readable. */
 #status-pill.activity-island {
@@ -777,8 +776,52 @@ html, body {
 }
 
 /* ── 消息流 ──────────────────────────────────────────────────────── */
+/* 对话区外框：只为放上下两条渐隐带。#messages 照旧是滚动容器。 */
+#messages-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 滚动渐隐：边缘 40px 从底色淡到透明，叠 2px 模糊、越靠边越糊；只在还能继续滚的一侧出现。 */
+.scroll-fade {
+  position: absolute;
+  left: 0;
+  right: 8px;
+  height: 40px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--m-quick) var(--e-swift);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.scroll-fade[data-edge="top"] {
+  top: 0;
+  background: linear-gradient(to bottom, var(--wallpaper), transparent);
+  mask-image: linear-gradient(to bottom, #000, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+}
+
+.scroll-fade[data-edge="bottom"] {
+  bottom: 0;
+  background: linear-gradient(to top, var(--wallpaper), transparent);
+  mask-image: linear-gradient(to top, #000, transparent);
+  -webkit-mask-image: linear-gradient(to top, #000, transparent);
+}
+
+#messages-frame[data-fade-top="true"] > .scroll-fade[data-edge="top"],
+#messages-frame[data-fade-bottom="true"] > .scroll-fade[data-edge="bottom"] { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-fade { transition: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
 #messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--s-4) var(--pad-x) var(--s-5);
   display: flex;
@@ -870,8 +913,9 @@ html, body {
 }
 
 /* 回答逐字浮现：透明度与轻微模糊一起收；时长与 stream-reveal.ts 的 FADE_MS 一致 */
+/* 流式淡入：一段 300ms 从透明、2px 模糊到清楚，不位移。 */
 .reveal-fade {
-  animation: revealFade 500ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation: revealFade 300ms var(--e-swift) both;
 }
 
 @keyframes revealFade {
@@ -2753,7 +2797,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .marginalia-control { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin:0 16px 6px; font-size:11px; color:var(--text-secondary); }
 #marginalia-mode { font:inherit; max-width:220px; border:1px solid var(--content-border); border-radius:6px; background:var(--content-bg); color:var(--text-secondary); padding:3px 6px; }
 
-#app:has(#marginalia-rail:not([hidden])) #messages, #app:has(#marginalia-rail:not([hidden])) #starter { display:none; }
+#app:has(#marginalia-rail:not([hidden])) #messages-frame, #app:has(#marginalia-rail:not([hidden])) #starter { display:none; }
 
 /* S10 直连按钮：顶栏下一行，只在当前页有可做的动作时出现；耗时读数几秒后收起。 */
 #ghost-bar { display:flex; align-items:center; gap:8px; padding:4px 10px 6px; background:var(--chrome-frame); flex-shrink:0; }

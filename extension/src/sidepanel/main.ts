@@ -171,8 +171,12 @@ app.innerHTML = `
     </div>
   </section>
   <div id="marginalia-rail" aria-label="伴读导轨" hidden></div>
-  <div id="messages">
-    <div id="resume-entry-root"></div>
+  <div id="messages-frame">
+    <div id="messages">
+      <div id="resume-entry-root"></div>
+    </div>
+    <div class="scroll-fade" data-edge="top" aria-hidden="true"></div>
+    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"></div>
   </div>
   <div id="team-card" hidden></div>
   <section id="starter" aria-label="开始方式">
@@ -2094,11 +2098,23 @@ function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): 
   });
 }
 
+/** 对话区上下边缘：哪一侧还能继续滚，哪一侧就淡出去（不画分割线）。 */
+function syncScrollFade(): void {
+  const frame = messagesEl.parentElement!;
+  frame.dataset.fadeTop = String(messagesEl.scrollTop > 0);
+  frame.dataset.fadeBottom = String(messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight > 1);
+}
+
 messagesEl.addEventListener("scroll", () => {
   pinned = nearBottom();
   toBottomBtn.hidden = pinned;
-  app.classList.toggle("messages-scrolled", messagesEl.scrollTop > 0);
+  syncScrollFade();
 });
+
+// 内容变长、侧栏变高时滚动位置不变也要重算两侧。
+new ResizeObserver(syncScrollFade).observe(messagesEl);
+
+new MutationObserver(syncScrollFade).observe(messagesEl, { childList: true, subtree: true, characterData: true });
 
 function scrollToEnd(force = false): void {
   followLive(currentRun?.body ?? null, force || runBodyPinned);
