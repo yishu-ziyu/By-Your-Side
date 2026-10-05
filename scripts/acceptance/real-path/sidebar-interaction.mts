@@ -33,7 +33,7 @@ const reply = "米娅负责编辑。\n\n名单中的职务来自当前页面。"
 const rules: Rule[] = [{ match: "找米娅", steps: [{ text: reply, delayMs: 8_000 }] }];
 
 const systemReading = (reading: { answerFont: string | null; answerSize: number | null; answerLineHeight: number | null }) =>
-  reading.answerSize === 14 && reading.answerLineHeight != null && Math.abs(reading.answerLineHeight - 24) <= 1 &&
+  reading.answerSize === 15 && reading.answerLineHeight != null && Math.abs(reading.answerLineHeight - 25.5) <= 1 &&
   !!reading.answerFont && /-apple-system|system-ui/.test(reading.answerFont) && !/Songti|STSong|SimSun/i.test(reading.answerFont);
 
 const checks: Array<{ item: string; pass: boolean; detail: Json }> = [];
@@ -260,7 +260,7 @@ try {
   for (const width of [360, 400, 440]) {
     const done = await shot("3-done", width);
     check(`${width}px 无横向溢出`, done.documentWidth <= width + 1 && done.overflow.length === 0, { documentWidth: done.documentWidth, overflow: done.overflow });
-    check(`${width}px 回答为系统字体 14px、约 24px 行高`, systemReading(done), { font: done.answerFont, size: done.answerSize, lineHeight: done.answerLineHeight });
+    check(`${width}px 回答为系统字体 15px、约 26px 行高`, systemReading(done), { font: done.answerFont, size: done.answerSize, lineHeight: done.answerLineHeight });
     check(`${width}px 复制操作可见且紧凑`, !!done.actions && done.actions.opacity >= 0.9 && done.actions.rect.height <= 30 && done.actions.button === "复制回答" && !!done.actions.buttonRect && done.actions.buttonRect.width <= 32, done.actions);
     check(`${width}px 完成后输入框上方不重复已完成`, !done.taskBar && !(done.resultText ?? "").includes("已完成"), { taskBar: done.taskBar, resultText: done.resultText });
   }
