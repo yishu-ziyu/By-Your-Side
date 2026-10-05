@@ -359,7 +359,7 @@ export function readMarksDisplay():HostDrawnMark[] {
 
 /** Serialized read-only observation; never trust page-written text as a completion flag. */
 export function readTranslationDisplay():TranslationDisplayState|null {
-  type Block={element:HTMLElement;output?:HTMLElement;segments:Array<{node:Text;original:string;translation?:string}>};
+  type Block={element:HTMLElement;output?:HTMLElement;outputs?:HTMLElement[];segments:Array<{node:Text;original:string;translation?:string}>};
 
   const state=(globalThis as typeof globalThis & {__bysTranslation?:{token:string;url:string;mode:'bilingual'|'translated';fontFamily:'original'|'songti';blocks:Map<HTMLElement,Block>}}).__bysTranslation;
   const url=new URL(location.href);url.hash='';
@@ -368,14 +368,25 @@ export function readTranslationDisplay():TranslationDisplayState|null {
   const blocks=[...state.blocks.values()].filter(b=>b.segments.every(s=>s.translation!==undefined));
 
   const displayValid=blocks.length>0&&blocks.every(b=>{
-    if(!b.element.isConnected||!b.segments.every(s=>s.node.isConnected&&s.node.data===(state.mode==='translated'?s.translation:s.original)))return false;
-    const target=state.mode==='bilingual'?b.output:b.element;
+    if(!b.element.isConnected||!b.segments.every(s=>s.node.isConnected&&b.element.contains(s.node)&&s.node.data===s.original))return false;
+    const targets=b.outputs??(b.output?[b.output]:[]);
 
-    if(!target?.isConnected)return false;
+    if(!targets.length||targets.map(target=>target.textContent).join('')!==b.segments.map(s=>s.translation).join(''))return false;
 
-    if(state.mode==='bilingual'&&target.textContent!==b.segments.map(s=>s.translation).join(''))return false;
+    if(b.outputs&&(state.mode!=='translated'||targets.length!==b.segments.length))return false;
 
-    return state.fontFamily!=='songti'||/Songti SC|STSong|SimSun/.test(getComputedStyle(target).fontFamily);
+    return targets.every((target,i)=>{
+      if(!target.isConnected||!b.element.contains(target))return false;
+
+      if(b.outputs&&(!target.parentElement?.contains(b.segments[i]!.node)||target.textContent!==b.segments[i]!.translation))return false;
+      const style=getComputedStyle(target);
+
+      if(state.mode==='translated'&&(target.dataset.bysVellum!=='true'||style.position!=='absolute'))return false;
+
+      if(style.display==='none'||style.visibility==='hidden'||target.getClientRects().length===0)return false;
+
+      return state.fontFamily!=='songti'||/Songti SC|STSong|SimSun/.test(style.fontFamily);
+    });
   });
 
   return {document:state.token,mode:state.mode,fontFamily:state.fontFamily,translated:blocks.length,displayValid};

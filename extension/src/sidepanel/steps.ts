@@ -189,6 +189,22 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
   }
 }
 
+/** 侧栏动作卡的一行字。点/填/看与页面光标旁的话同一套动词（content/cursor.ts renderActionLabel）。 */
+const CURSOR_VERBS = new Map([
+  ["click", { verb: "点", unnamed: "点这里" }],
+  ["fill", { verb: "填", unnamed: "填这一栏" }],
+  ["hover", { verb: "看", unnamed: "看这里" }],
+]);
+
+export function actionCardLabel(name: string, params: Parameters<typeof describeTool>[1]): string {
+  const words = CURSOR_VERBS.get(name);
+
+  if (!words) return describeTool(name, params).full;
+  const label = str(params.label);
+
+  return label ? `${words.verb}「${clip(label)}」` : words.unnamed;
+}
+
 /**
  * 步骤链：相邻重复去重，超长时只保留最近几步（前缀 "…"）。
  * 例：思考 → 读取页面结构 → 思考 → 点击

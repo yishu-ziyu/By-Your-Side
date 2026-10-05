@@ -1,4 +1,11 @@
-/** Selection → local reading conversation. UI never sends task/steer messages. */
+import { installDragFeed } from "./drag-feed.js";
+import { installEdgePill } from "./edge-pill.js";
+import { installGhostHud } from "./ghost-hud.js";
+import { installLinkPreview } from "./link-preview.js";
+import { installMarginaliaTracker } from "./marginalia-tracker.js";
+import { installNudge } from "./nudge.js";
+import { installSonarPinpoint } from "./sonar-pinpoint.js";
+/** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, PanelRight, RotateCcw } from 'lucide';
 import DOMPurify from 'dompurify';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
@@ -6,6 +13,7 @@ import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } fr
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
+import { createReadAloud } from './read-aloud.js';
 
 const HOST = 'data-sideagent-ask';
 
@@ -56,6 +64,13 @@ function boot(): void {
     return;
   }
 
+  installSonarPinpoint();
+  installDragFeed();
+  installMarginaliaTracker();
+  installGhostHud();
+  installEdgePill();
+  installLinkPreview();
+  installNudge();
   document.querySelector(`[${HOST}]`)?.remove();
   const host = document.createElement('div');
   host.setAttribute(HOST, '1');
@@ -63,7 +78,7 @@ function boot(): void {
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar"><button class="ask" data-act="ask"><span class="identity"></span>问 AI</button><button class="explain" data-act="explain">解释</button></div>
+      <div class="bar"><button class="ask" data-act="ask"><span class="identity"></span>问 AI</button><button class="explain" data-act="explain">解释</button><button data-act="read">朗读</button><button data-act="transfer">转入侧栏</button></div>
       <div class="header" hidden><span class="identity"></span><span class="site"></span><button class="icon" data-act="close" aria-label="收起阅读" title="收起阅读"></button></div>
       <details class="quote" hidden><summary></summary><p></p><div class="limit" hidden>已截取前 8000 字</div></details>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
@@ -89,6 +104,7 @@ function boot(): void {
   const submit = el<HTMLButtonElement>('.send');
   const restore = el('.restore');
   const error = el('.error');
+  const reader = createReadAloud(root);
   let snapshot: SelectionSnapshot | null = null;
   let record: ReadingRecord | undefined;
   let expanded = false;
@@ -227,7 +243,7 @@ function boot(): void {
     }
 
     messages.hidden = !expanded || !record?.turns.length;
-    el('.footer').hidden = !expanded || !record?.turns.length;
+    el('.footer').hidden = !expanded;
 
     if (!expanded || !source) {
       position();
@@ -296,6 +312,7 @@ function boot(): void {
     input.placeholder = record?.turns.length ? '继续问这段文字…' : '问问这段文字…';
     el<HTMLButtonElement>('[data-act="handoff"]').disabled = busy || sending;
     el('[data-act="handoff"]').lastChild!.textContent = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
+    el('[data-act="copy"]').hidden = !record?.turns.length;
     el<HTMLButtonElement>('[data-act="copy"]').disabled = !last?.answer;
     el('[data-act="retry"]').hidden = !last || !['error', 'stopped'].includes(last.state);
     position();
@@ -376,6 +393,15 @@ function boot(): void {
         await enter();
         await send(EXPLAIN_PROMPT);
       }
+      else if (action === 'read') {
+        // 朗读只在本页用浏览器声音出声，不发起任何阅读或页面任务。
+        const current = snapshot;
+        hide();
+
+        if (current) {
+          await reader.start(current.source.text, current.range);
+        }
+      }
       else if (action === 'close') {
         hide();
       }
@@ -400,7 +426,17 @@ function boot(): void {
       else if (action === 'retry') {
         await send(record!.turns.at(-1)!.question, true);
       }
-      else if (action === 'handoff') {
+      else if (action === 'transfer' || action === 'handoff') {
+        if (action === 'transfer' || !record?.turns.length) {
+          const source = snapshot?.source ?? record?.source;
+
+          if (!source) throw new Error('请先选择文字。');
+          await rpc('ASK_SELECTION_TO_PANEL', { text: source.text });
+          hide();
+
+          return;
+        }
+
         await rpc('reading_handoff');
 
         if (!record?.transferredConversationId) {

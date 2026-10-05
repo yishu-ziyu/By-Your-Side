@@ -30,7 +30,7 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const reply = "米娅负责编辑。\n\n名单中的职务来自当前页面。";
 
-const rules: Rule[] = [{ match: "找米娅", steps: [{ text: reply, delayMs: 5_000 }] }];
+const rules: Rule[] = [{ match: "找米娅", steps: [{ text: reply, delayMs: 8_000 }] }];
 
 const systemReading = (reading: { answerFont: string | null; answerSize: number | null; answerLineHeight: number | null }) =>
   reading.answerSize === 14 && reading.answerLineHeight != null && Math.abs(reading.answerLineHeight - 24) <= 1 &&
@@ -110,6 +110,14 @@ try {
   await until(async () => (await rp!.evaluate(panel, `document.querySelector('#status-dot')?.classList.contains('on')`)) || undefined, 60_000, "侧栏连接");
   await until(async () => (await rp!.evaluate(panel, `!document.querySelector('#send-btn')?.disabled && !document.querySelector('#conversation-new')?.disabled`)) || undefined, 60_000, "默认会话");
 
+  const pressPoint = await rp.evaluate(panel, `(() => { const r = document.querySelector('#header-more').getBoundingClientRect(); return { x:r.x+r.width/2, y:r.y+r.height/2 }; })()`);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type:"mousePressed", ...pressPoint, button:"left", clickCount:1 }, panel);
+  await sleep(180);
+  const pressed = await rp.evaluate(panel, `getComputedStyle(document.querySelector('#header-more')).transform`);
+  check("按钮按下缩放为0.96", pressed === "matrix(0.96, 0, 0, 0.96, 0, 0)", pressed);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...pressPoint, button:"left", clickCount:1 }, panel);
+  await rp.click(panel, "#header-more"); // 收起按压检查打开的菜单
+
   await rp.click(panel, "#header-more");
   await rp.click(panel, "#model-settings-open");
   const settingsTarget = await until(async () => (await rp!.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页");
@@ -173,6 +181,38 @@ try {
     check("点当前模型后搜索列表可见且能点到", false, { reason: "模型入口不可见" });
   }
 
+  // Real content script, closed shadow DOM and background relay; no model request on transfer.
+  await rp.evaluate(work, `(() => { const r=document.createRange(); r.selectNodeContents(document.querySelector('p')); const s=getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  const worker = await rp.attach((await rp.serviceWorker())!.targetId);
+  await rp.evaluate(worker, `chrome.tabs.query({}).then(tabs => { const t=tabs.find(t => t.url === ${JSON.stringify(`${origin}/writers`)}); return chrome.tabs.sendMessage(t.id,{type:'ask-hotkey'}); })`);
+
+  type ShadowNode = { attributes?: string[]; children?: ShadowNode[]; shadowRoots?: ShadowNode[]; backendNodeId: number };
+
+  const shadow = await until(async () => {
+    const doc = await rp!.cdp.send("DOM.getDocument", { depth:-1, pierce:true }, work);
+    const find = (node: ShadowNode): ShadowNode | undefined => node.attributes?.includes('data-sideagent-ask') ? node : [...(node.children ?? []), ...(node.shadowRoots ?? [])].map(find).find(Boolean);
+    const host = find(doc.root);
+
+    if (!host?.shadowRoots?.[0]) return undefined;
+
+    return (await rp!.cdp.send("DOM.resolveNode", { backendNodeId:host.shadowRoots[0].backendNodeId }, work)).object.objectId;
+  }, 5000, "划词阅读卡");
+
+  const shadowRead = async (expression: string) => (await rp!.cdp.send("Runtime.callFunctionOn", { objectId:shadow, returnByValue:true, functionDeclaration:`function(){return ${expression};}` }, work)).result.value;
+  await until(async () => await shadowRead(`this.querySelector('.surface').classList.contains('expanded')`) || undefined, 5000, "快捷键消息展开阅读卡");
+  const point = await shadowRead(`(() => {const r=this.querySelector('[data-act="handoff"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type:"mousePressed", ...point, button:"left", clickCount:1 }, work);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...point, button:"left", clickCount:1 }, work);
+  await until(async () => await rp!.evaluate(panel, `!document.querySelector('#ask-cite').hidden`) || undefined, 5000, "选区转入引用");
+  const cite = await rp.evaluate(panel, `({ text:document.querySelector('#ask-cite-text').textContent, host:document.querySelector('#ask-cite-host').textContent, focus:document.activeElement.id })`);
+  check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === 0, cite);
+  await rp.typeText(panel, "引用草稿");
+  await rp.screenshot(panel, join(artifacts, "selection-cite.png"));
+  await rp.click(panel, "#ask-cite-close");
+  check("去掉引用不清空正文", await rp.evaluate(panel, `document.querySelector('#ask-cite').hidden && document.querySelector('#input').value === '引用草稿'`), null);
+  await rp.evaluate(panel, `document.querySelector('#input').value='';document.querySelector('#input').dispatchEvent(new Event('input',{bubbles:true}));`);
+  await rp.detach(worker);
+
   const idle = await shot("1-idle", 400);
   check("当前页引用在输入框内", idle.pageInComposer, { pagePill: idle.pagePill, composer: idle.composer });
   check("开始建议可见", idle.starterShown, { shown: idle.starterShown });
@@ -189,6 +229,25 @@ try {
   await rp.pressEnter(panel);
   await until(async () => model.requests.some((r) => r.rule === "找米娅") || undefined, 30_000, "真实发送抵达脚本模型");
   const running = await shot("2-running", 400);
+  const taskCard = await rp.evaluate(panel, `(() => { const card = document.querySelector('.ai-task-card'); return { goal:card?.querySelector('.task-goal-line')?.textContent, expanded:card?.classList.contains('expanded') }; })()`);
+  check("真实运行生成流式任务卡", taskCard.goal === "请在当前页找米娅", taskCard);
+
+  if (taskCard.goal) {
+    await rp.click(panel, ".ai-task-trigger");
+    await sleep(240);
+    const folded = await rp.evaluate(panel, `(() => {const c=document.querySelector(".ai-task-card");return {height:c.querySelector(".ai-task-reveal").getBoundingClientRect().height,inert:c.querySelector(".ai-task-reveal").inert,chevron:getComputedStyle(c.querySelector(".task-chevron")).transform};})()`);
+    check("折叠后抽屉高度为零且不可聚焦", folded.height === 0 && folded.inert, folded);
+    check("任务卡可折叠", await rp.evaluate(panel, `document.querySelector('.ai-task-trigger').getAttribute('aria-expanded') === 'false'`), null);
+    await rp.click(panel, ".ai-task-trigger");
+    await sleep(240);
+    const craft = await rp.evaluate(panel, `(() => {const c=document.querySelector(".ai-task-card"), t=c.querySelector(".ai-task-trigger");return {outer:parseFloat(getComputedStyle(c).borderRadius),inner:parseFloat(getComputedStyle(t).borderRadius),padding:parseFloat(getComputedStyle(c).paddingLeft),height:c.querySelector(".ai-task-reveal").getBoundingClientRect().height,chevron:getComputedStyle(c.querySelector(".task-chevron")).transform};})()`);
+    check("展开有真实高度、箭头转180度且圆角同心", craft.height > 0 && craft.chevron === "matrix(-1, 0, 0, -1, 0, 0)" && craft.outer === craft.inner + craft.padding, craft);
+    await rp.cdp.send("Emulation.setEmulatedMedia", {features:[{name:"prefers-reduced-motion",value:"reduce"}]}, panel);
+    check("减少动态效果关闭任务卡入场与抽屉过渡", await rp.evaluate(panel, `getComputedStyle(document.querySelector(".ai-task-card")).animationName === "none" && getComputedStyle(document.querySelector(".ai-task-reveal")).transitionDuration === "0s"`), null);
+    await rp.cdp.send("Emulation.setEmulatedMedia", {features:[]}, panel);
+    check("任务卡可再次展开", await rp.evaluate(panel, `document.querySelector('.ai-task-trigger').getAttribute('aria-expanded') === 'true'`), null);
+  }
+
   check("运行中仍可输入补充", running.sendStopping && !(await rp.evaluate(panel, `document.querySelector('#input').disabled`)), { sendStopping: running.sendStopping });
   await until(async () => (await read()).answerText?.includes(reply.split("\n")[0]!) || undefined, 60_000, "回答落入真实侧栏");
   await until(async () => !!(await read()).actions || undefined, 15_000, "回答操作出现");

@@ -1,4 +1,5 @@
 import { isReadingClientMessage, isReadingEvent, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingTranscript } from "./reading.js";
+import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type NudgeResult } from "./nudge.js";
 import { isExecutionFeedback } from "./execution-feedback.js";
 /**
  * SideAgent 桥接协议（扩展 side panel ⇆ 本地伴随进程）。
@@ -173,6 +174,7 @@ export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
 export type ClientMessage = ConversationEnvelope & (
   | VoiceClientMessage
   | ReadingClientMessage
+  | NudgeClientMessage
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
@@ -239,6 +241,7 @@ export interface HostFeatures { memory: boolean }
 
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | ReadingEvent
+  | NudgeResult
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   | VoiceServerMessage
@@ -677,6 +680,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "reading_request" || msg.type === "reading_cancel") return isReadingClientMessage(msg) ? msg : null;
 
+    if (msg.type === "nudge_request") return isNudgeClientMessage(msg) ? msg : null;
+
     if (msg.type === "conversation_create" && msg.reading !== undefined && !isReadingTranscript(msg.reading)) return null;
 
     if (msg.type === "voice") {
@@ -820,6 +825,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if(msg.epochs!==undefined&&(!msg.epochs||typeof msg.epochs!=='object'||Array.isArray(msg.epochs)||!Object.entries(msg.epochs).every(([id,n])=>validOptionalSessionId(id)&&Number.isSafeInteger(n)&&n>=0)))return null;
 
     if (msg.type === 'reading_event') return isReadingEvent(msg) ? msg : null;
+
+    if (msg.type === 'nudge_result') return isNudgeResult(msg) ? msg : null;
 
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
 
@@ -1109,4 +1116,119 @@ export function isConversationSummary(value: unknown): value is ConversationSumm
     (item.mode === "act" || (item.mode as string) === "teach") && (item.model === undefined || typeof item.model === "string")
     && (item.runId === undefined || item.runId === null || taskId(item.runId))
     && (item.checkpoint === undefined || item.checkpoint === "interrupted" || item.checkpoint === "unavailable");
+}
+
+/** UI-only page evidence. Never an agent command or authority to mutate a website. */
+export interface PageElementSource {
+  document: string;
+  id: string;
+  url: string;
+  title: string;
+  text: string;
+  kind: 'section' | 'table' | 'code' | 'card' | 'selection';
+}
+
+export type MarginaliaMode = 'off' | 'source' | 'ai';
+
+export interface ViewportSectionUpdate { source: PageElementSource; position: number; viewportHeight: number; index: number; tabId: number }
+
+export type PageInteractionMessage =
+  | { type: 'PINPOINT_DOM_TARGET'; action: 'identity'; tabId: number; url: string }
+  | { type: 'PINPOINT_DOM_TARGET'; action: 'resolve'; query: string; tabId: number; document: string; url: string }
+  | { type: 'PINPOINT_DOM_TARGET'; action: 'reveal'; source: PageElementSource; tabId: number }
+  | { type: 'VIEWPORT_ACTIVE_SECTION'; action: 'update'; source: PageElementSource; position: number; viewportHeight: number; index: number }
+  | { type: 'VIEWPORT_ACTIVE_SECTION'; action: 'track'; tabId: number; mode: MarginaliaMode }
+  | { type: 'VIEWPORT_ACTIVE_SECTION'; action: 'track'; enabled: boolean }
+  | { type: 'VIEWPORT_ACTIVE_SECTION'; action: 'ready' | 'clear' }
+  | { type: 'FEED_DROPPED_ELEMENT'; action: 'offer'; token: string; source: PageElementSource }
+  | { type: 'FEED_DROPPED_ELEMENT'; action: 'consume'; token: string }
+  | { type: 'FEED_DROPPED_ELEMENT'; action: 'validate'; source: PageElementSource }
+  | { type: 'GHOST_QUICK_ACTION'; action: GhostQuickAction | 'probe' };
+
+/** 侧栏直连按钮：页面脚本直接操作，不经模型。probe 只回报这一页能做哪些。 */
+export const GHOST_QUICK_ACTIONS = ['toggle_play', 'next', 'toggle_code'] as const;
+
+export type GhostQuickAction = (typeof GHOST_QUICK_ACTIONS)[number];
+
+/** 页面脚本的回复。probe：available 是这一页能做的动作，playing/codeFolded 给按钮选文字；动作：ok、给用户看的结果和页面内耗时。 */
+export type GhostQuickReply =
+  | { ok: true; available: GhostQuickAction[]; playing: boolean; codeFolded: boolean }
+  | { ok: boolean; message: string; elapsedMs: number; playing: boolean; codeFolded: boolean };
+
+export function isPageElementSource(value: unknown): value is PageElementSource {
+  if (!value || typeof value !== 'object') return false;
+  // SAFETY: value is a non-null object; all required fields are validated below.
+  const source = value as Partial<PageElementSource>;
+
+  return typeof source.document === 'string' && source.document.length <= 80
+    && typeof source.id === 'string' && source.id.length <= 80
+    && typeof source.url === 'string' && source.url.length <= 4000
+    && typeof source.title === 'string' && source.title.length <= 160
+    && typeof source.text === 'string' && source.text.length > 0 && source.text.length <= 8000
+    && source.kind !== undefined && ['section', 'table', 'code', 'card', 'selection'].includes(source.kind);
+}
+
+
+export interface PageDocumentIdentity { document: string; url: string }
+
+
+export function isPageDocumentIdentity(value: unknown): value is PageDocumentIdentity {
+  if (!value || typeof value !== 'object') return false;
+  // SAFETY: object established above; both fields are checked before admission.
+  const identity = value as Partial<PageDocumentIdentity>;
+
+
+  return typeof identity.document === 'string' && identity.document.length > 0 && identity.document.length <= 80
+    && typeof identity.url === 'string' && identity.url.length > 0 && identity.url.length <= 4000;
+}
+
+/** Full schema admission at the runtime message boundary, separate from agent commands. */
+export function isPageInteractionMessage(value: unknown): value is PageInteractionMessage {
+  if (!value || typeof value !== 'object') return false;
+  // SAFETY: non-null object only; each union branch validates its complete payload.
+  const message = value as Partial<PageInteractionMessage>;
+  const token = (input: unknown): input is string => typeof input === 'string' && input.length > 0 && input.length <= 80;
+  const tab = (input: number | undefined) => input !== undefined && Number.isSafeInteger(input) && input > 0;
+
+
+  if (message.type === 'PINPOINT_DOM_TARGET') {
+    if (!tab(message.tabId)) return false;
+
+
+    if (message.action === 'reveal') return isPageElementSource(message.source);
+
+
+    if (message.action === 'identity') return typeof message.url === 'string' && message.url.length > 0 && message.url.length <= 4000;
+
+
+    return message.action === 'resolve' && token(message.document) && typeof message.url === 'string' && message.url.length <= 4000
+      && typeof message.query === 'string' && message.query.length > 0 && message.query.length <= 200;
+  }
+
+
+  if (message.type === 'GHOST_QUICK_ACTION') return message.action === 'probe' || GHOST_QUICK_ACTIONS.includes(message.action as GhostQuickAction);
+
+
+  if (message.type === 'FEED_DROPPED_ELEMENT') {
+    if (message.action === 'validate') return isPageElementSource(message.source);
+
+
+    if (message.action === 'consume') return token(message.token);
+
+
+    return message.action === 'offer' && token(message.token) && isPageElementSource(message.source);
+  }
+
+
+  if (message.type !== 'VIEWPORT_ACTIVE_SECTION') return false;
+
+
+  if (message.action === 'ready' || message.action === 'clear') return true;
+
+
+  if (message.action === 'track') return 'enabled' in message ? typeof message.enabled === 'boolean' : 'tabId' in message && 'mode' in message && tab(message.tabId) && ['off', 'source', 'ai'].includes(message.mode ?? '');
+
+
+  return message.action === 'update' && isPageElementSource(message.source) && message.position !== undefined && Number.isFinite(message.position)
+    && message.position >= 0 && message.position <= 1 && message.viewportHeight !== undefined && Number.isFinite(message.viewportHeight) && message.viewportHeight > 0 && message.viewportHeight <= 20000 && message.index !== undefined && Number.isInteger(message.index) && message.index > 0 && message.index <= 2000;
 }

@@ -10,6 +10,7 @@
  */
 
 import { isAttachment, type Attachment, type ImageAttachment } from "../../../shared/protocol.js";
+import { isRegionSelectActive, selectRegionFromScreen } from "./region-select.js";
 
 export const TILE_PERIMETER = 194;
 
@@ -155,6 +156,21 @@ export class AttachmentsManager {
       void this.captureActiveTab();
     });
 
+    // #50 从屏幕选取：菜单项，或侧栏里按 ⌘/Ctrl+Shift+S。
+    const regionBtn = this.menuEl.querySelector("#menu-action-region");
+    regionBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.closeMenu();
+      void this.captureRegion();
+    });
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "s" && !e.isComposing) {
+        e.preventDefault();
+        this.closeMenu();
+        void this.captureRegion();
+      }
+    });
+
     const uploadBtn = this.menuEl.querySelector("#menu-action-upload");
     uploadBtn?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -270,6 +286,27 @@ export class AttachmentsManager {
 
       if (this.onError) this.onError(`截屏失败: ${msg}`);
       else console.error("[sideagent-attachments] captureActiveTab failed:", err);
+    }
+  }
+
+  /**
+   * #50 让用户在当前网页拖框，框内截图加入附件；取消不留附件，也不发送。
+   */
+  public async captureRegion(): Promise<void> {
+    if (isRegionSelectActive()) return;
+    const scope = this.scopeId;
+
+    try {
+      const picked = await selectRegionFromScreen();
+
+      if (!picked) return;
+      const name = `${picked.title.replace(/[/\\?%*:|"<>]/g, "_")} 选区.png`;
+      await this.addFromDataUrl(picked.dataUrl, name, scope);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+
+      if (this.onError) this.onError(`选取失败: ${msg}`);
+      else console.error("[sideagent-attachments] captureRegion failed:", err);
     }
   }
 

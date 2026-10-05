@@ -15,7 +15,7 @@ describe("receipt hierarchy", () => {
     expect(receiptCopy(base,"other")).toMatchObject({summary:"测试任务 · 已接收新任务：打开页面",collapsed:false});
   });
   it("distinguishes queued correction from delivered correction", () => {
-    expect(receiptCopy({...base,action:"steer",message:"修改已保存，继续后生效：打开页面"},"c").summary).toContain("交还后生效");
+    expect(receiptCopy({...base,action:"steer",message:"修改已保存，继续后生效：打开页面"},"c").summary).toContain("点「你继续」后生效");
     expect(receiptCopy({...base,action:"steer",message:"修改已送达当前任务：打开页面"},"c").summary).toBe("修改已送达当前任务");
   });
 });

@@ -29,6 +29,11 @@ export interface AgentLoop extends Pick<
   retryGate?: (message: AssistantMessage) => boolean;
   /** 接着当前上下文再跑一轮，并带自动重试；没有时退回 agent.continue()（不带重试）。 */
   resume?(): Promise<void>;
+  /**
+   * 模型正在写正文（还没开始写工具调用）时，把已写的部分当成这次调用的完整回复收下，让循环立刻读排队的插话。
+   * 截断了返回 true；没有正在写的正文时返回 false，插话照旧等这一步结束。
+   */
+  interruptText?(): boolean;
 }
 
 /**
@@ -111,6 +116,7 @@ class FailoverLoop implements AgentLoop {
   }
 
   steer(...args: Parameters<AgentLoop["steer"]>) { return this.inner.steer(...args); }
+  interruptText() { return this.inner.interruptText?.() ?? false; }
   clearQueue() { return this.inner.clearQueue(); }
   getActiveToolNames() { return this.inner.getActiveToolNames(); }
   getToolDefinition(name: string) { return this.inner.getToolDefinition(name); }

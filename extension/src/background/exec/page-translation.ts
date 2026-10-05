@@ -15,6 +15,8 @@ export async function pageTranslation(params: TranslationCommand, sessionId: str
   const tabId = tab.id!;
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
+  await chrome.scripting.executeScript({target: {tabId}, world: 'ISOLATED', files: ['content-vellum.js']});
+  beforeDispatch?.checkNow?.();
   const [frame] = await chrome.scripting.executeScript({target: {tabId}, world: 'ISOLATED', func: translationInPage, args: [params]});
 
   if (!frame?.result) throw new Error('页面翻译未收到执行回执，结果未知；请先核查当前页面。');

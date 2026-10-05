@@ -1,3 +1,4 @@
+import type { TranslationCommand } from '../../shared/page-translation.js';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 
 vi.mock('../src/background/state.js',()=>({resolveWorkingTab:vi.fn(async()=>({id:12}))}));
@@ -36,9 +37,9 @@ describe('page translation injection receipts',()=>{
     await expect(pageTranslation({action:'begin'},'main')).rejects.toThrow('结果未知');
   });
   it('passes typography through and keeps tab identity',async()=>{
-    const executeScript=vi.fn(async(_params:unknown)=>[{result:{document:'doc',blocks:[]}}]);
+    const executeScript=vi.fn(async(_params:{args?:TranslationCommand[];files?:string[]})=>[{result:{document:'doc',blocks:[]}}]);
     vi.stubGlobal('chrome',{scripting:{executeScript}});
     expect(await pageTranslation({action:'display',fontFamily:'songti'},'main')).toMatchObject({tabId:12,document:'doc'});
-    expect(executeScript.mock.calls[0]?.[0]).toMatchObject({args:[{action:'display',fontFamily:'songti'}]});
+    expect(executeScript.mock.calls.find(([params]) => !!params.args)?.[0]).toMatchObject({args:[{action:'display',fontFamily:'songti'}]});
   });
 });

@@ -964,7 +964,7 @@ export function teamOwnerBanner(team: TeamView): {
   }
 
   if (team.phase === "user") {
-    return { status: "现在归你", sub: `${n} 个已暂停`, action: "交还", actionEnabled: true };
+    return { status: "现在归你", sub: `${n} 个已暂停`, action: "你继续", actionEnabled: true };
   }
 
   if (team.phase === "restoring") {
@@ -988,7 +988,7 @@ export function teamOwnerBanner(team: TeamView): {
     return { status: TEAM_ALL_RESTORED, sub: `${n} 个`, action: "", actionEnabled: false };
   }
 
-  return { status: "Agent 在工作", sub: `${n}`, action: "接管", actionEnabled: true };
+  return { status: "Agent 在工作", sub: `${n}`, action: "我来", actionEnabled: true };
 }
 
 export function memberPhaseLabel(phase: TeamMemberPhase): string {

@@ -1,3 +1,7 @@
+import { createMarginalia } from "./marginalia.js";
+import { installDropzone } from "./dropzone.js";
+import { attachSourceCitations, captureCitationContext, type CitationContext } from "./sonar-citations.js";
+import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
@@ -9,19 +13,21 @@ import { createOrb, type OrbHandle } from "./orb.js";
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
 import { renderMarkdownHtml } from "./markdown.js";
-import { attachAnswerActions } from "./answer-actions.js";
+import { attachAnswerActions as attachCopyActions } from "./answer-actions.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
+import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
-import { ChevronDown, ArrowDown } from "lucide";
+import { ChevronDown, ChevronRight, ArrowDown } from "lucide";
 import {
   StepChain,
   chipState,
   describeTool,
+  actionCardLabel,
   historyEventTime,
   recordedDuration,
   finishedRunTitle,
@@ -45,7 +51,9 @@ import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type Memor
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
-import { TaskBar } from "./task-bar.js";
+import { TaskBar, stateHeadline } from "./task-bar.js";
+import type { TaskView } from "../../../shared/task-view.js";
+import { plainStep } from "../../../shared/user-facing.js";
 import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
@@ -54,12 +62,38 @@ import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRu
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
 import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
+import { createGhostBar } from "./ghost-bar.js";
+import { installChromeQuiet } from "./chrome-quiet.js";
+import { createSteerRibbon } from "./in-flight-steer.js";
+import { mountSlashSkills } from "./slash-skills.js";
+
+const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
+
+let currentCitationSource: Promise<CitationContext | null> | null = null;
+
+let replayingHistory = false;
+
+let citationRequestPending = false;
+
+function attachAnswerActions(answer: HTMLElement): void {
+  attachCopyActions(answer);
+  const source = answerSources.get(answer);
+
+  if (source) void source.then(context => attachSourceCitations(answer, context));
+}
+
+/** #49：交付事实链里的已读页面 → 回答出处；点开的页面挂到输入框（定位到段落时连段落一起）。 */
+function attachDeliverySources(answer: HTMLElement, delivery: UserDelivery): void {
+  attachAnswerSources(answer, delivery.facts?.sources, (chip) => applyPendingAsk({
+    text: chip.passage?.text.slice(0, 2000) ?? "", tabId: chip.tabId, title: chip.title, url: chip.url, ...(chip.passage ? { element: chip.passage } : {}),
+  }));
+}
 
 const PLACEHOLDER_IDLE = "说说你想完成什么…";
 
 const PLACEHOLDER_RUNNING = "补充或修改这次任务…（Enter 发送）";
 
-const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；交还后生效";
+const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；点「你继续」后生效";
 
 const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
 
@@ -102,6 +136,7 @@ app.innerHTML = `
       <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
     </div>
   </header>
+  <div id="ghost-bar" aria-label="直接操作当前页" hidden></div>
   <button id="conversation-background" type="button" hidden></button>
   <div id="task-strip" aria-label="当前会话与结果">
     <div id="task-result-card" hidden>
@@ -122,6 +157,7 @@ app.innerHTML = `
       <div id="memory-body"></div>
     </div>
   </section>
+  <div id="marginalia-rail" aria-label="伴读导轨" hidden></div>
   <div id="messages">
     <div id="resume-entry-root"></div>
   </div>
@@ -147,19 +183,26 @@ app.innerHTML = `
       </div>
     </div>
     <div id="attach-menu" class="action-menu-popover" hidden>
-      <div class="action-menu-item" id="menu-action-screenshot">
+      <div class="action-menu-item pressable" id="menu-action-screenshot">
         <span class="action-menu-item-icon">📸</span>
         <span class="action-menu-item-label">截取当前网页视口</span>
       </div>
-      <div class="action-menu-item" id="menu-action-upload">
+      <div class="action-menu-item pressable" id="menu-action-region" title="在网页上拖框截图（⌘/Ctrl+Shift+S，Esc 取消）">
+        <span class="action-menu-item-icon">⬚</span>
+        <span class="action-menu-item-label">从屏幕选取</span>
+      </div>
+      <div class="action-menu-item pressable" id="menu-action-upload">
         <span class="action-menu-item-icon">📁</span>
         <span class="action-menu-item-label">上传本地图片</span>
       </div>
     </div>
     <input type="file" id="file-input" accept="image/*" multiple hidden />
+    <label class="marginalia-control">边注
+      <select id="marginalia-mode" aria-label="边注模式"><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
+    </label>
     <div id="task-bar-root"></div>
     <div id="composer" class="composer-glass-dock">
-      <div id="page-pill" class="morphing-page-pill" title="当前活动标签页（点击展开检查面板）">
+      <div id="page-pill" class="morphing-page-pill pressable" title="当前活动标签页（点击展开检查面板）">
         <span id="tab-icon-sq" class="tab-icon-sq"></span>
         <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
         <i class="tab-live-dot"></i>
@@ -167,7 +210,7 @@ app.innerHTML = `
       <div id="ask-cite" hidden>
         <span id="ask-cite-host"></span>
         <span id="ask-cite-text"></span>
-        <button type="button" id="ask-cite-close" title="去掉这段引用">×</button>
+        <button type="button" id="ask-cite-close" aria-label="去掉这段引用" title="去掉这段引用">×</button>
       </div>
       <div id="attachments-strip" class="attachments-strip" hidden></div>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
@@ -175,7 +218,7 @@ app.innerHTML = `
         <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button>
         <span id="composer-spacer"></span>
         <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
-        <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
+        <button id="takeover-btn" type="button" title="你来操作这个页面，Agent 先停手" hidden>我来</button>
         <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
           <span class="morph-icon-send"></span>
           <span class="morph-icon-stop"></span>
@@ -232,6 +275,24 @@ const inputEl = document.getElementById("input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 
 sendBtn.disabled = true;
+
+const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
+
+installChromeQuiet({
+  input: inputEl,
+  messages: messagesEl,
+  faded: () => ["#conversation-switcher", "#conversation-new", "#header-more", "#page-pill", "#attach-btn", "#composer-more", ".marginalia-control"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
+  hoverZone: "#topbar:hover, #composer-bar:hover, #page-pill:hover, .marginalia-control:hover",
+  menuOpen: () => !!document.querySelector("#header-menu:popover-open, #composer-menu:popover-open") || ["conversation-menu", "attach-menu", "memory-drawer"].some(id => document.getElementById(id)?.hidden === false),
+});
+
+const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(text));
+
+// #51 「/ 技能」：选中后把正文放进输入框，走正常发送路径（带当前页面上下文）。
+const slashSkills = mountSlashSkills({
+  composerEl, inputEl,
+  run: (text) => { inputEl.value = text; inputEl.dispatchEvent(new Event("input")); sendInput(); },
+});
 
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 
@@ -422,6 +483,7 @@ function starterReady(): boolean {
 
 function updateStarterVisibility(): void {
   app.classList.toggle("starter-ready", starterReady());
+  refreshOpenThreads();
 
   const tabId = starterTab();
 
@@ -559,6 +621,7 @@ function resetConversationRender(): void {
   teamView = null;
   teamRunId = null;
   running = false;
+  steerRibbon.reset();
   lastUserHasPage = false;
   lastHistorySeq = 0;
   userBubbles.clear();
@@ -573,6 +636,8 @@ function resetConversationRender(): void {
   leadToolUsed = false;
   historyPrimed = false;
   currentDraftReady = false;
+  currentCitationSource = null;
+  citationRequestPending = false;
   updateStarterVisibility();
   const resumeRoot = document.getElementById("resume-entry-root");
   artifactCards.reset();
@@ -1643,6 +1708,8 @@ async function refreshActiveTabPill(): Promise<void> {
 
     if (tab.id != null) {
       activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
+      ghostBar.setTab(activeTabInfo);
+      marginalia.setPage(activeTabInfo);
       noteStarterTab(tab.id);
       void refreshStarterSuggestions(tab.id);
     }
@@ -2002,6 +2069,7 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
     textEl.className = "user-msg-text";
     textEl.textContent = text;
     div.appendChild(textEl);
+    slashSkills.decorateUserMessage(div, text);
   } else if (!atts || atts.length === 0) {
     div.textContent = "";
   }
@@ -2037,6 +2105,8 @@ function addMsg(cls: string, text: string): HTMLElement {
 
   const div = document.createElement("div");
   div.className = cls;
+
+  if (cls.split(/\s+/).includes("assistant") && currentCitationSource && !replayingHistory) answerSources.set(div, currentCitationSource);
   div.textContent = text;
   appendToMessages(div);
   scrollToEnd();
@@ -2239,7 +2309,7 @@ function buildMemoryAsk(askId: string): HTMLElement {
 
 // ── 执行步骤聚合块 ──────────────────────────────────────────
 // 一次 run（用户消息 → agent_end）只有一条状态行：[光球] 正在做什么 · 耗时（在 summary 上）。
-// 思考块与工具 chips 收进同一个 details 的 body，运行中也不展开——要看过程点一下。
+// 思考块、旁白与动作卡收进同一个 details 的 body；第一张动作卡出现时展开（#47），结束后收起成历史。
 
 
 function ensureRun(): NonNullable<typeof currentRun> {
@@ -2427,7 +2497,12 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     lastUserHasPage = flags.userHasPage;
   }
 
-  takeoverBtn.hidden = !flags.takeoverVisible;
+  // 同一个位置：Agent 在做时是「我来」，页面归你时是「你继续」。
+  takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
+  takeoverBtn.dataset.mode = flags.userHasPage ? "handback" : "takeover";
+  takeoverBtn.textContent = flags.userHasPage ? "你继续" : "我来";
+  takeoverBtn.title = flags.userHasPage ? "交还页面，Agent 先重读页面再接着做" : "你来操作这个页面，Agent 先停手";
+  steerRibbon.setRunning(running && !flags.userHasPage);
 
   // Send / Stop in-place morphing
   if (flags.abortVisible) {
@@ -2623,7 +2698,6 @@ function closeLeadDraft(): void {
   if (currentLeadDraftDetails) {
     orbByHost.get(currentLeadDraftDetails)?.setRunning(false);
     currentLeadDraftDetails.classList.remove("streaming");
-    currentLeadDraftDetails.open = false;
   }
 
   currentLeadDraft = null;
@@ -2641,6 +2715,7 @@ function appendLeadAnswer(delta: string): void {
     leadAnswer = addMsg("msg assistant markdown streaming", "");
     leadAnswerText = "";
     leadAnswerTurnClosed = false;
+    steerRibbon.decorate(leadAnswer, !applyingHistory);
   }
 
   leadAnswerText += delta;
@@ -2660,6 +2735,7 @@ function foldLeadAnswer(): void {
   leadAnswer = null;
   leadAnswerText = "";
   leadAnswerTurnClosed = false;
+  steerRibbon.undecorate(answer);
   answer.remove();
 
   if (!currentRun || !text) return;
@@ -2689,8 +2765,10 @@ function appendLeadDelta(delta: string): void {
 
   if (!currentLeadDraft) {
     const details = document.createElement("details");
-    details.className = "thinking streaming";
-    details.open = false;
+    // #47：过程旁白直接露出，夹在前后动作卡之间；之后的动作另起一组卡。
+    details.className = "thinking narration streaming";
+    details.open = true;
+    run.chipGroup = null;
     const summary = document.createElement("summary");
     const orb = createOrb("composing", ORB_BOX_THINKING);
 
@@ -2823,6 +2901,7 @@ function toggleChipDetail(entry: ToolChipEntry): void {
   group.expanded = entry;
   entry.chip.classList.add("active");
   entry.chip.setAttribute("aria-expanded", "true");
+  entry.chip.after(group.detail);
   renderChipDetail(entry);
   group.detail.hidden = false;
   scrollToEnd();
@@ -2853,6 +2932,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   addChainStep(action.short);
   run.lastToolShort = action.short;
 
+  // #47：第一张动作卡出现时展开过程，逐步动作不必再点开才看得到；用户收起后不再强行打开。
+  if (!applyingHistory && !run.body.querySelector(".chip")) run.root.open = true;
+
   if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
   const group = run.chipGroup;
 
@@ -2881,11 +2963,14 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   iconBox.appendChild(chipOrb.el);
   const label = document.createElement("span");
   label.className = "chip-label";
-  label.textContent = action.full;
+  label.textContent = actionCardLabel(ev.name, ev.params);
   const dur = document.createElement("span");
   dur.className = "dur";
   dur.hidden = true;
-  chip.append(dot, iconBox, label, dur);
+  const more = document.createElement("span");
+  more.className = "chip-more";
+  more.appendChild(icon(ChevronRight));
+  chip.append(dot, iconBox, label, dur, more);
 
   const entry: ToolChipEntry = {
     chip,
@@ -3005,6 +3090,10 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       onToolEnd(ev);
       break;
     case "agent_start":
+      if (!citationRequestPending) currentCitationSource = null;
+
+      citationRequestPending = false;
+
       if (!runId || runId === conversations.get(selectedConversationId)?.runId) noteRunStarted(runId);
       foldLeadAnswer();
       leadDeliveryMode = (ev as { deliveryMode?: "explicit" }).deliveryMode ?? null;
@@ -3021,6 +3110,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 宿主没有用它交付（停止、出错、交给用户）：和原来一样只留在执行过程里。
       foldLeadAnswer();
       leadDeliveryMode = null;
+      steerRibbon.reset();
       artifactCards.settleAfterTurn();
       break;
     case "user_delivery":
@@ -3065,6 +3155,9 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
       }else if (ev.receipt) {
         // 任务条材料只认这张回执：accepted/applied 才把这次发出的材料升级为「已随任务送入」。
         taskBar.noteReceipt(ev.receipt);
+
+        // 插话没被采纳：下一段回答不是按它写的，不挂「已改方向」。
+        if (ev.receipt.action === "steer" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed")) steerRibbon.reset();
 
         if (ev.receipt.conversationId === selectedConversationId) {
           if (ev.receipt.action === "abort") {
@@ -3168,7 +3261,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
     const answer = existing!;
     delete answer.dataset.streaming;
     revealText(answer, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
-      after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(answer); } });
+      after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(answer); attachDeliverySources(answer, delivery); } } });
     existing!.dataset.deliveryKind = delivery.kind;
     placeStartAcknowledgement(existing!, delivery.kind);
     existing!.dataset.deliveryStatus = delivery.status;
@@ -3182,9 +3275,10 @@ function handleUserDelivery(delivery: UserDelivery): void {
   voiceUI.deliver?.(delivery);
 
   const bubble = addMsg("msg assistant markdown", "");
+  steerRibbon.decorate(bubble, !applyingHistory);
   // 整段一次送达的回答也按同样节奏放出来，不一下子整块冒出。
   revealText(bubble, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
-    after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble); } });
+    after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(bubble); attachDeliverySources(bubble, delivery); } } });
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
   bubble.dataset.deliveryStatus = delivery.status;
@@ -3226,6 +3320,16 @@ function send(msg: ClientMessage): boolean {
 }
 
 // ── T05 接续入口：消费 task_view；「继续原任务」只提交现有 resume 动作 ──
+// #53 继续上次的事：空白会话起点区的「没做完的事」卡，逻辑在 open-threads.ts。
+configureOpenThreads({
+  root: document.getElementById("starter")!,
+  send,
+  conversations: () => conversations.values(),
+  currentConversationId: () => selectedConversationId,
+  ready: () => starterReady() && conversationEmpty(),
+  selectConversation: (id) => selectConversation(id),
+});
+
 const resumeEntry = new ResumeEntry({
   root: document.getElementById("resume-entry-root")!,
   sendResume: (request) => send({ type: "task_action", request }),
@@ -3241,6 +3345,104 @@ const resumeEntry = new ResumeEntry({
     }
   },
 });
+
+/** Render only host facts. The footer reuses ResumeEntry's request, receipt and timeout handling. */
+function renderStreamTaskCard(view: TaskView): void {
+  const resumeRoot = document.getElementById("resume-entry-root")!;
+
+  if (!view.runId || !view.goal || view.state === "none") return;
+
+  let card = Array.from(messagesEl.querySelectorAll<HTMLElement>(".ai-task-card"))
+    .find(node => node.dataset.runId === view.runId);
+
+  if (card && Number(card.dataset.observedAt) > view.observedAt) return;
+  // A completed plain answer is not a multi-step task; keep its original uncluttered path.
+
+  if (view.state === "idle" && !view.results.length && !view.outstanding.length && !view.resumable) {
+    if (card) { messagesEl.append(resumeRoot); card.remove(); }
+
+    return;
+  }
+
+  if (!card) {
+    card = document.createElement("section");
+    card.className = "ai-task-card expanded";
+    card.dataset.runId = view.runId;
+    card.innerHTML = `<button type="button" class="ai-task-trigger" aria-expanded="true">
+      <span class="trigger-top-row"><span class="target-scope"><span class="dot"></span><span class="task-site"></span></span>
+      <span class="trigger-right"><span class="task-status-badge"></span><span class="task-chevron" aria-hidden="true">⌄</span></span></span>
+      <span class="task-goal-line"></span></button>
+      <div class="ai-task-reveal"><div class="ai-task-content"><div class="task-items"></div><div class="sources-row"></div></div></div>
+      <div class="ai-task-footer"></div>`;
+    const trigger = card.querySelector<HTMLButtonElement>(".ai-task-trigger")!;
+    const reveal = card.querySelector<HTMLElement>(".ai-task-reveal")!;
+    const content = card.querySelector<HTMLElement>(".ai-task-content")!;
+    content.id = `task-content-${crypto.randomUUID()}`;
+    trigger.setAttribute("aria-controls", content.id);
+    trigger.onclick = () => {
+      const expanded = card!.classList.toggle("expanded");
+      trigger.setAttribute("aria-expanded", String(expanded));
+      reveal.inert = !expanded;
+    };
+
+    appendToMessages(card);
+  }
+
+  card.dataset.observedAt = String(view.observedAt);
+  card.querySelector(".task-goal-line")!.textContent = view.goal;
+  // One ledger item may occur in both lists. Keep its last authoritative status, never infer success.
+  const items = new Map([...view.results, ...view.outstanding].map(item => [item.id, item]));
+  const done = [...items.values()].filter(item => item.status === "satisfied").length;
+  card.querySelector(".task-status-badge")!.textContent = `${stateHeadline(view.state, view.resumable)}${items.size ? ` (${done}/${items.size})` : ""}`;
+  const list = card.querySelector(".task-items")!;
+  list.replaceChildren();
+  const labels = { satisfied: "已完成", pending: "待执行", blocked: "受阻", unknown: "结果未知" };
+
+  for (const item of items.values()) {
+    const row = document.createElement("div");
+    row.className = `task-item ${item.status === "satisfied" ? "done" : "pending"}`;
+    const mark = document.createElement("span");
+    mark.className = "task-item-icon";
+    mark.textContent = item.status === "satisfied" ? "✓" : item.status === "pending" ? "○" : "!";
+    mark.setAttribute("aria-hidden", "true");
+    const title = document.createElement("span");
+    title.textContent = `${labels[item.status]} · ${plainStep(item.description)}`;
+    row.append(mark, title);
+    list.append(row);
+  }
+
+  for (const active of view.active) {
+    const row = document.createElement("div");
+    row.className = "task-item pending";
+    row.textContent = `正在执行 · ${plainStep(active.action)}`;
+    list.append(row);
+  }
+
+  if (!list.childElementCount) list.textContent = view.state === "running" ? "正在准备任务…" : "没有已记录的步骤。";
+  const sources = card.querySelector(".sources-row")!;
+  sources.replaceChildren();
+
+  for (const material of view.materials ?? []) {
+    const chip = document.createElement("span");
+    chip.className = "source-chip";
+    chip.textContent = material.label;
+    chip.title = "已随任务送入的材料，不代表内容已经核实";
+    sources.append(chip);
+  }
+
+  const site = card.querySelector(".task-site")!;
+  site.textContent = view.materials?.find(item => item.kind === "page")?.label ?? "当前任务";
+
+  if (view.page) {
+    const observedAt = view.observedAt;
+    void resolveTabPage(view.page.tabId).then(page => {
+      if (page?.url && card!.isConnected && Number(card!.dataset.observedAt) === observedAt) site.textContent = hostOf(page.url);
+    });
+  }
+  // Move the existing root, not a copied resume button. Conversation reset preserves this node.
+
+  card.querySelector(".ai-task-footer")!.append(resumeRoot);
+}
 
 /** 面板重开/重连/切会话时补取权威视图；拿不到时保持本地已渲染事实，不编造。 */
 function queryTaskView(): void {
@@ -3293,7 +3495,7 @@ const inputContext = (): VoiceInputContext => {
   const context: VoiceInputContext = { attachments: attachments?.getAttachments() ?? [] };
 
   if (pendingAsk) {
-    context.context = { tabId: pendingAsk.tabId, title: pendingAsk.title, url: pendingAsk.url, selection: { text: pendingAsk.text } };
+    context.context = { tabId: pendingAsk.tabId, title: pendingAsk.title, url: pendingAsk.url, ...(pendingAsk.text ? { selection: { text: pendingAsk.text } } : {}) };
   }
 
   return context;
@@ -3356,7 +3558,7 @@ function handleServerMessage(raw: string): void {
   }
 
   if (msg.type === "task_history_result") {
-    handlePastTasksResult(msg);
+    if (!receiveOpenThreadsTasks(msg)) handlePastTasksResult(msg);
 
     return;
   }
@@ -3422,6 +3624,8 @@ function handleServerMessage(raw: string): void {
     case "task_view":
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
+
+      if (msg.view.conversationId === selectedConversationId) renderStreamTaskCard(msg.view);
       renderTaskStrip();
 
       // T03 任务条：只信视图自己的任务身份，跨会话/旧 run 的视图不改当下这一条。
@@ -3460,6 +3664,7 @@ function handleBgMessage(envelope: BgToPanel): void {
     }
 
     renderConversations();
+    refreshOpenThreads();
 
     return;
   }
@@ -3503,6 +3708,12 @@ function handleBgMessage(envelope: BgToPanel): void {
     return;
   }
 
+  if (envelope.kind === "page_section" || envelope.kind === "marginalia") {
+    marginalia.receive(envelope);
+
+    return;
+  }
+
   if (envelope.kind === "ask_selection") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     applyPendingAsk(envelope.ask);
@@ -3530,6 +3741,7 @@ function handleBgMessage(envelope: BgToPanel): void {
     voiceUI.reconnected();
     // 面板重开或重连：补取当前只读视图，摘要不靠旧缓存。
     queryTaskView();
+    marginalia.refresh();
 
     // 清单可能先于连接到达：连上后补一次打开决策，别等兜底时限。
     if (bootFreshSession && bootInheritedId !== null) resolveBootSession(bootInheritedId, conversations.size > 0);
@@ -3600,6 +3812,7 @@ function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage
 }
 
 function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
+  replayingHistory = restoring;
   const fresh: PanelHistoryEntry[] = [];
   applyingHistory = true;
 
@@ -3611,6 +3824,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
       if (entry.item.kind === "user") {
         if (!running) runStartAt = eventTime();
+        else if (!entry.item.undelivered) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);
         const bubble = addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
@@ -3623,6 +3837,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
     }
   } finally {
     applyingHistory = false;
+    replayingHistory = false;
     historyOccurredAt = undefined;
   }
 
@@ -3791,7 +4006,7 @@ const taskBar = new TaskBar({
   // 重试走真实控制入口：与接管/停止按钮同一条路径，不新增权限。
   onRetryControl: (action) => {
     if (action === "stop") stopCurrentTask();
-    else takeoverBtn.click();
+    else requestTakeover();
   },
 });
 
@@ -3830,15 +4045,18 @@ function applyPendingAsk(ask: PendingAsk): void {
 
   if (!askCiteEl || !askCiteHost || !askCiteText) return;
   askCiteHost.textContent = hostOf(ask.url);
-  askCiteText.textContent = ask.text;
+  askCiteEl.classList.toggle("feed-token", !!ask.element);
+  askCiteText.textContent = ask.element && ask.element.kind !== "selection" ? `${ask.element.kind === "table" ? "📊" : ask.element.kind === "code" ? "⌘" : "▣"} ${ask.element.title}` : ask.text || ask.title;
+  askCiteText.title = ask.text;
   askCiteEl.hidden = false;
-  inputEl.focus();
+  inputEl.focus({ preventScroll: true });
   saveDraft();
   syncTaskBarDraft();
 }
 
 function clearPendingAsk(): void {
   pendingAsk = null;
+  askCiteEl?.classList.remove("feed-token");
 
   if (askCiteEl) askCiteEl.hidden = true;
 
@@ -3893,23 +4111,25 @@ function restoreLostSend(): void {
   noticeSendFailed();
 }
 
-function sendInput(): void {
+/** quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。 */
+function sendInput(quick?: string): void {
   if (!conversationReady) return;
   const held=panelLive(sessionRun.values(), teamView).userHasPage;
-  const text = inputEl.value.trim();
-  const pendingAtts = attachments.getAttachments();
+  const text = quick ?? inputEl.value.trim();
+  const pendingAtts = quick ? [] : attachments.getAttachments();
 
   if (!text && pendingAtts.length === 0) return;
 
   // steer 归入进行中的 run，不动计时起点；新消息重开计时
   if (!running&&!held) runStartAt = Date.now();
 
-  const context = pendingAsk
+  const context = pendingAsk && !quick
     ? {
         tabId: pendingAsk.tabId,
         title: pendingAsk.title,
         url: pendingAsk.url,
-        selection: { text: pendingAsk.text },
+        // 只挂了来源页、没定位到段落时没有选段：只带页面。
+        ...(pendingAsk.text ? { selection: { text: pendingAsk.text } } : {}),
       }
     : undefined;
 
@@ -3933,8 +4153,13 @@ function sendInput(): void {
 
  return; }
 
+  marginalia.showConversation();
+  const citationPage = context ?? activeTabInfo;
+
+  if (!running && !held) { currentCitationSource = citationPage ? captureCitationContext(citationPage) : null; citationRequestPending = true; }
+
   const queued = queuedSends.some((e) => e.kind === "client" && e.msg.type === "task_action" && e.msg.request.requestId === request.requestId);
-  unconfirmedSend = { text, ask: pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
+  unconfirmedSend = { text, ask: quick ? null : pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
 
   // 本地反馈：快照这次真正送出的材料；回执 accepted 之前只显示「发送中」
   taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
@@ -3954,6 +4179,8 @@ function sendInput(): void {
   }
 
   sendFailNotifiedFor = null;
+
+  if (quick) return;
   inputEl.value = "";
   clearPendingAsk();
   attachments.clear();
@@ -3981,17 +4208,34 @@ inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBar
 window.addEventListener("pagehide", saveDraft);
 
 inputEl.addEventListener("keydown", (e) => {
+  if (slashSkills.handleKeydown(e)) return;
+
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     sendInput();
   }
 });
 
-takeoverBtn.onclick = () => {
+function requestTakeover(): void {
   taskBar.noteControlRequested("takeover");
   port?.postMessage({ kind: "control", action: "takeover", conversationId: selectedConversationId } satisfies PanelToBg);
+}
+
+takeoverBtn.onclick = () => {
+  if (takeoverBtn.dataset.mode === "handback") port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
+  else requestTakeover();
 };
 
+
+const marginalia = createMarginalia(document.querySelector<HTMLSelectElement>("#marginalia-mode")!, document.getElementById("marginalia-rail")!);
+
+installDropzone(document.getElementById("composer")!, (source, tabId) => {
+  applyPendingAsk({ text: source.text, tabId, title: source.title, url: source.url, element: source });
+  const template = source.kind === "table" ? "请分析此表格，说明关键指标及其依据。" : source.kind === "code" ? "请解释这段代码，并指出值得注意的问题。" : source.kind === "selection" ? "请解释这段内容，并说明依据。" : "请总结这张卡片，并说明重要信息的依据。";
+  inputEl.value = inputEl.value.trim() ? `${inputEl.value}\n${template}` : template;
+  inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+  inputEl.focus({ preventScroll: true });
+}, () => ({ ready: currentDraftReady && conversationReady, scope: selectedConversationId, revision: draftRevision }));
 
 armBootDecisionTimeout();
 

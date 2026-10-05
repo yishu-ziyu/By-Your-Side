@@ -111,6 +111,8 @@ export class PiAgentLoop implements AgentLoop {
   private idleWaiters: Array<() => void> = [];
   /** 本次调用里宿主插入的上下文消息：convertToLlm 把 custom 转成 user 前记下，紧接着的模型调用读取。 */
   private injected: ModelRequestObservation["injected"] = [];
+  /** 当前这次模型调用的截断入口（见 AgentLoop.interruptText）；调用结束后清空。 */
+  private cutText: (() => boolean) | null = null;
 
   constructor(private readonly options: PiAgentLoopOptions) {
     // 0.5、1 秒两次重试：服务挂起时最坏 15 s × 3 + 1.5 s 就告诉用户，而不是让人干等几分钟。
@@ -129,7 +131,7 @@ export class PiAgentLoop implements AgentLoop {
 
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: options.messages ?? [] },
-      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort, options.firstEventTimeoutMs ?? MODEL_FIRST_EVENT_TIMEOUT_MS),
+      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort, options.firstEventTimeoutMs ?? MODEL_FIRST_EVENT_TIMEOUT_MS, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }),
       // Pi原生转换保留自定义消息、压缩摘要与分支摘要。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
@@ -228,6 +230,10 @@ export class PiAgentLoop implements AgentLoop {
 
   async steer(text: string, images?: ImageContent[]): Promise<void> {
     this.queue("steer", text, images);
+  }
+
+  interruptText(): boolean {
+    return this.cutText?.() ?? false;
   }
 
   async sendCustomMessage(message: Pick<CustomAppMessage, "customType" | "content" | "display" | "details">, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void> {
@@ -445,7 +451,7 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number): StreamFn {
+function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number, onCut: (cut: () => boolean, live: boolean) => void): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);
@@ -454,7 +460,7 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
     const options = level === undefined ? streamOptions : { ...streamOptions, reasoning: level === "off" ? undefined : level };
 
     // SAFETY: 同上，参数原样转交。
-    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs, signal => models.streamSimple(model as never, context as never, { ...options, signal } as never));
+    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs, signal => models.streamSimple(model as never, context as never, { ...options, signal } as never), onCut);
   }) as StreamFn;
 }
 
@@ -462,7 +468,7 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
  * 第一个事件（start 只表示连上，不算）迟迟不来：取消这次请求，交出一条可重试的超时错误，写明是哪个模型。
  * 用户取消照常走原来的 aborted 结局。
  */
-function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal) => AssistantMessageEventStream): AssistantMessageEventStream {
+function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void): AssistantMessageEventStream {
   const controller = new AbortController();
   const cancel = () => controller.abort();
 
@@ -493,17 +499,42 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     controller.abort();
   }, timeoutMs);
 
+  // 用户改方向：正在写的正文按「写完了」收下（stopReason stop），旧请求取消、晚到的字丢弃；
+  // 循环随即读排队的插话，同一轮里重写。已开始写工具调用、还没写出正文时不截断。
+  let partial: AssistantMessage | null = null;
+  let cut = false;
+
+  const cutText = (): boolean => {
+    if (cut || !partial || partial.content.some(part => part.type === "toolCall")
+      || !partial.content.some(part => part.type === "text" && part.text.trim())) return false;
+    cut = true;
+    clearTimeout(timer);
+    // 深拷贝：取消请求后供应商还会就地改它的流式对象，收下的这条消息不能跟着变。
+    out.push({ type: "done", reason: "stop", message: { ...structuredClone(partial), stopReason: "stop" } });
+    out.end();
+    controller.abort();
+
+    return true;
+  };
+
+  onCut?.(cutText, true);
+
   void (async () => {
     try {
       for await (const event of source) {
+        if (cut) break;
+
         if (event.type !== "start") clearTimeout(timer);
+
+        if ("partial" in event) partial = event.partial;
         out.push(event);
       }
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      if (!cut) fail(error instanceof Error ? error.message : String(error));
     } finally {
       clearTimeout(timer);
       outer?.removeEventListener("abort", cancel);
+      onCut?.(cutText, false);
       out.end();
     }
   })();

@@ -338,7 +338,7 @@ return child},
       expect(client).toBeDefined();
       const change=(client as unknown as {change:(phase:import('../src/sidepanel/voice-client.js').VoicePhase)=>void}).change;
 
-      for(const [phase,label] of [['connecting','正在连接'],['listening','正在听你说'],['thinking','正在处理这句话'],['speaking','正在回答'],['error','连接失败']] as const){
+      for(const [phase,label] of [['connecting','正在连接'],['listening','正在听'],['thinking','正在想'],['speaking','正在说'],['error','连接失败']] as const){
         change(phase);
         expect(byClass('voice-progress').hidden).toBe(false);
         expect(byClass('voice-state').textContent).toBe(label);

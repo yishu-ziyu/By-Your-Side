@@ -3,7 +3,7 @@
  * 与 shared/protocol.ts（扩展 ⇆ 伴随进程）不同，本文件只是 panel 与 background 之间的
  * 转发约定，走 chrome.runtime Port。
  */
-import type { Attachment, ClientMessage, ServerMessage } from "../../shared/protocol.js";
+import type { Attachment, ClientMessage, ServerMessage, ViewportSectionUpdate } from "../../shared/protocol.js";
 import type { PendingAsk } from "./shared/ask-selection.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
@@ -46,6 +46,8 @@ export type PanelToBg =
 export type BgToPanel = BgToPanelPayload & { conversationId?: string };
 
 type BgToPanelPayload =
+  | { kind: "page_section"; update: ViewportSectionUpdate | null; tabId: number }
+  | { kind: "marginalia"; update: ViewportSectionUpdate; state: import("../../shared/reading.js").ReadingEvent["state"]; text: string; error?: string }
   | { kind: "conversations"; conversations: import("../../shared/protocol.js").ConversationSummary[]; selectedConversationId: string; resumeReading?: boolean }
   /** 来自伴随进程的协议消息（tool_call 不经面板，由 background 直接执行）。 */
   | { kind: "server"; msg: ServerMessage }

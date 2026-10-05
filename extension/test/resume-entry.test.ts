@@ -98,7 +98,7 @@ describe('A05-02/A05-03 正向接续摘要与恢复入口', () => {
     expect(text).not.toContain('已完成');
     expect(find(section, 'resume-line')!.title).toContain('先重新读取当前页面');
     const button = find(section, 'resume-action')!;
-    expect(button.textContent).toBe('继续');
+    expect(button.textContent).toBe('继续原任务');
     button.onclick!();
     await flush();
     expect(sent).toHaveLength(1);
@@ -215,7 +215,7 @@ describe('A05-04/A05-05/D10 诚实阻塞与缺口说明', () => {
     expect(waitingText('readback_required', null)).toContain('读回');
     expect(waitingText('failure_limit', null)).toContain('失败');
     expect(waitingText('unknown_with_baseline', null)).toContain('未知');
-    expect(waitingText('human_control', null)).toContain('交还');
+    expect(waitingText('human_control', null)).toContain('你继续');
   });
 
   it('继续被拒后：同一任务的同一状态里保留真实原因；换任务/真正开跑后清除', async () => {

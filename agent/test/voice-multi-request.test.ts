@@ -107,7 +107,7 @@ it('a related instruction during SDK teardown stays with the original run, indep
 return {steps:[{action:'steer',text,target:null}]};});
  const reply:any=await h.say('然后把这条评论放进笔记');
  expect(reply.receipts[0].status).toBe('accepted');
- expect(runtime.session.steerCurrentTask).toHaveBeenCalledWith('然后把这条评论放进笔记',expect.objectContaining({tabId:1}),undefined);
+ expect(runtime.session.steerCurrentTask).toHaveBeenCalledWith('然后把这条评论放进笔记',expect.objectContaining({tabId:1}),undefined,{rewrite:false});
  expect(h.manager.getTaskProgress('default')!.runId).toBe(run);
  expect(h.manager.list()).toHaveLength(1);
 });

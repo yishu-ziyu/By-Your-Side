@@ -395,7 +395,7 @@ await page.evaluate(() => {
 
 const banner = await page.evaluate(() => window.__sideagent.controlBanner?.());
 
-if (!banner || banner.status !== "现在归你" || banner.action !== "交还") {
+if (!banner || banner.status !== "现在归你" || banner.action !== "你继续") {
   fail(`页顶接管条不对 ${JSON.stringify(banner)}`);
 }
 
@@ -461,7 +461,7 @@ await page.evaluate(() => {
 
 const restoredBanner = await page.evaluate(() => window.__sideagent.controlBanner?.());
 
-if (!restoredBanner || restoredBanner.status !== "现在归你" || restoredBanner.action !== "交还") {
+if (!restoredBanner || restoredBanner.status !== "现在归你" || restoredBanner.action !== "你继续") {
   fail(`load complete 后应恢复现在归你/交还 ${JSON.stringify(restoredBanner)}`);
 }
 

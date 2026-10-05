@@ -236,7 +236,7 @@ it('text and voice dispatch use the same strict steer with queryable receipts an
  await h.manager.handleMessage({type:'task_action',conversationId:'default',request});
  await h.manager.handleMessage({type:'task_action',conversationId:'default',request});
  expect(a.runtime.session.steerCurrentTask).toHaveBeenCalledTimes(1);
- expect(a.runtime.session.steerCurrentTask).toHaveBeenCalledWith('预算800',undefined,undefined);
+ expect(a.runtime.session.steerCurrentTask).toHaveBeenCalledWith('预算800',undefined,undefined,{rewrite:true});
  await h.manager.steerFromVoice('default','预算600',h.manager.getTaskProgress('default')!.startedAt,{requestId:'voice-edit',runId,voiceId:'v1',turn:1});
  expect(a.runtime.session.steerCurrentTask).toHaveBeenCalledTimes(2);
  await h.manager.handleMessage({type:'task_receipt_query',conversationId:'default',requestId:'voice-edit'});
@@ -253,12 +253,12 @@ it('resolves captured targets, isolates inputs and replays receipts to both conv
  const targets=h.manager.voiceTargets(),ctx={requestId:'cross',voiceId:'v',turn:1,runId:null,targets,input:{context:{tabId:7,title:'private',url:'https://source.test'}}};
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'steer',text:'阅读会话改成六百',target:'阅读'}]}));
  expect(await h.manager.routeVoiceInput('default','阅读会话改成六百',null,()=>true,ctx)).toMatchObject({ok:true});
- expect(other.runtime.session.steerCurrentTask).toHaveBeenCalledWith('阅读会话改成六百',undefined,undefined);
+ expect(other.runtime.session.steerCurrentTask).toHaveBeenCalledWith('阅读会话改成六百',undefined,undefined,{rewrite:false});
  expect(h.manager.dispatcher.store.list('default')).toEqual(h.manager.dispatcher.store.list(b));
  expect(h.emitted.filter(e=>e.type==='agent_event'&&e.event.kind==='notice'&&e.event.receipt?.requestId==='cross').map(e=>e.conversationId)).toEqual([b,'default']);
  a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'steer',text:'阅读会话用当前页面改成六百',target:'阅读'}]});
  await h.manager.routeVoiceInput('default','阅读会话用当前页面改成六百',null,()=>true,{...ctx,requestId:'share'});
- expect(other.runtime.session.steerCurrentTask).toHaveBeenLastCalledWith('阅读会话用当前页面改成六百',ctx.input.context,undefined);
+ expect(other.runtime.session.steerCurrentTask).toHaveBeenLastCalledWith('阅读会话用当前页面改成六百',ctx.input.context,undefined,{rewrite:false});
  other.emit({type:'agent_event',event:{kind:'agent_end'}});await h.manager.handleMessage({type:'user_message',conversationId:b,text:'replacement'});other.emit({type:'agent_event',event:{kind:'agent_start'}});
  expect(await h.manager.routeVoiceInput('default','阅读会话改成六百',null,()=>true,{...ctx,requestId:'old'})).toMatchObject({ok:false});
  expect(other.runtime.session.steerCurrentTask).toHaveBeenCalledTimes(2);

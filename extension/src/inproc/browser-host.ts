@@ -162,6 +162,13 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
+    // 主动建议是后台自己发起的：没配模型就静静地不建议，不在会话里报错。
+    if (message.type === "nudge_request") {
+      connection?.send({ type: "nudge_result", requestId: message.requestId, nudge: null });
+
+      return;
+    }
+
     if (message.type !== "task_view_query" && message.type !== "task_receipt_query") {
       connection?.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "请先在「模型与语音」里配置模型。" } });
     }

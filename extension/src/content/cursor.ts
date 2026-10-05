@@ -230,6 +230,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       }
       .action-text { display: block; }
       .agent-name { display: block; color: #d5dbea; font-size: 9.5px; font-weight: 500; }
+      .agent-name:empty { display: none; }
       /* 状态层：等待 / 读页面 / 完成 / 失败。与动作名牌同一块，左侧色条按状态上色 */
       .cursor.stating .label {
         background: #172033; color: #fff; border-left: 3px solid var(--s, #2d4a86);
@@ -274,7 +275,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         color: #141413; font: 400 12px/1.5 -apple-system, "PingFang SC", sans-serif;
       }
       .xpage.on { display: block; }
-      .cursor:not(.holding) .label { display: none !important; }
+      /* 状态统一在右上角；光标旁只挂「正在做的这一下」（#43），做完随光标回角落收起。 */
+      .cursor:not(.holding):not(.acting) .label { display: none !important; }
       .cursor.rest:not(.holding) { visibility: hidden; }
       .cursor.holding .label { display:flex; flex-wrap:wrap; gap:6px; width:170px; max-width:calc(100vw - 48px); background:#ffffff; color:#141413; border:1px solid #e3e1d9; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px #2928210d; }
       .hold-prompt { flex-basis:100%; font-size:12px; white-space:normal; }
@@ -691,16 +693,18 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     inst.labelSize = undefined;
   }
 
+  /** 光标旁一句人话，最多 12 个字：「我在填「出发日期」」「点好了」。 */
   function renderActionLabel(inst: Instance): void {
     const action = inst.action!;
-    const verb = { click: "点击", fill: "填写", hover: "定位" }[action.kind];
+    const verb = { click: "点", fill: "填", hover: "看" }[action.kind];
+    const name = action.name.length > 6 ? `${action.name.slice(0, 5)}…` : action.name;
 
-    const text = action.phase === "active" ? `正在${verb}`
-      : action.phase === "failed" ? "操作未完成"
+    const text = action.phase === "active" ? (name ? `我在${verb}「${name}」` : { click: "我在点这里", fill: "我在填这一栏", hover: "我在看这里" }[action.kind])
+      : action.phase === "failed" ? `没${verb}成`
       : action.phase === "unknown" ? "结果待确认"
-      : action.kind === "click" ? "已点击" : `${verb}结束`;
+      : `${verb}好了`;
 
-    paintLabel(inst, text + (action.name ? ` · ${action.name}` : ""), inst.name);
+    paintLabel(inst, text, "");
   }
 
   function relayoutActions(): void {
@@ -1290,7 +1294,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         position: absolute; left: 12px; top: 12px;
         display: inline-flex; align-items: center; gap: 10px;
         width: max-content; max-width: calc(100vw - 24px);
-        pointer-events: auto;
+        pointer-events: none;
         background: #fff; color: #1c1f24;
         border-radius: 10px; padding: 8px 10px;
         box-shadow: 0 8px 24px rgba(15,23,42,.12), 0 0 0 .5px rgba(15,23,42,.12);
@@ -1298,7 +1302,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         opacity: 0; transform: translateY(-6px);
         transition: opacity 160ms ease, transform 160ms ease;
       }
-      .bar.on { opacity: 1; transform: none; }
+      /* 隐藏后仍在原处：不能接住点击，否则用户和 Agent 都点不到底下的网页。 */
+      .bar.on { opacity: 1; transform: none; pointer-events: auto; }
       .bar b { font-weight: 600; white-space: nowrap; }
       .bar .sub { color: #7c828b; font: 500 11px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; white-space: nowrap; }
       .bar .stack { display: flex; margin-left: 1px; }
@@ -1323,7 +1328,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     status.textContent = "现在归你";
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.textContent = "交还";
+    btn.textContent = "你继续";
     btn.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -1397,7 +1402,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     }
 
     if (btn) {
-      const action = view?.action ?? "交还";
+      const action = view?.action ?? "你继续";
       btn.textContent = action;
       btn.hidden = !action;
       btn.disabled = view?.actionEnabled === false;

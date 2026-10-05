@@ -20,6 +20,7 @@ export function isSelectionBarOff(stored: unknown): stored is false {
 export const EXPLAIN_PROMPT = "解释这段选中的文字。用读者能懂的话说它在主张什么。不要操作页面。";
 
 export interface PendingAsk {
+  element?: import("../../../shared/protocol.js").PageElementSource;
   conversationId?: string;
   text: string;
   tabId: number;

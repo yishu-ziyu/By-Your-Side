@@ -1,3 +1,8 @@
+import { installEdgePill } from "./edge-pill.js";
+import { installLinkPreview } from "./link-preview.js";
+import { installMarginalia } from "./marginalia.js";
+import { installNudge } from "./nudge.js";
+import { installPageInteractions } from "./page-interactions.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
@@ -125,6 +130,24 @@ let selectedConversationId = "default";
 
 const connectedPanels = new Set<chrome.runtime.Port>();
 
+installPageInteractions();
+
+installLinkPreview();
+
+const edgePill = installEdgePill();
+
+const marginalia = installMarginalia({
+  send: message => transport.sendClientMessage(message),
+  selected: () => selectedConversationId,
+  publish: message => { for (const panel of connectedPanels) { try { panel.postMessage(message); } catch { /* Disconnected panel. */ } } },
+});
+
+const nudge = installNudge({
+  send: message => transport.sendClientMessage(message),
+  selected: () => selectedConversationId,
+  sendUserText: (id, text, context) => { const c = controller(id); void c.ready.then(() => c.sendUserText(text, context)); },
+});
+
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
 
 function broadcastConversations() { for (const port of connectedPanels) { try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId,resumeReading:reading.resumeOnOpen(selectedConversationId)}); } catch { /* 面板端口已断开 */ } } }
@@ -143,9 +166,15 @@ const HISTORY_PRUNE_DELAY_MS = 5_000;
 
 const transport = new Uplink({
  onServerMessage(msg) {
-   if (msg.type === "reading_event") { reading.receive(msg);
+   if (msg.type === "reading_event") { reading.receive(msg); marginalia.receive(msg);
 
  return; }
+
+   if (msg.type === "nudge_result") { nudge.receive(msg);
+
+ return; }
+
+   if (msg.type === "task_view") { edgePill.view(msg.view); nudge.view(msg.view); }
 
    if (msg.type === "conversation_created") reading.created(msg);
 
@@ -176,7 +205,7 @@ const transport = new Uplink({
  },
  onConnState(...args) { connectionSnapshot = args;
 
- if (args[0] !== "connected") { voiceRelay.disconnected(); reading.disconnected(); }
+ if (args[0] !== "connected") { voiceRelay.disconnected(); reading.disconnected(); edgePill.disconnected(); nudge.disconnected(); }
 
  if (args[0] === "connected") transport.sendClientMessage({type:"conversation_list"});
 
@@ -211,9 +240,13 @@ chrome.runtime.onConnect.addListener(port => {
  if (port.name !== PANEL_PORT_NAME || port.sender?.id !== chrome.runtime.id || port.sender?.url !== chrome.runtime.getURL("sidepanel.html")) return;
  voiceRelay.attach(port);
  connectedPanels.add(port);
+ edgePill.panel(true);
 
  for (const c of controllers.values()) c.attachPanel(port);
- port.onDisconnect.addListener(() => connectedPanels.delete(port));
+
+ port.onDisconnect.addListener(() => { connectedPanels.delete(port);
+
+   if (!connectedPanels.size) { marginalia.stopAll(); edgePill.panel(false); } });
  port.onMessage.addListener((msg: PanelToBg) => {
   if (!msg || typeof msg !== "object") return;
 
@@ -1171,7 +1204,10 @@ async function executeToolCall(
   const attachFact = (error: unknown): void => {
     if (!error || typeof error !== "object") return;
     const existing = (error as { executionFact?: string }).executionFact;
-    if (pageEffectStarted && existing === "not_executed") { Object.assign(error,{executionFact:"unknown"}); return; }
+
+    if (pageEffectStarted && existing === "not_executed") { Object.assign(error,{executionFact:"unknown"});
+
+ return; }
 
     if (existing === "not_executed" || existing === "unknown" || existing === "executed") return;
 
@@ -1180,6 +1216,7 @@ async function executeToolCall(
 
   try {
     checkIdentity();
+
     const guardedHandlers: Record<string,Handler> = {
       arm_event:(p,s)=>armEvent(p,s,beforeDispatch),
       screenshot:(p,s)=>screenshot(p,s,beforeDispatch),
@@ -1197,6 +1234,7 @@ async function executeToolCall(
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
       fetch:p=>fetchUrl(p,{beforeDispatch}),
     };
+
     const handler = name === "observe_page"
       ? (p: Record<string,unknown>) => voiceRelay.observe(conversationId,p.token,p.mode)
       : guardedHandlers[name] ?? handlers[name];
@@ -1880,6 +1918,22 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (selectedConversationId !== conversationId) return;
   const msg = raw as { type?: unknown; action?: unknown; text?: unknown };
 
+  if (msg.type === "ASK_SELECTION_TO_PANEL") {
+    if (!sender.tab?.id || sender.frameId !== 0 || typeof msg.text !== "string") return;
+    const text = clipSelection(msg.text);
+
+    if (!text) { sendResponse({ ok: false, error: "请先选择文字。" });
+
+      return; }
+    // Open synchronously in the originating gesture; trust sender metadata, not page payload.
+
+    const opened = chrome.sidePanel.open({ tabId: sender.tab.id });
+    void opened.then(() => deliverAsk({ text, tabId: sender.tab!.id!, title: sender.tab!.title ?? "", url: sender.url ?? sender.tab!.url ?? "" }))
+      .then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false, error: "未能转入侧栏，请重试。" }));
+
+    return true;
+  }
+
   if (msg.type === "sidepanel_capture_tab") {
     void (async () => {
       try {
@@ -1939,7 +1993,19 @@ async function importReading(record: ReadingRecord): Promise<void> {
   flushHistory();
 }
 
-return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
+/** 主动建议卡的按钮（#52）：与侧栏输入发出的用户消息走同一条路——记进对话、带页面上下文上行，没送达时标记可重试。 */
+function sendUserText(text: string, context: import("../../../shared/protocol.js").PageContext): void {
+  const entry = recordAndBroadcastHistory({ kind: "user", text });
+  const original: ClientMessage = { type: "user_message", text, context, conversationId };
+
+  if (!uplink.sendClientMessage(original)) {
+    panelHistory.markUndelivered(entry.seq, original);
+    flushHistory();
+    broadcast({ kind: "delivery", seq: entry.seq, ok: false, original } satisfies BgToPanel);
+  }
+}
+
+return { importReading, sendUserText, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
 voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
 
 return {context:enriched.context,attachments:enriched.attachments};}, ready: Promise.all([controlReady, historyReady]) };

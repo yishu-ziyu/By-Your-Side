@@ -1238,7 +1238,7 @@ return receipt;
       const revokeRequirement=this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
       await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
 
-      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);}
+      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments,{rewrite:request.source==='text'});}
       catch(error){
         if(error instanceof TaskActionRejected){
           revokeRequirement();
@@ -1461,6 +1461,21 @@ return receipt;
 
         return entry.runtime.session.answerReading(transcript, signal, onText);
       }, event => this.emit(event));
+
+      return;
+    }
+
+    if (message.type === 'nudge_request') {
+      // 主动建议（#52）：失败、超时、没有模型都当作不建议，只回 nudge:null，不打扰会话。
+      let nudge = null;
+
+      try {
+        const id = normalizeConversationId(message.conversationId);
+        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        nudge = entry ? await entry.runtime.session.judgeNudge(message.context) : null;
+      } catch { nudge = null; }
+
+      this.emit({ type: 'nudge_result', requestId: message.requestId, nudge });
 
       return;
     }

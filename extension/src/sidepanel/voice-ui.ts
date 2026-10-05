@@ -10,7 +10,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   region.className = 'voice-progress';
   region.hidden = true;
   region.setAttribute('aria-label', '语音问进度');
-  region.innerHTML = '<canvas class="voice-orb" aria-label="语音粒子球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div>';
+  region.innerHTML = '<canvas class="voice-orb" aria-label="语音粒子球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div>';
   composer.querySelector('#input')!.before(region);
   const button = document.createElement('button');
   button.type = 'button';
@@ -32,7 +32,46 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const transcript = region.querySelector<HTMLElement>('.voice-answer')!;
   const question = region.querySelector<HTMLElement>('.voice-question')!;
   const facts = region.querySelector<HTMLElement>('.voice-facts')!;
+  const stateDetail = region.querySelector<HTMLElement>('.voice-state-detail')!;
+  const sources = region.querySelector<HTMLElement>('.voice-sources')!;
   let phase: VoicePhase = 'idle';
+  /** 字幕区当前这段回答的全文；正在说时按句高亮最后一句。 */
+  let answerText = '';
+
+  /**
+   * #55 字幕：正在说时把当前句（累积文本的最后一句）单独标出来。
+   * 降级说明：Realtime 只给累积的 audio_transcript 文本，没有词级时间戳（VoiceEvent 'text' 只有 text），
+   * 所以不加粗当前词，只按句高亮；要做词级需另改语音后端协议。
+   */
+  const renderAnswer = (): void => {
+    const sentences = phase === 'speaking' ? answerText.match(/[^。！？!?；;\n]+[。！？!?；;\n]*/g) ?? [] : [];
+
+    if (sentences.length === 0) {
+      transcript.replaceChildren();
+      transcript.textContent = answerText;
+
+      return;
+    }
+
+    const before = document.createElement('span');
+    before.textContent = sentences.slice(0, -1).join('');
+    const current = document.createElement('span');
+    current.className = 'voice-current-sentence';
+    current.textContent = sentences.at(-1)!;
+    transcript.replaceChildren(before, current);
+  };
+
+  const setAnswer = (text: string): void => {
+    answerText = text;
+    renderAnswer();
+  };
+
+  /** 本轮真实来源数（来自交付事实链 facts.sources）；0 不显示。 */
+  const setSources = (count: number): void => {
+    sources.textContent = count > 0 ? `${count} 个来源` : '';
+    sources.hidden = count <= 0;
+  };
+
   let shownTurn = 0;
   /**
    * 「你：」这一行的各段。StepAudio 3 会按语义把一句带停顿的话切成几轮，前半句的转写常在后半句开口后才到：
@@ -325,7 +364,13 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     region.hidden = next === 'idle';
     button.setAttribute('aria-expanded', String(next !== 'idle'));
     button.setAttribute('aria-label', next === 'idle' ? '打开语音问进度' : '结束语音问进度');
-    status.textContent = detail ?? ({ idle: '', connecting: '正在连接', listening: '正在听你说', thinking: '正在处理这句话', speaking: '正在回答', error: '连接失败' }[next]);
+    // #55 状态胶囊：听/想/说固定短文案（颜色之外始终有字），后台给的说明放到胶囊下一行；连接中与出错仍直接显示说明。
+    const capsuleText: Partial<Record<VoicePhase, string>> = { listening: '正在听', thinking: '正在想', speaking: '正在说' };
+    const fallbackText: Partial<Record<VoicePhase, string>> = { idle: '', connecting: '正在连接', error: '连接失败' };
+    const capsule = capsuleText[next];
+    status.textContent = capsule ?? detail ?? fallbackText[next] ?? '';
+    // 「正在处理这句话」是 VoiceClient 的默认说明，和「正在想」重复，不再多写一行。
+    stateDetail.textContent = capsule && detail && detail !== '正在处理这句话' ? detail : '';
 
     if (next === 'error' && client.needsMicrophonePermission) {
       status.textContent = '请在授权页开启麦克风，再回到这里重试。';
@@ -335,6 +380,12 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     // 「停声」只在正在说时有用；其他时候收起，也不和右上角的「开启麦克风」叠在一起。
     stopSpeech.hidden = next !== 'speaking';
     region.dataset.state = next;
+
+    if (next === 'idle') {
+      setSources(0);
+    }
+
+    renderAnswer();
   }, event => {
     // 上一轮晚到的那段话是先说的：拼在当前各段前面，不切换轮次。
     if (event.kind === 'text' && event.role === 'user' && event.turn === shownTurn - 1) {
@@ -348,7 +399,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
     if ('turn' in event && event.turn !== shownTurn) {
       shownTurn = event.turn;
-      transcript.textContent = '';
+      setAnswer('');
+      setSources(0);
 
       if (answeredSinceQuestion) questionParts = [];
       showQuestion();
@@ -366,7 +418,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
         client.captureDisplay(event.turn, question.textContent ?? '');
       }
       else {
-        transcript.textContent = event.text;
+        setAnswer(event.text);
         answeredSinceQuestion = true;
       }
     }
@@ -390,8 +442,9 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     questionParts = [];
     answeredSinceQuestion = true;
     question.textContent = '';
-    transcript.textContent = '';
+    setAnswer('');
     facts.textContent = '';
+    setSources(0);
     currentDeliveryKind = null;
     void client.start(getConversation());
   };
@@ -458,6 +511,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     deliver: (delivery: {
       kind?: UserDelivery['kind'];
       text: string;
+      facts?: { sources: readonly unknown[] };
     }) => {
       if (currentDeliveryKind === 'finding' || currentDeliveryKind === 'reply') {
         if (delivery.kind === 'ack') {
@@ -469,7 +523,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
         currentDeliveryKind = delivery.kind;
       }
 
-      transcript.textContent = delivery.text;
+      setAnswer(delivery.text);
+      setSources(delivery.facts?.sources.length ?? 0);
     }
   };
 }

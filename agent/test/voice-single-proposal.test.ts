@@ -394,7 +394,7 @@ describe('提案校验沿用既有语义：整句、分界、目标名称、页�
     const context:RouteContext={requestId:'turn-target',voiceId:'v',turn:1,runId:h.manager.getTaskProgress(other)!.runId??null,targets:h.manager.voiceTargets(),input:{context:{tabId:7,title:'来源页',url:'https://source.test'}}};
     const receipt=await h.manager.routeVoiceInput('default','阅读会话用当前页面改成六百',null,()=>true,context);
     expect(receipt).toMatchObject({ok:true,turn:{branch:'control'}});
-    expect(target.steerCurrentTask).toHaveBeenCalledWith('阅读会话用当前页面改成六百',{tabId:7,title:'来源页',url:'https://source.test'},undefined);
+    expect(target.steerCurrentTask).toHaveBeenCalledWith('阅读会话用当前页面改成六百',{tabId:7,title:'来源页',url:'https://source.test'},undefined,{rewrite:false});
   });
 });
 

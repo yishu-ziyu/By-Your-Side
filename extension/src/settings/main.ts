@@ -16,6 +16,9 @@ import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from "../../../shared/voice-capture-core.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
+import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
+import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
+import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
 
 /** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
@@ -126,7 +129,26 @@ document.getElementById("settings")!.innerHTML = `
       <span>选中文字后显示「问 AI / 解释」</span>
     </label>
     <p class="settings-sub">关掉后选中文字不再弹出工具条；选中后按 ⌘J 或右键「问 By Your Side」仍然可用。已打开的网页立即生效。</p>
+    <label class="settings-check">
+      <input id="link-preview" type="checkbox" />
+      <span>按住 Shift 停在链接上，预览目标页</span>
+    </label>
+    <p class="settings-sub">卡片写目标页的标题和几行要点，不打开新标签；读页面时不带你的登录状态。</p>
+    <label class="settings-check">
+      <input id="nudge" type="checkbox" />
+      <span>主动建议</span>
+    </label>
+    <p class="settings-sub">在一页上读了一会儿，助手看出能帮上忙时（比如两篇可以对比、有个观点值得记下），在页面右下角递一张小卡，点一下交给侧栏去做。每次判断会把这一页和最近看过几页的摘录发给你选的模型；同一页只看一次，点 × 后这一页不再出现。</p>
     <p id="selection-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="settings-card" aria-labelledby="open-threads-title">
+    <h2 id="open-threads-title">继续上次的事</h2>
+    <label class="settings-check">
+      <input id="open-threads" type="checkbox" />
+      <span>新对话里显示没做完的事，点一下回去接着做</span>
+    </label>
+    <p class="settings-sub">最多 3 张，只来自这台电脑上的记录：中断或停在一半的任务、页面交给你的对话、没答完的阅读追问。单张点 × 后 7 天内不再出现。</p>
+    <p id="open-threads-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="settings-card" aria-labelledby="trace-title">
     <h2 id="trace-title">诊断记录</h2>
@@ -590,6 +612,9 @@ async function reload(): Promise<void> {
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
+  linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
+  nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
+  openThreads.checked = stored[OPEN_THREADS_KEY] === true;
   renderCurrent();
   refreshProviderMarks();
   renderCredentialState();
@@ -707,6 +732,49 @@ selectionBar.addEventListener("change", () => {
   );
 });
 
+const linkPreview = $<HTMLInputElement>("link-preview");
+
+linkPreview.addEventListener("change", () => {
+  const enabled = linkPreview.checked;
+
+  chrome.storage.local.set({ [LINK_PREVIEW_KEY]: enabled }).then(
+    () => setStatus(selectionStatus, enabled ? "链接预览已开启。" : "链接预览已关闭。", "ok"),
+    (error) => {
+      linkPreview.checked = !enabled;
+      setStatus(selectionStatus, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
+    },
+  );
+});
+
+const nudgeToggle = $<HTMLInputElement>("nudge");
+
+nudgeToggle.addEventListener("change", () => {
+  const enabled = nudgeToggle.checked;
+
+  chrome.storage.local.set({ [NUDGE_KEY]: enabled }).then(
+    () => setStatus(selectionStatus, enabled ? "主动建议已开启。" : "主动建议已关闭。", "ok"),
+    (error) => {
+      nudgeToggle.checked = !enabled;
+      setStatus(selectionStatus, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
+    },
+  );
+});
+
+const openThreads = $<HTMLInputElement>("open-threads");
+
+openThreads.addEventListener("change", () => {
+  const enabled = openThreads.checked;
+  const status = $("open-threads-status");
+
+  chrome.storage.local.set({ [OPEN_THREADS_KEY]: enabled }).then(
+    () => setStatus(status, enabled ? "已开启，下次打开新对话时出现。" : "已关闭。", "ok"),
+    (error) => {
+      openThreads.checked = !enabled;
+      setStatus(status, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
+    },
+  );
+});
+
 oauthLogin.addEventListener("click", () => void startLogin());
 
 oauthCancel.addEventListener("click", () => login?.abort());
@@ -725,7 +793,7 @@ voiceClear.addEventListener("click", () => void clearVoiceKey());
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 renderProviders();

@@ -51,6 +51,8 @@ import { ModelRequestTrace } from "./model-request-trace.js";
 import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
+import { judgeNudge } from "./nudge.js";
+import type { Nudge, NudgeContext } from "../../shared/nudge.js";
 import { asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
@@ -1173,6 +1175,16 @@ return;}
     return this.memoryRuntime.answerAsk(askId, answer);
   }
 
+  /** 主动建议的判断（#52）：快速模型优先，独立会话 id，不进任务历史。 */
+  async judgeNudge(context: NudgeContext, signal?: AbortSignal): Promise<Nudge | null> {
+    const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+
+    if (!model || !this.session) throw new Error("当前模型不可用");
+    const sessionId = `${this.session.sessionId}-nudge`;
+
+    return judgeNudge(this.sideHost()!, model, context, { sessionId, headers: opencodeSessionHeaders(model, sessionId), ...(signal ? { signal } : {}) });
+  }
+
   /** Separate no-tool completion; shares only model configuration, not task state/history. */
   async translatePageBatch(blocks: TranslationBlock[], language: string, signal: AbortSignal, meta?: TranslateMeta): Promise<TranslationSegment[]> {
     const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
@@ -1582,7 +1594,8 @@ return;}
   /**
    * 运行中修改统一入口：先登记（挡住在途旧写入），再按原路交给 Pi。语音与文字都走这里，不另开任务。
    */
-  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[]): Promise<SteerOutcome> {
+  /** rewrite：侧栏文字改方向。模型正在写正文时当场截断，同一轮按新要求重写（见 AgentLoop.interruptText）。 */
+  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[], options?: { rewrite?: boolean }): Promise<SteerOutcome> {
     const session = this.session;
 
     // 新任务显示路由尚未进入 Pi 时（Pi 还没在流），插话要取消路由并把两段要求合并重提示；
@@ -1634,6 +1647,8 @@ return {kind:'model'};
 
       try { if (images.length) await session.steer(input, images); else await session.steer(input); }
       catch (error) { this.unreserveCorrection(record); throw error; }
+
+      if (options?.rewrite && session.interruptText?.()) this.runTrace.record("steer_reshape", { text });
 
       return {kind:'model'};
     }catch(error){
