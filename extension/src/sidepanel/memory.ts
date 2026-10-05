@@ -186,11 +186,11 @@ export class MemoryManagementState {
   }
 
   /** 回答纠正后的询问；结果里的新条目（及被替换的旧条目）原样交给询问卡片，面板随后重读全表。 */
-  beginAskAnswer(conversationId: string, askId: string, answer: "remember" | "once"): MemoryClientMessage {
+  beginAskAnswer(conversationId: string, askId: string, answer: "remember" | "once", text?: string): MemoryClientMessage {
     const requestId = this.requestId();
     this.pending.set(requestId, { requestId, action: "ask", conversationId, order: ++this.order });
 
-    return { type: "memory_ask_answer", requestId, conversationId, askId, answer };
+    return text === undefined ? { type: "memory_ask_answer", requestId, conversationId, askId, answer } : { type: "memory_ask_answer", requestId, conversationId, askId, answer, text };
   }
 
   rejectLocally(requestId: string, error: string): MemoryApplyResult {

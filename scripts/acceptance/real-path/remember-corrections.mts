@@ -12,6 +12,7 @@
  *   --scripted --only=21p：个人长期偏好仍自动保存；只针对这次的纠正不改长期偏好。
  *   --scripted --only=21mix：一句话中独立的个人邮箱直接记，网站方法仍先询问。
  *   --scripted --only=21split：网站纠正的两段证据虽不重叠，也不能自动记成个人资料。
+ *   --scripted --only=23edit：卡片「改一下」后点「记住」，存下改后的文字、范围同卡片；空白、像密码的被拒，卡片给原因。
  *   --model=provider/id --only=22live：真实模型缺备注先问，用户补原文后再提交，不自动替用户确认。
  *   npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --model=opencode-go/deepseek-v4.1-flash
  *   npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --model=zai-coding-cn/glm-5.3-flash
@@ -1142,6 +1143,87 @@ async function rememberR1Again(): Promise<JsonRecord> {
   return { ok: !!entry, id: state.r1Id, useCount: entry ? TARGETS.read.useCount(entry) ?? null : null };
 }
 
+/** 在询问卡片的输入框里全选后输入（真键盘输入，替换原文）。 */
+async function typeInAskEdit(askId: string, text: string) {
+  const sel = `[data-memory-ask="${askId}"] [data-memory-ask-edit]`;
+  await rp.click(panel, sel);
+  await rp.evaluate(panel, `(() => { const t = document.querySelector(${JSON.stringify(sel)}); t.focus(); t.select(); return true; })()`);
+  await rp.typeText(panel, text);
+}
+
+// SAFETY: the page expression always returns a string (innerText or "").
+const askError = (askId: string) => rp.evaluate(panel, `document.querySelector(${JSON.stringify(`[data-memory-ask="${askId}"] .memory-ask-error`)})?.innerText.trim() ?? ""`) as Promise<string>;
+
+/**
+ * 23edit（docs/evals/20261006-memory-site-scope-and-edit.md R2）：「改一下」→ 空白被拒 → 像密码被拒（原话不进库）→ 改成新文字点「记住」。
+ * 堵：卡片显示的拒绝原因来自后台；拒绝后库里没有新做法；最后库里恰好 1 条生效做法，文字逐字等于改后的、范围是这个网站；「记忆」面板里显示改后的文字。
+ */
+async function s23edit(): Promise<Verdict> {
+  const RULE = "导出时选全部";
+  const EDITED = "导出时选全部并勾选附件";
+  const SECRET = "导出前输入密码 Qx7731zz";
+  await emptyMemory();
+  await navigate(CRM);
+  await newConversation();
+  await diagnostics("s23edit-before");
+  const r = await correct(CRM, S1_TASK, S1_FIX, () => fix({ rule: RULE, evidence: "页面一共 200 条，我要全部" }), { fresh: false });
+
+  if (!r.ask) return verdict(false, { error: "没有出询问" });
+  const id = r.ask.id;
+  const opened = await clickInAsk(id, "[data-memory-ask-edit-open]");
+  await shot("23edit-opened");
+  const draft = await until(async () => (await rp.evaluate(panel, `document.querySelector(${JSON.stringify(`[data-memory-ask="${id}"] [data-memory-ask-edit]`)})?.value ?? null`)) ?? undefined, 5_000, "出现输入框").catch(() => null);
+
+  await typeInAskEdit(id, "   ");
+  await clickInAsk(id, TARGETS.ask.remember);
+  const blankError = await until(async () => (await askError(id)) || undefined, 10_000, "空白被拒").catch(() => "");
+  const methodsAfterBlank = (await readMemories()).items.filter(isMethod).length;
+
+  await typeInAskEdit(id, SECRET);
+  await clickInAsk(id, TARGETS.ask.remember);
+
+  const secretError = await until(async () => {
+    const e = await askError(id);
+
+    return e && e !== blankError ? e : undefined;
+  }, 10_000, "像密码被拒").catch(() => "");
+
+  await shot("23edit-refused");
+  const methodsAfterSecret = (await readMemories()).items.filter(isMethod).length;
+  const secretHits = await idbHits("Qx7731zz");
+
+  await typeInAskEdit(id, EDITED);
+  await clickInAsk(id, TARGETS.ask.remember);
+
+  const after = await until(async () => {
+    const a = await askById(id);
+
+    return a?.undo ? a : undefined;
+  }, 15_000, "记住后出现撤销").catch(() => null);
+
+  await shot("23edit-remembered");
+  const active = (await readMemories()).items.filter((e) => isMethod(e) && isActive(e));
+  const entry = active[0] ?? null;
+  const lines = await diagnostics("s23edit");
+  const leaked = lines.filter((l) => l.raw.includes("Qx7731zz")).length;
+
+  await openMemoryPanel();
+  const panelText = String(await rp.evaluate(panel, `document.querySelector(${JSON.stringify(TARGETS.panel.methodGroup)})?.innerText ?? ""`));
+  await shot("23edit-panel");
+  await closeMemoryPanel();
+
+  const evidence: JsonRecord = {
+    opened, draft, blankError, methodsAfterBlank, secretError, methodsAfterSecret, secretHits, leaked, card: after,
+    stored: active.map((e) => ({ text: TARGETS.read.text(e), scope: TARGETS.read.scope(e) })), panelShowsEdited: panelText.includes(EDITED),
+  };
+
+  const pass = opened && draft === RULE && /空/.test(blankError) && methodsAfterBlank === 0 && /密码/.test(secretError) && methodsAfterSecret === 0 && secretHits.length === 0 && leaked === 0
+    && !!after && TARGETS.ask.rememberedText.test(after.text) && active.length === 1 && TARGETS.read.text(entry!) === EDITED
+    && TARGETS.read.scope(entry!).kind === "site" && TARGETS.read.scope(entry!).hostname === CRM && evidence.panelShowsEdited === true;
+
+  return verdict(pass, evidence);
+}
+
 /** 13：「这次就行」→ 不保存；同一会话里同一条纠正不再出卡片。 */
 async function s13(): Promise<Verdict> {
   const FIX = "你漏了「备注」那一栏，每次都要填";
@@ -2120,7 +2202,7 @@ async function real2(): Promise<Verdict> {
 
 let fatal: string | null = null;
 
-const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20", "21", "21m", "21p", "21mix", "21split"];
+const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20", "21", "21m", "21p", "21mix", "21split", "23edit"];
 
 const ORDER_REAL = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "risk-crm", "risk-form", "risk-shop", "22live"];
 
@@ -2201,6 +2283,7 @@ try {
     await run("21p", s21p);
     await run("21mix", s21mix);
     await run("21split", s21split);
+    await run("23edit", s23edit);
   } else {
     for (const site of RISK) {
       const askId = site.key === "crm" ? "1" : site.key === "form" ? "3" : null;

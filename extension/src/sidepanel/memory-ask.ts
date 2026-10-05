@@ -21,6 +21,8 @@ export interface MemoryAskCard {
   /** 被它替换的旧做法；撤销时恢复这条。 */
   replaced?: MemoryEntry;
   error: string;
+  /** 点了「改一下」：输入框里的文字（被拒后留着，用户接着改）；没在改为 undefined。 */
+  draft?: string;
   /** 等结果时先到的结局事件：结果丢了（被忽略或失败）就停在这个结局，不再让人点第二次。 */
   outcome?: AskOutcome;
 }
@@ -28,7 +30,9 @@ export interface MemoryAskCard {
 export type AskOutcome = NonNullable<MemoryAskEvent["outcome"]>;
 
 export type AskInput =
-  | { kind: "remember" | "once" | "scope" | "undo" }
+  | { kind: "remember" | "once" | "scope" | "undo" | "edit" }
+  /** 改过文字后点「记住」。 */
+  | { kind: "remember"; text: string }
   | { kind: "result"; ok: true; entry?: MemoryEntry; entries?: MemoryEntry[]; alreadySaved?: true }
   | { kind: "result"; ok: false; error: string; askClosed?: true }
   /** 后台发来的同一询问的结局（现场或对话历史回放）。 */
@@ -39,7 +43,7 @@ export type AskInput =
 type EntryRef = Pick<MemoryEntry, "id" | "version">;
 
 export type AskRequest =
-  | { type: "answer"; answer: "remember" | "once" }
+  | { type: "answer"; answer: "remember" | "once"; text?: string }
   | { type: "update"; entry: EntryRef; text: string; scope: MemoryScope }
   | { type: "restore" | "forget"; entry: EntryRef };
 
@@ -74,11 +78,16 @@ function toggledScope(card: MemoryAskCard, entry: MemoryEntry): MemoryScope | nu
   return hostname ? { kind: "site", hostname } : null;
 }
 
-function act(card: MemoryAskCard, kind: "remember" | "once" | "scope" | "undo"): AskStep {
+function act(card: MemoryAskCard, kind: "remember" | "once" | "scope" | "undo" | "edit", text?: string): AskStep {
   if (card.pending) return { card };
+
+  if (kind === "edit") return card.phase === "open" && card.draft === undefined ? { card: { ...card, draft: card.ask.rule.trim(), error: "" } } : { card };
 
   if (kind === "remember" || kind === "once") {
     if (card.phase !== "open") return { card };
+
+    // 改过的文字由后台判断能不能存（空白、像密码的会被拒，原因回到卡片上）。
+    if (kind === "remember" && text !== undefined) return { card: { ...card, pending: kind, draft: text, error: "" }, request: { type: "answer", answer: kind, text } };
 
     return { card: { ...card, pending: kind, error: "" }, request: { type: "answer", answer: kind } };
   }
@@ -141,5 +150,5 @@ export function stepAsk(card: MemoryAskCard, input: AskInput): AskStep {
 
   if (input.kind === "result" || input.kind === "ignored") return { card: settle(card, input) };
 
-  return act(card, input.kind);
+  return act(card, input.kind, "text" in input ? input.text : undefined);
 }

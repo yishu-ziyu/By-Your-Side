@@ -1,7 +1,7 @@
 import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
-import { endOfLocalDay, localDateOf, MEMORY_KIND_LABEL, memoryHostOfUrl, memoryTaskUrl, validLocalDate, type MemoryEntry, type MemoryScope, type MemoryValidity } from "../../shared/memory.js";
+import { endOfLocalDay, localDateOf, MEMORY_KIND_LABEL, memoryHostOfUrl, memoryTaskUrl, validLocalDate, validMemoryText, type MemoryEntry, type MemoryScope, type MemoryValidity } from "../../shared/memory.js";
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import { ReplaceTargetChanged, type MemoryQuery, type MemoryStore } from "./memory-store.js";
@@ -446,11 +446,21 @@ export class MemoryRuntime {
   /**
    * 用户回答询问（只认后台记下的 askId）：remember 存一条确认过的做法（有替换时旧的标「被替换」），once 不存、这次对话里同一条不再问。
    * 不认识的编号（没问过、已回答、扩展重启过）报「这条询问已失效」。
+   * text 是用户在卡片上「改一下」后的文字：就是用户自己的话，按它存；空白或像密码的不存，询问留着，用户改好可以再点。
    */
-  async answerAsk(askId: string, answer: "remember" | "once"): Promise<MemoryAskAnswer> {
+  async answerAsk(askId: string, answer: "remember" | "once", text?: string): Promise<MemoryAskAnswer> {
     const ask = this.asks.get(askId);
 
     if (!ask) throw new MemoryAskClosed(MEMORY_ASK_EXPIRED);
+
+    if (answer === "remember" && text !== undefined) {
+      if (!text.trim()) throw new Error("改后的内容是空的，没有记下");
+
+      if (!validMemoryText(text)) throw new Error("改后的内容太长，没有记下");
+
+      if (looksSecret(text)) throw new Error("像是密码、验证码一类的内容，不记");
+    }
+
     // 先收回这条询问：连点两下也只写一次；写入失败再放回，用户可以再点。
     this.asks.delete(askId);
 
@@ -463,7 +473,7 @@ export class MemoryRuntime {
     }
 
     try {
-      const method: Parameters<MemoryStore["saveMethod"]>[0] = { text: ask.rule, scope: ask.scope, sourceConversationId: this.conversationId, sourceQuote: ask.quote };
+      const method: Parameters<MemoryStore["saveMethod"]>[0] = { text: text?.trim() || ask.rule, scope: ask.scope, sourceConversationId: this.conversationId, sourceQuote: ask.quote };
 
       if (ask.replaces) method.replaces = ask.replaces;
       const { entries, alreadySaved } = await this.store.saveMethod(method);

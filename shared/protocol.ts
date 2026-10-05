@@ -8,7 +8,7 @@ import { isExecutionFeedback } from "./execution-feedback.js";
  * 本文件是两侧共用的唯一权威定义；修改需两侧同步。
  */
 
-import { isMemoryEntry, isMemoryScope, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
+import { isMemoryEntry, isMemoryScope, MEMORY_TEXT_MAX, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
@@ -180,8 +180,8 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
   /** 撤销替换：id 是被替换的旧条目；它恢复生效，替换它的新条目改为失效。 */
   | { type: "memory_restore"; requestId: string; id: string; expectedVersion: number }
-  /** 回答纠正后的询问（memory_ask）：remember 保存那条做法；once 不保存，同一对话里不再问同一条。规则文字只取后台记下的那份，面板不能改写。 */
-  | { type: "memory_ask_answer"; requestId: string; askId: string; answer: "remember" | "once" }
+  /** 回答纠正后的询问（memory_ask）：remember 保存那条做法；once 不保存，同一对话里不再问同一条。text 是用户在卡片上「改一下」后的文字，不带就存后台记下的那份。 */
+  | { type: "memory_ask_answer"; requestId: string; askId: string; answer: "remember" | "once"; text?: string }
   /** 「这里别用」：off=true 在这个网站不再带这条，off=false 恢复。不删除记忆、不改版本号。 */
   | { type: "memory_site"; requestId: string; id: string; expectedVersion: number; hostname: string; off: boolean }
   /** 撤销「忘掉」：把忘掉时删掉的那件事的全部条目（memory_result.forget 的 entries）原样放回。 */
@@ -733,7 +733,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
       if (msg.type === "memory_site" && !(typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean")) return null;
 
-      if (msg.type === "memory_ask_answer" && !(validMemoryId(msg.askId) && (msg.answer === "remember" || msg.answer === "once"))) return null;
+      // 改后的文字空白也照收：由后台拒绝并把原因带回卡片。
+      if (msg.type === "memory_ask_answer" && !(validMemoryId(msg.askId) && (msg.answer === "remember" || msg.answer === "once") && (msg.text === undefined || (typeof msg.text === "string" && msg.text.length <= MEMORY_TEXT_MAX)))) return null;
 
       if (msg.type !== "memory_list" && msg.type !== "memory_ask_answer" && (!validMemoryId(msg.id) || !validMemoryVersion(msg.expectedVersion))) return null;
 

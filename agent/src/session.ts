@@ -1169,10 +1169,10 @@ return;}
   }
 
   /** 用户回答「要我记住吗」：见 MemoryRuntime.answerAsk。没有记忆运行时，询问也就不在。 */
-  async answerMemoryAsk(askId: string, answer: "remember" | "once"): Promise<MemoryAskAnswer> {
+  async answerMemoryAsk(askId: string, answer: "remember" | "once", text?: string): Promise<MemoryAskAnswer> {
     if (!this.memoryRuntime) throw new MemoryAskClosed(MEMORY_ASK_EXPIRED);
 
-    return this.memoryRuntime.answerAsk(askId, answer);
+    return this.memoryRuntime.answerAsk(askId, answer, text);
   }
 
   /** 主动建议的判断（#52）：快速模型优先，独立会话 id，不进任务历史。 */

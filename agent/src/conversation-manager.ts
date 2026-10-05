@@ -1714,7 +1714,7 @@ return;
         const session = this.entries.get(conversationId)?.runtime.session;
 
         if (!session?.answerMemoryAsk) throw new MemoryAskClosed(MEMORY_ASK_EXPIRED);
-        const answered = await session.answerMemoryAsk(message.askId, message.answer);
+        const answered = await session.answerMemoryAsk(message.askId, message.answer, message.text);
         // 版本号用运行时写入后取到的那个；取不到就不带（不再读一次，免得把已存下的说成失败）。
         const result: Extract<ServerMessage, { type: "memory_result" }> = { type: "memory_result", conversationId, requestId: message.requestId, action, ok: true };
 

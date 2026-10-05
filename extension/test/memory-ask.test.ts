@@ -20,6 +20,8 @@ import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryA
  * 13. 结局事件盖掉了活卡片：已记住并带撤销的卡片被降成无按钮；等结果时先到的结局让随后的结果被丢掉、撤销没了。
  * 14. 等结果时结局已到、结果却丢了（被忽略或失败），卡片退回可点，再点会重复保存。
  * 15. 没有结局的询问（侧栏重开后也一样）不可点。
+ * 16. 「改一下」后点「记住」，发出去的仍是原来的规则文字；改的文字被拒（空白、像密码）后草稿丢了，或询问不能再点。
+ * 17. 已有结果或等待中的卡片还能进入修改。
  */
 
 const site = (hostname: string): MemoryScope => ({ kind: "site", hostname });
@@ -220,5 +222,24 @@ describe("memory ask card", () => {
     expect(failed.card).toMatchObject({ phase: "remembered", pending: null });
     expect(failed.card.error).toContain("连接不可用");
     expect(stepAsk(failed.card, { kind: "undo" }).request).toEqual({ type: "forget", entry: { id: "new", version: 1 } });
+  });
+
+  it("「改一下」 starts from the asked rule and 「记住」 sends the edited words; a refusal keeps the draft and stays answerable (16)", () => {
+    const editing = run(ask(), { kind: "edit" });
+    expect(editing.requests).toEqual([null]);
+    expect(editing.card).toMatchObject({ phase: "open", draft: "以后在这个网站导出，我都先选全部再核对条数。" });
+
+    const refused = run(editing.card, { kind: "remember", text: "   " }, fail("改后的内容是空的，没有记下"));
+    expect(refused.requests[0]).toEqual({ type: "answer", answer: "remember", text: "   " });
+    expect(refused.card).toMatchObject({ phase: "open", pending: null, draft: "   ", error: "改后的内容是空的，没有记下" });
+
+    const saved = run(refused.card, { kind: "remember", text: "导出时选全部并勾选附件" }, ok(method("new", 1, site("crm.test"))));
+    expect(saved.requests[0]).toEqual({ type: "answer", answer: "remember", text: "导出时选全部并勾选附件" });
+    expect(saved.card.phase).toBe("remembered");
+  });
+
+  it("cannot start editing while waiting or after the ask is answered (17)", () => {
+    expect(run(ask(), { kind: "remember" }, { kind: "edit" }).card.draft).toBeUndefined();
+    expect(run(ask(), { kind: "once" }, { kind: "result", ok: true }, { kind: "edit" }).card.draft).toBeUndefined();
   });
 });

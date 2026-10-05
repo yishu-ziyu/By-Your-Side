@@ -2429,7 +2429,7 @@ function stepMemoryAsk(askId: string, input: AskInput): void {
   if (!request) return;
 
   const message = request.type === "answer"
-    ? memoryState.beginAskAnswer(selectedConversationId, askId, request.answer)
+    ? memoryState.beginAskAnswer(selectedConversationId, askId, request.answer, request.text)
     : request.type === "update"
       ? memoryState.beginUpdate(selectedConversationId, request.entry, request.text, request.scope)
       : request.type === "restore"
@@ -2483,6 +2483,21 @@ function buildMemoryAsk(askId: string): HTMLElement {
       return root;
     }
 
+    // 「改一下」：在卡片里改规则文字，点「记住」时存改后的文字（范围仍是这张卡片的范围）。
+    let draft: HTMLTextAreaElement | null = null;
+
+    if (card.draft !== undefined) {
+      draft = document.createElement("textarea");
+      draft.className = "memory-ask-edit";
+      draft.dataset.memoryAskEdit = "";
+      draft.rows = 2;
+      draft.maxLength = MEMORY_TEXT_MAX;
+      draft.value = card.draft;
+      draft.disabled = card.pending !== null;
+      draft.setAttribute("aria-label", "改成要我记住的做法");
+      root.appendChild(draft);
+    }
+
     const pills = document.createElement("div");
     pills.className = "memory-ask-pills";
 
@@ -2490,8 +2505,26 @@ function buildMemoryAsk(askId: string): HTMLElement {
       const pill = memoryAskButton(answer === "remember" ? "memory-ask-pill memory-ask-yes" : "memory-ask-pill", label, { kind: answer }, card);
       pill.dataset.memoryAskAnswer = answer;
 
+      if (answer === "remember" && draft) pill.onclick = () => stepMemoryAsk(card.ask.askId, { kind: "remember", text: draft.value });
+
       if (card.pending === answer) pill.setAttribute("aria-busy", "true");
       pills.appendChild(pill);
+    }
+
+    if (!draft) {
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "memory-ask-pill";
+      edit.dataset.memoryAskEditOpen = "";
+      edit.textContent = "改一下";
+      edit.disabled = card.pending !== null;
+
+      edit.onclick = () => {
+        stepMemoryAsk(card.ask.askId, { kind: "edit" });
+        messagesEl.querySelector<HTMLTextAreaElement>(`[data-memory-ask="${CSS.escape(card.ask.askId)}"] [data-memory-ask-edit]`)?.focus();
+      };
+
+      pills.appendChild(edit);
     }
 
     root.appendChild(pills);

@@ -394,6 +394,35 @@ describe("answering the ask", () => {
     expect(f.asks()).toHaveLength(1);
   });
 
+  // 「改一下」再「记住」（docs/evals/20261006-memory-site-scope-and-edit.md R2）。会出错的方式：
+  // E1 存下的仍是模型原来的文字；E2 范围不是询问时的范围；E3 空白或像密码的文字也存下了，或原因没带回去；
+  // E4 被拒后询问作废，用户改好也点不成；E5 被拒的秘密原文进了诊断记录。
+  it("「改一下」 then 「记住」 stores the user's edited words with the ask's scope (E1, E2)", async () => {
+    const f = await fixture();
+    await f.say(correction);
+    const edited = "以后在这个网站导出，我都先选全部并勾选附件";
+    const answer = await f.runtime.answerAsk(f.asks()[0]!.askId, "remember", `  ${edited}  `);
+    const stored = await f.store.list();
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ text: edited, scope: { kind: "site", hostname: "crm.example" }, kind: "method", sourceQuote: correction, status: "active" });
+    expect(answer.entry).toEqual(stored[0]);
+  });
+
+  it("an edited rule that is blank or looks secret is refused with a reason; the ask stays answerable (E3, E4, E5)", async () => {
+    const f = await fixture();
+    await f.say(correction);
+    const askId = f.asks()[0]!.askId;
+
+    await expect(f.runtime.answerAsk(askId, "remember", "   ")).rejects.toThrow("改后的内容是空的，没有记下");
+    await expect(f.runtime.answerAsk(askId, "remember", "以后登录这个网站，密码填 Abc12345")).rejects.toThrow("像是密码、验证码一类的内容，不记");
+    expect(await f.store.list()).toEqual([]);
+    expect(JSON.stringify(f.records)).not.toContain("Abc12345");
+
+    await f.runtime.answerAsk(askId, "remember", "导出前先选全部");
+    expect((await f.store.list()).map(e => e.text)).toEqual(["导出前先选全部"]);
+  });
+
   it("remembering a rule that got saved meanwhile reports alreadySaved and writes nothing (F9)", async () => {
     const f = await fixture();
     await f.say(correction);
