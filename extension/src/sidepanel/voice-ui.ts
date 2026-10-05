@@ -10,7 +10,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   region.className = 'voice-progress';
   region.hidden = true;
   region.setAttribute('aria-label', '语音问进度');
-  region.innerHTML = '<canvas class="voice-orb" aria-label="语音粒子球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div>';
+  region.innerHTML = '<canvas class="voice-orb" aria-label="语音粒子球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div><div class="voice-actions"></div>';
   composer.querySelector('#input')!.before(region);
   const button = document.createElement('button');
   button.type = 'button';
@@ -28,7 +28,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   stopSpeech.textContent = '停声';
   stopSpeech.title = '只停止说话，后台任务继续';
   stopSpeech.hidden = true;
-  end.before(stopSpeech);
+  // 停声、结束放在底部居中，和光球、字幕同一条中线。
+  region.querySelector('.voice-actions')!.append(stopSpeech, end);
   const transcript = region.querySelector<HTMLElement>('.voice-answer')!;
   const question = region.querySelector<HTMLElement>('.voice-question')!;
   const facts = region.querySelector<HTMLElement>('.voice-facts')!;
@@ -66,10 +67,14 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     renderAnswer();
   };
 
-  /** 本轮真实来源数（来自交付事实链 facts.sources）；0 不显示。 */
-  const setSources = (count: number): void => {
-    sources.textContent = count > 0 ? `${count} 个来源` : '';
-    sources.hidden = count <= 0;
+  /** 本轮真实读过的网站（交付事实链 facts.sources）：「读了 a、b 等 N 个网站」；没有就不显示。 */
+  const setSources = (list: readonly { url: string }[]): void => {
+    const hosts = [...new Set(list.flatMap((item) => {
+      try { return [new URL(item.url).hostname.replace(/^www\./, '')]; } catch { return []; }
+    }))];
+
+    sources.textContent = hosts.length > 2 ? `读了 ${hosts.slice(0, 2).join('、')} 等 ${hosts.length} 个网站` : hosts.length ? `读了 ${hosts.join('、')}` : '';
+    sources.hidden = !hosts.length;
   };
 
   let shownTurn = 0;
@@ -81,7 +86,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   let answeredSinceQuestion = true;
 
   const showQuestion = () => {
-    question.textContent = questionParts.length ? '你：' + questionParts.reduce((all, part) => (all && !/[。！？!?，,、；;…]$/.test(all) ? `${all}，${part}` : all + part), '') : '';
+    question.textContent = questionParts.length ? questionParts.reduce((all, part) => (all && !/[。！？!?，,、；;…]$/.test(all) ? `${all}，${part}` : all + part), '') : '';
   };
 
   let currentDeliveryKind: UserDelivery['kind'] | null = null;
@@ -364,13 +369,11 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     region.hidden = next === 'idle';
     button.setAttribute('aria-expanded', String(next !== 'idle'));
     button.setAttribute('aria-label', next === 'idle' ? '打开语音问进度' : '结束语音问进度');
-    // #55 状态胶囊：听/想/说固定短文案（颜色之外始终有字），后台给的说明放到胶囊下一行；连接中与出错仍直接显示说明。
-    const capsuleText: Partial<Record<VoicePhase, string>> = { listening: '正在听', thinking: '正在想', speaking: '正在说' };
-    const fallbackText: Partial<Record<VoicePhase, string>> = { idle: '', connecting: '正在连接', error: '连接失败' };
-    const capsule = capsuleText[next];
-    status.textContent = capsule ?? detail ?? fallbackText[next] ?? '';
-    // 「正在处理这句话」是 VoiceClient 的默认说明，和「正在想」重复，不再多写一行。
-    stateDetail.textContent = capsule && detail && detail !== '正在处理这句话' ? detail : '';
+    // #55 状态由光球自己的动法表达，球下只留一个灰字：在听 / 在想（有具体说明就写说明，如「在读这个页面」）/ 在说（字幕在说话，只给读屏）。
+    const plainDetail = detail && detail !== '正在处理这句话' ? detail : '';
+    const stateText: Partial<Record<VoicePhase, string>> = { listening: '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '连接失败' };
+    status.textContent = stateText[next] ?? (next === 'idle' ? '' : detail ?? '');
+    stateDetail.textContent = '';
 
     if (next === 'error' && client.needsMicrophonePermission) {
       status.textContent = '请在授权页开启麦克风，再回到这里重试。';
@@ -382,7 +385,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     region.dataset.state = next;
 
     if (next === 'idle') {
-      setSources(0);
+      setSources([]);
     }
 
     renderAnswer();
@@ -400,7 +403,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     if ('turn' in event && event.turn !== shownTurn) {
       shownTurn = event.turn;
       setAnswer('');
-      setSources(0);
+      setSources([]);
 
       if (answeredSinceQuestion) questionParts = [];
       showQuestion();
@@ -444,7 +447,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     question.textContent = '';
     setAnswer('');
     facts.textContent = '';
-    setSources(0);
+    setSources([]);
     currentDeliveryKind = null;
     void client.start(getConversation());
   };
@@ -511,7 +514,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     deliver: (delivery: {
       kind?: UserDelivery['kind'];
       text: string;
-      facts?: { sources: readonly unknown[] };
+      facts?: { sources: readonly { url: string }[] };
     }) => {
       if (currentDeliveryKind === 'finding' || currentDeliveryKind === 'reply') {
         if (delivery.kind === 'ack') {
@@ -524,7 +527,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       }
 
       setAnswer(delivery.text);
-      setSources(delivery.facts?.sources.length ?? 0);
+      setSources(delivery.facts?.sources ?? []);
     }
   };
 }

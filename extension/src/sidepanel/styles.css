@@ -2560,8 +2560,8 @@ details.run-steps.done .chip.error { background: transparent; }
 /* Voice progress: approved Particles Orb composer, 2026-09-08. */
 .voice-start{display:inline-flex;align-items:center;gap:0;flex-shrink:0;border:1px solid var(--content-border);border-radius:18px;background:var(--content-bg);color:var(--text-secondary);padding:0 7px 0 0;font-size:10px;cursor:pointer}
 .voice-start canvas{width:30px;height:30px}.voice-start[aria-expanded="true"]{background:var(--content-subtle);border-color:var(--content-border)}
-.voice-progress{position:relative;text-align:center;border-bottom:1px solid var(--content-border);padding:0 0 10px;margin-bottom:8px;flex-shrink:0}
-.voice-progress[hidden]{display:none}.voice-progress .voice-orb{width:160px;height:160px;display:block;margin:0 auto}
+.voice-progress{position:relative;text-align:center;padding:var(--s-2) 0 var(--s-3);margin-bottom:var(--s-2);flex-shrink:0}
+.voice-progress[hidden]{display:none}.voice-progress .voice-orb{width:112px;height:112px;display:block;margin:0 auto}
 .voice-end,.voice-stop-speech{position:absolute;right:0;top:8px;border:0;background:transparent;color:var(--text-secondary);font-size:11px;cursor:pointer}
 .voice-stop-speech{right:40px}
 .voice-stop-speech[hidden]{display:none}
@@ -2831,19 +2831,28 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .msg.steer-morph { animation:steer-morph-in 320ms var(--e-out); }
 @media(prefers-reduced-motion:reduce) { .msg.steer-morph { animation:none; } #ghost-bar .ghost-action, .steer-chip { transition:none; } }
 
-/* #55 语音胶囊 */
-.voice-progress{--voice-amber:var(--apple-orange);--voice-teal:#2f7f78}
-@media (prefers-color-scheme: dark){.voice-progress{--voice-teal:#5cc2b7}}
-.voice-progress .voice-state:not(:empty){display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--radius-pill);border:1px solid var(--content-border);background:var(--content-subtle);font-weight:600;transition:color var(--m-quick) var(--e-glide),background-color var(--m-quick) var(--e-glide),border-color var(--m-quick) var(--e-glide)}
-.voice-progress:is([data-state="listening"],[data-state="thinking"],[data-state="speaking"]) .voice-state::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
-.voice-progress[data-state="listening"] .voice-state{color:var(--voice-amber);background:color-mix(in srgb,var(--voice-amber) 12%,transparent);border-color:color-mix(in srgb,var(--voice-amber) 35%,transparent)}
-.voice-progress[data-state="speaking"] .voice-state{color:var(--voice-teal);background:color-mix(in srgb,var(--voice-teal) 12%,transparent);border-color:color-mix(in srgb,var(--voice-teal) 35%,transparent)}
-.voice-progress:is([data-state="listening"],[data-state="speaking"]) .voice-state::before{animation:voice-capsule-pulse 1.2s ease-in-out infinite}
-@keyframes voice-capsule-pulse{50%{opacity:.35;transform:scale(.7)}}
-.voice-state-detail{font-size:11px;color:var(--text-tertiary);margin-top:3px}.voice-state-detail:empty{display:none}
-.voice-current-sentence{color:var(--text-primary);font-weight:600;background:color-mix(in srgb,var(--voice-teal) 14%,transparent);border-radius:3px}
-.voice-sources{display:inline-block;font-size:10px;color:var(--text-secondary);margin-top:4px;padding:1px 8px;border-radius:var(--radius-pill);background:var(--content-subtle)}.voice-sources:empty,.voice-sources[hidden]{display:none}
-@media (prefers-reduced-motion: reduce){.voice-progress .voice-state:not(:empty){transition:none}.voice-progress:is([data-state]) .voice-state::before{animation:none}}
+/* #55 语音：光球居中、球下一个灰字、字幕卡里当前句墨色、说过的退成静默色；不加彩色胶囊。 */
+.voice-progress .voice-state { margin-top: var(--s-1); font-size: var(--fs-meta); color: var(--text-tertiary); }
+.voice-progress[data-state="speaking"] .voice-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.voice-progress[data-state="error"] .voice-state { color: var(--err); }
+.voice-progress .voice-hint, .voice-progress .voice-state-detail { display: none; }
+.voice-progress .voice-question { margin-top: var(--s-3); max-height: 72px; font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-secondary); text-align: left; }
+.voice-progress .voice-answer {
+  margin-top: var(--s-2); max-height: 168px; padding: var(--s-3) var(--s-4);
+  background: var(--content-bg); border: 1px solid var(--content-border); border-radius: 14px;
+  font-size: var(--fs-read); line-height: var(--lh-read); color: var(--text-quaternary); text-align: left;
+}
+.voice-progress:not([data-state="speaking"]) .voice-answer { color: var(--text-primary); }
+.voice-current-sentence { color: var(--text-primary); }
+.voice-progress .voice-sources { display: block; margin-top: var(--s-2); font-size: var(--fs-meta); color: var(--text-tertiary); text-align: left; }
+.voice-progress .voice-sources:empty, .voice-progress .voice-sources[hidden] { display: none; }
+.voice-progress .voice-actions { display: flex; justify-content: center; gap: var(--s-2); margin-top: var(--s-3); }
+.voice-progress .voice-actions .voice-end, .voice-progress .voice-actions .voice-stop-speech {
+  position: static; padding: 5px 18px; border: 1px solid var(--glass-border); border-radius: var(--r-pill);
+  background: var(--content-bg); color: var(--text-primary); font-size: var(--fs-ui); cursor: pointer;
+}
+.voice-progress .voice-actions button:hover { background: var(--content-subtle); }
+.voice-progress .voice-actions .voice-stop-speech[hidden] { display: none; }
 
 /* #47 动作卡 */
 /* 运行中每步一行：图标 + 动词 + 目标，右侧 › 展开参数；旁白夹在卡片之间。 */
