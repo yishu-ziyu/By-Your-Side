@@ -65,6 +65,37 @@ const traceSince = (after) => `(async () => {
   } finally { db.close(); }
 })()`;
 
+/** Select `needle` (whitespace ignored) in the visible page text, open shadow roots included (MDN code blocks); returns the selected text or null. */
+const selectText = (needle) => `(() => {
+  const want = ${JSON.stringify(needle)}.replace(/\\s+/g, "");
+  let flat = ""; const at = [];
+
+  const walk = (root) => {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (n.shadowRoot) walk(n.shadowRoot);
+      const el = n.nodeType === 3 && (n.parentElement ?? n.parentNode.host);
+      if (!el || el.closest("script,style,noscript") || !el.checkVisibility()) continue;
+      for (let i = 0; i < n.data.length; i++) if (!/\\s/.test(n.data[i])) { flat += n.data[i]; at.push([n, i]); }
+    }
+  };
+
+  walk(document.body);
+  const i = flat.indexOf(want);
+  if (i < 0) return null;
+  const range = document.createRange();
+  range.setStart(...at[i]); range.setEnd(at[i + want.length - 1][0], at[i + want.length - 1][1] + 1);
+  (at[i][0].parentElement ?? at[i][0].parentNode.host).scrollIntoView({ block: "center", behavior: "instant" });
+  getSelection().removeAllRanges(); getSelection().addRange(range);
+  return getSelection().toString();
+})()`;
+
+/** The page's 划词 reading thread, as the extension stores it (chrome.storage.session, read from the panel). */
+const READING_PROBE = `chrome.storage.session.get("readingRecords").then((s) => {
+  const turn = (s.readingRecords ?? []).sort((a, b) => a.updatedAt - b.updatedAt).at(-1)?.turns.at(-1);
+  return turn ? { state: turn.state, answer: turn.answer, error: turn.error ?? "" } : null;
+})`;
+
 const parseLines = (text) => text.split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
 
 /** Child processes still alive (so the runner can kill them if it exits). */
@@ -150,21 +181,96 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       return rec;
     }
 
-    if (dryRun) {
-      rec.status = "dry_run_ok";
-      rec.dry = { panel: await evalIn(ps, PANEL_PROBE), modelLabel: await evalIn(ps, "document.querySelector('#model-name')?.textContent ?? ''") };
-      await rp.screenshot(ps, join(outDir, `${task.id}-dry.png`)).catch(() => {});
+    // --- task setup_steps: extra tabs; a text selection opened in the page's 划词 card like a user (Shift-select → 问 AI) ---
+    let selected = null;
+    rec.setup = [];
+
+    const shadowCenter = async (attr, value) => {
+      const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, pageSid);
+
+      const find = (n) => {
+        const a = n.attributes ?? [];
+
+        for (let i = 0; i < a.length; i += 2) if (a[i] === attr && (value == null || a[i + 1] === value)) return n;
+
+        for (const c of [...(n.children ?? []), ...(n.shadowRoots ?? [])]) {
+          const f = find(c);
+
+          if (f) return f;
+        }
+
+        return null;
+      };
+
+      const node = find(root);
+      const box = node && await rp.cdp.send("DOM.getBoxModel", { nodeId: node.nodeId }, pageSid).catch(() => null);
+      const q = box?.model?.border;
+
+      return q && box.model.width > 0 ? { x: (q[0] + q[4]) / 2, y: (q[1] + q[5]) / 2 } : null;
+    };
+
+    try {
+      for (const step of task.setup_steps ?? []) {
+        if (step.type === "open_tabs") {
+          for (const url of step.urls) {
+            const sid = await rp.attach((await rp.cdp.send("Target.createTarget", { url, background: true })).targetId);
+            await until(() => evalIn(sid, "location.href !== 'about:blank' && document.readyState === 'complete'").catch(() => false), 45000, `tab load ${url}`).catch((e) => rec.errors.push(`setup: ${e.message}`));
+            const landed = await evalIn(sid, "location.href + ' | ' + document.title").catch(() => "?");
+            rec.setup.push(`open_tabs ${url} -> ${landed}`);
+            await rp.detach(sid);
+
+            if (!/^https?:/.test(landed)) throw new Error(`tab did not load: ${url} -> ${landed}`);
+          }
+        } else if (step.type === "select_text") {
+          selected = await evalIn(pageSid, selectText(step.text));
+
+          if (!selected) throw new Error(`text not found on page: ${step.text.slice(0, 60)}`);
+          await sleep(600); // let scrollIntoView finish; a scroll hides the toolbar
+          const shift = { key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16 };
+          await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", modifiers: 8, ...shift }, pageSid);
+          await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...shift }, pageSid);
+          const ask = await until(() => shadowCenter("data-act", "ask"), 10000, "划词 toolbar 问 AI");
+
+          for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, x: ask.x, y: ask.y, button: "left", clickCount: 1 }, pageSid);
+          await until(() => shadowCenter("aria-label", "关于选中文字的问题"), 10000, "划词 card input");
+          rec.setup.push(`select_text ${selected.length} chars "${selected.replace(/\s+/g, " ").slice(0, 80)}" -> 划词 card open`);
+        } else throw new Error(`unknown setup step ${step.type}`);
+      }
+
+      await rp.cdp.send("Page.bringToFront", {}, pageSid).catch(() => {});
+    } catch (e) {
+      rec.status = "setup_failed";
+      rec.errors.push(`setup: ${e.message}`);
+    }
+
+    for (const line of rec.setup) log(`${task.id} setup: ${line}`);
+
+    if (rec.status === "setup_failed") {
+      const shot = join(outDir, `${task.id}-page.png`);
+      await rp.screenshot(pageSid, shot).catch(() => {}); rec.screenshots.push(shot);
 
       return rec;
     }
 
-    // --- send prompt like a user: focus, type, Enter ---
-    await rp.click(ps, "#input");
-    await rp.typeText(ps, task.prompt);
+    if (dryRun) {
+      rec.status = "dry_run_ok";
+      rec.dry = { panel: await evalIn(ps, PANEL_PROBE), modelLabel: await evalIn(ps, "document.querySelector('#model-name')?.textContent ?? ''") };
+      await rp.screenshot(ps, join(outDir, `${task.id}-dry.png`)).catch(() => {});
+      await rp.screenshot(pageSid, join(outDir, `${task.id}-dry-page.png`)).catch(() => {});
+
+      return rec;
+    }
+
+    // --- send prompt like a user: focus, type, Enter (selection tasks: into the open 划词 card, minus the （选中…） stage note) ---
+    const inputSid = selected ? pageSid : ps;
+
+    if (selected) rec.typed_prompt = task.prompt.replace(/^（[^）]*）\s*/, "");
+    else await rp.click(ps, "#input");
+    await rp.typeText(inputSid, rec.typed_prompt ?? task.prompt);
     await sleep(200);
     rec._t0 = Date.now();
     rec.timestamps.send = iso(rec._t0);
-    await rp.pressEnter(ps);
+    await rp.pressEnter(inputSid);
 
     // --- watch panel DOM + extension diagnostics ---
     const seen = new Set();
@@ -183,6 +289,18 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     while (Date.now() < deadline) {
       const now = Date.now();
+
+      // 划词 answers stream into the page card, not the panel
+      if (selected) {
+        const r = await evalIn(ps, READING_PROBE).catch(() => null);
+
+        if (r?.answer && !firstOut) { firstOut = now; rec.timestamps.first_visible_output = iso(now); }
+
+        if (r && !["pending", "streaming"].includes(r.state)) { ended = now; break; }
+
+        await sleep(300); continue;
+      }
+
       snap = await evalIn(ps, PANEL_PROBE).catch((e) => ({ error: e.message }));
 
       if (snap?.error) { rec.errors.push(`panel probe: ${snap.error}`); await sleep(500); continue; }
@@ -252,6 +370,16 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       for (const m of afterUser) if (/error/.test(m.cls)) rec.errors.push(`panel error: ${m.text}`);
 
       if (!rec.final_answer_verbatim && afterUser.length) rec.final_answer_verbatim = afterUser.map((m) => m.text).join("\n");
+    }
+
+    if (selected) {
+      const r = await evalIn(ps, READING_PROBE).catch(() => null);
+      rec.reading = r;
+      rec.final_answer_verbatim = r?.answer || r?.error || "";
+      rec.panel_messages = r ? [{ cls: `reading ${r.state}`, text: rec.final_answer_verbatim }] : [];
+      addStep(Date.now(), `reading:${r?.state ?? "none"}`, rec.final_answer_verbatim.slice(0, 300));
+
+      if (r?.state === "error") rec.errors.push(`reading error: ${r.error}`);
     }
 
     try {

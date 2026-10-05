@@ -107,7 +107,7 @@ JUDGE_CONC=4 eval/harness/finalize.sh eval/runs/my-run
 - 只装扩展的版本只在本机（macOS）跑过 2 个模型 × 3 题；判分当时没跑成（本机 codex 默认模型对 ChatGPT 账号不可用），报表里 `pass_rate` 为空，见[验收](../docs/evals/20261002-eval-extension-only.md)。云端 Linux 未验证。
 - 成本：没有价格表时只报 token。智谱、MiniMax、阶跃都是 Token Plan 订阅，按 token 折算的钱不是实际账单；`catalog_list_total_usd` 是轨迹里 pi-ai 目录的 API 标价，目录外的模型（如 MiniMax-M3.1-Flash-Preview）沿用模板模型的价，只能参考。快速模型的后台判断（`side_call`）只计次数，没有 token。
 
-- 28 道题的前置步骤（划词后 Ctrl+J、预先打开其他标签页、预置记忆等）harness 不执行，这些题的结果不可信。题号：BYS-019–028、BYS-071、BYS-079、BYS-097–106、BYS-121、BYS-122、BYS-124–126、BYS-139（v2 新增 BYS-122、BYS-139）。
+- 2026-10-06 起 harness 执行任务的 `setup_steps`（#33）：划词题 BYS-019–028 在页面划词卡片里提问，跨标签题 BYS-097–106 先打开其他标签页；准备失败记为 `setup_failed`，这 20 题已进 train。其余 8 题（预置记忆、承接上一题、录制技能、语音：BYS-071、079、121、122、124–126、139）仍不执行前置步骤，结果不可信。
 - （full-1，伴随进程时期）成本只统计伴随进程轨迹里记录到的模型调用，轨迹自带的 cost 字段恒为 0；所有调用都在非高峰时段，DeepSeek 高峰价翻倍没有测到。
 - 关思考配置只跑了 58 题（BYS-001–057 加 BYS-128），图 1 里它和其他行不是同一批题。
 - 判分由 Codex（judge v3）完成，只对照过 full-1 的一批人工复核，没有逐条人工审。超时上限为 240 秒。
