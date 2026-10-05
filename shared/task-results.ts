@@ -55,14 +55,14 @@ export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>
 
 /**
  * 写类工具里，再做一次也不会让同一件事多发生一次的：看页辅助（滚动、悬停、圈画、点选）、
- * 换页（导航、开/切/关标签页、页面归属）、等页面事件、处理原生弹窗、松开按住的输入、取消下载。
+ * 换页（导航、开/切/关标签页、页面归属）、等页面事件、处理原生弹窗、松开按住的输入。
  * 10-01 用户裁决：结果不确定时只拦可能重复造成后果的操作（提交、付款、发送、删除、发帖……），这些照常。
  */
 const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
   'worker_tabs', 'navigate', 'open_tab', 'switch_tab', 'close_tab',
   'scroll', 'hover', 'mark', 'clear_marks', 'ask_user_to_point',
   'arm_event', 'wait_event', 'disarm_event', 'accept_dialog', 'dismiss_dialog',
-  'release_held_inputs', 'download_cancel',
+  'release_held_inputs',
 ]);
 
 /**

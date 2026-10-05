@@ -208,7 +208,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       catch (error) { if (sdkId) rpc.markCallRejected?.(sdkId); throw error; }
     }
 
-    if (canExecute && !canExecute(modelToolOf(name) as ToolName)) {
+    // dialog_info 没有模型可见工具，只由 browser_run 的 pageInfo 组合调用；它只读，不受工具开关限制。
+    if (canExecute && name !== "dialog_info" && !canExecute(modelToolOf(name) as ToolName)) {
       if (sdkId) rpc.markCallRejected?.(sdkId);
       throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
     }
@@ -554,7 +555,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("double_click", params)) as ToolContract["double_click"]["data"];
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
 
-        if ("dialog" in data && data.dialog) return textResult(`${data.doubleClicked ? "Native double-click input dispatched" : "Double-click interrupted before its full input sequence"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. Query dialog_info, then use accept_dialog or dismiss_dialog as the user asked.`, data);
+        if ("dialog" in data && data.dialog) return textResult(`${data.doubleClicked ? "Native double-click input dispatched" : "Double-click interrupted before its full input sequence"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The dialog type and message are given here; use accept_dialog or dismiss_dialog as the user asked (browser.pageInfo() in browser_run also reports a pending dialog).`, data);
 
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
@@ -679,7 +680,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "download_url",
       label: "Download link",
-      description: "Save a user's requested HTTP(S) file link into Chrome's download folder, including a PDF currently open in Chrome's reader. Opening the PDF is not downloading it. Only completed=true confirms it was saved; if still running, use download_stat with the returned downloadId, never start another download. Chrome decides safety; do not bypass danger holds.",
+      description: "Save a user's requested HTTP(S) file link into Chrome's download folder, including a PDF currently open in Chrome's reader. Opening the PDF is not downloading it. Only completed=true confirms it was saved; if completed is not true, the save is unconfirmed: tell the user, never start another download. Chrome decides safety; do not bypass danger holds.",
       parameters: Type.Object({ url: Type.String({ minLength: 1 }), filename: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })), timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 20000 })), tabId: Type.Optional(Type.Integer()) }),
       execute: async (_id, params) => {
         // SAFETY: download_url RPC 的返回结构由 ToolContract 与扩展处理器一致定义。
@@ -732,7 +733,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("press_key", params)) as ToolContract["press_key"]["data"];
 
-        if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. Query dialog_info, then use accept_dialog or dismiss_dialog as the user asked.`, data);
+        if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. The dialog type and message are given here; use accept_dialog or dismiss_dialog as the user asked (browser.pageInfo() in browser_run also reports a pending dialog).`, data);
 
         return textResult(`Pressed ${params.key}.`, data);
       },
@@ -795,11 +796,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "js",
       label: "Run JavaScript",
       description:
-        "Evaluate a JavaScript expression in the working tab's page (window, document, fetch are available) and get its value. Invoke functions explicitly: (() => { return document.title; })(). A bare () => {...} only creates a function and does not execute its body. Prefer one invoked IIFE that extracts everything you need over multiple round trips." +
+        "Evaluate a JavaScript expression in the working tab's page (window, document, fetch are available) and get its value. Invoke functions explicitly: (() => { return document.title; })(). A bare () => {...} only creates a function and does not execute its body. Prefer one invoked IIFE that extracts everything you need over multiple round trips. Set readonly:true only when the script only reads the page (no clicks, form changes, requests that write, or navigation): if such a script times out it is reported as failed with no effect and does not pause later writes. Omit it for anything else." +
         (files ? ' saveAs:"name.ext" saves the returned string (other values as JSON text) as a conversation file (same rules and side-panel card as artifacts) and returns only {filename, chars, lines}; use it for large page data instead of retyping it.' : ""),
       promptGuidelines: ["Wrap code in a single IIFE that returns a JSON-serializable value."],
       parameters: Type.Object({
         code: Type.String({ description: "JavaScript to evaluate; use an IIFE with a return value" }),
+        readonly: Type.Optional(Type.Boolean({ description: "true only when the script only reads the page; a timeout is then reported as failed with no effect" })),
         ...(files ? { saveAs: Type.Optional(Type.String({ description: 'Save the return value as this conversation file, e.g. "subtitles.txt"; you get only {filename, chars, lines}' })) } : {}),
       }),
       execute: async (_id, params) => {

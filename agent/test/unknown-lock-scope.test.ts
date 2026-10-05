@@ -15,7 +15,10 @@
  * L5 扩展回「未执行」（目标被覆盖、元素不可填充）的点击/填写仍被记成结果不确定，锁住下一次点击；
  * L6 GET 取数超时（扩展回执结果未知）被记成结果不确定，锁住下一次点击；
  * L7 断连/超时后扩展补报「未执行」，这一步仍保持不确定、继续上锁；
- * L8 确认原生弹窗本身结果不确定（它可能就是「确定付款」那一下），之后的点击不再受保护。
+ * L8 确认原生弹窗本身结果不确定（它可能就是「确定付款」那一下），之后的点击不再受保护；
+ * L9 声明 readonly:true 的页面脚本超时：记失败、不上锁，下一次点击照常发出（#22 BYS-109/090）；
+ * L10 反向过宽：没声明 readonly 的页面脚本超时仍上锁（脚本可能改了页面）；
+ * L11 反向过宽：真正结果不确定的提交点击仍上锁。
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -39,7 +42,7 @@ type Reply = { ok: true; data: unknown } | { ok: false; error: string; fact: Too
 const page = { tabId: 7, title: "结账", url: "http://shop.test/checkout" };
 
 /** 一步程序的参数：目标、网址、标签页号、滚动距离、要填的值等，都是字符串或数字。 */
-type StepParams = Record<string, string | number>;
+type StepParams = Record<string, string | number | boolean>;
 
 /** 扩展一侧的假回执：special 先挑，其余按工具给一条已执行的回执。 */
 async function lead(special: (frame: Frame) => Reply | null = () => null) {
@@ -238,6 +241,49 @@ describe("确定没执行或只是取数失败的步骤不上锁", () => {
       expect(h.unknown()).toEqual([]);
       await h.tool("click", { target: "#other" });
       expect(h.sent("click")).toBe(2);
+    } finally {
+      h.runtime.dispose();
+    }
+  }, 30_000);
+});
+
+describe("声明只读的页面脚本（#22）", () => {
+  const SCAN = "(() => [...document.querySelectorAll('h3')].map(h => h.textContent))()";
+  const jsTimesOut = (frame: Frame): Reply | null => (frame.name === "js" ? { ok: false, error: 'Tool call "js" timed out after 30000ms', fact: "unknown" } : null);
+
+  it("L9 readonly:true 的脚本超时：不记结果不确定，下一次点击照常发出", async () => {
+    const h = await lead(jsTimesOut);
+
+    try {
+      await expect(h.tool("js", { code: SCAN, readonly: true })).rejects.toThrow(/timed out/);
+      expect(h.unknown()).toEqual([]);
+      await h.tool("click", { target: "#next" });
+      expect(h.sent("click")).toBe(1);
+    } finally {
+      h.runtime.dispose();
+    }
+  }, 30_000);
+
+  it("L10 没声明 readonly 的脚本超时：仍记结果不确定，下一次点击被拦", async () => {
+    const h = await lead(jsTimesOut);
+
+    try {
+      await expect(h.tool("js", { code: SCAN })).rejects.toThrow(/timed out/);
+      expect(h.unknown()).toEqual(["js"]);
+      await expect(h.tool("click", { target: "#next" })).rejects.toThrow(/当前写入已暂停/);
+      expect(h.sent("click")).toBe(0);
+    } finally {
+      h.runtime.dispose();
+    }
+  }, 30_000);
+
+  it("L11 提交点击结果不确定仍上锁", async () => {
+    const h = await lead(frame => (frame.name === "click" && frame.params.target === "#submit" ? { ok: false, error: 'Tool call "click" timed out after 30000ms', fact: "unknown" } : null));
+
+    try {
+      await expect(h.tool("click", { target: "#submit", label: "提交" })).rejects.toThrow(/timed out/);
+      expect(h.unknown()).toEqual(["click #submit"]);
+      await expect(h.tool("click", { target: "#other" })).rejects.toThrow(/当前写入已暂停/);
     } finally {
       h.runtime.dispose();
     }

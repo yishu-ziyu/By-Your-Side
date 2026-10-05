@@ -50,7 +50,7 @@ export class TaskProgress {
   private latestResult: NonNullable<VoiceConversationContext["latestResult"]> | null = null;
   private readonly ledger: UserDeliveryLedger;
   private readonly members = new Map<string, "running" | "paused" | "idle" | "error">();
-  private readonly tools = new Map<string, { member: string; name: string; action: string; since: number; target: string | null; tabId:number|null; readVersion:number; write:boolean; durableEffect:boolean; tabAction?:string; valueHash?:string }>();
+  private readonly tools = new Map<string, { member: string; name: string; action: string; since: number; target: string | null; tabId:number|null; readVersion:number; write:boolean; durableEffect:boolean; readOnlyScript?:boolean; tabAction?:string; valueHash?:string }>();
   private readonly readback=new TaskReadback();
   private readonly completedReads=new Map<string,{name:string;readVersion:number}>();
   private failureLimit=false;
@@ -417,6 +417,8 @@ return;}
         const entry: Parameters<typeof this.tools.set>[1] = { member, name: e.name, action: label(e.name), since: this.clock(), target,
         tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction };
 
+        if (e.name === 'js' && e.params.readonly === true) entry.readOnlyScript = true;
+
         if (valueHash) entry.valueHash = valueHash;
         this.tools.set(`${member}:${e.toolCallId}`, entry);
       }
@@ -469,14 +471,17 @@ if(page)this.recoveryInput.page=page;
         return;
       }
 
+      // 声明只读的页面脚本超时或结果未知：只是没拿到读数，按「失败、没有副作用」记，不上锁（#22）。
+      const fact = started.readOnlyScript && e.executionFact === 'unknown' ? 'not_executed' as const : e.executionFact;
+
       if (!this.aborted) {
         this.lastAction = { action: started.action, failed: e.isError, at: this.clock() };
 
         if(!isResultMetaTool(e.name))this.lastBrowserFailed=e.isError;
 
-        if (started.durableEffect && e.executionFact !== 'not_executed') this.goals.invalidatePage(started.tabId);
+        if (started.durableEffect && fact !== 'not_executed') this.goals.invalidatePage(started.tabId);
 
-        if(started.write&&e.executionFact!=='not_executed'){
+        if(started.write&&fact!=='not_executed'){
           if(started.tabAction==='close')this.readback.closedTab(member,started.tabId);
           else {
             if(started.tabAction==='open')this.readback.forgetPage(member);
@@ -484,7 +489,7 @@ if(page)this.recoveryInput.page=page;
           }
         }
 
-        if(!e.isError&&((RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)||e.name==='list_tabs'||started.tabAction==='list')&&e.executionFact!=='not_executed'){
+        if(!e.isError&&((RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)||e.name==='list_tabs'||started.tabAction==='list')&&fact!=='not_executed'){
           if(this.completedReads.size>=100)this.completedReads.delete(this.completedReads.keys().next().value!);
           this.completedReads.set(key,{name:e.name,readVersion:started.readVersion});
         }
@@ -492,15 +497,15 @@ if(page)this.recoveryInput.page=page;
         if (!e.isError && (RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)) this.lastReadAt = this.lastAction.at;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
         // 结果不确定时是否上锁由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 仍按 durableEffect 保护。
-        this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: e.executionFact,
+        this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: fact,
           effectful:started.durableEffect,valueHash:started.valueHash });
 
-        if((started.durableEffect||e.name==='fetch')&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
+        if((started.durableEffect||e.name==='fetch')&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 
         // 页面 JS、原始 CDP 即使记了账，也只写着「执行过一段脚本」，看不出改了什么（见 executionEffectsFullyKnown）。
-        if(started.durableEffect&&OPAQUE_EFFECT_TOOLS.has(e.name)&&e.executionFact!=='not_executed')this.opaqueEffectRan=true;
+        if(started.durableEffect&&OPAQUE_EFFECT_TOOLS.has(e.name)&&fact!=='not_executed')this.opaqueEffectRan=true;
 
-        if(resultLocksWhenUnknown({tool:e.name,evidence:{effectful:started.durableEffect}})&&e.isError&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
+        if(resultLocksWhenUnknown({tool:e.name,evidence:{effectful:started.durableEffect}})&&e.isError&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
       }
     } else if (e.kind === "tool_late_result") {
       // 晚到/重复回执只按原 SDK 调用身份关联当前 run 的未决结果。

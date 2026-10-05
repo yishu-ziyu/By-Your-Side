@@ -125,6 +125,27 @@ describe("browser programs", () => {
     expect(call).toHaveBeenCalledWith("double_click", { target: "#a" }, "program/1");
   });
 
+  it("pageInfo with a pending dialog returns the dialog through browser_run even though dialog_info has no model tool (#23)", async () => {
+    const frames: string[] = [];
+
+    const rpc = new ToolRpc(frame => {
+      frames.push(frame.name);
+
+      const data = frame.name === "list_tabs" ? { tabs: [{ id: 7, title: "T", url: "https://x/", working: true }] }
+        : frame.name === "dialog_info" ? { dialog: { type: "confirm", message: "确定付款？", tabId: 7 } }
+          : { value: { href: "https://x/" } };
+
+      setTimeout(() => rpc.handleResult(frame.id, true, data), 0);
+    });
+
+    // dialog_info 没有模型可见工具：真实会话里 isToolActive("dialog_info") 为 false。
+    const tool = createBrowserTools(rpc, undefined, undefined, (name: string) => name !== "dialog_info").find(t => t.name === "browser_run")!;
+    // SAFETY: browser_run 的 execute 不读取 ctx 参数（与上面的用例一致）。
+    const out = await tool.execute("p-dialog", { code: "return await browser.pageInfo();" }, new AbortController().signal, () => {}, {} as never);
+    expect(JSON.stringify(out)).toContain("确定付款？");
+    expect(frames).toContain("dialog_info");
+  });
+
   it("pageInfo composes list_tabs + js + dialog_info", async () => {
     const call = vi.fn(async (name: string) => {
       if (name === "list_tabs") return { tabs: [{ id: 7, title: "T", url: "https://x/", working: true }] };
