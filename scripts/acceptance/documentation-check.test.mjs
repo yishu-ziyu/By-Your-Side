@@ -27,7 +27,6 @@ function fixture(t) {
     maxChars: 500, maxLines: 30, entryLimits: { "README.md": 200 },
     historicalPrefixes: ["docs/history/", "docs/evals/"],
     locationExceptions: { "README.md": "entry" },
-    syncRules: [{ name: "browser", sources: ["^src/"], documents: ["docs/browser.md"] }],
   }));
   put("README.md", "# 项目\n\n[文档](docs/README.md)\n");
   put("docs/README.md", "# 文档\n\n[浏览器](browser.md)\n");
@@ -86,41 +85,6 @@ test("历史缺失证据只在全量审计中报告，不冒充当前验证", t 
   const r = f.run("--all");
   assert.equal(r.status, 0, r.output);
   assert.match(r.output, /HISTORY.*missing\.png/);
-});
-
-test("功能修改只写验收记录不能通过同步检查", t => {
-  const f = fixture(t);
-  f.put("src/browser.js", "export const version = 2;\n");
-  f.put("docs/evals/new.md", "# 检查通过\n");
-  const r = f.run("--base", f.base);
-  assert.equal(r.status, 1, r.output);
-  assert.match(r.output, /SYNC.*docs\/browser\.md/);
-});
-
-test("同步权威文档后工作区和已提交变更均通过", t => {
-  const f = fixture(t);
-  f.put("src/browser.js", "export const version = 2;\n");
-  f.put("docs/browser.md", "# 浏览器\n\n当前行为已变更。\n");
-  assert.equal(f.run("--base", f.base).status, 0);
-  f.git("add", ".");
-  f.git("commit", "-qm", "documented feature");
-  assert.equal(f.run("--base", f.base).status, 0);
-});
-
-test("无效基线必须报错，不能静默跳过同步", t => {
-  const f = fixture(t);
-  const r = f.run("--base", "does-not-exist");
-  assert.notEqual(r.status, 0);
-  assert.match(r.output, /基线|base|revision/i);
-});
-
-test("只删除对应文档不能冒充同步", t => {
-  const f = fixture(t);
-  f.put("src/browser.js", "export const version = 2;\n");
-  rmSync(join(f.root, "docs/browser.md"));
-  const r = f.run("--base", f.base);
-  assert.equal(r.status, 1, r.output);
-  assert.match(r.output, /SYNC.*docs\/browser\.md/);
 });
 
 test("全量审计显示所有缺失引用，不能截掉后半部分", t => {

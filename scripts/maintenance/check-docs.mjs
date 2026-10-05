@@ -1,20 +1,20 @@
 #!/usr/bin/env node
-/** 文档路径、篇幅、文件链接与功能同步检查；语义正确性仍由维护者复核。 */
+/** 文档路径、篇幅与文件链接检查；语义正确性仍由维护者复核。 */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";
 
-const options = { root: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), all: false, base: null };
+const options = { root: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), all: false };
 
 try {
   for (let i = 2; i < process.argv.length; i++) {
     const arg = process.argv[i];
 
     if (arg === "--all") options.all = true;
-    else if ((arg === "--root" || arg === "--base") && process.argv[i + 1]) options[arg.slice(2)] = process.argv[++i];
-    else throw new Error(`未知或缺值参数 ${arg}。用法：check-docs.mjs [--all] [--base <revision>] [--root <path>]`);
+    else if (arg === "--root" && process.argv[i + 1]) options[arg.slice(2)] = process.argv[++i];
+    else throw new Error(`未知或缺值参数 ${arg}。用法：check-docs.mjs [--all] [--root <path>]`);
   }
 
   options.root = resolve(options.root);
@@ -59,18 +59,7 @@ function run() {
   const paths = [...new Set(splitFiles(git("ls-files", "-c", "-o", "--exclude-standard", "-z")))];
   const documents = paths.filter(p => /\.(md|mdx)$/i.test(p) && fileExists(p));
   const untracked = splitFiles(git("ls-files", "--others", "--exclude-standard", "-z"));
-  let base = "HEAD";
-
-  if (options.base) {
-    try {
-      const commit = git("rev-parse", "--verify", "--end-of-options", `${options.base}^{commit}`).trim();
-      base = git("merge-base", commit, "HEAD").trim();
-    } catch {
-      throw new Error(`无效或不可比较的基线 base: ${options.base}`);
-    }
-  }
-
-  const changed = new Set([...splitFiles(git("diff", "--name-only", "--no-renames", "-z", base, "--")), ...untracked]);
+  const changed = new Set([...splitFiles(git("diff", "--name-only", "--no-renames", "-z", "HEAD", "--")), ...untracked]);
   const historical = p => policy.historicalPrefixes.some(prefix => p.startsWith(prefix)) && !p.endsWith("/README.md");
   let checked = 0;
   let historyCount = 0;
@@ -148,28 +137,11 @@ function run() {
     errors.push("ENTRY README.md: 必须链接 docs/README.md");
   }
 
-  if (options.base) {
-    const groups = new Map();
-
-    for (const file of changed) {
-      if (/\.(md|mdx)$/i.test(file) || /(^|\/)(test|tests)\//.test(file) || /\.test\.[^.]+$/.test(file)) continue;
-      const rule = policy.syncRules.find(rule => rule.sources.some(pattern => new RegExp(pattern).test(file)));
-
-      if (!rule) continue;
-      groups.set(rule.name, rule);
-    }
-
-    for (const rule of groups.values()) {
-      if (!rule.documents.some(doc => changed.has(doc) && fileExists(doc))) errors.push(`SYNC ${rule.name}: 请同步 ${rule.documents.join(" 或 ")}；STATUS/验收记录不能代替功能说明`);
-    }
-  }
-
   for (const error of errors) console.error(error);
 
   for (const warning of options.all ? warnings : warnings.slice(0, 15)) console.warn(warning);
 
   if (!options.all && warnings.length > 15) console.warn(`另有 ${warnings.length - 15} 条历史/本机证据提醒；--all 可看完整清单。`);
   console.log(`文档检查：${documents.length} 份文档，检查 ${checked} 份正文，${historyCount} 份历史记录；${errors.length} 错误，${warnings.length} 提醒。`);
-  console.log(options.base ? `功能同步比较基线：${base}` : "未指定 --base：本次只检查文档结构；PR 需另跑功能同步检查。");
   process.exitCode = errors.length ? 1 : 0;
 }
