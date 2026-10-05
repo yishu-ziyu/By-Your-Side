@@ -6,7 +6,7 @@
  * 订阅登录用 pi-ai 的设备码流程，登录结果经凭据库直接落盘。
  */
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
-import { createModelRuntime, FEATURED_PROVIDERS, type ProviderChoice } from "../inproc/model-runtime.js";
+import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, type ProviderChoice } from "../inproc/model-runtime.js";
 import {
   CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
   STEPFUN_PROVIDER_ID,
@@ -286,7 +286,7 @@ function refreshProviderMarks(): void {
 function defaultModel(choice: ProviderChoice): string {
   if (config?.provider === choice.id) return config.modelId;
 
-  return FEATURED_PROVIDERS.find((p) => p.id === choice.id)?.defaultModel ?? choice.models[0] ?? "";
+  return FEATURED_PROVIDERS.find((p) => p.id === choice.id)?.defaultModel ?? DEFAULT_MODELS.get(choice.id) ?? choice.models[0] ?? "";
 }
 
 function renderCredentialState(): void {

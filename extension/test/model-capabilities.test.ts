@@ -39,4 +39,16 @@ describe("model capabilities in the extension's model registration", () => {
     expect(unknown).toMatchObject({ provider: "minimax-cn", api: "anthropic-messages", reasoning: false, input: ["text"] });
     expect(thinkingProfile(unknown)).toEqual({ levels: ["off"], canDisable: true, image: false });
   });
+
+  it("Codex: hides models a ChatGPT account rejects and resolves gpt-6 models with reasoning and images", () => {
+    const codex = runtime.providerChoices().find((p) => p.id === "openai-codex")!.models;
+    expect(codex).not.toEqual(expect.arrayContaining(["gpt-5.4"]));
+    expect(codex).not.toContain("gpt-5.3-codex-spark");
+    expect(codex).not.toContain("gpt-5.4-mini");
+    expect(codex).toEqual(expect.arrayContaining(["gpt-5.5", "gpt-6-luna", "gpt-6-sol", "gpt-6-astra", "gpt-6.1-sol"]));
+
+    const astra = resolve("openai-codex", "gpt-6-astra");
+    expect(astra).toMatchObject({ api: "openai-codex-responses", baseUrl: "https://chatgpt.com/backend-api", reasoning: true, contextWindow: 625_000, maxTokens: 128_000 });
+    expect(thinkingProfile(resolve("openai-codex", "gpt-6.1-sol"))).toMatchObject({ image: true, levels: expect.arrayContaining(["low", "high", "xhigh"]) });
+  });
 });

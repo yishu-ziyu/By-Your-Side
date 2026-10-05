@@ -18,10 +18,17 @@ interface MeasuredCapability {
   systemRole?: true;
   /** 目录里没有的模型：从同服务商的这个模型复制连接参数（地址、协议、兼容项）。 */
   template?: string;
+  /** 目录里没有的模型：上下文窗口（token）；不写则沿用 template 的。 */
+  contextWindow?: number;
 }
 
 /** 实测记录见 docs/evals/20261001-model-effort-and-side-judgments.md。 */
 const MEASURED = new Map<string, MeasuredCapability>([
+  // ChatGPT 账号可用、pi-ai 0.84.4 目录还没收的 gpt-6 系列（2026-10-06 实测）；连接参数与档位同 gpt-5.6-luna，上下文取 pi CLI 较新目录，最大输出 128K。
+  ...([["gpt-6-luna", 272_000], ["gpt-6-sol", 272_000], ["gpt-6-astra", 625_000], ["gpt-6.1-sol", 872_000]] as const).map(([id, contextWindow]): [string, MeasuredCapability] => [
+    `openai-codex/${id}`,
+    { template: "gpt-5.6-luna", contextWindow, reasoning: true, input: ["text", "image"], thinkingLevelMap: { xhigh: "xhigh", max: "max", minimal: "low" } },
+  ]),
   // 不发档位时适配层发「关闭思考」，服务端 400「requires adaptive thinking」；low 起可用，最高 max；能看图。
   ["minimax-cn/MiniMax-M3.1-Flash-Preview", {
     template: "MiniMax-M3", reasoning: true, input: ["text", "image"],
@@ -74,7 +81,13 @@ export function unlistedModel(provider: string, id: string, siblings: readonly M
   if (!template) return undefined;
   const { thinkingLevelMap: _inherited, ...transport } = template;
 
-  return withMeasuredCapability({ ...transport, id, name: id, reasoning: false, input: ["text"], maxTokens: Math.min(template.maxTokens, 32_768) });
+  const measured = MEASURED.get(`${provider}/${id}`);
+
+  return withMeasuredCapability({
+    ...transport, id, name: id, reasoning: false, input: ["text"],
+    contextWindow: measured?.contextWindow ?? template.contextWindow,
+    maxTokens: measured?.contextWindow ? template.maxTokens : Math.min(template.maxTokens, 32_768),
+  });
 }
 
 export interface ThinkingProfile {

@@ -44,6 +44,14 @@ export const FEATURED_PROVIDERS: ReadonlyArray<{ id: string; label: string; defa
   { id: "kimi-coding", label: "Kimi For Coding", defaultModel: "kimi-for-coding" },
 ];
 
+/** ChatGPT 账号调用会被拒（「not supported when using Codex with a ChatGPT account」，2026-10-06 实测），设置页不列出。 */
+const HIDDEN_MODELS = new Map<string, ReadonlySet<string>>([
+  ["openai-codex", new Set(["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])],
+]);
+
+/** 不在置顶套餐里、但目录第一项不适合当默认的服务商。 */
+export const DEFAULT_MODELS = new Map([["openai-codex", "gpt-6-luna"]]);
+
 export interface ProviderChoice {
   id: string;
   name: string;
@@ -169,8 +177,10 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   /** 目录里的模型加上实测登记过、目录还没收的（如 MiniMax-M3.1-Flash-Preview）；登记的模型要靠同服务商目录模型解析，目录为空的不加。 */
   function listedModels(providerId: string): string[] {
     const catalog = models.getModels(providerId).map((m) => m.id);
+    const hidden = HIDDEN_MODELS.get(providerId);
+    const all = catalog.length ? [...new Set([...catalog, ...measuredModelIds(providerId)])] : catalog;
 
-    return catalog.length ? [...new Set([...catalog, ...measuredModelIds(providerId)])] : catalog;
+    return hidden ? all.filter((id) => !hidden.has(id)) : all;
   }
 
   function providerChoices(): ProviderChoice[] {
