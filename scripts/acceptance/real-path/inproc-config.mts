@@ -41,18 +41,22 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
   // SAFETY: 本机套餐清单由用户维护，形状见文件头注释。
   const plans = JSON.parse(await readFile(join(homedir(), ".sideagent/providers.local.json"), "utf8")) as Record<string, { key?: string; source?: string }>;
   // 阶跃星辰的 key 就是语音用的那个，不在套餐清单里重复存一份。
-  const plan = providerId === "stepfun" && !plans.stepfun ? { key: (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim() } : plans[providerId];
+  const plan = providerId === "stepfun" && !plans.stepfun ? { key: (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim() } : providerId === "openai-codex" ? plans[providerId] ?? { source: "pi-auth" } : plans[providerId];
 
   if (!plan) throw new Error(`providers.local.json 里没有 ${providerId}`);
 
   if (plan.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: plan.key } };
 
   // SAFETY: Pi 的 auth.json 按服务商存 { access, refresh, expires }。
-  const login = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { access: string; refresh: string; expires: number } | undefined>)[providerId];
+  const login = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { access: string; refresh: string; expires: number; accountId?: string } | undefined>)[providerId];
 
-  if (!login || login.expires - Date.now() < 5 * 60_000) throw new Error(`${providerId} 的登录令牌快过期了：先在 Pi 里用一次让它刷新`);
+  if (!login || login.expires - Date.now() < (providerId === "openai-codex" ? 3 * 3_600_000 : 5 * 60_000)) throw new Error(`${providerId} 的登录令牌快过期了：先在 Pi 里用一次让它刷新`);
 
-  return { providerId, modelId: idParts.join("/"), credential: { type: "oauth", access: login.access, refresh: login.refresh, expires: login.expires } };
+  const credential: JsonRecord = { type: "oauth", access: login.access, refresh: login.refresh, expires: login.expires };
+
+  if (login.accountId) credential.accountId = login.accountId;
+
+  return { providerId, modelId: idParts.join("/"), credential };
 }
 
 /** 快速路径要写进扩展存储的内容。 */

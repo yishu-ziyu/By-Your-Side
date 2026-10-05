@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import { REPO, attachDailyChrome, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
-import { configureViaSettings, loadModelPlan, type ModelPlan } from "./inproc-config.mts";
+import { configureViaSettings, loadModelPlan, modelStorageItems, type ModelPlan } from "./inproc-config.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 const daily = process.argv.includes("--daily");
@@ -309,7 +309,7 @@ function translationFacts(text: string) {
 }
 
 /** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */
-const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn", "opencode-go": "opencode.ai" } satisfies Record<string, string>;
+const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn", "opencode-go": "opencode.ai", "openai-codex": "chatgpt.com" } satisfies Record<string, string>;
 
 const hostOf = (provider: string): string | undefined => Object.entries(PROVIDER_HOSTS).find(([id]) => id === provider)?.[1];
 
@@ -409,10 +409,15 @@ try {
     inproc = await watchInproc(rp, rp.extensionId);
     scripted = scriptedThrottle ? await startScriptedModel([{ match: "没译完就接着译", steps: [{ tool: { name: "page_translation", args: { action: "translate" } } }, { tool: { name: "page_translation", args: { action: "translate" } } }, { text: "已把这页翻译成中文。" }] }, { match: "翻译成中文", steps: [{ tool: { name: "page_translation", args: { action: "translate" } } }, { text: "已把这页翻译成中文。" }] }], { maxConcurrent: 1, delayMs: 800 }) : null;
     plan = scripted ? { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-demo-no-secret" } } : await loadModelPlan(inprocModel);
-    const run = await configureViaSettings(rp, panel, plan, scripted ? { baseUrl: scripted.baseUrl } : {});
+    let run = { testStatus: "连接正常（订阅登录直接写入存储）", settingsTargetId: "" };
+
+    if (plan.credential.type === "oauth") await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
+    else run = await configureViaSettings(rp, panel, plan, scripted ? { baseUrl: scripted.baseUrl } : {});
 
     if (!run.testStatus.startsWith("连接正常")) throw new Error(`设置页测试连接失败：${run.testStatus}`);
-    await rp.cdp.send("Target.closeTarget", { targetId: run.settingsTargetId });
+
+    if (run.settingsTargetId) await rp.cdp.send("Target.closeTarget", { targetId: run.settingsTargetId });
+
     await rp.cdp.send("Page.bringToFront", {}, work);
   }
 
