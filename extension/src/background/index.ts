@@ -58,6 +58,7 @@ import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
+import { setDebugBannerNotice } from "./debugger.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
@@ -799,6 +800,8 @@ function broadcastVisibleServer(msg: PanelHistoryServerMessage): void {
 function emitNotice(message: string, kind: "notice" | "error" = "notice"): void {
   broadcastVisibleServer({ type: "agent_event", event: { kind, message } });
 }
+
+setDebugBannerNotice(() => emitNotice("Chrome 顶部会出现“正在调试此浏览器”的提示：这是助手操作页面的方式，任务结束后可关闭，不影响你的数据。"));
 
 /** T03：每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
 const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();

@@ -142,6 +142,27 @@ function noteDetachedFromTarget(sessionId: string): void {
   childSessionsByTab.get(child.parentTabId)?.delete(sessionId);
 }
 
+const DEBUG_BANNER_SEEN_KEY = "debugBannerExplained";
+
+let debugBannerNotice: (() => void) | undefined;
+
+let debugBannerCheck: Promise<void> | undefined;
+
+/** 首次附加调试器前，让侧栏先说明 Chrome 顶部的调试提示条；每次安装只说一次（#19）。 */
+export function setDebugBannerNotice(fn: () => void): void { debugBannerNotice = fn; }
+
+function explainDebugBannerOnce(): Promise<void> {
+  debugBannerCheck ??= (async () => {
+    const seen = (await chrome.storage.local.get(DEBUG_BANNER_SEEN_KEY))[DEBUG_BANNER_SEEN_KEY];
+
+    if (seen) return;
+    await chrome.storage.local.set({ [DEBUG_BANNER_SEEN_KEY]: true });
+    debugBannerNotice?.();
+  })().catch(() => {});
+
+  return debugBannerCheck;
+}
+
 export async function ensureAttached(tabId: number): Promise<void> {
   if (attached.has(tabId)) {
     scheduleIdleDetach();
@@ -159,6 +180,8 @@ export async function ensureAttached(tabId: number): Promise<void> {
   // 创建新的 attach Promise
   const promise = (async () => {
     try {
+      await explainDebugBannerOnce();
+
       await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION);
     } catch (e) {
       const msg = oneLine(e);
@@ -222,6 +245,7 @@ export async function sendCommand<T = unknown>(
 
     try {
       const pending = chrome.debugger.sendCommand({ tabId }, method, params ?? {});
+
       if (method.startsWith("Input.") || method === "Runtime.evaluate" || method === "Runtime.callFunctionOn" || method === "DOM.setFileInputFiles" || method === "Page.handleJavaScriptDialog") checkBeforeDispatch?.noteEffect?.();
 
       // SAFETY: T 由调用方按它请求的那个 CDP 方法声明；这里只是给 ACK 或超时路径补上同一结果类型。

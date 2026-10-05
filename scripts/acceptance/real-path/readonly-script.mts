@@ -189,6 +189,10 @@ try {
     } catch (caught) { failures.push(`${plan.mark}: ${String(caught)}`); }
   }
 
+  // #19: the debugger-infobar explanation shows exactly once across all three tasks.
+  const sidebarText = String(await browser.evaluate(sidebar, "document.querySelector('#messages')?.textContent"));
+  assert.equal(sidebarText.split("正在调试此浏览器").length - 1, 1, "debug infobar explanation appears once");
+
   assert.ok((await browser.targets()).some(t => t.url === `chrome-extension://${browser.extensionId}/inproc.html`), "real offscreen Agent required");
 
   for (const plan of plans) assert.ok(model.requests.some(r => r.rule === plan.mark && r.tools));
