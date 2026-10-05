@@ -31,3 +31,11 @@
 - 不重做设置、语音、记忆抽屉、任务卡的布局。
 - 深色模式只补井的描边/高光，不另起一套奶油。
 - 不把 09-25 已丢掉的浓黄纸 `#f5f2eb` 请回来。
+
+## 证据
+
+- 探针：`npx tsx scripts/probes/sidepanel-token-tighten.mts` → `ok { chroma: 0.0055, L: 0.980 }`（2026-10-05）。
+- 文档：`npm run check:docs` 0 错误；1 条既有提醒（drag-feed 本地预览未携带），与本任务无关。
+- 静态侧栏：`scripts/acceptance/fixtures/sidepanel-token-tighten.html` 无头 360×720 截图。用户气泡与输入框同井、同 20px 形状圆角；正文 15px；页胶囊走 meta；发送为胶囊；「用了 2 条记忆 ›」仍是生产一行，没有 D+X1 新皮肤。
+- 奶油对照：预览 wallpaper `oklch(0.975 0.010 88)` 与本 PR `oklch(0.980 0.0055 88)` 并排，后者更淡、少黄。人看。
+- 未跑：日常扩展重载；`sidebar-interaction.mts` 全套（判据已从 14px/24 改到 15px/25.5，本环境未接真侧栏）。
