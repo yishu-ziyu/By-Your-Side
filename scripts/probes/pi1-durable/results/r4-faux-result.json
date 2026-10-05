@@ -1,0 +1,186 @@
+{
+  "summary": [
+    {
+      "engine": "pi-durable",
+      "n": 10,
+      "medianMs": 13,
+      "minMs": 11,
+      "maxMs": 29,
+      "statuses": [
+        "done"
+      ]
+    },
+    {
+      "engine": "agent-core",
+      "n": 10,
+      "medianMs": 0,
+      "minMs": 0,
+      "maxMs": 1,
+      "statuses": [
+        "done"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 29,
+      "txns": 52,
+      "bytes": 13485,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 1,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 14,
+      "txns": 52,
+      "bytes": 13485,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 13,
+      "txns": 52,
+      "bytes": 13473,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 1,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 13,
+      "txns": 52,
+      "bytes": 13485,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 17,
+      "txns": 52,
+      "bytes": 13473,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 12,
+      "txns": 52,
+      "bytes": 13485,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 12,
+      "txns": 52,
+      "bytes": 13497,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 11,
+      "txns": 52,
+      "bytes": 13485,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 12,
+      "txns": 52,
+      "bytes": 13485,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    },
+    {
+      "engine": "pi-durable",
+      "status": "done",
+      "totalMs": 13,
+      "txns": 52,
+      "bytes": 13485,
+      "turns": 2
+    },
+    {
+      "engine": "agent-core",
+      "status": "done",
+      "totalMs": 0,
+      "txns": 0,
+      "bytes": 0,
+      "turns": 2
+    }
+  ]
+}

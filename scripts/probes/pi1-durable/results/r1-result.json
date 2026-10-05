@@ -1,0 +1,63 @@
+{
+  "A": {
+    "strictErrors": [],
+    "leftovers": [
+      {
+        "from": "@earendil-works/pi-ai/dist/utils/provider-env.js",
+        "import": "node:fs",
+        "kind": "require-call"
+      }
+    ],
+    "staticNodeImports": [],
+    "minifiedKb": 437,
+    "unminifiedKb": 1069
+  },
+  "B": {
+    "strictErrors": [
+      "../../../../../../../../../../../private/tmp/pi1/probe/node_modules/@earendil-works/pi-ai/dist/auth/oauth/callback-server.js: Could not resolve \"node:http\"",
+      "../../../../../../../../../../../private/tmp/pi1/probe/node_modules/@earendil-works/pi-ai/dist/auth/oauth/openai-codex.js: Could not resolve \"node:crypto\""
+    ],
+    "leftovers": [
+      {
+        "from": "@earendil-works/pi-ai/dist/utils/provider-env.js",
+        "import": "node:fs",
+        "kind": "require-call"
+      },
+      {
+        "from": "@earendil-works/pi-ai/dist/auth/oauth/callback-server.js",
+        "import": "node:http",
+        "kind": "import-statement"
+      },
+      {
+        "from": "@earendil-works/pi-ai/dist/auth/oauth/openai-codex.js",
+        "import": "node:crypto",
+        "kind": "dynamic-import"
+      }
+    ],
+    "staticNodeImports": [
+      ";import{createServer as YU}from\"node:http\""
+    ],
+    "minifiedKb": 450,
+    "unminifiedKb": 1092
+  },
+  "B+shim": {
+    "strictErrors": [
+      "../../../../../../../../../../../private/tmp/pi1/probe/node_modules/@earendil-works/pi-ai/dist/auth/oauth/openai-codex.js: Could not resolve \"node:crypto\""
+    ],
+    "leftovers": [
+      {
+        "from": "@earendil-works/pi-ai/dist/utils/provider-env.js",
+        "import": "node:fs",
+        "kind": "require-call"
+      },
+      {
+        "from": "@earendil-works/pi-ai/dist/auth/oauth/openai-codex.js",
+        "import": "node:crypto",
+        "kind": "dynamic-import"
+      }
+    ],
+    "staticNodeImports": [],
+    "minifiedKb": 450,
+    "unminifiedKb": 1092
+  }
+}

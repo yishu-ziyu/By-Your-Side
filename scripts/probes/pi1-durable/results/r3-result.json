@@ -1,0 +1,183 @@
+{
+  "started": {
+    "submissionId": 8
+  },
+  "liveBeforeReload": {
+    "live": {
+      "run": {
+        "taskId": 9,
+        "inputs": [
+          8
+        ]
+      },
+      "tools": [
+        {
+          "callId": "call_g24x5c41GOlOlCIuecgohmgk|fc_0b1c7ffc93438bcb016ac3fe04420887d093d65f653cd5ed08",
+          "name": "slow_lookup",
+          "taskId": 12,
+          "status": "running",
+          "output": "looking up...\n"
+        }
+      ]
+    },
+    "execs": {
+      "slow_lookup": 1,
+      "page_title": 0
+    },
+    "slowCalls": [
+      "call_g24x5c41GOlOlCIuecgohmgk|fc_0b1c7ffc93438bcb016ac3fe04420887d093d65f653cd5ed08"
+    ]
+  },
+  "reloadAt": 1791229446265,
+  "resumed": {
+    "openMs": 5,
+    "openWrites": {
+      "txns": 3,
+      "bytes": 525,
+      "byOp": {
+        "mkdir": 1,
+        "append": 22,
+        "write": 4,
+        "rename": 4,
+        "remove": 3
+      }
+    },
+    "pendingAtOpen": {
+      "tasks": [
+        {
+          "kind": "pi.tool",
+          "status": "pending",
+          "inspect": "ready"
+        },
+        {
+          "kind": "pi.generation",
+          "status": "waiting",
+          "inspect": "waiting"
+        }
+      ],
+      "submissions": [
+        "placed"
+      ]
+    },
+    "transcriptAtOpen": [
+      {
+        "kind": "pi.user",
+        "byTask": false,
+        "model": [
+          {
+            "role": "user",
+            "parts": [
+              "text:Call slow_lookup with key \"alpha\" and ms 8000, then tell me the code word. If the tool returns an error, reply exactly TOOL FAILED and do not call any tool agai"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.system",
+        "byTask": true,
+        "model": [
+          {
+            "role": "system",
+            "parts": [
+              "text:"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "byTask": true,
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_lookup({\"key\":\"alpha\",\"ms\":8000})"
+            ]
+          }
+        ]
+      }
+    ],
+    "resumeMs": 1430,
+    "transcript": [
+      {
+        "kind": "pi.user",
+        "byTask": false,
+        "model": [
+          {
+            "role": "user",
+            "parts": [
+              "text:Call slow_lookup with key \"alpha\" and ms 8000, then tell me the code word. If the tool returns an error, reply exactly TOOL FAILED and do not call any tool agai"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.system",
+        "byTask": true,
+        "model": [
+          {
+            "role": "system",
+            "parts": [
+              "text:"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "byTask": true,
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_lookup({\"key\":\"alpha\",\"ms\":8000})"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "byTask": true,
+        "data": {
+          "diagnostics": [
+            {
+              "severity": "error",
+              "code": "interrupted",
+              "message": "Tool slow_lookup was interrupted and may have partially run"
+            }
+          ]
+        },
+        "model": [
+          {
+            "role": "toolResult",
+            "toolName": "slow_lookup",
+            "isError": true,
+            "parts": [
+              "text:looking up...\n",
+              "text:<harness>\n[error] Tool slow_lookup was interrupted and may have partially run\n</harness>"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "byTask": true,
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "text:TOOL FAILED"
+            ]
+          }
+        ]
+      }
+    ],
+    "execs": {
+      "slow_lookup": 1,
+      "page_title": 0
+    },
+    "slowCalls": [
+      "call_g24x5c41GOlOlCIuecgohmgk|fc_0b1c7ffc93438bcb016ac3fe04420887d093d65f653cd5ed08"
+    ]
+  }
+}

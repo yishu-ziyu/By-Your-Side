@@ -1,0 +1,203 @@
+{
+  "open": {
+    "openMs": 23,
+    "openWrites": {
+      "txns": 7,
+      "bytes": 1739,
+      "byOp": {
+        "mkdir": 1,
+        "append": 6
+      }
+    }
+  },
+  "ask": {
+    "status": "done",
+    "submitMs": 4,
+    "firstDeltaMs": 1873,
+    "totalMs": 3963,
+    "writes": {
+      "txns": 56,
+      "bytes": 16569
+    },
+    "assistantTurns": 2,
+    "entries": [
+      {
+        "kind": "pi.user",
+        "byTask": false,
+        "model": [
+          {
+            "role": "user",
+            "parts": [
+              "text:Use the page_title tool to get the title of the current page, then reply with exactly that title and nothing else."
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.system",
+        "byTask": true,
+        "model": [
+          {
+            "role": "system",
+            "parts": [
+              "text:"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "byTask": true,
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:page_title({})"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "byTask": true,
+        "data": {
+          "diagnostics": []
+        },
+        "model": [
+          {
+            "role": "toolResult",
+            "toolName": "page_title",
+            "isError": false,
+            "parts": [
+              "text:Spike Page 7"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "byTask": true,
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "text:Spike Page 7"
+            ]
+          }
+        ]
+      }
+    ],
+    "eventLog": [
+      [
+        3,
+        "message_start",
+        "user"
+      ],
+      [
+        3,
+        "message_end",
+        null
+      ],
+      [
+        3,
+        "submission",
+        null
+      ],
+      [
+        3,
+        "run_start",
+        null
+      ],
+      [
+        3,
+        "turn_start",
+        null
+      ],
+      [
+        6,
+        "message_start",
+        "system"
+      ],
+      [
+        6,
+        "message_end",
+        null
+      ],
+      [
+        1873,
+        "message_start",
+        "assistant"
+      ],
+      [
+        1959,
+        "message_end",
+        null
+      ],
+      [
+        1959,
+        "usage_changed",
+        null
+      ],
+      [
+        1963,
+        "tool_execution_start",
+        null
+      ],
+      [
+        1966,
+        "tool_execution_end",
+        null
+      ],
+      [
+        1966,
+        "message_start",
+        "toolResult"
+      ],
+      [
+        1966,
+        "message_end",
+        null
+      ],
+      [
+        1969,
+        "turn_end",
+        null
+      ],
+      [
+        1969,
+        "turn_start",
+        null
+      ],
+      [
+        3843,
+        "message_start",
+        "assistant"
+      ],
+      [
+        3963,
+        "message_end",
+        null
+      ],
+      [
+        3963,
+        "turn_end",
+        null
+      ],
+      [
+        3963,
+        "run_end",
+        null
+      ],
+      [
+        3963,
+        "submission",
+        null
+      ],
+      [
+        3963,
+        "usage_changed",
+        null
+      ]
+    ]
+  }
+}

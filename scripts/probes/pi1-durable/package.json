@@ -1,0 +1,16 @@
+{
+  "name": "pi1-durable-probe",
+  "private": true,
+  "type": "module",
+  "description": "Spike: Pi 1.0 + pi-durable in a Chrome extension page. See docs/evals/20261006-pi1-durable-spike.md. Install with `npm install --legacy-peer-deps` (plain install fails in npm arborist on vitest peers).",
+  "dependencies": {
+    "@earendil-works/chord": "1.0.3",
+    "@earendil-works/pi-agent-core": "1.0.3",
+    "@earendil-works/pi-ai": "1.0.3",
+    "@earendil-works/pi-durable": "1.0.2",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5",
+    "vitest": "4.1.11",
+    "ws": "8.18.3"
+  }
+}

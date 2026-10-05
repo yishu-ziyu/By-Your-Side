@@ -1,0 +1,80 @@
+[
+  {
+    "engine": "pi-durable",
+    "run": 1,
+    "status": "done",
+    "firstDeltaMs": 2177,
+    "totalMs": 3749,
+    "assistantTurns": 2,
+    "writeTxns": 56,
+    "writeBytes": 16569,
+    "openWriteTxns": 7,
+    "openMs": 24
+  },
+  {
+    "engine": "agent-core",
+    "run": 1,
+    "status": "done",
+    "startMs": 777,
+    "firstDeltaMs": 1736,
+    "totalMs": 3487,
+    "assistantTurns": 2,
+    "writeTxns": 0,
+    "writeBytes": 0,
+    "answer": [
+      "text:Spike Page 7"
+    ]
+  },
+  {
+    "engine": "pi-durable",
+    "run": 2,
+    "status": "done",
+    "firstDeltaMs": 1546,
+    "totalMs": 3217,
+    "assistantTurns": 2,
+    "writeTxns": 56,
+    "writeBytes": 16569,
+    "openWriteTxns": 7,
+    "openMs": 5
+  },
+  {
+    "engine": "agent-core",
+    "run": 2,
+    "status": "done",
+    "startMs": 670,
+    "firstDeltaMs": 1279,
+    "totalMs": 3272,
+    "assistantTurns": 2,
+    "writeTxns": 0,
+    "writeBytes": 0,
+    "answer": [
+      "text:Spike Page 7"
+    ]
+  },
+  {
+    "engine": "pi-durable",
+    "run": 3,
+    "status": "done",
+    "firstDeltaMs": 1772,
+    "totalMs": 3396,
+    "assistantTurns": 2,
+    "writeTxns": 56,
+    "writeBytes": 16569,
+    "openWriteTxns": 7,
+    "openMs": 6
+  },
+  {
+    "engine": "agent-core",
+    "run": 3,
+    "status": "done",
+    "startMs": 620,
+    "firstDeltaMs": 1220,
+    "totalMs": 2771,
+    "assistantTurns": 2,
+    "writeTxns": 0,
+    "writeBytes": 0,
+    "answer": [
+      "text:Spike Page 7"
+    ]
+  }
+]

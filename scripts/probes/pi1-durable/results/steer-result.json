@@ -1,0 +1,87 @@
+{
+  "firstStatus": "done",
+  "steerStatus": "done",
+  "execs": {
+    "slow_lookup": 1,
+    "page_title": 0
+  },
+  "transcript": [
+    {
+      "kind": "pi.user",
+      "byTask": false,
+      "model": [
+        {
+          "role": "user",
+          "parts": [
+            "text:Call slow_lookup with key \"beta\" and ms 5000, then report the code word in one short sentence."
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.system",
+      "byTask": true,
+      "model": [
+        {
+          "role": "system",
+          "parts": [
+            "text:"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "byTask": true,
+      "model": [
+        {
+          "role": "assistant",
+          "parts": [
+            "toolCall:slow_lookup({\"key\":\"beta\",\"ms\":5000})"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.tool-result",
+      "byTask": true,
+      "data": {
+        "diagnostics": []
+      },
+      "model": [
+        {
+          "role": "toolResult",
+          "toolName": "slow_lookup",
+          "isError": false,
+          "parts": [
+            "text:code word for beta: PELICAN"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.user",
+      "byTask": true,
+      "model": [
+        {
+          "role": "user",
+          "parts": [
+            "text:Also: end your final answer with the single word BANANA."
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "byTask": true,
+      "model": [
+        {
+          "role": "assistant",
+          "parts": [
+            "text:The code word is PELICAN. BANANA"
+          ]
+        }
+      ]
+    }
+  ]
+}
