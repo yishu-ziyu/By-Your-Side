@@ -1,4 +1,4 @@
-import { isMemoryValidity, validLocalDate, type MemoryValidity } from "./memory.js";
+import { isMemoryValidity, validLocalDate, validNotOnHosts, type MemoryValidity } from "./memory.js";
 
 /**
  * 过往任务：每个动手做过事的任务结束时留一条摘要，助手之后能想起「之前做过什么、在哪做的、做成没有」。
@@ -30,6 +30,8 @@ export interface TaskHistoryEntry {
   /** 被带给助手的次数与最近一次时间；旧条目缺省为没用过。 */
   useCount?: number;
   lastUsedAt?: number;
+  /** 用户点过「这里别用」的网站：在这些网站不带给助手。缺省 = 照常。 */
+  notOnHosts?: string[];
 }
 
 export const TASK_HISTORY_MAX = 200;
@@ -57,5 +59,6 @@ export function isTaskHistoryEntry(value: unknown): value is TaskHistoryEntry {
     && (e.page === undefined || (typeof e.page === "string" && e.page.length <= 200))
     && (e.date === undefined || validLocalDate(e.date)) && (e.validity === undefined || isMemoryValidity(e.validity))
     && (e.useCount === undefined || (Number.isInteger(e.useCount) && e.useCount >= 0)) && (e.lastUsedAt === undefined || Number.isFinite(e.lastUsedAt))
+    && (e.notOnHosts === undefined || validNotOnHosts(e.notOnHosts))
     && (e.startedAt === null || Number.isFinite(e.startedAt)) && Number.isFinite(e.endedAt);
 }

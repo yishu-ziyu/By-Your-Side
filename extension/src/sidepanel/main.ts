@@ -73,6 +73,12 @@ let currentCitationSource: Promise<CitationContext | null> | null = null;
 
 let replayingHistory = false;
 
+/** 这一轮带给助手的记忆：先攒着，这一轮结束（agent_end）时画在回答下方。 */
+let pendingUsedLine: MemoryUsedLine | null = null;
+
+/** 「用了 N 条记忆」里各条按钮发出的请求，各自等自己的结果。 */
+const usedLineHandlers = new Map<string, (result: { ok: boolean; entry?: MemoryEntry; entries?: MemoryEntry[]; error?: string }) => void>();
+
 let citationRequestPending = false;
 
 function attachAnswerActions(answer: HTMLElement): void {
@@ -627,6 +633,7 @@ function resetConversationRender(): void {
   userBubbles.clear();
   deliveredBubbles.clear();
   receiptMessages.clear();
+  pendingUsedLine = null;
   leadDeliveryMode = null;
   currentLeadDraft = null;
   currentLeadDraftDetails = null;
@@ -811,7 +818,7 @@ type MemoryEdit = {
 
 type MemoryForget = { id: string; pendingRequestId: string | null; error: string };
 
-type MemoryUiRequest = { action: "list" | "update" | "forget" | "restore" | "ask"; entryId?: string };
+type MemoryUiRequest = { action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; entryId?: string };
 
 const memoryState = new MemoryManagementState();
 
@@ -1022,6 +1029,22 @@ function renderMemoryForgetConfirm(entry: MemoryEntry, state: MemoryForget): HTM
 }
 
 /** inGroup：列在「做事的方法」组里——不重复种类名，补上日期，原话收进「查看来源」。 */
+/** 「这里别用」过的网站：每个一行「在 某网站 不用」，旁边可恢复。记忆和过往任务共用。 */
+function renderNotHere(hosts: string[] | undefined, restore: (hostname: string) => HTMLButtonElement): HTMLElement | null {
+  if (!hosts?.length) return null;
+  const notes = document.createElement("div");
+  notes.className = "memory-not-here";
+
+  for (const hostname of hosts) {
+    const note = document.createElement("span");
+    note.className = "memory-not-here-note";
+    note.textContent = `在 ${hostname} 不用`;
+    notes.append(note, restore(hostname));
+  }
+
+  return notes;
+}
+
 function renderMemoryEntry(entry: MemoryEntry, inGroup = false): HTMLElement {
   const card = document.createElement("article");
   card.className = "memory-row";
@@ -1079,6 +1102,15 @@ function renderMemoryEntry(entry: MemoryEntry, inGroup = false): HTMLElement {
 
   card.appendChild(meta);
 
+  const notHere = renderNotHere(entry.notOnHosts, (hostname) => {
+    const restore = memoryButton("恢复", "site-on", entry.id);
+    restore.dataset.memoryHost = hostname;
+
+    return restore;
+  });
+
+  if (notHere) card.appendChild(notHere);
+
   const source = document.createElement("details");
   source.className = "memory-source";
   source.dataset.memorySource = entry.id;
@@ -1128,6 +1160,17 @@ function requestPastTasks(forget?: string | null): void {
     : { type: "task_history_forget", requestId: pastTasksRequestId, conversationId: selectedConversationId, id: forget };
 
   if (!send(message)) {
+    pastTasksRequestId = null;
+    pastTasksError = "连接不可用，请重试";
+  }
+}
+
+/** 过往任务在某网站恢复使用（撤销「这里别用」）；结果和列表、删除一样回到 pastTasks。 */
+function requestPastTaskSite(id: string, hostname: string): void {
+  pastTasksRequestId = crypto.randomUUID();
+  pastTasksError = "";
+
+  if (!send({ type: "task_history_site", requestId: pastTasksRequestId, conversationId: selectedConversationId, id, hostname, off: false })) {
     pastTasksRequestId = null;
     pastTasksError = "连接不可用，请重试";
   }
@@ -1212,6 +1255,17 @@ function renderPastTasks(): HTMLElement {
 
     meta.append(info, remove);
     row.append(goal, meta);
+
+    const notHere = renderNotHere(task.notOnHosts, (hostname) => {
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.textContent = "恢复";
+      restore.onclick = () => { requestPastTaskSite(task.id, hostname); renderMemoryDrawer(); };
+
+      return restore;
+    });
+
+    if (notHere) row.appendChild(notHere);
 
     if (task.unfinished.length) {
       const open = document.createElement("p");
@@ -1418,6 +1472,13 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
     undo(outcome.kind === "success", outcome.kind === "failure" ? outcome.error : undefined);
   }
 
+  const lineHandler = usedLineHandlers.get(outcome.requestId);
+
+  if (lineHandler) {
+    usedLineHandlers.delete(outcome.requestId);
+    lineHandler(outcome.kind === "success" ? { ok: true, entry: outcome.entry, entries: outcome.entries } : { ok: false, error: outcome.error });
+  }
+
   const askHandler = memoryAskHandlers.get(outcome.requestId);
 
   if (askHandler) {
@@ -1470,10 +1531,10 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
   if (!memoryDrawer.hidden) renderMemoryDrawer();
 
   // 忘记/撤销会连带改别的条目（重连历史、删整条历史、两条一起改），本地补丁不够，重新读全表。
-  if (outcome.kind === "success" && (outcome.action === "forget" || outcome.action === "restore" || (outcome.action === "ask" && outcome.entry && !outcome.alreadySaved))) requestMemoryList();
+  if (outcome.kind === "success" && (outcome.action === "forget" || outcome.action === "restore" || outcome.action === "site" || outcome.action === "unforget" || (outcome.action === "ask" && outcome.entry && !outcome.alreadySaved))) requestMemoryList();
 }
 
-function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" }>, ui: MemoryUiRequest): void {
+function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" | "memory_site" | "memory_unforget" }>, ui: MemoryUiRequest): void {
   memoryUiRequests.set(message.requestId, ui);
 
   if (send(message)) return;
@@ -1650,6 +1711,14 @@ memoryBody.addEventListener("click", (event) => {
     memoryForget.error = "";
     renderMemoryDrawer();
     dispatchMemoryRequest(message, { action: "forget", entryId: id });
+
+    return;
+  }
+
+  // 撤销「这里别用」：这个网站重新带这条；结果回来后重读全表。
+  if (action === "site-on" && target.dataset.memoryHost) {
+    target.disabled = true;
+    dispatchMemoryRequest(memoryState.beginSite(selectedConversationId, entry, target.dataset.memoryHost, false), { action: "site", entryId: id });
   }
 });
 
@@ -2112,6 +2181,163 @@ function addMsg(cls: string, text: string): HTMLElement {
   scrollToEnd();
 
   return div;
+}
+
+// ── 回答下方「用了 N 条记忆 ›」：展开列出这一轮带给助手的每一条，可「忘掉」或「这里别用」 ──
+type UsedItem = ({ kind: "entry"; entry: MemoryEntry; removed?: MemoryEntry[] } | { kind: "task"; task: TaskHistoryEntry })
+  & { state: "used" | "forgotten" | "not-here"; pending: boolean; error: string };
+
+type MemoryUsedLine = { el: HTMLElement; items: Map<string, UsedItem>; hostname: string | null; open: boolean };
+
+const usedItemKey = (item: UsedItem): string => item.kind === "entry" ? `entry:${item.entry.id}` : `task:${item.task.id}`;
+
+/** 同一轮里多次带记忆（重试、助手又查了记忆）并成一行，同一条只算一次。 */
+function noteMemoryUsed(event: Extract<AgentUiEvent, { kind: "memory" }>): void {
+  const line = pendingUsedLine ?? { el: document.createElement("div"), items: new Map<string, UsedItem>(), hostname: null, open: false };
+  pendingUsedLine = line;
+  line.hostname = event.hostname ?? line.hostname;
+
+  const incoming: UsedItem[] = [
+    ...event.entries.map((entry): UsedItem => ({ kind: "entry", entry: { ...entry, scope: { ...entry.scope } }, state: "used", pending: false, error: "" })),
+    ...(event.tasks ?? []).map((task): UsedItem => ({ kind: "task", task, state: "used", pending: false, error: "" })),
+  ];
+
+  for (const item of incoming) if (!line.items.has(usedItemKey(item))) line.items.set(usedItemKey(item), item);
+  renderUsedLine(line);
+}
+
+function flushMemoryUsedLine(): void {
+  const line = pendingUsedLine;
+  pendingUsedLine = null;
+
+  if (!line || !line.items.size) return;
+  messagesEl.appendChild(line.el);
+  scrollToEnd();
+}
+
+function renderUsedLine(line: MemoryUsedLine): void {
+  line.el.className = "memory-used-line";
+  line.el.dataset.memoryUsedLine = String(line.items.size);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "memory-used-toggle";
+  toggle.setAttribute("aria-expanded", String(line.open));
+  toggle.append(`用了 ${line.items.size} 条记忆 `);
+  const chevron = document.createElement("span");
+  chevron.className = "memory-used-chevron";
+  chevron.textContent = "›";
+  toggle.appendChild(chevron);
+  toggle.onclick = () => { line.open = !line.open; renderUsedLine(line); };
+
+  const list = document.createElement("ul");
+  list.className = "memory-used-list";
+  list.hidden = !line.open;
+
+  for (const item of line.items.values()) list.appendChild(renderUsedItem(line, item));
+  line.el.replaceChildren(toggle, list);
+}
+
+function usedButton(label: string, action: string, item: UsedItem, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.memoryUsedAction = action;
+  button.textContent = label;
+  button.disabled = item.pending;
+  button.onclick = onClick;
+
+  return button;
+}
+
+function renderUsedItem(line: MemoryUsedLine, item: UsedItem): HTMLElement {
+  const row = document.createElement("li");
+  row.className = "memory-used-item";
+  row.dataset.usedKind = item.kind;
+  row.dataset.usedId = item.kind === "entry" ? item.entry.id : item.task.id;
+  row.dataset.state = item.state;
+  const text = document.createElement("p");
+  text.className = "memory-used-text";
+  // 过往任务显示摘要（做成了什么），没有摘要时显示原话目标。
+  text.textContent = item.kind === "entry" ? item.entry.text : item.task.summary || item.task.goal;
+  const actions = document.createElement("div");
+  actions.className = "memory-used-actions";
+  const rerender = () => { if (line.el.isConnected || line === pendingUsedLine) renderUsedLine(line); };
+
+  if (item.state === "used") {
+    actions.append(usedButton("忘掉", "forget", item, () => runUsedAction(item, "forget", rerender)));
+
+    // 没有当前网站（扩展页、空白页）就没有「这里」可言。
+    if (line.hostname) actions.append(usedButton("这里别用", "not-here", item, () => runUsedAction(item, "not-here", rerender, line.hostname!)));
+  } else {
+    const note = document.createElement("span");
+    note.className = "memory-used-note";
+    note.textContent = item.state === "forgotten" ? "已忘掉，之后不再用" : `在 ${line.hostname} 不用`;
+    actions.append(note, usedButton("撤销", "undo", item, () => runUsedAction(item, "undo", rerender, line.hostname ?? undefined)));
+  }
+
+  row.append(text, actions);
+
+  if (item.error) {
+    const error = document.createElement("p");
+    error.className = "memory-used-error";
+    error.textContent = item.error;
+    row.appendChild(error);
+  }
+
+  return row;
+}
+
+/** 忘掉 / 这里别用 / 撤销：记忆走记忆面板的同一套请求，过往任务走过往任务的请求。 */
+function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", rerender: () => void, hostname?: string): void {
+  const undoing = action === "undo" ? item.state : null;
+  const next: UsedItem["state"] = action === "forget" ? "forgotten" : action === "not-here" ? "not-here" : "used";
+
+  const done = (result: { ok: boolean; entry?: MemoryEntry; entries?: MemoryEntry[]; error?: string }) => {
+    item.pending = false;
+
+    if (result.ok) {
+      item.state = next;
+      item.error = "";
+
+      if (item.kind === "entry") {
+        if (action === "forget") item.removed = result.entries;
+        const current = result.entry ?? result.entries?.find(entry => entry.id === item.entry.id);
+
+        if (current) item.entry = current;
+      }
+    } else {
+      item.error = `${action === "forget" ? "没有忘掉" : action === "not-here" ? "没有改成这里别用" : "没有撤销"}：${result.error ?? "请重试"}`;
+    }
+
+    rerender();
+  };
+
+  item.pending = true;
+  item.error = "";
+  rerender();
+
+  if (item.kind === "entry") {
+    const message = action === "forget" ? memoryState.beginForget(selectedConversationId, item.entry)
+      : undoing === "forgotten" ? memoryState.beginUnforget(selectedConversationId, item.removed ?? [item.entry])
+        : memoryState.beginSite(selectedConversationId, item.entry, hostname!, action === "not-here");
+
+    usedLineHandlers.set(message.requestId, done);
+    dispatchMemoryRequest(message, { action: message.type === "memory_forget" ? "forget" : message.type === "memory_unforget" ? "unforget" : "site", entryId: item.entry.id });
+
+    return;
+  }
+
+  const requestId = crypto.randomUUID();
+
+  const message: ClientMessage = action === "forget" ? { type: "task_history_forget", requestId, conversationId: selectedConversationId, id: item.task.id }
+    : undoing === "forgotten" ? { type: "task_history_restore", requestId, conversationId: selectedConversationId, task: item.task }
+      : { type: "task_history_site", requestId, conversationId: selectedConversationId, id: item.task.id, hostname: hostname!, off: action === "not-here" };
+
+  usedLineHandlers.set(requestId, done);
+
+  if (!send(message)) {
+    usedLineHandlers.delete(requestId);
+    done({ ok: false, error: "连接不可用，请重试" });
+  }
 }
 
 function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): HTMLElement {
@@ -3059,7 +3285,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
   switch (ev.kind) {
     case "memory":
-      renderMemoryReceipt(ev);
+      if (ev.action === "used") noteMemoryUsed(ev);
+      else renderMemoryReceipt(ev);
       refreshMemoryIfStale(ev.rev);
       break;
     case "memory_ask":
@@ -3107,6 +3334,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "agent_end":
       closeBlocks();
+      flushMemoryUsedLine();
       // 宿主没有用它交付（停止、出错、交给用户）：和原来一样只留在执行过程里。
       foldLeadAnswer();
       leadDeliveryMode = null;
@@ -3470,6 +3698,13 @@ function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" 
   const outcome = memoryState.receive(msg.conversationId, msg);
   processMemoryOutcome(outcome);
   const askHandler = outcome.kind === "ignored" ? memoryAskHandlers.get(msg.requestId) : undefined;
+  const lineHandler = outcome.kind === "ignored" ? usedLineHandlers.get(msg.requestId) : undefined;
+
+  // 回答下方那行的请求被判作过期：不会再有结果，那一条恢复可点。
+  if (lineHandler) {
+    usedLineHandlers.delete(msg.requestId);
+    lineHandler({ ok: false, error: "这条记忆刚在别处改过，请再试一次" });
+  }
 
   // 询问卡片的请求结果被判作过期或不属于它：不会再有结果，卡片恢复可点。
   if (askHandler) {
@@ -3558,6 +3793,17 @@ function handleServerMessage(raw: string): void {
   }
 
   if (msg.type === "task_history_result") {
+    const lineHandler = usedLineHandlers.get(msg.requestId);
+
+    if (lineHandler) {
+      usedLineHandlers.delete(msg.requestId);
+      lineHandler(msg.ok ? { ok: true } : { ok: false, error: msg.error ?? "请重试" });
+
+      if (msg.ok && !memoryDrawer.hidden) requestPastTasks();
+
+      return;
+    }
+
     if (!receiveOpenThreadsTasks(msg)) handlePastTasksResult(msg);
 
     return;

@@ -93,6 +93,8 @@ describe("conversation memory management routing", () => {
       action: "forget",
       ok: true,
       deletedId: saved.id,
+      // 删掉的那件事的全部条目，供撤销「忘掉」时原样放回。
+      entries: [update.entry],
       rev: 3,
     });
   });

@@ -8,7 +8,7 @@ import { isExecutionFeedback } from "./execution-feedback.js";
  * 本文件是两侧共用的唯一权威定义；修改需两侧同步。
  */
 
-import { isMemoryScope, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
+import { isMemoryEntry, isMemoryScope, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
@@ -182,9 +182,16 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_restore"; requestId: string; id: string; expectedVersion: number }
   /** 回答纠正后的询问（memory_ask）：remember 保存那条做法；once 不保存，同一对话里不再问同一条。规则文字只取后台记下的那份，面板不能改写。 */
   | { type: "memory_ask_answer"; requestId: string; askId: string; answer: "remember" | "once" }
+  /** 「这里别用」：off=true 在这个网站不再带这条，off=false 恢复。不删除记忆、不改版本号。 */
+  | { type: "memory_site"; requestId: string; id: string; expectedVersion: number; hostname: string; off: boolean }
+  /** 撤销「忘掉」：把忘掉时删掉的那件事的全部条目（memory_result.forget 的 entries）原样放回。 */
+  | { type: "memory_unforget"; requestId: string; entries: MemoryEntry[] }
   /** 过往任务：列出，或删一条（id 为 null 时全部清空）。 */
   | { type: "task_history_list"; requestId: string }
   | { type: "task_history_forget"; requestId: string; id: string | null }
+  /** 过往任务的「这里别用」与撤销「忘掉」（放回删掉的那条）。结果都是 task_history_result。 */
+  | { type: "task_history_site"; requestId: string; id: string; hostname: string; off: boolean }
+  | { type: "task_history_restore"; requestId: string; task: TaskHistoryEntry }
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
@@ -245,8 +252,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   | VoiceServerMessage
-  /** action=ask 是 memory_ask_answer 的结果：remember 成功时带 entry（新存的那条；alreadySaved 时是早已存在的同一条，这次没写入，不给撤销），once 成功时不带。 */
-  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
+  /** action=forget 成功时 entries 是删掉的那件事的全部条目（供撤销）。action=ask 是 memory_ask_answer 的结果：remember 成功时带 entry（新存的那条；alreadySaved 时是早已存在的同一条，这次没写入，不给撤销），once 成功时不带。 */
+  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
@@ -274,7 +281,9 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
-  | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number }
+  | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number;
+      /** action=used：这一轮一起带给助手的过往任务。 */ tasks?: TaskHistoryEntry[];
+      /** action=used：这一轮所在的网站（「这里别用」按它记）；没有网页时省略。 */ hostname?: string }
   /**
    * 纠正后开口问：用户这一轮纠正了助手，后台总结出一条做事的方法，问「要我记住吗」。
    * rule 是第一人称的那句做法（「以后在这个网站导出，我都先选全部再核对条数」）；scope 是默认范围；
@@ -716,9 +725,13 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if((msg.type==='takeover'||msg.type==='handback'||msg.type==='abort')&&msg.taskRequestId!==undefined&&!validRequestId(msg.taskRequestId))return null;
 
     if (msg.type.startsWith("memory_")) {
-      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget" && msg.type !== "memory_restore" && msg.type !== "memory_ask_answer") return null;
+      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget" && msg.type !== "memory_restore" && msg.type !== "memory_ask_answer" && msg.type !== "memory_site" && msg.type !== "memory_unforget") return null;
 
       if (!validRequestId(msg.requestId)) return null;
+
+      if (msg.type === "memory_unforget") return Array.isArray(msg.entries) && msg.entries.length > 0 && msg.entries.length <= 100 && msg.entries.every(isMemoryEntry) ? msg : null;
+
+      if (msg.type === "memory_site" && !(typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean")) return null;
 
       if (msg.type === "memory_ask_answer" && !(validMemoryId(msg.askId) && (msg.answer === "remember" || msg.answer === "once"))) return null;
 
@@ -730,6 +743,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "task_history_list" && !validRequestId(msg.requestId)) return null;
 
     if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
+
+    if (msg.type === "task_history_site" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean")) return null;
+
+    if (msg.type === "task_history_restore" && !(validRequestId(msg.requestId) && isTaskHistoryEntry(msg.task))) return null;
 
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
 
@@ -874,7 +891,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
 
     if (msg.type === "memory_result") {
-      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget", "restore", "ask"].includes(msg.action)) return null;
+      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget", "restore", "ask", "site", "unforget"].includes(msg.action)) return null;
 
       if (msg.entries !== undefined && !upgradeMemoryEntries(msg.entries)) return null;
 
@@ -892,7 +909,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
       if (msg.askClosed !== undefined && (msg.askClosed !== true || msg.action !== "ask" || msg.ok)) return null;
 
-      if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId) || (msg.action === "restore" && !msg.entries?.length))) return null;
+      if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId) || (msg.action === "restore" && !msg.entries?.length) || (msg.action === "site" && !msg.entry) || (msg.action === "unforget" && !msg.entries?.length))) return null;
 
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
@@ -933,6 +950,10 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.message !== undefined && typeof event.message !== "string") return null;
 
       if (event.rev !== undefined && !(Number.isInteger(event.rev) && event.rev >= 0)) return null;
+
+      if (event.tasks !== undefined && (!Array.isArray(event.tasks) || !event.tasks.every(isTaskHistoryEntry))) return null;
+
+      if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return null;
     }
 
     if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;

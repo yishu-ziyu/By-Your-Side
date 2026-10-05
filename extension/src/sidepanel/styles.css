@@ -2245,6 +2245,25 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-empty { display:flex; min-height:156px; flex-direction:column; align-items:center; justify-content:center; padding:28px 12px; color:var(--text-tertiary); text-align:center; font-size:11px; }
 .memory-empty strong { color:var(--text-secondary); font-size:13px; font-weight:560; }
 .memory-empty p { max-width:260px; margin:7px 0 0; line-height:1.7; }
+/* 回答下方「用了 N 条记忆 ›」：默认一行安静的小字，点开才列出每一条和两个按钮。 */
+.memory-used-line { margin:-8px 0 14px; color:var(--text-tertiary); font-size:11px; }
+.memory-used-toggle { border:0; background:transparent; color:var(--text-tertiary); font:inherit; padding:2px 0; cursor:pointer; }
+.memory-used-toggle:hover { color:var(--text-secondary); }
+.memory-used-chevron { display:inline-block; transition:transform var(--m-move, .18s) ease; }
+.memory-used-toggle[aria-expanded=true] .memory-used-chevron { transform:rotate(90deg); }
+.memory-used-list { list-style:none; margin:4px 0 0; padding:0 0 0 10px; border-left:2px solid var(--content-border); }
+.memory-used-item { padding:5px 0; }
+.memory-used-text { margin:0; color:var(--text-secondary); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.memory-used-item[data-state=forgotten] .memory-used-text { text-decoration:line-through; color:var(--text-tertiary); }
+.memory-used-actions { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin-top:2px; }
+.memory-used-actions button { border:0; background:transparent; color:var(--text-tertiary); font:inherit; font-size:11px; padding:0; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
+.memory-used-actions button:hover:not(:disabled) { color:var(--text-secondary); }
+.memory-used-actions button:disabled { opacity:.55; cursor:default; }
+.memory-used-line button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.memory-used-note { color:var(--text-tertiary); }
+.memory-used-error { margin:2px 0 0; color:var(--err); font-size:11px; }
+.memory-not-here { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; margin-top:6px; color:var(--text-tertiary); font-size:10.5px; }
+.memory-not-here button { padding:2px 6px; }
 .memory-receipt { display:flex; align-items:center; gap:6px; margin:-8px 0 14px; color:var(--text-secondary); font-size:10.5px; }
 .memory-receipt-mark { color:var(--ok); font-size:11px; display:inline-flex; align-items:center; flex-shrink:0; }
 .memory-receipt button { border:0; border-radius:5px; background:transparent; color:var(--accent); padding:2px 1px; font:inherit; font-size:11px; cursor:pointer; }

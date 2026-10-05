@@ -8,11 +8,14 @@ import {
   MEMORY_QUOTE_MAX,
   memoryHostOfUrl,
   isStoredMemoryEntry,
+  normalizeMemoryHostname,
   upgradeMemoryEntry,
+  usableOnHost,
   validLocalDate,
   validMemoryId,
   validMemoryText,
   validMemoryVersion,
+  withNotOnHost,
   type MemoryEntry,
   type MemoryKind,
   type MemoryScope,
@@ -289,9 +292,11 @@ export class MemoryStore {
     });
   }
 
-  async forget(input: { id: string; expectedVersion: number }): Promise<void> {
+  /** 返回删掉的条目（忘记生效的值时是整件事的全部版本），供 unforget 撤销。 */
+  async forget(input: { id: string; expectedVersion: number }): Promise<MemoryEntry[]> {
     assertMutationIdentity(input.id, input.expectedVersion);
-    await this.withWriteLock(async (entries, forgotten) => {
+
+    return this.withWriteLock(async (entries, forgotten) => {
       const index = entries.findIndex((entry) => entry.id === input.id);
 
       if (index < 0) throw new Error("Memory entry was not found");
@@ -302,9 +307,10 @@ export class MemoryStore {
 
       // 忘记生效的值 = 忘记这条事实：整条历史一起删。
       if (current.status === "active") {
+        const removed = entries.filter(entry => entry.factId === current.factId);
         removeFact(entries, forgotten, current.factId);
 
-        return;
+        return removed;
       }
 
       // 只删一条历史：指向它的旧值改指向它的下一条，链不断开。
@@ -323,6 +329,48 @@ export class MemoryStore {
 
       if (current.experience) forgotten.push(current.experience.runId);
       entries.splice(entries.indexOf(current), 1);
+
+      return [current];
+    });
+  }
+
+  /**
+   * 撤销「忘掉」：把 forget 删掉的条目原样放回（编号、版本、用过次数不变）。
+   * 这件事这期间又有了值、或这些条目已经放回过时拒绝，不出现两个生效值。
+   */
+  async unforget(removed: MemoryEntry[]): Promise<MemoryEntry[]> {
+    if (!Array.isArray(removed) || !removed.length || !removed.every(isMemoryEntry)) throw new Error("Memory entries are invalid");
+    const factId = removed[0]!.factId;
+
+    if (removed.some(entry => entry.factId !== factId)) throw new Error("只能撤销同一件事的条目");
+
+    return this.withWriteLock(async (entries, forgotten) => {
+      if (entries.some(entry => entry.factId === factId || removed.some(r => r.id === entry.id))) throw new Error("这条记忆已经恢复过，或已有新的值");
+      const restored = cloneEntries(removed);
+      entries.push(...restored);
+      const runs = new Set(restored.flatMap(entry => (entry.experience ? [entry.experience.runId] : [])));
+
+      for (let i = forgotten.length - 1; i >= 0; i--) if (runs.has(forgotten[i]!)) forgotten.splice(i, 1);
+
+      return restored;
+    });
+  }
+
+  /** 「这里别用」：off=true 在这个网站不再带这条，off=false 恢复。不删除、不改版本号（内容没变）。 */
+  async setNotHere(input: { id: string; expectedVersion: number; hostname: string; off: boolean }): Promise<MemoryEntry> {
+    assertMutationIdentity(input.id, input.expectedVersion);
+
+    if (normalizeMemoryHostname(input.hostname) !== input.hostname) throw new Error("Memory hostname is invalid");
+
+    return this.withWriteLock(async (entries) => {
+      const index = entries.findIndex((entry) => entry.id === input.id);
+
+      if (index < 0) throw new Error("Memory entry was not found");
+
+      if (entries[index]!.version !== input.expectedVersion) throw new Error("Memory version conflict");
+      entries[index] = withNotOnHost(entries[index]!, input.hostname, input.off);
+
+      return entries[index]!;
     });
   }
 
@@ -388,7 +436,7 @@ export class MemoryStore {
     assertQuery(query);
     const hostname = hostnameFromUrl(query.url);
 
-    return cloneEntries((await this.read()).filter((entry) => entry.status === "active" && scopeAllows(entry.scope, hostname) && isEntryRelevant(entry, query.text)));
+    return cloneEntries((await this.read()).filter((entry) => entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname) && isEntryRelevant(entry, query.text)));
   }
 
   async resolveSelected(selected: Array<{ id: string; version: number }>, query: MemoryQuery): Promise<MemoryEntry[]> {
@@ -402,7 +450,7 @@ export class MemoryStore {
     const hostname = hostnameFromUrl(query.url);
 
     return cloneEntries((await this.read()).filter((entry) =>
-      wanted.get(entry.id) === entry.version && entry.status === "active" && scopeAllows(entry.scope, hostname) && isEntryRelevant(entry, query.text),
+      wanted.get(entry.id) === entry.version && entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname) && isEntryRelevant(entry, query.text),
     ));
   }
 
@@ -677,6 +725,8 @@ function cloneEntries(entries: MemoryEntry[]): MemoryEntry[] {
     if (entry.validity) cloned.validity = { ...entry.validity };
 
     if (entry.experience) cloned.experience = { ...entry.experience, evidence: [...entry.experience.evidence] };
+
+    if (entry.notOnHosts) cloned.notOnHosts = [...entry.notOnHosts];
 
     return cloned;
   });

@@ -6,9 +6,9 @@
  * - 按网站带（site）：网站范围与当前网址主机名精确相同的记忆，以及这个网站最近几条过往任务；
  * - 问起过往（asked）：这句话在问「之前 / 上次」做过什么时，带最近几条过往任务（不限网站）。
  *
- * 每层各有上限，总字数不超过 MEMORY_CONTEXT_MAX_CHARS。被替换、失效、过期、别的网站的不带。
+ * 每层各有上限，总字数不超过 MEMORY_CONTEXT_MAX_CHARS。被替换、失效、过期、别的网站的不带；用户在当前网站点过「这里别用」的也不带。
  */
-import { withinValidity, type MemoryEntry } from "../../shared/memory.js";
+import { usableOnHost, withinValidity, type MemoryEntry } from "../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 
@@ -40,7 +40,7 @@ export interface MemoryContextSelection {
   tasks: Array<{ task: TaskHistoryEntry; rule: MemoryContextRule }>;
   totalChars: number;
   /** 没带的条数与原因，写进决定记录。 */
-  skipped: { replacedOrInvalid: number; expired: number; otherSite: number; overCap: number };
+  skipped: { replacedOrInvalid: number; expired: number; otherSite: number; notHere: number; overCap: number };
 }
 
 const ASKED_ABOUT_PAST = /之前|上次|以前|前几天|昨天|做过|订阅过|买过|填过|earlier|last time|before|previously|did you/i;
@@ -51,7 +51,7 @@ export function taskContextChars(task: TaskHistoryEntry): number {
 }
 
 export function selectMemoryContext(input: MemoryContextInput): MemoryContextSelection {
-  const skipped = { replacedOrInvalid: 0, expired: 0, otherSite: 0, overCap: 0 };
+  const skipped = { replacedOrInvalid: 0, expired: 0, otherSite: 0, notHere: 0, overCap: 0 };
   const pickedEntries: MemoryContextSelection["entries"] = [];
   const pickedTasks: MemoryContextSelection["tasks"] = [];
   let totalChars = 0;
@@ -79,6 +79,8 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
 
     if (entry.scope.kind === "site" && entry.scope.hostname !== input.hostname) { skipped.otherSite++; continue; }
 
+    if (!usableOnHost(entry, input.hostname)) { skipped.notHere++; continue; }
+
     const rule: MemoryContextRule = entry.scope.kind === "site" ? "site" : "always";
 
     if (entry.kind === "past") {
@@ -103,7 +105,9 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
     if (take(entry.text.length, facts, MEMORY_CONTEXT_CAPS.facts)) pickedEntries.push({ entry, rule });
   }
 
-  const tasks = [...input.tasks].sort((a, b) => b.endedAt - a.endedAt);
+  const usable = input.tasks.filter(task => usableOnHost(task, input.hostname));
+  skipped.notHere += input.tasks.length - usable.length;
+  const tasks = usable.sort((a, b) => b.endedAt - a.endedAt);
   const chosen = new Set<string>();
 
   // 过期的带日期任务只在被问起时出现（asked 层），不走有效期层，也不走网站层。

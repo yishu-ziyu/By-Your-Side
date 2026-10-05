@@ -1584,16 +1584,22 @@ return;}
       return;
     }
 
-    if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget" || message.type === "memory_restore" || message.type === "memory_ask_answer") {
+    if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget" || message.type === "memory_restore" || message.type === "memory_ask_answer" || message.type === "memory_site" || message.type === "memory_unforget") {
       await this.handleMemoryMessage(message, id);
 
       return;
     }
 
-    if (message.type === "task_history_list" || message.type === "task_history_forget") {
+    if (message.type === "task_history_list" || message.type === "task_history_forget" || message.type === "task_history_site" || message.type === "task_history_restore") {
       try {
         if (!this.taskHistory) throw new Error("过往任务记录不可用");
-        const tasks = message.type === "task_history_list" ? await this.taskHistory.list() : await this.taskHistory.forget(message.id);
+        const history = this.taskHistory;
+
+        const tasks = message.type === "task_history_list" ? await history.list()
+          : message.type === "task_history_site" ? await history.setNotHere(message.id, message.hostname, message.off)
+            : message.type === "task_history_restore" ? await history.record(message.task).then(() => history.list())
+              : await history.forget(message.id);
+
         this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: true, tasks });
       } catch (error) {
         this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
@@ -1672,10 +1678,11 @@ return;
   }
 
   private async handleMemoryMessage(
-    message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" }>,
+    message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" | "memory_site" | "memory_unforget" }>,
     conversationId: string,
   ): Promise<void> {
-    const action = message.type === "memory_list" ? "list" : message.type === "memory_update" ? "update" : message.type === "memory_restore" ? "restore" : message.type === "memory_ask_answer" ? "ask" : "forget";
+    const action = message.type === "memory_list" ? "list" : message.type === "memory_update" ? "update" : message.type === "memory_restore" ? "restore" : message.type === "memory_ask_answer" ? "ask"
+      : message.type === "memory_site" ? "site" : message.type === "memory_unforget" ? "unforget" : "forget";
 
     try {
       if (!this.memoryStore) throw new Error("记忆存储不可用");
@@ -1731,8 +1738,22 @@ return;
         return;
       }
 
-      await this.memoryStore.forget({ id: message.id, expectedVersion: message.expectedVersion });
-      this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id, rev: await this.memoryStore.currentRev() });
+      if (message.type === "memory_site") {
+        const entry = await this.memoryStore.setNotHere({ id: message.id, expectedVersion: message.expectedVersion, hostname: message.hostname, off: message.off });
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entry, rev: await this.memoryStore.currentRev() });
+
+        return;
+      }
+
+      if (message.type === "memory_unforget") {
+        const entries = await this.memoryStore.unforget(message.entries);
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries, rev: await this.memoryStore.currentRev() });
+
+        return;
+      }
+
+      const removed = await this.memoryStore.forget({ id: message.id, expectedVersion: message.expectedVersion });
+      this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id, entries: removed, rev: await this.memoryStore.currentRev() });
     } catch (error) {
       // 失败（如版本冲突）也带上当前 rev，面板据此重读；记忆读不出来时不带。
       const rev = await this.memoryStore?.currentRev().catch(() => undefined);

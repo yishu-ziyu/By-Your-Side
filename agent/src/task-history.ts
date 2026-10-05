@@ -1,3 +1,4 @@
+import { normalizeMemoryHostname, withNotOnHost } from "../../shared/memory.js";
 import { isTaskHistoryEntry, TASK_HISTORY_MAX, type TaskHistoryEntry } from "../../shared/task-history.js";
 import type { DocumentPersistence } from "./document-persistence.js";
 import { isRelevantMemory } from "./memory-relevance.js";
@@ -101,6 +102,17 @@ export class TaskHistoryStore {
     const wanted = new Set(ids);
 
     await this.mutate(tasks => tasks.map(task => (wanted.has(task.id) ? { ...task, useCount: (task.useCount ?? 0) + 1, lastUsedAt: now } : task)));
+  }
+
+  /** 「这里别用」：off=true 在这个网站不再带这条，off=false 恢复。返回全部过往任务。 */
+  async setNotHere(id: string, hostname: string, off: boolean): Promise<TaskHistoryEntry[]> {
+    if (normalizeMemoryHostname(hostname) !== hostname) throw new Error("Task history hostname is invalid");
+
+    return this.mutate(tasks => {
+      if (!tasks.some(task => task.id === id)) throw new Error("这条过往任务已不在");
+
+      return tasks.map(task => (task.id === id ? withNotOnHost(task, hostname, off) : task));
+    });
   }
 
   /** 删一条；id 为 null 时全部清空。 */

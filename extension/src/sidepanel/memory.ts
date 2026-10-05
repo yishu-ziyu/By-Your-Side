@@ -1,7 +1,7 @@
 import { MEMORY_KIND_LABEL, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol.js";
 
-type MemoryClientMessage = Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" }>;
+type MemoryClientMessage = Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" | "memory_site" | "memory_unforget" }>;
 
 export type MemoryResult = Extract<ServerMessage, { type: "memory_result" }>;
 
@@ -22,6 +22,8 @@ function cloneEntry(entry: MemoryEntry): MemoryEntry {
   const cloned = { ...entry, scope: { ...entry.scope } };
 
   if (entry.validity) cloned.validity = { ...entry.validity };
+
+  if (entry.notOnHosts) cloned.notOnHosts = [...entry.notOnHosts];
 
   return cloned;
 }
@@ -165,6 +167,24 @@ export class MemoryManagementState {
     return { type: "memory_restore", requestId, conversationId, id: entry.id, expectedVersion: entry.version };
   }
 
+  /** 「这里别用」/ 恢复：结果带回改好的那条。 */
+  beginSite(conversationId: string, entry: Pick<MemoryEntry, "id" | "version">, hostname: string, off: boolean): MemoryClientMessage {
+    const requestId = this.requestId();
+    const order = ++this.order;
+    this.pending.set(requestId, { requestId, action: "site", conversationId, order, entryId: entry.id });
+    this.latestIssuedByEntry.set(entry.id, order);
+
+    return { type: "memory_site", requestId, conversationId, id: entry.id, expectedVersion: entry.version, hostname, off };
+  }
+
+  /** 撤销「忘掉」：把忘掉时删掉的条目放回。面板随后重读全表。 */
+  beginUnforget(conversationId: string, entries: MemoryEntry[]): MemoryClientMessage {
+    const requestId = this.requestId();
+    this.pending.set(requestId, { requestId, action: "unforget", conversationId, order: ++this.order });
+
+    return { type: "memory_unforget", requestId, conversationId, entries: entries.map(cloneEntry) };
+  }
+
   /** 回答纠正后的询问；结果里的新条目（及被替换的旧条目）原样交给询问卡片，面板随后重读全表。 */
   beginAskAnswer(conversationId: string, askId: string, answer: "remember" | "once"): MemoryClientMessage {
     const requestId = this.requestId();
@@ -249,7 +269,7 @@ export class MemoryManagementState {
       };
     }
 
-    if (request.action === "update" && result.entry && request.entryId === result.entry.id) {
+    if ((request.action === "update" || request.action === "site") && result.entry && request.entryId === result.entry.id) {
       const applied = this.latestAppliedByEntry.get(result.entry.id) ?? 0;
       const deleted = this.deletedAtOrder.get(result.entry.id) ?? 0;
 

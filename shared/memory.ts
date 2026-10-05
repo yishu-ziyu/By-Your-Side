@@ -44,6 +44,8 @@ export interface MemoryEntry {
   status: MemoryStatus;
   /** status=replaced 时，替换它的那条。 */
   replacedBy?: string;
+  /** 用户点过「这里别用」的网站：在这些网站不带给助手，别处照常带。缺省 = 到处照常。 */
+  notOnHosts?: string[];
   formatVersion: typeof MEMORY_FORMAT_VERSION;
 }
 
@@ -179,7 +181,33 @@ function hasStatusFields(value: unknown): value is StatusFields {
     && (entry.validity === undefined || isMemoryValidity(entry.validity))
     && (entry.date === undefined || validLocalDate(entry.date))
     && (entry.sourceQuote === undefined || (typeof entry.sourceQuote === "string" && entry.sourceQuote.length > 0 && entry.sourceQuote.length <= MEMORY_QUOTE_MAX))
-    && (entry.replacedBy === undefined || validMemoryId(entry.replacedBy));
+    && (entry.replacedBy === undefined || validMemoryId(entry.replacedBy))
+    && (entry.notOnHosts === undefined || validNotOnHosts(entry.notOnHosts));
+}
+
+/** 「这里别用」的网站列表：每个都是规范的主机名，不重复，至多 50 个。记忆与过往任务共用。 */
+export function validNotOnHosts(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 50 && new Set(value).size === value.length
+    && value.every(host => normalizeMemoryHostname(String(host)) === host);
+}
+
+/** 在这个网站要不要带：没有当前网站，或用户没在这里点过「这里别用」。 */
+export function usableOnHost(item: { notOnHosts?: string[] }, hostname: string | null): boolean {
+  return !hostname || !item.notOnHosts?.includes(hostname);
+}
+
+/** 加上或去掉一个「这里别用」的网站；去光了就不留这个字段。 */
+export function withNotOnHost<T extends { notOnHosts?: string[] }>(item: T, hostname: string, off: boolean): T {
+  const hosts = new Set(item.notOnHosts ?? []);
+
+  if (off) hosts.add(hostname);
+  else hosts.delete(hostname);
+  const next = { ...item };
+
+  if (hosts.size) next.notOnHosts = [...hosts];
+  else delete next.notOnHosts;
+
+  return next;
 }
 
 export function isMemoryEntry(value: unknown): value is MemoryEntry {

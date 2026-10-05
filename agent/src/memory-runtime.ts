@@ -786,7 +786,7 @@ export class MemoryRuntime {
 
   /**
    * 决定点 B：按纯代码规则挑这一轮带的记忆（见 memory-context.ts），写一条决定记录，给带上的记忆记一次「用过」。
-   * 自动总结的网站做法仍发「使用了记忆」回执并交给经验运行时（与升级前相同）。
+   * 带了记忆或过往任务就发一条「用了」事件，列出带上的每一条：侧栏在回答下方显示「用了 N 条记忆」。
    */
   private async selectContext(turn: ActiveUserTurn): Promise<MemoryContextSelection | null> {
     const hostname = memoryHostOfUrl(turn.query.url);
@@ -815,10 +815,16 @@ export class MemoryRuntime {
       skipped: selection.skipped,
     });
 
-    const experiences = selection.entries.map(item => item.entry).filter(entry => entry.experience);
+    const count = selection.entries.length + selection.tasks.length;
 
-    if (experiences.length) {
-      this.emit({ kind: "memory", action: "used", entries: experiences, message: `本轮使用了 ${experiences.length} 条记忆`, ...await this.rev() });
+    if (count) {
+      const used: Extract<AgentUiEvent, { kind: "memory" }> = {
+        kind: "memory", action: "used", entries: selection.entries.map(item => item.entry), tasks: selection.tasks.map(item => item.task),
+        message: `本轮用了 ${count} 条记忆`, ...await this.rev(),
+      };
+
+      if (hostname) used.hostname = hostname;
+      this.emit(used);
     }
 
     return selection;
