@@ -349,3 +349,63 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
     expect(() => validateTranslationCommand({action: 'collect', exclude: [1 as never]})).toThrow();
   });
 });
+
+/** 单段页面替身：每个段落文本由 texts 指定。 */
+function textPage(texts: string[]) {
+  const done = new Set<string>(); const applied = new Map<string, string>();
+  const ids = texts.map((_, i) => String(i + 1));
+  const counts = () => ({translated: done.size, remaining: texts.length - done.size});
+
+  const call = vi.fn(async (command: {action: string; exclude?: string[]; translations?: {id: string; text: string}[]}): Promise<TranslationReceipt> => {
+    if (command.action === 'apply') {
+      for (const t of command.translations!) { done.add(t.id.split(':')[0]!); applied.set(t.id, t.text); }
+
+      return {...receipt, ...counts(), applied: command.translations!.length, blocks: []};
+    }
+
+    const next = command.action === 'collect' ? ids.filter(id => !done.has(id)).slice(0, 8) : [];
+
+    return {...receipt, ...counts(), blocks: next.map(id => ({id, segments: [{id: `${id}:0`, text: texts[Number(id) - 1]!}]}))};
+  });
+
+  return {call, applied};
+}
+
+describe('原文原样返回的段落（#26）', () => {
+  const run = (page: ReturnType<typeof textPage>, translate: never) =>
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
+    runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal, {concurrency: 1});
+
+  it('英文段落原样返回时重试一次，并写入重试的译文', async () => {
+    const source = 'The quick brown fox jumps over the lazy dog.';
+    const page = textPage([source]);
+
+    const translate = vi.fn()
+      .mockResolvedValueOnce([{id: '1:0', text: source}])
+      .mockResolvedValueOnce([{id: '1:0', text: '敏捷的棕色狐狸跳过了懒狗。'}]);
+
+    await run(page, translate as never);
+    expect(translate).toHaveBeenCalledTimes(2);
+    expect(page.applied.get('1:0')).toBe('敏捷的棕色狐狸跳过了懒狗。');
+  });
+
+  it.each(['https://example.com/a/b?c=1', 'OK', 'useState_hook()', 'user@example.com'])('原样返回 %s 不重试', async source => {
+    const page = textPage([source]);
+    const translate = vi.fn(async () => [{id: '1:0', text: source}]);
+    await run(page, translate as never);
+    expect(translate).toHaveBeenCalledTimes(1);
+    expect(page.applied.get('1:0')).toBe(source);
+  });
+});
+
+describe('长页面不再被批次数硬截断（#26）', () => {
+  it('1500 段、模型很快：全部译完，不以 batch-limit 停止', async () => {
+    const page = textPage(Array.from({length: 1500}, (_, i) => `Paragraph number ${i + 1}`));
+    const translate = vi.fn(async (blocks: {segments: {id: string}[]}[]) => echo(blocks));
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
+    const result = await runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal, {concurrency: 4});
+    expect(result).toMatchObject({translated: 1500, remaining: 0});
+    expect(result.incompleteReason).toBeUndefined();
+    expect(page.applied.size).toBe(1500);
+  });
+});
