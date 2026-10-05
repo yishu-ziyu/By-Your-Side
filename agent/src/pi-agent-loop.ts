@@ -138,7 +138,11 @@ export class PiAgentLoop implements AgentLoop {
 
         return convertToLlm(messages);
       },
-      transformContext: async messages => (this.hooks.has("context") ? this.contextThroughHooks(messages) : messages),
+      transformContext: async messages => {
+        const explained = this.explainUnknownTools(messages);
+
+        return this.hooks.has("context") ? this.contextThroughHooks(explained) : explained;
+      },
       beforeToolCall: async ({ toolCall, args }) => {
         await this.flushPersistence();
 
@@ -419,6 +423,19 @@ export class PiAgentLoop implements AgentLoop {
   }
 
   /** context 钩子按 Pi 的规则接力改写消息；钩子只增删 custom 消息，不改动其他消息对象。 */
+  /** pi-agent-core 对未知工具直接回 "Tool X not found"，不经 afterToolCall；这里在下一次模型调用前改写成可行动的说明。 */
+  private explainUnknownTools(messages: AgentMessage[]): AgentMessage[] {
+    return messages.map(message => {
+      if (message.role !== "toolResult" || !message.isError || this.active.includes(message.toolName)) return message;
+
+      const first = message.content[0];
+
+      if (first?.type !== "text" || first.text !== `Tool ${message.toolName} not found`) return message;
+
+      return { ...message, content: [{ type: "text", text: `工具 ${message.toolName} 不存在，没有执行。可用工具：${this.active.join("、")}。操作页面请用 browser_run。` }] };
+    });
+  }
+
   private async contextThroughHooks(messages: AgentMessage[]): Promise<AgentMessage[]> {
     // SAFETY: HookMessage 是 AgentMessage 的结构子集；钩子返回的仍是 Agent 消息（原对象或新的 custom 消息）。
     return [...await this.hooks.context(messages as readonly HookMessage[])] as AgentMessage[];
