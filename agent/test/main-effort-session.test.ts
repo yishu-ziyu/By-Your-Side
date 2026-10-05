@@ -173,6 +173,17 @@ describe("main task thinking level", () => {
     }
   }, 30_000);
 
+  it("starts a model registered with a measured start level there, gpt-6-luna at high (2026-10-06)", async () => {
+    const h = await session({ ...THINKER, id: "gpt-6-luna", name: "gpt-6-luna", provider: "openai-codex" }, readThenAnswer);
+
+    try {
+      h.start("看看这页写了什么");
+      await until(() => h.ends() > 0, "the run");
+
+      expect(h.efforts[0]).toBe("high");
+    } finally { h.host.abort(); }
+  }, 30_000);
+
   it("sends no thinking parameter to an unregistered model that does not think (M9)", async () => {
     const h = await session(PLAIN, readThenAnswer);
 
