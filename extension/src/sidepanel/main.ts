@@ -17,6 +17,7 @@ import { attachAnswerActions as attachCopyActions } from "./answer-actions.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
+import { mountOrb } from "./voice-orb.js";
 import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
@@ -180,6 +181,7 @@ app.innerHTML = `
   </div>
   <div id="team-card" hidden></div>
   <section id="starter" aria-label="开始方式">
+    <canvas id="starter-orb" aria-hidden="true"></canvas>
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub">浏览器 AI 助手，帮你读页面、整理信息或操作网页。</p>
     <div id="starter-actions">
@@ -3690,6 +3692,16 @@ function send(msg: ClientMessage): boolean {
 
 // ── T05 接续入口：消费 task_view；「继续原任务」只提交现有 resume 动作 ──
 // #53 继续上次的事：空白会话起点区的「没做完的事」卡，逻辑在 open-threads.ts。
+// 起点区中央的光球：看得见时才转，起点区收起就停，不空耗。
+{
+  const canvas = document.querySelector<HTMLCanvasElement>("#starter-orb")!;
+  let stop: (() => void) | null = null;
+  new IntersectionObserver(([entry]) => {
+    if (entry?.isIntersecting && !stop) stop = mountOrb(canvas, 56, () => "idle");
+    else if (!entry?.isIntersecting && stop) { stop(); stop = null; }
+  }).observe(canvas);
+}
+
 configureOpenThreads({
   root: document.getElementById("starter")!,
   send,

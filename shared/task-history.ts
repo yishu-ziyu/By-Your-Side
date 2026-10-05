@@ -32,7 +32,14 @@ export interface TaskHistoryEntry {
   lastUsedAt?: number;
   /** 用户点过「这里别用」的网站：在这些网站不带给助手。缺省 = 照常。 */
   notOnHosts?: string[];
+  /** 没做完的任务结束时由快速模型起的短主题（「周末行程登记」），给「继续上次的事」用；做完的任务与旧条目缺省。 */
+  title?: string;
+  /** 同上，下一步的一句短话（「接着填第 3 页」）；只依据没做完的事，不编。 */
+  next?: string;
 }
+
+/** 短主题与下一步的长度上限（字符）。 */
+export const TASK_LABEL_MAX = 24;
 
 export const TASK_HISTORY_MAX = 200;
 
@@ -44,6 +51,10 @@ function isTextList(value: unknown, max: number, each: number): value is string[
   for (const item of value) if (typeof item !== "string" || item.length > each) return false;
 
   return true;
+}
+
+export function validTaskLabel(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= TASK_LABEL_MAX && !/[\n\r]/.test(value);
 }
 
 export function isTaskHistoryEntry(value: unknown): value is TaskHistoryEntry {
@@ -60,5 +71,6 @@ export function isTaskHistoryEntry(value: unknown): value is TaskHistoryEntry {
     && (e.date === undefined || validLocalDate(e.date)) && (e.validity === undefined || isMemoryValidity(e.validity))
     && (e.useCount === undefined || (Number.isInteger(e.useCount) && e.useCount >= 0)) && (e.lastUsedAt === undefined || Number.isFinite(e.lastUsedAt))
     && (e.notOnHosts === undefined || validNotOnHosts(e.notOnHosts))
+    && (e.title === undefined || validTaskLabel(e.title)) && (e.next === undefined || validTaskLabel(e.next))
     && (e.startedAt === null || Number.isFinite(e.startedAt)) && Number.isFinite(e.endedAt);
 }

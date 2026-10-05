@@ -822,6 +822,9 @@ return host?[host]:[];}))].slice(0,16);
     const written=history.record(entry).catch(()=>{});
     const dating=(session?.datePastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,dating]).then(([,dated])=>dated?history.patchDate(entry.id,entry.endedAt,dated):undefined).catch(()=>{});
+    // 没做完的事：起短主题与下一步，给「继续上次的事」；晚到时只补这两个字段。
+    const labeling=(session?.labelPastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
+    void Promise.all([written,labeling]).then(([,label])=>label?history.patchLabel(entry.id,entry.endedAt,label):undefined).catch(()=>{});
   }
   private async fulfillOwedDelivery(id: string): Promise<void> {
     const progress = this.progress.get(id);

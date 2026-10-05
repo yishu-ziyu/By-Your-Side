@@ -35,8 +35,11 @@ export type OpenThreadAction =
 export interface OpenThread {
   id: string;
   title: string;
+  /** 记录里的处境（悬停时看）；行上只露主题、时间和下一步。 */
   where: string;
   label: string;
+  /** 网站主机名，取首字做灰底单字图标；会话卡没有网站。 */
+  site?: string;
   at: number;
   action: OpenThreadAction;
 }
@@ -57,6 +60,23 @@ export interface OpenThreadInputs {
   currentConversationId: string;
   hidden: Record<string, number>;
   now: number;
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+}
+
+/** 「刚才 / 今天 / 昨天 / N 天前」：清单只需要大概多久以前。 */
+export function relativeDay(at: number, now: number): string {
+  const day = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0);
+
+ return d.getTime(); };
+
+  const days = Math.round((day(now) - day(at)) / 86_400_000);
+
+  if (now - at < 3_600_000) return "刚才";
+
+  return days <= 0 ? "今天" : days === 1 ? "昨天" : `${days} 天前`;
 }
 
 function clip(text: string, max: number): string {
@@ -109,7 +129,11 @@ export function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
 
     if (!open) continue;
     const where = t.unfinished.length ? `还差：${clip(plainStep(t.unfinished[0]!), 30)}${t.unfinished.length > 1 ? ` 等 ${t.unfinished.length} 件` : ""}` : PAST_OUTCOME_LINE[t.outcome];
-    out.push({ id: `task:${t.id}`, title: clip(t.goal, 40), where, label: "回到这个任务", at: t.endedAt, action: { kind: "conversation", conversationId: t.conversationId } });
+    // 短主题与下一步由任务结束时的快速模型起（见 agent memory-runtime labelPastTask）；没有就沿用原话目标。
+    const thread: OpenThread = { id: `task:${t.id}`, title: t.title ?? clip(t.goal, 40), where, label: t.next ?? "回到这个任务", at: t.endedAt, action: { kind: "conversation", conversationId: t.conversationId } };
+
+    if (t.hosts[0]) thread.site = t.hosts[0];
+    out.push(thread);
     claimed.add(t.conversationId);
   }
 
@@ -123,6 +147,7 @@ export function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
       title: clip(r.source.title || r.source.text, 40),
       where: `追问没答完：${clip(last.question, 30)}`,
       label: "打开上次页面",
+      site: hostOf(r.source.url),
       at: r.updatedAt,
       action: { kind: "tab", tabId: r.source.tabId, url: r.source.url },
     });
@@ -303,27 +328,33 @@ function render(threads: OpenThread[]): void {
   const head = document.createElement("p");
   head.className = "open-threads-head";
   head.textContent = "继续上次的事";
+  const now = Date.now();
 
-  const cards = threads.map((thread) => {
-    const card = document.createElement("article");
-    card.className = "open-thread";
-    card.dataset.threadId = thread.id;
-    const text = document.createElement("div");
-    text.className = "open-thread-text";
-    const title = document.createElement("p");
-    title.className = "open-thread-title";
-    title.textContent = thread.title;
-    title.title = thread.title;
-    const where = document.createElement("p");
-    where.className = "open-thread-where";
-    where.textContent = thread.where;
-    text.append(title, where);
+  // 无框清单：整行都能点（等于点下一步）；× 只在指着那一行时出现，占时间的位置。
+  const rows = threads.map((thread) => {
+    const row = document.createElement("div");
+    row.className = "open-thread";
+    row.dataset.threadId = thread.id;
     const go = document.createElement("button");
     go.type = "button";
     go.className = "open-thread-go";
-    go.textContent = thread.label;
+    go.title = thread.where;
+    const glyph = document.createElement("span");
+    glyph.className = "open-thread-glyph";
+    glyph.setAttribute("aria-hidden", "true");
+    glyph.textContent = (thread.site || thread.title).charAt(0).toUpperCase();
+    const title = document.createElement("span");
+    title.className = "open-thread-title";
+    title.textContent = thread.title;
+    const time = document.createElement("span");
+    time.className = "open-thread-time";
+    time.textContent = relativeDay(thread.at, now);
+    const next = document.createElement("span");
+    next.className = "open-thread-next";
+    next.textContent = `${thread.label} →`;
+    go.append(glyph, title, time, next);
     go.onclick = () => void act(thread.action).catch(() => {
-      where.textContent = "原页面已经找不到了";
+      next.textContent = "原页面已经找不到了";
       go.disabled = true;
     });
     const close = document.createElement("button");
@@ -332,13 +363,13 @@ function render(threads: OpenThread[]): void {
     close.textContent = "×";
     close.title = "7 天内不再显示这条";
     close.setAttribute("aria-label", `隐藏「${thread.title}」7 天`);
-    close.onclick = () => { card.remove(); void hide(thread.id); };
+    close.onclick = () => { row.remove(); void hide(thread.id); };
 
-    card.append(text, go, close);
+    row.append(go, close);
 
-    return card;
+    return row;
   });
 
-  el.replaceChildren(head, ...cards);
+  el.replaceChildren(head, ...rows);
   el.hidden = false;
 }

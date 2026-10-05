@@ -96,6 +96,11 @@ export class TaskHistoryStore {
     await this.mutate(tasks => tasks.map(task => (task.id === id && task.endedAt === endedAt ? { ...task, date: dated.date, validity: dated.validity } : task)));
   }
 
+  /** 没做完的任务：补上短主题与下一步（晚到时只改这两个字段）。 */
+  async patchLabel(id: string, endedAt: number, label: { title: string; next: string }): Promise<void> {
+    await this.mutate(tasks => tasks.map(task => (task.id === id && task.endedAt === endedAt ? { ...task, title: label.title, next: label.next } : task)));
+  }
+
   /** 这几条刚被带给助手：用过次数加 1、记下时间；已不存在的 id 跳过。 */
   async markUsed(ids: readonly string[], now: number): Promise<void> {
     if (!ids.length) return;

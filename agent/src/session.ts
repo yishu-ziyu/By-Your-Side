@@ -1163,6 +1163,11 @@ return;}
     return this.memoryRuntime?.datePastTask(task) ?? null;
   }
 
+  /** 没做完的任务结束时：短主题与下一步；见 MemoryRuntime.labelPastTask。没有记忆运行时返回 null。 */
+  async labelPastTask(task: Pick<TaskHistoryEntry, "goal" | "revisions" | "summary" | "unfinished" | "outcome">): Promise<{ title: string; next: string } | null> {
+    return this.memoryRuntime?.labelPastTask(task) ?? null;
+  }
+
   /** 这个对话的任务碰过的网页（宿主的任务进度提供）：纠正询问的网站后备。 */
   bindVisitedUrls(urls: () => string[]): void {
     this.memoryRuntime?.bindVisitedUrls(urls);
