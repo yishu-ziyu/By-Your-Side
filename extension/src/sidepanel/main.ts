@@ -96,11 +96,9 @@ function attachAnswerActions(answer: HTMLElement): void {
   if (source) void source.then(context => attachSourceCitations(answer, context));
 }
 
-/** #49：交付事实链里的已读页面 → 回答出处；点开的页面挂到输入框（定位到段落时连段落一起）。 */
+/** #49：本轮读过的页面 → 回答出处。新记录用独立的 sources，旧记录退回事实链里的 sources。 */
 function attachDeliverySources(answer: HTMLElement, delivery: UserDelivery): void {
-  attachAnswerSources(answer, delivery.facts?.sources, (chip) => applyPendingAsk({
-    text: chip.passage?.text.slice(0, 2000) ?? "", tabId: chip.tabId, title: chip.title, url: chip.url, ...(chip.passage ? { element: chip.passage } : {}),
-  }));
+  attachAnswerSources(answer, delivery.sources ?? delivery.facts?.sources);
 }
 
 const PLACEHOLDER_IDLE = "说说你想完成什么…";

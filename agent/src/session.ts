@@ -39,7 +39,7 @@ import type { Session as PiSession } from "@earendil-works/pi-agent-core";
 import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
-import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
+import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, handbackContinueText } from "../../shared/control.js";
@@ -187,6 +187,8 @@ export class BrowserAgentSession {
     verify: (input: {id: string; expect: string; observation: {toolCallId: string; tool: string; text: string; at: number; target: string | null; tabId: number | null}}) => {ok: boolean; reason?: string};
     /** T06：交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
     deliveryFacts?: () => DeliveryFactInput;
+    /** 这一轮读到或打开的页面（回答出处）。 */
+    answerSources?: () => UserDeliverySourceRef[];
   } | null = null;
   private persistedResults = "";
   private checkpointReadFailed = false;
@@ -512,6 +514,7 @@ if(required.includes(key))candidates.set(key,attachment);
         },
         // 没列目标计划时没有“用户目标清单”可对照：不附完成/未完成事实，也不拿动作回执冒充完成。
         getDeliveryFacts: () => resultHost?.conversationSnapshot()?.goalPlan?.coverage === 'verified' ? resultHost.taskResultsHost?.deliveryFacts?.() ?? null : null,
+        getSources: () => resultHost?.taskResultsHost?.answerSources?.() ?? null,
         getPageChanges: () => resultHost?.pageChangeFacts() ?? null,
         hasUnfinishedWork: () => {
           const snapshot = resultHost?.taskResultsHost?.getSnapshot();
@@ -2333,6 +2336,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       tabId: read.tabId ?? (typeof params?.tabId === "number" ? params.tabId : null),
       workingTab: params?.tabId === undefined||read.tabId!==null&&read.tabId===this.rpc?.getPageTarget?.(this.memberId),
       ...(read.url?{url:read.url}:{}),
+      ...(read.title?{title:read.title}:{}),
       text: truncated ? visible.text.slice(0, RESULT_OBSERVATION_TEXT_MAX) : visible.text,
       truncated:truncated||visible.redacted,
     });
@@ -2340,7 +2344,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 }
 
 /** 从工具回执（AgentToolResult 或 browser_run 子步骤原始数据）提取页面读数。 */
-function readObservationOf(tool: string, result: unknown): { text: string; tabId: number | null; target: string | null; url?:string; truncated:boolean; fragments?:import('../../shared/page-text-evidence.js').PageTextEvidence } | null {
+function readObservationOf(tool: string, result: unknown): { text: string; tabId: number | null; target: string | null; url?:string; title?:string; truncated:boolean; fragments?:import('../../shared/page-text-evidence.js').PageTextEvidence } | null {
   const details = result && typeof result === "object" && "details" in result
     ? (result as { details?: unknown }).details
     : result;
@@ -2362,6 +2366,7 @@ function readObservationOf(tool: string, result: unknown): { text: string; tabId
     tabId: typeof data.tabId === "number" ? data.tabId : null,
     target: typeof data.target === "string" && data.target.trim() ? data.target : null,
     ...(typeof data.url==='string'?{url:data.url}:{}),
+    ...(typeof data.title==='string'&&data.title.trim()?{title:data.title.trim().slice(0,200)}:{}),
   };
 }
 

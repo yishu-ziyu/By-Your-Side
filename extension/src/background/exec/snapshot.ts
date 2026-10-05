@@ -49,7 +49,7 @@ interface SnapshotRead extends SnapshotBody {
 export async function snapshot(
   params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean; cursor?: string; viewScopeId?: string; fresh?: boolean },
   sessionId: string = LEAD_SESSION_ID,
-): Promise<{ text: string; tabId: number; documentId?:string; textEvidence?:PageTextEvidence; url?:string; translation?:TranslationDisplayState|null; marks?:HostDrawnMark[]; observation?:BrowserObservation }> {
+): Promise<{ text: string; tabId: number; documentId?:string; textEvidence?:PageTextEvidence; url?:string; title?:string; translation?:TranslationDisplayState|null; marks?:HostDrawnMark[]; observation?:BrowserObservation }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -180,8 +180,12 @@ export async function snapshot(
   if(view.tabsNextCursor) page.tabsNextCursor=view.tabsNextCursor;
 
   const observation=browserObservations.issue(sessionId,page,{collectedControls,collectedTabs,generation:view.generation});
+  const result: Awaited<ReturnType<typeof snapshot>> = {...identified,observation};
 
-  return {...identified,observation};
+  // 回答出处要写页面标题，不只写域名。
+  if(tab.title) result.title=tab.title;
+
+  return result;
 }
 
 /** 对指定标签做 snapshot，不改工作标签认领。交还时读用户当前页用。 */

@@ -59,6 +59,8 @@ export class TaskProgress {
   readonly goals = new TaskGoalBook();
   /** T06：本 run 真实打开或读到的页面（去重、有界）。只在内存；恢复后不猜测补齐，交付时按实际有的说。 */
   private runSources: UserDeliverySourceRef[] = [];
+  /** 这一轮（用户说了新的话之后）读到或打开的页面：回答出处只用它，不把上一轮读过的页面算到这一轮的回答上。 */
+  private turnSources: UserDeliverySourceRef[] = [];
   private readonly pendingNavUrls = new Map<string, string>();
   constructor(private readonly conversationId: string, private readonly clock = Date.now) {
     this.ledger = new UserDeliveryLedger(conversationId);
@@ -117,9 +119,23 @@ export class TaskProgress {
   private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
   /** 核对刚判「接着做」、宿主马上发起续做：下一次 agent_start 是它，保留核对的「还差」；用户的话或别的开始不保留。 */
   private hostContinuation = false;
-  private noteRunSource(url: string): void {
-    if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
-    this.runSources.push({ url });
+  /** 这一轮的回答出处（副本）。 */
+  answerSources(): UserDeliverySourceRef[] { return this.turnSources.map((source) => ({ ...source })); }
+  private noteRunSource(url: string, title?: string): void {
+    const inTurn = this.turnSources.find((source) => source.url === url);
+
+    if (inTurn) { if (title && !inTurn.title) inTurn.title = title; }
+    else if (/^https?:\/\//.test(url) && this.turnSources.length < USER_DELIVERY_SOURCE_MAX) this.turnSources.push(title ? { url, title } : { url });
+
+    const known = this.runSources.find((source) => source.url === url);
+
+    // 先只记到地址（导航）、后读到标题时补上标题。
+    if (known) { if (title && !known.title) known.title = title;
+
+ return; }
+
+    if (!/^https?:\/\//.test(url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
+    this.runSources.push(title ? { url, title } : { url });
   }
   /** Stop the live run without discarding obligations or guessing external effects. */
   interrupt(reason:NonNullable<TaskProgressSnapshot['interruptionReason']>):boolean {
@@ -269,6 +285,7 @@ return;}
     this.failureLimit=false;
     this.lastBrowserFailed=false;
     this.runSources = [];
+    this.turnSources = [];
     this.startUrl = context?.url ?? null;
     this.goalPage = context?.url ? { title: String(context.title ?? "").slice(0, 200), url: context.url.slice(0, 500) } : null;
     this.goalCheck = null;
@@ -328,7 +345,8 @@ return;}
         this.turnText = "";
         this.latestResult = null;
 
-        if (!this.hostContinuation) this.goalCheck = null;
+        if (!this.hostContinuation) { this.goalCheck = null; this.turnSources = []; }
+
         this.hostContinuation = false;
       }
     } else if (e.kind === "goal_check") {
@@ -432,7 +450,7 @@ return;}
     } else if (e.kind === "tool_observation") {
       if (!this.aborted && this.runId) {
         // T06：只记真实读到的页面地址；模型正文里的链接不算来源。
-        if (typeof e.url === "string") this.noteRunSource(e.url);
+        if (typeof e.url === "string") this.noteRunSource(e.url, e.title);
 
         if((RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name))this.results.noteObservation({ toolCallId: e.toolCallId, tool: e.name, target: e.target, tabId: e.tabId, workingTab: e.workingTab, text: e.text, truncated: e.truncated, member, runId: this.runId });
         const key=`${member}:${e.toolCallId}`,read=this.completedReads.get(key);

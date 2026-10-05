@@ -1,6 +1,6 @@
 /**
- * #49 回答出处：回答顶上「读了 N 个网站」，正文里引到的已读页面旁加角标；
- * 点开出处 → 主窗口切到那一页（已开着就复用）、尽量定位并高亮段落，同时把这一页挂到输入框旁。
+ * #49 回答出处：回答前一行安静的署名「读了 a、b 等 N 个网站 ⌄」，展开每个来源一行；正文里引到的已读页面旁加数字角标。
+ * 点开出处 → 主窗口切到那一页（已开着就复用）、尽量定位并高亮段落。输入框旁的「当前页」标签随之换成这一页，不另挂第二个。
  *
  * 诚实边界（与 delivery-facts-view 一致）：
  * - 只用交付事实链 `facts.sources`（本 run 真实读到/打开的页面）；旧记录没有这个字段就什么都不画。
@@ -11,9 +11,6 @@ import { isPageElementSource, type PageElementSource } from "../../../shared/pro
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
 import { sourceLabel } from "./delivery-facts-view.js";
 import { captureCitationContext, citationValues } from "./sonar-citations.js";
-
-/** 点开出处后要挂到输入框的页面；passage 只在原页真的定位到段落时才有。 */
-export interface SourcePageChip { tabId: number; title: string; url: string; passage: PageElementSource | null }
 
 /** 同一页面：忽略锚点和末尾斜杠，其余（含查询串）都要一致。 */
 function pageKey(url: string): string | null {
@@ -102,7 +99,7 @@ async function pinpointClaim(tabId: number, url: string, claim: string): Promise
   return null;
 }
 
-async function openAnswerSource(source: UserDeliverySourceRef, claim: string | null, attach: (chip: SourcePageChip) => void): Promise<void> {
+async function openAnswerSource(source: UserDeliverySourceRef, claim: string | null): Promise<void> {
   let opened: Awaited<ReturnType<typeof bringSourceTab>>;
 
   try { opened = await bringSourceTab(source.url); } catch { opened = null; }
@@ -113,15 +110,17 @@ async function openAnswerSource(source: UserDeliverySourceRef, claim: string | n
 
   const tabId = opened.tab.id;
   const tab = await waitForLoad(tabId);
-  const url = tab?.url ?? source.url;
   const passage = claim && tab?.url ? await pinpointClaim(tabId, tab.url, claim) : null;
 
   if (!passage) {
     if (opened.reused) await chrome.scripting.executeScript({ target: { tabId }, func: () => window.scrollTo({ top: 0 }) }).catch(() => undefined);
     toast("已打开来源页");
   }
+}
 
-  attach({ tabId, url, title: tab?.title?.trim() || source.title?.trim() || sourceLabel(url), passage });
+function hostOf(url: string): string {
+  // host 带非默认端口：同一台机器上的几个站分得开；常见网站端口默认，不受影响。
+  try { return new URL(url).host.replace(/^www\./, ""); } catch { return sourceLabel(url); }
 }
 
 /** 角标对应的主张：链接所在的那一段。 */
@@ -137,28 +136,32 @@ function claimOf(link: HTMLElement): string {
  * 给一条已渲染的回答加出处。可重复调用（正文重渲染后再调一次），不会叠出两份。
  * sources 缺省（旧记录）或为空时不画任何东西。
  */
-export function attachAnswerSources(answer: HTMLElement, sources: readonly UserDeliverySourceRef[] | undefined, attach: (chip: SourcePageChip) => void): void {
+export function attachAnswerSources(answer: HTMLElement, sources: readonly UserDeliverySourceRef[] | undefined): void {
   answer.querySelectorAll(".answer-sources,.source-mark").forEach(node => node.remove());
 
   if (!sources?.length) return;
-  const keyed = new Map<string, { source: UserDeliverySourceRef; label: string; index: number }>();
+  const keyed = new Map<string, { source: UserDeliverySourceRef; label: string; host: string; index: number }>();
 
   for (const source of sources) {
     const key = pageKey(source.url);
 
-    if (key && !keyed.has(key)) keyed.set(key, { source, label: source.title?.trim() || sourceLabel(source.url), index: keyed.size + 1 });
+    if (key && !keyed.has(key)) keyed.set(key, { source, label: source.title?.trim() || sourceLabel(source.url), host: hostOf(source.url), index: keyed.size + 1 });
   }
 
   if (!keyed.size) return;
   // 宿主最多记 USER_DELIVERY_SOURCE_MAX 条，记满时实际可能更多：只说「至少」。
   const capped = sources.length >= USER_DELIVERY_SOURCE_MAX;
+  const hosts = [...new Set([...keyed.values()].map(entry => entry.host))];
+  const named = hosts.slice(0, 2).join("、");
   const head = document.createElement("details");
   head.className = "answer-sources";
   const summary = document.createElement("summary");
-  summary.textContent = `读了${capped ? "至少 " : " "}${keyed.size} 个网站`;
+  summary.textContent = hosts.length > 2 || capped ? `读了 ${named} 等${capped ? "至少 " : " "}${hosts.length} 个网站` : `读了 ${named}`;
   const list = document.createElement("ol");
 
-  for (const { source, label, index } of keyed.values()) {
+  const untitled: Array<{ key: string; text: HTMLElement; where: HTMLElement }> = [];
+
+  for (const [key, { source, label, host, index }] of keyed) {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
@@ -167,11 +170,23 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     const number = document.createElement("span");
     number.className = "answer-source-index";
     number.textContent = String(index);
+    const glyph = document.createElement("span");
+    glyph.className = "answer-source-glyph";
+    glyph.setAttribute("aria-hidden", "true");
+    glyph.textContent = host.charAt(0).toUpperCase();
     const text = document.createElement("span");
     text.className = "answer-source-label";
     text.textContent = label;
-    button.append(number, text);
-    button.onclick = () => void openAnswerSource(source, null, attach);
+    const where = document.createElement("span");
+    where.className = "answer-source-host";
+    where.dataset.hover = "在旁边打开";
+    where.textContent = host;
+    button.append(number, glyph, text, where);
+
+    // 没有标题时第三列已经是地址，右边不再重复一遍。
+    if (!source.title?.trim()) { button.classList.add("untitled"); untitled.push({ key, text, where }); }
+
+    button.onclick = () => void openAnswerSource(source, null);
     item.append(button);
     list.append(item);
   }
@@ -179,17 +194,33 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
   head.append(summary, list);
   answer.prepend(head);
 
+  // 用批量脚本读的页面不带标题；这些页面多半还开着，标签页知道标题。
+  if (untitled.length && chrome.tabs?.query) {
+    void chrome.tabs.query({}).then((tabs) => {
+      for (const row of untitled) {
+        const title = tabs.find((tab) => tab.url && tab.title?.trim() && pageKey(tab.url) === row.key)?.title?.trim();
+
+        if (!title) continue;
+        row.text.textContent = title;
+        row.where.closest(".answer-source")?.classList.remove("untitled");
+      }
+    }).catch(() => undefined);
+  }
+
   for (const link of answer.querySelectorAll<HTMLAnchorElement>("a[href]")) {
     const entry = keyed.get(pageKey(link.href) ?? "");
 
     if (!entry) continue;
+    // 正文里指向已读页面的链接和它的角标做同一件事，不再一个开新标签、一个定位出处。
+    link.onclick = (ev) => { ev.preventDefault(); void openAnswerSource(entry.source, claimOf(link)); };
+
     const mark = document.createElement("button");
     mark.type = "button";
     mark.className = "source-mark";
     mark.textContent = String(entry.index);
     mark.title = `打开出处并定位：${entry.label}`;
     mark.setAttribute("aria-label", `打开出处 ${entry.index}：${entry.label}`);
-    mark.onclick = () => void openAnswerSource(entry.source, claimOf(link), attach);
+    mark.onclick = () => void openAnswerSource(entry.source, claimOf(link));
     link.after(mark);
   }
 }

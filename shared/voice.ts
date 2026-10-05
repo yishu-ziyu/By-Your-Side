@@ -75,6 +75,8 @@ export interface UserDelivery {
   facts?: UserDeliveryFacts;
   /** 模型自己说没做完的部分（按用户原话描述）；只出现在 outcome=partial 的 finding 上，不是宿主核验结果。 */
   unfinished?: string[];
+  /** 本轮真实读到或打开的页面（回答出处）。和完成情况无关：没列目标计划时也有；旧记录缺省。 */
+  sources?: UserDeliverySourceRef[];
 }
 
 /** Cumulative text of an explicitly user-facing answer; not ordinary model text_delta. */
@@ -401,15 +403,20 @@ export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
       && shortText((item as UserDeliveryRemainingItem).description, USER_DELIVERY_FACT_DESCRIPTION_MAX)
       && ["pending", "blocked", "unknown"].includes((item as UserDeliveryRemainingItem).status))) return false;
 
-  if (!Array.isArray(f.sources) || f.sources.length > USER_DELIVERY_SOURCE_MAX
-    || !f.sources.every((item) => !!item && typeof item === "object" && deliveryUrl((item as UserDeliverySourceRef).url)
-      && ((item as UserDeliverySourceRef).title === undefined || (item as UserDeliverySourceRef).title === null
-        || shortText((item as UserDeliverySourceRef).title, USER_DELIVERY_SOURCE_TITLE_MAX)))) return false;
+  if (!isDeliverySourceList(f.sources)) return false;
 
   // 漏项却报全部完成必须在记录边界就失败，界面与验收都不用再猜叙述。
   if (f.outcome === "complete" && (f.remaining.length > 0 || (f.omittedRemaining ?? 0) > 0)) return false;
 
   return true;
+}
+
+/** 回答出处列表：有界、每条是 http(s) 地址加可选标题。 */
+function isDeliverySourceList(v: unknown): v is UserDeliverySourceRef[] {
+  return Array.isArray(v) && v.length <= USER_DELIVERY_SOURCE_MAX
+    && v.every((item) => !!item && typeof item === "object" && deliveryUrl((item as UserDeliverySourceRef).url)
+      && ((item as UserDeliverySourceRef).title === undefined || (item as UserDeliverySourceRef).title === null
+        || shortText((item as UserDeliverySourceRef).title, USER_DELIVERY_SOURCE_TITLE_MAX)));
 }
 
 /** 模型列出的一条未完成项：非空、不超过事实条目长度。 */
@@ -427,7 +434,8 @@ export function isUserDelivery(v: unknown): v is UserDelivery {
     && (d.replyTo === undefined || typeof d.replyTo === "string" && d.replyTo.length >= 1 && d.replyTo.length <= USER_DELIVERY_TEXT_MAX)
     && (d.facts === undefined || isUserDeliveryFacts(d.facts))
     && (d.unfinished === undefined || Array.isArray(d.unfinished) && d.unfinished.length >= 1 && d.unfinished.length <= USER_DELIVERY_FACT_ITEM_MAX
-      && d.unfinished.every(isUnfinishedItem));
+      && d.unfinished.every(isUnfinishedItem))
+    && (d.sources === undefined || isDeliverySourceList(d.sources));
 }
 
 export function isSpeakableDelivery(d: UserDelivery | null | undefined, runId?: string | null): d is UserDelivery {

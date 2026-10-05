@@ -14,6 +14,7 @@ import {
   type UserDelivery,
   type UserDeliveryFacts,
   type UserDeliveryKind,
+  type UserDeliverySourceRef,
   type VoiceConversationContext,
 } from "../../shared/voice.js";
 
@@ -79,6 +80,7 @@ export function createUserDelivery(input: {
   status?: UserDelivery["status"];
   facts?: UserDeliveryFacts;
   unfinished?: string[];
+  sources?: UserDeliverySourceRef[];
 }): UserDelivery {
   const delivery = {
     conversationId: input.conversationId,
@@ -95,6 +97,8 @@ export function createUserDelivery(input: {
   if (input.facts) delivery.facts = input.facts;
 
   if (input.unfinished?.length) delivery.unfinished = input.unfinished;
+
+  if (input.sources?.length) delivery.sources = input.sources.map((source) => ({ ...source }));
 
   if (!RECORD_KINDS.includes(input.kind as (typeof RECORD_KINDS)[number])) throw new Error("kind 必须是 ack、finding 或 reply。");
 
@@ -128,6 +132,8 @@ export type SendUserMessageOptions = {
   getNextStep?: () => TaskNextStep | null;
   /** 宿主事实链：已满足项、未完成项、本 run 真实读到的页面；未接线时不附 facts。 */
   getDeliveryFacts?: () => DeliveryFactInput | null;
+  /** 本轮真实读到或打开的页面（回答出处），与有没有目标计划无关；未接线时不附。 */
+  getSources?: () => readonly UserDeliverySourceRef[] | null;
   /** 本轮尝试改页面的次数与真正生效的次数；未接线时不做这项纠正。 */
   getPageChanges?: () => PageChangeTally | null;
 };
@@ -197,6 +203,11 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   };
 
   if (facts) deliveryInput.facts = facts;
+
+  // 回答出处：结论和回复都附上本轮读过的页面；确认收到（ack）不附。
+  const sources = input.kind === "ack" ? null : opts.getSources?.() ?? null;
+
+  if (sources?.length) deliveryInput.sources = [...sources];
 
   // 只有模型自己说没做完时才记它列的未完成项；声称完成却附带清单的，以宿主判定为准，不采信。
   if (input.kind === "finding" && requested === "partial") {

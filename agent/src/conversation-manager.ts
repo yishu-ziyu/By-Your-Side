@@ -1421,6 +1421,7 @@ return receipt;
           return outcome;
         },
         deliveryFacts: () => progress.deliveryFacts(),
+        answerSources: () => progress.answerSources(),
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。

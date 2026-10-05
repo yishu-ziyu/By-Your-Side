@@ -515,6 +515,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       kind?: UserDelivery['kind'];
       text: string;
       facts?: { sources: readonly { url: string }[] };
+      sources?: readonly { url: string }[];
     }) => {
       if (currentDeliveryKind === 'finding' || currentDeliveryKind === 'reply') {
         if (delivery.kind === 'ack') {
@@ -527,7 +528,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       }
 
       setAnswer(delivery.text);
-      setSources(delivery.facts?.sources ?? []);
+      setSources(delivery.sources ?? delivery.facts?.sources ?? []);
     }
   };
 }
