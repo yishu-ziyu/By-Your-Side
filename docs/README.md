@@ -10,7 +10,7 @@
 | 做到哪里，哪些仍未验证？ | [当前状态](STATUS.md) |
 | 接着做时容易误判什么？ | [续接要点](NOTES.md) |
 | 如何检查与留证？ | [开发检查](development/checks.md) · [验收入口](testing/acceptance.md) |
-| 文档放哪里、改功能要同步什么？ | [文档维护](development/documentation.md) |
+| 文档放哪里、写什么、怎么写？ | [文档维护](development/documentation.md) · [术语表](glossary.md) |
 
 ## 实现与决定
 

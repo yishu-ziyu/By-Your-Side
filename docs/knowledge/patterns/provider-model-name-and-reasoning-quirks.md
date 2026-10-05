@@ -1,9 +1,9 @@
-# Pattern: 模型「调得通」不等于名字对、参数对、指令被听
+# 经验：模型「调得通」不等于名字对、参数对、指令被听
 
 ## 现象（10-01 实测）
 
 - MiniMax Anthropic 接口收到不认识的模型名（如 `Totally-Fake-Model-9`）不报错，静默换成 MiniMax-M3 回答；回答里模型还自报名字。真模型 `MiniMax-M3.1-Flash-Preview` 不在 `/anthropic/v1/models` 列表里，却真实可用。
-- 同一个「最低思考档」：OpenCode mimo-v2.6-flash 拒绝 `minimal`（400）；MiniMax-M3.1 反过来要求必须思考，不传档位时库默认发「关闭思考」被 400。后台判断因此整批静默失败。
+- 同一个「最低思考档」：OpenCode mimo-v2.6-flash 拒绝 `minimal`（400）；MiniMax-M3.1 反过来强制思考，不传档位时库默认发「关闭思考」被 400。后台判断因此整批静默失败。
 - 开了思考后 pi-ai 的 OpenAI 兼容适配把系统提示词改用 `developer` 角色，阶跃 step-3.7-flash 忽略它，直接和用户聊天，「只回 JSON」0/9。
 
 ## 方法

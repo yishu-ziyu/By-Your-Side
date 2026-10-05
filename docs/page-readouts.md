@@ -2,15 +2,13 @@
 
 [协议](protocol.md) · [验收记录](evals/20261002-tier1-product-gaps.md)
 
-页面读数指 `snapshot`（无障碍树全页与 DOM 视口两种）、`read_element` 和 `fill` 回执交给模型的内容。下面两条规则写在 [shared/page-readout.ts](../shared/page-readout.ts)，各读取入口按同一规则实现。
+页面读数指快照、读元素和填写回执交给模型的内容。规则写在 [shared/page-readout.ts](../shared/page-readout.ts)，各读取入口按同一规则实现。
 
 ## 截断文字给出完整值
 
-页面把长文字截成省略号显示时，读数在原文字后附上 `full="完整值"`（`read_element` 为 `fullText` 字段）。
+页面把长文字截成省略号显示时，读数在原文字后附上完整值。
 
-- 何时算截断：显示文字（合并空白后）以 `…` 或 `...` 结尾，去掉省略号后至少 3 个字符。
-- 完整值从哪来：只看元素自己的 `title`、`aria-label`、`aria-description`，依次取第一个满足条件的；无障碍树里对应节点的 description（Chrome 把未用作名字的 title 放在这里），纯文字行另看所在父元素的 description。不猜 `data-*`、相邻文字或其他属性。
-- 什么算完整：候选值以截断前缀开头（不分大小写），且比前缀长。
+- 完整值只取元素自己的 title、aria 名字或描述，而且只在这个值以截断前缀开头、比前缀长时采用。不猜 `data-*`、相邻文字或其他属性。
 
 | 页面 | 读数 |
 |---|---|
@@ -21,14 +19,11 @@
 
 ## 范围输入框带允许范围
 
-原生 `time`、`date`、`datetime-local`、`month`、`week`、`number`、`range` 输入框的读数带上 `type` 与页面写的 `min`、`max`、`step`（没写的不出现）。无障碍树不提供时间、日期框的这些属性和当前值，全页快照按节点补读 DOM（每次最多 40 个，读不到时快照照常输出、只缺范围）。
+原生时间、日期、数字和滑块输入框的读数带上页面写的最小值、最大值和步长。因为无障碍树不提供时间、日期框的这些属性和当前值，所以全页快照按节点补读 DOM。读不到时，快照照常输出，只缺范围。
 
-- 快照：`InputTime "Preferred delivery time:" type=time min="11:00" max="21:00" step="900"`；有值时带 `value=`，浏览器判定越界时带 `invalid=rangeUnderflow|rangeOverflow|stepMismatch`。
-- `read_element`：`inputRange{type,min?,max?,step?,problem?}`；只读状态属性时也保留这一项。
-- `fill`：照常写入；写入后浏览器的 `validity` 报 `rangeUnderflow`、`rangeOverflow` 或 `stepMismatch` 时，回执带 `rangeIssue{type,min,max,step,value,problem,message}`，模型看到的文字为「Filled …, but the value is not accepted by the page. Out of range: "21:30" is above the page's maximum 21:00. Allowed: 11:00–21:00, step 900 s. …」，不报成单纯成功。`browser_run` 里的 `browser.fill` 返回同一份数据。
+- 填写越界时照常写入，但回执说明页面不接受这个值及允许范围，不报成单纯成功。越界时间是写入后警告，不是拒绝写入。
+- 判定完全以浏览器自己的 `validity` 为准，不自行比较时间或数字。
+- 时间框格式无效（如 `9:30pm`）时不执行，保留原值。空串仍可清空。
+- 时间框的时、分子框按所属的原生时间框填写完整时间；网页刷新子框后，应重新快照获取 ref。
 
-判定完全以浏览器自己的 `validity` 为准，不自行比较时间或数字。时间框先用脱离页面的原生 time input 检查格式；`9:30pm` 等无效格式返回未执行，保留原值，不聚焦或发 input/change。空串仍可清空。Hours/Minutes AX 子框只映射到其精确原生 time 宿主，填写完整时间；网页刷新子框后须重新 snapshot 获取 ref。越界时间仍是写入后警告，不是拒绝写入。
-
-## 验收
-
-`npx tsx scripts/acceptance/page-readouts.mts --headless [--live]`：隔离无头 Chrome 加载当前源码构建的扩展，本机样例页覆盖上面各种形态；`--live` 另读 webscraper 测试站最后一页与 httpbin 表单（只填不提交）。产物在 `out/acceptance/page-readouts-<时间>/`。
+验收入口见[验收入口](testing/acceptance.md)；`--live` 另读 webscraper 测试站最后一页与 httpbin 表单（只填不提交）。

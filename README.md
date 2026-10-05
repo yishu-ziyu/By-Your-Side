@@ -21,7 +21,7 @@
 
 ## 可以做什么
 
-页面理解、选区追问、翻译、浏览器操作、会话与记忆见[使用说明](docs/guides/usage.md)。
+页面理解、划词追问、翻译、网页操作、会话与记忆见[使用说明](docs/guides/usage.md)。
 
 ## 语音交互
 
@@ -33,7 +33,7 @@
 
 ## 实现结构
 
-`extension/` 负责浏览器与侧栏；`agent/` 负责本地运行时；`shared/` 保存共享契约。详细职责只在[架构](docs/architecture.md)维护。
+`extension/` 负责浏览器与侧栏；`agent/` 是任务核心，构建时打包进扩展的 offscreen 文档；`shared/` 保存共享契约。详细职责只在[架构](docs/architecture.md)维护。
 
 ## 开发与验证
 

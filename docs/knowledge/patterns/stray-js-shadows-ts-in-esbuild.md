@@ -1,4 +1,4 @@
-# Pattern: 源码旁的旧 .js 会被 esbuild 打进扩展，tsx 却用 .ts
+# 经验：源码旁的旧 .js 会被 esbuild 打进扩展，tsx 却用 .ts
 
 ## 现象
 
@@ -11,7 +11,7 @@
 ## 方法
 
 - 构建或验收前列出 `git ls-files --others --exclude-standard 'shared/*.js' 'extension/src/**/*.js'` 里有同名 `.ts` 的文件，并比较修改时间；样板脚本 `scripts/acceptance/real-path/harness.mts` 的 `shadowedSources()` 会把这份清单写进 `result.json`。
-- 这些文件多半是别的会话或工具误编译产生的；删除前先确认来源，不要替别的会话清理。
+- 这些文件多半是别的会话或工具误编译产生的；删除前先确认来源，不替别的会话清理。
 
 ## 适用条件
 

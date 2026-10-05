@@ -1,4 +1,4 @@
-# Pattern: 读取 Secure Preferences 前先确定实际 profile 目录
+# 经验：读取 Secure Preferences 前先确定实际 profile 目录
 
 ## 现象
 
@@ -10,7 +10,7 @@
 
 ## 规避方法
 
-排查扩展安装/消失问题时，先确认目标浏览器使用的 user-data-dir 与实际 profile，再读取其中的 `Secure Preferences`。本次已验证的 profile 是 `Default/`；列出目录只能确认候选目录存在，不能单独证明浏览器正在使用它。
+排查扩展安装/消失问题时，先确认目标浏览器使用的 user-data-dir 与实际 profile，再读取其中的 `Secure Preferences`。本次已验证的 profile 是 `Default/`；列出目录只能确认候选目录存在，不能单独证明浏览器使用的是它。
 
 ## 验证
 

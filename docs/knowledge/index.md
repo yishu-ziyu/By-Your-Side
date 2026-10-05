@@ -5,11 +5,11 @@
 
 - `patterns/`：经过核对的经验及其适用条件、证据；不自动成为指令。
 - [收尾流程](closeout.md)：有新经验或需要纠正旧经验时按需读取。
-- [提案与裁决](proposal-workflow.md)：待审建议及接受、拒绝、修改后的处理。
+- [提案与裁决](proposal-workflow.md)：待审提案及接受、拒绝、修改后的处理。
 - 待审提案：无（2026-10-01 三份均已裁决）。归档：[已采纳](proposal-archive/accepted/)、[已拒绝](proposal-archive/rejected/)。
 - [演化日志](logs.md)：记录知识和提案发生了什么变化；任务当前进度仍在 [STATUS](../../docs/STATUS.md)。
 
-| Pattern | 一句话 | 来源会话 | 日期 |
+| 经验 | 一句话 | 来源会话 | 日期 |
 |---|---|---|---|
 | [tsx-adhoc-probe-scripts](patterns/tsx-adhoc-probe-scripts.md) | 区分导入路径、模块格式和依赖位置；脚本运行与网页操作成功分别核验，内联 import 禁令已被反例推翻 | session_236968c3（复盘 f0b4980d） | 2026-09-09 |
 | [chrome-secure-preferences-default-dir](patterns/chrome-secure-preferences-default-dir.md) | 先确定实际 profile，再读取 Secure Preferences；本例为 Default，扩展消失根因仍未决 | session_236968c3（复盘 f0b4980d） | 2026-09-09 |
@@ -19,7 +19,7 @@
 | [observation-identity-mismatch](patterns/observation-identity-mismatch.md) | 按名字匹配命中别的扩展、共享 stderr 没有时间轴、并发工作区造出假回归；下结论前先钉死观测对象 | 同上 | 2026-09-11 |
 | [cross-process-session-closeout](patterns/cross-process-session-closeout.md) | 收盘顺序错、结果被收走、归属依赖任务绑定：跨进程会话的尾巴会丢 | 示范录制第一刀真机模拟 | 2026-09-11 |
 | [gui-test-window-steals-focus](patterns/gui-test-window-steals-focus.md) | 可见 GUI 测试窗口会抢用户前台；浏览器验收走 `--headless=new`，脚本自带拒绝 | 同上（用户反馈） | 2026-09-11 |
-| [pi-opencode-missing-session-header](patterns/pi-opencode-missing-session-header.md) | Prime Agent 的 refine/子代理请求缺 `x-opencode-session` 被 400 拒；别假设 refine 成功 | 用户截图报错排查 | 2026-09-11 |
+| [pi-opencode-missing-session-header](patterns/pi-opencode-missing-session-header.md) | Prime Agent 的 refine/子代理请求缺 `x-opencode-session` 被 400 拒；不假设 refine 成功 | 用户截图报错排查 | 2026-09-11 |
 | [collapsed-details-animation-end](patterns/collapsed-details-animation-end.md) | 关闭的 `details` 里动画不启动，`animationend` 不会来；靠动画结束清状态要用定时器兜底，判断是否在跑看 `getAnimations()` | 面板运行态 A+B 动效 | 2026-09-11 |
 | [extension-harness-changes-observed-state](patterns/extension-harness-changes-observed-state.md) | 一直挂着的调试会话让扩展后台永不回收；标签页里的面板把自己当成当前页；要在真侧栏里测、会话只短暂挂 | 端到端测试基础设施小实验 | 2026-09-23 |
 | [chrome-fake-audio-file-sandbox](patterns/chrome-fake-audio-file-sandbox.md) | WAV 假麦克风默认静音，因为音频服务沙箱读不到文件；加 `--disable-features=AudioServiceSandbox`，用已知频率验 | 同上 | 2026-09-23 |

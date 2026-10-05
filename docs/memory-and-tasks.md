@@ -1,42 +1,41 @@
 # 记忆、过往任务与任务跨轮
 
-本页是[协议](protocol.md)中记忆、过往任务与任务跨轮部分的权威说明（目标核对见[目标核对](goal-check.md)）；记什么、记成哪种、用到哪里的设计见[记忆模型](memory-model.md)；用户可见行为见[使用说明](guides/usage.md#会话页面和记忆)，验收见 [20260927 记忆、主动、任务感](evals/20260927-memory-proactive-task.md)。
+本页写记忆、过往任务与任务跨轮的边界和取舍；消息与字段以 [`shared/protocol.ts`](../shared/protocol.ts)、[`shared/memory.ts`](../shared/memory.ts)、[`shared/task-history.ts`](../shared/task-history.ts) 为准。记什么、记成哪种、用到哪里的设计见[记忆模型](memory-model.md)；用户可见行为见[使用说明](guides/usage.md#会话页面和记忆)，验收见 [20260927 记忆、主动、任务感](evals/20260927-memory-proactive-task.md)。
 
 ## 个人记忆
 
-`memory_list{conversationId,requestId}` 读取个人记忆；`memory_update{conversationId,requestId,id,expectedVersion,text,scope}` 纠正内容与范围（只能改生效的条目）；`memory_forget{conversationId,requestId,id,expectedVersion}` 忘记：id 是生效的值时整条历史（同一事实的所有旧值）一起删；id 是被替换或失效的一行时只删这一行，指向它的更旧条目改指向它的下一条（`replacedBy` 接上，这些条目版本 +1）；`memory_restore{conversationId,requestId,id,expectedVersion}` 撤销：id 是被替换或失效的条目（生效的报错），它成为这条历史里唯一生效的值，原来生效的那条改为 `invalid` 并以 `replacedBy` 指向它；所有改动的条目版本各 +1。响应为 `memory_result{conversationId,requestId,action:"list"|"update"|"forget"|"restore",ok,entries?,entry?,deletedId?,error?,rev?}`，回到请求所属会话；restore 成功时 `entries` 为改动的条目（恢复的在前）。修改、忘记和撤销须匹配当前版本，失败不能呈现成功回执。侧栏在忘记或撤销成功后重新读取列表，显示的是存储里的最新状态。整份记忆文档带递增的 `rev`（每次写入 +1，缺省按 0），每个 `memory_result` 与 `agent_event` 的 `memory` 事件都带写入后的 `rev`；侧栏记着上次列表的 `rev`，收到的 `rev` 与之不同（或没带）就重新读取；自己 `update` 成功且 `rev` 恰好比手里的大 1 时直接接上，不重读，所以接着改刚记下的条目不会报版本冲突。
+- 修改、忘记和撤销应匹配当前版本；失败时不应显示成功回执。
+- 网站范围只约束使用；个人管理列表仍展示全部条目。
+- 读不懂或比当前更新的格式只读，不当作空记忆覆盖。旧格式升级时只修状态和链接，不删条目。
+- 网页、附件、工具输出及 worker 不能自行授予记忆修改权限。
+- 自动记忆只收用户自己说的、关于自己的长期资料；不收一次性参数、别人的事、网页内容和任何密码验证码。像密码验证码的话不交给模型，原话也不留。
+- 网站上的操作步骤与回复的语言格式语气不自动记，留给纠正后的询问。
+- 一句话在判断期间被新消息、中止或接管作废时不落盘。
+- 诊断记录只写编号、种类、规则与结论，不含用户原话和记忆原文。
+- 判断请求的取档、重试与失败原因见[后台判断](model-effort.md#后台判断)。
 
-`scope` 为 `{kind:"all"}` 或 `{kind:"site",hostname}`。站点范围只约束使用，个人管理列表仍展示全部条目。只有 http(s) 网页算一个网站（`memoryHostOfUrl`）：扩展页（`chrome-extension://`，主机名是扩展编号）、`chrome://`、`about:blank` 等都是「没有当前网站」，不会成为记忆范围、过往任务的网站，也对不上网站范围的记忆。条目（`MemoryEntry`，`formatVersion:3`）包含 id、必填的 `factId`（同一件事的所有版本共用，新条目等于自己的 id；换新值时新条目沿用旧条目的 `factId`）、version、text（最多 2000 字符）、scope、sourceConversationId、createdAt、updatedAt，以及：
+**纠正后开口问「要我记住吗」。**
 
-- `kind`：`profile` 关于你 / `past` 做过的事 / `method` 做事的方法（自动总结的 `experience` 条目，或用户在纠正询问里点「记住」的规则）；「这件事的要求」只在对话里，不落盘。
-- `validity?{start?,end?,task?}`：毫秒时间戳，缺省 = 长期；带日期的事 `end` 为那天本地 23:59:59.999。`date?` 是关联的本地日期 `YYYY-MM-DD`。
-- `sourceQuote?`：用户原话（判断依据的那段，最多 600 字）；升级前的条目没有。
-- `useCount`、`lastUsedAt?`：被带给助手的次数与最近一次，不改版本号。
-- `status`：`active` 生效 / `replaced` 被替换 / `invalid` 失效（两者的 `replacedBy` 都指向接替它的条目）。只有生效的会被带给助手、被判断当作修改目标。
+- 只看用户直接发的话，不看网页、附件、工具输出；任务运行期间插话说的纠正不问。
+- 等这一轮回答先到，再问快速模型。
+- 规则应出自用户原话：原话里没有的邮箱、网址或长数字会让这次不问。
+- 网站取用户说这句时所在的网页，不从原话里解析网址；没有网页时取任务最近操作过的网页，都没有就不问关于网站的做法。
+- 询问期间，如果用户又发话、中止或接管，就丢掉这次询问，不发过时的询问。询问判断失败只留记录，不补判。
+- 规则文字只取后台那份；模型工具与网页没有写入这类规则的途径。
 
-同一事实换新值（判断为 update）时不再覆盖：旧条目版本 +1、标 `replaced` 留作历史，新值另起一条。存储文件 `format:3`（`{format,rev,entries,forgottenExperiences}`）。读到 `format:1` 或 `2` 时在读取时升级：`format:1` 逐条补默认值（种类按来源推断：有 `experience` 的为 `method`，其余 `profile`；有效期为空；`active`；用过 0 次），再按替换链给每条分 `factId`（链上最早那条的 id），并先修复已违反规则的数据：`replacedBy` 指向不存在的条目就去掉链接；链成环就在环上最早的条目处断开；因此没了后继又没有生效值的，让这件事最新的条目生效，否则改为 `invalid`；一件事有多个生效值时留最近修改的那个，其余改为被它替换。修复只改状态和链接，不删条目、不改版本号，同一份旧文件每次修出的结果相同；下次写入即为 3。有一条不合格仍按损坏报错，不当作空记忆覆盖。每次写入前检查不变量：一件事（`factId`）至多一个生效值、`replacedBy` 指向存在且属于同一件事的条目、`replacedBy` 不成环；`format:3` 数据不修，新写入违反就拒绝写。读到比当前更新的格式时只读：能列出可识别的条目，任何写入都被拒绝。回执事件里的旧格式条目在协议解析时同样补默认值。
+**判断失败后补判。** 「要不要记」失败时，原话进本机补判队列，判完或放弃后即删。补判前，如果用户已改动这次补判涉及的记忆，就作废这次补判：可能少记，但不会改回旧值或新旧并存。
 
-当前 Lead 工具为 `user_memory`：`recall` 查询任务所需资料，`change` 按当前直接用户请求解释保存、修改或忘记，`history` 查过往任务。语义解释由 `memory-decision.ts` 完成，运行时核对输入当前性；网页、附件、工具输出及 worker 不能自行授予记忆修改权限。产品会话开启自动模式（`MemoryRuntime` 的 `auto`）：可能在说个人资料的用户消息一到（像密码验证码证件卡号的话除外：不判断、不进补判队列），就用快速模型按同一边界判断一次（这句通过纠正粗筛时追加 `MEMORY_CORRECTION_RULES`：用户自己的资料照常记，含纠正时顺口说的长期偏好，如「不对，我坐飞机都要靠过道」记成所有网站的「关于你」；网站上的操作步骤（漏填的栏、导出排序填写选择）与回复的语言格式语气不记，留给纠正后的询问；补判时同样），只收用户自己说的、关于自己的长期资料，不收一次性参数、别人的事、网页内容和任何密码验证码；这句被新消息、停止或接管作废时不落盘。模型再调用 `change` 时复用这次结果，不判断第二次。
-
-**决定点 A：一句话记成哪种。** 同一次判断里模型另答五个窄问题 `about{longTerm,date,onlyThisTask,explicitRequest,dateIsTheTask}`（是用户自己的长期事实吗？这件事关联哪一天，按输入里带星期几的 `today` 解析？只对眼前这件任务吗？明说记住了吗？这个带日期的安排本身就是此刻要助手去办的事吗？模型没答最后一问时按「是」处理，即先不记），`placeMemory` 按[记忆模型](memory-model.md)的顺序落位：像密码验证码证件卡号的不记 → 只对这次任务的不记 → 此刻要做的事不记（见下）→ 长期事实记 `profile` → 有日期的记 `past`、有效期到那天结束 → 明说记住的记 `profile` → 其余不记；更新 `method` 条目时保留种类。「此刻要做的事」指用户这句话同时在让助手去做事（订票、买东西），带的日期就是这件任务本身，还没做完：决定时不记，任务结束时作为过往任务带日期记下；只有明说「记住」或属于长期事实时才照常记。缺 `about` 时按长期事实处理（升级前行为）。粗筛也放行带日子的自述和「这次…」，让这两类得到判断。任务结束写过往任务时，先立即写入，提到日子的任务再问快速模型一个窄问题「结果关联哪一天」（`MemoryRuntime.datePastTask`，12 秒超时），晚到的日期经 `patchDate` 补上 `date` 与 `validity`。每次判断在诊断记录写一条 `memory_decision{source:"message"|"change"|"task"|"retry",status:"decided",key,action?,kind,stored?,rule,answers?,targetIds,entryIds,date,validityEnd}`，只有编号与结论，不含用户原话。
-
-**决定点 B：这一轮带哪些。** `before_agent_start` 用纯代码规则 `selectMemoryContext` 挑选：`always` 生效的 `profile` 与到处适用的 `method`，以及网站范围的 `profile`（网站范围只在当前主机名精确相同时才算），`always` 与 `site` 的记忆条目共用一层，合计最多 40 条、4000 字；`in-validity` 有效期内的 `past` 条目与带有效期的过往任务，不论网站，共用一层（10 条、2000 字）；`site` 网站范围与当前主机名精确相同的 `method` 与自动总结条目（记忆条目的 `site`，计入上面 40 条 / 4000 字那一层），以及这个网站最近 3 条没过期的过往任务（只有这一项限 2400 字）；`asked` 这句话在问「之前 / 上次」时，最近 5 条过往任务，不限网站，含已过期的（3000 字，此时不再按网站带任务）。每一层先各自受上限，再受总字数上限 `MEMORY_CONTEXT_MAX_CHARS`=9000（超出的不带，记入 `skipped.overCap`）。被替换、失效、过期、别的网站的不带：有效期已过的 `past` 条目与带日期任务，只在 `asked` 时出现，不会经 `site` 或 `always` 再带；网站范围的自动总结（带 `experience`）要对得上这件事，不论改过几次，没改过的按对象严格对、用户改过或恢复过的按词宽松对；用户确认过的网站做法（`method`，不带 `experience`）在该网站总是带，不按字面筛；到处适用的做法与用户自述的事实照常带。一条只记一次，列在第一个带上它的规则下。带上的条目在写锁下按 id+版本再核对一次（挑选后被忘记、修改或替换的不带），`useCount`+1。诊断记录写一条 `memory_context{hostname,rules,entries:[{id,kind,rule,chars}],tasks:[{id,rule,date}],totalChars,maxChars,skipped}`（每个带上的条目和任务各一行，标明是哪条规则带上的；`skipped` 为没带的条数及原因），只有编号和规则，不含记忆原文。显式查询仍由 `select / resolveSelected` 按任务对象选择生效条目并复核版本。`agent_event` 中的 `memory` 事件记录 saved/updated/forgotten/used 及条目快照，历史回执不随之后的修改而重写；侧栏在单条 saved 回执上给「撤销」，发的就是 `memory_forget`。
-
-判断请求的取档、重试与失败原因见[后台判断](model-effort.md#后台判断)。**决定点 C：纠正后开口问「要我记住吗」。** 产品会话（自动模式）里用户直接发的每句话先过便宜的检查（不看网页、附件、工具输出）：像密码验证码的不问模型、原话不留，连自动记忆也跳过（不判断、不进补判队列）；交给判断模型的 `recentTurns`（纠正询问与自动记忆都一样）先去掉像密码验证码的用户话；不像纠正的（`isUserCorrection`）不问。任务进行中插话（steer）说的纠正不问，与自动记忆相同。通过的等这一轮结束（`agent_settled`，回答先到）再用快速模型答窄问题 `CORRECTION_ASK_PROMPT`（`memory-correction.ts`，系统提示以 `You review a direct user correction of the assistant` 开头），输入 `{userMessage,recentTurns,currentHostname,methods:[{id,text,scope}]}`（生效的、到处适用或当前网站的 `method`），只回 `{correction,reusable,about,rule,evidence,replaces}`。代码按顺序决定：这句已被直接记下（自动或工具）、同一句原话（空白归一）这次对话里回过「这次就行」（`dismissed`）或点过「记住」（`already-remembered`）→ 不问且不问模型；同一句还有询问没回答时照常问模型，要问新的就先把旧的作废（`outcome:"closed"`）；模型答完后再核对一次这两项（问模型期间用户可能已回答旧询问），并按最新的做法判断是否重复；问过模型后（`decideCorrectionAsk`）：不是纠正、不可复用、`evidence` 不是原话里的连续一段、`rule` 不合格（空、超 200 字、像秘密）、`rule` 里有原话没有的邮箱、网址或 5 位以上数字、同范围已有同样文字的生效做法、同一条规则回过「这次就行」或还没回答 → 不问；否则发 `agent_event{kind:"memory_ask",askId,rule,scope,replaces?{id,text},hostname?}`（`hostname` 与默认范围里的网站都取用户发这句时所在的网页，不从原话里解析网址；所在的不是网页时取这个对话的任务最近操作过的网页（宿主经 `bindVisitedUrls` 提供，没有就用之前几轮的）；都没有时关于网站的做法不问（`no-site`），关于助手做事方式的照常为所有网站、不带 `hostname`）。询问有了结局时，后台按原样再发一条同 `askId` 的 `memory_ask` 并带 `outcome`：`remembered` 记下了、`already` 早已记着、`once` 这次就行、`closed` 没等到回答就作废（同一句又问了一次、替换目标被改过；后者先发带原因的失败结果，再发这条）；它与其他 `agent_event` 一样进对话历史，侧栏按同 askId 的最后一条画。范围：`about=site` 且有当前网站时为该网站，否则所有网站；`replaces` 只认同范围里生效的做法，其余当作不替换。算询问期间用户又发话、停止或接管就丢掉，不发过时的询问；判断失败只留记录，不补判，这句纠正不会再自动问（用户再说一次才会）。这句的自动判断失败进了补判队列时照常问：补判同样只收用户自己的资料，与询问管的做法不重叠。每句写一条 `memory_ask_decision{source:"message",key,status:"asked"|"skipped"|"failed"|"dropped",reason,askId?,scope?,replacesId?}`（`reason` 为 `asked`、`secret`、`not-correction`、`already-saved`、`already-remembered`、`not-reusable`、`evidence-not-quoted`、`invalid-rule`、`rule-not-grounded`、`no-site`、`duplicate`、`dismissed`、`already-asked`、`superseded`，失败为 `timeout` / `provider error` / `parse error` / `store error`），不含原话与规则文字。
-
-询问只存在这个对话的后台内存里（`MemoryRuntime`），侧栏用 `memory_ask_answer{conversationId,requestId,askId,answer:"remember"|"once"}` 回答，规则文字只取后台那份。`remember` 经 `MemoryStore.saveMethod` 存一条 `kind:"method"`（`sourceQuote` 为用户那句纠正，用过 0 次）；有 `replaces` 时旧条目版本 +1、标 `replaced` 并指向新条目，新条目沿用它的 `factId`（旧条目已删就只存新的；已被改过或不再生效则这条询问作废、不写入，回 `ok:false`、`askClosed:true`、`error:"要替换的那条做法刚被改过，这条没有记下，请再说一次"`，其余写入失败时询问保留可再点、不带 `askClosed`）；同范围已有同样文字的生效做法时不写入（`rev` 不变、不替换），返回那一条。`once` 不存，这次对话里同一条规则或同一句原话不再问；`remember` 成功（含早已记着）后这句原话也不再问。结果为 `memory_result{action:"ask",ok,entry?,entries?,alreadySaved?,rev}`：`remember` 带新条目（`entry`）及新条目与被替换的旧条目（`entries`）；早已记着同一条时只带那一条（`entry`）与 `alreadySaved:true`，面板说「已经记着了」、不给撤销；`once` 不带条目；回答过、没问过或扩展重启过的 `askId` 回 `ok:false`、`askClosed:true`、`error:"这条询问已失效，请再说一次"`。每次回答另记 `memory_ask_decision{source:"answer",status:"answered",askId,answer,alreadySaved?,entryIds}`，作废时记 `status:"withdrawn"`，`reason` 为 `replace-target-changed` 或 `re-asked`（同一句又问了一次）。撤销：没替换别的就 `memory_forget` 新条目，替换过就对旧条目 `memory_restore`；范围切换走 `memory_update`。模型工具与网页没有写入这类规则的途径。
-
-「要不要记」的判断失败时（超时、服务错误、解析失败、存储失败），诊断记录写 `memory_decision{source:"message",status:"failed",reason,key}`（`reason` 为 `timeout` / `provider error` / `parse error` / `store error`），这句话连同消息编号 `key` 存入补判队列：扩展 IndexedDB 同库 `kv` 表的 `pending-memory` 键（`IdbDocument`，只存本机）。每个对话只补判自己的话（回执出现在说这句话的对话里）：失败约 5 秒后到点补判，但对话正在跑任务（`agent_start` 到 `agent_settled` 之间）时留到这一轮结束；一轮结束（`afterTurn`）在后台补判，不拖住结束；对话运行时启动时（扩展重启后）补判队列里剩下的。同一份队列一次只进行一轮补判；每句至多尝试 3 次，失败后至少隔 30 秒（逐次翻倍）再试，补判失败记 `memory_decision{source:"retry",status:"failed",reason,key,attempts}`，第 3 次仍失败记 `status:"gave up"` 并放弃。按 `key` 幂等：判完的编号（只有编号，最近 200 个）留在队列文档里，同一句不会补判两次。判完（记下、不记或忘掉）或放弃后，队列里的原话即删。停止、接管、交还时这一轮排队的话作废即删；任务进行中插话只作废进行中的判断，已排队的照常补判。补判过时则作废（`status:"dropped"`，不写）：要更新或忘记的条目在排队之后改过；或要记下，而排队之后本对话里用户的话改动过记忆（记下、更新或说过「忘掉」；判断模型可能没看出那是纠正）、或排队时已有的某件事被面板修改、撤销或忘掉（判据较宽，可能少记，不会改回旧值或新旧并存）。不是用户动作的写入（「用过」计数、后台整理）与没有改动记忆的话（如插话问价格）不让补判作废。决定记录里不留用户原话：`memory_decision` 只写编号、种类、规则与结论。
-
-存储经 `DocumentPersistence` 抽象：扩展 IndexedDB `sideagent-memory` 库、`kv` 表的 `memories` 键（所有 IndexedDB 写入都用 `durability:"strict"` 的事务，提交后才算写入；扩展申请 `unlimitedStorage`，不受默认配额限制）（原本机宿主的 `~/.sideagent/memory/memories.json` 随本机模式退役；文件实现 `FileDocument` 只留给在 Node 里托管会话的检查）。忘记后被删的条目后续新轮次不再读取；原聊天仍保留。当前没有按 Chrome 配置分别选择存储目录，不能宣称已实现浏览器配置隔离。
+忘记后被删的条目后续轮次不再读取；原聊天仍保留。当前没有按 Chrome 配置分别存储，不应宣称已实现浏览器配置隔离。
 
 ## 过往任务
 
-列过目标或有执行记录的任务在 Lead 的 `agent_end` 后留一条摘要 `TaskHistoryEntry{id=runId,conversationId,goal,page?,revisions,hosts,outcome:"complete"|"partial"|"stopped"|"error",summary,unfinished,startedAt,endedAt,date?,validity?}`；同一 runId 接着做完时覆盖，但沿用原条目的 `useCount / lastUsedAt`，新条目没带日期与有效期时也沿用原来的。任务结束时立即写入；日期判断晚到时只补 `date / validity`，且只改仍存在、`endedAt` 相同的那条，已被删除的不重建，已被同一任务新记录覆盖的不动。带给助手的任务 `useCount`+1、记 `lastUsedAt`。`date / validity` 由决定点 A 在任务结束后补上，旧条目与无日期的任务缺省（文件仍是 `format:1`，新字段可选）。最多 200 条，存在同一处（扩展 IndexedDB `tasks` 键）。`hosts` 只收 http(s) 网页。写入前（`TaskHistoryStore.record`，宿主也在交给判断日期的模型前）只隐去具体值、不删整段：用户的话（目标、补充）里密码类关键词（密码、口令、验证码、password、code 等）后接「是 / 为 / 应该是 / 冒号 / 空格」的那个值（至少含一个字母或数字），以及紧跟卡、证件关键词的 15–19 位数字，换成「（已隐去）」；摘要、页面标题、没做完的事只换掉其中复述的这些值。只提到关键词没有值的（「忘记密码的入口」「需要你提供短信验证码」）和订单号等别的长数字照常保留。读取：无数据为空；`format:1` 取合格条目，不合格条目的原文另留；未知格式或读不懂的数据当作只读，本会话内所有写入（含删除、清空）都被拒绝，原文不动。写入时不合格的条目原样写回，不因一次改动丢数据；只有「全部清空」（`task_history_forget` 的 `id` 为 `null`）会连不可读的条目一起清掉。每轮带哪些见上面的决定点 B；`user_memory history` 按词或网站查过往任务，并列出用户说过的 `past` 条目（过期的标 already past），所以过了有效期仍查得到。侧栏用 `task_history_list{conversationId,requestId}` 读取、`task_history_forget{conversationId,requestId,id|null}` 删一条或全部清空，响应为 `task_history_result{conversationId,requestId,ok,tasks?,error?}`（删除后返回剩下的）。
+- 写入前只隐去密码、验证码、卡号等具体值，不删整段；只提到关键词没有值的照常保留。
+- 读不懂的数据只读，本会话写入都被拒绝，原文不动。只有「全部清空」会连不可读的条目一起清掉。
+- 过了有效期的事仍能经过往任务查询查到。
 
 ## 目标核对
 
-用过工具的任务一轮结束时，宿主用快速模型核对用户要的结果达成没有，结论决定接着做、等用户、受阻收尾还是做完；规则、输入、结论与显示见[目标核对](goal-check.md)。
+用过工具的任务一轮结束时，任务宿主用快速模型核对用户要的结果达成没有。结论决定接着做、等用户、受阻收尾还是做完；规则、输入、结论与显示见[目标核对](goal-check.md)。
 
 ## 用户设的提交条件
 
@@ -44,14 +43,16 @@
 
 ## 任务跨轮
 
-上一个任务以「部分完成」结束（任务视图 `resumable`）时，侧栏发来的普通文字 `task_action{action:"start"}` 按简单规则判断是否接着做这件事：目标核对说在等用户、或助手上一句在问用户，就算接着做（10-04 起不再调快速模型判断）。是则改走 `steer`：登记为原任务的修订，以 `manual_continuation` 中断后从原任务恢复，runId 与目标不变；恢复提示写明是用户补充而非重启。
+上一个任务部分完成时，按简单规则判断用户的下一句是否算接着做，不调模型。目标核对说在等用户，或助手上一句在问用户，就算接着做。接着做时任务与目标不变，恢复提示写明是用户补充而非重启。
 
-扩展重启后的恢复规则见下一节；后续记忆范围与检索方案见[记忆研究](research/20261002-extension-memory.md)。
+后续记忆范围与检索方案见[记忆研究](research/20261002-extension-memory.md)。
 
 ## 扩展会话恢复
 
-扩展复用Pi 0.84.4的原生Session、JSONL存储规则与buildSessionContext。JSONL后端通过注入接口把虚拟记录存入本扩展IndexedDB（`sideagent-session-data`），不访问电脑文件系统。消息、自定义检查点及分支指针由Pi同一条原子日志更新；现有执行循环继续运行，未启用尚未实现的AgentHarness。同步检查点读取用已提交条目的缓存，写入异步等待事务；任务接受回执和浏览器RPC发送前等待保存，失败不发送动作。
+- 复用 Pi 原生 Session 与存储规则，不另写一套；记录存在扩展 IndexedDB，不访问本机文件系统。
+- 任务接受回执和浏览器 RPC 发送前等待保存；保存失败不发送动作。
+- 本轮不启用自动压缩生成。
+- 恢复旧消息不自动执行旧工具调用；中断任务先读取当前页面，结果未知的写入继续受执行闸门约束。
+- 个人记忆不替代当前会话记录。旧版本从未落盘的消息不能凭侧栏回放还原为完整执行证据。
 
-重建模型上下文按原生分支的最旧到最新顺序读取；消息转换保留Pi压缩摘要和分支摘要。本轮不启用自动压缩生成。恢复旧消息不自动执行旧工具调用；中断任务仍走原检查点恢复入口，先读取当前页面，结果未知的写入继续受执行闸门约束。个人记忆不替代当前会话记录。
-
-文件正文独立保存，见[文件卡片与截图](artifacts.md)。用户可见的恢复验收见[本轮记录](evals/20261002-session-durability.md)。旧版本从未落盘的消息不能凭侧栏回放还原为完整执行证据。
+文件正文独立保存，见[文件卡片与截图](artifacts.md)。用户可见的恢复验收见[本轮记录](evals/20261002-session-durability.md)。

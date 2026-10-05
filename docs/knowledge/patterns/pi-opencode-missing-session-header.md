@@ -1,4 +1,4 @@
-# Pattern: Prime Agent 的 refine/子代理请求缺 x-opencode-session 会被 provider 400 拒
+# 经验：Prime Agent 的 refine/子代理请求缺 x-opencode-session 会被 provider 400 拒
 
 ## 现象
 
@@ -40,7 +40,7 @@ Request is missing x-opencode-session and cannot be routed efficiently.
 
 - 报 `Refinement failed` / `MissingSessionID` 时，先 `grep -c MissingSessionID ~/.prime/agent/logs/agent.jsonl`
   定位是不是同一件事，再看 `providerErrorType`。
-- **别假设 refine 成功**：`refine.run()` 返回 `{"scheduled": true}` 只代表排上队。要落一条关键经验时，
+- **不假设 refine 成功**：`refine.run()` 返回 `{"scheduled": true}` 只代表排上队。要落一条关键经验时，
   直接写 harness API 并核对（`grep 关键词 ~/.prime/agent/harness/harness_state.json`）。
 - 升级入口：`prime-agent update`（当前有忙会话时要求 `--force`，它会停会话、重启后台服务、恢复被打断的工作）。
   或把 daemon 默认 provider 换成本机可用的（`auth.json` 里有 `openai-codex`、`kimi-coding`）。
