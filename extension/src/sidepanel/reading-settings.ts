@@ -34,7 +34,7 @@ export const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: st
 
 export const READING_SIZE_OPTIONS: ReadonlyArray<{ value: ReadingSize; label: string }> = [
   { value: "small", label: "小 13px" },
-  { value: "normal", label: "标准 14px" },
+  { value: "normal", label: "标准 15px" },
   { value: "large", label: "大 17px" },
 ];
 
@@ -51,7 +51,7 @@ const READING_FONT_OVERRIDES: Record<Exclude<ReadingFont, "system">, string> = {
   song: '"Songti SC", "STSong", "Songti TC", "SimSun", serif',
 };
 
-/** 非默认字号才需要覆盖变量：标准 14px 是默认，值在 styles.css 的 :root 里。 */
+/** 非默认字号才需要覆盖变量：标准档的像素在 styles.css 的 --reading-size。 */
 const READING_SIZE_OVERRIDES: Record<Exclude<ReadingSize, "normal">, string> = {
   small: "13px",
   large: "17px",

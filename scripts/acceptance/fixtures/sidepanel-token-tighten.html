@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>侧栏 token 收紧</title>
+    <link rel="stylesheet" href="../../../extension/src/sidepanel/styles.css" />
+    <style>
+      html, body, #app { width: 360px; height: 720px; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <button id="conversation-switcher" type="button">
+          <span class="conversation-title">写冷邮件</span>
+        </button>
+        <button id="conversation-new" type="button" aria-label="新会话">+</button>
+        <button id="header-more" type="button" aria-label="更多">···</button>
+      </header>
+      <div id="messages">
+        <div class="msg user">帮我写一封冷邮件，跟对方约产品演示</div>
+        <div class="msg assistant markdown">
+          <p>主题：15 分钟看一眼演示？</p>
+          <p>Hi Alex — 上周看到你们在招增长负责人，好奇你们现在怎么跟进试用用户。我们这边有个很短的演示，方便约 15 分钟吗？</p>
+          <p>要我再压短一版吗？</p>
+          <div class="answer-actions"><button type="button" aria-label="复制回答">⎘</button></div>
+        </div>
+        <div class="memory-used-line">
+          <button class="memory-used-toggle" type="button">用了 2 条记忆 ›</button>
+        </div>
+      </div>
+      <div class="composer-dock-wrap">
+        <form id="composer">
+          <textarea id="input" placeholder="继续问…"></textarea>
+          <div id="composer-bar">
+            <button class="morphing-page-pill" type="button">Gmail · 草稿</button>
+            <span id="composer-spacer"></span>
+            <button id="send-btn" class="kinetic-morph-button" type="button" aria-label="发送">↑</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

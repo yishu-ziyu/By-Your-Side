@@ -1,23 +1,47 @@
 /* 暖纸与墨色。沿用既有 token 名，避免设置、语音和模型选择各自维护配色。 */
 :root {
-  --wallpaper: #faf9f6;
+  /* 字号 4 档、圆角 3 档、间距 5 步。预览 overlay 的数量收紧，写进生产变量。 */
+  --fs-read: 15px;
+  --lh-read: 1.7;
+  --fs-ui: 13px;
+  --lh-ui: 1.5;
+  --fs-meta: 12px;
+  --lh-meta: 1.45;
+  --fs-code: 12.5px;
+  --fs-micro: 11px;
 
-  /* 顶部、输入框和弹层共用近白表面（对齐 Claude 的浅底，不再偏黄），兼容已有 token 名。 */
-  --glass-surface: #faf9f6;
-  --glass-surface-elevated: #ffffff;
-  --glass-border: #d9d6cc;
-  --glass-border-subtle: #ecebe4;
+  --r: 12px;
+  --r-shape: 20px;
+  --r-pill: 999px;
+  --r-tail: 6px;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --gap-turn: var(--s-5);
+  --gap-block: var(--s-3);
+  --pad-x: var(--s-4);
+
+  /* 奶油同一色相（hue 88）。预览 wallpaper 彩度 0.010 偏黄，这里降到 0.0055。 */
+  --wallpaper: oklch(0.980 0.0055 88);
+  --chrome-frame: oklch(0.992 0.002 88);
+  --glass-surface: var(--wallpaper);
+  --glass-surface-elevated: oklch(0.996 0.0015 88);
+  --glass-border: rgb(20 20 19 / 0.10);
+  --glass-border-subtle: rgb(20 20 19 / 0.06);
   --glass-specular: 0 0 0 transparent;
   --glass-shadow: 0 3px 14px rgba(20, 20, 19, .04);
   --glass-blur: none;
-  /* Chrome 自己画的侧栏标题栏（图标、名字、图钉、关闭）的底色；扩展读不到，按默认主题取值，让顶栏接在它下面像同一块。 */
-  --chrome-frame: #ffffff;
 
-  /* 2. 消息流与内容主体：坚实实体材质 (Solid Surface，保证 100% 清晰阅读) */
-  --content-bg: #ffffff;
-  --content-subtle: #eeece6;
-  --content-subtle-hover: #e8e6dc;
-  --content-border: #e3e1d9;
+  --content-bg: oklch(0.996 0.0015 88);
+  --content-subtle: oklch(0.962 0.0055 88);
+  --content-subtle-hover: oklch(0.950 0.0065 88);
+  --content-border: rgb(20 20 19 / 0.07);
+  --well: var(--content-subtle);
+  --well-outline: rgb(0 0 0 / 0.05);
+  --well-highlight: rgb(255 255 255 / 0.9);
 
   /* 文字色彩层级 (Apple HIG) */
   --text-primary: #141413;
@@ -80,16 +104,16 @@
   /* 兼容既有引用（值统一到上面的曲线，不再各写各的） */
   --spring-bounce: var(--e-spring);
   --spring-fluid: var(--e-swift);
-  --radius-dock: 17px;
+  --radius-dock: var(--r-shape);
   --e-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --card-padding: 6px;
-  --radius-inner: 8px;
+  --card-padding: var(--s-1);
+  --radius-inner: var(--s-2);
   --radius-card: calc(var(--radius-inner) + var(--card-padding));
   --sh-1: 0 2px 8px rgba(20, 20, 19, .03);
   --sh-2: 0 3px 8px rgba(20, 20, 19, .04), 0 12px 32px rgba(20, 20, 19, .06);
-  --radius-pill: 9999px;
-  --radius: 10px;
-  --radius-sm: 8px;
+  --radius-pill: var(--r-pill);
+  --radius: var(--r);
+  --radius-sm: var(--r);
   --shadow-composer: var(--glass-shadow);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
   --mono: "SF Mono", Menlo, Consolas, monospace;
@@ -112,6 +136,9 @@
     --content-subtle: #353027;
     --content-subtle-hover: #40392e;
     --content-border: #484237;
+    --well: var(--content-subtle);
+    --well-outline: rgb(255 255 255 / 0.06);
+    --well-highlight: rgb(255 255 255 / 0.06);
 
     --text-primary: #eee9df;
     --text-secondary: #bbb3a5;
@@ -148,8 +175,8 @@ body {
   margin: 0;
   height: 100%;
   font-family: var(--font);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
   color: var(--text-primary);
   background: var(--wallpaper);
   background-attachment: fixed;
@@ -341,9 +368,9 @@ html, body {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 38px;
-  padding: 0 8px 0 6px;
+  gap: var(--s-1);
+  height: 40px;
+  padding: 0 var(--s-2) 0 6px;
   min-width: 0;
   border-bottom: 1px solid transparent;
   background: var(--chrome-frame);
@@ -753,10 +780,10 @@ html, body {
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 22px 26px;
+  padding: var(--s-4) var(--pad-x) var(--s-5);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--gap-turn);
   scrollbar-width: thin;
 }
 
@@ -776,15 +803,18 @@ html, body {
 .msg.user {
   align-self: flex-end;
   max-width: 90%;
-  background: var(--content-subtle);
+  background: var(--well);
   color: var(--text-primary);
   border: 1px solid transparent;
-  padding: 10px 13px;
-  border-radius: 17px 17px 5px 17px;
-  font-size: 13px;
-  line-height: 1.6;
+  padding: 10px 14px;
+  border-radius: var(--r-shape) var(--r-shape) var(--r-tail) var(--r-shape);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  box-shadow:
+    inset 0 0 0 1px var(--well-outline),
+    inset 0 1px 0 var(--well-highlight);
 }
 
 /* 断线确定未送达的用户消息（issue #4）：弱化边框 + 原文重试，不隐藏内容 */
@@ -1459,7 +1489,7 @@ details.run-steps.done .chip.error { background: transparent; }
 
 /* ── 输入区：暖白纸面 ─────────────────────── */
 .composer-dock-wrap {
-  margin: 6px 14px 14px;
+  margin: var(--s-2) var(--s-3) var(--s-3);
   position: relative;
   flex-shrink: 0;
   z-index: 6;
@@ -1469,20 +1499,24 @@ details.run-steps.done .chip.error { background: transparent; }
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 11px 12px 9px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-dock);
-  background: var(--glass-surface-elevated);
+  gap: var(--s-2);
+  padding: 12px var(--s-3) 10px;
+  border: 1px solid var(--well-outline);
+  border-radius: var(--r-shape);
+  background: var(--well);
   backdrop-filter: var(--glass-blur);
-  box-shadow: 0 3px 9px rgba(57, 51, 29, .02);
+  box-shadow:
+    inset 0 0 0 1px transparent,
+    inset 0 1px 0 var(--well-highlight);
   flex-shrink: 0;
   transition: border-color var(--m-quick) ease, box-shadow var(--m-quick) ease;
 }
 
 #composer:focus-within {
-  border-color: color-mix(in srgb, var(--glass-border) 72%, var(--accent));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 5%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  box-shadow:
+    inset 0 0 0 1px transparent,
+    inset 0 1px 0 var(--well-highlight);
 }
 
 /* 页面感知胶囊 (Page Context Pill) */
@@ -1490,15 +1524,15 @@ details.run-steps.done .chip.error { background: transparent; }
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--s-1);
   max-width: 100%;
-  padding: 3px 6px;
-  border: 1px solid var(--glass-border-subtle);
-  border-radius: 5px;
-  background: var(--glass-surface);
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--text-tertiary);
+  padding: 4px 8px;
+  border: 1px solid var(--well-outline);
+  border-radius: var(--r);
+  background: var(--glass-surface-elevated);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+  color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
 }
@@ -1656,8 +1690,9 @@ details.run-steps.done .chip.error { background: transparent; }
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  line-height: 1.7;
-  min-height: 43px;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-read);
+  min-height: 44px;
   padding: 0 1px;
   max-height: 140px;
 }
@@ -1669,7 +1704,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #composer-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--s-2);
   min-width: 0;
 }
 
@@ -2030,7 +2065,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #send-btn.kinetic-morph-button {
   width: 29px;
   height: 29px;
-  border-radius: 10px;
+  border-radius: var(--r-pill);
   background: var(--text-primary);
   /* 跟着底色反相：深色模式下 --text-primary 是浅色，写死 #fff 会让箭头看不见 */
   color: var(--content-bg);
@@ -2163,7 +2198,7 @@ details.run-steps.done .chip.error { background: transparent; }
   #status-text { max-width: 4.5em; overflow: hidden; text-overflow: ellipsis; }
 }
 /* 会话名是「我在哪」的指示，不是标题：常规字重、次要色，别像要点的大按钮。 */
-#conversation-switcher { border:0; background:transparent; color:var(--text-secondary); border-radius:7px; height:28px; padding:0 6px; font:inherit; font-size:12.5px; cursor:pointer; }
+#conversation-switcher { border:0; background:transparent; color:var(--text-secondary); border-radius:var(--r); height:28px; padding:0 6px; font:inherit; font-size:var(--fs-ui); cursor:pointer; }
 #conversation-switcher { flex:0 1 auto; min-width:0; margin-right:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-weight:450; }
 #conversation-switcher:hover { color:var(--text-primary); }
 
@@ -2322,13 +2357,13 @@ details.run-steps.done .chip.error { background: transparent; }
 /* 回答默认跟随界面字体；阅读外观设置仍可覆盖这两个变量。 */
 :root {
   --reading-font: var(--font);
-  --reading-size: 14px;
+  --reading-size: var(--fs-read);
 }
 
 .msg.assistant.markdown {
   font-family: var(--reading-font);
   font-size: var(--reading-size);
-  line-height: 1.75;
+  line-height: var(--lh-read);
   letter-spacing: 0;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -2337,7 +2372,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .msg.assistant.markdown h2 { font-size:1.05em; line-height:1.5; font-weight:600; letter-spacing:0; margin:18px 0 9px; text-wrap:balance; }
 .msg.assistant.markdown h3,
 .msg.assistant.markdown h4 { font-size:1em; line-height:1.55; font-weight:600; margin:18px 0 9px; text-wrap:balance; }
-.msg.assistant.markdown p { margin:0 0 11px; }
+.msg.assistant.markdown p { margin:0 0 var(--gap-block); }
 .msg.assistant.markdown p:has(+ .answer-actions) { margin-bottom: 0; }
 .msg.assistant.markdown > :first-child { margin-top:0; }
 .msg.assistant.markdown > :last-child { margin-bottom:0; }
@@ -2353,16 +2388,16 @@ details.run-steps.done .chip.error { background: transparent; }
 .msg.assistant.markdown code,
 .msg.assistant.markdown pre,
 .msg.assistant.markdown pre code,
-.msg.assistant.markdown kbd { font-family:var(--mono, "SF Mono", Menlo, Consolas, monospace); }
+.msg.assistant.markdown kbd { font-family:var(--mono, "SF Mono", Menlo, Consolas, monospace); font-size:var(--fs-code); }
 
 .answer-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--s-1);
   min-height: 24px;
-  margin-top: 7px;
-  font: 10px/1.5 var(--font);
+  margin-top: var(--s-2);
+  font: var(--fs-meta)/var(--lh-meta) var(--font);
   color: var(--text-tertiary);
 }
 .answer-actions button {
@@ -2372,7 +2407,7 @@ details.run-steps.done .chip.error { background: transparent; }
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r);
   background: transparent;
   color: inherit;
   font: inherit;
