@@ -832,8 +832,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
     startStatusTimers(inst);
 
-    // 拿住态（就地确认双键）优先，状态等松开后再画
-    if (!inst.hold) renderStatusLabel(inst);
+    // 拿住态与正在说的动作旁白优先：状态先记下，等它们结束再画
+    refreshLabel(inst);
     renderAmbient();
   }
 

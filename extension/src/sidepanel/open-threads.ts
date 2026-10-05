@@ -10,6 +10,7 @@
 import type { ClientMessage, ConversationSummary, ServerMessage } from "../../../shared/protocol.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import type { ReadingTurn } from "../../../shared/reading.js";
+import { plainStep } from "../../../shared/user-facing.js";
 
 /** chrome.storage.local：true 才开启（默认关）。 */
 export const OPEN_THREADS_KEY = "sideagent_open_threads";
@@ -107,7 +108,7 @@ export function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
     const open = t.unfinished.length > 0 || t.outcome !== "complete";
 
     if (!open) continue;
-    const where = t.unfinished.length ? `还差：${clip(t.unfinished[0]!, 30)}${t.unfinished.length > 1 ? ` 等 ${t.unfinished.length} 件` : ""}` : PAST_OUTCOME_LINE[t.outcome];
+    const where = t.unfinished.length ? `还差：${clip(plainStep(t.unfinished[0]!), 30)}${t.unfinished.length > 1 ? ` 等 ${t.unfinished.length} 件` : ""}` : PAST_OUTCOME_LINE[t.outcome];
     out.push({ id: `task:${t.id}`, title: clip(t.goal, 40), where, label: "回到这个任务", at: t.endedAt, action: { kind: "conversation", conversationId: t.conversationId } });
     claimed.add(t.conversationId);
   }

@@ -2761,7 +2761,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .voice-state-detail{font-size:11px;color:var(--text-tertiary);margin-top:3px}.voice-state-detail:empty{display:none}
 .voice-current-sentence{color:var(--text-primary);font-weight:600;background:color-mix(in srgb,var(--voice-teal) 14%,transparent);border-radius:3px}
 .voice-sources{display:inline-block;font-size:10px;color:var(--text-secondary);margin-top:4px;padding:1px 8px;border-radius:var(--radius-pill);background:var(--content-subtle)}.voice-sources:empty,.voice-sources[hidden]{display:none}
-@media (prefers-reduced-motion: reduce){.voice-progress .voice-state{transition:none}.voice-progress .voice-state::before{animation:none}}
+@media (prefers-reduced-motion: reduce){.voice-progress .voice-state:not(:empty){transition:none}.voice-progress:is([data-state]) .voice-state::before{animation:none}}
 
 /* #47 动作卡 */
 /* 运行中每步一行：图标 + 动词 + 目标，右侧 › 展开参数；旁白夹在卡片之间。 */
