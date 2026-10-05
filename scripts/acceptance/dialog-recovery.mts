@@ -13,9 +13,9 @@ const repo = resolve(import.meta.dirname, '../..');
 
 const out = join(repo, 'out/dialog-recovery', new Date().toISOString().replace(/[:.]/g, '-'));
 
-const suiteVersion = 'dialog-recovery-7-case-v4';
+const suiteVersion = 'dialog-recovery-9-case-v5';
 
-const expectedCases = 7;
+const expectedCases = 9;
 
 const quietWindowMs = 1000;
 
@@ -57,6 +57,7 @@ const fixtureHtml = `<!doctype html><meta charset="utf-8"><title>Dialog recovery
 <button id="mousedowndialog" type="button" onmousedown="runMouseBoundary()" onclick="mouseState.clicks++;reportEvent('mouse-click')">Mouse boundary</button>
 <button id="chain" type="button" onclick="runChain()">Chain fixture</button>
 <input id="after" aria-label="After dialog" value="before"><output id="result">untouched</output>
+<button id="domclick" type="button" onclick="runDom()">DOM fallback fixture</button>
 <script>
 const state = {opened:0, completed:0, inputs:0, last:null};
 function reportEvent(name) {fetch('/event?name='+encodeURIComponent(name),{method:'POST'});}
@@ -76,6 +77,13 @@ function runMouseBoundary(){
   mouseState.opened++;reportEvent('mouse-opened');
   mouseState.answer=confirm('mousedown fixture');
   mouseState.completed++;reportEvent('mouse-completed');
+}
+const domState={opened:0,completed:0,answer:null};
+window.boundaryState.dom=domState;
+function runDom(){
+  domState.opened++;reportEvent('dom-opened');
+  domState.answer=confirm('dom fixture');
+  domState.completed++;reportEvent('dom-completed');
 }
 function runChain(){
   chainState.opened++;reportEvent('chain-opened');
@@ -341,6 +349,42 @@ try {
   // The shared launcher hook has no heldInputs probe; do not infer the ledger from page keyup.
   const heldKeys = {status:'NOT_RUN',reason:'shared acceptance hook does not expose heldInputs; page keyup is checked separately'};
   evidence.push({case:currentCase,seeded,typed,page:letterPage,heldKeys,quietWindowMs,events:{...events}});
+
+  currentCase = 'dom-fallback-click-dialog';
+  // Pre-dispatch CDP failure (first mouseMoved rejects once) is the only way to reach the DOM fallback branch.
+  await iso.swEval(`(()=>{const orig=chrome.debugger.sendCommand.bind(chrome.debugger);globalThis.__dialogOrigSend=chrome.debugger.sendCommand;let failed=false;chrome.debugger.sendCommand=(t,m,p)=>{if(!failed&&m==='Input.dispatchMouseEvent'&&p&&p.type==='mouseMoved'){failed=true;chrome.debugger.sendCommand=globalThis.__dialogOrigSend;return Promise.reject(new Error('Another debugger is already attached (acceptance injected pre-dispatch failure)'));}return orig(t,m,p);};return true;})()`,3000);
+  const domStart = Date.now();
+  const domTrigger = await call('click',{tabId,target:'#domclick'},true);
+  const domElapsed = Date.now()-domStart;
+  await iso.swEval('chrome.debugger.sendCommand=globalThis.__dialogOrigSend||chrome.debugger.sendCommand;true',3000);
+  assert.equal(domTrigger.ok,true,'DOM fallback click must return ok');
+  assert.equal(record(data(domTrigger).dialog).message,'dom fixture');
+  assert.ok(domElapsed<5000,`DOM fallback click must return promptly with dialog (took ${domElapsed}ms)`);
+  assert.equal(events['dom-opened'],1,'DOM fallback must run exactly once');
+  evidence.push({case:currentCase,trigger:domTrigger,elapsedMs:domElapsed,events:{...events}});
+
+  currentCase = 'read-tools-while-dialog-open';
+  const readCalls: JsonRecord = {};
+
+  for (const [name,params] of [['snapshot',{tabId}],['read_element',{tabId,target:'#after'}],['read_elements',{tabId,selector:'#after'}]] as const) {
+    const began = Date.now();
+    const result = await call(name,{...params});
+    const elapsedMs = Date.now()-began;
+    const text = JSON.stringify(result);
+    readCalls[name] = {elapsedMs,result};
+    assert.ok(elapsedMs<3000,`${name} must return within 3s while dialog is open (took ${elapsedMs}ms)`);
+    assert.ok(text.includes('confirm')&&text.includes('dom fixture'),`${name} must report dialog type and message`);
+    assert.ok(text.includes('accept_dialog')&&text.includes('dismiss_dialog'),`${name} must say how to resolve`);
+  }
+
+  assert.equal(events['dom-completed']??0,0,'page still waits on the dialog');
+  const domHandled = await call('dismiss_dialog',{tabId},true);
+  assert.equal(domHandled.ok,true);
+  assert.equal(data(await dialogStatus()).dialog,null);
+  await until(()=>events['dom-completed']===1?true:undefined,4000,'DOM fallback dialog completes once');
+  const afterRead = await call('snapshot',{tabId});
+  assert.equal(afterRead.ok,true,'snapshot works again once the dialog is closed');
+  evidence.push({case:currentCase,readCalls,handled:domHandled,events:{...events}});
 
   assert.deepEqual((await readPage()).state,{...record(originalState),inputs:Number(record(originalState).inputs)+4},'boundary fixtures must not change the original dialog oracle');
   assert.equal(evidence.length,expectedCases);

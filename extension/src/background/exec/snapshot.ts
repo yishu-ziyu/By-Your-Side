@@ -16,6 +16,7 @@ import type { InputRangeReadout } from "../../../../shared/page-readout.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
 import { withTimeout } from "../timeout.js";
+import { assertNoPendingDialog } from "../page-events.js";
 
 /** 交给调用方的 snapshot 正文：页面内容与身份，不含采集预算字段。 */
 interface SnapshotBody {
@@ -52,6 +53,7 @@ export async function snapshot(
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
+  assertNoPendingDialog(tab.id);
 
   if(params.decision&&params.scope==='viewport')throw new Error('DECISION_UNSUPPORTED: 决策观察需要完整控件树，不能退回 viewport DOM 身份。');
 

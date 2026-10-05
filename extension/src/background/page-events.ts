@@ -540,6 +540,14 @@ export function readDialogInfo(tabId: number) {
   };
 }
 
+/** 这一页有未处理的原生对话框时，页面脚本被挡住，读取只会白等到超时；直接报出对话框与处理方式。 */
+export function assertNoPendingDialog(tabId: number): void {
+  const { dialog } = readDialogInfo(tabId);
+
+  if (!dialog) return;
+  throw new Error(`DIALOG_OPEN: 页面有未处理的原生 ${dialog.type} 对话框（内容：${dialog.message}），读取已暂停。请先调用 accept_dialog 或 dismiss_dialog 处理后再读取。`);
+}
+
 export async function handleJsDialog(
   tabId: number,
   accept: boolean,

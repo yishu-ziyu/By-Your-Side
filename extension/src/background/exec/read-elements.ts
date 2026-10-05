@@ -1,5 +1,6 @@
 import { recordObservedDocument } from "../observation-document.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
+import { assertNoPendingDialog } from "../page-events.js";
 import { getWorkingTabId, resolveReadableTab } from "../state.js";
 
 const MIN_LIMIT = 1;
@@ -170,6 +171,7 @@ export async function readElements(
   const tab = await resolveReadableTab(tabId, executionKey);
 
   if (tab.id == null) throw new Error(`标签页 ${tabId} 已关闭`);
+  assertNoPendingDialog(tabId);
   const { data, documentId } = await readInDocument(tabId, executionKey, css, limit);
 
   const result: ReadElementsResult = { tabId, selector: normalized, ...data };

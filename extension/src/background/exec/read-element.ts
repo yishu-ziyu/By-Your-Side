@@ -5,6 +5,7 @@ import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.
 import { isAxRef, snapshotRefKind } from "../axstate.js";
 import { parseTarget as sharedParseTarget, resolveArgs, resolveTargetSelector } from "../../shared/target.js";
 import { sendCommand } from "../debugger.js";
+import { assertNoPendingDialog } from "../page-events.js";
 import { getWorkingTabId, resolveReadableTab } from "../state.js";
 
 const MAX_ELEMENT_CHARS = 1_000_000;
@@ -364,7 +365,6 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
 }
 
 async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<ElementRead> {
-  const isolatedRef = target.kind === "ref";
   check();
 
   const args: Parameters<typeof readInPage> = [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null];
@@ -442,6 +442,7 @@ async function readElementInner(
   check();
 
   if (tab.id == null) throw new Error(`标签页 ${tabId} 已关闭`);
+  assertNoPendingDialog(tabId);
   const target = parseTarget(params.target);
 
   const checkDocument=async()=>{

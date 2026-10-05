@@ -1295,22 +1295,46 @@ export async function click(
       // 右键/中键/非左键不提供 DOM 回退（document 无法等价 contextmenu/中键）。
       if (target && button === "left" && clickCount === 1 && !force) {
         await ensureDomOps(tabId, beforeDispatch);
+        let fallbackEffect: EffectReport | undefined;
         const fallbackToken = await beginEffect(tabId, { point: [x, y] });
-        await beforeDispatch?.();
-        await callDom(
-          tabId,
-          (t: string) => {
-            const dom = window.__sideagent?.dom;
+        // 与 CDP 点击同理：DOM click 弹出原生对话框会挡住页面，callDom 要等对话框关掉才返回。
+        const fallbackWatch = watchDialog(tabId);
 
-            if (!dom) throw new Error("domops 未注入");
+        try {
+          await beforeDispatch?.();
 
-            return dom.click(t);
-          },
-          [target], undefined, beforeDispatch,
-        );
-        const fallbackEffect = await collectEffect(tabId, fallbackToken);
-        await endCursorAction(tabId, cid, actionId, "done", [x, y]);
-        await recordCursorTrail(tabId, sessionId, x, y, true);
+          const fallbackClick = (async () => {
+            await callDom(
+              tabId,
+              (t: string) => {
+                const dom = window.__sideagent?.dom;
+
+                if (!dom) throw new Error("domops 未注入");
+
+                return dom.click(t);
+              },
+              [target], undefined, beforeDispatch,
+            );
+
+            return await collectEffect(tabId, fallbackToken);
+          })();
+
+          const fallbackSettled = await Promise.race([
+            fallbackClick.then(report => ({ effect: report })),
+            fallbackWatch.opened.then(opened => ({ dialog: opened })),
+          ]);
+
+          if ("dialog" in fallbackSettled) {
+            fallbackClick.catch(() => {});
+            void endCursorAction(tabId, cid, actionId, "done", [x, y]);
+
+            return { clicked: true, dialog: fallbackSettled.dialog };
+          }
+
+          fallbackEffect = fallbackSettled.effect;
+        } finally {
+          fallbackWatch.stop();
+        }
 
         const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
