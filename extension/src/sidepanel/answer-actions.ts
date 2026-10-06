@@ -1,14 +1,14 @@
 import { createElement as icon, Copy } from "lucide";
 
 /** 不属于回答正文的界面文字：复制时去掉。 */
-const CHROME = ".answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row";
+const CHROME = ".answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
-const SECTION_TITLES = { sources: "读过的网页", memory: "用到的记忆" } as const;
+const SECTION_TITLES = { sources: "读过的网页" } as const;
 
 /**
  * 文末一排在回答落定时添加：复制 · 来源 · 耗时（docs/evals/20261006-answer-receipt.md）。
  * 最新一条回答一直显示，旧回答悬停才出现（样式表按 .answer-latest 区分）。
- * 「来源」展开回答下方的面板：读过的网页、用到的记忆，各自由 answer-sources / 记忆行填进来。
+ * 「来源」展开回答下方的面板：读过的网页，由 answer-sources 填进来；用到的记忆跟在首句后面（main.ts placeUsedLine）。
  */
 export function attachAnswerActions(answer: HTMLElement): void {
   if (answer.querySelector(".answer-actions") || !answer.textContent?.trim()) return;
@@ -79,9 +79,7 @@ export function answerPanelSection(answer: HTMLElement, kind: keyof typeof SECTI
     body.className = "answer-panel-body";
     section.append(title, body);
 
-    // 网页在前，记忆在后。
-    if (kind === "sources") panel.prepend(section);
-    else panel.append(section);
+    panel.append(section);
   }
 
   // SAFETY: 上面刚建的结构里第二个子元素就是 body。
@@ -109,7 +107,7 @@ export function refreshAnswerPanel(answer: HTMLElement): void {
   // SAFETY: cloneNode 保持原节点类型。
   const squares = [...hosts.values()].slice(0, 2).map(node => node.cloneNode(true) as HTMLElement);
 
-  button.replaceChildren(...squares, glyphs.length ? "来源" : "记忆");
+  button.replaceChildren(...squares, "来源");
 }
 
 /** 站点图标：浏览器缓存里的网站真图标（YIS-74）；取不到时退回首字母方块。 */

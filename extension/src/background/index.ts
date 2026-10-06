@@ -39,7 +39,7 @@ import {
 } from "../../../shared/control.js";
 import { dimPage, glowPage } from "./page-glow.js";
 import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
-import type { PanelHistoryServerMessage } from "../relay.js";
+import type { PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
 import { VoiceRelay } from "./voice-relay.js";
@@ -1827,6 +1827,17 @@ function attachPanel(port: chrome.runtime.Port) {
           void stopTrailReplay(key());
 
           void attachPageContext(client).then((enriched) => {
+            // 页面要等查完活动标签页才知道：补进这一条历史，侧栏当场的 chip 和重开后的回放都用它。
+            if (enriched.context && entry.item.kind === "user") {
+              const { title, url, selection } = enriched.context;
+              const context: UserTurnContext = { title, url };
+
+              if (selection?.text) context.selection = selection.text;
+              entry.item.context = context;
+              flushHistory();
+              broadcast({ kind: "turn_context", seq: entry.seq, context: entry.item.context });
+            }
+
             // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，
             // original 保留原始消息（含选区上下文）供用户明确重试。
             const original:ClientMessage = wireClient.type==='task_action'

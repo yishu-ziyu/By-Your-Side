@@ -13,7 +13,7 @@ import { createOrb, type OrbHandle } from "./orb.js";
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
 import { renderMarkdownHtml } from "./markdown.js";
-import { attachAnswerActions as attachCopyActions, answerPanelSection, refreshAnswerPanel, setAnswerTime } from "./answer-actions.js";
+import { attachAnswerActions as attachCopyActions, setAnswerTime, siteGlyph } from "./answer-actions.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
@@ -24,7 +24,7 @@ import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-action
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
-import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText } from "lucide";
+import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText, TextQuote } from "lucide";
 import {
   StepChain,
   chipState,
@@ -63,7 +63,7 @@ import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
 import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
-import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
+import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
@@ -167,10 +167,9 @@ app.innerHTML = `
       <span id="status-text">未连接</span>
     </div>
     <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
+    <button id="memory-open" type="button" aria-label="记忆" title="记忆" aria-haspopup="dialog" aria-expanded="false"></button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
-      <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span>记忆</span></button>
-      <hr />
         <button id="model-btn" type="button" title="切换模型" aria-label="切换当前模型" hidden aria-haspopup="listbox" aria-expanded="false">
           <span id="model-mark" class="model-mark" hidden></span>
           <span>当前模型</span>
@@ -256,7 +255,7 @@ app.innerHTML = `
     <input type="file" id="file-input" accept="image/*" multiple hidden />
     <select id="marginalia-mode" aria-label="边注模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
     <div id="task-bar-root"></div>
-    <div id="page-pill" class="morphing-page-pill pressable" title="当前活动标签页（点击展开检查面板）">
+    <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
       <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
       <i class="tab-live-dot"></i>
@@ -288,7 +287,6 @@ app.innerHTML = `
 function applyHostFeatures(features: { memory: boolean } | undefined): void {
   const memory = features?.memory ?? true;
   document.getElementById("memory-open")!.hidden = !memory;
-  document.querySelector<HTMLElement>("#header-menu hr")!.hidden = !memory;
 }
 
 // 原生 popover 负责外部点击和 Escape；各入口复用已有行为。
@@ -335,7 +333,7 @@ const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
 installChromeQuiet({
   input: inputEl,
   messages: messagesEl,
-  faded: () => ["#conversation-switcher", "#conversation-new", "#header-more", "#page-pill", "#attach-btn"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
+  faded: () => ["#conversation-switcher", "#conversation-new", "#memory-open", "#header-more", "#page-pill", "#attach-btn"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
   hoverZone: "#topbar:hover, #composer-bar:hover, #page-pill:hover",
   menuOpen: () => !!document.querySelector("#header-menu:popover-open") || ["conversation-menu", "attach-menu", "memory-drawer"].some(id => document.getElementById(id)?.hidden === false),
 });
@@ -1649,7 +1647,7 @@ function closeMemoryDrawer(): void {
   memoryEdit = null;
   memoryForget = null;
   memoryInspection = null;
-  headerMore.focus();
+  memoryOpen.focus();
 }
 
 memoryOpen.onclick = () => memoryDrawer.hidden ? openMemoryDrawer() : closeMemoryDrawer();
@@ -2314,6 +2312,45 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   return div;
 }
 
+/** chip C：这一轮带给助手的页面和选段，只读地跟在用户消息下面。消息已发出，所以不给「×」。 */
+function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void {
+  const next = bubble.nextElementSibling;
+  const row = next instanceof HTMLElement && next.matches(".ctx-chips") ? next : document.createElement("div");
+  row.className = "ctx-chips";
+  row.setAttribute("aria-label", "这一轮带给助手的内容");
+  const chips: HTMLElement[] = [];
+  const host = hostOf(context.url);
+
+  if (context.title || host) {
+    const glyph = siteGlyph(context.url, host);
+    glyph.className = "cg";
+    chips.push(ctxChip(glyph, context.title || host, [context.title, context.url].filter(Boolean).join("\n")));
+  }
+
+  if (context.selection) {
+    const glyph = document.createElement("span");
+    glyph.className = "cg";
+    glyph.append(icon(TextQuote));
+    chips.push(ctxChip(glyph, `「${clipTitle(context.selection, 18)}」`, context.selection));
+  }
+
+  row.replaceChildren(...chips);
+
+  if (chips.length && row !== next) bubble.after(row);
+}
+
+function ctxChip(glyph: HTMLElement, label: string, title: string): HTMLElement {
+  const chip = document.createElement("span");
+  chip.className = "ctx-chip";
+  chip.title = title;
+  const text = document.createElement("span");
+  text.className = "cl";
+  text.textContent = label;
+  chip.append(glyph, text);
+
+  return chip;
+}
+
 function appendToMessages(node: HTMLElement): void {
   const resumeRoot = document.getElementById("resume-entry-root");
 
@@ -2418,18 +2455,7 @@ function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
   if (floatingUsedLine === line) floatingUsedLine = null;
   line.answer = answer;
   usedLineByAnswer.set(answer, line);
-  // 回执改版：记忆和读过的网页一起收在回答下面的「来源」里，正文里不再夹「用了 N 条记忆」。
-  const slot = answerPanelSection(answer, "memory");
-
-  if (slot) {
-    line.open = true;
-    slot.replaceChildren(line.el);
-    renderUsedLine(line);
-    refreshAnswerPanel(answer);
-
-    return;
-  }
-
+  // #56 D + X1：「用了 N 条记忆 ›」跟在首句后面，点开在首段下面撑出小条；「来源」面板只放网页。
   const first = answer.firstElementChild;
   let head: HTMLElement;
 
@@ -2468,7 +2494,9 @@ function renderUsedLine(line: MemoryUsedLine): void {
 
   const list = document.createElement("ul");
   list.className = "memory-used-list";
-  list.hidden = !line.open;
+  // 放进回答后由外层按 data-open 弹簧撑开（styles.css），列表本身常在，展开收起不重建节点。
+  list.hidden = !line.open && !line.answer;
+  line.el.dataset.open = String(line.open);
   const items = Array.from(line.items.values());
   const shown = line.showAll ? items : items.slice(0, USED_VISIBLE);
 
@@ -3169,7 +3197,7 @@ function finishRun(): void {
 }
 
 /**
- * 过程行放在这一轮用户消息（和「收到」这类确认语）之后、回答之前：先看到做了什么，再看结论。
+ * 过程行放在这一轮用户消息（和它的 chip、「收到」这类确认语）之后、回答之前：先看到做了什么，再看结论。
  * 回答可能在过程块创建前就已开始渲染，所以结束时按位置规则摆放，而不是依赖事件先后。
  */
 function placeProcessBeforeAnswer(root: HTMLElement): void {
@@ -3180,7 +3208,8 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   if (!anchor) return;
   let next = anchor.nextElementSibling;
 
-  while (next instanceof HTMLElement && next !== root && next.dataset.deliveryKind === "ack") next = next.nextElementSibling;
+  // chip 跟着用户消息（chip C），「收到」这类确认语也留在前面。
+  while (next instanceof HTMLElement && next !== root && (next.dataset.deliveryKind === "ack" || next.classList.contains("ctx-chips"))) next = next.nextElementSibling;
 
   if (next && next !== root) messagesEl.insertBefore(root, next);
 }
@@ -4354,6 +4383,15 @@ function handleBgMessage(envelope: BgToPanel): void {
     return;
   }
 
+  if (envelope.kind === "turn_context") {
+    if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
+    const bubble = userBubbles.get(envelope.seq);
+
+    if (bubble) renderTurnContext(bubble, envelope.context);
+
+    return;
+  }
+
   if (envelope.kind === "delivery") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
     handleDeliveryReceipt(envelope.seq, envelope.ok, envelope.original);
@@ -4462,6 +4500,8 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         const bubble = addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
+
+        if (entry.item.context) renderTurnContext(bubble, entry.item.context);
 
         if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }

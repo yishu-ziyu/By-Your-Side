@@ -403,7 +403,8 @@ html, body {
 .island-pulse-dot.on { background: var(--apple-green); }
 .island-pulse-dot.retry { background: var(--apple-orange); }
 
-#header-more, #conversation-new {
+/* 顶栏 B：新会话、记忆两枚灰图标常驻，其余收进 ⋯。 */
+#header-more, #conversation-new, #memory-open {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -413,12 +414,14 @@ html, body {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   cursor: pointer;
-  transition: transform var(--m-quick) var(--e-swift);
+  transition: transform var(--m-quick) var(--e-swift), color var(--m-quick) var(--e-swift);
 }
-#header-more:active, #conversation-new:active:not(:disabled) { transform: scale(.95); }
-#header-more:focus-visible, #header-menu button:focus-visible {
+#header-more svg, #conversation-new svg, #memory-open svg { width: 15px; height: 15px; stroke-width: 1.8; }
+#memory-open[hidden] { display: none; }
+#header-more:active, #conversation-new:active:not(:disabled), #memory-open:active { transform: scale(.95); }
+#header-more:focus-visible, #memory-open:focus-visible, #header-menu button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -470,12 +473,13 @@ html, body {
 #header-menu [hidden] { display: none; }
 
 @media (hover: hover) and (pointer: fine) {
-  #header-more:hover, #header-menu button:hover { background: var(--content-subtle-hover); }
+  #header-more:hover, #memory-open:hover, #header-menu button:hover { background: var(--content-subtle-hover); }
+  #header-more:hover, #memory-open:hover, #conversation-new:hover:not(:disabled) { color: var(--text-primary); }
 }
 @media (prefers-reduced-motion: reduce) {
   #header-menu { transform: none; transition-duration: var(--m-quick); }
   @starting-style { #header-menu:popover-open { transform: none; } }
-  #header-more:active, #header-menu button:active, #conversation-new:active:not(:disabled) { transform: none; }
+  #header-more:active, #memory-open:active, #header-menu button:active, #conversation-new:active:not(:disabled) { transform: none; }
 }
 
 /* ── 模型选择器（输入区芯片 + 弹簧生长菜单） ─────────────────────── */
@@ -2266,6 +2270,8 @@ details.run-steps.done .chip.error { background: transparent; }
 
 #conversation-switcher { display:flex; align-items:center; gap:7px; }
 #conversation-switcher .conversation-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* 顶栏 B：任务名用正文色，旁边两枚图标更淡，一眼分清「在哪」和「能做什么」。 */
+#conversation-switcher .conversation-title { color:var(--text-primary); font-weight:500; }
 /* lucide 的 createElement 不带 .lucide 类名，按元素选中图标，否则是默认的 24px 粗箭头。 */
 #conversation-switcher svg, #model-btn svg { flex-shrink:0; width:12px; height:12px; stroke-width:1.75; color:var(--text-tertiary); }
 
@@ -2685,16 +2691,21 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 
 /* 原生 details 保留键盘语义；内容包裹层允许自然高度折叠。 */
 @supports selector(details::details-content) {
+  /* 过程行 A：打开走弹簧（stiffness 420 / damping 34，约 390ms），收起 180ms。曲线由弹簧方程采样成 linear()，不引入动效库。 */
   details.run-steps::details-content {
     display: grid;
     grid-template-rows: 0fr;
     content-visibility: hidden;
-    transition: grid-template-rows 250ms var(--e-swift), content-visibility 250ms allow-discrete;
+    transition: grid-template-rows 180ms cubic-bezier(.4, 0, .2, 1), content-visibility 180ms allow-discrete;
   }
-  details.run-steps[open]::details-content { grid-template-rows: 1fr; content-visibility: visible; }
+  details.run-steps[open]::details-content {
+    grid-template-rows: 1fr;
+    content-visibility: visible;
+    transition: grid-template-rows 390ms var(--e-spring-run), content-visibility 390ms allow-discrete;
+  }
   .run-reveal { min-height: 0; overflow: hidden; }
   @media (prefers-reduced-motion: reduce) {
-    details.run-steps::details-content { transition: none; }
+    details.run-steps::details-content, details.run-steps[open]::details-content { transition: none; }
   }
 }
 
@@ -2800,6 +2811,8 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 @media(prefers-reduced-motion:reduce) { .marginalia-card { transition:none; } .sonar-pulse { animation:none; } }
 /* 当前页：输入框外上方一行灰字，不占框内位置（#58 B）。 */
 #page-pill { display:flex; margin:0 0 var(--s-1); padding:2px var(--s-3); border:0; background:none; }
+/* 顶栏 B / chip C：这一轮带了哪页改由用户消息下面的 chip 说明，输入框上方不再常驻页面条。 */
+#page-pill[hidden] { display:none; }
 #page-pill:active { transform:none; }
 #composer-menu .composer-menu-label { margin:2px 7px 2px; font:var(--fs-micro)/1.6 var(--font); color:var(--text-tertiary); }
 #composer-menu [data-marginalia] { display:flex; align-items:baseline; gap:6px; }
@@ -3131,3 +3144,48 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 #page-pill .tab-live-dot { display: none; }
 .steer-tag { background: var(--content-subtle); color: var(--text-tertiary); font-weight: 500; }
 .msg.receipt.notice { color: var(--text-tertiary); }
+
+/* ── 侧栏选定版（#58 交接：顶栏 B / chip C / 过程行 A / 记忆展开 A） ── */
+:root {
+  /* 弹簧方程采样：过程行 stiffness 420 / damping 34；记忆 380 / 30。 */
+  --e-spring-run: linear(0, 0.053, 0.171, 0.304, 0.438, 0.562, 0.676, 0.765, 0.835, 0.889, 0.932, 0.96, 0.98, 0.993, 1.001, 1.006, 1.008, 1.008, 1.008, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
+  --e-spring-memory: linear(0, 0.055, 0.176, 0.316, 0.459, 0.59, 0.71, 0.802, 0.874, 0.931, 0.968, 0.993, 1.009, 1.017, 1.021, 1.021, 1.019, 1.016, 1.013, 1.01, 1.008, 1.005, 1.004, 1.002, 1);
+}
+
+/* 过程行 A：一行灰字，不放图标；动词深、对象浅沿用 .act-verb / .act-object。 */
+details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-icon { display: none; }
+
+/* chip C：这一轮带了什么。描边胶囊，右对齐贴在用户消息下面，只读。 */
+.ctx-chips { display: flex; flex-wrap: wrap; align-self: flex-end; justify-content: flex-end; gap: 4px; max-width: 90%; min-width: 0; margin-top: calc(var(--gap-turn) * -1 + 6px); }
+.ctx-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 22px; padding: 0 7px; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1px var(--content-border); color: var(--text-tertiary); font-size: var(--fs-meta); line-height: 22px; white-space: nowrap; }
+.ctx-chip .cg { display: inline-grid; flex: none; place-items: center; width: 12px; height: 12px; overflow: hidden; border-radius: 3px; font-size: 9px; color: var(--text-tertiary); }
+.ctx-chip .cg img, .ctx-chip .cg svg { width: 12px; height: 12px; }
+.ctx-chip .cg svg { stroke-width: 1.9; }
+.ctx-chip .cl { min-width: 0; max-width: 22em; overflow: hidden; text-overflow: ellipsis; }
+
+/* 记忆 D + X1：句尾灰字淡入，点开在首段下面弹簧撑开小条（Dia 密度：14px 图标 + 12px 灰字）。 */
+.msg.assistant .memory-used-toggle { animation: citePop 300ms var(--e-swift) both; }
+@keyframes citePop { from { opacity: 0; filter: blur(2px); } }
+.msg.assistant .memory-used-line {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  margin: 0;
+  transition: grid-template-rows 160ms cubic-bezier(.4, 0, .2, 1), margin 160ms cubic-bezier(.4, 0, .2, 1), visibility 160ms allow-discrete;
+}
+.msg.assistant .memory-used-line[data-open=true] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  margin-bottom: 12px;
+  transition: grid-template-rows 420ms var(--e-spring-memory), margin 420ms var(--e-spring-memory), visibility 0ms;
+}
+.msg.assistant.markdown :is(p, h1, h2, h3, h4, h5, h6):has(+ .memory-used-line[data-open=true]) { margin-bottom: 6px; }
+.msg.assistant .memory-used-line > .memory-used-list { min-height: 0; overflow: hidden; margin: 0; display: flex; flex-direction: column; gap: 5px; }
+.msg.assistant.markdown .memory-used-line .memory-used-item { min-height: 16px; column-gap: 7px; color: var(--text-tertiary); font-size: 12px; line-height: 1.35; animation: none; }
+.msg.assistant .memory-used-line .memory-used-glyph { width: 14px; height: 14px; }
+.msg.assistant .memory-used-line .memory-used-glyph svg { width: 9px; height: 9px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .msg.assistant .memory-used-toggle { animation: none; }
+  .msg.assistant .memory-used-line, .msg.assistant .memory-used-line[data-open=true] { transition: none; }
+}
