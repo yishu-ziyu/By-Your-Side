@@ -344,3 +344,41 @@ export function splitAction(text: string): { verb: string; object: string } {
 
   return at < 0 ? { verb: text, object: "" } : { verb: text.slice(0, at).trim(), object: text.slice(at).trim() };
 }
+
+/** 准备动作：看清页面、等它就绪。回执不计数、展开不列；读过的页面在回答下面的「来源」里。 */
+const PREP_TOOLS = new Set(["list_tabs", "get_active_tab", "snapshot", "read_element", "read_elements", "screenshot", "wait_for", "sleep", "scroll", "arm_event", "wait_event", "disarm_event", "judge_browser_action", "clear_marks"]);
+
+export function isPrepTool(name: string, params: Parameters<typeof describeTool>[1]): boolean {
+  if (name === "tabs") return params.action !== "open" && params.action !== "close";
+
+  return PREP_TOOLS.has(name);
+}
+
+/** 回执与步骤前的图标种类。 */
+export type ActionKind = "open" | "fill" | "click" | "other";
+
+export function actionKind(name: string, params: Parameters<typeof describeTool>[1]): ActionKind {
+  if (name === "navigate" || name === "open_tab" || (name === "tabs" && params.action === "open")) return "open";
+
+  if (name === "fill" || name === "type_text" || name === "page_operation" || name === "upload_file") return "fill";
+
+  if (name === "click" || name === "double_click" || name === "press_key" || name === "drag") return "click";
+
+  return "other";
+}
+
+/** 只做了一件事时，回执就写这件事：「打开了 whirl.chat」「点了「查询车票」」。 */
+export function pastAction(name: string, params: Parameters<typeof describeTool>[1]): string {
+  if (actionKind(name, params) === "open") {
+    const host = hostOf(params.url);
+
+    return host ? `打开了 ${host.replace(/^www\./, "")}` : "打开了一个网页";
+  }
+
+  const words = CURSOR_VERBS.get(name);
+  const label = str(params.label);
+
+  if (words && label) return `${words.verb}了「${clip(label)}」`;
+
+  return describeTool(name, params).full;
+}

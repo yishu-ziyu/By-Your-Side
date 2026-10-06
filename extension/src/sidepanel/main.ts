@@ -13,7 +13,7 @@ import { createOrb, type OrbHandle } from "./orb.js";
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
 import { renderMarkdownHtml } from "./markdown.js";
-import { attachAnswerActions as attachCopyActions } from "./answer-actions.js";
+import { attachAnswerActions as attachCopyActions, answerPanelSection, refreshAnswerPanel, setAnswerTime } from "./answer-actions.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
@@ -23,7 +23,7 @@ import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
-import { ChevronDown, ChevronRight, ArrowDown } from "lucide";
+import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText } from "lucide";
 import {
   StepChain,
   chipState,
@@ -35,6 +35,10 @@ import {
   spokenDuration,
   loaderSubtitle,
   splitAction,
+  isPrepTool,
+  actionKind,
+  pastAction,
+  type ActionKind,
   isLiveViewportPinned,
   liveViewportOverflows,
 } from "./steps.js";
@@ -93,6 +97,7 @@ function attachAnswerActions(answer: HTMLElement): void {
   attachCopyActions(answer);
   adoptUsedLine(answer);
   placeTaskCardAfter(answer);
+  syncAnswerTime(answer);
   const source = answerSources.get(answer);
 
   if (source) void source.then(context => attachSourceCitations(answer, context));
@@ -109,6 +114,17 @@ function placeTaskCardAfter(answer: HTMLElement): void {
   }
 
   answer.after(card);
+}
+
+/** 这一轮过程行的耗时挪到回答下面那一排（回执只说做了什么）。只读回合不留过程行，也就不写耗时。 */
+function syncAnswerTime(answer: HTMLElement): void {
+  for (let node = answer.previousElementSibling; node && !node.matches(".msg.user"); node = node.previousElementSibling) {
+    if (node.matches("details.run-steps.done")) {
+      setAnswerTime(answer, node.querySelector(".run-time")?.textContent ?? "");
+
+      return;
+    }
+  }
 }
 
 /** #49：本轮读过的页面 → 回答出处。新记录用独立的 sources，旧记录退回事实链里的 sources。 */
@@ -1998,6 +2014,20 @@ interface RunHost {
   /** 标题上次换字的时刻与排队中的下一句：每句至少停 RUN_TITLE_HOLD_MS，免得一闪而过。 */
   titleAt: number;
   titleTimer: number;
+  /** 标题前的动作图标：跟着当前动作换，收尾后是那一件事或「多步」。 */
+  actIcon: HTMLElement;
+}
+
+const ACTION_ICONS = { open: Globe, fill: PenLine, click: MousePointerClick, other: Dot, read: FileText, many: List, think: Brain } as const;
+
+type IconKind = ActionKind | "read" | "many" | "think";
+
+function setActionIcon(box: HTMLElement, kind: IconKind): void {
+  if (box.dataset.kind === kind) return;
+  box.dataset.kind = kind;
+  const graphic = icon(ACTION_ICONS[kind]);
+  graphic.setAttribute("aria-hidden", "true");
+  box.replaceChildren(graphic);
 }
 
 const RUN_TITLE_HOLD_MS = 1100;
@@ -2331,6 +2361,17 @@ function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
   if (floatingUsedLine === line) floatingUsedLine = null;
   line.answer = answer;
   usedLineByAnswer.set(answer, line);
+  // 回执改版：记忆和读过的网页一起收在回答下面的「来源」里，正文里不再夹「用了 N 条记忆」。
+  const slot = answerPanelSection(answer, "memory");
+
+  if (slot) {
+    line.open = true;
+    slot.replaceChildren(line.el);
+    renderUsedLine(line);
+    refreshAnswerPanel(answer);
+
+    return;
+  }
 
   const first = answer.firstElementChild;
   let head: HTMLElement;
@@ -2749,6 +2790,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
   orbMark.setAttribute("role", "img");
   // 过程行不放光球（#58 C）：光球只属于起始区和语音。orb 对象仍跟踪状态，不挂进页面就不画帧。
   iconBox.append(orbMark);
+  const actIcon = document.createElement("span");
+  actIcon.className = "run-act-icon";
+  setActionIcon(actIcon, "think");
   const title = document.createElement("span");
   title.className = "run-title";
   paintAction(title, `正在${loaderSubtitle(null)}`);
@@ -2759,7 +2803,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const chevron = document.createElement("span");
   chevron.className = "run-chevron";
   chevron.appendChild(icon(ChevronRight));
-  summary.append(iconBox, title, chainEl, timeEl, chevron);
+  summary.append(iconBox, actIcon, title, chainEl, timeEl, chevron);
   const body = document.createElement("div");
   body.className = "run-body";
   runBodyPinned = true;
@@ -2797,6 +2841,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     changedPage: false,
     titleAt: 0,
     titleTimer: 0,
+    actIcon,
   };
 
   return currentRun;
@@ -3042,15 +3087,24 @@ function finishRun(): void {
 
   if (title) {
     const outcome = run.orbActivity.state();
-    const steps = run.body.querySelectorAll(".chip").length;
-    setRunTitle(run, hasResumeReceipt && steps === 0 && outcome !== "failed" && outcome !== "stopped"
+    // 准备动作（定位当前页、读页面结构）不算一件事。
+    const done = Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep)"));
+    const ended = outcome === "failed" || outcome === "stopped" ? outcome : "completed";
+    const only = done.length === 1 && ended === "completed" ? done[0] : null;
+    // SAFETY: data-kind 由 onToolStart 写入，取值就是 IconKind。
+    setActionIcon(run.actIcon, only ? (only.dataset.kind as IconKind) : "many");
+    setRunTitle(run, hasResumeReceipt && done.length === 0 && ended === "completed"
       ? "恢复记录"
-      : finishedRunTitle(steps, outcome === "failed" || outcome === "stopped" ? outcome : "completed"), true);
+      : only?.dataset.past ?? finishedRunTitle(done.length, ended), true);
   }
 
   run.timeEl.textContent = spokenDuration(run.start, eventTime()) ?? "";
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
+
+  for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
+    if (node instanceof HTMLElement && node.matches(".msg.assistant")) syncAnswerTime(node);
+  }
 
   scrollToEnd();
 }
@@ -3341,7 +3395,10 @@ const BOOKKEEPING_TOOLS = new Set(["send_user_message"]);
 /** 用户能在页面上看到后果的动作；滚动、悬停、事件监听只是为了读页。 */
 const PAGE_VIEWING_TOOLS = new Set(["scroll", "hover", "arm_event", "wait_event", "disarm_event"]);
 
-function changesPage(name: string): boolean {
+function changesPage(name: string, tabsAction: string | undefined): boolean {
+  // 开、关标签页也是用户看得见的后果；tabs 的其余动作只是查看。
+  if (name === "tabs") return tabsAction === "open" || tabsAction === "close";
+
   return isWriteTool(name) && !PAGE_VIEWING_TOOLS.has(name);
 }
 
@@ -3370,13 +3427,21 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
   syncRunOrb(run);
 
-  if (changesPage(ev.name)) run.changedPage = true;
+  if (changesPage(ev.name, typeof ev.params.action === "string" ? ev.params.action : undefined)) run.changedPage = true;
 
-  if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`);
+  const prep = isPrepTool(ev.name, ev.params);
+  const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
+
+  if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
+    setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`);
+    setActionIcon(run.actIcon, kind);
+  }
 
   const chip = document.createElement("button");
   chip.type = "button";
-  chip.className = "chip";
+  chip.className = prep ? "chip prep" : "chip";
+  chip.dataset.kind = kind;
+  chip.dataset.past = pastAction(ev.name, ev.params);
   chip.setAttribute("aria-expanded", "false");
 
   // A：正在跑的那个 chip 才有蓝边和底色；历史回放不进入运行态
@@ -3385,6 +3450,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   dot.className = `chip-dot ${chipState(false, false)}`;
   const iconBox = document.createElement("span");
   iconBox.className = "chip-icon";
+  setActionIcon(iconBox, kind);
   // 工具在跑时用光球（solving = 色带归位）；跑完定格在同一颗球上，不换成别的图标
   const chipOrb = createOrb("solving", ORB_BOX_CHIP);
 

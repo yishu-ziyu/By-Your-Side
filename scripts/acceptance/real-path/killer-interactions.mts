@@ -104,11 +104,11 @@ try {
   await rp.cdp.send('Target.closeTarget',{targetId:(await rp.targets()).find(t=>t.url.endsWith('/settings.html'))!.targetId});
   await rp.click(panel,'#input');await rp.typeText(panel,'来源验收');await rp.pressEnter(panel);
   await until(async()=>await rp.evaluate(panel,'!!document.querySelector(".answer-actions")'),30000,'answer');await sleep(500);
-  const citations=await rp.evaluate(panel,'Array.from(document.querySelectorAll(".citation-btn")).map(b=>b.textContent)');
+  const citations=await rp.evaluate(panel,'Array.from(document.querySelectorAll(".num-cite")).map(b=>b.textContent)');
   check('有据数字生成引用、未知数字不生成',citations.length===2&&citations.some((s:string)=>s.includes('62.4%'))&&!citations.some((s:string)=>s.includes('99.99%')),citations);
 
   if(citations.length){
-    await rp.evaluate(work,'scrollTo(0,1500)');await rp.click(panel,'.citation-btn');await sleep(400);
+    await rp.evaluate(work,'scrollTo(0,1500)');await rp.click(panel,'.num-cite');await sleep(400);
     const target=await rp.evaluate(work,'document.querySelector(".bys-sonar-active")?.textContent');
     check('点击定位真实数据行',!!target?.includes('62.4%'),target);
     await rp.screenshot(work,join(out,'sonar.png'));await sleep(1000);
@@ -142,7 +142,7 @@ try {
   await rp.evaluate(work,'document.querySelector("table tr td:last-child").textContent="162.4%"');
   const partial=await rp.evaluate(panel,`(async()=>{const identity=await chrome.runtime.sendMessage({type:'PINPOINT_DOM_TARGET',action:'identity',tabId:${tabId},url:${JSON.stringify(origin+'/')}});return chrome.runtime.sendMessage({type:'PINPOINT_DOM_TARGET',action:'resolve',query:'62.4%',tabId:${tabId},...identity});})()`);
   check('不把62.4%误匹配到162.4%',partial.ok===false,partial);
-  await rp.click(panel,'.citation-btn');await sleep(200);
+  await rp.click(panel,'.num-cite');await sleep(200);
   check('原文改写后旧引用拒绝定位',await rp.evaluate(work,'!document.querySelector(".bys-sonar-active")'),null);
   await rp.evaluate(work,'document.querySelector("table tr td:last-child").textContent="62.4%"');
   await rp.evaluate(work,'scrollTo(0,0)');await sleep(300);
@@ -199,9 +199,9 @@ try {
 
   await rp.cdp.send('Page.navigate',{url:origin+'/replacement'},work);
   await until(async()=>await rp.evaluate(work,'!!document.querySelector("[data-sideagent-ask]")'),10000,'new document');
-  await rp.evaluate(panel,`document.querySelector('.citation-btn')?.scrollIntoView({block:'center'})`);
-  await rp.click(panel,'.citation-btn');await sleep(200);
-  const old=await rp.evaluate(panel,`!!document.querySelector('.citation-row [role=status]')`);
+  await rp.evaluate(panel,`document.querySelector('.num-cite')?.scrollIntoView({block:'center'})`);
+  await rp.click(panel,'.num-cite');await sleep(200);
+  const old=await rp.evaluate(panel,`!!document.querySelector('.source-toast')`);
   check('导航后不把旧回答绑定到新页',old,null);
 } finally {
   await writeFile(join(out,'result.json'),JSON.stringify({checks,notCovered:['操作系统跨窗口手感','供应商模型引用正确率'],modelRequests:model.requests},null,2));

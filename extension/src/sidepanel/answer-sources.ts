@@ -1,5 +1,6 @@
 /**
- * #49 回答出处：回答前一行安静的署名「读了 a、b 等 N 个网站 ⌄」，展开每个来源一行；正文里引到的已读页面旁加数字角标。
+ * #49 回答出处：读过的页面列在回答下面「来源」面板里，每个来源一行；正文里引到的已读页面旁加站点小胶囊
+ * （回执改版，docs/evals/20261006-answer-receipt.md；原来是回答前一行「读了 … ⌄」加数字角标）。
  * 点开出处 → 主窗口切到那一页（已开着就复用）、尽量定位并高亮段落。输入框旁的「当前页」标签随之换成这一页，不另挂第二个。
  *
  * 诚实边界（与 delivery-facts-view 一致）：
@@ -10,7 +11,8 @@
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
 import { sourceLabel } from "./delivery-facts-view.js";
-import { captureCitationContext, citationValues } from "./sonar-citations.js";
+import { captureCitationContext, citationValues, toast } from "./sonar-citations.js";
+import { answerPanelSection, refreshAnswerPanel } from "./answer-actions.js";
 
 /** 同一页面：忽略锚点和末尾斜杠，其余（含查询串）都要一致。 */
 function pageKey(url: string): string | null {
@@ -21,16 +23,6 @@ function pageKey(url: string): string | null {
 
     return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
   } catch { return null; }
-}
-
-function toast(text: string): void {
-  document.querySelector(".source-toast")?.remove();
-  const note = document.createElement("div");
-  note.className = "source-toast";
-  note.setAttribute("role", "status");
-  note.textContent = text;
-  document.body.append(note);
-  setTimeout(() => note.remove(), 2400);
 }
 
 /** 已开着这一页就切过去（优先侧栏所在窗口），否则在当前标签旁新开，不覆盖用户正在看的页面。 */
@@ -138,6 +130,7 @@ function claimOf(link: HTMLElement): string {
  */
 export function attachAnswerSources(answer: HTMLElement, sources: readonly UserDeliverySourceRef[] | undefined): void {
   answer.querySelectorAll(".answer-sources,.source-mark").forEach(node => node.remove());
+  refreshAnswerPanel(answer);
 
   if (!sources?.length) return;
   const keyed = new Map<string, { source: UserDeliverySourceRef; label: string; host: string; index: number }>();
@@ -149,15 +142,8 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
   }
 
   if (!keyed.size) return;
-  // 宿主最多记 USER_DELIVERY_SOURCE_MAX 条，记满时实际可能更多：只说「至少」。
-  const capped = sources.length >= USER_DELIVERY_SOURCE_MAX;
-  const hosts = [...new Set([...keyed.values()].map(entry => entry.host))];
-  const named = hosts.slice(0, 2).join("、");
-  const head = document.createElement("details");
-  head.className = "answer-sources";
-  const summary = document.createElement("summary");
-  summary.textContent = hosts.length > 2 || capped ? `读了 ${named} 等${capped ? "至少 " : " "}${hosts.length} 个网站` : `读了 ${named}`;
   const list = document.createElement("ol");
+  list.className = "answer-sources";
 
   const untitled: Array<{ key: string; text: HTMLElement; where: HTMLElement }> = [];
 
@@ -191,8 +177,17 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     list.append(item);
   }
 
-  head.append(summary, list);
-  answer.prepend(head);
+  // 宿主最多记 USER_DELIVERY_SOURCE_MAX 条，记满时实际可能更多：面板末尾说一句。
+  if (sources.length >= USER_DELIVERY_SOURCE_MAX) {
+    const more = document.createElement("li");
+    more.className = "answer-sources-capped";
+    more.textContent = "可能还读过别的页面，这里最多列这么多";
+    list.append(more);
+  }
+
+  const slot = answerPanelSection(answer, "sources");
+  slot?.replaceChildren(list);
+  refreshAnswerPanel(answer);
 
   // 用批量脚本读的页面不带标题；这些页面多半还开着，标签页知道标题。
   if (untitled.length && chrome.tabs?.query) {
@@ -217,7 +212,14 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     const mark = document.createElement("button");
     mark.type = "button";
     mark.className = "source-mark";
-    mark.textContent = String(entry.index);
+    const square = document.createElement("span");
+    square.className = "answer-source-glyph";
+    square.textContent = entry.host.charAt(0).toUpperCase();
+    mark.append(square);
+
+    // 链接文字已经是站名时只留方块，不把站名写两遍。
+    if ((link.textContent ?? "").includes(entry.host)) mark.classList.add("glyph-only");
+    else mark.append(entry.host);
     mark.title = `打开出处并定位：${entry.label}`;
     mark.setAttribute("aria-label", `打开出处 ${entry.index}：${entry.label}`);
     mark.onclick = () => void openAnswerSource(entry.source, claimOf(link));

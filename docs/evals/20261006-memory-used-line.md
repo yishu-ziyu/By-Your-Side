@@ -59,3 +59,7 @@
 - 不做：首句「因为你之前说过……」需要改提示词并用真实模型实测，留待下一步。
 
 证据：`npx tsx scripts/acceptance/real-path/memory-used-line.mts --headless --scripted` 16/16 通过；截图 R2-expanded、R4-forgotten 已人工看过；`npm run test:unit` 255 个文件、2418 项通过；`npm run typecheck`、`npm run build` 通过。
+
+## 修订：回执改版（2026-10-06）
+
+- R1 的位置被 [回执改版](20261006-answer-receipt.md) 取代：记忆不再以「用了 N 条记忆 ›」接在首句末尾，而是收在回答下面「来源」面板的「用到的记忆」里；R2–R4 的行为不变，验收脚本按新位置改写。
