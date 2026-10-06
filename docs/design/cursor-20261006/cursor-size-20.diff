@@ -1,0 +1,77 @@
+diff --git a/extension/src/content/cursor.ts b/extension/src/content/cursor.ts
+index 3323748..b0e0887 100644
+--- a/extension/src/content/cursor.ts
++++ b/extension/src/content/cursor.ts
+@@ -196,7 +196,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
+       @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge.on { animation: none; } }
+       .cursor.rest { opacity: .86; }
+       .cursor.rest .label { opacity: 0; }
+-      .cursor.flip .label { left: auto; right: 18px; }
++      .cursor.flip .label { left: auto; right: ${Math.round(CURSOR_SVG_SIZE * 0.51)}px; }
+       .svg-wrap {
+         position: absolute; left: 0; top: 0;
+         transition: transform 130ms ease;
+@@ -211,7 +211,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
+       .cursor path.fill { fill: var(--c); }
+       .cursor path.halo { fill: none; }
+       .label {
+-        position: absolute; left: 22px; top: 24px;
++        position: absolute; left: ${Math.round(CURSOR_SVG_SIZE * 0.63)}px; top: ${Math.round(CURSOR_SVG_SIZE * 0.69)}px;
+         padding: 2px 9px; border-radius: 999px;
+         background: var(--c); color: #fff;
+         font: 600 12px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+diff --git a/extension/src/shared/cursor-label.ts b/extension/src/shared/cursor-label.ts
+index e1abd85..a83f504 100644
+--- a/extension/src/shared/cursor-label.ts
++++ b/extension/src/shared/cursor-label.ts
+@@ -1,11 +1,17 @@
++import { CURSOR_SVG_SIZE } from "./cursor-visual.js";
++
++/** 光标尖到箭头下沿的距离（箭头在 24 格里占 4.7→21.3）；话框与箭头之间留 4px。 */
++const LABEL_DX = Math.round(CURSOR_SVG_SIZE * 16 / 35);
++const LABEL_DY = Math.round(CURSOR_SVG_SIZE * 0.69) + 4;
++
+ /** 光标旁那句话的位置：固定在光标尖右下，靠边才翻到另一侧。 */
+ export function cursorLabelPosition(
+   point: { x: number; y: number }, size: { width: number; height: number },
+   viewport: { width: number; height: number },
+ ) {
+-  // 固定挂在光标尖右下（16, 28），只随光标平移；碰到右边或下边才整体换到另一侧，不在候选位置之间来回跳。
+-  const right = point.x + 16;
+-  const below = point.y + 28;
++  // 固定挂在光标尖右下（35px 时是 16, 28；随光标尺寸等比），只随光标平移；碰到右边或下边才整体换到另一侧，不在候选位置之间来回跳。
++  const right = point.x + LABEL_DX;
++  const below = point.y + LABEL_DY;
+   const x = right + size.width > viewport.width - 8 ? point.x - size.width - 12 : right;
+   const y = below + size.height > viewport.height - 8 ? point.y - size.height - 12 : below;
+ 
+diff --git a/extension/src/shared/cursor-visual.ts b/extension/src/shared/cursor-visual.ts
+index 94593ca..1f16709 100644
+--- a/extension/src/shared/cursor-visual.ts
++++ b/extension/src/shared/cursor-visual.ts
+@@ -2,9 +2,10 @@
+  * 虚拟光标视觉常量（tldraw 协作光标：色填 + 白描边 + 深色外晕 + 名牌）。
+  * 44px 是 2026-09-10 为浅色/深色/花哨背景对比加大的结果；
+  * 2026-09-11 用户反馈静止光标压住站点 logo，要求缩小约 20% → 35px。
++ * 2026-10-06 形状不变，再缩到接近系统 / OpenAI 普通箭头的大小 → 20px（从光标尖缩放，落点不变）。
+  */
+ 
+-export const CURSOR_SVG_SIZE = 35;
++export const CURSOR_SVG_SIZE = 20;
+ 
+ export const CURSOR_STROKE_WHITE = 2.2;
+ 
+diff --git a/extension/test/overlay.test.ts b/extension/test/overlay.test.ts
+index b8c537e..a665f2c 100644
+--- a/extension/test/overlay.test.ts
++++ b/extension/test/overlay.test.ts
+@@ -83,7 +83,8 @@ describe("cursor visual / palette", () => {
+   it("光标尺寸锁定用户拍板值，描边仍大于旧版 27px/1.6", () => {
+     // 2026-09-10 为对比加大到 44；2026-09-11 用户反馈左上角压住 logo，要求小约 20%（44 → 35）。
+     // 原为下限断言（≥36），改为锁定该决定，防止以后无意改动。
+-    expect(CURSOR_SVG_SIZE).toBe(35);
++    // 2026-10-06 形状不变，缩到接近系统普通箭头（35 → 20）。
++    expect(CURSOR_SVG_SIZE).toBe(20);
+     expect(CURSOR_STROKE_WHITE).toBeGreaterThanOrEqual(2);
+     expect(CURSOR_STROKE_HALO).toBeGreaterThan(CURSOR_STROKE_WHITE);
+   });

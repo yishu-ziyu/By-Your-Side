@@ -1,0 +1,5396 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BYS 光标尺寸原型 · 18 / 19 / 20 / 当前</title>
+<style>
+  :root { --blue:#0b57d0; --ink:#1f1f1f; --mute:#444746; --line:#e0e3e7; --bg:#f8fafd; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; }
+  body { font: 14px/1.45 Roboto, "Google Sans", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif; color:var(--ink); background:var(--bg); overflow:hidden; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .ic { width:20px; height:20px; display:block; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .icon-btn { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; color:var(--mute); }
+  .icon-btn:hover { background:#e9eef6; }
+  /* 顶栏 */
+  .top { height:64px; display:flex; align-items:center; gap:4px; padding:0 8px 0 8px; }
+  .logo { display:flex; align-items:center; gap:6px; width:228px; padding-left:6px; font: 400 22px/1 "Google Sans", Roboto, sans-serif; color:#444746; }
+  .search { flex:1; max-width:720px; height:48px; border-radius:24px; background:#e9eef6; display:flex; align-items:center; gap:12px; padding:0 8px; color:#444746; font-size:16px; }
+  .top-right { margin-left:auto; display:flex; align-items:center; gap:2px; }
+  .avatar { width:32px; height:32px; border-radius:50%; background:#7a5af5; color:#fff; display:grid; place-items:center; font-weight:500; margin:0 6px 0 8px; }
+  /* 左栏 */
+  .shell { display:flex; height:calc(100% - 64px); }
+  .nav { width:256px; flex:none; padding:8px 16px 0 8px; }
+  .compose { display:inline-flex; align-items:center; gap:12px; height:56px; padding:0 22px 0 16px; border-radius:16px; background:#c2e7ff; font-weight:500; color:#001d35; margin:0 0 16px 0; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .nav a { display:flex; align-items:center; gap:18px; height:32px; padding:0 12px 0 26px; border-radius:0 16px 16px 0; color:#202124; text-decoration:none; font-size:14px; }
+  .nav a.on { background:#d3e3fd; font-weight:700; color:#001d35; }
+  .nav a .n { margin-left:auto; font-size:12px; font-weight:700; }
+  .nav h4 { margin:18px 0 6px 26px; font: 500 16px/1 "Google Sans", Roboto, sans-serif; color:#1f1f1f; }
+  /* 正文卡 */
+  .main { flex:1; background:#fff; border-radius:16px; margin:0 16px 16px 0; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+  .bar { height:48px; display:flex; align-items:center; gap:4px; padding:0 8px; color:var(--mute); }
+  .bar .pg { margin-left:auto; font-size:12px; color:#5e5e5e; padding-right:8px; }
+  .thread { flex:1; overflow:auto; padding:6px 0 24px 0; }
+  .subject { display:flex; align-items:center; gap:10px; padding:4px 24px 14px 72px; font: 400 22px/1.3 "Google Sans", Roboto, sans-serif; }
+  .tag { font-size:12px; background:#ddd; padding:1px 6px; border-radius:4px; color:#444; }
+  .msg { display:flex; gap:16px; padding:6px 24px 0 16px; }
+  .ava { width:40px; height:40px; border-radius:50%; flex:none; display:grid; place-items:center; color:#fff; font-weight:500; background:#e37400; }
+  .msg-h { display:flex; align-items:baseline; gap:6px; }
+  .msg-h b { font-weight:700; font-size:14px; }
+  .msg-h .addr, .to { color:#5e5e5e; font-size:12px; }
+  .msg-h .t { margin-left:auto; font-size:12px; color:#5e5e5e; }
+  .body { margin:18px 0 0; font-size:14px; line-height:1.6; color:#222; max-width:720px; }
+  .body p { margin:0 0 12px; }
+  .actions { display:flex; gap:12px; padding:18px 0 0 72px; }
+  .pill { display:inline-flex; align-items:center; gap:8px; height:40px; padding:0 22px 0 16px; border:1px solid #747775; border-radius:20px; color:#444746; font-weight:500; }
+  .pill:hover { background:#f2f6fc; }
+  /* 回复框 */
+  .reply { display:none; margin:16px 24px 0 72px; border-radius:16px; box-shadow:0 1px 2px rgba(60,64,67,.3), 0 2px 6px 2px rgba(60,64,67,.15); background:#fff; position:relative; }
+  .reply.on { display:block; }
+  .reply-av { position:absolute; left:-56px; top:2px; width:40px; height:40px; border-radius:50%; background:#7a5af5; color:#fff; display:grid; place-items:center; font-weight:500; }
+  .reply-h { display:flex; align-items:center; gap:6px; padding:12px 16px 4px; color:#444746; font-size:14px; }
+  .editor { min-height:120px; padding:10px 16px 8px; outline:none; font-size:14px; line-height:1.6; color:#222; white-space:pre-wrap; }
+  .editor:empty::before { content: ""; }
+  .caret { display:inline-block; width:1px; height:1.15em; background:#1f1f1f; vertical-align:-3px; margin-left:1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  @media (prefers-reduced-motion: reduce) { .caret { animation:none; } }
+  .tools { display:flex; align-items:center; gap:2px; padding:8px 12px 12px 16px; }
+  .send { display:inline-flex; align-items:stretch; height:36px; border-radius:18px; overflow:hidden; background:var(--blue); color:#fff; font-weight:500; margin-right:10px; }
+  .send .s { padding:0 16px 0 22px; display:flex; align-items:center; }
+  .send .more { width:28px; display:grid; place-items:center; border-left:1px solid rgba(255,255,255,.35); }
+  .tools .icon-btn { width:32px; height:32px; }
+  .tools .icon-btn .ic { width:18px; height:18px; }
+  .tools .trash { margin-left:auto; }
+  /* 落点检查十字 */
+  .xhair { position:fixed; width:0; height:0; pointer-events:none; z-index:9; }
+  .xhair::before, .xhair::after { content:""; position:absolute; background:#ff1744; }
+  .xhair::before { left:-9px; top:-.5px; width:18px; height:1px; }
+  .xhair::after { top:-9px; left:-.5px; width:1px; height:18px; }
+  /* 尺寸对照卡 */
+  .refs { position:fixed; left:16px; bottom:20px; z-index:10; background:#fff; border:1px solid #e3e1d9; border-radius:12px; box-shadow:0 6px 24px rgba(20,20,19,.12); padding:12px 14px 10px; font: 12px/1.4 -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif; color:#3d3b35; }
+  .refs h5 { margin:0 0 8px; font-size:12px; font-weight:600; }
+  .refs { width:228px; }
+  .refs .row { display:grid; grid-template-columns:repeat(3, 1fr); row-gap:10px; column-gap:6px; }
+  .refs figure { margin:0; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .refs .g { height:40px; display:flex; align-items:flex-start; padding-top:4px; }
+  .refs figcaption { white-space:nowrap; color:#5f5e58; }
+  .refs figure.pick figcaption { color:#141413; font-weight:600; }
+  .refs .note { margin-top:8px; color:#8a877d; font-size:11px; }
+  /* 变体选择器 */
+  .picker { position:fixed; right:32px; bottom:28px; z-index:11; display:flex; align-items:center; gap:6px; background:#141413; color:#f4f2ea; border-radius:999px; padding:6px 8px 6px 14px; box-shadow:0 8px 28px rgba(0,0,0,.25); font: 13px/1 -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+  .picker .lab { color:#a9a69c; margin-right:4px; }
+  .picker button { color:#f4f2ea; padding:7px 12px; border-radius:999px; }
+  .picker button:hover { background:#2a2925; }
+  .picker button[aria-pressed="true"] { background:#f4f2ea; color:#141413; font-weight:600; }
+  .picker .sep { width:1px; height:18px; background:#3a3934; margin:0 4px; }
+  body.clean .picker, body.clean .refs { display:none; }
+  body.norefs .refs { display:none; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.4M12 16.8v.2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-apps" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></g></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 4 2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-sendi" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z M14 3v5h5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><path d="M4 5h16v4H4zM5 9v10h14V9M10 13h4"/></symbol>
+  <symbol id="i-report" viewBox="0 0 24 24"><path d="M8.5 3h7L21 8.5v7L15.5 21h-7L3 15.5v-7z M12 8v5M12 16v.2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><path d="M4 6h16v12H4z M4 7l8 6 8-6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="12" cy="5.5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="18.5" r="1.6"/></g></symbol>
+  <symbol id="i-reply" viewBox="0 0 24 24"><path d="M10 8 5 12.5l5 4.5M5.5 12.5H14a5 5 0 0 1 5 5V19"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 24 24"><path d="m14 8 5 4.5-5 4.5M18.5 12.5H10a5 5 0 0 0-5 5V19"/></symbol>
+  <symbol id="i-font" viewBox="0 0 24 24"><path d="M6 19 11.5 5h1L18 19M8.2 14h7.6"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5 12.2 19.3a5 5 0 0 1-7.1-7.1l8.1-8.1a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-emoji" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4 4 0 0 0 7 0M9.5 10v.2M14.5 10v.2"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-4 4 3 3-2 4 3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol>
+</svg>
+
+<header class="top">
+  <button class="icon-btn" aria-label="主菜单"><svg class="ic"><use href="#i-menu"/></svg></button>
+  <div class="logo">
+    <svg width="32" height="24" viewBox="0 0 32 24" aria-hidden="true"><path d="M2 22V6.5L16 16 30 6.5V22h-5V11.5L16 17.5 7 11.5V22z" fill="#c5221f" opacity=".0"/><path d="M2 21V5l7 5.2V21H4a2 2 0 0 1-2-2" fill="#4285f4"/><path d="M23 21V10.2L30 5v14a2 2 0 0 1-2 2z" fill="#34a853"/><path d="M23 10.2V3.6l3.6-2.7A2.1 2.1 0 0 1 30 2.6V5z" fill="#fbbc04"/><path d="M9 10.2V3.6l7 5.2 7-5.2v6.6l-7 5.2z" fill="#ea4335"/><path d="M2 5V2.6A2.1 2.1 0 0 1 5.4.9L9 3.6v6.6z" fill="#c5221f"/></svg>
+    Gmail
+  </div>
+  <div class="search"><button class="icon-btn" aria-label="搜索"><svg class="ic"><use href="#i-search"/></svg></button>搜索邮件<button class="icon-btn" style="margin-left:auto" aria-label="搜索选项"><svg class="ic"><use href="#i-tune"/></svg></button></div>
+  <div class="top-right">
+    <button class="icon-btn" aria-label="帮助"><svg class="ic"><use href="#i-help"/></svg></button>
+    <button class="icon-btn" aria-label="设置"><svg class="ic"><use href="#i-gear"/></svg></button>
+    <button class="icon-btn" aria-label="应用"><svg class="ic"><use href="#i-apps"/></svg></button>
+    <div class="avatar">M</div>
+  </div>
+</header>
+<div class="shell">
+  <nav class="nav">
+    <button class="compose"><svg class="ic"><use href="#i-pen"/></svg>写邮件</button>
+    <a class="on"><svg class="ic"><use href="#i-inbox"/></svg>收件箱<span class="n">12</span></a>
+    <a><svg class="ic"><use href="#i-star"/></svg>已加星标</a>
+    <a><svg class="ic"><use href="#i-clock"/></svg>已延后</a>
+    <a><svg class="ic"><use href="#i-sendi"/></svg>已发送</a>
+    <a><svg class="ic"><use href="#i-file"/></svg>草稿<span class="n" style="font-weight:400">2</span></a>
+    <a><svg class="ic"><use href="#i-down"/></svg>更多</a>
+    <h4>标签</h4>
+    <a><svg class="ic"><use href="#i-file"/></svg>工作</a>
+    <a><svg class="ic"><use href="#i-file"/></svg>评审</a>
+  </nav>
+  <main class="main">
+    <div class="bar">
+      <button class="icon-btn" aria-label="返回"><svg class="ic"><use href="#i-back"/></svg></button>
+      <button class="icon-btn" aria-label="归档"><svg class="ic"><use href="#i-archive"/></svg></button>
+      <button class="icon-btn" aria-label="举报垃圾邮件"><svg class="ic"><use href="#i-report"/></svg></button>
+      <button class="icon-btn" aria-label="删除"><svg class="ic"><use href="#i-trash"/></svg></button>
+      <button class="icon-btn" aria-label="标为未读"><svg class="ic"><use href="#i-mail"/></svg></button>
+      <button class="icon-btn" aria-label="更多"><svg class="ic"><use href="#i-more"/></svg></button>
+      <span class="pg">第 3 封，共 48 封</span>
+    </div>
+    <div class="thread">
+      <div class="subject">周四设计评审时间确认 <span class="tag">收件箱 ×</span></div>
+      <div class="msg">
+        <div class="ava">李</div>
+        <div style="flex:1;min-width:0">
+          <div class="msg-h"><b>李雯</b><span class="addr">&lt;liwen@example.com&gt;</span><span class="t">下午 3:42（4 分钟前）</span></div>
+          <div class="to">发送至 我 ▾</div>
+          <div class="body">
+            <p>Mike 你好，</p>
+            <p>周四的设计评审想改到下午 3 点，会议室换成 4F 小会议室。你方便的话回我一下，我好发日历邀请。另外麻烦把侧栏的新截图带上。</p>
+            <p>谢谢！<br>李雯</p>
+          </div>
+        </div>
+      </div>
+      <div class="actions" id="actions">
+        <button class="pill" id="replyBtn" aria-label="回复"><svg class="ic"><use href="#i-reply"/></svg>回复</button>
+        <button class="pill" aria-label="转发"><svg class="ic"><use href="#i-fwd"/></svg>转发</button>
+      </div>
+      <section class="reply" id="reply">
+        <div class="reply-av">M</div>
+        <div class="reply-h"><svg class="ic" style="width:18px;height:18px"><use href="#i-reply"/></svg> 李雯 ▾</div>
+        <div class="editor" id="editor" role="textbox" aria-label="邮件正文" aria-multiline="true"></div>
+        <div class="tools">
+          <span class="send"><span class="s" id="sendBtn" role="button" aria-label="发送">发送</span><span class="more"><svg class="ic" style="width:16px;height:16px"><use href="#i-down"/></svg></span></span>
+          <button class="icon-btn" aria-label="格式选项"><svg class="ic"><use href="#i-font"/></svg></button>
+          <button class="icon-btn" aria-label="附件"><svg class="ic"><use href="#i-clip"/></svg></button>
+          <button class="icon-btn" aria-label="插入链接"><svg class="ic"><use href="#i-link"/></svg></button>
+          <button class="icon-btn" aria-label="表情"><svg class="ic"><use href="#i-emoji"/></svg></button>
+          <button class="icon-btn" aria-label="插入图片"><svg class="ic"><use href="#i-image"/></svg></button>
+          <button class="icon-btn" aria-label="机密模式"><svg class="ic"><use href="#i-lock"/></svg></button>
+          <button class="icon-btn" aria-label="更多选项"><svg class="ic"><use href="#i-more"/></svg></button>
+          <button class="icon-btn trash" aria-label="舍弃草稿"><svg class="ic"><use href="#i-trash"/></svg></button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="refs" id="refs" aria-label="尺寸对照"></div>
+<div class="picker" id="picker" role="toolbar" aria-label="光标尺寸"></div>
+
+<script>
+/* 原型参数：?size=18|19|20|35  ?clean（无选择器/对照卡） ?norefs ?debug（落点十字） ?reduced（模拟减少动态） ?nostart ?stopAt=hover|fill */
+(function () {
+  const q = new URLSearchParams(location.search);
+  const size = Number(q.get("size")) || 20;
+  window.__BYS_PROTO_SIZE = size;
+  window.__BYS_PROTO = { size, q };
+  if (q.has("reduced")) {
+    const mm = window.matchMedia.bind(window);
+    window.matchMedia = (s) => /prefers-reduced-motion:\s*reduce/.test(s) ? Object.assign(mm("all"), { matches: true, media: s }) : mm(s);
+  }
+  // 原型里没有扩展环境：chrome.runtime 只做空实现，什么都不会发出去。
+  window.chrome = window.chrome || {};
+  if (!window.chrome.runtime) window.chrome.runtime = { sendMessage(_m, cb) { cb && cb(undefined); }, getURL: (p) => p, lastError: undefined };
+})();
+</script>
+<script>"use strict";
+(() => {
+  // repo/extension/src/shared/mark-actions.ts
+  function parseMarkActions(raw) {
+    if (!Array.isArray(raw) || raw.length === 0) return void 0;
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const item of raw) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item;
+      if (rec.id !== "confirm" && rec.id !== "cancel") continue;
+      if (typeof rec.label !== "string") continue;
+      const label = rec.label.trim().slice(0, 16);
+      if (!label || seen.has(rec.id)) continue;
+      seen.add(rec.id);
+      out.push({ id: rec.id, label });
+      if (out.length >= 2) break;
+    }
+    if (out.length === 0) return void 0;
+    out.sort((a, b) => (a.id === "confirm" ? 0 : 1) - (b.id === "confirm" ? 0 : 1));
+    return out;
+  }
+  function isMarkActionId(value) {
+    return value === "confirm" || value === "cancel";
+  }
+  var DESTRUCTIVE_ZH = /^(删除|清空|支付|发送|归档)/;
+  var DESTRUCTIVE_EN = /^(delete|remove|pay|send|archive)(\s|$)/i;
+  function isDestructiveLabel(text) {
+    const t = text.trim().replace(/\s+/g, " ");
+    if (!t) return false;
+    if (DESTRUCTIVE_ZH.test(t)) return true;
+    if (DESTRUCTIVE_EN.test(t)) return true;
+    return false;
+  }
+  function confirmLabelForDestructive(text) {
+    const t = text.trim();
+    if (t.startsWith("\u6E05\u7A7A") || /^clear/i.test(t)) return "\u6E05\u7A7A";
+    if (t.startsWith("\u652F\u4ED8") || /^pay/i.test(t)) return "\u652F\u4ED8";
+    if (t.startsWith("\u53D1\u9001") || /^send/i.test(t)) return "\u53D1\u9001";
+    if (t.startsWith("\u5F52\u6863") || /^archive/i.test(t)) return "\u5F52\u6863";
+    if (/^(delete|remove)\b/i.test(t)) return "Delete";
+    return "\u5220\u9664";
+  }
+  function resolveImplicitMarkActions(label, actions) {
+    const parsed = parseMarkActions(actions);
+    if (parsed) return parsed;
+    if (!label) return void 0;
+    const t = label.trim();
+    if (!t) return void 0;
+    if (t.startsWith("\u5F85")) {
+      const actionName = t.slice(1).trim() || "\u786E\u8BA4";
+      return [
+        { id: "confirm", label: actionName.slice(0, 16) },
+        { id: "cancel", label: "\u53D6\u6D88" }
+      ];
+    }
+    if (isDestructiveLabel(t)) {
+      const actionName = confirmLabelForDestructive(t);
+      return [
+        { id: "confirm", label: actionName },
+        { id: "cancel", label: "\u53D6\u6D88" }
+      ];
+    }
+    return void 0;
+  }
+
+  // repo/extension/src/shared/mark-label.ts
+  var MARK_LABEL_SPACE_NEEDED_PX = 34;
+  function markLabelPlacement(elementViewportTop) {
+    return elementViewportTop >= MARK_LABEL_SPACE_NEEDED_PX ? "above" : "below";
+  }
+
+  // repo/shared/cast.ts
+  var LEAD_COLOR = "#2d4a86";
+  var LEAD_NAME = "By Your Side";
+  var CAST = [
+    {
+      key: "kim",
+      name: "Kim",
+      crew: "bcs",
+      color: "#000000",
+      shape: "squircle",
+      expr: 0,
+      pool: [0, 8],
+      mood: "idle",
+      waitLine: "\u5728\u5BF9\u9F50"
+    },
+    {
+      key: "mike",
+      name: "Mike",
+      crew: "bcs",
+      color: "#9a6737",
+      shape: "pebble",
+      expr: 4,
+      pool: [4, 22],
+      mood: "wait",
+      waitLine: "\u8FD8\u6CA1\u5230",
+      kenneyWait: { body: "yellow_body_circle.png", face: "face_b.png" }
+    },
+    {
+      key: "lalo",
+      name: "Lalo",
+      crew: "bcs",
+      color: "#ff6a00",
+      shape: "blob",
+      expr: 2,
+      pool: [2, 11, 17],
+      mood: "play",
+      waitLine: "\u6211\u5148\u770B\u770B"
+    },
+    {
+      key: "gus",
+      name: "Gus",
+      crew: "bcs",
+      color: "#000000",
+      shape: "hex",
+      expr: 14,
+      pool: [14, 0],
+      mood: "idle",
+      waitLine: "\u4E24\u8FB9\u90FD\u5728"
+    },
+    {
+      key: "kima",
+      name: "Kima",
+      crew: "wire",
+      color: "#ff3347",
+      shape: "capsule",
+      expr: 7,
+      pool: [7, 16, 10],
+      mood: "work",
+      waitLine: "\u4E0A\u624B\u4E86"
+    },
+    {
+      key: "omar",
+      name: "Omar",
+      crew: "wire",
+      color: "#8656f6",
+      shape: "triangle",
+      expr: 0,
+      pool: [0, 8],
+      mood: "idle",
+      waitLine: "\u6765\u4E86",
+      kenney: { body: "purple_body_rhombus.png", face: "face_h.png" }
+    },
+    {
+      key: "bunk",
+      name: "Bunk",
+      crew: "wire",
+      color: "#9a6737",
+      shape: "pebble",
+      expr: 11,
+      pool: [11, 2],
+      mood: "idle",
+      waitLine: "\u6210\u4E86"
+    },
+    {
+      key: "lester",
+      name: "Lester",
+      crew: "wire",
+      color: "#ff9800",
+      shape: "squircle",
+      expr: 8,
+      pool: [8, 16, 5],
+      mood: "idle",
+      waitLine: "\u62FC\u4E0A\u4E86"
+    }
+  ];
+  function hash(id) {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = h * 31 + id.charCodeAt(i) >>> 0;
+    return h;
+  }
+  function isLeadId(id) {
+    return !id || id === "main";
+  }
+  function personFor(id) {
+    if (isLeadId(id)) return null;
+    const key = /-cast-([a-z]+)-[a-f0-9]{8}$/.exec(id)?.[1];
+    const person = CAST.find((p) => p.key === key) ?? CAST[hash(id) % CAST.length];
+    return person ?? CAST[0] ?? null;
+  }
+  function displayColor(id) {
+    return personFor(id)?.color ?? LEAD_COLOR;
+  }
+  function displayNameFor(id) {
+    return personFor(id)?.name ?? LEAD_NAME;
+  }
+
+  // repo/extension/src/shared/palette.ts
+  var LEAD_CURSOR_ID = "main";
+  function cursorColor(id) {
+    if (!id || id === LEAD_CURSOR_ID) return LEAD_COLOR;
+    return displayColor(id);
+  }
+
+  // repo/extension/src/shared/grok-original.js
+  var GROKBOT_ORIGINAL = {
+    EXPRESSIONS: [
+      [
+        [
+          [130.36, 45.98],
+          [132.71, 46.19],
+          [134.98, 46.81],
+          [137.11, 47.83],
+          [138.97, 49.28],
+          [140.47, 51.09],
+          [141.68, 53.12],
+          [142.73, 55.23],
+          [143.76, 57.36],
+          [144.78, 59.49],
+          [145.79, 61.62],
+          [146.79, 63.76],
+          [147.76, 65.91],
+          [148.71, 68.07],
+          [149.63, 70.25],
+          [150.52, 72.43],
+          [151.37, 74.63],
+          [151.99, 76.91],
+          [152.1, 79.26],
+          [151.64, 81.57],
+          [150.59, 83.68],
+          [149.04, 85.45],
+          [147.1, 86.78],
+          [144.9, 87.62],
+          [142.56, 87.93],
+          [140.22, 87.71],
+          [137.98, 86.99],
+          [135.93, 85.82],
+          [134.17, 84.24],
+          [132.78, 82.34],
+          [131.69, 80.25],
+          [130.77, 78.08],
+          [129.87, 75.89],
+          [128.94, 73.72],
+          [128, 71.56],
+          [127.03, 69.4],
+          [126.05, 67.26],
+          [125.05, 65.12],
+          [124.03, 62.99],
+          [122.93, 60.9],
+          [121.87, 58.79],
+          [121.03, 56.59],
+          [120.72, 54.26],
+          [121.1, 51.93],
+          [122.15, 49.83],
+          [123.75, 48.1],
+          [125.76, 46.89],
+          [128.01, 46.19]
+        ],
+        [
+          [176.61, 37.08],
+          [178.72, 37.59],
+          [180.7, 38.48],
+          [182.52, 39.65],
+          [184.2, 41.03],
+          [185.71, 42.59],
+          [187.03, 44.31],
+          [188.2, 46.14],
+          [189.26, 48.03],
+          [190.27, 49.96],
+          [191.26, 51.89],
+          [192.23, 53.84],
+          [193.16, 55.8],
+          [194.05, 57.78],
+          [194.92, 59.77],
+          [195.74, 61.78],
+          [196.53, 63.8],
+          [197.27, 65.84],
+          [197.97, 67.9],
+          [198.47, 70.01],
+          [198.63, 72.18],
+          [198.4, 74.33],
+          [197.58, 76.33],
+          [195.95, 77.72],
+          [193.83, 78.08],
+          [191.71, 77.65],
+          [189.76, 76.69],
+          [188.03, 75.38],
+          [186.53, 73.82],
+          [185.28, 72.05],
+          [184.25, 70.13],
+          [183.4, 68.14],
+          [182.63, 66.11],
+          [181.87, 64.07],
+          [181.07, 62.05],
+          [180.25, 60.04],
+          [179.39, 58.05],
+          [178.49, 56.07],
+          [177.57, 54.1],
+          [176.61, 52.15],
+          [175.62, 50.22],
+          [174.59, 48.31],
+          [173.53, 46.41],
+          [172.54, 44.48],
+          [171.86, 42.42],
+          [171.76, 40.26],
+          [172.62, 38.3],
+          [174.45, 37.19]
+        ]
+      ],
+      [
+        [
+          [86.14, 124.79],
+          [89.16, 124.92],
+          [92.06, 125.76],
+          [94.68, 127.27],
+          [96.86, 129.36],
+          [98.48, 131.92],
+          [99.51, 134.76],
+          [100.12, 137.73],
+          [100.56, 140.72],
+          [101.01, 143.72],
+          [101.52, 146.71],
+          [102.06, 149.69],
+          [102.62, 152.67],
+          [103.2, 155.64],
+          [103.81, 158.61],
+          [104.44, 161.57],
+          [105.11, 164.52],
+          [105.81, 167.47],
+          [106.49, 170.42],
+          [106.72, 173.44],
+          [106.01, 176.37],
+          [104.37, 178.9],
+          [102.03, 180.81],
+          [99.26, 181.99],
+          [96.27, 182.46],
+          [93.25, 182.25],
+          [90.34, 181.43],
+          [87.65, 180.04],
+          [85.32, 178.11],
+          [83.51, 175.7],
+          [82.37, 172.9],
+          [81.66, 169.96],
+          [80.98, 167],
+          [80.32, 164.05],
+          [79.69, 161.08],
+          [79.08, 158.12],
+          [78.5, 155.14],
+          [77.94, 152.16],
+          [77.4, 149.18],
+          [76.89, 146.2],
+          [76.4, 143.21],
+          [75.93, 140.21],
+          [75.56, 137.21],
+          [75.7, 134.19],
+          [76.6, 131.3],
+          [78.22, 128.76],
+          [80.47, 126.74],
+          [83.18, 125.4]
+        ],
+        [
+          [147.23, 112.87],
+          [150.24, 113.13],
+          [153.07, 114.19],
+          [155.53, 115.94],
+          [157.46, 118.26],
+          [158.73, 121.01],
+          [159.53, 123.93],
+          [160.21, 126.88],
+          [160.88, 129.84],
+          [161.52, 132.8],
+          [162.15, 135.76],
+          [162.74, 138.73],
+          [163.32, 141.71],
+          [163.87, 144.69],
+          [164.39, 147.67],
+          [164.9, 150.66],
+          [165.39, 153.65],
+          [165.8, 156.65],
+          [165.76, 159.67],
+          [164.98, 162.59],
+          [163.56, 165.26],
+          [161.61, 167.58],
+          [159.23, 169.45],
+          [156.52, 170.77],
+          [153.57, 171.46],
+          [150.55, 171.4],
+          [147.67, 170.52],
+          [145.19, 168.79],
+          [143.45, 166.33],
+          [142.57, 163.44],
+          [142.08, 160.45],
+          [141.61, 157.46],
+          [141.11, 154.47],
+          [140.59, 151.48],
+          [140.04, 148.5],
+          [139.47, 145.53],
+          [138.87, 142.56],
+          [138.25, 139.59],
+          [137.6, 136.63],
+          [136.94, 133.68],
+          [136.25, 130.72],
+          [135.59, 127.77],
+          [135.47, 124.75],
+          [136.07, 121.78],
+          [137.34, 119.04],
+          [139.19, 116.65],
+          [141.53, 114.74],
+          [144.26, 113.44]
+        ]
+      ],
+      [
+        [
+          [104.84, 104.08],
+          [109.39, 104.89],
+          [113.63, 106.73],
+          [117.32, 109.5],
+          [120.25, 113.08],
+          [122.22, 117.25],
+          [123.15, 121.77],
+          [122.92, 126.39],
+          [121.86, 130.89],
+          [120.61, 135.35],
+          [119.37, 139.81],
+          [118.15, 144.27],
+          [116.94, 148.74],
+          [115.74, 153.21],
+          [114.56, 157.69],
+          [113.39, 162.17],
+          [112.24, 166.65],
+          [111.13, 171.15],
+          [110.04, 175.65],
+          [108.89, 180.13],
+          [106.98, 184.33],
+          [103.8, 187.67],
+          [99.75, 189.87],
+          [95.25, 190.93],
+          [90.63, 190.93],
+          [86.11, 189.97],
+          [81.86, 188.16],
+          [78.05, 185.54],
+          [74.89, 182.18],
+          [72.62, 178.16],
+          [71.54, 173.67],
+          [71.94, 169.08],
+          [73.01, 164.57],
+          [74.13, 160.08],
+          [75.26, 155.59],
+          [76.42, 151.11],
+          [77.59, 146.63],
+          [78.77, 142.15],
+          [79.97, 137.68],
+          [81.18, 133.22],
+          [82.41, 128.75],
+          [83.65, 124.29],
+          [84.87, 119.83],
+          [86.33, 115.43],
+          [88.67, 111.46],
+          [91.9, 108.15],
+          [95.83, 105.72],
+          [100.23, 104.35]
+        ],
+        [
+          [174.26, 115.55],
+          [178.59, 116.54],
+          [182.37, 118.86],
+          [185.31, 122.2],
+          [187.23, 126.21],
+          [188.12, 130.57],
+          [188.06, 135.02],
+          [187.52, 139.44],
+          [186.86, 143.85],
+          [186.11, 148.25],
+          [185.25, 152.62],
+          [184.3, 156.98],
+          [183.24, 161.31],
+          [182.07, 165.61],
+          [180.79, 169.88],
+          [179.39, 174.12],
+          [177.89, 178.31],
+          [176.27, 182.47],
+          [174.47, 186.55],
+          [172.17, 190.35],
+          [169.21, 193.68],
+          [165.73, 196.46],
+          [161.84, 198.64],
+          [157.66, 200.16],
+          [153.27, 200.91],
+          [148.83, 200.69],
+          [144.65, 199.19],
+          [141.47, 196.14],
+          [140.18, 191.91],
+          [140.82, 187.53],
+          [142.46, 183.38],
+          [144.16, 179.26],
+          [145.73, 175.09],
+          [147.18, 170.87],
+          [148.51, 166.62],
+          [149.73, 162.33],
+          [150.84, 158.01],
+          [151.84, 153.67],
+          [152.74, 149.3],
+          [153.54, 144.91],
+          [154.24, 140.51],
+          [154.85, 136.1],
+          [155.58, 131.7],
+          [156.93, 127.46],
+          [159.15, 123.6],
+          [162.12, 120.29],
+          [165.73, 117.68],
+          [169.84, 116]
+        ]
+      ],
+      [
+        [
+          [44.72, 103.35],
+          [47.95, 103.93],
+          [51.04, 105.05],
+          [53.93, 106.62],
+          [56.58, 108.57],
+          [58.97, 110.83],
+          [61.09, 113.35],
+          [62.93, 116.07],
+          [64.5, 118.97],
+          [65.79, 121.99],
+          [66.8, 125.13],
+          [67.52, 128.34],
+          [67.94, 131.6],
+          [68.08, 134.89],
+          [67.9, 138.17],
+          [67.4, 141.42],
+          [66.56, 144.6],
+          [65.33, 147.66],
+          [63.71, 150.52],
+          [61.69, 153.11],
+          [59.3, 155.36],
+          [56.54, 157.16],
+          [53.51, 158.42],
+          [50.29, 159.07],
+          [47, 159.09],
+          [43.76, 158.5],
+          [40.67, 157.39],
+          [37.78, 155.82],
+          [35.13, 153.87],
+          [32.75, 151.6],
+          [30.63, 149.09],
+          [28.78, 146.36],
+          [27.21, 143.47],
+          [25.92, 140.44],
+          [24.92, 137.31],
+          [24.2, 134.1],
+          [23.77, 130.84],
+          [23.64, 127.55],
+          [23.81, 124.27],
+          [24.31, 121.01],
+          [25.16, 117.84],
+          [26.38, 114.78],
+          [28, 111.92],
+          [30.02, 109.33],
+          [32.42, 107.08],
+          [35.17, 105.28],
+          [38.21, 104.02],
+          [41.43, 103.37]
+        ],
+        [
+          [114.62, 83.64],
+          [118.31, 83.88],
+          [121.94, 84.6],
+          [125.44, 85.77],
+          [128.77, 87.38],
+          [131.86, 89.4],
+          [134.67, 91.81],
+          [137.13, 94.56],
+          [139.2, 97.62],
+          [140.85, 100.93],
+          [142.05, 104.42],
+          [142.79, 108.05],
+          [143.05, 111.73],
+          [142.83, 115.42],
+          [142.13, 119.05],
+          [140.95, 122.55],
+          [139.34, 125.88],
+          [137.3, 128.96],
+          [134.88, 131.75],
+          [132.11, 134.2],
+          [129.05, 136.27],
+          [125.75, 137.93],
+          [122.25, 139.13],
+          [118.63, 139.86],
+          [114.94, 140.1],
+          [111.25, 139.86],
+          [107.63, 139.14],
+          [104.12, 137.97],
+          [100.8, 136.36],
+          [97.7, 134.34],
+          [94.9, 131.93],
+          [92.44, 129.18],
+          [90.36, 126.12],
+          [88.72, 122.81],
+          [87.51, 119.31],
+          [86.78, 115.69],
+          [86.52, 112.01],
+          [86.74, 108.32],
+          [87.44, 104.69],
+          [88.61, 101.18],
+          [90.23, 97.86],
+          [92.27, 94.78],
+          [94.69, 91.99],
+          [97.45, 89.54],
+          [100.51, 87.47],
+          [103.82, 85.81],
+          [107.31, 84.61],
+          [110.94, 83.88]
+        ]
+      ],
+      [
+        [
+          [90.44, 99.25],
+          [93.11, 99.26],
+          [95.74, 99.79],
+          [98.37, 100.3],
+          [101, 100.82],
+          [103.64, 101.33],
+          [106.27, 101.85],
+          [108.9, 102.37],
+          [111.53, 102.89],
+          [114.16, 103.41],
+          [116.79, 103.94],
+          [119.42, 104.47],
+          [122.06, 105],
+          [124.69, 105.53],
+          [127.32, 106.06],
+          [129.94, 106.6],
+          [132.57, 107.14],
+          [135.2, 107.68],
+          [137.65, 108.73],
+          [139.5, 110.65],
+          [140.44, 113.14],
+          [140.36, 115.81],
+          [139.35, 118.28],
+          [137.48, 120.18],
+          [135, 121.14],
+          [132.32, 121.11],
+          [129.7, 120.56],
+          [127.08, 120],
+          [124.45, 119.46],
+          [121.82, 118.93],
+          [119.19, 118.4],
+          [116.56, 117.87],
+          [113.93, 117.35],
+          [111.29, 116.83],
+          [108.66, 116.32],
+          [106.02, 115.82],
+          [103.39, 115.31],
+          [100.76, 114.79],
+          [98.12, 114.28],
+          [95.49, 113.75],
+          [92.86, 113.22],
+          [90.23, 112.68],
+          [87.77, 111.66],
+          [85.93, 109.74],
+          [85.01, 107.24],
+          [85.06, 104.57],
+          [86.07, 102.1],
+          [87.96, 100.22]
+        ],
+        [
+          [156.6, 112.56],
+          [158.91, 112.66],
+          [161.18, 113.15],
+          [163.45, 113.64],
+          [165.72, 114.13],
+          [167.99, 114.62],
+          [170.26, 115.12],
+          [172.53, 115.62],
+          [174.8, 116.12],
+          [177.07, 116.62],
+          [179.34, 117.13],
+          [181.6, 117.64],
+          [183.87, 118.15],
+          [186.14, 118.67],
+          [188.4, 119.18],
+          [190.67, 119.7],
+          [192.94, 120.2],
+          [195.12, 120.96],
+          [196.7, 122.63],
+          [197.45, 124.82],
+          [197.53, 127.14],
+          [197.07, 129.41],
+          [196.08, 131.51],
+          [194.49, 133.18],
+          [192.33, 133.97],
+          [190.04, 133.68],
+          [187.79, 133.09],
+          [185.52, 132.57],
+          [183.26, 132.05],
+          [180.99, 131.54],
+          [178.72, 131.03],
+          [176.45, 130.53],
+          [174.18, 130.03],
+          [171.91, 129.54],
+          [169.64, 129.05],
+          [167.37, 128.56],
+          [165.1, 128.07],
+          [162.83, 127.58],
+          [160.56, 127.08],
+          [158.29, 126.57],
+          [156.02, 126.05],
+          [153.9, 125.14],
+          [152.26, 123.51],
+          [151.32, 121.4],
+          [151.08, 119.1],
+          [151.53, 116.82],
+          [152.65, 114.8],
+          [154.41, 113.31]
+        ]
+      ],
+      [
+        [
+          [79.94, 130.44],
+          [83.08, 130.57],
+          [86.11, 131.41],
+          [88.89, 132.89],
+          [91.27, 134.94],
+          [93.15, 137.46],
+          [94.39, 140.35],
+          [95.11, 143.42],
+          [95.65, 146.52],
+          [96.2, 149.62],
+          [96.78, 152.72],
+          [97.39, 155.81],
+          [98.04, 158.89],
+          [98.72, 161.97],
+          [99.43, 165.04],
+          [100.18, 168.1],
+          [100.97, 171.15],
+          [101.81, 174.18],
+          [102.64, 177.22],
+          [103.01, 180.34],
+          [102.35, 183.4],
+          [100.66, 186.04],
+          [98.19, 187.98],
+          [95.28, 189.16],
+          [92.17, 189.6],
+          [89.03, 189.37],
+          [85.99, 188.56],
+          [83.16, 187.2],
+          [80.63, 185.33],
+          [78.55, 182.97],
+          [77.05, 180.21],
+          [76.1, 177.21],
+          [75.28, 174.17],
+          [74.5, 171.11],
+          [73.74, 168.06],
+          [73.02, 164.99],
+          [72.33, 161.92],
+          [71.68, 158.83],
+          [71.06, 155.75],
+          [70.47, 152.65],
+          [69.91, 149.55],
+          [69.37, 146.45],
+          [68.97, 143.32],
+          [69.12, 140.18],
+          [70.04, 137.18],
+          [71.7, 134.51],
+          [74.03, 132.41],
+          [76.86, 131.04]
+        ],
+        [
+          [168.95, 136.28],
+          [171.31, 136.97],
+          [172.99, 138.76],
+          [173.66, 141.13],
+          [173.36, 143.58],
+          [172.24, 145.79],
+          [170.45, 147.49],
+          [168.22, 148.58],
+          [165.89, 149.43],
+          [163.57, 150.31],
+          [161.24, 151.18],
+          [158.9, 152.02],
+          [156.56, 152.85],
+          [154.21, 153.65],
+          [151.85, 154.44],
+          [149.48, 155.2],
+          [147.11, 155.94],
+          [144.73, 156.65],
+          [142.34, 157.34],
+          [139.95, 158.01],
+          [137.55, 158.66],
+          [135.14, 159.27],
+          [132.73, 159.86],
+          [130.31, 160.43],
+          [127.84, 160.54],
+          [125.53, 159.69],
+          [123.77, 157.96],
+          [122.89, 155.66],
+          [123.09, 153.21],
+          [124.36, 151.09],
+          [126.34, 149.61],
+          [128.69, 148.83],
+          [131.1, 148.24],
+          [133.51, 147.62],
+          [135.91, 146.98],
+          [138.31, 146.32],
+          [140.7, 145.65],
+          [143.08, 144.95],
+          [145.46, 144.23],
+          [147.83, 143.49],
+          [150.2, 142.73],
+          [152.56, 141.95],
+          [154.91, 141.15],
+          [157.25, 140.32],
+          [159.59, 139.48],
+          [161.92, 138.61],
+          [164.24, 137.72],
+          [166.54, 136.78]
+        ]
+      ],
+      [
+        [
+          [119.79, 105.35],
+          [121.94, 105.42],
+          [124.03, 105.87],
+          [126, 106.72],
+          [127.77, 107.93],
+          [129.27, 109.47],
+          [130.45, 111.26],
+          [131.29, 113.23],
+          [131.73, 115.33],
+          [131.79, 117.47],
+          [131.53, 119.6],
+          [131.11, 121.71],
+          [130.66, 123.81],
+          [130.27, 125.92],
+          [129.88, 128.03],
+          [129.49, 130.14],
+          [129.07, 132.25],
+          [128.62, 134.35],
+          [127.96, 136.39],
+          [126.96, 138.29],
+          [125.62, 139.96],
+          [123.99, 141.36],
+          [122.13, 142.43],
+          [120.11, 143.15],
+          [118, 143.5],
+          [115.85, 143.45],
+          [113.75, 143],
+          [111.79, 142.15],
+          [110.03, 140.93],
+          [108.54, 139.38],
+          [107.36, 137.59],
+          [106.53, 135.61],
+          [106.1, 133.51],
+          [106.07, 131.37],
+          [106.35, 129.24],
+          [106.77, 127.14],
+          [107.22, 125.04],
+          [107.64, 122.93],
+          [108.05, 120.82],
+          [108.45, 118.71],
+          [108.84, 116.6],
+          [109.25, 114.49],
+          [109.86, 112.44],
+          [110.83, 110.52],
+          [112.16, 108.84],
+          [113.78, 107.44],
+          [115.65, 106.38],
+          [117.67, 105.68]
+        ],
+        [
+          [174.73, 114.1],
+          [176.71, 114.59],
+          [178.5, 115.55],
+          [180.04, 116.88],
+          [181.27, 118.5],
+          [182.17, 120.33],
+          [182.71, 122.29],
+          [182.9, 124.32],
+          [182.82, 126.36],
+          [182.56, 128.38],
+          [182.23, 130.39],
+          [181.89, 132.4],
+          [181.53, 134.41],
+          [181.16, 136.41],
+          [180.75, 138.41],
+          [180.3, 140.4],
+          [179.82, 142.38],
+          [179.18, 144.31],
+          [178.28, 146.15],
+          [177.14, 147.83],
+          [175.74, 149.31],
+          [174.11, 150.53],
+          [172.29, 151.44],
+          [170.32, 151.97],
+          [168.29, 152.07],
+          [166.29, 151.69],
+          [164.45, 150.83],
+          [162.87, 149.54],
+          [161.66, 147.91],
+          [160.83, 146.06],
+          [160.38, 144.07],
+          [160.29, 142.04],
+          [160.53, 140.01],
+          [160.98, 138.02],
+          [161.43, 136.03],
+          [161.84, 134.04],
+          [162.24, 132.04],
+          [162.62, 130.03],
+          [162.93, 128.02],
+          [163.24, 126],
+          [163.6, 124],
+          [164.11, 122.03],
+          [164.91, 120.15],
+          [165.99, 118.43],
+          [167.35, 116.91],
+          [168.94, 115.64],
+          [170.74, 114.69],
+          [172.7, 114.15]
+        ]
+      ],
+      [
+        [
+          [105.72, 72.58],
+          [108.82, 72.78],
+          [111.75, 73.82],
+          [114.27, 75.64],
+          [116.39, 77.92],
+          [118.42, 80.29],
+          [120.45, 82.66],
+          [122.47, 85.03],
+          [124.48, 87.41],
+          [126.49, 89.8],
+          [128.48, 92.2],
+          [130.47, 94.6],
+          [132.45, 97.01],
+          [134.43, 99.42],
+          [136.4, 101.83],
+          [138.37, 104.25],
+          [140.3, 106.7],
+          [141.85, 109.39],
+          [142.65, 112.4],
+          [142.63, 115.51],
+          [141.8, 118.5],
+          [140.21, 121.17],
+          [137.95, 123.31],
+          [135.17, 124.7],
+          [132.11, 125.26],
+          [129.02, 124.98],
+          [126.12, 123.86],
+          [123.67, 121.94],
+          [121.61, 119.6],
+          [119.66, 117.17],
+          [117.69, 114.75],
+          [115.73, 112.33],
+          [113.75, 109.92],
+          [111.77, 107.52],
+          [109.77, 105.12],
+          [107.77, 102.73],
+          [105.76, 100.34],
+          [103.75, 97.96],
+          [101.72, 95.59],
+          [99.68, 93.23],
+          [97.63, 90.89],
+          [95.91, 88.3],
+          [94.95, 85.34],
+          [94.92, 82.24],
+          [95.84, 79.27],
+          [97.56, 76.68],
+          [99.9, 74.63],
+          [102.67, 73.22]
+        ],
+        [
+          [176.73, 63.75],
+          [179.52, 64.43],
+          [182.02, 65.85],
+          [184.15, 67.78],
+          [185.85, 70.1],
+          [187.08, 72.7],
+          [187.76, 75.5],
+          [187.76, 78.37],
+          [187.23, 81.2],
+          [186.58, 84.01],
+          [185.89, 86.8],
+          [185.16, 89.59],
+          [184.39, 92.36],
+          [183.59, 95.13],
+          [182.76, 97.89],
+          [181.88, 100.64],
+          [180.98, 103.37],
+          [180.02, 106.09],
+          [179.03, 108.79],
+          [177.99, 111.48],
+          [176.9, 114.15],
+          [175.5, 116.66],
+          [173.51, 118.72],
+          [171, 120.11],
+          [168.18, 120.66],
+          [165.34, 120.29],
+          [162.75, 119.04],
+          [160.62, 117.12],
+          [159.02, 114.73],
+          [158, 112.04],
+          [157.63, 109.19],
+          [157.98, 106.34],
+          [158.83, 103.59],
+          [159.86, 100.9],
+          [160.87, 98.2],
+          [161.85, 95.49],
+          [162.79, 92.76],
+          [163.7, 90.03],
+          [164.57, 87.29],
+          [165.41, 84.53],
+          [166.21, 81.76],
+          [166.98, 78.99],
+          [167.7, 76.2],
+          [168.38, 73.4],
+          [169, 70.58],
+          [169.79, 67.82],
+          [171.41, 65.46],
+          [173.88, 64.03]
+        ]
+      ],
+      [
+        [
+          [64.12, 83.43],
+          [66.69, 84.08],
+          [68.9, 85.53],
+          [70.57, 87.6],
+          [71.56, 90.05],
+          [71.86, 92.69],
+          [71.53, 95.32],
+          [70.55, 97.78],
+          [69.06, 99.99],
+          [67.36, 102.03],
+          [65.64, 104.06],
+          [63.95, 106.11],
+          [62.28, 108.18],
+          [60.63, 110.27],
+          [59, 112.38],
+          [57.41, 114.5],
+          [55.84, 116.65],
+          [54.29, 118.82],
+          [52.78, 121],
+          [51.31, 123.22],
+          [49.86, 125.45],
+          [48.42, 127.69],
+          [46.67, 129.68],
+          [44.36, 130.96],
+          [41.73, 131.22],
+          [39.22, 130.38],
+          [37.16, 128.72],
+          [35.64, 126.55],
+          [34.65, 124.08],
+          [34.2, 121.46],
+          [34.29, 118.81],
+          [34.94, 116.24],
+          [36.12, 113.86],
+          [37.54, 111.61],
+          [39.04, 109.41],
+          [40.54, 107.21],
+          [42.06, 105.03],
+          [43.61, 102.87],
+          [45.18, 100.73],
+          [46.79, 98.6],
+          [48.41, 96.5],
+          [50.07, 94.42],
+          [51.74, 92.35],
+          [53.45, 90.31],
+          [55.17, 88.28],
+          [56.94, 86.3],
+          [59.04, 84.67],
+          [61.48, 83.65]
+        ],
+        [
+          [104.23, 93.09],
+          [106.97, 93.77],
+          [109.4, 95.24],
+          [111.32, 97.31],
+          [112.59, 99.85],
+          [113.4, 102.57],
+          [114.13, 105.32],
+          [114.87, 108.06],
+          [115.62, 110.8],
+          [116.37, 113.54],
+          [117.14, 116.28],
+          [117.9, 119.02],
+          [118.67, 121.75],
+          [119.45, 124.49],
+          [120.23, 127.22],
+          [121.03, 129.95],
+          [121.83, 132.68],
+          [122.6, 135.41],
+          [122.98, 138.22],
+          [122.57, 141.02],
+          [121.34, 143.57],
+          [119.44, 145.67],
+          [117.05, 147.19],
+          [114.34, 148.04],
+          [111.51, 148.14],
+          [108.77, 147.45],
+          [106.33, 146.01],
+          [104.38, 143.96],
+          [103.07, 141.44],
+          [102.21, 138.73],
+          [101.43, 136],
+          [100.65, 133.27],
+          [99.87, 130.53],
+          [99.09, 127.8],
+          [98.32, 125.06],
+          [97.55, 122.33],
+          [96.79, 119.59],
+          [96.04, 116.85],
+          [95.28, 114.11],
+          [94.53, 111.37],
+          [93.79, 108.62],
+          [93.05, 105.88],
+          [92.73, 103.07],
+          [93.18, 100.27],
+          [94.42, 97.72],
+          [96.32, 95.62],
+          [98.7, 94.08],
+          [101.4, 93.21]
+        ]
+      ],
+      [
+        [
+          [108.14, 135.9],
+          [111.13, 136.06],
+          [114.08, 136.56],
+          [116.95, 137.39],
+          [119.71, 138.55],
+          [122.31, 140.03],
+          [124.71, 141.81],
+          [126.86, 143.89],
+          [128.73, 146.23],
+          [130.27, 148.8],
+          [131.44, 151.55],
+          [132.22, 154.44],
+          [132.56, 157.41],
+          [132.47, 160.4],
+          [131.93, 163.34],
+          [130.96, 166.17],
+          [129.6, 168.83],
+          [127.87, 171.28],
+          [125.83, 173.46],
+          [123.51, 175.35],
+          [120.96, 176.91],
+          [118.23, 178.13],
+          [115.36, 179],
+          [112.42, 179.52],
+          [109.43, 179.7],
+          [106.44, 179.54],
+          [103.49, 179.04],
+          [100.62, 178.21],
+          [97.86, 177.06],
+          [95.26, 175.58],
+          [92.86, 173.79],
+          [90.71, 171.71],
+          [88.84, 169.37],
+          [87.3, 166.81],
+          [86.13, 164.06],
+          [85.35, 161.17],
+          [85.01, 158.2],
+          [85.11, 155.21],
+          [85.64, 152.26],
+          [86.61, 149.43],
+          [87.97, 146.77],
+          [89.7, 144.33],
+          [91.74, 142.14],
+          [94.06, 140.25],
+          [96.61, 138.69],
+          [99.34, 137.47],
+          [102.21, 136.6],
+          [105.15, 136.08]
+        ],
+        [
+          [175.67, 128.81],
+          [177.16, 128.85],
+          [178.62, 129.14],
+          [180.01, 129.67],
+          [181.28, 130.44],
+          [182.41, 131.42],
+          [183.36, 132.57],
+          [184.12, 133.85],
+          [184.68, 135.23],
+          [185.05, 136.68],
+          [185.24, 138.15],
+          [185.27, 139.64],
+          [185.13, 141.13],
+          [184.85, 142.59],
+          [184.42, 144.02],
+          [183.85, 145.4],
+          [183.15, 146.72],
+          [182.33, 147.96],
+          [181.38, 149.11],
+          [180.32, 150.16],
+          [179.15, 151.08],
+          [177.88, 151.87],
+          [176.53, 152.49],
+          [175.1, 152.91],
+          [173.62, 153.11],
+          [172.13, 153.07],
+          [170.67, 152.78],
+          [169.28, 152.24],
+          [168.01, 151.47],
+          [166.88, 150.49],
+          [165.93, 149.35],
+          [165.18, 148.06],
+          [164.61, 146.68],
+          [164.24, 145.24],
+          [164.05, 143.76],
+          [164.02, 142.27],
+          [164.16, 140.78],
+          [164.44, 139.32],
+          [164.87, 137.89],
+          [165.44, 136.51],
+          [166.14, 135.2],
+          [166.96, 133.95],
+          [167.91, 132.8],
+          [168.97, 131.75],
+          [170.14, 130.83],
+          [171.4, 130.04],
+          [172.76, 129.43],
+          [174.19, 129.01]
+        ]
+      ],
+      [
+        [
+          [103.39, 78.25],
+          [106.56, 78.38],
+          [109.59, 79.28],
+          [112.29, 80.94],
+          [114.43, 83.28],
+          [115.86, 86.1],
+          [116.52, 89.2],
+          [116.32, 92.37],
+          [115.62, 95.46],
+          [114.86, 98.55],
+          [114.1, 101.63],
+          [113.36, 104.72],
+          [112.63, 107.81],
+          [111.91, 110.91],
+          [111.2, 114.01],
+          [110.51, 117.1],
+          [109.82, 120.21],
+          [109.16, 123.31],
+          [108.52, 126.42],
+          [107.84, 129.53],
+          [106.8, 132.52],
+          [105.04, 135.16],
+          [102.66, 137.25],
+          [99.81, 138.63],
+          [96.7, 139.2],
+          [93.54, 138.96],
+          [90.53, 137.95],
+          [87.87, 136.24],
+          [85.71, 133.92],
+          [84.21, 131.13],
+          [83.48, 128.05],
+          [83.5, 124.88],
+          [84, 121.74],
+          [84.7, 118.64],
+          [85.4, 115.54],
+          [86.08, 112.44],
+          [86.77, 109.34],
+          [87.48, 106.24],
+          [88.19, 103.15],
+          [88.92, 100.05],
+          [89.66, 96.96],
+          [90.41, 93.88],
+          [91.18, 90.8],
+          [91.95, 87.71],
+          [93.1, 84.76],
+          [94.95, 82.19],
+          [97.4, 80.19],
+          [100.28, 78.86]
+        ],
+        [
+          [161.99, 91.57],
+          [165.07, 92],
+          [167.9, 93.28],
+          [170.32, 95.23],
+          [172.22, 97.69],
+          [173.49, 100.53],
+          [174.05, 103.59],
+          [173.93, 106.7],
+          [173.45, 109.78],
+          [172.9, 112.85],
+          [172.33, 115.91],
+          [171.71, 118.97],
+          [171.06, 122.02],
+          [170.38, 125.06],
+          [169.66, 128.09],
+          [168.91, 131.12],
+          [168.13, 134.14],
+          [167.33, 137.15],
+          [166.5, 140.16],
+          [165.58, 143.14],
+          [164.33, 145.98],
+          [162.5, 148.5],
+          [160.15, 150.53],
+          [157.38, 151.95],
+          [154.34, 152.61],
+          [151.24, 152.43],
+          [148.32, 151.38],
+          [145.83, 149.52],
+          [143.99, 147.01],
+          [142.95, 144.08],
+          [142.73, 140.98],
+          [143.25, 137.91],
+          [144.09, 134.91],
+          [144.94, 131.91],
+          [145.76, 128.9],
+          [146.54, 125.89],
+          [147.29, 122.86],
+          [148.01, 119.83],
+          [148.69, 116.79],
+          [149.34, 113.74],
+          [149.95, 110.68],
+          [150.54, 107.62],
+          [151.09, 104.55],
+          [151.6, 101.47],
+          [152.44, 98.48],
+          [154, 95.79],
+          [156.21, 93.6],
+          [158.94, 92.12]
+        ]
+      ],
+      [
+        [
+          [47.23, 91.05],
+          [51.61, 92.47],
+          [55.26, 95.29],
+          [57.96, 99.03],
+          [59.7, 103.31],
+          [60.56, 107.85],
+          [61.28, 112.42],
+          [62.11, 116.97],
+          [63.06, 121.51],
+          [64.11, 126.01],
+          [65.28, 130.49],
+          [66.56, 134.94],
+          [67.95, 139.35],
+          [69.44, 143.73],
+          [71.05, 148.07],
+          [72.77, 152.37],
+          [74.62, 156.61],
+          [76.52, 160.83],
+          [78.06, 165.19],
+          [78.52, 169.78],
+          [77.62, 174.3],
+          [75.2, 178.22],
+          [71.44, 180.86],
+          [66.96, 181.91],
+          [62.36, 181.55],
+          [57.99, 180.06],
+          [54.03, 177.68],
+          [50.59, 174.58],
+          [47.77, 170.92],
+          [45.62, 166.83],
+          [43.74, 162.6],
+          [41.96, 158.33],
+          [40.29, 154.01],
+          [38.72, 149.66],
+          [37.27, 145.26],
+          [35.93, 140.83],
+          [34.69, 136.37],
+          [33.56, 131.88],
+          [32.55, 127.37],
+          [31.65, 122.83],
+          [30.85, 118.27],
+          [30.2, 113.69],
+          [30.08, 109.07],
+          [30.85, 104.51],
+          [32.49, 100.19],
+          [35.01, 96.32],
+          [38.44, 93.24],
+          [42.64, 91.35]
+        ],
+        [
+          [108.93, 73.38],
+          [113.76, 73.6],
+          [118.38, 75.01],
+          [122.49, 77.56],
+          [125.82, 81.07],
+          [128.1, 85.34],
+          [129.65, 89.93],
+          [131.04, 94.58],
+          [132.43, 99.22],
+          [133.82, 103.87],
+          [135.22, 108.51],
+          [136.6, 113.16],
+          [137.99, 117.81],
+          [139.36, 122.46],
+          [140.73, 127.11],
+          [142.13, 131.76],
+          [143.51, 136.41],
+          [144.82, 141.08],
+          [145.51, 145.86],
+          [144.91, 150.66],
+          [143.09, 155.14],
+          [140.17, 158.99],
+          [136.38, 162.01],
+          [132, 164.05],
+          [127.26, 165.03],
+          [122.42, 164.86],
+          [117.79, 163.48],
+          [113.67, 160.95],
+          [110.36, 157.43],
+          [108.17, 153.11],
+          [106.72, 148.49],
+          [105.36, 143.83],
+          [103.99, 139.18],
+          [102.62, 134.53],
+          [101.24, 129.88],
+          [99.87, 125.23],
+          [98.48, 120.58],
+          [97.09, 115.93],
+          [95.7, 111.29],
+          [94.29, 106.64],
+          [92.89, 102],
+          [91.49, 97.36],
+          [90.81, 92.57],
+          [91.38, 87.77],
+          [93.14, 83.26],
+          [96.02, 79.37],
+          [99.79, 76.34],
+          [104.18, 74.32]
+        ]
+      ],
+      [
+        [
+          [102.86, 129.56],
+          [106.39, 129.96],
+          [109.85, 130.76],
+          [113.21, 131.94],
+          [116.4, 133.5],
+          [119.39, 135.42],
+          [122.13, 137.69],
+          [124.56, 140.28],
+          [126.64, 143.16],
+          [128.33, 146.29],
+          [129.59, 149.61],
+          [130.37, 153.08],
+          [130.66, 156.62],
+          [130.43, 160.16],
+          [129.68, 163.63],
+          [128.42, 166.96],
+          [126.7, 170.07],
+          [124.54, 172.89],
+          [122.02, 175.39],
+          [119.18, 177.52],
+          [116.07, 179.25],
+          [112.76, 180.54],
+          [109.31, 181.4],
+          [105.78, 181.82],
+          [102.23, 181.83],
+          [98.7, 181.42],
+          [95.24, 180.62],
+          [91.88, 179.44],
+          [88.69, 177.88],
+          [85.7, 175.96],
+          [82.96, 173.69],
+          [80.53, 171.1],
+          [78.45, 168.22],
+          [76.76, 165.1],
+          [75.5, 161.77],
+          [74.72, 158.31],
+          [74.44, 154.77],
+          [74.67, 151.22],
+          [75.41, 147.75],
+          [76.67, 144.42],
+          [78.39, 141.32],
+          [80.55, 138.49],
+          [83.07, 135.99],
+          [85.91, 133.86],
+          [89.02, 132.14],
+          [92.33, 130.84],
+          [95.78, 129.99],
+          [99.31, 129.56]
+        ],
+        [
+          [180.44, 141.06],
+          [183.61, 141.1],
+          [186.72, 141.68],
+          [189.66, 142.86],
+          [192.28, 144.63],
+          [194.43, 146.96],
+          [196, 149.71],
+          [197, 152.72],
+          [197.48, 155.86],
+          [197.51, 159.03],
+          [197.15, 162.18],
+          [196.43, 165.27],
+          [195.38, 168.26],
+          [194.07, 171.15],
+          [192.52, 173.92],
+          [190.74, 176.55],
+          [188.77, 179.03],
+          [186.6, 181.35],
+          [184.25, 183.48],
+          [181.74, 185.41],
+          [179.06, 187.12],
+          [176.23, 188.56],
+          [173.28, 189.71],
+          [170.21, 190.52],
+          [167.07, 190.95],
+          [163.9, 190.91],
+          [160.78, 190.33],
+          [157.84, 189.15],
+          [155.22, 187.37],
+          [153.08, 185.04],
+          [151.51, 182.29],
+          [150.51, 179.28],
+          [150.03, 176.15],
+          [150, 172.98],
+          [150.36, 169.83],
+          [151.07, 166.74],
+          [152.12, 163.74],
+          [153.43, 160.85],
+          [154.99, 158.09],
+          [156.76, 155.46],
+          [158.74, 152.98],
+          [160.91, 150.66],
+          [163.25, 148.53],
+          [165.77, 146.59],
+          [168.45, 144.89],
+          [171.27, 143.45],
+          [174.23, 142.3],
+          [177.29, 141.48]
+        ]
+      ],
+      [
+        [
+          [86.02, 131.33],
+          [88.42, 131.69],
+          [90.54, 132.87],
+          [92.12, 134.71],
+          [93.03, 136.97],
+          [93.17, 139.39],
+          [92.41, 141.69],
+          [90.78, 143.48],
+          [88.59, 144.52],
+          [86.19, 144.97],
+          [83.78, 145.34],
+          [81.37, 145.72],
+          [78.96, 146.09],
+          [76.54, 146.45],
+          [74.13, 146.81],
+          [71.72, 147.16],
+          [69.3, 147.5],
+          [66.88, 147.84],
+          [64.47, 148.16],
+          [62.05, 148.47],
+          [59.62, 148.76],
+          [57.2, 149.03],
+          [54.77, 149.27],
+          [52.34, 149.49],
+          [49.91, 149.68],
+          [47.53, 149.28],
+          [45.52, 147.92],
+          [44.04, 145.99],
+          [43.12, 143.74],
+          [42.85, 141.32],
+          [43.44, 138.97],
+          [45.04, 137.17],
+          [47.33, 136.4],
+          [49.76, 136.2],
+          [52.19, 135.96],
+          [54.62, 135.7],
+          [57.04, 135.43],
+          [59.46, 135.15],
+          [61.89, 134.85],
+          [64.31, 134.54],
+          [66.72, 134.22],
+          [69.14, 133.89],
+          [71.56, 133.54],
+          [73.97, 133.19],
+          [76.38, 132.83],
+          [78.79, 132.45],
+          [81.2, 132.06],
+          [83.61, 131.67]
+        ],
+        [
+          [153.42, 116.84],
+          [155.92, 117.69],
+          [157.78, 119.56],
+          [158.72, 122.03],
+          [158.73, 124.68],
+          [157.84, 127.18],
+          [156.08, 129.15],
+          [153.71, 130.33],
+          [151.13, 131],
+          [148.55, 131.65],
+          [145.98, 132.32],
+          [143.4, 132.98],
+          [140.82, 133.63],
+          [138.23, 134.27],
+          [135.65, 134.9],
+          [133.06, 135.53],
+          [130.47, 136.15],
+          [127.88, 136.76],
+          [125.29, 137.36],
+          [122.69, 137.94],
+          [120.09, 138.51],
+          [117.49, 139.06],
+          [114.88, 139.59],
+          [112.27, 140.1],
+          [109.62, 140.12],
+          [107.17, 139.14],
+          [105.28, 137.29],
+          [104.18, 134.88],
+          [104.06, 132.23],
+          [105.03, 129.78],
+          [106.92, 127.93],
+          [109.35, 126.87],
+          [111.96, 126.34],
+          [114.57, 125.8],
+          [117.17, 125.24],
+          [119.77, 124.67],
+          [122.37, 124.09],
+          [124.96, 123.5],
+          [127.56, 122.9],
+          [130.15, 122.29],
+          [132.74, 121.68],
+          [135.32, 121.05],
+          [137.91, 120.41],
+          [140.49, 119.76],
+          [143.07, 119.11],
+          [145.65, 118.44],
+          [148.22, 117.76],
+          [150.78, 117.03]
+        ]
+      ],
+      [
+        [
+          [83.36, 65.84],
+          [86.61, 66.42],
+          [89.57, 67.88],
+          [92, 70.12],
+          [93.67, 72.97],
+          [94.46, 76.17],
+          [94.31, 79.47],
+          [93.61, 82.71],
+          [92.8, 85.92],
+          [92.02, 89.14],
+          [91.27, 92.36],
+          [90.56, 95.6],
+          [89.88, 98.84],
+          [89.23, 102.09],
+          [88.62, 105.34],
+          [88.03, 108.61],
+          [87.51, 111.88],
+          [87.01, 115.15],
+          [86.5, 118.42],
+          [85.65, 121.62],
+          [84.11, 124.54],
+          [81.9, 126.99],
+          [79.13, 128.79],
+          [75.98, 129.8],
+          [72.68, 129.91],
+          [69.47, 129.13],
+          [66.6, 127.49],
+          [64.24, 125.18],
+          [62.49, 122.38],
+          [61.42, 119.25],
+          [61.08, 115.97],
+          [61.36, 112.67],
+          [61.87, 109.4],
+          [62.45, 106.13],
+          [63.01, 102.87],
+          [63.61, 99.61],
+          [64.24, 96.36],
+          [64.9, 93.11],
+          [65.6, 89.87],
+          [66.33, 86.64],
+          [67.09, 83.42],
+          [67.89, 80.2],
+          [68.73, 77],
+          [69.89, 73.9],
+          [71.7, 71.14],
+          [74.1, 68.86],
+          [76.93, 67.16],
+          [80.07, 66.12]
+        ],
+        [
+          [119.49, 99.16],
+          [121.99, 99.28],
+          [124.44, 99.82],
+          [126.9, 100.34],
+          [129.36, 100.86],
+          [131.81, 101.38],
+          [134.27, 101.91],
+          [136.72, 102.44],
+          [139.17, 102.98],
+          [141.62, 103.52],
+          [144.08, 104.07],
+          [146.52, 104.62],
+          [148.97, 105.18],
+          [151.42, 105.74],
+          [153.86, 106.31],
+          [156.31, 106.89],
+          [158.75, 107.47],
+          [161.2, 108.02],
+          [163.49, 109.03],
+          [165.16, 110.87],
+          [165.95, 113.24],
+          [165.87, 115.74],
+          [164.94, 118.05],
+          [163.17, 119.8],
+          [160.79, 120.55],
+          [158.31, 120.29],
+          [155.88, 119.65],
+          [153.44, 119.06],
+          [150.99, 118.49],
+          [148.55, 117.92],
+          [146.1, 117.36],
+          [143.65, 116.81],
+          [141.2, 116.26],
+          [138.75, 115.73],
+          [136.29, 115.2],
+          [133.84, 114.67],
+          [131.38, 114.15],
+          [128.93, 113.62],
+          [126.47, 113.1],
+          [124.02, 112.57],
+          [121.56, 112.04],
+          [119.11, 111.5],
+          [116.81, 110.53],
+          [115.08, 108.73],
+          [114.22, 106.39],
+          [114.29, 103.9],
+          [115.28, 101.61],
+          [117.12, 99.93]
+        ]
+      ],
+      [
+        [
+          [168.71, 85.67],
+          [170.73, 86],
+          [172.64, 86.75],
+          [174.37, 87.85],
+          [175.88, 89.24],
+          [177.11, 90.88],
+          [178.04, 92.71],
+          [178.71, 94.65],
+          [179.21, 96.64],
+          [179.64, 98.65],
+          [180.05, 100.66],
+          [180.45, 102.67],
+          [180.83, 104.69],
+          [181.18, 106.71],
+          [181.5, 108.74],
+          [181.77, 110.78],
+          [181.88, 112.82],
+          [181.71, 114.87],
+          [181.22, 116.86],
+          [180.41, 118.74],
+          [179.27, 120.45],
+          [177.83, 121.91],
+          [176.12, 123.03],
+          [174.2, 123.74],
+          [172.16, 123.99],
+          [170.13, 123.75],
+          [168.21, 123.04],
+          [166.49, 121.93],
+          [165.03, 120.48],
+          [163.88, 118.79],
+          [163.02, 116.93],
+          [162.49, 114.95],
+          [162.17, 112.92],
+          [161.85, 110.89],
+          [161.51, 108.87],
+          [161.14, 106.84],
+          [160.77, 104.83],
+          [160.37, 102.81],
+          [159.96, 100.8],
+          [159.52, 98.79],
+          [159.24, 96.76],
+          [159.3, 94.71],
+          [159.71, 92.7],
+          [160.48, 90.8],
+          [161.58, 89.08],
+          [163.01, 87.61],
+          [164.73, 86.49],
+          [166.67, 85.83]
+        ],
+        [
+          [206.57, 78.24],
+          [208.3, 78.8],
+          [209.77, 79.87],
+          [210.99, 81.22],
+          [212.01, 82.73],
+          [212.85, 84.34],
+          [213.53, 86.03],
+          [214.08, 87.77],
+          [214.54, 89.54],
+          [214.95, 91.31],
+          [215.34, 93.09],
+          [215.7, 94.88],
+          [216.04, 96.67],
+          [216.36, 98.46],
+          [216.64, 100.26],
+          [216.89, 102.07],
+          [217.11, 103.88],
+          [217.25, 105.7],
+          [217.26, 107.52],
+          [217.1, 109.33],
+          [216.75, 111.12],
+          [216.16, 112.84],
+          [215.3, 114.44],
+          [214.04, 115.75],
+          [212.34, 116.35],
+          [210.58, 115.96],
+          [209.11, 114.89],
+          [207.97, 113.48],
+          [207.1, 111.88],
+          [206.44, 110.18],
+          [205.97, 108.42],
+          [205.62, 106.63],
+          [205.35, 104.83],
+          [205.11, 103.02],
+          [204.85, 101.22],
+          [204.55, 99.42],
+          [204.22, 97.63],
+          [203.87, 95.84],
+          [203.49, 94.05],
+          [203.09, 92.28],
+          [202.67, 90.5],
+          [202.32, 88.71],
+          [202.1, 86.91],
+          [202.1, 85.08],
+          [202.32, 83.28],
+          [202.77, 81.51],
+          [203.54, 79.86],
+          [204.82, 78.59]
+        ]
+      ],
+      [
+        [
+          [39.78, 104.3],
+          [42.64, 105.01],
+          [45.03, 106.74],
+          [46.73, 109.15],
+          [47.75, 111.93],
+          [48.35, 114.83],
+          [48.81, 117.76],
+          [49.31, 120.68],
+          [49.87, 123.6],
+          [50.48, 126.5],
+          [51.15, 129.39],
+          [51.86, 132.27],
+          [52.63, 135.13],
+          [53.44, 137.98],
+          [54.3, 140.82],
+          [55.19, 143.65],
+          [56.13, 146.46],
+          [57.1, 149.26],
+          [58.1, 152.05],
+          [58.86, 154.92],
+          [58.96, 157.87],
+          [58.18, 160.72],
+          [56.43, 163.09],
+          [53.84, 164.48],
+          [50.9, 164.62],
+          [48.08, 163.75],
+          [45.58, 162.16],
+          [43.51, 160.05],
+          [41.89, 157.57],
+          [40.67, 154.87],
+          [39.67, 152.08],
+          [38.73, 149.26],
+          [37.81, 146.44],
+          [36.94, 143.61],
+          [36.11, 140.76],
+          [35.34, 137.9],
+          [34.61, 135.03],
+          [33.92, 132.14],
+          [33.28, 129.24],
+          [32.7, 126.34],
+          [32.16, 123.42],
+          [31.67, 120.5],
+          [31.23, 117.57],
+          [31.14, 114.61],
+          [31.65, 111.69],
+          [32.74, 108.94],
+          [34.47, 106.54],
+          [36.89, 104.86]
+        ],
+        [
+          [108.97, 125.73],
+          [111.9, 126.2],
+          [114.63, 127.37],
+          [117, 129.16],
+          [118.84, 131.49],
+          [119.99, 134.23],
+          [120.32, 137.18],
+          [119.85, 140.11],
+          [118.59, 142.8],
+          [116.78, 145.16],
+          [114.84, 147.42],
+          [112.89, 149.67],
+          [110.93, 151.92],
+          [108.97, 154.16],
+          [107.01, 156.39],
+          [105.03, 158.62],
+          [103.05, 160.85],
+          [101.07, 163.06],
+          [99.07, 165.28],
+          [97.09, 167.5],
+          [95.09, 169.71],
+          [93.05, 171.88],
+          [90.69, 173.67],
+          [87.89, 174.66],
+          [84.93, 174.81],
+          [82.02, 174.22],
+          [79.31, 173],
+          [76.92, 171.24],
+          [74.99, 168.98],
+          [73.7, 166.3],
+          [73.26, 163.37],
+          [73.74, 160.45],
+          [75.2, 157.86],
+          [77.17, 155.63],
+          [79.18, 153.43],
+          [81.18, 151.23],
+          [83.17, 149.02],
+          [85.16, 146.8],
+          [87.14, 144.58],
+          [89.11, 142.35],
+          [91.08, 140.11],
+          [93.04, 137.87],
+          [95, 135.63],
+          [96.95, 133.38],
+          [98.89, 131.12],
+          [100.87, 128.89],
+          [103.25, 127.12],
+          [106.02, 126.04]
+        ]
+      ],
+      [
+        [
+          [115.43, 87.59],
+          [118.19, 88.24],
+          [120.69, 89.59],
+          [122.69, 91.59],
+          [124.03, 94.09],
+          [124.63, 96.87],
+          [124.41, 99.7],
+          [123.7, 102.45],
+          [122.9, 105.18],
+          [122.12, 107.92],
+          [121.34, 110.65],
+          [120.57, 113.39],
+          [119.79, 116.13],
+          [119.02, 118.87],
+          [118.25, 121.61],
+          [117.48, 124.35],
+          [116.72, 127.09],
+          [115.97, 129.83],
+          [115.23, 132.58],
+          [114.45, 135.32],
+          [113.3, 137.91],
+          [111.49, 140.09],
+          [109.13, 141.65],
+          [106.41, 142.48],
+          [103.58, 142.56],
+          [100.82, 141.91],
+          [98.33, 140.54],
+          [96.33, 138.53],
+          [94.99, 136.03],
+          [94.38, 133.26],
+          [94.57, 130.43],
+          [95.25, 127.67],
+          [96.02, 124.93],
+          [96.79, 122.19],
+          [97.55, 119.45],
+          [98.31, 116.7],
+          [99.08, 113.96],
+          [99.85, 111.22],
+          [100.62, 108.49],
+          [101.4, 105.75],
+          [102.18, 103.01],
+          [102.95, 100.27],
+          [103.74, 97.54],
+          [104.51, 94.8],
+          [105.68, 92.21],
+          [107.5, 90.04],
+          [109.88, 88.5],
+          [112.59, 87.67]
+        ],
+        [
+          [155.37, 78.64],
+          [158.04, 79.15],
+          [160.48, 80.37],
+          [162.53, 82.16],
+          [164.33, 84.22],
+          [166.1, 86.3],
+          [167.85, 88.4],
+          [169.58, 90.51],
+          [171.29, 92.64],
+          [172.98, 94.78],
+          [174.65, 96.94],
+          [176.3, 99.12],
+          [177.92, 101.32],
+          [179.51, 103.54],
+          [181.06, 105.79],
+          [182.57, 108.07],
+          [184.03, 110.37],
+          [185.2, 112.83],
+          [185.77, 115.5],
+          [185.73, 118.23],
+          [185.07, 120.87],
+          [183.8, 123.28],
+          [181.94, 125.26],
+          [179.57, 126.6],
+          [176.89, 127.03],
+          [174.24, 126.43],
+          [171.99, 124.92],
+          [170.26, 122.8],
+          [168.75, 120.53],
+          [167.22, 118.27],
+          [165.66, 116.03],
+          [164.07, 113.81],
+          [162.45, 111.6],
+          [160.82, 109.41],
+          [159.16, 107.25],
+          [157.47, 105.1],
+          [155.76, 102.97],
+          [154.03, 100.85],
+          [152.28, 98.76],
+          [150.51, 96.68],
+          [148.74, 94.6],
+          [147.29, 92.29],
+          [146.49, 89.69],
+          [146.36, 86.97],
+          [146.94, 84.31],
+          [148.23, 81.91],
+          [150.19, 80.02],
+          [152.66, 78.89]
+        ]
+      ],
+      [
+        [
+          [92.71, 76.24],
+          [95.76, 76.59],
+          [98.73, 77.35],
+          [101.56, 78.53],
+          [104.21, 80.08],
+          [106.63, 81.96],
+          [108.78, 84.16],
+          [110.61, 86.62],
+          [112.09, 89.31],
+          [113.19, 92.17],
+          [113.91, 95.15],
+          [114.24, 98.2],
+          [114.18, 101.27],
+          [113.73, 104.31],
+          [112.9, 107.26],
+          [111.7, 110.09],
+          [110.15, 112.73],
+          [108.28, 115.17],
+          [106.12, 117.35],
+          [103.71, 119.24],
+          [101.08, 120.83],
+          [98.27, 122.07],
+          [95.33, 122.95],
+          [92.3, 123.44],
+          [89.23, 123.51],
+          [86.18, 123.17],
+          [83.21, 122.41],
+          [80.38, 121.23],
+          [77.73, 119.69],
+          [75.31, 117.8],
+          [73.16, 115.61],
+          [71.33, 113.14],
+          [69.86, 110.45],
+          [68.75, 107.59],
+          [68.02, 104.61],
+          [67.7, 101.56],
+          [67.76, 98.49],
+          [68.22, 95.46],
+          [69.05, 92.5],
+          [70.25, 89.68],
+          [71.8, 87.03],
+          [73.67, 84.59],
+          [75.83, 82.41],
+          [78.24, 80.52],
+          [80.87, 78.93],
+          [83.67, 77.69],
+          [86.61, 76.81],
+          [89.64, 76.32]
+        ],
+        [
+          [157.73, 102.08],
+          [159.31, 102.13],
+          [160.86, 102.42],
+          [162.35, 102.95],
+          [163.74, 103.69],
+          [165.01, 104.62],
+          [166.15, 105.72],
+          [167.13, 106.95],
+          [167.96, 108.29],
+          [168.63, 109.72],
+          [169.13, 111.22],
+          [169.45, 112.76],
+          [169.59, 114.34],
+          [169.55, 115.91],
+          [169.31, 117.47],
+          [168.88, 118.99],
+          [168.28, 120.45],
+          [167.52, 121.83],
+          [166.58, 123.1],
+          [165.48, 124.23],
+          [164.25, 125.22],
+          [162.89, 126.02],
+          [161.43, 126.63],
+          [159.91, 127.02],
+          [158.34, 127.2],
+          [156.76, 127.14],
+          [155.21, 126.85],
+          [153.73, 126.33],
+          [152.33, 125.59],
+          [151.06, 124.65],
+          [149.93, 123.56],
+          [148.94, 122.33],
+          [148.11, 120.99],
+          [147.44, 119.56],
+          [146.95, 118.06],
+          [146.62, 116.51],
+          [146.48, 114.94],
+          [146.52, 113.37],
+          [146.76, 111.8],
+          [147.18, 110.28],
+          [147.78, 108.83],
+          [148.56, 107.45],
+          [149.5, 106.18],
+          [150.59, 105.05],
+          [151.83, 104.07],
+          [153.18, 103.26],
+          [154.64, 102.65],
+          [156.17, 102.26]
+        ]
+      ],
+      [
+        [
+          [57.98, 112.03],
+          [61.01, 112.26],
+          [63.82, 113.41],
+          [66.22, 115.27],
+          [68.09, 117.67],
+          [69.36, 120.44],
+          [70.14, 123.39],
+          [70.64, 126.39],
+          [71.07, 129.41],
+          [71.58, 132.42],
+          [72.15, 135.41],
+          [72.76, 138.4],
+          [73.4, 141.38],
+          [74.09, 144.35],
+          [74.82, 147.31],
+          [75.59, 150.26],
+          [76.42, 153.2],
+          [77.3, 156.12],
+          [78.16, 159.04],
+          [78.68, 162.04],
+          [78.42, 165.07],
+          [77.28, 167.88],
+          [75.25, 170.13],
+          [72.54, 171.49],
+          [69.52, 171.87],
+          [66.51, 171.44],
+          [63.69, 170.32],
+          [61.16, 168.61],
+          [59.03, 166.44],
+          [57.38, 163.89],
+          [56.23, 161.06],
+          [55.34, 158.15],
+          [54.53, 155.21],
+          [53.73, 152.27],
+          [52.97, 149.31],
+          [52.25, 146.35],
+          [51.57, 143.38],
+          [50.93, 140.4],
+          [50.34, 137.41],
+          [49.78, 134.41],
+          [49.26, 131.4],
+          [48.78, 128.39],
+          [48.37, 125.37],
+          [48.37, 122.33],
+          [49.06, 119.36],
+          [50.44, 116.65],
+          [52.47, 114.39],
+          [55.04, 112.78]
+        ],
+        [
+          [117.45, 101.46],
+          [120.57, 101.84],
+          [123.48, 103.02],
+          [125.99, 104.91],
+          [127.97, 107.35],
+          [129.25, 110.23],
+          [130.05, 113.27],
+          [130.76, 116.34],
+          [131.46, 119.41],
+          [132.15, 122.49],
+          [132.85, 125.56],
+          [133.55, 128.63],
+          [134.24, 131.71],
+          [134.93, 134.78],
+          [135.61, 137.86],
+          [136.32, 140.93],
+          [137.01, 144],
+          [137.66, 147.09],
+          [137.87, 150.22],
+          [137.25, 153.3],
+          [135.83, 156.1],
+          [133.73, 158.45],
+          [131.15, 160.23],
+          [128.22, 161.38],
+          [125.11, 161.83],
+          [121.98, 161.5],
+          [119.05, 160.37],
+          [116.52, 158.51],
+          [114.57, 156.05],
+          [113.37, 153.14],
+          [112.64, 150.08],
+          [111.95, 147],
+          [111.27, 143.93],
+          [110.58, 140.85],
+          [109.89, 137.78],
+          [109.2, 134.7],
+          [108.51, 131.63],
+          [107.81, 128.56],
+          [107.12, 125.48],
+          [106.42, 122.41],
+          [105.71, 119.34],
+          [105.02, 116.27],
+          [104.83, 113.13],
+          [105.42, 110.04],
+          [106.79, 107.22],
+          [108.84, 104.83],
+          [111.41, 103.02],
+          [114.33, 101.87]
+        ]
+      ],
+      [
+        [
+          [113.75, 120.08],
+          [118.16, 120.78],
+          [122.31, 122.43],
+          [125.98, 124.96],
+          [128.94, 128.29],
+          [131.02, 132.23],
+          [132.12, 136.56],
+          [132.1, 141.02],
+          [131.16, 145.38],
+          [129.94, 149.68],
+          [128.69, 153.98],
+          [127.44, 158.27],
+          [126.19, 162.56],
+          [124.92, 166.85],
+          [123.64, 171.14],
+          [122.35, 175.42],
+          [121.05, 179.69],
+          [119.76, 183.97],
+          [118.46, 188.25],
+          [117.05, 192.49],
+          [114.84, 196.36],
+          [111.47, 199.27],
+          [107.42, 201.12],
+          [103.04, 201.99],
+          [98.58, 201.97],
+          [94.18, 201.19],
+          [89.97, 199.7],
+          [86.1, 197.48],
+          [82.8, 194.48],
+          [80.41, 190.72],
+          [79.31, 186.41],
+          [79.87, 182],
+          [81.24, 177.74],
+          [82.57, 173.47],
+          [83.88, 169.2],
+          [85.19, 164.92],
+          [86.48, 160.64],
+          [87.75, 156.36],
+          [89.02, 152.07],
+          [90.28, 147.78],
+          [91.53, 143.49],
+          [92.77, 139.19],
+          [93.97, 134.88],
+          [95.5, 130.69],
+          [97.93, 126.95],
+          [101.16, 123.87],
+          [105.02, 121.64],
+          [109.3, 120.36]
+        ],
+        [
+          [181.19, 127.71],
+          [185.4, 128.03],
+          [189.23, 129.79],
+          [192.19, 132.8],
+          [194.06, 136.59],
+          [194.87, 140.74],
+          [194.76, 144.98],
+          [194.21, 149.18],
+          [193.55, 153.37],
+          [192.79, 157.55],
+          [191.91, 161.69],
+          [190.91, 165.82],
+          [189.8, 169.91],
+          [188.57, 173.97],
+          [187.22, 177.99],
+          [185.72, 181.96],
+          [184.07, 185.87],
+          [182.26, 189.7],
+          [180.26, 193.44],
+          [177.85, 196.92],
+          [174.93, 199.99],
+          [171.62, 202.64],
+          [168, 204.85],
+          [164.13, 206.59],
+          [160.07, 207.78],
+          [155.86, 208.24],
+          [151.69, 207.6],
+          [148.31, 205.16],
+          [147.33, 201.11],
+          [148.48, 197.06],
+          [150.4, 193.28],
+          [152.24, 189.46],
+          [153.93, 185.56],
+          [155.48, 181.61],
+          [156.89, 177.62],
+          [158.17, 173.57],
+          [159.32, 169.49],
+          [160.35, 165.38],
+          [161.26, 161.23],
+          [162.06, 157.07],
+          [162.7, 152.87],
+          [163.29, 148.67],
+          [164.12, 144.52],
+          [165.46, 140.5],
+          [167.49, 136.78],
+          [170.16, 133.49],
+          [173.37, 130.73],
+          [177.08, 128.7]
+        ]
+      ],
+      [
+        [
+          [52.43, 111.88],
+          [55.76, 112.3],
+          [59, 113.21],
+          [62.08, 114.57],
+          [64.96, 116.3],
+          [67.61, 118.36],
+          [70.01, 120.71],
+          [72.16, 123.3],
+          [74.02, 126.1],
+          [75.61, 129.06],
+          [76.9, 132.17],
+          [77.89, 135.38],
+          [78.56, 138.68],
+          [78.89, 142.02],
+          [78.86, 145.39],
+          [78.45, 148.72],
+          [77.63, 151.98],
+          [76.39, 155.11],
+          [74.74, 158.03],
+          [72.67, 160.68],
+          [70.2, 162.96],
+          [67.38, 164.79],
+          [64.28, 166.08],
+          [61, 166.78],
+          [57.64, 166.91],
+          [54.3, 166.49],
+          [51.07, 165.57],
+          [47.99, 164.22],
+          [45.11, 162.49],
+          [42.46, 160.42],
+          [40.05, 158.07],
+          [37.91, 155.48],
+          [36.04, 152.68],
+          [34.46, 149.72],
+          [33.16, 146.62],
+          [32.17, 143.4],
+          [31.51, 140.11],
+          [31.18, 136.76],
+          [31.21, 133.4],
+          [31.62, 130.06],
+          [32.44, 126.8],
+          [33.67, 123.68],
+          [35.33, 120.75],
+          [37.4, 118.1],
+          [39.86, 115.82],
+          [42.68, 114],
+          [45.79, 112.71],
+          [49.07, 112.01]
+        ],
+        [
+          [126.89, 95.19],
+          [130.56, 95.44],
+          [134.16, 96.17],
+          [137.64, 97.36],
+          [140.94, 98.99],
+          [143.98, 101.06],
+          [146.73, 103.5],
+          [149.13, 106.29],
+          [151.14, 109.37],
+          [152.72, 112.69],
+          [153.86, 116.19],
+          [154.54, 119.8],
+          [154.74, 123.47],
+          [154.45, 127.14],
+          [153.67, 130.74],
+          [152.43, 134.2],
+          [150.76, 137.48],
+          [148.69, 140.51],
+          [146.25, 143.27],
+          [143.48, 145.69],
+          [140.43, 147.75],
+          [137.14, 149.39],
+          [133.66, 150.59],
+          [130.06, 151.32],
+          [126.39, 151.56],
+          [122.72, 151.31],
+          [119.11, 150.59],
+          [115.63, 149.4],
+          [112.34, 147.76],
+          [109.29, 145.7],
+          [106.54, 143.26],
+          [104.14, 140.47],
+          [102.13, 137.39],
+          [100.55, 134.07],
+          [99.41, 130.57],
+          [98.73, 126.96],
+          [98.53, 123.28],
+          [98.83, 119.62],
+          [99.6, 116.02],
+          [100.84, 112.56],
+          [102.51, 109.28],
+          [104.59, 106.25],
+          [107.03, 103.49],
+          [109.79, 101.07],
+          [112.84, 99.01],
+          [116.13, 97.36],
+          [119.61, 96.16],
+          [123.22, 95.43]
+        ]
+      ],
+      [
+        [
+          [72.34, 79.33],
+          [74.93, 79.64],
+          [77.52, 79.94],
+          [80.12, 80.25],
+          [82.71, 80.57],
+          [85.3, 80.91],
+          [87.88, 81.26],
+          [90.47, 81.63],
+          [93.05, 82],
+          [95.63, 82.39],
+          [98.21, 82.79],
+          [100.79, 83.21],
+          [103.37, 83.63],
+          [105.94, 84.07],
+          [108.51, 84.52],
+          [111.09, 84.92],
+          [113.65, 85.44],
+          [115.99, 86.56],
+          [117.75, 88.47],
+          [118.68, 90.89],
+          [118.57, 93.48],
+          [117.47, 95.83],
+          [115.57, 97.6],
+          [113.16, 98.56],
+          [110.56, 98.58],
+          [108, 98.1],
+          [105.43, 97.64],
+          [102.85, 97.19],
+          [100.28, 96.76],
+          [97.7, 96.33],
+          [95.12, 95.93],
+          [92.54, 95.53],
+          [89.96, 95.14],
+          [87.38, 94.77],
+          [84.79, 94.4],
+          [82.2, 94.06],
+          [79.62, 93.72],
+          [77.02, 93.41],
+          [74.43, 93.11],
+          [71.84, 92.81],
+          [69.24, 92.5],
+          [66.78, 91.69],
+          [64.99, 89.83],
+          [64.25, 87.35],
+          [64.5, 84.76],
+          [65.58, 82.39],
+          [67.38, 80.53],
+          [69.74, 79.45]
+        ],
+        [
+          [136.83, 90.25],
+          [139.33, 90.71],
+          [141.8, 91.34],
+          [144.28, 91.93],
+          [146.75, 92.53],
+          [149.22, 93.14],
+          [151.69, 93.77],
+          [154.15, 94.4],
+          [156.62, 95.05],
+          [159.08, 95.71],
+          [161.53, 96.38],
+          [163.98, 97.07],
+          [166.43, 97.76],
+          [168.88, 98.47],
+          [171.32, 99.2],
+          [173.75, 99.94],
+          [176.19, 100.67],
+          [178.49, 101.74],
+          [180.18, 103.62],
+          [181.12, 105.98],
+          [181.31, 108.51],
+          [180.69, 110.96],
+          [179.21, 113.01],
+          [176.98, 114.19],
+          [174.46, 114.13],
+          [172.02, 113.41],
+          [169.58, 112.66],
+          [167.14, 111.93],
+          [164.7, 111.22],
+          [162.25, 110.52],
+          [159.8, 109.84],
+          [157.34, 109.17],
+          [154.88, 108.52],
+          [152.42, 107.88],
+          [149.95, 107.26],
+          [147.48, 106.64],
+          [145.01, 106.03],
+          [142.54, 105.42],
+          [140.06, 104.81],
+          [137.59, 104.21],
+          [135.12, 103.61],
+          [132.78, 102.62],
+          [130.96, 100.86],
+          [129.93, 98.55],
+          [129.77, 96.02],
+          [130.49, 93.59],
+          [132.06, 91.61],
+          [134.31, 90.46]
+        ]
+      ],
+      [
+        [
+          [107.05, 116.19],
+          [110.26, 116.71],
+          [113.26, 118],
+          [115.85, 119.97],
+          [117.92, 122.49],
+          [119.29, 125.45],
+          [120.04, 128.63],
+          [120.54, 131.86],
+          [121.04, 135.09],
+          [121.54, 138.31],
+          [122.06, 141.54],
+          [122.59, 144.77],
+          [123.12, 147.99],
+          [123.67, 151.21],
+          [124.22, 154.43],
+          [124.8, 157.65],
+          [125.4, 160.86],
+          [125.95, 164.08],
+          [126.04, 167.34],
+          [125.2, 170.49],
+          [123.53, 173.28],
+          [121.14, 175.49],
+          [118.26, 177.02],
+          [115.11, 177.87],
+          [111.85, 178.04],
+          [108.63, 177.56],
+          [105.58, 176.41],
+          [102.87, 174.58],
+          [100.72, 172.14],
+          [99.35, 169.18],
+          [98.61, 166],
+          [98.04, 162.78],
+          [97.47, 159.57],
+          [96.91, 156.35],
+          [96.36, 153.13],
+          [95.83, 149.9],
+          [95.3, 146.68],
+          [94.78, 143.45],
+          [94.27, 140.22],
+          [93.76, 137],
+          [93.26, 133.77],
+          [92.82, 130.53],
+          [92.96, 127.27],
+          [93.87, 124.15],
+          [95.55, 121.35],
+          [97.88, 119.07],
+          [100.68, 117.41],
+          [103.79, 116.44]
+        ],
+        [
+          [189.21, 121.96],
+          [191.36, 122.71],
+          [192.8, 124.5],
+          [193.41, 126.73],
+          [193.32, 129.04],
+          [192.59, 131.23],
+          [191.22, 133.09],
+          [189.28, 134.34],
+          [187.12, 135.19],
+          [184.95, 136],
+          [182.78, 136.83],
+          [180.61, 137.63],
+          [178.43, 138.43],
+          [176.24, 139.2],
+          [174.05, 139.95],
+          [171.85, 140.69],
+          [169.64, 141.4],
+          [167.43, 142.09],
+          [165.21, 142.76],
+          [162.98, 143.42],
+          [160.75, 144.05],
+          [158.51, 144.66],
+          [156.27, 145.25],
+          [154.02, 145.81],
+          [151.72, 145.98],
+          [149.57, 145.18],
+          [148.01, 143.49],
+          [147.25, 141.31],
+          [147.31, 139],
+          [148.16, 136.86],
+          [149.7, 135.14],
+          [151.74, 134.05],
+          [153.97, 133.43],
+          [156.21, 132.84],
+          [158.45, 132.22],
+          [160.68, 131.59],
+          [162.91, 130.93],
+          [165.13, 130.26],
+          [167.34, 129.58],
+          [169.55, 128.87],
+          [171.76, 128.15],
+          [173.95, 127.41],
+          [176.15, 126.65],
+          [178.33, 125.87],
+          [180.51, 125.08],
+          [182.68, 124.26],
+          [184.84, 123.41],
+          [186.98, 122.53]
+        ]
+      ],
+      [
+        [
+          [98.62, 121.53],
+          [100.72, 121.6],
+          [102.78, 122.03],
+          [104.72, 122.83],
+          [106.49, 123.97],
+          [108.01, 125.42],
+          [109.24, 127.12],
+          [110.15, 129.02],
+          [110.66, 131.05],
+          [110.78, 133.15],
+          [110.62, 135.25],
+          [110.34, 137.33],
+          [110.04, 139.42],
+          [109.76, 141.5],
+          [109.49, 143.59],
+          [109.21, 145.68],
+          [108.92, 147.76],
+          [108.6, 149.84],
+          [108.08, 151.88],
+          [107.18, 153.78],
+          [105.92, 155.45],
+          [104.34, 156.83],
+          [102.51, 157.86],
+          [100.51, 158.52],
+          [98.43, 158.81],
+          [96.33, 158.72],
+          [94.28, 158.27],
+          [92.33, 157.47],
+          [90.57, 156.33],
+          [89.03, 154.89],
+          [87.78, 153.21],
+          [86.85, 151.32],
+          [86.29, 149.3],
+          [86.13, 147.2],
+          [86.28, 145.11],
+          [86.57, 143.02],
+          [86.9, 140.94],
+          [87.2, 138.86],
+          [87.49, 136.78],
+          [87.79, 134.69],
+          [88.08, 132.61],
+          [88.4, 130.53],
+          [88.96, 128.5],
+          [89.88, 126.61],
+          [91.15, 124.94],
+          [92.73, 123.56],
+          [94.56, 122.52],
+          [96.54, 121.84]
+        ],
+        [
+          [155.31, 127.29],
+          [157.36, 127.43],
+          [159.33, 127.99],
+          [161.14, 128.96],
+          [162.7, 130.29],
+          [163.95, 131.92],
+          [164.84, 133.77],
+          [165.35, 135.75],
+          [165.49, 137.8],
+          [165.35, 139.85],
+          [165.07, 141.89],
+          [164.79, 143.92],
+          [164.53, 145.96],
+          [164.26, 148],
+          [163.97, 150.04],
+          [163.65, 152.06],
+          [163.27, 154.09],
+          [162.7, 156.06],
+          [161.83, 157.92],
+          [160.68, 159.62],
+          [159.29, 161.13],
+          [157.69, 162.41],
+          [155.9, 163.42],
+          [153.97, 164.1],
+          [151.94, 164.41],
+          [149.89, 164.32],
+          [147.9, 163.82],
+          [146.06, 162.92],
+          [144.47, 161.62],
+          [143.24, 159.98],
+          [142.41, 158.1],
+          [142, 156.09],
+          [142.01, 154.04],
+          [142.32, 152.01],
+          [142.64, 149.98],
+          [142.96, 147.95],
+          [143.25, 145.92],
+          [143.51, 143.88],
+          [143.73, 141.83],
+          [143.97, 139.79],
+          [144.27, 137.76],
+          [144.74, 135.76],
+          [145.53, 133.87],
+          [146.62, 132.13],
+          [147.98, 130.59],
+          [149.57, 129.28],
+          [151.35, 128.27],
+          [153.28, 127.58]
+        ]
+      ]
+    ],
+    GROUPS: {
+      "Cycle de vie": [
+        "sleeping",
+        "waking",
+        "idle",
+        "listening",
+        "thinking",
+        "searching",
+        "working"
+      ],
+      R\u00E9actions: [
+        "excited",
+        "surprised",
+        "suspicious",
+        "angry",
+        "drowsy",
+        "happy",
+        "curious",
+        "confused",
+        "bored",
+        "proud",
+        "shy",
+        "sad",
+        "laughing",
+        "scared",
+        "playful",
+        "celebrate"
+      ],
+      "Morphes agent": ["orbit", "radar", "progress"],
+      "Cycle produit": [
+        "spawning",
+        "humming",
+        "loading",
+        "dictating",
+        "writing",
+        "sending",
+        "receiving",
+        "uploading",
+        "notifying",
+        "alerting",
+        "dragging",
+        "bouncing",
+        "powering-down"
+      ]
+    },
+    POOLS: {
+      sleeping: [13, 22, 4],
+      waking: [13],
+      idle: [0, 8],
+      listening: [10, 1, 19],
+      thinking: [8, 16, 14, 17, 5],
+      searching: [15, 9, 3, 20, 12, 18],
+      working: [7, 16, 11, 10],
+      excited: [2, 17, 21, 3, 11],
+      surprised: [3, 21],
+      suspicious: [14, 5, 23],
+      angry: [7, 16],
+      drowsy: [4, 22, 13],
+      happy: [2, 11, 17, 19],
+      curious: [3, 21, 0, 15],
+      confused: [14, 5, 8],
+      bored: [4, 22, 0],
+      proud: [15, 8, 2],
+      shy: [0, 24, 13],
+      sad: [4, 13, 22],
+      laughing: [2, 11, 17],
+      scared: [3, 21],
+      playful: [2, 17, 11, 8],
+      celebrate: [2, 8, 17],
+      orbit: [0, 8],
+      radar: [0, 8],
+      progress: [0, 8],
+      spawning: [3, 0],
+      humming: [0, 8],
+      loading: [0, 8],
+      dictating: [10, 1, 19],
+      sending: [0, 8],
+      receiving: [19, 0, 8],
+      uploading: [15, 9, 8],
+      writing: [15, 9],
+      notifying: [3, 21, 0],
+      alerting: [3, 21],
+      bouncing: [2, 17],
+      dragging: [3, 15, 0],
+      "powering-down": [13, 22]
+    },
+    EXPR_CADENCE: {
+      sleeping: [6e3, 1e4],
+      waking: [800, 800],
+      idle: [9e3, 16e3],
+      listening: [2800, 5e3],
+      thinking: [2e3, 3600],
+      searching: [1e3, 1800],
+      working: [1800, 3200],
+      excited: [1100, 2e3],
+      surprised: [2500, 4e3],
+      suspicious: [2600, 4500],
+      angry: [2200, 3800],
+      drowsy: [4e3, 8e3],
+      happy: [2500, 4500],
+      curious: [1800, 3200],
+      confused: [2200, 3800],
+      bored: [3500, 6e3],
+      proud: [3500, 6e3],
+      shy: [3e3, 5500],
+      sad: [4e3, 7e3],
+      laughing: [1200, 2400],
+      scared: [900, 1800],
+      playful: [1500, 3e3],
+      celebrate: [1400, 2600],
+      orbit: [4e3, 8e3],
+      radar: [4e3, 8e3],
+      progress: [4e3, 8e3],
+      spawning: [1200, 1200],
+      humming: [5e3, 9e3],
+      loading: [6e3, 1e4],
+      dictating: [4e3, 8e3],
+      sending: [4e3, 8e3],
+      receiving: [4e3, 8e3],
+      uploading: [4e3, 8e3],
+      writing: [4e3, 8e3],
+      notifying: [1500, 2600],
+      alerting: [2e3, 3600],
+      bouncing: [3e3, 6e3],
+      dragging: [1600, 3e3],
+      "powering-down": [6e3, 9e3]
+    },
+    BLINK: {
+      sleeping: null,
+      waking: null,
+      idle: [6e3, 14e3],
+      listening: [3e3, 7e3],
+      thinking: [3500, 7e3],
+      searching: [1600, 4e3],
+      working: [2800, 5500],
+      excited: [2e3, 4e3],
+      surprised: [1800, 3500],
+      suspicious: [4500, 8e3],
+      angry: [3500, 7e3],
+      drowsy: null,
+      happy: [2500, 5e3],
+      curious: [2500, 5500],
+      confused: [2800, 5500],
+      bored: [4e3, 8e3],
+      proud: [3500, 7e3],
+      shy: [3e3, 6e3],
+      sad: [4e3, 8e3],
+      laughing: [2500, 5e3],
+      scared: [1200, 3e3],
+      playful: [2e3, 4500],
+      celebrate: [2200, 4500],
+      orbit: null,
+      radar: null,
+      progress: null,
+      spawning: null,
+      humming: [4e3, 8e3],
+      loading: null,
+      dictating: null,
+      sending: null,
+      receiving: null,
+      uploading: null,
+      writing: null,
+      notifying: [2e3, 4e3],
+      alerting: null,
+      bouncing: null,
+      dragging: [2200, 4500],
+      "powering-down": null
+    }
+  };
+
+  // repo/extension/src/shared/grok-bot.ts
+  var SILHOUETTE_PATHS = {
+    blob: "M228.541 114.228C228.541 130.133 225.184 145.994 218.738 160.534C212.674 174.217 203.904 186.669 193.065 196.988C155.933 232.34 99.497 238.596 55.5255 212.24C45.097 205.99 35.6851 198.072 27.7451 188.866C19.1926 178.953 12.3686 167.569 7.65781 155.351C2.60712 142.264 0 128.257 0 114.228C0 98.3219 3.35751 82.4611 9.80315 67.9215C15.8672 54.2382 24.6377 41.7862 35.4767 31.4668C72.6081 -3.88483 129.044 -10.1413 173.016 16.2153C183.444 22.4653 192.856 30.3829 200.796 39.5896C209.349 49.5018 216.173 60.8859 220.883 73.1037C225.934 86.1906 228.541 100.198 228.541 114.228Z",
+    pebble: "M114 8C177 8 217 45 217 109C217 178 181 219 112 219C43 219 12 181 12 113C12 48 51 8 114 8Z",
+    squircle: "M55 10H174Q219 10 219 55V174Q219 219 174 219H55Q10 219 10 174V55Q10 10 55 10Z",
+    capsule: "M61 31H168C202 31 220 65 220 114C220 163 202 197 168 197H61C27 197 9 163 9 114C9 65 27 31 61 31Z",
+    hex: "M114 5L207 58Q218 64 218 78V153Q218 167 207 173L128 218Q114 226 100 218L21 173Q10 167 10 153V78Q10 64 21 58L100 12Q114 5 114 5Z",
+    triangle: "M114 9Q122 9 128 21L220 194Q227 210 207 210H21Q1 210 9 194L101 21Q106 9 114 9Z"
+  };
+  var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  var xOf = (p) => p?.[0] ?? 0;
+  var yOf = (p) => p?.[1] ?? 0;
+  var mixPt = (a, b, t) => {
+    const ax = xOf(a);
+    const ay = yOf(a);
+    return [ax + (xOf(b) - ax) * t, ay + (yOf(b) - ay) * t];
+  };
+  var ringPath = (ring) => "M" + ring.map((p) => `${xOf(p).toFixed(2)} ${yOf(p).toFixed(2)}`).join("L") + "Z";
+  var centroid = (ring) => {
+    const n = ring.length || 1;
+    let x = 0;
+    let y = 0;
+    for (const p of ring) {
+      x += xOf(p) / n;
+      y += yOf(p) / n;
+    }
+    return [x, y];
+  };
+  var cloneExpr = (expr) => expr.map((r) => r.map((p) => [xOf(p), yOf(p)]));
+  var clip = 0;
+  var live = /* @__PURE__ */ new Set();
+  var raf = 0;
+  var last = 0;
+  function reduceMotion() {
+    return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  function loop(now) {
+    const dt = Math.min((now - last) / 1e3, 0.1);
+    last = now;
+    for (const bot of live) bot.tick(now, dt);
+    raf = live.size ? requestAnimationFrame(loop) : 0;
+  }
+  function ensureLoop() {
+    if (raf || live.size === 0) return;
+    last = performance.now();
+    raf = requestAnimationFrame(loop);
+  }
+  var GrokBot = class {
+    svg;
+    eye0;
+    eye1;
+    pool;
+    mood;
+    expr;
+    current;
+    target;
+    morph = 1;
+    vel = 0;
+    blink = 1;
+    blinkStart = 0;
+    gazeX = 0;
+    gazeY = 0;
+    gx = 0;
+    gy = 0;
+    nextBlink = 0;
+    nextExpr = 0;
+    nextGaze = 0;
+    nextTilt = 0;
+    waiting = false;
+    constructor(svg, person) {
+      this.svg = svg;
+      const e0 = svg.querySelector(".e0");
+      const e1 = svg.querySelector(".e1");
+      if (!(e0 instanceof SVGPathElement) || !(e1 instanceof SVGPathElement)) {
+        throw new Error("grok eyes missing");
+      }
+      this.eye0 = e0;
+      this.eye1 = e1;
+      this.pool = [...person.pool];
+      this.mood = person.mood;
+      this.expr = person.expr;
+      const rings = GROKBOT_ORIGINAL.EXPRESSIONS[person.expr];
+      if (!rings) throw new Error(`missing expression ${person.expr}`);
+      this.current = cloneExpr(rings);
+      this.target = rings;
+      const now = performance.now();
+      this.nextBlink = now + 600 + Math.random() * 2e3;
+      this.nextExpr = now + 900 + Math.random() * 1600;
+      this.nextGaze = now;
+      this.nextTilt = now + 1600 + Math.random() * 2e3;
+      this.draw();
+    }
+    setWaiting(waiting) {
+      this.waiting = waiting;
+    }
+    choose(i) {
+      const t = clamp(this.morph, 0, 1);
+      this.current = this.current.map(
+        (ring, e) => ring.map((p, j) => mixPt(p, this.target[e]?.[j], t))
+      );
+      const next = GROKBOT_ORIGINAL.EXPRESSIONS[i];
+      if (!next) return;
+      this.target = next;
+      this.expr = i;
+      this.morph = 0;
+      this.vel = 0;
+    }
+    tick(now, dt) {
+      if (reduceMotion()) {
+        this.morph = 1;
+        this.blink = 1;
+        this.draw();
+        return;
+      }
+      this.vel += (-14 * this.vel - 49 * (this.morph - 1)) * dt;
+      this.morph += this.vel * dt;
+      if (!Number.isFinite(this.morph)) {
+        this.morph = 1;
+        this.vel = 0;
+      }
+      if (now > this.nextBlink) {
+        this.blinkStart = now;
+        this.nextBlink = now + 2600 + Math.random() * 3400;
+      }
+      if (this.blinkStart) {
+        const t = (now - this.blinkStart) / 320;
+        if (t >= 1) {
+          this.blinkStart = 0;
+          this.blink = 1;
+        } else this.blink = Math.max(t < 0.42 ? 1 - t / 0.42 : (t - 0.42) / 0.58, 0.04);
+      }
+      if (this.pool.length > 1 && now > this.nextExpr) {
+        const next = this.pool.find((i) => i !== this.expr) ?? this.pool[0] ?? this.expr;
+        this.choose(next);
+        this.nextExpr = now + (this.waiting || this.mood === "wait" ? 2800 : 1500) + Math.random() * 1800;
+      }
+      if (now > this.nextGaze) {
+        const amp = this.waiting || this.mood === "wait" ? 6 : 16;
+        this.gx = (Math.random() - 0.5) * amp;
+        this.gy = (Math.random() - 0.5) * amp * 0.6;
+        this.nextGaze = now + 800 + Math.random() * 1400;
+      }
+      this.gazeX += (this.gx - this.gazeX) * Math.min(1, dt * 3);
+      this.gazeY += (this.gy - this.gazeY) * Math.min(1, dt * 3);
+      if (this.mood === "play" && !this.waiting && now > this.nextTilt) {
+        this.svg.classList.remove("tilt-once");
+        void this.svg.getBoundingClientRect();
+        this.svg.classList.add("tilt-once");
+        this.nextTilt = now + 3800 + Math.random() * 3200;
+      }
+      this.draw();
+    }
+    draw() {
+      const t = clamp(this.morph, 0, 1);
+      const shown = this.current.map(
+        (ring, e) => ring.map((p, j) => mixPt(p, this.target[e]?.[j], t))
+      );
+      [this.eye0, this.eye1].forEach((el, i) => {
+        const ring = shown[i];
+        if (!ring) return;
+        const c = centroid(ring);
+        const x = c[0] + this.gazeX;
+        const y = c[1] + this.gazeY;
+        el.setAttribute("d", ringPath(ring));
+        el.setAttribute(
+          "transform",
+          `translate(${x} ${y}) scale(1 ${this.blink}) translate(${-c[0]} ${-c[1]})`
+        );
+      });
+    }
+    destroy() {
+      live.delete(this);
+      this.svg.remove();
+    }
+  };
+  function mountGrok(host, person, size = 28, options = {}) {
+    host.replaceChildren();
+    const id = `gb${++clip}`;
+    const d = SILHOUETTE_PATHS[person.shape];
+    host.innerHTML = `<svg class="gb" width="${size}" height="${size}" viewBox="0 0 229 229" aria-hidden="true">
+    <defs><clipPath id="${id}"><path d="${d}"/></clipPath></defs>
+    <path fill="${person.color}" d="${d}"/>
+    <g clip-path="url(#${id})">
+      <path class="e0" fill="#fff"/>
+      <path class="e1" fill="#fff"/>
+    </g>
+  </svg>`;
+    const svg = host.querySelector("svg");
+    if (!svg) throw new Error("grok svg missing");
+    const bot = new GrokBot(svg, person);
+    if (options.animate !== false) {
+      live.add(bot);
+      ensureLoop();
+    }
+    return {
+      destroy() {
+        bot.destroy();
+        host.replaceChildren();
+      },
+      setWaiting(waiting) {
+        bot.setWaiting(waiting);
+      }
+    };
+  }
+  function mountKenney(host, bodyUrl, faceUrl, size = 28) {
+    host.replaceChildren();
+    const el = document.createElement("span");
+    el.className = "kn live";
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    el.style.setProperty("--body", `url("${bodyUrl}")`);
+    el.style.setProperty("--face", `url("${faceUrl}")`);
+    el.innerHTML = "<i></i>";
+    host.appendChild(el);
+  }
+
+  // repo/extension/src/shared/cursor-visual.ts
+  var CURSOR_SVG_SIZE = globalThis.__BYS_PROTO_SIZE ?? 35;
+  var CURSOR_STROKE_WHITE = 2.2;
+  var CURSOR_STROKE_HALO = 3.8;
+  var CURSOR_TIP = { x: 4.037, y: 4.688 };
+  var CURSOR_ARROW_PATH = "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z";
+
+  // repo/extension/src/shared/cursor-label.ts
+  var LABEL_DX = Math.round(CURSOR_SVG_SIZE * 16 / 35);
+  var LABEL_DY = Math.round(CURSOR_SVG_SIZE * 0.69) + 4;
+  function cursorLabelPosition(point, size, viewport) {
+    const right = point.x + LABEL_DX;
+    const below = point.y + LABEL_DY;
+    const x = right + size.width > viewport.width - 8 ? point.x - size.width - 12 : right;
+    const y = below + size.height > viewport.height - 8 ? point.y - size.height - 12 : below;
+    return { x: Math.max(8, x), y: Math.max(8, y) };
+  }
+
+  // repo/extension/src/shared/cursor-path.ts
+  var CURSOR_REST_INSET = 24;
+  var FITTS_MIN_MS = 220;
+  var FITTS_MAX_MS = 480;
+  var PARK_AFTER_MS = 1200;
+  function easeInOutCubic(t) {
+    const x = t < 0 ? 0 : t > 1 ? 1 : t;
+    return x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+  }
+  function fittsMs(dist, width = 44) {
+    const d = Math.max(0, dist);
+    const w = Math.max(1, width);
+    const id = Math.log2(d / w + 1);
+    return Math.max(FITTS_MIN_MS, Math.min(FITTS_MAX_MS, 90 + 160 * id));
+  }
+  function restOnRight(index) {
+    return (index < 0 ? 0 : index) % 2 === 1;
+  }
+  function restPoint(index, viewportWidth) {
+    const right = restOnRight(index);
+    const w = Math.max(CURSOR_REST_INSET * 2, viewportWidth);
+    return {
+      x: right ? w - CURSOR_REST_INSET : CURSOR_REST_INSET,
+      y: CURSOR_REST_INSET
+    };
+  }
+  function arcControl(from, to) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const spread = Math.max(8, Math.min(36, dist * 0.12));
+    return {
+      x: (from.x + to.x) / 2 + -dy / dist * spread,
+      y: (from.y + to.y) / 2 + dx / dist * spread
+    };
+  }
+  function qbez(p0, p1, p2, t) {
+    const u = 1 - t;
+    return {
+      x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+      y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y
+    };
+  }
+  function pointOnArc(from, to, t) {
+    return qbez(from, arcControl(from, to), to, t);
+  }
+  function flightMs(from, to) {
+    return fittsMs(Math.hypot(to.x - from.x, to.y - from.y));
+  }
+
+  // repo/extension/src/shared/overlay.ts
+  var OVERLAY_ATTR = "data-sideagent-overlay";
+  var OVERLAY_KIND_CURSOR = "cursor";
+  var OVERLAY_KIND_MARKS = "marks";
+  var OVERLAY_KIND_CONTROL = "control";
+  var HIGHLIGHT_PAD = 3;
+  var MARK_PAD = 6;
+  function overlayHostSelector() {
+    return `[${OVERLAY_ATTR}]`;
+  }
+  function sweepStaleOverlayHosts(root) {
+    const nodes = root.querySelectorAll(overlayHostSelector());
+    const len = nodes.length;
+    for (let i = 0; i < len; i++) nodes[i].remove();
+    return len;
+  }
+  function highlightBounds(rect, pad = HIGHLIGHT_PAD) {
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      left: Math.round(rect.x - pad),
+      top: Math.round(rect.y - pad),
+      width: Math.round(rect.width + pad * 2),
+      height: Math.round(rect.height + pad * 2)
+    };
+  }
+  function viewportRectToDocumentBox(rect, scrollX, scrollY, pad = MARK_PAD) {
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: Math.round(rect.x + scrollX) - pad,
+      y: Math.round(rect.y + scrollY) - pad,
+      width: Math.round(rect.width) + pad * 2,
+      height: Math.round(rect.height) + pad * 2
+    };
+  }
+
+  // repo/extension/src/shared/rough/prng.ts
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = a + 1831565813 >>> 0;
+      let t = a;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // repo/extension/src/shared/rough/geometry.ts
+  function sampleLine(x1, y1, x2, y2, step = 8) {
+    const n = Math.max(2, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / step));
+    return Array.from({ length: n + 1 }, (_, i) => [
+      x1 + (x2 - x1) * i / n,
+      y1 + (y2 - y1) * i / n
+    ]);
+  }
+  function ellipsePoints(cx, cy, rx, ry, a0, a1, n) {
+    return Array.from({ length: n + 1 }, (_, i) => {
+      const a = a0 + (a1 - a0) * i / n;
+      return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)];
+    });
+  }
+  function jitter(points, rand, amp) {
+    return points.map(([x, y]) => [x + (rand() * 2 - 1) * amp, y + (rand() * 2 - 1) * amp]);
+  }
+  function toPath(points, close) {
+    const first = points[0];
+    if (!first) return "";
+    let d = `M${first[0].toFixed(2)} ${first[1].toFixed(2)}`;
+    for (let i = 1; i < points.length - 1; i++) {
+      const pCurrent = points[i];
+      const pNext = points[i + 1];
+      if (!pCurrent || !pNext) continue;
+      const [cx, cy] = pCurrent;
+      const mx = (cx + pNext[0]) / 2;
+      const my = (cy + pNext[1]) / 2;
+      d += ` Q${cx.toFixed(2)} ${cy.toFixed(2)} ${mx.toFixed(2)} ${my.toFixed(2)}`;
+    }
+    const last2 = points[points.length - 1];
+    if (last2) {
+      d += ` L${last2[0].toFixed(2)} ${last2[1].toFixed(2)}`;
+    }
+    return close ? d + " Z" : d;
+  }
+  function boilPass(points, o) {
+    if (!o.boil || o.boilSeed === void 0) return points;
+    return jitter(points, mulberry32(o.boilSeed), o.boil);
+  }
+
+  // repo/extension/src/shared/rough/frame.ts
+  var WIDE_RATIO = 3.2;
+  function roundedRectPoints(b, r) {
+    const n = 5;
+    const { x, y, w, h } = b;
+    return [
+      ...sampleLine(x + r, y, x + w - r, y),
+      ...ellipsePoints(x + w - r, y + r, r, r, -Math.PI / 2, 0, n),
+      ...sampleLine(x + w, y + r, x + w, y + h - r),
+      ...ellipsePoints(x + w - r, y + h - r, r, r, 0, Math.PI / 2, n),
+      ...sampleLine(x + w - r, y + h, x + r, y + h),
+      ...ellipsePoints(x + r, y + h - r, r, r, Math.PI / 2, Math.PI, n),
+      ...sampleLine(x, y + h - r, x, y + r),
+      ...ellipsePoints(x + r, y + r, r, r, Math.PI, Math.PI * 1.5, n)
+    ];
+  }
+  function sketchFrame(target, o) {
+    const rand = mulberry32(o.seed);
+    const amp = 1.1 * o.roughness;
+    if (target.w / Math.max(1, target.h) > WIDE_RATIO) {
+      const pad = 4;
+      const frame = { x: target.x - pad, y: target.y - pad, w: target.w + pad * 2, h: target.h + pad * 2 };
+      return { d: toPath(boilPass(jitter(roundedRectPoints(frame, Math.min(10, frame.h / 2)), rand, amp), o), true), frame };
+    }
+    const cx = target.x + target.w / 2;
+    const cy = target.y + target.h / 2;
+    const rx = target.w / 2 * 1.25 + 4;
+    const ry = target.h / 2 * 1.25 + 4;
+    const n = Math.max(24, Math.ceil(Math.PI * (rx + ry) / 8));
+    return { d: toPath(boilPass(jitter(ellipsePoints(cx, cy, rx, ry, 0, Math.PI * 2, n).slice(0, -1), rand, amp), o), true), frame: { x: cx - rx, y: cy - ry, w: rx * 2, h: ry * 2 } };
+  }
+  function sketchLabelPosition(frame, label, room) {
+    const gap = 8;
+    const above = frame.y - label.h - 2;
+    const below = frame.y + frame.h + 2;
+    const right = { left: frame.x + frame.w + gap, top: frame.y + frame.h / 2 - label.h / 2 };
+    const candidates = [right, { left: frame.x, top: above }, { left: frame.x, top: below }, { left: frame.x - gap - label.w, top: right.top }];
+    for (let dx = 16; dx <= 480; dx += 16) candidates.push({ left: frame.x + dx, top: above }, { left: frame.x + dx, top: below });
+    const boxOf = (c) => ({ x: c.left, y: c.top, w: label.w, h: label.h });
+    const visible = candidates.filter((c) => room.inView(boxOf(c)));
+    return visible.find((c) => room.clear(boxOf(c))) ?? visible[0] ?? right;
+  }
+
+  // repo/extension/src/shared/feedback-pill.ts
+  var FEEDBACK_SUCCESS_MS = 2400;
+  var FEEDBACK_PENDING_MS = 12e3;
+  function feedbackLifetimeMs(kind) {
+    return kind === "success" ? FEEDBACK_SUCCESS_MS : FEEDBACK_PENDING_MS;
+  }
+  function beginFeedbackPill(previous, next, at) {
+    if (!previous) {
+      return { state: { ...next, bounces: 1, shownAt: at }, bounce: true };
+    }
+    const bounce = previous.id !== next.id;
+    return {
+      state: {
+        ...next,
+        bounces: bounce ? 1 : previous.bounces,
+        shownAt: bounce ? at : previous.shownAt
+      },
+      bounce
+    };
+  }
+
+  // repo/extension/src/content/cursor.ts
+  (function() {
+    const ns = window.__sideagent ??= {};
+    if (!ns.cursor) sweepStaleOverlayHosts(document);
+    if (ns.cursor) return;
+    const SCALE = CURSOR_SVG_SIZE / 24;
+    const DEFAULT_ID = LEAD_CURSOR_ID;
+    const DEFAULT_LABEL = "By Your Side";
+    const STATUS_COPY = {
+      waiting: { text: "\u5904\u7406\u4E2D", color: "#f59e0b" },
+      reading: { text: "\u6B63\u5728\u8BFB\u8FD9\u4E2A\u9875\u9762", color: "#2d4a86" },
+      done: { text: "\u672C\u8F6E\u5DF2\u7ED3\u675F", color: "#16a34a", autoHideMs: 1500 },
+      failed: { text: "\u8FD9\u4E00\u6B65\u6CA1\u505A\u6210", sub: "\u53EF\u4EE5\u8BA9\u6211\u91CD\u8BD5", color: "#e2554f" }
+    };
+    let defaultMarkOptions = { style: "rect", motion: "grow" };
+    let host = null;
+    let marksHost = null;
+    let controlHost = null;
+    let controlBar = null;
+    let shadow = null;
+    let highlightLayer = null;
+    let rippleLayer = null;
+    let marksLayer = null;
+    let viewportHooked = false;
+    const instances = /* @__PURE__ */ new Map();
+    const liveMarks = [];
+    let actionFrame;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    function svgEl(tag, attrs) {
+      const node = document.createElementNS(SVG_NS, tag);
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+      return node;
+    }
+    function ensureDom() {
+      if (host) return;
+      host = document.createElement("div");
+      host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CURSOR);
+      host.setAttribute("aria-label", "\u52A9\u624B\u64CD\u4F5C\u4E0E\u72B6\u6001");
+      host.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
+      shadow = host.attachShadow({ mode: "closed" });
+      const style = document.createElement("style");
+      style.textContent = `
+      .cursor {
+        position: absolute; top: 0; left: 0;
+        transition: opacity 160ms ease;
+        will-change: transform;
+      }
+      .cursor.hidden { opacity: 0; }
+      /* \u9875\u9762\u8FB9\u7F18\u5149\uFF1A\u52A9\u624B\u6B63\u5728\u64CD\u4F5C\u8FD9\u4E00\u9875\u3002\u989C\u8272\u8DDF\u968F\u6210\u5458\u5149\u6807\uFF0C\u7ED3\u675F\u540E\u6DE1\u51FA\u3002 */
+      .edge {
+        position: absolute; inset: 0; pointer-events: none;
+        opacity: 0; transition: opacity 420ms ease;
+        box-shadow:
+          inset 0 0 0 1px color-mix(in srgb, var(--c) 28%, transparent),
+          inset 0 0 32px 2px color-mix(in srgb, var(--c) 16%, transparent);
+      }
+      .edge.on { opacity: 1; animation: edge-breathe 2.6s ease-in-out infinite; }
+      /* \u65B0\u5EFA\u5373\u70B9\u4EAE\uFF1A\u6DE1\u5165\u7531\u6837\u5F0F\u8D77\u70B9\u5B8C\u6210\uFF0C\u4E0D\u9760\u4E0B\u4E00\u5E27\u518D\u6539 class\uFF08\u540E\u53F0\u9875\u7684\u4E0B\u4E00\u5E27\u53EF\u80FD\u5F88\u665A\uFF0C\u665A\u5230\u7684\u6539\u52A8\u4F1A\u8BA9\u5DF2\u53D1\u51FA\u7684\u786E\u8BA4\u5224\u4E3A\u9875\u9762\u5DF2\u53D8\uFF09\u3002 */
+      @starting-style { .edge.on { opacity: 0; } }
+      @keyframes edge-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
+      @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge.on { animation: none; } }
+      .cursor.rest { opacity: .86; }
+      .cursor.rest .label { opacity: 0; }
+      .cursor.flip .label { left: auto; right: ${Math.round(CURSOR_SVG_SIZE * 0.51)}px; }
+      .svg-wrap {
+        position: absolute; left: 0; top: 0;
+        transition: transform 130ms ease;
+        transform-origin: ${(CURSOR_TIP.x * SCALE).toFixed(1)}px ${(CURSOR_TIP.y * SCALE).toFixed(1)}px;
+      }
+      .cursor.pressing .svg-wrap { transform: scale(.8); }
+      .cursor svg {
+        position: absolute; display: block; overflow: visible;
+        left: ${(-CURSOR_TIP.x * SCALE).toFixed(1)}px; top: ${(-CURSOR_TIP.y * SCALE).toFixed(1)}px;
+        filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 3px rgba(20,20,19,.32));
+      }
+      .cursor path.fill { fill: var(--c); }
+      .cursor path.halo { fill: none; }
+      .label {
+        position: absolute; left: ${Math.round(CURSOR_SVG_SIZE * 0.63)}px; top: ${Math.round(CURSOR_SVG_SIZE * 0.69)}px;
+        padding: 2px 9px; border-radius: 999px;
+        background: var(--c); color: #fff;
+        font: 600 12px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        letter-spacing: .02em; white-space: nowrap;
+        box-shadow: 0 0 0 1px rgba(255,255,255,.7), 0 2px 8px rgba(15,23,42,.35);
+        text-shadow: 0 1px 1px rgba(15,23,42,.35);
+        transition: opacity 160ms ease;
+        pointer-events: none;
+      }
+      /* \u5149\u6807\u65C1\u7684\u8BDD\uFF1A\u767D\u5E95\u8F7B\u5361\uFF0C\u5DE6\u4E0A\u89D2\u6536\u5C16\uFF0C\u50CF\u4ECE\u5149\u6807\u8BF4\u51FA\u6765\uFF1B\u5DE6\u8FB9\u4E00\u9897\u5C0F\u5149\u7403\u662F\u6211\u4EEC\u7684\u8BB0\u53F7\u3002 */
+      .cursor.acting .label, .cursor.stating .label {
+        display: inline-flex; align-items: center; gap: 7px;
+        background: #ffffff; color: #141413;
+        border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px;
+        padding: 6px 12px 6px 9px;
+        width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
+        font: 400 13px/1.45 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        letter-spacing: 0; white-space: normal; overflow-wrap: anywhere;
+        text-shadow: none; opacity: 1;
+        box-shadow: 0 4px 14px rgba(20,20,19,.10);
+      }
+      .orb-dot {
+        flex: none; width: 10px; height: 10px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%);
+        box-shadow: 0 0 6px rgba(129,140,248,.45);
+        animation: orb-breathe 2.4s ease-in-out infinite;
+      }
+      @keyframes orb-breathe { 50% { transform: scale(.82); opacity: .75; } }
+      @media (prefers-reduced-motion: reduce) { .orb-dot { animation: none; } }
+      .action-text { display: block; }
+      .agent-name { display: none; }
+      .cursor.rest.stating .label { opacity: 1; }
+      /* \u62FF\u4F4F\uFF1A\u540D\u724C\u4FDD\u6301\u6210\u5458\u8272\uFF0C\u5185\u5D4C\u786E\u8BA4\u7EA2 / \u53D6\u6D88\u7070\u53CC\u952E\uFF08C \u6848\uFF09 */
+      .cursor.holding .label {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 3px 4px; pointer-events: auto;
+        text-shadow: none;
+      }
+      .hold-action {
+        pointer-events: auto; cursor: pointer; border: 0; border-radius: 999px;
+        padding: 2px 10px;
+        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        letter-spacing: .02em; white-space: nowrap;
+      }
+      .hold-action.confirm { background: #c43c32; color: #fff; }
+      .hold-action.cancel { background: #eceef1; color: #1c1f24; }
+      .hold-action:disabled { opacity: .5; cursor: default; }
+      .ripple {
+        position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+        border-radius: 50%; border: 2px solid;
+        animation: rip 360ms cubic-bezier(.16,1,.3,1) forwards;
+      }
+      .ripple.r2 {
+        width: 6px; height: 6px; margin: -3px 0 0 -3px;
+        border-width: 1.5px; animation-delay: 90ms;
+      }
+      @keyframes rip {
+        from { transform: scale(.5); opacity: .95; }
+        to { transform: scale(4.2); opacity: 0; }
+      }
+      /* \u8DE8\u9875\u5165\u53E3\uFF1A\u89D2\u8272\u8EAB\u4EFD\u4E0E\u9875\u9762\u4F4D\u7F6E\uFF0C\u4E0D\u906E\u6321\u9605\u8BFB\u7684\u5927\u901A\u77E5\u3002 */
+      .xpage {
+        position: absolute; right: 20px; top: 20px; display: none;
+        max-width: min(280px, calc(100vw - 40px)); pointer-events: auto;
+        color: #141413; font: 400 12px/1.5 -apple-system, "PingFang SC", sans-serif;
+      }
+      .xpage.on { display: block; }
+      /* \u72B6\u6001\u7EDF\u4E00\u5728\u53F3\u4E0A\u89D2\uFF1B\u5149\u6807\u65C1\u53EA\u6302\u300C\u6B63\u5728\u505A\u7684\u8FD9\u4E00\u4E0B\u300D\uFF08#43\uFF09\uFF0C\u505A\u5B8C\u968F\u5149\u6807\u56DE\u89D2\u843D\u6536\u8D77\u3002 */
+      .cursor:not(.holding):not(.acting) .label { display: none !important; }
+      .cursor.rest:not(.holding) { visibility: hidden; }
+      .cursor.holding .label { display:flex; flex-wrap:wrap; gap:6px; width:170px; max-width:calc(100vw - 48px); background:#ffffff; color:#141413; border:1px solid #e3e1d9; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px #2928210d; }
+      .hold-prompt { flex-basis:100%; font-size:12px; white-space:normal; }
+      .hold-action.confirm { background:#141413; color:#fff; }
+      .hold-action.cancel { background:#f0eee6; color:#514b42; }
+      .hold-action:focus-visible { outline:2px solid #2d4a86; outline-offset:2px; }
+      .xdetail { color:inherit; font-size:11px; padding:8px; overflow-wrap:anywhere; }
+      .xdetail[hidden] { display:none; }
+      .xpage button {
+        font: inherit; color: inherit; cursor: pointer; display: flex; align-items: center;
+        gap: 7px; min-width: 0; width: 100%; box-sizing: border-box;
+        background: #ffffff; border: 1px solid #e3e1d9; border-radius: 20px;
+        padding: 6px 10px; box-shadow: 0 2px 8px #2928210d;
+      }
+      .xpage button:hover { background: #f0eee6; }
+      .xpage button:focus-visible { outline: 2px solid #2d4a86; outline-offset: 3px; }
+      .xface { display: inline-flex; width: 22px; height: 22px; flex-shrink: 0; align-items:center; justify-content:center; }
+      .xface svg { width: 22px; height: 22px; }
+      .xface .kn { position:relative; display:block; background:var(--body) center / contain no-repeat; }
+      .xface .kn i { position:absolute; left:18%; right:18%; top:24%; bottom:30%; background:var(--face) center / contain no-repeat; }
+      .xmain { white-space: nowrap; flex-shrink: 0; font-weight: 500; }
+      /* \u53F3\u4E0A\u89D2\u53EA\u7BA1\u505C\uFF1A\u5C0F\u5149\u7403\u3001\u540D\u5B57\u3001\u4E00\u4E2A\u300C\u505C\u4E0B\u300D\u3002 */
+      .xbar {
+        display: inline-flex; align-items: center; gap: 8px; float: right;
+        background: #ffffff; border: 1px solid rgba(20,20,19,.08); border-radius: 999px;
+        padding: 5px 5px 5px 11px; box-shadow: 0 2px 8px rgba(20,20,19,.06);
+      }
+      .xbar .xmain { font-weight: 400; color: #5f5e58; }
+      .xpage .xbar .xstop {
+        width: auto; padding: 3px 12px; border-radius: 999px; box-shadow: none;
+        background: #ffffff; border: 1px solid rgba(20,20,19,.14); color: #141413; font: inherit;
+      }
+      .xpage .xbar .xstop:hover:not(:disabled) { background: #f0eee6; }
+      .xpage .xbar .xstop:disabled { color: #77756d; cursor: default; }
+      .xsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #5f5e58; }
+      .xarrow { margin-left: auto; }
+      .xlist { margin-top: 6px; padding: 5px; border: 1px solid #e3e1d9; border-radius: 12px; background: #ffffff; max-height: 240px; overflow-y:auto; }
+      .xlist {
+        transform-origin: top right;
+        opacity: 1; transform: scale(1);
+        transition: opacity 250ms cubic-bezier(.22,1,.36,1), transform 250ms cubic-bezier(.22,1,.36,1), display 250ms allow-discrete;
+      }
+      .xlist[hidden] { display:none; opacity:0; transform:scale(.97); transition-duration:150ms; }
+      @starting-style { .xlist:not([hidden]):not([data-restored]) { opacity:0; transform:scale(.97); } }
+      @media(prefers-reduced-motion:reduce) { .xlist { transition:none; } }
+      .xlist button { border:0; border-radius:7px; box-shadow:none; }
+      @media(prefers-color-scheme:dark) {
+        .xpage { color:#ece8df; }
+        .xpage button, .xlist { background:#282720; border-color:#49463d; }
+        .xpage button:hover { background:#343229; }
+        .xsub { color:#c0bbaf; }
+      }
+      .highlight {
+        position: absolute;
+        box-sizing: border-box;
+        pointer-events: none;
+        border-radius: 6px;
+        border: 2px solid var(--c);
+        background: color-mix(in srgb, var(--c) 14%, transparent);
+        mix-blend-mode: multiply;
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.4), 0 0 14px color-mix(in srgb, var(--c) 35%, transparent);
+        /* \u4E09\u6BB5\uFF1A\u51FA\u73B0 ~125ms \u2192 \u4FDD\u6301 \u2192 \u6D88\u9000 ~250ms\u3002\u65E7\u7248 500ms \u5185\u8FDE\u6D88\u5931\u4E00\u8D77\u64AD\u5B8C\uFF0C\u770B\u4E0D\u6E05\u6807\u4E86\u54EA\u3002 */
+        animation: highlightTrace 1800ms cubic-bezier(.16,1,.3,1) forwards;
+        will-change: opacity, transform;
+      }
+      .highlight.action-target {
+        animation: none; background: transparent; mix-blend-mode: normal;
+        border-width: 2px; box-shadow: none;
+      }
+      /* \u64CD\u4F5C\u5B8C\u6210\uFF1A\u5148\u7559\u4E00\u5C0F\u4F1A\u513F\u8BA9\u4EBA\u770B\u6E05\u70B9\u4E86\u54EA\uFF0C\u518D\u6D88\u9000 */
+      .highlight.action-target.fading {
+        animation: targetFade 400ms cubic-bezier(.16,1,.3,1) 500ms forwards;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cursor, .label, .svg-wrap { transition: none; }
+        .cursor.pressing .svg-wrap { transform: none; }
+        .ripple, .ripple.r2 { animation: rip-reduced 200ms ease-out forwards; }
+        .highlight { animation: highlight-reduced 1600ms linear forwards; }
+        @keyframes rip-reduced { from { opacity: .95; } to { opacity: 0; } }
+        @keyframes highlight-reduced { 0% { opacity: 0; } 8% { opacity: 1; } 84% { opacity: 1; } 100% { opacity: 0; } }
+      }
+      @keyframes highlightTrace {
+        0%   { opacity: 0; transform: scale(0.985); }
+        7%   { opacity: 1; transform: scale(1); }
+        86%  { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; transform: scale(1.012); }
+      }
+      @keyframes targetFade {
+        from { opacity: 1; }
+        to { opacity: 0; }
+      }
+    `;
+      shadow.appendChild(style);
+      highlightLayer = document.createElement("div");
+      shadow.appendChild(highlightLayer);
+      rippleLayer = document.createElement("div");
+      shadow.appendChild(rippleLayer);
+      (document.documentElement ?? document.body).appendChild(host);
+      hookViewport();
+    }
+    function ensureMarksDom() {
+      if (marksLayer) return;
+      marksHost = document.createElement("div");
+      marksHost.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_MARKS);
+      marksHost.setAttribute("aria-hidden", "true");
+      marksHost.style.cssText = "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483646;pointer-events:none;";
+      const marksShadow = marksHost.attachShadow({ mode: "closed" });
+      const style = document.createElement("style");
+      style.textContent = `
+      .mark {
+        position: absolute; box-sizing: border-box; pointer-events: none;
+        border: 2.5px solid var(--c); border-radius: 8px;
+        background: color-mix(in srgb, var(--c) 7%, transparent);
+        box-shadow: 0 0 0 1px rgba(255,255,255,.5), 0 0 16px color-mix(in srgb, var(--c) 40%, transparent);
+      }
+      .mark-arrow {
+        position: absolute; left: -30px; top: 50%; transform: translateY(-50%);
+        display: block; overflow: visible;
+        filter: drop-shadow(0 1px 2px rgba(15,23,42,.35));
+      }
+      .mark-arrow path, .mark-arrow line { stroke: var(--c); }
+      .mark-label {
+        position: absolute; left: -3px; top: -26px;
+        padding: 1px 8px; border-radius: 999px;
+        background: var(--c); color: #fff;
+        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        letter-spacing: .02em; white-space: nowrap;
+        box-shadow: 0 2px 6px rgba(15,23,42,.25);
+      }
+      .mark-label.below { top: calc(100% + 6px); }
+      .mark.sketch {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sketch-svg {
+        position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+        overflow: visible; pointer-events: none;
+      }
+      .sketch-svg path {
+        fill: none;
+        stroke: var(--c);
+        stroke-width: 2.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .mark.sketch.grow path {
+        stroke-dasharray: 1200;
+        stroke-dashoffset: 1200;
+        animation: markStrokeGrow 420ms cubic-bezier(.16, 1, .3, 1) forwards;
+      }
+      @keyframes markStrokeGrow {
+        to { stroke-dashoffset: 0; }
+      }
+      @property --mark-boil-frame {
+        syntax: "<integer>";
+        inherits: true;
+        initial-value: 0;
+      }
+      .mark.sketch.boil .sketch-svg {
+        --mark-boil-frame: 0;
+        animation: markBoilFrames 1200ms step-end infinite;
+      }
+      @keyframes markBoilFrames {
+        0% { --mark-boil-frame: 0; }
+        33.33% { --mark-boil-frame: 1; }
+        66.67% { --mark-boil-frame: 2; }
+      }
+      .mark.sketch.boil .boil-path {
+        --path-i: 0;
+        opacity: clamp(0, 1 - (var(--mark-boil-frame) - var(--path-i)) * (var(--mark-boil-frame) - var(--path-i)), 1);
+      }
+      .mark.sketch.boil .boil-path[data-i="1"] { --path-i: 1; }
+      .mark.sketch.boil .boil-path[data-i="2"] { --path-i: 2; }
+
+      .mark-label.sketch-label {
+        position: absolute;
+        padding: 3px 10px; border-radius: 999px;
+        background: var(--c); color: #fff;
+        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        box-shadow: 0 0 0 1.5px #fff, 0 3px 10px rgba(15,23,42,.28);
+        white-space: nowrap;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .mark.sketch.grow path { animation: none !important; stroke-dashoffset: 0 !important; }
+        .mark.sketch.boil .sketch-svg { animation: none !important; }
+        .mark.sketch.boil .boil-path { opacity: 1 !important; }
+        .mark.sketch.boil .boil-path:not([data-i="0"]) { display: none !important; }
+      }
+    `;
+      marksShadow.appendChild(style);
+      marksLayer = document.createElement("div");
+      marksShadow.appendChild(marksLayer);
+      (document.documentElement ?? document.body).appendChild(marksHost);
+      hookViewport();
+    }
+    function hookViewport() {
+      if (viewportHooked) return;
+      viewportHooked = true;
+      window.addEventListener("resize", onViewportResize);
+      window.visualViewport?.addEventListener("resize", onViewportResize);
+      window.addEventListener("scroll", onScroll, { capture: true, passive: true });
+      window.visualViewport?.addEventListener("scroll", onScroll, { passive: true });
+    }
+    function onViewportResize() {
+      for (const inst of instances.values()) {
+        if (inst.action) {
+          inst.labelSize = void 0;
+          continue;
+        }
+        if (inst.highlightEl) {
+          inst.highlightEl.remove();
+          inst.highlightEl = void 0;
+        }
+        cancelFly(inst);
+        if (inst.visible && !inst.hold) {
+          const home = restPoint(inst.restIndex, window.innerWidth);
+          setPos(inst, home);
+          setResting(inst, true);
+        }
+      }
+      relayoutMarks();
+      relayoutHolds();
+      relayoutActions();
+    }
+    function onScroll() {
+      relayoutMarks();
+      relayoutHolds();
+      relayoutActions();
+    }
+    function liveAnchor(holder) {
+      if (holder.anchor?.isConnected) return holder.anchor;
+      if (holder.target) {
+        const el = window.__sideagent?.dom?.resolve?.(holder.target) ?? null;
+        if (el) holder.anchor = el;
+        return el;
+      }
+      return null;
+    }
+    function relayoutMarks() {
+      if (liveMarks.length === 0) return;
+      for (const mark of liveMarks) {
+        if (mark.observedNode) {
+          const node = mark.observedNode;
+          if (node instanceof Range ? !node.startContainer.isConnected : !node.isConnected) {
+            mark.el.style.visibility = "hidden";
+            continue;
+          }
+          let rect;
+          if (node instanceof Range) rect = node.getBoundingClientRect();
+          else if (node.nodeType === Node.TEXT_NODE) {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            rect = range.getBoundingClientRect();
+          } else rect = node.getBoundingClientRect();
+          mark.el.style.visibility = rect.width && rect.height ? "" : "hidden";
+          placeMark(mark, rect);
+          continue;
+        }
+        const anchor = liveAnchor(mark);
+        if (!anchor) {
+          mark.el.style.visibility = "hidden";
+          continue;
+        }
+        mark.el.style.visibility = "";
+        const r = anchor.getBoundingClientRect();
+        placeMark(mark, { x: r.x, y: r.y, width: r.width, height: r.height });
+      }
+    }
+    function placeMark(mark, rect) {
+      applyMarkBox(mark.el, rect, mark.pad, mark.label);
+      if (!mark.drawn || !rect.width || !rect.height) return;
+      if (Math.abs(mark.drawn.w - rect.width) <= 1 && Math.abs(mark.drawn.h - rect.height) <= 1) return;
+      mark.drawn = { w: rect.width, h: rect.height };
+      const frame = drawSketchPaths(mark.el, { x: mark.pad, y: mark.pad, w: rect.width, h: rect.height }, mark.seed ?? 1);
+      const labelEl = mark.el.querySelector(".sketch-label");
+      if (labelEl) placeSketchLabel(mark.el, labelEl, frame);
+    }
+    function relayoutHolds() {
+      for (const inst of instances.values()) {
+        const hold = inst.hold;
+        if (!hold) continue;
+        const anchor = liveAnchor(hold);
+        if (anchor) {
+          const r = anchor.getBoundingClientRect();
+          hold.point = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+        }
+        if (inst.visible) inst.el.classList.remove("hidden");
+        cancelFly(inst);
+        setPos(inst, hold.point);
+      }
+    }
+    function getInstance(id) {
+      const existing = instances.get(id);
+      if (existing) return existing;
+      ensureDom();
+      const el = document.createElement("div");
+      el.className = "cursor hidden";
+      const svgWrap = document.createElement("div");
+      svgWrap.className = "svg-wrap";
+      const cursorSvg = svgEl("svg", { width: CURSOR_SVG_SIZE, height: CURSOR_SVG_SIZE, viewBox: "0 0 24 24" });
+      cursorSvg.append(
+        svgEl("path", { class: "halo", d: CURSOR_ARROW_PATH, fill: "none", stroke: "#0f172a", "stroke-width": CURSOR_STROKE_HALO, "stroke-linejoin": "round" }),
+        svgEl("path", { class: "fill", d: CURSOR_ARROW_PATH, stroke: "#ffffff", "stroke-width": CURSOR_STROKE_WHITE, "stroke-linejoin": "round" })
+      );
+      svgWrap.appendChild(cursorSvg);
+      const nameLabel = document.createElement("div");
+      nameLabel.className = "label";
+      nameLabel.textContent = id === DEFAULT_ID ? DEFAULT_LABEL : displayNameFor(id);
+      el.replaceChildren(svgWrap, nameLabel);
+      const color = cursorColor(id);
+      el.style.setProperty("--c", color);
+      shadow.appendChild(el);
+      const restIndex = instances.size;
+      const home = restPoint(restIndex, window.innerWidth);
+      const inst = {
+        el,
+        color,
+        visible: false,
+        restIndex,
+        pos: home,
+        resting: true,
+        name: id === DEFAULT_ID ? DEFAULT_LABEL : displayNameFor(id)
+      };
+      instances.set(id, inst);
+      return inst;
+    }
+    function setPos(inst, p) {
+      inst.pos = p;
+      inst.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+      if (inst.action) positionActionLabel(inst);
+      else if (inst.status && !inst.hold) inst.el.classList.toggle("flip", p.x > window.innerWidth * 0.6);
+    }
+    function positionActionLabel(inst) {
+      if (!inst.action) return;
+      const label = inst.el.querySelector(".label");
+      const size = inst.labelSize ??= { width: label.offsetWidth, height: label.offsetHeight };
+      const p = cursorLabelPosition(inst.pos, size, { width: window.innerWidth, height: window.innerHeight });
+      label.style.left = `${p.x - inst.pos.x}px`;
+      label.style.top = `${p.y - inst.pos.y}px`;
+    }
+    function clearAction(inst) {
+      inst.action = void 0;
+      inst.labelSize = void 0;
+      inst.el.classList.remove("acting");
+      inst.highlightEl?.remove();
+      inst.highlightEl = void 0;
+      refreshLabel(inst);
+      renderAmbient();
+    }
+    function paintLabel(inst, main, sub) {
+      const label = inst.el.querySelector(".label");
+      const orb = document.createElement("span");
+      orb.className = "orb-dot";
+      orb.setAttribute("aria-hidden", "true");
+      const line = document.createElement("span");
+      line.className = "action-text";
+      line.textContent = main;
+      const name = document.createElement("span");
+      name.className = "agent-name";
+      name.textContent = sub;
+      label.replaceChildren(orb, line, name);
+      inst.labelSize = void 0;
+      positionActionLabel(inst);
+    }
+    function refreshLabel(inst) {
+      if (inst.hold) return;
+      if (inst.action) {
+        inst.el.classList.remove("stating");
+        renderActionLabel(inst);
+        return;
+      }
+      if (inst.status) {
+        renderStatusLabel(inst);
+        return;
+      }
+      inst.el.classList.remove("stating");
+      const label = inst.el.querySelector(".label");
+      label.removeAttribute("style");
+      label.textContent = inst.name;
+      inst.labelSize = void 0;
+    }
+    function renderActionLabel(inst) {
+      const action = inst.action;
+      const verb = { click: "\u70B9", fill: "\u586B", hover: "\u770B" }[action.kind];
+      const name = action.name.length > 6 ? `${action.name.slice(0, 5)}\u2026` : action.name;
+      const target = action.kind === "click" ? `\u300C${name}\u300D` : name;
+      const text = action.phase === "active" ? name ? `\u6211\u5728${verb}${target}` : { click: "\u6211\u5728\u70B9\u8FD9\u91CC", fill: "\u6211\u5728\u586B\u8FD9\u4E00\u680F", hover: "\u6211\u5728\u770B\u8FD9\u91CC" }[action.kind] : action.phase === "failed" ? `\u6CA1${verb}\u6210` : action.phase === "unknown" ? "\u7ED3\u679C\u5F85\u786E\u8BA4" : `${verb}\u597D\u4E86`;
+      paintLabel(inst, text, "");
+    }
+    function relayoutActions() {
+      for (const inst of instances.values()) {
+        const action = inst.action;
+        if (!action) continue;
+        if (action.anchor) {
+          if (!action.anchor.isConnected) {
+            clearAction(inst);
+            schedulePark(inst);
+            continue;
+          }
+          const r2 = action.anchor.getBoundingClientRect();
+          action.rect = { x: r2.x, y: r2.y, width: r2.width, height: r2.height };
+        }
+        const r = action.rect;
+        if (r && inst.highlightEl) {
+          const b = highlightBounds(r);
+          const visible = b && r.x + r.width > 0 && r.y + r.height > 0 && r.x < innerWidth && r.y < innerHeight;
+          inst.highlightEl.style.visibility = visible ? "" : "hidden";
+          if (b) Object.assign(inst.highlightEl.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.width}px`, height: `${b.height}px` });
+          if (visible && inst.action?.arrived && inst.raf === void 0) setPos(inst, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
+        }
+        positionActionLabel(inst);
+      }
+    }
+    function followActions() {
+      if (actionFrame !== void 0) return;
+      const tick = () => {
+        actionFrame = void 0;
+        relayoutActions();
+        if ([...instances.values()].some((inst) => inst.action)) actionFrame = requestAnimationFrame(tick);
+      };
+      actionFrame = requestAnimationFrame(tick);
+    }
+    function actionName(anchor, fallback) {
+      const root = anchor?.getRootNode();
+      const labelledBy = anchor?.getAttribute("aria-labelledby")?.split(/\s+/).map((id) => root?.getElementById?.(id)?.textContent ?? "").join(" ");
+      const labels = anchor && "labels" in anchor ? Array.from(anchor.labels ?? []).map((el) => el.textContent).join(" ") : "";
+      const editable = anchor?.matches("input, textarea, [contenteditable]");
+      const text = anchor?.getAttribute("aria-label") || labelledBy || labels || anchor?.getAttribute("title") || anchor?.getAttribute("placeholder") || (!editable ? anchor?.textContent : "") || fallback || "";
+      return text.trim().replace(/\s+/g, " ").slice(0, 40);
+    }
+    function setResting(inst, on) {
+      inst.resting = on;
+      inst.el.classList.toggle("rest", on);
+      inst.el.classList.toggle("flip", on && restOnRight(inst.restIndex));
+    }
+    function statusSub(inst) {
+      const status = inst.status;
+      return status.detail || status.sub || inst.name;
+    }
+    function renderStatusLabel(inst) {
+      const status = inst.status;
+      const label = inst.el.querySelector(".label");
+      label.removeAttribute("style");
+      inst.labelSize = void 0;
+      inst.el.classList.add("stating");
+      inst.el.style.setProperty("--s", STATUS_COPY[status.state].color);
+      inst.el.classList.toggle("flip", inst.pos.x > window.innerWidth * 0.6);
+      paintLabel(inst, status.text, statusSub(inst));
+    }
+    function clearStatusTimers(inst) {
+      if (inst.status?.clearTimer !== void 0) clearTimeout(inst.status.clearTimer);
+    }
+    function startStatusTimers(inst) {
+      const status = inst.status;
+      const copy = STATUS_COPY[status.state];
+      const hideAfter = status.autoHideMs ?? copy.autoHideMs;
+      if (hideAfter !== void 0) {
+        status.clearTimer = setTimeout(() => {
+          clearStatusInst(inst);
+          parkNow(inst);
+        }, hideAfter);
+      }
+    }
+    function setStatusInst(inst, view) {
+      const copy = STATUS_COPY[view.state];
+      if (!copy) return;
+      clearStatusTimers(inst);
+      inst.status = {
+        state: view.state,
+        text: view.text || copy.text,
+        detail: view.detail || "",
+        sub: copy.sub || "",
+        autoHideMs: view.autoHideMs
+      };
+      if (!inst.visible) showAtRest(inst);
+      if (view.state === "failed") {
+        clearTimeout(inst.parkTimer);
+        setResting(inst, false);
+      }
+      startStatusTimers(inst);
+      refreshLabel(inst);
+      renderAmbient();
+    }
+    function clearStatusInst(inst) {
+      if (!inst.status) return;
+      clearStatusTimers(inst);
+      inst.status = void 0;
+      refreshLabel(inst);
+      renderAmbient();
+    }
+    function cancelFly(inst) {
+      if (inst.raf !== void 0) {
+        cancelAnimationFrame(inst.raf);
+        inst.raf = void 0;
+      }
+    }
+    function showAtRest(inst) {
+      const home = restPoint(inst.restIndex, window.innerWidth);
+      setPos(inst, home);
+      setResting(inst, true);
+      inst.el.classList.remove("hidden");
+      inst.visible = true;
+    }
+    function flyTo(inst, to) {
+      cancelFly(inst);
+      const from = inst.pos;
+      const dist = Math.hypot(to.x - from.x, to.y - from.y);
+      if (dist < 2 || reducedMotion.matches) {
+        setPos(inst, to);
+        if (inst.action) inst.action.arrived = true;
+        return 0;
+      }
+      const ms = flightMs(from, to);
+      const t0 = performance.now();
+      const tick = (now) => {
+        const t = Math.min(1, (now - t0) / ms);
+        setPos(inst, pointOnArc(from, to, easeInOutCubic(t)));
+        if (t < 1) inst.raf = requestAnimationFrame(tick);
+        else {
+          inst.raf = void 0;
+          if (inst.action) inst.action.arrived = true;
+          setPos(inst, to);
+        }
+      };
+      inst.raf = requestAnimationFrame(tick);
+      return ms;
+    }
+    function schedulePark(inst) {
+      clearTimeout(inst.parkTimer);
+      inst.parkTimer = setTimeout(() => parkNow(inst), PARK_AFTER_MS);
+    }
+    function parkNow(inst) {
+      if (inst.action?.phase === "active" || inst.hold) return;
+      if (inst.action?.phase === "done") clearAction(inst);
+      const home = restPoint(inst.restIndex, window.innerWidth);
+      setResting(inst, true);
+      flyTo(inst, home);
+    }
+    function spawnRipple(x, y, cls, color) {
+      const ripple = document.createElement("div");
+      ripple.className = cls;
+      ripple.style.left = `${x}px`;
+      ripple.style.top = `${y}px`;
+      ripple.style.borderColor = color;
+      ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+      rippleLayer.appendChild(ripple);
+    }
+    function spawnHighlight(inst, rect) {
+      const bounds = highlightBounds(rect, HIGHLIGHT_PAD);
+      if (!bounds) return;
+      ensureDom();
+      if (inst.highlightEl) {
+        inst.highlightEl.remove();
+        inst.highlightEl = void 0;
+      }
+      const el = document.createElement("div");
+      el.className = "highlight";
+      el.style.setProperty("--c", inst.color);
+      el.style.left = `${bounds.left}px`;
+      el.style.top = `${bounds.top}px`;
+      el.style.width = `${bounds.width}px`;
+      el.style.height = `${bounds.height}px`;
+      const remove = () => {
+        el.remove();
+        if (inst.highlightEl === el) {
+          inst.highlightEl = void 0;
+        }
+      };
+      el.addEventListener("animationend", remove, { once: true });
+      setTimeout(remove, 1900);
+      inst.highlightEl = el;
+      highlightLayer.appendChild(el);
+    }
+    function resolveAnchor(rect, target) {
+      if (target) {
+        const el = window.__sideagent?.dom?.resolve?.(target);
+        if (el) return el;
+      }
+      const cx = rect.x + rect.width / 2;
+      const cy = rect.y + rect.height / 2;
+      return document.elementFromPoint(cx, cy);
+    }
+    function coversPageContent(r) {
+      const seen = /* @__PURE__ */ new Set();
+      for (let i = 0; i <= 4; i++) {
+        for (let j = 0; j <= 2; j++) {
+          const px = r.x + 1 + (r.w - 2) * i / 4;
+          const py = r.y + 1 + (r.h - 2) * j / 2;
+          const hit = document.elementsFromPoint(px, py).find((e) => !e.closest(`[${OVERLAY_ATTR}]`));
+          if (!hit || seen.has(hit)) continue;
+          seen.add(hit);
+          if (hit.matches("img,svg,video,canvas,input,textarea,select,button,iframe")) return true;
+          for (const node of hit.childNodes) {
+            if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const t of range.getClientRects()) {
+              if (Math.min(t.right, r.x + r.w) > Math.max(t.left, r.x) && Math.min(t.bottom, r.y + r.h) > Math.max(t.top, r.y)) return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+    function applyMarkBox(el, rect, pad, label) {
+      const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
+      if (!box) return;
+      el.style.left = `${box.x}px`;
+      el.style.top = `${box.y}px`;
+      el.style.width = `${box.width}px`;
+      el.style.height = `${box.height}px`;
+      const labelEl = el.querySelector(".mark-label");
+      if (labelEl && label) {
+        labelEl.classList.toggle("below", markLabelPlacement(rect.y) === "below");
+      }
+    }
+    function armHoldLabel(inst, actions) {
+      const labelEl = inst.el.querySelector(".label");
+      if (!labelEl) return;
+      inst.el.classList.remove("stating");
+      labelEl.replaceChildren();
+      const prompt = document.createElement("span");
+      prompt.className = "hold-prompt";
+      prompt.textContent = "\u786E\u8BA4\u6267\u884C\u6B64\u64CD\u4F5C\uFF1F";
+      labelEl.appendChild(prompt);
+      inst.el.dataset.armed = "1";
+      for (const action of actions) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `hold-action ${action.id}`;
+        btn.dataset.action = action.id;
+        btn.textContent = action.label;
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (inst.el.dataset.armed === "0") return;
+          inst.el.dataset.armed = "0";
+          for (const b of labelEl.querySelectorAll("button")) b.disabled = true;
+          try {
+            chrome.runtime.sendMessage({ type: "mark_action", action: action.id }, () => {
+              void chrome.runtime.lastError;
+            });
+          } catch {
+          }
+        });
+        labelEl.appendChild(btn);
+      }
+    }
+    function releaseHoldInst(inst) {
+      const hold = inst.hold;
+      if (!hold) return;
+      inst.hold = void 0;
+      clearTimeout(inst.pressTimer);
+      inst.el.classList.remove("pressing", "holding");
+      delete inst.el.dataset.armed;
+      if (hold.mark) removeMark(hold.mark);
+      refreshLabel(inst);
+      renderAmbient();
+    }
+    function holdInst(inst, x, y, actions, target, anchorMark) {
+      releaseHoldInst(inst);
+      if (inst.action) clearAction(inst);
+      clearTimeout(inst.parkTimer);
+      clearTimeout(inst.pressTimer);
+      if (!inst.visible) showAtRest(inst);
+      setResting(inst, false);
+      inst.el.classList.remove("hidden");
+      inst.visible = true;
+      const name = inst.el.querySelector(".label")?.textContent ?? "";
+      inst.hold = {
+        point: { x, y },
+        target,
+        anchor: resolveAnchor({ x: x - 1, y: y - 1, width: 2, height: 2 }, target),
+        name,
+        mark: anchorMark ?? void 0
+      };
+      armHoldLabel(inst, actions);
+      inst.el.classList.add("pressing", "holding");
+      renderAmbient();
+      flyTo(inst, { x, y });
+    }
+    function spawnMark(inst, rect, label, target, options, observedNode) {
+      const opts = { ...defaultMarkOptions, ...options };
+      const isSketch = opts.style === "sketch";
+      const motion = opts.motion ?? "grow";
+      const pad = isSketch ? 10 : MARK_PAD;
+      const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
+      if (!box) return null;
+      ensureMarksDom();
+      const el = document.createElement("div");
+      el.className = isSketch ? `mark sketch ${motion === "boil" ? "boil" : "grow"}` : "mark";
+      el.style.setProperty("--c", inst.color);
+      const seed = opts.seed ?? Math.floor(Math.random() * 1e6) + 1;
+      const targetBox = { x: pad, y: pad, w: rect.width, h: rect.height };
+      let frame = targetBox;
+      if (isSketch) {
+        const svg = svgEl("svg", { class: motion === "boil" ? "sketch-svg" : "sketch-svg anim-stroke-grow", style: "left:0;top:0;width:100%;height:100%;" });
+        if (motion === "boil") {
+          [0, 1, 2].forEach((i) => svg.appendChild(svgEl("path", { class: `boil-path sketch-frame-path frame-${i}`, "data-i": i })));
+        } else svg.appendChild(svgEl("path", { class: "sketch-frame-path" }));
+        el.replaceChildren(svg);
+        frame = drawSketchPaths(el, targetBox, seed);
+        if (label) {
+          const markLabel = document.createElement("div");
+          markLabel.className = "mark-label sketch-label";
+          el.appendChild(markLabel);
+        }
+      } else {
+        const svg = svgEl("svg", { class: "mark-arrow", width: 24, height: 24, viewBox: "0 0 24 24", fill: "none" });
+        svg.appendChild(svgEl("path", { d: "M2 12h17m-6-6 6 6-6 6", "stroke-width": 2.5, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+        el.replaceChildren(svg);
+        if (label) {
+          const markLabel = document.createElement("div");
+          markLabel.className = "mark-label";
+          el.appendChild(markLabel);
+        }
+      }
+      const labelEl = label ? el.querySelector(".mark-label") : null;
+      if (labelEl && label) labelEl.textContent = label;
+      applyMarkBox(el, rect, pad, label);
+      marksLayer.appendChild(el);
+      if (labelEl && isSketch) placeSketchLabel(el, labelEl, frame);
+      liveMarks.push({
+        el,
+        anchor: observedNode ? null : resolveAnchor(rect, target),
+        observedNode,
+        target,
+        pad,
+        label,
+        options: opts,
+        seed,
+        drawn: isSketch ? { w: rect.width, h: rect.height } : void 0
+      });
+      return el;
+    }
+    function drawSketchPaths(el, targetBox, seed) {
+      const paths = [...el.querySelectorAll(".sketch-frame-path")];
+      const boil = paths.length > 1;
+      let frame = targetBox;
+      paths.forEach((path, i) => {
+        const outline = sketchFrame(targetBox, boil ? { seed, roughness: 0.9, boil: 0.45, boilSeed: seed + (i + 1) * 7919 } : { seed, roughness: 0.9 });
+        frame = outline.frame;
+        path.setAttribute("d", outline.d);
+      });
+      return frame;
+    }
+    function placeSketchLabel(el, labelEl, frame) {
+      const size = labelEl.getBoundingClientRect();
+      const originX = (parseFloat(el.style.left) || 0) - window.scrollX;
+      const originY = (parseFloat(el.style.top) || 0) - window.scrollY;
+      const toView = (b) => ({ x: originX + b.x, y: originY + b.y, w: b.w, h: b.h });
+      const at = sketchLabelPosition(frame, { w: size.width, h: size.height }, {
+        inView: (b) => {
+          const v = toView(b);
+          return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight;
+        },
+        clear: (b) => !coversPageContent(toView(b))
+      });
+      labelEl.style.left = `${at.left}px`;
+      labelEl.style.top = `${at.top}px`;
+    }
+    function removeMark(el) {
+      const at = liveMarks.findIndex((mark) => mark.el === el);
+      if (at >= 0) liveMarks.splice(at, 1);
+      el.remove();
+    }
+    function stopReplayInst(inst) {
+      inst.replayGen = (inst.replayGen ?? 0) + 1;
+      cancelFly(inst);
+      clearTimeout(inst.replayTimer);
+    }
+    function waitReplay(inst, ms) {
+      return new Promise((resolve) => {
+        clearTimeout(inst.replayTimer);
+        inst.replayTimer = setTimeout(resolve, Math.max(0, ms));
+      });
+    }
+    async function runReplay(inst, points) {
+      const gen = (inst.replayGen ?? 0) + 1;
+      inst.replayGen = gen;
+      cancelFly(inst);
+      clearTimeout(inst.parkTimer);
+      if (!inst.visible) showAtRest(inst);
+      setResting(inst, false);
+      inst.el.classList.remove("hidden");
+      inst.visible = true;
+      for (const p of points) {
+        if (inst.replayGen !== gen) return;
+        if (p.x - window.scrollX < 8 || p.y - window.scrollY < 8 || p.x - window.scrollX > window.innerWidth - 8 || p.y - window.scrollY > window.innerHeight - 8) {
+          window.scrollTo(Math.max(0, p.x - window.innerWidth / 2), Math.max(0, p.y - window.innerHeight / 2));
+        }
+        const to = { x: p.x - window.scrollX, y: p.y - window.scrollY };
+        const ms = flyTo(inst, to);
+        await waitReplay(inst, ms);
+        if (inst.replayGen !== gen) return;
+        if (p.click) {
+          spawnRipple(to.x, to.y, "ripple", inst.color);
+          spawnRipple(to.x, to.y, "ripple r2", inst.color);
+          inst.el.classList.add("pressing");
+          clearTimeout(inst.pressTimer);
+          inst.pressTimer = setTimeout(() => inst.el.classList.remove("pressing"), 160);
+          await waitReplay(inst, 180);
+        }
+      }
+      if (inst.replayGen === gen) schedulePark(inst);
+    }
+    function ensureControlDom() {
+      if (controlBar) return controlBar;
+      controlHost = document.createElement("div");
+      controlHost.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CONTROL);
+      controlHost.style.cssText = "position:fixed;inset:0;z-index:2147483645;pointer-events:none;";
+      const controlShadow = controlHost.attachShadow({ mode: "closed" });
+      const style = document.createElement("style");
+      style.textContent = `
+      /* \u9875\u9762\u5F52\u4F60\u65F6\uFF1A\u548C\u300C\u505C\u4E0B\u300D\u540C\u4E00\u4E2A\u4F4D\u7F6E\u3001\u540C\u4E00\u79CD\u80F6\u56CA\uFF1B\u5149\u7403\u53D8\u7070\u8868\u793A\u52A9\u624B\u505C\u7740\u3002 */
+      .bar {
+        position: absolute; right: 20px; top: 20px;
+        display: inline-flex; align-items: center; gap: 8px;
+        width: max-content; max-width: calc(100vw - 40px);
+        pointer-events: none;
+        background: #fff; color: #141413;
+        border: 1px solid rgba(20,20,19,.08); border-radius: 999px; padding: 5px 5px 5px 11px;
+        box-shadow: 0 2px 8px rgba(20,20,19,.06);
+        font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        opacity: 0; transform: translateY(-6px);
+        transition: opacity 160ms ease, transform 160ms ease;
+      }
+      /* \u9690\u85CF\u540E\u4ECD\u5728\u539F\u5904\uFF1A\u4E0D\u80FD\u63A5\u4F4F\u70B9\u51FB\uFF0C\u5426\u5219\u7528\u6237\u548C Agent \u90FD\u70B9\u4E0D\u5230\u5E95\u4E0B\u7684\u7F51\u9875\u3002 */
+      .bar.on { opacity: 1; transform: none; pointer-events: auto; }
+      .bar::before {
+        content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); filter: grayscale(1); opacity: .55;
+      }
+      .bar b { font-weight: 400; color: #5f5e58; white-space: nowrap; }
+      .bar .sub { color: #7c828b; font: 500 11px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; white-space: nowrap; }
+      .bar .stack { display: flex; margin-left: 1px; }
+      .bar .avatar {
+        width: 16px; height: 16px; margin-left: -4px;
+        border: 2px solid #fff; border-radius: 50%;
+        display: grid; place-items: center; color: #fff;
+        font: 700 8px/1 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        background: #56667d;
+      }
+      .bar .avatar:first-child { margin-left: 0; }
+      .bar button {
+        font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        border: 1px solid rgba(20,20,19,.14); border-radius: 999px; padding: 3px 12px;
+        background: #fff; color: #141413; cursor: pointer;
+      }
+      .bar button:hover:not(:disabled) { background: #f0eee6; }
+      .bar button:disabled { opacity: .55; cursor: default; }
+    `;
+      controlBar = document.createElement("div");
+      controlBar.className = "bar";
+      const status = document.createElement("b");
+      status.textContent = "\u73B0\u5728\u5F52\u4F60";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "\u4EA4\u8FD8";
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (btn.disabled) return;
+        try {
+          chrome.runtime.sendMessage({ type: "handback_click" }, () => {
+            void chrome.runtime.lastError;
+          });
+        } catch {
+        }
+      });
+      controlBar.append(status, btn);
+      controlShadow.append(style, controlBar);
+      (document.documentElement ?? document.body).appendChild(controlHost);
+      return controlBar;
+    }
+    function applyControlView(view) {
+      const bar = ensureControlDom();
+      const status = bar.querySelector("b");
+      const btn = bar.querySelector("button");
+      let sub = bar.querySelector(".sub");
+      let stack = bar.querySelector(".stack");
+      if (status) status.textContent = view?.status || "\u73B0\u5728\u5F52\u4F60";
+      const subText = view?.sub?.trim() ?? "";
+      const members = view?.members ?? [];
+      const team = members.length > 1;
+      if (subText && team) {
+        if (!sub) {
+          sub = document.createElement("span");
+          sub.className = "sub";
+          status?.after(sub);
+        }
+        sub.textContent = subText;
+      } else {
+        sub?.remove();
+      }
+      if (team) {
+        if (!stack) {
+          stack = document.createElement("div");
+          stack.className = "stack";
+          (bar.querySelector(".sub") ?? status)?.after(stack);
+        }
+        stack.replaceChildren();
+        for (const m of members) {
+          const av = document.createElement("i");
+          av.className = "avatar";
+          av.textContent = m.initial || "?";
+          if (m.color) av.style.background = m.color;
+          stack.appendChild(av);
+        }
+      } else {
+        stack?.remove();
+      }
+      if (btn) {
+        const action = view?.action ?? "\u4EA4\u8FD8";
+        btn.textContent = action;
+        btn.hidden = !action;
+        btn.disabled = view?.actionEnabled === false;
+      }
+    }
+    function showUserControl(view) {
+      applyControlView(view);
+      const bar = ensureControlDom();
+      bar.classList.add("on");
+    }
+    function hideUserControl() {
+      if (!controlBar) return;
+      controlBar.classList.remove("on");
+    }
+    function hide(inst) {
+      stopReplayInst(inst);
+      cancelFly(inst);
+      clearTimeout(inst.parkTimer);
+      releaseHoldInst(inst);
+      clearStatusInst(inst);
+      if (inst.action) clearAction(inst);
+      inst.el.classList.add("hidden");
+      inst.el.classList.remove("pressing", "rest", "flip");
+      inst.visible = false;
+      inst.resting = true;
+      if (inst.highlightEl) {
+        inst.highlightEl.remove();
+        inst.highlightEl = void 0;
+      }
+    }
+    let crossPill = null;
+    let edge = null;
+    const glowing = /* @__PURE__ */ new Set();
+    function renderGlow() {
+      const first = glowing.values().next().value;
+      if (first === void 0) {
+        edge?.classList.remove("on");
+        return;
+      }
+      ensureDom();
+      if (!edge?.isConnected) {
+        edge = document.createElement("div");
+        edge.className = "edge";
+        shadow.prepend(edge);
+      }
+      edge.style.setProperty("--c", cursorColor(first));
+      edge.classList.add("on");
+    }
+    let crossPillSession = "";
+    let remoteMembers = [];
+    function jumpToMember(member) {
+      try {
+        chrome.runtime.sendMessage(
+          { type: "cross_page_click", sessionId: member.sessionId, tabId: member.tabId },
+          (res) => {
+            if (chrome.runtime.lastError || res?.ok !== true) hideCrossPill();
+          }
+        );
+      } catch {
+      }
+    }
+    function memberButton(member) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.member = member.sessionId;
+      const face = document.createElement("span");
+      face.className = "xface";
+      face.setAttribute("aria-hidden", "true");
+      const person = personFor(member.sessionId);
+      if (person?.kenney) {
+        mountKenney(face, chrome.runtime.getURL(`cast/${person.kenney.body}`), chrome.runtime.getURL(`cast/${person.kenney.face}`), 22);
+      } else if (person) {
+        mountGrok(face, person, 22, { animate: false });
+      } else {
+        const fallback = svgEl("svg", { viewBox: "0 0 128 128", "aria-hidden": "true" });
+        const group = svgEl("g", { fill: "none", stroke: "currentColor", "stroke-width": 26, "stroke-linecap": "round" });
+        group.append(svgEl("path", { d: "M53 22L32 79" }), svgEl("path", { d: "M94 41L73 98" }));
+        fallback.appendChild(group);
+        face.replaceChildren(fallback);
+      }
+      const name = document.createElement("span");
+      name.className = "xmain";
+      name.textContent = displayNameFor(member.sessionId);
+      const title = document.createElement("span");
+      title.className = "xsub";
+      title.textContent = member.local ? member.title : `\u5728 ${member.title}`;
+      const arrow = document.createElement("span");
+      arrow.className = "xarrow";
+      arrow.textContent = member.local ? "\u2304" : "\u2197";
+      arrow.setAttribute("aria-hidden", "true");
+      const state = member.state === "reading" ? "\u6B63\u5728\u8BFB\u53D6" : "\u7B49\u5F85\u54CD\u5E94";
+      button.title = `${name.textContent} \xB7 ${state} \xB7 ${member.title}`;
+      button.setAttribute("aria-label", member.local ? `${name.textContent} \xB7 ${member.title}\uFF0C\u67E5\u770B\u8BE6\u60C5` : `${button.title}\uFF0C\u5207\u6362\u5230\u5DE5\u4F5C\u9875\u9762`);
+      button.append(face, name, title, arrow);
+      if (member.local) {
+        button.title = member.detail || member.title;
+        button.setAttribute("aria-expanded", "false");
+        button.onclick = () => {
+          let detail = button.nextElementSibling;
+          if (!detail?.classList.contains("xdetail")) {
+            detail = document.createElement("div");
+            detail.className = "xdetail xlist";
+            detail.textContent = member.detail || member.title;
+            detail.hidden = true;
+            button.after(detail);
+          }
+          detail.hidden = !detail.hidden;
+          detail.inert = detail.hidden;
+          button.setAttribute("aria-expanded", String(!detail.hidden));
+        };
+      } else button.onclick = () => jumpToMember(member);
+      return button;
+    }
+    function showCrossPill(view) {
+      remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "\u53E6\u4E00\u4E2A\u9875\u9762", tabId: view.tabId, state: view.state }];
+      crossPillSession = view.sessionId ?? remoteMembers[0].sessionId;
+      for (const member of remoteMembers) {
+        const inst = instances.get(member.sessionId);
+        if (inst && !inst.hold) hide(inst);
+      }
+      renderAmbient();
+    }
+    function renderAmbient() {
+      const members = [...remoteMembers];
+      for (const [id, inst] of instances) {
+        if (inst.hold || remoteMembers.some((m) => m.sessionId === id)) continue;
+        if (inst.action) {
+          const a = inst.action;
+          const verb = { click: "\u70B9\u51FB", fill: "\u586B\u5199", hover: "\u5B9A\u4F4D" }[a.kind];
+          const text = a.phase === "active" ? `\u6B63\u5728${verb}` : a.phase === "unknown" ? "\u7ED3\u679C\u5F85\u786E\u8BA4" : a.phase === "failed" ? "\u64CD\u4F5C\u672A\u5B8C\u6210" : `${verb}\u7ED3\u675F`;
+          members.push({ sessionId: id, title: text, local: true, detail: a.name ? `${text} \xB7 ${a.name}` : text });
+        } else if (inst.status) members.push({ sessionId: id, title: inst.status.text, local: true, detail: inst.status.detail || inst.status.sub || inst.status.text });
+      }
+      if (!members.length) {
+        crossPill?.classList.remove("on");
+        return;
+      }
+      ensureDom();
+      if (!crossPill?.isConnected) {
+        crossPill = document.createElement("div");
+        crossPill.className = "xpage";
+        crossPill.addEventListener("click", (ev) => ev.stopPropagation());
+        shadow.appendChild(crossPill);
+      }
+      const previousText = new Map(Array.from(crossPill.querySelectorAll("button[data-member]")).map((button) => [button.dataset.member, button.querySelector(".xsub")?.textContent]));
+      const wasOpen = crossPill.querySelector("button")?.getAttribute("aria-expanded") === "true";
+      const hadFocus = crossPill.contains(shadow?.activeElement ?? null);
+      crossPill.replaceChildren();
+      if (members.length === 1 && members[0].local) {
+        crossPill.onkeydown = null;
+        crossPill.append(stopBar());
+        crossPill.classList.add("on");
+        return;
+      }
+      const trigger = memberButton(members[0]);
+      if (members.length > 1) {
+        trigger.querySelector(".xmain").textContent = `${members.length} \u4F4D\u52A9\u624B`;
+        trigger.querySelector(".xsub").textContent = "\u67E5\u770B\u5DE5\u4F5C\u72B6\u6001";
+        trigger.title = "\u67E5\u770B\u52A9\u624B\u4E0E\u5DE5\u4F5C\u9875\u9762";
+        trigger.setAttribute("aria-label", `${members.length} \u4F4D\u52A9\u624B\uFF0C\u5C55\u5F00\u5DE5\u4F5C\u72B6\u6001`);
+        trigger.setAttribute("aria-expanded", "false");
+        const list = document.createElement("div");
+        list.className = "xlist";
+        list.hidden = !wasOpen;
+        if (wasOpen) list.dataset.restored = "true";
+        list.inert = list.hidden;
+        trigger.setAttribute("aria-expanded", String(wasOpen));
+        list.append(...members.map(memberButton));
+        trigger.onclick = () => {
+          delete list.dataset.restored;
+          list.hidden = !list.hidden;
+          list.inert = list.hidden;
+          trigger.setAttribute("aria-expanded", String(!list.hidden));
+        };
+        crossPill.onkeydown = (ev) => {
+          if (ev.key === "Escape") {
+            list.hidden = true;
+            list.inert = true;
+            trigger.setAttribute("aria-expanded", "false");
+            trigger.focus();
+            ev.stopPropagation();
+          }
+        };
+        crossPill.append(trigger, list);
+      } else {
+        crossPill.onkeydown = null;
+        crossPill.append(trigger);
+      }
+      crossPill.classList.add("on");
+      if (!reducedMotion.matches) {
+        for (const button of crossPill.querySelectorAll("button[data-member]")) {
+          const text = button.querySelector(".xsub");
+          if (text && previousText.has(button.dataset.member) && previousText.get(button.dataset.member) !== text.textContent) {
+            text.animate([{ opacity: 0.4, transform: "translateY(2px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 150, easing: "ease-out" });
+          }
+        }
+      }
+      if (hadFocus) trigger.focus();
+    }
+    function stopBar() {
+      const bar = document.createElement("div");
+      bar.className = "xbar";
+      const orb = document.createElement("span");
+      orb.className = "orb-dot";
+      orb.setAttribute("aria-hidden", "true");
+      const name = document.createElement("span");
+      name.className = "xmain";
+      name.textContent = "By Your Side";
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.className = "xstop";
+      stop.textContent = "\u505C\u4E0B";
+      stop.onclick = (ev) => {
+        ev.stopPropagation();
+        stop.disabled = true;
+        stop.textContent = "\u6B63\u5728\u505C";
+        try {
+          chrome.runtime.sendMessage({ type: "page_stop_click" }, (res) => {
+            if (chrome.runtime.lastError || res?.ok !== true) {
+              stop.disabled = false;
+              stop.textContent = "\u505C\u4E0B";
+            }
+          });
+        } catch {
+        }
+      };
+      bar.append(orb, name, stop);
+      return bar;
+    }
+    function hideCrossPill() {
+      remoteMembers = [];
+      renderAmbient();
+    }
+    let feedbackPill = null;
+    let feedbackPillState = null;
+    let feedbackTimer;
+    function positionCrossPill() {
+      if (crossPill) crossPill.style.top = feedbackPillState ? "64px" : "";
+    }
+    function renderFeedbackPill() {
+      if (!feedbackPillState) {
+        feedbackPill?.classList.remove("on");
+        positionCrossPill();
+        return;
+      }
+      ensureDom();
+      if (!feedbackPill?.isConnected) {
+        feedbackPill = document.createElement("div");
+        feedbackPill.className = "xpage xfeedback";
+        feedbackPill.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          hideFeedbackPill();
+        });
+        shadow.appendChild(feedbackPill);
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      const main = document.createElement("span");
+      main.className = "xmain";
+      main.textContent = feedbackPillState.text;
+      button.append(main);
+      if (feedbackPillState.kind !== "success") {
+        const sub = document.createElement("span");
+        sub.className = "xsub";
+        sub.textContent = "\u8BE6\u60C5\u5728\u4FA7\u680F";
+        button.append(sub);
+      }
+      button.title = feedbackPillState.detail || feedbackPillState.text;
+      button.setAttribute("aria-label", feedbackPillState.text);
+      feedbackPill.replaceChildren(button);
+      feedbackPill.classList.add("on");
+      positionCrossPill();
+    }
+    function showFeedbackPill(view) {
+      if (!view?.text) return;
+      const next = { id: view.id || `f-${Date.now()}`, text: view.text, kind: view.kind ?? "success" };
+      if (view.detail) next.detail = view.detail;
+      const { state, bounce } = beginFeedbackPill(feedbackPillState, next, Date.now());
+      const played = bounce && !reducedMotion.matches;
+      feedbackPillState = played || !bounce ? state : { ...state, bounces: 0 };
+      renderFeedbackPill();
+      if (played) {
+        feedbackPill?.querySelector("button")?.animate(
+          [{ transform: "scale(.94)" }, { transform: "scale(1.035)", offset: 0.55 }, { transform: "scale(1)" }],
+          { duration: 340, easing: "cubic-bezier(.22,1,.36,1)" }
+        );
+      }
+      if (feedbackTimer !== void 0) clearTimeout(feedbackTimer);
+      feedbackTimer = window.setTimeout(() => hideFeedbackPill(), feedbackLifetimeMs(feedbackPillState.kind));
+    }
+    function hideFeedbackPill() {
+      if (feedbackTimer !== void 0) {
+        clearTimeout(feedbackTimer);
+        feedbackTimer = void 0;
+      }
+      feedbackPillState = null;
+      renderFeedbackPill();
+    }
+    function teardown() {
+      if (actionFrame !== void 0) cancelAnimationFrame(actionFrame);
+      actionFrame = void 0;
+      for (const inst of instances.values()) {
+        stopReplayInst(inst);
+        cancelFly(inst);
+        clearTimeout(inst.parkTimer);
+        clearTimeout(inst.pressTimer);
+        clearStatusTimers(inst);
+      }
+      remoteMembers = [];
+      instances.clear();
+      liveMarks.length = 0;
+      if (feedbackTimer !== void 0) clearTimeout(feedbackTimer);
+      feedbackTimer = void 0;
+      feedbackPillState = null;
+      feedbackPill = null;
+      host?.remove();
+      marksHost?.remove();
+      controlHost?.remove();
+      crossPill = null;
+      crossPillSession = "";
+      host = null;
+      marksHost = null;
+      controlHost = null;
+      controlBar = null;
+      shadow = null;
+      highlightLayer = null;
+      rippleLayer = null;
+      marksLayer = null;
+      ns.cursor = void 0;
+      ns.cursorHidden = void 0;
+      ns.cursorState = void 0;
+      ns.markLayout = void 0;
+      ns.markLayerCount = void 0;
+      ns.marksState = void 0;
+      ns.holdState = void 0;
+      ns.holdActionLabels = void 0;
+      ns.clickHoldAction = void 0;
+      ns.controlBanner = void 0;
+      ns.clickHandback = void 0;
+      ns.cursorStatus = void 0;
+      ns.crossPageState = void 0;
+      ns.feedbackState = void 0;
+      ns.clickCrossPage = void 0;
+      ns.setMarkConfig = void 0;
+      ns.getMarkConfig = void 0;
+      ns.markDetails = void 0;
+    }
+    window.addEventListener("pagehide", teardown);
+    function api(id) {
+      return {
+        beginAction(actionId, kind, rect, anchor, label) {
+          const inst = getInstance(id);
+          releaseHoldInst(inst);
+          clearTimeout(inst.parkTimer);
+          stopReplayInst(inst);
+          if (inst.action) clearAction(inst);
+          if (!inst.visible) showAtRest(inst);
+          inst.action = { id: actionId, kind, phase: "active", anchor, rect, name: actionName(anchor, label) };
+          setResting(inst, false);
+          inst.el.classList.add("acting");
+          if (rect && anchor) {
+            inst.highlightEl?.remove();
+            inst.highlightEl = document.createElement("div");
+            inst.highlightEl.className = "highlight action-target";
+            inst.highlightEl.style.setProperty("--c", inst.color);
+            highlightLayer.appendChild(inst.highlightEl);
+          }
+          renderActionLabel(inst);
+          renderAmbient();
+          followActions();
+        },
+        endAction(actionId, outcome, point) {
+          const inst = instances.get(id);
+          if (!inst?.action || inst.action.id !== actionId || inst.action.phase !== "active") return;
+          cancelFly(inst);
+          inst.action.phase = outcome;
+          if (outcome === "done" && inst.action.kind === "click" && point) {
+            setPos(inst, { x: point[0], y: point[1] });
+            api(id).click(point[0], point[1]);
+          }
+          if (outcome !== "done") {
+            inst.highlightEl?.remove();
+            inst.highlightEl = void 0;
+          } else if (inst.highlightEl) {
+            const el = inst.highlightEl;
+            inst.highlightEl = void 0;
+            el.classList.add("fading");
+            el.addEventListener("animationend", () => el.remove(), { once: true });
+            window.setTimeout(() => el.remove(), 1200);
+          }
+          renderActionLabel(inst);
+          renderAmbient();
+          schedulePark(inst);
+        },
+        arrive(x, y) {
+          const inst = instances.get(id);
+          if (!inst?.visible) return;
+          cancelFly(inst);
+          if (inst.action) inst.action.arrived = true;
+          setPos(inst, { x, y });
+        },
+        move(x, y) {
+          const inst = getInstance(id);
+          releaseHoldInst(inst);
+          clearTimeout(inst.parkTimer);
+          if (!inst.visible) showAtRest(inst);
+          setResting(inst, false);
+          inst.el.classList.remove("hidden");
+          inst.visible = true;
+          return flyTo(inst, { x, y });
+        },
+        click(x, y) {
+          const inst = getInstance(id);
+          releaseHoldInst(inst);
+          clearTimeout(inst.pressTimer);
+          inst.el.classList.add("pressing");
+          inst.pressTimer = setTimeout(() => inst.el.classList.remove("pressing"), 160);
+          spawnRipple(x, y, "ripple", inst.color);
+          spawnRipple(x, y, "ripple r2", inst.color);
+          schedulePark(inst);
+        },
+        releaseHold() {
+          const inst = instances.get(id);
+          if (!inst) return;
+          releaseHoldInst(inst);
+          if (inst.visible) schedulePark(inst);
+        },
+        park() {
+          const inst = getInstance(id);
+          if (!inst.visible) {
+            showAtRest(inst);
+            return;
+          }
+          schedulePark(inst);
+        },
+        replay(points) {
+          void runReplay(getInstance(id), points);
+        },
+        stopReplay() {
+          const inst = instances.get(id);
+          if (inst) stopReplayInst(inst);
+        },
+        hide() {
+          const inst = instances.get(id);
+          if (inst) hide(inst);
+        },
+        setStatus(view) {
+          if (!view?.state) return;
+          setStatusInst(getInstance(id), view);
+        },
+        clearStatus() {
+          const inst = instances.get(id);
+          if (inst) {
+            clearStatusInst(inst);
+            if (inst.action && inst.action.phase !== "active") clearAction(inst);
+          }
+        },
+        showCrossPage(view) {
+          showCrossPill(view ?? {});
+        },
+        hideCrossPage() {
+          hideCrossPill();
+        },
+        setGlow(on) {
+          if (on) glowing.add(id);
+          else glowing.delete(id);
+          renderGlow();
+        },
+        showFeedback(view) {
+          showFeedbackPill(view);
+        },
+        hideFeedback() {
+          hideFeedbackPill();
+        },
+        showUserControl(view) {
+          showUserControl(view);
+        },
+        hideUserControl() {
+          hideUserControl();
+        },
+        highlight(rect) {
+          const inst = getInstance(id);
+          spawnHighlight(inst, rect);
+        },
+        mark(rect, label, target, actions, options, observedNode) {
+          const inst = getInstance(id);
+          const mark = spawnMark(inst, rect, label, target, options, observedNode);
+          const parsed = resolveImplicitMarkActions(label, actions);
+          if (parsed) {
+            holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target, mark);
+          }
+        },
+        clearMarks() {
+          liveMarks.length = 0;
+          marksLayer?.replaceChildren();
+        },
+        for(instanceId) {
+          return api(instanceId);
+        }
+      };
+    }
+    ns.cursor = api(DEFAULT_ID);
+    ns.cursorState = (id = DEFAULT_ID) => {
+      const inst = instances.get(id);
+      if (!inst) return null;
+      const r = inst.el.querySelector(".label")?.getBoundingClientRect();
+      return {
+        action: inst.action?.id ?? null,
+        phase: inst.action?.phase ?? null,
+        label: inst.el.querySelector(".label")?.textContent ?? "",
+        labelRect: r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null,
+        targetRect: inst.action?.rect ?? null,
+        hidden: !inst.visible,
+        resting: inst.resting,
+        x: inst.pos.x,
+        y: inst.pos.y,
+        size: CURSOR_SVG_SIZE
+      };
+    };
+    ns.cursorHidden = () => {
+      const inst = instances.get(DEFAULT_ID);
+      return !inst || !inst.visible;
+    };
+    ns.cursorStatus = (id = DEFAULT_ID) => {
+      const inst = instances.get(id);
+      if (!inst) return null;
+      const label = inst.el.querySelector(".label");
+      const rect = label?.getBoundingClientRect();
+      const computed = label ? getComputedStyle(label) : null;
+      const nameEl = inst.el.querySelector(".agent-name");
+      return {
+        state: inst.status?.state ?? null,
+        text: inst.el.querySelector(".action-text")?.textContent ?? "",
+        detail: nameEl?.textContent ?? "",
+        fontSize: computed?.fontSize ?? "",
+        nameFontSize: nameEl ? getComputedStyle(nameEl).fontSize : "",
+        borderColor: computed?.borderLeftColor ?? "",
+        opacity: computed ? Number(computed.opacity) : 0,
+        labelRect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
+        x: inst.pos.x,
+        y: inst.pos.y,
+        hidden: !inst.visible,
+        resting: inst.resting
+      };
+    };
+    ns.crossPageState = () => {
+      if (!crossPill?.classList.contains("on")) return null;
+      const rect = crossPill.getBoundingClientRect();
+      return {
+        main: crossPill.querySelector(".xmain")?.textContent ?? "",
+        sub: crossPill.querySelector(".xsub")?.textContent ?? "",
+        sessionId: crossPillSession,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        viewport: { width: window.innerWidth, height: window.innerHeight }
+      };
+    };
+    ns.clickCrossPage = () => {
+      if (!crossPill?.classList.contains("on")) return false;
+      crossPill.querySelector("button")?.click();
+      return true;
+    };
+    ns.feedbackState = () => feedbackPillState ? {
+      id: feedbackPillState.id,
+      text: feedbackPillState.text,
+      kind: feedbackPillState.kind,
+      bounces: feedbackPillState.bounces,
+      visible: Boolean(feedbackPill?.classList.contains("on"))
+    } : null;
+    ns.controlBanner = () => {
+      if (!controlBar || !controlBar.classList.contains("on")) return null;
+      const statusEl = controlBar.querySelector("b");
+      const actionEl = controlBar.querySelector("button");
+      const barRect = controlBar.getBoundingClientRect();
+      const statusRect = statusEl?.getBoundingClientRect();
+      const actionRect = actionEl?.getBoundingClientRect();
+      return {
+        status: statusEl?.textContent ?? "",
+        action: actionEl?.textContent ?? "",
+        barWidth: barRect.width,
+        statusRight: statusRect?.right ?? 0,
+        actionLeft: actionRect?.left ?? 0,
+        actionRight: actionRect?.right ?? 0,
+        viewportWidth: window.innerWidth
+      };
+    };
+    ns.clickHandback = () => {
+      const btn = controlBar?.querySelector("button");
+      if (!btn || !controlBar?.classList.contains("on")) return false;
+      btn.click();
+      return true;
+    };
+    ns.holdActionLabels = () => [...instances.values()].filter((inst) => inst.hold).flatMap(
+      (inst) => [...inst.el.querySelectorAll(".hold-action")].map((b) => ({
+        id: b.dataset.action ?? "",
+        label: b.textContent ?? ""
+      }))
+    );
+    ns.clickHoldAction = (actionId) => {
+      if (!isMarkActionId(actionId)) return false;
+      const btn = [...instances.values()].filter((inst) => inst.hold).flatMap((inst) => [...inst.el.querySelectorAll(".hold-action")]).find((b) => b.dataset.action === actionId);
+      if (!btn) return false;
+      btn.click();
+      return true;
+    };
+    ns.holdState = (instanceId) => {
+      const inst = instances.get(instanceId ?? DEFAULT_ID);
+      if (!inst) return null;
+      return {
+        holding: Boolean(inst.hold),
+        pressing: inst.el.classList.contains("pressing"),
+        hidden: inst.el.classList.contains("hidden") || !inst.visible,
+        x: inst.pos.x,
+        y: inst.pos.y
+      };
+    };
+    ns.markLayout = () => liveMarks.map((m) => {
+      const viewRect = (e) => {
+        const r = e?.getBoundingClientRect();
+        return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null;
+      };
+      return {
+        x: parseFloat(m.el.style.left) || 0,
+        y: parseFloat(m.el.style.top) || 0,
+        width: parseFloat(m.el.style.width) || 0,
+        height: parseFloat(m.el.style.height) || 0,
+        stroke: viewRect(m.el.querySelector(".sketch-frame-path")),
+        label: viewRect(m.el.querySelector(".mark-label"))
+      };
+    });
+    ns.markLayerCount = () => marksLayer?.childElementCount ?? 0;
+    ns.marksState = () => liveMarks.map((m) => {
+      const node = m.observedNode instanceof Range ? m.observedNode.commonAncestorContainer : m.observedNode;
+      const anchor = node ? node instanceof Element ? node : node.parentElement : liveAnchor(m);
+      return {
+        label: m.label ?? "",
+        element: anchor?.isConnected ? { tag: anchor.tagName.toLowerCase(), name: actionName(anchor) } : null,
+        shown: m.el.isConnected && m.el.style.visibility !== "hidden"
+      };
+    });
+    ns.setMarkConfig = (opts) => {
+      defaultMarkOptions = { ...defaultMarkOptions, ...opts };
+    };
+    ns.getMarkConfig = () => ({ ...defaultMarkOptions });
+    ns.markDetails = () => liveMarks.map((m) => {
+      const svg = m.el.querySelector("svg.sketch-svg");
+      const boilPaths = svg ? [...svg.querySelectorAll(".boil-path")] : [];
+      const framePath = svg?.querySelector(".sketch-frame-path");
+      const labelEl = m.el.querySelector(".sketch-label") ?? m.el.querySelector(".mark-label");
+      return {
+        className: m.el.className,
+        hasSvg: Boolean(svg),
+        isGrow: m.el.classList.contains("grow"),
+        isBoil: m.el.classList.contains("boil"),
+        isSketch: m.el.classList.contains("sketch"),
+        hasFrame: Boolean(framePath),
+        boilFrameCount: boilPaths.length,
+        labelText: labelEl?.textContent ?? ""
+      };
+    });
+  })();
+})();
+</script>
+<script>
+(function () {
+  const P = window.__BYS_PROTO, q = P.q, size = P.size;
+  const VISUAL = {"path":"M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z","white":2.2,"halo":3.8,"tip":{"x":4.037,"y":4.688}};
+  const $ = (s) => document.querySelector(s);
+  if (q.has("clean")) document.body.classList.add("clean");
+  if (q.has("norefs")) document.body.classList.add("norefs");
+
+  // ── 尺寸对照卡：同一条路径、同一组描边，1:1 渲染；macOS / OpenAI 箭头为重绘示意 ──
+  function bysSvg(px) {
+    const s = px / 24;
+    const tx = -VISUAL.tip.x * s + 4, ty = -VISUAL.tip.y * s + 4;
+    return `<svg width="${px + 8}" height="${px + 8}" viewBox="0 0 ${px + 8} ${px + 8}" style="overflow:visible;filter:drop-shadow(0 0 1px #fff) drop-shadow(0 1px 3px rgba(20,20,19,.32))"><g transform="translate(${tx} ${ty}) scale(${s})"><path d="${VISUAL.path}" fill="none" stroke="#0f172a" stroke-width="${VISUAL.halo}" stroke-linejoin="round"/><path d="${VISUAL.path}" fill="#2d4a86" stroke="#fff" stroke-width="${VISUAL.white}" stroke-linejoin="round"/></g></svg>`;
+  }
+  // macOS 箭头（按 1× 系统尺寸重绘：黑填白边，箭头高约 18px）
+  const MAC = `<svg width="16" height="24" viewBox="-1.5 -1.5 16 24" style="overflow:visible;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))"><path d="M0 0v16.6l3.9-3.6 2.6 6.1 2.6-1.1-2.6-5.9h5.4z" fill="#000" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+  // OpenAI 风格普通箭头（ChatGPT 智能体里的白边黑箭头，重绘示意，约 19px）
+  const OAI = `<svg width="18" height="24" viewBox="-2 -2 18 24" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))"><path d="M.5.5 13.2 12.4l-5.6.5 3.2 6-2.3 1.2-3.1-6.1L1.2 17.7z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  $("#refs").innerHTML = `<h5>尺寸对照（1:1）</h5><div class="row">
+    <figure><div class="g">${MAC}</div><figcaption>macOS 箭头</figcaption></figure>
+    <figure><div class="g">${OAI}</div><figcaption>OpenAI 箭头</figcaption></figure>
+    ${[18, 19, 20, 35].map(n => `<figure class="${n === size ? "pick" : ""}"><div class="g">${bysSvg(n)}</div><figcaption>${n === 35 ? "当前 35" : "BYS " + n}</figcaption></figure>`).join("")}
+  </div><div class="note">macOS / OpenAI 两枚为重绘示意；BYS 用仓库同一条路径和描边。</div>`;
+
+  // ── 选择器：改尺寸要重新载入（尺寸在光标脚本启动时读一次，和产品一致）──
+  const pk = $("#picker");
+  const go = (patch) => { const u = new URL(location.href); for (const [k, v] of Object.entries(patch)) v === null ? u.searchParams.delete(k) : u.searchParams.set(k, v); location.href = u.toString(); };
+  pk.innerHTML = `<span class="lab">光标</span>` + [18, 19, 20, 35].map(n => `<button data-size="${n}" aria-pressed="${n === size}">${n === 35 ? "当前 35" : n + "px"}</button>`).join("") +
+    `<span class="sep"></span><button id="replay">重放</button><button id="dbg" aria-pressed="${q.has("debug")}">落点</button><button id="rm" aria-pressed="${q.has("reduced")}">减少动态</button><button id="rf" aria-pressed="${!q.has("norefs")}">对照</button>`;
+  pk.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.size) go({ size: b.dataset.size });
+    else if (b.id === "replay") run();
+    else if (b.id === "dbg") go({ debug: q.has("debug") ? null : "" });
+    else if (b.id === "rm") go({ reduced: q.has("reduced") ? null : "" });
+    else if (b.id === "rf") document.body.classList.toggle("norefs");
+  });
+
+  // 发送按钮在原型里永远不做事。
+  $("#sendBtn").addEventListener("click", (e) => e.preventDefault());
+
+  // ── 演示脚本：只调真实 cursor API（beginAction / move / endAction），和产品里一次填写、一次悬停的顺序一致 ──
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const rectOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+  const center = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]; };
+  function xhair(x, y) { if (!q.has("debug")) return; const d = document.createElement("div"); d.className = "xhair"; d.style.left = x + "px"; d.style.top = y + "px"; document.body.appendChild(d); }
+  const DRAFT = "好的，周四下午 3 点没问题，4F 小会议室见。新截图我会提前发你。";
+  let runId = 0;
+
+  function reset() {
+    document.querySelectorAll(".xhair").forEach(n => n.remove());
+    $("#reply").classList.remove("on"); $("#editor").textContent = "";
+  }
+
+  async function run() {
+    const my = ++runId; const alive = () => my === runId;
+    const c = window.__sideagent && window.__sideagent.cursor; if (!c) return;
+    reset(); c.hide && c.hide();
+    await sleep(500); if (!alive()) return;
+    window.__protoPhase = "reply";
+    // 1) 点「回复」
+    const rb = $("#replyBtn"); let [x, y] = center(rb); xhair(x, y);
+    c.beginAction("p1", "click", rectOf(rb), rb, "回复");
+    await sleep(c.move(x, y) + 260); if (!alive()) return;
+    c.endAction("p1", "done", [x, y]);
+    await sleep(140); $("#reply").classList.add("on");
+    await sleep(720); if (!alive()) return;
+    // 2) 在回复框里填草稿
+    window.__protoPhase = "fill";
+    const ed = $("#editor"); [x, y] = center(ed); xhair(x, y);
+    c.beginAction("p2", "fill", rectOf(ed), ed, "邮件正文");
+    await sleep(c.move(x, y) + 220); if (!alive()) return;
+    const caret = document.createElement("span"); caret.className = "caret";
+    if (reduced) { ed.textContent = DRAFT; ed.appendChild(caret); }
+    else for (let i = 1; i <= DRAFT.length; i++) { ed.textContent = DRAFT.slice(0, i); ed.appendChild(caret); await sleep(48); if (!alive()) return; }
+    if (q.get("stopAt") === "fill") { window.__protoPhase = "fill-hold"; return; }
+    await sleep(320); c.endAction("p2", "done"); caret.remove();
+    await sleep(520); if (!alive()) return;
+    // 3) 悬停「发送」：只标出来，不点
+    window.__protoPhase = "hover";
+    const sb = $("#sendBtn"); [x, y] = center(sb); xhair(x, y);
+    c.beginAction("p3", "hover", rectOf(sb), sb, "发送");
+    await sleep(c.move(x, y) + 200); if (!alive()) return;
+    window.__protoPhase = "hover-arrived";
+    if (q.get("stopAt") === "hover") return;
+    await sleep(1700); if (!alive()) return;
+    c.endAction("p3", "done");
+    window.__protoPhase = "parking";
+    await sleep(2000);
+    window.__protoPhase = "end";
+  }
+  window.__protoRun = run;
+  if (!q.has("nostart")) addEventListener("load", () => run());
+})();
+</script>
+</body>
+</html>
