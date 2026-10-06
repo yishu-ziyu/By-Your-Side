@@ -9,7 +9,7 @@
 | 能力 | 现在 | 还差 | 证据 |
 |---|---|---|---|
 | 侧栏会话与外观 | 任务卡、掀原文、AI 边注、投喂、反查、直连按钮、改方向已合并；隔离路径通过 | 新交互未重载；首开新建曾卡住，重开恢复 | [伴读](evals/20261005-killer-interactions.md) · [直连](evals/20261005-ghost-hud-and-steering.md) |
-| 回答交付 | 正文直接交付，未完成项只标注；问答中位约 10 秒；目标核对移到回答后，不拖慢回答（10-04，未进日常） | 只装扩展时侧栏「还差：…」一行为空（10-01 发现，两模型均复现，原因未查）；复制任务中位约 26 秒 | [开发日志](devlog/20260924-02-回答不再被核验扣下.md) · [没做完的一行](evals/20260925-unfinished-line-and-answer-reveal.md) |
+| 回答交付 | 正文直接交付，未完成项只标注；问答中位约 10 秒；目标核对移到回答后，不拖慢回答（10-04，未进日常） | 复制任务中位约 26 秒 | [开发日志](devlog/20260924-02-回答不再被核验扣下.md) · [没做完的一行](evals/20260925-unfinished-line-and-answer-reveal.md) |
 | 读页 | 大页面读完不再被记为结果未知而锁住后续操作；网址中的密码类信息遮掉 | 原 MiMo 会话定位失败、「继续」不恢复，根因未确认 | [MDN 修复](evals/20260930-mdn-reading-recovery.md) · [MiMo 试用](evals/20260930-first-user-mimo.md) |
 | 整页翻译 | 4 路并发，109 段约 70 秒；待翻段落先出占位，Kimi 限流时自动降速（用户试过：满意） | 说完后主模型先想约 8 秒，页面不动 | [提速](evals/20260926-translate-fast.md) · [占位](evals/20260927-translate-marks.md) |
 | 即时动作（快速模型） | 解释约 2 秒出字；翻译、定位的意图预判已删（10-04） | 未达 2 秒，瓶颈是智谱首字 | [验收](evals/20260926-instant-2s.md) |
@@ -37,7 +37,7 @@
 
 本轮进展：
 
-1. 自检（#28）：GLM、M3.1 定点各 5/5；M3.1 文件转义失败已修复并复测，已加载（[验收](evals/20261002-answer-selfcheck.md)）。
+1. 自检（#28，已关）：GLM、M3.1 定点各 5/5（[验收](evals/20261002-answer-selfcheck.md)）；10-06 用 gpt-6-luna 重跑原失败 6 题全过（[复查](evals/20261006-stale-issues-recheck.md)）。
 2. PDF 下载（#25）：两模型的原 arXiv 请求通过，日常 Chrome 可见实录为 2 步、8 秒（[验收与录像](evals/20261002-pdf-download.md)）。
 3. #32 环境分类在独占条件下完整通过；#35 共 124 次运行与判分完成。M3.1 正常任务 52/55，GLM 50/56；环境分别 7、6 次（[环境验收](evals/20261002-eval-environment.md)）。
 4. Pi 会话/文件恢复与 40px 截图卡已部署，关键验收通过（[验收与录像](evals/20261002-session-durability.md)）。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax 记忆分类与备注提交检查通过，已加载（[分类](evals/20261003-memory-classification.md)、[执行](evals/20261003-method-form-enforcement.md)）。备注补填、电话规则替换、撤销恢复备注的整条扩展路径通过，已加载；本轮用脚本模型，下一步用在线 MiniMax 复测（[验收](evals/20261003-memory-rule-replacement.md)）。

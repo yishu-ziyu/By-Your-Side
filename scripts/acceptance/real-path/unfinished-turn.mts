@@ -12,7 +12,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc } from "./harness.mts";
-import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
+import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
@@ -21,7 +21,7 @@ const LIMIT_MS = 600_000;
 const PROMPT = "在页面上圈出五小时用量和「升级套餐」按钮。";
 
 // 模型来自 ~/.sideagent/providers.local.json（用户选的套餐）；--model=provider/id 指定。
-const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice(8) ?? "zai-coding-cn/glm-5.3-flash";
+const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
 
 const plan = await loadModelPlan(modelArg);
 
