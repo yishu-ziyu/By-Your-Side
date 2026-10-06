@@ -1,4 +1,5 @@
-import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { isContextOverflow, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { isTransientModelError } from "../../shared/provider-busy.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AgentSession, AgentSessionEvent, AgentSessionEventListener, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 
@@ -228,7 +229,7 @@ class FailoverLoop implements AgentLoop {
     return !this.stopped && !this.switchedThisRun && !!model && !!backup
       && `${model.provider}/${model.id}` !== `${backup.provider}/${backup.id}`
       && !isContextOverflow(message, model.contextWindow)
-      && isRetryableAssistantError(message);
+      && isTransientModelError(message);
   }
 
   private candidate(): Model<Api> | undefined {

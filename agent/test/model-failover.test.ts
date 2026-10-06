@@ -26,6 +26,9 @@ const base = { api: "openai-completions" as const, baseUrl: "http://127.0.0.1", 
 
 const MAIN: Model<"openai-completions"> = { ...base, id: "step-5-preview", name: "step-5-preview", provider: "stepfun" };
 
+/** 能力表给 gpt-6 系列登记了 30 秒首个事件上限（服务端偶尔排队 16–17 秒）。 */
+const LUNA: Model<"openai-completions"> = { ...base, id: "gpt-6-luna", name: "gpt-6-luna", provider: "openai-codex" };
+
 const FAST: Model<"openai-completions"> = { ...base, id: "glm-5.3-flash", name: "glm-5.3-flash", provider: "zai-coding-cn" };
 
 function reply(model: Model<"openai-completions">, stopReason: AssistantMessage["stopReason"], text: string, errorMessage?: string): AssistantMessage {
@@ -38,10 +41,10 @@ function reply(model: Model<"openai-completions">, stopReason: AssistantMessage[
   return message;
 }
 
-/** 主模型怎么坏：一直不回（只在取消时结束）、429、流提前结束。 */
-type MainFailure = "hang" | "429" | "early-end";
+/** 主模型怎么坏：一直不回（只在取消时结束）、429、流提前结束、Chrome 断网、连上后 20 秒才出字。 */
+type MainFailure = "hang" | "429" | "early-end" | "failed-to-fetch" | "slow-20s";
 
-async function session(failure: MainFailure, withFast: boolean) {
+async function session(failure: MainFailure, withFast: boolean, main = MAIN) {
   const traceDir = mkdtempSync(join(tmpdir(), "bys-failover-"));
   dirs.push(traceDir);
   process.env.SIDEAGENT_TRACE_DIR = traceDir;
@@ -56,12 +59,16 @@ async function session(failure: MainFailure, withFast: boolean) {
     if (model.id === FAST.id) {
       const done = reply(FAST, "stop", "你好！我在。");
       setTimeout(() => stream.push({ type: "done", reason: "stop", message: done }), 500);
+    } else if (failure === "slow-20s") {
+      setTimeout(() => stream.push({ type: "start", partial: reply(main, "stop", "") }), 200);
+      const timer = setTimeout(() => stream.push({ type: "done", reason: "stop", message: reply(main, "stop", "排队后答完。") }), 20_000);
+      options?.signal?.addEventListener("abort", () => { clearTimeout(timer); stream.push({ type: "error", reason: "aborted", error: reply(main, "aborted", "", "Request was aborted") }); }, { once: true });
     } else if (failure === "hang") {
       // 连上了（start）但之后什么都不来；只有取消时结束。
       setTimeout(() => stream.push({ type: "start", partial: reply(MAIN, "stop", "") }), 200);
       options?.signal?.addEventListener("abort", () => stream.push({ type: "error", reason: "aborted", error: reply(MAIN, "aborted", "", "Request was aborted") }), { once: true });
     } else {
-      const errorMessage = failure === "429" ? "429 Endpoint is unavailable" : "Stream ended without finish_reason";
+      const errorMessage = failure === "429" ? "429 Endpoint is unavailable" : failure === "failed-to-fetch" ? "Failed to fetch" : "Stream ended without finish_reason";
       setTimeout(() => stream.push({ type: "error", reason: "error", error: reply(MAIN, "error", "", errorMessage) }), 300);
     }
 
@@ -69,8 +76,8 @@ async function session(failure: MainFailure, withFast: boolean) {
   };
 
   const port: ModelPort = {
-    getModel: (provider, id) => [MAIN, FAST].find(model => model.provider === provider && model.id === id),
-    getAvailable: async () => (withFast ? [MAIN, FAST] : [MAIN]),
+    getModel: (provider, id) => [main, FAST].find(model => model.provider === provider && model.id === id),
+    getAvailable: async () => (withFast ? [main, FAST] : [main]),
     completeSimple: async () => reply(FAST, "stop", "{}"),
     streamSimple,
   };
@@ -83,7 +90,7 @@ async function session(failure: MainFailure, withFast: boolean) {
   // SAFETY: 替身实现了会话用到的全部 ToolRpc 方法。
   const host = await BrowserAgentSession.create(rpc as never, { emit: event => { emitted.push(event); progress.observe({ type: "agent_event", event }); },
     setStatus: state => progress.observe({ type: "status", state }) },
-    { loop: { models: port, cwd: "/tmp" }, modelPattern: "stepfun/step-5-preview", conversationId: "default" });
+    { loop: { models: port, cwd: "/tmp" }, modelPattern: `${main.provider}/${main.id}`, conversationId: "default" });
 
   host.bindConversationContext(() => progress.snapshot());
   host.bindDeliveryRun(() => progress.snapshot().runId ?? null);
@@ -123,7 +130,21 @@ describe("model failover: the user is not left waiting for minutes", () => {
     h.host.abort();
   }, 30_000);
 
-  it.each(["429", "early-end"] as const)("F2 main fails with %s: switches on the first failure, answer within 3 s (W3)", async failure => {
+  it("F5 first event at 20 s: gpt-6-luna waits and answers itself; step-5-preview still switches at 15 s", async () => {
+    const luna = await session("slow-20s", true, LUNA);
+    await sayHello(luna, 60_000);
+    expect(JSON.stringify(luna.emitted)).toContain("排队后答完。");
+    expect(luna.calls).toEqual([LUNA.id]);
+    luna.host.abort();
+
+    const step = await session("slow-20s", true);
+    await sayHello(step, 60_000);
+    expect(JSON.stringify(step.emitted)).toContain("你好！我在。");
+    expect(step.calls).toEqual([MAIN.id, FAST.id]);
+    step.host.abort();
+  }, 30_000);
+
+  it.each(["429", "early-end", "failed-to-fetch"] as const)("F2 main fails with %s: switches on the first failure, answer within 3 s (W3)", async failure => {
     const h = await session(failure, true);
     const elapsed = await sayHello(h, 300_000);
 

@@ -11,8 +11,9 @@
  * 会话消息和任务检查点可交给Pi原生Session；扩展提供持久存储。
  */
 import { Agent, convertToLlm, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
-import { isProviderBusyError } from "../../shared/provider-busy.js";
-import { createAssistantMessageEventStream, isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
+import { firstEventTimeout } from "../../shared/model-capabilities.js";
+import { isTransientModelError } from "../../shared/provider-busy.js";
+import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -33,7 +34,7 @@ export interface PiAgentLoopOptions {
   persistence?: PiSessionPersistence;
   messages?: AgentMessage[];
   retry?: { maxRetries: number; baseDelayMs: number };
-  /** 模型多久不出第一个事件就取消这次调用、按可重试错误处理；默认 MODEL_FIRST_EVENT_TIMEOUT_MS。 */
+  /** 模型多久不出第一个事件就取消这次调用、按可重试错误处理；默认取能力表登记值，再退到 MODEL_FIRST_EVENT_TIMEOUT_MS。 */
   firstEventTimeoutMs?: number;
   onHookError?: (event: string, message: string) => void;
   /** 每次模型调用前观察实际请求（诊断记录用）；只读，抛错被吞掉。 */
@@ -131,7 +132,7 @@ export class PiAgentLoop implements AgentLoop {
 
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: options.messages ?? [] },
-      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort, options.firstEventTimeoutMs ?? MODEL_FIRST_EVENT_TIMEOUT_MS, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }),
+      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort, options.firstEventTimeoutMs, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }),
       // Pi原生转换保留自定义消息、压缩摘要与分支摘要。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
@@ -333,7 +334,7 @@ export class PiAgentLoop implements AgentLoop {
   private retryable(message: AssistantMessage): boolean {
     if (isContextOverflow(message, this.model?.contextWindow ?? 0)) return false;
 
-    return isRetryableAssistantError(message) || (message.stopReason === "error" && isProviderBusyError(message.errorMessage));
+    return isTransientModelError(message);
   }
 
   private async prepareRetry(message: AssistantMessage): Promise<boolean> {
@@ -468,7 +469,7 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number, onCut: (cut: () => boolean, live: boolean) => void): StreamFn {
+function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);
@@ -477,7 +478,7 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
     const options = level === undefined ? streamOptions : { ...streamOptions, reasoning: level === "off" ? undefined : level };
 
     // SAFETY: 同上，参数原样转交。
-    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs, signal => models.streamSimple(model as never, context as never, { ...options, signal } as never), onCut);
+    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, signal => models.streamSimple(model as never, context as never, { ...options, signal } as never), onCut);
   }) as StreamFn;
 }
 
