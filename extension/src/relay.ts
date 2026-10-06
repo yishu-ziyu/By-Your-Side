@@ -19,8 +19,11 @@ export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" 
 
 /** 关闭侧栏后仍需要恢复的可见内容。 */
 export type PanelHistoryItem =
-  | { kind: "user"; text: string; attachments?: Attachment[]; undelivered?: { original: ClientMessage } }
+  | { kind: "user"; text: string; attachments?: Attachment[]; undelivered?: { original: ClientMessage }; context?: UserTurnContext }
   | { kind: "server"; msg: PanelHistoryServerMessage };
+
+/** 这一轮随消息带给助手的页面与选段；侧栏画成用户消息下面的 chip。 */
+export interface UserTurnContext { title: string; url: string; selection?: string }
 
 /** background 分配的单调序号是增量同步游标。 */
 export interface PanelHistoryEntry {
@@ -66,5 +69,7 @@ type BgToPanelPayload =
    * 已交给传输层，不表示伴随进程已处理或任务已完成。
    */
   | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
+  /** 用户那一条历史补上了这一轮带的页面（见 UserTurnContext）。 */
+  | { kind: "turn_context"; seq: number; context: UserTurnContext }
   /** 一次同步回放结束：面板据此核对旧端口上的消息是否丢了。 */
   | { kind: "synced" };

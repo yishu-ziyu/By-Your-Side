@@ -52,7 +52,7 @@ const check = (name: string, ok: boolean, evidence: string) => {
 
 const RECEIPT = `(() => { const r = [...document.querySelectorAll("details.run-steps")].pop(); return r ? { done: r.classList.contains("done"), text: r.querySelector(".run-title").textContent, icon: r.querySelector(".run-act-icon")?.dataset.kind ?? null, timeShown: getComputedStyle(r.querySelector(".run-time")).display !== "none" } : null; })()`;
 
-const ANSWER = `(() => { const a = document.querySelector(".msg.assistant.answer-latest"); if (!a) return null; const row = a.querySelector(":scope > .answer-actions"); const btn = row?.querySelector(".answer-sources-btn"); const fav = a.querySelector("a > .source-fav"); const img = fav?.querySelector("img"); return { text: a.innerText.slice(0, 80), before: !!a.querySelector(":scope > details.answer-sources") || !!a.querySelector(".memory-used-toggle"), opacity: row ? getComputedStyle(row).opacity : null, sources: btn && !btn.hidden ? btn.textContent : null, time: a.querySelector(".answer-time")?.textContent ?? "", fav: fav ? { first: fav.parentElement.firstChild === fav, icon: !!img && img.complete && img.naturalWidth > 0, link: fav.parentElement.textContent, title: fav.parentElement.title } : null, pill: !!a.querySelector(".source-mark"), chipRow: !!a.querySelector(".citation-row") }; })()`;
+const ANSWER = `(() => { const a = document.querySelector(".msg.assistant.answer-latest"); if (!a) return null; const row = a.querySelector(":scope > .answer-actions"); const btn = row?.querySelector(".answer-sources-btn"); const fav = a.querySelector("a > .source-fav"); const img = fav?.querySelector("img"); return { text: a.innerText.slice(0, 80), before: !!a.querySelector(":scope > details.answer-sources"), opacity: row ? getComputedStyle(row).opacity : null, sources: btn && !btn.hidden ? btn.textContent : null, time: a.querySelector(".answer-time")?.textContent ?? "", fav: fav ? { first: fav.parentElement.firstChild === fav, icon: !!img && img.complete && img.naturalWidth > 0, link: fav.parentElement.textContent, title: fav.parentElement.title } : null, pill: !!a.querySelector(".source-mark"), chipRow: !!a.querySelector(".citation-row") }; })()`;
 
 const rp = await launchRealPath();
 
@@ -88,7 +88,7 @@ try {
   const receiptA = await rp.evaluate(panel, RECEIPT);
   const answerA = await rp.evaluate(panel, ANSWER);
   check("开站：回执写那一件事，前面是地球图标，回执里不写耗时", !!receiptA?.done && receiptA.text.startsWith("打开了 127.0.0.1") && receiptA.icon === "open" && !receiptA.timeShown, JSON.stringify(receiptA));
-  check("开站：回答前没有「读了…」「用了 N 条记忆」行", !!answerA && !answerA.before, JSON.stringify(answerA));
+  check("开站：回答前没有「读了…」行（「用了 N 条记忆 ›」按 #58 交接回到句尾）", !!answerA && !answerA.before, JSON.stringify(answerA));
   check("开站：最新回答下面一排常显，有「来源」和耗时", answerA?.opacity === "1" && !!answerA.sources?.includes("来源") && /秒/.test(answerA.time), JSON.stringify(answerA));
   check("开站：站点图标长在链接文字前面、图标已加载，链接后没有胶囊（YIS-74）", !!answerA?.fav?.first && answerA.fav.icon && !answerA.pill && answerA.fav.title.includes("127.0.0.1"), JSON.stringify({ fav: answerA?.fav, pill: answerA?.pill }));
 
@@ -115,6 +115,20 @@ try {
   const bubble = await rp.evaluate(panel, "(() => { const u = [...document.querySelectorAll(\".msg.user\")].pop(); const lh = parseFloat(getComputedStyle(u).lineHeight); const pad = parseFloat(getComputedStyle(u).paddingTop) + parseFloat(getComputedStyle(u).paddingBottom); return { h: u.getBoundingClientRect().height, lines: Math.round((u.getBoundingClientRect().height - pad) / lh) }; })()");
   check("用户气泡底部没有空白（一行字就是一行高）", bubble.lines === 1, JSON.stringify(bubble));
   await rp.screenshot(panel, join(out, "receipt-fill-open.png"));
+
+  // chip C：每条用户消息下面紧跟这一轮带的页面；重新载入侧栏后从历史里画回来。
+  const CHIPS = "[...document.querySelectorAll(\"#messages .msg.user\")].map((u) => { const n = u.nextElementSibling; return n?.matches(\".ctx-chips\") ? [...n.querySelectorAll(\".ctx-chip\")].map((c) => c.textContent) : null; })";
+  const liveChips = await rp.evaluate(panel, CHIPS);
+  check("chip：两条用户消息下面都紧跟「订票」页面 chip", liveChips.length === 2 && liveChips.every((c: string[] | null) => c?.[0] === "订票"), JSON.stringify(liveChips));
+  await rp.cdp.send("Page.reload", {}, panel);
+
+  const restoredChips = await until(async () => {
+    const c = await rp.evaluate(panel, CHIPS);
+
+    return c.length === 2 ? c : undefined;
+  }, 30_000, "重载后回放历史");
+
+  check("chip：重新载入侧栏后 chip 还在", restoredChips.every((c: string[] | null) => c?.[0] === "订票"), JSON.stringify(restoredChips));
 
   // 三、没做成
   // 开站那一轮把新标签放到了前面：回到订票页再做。

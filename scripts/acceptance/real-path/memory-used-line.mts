@@ -209,9 +209,9 @@ async function turn(): Promise<string> {
   return mainRequests[mark] ?? "";
 }
 
-type LineView = { count: number; text: string; inPanel: boolean; listHidden: boolean; items: Array<{ id: string; kind: string; text: string; state: string; note: string; buttons: string[] }> } | null;
+type LineView = { count: number; text: string; inFirstSentence: boolean; listHidden: boolean; items: Array<{ id: string; kind: string; text: string; state: string; note: string; buttons: string[] }> } | null;
 
-/** 这一轮的那一行：回执改版后收在回答下面「来源」面板里（回答未定稿时是消息流里独立的 .memory-used-line）。 */
+/** 这一轮的那一行：最后一条用户消息之后的回答里（回答未定稿时是消息流里独立的 .memory-used-line）。 */
 // SAFETY: 页面脚本返回 null 或与 LineView 一一对应的字段。
 const lastLine = async (): Promise<LineView> => (await rp.evaluate(panel, `(() => {
   const all = [...document.querySelectorAll("#messages > *")];
@@ -220,12 +220,12 @@ const lastLine = async (): Promise<LineView> => (await rp.evaluate(panel, `(() =
   const answer = after.find((n) => n.matches(".msg.assistant") && n.textContent.includes("普通商品页"));
   const line = answer?.querySelector(".memory-used-line") ?? after.find((n) => n.matches(".memory-used-line"));
   if (!line) return null;
-  const toggle = answer?.querySelector(":scope > .answer-actions > .answer-sources-btn");
-  const box = line.closest(".answer-panel");
+  const toggle = (answer ?? line).querySelector(".memory-used-toggle");
+  const first = answer?.firstElementChild;
   return {
-    count: Number(line.dataset.memoryUsedLine), text: toggle && !toggle.hidden ? toggle.innerText.trim() : "",
-    inPanel: !!box && !!answer?.contains(box) && !answer.querySelector(".memory-used-toggle"),
-    listHidden: !box || box.hidden || line.querySelector(".memory-used-list").hidden,
+    count: Number(line.dataset.memoryUsedLine), text: toggle.innerText.trim(),
+    inFirstSentence: !!first && first.matches("p") && first.textContent.includes("普通商品页") && first.contains(toggle) && first.nextElementSibling === line,
+    listHidden: answer ? line.dataset.open !== "true" : line.querySelector(".memory-used-list").hidden,
     items: [...line.querySelectorAll(".memory-used-item")].map((li) => ({ id: li.dataset.usedId, kind: li.dataset.usedKind, text: li.querySelector(".memory-used-text").textContent, state: li.dataset.state, note: li.querySelector(".memory-used-note")?.textContent ?? "", buttons: [...li.querySelectorAll("button")].map((b) => b.textContent) })),
   };
 })()`)) as LineView;
@@ -233,9 +233,11 @@ const lastLine = async (): Promise<LineView> => (await rp.evaluate(panel, `(() =
 /** 真点这一行里某条的某个按钮（先展开）。 */
 async function clickLine(id: string, label: string) {
   if ((await lastLine())?.listHidden) {
-    await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll(".memory-used-line")]; all.at(-1).closest(".msg").querySelector(":scope > .answer-actions > .answer-sources-btn").setAttribute("data-acceptance-click", "1"); return true; })()`);
+    await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll(".memory-used-line")]; (all.at(-1).closest(".msg") ?? all.at(-1)).querySelector(".memory-used-toggle").setAttribute("data-acceptance-click", "1"); return true; })()`);
     await rp.click(panel, "[data-acceptance-click]");
     await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`);
+    // 小条用弹簧撑开（约 420ms），等它停稳再点里面的按钮。
+    await sleep(600);
   }
 
   const found = await rp.evaluate(panel, `(() => { const line = [...document.querySelectorAll(".memory-used-line")].at(-1);
@@ -300,12 +302,12 @@ try {
   const sent = has(first);
   const expectedN = Object.values(sent).filter(Boolean).length;
   check("R1", "请求里带了两条记忆和一条过往任务", sent.email && sent.lang && sent.task, sent);
-  check("R1", `回答下面一排有「来源」，面板里的记忆条数等于请求里带的 ${expectedN} 条`, !!line1 && line1.count === expectedN && /来源|记忆/.test(line1.text), { button: line1?.text ?? null, count: line1?.count ?? null, expectedN });
-  check("R1", "记忆收在「来源」面板里，正文不夹「用了 N 条记忆」，默认折起", !!line1 && line1.inPanel && line1.listHidden, { inPanel: line1?.inPanel ?? null, listHidden: line1?.listHidden ?? null });
+  check("R1", `首句末尾显示「用了 ${expectedN} 条记忆 ›」，N 等于请求里带的条数`, !!line1 && line1.count === expectedN && line1.text === `用了 ${expectedN} 条记忆 ›`, { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
+  check("R1", "灰字接在回答首句末尾，列表紧跟首句，默认折起", !!line1 && line1.inFirstSentence && line1.listHidden, { inFirstSentence: line1?.inFirstSentence ?? null, listHidden: line1?.listHidden ?? null });
   await shot("R1-collapsed");
 
   // R2：展开。
-  await rp.evaluate(panel, `[...document.querySelectorAll(".memory-used-line")].at(-1).closest(".msg").querySelector(":scope > .answer-actions > .answer-sources-btn").setAttribute("data-acceptance-click", "1"); true`);
+  await rp.evaluate(panel, `[...document.querySelectorAll(".memory-used-toggle")].at(-1).setAttribute("data-acceptance-click", "1"); true`);
   await rp.click(panel, "[data-acceptance-click]");
   await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`);
   await sleep(500);
