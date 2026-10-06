@@ -18,6 +18,8 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   detail.textContent = copy.detail;
   root.append(summary, detail);
 
+  if (receipt.needsModel) return needsModelCard();
+
   if (!receipt.newConversationRequest || receipt.status !== 'rejected') return root;
   summary.textContent = '查看原请求';
   root.className = 'msg receipt';
@@ -46,4 +48,21 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   actions.append(create,dismiss); decision.append(title,description,actions,status,root);
 
   return decision;
+}
+
+/** 没连模型时的回复：一个能点的入口，不让用户自己去找「更多 → 模型与语音」。 */
+function needsModelCard(): HTMLElement {
+  const card = document.createElement('section');
+  card.className = 'msg receipt-decision';
+  const title = document.createElement('strong');
+  title.textContent = '还没连模型';
+  const description = document.createElement('p');
+  description.textContent = '连好以后，把刚才的话再发一次。';
+  const actions = document.createElement('div');
+  const connect = document.createElement('button');
+  connect.type = 'button'; connect.textContent = '连一个模型';
+  connect.onclick = () => void chrome.runtime.openOptionsPage();
+  actions.append(connect); card.append(title, description, actions);
+
+  return card;
 }
