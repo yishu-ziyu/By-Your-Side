@@ -2304,11 +2304,14 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         const hasFinalText = lastAssistant?.role === "assistant"
           && lastAssistant.content.some(part => part.type === "text" && part.text.trim());
 
-        emit({
-          kind: "notice",
-          message: hasFinalText ? "执行已结束，正式结果尚未交付。"
-            : "模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试",
-        });
+        // 只改记忆的一轮，模型常常改完就不说话：侧栏已有「已记住」，不再报一条假的空响应。
+        if (hasFinalText || !memoryChangedInRun(event.messages)) {
+          emit({
+            kind: "notice",
+            message: hasFinalText ? "执行已结束，正式结果尚未交付。"
+              : "模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试",
+          });
+        }
       }
     }
 
@@ -2509,6 +2512,11 @@ function isAbortLike(err: unknown): boolean {
  * Pi 的 assistant 消息把工具调用放在 content 的 `{type:"toolCall"}` 块里（旧字段 toolCalls 仍兼容），
  * 交付走 send_user_message 工具时不产生 text；只认 text 会把正常交付误报成空响应。
  */
+/** 这一轮里记忆工具成功改过记忆。 */
+export function memoryChangedInRun(messages: readonly { role: string; toolName?: string; isError?: boolean }[]): boolean {
+  return messages.some((m) => m.role === "toolResult" && m.toolName === "user_memory" && !m.isError);
+}
+
 export function runProducedNothing(messages: unknown): boolean {
   if (!Array.isArray(messages)) return false;
 

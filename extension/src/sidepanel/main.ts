@@ -396,6 +396,9 @@ const completedConversations = new Set<string>();
 
 let conversationRequest: string | null = null;
 
+/** 点「新会话」那一刻输入框里的字；会话建好前多打的字归新会话。 */
+let draftAtNewRequest: string | null = null;
+
 /**
  * 面板打开时恢复上次会话；没有可用会话才新建。
  * 用户用＋明确新建，重启与重连不自动丢弃原任务。
@@ -741,6 +744,12 @@ function selectConversation(id: string, notify = true): void {
   conversationSwitcher.setAttribute("aria-expanded", "false");
 
   if (id !== selectedConversationId || !conversationReady) {
+    // 点「新会话」后、切过去之前打的字跟着用户走：旧会话草稿保持点击时的样子，否则这些字会被清掉。
+    const typed = draftAtNewRequest !== null && inputEl.value !== draftAtNewRequest ? inputEl.value : null;
+
+    if (typed !== null) inputEl.value = draftAtNewRequest!;
+    draftAtNewRequest = null;
+
     if (conversationReady) saveDraft();
     selectedConversationId = id;
     conversationReady = true;
@@ -758,7 +767,9 @@ function selectConversation(id: string, notify = true): void {
     attachments.restore([], id);
     restoringDraft = false;
     modelPicker.reset();
-    void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));
+
+    if (typed !== null) { inputEl.value = typed; syncSteerSend(); autoResize(); saveDraft(); currentDraftReady = true; updateStarterVisibility(); }
+    else void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));
   }
 
   renderConversations();
@@ -827,12 +838,14 @@ function armBootDecisionTimeout(): void {
 function requestNewConversation(): boolean {
   if (conversationRequest) return true;
 
-  if (conversationReady) saveDraft();
+  if (conversationReady) { saveDraft(); draftAtNewRequest = inputEl.value; }
+
   conversationRequest = crypto.randomUUID();
   renderConversations();
 
   if (!send({ type: "conversation_create", requestId: conversationRequest })) {
     conversationRequest = null;
+    draftAtNewRequest = null;
     renderConversations();
 
     return false;
