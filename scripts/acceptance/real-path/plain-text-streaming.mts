@@ -160,7 +160,7 @@ try {
   const offered = await rp.evaluate(settings, `[...document.querySelectorAll("#model-options .combo-opt")].map((o) => o.dataset.id)`) as string[];
   await rp.screenshot(settings, join(artifacts, "settings-minimax.png")).catch(() => {});
   // 独立参照：pi-ai 目录里 minimax-cn 的模型 + 能力表登记的那一个，不多不少。
-  const pi = join(REPO, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/all.js");
+  const pi = join(REPO, "node_modules/@earendil-works/pi-ai/dist/providers/all.js");
   // SAFETY: pi-ai 的公开入口，builtinModels 返回服务商目录。
   const { builtinModels } = await import(pi) as { builtinModels: () => { getModels(provider: string): Array<{ id: string }> } };
   const catalog = builtinModels().getModels("minimax-cn").map((m) => m.id);

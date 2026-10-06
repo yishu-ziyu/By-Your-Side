@@ -73,7 +73,7 @@ export function modelStorageItems(plan: ModelPlan): JsonRecord {
 
 /** 服务商在 pi-ai 目录里的地址，用来把同一个服务当成「自定义地址」配置。 */
 async function catalogBaseUrl(plan: ModelPlan): Promise<string> {
-  const pi = join(REPO, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/all.js");
+  const pi = join(REPO, "node_modules/@earendil-works/pi-ai/dist/providers/all.js");
   // SAFETY: pi-ai 的公开入口，builtinModels 返回服务商目录。
   const { builtinModels } = await import(pi) as { builtinModels: () => { getModels(provider: string): Array<{ baseUrl: string; api: string }> } };
   const model = builtinModels().getModels(plan.providerId).find((m) => m.api === "openai-completions");
