@@ -14,7 +14,7 @@
  * 坐标均为视口坐标系（与 Input.dispatchMouseEvent / getBoundingClientRect 一致）。
  *
  * 视觉参考：tldraw 协作光标（彩色填充 + 白描边 + 深色外晕 + 名牌 pill）、ChatGPT Agent（点击波纹）。
- * 轨迹：浅弧（ghost-cursor 一侧弧去掉随机）+ Fitts 时长 + easeInOutCubic。
+ * 轨迹：浅弧（ghost-cursor 一侧弧去掉随机）+ Fitts 时长 + 欠阻尼弹簧进度（轻过冲再稳住）。
  * 闲着停角落，要点再飞过去；不 3 秒隐掉。
  * 箭头形状取自 lucide MousePointer2（ISC）。
  *
@@ -37,11 +37,13 @@ import {
 } from "../shared/cursor-visual.js";
 import {
   PARK_AFTER_MS,
-  easeInOutCubic,
   flightMs,
   pointOnArc,
   restOnRight,
   restPoint,
+  springFor,
+  springSettled,
+  springStep,
 } from "../shared/cursor-path.js";
 import {
   HIGHLIGHT_PAD,
@@ -896,13 +898,20 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     }
 
     const ms = flightMs(from, to);
-    const t0 = performance.now();
+    const spring = springFor(ms);
+    let s = 0;
+    let v = 0;
+    let last = performance.now();
+    let elapsed = 0;
 
     const tick = (now: number) => {
-      const t = Math.min(1, (now - t0) / ms);
-      setPos(inst, pointOnArc(from, to, easeInOutCubic(t)));
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      elapsed += dt * 1000;
+      [s, v] = springStep(s, v, dt, spring);
+      setPos(inst, pointOnArc(from, to, s));
 
-      if (t < 1) inst.raf = requestAnimationFrame(tick);
+      if (!springSettled(s, v) && elapsed < ms * 2) inst.raf = requestAnimationFrame(tick);
       else {
         inst.raf = undefined;
 

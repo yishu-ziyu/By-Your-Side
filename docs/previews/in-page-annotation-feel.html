@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>页面内圈点勾画 · 手感对比预览</title>
+<style>
+  :root {
+    --ink: #2b2b2b;
+    --ink-soft: #6b6b66;
+    --blue: #2d4a86;
+    --amber: #f59e0b;
+    --green: #16a34a;
+    --bg: #faf9f7;
+    --card: #ffffff;
+    --line: #e8e6e1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--ink-soft); font-size: 13px; margin-bottom: 40px; }
+  section { margin-bottom: 56px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .why { color: var(--ink-soft); font-size: 13px; margin: 0 0 16px; }
+  .stage {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 28px;
+    position: relative;
+  }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  button.ctl {
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button.ctl:hover { border-color: var(--blue); color: var(--blue); }
+  button.ctl.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .note { font-size: 12px; color: var(--ink-soft); margin-top: 12px; }
+
+  /* 假页面元素 */
+  .fake-card {
+    display: inline-flex;
+    gap: 16px;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 18px;
+    background: #fff;
+  }
+  .fake-thumb { width: 44px; height: 44px; border-radius: 8px; background: linear-gradient(135deg, #dfe7f5, #b9c8e8); }
+  .fake-title { font-size: 14px; font-weight: 600; }
+  .fake-meta { font-size: 12px; color: var(--ink-soft); }
+  .fake-btn {
+    font-size: 13px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    background: var(--ink);
+    color: #fff;
+    border: none;
+  }
+  .fake-toolbar { display: flex; gap: 12px; }
+  .fake-tab {
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fff;
+    cursor: pointer;
+    user-select: none;
+  }
+  .fake-tab:hover { border-color: var(--blue); }
+
+  .overlay-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .overlay-svg path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+  .prose { font-size: 15px; max-width: 640px; }
+  ::highlight(bys-ink) { background-color: #ffe9a8; }
+  .hl-box { position: absolute; border: 2px solid var(--amber); border-radius: 4px; background: rgba(245, 158, 11, .12); pointer-events: none; }
+
+  #pad {
+    width: 100%;
+    height: 220px;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    background: #fff;
+    touch-action: none;
+    cursor: crosshair;
+    display: block;
+  }
+  footer { font-size: 12px; color: var(--ink-soft); border-top: 1px solid var(--line); padding-top: 16px; margin-top: 64px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>页面内圈点勾画 · 手感对比</h1>
+  <p class="sub">每项都可以反复回放。重点看：动画过程本身在传递"看这里"。</p>
+
+  <section>
+    <h2>1 · 圈的出现方式</h2>
+    <p class="why">同一个手绘圈：瞬间出现 vs 一笔画出来。画入过程（约 350ms）就是"看这里"这句话本身。</p>
+    <div class="stage" id="stage1">
+      <div class="fake-card">
+        <div class="fake-thumb"></div>
+        <div>
+          <div class="fake-title">无线降噪耳机</div>
+          <div class="fake-meta">¥1,299 · 月售 2.3 万</div>
+        </div>
+        <button class="fake-btn" id="target1">立即购买</button>
+      </div>
+      <svg class="overlay-svg" id="svg1"></svg>
+      <div class="controls">
+        <button class="ctl" data-mode="instant">瞬间出现</button>
+        <button class="ctl on" data-mode="draw">一笔画出来</button>
+        <button class="ctl" id="replay1">再看一遍</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · 圈的移动手感</h2>
+    <p class="why">点任意标签，圈会飞过去。切换 cubic 缓动和弹簧物理：弹簧对"目标突然变了"的反应更活，没有机械感。飞行时长按距离走 Fitts 定律。</p>
+    <div class="stage" id="stage2">
+      <div class="fake-toolbar" id="toolbar2">
+        <div class="fake-tab">商品详情</div>
+        <div class="fake-tab">用户评价（8,421）</div>
+        <div class="fake-tab">问大家</div>
+        <div class="fake-tab">店铺推荐</div>
+      </div>
+      <svg class="overlay-svg" id="svg2"></svg>
+      <div class="controls">
+        <button class="ctl on" data-move="cubic">easeInOutCubic（我们现在用的）</button>
+        <button class="ctl" data-move="spring">弹簧 spring</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3 · 高亮一句话</h2>
+    <p class="why">方框是"盖在页面上"，CSS Custom Highlight API 是"长在页面上"——零 DOM 改动，不破坏选中、复制和页面布局。试着在高亮后选中这段文字。</p>
+    <div class="stage" id="stage3">
+      <p class="prose" id="prose3">续航方面，这款耳机在开启降噪的情况下可以连续播放约 30 小时，<span id="sentence3">配合充电盒最长可达 60 小时</span>，日常通勤一周只需充一次电。通话降噪升级到了三麦克风阵列，风噪抑制比上一代提升明显。</p>
+      <div class="controls">
+        <button class="ctl" id="hl-box">方框高亮（老办法）</button>
+        <button class="ctl" id="hl-api">文字底色高亮（Custom Highlight API）</button>
+        <button class="ctl" id="hl-clear">清除</button>
+      </div>
+      <p class="note" id="hl-note"></p>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 · 笔迹平滑（涂鸦/手画场景）</h2>
+    <p class="why">在画板里随手画。原始点折线会抖；Catmull-Rom 平滑后变干净；再叠速度压感（快细慢粗）就有手写笔的味道。高频采样用的是 coalesced pointer events。</p>
+    <div class="stage" id="stage4">
+      <canvas id="pad"></canvas>
+      <div class="controls">
+        <button class="ctl" data-pen="raw">原始折线</button>
+        <button class="ctl on" data-pen="smooth">平滑</button>
+        <button class="ctl" data-pen="pressure">平滑 + 压感</button>
+        <button class="ctl" id="pad-clear">清空</button>
+      </div>
+      <p class="note" id="pad-stat">点数：0</p>
+    </div>
+  </section>
+
+  <footer>
+    对应调研结论：画入动画与手绘圈 → extension/src/shared/rough/（自研、种子防沸腾）；
+    移动手感 → shared/cursor-path.ts（现为 easeInOutCubic，可对比 spring）；
+    文字高亮 → CSS Custom Highlight API（MDN）；
+    笔迹 → coalesced events + perfect-freehand 思路的简化版。
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- 手绘几何（rough/geometry.ts 的简化移植，种子防沸腾） ---------- */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function roughPathForRect(x, y, w, h, seed) {
+    const rand = mulberry32(seed);
+    const aspect = w / h;
+    const pts = [];
+    const amp = 1.6;
+    const jit = () => (rand() - 0.5) * 2 * amp;
+    if (aspect > 2.2) {
+      // 宽扁目标：圆角框
+      const r = Math.min(h / 2, 10);
+      const seg = 5;
+      const edges = [
+        [[x + r, y], [x + w - r, y]],
+        [[x + w, y + r], [x + w, y + h - r]],
+        [[x + w - r, y + h], [x + r, y + h]],
+        [[x, y + h - r], [x, y + r]],
+      ];
+      for (const [[x1, y1], [x2, y2]] of edges) {
+        for (let i = 0; i <= seg; i++) {
+          pts.push([x1 + (x2 - x1) * (i / seg) + jit(), y1 + (y2 - y1) * (i / seg) + jit()]);
+        }
+      }
+      pts.push([x + r + jit(), y + jit()]);
+    } else {
+      // 紧凑目标：椭圆圈
+      const cx = x + w / 2, cy = y + h / 2;
+      const rx = w / 2 + 5, ry = h / 2 + 5;
+      const n = 28;
+      const rot = rand() * Math.PI * 2;
+      for (let i = 0; i <= n; i++) {
+        const a = rot + (i / n) * Math.PI * 2;
+        pts.push([cx + Math.cos(a) * rx + jit(), cy + Math.sin(a) * ry + jit()]);
+      }
+    }
+    let d = "M" + pts[0][0].toFixed(1) + " " + pts[0][1].toFixed(1);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+      const my = (pts[i][1] + pts[i + 1][1]) / 2;
+      d += " Q" + pts[i][0].toFixed(1) + " " + pts[i][1].toFixed(1) + " " + mx.toFixed(1) + " " + my.toFixed(1);
+    }
+    return d + " Z";
+  }
+
+  function makeCirclePath(svg, d, color, width) {
+    svg.innerHTML = "";
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d);
+    p.setAttribute("stroke", color);
+    p.setAttribute("stroke-width", width || 2.5);
+    p.setAttribute("pathLength", "1");
+    p.style.strokeDasharray = "1";
+    svg.appendChild(p);
+    return p;
+  }
+
+  function drawIn(path, ms) {
+    path.style.transition = "none";
+    path.style.strokeDashoffset = "1";
+    path.getBoundingClientRect(); // 强制 reflow
+    path.style.transition = "stroke-dashoffset " + ms + "ms ease-in-out";
+    path.style.strokeDashoffset = "0";
+  }
+
+  function boxInStage(stage, el, pad) {
+    const s = stage.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.left - s.left - pad,
+      y: r.top - s.top - pad,
+      w: r.width + pad * 2,
+      h: r.height + pad * 2,
+    };
+  }
+
+  /* ---------- 1 · 圈的出现 ---------- */
+  const stage1 = document.getElementById("stage1");
+  const svg1 = document.getElementById("svg1");
+  const target1 = document.getElementById("target1");
+  let mode1 = "draw";
+  let shown1 = false;
+
+  function show1() {
+    const b = boxInStage(stage1, target1, 7);
+    const path = makeCirclePath(svg1, roughPathForRect(b.x, b.y, b.w, b.h, 42), "#2d4a86");
+    if (mode1 === "draw" && !reducedMotion) drawIn(path, 380);
+    else path.style.strokeDashoffset = "0";
+    shown1 = true;
+  }
+
+  stage1.querySelectorAll("[data-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      stage1.querySelectorAll("[data-mode]").forEach((b) => b.classList.remove("on"));
+      btn.classList.add("on");
+      mode1 = btn.dataset.mode;
+      show1();
+    });
+  });
+  document.getElementById("replay1").addEventListener("click", show1);
+  window.addEventListener("resize", () => { if (shown1) show1(); });
+  show1();
+
+  /* ---------- 2 · 移动手感 ---------- */
+  const stage2 = document.getElementById("stage2");
+  const svg2 = document.getElementById("svg2");
+  const toolbar2 = document.getElementById("toolbar2");
+  const tabs = Array.from(toolbar2.children);
+  let moveMode = "cubic";
+  let currentBox = null;
+  let anim = null;
+
+  function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+  function fittsMs(from, to) {
+    const d = Math.hypot(to.x - from.x, to.y - from.y);
+    const w = Math.max(to.w, 1);
+    return Math.min(900, 140 + 260 * Math.log2(d / w + 1));
+  }
+
+  function render2(b, seed) {
+    makeCirclePath(svg2, roughPathForRect(b.x, b.y, b.w, b.h, seed), "#f59e0b").style.strokeDashoffset = "0";
+  }
+
+  function flyTo(to) {
+    if (anim) cancelAnimationFrame(anim);
+    const from = currentBox;
+    if (!from || reducedMotion) { currentBox = to; render2(to, 7); return; }
+    const seed = 7;
+    if (moveMode === "cubic") {
+      const ms = fittsMs(from, to);
+      const t0 = performance.now();
+      const step = (now) => {
+        const t = Math.min(1, (now - t0) / ms);
+        const e = easeInOutCubic(t);
+        currentBox = {
+          x: from.x + (to.x - from.x) * e,
+          y: from.y + (to.y - from.y) * e,
+          w: from.w + (to.w - from.w) * e,
+          h: from.h + (to.h - from.h) * e,
+        };
+        render2(currentBox, seed);
+        if (t < 1) anim = requestAnimationFrame(step);
+      };
+      anim = requestAnimationFrame(step);
+    } else {
+      // 欠阻尼弹簧：stiffness/damping 手感接近 tldraw 光标
+      const k = 210, c = 18;
+      let px = from.x, py = from.y, pw = from.w, ph = from.h;
+      let vx = 0, vy = 0, vw = 0, vh = 0;
+      let last = performance.now();
+      const step = (now) => {
+        const dt = Math.min(0.032, (now - last) / 1000);
+        last = now;
+        vx += ((to.x - px) * k - vx * c) * dt;
+        vy += ((to.y - py) * k - vy * c) * dt;
+        vw += ((to.w - pw) * k - vw * c) * dt;
+        vh += ((to.h - ph) * k - vh * c) * dt;
+        px += vx * dt; py += vy * dt; pw += vw * dt; ph += vh * dt;
+        currentBox = { x: px, y: py, w: pw, h: ph };
+        render2(currentBox, seed);
+        const done = Math.hypot(to.x - px, to.y - py) < 0.5 && Math.hypot(vx, vy) < 8
+          && Math.abs(to.w - pw) < 0.5 && Math.abs(to.h - ph) < 0.5;
+        if (!done) anim = requestAnimationFrame(step);
+        else { currentBox = to; render2(to, seed); }
+      };
+      anim = requestAnimationFrame(step);
+    }
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => flyTo(boxInStage(stage2, tab, 8)));
+  });
+  stage2.querySelectorAll("[data-move]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      stage2.querySelectorAll("[data-move]").forEach((b) => b.classList.remove("on"));
+      btn.classList.add("on");
+      moveMode = btn.dataset.move;
+      if (currentBox) flyTo(boxInStage(stage2, tabs[1], 8));
+    });
+  });
+  flyTo(boxInStage(stage2, tabs[0], 8));
+
+  /* ---------- 3 · 文字高亮 ---------- */
+  const sentence3 = document.getElementById("sentence3");
+  const stage3 = document.getElementById("stage3");
+  const hlNote = document.getElementById("hl-note");
+  let boxEl = null;
+
+  function clearHl() {
+    if (boxEl) { boxEl.remove(); boxEl = null; }
+    if ("highlights" in CSS) CSS.highlights.delete("bys-ink");
+    hlNote.textContent = "";
+  }
+
+  document.getElementById("hl-box").addEventListener("click", () => {
+    clearHl();
+    const b = boxInStage(stage3, sentence3, 4);
+    boxEl = document.createElement("div");
+    boxEl.className = "hl-box";
+    Object.assign(boxEl.style, { left: b.x + "px", top: b.y + "px", width: b.w + "px", height: b.h + "px" });
+    stage3.appendChild(boxEl);
+    hlNote.textContent = "方框只能罩住矩形区域，换行就露馅，而且和文字是两层皮。";
+  });
+
+  document.getElementById("hl-api").addEventListener("click", () => {
+    clearHl();
+    if (!("highlights" in CSS)) {
+      hlNote.textContent = "当前浏览器不支持 Custom Highlight API。";
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(sentence3);
+    CSS.highlights.set("bys-ink", new Highlight(range));
+    hlNote.textContent = "现在选中这段文字试试——选择、复制完全正常，页面 DOM 一个节点都没加。";
+  });
+
+  document.getElementById("hl-clear").addEventListener("click", clearHl);
+
+  /* ---------- 4 · 笔迹平滑 ---------- */
+  const stage4 = document.getElementById("stage4");
+  const pad = document.getElementById("pad");
+  const ctx = pad.getContext("2d");
+  const stat = document.getElementById("pad-stat");
+  let penMode = "smooth";
+  let strokes = [];
+  let drawing = null;
+  let pointCount = 0;
+
+  function fitPad() {
+    const r = pad.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    pad.width = r.width * dpr;
+    pad.height = r.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redraw();
+  }
+
+  function pos(e) {
+    const r = pad.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top, t: performance.now() };
+  }
+
+  function redraw() {
+    ctx.clearRect(0, 0, pad.width, pad.height);
+    ctx.strokeStyle = "#2b2b2b";
+    ctx.fillStyle = "#2b2b2b";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const s of strokes) drawStroke(s);
+    if (drawing) drawStroke(drawing);
+  }
+
+  function drawStroke(pts) {
+    if (pts.length < 2) {
+      if (pts.length === 1) { ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, 1.8, 0, 7); ctx.fill(); }
+      return;
+    }
+    if (penMode === "raw") {
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+      return;
+    }
+    // 中点二次贝塞尔平滑；pressure 模式按段变速宽
+    const widthAt = (i) => {
+      if (penMode !== "pressure") return 2.5;
+      const a = pts[Math.max(0, i - 1)], b = pts[i];
+      const dt = Math.max(1, b.t - a.t);
+      const speed = Math.hypot(b.x - a.x, b.y - a.y) / dt; // px/ms
+      return Math.max(1.2, Math.min(6, 6 - speed * 3.2));
+    };
+    let prev = pts[0];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mid = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
+      ctx.lineWidth = widthAt(i);
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, mid.x, mid.y);
+      ctx.stroke();
+      prev = mid;
+    }
+  }
+
+  pad.addEventListener("pointerdown", (e) => {
+    pad.setPointerCapture(e.pointerId);
+    drawing = [pos(e)];
+    pointCount++;
+    redraw();
+  });
+  pad.addEventListener("pointermove", (e) => {
+    if (!drawing) return;
+    const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of events.length ? events : [e]) {
+      drawing.push(pos(ev));
+      pointCount++;
+    }
+    stat.textContent = "点数：" + pointCount;
+    redraw();
+  });
+  const endStroke = () => {
+    if (drawing) { strokes.push(drawing); drawing = null; redraw(); }
+  };
+  pad.addEventListener("pointerup", endStroke);
+  pad.addEventListener("pointercancel", endStroke);
+
+  stage4.querySelectorAll("[data-pen]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      stage4.querySelectorAll("[data-pen]").forEach((b) => b.classList.remove("on"));
+      btn.classList.add("on");
+      penMode = btn.dataset.pen;
+      redraw();
+    });
+  });
+  document.getElementById("pad-clear").addEventListener("click", () => {
+    strokes = []; drawing = null; pointCount = 0;
+    stat.textContent = "点数：0";
+    redraw();
+  });
+
+  window.addEventListener("resize", fitPad);
+  fitPad();
+})();
+</script>
+</body>
+</html>
