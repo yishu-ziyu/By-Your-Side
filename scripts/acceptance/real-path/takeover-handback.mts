@@ -1,5 +1,5 @@
 /**
- * 我来 / 你继续（docs/evals/20261005-takeover-handback.md R1–R4）：只装扩展的隔离无头 Chrome、真侧栏、
+ * 接管 / 交还（原名我来 / 你继续）（docs/evals/20261005-takeover-handback.md R1–R4）：只装扩展的隔离无头 Chrome、真侧栏、
  * 本机计数页与本机脚本模型。Agent 每 1.5 秒点一次左上角按钮；中途接手、改页面、交还，看它是否从改后的页面接着点。
  */
 import { createServer } from 'node:http';
@@ -90,21 +90,21 @@ try {
     return Date.now() - at;
   };
 
-  // ── R1 我来 ──
+  // ── R1 接管 ──
   await startTask();
   await rp.screenshot(panel, join(out, 'running-panel.png'));
-  check('运行中侧栏按钮是「我来」', (await sideButton()) === '我来', { button: await sideButton(), bar: await taskBar(), n: await count(), messages: String(await rp.evaluate(panel, 'document.querySelector("#messages").innerText')).slice(0, 300) });
+  check('运行中侧栏按钮是「接管」', (await sideButton()) === '接管', { button: await sideButton(), bar: await taskBar(), n: await count(), messages: String(await rp.evaluate(panel, 'document.querySelector("#messages").innerText')).slice(0, 300) });
   const pausedMs = await takeOver();
-  check('点「我来」1 秒内显示已暂停', pausedMs <= 1000, pausedMs);
-  check('暂停后侧栏同位置变成「你继续」', (await sideButton()) === '你继续', await sideButton());
+  check('点「接管」1 秒内显示已暂停', pausedMs <= 1000, pausedMs);
+  check('暂停后侧栏同位置变成「交还」', (await sideButton()) === '交还', await sideButton());
   const bar = await pageBar();
-  check('页面条显示「现在归你」和「你继续」', !!bar && bar.text.includes('现在归你') && bar.button === '你继续', bar);
+  check('页面条显示「现在归你」和「交还」', !!bar && bar.text.includes('现在归你') && bar.button === '交还', bar);
   await rp.screenshot(work, join(out, 'paused-page.png')); await rp.screenshot(panel, join(out, 'paused-panel.png'));
   const pausedCount = await count();
   await sleep(3000);
   check('暂停 3 秒内 Agent 没再点页面', (await count()) === pausedCount, { before: pausedCount, after: await count() });
 
-  // ── R2 用户改页面后点页面条「你继续」──
+  // ── R2 用户改页面后点页面条「交还」──
   await rp.evaluate(work, 'document.querySelector("#q").scrollIntoView()');
   await mouseClick(await rp.evaluate(work, '(()=>{const r=document.querySelector("#q").getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()'));
   await rp.evaluate(work, 'document.querySelector("#q").select()'); await rp.typeText(work, EDIT);
@@ -128,15 +128,15 @@ try {
   await sleep(200);
   check('用户点左上角按钮，计数加一', (await count()) === userBefore + 1, { before: userBefore, after: await count() });
 
-  // ── R4 侧栏「你继续」──
+  // ── R4 侧栏「交还」──
   await startTask();
   await takeOver();
   const heldCount = await count();
   await rp.click(panel, '#takeover-btn');
-  await until(async () => (await count()) > heldCount, 10000, '侧栏你继续后接着点');
+  await until(async () => (await count()) > heldCount, 10000, '侧栏交还后接着点');
   await until(async () => !(await sideButton()), 30000, '第二次任务结束');
   const second = String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].at(-1)?.textContent??""'));
-  check('侧栏「你继续」后接着点并做完', (await count()) > heldCount && second.includes('点完了。'), { heldCount, after: await count(), second });
+  check('侧栏「交还」后接着点并做完', (await count()) > heldCount && second.includes('点完了。'), { heldCount, after: await count(), second });
 } catch (error) { check('流程完成', false, String(error)); } finally {
   await writeFile(join(out, 'payloads.json'), JSON.stringify(payloads.map(p => JSON.parse(p)), null, 1));
   await writeFile(join(out, 'result.json'), JSON.stringify({ checks, notCovered: ['真实网站', '接管失败与断线（单元测试覆盖）', '真人手感'], modelRequests: model.requests }, null, 2));

@@ -50,7 +50,7 @@ try {
 
     return until(async () => (await read()) || null, ms, 'wait', 20).then(() => Date.now() - at, () => null); };
 
-  const faded = ['#conversation-switcher', '#conversation-new', '#header-more', '#page-pill', '#attach-btn', '#composer-more', '.marginalia-control'];
+  const faded = ['#conversation-switcher', '#conversation-new', '#header-more', '#page-pill', '#attach-btn'];
   const all = async () => Object.fromEntries(await Promise.all([...faded, '#status-pill', '#input', '#send-btn'].map(async s => [s, await opacity(s)])));
   const loud = async () => (await opacity('#header-more')) >= 0.95;
 

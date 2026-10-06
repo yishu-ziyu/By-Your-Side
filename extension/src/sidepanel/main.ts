@@ -23,6 +23,7 @@ import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
+import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
 import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText } from "lucide";
 import {
   StepChain,
@@ -134,9 +135,9 @@ function attachDeliverySources(answer: HTMLElement, delivery: UserDelivery): voi
 
 const PLACEHOLDER_IDLE = "说说你想完成什么…";
 
-const PLACEHOLDER_RUNNING = "补充或修改这次任务…（Enter 发送）";
+const PLACEHOLDER_RUNNING = "补充或改方向…";
 
-const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；点「你继续」后生效";
+const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；点「交还」后生效";
 
 const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
 
@@ -232,17 +233,24 @@ app.innerHTML = `
     </div>
     <div id="attach-menu" class="action-menu-popover" hidden>
       <div class="action-menu-item pressable" id="menu-action-screenshot">
-        <span class="action-menu-item-icon">📸</span>
+        <span class="action-menu-item-icon" data-icon="camera"></span>
         <span class="action-menu-item-label">截取当前网页视口</span>
       </div>
       <div class="action-menu-item pressable" id="menu-action-region" title="在网页上拖框截图（⌘/Ctrl+Shift+S，Esc 取消）">
-        <span class="action-menu-item-icon">⬚</span>
+        <span class="action-menu-item-icon" data-icon="region"></span>
         <span class="action-menu-item-label">从屏幕选取</span>
       </div>
       <div class="action-menu-item pressable" id="menu-action-upload">
-        <span class="action-menu-item-icon">📁</span>
+        <span class="action-menu-item-icon" data-icon="upload"></span>
         <span class="action-menu-item-label">上传本地图片</span>
       </div>
+      <hr />
+      <p class="composer-menu-label">边注</p>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="off">关闭</button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="source">原文摘录</button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="ai">AI 解释<span>会调用模型</span></button>
+      <hr />
+      <button id="voice-diagnostics-open" class="action-menu-radio" type="button">语音诊断</button>
     </div>
     <input type="file" id="file-input" accept="image/*" multiple hidden />
     <select id="marginalia-mode" aria-label="边注模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
@@ -263,22 +271,14 @@ app.innerHTML = `
       <div id="composer-bar">
         <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button>
         <span id="composer-spacer"></span>
-        <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
-        <button id="takeover-btn" type="button" title="你来操作这个页面，Agent 先停手" hidden>我来</button>
+        <button id="takeover-btn" type="button" title="接管页面：助手先停手，你来操作；弄完点「交还」" hidden>接管</button>
+        <button id="steer-send-btn" type="button" title="发出插话（Enter）" aria-label="发出插话" hidden></button>
         <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
           <span class="morph-icon-send"></span>
           <span class="morph-icon-stop"></span>
         </button>
       </div>
     </div>
-  </div>
-  <div id="composer-menu" popover="auto">
-    <p class="composer-menu-label">边注</p>
-    <button type="button" role="menuitemradio" data-marginalia="off">关闭</button>
-    <button type="button" role="menuitemradio" data-marginalia="source">原文摘录</button>
-    <button type="button" role="menuitemradio" data-marginalia="ai">AI 解释<span>会调用模型</span></button>
-    <hr />
-    <button id="voice-diagnostics-open" type="button">语音诊断</button>
   </div>
   <div id="model-popover" hidden></div>
 `;
@@ -334,9 +334,9 @@ const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
 installChromeQuiet({
   input: inputEl,
   messages: messagesEl,
-  faded: () => ["#conversation-switcher", "#conversation-new", "#header-more", "#page-pill", "#attach-btn", "#composer-more"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
+  faded: () => ["#conversation-switcher", "#conversation-new", "#header-more", "#page-pill", "#attach-btn"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
   hoverZone: "#topbar:hover, #composer-bar:hover, #page-pill:hover",
-  menuOpen: () => !!document.querySelector("#header-menu:popover-open, #composer-menu:popover-open") || ["conversation-menu", "attach-menu", "memory-drawer"].some(id => document.getElementById(id)?.hidden === false),
+  menuOpen: () => !!document.querySelector("#header-menu:popover-open") || ["conversation-menu", "attach-menu", "memory-drawer"].some(id => document.getElementById(id)?.hidden === false),
 });
 
 const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(text));
@@ -723,6 +723,7 @@ function selectConversation(id: string, notify = true): void {
     resetConversationRender();
     restoringDraft = true;
     inputEl.value = "";
+    syncSteerSend();
     pendingAsk = null;
 
     if (askCiteEl) askCiteEl.hidden = true;
@@ -1791,6 +1792,26 @@ const morphStop = sendBtn.querySelector(".morph-icon-stop");
 if (morphSend) morphSend.appendChild(icon(ArrowUp));
 
 if (morphStop) morphStop.appendChild(icon(Square));
+
+const steerSendBtn = document.getElementById("steer-send-btn") as HTMLButtonElement;
+
+steerSendBtn.append(icon(ArrowUp));
+
+steerSendBtn.onclick = () => sendInput();
+
+for (const [key, node] of [["camera", Camera], ["region", SquareDashedMousePointer], ["upload", ImagePlus]] as const) {
+  document.querySelector(`#attach-menu [data-icon="${key}"]`)?.replaceChildren(icon(node));
+}
+
+/** 运行中：停止键一直在；输入框里有字时，它左边多一个发送键，发出的是插话。 */
+function syncSteerSend(): void {
+  // 按 id 现取：切会话可能在这段模块代码跑到之前就调用。
+  const steer = document.getElementById("steer-send-btn");
+  const send = document.getElementById("send-btn");
+  const input = document.getElementById("input") as HTMLTextAreaElement | null;
+
+  if (steer && send && input) steer.hidden = !send.classList.contains("stopping") || !input.value.trim();
+}
 
 memoryOpen.prepend(icon(Database));
 
@@ -2973,7 +2994,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   // 同一个位置：Agent 在做时是「我来」，页面归你时是「你继续」。
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
   takeoverBtn.dataset.mode = flags.userHasPage ? "handback" : "takeover";
-  takeoverBtn.textContent = flags.userHasPage ? "你继续" : "我来";
+  takeoverBtn.textContent = flags.userHasPage ? "交还" : "接管";
   takeoverBtn.title = flags.userHasPage ? "交还页面，Agent 先重读页面再接着做" : "你来操作这个页面，Agent 先停手";
   steerRibbon.setRunning(running && !flags.userHasPage);
 
@@ -2987,6 +3008,8 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     sendBtn.title = "发送";
     sendBtn.hidden = !flags.sendVisible;
   }
+
+  syncSteerSend();
 
   const statusPill = document.getElementById("status-pill");
 
@@ -4084,29 +4107,25 @@ const diagnosticRecord = composerEl.querySelector<HTMLElement>('.voice-record');
 
 if (diagnosticRecord) diagnosticRecord.hidden = true;
 
-document.querySelector('#composer-menu')?.addEventListener('beforetoggle', (event) => {
-  if ((event as ToggleEvent).newState !== 'open') return;
-  const button = document.querySelector('#composer-more')!.getBoundingClientRect();
-  const menu = document.querySelector<HTMLElement>('#composer-menu')!;
-  menu.style.left = `${Math.max(8, button.right - 160)}px`;
-  menu.style.bottom = `${innerHeight - button.top + 6}px`;
+// ＋ 菜单里的「边注」：打开菜单时勾上当前模式，点一项就切换并收起菜单。
+attachBtn.addEventListener('click', () => {
   const mode = document.querySelector<HTMLSelectElement>('#marginalia-mode')!.value;
 
-  for (const item of menu.querySelectorAll<HTMLElement>('[data-marginalia]')) item.setAttribute('aria-checked', String(item.dataset.marginalia === mode));
+  for (const item of attachMenu.querySelectorAll<HTMLElement>('[data-marginalia]')) item.setAttribute('aria-checked', String(item.dataset.marginalia === mode));
 });
 
-document.querySelector('#composer-menu')?.addEventListener('click', (event) => {
+attachMenu.addEventListener('click', (event) => {
   const item = (event.target as Element).closest<HTMLElement>('[data-marginalia]');
 
   if (!item) return;
   const select = document.querySelector<HTMLSelectElement>('#marginalia-mode')!;
   select.value = item.dataset.marginalia!;
   select.dispatchEvent(new Event('change'));
-  document.querySelector<HTMLElement>('#composer-menu')?.hidePopover();
+  attachments.closeMenu();
 });
 
 document.querySelector('#voice-diagnostics-open')?.addEventListener('click', () => {
-  document.querySelector<HTMLElement>('#composer-menu')?.hidePopover();
+  attachments.closeMenu();
 
   if (!diagnosticRecord) return;
   diagnosticRecord.hidden = !diagnosticRecord.hidden;
@@ -4773,6 +4792,7 @@ function sendInput(quick?: string): void {
 
   if (quick) return;
   inputEl.value = "";
+  syncSteerSend();
   clearPendingAsk();
   attachments.clear();
   autoResize();
@@ -4794,7 +4814,7 @@ sendBtn.onclick = () => {
   }
 };
 
-inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBarDraft(); });
+inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBarDraft(); syncSteerSend(); });
 
 window.addEventListener("pagehide", saveDraft);
 

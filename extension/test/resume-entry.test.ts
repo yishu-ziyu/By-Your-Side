@@ -215,7 +215,7 @@ describe('A05-04/A05-05/D10 诚实阻塞与缺口说明', () => {
     expect(waitingText('readback_required', null)).toContain('读回');
     expect(waitingText('failure_limit', null)).toContain('失败');
     expect(waitingText('unknown_with_baseline', null)).toContain('未知');
-    expect(waitingText('human_control', null)).toContain('你继续');
+    expect(waitingText('human_control', null)).toContain('交还');
   });
 
   it('继续被拒后：同一任务的同一状态里保留真实原因；换任务/真正开跑后清除', async () => {

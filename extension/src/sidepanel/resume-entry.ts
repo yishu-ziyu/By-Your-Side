@@ -25,7 +25,7 @@ export function resultStatusLabel(status: string): string {
 }
 
 const WAITING_TEXT: Record<string, string> = {
-  human_control: "页面已交给你，点「你继续」后再接着做",
+  human_control: "页面已交给你，点「交还」后再接着做",
   restart_checkpoint: "任务中断在检查点，等你说继续",
   cancelled: "已按你的要求停止，不会自动复活",
   failure_limit: "连续失败达到上限，已停住等你决定",
@@ -67,7 +67,7 @@ export function resumeAvailability(view: TaskView | null, checkpointUnavailable:
 
   if (view.state === "running") return { available: false, reason: "任务正在执行" };
 
-  if (view.state === "paused") return { available: false, reason: "页面已交给你；点「你继续」后我会继续原任务" };
+  if (view.state === "paused") return { available: false, reason: "页面已交给你；点「交还」后我会继续原任务" };
 
   if (view.state === "aborted") return { available: false, reason: "任务已停止，这个入口不会把它复活" };
 
@@ -135,7 +135,7 @@ function clipText(text: string, max: number): string {
 function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: ResumeSummary["remaining"], blocking: string | null): string {
   if (checkpointUnavailable) return "原任务检查点无法恢复，不会自动重做";
 
-  if (view.state === "paused") return "页面现在归你，点「你继续」后接着做";
+  if (view.state === "paused") return "页面现在归你，点「交还」后接着做";
   const declared = declaredUnfinished(view);
 
   // 用户要的哪件事没做成，比中途哪个工具失败更有用；中途失败留在步骤清单里。
@@ -214,7 +214,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
 
     if (view.state === "running") return remaining.length ? `正在处理剩余 ${remaining.length} 项。` : "正在执行；完成后会交给你可核对的结果。";
 
-    if (view.state === "paused") return "点「你继续」后，我会先重读页面，再做原任务剩下的部分。";
+    if (view.state === "paused") return "点「交还」后，我会先重读页面，再做原任务剩下的部分。";
 
     if (view.state === "aborted") return "已按你的要求停止；历史保留，需要的话请重新说明新任务。";
 

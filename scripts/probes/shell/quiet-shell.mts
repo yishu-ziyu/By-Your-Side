@@ -1,6 +1,6 @@
 /**
  * 侧栏壳探针（docs/evals/20261006-sidepanel-shell-quiet.md）：只装扩展的无头 Chrome、真侧栏。
- * 读当前页标签是否在输入框外、边注能否从 ··· 菜单切换、顶栏图标，并截图。
+ * 读当前页标签是否在输入框外、边注能否从 ＋ 菜单切换（原在 ··· 菜单，见 20261006-composer-quiet.md）、顶栏图标，并截图。
  *
  *   npx tsx scripts/probes/shell/quiet-shell.mts --headless
  */
@@ -37,16 +37,16 @@ try {
   result.marginaliaVisible = await rp.evaluate(panel, "[...document.querySelectorAll(\"select, .marginalia-control\")].some((e) => e.getClientRects().length > 0)");
   result.topbar = String(await rp.evaluate(panel, "JSON.stringify({ title: document.querySelector(\"#conversation-switcher\").innerText, svgInTitle: !!document.querySelector(\"#conversation-switcher svg\"), icons: [...document.querySelectorAll(\"#conversation-new svg, #header-more svg\")].map((s) => s.getAttribute(\"class\")) })"));
   await rp.screenshot(panel, join(out, "idle.png"));
-  await rp.click(panel, "#composer-more");
+  await rp.click(panel, "#attach-btn");
   await sleep(300);
   await rp.screenshot(panel, join(out, "menu.png"));
-  await rp.click(panel, "[data-marginalia=\"source\"]");
+  await rp.click(panel, "#attach-menu [data-marginalia=\"source\"]");
   await sleep(300);
   result.modeAfterPick = String(await rp.evaluate(panel, "document.querySelector(\"#marginalia-mode\").value"));
-  result.menuClosed = !(await rp.evaluate(panel, "document.querySelector(\"#composer-menu\").matches(\":popover-open\")"));
-  await rp.click(panel, "#composer-more");
+  result.menuClosed = await rp.evaluate(panel, "document.querySelector(\"#attach-menu\").hidden");
+  await rp.click(panel, "#attach-btn");
   await sleep(300);
-  result.checked = String(await rp.evaluate(panel, "document.querySelector(\"#composer-menu [aria-checked=true]\")?.dataset.marginalia"));
+  result.checked = String(await rp.evaluate(panel, "document.querySelector(\"#attach-menu [aria-checked=true]\")?.dataset.marginalia"));
   await rp.click(panel, "#conversation-switcher");
   await sleep(300);
   result.switcherOpens = await rp.evaluate(panel, "document.querySelector(\"#conversation-menu\").hidden === false");

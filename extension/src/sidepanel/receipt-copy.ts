@@ -24,7 +24,7 @@ export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string
   if (local && receipt.status === "accepted" && receipt.action === "steer") {
     const queued = receipt.message.includes("继续后生效");
 
-    return { summary: queued ? "修改已保存，点「你继续」后生效" : "修改已送达当前任务", detail, collapsed: true };
+    return { summary: queued ? "修改已保存，点「交还」后生效" : "修改已送达当前任务", detail, collapsed: true };
   }
 
   if (local && receipt.status === "applied" && receipt.action === "steer") {

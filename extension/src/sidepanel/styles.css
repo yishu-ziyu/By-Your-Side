@@ -3089,3 +3089,45 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 
 /* 思考摘要、旁白里的小标题（模型写的 **粗体**）：比正文深一档，不放大。 */
 details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
+
+/* ── 输入框改版（docs/evals/20261006-composer-quiet.md）────────────
+   一个圆角框，框里最多一行工具：＋ … 话筒 接管 [↑] ■。只用黑白灰；运行中不换颜色、不加提示区。
+   做法取自 Claude for Chrome、ChatGPT Atlas、Gemini in Chrome、Operator 的输入框。 */
+#composer { background: var(--content-bg); border-color: var(--content-border); box-shadow: 0 2px 10px rgb(20 20 19 / .04); padding: 12px 10px 10px 14px; }
+#composer.steering-active { border-color: var(--content-border); box-shadow: 0 2px 10px rgb(20 20 19 / .04); }
+#steer-ribbon { display: none !important; }
+#composer-bar { gap: 4px; }
+#attach-btn, #composer .voice-start, #steer-send-btn { width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0; }
+#attach-btn { font-size: 18px; font-weight: 400; }
+#attach-btn.active { color: var(--text-primary); background: var(--content-subtle); }
+#composer .voice-start { display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--text-secondary); }
+#composer .voice-start:hover, #composer .voice-start[aria-expanded="true"] { background: var(--content-subtle); color: var(--text-primary); }
+#composer .voice-start svg { width: 17px; height: 17px; stroke-width: 1.8; }
+#takeover-btn { height: 32px; padding: 0 12px; background: transparent; color: var(--text-secondary); box-shadow: inset 0 0 0 1px var(--content-border); font-weight: 400; font-size: 13px; }
+#takeover-btn:hover { opacity: 1; transform: none; background: var(--content-subtle); color: var(--text-primary); }
+#steer-send-btn { display: inline-grid; place-items: center; padding: 0; border: 0; background: var(--text-primary); color: var(--content-bg); cursor: pointer; }
+#steer-send-btn[hidden] { display: none; }
+#steer-send-btn svg { width: 16px; height: 16px; stroke-width: 2.2; }
+#steer-send-btn:active { transform: scale(.95); }
+#send-btn.kinetic-morph-button { width: 32px; height: 32px; }
+#send-btn.kinetic-morph-button:hover { background: color-mix(in srgb, var(--text-primary) 82%, var(--content-bg)); color: var(--content-bg); }
+#send-btn.kinetic-morph-button.stopping { border-radius: 999px; background: var(--text-primary) !important; color: var(--content-bg) !important; }
+#send-btn.kinetic-morph-button.stopping .morph-icon-stop svg { width: 12px; height: 12px; fill: currentColor; }
+
+/* ＋ 菜单：添加文件 + 边注 + 语音诊断，细线图标 */
+.action-menu-popover { width: 200px; }
+.action-menu-item { font-size: 13px; }
+.action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
+.action-menu-item-icon svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.action-menu-popover hr { width: calc(100% - 8px); margin: 4px; border: 0; border-top: 1px solid var(--content-border); }
+.action-menu-popover .composer-menu-label { margin: 4px 10px 2px; font: var(--fs-micro)/1.6 var(--font); color: var(--text-tertiary); }
+.action-menu-radio { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 7px 10px; border: 0; border-radius: 8px; background: none; color: var(--text-primary); font: 13px/1.4 var(--font); text-align: left; cursor: pointer; }
+.action-menu-radio:hover { background: var(--glass-border); }
+.action-menu-radio span { color: var(--text-tertiary); font-size: var(--fs-micro); }
+.action-menu-radio[aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--text-secondary); }
+#voice-diagnostics-open { color: var(--text-secondary); }
+
+/* 当前页标签后不再挂含义不明的绿点；改方向标记与「已停止」回执用灰字，不用琥珀色 */
+#page-pill .tab-live-dot { display: none; }
+.steer-tag { background: var(--content-subtle); color: var(--text-tertiary); font-weight: 500; }
+.msg.receipt.notice { color: var(--text-tertiary); }

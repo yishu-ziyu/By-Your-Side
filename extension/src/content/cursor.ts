@@ -1356,7 +1356,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     status.textContent = "现在归你";
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.textContent = "你继续";
+    btn.textContent = "交还";
     btn.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -1432,7 +1432,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     }
 
     if (btn) {
-      const action = view?.action ?? "你继续";
+      const action = view?.action ?? "交还";
       btn.textContent = action;
       btn.hidden = !action;
       btn.disabled = view?.actionEnabled === false;

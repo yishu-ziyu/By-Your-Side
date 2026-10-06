@@ -1,7 +1,7 @@
 /**
  * 页面右上角「停下」探针（docs/evals/20261006-cursor-narration-redesign.md R3）：
  * 只装扩展的无头 Chrome、真侧栏、脚本模型反复点按钮。助手在点时点页面右上角「停下」，
- * 看侧栏是否进入「已暂停 · 页面归你」、助手是否不再点、页面上是否换成「现在归你 · 你继续」。
+ * 看侧栏是否进入「已暂停 · 页面归你」、助手是否不再点、页面上是否换成「现在归你 · 交还」。
  *
  *   npx tsx scripts/probes/cursor-narration/page-stop.mts --headless
  */
