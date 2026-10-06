@@ -83,7 +83,8 @@ describe("cursor visual / palette", () => {
   it("光标尺寸锁定用户拍板值，描边仍大于旧版 27px/1.6", () => {
     // 2026-09-10 为对比加大到 44；2026-09-11 用户反馈左上角压住 logo，要求小约 20%（44 → 35）。
     // 原为下限断言（≥36），改为锁定该决定，防止以后无意改动。
-    expect(CURSOR_SVG_SIZE).toBe(35);
+    // 2026-10-06 形状不变，缩到接近系统普通箭头（35 → 20）。
+    expect(CURSOR_SVG_SIZE).toBe(20);
     expect(CURSOR_STROKE_WHITE).toBeGreaterThanOrEqual(2);
     expect(CURSOR_STROKE_HALO).toBeGreaterThan(CURSOR_STROKE_WHITE);
   });

@@ -2,9 +2,10 @@
  * 虚拟光标视觉常量（tldraw 协作光标：色填 + 白描边 + 深色外晕 + 名牌）。
  * 44px 是 2026-09-10 为浅色/深色/花哨背景对比加大的结果；
  * 2026-09-11 用户反馈静止光标压住站点 logo，要求缩小约 20% → 35px。
+ * 2026-10-06 形状不变，再缩到接近系统 / OpenAI 普通箭头的大小 → 20px（从光标尖缩放，落点不变）。
  */
 
-export const CURSOR_SVG_SIZE = 35;
+export const CURSOR_SVG_SIZE = 20;
 
 export const CURSOR_STROKE_WHITE = 2.2;
 
