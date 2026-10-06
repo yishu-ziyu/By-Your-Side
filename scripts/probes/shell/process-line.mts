@@ -76,6 +76,15 @@ try {
     if (tag === "ok") {
       check("进行中：一行「正在 动词 对象」，没有光球，有扫光", live.text.startsWith("正在") && !!live.verb && !live.orb && live.height <= 26 && live.anim === "runShine", JSON.stringify(live));
       check("进行中：任务条不出现", bar, JSON.stringify(null));
+
+      // 一步做完、模型还在想下一步（脚本模型每步前停 2.5 秒）：这一行回到「正在思考」，不停在刚做完的动作上。
+      const between = await until(async () => {
+        const line = await rp.evaluate(panel, LINE);
+
+        return line?.text === "正在思考" ? line : undefined;
+      }, 10_000, "两步之间回到正在思考").catch(() => null);
+
+      check("进行中：两步之间回到「正在思考」", !!between, JSON.stringify(between));
     }
 
     await until(async () => (await rp.evaluate(panel, LINE))?.done || undefined, 60_000, "这一轮收尾");

@@ -44,7 +44,8 @@ import { createArtifactStore, createArtifactsTool, type ArtifactStore, type Arti
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, handbackContinueText } from "../../shared/control.js";
 import { leadSystemPrompt } from "./prompt.js";
-import { createBrowserTools } from "./tools.js";
+import { createBrowserTools, STALE_STEP_MESSAGE } from "./tools.js";
+import { isUserCorrection } from "./memory-correction.js";
 import type { ToolRpc } from "./rpc.js";
 import { RunTrace } from "./run-trace.js";
 import { ModelRequestTrace } from "./model-request-trace.js";
@@ -1627,8 +1628,12 @@ return {kind:'model'};
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
     this.runTrace.record("steer", { text, context, attachments });
-    this.mainEffort.raise(session.model, "user_correction");
+
+    // 只有真在纠正（「不对」「错了」…）才升思考档；补一个问题、补一条资料不是任务变难了。
+    if (isUserCorrection(text)) this.mainEffort.raise(session.model, "user_correction");
     this.memoryRuntime?.invalidateUserTurn("steer");
+    // 插话也是用户直接说的话：开新的一轮，「记住这是我常用邮箱」这类要求才有权改记忆。
+    this.memoryRuntime?.beginUserTurn(text, context, this.conversationSnapshot()?.conversationContext?.recentTurns);
     const images = extractImages(attachments);
     // 先登记再观察：预观察期间旧计划的写入必須已经被挡住。
     const record = this.reserveCorrection(text, attachments);
@@ -1985,7 +1990,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           if (!this.rpc?.wasRepeatRefused?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
-          this.tallyPageChange(event.toolName, event.isError, event.toolName === "browser_run" ? Number(event.result?.details?.steps ?? 0) : 1);
+          // 被插话作废的旧步骤没碰页面，不算「改页面却没生效」（页面脚本被拦、一步没走的仍算）。
+          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE))) this.tallyPageChange(event.toolName, event.isError, event.toolName === "browser_run" ? Number(event.result?.details?.steps ?? 0) : 1);
 
           emit({
             kind: "tool_end",
@@ -2527,3 +2533,9 @@ function firstText(result: unknown): string {
   return "";
 }
 
+/** 工具结果里第一段文字；没有就是空串。 */
+function firstResultText(result: { content?: unknown } | undefined): string {
+  const first: unknown = Array.isArray(result?.content) ? result.content[0] : undefined;
+
+  return first && typeof first === "object" && "text" in first && typeof first.text === "string" ? first.text : "";
+}

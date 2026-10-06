@@ -2049,11 +2049,17 @@ function paintAction(el: HTMLElement, text: string): void {
   el.replaceChildren(v, " ", o);
 }
 
-/** 换过程行标题。进行中每句至少停 1.1 秒，后来的只留最新一句排队；now=true（收尾）立即换。 */
-function setRunTitle(run: RunHost, text: string, now = false): void {
+/** 换过程行标题（和它前面的图标一起换）。进行中每句至少停 1.1 秒，后来的只留最新一句排队；now=true（收尾）立即换。 */
+function setRunTitle(run: RunHost, text: string, now = false, kind?: IconKind): void {
   clearTimeout(run.titleTimer);
   const wait = now || applyingHistory ? 0 : run.titleAt + RUN_TITLE_HOLD_MS - Date.now();
-  const paint = () => { paintAction(run.titleEl, text); run.titleAt = Date.now(); };
+
+  const paint = () => {
+    paintAction(run.titleEl, text);
+
+    if (kind) setActionIcon(run.actIcon, kind);
+    run.titleAt = Date.now();
+  };
 
   if (wait <= 0) paint();
   else run.titleTimer = window.setTimeout(paint, wait);
@@ -3456,8 +3462,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
 
   if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`);
-    setActionIcon(run.actIcon, kind);
+    setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`, false, kind);
   }
 
   const chip = document.createElement("button");
@@ -3517,6 +3522,11 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
+
+  // 这一步做完、下一步还没开始：模型在想下一步，标题不该停在刚结束的动作上（「正在读取页面结构 54 秒」）。
+  if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
+    setRunTitle(run, `正在${loaderSubtitle(null)}`, false, "think");
+  }
 
   if (!entry) return;
   // 用户拒绝授权的那一步照你的意思没做：不画成失败。
@@ -4689,7 +4699,14 @@ function restoreLostSend(): void {
 function sendInput(quick?: string): void {
   if (!conversationReady) return;
   const held=panelLive(sessionRun.values(), teamView).userHasPage;
-  const text = quick ?? inputEl.value.trim();
+
+  // 语音输入或粘贴偶尔带进看不见的控制字符（如退格 \b），发出去前去掉；换行和制表保留。
+  const text = Array.from(quick ?? inputEl.value).filter((ch) => {
+    const code = ch.charCodeAt(0);
+
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+  }).join("").trim();
+
   const pendingAtts = quick ? [] : attachments.getAttachments();
 
   if (!text && pendingAtts.length === 0) return;

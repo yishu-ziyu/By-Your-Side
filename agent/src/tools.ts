@@ -124,6 +124,9 @@ export const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
 
+/** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
+export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
+
 export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   const files = execution?.files;
@@ -186,7 +189,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
     if (staleStep()) {
       rejectCall();
-      throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。");
+      throw new Error(STALE_STEP_MESSAGE);
     }
 
     const callParams = rpc.resolvePageParams?.(name, params, sid) ?? params;
