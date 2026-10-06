@@ -103,6 +103,7 @@ for (const [from, to] of [
   ["manifest.json", "manifest.json"],
   ["src/sidepanel/voice-worklet.js", "voice-worklet.js"],
   ["licenses/voiceorbs-MIT.txt", "voiceorbs-MIT.txt"],
+  ["licenses/lobe-icons-MIT.txt", "lobe-icons-MIT.txt"],
   ["sidepanel.html", "sidepanel.html"],
   ["inproc.html", "inproc.html"],
   ["settings.html", "settings.html"],

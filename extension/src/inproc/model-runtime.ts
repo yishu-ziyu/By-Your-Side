@@ -32,6 +32,9 @@ registerBundledOAuthFlowLoaders({
 /** 设备码登录能在浏览器里完成的服务商。Claude 订阅不接：Anthropic 不允许在第三方工具里使用。 */
 const BROWSER_OAUTH = new Set(["kimi-coding", "github-copilot", "xai", "openai-codex"]);
 
+/** pi-ai 给这几家的登录文案是英文。 */
+const LOGIN_LABELS = new Map([["kimi-coding", "用 Kimi Code 账号登录"], ["xai", "用 SuperGrok 或 X Premium 登录"]]);
+
 /** 需要额外账号参数（区域、网关编号、云凭据）的服务商，第一版设置页不提供。 */
 const NEEDS_EXTRA_CONFIG = new Set(["amazon-bedrock", "google-vertex", "azure-openai-responses", "cloudflare-ai-gateway", "cloudflare-workers-ai", "radius"]);
 
@@ -192,7 +195,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
         id: p.id,
         name: FEATURED_PROVIDERS.find((f) => f.id === p.id)?.label ?? p.name,
         apiKey: !!p.auth.apiKey,
-        oauthLabel: p.auth.oauth && BROWSER_OAUTH.has(p.id) ? p.auth.oauth.loginLabel ?? `用 ${p.name} 账号登录` : undefined,
+        oauthLabel: p.auth.oauth && BROWSER_OAUTH.has(p.id) ? LOGIN_LABELS.get(p.id) ?? p.auth.oauth.loginLabel ?? `用 ${p.name} 账号登录` : undefined,
         models: listedModels(p.id),
       }));
 
