@@ -993,7 +993,7 @@ export class MemoryRuntime {
       turn.memoryOnly = !auto.decision.taskRequested;
       const action = auto.decision.action === "save" ? "saved" : auto.decision.action === "update" ? "updated" : "forgotten";
 
-      return result(action, action === "forgotten" ? [] : auto.changed, auto.message + (turn.memoryOnly ? "\n本轮仅修改记忆；不要操作当前网页。" : ""));
+      return result(action, action === "forgotten" ? [] : auto.changed, auto.message + (turn.memoryOnly ? "\n本轮仅修改记忆：用一句话告诉用户记下了什么，不要操作当前网页。" : ""));
     }
 
     return this.change(turn, signal);
@@ -1042,7 +1042,7 @@ export class MemoryRuntime {
     this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev() });
 
     // A forget receipt carries IDs to the UI but never echoes the deleted content to the model.
-    return result(action, action === "forgotten" ? [] : changed, message + (turn.memoryOnly ? "\n本轮仅修改记忆；不要操作当前网页。" : ""));
+    return result(action, action === "forgotten" ? [] : changed, message + (turn.memoryOnly ? "\n本轮仅修改记忆：用一句话告诉用户记下了什么，不要操作当前网页。" : ""));
   }
 }
 

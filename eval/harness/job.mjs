@@ -297,15 +297,17 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
         await sent().catch(shot); });
 
-      // a turn with no text ends in the product's 「模型返回了空响应」 notice instead of an answer. A pure 「记住…」 turn does this often
-      // after saving the memory (product bug, 2026-10-06), so it counts as settled and is recorded as empty.
+      // a pure 「记住…」 turn often ends with no text: only the 「已记住」 chip (fixed 2026-10-07; before that, a false 「模型返回了空响应」 notice).
+      // Either counts as settled and is recorded as empty.
       const settled = await until(async () => evalIn(ps, `(() => { const idle = !document.querySelector('#status-pill')?.classList.contains('running') && !document.querySelector('#send-btn')?.classList.contains('stopping');
         const empty = [...document.querySelectorAll('#messages .msg')].slice(-3).find((m) => ${MODEL_EMPTY}.test(m.innerText))?.innerText;
 
-        return idle && (document.querySelectorAll('#messages .msg.assistant').length > ${answers} ? 'answer' : empty ? 'empty: ' + empty : ''); })()`), capMs, "earlier turn done").catch(shot);
+        const remembered = [...document.querySelectorAll('#messages > *')].slice(-4).some((m) => /已记住|记忆已更新/.test(m.innerText));
+
+        return idle && (document.querySelectorAll('#messages .msg.assistant').length > ${answers} ? 'answer' : empty ? 'empty: ' + empty : remembered ? 'remembered' : ''); })()`), capMs, "earlier turn done").catch(shot);
 
       await sleep(4000); // memory judgments run after the turn settles
-      rec.before_turns.push({ prompt: text, answer: settled === "answer" ? await evalIn(ps, "[...document.querySelectorAll('#messages .msg.assistant')].at(-1)?.innerText ?? ''") : "", empty: settled !== "answer" });
+      rec.before_turns.push({ prompt: text, answer: settled === "answer" ? await evalIn(ps, "[...document.querySelectorAll('#messages .msg.assistant')].at(-1)?.innerText ?? ''") : "", empty: settled !== "answer", ended_by: settled.startsWith("empty") ? "empty_notice" : settled });
     };
 
     rec.before_turns = [];
