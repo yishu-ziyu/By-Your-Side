@@ -2797,7 +2797,14 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 @keyframes sonar-wave { 0% { box-shadow:0 0 0 0 rgba(45,74,134,.7); } 60% { box-shadow:0 0 0 14px rgba(45,74,134,0); } 100% { box-shadow:0 0 0 0 rgba(45,74,134,0); } }
 .sonar-pulse { animation:sonar-wave 1.2s ease-out; }
 @media(prefers-reduced-motion:reduce) { .marginalia-card { transition:none; } .sonar-pulse { animation:none; } }
-.marginalia-control { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin:0 16px 6px; font-size:11px; color:var(--text-secondary); }
+/* 当前页：输入框外上方一行灰字，不占框内位置（#58 B）。 */
+#page-pill { display:flex; margin:0 0 var(--s-1); padding:2px var(--s-3); border:0; background:none; }
+#page-pill:active { transform:none; }
+#composer-menu .composer-menu-label { margin:2px 7px 2px; font:var(--fs-micro)/1.6 var(--font); color:var(--text-tertiary); }
+#composer-menu [data-marginalia] { display:flex; align-items:baseline; gap:6px; }
+#composer-menu [data-marginalia] span { color:var(--text-tertiary); font-size:var(--fs-micro); }
+#composer-menu [aria-checked="true"]::after { content:"✓"; margin-left:auto; color:var(--text-secondary); }
+#composer-menu hr { border:0; border-top:1px solid var(--content-border); margin:4px 2px; }
 #marginalia-mode { font:inherit; max-width:220px; border:1px solid var(--content-border); border-radius:6px; background:var(--content-bg); color:var(--text-secondary); padding:3px 6px; }
 
 #app:has(#marginalia-rail:not([hidden])) #messages-frame, #app:has(#marginalia-rail:not([hidden])) #starter { display:none; }

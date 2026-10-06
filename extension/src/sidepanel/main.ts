@@ -22,7 +22,7 @@ import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
+import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
 import { ChevronDown, ChevronRight, ArrowDown } from "lucide";
 import {
   StepChain,
@@ -128,7 +128,7 @@ const app = document.getElementById("app")!;
 
 app.innerHTML = `
   <header id="topbar">
-    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
+    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false" title="切换会话">新会话</button>
     <div id="status-pill" class="activity-island" title="当前连接与执行状态">
       <span id="status-dot" class="dot island-pulse-dot"></span>
       <span id="status-text">未连接</span>
@@ -214,16 +214,14 @@ app.innerHTML = `
       </div>
     </div>
     <input type="file" id="file-input" accept="image/*" multiple hidden />
-    <label class="marginalia-control">边注
-      <select id="marginalia-mode" aria-label="边注模式"><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
-    </label>
+    <select id="marginalia-mode" aria-label="边注模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
     <div id="task-bar-root"></div>
+    <div id="page-pill" class="morphing-page-pill pressable" title="当前活动标签页（点击展开检查面板）">
+      <span id="tab-icon-sq" class="tab-icon-sq"></span>
+      <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
+      <i class="tab-live-dot"></i>
+    </div>
     <div id="composer" class="composer-glass-dock">
-      <div id="page-pill" class="morphing-page-pill pressable" title="当前活动标签页（点击展开检查面板）">
-        <span id="tab-icon-sq" class="tab-icon-sq"></span>
-        <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
-        <i class="tab-live-dot"></i>
-      </div>
       <div id="ask-cite" hidden>
         <span id="ask-cite-host"></span>
         <span id="ask-cite-text"></span>
@@ -243,7 +241,14 @@ app.innerHTML = `
       </div>
     </div>
   </div>
-  <div id="composer-menu" popover="auto"><button id="voice-diagnostics-open" type="button">语音诊断</button></div>
+  <div id="composer-menu" popover="auto">
+    <p class="composer-menu-label">边注</p>
+    <button type="button" role="menuitemradio" data-marginalia="off">关闭</button>
+    <button type="button" role="menuitemradio" data-marginalia="source">原文摘录</button>
+    <button type="button" role="menuitemradio" data-marginalia="ai">AI 解释<span>会调用模型</span></button>
+    <hr />
+    <button id="voice-diagnostics-open" type="button">语音诊断</button>
+  </div>
   <div id="model-popover" hidden></div>
 `;
 
@@ -298,8 +303,8 @@ const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
 installChromeQuiet({
   input: inputEl,
   messages: messagesEl,
-  faded: () => ["#conversation-switcher", "#conversation-new", "#header-more", "#page-pill", "#attach-btn", "#composer-more", ".marginalia-control"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
-  hoverZone: "#topbar:hover, #composer-bar:hover, #page-pill:hover, .marginalia-control:hover",
+  faded: () => ["#conversation-switcher", "#conversation-new", "#header-more", "#page-pill", "#attach-btn", "#composer-more"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
+  hoverZone: "#topbar:hover, #composer-bar:hover, #page-pill:hover",
   menuOpen: () => !!document.querySelector("#header-menu:popover-open, #composer-menu:popover-open") || ["conversation-menu", "attach-menu", "memory-drawer"].some(id => document.getElementById(id)?.hidden === false),
 });
 
@@ -574,10 +579,10 @@ function renderConversations(): void {
   const currentTitle = document.createElement("span");
   currentTitle.className = "conversation-title";
   currentTitle.textContent = current?.title || "新会话";
-  conversationSwitcher.replaceChildren(currentTitle, icon(ChevronDown));
+  conversationSwitcher.replaceChildren(currentTitle);
   conversationSwitcher.title = current?.title || "切换会话";
   conversationNew.disabled = !conversationReady || !transportConnected || conversationRequest !== null;
-  conversationNew.replaceChildren(icon(conversationRequest ? LoaderCircle : Plus));
+  conversationNew.replaceChildren(icon(conversationRequest ? LoaderCircle : SquarePen));
   conversationNew.setAttribute("aria-label", conversationRequest ? "正在新建会话" : "新会话");
   conversationNew.setAttribute("aria-busy", String(!!conversationRequest));
   conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
@@ -3915,7 +3920,20 @@ document.querySelector('#composer-menu')?.addEventListener('beforetoggle', (even
   const button = document.querySelector('#composer-more')!.getBoundingClientRect();
   const menu = document.querySelector<HTMLElement>('#composer-menu')!;
   menu.style.left = `${Math.max(8, button.right - 160)}px`;
-  menu.style.top = `${Math.max(8, button.top - 58)}px`;
+  menu.style.bottom = `${innerHeight - button.top + 6}px`;
+  const mode = document.querySelector<HTMLSelectElement>('#marginalia-mode')!.value;
+
+  for (const item of menu.querySelectorAll<HTMLElement>('[data-marginalia]')) item.setAttribute('aria-checked', String(item.dataset.marginalia === mode));
+});
+
+document.querySelector('#composer-menu')?.addEventListener('click', (event) => {
+  const item = (event.target as Element).closest<HTMLElement>('[data-marginalia]');
+
+  if (!item) return;
+  const select = document.querySelector<HTMLSelectElement>('#marginalia-mode')!;
+  select.value = item.dataset.marginalia!;
+  select.dispatchEvent(new Event('change'));
+  document.querySelector<HTMLElement>('#composer-menu')?.hidePopover();
 });
 
 document.querySelector('#voice-diagnostics-open')?.addEventListener('click', () => {
