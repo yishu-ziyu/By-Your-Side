@@ -26,6 +26,9 @@ export interface ModelPlan {
   baseUrl?: string;
 }
 
+/** 真实模型验收的默认模型：用户的 ChatGPT 账号（10-06 起；各家套餐额度会陆续用完，换模型用 --model=）。 */
+export const DEFAULT_TEST_MODEL = "openai-codex/gpt-6-luna";
+
 export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
   const [providerId = "", ...idParts] = modelArg.split("/");
 

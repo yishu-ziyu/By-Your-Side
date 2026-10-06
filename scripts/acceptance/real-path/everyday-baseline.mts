@@ -6,7 +6,7 @@
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --daily [--only=...]   # 用户已开的日常 Chrome（9222），需用户同意
  *
  * 隔离运行只装扩展（不注册伴随进程）：像用户一样从设置页填 key、测试连接、保存 --model 指定的模型
- * （默认 opencode-go/deepseek-v4.1-flash，凭据取自 ~/.sideagent/providers.local.json）。旧参数 --inproc=provider/id 等同 --model。
+ * （默认 DEFAULT_TEST_MODEL，凭据取自 ~/.sideagent/providers.local.json）。旧参数 --inproc=provider/id 等同 --model。
  * 每条另记扩展内 agent 发出的模型请求（地址、首字节、结束），并判定请求都发往所选服务商；结束后从设置页导出诊断记录核对。
  *
  * 每条记录：是否出现回答、首字出现耗时、整轮结束耗时、侧栏里回答之外的杂项数（提示、错误、回执、任务卡、续做入口），
@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import { REPO, attachDailyChrome, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
-import { configureViaSettings, loadModelPlan, modelStorageItems, type ModelPlan } from "./inproc-config.mts";
+import { DEFAULT_TEST_MODEL, configureViaSettings, loadModelPlan, modelStorageItems, type ModelPlan } from "./inproc-config.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 const daily = process.argv.includes("--daily");
@@ -31,7 +31,7 @@ const inprocArg = process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
 
 const modelArg = process.argv.find((a) => a.startsWith("--model="))?.slice(8);
 
-const inprocModel = scriptedThrottle ? "custom/demo-model" : daily ? inprocArg : inprocArg ?? modelArg ?? "opencode-go/deepseek-v4.1-flash";
+const inprocModel = scriptedThrottle ? "custom/demo-model" : daily ? inprocArg : inprocArg ?? modelArg ?? DEFAULT_TEST_MODEL;
 
 /** --suite=sitegeist：换成 Sitegeist 官网与新手教程里宣传的任务（多页汇总、导出表格、改错字、提取会议、做小工具）。 */
 const suite = process.argv.find((a) => a.startsWith("--suite="))?.slice(8) === "sitegeist" ? "sitegeist" : "everyday";

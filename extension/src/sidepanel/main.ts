@@ -2857,6 +2857,13 @@ function buildMemoryAsk(askId: string): HTMLElement {
 // 思考块、旁白与动作卡收进同一个 details 的 body；第一张动作卡出现时展开（#47），结束后收起成历史。
 
 
+/** 最后一轮是刚发出的用户消息，后面还没有过程行或回答。 */
+function awaitingFirstStep(): boolean {
+  const last = [...messagesEl.children].reverse().find((e) => e.matches(".msg.user, .msg.assistant, details.run-steps"));
+
+  return !!last?.matches(".msg.user");
+}
+
 function ensureRun(): NonNullable<typeof currentRun> {
   if (currentRun) return currentRun;
   const root = document.createElement("details");
@@ -4282,6 +4289,10 @@ function handleServerMessage(raw: string): void {
       break;
     case "status":
       setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
+
+      // 模型开始前后台要先读页（大页面几秒）：一报「运行中」就出过程行，agent_start 沿用这一行。
+      // 不排除补放历史：新会话第一轮正是经补放到达的。
+      if (msg.state === "running" && (msg.sessionId ?? LEAD_SESSION_ID) === LEAD_SESSION_ID && awaitingFirstStep()) ensureRun();
       break;
     case "task_view":
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。

@@ -2,7 +2,7 @@
  * 用户在真侧栏点「语音」，对着麦克风问页面上的内容，听到并看到答案。
  * 麦克风是 macOS say 合成的一段中文 WAV（Chrome 假设备只放一遍）；语音模型、断句都是真的。
  * 只装扩展、不装伴随进程：语音在扩展里连 StepFun，密钥来自 ~/.sideagent/stepfun-api.key；
- * 文字模型来自 ~/.sideagent/providers.local.json（--model=provider/id，默认 opencode-go/deepseek-v4.1-flash）。
+ * 文字模型来自 ~/.sideagent/providers.local.json（--model=provider/id，默认 DEFAULT_TEST_MODEL）。
  * 判定只看结果：侧栏进入聆听、识别出的问题、回答里有页面原文。
  *
  *   npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless
@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, until } from "./harness.mts";
 import type { JsonRecord } from "./harness.mts";
-import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
+import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
@@ -48,7 +48,7 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
 const pageUrl = `http://127.0.0.1:${siteAddress(site).port}/note`;
 
-const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? "opencode-go/deepseek-v4.1-flash";
+const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? DEFAULT_TEST_MODEL;
 
 const plan = await loadModelPlan(modelArg);
 

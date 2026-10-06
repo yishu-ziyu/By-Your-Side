@@ -17,7 +17,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { DAILY_DATA_DIR, REPO, changedFiles, exportDiagnosticsViaSettings, filesContaining, launchRealPath, listenerPids, requireHeadless, sha256File, shadowedSources, siteAddress, sleep, snapshotDir, until, watchInproc } from "./harness.mts";
 import type { JsonRecord } from "./harness.mts";
-import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
+import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
@@ -29,8 +29,8 @@ const DAILY_CLIPBOARD_PORT = 7761;
 
 const nonce = `rp${randomBytes(6).toString("hex")}`;
 
-// 模型来自 ~/.sideagent/providers.local.json；--model=provider/id 指定，默认 OpenCode Go 的 deepseek-v4.1-flash。
-const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? "opencode-go/deepseek-v4.1-flash";
+// 模型来自 ~/.sideagent/providers.local.json；--model=provider/id 指定，默认 DEFAULT_TEST_MODEL。
+const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? DEFAULT_TEST_MODEL;
 
 const plan = await loadModelPlan(modelArg);
 

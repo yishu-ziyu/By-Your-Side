@@ -991,6 +991,8 @@ return;}
     images: SessionImageContent[],
   ): Promise<void> {
     const preparationEpoch=this.controlEpoch,preparationRun=this.deliveryRunId();
+    // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
+    this.callbacks.setStatus("running");
     const observation = await this.readUserPageForPrompt(context, "task");
 
     if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
@@ -998,7 +1000,13 @@ return;}
     const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)
       +(context && typeof context.tabId === "number" ? programFirstGuidance() : "");
 
-    await session.prompt(promptText, images.length > 0 ? { images } : undefined);
+    try {
+      await session.prompt(promptText, images.length > 0 ? { images } : undefined);
+    } catch (error) {
+      // 模型没开始就失败时没有 agent_end 来收回上面的「已开工」。
+      if (!session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? "user" : "idle");
+      throw error;
+    }
   }
 
   /** 执行一次已注册的会话工具，并发出与模型调用同一形状的 tool_start/tool_end/读数事件。 */
