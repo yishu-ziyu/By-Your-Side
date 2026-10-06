@@ -47,3 +47,41 @@
   - 流式输出：pi-durable 的半截回答最多每 100 ms 提交一次（README），短回答在界面上看不到逐字更新事件，只看到整条消息。
 
 结论（推断，待主代理裁决）：技术上 pi-durable 能在扩展页面里跑通，中断恢复和插话符合预期，延迟代价可以忽略。风险在于 API 标明实验性、浏览器存储要自己写和测、我们的运行循环要整体改成它的扩展和钩子。
+
+## 追加：R5 接管→交还、R6 两个任务同时跑
+
+重构计划第 2 步。两项都通过才换到 Pi 1.0 加 pi-durable；否则留在 0.84.4，自己做压缩和恢复。
+
+### 规则
+
+- R5 接管→交还：填表任务进行中、`fill_field` 正在执行时，用户接管（`Conversation.abort()`）。接管期间用户改电话，页面重载。用户交还：同一会话发一句话，带上当前表单。通过条件：(a) 被打断的调用只执行 1 次；(b) 同一会话继续，填完剩下的格；(c) 用户改的电话保留；(d) 重载后会话记录是一个连贯的任务，没有待办。机器检查：`node drive.mjs --headless r5`。
+- R6 两个任务同时跑：同一页面、同一存储里两个会话，各调用 3 次慢工具（每次 1.5 秒）。通过条件：两边的工具执行时间有重叠；两边答案正确；记录里没有对方的内容；中途重载后 `resume()` 能做完两个任务，做完的工具不重跑。机器检查：`node drive.mjs --headless r6`。
+
+### 证据
+
+2026-10-06 实测，gpt-6-luna（thinking low）。页面代码 [ext-src/r56.ts](../../scripts/probes/pi1-durable/ext-src/r56.ts)；表单和执行记录放 localStorage，重载后还在。结果在 `results/` 和 `out/pi1-durable/`。
+
+- R5 通过（10/10 项）。结果：`r5-result.json`。
+  - 填完姓名，电话的 `fill_field` 执行到 0.45 秒时接管。`abort()` 18 ms 返回，工具从 `context.abortSignal` 收到中断。第一次提交的状态是 `unanswered`。
+  - 被打断的调用在记录里是 `isError: true`，文字 “Tool fill_field was aborted”。注意：我们的工具在中断前已经写进了页面，工具自己的返回值没有进记录。模型知道电话的实际值，只靠交还消息里的表单。
+  - 重载后没有待办。交还后模型直接填邮箱、城市，没有再碰电话。最终表单：电话是用户的 13912345678，其余三格正确。记录：用户 → 姓名 → 电话（中断）→ 交还 → 邮箱 → 城市 → “DONE”。
+  - 时间：第一次首字 2058 ms；提交到接管 6.7 秒；交还首字 2037 ms，交还到答完 12.9 秒（3 轮模型请求加 2 次工具）。
+- R6 通过，跑了 2 次，都是 8/8 项。结果：`r6-result-run1.json`、`r6-result.json`。
+  - 第二次在页面里记录了模型请求时间：两个会话的第一次请求相隔 2 ms 发出，之后的请求和工具也交错进行。工具执行重叠 954 ms（第一次 1917 ms）。
+  - 重载时有 1 个工具（a2）在执行、1 个模型回答在流式输出。重开时待办：1 个 `pi.tool`、1 个正在进行的 `pi.generation`、1 个等待中的 `pi.generation`。`resume()` 后，a2 按同一个调用编号重跑（这个工具声明了 `replay: "safe"`）；被打断的模型请求重新发了一次。做完的工具没有重跑，每个键只成功执行 1 次。
+  - 两边答案：“PELICAN GRANITE SAFFRON”、“WALRUS COBALT TAMARIND”。记录里没有对方的词和键。
+  - 时间：总耗时 18.0 秒、18.3 秒（含一次重载）；首字 A 3091/2634 ms，B 6333/3137 ms。
+
+- 整理代码（过 lint）后复跑一次：R5、R6 都通过。结果：`r5-result-run2.json`、`r6-result-run3.json`。
+  - R6：总耗时 19.1 秒，首字 2024/2548 ms，工具重叠 1789 ms。
+  - R5 这次慢很多：首字 12.0 秒，交还到答完 64.0 秒，多了一轮空的助手回答。每次模型请求的响应头都在约 1 秒内回来，时间花在模型流式输出上（推断：模型端思考时间波动，不是 pi-durable）。
+
+用到的接口（`node_modules/@earendil-works/pi-durable/dist/harness/types.d.ts`）：`Conversation.abort` 459，`Conversation.submit` 438，`Conversation.entries` 453，`Harness.createConversation` 485，`Harness.conversation` 484，`Harness.resume` 478，`Harness.inspect` 488，`Harness.submission` 490，`Submission.wait` 38，工具 `replay` 146、`executionMode` 148、`execute(args, api, context)` 160；中断信号是 chord 的 `Context.abortSignal`（`chord/dist/types.d.ts` 13）。
+
+要注意的地方：
+
+- 被中断的工具，结果统一写成 “aborted”，工具自己的返回值不进记录。产品里“写完了没有”要由交还时的页面快照告诉模型，pi-durable 不替我们做。
+- 重载打断一次模型回答时，这次请求会整个重发，多花一次模型调用。
+- `ConversationId` 是带品牌的数字，不是字符串。用字符串去 `Harness.conversation()` 查会找不到。
+
+结论（推断，待主代理裁决）：R5、R6 都通过。接管→交还和两个任务同时跑，pi-durable 原生支持，不需要我们自己做中断和并发的记账。

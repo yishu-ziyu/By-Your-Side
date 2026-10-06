@@ -1,0 +1,376 @@
+{
+  "pass": true,
+  "checks": {
+    "a_interruptedCallRanOnce": true,
+    "a_phoneFilledByAgentOnce": true,
+    "b_sameConversation": true,
+    "b_handbackDone": true,
+    "b_restFilled": true,
+    "c_userPhoneKept": true,
+    "d_twoUserMessages": true,
+    "d_everyCallHasOneResult": true,
+    "d_endsWithAssistantText": true,
+    "d_nothingPendingAfterReload": true
+  },
+  "timings": {
+    "firstTokenMs": 12038,
+    "untilTakeoverMs": 35248,
+    "abortMs": 9,
+    "handbackMs": 64006,
+    "handbackFirstTokenMs": 19352
+  },
+  "firstStatus": {
+    "status": "unanswered",
+    "waitedMs": 0
+  },
+  "inflight": {
+    "tool": "fill_field",
+    "conv": "1",
+    "callId": "call_9sFOvYRLa2N9fIsfS08tQHKM|fc_01995b3c6704d156016ac4ff0682c487d0af7e004e54d35637",
+    "arg": "phone=13800000000",
+    "start": 1791295239066
+  },
+  "atTakeover": {
+    "form": {
+      "name": "Li Lei",
+      "phone": "13800000000",
+      "email": "",
+      "city": ""
+    },
+    "execs": [
+      {
+        "tool": "fill_field",
+        "conv": "1",
+        "callId": "call_yawK4qJept0G8MD0dwDasuh7|fc_01995b3c6704d156016ac4fef0052887d09acac234ca4e4943",
+        "arg": "name=Li Lei",
+        "start": 1791295216418,
+        "end": 1791295217919,
+        "aborted": false
+      },
+      {
+        "tool": "fill_field",
+        "conv": "1",
+        "callId": "call_9sFOvYRLa2N9fIsfS08tQHKM|fc_01995b3c6704d156016ac4ff0682c487d0af7e004e54d35637",
+        "arg": "phone=13800000000",
+        "start": 1791295239066,
+        "end": 1791295239404,
+        "aborted": true
+      }
+    ],
+    "transcript": [
+      {
+        "kind": "pi.user",
+        "model": [
+          {
+            "role": "user",
+            "parts": [
+              "text:Fill the form on this page with: name = Li Lei, phone = 13800000000, email = lilei@example.com, city = Hangzhou. Call fill_field once per field, in exactly that order, one call at a time. When all four fields are filled, reply DONE and a on"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:fill_field({\"field\":\"name\",\"value\":\"Li Lei\"})#call_yawK4qJept0G8MD0dwDasuh7|fc_01995b3c6704d156016ac4fef0052887d09acac234ca4e4943"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:name set to Li Lei"
+            ],
+            "toolName": "fill_field",
+            "callId": "call_yawK4qJept0G8MD0dwDasuh7|fc_01995b3c6704d156016ac4fef0052887d09acac234ca4e4943",
+            "isError": false
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:fill_field({\"field\":\"phone\",\"value\":\"13800000000\"})#call_9sFOvYRLa2N9fIsfS08tQHKM|fc_01995b3c6704d156016ac4ff0682c487d0af7e004e54d35637"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:<harness>\n[error] Tool fill_field was aborted\n</harness>"
+            ],
+            "toolName": "fill_field",
+            "callId": "call_9sFOvYRLa2N9fIsfS08tQHKM|fc_01995b3c6704d156016ac4ff0682c487d0af7e004e54d35637",
+            "isError": true
+          }
+        ]
+      }
+    ]
+  },
+  "reopened": {
+    "rootId": "1",
+    "openMs": 4,
+    "pendingAtOpen": {
+      "tasks": [],
+      "submissions": []
+    }
+  },
+  "handback": "交还：我接管期间把电话改成了 13912345678，这是我要的值，不要再改它。当前页面表单：{\"name\":\"Li Lei\",\"phone\":\"13912345678\",\"email\":\"\",\"city\":\"\"}。其余你继续。",
+  "hbStatus": {
+    "status": "done",
+    "waitedMs": 64003
+  },
+  "final": {
+    "form": {
+      "name": "Li Lei",
+      "phone": "13912345678",
+      "email": "lilei@example.com",
+      "city": "Hangzhou"
+    },
+    "execs": [
+      {
+        "tool": "fill_field",
+        "conv": "1",
+        "callId": "call_yawK4qJept0G8MD0dwDasuh7|fc_01995b3c6704d156016ac4fef0052887d09acac234ca4e4943",
+        "arg": "name=Li Lei",
+        "start": 1791295216418,
+        "end": 1791295217919,
+        "aborted": false
+      },
+      {
+        "tool": "fill_field",
+        "conv": "1",
+        "callId": "call_9sFOvYRLa2N9fIsfS08tQHKM|fc_01995b3c6704d156016ac4ff0682c487d0af7e004e54d35637",
+        "arg": "phone=13800000000",
+        "start": 1791295239066,
+        "end": 1791295239404,
+        "aborted": true
+      },
+      {
+        "tool": "fill_field",
+        "conv": "1",
+        "callId": "call_Fxlu2Mk9jhbqoBw5TbkIf7Q9|fc_01995b3c6704d156016ac4ff1ae79c87d0aaed90bed427c425",
+        "arg": "email=lilei@example.com",
+        "start": 1791295259183,
+        "end": 1791295260685,
+        "aborted": false
+      },
+      {
+        "tool": "fill_field",
+        "conv": "1",
+        "callId": "call_0hBESn5d3wDhSk7GT8GLWkq4|fc_01995b3c6704d156016ac4ff32775487d08190698a009ebc76",
+        "arg": "city=Hangzhou",
+        "start": 1791295283214,
+        "end": 1791295284716,
+        "aborted": false
+      }
+    ],
+    "reqs": [
+      {
+        "task": "other",
+        "start": 1791295204165,
+        "headers": 1791295205826
+      },
+      {
+        "task": "other",
+        "start": 1791295217938,
+        "headers": 1791295218934
+      },
+      {
+        "task": "other",
+        "start": 1791295223617,
+        "headers": 1791295224408
+      },
+      {
+        "task": "other",
+        "start": 1791295239727,
+        "headers": 1791295240645
+      },
+      {
+        "task": "other",
+        "start": 1791295260706,
+        "headers": 1791295261815
+      },
+      {
+        "task": "other",
+        "start": 1791295284736,
+        "headers": 1791295285614
+      }
+    ]
+  },
+  "reopened2": {
+    "rootId": "1",
+    "openMs": 4,
+    "pendingAtOpen": {
+      "tasks": [],
+      "submissions": []
+    }
+  },
+  "transcript": [
+    {
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "parts": [
+            "text:Fill the form on this page with: name = Li Lei, phone = 13800000000, email = lilei@example.com, city = Hangzhou. Call fill_field once per field, in exactly that order, one call at a time. When all four fields are filled, reply DONE and a on"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "parts": [
+            "toolCall:fill_field({\"field\":\"name\",\"value\":\"Li Lei\"})#call_yawK4qJept0G8MD0dwDasuh7|fc_01995b3c6704d156016ac4fef0052887d09acac234ca4e4943"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.tool-result",
+      "model": [
+        {
+          "role": "toolResult",
+          "parts": [
+            "text:name set to Li Lei"
+          ],
+          "toolName": "fill_field",
+          "callId": "call_yawK4qJept0G8MD0dwDasuh7|fc_01995b3c6704d156016ac4fef0052887d09acac234ca4e4943",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "parts": []
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "parts": [
+            "toolCall:fill_field({\"field\":\"phone\",\"value\":\"13800000000\"})#call_9sFOvYRLa2N9fIsfS08tQHKM|fc_01995b3c6704d156016ac4ff0682c487d0af7e004e54d35637"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.tool-result",
+      "model": [
+        {
+          "role": "toolResult",
+          "parts": [
+            "text:<harness>\n[error] Tool fill_field was aborted\n</harness>"
+          ],
+          "toolName": "fill_field",
+          "callId": "call_9sFOvYRLa2N9fIsfS08tQHKM|fc_01995b3c6704d156016ac4ff0682c487d0af7e004e54d35637",
+          "isError": true
+        }
+      ]
+    },
+    {
+      "kind": "pi.user",
+      "model": [
+        {
+          "role": "user",
+          "parts": [
+            "text:交还：我接管期间把电话改成了 13912345678，这是我要的值，不要再改它。当前页面表单：{\"name\":\"Li Lei\",\"phone\":\"13912345678\",\"email\":\"\",\"city\":\"\"}。其余你继续。"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "parts": [
+            "toolCall:fill_field({\"field\":\"email\",\"value\":\"lilei@example.com\"})#call_Fxlu2Mk9jhbqoBw5TbkIf7Q9|fc_01995b3c6704d156016ac4ff1ae79c87d0aaed90bed427c425"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.tool-result",
+      "model": [
+        {
+          "role": "toolResult",
+          "parts": [
+            "text:email set to lilei@example.com"
+          ],
+          "toolName": "fill_field",
+          "callId": "call_Fxlu2Mk9jhbqoBw5TbkIf7Q9|fc_01995b3c6704d156016ac4ff1ae79c87d0aaed90bed427c425",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "parts": [
+            "toolCall:fill_field({\"field\":\"city\",\"value\":\"Hangzhou\"})#call_0hBESn5d3wDhSk7GT8GLWkq4|fc_01995b3c6704d156016ac4ff32775487d08190698a009ebc76"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "pi.tool-result",
+      "model": [
+        {
+          "role": "toolResult",
+          "parts": [
+            "text:city set to Hangzhou"
+          ],
+          "toolName": "fill_field",
+          "callId": "call_0hBESn5d3wDhSk7GT8GLWkq4|fc_01995b3c6704d156016ac4ff32775487d08190698a009ebc76",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "kind": "pi.assistant",
+      "model": [
+        {
+          "role": "assistant",
+          "parts": [
+            "text:DONE — Name: Li Lei; phone: 13912345678; email: lilei@example.com; city: Hangzhou."
+          ]
+        }
+      ]
+    }
+  ]
+}
