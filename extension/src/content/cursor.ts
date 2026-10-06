@@ -196,7 +196,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge.on { animation: none; } }
       .cursor.rest { opacity: .86; }
       .cursor.rest .label { opacity: 0; }
-      .cursor.flip .label { left: auto; right: 18px; }
+      .cursor.flip .label { left: auto; right: ${Math.round(CURSOR_SVG_SIZE * 0.51)}px; }
       .svg-wrap {
         position: absolute; left: 0; top: 0;
         transition: transform 130ms ease;
@@ -211,7 +211,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       .cursor path.fill { fill: var(--c); }
       .cursor path.halo { fill: none; }
       .label {
-        position: absolute; left: 22px; top: 24px;
+        position: absolute; left: ${Math.round(CURSOR_SVG_SIZE * 0.63)}px; top: ${Math.round(CURSOR_SVG_SIZE * 0.69)}px;
         padding: 2px 9px; border-radius: 999px;
         background: var(--c); color: #fff;
         font: 600 12px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
