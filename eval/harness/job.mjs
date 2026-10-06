@@ -270,6 +270,31 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       return rec;
     }
 
+    // --- memory quiz: earlier turns (same or new conversation), each run to the end before the next; not timed ---
+    const newConversation = async () => {
+      await rp.click(ps, "#conversation-new");
+      await until(async () => evalIn(ps, "document.querySelector('#send-btn')?.disabled === false && !document.querySelector('#messages .msg.user')"), 30000, "new conversation");
+    };
+
+    const sendAndSettle = async (text) => {
+      const answers = await evalIn(ps, "document.querySelectorAll('#messages .msg.assistant').length");
+      await rp.click(ps, "#input");
+      await rp.typeText(ps, text);
+      await rp.pressEnter(ps);
+      await until(async () => evalIn(ps, `document.querySelectorAll('#messages .msg.assistant').length > ${answers} && !document.querySelector('#status-pill')?.classList.contains('running') && !document.querySelector('#send-btn')?.classList.contains('stopping')`), capMs, "earlier turn done");
+      await sleep(4000); // memory judgments run after the turn settles
+      rec.before_turns.push({ prompt: text, answer: await evalIn(ps, "[...document.querySelectorAll('#messages .msg.assistant')].at(-1)?.innerText ?? ''") });
+    };
+
+    rec.before_turns = [];
+
+    for (const turn of task.before_turns ?? []) {
+      if (turn.new_conversation) await newConversation();
+      await sendAndSettle(turn.prompt);
+    }
+
+    if (task.new_conversation) await newConversation();
+
     // --- send prompt like a user: focus, type, Enter (selection tasks: into the open 划词 card, minus the （选中…） stage note) ---
     const inputSid = selected ? pageSid : ps;
 
@@ -453,6 +478,15 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       if (pageB) rec.final_page_text = `[tab 1] ${rec.final_page_text ?? ""}\n\n[tab 2] ${await evalIn(pageB, "(document.body?.innerText ?? '').slice(0, 15000)").catch(() => "")}`;
     } catch (e) { rec.errors.push(`final page: ${e.message}`); }
+
+    if (task.before_turns || task.memory_check) {
+      const memory = await evalIn(ps, `new Promise((ok) => { const q = indexedDB.open("sideagent-memory"); q.onsuccess = () => { const g = q.result.transaction("kv").objectStore("kv").get("memories"); g.onsuccess = () => ok(g.result ?? null); g.onerror = () => ok(null); }; q.onerror = () => ok(null); })`).catch(() => null);
+      const doc = memory ? JSON.parse(memory) : null; // document-idb stores the document as JSON text
+      const entries = (doc?.entries ?? []).filter((e) => e.status === "active").map((e) => ({ kind: e.kind, scope: e.scope, text: e.text }));
+      const dst = join(outDir, `${task.id}.memory.json`);
+      writeFileSync(dst, JSON.stringify(entries, null, 1));
+      rec.downloads.push({ kind: "memory store after the run (active entries)", name: "memory.json", path: dst, bytes: statSync(dst).size });
+    }
 
     // screenshots: page + side panel side by side (what the judge prompt calls the window), and the panel alone
     const pagePng = join(outDir, `${task.id}-page.png`), panelPng = join(outDir, `${task.id}-panel.png`), shot = join(outDir, `${task.id}.png`);

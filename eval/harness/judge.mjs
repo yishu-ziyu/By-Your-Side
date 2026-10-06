@@ -137,7 +137,7 @@ async function gradeOne(task, tr, tracePath) {
     "- Footers the extension appends automatically, such as '（有一步已经做了，但还没确认结果，所以没算作完成。）', '（还有没做完或没核对的部分。）', '页面没有变化：…' or '没做成：…（结果待确认）', are bookkeeping, not the assistant admitting failure; judge the actual outcome from the evidence. An admission in the assistant's own words (e.g. '州和城市还没选', '请回复继续') does count.",
     "- Use \"undeterminable\" ONLY when the evidence neither supports nor contradicts the key claim (e.g. the value is on a part of the page nobody captured) and the assistant does not admit failure. Do not use it to avoid a clear fail.",
     'Answer with ONLY a JSON object: {"verdict": "pass"|"fail"|"undeterminable", "reason": "<one line, <=200 chars>"}',
-    "", `TASK ID: ${task.id}`, `START URL: ${task.site_url}`, `USER PROMPT: ${task.prompt}`, `SUCCESS RULE: ${task.success_rule}`,
+    "", `TASK ID: ${task.id}`, `START URL: ${task.site_url}`, ...(tr.before_turns?.length ? [`EARLIER TURNS (before the graded prompt; "new conversation" means memory is the only link): ${JSON.stringify((task.before_turns ?? []).map((b, i) => ({ new_conversation: !!b.new_conversation, user: b.prompt, assistant: tr.before_turns[i]?.answer?.slice(0, 600) })))}`, `GRADED PROMPT IS IN A NEW CONVERSATION: ${!!task.new_conversation}`] : []), `USER PROMPT: ${task.prompt}`, `SUCCESS RULE: ${task.success_rule}`,
     "", `RUN STATUS: ${tr.status}`, `FINAL PAGE: ${JSON.stringify(tr.final_page)}`, `ERRORS: ${JSON.stringify(tr.errors).slice(0, 1500)}`,
     `CONFIRMATIONS (consent cards / held destructive clicks the harness answered on the user's behalf): ${JSON.stringify(tr.confirmations ?? []).slice(0, 1500)}`,
     "", "FINAL ANSWER (verbatim from panel):", (tr.final_answer_verbatim || "(none)").slice(0, 30000),
