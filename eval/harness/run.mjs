@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import { runJob, killLive, slugOf } from "./job.mjs";
 import os from "node:os";
 import { judgeRun } from "./judge.mjs";
+import { startLadderSites } from "./ladder-sites.mjs";
 import { RUNS_DIR, TASKS_FILE } from "./paths.mjs";
 
 export { writeSummary } from "./summary.mjs";
@@ -59,7 +60,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     try {
       const r = JSON.parse(readFileSync(p, "utf8"));
 
-      return r.status !== "setup_error" && !isQuota(r);
+      return r.status !== "setup_error" && !isQuota(r) && !(!r.environment && (r.panel_messages ?? []).some((m) => /模型返回了空响应/.test(m.text)));
     } catch { return false; }
   };
 
@@ -69,6 +70,10 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const jobs = [];
 
   for (const task of tasks) for (const model of models) if (!resume || !validResult(model, task.id)) jobs.push({ task, model });
+
+  // tasks on local ladder pages ({ladder} in a URL): one server for the whole run, closed when the process exits
+  if (tasks.some((t) => JSON.stringify(t).includes("{ladder}"))) process.env.BYS_LADDER_BASE = (await startLadderSites()).base;
+  const hostOf = (task) => new URL(task.site_url.replace("{ladder}", process.env.BYS_LADDER_BASE)).hostname;
   let quotaHits = 0, stopped = false;
   // never let a stray socket error kill the whole run; the job in flight is marked error/retried
   process.on("uncaughtException", (e) => console.log(`[${new Date().toLocaleTimeString("en-GB")}] uncaught (ignored): ${e.code ?? ""} ${e.message}`));
@@ -91,12 +96,12 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   log(`run ${runId}: ${jobs.length} jobs, concurrency ${concurrency}`);
   await Promise.all(Array.from({ length: concurrency }, () => (async () => {
     while (pending.length && !stopped) {
-      const available = pending.findIndex(j => !activeSites.has(new URL(j.task.site_url).hostname));
+      const available = pending.findIndex(j => !activeSites.has(hostOf(j.task)));
 
       if (available < 0) { await new Promise(r => setTimeout(r, 200)); continue; }
 
       const { task, model } = pending.splice(available, 1)[0];
-      const site = new URL(task.site_url).hostname;
+      const site = hostOf(task);
       activeSites.add(site);
       const outDir = join(runDir, slugOf(model));
       log(`start ${model} ${task.id}`);
@@ -110,11 +115,11 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
         try { rec = await runJob({ task, model, outDir, capMs, log, dryRun: process.argv.includes("--dry-run") }); }
         catch (e) { rec = { status: "error", errors: [`runner: ${e.message}`] }; }
 
-        const crashed = rec.status === "setup_error" || (rec.errors ?? []).some((e) => /CDP pipe closed|chrome\/pipe died/.test(e));
+        const crashed = rec.status === "setup_error" || rec.environment?.kind === "model_empty" || (rec.errors ?? []).some((e) => /CDP pipe closed|chrome\/pipe died/.test(e));
 
         if (!crashed || isQuota(rec)) break;
         log(`retry ${attempt + 1}/${retries} ${model} ${task.id} (${rec.status}: ${(rec.errors ?? [])[0]?.split("\n")[0]?.slice(0, 100)})`);
-        await new Promise((r) => setTimeout(r, 10000));
+        await new Promise((r) => setTimeout(r, 30000));
       }
 
       activeSites.delete(site);

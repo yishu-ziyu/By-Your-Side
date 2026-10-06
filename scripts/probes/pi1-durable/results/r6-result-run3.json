@@ -1,0 +1,402 @@
+{
+  "pass": true,
+  "checks": {
+    "overlap": true,
+    "bothDone": true,
+    "aCorrect": true,
+    "bCorrect": true,
+    "aIsolated": true,
+    "bIsolated": true,
+    "noFinishedToolRerun": true,
+    "eachKeyFinishedOnce": true
+  },
+  "timings": {
+    "wallMs": 19123,
+    "firstTokenMs": {
+      "a": 2024,
+      "b": 2548
+    },
+    "untilReloadMs": 5840,
+    "overlapMs": 1789,
+    "afterReloadMs": 13286
+  },
+  "ids": {
+    "aId": "1",
+    "bId": "7"
+  },
+  "statuses": {
+    "a": {
+      "status": "done",
+      "waitedMs": 7176
+    },
+    "b": {
+      "status": "done",
+      "waitedMs": 12973
+    }
+  },
+  "answers": {
+    "a": "text:PELICAN GRANITE SAFFRON",
+    "b": "text:WALRUS COBALT TAMARIND"
+  },
+  "execsBeforeReload": [
+    {
+      "tool": "slow_word",
+      "conv": "1",
+      "callId": "call_e8b96f6ccc1c4098b50e87d87e55a69e|fc_008185dcd1a31f68016ac4ff4a0c8c81918a92dce34cdad50f",
+      "arg": "a1",
+      "start": 1791295306450,
+      "end": 1791295307952,
+      "aborted": false
+    },
+    {
+      "tool": "slow_word",
+      "conv": "7",
+      "callId": "call_FPAQK45a1VgaYrkSzJJA3Tvx|fc_01ef07c5ef3a8bce016ac4ff4aaa2887d0b5338f68db4ce1a1",
+      "arg": "b1",
+      "start": 1791295307087,
+      "end": 1791295308588,
+      "aborted": false
+    },
+    {
+      "tool": "slow_word",
+      "conv": "1",
+      "callId": "call_CbuifY4bDuyhzMFzZSvVdxb6|fc_008185dcd1a31f68016ac4ff4dac3c8191a23d0769abd3f5d4",
+      "arg": "a2",
+      "start": 1791295310009
+    }
+  ],
+  "execs": [
+    {
+      "tool": "slow_word",
+      "conv": "1",
+      "callId": "call_e8b96f6ccc1c4098b50e87d87e55a69e|fc_008185dcd1a31f68016ac4ff4a0c8c81918a92dce34cdad50f",
+      "arg": "a1",
+      "start": 1791295306450,
+      "end": 1791295307952,
+      "aborted": false
+    },
+    {
+      "tool": "slow_word",
+      "conv": "7",
+      "callId": "call_FPAQK45a1VgaYrkSzJJA3Tvx|fc_01ef07c5ef3a8bce016ac4ff4aaa2887d0b5338f68db4ce1a1",
+      "arg": "b1",
+      "start": 1791295307087,
+      "end": 1791295308588,
+      "aborted": false
+    },
+    {
+      "tool": "slow_word",
+      "conv": "1",
+      "callId": "call_CbuifY4bDuyhzMFzZSvVdxb6|fc_008185dcd1a31f68016ac4ff4dac3c8191a23d0769abd3f5d4",
+      "arg": "a2",
+      "start": 1791295310009
+    },
+    {
+      "tool": "slow_word",
+      "conv": "1",
+      "callId": "call_CbuifY4bDuyhzMFzZSvVdxb6|fc_008185dcd1a31f68016ac4ff4dac3c8191a23d0769abd3f5d4",
+      "arg": "a2",
+      "start": 1791295310438,
+      "end": 1791295311940,
+      "aborted": false
+    },
+    {
+      "tool": "slow_word",
+      "conv": "7",
+      "callId": "call_ccGeby31VDdk7iRnSVasPErl|fc_01ef07c5ef3a8bce016ac4ff51332c87d0875652a842ccdad4",
+      "arg": "b2",
+      "start": 1791295313488,
+      "end": 1791295314990,
+      "aborted": false
+    },
+    {
+      "tool": "slow_word",
+      "conv": "1",
+      "callId": "call_f6xCgHp3qb5cEbpeSxiX2uXp|fc_008185dcd1a31f68016ac4ff5193c88191832392898d16494f",
+      "arg": "a3",
+      "start": 1791295314066,
+      "end": 1791295315568,
+      "aborted": false
+    },
+    {
+      "tool": "slow_word",
+      "conv": "7",
+      "callId": "call_FV8vhlGYJA38960PxwTcFtiQ|fc_01ef07c5ef3a8bce016ac4ff55f37c87d080d36fe702f14cdb",
+      "arg": "b3",
+      "start": 1791295318415,
+      "end": 1791295319916,
+      "aborted": false
+    }
+  ],
+  "modelRequests": [
+    {
+      "task": "b",
+      "start": 1791295304309,
+      "headers": 1791295305241
+    },
+    {
+      "task": "a",
+      "start": 1791295304307,
+      "headers": 1791295305651
+    },
+    {
+      "task": "a",
+      "start": 1791295307964,
+      "headers": 1791295308853
+    },
+    {
+      "task": "b",
+      "start": 1791295308597,
+      "headers": 1791295309591
+    },
+    {
+      "task": "b",
+      "start": 1791295310438,
+      "headers": 1791295311361
+    },
+    {
+      "task": "a",
+      "start": 1791295311950,
+      "headers": 1791295312811
+    },
+    {
+      "task": "b",
+      "start": 1791295315002,
+      "headers": 1791295316148
+    },
+    {
+      "task": "a",
+      "start": 1791295315576,
+      "headers": 1791295316714
+    },
+    {
+      "task": "b",
+      "start": 1791295319924,
+      "headers": 1791295320886
+    }
+  ],
+  "reopened": {
+    "rootId": "1",
+    "openMs": 6,
+    "pendingAtOpen": {
+      "tasks": [
+        {
+          "kind": "pi.generation",
+          "status": "pending"
+        },
+        {
+          "kind": "pi.tool",
+          "status": "pending"
+        },
+        {
+          "kind": "pi.generation",
+          "status": "waiting"
+        }
+      ],
+      "submissions": [
+        "placed",
+        "placed"
+      ]
+    }
+  },
+  "transcripts": {
+    "a": [
+      {
+        "kind": "pi.user",
+        "model": [
+          {
+            "role": "user",
+            "parts": [
+              "text:Call slow_word for key \"a1\", then \"a2\", then \"a3\", one call at a time, waiting for each result before the next call. Then reply with the three secret words separated by single spaces and nothing else."
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_word({\"key\":\"a1\"})#call_e8b96f6ccc1c4098b50e87d87e55a69e|fc_008185dcd1a31f68016ac4ff4a0c8c81918a92dce34cdad50f"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:secret word for a1: PELICAN"
+            ],
+            "toolName": "slow_word",
+            "callId": "call_e8b96f6ccc1c4098b50e87d87e55a69e|fc_008185dcd1a31f68016ac4ff4a0c8c81918a92dce34cdad50f",
+            "isError": false
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_word({\"key\":\"a2\"})#call_CbuifY4bDuyhzMFzZSvVdxb6|fc_008185dcd1a31f68016ac4ff4dac3c8191a23d0769abd3f5d4"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:secret word for a2: GRANITE"
+            ],
+            "toolName": "slow_word",
+            "callId": "call_CbuifY4bDuyhzMFzZSvVdxb6|fc_008185dcd1a31f68016ac4ff4dac3c8191a23d0769abd3f5d4",
+            "isError": false
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_word({\"key\":\"a3\"})#call_f6xCgHp3qb5cEbpeSxiX2uXp|fc_008185dcd1a31f68016ac4ff5193c88191832392898d16494f"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:secret word for a3: SAFFRON"
+            ],
+            "toolName": "slow_word",
+            "callId": "call_f6xCgHp3qb5cEbpeSxiX2uXp|fc_008185dcd1a31f68016ac4ff5193c88191832392898d16494f",
+            "isError": false
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "text:PELICAN GRANITE SAFFRON"
+            ]
+          }
+        ]
+      }
+    ],
+    "b": [
+      {
+        "kind": "pi.user",
+        "model": [
+          {
+            "role": "user",
+            "parts": [
+              "text:Call slow_word for key \"b1\", then \"b2\", then \"b3\", one call at a time, waiting for each result before the next call. Then reply with the three secret words separated by single spaces and nothing else."
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_word({\"key\":\"b1\"})#call_FPAQK45a1VgaYrkSzJJA3Tvx|fc_01ef07c5ef3a8bce016ac4ff4aaa2887d0b5338f68db4ce1a1"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:secret word for b1: WALRUS"
+            ],
+            "toolName": "slow_word",
+            "callId": "call_FPAQK45a1VgaYrkSzJJA3Tvx|fc_01ef07c5ef3a8bce016ac4ff4aaa2887d0b5338f68db4ce1a1",
+            "isError": false
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_word({\"key\":\"b2\"})#call_ccGeby31VDdk7iRnSVasPErl|fc_01ef07c5ef3a8bce016ac4ff51332c87d0875652a842ccdad4"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:secret word for b2: COBALT"
+            ],
+            "toolName": "slow_word",
+            "callId": "call_ccGeby31VDdk7iRnSVasPErl|fc_01ef07c5ef3a8bce016ac4ff51332c87d0875652a842ccdad4",
+            "isError": false
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "toolCall:slow_word({\"key\":\"b3\"})#call_FV8vhlGYJA38960PxwTcFtiQ|fc_01ef07c5ef3a8bce016ac4ff55f37c87d080d36fe702f14cdb"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "pi.tool-result",
+        "model": [
+          {
+            "role": "toolResult",
+            "parts": [
+              "text:secret word for b3: TAMARIND"
+            ],
+            "toolName": "slow_word",
+            "callId": "call_FV8vhlGYJA38960PxwTcFtiQ|fc_01ef07c5ef3a8bce016ac4ff55f37c87d080d36fe702f14cdb",
+            "isError": false
+          }
+        ]
+      },
+      {
+        "kind": "pi.assistant",
+        "model": [
+          {
+            "role": "assistant",
+            "parts": [
+              "text:WALRUS COBALT TAMARIND"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

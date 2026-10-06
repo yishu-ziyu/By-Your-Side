@@ -26,6 +26,11 @@ Failure review page for the product owner: node eval/harness/review.mjs eval/run
   Marks 能接受 / 不能接受 / 判错了 + note are kept in localStorage (key bys-review:<runId>|<task>|<spec>);
   导出我的判断 downloads review-<runId>.json = {runId, decisions:[{task, config, mark: accept|reject|misjudged, note}]}.
 
+Complexity ladder (docs/evals/20261006-complexity-ladder.md): node eval/harness/ladder.mjs --tag X --models openai-codex/gpt-6-luna [--repeats 3]
+  runs eval/tasks/ladder.json level by level and writes runs/ladder-X/ladder.md. Task fields it adds: `level`; `takeover` {when, edit}
+  (the user takes over mid-run, edits one field, hands back); `parallel` {site_url, prompt} (a second task in a new tab and conversation);
+  `{ladder}` in a URL = local pages from ladder-sites.mjs.
+
 Paths and env (see paths.mjs, credentials.mjs): BYS_REPO (default: this repo), BYS_TASKS (default eval/tasks/tasks.jsonl),
 BYS_RUNS_DIR (default eval/runs), BYS_KEY_<PROVIDER> (API key, overrides credential files), SIDEAGENT_STEP_PLAN_KEY,
 EGO_ACCEPTANCE_CHROME (Chrome for Testing / Chromium binary), BYS_PRICES (price table), BYS_CJK_FONT (charts), JUDGE_CONC (finalize.sh, default 4).
