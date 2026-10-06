@@ -22,3 +22,4 @@
 - 2026-10-02 | [受阻结论](../../docs/evals/20261002-goal-check-blocked.md) | 新建 patterns/widened-check-needs-the-other-side.md，更新 index.md | 无新提案
 - 2026-10-04 | [删掉半成品与预判](../../docs/evals/20261004-cut-unused.md) | 新建 patterns/worktree-workspace-link-builds-main-tree.md，更新 index.md | 无新提案
 - 2026-10-06 | [首个反馈](../../docs/evals/20261006-first-feedback.md) | 新建 patterns/execute-script-waits-for-idle.md、patterns/node-error-text-in-browser.md，更新 index.md | 无新提案
+- 2026-10-06 | [出错恢复](../../docs/evals/20261006-error-states.md)、[记忆管理](../../docs/evals/20261006-memory-management.md) 预览 | 新建 patterns/offline-preview-porting-pitfalls.md，更新 index.md | 无新提案

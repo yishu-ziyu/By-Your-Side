@@ -34,3 +34,4 @@
 | [worktree-workspace-link-builds-main-tree](patterns/worktree-workspace-link-builds-main-tree.md) | 工作树里构建旧版本时 workspaces 链接指回主仓库，打包的是新代码；旧版反例要先证明跑的真是旧代码 | 删掉半成品与预判 | 2026-10-04 |
 | [execute-script-waits-for-idle](patterns/execute-script-waits-for-idle.md) | 页面加载中注入脚本默认等空闲，读页卡数秒；只读注入加 `injectImmediately`，先拆单个调用计时再下结论 | #18 首个反馈 | 2026-10-06 |
 | [node-error-text-in-browser](patterns/node-error-text-in-browser.md) | 库按 Node 报错文字判断可重试，浏览器的「Failed to fetch」认不出；补浏览器反例，判断只放一处 | 同上 | 2026-10-06 |
+| [offline-preview-porting-pitfalls](patterns/offline-preview-porting-pitfalls.md) | 移植扩展模块做离线预览的四个坑：file:// 不能 import、引擎 `$` 撞名、display 覆盖 hidden、SVG inset 不撑满 | UX 三缺口预览 | 2026-10-06 |
