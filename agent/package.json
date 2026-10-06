@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.84.4",
-    "@earendil-works/pi-ai": "0.84.4",
-    "@earendil-works/pi-coding-agent": "0.84.4",
+    "@earendil-works/pi-agent-core": "1.0.4",
+    "@earendil-works/pi-ai": "1.0.4",
+    "pi-session-084": "npm:@earendil-works/pi-agent-core@0.84.4",
+    "@earendil-works/pi-coding-agent": "1.0.4",
     "quickjs-emscripten": "0.32.0",
     "typebox": "1.3.25",
     "undici": "8.10.2",

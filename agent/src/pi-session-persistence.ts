@@ -1,4 +1,6 @@
-import { buildSessionContext, type AgentMessage, type Session } from '@earendil-works/pi-agent-core';
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
+// Pi 1.0 删掉了会话存储；沿用 0.84.4 的实现，存储格式不变（docs/evals/20261007-pi1-rebuild.md）。
+import { buildSessionContext, type Session } from 'pi-session-084';
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent';
 
 /** Synchronous checkpoint reads retain the existing task contract. Writes await Pi's durable append. */
@@ -12,7 +14,7 @@ export class PiSessionPersistence {
     const branch = await native.findEntriesOnBranch({order:'oldestFirst'});
     persistence.entries = branch.flatMap(entry => entry.type === 'custom' ? [{ type:'custom' as const, id:entry.id, parentId:entry.parentId, timestamp:new Date(entry.timestamp).toISOString(), customType:entry.customType, data:entry.data }] : []);
 
-    return {persistence, messages:buildSessionContext(branch).messages};
+    return {persistence, messages:currentMessages(buildSessionContext(branch).messages)};
   }
   getBranch(): SessionEntry[] { return [...this.entries]; }
   appendCustomEntry(customType: string, data?: Parameters<SessionManager['appendCustomEntry']>[1]): Promise<string> {
@@ -31,7 +33,8 @@ export class PiSessionPersistence {
     });
   }
   appendMessage(message: AgentMessage): Promise<string> {
-    const durable: AgentMessage = JSON.parse(JSON.stringify(message));
+    // 深拷贝成纯 JSON，交给 0.84.4 的存储（结构相同）。
+    const durable: Parameters<Session['appendMessage']>[0] = JSON.parse(JSON.stringify(message));
 
     return this.enqueue(() => this.native.appendMessage(durable));
   }
@@ -53,4 +56,10 @@ export class PiSessionPersistence {
 
     return pending;
   }
+}
+
+/** 0.84.4 写下的消息与 1.0.4 的消息是同一份 JSON 结构，只是两套类型声明。 */
+function currentMessages(messages: ReturnType<typeof buildSessionContext>['messages']): AgentMessage[] {
+  // SAFETY: 见上；会话记录里没有 system 消息，其余角色两版字段相同。
+  return messages as never;
 }

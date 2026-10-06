@@ -48,7 +48,7 @@ describe("model capabilities in the extension's model registration", () => {
     expect(codex).toEqual(expect.arrayContaining(["gpt-5.5", "gpt-6-luna", "gpt-6-sol", "gpt-6-astra", "gpt-6.1-sol"]));
 
     const astra = resolve("openai-codex", "gpt-6-astra");
-    expect(astra).toMatchObject({ api: "openai-codex-responses", baseUrl: "https://chatgpt.com/backend-api", reasoning: true, contextWindow: 625_000, maxTokens: 128_000 });
+    expect(astra).toMatchObject({ api: "openai-codex-responses", baseUrl: "https://chatgpt.com/backend-api", reasoning: true, contextWindow: 272_000, maxTokens: 128_000 });
     expect(thinkingProfile(resolve("openai-codex", "gpt-6.1-sol"))).toMatchObject({ image: true, levels: expect.arrayContaining(["low", "high", "xhigh"]) });
   });
 });

@@ -23,6 +23,8 @@ export interface AgentLoop extends Pick<
     getBranch(): ReturnType<SessionManager["getBranch"]>;
   };
   flushPersistence?(): Promise<void>;
+  /** 这一轮发给模型的系统提示词（Pi 1.0 的 agent.state.systemPrompt 不再反映它）。 */
+  readonly systemPrompt: string;
   /**
    * 可重试的模型错误要不要在同一模型上重试；返回 false 时这一轮直接结束（willRetry=false），由外层换备用模型。
    * 只有扩展里的循环支持；本机 AgentSession 照旧按自己的重试设置。
@@ -93,6 +95,8 @@ class FailoverLoop implements AgentLoop {
   get sessionManager() { return this.inner.sessionManager; }
   flushPersistence() { return this.inner.flushPersistence?.() ?? Promise.resolve(); }
   get model() { return this.inner.model; }
+
+  get systemPrompt() { return this.inner.systemPrompt; }
   get sessionId() { return this.inner.sessionId; }
   get isStreaming() { return this.running || this.inner.isStreaming; }
 

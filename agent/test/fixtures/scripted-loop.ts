@@ -5,6 +5,7 @@
  */
 import { createAssistantMessageEventStream, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import type { ModelPort } from "../../src/agent-loop.js";
+import { seenByModel } from "./seen-by-model.js";
 
 export const PROBE_PATTERN = "probe/probe";
 
@@ -27,7 +28,8 @@ export function scriptedModels(replies: Array<(input: ScriptedInput) => Assistan
   const streamSimple: ModelPort["streamSimple"] = (_model, context) => {
     const stream = createAssistantMessageEventStream();
     // 只记模型可见的元数据：Pi 的工具对象还带执行函数，不能整份克隆。
-    const input: ScriptedInput = { systemPrompt: context.systemPrompt, tools: context.tools?.map(({ name, description }) => ({ name, description })), messages: structuredClone(context.messages) };
+    const seen = seenByModel(context);
+    const input: ScriptedInput = { systemPrompt: seen.systemPrompt, tools: seen.tools?.map(({ name, description }) => ({ name, description })), messages: structuredClone(seen.messages) };
     inputs.push(input);
     const content = replies.shift()?.(input) ?? (finalText === null ? [] : [{ type: "text" as const, text: finalText }]);
     const reply = assistantMessage(content, content.some(part => part.type === "toolCall") ? "toolUse" : "stop");

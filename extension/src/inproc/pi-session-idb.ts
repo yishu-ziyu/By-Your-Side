@@ -1,6 +1,6 @@
 /** Pi owns log format, sequencing, branch semantics and context recovery.
  * Its injected JSONL backend addresses virtual records in IndexedDB, not OS files. */
-import { FileError, JsonlSessionRepo, type JsonlSessionRepoFileSystem, type FileInfo } from '@earendil-works/pi-agent-core';
+import { FileError, JsonlSessionRepo, type JsonlSessionRepoFileSystem, type FileInfo } from 'pi-session-084';
 import { durableTransaction, readRequest } from '../shared/durable-store.js';
 
 type Item = { text: string; directory: boolean; modifiedAt: number };

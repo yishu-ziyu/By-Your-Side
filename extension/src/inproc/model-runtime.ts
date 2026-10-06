@@ -27,6 +27,8 @@ const unsupported = (name: string) => () => { throw new Error(`${name} 登录暂
 registerBundledOAuthFlowLoaders({
   kimiCoding: () => kimiCodingOAuth, githubCopilot: () => githubCopilotOAuth, xai: () => xaiOAuth, openaiCodex: () => openaiCodexOAuth,
   anthropic: unsupported("Claude 订阅"), openrouter: unsupported("OpenRouter"), radius: unsupported("Radius"),
+  // Pi 1.0 新增；两者都要本机回调服务。
+  openaiChatGPT: unsupported("ChatGPT（OpenAI 平台）"), meta: unsupported("Meta"),
 });
 
 /** 设备码登录能在浏览器里完成的服务商。Claude 订阅不接：Anthropic 不允许在第三方工具里使用。 */

@@ -7,7 +7,7 @@
  * - 指向过期任务的修订被拒绝，也不进入模型输入。
  *
  */
-import { InMemorySessionRepo } from "@earendil-works/pi-agent-core";
+import { InMemorySessionRepo } from "pi-session-084";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

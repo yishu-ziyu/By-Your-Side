@@ -66,9 +66,8 @@ describe("扩展形态的会话工具清单", () => {
       for (const name of ["artifacts", "browser_run", "js", "fetch", "download_url", "arm_event", "mark", "take_tab"]) expect(active).toContain(name);
 
       // 5. 系统提示词里没有分派助手的指令（本机对照见 program-save-file.test.ts 的本机用例）。
-      const state: { systemPrompt?: string; messages: unknown[] } = inner.agent.state;
-      expect(state.systemPrompt).toContain("You are By Your Side");
-      expect(state.systemPrompt).not.toMatch(/spawn_worker|Parallel workers|delegate/i);
+      expect(inner.systemPrompt).toContain("You are By Your Side");
+      expect(inner.systemPrompt).not.toMatch(/spawn_worker|Parallel workers|delegate/i);
 
       // 2. browser_run 描述与程序方法
       const run = inner.getToolDefinition("browser_run");

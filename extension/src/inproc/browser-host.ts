@@ -1,6 +1,6 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
 import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
-import type { Session } from "@earendil-works/pi-agent-core";
+import type { Session } from "pi-session-084";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import type { createModelRuntime, ModelRuntime } from "./model-runtime.js";

@@ -7,13 +7,15 @@
  *   before_agent_start 钩子只对本轮替换系统提示词 → 运行；
  * - 运行：每轮结束后可重试的错误按 2 次、0.5 秒起翻倍重试，再 continue；结束时写入暂存的自定义消息；
  * - sendCustomMessage 的五个分支、插话记账、agent_end 的 willRetry、auto_retry_start/end 事件；
- * - 切换工具时用 composeSystemPrompt 重建系统提示词（与 Pi 逐字一致，见 system-prompt.test.ts）。
+ * - 切换工具时用 composeSystemPrompt 重建系统提示词；Pi 1.0 起每次请求开头拼一条 system 消息带上它和工具清单。
  * 会话消息和任务检查点可交给Pi原生Session；扩展提供持久存储。
  */
-import { Agent, convertToLlm, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+// Pi 1.0 删掉了 convertToLlm（custom 消息转 user）；沿用 0.84.4 的实现。
+import { convertToLlm as legacyConvertToLlm } from "pi-session-084";
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import { firstEventTimeout } from "../../shared/model-capabilities.js";
 import { isTransientModelError } from "../../shared/provider-busy.js";
-import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -97,6 +99,8 @@ export class PiAgentLoop implements AgentLoop {
   private active: string[];
   private base = "";
   private override: string | undefined;
+  /** 这一轮的系统提示词。Pi 1.0 把提示词放进消息里的 system 消息；我们每次请求前重新拼一条，不写进会话记录。 */
+  systemPrompt = "";
   private steering: string[] = [];
   private followUps: string[] = [];
   private pendingCustom: CustomAppMessage[] = [];
@@ -137,7 +141,7 @@ export class PiAgentLoop implements AgentLoop {
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
 
-        return convertToLlm(messages);
+        return [this.systemMessage(), ...legacyMessages(messages.filter(message => message.role !== "system"))];
       },
       transformContext: async messages => {
         const explained = this.explainUnknownTools(messages);
@@ -192,7 +196,7 @@ export class PiAgentLoop implements AgentLoop {
     this.active = toolNames.filter(name => this.definitions.has(name));
     this.agent.state.tools = this.active.map(name => toAgentTool(this.definitions.get(name)!));
     this.base = composeSystemPrompt(this.options.systemPrompt, this.options.appendPrompt(), this.options.cwd);
-    this.agent.state.systemPrompt = this.override ?? this.base;
+    this.systemPrompt = this.override ?? this.base;
   }
 
   subscribe(listener: AgentSessionEventListener): () => void {
@@ -229,12 +233,14 @@ export class PiAgentLoop implements AgentLoop {
 
     const systemPrompt = this.hooks.has("before_agent_start") ? await this.hooks.beforeAgentStart(text, this.base) : this.base;
     this.override = systemPrompt === this.base ? undefined : systemPrompt;
-    this.agent.state.systemPrompt = systemPrompt;
+    this.systemPrompt = systemPrompt;
     await this.run(messages);
   }
 
-  async steer(text: string, images?: ImageContent[]): Promise<void> {
+  async steer(text: string, images?: ImageContent[]): Promise<"queued"> {
     this.queue("steer", text, images);
+
+    return "queued";
   }
 
   interruptText(): boolean {
@@ -381,7 +387,8 @@ export class PiAgentLoop implements AgentLoop {
       }
     }
 
-    if (event.type === "message_end") this.options.persistence?.appendMessage(event.message);
+    // Pi 1.0 自己会往记录里加 system 消息（宣告工具变化）；提示词每次请求重拼，不存。
+    if (event.type === "message_end" && event.message.role !== "system") this.options.persistence?.appendMessage(event.message);
 
     if(event.type === "agent_end" && this.options.persistence) {
       const end = {...event,willRetry:this.willRetry(event.messages)};
@@ -446,13 +453,20 @@ export class PiAgentLoop implements AgentLoop {
     if (!this.options.onModelRequest) return;
 
     try {
+      const system = context.messages.find(message => message.role === "system");
+
       this.options.onModelRequest({
-        systemPrompt: context.systemPrompt ?? "",
-        tools: (context.tools ?? []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, promptGuidelines: this.definitions.get(tool.name)?.promptGuidelines })),
-        messages: context.messages,
+        systemPrompt: this.systemPrompt,
+        tools: (system?.role === "system" ? system.toolsAdded ?? [] : []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, promptGuidelines: this.definitions.get(tool.name)?.promptGuidelines })),
+        messages: context.messages.filter(message => message.role !== "system"),
         injected: this.injected,
       });
     } catch { /* Diagnostics only. */ }
+  }
+
+  /** 每次请求开头的那条 system 消息：当前提示词加当前可用工具（与 0.84 每次请求带 systemPrompt、tools 一致）。 */
+  private systemMessage(): Message {
+    return { role: "system", timestamp: 0, content: this.systemPrompt, toolsAdded: this.agent.state.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) };
   }
 
   private emit(event: AgentSessionEvent): void {
@@ -570,4 +584,10 @@ function toAgentTool(definition: ToolDefinition): AgentTool {
     prepareArguments: definition.prepareArguments, executionMode: definition.executionMode,
     execute: (toolCallId, params, signal, onUpdate) => definition.execute(toolCallId, params as never, signal, onUpdate as never, undefined as never),
   } as AgentTool;
+}
+
+/** 0.84.4 与 1.0.4 的消息是同一份 JSON 结构，只是两套类型声明。 */
+function legacyMessages(messages: AgentMessage[]): Message[] {
+  // SAFETY: 见上；system 消息已在调用前去掉，其余角色两版字段相同。
+  return legacyConvertToLlm(messages as Parameters<typeof legacyConvertToLlm>[0]) as Message[];
 }
