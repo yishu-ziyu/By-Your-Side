@@ -1,6 +1,6 @@
 # 侧栏高保真原型：用户选定版（2026-10-06）
 
-这是设计参考，不是产品代码。实现交接写在 [#58 的交接评论](https://github.com/yishu-ziyu/By-Your-Side/issues/58)。
+这是设计参考，不是产品代码。实现交接写在 [#58 的交接评论](https://github.com/yishu-ziyu/By-Your-Side/issues/58#issuecomment-6011562876)。
 
 ## 用户的选择
 
