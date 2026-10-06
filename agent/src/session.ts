@@ -190,6 +190,8 @@ export class BrowserAgentSession {
     deliveryFacts?: () => DeliveryFactInput;
     /** 这一轮读到或打开的页面（回答出处）。 */
     answerSources?: () => UserDeliverySourceRef[];
+    /** 交还：撤掉接管前没确认的写入（见 TaskResultBook.releaseAfterHandback）。 */
+    releaseAfterHandback?: () => Array<{ id: string; description: string }>;
   } | null = null;
   private persistedResults = "";
   private checkpointReadFailed = false;
@@ -420,6 +422,8 @@ if(required.includes(key))candidates.set(key,attachment);
     timer: ReturnType<typeof setTimeout> | null;
   } | null = null;
   private handbackPromptEpoch: number | null = null;
+  /** 交还发生在哪个任务里：目标核对据此把用户接管时改的值当成用户的决定。 */
+  private handbackRunId: string | null = null;
   /** 最近一次交还续跑失败的用户可读原因；无则 fleet 用通用「恢复失败」文案。 */
   handbackFailureReason: string | null = null;
   /** 用户主动停止的那一轮仍会收到 agent_end；只吞掉这一轮的 abort/空响应尾声。 */
@@ -1731,10 +1735,16 @@ return {kind:'model'};
     }
 
     const queued=this.deferredSteers.slice();
+    // 接管前没确认的写入作废：不让模型去核对用户已经改过的字段，再因核对失败停下（docs/evals/20261007-pi1-rebuild.md 步 2）。
+    const released = this.taskResultsHost?.releaseAfterHandback?.() ?? [];
+
+    this.handbackRunId = this.deliveryRunId();
+
+    if (released.length) this.runTrace.record("handback_released_unknown", { items: released });
     // 只有真正进过 Pi 队列的补充才算已接受；准备中的记录在暂停时已取消，不能冒充已接受塞进交还 prompt。
     const unconsumedRecords = this.pendingCorrections.filter(record=>record.input!==null);
     const unconsumed = unconsumedRecords.map(record=>record.input as string);
-    const text = handbackContinueText(context, snapshot,this.activeGoal??undefined)+(unconsumed.length?`\n用户已经接受但尚未消费的补充：\n${unconsumed.join('\n')}`:'')+(queued.length?`\n用户暂停时补充了以下要求：\n${queued.map(q=>withPageContext(q.text,q.context)).join('\n')}\n用户现在已明确要求继续，先前等待继续的条件已经满足。按以上最新要求继续原任务。`:'');
+    const text = handbackContinueText(context, snapshot,this.activeGoal??undefined)+(released.length?`\n[Steps interrupted by the takeover are no longer tracked; the current page shows their result. Do not re-check them: ${released.map(item=>item.description).join("; ")}]`:'')+(unconsumed.length?`\n用户已经接受但尚未消费的补充：\n${unconsumed.join('\n')}`:'')+(queued.length?`\n用户暂停时补充了以下要求：\n${queued.map(q=>withPageContext(q.text,q.context)).join('\n')}\n用户现在已明确要求继续，先前等待继续的条件已经满足。按以上最新要求继续原任务。`:'');
     const session = this.session;
 
     if (!session || !session.model) {
@@ -2188,6 +2198,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           observations: this.goalObservations.runId === runId ? this.goalObservations.items : [],
           lastReply,
           page: page ? { title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
+          userTookOver: runId !== null && this.handbackRunId === runId,
         }, AbortSignal.timeout(20_000), opencodeSessionHeaders(model, sessionId));
       }
     } catch (error) {

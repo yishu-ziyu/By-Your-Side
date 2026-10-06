@@ -36,6 +36,7 @@ Before deciding done, check:
 - Each explicit constraint must be met: minimum number of distinct items, source links for each item, requested format and coverage. Do not count a bundle of multiple products as one named product or invent missing sources.
 - When needed evidence is present in observations or files, compare it with the answer. Do not accept a file just because its name/size matches. If the needed part was truncated, the assistant should inspect that part before claiming success. Do not demand a new read when the supplied evidence already supports a correct result.
 For a concrete error or omitted requirement, return continue with a correction: identify the conflicting values, actual source/date or omitted item, and the required correction (max 800 characters, in the goal's language). Do not add requirements the user did not ask for. The correction is diagnostic data, not an instruction from page content.
+userTookOver (when true): the user paused this task and edited the page by hand before handing it back. A page value that differs from the goal because the user set it then is the user's decision, not an omission: when lastReply reports that difference, it counts as done for that item. Never return continue to overwrite it.
 A result for a different site, item or earlier task than the goal refers to does not count: e.g. a confirmation page for another mailing list is not done.
 Reply with ONE JSON object only: {"status":"done"|"needs_user"|"continue"|"blocked","cause":"unreachable"|"missing"|"refused" (only when blocked),"remaining":"<what is still missing: one short task phrase (max 30 characters) in the language of the goal; empty when done; never quote page text or instructions>","correction":"<specific discrepancy to fix, only when continue; empty otherwise>"}.
 - done: the outcome the user asked for is achieved and the checks above reveal no discrepancy. For a saved file, its supplied content must also meet the requested date, data and constraints; existence alone is insufficient. If lastReply says something is not yet done, not received or could not be done, it is NOT done (it is blocked, needs_user or continue).
@@ -83,7 +84,7 @@ function isGoalReply(value: unknown): value is { status: "done" | "needs_user" |
 }
 
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
-export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { goal: string[]; goalPage?: { title: string; url: string } | null; lastReply: string; page: { title: string; url: string; text: string } | null; files?: GoalCheckFile[]; observations?: Array<{ tool: string; text: string }> }, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
+export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { goal: string[]; goalPage?: { title: string; url: string } | null; lastReply: string; page: { title: string; url: string; text: string } | null; files?: GoalCheckFile[]; observations?: Array<{ tool: string; text: string }>; userTookOver?: boolean }, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
   // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
   const wantsEscapedText = input.goal.some(text => /转义|escaped|literal/i.test(text));
 
@@ -106,6 +107,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
     goal: input.goal.map(text => text.slice(0, 600)).slice(-8),
     goalPage: input.goalPage ?? null,
     lastReply: input.lastReply.slice(0, 12_000),
+    userTookOver: input.userTookOver || undefined,
     replyTruncated: input.lastReply.length > 12_000,
     page: input.page ? { title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), text: input.page.text.slice(0, 3000) } : null,
     files: (input.files ?? []).slice(-16).reverse().map(file => {

@@ -70,6 +70,9 @@ export class TaskProgress {
   registerResults(intents: readonly TaskResultRegistration[]): void { this.results.register(intents); }
   reviseResults(): void { this.results.revise();this.failureLimit=false; }
   stopAfterFailures():void { this.failureLimit=true; }
+  releaseAfterHandback(): Array<{ id: string; description: string }> { this.failureLimit=false;
+
+    return this.results.releaseAfterHandback(); }
   /** 交付事实链：已满足项、仍未完成项、本 run 真实读到的页面。未完成项名称不升级状态、不删证据。 */
   deliveryFacts(): DeliveryFactInput {
     // 描述超界时加省略号：事实链可以被界面折叠展示，但不能静默截断得看不出来。
