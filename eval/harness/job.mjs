@@ -107,6 +107,15 @@ export function killLive() {
   LIVE.clear();
 }
 
+/** `{ladder}` in a task URL = the local ladder pages (ladder-sites.mjs), started by run.mjs. */
+const siteUrl = (url) => url.replace("{ladder}", process.env.BYS_LADDER_BASE ?? "{ladder}");
+
+/** Center of the first element matching `selector` (page coordinates for a mouse click). */
+const centerOf = (selector) => `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`;
+
+/** Each conversation in the panel menu with its state label (运行中 / 空闲 / …). */
+const CONVERSATIONS = `[...document.querySelectorAll("#conversation-menu [data-conversation-id]")].map((b) => ({ id: b.dataset.conversationId, title: b.title, state: b.lastElementChild?.textContent ?? "" }))`;
+
 export async function runJob({ task, model, outDir, capMs = 240000, log = () => {}, dryRun = false }) {
   mkdirSync(outDir, { recursive: true });
   const { launchRealPath, until, exportDiagnosticsViaSettings } = await driver();
@@ -159,7 +168,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     // --- task page ---
     rec.timestamps.page_open = iso(Date.now());
-    const navigation = await rp.cdp.send("Page.navigate", { url: task.site_url }, pageSid);
+    const navigation = await rp.cdp.send("Page.navigate", { url: siteUrl(task.site_url) }, pageSid);
     await until(async () => (await evalIn(pageSid, "document.readyState").catch(() => "")) === "complete", 45000, "page load").catch((e) => rec.errors.push(`page load: ${e.message}`));
     await rp.cdp.send("Page.bringToFront", {}, pageSid).catch(() => {});
     await sleep(1000);
@@ -212,7 +221,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     try {
       for (const step of task.setup_steps ?? []) {
         if (step.type === "open_tabs") {
-          for (const url of step.urls) {
+          for (const url of step.urls.map(siteUrl)) {
             const sid = await rp.attach((await rp.cdp.send("Target.createTarget", { url, background: true })).targetId);
             await until(() => evalIn(sid, "location.href !== 'about:blank' && document.readyState === 'complete'").catch(() => false), 45000, `tab load ${url}`).catch((e) => rec.errors.push(`setup: ${e.message}`));
             const landed = await evalIn(sid, "location.href + ' | ' + document.title").catch(() => "?");
@@ -272,6 +281,36 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     rec.timestamps.send = iso(rec._t0);
     await rp.pressEnter(inputSid);
 
+    // --- L7: a second task in a new foreground tab and a new conversation, while the first one runs ---
+    let pageB = null;
+
+    if (task.parallel) {
+      pageB = await rp.attach((await rp.cdp.send("Target.createTarget", { url: siteUrl(task.parallel.site_url) })).targetId);
+      await until(async () => (await evalIn(pageB, "document.readyState").catch(() => "")) === "complete", 45000, "parallel tab load").catch((e) => rec.errors.push(`parallel: ${e.message}`));
+      await rp.cdp.send("Page.bringToFront", {}, pageB);
+      await rp.click(ps, "#conversation-new");
+      await until(async () => evalIn(ps, "document.querySelector('#send-btn')?.disabled === false && !document.querySelector('#messages .msg.user')"), 30000, "new conversation");
+      await rp.click(ps, "#input");
+      await rp.typeText(ps, task.parallel.prompt);
+      await rp.pressEnter(ps);
+      rec.parallel = { site_url: task.parallel.site_url, prompt: task.parallel.prompt, sent_at: t(Date.now()) };
+    }
+
+    // --- L6: the user takes over once `takeover.when` holds on the page, edits one field, hands back ---
+    const takeover = async () => {
+      const at = Date.now();
+      await rp.click(ps, "#takeover-btn");
+      await until(async () => /已暂停/.test(await evalIn(ps, "document.querySelector('#task-bar-root')?.innerText ?? ''")), 10000, "paused");
+      const paused = Date.now();
+      const p = await evalIn(pageSid, centerOf(task.takeover.edit.selector));
+
+      for (const type of ["mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, ...p, button: "left", clickCount: 1 }, pageSid);
+      await evalIn(pageSid, `document.querySelector(${JSON.stringify(task.takeover.edit.selector)}).select()`);
+      await rp.typeText(pageSid, task.takeover.edit.value);
+      await rp.click(ps, "#takeover-btn");
+      rec.takeover = { at: t(at), paused_ms: paused - at, edited: task.takeover.edit, value_after_edit: await evalIn(pageSid, `document.querySelector(${JSON.stringify(task.takeover.edit.selector)}).value`) };
+    };
+
     // --- watch panel DOM + extension diagnostics ---
     const seen = new Set();
 
@@ -299,6 +338,11 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
         if (r && !["pending", "streaming"].includes(r.state)) { ended = now; break; }
 
         await sleep(300); continue;
+      }
+
+      if (task.takeover && !rec.takeover && await evalIn(pageSid, task.takeover.when).catch(() => false)) {
+        await takeover().catch((e) => { rec.takeover = { error: e.message }; rec.errors.push(`takeover: ${e.message}`); });
+        lastChange = Date.now();
       }
 
       snap = await evalIn(ps, PANEL_PROBE).catch((e) => ({ error: e.message }));
@@ -337,7 +381,8 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       if (sig !== lastSig) { lastSig = sig; lastChange = now; }
 
-      const idle = !snap.abortVisible && !snap.running && !snap.streaming;
+      const othersRunning = task.parallel && (await evalIn(ps, CONVERSATIONS).catch(() => [])).some((c) => c.state === "运行中");
+      const idle = !snap.abortVisible && !snap.running && !snap.streaming && !othersRunning;
       const answered = afterUser.some((m) => /assistant/.test(m.cls) && m.text);
 
       if (idle && visible && ((settled && answered && now - lastChange > 4000) || (answered && now - lastChange > 8000) || (settled && now - lastChange > 12000))) { ended = lastChange; break; }
@@ -372,6 +417,20 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       if (!rec.final_answer_verbatim && afterUser.length) rec.final_answer_verbatim = afterUser.map((m) => m.text).join("\n");
     }
 
+    if (task.parallel) {
+      const answers = [];
+
+      for (const c of await evalIn(ps, CONVERSATIONS).catch(() => [])) {
+        await evalIn(ps, `document.querySelector('#conversation-menu [data-conversation-id="${c.id}"]').click()`);
+        await sleep(1500);
+        const last = await evalIn(ps, "[...document.querySelectorAll('#messages .msg.assistant')].at(-1)?.innerText ?? ''");
+        answers.push(`【${c.title}】（${c.state}）\n${last}`);
+      }
+
+      rec.final_answer_verbatim = answers.join("\n\n");
+      rec.parallel.conversations = answers.length;
+    }
+
     if (selected) {
       const r = await evalIn(ps, READING_PROBE).catch(() => null);
       rec.reading = r;
@@ -391,6 +450,8 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.final_page_text = await Promise.race([
         evalIn(pageSid, `(()=>{const f=[...document.querySelectorAll('input,select,textarea')].filter(e=>e.type!=='hidden'&&e.type!=='password').slice(0,80).map(e=>(e.name||e.id||e.type)+'='+(e.type==='checkbox'||e.type==='radio'?e.checked:(e.tagName==='SELECT'?(e.selectedOptions[0]?.text??''):e.value))).join('; ');return (document.body?.innerText??'').slice(0,30000)+(f?'\\n[form fields] '+f:'')})()`),
         sleep(5000).then(() => null)]).catch(() => null);
+
+      if (pageB) rec.final_page_text = `[tab 1] ${rec.final_page_text ?? ""}\n\n[tab 2] ${await evalIn(pageB, "(document.body?.innerText ?? '').slice(0, 15000)").catch(() => "")}`;
     } catch (e) { rec.errors.push(`final page: ${e.message}`); }
 
     // screenshots: page + side panel side by side (what the judge prompt calls the window), and the panel alone
@@ -431,7 +492,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.errors.push(`trace export: ${e.message}`);
     }
 
-    if (exported) trace = exported;
+    if (exported?.length) trace = exported;
     rec.trace_counts = {};
 
     for (const e of trace) rec.trace_counts[e.type] = (rec.trace_counts[e.type] ?? 0) + 1;
