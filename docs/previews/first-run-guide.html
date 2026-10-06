@@ -1,0 +1,1426 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>首启引导 · 光球向导</title>
+<style>
+  :root {
+    --wallpaper: #f6f4ee;
+    --elevated: #fdfcf9;
+    --border: rgb(20 20 19 / .10);
+    --border-subtle: rgb(20 20 19 / .06);
+    --ink: #1c1b17;
+    --ink-2: #57534a;
+    --ink-3: #8a8375;
+    --ink-4: #b3ab9c;
+    --accent: #3c8a55;
+    --warn: #b54848;
+    --pill: 999px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #fbf9f4, transparent),
+      var(--wallpaper);
+    color: var(--ink);
+    font: 15px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── 舞台外层：说明与重播 ── */
+  .meta { display: flex; align-items: baseline; gap: 14px; }
+  .meta .cap { font-size: 12.5px; color: var(--ink-3); letter-spacing: .02em; }
+  .meta .cap b { color: var(--ink-2); font-weight: 600; }
+  .meta button {
+    border: 1px solid var(--border); background: var(--elevated); color: var(--ink-2);
+    font: 12px/1 inherit; padding: 6px 12px; border-radius: var(--pill); cursor: pointer;
+  }
+  .meta button:hover { color: var(--ink); border-color: rgb(20 20 19 / .28); }
+  .hint { font-size: 11.5px; color: var(--ink-4); }
+
+  /* ── 侧栏 ── */
+  .panel {
+    position: relative; width: 384px; height: 664px;
+    background: var(--wallpaper); border: 1px solid var(--border); border-radius: 24px;
+    box-shadow: 0 1px 2px rgb(20 20 19 / .04), 0 24px 64px -16px rgb(20 20 19 / .18);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; padding: 14px 20px;
+    border-bottom: 1px solid var(--border-subtle); font-size: 14px; font-weight: 600; flex: none;
+  }
+  .panel-head .icons { margin-left: auto; display: flex; gap: 12px; color: var(--ink-3); font-size: 13px; }
+  .panel-body { position: relative; flex: 1; padding: 0 28px; overflow: hidden; }
+
+  /* 进度点 */
+  .dots { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 7px; z-index: 3; }
+  .dots i {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--ink-4);
+    transition: background .3s;
+  }
+  .dots i.done { background: var(--ink-3); }
+  .dots i.cur { background: var(--ink); }
+
+  /* ── 步骤 ── */
+  .step {
+    position: absolute; inset: 0; padding: 64px 28px 24px;
+    display: flex; flex-direction: column;
+  }
+  .step.center { align-items: center; text-align: center; }
+  .step h1 { font-size: 24px; font-weight: 650; letter-spacing: .01em; line-height: 1.35; }
+  .step h2 { font-size: 20px; font-weight: 650; letter-spacing: .01em; line-height: 1.4; }
+  .step .sub { font-size: 13.5px; color: var(--ink-2); line-height: 1.7; margin-top: 6px; }
+  .rise { opacity: 0; will-change: transform, opacity; }
+
+  .orb-slot { flex: none; }
+
+  .btn {
+    border: none; cursor: pointer; font: 600 13.5px/1 inherit;
+    padding: 12px 24px; border-radius: var(--pill); width: fit-content;
+    transition: filter .15s ease;
+  }
+  .btn:hover { filter: brightness(1.06); }
+  .btn-primary { background: var(--ink); color: #fff; }
+  .btn-quiet { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  .btn-quiet:hover { border-color: rgb(20 20 19 / .3); filter: none; }
+
+  /* 服务商分段选择 */
+  .seg {
+    position: relative; display: flex; gap: 2px; margin-top: 26px;
+    background: rgb(20 20 19 / .05); border-radius: var(--pill); padding: 3px;
+  }
+  .seg .pill {
+    position: absolute; top: 3px; bottom: 3px; border-radius: var(--pill);
+    background: var(--elevated); box-shadow: 0 1px 4px rgb(20 20 19 / .14); z-index: 0;
+  }
+  .seg button {
+    position: relative; z-index: 1; flex: 1; border: none; background: none; cursor: pointer;
+    font: 500 12.5px/1 inherit; color: var(--ink-2); padding: 8px 4px; border-radius: var(--pill);
+    transition: color .2s;
+  }
+  .seg button.sel { color: var(--ink); font-weight: 600; }
+
+  .key-wrap { margin-top: 14px; position: relative; }
+  .key-wrap input {
+    width: 100%; font: 14px/1.5 inherit; color: var(--ink);
+    background: transparent; border: none; border-bottom: 1.5px solid var(--border);
+    padding: 10px 2px; outline: none; transition: border-color .25s;
+  }
+  .key-wrap input::placeholder { color: var(--ink-4); }
+  .key-wrap input:focus { border-bottom-color: var(--ink); }
+  .key-note { font-size: 11.5px; color: var(--ink-3); margin-top: 8px; }
+
+  .test-row { display: flex; align-items: center; gap: 12px; margin-top: 24px; min-height: 40px; }
+  .status { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); }
+  .status.ok { color: var(--accent); }
+  .status.err { color: var(--warn); }
+  .status svg { flex: none; }
+  .status svg path { stroke-dasharray: 24; stroke-dashoffset: 24; }
+  .status.ok svg path { animation: draw .4s ease-out forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  /* 第一步对话 chips */
+  .chips { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+  .chip {
+    border: 1px solid var(--border); background: var(--elevated); border-radius: 16px;
+    padding: 12px 16px; font: 13.5px/1.5 inherit; color: var(--ink); text-align: left;
+    cursor: pointer; transition: border-color .2s, transform .15s ease;
+  }
+  .chip:hover { border-color: rgb(20 20 19 / .3); transform: translateY(-1px); }
+  .chip .sub2 { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+
+  /* 对话 */
+  .convo { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+  .bubble {
+    align-self: flex-end; background: var(--elevated); border: 1px solid var(--border-subtle);
+    border-radius: 18px 18px 6px 18px; padding: 9px 15px; font-size: 13.5px; max-width: 85%;
+    box-shadow: 0 1px 3px rgb(20 20 19 / .05);
+  }
+  .reply { display: flex; gap: 10px; align-items: flex-start; }
+  .reply .text { font-size: 13.5px; line-height: 1.75; color: var(--ink); padding-top: 1px; }
+  .reply .text .ln { display: block; }
+  .reply .text .caret {
+    display: inline-block; width: 7px; height: 15px; background: var(--ink);
+    vertical-align: -2px; margin-left: 1px; animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .mem-line {
+    font-size: 11.5px; color: var(--ink-3); display: flex; align-items: center; gap: 4px;
+    margin-left: 30px; cursor: pointer;
+  }
+  .skip-btn {
+    margin-top: auto; align-self: center; border: none; background: none; cursor: pointer;
+    font: 12.5px/1 inherit; color: var(--ink-3); padding: 10px;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .skip-btn:hover { color: var(--ink); }
+
+  /* 手绘圈层 */
+  .sketch-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; }
+  .sketch-layer path { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-linecap: round; opacity: .85; }
+
+  /* 日常空状态（引导结束后） */
+  .daily { align-items: center; text-align: center; padding-top: 88px; gap: 22px; }
+  .daily .chips { margin-top: 0; align-items: center; }
+  .daily .chip { border-radius: var(--pill); padding: 9px 18px; font-size: 13px; color: var(--ink-2); }
+  .daily .arrow { font-size: 12px; color: var(--ink-3); }
+
+  .composer {
+    flex: none; margin: 14px; border: 1px solid var(--border); border-radius: 22px;
+    background: var(--elevated); padding: 13px 16px; color: var(--ink-4); font-size: 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    position: relative; z-index: 2;
+  }
+  .composer .ctext { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .composer .ctext.filled { color: var(--ink); }
+  .composer .send {
+    width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff;
+    display: grid; place-items: center; font-size: 14px; flex: none;
+  }
+  .composer.ring::after {
+    content: ""; position: absolute; inset: -1px; border-radius: 22px;
+    border: 1.5px solid var(--ink); opacity: 0;
+    animation: ringPulse 1.1s ease-out 2;
+  }
+  @keyframes ringPulse { 0% { opacity: .5; transform: scale(1); } 100% { opacity: 0; transform: scale(1.045); } }
+
+  /* 飞入输入框的 chip 残影 */
+  .ghost {
+    position: absolute; z-index: 6; pointer-events: none;
+    background: var(--elevated); border: 1px solid var(--border); border-radius: 14px;
+    padding: 8px 14px; font-size: 13px; color: var(--ink); box-shadow: 0 6px 18px rgb(20 20 19 / .12);
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="meta">
+  <span class="cap">首启引导 · 方案 A′ <b id="cap-step">到来</b></span>
+  <button id="replay" title="重播（R）">↻ 重播</button>
+</div>
+
+<div class="panel" id="panel">
+  <div class="panel-head">新会话 <span class="icons">✎ ▤ ⋯</span></div>
+  <div class="panel-body" id="body">
+    <div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
+
+    <!-- 0 · 到来 -->
+    <section class="step center" data-step="0">
+      <div class="orb-slot" id="slot-0" style="width:76px;height:76px;margin:36px 0 26px"></div>
+      <h1 class="rise">我是 By Your Side。</h1>
+      <p class="sub rise">在每一页旁边，帮你读、帮你做。<br>花 30 秒认识一下。</p>
+      <button class="btn btn-primary rise" data-act="next" style="margin-top:30px">开始</button>
+    </section>
+
+    <!-- 1 · 连模型 -->
+    <section class="step" data-step="1" hidden>
+      <div class="orb-slot" id="slot-1" style="width:34px;height:34px"></div>
+      <h2 class="rise" style="margin-top:14px">先给我接一个大脑。</h2>
+      <p class="sub rise">选一个服务商，粘贴它的 API key。</p>
+      <div class="seg rise" id="seg">
+        <span class="pill" id="seg-pill"></span>
+        <button class="sel">Kimi</button>
+        <button>DeepSeek</button>
+        <button>自定义</button>
+      </div>
+      <div class="key-wrap rise" id="url-wrap" hidden>
+        <input id="base-url" type="text" placeholder="服务地址，如 https://api.example.com/v1" autocomplete="off">
+      </div>
+      <div class="key-wrap rise">
+        <input id="key" type="password" placeholder="粘贴 API key" autocomplete="off">
+        <div class="key-note">key 只存在这台电脑，不会上传。</div>
+      </div>
+      <div class="test-row rise">
+        <button class="btn btn-quiet" id="test">测试连接</button>
+        <span class="status" id="status"></span>
+      </div>
+      <button class="btn btn-primary rise" data-act="next" id="cont-1" hidden style="margin-top:14px">继续 →</button>
+      <button class="skip-btn rise" data-act="next">先跳过，随便看看 →</button>
+    </section>
+
+    <!-- 2 · 第一次对话 -->
+    <section class="step" data-step="2" hidden>
+      <h2 class="rise">试一句。</h2>
+      <div class="chips" id="chips">
+        <button class="chip rise" data-q="概括这一页，给我三个要点">概括这一页，给我三个要点</button>
+        <button class="chip rise" data-q="这一页有什么值得记住的？">这一页有什么值得记住的？<span class="sub2">存下来的东西，以后我都记得</span></button>
+        <button class="chip rise" data-q="帮我看看这个表单怎么填">帮我看看这个表单怎么填</button>
+      </div>
+      <div class="convo" id="convo"></div>
+      <button class="btn btn-primary rise" data-act="next" id="cont-2" hidden style="margin-top:18px;align-self:flex-end">继续 →</button>
+    </section>
+
+    <!-- 3 · 交付 -->
+    <section class="step center" data-step="3" hidden>
+      <div class="orb-slot" id="slot-3" style="width:64px;height:64px;margin:52px 0 24px"></div>
+      <h2 class="rise">以后我就在旁边。</h2>
+      <p class="sub rise">任何一页，想让我看一眼，直接说。</p>
+      <button class="btn btn-primary rise" data-act="finish" style="margin-top:30px">开始用</button>
+    </section>
+
+    <!-- 4 · 日常空状态 -->
+    <section class="step center daily" data-step="4" hidden>
+      <div class="orb-slot" id="slot-4" style="width:56px;height:56px"></div>
+      <div class="chips">
+        <button class="chip rise">概括当前页，给我三个要点</button>
+        <button class="chip rise">这页有什么值得存下来的？</button>
+      </div>
+      <span class="arrow rise">或者，直接从下面开始 ↓</span>
+    </section>
+
+    <!-- 唯一的真光球 -->
+    <div id="orb" style="position:absolute;left:0;top:0;z-index:2;pointer-events:none"></div>
+    <svg class="sketch-layer" id="sketch"></svg>
+  </div>
+  <div class="composer" id="composer">
+    <span class="ctext" id="ctext">说说你想完成什么…</span>
+    <span class="send">↑</span>
+  </div>
+</div>
+
+<span class="hint">点面板里的按钮推进 · 按 R 重播</span>
+
+<script>/**
+ * thinking-orbs v0.3.1 — 从 npm 包 dist/engine.es.js 原样拷入，未做任何修改。
+ *
+ * MIT License, Copyright (c) 2026 Jakub Antalik
+ * https://www.npmjs.com/package/thinking-orbs
+ *
+ * 许可全文见同目录 thinking-orbs.LICENSE。本文件由 npm 包 dist/engine.es.js 原样拷入，
+ * 升级时直接替换即可；不要在这里手改几何——要调的是外面 orb.ts 的取帧与上色。
+ */
+function U(n, s, t) {
+  return n + (s - n) * t;
+}
+
+function nt(n) {
+  return n - Math.floor(n);
+}
+
+function G(n, s) {
+  const t = Math.floor(n), r = Math.floor(s);
+  let a = n - t, o = s - r;
+  a = a * a * (3 - 2 * a);
+  o = o * o * (3 - 2 * o);
+  const c = E(t, r), M = E(t + 1, r), h = E(t, r + 1), m = E(t + 1, r + 1);
+
+  return c + (M - c) * a + (h - c) * o + (c - M - h + m) * a * o;
+}
+
+function E(n, s) {
+  const t = Math.sin(n * 12.9898 + s * 78.233) * 43758.5453;
+
+  return t - Math.floor(t);
+}
+
+function J(n, s) {
+  const t = Math.PI * (3 - Math.sqrt(5)), r = 1 - 2 * (n + 0.5) / s, a = Math.sqrt(1 - r * r), o = n * t;
+
+  return [a * Math.cos(o), r, a * Math.sin(o)];
+}
+
+function et(n, s) {
+  return Math.atan2(Math.sin(n - s), Math.cos(n - s));
+}
+
+function _(n, s, t, r, a) {
+  const o = Math.sin(s), c = Math.cos(s), M = Math.sin(n), h = Math.cos(n);
+
+  return (m, D, p) => {
+    const e = m * h + p * M, l = -m * M + p * h, R = D * c - l * o, w = D * o + l * c;
+
+    return [t + e * a, r - R * a, w];
+  };
+}
+
+function rt(n, s, t, _r = 0.3) {
+  for (const a of s) {
+    const o = a.a ?? 1, c = Math.min(1, Math.max(0, a.white)), M = Math.round((t ? 1 - c : c) * 255);
+
+    n.fillStyle = `rgba(${M},${M},${M},${o})`;
+    n.beginPath();
+    n.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+    n.fill();
+  }
+}
+
+function it(n, s, t) {
+  for (const r of s) {
+    const a = r.a ?? 1, o = Math.min(1, Math.max(0, r.white)), c = Math.round((t ? 1 - o : o) * 255);
+
+    n.strokeStyle = `rgba(${c},${c},${c},${a})`;
+    n.lineWidth = r.w;
+    n.beginPath();
+    n.moveTo(r.x1, r.y1);
+    n.lineTo(r.x2, r.y2);
+    n.stroke();
+  }
+}
+
+function L(n, s, t = 0.3) {
+  const r = [];
+
+  for (const a of n) {
+    if (!((a.a ?? 1) < 0.02)) {
+      a.r = Math.max(t, a.r);
+      r.push(a);
+    }
+  }
+
+  return r.sort((a, o) => a.z - o.z), { dots: r, lines: s.filter((a) => (a.a ?? 1) >= 0.02) };
+}
+
+function ht(n, s, t) {
+  if (s.lines.length) it(n, s.lines, t);
+
+  rt(n, s.dots, t);
+}
+
+function $(n, s) {
+  return (n / 300) ** s;
+}
+
+const Mt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.76, c = _(s * 0.4, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.ghostN ?? 150;
+
+  for (let e = 0; e < m; e++) {
+    const l = J(e, m), [R, w, i] = c(l[0] * o, l[1] * o, l[2] * o), u = (i / o + 1) / 2;
+    h.push({ x: R, y: w, z: i, r: 0.8 * M, white: 0.78, a: 0.1 + 0.22 * u });
+  }
+
+  const D = t.strandN ?? 52, p = t.turns ?? 3;
+
+  for (let e = 0; e < 3; e++) {
+    const l = e / 3 * 2 * Math.PI;
+
+    for (let R = 0; R < D; R++) {
+      const w = (nt(R / D + s * 0.045) * 2 - 1) * 0.96, i = Math.sqrt(Math.max(0, 1 - w * w)), u = Math.min(1, (1 - Math.abs(w)) / 0.1), y = w * Math.PI * p + l, b = 1 + 0.075 * Math.sin(w * Math.PI * p * 2 + l * 2 + s * 0.8), f = i * o * b, [P, x, g] = c(Math.cos(y) * f, w * o * b, Math.sin(y) * f), d = (g / o + 1) / 2;
+      h.push({
+        x: P,
+        y: x,
+        z: g,
+        r: ((t.rBase ?? 1.2) + (t.rDepth ?? 1.8) * d) * M,
+        white: 0.55 - 0.45 * d,
+        a: u * (0.45 + 0.55 * d)
+      });
+    }
+  }
+
+  return L(h, [], t.rMin);
+};
+
+function lt(n, s, t, r) {
+  const a = 2 * s * t + r, o = n % a, c = Array.from({ length: s }, () => 0);
+  let M = -1;
+
+  if (o < 2 * s * t) {
+    const h = Math.floor(o / t), m = (o - h * t) / t, p = 1 - (1 - Math.min(1, m / 0.7)) ** 3;
+
+    if (h < s) {
+      for (let e = 0; e < h; e++) c[e] = 1;
+      c[h] = p;
+      M = h;
+    } else {
+      const e = 2 * s - 1 - h;
+
+      for (let l = 0; l < e; l++) c[l] = 1;
+      c[e] = 1 - p;
+      M = e;
+    }
+  }
+
+  return { amount: c, active: M };
+}
+
+function pt(n, s, t) {
+  let [r, a, o] = n, c = !1;
+
+  for (let M = 0; M < s.length; M++) {
+    if (t.amount[M] <= 0) continue;
+    const h = s[M], m = h.axis === 0 ? r : h.axis === 1 ? a : o;
+
+    if (m < h.lo || m >= h.hi) continue;
+
+    if (M === t.active) c = !0;
+    const D = h.ang * t.amount[M], p = Math.cos(D), e = Math.sin(D);
+
+    if (h.axis === 0) {
+      const l = a * p - o * e;
+      o = a * e + o * p;
+      a = l;
+    } else if (h.axis === 1) {
+      const l = r * p + o * e;
+      o = -r * e + o * p;
+      r = l;
+    } else {
+      const l = r * p - a * e;
+      a = r * e + a * p;
+      r = l;
+    }
+  }
+
+  return [r, a, o, c];
+}
+
+function ut(n) {
+  const s = [];
+
+  for (let t = 0; t < n; t++) {
+    const r = Math.min(2, Math.floor(E(t, 2.3) * 3)), a = -1 + 0.5 * Math.min(3, Math.floor(E(t, 5.9) * 4)), o = E(t, 7.7) < 0.5 ? 1 : -1;
+    s.push({ axis: r, lo: a, hi: a + 0.5, ang: o * Math.PI / 2 });
+  }
+
+  return s;
+}
+
+const ft = (n, s, t) => {
+  const a = n / 2, o = n / 2, c = n / 2 * 0.82, M = 0.4 + 0.06 * Math.sin(s * 0.35), h = _(s * 0.5, M, a, o, c), m = s * (0.5 + (1.7 - 0.5) * (t.scanMul ?? 1)), D = $(n, t.rsPow ?? 0.6), p = t.dimBase ?? 1, e = [], l = t.latRings ?? 17, R = t.lonDensity ?? 44;
+
+  for (let w = 0; w <= l; w++) {
+    const i = -Math.PI / 2 + w / l * Math.PI, u = Math.cos(i), y = Math.sin(i), b = Math.max(1, Math.round(Math.abs(u) * R));
+
+    for (let f = 0; f < b; f++) {
+      const P = f / b * 2 * Math.PI, [x, g, d] = h(u * Math.cos(P), y, u * Math.sin(P)), v = (d + 1) / 2, k = et(P + s * 0.5, m), N = Math.exp(-(k * k) / 0.18) * Math.max(0, d);
+      e.push({
+        x,
+        y: g,
+        z: d,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * v + (t.rBoost ?? 1) * N) * D,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * v,
+        // dimBase < 1 fades un-scanned dots so the meridian reads clearly
+        a: p + (1 - p) * Math.min(1, N)
+      });
+    }
+  }
+
+  return L(e, [], t.rMin);
+}, dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.55, 0.35 + 0.1 * Math.sin(s * 0.9), r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.moveCount ?? 14, m = ut(h), D = lt(s, h, 0.42, 1.2), p = [], e = t.latRings ?? 15, l = t.lonDensity ?? 40;
+
+  for (let R = 0; R <= e; R++) {
+    const w = -Math.PI / 2 + R / e * Math.PI, i = Math.cos(w), u = Math.sin(w), y = Math.max(1, Math.round(Math.abs(i) * l));
+
+    for (let b = 0; b < y; b++) {
+      const f = b / y * 2 * Math.PI, [P, x, g, d] = pt([i * Math.cos(f), u, i * Math.sin(f)], m, D), [v, k, N] = c(P, x, g), z = (N + 1) / 2;
+      p.push({
+        x: v,
+        y: k,
+        z: N,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * z + (d ? t.rActive ?? 0.3 : 0)) * M,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * z - (d ? 0.14 : 0)
+      });
+    }
+  }
+
+  return L(p, [], t.rMin);
+}, bt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.874, c = _(s * 0.18, 0.38, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.rings ?? 15, D = t.lonDensity ?? 40;
+
+  for (let p = 0; p <= m; p++) {
+    const e = -Math.PI / 2 + p / m * Math.PI, l = Math.cos(e), R = Math.sin(e), w = 0.62 * Math.sin(s * 2.1 - p * 0.52) + 0.38 * Math.sin(s * 1.27 + p * 0.83), i = o * (0.88 + 0.105 * w), u = Math.max(1, Math.round(Math.abs(l) * D));
+
+    for (let y = 0; y < u; y++) {
+      const b = y / u * 2 * Math.PI, [f, P, x] = c(l * Math.cos(b) * i, R * i, l * Math.sin(b) * i), g = (x / o + 1) / 2, d = Math.max(0, w);
+      h.push({
+        x: f,
+        y: P,
+        z: x,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * g) * (1 + 0.4 * d) * M,
+        white: 0.66 - 0.56 * g - 0.1 * d
+      });
+    }
+  }
+
+  return L(h, [], t.rMin);
+};
+
+function xt(n) {
+  return n * n * (3 - 2 * n);
+}
+
+function st(n) {
+  const s = n.length, t = [];
+  let r = 0;
+
+  for (let a = 0; a < s; a++) {
+    const o = n[a], c = n[(a + 1) % s], M = Math.hypot(c[0] - o[0], c[1] - o[1]);
+    t.push(M);
+    r += M;
+  }
+
+  return (a) => {
+    let o = a * r, c = 0;
+
+    for (; o > t[c] && c < s - 1; ) {
+      o -= t[c];
+      c++;
+    }
+
+    const M = n[c], h = n[(c + 1) % s], m = t[c] ? Math.min(1, o / t[c]) : 0;
+
+    return [M[0] + (h[0] - M[0]) * m, M[1] + (h[1] - M[1]) * m];
+  };
+}
+
+const yt = (n) => {
+  const s = -Math.PI / 2 + n * 2 * Math.PI;
+
+  return [Math.cos(s) * 0.24, Math.sin(s) * 0.24];
+}, gt = st([
+  [0, -0.26],
+  [0.24, 0.16],
+  [-0.24, 0.16]
+]), mt = st([
+  [0, -0.2],
+  [0.2, -0.2],
+  [0.2, 0.2],
+  [-0.2, 0.2],
+  [-0.2, -0.2]
+]), H = [yt, gt, mt];
+
+function wt(n) {
+  return Math.max(6, Math.round(34 * n));
+}
+
+const V = 1.4, ot = 0.9, Q = V + ot, Pt = (n, s, t) => {
+  const r = H.length, a = s % (Q * r), o = Math.floor(a / Q), c = a - o * Q, M = c > V ? xt((c - V) / ot) : 0, h = t.spread ?? 1, m = H[o], D = H[(o + 1) % r], p = 160, e = [];
+
+  for (let x = 0; x < p; x++) {
+    const g = x / p, d = m(g), v = D(g);
+    e.push([(d[0] + (v[0] - d[0]) * M) * h, (d[1] + (v[1] - d[1]) * M) * h]);
+  }
+
+  const l = [];
+  let R = 0;
+
+  for (let x = 0; x < p; x++) {
+    const g = e[x], d = e[(x + 1) % p], v = Math.hypot(d[0] - g[0], d[1] - g[1]);
+    l.push(v);
+    R += v;
+  }
+
+  const w = wt(t.iconD ?? 1), i = (t.rDot ?? 0.021) * 1.35 * h, u = 1 + 0.02 * Math.sin(c * 3.1), y = [], b = n / 2;
+  let f = 0, P = 0;
+
+  for (let x = 0; x < w; x++) {
+    const g = x / w * R;
+
+    for (; P + l[f] < g && f < p - 1; ) {
+      P += l[f];
+      f++;
+    }
+
+    const d = e[f], v = e[(f + 1) % p], k = l[f] ? Math.min(1, (g - P) / l[f]) : 0, N = (d[0] + (v[0] - d[0]) * k) * u, z = (d[1] + (v[1] - d[1]) * k) * u;
+    y.push({
+      x: b + N * n,
+      y: b + z * n,
+      z: 0,
+      r: Math.max(0.35, i * n),
+      white: 0.1
+    });
+  }
+
+  return L(y, [], t.rMin);
+}, Rt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.12, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.orbitN ?? 12, D = t.ghostN ?? 40, p = t.particles ?? 3;
+
+  for (let e = 0; e < m; e++) {
+    const l = E(e, 1.7), R = E(e, 5.2), w = E(e, 8.9), i = o * (0.45 + 0.52 * l), u = l * 2 * Math.PI, y = Math.acos(2 * R - 1), b = Math.sin(y) * Math.cos(u), f = Math.cos(y), P = Math.sin(y) * Math.sin(u);
+    let x = -f, g = b;
+    const d = 0, v = Math.max(1e-6, Math.sqrt(x * x + g * g));
+    x /= v;
+    g /= v;
+    const k = f * d - P * g, N = P * x - b * d, z = b * g - f * x, O = (0.25 + 0.55 * w) * (w > 0.5 ? 1 : -1);
+
+    for (let B = 0; B < D; B++) {
+      const I = B / D * 2 * Math.PI, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: (t.ghostR ?? 0.9) * M,
+        white: 0.72,
+        a: (t.ghostA ?? 0.5) * (0.4 + 0.6 * C)
+      });
+    }
+
+    for (let B = 0; B < p; B++) {
+      const I = s * O + B / p * 2 * Math.PI + R * 6, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: ((t.partR ?? 1.2) + (t.partRDepth ?? 1.6) * C) * M,
+        white: 0.3 - 0.22 * C
+      });
+    }
+  }
+
+  return L(h, [], t.rMin);
+}, Z = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.78, c = t.spin ?? 1, M = 0.3, h = _(s * 0.1 * c, M, r, a, 1), m = $(n, t.rsPow ?? 0.6), D = [], p = t.ghostN ?? 150;
+
+  for (let z = 0; z < p; z++) {
+    const O = J(z, p), [B, I, S] = h(O[0] * o, O[1] * o, O[2] * o), A = (S / o + 1) / 2;
+    D.push({ x: B, y: I, z: S, r: 0.8 * m, white: 0.78, a: 0.1 + 0.22 * A });
+  }
+
+  const e = s * 0.24 * c, l = t.faceOn ? -M : 0.55 + 0.3 * Math.sin(s * 0.18) * c, R = Math.cos(e), w = 0, i = Math.sin(e), u = -i * Math.sin(l), y = Math.cos(l), b = R * Math.sin(l), f = w * b - i * y, P = i * u - R * b, x = R * y - w * u, g = 0.23 * (t.wobMul ?? 1), d = t.faceOn ? o / (1 + 0.85 * g) : o, v = t.lanes ?? 5, k = t.segs ?? 88, N = Math.max(1, Math.round(v * (t.bandMul ?? 1)));
+
+  for (let z = 0; z < N; z++) {
+    const O = (z - (N - 1) / 2) * 0.075, B = Math.abs(z - (N - 1) / 2) / Math.max(1, (N - 1) / 2);
+
+    for (let I = 0; I < k; I++) {
+      const S = I / k * 2 * Math.PI, A = (0.16 * Math.sin(S * 3 - s * 1.7 + z * 0.22) + 0.07 * Math.sin(S * 5 + s * 1.1)) * (t.wobMul ?? 1), T = t.faceOn ? 1 + A : 1, C = t.faceOn ? O : O + A, q = R * Math.cos(S) + u * Math.sin(S) + f * C, F = w * Math.cos(S) + y * Math.sin(S) + P * C, j = i * Math.cos(S) + b * Math.sin(S) + x * C, W = Math.sqrt(q * q + F * F + j * j), Y = d * T, [ct, at, X] = h(q / W * Y, F / W * Y, j / W * Y), K = (X / o + 1) / 2;
+      D.push({
+        x: ct,
+        y: at,
+        z: X,
+        r: ((t.rBase ?? 1.1) + (t.rDepth ?? 1.7) * K) * (1 - 0.25 * B) * m,
+        white: 0.52 - 0.44 * K + 0.18 * B,
+        a: 0.4 + 0.6 * K
+      });
+    }
+  }
+
+  return L(D, [], t.rMin);
+}, Dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.8 * (t.spread ?? 1), c = _(s * 0.12, 0.32, r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.nodeN ?? 30, m = t.thr ?? 0.72, D = t.nodeR ?? 1.4, p = t.nodeRDepth ?? 1.8, e = [];
+
+  for (let i = 0; i < h; i++) {
+    const u = J(i, h), y = u[0] + 0.3 * (G(i * 0.31 + 9, s * 0.24) - 0.5) * 2, b = u[1] + 0.3 * (G(i * 0.53 + 27, s * 0.21) - 0.5) * 2, f = u[2] + 0.3 * (G(i * 0.77 + 55, s * 0.27) - 0.5) * 2, P = Math.sqrt(y * y + b * b + f * f);
+    e.push([y / P, b / P, f / P]);
+  }
+
+  const l = [], R = [];
+
+  for (let i = 0; i < h; i++)
+    for (let u = i + 1; u < h; u++) {
+      const y = e[i][0] - e[u][0], b = e[i][1] - e[u][1], f = e[i][2] - e[u][2], P = Math.sqrt(y * y + b * b + f * f);
+
+      if (P >= m) continue;
+      const [x, g, d] = c(e[i][0], e[i][1], e[i][2]), [v, k, N] = c(e[u][0], e[u][1], e[u][2]), z = ((d + N) / 2 + 1) / 2;
+      l.push({
+        x1: x,
+        y1: g,
+        x2: v,
+        y2: k,
+        white: 0.42,
+        a: (1 - P / m) * (0.3 + 0.55 * z),
+        w: Math.max(0.6, (t.lineW ?? 0.8) * M)
+      });
+    }
+
+  for (let i = 0; i < h; i++) {
+    const [u, y, b] = c(e[i][0], e[i][1], e[i][2]), f = (b + 1) / 2, P = 1 + 0.25 * Math.sin(s * 1.4 + i * 2.7);
+    R.push({
+      x: u,
+      y,
+      z: b,
+      r: (D + p * f) * P * M,
+      white: 0.55 - 0.45 * f
+    });
+  }
+
+  const w = t.signals ?? 5;
+
+  for (let i = 0; i < w; i++) {
+    const u = Math.floor(s * 0.55 + i * 7.31), y = Math.floor(E(u, i * 3.1 + 1.7) * h), b = Math.floor(E(u, i * 5.7 + 4.2) * h);
+
+    if (y === b) continue;
+    const f = nt(s * 0.55 + i * 7.31), P = U(e[y][0], e[b][0], f), x = U(e[y][1], e[b][1], f), g = U(e[y][2], e[b][2], f), d = Math.max(1e-6, Math.sqrt(P * P + x * x + g * g)), [v, k, N] = c(P / d, x / d, g / d), z = (N + 1) / 2;
+    R.push({
+      x: v,
+      y: k,
+      z: N,
+      r: (D * 1.5 + p * z) * M,
+      white: 0.05,
+      a: 0.5 + 0.5 * z
+    });
+  }
+
+  return L(R, l, t.rMin);
+}, vt = {
+  orbits: Rt,
+  globe: ft,
+  rubik: dt,
+  wave: bt,
+  web: Dt,
+  braid: Mt,
+  ribbon: Z,
+  // ring shares ribbon's geometry — the `faceOn` profile flag switches it
+  ring: Z,
+  morph: Pt
+}, Ct = Object.fromEntries(
+  Object.entries(vt).map(([n, s]) => [
+    n,
+    (t, r, a, o, c) => ht(t, s(r, a, c), o)
+  ])
+), zt = [
+  ["latRings", "lonDensity"],
+  ["rings", "lonDensity"],
+  ["lanes", "segs"]
+], Nt = ["orbitN", "ghostN", "nodeN", "strandN", "signals"], It = ["iconD"], kt = [
+  "rBase",
+  "rDepth",
+  "rActive",
+  "rDot",
+  "ghostR",
+  "partR",
+  "partRDepth",
+  "nodeR",
+  "nodeRDepth"
+];
+
+function St(n, s) {
+  const t = { ...n }, r = /* @__PURE__ */ new Set(), a = Math.sqrt(s);
+
+  for (const [o, c] of zt) {
+    const M = t[o], h = t[c];
+
+    if (M != null && h != null && !r.has(o) && !r.has(c)) {
+      t[o] = Math.max(2, Math.round(M * a));
+      t[c] = Math.max(2, Math.round(h * a));
+      r.add(o);
+      r.add(c);
+    }
+  }
+
+  for (const o of Nt) {
+    const c = t[o];
+
+    if (c != null && c !== 0 && !r.has(o)) t[o] = Math.max(1, Math.round(c * s));
+  }
+
+  for (const o of It) {
+    const c = t[o];
+
+    if (c != null) t[o] = Math.max(0.02, c * s);
+  }
+
+  return t;
+}
+
+function Bt(n, s) {
+  const t = { ...n };
+
+  for (const r of kt) {
+    const a = t[r];
+
+    if (a != null) t[r] = a * s;
+  }
+
+  return t.rSizeMul = (t.rSizeMul ?? 1) * s, t;
+}
+
+const Et = {
+  globe: {
+    latRings: 17,
+    lonDensity: 44,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rBoost: 1,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  orbits: {
+    orbitN: 12,
+    ghostN: 40,
+    ghostR: 0.9,
+    ghostA: 0.5,
+    particles: 3,
+    partR: 1.2,
+    partRDepth: 1.6,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  rubik: {
+    latRings: 15,
+    lonDensity: 40,
+    moveCount: 14,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rActive: 0.3,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  wave: {
+    rings: 15,
+    lonDensity: 40,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  web: {
+    nodeN: 30,
+    thr: 0.72,
+    signals: 5,
+    nodeR: 1.4,
+    nodeRDepth: 1.8,
+    lineW: 0.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  braid: {
+    strandN: 52,
+    turns: 3,
+    ghostN: 150,
+    rBase: 1.2,
+    rDepth: 1.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  ribbon: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 150,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  // ring shares ribbon's painter; faceOn cancels the camera tilt and moves
+  // the undulation onto the radius, and there is no ghost sphere behind it
+  ring: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 0,
+    faceOn: 1,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  morph: {
+    rDot: 0.021,
+    iconD: 1,
+    rMin: 0.25
+  }
+}, Ot = {
+  working: "orbits",
+  searching: "globe",
+  solving: "rubik",
+  listening: "wave",
+  connecting: "web",
+  weaving: "braid",
+  composing: "ribbon",
+  breathing: "ring",
+  shaping: "morph"
+}, At = {
+  orbits: {
+    64: { speed: 1.885, count: 1, size: 1 },
+    20: { speed: 3.9, count: 0.238, size: 2.4 }
+  },
+  globe: {
+    64: { speed: 2.015, count: 0.42, size: 1.15, extra: { scanMul: 4.08, dimBase: 0.45 } },
+    20: { speed: 2.665, count: 0.105, size: 1.75, extra: { scanMul: 4.335, dimBase: 0.45 } }
+  },
+  rubik: {
+    64: { speed: 1.82, count: 0.35, size: 1.05 },
+    20: { speed: 1.95, count: 0.088, size: 1.9 }
+  },
+  wave: {
+    64: { speed: 4.388, count: 0.341, size: 1 },
+    20: { speed: 3.998, count: 0.105, size: 1.6 }
+  },
+  web: {
+    64: { speed: 3.315, count: 1.35, size: 0.95 },
+    20: { speed: 6.63, count: 0.25, size: 1.52 }
+  },
+  braid: {
+    64: { speed: 1.625, count: 0.5, size: 1 },
+    20: { speed: 2.75, count: 0.1125, size: 1.36 }
+  },
+  ribbon: {
+    64: { speed: 2.34, count: 0.25, size: 0.85, extra: { spin: 0, bandMul: 3.9, wobMul: 1 } },
+    20: { speed: 3.12, count: 0.051, size: 1.073, extra: { spin: 0, bandMul: 4.94, wobMul: 1 } }
+  },
+  ring: {
+    64: { speed: 3.24, count: 0.25, size: 0.956, extra: { spin: 0, bandMul: 3.627, wobMul: 0.368 } },
+    20: { speed: 3.78, count: 0.028, size: 1.622, extra: { spin: 0, bandMul: 3.968, wobMul: 0.565 } }
+  },
+  morph: {
+    64: { speed: 2.405, count: 0.702, size: 0.395, extra: { spread: 1.45 } },
+    20: { speed: 2.08, count: 0.53, size: 1.011, extra: { spread: 1.45 } }
+  }
+}, tt = /* @__PURE__ */ new Map();
+
+function Lt(n, s) {
+  const t = `${n}-${s}`, r = tt.get(t);
+
+  if (r) return r;
+  const a = Ot[n], o = At[a][s];
+  let c = { ...Et[a] };
+
+  if (o.count !== 1) c = St(c, o.count);
+
+  if (o.size !== 1) c = Bt(c, o.size);
+
+  if (o.extra) c = { ...c, ...o.extra };
+  const M = { mode: a, speed: o.speed, opts: c };
+
+  return tt.set(t, M), M;
+}
+
+
+window.__orbs = { MODE_FRAMES: vt, resolvePreset: Lt };
+</script>
+<script>
+"use strict";
+const { MODE_FRAMES, resolvePreset } = window.__orbs;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const GEOM = 20, STILL_T = 0.6;
+
+/* ═══ 弹簧（与 extension/src/shared/cursor-path.ts 同一组参数思路：ζ≈0.72 欠阻尼） ═══ */
+function spring({ ms = 450, zeta = 0.72, from = 0, to = 1, onUpdate }) {
+  return new Promise((resolve) => {
+    if (reduced) { onUpdate(to); resolve(); return; }
+    const wn = 4 / (zeta * (ms / 1000));
+    let s = from, v = 0, last = performance.now();
+    (function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      v += (-wn * wn * (s - to) - 2 * zeta * wn * v) * dt;
+      s += v * dt;
+      onUpdate(s);
+      if (Math.abs(to - s) < 0.002 && Math.abs(v) < 0.05) { onUpdate(to); resolve(); return; }
+      requestAnimationFrame(frame);
+    })(last);
+  });
+}
+
+/* ═══ 光球（移植 extension/src/sidepanel/orb.ts 的取帧与上色） ═══ */
+const INK = [87, 83, 74]; // --text-secondary 亮主题
+function shade(white, alpha) {
+  return `rgba(${INK[0]},${INK[1]},${INK[2]},${(alpha * (1 - white)).toFixed(3)})`;
+}
+const orb = (() => {
+  const host = document.getElementById("orb");
+  const canvas = document.createElement("canvas");
+  host.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  let box = 76, preset = resolvePreset("breathing", GEOM), live = false, raf = 0;
+  let pos = { x: 0, y: 0 };
+
+  function sizeTo(next) {
+    box = next;
+    canvas.width = Math.round(box * dpr); canvas.height = Math.round(box * dpr);
+    canvas.style.width = box + "px"; canvas.style.height = box + "px";
+  }
+  function paint(t) {
+    const frameOf = MODE_FRAMES[preset.mode];
+    if (!frameOf) return;
+    const frame = frameOf(GEOM, t, preset.opts);
+    const k = (dpr * box) / GEOM;
+    ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, GEOM, GEOM);
+    for (const l of frame.lines) {
+      ctx.strokeStyle = shade(l.white, l.a ?? 1); ctx.lineWidth = l.w;
+      ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+    }
+    for (const d of frame.dots) {
+      ctx.fillStyle = shade(d.white, d.a ?? 1);
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  function loop() {
+    raf = 0;
+    if (live && host.isConnected) { paint(performance.now() / 1000 * preset.speed); raf = requestAnimationFrame(loop); }
+  }
+  sizeTo(box);
+  return {
+    get pos() { return pos; }, get box() { return box; },
+    place(x, y) { pos = { x, y }; host.style.transform = `translate(${x}px,${y}px)`; },
+    scale(s) { host.style.transform = `translate(${pos.x}px,${pos.y}px) scale(${s})`; },
+    sizeTo, paintStill: () => paint(STILL_T),
+    setState(name) { preset = resolvePreset(name, GEOM); paint(performance.now() / 1000 * preset.speed); },
+    setLive(on) { live = on && !reduced; if (live && !raf) raf = requestAnimationFrame(loop); if (!live) paint(STILL_T); },
+  };
+})();
+
+/* ═══ 手绘描边（移植 extension/src/shared/rough：mulberry32 + sketchFrame） ═══ */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0; let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const sampleLine = (x1, y1, x2, y2, step = 8) => {
+  const n = Math.max(2, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / step));
+  return Array.from({ length: n + 1 }, (_, i) => [x1 + (x2 - x1) * i / n, y1 + (y2 - y1) * i / n]);
+};
+const ellipsePoints = (cx, cy, rx, ry, a0, a1, n) =>
+  Array.from({ length: n + 1 }, (_, i) => { const a = a0 + (a1 - a0) * i / n; return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)]; });
+const jitterPts = (pts, rand, amp) => pts.map(([x, y]) => [x + (rand() * 2 - 1) * amp, y + (rand() * 2 - 1) * amp]);
+function toPath(pts, close) {
+  if (!pts.length) return "";
+  let d = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [cx, cy] = pts[i], nx = pts[i + 1];
+    d += ` Q${cx.toFixed(2)} ${cy.toFixed(2)} ${((cx + nx[0]) / 2).toFixed(2)} ${((cy + nx[1]) / 2).toFixed(2)}`;
+  }
+  const last = pts[pts.length - 1];
+  d += ` L${last[0].toFixed(2)} ${last[1].toFixed(2)}`;
+  return close ? d + " Z" : d;
+}
+function sketchFrame(target, { seed, roughness }) {
+  const rand = mulberry32(seed), amp = 1.1 * roughness;
+  if (target.w / Math.max(1, target.h) > 3.2) {
+    const pad = 4, b = { x: target.x - pad, y: target.y - pad, w: target.w + pad * 2, h: target.h + pad * 2 };
+    const r = Math.min(10, b.h / 2), n = 5;
+    const pts = [
+      ...sampleLine(b.x + r, b.y, b.x + b.w - r, b.y),
+      ...ellipsePoints(b.x + b.w - r, b.y + r, r, r, -Math.PI / 2, 0, n),
+      ...sampleLine(b.x + b.w, b.y + r, b.x + b.w, b.y + b.h - r),
+      ...ellipsePoints(b.x + b.w - r, b.y + b.h - r, r, r, 0, Math.PI / 2, n),
+      ...sampleLine(b.x + b.w - r, b.y + b.h, b.x + r, b.y + b.h),
+      ...ellipsePoints(b.x + r, b.y + b.h - r, r, r, Math.PI / 2, Math.PI, n),
+      ...sampleLine(b.x, b.y + b.h - r, b.x, b.y + r),
+      ...ellipsePoints(b.x + r, b.y + r, r, r, Math.PI, Math.PI * 1.5, n),
+    ];
+    return toPath(jitterPts(pts, rand, amp), true);
+  }
+  const cx = target.x + target.w / 2, cy = target.y + target.h / 2;
+  const rx = target.w / 2 * 1.25 + 4, ry = target.h / 2 * 1.25 + 4;
+  const n = Math.max(24, Math.ceil((Math.PI * (rx + ry)) / 8));
+  return toPath(jitterPts(ellipsePoints(cx, cy, rx, ry, 0, Math.PI * 2, n).slice(0, -1), rand, amp), true);
+}
+function drawSketch(target, { seed = 42, ms = 560 } = {}) {
+  const svg = document.getElementById("sketch");
+  const body = document.getElementById("body").getBoundingClientRect();
+  const d = sketchFrame(target, { seed, roughness: 0.9 });
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", d);
+  svg.appendChild(path);
+  const len = path.getTotalLength();
+  path.style.strokeDasharray = String(len);
+  if (reduced) { path.style.strokeDashoffset = "0"; return Promise.resolve(); }
+  path.style.strokeDashoffset = String(len);
+  const t0 = performance.now();
+  return new Promise((resolve) => (function f(now) {
+    const p = Math.min(1, (now - t0) / ms);
+    path.style.strokeDashoffset = String(len * (1 - (1 - Math.pow(1 - p, 3))));
+    if (p < 1) requestAnimationFrame(f); else resolve();
+  })(t0));
+}
+
+/* ═══ 步骤机 ═══ */
+const steps = [...document.querySelectorAll(".step")];
+const dots = [...document.querySelectorAll("#dots i")];
+const CAPS = ["到来", "连模型", "第一次对话", "交付", "日常"];
+let cur = -1, busy = false;
+
+function rectIn(el) {
+  const b = document.getElementById("body").getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height };
+}
+async function dockOrb(slot) {
+  const r = rectIn(slot), from = orb.pos, fromBox = orb.box;
+  if (reduced) { orb.place(r.x, r.y); orb.sizeTo(r.w); orb.paintStill(); return; }
+  await spring({
+    ms: 560, zeta: 0.78,
+    onUpdate: (p) => {
+      orb.place(from.x + (r.x - from.x) * p, from.y + (r.y - from.y) * p);
+      orb.scale((fromBox + (r.w - fromBox) * p) / fromBox);
+    },
+  });
+  orb.sizeTo(r.w); orb.place(r.x, r.y); orb.paintStill();
+}
+function enterEls(els, base = 0) {
+  els.forEach((el, i) => setTimeout(() => spring({
+    ms: 480, zeta: 0.72,
+    onUpdate: (p) => {
+      el.style.opacity = String(Math.min(1, p));
+      el.style.transform = `translateY(${((1 - p) * 18).toFixed(2)}px)`;
+    },
+  }), base + i * 75));
+  return reduced ? 0 : base + els.length * 75 + 200;
+}
+async function exitEls(els) {
+  await Promise.all(els.map((el, i) => new Promise((res) => setTimeout(() =>
+    spring({ ms: 240, zeta: 1, onUpdate: (p) => {
+      el.style.opacity = String(1 - p);
+      el.style.transform = `translateY(${(-10 * p).toFixed(2)}px)`;
+    } }).then(res), i * 35))));
+}
+function setDots(n) {
+  dots.forEach((d, i) => {
+    d.className = i < n ? "done" : i === n ? "cur" : "";
+    if (i === n && !reduced) spring({ ms: 380, onUpdate: (p) => { d.style.transform = `scale(${1 + 0.5 * Math.sin(p * Math.PI)})`; } });
+  });
+  document.getElementById("cap-step").textContent = CAPS[n] ?? "";
+}
+async function goto(n) {
+  if (busy) return; busy = true;
+  document.getElementById("sketch").replaceChildren();
+  const prev = cur >= 0 ? steps[cur] : null, next = steps[n];
+  if (prev) { await exitEls([...prev.querySelectorAll(".rise")].filter(e => e.offsetParent)); prev.hidden = true; }
+  cur = n; setDots(Math.min(n, 3));
+  next.hidden = false;
+  const slot = next.querySelector(".orb-slot");
+  if (slot) await dockOrb(slot);
+  const rises = [...next.querySelectorAll(".rise")].filter(e => !e.hidden && !e.closest("[hidden]"));
+  for (const el of rises) { el.style.opacity = "0"; el.style.transform = "translateY(18px)"; }
+  enterEls(rises);
+  busy = false;
+}
+
+/* ═══ 第 1 步：服务商选择 + 测试连接 ═══ */
+const seg = document.getElementById("seg"), segPill = document.getElementById("seg-pill");
+function moveSegPill(btn, instant) {
+  const r = btn.getBoundingClientRect(), host = seg.getBoundingClientRect();
+  const x = r.left - host.left, w = r.width;
+  if (instant || reduced) { segPill.style.left = x + "px"; segPill.style.width = w + "px"; return; }
+  const from = { x: parseFloat(segPill.style.left || x), w: parseFloat(segPill.style.width || w) };
+  spring({ ms: 380, zeta: 0.75, onUpdate: (p) => {
+    segPill.style.left = from.x + (x - from.x) * p + "px";
+    segPill.style.width = from.w + (w - from.w) * p + "px";
+  } });
+}
+for (const btn of seg.querySelectorAll("button")) {
+  btn.addEventListener("click", () => {
+    seg.querySelector(".sel").classList.remove("sel");
+    btn.classList.add("sel"); moveSegPill(btn);
+    const urlWrap = document.getElementById("url-wrap");
+    const need = btn.textContent === "自定义";
+    if (need && urlWrap.hidden) {
+      urlWrap.hidden = false;
+      spring({ ms: 380, onUpdate: (p) => {
+        urlWrap.style.opacity = String(Math.min(1, p));
+        urlWrap.style.transform = `translateY(${((1 - p) * 10).toFixed(2)}px)`;
+      } });
+    } else if (!need) urlWrap.hidden = true;
+  });
+}
+
+const statusEl = document.getElementById("status");
+function streamText(el, text, cps = 26) {
+  return new Promise((resolve) => {
+    if (reduced) { el.textContent = text; resolve(); return; }
+    let i = 0;
+    const t = setInterval(() => {
+      el.textContent = text.slice(0, ++i);
+      if (i >= text.length) { clearInterval(t); resolve(); }
+    }, 1000 / cps);
+  });
+}
+const CHECK = '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.5 L5.8 10.8 L11.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+let testing = false;
+document.getElementById("test").addEventListener("click", async () => {
+  if (testing) return;
+  const key = document.getElementById("key").value.trim();
+  const provider = seg.querySelector(".sel").textContent;
+  statusEl.className = "status";
+  if (provider === "自定义" && !document.getElementById("base-url").value.trim()) {
+    statusEl.classList.add("err");
+    statusEl.textContent = "自定义服务要先填服务地址。";
+    return;
+  }
+  if (key.length < 8) {
+    statusEl.classList.add("err");
+    statusEl.textContent = key ? "key 好像不完整，再检查一下。" : "先粘贴 key；没有 key 可以点下方「先跳过」。";
+    if (!reduced) spring({ ms: 500, zeta: 0.25, from: 0, onUpdate: (p) => {
+      document.getElementById("key").style.transform = `translateX(${(Math.sin(p * Math.PI * 3) * (1 - p) * 6).toFixed(2)}px)`;
+    } });
+    return;
+  }
+  testing = true;
+  orb.setState("connecting"); orb.setLive(true);
+  await streamText(statusEl, `正在连接 ${provider}…`);
+  await new Promise(r => setTimeout(r, reduced ? 0 : 700));
+  orb.setLive(false); orb.setState("breathing"); orb.paintStill();
+  statusEl.classList.add("ok");
+  statusEl.innerHTML = CHECK + "<span></span>";
+  await streamText(statusEl.querySelector("span"), `连上了：${provider} · 延迟 0.8s`);
+  const cont = document.getElementById("cont-1");
+  cont.hidden = false;
+  spring({ ms: 460, onUpdate: (p) => {
+    cont.style.opacity = String(Math.min(1, p));
+    cont.style.transform = `translateY(${((1 - p) * 14).toFixed(2)}px)`;
+  } });
+  testing = false;
+});
+
+/* ═══ 第 2 步：第一次对话 ═══ */
+const ANSWER = [
+  "好。这一页最核心的三件事——",
+  "① 作者在论证「少，但更好」的设计立场；",
+  "② 两组前后对比数据，留存提升 32%；",
+  "③ 文末附了一份可下载的检查清单。",
+  "值得多看一眼的是第 ② 条，我替你圈出来了。",
+];
+let asked = false;
+for (const chip of document.querySelectorAll("#chips .chip")) {
+  chip.addEventListener("click", () => { if (!asked) { asked = true; runFirstAsk(chip); } });
+}
+async function runFirstAsk(chip) {
+  const convo = document.getElementById("convo");
+  const chips = document.getElementById("chips");
+  const q = chip.dataset.q;
+
+  // chip 残影飞进输入框
+  const from = chip.getBoundingClientRect();
+  const comp = document.getElementById("composer");
+  const to = comp.getBoundingClientRect();
+  const ghost = document.createElement("div");
+  ghost.className = "ghost"; ghost.textContent = q;
+  ghost.style.left = from.left + "px"; ghost.style.top = from.top + "px";
+  document.body.appendChild(ghost);
+  for (const c of chips.querySelectorAll(".chip")) { c.style.pointerEvents = "none"; if (c !== chip) spring({ ms: 260, zeta: 1, onUpdate: p => { c.style.opacity = String(1 - p); } }); }
+  chip.style.opacity = "0";
+  await spring({ ms: 520, zeta: 0.8, onUpdate: (p) => {
+    ghost.style.left = from.left + (to.left + 14 - from.left) * p + "px";
+    ghost.style.top = from.top + (to.top + 6 - from.top) * p + "px";
+    ghost.style.opacity = String(1 - Math.max(0, p - 0.7) / 0.3);
+  } });
+  ghost.remove();
+  const ctext = document.getElementById("ctext");
+  ctext.textContent = q; ctext.classList.add("filled");
+  await new Promise(r => setTimeout(r, reduced ? 0 : 350));
+  spring({ ms: 300, onUpdate: p => { comp.querySelector(".send").style.transform = `scale(${1 + 0.18 * Math.sin(p * Math.PI)})`; } });
+  await new Promise(r => setTimeout(r, reduced ? 0 : 280));
+  ctext.textContent = "说说你想完成什么…"; ctext.classList.remove("filled");
+
+  // 用户气泡
+  chips.style.display = "none";
+  const bubble = document.createElement("div");
+  bubble.className = "bubble"; bubble.textContent = q;
+  convo.appendChild(bubble);
+  await spring({ ms: 420, onUpdate: p => {
+    bubble.style.opacity = String(Math.min(1, p));
+    bubble.style.transform = `translateY(${((1 - p) * 14).toFixed(2)}px)`;
+  } });
+
+  // 光球赶到回答旁，进入思考
+  const reply = document.createElement("div");
+  reply.className = "reply";
+  reply.innerHTML = '<div class="orb-slot" style="width:20px;height:20px;flex:none;margin-top:2px"></div><div class="text"></div>';
+  convo.appendChild(reply);
+  await dockOrb(reply.querySelector(".orb-slot"));
+  orb.setState("solving"); orb.setLive(true);
+  await new Promise(r => setTimeout(r, reduced ? 0 : 900));
+
+  // 流式回答
+  orb.setState("composing");
+  const textEl = reply.querySelector(".text");
+  const caret = document.createElement("span"); caret.className = "caret";
+  for (const line of ANSWER) {
+    const ln = document.createElement("span"); ln.className = "ln";
+    textEl.appendChild(ln); ln.appendChild(caret);
+    await streamText(ln, line, 34);
+    ln.appendChild(caret);
+  }
+  caret.remove();
+  orb.setLive(false); orb.setState("breathing"); orb.paintStill();
+
+  // 记忆行
+  const mem = document.createElement("span");
+  mem.className = "mem-line"; mem.textContent = "用了 1 条记忆 ›"; mem.style.opacity = "0";
+  convo.appendChild(mem);
+  spring({ ms: 400, onUpdate: p => { mem.style.opacity = String(p); } });
+
+  // 手绘圈：圈出第 ② 条
+  await new Promise(r => setTimeout(r, reduced ? 0 : 500));
+  const target = textEl.querySelectorAll(".ln")[2];
+  const b = document.getElementById("body").getBoundingClientRect();
+  const r2 = target.getBoundingClientRect();
+  await drawSketch({ x: r2.left - b.left, y: r2.top - b.top, w: r2.width, h: r2.height });
+
+  // 继续
+  const cont = document.getElementById("cont-2");
+  cont.hidden = false;
+  spring({ ms: 460, onUpdate: p => {
+    cont.style.opacity = String(Math.min(1, p));
+    cont.style.transform = `translateY(${((1 - p) * 14).toFixed(2)}px)`;
+  } });
+}
+
+/* ═══ 第 3 步：交付——手绘环圈住光球 ═══ */
+async function celebrate() {
+  const r = rectIn(document.getElementById("slot-3"));
+  await drawSketch({ x: r.x - 8, y: r.y - 8, w: r.w + 16, h: r.h + 16 }, { seed: 7, ms: 620 });
+}
+
+/* ═══ 完成：日常空状态 + 输入框召唤 ═══ */
+async function finish() {
+  document.getElementById("sketch").replaceChildren();
+  await goto(4);
+  document.getElementById("cap-step").textContent = "日常";
+  document.getElementById("dots").style.opacity = "0";
+  await new Promise(r => setTimeout(r, reduced ? 0 : 900));
+  document.getElementById("composer").classList.add("ring");
+}
+
+/* ═══ 主控 ═══ */
+document.querySelectorAll("[data-act]").forEach(btn => btn.addEventListener("click", async () => {
+  const act = btn.dataset.act;
+  if (act === "next") await goto(cur + 1);
+  else if (act === "finish") await finish();
+  if (cur === 3) celebrate();
+}));
+async function replay() {
+  if (busy) return;
+  document.getElementById("sketch").replaceChildren();
+  document.getElementById("convo").replaceChildren();
+  const chips = document.getElementById("chips");
+  chips.style.display = "";
+  for (const c of chips.querySelectorAll(".chip")) { c.style.opacity = ""; c.style.pointerEvents = ""; c.style.transform = ""; }
+  document.getElementById("cont-1").hidden = true;
+  document.getElementById("cont-2").hidden = true;
+  document.getElementById("key").value = "";
+  document.getElementById("base-url").value = "";
+  document.getElementById("url-wrap").hidden = true;
+  seg.querySelector(".sel").classList.remove("sel");
+  seg.querySelector("button").classList.add("sel");
+  moveSegPill(seg.querySelector(".sel"), true);
+  statusEl.className = "status"; statusEl.textContent = "";
+  document.getElementById("dots").style.opacity = "";
+  document.getElementById("composer").classList.remove("ring");
+  asked = false; testing = false; cur = -1;
+  for (const s of steps) s.hidden = true;
+  orb.setState("breathing"); orb.setLive(true);
+  // 初始：光球从 0 弹出来
+  const slot0 = document.getElementById("slot-0");
+  steps[0].hidden = false;
+  const r = rectIn(slot0);
+  orb.place(r.x + r.w / 2, r.y + r.h / 2);
+  orb.sizeTo(r.w); orb.scale(0.001); orb.paintStill();
+  cur = 0; setDots(0);
+  await spring({ ms: 640, zeta: 0.65, onUpdate: p => orb.scale(Math.max(0.001, p)) });
+  orb.place(r.x, r.y); orb.paintStill();
+  const rises = [...steps[0].querySelectorAll(".rise")];
+  for (const el of rises) { el.style.opacity = "0"; el.style.transform = "translateY(18px)"; }
+  enterEls(rises, 100);
+}
+document.getElementById("replay").addEventListener("click", replay);
+addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") replay(); });
+
+moveSegPill(seg.querySelector(".sel"), true);
+replay();
+</script>
+</body>
+</html>
