@@ -1,0 +1,11 @@
+{
+  "name": "bys-settings-proto-abc",
+  "private": true,
+  "description": "模型与语音 A/B/C 原型，只用于设计参考",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": {
+    "@floating-ui/dom": "1.8.0",
+    "esbuild": "0.28.2",
+    "lucide": "1.39.0"
+  }
+}

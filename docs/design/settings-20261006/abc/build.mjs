@@ -1,0 +1,11 @@
+import { build } from "esbuild";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+mkdirSync("dist", { recursive: true });
+await build({ bundle: true, format: "esm", target: "chrome120", minify: true, legalComments: "none", entryPoints: ["src/main.ts"], outfile: "dist/proto.js", loader: { ".svg": "dataurl", ".json": "json" } });
+const css = readFileSync("src/tokens.css", "utf8") + "\n" + readFileSync("src/proto.css", "utf8");
+writeFileSync("dist/proto.css", css);
+const head = `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src data: 'self'; connect-src 'none'" />\n<title>模型与语音 · 高保真原型</title>\n`;
+writeFileSync("index.html", head + `<link rel="stylesheet" href="dist/proto.css" />\n</head>\n<body><script type="module" src="dist/proto.js"></script></body>\n</html>\n`);
+const js = readFileSync("dist/proto.js", "utf8").replace(/<\/script/gi, "<\\/script");
+writeFileSync("bys-settings-proto.html", head + `<style>\n${css}\n</style>\n</head>\n<body><script type="module">\n${js}\n</script></body>\n</html>\n`);
+console.log("built", (js.length / 1024).toFixed(0) + " KB js");
