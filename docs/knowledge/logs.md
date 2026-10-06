@@ -21,3 +21,4 @@
 - 2026-10-02 | [模型思考档与后台判断](../../docs/evals/20261001-model-effort-and-side-judgments.md) | 新建 patterns/provider-model-name-and-reasoning-quirks.md，更新 index.md；锁范围与答非所问的结论已在验收与 `docs/unknown-results.md`，不另立页 | 无新提案
 - 2026-10-02 | [受阻结论](../../docs/evals/20261002-goal-check-blocked.md) | 新建 patterns/widened-check-needs-the-other-side.md，更新 index.md | 无新提案
 - 2026-10-04 | [删掉半成品与预判](../../docs/evals/20261004-cut-unused.md) | 新建 patterns/worktree-workspace-link-builds-main-tree.md，更新 index.md | 无新提案
+- 2026-10-06 | [首个反馈](../../docs/evals/20261006-first-feedback.md) | 新建 patterns/execute-script-waits-for-idle.md、patterns/node-error-text-in-browser.md，更新 index.md | 无新提案

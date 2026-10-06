@@ -32,3 +32,5 @@
 | [provider-model-name-and-reasoning-quirks](patterns/provider-model-name-and-reasoning-quirks.md) | 调得通不等于名字对、档位对、指令被听；看响应 `model` 字段，档位/角色/收图按实测登记一处 | 答非所问排查与选模型 | 2026-10-01 |
 | [widened-check-needs-the-other-side](patterns/widened-check-needs-the-other-side.md) | 扩大检查范围只测了该拦的，没测「做不成但处理正确」的，结果把正确放弃的任务催回去重试 | 第一档缺口修复 | 2026-10-02 |
 | [worktree-workspace-link-builds-main-tree](patterns/worktree-workspace-link-builds-main-tree.md) | 工作树里构建旧版本时 workspaces 链接指回主仓库，打包的是新代码；旧版反例要先证明跑的真是旧代码 | 删掉半成品与预判 | 2026-10-04 |
+| [execute-script-waits-for-idle](patterns/execute-script-waits-for-idle.md) | 页面加载中注入脚本默认等空闲，读页卡数秒；只读注入加 `injectImmediately`，先拆单个调用计时再下结论 | #18 首个反馈 | 2026-10-06 |
+| [node-error-text-in-browser](patterns/node-error-text-in-browser.md) | 库按 Node 报错文字判断可重试，浏览器的「Failed to fetch」认不出；补浏览器反例，判断只放一处 | 同上 | 2026-10-06 |
