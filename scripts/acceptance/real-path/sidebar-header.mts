@@ -136,21 +136,17 @@ try {
   await rp.click(panel, "#input");
   await rp.typeText(panel, "这个网站上你能找到她吗");
   await rp.pressEnter(panel);
-  await until(async () => (await layout()).taskBar?.text.includes("正在执行") || undefined, 20_000, "任务条出现");
+  // #58 C：进行中只在对话里留一行「正在…」，任务条让位（页面归你、回执、任务页不一致时才出来）。
+  const runLine = `(() => { const t = document.querySelector("details.run-steps:not(.done) .run-title"); const r = t?.getBoundingClientRect(); return t ? { text: t.textContent, height: Math.round(r.height) } : null; })()`;
+  await until(async () => (await rp.evaluate(panel, runLine))?.text.startsWith("正在") || undefined, 20_000, "过程行出现");
   await sleep(4000);
   const running = await shot("2-running");
-  const bar = running.taskBar;
-  check("执行中：任务条贴在输入框正上方", !!bar?.box && !!running.composer && running.composer.top - bar.box.bottom <= 10 && bar.box.top > (running.topbar?.bottom ?? 0) + 100, { bar: bar?.box ?? null, composer: running.composer });
-  check("执行中：收起时一行，写状态", !!bar && !bar.expanded && (bar.box?.height ?? 99) <= 36 && /正在执行/.test(bar.text), { text: bar?.text ?? null, height: bar?.box?.height ?? null });
+  const line = await rp.evaluate(panel, runLine);
+  // 这一轮模型只想不做，没有步骤可展开；展开后的步骤见 scripts/probes/shell/process-line.mts。
+  check("执行中：对话里一行「正在…」，任务条不出现", !running.taskBar && !!line && line.height <= 26, { line, taskBar: running.taskBar?.text ?? null });
   const panelText = String(await rp.evaluate(panel, `document.querySelector("#app").innerText`));
   check("执行中：任务页就是当前页时，网站名只在输入框上方出现一次", (panelText.match(/127\.0\.0\.1/g) ?? []).length === 1, { hits: (panelText.match(/127\.0\.0\.1/g) ?? []).length });
-  await rp.click(panel, ".tb-expand");
-  await sleep(300);
-  const expanded = await shot("3-running-expanded");
-  const expandedHits = (expanded.taskBar?.text.match(/127\.0\.0\.1/g) ?? []).length;
-  check("展开后看得到目标与作用页，网站只列一次", !!expanded.taskBar?.expanded && expanded.taskBar.text.includes("你能找到她吗") && expandedHits === 1, { text: expanded.taskBar?.text ?? null });
-  await rp.click(panel, ".tb-expand");
-  await until(async () => !(await layout()).taskBar || undefined, 60_000, "这一轮结束");
+  await until(async () => await rp.evaluate(panel, `!document.querySelector("#send-btn.stopping")`) || undefined, 60_000, "这一轮结束");
   await sleep(1000);
   await shot("4-done");
 

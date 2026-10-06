@@ -356,12 +356,14 @@ describe("A03-01 本地反馈：没有 accepted 证据不写已接收", () => {
   });
 
   it("回执 accepted 才升级为「已随任务送入」，并带上 run", () => {
-    const { bar, text } = mount();
+    const { bar, text, element } = mount();
     bar.updateView(view());
     bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
     bar.noteReceipt(receipt());
-    expect(text()).toContain("已随任务送入");
+    expect(bar.getModel()?.materials?.status).toBeNull();
     expect(text()).not.toContain("发送中");
+    // #58 C：只送入了页面、任务在跑时，过程由对话里的灰字讲，任务条让出位置。
+    expect(element().hidden).toBe(true);
   });
 
   it("中间态 queued 不改口径，unknown 如实说未知", () => {
@@ -514,7 +516,7 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
 });
 
 describe("A03-03 作用页：以任务绑定页为准，不跟随当前标签页", () => {
-  it("任务页与当前页不同：明确提示任务仍作用于那一页，任务材料里没有当前页", () => {
+  it("任务页与当前页不同：明确提示任务仍作用于那一页，任务材料里没有当前页", async () => {
     const model = buildTaskBarModel(inputs({
       activeTabId: 99,
       taskMaterials: { runId: "run-1", items: [{ key: "task:page", kind: "page", label: "报名表（forms.example）" }] },
@@ -522,8 +524,11 @@ describe("A03-03 作用页：以任务绑定页为准，不跟随当前标签页
 
     expect(model.page?.mismatch).toBe(true);
     expect(model.materials?.rows.map((row) => row.label)).toEqual(["报名表（forms.example）"]);
-    const { bar, text } = mount({ getActiveTabId: async () => 99, resolvePage: async () => ({ title: "报名表", url: "https://forms.example/edit" }) });
+    // 时钟要走过首次查询间隔（5 秒），任务条才会去查当前是哪一页。
+    const { bar, text } = mount({ now: () => 10_000, getActiveTabId: async () => 99, resolvePage: async () => ({ title: "报名表", url: "https://forms.example/edit" }) });
     bar.updateView(view());
+    // 任务在跑、任务条让位时，当前页也要异步查；查到不一致，任务条出来点出任务在哪一页（#58 C）。
+    await vi.waitFor(() => expect(text()).toContain("任务在 forms.example"));
     bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
     bar.noteReceipt(receipt({ requestId: "req-1" }));
     expect(text()).toContain("作用于：");
@@ -656,10 +661,11 @@ describe("A03-07 可达性结构面：真实 button、屏幕阅读器有名字�
 
   it("有目标就有目标行，没有目标就不显示这一行，也不放占位字", () => {
     const { bar, element, text } = mount();
-    bar.updateView(view({ goal: null }));
+    // 任务条只在页面归你等时刻出现（#58 C）；这里测出现时的目标行。
+    bar.updateView(view({ goal: null, state: "paused" }));
     expect(element().querySelector(".tb-head")!.hidden).toBe(true);
     expect(text()).not.toContain("目标未记录");
-    bar.updateView(view({ goal: "填写报名表" }));
+    bar.updateView(view({ goal: "填写报名表", state: "paused" }));
     expect(element().querySelector(".tb-head")!.hidden).toBe(false);
     expect(element().querySelector(".tb-goal")!.textContent).toBe("填写报名表");
   });

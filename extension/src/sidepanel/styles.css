@@ -2981,3 +2981,55 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.assistant .source-mark:hover { color: var(--text-primary); }
 .msg.assistant .answer-source:focus-visible, .msg.assistant .source-mark:focus-visible, .msg.assistant .answer-sources > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .source-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 50; padding: 6px 12px; border-radius: 999px; background: var(--text-primary); color: var(--content-subtle); font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); pointer-events: none; }
+
+/* ── #58 C 过程灰字：一轮只留一行 ─────────────────────────
+   进行中「正在 动词 对象」，一道光扫过整行；结束收成「做了 N 件事 · 9 秒 ›」。
+   动词墨色、对象浅灰，无图标；展开是左边一条细线下的灰字步骤。 */
+details.run-steps .run-icon { display: none; }
+details.run-steps summary { gap: 6px; font-size: var(--fs-ui); }
+.run-title { flex: 0 1 auto; font-size: var(--fs-read); line-height: 22px; font-weight: 400; }
+.run-title .act-verb { color: var(--text-primary); font-weight: 500; }
+.run-title .act-object { color: var(--text-tertiary); }
+details.run-steps:not(.done) .run-title {
+  -webkit-mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
+  mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
+  -webkit-mask-size: 260% 100%;
+  mask-size: 260% 100%;
+  animation: runShine 2.4s cubic-bezier(.4, 0, .2, 1) infinite;
+}
+@keyframes runShine { from { -webkit-mask-position: 110% 0; mask-position: 110% 0; } to { -webkit-mask-position: -10% 0; mask-position: -10% 0; } }
+details.run-steps:not(.done) .run-time { margin-left: auto; font-size: var(--fs-meta); color: var(--text-quaternary); }
+details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: hidden; }
+details.run-steps.done summary { width: max-content; max-width: 100%; margin: 0 -4px; padding: 2px 4px; border-radius: 6px; }
+details.run-steps.done summary:hover { background: var(--content-subtle-hover); }
+details.run-steps.done .run-title { font-size: var(--fs-ui); line-height: 20px; }
+details.run-steps.done .run-title .act-verb, details.run-steps.done .run-title .act-object { color: var(--text-tertiary); font-weight: 400; }
+details.run-steps.done .run-time { margin-left: 0; font-size: var(--fs-ui); color: var(--text-tertiary); }
+details.run-steps.done .run-time:not(:empty)::before { content: "· "; }
+details.run-steps[open] .run-chevron { transform: rotate(90deg); }
+details.run-steps .run-chevron svg { width: 12px; height: 12px; }
+details.run-steps .run-body { gap: 3px; margin: 4px 0 8px 6px; padding: 2px 0 2px 12px; }
+details.run-steps .run-body .chip-group, details.run-steps .run-body .chip-row { gap: 3px; }
+details.run-steps .run-body .chip { min-height: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; font-size: var(--fs-ui); line-height: 20px; }
+.run-body .chip:hover, .run-body .chip.running, .run-body .chip.error, .run-body .chip.active { background: none; border: 0; color: inherit; }
+.run-body .chip:active { transform: none; }
+.run-body .chip-dot, .run-body .chip-icon, .run-body .chip .dur { display: none; }
+.run-body .chip-more { visibility: hidden; }
+.run-body .chip:hover .chip-more, .run-body .chip.active .chip-more { visibility: visible; }
+.run-body .chip-label .act-verb { color: var(--text-secondary); }
+.run-body .chip-label .act-object { color: var(--text-quaternary); }
+.run-body .chip:hover .chip-label .act-object { color: var(--text-tertiary); }
+.run-body .act-failed { color: var(--text-secondary); }
+details.run-steps .run-body details.thinking.narration > pre, details.run-steps.done .run-body > details.thinking.narration > pre { font-family: var(--font); font-size: var(--fs-ui); line-height: 20px; color: var(--text-tertiary); }
+@media (prefers-reduced-motion: reduce) { details.run-steps:not(.done) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; } }
+
+/* 任务卡只剩「还差什么 + 继续原任务」，放在回答之后；进行中没有内容就不占位。 */
+.ai-task-card { margin: 4px 0 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; animation: none; }
+.ai-task-card .ai-task-trigger, .ai-task-card .ai-task-reveal { display: none; }
+.ai-task-card:not(:has(#resume-entry-root:not([hidden]) > *)) { display: none; }
+.ai-task-footer:has(#resume-entry-root:not([hidden])) { padding: 0; border-top: 0; }
+.ai-task-footer .resume-action { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-primary); font-size: var(--fs-ui); padding: 5px 12px; }
+.ai-task-footer .resume-action:hover { background: var(--content-subtle); }
+
+/* 一次性的系统提示：灰字，不用琥珀色。 */
+.msg.notice { color: var(--text-tertiary); font-size: var(--fs-meta); }

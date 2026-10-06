@@ -767,9 +767,15 @@ export class TaskBar {
 
     const changed = !this.model || !shallowEqualModel(this.model, model);
     this.model = model;
-    this.el.hidden = !model.visible;
 
-    if (!model.visible) {
+    // 进行中、已结束由对话里那一行过程灰字讲（#58 C）；任务条只在有它独有的事时出现：
+    // 页面归你、停止/接管回执、任务页不是你在看的页、还没送入的附件。
+    const own = model.state === "paused" || !!model.control || !!model.page?.mismatch
+      || !!model.materials && (!!model.materials.status || model.materials.rows.some((row) => row.kind !== "page"));
+
+    this.el.hidden = !model.visible || !own;
+
+    if (this.el.hidden) {
       // 不可见就清空：不留旧任务文本给屏幕阅读器，也不让测试/检查读到过期事实。
       this.goalEl.textContent = "";
       this.revisionsEl.textContent = "";
@@ -789,6 +795,9 @@ export class TaskBar {
       this.materialsEl.replaceChildren();
       this.el.removeAttribute("data-state");
       this.stopTick();
+
+      // 任务在跑但任务条让位时，仍要查任务页与当前页：不一致时任务条要出来提醒。
+      if (model.visible && changed) this.resolvePages();
 
       return;
     }

@@ -310,11 +310,11 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
-/** 过程行标题：做了几步，以及失败/停止。 */
+/** 过程行标题：做了几件事，以及失败/停止。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed"): string {
-  const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
+  const done = steps > 0 ? `做了 ${steps} 件事` : "查看执行过程";
 
-  if (outcome === "failed") return `${done}，有一步没成功`;
+  if (outcome === "failed") return `${done}，有一件没成功`;
 
   if (outcome === "stopped") return `已停止 · ${done}`;
 
@@ -334,4 +334,13 @@ export function isLiveViewportPinned(scrollTop: number, scrollHeight: number, cl
 
 export function liveViewportOverflows(scrollHeight: number, clientHeight: number): boolean {
   return scrollHeight > clientHeight + 1;
+}
+
+/** 过程灰字拆成动词与对象：「填写「出发日期」」→ 填写 / 「出发日期」；没有对象就整句当动词。 */
+export function splitAction(text: string): { verb: string; object: string } {
+  const quote = text.indexOf("「");
+  const space = text.indexOf(" ");
+  const at = quote > 0 ? quote : space > 0 ? space : -1;
+
+  return at < 0 ? { verb: text, object: "" } : { verb: text.slice(0, at).trim(), object: text.slice(at).trim() };
 }

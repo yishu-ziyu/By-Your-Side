@@ -22,3 +22,7 @@
 ## 边界与不做
 - 不改引用块（`#ask-cite`）位置：它是要发出去的内容，留在框内。
 - 不做 C 过程灰字、不缩小页面光标（另行）。
+
+## 证据
+- `scripts/probes/shell/quiet-shell.mts`：标签不在框内且在框上方；从 `···` 选「原文摘录」后模式为 source、菜单关闭、再开时勾在该项；点标题弹出会话列表。截图 `out/probes/shell/idle.png`、`menu.png`。
+- `sidebar-interaction.mts`「当前页引用在输入框外上方一行」通过（旧检查「在输入框内」按本次约定改写）。

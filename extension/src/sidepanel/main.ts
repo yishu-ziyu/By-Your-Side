@@ -34,6 +34,7 @@ import {
   finishedRunTitle,
   spokenDuration,
   loaderSubtitle,
+  splitAction,
   isLiveViewportPinned,
   liveViewportOverflows,
 } from "./steps.js";
@@ -91,9 +92,23 @@ let citationRequestPending = false;
 function attachAnswerActions(answer: HTMLElement): void {
   attachCopyActions(answer);
   adoptUsedLine(answer);
+  placeTaskCardAfter(answer);
   const source = answerSources.get(answer);
 
   if (source) void source.then(context => attachSourceCitations(answer, context));
+}
+
+/** 「还差… 继续原任务」放在本轮回答之后：先看结论，再决定要不要接着做（#58 C）。 */
+function placeTaskCardAfter(answer: HTMLElement): void {
+  const card = Array.from(messagesEl.querySelectorAll<HTMLElement>(".ai-task-card")).pop();
+
+  if (!card || !(card.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING)) return;
+
+  for (let node = card.nextElementSibling; node && node !== answer; node = node.nextElementSibling) {
+    if (node.classList.contains("user")) return;
+  }
+
+  answer.after(card);
 }
 
 /** #49：本轮读过的页面 → 回答出处。新记录用独立的 sources，旧记录退回事实链里的 sources。 */
@@ -1980,6 +1995,38 @@ interface RunHost {
   chipGroup: ChipGroup | null;
   /** 这一轮动过页面（标注、开标签、填写等）；只读回合结束后不留过程行。 */
   changedPage: boolean;
+  /** 标题上次换字的时刻与排队中的下一句：每句至少停 RUN_TITLE_HOLD_MS，免得一闪而过。 */
+  titleAt: number;
+  titleTimer: number;
+}
+
+const RUN_TITLE_HOLD_MS = 1100;
+
+/** 过程灰字：动词墨色、对象浅灰，无图标（#58 C）。 */
+function paintAction(el: HTMLElement, text: string): void {
+  const { verb, object } = splitAction(text);
+  const v = document.createElement("span");
+  v.className = "act-verb";
+  v.textContent = verb;
+
+  if (!object) { el.replaceChildren(v);
+
+ return; }
+
+  const o = document.createElement("span");
+  o.className = "act-object";
+  o.textContent = object;
+  el.replaceChildren(v, " ", o);
+}
+
+/** 换过程行标题。进行中每句至少停 1.1 秒，后来的只留最新一句排队；now=true（收尾）立即换。 */
+function setRunTitle(run: RunHost, text: string, now = false): void {
+  clearTimeout(run.titleTimer);
+  const wait = now || applyingHistory ? 0 : run.titleAt + RUN_TITLE_HOLD_MS - Date.now();
+  const paint = () => { paintAction(run.titleEl, text); run.titleAt = Date.now(); };
+
+  if (wait <= 0) paint();
+  else run.titleTimer = window.setTimeout(paint, wait);
 }
 
 /** 当前 run；run 外为 null。 */
@@ -2700,17 +2747,18 @@ function ensureRun(): NonNullable<typeof currentRun> {
   orbMark.className = "run-orb-mark";
   orbMark.hidden = true;
   orbMark.setAttribute("role", "img");
-  iconBox.append(orb.el, orbMark);
+  // 过程行不放光球（#58 C）：光球只属于起始区和语音。orb 对象仍跟踪状态，不挂进页面就不画帧。
+  iconBox.append(orbMark);
   const title = document.createElement("span");
   title.className = "run-title";
-  title.textContent = `正在${loaderSubtitle(null)}`;
+  paintAction(title, `正在${loaderSubtitle(null)}`);
   const chainEl = document.createElement("span");
   chainEl.className = "run-chain";
   const timeEl = document.createElement("span");
   timeEl.className = "run-time";
   const chevron = document.createElement("span");
   chevron.className = "run-chevron";
-  chevron.appendChild(icon(ChevronDown));
+  chevron.appendChild(icon(ChevronRight));
   summary.append(iconBox, title, chainEl, timeEl, chevron);
   const body = document.createElement("div");
   body.className = "run-body";
@@ -2724,12 +2772,12 @@ function ensureRun(): NonNullable<typeof currentRun> {
   root.append(summary, reveal);
   messagesEl.appendChild(root);
   const start = runStartAt || eventTime();
-  timeEl.textContent = recordedDuration(start, eventTime()) ?? "";
+  timeEl.textContent = spokenDuration(start, eventTime()) ?? "";
 
-  // 唯一状态行的耗时读数 100ms 刷新
+  // 唯一状态行的耗时读数，按秒走
   const timer = window.setInterval(() => {
-    timeEl.textContent = recordedDuration(start, Date.now()) ?? "";
-  }, 100);
+    timeEl.textContent = spokenDuration(start, Date.now()) ?? "";
+  }, 1000);
 
   currentRun = {
     root,
@@ -2747,6 +2795,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
     orbActivity: new RunOrbActivity(),
     orbMark,
     changedPage: false,
+    titleAt: 0,
+    titleTimer: 0,
   };
 
   return currentRun;
@@ -2934,7 +2984,7 @@ function addChainStep(label: string): void {
 }
 
 const RUN_ORB_MARKS = {
-  user: { icon: Hand, label: "等待你操作" },
+  user: { icon: Hand, label: "已暂停 · 页面归你" },
   completed: { icon: Check, label: "本轮结束" },
   failed: { icon: CircleAlert, label: "执行失败" },
   stopped: { icon: Square, label: "已停止" },
@@ -2954,7 +3004,8 @@ function syncRunOrb(run: RunHost): void {
     run.orbMark.replaceChildren(graphic);
   }
 
-  if (mark && state !== "completed") run.titleEl.textContent = mark.label;
+  // 收尾后标题由 finishRun 定稿（做了几件事），迟到的 tool_end 不再改回状态词。
+  if (mark && state !== "completed" && !run.root.classList.contains("done") && run.titleEl.textContent !== mark.label) setRunTitle(run, mark.label, true);
   run.orb.setState(state);
   run.orb.setRunning(!applyingHistory && orbStateRuns(state));
 }
@@ -2987,14 +3038,14 @@ function finishRun(): void {
   run.root.classList.add("done");
   run.orbActivity.finish();
   syncRunOrb(run);
-  const title = run.root.querySelector(".run-title");
+  const title = run.titleEl;
 
   if (title) {
     const outcome = run.orbActivity.state();
     const steps = run.body.querySelectorAll(".chip").length;
-    title.textContent = hasResumeReceipt && steps === 0 && outcome !== "failed" && outcome !== "stopped"
+    setRunTitle(run, hasResumeReceipt && steps === 0 && outcome !== "failed" && outcome !== "stopped"
       ? "恢复记录"
-      : finishedRunTitle(steps, outcome === "failed" || outcome === "stopped" ? outcome : "completed");
+      : finishedRunTitle(steps, outcome === "failed" || outcome === "stopped" ? outcome : "completed"), true);
   }
 
   run.timeEl.textContent = spokenDuration(run.start, eventTime()) ?? "";
@@ -3076,6 +3127,11 @@ function closeLeadDraft(): void {
   currentLeadDraftDetails = null;
 }
 
+/** 正文开始出字、这一轮还没做过动作：「正在思考」让位给正文；之后有动作再出来。 */
+function quietRunForProse(): void {
+  if (currentRun && !currentRun.body.querySelector(".chip")) currentRun.root.hidden = true;
+}
+
 /** 模型直接写的正文：没调过工具时放在回答位置逐段显示；新一轮的正文出现时，上一轮那段只是过程。 */
 function appendLeadAnswer(delta: string): void {
   // 过程行照常在跑：停止、出错时这段正文按原样收进去，过程行也随之保留。
@@ -3084,6 +3140,7 @@ function appendLeadAnswer(delta: string): void {
   if (leadAnswer && leadAnswerTurnClosed) foldLeadAnswer();
 
   if (!leadAnswer) {
+    quietRunForProse();
     leadAnswer = addMsg("msg assistant markdown streaming", "");
     leadAnswerText = "";
     leadAnswerTurnClosed = false;
@@ -3301,11 +3358,11 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
     return;
   }
 
+  run.root.hidden = false;
   addChainStep(action.short);
   run.lastToolShort = action.short;
 
-  // #47：第一张动作卡出现时展开过程，逐步动作不必再点开才看得到；用户收起后不再强行打开。
-  if (!applyingHistory && !run.body.querySelector(".chip")) run.root.open = true;
+  // #58 C 取代 #47 的自动展开：进行中只有一行「正在…」，做过的步骤收在 › 里。
 
   if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
   const group = run.chipGroup;
@@ -3315,7 +3372,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
 
   if (changesPage(ev.name)) run.changedPage = true;
 
-  if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) run.titleEl.textContent = `正在${action.full}`;
+  if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`);
 
   const chip = document.createElement("button");
   chip.type = "button";
@@ -3332,10 +3389,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const chipOrb = createOrb("solving", ORB_BOX_CHIP);
 
   if (!applyingHistory) chipOrb.setRunning(true);
-  iconBox.appendChild(chipOrb.el);
   const label = document.createElement("span");
   label.className = "chip-label";
-  label.textContent = actionCardLabel(ev.name, ev.params);
+  paintAction(label, actionCardLabel(ev.name, ev.params));
   const dur = document.createElement("span");
   dur.className = "dur";
   dur.hidden = true;
@@ -3396,7 +3452,15 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   const label = entry.chip.querySelector(".chip-label");
 
-  if (ev.repeatRefused && label) label.textContent = `${label.textContent}（已做过，没再重复）`;
+  if (ev.repeatRefused && label) label.append("（已做过，没再重复）");
+
+  if (failed && label) {
+    const note = document.createElement("span");
+    note.className = "act-failed";
+    note.textContent = " · 没成功";
+    label.append(note);
+  }
+
   const text = ev.resultText ?? "";
 
   if (text) entry.resultText = text.length > 800 ? `${text.slice(0, 797)}...` : text;
@@ -3474,6 +3538,10 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       resultByConversation.delete(selectedConversationId);
       renderTaskStrip();
       closeBlocks();
+
+      // #58 C：一开始就有一行「正在思考」，模型想很久时也看得到在做（任务条不再兜这段）。
+      // 新会话第一轮的开头经补放历史到达，所以补放时也建；补放到 agent_end 会照常收尾。
+      ensureRun();
       break;
     case "turn_end":
       closeBlocks();
@@ -3505,6 +3573,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       if(plan==='mark_cancelled'){bubble!.dataset.streaming='cancelled';bubble!.title='这次回答未完成';break;}
 
+      if(!bubble)quietRunForProse();
+
       const target=bubble??addMsg('msg assistant markdown','');
 
       if(!bubble){target.dataset.deliveryId=s.id;target.dataset.deliveryKind=s.kind;deliveredBubbles.set(s.id,target);}
@@ -3519,7 +3589,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if (ev.progress) {
         // 进度说明只属于正在跑的这一轮：放进过程行标题，不在对话里留下一句过时的话。
         // 不为它新建过程行：压缩可能发生在回合结束后，新建的行不会再收尾。
-        if (currentRun && !applyingHistory) currentRun.titleEl.textContent = ev.message;
+        if (currentRun && !applyingHistory) setRunTitle(currentRun, ev.message);
       } else if(ev.plan){
         const key=`plan:${ev.plan.conversationId}:${ev.plan.id}`;
         const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果待确认':'未执行')}\n${s.text}`).join('\n');

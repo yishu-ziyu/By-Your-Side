@@ -71,7 +71,7 @@ try {
       viewport: innerWidth,
       documentWidth: document.documentElement.scrollWidth,
       overflow: [...document.querySelectorAll('#app *')].filter((el) => shown(el) && el.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map((el) => el.id || el.className || el.tagName),
-      pageInComposer: !!q('#composer #page-pill') && shown(q('#page-pill')),
+      pageAboveComposer: !q('#composer #page-pill') && shown(q('#page-pill')) && q('#page-pill').getBoundingClientRect().bottom <= q('#composer').getBoundingClientRect().top + 1,
       pagePill: rect(q('#page-pill')),
       composer: rect(q('#composer')),
       starterShown: shown(q('#starter')),
@@ -86,7 +86,7 @@ try {
       resultText: shown(q('#task-result-card')) ? q('#task-result-card').innerText : null,
     };
   })()`) as {
-    viewport: number; documentWidth: number; overflow: string[]; pageInComposer: boolean;
+    viewport: number; documentWidth: number; overflow: string[]; pageAboveComposer: boolean;
     pagePill: { width: number } | null; composer: { width: number } | null;
     starterShown: boolean; input: string; sendStopping: boolean;
     taskBar: { text: string; rect: { height: number } } | null;
@@ -214,7 +214,7 @@ try {
   await rp.detach(worker);
 
   const idle = await shot("1-idle", 400);
-  check("当前页引用在输入框内", idle.pageInComposer, { pagePill: idle.pagePill, composer: idle.composer });
+  check("当前页引用在输入框外上方一行（#58 B）", idle.pageAboveComposer, { pagePill: idle.pagePill, composer: idle.composer });
   check("开始建议可见", idle.starterShown, { shown: idle.starterShown });
   const suggestion = String(await rp.evaluate(panel, `document.querySelector('#starter button[data-starter]')?.dataset.starter ?? ''`));
   await rp.click(panel, "#starter button[data-starter]");
@@ -229,24 +229,14 @@ try {
   await rp.pressEnter(panel);
   await until(async () => model.requests.some((r) => r.rule === "找米娅") || undefined, 30_000, "真实发送抵达脚本模型");
   const running = await shot("2-running", 400);
-  const taskCard = await rp.evaluate(panel, `(() => { const card = document.querySelector('.ai-task-card'); return { goal:card?.querySelector('.task-goal-line')?.textContent, expanded:card?.classList.contains('expanded') }; })()`);
-  check("真实运行生成流式任务卡", taskCard.goal === "请在当前页找米娅", taskCard);
+  // #58 C：不再有重复目标的厚任务卡；过程只有一行，点开是步骤，减少动态效果时不扫光。
+  check("真实运行不再生成重复目标的任务卡", await rp.evaluate(panel, `!document.querySelector('.ai-task-card .task-goal-line')?.getClientRects().length`), null);
+  const line = await until(async () => await rp.evaluate(panel, `document.querySelector("details.run-steps .run-title")?.textContent || ""`) || undefined, 20_000, "过程行");
+  check("过程只有一行，写在做什么", /^正在|^做了/.test(String(line)), { line });
+  await rp.cdp.send("Emulation.setEmulatedMedia", {features:[{name:"prefers-reduced-motion",value:"reduce"}]}, panel);
+  check("减少动态效果时过程行不扫光", await rp.evaluate(panel, `(() => { const t = document.querySelector("details.run-steps .run-title"); return !t || getComputedStyle(t).animationName === "none"; })()`), null);
+  await rp.cdp.send("Emulation.setEmulatedMedia", {features:[]}, panel);
 
-  if (taskCard.goal) {
-    await rp.click(panel, ".ai-task-trigger");
-    await sleep(240);
-    const folded = await rp.evaluate(panel, `(() => {const c=document.querySelector(".ai-task-card");return {height:c.querySelector(".ai-task-reveal").getBoundingClientRect().height,inert:c.querySelector(".ai-task-reveal").inert,chevron:getComputedStyle(c.querySelector(".task-chevron")).transform};})()`);
-    check("折叠后抽屉高度为零且不可聚焦", folded.height === 0 && folded.inert, folded);
-    check("任务卡可折叠", await rp.evaluate(panel, `document.querySelector('.ai-task-trigger').getAttribute('aria-expanded') === 'false'`), null);
-    await rp.click(panel, ".ai-task-trigger");
-    await sleep(240);
-    const craft = await rp.evaluate(panel, `(() => {const c=document.querySelector(".ai-task-card"), t=c.querySelector(".ai-task-trigger");return {outer:parseFloat(getComputedStyle(c).borderRadius),inner:parseFloat(getComputedStyle(t).borderRadius),padding:parseFloat(getComputedStyle(c).paddingLeft),height:c.querySelector(".ai-task-reveal").getBoundingClientRect().height,chevron:getComputedStyle(c.querySelector(".task-chevron")).transform};})()`);
-    check("展开有真实高度、箭头转180度且圆角同心", craft.height > 0 && craft.chevron === "matrix(-1, 0, 0, -1, 0, 0)" && craft.outer === craft.inner + craft.padding, craft);
-    await rp.cdp.send("Emulation.setEmulatedMedia", {features:[{name:"prefers-reduced-motion",value:"reduce"}]}, panel);
-    check("减少动态效果关闭任务卡入场与抽屉过渡", await rp.evaluate(panel, `getComputedStyle(document.querySelector(".ai-task-card")).animationName === "none" && getComputedStyle(document.querySelector(".ai-task-reveal")).transitionDuration === "0s"`), null);
-    await rp.cdp.send("Emulation.setEmulatedMedia", {features:[]}, panel);
-    check("任务卡可再次展开", await rp.evaluate(panel, `document.querySelector('.ai-task-trigger').getAttribute('aria-expanded') === 'true'`), null);
-  }
 
   check("运行中仍可输入补充", running.sendStopping && !(await rp.evaluate(panel, `document.querySelector('#input').disabled`)), { sendStopping: running.sendStopping });
   await until(async () => (await read()).answerText?.includes(reply.split("\n")[0]!) || undefined, 60_000, "回答落入真实侧栏");
