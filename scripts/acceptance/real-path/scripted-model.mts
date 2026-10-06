@@ -12,9 +12,10 @@ type ToolCall = { name: string; args: JsonRecord };
 
 /**
  * 一步：写正文、调用一个工具、回错误码，或先挂起再回。
- * 正文可设 chunkDelayMs（每段之间停顿，模拟慢模型逐段输出）和 thenTool（同一条回复里写完正文再调工具）。
+ * 正文可设 chunkDelayMs（每段之间停顿，模拟慢模型逐段输出）和 thenTool（同一条回复里写完正文再调工具）；
+ * reasoning 是正文前的思考摘要，按 OpenAI 兼容的 reasoning_content 分段送出。
  */
-export type TextStep = { text: string; delayMs?: number; chunkDelayMs?: number; thenTool?: ToolCall };
+export type TextStep = { text: string; delayMs?: number; chunkDelayMs?: number; thenTool?: ToolCall; reasoning?: string };
 
 export type Step = TextStep | { tool: ToolCall; delayMs?: number } | { status: number; body: string };
 
@@ -57,6 +58,8 @@ async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall }, 
   res.write(chunk({ role: "assistant", content: "" }));
 
   if ("text" in step) {
+    for (const piece of step.reasoning?.match(/[\s\S]{1,12}/g) ?? []) res.write(chunk({ reasoning_content: piece }));
+
     for (const piece of step.text.match(/[\s\S]{1,12}/g) ?? []) {
       if (step.chunkDelayMs && record?.firstTextAt !== undefined) await new Promise((done) => setTimeout(done, step.chunkDelayMs));
       res.write(chunk({ content: piece }));

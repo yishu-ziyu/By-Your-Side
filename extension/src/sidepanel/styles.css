@@ -3086,3 +3086,6 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 /* 用户气泡：「存成技能」悬停时浮在气泡下方，不撑出空白。 */
 .msg.user { position: relative; padding: 8px 14px; line-height: 1.6; }
 .msg.user .pskill-save { position: absolute; right: 4px; top: 100%; margin: 3px 0 0; }
+
+/* 思考摘要、旁白里的小标题（模型写的 **粗体**）：比正文深一档，不放大。 */
+details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }

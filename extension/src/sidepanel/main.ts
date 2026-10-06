@@ -3268,8 +3268,31 @@ function appendLeadDelta(delta: string): void {
     currentLeadDraftDetails = details;
   }
 
-  currentLeadDraft.appendChild(document.createTextNode(delta));
+  appendTrace(currentLeadDraft, delta);
   scrollToEnd();
+}
+
+/** 思考摘要、旁白按原文累积。 */
+const traceText = new WeakMap<HTMLElement, string>();
+
+/**
+ * 只认 **粗体**：模型（如 GPT 的思考摘要）用它写每段的小标题，原样显示成「**Checking …**」。
+ * 过程区不排标题、列表这类大块格式；空行压成换行，摘要读起来是一串短句。
+ */
+function appendTrace(pre: HTMLElement, delta: string): void {
+  const text = (traceText.get(pre) ?? "") + delta;
+  traceText.set(pre, text);
+
+  const parts = text.replace(/\n{2,}/g, "\n").split(/\*\*([^*\n]+)\*\*/g).map((part, i) => {
+    if (i % 2 === 0) return part;
+
+    const strong = document.createElement("strong");
+    strong.textContent = part;
+
+    return strong;
+  });
+
+  pre.replaceChildren(...parts);
 }
 
 function appendDelta(kind: "assistant" | "thinking", delta: string): void {
@@ -3308,7 +3331,7 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       currentThinkingDetails = details;
     }
 
-    currentThinking.appendChild(document.createTextNode(delta));
+    appendTrace(currentThinking, delta);
   }
 
   scrollToEnd();

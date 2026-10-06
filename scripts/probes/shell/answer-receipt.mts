@@ -38,6 +38,7 @@ const model = await startScriptedModel([
   { match: "开站甲", steps: [{ tool: { name: "tabs", args: { action: "active" } } }, slow({ name: "tabs", args: { action: "open", url: `${origin}/about` } }), { tool: { name: "snapshot", args: {} } }, { text: `已打开[体验页](${origin}/about)，登录后才能聊天。订票页写着票价 388 元。` }] },
   fillTask("订票甲", "#b"),
   fillTask("订票乙", "#nope"),
+  { match: "思考甲", steps: [{ text: "我先看一下页面。", reasoning: "**Checking sign-in requirement**\n\n**Inspecting linked show page**\n\nThe page needs login.", thenTool: { name: "tabs", args: { action: "active" } } }, { tool: { name: "tabs", args: { action: "open", url: `${origin}/about` } } }, { text: "看过了。" }] },
 ]);
 
 const failures: string[] = [];
@@ -124,6 +125,15 @@ try {
   const card = await until(async () => await rp.evaluate(panel, "(() => { const e = document.querySelector(\".ai-task-card resume-entry\"); if (!e || !e.getClientRects().length) return null; const b = e.querySelector(\".resume-action\"); const bg = getComputedStyle(b).backgroundColor.match(/\\d+/g).slice(0, 3).map(Number); return { line: e.querySelector(\".resume-line\").textContent, cardBg: getComputedStyle(e).backgroundColor, button: b.textContent, buttonDark: bg.reduce((s, v) => s + v, 0) < 200 }; })()") || undefined, 20_000, "没做成卡片").catch(() => null);
   check("没做成：浅底卡片 + 实心按钮「继续原任务」", !!card && card.cardBg !== "rgba(0, 0, 0, 0)" && card.button.includes("继续原任务") && card.buttonDark, JSON.stringify(card));
   await rp.screenshot(panel, join(out, "receipt-fail.png"));
+
+  // 四、思考摘要和旁白里的 **粗体** 渲染成粗体，不露星号
+  await rp.cdp.send("Page.bringToFront", {}, work);
+  await ask("思考甲：看看这页要不要登录");
+  await rp.click(panel, "details.run-steps:last-of-type > summary");
+  await sleep(400);
+  const trace = await rp.evaluate(panel, "[...document.querySelectorAll(\"details.run-steps:last-of-type details.thinking pre\")].map((p) => ({ text: p.textContent, bold: [...p.querySelectorAll(\"strong\")].map((b) => b.textContent) }))");
+  check("思考摘要：小标题是粗体，没有 ** 星号", trace.some((t: { bold: string[] }) => t.bold.includes("Checking sign-in requirement")) && !trace.some((t: { text: string }) => t.text.includes("**")), JSON.stringify(trace));
+  await rp.screenshot(panel, join(out, "receipt-trace.png"));
 } finally {
   console.log(failures.length ? `FAILED ${failures.length}` : "ALL PASS");
   await rp.close().catch(() => undefined);
