@@ -235,9 +235,10 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
   function start(skill: PromptSkill): void {
     const questions = skill.questions ?? [];
 
+    // 不用回答问题的技能：正文放进输入框，用户看过、改过再发（YIS-74）。
     if (!questions.length) {
-      setInput("");
-      run(fillSkillBody(skill, []));
+      setInput(fillSkillBody(skill, []));
+      inputEl.focus({ preventScroll: true });
 
       return;
     }

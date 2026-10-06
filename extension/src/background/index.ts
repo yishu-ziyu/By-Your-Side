@@ -146,7 +146,6 @@ const marginalia = installMarginalia({
 const nudge = installNudge({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
-  sendUserText: (id, text, context) => { const c = controller(id); void c.ready.then(() => c.sendUserText(text, context)); },
 });
 
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
@@ -2012,19 +2011,7 @@ async function importReading(record: ReadingRecord): Promise<void> {
   flushHistory();
 }
 
-/** 主动建议卡的按钮（#52）：与侧栏输入发出的用户消息走同一条路——记进对话、带页面上下文上行，没送达时标记可重试。 */
-function sendUserText(text: string, context: import("../../../shared/protocol.js").PageContext): void {
-  const entry = recordAndBroadcastHistory({ kind: "user", text });
-  const original: ClientMessage = { type: "user_message", text, context, conversationId };
-
-  if (!uplink.sendClientMessage(original)) {
-    panelHistory.markUndelivered(entry.seq, original);
-    flushHistory();
-    broadcast({ kind: "delivery", seq: entry.seq, ok: false, original } satisfies BgToPanel);
-  }
-}
-
-return { importReading, sendUserText, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
+return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
 // 页面右上角「停下」：只认本会话正在操作的那一页；和侧栏「接管」走同一条路。
 worksOn: async (tabId: number) => !gate.isUser() && await getWorkingTabId() === tabId,
 pauseFromPage: (tabId: number) => { void handleTakeover(tabId); requestPanelControl("pause", tabId); },

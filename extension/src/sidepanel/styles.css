@@ -1730,7 +1730,8 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 
 #input {
-  flex: 1;
+  /* 不用 flex: 1：框高随内容走，flex-basis 为 0 会把 autoResize 写的高度压回最小高度，多行只能在两行里滚。 */
+  flex: none;
   resize: none;
   border: none;
   outline: none;
@@ -2974,12 +2975,7 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.assistant .answer-source.untitled:hover .answer-source-host { visibility: visible; }
 .msg.assistant .answer-source:hover .answer-source-host { font-size: 0; }
 .msg.assistant .answer-source:hover .answer-source-host::after { content: attr(data-hover); font-size: var(--fs-micro); color: var(--text-tertiary); }
-.msg.assistant .source-mark {
-  margin-left: 1px; padding: 0 1px; border: 0; background: transparent; color: var(--text-tertiary);
-  font: inherit; font-size: 0.68em; line-height: 1; vertical-align: super; cursor: pointer;
-}
-.msg.assistant .source-mark:hover { color: var(--text-primary); }
-.msg.assistant .answer-source:focus-visible, .msg.assistant .source-mark:focus-visible, .msg.assistant .answer-sources > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.msg.assistant .answer-source:focus-visible, .msg.assistant .answer-sources > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .source-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 50; padding: 6px 12px; border-radius: 999px; background: var(--text-primary); color: var(--content-subtle); font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); pointer-events: none; }
 
 /* ── #58 C 过程灰字：一轮只留一行 ─────────────────────────
@@ -3054,7 +3050,7 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .answer-actions .answer-sources-btn { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[hidden] { display: none; }
 .answer-actions .answer-sources-btn[aria-expanded=true] { background: var(--content-subtle); }
-.answer-actions .answer-source-glyph, .source-mark .answer-source-glyph { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; background: rgb(0 0 0 / .06); color: var(--text-secondary); font-size: 9px; font-weight: 600; line-height: 1; }
+.answer-actions .answer-source-glyph { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; background: rgb(0 0 0 / .06); color: var(--text-secondary); font-size: 9px; font-weight: 600; line-height: 1; }
 .answer-time { margin-left: 6px; font-size: 11.5px; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
 .answer-time:empty { display: none; }
 .answer-panel { scroll-margin-bottom: 28px; margin: 6px 0 2px; padding: 4px 6px 6px; border-radius: 12px; background: var(--content-bg); box-shadow: 0 0 0 1px var(--content-border), 0 8px 24px rgb(0 0 0 / .06); font-family: var(--font); }
@@ -3066,10 +3062,13 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .msg.assistant .answer-panel .memory-used-list { margin: 0; }
 .msg.assistant .answer-panel .memory-used-item { margin: 0; }
 
-/* 正文出处：站点小胶囊；能回原页核对的数字带虚下划线。 */
-.msg.assistant .source-mark { display: inline-flex; align-items: center; gap: 4px; margin-left: 3px; padding: 2px 7px 2px 3px; border-radius: 999px; background: var(--content-subtle); color: var(--text-secondary); font-family: var(--font); font-size: 11.5px; line-height: 1.2; vertical-align: 2px; }
-.msg.assistant .source-mark.glyph-only { padding-right: 3px; }
-.msg.assistant .source-mark:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
+/* 正文出处：站点图标长在链接文字前面（YIS-74），下划线淡到悬停才显；能回原页核对的数字带虚下划线。 */
+.answer-source-glyph { overflow: hidden; }
+.answer-source-glyph > img { display: block; width: min(16px, 100%); height: min(16px, 100%); object-fit: contain; }
+.answer-source-glyph:has(> img) { background: transparent !important; }
+.msg.assistant.markdown a:has(> .source-fav) { text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-decoration-thickness: 1px; text-underline-offset: 4px; transition: text-decoration-color var(--m-quick) var(--e-swift); }
+.msg.assistant.markdown a:has(> .source-fav):hover { text-decoration-color: currentColor; }
+.msg.assistant .source-fav { display: inline-block; width: 15px; height: 15px; margin: 0 4px 0 2px; border-radius: 4px; vertical-align: -2px; background: var(--content-subtle); color: var(--text-secondary); font-size: 9px; font-weight: 600; line-height: 15px; text-align: center; text-decoration: none; }
 .msg.assistant .num-cite { text-decoration: underline dotted var(--text-quaternary); text-underline-offset: 4px; cursor: pointer; border-radius: 3px; }
 .msg.assistant .num-cite:hover { text-decoration-color: var(--accent); }
 .msg.assistant .num-cite:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

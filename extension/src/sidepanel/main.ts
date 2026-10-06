@@ -65,6 +65,7 @@ import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
+import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
@@ -534,8 +535,37 @@ function starterReady(): boolean {
   return historyPrimed && currentDraftReady;
 }
 
+/**
+ * 页角建议卡（#52）点了按钮：后台把建议的话放进 session 存储，这里取走填进输入框，由用户自己发送（YIS-74）。
+ * 等当前草稿恢复完再填，免得被恢复覆盖；输入框已有字时接在后面，不吞掉用户的草稿。
+ */
+let takingNudgeDraft = false;
+
+async function takeNudgeDraft(): Promise<void> {
+  if (!starterReady() || takingNudgeDraft) return;
+  takingNudgeDraft = true;
+  let text = "";
+
+  try {
+    // 只有后台 nudge.ts 写这个键，值是建议的那句话。
+    text = String((await chrome.storage.session.get(NUDGE_DRAFT_KEY))[NUDGE_DRAFT_KEY] ?? "").trim();
+    await chrome.storage.session.remove(NUDGE_DRAFT_KEY);
+  } finally { takingNudgeDraft = false; }
+
+  if (!text) return;
+  inputEl.value = inputEl.value.trim() ? `${inputEl.value.trimEnd()}\n${text}` : text;
+  inputEl.dispatchEvent(new Event("input"));
+  inputEl.focus();
+  inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "session" && changes[NUDGE_DRAFT_KEY]?.newValue) void takeNudgeDraft();
+});
+
 function updateStarterVisibility(): void {
   app.classList.toggle("starter-ready", starterReady());
+  void takeNudgeDraft();
   refreshOpenThreads();
 
   const tabId = starterTab();

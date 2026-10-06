@@ -1,18 +1,18 @@
 /**
- * #49 回答出处：读过的页面列在回答下面「来源」面板里，每个来源一行；正文里引到的已读页面旁加站点小胶囊
- * （回执改版，docs/evals/20261006-answer-receipt.md；原来是回答前一行「读了 … ⌄」加数字角标）。
+ * #49 回答出处：读过的页面列在回答下面「来源」面板里，每个来源一行；正文里引到的已读页面，链接前加站点图标
+ * （回执改版 docs/evals/20261006-answer-receipt.md、YIS-74；原来是回答前一行「读了 … ⌄」加数字角标，后来是链接后的站点胶囊）。
  * 点开出处 → 主窗口切到那一页（已开着就复用）、尽量定位并高亮段落。输入框旁的「当前页」标签随之换成这一页，不另挂第二个。
  *
  * 诚实边界（与 delivery-facts-view 一致）：
  * - 只用交付事实链 `facts.sources`（本 run 真实读到/打开的页面）；旧记录没有这个字段就什么都不画。
- * - 角标只加在正文链接指向已读页面的地方；模型正文里没读过的链接不标成出处。
+ * - 图标只加在正文链接指向已读页面的地方；模型正文里没读过的链接不标成出处。
  * - 段落定位复用 PINPOINT_DOM_TARGET：找不到唯一位置就不假装高亮，回到页顶并提示「已打开来源页」。
  */
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
 import { sourceLabel } from "./delivery-facts-view.js";
 import { captureCitationContext, citationValues, toast } from "./sonar-citations.js";
-import { answerPanelSection, refreshAnswerPanel } from "./answer-actions.js";
+import { answerPanelSection, refreshAnswerPanel, siteGlyph } from "./answer-actions.js";
 
 /** 同一页面：忽略锚点和末尾斜杠，其余（含查询串）都要一致。 */
 function pageKey(url: string): string | null {
@@ -119,7 +119,7 @@ function hostOf(url: string): string {
 function claimOf(link: HTMLElement): string {
   // SAFETY: cloneNode 保持原节点类型；link 本身是 HTMLElement，closest 命中的也是元素。
   const block = (link.closest("p,li,td,th,blockquote") ?? link).cloneNode(true) as HTMLElement;
-  block.querySelectorAll(".source-mark").forEach(node => node.remove());
+  block.querySelectorAll(".source-fav").forEach(node => node.remove());
 
   return block.textContent ?? "";
 }
@@ -129,7 +129,7 @@ function claimOf(link: HTMLElement): string {
  * sources 缺省（旧记录）或为空时不画任何东西。
  */
 export function attachAnswerSources(answer: HTMLElement, sources: readonly UserDeliverySourceRef[] | undefined): void {
-  answer.querySelectorAll(".answer-sources,.source-mark").forEach(node => node.remove());
+  answer.querySelectorAll(".answer-sources,.source-fav").forEach(node => node.remove());
   refreshAnswerPanel(answer);
 
   if (!sources?.length) return;
@@ -156,10 +156,7 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     const number = document.createElement("span");
     number.className = "answer-source-index";
     number.textContent = String(index);
-    const glyph = document.createElement("span");
-    glyph.className = "answer-source-glyph";
-    glyph.setAttribute("aria-hidden", "true");
-    glyph.textContent = host.charAt(0).toUpperCase();
+    const glyph = siteGlyph(source.url, host);
     const text = document.createElement("span");
     text.className = "answer-source-label";
     text.textContent = label;
@@ -209,20 +206,10 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     // 正文里指向已读页面的链接和它的角标做同一件事，不再一个开新标签、一个定位出处。
     link.onclick = (ev) => { ev.preventDefault(); void openAnswerSource(entry.source, claimOf(link)); };
 
-    const mark = document.createElement("button");
-    mark.type = "button";
-    mark.className = "source-mark";
-    const square = document.createElement("span");
-    square.className = "answer-source-glyph";
-    square.textContent = entry.host.charAt(0).toUpperCase();
-    mark.append(square);
-
-    // 链接文字已经是站名时只留方块，不把站名写两遍。
-    if ((link.textContent ?? "").includes(entry.host)) mark.classList.add("glyph-only");
-    else mark.append(entry.host);
-    mark.title = `打开出处并定位：${entry.label}`;
-    mark.setAttribute("aria-label", `打开出处 ${entry.index}：${entry.label}`);
-    mark.onclick = () => void openAnswerSource(entry.source, claimOf(link));
-    link.after(mark);
+    // 站点图标长在链接文字前面（YIS-74 截图的做法），不在后面另挂胶囊；站名和标题放在悬停提示里。
+    const glyph = siteGlyph(entry.source.url, entry.host);
+    glyph.classList.add("source-fav");
+    link.prepend(glyph);
+    link.title = `${entry.label} · ${entry.host}（点开回原页核对）`;
   }
 }

@@ -31,6 +31,12 @@ export function isNudgeCard(v: unknown): v is NudgeCard {
 /** 页面 → 后台：点了卡上的按钮（id 指向后台记着的那条建议）。 */
 export const NUDGE_ACT = 'NUDGE_ACT';
 
+/**
+ * chrome.storage.session 键：点了卡上的按钮后，后台把建议的话放在这里，侧栏取走填进输入框（YIS-74：只填草稿，由用户发送）。
+ * 侧栏可能还没打开，所以不用消息而用存储。
+ */
+export const NUDGE_DRAFT_KEY = 'sideagent_nudge_draft';
+
 /** 页面 → 后台：点了 ×，这一页本次会话不再建议。 */
 export const NUDGE_DISMISS = 'NUDGE_DISMISS';
 

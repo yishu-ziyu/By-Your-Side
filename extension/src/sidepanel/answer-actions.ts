@@ -1,7 +1,7 @@
 import { createElement as icon, Copy } from "lucide";
 
 /** 不属于回答正文的界面文字：复制时去掉。 */
-const CHROME = ".answer-actions,.answer-panel,.source-mark,.answer-sources,.citation-row";
+const CHROME = ".answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row";
 
 const SECTION_TITLES = { sources: "读过的网页", memory: "用到的记忆" } as const;
 
@@ -104,17 +104,36 @@ export function refreshAnswerPanel(answer: HTMLElement): void {
 
   if (button.hidden) panel.hidden = true;
 
-  const glyphs = Array.from(panel.querySelectorAll(".answer-source-glyph"), node => node.textContent ?? "");
-
-  const squares = [...new Set(glyphs)].slice(0, 2).map((text) => {
-    const square = document.createElement("span");
-    square.className = "answer-source-glyph";
-    square.textContent = text;
-
-    return square;
-  });
+  const glyphs = Array.from(panel.querySelectorAll<HTMLElement>(".answer-source-glyph"));
+  const hosts = new Map(glyphs.map(node => [node.dataset.host ?? node.textContent ?? "", node]));
+  // SAFETY: cloneNode 保持原节点类型。
+  const squares = [...hosts.values()].slice(0, 2).map(node => node.cloneNode(true) as HTMLElement);
 
   button.replaceChildren(...squares, glyphs.length ? "来源" : "记忆");
+}
+
+/** 站点图标：浏览器缓存里的网站真图标（YIS-74）；取不到时退回首字母方块。 */
+export function siteGlyph(url: string, host: string): HTMLElement {
+  const glyph = document.createElement("span");
+  glyph.className = "answer-source-glyph";
+  glyph.dataset.host = host;
+  glyph.setAttribute("aria-hidden", "true");
+  const letter = host.charAt(0).toUpperCase();
+
+  if (!chrome.runtime?.getURL) {
+    glyph.textContent = letter;
+
+    return glyph;
+  }
+
+  const img = document.createElement("img");
+  img.alt = "";
+  img.src = `${chrome.runtime.getURL("/_favicon/")}?pageUrl=${encodeURIComponent(url)}&size=32`;
+  img.onerror = () => { glyph.textContent = letter; };
+
+  glyph.append(img);
+
+  return glyph;
 }
 
 export function setAnswerTime(answer: HTMLElement, text: string): void {

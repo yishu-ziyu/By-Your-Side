@@ -1,11 +1,11 @@
 import { NUDGE_EXCERPT_LIMIT, NUDGE_RECENT_LIMIT, NUDGE_SELECTION_LIMIT, NUDGE_TEXT_LIMIT, type Nudge, type NudgeContext, type NudgeRecentPage, type NudgeResult } from '../../../shared/nudge.js';
-import type { ClientMessage, PageContext } from '../../../shared/protocol.js';
+import type { ClientMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
-import { NUDGE_ACT, NUDGE_COOLDOWN_MS, NUDGE_DISMISS, NUDGE_KEY, NUDGE_PAGE, NUDGE_SHOW, isNudgeOn, nudgeableUrl, type NudgeCard } from '../shared/nudge.js';
+import { NUDGE_ACT, NUDGE_COOLDOWN_MS, NUDGE_DISMISS, NUDGE_DRAFT_KEY, NUDGE_KEY, NUDGE_PAGE, NUDGE_SHOW, isNudgeOn, nudgeableUrl, type NudgeCard } from '../shared/nudge.js';
 
 /**
  * 主动建议卡（#52）的后台一半：记下这次会话最近看过的几页，在用户读一页够久又动过手时，
- * 请模型判断一次要不要建议；有建议才让页角出卡，点按钮打开侧栏并把建议的指令当一条用户消息发出。
+ * 请模型判断一次要不要建议；有建议才让页角出卡，点按钮打开侧栏并把建议的指令填进输入框，由用户自己发送（YIS-74）。
  *
  * 限频（本次浏览器会话，存 chrome.storage.session，不落盘）：同一网址只判断一次；两张卡至少隔 3 分钟；点过 × 的网址不再建议。
  */
@@ -13,8 +13,6 @@ import { NUDGE_ACT, NUDGE_COOLDOWN_MS, NUDGE_DISMISS, NUDGE_KEY, NUDGE_PAGE, NUD
 type Deps = {
   send: (message: ClientMessage) => boolean;
   selected: () => string;
-  /** 在该会话里发一条用户消息（与侧栏输入同一条路径），附上页面上下文。 */
-  sendUserText: (conversationId: string, text: string, context: PageContext) => void;
 };
 
 type State = { recent: NudgeRecentPage[]; judged: string[]; dismissed: string[]; lastShownAt: number };
@@ -130,7 +128,7 @@ export function installNudge(deps: Deps) {
     if (type === NUDGE_ACT) {
       // 必须在这次点击的消息里同步打开：等异步之后浏览器就不认是用户动作了。
       void chrome.sidePanel.open({ tabId }).catch(() => { /* 侧栏已开 */ });
-      deps.sendUserText(deps.selected(), offer.prompt, { tabId, title: sender.tab.title ?? offer.title, url: sender.url! });
+      void chrome.storage.session.set({ [NUDGE_DRAFT_KEY]: offer.prompt });
     }
   });
 

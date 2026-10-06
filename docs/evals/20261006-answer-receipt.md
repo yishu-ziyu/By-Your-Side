@@ -37,3 +37,6 @@
 - 回归：`process-line.mts` 全过；`sidebar-interaction.mts` 29/29；`takeover-handback.mts` 12/12；`task-view-ui`、`steps` 单测 62/62。
 - 已有失败，与本次无关：`sidebar-header.mts` 两项（同上一份验收）；`killer-interactions.mts`「伴读使用阅读区导轨且对话保留」改动前同样失败——检查读的是 `#messages`，样式隐藏的是外层 `#messages-frame`，属检查本身的问题。
 - 2026-10-06 用户手试发现过程区露出模型写的「**Checking sign-in requirement**」。思考摘要和旁白改成只认 `**粗体**`、空行压成换行；探针加第四轮（脚本模型送 reasoning_content），检查小标题是 `<strong>`、文字里没有星号，通过。截图 `out/probes/shell/receipt-trace.png`。
+
+## 修订
+- 2026-10-06 YIS-74：R3 的站点小胶囊改成链接文字前的站点图标，见 [建议只填草稿](20261006-draft-only.md) R1。

@@ -61,7 +61,7 @@ export async function attachSourceCitations(answer: HTMLElement, context: Citati
   // 出处清单和角标是界面文字，不是回答正文里的数字。
   // SAFETY: cloneNode 保持原节点类型，answer 是 HTMLElement。
   const body = answer.cloneNode(true) as HTMLElement;
-  body.querySelectorAll('.answer-sources,.source-mark,.answer-actions,.answer-panel,.memory-used-line').forEach(node => node.remove());
+  body.querySelectorAll('.answer-sources,.source-fav,.answer-actions,.answer-panel,.memory-used-line').forEach(node => node.remove());
   const values = citationValues(body.textContent ?? '');
 
   for (const value of values) {
