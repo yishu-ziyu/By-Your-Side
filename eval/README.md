@@ -11,7 +11,7 @@
 | 路径 | 内容 |
 |---|---|
 | `harness/` | 运行、判分、汇总、画图的脚本，细节见 [harness/README.md](harness/README.md) |
-| `tasks/` | 150 道任务（BYS-142–150 是复杂度阶梯新题，分级见 `ladder.json`）（`tasks.jsonl`，v2）、修改记录 `tasks_changes.md`、生成脚本 `gen_tasks.py`（生成的是 v1，重新生成会覆盖 v2 的修改）、类别分布图 |
+| `tasks/` | 171 道任务（BYS-142–150、171 是复杂度阶梯新题，151–170 是记忆小考，分级见 `ladder.json`）（`tasks.jsonl`，v2）、修改记录 `tasks_changes.md`、生成脚本 `gen_tasks.py`（生成的是 v1，重新生成会覆盖 v2 的修改）、类别分布图 |
 | `splits/` | train / held-out 切分（`train.txt`、`heldout.txt`）、切分规则 `README.md`、修正后的基线 `baseline_judge_v3.json` |
 | `judge_validation/` | judge v3 与人工结论的对照 `summary.md` |
 | `research/` | 竞品调研 `competitors.md`、Go 套餐额度估算图 `cost.png` |

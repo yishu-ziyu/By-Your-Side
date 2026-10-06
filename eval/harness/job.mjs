@@ -18,6 +18,8 @@ import { REPO } from "./paths.mjs";
 import { siteBlock } from "./environment.mjs";
 import { storageItemsFor } from "./credentials.mjs";
 
+const MODEL_EMPTY = /模型返回了空响应/;
+
 export { REPO };
 
 /** The tested repo's real-path driver (BYS_REPO decides which checkout is built and driven). */
@@ -278,12 +280,32 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     const sendAndSettle = async (text) => {
       const answers = await evalIn(ps, "document.querySelectorAll('#messages .msg.assistant').length");
+      const asked = await evalIn(ps, "document.querySelectorAll('#messages .msg.user').length");
+
+      const sent = () => until(async () => evalIn(ps, `document.querySelectorAll('#messages .msg.user').length > ${asked}`), 15000, "earlier turn sent");
+
+      const shot = async (e) => { await rp.screenshot(ps, join(outDir, `${task.id}-before-turn.png`)).catch(() => {});
+
+        throw e; };
+
+      // the default conversation may still be starting: Enter is then ignored, so wait for the send button and confirm the message landed
+      await until(async () => evalIn(ps, "document.querySelector('#send-btn')?.disabled === false"), 30000, "send ready").catch(shot);
       await rp.click(ps, "#input");
       await rp.typeText(ps, text);
       await rp.pressEnter(ps);
-      await until(async () => evalIn(ps, `document.querySelectorAll('#messages .msg.assistant').length > ${answers} && !document.querySelector('#status-pill')?.classList.contains('running') && !document.querySelector('#send-btn')?.classList.contains('stopping')`), capMs, "earlier turn done");
+      await sent().catch(async () => { await rp.click(ps, "#send-btn");
+
+        await sent().catch(shot); });
+
+      // a turn with no text ends in the product's 「模型返回了空响应」 notice instead of an answer. A pure 「记住…」 turn does this often
+      // after saving the memory (product bug, 2026-10-06), so it counts as settled and is recorded as empty.
+      const settled = await until(async () => evalIn(ps, `(() => { const idle = !document.querySelector('#status-pill')?.classList.contains('running') && !document.querySelector('#send-btn')?.classList.contains('stopping');
+        const empty = [...document.querySelectorAll('#messages .msg')].slice(-3).find((m) => ${MODEL_EMPTY}.test(m.innerText))?.innerText;
+
+        return idle && (document.querySelectorAll('#messages .msg.assistant').length > ${answers} ? 'answer' : empty ? 'empty: ' + empty : ''); })()`), capMs, "earlier turn done").catch(shot);
+
       await sleep(4000); // memory judgments run after the turn settles
-      rec.before_turns.push({ prompt: text, answer: await evalIn(ps, "[...document.querySelectorAll('#messages .msg.assistant')].at(-1)?.innerText ?? ''") });
+      rec.before_turns.push({ prompt: text, answer: settled === "answer" ? await evalIn(ps, "[...document.querySelectorAll('#messages .msg.assistant')].at(-1)?.innerText ?? ''") : "", empty: settled !== "answer" });
     };
 
     rec.before_turns = [];
@@ -298,6 +320,8 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     // --- send prompt like a user: focus, type, Enter (selection tasks: into the open 划词 card, minus the （选中…） stage note) ---
     const inputSid = selected ? pageSid : ps;
 
+    const askedBefore = await evalIn(ps, "document.querySelectorAll('#messages .msg.user').length");
+
     if (selected) rec.typed_prompt = task.prompt.replace(/^（[^）]*）\s*/, "");
     else await rp.click(ps, "#input");
     await rp.typeText(inputSid, rec.typed_prompt ?? task.prompt);
@@ -305,6 +329,16 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     rec._t0 = Date.now();
     rec.timestamps.send = iso(rec._t0);
     await rp.pressEnter(inputSid);
+
+    // a conversation still being created can clear the typed text (BYS-163 stayed blank, input empty): type and send once more
+    if (!selected) {
+      await until(async () => evalIn(ps, `document.querySelectorAll('#messages .msg.user').length > ${askedBefore}`), 15000, "prompt sent").catch(async () => {
+        rec.errors.push("harness: first send was lost, typed again");
+        await rp.click(ps, "#input");
+        await rp.typeText(ps, task.prompt);
+        await rp.pressEnter(ps);
+      });
+    }
 
     // --- L7: a second task in a new foreground tab and a new conversation, while the first one runs ---
     let pageB = null;
@@ -440,6 +474,11 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       for (const m of afterUser) if (/error/.test(m.cls)) rec.errors.push(`panel error: ${m.text}`);
 
       if (!rec.final_answer_verbatim && afterUser.length) rec.final_answer_verbatim = afterUser.map((m) => m.text).join("\n");
+
+      // no answer, only the product's empty-response notice: the model gave nothing back, not a product verdict
+      const empty = afterUser.find((m) => MODEL_EMPTY.test(m.text));
+
+      if (!answers.length && empty) { rec.status = "environment"; rec.environment = { kind: "model_empty", text: empty.text.slice(0, 200) }; }
     }
 
     if (task.parallel) {

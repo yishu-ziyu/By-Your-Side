@@ -60,7 +60,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     try {
       const r = JSON.parse(readFileSync(p, "utf8"));
 
-      return r.status !== "setup_error" && !isQuota(r);
+      return r.status !== "setup_error" && !isQuota(r) && !(!r.environment && (r.panel_messages ?? []).some((m) => /模型返回了空响应/.test(m.text)));
     } catch { return false; }
   };
 
@@ -115,11 +115,11 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
         try { rec = await runJob({ task, model, outDir, capMs, log, dryRun: process.argv.includes("--dry-run") }); }
         catch (e) { rec = { status: "error", errors: [`runner: ${e.message}`] }; }
 
-        const crashed = rec.status === "setup_error" || (rec.errors ?? []).some((e) => /CDP pipe closed|chrome\/pipe died/.test(e));
+        const crashed = rec.status === "setup_error" || rec.environment?.kind === "model_empty" || (rec.errors ?? []).some((e) => /CDP pipe closed|chrome\/pipe died/.test(e));
 
         if (!crashed || isQuota(rec)) break;
         log(`retry ${attempt + 1}/${retries} ${model} ${task.id} (${rec.status}: ${(rec.errors ?? [])[0]?.split("\n")[0]?.slice(0, 100)})`);
-        await new Promise((r) => setTimeout(r, 10000));
+        await new Promise((r) => setTimeout(r, 30000));
       }
 
       activeSites.delete(site);
