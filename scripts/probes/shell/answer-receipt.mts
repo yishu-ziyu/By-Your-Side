@@ -130,6 +130,50 @@ try {
 
   check("chip：重新载入侧栏后 chip 还在", restoredChips.every((c: string[] | null) => c?.[0] === "订票"), JSON.stringify(restoredChips));
 
+  // 划词提问：后台在侧栏连上时把 session 里的待问选段交给侧栏，这一轮多一枚选段 chip。
+  await rp.evaluate(panel, `chrome.tabs.query({ url: "${origin}/" }).then(([t]) => chrome.storage.session.set({ pendingAsk: { text: "本线路票价 388 元。", tabId: t.id, title: t.title, url: t.url } })).then(() => true)`);
+  await rp.cdp.send("Page.reload", {}, panel);
+  await until(async () => await rp.evaluate(panel, "document.querySelectorAll(\"#messages .msg.user\").length === 2 && document.querySelector(\"#send-btn\")?.disabled === false") || undefined, 30_000, "重载后带着选段");
+  await ask("开站甲：再打开体验网站");
+  const selChips = (await rp.evaluate(panel, CHIPS)).pop();
+  check("chip：划词提问的那一轮有页面 chip 和「选段」chip", selChips?.[0] === "订票" && selChips[1] === "「本线路票价 388 元。」", JSON.stringify(selChips));
+
+  // 键盘：Tab 从新会话走到记忆，Enter 打开抽屉，Esc 关上并把焦点还给记忆图标；Enter 展开收起过程行。
+  const key = async (k: "Tab" | "Enter" | "Escape") => {
+    const code = { Tab: 9, Enter: 13, Escape: 27 }[k];
+
+    await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: k, windowsVirtualKeyCode: code, text: k === "Enter" ? "\r" : undefined }, panel);
+    await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: k, windowsVirtualKeyCode: code }, panel);
+    await sleep(500);
+  };
+
+  const FOCUS = "(() => ({ focus: document.activeElement?.id || document.activeElement?.tagName, drawer: !document.querySelector(\"#memory-drawer\").hidden, run: document.querySelector(\"details.run-steps:last-of-type\")?.open }))()";
+  await rp.evaluate(panel, "document.querySelector(\"#conversation-new\").focus()");
+  await key("Tab");
+  const kTab = await rp.evaluate(panel, FOCUS);
+  await key("Enter");
+  const kOpen = await rp.evaluate(panel, FOCUS);
+  await key("Escape");
+  const kClose = await rp.evaluate(panel, FOCUS);
+  check("键盘：Tab 到记忆、Enter 打开、Esc 关上并回到记忆图标", kTab.focus === "memory-open" && kOpen.drawer && !kClose.drawer && kClose.focus === "memory-open", JSON.stringify([kTab, kOpen, kClose]));
+  await rp.evaluate(panel, "document.querySelector(\"details.run-steps:last-of-type > summary\").focus()");
+  const kRun0 = (await rp.evaluate(panel, FOCUS)).run;
+  await key("Enter");
+  const kRun1 = (await rp.evaluate(panel, FOCUS)).run;
+  await key("Enter");
+  const kRun2 = (await rp.evaluate(panel, FOCUS)).run;
+  check("键盘：过程行 Enter 展开、再 Enter 收起", kRun0 === false && kRun1 === true && kRun2 === false, JSON.stringify([kRun0, kRun1, kRun2]));
+
+  // 暗色：chip、过程行、顶栏图标和侧栏底色（oklch 经画布转成 rgb）的对比度不低于 3:1（WCAG 非正文/图形下限）。
+  const CONTRAST = "(() => { const cx = Object.assign(document.createElement(\"canvas\"), { width: 1, height: 1 }).getContext(\"2d\"); const rgb = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); return [...cx.getImageData(0, 0, 1, 1).data].slice(0, 3); }; const lum = (c) => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; }; const bg = lum(getComputedStyle(document.body).backgroundColor); const ratio = (el) => { if (!el) return null; const l = lum(getComputedStyle(el).color); return Math.round(((Math.max(l, bg) + 0.05) / (Math.min(l, bg) + 0.05)) * 10) / 10; }; return { bg: getComputedStyle(document.body).backgroundColor, chip: ratio(document.querySelector(\".ctx-chip\")), run: ratio(document.querySelector(\"details.run-steps:last-of-type .run-title\")), icon: ratio(document.querySelector(\"#memory-open\")) }; })()";
+  const light = await rp.evaluate(panel, CONTRAST);
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
+  await sleep(400);
+  const dark = await rp.evaluate(panel, CONTRAST);
+  await rp.screenshot(panel, join(out, "receipt-dark.png"));
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, panel);
+  check("暗色：底色变深，chip、过程行、顶栏图标对比度都 ≥ 3", dark.bg !== light.bg && [dark.chip, dark.run, dark.icon].every((r: number | null) => r !== null && r >= 3), JSON.stringify({ light, dark }));
+
   // 三、没做成
   // 开站那一轮把新标签放到了前面：回到订票页再做。
   await rp.cdp.send("Page.bringToFront", {}, work);

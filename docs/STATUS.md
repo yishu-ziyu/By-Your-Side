@@ -15,7 +15,7 @@
 | 即时动作（快速模型） | 解释约 2 秒出字；翻译、定位的意图预判已删（10-04） | 未达 2 秒，瓶颈是智谱首字 | [验收](evals/20260926-instant-2s.md) |
 | 记忆与任务感 | 接回记忆与过往任务，跨轮续接；纠正后开口问「要我记住吗」，点「记住」后在该网站照做（DeepSeek、GLM 场景 1–10 全对）；GLM 只思考不回正文时当场放宽重试（记忆底座 1/6→6/6） | 已进日常构建（10-01），待真人试用；方法只作上下文（10-04）；其他方法执行和检索待加强（见下一步） | [纠正](evals/20261001-remember-corrections.md) · [加固](evals/20261001-memory-hardening.md) · [端到端](evals/20260926-e2e-before-daily-install.md) |
 | 网页操作 | 点击、填写、回车直接执行，不弹卡（[10-04](evals/20261004-remove-approvals.md)）；圈画、下载完成/中断如实回报；取到的数据可直接存成侧栏文件、不经模型重打；原地打转连续 6 步无进展自己停下并说明（[数据存文件](evals/20261001-data-to-file.md)） | 失败时露出 Chrome 错误码；出错换快速模型，真故障未验 | [下载](evals/20260926-page-download.md) · [界面 10 项](evals/20260926-ux-fixes.md) · [扩展内核](evals/20260924-core-into-extension.md) |
-| 侧栏视觉语言 | 10-06 重画出处、旁白、续做、语音、壳 | 手试后关 #43 #49 #53 #55 #58 | [日志](devlog/20261006-02-侧栏统一视觉语言.md) |
+| 侧栏视觉语言 | 10-06 统一重画，合并选定版 | #53 待手试 | [日志](devlog/20261006-02-侧栏统一视觉语言.md) · [选定版](evals/20261006-sidepanel-picks.md) |
 | 语音 | 插话约 0.25 秒停声；StepFun 挂住约 22 秒发现并请用户重说 | StepFun 傍晚挂住率高；外放回声阈值未经真人 | [插话](evals/20260925-voice-barge-in.md) · [日常纯扩展](evals/20260925-pure-extension-daily.md) |
 | 模型思考档与后台判断 | 后台判断（目标核对、记忆、语音）统一取模型允许的最低档，档位被拒换档、格式不对修复各重试一次，失败带原因；主任务从中档起、按失败/打转/没做完/用户纠正升档；阶跃登记为可看图。探针：M3.1 作主模型带工具跑通，目标核对 M3.1、GLM 9/9，阶跃可解析 0/9→9/9 | 已进日常构建（10-02）；扩展里选 M3.1 对话待真人（标准 9）；MiniMax-M3 目标核对正确率 4/9 | [验收](evals/20261001-model-effort-and-side-judgments.md) · [说明](model-effort.md) |
 | 结果未知的边界 | 一步结果未知后，只拦点击、填写、按键、页面脚本、POST；读页、导航、开标签页、GET、关/确认弹窗照常；同一项只核验一次，查不清由任务宿主说明后停下；被覆盖/不可填记为没执行；点击遇原生弹窗立即返回 | 已进日常构建（10-02）；只读脚本超时仍记为结果未知；弹窗恢复修复在验收中 | [验收](evals/20261001-unknown-lock-scope.md) · [规则](unknown-results.md) |
@@ -24,7 +24,7 @@
 
 ## 仍需解决
 
-- 改口后改写已有成功回执有缺口；[我来/你继续](evals/20261005-takeover-handback.md)、[药丸](evals/20261005-edge-pill.md)、[淡出](evals/20261005-chrome-quiet.md)真路径过；#48、50–52、54 已快查余[待测](guides/usage.md)；[复测](evals/20260922-computer-use-product-path.md)。
+- 改口后改写已有成功回执有缺口；[接管/交还](evals/20261005-takeover-handback.md)、[药丸](evals/20261005-edge-pill.md)、[淡出](evals/20261005-chrome-quiet.md)真路径过；#48、50–52、54 已快查余[待测](guides/usage.md)；[复测](evals/20260922-computer-use-product-path.md)。
 - 扩展外跑任务核心的检查与调试通道已于 10-04 删除；`eval:live` 如实报 BLOCKED，需要在扩展里跑的真实模型评测（[删减验收](evals/20261004-cut-unused.md)）。
 - 去掉批准卡后，网页注入可让助手在已登录网站上动手（[说明](browser-confirmation.md)），防护待定。
 - 上传本机文件、请帮手并行、富文本粘贴的代码已于 10-04 删除，要做应另起。DeepSeek 在字幕站找不到内嵌数据的接口，两次放弃（[数据存文件](evals/20261001-data-to-file.md)）。
@@ -37,12 +37,12 @@
 
 本轮进展：
 
-1. 自检（#28）：GLM、M3.1 定点各 5/5；M3.1 文件转义失败已修复、复测，日常已加载。见[验收](evals/20261002-answer-selfcheck.md)。
-2. PDF 下载（#25）：两模型的原 arXiv 请求通过，日常 Chrome 可见实录为 2 步、8 秒；见[验收与录像](evals/20261002-pdf-download.md)。
-3. #32 环境分类在独占条件下完整通过；#35 共 124 次运行与判分完成。M3.1 正常任务 52/55，GLM 50/56；环境分别 7、6 次。见[环境验收](evals/20261002-eval-environment.md)与[复测验收](evals/20261002-tiers12-after-fixes.md)。
-4. Pi 会话/文件恢复与 40px 截图卡已部署，关键验收通过。见[验收与录像](evals/20261002-session-durability.md)。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax 记忆分类与备注提交检查通过，日常已加载；见[分类](evals/20261003-memory-classification.md)与[执行](evals/20261003-method-form-enforcement.md)。备注补填、电话规则替换、撤销恢复备注的整条扩展路径通过，日常已加载；本轮用脚本模型，在线 MiniMax 复测为下一步。见[验收](evals/20261003-memory-rule-replacement.md)。
+1. 自检（#28）：GLM、M3.1 定点各 5/5；M3.1 文件转义失败已修复并复测，已加载（[验收](evals/20261002-answer-selfcheck.md)）。
+2. PDF 下载（#25）：两模型的原 arXiv 请求通过，日常 Chrome 可见实录为 2 步、8 秒（[验收与录像](evals/20261002-pdf-download.md)）。
+3. #32 环境分类在独占条件下完整通过；#35 共 124 次运行与判分完成。M3.1 正常任务 52/55，GLM 50/56；环境分别 7、6 次（[环境验收](evals/20261002-eval-environment.md)）。
+4. Pi 会话/文件恢复与 40px 截图卡已部署，关键验收通过（[验收与录像](evals/20261002-session-durability.md)）。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax 记忆分类与备注提交检查通过，已加载（[分类](evals/20261003-memory-classification.md)、[执行](evals/20261003-method-form-enforcement.md)）。备注补填、电话规则替换、撤销恢复备注的整条扩展路径通过，已加载；本轮用脚本模型，下一步用在线 MiniMax 复测（[验收](evals/20261003-memory-rule-replacement.md)）。
 
-Issue：#27、#40、#23 原生路径已部署，#23 备用待验。见[部署](evals/20261003-issue-fixes-deployment.md)。
+Issue：#27、#40、#23 原生路径已部署，#23 备用待验（[部署](evals/20261003-issue-fixes-deployment.md)）。
 
 进展见 [Linear](development/checks.md#给用户看的进展linear)。
 

@@ -41,4 +41,4 @@
 - `process-line.mts` 全过；截图 `out/probes/shell/process-ok-open.png`。首跑发现 chip 被过程行挤到后面，已修。
 - `reduced-motion.mts` 2/2；首跑发现减少动效下过程展开仍有 0.39s，已修。
 - `npm run check`：文档、模块边界、类型通过；测试 2409/2412，3 个 agent 测试（main-effort-session、cap02a-events、browser-program-binding）全量时超时，独占复跑 13/13 通过，本次未改 agent；构建通过。
-- 未跑：选段 chip（有引用时第二枚 chip）没有探针覆盖；键盘 Tab/Enter/Esc 未单独探针（全部是原生 button / summary / popover）；暗色未截图。
+- 10-06 补跑（`answer-receipt.mts` 全过）：划词提问那一轮出现第二枚选段 chip；键盘 Tab 到记忆、Enter 打开、Esc 关上并回到图标，Enter 展开和收起过程行；暗色下 chip、过程行、顶栏图标对比度 6.1–7.9（下限 3）。截图 `out/probes/shell/receipt-dark.png`。首跑把 oklch 颜色当 rgb 读，数字不可信，改用画布换算后重跑。
