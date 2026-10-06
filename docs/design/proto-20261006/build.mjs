@@ -1,0 +1,13 @@
+import { build } from "esbuild";
+import { readFileSync, writeFileSync } from "node:fs";
+const common = { bundle: true, format: "esm", target: "chrome120", minify: true, loader: { ".html": "text" }, legalComments: "none" };
+await build({ ...common, entryPoints: ["src/main.ts"], outfile: "dist/proto.js", metafile: true }).then((r) => writeFileSync("dist/meta.json", JSON.stringify(r.metafile)));
+await build({ ...common, entryPoints: ["src/current.ts"], outfile: "dist/current.js" });
+const css = readFileSync("src/styles.css", "utf8") + "\n" + readFileSync("src/proto.css", "utf8");
+writeFileSync("dist/proto.css", css);
+const shell = (body) => `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>BYS 侧栏 · 高保真原型</title>\n${body}`;
+writeFileSync("index.html", shell(`<link rel="stylesheet" href="dist/proto.css" />\n</head>\n<body><div id="app"></div><script type="module" src="dist/proto.js"></script></body>\n</html>\n`));
+const js = readFileSync("dist/proto.js", "utf8").replace(/<\/script/gi, "<\\/script");
+writeFileSync("bys-proto.html", shell(`<style>\n${css}\n</style>\n</head>\n<body><div id="app"></div><script type="module">\n${js}\n</script></body>\n</html>\n`));
+writeFileSync("current.html", shell(`<link rel="stylesheet" href="src/styles.css" />\n<style>html,body{width:400px;height:800px}</style>\n</head>\n<body><div id="app"></div><script type="module" src="dist/current.js"></script></body>\n</html>\n`));
+console.log("built");

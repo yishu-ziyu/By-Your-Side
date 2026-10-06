@@ -1,0 +1,123 @@
+  <header id="topbar">
+    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false" title="切换会话">新会话</button>
+    <div id="status-pill" class="activity-island" title="当前连接与执行状态">
+      <span id="status-dot" class="dot island-pulse-dot"></span>
+      <span id="status-text">未连接</span>
+    </div>
+    <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
+    <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
+    <div id="header-menu" popover="auto" aria-label="更多功能">
+      <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span>记忆</span></button>
+      <hr />
+        <button id="model-btn" type="button" title="切换模型" aria-label="切换当前模型" hidden aria-haspopup="listbox" aria-expanded="false">
+          <span id="model-mark" class="model-mark" hidden></span>
+          <span>当前模型</span>
+          <span id="model-name"></span>
+          <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
+        </button>
+      <button id="model-settings-open" type="button"><span>模型与语音</span></button>
+      <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
+    </div>
+  </header>
+  <div id="ghost-bar" aria-label="直接操作当前页" hidden></div>
+  <button id="conversation-background" type="button" hidden></button>
+  <div id="task-strip" aria-label="当前会话与结果">
+    <div id="task-result-card" hidden>
+      <div id="task-result-primary"></div>
+      <div id="task-result-secondary"></div>
+    </div>
+  </div>
+  <div id="conversation-menu" role="menu" hidden></div>
+  <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
+  <section id="memory-drawer" role="dialog" aria-label="记忆" aria-modal="false" hidden>
+    <div class="memory-drawer-head">
+      <div>
+        <h2 id="memory-title">记忆</h2>
+      </div>
+      <button id="memory-close" type="button">关闭</button>
+    </div>
+    <div id="knowledge-body">
+      <div id="memory-body"></div>
+    </div>
+  </section>
+  <div id="marginalia-rail" aria-label="伴读导轨" hidden></div>
+  <div id="messages-frame">
+    <div id="messages">
+      <div id="resume-entry-root"></div>
+    </div>
+    <div class="scroll-fade" data-edge="top" aria-hidden="true"></div>
+    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"></div>
+  </div>
+  <div id="team-card" hidden></div>
+  <section id="starter" aria-label="开始方式">
+    <canvas id="starter-orb" aria-hidden="true"></canvas>
+    <p id="starter-title">说说你想完成什么</p>
+    <p id="starter-sub">浏览器 AI 助手，帮你读页面、整理信息或操作网页。</p>
+    <div id="starter-actions">
+      <button type="button" data-starter="请概括当前页面的要点。">概括当前页</button>
+      <button type="button" data-starter="请帮我填写当前页面的表单，提交前让我确认。">帮我填写表单</button>
+    </div>
+  </section>
+  <div class="composer-dock-wrap">
+    <div id="morph-sheet" class="page-morph-sheet" style="display: none;">
+      <div class="morph-sheet-head">
+        <span>当前活动标签页检查器</span>
+        <button type="button" id="close-morph-sheet" class="sheet-close-btn" title="关闭">✕</button>
+      </div>
+      <div class="morph-sheet-body" id="morph-sheet-body">
+        <div id="morph-sheet-title">标题：检测中…</div>
+        <div id="morph-sheet-url">URL：-</div>
+        <div id="morph-sheet-status">状态：活跃连接已就绪</div>
+      </div>
+    </div>
+    <div id="attach-menu" class="action-menu-popover" hidden>
+      <div class="action-menu-item pressable" id="menu-action-screenshot">
+        <span class="action-menu-item-icon">📸</span>
+        <span class="action-menu-item-label">截取当前网页视口</span>
+      </div>
+      <div class="action-menu-item pressable" id="menu-action-region" title="在网页上拖框截图（⌘/Ctrl+Shift+S，Esc 取消）">
+        <span class="action-menu-item-icon">⬚</span>
+        <span class="action-menu-item-label">从屏幕选取</span>
+      </div>
+      <div class="action-menu-item pressable" id="menu-action-upload">
+        <span class="action-menu-item-icon">📁</span>
+        <span class="action-menu-item-label">上传本地图片</span>
+      </div>
+    </div>
+    <input type="file" id="file-input" accept="image/*" multiple hidden />
+    <select id="marginalia-mode" aria-label="边注模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
+    <div id="task-bar-root"></div>
+    <div id="page-pill" class="morphing-page-pill pressable" title="当前活动标签页（点击展开检查面板）">
+      <span id="tab-icon-sq" class="tab-icon-sq"></span>
+      <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
+      <i class="tab-live-dot"></i>
+    </div>
+    <div id="composer" class="composer-glass-dock">
+      <div id="ask-cite" hidden>
+        <span id="ask-cite-host"></span>
+        <span id="ask-cite-text"></span>
+        <button type="button" id="ask-cite-close" aria-label="去掉这段引用" title="去掉这段引用">×</button>
+      </div>
+      <div id="attachments-strip" class="attachments-strip" hidden></div>
+      <textarea id="input" rows="1" placeholder="说说你想完成什么…"></textarea>
+      <div id="composer-bar">
+        <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button>
+        <span id="composer-spacer"></span>
+        <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
+        <button id="takeover-btn" type="button" title="你来操作这个页面，Agent 先停手" hidden>我来</button>
+        <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
+          <span class="morph-icon-send"></span>
+          <span class="morph-icon-stop"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div id="composer-menu" popover="auto">
+    <p class="composer-menu-label">边注</p>
+    <button type="button" role="menuitemradio" data-marginalia="off">关闭</button>
+    <button type="button" role="menuitemradio" data-marginalia="source">原文摘录</button>
+    <button type="button" role="menuitemradio" data-marginalia="ai">AI 解释<span>会调用模型</span></button>
+    <hr />
+    <button id="voice-diagnostics-open" type="button">语音诊断</button>
+  </div>
+  <div id="model-popover" hidden></div>
