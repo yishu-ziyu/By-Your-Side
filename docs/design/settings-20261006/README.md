@@ -1,6 +1,6 @@
 # 设置页「模型与语音」重做：7 版原型（2026-10-06）
 
-这是设计参考，不是产品代码。用户把选择交给实现的代理（Claude Code）。交接说明写在对应的 GitHub issue 里。
+这是设计参考，不是产品代码。用户把选择交给实现的代理（Claude Code）。交接说明写在 [#62](https://github.com/yishu-ziyu/By-Your-Side/issues/62)。
 
 ![现状：服务商全用一样的胶囊按钮平铺](current.png)
 
