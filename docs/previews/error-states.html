@@ -1,0 +1,1268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>出错与恢复 · 三个场景</title>
+<style>
+  :root {
+    --wallpaper: #f6f4ee;
+    --elevated: #fdfcf9;
+    --border: rgb(20 20 19 / .10);
+    --border-subtle: rgb(20 20 19 / .06);
+    --ink: #1c1b17;
+    --ink-2: #57534a;
+    --ink-3: #8a8375;
+    --ink-4: #b3ab9c;
+    --accent: #3c8a55;
+    --warn: #b54848;
+    --pill: 999px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #fbf9f4, transparent), var(--wallpaper);
+    color: var(--ink);
+    font: 15px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; overflow: hidden; -webkit-font-smoothing: antialiased;
+  }
+
+  .meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .meta .cap { font-size: 12.5px; color: var(--ink-3); }
+  .meta .cap b { color: var(--ink-2); font-weight: 600; }
+  .meta > button {
+    border: 1px solid var(--border); background: var(--elevated); color: var(--ink-2);
+    font: 12px/1 inherit; padding: 6px 12px; border-radius: var(--pill); cursor: pointer;
+  }
+  .meta > button:hover { color: var(--ink); border-color: rgb(20 20 19 / .28); }
+  .seg {
+    position: relative; display: flex; gap: 2px;
+    background: rgb(20 20 19 / .05); border-radius: var(--pill); padding: 3px;
+  }
+  .seg .pill {
+    position: absolute; top: 3px; bottom: 3px; border-radius: var(--pill);
+    background: var(--elevated); box-shadow: 0 1px 4px rgb(20 20 19 / .14);
+  }
+  .seg button {
+    position: relative; z-index: 1; border: none; background: none; cursor: pointer;
+    font: 500 12px/1 inherit; color: var(--ink-2); padding: 7px 14px; border-radius: var(--pill);
+  }
+  .seg button.sel { color: var(--ink); font-weight: 600; }
+  .hint { font-size: 11.5px; color: var(--ink-4); }
+
+  .panel {
+    position: relative; width: 384px; height: 664px;
+    background: var(--wallpaper); border: 1px solid var(--border); border-radius: 24px;
+    box-shadow: 0 1px 2px rgb(20 20 19 / .04), 0 24px 64px -16px rgb(20 20 19 / .18);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; padding: 14px 20px;
+    border-bottom: 1px solid var(--border-subtle); font-size: 14px; font-weight: 600; flex: none;
+  }
+  .panel-head .icons { margin-left: auto; display: flex; gap: 12px; color: var(--ink-3); font-size: 13px; }
+  .panel-body { position: relative; flex: 1; padding: 20px; overflow: hidden; display: flex; flex-direction: column; }
+
+  #stage { display: flex; flex-direction: column; gap: 14px; }
+  .bubble {
+    align-self: flex-end; background: var(--elevated); border: 1px solid var(--border-subtle);
+    border-radius: 18px 18px 6px 18px; padding: 9px 15px; font-size: 13.5px; max-width: 85%;
+    box-shadow: 0 1px 3px rgb(20 20 19 / .05);
+  }
+  .reply { display: flex; gap: 10px; align-items: flex-start; }
+  .reply .text { font-size: 13.5px; line-height: 1.75; padding-top: 1px; }
+  .reply .text .ln { display: block; }
+  .reply .text .cut { color: var(--ink-3); }
+  .mem-line { font-size: 11.5px; color: var(--ink-3); margin-left: 30px; }
+
+  .card {
+    background: var(--elevated); border: 1px solid var(--border); border-radius: 18px;
+    padding: 16px; display: flex; flex-direction: column; gap: 10px; position: relative;
+  }
+  .card.err { border-left: 3px solid var(--warn); }
+  .card .head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .card .head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
+  .card p { font-size: 13px; color: var(--ink-2); line-height: 1.65; }
+  .card .note { font-size: 12px; color: var(--ink-3); }
+  .btn {
+    border: none; cursor: pointer; font: 600 13px/1 inherit;
+    padding: 10px 18px; border-radius: var(--pill); width: fit-content;
+    transition: filter .15s ease;
+  }
+  .btn:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: .45; cursor: default; filter: none; }
+  .btn-primary { background: var(--ink); color: #fff; }
+  .btn-quiet { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  .model-menu {
+    position: absolute; z-index: 5; left: 16px; top: calc(100% - 6px);
+    border: 1px solid var(--border); border-radius: 14px; background: var(--elevated);
+    box-shadow: 0 10px 28px rgb(20 20 19 / .14); overflow: hidden; min-width: 220px;
+    transform-origin: top left;
+  }
+  .model-menu button {
+    display: block; width: 100%; text-align: left; border: none; background: none;
+    font: 13px/1.5 inherit; color: var(--ink); padding: 10px 14px; cursor: pointer;
+  }
+  .model-menu button:hover { background: rgb(20 20 19 / .05); }
+  .model-menu button .sub { color: var(--ink-3); font-size: 11.5px; margin-left: 6px; }
+  .model-chip {
+    font-size: 12px; color: var(--ink-3); display: inline-flex; gap: 5px; align-items: baseline;
+  }
+  .model-chip b { color: var(--ink); font-weight: 600; }
+
+  details.tech { font-size: 12px; color: var(--ink-3); }
+  details.tech summary { cursor: pointer; font-size: 12px; width: fit-content; }
+  details.tech pre {
+    margin-top: 6px; background: rgb(20 20 19 / .05); border-radius: 8px; padding: 8px 10px;
+    font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: var(--ink-2);
+  }
+
+  .receipt {
+    display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--accent);
+    margin-left: 30px;
+  }
+  .receipt svg path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: draw .45s ease-out .1s forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .status-inline { font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 7px; }
+  .status-inline.err { color: var(--warn); }
+
+  /* 底部换 key 表单 */
+  #sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+    background: var(--elevated); border-top: 1px solid var(--border);
+    border-radius: 20px 20px 0 0; box-shadow: 0 -12px 40px rgb(20 20 19 / .16);
+    padding: 20px 22px 26px; transform: translateY(105%);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  #sheet h3 { font-size: 15px; font-weight: 650; }
+  #sheet .prov { font-size: 12.5px; color: var(--ink-2); display: flex; justify-content: space-between; }
+  #sheet input {
+    width: 100%; font: 14px/1.5 inherit; color: var(--ink); background: transparent;
+    border: none; border-bottom: 1.5px solid var(--border); padding: 9px 2px; outline: none;
+  }
+  #sheet input:focus { border-bottom-color: var(--ink); }
+  #sheet .note { font-size: 11.5px; color: var(--ink-3); }
+  #sheet .row { display: flex; gap: 10px; align-items: center; min-height: 38px; }
+  #sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--border); align-self: center; }
+
+  .toast {
+    position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%);
+    background: var(--ink); color: #fff; font-size: 12.5px; padding: 8px 16px;
+    border-radius: var(--pill); opacity: 0; transition: opacity .2s;
+    pointer-events: none; white-space: nowrap; z-index: 8;
+  }
+  .toast.show { opacity: 1; }
+
+  .composer {
+    flex: none; margin: 14px; border: 1px solid var(--border); border-radius: 22px;
+    background: var(--elevated); padding: 13px 16px; color: var(--ink-4); font-size: 14px;
+    display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 2;
+  }
+  .composer .send {
+    width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff;
+    display: grid; place-items: center; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="meta">
+  <span class="cap">出错与恢复 · <b id="cap">401 · key 无效</b></span>
+  <div class="seg" id="scen">
+    <span class="pill" id="scen-pill"></span>
+    <button class="sel" data-k="401">401 key 无效</button>
+    <button data-k="429">429 额度/频繁</button>
+    <button data-k="net">断网</button>
+  </div>
+  <button id="net-toggle" hidden>⚡ 模拟网络恢复</button>
+  <button id="replay" title="重播（R）">↻</button>
+</div>
+
+<div class="panel">
+  <div class="panel-head">概括这一页 <span class="icons">✎ ▤ ⋯</span></div>
+  <div class="panel-body" id="body">
+    <div id="stage"></div>
+    <div id="orb" style="position:absolute;left:0;top:0;z-index:2;pointer-events:none"></div>
+    <div class="toast" id="toast"></div>
+  </div>
+  <div id="sheet" hidden>
+    <span class="grab"></span>
+    <h3>模型与语音</h3>
+    <div class="prov"><span>Kimi（月之暗面）</span><span>kimi-k2</span></div>
+    <input id="sheet-key" type="password" placeholder="粘贴新的 API key" autocomplete="off">
+    <span class="note">key 只存在这台电脑，不会上传。</span>
+    <div class="row">
+      <button class="btn btn-quiet" id="sheet-test">测试连接</button>
+      <button class="btn btn-primary" id="sheet-save" disabled>保存并继续</button>
+      <span class="status-inline" id="sheet-status"></span>
+    </div>
+  </div>
+  <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+</div>
+
+<span class="hint">上方切换三种错误 · 每个场景都能修到底 · R 重播当前场景</span>
+
+<script>/**
+ * thinking-orbs v0.3.1 — 从 npm 包 dist/engine.es.js 原样拷入，未做任何修改。
+ *
+ * MIT License, Copyright (c) 2026 Jakub Antalik
+ * https://www.npmjs.com/package/thinking-orbs
+ *
+ * 许可全文见同目录 thinking-orbs.LICENSE。本文件由 npm 包 dist/engine.es.js 原样拷入，
+ * 升级时直接替换即可；不要在这里手改几何——要调的是外面 orb.ts 的取帧与上色。
+ */
+function U(n, s, t) {
+  return n + (s - n) * t;
+}
+
+function nt(n) {
+  return n - Math.floor(n);
+}
+
+function G(n, s) {
+  const t = Math.floor(n), r = Math.floor(s);
+  let a = n - t, o = s - r;
+  a = a * a * (3 - 2 * a);
+  o = o * o * (3 - 2 * o);
+  const c = E(t, r), M = E(t + 1, r), h = E(t, r + 1), m = E(t + 1, r + 1);
+
+  return c + (M - c) * a + (h - c) * o + (c - M - h + m) * a * o;
+}
+
+function E(n, s) {
+  const t = Math.sin(n * 12.9898 + s * 78.233) * 43758.5453;
+
+  return t - Math.floor(t);
+}
+
+function J(n, s) {
+  const t = Math.PI * (3 - Math.sqrt(5)), r = 1 - 2 * (n + 0.5) / s, a = Math.sqrt(1 - r * r), o = n * t;
+
+  return [a * Math.cos(o), r, a * Math.sin(o)];
+}
+
+function et(n, s) {
+  return Math.atan2(Math.sin(n - s), Math.cos(n - s));
+}
+
+function _(n, s, t, r, a) {
+  const o = Math.sin(s), c = Math.cos(s), M = Math.sin(n), h = Math.cos(n);
+
+  return (m, D, p) => {
+    const e = m * h + p * M, l = -m * M + p * h, R = D * c - l * o, w = D * o + l * c;
+
+    return [t + e * a, r - R * a, w];
+  };
+}
+
+function rt(n, s, t, _r = 0.3) {
+  for (const a of s) {
+    const o = a.a ?? 1, c = Math.min(1, Math.max(0, a.white)), M = Math.round((t ? 1 - c : c) * 255);
+
+    n.fillStyle = `rgba(${M},${M},${M},${o})`;
+    n.beginPath();
+    n.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+    n.fill();
+  }
+}
+
+function it(n, s, t) {
+  for (const r of s) {
+    const a = r.a ?? 1, o = Math.min(1, Math.max(0, r.white)), c = Math.round((t ? 1 - o : o) * 255);
+
+    n.strokeStyle = `rgba(${c},${c},${c},${a})`;
+    n.lineWidth = r.w;
+    n.beginPath();
+    n.moveTo(r.x1, r.y1);
+    n.lineTo(r.x2, r.y2);
+    n.stroke();
+  }
+}
+
+function L(n, s, t = 0.3) {
+  const r = [];
+
+  for (const a of n) {
+    if (!((a.a ?? 1) < 0.02)) {
+      a.r = Math.max(t, a.r);
+      r.push(a);
+    }
+  }
+
+  return r.sort((a, o) => a.z - o.z), { dots: r, lines: s.filter((a) => (a.a ?? 1) >= 0.02) };
+}
+
+function ht(n, s, t) {
+  if (s.lines.length) it(n, s.lines, t);
+
+  rt(n, s.dots, t);
+}
+
+function $(n, s) {
+  return (n / 300) ** s;
+}
+
+const Mt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.76, c = _(s * 0.4, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.ghostN ?? 150;
+
+  for (let e = 0; e < m; e++) {
+    const l = J(e, m), [R, w, i] = c(l[0] * o, l[1] * o, l[2] * o), u = (i / o + 1) / 2;
+    h.push({ x: R, y: w, z: i, r: 0.8 * M, white: 0.78, a: 0.1 + 0.22 * u });
+  }
+
+  const D = t.strandN ?? 52, p = t.turns ?? 3;
+
+  for (let e = 0; e < 3; e++) {
+    const l = e / 3 * 2 * Math.PI;
+
+    for (let R = 0; R < D; R++) {
+      const w = (nt(R / D + s * 0.045) * 2 - 1) * 0.96, i = Math.sqrt(Math.max(0, 1 - w * w)), u = Math.min(1, (1 - Math.abs(w)) / 0.1), y = w * Math.PI * p + l, b = 1 + 0.075 * Math.sin(w * Math.PI * p * 2 + l * 2 + s * 0.8), f = i * o * b, [P, x, g] = c(Math.cos(y) * f, w * o * b, Math.sin(y) * f), d = (g / o + 1) / 2;
+      h.push({
+        x: P,
+        y: x,
+        z: g,
+        r: ((t.rBase ?? 1.2) + (t.rDepth ?? 1.8) * d) * M,
+        white: 0.55 - 0.45 * d,
+        a: u * (0.45 + 0.55 * d)
+      });
+    }
+  }
+
+  return L(h, [], t.rMin);
+};
+
+function lt(n, s, t, r) {
+  const a = 2 * s * t + r, o = n % a, c = Array.from({ length: s }, () => 0);
+  let M = -1;
+
+  if (o < 2 * s * t) {
+    const h = Math.floor(o / t), m = (o - h * t) / t, p = 1 - (1 - Math.min(1, m / 0.7)) ** 3;
+
+    if (h < s) {
+      for (let e = 0; e < h; e++) c[e] = 1;
+      c[h] = p;
+      M = h;
+    } else {
+      const e = 2 * s - 1 - h;
+
+      for (let l = 0; l < e; l++) c[l] = 1;
+      c[e] = 1 - p;
+      M = e;
+    }
+  }
+
+  return { amount: c, active: M };
+}
+
+function pt(n, s, t) {
+  let [r, a, o] = n, c = !1;
+
+  for (let M = 0; M < s.length; M++) {
+    if (t.amount[M] <= 0) continue;
+    const h = s[M], m = h.axis === 0 ? r : h.axis === 1 ? a : o;
+
+    if (m < h.lo || m >= h.hi) continue;
+
+    if (M === t.active) c = !0;
+    const D = h.ang * t.amount[M], p = Math.cos(D), e = Math.sin(D);
+
+    if (h.axis === 0) {
+      const l = a * p - o * e;
+      o = a * e + o * p;
+      a = l;
+    } else if (h.axis === 1) {
+      const l = r * p + o * e;
+      o = -r * e + o * p;
+      r = l;
+    } else {
+      const l = r * p - a * e;
+      a = r * e + a * p;
+      r = l;
+    }
+  }
+
+  return [r, a, o, c];
+}
+
+function ut(n) {
+  const s = [];
+
+  for (let t = 0; t < n; t++) {
+    const r = Math.min(2, Math.floor(E(t, 2.3) * 3)), a = -1 + 0.5 * Math.min(3, Math.floor(E(t, 5.9) * 4)), o = E(t, 7.7) < 0.5 ? 1 : -1;
+    s.push({ axis: r, lo: a, hi: a + 0.5, ang: o * Math.PI / 2 });
+  }
+
+  return s;
+}
+
+const ft = (n, s, t) => {
+  const a = n / 2, o = n / 2, c = n / 2 * 0.82, M = 0.4 + 0.06 * Math.sin(s * 0.35), h = _(s * 0.5, M, a, o, c), m = s * (0.5 + (1.7 - 0.5) * (t.scanMul ?? 1)), D = $(n, t.rsPow ?? 0.6), p = t.dimBase ?? 1, e = [], l = t.latRings ?? 17, R = t.lonDensity ?? 44;
+
+  for (let w = 0; w <= l; w++) {
+    const i = -Math.PI / 2 + w / l * Math.PI, u = Math.cos(i), y = Math.sin(i), b = Math.max(1, Math.round(Math.abs(u) * R));
+
+    for (let f = 0; f < b; f++) {
+      const P = f / b * 2 * Math.PI, [x, g, d] = h(u * Math.cos(P), y, u * Math.sin(P)), v = (d + 1) / 2, k = et(P + s * 0.5, m), N = Math.exp(-(k * k) / 0.18) * Math.max(0, d);
+      e.push({
+        x,
+        y: g,
+        z: d,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * v + (t.rBoost ?? 1) * N) * D,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * v,
+        // dimBase < 1 fades un-scanned dots so the meridian reads clearly
+        a: p + (1 - p) * Math.min(1, N)
+      });
+    }
+  }
+
+  return L(e, [], t.rMin);
+}, dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.55, 0.35 + 0.1 * Math.sin(s * 0.9), r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.moveCount ?? 14, m = ut(h), D = lt(s, h, 0.42, 1.2), p = [], e = t.latRings ?? 15, l = t.lonDensity ?? 40;
+
+  for (let R = 0; R <= e; R++) {
+    const w = -Math.PI / 2 + R / e * Math.PI, i = Math.cos(w), u = Math.sin(w), y = Math.max(1, Math.round(Math.abs(i) * l));
+
+    for (let b = 0; b < y; b++) {
+      const f = b / y * 2 * Math.PI, [P, x, g, d] = pt([i * Math.cos(f), u, i * Math.sin(f)], m, D), [v, k, N] = c(P, x, g), z = (N + 1) / 2;
+      p.push({
+        x: v,
+        y: k,
+        z: N,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * z + (d ? t.rActive ?? 0.3 : 0)) * M,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * z - (d ? 0.14 : 0)
+      });
+    }
+  }
+
+  return L(p, [], t.rMin);
+}, bt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.874, c = _(s * 0.18, 0.38, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.rings ?? 15, D = t.lonDensity ?? 40;
+
+  for (let p = 0; p <= m; p++) {
+    const e = -Math.PI / 2 + p / m * Math.PI, l = Math.cos(e), R = Math.sin(e), w = 0.62 * Math.sin(s * 2.1 - p * 0.52) + 0.38 * Math.sin(s * 1.27 + p * 0.83), i = o * (0.88 + 0.105 * w), u = Math.max(1, Math.round(Math.abs(l) * D));
+
+    for (let y = 0; y < u; y++) {
+      const b = y / u * 2 * Math.PI, [f, P, x] = c(l * Math.cos(b) * i, R * i, l * Math.sin(b) * i), g = (x / o + 1) / 2, d = Math.max(0, w);
+      h.push({
+        x: f,
+        y: P,
+        z: x,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * g) * (1 + 0.4 * d) * M,
+        white: 0.66 - 0.56 * g - 0.1 * d
+      });
+    }
+  }
+
+  return L(h, [], t.rMin);
+};
+
+function xt(n) {
+  return n * n * (3 - 2 * n);
+}
+
+function st(n) {
+  const s = n.length, t = [];
+  let r = 0;
+
+  for (let a = 0; a < s; a++) {
+    const o = n[a], c = n[(a + 1) % s], M = Math.hypot(c[0] - o[0], c[1] - o[1]);
+    t.push(M);
+    r += M;
+  }
+
+  return (a) => {
+    let o = a * r, c = 0;
+
+    for (; o > t[c] && c < s - 1; ) {
+      o -= t[c];
+      c++;
+    }
+
+    const M = n[c], h = n[(c + 1) % s], m = t[c] ? Math.min(1, o / t[c]) : 0;
+
+    return [M[0] + (h[0] - M[0]) * m, M[1] + (h[1] - M[1]) * m];
+  };
+}
+
+const yt = (n) => {
+  const s = -Math.PI / 2 + n * 2 * Math.PI;
+
+  return [Math.cos(s) * 0.24, Math.sin(s) * 0.24];
+}, gt = st([
+  [0, -0.26],
+  [0.24, 0.16],
+  [-0.24, 0.16]
+]), mt = st([
+  [0, -0.2],
+  [0.2, -0.2],
+  [0.2, 0.2],
+  [-0.2, 0.2],
+  [-0.2, -0.2]
+]), H = [yt, gt, mt];
+
+function wt(n) {
+  return Math.max(6, Math.round(34 * n));
+}
+
+const V = 1.4, ot = 0.9, Q = V + ot, Pt = (n, s, t) => {
+  const r = H.length, a = s % (Q * r), o = Math.floor(a / Q), c = a - o * Q, M = c > V ? xt((c - V) / ot) : 0, h = t.spread ?? 1, m = H[o], D = H[(o + 1) % r], p = 160, e = [];
+
+  for (let x = 0; x < p; x++) {
+    const g = x / p, d = m(g), v = D(g);
+    e.push([(d[0] + (v[0] - d[0]) * M) * h, (d[1] + (v[1] - d[1]) * M) * h]);
+  }
+
+  const l = [];
+  let R = 0;
+
+  for (let x = 0; x < p; x++) {
+    const g = e[x], d = e[(x + 1) % p], v = Math.hypot(d[0] - g[0], d[1] - g[1]);
+    l.push(v);
+    R += v;
+  }
+
+  const w = wt(t.iconD ?? 1), i = (t.rDot ?? 0.021) * 1.35 * h, u = 1 + 0.02 * Math.sin(c * 3.1), y = [], b = n / 2;
+  let f = 0, P = 0;
+
+  for (let x = 0; x < w; x++) {
+    const g = x / w * R;
+
+    for (; P + l[f] < g && f < p - 1; ) {
+      P += l[f];
+      f++;
+    }
+
+    const d = e[f], v = e[(f + 1) % p], k = l[f] ? Math.min(1, (g - P) / l[f]) : 0, N = (d[0] + (v[0] - d[0]) * k) * u, z = (d[1] + (v[1] - d[1]) * k) * u;
+    y.push({
+      x: b + N * n,
+      y: b + z * n,
+      z: 0,
+      r: Math.max(0.35, i * n),
+      white: 0.1
+    });
+  }
+
+  return L(y, [], t.rMin);
+}, Rt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.12, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.orbitN ?? 12, D = t.ghostN ?? 40, p = t.particles ?? 3;
+
+  for (let e = 0; e < m; e++) {
+    const l = E(e, 1.7), R = E(e, 5.2), w = E(e, 8.9), i = o * (0.45 + 0.52 * l), u = l * 2 * Math.PI, y = Math.acos(2 * R - 1), b = Math.sin(y) * Math.cos(u), f = Math.cos(y), P = Math.sin(y) * Math.sin(u);
+    let x = -f, g = b;
+    const d = 0, v = Math.max(1e-6, Math.sqrt(x * x + g * g));
+    x /= v;
+    g /= v;
+    const k = f * d - P * g, N = P * x - b * d, z = b * g - f * x, O = (0.25 + 0.55 * w) * (w > 0.5 ? 1 : -1);
+
+    for (let B = 0; B < D; B++) {
+      const I = B / D * 2 * Math.PI, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: (t.ghostR ?? 0.9) * M,
+        white: 0.72,
+        a: (t.ghostA ?? 0.5) * (0.4 + 0.6 * C)
+      });
+    }
+
+    for (let B = 0; B < p; B++) {
+      const I = s * O + B / p * 2 * Math.PI + R * 6, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: ((t.partR ?? 1.2) + (t.partRDepth ?? 1.6) * C) * M,
+        white: 0.3 - 0.22 * C
+      });
+    }
+  }
+
+  return L(h, [], t.rMin);
+}, Z = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.78, c = t.spin ?? 1, M = 0.3, h = _(s * 0.1 * c, M, r, a, 1), m = $(n, t.rsPow ?? 0.6), D = [], p = t.ghostN ?? 150;
+
+  for (let z = 0; z < p; z++) {
+    const O = J(z, p), [B, I, S] = h(O[0] * o, O[1] * o, O[2] * o), A = (S / o + 1) / 2;
+    D.push({ x: B, y: I, z: S, r: 0.8 * m, white: 0.78, a: 0.1 + 0.22 * A });
+  }
+
+  const e = s * 0.24 * c, l = t.faceOn ? -M : 0.55 + 0.3 * Math.sin(s * 0.18) * c, R = Math.cos(e), w = 0, i = Math.sin(e), u = -i * Math.sin(l), y = Math.cos(l), b = R * Math.sin(l), f = w * b - i * y, P = i * u - R * b, x = R * y - w * u, g = 0.23 * (t.wobMul ?? 1), d = t.faceOn ? o / (1 + 0.85 * g) : o, v = t.lanes ?? 5, k = t.segs ?? 88, N = Math.max(1, Math.round(v * (t.bandMul ?? 1)));
+
+  for (let z = 0; z < N; z++) {
+    const O = (z - (N - 1) / 2) * 0.075, B = Math.abs(z - (N - 1) / 2) / Math.max(1, (N - 1) / 2);
+
+    for (let I = 0; I < k; I++) {
+      const S = I / k * 2 * Math.PI, A = (0.16 * Math.sin(S * 3 - s * 1.7 + z * 0.22) + 0.07 * Math.sin(S * 5 + s * 1.1)) * (t.wobMul ?? 1), T = t.faceOn ? 1 + A : 1, C = t.faceOn ? O : O + A, q = R * Math.cos(S) + u * Math.sin(S) + f * C, F = w * Math.cos(S) + y * Math.sin(S) + P * C, j = i * Math.cos(S) + b * Math.sin(S) + x * C, W = Math.sqrt(q * q + F * F + j * j), Y = d * T, [ct, at, X] = h(q / W * Y, F / W * Y, j / W * Y), K = (X / o + 1) / 2;
+      D.push({
+        x: ct,
+        y: at,
+        z: X,
+        r: ((t.rBase ?? 1.1) + (t.rDepth ?? 1.7) * K) * (1 - 0.25 * B) * m,
+        white: 0.52 - 0.44 * K + 0.18 * B,
+        a: 0.4 + 0.6 * K
+      });
+    }
+  }
+
+  return L(D, [], t.rMin);
+}, Dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.8 * (t.spread ?? 1), c = _(s * 0.12, 0.32, r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.nodeN ?? 30, m = t.thr ?? 0.72, D = t.nodeR ?? 1.4, p = t.nodeRDepth ?? 1.8, e = [];
+
+  for (let i = 0; i < h; i++) {
+    const u = J(i, h), y = u[0] + 0.3 * (G(i * 0.31 + 9, s * 0.24) - 0.5) * 2, b = u[1] + 0.3 * (G(i * 0.53 + 27, s * 0.21) - 0.5) * 2, f = u[2] + 0.3 * (G(i * 0.77 + 55, s * 0.27) - 0.5) * 2, P = Math.sqrt(y * y + b * b + f * f);
+    e.push([y / P, b / P, f / P]);
+  }
+
+  const l = [], R = [];
+
+  for (let i = 0; i < h; i++)
+    for (let u = i + 1; u < h; u++) {
+      const y = e[i][0] - e[u][0], b = e[i][1] - e[u][1], f = e[i][2] - e[u][2], P = Math.sqrt(y * y + b * b + f * f);
+
+      if (P >= m) continue;
+      const [x, g, d] = c(e[i][0], e[i][1], e[i][2]), [v, k, N] = c(e[u][0], e[u][1], e[u][2]), z = ((d + N) / 2 + 1) / 2;
+      l.push({
+        x1: x,
+        y1: g,
+        x2: v,
+        y2: k,
+        white: 0.42,
+        a: (1 - P / m) * (0.3 + 0.55 * z),
+        w: Math.max(0.6, (t.lineW ?? 0.8) * M)
+      });
+    }
+
+  for (let i = 0; i < h; i++) {
+    const [u, y, b] = c(e[i][0], e[i][1], e[i][2]), f = (b + 1) / 2, P = 1 + 0.25 * Math.sin(s * 1.4 + i * 2.7);
+    R.push({
+      x: u,
+      y,
+      z: b,
+      r: (D + p * f) * P * M,
+      white: 0.55 - 0.45 * f
+    });
+  }
+
+  const w = t.signals ?? 5;
+
+  for (let i = 0; i < w; i++) {
+    const u = Math.floor(s * 0.55 + i * 7.31), y = Math.floor(E(u, i * 3.1 + 1.7) * h), b = Math.floor(E(u, i * 5.7 + 4.2) * h);
+
+    if (y === b) continue;
+    const f = nt(s * 0.55 + i * 7.31), P = U(e[y][0], e[b][0], f), x = U(e[y][1], e[b][1], f), g = U(e[y][2], e[b][2], f), d = Math.max(1e-6, Math.sqrt(P * P + x * x + g * g)), [v, k, N] = c(P / d, x / d, g / d), z = (N + 1) / 2;
+    R.push({
+      x: v,
+      y: k,
+      z: N,
+      r: (D * 1.5 + p * z) * M,
+      white: 0.05,
+      a: 0.5 + 0.5 * z
+    });
+  }
+
+  return L(R, l, t.rMin);
+}, vt = {
+  orbits: Rt,
+  globe: ft,
+  rubik: dt,
+  wave: bt,
+  web: Dt,
+  braid: Mt,
+  ribbon: Z,
+  // ring shares ribbon's geometry — the `faceOn` profile flag switches it
+  ring: Z,
+  morph: Pt
+}, Ct = Object.fromEntries(
+  Object.entries(vt).map(([n, s]) => [
+    n,
+    (t, r, a, o, c) => ht(t, s(r, a, c), o)
+  ])
+), zt = [
+  ["latRings", "lonDensity"],
+  ["rings", "lonDensity"],
+  ["lanes", "segs"]
+], Nt = ["orbitN", "ghostN", "nodeN", "strandN", "signals"], It = ["iconD"], kt = [
+  "rBase",
+  "rDepth",
+  "rActive",
+  "rDot",
+  "ghostR",
+  "partR",
+  "partRDepth",
+  "nodeR",
+  "nodeRDepth"
+];
+
+function St(n, s) {
+  const t = { ...n }, r = /* @__PURE__ */ new Set(), a = Math.sqrt(s);
+
+  for (const [o, c] of zt) {
+    const M = t[o], h = t[c];
+
+    if (M != null && h != null && !r.has(o) && !r.has(c)) {
+      t[o] = Math.max(2, Math.round(M * a));
+      t[c] = Math.max(2, Math.round(h * a));
+      r.add(o);
+      r.add(c);
+    }
+  }
+
+  for (const o of Nt) {
+    const c = t[o];
+
+    if (c != null && c !== 0 && !r.has(o)) t[o] = Math.max(1, Math.round(c * s));
+  }
+
+  for (const o of It) {
+    const c = t[o];
+
+    if (c != null) t[o] = Math.max(0.02, c * s);
+  }
+
+  return t;
+}
+
+function Bt(n, s) {
+  const t = { ...n };
+
+  for (const r of kt) {
+    const a = t[r];
+
+    if (a != null) t[r] = a * s;
+  }
+
+  return t.rSizeMul = (t.rSizeMul ?? 1) * s, t;
+}
+
+const Et = {
+  globe: {
+    latRings: 17,
+    lonDensity: 44,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rBoost: 1,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  orbits: {
+    orbitN: 12,
+    ghostN: 40,
+    ghostR: 0.9,
+    ghostA: 0.5,
+    particles: 3,
+    partR: 1.2,
+    partRDepth: 1.6,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  rubik: {
+    latRings: 15,
+    lonDensity: 40,
+    moveCount: 14,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rActive: 0.3,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  wave: {
+    rings: 15,
+    lonDensity: 40,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  web: {
+    nodeN: 30,
+    thr: 0.72,
+    signals: 5,
+    nodeR: 1.4,
+    nodeRDepth: 1.8,
+    lineW: 0.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  braid: {
+    strandN: 52,
+    turns: 3,
+    ghostN: 150,
+    rBase: 1.2,
+    rDepth: 1.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  ribbon: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 150,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  // ring shares ribbon's painter; faceOn cancels the camera tilt and moves
+  // the undulation onto the radius, and there is no ghost sphere behind it
+  ring: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 0,
+    faceOn: 1,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  morph: {
+    rDot: 0.021,
+    iconD: 1,
+    rMin: 0.25
+  }
+}, Ot = {
+  working: "orbits",
+  searching: "globe",
+  solving: "rubik",
+  listening: "wave",
+  connecting: "web",
+  weaving: "braid",
+  composing: "ribbon",
+  breathing: "ring",
+  shaping: "morph"
+}, At = {
+  orbits: {
+    64: { speed: 1.885, count: 1, size: 1 },
+    20: { speed: 3.9, count: 0.238, size: 2.4 }
+  },
+  globe: {
+    64: { speed: 2.015, count: 0.42, size: 1.15, extra: { scanMul: 4.08, dimBase: 0.45 } },
+    20: { speed: 2.665, count: 0.105, size: 1.75, extra: { scanMul: 4.335, dimBase: 0.45 } }
+  },
+  rubik: {
+    64: { speed: 1.82, count: 0.35, size: 1.05 },
+    20: { speed: 1.95, count: 0.088, size: 1.9 }
+  },
+  wave: {
+    64: { speed: 4.388, count: 0.341, size: 1 },
+    20: { speed: 3.998, count: 0.105, size: 1.6 }
+  },
+  web: {
+    64: { speed: 3.315, count: 1.35, size: 0.95 },
+    20: { speed: 6.63, count: 0.25, size: 1.52 }
+  },
+  braid: {
+    64: { speed: 1.625, count: 0.5, size: 1 },
+    20: { speed: 2.75, count: 0.1125, size: 1.36 }
+  },
+  ribbon: {
+    64: { speed: 2.34, count: 0.25, size: 0.85, extra: { spin: 0, bandMul: 3.9, wobMul: 1 } },
+    20: { speed: 3.12, count: 0.051, size: 1.073, extra: { spin: 0, bandMul: 4.94, wobMul: 1 } }
+  },
+  ring: {
+    64: { speed: 3.24, count: 0.25, size: 0.956, extra: { spin: 0, bandMul: 3.627, wobMul: 0.368 } },
+    20: { speed: 3.78, count: 0.028, size: 1.622, extra: { spin: 0, bandMul: 3.968, wobMul: 0.565 } }
+  },
+  morph: {
+    64: { speed: 2.405, count: 0.702, size: 0.395, extra: { spread: 1.45 } },
+    20: { speed: 2.08, count: 0.53, size: 1.011, extra: { spread: 1.45 } }
+  }
+}, tt = /* @__PURE__ */ new Map();
+
+function Lt(n, s) {
+  const t = `${n}-${s}`, r = tt.get(t);
+
+  if (r) return r;
+  const a = Ot[n], o = At[a][s];
+  let c = { ...Et[a] };
+
+  if (o.count !== 1) c = St(c, o.count);
+
+  if (o.size !== 1) c = Bt(c, o.size);
+
+  if (o.extra) c = { ...c, ...o.extra };
+  const M = { mode: a, speed: o.speed, opts: c };
+
+  return tt.set(t, M), M;
+}
+
+
+window.__orbs = { MODE_FRAMES: vt, resolvePreset: Lt };
+</script>
+<script>
+"use strict";
+const { MODE_FRAMES, resolvePreset } = window.__orbs;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const GEOM = 20, STILL_T = 0.6;
+const qs = (s) => document.querySelector(s);
+
+function spring({ ms = 450, zeta = 0.72, from = 0, to = 1, onUpdate }) {
+  return new Promise((resolve) => {
+    if (reduced) { onUpdate(to); resolve(); return; }
+    const wn = 4 / (zeta * (ms / 1000));
+    let s = from, v = 0, last = performance.now();
+    (function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      v += (-wn * wn * (s - to) - 2 * zeta * wn * v) * dt;
+      s += v * dt;
+      onUpdate(s);
+      if (Math.abs(to - s) < 0.002 && Math.abs(v) < 0.05) { onUpdate(to); resolve(); return; }
+      requestAnimationFrame(frame);
+    })(last);
+  });
+}
+const wait = (ms) => new Promise(r => setTimeout(r, reduced ? 0 : ms));
+
+/* 光球（同 first-run-guide） */
+const INK = [87, 83, 74];
+const shade = (white, alpha) => `rgba(${INK[0]},${INK[1]},${INK[2]},${(alpha * (1 - white)).toFixed(3)})`;
+const orb = (() => {
+  const host = qs("#orb");
+  const canvas = document.createElement("canvas");
+  host.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  let box = 20, preset = resolvePreset("breathing", GEOM), live = false, raf = 0;
+  let pos = { x: 0, y: 0 };
+  function sizeTo(next) {
+    box = next;
+    canvas.width = Math.round(box * dpr); canvas.height = Math.round(box * dpr);
+    canvas.style.width = box + "px"; canvas.style.height = box + "px";
+  }
+  function paint(t) {
+    const frameOf = MODE_FRAMES[preset.mode];
+    if (!frameOf) return;
+    const frame = frameOf(GEOM, t, preset.opts);
+    const k = (dpr * box) / GEOM;
+    ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, GEOM, GEOM);
+    for (const l of frame.lines) {
+      ctx.strokeStyle = shade(l.white, l.a ?? 1); ctx.lineWidth = l.w;
+      ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+    }
+    for (const d of frame.dots) {
+      ctx.fillStyle = shade(d.white, d.a ?? 1);
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  function loop() {
+    raf = 0;
+    if (live && host.isConnected) { paint(performance.now() / 1000 * preset.speed); raf = requestAnimationFrame(loop); }
+  }
+  sizeTo(box);
+  return {
+    get pos() { return pos; }, get box() { return box; },
+    place(x, y) { pos = { x, y }; host.style.transform = `translate(${x}px,${y}px)`; },
+    scale(s) { host.style.transform = `translate(${pos.x}px,${pos.y}px) scale(${s})`; },
+    sizeTo, paintStill: () => paint(STILL_T),
+    setState(name) { preset = resolvePreset(name, GEOM); paint(performance.now() / 1000 * preset.speed); },
+    setLive(on) { live = on && !reduced; if (live && !raf) raf = requestAnimationFrame(loop); if (!live) paint(STILL_T); },
+  };
+})();
+function rectIn(el) {
+  const b = qs("#body").getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height };
+}
+async function dockOrb(slot) {
+  const r = rectIn(slot), from = orb.pos, fromBox = orb.box;
+  if (reduced) { orb.place(r.x, r.y); orb.sizeTo(r.w); orb.paintStill(); return; }
+  await spring({ ms: 520, zeta: 0.78, onUpdate: (p) => {
+    orb.place(from.x + (r.x - from.x) * p, from.y + (r.y - from.y) * p);
+    orb.scale((fromBox + (r.w - fromBox) * p) / fromBox);
+  } });
+  orb.sizeTo(r.w); orb.place(r.x, r.y); orb.paintStill();
+}
+function rise(el, base = 0) {
+  el.style.opacity = "0"; el.style.transform = "translateY(14px)";
+  setTimeout(() => spring({ ms: 460, onUpdate: (p) => {
+    el.style.opacity = String(Math.min(1, p));
+    el.style.transform = `translateY(${((1 - p) * 14).toFixed(2)}px)`;
+  } }), reduced ? 0 : base);
+}
+function streamText(el, text, cps = 30) {
+  return new Promise((resolve) => {
+    if (reduced) { el.textContent = text; resolve(); return; }
+    let i = 0;
+    const t = setInterval(() => {
+      el.textContent = text.slice(0, ++i);
+      if (i >= text.length) { clearInterval(t); resolve(); }
+    }, 1000 / cps);
+  });
+}
+const CHECK = '<svg width="13" height="13" viewBox="0 0 14 14"><path d="M2.5 7.5 L5.8 10.8 L11.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function toast(msg) {
+  const el = qs("#toast");
+  el.textContent = msg; el.classList.add("show");
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+/* ═══ 场景定义 ═══ */
+const SCEN = {
+  "401": {
+    cap: "401 · key 无效",
+    title: "模型拒绝了请求",
+    copy: "key 无效，或这个 key 没有 kimi-k2 的权限。重试结果会一样，先去换 key。",
+    tech: '401 Unauthorized {"error":{"message":"Invalid API key","type":"invalid_request_error"}} · kimi-k2',
+  },
+  "429": {
+    cap: "429 · 额度或太频繁",
+    title: "额度用完，或请求太频繁",
+    copy: "可以稍后再试，或换个模型立刻继续。",
+    tech: '429 Too Many Requests {"error":{"message":"quota exceeded"}} · kimi-k2',
+  },
+  net: {
+    cap: "断网 · 连不上",
+    title: "连不上模型服务",
+    copy: "网络断了，或服务商没有响应。进度没有丢。",
+    tech: "TypeError: Failed to fetch · kimi-k2",
+  },
+};
+const PARTIAL = "这一页最核心的三件事——① 作者在论证「少，但更好」的";
+const FULL = [
+  "这一页最核心的三件事——",
+  "① 作者在论证「少，但更好」的设计立场；",
+  "② 两组前后对比数据，留存提升 32%；",
+  "③ 文末附了一份可下载的检查清单。",
+];
+
+let kind = "401", running = false;
+
+function cardHTML(k) {
+  const s = SCEN[k];
+  const btns = k === "401"
+    ? '<button class="btn btn-primary" data-a="fix">去换 key</button><button class="btn btn-quiet" data-a="retry-anyway">仍然重试</button>'
+    : k === "429"
+      ? '<button class="btn btn-primary" data-a="menu">换一个模型 ▾</button><button class="btn btn-quiet" data-a="later">稍后重试</button>'
+      : '<button class="btn btn-primary" data-a="retry-net">重试</button>';
+  const note = k === "net" ? '<p class="note">网络恢复后会自动重试一次，不用盯着。</p>' : "";
+  const menu = k === "429"
+    ? '<div class="model-menu" hidden><button data-m="Kimi K2（另一个 key）">Kimi K2 <span class="sub">另一个 key · 快</span></button><button data-m="DeepSeek V3">DeepSeek V3 <span class="sub">已配置</span></button><button data-m="__settings">去设置里加新模型…</button></div>'
+    : "";
+  return `<div class="card err" id="card">
+    <div class="head"><span class="dot"></span>${s.title}</div>
+    <p>${s.copy}</p>
+    <div class="btn-row">${btns}<span class="model-chip" hidden></span></div>
+    ${menu}${note}
+    <details class="tech"><summary>技术详情</summary><pre>${s.tech}</pre></details>
+  </div>`;
+}
+
+async function loadScenario(k) {
+  if (running) return;
+  running = true; kind = k;
+  qs("#cap").textContent = SCEN[k].cap;
+  qs("#net-toggle").hidden = k !== "net";
+  qs("#sheet").hidden = true; qs("#sheet").style.transform = "translateY(105%)";
+  const stage = qs("#stage");
+  stage.innerHTML = `
+    <div class="bubble">帮我概括这一页，顺便存下重点</div>
+    <div class="reply"><div class="orb-slot" style="width:20px;height:20px;flex:none;margin-top:2px"></div><div class="text"><span class="ln cut"></span></div></div>`;
+  const bubble = stage.querySelector(".bubble");
+  rise(bubble);
+  await wait(250);
+  await dockOrb(stage.querySelector(".orb-slot"));
+  orb.setState("solving"); orb.setLive(true);
+  const ln = stage.querySelector(".ln");
+  await streamText(ln, PARTIAL, 40);
+  await wait(500);
+  // 失败定格：光球停住，半截的话变灰
+  orb.setLive(false);
+  ln.textContent = PARTIAL + " ▌";
+  const card = document.createElement("div");
+  card.innerHTML = cardHTML(k);
+  stage.appendChild(card.firstElementChild);
+  const cardEl = qs("#card");
+  rise(cardEl);
+  wireCard(cardEl, k);
+  running = false;
+}
+
+function wireCard(card, k) {
+  if (k === "401") {
+    card.querySelector('[data-a="fix"]').addEventListener("click", openSheet);
+    card.querySelector('[data-a="retry-anyway"]').addEventListener("click", async () => {
+      spring({ ms: 480, zeta: 0.25, onUpdate: (p) => {
+        card.style.transform = `translateX(${(Math.sin(p * Math.PI * 3) * (1 - p) * 5).toFixed(2)}px)`;
+      } });
+      toast("还是 401：key 没换，重试结果一样");
+    });
+  }
+  if (k === "429") {
+    const menu = card.querySelector(".model-menu");
+    card.querySelector('[data-a="menu"]').addEventListener("click", async () => {
+      if (menu.hidden) {
+        menu.hidden = false;
+        spring({ ms: 320, zeta: 0.8, onUpdate: (p) => {
+          menu.style.opacity = String(Math.min(1, p));
+          menu.style.transform = `scale(${0.92 + 0.08 * p})`;
+        } });
+        for (const [i, b] of [...menu.querySelectorAll("button")].entries()) rise(b, 60 + i * 50);
+      } else menu.hidden = true;
+    });
+    for (const b of menu.querySelectorAll("button")) {
+      b.addEventListener("click", async () => {
+        menu.hidden = true;
+        if (b.dataset.m === "__settings") { toast("打开「模型与语音」"); return; }
+        const chip = card.querySelector(".model-chip");
+        chip.hidden = false;
+        chip.innerHTML = `kimi-k2 → <b>${b.dataset.m.split("（")[0]}</b>`;
+        rise(chip);
+        const primary = card.querySelector('[data-a="menu"]');
+        primary.textContent = "重试"; primary.dataset.a = "retry-now";
+        card.querySelector('[data-a="later"]').remove();
+        primary.replaceWith(primary.cloneNode(true));
+        card.querySelector('[data-a="retry-now"]').addEventListener("click", () => recover("已切到 " + b.dataset.m.split("（")[0]));
+        toast("已切换，点「重试」即可继续");
+      });
+    }
+    card.querySelector('[data-a="later"]').addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      for (let i = 4; i >= 1; i--) { btn.textContent = `${i} 秒后自动重试…`; await wait(1000); }
+      recover("已自动重试");
+    });
+  }
+  if (k === "net") {
+    card.querySelector('[data-a="retry-net"]').addEventListener("click", () => {
+      spring({ ms: 480, zeta: 0.25, onUpdate: (p) => {
+        card.style.transform = `translateX(${(Math.sin(p * Math.PI * 3) * (1 - p) * 5).toFixed(2)}px)`;
+      } });
+      toast("还连不上，等网络恢复");
+    });
+  }
+}
+qs("#net-toggle").addEventListener("click", () => {
+  qs("#net-toggle").hidden = true;
+  recover("网络恢复，自动重试");
+});
+
+/* ═══ 换 key 底部表单 ═══ */
+let sheetOpen = false;
+async function openSheet() {
+  if (sheetOpen) return; sheetOpen = true;
+  const sheet = qs("#sheet");
+  sheet.hidden = false;
+  const save = qs("#sheet-save");
+  save.disabled = true;
+  qs("#sheet-status").className = "status-inline"; qs("#sheet-status").textContent = "";
+  await spring({ ms: 520, zeta: 0.8, onUpdate: (p) => {
+    sheet.style.transform = `translateY(${((1 - p) * 105).toFixed(2)}%)`;
+  } });
+  qs("#sheet-key").focus();
+}
+async function closeSheet() {
+  const sheet = qs("#sheet");
+  await spring({ ms: 380, zeta: 1, onUpdate: (p) => {
+    sheet.style.transform = `translateY(${(p * 105).toFixed(2)}%)`;
+  } });
+  sheet.hidden = true; sheetOpen = false;
+}
+let sheetTesting = false;
+qs("#sheet-test").addEventListener("click", async () => {
+  if (sheetTesting) return;
+  const key = qs("#sheet-key").value.trim();
+  const st = qs("#sheet-status");
+  st.className = "status-inline";
+  if (key.length < 8) { st.classList.add("err"); st.textContent = "key 好像不完整。"; return; }
+  sheetTesting = true;
+  st.textContent = "正在测试…";
+  await wait(900);
+  st.classList.add("ok");
+  st.innerHTML = CHECK + "<span>连上了 · 0.8s</span>";
+  st.querySelector("path").style.animation = "draw .4s ease-out forwards";
+  qs("#sheet-save").disabled = false;
+  sheetTesting = false;
+});
+qs("#sheet-save").addEventListener("click", async () => {
+  await closeSheet();
+  recover("已换 key");
+});
+
+/* ═══ 恢复：从出错处继续 ═══ */
+async function recover(source) {
+  if (running) return; running = true;
+  const card = qs("#card");
+  // 卡片收拢成一行重试状态
+  card.innerHTML = `<div class="status-inline"><div class="orb-slot" style="width:16px;height:16px"></div><span>${source}，正在从出错处继续…</span></div>`;
+  card.classList.remove("err");
+  await dockOrb(card.querySelector(".orb-slot"));
+  orb.setState("solving"); orb.setLive(true);
+  await wait(1100);
+  // 卡片退场
+  await spring({ ms: 320, zeta: 1, onUpdate: (p) => {
+    card.style.opacity = String(1 - p);
+    card.style.transform = `translateY(${(-8 * p).toFixed(2)}px)`;
+  } });
+  card.remove();
+  // 光球回到回答旁，续写完整答案
+  const replySlot = document.querySelector(".reply .orb-slot");
+  const ln = document.querySelector(".reply .ln");
+  const textEl = document.querySelector(".reply .text");
+  ln.remove();
+  await dockOrb(replySlot);
+  orb.setState("composing");
+  for (const line of FULL) {
+    const el = document.createElement("span");
+    el.className = "ln";
+    textEl.appendChild(el);
+    await streamText(el, line, 36);
+  }
+  orb.setLive(false); orb.setState("breathing"); orb.paintStill();
+  const mem = document.createElement("span");
+  mem.className = "mem-line"; mem.textContent = "用了 1 条记忆 ›"; mem.style.opacity = "0";
+  qs("#stage").appendChild(mem);
+  spring({ ms: 400, onUpdate: p => { mem.style.opacity = String(p); } });
+  const receipt = document.createElement("div");
+  receipt.className = "receipt";
+  receipt.innerHTML = CHECK + `<span>出过错 · ${source}，已从出错处继续</span>`;
+  receipt.style.opacity = "0";
+  qs("#stage").appendChild(receipt);
+  spring({ ms: 400, onUpdate: p => { receipt.style.opacity = String(p); } });
+  running = false;
+}
+
+/* ═══ 主控 ═══ */
+const scen = qs("#scen"), scenPill = qs("#scen-pill");
+function moveScenPill(btn, instant) {
+  const r = btn.getBoundingClientRect(), host = scen.getBoundingClientRect();
+  const x = r.left - host.left, w = r.width;
+  if (instant || reduced) { scenPill.style.left = x + "px"; scenPill.style.width = w + "px"; return; }
+  const from = { x: parseFloat(scenPill.style.left || x), w: parseFloat(scenPill.style.width || w) };
+  spring({ ms: 360, zeta: 0.75, onUpdate: (p) => {
+    scenPill.style.left = from.x + (x - from.x) * p + "px";
+    scenPill.style.width = from.w + (w - from.w) * p + "px";
+  } });
+}
+for (const btn of scen.querySelectorAll("button")) {
+  btn.addEventListener("click", () => {
+    scen.querySelector(".sel").classList.remove("sel");
+    btn.classList.add("sel"); moveScenPill(btn);
+    qs("#sheet-key").value = "";
+    loadScenario(btn.dataset.k);
+  });
+}
+qs("#replay").addEventListener("click", () => { qs("#sheet-key").value = ""; loadScenario(kind); });
+addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") loadScenario(kind); });
+
+moveScenPill(scen.querySelector(".sel"), true);
+loadScenario("401");
+</script>
+</body>
+</html>
