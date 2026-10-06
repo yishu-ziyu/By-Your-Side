@@ -11,6 +11,7 @@ import {
   RESULT_VERIFY_READ_TOOLS,
   deriveResultDescription,
   isResultMetaTool,
+  isSupersededUnknown,
   isTaskResultItem,
   normalizeResultEvidence,
   normalizeResultTarget,
@@ -53,6 +54,20 @@ export class TaskResultBook {
   }
 
   clear(): void { this.items = []; this.observations = []; this.baselines.clear(); }
+
+  /**
+   * 用户接管后交还：接管期间页面归用户，接管前没确认的写入（未知，或执行到一半被打断）不再有意义。
+   * 从账上撤掉，交还时的页面就是新的起点；返回撤掉的项供诊断记录。
+   */
+  releaseAfterHandback(): Array<{ id: string; description: string }> {
+    const released = this.items.filter(item => item.status === "unknown" && !isSupersededUnknown(item, this.items) || item.status === "pending" && item.evidence !== null && item.tool !== undefined);
+
+    this.items = this.items.filter(item => !released.includes(item));
+
+    for (const item of released) this.baselines.delete(item.id);
+
+    return released.map(item => ({ id: item.id, description: item.description }));
+  }
 
   list(): TaskResultItem[] {
     return this.items.map(item => ({ ...item, evidence: item.evidence ? { ...item.evidence } : null }));

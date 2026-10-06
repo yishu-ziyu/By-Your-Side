@@ -1422,6 +1422,13 @@ return receipt;
         },
         deliveryFacts: () => progress.deliveryFacts(),
         answerSources: () => progress.answerSources(),
+        releaseAfterHandback: () => {
+          const released = progress.releaseAfterHandback();
+
+          if (released.length) runtime.session.persistTaskResults?.(progress.snapshot());
+
+          return released;
+        },
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
