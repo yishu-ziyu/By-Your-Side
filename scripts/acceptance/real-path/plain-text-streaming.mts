@@ -150,12 +150,14 @@ try {
   const settingsTarget = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页打开");
   const settings = await rp.attach(settingsTarget.targetId);
   await until(async () => (await rp.evaluate(settings, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页渲染服务商");
-  await rp.evaluate(settings, `document.querySelector("#provider-more").open = true; true`);
-  await rp.evaluate(settings, `document.querySelector('.provider-option[data-provider="minimax-cn"]').scrollIntoView({ block: "center" }); true`);
-  await rp.click(settings, `.provider-option[data-provider="minimax-cn"]`);
+  // MiniMax 的国际、中国合成一行：先展开这一行，再切到「中国」，点开模型下拉。
+  await rp.evaluate(settings, `document.querySelector("#provider-more").open = true; document.querySelector('.provider-option[data-provider="minimax"]').scrollIntoView({ block: "center" }); true`);
+  await rp.click(settings, `.provider-option[data-provider="minimax"]`);
+  await rp.click(settings, `#region-row [data-region="minimax-cn"]`);
+  await rp.click(settings, "#model-id");
   await sleep(300);
   // SAFETY: 页面脚本返回字符串数组。
-  const offered = await rp.evaluate(settings, `[...document.querySelectorAll("#model-options option")].map((o) => o.value)`) as string[];
+  const offered = await rp.evaluate(settings, `[...document.querySelectorAll("#model-options .combo-opt")].map((o) => o.dataset.id)`) as string[];
   await rp.screenshot(settings, join(artifacts, "settings-minimax.png")).catch(() => {});
   // 独立参照：pi-ai 目录里 minimax-cn 的模型 + 能力表登记的那一个，不多不少。
   const pi = join(REPO, "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/all.js");
@@ -166,6 +168,7 @@ try {
   check(4, "设置里 MiniMax 下能选到 MiniMax-M3.1-Flash-Preview", offered.includes("MiniMax-M3.1-Flash-Preview"), { offered });
   check(4, "列表只来自目录与能力表（无猜出来的名字、无遗漏）", offered.length === expected.size && offered.every((id) => expected.has(id)), { catalog, offered });
 
+  await rp.evaluate(settings, `document.querySelector('.provider-option[data-provider="custom"]').scrollIntoView({ block: "center" }); true`);
   await rp.click(settings, `.provider-option[data-provider="custom"]`);
   const focus = (sel: string) => rp.evaluate(settings, `(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.scrollIntoView({ block: "center" }); el.focus(); el.select?.(); return true; })()`);
   await focus("#base-url");

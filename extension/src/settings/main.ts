@@ -6,6 +6,7 @@
  * 订阅登录用 pi-ai 的设备码流程，登录结果经凭据库直接落盘。
  */
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
+import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search } from "lucide";
 import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, type ProviderChoice } from "../inproc/model-runtime.js";
 import {
   CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
@@ -21,6 +22,7 @@ import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
+import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
 /** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
 const TEST_TIMEOUT_MS = 60_000;
@@ -39,124 +41,158 @@ const CUSTOM_CHOICE: ProviderChoice = { id: CUSTOM_PROVIDER_ID, name: "自定义
 
 const choices = [...runtime.providerChoices(), CUSTOM_CHOICE];
 
-const featuredIds = new Set([...FEATURED_PROVIDERS.map((p) => p.id), CUSTOM_PROVIDER_ID]);
+const entries = groupEntries(choices);
+
+const svg = (node: Parameters<typeof icon>[0], size = 14) => icon(node, { width: size, height: size, "stroke-width": 1.75, "aria-hidden": "true" });
+
+const toggleRow = (id: string, title: string, desc: string) => `
+  <label class="row">
+    <span class="row-main"><span class="row-title">${title}</span><span class="row-desc">${desc}</span></span>
+    <input id="${id}" type="checkbox" class="sw" role="switch" />
+  </label>`;
 
 document.getElementById("settings")!.innerHTML = `
   <header class="settings-head">
     <img src="icons/brand-mark.svg" alt="" />
     <h1>模型与语音</h1>
   </header>
-  <p id="model-current" class="settings-current"></p>
-  <section class="settings-card" aria-labelledby="model-title">
-    <h2 id="model-title">模型</h2>
-    <p class="settings-sub">用你自己的套餐调用模型。密钥只保存在这个浏览器里。</p>
-    <div id="provider-featured" class="provider-grid" role="radiogroup" aria-label="常用服务商"></div>
-    <details id="provider-more">
-      <summary>更多服务商</summary>
-      <div id="provider-others" class="provider-list" role="radiogroup" aria-label="更多服务商"></div>
-    </details>
-    <div id="provider-form" hidden>
-      <h3 id="provider-name"></h3>
-      <div id="oauth-row" class="settings-field" hidden>
-        <div class="settings-inline">
-          <button id="oauth-login" type="button" class="settings-primary"></button>
-          <button id="oauth-cancel" type="button" hidden>取消登录</button>
-          <button id="oauth-logout" type="button" hidden>退出登录</button>
+  <section class="sx" aria-labelledby="model-title">
+    <div class="sx-head">
+      <h2 id="model-title">模型</h2>
+      <p class="sx-sub">用你自己的套餐调用模型。密钥只保存在这个浏览器里。</p>
+    </div>
+    <div class="surface rows">
+      <div class="row">
+        <span class="row-main"><span class="row-title">主模型</span><span id="main-desc" class="row-desc"></span></span>
+        <span class="row-ctl pick"><span id="main-icon"></span><select id="main-model" class="sel" aria-label="主模型"></select></span>
+      </div>
+      <div class="row">
+        <span class="row-main"><span class="row-title">快速模型</span><span class="row-desc">划词解释、翻译这类要马上出结果的动作用它。</span></span>
+        <span class="row-ctl"><select id="fast-model" class="sel" aria-label="快速模型"></select></span>
+      </div>
+    </div>
+    <p id="main-status" class="settings-status" role="status" aria-live="polite"></p>
+    <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
+    <div class="surface plist">
+      <div class="search">
+        <input id="provider-search" type="search" placeholder="搜索服务商或模型，比如 glm、claude" aria-label="搜索服务商或模型" spellcheck="false" autocomplete="off" />
+        <kbd>/</kbd>
+      </div>
+      <div id="provider-connected"></div>
+      <div id="provider-custom"></div>
+      <details id="provider-more">
+        <summary class="more"><span id="provider-more-names"></span><span class="more-btn"><span class="more-open">展开</span><span class="more-close">收起</span></span></summary>
+        <div id="provider-others"></div>
+      </details>
+      <p id="provider-empty" class="empty" hidden></p>
+    </div>
+    <div id="provider-form" class="detail" hidden>
+      <div id="region-row" class="seg" role="radiogroup" aria-label="地区" hidden></div>
+      <label id="base-url-row" class="d-field" hidden>
+        <span class="d-label">服务地址（OpenAI 兼容）</span>
+        <input id="base-url" class="d-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/v1" />
+      </label>
+      <div id="oauth-row" class="d-field" hidden>
+        <div class="d-cred">
+          <span id="oauth-ok" class="ok-ic" hidden></span>
+          <span id="oauth-state" class="d-cred-text"></span>
+          <span class="d-cred-acts">
+            <button id="oauth-login" type="button" class="btn"></button>
+            <button id="oauth-cancel" type="button" class="btn btn-quiet" hidden>取消登录</button>
+            <button id="oauth-logout" type="button" class="btn btn-quiet" hidden>退出登录</button>
+          </span>
         </div>
-        <p id="oauth-state" class="settings-hint"></p>
         <div id="oauth-flow" class="oauth-flow" hidden></div>
       </div>
-      <label id="base-url-row" class="settings-field" hidden>
-        <span>服务地址（OpenAI 兼容）</span>
-        <input id="base-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/v1" />
+      <div id="key-saved" class="d-cred" hidden>
+        <span class="key-ic"></span>
+        <span class="d-cred-text">已填 key<span id="key-tail" class="d-mono"></span></span>
+        <span class="d-cred-acts">
+          <button id="key-change" type="button" class="btn btn-quiet">更换</button>
+          <button id="key-delete" type="button" class="btn btn-quiet">删除</button>
+        </span>
+      </div>
+      <label id="key-row" class="d-field">
+        <span id="key-label" class="d-label">API key</span>
+        <input id="api-key" class="d-input" type="password" autocomplete="off" spellcheck="false" />
       </label>
-      <label id="key-row" class="settings-field">
-        <span id="key-label">API key</span>
-        <input id="api-key" type="password" autocomplete="off" spellcheck="false" />
-      </label>
-      <label class="settings-field">
-        <span>模型</span>
-        <input id="model-id" list="model-options" autocomplete="off" spellcheck="false" />
-        <datalist id="model-options"></datalist>
-      </label>
-      <div class="settings-inline">
-        <button id="model-test" type="button">测试连接</button>
-        <button id="model-save" type="button" class="settings-primary">保存并使用</button>
-        <button id="model-fast" type="button">用作快速模型</button>
+      <div class="d-field">
+        <span class="d-label"><span>模型</span><span id="model-meta" class="d-label-meta"></span></span>
+        <div class="combo">
+          <input id="model-id" class="d-input" role="combobox" aria-label="模型" aria-controls="model-options" aria-expanded="false" autocomplete="off" spellcheck="false" placeholder="选择或输入模型名称" />
+          <button id="model-toggle" type="button" class="combo-btn" tabindex="-1" aria-label="展开模型列表"></button>
+        </div>
+        <div id="model-options" class="combo-list" role="listbox" popover="manual"></div>
+      </div>
+      <div class="d-actions">
+        <button id="model-test" type="button" class="btn btn-quiet">测试连接</button>
+        <button id="model-fast" type="button" class="btn btn-quiet">用作快速模型</button>
+        <span class="grow"></span>
+        <button id="model-save" type="button" class="btn btn-primary">保存并使用</button>
       </div>
       <p id="model-status" class="settings-status" role="status" aria-live="polite"></p>
     </div>
   </section>
-  <section class="settings-card" aria-labelledby="fast-title">
-    <h2 id="fast-title">快速模型</h2>
-    <p class="settings-sub">划词解释、网页翻译、找东西这类要当场出结果的动作用它，并且不让它先思考。不选就用上面的主模型。还没填过 key 的服务商：在上面选中它、填好 key 和模型，点「用作快速模型」，主模型不变。</p>
-    <label class="settings-field">
-      <span>即时动作用的模型</span>
-      <select id="fast-model"></select>
-    </label>
-    <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
-  </section>
-  <section class="settings-card" aria-labelledby="voice-title">
-    <h2 id="voice-title">实时语音</h2>
-    <p class="settings-sub">语音对话使用阶跃星辰的实时语音。上面模型选了阶跃星辰并填了 key 的话，这里不用再填。</p>
-    <label class="settings-field">
-      <span>StepFun API key</span>
-      <input id="voice-key" type="password" autocomplete="off" spellcheck="false" />
-    </label>
-    <div class="settings-inline">
-      <button id="voice-save" type="button" class="settings-primary">保存</button>
-      <button id="voice-clear" type="button" hidden>清除</button>
+  <section class="sx" aria-labelledby="voice-title">
+    <div class="sx-head">
+      <h2 id="voice-title">实时语音</h2>
+      <p class="sx-sub">语音对话使用阶跃星辰的实时语音。上面已经填了阶跃星辰的 key，这里就不用再填。</p>
     </div>
-    <p id="voice-status" class="settings-status" role="status" aria-live="polite"></p>
-    <h3 id="timbre-title">音色</h3>
-    <p class="settings-sub">点一下就换，下次开启语音时生效。</p>
-    <div id="timbre-list" class="timbre-list" role="radiogroup" aria-labelledby="timbre-title"></div>
-    <h3 id="persona-title">人设</h3>
-    <p class="settings-sub">只改变语音的语气和措辞；如实汇报、不乱问这些规则不受影响。下次开启语音时生效。</p>
-    <div id="persona-list" class="timbre-list" role="radiogroup" aria-labelledby="persona-title"></div>
-    <div id="persona-custom" class="settings-field" hidden>
-      <textarea id="persona-text" rows="3" maxlength="${CUSTOM_PERSONA_MAX_CHARS}" placeholder="用几句话描述你想要的性格，比如：说话干脆，带点幽默"></textarea>
-      <div class="settings-inline">
-        <button id="persona-save" type="button" class="settings-primary">保存</button>
-        <span id="persona-count" class="settings-hint"></span>
+    <div class="surface rows">
+      <div class="row">
+        <span class="row-main"><span class="row-title">StepFun API key</span><span id="voice-state" class="row-desc"></span></span>
+        <span class="row-ctl inline">
+          <input id="voice-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="StepFun API key" />
+          <button id="voice-save" type="button" class="btn">保存</button>
+          <button id="voice-clear" type="button" class="btn btn-quiet" hidden>清除</button>
+        </span>
+      </div>
+      <div class="row stack">
+        <span class="row-main"><span id="timbre-title" class="row-title">音色</span><span class="row-desc">点一下就换，下次开启语音时生效。</span></span>
+        <div id="timbre-list" class="radio-rows" role="radiogroup" aria-labelledby="timbre-title"></div>
+      </div>
+      <div class="row stack">
+        <span class="row-main"><span id="persona-title" class="row-title">人设</span><span class="row-desc">只改变语音的语气和措辞；如实汇报、不乱问这些规则不变。下次开启语音时生效。</span></span>
+        <div id="persona-list" class="radio-rows" role="radiogroup" aria-labelledby="persona-title"></div>
+        <div id="persona-custom" class="persona-custom" hidden>
+          <textarea id="persona-text" class="d-input" rows="3" maxlength="${CUSTOM_PERSONA_MAX_CHARS}" placeholder="用几句话描述你想要的性格，比如：说话干脆，带点幽默"></textarea>
+          <div class="d-actions">
+            <span id="persona-count" class="d-hint"></span>
+            <span class="grow"></span>
+            <button id="persona-save" type="button" class="btn btn-primary">保存</button>
+          </div>
+        </div>
       </div>
     </div>
+    <p id="voice-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
-  <section class="settings-card" aria-labelledby="selection-title">
-    <h2 id="selection-title">划词</h2>
-    <label class="settings-check">
-      <input id="selection-bar" type="checkbox" />
-      <span>选中文字后显示「问 AI / 解释」</span>
-    </label>
-    <p class="settings-sub">关掉后选中文字不再弹出工具条；选中后按 ⌘J 或右键「问 By Your Side」仍然可用。已打开的网页立即生效。</p>
-    <label class="settings-check">
-      <input id="link-preview" type="checkbox" />
-      <span>按住 Shift 停在链接上，预览目标页</span>
-    </label>
-    <p class="settings-sub">卡片写目标页的标题和几行要点，不打开新标签；读页面时不带你的登录状态。</p>
-    <label class="settings-check">
-      <input id="nudge" type="checkbox" />
-      <span>主动建议</span>
-    </label>
-    <p class="settings-sub">在一页上读了一会儿，助手看出能帮上忙时（比如两篇可以对比、有个观点值得记下），在页面右下角递一张小卡，点一下交给侧栏去做。每次判断会把这一页和最近看过几页的摘录发给你选的模型；同一页只看一次，点 × 后这一页不再出现。</p>
+  <section class="sx" aria-labelledby="selection-title">
+    <div class="sx-head"><h2 id="selection-title">划词</h2></div>
+    <div class="surface rows">
+      ${toggleRow("selection-bar", "选中文字后显示「问 AI / 解释」", "关掉后按 ⌘J 或右键「问 By Your Side」仍然可用。已打开的网页立即生效。")}
+      ${toggleRow("link-preview", "按住 Shift 停在链接上，预览目标页", "卡片写目标页的标题和几行要点，不打开新标签；读页面时不带你的登录状态。")}
+      ${toggleRow("nudge", "主动建议", "看出能帮上忙时，在页面右下角递一张小卡，点一下交给侧栏去做。每次判断会把这一页和最近几页的摘录发给你选的模型；同一页只看一次。")}
+    </div>
     <p id="selection-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
-  <section class="settings-card" aria-labelledby="open-threads-title">
-    <h2 id="open-threads-title">继续上次的事</h2>
-    <label class="settings-check">
-      <input id="open-threads" type="checkbox" />
-      <span>新对话里显示没做完的事，点一下回去接着做</span>
-    </label>
-    <p class="settings-sub">最多 3 张，只来自这台电脑上的记录：中断或停在一半的任务、页面交给你的对话、没答完的阅读追问。单张点 × 后 7 天内不再出现。</p>
+  <section class="sx" aria-labelledby="open-threads-title">
+    <div class="sx-head"><h2 id="open-threads-title">继续上次的事</h2></div>
+    <div class="surface rows">
+      ${toggleRow("open-threads", "新对话里显示没做完的事", "最多 3 张，只来自这台电脑上的记录：中断的任务、交给你的页面、没答完的追问。单张点 × 后 7 天内不再出现。")}
+    </div>
     <p id="open-threads-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
-  <section class="settings-card" aria-labelledby="trace-title">
-    <h2 id="trace-title">诊断记录</h2>
-    <p class="settings-sub">每次任务的步骤、耗时和页面文字，以及语音每一轮的识别文字和时间，留在这台电脑的浏览器里（密码、密钥已去掉；不存录音），任务只保留最近 ${TRACE_SESSIONS_KEPT} 个会话，语音保留 ${VOICE_CAPTURE_MAX_AGE_DAYS} 天，不会上传。排查问题时导出给开发者。</p>
-    <div class="settings-inline">
-      <button id="trace-export" type="button" class="settings-primary">导出</button>
-      <button id="trace-clear" type="button">清空</button>
+  <section class="sx" aria-labelledby="trace-title">
+    <div class="sx-head"><h2 id="trace-title">诊断记录</h2></div>
+    <div class="surface rows">
+      <div class="row">
+        <span class="row-main"><span class="row-title">任务步骤与语音识别记录</span><span class="row-desc">留在这台电脑的浏览器里，密码和密钥已去掉，不存录音，不上传。任务保留最近 ${TRACE_SESSIONS_KEPT} 个会话，语音保留 ${VOICE_CAPTURE_MAX_AGE_DAYS} 天。排查问题时导出给开发者。</span></span>
+        <span class="row-ctl inline">
+          <button id="trace-export" type="button" class="btn">导出</button>
+          <button id="trace-clear" type="button" class="btn btn-quiet">清空</button>
+        </span>
+      </div>
     </div>
     <p id="trace-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
@@ -169,9 +205,11 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const form = $("provider-form");
 
-const providerName = $("provider-name");
+const regionRow = $("region-row");
 
 const oauthRow = $("oauth-row");
+
+const oauthOk = $("oauth-ok");
 
 const oauthLogin = $<HTMLButtonElement>("oauth-login");
 
@@ -187,17 +225,31 @@ const baseUrlRow = $("base-url-row");
 
 const baseUrlInput = $<HTMLInputElement>("base-url");
 
+const keySaved = $("key-saved");
+
 const keyRow = $("key-row");
 
 const keyLabel = $("key-label");
 
 const keyInput = $<HTMLInputElement>("api-key");
 
+const keyTail = $("key-tail");
+
+const modelMeta = $("model-meta");
+
 const modelInput = $<HTMLInputElement>("model-id");
 
-const modelOptions = $<HTMLDataListElement>("model-options");
+const modelOptions = $("model-options");
 
 const modelStatus = $("model-status");
+
+const search = $<HTMLInputElement>("provider-search");
+
+const more = $<HTMLDetailsElement>("provider-more");
+
+const mainSelect = $<HTMLSelectElement>("main-model");
+
+const mainStatus = $("main-status");
 
 const voiceInput = $<HTMLInputElement>("voice-key");
 
@@ -217,54 +269,40 @@ let credentials: StoredCredentials = {};
 
 let selected: ProviderChoice | null = null;
 
+/** 展开详情的那一行（Entry.key）。 */
+let openKey: string | null = null;
+
+/** 已存 key 时，点了「更换」才露出输入框。 */
+let changingKey = false;
+
 let login: AbortController | null = null;
+
+$("model-toggle").append(svg(ChevronDown));
+
+$("provider-search").before(svg(Search));
+
+oauthOk.append(svg(CircleCheck, 15));
+
+keySaved.querySelector(".key-ic")!.append(svg(KeyRound));
 
 function setStatus(el: HTMLElement, text: string, tone: "ok" | "err" | "busy" | "" = ""): void {
   el.textContent = text;
   el.dataset.tone = tone;
 }
 
+const choiceOf = (providerId: string) => choices.find((c) => c.id === providerId);
+
+const entryOf = (providerId: string) => entries.find((e) => e.members.some((m) => m.id === providerId));
+
+/** 带地区的家族成员写成「MiniMax（中国）」。 */
 function labelOf(providerId: string): string {
-  return choices.find((c) => c.id === providerId)?.name ?? providerId;
+  const entry = entryOf(providerId);
+  const region = entry?.members.find((m) => m.id === providerId)?.region;
+
+  return entry ? region ? `${entry.name}（${region}）` : entry.name : providerId;
 }
 
-function renderCurrent(): void {
-  const el = $("model-current");
-
-  el.textContent = config ? `正在使用：${labelOf(config.provider)} · ${config.modelId}` : "还没有选择模型。选一个服务商，填好 key 或登录后保存。";
-  el.dataset.tone = config ? "ok" : "";
-}
-
-function providerButton(choice: ProviderChoice): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "provider-option";
-  button.dataset.provider = choice.id;
-  button.setAttribute("role", "radio");
-  const name = document.createElement("span");
-  name.className = "provider-option-name";
-  name.textContent = choice.name;
-  const note = document.createElement("span");
-  note.className = "provider-option-note";
-  button.append(name, note);
-  button.addEventListener("click", () => select(choice));
-
-  return button;
-}
-
-function renderProviders(): void {
-  const featured = $("provider-featured");
-  const others = $("provider-others");
-  const featuredButtons: HTMLButtonElement[] = [];
-  const otherButtons: HTMLButtonElement[] = [];
-
-  for (const choice of choices) (featuredIds.has(choice.id) ? featuredButtons : otherButtons).push(providerButton(choice));
-  featured.replaceChildren(...featuredButtons);
-  others.replaceChildren(...otherButtons);
-  refreshProviderMarks();
-}
-
-function credentialNote(providerId: string): string {
+function credentialNote(providerId: string): "已登录" | "已填 key" | "" {
   const credential = credentials[providerId];
 
   if (credential?.type === "oauth") return "已登录";
@@ -274,14 +312,119 @@ function credentialNote(providerId: string): string {
   return "";
 }
 
-function refreshProviderMarks(): void {
-  for (const button of document.querySelectorAll<HTMLButtonElement>(".provider-option[data-provider]")) {
-    const id = button.dataset.provider!;
-    button.setAttribute("aria-checked", String(selected?.id === id));
-    button.classList.toggle("in-use", config?.provider === id);
-    const note = config?.provider === id ? `使用中 · ${credentialNote(id) || "未配置凭据"}` : credentialNote(id);
-    button.querySelector(".provider-option-note")!.textContent = note;
+const connected = (entry: Entry) => entry.members.some((m) => credentialNote(m.id) || m.id === config?.provider);
+
+/** 一行的状态：使用中 > 已登录 > 已填 key。 */
+interface EntryStatus { kind: "use" | "oauth" | "key" | ""; text: string; region?: string }
+
+function entryStatus(entry: Entry): EntryStatus {
+  const use = entry.members.find((m) => m.id === config?.provider);
+
+  if (use) return { kind: "use", text: "使用中", region: use.region };
+
+  for (const [kind, text] of [["oauth", "已登录"], ["key", "已填 key"]] as const) {
+    const member = entry.members.find((m) => credentialNote(m.id) === text);
+
+    if (member) return { kind, text, region: member.region };
   }
+
+  return { kind: "", text: "" };
+}
+
+function statusEl(entry: Entry): HTMLElement {
+  const { kind, text, region } = entryStatus(entry);
+  const el = document.createElement("span");
+  el.className = `st st-${kind || "none"}`;
+
+  if (!kind) return el;
+  el.append(kind === "key" ? svg(KeyRound, 12) : Object.assign(document.createElement("i"), { className: "dot" }));
+  el.append(entry.members.length > 1 && region ? `${text} · ${region}` : text);
+
+  return el;
+}
+
+/** 家族里先打开正在用的、再是已连接的地区。 */
+const representative = (entry: Entry) => (entry.members.find((m) => m.id === config?.provider) ?? entry.members.find((m) => credentialNote(m.id)))?.id ?? entry.key;
+
+function providerRow(entry: Entry, hits: string[]): HTMLElement {
+  const isOpen = openKey === entry.key;
+  const id = representative(entry);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "provider-option prow";
+  button.dataset.provider = id;
+  button.setAttribute("aria-expanded", String(isOpen));
+  const name = document.createElement("span");
+  name.className = "p-name";
+  name.append(Object.assign(document.createElement("span"), { textContent: entry.name }));
+
+  if (entry.members.length > 1) name.append(Object.assign(document.createElement("span"), { className: "p-meta", textContent: entry.members.map((m) => m.region).join(" / ") }));
+
+  if (hits.length) name.append(Object.assign(document.createElement("span"), { className: "p-meta p-hit", textContent: hits.length > 1 ? `${hits[0]} 等 ${hits.length} 个` : hits[0] }));
+  const lead = entry.key === CUSTOM_PROVIDER_ID ? Object.assign(document.createElement("span"), { className: "pv pv-glyph" }) : providerIcon(id, entry.name);
+
+  if (entry.key === CUSTOM_PROVIDER_ID) lead.append(svg(Link, 15));
+  const chevron = svg(ChevronRight);
+  chevron.classList.add("p-chev");
+  button.append(lead, name, statusEl(entry), chevron);
+  button.addEventListener("click", () => toggle(entry));
+  const item = document.createElement("div");
+  item.className = `pitem${isOpen ? " is-open" : ""}${entryStatus(entry).kind === "use" ? " is-use" : ""}`;
+  item.append(button);
+
+  if (isOpen) item.append(form);
+
+  return item;
+}
+
+function groupLabel(text: string): HTMLElement {
+  return Object.assign(document.createElement("div"), { className: "grp", textContent: text });
+}
+
+/** 已连接的在上（正在用的第一），自定义地址其次，其余折起；搜索时只留命中的行，并展开其余。 */
+function renderProviders(): void {
+  const query = search.value.trim();
+  const matches = entries.filter((e) => e.key !== CUSTOM_PROVIDER_ID).map((e) => [e, matchEntry(e, choices, query)] as const).filter(([, m]) => m.hit);
+  const mine = matches.filter(([e]) => connected(e)).sort(([a], [b]) => Number(entryStatus(b).kind === "use") - Number(entryStatus(a).kind === "use"));
+  const rest = matches.filter(([e]) => !connected(e));
+  const custom = entries.find((e) => e.key === CUSTOM_PROVIDER_ID)!;
+  const customHit = !query || matchEntry(custom, choices, query).hit || !matches.length;
+
+  $("provider-connected").replaceChildren(...mine.length ? [groupLabel(`已连接 · ${mine.length}`), ...mine.map(([e, m]) => providerRow(e, m.models))] : []);
+  $("provider-others").replaceChildren(...rest.map(([e, m]) => providerRow(e, m.models)));
+  more.hidden = !rest.length;
+  $("provider-more-names").replaceChildren(groupLabel(`其余服务商 · ${rest.length}`), Object.assign(document.createElement("span"), {
+    className: "more-names", textContent: `${rest.slice(0, 4).map(([e]) => e.name).join("、")}${rest.length > 4 ? ` 等 ${rest.length} 家` : ""}`,
+  }));
+
+  if (query || rest.some(([e]) => e.key === openKey)) more.open = true;
+  const empty = $("provider-empty");
+  empty.hidden = matches.length > 0;
+  empty.textContent = `没有找到「${query}」。OpenAI 兼容的服务可以用下面的「自定义地址」接入。`;
+  $("provider-custom").replaceChildren(...customHit ? [providerRow(custom, [])] : []);
+
+  if (openKey && !form.isConnected) closeForm();
+}
+
+function closeForm(): void {
+  openKey = null;
+  selected = null;
+  form.hidden = true;
+  closeModelList();
+  form.remove();
+}
+
+function toggle(entry: Entry): void {
+  if (login) return;
+
+  if (openKey === entry.key) {
+    closeForm();
+    renderProviders();
+
+    return;
+  }
+
+  select(choiceOf(representative(entry))!);
 }
 
 function defaultModel(choice: ProviderChoice): string {
@@ -290,43 +433,161 @@ function defaultModel(choice: ProviderChoice): string {
   return FEATURED_PROVIDERS.find((p) => p.id === choice.id)?.defaultModel ?? DEFAULT_MODELS.get(choice.id) ?? choice.models[0] ?? "";
 }
 
+function renderRegions(): void {
+  const entry = selected && entryOf(selected.id);
+  regionRow.hidden = !entry || entry.members.length < 2;
+
+  if (!entry || regionRow.hidden) return;
+  regionRow.replaceChildren(...entry.members.map((m) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(m.id === selected!.id));
+    button.dataset.region = m.id;
+    button.append(m.region ?? m.id);
+
+    if (credentialNote(m.id)) button.append(Object.assign(document.createElement("i"), { className: "seg-dot", title: credentialNote(m.id) }));
+    button.addEventListener("click", () => { if (!login && m.id !== selected?.id) select(choiceOf(m.id)!); });
+
+    return button;
+  }));
+}
+
 function renderCredentialState(): void {
   if (!selected) return;
   const credential = credentials[selected.id];
   const loggedIn = credential?.type === "oauth";
+  const saved = credential?.type === "api_key" && credential.key ? credential.key : "";
 
   oauthRow.hidden = !selected.oauthLabel;
   oauthLogin.textContent = loggedIn ? "重新登录" : selected.oauthLabel ?? "";
+  oauthLogin.classList.toggle("btn-primary", !loggedIn);
+  oauthLogin.classList.toggle("btn-quiet", loggedIn);
   oauthLogin.hidden = login !== null;
   oauthCancel.hidden = login === null;
   oauthLogout.hidden = !loggedIn || login !== null;
+  oauthOk.hidden = !loggedIn || login !== null;
 
-  if (login === null) oauthState.textContent = loggedIn ? "已登录，令牌会自动续期。" : "用设备码登录：会打开服务商的网页，在那里确认即可。";
+  if (login === null) oauthState.textContent = loggedIn ? "已登录，令牌会自动续期。" : "会打开服务商的网页，在那里确认即可。";
 
-  keyRow.hidden = !selected.apiKey;
-  keyLabel.textContent = selected.oauthLabel ? "或者填写 API key" : "API key";
-  const saved = credential?.type === "api_key" && credential.key ? credential.key : "";
-  keyInput.placeholder = saved ? `已保存（末四位 ${saved.slice(-4)}），留空则沿用` : selected.id === CUSTOM_PROVIDER_ID ? "本机服务可以不填" : "粘贴 key";
+  keySaved.hidden = !selected.apiKey || !saved || changingKey;
+  keyTail.textContent = saved ? ` · 末四位 ${saved.slice(-4)}` : "";
+  keyRow.hidden = !selected.apiKey || loggedIn || !!saved && !changingKey;
+  keyLabel.textContent = selected.id === CUSTOM_PROVIDER_ID ? "API key（本机服务可以不填）" : selected.oauthLabel ? "或者填写 API key" : "API key";
+  keyInput.placeholder = saved ? "粘贴新的 key，留空则沿用" : "粘贴 key";
 }
 
 function select(choice: ProviderChoice): void {
   if (login) return;
   selected = choice;
+  openKey = entryOf(choice.id)?.key ?? null;
+  changingKey = false;
   form.hidden = false;
-  providerName.textContent = choice.name;
   baseUrlRow.hidden = choice.id !== CUSTOM_PROVIDER_ID;
   baseUrlInput.value = choice.id === CUSTOM_PROVIDER_ID ? config?.baseUrl ?? "" : "";
   keyInput.value = "";
   modelInput.value = defaultModel(choice);
-  modelOptions.replaceChildren(...choice.models.map((id) => Object.assign(document.createElement("option"), { value: id })));
+  modelMeta.textContent = choice.models.length ? `目录 ${choice.models.length} 个，也可以直接输入` : "填写模型名称";
+  closeModelList();
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
   setStatus(modelStatus, "");
+  renderRegions();
   renderCredentialState();
-  refreshProviderMarks();
-
-  if (!featuredIds.has(choice.id)) $<HTMLDetailsElement>("provider-more").open = true;
+  renderProviders();
 }
+
+/* 模型下拉：可搜索的列表，也能直接填目录外的名字（自定义地址必须能填）。 */
+
+let modelActive = -1;
+
+/** 打开时列出全部；输入后只留包含所输文字的。 */
+let modelFilter = "";
+
+function renderModelList(): void {
+  const models = selected?.models ?? [];
+  const query = modelFilter.toLowerCase();
+  const shown = query ? models.filter((m) => m.toLowerCase().includes(query)) : models;
+
+  const rows = shown.map((m, i) => {
+    const option = document.createElement("div");
+    option.className = `combo-opt${m === modelInput.value ? " is-cur" : ""}${i === modelActive ? " is-hi" : ""}`;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(m === modelInput.value));
+    option.dataset.id = m;
+    option.append(Object.assign(document.createElement("span"), { textContent: m }));
+
+    if (m === modelInput.value) option.append(svg(Check, 13));
+    option.addEventListener("mousedown", (event) => { event.preventDefault(); pickModel(m); });
+
+    return option;
+  });
+
+  const note = Object.assign(document.createElement("div"), { className: "combo-note" });
+  note.textContent = !models.length ? "这家没有模型目录，直接填写模型名称。" : !shown.length ? `目录里没有「${modelFilter}」，保存时按你填的名称调用。` : `${shown.length} 个模型`;
+  modelOptions.replaceChildren(note, ...rows);
+}
+
+function openModelList(): void {
+  if (modelOptions.matches(":popover-open") || !selected) return;
+  modelFilter = "";
+  modelActive = -1;
+  renderModelList();
+  const box = modelInput.getBoundingClientRect();
+  const below = innerHeight - box.bottom - 12;
+  Object.assign(modelOptions.style, { left: `${box.left}px`, width: `${box.width}px`, maxHeight: `${Math.min(280, Math.max(below, 160))}px`, top: below >= 160 ? `${box.bottom + 4}px` : "auto", bottom: below >= 160 ? "auto" : `${innerHeight - box.top + 4}px` });
+  modelOptions.showPopover();
+  modelInput.setAttribute("aria-expanded", "true");
+  modelOptions.querySelector(".is-cur")?.scrollIntoView({ block: "nearest" });
+}
+
+function closeModelList(): void {
+  if (modelOptions.matches(":popover-open")) modelOptions.hidePopover();
+  modelInput.setAttribute("aria-expanded", "false");
+}
+
+function pickModel(id: string): void {
+  modelInput.value = id;
+  closeModelList();
+}
+
+modelInput.addEventListener("click", openModelList);
+
+modelInput.addEventListener("blur", closeModelList);
+
+modelInput.addEventListener("input", () => {
+  openModelList();
+  modelFilter = modelInput.value.trim();
+  modelActive = -1;
+  renderModelList();
+});
+
+modelInput.addEventListener("keydown", (event) => {
+  const options = [...modelOptions.querySelectorAll<HTMLElement>(".combo-opt")];
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    openModelList();
+    modelActive = Math.max(0, Math.min(options.length - 1, modelActive + (event.key === "ArrowDown" ? 1 : -1)));
+    options.forEach((o, i) => o.classList.toggle("is-hi", i === modelActive));
+    options[modelActive]?.scrollIntoView({ block: "nearest" });
+  } else if (event.key === "Enter" && modelOptions.matches(":popover-open")) {
+    event.preventDefault();
+    pickModel(options[modelActive]?.dataset.id ?? modelInput.value.trim());
+  } else if (event.key === "Escape") closeModelList();
+});
+
+$("model-toggle").addEventListener("mousedown", (event) => {
+  event.preventDefault();
+
+  if (modelOptions.matches(":popover-open")) return closeModelList();
+  modelInput.focus();
+  openModelList();
+});
+
+addEventListener("scroll", closeModelList, { passive: true });
+
+addEventListener("resize", closeModelList);
 
 /** 表单里的草稿：模型选择 + 新填的 key（没填则为空）。 */
 function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: false; error: string } {
@@ -403,6 +664,8 @@ async function save(): Promise<void> {
   if (value.key) await runtime.credentials.modify(value.config.provider, async () => ({ type: "api_key", key: value.key }));
   await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: value.config });
   keyInput.value = "";
+  changingKey = false;
+  setStatus(mainStatus, "");
   setStatus(modelStatus, `已保存。侧栏接下来的任务会使用 ${labelOf(value.config.provider)} · ${value.config.modelId}。`, "ok");
 }
 
@@ -415,7 +678,16 @@ async function saveAsFast(): Promise<void> {
   if (value.key) await runtime.credentials.modify(value.config.provider, async () => ({ type: "api_key", key: value.key }));
   await chrome.storage.local.set({ [INPROC_FAST_CONFIG_KEY]: value.config });
   keyInput.value = "";
+  changingKey = false;
   setStatus(modelStatus, `已设为快速模型：${labelOf(value.config.provider)} · ${value.config.modelId}。主模型不变。`, "ok");
+}
+
+async function deleteKey(): Promise<void> {
+  if (!selected) return;
+  const inUse = config?.provider === selected.id;
+  await runtime.credentials.delete(selected.id);
+  await reload();
+  setStatus(modelStatus, inUse ? "已删除 key。主模型还是这家，填新 key 或换个模型后才能用。" : "已删除 key。", inUse ? "err" : "");
 }
 
 function flowLine(text: string, className = "oauth-line"): HTMLElement {
@@ -434,6 +706,7 @@ function openPage(url: string): void {
 function linkButton(label: string, url: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
+  button.className = "btn";
   button.textContent = label;
   button.addEventListener("click", () => openPage(url));
 
@@ -449,9 +722,10 @@ function onAuthEvent(event: AuthEvent): void {
     const code = flowLine(event.userCode, "oauth-code");
     code.id = "oauth-user-code";
     const actions = document.createElement("div");
-    actions.className = "settings-inline";
+    actions.className = "d-actions";
     const copy = document.createElement("button");
     copy.type = "button";
+    copy.className = "btn";
     copy.textContent = "复制代码";
     copy.addEventListener("click", () => { void navigator.clipboard.writeText(event.userCode).then(() => { copy.textContent = "已复制"; }); });
     actions.append(copy, linkButton("重新打开登录网页", event.verificationUri));
@@ -490,6 +764,7 @@ function onAuthPrompt(prompt: AuthPrompt): Promise<string> {
       for (const option of prompt.options) {
         const button = document.createElement("button");
         button.type = "button";
+        button.className = "btn";
         button.textContent = option.label;
         button.title = option.description ?? "";
         button.addEventListener("click", () => done(option.id));
@@ -500,10 +775,12 @@ function onAuthPrompt(prompt: AuthPrompt): Promise<string> {
     }
 
     const input = document.createElement("input");
+    input.className = "d-input";
     input.type = prompt.type === "secret" ? "password" : "text";
     input.placeholder = prompt.placeholder ?? "";
     const ok = document.createElement("button");
     ok.type = "button";
+    ok.className = "btn";
     ok.textContent = "确定";
     ok.addEventListener("click", () => done(input.value));
     input.addEventListener("keydown", (event) => { if (event.key === "Enter") done(input.value); });
@@ -559,24 +836,54 @@ async function clearVoiceKey(): Promise<void> {
   setStatus(voiceStatus, "已清除。", "");
 }
 
+/** 已连接服务商的模型，按服务商分组；`current` 不在其中时单独补一项，免得下拉显示空白。 */
+function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGroupElement | HTMLOptionElement> {
+  const value = (c: InprocModelConfig) => JSON.stringify({ provider: c.provider, modelId: c.modelId });
+  const groups: Array<HTMLOptGroupElement | HTMLOptionElement> = [];
+
+  for (const choice of choices) {
+    if (choice.id === CUSTOM_PROVIDER_ID || !credentialNote(choice.id) || !choice.models.length) continue;
+    const group = document.createElement("optgroup");
+    group.label = labelOf(choice.id);
+    group.append(...choice.models.map((modelId) => new Option(modelId, value({ provider: choice.id, modelId }))));
+    groups.push(group);
+  }
+
+  if (current && !groups.some((g) => [...g.querySelectorAll("option")].some((o) => o.value === value(current)))) {
+    groups.push(new Option(`${labelOf(current.provider)} · ${current.modelId}`, value(current)));
+  }
+
+  return groups;
+}
+
+/** 主模型：只列已连接的，选了就换，不用再进服务商详情。 */
+function renderMainModel(): void {
+  mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...modelOptionGroups(config));
+  mainSelect.value = config ? JSON.stringify({ provider: config.provider, modelId: config.modelId }) : "";
+  $("main-icon").replaceChildren(...config ? [config.provider === CUSTOM_PROVIDER_ID ? svg(Link, 15) : providerIcon(config.provider, labelOf(config.provider))] : []);
+  $("main-desc").textContent = config ? labelOf(config.provider) : "在下面选一个服务商，登录或填好 key 后保存。";
+}
+
+async function saveMainModel(): Promise<void> {
+  if (!mainSelect.value) return;
+  // SAFETY: 选项值只由 modelOptionGroups 生成，是 {provider, modelId} 的 JSON。
+  const next = JSON.parse(mainSelect.value) as InprocModelConfig;
+
+  // 自定义地址的服务地址只存在主模型配置里：换回同一家时带上。
+  if (next.provider === config?.provider && config.baseUrl) next.baseUrl = config.baseUrl;
+  await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: next });
+  setStatus(mainStatus, `已换成 ${labelOf(next.provider)} · ${next.modelId}。侧栏接下来的任务会用它。`, "ok");
+}
+
+mainSelect.addEventListener("change", () => void saveMainModel());
+
 /** 阶跃的文字模型每次都先思考，官方接口关不掉；用作即时动作会让解释、翻译等十几秒才出字。 */
 const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PROVIDER_ID;
 
 /** 只列已填 key 或已登录的服务商的模型，选了就能用；另保留当前已存的选择。 */
 function renderFastModels(): void {
-  const options = [new Option("和主模型相同", "")];
-
-  for (const choice of choices) {
-    if (choice.id === CUSTOM_PROVIDER_ID || !credentialNote(choice.id)) continue;
-
-    for (const modelId of choice.models) options.push(new Option(`${choice.name} · ${modelId}`, JSON.stringify({ provider: choice.id, modelId })));
-  }
-
-  const current = fastConfig ? JSON.stringify({ provider: fastConfig.provider, modelId: fastConfig.modelId }) : "";
-
-  if (current && !options.some((o) => o.value === current)) options.push(new Option(`${labelOf(fastConfig!.provider)} · ${fastConfig!.modelId}`, current));
-  fastSelect.replaceChildren(...options);
-  fastSelect.value = current;
+  fastSelect.replaceChildren(new Option("和主模型相同", ""), ...modelOptionGroups(fastConfig));
+  fastSelect.value = fastConfig ? JSON.stringify({ provider: fastConfig.provider, modelId: fastConfig.modelId }) : "";
   const slow = fastConfig ? alwaysThinks(fastConfig) : alwaysThinks(config);
 
   // 保存会触发存储变化、重新渲染：只增减「会很慢」的提醒，不清掉刚显示的「已保存」。
@@ -585,7 +892,7 @@ function renderFastModels(): void {
 }
 
 async function saveFastModel(): Promise<void> {
-  // SAFETY: 选项值只由 renderFastModels 生成，是 {provider, modelId} 的 JSON 或空串。
+  // SAFETY: 选项值只由 modelOptionGroups 生成，是 {provider, modelId} 的 JSON 或空串。
   const next = fastSelect.value ? (JSON.parse(fastSelect.value) as InprocModelConfig) : null;
 
   if (next) await chrome.storage.local.set({ [INPROC_FAST_CONFIG_KEY]: next });
@@ -609,7 +916,9 @@ async function reload(): Promise<void> {
   const storedVoiceKey = stored[INPROC_VOICE_KEY];
   const ownVoiceKey = isText(storedVoiceKey) ? storedVoiceKey : "";
   const voiceKey = resolveVoiceKey(Object.entries(stored));
-  voiceInput.placeholder = ownVoiceKey ? `已保存（末四位 ${ownVoiceKey.slice(-4)}）` : voiceKey ? "正在沿用阶跃星辰模型的 key，可以不填" : "粘贴 key";
+  $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)}` : voiceKey ? "正在沿用阶跃星辰模型的 key，可以不填。" : "还没有 key。";
+  $("voice-state").dataset.tone = voiceKey ? "ok" : "";
+  voiceInput.placeholder = ownVoiceKey ? "粘贴新的 key" : "粘贴 key";
   voiceClear.hidden = !ownVoiceKey;
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
@@ -618,34 +927,59 @@ async function reload(): Promise<void> {
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
-  renderCurrent();
-  refreshProviderMarks();
+  renderMainModel();
+  renderRegions();
   renderCredentialState();
+  renderProviders();
   renderFastModels();
 }
+
+search.addEventListener("input", () => renderProviders());
+
+search.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  search.value = "";
+  renderProviders();
+});
+
+addEventListener("keydown", (event) => {
+  if (event.key !== "/" || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+  event.preventDefault();
+  search.focus();
+});
 
 const timbreList = $("timbre-list");
 
 const sample = new Audio();
 
+/** 单选行：左边圆点 + 名字（+ 说明），整行可点。 */
+function radioRow(className: string, label: string, checked: boolean, meta = ""): HTMLButtonElement {
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = `radio-hit ${className}`;
+  pick.setAttribute("role", "radio");
+  pick.setAttribute("aria-checked", String(checked));
+  pick.append(Object.assign(document.createElement("i"), { className: "radio" }), Object.assign(document.createElement("span"), { textContent: label }));
+
+  if (meta) pick.append(Object.assign(document.createElement("span"), { className: "radio-meta", textContent: meta }));
+
+  return pick;
+}
+
 function renderTimbres(current: string): void {
   timbreList.replaceChildren(...STEP_VOICES.map((voice) => {
     const row = document.createElement("div");
-    row.className = "timbre-row";
-    const pick = document.createElement("button");
-    pick.type = "button";
-    pick.className = "provider-option timbre-option";
+    row.className = "radio-row";
+    const pick = radioRow("timbre-option", voice.label, voice.id === current);
     pick.dataset.voice = voice.id;
-    pick.setAttribute("role", "radio");
-    pick.setAttribute("aria-checked", String(voice.id === current));
-    pick.textContent = voice.label;
     pick.addEventListener("click", () => {
       renderTimbres(voice.id);
       void chrome.storage.local.set({ [STEP_VOICE_STORAGE_KEY]: voice.id });
     });
     const listen = document.createElement("button");
     listen.type = "button";
-    listen.textContent = "试听";
+    listen.className = "icon-btn";
+    listen.append(svg(Play, 13), "试听");
     listen.setAttribute("aria-label", `试听${voice.label}`);
     listen.addEventListener("click", () => {
       sample.src = `voices/${voice.id}.m4a`;
@@ -672,19 +1006,10 @@ const PERSONA_OPTIONS = [...VOICE_PERSONAS.map(({ id, label, summary }) => ({ id
 /** 预设点一下就保存；自定义先展开输入框，点保存才生效。 */
 function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.id): void {
   personaList.replaceChildren(...PERSONA_OPTIONS.map((option) => {
-    const pick = document.createElement("button");
-    pick.type = "button";
-    pick.className = "provider-option persona-option";
+    const row = document.createElement("div");
+    row.className = "radio-row";
+    const pick = radioRow("persona-option", option.label, option.id === picked, option.summary);
     pick.dataset.persona = option.id;
-    pick.setAttribute("role", "radio");
-    pick.setAttribute("aria-checked", String(option.id === picked));
-    const name = document.createElement("span");
-    name.className = "provider-option-name";
-    name.textContent = option.label;
-    const note = document.createElement("span");
-    note.className = "provider-option-note";
-    note.textContent = option.summary;
-    pick.append(name, note);
     pick.addEventListener("click", () => {
       if (option.id === "custom") {
         renderPersonas(saved, "custom");
@@ -695,8 +1020,9 @@ function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.
 
       void savePersona({ id: option.id });
     });
+    row.append(pick);
 
-    return pick;
+    return row;
   }));
   personaCustom.hidden = picked !== "custom";
 
@@ -719,70 +1045,52 @@ $("persona-save").addEventListener("click", () => {
   void savePersona({ id: "custom", text });
 });
 
+/** 开关一改就存；存失败时拨回去并说明。 */
+function bindToggle(input: HTMLInputElement, key: string, status: HTMLElement, said: (on: boolean) => string): void {
+  input.addEventListener("change", () => {
+    const enabled = input.checked;
+
+    chrome.storage.local.set({ [key]: enabled }).then(
+      () => setStatus(status, said(enabled), "ok"),
+      (error) => {
+        input.checked = !enabled;
+        setStatus(status, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
+      },
+    );
+  });
+}
+
 const selectionBar = $<HTMLInputElement>("selection-bar");
 
 const selectionStatus = $("selection-status");
 
-selectionBar.addEventListener("change", () => {
-  const enabled = selectionBar.checked;
-
-  chrome.storage.local.set({ [SELECTION_BAR_KEY]: enabled }).then(
-    () => setStatus(selectionStatus, enabled ? "已开启。" : "已关闭。", "ok"),
-    (error) => {
-      selectionBar.checked = !enabled;
-      setStatus(selectionStatus, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
-    },
-  );
-});
-
 const linkPreview = $<HTMLInputElement>("link-preview");
-
-linkPreview.addEventListener("change", () => {
-  const enabled = linkPreview.checked;
-
-  chrome.storage.local.set({ [LINK_PREVIEW_KEY]: enabled }).then(
-    () => setStatus(selectionStatus, enabled ? "链接预览已开启。" : "链接预览已关闭。", "ok"),
-    (error) => {
-      linkPreview.checked = !enabled;
-      setStatus(selectionStatus, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
-    },
-  );
-});
 
 const nudgeToggle = $<HTMLInputElement>("nudge");
 
-nudgeToggle.addEventListener("change", () => {
-  const enabled = nudgeToggle.checked;
-
-  chrome.storage.local.set({ [NUDGE_KEY]: enabled }).then(
-    () => setStatus(selectionStatus, enabled ? "主动建议已开启。" : "主动建议已关闭。", "ok"),
-    (error) => {
-      nudgeToggle.checked = !enabled;
-      setStatus(selectionStatus, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
-    },
-  );
-});
-
 const openThreads = $<HTMLInputElement>("open-threads");
 
-openThreads.addEventListener("change", () => {
-  const enabled = openThreads.checked;
-  const status = $("open-threads-status");
+bindToggle(selectionBar, SELECTION_BAR_KEY, selectionStatus, (on) => (on ? "已开启。" : "已关闭。"));
 
-  chrome.storage.local.set({ [OPEN_THREADS_KEY]: enabled }).then(
-    () => setStatus(status, enabled ? "已开启，下次打开新对话时出现。" : "已关闭。", "ok"),
-    (error) => {
-      openThreads.checked = !enabled;
-      setStatus(status, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
-    },
-  );
-});
+bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接预览已开启。" : "链接预览已关闭。"));
+
+bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
+
+bindToggle(openThreads, OPEN_THREADS_KEY, $("open-threads-status"), (on) => (on ? "已开启，下次打开新对话时出现。" : "已关闭。"));
 
 oauthLogin.addEventListener("click", () => void startLogin());
 
 oauthCancel.addEventListener("click", () => login?.abort());
 
 oauthLogout.addEventListener("click", () => void logout());
+
+$("key-change").addEventListener("click", () => {
+  changingKey = true;
+  renderCredentialState();
+  keyInput.focus();
+});
+
+$("key-delete").addEventListener("click", () => void deleteKey());
 
 $("model-test").addEventListener("click", () => void testConnection());
 
@@ -799,13 +1107,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
-renderProviders();
+form.remove();
 
 await reload();
-
-const initial = choices.find((c) => c.id === config?.provider);
-
-if (initial) select(initial);
 
 const traceStatus = document.getElementById("trace-status")!;
 
