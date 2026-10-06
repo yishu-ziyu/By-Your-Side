@@ -180,6 +180,8 @@ const CASES: Case[] = [
   { id: "math", path: "/article", prompt: "1+1等于几啊？", check: (c) => (/2|二/.test(c.answer) ? null : "回答里没有 2") },
   { id: "upset", path: "/article", prompt: "好烦", check: (c) => (c.answer ? null : "没有回答") },
   { id: "page-gist", path: "/article", prompt: "这篇文章的核心观点是什么？", check: (c) => (has(c.answer, "新人") ? null : "没提到新人成长这一核心观点") },
+  // #18：真实少数派长文、原问法，看首字多久出现（9-30 本机模式下约 115 秒）。
+  { id: "summary-real-sspai", path: "https://sspai.com/post/115308", prompt: "这页讲了什么？给我三句话总结", check: (c) => (has(c.answer, "iPhone") ? null : "总结里没提到 iPhone") },
   { id: "page-fields", path: "/job", prompt: "这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。", check: (c) => (has(c.answer, "前端", "杭州") ? null : "缺岗位名或城市") },
   { id: "three-repos", path: "/projects", prompt: "找到这三个项目的 GitHub 仓库地址。", check: (c) => (has(c.answer, "alpha-kit", "beta-flow", "gamma-db") ? null : "三个仓库没有全部给出") },
   { id: "translate", path: "/en", prompt: "把这个页面翻译成中文。", check: (c) => ((c.pageText.match(/[一-鿿]/g) ?? []).length >= 20 ? null : "页面上没有出现中文译文") },

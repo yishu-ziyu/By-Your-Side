@@ -12,6 +12,7 @@ import {
   STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
+import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from "../../../shared/voice-capture-core.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
@@ -377,10 +378,12 @@ async function testConnection(): Promise<void> {
   try {
     await probe.credentials.load(value.key ? { ...credentials, [value.config.provider]: { type: "api_key", key: value.key } } : credentials);
     const model = probe.resolveModel(value.config);
+    // 取能力表里最低的一档：不发档位时适配层会发「关闭思考」，始终思考的模型（GLM-5.3-flash）回 400。
+    const [lowest] = thinkingProfile(model).levels;
 
     const reply = await probe.models.completeSimple(model, {
       messages: [{ role: "user", content: "Reply with the single word OK.", timestamp: Date.now() }],
-    }, { maxTokens: 256, signal: timeout, headers: probe.headersFor(model), sessionId: probe.sessionId });
+    }, { maxTokens: 256, signal: timeout, headers: probe.headersFor(model), sessionId: probe.sessionId, reasoning: lowest === "off" ? undefined : lowest });
 
     if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage ?? "服务商返回错误");
     setStatus(modelStatus, `连接正常（${((performance.now() - started) / 1000).toFixed(1)} 秒）。`, "ok");
