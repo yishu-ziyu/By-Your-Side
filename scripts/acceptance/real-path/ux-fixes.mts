@@ -326,7 +326,7 @@ async function mainGroup() {
 
     // 6a：还没配模型就发消息。
     await s.send("这篇文章的核心观点是什么？");
-    await until(async () => /还没有配置模型/.test((await s.readPanel()).text) || undefined, 30_000, "未配模型的提示").catch(async (error) => {
+    await until(async () => /还没连模型/.test((await s.readPanel()).text) || undefined, 30_000, "未配模型的提示").catch(async (error) => {
       await s.shotPanel("06a-model-none-timeout");
       throw error;
     });

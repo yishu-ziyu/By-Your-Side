@@ -54,6 +54,8 @@ export interface TaskReceipt {
   message: string;
   updatedAt: number;
   diff?: TaskReceiptDiff;
+  /** Rejected because no model is connected: the panel offers a 「连一个模型」 button. */
+  needsModel?: true;
 }
 
 export const taskId = (v: unknown): v is string => typeof v === 'string' && /^[\w-]{1,128}$/.test(v);
@@ -91,5 +93,6 @@ export function isTaskReceipt(v: unknown): v is TaskReceipt {
     && ['queued','accepted','applied','rejected','failed','unknown'].includes(r.status)
     && typeof r.text === 'string' && r.text.length <= 12000 && typeof r.targetTitle === 'string' && r.targetTitle.length <= 120
     && typeof r.message === 'string' && r.message.length <= 14000 && Number.isFinite(r.updatedAt)
-    && (r.diff === undefined || receiptDiff(r.diff));
+    && (r.diff === undefined || receiptDiff(r.diff))
+    && (r.needsModel === undefined || r.needsModel === true && r.status === 'rejected');
 }

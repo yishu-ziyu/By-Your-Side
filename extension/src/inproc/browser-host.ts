@@ -154,7 +154,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       const receipt: TaskReceipt = {
         requestId: request.requestId, conversationId: request.conversationId, source: request.source,
         action: request.action, runId: null, text: request.text ?? "", targetTitle: request.context?.title ?? "",
-        status: "rejected", message: detail, updatedAt: Date.now(),
+        status: "rejected", message: detail, updatedAt: Date.now(), needsModel: true,
       };
 
       connection?.send({ type: "agent_event", conversationId: request.conversationId, event: { kind: "notice", message: detail, receipt } });

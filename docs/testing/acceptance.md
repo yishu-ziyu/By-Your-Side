@@ -42,6 +42,7 @@ npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark --v
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=barge-in --model=zai-coding-cn/glm-5.3-flash # 长回答念到一半插话
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录
 npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=after # 09-26 实拍的 10 个界面问题
+npx tsx scripts/acceptance/real-path/no-model-card.mts --headless # 没连模型就发消息：回复给「连一个模型」按钮
 ```
 
 `ux-fixes.mts` 只装扩展，用本机脚本模型。脚本像用户一样在设置页选「自定义地址」填写，所以工具调用、任务宿主核验和页面标注都是产品自己在跑。判据只看用户看得到的东西。`demo` 组依赖的技能存储已不在扩展里，要等技能接进扩展后改写。
