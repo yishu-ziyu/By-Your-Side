@@ -35,7 +35,7 @@ import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallE
 import { MainEffort } from "./main-effort.js";
 import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
-import type { Session as PiSession } from "@earendil-works/pi-agent-core";
+import type { Session as PiSession } from "pi-session-084";
 import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";

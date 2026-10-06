@@ -28,12 +28,12 @@ interface MeasuredCapability {
 
 /** 实测记录见 docs/evals/20261001-model-effort-and-side-judgments.md。 */
 const MEASURED = new Map<string, MeasuredCapability>([
-  // ChatGPT 账号可用、pi-ai 0.84.4 目录还没收的 gpt-6 系列（2026-10-06 实测）；连接参数与档位同 gpt-5.6-luna，上下文取 pi CLI 较新目录，最大输出 128K。
+  // ChatGPT 账号的 gpt-6 系列（2026-10-06 实测）；pi-ai 1.0.4 目录已收录，上下文与连接参数取目录。
   // 起始档用高档：gpt-6-luna 两道核对题各跑 4 次，高档 7/8 对，中档 0/7、低档 2/6，耗时相差几秒。
   // 首个事件等 30 秒：服务端偶尔排队，10-06 实测 12 次有 2 次 16–17 秒才出第一个事件、随后正常答完；15 秒会误判挂起重来。
-  ...([["gpt-6-luna", 272_000], ["gpt-6-sol", 272_000], ["gpt-6-astra", 625_000], ["gpt-6.1-sol", 872_000]] as const).map(([id, contextWindow]): [string, MeasuredCapability] => [
+  ...(["gpt-6-luna", "gpt-6-sol", "gpt-6-astra", "gpt-6.1-sol"] as const).map((id): [string, MeasuredCapability] => [
     `openai-codex/${id}`,
-    { template: "gpt-5.6-luna", contextWindow, reasoning: true, input: ["text", "image"], thinkingLevelMap: { xhigh: "xhigh", max: "max", minimal: "low" }, start: "high", firstEventMs: 30_000 },
+    { reasoning: true, input: ["text", "image"], thinkingLevelMap: { xhigh: "xhigh", max: "max", minimal: "low" }, start: "high", firstEventMs: 30_000 },
   ]),
   // 不发档位时适配层发「关闭思考」，服务端 400「requires adaptive thinking」；low 起可用，最高 max；能看图。
   ["minimax-cn/MiniMax-M3.1-Flash-Preview", {

@@ -1,0 +1,13 @@
+{
+  "name": "pi1-rebuild-probe",
+  "private": true,
+  "type": "module",
+  "description": "Premises P1 (watchEvents coverage + text latency) and P2 (resume in an offscreen document) for docs/evals/20261007-pi1-rebuild.md. Install with `npm install --legacy-peer-deps`.",
+  "dependencies": {
+    "@earendil-works/chord": "1.0.4",
+    "@earendil-works/pi-agent-core": "1.0.4",
+    "@earendil-works/pi-ai": "1.0.4",
+    "@earendil-works/pi-durable": "1.0.4",
+    "esbuild": "0.28.2"
+  }
+}

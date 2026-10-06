@@ -68,6 +68,7 @@ const browserSwaps = {
     swap(/^node:path$/, path.join(shims, "node-path.ts"), false);
     swap(/^node:os$/, path.join(shims, "node-os.ts"), false);
     swap(/^node:perf_hooks$/, path.join(shims, "node-perf-hooks.ts"), false);
+    swap(/^node:http$/, path.join(shims, "node-http.ts"), false);
   },
 };
 

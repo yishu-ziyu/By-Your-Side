@@ -59,6 +59,6 @@ if (actionCount() !== 1) throw new Error("External action was replayed or missin
 
 if (phase === "write") writeFileSync(join(dir, "path.txt"), manager.getSessionFile()!);
 
-console.log(JSON.stringify({ phase, contextFound, calls, actions: actionCount(), sessionFile: manager.getSessionFile(), messages: manager.buildSessionContext().messages.length }));
+console.log(JSON.stringify({ phase, contextFound, calls, actions: actionCount(), sessionFile: manager.getSessionFile(), messages: manager.buildSessionContext().messages.filter(message => message.role !== "system").length }));
 
 session.dispose();

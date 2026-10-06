@@ -26,6 +26,7 @@ import { BrowserAgentSession } from "../src/session.js";
 import { TaskProgress } from "../src/task-progress.js";
 import { createBrowserTools } from "../src/tools.js";
 import type { AgentUiEvent, Attachment, PageContext } from "../../shared/protocol.js";
+import { seenByModel } from "./fixtures/seen-by-model.js";
 
 const dirs: string[] = [];
 
@@ -52,7 +53,8 @@ function models(step: Step, verdicts: Array<{ status: string; remaining?: string
   const streamSimple: ModelPort["streamSimple"] = (_model, context, options) => {
     const stream = createAssistantMessageEventStream();
     const call = received.length;
-    received.push(structuredClone({ systemPrompt: context.systemPrompt, messages: context.messages, tools: (context.tools ?? []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }));
+    const seen = seenByModel(context);
+    received.push(structuredClone({ systemPrompt: seen.systemPrompt, messages: seen.messages, tools: (seen.tools ?? []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }));
     const reply = options?.signal?.aborted || call >= 8 ? message([{ type: "text", text: "好的。" }], "stop") : step(context, call);
     setTimeout(() => stream.push({ type: "done", reason: reply.stopReason === "toolUse" ? "toolUse" : "stop", message: reply }), 0);
 
