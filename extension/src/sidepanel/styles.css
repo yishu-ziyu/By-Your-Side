@@ -3092,8 +3092,9 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 /* ── 输入框改版（docs/evals/20261006-composer-quiet.md）────────────
    一个圆角框，框里最多一行工具：＋ … 话筒 接管 [↑] ■。只用黑白灰；运行中不换颜色、不加提示区。
    做法取自 Claude for Chrome、ChatGPT Atlas、Gemini in Chrome、Operator 的输入框。 */
-#composer { background: var(--content-bg); border-color: var(--content-border); box-shadow: 0 2px 10px rgb(20 20 19 / .04); padding: 12px 10px 10px 14px; }
-#composer.steering-active { border-color: var(--content-border); box-shadow: 0 2px 10px rgb(20 20 19 / .04); }
+/* 框的材质沿用暖灰凹槽 + 顶边高光（用户 10-06 要回这种质感），只改内边距。 */
+#composer { padding: 12px 10px 10px 14px; }
+#composer.steering-active { border-color: var(--well-outline); box-shadow: inset 0 1px 0 var(--well-highlight); }
 #steer-ribbon { display: none !important; }
 #composer-bar { gap: 4px; }
 #attach-btn, #composer .voice-start, #steer-send-btn { width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0; }

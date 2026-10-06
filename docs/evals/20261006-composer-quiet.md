@@ -28,3 +28,4 @@
 - 改写的验收：`quiet-shell.mts`（边注从 ＋ 菜单切换）、`chrome-quiet.mts`（去掉 `#composer-more`）、`ghost-hud-and-steering.mts`（改方向从点建议按钮改成在输入框里说）、`takeover-handback.mts` 与 `page-stop.mts` 和三条单测（按钮名）。全部通过：takeover-handback 0 失败、chrome-quiet 0 失败、ghost-hud-and-steering 全过、sidebar-interaction 29/29、page-stop 暂停后 0 次点击。
 - 扩展单测 927/927；其中 `voice-diagnostic.test.ts` 按 [语音验收](20261006-voice-states-redesign.md) R1 改成「在听 / 在想 / 在说」（原先失败，测试没跟上语音改版）。
 - 未跑：`extension/test/overlay-check.mjs`（本机缺 Playwright 的 Chromium，只改了其中按钮名）。
+- 2026-10-06 修订：框的材质改回暖灰凹槽 + 顶边高光（用户看过「纯白平面 / 暖灰凹槽 / 纸面浮起」三张真侧栏截图后选定），布局与按钮不变；`composer-quiet.mts` 仍全过。
