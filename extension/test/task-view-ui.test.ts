@@ -198,7 +198,6 @@ function inputs(overrides: Partial<TaskBarInputs> = {}): TaskBarInputs {
     taskMaterials: null,
     control: idleControl(),
     pageLabel: "报名表（forms.example）",
-    activeTabId: 7,
     pageTabId: 7,
     now: 1_500,
     ...overrides,
@@ -214,7 +213,6 @@ function mount(options: Partial<ConstructorParameters<typeof TaskBar>[0]> = {}) 
   const bar = new TaskBar({
     root: root as unknown as HTMLElement,
     resolvePage: async () => ({ title: "报名表", url: "https://forms.example/edit" }),
-    getActiveTabId: async () => 7,
     removeDraftAttachment,
     removeDraftSelection,
     onRetryControl,
@@ -243,17 +241,19 @@ describe("任务条文案：真实原因，不合并成含糊状态", () => {
 
     if (message?.type !== 'task_view') throw new Error('材料未通过协议');
     const h = mount();
+    // 任务在跑时任务条让位（#58 C），材料在模型里；这里只查送入了什么。
+    const sent = () => h.bar.getModel()?.materials?.rows.map((row) => row.label).join("|") ?? "";
     h.bar.updateView(message.view);
-    expect(h.text()).toContain('退票说明原文');
-    expect(h.text()).toContain('参考截图.png');
-    expect(h.text()).not.toContain('未接受.png');
+    expect(sent()).toContain('退票说明原文');
+    expect(sent()).toContain('参考截图.png');
+    expect(sent()).not.toContain('未接受.png');
     expect(JSON.stringify(message.view)).not.toContain('token=secret');
     h.bar.updateView({ ...message.view, conversationId: 'other' });
-    expect(h.text()).toContain('参考截图.png');
+    expect(sent()).toContain('参考截图.png');
     restored.abort();
     restored.request('新任务');
     h.bar.updateView(projectTaskView(restored.snapshot()));
-    expect(h.text()).not.toContain('参考截图.png');
+    expect(sent()).not.toContain('参考截图.png');
     h.bar.dispose();
   });
   it("阻塞原因逐条可读，未知原因不吞掉原文", () => {
@@ -445,7 +445,8 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
   });
 
   it("被移除的材料不会再出现在送给任务的材料里", () => {
-    const { bar, text } = mount();
+    const { bar } = mount();
+    const text = () => bar.getModel()?.materials?.rows.map((row) => row.label).join("|") ?? "";
     bar.updateView(view({ page: null }));
     // 用户移除了附件 att-2：发送时快照里就没有它
     bar.setDraft({
@@ -516,23 +517,13 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
 });
 
 describe("A03-03 作用页：以任务绑定页为准，不跟随当前标签页", () => {
-  it("任务页与当前页不同：明确提示任务仍作用于那一页，任务材料里没有当前页", async () => {
-    const model = buildTaskBarModel(inputs({
-      activeTabId: 99,
-      taskMaterials: { runId: "run-1", items: [{ key: "task:page", kind: "page", label: "报名表（forms.example）" }] },
-    }));
-
-    expect(model.page?.mismatch).toBe(true);
-    expect(model.materials?.rows.map((row) => row.label)).toEqual(["报名表（forms.example）"]);
-    // 时钟要走过首次查询间隔（5 秒），任务条才会去查当前是哪一页。
-    const { bar, text } = mount({ now: () => 10_000, getActiveTabId: async () => 99, resolvePage: async () => ({ title: "报名表", url: "https://forms.example/edit" }) });
+  it("任务在跑、附件已送入：任务条让位，不因你切到别的页或材料已送入而冒出来（10-06）", () => {
+    const { bar, element } = mount();
     bar.updateView(view());
-    // 任务在跑、任务条让位时，当前页也要异步查；查到不一致，任务条出来点出任务在哪一页（#58 C）。
-    await vi.waitFor(() => expect(text()).toContain("任务在 forms.example"));
-    bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
+    bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [{ type: "image", id: "a1", name: "image.png", mimeType: "image/png", dataBase64: "" }] });
     bar.noteReceipt(receipt({ requestId: "req-1" }));
-    expect(text()).toContain("作用于：");
-    expect(text()).not.toContain("别的页面");
+    expect(bar.getModel()?.materials?.rows.map((row) => row.label)).toContain("image.png");
+    expect(element().hidden).toBe(true);
   });
 
   it("没有可靠页面证据时不猜：page 为 null，界面不编页面", () => {

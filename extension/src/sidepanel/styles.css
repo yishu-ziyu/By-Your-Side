@@ -220,21 +220,6 @@ body {
 .task-bar [hidden] { display: none; }
 .tb-summary { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 22px; }
 .tb-summary .tb-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tb-site {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--content-subtle);
-  color: var(--text-tertiary);
-  font-size: 11px;
-  line-height: 18px;
-}
-.tb-site[data-mismatch] { color: var(--apple-orange); }
 .tb-expand {
   flex: none;
   width: 22px;
@@ -251,12 +236,12 @@ body {
 .task-bar[data-expanded] .tb-expand::before { transform: translateY(2px) rotate(180deg); }
 .tb-expand:hover { background: var(--content-subtle); color: var(--text-primary); }
 .tb-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* 收起时：目标在对话里已有，作用页全名、已送入的材料都收进详情；页面不一致由摘要行的网站名提示，待处理的材料照常显示。 */
+/* 收起时：目标在对话里已有，作用页全名、已送入的材料都收进详情；待处理的材料照常显示。 */
 .task-bar:not([data-expanded]) .tb-head,
 .task-bar:not([data-expanded]) .tb-page,
 .task-bar:not([data-expanded]) .tb-materials[data-settled] { display: none; }
 .task-bar[data-head-in-summary] .tb-mat-head { display: none; }
-.task-bar[data-page-in-materials] .tb-page:not([data-mismatch]) { display: none; }
+.task-bar[data-page-in-materials] .tb-page { display: none; }
 .tb-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .tb-dot {
   flex: none;

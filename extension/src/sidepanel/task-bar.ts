@@ -195,7 +195,7 @@ export interface TaskBarModel {
   /** 距上次真实动作的时长（长时间无进展时的诚实信号）；无依据为 null。 */
   idleAge: string | null;
   waiting: { text: string; detail: string | null } | null;
-  page: { label: string; host: string | null; mismatch: boolean } | null;
+  page: { label: string; host: string | null } | null;
   materials: {
     rows: MaterialRow[];
     head: string;
@@ -219,8 +219,6 @@ export interface TaskBarInputs {
   pageLabel: string | null;
   /** 任务页的主机名，摘要行只显示它；还没查到为 null。 */
   pageHost?: string | null;
-  /** 当前活动标签页；与 task_view.page 不一致时如实提示（A03-03）。 */
-  activeTabId: number | null;
   pageTabId: number | null;
   now: number;
 }
@@ -280,7 +278,6 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     ? {
         label: input.pageLabel ?? `标签页 ${pageTabId}`,
         host: input.pageHost ?? null,
-        mismatch: input.activeTabId != null && input.activeTabId !== pageTabId,
       }
     : null;
 
@@ -391,7 +388,6 @@ export interface TaskBarOptions {
   /** 挂载点；TaskBar 拥有其内容（replaceChildren）。 */
   root: HTMLElement;
   resolvePage(tabId: number): Promise<{ title?: string; url?: string } | null>;
-  getActiveTabId(): Promise<number | null>;
   removeDraftAttachment(id: string): void;
   removeDraftSelection(): void;
   /** 控制失败后的重试入口（复用真实控制按钮，不是新权限）。 */
@@ -415,7 +411,6 @@ export class TaskBar {
   private control: ControlState = { takeover: { pending: false, since: null, failReason: null }, stop: { pending: false, since: null, accepted: false, failReason: null } };
   private draftHasText = false;
   private readonly pageCache = new Map<number, { label: string | null; host: string | null; at: number }>();
-  private activeTab: { id: number | null; at: number } = { id: null, at: 0 };
   private model: TaskBarModel | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private readonly el: HTMLElement;
@@ -427,7 +422,6 @@ export class TaskBar {
   private readonly goalEl: HTMLElement;
   private readonly headEl: HTMLElement;
   private readonly revisionsEl: HTMLElement;
-  private readonly siteEl: HTMLElement;
   private readonly expandEl: HTMLButtonElement;
   /** 目标、作用页全名与已送入材料默认收起，摘要行只留状态、耗时与网站名。 */
   private expanded = false;
@@ -452,15 +446,13 @@ export class TaskBar {
     this.statusEl.className = "tb-status";
     this.statusEl.setAttribute("role", "status");
     this.statusEl.setAttribute("aria-live", "polite");
-    this.siteEl = doc.createElement("span");
-    this.siteEl.className = "tb-site";
     this.expandEl = doc.createElement("button");
     this.expandEl.type = "button";
     this.expandEl.className = "tb-expand";
     this.expandEl.setAttribute("aria-expanded", "false");
     this.expandEl.setAttribute("aria-label", "展开任务详情");
     this.expandEl.title = "展开任务详情";
-    summary.append(dot, this.statusEl, this.siteEl, this.expandEl);
+    summary.append(dot, this.statusEl, this.expandEl);
     this.headEl = doc.createElement("div");
     this.headEl.className = "tb-head";
     this.goalEl = doc.createElement("span");
@@ -632,10 +624,9 @@ export class TaskBar {
     this.render();
   }
 
-  /** 标签页切换/关闭后调用：重解析作用页身份与当前活动页。 */
+  /** 标签页切换/关闭后调用：重解析作用页身份。 */
   noteTabsChanged(): void {
     if (this.disposed) return;
-    this.activeTab = { id: null, at: 0 };
     const tabId = this.view?.page?.tabId;
 
     if (tabId != null) this.pageCache.delete(tabId);
@@ -737,14 +728,6 @@ export class TaskBar {
         this.pageCache.set(tabId, { label: null, host: null, at: this.now() });
       });
     }
-
-    if (tabId != null && this.now() - this.activeTab.at > 5_000) {
-      void this.opts.getActiveTabId().then((id) => {
-        if (this.disposed) return;
-        this.activeTab = { id, at: this.now() };
-        this.render();
-      }).catch(() => {});
-    }
   }
 
   private render(): void {
@@ -760,7 +743,6 @@ export class TaskBar {
       draftHasText: this.draftHasText,
       pageLabel: tabId != null ? this.pageCache.get(tabId)?.label ?? null : null,
       pageHost: tabId != null ? this.pageCache.get(tabId)?.host ?? null : null,
-      activeTabId: this.now() - this.activeTab.at < 30_000 ? this.activeTab.id : null,
       pageTabId: tabId,
       now: this.now(),
     });
@@ -769,9 +751,9 @@ export class TaskBar {
     this.model = model;
 
     // 进行中、已结束由对话里那一行过程灰字讲（#58 C）；任务条只在有它独有的事时出现：
-    // 页面归你、停止/接管回执、任务页不是你在看的页、还没送入的附件。
-    const own = model.state === "paused" || !!model.control || !!model.page?.mismatch
-      || !!model.materials && (!!model.materials.status || model.materials.rows.some((row) => row.kind !== "page"));
+    // 页面归你、停止/接管回执、还没送入的材料。任务页不是你在看的页时不提醒：过程行和回答已说明（10-06 用户删）。
+    const own = model.state === "paused" || !!model.control
+      || !!model.materials && (!!model.materials.status || model.materials.rows.some((row) => row.removable));
 
     this.el.hidden = !model.visible || !own;
 
@@ -780,8 +762,6 @@ export class TaskBar {
       this.goalEl.textContent = "";
       this.revisionsEl.textContent = "";
       this.statusEl.textContent = "";
-      this.siteEl.textContent = "";
-      this.siteEl.hidden = true;
       this.expandEl.hidden = true;
       this.expanded = false;
       this.el.removeAttribute("data-expanded");
@@ -795,9 +775,6 @@ export class TaskBar {
       this.materialsEl.replaceChildren();
       this.el.removeAttribute("data-state");
       this.stopTick();
-
-      // 任务在跑但任务条让位时，仍要查任务页与当前页：不一致时任务条要出来提醒。
-      if (model.visible && changed) this.resolvePages();
 
       return;
     }
@@ -818,21 +795,15 @@ export class TaskBar {
     this.statusEl.textContent = materialsHead ?? statusBits.join(" · ");
     this.statusEl.hidden = !this.statusEl.textContent;
     flag(this.el, "data-head-in-summary", materialsHead !== null);
-    // 任务页就是输入框上方显示的当前页时不再重复网站名；不是同一页才在摘要行点出任务在哪。
-    this.siteEl.textContent = model.page?.mismatch ? `任务在 ${model.page.host ?? model.page.label}` : "";
-    this.siteEl.hidden = !model.page?.mismatch;
-    this.siteEl.title = model.page?.mismatch ? "你现在看的是别的页，任务仍作用于这一页" : "";
-    flag(this.siteEl, "data-mismatch", !!model.page?.mismatch);
     this.waitingEl.hidden = !model.waiting;
     this.waitingEl.textContent = model.waiting ? `等待：${model.waiting.text}${model.waiting.detail ? `（${model.waiting.detail}）` : ""}` : "";
     this.pageEl.hidden = !model.page;
-    this.pageEl.textContent = model.page ? `作用于：${model.page.label}${model.page.mismatch ? "（你现在看的是别的页，任务仍作用于上面这页）" : ""}` : "";
-    flag(this.pageEl, "data-mismatch", !!model.page?.mismatch);
+    this.pageEl.textContent = model.page ? `作用于：${model.page.label}` : "";
     this.renderMaterials(model.materials);
     // 只有已送入、不可再改的材料才收进详情；发送中、可移除的草稿材料要一直看得见。
     const settledMaterials = !!model.materials && !model.materials.status && !model.materials.rows.some((row) => row.removable);
     flag(this.materialsEl, "data-settled", settledMaterials);
-    // 材料里已经列出这一页时，展开后不再另写一行「作用于」；页面不一致的提示除外。
+    // 材料里已经列出这一页时，展开后不再另写一行「作用于」。
     flag(this.el, "data-page-in-materials", !!model.materials?.rows.some((row) => row.kind === "page"));
     const hasDetail = !this.headEl.hidden || !!model.page || (settledMaterials && !this.materialsEl.hidden);
     this.expandEl.hidden = !hasDetail;

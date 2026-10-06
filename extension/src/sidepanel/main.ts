@@ -4683,7 +4683,6 @@ function activeTabId(): Promise<number | null> {
 const taskBar = new TaskBar({
   root: document.getElementById("task-bar-root")!,
   resolvePage: resolveTabPage,
-  getActiveTabId: activeTabId,
   removeDraftAttachment: (id) => attachments.removeItem(id),
   removeDraftSelection: clearPendingAsk,
   currentConversationId: () => selectedConversationId,
