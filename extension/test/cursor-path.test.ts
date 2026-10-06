@@ -11,6 +11,9 @@ import {
   qbez,
   restOnRight,
   restPoint,
+  springFor,
+  springSettled,
+  springStep,
 } from "../src/shared/cursor-path.js";
 
 describe("cursor-path 浅弧 + Fitts", () => {
@@ -68,5 +71,45 @@ describe("cursor-path 浅弧 + Fitts", () => {
     const a = { x: 0, y: 0 };
     expect(flightMs(a, { x: 10, y: 0 })).toBe(FITTS_MIN_MS);
     expect(flightMs(a, { x: 900, y: 0 })).toBe(FITTS_MAX_MS);
+  });
+});
+
+describe("欠阻尼弹簧进度", () => {
+  function simulate(ms: number, maxSeconds = 3) {
+    const spring = springFor(ms);
+    let s = 0;
+    let v = 0;
+    let peak = 0;
+    let settledAt = -1;
+    const dt = 1 / 240;
+
+    for (let t = 0; t < maxSeconds; t += dt) {
+      [s, v] = springStep(s, v, dt, spring);
+      peak = Math.max(peak, s);
+
+      if (settledAt < 0 && springSettled(s, v)) settledAt = t;
+    }
+
+    return { s, v, peak, settledAt };
+  }
+
+  it("从 0 出发，稳定贴在 1", () => {
+    const { s, v } = simulate(300);
+    expect(s).toBeGreaterThan(0.998);
+    expect(s).toBeLessThan(1.002);
+    expect(Math.abs(v)).toBeLessThan(0.05);
+  });
+
+  it("到 Fitts 时长已贴住终点：调用方等完就点击，飞 1000px 也偏不到 1px", () => {
+    for (const ms of [FITTS_MIN_MS, FITTS_MAX_MS]) {
+      const { s } = simulate(ms, ms / 1000);
+      expect(Math.abs(1 - s)).toBeLessThan(0.001);
+    }
+  });
+
+  it("轻过冲：看得出，但不超过 8%", () => {
+    const { peak } = simulate(300);
+    expect(peak).toBeGreaterThan(1.005);
+    expect(peak).toBeLessThan(1.08);
   });
 });

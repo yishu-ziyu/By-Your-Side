@@ -107,12 +107,47 @@ try {
   const citations=await rp.evaluate(panel,'Array.from(document.querySelectorAll(".num-cite")).map(b=>b.textContent)');
   check('有据数字生成引用、未知数字不生成',citations.length===2&&citations.some((s:string)=>s.includes('62.4%'))&&!citations.some((s:string)=>s.includes('99.99%')),citations);
 
+  // 声纳圈在 closed shadow 里（docs/evals/20261006-in-page-annotation.md R1）：用 CDP 穿透读出圈的路径，看它是否圈住真实数据格。
+  const circle=async()=>{
+    const {root}=await rp.cdp.send('DOM.getDocument',{depth:-1,pierce:true},work);
+
+    const walk=(n:any,inSonar:boolean):string|null=>{
+      const here=inSonar||(n.attributes??[]).join(' ').includes('data-sideagent-overlay sonar');
+
+      if(here&&n.nodeName==='path')return n.attributes[n.attributes.indexOf('d')+1];
+
+      for(const c of [...(n.shadowRoots??[]),...(n.children??[])]){
+        const d=walk(c,here);
+
+        if(d)return d;
+      }
+
+      return null;
+    };
+
+    const d=walk(root,false);
+
+    if(!d)return null;
+
+    const xy=(d.match(/-?[\d.]+/g)??[]).map(Number);
+    const xs=xy.filter((_,i)=>i%2===0),ys=xy.filter((_,i)=>i%2===1);
+
+    return {left:Math.min(...xs),right:Math.max(...xs),top:Math.min(...ys),bottom:Math.max(...ys)};
+  };
+
   if(citations.length){
-    await rp.evaluate(work,'scrollTo(0,1500)');await rp.click(panel,'.num-cite');await sleep(400);
-    const target=await rp.evaluate(work,'document.querySelector(".bys-sonar-active")?.textContent');
-    check('点击定位真实数据行',!!target?.includes('62.4%'),target);
-    await rp.screenshot(work,join(out,'sonar.png'));await sleep(1000);
-    check('声纳结束清理',await rp.evaluate(work,'!document.querySelector(".bys-sonar-active")'),null);
+    const cell='(()=>{const td=[...document.querySelectorAll("td")].find(t=>t.textContent==="62.4%"),r=td.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()';
+    const pageMarks='document.querySelectorAll("[class*=bys-sonar],style").length';
+    const marksBefore=await rp.evaluate(work,pageMarks);
+    await rp.evaluate(work,'scrollTo(0,1500)');await rp.click(panel,'.num-cite');await sleep(1000);
+    const box=await circle();const center=await rp.evaluate(work,cell);
+    check('手绘圈圈住真实数据格',!!box&&box.left<center.x&&center.x<box.right&&box.top<center.y&&center.y<box.bottom,{box,center});
+    check('声纳不改页面 DOM',await rp.evaluate(work,pageMarks)===marksBefore,null);
+    await rp.screenshot(work,join(out,'sonar.png'));await sleep(1300);
+    check('声纳 1.8 秒后淡出清理',await circle()===null,null);
+    await rp.click(panel,'.num-cite');await sleep(1850);await rp.click(panel,'.num-cite');await sleep(450);
+    check('淡出途中再点，新圈不被旧圈的清理带走',await circle()!==null,null);
+    await sleep(2000);
   }
 
   const aiBefore=model.requests.filter(r=>r.rule==='边注解释').length;
@@ -143,7 +178,7 @@ try {
   const partial=await rp.evaluate(panel,`(async()=>{const identity=await chrome.runtime.sendMessage({type:'PINPOINT_DOM_TARGET',action:'identity',tabId:${tabId},url:${JSON.stringify(origin+'/')}});return chrome.runtime.sendMessage({type:'PINPOINT_DOM_TARGET',action:'resolve',query:'62.4%',tabId:${tabId},...identity});})()`);
   check('不把62.4%误匹配到162.4%',partial.ok===false,partial);
   await rp.click(panel,'.num-cite');await sleep(200);
-  check('原文改写后旧引用拒绝定位',await rp.evaluate(work,'!document.querySelector(".bys-sonar-active")'),null);
+  check('原文改写后旧引用拒绝定位',await circle()===null,null);
   await rp.evaluate(work,'document.querySelector("table tr td:last-child").textContent="62.4%"');
   await rp.evaluate(work,'scrollTo(0,0)');await sleep(300);
   // 表格本身不再可拖：悬停表格，从左上角把手拖整张表（docs/evals/20261005-drag-feed-selection.md R3）。
