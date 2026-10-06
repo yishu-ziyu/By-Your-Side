@@ -64,9 +64,10 @@ export async function snapshot(
     // SPA URL changes do not necessarily replace the document. Do not label the
     // new content with the address observed before the read began.
     if(current.id!==tab.id||current.url!==tab.url)throw new Error('读取期间页面地址已变化，请重新读取当前页面。');
-    const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
+    // 不等页面空闲：页面还在加载时默认注入会卡到加载完（少数派冷启动实测 6.4 秒），开工前读页因此超时。
+    const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},injectImmediately:true,world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
 
-    const marks=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},world:'ISOLATED',func:readMarksDisplay})).then(r=>r[0]?.result??[]).catch(()=>[]);
+    const marks=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},injectImmediately:true,world:'ISOLATED',func:readMarksDisplay})).then(r=>r[0]?.result??[]).catch(()=>[]);
 
     const snapshotValue: SnapshotRead = {...result,tabId:tab.id!};
 
