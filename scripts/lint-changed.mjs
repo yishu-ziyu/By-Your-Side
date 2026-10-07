@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// Lint only what is in flight, and fail only on violations that are new.
+// Lint only what is in flight, and report only violations that are new.
+//
+// Optional report, not a commit gate (user decision 2026-10-07): an experiment on 72 fix commits
+// found anti-slop flags did not point at the lines that were later fixed (1.5% vs 2.3% of all
+// lines). See docs/evals/20260923-anti-slop-vendor.md.
 //
 // Why this shape: the repository still carries thousands of legacy anti-slop
 // violations (see docs/evals/20260923-anti-slop-vendor.md). A plain `oxlint`
