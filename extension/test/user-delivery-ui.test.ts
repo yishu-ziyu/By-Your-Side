@@ -3,6 +3,8 @@ import { PanelHistory } from "../src/background/panel-history.js";
 import type { PanelHistoryItem } from "../src/relay.js";
 import type { UserDelivery } from "../../shared/voice.js";
 import { mountVoiceUI } from "../src/sidepanel/voice-ui.js";
+import { particlesOrbChrome } from "./fixtures/orb-storage.js";
+
 
 describe("PanelHistory user delivery deduplication & status update", () => {
   const deliveryA1: UserDelivery = {
@@ -345,6 +347,7 @@ describe("VoiceUI deliver consumption", () => {
     vi.stubGlobal("devicePixelRatio", 1);
     vi.stubGlobal("requestAnimationFrame", () => 1);
     vi.stubGlobal("cancelAnimationFrame", () => {});
+    vi.stubGlobal("chrome", particlesOrbChrome());
     vi.stubGlobal("window", {
       addEventListener: () => {},
       requestAnimationFrame: () => 1,

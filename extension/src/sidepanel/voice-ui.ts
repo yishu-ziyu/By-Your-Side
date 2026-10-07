@@ -1,7 +1,7 @@
 import { microphonePermissionState } from "./voice-permission.js";
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { VoiceClient, type VoicePhase } from './voice-client.js';
-import { mountOrb } from './voice-orb.js';
+import { mountVoiceOrb } from './orb-style.js';
 import { VoiceDiagnosticLog, type VoiceDiagCapture } from './voice-diagnostic.js';
 import { type StepVoice, type UserDelivery, type VoiceInputContext, type VoicePersona } from '../../../shared/voice.js';
 
@@ -10,7 +10,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   region.className = 'voice-progress';
   region.hidden = true;
   region.setAttribute('aria-label', '语音问进度');
-  region.innerHTML = '<canvas class="voice-orb" aria-label="语音粒子球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div><div class="voice-actions"></div>';
+  region.innerHTML = '<canvas class="voice-orb" aria-label="语音光球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div><div class="voice-actions"></div>';
   composer.querySelector('#input')!.before(region);
   const button = document.createElement('button');
   button.type = 'button';
@@ -482,7 +482,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       });
     }
   });
-  const disposeLarge = mountOrb(region.querySelector('canvas')!, 160, () => phase, () => client.level);
+  const disposeLarge = mountVoiceOrb(region.querySelector('canvas')!, 160, () => phase, () => client.level);
   window.addEventListener('pagehide', () => {
     if (renderTimer) {
       clearTimeout(renderTimer);

@@ -129,4 +129,6 @@ await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: t
 // 设置页的音色试听样本（scripts/voice/voice-samples.mts 用真实接口录制）。
 await cp(path.join(root, "assets/voices"), path.join(dist, "voices"), { recursive: true });
 
+await cp(path.join(root, "assets/orbs"), path.join(dist, "orbs"), { recursive: true });
+
 console.log("dist/ 构建完成");

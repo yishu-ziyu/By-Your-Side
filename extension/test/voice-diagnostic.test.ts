@@ -3,6 +3,8 @@ import {VoiceDiagnosticLog,VOICE_DIAG_MAX_CAPTURES} from '../src/sidepanel/voice
 import {VoiceClient} from '../src/sidepanel/voice-client.js';
 import {mountVoiceUI} from '../src/sidepanel/voice-ui.js';
 import {parseServerMessage} from '../../shared/protocol.js';
+import { particlesOrbChrome } from './fixtures/orb-storage.js';
+
 
 const b64=(values:number[]):string=>Buffer.from(new Int16Array(values).buffer).toString('base64');
 
@@ -171,7 +173,7 @@ return true};
     vi.stubGlobal('AudioContext',function(){return context;});
     const media=stream();
     vi.stubGlobal('navigator',{mediaDevices:{getUserMedia:async()=>({getTracks:media.getTracks,getAudioTracks:media.getAudioTracks})}});
-    vi.stubGlobal('chrome',{runtime:{getURL:(path:string)=>path}});
+    vi.stubGlobal('chrome',particlesOrbChrome());
     worklet={port:{onmessage:null},connect:vi.fn(),disconnect:vi.fn()};
     vi.stubGlobal('AudioWorkletNode',function(){return worklet;});
   });
@@ -317,6 +319,7 @@ return child},
     vi.stubGlobal("devicePixelRatio",1);
     vi.stubGlobal("requestAnimationFrame",()=>1);
     vi.stubGlobal("cancelAnimationFrame",()=>{});
+    vi.stubGlobal("chrome",particlesOrbChrome());
     vi.stubGlobal("window",{addEventListener:()=>{},requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},devicePixelRatio:1,matchMedia:()=>({matches:false,addEventListener:()=>{},removeEventListener:()=>{}})});
   });
   afterEach(()=>vi.unstubAllGlobals());

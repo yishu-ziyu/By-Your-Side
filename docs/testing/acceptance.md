@@ -33,6 +33,7 @@ npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=s
 npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless # 语音问页面内容（say 合成的 WAV 当麦克风）
 npx tsx scripts/acceptance/real-path/answer-before-goal-check.mts --headless # 回答交付与回到空闲不等目标核对
 npx tsx scripts/acceptance/real-path/goal-continue-same-page.mts --headless # 回答后的续做只在原网页上、侧栏写明原因
+npx tsx scripts/acceptance/real-path/orb-style.mts --headless           # 语音光球三种样子可选，默认暮色
 npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless    # 一项做不到时的未完成行
 npx tsx scripts/acceptance/real-path/offline-send-and-model-menu.mts --headless # 模型菜单（#2）；后台停机时发送（#4）
 npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 设置页到圈画交付

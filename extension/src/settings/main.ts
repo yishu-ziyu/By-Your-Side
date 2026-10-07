@@ -20,7 +20,7 @@ import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js
 import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
-import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
+import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
 async function writeCredential(providerId: string, credential: Credential | StoredCredential | undefined): Promise<void> {
@@ -146,6 +146,10 @@ document.getElementById("settings")!.innerHTML = `
       <div class="row stack">
         <span class="row-main"><span id="timbre-title" class="row-title">音色</span><span class="row-desc">点一下就换，下次开启语音时生效。</span></span>
         <div id="timbre-list" class="radio-rows" role="radiogroup" aria-labelledby="timbre-title"></div>
+      </div>
+      <div class="row stack">
+        <span class="row-main"><span id="orb-title" class="row-title">光球</span><span class="row-desc">欢迎页和语音里的光球，点一下立即换。</span></span>
+        <div id="orb-list" class="radio-rows" role="radiogroup" aria-labelledby="orb-title"></div>
       </div>
       <div class="row stack">
         <span class="row-main"><span id="persona-title" class="row-title">人设</span><span class="row-desc">只改变语音的语气和措辞；如实汇报、不乱问这些规则不变。下次开启语音时生效。</span></span>
@@ -920,6 +924,7 @@ async function reload(): Promise<void> {
   voiceClear.hidden = !ownVoiceKey;
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
+  renderOrbStyles(parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]));
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
@@ -984,6 +989,31 @@ function renderTimbres(current: string): void {
       void sample.play();
     });
     row.append(pick, listen);
+
+    return row;
+  }));
+}
+
+const orbList = $("orb-list");
+
+/** 光球样子：暮色、晨光带一个会动的小样（同一段视频），粒子用一个静态小圆示意。 */
+function renderOrbStyles(current: OrbStyle): void {
+  orbList.replaceChildren(...ORB_STYLES.map((style) => {
+    const row = document.createElement("div");
+    row.className = "radio-row";
+    const pick = radioRow("orb-option", style.label, style.id === current, style.id === "dusk" ? "默认" : undefined);
+    pick.dataset.orbStyle = style.id;
+    pick.addEventListener("click", () => {
+      renderOrbStyles(style.id);
+      void chrome.storage.local.set({ [ORB_STYLE_STORAGE_KEY]: style.id });
+    });
+
+    const thumb = style.id === "particles"
+      ? Object.assign(document.createElement("span"), { className: "orb-thumb orb-thumb-particles" })
+      : Object.assign(document.createElement("video"), { className: "orb-thumb", src: `orbs/${style.id}.mp4`, muted: true, loop: true, autoplay: !window.matchMedia("(prefers-reduced-motion: reduce)").matches, playsInline: true });
+
+    thumb.setAttribute("aria-hidden", "true");
+    row.append(pick, thumb);
 
     return row;
   }));
