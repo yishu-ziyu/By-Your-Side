@@ -20,7 +20,7 @@
 修法：归属检查拦下的一律算「没执行」（拦在动页面之前）；查归属没带页码时查当前激活页，和动手时取页的办法一致。只用在「空闲就接手」这条路上；`take_tab`、切页、关页照旧。
 
 ## 实测
-脚本 `scripts/acceptance/real-path/same-tab-new-conversation.mts`，GPT-6 Luna，只装扩展，无头。产物在各自工作区的 `out/acceptance/real-path/`（不进仓库）。
+脚本 `scripts/acceptance/real-path/same-tab-new-conversation.mts`，GPT-6 Luna，只装扩展，无头。产物（结果、失败截图）随临时工作区一起删掉了，没有保留；下表数字来自当时的 result.json。
 
 | 代码 | 对话二（同一页）订对 |
 |---|---|
