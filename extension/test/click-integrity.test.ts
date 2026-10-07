@@ -848,3 +848,89 @@ describe("fill 到不可填的元素", () => {
     expect(delivery.focus).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("R3 text=/role 目标在点击、填写那一刻再核对（YIS-113）", () => {
+  /** 页面上只有一个写着「保存」的按钮；text= 解析走 querySelectorAll("*") 扫全页，再按 textContent 比对。 */
+  function installNamedPage() {
+    const page = installPage();
+    const save = Object.assign(makeEl("save", { x: 10, y: 20, width: 80, height: 40 }), {
+      textContent: "保存",
+      attrs: {} as Record<string, string>,
+      getAttribute(name: string): string | null { return save.attrs[name] ?? null; },
+    });
+    page.querySelectorAll.mockImplementation((sel: string) => (sel === "*" ? [save] : []));
+    page.elementFromPoint.mockImplementation(() => save);
+    vi.stubGlobal("getComputedStyle", () => ({ display: "block", visibility: "visible" }));
+
+    return { ...page, save };
+  }
+
+  it("定位后、按下前按钮文字变成「保存中…」：不按下、报 TARGET_GONE、记成没执行", async () => {
+    const { save, cursor } = installNamedPage();
+    // 光标移过去那一步在定位之后、确认之前：页面在这里把按钮改名。
+    cursor.move.mockImplementationOnce(() => { save.textContent = "保存中…"; return 0; });
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "text=保存" })).rejects.toMatchObject({
+      message: expect.stringMatching(/^TARGET_GONE: .*「保存」/),
+      executionFact: "not_executed",
+    });
+    expect(save.clickCount).toBe(0);
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+
+  it("真实 mouseMoved 之后文字才变：同样不按下，仍记成没执行而不是结果不确定", async () => {
+    const { save } = installNamedPage();
+    mocks.sendCommand.mockImplementation(async (_tab: number, method: string, params?: { type?: string }) => {
+      if (method === "Input.dispatchMouseEvent" && params?.type === "mouseMoved") save.textContent = "保存中…";
+
+      return {};
+    });
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "text=保存" })).rejects.toMatchObject({
+      message: expect.stringMatching(/^TARGET_GONE/),
+      executionFact: "not_executed",
+    });
+    expect(save.clickCount).toBe(0);
+    expect(mouseEvents().some((e) => e.type === "mouseMoved")).toBe(true);
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+
+  it("同样的文字跑到另一个元素上：不点新元素", async () => {
+    const page = installNamedPage();
+    const { save, cursor } = page;
+    const twin = Object.assign(makeEl("save-2", { x: 10, y: 20, width: 80, height: 40 }), { textContent: "保存", attrs: {}, getAttribute: () => null });
+    cursor.move.mockImplementationOnce(() => {
+      save.textContent = "保存中…";
+      page.querySelectorAll.mockImplementation((sel: string) => (sel === "*" ? [save, twin] : []));
+      page.elementFromPoint.mockImplementation(() => twin);
+
+      return 0;
+    });
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "text=保存" })).rejects.toMatchObject({ message: expect.stringMatching(/^TARGET_GONE/), executionFact: "not_executed" });
+    expect(twin.clickCount).toBe(0);
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+
+  it("role 目标填写前名字变了：不聚焦、不写值、报 TARGET_GONE", async () => {
+    const { save, cursor } = installNamedPage();
+    const focus = vi.fn();
+    Object.assign(save, { tagName: "TEXTAREA", textContent: "", focus, value: "", isContentEditable: false });
+    save.attrs["aria-label"] = "备注";
+    cursor.move.mockImplementationOnce(() => { save.attrs["aria-label"] = "备注（已锁定）"; return 0; });
+    const { fill } = await import("../src/background/exec/input.js");
+    await expect(fill({ target: 'loc=role:textbox[name="备注"]', value: "改期" })).rejects.toMatchObject({
+      message: expect.stringMatching(/^TARGET_GONE: .*「备注」/),
+      executionFact: "not_executed",
+    });
+    expect(focus).not.toHaveBeenCalled();
+    expect((save as unknown as { value: string }).value).toBe("");
+  });
+
+  it("文字没变时照常按下一次", async () => {
+    const { save } = installNamedPage();
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "text=保存" })).resolves.toMatchObject({ clicked: true });
+    expect(mouseEvents().filter((e) => e.type === "mousePressed")).toHaveLength(1);
+  });
+});

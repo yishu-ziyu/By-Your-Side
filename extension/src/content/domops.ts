@@ -253,6 +253,45 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
 
   let pointLock: Element | null = null;
 
+  /** text= / loc=role: 目标定位那一刻解析到的元素；按下、填写前据此核对「文字还在不在、还是不是它」。 */
+  let nameLock: { target: string; el: Element } | null = null;
+
+  function namedTargetLabel(target: string): string | null {
+    const parsed = parseTarget(target);
+
+    if (parsed?.kind === "text") return parsed.sel;
+
+    if (parsed?.kind === "role") return parsed.name;
+
+    return null;
+  }
+
+  /**
+   * 文字/名字型目标在动作那一刻再核对一次：文字不在了、或同样的文字跑到别的元素上，都报 TARGET_GONE 停下，
+   * 不点别的东西（YIS-113 R3）。CSS/xpath/href 目标照旧按字符串重解析，不改既有语义。
+   */
+  function mustResolveNamed(target: string, verb: string): Element {
+    const label = namedTargetLabel(target);
+
+    if (label === null) return mustResolve(target);
+    let el: Element;
+
+    try {
+      el = mustResolve(target);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+
+      if (/未找到元素/.test(message)) throw new Error(`TARGET_GONE: 目标文字「${label}」已不在页面上，没有${verb}`);
+      throw err;
+    }
+
+    if (nameLock && nameLock.target === target && nameLock.el !== el) {
+      throw new Error(`TARGET_GONE: 目标文字「${label}」已换到别的元素上，没有${verb}`);
+    }
+
+    return el;
+  }
+
   ns.dom = {
     resolve(target: string): Element | null {
       try {
@@ -264,6 +303,8 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
 
     rectOf(target: string): SideAgentRect {
       const el = mustResolve(target);
+      // 每次定位都覆盖：上一次动作留下的旧锁不能让重新渲染后的同名按钮误报。
+      nameLock = namedTargetLabel(target) === null ? null : { target, el };
       scrollIntoView(el);
       const r = topViewportRect(el);
 
@@ -273,7 +314,7 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
     },
 
     confirmForClick(target: string): SideAgentRect {
-      const el = mustResolve(target);
+      const el = mustResolveNamed(target, "点击");
       scrollIntoView(el);
       const r = topViewportRect(el);
 
@@ -285,7 +326,7 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
 
     /** 在即将按下的视口坐标做命中检查，不滚动。mouseMoved 之后目标可能已离开该点。 */
     hitTestAt(target: string, x: number, y: number): { hit: true } {
-      const el = mustResolve(target);
+      const el = mustResolveNamed(target, "点击");
 
       if (!el.isConnected) {
         throw new Error(`ref ${target} 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。`);
@@ -353,7 +394,18 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
     },
 
     fill(target: string, value: string): { filled: true; range?: InputRangeReadout | null } | { refused: string } {
-      const el = mustResolve(target) as HTMLElement;
+      let el: HTMLElement;
+
+      try {
+        el = mustResolveNamed(target, "填写") as HTMLElement;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+
+        // 页面脚本抛错在背景侧拿不到原因；TARGET_GONE 走 refused 回去，背景侧按「没执行」上报。
+        if (message.startsWith("TARGET_GONE:")) return { refused: message };
+        throw err;
+      }
+
       const tag = el.tagName.toLowerCase();
 
       // 先核对能不能填，再聚焦写入：不能填时页面一点没动，背景侧按「没执行」上报（#22/#27）。
