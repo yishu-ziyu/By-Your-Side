@@ -60,7 +60,7 @@ function chromePath() {
 
 const profile = mkdtempSync(path.join(tmpdir(), "pi1-rebuild-"));
 
-const chrome = spawn(chromePath(), ["--headless=new", "--enable-unsafe-extension-debugging", `--user-data-dir=${profile}`, "--remote-debugging-port=0", `--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`, "--no-first-run", "--no-default-browser-check", "--window-size=1100,900", "about:blank"], { stdio: "ignore" });
+const chrome = spawn(chromePath(), ["--headless=new", "--use-mock-keychain", "--enable-unsafe-extension-debugging", `--user-data-dir=${profile}`, "--remote-debugging-port=0", `--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`, "--no-first-run", "--no-default-browser-check", "--window-size=1100,900", "about:blank"], { stdio: "ignore" });
 
 let port;
 
