@@ -1,10 +1,12 @@
 /**
  * 同一网站、同一类事照上次的做法走；页面改了就停下交回一步步做（YIS-95，docs/evals/20261007-route-replay.md）；
- * 提交前核对、侧栏「照上次的做法 第 N/M 步」（YIS-96，docs/evals/20261007-route-check.md）。真实模型，只装扩展，无头。
+ * 提交前核对、侧栏「照上次的做法 第 N/M 步」（YIS-96，docs/evals/20261007-route-check.md）；
+ * 回答下面写照的哪一次、「下次别照旧」（YIS-97，docs/evals/20261007-route-source.md）。真实模型，只装扩展，无头。
  *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--model=provider/id] [--first=selector]
  * --first=selector：第一次请模型用页面选择器（#date 这类）操作，复现「这样做成的记不下做法」（YIS-103）。
  * 失败方式：第二次没照上次走、还是一步步做；照走时值没换（日期、时间、主题、选哪一间）；页面改了还照点、点错或订错；
- *   停下后模型没接着做完；订了不止一次；「下周四」这种说法核对不过或订错日期；侧栏没写第几步、没留核对和对不上那一行。
+ *   停下后模型没接着做完；订了不止一次；「下周四」这种说法核对不过或订错日期；侧栏没写第几步、没留核对和对不上那一行；
+ *   回答下面没写照的哪一次、页面变了没说已更新；旧做法没被新的替掉；「下次别照旧」后做法还在，撤销后没回来。
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -148,8 +150,10 @@ const ask = async (name: string, text: string, url: string) => {
   await until(async () => (await rp.evaluate(panel, idle)) || undefined, 240_000, name, 500);
   finished = true;
   await watch;
-  runs.push({ name, text, seconds: Math.round((Date.now() - started) / 1000), titles: [...titles], trail: [...trail] });
   await sleep(2500);
+  // SAFETY: 页面脚本返回字符串。
+  const line = await rp.evaluate(panel, `[...document.querySelectorAll(".route-line .memory-used-toggle")].at(-1)?.innerText.replace(/\\s*›$/, "") ?? ""`) as string;
+  runs.push({ name, text, seconds: Math.round((Date.now() - started) / 1000), titles: [...titles], trail: [...trail], line, routes: (await tasks()).filter((task) => task.route).length });
 };
 
 try {
@@ -178,6 +182,15 @@ try {
 
   // YIS-96 R2：「下周四」不在页面写法里（期望值按 2026-10-07 周三写：下周四是 10 月 15 日），要做一次核对判断；核对过了才提交。
   await ask("换个说法", "在当前网页订会议室：下周四 15:00–16:00，青松，主题写周会。直接点预订。", base);
+  // 「下周四」可能有两种理解：模型和核对不一致时应该问用户，而不是原样提交（10-07 实测）。问了就像用户一样答一句。
+  if (bookings.length === 2) {
+    evidence.askedUser = await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].at(-1)?.innerText.slice(0, 300) ?? ""`);
+    await send("10 月 15 日（周四）");
+    await until(async () => (await rp.evaluate(panel, idle)) || undefined, 240_000, "换个说法：答了之后做完", 500);
+    await sleep(2500);
+    runs.at(-1)!.line = await rp.evaluate(panel, `[...document.querySelectorAll(".route-line .memory-used-toggle")].at(-1)?.innerText.replace(/\\s*›$/, "") ?? ""`);
+    runs.at(-1)!.routes = (await tasks()).filter((task) => task.route).length;
+  }
   assert.deepEqual(booked(2), { date: "10 月 15 日（周四）", time: "15:00–16:00", room: "青松", topic: "周会" }, "「下周四」订成 10 月 15 日");
 
   // R2：页面改版，照走停在对不上的那一步，模型接着做完。
@@ -185,6 +198,19 @@ try {
   assert.deepEqual(booked(3), { date: "10 月 15 日（周四）", time: "16:00–17:00", room: "银杏", topic: "评审" }, "页面改了仍订对");
   assert.equal(bookings.length, 4, "一共只订了四次，没有多订或订错");
   await rp.screenshot(panel, join(artifacts, "panel.png"));
+
+  // YIS-97：点开最后一次回答下面那一行，看这次重新想的步骤；「下次别照旧」后做法删掉，撤销后回来。
+  await rp.evaluate(panel, `[...document.querySelectorAll(".route-line .memory-used-toggle")].at(-1).click(), true`);
+  await sleep(300);
+  await rp.screenshot(panel, join(artifacts, "route-line-open.png"));
+  // SAFETY: 页面脚本返回数字。
+  evidence.changedRows = await rp.evaluate(panel, `[...document.querySelectorAll(".route-line")].at(-1).querySelectorAll(".memory-used-item.changed").length`) as number;
+  const routeButton = (action: string) => rp.evaluate(panel, `(() => { const b = [...document.querySelectorAll(".route-line")].at(-1).querySelector('[data-route-action="${action}"]'); b?.click(); return b?.textContent ?? ""; })()`);
+  evidence.declineLabel = await routeButton("decline");
+  await until(async () => (await tasks()).every((task) => !task.route) || undefined, 10_000, "下次别照旧：做法删掉");
+  await rp.screenshot(panel, join(artifacts, "route-line-declined.png"));
+  evidence.undoLabel = await routeButton("undo");
+  await until(async () => (await tasks()).some((task) => task.route) || undefined, 10_000, "撤销：做法回来");
 
   // 诊断记录：每次请求用没用照走、走了几步、等了几次模型。
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
@@ -206,6 +232,16 @@ try {
   const followed = (run: JsonRecord | undefined) => String(Array.isArray(run?.followRoute) ? run.followRoute[0] ?? "" : "");
   if (selectorFirst) assert.ok(Number(runs[0]?.bySelector) > 0, "第一次确实有步骤按选择器定位");
   assert.match(followed(runs[1]), /^Followed all/, "第二次照上次的做法走完");
+  // YIS-97：回答下面那一行；每次照走后只留最新的一份做法。
+  const answerLines = runs.map((run) => String(run.line));
+  assert.equal(answerLines[0], "记下了这次的做法，下次照着走", "第一次：记下了做法");
+  assert.match(answerLines[1]!, /^照今天那次的做法 · 上次 \d+ 秒$/, "照上次走：写照的哪一次和上次用时");
+  // 问过用户的那次，答完是接着一步步做的，回答下面那一行不一定是「照…那次」。
+  if (!evidence.askedUser) assert.match(answerLines[2]!, /^照今天那次的做法 · 上次 \d+ 秒$/, "换个说法：写照的哪一次和上次用时");
+  assert.equal(answerLines[3], "页面和上次不一样，已按这次的做法更新", "页面改了：说已更新");
+  assert.deepEqual(runs.map((run) => run.routes), [1, 1, 1, 1], "旧做法被新的替掉，始终只有一份");
+  assert.ok(Number(evidence.changedRows) > 0, "点开后标出这次重新想的步骤");
+  assert.equal(evidence.declineLabel, "下次别照旧", "按钮写「下次别照旧」");
   // 换个说法：照走模型可能把「下周四」算错；核对拦下改正也算对，只要最后订对、没有先订错。
   assert.match(followed(runs[2]), /^Followed all|the check before submitting found/, "换个说法：照上次的做法走完，或被核对拦在提交前");
   assert.match(followed(runs[3]), /Stopped before step 3/, "页面改了：停在第 3 步（会议室按钮）");

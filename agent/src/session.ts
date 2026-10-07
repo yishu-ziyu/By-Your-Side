@@ -6,6 +6,7 @@ import { elementText, redactObservedText } from './task-evidence.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
+import type { RouteSource } from "../../shared/route.js";
 import {createTaskResultsTool, createVerifyUnknownResultTool, unconfirmedResultMessage} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
@@ -1224,6 +1225,27 @@ return;}
     this.routeDrafts.set(runId, noteRouteStep(this.routeDrafts.get(runId) ?? { steps: [] }, note));
 
     while (this.routeDrafts.size > 4) this.routeDrafts.delete(this.routeDrafts.keys().next().value!);
+  }
+
+  /** 走老路：本会话各任务照着走的是哪一次（YIS-97），按 runId；同一任务照走过几次时记第一次。 */
+  private routeSources = new Map<string, RouteSource>();
+
+  /** 照走一次之后记下照的是哪一次；中途停下时，从此刻已记的步数起是这次重新想的。 */
+  noteRouteFollowed(source: { id: string; startedAt: number | null; endedAt: number; stopped: boolean }): void {
+    const runId = this.deliveryRunId();
+
+    if (!runId) return;
+    const known = this.routeSources.get(runId) ?? { id: source.id, at: source.startedAt ?? source.endedAt, ms: source.startedAt === null ? 0 : Math.max(0, source.endedAt - source.startedAt) };
+
+    if (source.stopped && known.freshFrom === undefined) known.freshFrom = this.routeDrafts.get(runId)?.steps.length ?? 0;
+    this.routeSources.set(runId, known);
+
+    while (this.routeSources.size > 4) this.routeSources.delete(this.routeSources.keys().next().value!);
+  }
+
+  /** 某个任务照着走的是哪一次；一步步做的没有。 */
+  routeSourceOf(runId: string): RouteSource | undefined {
+    return this.routeSources.get(runId);
   }
 
   /** 代码裁判的结论写进诊断记录：存了几步，或为什么没存。 */

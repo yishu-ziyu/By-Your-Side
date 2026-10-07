@@ -7,6 +7,7 @@
 // 17 换了值，步骤名还写着上次的值（点白桦却写「选青松」）；18 模型抄错做法编号就只能放弃，不知道有哪些可选；
 // 21 用户这次又原样说了上次的值（「青松」「周会」），模型没再传一遍，就整个拒绝、退回一步步做；
 // 22 按文字点的那一项（标题「青松」）没换成这次的（YIS-103）；
+// 23 核对没过停下时没交出提交控件（模型不改值就原样提交，10-07 实测订错日期）；页面没变也被说成「页面变了」（YIS-97）；
 // 19 写过值后中途停下（还没到提交），交回时不核对，模型自己提交了错的值（10-07 实测订错日期）；20 同一张卡片点两次被当成重复操作停下。
 import { describe, expect, it } from "vitest";
 import { followRoute, routeOfTask, type ReplayPort, type RouteActParams } from "../src/route-replay.js";
@@ -154,6 +155,7 @@ describe("照上次的做法走", () => {
 
       expect(result.done).toBe(1);
       expect(result.stop).toMatch(/step 2/);
+      expect(result.pageChanged).toBe(true);
       expect(p.acted).toHaveLength(1);
     }
   });
@@ -206,6 +208,7 @@ describe("提交前核对", () => {
     expect(result.done).toBe(5);
     expect(result.stop).toMatch(/step 6.*10 月 8 日.*"预订" is @\d+/);
     expect(result.notice).toMatch(/提交前核对没过/);
+    expect([result.held, result.pageChanged]).toEqual([expect.stringMatching(/^@\d+$/), undefined]);
     expect(p.acted).toHaveLength(5);
   });
 

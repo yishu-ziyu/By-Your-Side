@@ -831,7 +831,13 @@ return host?[host]:[];}))].slice(0,16);
     const session=this.entries.get(id)?.runtime.session;
     const written=history.record(entry).catch(()=>{});
 
-    if(entry.route)void written.then(()=>this.emit({type:'agent_event',conversationId:id,event:{kind:'route_saved',runId:entry.id,route:entry.route!}}));
+    // 照着走的（YIS-97）：回答下面写照的哪一次；这次的做法替掉那一次的，下次只照最新的。
+    const source=entry.route?session0?.routeSourceOf?.(snap.runId):undefined;
+
+    if(entry.route)void written.then(async()=>{
+      if(source&&source.id!==entry.id)await history.setRoute(source.id,null).catch(()=>{});
+      this.emit({type:'agent_event',conversationId:id,event:{kind:'route_saved',runId:entry.id,route:entry.route!,...(source?{source}:{})}});
+    });
     const dating=(session?.datePastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,dating]).then(([,dated])=>dated?history.patchDate(entry.id,entry.endedAt,dated):undefined).catch(()=>{});
     // 没做完的事：起短主题与下一步，给「继续上次的事」；晚到时只补这两个字段。

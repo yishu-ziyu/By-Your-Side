@@ -10,7 +10,7 @@ import { isExecutionFeedback } from "./execution-feedback.js";
 
 import { isMemoryEntry, isMemoryScope, MEMORY_TEXT_MAX, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
-import { isTaskRoute, type RouteTarget, type TaskRoute } from "./route.js";
+import { isRouteSource, isTaskRoute, type RouteSource, type RouteTarget, type TaskRoute } from "./route.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 import { isTaskView } from "./task-view.js";
@@ -302,7 +302,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
 export type AgentUiEvent =
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
   /** 走老路：这次任务的做法已记下（过往任务 id = runId）。侧栏在回答下面写「记下了这次的做法」。 */
-  | { kind: "route_saved"; runId: string; route: TaskRoute }
+  /** source：这次是照哪一次的做法走的（YIS-97）；没有就是一步步做的。 */
+  | { kind: "route_saved"; runId: string; route: TaskRoute; source?: RouteSource }
   | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number;
       /** action=used：这一轮一起带给助手的过往任务。 */ tasks?: TaskHistoryEntry[];
       /** action=used：这一轮所在的网站（「这里别用」按它记）；没有网页时省略。 */ hostname?: string;
@@ -1000,7 +1001,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.habit !== undefined && event.habit !== true) return null;
     }
 
-    if (msg.type === "agent_event" && msg.event?.kind === "route_saved" && !(typeof msg.event.runId === "string" && isTaskRoute(msg.event.route))) return null;
+    if (msg.type === "agent_event" && msg.event?.kind === "route_saved" && !(typeof msg.event.runId === "string" && isTaskRoute(msg.event.route) && (msg.event.source === undefined || isRouteSource(msg.event.source)))) return null;
 
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {
       const event = msg.event;

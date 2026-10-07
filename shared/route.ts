@@ -37,6 +37,14 @@ export interface TaskRoute {
   recordedAt: number;
 }
 
+/** 这次照着走的是哪一次（YIS-97）：那次的任务、开始时间与用时；中途对不上停下时，这次做法从第几步起（0 起）是重新想的。 */
+export interface RouteSource {
+  id: string;
+  at: number;
+  ms: number;
+  freshFrom?: number;
+}
+
 export const ROUTE_STEPS_MAX = 40;
 
 const TEXT_MAX = 300;
@@ -73,4 +81,13 @@ export function isTaskRoute(value: unknown): value is TaskRoute {
   const r = value as TaskRoute;
 
   return Number.isFinite(r.recordedAt) && Array.isArray(r.steps) && r.steps.length > 0 && r.steps.length <= ROUTE_STEPS_MAX && r.steps.every(isRouteStep);
+}
+
+export function isRouteSource(value: unknown): value is RouteSource {
+  if (!value || typeof value !== "object") return false;
+  // SAFETY: 同上。
+  const s = value as RouteSource;
+
+  return typeof s.id === "string" && s.id.length > 0 && s.id.length <= 200 && Number.isFinite(s.at) && Number.isFinite(s.ms) && s.ms >= 0
+    && (s.freshFrom === undefined || (Number.isInteger(s.freshFrom) && s.freshFrom >= 0 && s.freshFrom <= ROUTE_STEPS_MAX));
 }

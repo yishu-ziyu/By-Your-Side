@@ -138,7 +138,7 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 动手成功后记一笔做法（走老路）。 */ noteRouteStep?: (note: RouteNote) => void; /** 照走用：取一条过往任务记下的做法和网站。 */ routeOf?: (handle: string) => Promise<{ route: TaskRoute; hosts: string[] } | { choices: string[] }>; /** 照走到提交前核对值是不是用户这次要的。 */ checkRoute?: (input: { fields: CheckField[]; submit: string }) => Promise<CheckVerdict>; /** 用户这次说的话（目标与补充）。 */ askedNow?: () => string[] }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 动手成功后记一笔做法（走老路）。 */ noteRouteStep?: (note: RouteNote) => void; /** 照走用：取一条过往任务记下的做法和网站。 */ routeOf?: (handle: string) => Promise<{ route: TaskRoute; hosts: string[]; source: { id: string; startedAt: number | null; endedAt: number } } | { choices: string[] }>; /** 照走之后记下照的是哪一次、有没有中途停下（回答下面写「照哪次的做法」）。 */ noteRouteFollowed?: (source: { id: string; startedAt: number | null; endedAt: number; stopped: boolean }) => void; /** 照走到提交前核对值是不是用户这次要的。 */ checkRoute?: (input: { fields: CheckField[]; submit: string }) => Promise<CheckVerdict>; /** 用户这次说的话（目标与补充）。 */ askedNow?: () => string[] }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
@@ -191,12 +191,21 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
   // 每次工具执行的身份（轮次、调用 ID、停止信号）显式绑定到一个 call 上，不靠 AsyncLocalStorage：
   // 浏览器里没有它，而工具可能并行执行，全局变量会串号。
+  /** 照走核对没过、停在提交前（YIS-97 验收实测）：值没改、用户也没再说话之前，不让原样点那个提交。 */
+  let routeHold: { ref: string; asked: string; problem: string } | null = null;
+
   const makeCall = (scope: ExecutionScope | undefined) => {
   const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number): Promise<unknown> => {
     // 填的值来自本轮带上的记忆：交给扩展在那一格画「记得的」（fill 工具和 browser_run 里的 fill 都走这里）。
     const memory = name === "fill" && typeof params.value === "string" ? execution?.memoryForValue?.(params.value) : undefined;
 
     if (memory) params = { ...params, memory };
+
+    if (routeHold) {
+      if ((execution?.askedNow?.() ?? []).join("\n") !== routeHold.asked || name === "fill" || name === "select_option" || name === "type_text") routeHold = null;
+      else if (name === "click" && params.target === routeHold.ref) throw Object.assign(new Error(`Not submitted: the check before submitting found ${routeHold.problem}, and no value was changed since. Fix that value first; if you think it is already right, ask the user which one they mean.`), { executionFact: "not_executed" as const });
+    }
+
     const epoch = scope?.epoch;
     const signal = scope?.signal;
     // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
@@ -1080,6 +1089,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             }
           },
         });
+
+        if (result.done > 0) execution.noteRouteFollowed?.({ ...found.source, stopped: !!result.pageChanged });
+
+        routeHold = result.held ? { ref: result.held, asked: (execution.askedNow?.() ?? []).join("\n"), problem: result.notice?.replace(/^提交前核对没过：|，改为一步步看$/g, "") ?? "a mismatch" } : null;
 
         // 「提交前核对…」那一行核对时已经写过，其余停下的原因（对不上、要问你、读回不一致）补一行。
         if (result.notice && !result.notice.startsWith("提交前核对")) note("route_miss", {})(result.notice);
