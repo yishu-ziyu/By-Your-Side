@@ -539,6 +539,7 @@ if(required.includes(key))candidates.set(key,attachment);
             canWrite: () => resultHost?.canWriteCurrentInput() ?? false,
             files: () => resultHost?.fileStore(),
             attachments: () => resultHost?.userAttachments() ?? [],
+            memoryForValue: value => memoryRuntime?.memoryForValue(value),
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -1204,6 +1205,11 @@ return;}
     if (!call) throw new Error('当前观察模型不可用。');
 
     return answerVoiceObservation(call, question, page, stillCurrent);
+  }
+
+  /** 填进网页的值来自本轮带上的哪条记忆；见 MemoryRuntime.memoryForValue。 */
+  memoryForValue(value: string): { id: string; text: string; createdAt: number } | undefined {
+    return this.memoryRuntime?.memoryForValue(value);
   }
 
   /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */
