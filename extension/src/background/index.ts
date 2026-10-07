@@ -143,7 +143,7 @@ installPageInteractions();
 
 installLinkPreview();
 
-const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice(message => controller(pttCapsule.conversationId() ?? selectedConversationId).notice(message, "error")));
+const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error")));
 
 const edgePill = installEdgePill(() => pttCapsule.tabId());
 

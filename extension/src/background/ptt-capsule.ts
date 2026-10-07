@@ -12,8 +12,14 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '..
 /** 任务停下后等这么久再出结果：目标核对和交付可能随后才到。 */
 const SETTLE_MS = 800;
 
-/** saidPhase：这一轮已经念过的那一步（结果或等你）；任务再跑起来就清空，下次停下再念。 */
-interface Tracked { tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; settle?: ReturnType<typeof setTimeout>; saidPhase?: 'done' | 'waiting'; speaking?: boolean; last?: PttCapsule }
+/**
+ * spokenText：已经念过的那句，同一句不再念（目标核对、交付会让胶囊刷新几遍）；内容变了（比如晚到的「留给你的」）就重念。
+ * utterance：每念一句加一，念完的回调只认自己那一句，旧的一句被打断或过期时不再改胶囊。
+ */
+interface Tracked {
+  tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; settle?: ReturnType<typeof setTimeout>;
+  spokenText?: string; utterance: number; speaking?: boolean; last?: PttCapsule;
+}
 
 /** 回答的第一句；太长就截断。 */
 function firstSentence(text: string): string {
@@ -28,7 +34,7 @@ function firstSentence(text: string): string {
 const stepOf = (view: TaskView) => view.active.at(-1)?.action ?? view.lastAction?.action ?? null;
 
 /** 念结果：speak 在不念（没 Key、关了）时返回 null，否则等念完；hush 马上停。 */
-export interface PttVoice { speak(text: string): Promise<PttSpeechReply> | null; hush(): void }
+export interface PttVoice { speak(text: string, conversationId: string): Promise<PttSpeechReply> | null; hush(): void }
 
 /** 要念的那一句：结果 + 留给你的；等你时说需要你做什么。 */
 export function speechFor(capsule: PttCapsule): string | null {
@@ -47,26 +53,34 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     void chrome.tabs.sendMessage(tabId, { type: PTT_CAPSULE, capsule }).catch(() => { /* 网页已关或没有内容脚本 */ });
   };
 
-  /** 显示结果或等你，同一步只念一次（目标核对、交付可能随后又让胶囊刷新一遍）；念完时还是这次跟踪，就去掉 speaking。 */
+  /** 显示结果或等你，并念出来；念完时如果还是这一句、还是这次跟踪，就去掉 speaking。 */
   const showAndSay = (t: Tracked, capsule: Extract<PttCapsule, { phase: 'done' | 'waiting' }>) => {
     t.last = capsule;
+    const text = speechFor(capsule);
 
-    if (t.saidPhase !== capsule.phase) {
-      t.saidPhase = capsule.phase;
-      const text = speechFor(capsule);
-      const speaking = text ? voice.speak(text) : null;
+    if (text && text !== t.spokenText) {
+      t.spokenText = text;
+      const id = ++t.utterance;
+      const speaking = voice.speak(text, t.conversationId);
+      t.speaking = !!speaking;
+      void speaking?.then(() => {
+        if (t.utterance !== id) return;
+        t.speaking = false;
 
-      if (speaking) {
-        t.speaking = true;
-        void speaking.then(() => {
-          t.speaking = false;
-
-          if (tracked === t && t.last) show(t.tabId, t.last);
-        });
-      }
+        if (tracked === t && t.last) show(t.tabId, t.last);
+      });
     }
 
     show(t.tabId, t.speaking ? { ...capsule, speaking: true } : capsule);
+  };
+
+  /** 任务又跑起来、停下或出错：正在念的那句作废，旧结果不再回到胶囊上。 */
+  const silence = (t: Tracked) => {
+    if (t.speaking) voice.hush();
+    t.utterance += 1;
+    t.speaking = false;
+    t.spokenText = undefined;
+    t.last = undefined;
   };
 
   const settle = (view: TaskView) => {
@@ -74,7 +88,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
 
     if (!t) return;
 
-    if (view.state === 'aborted' || view.state === 'error') voice.hush();
+    if (view.state === 'aborted' || view.state === 'error') silence(t);
 
     if (view.state === 'aborted') return show(t.tabId, { phase: 'stopped', heard: t.heard });
 
@@ -95,7 +109,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
 
     if (view.state === 'running') {
       t.sawRun = true;
-      t.saidPhase = undefined;
+      silence(t);
       show(t.tabId, { phase: 'doing', heard: t.heard, step: stepOf(view) });
     } else if (view.state === 'paused') {
       showAndSay(t, { phase: 'waiting', heard: t.heard, reason: '页面交给你了，做完回侧栏点继续。' });
@@ -118,7 +132,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     /** 松开后的结局：交给了助手（开始跟踪），或没成（直接显示原因）。 */
     handedOff(tabId: number, conversationId: string, heard: string) {
       recordingTab = null;
-      tracked = { tabId, conversationId, heard, sawRun: false, result: null };
+      tracked = { tabId, conversationId, heard, sawRun: false, result: null, utterance: 0 };
       show(tabId, { phase: 'doing', heard, step: null });
       onChange();
     },

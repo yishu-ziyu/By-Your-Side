@@ -3,7 +3,7 @@
  * MiniMax speech-2.8-hd 流式返回 24kHz 16 位小端 PCM（十六进制），收到一段就排进 AudioContext 接着放。
  * 只用订阅 Key：MiniMax 按 Key 扣费，订阅 Key 只扣套餐；Key 由后台随命令带来（离屏文档读不到 chrome.storage）。
  */
-import { PTT_SPEECH_TARGET, type PttSpeechCommand, type PttSpeechReply } from "../shared/ptt.js";
+import { isSubscriptionKey, PTT_SPEECH_TARGET, type PttSpeechCommand, type PttSpeechReply } from "../shared/ptt.js";
 
 export const SPEECH_URL = "https://api.minimaxi.com/v1/t2a_v2";
 
@@ -13,6 +13,9 @@ const SAMPLE_RATE = 24_000;
 
 /** 第一段声音前留一点余量，免得开头被吞。 */
 const LEAD_S = 0.05;
+
+/** 连接半开、AudioContext 恢复不了时不能一直挂着「在说」：一句话（含留给你的）连收带放不超过这么久。 */
+const SPEECH_TIMEOUT_MS = 45_000;
 
 /** 流式返回的一行：status 1 是声音段，2 是收尾段（里面的声音是整段重复，不放）。 */
 interface SpeechChunk { data?: { audio?: string; status?: number } | null; base_resp?: { status_code?: number; status_msg?: string } }
@@ -49,10 +52,12 @@ export function installPttSpeech(): void {
     const context = new AudioContext({ sampleRate: SAMPLE_RATE });
     const abort = new AbortController();
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const done = (reply: PttSpeechReply) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
 
       if (current?.abort === abort) { current = null; void context.close(); }
 
@@ -60,6 +65,7 @@ export function installPttSpeech(): void {
     };
 
     current = { abort, context, done };
+    timer = setTimeout(() => { done({ ok: false, reason: "failed", message: "念结果超时" }); abort.abort(); }, SPEECH_TIMEOUT_MS);
     let nextAt = 0;
     let startedAt = 0;
 
@@ -88,9 +94,22 @@ export function installPttSpeech(): void {
         body: JSON.stringify({ model: SPEECH_MODEL, text, stream: true, voice_setting: { voice_id: "female-shaonv", speed: 1, vol: 1, pitch: 0 }, audio_setting: { sample_rate: SAMPLE_RATE, format: "pcm", channel: 1 } }),
       });
 
-      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status} ${(await response.text().catch(() => "")).slice(0, 120)}`.trim());
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let pending = "";
+
+      /** 一行：流式段是 data: 开头；Key 被拒等错误可能是一整段不带 data: 的 JSON，同样读出原因。 */
+      const take = (line: string) => {
+        const json = line.startsWith("data:") ? line.slice(5) : line.trim().startsWith("{") ? line : null;
+
+        if (!json) return;
+        // SAFETY: MiniMax 接口每段是一个 SpeechChunk JSON。
+        const chunk = JSON.parse(json) as SpeechChunk;
+
+        if (chunk.base_resp?.status_code) throw new Error(chunk.base_resp.status_msg || `MiniMax ${chunk.base_resp.status_code}`);
+
+        if (chunk.data?.status === 1 && chunk.data.audio) play(chunk.data.audio);
+      };
 
       for (;;) {
         const { value, done: ended } = await reader.read();
@@ -100,16 +119,10 @@ export function installPttSpeech(): void {
         const lines = pending.split("\n");
         pending = lines.pop() ?? "";
 
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          // SAFETY: MiniMax 流式接口每行 data: 后是一个 SpeechChunk JSON。
-          const chunk = JSON.parse(line.slice(5)) as SpeechChunk;
-
-          if (chunk.base_resp?.status_code) throw new Error(chunk.base_resp.status_msg || `MiniMax ${chunk.base_resp.status_code}`);
-
-          if (chunk.data?.status === 1 && chunk.data.audio) play(chunk.data.audio);
-        }
+        for (const line of lines) take(line);
       }
+
+      take(pending);
 
       if (!startedAt) throw new Error("没有收到声音");
       // 最后一段排进去了，等它放完。
@@ -121,12 +134,13 @@ export function installPttSpeech(): void {
   });
 
   chrome.runtime.onMessage.addListener((command: Partial<PttSpeechCommand> | undefined, sender, sendResponse) => {
-    // 只认本扩展发来、带 PTT_SPEECH_TARGET 的命令。
-    if (sender.id !== chrome.runtime.id || command?.target !== PTT_SPEECH_TARGET) return;
+    // 只认本扩展后台发来（不是网页里的脚本）、带 PTT_SPEECH_TARGET 的命令。
+    if (sender.id !== chrome.runtime.id || sender.tab || command?.target !== PTT_SPEECH_TARGET) return;
 
     if (command.action === "hush") { hush(); sendResponse({ ok: true, playedMs: 0 }); return; }
 
-    if (command.action !== "speak" || !command.text || !command.key) return;
+    // 只用订阅 Key：后台已经筛过，这里再守一道（MiniMax 按 Key 扣费）。
+    if (command.action !== "speak" || !command.text || !command.key || !isSubscriptionKey(command.key)) return;
     void speak(command.text, command.key).then(reply => {
       // 离屏文档没人看得见，网页也读不到；验收从这里读上一次念的结果。
       document.documentElement.dataset.pttSpeech = JSON.stringify(reply);
