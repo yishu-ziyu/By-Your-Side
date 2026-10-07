@@ -2289,6 +2289,9 @@ let leadAnswerTurnClosed = false;
 /** 这一轮已调用过工具：之后的正文按「先核对再显示」留在执行过程，由宿主交付。 */
 let leadToolUsed = false;
 
+/** 目标核对判「没做完」、宿主马上接着做时记下还差的事；下一轮开始时写进过程行。 */
+let goalContinuing: string | null = null;
+
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
   root: HTMLElement;
@@ -3996,6 +3999,19 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // #58 C：一开始就有一行「正在思考」，模型想很久时也看得到在做（任务条不再兜这段）。
       // 新会话第一轮的开头经补放历史到达，所以补放时也建；补放到 agent_end 会照常收尾。
       ensureRun();
+
+      // 回答之后宿主自己接着做：标题说明为什么又动起来，还差的事留在过程下面直到这一轮结束（#105）。
+      if (goalContinuing !== null) {
+        const run = ensureRun();
+        setRunTitle(run, "还没做完，接着做", true, "think");
+        run.aside = goalContinuing ? `还差：${goalContinuing}` : null;
+        renderTrail(run);
+        goalContinuing = null;
+      }
+
+      break;
+    case "goal_check":
+      goalContinuing = ev.status === "continue" ? ev.remaining ?? "" : null;
       break;
     case "turn_end":
       closeBlocks();

@@ -2217,10 +2217,12 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const snapshot = this.conversationSnapshot();
     let verdict: GoalVerdict | null = null;
     let unavailable: string | undefined;
+    const tabId = this.rpc?.getPageTarget?.(this.memberId) ?? null;
+    /** 交付时标签页所在的网页；续做前据此判断用户有没有换走。 */
+    let endedOn = "";
 
     try {
       const model = this.modelRuntime!.fastModel?.() ?? this.session!.model;
-      const tabId = this.rpc?.getPageTarget?.(this.memberId) ?? null;
 
       // SAFETY: snapshot 工具回 { text, url, title? }；读不到就不带页面，只按回答判断。
       const page = tabId !== null && this.rpc
@@ -2229,6 +2231,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       const lastReply = this.runReplyText(event.messages);
       const pageText = page ? String(page.text ?? "") : "";
+      endedOn = page ? String(page.url ?? "") : "";
 
       if (pageAwaitsEmailStep(pageText)) {
         // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去（09-27 Kimi 这样问了就停住）。
@@ -2264,7 +2267,12 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (runId && this.goalContinueRun !== runId) { this.goalContinueRun = runId; this.goalContinues = 0; }
 
-    if (verdict?.status === "continue" && this.goalContinues < GOAL_CONTINUE_MAX && this.session) {
+    // 核对期间用户把标签页换到了别的网页：不在新网页上接着做，按「还差」收尾（10-07 翻译续做落到了下一个网页上）。
+    const movedTo = verdict?.status === "continue" && endedOn && tabId !== null ? await this.tabMovedFrom(endedOn, tabId) : null;
+
+    if (!current()) return;
+
+    if (verdict?.status === "continue" && this.goalContinues < GOAL_CONTINUE_MAX && this.session && !movedTo) {
       const session = this.session;
 
       // agent_end 回调返回后会话才真正空闲；稍等再发下一轮，最多等 3 秒。等的期间用户另有动作就作罢。
@@ -2298,8 +2306,18 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (verdict.remaining) settled.remaining = verdict.remaining;
       emit(settled);
-      this.runTrace.record("goal_check", verdict);
+      this.runTrace.record("goal_check", movedTo ? { ...verdict, pageMovedTo: movedTo } : verdict);
     }
+  }
+
+  /** 标签页已换到别的网页时返回新地址；只差 #锚点 算同一页，读不到地址按没换处理。 */
+  private async tabMovedFrom(url: string, tabId: number): Promise<string | null> {
+    // SAFETY: snapshot 工具回 { url, ... }；读不到就是 null。
+    const page = await (this.rpc!.call("snapshot", { tabId }, 4_000) as Promise<{ url?: unknown } | null>).catch(() => null);
+    const now = page?.url ? String(page.url) : "";
+    const withoutHash = (value: string) => value.split("#")[0];
+
+    return now && withoutHash(now) !== withoutHash(url) ? now : null;
   }
 
   /** 一轮真正结束后的收尾（原 agent_end 处理）：交付最终正文、状态回到空闲、技能学习与异常说明。 */
