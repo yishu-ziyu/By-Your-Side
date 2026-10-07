@@ -39,7 +39,7 @@ await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
 
 const pageUrl = `http://127.0.0.1:${siteAddress(site).port}/`;
 
-const offer = { offer: true, sentence: "要比一下别家的价格吗", evidence: [{ text: "耳机详情页", url: pageUrl }], actionLabel: "帮我比价", prompt: PROMPT };
+const offer = { offer: true, actionLabel: "比价", sentence: "这款耳机在别家的价格", evidence: [{ text: "耳机详情页", url: pageUrl }], prompt: PROMPT };
 
 // 建议判断收到的是页面 JSON（含标题）；其余请求不该出现：发出去了就会被判失败（users > 0）。
 const model = await startScriptedModel([{ match: "耳机详情页", steps: [{ text: JSON.stringify(offer) }] }, { match: "", steps: [{ text: "不该发出。" }] }]);

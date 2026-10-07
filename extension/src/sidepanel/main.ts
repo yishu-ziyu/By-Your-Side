@@ -5006,7 +5006,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
 
-        if (entry.item.card) proactiveCard.turn(entry.item.card, bubble);
+        if (entry.item.card) proactiveCard.turn(entry.item.card, bubble, entry.occurredAt);
         else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
 
         if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);

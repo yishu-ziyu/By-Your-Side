@@ -160,7 +160,15 @@ const marginalia = installMarginalia({
 const nudge = installNudge({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
-  panelOpen: () => connectedPanels.size > 0,
+  // 侧栏可以按窗口开，也可以只给某个标签页开：只认这个标签页能看到的那一个。
+  // Chrome 不一定报出侧栏在哪个窗口（10-07 无头实测为 -1）：报不出就按「有侧栏开着」算。
+  panelOpen: async (windowId, tabId) => {
+    const panels = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL] }).catch(() => null);
+
+    if (!panels?.length || panels.some(panel => panel.windowId === -1)) return connectedPanels.size > 0;
+
+    return panels.some(panel => panel.windowId === windowId && (panel.tabId === -1 || panel.tabId === tabId));
+  },
   act: (conversationId, text, card, context) => controller(conversationId).spoken(text, context, card),
 });
 

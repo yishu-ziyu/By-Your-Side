@@ -140,19 +140,23 @@ try {
   // R2：按动词就做。卡先淡成壳，再原位变成这一轮的开头；下面步骤从进行中到完成，再接三句话。
   await read("/b");
   await until(async () => await rp.evaluate(panel, CARD), 60_000, "第二张卡", 500);
+  // 卡出来后先发一句别的、等回答（输入框里还留着上面那句草稿；回答内容不管）：再按卡，这一轮要排在最后。
+  await rp.click(panel, "#input");
+  await rp.pressEnter(panel);
+  await until(async () => (await rp.evaluate(panel, "document.querySelectorAll('#messages .msg.assistant').length > 0 && !document.querySelector('#send-btn').classList.contains('stopping')")) || undefined, 20_000, "先聊一句");
+  const order = await rp.evaluate(panel, "[...document.querySelectorAll('#messages > *')].map(n => n.matches('.pc') ? 'card' : n.matches('.msg.user') ? 'user' : n.matches('.msg.assistant') ? 'answer' : '').filter(Boolean).join(',')");
   await sleep(600);
-  const before = await rp.evaluate(panel, "document.querySelector('#messages .pc').getBoundingClientRect().top");
   await rp.click(panel, "#messages .pc .pc-verb");
   await sleep(60);
   const shell = await rp.evaluate(panel, "({ fading: !!document.querySelector('#messages .pc.fading'), turn: !!document.querySelector('#messages .card-turn') })");
   const running = await until(async () => { const t = await rp.evaluate(panel, TURN); return t.turns === 1 && t.chips.length > 0 ? t : undefined; }, 10_000, "这一轮开始").catch(() => null);
-  const top = await rp.evaluate(panel, "document.querySelector('#messages .card-turn').getBoundingClientRect().top");
   await rp.screenshot(panel, join(out, "5-running.png"));
-  check("R2 按下不再问：卡淡成壳、原位变成这一轮开头，没有用户气泡，步骤 chip 接在下面", (shell.fading || shell.turn) && !!running && running.bubbles === 0 && !running.live && running.verb === "申请" && String(running.obj).includes("晚退房到 14:00") && running.after[0] === "steps" && Math.abs(top - before) < 2, { shell, running, before, top });
+  const last = await rp.evaluate(panel, "[...document.querySelectorAll('#messages .msg.user')].at(-1)?.classList.contains('card-turn')");
+  check("R2 按下不再问：卡淡成壳，变成这一轮开头排在最后（中间聊过一句），步骤 chip 接在下面", order === "card,user,answer" && (shell.fading || shell.turn) && !!running && running.bubbles === 1 && !running.live && last === true && running.verb === "申请" && String(running.obj).includes("晚退房到 14:00") && running.after[0] === "steps", { order, shell, running, last });
   const done = await until(async () => { const t = await rp.evaluate(panel, TURN); return t.runDone && !t.running && t.answer.includes("告诉你") ? t : undefined; }, 30_000, "这一轮做完").catch(() => null);
   await sleep(1500);
   await rp.screenshot(panel, join(out, "6-done.png"));
-  check("R2 做完：步骤留着且完成，三句话接在步骤下面", !!done && done.after.slice(0, 2).join(",") === "steps,answer" && done.chips.every(c => !c.error) && done.answer.includes("国贸三期") && String(done.header).startsWith("申请晚退房到 14:00"), done);
+  check("R2 做完：步骤留着且完成，三句话接在步骤下面", !!done && done.after.slice(0, 2).join(",") === "steps,answer" && done.chips.every(c => !c.error) && done.answer.includes("国贸三期") && done.bubbles === 1, done);
 
   // R4：对方没同意、步骤失败：原位说清，chip 变失败，不停在进行中。
   await read("/c");
@@ -168,7 +172,7 @@ try {
   // 重开侧栏：这两轮从历史回放，仍画成按下的卡，不变回给助手的长指令。
   await rp.cdp.send("Page.reload", {}, panel);
   const replayed = await until(async () => { const t = await rp.evaluate(panel, TURN); return t.turns === 2 ? t : undefined; }, 20_000, "回放").catch(() => null);
-  check("重开侧栏：两轮仍是卡，没有长指令气泡", !!replayed && replayed.bubbles === 0 && replayed.verb === "申请", replayed);
+  check("重开侧栏：两轮仍是卡，没有长指令气泡", !!replayed && replayed.bubbles === 1 && replayed.verb === "申请", replayed);
   await rp.screenshot(panel, join(out, "8-replayed.png"));
 } finally {
   console.log(failures.length ? `FAILED ${failures.length}` : "ALL PASS");

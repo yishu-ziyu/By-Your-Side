@@ -121,13 +121,16 @@ export function acceptNudgeReply(reply: NudgeReply, context: NudgeContext): Nudg
   });
 
   if (!grounded) return null;
-  // 对象名也只能是上下文里出现过的；对不上就不写，不为它丢掉整条建议。
-  const named = party !== undefined && [...sources.values()].some(source => source.includes(squash(party)));
+  // 对象名也只能是出处那几页里出现过的；太短或对不上就不写，不为它丢掉整条建议。
+  const named = party !== undefined && chars(party) >= 2 && candidate.evidence.some(e => sources.get(e.url)?.includes(squash(party)));
+  const label = candidate.actionLabel.trim();
+  // 卡上读作「动词 + 宾语」：模型把动词又写进句首时去掉，免得读成「申请申请晚退房」。
+  const object = candidate.sentence.trim().startsWith(label) && candidate.sentence.trim().length > label.length ? candidate.sentence.trim().slice(label.length).trim() : candidate.sentence.trim();
 
   return {
-    sentence: candidate.sentence.trim(),
+    sentence: object,
     evidence: candidate.evidence.map(e => ({ text: e.text.trim(), url: e.url })),
-    actionLabel: candidate.actionLabel.trim(),
+    actionLabel: label,
     prompt: candidate.prompt.trim(),
     ...(named && party ? { party } : {}),
   };

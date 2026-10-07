@@ -37,15 +37,23 @@ export function isNudgeCard(v: unknown): v is NudgeCard {
 
 /**
  * chrome.storage.session 键：侧栏开着时，建议卡不出在页角，而是放进侧栏对话流（YIS-106）。
- * 值是 { conversationId, card }；只有后台 nudge.ts 写，侧栏点 × 或按动词后由后台删。
+ * 值是 { conversationId, card, at }，另带只有后台读的指令和出处页；只有后台 nudge.ts 写，侧栏点 × 或按动词后由后台删。
+ * 放在存储里而不是后台内存：后台重启后卡还能按、还能收。
  */
 export const NUDGE_PANEL_KEY = 'sideagent_nudge_panel';
 
-export type NudgePanelOffer = { conversationId: string; card: NudgeCard };
+/** at：出卡的时间（毫秒）。 */
+export type NudgePanelOffer = { conversationId: string; card: NudgeCard; at: number };
+
+/** 侧栏卡放久了就不再画：那一页多半早就不在看了。 */
+export const NUDGE_PANEL_TTL_MS = 30 * 60_000;
 
 export function isNudgePanelOffer(v: unknown): v is NudgePanelOffer {
-  return !!v && typeof v === 'object' && 'conversationId' in v && typeof v.conversationId === 'string' && 'card' in v && isNudgeCard(v.card);
+  return !!v && typeof v === 'object' && 'conversationId' in v && typeof v.conversationId === 'string' && 'card' in v && isNudgeCard(v.card) && 'at' in v && typeof v.at === 'number';
 }
+
+/** 侧栏按动词后后台的回复：busy 是这个会话正有任务在做，offline 是没交给助手，gone 是这张卡已经不在了。 */
+export type NudgePanelReply = { ok: true } | { ok: false; reason: 'busy' | 'offline' | 'gone' };
 
 /** 页面或侧栏 → 后台：点了卡上的按钮（id 指向后台记着的那条建议）。 */
 export const NUDGE_ACT = 'NUDGE_ACT';
