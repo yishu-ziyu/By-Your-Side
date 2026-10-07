@@ -38,6 +38,8 @@ const ACTION_NAMES: Record<string, string> = {
   route_check: "提交前核对",
   route_miss: "改为一步步看",
   wait_for: "等待元素",
+  check: "核对",
+  assert: "断言",
   sleep: "等待",
   fill: "填写文本",
   page_operation: "填写并核对",

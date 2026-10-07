@@ -14,6 +14,19 @@ export interface ProgramStep {
   elapsedMs?: number;
 }
 
+/**
+ * browser.assert 不成立时整个程序停在那一步。宿主拿到的是结构化结果（停在第几步、名字、原因、已完成几步），
+ * 不只是一行错误文字；`steps` 是到停下为止已结束的步骤（含 assert 这一步）。
+ */
+export class ProgramAssertError extends Error {
+  constructor(
+    readonly assert: { failedAt: number; name: string; reason: string; completed: number },
+    readonly steps: ProgramStep[],
+  ) {
+    super(`程序在第 ${assert.failedAt} 步「${assert.name}」停下${assert.reason ? `：${assert.reason}` : ""}（已完成 ${assert.completed} 步）`);
+  }
+}
+
 interface ProgramOptions {
   code: string;
   call(name: ToolName, params: Record<string, unknown>, stepId?: string, origin?: "readonly-poll"): Promise<unknown>;
@@ -48,6 +61,8 @@ export const RPC_ALIASES: Record<string, string> = {
 export const BROWSER_PROGRAM_HELPERS = [
   { name: "waitFor", summary: "等待唯一目标：state=visible|visible+enabled|attached|detached|hidden（统一 target：@ref / CSS / loc=role / loc=href / xpath= / text=）", composed: "read_element expect 轮询（只读）" },
   { name: "waitForElement", summary: "waitFor 的语义别名", composed: "waitFor" },
+  { name: "check", summary: "check({text|selector,state=appears|disappears,timeoutMs=3000}) 等文字或目标出现/消失，不叫模型；返回 {ok,waitedMs,polls}，超时返回 ok:false 不抛错", composed: "read_element expect 轮询（只读）" },
+  { name: "assert", summary: "assert({ok,name,reason}) 条件不成立就停下整个程序，后面的动作一个都不执行；结果带停在第几步、名字、原因、已完成几步", composed: "宿主停止路径" },
   { name: "sleep", summary: "有界等待毫秒（纯宿主，不伪造浏览器动作）", composed: "host timer" },
   { name: "pageInfo", summary: "url/title/readyState/视口/滚动/工作页/未处理 JS dialog（身份一致才返回）", composed: "list_tabs + js + dialog_info" },
   { name: "waitForLoad", summary: "等当前文档的 domcontentloaded / load 就绪", composed: "js(document.readyState+timeOrigin)" },
@@ -137,10 +152,20 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   let program: QuickJSHandle | undefined;
   const pending = new Set<QuickJSDeferredPromise>();
   const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
+  /** 已结束的步骤，按顺序；assert 停下时随结构化错误交给宿主。 */
+  const trail: ProgramStep[] = [];
+  /** 停下时如果是带结构的错误（assert），所有停止路径都抛它本身，不压成一行文字。 */
+  let stoppedBy: Error | undefined;
 
-  const stop = (reason: string) => { stopped ||= reason;
+  const stop = (reason: string | Error) => {
+    if (!stopped) {
+      stopped = message(reason);
 
- return new Error(stopped); };
+      if (reason instanceof Error) stoppedBy = reason;
+    }
+
+    return stoppedBy ?? new Error(stopped);
+  };
 
   const guard = () => {
     if (options.signal?.aborted) throw stop("Browser program aborted; no further actions dispatched");
@@ -159,7 +184,11 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     return Boolean(stopped || closed);
   });
-  const emit = (step: ProgramStep) => { try { options.onStep?.(step); } catch { /* observation is not control */ } };
+  const emit = (step: ProgramStep) => {
+    if (step.phase === "end") trail.push(step);
+
+    try { options.onStep?.(step); } catch { /* observation is not control */ }
+  };
 
   async function sleep(ms: number) {
     if (!Number.isFinite(ms) || ms < 0 || ms > 10_000) throw new Error("INVALID_ARGUMENT: sleep.ms must be between 0 and 10000");
@@ -304,6 +333,74 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     } while (Date.now() <= until);
 
     throw new Error(`wait_for ${target} state=${state} timed out after ${timeout}ms (${polls} polls)`);
+  }
+
+  /**
+   * check：动作后不叫模型就核对结果——等一段文字或一个目标出现/消失，到时返回 ok:false 而不是抛错。
+   * 文字默认在 body 上找；探测走 read_element expect（只读），与 waitFor 同一条控制闸门。
+   * 中止、接管、断连仍从 guard() 抛出，照旧停下程序。
+   */
+  async function check(params: Record<string, unknown>, stepId: string) {
+    const text = typeof params.text === "string" && params.text ? params.text : null;
+    const selector = typeof params.selector === "string" && params.selector ? params.selector : null;
+
+    if (!text && !selector) throw new Error("INVALID_ARGUMENT: check 需要 text（页面上应出现的文字）或 selector（统一 target）");
+    const state = params.state === undefined ? "appears" : String(params.state);
+
+    if (state !== "appears" && state !== "disappears") throw new Error(`INVALID_ARGUMENT: check.state 只支持 appears 或 disappears，收到 ${state}`);
+    const timeout = Number(params.timeoutMs ?? 3000);
+
+    if (!Number.isFinite(timeout) || timeout < 1 || timeout > 30_000) throw new Error("INVALID_ARGUMENT: check.timeoutMs must be between 1 and 30000");
+    const until = Math.min(deadline, Date.now() + timeout);
+    const started = Date.now();
+    let polls = 0;
+    const sub = nextSubId(stepId);
+    const target = selector ?? "body";
+    // expect 只比较 properties 里读到的值，所以要一起要那个属性。
+    const readParams = text
+      ? { target, properties: ["textContent"], expect: { property: "textContent", contains: text } }
+      : { target, properties: ["visible"], expect: { property: "visible", equals: true } };
+
+    /** 条件此刻成立吗：目标不在（NOT_FOUND）或条件未满足（NOT_READY）都算不成立；其他错误照抛。 */
+    const holds = async (): Promise<boolean> => {
+      try {
+        const data = await options.call("read_element", readParams, sub(), "readonly-poll") as { check?: { matched?: boolean } };
+
+        return data.check?.matched === true;
+      } catch (error) {
+        guard();
+
+        if (isRetryableWait(message(error))) return false;
+        throw error;
+      }
+    };
+
+    do {
+      guard();
+      polls++;
+
+      if ((await holds()) === (state === "appears")) return { ok: true, waitedMs: Date.now() - started, polls };
+      guard();
+
+      if (Date.now() >= until) break;
+      await sleep(Math.max(0, Math.min(150, until - Date.now())));
+    } while (Date.now() <= until);
+
+    return { ok: false, waitedMs: Date.now() - started, polls };
+  }
+
+  /** assert：程序自己算好条件传进来；不成立就以结构化错误停下整个程序（走 stop，catch 救不回）。 */
+  function assert(params: Record<string, unknown>, failedAt: number) {
+    if (typeof params.ok !== "boolean") throw new Error("INVALID_ARGUMENT: assert.ok must be a boolean");
+
+    if (typeof params.name !== "string" || !params.name.trim()) throw new Error("INVALID_ARGUMENT: assert.name must be a non-empty string");
+
+    if (params.ok) return { ok: true };
+    const reason = typeof params.reason === "string" ? params.reason : "";
+    const completed = trail.filter(step => !step.error).length;
+
+    // trail 按引用交出：这一步的 end 随后也会记进去，宿主看到的步骤列表含 assert 本身。
+    throw new ProgramAssertError({ failedAt, name: params.name.trim(), reason, completed }, trail);
   }
 
   /** pageInfo：list_tabs 与 js 之间工作页必须稳定，禁止 A 身份 + B 内容；附带未处理 JS dialog。 */
@@ -591,6 +688,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
         const result = actualResult = name === "sleep" ? await sleep(Number(params.ms ?? 0))
           : name === "waitFor" || name === "waitForElement" ? await waitFor(params, id)
+          : name === "check" ? await check(params, id)
+          : name === "assert" ? assert(params, steps)
           : name === "pageInfo" ? await pageInfo(params, id)
           : name === "waitForLoad" ? await waitForLoad(params, id)
           : name === "waitForNetworkIdle" ? await waitForNetworkIdle(params, id)
@@ -637,7 +736,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         const text = message(error);
         // A caught RPC error is not a license to keep writing. The host owns this
         // boundary even if generated JS catches the rejected promise or queued writes.
-        stop(text);
+        stop(error instanceof ProgramAssertError ? error : text);
         emit({ ...step, phase: "end", result: actualResult, error: text, elapsedMs: Date.now() - started });
 
         if (!closed) {
@@ -673,7 +772,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     if (evaluated.error) {
       const error = vm.dump(evaluated.error);
       evaluated.error.dispose();
-      throw new Error(stopped || (error.message ? explainProgramError(error.message, options.code, METHODS) : String(error)));
+      throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, METHODS) : String(error));
     }
 
     program = evaluated.value;
@@ -686,7 +785,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (jobs.error) {
         const error = vm.dump(jobs.error);
         jobs.error.dispose();
-        throw new Error(stopped || (error.message ? explainProgramError(error.message, options.code, METHODS) : String(error)));
+        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, METHODS) : String(error));
       }
 
       const state = vm.getPromiseState(program);
@@ -705,7 +804,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (state.type === "rejected") {
         const error = vm.dump(state.error);
         state.error.dispose();
-        throw new Error(stopped || (error.message ? explainProgramError(error.message, options.code, METHODS) : String(error)));
+        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, METHODS) : String(error));
       }
 
       await pause(10);
