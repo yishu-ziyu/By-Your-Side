@@ -23,6 +23,7 @@ const READ_TOOLS = new Set([
   "observe_page",
   "consume_events",
   "dialog_info",
+  "describe_target",
 ]);
 
 function methodOf(params?: Record<string, unknown>): string {

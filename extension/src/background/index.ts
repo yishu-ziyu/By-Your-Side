@@ -60,6 +60,7 @@ import { network } from "./exec/network.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { setDebugBannerNotice } from "./debugger.js";
+import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
@@ -114,6 +115,7 @@ const handlers: Record<ToolName, Handler> = {
   accept_dialog: (p, sid) => acceptDialog(p, sid),
   dismiss_dialog: (p, sid) => dismissDialog(p, sid),
   dialog_info: (p, sid) => dialogInfo(p, sid),
+  describe_target: (p, sid) => describeTarget(p, sid),
   download_url: (p, sid) => downloadUrl(p, sid),
   hover: (p, sid) => hover(p, sid),
   fill: (p, sid) => fill(p, sid),
