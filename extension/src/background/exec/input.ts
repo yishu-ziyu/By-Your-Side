@@ -271,7 +271,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
   return outcome?.range;
 }
 
-async function ensureDomOps(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
+export async function ensureDomOps(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   await chrome.scripting.executeScript({

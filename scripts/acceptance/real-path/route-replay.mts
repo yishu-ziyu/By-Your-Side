@@ -1,7 +1,8 @@
 /**
  * 同一网站、同一类事照上次的做法走；页面改了就停下交回一步步做（YIS-95，docs/evals/20261007-route-replay.md）；
  * 提交前核对、侧栏「照上次的做法 第 N/M 步」（YIS-96，docs/evals/20261007-route-check.md）。真实模型，只装扩展，无头。
- *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--model=provider/id]
+ *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--model=provider/id] [--first=selector]
+ * --first=selector：第一次请模型用页面选择器（#date 这类）操作，复现「这样做成的记不下做法」（YIS-103）。
  * 失败方式：第二次没照上次走、还是一步步做；照走时值没换（日期、时间、主题、选哪一间）；页面改了还照点、点错或订错；
  *   停下后模型没接着做完；订了不止一次；「下周四」这种说法核对不过或订错日期；侧栏没写第几步、没留核对和对不上那一行。
  */
@@ -17,6 +18,8 @@ requireHeadless();
 const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? DEFAULT_TEST_MODEL;
 
 const plan = await loadModelPlan(modelArg);
+
+const selectorFirst = process.argv.includes("--first=selector");
 
 const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-route-replay`);
 
@@ -163,7 +166,7 @@ try {
   const base = `http://127.0.0.1:${siteAddress(site).port}/`;
 
   // 第一次：一步步做，记下做法。
-  await ask("第一次", "在当前网页订会议室：10 月 8 日（周四）15:00–16:00，青松，主题写周会。直接点预订。", base);
+  await ask("第一次", `在当前网页订会议室：10 月 8 日（周四）15:00–16:00，青松，主题写周会。直接点预订。${selectorFirst ? "日期、时间、主题和预订按钮用 #date、#time、#topic、#submit 这些选择器定位。" : ""}`, base);
   assert.deepEqual(booked(0), { date: "10 月 8 日（周四）", time: "15:00–16:00", room: "青松", topic: "周会" }, "第一次订对");
   const first = (await tasks()).find((t) => t.goal.includes("青松"));
   evidence.route = first?.route ?? null;
@@ -194,11 +197,14 @@ try {
     run.modelRequests = mine.filter((l) => l.type === "model_request").length;
     run.tools = mine.filter((l) => l.type === "tool_execution_end").map((l) => l.data?.toolName ?? "?");
     run.routeChecks = mine.filter((l) => l.type === "route_check").map((l) => `${l.data?.ok ? "通过" : "没过"}${l.data?.literal ? "（原话直通）" : `（判断 ${l.data?.elapsedMs} ms）`}`);
+    // 程序代码在诊断记录里被隐去：用记做法时数下的「按选择器定位的步数」。
+    run.bySelector = Math.max(0, ...lines.filter((l) => l.type === "route_verdict" && (l.runId === runId || (l.data as { runId?: string } | undefined)?.runId === runId)).map((l) => Number((l.data as { bySelector?: number } | undefined)?.bySelector ?? 0)));
     run.followRoute = mine.filter((l) => l.type === "tool_execution_end" && l.data?.toolName === "follow_route").map((l) => `${l.data?.isError ? "ERROR " : ""}${l.data?.result?.content?.[0]?.text ?? ""}`.slice(0, 400));
   }
 
   evidence.runs = runs;
   const followed = (run: JsonRecord | undefined) => String(Array.isArray(run?.followRoute) ? run.followRoute[0] ?? "" : "");
+  if (selectorFirst) assert.ok(Number(runs[0]?.bySelector) > 0, "第一次确实有步骤按选择器定位");
   assert.match(followed(runs[1]), /^Followed all/, "第二次照上次的做法走完");
   // 换个说法：照走模型可能把「下周四」算错；核对拦下改正也算对，只要最后订对、没有先订错。
   assert.match(followed(runs[2]), /^Followed all|the check before submitting found/, "换个说法：照上次的做法走完，或被核对拦在提交前");

@@ -6,6 +6,7 @@
 // 14 交给核对的值标错来源（模型改过的标成「这次说的」）；15 对不上时侧栏没有那一行；16 侧栏拿不到「第 N/M 步」；
 // 17 换了值，步骤名还写着上次的值（点白桦却写「选青松」）；18 模型抄错做法编号就只能放弃，不知道有哪些可选；
 // 21 用户这次又原样说了上次的值（「青松」「周会」），模型没再传一遍，就整个拒绝、退回一步步做；
+// 22 按文字点的那一项（标题「青松」）没换成这次的（YIS-103）；
 // 19 写过值后中途停下（还没到提交），交回时不核对，模型自己提交了错的值（10-07 实测订错日期）；20 同一张卡片点两次被当成重复操作停下。
 import { describe, expect, it } from "vitest";
 import { followRoute, routeOfTask, type ReplayPort, type RouteActParams } from "../src/route-replay.js";
@@ -96,6 +97,15 @@ describe("照上次的做法走", () => {
     expect(p.acted.map(([name, params]) => [name, params.values ?? params.value ?? null])).toEqual([
       ["select_option", "10 月 15 日（周四）"], ["click", null], ["fill", "复盘"], ["fill", "a@example.com"], ["fill", "8"], ["click", null],
     ]);
+  });
+
+  it("按文字点的那一项：换成这次说的文字", async () => {
+    const p = page();
+    const list: RouteStep[] = [steps[0]!, { action: "click", target: t("heading", "青松"), value: "青松", valueFrom: "said" }, steps[2]!, steps[5]!];
+    const result = await followRoute({ route: route(list), hosts, values: [said[0]!, said[1]!, { step: 3, value: "复盘" }] }, p.port);
+
+    expect(result).toEqual({ done: 4, total: 4 });
+    expect(p.found[1]).toEqual(t("heading", "白桦"));
   });
 
   it("模型可以改记忆或固定的值", async () => {

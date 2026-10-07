@@ -295,7 +295,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     const routeAction = execution?.noteRouteStep ? ROUTE_ACTION_OF[name] : undefined;
     // SAFETY: 模型工具与 browser_run 子步骤的参数都已按各自的参数表校验过；这里只取字符串字段，取不到按缺省处理。
     const step = callParams as { target?: string; tabId?: number; label?: string; value?: string; url?: string; key?: string; values?: ToolContract["select_option"]["params"]["values"] };
-    const ref = step.target && /^@\d+$/.test(step.target) ? step.target : undefined;
+    // 选择器（如 #date）也读：扩展端按动作同一套解析找到那一个元素再写描述（YIS-103）。
+    const ref = step.target?.trim() || undefined;
     let target: RouteTarget | null = null;
 
     if (routeAction && ref) {
@@ -308,7 +309,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     if (routeAction) {
       const picked = Array.isArray(step.values) ? step.values[0] : step.values;
       const value = name === "fill" ? step.value : picked === null || picked === undefined ? undefined : typeof picked === "string" ? picked : picked.label ?? picked.value;
-      execution!.noteRouteStep!({ action: routeAction, target, label: step.label, value, url: step.url, key: step.key, memory: !!memory });
+      execution!.noteRouteStep!({ action: routeAction, target, label: step.label, value, url: step.url, key: step.key, memory: !!memory, at: step.target });
     }
 
     return result;
