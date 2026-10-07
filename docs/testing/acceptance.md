@@ -38,6 +38,7 @@ npx tsx scripts/acceptance/real-path/ptt-dictation.mts --headless       # 网页
 npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless         # 按住说话的网页底部胶囊：在听 → 在做 → 结果（念出来），Esc 停；念结果连 MiniMax 订阅 Key
 npx tsx scripts/acceptance/real-path/route-record.mts --headless # 做成一件事后记下做法，「不用记」可撤销，被停下的不记
 npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--first=selector] # 同一类事照上次的做法走、提交前核对；页面改了停下交回；--first=selector 第一次用选择器操作
+npx tsx scripts/acceptance/real-path/route-ab.mts --headless [--rounds=3] # 走老路对照实验：照旧组与一步步组各跑 N 轮，按判负条件给结论
 npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless    # 一项做不到时的未完成行
 npx tsx scripts/acceptance/real-path/offline-send-and-model-menu.mts --headless # 模型菜单（#2）；后台停机时发送（#4）
 npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 设置页到圈画交付
