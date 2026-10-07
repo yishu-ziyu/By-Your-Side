@@ -35,6 +35,8 @@ export interface AttachmentItem {
   dataUrl: string;
   /** 圈出来问的第几圈；去掉这张时页面上那一圈也去掉。 */
   circle?: number;
+  /** 圈内的网页文字，随图交给助手。 */
+  note?: string;
   width?: number;
   height?: number;
   dom: {
@@ -300,7 +302,11 @@ export class AttachmentsManager {
     const start = Math.max(0, ...this.scopeItems(scope).map(item => item.circle ?? 0)) + 1;
 
     try {
-      await startCircling(start, async (dataUrl, n) => { await this.addFromDataUrl(dataUrl, `圈 ${n}.png`, scope, n); });
+      await startCircling(start, async (dataUrl, n, text) => {
+        const item = await this.addFromDataUrl(dataUrl, `圈 ${n}.png`, scope, n);
+
+        if (text) item.note = text;
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
 
@@ -480,13 +486,13 @@ export class AttachmentsManager {
   }
 
   public getAttachments(scope = this.scopeId): ImageAttachment[] {
-    return this.scopeItems(scope).map((item) => ({
-      type: "image",
-      id: item.id,
-      name: item.name,
-      mimeType: item.mimeType,
-      dataBase64: item.dataBase64,
-    }));
+    return this.scopeItems(scope).map((item) => {
+      const attachment: ImageAttachment = { type: "image", id: item.id, name: item.name, mimeType: item.mimeType, dataBase64: item.dataBase64 };
+
+      if (item.note) attachment.note = item.note;
+
+      return attachment;
+    });
   }
 
   public hasPending(): boolean {

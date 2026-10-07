@@ -1,6 +1,7 @@
 /**
  * 圈出来问（YIS-88，样子见 docs/previews/circle-and-memory）：在当前网页上按住拖动画手绘圈，可以连圈几处。
  * 每圈一处：页面在圈旁标上编号 → 画圈层先藏起淡色底和提示 → 后台截当前视口 → 侧栏按圈的外框裁切，变成带编号的附件。
+ * 圈内的网页文字（不含输入框里的值）随附件一起交给助手（YIS-89）；圈的是空白处就只有图。
  * 圈留在页面上（随页面滚动）；去掉某张附件，页面上那一圈也去掉。Esc、换标签页、页面跳转退出圈画，已圈的保留。永不自动发送。
  */
 import { isPageInteractionMessage, type PageInteractionMessage } from "../../../shared/protocol.js";
@@ -74,6 +75,42 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
 
   const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
 
+  // 圈内的文字：文字块的中心落在圈的外框里就算。看不见的、本层自己的、输入框里的值都不算。
+  const textInside = (box: { left: number; top: number; right: number; bottom: number }) => {
+    const parts: string[] = [];
+    let length = 0;
+    const range = document.createRange();
+
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        if (node instanceof Element) {
+          if (node === host || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|TEXTAREA|SELECT)$/.test(node.tagName)) return NodeFilter.FILTER_REJECT;
+          const r = node.getBoundingClientRect();
+          const inView = r.right + scrollX >= box.left && r.left + scrollX <= box.right && r.bottom + scrollY >= box.top && r.top + scrollY <= box.bottom;
+
+          // 元素和圈不相交就跳过整棵子树（固定定位、溢出的子元素可能漏掉，宁少不错）。
+          return inView || getComputedStyle(node).display === "contents" ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_REJECT;
+        }
+
+        return node.nodeValue?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      },
+    });
+
+    for (let node = walker.nextNode(); node && length < 600; node = walker.nextNode()) {
+      range.selectNodeContents(node);
+      const r = range.getBoundingClientRect();
+      const cx = r.left + r.width / 2 + scrollX;
+      const cy = r.top + r.height / 2 + scrollY;
+
+      if (!r.width || !r.height || cx < box.left || cx > box.right || cy < box.top || cy > box.bottom) continue;
+      const text = node.nodeValue!.replace(/\s+/g, " ").trim();
+      parts.push(text);
+      length += text.length + 1;
+    }
+
+    return parts.join(" ").slice(0, 600);
+  };
+
   function exit(): void {
     if (!wrap.classList.contains("on")) return;
     wrap.classList.remove("on");
@@ -110,7 +147,8 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
     const left = Math.max(0, box.left - scrollX - pad);
     const top = Math.max(0, box.top - scrollY - pad);
     const rect = { x: left, y: top, width: Math.min(innerWidth, box.right - scrollX + pad) - left, height: Math.min(innerHeight, box.bottom - scrollY + pad) - top, viewportWidth: innerWidth, viewportHeight: innerHeight };
-    await chrome.runtime.sendMessage({ type: "CIRCLE_DRAWN", n, rect }).catch(() => undefined);
+    const text = textInside(box);
+    await chrome.runtime.sendMessage(text ? { type: "CIRCLE_DRAWN", n, rect, text } : { type: "CIRCLE_DRAWN", n, rect }).catch(() => undefined);
     wrap.classList.remove("shooting");
     busy = false;
   }
@@ -190,10 +228,10 @@ export function removeCircle(n: number): void {
 }
 
 /**
- * 进入圈画。每圈好一处调用 onCircle（截好的 PNG dataURL、编号、页面标题）；退出时结束，不返回附件。
+ * 进入圈画。每圈好一处调用 onCircle（截好的 PNG dataURL、编号、圈内的网页文字）；退出时结束，不返回附件。
  * 页面不允许注入时抛出带中文原因的错误。
  */
-export async function startCircling(start: number, onCircle: (dataUrl: string, n: number, title: string) => Promise<void>): Promise<void> {
+export async function startCircling(start: number, onCircle: (dataUrl: string, n: number, text: string | undefined) => Promise<void>): Promise<void> {
   active?.stop();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -208,7 +246,7 @@ export async function startCircling(start: number, onCircle: (dataUrl: string, n
       return; }
 
     if (message.type !== "CIRCLE_DRAWN") return;
-    void captureCircle(message.rect).then(dataUrl => onCircle(dataUrl, message.n, tab.title || "网页"))
+    void captureCircle(message.rect).then(dataUrl => onCircle(dataUrl, message.n, message.text))
       .then(() => respond({ ok: true }), () => respond({ ok: false }));
 
     return true;
