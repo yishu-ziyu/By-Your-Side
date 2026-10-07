@@ -3133,6 +3133,9 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .action-menu-popover { width: 200px; }
 .action-menu-item { font-size: 13px; }
 .action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
+.action-menu-item-key { margin-left: 6px; color: var(--text-tertiary); font-size: 11px; }
+/* 圈出来问的附件：左上角是页面上那一圈的编号（与页面上的橙色编号同款）。 */
+.tile-circle-num { position: absolute; left: 4px; top: 4px; z-index: 15; width: 18px; height: 18px; border-radius: 50%; background: #d2602a; color: #fff; font: 600 11px/18px var(--font); text-align: center; box-shadow: 0 0 0 1.5px #fff; pointer-events: none; }
 .action-menu-item-icon svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .action-menu-popover hr { width: calc(100% - 8px); margin: 4px; border: 0; border-top: 1px solid var(--content-border); }
 .action-menu-popover .composer-menu-label { margin: 4px 10px 2px; font: var(--fs-micro)/1.6 var(--font); color: var(--text-tertiary); }

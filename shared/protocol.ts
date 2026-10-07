@@ -1198,7 +1198,11 @@ export type PageInteractionMessage =
   /** 按记忆填的那一格画「记得的」（后台 → 页面）；token 是后台挂在那个元素上的一次性属性值。 */
   | { type: 'MEMORY_FIELD_MARK'; token: string; memory: { id: string; text: string; createdAt: number } }
   /** 「记得的」小卡点了「忘掉」（页面 → 侧栏）。 */
-  | { type: 'MEMORY_FIELD_FORGET'; id: string };
+  | { type: 'MEMORY_FIELD_FORGET'; id: string }
+  /** 圈出来问：页面上圈好了第 n 处（页面 → 侧栏），rect 是要截的视口区域（CSS 像素）。 */
+  | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number } }
+  /** 圈出来问：页面上按了 Esc，退出圈画（页面 → 侧栏）。 */
+  | { type: 'CIRCLE_EXIT' };
 
 /** 侧栏直连按钮：页面脚本直接操作，不经模型。probe 只回报这一页能做哪些。 */
 export const GHOST_QUICK_ACTIONS = ['toggle_play', 'next', 'toggle_code'] as const;
@@ -1269,6 +1273,18 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
 
 
   if (message.type === 'MEMORY_FIELD_FORGET') return token(message.id);
+
+
+  if (message.type === 'CIRCLE_EXIT') return true;
+
+
+  if (message.type === 'CIRCLE_DRAWN') {
+    const rect = message.rect;
+    const size = (v: number) => Number.isFinite(v) && v >= 0;
+
+    return Number.isSafeInteger(message.n) && (message.n ?? 0) > 0 && !!rect && typeof rect === 'object'
+      && size(rect.x) && size(rect.y) && size(rect.width) && size(rect.height) && size(rect.viewportWidth) && size(rect.viewportHeight) && rect.viewportWidth > 0 && rect.viewportHeight > 0;
+  }
 
 
   if (message.type === 'GHOST_QUICK_ACTION') return message.action === 'probe' || GHOST_QUICK_ACTIONS.includes(message.action as GhostQuickAction);
