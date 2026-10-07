@@ -500,10 +500,7 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
     observe(context);
     // 档位按每次调用取：同一轮里升档信号出现后，下一次调用就用新档。
     const level = effort?.(model);
-    const leveled = level === undefined ? streamOptions : { ...streamOptions, reasoning: level === "off" ? undefined : level };
-
-    // 浏览器的 WebSocket 不能带请求头，ChatGPT 登录的模型默认先试 WebSocket 必失败；直接用 SSE，免得每次会话留下假的传输故障。
-    const options = model.api === "openai-codex-responses" ? { ...leveled, transport: "sse" as const } : leveled;
+    const options = level === undefined ? streamOptions : { ...streamOptions, reasoning: level === "off" ? undefined : level };
 
     // 服务端原始事件先告诉超时计时「已受理」，再转给调用方原有的钩子。
     const withAccepted = (accepted: () => void): StreamOptions["onProviderStreamEvent"] => async (event, eventModel) => {
