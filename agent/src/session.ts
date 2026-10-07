@@ -53,7 +53,7 @@ import { ModelRequestTrace } from "./model-request-trace.js";
 import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
-import { judgeNudge } from "./nudge.js";
+import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
 import { asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
@@ -1335,7 +1335,10 @@ return;}
     if (!model || !this.session) throw new Error("当前模型不可用");
     const sessionId = `${this.session.sessionId}-nudge`;
 
-    return judgeNudge(this.sideHost()!, model, context, { sessionId, headers: opencodeSessionHeaders(model, sessionId), ...(signal ? { signal } : {}) });
+    // 每次判断记一行 nudge_verdict：哪一页、出没出卡、卡写了什么；只进本机诊断记录。
+    const onVerdict = (verdict: NudgeVerdict) => this.runTrace?.record("nudge_verdict", { title: context.page.title, url: context.page.url, recent: context.recent.length, ...verdict });
+
+    return judgeNudge(this.sideHost()!, model, context, { sessionId, headers: opencodeSessionHeaders(model, sessionId), onVerdict, ...(signal ? { signal } : {}) });
   }
 
   /** 用户这次说的话：目标与之后的补充（原话）。 */

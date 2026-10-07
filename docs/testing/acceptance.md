@@ -37,7 +37,7 @@ npx tsx scripts/acceptance/real-path/orb-style.mts --headless           # 语音
 npx tsx scripts/acceptance/real-path/ptt-dictation.mts --headless       # 网页上按住右 ⌥ 说话，松开交给助手（侧栏关着；听写走 Step Plan 套餐）
 npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless         # 按住说话的网页底部胶囊：在听 → 在做 → 结果（念出来），Esc 停；念结果连 MiniMax 订阅 Key
 npx tsx scripts/acceptance/real-path/reinject.mts --headless            # 重载扩展后，已打开的网页不刷新也能按住说话
-npx tsx scripts/acceptance/real-path/proactive-card.mts --headless      # 侧栏里的主动卡：动词即按钮，按下原位接着说；没成也原位说清；全程录侧栏
+npx tsx scripts/acceptance/real-path/proactive-card.mts --headless      # 侧栏里的主动卡：动词即按钮，按下原位接着说；没成也原位说清；每次判断进诊断记录；全程录侧栏
 npx tsx scripts/acceptance/real-path/step-icons.mts --headless          # 侧栏每一步都有自己的图标
 npx tsx scripts/acceptance/real-path/route-record.mts --headless # 做成一件事后记下做法，「不用记」可撤销，被停下的不记
 npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--first=selector] # 同一类事照上次的做法走、提交前核对；页面改了停下交回；--first=selector 第一次用选择器操作
