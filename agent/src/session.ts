@@ -1216,6 +1216,11 @@ return;}
     return this.memoryRuntime?.labelPastTask(task) ?? null;
   }
 
+  /** 改过页面的任务结束时：计入习惯，3 个对话做过同一件事就问要不要记住；见 MemoryRuntime.noticeHabit。 */
+  async noticeHabit(task: Pick<TaskHistoryEntry, "goal" | "revisions" | "hosts" | "summary">): Promise<void> {
+    await this.memoryRuntime?.noticeHabit(task);
+  }
+
   /** 这个对话的任务碰过的网页（宿主的任务进度提供）：纠正询问的网站后备。 */
   bindVisitedUrls(urls: () => string[]): void {
     this.memoryRuntime?.bindVisitedUrls(urls);

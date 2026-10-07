@@ -2835,7 +2835,7 @@ function buildMemoryAsk(askId: string): HTMLElement {
   const scopeLabel = (scope: MemoryScope): string => scope.kind === "all" ? "所有网站" : "这个网站";
 
   if (card.phase === "open" || card.phase === "closed") {
-    line.textContent = `${card.ask.rule.trim().replace(/[。.!！?？，,；;]+$/u, "")}，要我记住吗？`;
+    line.textContent = `${card.ask.habit ? "你好像总是" : ""}${card.ask.rule.trim().replace(/[。.!！?？，,；;]+$/u, "")}，要我记住吗？`;
 
     if (card.ask.replaces) {
       const replaces = document.createElement("p");
