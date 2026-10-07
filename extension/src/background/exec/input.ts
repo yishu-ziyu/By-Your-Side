@@ -3,7 +3,7 @@ import {assertObservedDocument, assertSameDocument} from "../observation-documen
 import {replaceEditableText} from "../../shared/editable-text.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
-import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
+import { LEAD_SESSION_ID, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { sendCommand } from "../debugger.js";
@@ -1567,7 +1567,8 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
   try {
     if (backendNodeId !== undefined) await callOnBackendNode(tabId, backendNodeId, "function(t){ this.setAttribute('data-sideagent-memory-field', t); }", [token]);
     else await callDom(tabId, (t: string, k: string) => { window.__sideagent?.dom?.resolve(t)?.setAttribute("data-sideagent-memory-field", k); }, [target, token]);
-    await chrome.tabs.sendMessage(tabId, { type: "MEMORY_FIELD_MARK", token, memory });
+    const message: PageInteractionMessage = { type: "MEMORY_FIELD_MARK", token, memory };
+    await chrome.tabs.sendMessage(tabId, message);
   } catch { /* 记号只是提示：页面变了或脚本不在就不画。 */ }
 }
 

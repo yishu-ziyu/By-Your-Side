@@ -1192,7 +1192,11 @@ export type PageInteractionMessage =
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'offer'; token: string; source: PageElementSource }
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'consume'; token: string }
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'validate'; source: PageElementSource }
-  | { type: 'GHOST_QUICK_ACTION'; action: GhostQuickAction | 'probe' };
+  | { type: 'GHOST_QUICK_ACTION'; action: GhostQuickAction | 'probe' }
+  /** 按记忆填的那一格画「记得的」（后台 → 页面）；token 是后台挂在那个元素上的一次性属性值。 */
+  | { type: 'MEMORY_FIELD_MARK'; token: string; memory: { id: string; text: string; createdAt: number } }
+  /** 「记得的」小卡点了「忘掉」（页面 → 侧栏）。 */
+  | { type: 'MEMORY_FIELD_FORGET'; id: string };
 
 /** 侧栏直连按钮：页面脚本直接操作，不经模型。probe 只回报这一页能做哪些。 */
 export const GHOST_QUICK_ACTIONS = ['toggle_play', 'next', 'toggle_code'] as const;
@@ -1253,6 +1257,16 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
     return message.action === 'resolve' && token(message.document) && typeof message.url === 'string' && message.url.length <= 4000
       && typeof message.query === 'string' && message.query.length > 0 && message.query.length <= 200;
   }
+
+
+  if (message.type === 'MEMORY_FIELD_MARK') {
+    const memory = message.memory;
+
+    return token(message.token) && !!memory && typeof memory === 'object' && token(memory.id) && typeof memory.text === 'string' && Number.isFinite(memory.createdAt);
+  }
+
+
+  if (message.type === 'MEMORY_FIELD_FORGET') return token(message.id);
 
 
   if (message.type === 'GHOST_QUICK_ACTION') return message.action === 'probe' || GHOST_QUICK_ACTIONS.includes(message.action as GhostQuickAction);

@@ -1,7 +1,8 @@
 /**
- * 按记忆填的那一格带「记得的」记号（YIS-87 第一步）。真实模型，只装扩展，无头。
+ * 按记忆填的那一格带「记得的」记号，点开小卡能「这次不用」「忘掉」（YIS-87）。真实模型，只装扩展，无头。
  *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/memory-field-mark.mts --headless [--model=provider/id]
- * 失败方式：按记忆填的邮箱没有记号；不是记忆的备注也带了记号；记号改了网页的值或留下属性；你自己改了这一格记号还在。
+ * 失败方式：按记忆填的邮箱没有记号；不是记忆的备注也带了记号；记号改了网页的值或留下属性；你自己改了这一格记号还在；
+ *   「这次不用」没清空或删了记忆；「忘掉」没清空、记忆库里还在，或侧栏没写已忘掉。
  */
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -58,6 +59,70 @@ const page = () => rp.evaluate(work, `({ email: email.value, note: note.value,
   marks: [...document.querySelectorAll('[data-sideagent-overlay="memory-field"]')].map((h) => h.dataset.memoryId),
   leftover: document.querySelectorAll("[data-sideagent-memory-field]").length })`) as Promise<PageView>;
 
+type DomNode = { nodeId: number; nodeName: string; nodeValue?: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
+
+/** 记号画在封闭的影子层里（网页脚本读不到），用调试接口穿进去，真点里面的按钮。 */
+const clickInMark = async (match: (attrs: Record<string, string>, text: string) => boolean, what: string) => {
+  // SAFETY: CDP DOM.getDocument 返回带 nodeId / children / shadowRoots 的节点树。
+  const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
+  const text = (n: DomNode): string => (n.nodeValue ?? "") + (n.children ?? []).map(text).join("");
+
+  const walk = (n: DomNode): DomNode | undefined => {
+    const attrs = Object.fromEntries((n.attributes ?? []).flatMap((v, i, a) => (i % 2 ? [] : [[v, a[i + 1]!]])));
+
+    if (n.nodeName === "BUTTON" && match(attrs, text(n))) return n;
+
+    for (const c of [...(n.shadowRoots ?? []), ...(n.children ?? [])]) { const hit = walk(c);
+
+ if (hit) return hit; }
+
+    return undefined;
+  };
+
+  const node = walk(root);
+
+  if (!node) throw new Error(`记号里找不到「${what}」`);
+  // SAFETY: CDP DOM.getBoxModel 的 content 是 8 个数的四边形。
+  const { model } = await rp.cdp.send("DOM.getBoxModel", { nodeId: node.nodeId }, work) as { model: { content: number[] } };
+  const [x1 = 0, y1 = 0, , , x3 = 0, y3 = 0] = model.content;
+  const at = { x: (x1 + x3) / 2, y: (y1 + y3) / 2 };
+
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount: 1 }, work);
+  await sleep(400);
+};
+
+/** 记忆库里生效的记忆原文。 */
+const active = async (): Promise<string[]> => {
+  // SAFETY: CDP Target.createTarget 的返回值带字符串 targetId。
+  const target = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId as string;
+
+  try {
+    const ext = await rp.attach(target);
+    await until(async () => (await rp.evaluate(ext, `location.protocol === "chrome-extension:" && document.readyState === "complete"`)) || undefined, 10_000, "扩展页");
+
+    // SAFETY: 页面脚本返回 kv 里 memories 的 JSON 文本。
+    const raw = await rp.evaluate(ext, `new Promise((res, rej) => { const r = indexedDB.open("sideagent-memory"); r.onerror = () => rej(r.error);
+      r.onsuccess = () => { const q = r.result.transaction("kv").objectStore("kv").get("memories"); q.onsuccess = () => res(q.result ?? ""); q.onerror = () => rej(q.error); }; })`) as string;
+
+    // SAFETY: memories 键由扩展写入，形状是 { entries: [{ text, status }] }。
+    return raw ? (JSON.parse(raw) as { entries: Array<{ text: string; status: string }> }).entries.filter((e) => e.status === "active").map((e) => e.text) : [];
+  } finally {
+    await rp.cdp.send("Target.closeTarget", { targetId: target }).catch(() => undefined);
+    await rp.cdp.send("Target.activateTarget", { targetId: workTarget }).catch(() => undefined);
+  }
+};
+
+/** 让助手按记忆把邮箱重新填一遍，等记号出来。 */
+const refill = async () => {
+  await rp.evaluate(work, `email.value = ""; true`);
+  await ask("把当前网页报名表的邮箱一格重新填成我的邮箱。不用提交。");
+  await until(async () => { const v = await page();
+
+ return v.email === email && v.marks.length === 1 || undefined; }, 20_000, "邮箱重新填上并带记号");
+};
+
+let workTarget = "";
+
 try {
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
@@ -74,6 +139,7 @@ try {
   // SAFETY: CDP Target.createTarget 的返回值带字符串 targetId。
   const tab = (await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${siteAddress(site).port}/` })).targetId as string;
   await rp.cdp.send("Target.activateTarget", { targetId: tab });
+  workTarget = tab;
   work = await rp.attach(tab);
   await sleep(1000);
   await ask("帮我填当前网页的报名表：邮箱填我的邮箱，备注写「第一次参加」。不用提交。");
@@ -98,6 +164,32 @@ try {
   evidence.edited = edited;
   assert.equal(edited.marks.length, 0, "你改过这一格后记号消失");
   await rp.screenshot(work, join(artifacts, "edited.png"));
+
+  // 点标签出小卡，点「这次不用」：这一格清空，记号消失，记忆还在。
+  await refill();
+  await clickInMark((a) => a.class === "tag", "记得的");
+  await rp.screenshot(work, join(artifacts, "card.png"));
+  await clickInMark((a) => a["data-action"] === "once", "这次不用");
+  const once = await page();
+  evidence.once = { ...once, memories: await active() };
+  assert.equal(once.email, "", "「这次不用」清空这一格");
+  assert.equal(once.marks.length, 0, "「这次不用」后记号消失");
+  assert.ok((await active()).some((t) => t.includes(email)), "「这次不用」不删记忆");
+
+  // 再填一次，点「忘掉」：这一格清空，记忆库里没有了，侧栏那一行写已忘掉。
+  await refill();
+  await clickInMark((a) => a.class === "tag", "记得的");
+  await clickInMark((a) => a["data-action"] === "forget", "忘掉");
+  await until(async () => (await page()).marks.length === 0 || undefined, 10_000, "「忘掉」后记号消失");
+  const forgot = await page();
+  const memories = await active();
+  // SAFETY: 页面脚本返回字符串。
+  const panelRow = await rp.evaluate(panel, `[...document.querySelectorAll('.memory-used-item[data-state="forgotten"]')].at(-1)?.innerText ?? ""`) as string;
+  evidence.forgot = { ...forgot, memories, panelRow };
+  await rp.screenshot(panel, join(artifacts, "panel-forgotten.png"));
+  assert.equal(forgot.email, "", "「忘掉」清空这一格");
+  assert.ok(!memories.some((t) => t.includes(email)), "「忘掉」后记忆库里没有这条");
+  assert.match(panelRow, /已忘掉/, "侧栏那一行写已忘掉");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 
