@@ -1,5 +1,5 @@
 /**
- * 回答首句末尾「用了 N 条记忆 ›」验收（docs/evals/20261006-memory-used-line.md 的 R1–R4）。
+ * 回答首句末尾「按你说过的「…」等 N 条 ›」验收（docs/evals/20261006-memory-used-line.md 的 R1–R4）。
  * 只装扩展的隔离无头 Chrome、真侧栏、本机脚本模型。证据只取用户看得到的结果和「发给模型的请求原文」
  * （代理在脚本模型前面记下），再加扩展自己的 IndexedDB（核对「这里别用」没有删记忆）。
  *
@@ -302,7 +302,9 @@ try {
   const sent = has(first);
   const expectedN = Object.values(sent).filter(Boolean).length;
   check("R1", "请求里带了两条记忆和一条过往任务", sent.email && sent.lang && sent.task, sent);
-  check("R1", `首句末尾显示「用了 ${expectedN} 条记忆 ›」，N 等于请求里带的条数`, !!line1 && line1.count === expectedN && line1.text === `用了 ${expectedN} 条记忆 ›`, { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
+  // YIS-86：行内点名第一条（「按你说过的「<原文>」」），多条加「等 N 条」。
+  const named = /^按你说过的「(.+?)…?」等 (\d+) 条 ›$/.exec(line1?.text ?? "");
+  check("R1", `首句末尾显示「按你说过的「<某条原文>」等 ${expectedN} 条 ›」，N 等于请求里带的条数`, !!line1 && !!named && line1.count === expectedN && Number(named[2]) === expectedN && [EMAIL, LANG].some((t) => t.startsWith(named[1]!)), { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
   check("R1", "灰字接在回答首句末尾，列表紧跟首句，默认折起", !!line1 && line1.inFirstSentence && line1.listHidden, { inFirstSentence: line1?.inFirstSentence ?? null, listHidden: line1?.listHidden ?? null });
   await shot("R1-collapsed");
 
