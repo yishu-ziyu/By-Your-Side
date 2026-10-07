@@ -491,6 +491,8 @@ export class AttachmentsManager {
 
       if (item.note) attachment.note = item.note;
 
+      if (item.circle) attachment.circle = item.circle;
+
       return attachment;
     });
   }

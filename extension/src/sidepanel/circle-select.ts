@@ -2,6 +2,7 @@
  * 圈出来问（YIS-88，样子见 docs/previews/circle-and-memory）：在当前网页上按住拖动画手绘圈，可以连圈几处。
  * 每圈一处：页面在圈旁标上编号 → 画圈层先藏起淡色底和提示 → 后台截当前视口 → 侧栏按圈的外框裁切，变成带编号的附件。
  * 圈内的网页文字（不含输入框里的值）随附件一起交给助手（YIS-89）；圈的是空白处就只有图。
+ * 回答里的 ①②… 点一下，页面滚回那一圈，再用蓝色手绘圈指一下（YIS-90）；那一圈不在了就不圈。
  * 圈留在页面上（随页面滚动）；去掉某张附件，页面上那一圈也去掉。Esc、换标签页、页面跳转退出圈画，已圈的保留。永不自动发送。
  */
 import { isPageInteractionMessage, type PageInteractionMessage } from "../../../shared/protocol.js";
@@ -12,17 +13,17 @@ type CircleRect = Extract<PageInteractionMessage, { type: "CIRCLE_DRAWN" }>["rec
 
 const GLOBAL_KEY = "__byYourSideCircle";
 
-type PageCircles = { enter: (start: number) => void; exit: () => void; remove: (n: number) => void };
+type PageCircles = { enter: (start: number, set: number) => void; exit: () => void; remove: (n: number) => void; reveal: (n: number, set: number) => boolean };
 
 /**
  * 注入页面执行（会被序列化，不能引用本模块的任何东西）。第一次调用建好画圈层，之后再调用只重新进入圈画。
- * start 是下一圈的编号；为 1 时清掉页面上之前的圈。
+ * start 是下一圈的编号；为 1 时清掉页面上之前的圈，开始新的一组（set 是侧栏给这组的编号，回指时核对）。
  */
-function circleInPage(globalKey: string, start: number): void {
+function circleInPage(globalKey: string, start: number, set: number): void {
   // SAFETY: 页面全局对象按字符串键取值；这个键只存放本模块写入的控制对象。
   const g = globalThis as typeof globalThis & Record<string, PageCircles | undefined>;
 
-  if (g[globalKey]) { g[globalKey].enter(start);
+  if (g[globalKey]) { g[globalKey].enter(start, set);
 
     return; }
 
@@ -35,6 +36,7 @@ function circleInPage(globalKey: string, start: number): void {
 :host{all:initial}
 svg{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 path{fill:none;stroke:#d2602a;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+path.point{stroke:#2d4a86;stroke-width:2.5;opacity:1;transition:opacity .2s ease-out}
 .num{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:#d2602a;color:#fff;text-align:center;pointer-events:none;
   font:600 12.5px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;box-shadow:0 0 0 2px #fff,0 2px 6px rgba(20,20,19,.2);animation:pop .22s cubic-bezier(.3,1.5,.5,1) both}
 .mode{display:none}
@@ -58,6 +60,7 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
   const catcher = root.querySelector<HTMLElement>(".catch")!;
   const circles = new Map<number, Element[]>();
   let next = start;
+  let currentSet = set;
   let live: { id: number; pts: Array<[number, number]>; path: SVGPathElement } | null = null;
   let busy = false;
 
@@ -188,22 +191,65 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
 
   const remove = (n: number) => { for (const el of circles.get(n) ?? []) el.remove(); circles.delete(n); };
 
-  const enter = (from: number) => {
+  const enter = (from: number, group: number) => {
     if (from === 1) for (const n of Array.from(circles.keys())) remove(n);
     next = from;
+    currentSet = group;
     wrap.classList.add("on");
     addEventListener("keydown", onKey, true);
   };
 
-  g[globalKey] = { enter, exit, remove };
+  // 回指：滚到那一圈，沿它外面画一圈蓝色手绘圈（画入约 0.4 秒，停一会儿淡出）。
+  const reveal = (n: number, group: number) => {
+    const path = circles.get(n)?.[0];
+
+    if (group !== currentSet || !(path instanceof SVGPathElement)) return false;
+    const b = path.getBBox();
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scrollTo({ left: b.x + b.width / 2 - innerWidth / 2, top: b.y + b.height / 2 - innerHeight / 2, behavior: reduced ? "instant" : "smooth" });
+    let seed = n * 97 + 13;
+
+    const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280 - 0.5);
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    const pts: Array<[number, number]> = [];
+
+    for (let i = 0; i <= 46; i++) {
+      const a = -2.3 + (i / 46) * Math.PI * 2.18;
+      const k = 1 + rnd() * 0.015 + (i / 46) * 0.05;
+      pts.push([cx + Math.cos(a) * (b.width / 2 + 12) * k, cy + Math.sin(a) * (b.height / 2 + 10) * k]);
+    }
+
+    const loop = document.createElementNS(SVG, "path");
+    loop.setAttribute("class", "point");
+    loop.setAttribute("d", smooth(pts));
+    ink.appendChild(loop);
+
+    if (!reduced) {
+      const length = loop.getTotalLength();
+      loop.style.strokeDasharray = String(length);
+      loop.animate([{ strokeDashoffset: length }, { strokeDashoffset: 0 }], { duration: 380, easing: "ease-in-out" });
+    }
+
+    setTimeout(() => { loop.style.opacity = "0"; setTimeout(() => loop.remove(), 220); }, 1800);
+
+    return true;
+  };
+
+  g[globalKey] = { enter, exit, remove, reveal };
   addEventListener("pagehide", () => { exit(); host.remove(); delete g[globalKey]; });
   document.documentElement.append(host);
-  enter(start);
+  enter(start, set);
 }
 
 function exitInPage(globalKey: string): void {
   // SAFETY: 同 circleInPage：这个键只存放本模块写入的控制对象。
   (globalThis as typeof globalThis & Record<string, PageCircles | undefined>)[globalKey]?.exit();
+}
+
+function revealInPage(globalKey: string, n: number, set: number): boolean {
+  // SAFETY: 同 circleInPage：这个键只存放本模块写入的控制对象。
+  return (globalThis as typeof globalThis & Record<string, PageCircles | undefined>)[globalKey]?.reveal(n, set) ?? false;
 }
 
 function removeInPage(globalKey: string, n: number): void {
@@ -215,6 +261,24 @@ let active: { tabId: number; stop: () => void } | null = null;
 
 /** 最近一次画圈的标签页：去掉附件时到这里去掉那一圈。 */
 let circleTabId: number | null = null;
+
+/** 第几组圈（从 1 号重新圈算新的一组）；回答里的编号认这一组。 */
+let circleSet = 0;
+
+/** 当前这组圈在哪个标签页、第几组；还没圈过返回 null。 */
+export function currentCircleSet(): { tabId: number; set: number } | null {
+  return circleTabId == null ? null : { tabId: circleTabId, set: circleSet };
+}
+
+/** 回答里的编号：切到那个标签页，滚到那一圈再指一下。那一圈已经不在了（页面变了、又圈了新的一组）返回 false。 */
+export async function revealCircle(target: { tabId: number; set: number }, n: number): Promise<boolean> {
+  try {
+    await chrome.tabs.update(target.tabId, { active: true });
+    const [result] = await chrome.scripting.executeScript({ target: { tabId: target.tabId }, func: revealInPage, args: [GLOBAL_KEY, n, target.set] });
+
+    return result?.result === true;
+  } catch { return false; }
+}
 
 export function isCircling(): boolean { return active !== null; }
 
@@ -271,6 +335,8 @@ export async function startCircling(start: number, onCircle: (dataUrl: string, n
   }
 
   active = { tabId, stop: () => stop(true) };
+
+  if (start === 1 || circleTabId !== tabId) circleSet++;
   circleTabId = tabId;
   chrome.runtime.onMessage.addListener(onMessage);
   chrome.tabs.onActivated.addListener(onActivated);
@@ -278,7 +344,7 @@ export async function startCircling(start: number, onCircle: (dataUrl: string, n
   document.addEventListener("keydown", onPanelKey, true);
 
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, func: circleInPage, args: [GLOBAL_KEY, start] });
+    await chrome.scripting.executeScript({ target: { tabId }, func: circleInPage, args: [GLOBAL_KEY, start, circleSet] });
   } catch (err) {
     stop(false);
     throw new Error(`这个页面不能圈（${err instanceof Error ? err.message : String(err)}）`);

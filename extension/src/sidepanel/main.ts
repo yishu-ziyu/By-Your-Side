@@ -54,6 +54,7 @@ import { INPROC_CREDENTIAL_PREFIX } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
+import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
@@ -98,8 +99,54 @@ const usedLineHandlers = new Map<string, (result: { ok: boolean; entry?: MemoryE
 
 let citationRequestPending = false;
 
+/** 最近一次带圈发出的问题：回答里的 ①② 指向这一组圈（YIS-90）。换了对话就不认。 */
+let circleRefs: { conversationId: string; target: { tabId: number; set: number }; max: number } | null = null;
+
+/** 回答里的 ①②…（不超过这次圈的个数）换成按钮：点一下页面滚回那一圈再指一下；那一圈不在了写「原处已变化」。 */
+function linkifyCircleRefs(answer: HTMLElement): void {
+  const refs = circleRefs;
+
+  if (!refs || refs.conversationId !== selectedConversationId || answer.querySelector(".circle-ref")) return;
+  const walker = document.createTreeWalker(answer, NodeFilter.SHOW_TEXT, { acceptNode: node => (node.parentElement?.closest("pre,code,button,a") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  const nodes: Text[] = [];
+
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node instanceof Text && /[①-⑨]/.test(node.data)) nodes.push(node);
+
+  for (const node of nodes) {
+    const parts = node.data.split(/([①-⑨])/);
+    const fragment = document.createDocumentFragment();
+
+    for (const part of parts) {
+      const n = part.length === 1 ? "①②③④⑤⑥⑦⑧⑨".indexOf(part) + 1 : 0;
+
+      if (n < 1 || n > refs.max) { if (part) fragment.append(part);
+
+ continue; }
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "circle-ref";
+      button.dataset.ref = String(n);
+      button.textContent = String(n);
+      button.title = `回到页面上的第 ${n} 圈`;
+      button.onclick = () => void revealCircle(refs.target, n).then((ok) => {
+        if (ok || button.nextElementSibling?.classList.contains("circle-ref-gone")) return;
+        const gone = document.createElement("span");
+        gone.className = "circle-ref-gone";
+        gone.textContent = "原处已变化";
+        button.after(gone);
+        setTimeout(() => gone.remove(), 2400);
+      });
+      fragment.append(button);
+    }
+
+    node.replaceWith(fragment);
+  }
+}
+
 function attachAnswerActions(answer: HTMLElement): void {
   attachCopyActions(answer);
+  linkifyCircleRefs(answer);
   adoptUsedLine(answer);
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
@@ -5081,6 +5128,10 @@ function sendInput(quick?: string): void {
 
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
+  const circled = pendingAtts.flatMap(att => (att.circle ? [att.circle] : []));
+  const circleSet = currentCircleSet();
+
+  if (circled.length && circleSet) circleRefs = { conversationId: conversation, target: circleSet, max: Math.max(...circled) };
 
   const request = {
     requestId: crypto.randomUUID(),
