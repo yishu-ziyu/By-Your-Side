@@ -59,3 +59,4 @@
   - R1 入口：顶栏的数据库图标换成文字「记忆」。
   - R5 搜索：抽屉标题下加搜索框，记忆、做事的方法、历史和过往任务一起过滤；标题写「找到 N 条」，组头写匹配条数，没有匹配的组隐藏，全都不匹配时说「没有找到」。关抽屉时清空搜索。
 - 真实路径：[memory-management.mts](../../scripts/acceptance/real-path/memory-management.mts) 通过（`out/acceptance/real-path/2026-10-07T05-21-34-301Z-memory-management/`）。实现前同一脚本失败：顶栏入口没有文字。
+- 回归：`memory-used-line` 16/16 通过。`memory-foundation --scripted` 的 D10（旧「做事的方法」行缺种类标签）和 `memory-hardening --scripted` 的 H7 失败，在 main 上用同样参数复跑结果相同，不是本改动带来的。
