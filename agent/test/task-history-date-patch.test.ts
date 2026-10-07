@@ -83,9 +83,14 @@ describe("task end writes the record before the date answer arrives", () => {
     const s = await store();
     let answer!: (value: typeof DATED) => void;
     finish(s, () => new Promise(resolve => { answer = resolve; }));
-    await new Promise(resolve => setTimeout(resolve, 50));
-    const early = await s.list();
-    expect(early.map(t => t.id)).toEqual(["run-1"]);
+    // 日期问题还没回答（answer 没调用）：记录写下的时机取决于机器快慢，等到它出现为止，不靠固定 50 毫秒（CI 上偶尔不够）。
+    const early = await vi.waitFor(async () => {
+      const listed = await s.list();
+
+      expect(listed.map(t => t.id)).toEqual(["run-1"]);
+
+      return listed;
+    }, { timeout: 3000 });
     expect(early[0]?.date).toBeUndefined();
 
     answer(DATED);
