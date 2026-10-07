@@ -11,7 +11,6 @@
  * 会话消息和任务检查点可交给Pi原生Session；扩展提供持久存储。
  */
 // Pi 1.0 删掉了 convertToLlm（custom 消息转 user）；沿用 0.84.4 的实现。
-import { convertToLlm as legacyConvertToLlm } from "pi-session-084";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import { firstEventTimeout } from "../../shared/model-capabilities.js";
 import { isTransientModelError } from "../../shared/provider-busy.js";
@@ -137,7 +136,7 @@ export class PiAgentLoop implements AgentLoop {
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: options.messages ?? [] },
       streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort, options.firstEventTimeoutMs, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }),
-      // Pi原生转换保留自定义消息、压缩摘要与分支摘要。
+      // 自定义消息转成 user 消息后送给模型。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
 
@@ -586,8 +585,11 @@ function toAgentTool(definition: ToolDefinition): AgentTool {
   } as AgentTool;
 }
 
-/** 0.84.4 与 1.0.4 的消息是同一份 JSON 结构，只是两套类型声明。 */
+/** 取自 Pi 0.84.4 的 convertToLlm：custom 消息转成 user 消息，模型消息原样保留，其余角色不送给模型。我们不产生 bashExecution 与摘要消息，所以不转换它们。 */
 function legacyMessages(messages: AgentMessage[]): Message[] {
-  // SAFETY: 见上；system 消息已在调用前去掉，其余角色两版字段相同。
-  return legacyConvertToLlm(messages as Parameters<typeof legacyConvertToLlm>[0]) as Message[];
+  return messages.flatMap((message): Message[] => {
+    if (message.role === "custom") return [{ role: "user", content: userContent(message.content), timestamp: message.timestamp }];
+
+    return message.role === "user" || message.role === "assistant" || message.role === "toolResult" ? [message] : [];
+  });
 }
