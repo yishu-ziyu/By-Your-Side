@@ -2834,7 +2834,17 @@ function routeStepNode(step: RouteStep): HTMLElement {
   return text;
 }
 
-/** 回答下面的「记下了这次的做法 ›」：点开看每一步，「不用记」删掉这份做法，可撤销（YIS-94，对照 docs/previews/route-replay）。 */
+/** 照的是哪一次：「10 月 2 日」，当天的写「今天」。 */
+function routeSourceDay(at: number): string {
+  const day = new Date(at);
+
+  return day.toDateString() === new Date().toDateString() ? "今天" : `${day.getMonth() + 1} 月 ${day.getDate()} 日`;
+}
+
+/**
+ * 回答下面的「记下了这次的做法 ›」：点开看每一步，「不用记」删掉这份做法，可撤销（YIS-94，对照 docs/previews/route-replay）。
+ * 照着走的写「照 10 月 2 日那次的做法 · 上次 28 秒」，页面变了写「页面和上次不一样，已按这次的做法更新」，按钮是「下次别照旧」（YIS-97）。
+ */
 function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>): void {
   const answers = messagesEl.querySelectorAll<HTMLElement>(".msg.assistant.answer-latest");
   const answer = answers[answers.length - 1];
@@ -2856,7 +2866,11 @@ function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>)
     const chevron = document.createElement("span");
     chevron.className = "memory-used-chevron";
     chevron.textContent = "›";
-    toggle.append(kept ? "记下了这次的做法，下次照着走 " : "没有记下这次的做法 ", chevron);
+    const source = event.source;
+    const fresh = source?.freshFrom;
+    const seconds = source ? Math.round(source.ms / 1000) : 0;
+    const head = !source ? "记下了这次的做法，下次照着走" : fresh !== undefined ? "页面和上次不一样，已按这次的做法更新" : `照${routeSourceDay(source.at)}那次的做法${seconds ? ` · 上次 ${seconds} 秒` : ""}`;
+    toggle.append(kept ? `${head} ` : source ? "下次不照这份做法 " : "没有记下这次的做法 ", chevron);
     toggle.onclick = () => { open = !open; box.dataset.open = String(open); draw(); };
 
     const list = document.createElement("ul");
@@ -2865,7 +2879,8 @@ function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>)
 
     event.route.steps.forEach((step, index) => {
       const row = document.createElement("li");
-      row.className = "memory-used-item";
+      // 页面变了之后这次重新想的步骤标出来。
+      row.className = fresh !== undefined && index >= fresh ? "memory-used-item changed" : "memory-used-item";
       const glyph = document.createElement("span");
       glyph.className = "memory-used-glyph route-step-num";
       glyph.textContent = String(index + 1);
@@ -2876,11 +2891,13 @@ function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>)
     const foot = document.createElement("li");
     foot.className = "route-foot";
     const note = document.createElement("span");
-    note.textContent = error || (kept ? "只在这个网站、同一类事上用；页面对不上就照常一步步做。" : "以后这类事照常一步步做。");
+    const said = event.route.steps.some((step) => step.valueFrom === "said");
+    const followedNote = fresh === undefined ? (said ? "加粗的是换成你这次说的。" : "和上次一样走的。") : fresh > 0 ? `前 ${fresh} 步照旧，第 ${fresh + 1} 步起是这次重新想的。` : "这次每一步都是重新想的。";
+    note.textContent = error || (!kept ? (source ? "下次在这个网站上一步步来。" : "以后这类事照常一步步做。") : source ? followedNote : "只在这个网站、同一类事上用；页面对不上就照常一步步做。");
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.routeAction = kept ? "decline" : "undo";
-    button.textContent = kept ? "不用记" : "撤销";
+    button.textContent = kept ? (source ? "下次别照旧" : "不用记") : "撤销";
     button.disabled = pending;
     button.onclick = () => {
       const requestId = crypto.randomUUID();
@@ -2897,7 +2914,7 @@ function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>)
         draw();
       });
 
-      if (!send({ type: "task_history_route", requestId, conversationId: selectedConversationId, id: event.runId, route: want ? event.route : null })) {
+      if (!send({ type: "task_history_route", requestId, conversationId: selectedConversationId, id: event.runId, route: want ? event.route : null, ...(source ? { site: true as const } : {}) })) {
         usedLineHandlers.delete(requestId);
         pending = false;
         error = "连接不可用，请重试";

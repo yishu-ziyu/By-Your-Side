@@ -36,6 +36,10 @@ export interface ReplayResult {
   stop?: string;
   /** 给侧栏的一行（控件对不上、核对没过、要问用户）。 */
   notice?: string;
+  /** 控件对不上：页面和记下时不一样了（YIS-97，回答下面写「已按这次的做法更新」）。 */
+  pageChanged?: true;
+  /** 核对没过、停在提交前时的提交控件：值没改之前不让原样提交。 */
+  held?: RouteTarget;
 }
 
 /** 名字像提交、付款、发送、删除这类会把东西交出去的按钮。 */
@@ -82,8 +86,8 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
   for (const [i, step] of route.steps.entries()) {
     const n = i + 1;
 
-    const stop = (why: string, notice?: string): ReplayResult => {
-      const result: ReplayResult = { done: i, total, stop: `Stopped before step ${n}: ${why}` };
+    const stop = (why: string, notice?: string, more: Pick<ReplayResult, "pageChanged" | "held"> = {}): ReplayResult => {
+      const result: ReplayResult = { done: i, total, stop: `Stopped before step ${n}: ${why}`, ...more };
 
       if (notice) result.notice = notice;
 
@@ -91,12 +95,12 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
     };
 
     // 中途停下、已经写过值：交回前也核对一次。模型接手后会自己提交，写错的值得先告诉它（10-07 实测：没核对就交回，订错了日期）。
-    const halt = async (why: string, notice?: string): Promise<ReplayResult> => {
-      if (pending === 0) return stop(why, notice);
+    const halt = async (why: string, notice?: string, more: Pick<ReplayResult, "pageChanged"> = {}): Promise<ReplayResult> => {
+      if (pending === 0) return stop(why, notice, more);
       const verdict = await port.check({ fields: fields.map(({ step: at, field, value: v, from }) => ({ step: at, field, value: v, from })), submit: "" }).catch(() => null);
       const found = !verdict ? " The values written so far could not be checked: compare them with what the user asked before submitting." : verdict.ok ? "" : ` The values written so far were checked against the request: ${verdict.problem}. Fix that before submitting.`;
 
-      return stop(`${why}${found}`, notice);
+      return stop(`${why}${found}`, notice, more);
     };
 
     if (step.secret) return await halt(`it needs "${step.target?.name}", which is asked from the user each time. Ask the user, then continue from step ${n} yourself.`, `第 ${n} 步要填「${step.target?.name ?? ""}」，这一项每次问你`);
@@ -105,17 +109,16 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
 
     // 提交前核对：先读回新写的值，再看是不是用户这次要的。没过或没核对成都停在提交前，并告诉模型提交按钮现在是哪个，改完一步就能提交。
     if (submit && pending > 0) {
-      const submitRef = async () => {
-        const where = step.target ? await port.find(step.target).catch(() => null) : null;
-
-        return where?.ref ? ` The submit control "${step.target!.name}" is ${where.ref}.` : "";
-      };
+      const where = async () => (step.target ? (await port.find(step.target).catch(() => null))?.ref ?? undefined : undefined);
+      const hint = (ref: string | undefined) => (ref ? ` The submit control "${step.target!.name}" is ${ref}.` : "");
 
       for (const field of fields.slice(-pending).filter(item => item.readable)) {
         const now = await port.read(field.target).catch(() => null);
 
         if (!now || (now.value?.trim() !== field.value.trim() && now.displayValue?.trim() !== field.value.trim())) {
-          return stop(`step ${field.step} ("${field.field}") should be "${field.value}" but the page shows "${now?.displayValue ?? now?.value ?? "nothing"}". Fix it, then submit yourself.${await submitRef()}`, `第 ${field.step} 步「${field.field}」页面上不是「${field.value}」，改为一步步看`);
+          const ref = await where();
+
+          return stop(`step ${field.step} ("${field.field}") should be "${field.value}" but the page shows "${now?.displayValue ?? now?.value ?? "nothing"}". Fix it, then submit yourself.${hint(ref)}`, `第 ${field.step} 步「${field.field}」页面上不是「${field.value}」，改为一步步看`, step.target ? { held: step.target } : {});
         }
       }
 
@@ -123,9 +126,12 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
       const verdict = await port.check({ fields: fields.map(({ step: at, field, value: v, from }) => ({ step: at, field, value: v, from })), submit: label }).catch((error: Error) => ({ ok: false as const, problem: "", error }));
 
       if (!verdict.ok) {
+        const ref = await where();
+
+        // 核对没过或没跑成：值没改就不让原样提交；模型觉得值没错时去问用户（10-07 实测两次：模型认定「下周四」是 10 月 8 日，不改就点了预订，一次是核对超时）。
         return "error" in verdict
-          ? stop(`the check before submitting could not run (${verdict.error.message}). Look at the page, compare the values with what the user asked, then submit yourself.${await submitRef()}`, "提交前核对没能完成，改为一步步看")
-          : stop(`the check before submitting found: ${verdict.problem}. Fix it, then submit yourself.${await submitRef()}`, `提交前核对没过：${verdict.problem}，改为一步步看`);
+          ? stop(`the check before submitting could not run (${verdict.error.message}). Fix any value that differs from what the user asked; if they all look right, ask the user to confirm them before submitting. Submitting them unchanged is blocked.${hint(ref)}`, "提交前核对没能完成，改为一步步看", step.target ? { held: step.target } : {})
+          : stop(`the check before submitting found: ${verdict.problem}. Fix it, then submit yourself. If you think the value is already right, ask the user which one they mean; submitting it unchanged is blocked.${hint(ref)}`, `提交前核对没过：${verdict.problem}，改为一步步看`, step.target ? { held: step.target } : {});
       }
 
       pending = 0;
@@ -154,7 +160,7 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
 
       if (!found.ref) {
         return await halt(`${found.matches ? `${found.matches} controls look like` : "the page has no"} ${want.role} "${want.name}"${want.box ? ` in "${want.box}"` : ""}${want.area ? ` (${want.area})` : ""}. The page may have changed; look at it and continue from step ${n} yourself.`,
-          `第 ${n} 步对不上：${found.matches ? "分不清" : "找不到"}上次点的「${want.name}」，改为一步步看`);
+          `第 ${n} 步对不上：${found.matches ? "分不清" : "找不到"}上次点的「${want.name}」，改为一步步看`, { pageChanged: true });
       }
 
       const params: RouteActParams = { target: found.ref };
@@ -206,12 +212,14 @@ export function describeRoute(taskId: string, route: TaskRoute): string {
 export const routeHandle = (taskId: string) => taskId.slice(0, 8);
 
 /** 照走用：按编号取一条过往任务记下的做法和网站；对不上时给出现有的做法，好让模型重选。 */
-export async function routeOfTask(history: Pick<TaskHistoryStore, "list"> | undefined, handle: string): Promise<{ route: TaskRoute; hosts: string[] } | { choices: string[] }> {
+export async function routeOfTask(history: Pick<TaskHistoryStore, "list"> | undefined, handle: string): Promise<{ route: TaskRoute; hosts: string[]; source: { id: string; startedAt: number | null; endedAt: number } } | { choices: string[] }> {
   const routed = ((await history?.list()) ?? []).filter(entry => entry.route);
   const key = handle.trim().replace(/^route\s+/i, "");
   const hits = key ? routed.filter(entry => entry.id.startsWith(key) || routeHandle(entry.id) === key) : [];
 
-  if (hits.length === 1 && hits[0]!.route) return { route: hits[0]!.route, hosts: hits[0]!.hosts };
+  const hit = hits.length === 1 ? hits[0]! : undefined;
+
+  if (hit?.route) return { route: hit.route, hosts: hit.hosts, source: { id: hit.id, startedAt: hit.startedAt, endedAt: hit.endedAt } };
 
   return { choices: routed.slice(0, 6).map(entry => `${routeHandle(entry.id)} (${entry.hosts.join(", ")}: ${entry.goal.slice(0, 60)})`) };
 }

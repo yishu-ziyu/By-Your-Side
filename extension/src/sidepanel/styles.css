@@ -2361,6 +2361,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #messages > .route-line { margin:-8px 0 14px; }
 .route-line .route-step-num { font:600 9.5px/16px var(--font); }
 .route-line .memory-used-text b { font-weight:600; color:var(--text-primary); }
+.route-line .memory-used-item.changed .route-step-num { color:var(--apple-orange, #c96a1b); }
 .route-line .route-foot { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; min-height:24px; padding-left:25px; color:var(--text-quaternary); font-size:11.5px; }
 .route-line .route-foot button { all:unset; color:var(--text-tertiary); font-size:11.5px; cursor:pointer; }
 .route-line .route-foot button:hover:not(:disabled) { color:var(--text-primary); }

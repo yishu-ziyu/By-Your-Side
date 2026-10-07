@@ -37,6 +37,26 @@ export interface TaskRoute {
   recordedAt: number;
 }
 
+/** 这次照着走的是哪一次（YIS-97）：那次的任务、开始时间与用时；中途对不上停下时，这次做法从第几步起（0 起）是重新想的。 */
+export interface RouteSource {
+  id: string;
+  at: number;
+  ms: number;
+  freshFrom?: number;
+}
+
+/**
+ * 做法的「样子」：每步做什么、点哪个控件，不含这次的值（选哪张卡片、按文字点的那一项也算值）。
+ * 同一网站上样子相同的两份做法是同一类事，只留最新的（YIS-97：问过用户后一步步做完又记一份，「下次别照旧」只删掉一份）。
+ */
+export function routeShape(route: TaskRoute): string {
+  return JSON.stringify(route.steps.map((s) => {
+    const picked = s.action === "click" && s.value !== undefined;
+
+    return [s.action, s.target?.role ?? "", picked && !s.target?.box ? "" : s.target?.name ?? "", s.target?.area ?? "", picked ? "" : s.target?.box ?? "", s.key ?? "", s.action === "navigate" ? s.url?.split(/[?#]/)[0] ?? "" : ""];
+  }));
+}
+
 export const ROUTE_STEPS_MAX = 40;
 
 const TEXT_MAX = 300;
@@ -73,4 +93,13 @@ export function isTaskRoute(value: unknown): value is TaskRoute {
   const r = value as TaskRoute;
 
   return Number.isFinite(r.recordedAt) && Array.isArray(r.steps) && r.steps.length > 0 && r.steps.length <= ROUTE_STEPS_MAX && r.steps.every(isRouteStep);
+}
+
+export function isRouteSource(value: unknown): value is RouteSource {
+  if (!value || typeof value !== "object") return false;
+  // SAFETY: 同上。
+  const s = value as RouteSource;
+
+  return typeof s.id === "string" && s.id.length > 0 && s.id.length <= 200 && Number.isFinite(s.at) && Number.isFinite(s.ms) && s.ms >= 0
+    && (s.freshFrom === undefined || (Number.isInteger(s.freshFrom) && s.freshFrom >= 0 && s.freshFrom <= ROUTE_STEPS_MAX));
 }
