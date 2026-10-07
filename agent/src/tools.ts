@@ -21,6 +21,12 @@ import { RepeatRefusedError } from "../../shared/task-next-step.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type ProgramStep } from "./browser-program.js";
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
+import type { RouteNote } from "./route-record.js";
+
+/** 记进做法的动作（走老路）；其余工具不记。 */
+const ROUTE_ACTION_OF: Partial<Record<ToolName, RouteNote["action"]>> = { click: "click", fill: "fill", select_option: "select_option", press_key: "press_key", navigate: "navigate" };
+
+import type { RouteTarget } from "../../shared/route.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
 
@@ -130,7 +136,7 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 动手成功后记一笔做法（走老路）。 */ noteRouteStep?: (note: RouteNote) => void }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
@@ -233,8 +239,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       catch (error) { if (sdkId) rpc.markCallRejected?.(sdkId); throw error; }
     }
 
-    // dialog_info 没有模型可见工具，只由 browser_run 的 pageInfo 组合调用；它只读，不受工具开关限制。
-    if (canExecute && name !== "dialog_info" && !canExecute(modelToolOf(name) as ToolName)) {
+    // dialog_info、describe_target 没有模型可见工具（前者由 pageInfo 组合调用，后者给走老路记做法）；只读，不受工具开关限制。
+    if (canExecute && name !== "dialog_info" && name !== "describe_target" && !canExecute(modelToolOf(name) as ToolName)) {
       if (sdkId) rpc.markCallRejected?.(sdkId);
       throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
     }
@@ -283,7 +289,27 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }
     };
 
-    return invokeReleasingIdleOwner(gated ? epoch : undefined);
+    // 走老路：动手前先读下这个控件是什么（页面变了之后编号就不作数）；读不出来不拦动作，只是这份做法存不了。
+    const routeAction = execution?.noteRouteStep ? ROUTE_ACTION_OF[name] : undefined;
+    // SAFETY: 模型工具与 browser_run 子步骤的参数都已按各自的参数表校验过；这里只取字符串字段，取不到按缺省处理。
+    const step = callParams as { target?: string; tabId?: number; label?: string; value?: string; url?: string; key?: string; values?: ToolContract["select_option"]["params"]["values"] };
+    const ref = step.target && /^@\d+$/.test(step.target) ? step.target : undefined;
+    let target: RouteTarget | null = null;
+
+    if (routeAction && ref) {
+      // SAFETY: describe_target 的返回形状见 ToolContract["describe_target"]["data"]；出错时按读不出处理。
+      target = await (rpc.call("describe_target", { target: ref, tabId: step.tabId }, 6_000, sid) as Promise<ToolContract["describe_target"]["data"]>).then((data) => data.target, () => null);
+    }
+
+    const result = await invokeReleasingIdleOwner(gated ? epoch : undefined);
+
+    if (routeAction) {
+      const picked = Array.isArray(step.values) ? step.values[0] : step.values;
+      const value = name === "fill" ? step.value : picked === null || picked === undefined ? undefined : typeof picked === "string" ? picked : picked.label ?? picked.value;
+      execution!.noteRouteStep!({ action: routeAction, target, label: step.label, value, url: step.url, key: step.key, memory: !!memory });
+    }
+
+    return result;
   };
 
   return call;

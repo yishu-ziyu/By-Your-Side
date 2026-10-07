@@ -1,3 +1,4 @@
+import type { RouteStep, TaskRoute } from "../../shared/route.js";
 import { normalizeMemoryHostname, withNotOnHost } from "../../shared/memory.js";
 import { isTaskHistoryEntry, TASK_HISTORY_MAX, type TaskHistoryEntry } from "../../shared/task-history.js";
 import type { DocumentPersistence } from "./document-persistence.js";
@@ -46,6 +47,18 @@ export function redactTaskSecrets(entry: TaskHistoryEntry): TaskHistoryEntry {
   const redacted: TaskHistoryEntry = { ...entry, goal: scrub(entry.goal), revisions: entry.revisions.map(scrub), summary: scrub(entry.summary), unfinished: entry.unfinished.map(scrub) };
 
   if (entry.page !== undefined) redacted.page = scrub(entry.page);
+
+  // 做法里填过这样的值：值不留，只记「这里要填」。
+  if (entry.route) {
+    redacted.route = { ...entry.route, steps: entry.route.steps.map(step => {
+      if (step.value === undefined || !values.some(v => step.value!.includes(v))) return step;
+      const hidden: RouteStep = { ...step, secret: true };
+      delete hidden.value;
+      delete hidden.valueFrom;
+
+      return hidden;
+    }) };
+  }
 
   return redacted;
 }
@@ -99,6 +112,18 @@ export class TaskHistoryStore {
   /** 没做完的任务：补上短主题与下一步（晚到时只改这两个字段）。 */
   async patchLabel(id: string, endedAt: number, label: { title: string; next: string }): Promise<void> {
     await this.mutate(tasks => tasks.map(task => (task.id === id && task.endedAt === endedAt ? { ...task, title: label.title, next: label.next } : task)));
+  }
+
+  /** 走老路：换掉或删掉一条过往任务的做法（「不用记」与撤销）。返回全部过往任务。 */
+  async setRoute(id: string, route: TaskRoute | null): Promise<TaskHistoryEntry[]> {
+    await this.mutate(tasks => tasks.map(task => {
+      if (task.id !== id) return task;
+      const { route: _old, ...rest } = task;
+
+      return route ? { ...rest, route } : rest;
+    }));
+
+    return this.list();
   }
 
   /** 这几条刚被带给助手：用过次数加 1、记下时间；已不存在的 id 跳过。 */

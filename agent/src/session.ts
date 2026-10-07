@@ -59,6 +59,7 @@ import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
 import { programFirstGuidance } from "./program-first.js";
+import { noteRouteStep, type RouteDraft, type RouteNote } from "./route-record.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand" }
@@ -540,6 +541,7 @@ if(required.includes(key))candidates.set(key,attachment);
             files: () => resultHost?.fileStore(),
             attachments: () => resultHost?.userAttachments() ?? [],
             memoryForValue: value => memoryRuntime?.memoryForValue(value),
+            noteRouteStep: note => resultHost?.noteRouteStep(note),
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -1205,6 +1207,29 @@ return;}
     if (!call) throw new Error('当前观察模型不可用。');
 
     return answerVoiceObservation(call, question, page, stillCurrent);
+  }
+
+  /** 走老路：本会话各任务记下的步骤，按 runId；只留最近几个任务（结束时和目标核对后各取一次）。 */
+  private routeDrafts = new Map<string, RouteDraft>();
+
+  /** 动手成功后记一笔做法；见 route-record.ts。 */
+  noteRouteStep(note: RouteNote): void {
+    const runId = this.deliveryRunId();
+
+    if (!runId) return;
+    this.routeDrafts.set(runId, noteRouteStep(this.routeDrafts.get(runId) ?? { steps: [] }, note));
+
+    while (this.routeDrafts.size > 4) this.routeDrafts.delete(this.routeDrafts.keys().next().value!);
+  }
+
+  /** 代码裁判的结论写进诊断记录：存了几步，或为什么没存。 */
+  traceRouteVerdict(runId: string, verdict: { saved: number } | { rejected: string }): void {
+    this.runTrace.record("route_verdict", { runId, ...verdict });
+  }
+
+  /** 某个任务记下的步骤（给过往任务存做法）。 */
+  routeDraft(runId: string): RouteDraft | undefined {
+    return this.routeDrafts.get(runId);
   }
 
   /** 填进网页的值来自本轮带上的哪条记忆；见 MemoryRuntime.memoryForValue。 */

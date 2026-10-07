@@ -57,6 +57,7 @@ import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { RouteStep } from "../../../shared/route.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -2812,6 +2813,110 @@ function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", r
   }
 }
 
+/** 做法里的一步，写成给人看的一句（YIS-94）。这次说的值加粗；密码一类不显示值。 */
+function routeStepNode(step: RouteStep): HTMLElement {
+  const text = document.createElement("span");
+  text.className = "memory-used-text";
+  const name = step.target ? `「${step.target.name}」${step.target.box ? `（${step.target.box}）` : ""}` : "";
+  const value = document.createElement(step.valueFrom === "said" ? "b" : "span");
+  value.textContent = step.secret ? "（每次问你）" : `「${step.value ?? ""}」`;
+
+  if (step.action === "navigate") text.textContent = `打开 ${step.url?.replace(/^https?:\/\//, "").slice(0, 60) ?? ""}`;
+  else if (step.action === "press_key") text.textContent = `按 ${step.key ?? ""}`;
+  // 模型起的短名比「点「选择」（青松）」好读；短名只是控件名本身时补上「点」。
+  else if (step.action === "click") text.textContent = step.label && step.label !== step.target?.name ? step.label : `点${name}`;
+  else text.append(`在${name}${step.action === "fill" ? "填" : "选"}`, value);
+
+  text.title = text.textContent ?? "";
+
+  return text;
+}
+
+/** 回答下面的「记下了这次的做法 ›」：点开看每一步，「不用记」删掉这份做法，可撤销（YIS-94，对照 docs/previews/route-replay）。 */
+function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>): void {
+  const answers = messagesEl.querySelectorAll<HTMLElement>(".msg.assistant.answer-latest");
+  const answer = answers[answers.length - 1];
+
+  if (!answer) return;
+  const box = messagesEl.querySelector<HTMLElement>(`.route-line[data-run-id="${CSS.escape(event.runId)}"]`) ?? document.createElement("div");
+  box.className = "memory-used-line route-line";
+  box.dataset.runId = event.runId;
+  let open = box.dataset.open === "true";
+  let kept = true;
+  let pending = false;
+  let error = "";
+
+  const draw = () => {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "memory-used-toggle";
+    toggle.setAttribute("aria-expanded", String(open));
+    const chevron = document.createElement("span");
+    chevron.className = "memory-used-chevron";
+    chevron.textContent = "›";
+    toggle.append(kept ? "记下了这次的做法，下次照着走 " : "没有记下这次的做法 ", chevron);
+    toggle.onclick = () => { open = !open; box.dataset.open = String(open); draw(); };
+
+    const list = document.createElement("ul");
+    list.className = "memory-used-list";
+    list.hidden = !open;
+
+    event.route.steps.forEach((step, index) => {
+      const row = document.createElement("li");
+      row.className = "memory-used-item";
+      const glyph = document.createElement("span");
+      glyph.className = "memory-used-glyph route-step-num";
+      glyph.textContent = String(index + 1);
+      row.append(glyph, routeStepNode(step));
+      list.appendChild(row);
+    });
+
+    const foot = document.createElement("li");
+    foot.className = "route-foot";
+    const note = document.createElement("span");
+    note.textContent = error || (kept ? "只在这个网站、同一类事上用；页面对不上就照常一步步做。" : "以后这类事照常一步步做。");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.routeAction = kept ? "decline" : "undo";
+    button.textContent = kept ? "不用记" : "撤销";
+    button.disabled = pending;
+    button.onclick = () => {
+      const requestId = crypto.randomUUID();
+      const want = !kept;
+      pending = true;
+      error = "";
+      draw();
+
+      usedLineHandlers.set(requestId, (result) => {
+        pending = false;
+
+        if (result.ok) kept = want;
+        else error = `没改成：${result.error ?? "请重试"}`;
+        draw();
+      });
+
+      if (!send({ type: "task_history_route", requestId, conversationId: selectedConversationId, id: event.runId, route: want ? event.route : null })) {
+        usedLineHandlers.delete(requestId);
+        pending = false;
+        error = "连接不可用，请重试";
+        draw();
+      }
+    };
+
+    foot.append(note, button);
+    list.appendChild(foot);
+    box.replaceChildren(toggle, list);
+  };
+
+  draw();
+  // 跟在这次回答（以及「用了哪条记忆」那一行）后面。
+  let after: Element = answer;
+
+  while (after.nextElementSibling?.classList.contains("memory-used-line") && !after.nextElementSibling.classList.contains("route-line")) after = after.nextElementSibling;
+
+  if (!box.isConnected) after.after(box);
+}
+
 /** 「原来是…」只写变了的部分：新旧值在同一个「：」或空格之前完全相同，就省掉这一段（不在词中间截断）。 */
 function changedPart(now: string, before: string): string {
   let cut = 0;
@@ -3957,6 +4062,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "memory_ask":
       renderMemoryAsk(ev);
+      break;
+    case "route_saved":
+      renderRouteSaved(ev);
       break;
     case "text_delta":
       if (leadDeliveryMode === "explicit") {

@@ -1,4 +1,5 @@
 import { isMemoryValidity, validLocalDate, validNotOnHosts, type MemoryValidity } from "./memory.js";
+import { isTaskRoute, type TaskRoute } from "./route.js";
 
 /**
  * 过往任务：每个动手做过事的任务结束时留一条摘要，助手之后能想起「之前做过什么、在哪做的、做成没有」。
@@ -36,6 +37,8 @@ export interface TaskHistoryEntry {
   title?: string;
   /** 同上，下一步的一句短话（「接着填第 3 页」）；只依据没做完的事，不编。 */
   next?: string;
+  /** 做成后记下的做法（YIS-94）；没通过代码裁判、用户点了「不用记」或旧条目缺省。 */
+  route?: TaskRoute;
 }
 
 /** 短主题与下一步的长度上限（字符）。 */
@@ -72,5 +75,6 @@ export function isTaskHistoryEntry(value: unknown): value is TaskHistoryEntry {
     && (e.useCount === undefined || (Number.isInteger(e.useCount) && e.useCount >= 0)) && (e.lastUsedAt === undefined || Number.isFinite(e.lastUsedAt))
     && (e.notOnHosts === undefined || validNotOnHosts(e.notOnHosts))
     && (e.title === undefined || validTaskLabel(e.title)) && (e.next === undefined || validTaskLabel(e.next))
+    && (e.route === undefined || isTaskRoute(e.route))
     && (e.startedAt === null || Number.isFinite(e.startedAt)) && Number.isFinite(e.endedAt);
 }
