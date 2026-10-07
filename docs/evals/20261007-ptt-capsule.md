@@ -20,7 +20,7 @@
 
 ## 技术前提
 
-- 前提：胶囊放在网页里（内容脚本），不用 Document Picture-in-Picture 小窗。小实验：`scratchpad/ptt-probe/pip-probe.mts`，无头 Chrome。结果：PiP 不成立，所以用内容脚本。
+- 前提：胶囊放在网页里（内容脚本），不用 Document Picture-in-Picture 小窗。小实验：`scripts/probes/ptt-capsule/pip-probe.mts`，无头 Chrome。结果：不成立（退出码 1），所以用内容脚本。
   - 只按 ⌥ 不算用户动作，`requestWindow` 报 `Document PiP requires user activation`。按字母键就能打开。
   - 打开小窗的网页一跳转，小窗就关了。助手做事时经常跳转网页。
   - 侧栏关着时，侧栏也开不了小窗。
