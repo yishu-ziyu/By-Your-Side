@@ -35,6 +35,9 @@ import {
   finishedRunTitle,
   spokenDuration,
   loaderSubtitle,
+  openedPageTitle,
+  recentSteps,
+  betweenStepsTitle,
   splitAction,
   isPrepTool,
   actionKind,
@@ -2151,6 +2154,8 @@ interface RunHost {
   titleTimer: number;
   /** 标题前的动作图标：跟着当前动作换，收尾后是那一件事或「多步」。 */
   actIcon: HTMLElement;
+  /** 进行中标题下方的最近几步（#102）；收尾时移除，过程照旧收进 ›。 */
+  trail: HTMLElement;
 }
 
 const ACTION_ICONS = { open: Globe, fill: PenLine, click: MousePointerClick, other: Dot, read: FileText, many: List, think: Brain } as const;
@@ -3007,6 +3012,10 @@ function ensureRun(): NonNullable<typeof currentRun> {
   reveal.append(body);
   root.append(summary, reveal);
   messagesEl.appendChild(root);
+  const trail = document.createElement("div");
+  trail.className = "run-trail";
+  trail.hidden = true;
+  root.after(trail);
   const start = runStartAt || eventTime();
   timeEl.textContent = spokenDuration(start, eventTime()) ?? "";
 
@@ -3034,9 +3043,53 @@ function ensureRun(): NonNullable<typeof currentRun> {
     titleAt: 0,
     titleTimer: 0,
     actIcon,
+    trail,
   };
 
   return currentRun;
+}
+
+/** 进行中标题下方：做完的最近 3 步（名称 + 耗时），更早的只计数。准备动作不算，和收尾的「做了 N 件事」一致。 */
+function renderTrail(run: RunHost): void {
+  const done = Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.running)")).map((chip) => ({
+    text: chip.dataset.past ?? "",
+    dur: chip.querySelector(".dur")?.textContent ?? "",
+    failed: chip.classList.contains("error"),
+  }));
+
+  const { shown, earlier } = recentSteps(done);
+  // 准备动作结束也会走到这里：内容没变就不重画，免得最后一步反复淡入。
+  const key = JSON.stringify([shown, earlier]);
+
+  if (run.trail.dataset.key === key) return;
+
+  run.trail.dataset.key = key;
+
+  const rows = shown.map((step) => {
+    const row = document.createElement("div");
+    row.className = step.failed ? "trail-step failed" : "trail-step";
+    const text = document.createElement("span");
+    text.className = "trail-text";
+    text.textContent = step.failed ? `${step.text} · 没成功` : step.text;
+    const dur = document.createElement("span");
+    dur.className = "trail-dur";
+    dur.textContent = step.dur;
+    row.append(text, dur);
+
+    return row;
+  });
+
+  if (earlier > 0) {
+    const more = document.createElement("div");
+    more.className = "trail-more";
+    more.textContent = `+ 前面 ${earlier} 步`;
+    rows.unshift(more);
+  }
+
+  run.trail.replaceChildren(...rows);
+  run.trail.hidden = rows.length === 0;
+
+  if (run.root.nextElementSibling !== run.trail) run.root.after(run.trail);
 }
 
 const sessionRun = new Map<string, AgentRunState>();
@@ -3258,6 +3311,8 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
+  // 收尾后过程只留「做了 N 件事 ›」，进行中的最近几步不再单列。
+  run.trail.remove();
   // 空 run（纯文本回复，无思考/工具步骤）不留壳；只读回合（问答、读页）正常结束也不留过程行，
   // 用户看回答和页面本身即可。动过页面、失败或被停止时才保留「查看执行过程」。
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
@@ -3712,9 +3767,10 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
 
-  // 这一步做完、下一步还没开始：模型在想下一步，标题不该停在刚结束的动作上（「正在读取页面结构 54 秒」）。
+  // 这一步做完、下一步还没开始：模型在想下一步，标题不该停在刚结束的动作上（「正在读取页面结构 54 秒」），
+  // 也不退回光秃秃的「正在思考」：带上已做几件事（#102）。此时没有在跑的工具，所以每个非准备 chip 都已做完。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    setRunTitle(run, `正在${loaderSubtitle(null)}`, false, "think");
+    setRunTitle(run, betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep)").length), false, "think");
   }
 
   if (!entry) return;
@@ -3738,7 +3794,14 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (failed) entry.chip.classList.add("error");
 
-  const label = entry.chip.querySelector(".chip-label");
+  const label = entry.chip.querySelector<HTMLElement>(".chip-label");
+  // 打开页面：拿到标题后用页面名，不用网址（#102）。页面标题来自网页，只作文字显示。
+  const pageTitle = !failed && entry.chip.dataset.kind === "open" ? openedPageTitle(ev.resultText ?? "") : null;
+
+  if (pageTitle && label) {
+    entry.chip.dataset.past = `打开了 ${pageTitle}`;
+    paintAction(label, `打开页面 ${pageTitle}`);
+  }
 
   if (ev.repeatRefused && label) label.append("（已做过，没再重复）");
 
@@ -3755,6 +3818,8 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   // 详情正展开着这个 chip 时实时补上结果
   if (entry.group.expanded === entry) renderChipDetail(entry);
+
+  if (run && run === currentRun) renderTrail(run);
 
   scrollToEnd();
 }

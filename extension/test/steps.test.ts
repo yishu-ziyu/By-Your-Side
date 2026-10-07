@@ -5,6 +5,9 @@ import {
   describeTool,
   formatDuration,
   loaderSubtitle,
+  openedPageTitle,
+  recentSteps,
+  betweenStepsTitle,
   workerEventRunPolicy,
   isLiveViewportPinned,
   liveViewportOverflows,
@@ -131,4 +134,49 @@ describe("执行中过程视窗限高", () => {
     expect(liveViewportOverflows(200, 320)).toBe(false);
   });
 
+});
+
+// #102 进行中看得见进展：页面名、最近几步、动作之间的标题。
+describe("openedPageTitle 打开页面后取页面标题", () => {
+  it("程序里的 navigate：结果是 JSON", () => {
+    expect(openedPageTitle('{"url":"http://127.0.0.1:53623/company/lumen","title":"Lumen 光子 · 公司资料","readiness":"complete"}')).toBe("Lumen 光子 · 公司资料");
+  });
+  it("单独的 navigate：结果是一行说明加快照", () => {
+    expect(openedPageTitle("Navigation result: https://hamel.dev/blog/posts/evals-faq/ — AI Evals FAQ; document: complete\n\nFresh snapshot …")).toBe("AI Evals FAQ");
+  });
+  it("JSON 被截断、标题含转义引号也能取到", () => {
+    expect(openedPageTitle('{"url":"https://a.test/","title":"他说 \\"好\\" 的那页","readiness":"comp')).toBe('他说 "好" 的那页');
+  });
+  it("没有标题、空标题、标题就是网址时不给（沿用域名）", () => {
+    expect(openedPageTitle('{"url":"https://a.test/","readiness":"complete"}')).toBeNull();
+    expect(openedPageTitle('{"url":"https://a.test/","title":"  "}')).toBeNull();
+    expect(openedPageTitle('{"url":"https://a.test/x","title":"https://a.test/x"}')).toBeNull();
+    expect(openedPageTitle("Navigation timed out")).toBeNull();
+    expect(openedPageTitle("")).toBeNull();
+  });
+  it("超长标题截短", () => {
+    const t = openedPageTitle(`{"title":"${"长".repeat(80)}"}`);
+    expect(t?.length).toBeLessThanOrEqual(30);
+    expect(t?.endsWith("…")).toBe(true);
+  });
+});
+
+describe("recentSteps 进行中只露最近 3 步", () => {
+  const step = (n: number) => ({ text: `第${n}步`, dur: "0.5s", failed: false });
+  it("不足 3 步全露，没有「前面」", () => {
+    expect(recentSteps([step(1), step(2)])).toEqual({ shown: [step(1), step(2)], earlier: 0 });
+    expect(recentSteps([])).toEqual({ shown: [], earlier: 0 });
+  });
+  it("超过 3 步只露最后 3 步，其余计数", () => {
+    expect(recentSteps([step(1), step(2), step(3), step(4), step(5)])).toEqual({ shown: [step(3), step(4), step(5)], earlier: 2 });
+  });
+});
+
+describe("betweenStepsTitle 两步之间的标题", () => {
+  it("还没做事时就是「正在思考」", () => {
+    expect(betweenStepsTitle(0)).toBe("正在思考");
+  });
+  it("做过事后带上进度，不退回光秃秃的「正在思考」", () => {
+    expect(betweenStepsTitle(3)).toBe("正在思考 · 已做 3 件事");
+  });
 });

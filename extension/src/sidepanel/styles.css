@@ -2999,6 +2999,17 @@ details.run-steps:not(.done) .run-title {
 @keyframes runShine { from { -webkit-mask-position: 110% 0; mask-position: 110% 0; } to { -webkit-mask-position: -10% 0; mask-position: -10% 0; } }
 details.run-steps:not(.done) .run-time { margin-left: auto; font-size: var(--fs-meta); color: var(--text-quaternary); }
 details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: hidden; }
+/* #102 进行中标题下方的最近几步：一条细线下的灰字，新的一步淡入；收尾时整块移除。 */
+.run-trail { margin: -2px 0 10px 7px; padding-left: 12px; border-left: 1px solid var(--content-border); display: flex; flex-direction: column; gap: 2px; }
+.run-trail .trail-step, .run-trail .trail-more { display: flex; gap: 8px; align-items: baseline; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+.run-trail .trail-step::before { content: "✓"; color: var(--text-quaternary); font-size: 11px; }
+.run-trail .trail-step.failed::before { content: "!"; }
+.run-trail .trail-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-trail .trail-dur { margin-left: auto; flex-shrink: 0; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
+.run-trail .trail-more { color: var(--text-quaternary); }
+.run-trail .trail-step:last-child { animation: trailIn .32s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes trailIn { from { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation: none; } }
 details.run-steps.done summary { width: max-content; max-width: 100%; margin: 0 -4px; padding: 2px 4px; border-radius: 6px; }
 details.run-steps.done summary:hover { background: var(--content-subtle-hover); }
 details.run-steps.done .run-title { font-size: var(--fs-ui); line-height: 20px; }
