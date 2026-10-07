@@ -1,6 +1,6 @@
 # 当前状态
 
-复核日期：2026-10-06。开发预览版，尚无发布通过结论。
+复核日期：2026-10-07。开发预览版，尚无发布通过结论。
 
 日常会话/文件恢复和菜单已加载，关键验收通过（[部署](evals/20261003-session-deployment.md)）。PDF 有可见录像；本机模式已退役，产品仅为扩展（[退役验收](evals/20261001-retire-native-and-dead-code.md)）。10-04 删掉没人用的半成品与预判，模型工具 45→30 个（[删减验收](evals/20261004-cut-unused.md)，未进日常构建）。真人试用另计。
 
@@ -37,16 +37,15 @@
 
 本轮进展：
 
+1. 记忆与重启（10-07，#89–#98）：没说「记住」的改口也更新旧值，小考新 4 题全过；同一件事 3 个对话做过就弹卡问；后台重启后安全的任务自动续做；首次配好马上发的第一句话不再丢。去掉 Pi 0.84.4 依赖。合并前跑 `npm run smoke`（真实模型，约 1 分钟）。
 1. 提速（10-07）：98% 时间在等模型；多页调研中位 34→10 秒，回答全对（[验收](evals/20261007-navigate-returns-page.md)）。
 2. PDF 下载（#25）：两模型的原 arXiv 请求通过，日常 Chrome 可见实录为 2 步、8 秒（[验收与录像](evals/20261002-pdf-download.md)）。
 3. #32 环境分类在独占条件下完整通过；#35 共 124 次运行与判分完成。M3.1 正常任务 52/55，GLM 50/56；环境分别 7、6 次（[环境验收](evals/20261002-eval-environment.md)）。
 4. Pi 会话/文件恢复与 40px 截图卡已部署，关键验收通过（[验收与录像](evals/20261002-session-durability.md)）。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax 记忆分类与备注提交检查通过，已加载（[分类](evals/20261003-memory-classification.md)、[执行](evals/20261003-method-form-enforcement.md)）。备注补填、电话规则替换、撤销恢复备注的整条扩展路径通过，已加载；本轮用脚本模型，下一步用在线 MiniMax 复测（[验收](evals/20261003-memory-rule-replacement.md)）。
 
-Issue：#27、#40、#23 原生路径已部署，#23 备用待验（[部署](evals/20261003-issue-fixes-deployment.md)）。
-
 进展见 [Linear](development/checks.md#给用户看的进展linear)。
 
-ChatGPT 登录的默认模型为 gpt-6-luna（10-06）。待真人试：回答逐字出现、打开生成的 HTML、要截图。
+ChatGPT 登录的默认模型为 gpt-6-luna（10-06）。
 
 ## 历史
 
