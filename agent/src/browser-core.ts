@@ -20,3 +20,5 @@ export { InProcessLock, type DocumentPersistence } from "./document-persistence.
 export { TaskHistoryStore } from "./task-history.js";
 
 export type { ArtifactPersistence } from "./artifacts-tool.js";
+
+export { SessionLog, type SessionLogPort } from "./session-log.js";

@@ -1,6 +1,7 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
-// Pi 1.0 删掉了会话存储；沿用 0.84.4 的实现，存储格式不变（docs/evals/20261007-pi1-rebuild.md）。
-import { buildSessionContext, type Session } from 'pi-session-084';
+// 会话上下文仍由 0.84.4 的 buildSessionContext 还原；存储换成 session-log.ts，格式不变。
+import { buildSessionContext } from 'pi-session-084';
+import type { SessionLogPort } from './session-log.js';
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent';
 
 /** Synchronous checkpoint reads retain the existing task contract. Writes await Pi's durable append. */
@@ -8,13 +9,14 @@ export class PiSessionPersistence {
   private entries: SessionEntry[] = [];
   private tail: Promise<void> = Promise.resolve();
   private error: unknown;
-  private constructor(readonly native: Session) {}
-  static async open(native: Session): Promise<{ persistence: PiSessionPersistence; messages: AgentMessage[] }> {
+  private constructor(readonly native: SessionLogPort) {}
+  static async open(native: SessionLogPort): Promise<{ persistence: PiSessionPersistence; messages: AgentMessage[] }> {
     const persistence = new PiSessionPersistence(native);
     const branch = await native.findEntriesOnBranch({order:'oldestFirst'});
-    persistence.entries = branch.flatMap(entry => entry.type === 'custom' ? [{ type:'custom' as const, id:entry.id, parentId:entry.parentId, timestamp:new Date(entry.timestamp).toISOString(), customType:entry.customType, data:entry.data }] : []);
+    persistence.entries = branch.flatMap(entry => entry.type === 'custom' ? [{ type:'custom' as const, id:entry.id, parentId:entry.parentId, timestamp:new Date(entry.timestamp).toISOString(), customType:entry.customType ?? '', data:entry.data }] : []);
 
-    return {persistence, messages:currentMessages(buildSessionContext(branch).messages)};
+    // SAFETY: 日志条目就是 0.84.4 写下的 JSONL 条目，字段相同。
+    return {persistence, messages:currentMessages(buildSessionContext(branch as never).messages)};
   }
   getBranch(): SessionEntry[] { return [...this.entries]; }
   appendCustomEntry(customType: string, data?: Parameters<SessionManager['appendCustomEntry']>[1]): Promise<string> {
@@ -33,8 +35,8 @@ export class PiSessionPersistence {
     });
   }
   appendMessage(message: AgentMessage): Promise<string> {
-    // 深拷贝成纯 JSON，交给 0.84.4 的存储（结构相同）。
-    const durable: Parameters<Session['appendMessage']>[0] = JSON.parse(JSON.stringify(message));
+    // 深拷贝成纯 JSON 再写入日志。
+    const durable: AgentMessage = JSON.parse(JSON.stringify(message));
 
     return this.enqueue(() => this.native.appendMessage(durable));
   }

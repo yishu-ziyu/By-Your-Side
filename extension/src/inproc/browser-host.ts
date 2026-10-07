@@ -1,6 +1,6 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
 import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
-import type { Session } from "pi-session-084";
+import type { SessionLogPort } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { describeModelError } from "../../../shared/user-facing.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
@@ -21,7 +21,7 @@ type Inbound = ClientMessage
 export interface InprocHostDeps {
   createRuntime: typeof createModelRuntime;
   /** Tests explicitly inject a session backend; production always uses IndexedDB. */
-  sessionData?: (id: string) => Promise<{ session: Session; files?: ArtifactPersistence }>;
+  sessionData?: (id: string) => Promise<{ session: SessionLogPort; files?: ArtifactPersistence }>;
   /** Node entry-contract tests inject durable documents; production uses IndexedDB. */
   document?: (name: "memories" | "pending-memory" | "tasks") => DocumentPersistence;
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
