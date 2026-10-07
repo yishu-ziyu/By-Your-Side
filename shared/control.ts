@@ -46,6 +46,7 @@ export const WRITE_TOOLS = [
   "dismiss_dialog",
   "download_url",
   "select_option",
+  "upload_file",
 ] as const satisfies readonly ToolName[];
 
 export const WRITE_TOOL_SET: ReadonlySet<ToolName> = new Set(WRITE_TOOLS);

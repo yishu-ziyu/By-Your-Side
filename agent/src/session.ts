@@ -538,6 +538,7 @@ if(required.includes(key))candidates.set(key,attachment);
             epoch: () => resultHost?.executionEpoch() ?? 0,
             canWrite: () => resultHost?.canWriteCurrentInput() ?? false,
             files: () => resultHost?.fileStore(),
+            attachments: () => resultHost?.userAttachments() ?? [],
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -668,6 +669,15 @@ if(required.includes(key))candidates.set(key,attachment);
   isToolActive(name: string): boolean { return this.session?.getActiveToolNames().includes(name) ?? true; }
 
   private artifactStore: ArtifactStore | null = null;
+
+  private attachedFiles: Attachment[] = [];
+
+  /** 用户在本会话侧栏附上的文件（最近 16 个），upload_file 按文件名取用。 */
+  userAttachments(): readonly Attachment[] { return this.attachedFiles; }
+
+  private rememberAttachments(attachments?: Attachment[]): void {
+    if (attachments?.length) this.attachedFiles = [...this.attachedFiles.filter(a => !attachments.some(b => b.id === a.id)), ...attachments].slice(-16);
+  }
 
   /** 本会话文件区；没有 artifacts 工具（worker、非交付会话）或它未启用时没有，browser.saveFile 随之不可用。 */
   fileStore(): ArtifactStore | undefined {
@@ -961,6 +971,7 @@ return;}
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
     const images = extractImages(attachments);
+    this.rememberAttachments(attachments);
 
     if (session.isStreaming) this.runTrace.record("steer", { text, context, attachments });
     else {
@@ -1427,6 +1438,7 @@ return;}
 
     if(expectedPage&&pageRecoveryKey(context.tabId,context.url)?.urlHash!==expectedPage.urlHash)throw new TaskActionRejected('当前页面不是原任务保留的页面，请先打开原任务页面再继续；没有在另一页执行。');
     const restoredAttachments=this.recoveryAttachments(snapshot,attachments);
+    this.rememberAttachments(restoredAttachments);
 
     if (!this.abandonUnconsumedCorrections("superseded")) {
       throw new TaskActionRejected("未读补充尚未清理，原任务保持中断。请重试或重新连接。");
@@ -1639,6 +1651,7 @@ return;}
   /** rewrite：侧栏文字改方向。模型正在写正文时当场截断，同一轮按新要求重写（见 AgentLoop.interruptText）。 */
   async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[], options?: { rewrite?: boolean }): Promise<SteerOutcome> {
     const session = this.session;
+    this.rememberAttachments(attachments);
 
     // 新任务显示路由尚未进入 Pi 时（Pi 还没在流），插话要取消路由并把两段要求合并重提示；
     // 一旦模型已经在跑，即使 displayWork 还挂着，也算正常的运行中修改，走统一 steer 路径。

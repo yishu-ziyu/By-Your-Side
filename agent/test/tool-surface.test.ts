@@ -27,7 +27,7 @@ describe("组件工具语义（非真实会话清单）", () => {
     expect(names).toContain("page_translation");
     expect(names).toContain("mark");
 
-    for (const gone of ["page_operation", "ask_user_to_point", "cdp", "drag", "html5_drag", "wheel", "mouse_down", "mouse_up", "key_down", "key_up", "release_held_inputs", "download_stat", "download_cancel", "download_delete", "upload_file", "file_chooser_set_files", "paste", "download_save_as"]) {
+    for (const gone of ["page_operation", "ask_user_to_point", "cdp", "drag", "html5_drag", "wheel", "mouse_down", "mouse_up", "key_down", "key_up", "release_held_inputs", "download_stat", "download_cancel", "download_delete", "file_chooser_set_files", "paste", "download_save_as"]) {
       expect(names, gone).not.toContain(gone);
     }
   });

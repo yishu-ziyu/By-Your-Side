@@ -49,7 +49,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
 import { downloadUrl } from "./exec/download.js";
@@ -117,6 +117,7 @@ const handlers: Record<ToolName, Handler> = {
   hover: (p, sid) => hover(p, sid),
   fill: (p, sid) => fill(p, sid),
   select_option: (p, sid) => selectOption(p, sid),
+  upload_file: (p, sid) => uploadFile(p, sid),
   type_text: (p, sid) => typeText(p, sid),
   press_key: (p, sid) => pressKey(p, sid),
   scroll: (p, sid) => scroll(p, sid),
