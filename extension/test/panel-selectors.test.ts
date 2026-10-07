@@ -13,7 +13,7 @@ describe('conversation checkpoint labels',()=>{
   it('keeps existing live and idle labels',()=>{
     expect(conversationStateLabel({state:'running'})).toBe('运行中');
     expect(conversationStateLabel({state:'user'})).toBe('现在归你');
-    expect(conversationBackgroundLabel({state:'idle'})).toBe('已结束');
+    expect(conversationBackgroundLabel({state:'idle'})).toBe('另一个对话结束了');
   });
 });
 

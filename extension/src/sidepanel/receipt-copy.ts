@@ -31,6 +31,11 @@ export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string
     return { summary: "修改已应用并核对", detail, collapsed: true };
   }
 
+  // 停下已由过程行「已停止」和接续那一行说过，不再另起一条「任务已终止」（#103）；停止失败照旧露出。
+  if (local && receipt.action === "abort" && (receipt.status === "accepted" || receipt.status === "applied")) {
+    return { summary: receipt.message, detail, collapsed: true };
+  }
+
   if (local && receipt.action === "resume" && receipt.status === "accepted") {
     return { summary: "已继续原任务", detail, collapsed: false, inProcess: true };
   }

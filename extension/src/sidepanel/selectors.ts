@@ -40,7 +40,8 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
     return '现在归你';
   }
 
-  return '已结束';
+  // 顶部条挂在当前对话上方，要说清这是另一个对话（#103）。
+  return '另一个对话结束了';
 }
 
 /** 结果卡：摘要是主信息，剩余项和声音失败弱化。没有摘要时整张卡不出现。 */

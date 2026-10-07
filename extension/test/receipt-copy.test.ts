@@ -71,3 +71,12 @@ describe("恢复回执的呈现归属", () => {
     expect(copy.inProcess).not.toBe(true);
   });
 });
+
+describe("#103 停下只说一次", () => {
+  it.each(["accepted","applied"] as const)("本会话停止 %s：不再另起一条「任务已终止」", status => {
+    expect(receiptCopy({...base,action:"abort",status,message:"任务已终止。"},"c").collapsed).toBe(true);
+  });
+  it("停止失败照旧露出", () => {
+    expect(receiptCopy({...base,action:"abort",status:"failed",message:"停止没成功"},"c").collapsed).toBe(false);
+  });
+});

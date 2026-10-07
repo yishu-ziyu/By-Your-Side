@@ -818,7 +818,8 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
   broadcastVisibleServer({ type: "agent_event", event: { kind, message } });
 }
 
-setDebugBannerNotice(() => emitNotice("Chrome 顶部会出现“正在调试此浏览器”的提示：这是助手操作页面的方式，任务结束后可关闭，不影响你的数据。"));
+// 提示条只在助手操作页面时出现：说明跟着这一轮走，结束后不再压在回答上方（#103）。
+setDebugBannerNotice(() => broadcastVisibleServer({ type: "agent_event", event: { kind: "notice", aside: true, message: "Chrome 顶部的“正在调试此浏览器”是助手在操作页面，任务结束后可以关掉，不影响你的数据。" } }));
 
 /** T03：每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
 const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();

@@ -542,3 +542,21 @@ describe('标准 8：停下或结束时的「已做 / 还差」', () => {
     expect(buildResumeSummary(view).line).toBe('已停止，还没做：把字幕保存成文件，不会自动继续');
   });
 });
+
+// #103 收尾只说一次。
+describe('收尾只说一次（#103）', () => {
+  it('模型在回答里自己说了没做完、又没法「继续」：不再另弹一张「没做成」卡', () => {
+    const view = viewOf({ state: 'idle', waiting: null, outstanding: [], resumable: false, latestDelivery: { kind: 'finding', unfinished: ['把这个页面翻译成中文。'] } });
+    expect(buildResumeSummary(view).visible).toBe(false);
+  });
+  it('账本里还有没做的事（回答没说到的）照旧出卡', () => {
+    const view = viewOf({ state: 'idle', waiting: null, resumable: false, latestDelivery: { kind: 'finding', unfinished: ['把这个页面翻译成中文。'] } });
+    expect(buildResumeSummary(view).visible).toBe(true);
+  });
+  it('停下时那一步结果未知（做到一半）：写「停在中途」，不写「还没做」', () => {
+    const view = viewOf({ state: 'aborted', waiting: null, resumable: false, outstanding: [{ id: 'r9', description: '翻译网页', status: 'unknown' }] });
+    const line = buildResumeSummary(view).line;
+    expect(line).toBe('已停止，翻译网页停在中途，不会自动继续');
+    expect(line).not.toContain('还没做');
+  });
+});

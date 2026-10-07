@@ -333,7 +333,9 @@ export type AgentUiEvent =
   | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }
   | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary;
       /** 运行中的进度说明：只替换过程行标题，不进消息流，回合结束即被结果标题取代。 */
-      progress?: true }
+      progress?: true;
+      /** 只对这一轮有用的说明（如调试提示条）：放在过程行下方，回合结束即收起，不留在回答上方。 */
+      aside?: true }
   | { kind: "error"; message: string };
 
 // ── 工具契约 ───────────────────────────────────────────────────────

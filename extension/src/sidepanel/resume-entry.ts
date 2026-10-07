@@ -153,6 +153,11 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   const listed = remaining.map((r) => r.description);
   const left = told ? (told.length ? notDone(told) : null) : listed.length ? (unverifiedOnly ? phrase("还没确认完成", listed) : notDone(listed)) : null;
 
+  // 停在一步中间（结果未知）不是「还没做」：页面上可能已经留下了部分结果（#103，整页翻译停下时已翻好几百段）。
+  const midway = !told && remaining.length > 0 && remaining.every((r) => r.status === "unknown");
+
+  if (view.state === "aborted" && midway) return `已停止，${clipText(listed[0]!, 24)}${listed.length > 1 ? ` 等 ${listed.length} 件` : ""}停在中途，不会自动继续`;
+
   if (view.state === "aborted") return left ? `已停止，${left}，不会自动继续` : "已停止";
 
   if (view.state === "interrupted") return left ? `任务中断了，${left}` : "任务中断了";
@@ -245,7 +250,8 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   const visible = checkpointUnavailable
     || ["paused", "interrupted", "error"].includes(view.state)
     || (view.state === "aborted" && (remaining.length > 0 || !!view.waiting))
-    || (view.state === "idle" && (remaining.length > 0 || !!view.waiting || declaredUnfinished(view).length > 0));
+    // 模型在回答里自己交代的没做完（declaredUnfinished）不另出卡：回答已经说了，「继续」也不提供（#103）。
+    || (view.state === "idle" && (remaining.length > 0 || !!view.waiting));
 
   return {
     visible,
