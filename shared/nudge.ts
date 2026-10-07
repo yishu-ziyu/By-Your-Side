@@ -14,14 +14,22 @@ export const NUDGE_RECENT_LIMIT = 5;
 
 export const NUDGE_SELECTION_LIMIT = 2000;
 
-export const NUDGE_SENTENCE_LIMIT = 20;
+/**
+ * 句子、动词、对象名的上限按显示宽度算：汉字算 1，英文字母、数字、空格算半个（「AirPods Pro 3」算 6.5）。
+ * 10-08 真实模型试跑：按字数算时，带英文型号的句子大多被拦下（docs/evals/20261008-nudge-trial.md）。
+ */
+export const NUDGE_SENTENCE_LIMIT = 24;
 
 export const NUDGE_LABEL_LIMIT = 5;
 
 /** 句子里对象是谁（商家、机构、网站名）的上限。 */
 export const NUDGE_PARTY_LIMIT = 16;
 
+/** 卡上显示的出处引文上限；模型给的引文可以更长，核对原文后截到这么长。 */
 export const NUDGE_EVIDENCE_LIMIT = 60;
+
+/** 模型给的出处引文上限：超了才算不合格。 */
+const QUOTE_LIMIT = 300;
 
 export const NUDGE_PROMPT_LIMIT = 2000;
 
@@ -74,24 +82,28 @@ interface NudgeDraft { sentence: unknown; evidence: unknown; actionLabel: unknow
 /** 模型回复的原样 JSON 对象：字段都还没核对。 */
 export interface NudgeReply extends Partial<NudgeDraft> { offer?: unknown }
 
-function isEvidence(e: unknown): e is NudgeEvidence {
-  return !!e && typeof e === 'object'
-    && 'text' in e && typeof e.text === 'string' && !!e.text.trim() && chars(e.text) <= NUDGE_EVIDENCE_LIMIT
-    && 'url' in e && text(e.url, 4000);
-}
+/** 显示宽度：汉字等全角字符算 1，英文字母、数字、空格、半角标点算半个。 */
+const width = (v: string) => [...v].reduce((sum, ch) => sum + (ch.codePointAt(0)! < 0x2e80 ? 0.5 : 1), 0);
 
-function isNudge(n: NudgeDraft): n is Nudge {
-  return typeof n.sentence === 'string' && !!n.sentence.trim() && chars(n.sentence) <= NUDGE_SENTENCE_LIMIT
-    && typeof n.actionLabel === 'string' && !!n.actionLabel.trim() && chars(n.actionLabel) <= NUDGE_LABEL_LIMIT
+const isEvidence = (max: number) => (e: unknown): e is NudgeEvidence => !!e && typeof e === 'object'
+  && 'text' in e && typeof e.text === 'string' && !!e.text.trim() && chars(e.text) <= max
+  && 'url' in e && text(e.url, 4000);
+
+function isNudge(n: NudgeDraft, quoteMax = NUDGE_EVIDENCE_LIMIT): n is Nudge {
+  return typeof n.sentence === 'string' && !!n.sentence.trim() && width(n.sentence) <= NUDGE_SENTENCE_LIMIT
+    && typeof n.actionLabel === 'string' && !!n.actionLabel.trim() && width(n.actionLabel) <= NUDGE_LABEL_LIMIT
     && typeof n.prompt === 'string' && !!n.prompt.trim() && n.prompt.length <= NUDGE_PROMPT_LIMIT
     && Array.isArray(n.evidence) && n.evidence.length >= 1 && n.evidence.length <= 3
-    && n.evidence.every(isEvidence)
-    && (n.party === undefined || (typeof n.party === 'string' && chars(n.party) <= NUDGE_PARTY_LIMIT));
+    && n.evidence.every(isEvidence(quoteMax))
+    && (n.party === undefined || (typeof n.party === 'string' && width(n.party) <= NUDGE_PARTY_LIMIT));
 }
 
 export function isNudgeResult(v: NudgeResult): boolean {
   return id(v.requestId) && (v.nudge === null || isNudge(v.nudge));
 }
+
+/** 原文引文太长时截前一段：截下来的仍是原文。 */
+const clipQuote = (quote: string) => (chars(quote) <= NUDGE_EVIDENCE_LIMIT ? quote : `${[...quote].slice(0, NUDGE_EVIDENCE_LIMIT - 1).join('').trimEnd()}…`);
 
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -103,10 +115,10 @@ export function acceptNudgeReply(reply: NudgeReply, context: NudgeContext): Nudg
   if (reply.offer !== true) return null;
 
   // 对象名可有可无：空的、太长的直接不要，不连累整条建议。
-  const party = typeof reply.party === 'string' && reply.party.trim() && chars(reply.party.trim()) <= NUDGE_PARTY_LIMIT ? reply.party.trim() : undefined;
+  const party = typeof reply.party === 'string' && reply.party.trim() && width(reply.party.trim()) <= NUDGE_PARTY_LIMIT ? reply.party.trim() : undefined;
   const candidate: NudgeDraft = { sentence: reply.sentence, evidence: reply.evidence, actionLabel: reply.actionLabel, prompt: reply.prompt, ...(party === undefined ? {} : { party }) };
 
-  if (!isNudge(candidate)) return null;
+  if (!isNudge(candidate, QUOTE_LIMIT)) return null;
   const sources = new Map<string, string>();
   const add = (url: string, ...parts: (string | undefined)[]) => sources.set(url, `${sources.get(url) ?? ''} ${squash(parts.filter(Boolean).join(' '))}`);
   add(context.page.url, context.page.title, context.page.text, context.page.selection);
@@ -129,7 +141,7 @@ export function acceptNudgeReply(reply: NudgeReply, context: NudgeContext): Nudg
 
   return {
     sentence: object,
-    evidence: candidate.evidence.map(e => ({ text: e.text.trim(), url: e.url })),
+    evidence: candidate.evidence.map(e => ({ text: clipQuote(e.text.trim()), url: e.url })),
     actionLabel: label,
     prompt: candidate.prompt.trim(),
     ...(named && party ? { party } : {}),
