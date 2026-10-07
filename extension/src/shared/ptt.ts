@@ -21,15 +21,15 @@ export const isPttPageMessage = (raw: Partial<PttPageMessage> | null | undefined
 
 /**
  * 网页底部胶囊现在显示什么（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）。heard 是听写出的那句话。
- * failed 带 heard：话没交给助手，可以重发；不带：没听到或听写失败。
+ * failed 带 heard：话没交给助手，可以重发；不带：没听到或听写失败。speaking：正在念这一条（docs/evals/20261007-ptt-speak.md）。
  */
 export type PttCapsule =
   | { phase: "listening" }
   | { phase: "transcribing" }
   | { phase: "failed"; reason: string; heard?: string }
   | { phase: "doing"; heard: string; step: string | null }
-  | { phase: "waiting"; heard: string; reason: string }
-  | { phase: "done"; heard: string; result: string; left: string | null }
+  | { phase: "waiting"; heard: string; reason: string; speaking?: true }
+  | { phase: "done"; heard: string; result: string; left: string | null; speaking?: true }
   | { phase: "stopped"; heard: string };
 
 /** 后台 → 网页：换胶囊内容，capsule 为 null 时收起。 */
@@ -40,5 +40,22 @@ export const PTT_LEVEL = "ptt_level";
 
 export interface PttLevelMessage { type: typeof PTT_LEVEL; level: number }
 
-/** 网页 → 后台：胶囊上的「停」（含 Esc）、「重发」，以及胶囊已收起。「在侧栏看」复用药丸的 EDGE_PILL_OPEN。 */
-export interface PttCapsuleAction { type: "ptt_capsule_action"; action: "stop" | "resend" | "closed"; text?: string }
+/** 网页 → 后台：胶囊上的「停」（含 Esc）、「重发」、念的时候按 Esc（hush），以及胶囊已收起。「在侧栏看」复用药丸的 EDGE_PILL_OPEN。 */
+export interface PttCapsuleAction { type: "ptt_capsule_action"; action: "stop" | "resend" | "closed" | "hush"; text?: string }
+
+/** 后台 → 离屏文档：念一句（带订阅 Key）或停下。 */
+export const PTT_SPEECH_TARGET = "inproc-speech";
+
+export type PttSpeechCommand = { target: typeof PTT_SPEECH_TARGET; action: "speak"; text: string; key: string } | { target: typeof PTT_SPEECH_TARGET; action: "hush" };
+
+/** 念完（放了多久）、被打断，或失败。 */
+export type PttSpeechReply = { ok: true; playedMs: number } | { ok: false; reason: "hushed" } | { ok: false; reason: "failed"; message: string };
+
+/** 念结果的 MiniMax 订阅 Key（设置页写）。 */
+export const PTT_SPEECH_KEY = "ptt_speech_key";
+
+/** 「做完念出来」开关：只有明确存了 false 才算关。 */
+export const PTT_SPEAK_RESULT = "ptt_speak_result";
+
+/** 订阅 Key 的样子：MiniMax 按 Key 决定扣套餐还是按量，只认订阅 Key（sk-cp-）。 */
+export const isSubscriptionKey = (key: string) => /^sk-cp-[\w-]{8,}$/.test(key.trim());

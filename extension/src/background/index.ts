@@ -16,6 +16,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
+import { createPttVoice } from "./ptt-voice.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
@@ -142,7 +143,7 @@ installPageInteractions();
 
 installLinkPreview();
 
-const pttCapsule = installPttCapsule(() => edgePill.refresh());
+const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error")));
 
 const edgePill = installEdgePill(() => pttCapsule.tabId());
 
@@ -344,7 +345,7 @@ async function handOffSpoken(tab: chrome.tabs.Tab, conversationId: string, text:
  else pttCapsule.failed(tab.id!, "这句话没交给助手：助手没连上。", text);
 }
 
-// 离屏文档的音量转给正在录的那一页；胶囊上的「停」「重发」和收起。
+// 离屏文档的音量转给正在录的那一页；胶囊上的「停」「重发」、念的时候按 Esc，和收起。
 chrome.runtime.onMessage.addListener((raw: Partial<PttCapsuleAction> | Partial<PttLevelMessage> | undefined, sender) => {
  if (sender.id !== chrome.runtime.id) return;
 
@@ -354,6 +355,8 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttCapsuleAction> | Partial<P
  const tab = sender.tab;
 
  if (raw.action === "closed") pttCapsule.closed(tab.id!);
+
+ if (raw.action === "hush") pttCapsule.hush();
 
  if (raw.action === "stop") controller(pttCapsule.conversationId() ?? selectedConversationId).stop();
 

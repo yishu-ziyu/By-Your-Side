@@ -30,7 +30,7 @@ beforeEach(async () => {
  vi.resetModules(); wire.sent = []; storage = {}; connect = event();
  const area = {get: async (key: string | null) => key === null ? {...storage} : {[key]:storage[key]}, set: async (data: SessionItems) => {Object.assign(storage, data);} };
  vi.stubGlobal("chrome", {
-  storage:{session:area,local:area},
+  storage:{session:area,local:area,onChanged:event()},
   runtime:{id:"fixture-extension",getURL:(path:string)=>"chrome-extension://fixture-extension/"+path,onConnect:connect,onMessage:event(),onInstalled:event()},
   tabs:{onRemoved:event(),onUpdated:event(),onActivated:event(),query:async()=>[],sendMessage:async()=>{}},
   debugger:{onDetach:event()},

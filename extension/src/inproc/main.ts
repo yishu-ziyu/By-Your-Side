@@ -2,6 +2,7 @@
 import { createModelRuntime } from "./model-runtime.js";
 import { startInprocHost } from "./browser-host.js";
 import { installPushToTalk } from "./ptt-capture.js";
+import { installPttSpeech } from "./ptt-speech.js";
 
 startInprocHost({
   createRuntime: createModelRuntime,
@@ -9,3 +10,4 @@ startInprocHost({
 });
 
 installPushToTalk();
+installPttSpeech();
