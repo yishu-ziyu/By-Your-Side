@@ -1,5 +1,5 @@
 // 扩展里的循环用 ExtensionHost 执行我们的 Pi 钩子；组合规则须与 pi-coding-agent 的 ExtensionRunner 一致。
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { ExtensionHost, type HookResult } from "../src/extension-host.js";
 import { ProductContext } from "../src/product-context.js";
@@ -75,6 +75,18 @@ describe("ExtensionHost 组合规则", () => {
 
     expect(prompt.startsWith("BASE PROMPT\n\n# Product conversation context\n")).toBe(true);
     expect(prompt).not.toContain("task_goals");
+  });
+
+  it("产品上下文写明今天的日期和星期几：「下周四」不会被算成明天（YIS-102）", async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 7, 10, 0) });
+
+    try {
+      const { value } = host([new ProductContext().extension()], ["snapshot"]);
+
+      expect(await value.beforeAgentStart("下周四再订", "BASE")).toContain("Today is 2026-10-07, Wednesday (local time).");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("真实的失败策略钩子：同一操作失败到上限时中止本轮", async () => {
