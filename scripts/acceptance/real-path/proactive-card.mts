@@ -7,7 +7,7 @@
  *   npx tsx scripts/acceptance/real-path/proactive-card.mts --headless
  */
 import { createServer } from "node:http";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, exportDiagnosticsViaSettings, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
@@ -176,6 +176,8 @@ try {
   await rp.screenshot(panel, join(out, "8-replayed.png"));
 
   // 日常试用回看：设置页导出的诊断记录里，每次判断一行 nudge_verdict，写明哪一页、出了什么卡。
+  // 先清掉上一次运行导出的文件，免得读到旧记录。
+  await rm(join(out, "downloads"), { recursive: true, force: true });
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
   const verdicts = traces.split("\n").filter(Boolean).map(line => JSON.parse(line)).filter(line => line.type === "nudge_verdict").map(line => line.data);
   check("诊断记录：三页各一行判断，写明出的卡", verdicts.length === 3 && verdicts.every(v => v.verdict === "offer" && v.actionLabel === "申请" && String(v.url).startsWith(origin)), verdicts);
