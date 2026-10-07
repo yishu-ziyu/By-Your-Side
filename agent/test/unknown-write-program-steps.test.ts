@@ -180,7 +180,8 @@ describe("页面脚本结果未知时 browser_run 的逐步放行", () => {
       await expect(h.run({ code: 'return await browser.js({code:"return 1"});' })).rejects.toThrow(/脚本未运行/);
       expect(h.unknownResults()).toEqual([]);
       await expect(h.run({ code: 'await browser.click({target:"#subtitle"}); return "clicked";' })).resolves.toBeDefined();
-      expect(h.frames.map(frame => frame.name)).toEqual(["js", "click"]);
+      // 选择器定位的点击之前先只读一次控件描述（记做法用，YIS-103），不算执行。
+      expect(h.frames.map(frame => frame.name).filter(name => name !== "describe_target")).toEqual(["js", "click"]);
     } finally {
       h.runtime.dispose();
     }
