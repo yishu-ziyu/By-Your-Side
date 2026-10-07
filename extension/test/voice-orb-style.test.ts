@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ORB_STYLE, ORB_STYLES, parseOrbStyle } from "../../shared/voice.js";
-import { videoOrbLook } from "../src/sidepanel/orb-style.js";
+import { videoOrbLook } from "../src/shared/orb-style.js";
 
 const STATES = ["idle", "listening", "thinking", "speaking"] as const;
 

@@ -1,6 +1,5 @@
 /** Extension runtime regression: successful browser reads must not need Node files. */
-// Module mocks stand in for the extension build, which swaps node:fs for the shim and leaves dataDir empty;
-// recorded in the anti-slop baseline on 2026-10-01 until fetch storage becomes injectable.
+// Module mocks stand in for the extension build, which swaps node:fs for the shim and leaves dataDir empty.
 import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('../../agent/src/config.js', async importOriginal => ({
