@@ -57,6 +57,12 @@ export function routeShape(route: TaskRoute): string {
   }));
 }
 
+/**
+ * 照上次的做法走（YIS-91）先关着：对照实验不到提速门槛（docs/evals/20261007-route-ab.md）。关着时不存做法、不给模型照走工具、提示里不列做法。
+ * 代码留着，等「经验怎么变成更快的执行」的新调研定方向后再删或改。
+ */
+export const ROUTE_REPLAY_ON = false;
+
 export const ROUTE_STEPS_MAX = 40;
 
 const TEXT_MAX = 300;

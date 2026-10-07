@@ -8,6 +8,7 @@ import { ReplaceTargetChanged, type MemoryQuery, type MemoryStore } from "./memo
 import { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { describeRoute } from "./route-replay.js";
+import { ROUTE_REPLAY_ON } from "../../shared/route.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextSelection } from "./memory-context.js";
 import { isRelevantMemory } from "./memory-relevance.js";
@@ -306,7 +307,7 @@ interface MemoryToolResult {
 
 /** 过往任务连同记下的做法（走老路）：有做法的任务下面列出步骤，模型才能照上次的做法走。 */
 function tasksWithRoutes(tasks: TaskHistoryEntry[]): string {
-  return tasks.map(task => [formatTaskHistory([task]), ...(task.route ? [describeRoute(task.id, task.route)] : [])].join("\n")).join("\n");
+  return tasks.map(task => [formatTaskHistory([task]), ...(task.route && ROUTE_REPLAY_ON ? [describeRoute(task.id, task.route)] : [])].join("\n")).join("\n");
 }
 
 export class MemoryRuntime {

@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, type JsonRecord } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until, type JsonRecord } from "./harness.mts";
 import { DEFAULT_TEST_MODEL, configureViaSettings, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
@@ -70,6 +70,8 @@ const rp = await launchRealPath();
 let error: string | null = null;
 
 let panel = "";
+
+let stopVideo: (() => Promise<string | null>) | null = null;
 
 let work = "";
 
@@ -178,6 +180,8 @@ const expectBooking = (want: Booking, message: string) => {
 
 try {
   panel = await rp.attach(await rp.openSidePanel());
+  // 侧栏全程录像，跑完给用户看（panel.mp4）。
+  stopVideo = await recordScreen(rp.cdp, panel, join(artifacts, "panel.mp4")).catch(() => null);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`)) || undefined, 60_000, "侧栏就绪");
 
@@ -234,11 +238,11 @@ try {
   await rp.screenshot(panel, join(artifacts, "panel.png"));
 
   // YIS-97：点开页面改版那次回答下面那一行，看这次重新想的步骤（模型那次可能看出页面变了、没照走）。
-  await rp.evaluate(panel, `[...document.querySelectorAll(".route-line .memory-used-toggle")].at(-1).click(), true`);
+  if (!arm) await rp.evaluate(panel, `[...document.querySelectorAll(".route-line .memory-used-toggle")].at(-1).click(), true`);
   await sleep(300);
   await rp.screenshot(panel, join(artifacts, "route-line-open.png"));
   // SAFETY: 页面脚本返回数字。
-  evidence.changedRows = await rp.evaluate(panel, `[...document.querySelectorAll(".route-line")].at(-1).querySelectorAll(".memory-used-item.changed").length`) as number;
+  if (!arm) evidence.changedRows = await rp.evaluate(panel, `[...document.querySelectorAll(".route-line")].at(-1).querySelectorAll(".memory-used-item.changed").length`) as number;
 
   // 诊断记录：每次请求用没用照走、走了几步、等了几次模型。
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
@@ -299,6 +303,7 @@ try {
 
   if (panel) await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).catch(() => undefined);
 } finally {
+  evidence.video = await stopVideo?.().catch(() => null) ?? null;
   await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, error }, null, 2));
   await rp.close();
   await rp.remove();

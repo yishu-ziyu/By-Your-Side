@@ -624,3 +624,51 @@ export function shadowedSources(): Array<{ file: string; sourceNewer: boolean }>
     .filter((file) => file.endsWith(".js") && existsSync(join(REPO, file.replace(/\.js$/, ".ts"))))
     .map((file) => ({ file, sourceNewer: statSync(join(REPO, file.replace(/\.js$/, ".ts"))).mtimeMs > statSync(join(REPO, file)).mtimeMs }));
 }
+
+type ScreencastFrame = { sessionId?: string; params: { data: string; sessionId: number; metadata: { timestamp?: number } } };
+
+/**
+ * 录下一个页面（如侧栏）的画面，停下时按真实节奏合成 mp4（要本机 ffmpeg）。给用户直接看真实运行的样子（10-07 用户要求）。
+ * 画面只在变化时出帧；每帧显示到下一帧为止。没录到画面或没有 ffmpeg 时返回 null，不影响验收。
+ */
+export async function recordScreen(cdp: ReturnType<typeof createCdp>, sessionId: string, file: string): Promise<() => Promise<string | null>> {
+  const frames: Array<{ at: number; data: string }> = [];
+
+  const off = cdp.onEvent("Page.screencastFrame", (message: ScreencastFrame) => {
+    if (message.sessionId !== sessionId) return;
+    frames.push({ at: message.params.metadata.timestamp ?? Date.now() / 1000, data: message.params.data });
+    void cdp.send("Page.screencastFrameAck", { sessionId: message.params.sessionId }, sessionId).catch(() => {});
+  });
+
+  await cdp.send("Page.startScreencast", { format: "jpeg", quality: 75, everyNthFrame: 1 }, sessionId);
+
+  return async () => {
+    off();
+    await cdp.send("Page.stopScreencast", {}, sessionId).catch(() => {});
+
+    if (frames.length < 2) return null;
+    const dir = await mkdtemp(join(tmpdir(), "sideagent-video-"));
+    const list: string[] = [];
+
+    for (const [i, frame] of frames.entries()) {
+      const name = join(dir, `${String(i).padStart(5, "0")}.jpg`);
+      await writeFile(name, Buffer.from(frame.data, "base64"));
+      // 按真实间隔显示，不设下限：动画时一秒几十帧，每帧补到 0.04 秒会把视频拉长好几倍（10-07 实测 3 分钟录成 10 分钟）。
+      list.push(`file '${name}'`, `duration ${Math.max(0.001, (frames[i + 1]?.at ?? frame.at + 1) - frame.at).toFixed(3)}`);
+    }
+
+    // concat 的最后一帧要再写一次文件名，时长才生效。
+    list.push(`file '${join(dir, `${String(frames.length - 1).padStart(5, "0")}.jpg`)}'`);
+    await writeFile(join(dir, "list.txt"), list.join("\n"));
+
+    try {
+      execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(dir, "list.txt"), "-fps_mode", "cfr", "-r", "25", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", file]);
+
+      return file;
+    } catch {
+      return null;
+    } finally {
+      execFileSync("rm", ["-rf", dir]);
+    }
+  };
+}

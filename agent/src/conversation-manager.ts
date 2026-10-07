@@ -1,5 +1,5 @@
 import { realtimeBrowserError, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
-import { routeShape, type TaskRoute } from '../../shared/route.js';
+import { ROUTE_REPLAY_ON, routeShape, type TaskRoute } from '../../shared/route.js';
 import { isSupersededUnknown } from '../../shared/task-results.js';
 import type { VoiceInputContext } from '../../shared/voice.js';
 import {TaskQueue} from "./task-queue.js";
@@ -852,7 +852,7 @@ return host?[host]:[];}))].slice(0,16);
     const draft=session0?.routeDraft?.(snap.runId);
     const verdict=judgeRoute({outcome:raw.outcome,revised:raw.revisions.length>0,results:snap.results??[],draft,said:[snap.goal,...raw.revisions].join('\n')});
 
-    if('route' in verdict&&!this.routesDeclined.has(snap.runId))raw.route=verdict.route;
+    if(ROUTE_REPLAY_ON&&'route' in verdict&&!this.routesDeclined.has(snap.runId))raw.route=verdict.route;
     session0?.traceRouteVerdict?.(snap.runId,'route' in verdict?{saved:verdict.route.steps.length,bySelector:draft?.bySelector??0}:{rejected:verdict.rejected});
     // 像密码验证码的用户原话不进过往任务，也不交给判断日期的模型。
     const entry=redactTaskSecrets(raw);
