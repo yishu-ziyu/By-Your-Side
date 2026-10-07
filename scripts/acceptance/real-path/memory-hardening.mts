@@ -300,6 +300,17 @@ async function startRecordingModel() {
 
         return;
       }
+
+      // 「不对，……」还会问一次「是不是可复用的做法」（10-01 之后加的判断，见 agent/src/memory-correction.ts）。
+      // 这里的纠正都是个人资料（邮箱），按提示词规定答不可复用；不答的话产品解析失败，整句排进补判。
+      if (system.includes("You review a direct user correction")) {
+        // SAFETY: 产品发来的纠正判断输入是 JSON，带 userMessage。
+        const asked = (JSON.parse(lastUser) as { userMessage?: string }).userMessage ?? "";
+        const evidence = asked.match(/^不对/)?.[0] ?? "";
+        answer(res, payload.stream === true, JSON.stringify({ correction: !!evidence, reusable: false, about: "assistant", rule: "", evidence, replaces: null, personalEvidence: "" }));
+
+        return;
+      }
     }
 
     // 用户点停止时扩展会中断请求，上游连接随之关闭；这不是失败，代理只需收尾，不能让整个脚本崩掉。

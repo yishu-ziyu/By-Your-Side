@@ -575,9 +575,12 @@ async function d10(): Promise<Verdict> {
   // 种类按原来源推断：无来源标记的资料=关于你；experience=做事的方法。
   const kindOk = (text: string, label: string) => rows.find((r) => r.text.includes(text))?.text.includes(label) ?? false;
 
+  // 「做事的方法」单独成组，组头写种类名，组里的行不再重复（main.ts renderMemoryEntry 的 inGroup）：看这条落在哪一组。
+  const inMethodGroup = await rp.evaluate(panel, `[...document.querySelectorAll('[data-memory-group="method"] .memory-row')].some((r) => r.textContent.includes("先点日期再点确认"))`);
+
   const kindChecks = {
     email: kindOk("yishu.old@example.com", TARGETS.panel.kindLabels.aboutYou),
-    experience: kindOk("先点日期再点确认", TARGETS.panel.kindLabels.method),
+    experience: inMethodGroup === true && !kindOk("先点日期再点确认", TARGETS.panel.kindLabels.aboutYou),
   };
 
   const taskRowsShowDid = OLD_TASKS.every((t) => rows.find((r) => r.text.includes(t.goal))?.text.includes(TARGETS.panel.kindLabels.did));
