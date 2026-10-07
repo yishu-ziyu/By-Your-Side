@@ -2,7 +2,7 @@
 
 复核日期：2026-10-07。开发预览版，尚无发布通过结论。
 
-日常会话/文件恢复和菜单已加载，关键验收通过（[部署](evals/20261003-session-deployment.md)）。PDF 有可见录像；本机模式已退役，产品仅为扩展（[退役验收](evals/20261001-retire-native-and-dead-code.md)）。10-04 删掉没人用的半成品与预判，模型工具 45→30 个（[删减验收](evals/20261004-cut-unused.md)，未进日常构建）。真人试用另计。
+会话恢复与菜单已部署（[部署](evals/20261003-session-deployment.md)）。本机模式已退役，产品仅为扩展（[退役验收](evals/20261001-retire-native-and-dead-code.md)）。10-04 删掉没人用的半成品与预判，模型工具 45→30 个（[删减验收](evals/20261004-cut-unused.md)，未进日常构建）。
 
 ## 现在能用什么、还差什么
 
@@ -33,20 +33,20 @@
 
 ## 下一步
 
-62 题两配置复测完成，环境单列（[测量规则](../eval/README.md)）；比较见[复测验收](evals/20261002-tiers12-after-fixes.md)。
+62 题两配置复测完成（[复测验收](evals/20261002-tiers12-after-fixes.md)）。
 
 本轮进展：
 
-1. 记忆与重启（10-07，#89–#98）：没说「记住」的改口也更新旧值，小考新 4 题全过；同一件事 3 个对话做过就弹卡问；后台重启后安全的任务自动续做；首次配好马上发的第一句话不再丢。去掉 Pi 0.84.4 依赖。合并前跑 `npm run smoke`（真实模型，约 1 分钟）。
-1. 记忆露出来、圈给它看（10-07，Linear YIS-83/84 全部关闭）：改了记忆回执写新旧值并能撤销；回答下面点名用了哪条；按记忆填的格子标「记得的」，点开能改、这次不用、忘掉。「圈出来问」能连圈几处、带圈内文字，回答里的 ①② 点回页面那一圈。检查脚本在 `scripts/acceptance/real-path/`（memory-update-receipt、memory-field-mark、circle-ask、circle-notes）。未决：配好后第一句「记住…」偶尔卡 3 分钟（YIS-92）。
-1. 提速（10-07）：98% 时间在等模型；多页调研中位 34→10 秒，回答全对（[验收](evals/20261007-navigate-returns-page.md)）。
+1. 记忆与重启（10-07，#89–#98）：没说「记住」的改口也更新旧值；同一件事 3 个对话做过就弹卡问；后台重启后安全的任务自动续做；首次配好后的第一句不丢。合并前跑 `npm run smoke`（真实模型，约 1 分钟）。
+1. 记忆露出来、圈给它看（10-07，YIS-83/84 已关）：回执写新旧值可撤销；回答下面点名用了哪条；按记忆填的格子标「记得的」；「圈出来问」可连圈、带圈内文字，回答里的 ①② 能点回原处。第一句「记住…」偶尔卡住已修（YIS-92：工具说明自相矛盾）。
+1. 提速（10-07）：会动手的日常任务 98% 时间在等模型（[时间拆分](evals/20261007-time-breakdown.md)）；多页调研中位 34→10 秒（[验收](evals/20261007-navigate-returns-page.md)）。下一步「走老路」：预览已认可（`docs/previews/route-replay/`），Linear YIS-91。
 2. PDF 下载（#25）：两模型的原 arXiv 请求通过，日常 Chrome 可见实录为 2 步、8 秒（[验收与录像](evals/20261002-pdf-download.md)）。
-3. #32 环境分类在独占条件下完整通过；#35 共 124 次运行与判分完成。M3.1 正常任务 52/55，GLM 50/56；环境分别 7、6 次（[环境验收](evals/20261002-eval-environment.md)）。
-4. Pi 会话/文件恢复与 40px 截图卡已部署，关键验收通过（[验收与录像](evals/20261002-session-durability.md)）。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax 记忆分类与备注提交检查通过，已加载（[分类](evals/20261003-memory-classification.md)、[执行](evals/20261003-method-form-enforcement.md)）。备注补填、电话规则替换、撤销恢复备注的整条扩展路径通过，已加载；本轮用脚本模型，下一步用在线 MiniMax 复测（[验收](evals/20261003-memory-rule-replacement.md)）。
+3. #32 环境分类独占通过；#35 共 124 次运行判分完成（[环境验收](evals/20261002-eval-environment.md)）。
+4. 会话/文件恢复、40px 截图卡（[验收](evals/20261002-session-durability.md)）、会话菜单（[验收](evals/20261003-conversation-menu.md)）、MiniMax 记忆分类与备注提交（[分类](evals/20261003-memory-classification.md)、[执行](evals/20261003-method-form-enforcement.md)）、备注补填与撤销（[验收](evals/20261003-memory-rule-replacement.md)，下一步用在线 MiniMax 复测）均已部署。
 
 进展见 [Linear](development/checks.md#给用户看的进展linear)。
 
-ChatGPT 登录的默认模型为 gpt-6-luna（10-06）。
+默认测试模型 gpt-6-luna（10-06）。
 
 ## 历史
 
