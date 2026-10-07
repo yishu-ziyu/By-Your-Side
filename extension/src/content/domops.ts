@@ -253,7 +253,11 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
 
   let pointLock: Element | null = null;
 
-  /** text= / loc=role: 目标定位那一刻解析到的元素；按下、填写前据此核对「文字还在不在、还是不是它」。 */
+  /**
+   * text= / loc=role: 目标定位（rectOf）那一刻解析到的元素；按下、填写前据此核对「文字还在不在、还是不是它」。
+   * 动作结束就清掉（hitTestAt 通过、fill 结束）：没经过本次定位的检查只核对文字，不拿上一次动作的元素比身份，
+   * 否则 click 带 point、force 点击、annotate 留下的旧锁会让重新渲染后的同名按钮误报。
+   */
   let nameLock: { target: string; el: Element } | null = null;
 
   function namedTargetLabel(target: string): string | null {
@@ -333,6 +337,8 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
       }
 
       assertHits(el, x, y);
+      // 按下前最后一道核对通过：这次定位的锁用完即清。
+      nameLock = null;
 
       return { hit: true };
     },
@@ -404,6 +410,8 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
         // 页面脚本抛错在背景侧拿不到原因；TARGET_GONE 走 refused 回去，背景侧按「没执行」上报。
         if (message.startsWith("TARGET_GONE:")) return { refused: message };
         throw err;
+      } finally {
+        nameLock = null;
       }
 
       const tag = el.tagName.toLowerCase();
