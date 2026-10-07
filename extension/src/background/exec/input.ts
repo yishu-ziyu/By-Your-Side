@@ -859,9 +859,10 @@ function targetOwnsHit(el, top, x, y) {
   return false;
 }`;
 
+// 快照里的编号可能落在按钮里的文字节点上（BYS-143 弹窗的「Close」）：按包住它的元素来点。
 const CONFIRM_CLICK_JS = `function() {
   ${TARGET_OWNS_HIT_JS}
-  const el = this;
+  const el = this && this.nodeType === 3 ? this.parentElement : this;
   if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
   if (typeof el.scrollIntoViewIfNeeded === "function") el.scrollIntoViewIfNeeded({ block: "center", inline: "center" });
   else el.scrollIntoView({ block: "center", inline: "center" });
@@ -879,7 +880,7 @@ const CONFIRM_CLICK_JS = `function() {
 
 const HIT_TEST_AT_JS = `function(x, y) {
   ${TARGET_OWNS_HIT_JS}
-  const el = this;
+  const el = this && this.nodeType === 3 ? this.parentElement : this;
   if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
   const top = document.elementFromPoint(x, y);
   if (!top) throw new Error("目标处没有可命中的元素，操作未执行。请重新 snapshot 确认当前目标。");
