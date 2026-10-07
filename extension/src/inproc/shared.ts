@@ -19,25 +19,31 @@ export const INPROC_VOICE_KEY = "inproc_voice_key";
 
 const VOICE_HEADER_RULE_ID = 7101;
 
+const PLAN_VOICE_HEADER_RULE_ID = 7102;
+
 /**
  * 浏览器的 WebSocket 不能自己设请求头，StepFun 又只认 Authorization 头：
  * 用会话级 declarativeNetRequest 规则在握手时补上。返回语音是否已配置。
  */
 export async function installVoiceHeaderRule(key: string): Promise<boolean> {
   const configured = key.trim().length > 0;
+
+  // 两条规则：按量的 /v1/realtime 只给免按键的 Realtime 3；按住说话的听写走套餐 /step_plan/v1/realtime（#125）。
+  const rule = (id: number, urlFilter: string): chrome.declarativeNetRequest.Rule => ({
+    id, priority: 1,
+    action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [{ header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` }] },
+    // 只给本扩展自己发起、且不属于任何标签页的连接（offscreen / 侧栏）补头；网页自己连 StepFun 拿不到用户的 key。
+    condition: {
+      urlFilter,
+      resourceTypes: [chrome.declarativeNetRequest.ResourceType.WEBSOCKET],
+      initiatorDomains: [chrome.runtime.id],
+      tabIds: [chrome.tabs.TAB_ID_NONE],
+    },
+  });
+
   await chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [VOICE_HEADER_RULE_ID],
-    addRules: configured ? [{
-      id: VOICE_HEADER_RULE_ID, priority: 1,
-      action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [{ header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` }] },
-      // 只给本扩展自己发起、且不属于任何标签页的连接（offscreen / 侧栏）补头；网页自己连 StepFun 拿不到用户的 key。
-      condition: {
-        urlFilter: "||api.stepfun.com/v1/realtime",
-        resourceTypes: [chrome.declarativeNetRequest.ResourceType.WEBSOCKET],
-        initiatorDomains: [chrome.runtime.id],
-        tabIds: [chrome.tabs.TAB_ID_NONE],
-      },
-    }] : [],
+    removeRuleIds: [VOICE_HEADER_RULE_ID, PLAN_VOICE_HEADER_RULE_ID],
+    addRules: configured ? [rule(VOICE_HEADER_RULE_ID, "||api.stepfun.com/v1/realtime"), rule(PLAN_VOICE_HEADER_RULE_ID, "||api.stepfun.com/step_plan/v1/realtime")] : [],
   });
 
   return configured;

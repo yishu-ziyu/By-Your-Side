@@ -13,7 +13,8 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * - side panel 经 chrome.runtime Port 接入，只做渲染与用户输入转发
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
-import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
+import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
+import { isPttPageMessage, PTT_TARGET, type PttCommand, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
@@ -274,6 +275,43 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   }
 
   sendResponse({ok:false,error:"NOT_WORKING_HERE"});
+ })();
+
+ return true;
+});
+
+/** 按住说话没成的那一行说明（#125 R4）。 */
+function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
+ if (reply.reason === "empty") return "按住右 ⌥ 说话时没有听到声音，再说一次试试。";
+
+ if (reply.reason === "timeout") return "听写超时了，再说一次试试。";
+
+ if (reply.reason === "device") return `麦克风打不开：${reply.message ?? "未知原因"}`;
+
+ return `听写没成功：${reply.message ?? "未知原因"}`;
+}
+
+// 按住说话（#125，docs/evals/20261007-ptt-dictation.md）：网页脚本报按下/松开/取消，离屏文档录音并听写；听写出的一句交给当前会话。
+chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, sender, sendResponse) => {
+ if (!isPttPageMessage(raw) || sender.id !== chrome.runtime.id || sender.tab?.id == null) return;
+ const tab = sender.tab;
+ void (async () => {
+  const command: PttCommand = { target: PTT_TARGET, phase: raw.phase };
+  // SAFETY: 离屏文档对 PttCommand 只回 PttReply；没有接收方时 sendMessage 会抛错。
+  const reply = await (chrome.runtime.sendMessage(command) as Promise<PttReply | undefined>).catch(() => undefined);
+  const conversation = controller(selectedConversationId);
+
+  if (!reply) {
+   if (raw.phase !== "cancel") conversation.notice("按住说话没有接上：助手还没启动好，稍后再试。", "error");
+  } else if (!reply.ok) {
+   if (reply.reason === "permission") await chrome.tabs.create({ url: chrome.runtime.getURL("voice-permission.html") });
+   else if (reply.reason !== "cancelled") conversation.notice(pttFailureText(reply), "error");
+  } else if (raw.phase === "stop" && reply.text) {
+   const context: PageContext = { tabId: tab.id!, title: tab.title ?? "", url: tab.url ?? "" };
+   await conversation.spoken(reply.text, context);
+  }
+
+  sendResponse(reply ?? { ok: false, reason: "failed" });
  })();
 
  return true;
@@ -2029,6 +2067,12 @@ async function importReading(record: ReadingRecord): Promise<void> {
 }
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
+/** 按住说话听写出的一句（#125）：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。 */
+spoken: async (text: string, context?: PageContext) => {
+  recordAndBroadcastHistory({ kind: "user", text });
+  uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context }));
+},
+notice: emitNotice,
 // 页面右上角「停下」：只认本会话正在操作的那一页；和侧栏「接管」走同一条路。
 worksOn: async (tabId: number) => !gate.isUser() && await getWorkingTabId() === tabId,
 pauseFromPage: (tabId: number) => { void handleTakeover(tabId); requestPanelControl("pause", tabId); },
