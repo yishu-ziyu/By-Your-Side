@@ -692,7 +692,7 @@ function renderConversations(): void {
   conversationBackground.hidden = !other;
 
   if (other) {
-    conversationBackground.textContent = `${other.title} · ${conversationBackgroundLabel(other)} ↗`;
+    conversationBackground.textContent = `${conversationBackgroundLabel(other)}：${other.title} ↗`;
     conversationBackground.onclick = () => selectConversation(other.id);
   }
 }
@@ -2156,6 +2156,8 @@ interface RunHost {
   actIcon: HTMLElement;
   /** 进行中标题下方的最近几步（#102）；收尾时移除，过程照旧收进 ›。 */
   trail: HTMLElement;
+  /** 只对这一轮有用的说明（调试提示条，#103），跟在最近几步后面，随它收起。 */
+  aside: string | null;
 }
 
 const ACTION_ICONS = { open: Globe, fill: PenLine, click: MousePointerClick, other: Dot, read: FileText, many: List, think: Brain } as const;
@@ -3053,6 +3055,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     titleTimer: 0,
     actIcon,
     trail,
+    aside: null,
   };
 
   return currentRun;
@@ -3068,7 +3071,7 @@ function renderTrail(run: RunHost): void {
 
   const { shown, earlier } = recentSteps(done);
   // 准备动作结束也会走到这里：内容没变就不重画，免得最后一步反复淡入。
-  const key = JSON.stringify([shown, earlier]);
+  const key = JSON.stringify([shown, earlier, run.aside]);
 
   if (run.trail.dataset.key === key) return;
 
@@ -3093,6 +3096,13 @@ function renderTrail(run: RunHost): void {
     more.className = "trail-more";
     more.textContent = `+ 前面 ${earlier} 步`;
     rows.unshift(more);
+  }
+
+  if (run.aside) {
+    const aside = document.createElement("div");
+    aside.className = "trail-aside";
+    aside.textContent = run.aside;
+    rows.push(aside);
   }
 
   run.trail.replaceChildren(...rows);
@@ -3951,7 +3961,16 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "turn_start":
       break;
     case "notice":
-      if (ev.progress) {
+      if (ev.aside) {
+        // 只对这一轮有用：跟在过程行下方，回合结束随最近几步收起。新会话第一轮经补放历史到达，所以补放时也挂上；
+        // 已结束的历史里没有在跑的一轮，不再出现。没有在跑的一轮的实时说明照旧进消息流。
+        if (currentRun) {
+          currentRun.aside = ev.message;
+          renderTrail(currentRun);
+        } else if (!applyingHistory) {
+          addMsg("msg notice", ev.message);
+        }
+      } else if (ev.progress) {
         // 进度说明只属于正在跑的这一轮：放进过程行标题，不在对话里留下一句过时的话。
         // 不为它新建过程行：压缩可能发生在回合结束后，新建的行不会再收尾。
         if (currentRun && !applyingHistory) setRunTitle(currentRun, ev.message);

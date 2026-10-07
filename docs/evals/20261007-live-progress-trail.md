@@ -34,6 +34,6 @@
 - 单元：`steps.test.ts` 新增 9 项，改前全失败，改后通过；扩展全量 939 项通过；`tsc`、`lint:changed` 通过。
 - 真实路径（gpt-6-luna，只装扩展的无头 Chrome）：
   - 改前：`out/acceptance/real-path/2026-10-07T09-07-04-710Z-everyday-baseline-sitegeist-inproc`，第 1/3/6/10/16 秒都只有「正在思考」。
-  - 改后：`2026-10-07T09-32-59-203Z-…-sitegeist-inproc` 第 6 秒「正在思考 · 已做 4 件事」，轨迹 3 步写页面名；`09-32-37` 第 4、6 秒同样。结束后 13 条任务的侧栏结构都没有 `run-trail`，只读问答（math、page-gist、meeting、export-csv、calculator）没有过程行。
+  - 改后：第 6 秒「正在思考 · 已做 4 件事」，轨迹 3 步写页面名（[改前改后截图](https://raw.githubusercontent.com/yishu-ziyu/By-Your-Side/ux-walkthrough-1007/20261007-ux-walkthrough/1-shipped-v2.png)）；另一次运行第 4、6 秒同样。结束后 13 条任务的侧栏结构都没有 `run-trail`，只读问答（math、page-gist、meeting、export-csv、calculator）没有过程行。改后运行的本地目录随工作树删除，截图留在上面的图片分支。
   - 一次改后运行（`09-28-38`）首个模型请求挂住、触发重试，前 16 秒还没做任何事，截图只有「正在思考」——这是正确显示；因此截图改为每 2 秒一张。
   - 同批 everyday 6 条 5 过；copy-no-save 失败是模型把两句都复制进草稿框（判据只要第一句），与显示无关，改前 3 次都过。

@@ -1,9 +1,9 @@
 /**
- * 没做完的一轮：请求里一项页面上做得到、一项做不到，看侧栏是否只留一行加「继续」，并拍下执行过程展开后的步骤清单。
+ * 没做完的一轮：请求里一项页面上做得到、一项做不到，看侧栏是否只说一次没做成的事，并拍下执行过程展开后的步骤清单。
  *
  *   npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless [--model=provider/id]
  *
- * 判据：侧栏那一行说的是用户没拿到的事（升级套餐），不是中途失败的内部步骤；没有「继续」；
+ * 判据：回答里说出用户没拿到的事（升级套餐），不是中途失败的内部步骤；回答下面不再另弹一张卡重复它（#103，取代 09-25 的「单独一行」）；没有「继续」；
  * 展开后只有动作清单，没有思考/草稿分组、单步耗时和交付工具。
  * 练习页在本机，不碰真实账号。产物：panel-collapsed.png、panel-expanded.png、summary.json。
  * 只装扩展、不注册伴随进程：agent 跑在扩展的 offscreen 文档里，模型配置写进扩展存储（与设置页写入的格式相同）。
@@ -59,7 +59,8 @@ const PANEL_STATE = `(() => {
     resumeText: resume?.innerText.trim() ?? "",
     resumeButton: [...(resume?.querySelectorAll("button") ?? [])].map((b) => b.innerText.trim()),
     processTitles: [...document.querySelectorAll("#messages .run-steps > summary")].map((el) => el.innerText.trim()),
-    steps: [...document.querySelectorAll("#messages .run-steps .chip")].map((el) => el.innerText.trim()),
+    // 只读用户看得见的步骤：准备动作的 chip 收尾后隐藏，隐藏元素的 innerText 会带出耗时。
+    steps: [...document.querySelectorAll("#messages .run-steps .chip")].filter((el) => el.getClientRects().length > 0).map((el) => el.innerText.trim()),
     visibleGroups: [...document.querySelectorAll("#messages .run-steps .run-body > details.thinking")].filter((el) => el.getClientRects().length > 0).length,
   };
 })()`;
@@ -147,7 +148,9 @@ const failures: string[] = [];
 
 if (doneMs === null) failures.push(`超过 ${LIMIT_MS / 1000} 秒未结束`);
 
-if (!final?.resumeText.includes("升级套餐")) failures.push(`那一行没说出没做成的事：${JSON.stringify(final?.resumeText)}`);
+if (!final?.answers.some((answer) => answer.includes("升级套餐"))) failures.push(`回答没说出没做成的事：${JSON.stringify(final?.answers)}`);
+
+if (final?.resumeText) failures.push(`回答下面又弹了一张卡：${JSON.stringify(final.resumeText)}`);
 
 if (final?.resumeButton.length) failures.push(`仍有按钮：${final.resumeButton.join("、")}`);
 

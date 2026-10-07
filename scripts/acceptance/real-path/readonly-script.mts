@@ -107,6 +107,10 @@ try {
   await until(async () => String(await browser.evaluate(settings, 'document.querySelector("#model-status")?.textContent')).startsWith("已保存") || undefined, 10_000, "saved scripted endpoint");
   await browser.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId });
 
+  // #19 / #103：调试提示条的说明整个安装只出现一次，而且只在那一轮进行中出现、结束后收起。记下它在哪几个任务里出现过。
+  await browser.evaluate(sidebar, `(() => { globalThis.__debugNoticeSeen = false; new MutationObserver((records) => { if (records.some((r) => [...r.addedNodes].some((n) => n.textContent?.includes("正在调试此浏览器")))) globalThis.__debugNoticeSeen = true; }).observe(document.querySelector("#messages"), { childList: true, subtree: true, characterData: true }); return true; })()`);
+  const noticeSeenIn: string[] = [];
+
   const pageState = () => browser.evaluate(work!, '({title:document.title,text:document.querySelector("#text").textContent,evidence:document.querySelector("#evidence").value})');
 
   for (const plan of plans) {
@@ -123,6 +127,9 @@ try {
       return await browser.evaluate(sidebar, `document.querySelector("#messages")?.textContent.includes(${JSON.stringify(`【${plan.mark}结束】`)}) && !document.querySelector("#status-pill")?.classList.contains("running")`) || undefined;
     }, plan.ordinary ? 100_000 : 90_000, `${plan.mark} real Agent completion`);
     await sleep(500);
+
+    if (await browser.evaluate(sidebar, "(() => { const seen = globalThis.__debugNoticeSeen; globalThis.__debugNoticeSeen = false; return seen; })()")) noticeSeenIn.push(plan.mark);
+
     const state = await pageState();
     const relevant = payloads.filter(entry => entry.at >= start);
 
@@ -189,9 +196,10 @@ try {
     } catch (caught) { failures.push(`${plan.mark}: ${String(caught)}`); }
   }
 
-  // #19: the debugger-infobar explanation shows exactly once across all three tasks.
+  // #19: the debugger-infobar explanation shows during exactly one task (the first); #103: it is gone once that task ends.
   const sidebarText = String(await browser.evaluate(sidebar, "document.querySelector('#messages')?.textContent"));
-  assert.equal(sidebarText.split("正在调试此浏览器").length - 1, 1, "debug infobar explanation appears once");
+  assert.deepEqual(noticeSeenIn, [plans[0]!.mark], "debug infobar explanation appears during the first task only");
+  assert.ok(!sidebarText.includes("正在调试此浏览器"), "debug infobar explanation does not stay above the answer after the task");
 
   assert.ok((await browser.targets()).some(t => t.url === `chrome-extension://${browser.extensionId}/inproc.html`), "real offscreen Agent required");
 
