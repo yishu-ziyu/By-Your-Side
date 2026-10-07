@@ -32,8 +32,19 @@ function payload(context: NudgeContext): string {
   return JSON.stringify({ page, recent: context.recent.map(r => ({ ...r, excerpt: redactCredentialText(r.excerpt) })) });
 }
 
+/**
+ * 一次判断的结论，给诊断记录用（日常试用时回看出了什么卡、为什么没出）。
+ * no_offer：模型说不建议；rejected：模型想建议，但字段或出处没过核对，带上它的原话（截 400 字）。
+ */
+export type NudgeVerdict =
+  | { verdict: "offer"; actionLabel: string; sentence: string; party?: string; evidence: string }
+  | { verdict: "no_offer" }
+  | { verdict: "rejected"; reply: string };
+
 /** 不建议、回复不合格或出处对不上都回 null；调用失败抛 SideCallError，由调用方当作不建议。 */
-export function judgeNudge(host: SideCallHost, model: Model<Api>, context: NudgeContext, options: { sessionId?: string; headers?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Nudge | null> {
+export function judgeNudge(host: SideCallHost, model: Model<Api>, context: NudgeContext, options: { sessionId?: string; headers?: Record<string, string>; signal?: AbortSignal; onVerdict?: (verdict: NudgeVerdict) => void } = {}): Promise<Nudge | null> {
+  const { onVerdict, ...call } = options;
+
   return sideJudgment(host, model, {
     purpose: "nudge",
     systemPrompt: NUDGE_PROMPT,
@@ -41,7 +52,15 @@ export function judgeNudge(host: SideCallHost, model: Model<Api>, context: Nudge
     maxTokens: 800,
     timeoutMs: NUDGE_TIMEOUT_MS,
     retry: "none",
-    ...options,
-    parse: text => acceptNudgeReply(parseJsonReply(text, isJsonObject), context),
+    ...call,
+    parse: text => {
+      const reply = parseJsonReply(text, isJsonObject);
+      const nudge = acceptNudgeReply(reply, context);
+
+      onVerdict?.(nudge ? { verdict: "offer", actionLabel: nudge.actionLabel, sentence: nudge.sentence, ...(nudge.party ? { party: nudge.party } : {}), evidence: nudge.evidence[0]!.text }
+        : "offer" in reply && reply.offer === true ? { verdict: "rejected", reply: text.slice(0, 400) } : { verdict: "no_offer" });
+
+      return nudge;
+    },
   });
 }

@@ -9,7 +9,7 @@
 import { createServer } from "node:http";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { REPO, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
@@ -174,6 +174,11 @@ try {
   const replayed = await until(async () => { const t = await rp.evaluate(panel, TURN); return t.turns === 2 ? t : undefined; }, 20_000, "回放").catch(() => null);
   check("重开侧栏：两轮仍是卡，没有长指令气泡", !!replayed && replayed.bubbles === 1 && replayed.verb === "申请", replayed);
   await rp.screenshot(panel, join(out, "8-replayed.png"));
+
+  // 日常试用回看：设置页导出的诊断记录里，每次判断一行 nudge_verdict，写明哪一页、出了什么卡。
+  const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
+  const verdicts = traces.split("\n").filter(Boolean).map(line => JSON.parse(line)).filter(line => line.type === "nudge_verdict").map(line => line.data);
+  check("诊断记录：三页各一行判断，写明出的卡", verdicts.length === 3 && verdicts.every(v => v.verdict === "offer" && v.actionLabel === "申请" && String(v.url).startsWith(origin)), verdicts);
 } finally {
   console.log(failures.length ? `FAILED ${failures.length}` : "ALL PASS");
   await rp.close().catch(() => undefined);
