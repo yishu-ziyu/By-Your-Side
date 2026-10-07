@@ -5,8 +5,7 @@
 // 3. 去掉这些写工具后「写能力不完整」闸门把通用页面 JS 一起关掉；4. saveFile 在扩展里反而不可用；
 // 5. 系统提示词仍要求模型分派助手。
 // 扩展形态由构建时的模块替换定义（extension/build.mjs 把 agent/src 的 `./config.js` 换成垫片）；
-// 这里做同一个替换、用同一个垫片文件，其余都是生产装配。与 extension/test/inproc-fetch.test.ts 同理，
-// 这处模块替换记入 anti-slop 基线（2026-10-01），直到运行形态可以注入为止。
+// 这里做同一个替换、用同一个垫片文件，其余都是生产装配。与 extension/test/inproc-fetch.test.ts 同理。
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

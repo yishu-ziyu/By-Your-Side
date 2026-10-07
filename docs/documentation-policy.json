@@ -17,8 +17,6 @@
     ".agents/skills/typesafe-ai/SKILL.md": "工具技能加载约定",
     ".kimi-code/agents/consolidator.md": "已有代理角色加载入口",
     "agent/src/vendor/stagehand/PATCH.md": "随第三方源码保留的补丁来源",
-    "tools/oxlint/anti-slop/VENDOR.md": "随第三方源码保留的版本来源",
-    "tools/oxlint/anti-slop/src/vendor/eslint-stylistic/UPSTREAM.md": "上游授权与来源说明",
     "eval/protected/README.md": "锁定评测原件，不随候选实现迁移",
     "eval/protected/CODEX_EXECUTION_SPEC.md": "锁定评测原件，不随候选实现迁移",
     "eval/protected/REVIEW_EVIDENCE.md": "锁定评测原件，不随候选实现迁移",

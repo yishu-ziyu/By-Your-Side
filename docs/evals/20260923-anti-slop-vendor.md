@@ -126,5 +126,5 @@ WIP 从 8 条涨到 231 条超额后做了全量清理，闸门回到 0，并把
 
 报警没有指向 bug（低于随机）。72 个修复里 16 个「沾上」，都是大改动里碰巧一两行；其中 `c4e4157` 修的就是 lint 自己报的问题。没测到的：可读性、好不好审。代价：10-07 两个功能各返工 2–3 轮，多为格式与类型写法。
 
-**裁决（用户 10-07）**：不再拦提交，删去 `scripts/git-hooks/pre-commit`；规则与基线保留，`npm run lint`、`npm run lint:changed` 作为可选报告。上面标准 5「违规量收敛」随之作废。实验脚本与逐提交数据在当次会话临时目录（`anti-slop-exp.py`、`anti-slop-exp.json`），未入库。
+**裁决（用户 10-07）**：整套移除——规则集 `tools/oxlint/`、基线、`oxlint.config.ts`、`scripts/lint-changed.mjs`、提交钩子 `scripts/git-hooks/pre-commit`、`npm run lint*` 与 oxlint 依赖。用户：「证明它没用的话，就不要保留」。上面标准 5「违规量收敛」随之作废。实验脚本与逐提交数据在当次会话临时目录（`anti-slop-exp.py`、`anti-slop-exp.json`），未入库。
 

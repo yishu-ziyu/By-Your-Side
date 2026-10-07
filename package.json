@@ -24,10 +24,6 @@
     "check:docs": "node scripts/maintenance/check-docs.mjs",
     "dashboard": "node scripts/maintenance/dashboard.mjs",
     "test:docs": "node --test scripts/acceptance/documentation-check.test.mjs",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
-    "lint:changed": "node scripts/lint-changed.mjs",
-    "lint:baseline": "node scripts/lint-changed.mjs --all --write-baseline",
     "check": "npm run check:docs && npm run check:architecture && npm run typecheck && npm test && npm run build",
     "test:unit": "vitest run --exclude \"agent/test/performance/**\"",
     "test:scale": "vitest run agent/test/performance --maxWorkers=1",
@@ -36,9 +32,7 @@
     "fixture:p0": "tsx scripts/acceptance/p0-fixture.mts"
   },
   "devDependencies": {
-    "@oxlint/plugins": "1.85.0",
     "marked": "18.0.11",
-    "oxlint": "1.85.0",
     "playwright": "1.58.2",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
