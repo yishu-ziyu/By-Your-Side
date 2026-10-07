@@ -1225,6 +1225,43 @@ return;}
     this.routeDrafts.set(runId, noteRouteStep(this.routeDrafts.get(runId) ?? { steps: [] }, note));
 
     while (this.routeDrafts.size > 4) this.routeDrafts.delete(this.routeDrafts.keys().next().value!);
+    // 提交前核对（YIS-104）：记下这次填过、选过的值（选卡片时值是卡片名）。密码一类不交给核对。
+    const name = note.target?.name ?? note.label ?? "一栏";
+    const value = note.action === "click" ? note.target?.box || undefined : note.action === "fill" || note.action === "select_option" ? note.value : undefined;
+
+    if (value === undefined || /密码|验证码|卡号|password|otp|cvv|card number/i.test(name)) return;
+    const written = this.writtenThisRun.get(runId) ?? { fields: [], keys: [], checked: 0 };
+    // 同一栏改过：只认最后一次（10-07 实测：模型把 8 日改成 15 日后，核对还拿着 8 日，怎么都过不了）。卡片按控件名认，换一张卡片也算改。
+    const key = `${note.action === "click" ? "click" : "value"}\n${name}\n${note.target?.area ?? ""}`;
+    const earlier = written.fields.findIndex((field, i) => i >= written.checked && written.keys[i] === key);
+
+    if (earlier >= 0) {
+      written.fields.splice(earlier, 1);
+      written.keys.splice(earlier, 1);
+    }
+
+    written.fields.push({ step: written.fields.length + 1, field: note.action === "click" ? `${name}（${value}）` : name, value, from: note.memory ? "memory" : "chosen" });
+    written.keys.push(key);
+    this.writtenThisRun.set(runId, written);
+
+    while (this.writtenThisRun.size > 4) this.writtenThisRun.delete(this.writtenThisRun.keys().next().value!);
+  }
+
+  /** 本会话各任务填过的值，以及核对到第几个（YIS-104）。 */
+  private writtenThisRun = new Map<string, { fields: CheckField[]; keys: string[]; checked: number }>();
+
+  /** 上次核对之后新填的值；没有就不用核对。 */
+  writtenSinceCheck(): CheckField[] {
+    const written = this.writtenThisRun.get(this.deliveryRunId() ?? "");
+
+    return written ? written.fields.slice(written.checked) : [];
+  }
+
+  /** 核对过了：之前填的值不再重复核对。 */
+  markWrittenChecked(): void {
+    const written = this.writtenThisRun.get(this.deliveryRunId() ?? "");
+
+    if (written) written.checked = written.fields.length;
   }
 
   /** 走老路：本会话各任务照着走的是哪一次（YIS-97），按 runId；同一任务照走过几次时记第一次。 */

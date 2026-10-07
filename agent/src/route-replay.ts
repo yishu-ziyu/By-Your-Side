@@ -43,7 +43,7 @@ export interface ReplayResult {
 }
 
 /** 名字像提交、付款、发送、删除这类会把东西交出去的按钮。 */
-const SUBMIT = /提交|预订|预约|付款|支付|购买|下单|发送|删除|确认|保存|报名|登记|submit|book|reserve|pay|purchase|order|send|delete|remove|confirm|save|place/i;
+export const SUBMIT = /提交|预订|预约|付款|支付|购买|下单|发送|删除|确认|保存|报名|登记|submit|book|reserve|pay|purchase|order|send|delete|remove|confirm|save|place/i;
 
 /** 值不齐、步骤号不对、不在这个网站：抛错，一步都不做。 */
 function checkInput(route: TaskRoute, values: ReadonlyArray<{ step: number; value: string }>, asked: readonly string[]): Map<number, string> {
