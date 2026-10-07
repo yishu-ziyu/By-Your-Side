@@ -1817,6 +1817,89 @@ export async function selectOption(
   );
 }
 
+type UploadOutcome = ToolContract["upload_file"]["data"] | { refused: string };
+
+/**
+ * 页面内执行（自包含：经 executeScript 或 toString 注入）。where 是元素（AX ref 已解析）、定位串，或 null（找页面上唯一的文件框）。
+ * 目标可以是文件框本身、它的 <label>，或只包着一个文件框的容器（常见的自绘上传按钮把文件框藏在里面）。
+ * 用 DataTransfer 构造 File 放进 input.files，发冒泡的 input/change，再读回 files 作回执。
+ */
+function putFilesInPage(where: Element | string | null, files: ToolContract["upload_file"]["params"]["files"]): UploadOutcome {
+  const isFileInput = (el: Element | null | undefined): el is HTMLInputElement => el?.tagName === "INPUT" && (el as HTMLInputElement).type === "file";
+
+  const fileInputsIn = (root: ParentNode): HTMLInputElement[] => [...root.querySelectorAll("*")].flatMap(el =>
+    [...(isFileInput(el) ? [el] : []), ...(el.shadowRoot ? fileInputsIn(el.shadowRoot) : [])]);
+
+  let input: HTMLInputElement | undefined;
+
+  if (where === null) {
+    const found = fileInputsIn(document);
+    const [only] = found;
+
+    // 几个文件框时列出可用的 CSS 定位（id、name 或 class），模型下一步直接带 target，不必再读页面。
+    const locator = (el: HTMLInputElement) => el.id ? `#${CSS.escape(el.id)}` : el.name ? `input[type=file][name="${el.name}"]` : el.classList.length ? `input[type=file].${[...el.classList].map(c => CSS.escape(c)).join(".")}` : "input[type=file]（无 id/name/class）";
+
+    if (found.length !== 1 || !only) return { refused: found.length === 0 ? "页面上没有文件选择框（input type=file），操作未执行。" : `页面上有 ${found.length} 个文件选择框，请用 target 指定其中一个，操作未执行。候选：${found.slice(0, 6).map(locator).join("、")}` };
+    input = only;
+  } else {
+    const el = typeof where === "string" ? window.__sideagent?.dom?.resolve(where) ?? null : where;
+
+    if (!el) return { refused: "找不到目标元素，操作未执行。请重新 snapshot 后再定位。" };
+    const control = el.tagName === "LABEL" ? (el as HTMLLabelElement).control : null;
+    const inside = fileInputsIn(el);
+    input = isFileInput(el) ? el : isFileInput(control) ? control : inside.length === 1 ? inside[0] : undefined;
+
+    if (!input) return { refused: inside.length > 1 ? `目标里有 ${inside.length} 个文件选择框，请指定其中一个，操作未执行。` : "目标不是文件选择框（input type=file），也不包含文件选择框，操作未执行。" };
+  }
+
+  if (input.disabled) return { refused: "文件选择框已禁用，操作未执行。" };
+
+  if (files.length > 1 && !input.multiple) return { refused: `这个文件选择框一次只收一个文件，给了 ${files.length} 个，操作未执行。` };
+  const transfer = new DataTransfer();
+
+  for (const file of files) {
+    const body = file.base64 !== undefined ? Uint8Array.from(atob(file.base64), c => c.charCodeAt(0)) : file.text ?? "";
+    transfer.items.add(new File([body], file.name, { type: file.type }));
+  }
+
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+
+  return { files: [...(input.files ?? [])].map(f => ({ name: f.name, size: f.size, type: f.type })) };
+}
+
+/** 上传文件：不开系统选择框、不经本机磁盘；target 缺省时用页面上唯一的文件框。回执只认从文件框读回的文件。 */
+export async function uploadFile(
+  params: ToolContract["upload_file"]["params"],
+  sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+): Promise<ToolContract["upload_file"]["data"]> {
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
+
+  if (tab.id == null) throw new Error("工作标签页无效");
+  const tabId = tab.id;
+  await assertObservedDocument(tabId, sessionId, [params.target]);
+  await beforeDispatch?.();
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
+
+  const target = params.target ?? null;
+  const backendNodeId = target === null ? undefined : axBackendNodeFor(tabId, parseRef(target));
+  let outcome: UploadOutcome;
+
+  if (backendNodeId !== undefined) {
+    outcome = await callOnBackendNode<UploadOutcome>(tabId, backendNodeId,
+      `function(files) { return (${putFilesInPage.toString()})(this, files); }`, [params.files], undefined, undefined, beforeDispatch);
+  } else {
+    if (target !== null) await ensureDomOps(tabId, beforeDispatch);
+    outcome = await callDom(tabId, putFilesInPage, [target, params.files], undefined, beforeDispatch);
+  }
+
+  if ("refused" in outcome) throw notExecuted(new Error(outcome.refused));
+
+  return outcome;
+}
+
 export async function typeText(
   params: { text: string; tabId?: number; },
   sessionId: string = LEAD_SESSION_ID,

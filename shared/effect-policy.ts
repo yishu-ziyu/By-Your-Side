@@ -68,7 +68,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
     };
   }
 
-  if (name === "upload_file" || name === "file_chooser_set_files") {
+  if (name === "upload_file") {
     return {
       class: "write",
       requiresControlGate: true,

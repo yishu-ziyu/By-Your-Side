@@ -374,9 +374,13 @@ export const TOOL_NAMES = [
   "download_url",
   /** CAP-02C：原生 select 的 value/label/index、多选、清空（≠ 单值 fill）。 */
   "select_option",
+  "upload_file",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
+
+/** upload_file 送进页面的一份文件：文字文件给 text，图片等二进制给 base64。 */
+export interface UploadFilePayload { name: string; type: string; text?: string; base64?: string }
 
 /** read_element 读到的表单控件属性：语音填写读回据 type/autocomplete 判断是不是密码、验证码类保护字段。 */
 export interface AnchorSource {
@@ -623,6 +627,11 @@ export interface ToolContract {
       expectedBackendNodeId?: number;
     };
     data: { selected: string[]; labels: string[] };
+  };
+  /** 把本会话的文件放进页面上的一个 <input type=file>：文件在页面里构造，不经本机磁盘；回执是从文件框读回的文件。 */
+  upload_file: {
+    params: { tabId?: number; target?: string; files: UploadFilePayload[] };
+    data: { files: Array<{ name: string; size: number; type: string }> };
   };
   type_text: { params: { tabId?: number; text: string; }; data: { typed: true } };
   press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
