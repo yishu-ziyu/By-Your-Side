@@ -209,7 +209,8 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
     const observedAfter = typeof snapshot.lastReadAt === 'number' && item.evidence?.observedAt !== undefined && snapshot.lastReadAt > item.evidence.observedAt;
 
     if (snapshot.restartRecovery || (!worker && !observedAfter)) {
-      if (snapshot.restartRecovery && name === 'fill') throw new Error(`「${item.description}」已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请停下告诉用户，由用户在对话里决定是否重填。`);
+      // 重启前填好的也一样：这次没执行，原步骤已做成，不能在账上留成受阻待办。
+      if (snapshot.restartRecovery && name === 'fill') throw new RepeatRefusedError(`「${item.description}」已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请停下告诉用户，由用户在对话里决定是否重填。`);
 
       throw new RepeatRefusedError(`「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
     }
