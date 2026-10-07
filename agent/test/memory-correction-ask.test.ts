@@ -628,6 +628,7 @@ describe("recognizing a correction by wording", () => {
     "我说的是导出全部",
     "你理解错了，要按价格排序",
     "No, I meant the cheaper one",
+    "你记错了，我其实一直吃大号披萨。",
     "不对，只导了当前页",
     "这个搞错了，是 B 列",
     "怎么又只导了一页",

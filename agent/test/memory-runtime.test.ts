@@ -188,7 +188,7 @@ return entries;});
 });
 
 describe("mayStatePersonalFact: implicit fact changes", () => {
-  it.each(["我搬到杭州了", "我换工作了，现在在字节", "我现在住在上海", "I moved to Berlin"])("lets %s reach the memory judge", text => {
+  it.each(["我搬到杭州了", "我换工作了，现在在字节", "我现在住在上海", "I moved to Berlin", "你记错了，我其实一直吃大号披萨。"])("lets %s reach the memory judge", text => {
     expect(mayStatePersonalFact(text, [])).toBe(true);
   });
   it.each(["帮我把标题改成蓝色", "换一个搜索词试试", "把这个按钮点一下"])("filters out the task request %s", text => {
