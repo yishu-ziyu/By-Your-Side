@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>思考强度 · 三个方向</title>
+<style>
+  :root { --desk:#e8e6e0; --ink:#141413; --ink-2:#5f5e58; --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--desk); font:13px/1.6 var(--font); color:var(--ink); display:flex; gap:22px; padding:18px; box-sizing:border-box; }
+  .side { width:380px; flex:none; border-radius:12px; overflow:hidden; box-shadow:0 0 0 1px rgba(20,20,19,.10),0 10px 30px rgba(20,20,19,.10); background:#fff; }
+  .side iframe { width:100%; height:100%; border:0; display:block; }
+  .notes { max-width:340px; color:var(--ink-2); }
+  .seg { display:inline-flex; background:rgba(20,20,19,.06); border-radius:999px; padding:2px; margin-bottom:14px; }
+  .seg button { font:500 12.5px var(--font); border:0; background:transparent; color:var(--ink-2); padding:5px 12px; border-radius:999px; cursor:pointer; }
+  .seg button[aria-pressed="true"] { background:#fff; color:var(--ink); box-shadow:0 1px 3px rgba(20,20,19,.10); }
+  .notes h1 { font-size:15px; color:var(--ink); margin:0 0 6px; }
+  .notes p { margin:0 0 8px; }
+  .notes b { color:var(--ink); }
+  .map { margin-top:14px; padding-top:10px; border-top:1px solid rgba(20,20,19,.1); font-size:12px; }
+  .map table { border-collapse:collapse; } .map td { padding:2px 10px 2px 0; }
+</style>
+</head>
+<body>
+  <div class="side"><iframe id="panel" title="侧栏"></iframe></div>
+  <div class="notes">
+    <div class="seg" id="dirs"><button data-d="1" aria-pressed="true">方向一</button><button data-d="2">方向二</button><button data-d="3">方向三</button></div>
+    <div id="note"></div>
+    <div class="map">每个模型自己的档位，产品里已有一张表；两个选择按下面对应：
+      <table>
+        <tr><td></td><td><b>快</b></td><td><b>深入</b></td></tr>
+        <tr><td>6 Luna</td><td>低</td><td>高</td></tr>
+        <tr><td>MiniMax M3.1</td><td>低</td><td>高</td></tr>
+        <tr><td>阶跃 Step 5</td><td colspan="2">不能调思考：开关不出现</td></tr>
+      </table>
+    </div>
+  </div>
+<script>
+const PANEL = __PANEL__;
+const NOTES = {
+  1: `<h1>方向一：一个小灯泡（像 Claude）</h1><p>输入框左下角，加号旁边多一个灯泡。<b>灭着 = 快</b>（默认），<b>点亮 = 深入</b>。</p><p>点一下会在上方浮出一行字，说清这个模型现在用哪一档，两秒后消失。平时只占一个小图标。</p>`,
+  2: `<h1>方向二：收进模型菜单（像 Gemini）</h1><p>点右上角「…」，在「当前模型」下面多一行「思考：快 / 深入」。</p><p>输入框完全不变。缺点：要点两下才找得到，正在做的时候看不到现在是哪一档。</p>`,
+  3: `<h1>方向三：输入框写明模型和档位（像 ChatGPT）</h1><p>输入框左下角写「6 Luna · 快」。点开先看到是哪个模型，再选快或深入，每项写明这个模型实际用哪一档。</p><p>好处是不会意义不明；缺点是多占一段文字。</p>`,
+};
+const BULB = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>';
+const CHEV = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const CSS = `<style>
+  .tl-bulb { width:26px; height:26px; border-radius:6px; border:0; background:transparent; color:var(--text-secondary); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; margin-left:2px; transition:background var(--m-quick) ease, color var(--m-quick) ease, transform var(--m-quick) ease; }
+  .tl-bulb:hover { color:var(--text-primary); background:var(--content-subtle); }
+  .tl-bulb:active { transform:scale(.95); }
+  .tl-bulb.on { color:var(--apple-blue); background:var(--apple-blue-soft); }
+  .tl-hint { position:absolute; left:14px; bottom:calc(100% + 8px); padding:6px 10px; border-radius:8px; background:var(--content-bg); box-shadow:var(--popover-shadow); border:1px solid var(--glass-border); color:var(--text-secondary); font-size:12px; white-space:nowrap; opacity:0; transform:translateY(4px); transition:opacity var(--m-move) var(--e-swift), transform var(--m-move) var(--e-swift); pointer-events:none; }
+  .tl-hint.show { opacity:1; transform:none; }
+  .tl-hint b { color:var(--text-primary); font-weight:600; }
+  .tl-row { display:flex; align-items:center; justify-content:space-between; padding:6px 10px 10px; font-size:13px; color:var(--text-primary); }
+  .tl-seg { display:inline-flex; background:var(--content-subtle); border-radius:7px; padding:2px; }
+  #header-menu .tl-seg button, .tl-seg button { all:unset; width:auto; white-space:nowrap; padding:3px 10px; border-radius:5px; font-size:12px; color:var(--text-secondary); cursor:pointer; }
+  #header-menu .tl-seg button[aria-pressed="true"], .tl-seg button[aria-pressed="true"] { background:var(--content-bg); color:var(--text-primary); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .tl-chip { all:unset; display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 8px; border-radius:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; margin-left:2px; transition:background var(--m-quick) ease, color var(--m-quick) ease; }
+  .tl-chip:hover, .tl-chip[aria-expanded="true"] { background:var(--content-subtle); color:var(--text-primary); }
+  .tl-chip svg { opacity:.6; transition:transform var(--m-move) var(--e-swift); }
+  .tl-chip[aria-expanded="true"] svg { transform:rotate(180deg); }
+  .tl-menu { position:absolute; left:10px; bottom:calc(100% + 6px); width:232px; padding:6px; border-radius:14px; border:1px solid var(--glass-border); background:var(--content-bg); box-shadow:var(--popover-shadow); opacity:0; transform:translateY(4px) scale(.97); transform-origin:bottom left; pointer-events:none; transition:opacity var(--m-move) var(--e-swift), transform var(--m-move) var(--e-swift); z-index:20; }
+  .tl-menu.open { opacity:1; transform:none; pointer-events:auto; }
+  .tl-menu .head { padding:6px 10px 4px; font-size:11px; color:var(--text-tertiary); }
+  .tl-menu button { all:unset; box-sizing:border-box; width:100%; display:grid; grid-template-columns:1fr auto; padding:8px 10px; border-radius:8px; cursor:pointer; }
+  .tl-menu button:hover { background:var(--content-subtle); }
+  .tl-menu button span { font-size:13px; color:var(--text-primary); }
+  .tl-menu button small { grid-column:1; font-size:11.5px; color:var(--text-tertiary); }
+  .tl-menu button i { grid-row:1 / span 2; grid-column:2; align-self:center; font-style:normal; color:var(--apple-blue); visibility:hidden; }
+  .tl-menu button[aria-checked="true"] i { visibility:visible; }
+  .tl-menu hr { border:0; border-top:1px solid var(--glass-border); margin:4px 6px; }
+  .tl-menu .more { font-size:12.5px; color:var(--text-secondary); }
+</style>`;
+let dir = 1;
+const frame = document.getElementById("panel");
+function setup(d) {
+  const bar = d.getElementById("composer-bar");
+  const attach = d.getElementById("attach-btn");
+  const host = bar.parentElement; host.style.position = "relative";
+  const input = d.getElementById("input"); if (input) input.placeholder = "说说你想完成什么…";
+  let deep = false;
+  if (dir === 1) {
+    const b = d.createElement("button"); b.className = "tl-bulb"; b.title = "深入思考"; b.innerHTML = BULB; attach.after(b);
+    const hint = d.createElement("div"); hint.className = "tl-hint"; host.append(hint);
+    let t;
+    b.onclick = () => { deep = !deep; b.classList.toggle("on", deep); hint.innerHTML = deep ? "<b>深入思考</b> · 6 Luna 用高档，会慢一些" : "<b>快</b> · 6 Luna 用低档"; hint.classList.add("show"); clearTimeout(t); t = setTimeout(() => hint.classList.remove("show"), 2000); };
+  }
+  if (dir === 2) {
+    const menu = d.getElementById("header-menu"); const mb = d.getElementById("model-btn");
+    mb.hidden = false; d.getElementById("model-name").textContent = "6 Luna";
+    const row = d.createElement("div"); row.className = "tl-row";
+    row.innerHTML = `<span>思考</span><span class="tl-seg"><button aria-pressed="true">快</button><button aria-pressed="false">深入</button></span>`;
+    mb.after(row);
+    row.querySelectorAll("button").forEach(x => x.onclick = () => row.querySelectorAll("button").forEach(y => y.setAttribute("aria-pressed", String(y === x))));
+    setTimeout(() => { try { menu.showPopover(); } catch {} }, 300);
+  }
+  if (dir === 3) {
+    const chip = d.createElement("button"); chip.className = "tl-chip"; chip.setAttribute("aria-expanded", "false"); attach.after(chip);
+    const menu = d.createElement("div"); menu.className = "tl-menu"; host.append(menu);
+    menu.innerHTML = `<div class="head">6 Luna</div><button data-k="0" aria-checked="true"><span>快</span><small>低档 · 填表、订东西</small><i>✓</i></button><button data-k="1" aria-checked="false"><span>深入</span><small>高档 · 多步骤、要权衡的事</small><i>✓</i></button><hr><button class="more"><span class="more">换模型…</span></button>`;
+    const draw = () => { chip.innerHTML = `6 Luna · ${deep ? "深入" : "快"}${CHEV}`; menu.querySelectorAll("[data-k]").forEach(x => x.setAttribute("aria-checked", String((x.dataset.k === "1") === deep))); };
+    const open = o => { menu.classList.toggle("open", o); chip.setAttribute("aria-expanded", String(o)); };
+    chip.onclick = e => { e.stopPropagation(); open(!menu.classList.contains("open")); };
+    menu.onclick = e => { const x = e.target.closest("[data-k]"); if (!x) return; deep = x.dataset.k === "1"; draw(); open(false); };
+    d.addEventListener("click", () => open(false));
+    draw();
+  }
+}
+function load() {
+  document.getElementById("note").innerHTML = NOTES[dir];
+  document.querySelectorAll("#dirs button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.d === dir)));
+  frame.onload = () => setup(frame.contentDocument);
+  frame.srcdoc = PANEL.replace("</head>", CSS + "</head>");
+}
+document.querySelectorAll("#dirs button").forEach(b => b.onclick = () => { dir = +b.dataset.d; load(); });
+load();
+</script>
+</body>
+</html>

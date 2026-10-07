@@ -20,6 +20,8 @@ export interface ModelRequestObservation {
   tools: readonly ModelRequestTool[];
   messages: readonly Message[];
   injected: ReadonlyArray<{ customType: string; text: string }>;
+  /** 这次调用用的思考档。 */
+  effort?: string;
 }
 
 /** 全文分段字数：远低于脱敏的单串上限（64k 字）与单行上限（256 KB，最坏每字 6 字节转义也不到 100 KB）。 */
@@ -67,7 +69,7 @@ export class ModelRequestTrace {
 
       this.record("model_request", {
         systemPromptSha256, systemPromptChars: request.systemPrompt.length,
-        toolsSha256, toolCount: request.tools.length,
+        toolsSha256, toolCount: request.tools.length, effort: request.effort,
         injected: request.injected.map(item => ({ customType: item.customType, text: item.text })),
         images: this.images(request.messages),
       });

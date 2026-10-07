@@ -54,6 +54,7 @@ import { mountErrorCards, type KeyTestResult } from "./error-card.js";
 import { describeModelError } from "../../../shared/user-facing.js";
 import { INPROC_CREDENTIAL_PREFIX } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
+import { mountThinkingChip } from "./thinking-chip.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
@@ -2073,6 +2074,14 @@ const modelPicker = mountModelPicker({
   },
 });
 
+// 输入框左下角「6 Luna · 快」：当前模型与思考强度；「换模型…」打开上面的模型选择器。
+const thinkingChip = mountThinkingChip({
+  composer: document.getElementById("composer")!,
+  after: document.getElementById("attach-btn")!,
+  send: (deep) => { send({ type: "set_thinking", deep }); },
+  openModels: () => { modelBtn.click(); },
+});
+
 // ── 错误卡（#74）：模型出错时按种类给修复动作，修好后从出错处接着做 ──
 let knownModels: ModelOption[] = [];
 
@@ -2085,6 +2094,7 @@ const keyTests = new Map<string, (result: KeyTestResult) => void>();
 
 function noteModelInfo(model: string | undefined, models: ModelOption[] | undefined): void {
   if (models?.length) knownModels = models;
+  thinkingChip.update(model ?? currentModelId, knownModels);
 
   if (!model) return;
   currentModelId = model;
@@ -4733,6 +4743,7 @@ function handleServerMessage(raw: string): void {
       applyHostFeatures(msg.features);
       modelPicker.apply(msg.model, msg.models);
       noteModelInfo(msg.model, msg.models);
+      thinkingChip.connected();
       break;
     case "model_info":
       modelPicker.update(msg.model, msg.models);

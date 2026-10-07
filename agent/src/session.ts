@@ -33,7 +33,7 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
  */
 import type { AgentToolResult, DefaultResourceLoader, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallError, sideJudgment, type RejectedEfforts, type SideCallHost } from "./side-judgment.js";
-import { MainEffort } from "./main-effort.js";
+import { MainEffort, thinkingChoice } from "./main-effort.js";
 import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
@@ -594,7 +594,7 @@ if(required.includes(key))candidates.set(key,attachment);
         appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
         extensionFactories: extensionFactories.map(entry => entry.factory),
         onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
-        onModelRequest: request => resultHost?.modelRequestTrace.observe(request),
+        onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined }),
         effort: model => resultHost?.mainEffort.level(model) ?? "off",
       });
 
@@ -736,6 +736,7 @@ if(required.includes(key))candidates.set(key,attachment);
         provider: m.provider,
         modelId: m.id,
         name: m.name,
+        ...(thinkingChoice(m) ? { thinking: thinkingChoice(m) } : {}),
       })), this.modelName());
     } catch (err) {
       console.error(`[sideagent] 枚举可用模型失败：${err instanceof Error ? err.message : String(err)}`);
