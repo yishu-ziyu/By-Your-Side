@@ -6,6 +6,7 @@ import { installMarginaliaTracker } from "./marginalia-tracker.js";
 import { installNudge } from "./nudge.js";
 import { installSonarPinpoint } from "./sonar-pinpoint.js";
 import { installMemoryMark } from "./memory-mark.js";
+import { installPushToTalkKeys } from "./ptt.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, PanelRight, RotateCcw } from 'lucide';
 import DOMPurify from 'dompurify';
@@ -67,6 +68,7 @@ function boot(): void {
 
   installSonarPinpoint();
   installMemoryMark();
+  installPushToTalkKeys();
   installDragFeed();
   installMarginaliaTracker();
   installGhostHud();

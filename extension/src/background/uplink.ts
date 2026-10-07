@@ -143,7 +143,8 @@ export class Uplink {
       const existing = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
 
       if (existing.length === 0) {
-        await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS], justification: "Run the agent loop inside the extension" });
+        // USER_MEDIA：按住说话在侧栏关着时也要在这里录音（#125）。
+        await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS, chrome.offscreen.Reason.USER_MEDIA], justification: "Run the agent loop inside the extension and record push-to-talk speech" });
       }
     } catch (err) {
       this.connecting = false;
