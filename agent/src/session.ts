@@ -35,7 +35,7 @@ import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallE
 import { MainEffort } from "./main-effort.js";
 import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
-import type { Session as PiSession } from "pi-session-084";
+import type { SessionLogPort } from "./session-log.js";
 import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
@@ -90,7 +90,7 @@ export interface SessionCreateOptions {
   /** 复用 Lead 的 runtime，工人不再 create/注册 cliproxy。 */
   modelRuntime?: ModelRuntime;
   /** 给定时用 pi-agent-core 的循环（扩展里）代替 pi-coding-agent 的 AgentSession；modelPattern 此时必填。 */
-  loop?: { models: ModelPort; cwd: string; session?: PiSession };
+  loop?: { models: ModelPort; cwd: string; session?: SessionLogPort };
   artifactPersistence?: ArtifactPersistence;
   customTools?: ToolDefinition[];
   systemPrompt?: string;
