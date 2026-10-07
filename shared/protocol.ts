@@ -60,6 +60,9 @@ export interface PageContext {
   selection?: { text: string };
 }
 
+/** 圈内网页文字最多带这么多字。 */
+export const CIRCLE_NOTE_MAX = 600;
+
 /** 用户消息附带的附件材料（截图、粘贴图或上传图片）。 */
 export interface ImageAttachment {
   id: string;
@@ -67,6 +70,8 @@ export interface ImageAttachment {
   name: string;
   dataBase64: string;
   mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  /** 圈出来问：圈内的网页文字（不含输入框里的值），随这张图交给助手。 */
+  note?: string;
 }
 
 export type Attachment = ImageAttachment;
@@ -82,6 +87,8 @@ export function isAttachment(v: unknown): v is Attachment {
   if (typeof a.name !== "string" || a.name.length > 256) return false;
 
   if (typeof a.dataBase64 !== "string" || !a.dataBase64) return false;
+
+  if (a.note !== undefined && (typeof a.note !== "string" || a.note.length > CIRCLE_NOTE_MAX)) return false;
 
   if (
     a.mimeType !== "image/png" &&
@@ -1200,7 +1207,7 @@ export type PageInteractionMessage =
   /** 「记得的」小卡点了「忘掉」（页面 → 侧栏）。 */
   | { type: 'MEMORY_FIELD_FORGET'; id: string }
   /** 圈出来问：页面上圈好了第 n 处（页面 → 侧栏），rect 是要截的视口区域（CSS 像素）。 */
-  | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number } }
+  | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number }; /** 圈内的网页文字；圈的是空白处就省略。 */ text?: string }
   /** 圈出来问：页面上按了 Esc，退出圈画（页面 → 侧栏）。 */
   | { type: 'CIRCLE_EXIT' };
 
@@ -1281,6 +1288,8 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
   if (message.type === 'CIRCLE_DRAWN') {
     const rect = message.rect;
     const size = (v: number) => Number.isFinite(v) && v >= 0;
+
+    if (message.text !== undefined && (typeof message.text !== 'string' || message.text.length > CIRCLE_NOTE_MAX)) return false;
 
     return Number.isSafeInteger(message.n) && (message.n ?? 0) > 0 && !!rect && typeof rect === 'object'
       && size(rect.x) && size(rect.y) && size(rect.width) && size(rect.height) && size(rect.viewportWidth) && size(rect.viewportHeight) && rect.viewportWidth > 0 && rect.viewportHeight > 0;
