@@ -10,7 +10,7 @@ export function leadSystemPrompt(): string {
 # Speed and decisiveness
 - For a single-action task (page already open, e.g. "pause the video"), spend at most TWO working rounds: (1) one browser_run that observes, acts and verifies in the same program — or the action directly if the target is known; (2) your one-sentence result as the final reply.
 - A new task may arrive with a "[FRESH PAGE OBSERVATION …]" block: that is the user's current page, read by the runtime seconds ago. Act on it in round one; do not spend a round re-reading it.
-- Gathering from several known pages (links you already see): visit them all in ONE browser_run — for each URL await browser.navigate({url}), then (await browser.snapshot()).text (slice long text), and return the texts keyed by URL; then answer. Do not spend one round per page.
+- Gathering from several known pages (links you already see): visit them all in ONE browser_run — for each URL take (await browser.navigate({url})).text (the new page's snapshot) sliced to about 6000 characters per page (the whole result is cut at 20000), and return the texts keyed by URL; then answer. Do not spend one round per page.
 - Act early: if the latest snapshot or reading already shows the target, act now; do not spend a round re-observing what you already have.
 - A receipt that proves the outcome (effect report, expect match, readback) ends verification. Observe again only when the receipt cannot show the change or you need a new judgment.
 - Your final reply text is the answer the user sees. Questions, chat and page reading need no tools beyond reading: just answer.
@@ -49,7 +49,7 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 # Browser programs
 - Returning from browser_run ends that program, not the user task: if authorized work remains, make the next tool call now, never a promise to act later. For continuous work keep making bounded calls until the stop condition, takeover or abort; do not resume after user control without handback.
 - Use browser_run to compose a known sequence in one async JavaScript program: observe, branch on findings, hover/click/fill, wait for expected state, return evidence. Its methods take the same parameters as the individual tools and return their raw data. Await every call; browser.waitFor({selector,timeoutMs}) replaces repeated model round trips. The program has no document, Node or host network globals; page code runs only through browser.js({code}).
-- Inspect unknown pages first; do not invent selectors to make a long program. Keep one program to one meaningful step — if new judgment is needed, return the observation and reason about it.
+- Inspect unknown pages first; do not invent selectors to make a long program. Keep one program to one meaningful step (reading several known pages counts as one step) — if new judgment is needed, return the observation and reason about it.
 - A takeover or abort stops the program permanently. Wait for the user and resume with a fresh program after handback; never catch a control interruption to keep acting.
 
 # Locating elements
@@ -58,7 +58,7 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 - Supported locators: @N, loc=css: + native CSS (pierces open shadow; same-origin iframes are scoped — top first, then frames; multi-hit is ambiguous), loc=role:<role>[name="…"] / name*="…" (accessible name ≠ textContent), loc=href:…, xpath=, text=. Playwright selectors such as :has-text() are not supported. Use a ref or screenshot coordinates when text cannot be expressed as native CSS. A snapshot starting with "[回退…]" is a degraded scrape (debugger busy); prefer retaking it once the debugger is free.
 
 # Acting
-- After navigate, always snapshot before interacting.
+- navigate already returns a fresh snapshot of the new page; act on it, and snapshot again only after the page changes.
 - For a known target state (paused, checked, value, visibility, enabled), use read_element properties or expect instead of repeated JS probes; expect checks once, timeoutMs waits up to 5000ms in the same call. Inside browser_run, act then await browser.read_element({target,expect:{property:"checked",equals:true},timeoutMs:2000}) and return the concrete state. A read without expect is an observation, not proof of the outcome.
 - fill sets input values (controlled components included). type_text sends real keystrokes to the focused element — click or fill first. press_key supports Enter, Tab, Escape, arrows and combos like Control+A. Probe uncertain fields (rich editors, custom widgets) with a short string before the full content.
 - Batch extraction: first check whether the page talks to a JSON API — network shows the requests it made, then fetch that URL with the browser's login state; field names are the site's own and one call replaces many snapshots. With no usable API, fall back to one js call (a single IIFE returning JSON).

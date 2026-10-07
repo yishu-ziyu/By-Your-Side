@@ -23,6 +23,10 @@ import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
 import { FileDocument } from "./fixtures/file-document.js";
 import { PROBE_PATTERN, scriptedModels } from "./fixtures/scripted-loop.js";
 
+/** browser_run 的文本结果包在不可信页面标记里；取出里面的 {value, steps} JSON。 */
+const programJson = (text: string) => JSON.parse(text.replace(/^<page-content untrusted[^>]*>\n/, "").replace(/\n<\/page-content>$/, ""));
+
+
 const dirs: string[] = [];
 
 afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
@@ -111,7 +115,7 @@ describe("页面脚本结果未知时 browser_run 的逐步放行", () => {
     try {
       await leaveUnknownScript(h);
       const result = await h.run({ code: FETCH_AND_SAVE });
-      expect(JSON.parse(textOf(result)).value).toEqual({ sawButton: true, receipt: { filename: "字幕.txt", chars: 8, lines: 2, overwritten: false } });
+      expect(programJson(textOf(result)).value).toEqual({ sawButton: true, receipt: { filename: "字幕.txt", chars: 8, lines: 2, overwritten: false } });
       expect(h.frames.map(frame => frame.name)).toEqual(["js", "snapshot", "fetch"]);
       expect(textOf(await h.artifacts({ command: "get", filename: "字幕.txt" }))).toBe("第一句\n第二句\n");
       // 6. 放行取数和存文件不等于核查过那次页面脚本。
@@ -188,7 +192,7 @@ describe("页面脚本结果未知时 browser_run 的逐步放行", () => {
     try {
       await leaveUnknownScript(h);
       const result = await h.run({ code: 'return await browser.waitForLoad({state:"load", timeoutMs:3000});' });
-      expect(JSON.parse(textOf(result)).value).toMatchObject({ readyState: "complete", state: "load" });
+      expect(programJson(textOf(result)).value).toMatchObject({ readyState: "complete", state: "load" });
       expect(h.frames.filter(frame => frame.name === "js").length).toBeGreaterThan(1);
       expect(h.unknownResults().map(item => item.tool)).toEqual(["js"]);
     } finally {

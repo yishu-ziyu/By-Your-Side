@@ -14,6 +14,10 @@ import { join } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ToolName } from "../../shared/protocol.js";
 
+/** browser_run 的文本结果包在不可信页面标记里；取出里面的 {value, steps} JSON。 */
+const programJson = (text: string) => JSON.parse(text.replace(/^<page-content untrusted[^>]*>\n/, "").replace(/\n<\/page-content>$/, ""));
+
+
 vi.mock("../src/config.js", () => import("../../extension/src/inproc/shims/config.js"));
 
 const dirs: string[] = [];
@@ -77,7 +81,7 @@ describe("扩展形态的会话工具清单", () => {
 
       for (const word of ["downloadSaveAs", "uploadFile", "fileChooserSetFiles", "/paste/", "browser.cdp", "playwright", "html5Drag"]) expect(run.description).not.toContain(word);
 
-      const listed: { value: string[] } = JSON.parse(textOf(await invoke(run, { code: "return Object.keys(browser);" })));
+      const listed: { value: string[] } = programJson(textOf(await invoke(run, { code: "return Object.keys(browser);" })));
       expect(listed.value).toContain("saveFile");
       expect(listed.value).toContain("js");
 
