@@ -2469,7 +2469,7 @@ function addMsg(cls: string, text: string): HTMLElement {
   return div;
 }
 
-// ── 回答首句末尾「用了 N 条记忆 ›」：展开后插在首句与正文之间，每条可「忘掉」或「这里别用」 ──
+// ── 回答首句末尾「按你说过的「…」等 N 条 ›」：展开后插在首句与正文之间，每条可「忘掉」或「这里别用」 ──
 type UsedItem = ({ kind: "entry"; entry: MemoryEntry; removed?: MemoryEntry[] } | { kind: "task"; task: TaskHistoryEntry })
   & { state: "used" | "forgotten" | "not-here"; pending: boolean; error: string };
 
@@ -2565,6 +2565,15 @@ const USED_GLYPHS: Record<"past" | "profile" | "method", string> = {
   method: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 2.5h6M2 5h4M2 7.5h5"/></svg>',
 };
 
+/** 行内点名用上的第一条（带给助手时排第一），多条时加「等 N 条」（YIS-86）。太长的截断，全文在展开里。 */
+function usedLineLabel(line: MemoryUsedLine): string {
+  const first = line.items.values().next().value!;
+  const text = first.kind === "entry" ? first.entry.text : first.task.summary || first.task.goal;
+  const short = text.length > 16 ? `${text.slice(0, 15)}…` : text;
+
+  return `${first.kind === "entry" ? "按你说过的" : "按上次做过的"}「${short}」${line.items.size > 1 ? `等 ${line.items.size} 条` : ""}`;
+}
+
 function renderUsedLine(line: MemoryUsedLine): void {
   line.el.className = "memory-used-line";
   line.el.dataset.memoryUsedLine = String(line.items.size);
@@ -2575,7 +2584,7 @@ function renderUsedLine(line: MemoryUsedLine): void {
   const chevron = document.createElement("span");
   chevron.className = "memory-used-chevron";
   chevron.textContent = "›";
-  cite.replaceChildren(`用了 ${line.items.size} 条记忆 `, chevron);
+  cite.replaceChildren(`${usedLineLabel(line)} `, chevron);
   cite.onclick = () => { line.open = !line.open; renderUsedLine(line); };
 
   const list = document.createElement("ul");
