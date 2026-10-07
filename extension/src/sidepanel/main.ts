@@ -22,7 +22,7 @@ import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, Database, SlidersHorizontal } from "lucide";
+import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
 import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText, TextQuote } from "lucide";
 import {
@@ -167,7 +167,7 @@ app.innerHTML = `
       <span id="status-text">未连接</span>
     </div>
     <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
-    <button id="memory-open" type="button" aria-label="记忆" title="记忆" aria-haspopup="dialog" aria-expanded="false"></button>
+    <button id="memory-open" type="button" title="看、改、删助手记住的事" aria-haspopup="dialog" aria-expanded="false">记忆</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
         <button id="model-btn" type="button" title="切换模型" aria-label="切换当前模型" hidden aria-haspopup="listbox" aria-expanded="false">
@@ -197,6 +197,7 @@ app.innerHTML = `
       </div>
       <button id="memory-close" type="button">关闭</button>
     </div>
+    <input id="memory-search" type="search" placeholder="搜索记忆和过往任务" aria-label="搜索记忆和过往任务" autocomplete="off">
     <div id="knowledge-body">
       <div id="memory-body"></div>
     </div>
@@ -1226,9 +1227,31 @@ function renderMemoryDrawer(): void {
 
   // 编辑/确认刚关闭，补上之前被推迟的那一次重读。
   if (memoryState.takeDeferredRefresh(memoryEditorBusy())) queueMicrotask(() => { if (!memoryDrawer.hidden) requestMemoryList(); });
-  renderMemoryFacts();
-  memoryBody.appendChild(renderPastTasks());
+  const memories = renderMemoryFacts();
+  const tasks = pastTasks.filter(task => memoryMatches(task.goal, task.summary));
+  memoryBody.appendChild(renderPastTasks(tasks));
+
+  if (!memoryQuery) return;
+  memoryTitle.textContent = `找到 ${memories + tasks.length} 条`;
+
+  if (memories + tasks.length) return;
+  const nothing = document.createElement("p");
+  nothing.className = "memory-quiet memory-search-empty";
+  nothing.textContent = `没有找到和「${memorySearch.value.trim()}」有关的记忆或任务。`;
+  memoryBody.appendChild(nothing);
 }
+
+// ── 抽屉搜索（#75）：记忆、做法、历史和过往任务一起过滤；组头写匹配条数，没有匹配的组不占位置 ──
+let memoryQuery = "";
+
+const memoryMatches = (...texts: Array<string | undefined>) => !memoryQuery || texts.some(text => text?.toLowerCase().includes(memoryQuery));
+
+const memorySearch = document.getElementById("memory-search") as HTMLInputElement;
+
+memorySearch.addEventListener("input", () => {
+  memoryQuery = memorySearch.value.trim().toLowerCase();
+  renderMemoryDrawer();
+});
 
 // ── 过往任务：每个动手做过的任务结束时留的一条摘要，可删单条或全部清空 ──
 let pastTasks: TaskHistoryEntry[] = [];
@@ -1266,16 +1289,18 @@ function requestPastTaskSite(id: string, hostname: string): void {
   }
 }
 
-function renderPastTasks(): HTMLElement {
+function renderPastTasks(shown: TaskHistoryEntry[]): HTMLElement {
   const section = document.createElement("section");
   section.className = "past-tasks";
+  // 搜索时没有匹配的过往任务：整组不占位置。
+  section.hidden = !!memoryQuery && !shown.length;
   const head = document.createElement("div");
   head.className = "past-tasks-head";
   const title = document.createElement("h3");
-  title.textContent = pastTasks.length ? `过往任务 · ${pastTasks.length}` : "过往任务";
+  title.textContent = shown.length ? `过往任务 · ${shown.length}` : "过往任务";
   head.appendChild(title);
 
-  if (pastTasks.length) {
+  if (pastTasks.length && !memoryQuery) {
     const clear = document.createElement("button");
     clear.type = "button";
     clear.className = pastTasksConfirmClear ? "memory-danger" : "";
@@ -1297,7 +1322,8 @@ function renderPastTasks(): HTMLElement {
   const intro = document.createElement("p");
   intro.className = "memory-quiet";
   intro.textContent = "动手做过的任务结束后留一条摘要，之后它能想起做过什么、在哪做的。只存在这台电脑上。";
-  section.appendChild(intro);
+
+  if (!memoryQuery) section.appendChild(intro);
 
   if (pastTasksError) {
     const failure = document.createElement("p");
@@ -1315,7 +1341,7 @@ function renderPastTasks(): HTMLElement {
     return section;
   }
 
-  for (const task of pastTasks) {
+  for (const task of shown) {
     const row = document.createElement("article");
     row.className = "memory-row past-task";
     row.dataset.taskId = task.id;
@@ -1460,8 +1486,9 @@ function renderMethodGroup(methods: MemoryEntry[]): HTMLElement {
   const group = document.createElement("section");
   group.className = "memory-group";
   group.dataset.memoryGroup = "method";
+  group.hidden = !!memoryQuery && !methods.length;
   const heading = document.createElement("h3");
-  heading.textContent = MEMORY_KIND_LABEL.method;
+  heading.textContent = memoryQuery ? `${MEMORY_KIND_LABEL.method} · ${methods.length}` : MEMORY_KIND_LABEL.method;
   group.appendChild(heading);
 
   if (!methods.length) {
@@ -1476,13 +1503,16 @@ function renderMethodGroup(methods: MemoryEntry[]): HTMLElement {
   return group;
 }
 
-function renderMemoryFacts(): void {
+/** 画记忆部分，返回搜索时匹配的条数。 */
+function renderMemoryFacts(): number {
   const all = memoryState.getEntries();
   const active = all.filter(entry => entry.status === "active");
-  const methods = active.filter(entry => entry.kind === "method");
-  const entries = active.filter(entry => entry.kind !== "method");
-  const history = all.filter(entry => entry.status !== "active");
   memoryTitle.textContent = active.length ? `记忆 · ${active.length}` : "记忆";
+  const shown = all.filter(entry => memoryMatches(entry.text));
+  const methods = shown.filter(entry => entry.status === "active" && entry.kind === "method");
+  const entries = shown.filter(entry => entry.status === "active" && entry.kind !== "method");
+  const history = shown.filter(entry => entry.status !== "active");
+  const matched = shown.length;
   memoryBody.replaceChildren();
   const inspection = renderMemoryInspection();
 
@@ -1491,7 +1521,8 @@ function renderMemoryFacts(): void {
   const intro = document.createElement("p");
   intro.className = "memory-quiet memory-intro";
   intro.textContent = "你在对话里说过的邮箱、姓名、偏好和带日期的安排会自动记在这里。关于你的每轮都会用上；带日期的到那天过后不再主动用，仍能查到。可以纠正或忘记。";
-  memoryBody.appendChild(intro);
+
+  if (!memoryQuery) memoryBody.appendChild(intro);
 
   if (memoryListError) {
     const failure = document.createElement("div");
@@ -1508,7 +1539,7 @@ function renderMemoryFacts(): void {
     loading.textContent = "正在读取记忆…";
     memoryBody.appendChild(loading);
 
-    return;
+    return 0;
   }
 
   if (!memoryLoaded && !memoryListRequestId) {
@@ -1517,7 +1548,7 @@ function renderMemoryFacts(): void {
     unavailable.append("还不能读取记忆。", memoryButton("重试", "reload"));
     memoryBody.appendChild(unavailable);
 
-    return;
+    return 0;
   }
 
   if (entries.length === 0 && history.length === 0) {
@@ -1529,10 +1560,10 @@ function renderMemoryFacts(): void {
     text.textContent = "你在对话里说过的邮箱、姓名等资料会自动记在这里。";
     empty.append(heading, text);
 
-    if (!methods.length) memoryBody.appendChild(empty);
+    if (!methods.length && !memoryQuery) memoryBody.appendChild(empty);
     memoryBody.appendChild(renderMethodGroup(methods));
 
-    return;
+    return matched;
   }
 
   const list = document.createElement("div");
@@ -1543,6 +1574,8 @@ function renderMemoryFacts(): void {
   memoryBody.appendChild(renderMethodGroup(methods));
 
   if (history.length) memoryBody.appendChild(renderMemoryHistory(history));
+
+  return matched;
 }
 
 /** 回执上的「撤销」各自等自己的结果。 */
@@ -1655,6 +1688,8 @@ function openMemoryDrawer(inspection: MemoryInspection | null = null): void {
 
 function closeMemoryDrawer(): void {
   memoryDrawer.hidden = true;
+  memorySearch.value = "";
+  memoryQuery = "";
   memoryShade.hidden = true;
   memoryOpen.setAttribute("aria-expanded", "false");
   memoryEdit = null;
@@ -1853,8 +1888,6 @@ function syncSteerSend(): void {
 
   if (steer && send && input) steer.hidden = !send.classList.contains("stopping") || !input.value.trim();
 }
-
-memoryOpen.prepend(icon(Database));
 
 document.getElementById("reading-settings-btn")!.prepend(icon(BookOpen));
 
