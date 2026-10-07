@@ -359,17 +359,32 @@ export function isPrepTool(name: string, params: Parameters<typeof describeTool>
   return PREP_TOOLS.has(name);
 }
 
-/** 回执与步骤前的图标种类。 */
-export type ActionKind = "open" | "fill" | "click" | "other";
+/** 回执与步骤前的图标种类：每种动作都有自己的图标，认不出的工具用扳手（10-07 用户：不要有的有图标、有的只有一个点）。 */
+export type ActionKind = "open" | "fill" | "click" | "key" | "script" | "run" | "look" | "pick" | "mark" | "tab" | "close" | "translate" | "download" | "team" | "remember" | "route" | "other";
+
+const KIND_OF_TOOL: Record<string, ActionKind> = {
+  navigate: "open", open_tab: "open",
+  fill: "fill", type_text: "fill", page_operation: "fill", upload_file: "fill",
+  click: "click", double_click: "click", drag: "click",
+  press_key: "key",
+  js: "script", cdp: "script",
+  browser_run: "run",
+  hover: "look",
+  select_option: "pick",
+  mark: "mark",
+  switch_tab: "tab", worker_tabs: "tab", share_tab: "tab", take_tab: "tab",
+  close_tab: "close",
+  page_translation: "translate",
+  download_url: "download",
+  spawn_worker: "team", list_workers: "team", stop_worker: "team", post: "team", await_message: "team",
+  remember_user_preference: "remember",
+  follow_route: "route", route_check: "route", route_miss: "route",
+};
 
 export function actionKind(name: string, params: Parameters<typeof describeTool>[1]): ActionKind {
-  if (name === "navigate" || name === "open_tab" || (name === "tabs" && params.action === "open")) return "open";
+  if (name === "tabs") return params.action === "open" ? "open" : params.action === "close" ? "close" : "tab";
 
-  if (name === "fill" || name === "type_text" || name === "page_operation" || name === "upload_file") return "fill";
-
-  if (name === "click" || name === "double_click" || name === "press_key" || name === "drag") return "click";
-
-  return "other";
+  return KIND_OF_TOOL[name] ?? "other";
 }
 
 /** 只做了一件事时，回执就写这件事：「打开了 whirl.chat」「点了「查询车票」」。 */

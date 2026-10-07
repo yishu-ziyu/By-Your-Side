@@ -4,6 +4,7 @@
  * 按下、松开、取消时胶囊立刻跟着变（ptt-capsule.ts），不等后台回话。
  */
 import type { PttPageMessage } from "../shared/ptt.js";
+import { extensionAlive } from "./alive.js";
 import { createPttCapsule } from "./ptt-capsule.js";
 import { createPttKeys } from "./ptt-keys.js";
 
@@ -22,7 +23,7 @@ export function installPushToTalkKeys(): void {
   });
 
   for (const type of ["keydown", "keyup"] as const) {
-    addEventListener(type, event => { keys.handle({ type, code: event.code, repeat: event.repeat }); }, true);
+    addEventListener(type, event => { if (extensionAlive()) keys.handle({ type, code: event.code, repeat: event.repeat }); }, true);
   }
 
   addEventListener("blur", () => keys.reset());

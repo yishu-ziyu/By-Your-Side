@@ -1,5 +1,6 @@
 import { isPageElementSource, type PageElementSource } from '../../../shared/protocol.js';
 import { registerSelection, registerSource, resolveSource } from './page-sources.js';
+import { extensionAlive } from './alive.js';
 
 export const FEED_PREFIX = 'by-your-side-feed:';
 
@@ -83,7 +84,7 @@ export function installDragFeed(): void {
   }
 
   document.addEventListener('mouseover', event => {
-    if (dragging || event.buttons) return;
+    if (dragging || event.buttons || !extensionAlive()) return;
 
     if (event.composedPath().includes(grip)) { clearTimeout(hideTimer);
 

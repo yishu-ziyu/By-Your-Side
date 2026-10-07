@@ -16,6 +16,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
+import { installReinject } from "./reinject.js";
 import { createPttVoice } from "./ptt-voice.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
@@ -142,6 +143,8 @@ const connectedPanels = new Set<chrome.runtime.Port>();
 installPageInteractions();
 
 installLinkPreview();
+
+installReinject();
 
 const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error")));
 
