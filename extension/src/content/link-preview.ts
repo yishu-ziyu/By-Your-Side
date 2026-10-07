@@ -1,5 +1,6 @@
 import { LINK_PREVIEW_GET, LINK_PREVIEW_KEY, isLinkPreviewOff, previewableUrl, type LinkPreview } from '../shared/link-preview.js';
 import { OVERLAY_ATTR } from '../shared/overlay.js';
+import { extensionAlive } from './alive.js';
 
 /**
  * Shift+悬停链接预览卡（#48）：按住 Shift 停在普通链接上约 300ms，链接下方出一张小卡，
@@ -132,7 +133,7 @@ export function installLinkPreview(): void {
   card.addEventListener('pointerenter', () => clearTimeout(leaveTimer));
   card.addEventListener('pointerleave', () => { if (link !== shownFor) leaveTimer = setTimeout(hide, LEAVE_GRACE_MS); });
 
-  document.addEventListener('keydown', event => { if (event.key === 'Shift' && !shift) { shift = true; arm(); } }, true);
+  document.addEventListener('keydown', event => { if (event.key === 'Shift' && !shift && extensionAlive()) { shift = true; arm(); } }, true);
   document.addEventListener('keyup', event => { if (event.key === 'Shift') { shift = false; hide(); } }, true);
   // 点击照常导航，只把卡收起。
   document.addEventListener('pointerdown', event => { if (!event.composedPath().includes(card)) hide(); }, true);

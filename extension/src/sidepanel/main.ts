@@ -24,7 +24,7 @@ import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-action
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
-import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText, TextQuote, Route } from "lucide";
+import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, FileText, TextQuote, Route, Keyboard, SquareTerminal, Workflow, Eye, ListChecks, Highlighter, ArrowLeftRight, X as XIcon, Languages, Download, Users, Bookmark, Wrench } from "lucide";
 import {
   StepChain,
   chipState,
@@ -2210,9 +2210,13 @@ interface RunHost {
   aside: string | null;
 }
 
-const ACTION_ICONS = { open: Globe, fill: PenLine, click: MousePointerClick, other: Dot, read: FileText, many: List, think: Brain, route: Route } as const;
+const ACTION_ICONS = {
+  open: Globe, fill: PenLine, click: MousePointerClick, key: Keyboard, script: SquareTerminal, run: Workflow, look: Eye, pick: ListChecks, mark: Highlighter,
+  tab: ArrowLeftRight, close: XIcon, translate: Languages, download: Download, team: Users, remember: Bookmark, route: Route, other: Wrench,
+  read: FileText, many: List, think: Brain,
+} as const;
 
-type IconKind = ActionKind | "read" | "many" | "think" | "route";
+type IconKind = ActionKind | "read" | "many" | "think";
 
 function setActionIcon(box: HTMLElement, kind: IconKind): void {
   if (box.dataset.kind === kind) return;
