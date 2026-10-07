@@ -38,8 +38,8 @@ export interface ReplayResult {
   notice?: string;
   /** 控件对不上：页面和记下时不一样了（YIS-97，回答下面写「已按这次的做法更新」）。 */
   pageChanged?: true;
-  /** 核对没过、停在提交前时的提交控件（@N）：值没改之前不让原样提交。 */
-  held?: string;
+  /** 核对没过、停在提交前时的提交控件：值没改之前不让原样提交。 */
+  held?: RouteTarget;
 }
 
 /** 名字像提交、付款、发送、删除这类会把东西交出去的按钮。 */
@@ -118,7 +118,7 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
         if (!now || (now.value?.trim() !== field.value.trim() && now.displayValue?.trim() !== field.value.trim())) {
           const ref = await where();
 
-          return stop(`step ${field.step} ("${field.field}") should be "${field.value}" but the page shows "${now?.displayValue ?? now?.value ?? "nothing"}". Fix it, then submit yourself.${hint(ref)}`, `第 ${field.step} 步「${field.field}」页面上不是「${field.value}」，改为一步步看`, ref ? { held: ref } : {});
+          return stop(`step ${field.step} ("${field.field}") should be "${field.value}" but the page shows "${now?.displayValue ?? now?.value ?? "nothing"}". Fix it, then submit yourself.${hint(ref)}`, `第 ${field.step} 步「${field.field}」页面上不是「${field.value}」，改为一步步看`, step.target ? { held: step.target } : {});
         }
       }
 
@@ -128,10 +128,10 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
       if (!verdict.ok) {
         const ref = await where();
 
-        // 核对没过：值没改就不让原样提交；模型觉得值没错时去问用户（10-07 实测：模型认定「下周四」是 10 月 8 日，不改就点了预订）。
+        // 核对没过或没跑成：值没改就不让原样提交；模型觉得值没错时去问用户（10-07 实测两次：模型认定「下周四」是 10 月 8 日，不改就点了预订，一次是核对超时）。
         return "error" in verdict
-          ? stop(`the check before submitting could not run (${verdict.error.message}). Look at the page, compare the values with what the user asked, then submit yourself.${hint(ref)}`, "提交前核对没能完成，改为一步步看")
-          : stop(`the check before submitting found: ${verdict.problem}. Fix it, then submit yourself. If you think the value is already right, ask the user which one they mean; submitting it unchanged is blocked.${hint(ref)}`, `提交前核对没过：${verdict.problem}，改为一步步看`, ref ? { held: ref } : {});
+          ? stop(`the check before submitting could not run (${verdict.error.message}). Fix any value that differs from what the user asked; if they all look right, ask the user to confirm them before submitting. Submitting them unchanged is blocked.${hint(ref)}`, "提交前核对没能完成，改为一步步看", step.target ? { held: step.target } : {})
+          : stop(`the check before submitting found: ${verdict.problem}. Fix it, then submit yourself. If you think the value is already right, ask the user which one they mean; submitting it unchanged is blocked.${hint(ref)}`, `提交前核对没过：${verdict.problem}，改为一步步看`, step.target ? { held: step.target } : {});
       }
 
       pending = 0;

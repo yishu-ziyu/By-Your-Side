@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { judgeRoute, noteRouteStep, type RouteDraft, type RouteNote, type RouteVerdictInput } from "../src/route-record.js";
 import { redactTaskSecrets } from "../src/task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
+import { routeShape, type RouteStep } from "../../shared/route.js";
 
 const box = (name: string, role = "textbox") => ({ role, name, area: "form:", box: "" });
 
@@ -87,5 +88,18 @@ describe("同一张卡片点了两次", () => {
     const verdict = judgeRoute({ ...ok, draft: draftOf([booking[0]!, { action: "click", target: { role: "heading", name: "青松", area: "", box: "" }, memory: false }, { action: "click", target: { role: "heading", name: "会议室", area: "", box: "" }, memory: false }, booking[4]!]) });
 
     expect("route" in verdict && verdict.route.steps.slice(1, 3).map((s) => [s.value, s.valueFrom])).toEqual([["青松", "said"], [undefined, undefined]]);
+  });
+
+  it("同一类事的两份做法样子相同（值、选哪张卡片、按文字点的哪一项不算）；换了控件就不同", () => {
+    const steps = (date: string, room: string, button = "预订"): RouteStep[] => [
+      { action: "select_option", target: box("日期", "combobox"), value: date, valueFrom: "said" },
+      { action: "click", target: { role: "button", name: "选择", area: "", box: room }, value: room, valueFrom: "said" },
+      { action: "click", target: { role: "heading", name: room, area: "", box: "" }, value: room, valueFrom: "said" },
+      { action: "click", target: box(button, "button") },
+    ];
+    const shape = (list: RouteStep[]) => routeShape({ steps: list, recordedAt: 1 });
+
+    expect(shape(steps("10 月 8 日", "青松"))).toBe(shape(steps("10 月 15 日", "白桦")));
+    expect(shape(steps("10 月 8 日", "青松"))).not.toBe(shape(steps("10 月 8 日", "青松", "预约此间")));
   });
 });

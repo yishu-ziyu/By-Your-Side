@@ -192,7 +192,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   // 每次工具执行的身份（轮次、调用 ID、停止信号）显式绑定到一个 call 上，不靠 AsyncLocalStorage：
   // 浏览器里没有它，而工具可能并行执行，全局变量会串号。
   /** 照走核对没过、停在提交前（YIS-97 验收实测）：值没改、用户也没再说话之前，不让原样点那个提交。 */
-  let routeHold: { ref: string; asked: string; problem: string } | null = null;
+  let routeHold: { target: RouteTarget; asked: string; problem: string } | null = null;
 
   const makeCall = (scope: ExecutionScope | undefined) => {
   const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number): Promise<unknown> => {
@@ -200,11 +200,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     const memory = name === "fill" && typeof params.value === "string" ? execution?.memoryForValue?.(params.value) : undefined;
 
     if (memory) params = { ...params, memory };
-
-    if (routeHold) {
-      if ((execution?.askedNow?.() ?? []).join("\n") !== routeHold.asked || name === "fill" || name === "select_option" || name === "type_text") routeHold = null;
-      else if (name === "click" && params.target === routeHold.ref) throw Object.assign(new Error(`Not submitted: the check before submitting found ${routeHold.problem}, and no value was changed since. Fix that value first; if you think it is already right, ask the user which one they mean.`), { executionFact: "not_executed" as const });
-    }
 
     const epoch = scope?.epoch;
     const signal = scope?.signal;
@@ -311,6 +306,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     if (routeAction && ref) {
       // SAFETY: describe_target 的返回形状见 ToolContract["describe_target"]["data"]；出错时按读不出处理。
       target = await (rpc.call("describe_target", { target: ref, tabId: step.tabId }, 6_000, sid) as Promise<ToolContract["describe_target"]["data"]>).then((data) => data.target, () => null);
+    }
+
+    // 照走核对没过、停在提交前：值没改、用户也没再说话之前，不让原样提交。认控件本身，用编号、选择器点都一样；按回车也不行（10-07 实测：模型换成选择器点了提交）。
+    if (routeHold) {
+      if ((execution?.askedNow?.() ?? []).join("\n") !== routeHold.asked || name === "fill" || name === "select_option" || name === "type_text") routeHold = null;
+      else if ((name === "click" && target && JSON.stringify(target) === JSON.stringify(routeHold.target)) || (name === "press_key" && /enter/i.test(step.key ?? ""))) {
+        rejectCall();
+        throw Object.assign(new Error(`Not submitted: the check before submitting found ${routeHold.problem}, and no value was changed since and the user said nothing new. Fix that value first; if you think it is already right, ask the user which one they mean.`), { executionFact: "not_executed" as const });
+      }
     }
 
     const result = await invokeReleasingIdleOwner(gated ? epoch : undefined);
@@ -1092,7 +1096,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if (result.done > 0) execution.noteRouteFollowed?.({ ...found.source, stopped: !!result.pageChanged });
 
-        routeHold = result.held ? { ref: result.held, asked: (execution.askedNow?.() ?? []).join("\n"), problem: result.notice?.replace(/^提交前核对没过：|，改为一步步看$/g, "") ?? "a mismatch" } : null;
+        routeHold = result.held ? { target: result.held, asked: (execution.askedNow?.() ?? []).join("\n"), problem: result.notice?.startsWith("提交前核对没过") ? result.notice.replace(/^提交前核对没过：|，改为一步步看$/g, "") : "nothing it could confirm (the check did not finish)" } : null;
 
         // 「提交前核对…」那一行核对时已经写过，其余停下的原因（对不上、要问你、读回不一致）补一行。
         if (result.notice && !result.notice.startsWith("提交前核对")) note("route_miss", {})(result.notice);
@@ -1109,7 +1113,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
           return textResult(`${head}\n\nFresh snapshot of the page now (no separate snapshot needed):\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...result, steps: result.done });
         } catch {
-          return textResult(head, { ...result, steps: result.done });
+          // 开头这句也告诉进度账本这次没读到页面（结果文字只留前 500 字）。
+          return textResult(`Page not re-read. ${head}`, { ...result, steps: result.done });
         }
       },
     })] : []),

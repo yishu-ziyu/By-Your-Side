@@ -515,7 +515,8 @@ if(page)this.recoveryInput.page=page;
           this.completedReads.set(key,{name:e.name,readVersion:started.readVersion});
         }
 
-        if (!e.isError && (RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)) this.lastReadAt = this.lastAction.at;
+        // 照走结束时顺手读了一次页面（结果里带新快照）：也算读过，模型改照走填的值不被当成重复（10-07 实测：改日期绕了 80 秒）。
+        if (!e.isError && ((RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name) || (e.name === 'follow_route' && !e.resultText.startsWith('Page not re-read')))) this.lastReadAt = this.lastAction.at;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
         // 结果不确定时是否上锁由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 仍按 durableEffect 保护。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: fact,

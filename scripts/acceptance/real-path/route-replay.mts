@@ -180,6 +180,15 @@ try {
   await ask("照上次走", "在当前网页订会议室：10 月 15 日（周四）14:00–15:00，白桦，主题写复盘。直接点预订。", base);
   assert.deepEqual(booked(1), { date: "10 月 15 日（周四）", time: "14:00–15:00", room: "白桦", topic: "复盘" }, "照上次走订对：四个值都是这次的");
 
+  // YIS-97 R4：「下次别照旧」后这个网站上没有做法，撤销后都回来；照上次走一定是照着走的，在这里点。
+  const routeButton = (action: string) => rp.evaluate(panel, `(() => { const b = [...document.querySelectorAll(".route-line")].at(-1).querySelector('[data-route-action="${action}"]'); b?.click(); return b?.textContent ?? ""; })()`);
+  await rp.evaluate(panel, `[...document.querySelectorAll(".route-line .memory-used-toggle")].at(-1).click(), true`);
+  evidence.declineLabel = await routeButton("decline");
+  await until(async () => (await tasks()).every((task) => !task.route) || undefined, 10_000, "下次别照旧：做法删掉");
+  await rp.screenshot(panel, join(artifacts, "route-line-declined.png"));
+  evidence.undoLabel = await routeButton("undo");
+  await until(async () => (await tasks()).some((task) => task.route) || undefined, 10_000, "撤销：做法回来");
+
   // YIS-96 R2：「下周四」不在页面写法里（期望值按 2026-10-07 周三写：下周四是 10 月 15 日），要做一次核对判断；核对过了才提交。
   await ask("换个说法", "在当前网页订会议室：下周四 15:00–16:00，青松，主题写周会。直接点预订。", base);
   // 「下周四」可能有两种理解：模型和核对不一致时应该问用户，而不是原样提交（10-07 实测）。问了就像用户一样答一句。
@@ -199,18 +208,12 @@ try {
   assert.equal(bookings.length, 4, "一共只订了四次，没有多订或订错");
   await rp.screenshot(panel, join(artifacts, "panel.png"));
 
-  // YIS-97：点开最后一次回答下面那一行，看这次重新想的步骤；「下次别照旧」后做法删掉，撤销后回来。
+  // YIS-97：点开页面改版那次回答下面那一行，看这次重新想的步骤（模型那次可能看出页面变了、没照走）。
   await rp.evaluate(panel, `[...document.querySelectorAll(".route-line .memory-used-toggle")].at(-1).click(), true`);
   await sleep(300);
   await rp.screenshot(panel, join(artifacts, "route-line-open.png"));
   // SAFETY: 页面脚本返回数字。
   evidence.changedRows = await rp.evaluate(panel, `[...document.querySelectorAll(".route-line")].at(-1).querySelectorAll(".memory-used-item.changed").length`) as number;
-  const routeButton = (action: string) => rp.evaluate(panel, `(() => { const b = [...document.querySelectorAll(".route-line")].at(-1).querySelector('[data-route-action="${action}"]'); b?.click(); return b?.textContent ?? ""; })()`);
-  evidence.declineLabel = await routeButton("decline");
-  await until(async () => (await tasks()).every((task) => !task.route) || undefined, 10_000, "下次别照旧：做法删掉");
-  await rp.screenshot(panel, join(artifacts, "route-line-declined.png"));
-  evidence.undoLabel = await routeButton("undo");
-  await until(async () => (await tasks()).some((task) => task.route) || undefined, 10_000, "撤销：做法回来");
 
   // 诊断记录：每次请求用没用照走、走了几步、等了几次模型。
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
@@ -238,19 +241,23 @@ try {
   assert.match(answerLines[1]!, /^照今天那次的做法 · 上次 \d+ 秒$/, "照上次走：写照的哪一次和上次用时");
   // 问过用户的那次，答完是接着一步步做的，回答下面那一行不一定是「照…那次」。
   if (!evidence.askedUser) assert.match(answerLines[2]!, /^照今天那次的做法 · 上次 \d+ 秒$/, "换个说法：写照的哪一次和上次用时");
-  assert.equal(answerLines[3], "页面和上次不一样，已按这次的做法更新", "页面改了：说已更新");
-  assert.deepEqual(runs.map((run) => run.routes), [1, 1, 1, 1], "旧做法被新的替掉，始终只有一份");
-  assert.ok(Number(evidence.changedRows) > 0, "点开后标出这次重新想的步骤");
+  // 页面改版那次：照走停下 → 「已按这次的做法更新」并标出重新想的步骤；模型看出页面变了、没照走 → 照常记下（新旧页面两份做法）。
+  const replayedV2 = followed(runs[3]) !== "";
+  assert.equal(answerLines[3], replayedV2 ? "页面和上次不一样，已按这次的做法更新" : "记下了这次的做法，下次照着走", "页面改了：回答下面那一行");
+  if (replayedV2) assert.ok(Number(evidence.changedRows) > 0, "点开后标出这次重新想的步骤");
+  // 照着走完的那次，旧做法被新的替掉，不会越存越多。
+  runs.forEach((run, i) => { if (i > 0 && /^(照|页面和上次)/.test(String(run.line))) assert.ok(Number(run.routes) <= Number(runs[i - 1]!.routes), `${String(run.name)}：旧做法被新的替掉`); });
   assert.equal(evidence.declineLabel, "下次别照旧", "按钮写「下次别照旧」");
+  assert.equal(evidence.undoLabel, "撤销", "可以撤销");
   // 换个说法：照走模型可能把「下周四」算错；核对拦下改正也算对，只要最后订对、没有先订错。
   assert.match(followed(runs[2]), /^Followed all|the check before submitting found/, "换个说法：照上次的做法走完，或被核对拦在提交前");
-  assert.match(followed(runs[3]), /Stopped before step 3/, "页面改了：停在第 3 步（会议室按钮）");
+  if (replayedV2) assert.match(followed(runs[3]), /Stopped before step 3/, "页面改了：停在第 3 步（会议室按钮）");
   const list = (run: JsonRecord | undefined, key: string) => (Array.isArray(run?.[key]) ? run[key].map(String) : []);
   assert.deepEqual(list(runs[1], "routeChecks"), ["通过（原话直通）"], "值都在原话里：核对直接过");
   assert.match(list(runs[2], "routeChecks").join(), /（判断 \d+ ms）/, "「下周四」：核对问了模型");
   assert.ok(list(runs[1], "titles").some((t) => /^照上次的做法 第 \d\/5 步$/.test(t)), "侧栏标题写「照上次的做法 第 N/5 步」");
   assert.ok(list(runs[1], "trail").some((t) => t.includes("核对过了：和你这次说的一致")), "侧栏留一行「核对过了」");
-  assert.ok(list(runs[3], "trail").some((t) => t.startsWith("↩") && t.includes("第 3 步对不上：找不到上次点的「选择」，改为一步步看")), "页面改了：侧栏留一行「第 3 步对不上…」");
+  if (replayedV2) assert.ok(list(runs[3], "trail").some((t) => t.startsWith("↩") && t.includes("第 3 步对不上：找不到上次点的「选择」，改为一步步看")), "页面改了：侧栏留一行「第 3 步对不上…」");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 

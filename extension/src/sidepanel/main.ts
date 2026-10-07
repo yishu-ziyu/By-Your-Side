@@ -2893,7 +2893,7 @@ function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>)
     const note = document.createElement("span");
     const said = event.route.steps.some((step) => step.valueFrom === "said");
     const followedNote = fresh === undefined ? (said ? "加粗的是换成你这次说的。" : "和上次一样走的。") : fresh > 0 ? `前 ${fresh} 步照旧，第 ${fresh + 1} 步起是这次重新想的。` : "这次每一步都是重新想的。";
-    note.textContent = error || (!kept ? (source ? "下次会一步步来。" : "以后这类事照常一步步做。") : source ? followedNote : "只在这个网站、同一类事上用；页面对不上就照常一步步做。");
+    note.textContent = error || (!kept ? (source ? "下次在这个网站上一步步来。" : "以后这类事照常一步步做。") : source ? followedNote : "只在这个网站、同一类事上用；页面对不上就照常一步步做。");
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.routeAction = kept ? "decline" : "undo";
@@ -2914,7 +2914,7 @@ function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>)
         draw();
       });
 
-      if (!send({ type: "task_history_route", requestId, conversationId: selectedConversationId, id: event.runId, route: want ? event.route : null })) {
+      if (!send({ type: "task_history_route", requestId, conversationId: selectedConversationId, id: event.runId, route: want ? event.route : null, ...(source ? { site: true as const } : {}) })) {
         usedLineHandlers.delete(requestId);
         pending = false;
         error = "连接不可用，请重试";

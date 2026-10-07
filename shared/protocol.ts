@@ -205,7 +205,8 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "task_history_site"; requestId: string; id: string; hostname: string; off: boolean }
   | { type: "task_history_restore"; requestId: string; task: TaskHistoryEntry }
   /** 走老路：「不用记」删掉这条过往任务的做法（route=null），撤销时放回。结果是 task_history_result。 */
-  | { type: "task_history_route"; requestId: string; id: string; route: TaskRoute | null }
+  /** site：「下次别照旧」，同网站上别的做法一起关掉，撤销时一起放回。 */
+  | { type: "task_history_route"; requestId: string; id: string; route: TaskRoute | null; site?: true }
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
@@ -797,7 +798,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "task_history_restore" && !(validRequestId(msg.requestId) && isTaskHistoryEntry(msg.task))) return null;
 
-    if (msg.type === "task_history_route" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && (msg.route === null || isTaskRoute(msg.route)))) return null;
+    if (msg.type === "task_history_route" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && (msg.route === null || isTaskRoute(msg.route)) && (msg.site === undefined || msg.site === true))) return null;
 
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
 

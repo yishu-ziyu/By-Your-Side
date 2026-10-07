@@ -208,7 +208,7 @@ describe("提交前核对", () => {
     expect(result.done).toBe(5);
     expect(result.stop).toMatch(/step 6.*10 月 8 日.*"预订" is @\d+/);
     expect(result.notice).toMatch(/提交前核对没过/);
-    expect([result.held, result.pageChanged]).toEqual([expect.stringMatching(/^@\d+$/), undefined]);
+    expect([result.held, result.pageChanged]).toEqual([t("button", "预订"), undefined]);
     expect(p.acted).toHaveLength(5);
   });
 
@@ -218,6 +218,8 @@ describe("提交前核对", () => {
 
     expect(result.done).toBe(5);
     expect(p.acted).toHaveLength(5);
+    // 没核对成也不让原样提交（10-07 实测：核对超时后模型原样提交，订错日期）。
+    expect(result.held).toEqual(t("button", "预订"));
   });
 
   it("页面上读回的值和要写的不一样：不问判断，直接停在提交前", async () => {
