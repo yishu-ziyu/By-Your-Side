@@ -19,6 +19,10 @@ import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
 import { FileDocument } from "./fixtures/file-document.js";
 import { PROBE_PATTERN, scriptedModels } from "./fixtures/scripted-loop.js";
 
+/** browser_run 的文本结果包在不可信页面标记里；取出里面的 {value, steps} JSON。 */
+const programJson = (text: string) => JSON.parse(text.replace(/^<page-content untrusted[^>]*>\n/, "").replace(/\n<\/page-content>$/, ""));
+
+
 const dirs: string[] = [];
 
 afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
@@ -45,7 +49,7 @@ type Receipt = { filename: string; chars: number; lines: number; overwritten: bo
 
 /** 程序返回值：browser_run 的文本结果是 {value, steps} 的 JSON；这里的程序都返回 saveFile 回执或一个字符串。 */
 function valueOf(result: Result): Receipt | string {
-  const parsed: { value: Receipt | string } = JSON.parse(textOf(result));
+  const parsed: { value: Receipt | string } = programJson(textOf(result));
 
   return parsed.value;
 }

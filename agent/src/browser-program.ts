@@ -602,6 +602,17 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         guard();
         let value = result;
 
+        // 与模型直调的 navigate 一致：新页面就绪后顺手读一次，text 即新页面快照，程序里不必再调 snapshot。
+        if (canonical === "navigate" && result && typeof result === "object" && (result as { readiness?: unknown }).readiness !== "timeout") {
+          try {
+            const page = await options.call("snapshot", {}, nextSubId(id)(), "readonly-poll") as { text?: unknown };
+
+            if (typeof page?.text === "string") value = { ...result, text: page.text };
+          } catch { /* 补读失败只退回导航本身的结果。 */ }
+
+          guard();
+        }
+
         if (name === "screenshot" && result && typeof result === "object" && "imageBase64" in result) {
           const shot = result as Record<string, unknown>;
           const data = shot.imageBase64;

@@ -436,7 +436,7 @@
    "type": "function",
    "function": {
     "name": "navigate",
-    "description": "Navigate the working tab to a URL and wait for the new document to be interactive. Readiness timeout is not confirmed navigation success; verify the URL and take a snapshot before acting.",
+    "description": "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL and take a snapshot before acting.",
     "parameters": {
      "type": "object",
      "required": [
@@ -459,7 +459,7 @@
    "type": "function",
    "function": {
     "name": "snapshot",
-    "description": "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.\nTake a snapshot after every navigation and after actions that change the page.\nRef numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.\nViewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
+    "description": "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.\nTake a snapshot after actions that change the page; navigate already returns a fresh snapshot of the new page.\nRef numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.\nViewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
     "parameters": {
      "type": "object",
      "properties": {

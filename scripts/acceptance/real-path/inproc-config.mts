@@ -46,12 +46,15 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
   // 阶跃星辰的 key 就是语音用的那个，不在套餐清单里重复存一份。
   const plan = providerId === "stepfun" && !plans.stepfun ? { key: (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim() } : providerId === "openai-codex" ? plans[providerId] ?? { source: "pi-auth" } : plans[providerId];
 
-  if (!plan) throw new Error(`providers.local.json 里没有 ${providerId}`);
+  if (plan?.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: plan.key } };
 
-  if (plan.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: plan.key } };
+  // SAFETY: Pi 的 auth.json 按服务商存订阅登录 { access, refresh, expires } 或填的 key { type: "api_key", key }。
+  const login = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { type?: string; key?: string; access: string; refresh: string; expires: number; accountId?: string } | undefined>)[providerId];
 
-  // SAFETY: Pi 的 auth.json 按服务商存 { access, refresh, expires }。
-  const login = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { access: string; refresh: string; expires: number; accountId?: string } | undefined>)[providerId];
+  // 套餐清单里没有、Pi 里存着 key 的服务商（如 minimax-cn）直接用 Pi 的 key。
+  if (!plan && login?.type === "api_key" && login.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: login.key } };
+
+  if (!plan) throw new Error(`providers.local.json 和 Pi 里都没有 ${providerId}`);
 
   if (!login || login.expires - Date.now() < (providerId === "openai-codex" ? 3 * 3_600_000 : 5 * 60_000)) throw new Error(`${providerId} 的登录令牌快过期了：先在 Pi 里用一次让它刷新`);
 

@@ -286,6 +286,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   };
 
   const call = makeCall(undefined);
+  /** 导航后的只读补读：不带调用身份，避免与导航本身的执行事实混在一起。 */
+  const readAfterNavigate = call;
 
   const makeDefinitions = (call: ReturnType<typeof makeCall>, _scope: ExecutionScope | undefined) => [
     defineTool({
@@ -356,7 +358,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
+      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout), js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -383,7 +385,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         rpc.noteToolFact?.(id, "executed");
 
-        return { content: [{ type: "text" as const, text: truncate(JSON.stringify({ value: result.value, steps: result.steps }), MAX_JS_RESULT_CHARS) }, ...result.images], details: { value: result.value, steps: result.steps } };
+        const json = JSON.stringify({ value: result.value, steps: result.steps });
+
+        // 程序常带回网页正文：与 snapshot 一样标成不可信页面数据并遮掉凭据；超长时写明截了多少，别让模型以为拿全了。
+        const shown = json.length > MAX_JS_RESULT_CHARS
+          ? `${json.slice(0, MAX_JS_RESULT_CHARS)}… [truncated: showed ${MAX_JS_RESULT_CHARS} of ${json.length} chars; the rest is missing — return less (slice each page) or save it with browser.saveFile]`
+          : json;
+
+        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) }, ...result.images], details: { value: result.value, steps: result.steps } };
       },
     }),
 
@@ -445,15 +454,25 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "navigate",
       label: "Navigate",
-      description: "Navigate the working tab to a URL and wait for the new document to be interactive. Readiness timeout is not confirmed navigation success; verify the URL and take a snapshot before acting.",
+      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL and take a snapshot before acting.",
       parameters: Type.Object({
         url: Type.String({ description: "Absolute URL" }),
         timeout: Type.Optional(Type.Number({ description: "Load timeout in seconds" })),
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
+        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`;
 
-        return textResult(`Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`, data);
+        if (data.readiness === "timeout") return textResult(head, data);
+
+        // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
+        try {
+          const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
+
+          return textResult(`${head}\n\nFresh snapshot of the new page (no separate snapshot needed):\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
+        } catch {
+          return textResult(head, data);
+        }
       },
     }),
 
@@ -463,7 +482,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
-        "Take a snapshot after every navigation and after actions that change the page.",
+        "Take a snapshot after actions that change the page; navigate already returns a fresh snapshot of the new page.",
         "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
         "Viewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
       ],

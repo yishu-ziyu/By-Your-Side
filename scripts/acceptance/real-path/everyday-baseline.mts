@@ -4,6 +4,7 @@
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math]   # 只装扩展，设置页配模型
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --model=stepfun/step-3.7-flash --suite=sitegeist   # Sitegeist 宣传的 5 类任务
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --daily [--only=...]   # 用户已开的日常 Chrome（9222），需用户同意
+ *   加 --direct-config：不走设置页界面，直接写模型配置（API key 服务商目前只能这样配）
  *
  * 隔离运行只装扩展（不注册伴随进程）：像用户一样从设置页填 key、测试连接、保存 --model 指定的模型
  * （默认 DEFAULT_TEST_MODEL，凭据取自 ~/.sideagent/providers.local.json）。旧参数 --inproc=provider/id 等同 --model。
@@ -22,6 +23,8 @@ import { DEFAULT_TEST_MODEL, configureViaSettings, loadModelPlan, modelStorageIt
 import { startScriptedModel } from "./scripted-model.mts";
 
 const daily = process.argv.includes("--daily");
+
+const directConfig = process.argv.includes("--direct-config");
 
 /** --model=provider/id（旧名 --inproc=）：隔离运行只装扩展，从设置页配置这个模型；--daily 时只有显式 --inproc= 才去改日常设置。 */
 /** --scripted-throttle：本机脚本服务商代替真实模型，翻译同一时间只接 1 个请求，超出回 403（复刻 Kimi 编程套餐的并发上限）。 */
@@ -311,7 +314,7 @@ function translationFacts(text: string) {
 }
 
 /** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */
-const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn", "opencode-go": "opencode.ai", "openai-codex": "chatgpt.com" } satisfies Record<string, string>;
+const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn", "opencode-go": "opencode.ai", "openai-codex": "chatgpt.com", "kimi-coding": "api.kimi.com", "minimax-cn": "api.minimaxi.com" } satisfies Record<string, string>;
 
 const hostOf = (provider: string): string | undefined => Object.entries(PROVIDER_HOSTS).find(([id]) => id === provider)?.[1];
 
@@ -340,7 +343,8 @@ const TRANSLATED_BLOCKS = "[...document.querySelectorAll('h1,h2,h3,p,li')].filte
 const PANEL_STATE = `(() => {
   const q = (s) => document.querySelector(s);
   const visible = (el) => !!el && !el.hidden && el.getClientRects().length > 0 && el.innerText.trim().length > 0;
-  const answers = [...document.querySelectorAll("#messages .msg.assistant")].map((el) => el.innerText.trim()).filter(Boolean);
+  // 回答里的链接文字常是“公司资料页”，网址只在 href 里；用户点得到，判据也要看得到。
+  const answers = [...document.querySelectorAll("#messages .msg.assistant")].map((el) => [el.innerText.trim(), ...[...el.querySelectorAll("a[href]")].map((a) => a.href)].join(" ").trim()).filter(Boolean);
   return {
     connected: q("#status-dot")?.classList.contains("on") ?? false,
     running: q("#status-pill")?.classList.contains("running") ?? false,
@@ -413,7 +417,8 @@ try {
     plan = scripted ? { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-demo-no-secret" } } : await loadModelPlan(inprocModel);
     let run = { testStatus: "连接正常（订阅登录直接写入存储）", settingsTargetId: "" };
 
-    if (plan.credential.type === "oauth") await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
+    // --direct-config：跳过设置页界面，像订阅登录一样直接写存储（10-06 设置页重做后旧选择器失效，API key 走界面会卡住）。
+    if (plan.credential.type === "oauth" || directConfig) await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
     else run = await configureViaSettings(rp, panel, plan, scripted ? { baseUrl: scripted.baseUrl } : {});
 
     if (!run.testStatus.startsWith("连接正常")) throw new Error(`设置页测试连接失败：${run.testStatus}`);
