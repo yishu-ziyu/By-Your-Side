@@ -215,6 +215,8 @@ describe("main task thinking level", () => {
     try {
       h.start("把字幕存成文件");
       await until(() => h.emitted.filter(event => event.kind === "goal_check").length > 1, "both goal checks");
+      // 诊断记录异步写入：并发跑时断言会先于这一行到达。
+      await until(() => h.changes().length > 0, "the effort_change line");
 
       expect(h.efforts).toEqual(["medium", "medium", "high", "high"]);
       expect(h.changes()).toEqual([{ from: "medium", to: "high", signal: "goal_unfinished" }]);
