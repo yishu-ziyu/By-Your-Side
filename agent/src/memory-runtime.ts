@@ -325,6 +325,8 @@ export class MemoryRuntime {
   private visitedUrls: () => string[] = () => [];
   /** 之前几轮最近操作过的网站：本轮没碰网页时的后备。 */
   private lastWebHost: string | null = null;
+  /** 这一轮带给助手的资料：填表的值和其中一条对上，网页上那一格标「记得的」（YIS-87）。 */
+  private usedThisTurn: MemoryEntry[] = [];
 
   constructor(
     private readonly store: MemoryStore,
@@ -340,8 +342,22 @@ export class MemoryRuntime {
     if (complete) queueMicrotask(() => void this.drainPending());
   }
 
+  /**
+   * 填进网页的值来自这一轮带上的哪条记忆：值是那条原文的一部分就算（「邮箱：a@b.com」与 a@b.com）。
+   * 只比对本轮带上的、关于你的资料；单个字不算，免得误标。
+   */
+  memoryForValue(value: string): { id: string; text: string; createdAt: number } | undefined {
+    const v = value.trim();
+
+    if (v.length < 2) return undefined;
+    const entry = this.usedThisTurn.find(e => e.status === "active" && !e.experience && e.kind === "profile" && e.text.includes(v));
+
+    return entry && { id: entry.id, text: entry.text, createdAt: entry.createdAt };
+  }
+
   beginUserTurn(text: string, context?: PageContext, recentTurns: MemoryConversation = []): void {
     this.endTurn();
+    this.usedThisTurn = [];
     const key = `${this.conversationId}:${globalThis.crypto.randomUUID()}`;
     // 前几轮里像密码验证码的用户话不交给任何判断模型。
     const turns = recentTurns.filter(t => t.role !== "user" || !looksSecret(t.text)).slice(-12).map(t => ({ role: t.role, text: t.text.slice(0, 2000) }));
@@ -886,6 +902,7 @@ export class MemoryRuntime {
 
     if (selection.tasks.length) await this.options.history?.markUsed(selection.tasks.map(({ task }) => task.id), Date.now()).catch(() => undefined);
     selection.entries = selection.entries.flatMap(item => (current.has(item.entry.id) ? [{ ...item, entry: current.get(item.entry.id)! }] : []));
+    this.usedThisTurn = selection.entries.map(item => item.entry);
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);
 
     this.onRecord?.("memory_context", {
@@ -1038,6 +1055,7 @@ export class MemoryRuntime {
     if (!this.current(turn)) return [];
 
     if (entries.length) {
+      this.usedThisTurn.push(...entries.filter(entry => !this.usedThisTurn.some(used => used.id === entry.id)));
       this.emit({ kind: "memory", action: "used", entries, message: `本轮使用了 ${entries.length} 条记忆`, ...await this.rev() });
     }
 

@@ -1557,8 +1557,22 @@ export async function doubleClick(
 }
 
 
+/**
+ * 按记忆填的那一格标「记得的」（YIS-87）：先给元素挂一个一次性记号属性，再让页面脚本找到它、画记号并摘掉属性。
+ * 只是画在页面上面，不改这一格的值；画不出来不影响填写结果。
+ */
+async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["fill"]["params"]["memory"]>, backendNodeId: number | undefined, target: string): Promise<void> {
+  const token = crypto.randomUUID();
+
+  try {
+    if (backendNodeId !== undefined) await callOnBackendNode(tabId, backendNodeId, "function(t){ this.setAttribute('data-sideagent-memory-field', t); }", [token]);
+    else await callDom(tabId, (t: string, k: string) => { window.__sideagent?.dom?.resolve(t)?.setAttribute("data-sideagent-memory-field", k); }, [target, token]);
+    await chrome.tabs.sendMessage(tabId, { type: "MEMORY_FIELD_MARK", token, memory });
+  } catch { /* 记号只是提示：页面变了或脚本不在就不画。 */ }
+}
+
 export async function fill(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"] },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
@@ -1651,6 +1665,8 @@ export async function fill(
 
         await endCursorAction(tabId, cid, actionId, "done");
 
+        if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
+
         return filledResult(range);
       } catch (e) {
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
@@ -1703,6 +1719,8 @@ export async function fill(
     }
 
     await endCursorAction(tabId, cid, actionId, "done");
+
+    if (params.memory) await markMemoryField(tabId, params.memory, undefined, params.target);
 
     return filledResult(filled?.range);
   } catch (error) {
