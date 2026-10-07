@@ -3585,7 +3585,8 @@ function finishRun(): void {
   run.orbActivity.finish();
   const outcome = run.orbActivity.state();
   const hasResumeReceipt = !!run.body.querySelector(".receipt-history");
-  const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped";
+  // 按主动卡发起的一轮（YIS-106）：步骤就是卡上那件事的结果，即使只读也留着。
+  const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
 
   if (!hasSteps || !keepProcess) {
     run.root.remove();
@@ -3640,6 +3641,14 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   while (next instanceof HTMLElement && next !== root && (next.dataset.deliveryKind === "ack" || next.classList.contains("ctx-chips"))) next = next.nextElementSibling;
 
   if (next && next !== root) messagesEl.insertBefore(root, next);
+}
+
+function cardTurn(root: HTMLElement): boolean {
+  let node = root.previousElementSibling;
+
+  while (node && !node.matches(".msg.user")) node = node.previousElementSibling;
+
+  return !!node?.classList.contains("card-turn");
 }
 
 /** 步骤容器：run 进行中进聚合块，否则直接进消息流。 */
@@ -4997,7 +5006,8 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
 
-        if (entry.item.context) renderTurnContext(bubble, entry.item.context);
+        if (entry.item.card) proactiveCard.turn(entry.item.card, bubble);
+        else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
 
         if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }

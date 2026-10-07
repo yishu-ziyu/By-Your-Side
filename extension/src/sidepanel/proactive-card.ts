@@ -48,8 +48,25 @@ function favicon(url: string): HTMLImageElement {
   return img;
 }
 
+/** 句子：动词后面的宾语，再加对象图标和对象名；下面一行出处。动词按钮由调用方放在最前。 */
+function sentence(card: NudgeCard, obj: HTMLElement): HTMLElement[] {
+  obj.append(card.sentence);
+
+  if (card.url || card.party) {
+    const who = el("span", "pc-who");
+
+    if (card.url) who.append(favicon(card.url));
+
+    if (card.party) who.append(card.party);
+    obj.append(" ", who);
+  }
+
+  return [obj, el("span", "pc-src", `来自：${card.source ? `${clip(card.source, SOURCE_LIMIT)} · ` : ""}${ago(card.seenAt, Date.now())}`)];
+}
+
 export function installProactiveCard(deps: Deps) {
-  let shown: { id: string; node: HTMLElement } | null = null;
+  // busy：动词已按下，等这一轮进对话后换成卡的样子；这段时间存储里的卡删了也不收。
+  let shown: { id: string; node: HTMLElement; busy: boolean } | null = null;
 
   const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -75,25 +92,14 @@ export function installProactiveCard(deps: Deps) {
     const verb = el("button", "pc-verb", card.actionLabel);
     const obj = el("span", "pc-obj");
     const close = el("button", "pc-x", "×");
+    const fail = el("span", "pc-fail");
 
     root.dataset.nudgeId = card.id;
     verb.type = "button";
     obj.tabIndex = 0;
     obj.setAttribute("role", "button");
     obj.title = "放进输入框接着问";
-    obj.append(card.sentence);
-
-    if (card.url || card.party) {
-      const who = el("span", "pc-who");
-
-      if (card.url) who.append(favicon(card.url));
-
-      if (card.party) who.append(card.party);
-      obj.append(" ", who);
-    }
-    const source = `来自：${card.source ? `${clip(card.source, SOURCE_LIMIT)} · ` : ""}${ago(card.seenAt, Date.now())}`;
-
-    face.append(verb, obj, el("span", "pc-src", source));
+    face.append(verb, ...sentence(card, obj));
     close.type = "button";
     close.setAttribute("aria-label", "收起这张卡");
     root.append(face, close);
@@ -106,13 +112,58 @@ export function installProactiveCard(deps: Deps) {
       void chrome.runtime.sendMessage({ type: NUDGE_DISMISS, id: card.id }).catch(() => {});
       remove(true);
     });
-    verb.addEventListener("click", () => {
+    // 按下就做，不弹卡、不再问：文字先淡出，壳留在原位，等这一轮进对话。
+    verb.addEventListener("click", async () => {
+      if (shown?.node !== root || shown.busy) return;
+      shown.busy = true;
+      fail.remove();
       verb.classList.add("pressed");
-      void chrome.runtime.sendMessage({ type: NUDGE_ACT, id: card.id }).catch(() => {});
-      remove(true);
+      root.classList.add("fading");
+      const reply: { ok?: boolean } | undefined = await chrome.runtime.sendMessage({ type: NUDGE_ACT, id: card.id }).catch(() => undefined);
+
+      if (reply?.ok) {
+        // 正常情况下这一轮马上进对话、换掉这张卡；万一没等到，也不留一张按不动的卡。
+        setTimeout(() => { if (shown?.node === root) remove(false); }, 5_000);
+
+        return;
+      }
+      if (shown?.node === root) shown.busy = false;
+      verb.classList.remove("pressed");
+      root.classList.remove("fading");
+      fail.textContent = "没交给助手：助手没连上。再按一次试试。";
+      face.append(fail);
     });
 
     return root;
+  };
+
+  /**
+   * 这一轮是按卡发起的：用户消息画成按下的卡（动词实心、句子、出处），不画成气泡。
+   * 刚按下的那张卡还在时，换在它的位置上，高度平滑过渡；回放历史时直接画。
+   */
+  const turn = (card: NudgeCard, bubble: HTMLElement) => {
+    const face = el("div", "pc-face");
+
+    face.append(el("span", "pc-verb done", card.actionLabel), ...sentence(card, el("span", "pc-obj")));
+    bubble.classList.add("card-turn");
+    bubble.replaceChildren(face);
+    const live = shown?.id === card.id ? shown.node : null;
+
+    if (!live?.isConnected) return;
+    shown = null;
+    const from = live.offsetHeight;
+
+    live.replaceWith(bubble);
+
+    if (reduce()) return;
+    const to = bubble.offsetHeight;
+
+    bubble.style.height = `${from}px`;
+    bubble.style.overflow = "hidden";
+    void bubble.offsetHeight;
+    bubble.classList.add("growing");
+    bubble.style.height = `${to}px`;
+    setTimeout(() => { bubble.style.height = ""; bubble.style.overflow = ""; bubble.classList.remove("growing"); }, 380);
   };
 
   const refresh = async () => {
@@ -121,13 +172,15 @@ export function installProactiveCard(deps: Deps) {
     const offer = (await chrome.storage.session.get(NUDGE_PANEL_KEY))[NUDGE_PANEL_KEY];
     const card = isNudgePanelOffer(offer) && offer.conversationId === deps.selected() ? offer.card : null;
 
+    if (shown?.busy && shown.node.isConnected) return;
+
     if (shown && shown.id === card?.id && shown.node.isConnected) return;
     remove(false);
 
     if (!card || !deps.ready()) return;
     const node = render(card);
 
-    shown = { id: card.id, node };
+    shown = { id: card.id, node, busy: false };
     deps.mount(node);
   };
 
@@ -135,5 +188,5 @@ export function installProactiveCard(deps: Deps) {
     if (area === "session" && changes[NUDGE_PANEL_KEY]) void refresh();
   });
 
-  return { refresh };
+  return { refresh, turn };
 }

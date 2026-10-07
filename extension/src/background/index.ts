@@ -2,6 +2,7 @@ import { installEdgePill } from "./edge-pill.js";
 import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
+import type { NudgeCard } from "../shared/nudge.js";
 import { installPageInteractions } from "./page-interactions.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
@@ -160,6 +161,7 @@ const nudge = installNudge({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
   panelOpen: () => connectedPanels.size > 0,
+  act: (conversationId, text, card, context) => controller(conversationId).spoken(text, context, card),
 });
 
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
@@ -2117,12 +2119,15 @@ async function importReading(record: ReadingRecord): Promise<void> {
 }
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
-/** 按住说话听写出的一句（#125）：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。返回是否送出。 */
-spoken: async (text: string, context?: PageContext) => {
+/**
+ * 按住说话听写出的一句（#125）、按了主动卡的动词（YIS-106）：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。返回是否送出。
+ * card 只进侧栏历史，让这一轮画成那张卡。
+ */
+spoken: async (text: string, context?: PageContext, card?: NudgeCard) => {
   const sent = uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context }));
 
   // 没送出去就不记：胶囊上留着这句话可以重发，重发成功才进对话。
-  if (sent) recordAndBroadcastHistory({ kind: "user", text });
+  if (sent) recordAndBroadcastHistory(card ? { kind: "user", text, card } : { kind: "user", text });
 
   return sent;
 },

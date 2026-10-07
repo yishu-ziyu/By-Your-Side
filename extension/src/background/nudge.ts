@@ -1,5 +1,5 @@
 import { NUDGE_EXCERPT_LIMIT, NUDGE_RECENT_LIMIT, NUDGE_SELECTION_LIMIT, NUDGE_TEXT_LIMIT, type Nudge, type NudgeContext, type NudgeRecentPage, type NudgeResult } from '../../../shared/nudge.js';
-import type { ClientMessage } from '../../../shared/protocol.js';
+import type { ClientMessage, PageContext } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
 import { NUDGE_ACT, NUDGE_COOLDOWN_MS, NUDGE_DISMISS, NUDGE_DRAFT_KEY, NUDGE_KEY, NUDGE_PAGE, NUDGE_PANEL_KEY, NUDGE_SHOW, isNudgeOn, nudgeableUrl, type NudgeCard, type NudgePanelOffer } from '../shared/nudge.js';
 
@@ -15,7 +15,15 @@ type Deps = {
   send: (message: ClientMessage) => boolean;
   selected: () => string;
   panelOpen: () => boolean;
+  /** 按了侧栏卡的动词：把话交给这张卡所属的会话，返回是否送出。 */
+  act: (conversationId: string, text: string, card: NudgeCard, context?: PageContext) => Promise<boolean>;
 };
+
+/**
+ * 按动词就做（YIS-106 R2）：回复固定三句，接在卡下面原位说清。
+ * 写进交给助手的话里，不另开通道；侧栏这一轮画成卡，不显示这段原文。
+ */
+const CARD_REPLY = '回复只用三句短话：一、在做什么或做成了什么；二、一个具体细节，证明你理解了这件事；三、接下来会怎样，或没做成时的退路。用了存的账号或卡，写明是哪一个。没做成就直说原因，不要说做成了。';
 
 /** seenAt 只给出处行写「多久前」，不发给模型。 */
 type SeenPage = NudgeRecentPage & { seenAt?: number };
@@ -47,7 +55,7 @@ export function installNudge(deps: Deps) {
   const pending = new Map<string, { tabId: number; url: string; title: string; context: NudgeContext; conversationId: string; seen: SeenPage[] }>();
   const offers = new Map<number, { id: string; url: string; title: string; prompt: string }>();
   // 侧栏里同时只留一张卡；新卡顶掉旧卡。
-  let panelOffer: { id: string; url: string; prompt: string } | null = null;
+  let panelOffer: { id: string; url: string; prompt: string; tabId: number; conversationId: string; card: NudgeCard } | null = null;
   // 状态读写串行：两个标签同时报到时不互相覆盖。
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -116,7 +124,7 @@ export function installNudge(deps: Deps) {
         const offer: NudgePanelOffer = { conversationId: request.conversationId, card };
 
         await chrome.storage.session.set({ [NUDGE_PANEL_KEY]: offer });
-        panelOffer = { id: requestId, url: request.url, prompt: nudge.prompt };
+        panelOffer = { id: requestId, url: request.url, prompt: nudge.prompt, tabId: request.tabId, conversationId: request.conversationId, card };
       } else {
         const shown = await chrome.tabs.sendMessage(request.tabId, { type: NUDGE_SHOW, card }, { frameId: 0 }).then(() => true, () => false);
 
@@ -133,9 +141,9 @@ export function installNudge(deps: Deps) {
     if (type !== NUDGE_PAGE && type !== NUDGE_ACT && type !== NUDGE_DISMISS) return;
 
     if (sender.id === chrome.runtime.id && !sender.tab && sender.url?.startsWith(chrome.runtime.getURL('')) && type !== NUDGE_PAGE) {
-      onPanel(type, message?.id);
+      void onPanel(type, message?.id).then(respond, () => respond({ ok: false }));
 
-      return;
+      return true;
     }
 
     if (sender.id !== chrome.runtime.id || !sender.tab?.id || sender.frameId !== 0 || !nudgeableUrl(sender.url)) return;
@@ -160,16 +168,27 @@ export function installNudge(deps: Deps) {
     }
   });
 
-  // 侧栏卡：点 × 收起；按动词把建议的话放进输入框（YIS-106 第 2 步改成一按就做）。两种都让这一页本次不再建议。
-  const onPanel = (type: string, id: unknown) => {
-    if (!panelOffer || panelOffer.id !== id) return;
+  // 侧栏卡：点 × 收起；按动词就把事交给助手，不再问（用户 10-07 决定）。两种都让这一页本次不再建议。
+  // 没送出去（助手没连上）时卡留着，可以再按。
+  const onPanel = async (type: string, id: unknown): Promise<{ ok: boolean }> => {
+    if (!panelOffer || panelOffer.id !== id) return { ok: false };
     const offer = panelOffer;
 
-    panelOffer = null;
-    void chrome.storage.session.remove(NUDGE_PANEL_KEY);
+    if (type === NUDGE_ACT) {
+      const tab = await chrome.tabs.get(offer.tabId).catch(() => null);
+      const context: PageContext | undefined = tab?.id && tab.url ? { tabId: tab.id, title: tab.title ?? '', url: tab.url } : undefined;
+
+      // 第一行是卡上那句话：会话标题和记录里读到的是这件事，不是给助手的长指令。
+      const said = `${offer.card.actionLabel}${offer.card.sentence}${offer.card.party ? `（${offer.card.party}）` : ''}`;
+
+      if (!await deps.act(offer.conversationId, `${said}\n${offer.prompt}\n\n${CARD_REPLY}`, offer.card, context)) return { ok: false };
+    }
+
+    if (panelOffer === offer) panelOffer = null;
+    await chrome.storage.session.remove(NUDGE_PANEL_KEY);
     void withState(state => { state.dismissed.push(pageKey(offer.url)); });
 
-    if (type === NUDGE_ACT) void chrome.storage.session.set({ [NUDGE_DRAFT_KEY]: offer.prompt });
+    return { ok: true };
   };
 
   chrome.tabs.onRemoved.addListener(tabId => offers.delete(tabId));

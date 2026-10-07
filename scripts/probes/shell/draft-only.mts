@@ -1,7 +1,8 @@
 /**
  * YIS-74「只填草稿，由用户发送」探针（docs/evals/20261006-draft-only.md）：只装扩展的无头 Chrome、真侧栏。
  * 一、「/ 技能」里不用回答问题的技能：选中后正文进输入框，不发出。
- * 二、页角建议卡（#52）：真页面停留、滚动，脚本模型给出建议，点卡上的按钮；侧栏把话接在已有草稿后面，不发出。
+ * 二、页角建议卡（#52）：侧栏关着时卡才出在页角（开着时进侧栏，见 real-path/proactive-card.mts）。先关侧栏，真页面停留、滚动，
+ *    脚本模型给出建议，点卡上的按钮；侧栏重新打开，把话接在已有草稿后面，不发出。
  *
  *   npx tsx scripts/probes/shell/draft-only.mts --headless
  */
@@ -46,7 +47,8 @@ const model = await startScriptedModel([{ match: "耳机详情页", steps: [{ te
 const rp = await launchRealPath();
 
 try {
-  const panel = await rp.attach(await rp.openSidePanel());
+  const panelTarget = await rp.openSidePanel();
+  let panel = await rp.attach(panelTarget);
   const items = { sideagent_nudge: true, inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, "document.querySelector('#app')?.classList.contains('starter-ready')") || undefined, 60_000, "侧栏草稿恢复完");
@@ -62,7 +64,10 @@ try {
   check("选「概括这页」：正文进输入框，没有发出", skill.input.startsWith("请概括当前页面的要点") && skill.users === 0 && !skill.stopping, JSON.stringify(skill));
   await rp.screenshot(panel, join(out, "draft-skill.png"));
 
-  // 二、建议卡：真页面停留 15 秒以上并滚动，等卡出现，点卡上的按钮
+  // 二、建议卡：先关侧栏（草稿已存），真页面停留 15 秒以上并滚动，等卡出现，点卡上的按钮
+  await sleep(500);
+  await rp.cdp.send("Target.closeTarget", { targetId: panelTarget });
+  await until(async () => !(await rp.targets()).some((t) => t.targetId === panelTarget) || undefined, 5_000, "侧栏关上");
   const work = await rp.attach((await rp.targets()).find((t) => t.url === "about:blank")!.targetId);
   await rp.cdp.send("Page.navigate", { url: pageUrl }, work);
   await rp.cdp.send("Page.bringToFront", {}, work);
@@ -99,6 +104,8 @@ try {
     await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at }, work);
   }
 
+  panel = await rp.attach(await rp.openSidePanel());
+  await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 0, height: 0, deviceScaleFactor: 2, mobile: false }, panel);
   const nudged = await until(async () => {
     const s = await rp.evaluate(panel, STATE);
 
