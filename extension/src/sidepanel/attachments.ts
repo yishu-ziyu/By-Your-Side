@@ -10,7 +10,7 @@
  */
 
 import { isAttachment, type Attachment, type ImageAttachment } from "../../../shared/protocol.js";
-import { isRegionSelectActive, selectRegionFromScreen } from "./region-select.js";
+import { isCircling, removeCircle, startCircling } from "./circle-select.js";
 
 export const TILE_PERIMETER = 194;
 
@@ -33,6 +33,8 @@ export interface AttachmentItem {
   mimeType: SupportedImageMime;
   dataBase64: string; // base64 without prefix
   dataUrl: string;
+  /** 圈出来问的第几圈；去掉这张时页面上那一圈也去掉。 */
+  circle?: number;
   width?: number;
   height?: number;
   dom: {
@@ -156,7 +158,7 @@ export class AttachmentsManager {
       void this.captureActiveTab();
     });
 
-    // #50 从屏幕选取：菜单项，或侧栏里按 ⌘/Ctrl+Shift+S。
+    // 圈出来问：菜单项，或侧栏里按 ⌘/Ctrl+Shift+S。
     const regionBtn = this.menuEl.querySelector("#menu-action-region");
     regionBtn?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -290,22 +292,19 @@ export class AttachmentsManager {
   }
 
   /**
-   * #50 让用户在当前网页拖框，框内截图加入附件；取消不留附件，也不发送。
+   * 圈出来问（YIS-88）：进入圈画，每圈一处加一张带编号的附件；编号接着输入框上方已有的圈往下数。不发送。
    */
   public async captureRegion(): Promise<void> {
-    if (isRegionSelectActive()) return;
+    if (isCircling()) return;
     const scope = this.scopeId;
+    const start = Math.max(0, ...this.scopeItems(scope).map(item => item.circle ?? 0)) + 1;
 
     try {
-      const picked = await selectRegionFromScreen();
-
-      if (!picked) return;
-      const name = `${picked.title.replace(/[/\\?%*:|"<>]/g, "_")} 选区.png`;
-      await this.addFromDataUrl(picked.dataUrl, name, scope);
+      await startCircling(start, async (dataUrl, n) => { await this.addFromDataUrl(dataUrl, `圈 ${n}.png`, scope, n); });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
 
-      if (this.onError) this.onError(`选取失败: ${msg}`);
+      if (this.onError) this.onError(`圈不了：${msg}`);
       else console.error("[sideagent-attachments] captureRegion failed:", err);
     }
   }
@@ -337,13 +336,13 @@ export class AttachmentsManager {
   /**
    * 从 dataUrl 加入单枚瓷贴
    */
-  public async addFromDataUrl(dataUrl: string, name?: string, scope = this.scopeId): Promise<AttachmentItem> {
+  public async addFromDataUrl(dataUrl: string, name?: string, scope = this.scopeId, circle?: number): Promise<AttachmentItem> {
     const { mimeType, dataBase64 } = parseDataUrl(dataUrl);
     const { width, height } = await getImageDimensions(dataUrl);
     const id = "att_" + Math.random().toString(36).slice(2, 9);
     const safeName = name || `image_${Date.now()}.png`;
 
-    const dom = this.createTileDom(id, safeName, dataUrl, scope);
+    const dom = this.createTileDom(id, safeName, dataUrl, scope, circle);
 
     const item: AttachmentItem = {
       id,
@@ -356,6 +355,8 @@ export class AttachmentsManager {
       dom,
     };
 
+
+    if (circle) item.circle = circle;
     this.scopeItems(scope).push(item);
 
     if (scope === this.scopeId) {
@@ -371,7 +372,7 @@ export class AttachmentsManager {
     return item;
   }
 
-  private createTileDom(id: string, name: string, dataUrl: string, scope = this.scopeId): AttachmentItem["dom"] {
+  private createTileDom(id: string, name: string, dataUrl: string, scope = this.scopeId, circle?: number): AttachmentItem["dom"] {
     const tile = document.createElement("div");
     tile.className = "tile-56 tile-landing";
     tile.dataset.id = id;
@@ -382,6 +383,15 @@ export class AttachmentsManager {
     img.src = dataUrl;
     img.alt = name;
     tile.appendChild(img);
+
+    // 圈出来问的附件：左上角是页面上那一圈的编号。
+    if (circle) {
+      const num = document.createElement("span");
+      num.className = "tile-circle-num";
+      num.textContent = String(circle);
+      tile.dataset.circle = String(circle);
+      tile.appendChild(num);
+    }
 
     // 2. 顺时针 Accent Ring 描边 SVG (56x56 容器，rx=11)
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -408,7 +418,7 @@ export class AttachmentsManager {
     dismissBtn.type = "button";
     dismissBtn.className = "tile-dismiss-btn";
     dismissBtn.innerHTML = "✕";
-    dismissBtn.title = "移除该附件";
+    dismissBtn.title = circle ? "去掉这一圈" : "移除该附件";
     dismissBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.removeItem(id, scope);
@@ -453,6 +463,8 @@ export class AttachmentsManager {
     const item = removed[0];
 
     if (!item) return;
+
+    if (item.circle) removeCircle(item.circle);
     item.dom.tile.classList.add("removing");
     this.updateVisibility(scope);
     setTimeout(() => { item.dom.tile.remove(); }, 250);

@@ -240,9 +240,9 @@ app.innerHTML = `
         <span class="action-menu-item-icon" data-icon="camera"></span>
         <span class="action-menu-item-label">截取当前网页视口</span>
       </div>
-      <div class="action-menu-item pressable" id="menu-action-region" title="在网页上拖框截图（⌘/Ctrl+Shift+S，Esc 取消）">
+      <div class="action-menu-item pressable" id="menu-action-region" title="在网页上圈出想问的地方，可以圈好几处（Esc 退出）">
         <span class="action-menu-item-icon" data-icon="region"></span>
-        <span class="action-menu-item-label">从屏幕选取</span>
+        <span class="action-menu-item-label">圈出来问 <span class="action-menu-item-key">⌘⇧S</span></span>
       </div>
       <div class="action-menu-item pressable" id="menu-action-upload">
         <span class="action-menu-item-icon" data-icon="upload"></span>
