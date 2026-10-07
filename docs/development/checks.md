@@ -59,7 +59,7 @@ npm run check                # 文档、边界、类型、测试、构建
 
 任务按标签分执行者（10-04 用户确认）：「Claude」主导拆任务、写完成标准、查根因、产品判断与最终验收；「Codex 可领」只给规格清楚、写明文件范围与检查命令的实现任务；「要你来」是需要用户亲手试、拍板或授权的事。Codex 用本机 CLI（已接 Linear），在单独的 git worktree 和分支里完成，交回后由 Claude 验收再合入 main；不与 Claude 同时改同一文件，浏览器验收由 Claude 错开安排。排期按 Linear 每周一个周期。
 
-只存图的远端分支：`design-refs`、`cursor/sidepanel-chrome-refs-f8b2`、`design/proto-picks`。issue #43–#59 的正文和评论直接引用这些分支上的图片与原型，删了会裂图。不合并，不删除，不再往上提交（10-06 用户确认）。
+只存图的远端分支：`design-refs`（#53 引用）、`ux-walkthrough-1007`（#102–#106 引用）。issue 直接引用这些分支上的图片，删了会裂图；不合并，不再往上提交，引用它的 issue 都关闭后再删。10-07 用户确认删掉只被已关闭 issue 引用的 4 个分支（旧 issue 里的图从此裂开）。
 
 ## CI 与人工复核
 
