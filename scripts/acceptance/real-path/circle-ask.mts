@@ -1,7 +1,8 @@
 /**
- * 圈出来问（YIS-88）：在网页上连圈几处，每处一张带编号的附件；去掉一张，页面上那一圈也去掉；Esc 退出，已圈的保留；发送时请求里带这些图。
+ * 圈出来问（YIS-88/90）：在网页上连圈几处，每处一张带编号的附件；去掉一张，页面上那一圈也去掉；Esc 退出，已圈的保留；发送时请求里带这些图。
  * 只装扩展、隔离构建、真实模型（要能看图）。圈是真鼠标拖出来的（调试接口发的鼠标事件）。
  *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/circle-ask.mts --headless [--model=provider/id]
+ * 回答里的 ②③ 是按钮，点一下页面那一圈旁出现蓝色手绘圈；又圈了新的一组后，点旧编号写「原处已变化」，不乱圈。
  * 失败方式：圈完没有附件或编号不对；去掉附件后页面上的圈还在；Esc 后附件丢了或还在圈画；发出去的消息里图的张数不对；回答没看圈的两处。
  */
 import assert from "node:assert/strict";
@@ -46,12 +47,14 @@ const pageCircles = async () => {
   // SAFETY: CDP DOM.getDocument 返回带 nodeName / attributes / children / shadowRoots 的节点树。
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
   const circles: number[] = [];
-  const found = { circles, circling: false };
+  const found = { circles, circling: false, pointing: 0 };
 
   const walk = (n: DomNode) => {
     const attrs = Object.fromEntries((n.attributes ?? []).flatMap((v, i, a) => (i % 2 ? [] : [[v, a[i + 1]!]])));
 
     if (n.nodeName === "path" && attrs["data-n"]) found.circles.push(Number(attrs["data-n"]));
+
+    if (n.nodeName === "path" && attrs.class === "point") found.pointing++;
 
     if (n.nodeName === "DIV" && /\bwrap\b/.test(attrs.class ?? "") && /\bon\b/.test(attrs.class ?? "")) found.circling = true;
 
@@ -65,6 +68,13 @@ const pageCircles = async () => {
 
 // SAFETY: 页面脚本返回数字数组。
 const tiles = () => rp.evaluate(panel, `[...document.querySelectorAll("#attachments-strip .tile-56:not(.removing)")].map((t) => Number(t.dataset.circle ?? 0))`) as Promise<number[]>;
+
+/** 真点最后一个回答里的编号按钮。 */
+async function clickRef(ref: string) {
+  await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].at(-1).querySelector('.circle-ref[data-ref="${ref}"]').setAttribute("data-acceptance-click", "1"); true`);
+  await rp.click(panel, "[data-acceptance-click]");
+  await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`);
+}
 
 /** 用真鼠标在页面上绕 (cx, cy) 画一圈。 */
 async function drawCircle(cx: number, cy: number, rx: number, ry: number) {
@@ -148,6 +158,29 @@ try {
   await rp.screenshot(panel, join(artifacts, "sent.png"));
   assert.equal(evidence.imagesInMessage, 2, "发出去的消息里 2 张图");
   assert.ok(/B/.test(answer) && /C/.test(answer) && !/A\s*款/.test(answer), "回答说的是圈的 B、C 两款，没扯到没圈的 A 款");
+
+  // 6. 回答里的编号是按钮；点一下，页面上那一圈旁出现蓝色手绘圈。
+  // SAFETY: 页面脚本返回字符串数组。
+  const refs = await rp.evaluate(panel, `[...[...document.querySelectorAll("#messages .msg.assistant")].at(-1).querySelectorAll(".circle-ref")].map((b) => b.dataset.ref)`) as string[];
+  evidence.refs = refs;
+  assert.ok(refs.length > 0 && refs.every((r) => r === "2" || r === "3"), "回答里有 ②③ 按钮，只指圈过的");
+  await clickRef(refs[0]!);
+  await until(async () => (await pageCircles()).pointing > 0 || undefined, 5_000, "页面上出现蓝色手绘圈");
+  await sleep(500);
+  await rp.screenshot(work, join(artifacts, "pointed.png"));
+
+  // 7. 又圈了新的一组（从 1 号重新圈）：点旧编号写「原处已变化」，页面上不画。
+  await sleep(2500);
+  await rp.click(panel, "#attach-btn");
+  await rp.click(panel, "#menu-action-region");
+  await until(async () => (await pageCircles()).circling || undefined, 10_000, "又进入圈画");
+  await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
+  await until(async () => !(await pageCircles()).circling || undefined, 5_000, "退出圈画");
+  await clickRef(refs[0]!);
+  await until(async () => (await rp.evaluate(panel, `!!document.querySelector(".circle-ref-gone")`)) || undefined, 5_000, "写「原处已变化」");
+  evidence.gone = { pointing: (await pageCircles()).pointing, text: await rp.evaluate(panel, `document.querySelector(".circle-ref-gone")?.textContent`) };
+  await rp.screenshot(panel, join(artifacts, "gone.png"));
+  assert.equal((await pageCircles()).pointing, 0, "原处变了不乱圈");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 
