@@ -241,8 +241,10 @@ function createCoreModelPort(runtime: ModelRuntime, selectedConfig: () => Inproc
 
   const withHeaders = (model: Model<Api>, options: Parameters<ModelPort["streamSimple"]>[2]) => {
     const headers = runtime.headersFor(model);
+    const merged = headers ? { ...options, headers: { ...options?.headers, ...headers } } : options;
 
-    return headers ? { ...options, headers: { ...options?.headers, ...headers } } : options;
+    // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型默认先试 WebSocket，必失败再退回 SSE，每次都留一条假的连接失败。直接用 SSE。
+    return model.api === "openai-codex-responses" ? { ...merged, transport: "sse" as const } : merged;
   };
 
   return {
