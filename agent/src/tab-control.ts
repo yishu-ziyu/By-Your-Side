@@ -150,7 +150,8 @@ export class TabControl {
     type TabInfo = { tabId: number; foreign?: boolean; conversationId?: string | null };
 
     // SAFETY: worker_tabs inspect resolves with WorkerTabControl.manage's result shape; every field is re-checked before use.
-    const inspect = () => this.rpc.call("worker_tabs", tabId != null ? { action: "inspect", tabId } : { action: "inspect" }) as Promise<TabInfo>;
+    // 没带页码：新对话还没有工作页时，被拦的是当前激活页，查它。
+    const inspect = () => this.rpc.call("worker_tabs", tabId != null ? { action: "inspect", tabId } : { action: "inspect", orActive: true }) as Promise<TabInfo>;
     let info: TabInfo;
 
     try { info = await inspect(); } catch { return false; }
