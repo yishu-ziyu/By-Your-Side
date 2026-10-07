@@ -29,12 +29,6 @@ const LINTABLE = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", 
 
 const BATCH = 200;
 
-// 「语句之间空一行」是纯排版：10-07 用户定，改动到的文件自动补上，不再拦提交（原因见 docs/NOTES.md）。
-const SPACING_RULE = "anti-slop/require-readable-spacing";
-
-// oxlint 报告里同一条规则写作 plugin(rule)。
-const SPACING_CODE = "anti-slop(require-readable-spacing)";
-
 const args = new Set(process.argv.slice(2));
 
 function git(gitArgs) {
@@ -140,26 +134,7 @@ if (candidates.length === 0) {
   process.exit(0);
 }
 
-// 只修「已暂存、且没有另外未暂存改动」的文件，修完重新暂存；有半成品未暂存的文件不碰，免得把半成品带进提交。
-function fixSpacing(files) {
-  const unstaged = new Set(git(["diff", "--name-only"]));
-  const targets = files.filter((file) => existsSync(join(ROOT, file)) && !unstaged.has(file));
-
-  for (let i = 0; i < targets.length; i += BATCH) {
-    spawnSync(OXLINT, ["--fix", "-A", "all", "-D", SPACING_RULE, "--", ...targets.slice(i, i + BATCH)], { cwd: ROOT, encoding: "utf8" });
-  }
-
-  if (targets.length === 0) return;
-
-  const fixed = git(["diff", "--name-only", "--", ...targets]);
-
-  if (fixed.length > 0) spawnSync("git", ["add", "--", ...fixed], { cwd: ROOT });
-}
-
-// 只在提交钩子（--staged）里改文件：平时手动跑可能碰到共享工作区里别的会话还没提交的文件，那时只是不拦这一条。
-if (args.has("--staged")) fixSpacing(candidates);
-
-const diagnostics = lint(candidates).filter((diagnostic) => args.has("--write-baseline") || diagnostic.code !== SPACING_CODE);
+const diagnostics = lint(candidates);
 
 const current = countBy(diagnostics);
 

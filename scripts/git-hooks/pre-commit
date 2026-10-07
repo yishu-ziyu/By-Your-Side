@@ -2,8 +2,7 @@
 # Reject lint violations that are new in this commit.
 #
 # Installed with: git config core.hooksPath scripts/git-hooks
-# Keep it fast. One side effect: blank-line spacing in fully staged files is
-# fixed and re-staged (see scripts/lint-changed.mjs); nothing else is rewritten.
+# Keep it fast and side-effect free: it only reads git state and runs oxlint.
 #
 # Escape hatch for a one-off commit that must land as-is:
 #   git commit --no-verify
