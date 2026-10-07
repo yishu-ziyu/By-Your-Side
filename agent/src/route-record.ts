@@ -82,7 +82,11 @@ export function judgeRoute(input: RouteVerdictInput): { route: TaskRoute } | { r
 
   const said = input.said.replace(/\s+/g, "");
 
-  const steps = input.draft.steps.map((raw): RouteStep => {
+  const same = (a: RouteStep, b: RouteStep) => a.action === b.action && JSON.stringify(a.target) === JSON.stringify(b.target);
+  // 同一张卡片点了两次（模型自己重试时常见）：选卡片重复点没有新作用，只留第一次；照走时第二次会被当成重复操作拦下（10-07 实测）。
+  const unique = input.draft.steps.filter((step, i, all) => !(step.action === "click" && step.target?.box && all.slice(0, i).some(prev => same(prev, step))));
+
+  const steps = unique.map((raw): RouteStep => {
     // 在几张同样的卡片里点了一张：卡片名就是这一步选的值，下次照走时可以换成别的卡片（YIS-95）。
     const step = raw.action === "click" && raw.target?.box ? { ...raw, value: raw.target.box } : raw;
 

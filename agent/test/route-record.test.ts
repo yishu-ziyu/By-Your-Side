@@ -72,3 +72,13 @@ describe("过往任务隐去用户话里的卡号", () => {
     expect(JSON.stringify(redacted)).not.toContain("4111 1111");
   });
 });
+
+describe("同一张卡片点了两次", () => {
+  it("做法里只留一次（选卡片重复点没有新作用）；别的按钮点两次照记", () => {
+    const pick: RouteNote = { action: "click", target: { role: "button", name: "选择", area: "region:会议室", box: "青松" }, memory: false };
+    const next: RouteNote = { action: "click", target: { role: "button", name: "下一页", area: "", box: "" }, memory: false };
+    const verdict = judgeRoute({ ...ok, draft: draftOf([pick, booking[2]!, pick, next, next]) });
+
+    expect("route" in verdict && verdict.route.steps.map((s) => s.target?.name)).toEqual(["选择", "会议主题", "下一页", "下一页"]);
+  });
+});

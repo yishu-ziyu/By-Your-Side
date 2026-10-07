@@ -1,8 +1,9 @@
 /**
- * 同一网站、同一类事照上次的做法走；页面改了就停下交回一步步做（YIS-95，docs/evals/20261007-route-replay.md）。真实模型，只装扩展，无头。
+ * 同一网站、同一类事照上次的做法走；页面改了就停下交回一步步做（YIS-95，docs/evals/20261007-route-replay.md）；
+ * 提交前核对、侧栏「照上次的做法 第 N/M 步」（YIS-96，docs/evals/20261007-route-check.md）。真实模型，只装扩展，无头。
  *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--model=provider/id]
  * 失败方式：第二次没照上次走、还是一步步做；照走时值没换（日期、时间、主题、选哪一间）；页面改了还照点、点错或订错；
- *   停下后模型没接着做完；订了不止一次。
+ *   停下后模型没接着做完；订了不止一次；「下周四」这种说法核对不过或订错日期；侧栏没写第几步、没留核对和对不上那一行。
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -42,7 +43,7 @@ const site = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><meta charset="utf-8"><title>会议室预订</title>
 <style>body{font:15px system-ui;margin:32px;max-width:760px} label{display:block;margin:12px 0} select,input{font:15px system-ui;padding:6px 8px} .rooms{display:flex;gap:12px;margin:16px 0} .room{border:1px solid #ccc;border-radius:8px;padding:12px;flex:1} .room.picked{border-color:#3370ff;background:#f0f4ff} #ok{color:green}</style>
 <h1>会议室预订</h1>
-<label>日期 <select id="date"><option value="">选择日期</option><option>10 月 9 日（周四）</option><option>10 月 16 日（周四）</option></select></label>
+<label>日期 <select id="date"><option value="">选择日期</option><option>10 月 8 日（周四）</option><option>10 月 15 日（周四）</option></select></label>
 <label>时间 <select id="time"><option value="">选择时间</option><option>14:00–15:00</option><option>15:00–16:00</option><option>16:00–17:00</option></select></label>
 <section aria-label="会议室">${roomList(req.url?.includes("v=2") ?? false)}</section>
 <label>会议主题 <input id="topic" placeholder="例如：项目周会"></label>
@@ -116,8 +117,35 @@ const ask = async (name: string, text: string, url: string) => {
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.getAttribute("aria-busy") === "false" && ${idle}`)) || undefined, 60_000, `${name}：新对话`);
   const started = Date.now();
   await send(text);
+  // 做的过程中每 150 毫秒记一次侧栏标题和标题下的几行：照走时标题一闪而过。
+  const titles = new Set<string>();
+  const trail = new Set<string>();
+  let finished = false;
+  let shot = false;
+
+  const watch = (async () => {
+    while (!finished) {
+      // SAFETY: 页面脚本返回 [标题, 行…] 字符串数组。
+      const seen = await rp.evaluate(panel, `[[...document.querySelectorAll(".run-title")].at(-1)?.innerText ?? "", ...[...document.querySelectorAll(".run-trail .trail-step")].map((row) => row.className.includes("route-miss") ? "↩ " + row.innerText : row.innerText)]`).catch(() => []) as string[];
+
+      if (seen[0]) titles.add(seen[0].replace(/\s+/g, " "));
+
+      for (const row of seen.slice(1)) trail.add(row.replace(/\s+/g, " "));
+
+      // 侧栏正在照走时的样子：出现核对那一行或对不上那一行时截一张。
+      if (!shot && seen.slice(1).some((row) => row.includes("核对") || row.startsWith("↩"))) {
+        shot = true;
+        await rp.screenshot(panel, join(artifacts, `running-${name}.png`)).catch(() => undefined);
+      }
+
+      await sleep(150);
+    }
+  })();
+
   await until(async () => (await rp.evaluate(panel, idle)) || undefined, 240_000, name, 500);
-  runs.push({ name, text, seconds: Math.round((Date.now() - started) / 1000) });
+  finished = true;
+  await watch;
+  runs.push({ name, text, seconds: Math.round((Date.now() - started) / 1000), titles: [...titles], trail: [...trail] });
   await sleep(2500);
 };
 
@@ -135,39 +163,52 @@ try {
   const base = `http://127.0.0.1:${siteAddress(site).port}/`;
 
   // 第一次：一步步做，记下做法。
-  await ask("第一次", "在当前网页订会议室：10 月 9 日（周四）15:00–16:00，青松，主题写周会。直接点预订。", base);
-  assert.deepEqual(booked(0), { date: "10 月 9 日（周四）", time: "15:00–16:00", room: "青松", topic: "周会" }, "第一次订对");
+  await ask("第一次", "在当前网页订会议室：10 月 8 日（周四）15:00–16:00，青松，主题写周会。直接点预订。", base);
+  assert.deepEqual(booked(0), { date: "10 月 8 日（周四）", time: "15:00–16:00", room: "青松", topic: "周会" }, "第一次订对");
   const first = (await tasks()).find((t) => t.goal.includes("青松"));
   evidence.route = first?.route ?? null;
   assert.ok(first?.route, "第一次记下了做法");
 
   // R1：同一类事，照上次的做法走，值换成这次的。
-  await ask("照上次走", "在当前网页订会议室：10 月 16 日（周四）14:00–15:00，白桦，主题写复盘。直接点预订。", base);
-  assert.deepEqual(booked(1), { date: "10 月 16 日（周四）", time: "14:00–15:00", room: "白桦", topic: "复盘" }, "照上次走订对：四个值都是这次的");
+  await ask("照上次走", "在当前网页订会议室：10 月 15 日（周四）14:00–15:00，白桦，主题写复盘。直接点预订。", base);
+  assert.deepEqual(booked(1), { date: "10 月 15 日（周四）", time: "14:00–15:00", room: "白桦", topic: "复盘" }, "照上次走订对：四个值都是这次的");
+
+  // YIS-96 R2：「下周四」不在页面写法里（期望值按 2026-10-07 周三写：下周四是 10 月 15 日），要做一次核对判断；核对过了才提交。
+  await ask("换个说法", "在当前网页订会议室：下周四 15:00–16:00，青松，主题写周会。直接点预订。", base);
+  assert.deepEqual(booked(2), { date: "10 月 15 日（周四）", time: "15:00–16:00", room: "青松", topic: "周会" }, "「下周四」订成 10 月 15 日");
 
   // R2：页面改版，照走停在对不上的那一步，模型接着做完。
-  await ask("页面改了", "在当前网页订会议室：10 月 16 日（周四）16:00–17:00，银杏，主题写评审。直接点预订。", `${base}?v=2`);
-  assert.deepEqual(booked(2), { date: "10 月 16 日（周四）", time: "16:00–17:00", room: "银杏", topic: "评审" }, "页面改了仍订对");
-  assert.equal(bookings.length, 3, "一共只订了三次，没有多订或订错");
+  await ask("页面改了", "在当前网页订会议室：10 月 15 日（周四）16:00–17:00，银杏，主题写评审。直接点预订。", `${base}?v=2`);
+  assert.deepEqual(booked(3), { date: "10 月 15 日（周四）", time: "16:00–17:00", room: "银杏", topic: "评审" }, "页面改了仍订对");
+  assert.equal(bookings.length, 4, "一共只订了四次，没有多订或订错");
   await rp.screenshot(panel, join(artifacts, "panel.png"));
 
   // 诊断记录：每次请求用没用照走、走了几步、等了几次模型。
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
   // SAFETY: 诊断记录每行是 { runId, type, data } 的 JSON。
-  const lines = traces.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { runId?: string; type: string; data?: { text?: string; toolName?: string; isError?: boolean; result?: { content?: Array<{ text?: string }> } } });
+  const lines = traces.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { runId?: string; type: string; data?: { text?: string; toolName?: string; isError?: boolean; ok?: boolean; literal?: boolean; elapsedMs?: number; result?: { content?: Array<{ text?: string }> } } });
 
   for (const run of runs) {
     const runId = lines.find((l) => l.type === "run_start" && l.data?.text?.includes(String(run.text)))?.runId;
     const mine = lines.filter((l) => l.runId === runId);
     run.modelRequests = mine.filter((l) => l.type === "model_request").length;
     run.tools = mine.filter((l) => l.type === "tool_execution_end").map((l) => l.data?.toolName ?? "?");
+    run.routeChecks = mine.filter((l) => l.type === "route_check").map((l) => `${l.data?.ok ? "通过" : "没过"}${l.data?.literal ? "（原话直通）" : `（判断 ${l.data?.elapsedMs} ms）`}`);
     run.followRoute = mine.filter((l) => l.type === "tool_execution_end" && l.data?.toolName === "follow_route").map((l) => `${l.data?.isError ? "ERROR " : ""}${l.data?.result?.content?.[0]?.text ?? ""}`.slice(0, 400));
   }
 
   evidence.runs = runs;
   const followed = (run: JsonRecord | undefined) => String(Array.isArray(run?.followRoute) ? run.followRoute[0] ?? "" : "");
   assert.match(followed(runs[1]), /^Followed all/, "第二次照上次的做法走完");
-  assert.match(followed(runs[2]), /Stopped before step 3/, "页面改了：停在第 3 步（会议室按钮）");
+  // 换个说法：照走模型可能把「下周四」算错；核对拦下改正也算对，只要最后订对、没有先订错。
+  assert.match(followed(runs[2]), /^Followed all|the check before submitting found/, "换个说法：照上次的做法走完，或被核对拦在提交前");
+  assert.match(followed(runs[3]), /Stopped before step 3/, "页面改了：停在第 3 步（会议室按钮）");
+  const list = (run: JsonRecord | undefined, key: string) => (Array.isArray(run?.[key]) ? run[key].map(String) : []);
+  assert.deepEqual(list(runs[1], "routeChecks"), ["通过（原话直通）"], "值都在原话里：核对直接过");
+  assert.match(list(runs[2], "routeChecks").join(), /（判断 \d+ ms）/, "「下周四」：核对问了模型");
+  assert.ok(list(runs[1], "titles").some((t) => /^照上次的做法 第 \d\/5 步$/.test(t)), "侧栏标题写「照上次的做法 第 N/5 步」");
+  assert.ok(list(runs[1], "trail").some((t) => t.includes("核对过了：和你这次说的一致")), "侧栏留一行「核对过了」");
+  assert.ok(list(runs[3], "trail").some((t) => t.startsWith("↩") && t.includes("第 3 步对不上：找不到上次点的「选择」，改为一步步看")), "页面改了：侧栏留一行「第 3 步对不上…」");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 

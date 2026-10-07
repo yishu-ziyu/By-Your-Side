@@ -37,7 +37,7 @@ npx tsx scripts/acceptance/real-path/orb-style.mts --headless           # 语音
 npx tsx scripts/acceptance/real-path/ptt-dictation.mts --headless       # 网页上按住右 ⌥ 说话，松开交给助手（侧栏关着；听写走 Step Plan 套餐）
 npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless         # 按住说话的网页底部胶囊：在听 → 在做 → 结果，Esc 停
 npx tsx scripts/acceptance/real-path/route-record.mts --headless # 做成一件事后记下做法，「不用记」可撤销，被停下的不记
-npx tsx scripts/acceptance/real-path/route-replay.mts --headless # 同一类事照上次的做法走，值换成这次的；页面改了停下交回
+npx tsx scripts/acceptance/real-path/route-replay.mts --headless # 同一类事照上次的做法走、提交前核对；页面改了停下交回
 npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless    # 一项做不到时的未完成行
 npx tsx scripts/acceptance/real-path/offline-send-and-model-menu.mts --headless # 模型菜单（#2）；后台停机时发送（#4）
 npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 设置页到圈画交付

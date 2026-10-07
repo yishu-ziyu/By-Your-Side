@@ -24,7 +24,7 @@ import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-action
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
-import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText, TextQuote } from "lucide";
+import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, Dot, FileText, TextQuote, Route } from "lucide";
 import {
   StepChain,
   chipState,
@@ -45,6 +45,8 @@ import {
   type ActionKind,
   isLiveViewportPinned,
   liveViewportOverflows,
+  ROUTE_NOTES,
+  routeProgressTitle,
 } from "./steps.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
@@ -2208,9 +2210,9 @@ interface RunHost {
   aside: string | null;
 }
 
-const ACTION_ICONS = { open: Globe, fill: PenLine, click: MousePointerClick, other: Dot, read: FileText, many: List, think: Brain } as const;
+const ACTION_ICONS = { open: Globe, fill: PenLine, click: MousePointerClick, other: Dot, read: FileText, many: List, think: Brain, route: Route } as const;
 
-type IconKind = ActionKind | "read" | "many" | "think";
+type IconKind = ActionKind | "read" | "many" | "think" | "route";
 
 function setActionIcon(box: HTMLElement, kind: IconKind): void {
   if (box.dataset.kind === kind) return;
@@ -3250,12 +3252,22 @@ function ensureRun(): NonNullable<typeof currentRun> {
   return currentRun;
 }
 
+/** 说明行的结果是子步骤结果的 JSON 字符串；解不开就原样用。 */
+function noteText(resultText: string): string {
+  try {
+    return String(JSON.parse(resultText));
+  } catch {
+    return resultText;
+  }
+}
+
 /** 进行中标题下方：做完的最近 3 步（名称 + 耗时），更早的只计数。准备动作不算，和收尾的「做了 N 件事」一致。 */
 function renderTrail(run: RunHost): void {
   const done = Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.running)")).map((chip) => ({
     text: chip.dataset.past ?? "",
     dur: chip.querySelector(".dur")?.textContent ?? "",
     failed: chip.classList.contains("error"),
+    miss: chip.classList.contains("route-miss"),
   }));
 
   const { shown, earlier } = recentSteps(done);
@@ -3268,7 +3280,7 @@ function renderTrail(run: RunHost): void {
 
   const rows = shown.map((step) => {
     const row = document.createElement("div");
-    row.className = step.failed ? "trail-step failed" : "trail-step";
+    row.className = step.failed ? "trail-step failed" : step.miss ? "trail-step route-miss" : "trail-step";
     const text = document.createElement("span");
     text.className = "trail-text";
     text.textContent = step.failed ? `${step.text} · 没成功` : step.text;
@@ -3545,7 +3557,7 @@ function finishRun(): void {
   if (title) {
     const outcome = run.orbActivity.state();
     // 准备动作（定位当前页、读页面结构）不算一件事。
-    const done = Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep)"));
+    const done = Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.note)"));
     const ended = outcome === "failed" || outcome === "stopped" ? outcome : "completed";
     const only = done.length === 1 && ended === "completed" ? done[0] : null;
     // SAFETY: data-kind 由 onToolStart 写入，取值就是 IconKind。
@@ -3914,12 +3926,15 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
 
   if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`, false, kind);
+    // 照上次的做法走（YIS-96）：标题写第几步；核对时写核对哪几项。
+    const routeTitle = routeProgressTitle(ev.params) ?? (ev.name === "route_check" ? `提交前核对 ${String(ev.params.fields ?? "")}`.trim() : null);
+
+    setRunTitle(run, routeTitle ?? `正在${actionCardLabel(ev.name, ev.params)}`, false, routeTitle ? "route" : kind);
   }
 
   const chip = document.createElement("button");
   chip.type = "button";
-  chip.className = prep ? "chip prep" : "chip";
+  chip.className = prep ? "chip prep" : ROUTE_NOTES.has(ev.name) ? `chip note ${ev.name === "route_miss" ? "route-miss" : ""}`.trim() : "chip";
   chip.dataset.kind = kind;
   chip.dataset.past = pastAction(ev.name, ev.params);
   chip.setAttribute("aria-expanded", "false");
@@ -3978,7 +3993,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   // 这一步做完、下一步还没开始：模型在想下一步，标题不该停在刚结束的动作上（「正在读取页面结构 54 秒」），
   // 也不退回光秃秃的「正在思考」：带上已做几件事（#102）。此时没有在跑的工具，所以每个非准备 chip 都已做完。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    setRunTitle(run, betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep)").length), false, "think");
+    setRunTitle(run, betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), false, "think");
   }
 
   if (!entry) return;
@@ -4001,6 +4016,18 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   entry.dur.textContent = duration ?? "";
 
   if (failed) entry.chip.classList.add("error");
+
+  // 照走的说明行（核对、对不上）：结果就是给人看的那句话，写成这一行的字。
+  if (ROUTE_NOTES.has(entry.name)) {
+    const text = noteText(ev.resultText);
+    const label = entry.chip.querySelector<HTMLElement>(".chip-label");
+
+    entry.chip.dataset.past = text;
+
+    if (label) label.textContent = text;
+
+    if (entry.name === "route_miss") entry.dur.textContent = "";
+  }
 
   const label = entry.chip.querySelector<HTMLElement>(".chip-label");
   // 打开页面：拿到标题后用页面名，不用网址（#102）。页面标题来自网页，只作文字显示。
