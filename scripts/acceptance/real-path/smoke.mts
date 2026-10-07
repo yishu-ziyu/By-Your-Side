@@ -117,8 +117,8 @@ const storedMemories = async (): Promise<string[]> => {
   }
 };
 
-// SAFETY: 页面脚本返回字符串（没有时为空串）。
-const selectedConversation = () => rp.evaluate(panel, `chrome.storage.local.get("selectedConversationId").then((v) => v.selectedConversationId ?? "")`) as Promise<string>;
+// SAFETY: 页面脚本返回字符串。没存过时 background 用默认会话（"default"），这里同一规则。
+const selectedConversation = () => rp.evaluate(panel, `chrome.storage.local.get("selectedConversationId").then((v) => v.selectedConversationId ?? "default")`) as Promise<string>;
 
 try {
   // 1. 打开侧栏，配真实模型。

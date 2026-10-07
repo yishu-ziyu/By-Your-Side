@@ -37,7 +37,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let storedCredentials: StoredCredentials = {};
   let voiceConfigured = false;
   let helloReceived = false;
-  /** 配置模型前侧栏发来的新建会话：核心启动后补处理，否则侧栏一直「正在新建会话」。 */
+  /** 配置模型前收到的阅读转侧栏（带 reading 的新建会话）：核心启动后补处理。 */
   const deferredCreates: ClientMessage[] = [];
 
   const log = (message: string) => console.debug("[sideagent]", message);
@@ -143,8 +143,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
+    // 只补处理阅读转侧栏：它一直等回执。侧栏自己的新建请求 4 秒没回执就留在原会话，
+    // 配好模型后再补建会把侧栏切到一个空会话，用户刚发的第一句话和回答都被挤到后台。
     if (message.type === "conversation_create") {
-      deferredCreates.push(message);
+      if (message.reading) deferredCreates.push(message);
 
       return;
     }
