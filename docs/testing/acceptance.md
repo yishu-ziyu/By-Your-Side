@@ -44,6 +44,7 @@ npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-tas
 npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=after # 09-26 实拍的 10 个界面问题
 npx tsx scripts/acceptance/real-path/no-model-card.mts --headless # 没连模型就发消息：回复给「连一个模型」按钮
 npx tsx scripts/acceptance/real-path/error-recovery.mts --headless # 模型报 401/429/断网：错误卡上修好原因，从出错处接着做
+npx tsx scripts/acceptance/real-path/memory-management.mts --headless # 顶栏「记忆」入口有字；抽屉搜索，组头计数跟着结果走
 npx tsx scripts/acceptance/real-path/new-conversation-draft.mts --headless # 点「新会话」后马上打字，字不被清掉
 ```
 

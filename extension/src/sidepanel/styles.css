@@ -405,6 +405,8 @@ html, body {
 }
 #header-more svg, #conversation-new svg, #memory-open svg { width: 15px; height: 15px; stroke-width: 1.8; }
 #memory-open[hidden] { display: none; }
+/* 记忆入口写字（#75）：图标认不出是什么，文字一眼看懂。 */
+#memory-open { width: auto; padding: 0 8px; font: 500 var(--fs-meta)/1 var(--font); color: var(--text-secondary); }
 #header-more:active, #conversation-new:active:not(:disabled), #memory-open:active { transform: scale(.95); }
 #header-more:focus-visible, #memory-open:focus-visible, #header-menu button:focus-visible {
   outline: 2px solid var(--accent);
@@ -2266,6 +2268,9 @@ details.run-steps.done .chip.error { background: transparent; }
 #memory-drawer { position:absolute; inset:148px 0 0; z-index:35; display:flex; min-height:0; flex-direction:column; overflow:hidden; border:1px solid var(--glass-border-subtle); border-bottom:0; border-radius:20px 20px 0 0; background:var(--content-bg); box-shadow:0 -10px 34px rgba(31,42,60,.14),var(--glass-specular); animation:memoryDrawerIn 180ms var(--spring-fluid); }
 @keyframes memoryDrawerIn { from { transform:translateY(18px); opacity:.7; } to { transform:none; opacity:1; } }
 .memory-drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:17px 18px 11px; border-bottom:1px solid var(--content-border); flex-shrink:0; }
+#memory-search { margin: 10px 18px 2px; padding: 7px 12px; border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-subtle); font: var(--fs-ui)/var(--lh-ui) var(--font); color: var(--text-primary); outline: none; flex-shrink: 0; }
+#memory-search:focus { border-color: var(--text-tertiary); background: var(--content-bg); }
+.memory-search-empty { margin: 16px 0; text-align: center; }
 .memory-drawer-head h2, .memory-drawer-head p { margin:0; }
 .memory-drawer-head h2 { font-size:16px; line-height:1.35; font-weight:620; letter-spacing:-.015em; }
 .memory-drawer-head p { margin-top:2px; color:var(--text-tertiary); font-size:10.5px; }
