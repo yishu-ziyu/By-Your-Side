@@ -159,6 +159,7 @@ const marginalia = installMarginalia({
 const nudge = installNudge({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
+  panelOpen: () => connectedPanels.size > 0,
 });
 
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];

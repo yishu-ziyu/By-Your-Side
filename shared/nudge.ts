@@ -18,6 +18,9 @@ export const NUDGE_SENTENCE_LIMIT = 20;
 
 export const NUDGE_LABEL_LIMIT = 5;
 
+/** 句子里对象是谁（商家、机构、网站名）的上限。 */
+export const NUDGE_PARTY_LIMIT = 16;
+
 export const NUDGE_EVIDENCE_LIMIT = 60;
 
 export const NUDGE_PROMPT_LIMIT = 2000;
@@ -30,7 +33,8 @@ export interface NudgeContext { page: NudgePage; recent: NudgeRecentPage[] }
 
 export interface NudgeEvidence { text: string; url: string }
 
-export interface Nudge { sentence: string; evidence: NudgeEvidence[]; actionLabel: string; prompt: string }
+/** actionLabel 是句首的动词，也是按钮；sentence 是动词后面的宾语；party 是对象是谁，没有就不写。 */
+export interface Nudge { sentence: string; evidence: NudgeEvidence[]; actionLabel: string; prompt: string; party?: string }
 
 export type NudgeClientMessage = { type: 'nudge_request'; requestId: string; context: NudgeContext };
 
@@ -65,7 +69,7 @@ export function isNudgeClientMessage(v: NudgeClientMessage): boolean {
 }
 
 /** 模型回复里还没核对过的建议字段。 */
-interface NudgeDraft { sentence: unknown; evidence: unknown; actionLabel: unknown; prompt: unknown }
+interface NudgeDraft { sentence: unknown; evidence: unknown; actionLabel: unknown; prompt: unknown; party?: unknown }
 
 /** 模型回复的原样 JSON 对象：字段都还没核对。 */
 export interface NudgeReply extends Partial<NudgeDraft> { offer?: unknown }
@@ -81,7 +85,8 @@ function isNudge(n: NudgeDraft): n is Nudge {
     && typeof n.actionLabel === 'string' && !!n.actionLabel.trim() && chars(n.actionLabel) <= NUDGE_LABEL_LIMIT
     && typeof n.prompt === 'string' && !!n.prompt.trim() && n.prompt.length <= NUDGE_PROMPT_LIMIT
     && Array.isArray(n.evidence) && n.evidence.length >= 1 && n.evidence.length <= 3
-    && n.evidence.every(isEvidence);
+    && n.evidence.every(isEvidence)
+    && (n.party === undefined || (typeof n.party === 'string' && chars(n.party) <= NUDGE_PARTY_LIMIT));
 }
 
 export function isNudgeResult(v: NudgeResult): boolean {
@@ -97,7 +102,9 @@ const squash = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 export function acceptNudgeReply(reply: NudgeReply, context: NudgeContext): Nudge | null {
   if (reply.offer !== true) return null;
 
-  const candidate: NudgeDraft = { sentence: reply.sentence, evidence: reply.evidence, actionLabel: reply.actionLabel, prompt: reply.prompt };
+  // 对象名可有可无：空的、太长的直接不要，不连累整条建议。
+  const party = typeof reply.party === 'string' && reply.party.trim() && chars(reply.party.trim()) <= NUDGE_PARTY_LIMIT ? reply.party.trim() : undefined;
+  const candidate: NudgeDraft = { sentence: reply.sentence, evidence: reply.evidence, actionLabel: reply.actionLabel, prompt: reply.prompt, ...(party === undefined ? {} : { party }) };
 
   if (!isNudge(candidate)) return null;
   const sources = new Map<string, string>();
@@ -114,11 +121,14 @@ export function acceptNudgeReply(reply: NudgeReply, context: NudgeContext): Nudg
   });
 
   if (!grounded) return null;
+  // 对象名也只能是上下文里出现过的；对不上就不写，不为它丢掉整条建议。
+  const named = party !== undefined && [...sources.values()].some(source => source.includes(squash(party)));
 
   return {
     sentence: candidate.sentence.trim(),
     evidence: candidate.evidence.map(e => ({ text: e.text.trim(), url: e.url })),
     actionLabel: candidate.actionLabel.trim(),
     prompt: candidate.prompt.trim(),
+    ...(named && party ? { party } : {}),
   };
 }
