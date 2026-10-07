@@ -340,7 +340,8 @@ const TRANSLATED_BLOCKS = "[...document.querySelectorAll('h1,h2,h3,p,li')].filte
 const PANEL_STATE = `(() => {
   const q = (s) => document.querySelector(s);
   const visible = (el) => !!el && !el.hidden && el.getClientRects().length > 0 && el.innerText.trim().length > 0;
-  const answers = [...document.querySelectorAll("#messages .msg.assistant")].map((el) => el.innerText.trim()).filter(Boolean);
+  // 回答里的链接文字常是“公司资料页”，网址只在 href 里；用户点得到，判据也要看得到。
+  const answers = [...document.querySelectorAll("#messages .msg.assistant")].map((el) => [el.innerText.trim(), ...[...el.querySelectorAll("a[href]")].map((a) => a.href)].join(" ").trim()).filter(Boolean);
   return {
     connected: q("#status-dot")?.classList.contains("on") ?? false,
     running: q("#status-pill")?.classList.contains("running") ?? false,

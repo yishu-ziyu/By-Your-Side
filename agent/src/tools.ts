@@ -268,6 +268,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   };
 
   const call = makeCall(undefined);
+  /** 导航后的只读补读：不带调用身份，避免与导航本身的执行事实混在一起。 */
+  const readAfterNavigate = call;
 
   const makeDefinitions = (call: ReturnType<typeof makeCall>, _scope: ExecutionScope | undefined) => [
     defineTool({
@@ -427,15 +429,25 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "navigate",
       label: "Navigate",
-      description: "Navigate the working tab to a URL and wait for the new document to be interactive. Readiness timeout is not confirmed navigation success; verify the URL and take a snapshot before acting.",
+      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL and take a snapshot before acting.",
       parameters: Type.Object({
         url: Type.String({ description: "Absolute URL" }),
         timeout: Type.Optional(Type.Number({ description: "Load timeout in seconds" })),
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
+        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`;
 
-        return textResult(`Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`, data);
+        if (data.readiness === "timeout") return textResult(head, data);
+
+        // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
+        try {
+          const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
+
+          return textResult(`${head}\n\nFresh snapshot of the new page (no separate snapshot needed):\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
+        } catch {
+          return textResult(head, data);
+        }
       },
     }),
 
@@ -445,7 +457,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
-        "Take a snapshot after every navigation and after actions that change the page.",
+        "Take a snapshot after actions that change the page; navigate already returns a fresh snapshot of the new page.",
         "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
         "Viewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
       ],

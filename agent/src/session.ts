@@ -2370,6 +2370,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       return;
     }
 
+    // navigate 结果里带着新页面的快照：按一次 snapshot 读数记账（排在导航的 tool_end 之后，旧读数已失效）。
+    if (name === 'navigate') {
+      const page = (result as { details?: { page?: unknown } } | null)?.details?.page;
+
+      if (page) this.emitReadObservation(toolCallId, 'snapshot', {}, page, false);
+
+      return;
+    }
+
     if (!(RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(name)) return;
     const read = readObservationOf(name, result);
 

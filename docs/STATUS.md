@@ -37,7 +37,7 @@
 
 本轮进展：
 
-1. 自检（#28，已关）：GLM、M3.1 定点各 5/5（[验收](evals/20261002-answer-selfcheck.md)）；10-06 用 gpt-6-luna 重跑原失败 6 题全过（[复查](evals/20261006-stale-issues-recheck.md)）。
+1. 提速（10-07）：98% 时间在等模型；多页调研中位 34→17 秒，回答 13/13 正确（[验收](evals/20261007-navigate-returns-page.md)）。
 2. PDF 下载（#25）：两模型的原 arXiv 请求通过，日常 Chrome 可见实录为 2 步、8 秒（[验收与录像](evals/20261002-pdf-download.md)）。
 3. #32 环境分类在独占条件下完整通过；#35 共 124 次运行与判分完成。M3.1 正常任务 52/55，GLM 50/56；环境分别 7、6 次（[环境验收](evals/20261002-eval-environment.md)）。
 4. Pi 会话/文件恢复与 40px 截图卡已部署，关键验收通过（[验收与录像](evals/20261002-session-durability.md)）。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax 记忆分类与备注提交检查通过，已加载（[分类](evals/20261003-memory-classification.md)、[执行](evals/20261003-method-form-enforcement.md)）。备注补填、电话规则替换、撤销恢复备注的整条扩展路径通过，已加载；本轮用脚本模型，下一步用在线 MiniMax 复测（[验收](evals/20261003-memory-rule-replacement.md)）。
