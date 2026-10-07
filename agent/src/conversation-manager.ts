@@ -807,6 +807,9 @@ return { kind: "silent" };}
     return history.setRoute(id, null);
   }
 
+  /** 输入框旁选的思考强度；没选过为 undefined（按模型登记的起始档）。 */
+  private thinkingDeep: boolean | undefined;
+
   /** 用户点过「不用记」的任务：目标核对后重记这条过往任务时也不再存做法。 */
   private routesDeclined = new Set<string>();
   /** 「下次别照旧」顺带关掉的同网站做法，按点的那条任务记着，撤销时一起放回（YIS-97）。 */
@@ -1485,6 +1488,8 @@ return receipt;
         },
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
+
+      if (this.thinkingDeep !== undefined) runtime.session.mainEffort?.prefer(this.thinkingDeep);
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
       runtime.session.bindVoiceTurnGate?.(this.voiceTurns);
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
@@ -1645,6 +1650,15 @@ return;}
 
       if (receipt) this.emitReceipt(receipt);
       else {const result=this.voicePlans.get(id,message.requestId);this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:result?'这份语音计划的结果见逐步记录；不会自动重做。':'未找到这条请求的回执，请不要自动重发。',...(result?.plan?.steps.length?{plan:result.plan}:{})}});}
+
+      return;
+    }
+
+    // 思考强度对所有会话生效，之后新开的会话也按它起步。
+    if (message.type === "set_thinking") {
+      this.thinkingDeep = message.deep;
+
+      for (const entry of this.entries.values()) entry.runtime.session.mainEffort?.prefer(message.deep);
 
       return;
     }

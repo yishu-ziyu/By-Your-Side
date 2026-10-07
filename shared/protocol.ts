@@ -237,6 +237,8 @@ export type ClientMessage = ConversationEnvelope & (
       generation?: number;
     }
   | { type: "set_model"; model: string }
+  /** 输入框旁的思考强度：深入用高档，快用低档（各模型按自己的档位换算），对所有会话生效。 */
+  | { type: "set_thinking"; deep: boolean }
   /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做（#74）。key：刚换的 key，先用上再接着做。 */
   | { type: "retry_after_error"; key?: string }
   /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
@@ -260,6 +262,8 @@ export interface ModelOption {
    * UI 默认只显示 featured，用户可展开查看全部；缺失视为 false。
    */
   featured?: boolean;
+  /** 输入框旁「快 / 深入」在这个模型上各用哪一档；不能调思考的模型没有。 */
+  thinking?: { fast: string; deep: string };
 }
 
 /** 宿主能提供的可选功能：没有存储的功能，侧栏不给入口。 */
@@ -805,6 +809,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
 
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
+
+    if (msg.type === "set_thinking" && typeof msg.deep !== "boolean") return null;
 
     if (msg.type === "retry_after_error" && msg.key !== undefined && (typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
 
