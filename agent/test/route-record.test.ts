@@ -25,11 +25,11 @@ const booking: RouteNote[] = [
 const ok: Omit<RouteVerdictInput, "draft"> = { outcome: "complete", revised: false, results: [], said: "订 2026-10-09 的青松，主题周会" };
 
 describe("记做法的代码裁判", () => {
-  it("做完、步骤都认得出：存下，这次说的值标「这次说的」，记忆里的标「记忆」，其余标「固定」", () => {
+  it("做完、步骤都认得出：存下，这次说的值标「这次说的」（含在几张卡片里选的那张），记忆里的标「记忆」，其余标「固定」", () => {
     const verdict = judgeRoute({ ...ok, draft: draftOf([...booking, { action: "fill", target: box("备注"), value: "无", memory: false }]) });
 
-    expect("route" in verdict && verdict.route.steps.map((s) => s.valueFrom)).toEqual(["said", undefined, "said", "memory", undefined, "fixed"]);
-    expect("route" in verdict && verdict.route.steps[1]!.target!.box).toBe("青松");
+    expect("route" in verdict && verdict.route.steps.map((s) => s.valueFrom)).toEqual(["said", "said", "said", "memory", undefined, "fixed"]);
+    expect("route" in verdict && [verdict.route.steps[1]!.target!.box, verdict.route.steps[1]!.value]).toEqual(["青松", "青松"]);
   });
 
   it("密码、验证码的值不存，只记这里要填", () => {

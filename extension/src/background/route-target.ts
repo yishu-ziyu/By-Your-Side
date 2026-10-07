@@ -2,7 +2,7 @@ import type { ToolContract } from "../../../shared/protocol.js";
 import { LEAD_SESSION_ID } from "../../../shared/protocol.js";
 import type { RouteTarget } from "../../../shared/route.js";
 import type { AxNodeLite } from "./axtree.js";
-import { axBackendNodeFor } from "./axstate.js";
+import { addAxRefs, axBackendNodeFor } from "./axstate.js";
 import { sendCommand } from "./debugger.js";
 import { resolveWorkingTab } from "./state.js";
 
@@ -92,4 +92,23 @@ export async function describeTarget(params: ToolContract["describe_target"]["pa
   const { nodes = [] } = await sendCommand<{ nodes?: AxNodeLite[] }>(tab.id, "Accessibility.getFullAXTree", undefined, undefined, 5_000);
 
   return { target: routeTargets(nodes).get(backend) ?? null };
+}
+
+/**
+ * 照走（YIS-95）：在当前页找角色、名字、所在区域、所在卡片四项都相同的控件；恰好一个才登记成可执行的 @N（编号即 backendDOMNodeId），否则不给。只读。
+ */
+export async function findRouteTarget(params: ToolContract["find_route_target"]["params"], sessionId: string = LEAD_SESSION_ID): Promise<ToolContract["find_route_target"]["data"]> {
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
+
+  if (tab.id == null) throw new Error("工作标签页无效");
+  const want = params.target;
+
+  if (!want) return { url: tab.url ?? "", ref: null, matches: 0 };
+  const { nodes = [] } = await sendCommand<{ nodes?: AxNodeLite[] }>(tab.id, "Accessibility.getFullAXTree", undefined, undefined, 5_000);
+  const hits = [...routeTargets(nodes)].filter(([, t]) => t.role === want.role && t.name === want.name && t.area === want.area && t.box === want.box);
+
+  if (hits.length !== 1) return { url: tab.url ?? "", ref: null, matches: hits.length };
+  addAxRefs(tab.id, [hits[0]![0]]);
+
+  return { url: tab.url ?? "", ref: `@${hits[0]![0]}`, matches: 1 };
 }

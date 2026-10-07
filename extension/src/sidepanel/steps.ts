@@ -34,6 +34,7 @@ const ACTION_NAMES: Record<string, string> = {
   hover: "悬停",
   remember_user_preference: "记住偏好",
   browser_run: "连续操作",
+  follow_route: "照上次的做法",
   wait_for: "等待元素",
   sleep: "等待",
   fill: "填写文本",

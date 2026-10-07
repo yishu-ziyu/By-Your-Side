@@ -26,7 +26,8 @@ import type { RouteNote } from "./route-record.js";
 /** 记进做法的动作（走老路）；其余工具不记。 */
 const ROUTE_ACTION_OF: Partial<Record<ToolName, RouteNote["action"]>> = { click: "click", fill: "fill", select_option: "select_option", press_key: "press_key", navigate: "navigate" };
 
-import type { RouteTarget } from "../../shared/route.js";
+import type { RouteTarget, TaskRoute } from "../../shared/route.js";
+import { followRoute } from "./route-replay.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
 
@@ -136,7 +137,7 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 动手成功后记一笔做法（走老路）。 */ noteRouteStep?: (note: RouteNote) => void }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 动手成功后记一笔做法（走老路）。 */ noteRouteStep?: (note: RouteNote) => void; /** 照走用：取一条过往任务记下的做法和网站。 */ routeOf?: (taskId: string) => Promise<{ route: TaskRoute; hosts: string[] } | undefined> }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
@@ -999,6 +1000,61 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         };
       },
     }),
+    // 照上次的做法走（YIS-95）：只给主会话；步骤逐个交给原有工具执行，像 browser_run 的子步骤一样记账、可停。
+    ...(execution?.routeOf && !sid ? [defineTool({
+      name: "follow_route",
+      label: "照上次的做法",
+      description: 'Repeat the recorded route of a past task on THIS site in one call, when the user asks for the same kind of task again. Past tasks in your context show "route <id>" with numbered steps. Pass values for every step marked [said], taken from what the user said THIS time, using the exact option or card text the page shows; also pass a value for any other step whose value should differ this time (for example a date the user put differently). Each step first re-finds its control on the current page. When a control is missing or ambiguous, or a step needs a secret the user gives each time, it stops and says where: continue from that step yourself, reading the page first. Steps it did are real page actions. Afterwards verify the result on the page as usual. Never use it on another site or for a different kind of task.',
+      parameters: Type.Object({
+        task: Type.String({ description: 'The id after "route" in the past task' }),
+        values: Type.Optional(Type.Array(Type.Object({ step: Type.Integer({ minimum: 1 }), value: Type.String() }))),
+      }),
+      execute: async (id, params, signal, onUpdate) => {
+        const found = await execution.routeOf!(params.task);
+
+        if (!found) throw new Error(`No recorded route for task ${params.task}; nothing was done.`);
+        let n = 0;
+
+        const emit = (programStep: ProgramStep) => execution.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } });
+
+        const result = await followRoute({ route: found.route, hosts: found.hosts, values: params.values ?? [] }, {
+          // SAFETY: find_route_target 的返回形状见 ToolContract["find_route_target"]["data"]。
+          find: target => rpc.call("find_route_target", target ? { target } : {}, 8_000, sid) as Promise<ToolContract["find_route_target"]["data"]>,
+          act: async (name, args) => {
+            // 第一步动手起，整体结果就不再是「确定未执行」。
+            if (n === 0) rpc.noteToolFact?.(id, "unknown");
+            const step = { parentId: id, id: `${id}/${++n}`, name, params: { ...args } };
+            const started = Date.now();
+
+            emit({ ...step, phase: "start" });
+
+            try {
+              const data = await call(name, { ...args }, id, step.id);
+
+              emit({ ...step, phase: "end", result: data, elapsedMs: Date.now() - started });
+            } catch (error) {
+              emit({ ...step, phase: "end", error: error instanceof Error ? error.message : String(error), elapsedMs: Date.now() - started });
+              throw error;
+            }
+          },
+        });
+
+        if (n > 0) rpc.noteToolFact?.(id, "executed");
+
+        if (signal?.aborted) throw new Error("本次调用已取消，后面的步骤没有做。");
+        const head = result.stop ? `Followed ${result.done} of ${result.total} steps. ${result.stop}` : `Followed all ${result.total} steps of the route. Verify the result in the snapshot below.`;
+
+        // 和导航一样顺手读一次页面：核对结果或接着做都不必再花一轮调 snapshot。读页失败只退回原结果。
+        try {
+          // SAFETY: snapshot 的返回形状见 ToolContract["snapshot"]["data"]。
+          const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
+
+          return textResult(`${head}\n\nFresh snapshot of the page now (no separate snapshot needed):\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...result, steps: result.done });
+        } catch {
+          return textResult(head, { ...result, steps: result.done });
+        }
+      },
+    })] : []),
   ];
 
   const definitions = makeDefinitions(call, undefined);

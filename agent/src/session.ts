@@ -158,9 +158,12 @@ function loopModel(models: ModelPort, pattern: string | undefined) {
 
 /**
  * 会改变页面的工具（模型可见名）。滚动、悬停、等待事件、切标签等只看不改的不算；
- * browser_run 另按执行步数判断。用于交付时纠正「页面没变却说做完了」。
+ * browser_run、follow_route 另按执行步数判断。用于交付时纠正「页面没变却说做完了」。
  */
 const PAGE_CHANGE_TOOLS = new Set(["page_translation", "navigate", "open_tab", "click", "double_click", "fill", "type_text", "press_key", "js", "mark", "accept_dialog", "dismiss_dialog"]);
+
+/** 由多个浏览器步骤组成的工具：步骤作为子步骤上报，结果里带实际执行的步数。 */
+const PROGRAM_TOOLS = new Set(["browser_run", "follow_route"]);
 
 export class BrowserAgentSession {
   private activeGoal:string|null=null;
@@ -443,9 +446,9 @@ if(required.includes(key))candidates.set(key,attachment);
     return { ...this.pageChangeTally };
   }
 
-  /** 改页面的工具：出错不算生效；browser_run 只有真的执行了浏览器步骤才算。 */
+  /** 改页面的工具：出错不算生效；browser_run、follow_route 只有真的执行了浏览器步骤才算。 */
   private tallyPageChange(toolName: string, isError: boolean, steps: number): void {
-    if (toolName !== "browser_run" && !PAGE_CHANGE_TOOLS.has(toolName)) return;
+    if (!PROGRAM_TOOLS.has(toolName) && !PAGE_CHANGE_TOOLS.has(toolName)) return;
     this.pageChangeTally.attempts += 1;
 
     if (!isError && steps > 0) this.pageChangeTally.changes += 1;
@@ -2033,7 +2036,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         case "tool_execution_update": {
           const step = event.partialResult?.details?.programStep as ProgramStep | undefined;
 
-          if (event.toolName !== "browser_run" || !step) break;
+          if (!PROGRAM_TOOLS.has(event.toolName) || !step) break;
           this.observeProgramStep(step);
           break;
         }
@@ -2080,7 +2083,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
           // 被插话作废的旧步骤没碰页面，不算「改页面却没生效」（页面脚本被拦、一步没走的仍算）。
-          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE))) this.tallyPageChange(event.toolName, event.isError, event.toolName === "browser_run" ? Number(event.result?.details?.steps ?? 0) : 1);
+          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE))) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
 
           emit({
             kind: "tool_end",

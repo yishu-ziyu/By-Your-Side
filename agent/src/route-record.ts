@@ -82,9 +82,12 @@ export function judgeRoute(input: RouteVerdictInput): { route: TaskRoute } | { r
 
   const said = input.said.replace(/\s+/g, "");
 
-  const steps = input.draft.steps.map((step): RouteStep => step.value === undefined || step.valueFrom
-    ? step
-    : { ...step, valueFrom: step.value.trim() && said.includes(step.value.replace(/\s+/g, "")) ? "said" : "fixed" });
+  const steps = input.draft.steps.map((raw): RouteStep => {
+    // 在几张同样的卡片里点了一张：卡片名就是这一步选的值，下次照走时可以换成别的卡片（YIS-95）。
+    const step = raw.action === "click" && raw.target?.box ? { ...raw, value: raw.target.box } : raw;
+
+    return step.value === undefined || step.valueFrom ? step : { ...step, valueFrom: step.value.trim() && said.includes(step.value.replace(/\s+/g, "")) ? "said" : "fixed" };
+  });
 
   return { route: { steps, recordedAt: Date.now() } };
 }
