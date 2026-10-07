@@ -10,7 +10,7 @@ npm workspaces 把 `node_modules/@sideagent/agent` 做成指回主仓库 `agent/
 
 ## 方法
 
-- 工作树里建真目录 `node_modules`，其余条目逐个链到主仓库，`@sideagent/*` 改链到工作树自己的 `agent/`、`extension/`。
+- 用 `node scripts/worktree-deps.mjs <工作树>` 接依赖：建真目录 `node_modules`，其余条目逐个链到主仓库，`@sideagent/*` 链到工作树自己的 `agent/`、`extension/`。不要手动整个链接。
 - 修复也一样：在工作树里改了 `agent/` 或 `shared/`，构建出来的扩展里可能没有这些改动。跑真实路径之前，先确认构建产物里有改动：`SIDEAGENT_BUILD_DIST=<临时目录> node extension/build.mjs`，然后在 `inproc.js` 里 grep 新加的一句话。
 - 先在旧代码里加一行日志，用 `watchInproc()` 读到它，确认跑的确实是旧代码，再拿反例结论。
 
@@ -23,3 +23,4 @@ npm workspaces 把 `node_modules/@sideagent/agent` 做成指回主仓库 `agent/
 - [删减验收](../../evals/20261004-cut-unused.md)「技术前提」：修正链接前旧代码误通过，修正后同脚本在旧代码上失败（回答与空闲都在核对放行之后）。
 - 2026-10-04，本轮主代理。
 - 2026-10-07 又犯了一次（YIS-92）：工作树整个链接了主仓库的 `node_modules`，10 次「修好后」的复现跑的其实是旧代码。grep 构建产物时才发现。
+- 2026-10-08 第三次（YIS-101）：工作树整个链接，agent 那半边修改没打进验收构建，「修复后通过」只测到扩展那半边。加了 `scripts/worktree-deps.mjs`；同一处改动用它构建能在 `inproc.js` 里找到，整个链接时找不到。
