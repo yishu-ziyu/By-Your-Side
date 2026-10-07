@@ -26,7 +26,7 @@ import { FileDocument } from "./fixtures/file-document.js";
 import { InProcessLock, type DocumentPersistence } from "../src/document-persistence.js";
 import type { AgentUiEvent, PageContext, ServerMessage } from "../../shared/protocol.js";
 import { ConversationManager } from "../src/conversation-manager.js";
-import type { CorrectionVerdict } from "../src/memory-correction.js";
+import { isUserCorrection, type CorrectionVerdict } from "../src/memory-correction.js";
 import { MEMORY_CORRECTION_RULES, type MemoryDecision } from "../src/memory-decision.js";
 import { TASK_HISTORY_FILE, TaskHistoryStore } from "../src/task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
@@ -619,4 +619,26 @@ describe("task history hides secret values, not ordinary tasks", () => {
     const { saved } = await recorded({ goal: "用银行卡 6222020200112233445 付订单 3012345678901234567" });
     expect(saved.goal).toBe("用银行卡 （已隐去） 付订单 3012345678901234567");
   });
+});
+
+describe("recognizing a correction by wording", () => {
+  it.each([
+    "明明是 3 号，你填成了 4 号",
+    "其实不是这个邮箱",
+    "我说的是导出全部",
+    "你理解错了，要按价格排序",
+    "No, I meant the cheaper one",
+    "不对，只导了当前页",
+    "这个搞错了，是 B 列",
+    "怎么又只导了一页",
+    "that's not what I asked",
+  ])("counts %s", text => { expect(isUserCorrection(text)).toBe(true); });
+
+  it.each([
+    "翻译一下：其实不是这样的",
+    "网页上写着：明明是周三",
+    "帮我查一下明天的天气",
+    "我要的是什么来着？",
+    "其实是不是要先登录？",
+  ])("does not count %s", text => { expect(isUserCorrection(text)).toBe(false); });
 });
