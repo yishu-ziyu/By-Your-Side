@@ -57,6 +57,8 @@ export interface TaskView {
    * blocked 原因在助手和用户之外（网站连不上等），remaining 是给用户看的原因。remaining 是用户口吻的一句。没核对过时缺省。
    */
   goalStatus?: { status: "done" | "waiting" | "open" | "blocked"; remaining: string | null };
+  /** 有写入步骤说不清是否已执行（中断时没登记结果）。只在为真时出现。 */
+  unresolvedEffect?: true;
 }
 
 const OPEN_STATUSES = new Set(["pending", "blocked", "unknown"]);
@@ -124,11 +126,27 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     ...(snapshot.goalCheck ? { goalStatus: { status: snapshot.goalCheck.status === "done" ? "done" as const : snapshot.goalCheck.status === "needs_user" ? "waiting" as const : snapshot.goalCheck.status === "blocked" ? "blocked" as const : "open" as const, remaining: snapshot.goalCheck.remaining } } : {}),
   };
 
+  if (snapshot.unresolvedEffect || snapshot.untrackedWritePending) view.unresolvedEffect = true;
   const materials = snapshot.recoveryInput?.materials;
 
   if (materials) view.materials = materials.map(item => ({ ...item }));
 
   return view;
+}
+
+/**
+ * 后台（offscreen）重启后能否不等用户、自己接着做：被重启或断连打断、没有说不清是否已执行的步骤、
+ * 可恢复、并且知道原页面。页面是否还开着由调用方核对；不满足就照旧等用户点「继续原任务」。
+ */
+export function canAutoResume(view: TaskView): boolean {
+  return view.state === "interrupted"
+    && view.waiting?.reason === "restart_checkpoint"
+    && (view.waiting.detail === "host_restart" || view.waiting.detail === "connection_lost")
+    && view.resumable
+    && !view.unresolvedEffect
+    && !view.outstanding.some((item) => item.status === "unknown")
+    && !!view.runId
+    && view.page !== null;
 }
 
 function latestDeliveryRef(delivery: UserDelivery | null | undefined): TaskView["latestDelivery"] {
@@ -186,6 +204,8 @@ export function isTaskView(value: unknown): value is TaskView {
   if (typeof v.resumable !== "boolean") return false;
 
   if (v.goalsListed !== undefined && v.goalsListed !== true && v.goalsListed !== false) return false;
+
+  if (v.unresolvedEffect !== undefined && v.unresolvedEffect !== true) return false;
 
   if (v.goalStatus !== undefined && (!v.goalStatus || !["done", "waiting", "open", "blocked"].includes(v.goalStatus.status) || (v.goalStatus.remaining !== null && (typeof v.goalStatus.remaining !== "string" || v.goalStatus.remaining.length > 200)))) return false;
 
