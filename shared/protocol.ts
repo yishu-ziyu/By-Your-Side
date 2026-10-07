@@ -392,6 +392,8 @@ export const TOOL_NAMES = [
   "dialog_info",
   /** 走老路：给一个 @N 控件写出角色 + 名字 + 所在区域（只读，没有模型可见工具）。 */
   "describe_target",
+  /** 走老路照走：在当前页按同一套描述找回控件，唯一时给出可执行的 @N（只读，没有模型可见工具）。 */
+  "find_route_target",
   "download_url",
   /** CAP-02C：原生 select 的 value/label/index、多选、清空（≠ 单值 fill）。 */
   "select_option",
@@ -630,6 +632,11 @@ export interface ToolContract {
   describe_target: {
     params: { tabId?: number; target: string };
     data: { target: RouteTarget | null };
+  };
+  /** 不给 target 时只回当前网址；matches 是四项都相同的控件个数，恰好 1 个才给 ref。 */
+  find_route_target: {
+    params: { tabId?: number; target?: RouteTarget };
+    data: { url: string; ref: string | null; matches: number };
   };
   /** 直接保存 HTTP(S) 链接，绕过 PDF 阅读器；完成只认 Chrome 下载状态。 */
   download_url: {
