@@ -203,6 +203,28 @@ export function isStepVoice(value: unknown): value is StepVoice {
 }
 
 /**
+ * 语音光球的样子（#124）：暮色、晨光是自己用流体模拟渲染的循环视频（scripts/orb/render_fluid.py），粒子是原来的粒子球。
+ * 10-07 用户挑选后三种都保留，默认暮色。
+ */
+export const ORB_STYLES = [
+  { id: "dusk", label: "暮色" },
+  { id: "dawn", label: "晨光" },
+  { id: "particles", label: "粒子" },
+] as const;
+
+export type OrbStyle = typeof ORB_STYLES[number]["id"];
+
+export const DEFAULT_ORB_STYLE: OrbStyle = "dusk";
+
+/** 扩展 chrome.storage.local 里存用户所选光球样子的键。 */
+export const ORB_STYLE_STORAGE_KEY = "voice_orb_style";
+
+/** 存储读出的值先过这里；不认识的值按默认显示。 */
+export function parseOrbStyle(value: {} | null | undefined): OrbStyle {
+  return ORB_STYLES.find(style => style.id === value)?.id ?? DEFAULT_ORB_STYLE;
+}
+
+/**
  * 语音人设：只改变语气和措辞，不改变行为规则（如实报结果、不反问、不客套仍然优先）。
  * 方向见 docs/voice-interaction.md。自定义内容由用户在设置页填写，长度有上限。
  */

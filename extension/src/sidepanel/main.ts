@@ -17,7 +17,7 @@ import { attachAnswerActions as attachCopyActions, setAnswerTime, siteGlyph } fr
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
-import { mountOrb } from "./voice-orb.js";
+import { mountVoiceOrb } from "./orb-style.js";
 import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
@@ -4363,7 +4363,7 @@ function send(msg: ClientMessage): boolean {
   const canvas = document.querySelector<HTMLCanvasElement>("#starter-orb")!;
   let stop: (() => void) | null = null;
   new IntersectionObserver(([entry]) => {
-    if (entry?.isIntersecting && !stop) stop = mountOrb(canvas, 56, () => "idle");
+    if (entry?.isIntersecting && !stop) stop = mountVoiceOrb(canvas, 56, () => "idle");
     else if (!entry?.isIntersecting && stop) { stop(); stop = null; }
   }).observe(canvas);
 }
