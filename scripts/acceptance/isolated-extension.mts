@@ -198,6 +198,8 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
 
     child = spawn(CHROME, [
       "--headless=new",
+      // macOS：不读钥匙串里的「Chrome Safe Storage」，否则每启动一次就弹一次钥匙串授权框。
+      "--use-mock-keychain",
       "--mute-audio",
       ...(options.fakeMedia ? ['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'] : []),
       "--enable-unsafe-extension-debugging",

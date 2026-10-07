@@ -411,6 +411,8 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
 
   const spawnChrome = () => spawn(resolveChrome(), [
     "--headless=new",
+    // macOS：不读钥匙串里的「Chrome Safe Storage」，否则每启动一次就弹一次钥匙串授权框。
+    "--use-mock-keychain",
     // Ubuntu runners deny Chrome's unprivileged namespace sandbox (same as isolated-extension).
     ...(process.platform === "linux" ? ["--no-sandbox"] : []),
     "--mute-audio",
@@ -440,6 +442,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
 
   const port = await until(async () => {
     if (chromeSpawnError) throw chromeSpawnError;
+
     if (chrome.exitCode !== null || chrome.signalCode !== null) throw new Error(`Chrome 提前退出（${chrome.exitCode ?? chrome.signalCode}）`);
     const text = await readFile(join(dirs.profile, "DevToolsActivePort"), "utf8").catch(() => "");
 
