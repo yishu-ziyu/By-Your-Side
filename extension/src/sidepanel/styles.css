@@ -3134,6 +3134,11 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .action-menu-item { font-size: 13px; }
 .action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
 .action-menu-item-key { margin-left: 6px; color: var(--text-tertiary); font-size: 11px; }
+/* 回答里的 ①②：点一下页面滚回那一圈再指一下（与页面上助手画的蓝圈同色）。 */
+.circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: #2d4a86; color: #fff; font: 600 11px/18px var(--font); vertical-align: 1px; cursor: pointer; }
+.circle-ref:hover { background: #22396b; }
+.circle-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.circle-ref-gone { margin-left: 4px; color: var(--text-tertiary); font-size: 12px; }
 /* 圈出来问的附件：左上角是页面上那一圈的编号（与页面上的橙色编号同款）。 */
 .tile-circle-num { position: absolute; left: 4px; top: 4px; z-index: 15; width: 18px; height: 18px; border-radius: 50%; background: #d2602a; color: #fff; font: 600 11px/18px var(--font); text-align: center; box-shadow: 0 0 0 1.5px #fff; pointer-events: none; }
 .action-menu-item-icon svg { width: 16px; height: 16px; stroke-width: 1.8; }

@@ -72,6 +72,8 @@ export interface ImageAttachment {
   mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
   /** 圈出来问：圈内的网页文字（不含输入框里的值），随这张图交给助手。 */
   note?: string;
+  /** 圈出来问：这张图是页面上的第几圈。 */
+  circle?: number;
 }
 
 export type Attachment = ImageAttachment;
@@ -89,6 +91,8 @@ export function isAttachment(v: unknown): v is Attachment {
   if (typeof a.dataBase64 !== "string" || !a.dataBase64) return false;
 
   if (a.note !== undefined && (typeof a.note !== "string" || a.note.length > CIRCLE_NOTE_MAX)) return false;
+
+  if (a.circle !== undefined && !(Number.isSafeInteger(a.circle) && Number(a.circle) >= 1 && Number(a.circle) <= 99)) return false;
 
   if (
     a.mimeType !== "image/png" &&
