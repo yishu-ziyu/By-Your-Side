@@ -78,6 +78,12 @@ export const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
  */
 export const MODEL_STALL_AFTER_START_MS = 10_000;
 
+/**
+ * 工具调用参数里连续这么多空白，就算模型写跑了：取消这次请求，按可重试错误重来。
+ * 10-07 实测 gpt-6-luna 在 user_memory 参数里先自言自语、再无休止地输出空白，60 秒写了上万字也不收尾（YIS-92）；正常参数里不会有这么长的空白。
+ */
+export const RUNAWAY_TOOL_ARGS_BLANKS = 512;
+
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
   const timer = setTimeout(resolve, ms);
   signal.addEventListener("abort", () => { clearTimeout(timer); reject(new Error("aborted")); }, { once: true });
@@ -563,6 +569,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   // 循环随即读排队的插话，同一轮里重写。已开始写工具调用、还没写出正文时不截断。
   let partial: AssistantMessage | null = null;
   let cut = false;
+  const blanks = new Map<number, number>();
 
   const cutText = (): boolean => {
     if (cut || !partial || partial.content.some(part => part.type === "toolCall")
@@ -590,6 +597,19 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
         }
 
         if ("partial" in event) partial = event.partial;
+
+        if (event.type === "toolcall_delta") {
+          const run = /^\s*$/.test(event.delta) ? (blanks.get(event.contentIndex) ?? 0) + event.delta.length : event.delta.length - event.delta.trimEnd().length;
+          blanks.set(event.contentIndex, run);
+
+          if (run >= RUNAWAY_TOOL_ARGS_BLANKS) {
+            cut = true;
+            fail(`runaway tool call: ${model.provider}/${model.id} kept writing blank tool arguments`);
+            controller.abort();
+            break;
+          }
+        }
+
         out.push(event);
       }
     } catch (error) {
