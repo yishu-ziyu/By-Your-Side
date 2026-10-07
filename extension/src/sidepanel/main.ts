@@ -54,7 +54,7 @@ import { INPROC_CREDENTIAL_PREFIX } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
-import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
+import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
@@ -2673,6 +2673,40 @@ function renderUsedItem(line: MemoryUsedLine, item: UsedItem): HTMLElement {
 
   return row;
 }
+
+/** 本对话里最近一次带上这条记忆、还没动过的那一行（从最新的回答往前找）。 */
+function findUsedEntry(id: string): { line: MemoryUsedLine; item: UsedItem } | null {
+  const answers = Array.from(messagesEl.querySelectorAll<HTMLElement>(".msg.assistant")).reverse();
+  const lines = [pendingUsedLine, floatingUsedLine, ...answers.map(answer => usedLineByAnswer.get(answer) ?? null)];
+
+  for (const line of lines) {
+    const item = line?.items.get(`entry:${id}`);
+
+    if (line && item?.state === "used" && !item.pending) return { line, item };
+  }
+
+  return null;
+}
+
+// 网页上「记得的」小卡点「忘掉」（YIS-87）：用回答下面那一行同一套「忘掉」，展开那一行让你看到「已忘掉 · 撤销」。
+chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+  if (!isPageInteractionMessage(message) || message.type !== "MEMORY_FIELD_FORGET") return;
+  const found = findUsedEntry(message.id);
+
+  if (!found) { respond({ ok: false });
+
+ return; }
+
+  const { line, item } = found;
+  line.open = true;
+  runUsedAction(item, "forget", () => {
+    if (line.el.isConnected || line === pendingUsedLine) renderUsedLine(line);
+
+    if (!item.pending) respond({ ok: item.state === "forgotten" });
+  });
+
+  return true;
+});
 
 /** 忘掉 / 这里别用 / 撤销：记忆走记忆面板的同一套请求，过往任务走过往任务的请求。 */
 function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", rerender: () => void, hostname?: string): void {
