@@ -727,7 +727,7 @@ export class MemoryRuntime {
     const message = action === "forgotten" ? "已忘记所指定的记忆，后续不再使用。"
       : `${action === "saved" ? "已记住" : "已更新"}：${changed[0]!.text}${untilLabel(changed[0]!)}`;
 
-    this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev() });
+    this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev(), ...await this.replaced(action, changed) });
 
     return message;
   }
@@ -735,6 +735,17 @@ export class MemoryRuntime {
   /** 写入后整份记忆的版本号；取不到就不带（面板照旧按条目版本核对）。 */
   private async rev(): Promise<{ rev?: number }> {
     try { return { rev: await this.store.currentRev() }; } catch { return {}; }
+  }
+
+  /** 更新回执带上被换下的旧值，侧栏写「原来是…」并能撤销回去；取不到就不带。 */
+  private async replaced(action: string, changed: MemoryEntry[]): Promise<{ replaced?: MemoryEntry[] }> {
+    if (action !== "updated" || !changed[0]) return {};
+
+    try {
+      const old = (await this.store.list()).filter(entry => entry.replacedBy === changed[0]!.id);
+
+      return old.length ? { replaced: old } : {};
+    } catch { return {}; }
   }
 
   /** 把判断请求本身的出错标成「服务出错」，与回答看不懂区分开。 */
@@ -1143,7 +1154,7 @@ export class MemoryRuntime {
     const message = action === "forgotten" ? (changed.length ? "已忘记所指定的记忆，后续不再使用。" : "没有找到需要忘记的记忆。")
       : `${action === "saved" ? "已记住" : "已更新"}：${changed[0]!.text}${untilLabel(changed[0]!)}\n适用范围：${decision.scope.kind === "all" ? "所有网站" : decision.scope.hostname}`;
 
-    this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev() });
+    this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev(), ...await this.replaced(action, changed) });
 
     // A forget receipt carries IDs to the UI but never echoes the deleted content to the model.
     return result(action, action === "forgotten" ? [] : changed, message + (turn.memoryOnly ? "\n本轮仅修改记忆：用一句话告诉用户记下了什么，不要操作当前网页。" : ""));

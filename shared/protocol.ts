@@ -289,7 +289,8 @@ export type AgentUiEvent =
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
   | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number;
       /** action=used：这一轮一起带给助手的过往任务。 */ tasks?: TaskHistoryEntry[];
-      /** action=used：这一轮所在的网站（「这里别用」按它记）；没有网页时省略。 */ hostname?: string }
+      /** action=used：这一轮所在的网站（「这里别用」按它记）；没有网页时省略。 */ hostname?: string;
+      /** action=updated：被这次更新换下的旧值（已标为 replaced），回执写「原来是…」，撤销即恢复它。 */ replaced?: MemoryEntry[] }
   /**
    * 纠正后开口问：用户这一轮纠正了助手，后台总结出一条做事的方法，问「要我记住吗」。
    * rule 是第一人称的那句做法（「以后在这个网站导出，我都先选全部再核对条数」）；scope 是默认范围；
@@ -979,6 +980,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.tasks !== undefined && (!Array.isArray(event.tasks) || !event.tasks.every(isTaskHistoryEntry))) return null;
 
       if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return null;
+
+      if (event.replaced !== undefined && !upgradeMemoryEntries(event.replaced)) return null;
     }
 
     if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;
