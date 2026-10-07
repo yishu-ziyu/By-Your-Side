@@ -3,8 +3,9 @@
  *
  * 1. 设置页先存 A 再存 B（提示「侧栏接下来的任务会使用 B」），新建对话的任务必须调用 B。
  *    可能的失败：核心按第一次收到的配置记住默认模型，只更新已有对话。
- * 2. 首次使用：侧栏打开就发了新建会话，这时还没配置模型；配好后这条请求必须得到回执。
- *    可能的失败：未配置时的兜底只认识少数消息，新建会话被回成无会话编号的错误，侧栏永远「正在新建会话」。
+ * 2. 首次使用：侧栏打开就发了新建会话，这时还没配置模型；侧栏 4 秒没回执就留在默认会话。
+ *    配好模型后马上发的第一句话必须在默认会话里得到回答。
+ *    可能的失败：配好后补建那条早先的新建会话，侧栏被切到空会话，第一句话的回答被挤到后台（2026-10-07 实测）。
  * 判据只看协议上可见的结果（调用了哪个模型、有没有 conversation_created），不看实现路径。
  */
 import { SessionLog } from "../../agent/src/session-log.js";
@@ -113,14 +114,20 @@ describe("扩展内 agent 的模型配置", () => {
     expect(host.called[0]).toBe("vendor-b/model-b");
   }, 20_000);
 
-  it("配置模型前发出的新建会话，配好后得到回执", async () => {
+  it("配置模型前发出的新建会话，配好后不再补建；第一句话在默认会话里得到回答", async () => {
     const host = await startHost();
     host.send({ type: "hello", token: "", client: "sidepanel" });
     host.send({ type: "conversation_create", requestId: "early-1" });
     await new Promise(resolve => setTimeout(resolve, 50));
     host.configure("vendor-a", "model-a");
+    host.send({
+      type: "task_action", conversationId: "default",
+      request: { requestId: "task-1", conversationId: "default", source: "text", action: "start", expectedRunId: null, text: "你好" },
+    });
+    await until(() => host.called.length > 0, "第一句话调用模型");
+    await new Promise(resolve => setTimeout(resolve, 200));
 
-    const created = await until(() => host.created("early-1"), "配置后新会话建好");
-    expect(created.conversation.id).toBeTruthy();
+    expect(host.called[0]).toBe("vendor-a/model-a");
+    expect(host.frames.some(f => f.type === "conversation_created")).toBe(false);
   }, 20_000);
 });

@@ -298,7 +298,7 @@ export type AgentUiEvent =
    * outcome：询问有了结局时后台再发一条同 askId 的事件（进对话历史），侧栏按最后一条画——
    * remembered 已记下 / already 早已记着 / once 这次就行 / closed 已作废（同一句纠正又问了一次、替换目标被改过等）。没有 outcome 的是仍在等回答的询问。
    */
-  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed" }
+  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
@@ -962,6 +962,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return null;
 
       if (event.outcome !== undefined && !["remembered", "already", "once", "closed"].includes(event.outcome)) return null;
+
+      if (event.habit !== undefined && event.habit !== true) return null;
     }
 
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {

@@ -42,6 +42,7 @@ import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type T
 import type { PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
+import { autoResumeIfSafe } from "./auto-resume.js";
 import { VoiceRelay } from "./voice-relay.js";
 import {assertBrowserDecision} from './browser-observation.js';
 import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
@@ -1025,7 +1026,7 @@ const callbacks: UplinkHandlers = {
   onServerMessage(msg) {
     reconcileControlRun();
 
-    if (msg.type === "task_view") lastTaskViews.set(msg.view.conversationId, msg.view);
+    if (msg.type === "task_view") { lastTaskViews.set(msg.view.conversationId, msg.view); void autoResumeIfSafe(msg.view, (m) => uplink.sendClientMessage(m)); }
     const knownRun=conversationSummaries.find(c=>c.id===conversationId)?.runId;
 
     if (knownRun && msg.runId && knownRun !== msg.runId && ["team_status","control_result","status","agent_event"].includes(msg.type)) return;

@@ -1,5 +1,5 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, useMemoryHabits, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { SessionLogPort } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { describeModelError } from "../../../shared/user-facing.js";
@@ -23,7 +23,7 @@ export interface InprocHostDeps {
   /** Tests explicitly inject a session backend; production always uses IndexedDB. */
   sessionData?: (id: string) => Promise<{ session: SessionLogPort; files?: ArtifactPersistence }>;
   /** Node entry-contract tests inject durable documents; production uses IndexedDB. */
-  document?: (name: "memories" | "pending-memory" | "tasks") => DocumentPersistence;
+  document?: (name: "memories" | "pending-memory" | "tasks" | "habits") => DocumentPersistence;
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
 }
 
@@ -37,7 +37,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let storedCredentials: StoredCredentials = {};
   let voiceConfigured = false;
   let helloReceived = false;
-  /** 配置模型前侧栏发来的新建会话：核心启动后补处理，否则侧栏一直「正在新建会话」。 */
+  /** 配置模型前收到的阅读转侧栏（带 reading 的新建会话）：核心启动后补处理。 */
   const deferredCreates: ClientMessage[] = [];
 
   const log = (message: string) => console.debug("[sideagent]", message);
@@ -73,7 +73,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     // 个人记忆存在扩展本地（IndexedDB），和本机宿主同一套判断与读写规则。
     // 「要不要记」判断失败的话排在另一条记录里，一轮结束后补判；判完即删原话。
     const document = deps.document ?? ((name: string) => new IdbDocument(name));
-    const memoryStore = usePendingMemoryJudgments(new MemoryStore(document("memories")), document("pending-memory"));
+    const memoryStore = useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(document("memories")), document("pending-memory")), document("habits"));
     const taskHistory = new TaskHistoryStore(document("tasks"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
       store,
@@ -143,8 +143,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
+    // 只补处理阅读转侧栏：它一直等回执。侧栏自己的新建请求 4 秒没回执就留在原会话，
+    // 配好模型后再补建会把侧栏切到一个空会话，用户刚发的第一句话和回答都被挤到后台。
     if (message.type === "conversation_create") {
-      deferredCreates.push(message);
+      if (message.reading) deferredCreates.push(message);
 
       return;
     }

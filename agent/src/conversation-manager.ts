@@ -825,6 +825,9 @@ return host?[host]:[];}))].slice(0,16);
     // 没做完的事：起短主题与下一步，给「继续上次的事」；晚到时只补这两个字段。
     const labeling=(session?.labelPastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,labeling]).then(([,label])=>label?history.patchLabel(entry.id,entry.endedAt,label):undefined).catch(()=>{});
+
+    // 改过页面的任务计入习惯：同一件事在 3 个对话里做过，就问一次要不要记住。
+    if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
   }
   private async fulfillOwedDelivery(id: string): Promise<void> {
     const progress = this.progress.get(id);

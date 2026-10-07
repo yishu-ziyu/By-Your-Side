@@ -9,7 +9,7 @@
  * - 摘要呈现时序：从收到视图（apply 调用）到下一帧可视为「可见摘要」，
  *   采样交给真实面板验收读取，50 次 P95 ≤200ms。
  */
-import type { TaskView } from "../../../shared/task-view.js";
+import { canAutoResume, type TaskView } from "../../../shared/task-view.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import type { PageContext } from "../../../shared/protocol.js";
 import { plainStep } from "../../../shared/user-facing.js";
@@ -205,6 +205,9 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
 
   const nextStep = (() => {
     if (checkpointUnavailable) return "不会自动重做原任务；没有覆盖原记录，其他独立任务可以另开会话。";
+
+    // 后台自动续做只在原标签页还在时发生（extension/src/background/auto-resume.ts），侧栏看不到标签页，按两种情况都说清。
+    if (resume.available && view.state === "interrupted" && canAutoResume(view)) return "后台刚重启。原页面还开着的话，我会自动接着做，已完成的步骤不会重做；没有动静就点「继续原任务」。";
 
     if (resume.available) {
       return unknown || blocked
