@@ -382,3 +382,46 @@ export function pastAction(name: string, params: Parameters<typeof describeTool>
 
   return describeTool(name, params).full;
 }
+
+/**
+ * 打开页面这一步的结果里取页面标题（#102：步骤名写「Lumen 光子 · 公司资料」，不写 127.0.0.1:53623）。
+ * 程序里的 navigate 结果是 JSON（可能被截断），单独的 navigate 是「Navigation result: 网址 — 标题; document: …」。
+ * 取不到、是空白或就是网址时返回 null，调用方沿用域名。
+ */
+export function openedPageTitle(resultText: string): string | null {
+  const json = /"title":"((?:[^"\\]|\\.)*)"/.exec(resultText);
+  const line = json ? null : /^Navigation result: (\S+) — (.+?); document:/m.exec(resultText);
+  let title = "";
+
+  if (json) {
+    try {
+      title = String(JSON.parse(`"${json[1]}"`));
+    } catch {
+      return null;
+    }
+  } else if (line) {
+    title = line[2] ?? "";
+  }
+
+  title = title.trim();
+
+  if (!title || /^https?:\/\//.test(title)) return null;
+
+  return title.length > 30 ? `${title.slice(0, 29)}…` : title;
+}
+
+export interface TrailStep { text: string; dur: string; failed: boolean }
+
+/** 进行中标题下方只露最近 3 步，更早的只计数（「+ 前面 N 步」）。 */
+export interface RecentSteps { shown: TrailStep[]; earlier: number }
+
+export function recentSteps(done: TrailStep[]): RecentSteps {
+  const shown = done.slice(-3);
+
+  return { shown, earlier: done.length - shown.length };
+}
+
+/** 一步做完、下一步还没开始时的标题：做过事就带上进度，不退回光秃秃的「正在思考」。 */
+export function betweenStepsTitle(doneCount: number): string {
+  return doneCount > 0 ? `正在思考 · 已做 ${doneCount} 件事` : "正在思考";
+}

@@ -403,6 +403,13 @@ try {
   await rp.cdp.send("Page.enable", {}, work);
   await rp.cdp.send("Page.navigate", { url: `${origin}/article` }, work);
   const panel = await rp.attach(await rp.openSidePanel());
+
+  /** 侧栏截图 + 当时的页面结构（结构可在真实样式上复原，用于前后对照）。 */
+  const capturePanel = async (name: string) => {
+    await rp.screenshot(panel, join(artifacts, `${name}.png`)).catch(() => {});
+    await writeFile(join(artifacts, `${name}.html`), String(await rp.evaluate(panel, "document.documentElement.outerHTML").catch(() => ""))).catch(() => {});
+  };
+
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
 
   // SAFETY: PANEL_STATE 返回的对象字段与 PanelState 一一对应。
@@ -504,7 +511,7 @@ try {
       return state.userMessages.length === 0 && !state.running ? state : undefined;
     }, 20_000, `${item.id} 新会话`, 500);
     await sleep(1000);
-    await rp.screenshot(panel, join(artifacts, `${item.id}-starter.png`)).catch(() => {});
+    await capturePanel(`${item.id}-starter`);
 
     if (process.env.STARTER_DEBUG) {
       console.log("starter-debug", JSON.stringify(await rp.evaluate(panel, `(() => ({
@@ -532,6 +539,7 @@ try {
     let idle = 0;
     let last: PanelState | null = null;
     let pageShots = 0;
+    let panelShots = 0;
     let nextPageShotAt = 0;
     const translating = item.id.startsWith("translate");
     let firstTranslatedMs: number | null = null;
@@ -583,6 +591,12 @@ try {
           pageShots += 1;
           nextPageShotAt = Date.now() + 1500;
           await rp.screenshot(work, join(artifacts, `${item.id}-page-running-${pageShots}.png`)).catch(() => {});
+        }
+
+        // 等待期间每 2 秒给侧栏拍照并存下结构（最多 30 秒）：看用户等的时候看到什么（#102）。
+        if ((state.running || state.stopping || state.streaming) && panelShots < 15 && Date.now() - sentAt >= (panelShots + 1) * 2000) {
+          panelShots += 1;
+          await capturePanel(`${item.id}-panel-wait-${panelShots * 2}s`);
         }
 
         const busy = state.running || state.stopping || state.streaming;
@@ -657,7 +671,7 @@ try {
 
     if (translating) Object.assign(result, { firstTranslatedMs, firstMarkMs, stopClearMs, pendingMarks, pendingRose, pendingLog: pendingLog.slice(0, 200), pendingFlickers: pendingFlickers.slice(0, 20), ...coverage, translatedTimeline });
     results.push(result);
-    await rp.screenshot(panel, join(artifacts, `${item.id}-panel.png`)).catch(() => {});
+    await capturePanel(`${item.id}-panel`);
     const calls = modelCalls ? `\tcalls=${modelCalls.length} ttfb=${modelCalls.map((c) => (c.firstByteMs === null ? "-" : c.firstByteMs - c.startMs)).join(",")}` : "";
     const onPage = translating ? `\tfirstMark=${firstMarkMs ?? "-"}ms firstTranslated=${firstTranslatedMs ?? "-"}ms blocks=${translatedBlocks} pending=${pendingMarks} stopClear=${stopClearMs ?? "-"}ms` : "";
     console.log(`${item.id}\t${finalReason ? "FAIL" : "pass"}\treply=${answer.length > 0}\tfirst=${firstVisibleMs ?? "-"}ms\tdone=${doneMs ?? "-"}ms${onPage}\tnoise=${noiseCount}${calls}\t${finalReason ?? ""}`);
