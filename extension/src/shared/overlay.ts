@@ -13,6 +13,8 @@ export const OVERLAY_KIND_CONTROL = "control";
 
 export const OVERLAY_KIND_EDGE_PILL = "edge-pill";
 
+export const OVERLAY_KIND_PTT_CAPSULE = "ptt-capsule";
+
 export const HIGHLIGHT_PAD = 3;
 
 export const MARK_PAD = 6;
