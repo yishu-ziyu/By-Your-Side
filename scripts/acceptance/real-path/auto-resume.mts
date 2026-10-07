@@ -1,9 +1,10 @@
 /**
  * 后台重启后自动接着做：任务填到第 3 个输入框时只关掉扩展内 agent（offscreen 文档），不动浏览器和标签页。
  * 安全的任务（中断原因是重启/断连、没有不确定是否已执行的步骤、原页面还在）应自己接着填完 4、5，不用用户点「继续原任务」；
- * 已填的 1–3 每个只填一次。
+ * 已填的 1–3 每个只填一次；5 个都填好后侧栏不再显示「没做成」，也不再给「继续原任务」。
  *
  *   npx tsx scripts/acceptance/real-path/auto-resume.mts --headless
+ *   npx tsx scripts/acceptance/real-path/auto-resume.mts --headless --manual   # 关掉自动接续，由用户点「继续原任务」
  *
  * 模型是本机脚本；侧栏、扩展、会话存储、页面都是真实路径。产物：before.png、after.png、result.json。
  */
@@ -16,6 +17,8 @@ import { configureViaSettings } from "./inproc-config.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
+
+const MANUAL = process.argv.includes("--manual");
 
 const GOAL = "自动接续验收：把这页 5 个输入框依次填好。";
 
@@ -45,7 +48,7 @@ const fill = (i: number, delayMs = 0) => ({ tool: { name: "fill", args: { target
 // 第 4 步挂起几秒：关掉 offscreen 时模型这一步还没回。
 const model = await startScriptedModel([{ match: "自动接续验收", steps: [fill(1), fill(2), fill(3), fill(4, 6000), fill(5), { text: "5 个都填好了。" }] }]);
 
-const out = join(REPO, "out/acceptance/real-path", new Date().toISOString().replace(/[:.]/g, "-") + "-auto-resume");
+const out = join(REPO, "out/acceptance/real-path", new Date().toISOString().replace(/[:.]/g, "-") + (MANUAL ? "-manual-resume" : "-auto-resume"));
 
 await mkdir(out, { recursive: true });
 
@@ -53,16 +56,27 @@ const rp = await launchRealPath();
 
 let panel = "", failure: string | null = null;
 
-let logs: Awaited<ReturnType<typeof watchInproc>> | undefined;
+let logs: Awaited<ReturnType<typeof watchInproc>> | undefined, logsAfter: typeof logs;
 
 /** result.json 的内容。 */
-type Evidence = { before?: Json; after?: Json; pass?: boolean; failure?: string; modelRequests?: Json };
+type Evidence = { before?: Json; after?: Json; final?: Json; reopenedTask?: boolean; pass?: boolean; failure?: string; modelRequests?: Json };
 
 const evidence: Evidence = {};
 
 // SAFETY: 表达式返回的就是这两个字符串字段。
 const state = () => rp.evaluate(panel, `(() => { const r = document.querySelector("#resume-entry-root");
-  return { resumeText: r?.hidden ? "" : r?.innerText.trim() ?? "", messages: document.querySelector("#messages")?.innerText ?? "" }; })()`) as Promise<{ resumeText: string; messages: string }>;
+  return { resumeText: r?.hidden ? "" : r?.innerText.trim() ?? "", resumeButton: !r?.hidden && !!r?.querySelector(".resume-action"),
+    messages: document.querySelector("#messages")?.innerText ?? "" }; })()`) as Promise<{ resumeText: string; resumeButton: boolean; messages: string }>;
+
+/** 重启后侧栏有时落到新会话，原任务只剩顶部一条「… ↗」：点它回到原任务会话。返回是否点了。 */
+const showTask = async () => {
+  const away = await rp.evaluate(panel, `(() => { const b = document.querySelector("#conversation-background");
+    return !!b && !b.hidden && b.textContent.includes(${JSON.stringify(GOAL.slice(0, 6))}); })()`);
+
+  if (away) await rp.click(panel, "#conversation-background");
+
+  return away === true;
+};
 
 try {
   const work = await rp.attach((await rp.targets()).find((t) => t.url === "about:blank")!.targetId);
@@ -86,8 +100,27 @@ try {
   // 只重启扩展内 agent：关掉 offscreen 文档，浏览器、标签页、侧栏都留着。
   const inproc = (await rp.targets()).find((t) => t.url === `chrome-extension://${rp.extensionId}/inproc.html`);
   assert.ok(inproc, "找不到 offscreen 文档");
+
+  if (MANUAL) {
+    // 手动模式：让后台以为这个任务已自动接续过（autoResumedRuns 永远「包含」当前 runId），只剩用户点「继续原任务」。
+    const worker = (await rp.targets()).find((t) => t.url === `chrome-extension://${rp.extensionId}/background.js`);
+    assert.ok(worker, "找不到扩展后台");
+    await rp.evaluate(await rp.attach(worker.targetId), `(() => { class All extends Array { includes() { return true; } }
+      const get = chrome.storage.session.get.bind(chrome.storage.session);
+      chrome.storage.session.get = (k) => k === "autoResumedRuns" ? Promise.resolve({ autoResumedRuns: All.from(["x"]) }) : get(k); return true; })()`);
+  }
+
   await rp.cdp.send("Target.closeTarget", { targetId: inproc.targetId });
   const closedAt = Date.now();
+  await until(async () => (await rp.targets()).some((t) => t.url === inproc.url && t.targetId !== inproc.targetId) || undefined, 30_000, "扩展内 agent 重新起来");
+  logsAfter = await watchInproc(rp, rp.extensionId);
+
+  if (MANUAL) {
+    await until(async () => { evidence.reopenedTask ||= await showTask();
+
+      return (await state()).resumeButton || undefined; }, 30_000, "侧栏出现「继续原任务」");
+    await rp.click(panel, "#resume-entry-root .resume-action");
+  }
 
   const filled = await until(async () => { const v = await values();
 
@@ -97,6 +130,15 @@ try {
   await rp.screenshot(panel, join(out, "after.png"));
   assert.deepEqual(filled, ["值1", "值2", "值3", "值4", "值5"], `重启后没有自己接着填完：${JSON.stringify(filled)}；侧栏：${JSON.stringify((await state()).resumeText)}`);
   assert.deepEqual([fills.f1, fills.f2, fills.f3], [1, 1, 1], `字段 1–3 被重复填写：${JSON.stringify(fills)}`);
+  // 任务结束后（回答已出现），侧栏应当说做完了：不说「没做成」，不再给「继续原任务」。
+  await until(async () => { evidence.reopenedTask ||= await showTask();
+
+    return (await state()).messages.includes("5 个都填好了。") || undefined; }, 30_000, "原任务会话里出现回答");
+  await sleep(1500);
+  const final = await state();
+  evidence.final = { resumeText: final.resumeText, resumeButton: final.resumeButton };
+  await rp.screenshot(panel, join(out, "final.png"));
+  assert.ok(!final.resumeText.includes("没做成") && !final.resumeButton, `5 个都填好了，侧栏却说：${JSON.stringify(final.resumeText)}`);
   evidence.pass = true;
 } catch (e) {
   failure = String(e); evidence.pass = false; evidence.failure = failure;
@@ -105,6 +147,8 @@ try {
   console.error(e);
 } finally {
   if (logs) await writeFile(join(out, "inproc.log"), logs.logs()).catch(() => {});
+
+  if (logsAfter) await writeFile(join(out, "inproc-after-restart.log"), logsAfter.logs()).catch(() => {});
   evidence.modelRequests = model.requests;
   await writeFile(join(out, "result.json"), JSON.stringify(evidence, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.close();
