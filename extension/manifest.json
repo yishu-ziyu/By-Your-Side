@@ -60,7 +60,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["cast/*.png"],
+      "resources": ["cast/*.png", "orbs/*.mp4"],
       "matches": ["<all_urls>"]
     }
   ]

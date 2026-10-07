@@ -35,6 +35,7 @@ npx tsx scripts/acceptance/real-path/answer-before-goal-check.mts --headless # �
 npx tsx scripts/acceptance/real-path/goal-continue-same-page.mts --headless # 回答后的续做只在原网页上、侧栏写明原因
 npx tsx scripts/acceptance/real-path/orb-style.mts --headless           # 语音光球三种样子可选，默认暮色
 npx tsx scripts/acceptance/real-path/ptt-dictation.mts --headless       # 网页上按住右 ⌥ 说话，松开交给助手（侧栏关着；听写走 Step Plan 套餐）
+npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless         # 按住说话的网页底部胶囊：在听 → 在做 → 结果，Esc 停
 npx tsx scripts/acceptance/real-path/route-record.mts --headless # 做成一件事后记下做法，「不用记」可撤销，被停下的不记
 npx tsx scripts/acceptance/real-path/route-replay.mts --headless # 同一类事照上次的做法走，值换成这次的；页面改了停下交回
 npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless    # 一项做不到时的未完成行

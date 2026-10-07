@@ -3,7 +3,7 @@
  * 侧栏关着也能录：离屏文档声明了 USER_MEDIA，麦克风权限按扩展来源授一次即可（10-07 小实验）。
  * 按下就连听写服务、开麦；松开停麦、提交，回听写结果。录音复用侧栏语音的 voice-worklet（24kHz、每帧 20ms）。
  */
-import { PTT_TARGET, type PttCommand, type PttReply } from "../shared/ptt.js";
+import { PTT_LEVEL, PTT_TARGET, type PttCommand, type PttLevelMessage, type PttReply } from "../shared/ptt.js";
 import { createDictation, type Dictation, type DictationSocket } from "./ptt-dictation.js";
 
 /** 浏览器 WebSocket 包成听写要的样子。鉴权头由后台的 declarativeNetRequest 规则补上。 */
@@ -20,7 +20,13 @@ function openSocket(url: string): DictationSocket {
 
 interface Recording { dictation: Dictation; release: () => void }
 
-async function openMicrophone(onFrame: (frame: ArrayBuffer) => void): Promise<() => void> {
+/** 声波跟上说话就够：每 80ms 报一次，取这段里最大的音量。 */
+const LEVEL_EVERY_MS = 80;
+
+/** 和侧栏语音同样的换算（voice-client.ts：rms×5，封顶 1）。 */
+const levelOf = (rms: number) => Math.min(1, rms * 5);
+
+async function openMicrophone(onFrame: (frame: ArrayBuffer) => void, onLevel: (level: number) => void): Promise<() => void> {
   const context = new AudioContext({ sampleRate: 24_000 });
   let stream: MediaStream;
 
@@ -33,8 +39,19 @@ async function openMicrophone(onFrame: (frame: ArrayBuffer) => void): Promise<()
 
   await context.audioWorklet.addModule(chrome.runtime.getURL("voice-worklet.js"));
   const worklet = new AudioWorkletNode(context, "voice-capture");
+  let peak = 0;
+  let reportedAt = 0;
   // SAFETY: voice-worklet.js 每帧只发 { pcm: ArrayBuffer, rms: number }。
-  worklet.port.onmessage = ({ data }) => onFrame((data as { pcm: ArrayBuffer }).pcm);
+  worklet.port.onmessage = ({ data }) => {
+    const frame = data as { pcm: ArrayBuffer; rms: number };
+    onFrame(frame.pcm);
+    peak = Math.max(peak, frame.rms);
+
+    if (performance.now() - reportedAt < LEVEL_EVERY_MS) return;
+    onLevel(levelOf(peak));
+    peak = 0;
+    reportedAt = performance.now();
+  };
   context.createMediaStreamSource(stream).connect(worklet);
 
   return () => {
@@ -56,7 +73,9 @@ export function installPushToTalk(): void {
     dictation.start();
 
     try {
-      recording.release = await openMicrophone(frame => dictation.push(frame));
+      recording.release = await openMicrophone(frame => dictation.push(frame), level => {
+        if (current === recording) void chrome.runtime.sendMessage({ type: PTT_LEVEL, level } satisfies PttLevelMessage).catch(() => {});
+      });
     } catch (error) {
       dictation.cancel();
 

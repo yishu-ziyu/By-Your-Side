@@ -17,7 +17,7 @@ import { attachAnswerActions as attachCopyActions, setAnswerTime, siteGlyph } fr
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
-import { mountVoiceOrb } from "./orb-style.js";
+import { mountVoiceOrb } from "../shared/orb-style.js";
 import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";

@@ -1,7 +1,7 @@
 import { microphonePermissionState } from "./voice-permission.js";
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { VoiceClient, type VoicePhase } from './voice-client.js';
-import { mountVoiceOrb } from './orb-style.js';
+import { mountVoiceOrb } from '../shared/orb-style.js';
 import { VoiceDiagnosticLog, type VoiceDiagCapture } from './voice-diagnostic.js';
 import { type StepVoice, type UserDelivery, type VoiceInputContext, type VoicePersona } from '../../../shared/voice.js';
 
