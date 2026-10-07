@@ -13,7 +13,7 @@ import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
 import { formatEffectReport } from "../../shared/effect.js";
 import { formatFetchReply, type FetchReply } from "./fetch-result.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
-import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
+import { isLeadSession, type Attachment, type TabInfo, type ToolContract, type ToolName, type UploadFilePayload } from "../../shared/protocol.js";
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
 import { requiresControlGate } from "../../shared/effect-policy.js";
@@ -23,6 +23,9 @@ import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type P
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
+
+/** upload_file 按扩展名给出的 MIME 类型；artifacts 能存的文字文件与截图。 */
+const UPLOAD_TYPES = new Map([["txt", "text/plain"], ["csv", "text/csv"], ["md", "text/markdown"], ["json", "application/json"], ["html", "text/html"], ["svg", "image/svg+xml"], ["js", "text/javascript"], ["css", "text/css"], ["png", "image/png"]]);
 
 /**
  * 视口坐标 [x, y]。不用 Type.Tuple：它生成的元组 schema（items 是数组）会让 MiMo V2.6 Flash 的网关
@@ -127,10 +130,25 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[] }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
+
+  /** upload_file 按文件名取本会话的文件：先找 artifacts / saveFile 存下的，再找用户附上的；找不到就列出可用的名字。 */
+  const uploadPayload = (name: string): UploadFilePayload => {
+    const store = files?.();
+    const saved = store?.get(name);
+
+    if (store && saved !== undefined) return { name, type: UPLOAD_TYPES.get(name.split(".").pop()?.toLowerCase() ?? "") ?? "", ...(store.isImage(name) ? { base64: saved } : { text: saved }) };
+    const attached = execution?.attachments?.() ?? [];
+    const match = attached.filter(a => a.name === name).at(-1);
+
+    if (match) return { name, type: match.mimeType, base64: match.dataBase64 };
+    const available = [...new Set([...(store?.names() ?? []), ...attached.map(a => a.name)])];
+
+    throw new Error(`找不到文件 ${JSON.stringify(name)}，操作未执行。${available.length ? `可上传的文件：${available.join("、")}。` : "本会话还没有文件：先用 artifacts 创建，或请用户在侧栏附上。"}`);
+  };
 
   /** screenshot forUser：把这张图存进本会话文件区，侧栏显示成回答里的图片卡片；做不到时如实告诉模型用户没看到。 */
   const deliverScreenshot = async (base64: string): Promise<string> => {
@@ -639,6 +657,24 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }),
 
 
+
+    defineTool({
+      name: "upload_file",
+      label: "Upload file",
+      description:
+        'The only way to upload a file to a page: put files into a file upload field (<input type=file>) of the working tab, without the OS file picker. Do not build File, Blob or DataTransfer objects or post the form yourself in browser_run or js. To upload a file you create, first save it with artifacts, then call upload_file. Files come from this conversation, named by filename: files saved with artifacts or browser.saveFile, and files the user attached in the side panel. No local disk paths. Do not click the file input or a "choose file" button and do not arm a filechooser: that opens the OS file picker, which you cannot use. Call upload_file directly. target takes the same locator forms as click and may point at the file input, its label, or a custom upload button that contains it. Omit target when the page has exactly one file input; hidden inputs count, and snapshot often does not show them. The receipt lists the files read back from the input. This only selects the files: then check the page, and if the task says to upload, submit the form (for example click its Upload button) and verify the result.',
+      parameters: Type.Object({
+        files: Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 8, description: 'File names from this conversation, e.g. ["hello.txt"]' }),
+        target: Type.Optional(Type.String({ description: 'File input, its label, or an upload button containing it: "@N" ref, "loc=css:..." locator, or raw CSS selector. Omit when the page has one file input.' })),
+      }),
+      execute: async (_id, params) => {
+        const payload = params.files.map(name => uploadPayload(name.trim()));
+        const data = (await call("upload_file", { files: payload, ...(params.target ? { target: params.target } : {}) })) as ToolContract["upload_file"]["data"];
+        const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ");
+
+        return textResult(`Put ${data.files.length} file(s) into the file input; read back from the page: ${list}. Not submitted yet unless the page uploads on change: check the page, and submit if the task says to upload.`, data);
+      },
+    }),
 
     defineTool({
       name: "arm_event",

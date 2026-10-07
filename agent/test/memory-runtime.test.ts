@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryRuntime } from "../src/memory-runtime.js";
+import { MemoryRuntime, mayStatePersonalFact } from "../src/memory-runtime.js";
 import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
 import { FileDocument } from "./fixtures/file-document.js";
 import { validateMemoryDecision, type MemoryDecision } from "../src/memory-decision.js";
@@ -184,5 +184,14 @@ return entries;});
 
 return entries;});
     await expect(f.execute({action:"recall",query:"邮箱"})).rejects.toThrow(/取消/);
+  });
+});
+
+describe("mayStatePersonalFact: implicit fact changes", () => {
+  it.each(["我搬到杭州了", "我换工作了，现在在字节", "我现在住在上海", "I moved to Berlin", "你记错了，我其实一直吃大号披萨。"])("lets %s reach the memory judge", text => {
+    expect(mayStatePersonalFact(text, [])).toBe(true);
+  });
+  it.each(["帮我把标题改成蓝色", "换一个搜索词试试", "把这个按钮点一下"])("filters out the task request %s", text => {
+    expect(mayStatePersonalFact(text, [])).toBe(false);
   });
 });

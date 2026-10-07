@@ -7,7 +7,7 @@
  *    可能的失败：未配置时的兜底只认识少数消息，新建会话被回成无会话编号的错误，侧栏永远「正在新建会话」。
  * 判据只看协议上可见的结果（调用了哪个模型、有没有 conversation_created），不看实现路径。
  */
-import { InMemorySessionRepo } from "pi-session-084";
+import { SessionLog } from "../../agent/src/session-log.js";
 import { describe, expect, it } from "vitest";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 
@@ -84,7 +84,7 @@ function startHost() {
     };
 
     // SAFETY: browser-host 只用到 runtime 的这些成员和端口的 name / postMessage / onMessage / onDisconnect。
-    startInprocHost({ sessionData: async id => ({session:await new InMemorySessionRepo().create({id})}), createRuntime: () => runtime as never, onConnect: listener => listener(port as never) });
+    startInprocHost({ sessionData: async id => ({session:SessionLog.load(SessionLog.header(id, 0), async () => {}).log}), createRuntime: () => runtime as never, onConnect: listener => listener(port as never) });
 
     const configure = (provider: string, modelId: string) => send({ type: "inproc_config", config: { provider, modelId }, credentials: {} });
 

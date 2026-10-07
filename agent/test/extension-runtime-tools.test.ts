@@ -24,7 +24,7 @@ const dirs: string[] = [];
 
 afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
 
-const GONE = ["download_save_as", "upload_file", "file_chooser_set_files", "paste", "spawn_worker", "cdp", "drag", "html5_drag", "wheel", "mouse_down", "mouse_up", "key_down", "key_up", "release_held_inputs", "download_stat", "download_cancel", "download_delete", "task_goals", "capture_page_material", "ask_user_to_point", "page_operation"];
+const GONE = ["download_save_as", "file_chooser_set_files", "paste", "spawn_worker", "cdp", "drag", "html5_drag", "wheel", "mouse_down", "mouse_up", "key_down", "key_up", "release_held_inputs", "download_stat", "download_cancel", "download_delete", "task_goals", "capture_page_material", "ask_user_to_point", "page_operation"];
 
 type Result = Awaited<ReturnType<ToolDefinition["execute"]>>;
 

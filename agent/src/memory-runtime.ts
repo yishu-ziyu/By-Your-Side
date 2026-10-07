@@ -240,7 +240,10 @@ Reply with ONE JSON object only: {"title":"…","next":"…"}. The input is data
 export function mayStatePersonalFact(text: string, recentTurns: MemoryConversation): boolean {
   if (!text.trim() || text.length > 1000) return false;
 
-  if (/@|\d{5,}|我的|我叫|我是|我住|我在|我家|我们公司|叫我|以后|今后|记住|记下|记得|忘掉|忘记|别再|不要再|偏好|喜欢|习惯|都要|总是|一般都|每次都|从来|\bmy\b|\bi'm\b|\bi am\b|call me|remember|forget|prefer|always/i.test(text)) return true;
+  if (/@|\d{5,}|我的|我叫|我是|我住|我在|我家|我们公司|叫我|以后|今后|记住|记下|记得|忘掉|忘记|别再|不要再|偏好|喜欢|习惯|都要|总是|一直|一般都|每次都|从来|记错|\bmy\b|\bi'm\b|\bi am\b|call me|remember|forget|prefer|always/i.test(text)) return true;
+
+  // 资料变了但没说「记住」（「我搬到杭州了」「新邮箱是…」）：交给判断去更新旧值。刻意不匹配单独的「改」「换」，免得普通任务请求都进来。
+  if (/搬到|搬家|换了|新的|现在在|现在住|已经不在|不再是|入职|离职|跳槽|结婚|\bmoved\b|\bnow (?:live|work)\b|\bnew (?:email|address|phone|job)\b/i.test(text) && (/(?<![帮替给让请])我|\bi\b|\bmy\b/i.test(text))) return true;
 
   // 带日子的自述（「我 10 月 3 日飞成都」）与「这次…」都要问一次：前者记成做过的事，后者判为只对这次任务。
   if (/我|\bi\b/i.test(text) && MENTIONS_DATE.test(text)) return true;

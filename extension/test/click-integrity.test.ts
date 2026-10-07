@@ -227,6 +227,7 @@ function installPage(opts?: { overlayAt?: FakeEl | null }) {
       // 载荷与背景侧 callDom<Args, Result> 的调用契约一致：func 与 args 成对（callDom 第三参必填），注入函数返回值原样回传。
       executeScript: vi.fn(async <Args extends unknown[], Result>(details: { func?: (...args: Args) => Result; args?: Args }) => {
         if (details.func?.toString().includes("readyState")) return [{ frameId: 0, documentId: "fixture-101", result: {url:"https://fixture.invalid/",readyState:"complete"} }];
+
         return [
         {
           frameId: 0,
@@ -446,6 +447,40 @@ describe("B3 AX ref：只有 debugger 不可用才回退 DOM 点击", () => {
     await expect(click({ target: "@9" })).rejects.toThrow(/覆盖/);
     expect(counter.clickCount).toBe(0);
     expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+});
+
+describe("鼠标移到目标后、按下前发现被遮挡", () => {
+  it("记成没执行：点击确定没发生，可以重新 snapshot 后再点（BYS-143 弹窗淡入时被挡）", async () => {
+    const { counter } = installPage();
+    mocks.isAxRef.mockReturnValue(true);
+    mocks.sendCommand.mockImplementation(
+      async (_tab: number, method: string, params?: { functionDeclaration?: string }) => {
+        if (method === "DOM.resolveNode") return { object: { objectId: "node-9" } };
+
+        if (method === "Runtime.callFunctionOn") {
+          const fn = params?.functionDeclaration ?? "";
+
+          if (fn.includes("getAttribute")) return { result: { value: "关闭" } };
+
+          // 按下前的命中检查：此时弹窗的遮罩盖住了按钮。
+          if (fn.startsWith("function(x, y)")) return { exceptionDetails: { exception: { description: "目标被其他元素覆盖，操作未执行。请重新 snapshot 确认当前可点击目标。" } } };
+
+          return { result: { value: { x: 10, y: 20, width: 80, height: 40 } } };
+        }
+
+        return {};
+      },
+    );
+    const { click } = await import("../src/background/exec/input.js");
+    const failure: unknown = await click({ target: "@9" }).catch(error => error);
+
+    expect(String(failure)).toMatch(/覆盖/);
+    expect(mouseEvents().some((e) => e.type === "mouseMoved")).toBe(true);
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+    expect(counter.clickCount).toBe(0);
+    // SAFETY: 宿主抛出的错误带 executionFact 标记。
+    expect((failure as { executionFact?: string }).executionFact).toBe("not_executed");
   });
 });
 
