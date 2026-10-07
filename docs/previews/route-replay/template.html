@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>走老路 · 预览</title>
+<style>
+  :root {
+    --desk: #e8e6e0;
+    --ink: #141413; --ink-2: #5f5e58; --ink-3: #77756d;
+    --line: rgba(20,20,19,.10);
+    --ai: #2d4a86;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--desk); color: var(--ink); font: 13px/1.5 var(--font); display: flex; flex-direction: column; padding: 12px 14px 14px; gap: 10px; }
+
+  /* 预览控制条：不属于产品，压低存在感 */
+  .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: rgba(20,20,19,.06); border-radius: 999px; padding: 2px; }
+  .seg button, .ctl > button { font: 500 12.5px var(--font); border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(20,20,19,.10); }
+  .ctl > button { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .ctl > button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .ctl > button:disabled { opacity: .45; cursor: default; }
+  .narr { flex: 1 1 260px; min-width: 0; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .narr b { color: var(--ink); font-weight: 600; }
+
+  /* 浏览器窗口 */
+  .win { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(20,20,19,.10), 0 10px 30px rgba(20,20,19,.10); position: relative; }
+  .tabbar { height: 38px; flex: none; background: #f1f0ec; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid rgba(20,20,19,.07); }
+  .lights { display: flex; gap: 6px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #d9d7d0; }
+  .url { flex: 1; max-width: 520px; height: 26px; border-radius: 999px; background: #fff; border: 1px solid rgba(20,20,19,.08); display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--ink-2); gap: 6px; }
+  .body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .vp { flex: 1 1 auto; min-width: 0; position: relative; overflow: hidden; background: #f6f7f9; }
+  .side { width: 380px; flex: none; border-left: 1px solid rgba(20,20,19,.08); position: relative; }
+  .side iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* 网页：一个普通的公司内部会议室预订页（虚构） */
+  .site { font: 14px/1.5 "PingFang SC", var(--font); color: #1f2329; min-height: 100%; }
+  .site header { height: 52px; background: #fff; border-bottom: 1px solid #e5e6eb; display: flex; align-items: center; padding: 0 24px; gap: 10px; }
+  .site header .logo { width: 22px; height: 22px; border-radius: 6px; background: #3370ff; }
+  .site header b { font-size: 15px; }
+  .site header .who { margin-left: auto; color: #646a73; font-size: 13px; }
+  .site main { padding: 22px 24px; display: grid; gap: 16px; max-width: 760px; }
+  .site h1 { margin: 0; font-size: 20px; }
+  .card { background: #fff; border: 1px solid #e5e6eb; border-radius: 10px; padding: 16px 18px; }
+  .row { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
+  .fld { display: grid; gap: 6px; font-size: 13px; color: #646a73; }
+  .box { height: 36px; min-width: 150px; border: 1px solid #d0d3d6; border-radius: 6px; background: #fff; display: flex; align-items: center; padding: 0 10px; color: #8f959e; font-size: 14px; transition: border-color .2s, box-shadow .2s; }
+  .box.set { color: #1f2329; }
+  .box.focus { border-color: #3370ff; box-shadow: 0 0 0 3px rgba(51,112,255,.15); }
+  .box.wide { min-width: 320px; }
+  .rooms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .room { border: 1px solid #e5e6eb; border-radius: 8px; padding: 12px; display: grid; gap: 4px; transition: border-color .2s, background .2s; }
+  .room b { font-size: 15px; } .room small { color: #646a73; }
+  .room.picked { border-color: #3370ff; background: #f0f4ff; }
+  .btn { justify-self: start; margin-top: 6px; height: 30px; padding: 0 14px; border-radius: 6px; border: 1px solid #d0d3d6; background: #fff; font: 13px "PingFang SC", var(--font); color: #1f2329; display: inline-flex; align-items: center; }
+  .room.picked .btn { border-color: #3370ff; color: #3370ff; }
+  .btn.primary { background: #3370ff; border-color: #3370ff; color: #fff; height: 36px; padding: 0 22px; font-size: 14px; }
+  .btn.primary.done { background: #34a853; border-color: #34a853; }
+  .toast { position: absolute; left: 50%; top: 70px; transform: translate(-50%, -6px); background: #fff; border: 1px solid #e5e6eb; border-radius: 8px; padding: 9px 16px; box-shadow: 0 6px 20px rgba(0,0,0,.08); font: 14px "PingFang SC", var(--font); color: #1f2329; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  .toast::before { content: "✓ "; color: #34a853; font-weight: 600; }
+  /* 改版后的页面：会议室变成表格，按钮换了名字 */
+  table.rooms2 { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .rooms2 th { text-align: left; color: #646a73; font-weight: 500; font-size: 13px; padding: 8px 10px; border-bottom: 1px solid #e5e6eb; }
+  .rooms2 td { padding: 10px; border-bottom: 1px solid #f0f1f2; }
+  .rooms2 tr.picked td { background: #f0f4ff; }
+  .rooms2 .btn { margin: 0; }
+  .newbadge { font-size: 11px; color: #3370ff; background: #f0f4ff; border-radius: 4px; padding: 1px 6px; margin-left: 8px; vertical-align: 2px; }
+
+  /* 侧栏里新增的两样（产品里还没有，样式按现有元素的语气写） */
+
+  /* 光标层 */
+  .cursors { position: absolute; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+  .cur { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity .2s; will-change: transform; }
+  .cur.on { opacity: 1; }
+  .cur svg { position: absolute; left: -4px; top: -4.7px; overflow: visible; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 3px rgba(20,20,19,.32)); }
+  .cur .lbl { position: absolute; left: 13px; top: 14px; display: inline-flex; gap: 7px; align-items: center; background: #fff; color: #141413; border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px; padding: 6px 12px 6px 9px; font: 400 13px/1.45 var(--font); white-space: nowrap; box-shadow: 0 4px 14px rgba(20,20,19,.10); opacity: 0; transition: opacity .16s; }
+  .cur .lbl.on { opacity: 1; }
+  .orb-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); box-shadow: 0 0 6px rgba(129,140,248,.45); }
+  .ripple { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; border: 2px solid #2d4a86; animation: rip .5s ease-out forwards; }
+  @keyframes rip { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.6); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .cur { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="ctl">
+    <div class="seg" role="group" aria-label="场景">
+      <button type="button" data-sc="first" aria-pressed="true">第一次</button>
+      <button type="button" data-sc="replay" aria-pressed="false">第二次：照上次走</button>
+      <button type="button" data-sc="changed" aria-pressed="false">页面改了</button>
+    </div>
+    <button type="button" id="play" class="primary">▶ 播放</button>
+    <button type="button" id="reset">重来</button>
+    <div class="narr" id="narr"></div>
+  </div>
+
+  <div class="win" id="win">
+    <div class="tabbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="url"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#77756d" stroke-width="2.4"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>oa.example.cn/rooms</span></div>
+    </div>
+    <div class="body">
+      <div class="vp" id="vp"><div class="site" id="site"></div><div class="toast" id="toast"></div></div>
+      <div class="side"><iframe id="panel" title="侧栏"></iframe></div>
+    </div>
+    <div class="cursors" id="cursors">
+      <div class="cur" id="ai"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linejoin="round"/><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#2d4a86" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg><span class="lbl"><span class="orb-dot"></span><span class="t"></span></span></div>
+    </div>
+  </div>
+
+<script>
+const PANEL_HTML = __PANEL__;
+</script>
+<script src="preview.js"></script>
+</body>
+</html>
