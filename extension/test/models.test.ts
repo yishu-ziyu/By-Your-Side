@@ -5,11 +5,11 @@ import {
   displayName,
   filterModels,
   groupModelsByProvider,
-  humanizeModelError,
   modelReasoningMeta,
   providerLabel,
   providerMark,
 } from "../src/sidepanel/models.js";
+import { describeModelError } from "../../shared/user-facing.js";
 
 const m = (provider: string, modelId: string): ModelOption => ({
   id: `${provider}/${modelId}`,
@@ -101,33 +101,30 @@ describe("providerMark", () => {
   });
 });
 
-describe("humanizeModelError", () => {
-  it("rewrites a bare Not Found model failure with actionable guidance", () => {
-    expect(humanizeModelError("模型请求最终失败：Not Found")).toBe("找不到这个模型：可能已下线或当前账号没有权限，在下方换一个模型后重试。");
+describe("describeModelError", () => {
+  it("sorts failures into the kind that decides the card's buttons", () => {
+    expect(describeModelError("模型请求最终失败：401 Unauthorized")?.kind).toBe("auth");
+    expect(describeModelError('模型请求最终失败：429: {"error":{"message":"quota exceeded"}}')?.kind).toBe("busy");
+    expect(describeModelError('模型请求最终失败：503: {"message":"upstream overloaded"}')?.kind).toBe("busy");
+    expect(describeModelError("模型请求最终失败：Not Found")?.kind).toBe("missing");
+    expect(describeModelError("模型请求最终失败：HTTP 404: model not found")?.kind).toBe("missing");
+    expect(describeModelError("模型请求最终失败：Connection error.")?.kind).toBe("network");
   });
 
-  it("rewrites 404-shaped model failures", () => {
-    expect(humanizeModelError("模型请求最终失败：HTTP 404: model not found")).toContain("换一个模型");
+  it("never shows status codes or raw provider JSON outside the details", () => {
+    const shown = describeModelError('模型请求最终失败：503: {"message":"upstream overloaded"}')!;
+    expect(`${shown.title}${shown.copy}`).not.toMatch(/503|\{|message/);
+    expect(shown.detail).toContain("upstream overloaded");
   });
 
-  it("never shows status codes or raw provider JSON", () => {
-    const shown = humanizeModelError('模型请求最终失败：503: {"message":"upstream overloaded"}');
-    expect(shown).toContain("模型服务暂时出错");
-    expect(shown).not.toMatch(/503|\{|message/);
-    expect(humanizeModelError("模型请求最终失败：Connection error.")).toBe("连不上模型服务，检查网络后再试。");
-    expect(humanizeModelError("模型请求最终失败：401 Unauthorized")).toContain("key 无效");
+  it("names the failed model (docs/evals/20261004-model-failover.md F3)", () => {
+    expect(describeModelError("模型请求最终失败（stepfun/step-5-preview）：Connection error.")?.copy).toContain("stepfun/step-5-preview");
+    expect(describeModelError("模型请求最终失败（stepfun/step-5-preview）：first response timeout: stepfun/step-5-preview sent nothing within 15 s")?.title).toContain("太久没有回应");
   });
 
-  it("keeps the failed model's name after the plain sentence (docs/evals/20261004-model-failover.md F3)", () => {
-    expect(humanizeModelError("模型请求最终失败（stepfun/step-5-preview）：Connection error.")).toBe("连不上模型服务，检查网络后再试。出错的模型：stepfun/step-5-preview。");
-    expect(humanizeModelError("模型请求最终失败（stepfun/step-5-preview）：first response timeout: stepfun/step-5-preview sent nothing within 15 s")).toContain("太久没有回应");
-  });
-
-  it("leaves other errors untouched", () => {
-    expect(humanizeModelError("切换模型失败：模型不存在或未配置凭据：foo/bar")).toBe(
-      "切换模型失败：模型不存在或未配置凭据：foo/bar",
-    );
-    expect(humanizeModelError("Not Found")).toBe("Not Found");
+  it("leaves other errors to the plain message", () => {
+    expect(describeModelError("切换模型失败：模型不存在或未配置凭据：foo/bar")).toBeNull();
+    expect(describeModelError("Not Found")).toBeNull();
   });
 });
 

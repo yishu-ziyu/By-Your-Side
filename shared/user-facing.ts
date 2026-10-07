@@ -49,32 +49,50 @@ export function plainStep(description: string): string {
   return plain || "处理这一步";
 }
 
-/**
- * 模型服务的错误 → 用户能处理的一句话。原文形如「503: {"message":...}」「Connection error.」「401 Unauthorized」。
- * 只按状态码和常见字样分类，不猜原因；分不出来时如实说没拿到回答。
- */
-export function plainModelError(raw: string): string {
-  // 宿主写成「模型请求最终失败（provider/id）：原文」：人话后面补上是哪个模型。
-  const model = /^模型请求最终失败（([^）]+)）：/.exec(raw)?.[1];
-  const plain = plainModelErrorText(raw.replace(/^模型请求最终失败(（[^）]+）)?：/, ""));
+/** 错误卡按种类给按钮：auth 换 key，busy 稍后重试或换模型，missing 换模型，network 重试。 */
+export type ModelErrorKind = "auth" | "busy" | "missing" | "network" | "other";
 
-  return model ? `${plain}出错的模型：${model}。` : plain;
+export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; detail: string }
+
+/**
+ * 模型服务的错误 → 错误卡的标题和说明。宿主写成「模型请求最终失败（provider/id）：原文」，原文形如
+ * 「503: {"message":...}」「Connection error.」「401 Unauthorized」；不是这种格式时返回 null。
+ * 只按状态码和常见字样分类，不猜原因；原文只进 detail（卡上的「技术详情」）。
+ */
+export function describeModelError(raw: string): ModelErrorCopy | null {
+  const head = /^模型请求最终失败(?:（([^）]+)）)?：/.exec(raw);
+
+  if (!head) return null;
+  const model = head[1];
+  const text = raw.slice(head[0].length);
+
+  const described = classifyModelError(text, model);
+  // 写明哪个模型出的错（docs/evals/20261004-model-failover.md F3）；auth 的说明里已经带上。
+  const copy = model && described.kind !== "auth" ? `${described.copy}出错的模型：${model}。` : described.copy;
+
+  const result: ModelErrorCopy = { ...described, copy, detail: model ? `${text} · ${model}` : text };
+
+  if (model) result.model = model;
+
+  return result;
 }
 
-function plainModelErrorText(text: string): string {
-  if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid.{0,20}(api.?key|token)/i.test(text)) return "模型服务拒绝了请求：key 无效，或没有这个模型的权限。可以在「更多 → 模型与语音」里检查。";
+function classifyModelError(text: string, model: string | undefined): Pick<ModelErrorCopy, "kind" | "title" | "copy"> {
+  if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid.{0,20}(api.?key|token)/i.test(text)) {
+    return { kind: "auth", title: "模型拒绝了请求", copy: `key 无效，或这个 key 没有${model ? ` ${model} ` : "这个模型"}的权限。重试结果会一样，先换 key。` };
+  }
 
-  if (/\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(text)) return "模型服务说额度用完或请求太频繁，稍后再试，或在下方换一个模型。";
+  if (/\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(text)) return { kind: "busy", title: "额度用完，或请求太频繁", copy: "可以稍后再试，或换个模型立刻继续。" };
 
-  if (/\b404\b|not.?found|does not exist|不存在/i.test(text)) return "找不到这个模型：可能已下线或当前账号没有权限，在下方换一个模型后重试。";
+  if (/\b404\b|not.?found|does not exist|不存在/i.test(text)) return { kind: "missing", title: "找不到这个模型", copy: "可能已下线，或当前账号没有权限。换一个模型就能继续。" };
 
-  if (/\b5\d\d\b|overload|unavailable|bad gateway|internal server error/i.test(text)) return "模型服务暂时出错（对方繁忙或故障），已重试几次仍没有回答。稍后再试，或在下方换一个模型。";
+  if (/\b5\d\d\b|overload|unavailable|bad gateway|internal server error/i.test(text)) return { kind: "busy", title: "模型服务暂时出错", copy: "对方繁忙或故障，已自动重试几次。可以稍后再试，或换个模型立刻继续。" };
 
-  if (/timeout|timed out|超时/i.test(text)) return "模型服务太久没有回应，这次没有拿到回答。稍后再试，或在下方换一个模型。";
+  if (/timeout|timed out|超时/i.test(text)) return { kind: "busy", title: "模型服务太久没有回应", copy: "这次没有拿到回答。可以稍后再试，或换个模型立刻继续。" };
 
-  if (/connection|network|fetch failed|failed to fetch|ECONN|ENOTFOUND|socket/i.test(text)) return "连不上模型服务，检查网络后再试。";
+  if (/connection|network|fetch failed|failed to fetch|ECONN|ENOTFOUND|socket/i.test(text)) return { kind: "network", title: "连不上模型服务", copy: "网络断了，或服务商没有响应。进度没有丢。" };
 
-  return "模型这次没有给出回答，可以再试一次或换一个模型。";
+  return { kind: "other", title: "模型这次没有给出回答", copy: "可以再试一次，或换个模型。" };
 }
 
 /** Chrome 下载中断原因（chrome.downloads InterruptReason）→ 人话。 */

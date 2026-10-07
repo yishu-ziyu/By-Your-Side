@@ -3174,3 +3174,47 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   .msg.assistant .memory-used-toggle { animation: none; }
   .msg.assistant .memory-used-line, .msg.assistant .memory-used-line[data-open=true] { transition: none; }
 }
+
+/* 错误卡（#74）：按错误种类给能修掉原因的动作；原文收进「技术详情」。 */
+.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--m-morph) var(--e-spring); }
+.error-card strong { font-size: var(--fs-ui); font-weight: 600; }
+.error-card > p { margin: 0; color: var(--text-secondary); }
+.error-card .error-card-note { font-size: var(--fs-meta); color: var(--text-tertiary); }
+.error-card-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.error-card .btn-primary, .error-card .btn-quiet, #key-sheet .btn-primary, #key-sheet .btn-quiet { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border-radius: var(--r-pill); cursor: pointer; }
+.error-card .btn-primary, #key-sheet .btn-primary { border: 0; background: var(--text-primary); color: var(--content-bg); }
+.error-card .btn-quiet, #key-sheet .btn-quiet { border: 1px solid var(--content-border); background: transparent; color: var(--text-primary); }
+.error-card button:disabled, #key-sheet button:disabled { opacity: .45; cursor: default; }
+.error-card-menu { display: flex; flex-direction: column; border: 1px solid var(--content-border); border-radius: var(--r); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; }
+.error-card-menu button { border: 0; background: none; text-align: left; font: var(--fs-ui)/1.5 var(--font); color: var(--text-primary); padding: 8px 12px; cursor: pointer; }
+.error-card-menu button:hover { background: var(--content-subtle); }
+.error-card-menu button:last-child { color: var(--text-secondary); border-top: 1px solid var(--content-border); }
+.error-card-tech { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.error-card-tech summary { cursor: pointer; width: fit-content; }
+.error-card-tech pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--content-subtle); white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); font-size: var(--fs-micro); }
+.error-card.is-recovering { border-left-color: var(--content-border); }
+.error-card-status { margin: 0; color: var(--text-secondary); }
+/* 错误卡已经给了修复动作：旧的「运行出错 · 继续原任务」入口说的是同一件事，不再重复。 */
+#messages:has(.error-card:not(.is-retired)) #resume-entry-root { display: none; }
+.error-card.is-retired { opacity: .6; }
+.error-card.is-retired .error-card-actions, .error-card.is-retired .error-card-menu { display: none; }
+.error-receipt { align-self: flex-start; display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--fs-meta); color: var(--ok); }
+.error-receipt svg { width: 14px; height: 14px; }
+@keyframes error-card-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* 换 key 面板：从侧栏底部升起，测试连接通过才能保存。 */
+#key-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 22px; background: var(--content-bg); border-top: 1px solid var(--content-border); border-radius: var(--r-shape) var(--r-shape) 0 0; box-shadow: 0 -12px 40px rgb(20 20 19 / .14); transform: translateY(105%); transition: transform var(--m-morph) var(--e-swift); font: var(--fs-ui)/var(--lh-ui) var(--font); }
+#key-sheet.is-open { transform: none; }
+#key-sheet h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.key-sheet-grab { width: 36px; height: 4px; border-radius: 2px; background: var(--content-border); align-self: center; }
+.key-sheet-model { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: var(--fs-meta); }
+#key-sheet-input { width: 100%; font: 14px/1.5 var(--font); color: var(--text-primary); background: transparent; border: 0; border-bottom: 1.5px solid var(--content-border); padding: 8px 2px; outline: none; }
+#key-sheet-input:focus { border-bottom-color: var(--text-primary); }
+.key-sheet-note { margin: 0; font-size: var(--fs-micro); color: var(--text-tertiary); }
+.key-sheet-link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.key-sheet-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#key-sheet-status { font-size: var(--fs-meta); color: var(--text-secondary); }
+#key-sheet-status[data-tone="ok"] { color: var(--ok); display: flex; align-items: center; gap: 6px; }
+#key-sheet-status[data-tone="ok"] svg { width: 14px; height: 14px; }
+#key-sheet-status[data-tone="err"] { color: var(--err); }
+@media (prefers-reduced-motion: reduce) { .error-card { animation: none; } #key-sheet { transition: none; } }

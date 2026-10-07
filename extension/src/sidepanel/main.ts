@@ -45,14 +45,14 @@ import {
 } from "./steps.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
-import {
-  humanizeModelError,
-} from "./models.js";
+import { mountErrorCards, type KeyTestResult } from "./error-card.js";
+import { describeModelError } from "../../../shared/user-facing.js";
+import { INPROC_CREDENTIAL_PREFIX } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
-import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -1987,6 +1987,46 @@ const modelPicker = mountModelPicker({
   },
 });
 
+// ── 错误卡（#74）：模型出错时按种类给修复动作，修好后从出错处接着做 ──
+let knownModels: ModelOption[] = [];
+
+let currentModelId: string | undefined;
+
+/** 错误卡换模型：等宿主回 model_info 确认换好再接着做。 */
+let pendingModelSwitch: { id: string; done: () => void; timer: ReturnType<typeof setTimeout> } | null = null;
+
+const keyTests = new Map<string, (result: KeyTestResult) => void>();
+
+function noteModelInfo(model: string | undefined, models: ModelOption[] | undefined): void {
+  if (models?.length) knownModels = models;
+
+  if (!model) return;
+  currentModelId = model;
+
+  if (pendingModelSwitch?.id === model) { clearTimeout(pendingModelSwitch.timer); pendingModelSwitch.done(); pendingModelSwitch = null; }
+}
+
+const errorCards = mountErrorCards({
+  messages: messagesEl,
+  app,
+  models: () => knownModels,
+  currentModel: () => currentModelId,
+  switchModel: (id) => new Promise((resolve, reject) => {
+    if (pendingModelSwitch) clearTimeout(pendingModelSwitch.timer);
+    pendingModelSwitch = { id, done: resolve, timer: setTimeout(() => { pendingModelSwitch = null; reject(new Error("切换超时")); }, 10_000) };
+    send({ type: "set_model", model: id });
+  }),
+  retry: (key) => { send(key ? { type: "retry_after_error", key } : { type: "retry_after_error" }); },
+  testKey: (key) => new Promise((resolve) => {
+    const requestId = crypto.randomUUID();
+    keyTests.set(requestId, resolve);
+    setTimeout(() => { if (keyTests.delete(requestId)) resolve({ ok: false, reason: "测试没有回音，再试一次。" }); }, 70_000);
+    send({ type: "model_key_test", requestId, key });
+  }),
+  saveKey: (provider, key) => chrome.storage.local.set({ [`${INPROC_CREDENTIAL_PREFIX}${provider}`]: { type: "api_key", key } }),
+  scrollToEnd: () => scrollToEnd(true),
+});
+
 let port: chrome.runtime.Port | null = null;
 
 let reconnectAttempt = 0;
@@ -3740,6 +3780,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       renderTaskStrip();
       closeBlocks();
 
+      errorCards.retire();
       // #58 C：一开始就有一行「正在思考」，模型想很久时也看得到在做（任务条不再兜这段）。
       // 新会话第一轮的开头经补放历史到达，所以补放时也建；补放到 agent_end 会照常收尾。
       ensureRun();
@@ -3758,6 +3799,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "user_delivery":
       handleUserDelivery(ev.delivery);
+
+      if (ev.delivery.conversationId === selectedConversationId) errorCards.delivered();
       break;
     case "artifact":
       artifactCards.apply(ev);
@@ -3836,9 +3879,13 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         scrollToEnd();
       } else addMsg("msg notice", ev.message);
       break;
-    case "error":
-      addMsg("msg error", humanizeModelError(ev.message));
+    case "error": {
+      const copy = describeModelError(ev.message);
+
+      if (copy) errorCards.show(copy);
+      else addMsg("msg error", ev.message);
       break;
+    }
   }
 
   if (currentRun && runId && currentRun.root.dataset.runId !== runId) {
@@ -4292,9 +4339,15 @@ function handleServerMessage(raw: string): void {
       setStatus("on", "已连接");
       applyHostFeatures(msg.features);
       modelPicker.apply(msg.model, msg.models);
+      noteModelInfo(msg.model, msg.models);
       break;
     case "model_info":
       modelPicker.update(msg.model, msg.models);
+      noteModelInfo(msg.model, msg.models);
+      break;
+    case "model_key_test_result":
+      keyTests.get(msg.requestId)?.(msg);
+      keyTests.delete(msg.requestId);
       break;
     case "hello_error":
       addMsg("msg error", msg.error);

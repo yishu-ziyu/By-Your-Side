@@ -110,6 +110,10 @@ class FailoverLoop implements AgentLoop {
     return this.run(() => this.inner.prompt(...args));
   }
 
+  resume(): Promise<void> {
+    return this.run(() => this.continueRun());
+  }
+
   sendCustomMessage(...args: Parameters<AgentLoop["sendCustomMessage"]>): Promise<void> {
     if (this.running && !this.inner.isStreaming && args[1]?.triggerTurn) {
       return this.waitForIdle().then(() => this.sendCustomMessage(...args));

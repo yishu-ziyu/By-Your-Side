@@ -222,6 +222,10 @@ export type ClientMessage = ConversationEnvelope & (
       generation?: number;
     }
   | { type: "set_model"; model: string }
+  /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做（#74）。key：刚换的 key，先用上再接着做。 */
+  | { type: "retry_after_error"; key?: string }
+  /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
+  | { type: "model_key_test"; requestId: string; key: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact });
 
 export interface ConversationEnvelope { conversationId?: string }
@@ -256,6 +260,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
+  /** reason 是人话；detail 是服务商原文，只进「技术详情」。 */
+  | { type: "model_key_test_result"; requestId: string; ok: boolean; ms?: number; reason?: string; detail?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
@@ -755,6 +761,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
 
+    if (msg.type === "retry_after_error" && msg.key !== undefined && (typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
+
+    if (msg.type === "model_key_test" && (!validRequestId(msg.requestId) || typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
+
     if (
       (msg.type === "user_message" || msg.type === "steer") &&
       msg.context !== undefined &&
@@ -882,6 +892,9 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
       if (input.attachments !== undefined && (!Array.isArray(input.attachments) || !input.attachments.every(isAttachment))) return null;
     }
+
+    if (msg.type === "model_key_test_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean"
+      && (msg.ms === undefined || Number.isFinite(msg.ms)) && (msg.reason === undefined || isShortText(msg.reason)) && (msg.detail === undefined || isShortText(msg.detail)))) return null;
 
     if (msg.type === "task_history_result") {
       if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;
