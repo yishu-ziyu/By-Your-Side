@@ -859,9 +859,10 @@ function targetOwnsHit(el, top, x, y) {
   return false;
 }`;
 
+// 快照里的编号可能落在按钮里的文字节点上（BYS-143 弹窗的「Close」）：按包住它的元素来点。
 const CONFIRM_CLICK_JS = `function() {
   ${TARGET_OWNS_HIT_JS}
-  const el = this;
+  const el = this && this.nodeType === 3 ? this.parentElement : this;
   if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
   if (typeof el.scrollIntoViewIfNeeded === "function") el.scrollIntoViewIfNeeded({ block: "center", inline: "center" });
   else el.scrollIntoView({ block: "center", inline: "center" });
@@ -879,7 +880,7 @@ const CONFIRM_CLICK_JS = `function() {
 
 const HIT_TEST_AT_JS = `function(x, y) {
   ${TARGET_OWNS_HIT_JS}
-  const el = this;
+  const el = this && this.nodeType === 3 ? this.parentElement : this;
   if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
   const top = document.elementFromPoint(x, y);
   if (!top) throw new Error("目标处没有可命中的元素，操作未执行。请重新 snapshot 确认当前目标。");
@@ -929,10 +930,11 @@ async function checkPointerTarget(
       };
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
+        // 只读的目标核对自己抛出的「被挡、失效、不可见」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
+        if (/已失效|覆盖|可命中|不可见/.test(oneLine(e))) throw notExecuted(new Error(oneLine(e)));
+
         if (e && typeof e === "object" && "executionFact" in e) throw e;
         const msg = oneLine(e);
-
-        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
         throw notExecuted(new Error(
           `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${msg}）`,
         ));
@@ -986,10 +988,11 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
       return;
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
+        // 只读的目标核对自己抛出的「被挡、失效、不可见」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
+        if (/已失效|覆盖|可命中|不可见/.test(oneLine(e))) throw notExecuted(new Error(oneLine(e)));
+
         if (e && typeof e === "object" && "executionFact" in e) throw e;
         const msg = oneLine(e);
-
-        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
         throw notExecuted(new Error(
           `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${msg}）`,
         ));
@@ -1272,7 +1275,8 @@ export async function click(
       }
     } catch (e) {
       if (e && typeof e === "object" && "executionFact" in e && e.executionFact === "not_executed") {
-        if (cdpMouseMoved) Object.assign(e,{executionFact:"unknown"});
+        // 鼠标移过去后才发现目标被挡、失效：没有按下，点击确定没发生，仍算没执行，允许重新确认后再点。
+        if (cdpMouseMoved && !isPrePressTargetError(e)) Object.assign(e,{executionFact:"unknown"});
         throw e;
       }
       if (cdpMousePressed) {
