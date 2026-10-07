@@ -124,12 +124,17 @@ async function holdAndSpeak(session: string, round: Evidence["rounds"][number], 
   return Date.now();
 }
 
-/** 等胶囊到某一步，顺路记下经过的步骤。 */
+/** 听写最长可等：连上 15 秒 + 提交后 30 秒（docs/evals/20261008-ptt-timeout.md）。 */
+const DICTATION_MS = 50_000;
+
+/** 等胶囊到某一步，顺路记下经过的步骤；中途变成「没成」就马上失败。 */
 async function waitPhase(session: string, round: Evidence["rounds"][number], phase: string, ms: number): Promise<void> {
   await until(async () => {
     const state = await capsuleState(session);
 
     if (state?.phase && round.phases.at(-1) !== state.phase) round.phases.push(state.phase);
+
+    if (state?.phase === "failed" && phase !== "failed") throw new Error(`capsule failed while waiting for ${phase} ${JSON.stringify(round.phases)}`);
 
     return state?.phase === phase || undefined;
   }, ms, `capsule ${phase}`, 50);
@@ -192,7 +197,7 @@ try {
   assert.ok(one.phases.includes("listening"), `R1: listening while held ${JSON.stringify(one.phases)}`);
   assert.ok((one.peakPx ?? 0) > 8, `R1: the waveform moved with the voice (peak ${one.peakPx}px of 24)`);
   await waitPhase(work, one, "transcribing", 2_000);
-  await waitPhase(work, one, "doing", 15_000);
+  await waitPhase(work, one, "doing", DICTATION_MS);
   one.ms.doing = Date.now() - released;
   await sleep(600);
   await rp.screenshot(work, join(artifacts, "2-doing.png"));
@@ -231,7 +236,7 @@ try {
   const two: Evidence["rounds"][number] = { phases: [], ms: {} };
   evidence.rounds.push(two);
   const released2 = await holdAndSpeak(work, two, join(artifacts, "4-listening-again.png"));
-  await waitPhase(work, two, "doing", 15_000);
+  await waitPhase(work, two, "doing", DICTATION_MS);
   await sleep(1_000);
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
@@ -250,7 +255,7 @@ try {
   const three: Evidence["rounds"][number] = { phases: [], ms: {} };
   evidence.rounds.push(three);
   await holdAndSpeak(work, three, join(artifacts, "6-listening-third.png"));
-  await waitPhase(work, three, "done", 30_000);
+  await waitPhase(work, three, "done", DICTATION_MS + 15_000);
   await until(async () => (await capsuleState(work))?.speaking || undefined, 10_000, "third speaking");
   await sleep(1_200);
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
@@ -274,7 +279,7 @@ try {
   evidence.rounds.push(four);
   const before = evidence.speechRequests.length;
   await holdAndSpeak(work, four, join(artifacts, "8-listening-fourth.png"));
-  await waitPhase(work, four, "done", 30_000);
+  await waitPhase(work, four, "done", DICTATION_MS + 15_000);
   await until(async () => evidence.speechRequests.length >= before + 2 || undefined, 20_000, "left-for-you spoken after the result");
   await sleep(600);
   await rp.screenshot(work, join(artifacts, "9-left-speaking.png"));
