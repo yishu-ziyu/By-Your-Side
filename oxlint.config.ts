@@ -29,6 +29,8 @@ export default defineConfig({
     "tools/oxlint/anti-slop/**",
     // Build output.
     "out/**",
+    // Disposable design previews: the user tries them and throws them away; rough.js is a generated bundle.
+    "docs/previews/**",
   ],
   jsPlugins: [
     { name: "anti-slop", specifier: "./tools/oxlint/anti-slop/src/index.ts" },
