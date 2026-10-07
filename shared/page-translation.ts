@@ -20,7 +20,8 @@ export interface TranslationReceipt {
   unsupported: number;
   blocks: TranslationBlock[];
   applied?: number;
-  incompleteReason?: 'page-changing' | 'batch-limit';
+  /** model-output: the model never returned matching text for some paragraphs; they stay untranslated (remaining). */
+  incompleteReason?: 'page-changing' | 'batch-limit' | 'model-output';
 }
 
 export interface TranslationCommand {

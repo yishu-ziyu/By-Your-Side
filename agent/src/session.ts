@@ -3,7 +3,7 @@ import { classifyDirectExecutionFeedback, type ExecutionFeedback } from '../../s
 import { isPageTextEvidence } from '../../shared/page-text-evidence.js';
 import { toolAction } from '../../shared/user-facing.js';
 import { elementText, redactObservedText } from './task-evidence.js';
-import { TRANSLATION_PROMPT, isProviderThrottle, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
+import { TRANSLATION_PROMPT, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import type { RouteSource } from "../../shared/route.js";
@@ -1386,39 +1386,50 @@ return;}
 
     // Translation is a bounded text conversion: the model's lowest allowed thinking level (off where it can be disabled).
     const effort = lowestEffort(model, this.sideRejected);
+    // 按段落块收译文：一次回复里段落齐了的块就收下，第二次只重问缺的块；两次都没齐的块不写页面，交回请求池。
+    const done = new Map<string, string>();
+    let ask = modelBlocks;
 
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 2 && ask.length; attempt++) {
       const startedAt = Date.now();
 
       const reply = await this.modelRuntime.completeSimple(model, {
         systemPrompt: TRANSLATION_PROMPT + (attempt ? '\nThe previous answer was malformed. Return one complete JSON array only, with every supplied segment id, no prose or extra JSON.' : ''),
-        messages: [{role: 'user', content: JSON.stringify({language, blocks:modelBlocks}), timestamp: Date.now()}],
+        messages: [{role: 'user', content: JSON.stringify({language, blocks:ask}), timestamp: Date.now()}],
       }, {signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]), maxTokens: 10000, sessionId, headers: opencodeSessionHeaders(model, sessionId), ...(effort === 'off' ? {} : {reasoning: effort})});
 
       // 逐请求记录进导出的诊断记录：下次慢了可以直接从导出文件读出每批用时、停止原因和用量。
       const record = {...meta, phase:'model', attempt, stopReason:reply.stopReason, elapsedMs:Date.now()-startedAt,
-        blocks:modelBlocks.length, inputChars:JSON.stringify(modelBlocks).length, segments:modelBlocks.reduce((n,b)=>n+b.segments.length,0), usage:reply.usage,
+        blocks:ask.length, inputChars:JSON.stringify(ask).length, segments:ask.reduce((n,b)=>n+b.segments.length,0), usage:reply.usage,
         ...(reply.errorMessage ? {error:redactCredentialText(reply.errorMessage).slice(0,600)} : {})};
 
       console.error('[page-translation]', JSON.stringify(record));
       this.runTrace?.record('page_translation_request', record);
 
       if (reply.stopReason === 'error' || reply.stopReason === 'aborted' || reply.stopReason === 'length') throw Object.assign(new Error(`这批翻译未完成（${reply.stopReason}），已保留之前的译文。可以继续翻译。`), {stopReason: reply.stopReason, throttled: reply.stopReason === 'error' && isProviderThrottle(reply.errorMessage)});
+      const text = reply.content.filter(part => part.type === 'text').map(part => part.text).join('');
+      const got = salvageTranslations(text, ask);
 
-      try {
-        return restoreTranslationWhitespace(parseTranslations(reply.content.filter(part => part.type === 'text').map(part => part.text).join(''), modelBlocks), blocks);
-      } catch (error) {
-        const invalid = {...meta, phase:'validation', attempt, reason: error instanceof SyntaxError ? 'invalid_json' : 'segment_mismatch'};
+      for (const [id, value] of got) done.set(id, value);
+      const missing = ask.filter(b => b.segments.some(s => !done.has(s.id)));
+
+      if (missing.length) {
+        // 记下缺哪几块、回复开头什么样：下次格式出错可以直接从导出文件看出原因。
+        const invalid = {...meta, phase:'validation', attempt, reason: got.size ? 'partial' : 'no_segments', missingBlocks: missing.map(b => b.id), reply: redactCredentialText(text.slice(0, 200))};
 
         console.error('[page-translation]', JSON.stringify(invalid));
         this.runTrace?.record('page_translation_request', invalid);
-
-        // Regenerating text is safe: neither attempt has been sent to the page yet.
-        if (attempt === 1) throw new Error('模型未返回完整对应的译文，本批未写入。可以继续翻译。');
       }
+
+      ask = missing;
     }
 
-    throw new Error('翻译未完成。');
+    // Regenerating text is safe: nothing reaches the page before this returns.
+    const complete = blocks.filter(b => b.segments.every(s => !needsTranslation(s.text) || done.has(s.id)));
+
+    if (!complete.length) throw Object.assign(new Error('模型未返回完整对应的译文，本批未写入。可以继续翻译。'), {malformed: true});
+
+    return restoreTranslationWhitespace([...done].map(([id, text]) => ({id, text})), complete);
   }
 
   async answerReading(transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void): Promise<string> {
