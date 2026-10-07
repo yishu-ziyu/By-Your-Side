@@ -12,6 +12,7 @@
     "reload:ext": "node scripts/reload-ext.mjs",
     "capture:clear": "node scripts/clear-voice-capture.mjs",
     "accept:browser": "node scripts/acceptance/run.mjs",
+    "smoke": "tsx scripts/acceptance/real-path/smoke.mts --headless",
     "accept:real-path": "tsx scripts/acceptance/real-path/run-all.mts",
     "doctor": "tsx scripts/eval/doctor.mts",
     "eval:offline": "tsx scripts/eval/offline.mts",
