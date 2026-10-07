@@ -14,7 +14,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import { firstEventTimeout } from "../../shared/model-capabilities.js";
 import { isTransientModelError } from "../../shared/provider-busy.js";
-import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type ModelThinkingLevel, type StreamOptions, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -71,6 +71,12 @@ class MemoryEntries {
  * 见 docs/evals/20261004-model-failover.md。
  */
 export const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
+
+/**
+ * 服务端已发出原始事件（如 response.created）后，等第一个内容事件的上限。排队发生在这之前，不受这条限制；
+ * 10-07 实测 gpt-6-luna 39 次正常请求「已创建」到开始输出最长 1.8 秒，挂住的 2 次之后再无下文。
+ */
+export const MODEL_STALL_AFTER_START_MS = 10_000;
 
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
   const timer = setTimeout(resolve, ms);
@@ -490,16 +496,23 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
     const level = effort?.(model);
     const options = level === undefined ? streamOptions : { ...streamOptions, reasoning: level === "off" ? undefined : level };
 
+    // 服务端原始事件先告诉超时计时「已受理」，再转给调用方原有的钩子。
+    const withAccepted = (accepted: () => void): StreamOptions["onProviderStreamEvent"] => async (event, eventModel) => {
+      accepted();
+      await options?.onProviderStreamEvent?.(event, eventModel);
+    };
+
     // SAFETY: 同上，参数原样转交。
-    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, signal => models.streamSimple(model as never, context as never, { ...options, signal } as never), onCut);
+    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, (signal, accepted) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted) } as never), onCut);
   }) as StreamFn;
 }
 
 /**
  * 第一个事件（start 只表示连上，不算）迟迟不来：取消这次请求，交出一条可重试的超时错误，写明是哪个模型。
+ * 服务端一旦发出原始事件（已受理），剩余等待缩短到 MODEL_STALL_AFTER_START_MS：受理后迟迟不出内容就是挂住了。
  * 用户取消照常走原来的 aborted 结局。
  */
-function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void): AssistantMessageEventStream {
+function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal, onProviderStreamEvent: () => void) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void): AssistantMessageEventStream {
   const controller = new AbortController();
   const cancel = () => controller.abort();
 
@@ -509,7 +522,26 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   // 同步抛出的错误（如缺 key）照旧交给 Agent 处理。
   let source: AssistantMessageEventStream;
 
-  try { source = start(controller.signal); } catch (error) {
+  // 计时器在下面建立；服务端第一个原始事件到来时，若内容还没来，就改成受理后的短等待。
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let started = false;
+  let content = false;
+
+  const arm = (ms: number, message: string) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      fail(message);
+      controller.abort();
+    }, ms);
+  };
+
+  const onProviderStreamEvent = () => {
+    if (started || content) return;
+    started = true;
+    arm(Math.min(timeoutMs, MODEL_STALL_AFTER_START_MS), `first response timeout: ${model.provider}/${model.id} accepted the request but sent nothing within ${Math.round(MODEL_STALL_AFTER_START_MS / 1000)} s`);
+  };
+
+  try { source = start(controller.signal, onProviderStreamEvent); } catch (error) {
     outer?.removeEventListener("abort", cancel);
     throw error;
   }
@@ -525,10 +557,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     out.end();
   };
 
-  const timer = setTimeout(() => {
-    fail(`first response timeout: ${model.provider}/${model.id} sent nothing within ${Math.round(timeoutMs / 1000)} s`);
-    controller.abort();
-  }, timeoutMs);
+  if (!started) arm(timeoutMs, `first response timeout: ${model.provider}/${model.id} sent nothing within ${Math.round(timeoutMs / 1000)} s`);
 
   // 用户改方向：正在写的正文按「写完了」收下（stopReason stop），旧请求取消、晚到的字丢弃；
   // 循环随即读排队的插话，同一轮里重写。已开始写工具调用、还没写出正文时不截断。
@@ -555,7 +584,10 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
       for await (const event of source) {
         if (cut) break;
 
-        if (event.type !== "start") clearTimeout(timer);
+        if (event.type !== "start") {
+          content = true;
+          clearTimeout(timer);
+        }
 
         if ("partial" in event) partial = event.partial;
         out.push(event);
