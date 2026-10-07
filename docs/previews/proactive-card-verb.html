@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>主动卡 · 动词即按钮 — 临时预览</title>
+<style>
+  /* 与侧栏同一组 token（extension/src/sidepanel/styles.css） */
+  :root {
+    --wallpaper: oklch(0.980 0.0055 88);
+    --elevated: oklch(0.996 0.0015 88);
+    --well: oklch(0.962 0.0055 88);
+    --well-hover: oklch(0.950 0.0065 88);
+    --well-outline: rgb(0 0 0 / .05);
+    --well-highlight: rgb(255 255 255 / .9);
+    --border: rgb(20 20 19 / .07);
+    --border-strong: rgb(20 20 19 / .10);
+    --ink: #141413;
+    --ink-2: #5f5e58;
+    --ink-3: #77756d;
+    --ink-4: #b0aea5;
+    --accent: #0a84ff;
+    --ok: #3c8a55;
+    --r: 12px;
+    --r-shape: 20px;
+    --r-tail: 6px;
+    --pill: 999px;
+    --m-quick: 120ms; --m-move: 240ms; --m-morph: 360ms;
+    --e-swift: cubic-bezier(0.16, 1, 0.3, 1);
+    --e-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #efede6; color: var(--ink); font: 15px/1.7 var(--font); padding: 40px 24px 120px; }
+  .page { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 24px; }
+  .lede { color: var(--ink-2); margin-top: 6px; max-width: 680px; font-size: 14px; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .judge { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .judge span { font-size: 12.5px; padding: 4px 10px; border-radius: var(--pill); border: 1px solid var(--border-strong); background: var(--elevated); color: var(--ink-2); }
+
+  .stage { margin-top: 32px; display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; }
+  .col { width: 360px; }
+  .col h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .col .note { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; min-height: 64px; margin-bottom: 12px; }
+  .col .note b { color: var(--ink); }
+  .controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .controls button {
+    font: 600 12.5px/1 var(--font); padding: 9px 14px; border-radius: var(--pill); cursor: pointer;
+    border: 1px solid var(--border-strong); background: var(--elevated); color: var(--ink);
+  }
+  .controls button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .controls button:active { transform: scale(.97); }
+
+  /* ── 侧栏框（和真机同尺寸） ── */
+  .panel {
+    width: 340px; height: 600px; background: var(--wallpaper);
+    border: 1px solid var(--border-strong); border-radius: var(--r-shape);
+    box-shadow: 0 8px 28px rgb(20 20 19 / .08);
+    display: flex; flex-direction: column; overflow: hidden; position: relative;
+  }
+  .panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 14px; font-weight: 600; flex: none; }
+  .panel-head .page-pill { margin-left: auto; font-size: 11.5px; font-weight: 400; color: var(--ink-3); padding: 3px 8px; border-radius: var(--r); background: var(--elevated); border: 1px solid var(--border); max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thread { flex: 1; overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .composer { flex: none; margin: 12px; border-radius: var(--r-shape); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); padding: 12px 14px; color: var(--ink-4); font-size: 14px; display: flex; align-items: center; justify-content: space-between; min-height: 46px; }
+  .composer .draft { color: var(--ink); }
+  .composer .send { width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 13px; flex: none; }
+
+  .day { font-size: 11.5px; color: var(--ink-3); text-align: center; }
+
+  /* ── 主动卡：一句话，第一个词是按钮 ── */
+  .pc-group { display: flex; flex-direction: column; gap: 8px; }
+  .pc-group .lead { font-size: 11.5px; color: var(--ink-3); }
+  .pc { position: relative; overflow: hidden; }
+  .pc .face {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--elevated); border: 1px solid var(--border-strong); border-radius: var(--r-shape);
+    padding: 8px 10px 8px 8px; font-size: 14px; line-height: 1.5;
+    transition: opacity var(--m-quick) var(--e-swift), background var(--m-morph) var(--e-out), border-color var(--m-morph) var(--e-out), padding var(--m-morph) var(--e-out), height var(--m-morph) var(--e-out);
+  }
+  .pc .verb {
+    all: unset; cursor: pointer; font: 600 13.5px/1 var(--font); color: var(--ink);
+    padding: 8px 12px; border-radius: 10px; background: var(--well);
+    box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight);
+    transition: background var(--m-quick) var(--e-swift), color var(--m-quick) var(--e-swift), transform var(--m-quick) var(--e-swift);
+  }
+  .pc .verb:hover { background: var(--well-hover); }
+  .pc .verb:active, .pc .verb.pressed { background: var(--ink); color: #fff; transform: scale(.96); }
+  .pc .obj { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; cursor: text; }
+  .pc .obj:hover { text-decoration: underline; text-decoration-color: var(--ink-4); text-underline-offset: 4px; }
+  .pc .who { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .pc.reply { margin: 6px 0; }
+  .pc .brand { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; flex: none; }
+  .pc .src { flex-basis: 100%; font-size: 11.5px; color: var(--ink-3); padding-left: 2px; margin-top: -2px; }
+  .pc .x { all: unset; cursor: pointer; position: absolute; right: 10px; top: 9px; width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; color: var(--ink-4); font-size: 14px; opacity: 0; transition: opacity var(--m-quick); }
+  .pc:hover .x { opacity: 1; }
+  .pc .x:hover { background: var(--well); color: var(--ink); }
+
+  /* 按下后：文字先淡出，壳保留，再在原位长出助手文本 */
+  .pc.fading .face > * { opacity: 0; transition: opacity var(--m-quick) var(--e-swift); }
+  .pc.shell .face { background: var(--well); border-color: transparent; }
+  .pc.shell .x { display: none; }
+  .pc.reply .face { background: transparent; border-color: transparent; padding: 2px 0; }
+
+  .reply-body { display: none; flex-direction: column; gap: 6px; font-size: 15px; line-height: 1.7; }
+  .pc.reply .reply-body { display: flex; }
+  .reply-body .line { opacity: 0; filter: blur(2px); animation: revealFade 300ms var(--e-swift) both; }
+  .reply-body .line:nth-child(2) { animation-delay: 220ms; }
+  .reply-body .line:nth-child(3) { animation-delay: 440ms; }
+  .reply-body .fallback { color: var(--ink-2); font-size: 14px; }
+  @keyframes revealFade { to { opacity: 1; filter: none; } }
+
+  /* 我们的特质：动作有名字、耗时、结果态（真机 chip） */
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--ink-2); font-size: 11px; width: fit-content; margin-top: 2px; animation: revealFade 300ms var(--e-swift) 600ms both; }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  .chip.done .dot { background: var(--ok); animation: none; }
+  .chip .dur { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .pc.gone { opacity: 0; transform: translateX(12px); transition: opacity var(--m-move) var(--e-swift), transform var(--m-move) var(--e-swift); }
+  .pc.collapse { height: 0 !important; margin-top: -8px; transition: height var(--m-move) var(--e-swift), margin var(--m-move) var(--e-swift); }
+
+  /* 现状对照：#52 页角卡 */
+  .site { width: 340px; height: 600px; border-radius: var(--r-shape); border: 1px solid var(--border-strong); background: #fff; position: relative; overflow: hidden; box-shadow: 0 8px 28px rgb(20 20 19 / .08); }
+  .site .bar { height: 38px; background: #f3f3f3; border-bottom: 1px solid #e4e4e4; display: flex; align-items: center; padding: 0 12px; gap: 6px; }
+  .site .bar i { width: 10px; height: 10px; border-radius: 50%; background: #d9d9d9; display: block; }
+  .site .bar .url { margin-left: 8px; flex: 1; height: 20px; border-radius: 6px; background: #fff; border: 1px solid #e4e4e4; font-size: 10.5px; color: #8a8a8a; padding: 0 8px; line-height: 18px; }
+  .site .body { padding: 22px 20px; }
+  .site .body .t { height: 14px; width: 60%; background: #e9e9e9; border-radius: 4px; margin-bottom: 14px; }
+  .site .body .l { height: 9px; background: #efefef; border-radius: 4px; margin-bottom: 9px; }
+  .old { position: absolute; right: 16px; bottom: 16px; width: 280px; padding: 12px 14px; border-radius: 12px; background: #fff; color: #1d1d1f; border: 1px solid rgba(0,0,0,.1); box-shadow: 0 10px 30px rgba(0,0,0,.14), 0 1px 3px rgba(0,0,0,.08); font: 13px/1.45 var(--font); }
+  .old .head { display: flex; gap: 8px; align-items: flex-start; }
+  .old .sentence { flex: 1; font-size: 14px; font-weight: 600; }
+  .old .close { color: #86868b; font-size: 16px; line-height: 1; }
+  .old .evidence { margin-top: 4px; color: #6e6e73; font-size: 12px; }
+  .old .action { margin-top: 10px; padding: 5px 14px; border-radius: 8px; background: #1d1d1f; color: #fff; font-weight: 600; width: fit-content; }
+
+  /* 演示光标 */
+  .cursor { position: absolute; left: 0; top: 0; width: 18px; height: 18px; pointer-events: none; z-index: 9; opacity: 0; transition: transform 520ms var(--e-out), opacity 200ms; }
+  .cursor svg { display: block; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .3)); }
+
+  .learned { margin-top: 48px; max-width: 720px; }
+  .learned h2 { font-size: 17px; margin-bottom: 8px; }
+  .learned li { font-size: 14px; color: var(--ink-2); margin: 6px 0 6px 18px; }
+  .learned li b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>主动卡：动词即按钮，按下原位接着说</h1>
+  <p class="lede">从 Hark Pro 4:40–5:40 学来的理念，嫁接到我们侧栏。<b>基准是我们的产品</b>：奶油纸面、同一组圆角和字号、助手回复仍是纸面上的文字而不是气泡，并保留我们的特质——每个动作有名字、耗时和结果态，卡片写明出处。</p>
+  <div class="judge"><span>要判断 1：第一个词当按钮，读完句子就等于看完后果吗</span><span>要判断 2：按下后原位变成助手的话，比跳到别处找结果好吗</span><span>要判断 3：出处行和步骤 chip 留着，是否已经够克制</span></div>
+
+  <div class="stage">
+    <div class="col">
+      <h3>方案 · 侧栏对话流（点动词试试，或按「自动演示」）</h3>
+      <p class="note">三张卡来自你最近看过的页面。<b>点第一个词</b>就执行，照 Hark 一按即做；<b>点句子其余部分</b>把这件事放进输入框接着问；<b>悬停出 ×</b> 取消这张卡。按下后卡片文字淡出，壳留在原位，再长出助手的三句话：在做什么 / 一个具体细节 / 接下来或兜底。</p>
+      <div class="panel" id="panel">
+        <div class="panel-head">By Your Side <span class="page-pill">全季酒店 · 订单确认</span></div>
+        <div class="thread" id="thread">
+          <div class="day">今天</div>
+          <div class="pc-group" id="cards">
+            <div class="lead">看你最近在看的，这几件事可以直接办</div>
+          </div>
+        </div>
+        <div class="composer" id="composer"><span class="ph">问点什么，或把事交给我</span><span class="send">↑</span></div>
+        <div class="cursor" id="cursor"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 2l11 8-4.6.9L12 16l-2.4 1-2.6-5.2L3 14z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
+      </div>
+      <div class="controls">
+        <button class="primary" id="demo">自动演示（依次按三张）</button>
+        <button id="reset">重置</button>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>现状 · #52 页角卡（对照）</h3>
+      <p class="note">同一件事今天的样子：标题句、出处行、独立文字的黑按钮、×。按钮文字和句子分开，按下后卡片消失，结果要回侧栏找。</p>
+      <div class="site">
+        <div class="bar"><i></i><i></i><i></i><span class="url">mail.example.com/订单确认-全季酒店</span></div>
+        <div class="body"><div class="t"></div><div class="l"></div><div class="l" style="width:92%"></div><div class="l" style="width:85%"></div><div class="l" style="width:70%"></div><br><div class="l"></div><div class="l" style="width:88%"></div><div class="l" style="width:60%"></div></div>
+        <div class="old">
+          <div class="head"><div class="sentence">可以帮你申请晚退房</div><div class="close">×</div></div>
+          <div class="evidence">「退房时间 12:00」· 全季酒店 北京国贸店 确认邮件</div>
+          <div class="action">去申请</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="learned">
+    <h2>这段视频里学到的，以及这里怎么用</h2>
+    <ul>
+      <li><b>一张卡 = 一句话，第一个词是按钮。</b> 金额、日期、商家在句子里，没有标题/正文/CTA 三段。这里照搬，但加了一行出处（我们的「可依赖」）。</li>
+      <li><b>按下后卡片原位变成助手的话。</b> Hark 变成气泡；我们的助手回复本来就是纸面文字，所以壳淡掉、文字长出来，不换容器。</li>
+      <li><b>结果固定三段：</b> 在做什么 / 一个具体细节证明理解了 / 接下来或兜底。付款类写明「用你存的凭据」。</li>
+      <li><b>两个退路：</b> 对卡提问（这里是放进输入框）、取消（×）。「取消后以后不再出」Hark 只说未来会有，这里不承诺。</li>
+      <li><b>视频没展示的：</b> 一按付款没有二次确认、没有失败态。本预览按你的决定一按即执行；失败态另排。</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+  const CARDS = [
+    { verb: '申请', obj: '晚退房到 14:00', brand: { t: '季', c: '#c58a2a' }, name: '全季酒店 北京国贸店', src: '来自：订单确认邮件 · 2 小时前',
+      reply: ['正在给全季酒店前台发邮件申请明天晚退房到 14:00。', '你明天 10:40 的会在国贸三期，走路 8 分钟，退房不用赶。', '他们不同意我会再争取一次，结果出来告诉你。'], step: '发邮件 · 全季酒店前台', ms: 2400 },
+    { verb: '值机', obj: '明天 CA1831 → 上海', brand: { t: '航', c: '#1f4e9a' }, name: '国航', src: '来自：航旅纵横 行程页 · 昨天',
+      reply: ['正在国航网站给你值机，明天 CA1831 北京→上海 08:15。', '按你常选的靠过道，已拿到 23C。', '登机牌放进你的钱包，起飞前 2 小时再提醒你一次。'], step: '网页操作 · 国航值机', ms: 3100 },
+    { verb: '付', obj: '¥31.97 水费', brand: { t: '水', c: '#2b7fa8' }, name: '北京自来水', src: '来自：缴费通知 短信 · 今天',
+      reply: ['正在用你存的招行卡付 ¥31.97 本月水费。', '账户尾号 4471，与上月账单一致。', '扣款成功会把回执放进这条对话。'], step: '付款 · 存储凭据', ms: 1900 },
+  ];
+
+  const cards = document.getElementById('cards');
+  const composer = document.getElementById('composer');
+  const cursor = document.getElementById('cursor');
+  const panel = document.getElementById('panel');
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function build() {
+    cards.querySelectorAll('.pc').forEach(n => n.remove());
+    CARDS.forEach((c, i) => {
+      const el = document.createElement('div');
+      el.className = 'pc'; el.dataset.i = i;
+      el.innerHTML = `
+        <div class="face">
+          <button class="verb" type="button">${c.verb}</button>
+          <span class="obj">${c.obj} <span class="who"><span class="brand" style="background:${c.brand.c}">${c.brand.t}</span>${c.name}</span></span>
+          <span class="src">${c.src}</span>
+          <div class="reply-body"></div>
+        </div>
+        <button class="x" type="button" aria-label="取消这张卡">×</button>`;
+      el.querySelector('.verb').addEventListener('click', () => press(el));
+      el.querySelector('.obj').addEventListener('click', () => ask(c));
+      el.querySelector('.x').addEventListener('click', () => dismiss(el));
+      cards.appendChild(el);
+    });
+    composer.innerHTML = '<span class="ph">问点什么，或把事交给我</span><span class="send">↑</span>';
+  }
+
+  async function press(el) {
+    if (el.classList.contains('busy')) return;
+    el.classList.add('busy');
+    const c = CARDS[el.dataset.i];
+    const face = el.querySelector('.face');
+    const verb = el.querySelector('.verb');
+    verb.classList.add('pressed');
+    await sleep(reduce ? 0 : 140);
+    // 1. 文字淡出，壳留在原位
+    el.classList.add('fading');
+    await sleep(reduce ? 0 : 160);
+    el.classList.add('shell');
+    const h0 = face.offsetHeight;
+    await sleep(reduce ? 0 : 260);
+    // 2. 原位长出助手的话（纸面文字，不换容器）
+    const body = el.querySelector('.reply-body');
+    body.innerHTML = `<div class="line">${c.reply[0]}</div><div class="line">${c.reply[1]}</div><div class="line fallback">${c.reply[2]}</div><div class="chip"><span class="dot"></span>${c.step}<span class="dur">进行中</span></div>`;
+    el.classList.remove('fading');
+    // 量终态高度时先关过渡，否则 padding 还在路上，量出来偏大
+    face.style.transition = 'none';
+    el.classList.add('reply');
+    face.querySelectorAll('.verb,.obj,.src').forEach(n => n.style.display = 'none');
+    const h1 = face.offsetHeight;
+    if (!reduce) { face.style.height = h0 + 'px'; face.offsetHeight; face.style.transition = ''; face.style.height = h1 + 'px'; await sleep(380); face.style.height = ''; }
+    else face.style.transition = '';
+    // 回复长出来后把当前这条留在视野里（真机 thread 也是跟到底部）
+    document.getElementById('thread').scrollTo({ top: el.offsetTop - 8, behavior: reduce ? 'auto' : 'smooth' });
+    // 3. 结果态：动作有名字、耗时、状态
+    const chip = body.querySelector('.chip');
+    const t0 = performance.now();
+    const tick = setInterval(() => { chip.querySelector('.dur').textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
+    await sleep(c.ms);
+    clearInterval(tick);
+    chip.classList.add('done');
+    chip.querySelector('.dur').textContent = '完成 · ' + (c.ms / 1000).toFixed(1) + 's';
+  }
+
+  function ask(c) {
+    composer.innerHTML = `<span class="draft">关于「${c.verb}${c.obj}」：</span><span class="send">↑</span>`;
+  }
+
+  async function dismiss(el) {
+    el.style.height = el.offsetHeight + 'px';
+    el.classList.add('gone');
+    await sleep(reduce ? 0 : 200);
+    el.classList.add('collapse');
+    await sleep(reduce ? 0 : 260);
+    el.remove();
+  }
+
+  // 自动演示：光标依次移到三个动词上按下
+  let demoing = false;
+  async function demo() {
+    if (demoing) return; demoing = true;
+    build();
+    await sleep(400);
+    cursor.style.opacity = 1;
+    for (const el of [...cards.querySelectorAll('.pc')]) {
+      const v = el.querySelector('.verb');
+      const pr = panel.getBoundingClientRect(), vr = v.getBoundingClientRect();
+      cursor.style.transform = `translate(${vr.left - pr.left + vr.width / 2 - 3}px, ${vr.top - pr.top + vr.height / 2 - 2}px)`;
+      await sleep(700);
+      press(el);
+      await sleep(1600);
+    }
+    await sleep(600);
+    cursor.style.opacity = 0;
+    demoing = false;
+  }
+
+  document.getElementById('demo').addEventListener('click', demo);
+  document.getElementById('reset').addEventListener('click', () => { demoing = false; cursor.style.opacity = 0; build(); });
+  build();
+</script>
+</body>
+</html>
