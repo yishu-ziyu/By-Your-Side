@@ -4,6 +4,8 @@
  * 麦克风是 say 合成的一句话；听写连真实的 Step Plan 套餐，助手用本机脚本模型。
  * 第 1 轮：按住（在听、声波）→ 松开（听写中）→ 在做 → 结果，点「在侧栏看」打开侧栏。
  * 第 2 轮：同一句话，脚本模型挂起不回；胶囊在做时按 Esc，任务停下，胶囊写「已停下」。
+ * 念结果（docs/evals/20261007-ptt-speak.md）：设置页先拒绝一个按量格式的 key，再存 MiniMax 订阅 Key（~/.pi/agent/auth.json 的 minimax-cn）；
+ * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着。
  * 胶囊的 shadow root 是关着的：用它挂在宿主上的 data-phase / data-peak 判断步骤，内容看截图。
  */
 import assert from "node:assert/strict";
@@ -42,17 +44,31 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const planKey = (await readFile(join(homedir(), ".sideagent", "step-plan.key"), "utf8")).trim();
 
+// SAFETY: Pi 的 auth.json 里 minimax-cn 存 { type: "api_key", key }。
+const speechKey = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { key?: string }>)["minimax-cn"]?.key ?? "";
+
+const ANSWER3 = "表格已经放在页面下方，三家都按去年营收从高到低排好了，数字来自各家官网的年报。";
+
 const rp = await launchRealPath({ microphoneWav: wav });
 
 let error: string | null = null;
 
-/** 写进 result.json 的证据：每轮看到的步骤顺序、声波最高、各步耗时。 */
-interface Evidence { speechMs: number; rounds: Array<{ phases: string[]; peakPx?: number; pillDuringCapsule?: string | null; ms: Record<string, number> }>; panelOpened?: boolean; sockets: string[] }
+/** 出错时截一张网页，胶囊上写着原因（shadow root 关着，只能看图）。 */
+let failShot: (() => Promise<void>) | null = null;
 
-const evidence: Evidence = { speechMs, rounds: [], sockets: [] };
+/** 写进 result.json 的证据：每轮看到的步骤顺序、声波最高、各步耗时。 */
+interface Evidence {
+  speechMs: number; rounds: Array<{ phases: string[]; peakPx?: number; pillDuringCapsule?: string | null; ms: Record<string, number>; spoken?: unknown }>;
+  panelOpened?: boolean; sockets: string[]; payGoKeyRejected?: string; speechRequests: Array<{ url: string; model?: string; text?: string }>;
+}
+
+const evidence: Evidence = { speechMs, rounds: [], sockets: [], speechRequests: [] };
 
 /** 胶囊宿主上的步骤；没有胶囊时为 null。 */
-const capsuleState = (session: string) => rp.evaluate(session, `(() => { const h = document.querySelector('[data-sideagent-overlay="ptt-capsule"]'); return h ? { phase: h.dataset.phase ?? null, peak: Number(h.dataset.peak ?? 0) } : null; })()`) as Promise<{ phase: string | null; peak: number } | null>;
+const capsuleState = (session: string) => rp.evaluate(session, `(() => { const h = document.querySelector('[data-sideagent-overlay="ptt-capsule"]'); return h ? { phase: h.dataset.phase ?? null, peak: Number(h.dataset.peak ?? 0), speaking: h.dataset.speaking === "true" } : null; })()`) as Promise<{ phase: string | null; peak: number; speaking: boolean } | null>;
+
+/** 离屏文档上一次念的结果（ptt-speech.ts 写在根元素上）。 */
+const lastSpeech = async (inproc: string) => JSON.parse(String(await rp.evaluate(inproc, `document.documentElement.dataset.pttSpeech ?? "null"`)));
 
 type DomNode = { nodeId: number; nodeName: string; nodeValue?: string; children?: DomNode[]; shadowRoots?: DomNode[] };
 
@@ -111,6 +127,7 @@ async function waitPhase(session: string, round: Evidence["rounds"][number], pha
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
   const work = await rp.attach(blank.targetId);
+  failShot = () => rp.screenshot(work, join(artifacts, "failure.png"));
   await rp.cdp.send("Page.enable", {}, work);
   await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/suppliers` }, work);
 
@@ -121,8 +138,28 @@ try {
   const settings = await rp.attach(settingsTarget);
   await until(async () => await rp.evaluate(settings, "typeof chrome !== 'undefined' && !!chrome.storage?.local"), 15_000, "settings page");
   await rp.evaluate(settings, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
+
+  // R2：设置页只收订阅 Key。先填一个按量格式的（不是真 key），再填订阅 Key。
+  const saveSpeechKey = async (key: string) => {
+    await rp.evaluate(settings, `(() => { const input = document.querySelector("#speech-key"); input.value = ${JSON.stringify(key)}; document.querySelector("#speech-save").click(); return true; })()`);
+    await sleep(500);
+    // SAFETY: 表达式返回 { status, stored }。
+    return await rp.evaluate(settings, `chrome.storage.local.get("ptt_speech_key").then(got => ({ status: document.querySelector("#voice-status").textContent, stored: typeof got.ptt_speech_key === "string" }))`) as { status: string; stored: boolean };
+  };
+  const rejected = await saveSpeechKey("eyJhbGciOiJSUzI1NiJ9.pay-as-you-go-shaped");
+  evidence.payGoKeyRejected = rejected.status;
+  assert.ok(!rejected.stored && rejected.status.includes("只接受"), `R2: pay-as-you-go key rejected ${JSON.stringify(rejected)}`);
+  assert.ok((await saveSpeechKey(speechKey)).stored, "R2: subscription key saved");
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget });
   rp.cdp.onEvent("Network.webSocketCreated", (message: { sessionId?: string; params?: { url?: string } }) => { if (message.sessionId === inproc && message.params?.url) evidence.sockets.push(message.params.url); });
+  rp.cdp.onEvent("Network.requestWillBeSent", (message: { sessionId?: string; params?: { request?: { url: string; postData?: string } } }) => {
+    const request = message.params?.request;
+
+    if (message.sessionId !== inproc || !request?.url.includes("minimax")) return;
+    // SAFETY: 念结果的请求体是 { model, text, ... } 的 JSON。
+    const body = request.postData ? JSON.parse(request.postData) as { model?: string; text?: string } : {};
+    evidence.speechRequests.push({ url: request.url, model: body.model, text: body.text });
+  });
   await rp.cdp.send("Network.enable", {}, inproc);
   await sleep(1_500);
   await rp.cdp.send("Runtime.evaluate", { expression: "document.body.click(), true" }, work);
@@ -143,9 +180,20 @@ try {
   assert.equal(one.pillDuringCapsule, null, "R4: the edge pill stays hidden on the capsule's page");
   await waitPhase(work, one, "done", 30_000);
   one.ms.done = Date.now() - released;
-  await sleep(400);
-  await rp.screenshot(work, join(artifacts, "3-done.png"));
   assert.deepEqual(one.phases.filter(p => p !== "transcribing"), ["listening", "doing", "done"], `R1–R3: phase order ${JSON.stringify(one.phases)}`);
+
+  // 念结果 R1、R3：念的时候光球在说，念完 speaking 去掉；离屏文档真的放完了。
+  await until(async () => (await capsuleState(work))?.speaking || undefined, 10_000, "capsule speaking");
+  one.ms.speaking = Date.now() - released;
+  await sleep(400);
+  await rp.screenshot(work, join(artifacts, "3-done-speaking.png"));
+  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "speech finished");
+  one.ms.spoken = Date.now() - released;
+  one.spoken = await lastSpeech(inproc);
+  assert.ok((one.spoken as { ok?: boolean; playedMs?: number }).ok && (one.spoken as { playedMs: number }).playedMs > 1_500, `R1: the result was played ${JSON.stringify(one.spoken)}`);
+  assert.equal((await capsuleState(work))?.phase, "done", "R3: capsule stays after speaking");
+  assert.ok(evidence.speechRequests.length === 1 && evidence.speechRequests[0]!.url === "https://api.minimaxi.com/v1/t2a_v2" && evidence.speechRequests[0]!.model === "speech-2.8-hd", `R2: one request to the subscription endpoint ${JSON.stringify(evidence.speechRequests)}`);
+  assert.ok(evidence.speechRequests[0]!.text?.startsWith("已经按营收排好了表，Lumen 最高。") && !evidence.speechRequests[0]!.text.includes("第二句"), `R1: spoke only the first sentence ${evidence.speechRequests[0]!.text}`);
 
   // R3：点「在侧栏看」打开侧栏，对话里有这句话。
   await clickCapsuleButton(work, "在侧栏看");
@@ -171,10 +219,33 @@ try {
   two.ms.stoppedAfterEsc = Date.now() - escAt;
   two.ms.doing = escAt - released2;
   await rp.screenshot(work, join(artifacts, "5-stopped.png"));
+  await sleep(1_500);
+  assert.equal(evidence.speechRequests.length, 1, "R1: a stopped task is not spoken");
+
+  // ── 第 3 轮：念到一半按 Esc ──
+  rule.steps = [{ text: ANSWER3 }];
+  await clickCapsuleButton(work, "✕").catch(() => {});
+  await sleep(500);
+  const three: Evidence["rounds"][number] = { phases: [], ms: {} };
+  evidence.rounds.push(three);
+  await holdAndSpeak(work, three, join(artifacts, "6-listening-third.png"));
+  await waitPhase(work, three, "done", 30_000);
+  await until(async () => (await capsuleState(work))?.speaking || undefined, 10_000, "third speaking");
+  await sleep(1_200);
+  await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
+  await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
+  const hushAt = Date.now();
+  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 3_000, "speech hushed");
+  three.ms.hushedAfterEsc = Date.now() - hushAt;
+  three.spoken = await lastSpeech(inproc);
+  assert.deepEqual(three.spoken, { ok: false, reason: "hushed" }, "R3: Esc hushed the speech");
+  assert.equal((await capsuleState(work))?.phase, "done", "R3: Esc while speaking keeps the capsule");
+  await rp.screenshot(work, join(artifacts, "7-hushed.png"));
 
   assert.ok(evidence.sockets.length > 0 && evidence.sockets.every(url => url.startsWith("wss://api.stepfun.com/step_plan/v1/realtime")), `dictation only on the plan URL ${JSON.stringify(evidence.sockets)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
+  await failShot?.().catch(() => {});
 } finally {
   await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, error }, null, 2));
   await rp.close();

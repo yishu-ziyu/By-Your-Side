@@ -7,7 +7,8 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttCapsuleAction } from '
 /**
  * 按住说话的网页底部胶囊（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）。
  * 光球旁只放一个状态词：在听 / 听写中 / 在做 / 等你 / 结果 / 已停下 / 没成。按住、听写中由按键直接驱动；
- * 之后的内容都由后台按真实事件推来。shadow root 关着，网页读不到听写的话；data-phase 只给验收看现在是哪一步。
+ * 之后的内容都由后台按真实事件推来。shadow root 关着，网页读不到听写的话；data-phase / data-speaking 只给验收看现在是哪一步。
+ * 念结果时（docs/evals/20261007-ptt-speak.md）光球是在说的样子，念完才开始倒计时收起；念的时候 Esc 只停声音。
  */
 
 const BARS = 18;
@@ -32,6 +33,7 @@ canvas{width:36px;height:36px;flex:none}
 .line{display:flex;gap:8px;align-items:baseline;min-width:0}
 .word{font-weight:600;flex:none}
 .detail{color:rgba(255,255,255,.86);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cap[data-phase=done] .detail,.cap[data-phase=waiting] .detail,.cap[data-phase=failed] .detail{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .heard,.left{font-size:12px;-webkit-user-select:text;user-select:text;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .heard{color:rgba(255,255,255,.58)}
 .left{color:rgba(255,255,255,.86)}
@@ -108,13 +110,16 @@ export function createPttCapsule() {
     disposeOrb?.(); disposeOrb = null;
     host.remove();
     delete host.dataset.phase;
+    delete host.dataset.speaking;
 
     if (tell) send('closed');
   };
 
+  const speaking = () => !!shown && 'speaking' in shown && !!shown.speaking;
+
   const scheduleClose = () => {
     clearTimeout(closeTimer);
-    const after = shown && CLOSE_AFTER_MS[shown.phase];
+    const after = shown && !speaking() && CLOSE_AFTER_MS[shown.phase];
 
     // 可以重发的失败留着，等你决定。
     if (after && !(shown?.phase === 'failed' && shown.heard)) closeTimer = setTimeout(() => hide(), after);
@@ -128,7 +133,8 @@ export function createPttCapsule() {
 
     const fresh = !shown;
     shown = capsule;
-    host.dataset.phase = capsule.phase;
+    host.dataset.phase = cap.dataset.phase = capsule.phase;
+    host.dataset.speaking = String(speaking());
     word.textContent = WORD[capsule.phase];
     $<HTMLElement>('.bars').hidden = capsule.phase !== 'listening';
 
@@ -156,15 +162,16 @@ export function createPttCapsule() {
 
     if (!host.isConnected) document.documentElement.append(host);
 
-    if (!disposeOrb) disposeOrb = mountVoiceOrb(canvas, 36, () => shown ? ORB_STATE[shown.phase] : 'idle', () => shown?.phase === 'listening' ? level : 0);
+    if (!disposeOrb) disposeOrb = mountVoiceOrb(canvas, 36, () => speaking() ? 'speaking' : shown ? ORB_STATE[shown.phase] : 'idle', () => shown?.phase === 'listening' ? level : 0);
     scheduleClose();
   };
 
-  // 任务在跑时 Esc 停下；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
+  // 任务在跑时 Esc 停下；正在念时 Esc 只停声音；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
   addEventListener('keydown', event => {
     if (event.key !== 'Escape' || !shown) return;
 
     if (shown.phase === 'doing') send('stop');
+    else if (speaking()) send('hush');
     else if (shown.phase !== 'listening' && shown.phase !== 'transcribing') hide();
   }, true);
 

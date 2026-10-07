@@ -19,6 +19,7 @@ import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
 import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
+import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
@@ -163,6 +164,15 @@ document.getElementById("settings")!.innerHTML = `
           </div>
         </div>
       </div>
+      <div class="row">
+        <span class="row-main"><span class="row-title">MiniMax 订阅 Key</span><span id="speech-state" class="row-desc"></span></span>
+        <span class="row-ctl inline">
+          <input id="speech-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="MiniMax 订阅 Key" />
+          <button id="speech-save" type="button" class="btn">保存</button>
+          <button id="speech-clear" type="button" class="btn btn-quiet" hidden>清除</button>
+        </span>
+      </div>
+      ${toggleRow("ptt-speak", "按住说话的事做完，念出结果", "念回答的第一句和「留给你的」，用 MiniMax speech-2.8-hd。只接受 Token Plan 订阅 Key（sk-cp- 开头），不走按量计费。")}
     </div>
     <p id="voice-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
@@ -256,6 +266,12 @@ const voiceInput = $<HTMLInputElement>("voice-key");
 const voiceClear = $<HTMLButtonElement>("voice-clear");
 
 const voiceStatus = $("voice-status");
+
+const speechInput = $<HTMLInputElement>("speech-key");
+
+const speechClear = $<HTMLButtonElement>("speech-clear");
+
+const speakToggle = $<HTMLInputElement>("ptt-speak");
 
 let config: InprocModelConfig | null = null;
 
@@ -858,6 +874,25 @@ function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGrou
   return groups;
 }
 
+/** 念结果只用 MiniMax 订阅 Key：MiniMax 按 Key 决定扣套餐还是按量（docs/evals/20261007-ptt-speak.md R2）。 */
+async function saveSpeechKey(): Promise<void> {
+  const key = speechInput.value.trim();
+
+  if (!key) return setStatus(voiceStatus, "填写 MiniMax 订阅 Key。", "err");
+
+  if (!isSubscriptionKey(key)) return setStatus(voiceStatus, "只接受 MiniMax Token Plan 的订阅 Key（sk-cp- 开头）。按量计费的 key 不能用。", "err");
+  await chrome.storage.local.set({ [PTT_SPEECH_KEY]: key });
+  speechInput.value = "";
+  await reload();
+  setStatus(voiceStatus, "已保存。按住说话的事做完会念出结果。", "ok");
+}
+
+async function clearSpeechKey(): Promise<void> {
+  await chrome.storage.local.remove(PTT_SPEECH_KEY);
+  await reload();
+  setStatus(voiceStatus, "已清除，做完不再念。", "");
+}
+
 /** 主模型：只列已连接的，选了就换，不用再进服务商详情。 */
 function renderMainModel(): void {
   mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...modelOptionGroups(config));
@@ -922,6 +957,13 @@ async function reload(): Promise<void> {
   $("voice-state").dataset.tone = voiceKey ? "ok" : "";
   voiceInput.placeholder = ownVoiceKey ? "粘贴新的 key" : "粘贴 key";
   voiceClear.hidden = !ownVoiceKey;
+  const speechKey = stored[PTT_SPEECH_KEY];
+  const ownSpeechKey = isText(speechKey) && isSubscriptionKey(speechKey) ? speechKey : "";
+  $("speech-state").textContent = ownSpeechKey ? `已保存 · 末四位 ${ownSpeechKey.slice(-4)}` : "还没有 key，做完不念。";
+  $("speech-state").dataset.tone = ownSpeechKey ? "ok" : "";
+  speechInput.placeholder = ownSpeechKey ? "粘贴新的 key" : "粘贴 sk-cp- 开头的 key";
+  speechClear.hidden = !ownSpeechKey;
+  speakToggle.checked = stored[PTT_SPEAK_RESULT] !== false;
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
   renderOrbStyles(parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]));
@@ -1130,9 +1172,17 @@ $("voice-save").addEventListener("click", () => void saveVoiceKey());
 
 voiceClear.addEventListener("click", () => void clearVoiceKey());
 
+$("speech-save").addEventListener("click", () => void saveSpeechKey());
+
+speechInput.addEventListener("keydown", (event) => { if (event.key === "Enter") void saveSpeechKey(); });
+
+speechClear.addEventListener("click", () => void clearSpeechKey());
+
+bindToggle(speakToggle, PTT_SPEAK_RESULT, voiceStatus, (on) => (on ? "做完会念出结果。" : "做完不再念。"));
+
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 form.remove();
