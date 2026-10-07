@@ -13,12 +13,13 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '..
 const SETTLE_MS = 800;
 
 /**
- * spokenText：已经念过的那句，同一句不再念（目标核对、交付会让胶囊刷新几遍）；内容变了（比如晚到的「留给你的」）就重念。
+ * spokenText：已经交去念的整句，同一句不再念（目标核对、交付会让胶囊刷新几遍）。
+ * 晚到的「留给你的」只是在原句后面多一段：排在 queue 里，等前一句念完接着念那一段，不从头重念。
  * utterance：每念一句加一，念完的回调只认自己那一句，旧的一句被打断或过期时不再改胶囊。
  */
 interface Tracked {
   tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; settle?: ReturnType<typeof setTimeout>;
-  spokenText?: string; utterance: number; speaking?: boolean; last?: PttCapsule;
+  spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: PttCapsule;
 }
 
 /** 回答的第一句；太长就截断。 */
@@ -53,25 +54,42 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     void chrome.tabs.sendMessage(tabId, { type: PTT_CAPSULE, capsule }).catch(() => { /* 网页已关或没有内容脚本 */ });
   };
 
-  /** 显示结果或等你，并念出来；念完时如果还是这一句、还是这次跟踪，就去掉 speaking。 */
+  const current = (t: Tracked) => t.last ? (t.speaking ? { ...t.last, speaking: true as const } : t.last) : null;
+
+  /** 念一句；念完接着念排队的下一段。被打断（Esc、✕、新的一句）或失败就清掉队列。 */
+  const start = (t: Tracked, text: string) => {
+    const id = ++t.utterance;
+    const speaking = voice.speak(text, t.conversationId);
+    t.speaking = !!speaking;
+    void speaking?.then(reply => {
+      if (t.utterance !== id) return;
+      t.speaking = false;
+      const next = reply.ok ? t.queue.shift() : undefined;
+
+      if (!reply.ok) t.queue = [];
+
+      if (next) start(t, next);
+      const capsule = current(t);
+
+      if (tracked === t && capsule) show(t.tabId, capsule);
+    });
+  };
+
+  /** 显示结果或等你，并念出来。只是后面多了一段，就排队念那一段；整句变了，就从这一句重新念。 */
   const showAndSay = (t: Tracked, capsule: Extract<PttCapsule, { phase: 'done' | 'waiting' }>) => {
     t.last = capsule;
     const text = speechFor(capsule);
 
     if (text && text !== t.spokenText) {
+      const before = t.spokenText;
       t.spokenText = text;
-      const id = ++t.utterance;
-      const speaking = voice.speak(text, t.conversationId);
-      t.speaking = !!speaking;
-      void speaking?.then(() => {
-        if (t.utterance !== id) return;
-        t.speaking = false;
+      const rest = before && text.startsWith(before) ? text.slice(before.length).trim() : null;
 
-        if (tracked === t && t.last) show(t.tabId, t.last);
-      });
+      if (rest && t.speaking) t.queue.push(rest);
+      else { t.queue = []; start(t, rest ?? text); }
     }
 
-    show(t.tabId, t.speaking ? { ...capsule, speaking: true } : capsule);
+    show(t.tabId, current(t)!);
   };
 
   /** 任务又跑起来、停下或出错：正在念的那句作废，旧结果不再回到胶囊上。 */
@@ -79,6 +97,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     if (t.speaking) voice.hush();
     t.utterance += 1;
     t.speaking = false;
+    t.queue = [];
     t.spokenText = undefined;
     t.last = undefined;
   };
@@ -132,7 +151,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     /** 松开后的结局：交给了助手（开始跟踪），或没成（直接显示原因）。 */
     handedOff(tabId: number, conversationId: string, heard: string) {
       recordingTab = null;
-      tracked = { tabId, conversationId, heard, sawRun: false, result: null, utterance: 0 };
+      tracked = { tabId, conversationId, heard, sawRun: false, result: null, utterance: 0, queue: [] };
       show(tabId, { phase: 'doing', heard, step: null });
       onChange();
     },

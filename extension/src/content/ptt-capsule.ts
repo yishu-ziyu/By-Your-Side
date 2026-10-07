@@ -63,7 +63,7 @@ export function createPttCapsule() {
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${STYLE}</style><div class="cap" role="status" aria-live="polite"><canvas aria-hidden="true"></canvas>
 <div class="bars" aria-hidden="true">${'<i></i>'.repeat(BARS)}</div>
-<div class="body"><div class="line"><span class="word"></span><span class="detail"></span></div><div class="heard"></div><div class="left"><b>留给你的：</b><span></span></div></div>
+<div class="body"><div class="line"><span class="word"></span><span class="detail"></span></div><div class="left"><b>留给你的：</b><span></span></div><div class="heard"></div></div>
 <div class="side"></div></div>`;
   const $ = <T extends Element>(selector: string) => root.querySelector<T>(selector)!;
   const cap = $<HTMLElement>('.cap');
