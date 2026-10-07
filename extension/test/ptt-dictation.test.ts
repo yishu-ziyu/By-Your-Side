@@ -8,8 +8,12 @@
  * D3 会话还没配好就发音频，开头几个字丢了。
  * D4 松开后没提交，或提交了却不等最终转写就结束。
  * D5 连接失败、超时、服务端报错、没听到话时，给出空文字当成功。
+ * 计时（docs/evals/20261008-ptt-timeout.md R1、R2）：
+ * D6 松开时还没连上，等过 15 秒还在等，或报成「没回应」，用户分不清是连不上。
+ * D7 服务端还在一个个回事件，却按固定时长判超时，把慢而正常的听写丢掉。
+ * D8 服务端一直不回，等过 8 秒还在等；或一直零星回事件，过了 30 秒还不结束。
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDictation, DICTATION_URL, type DictationSocket } from "../src/inproc/ptt-dictation.js";
 
 /** 测试里收发的 JSON 事件。 */
@@ -36,7 +40,7 @@ class FakeSocket implements DictationSocket {
   types(): unknown[] { return this.sent.map(event => event.type); }
 }
 
-function setup(timeoutMs = 2_000) {
+function setup(timing?: { connectMs: number; idleMs: number; capMs: number }) {
   const sockets: FakeSocket[] = [];
 
   const open = (url: string) => {
@@ -46,7 +50,7 @@ function setup(timeoutMs = 2_000) {
     return socket;
   };
 
-  const dictation = createDictation({ open, timeoutMs });
+  const dictation = createDictation({ open, ...timing });
 
   return { sockets, dictation };
 }
@@ -112,10 +116,86 @@ describe("push-to-talk dictation over the Step Plan realtime socket", () => {
     broken.sockets[0]!.serve({ type: "error", error: { message: "invalid api key" } });
     await expect(broken.dictation.stop()).resolves.toMatchObject({ ok: false, reason: "failed" });
 
-    const slow = setup(30);
-    slow.dictation.start();
-    await expect(slow.dictation.stop()).resolves.toMatchObject({ ok: false, reason: "timeout" });
-    expect(slow.sockets[0]!.closed).toBe(true);
+  });
+
+  describe("timers count from release, not from connecting (D6–D8)", () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    /** 连上、配好、松开：返回 socket 与结果。 */
+    const released = () => {
+      vi.useFakeTimers();
+      const { sockets, dictation } = setup();
+      dictation.start();
+      const socket = sockets[0]!;
+      socket.serve({ type: "session.created" });
+      socket.serve({ type: "session.updated" });
+      const result = dictation.stop();
+      let settled: unknown = null;
+      void result.then(value => { settled = value; });
+
+      return { socket, result, settled: () => settled };
+    };
+
+    it("a connection that is not ready 15 s after release fails as 'cannot connect', not as no reply (D6)", async () => {
+      vi.useFakeTimers();
+      const { sockets, dictation } = setup();
+      dictation.start();
+      const result = dictation.stop();
+      let settled: unknown = null;
+      void result.then(value => { settled = value; });
+      await vi.advanceTimersByTimeAsync(14_900);
+      expect(settled).toBeNull();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(settled).toEqual({ ok: false, reason: "failed", message: "连不上听写服务（网络慢或代理）" });
+      expect(sockets[0]!.closed).toBe(true);
+    });
+
+    it("a connection ready 12 s after release still gets its own idle window and succeeds (D6, D7)", async () => {
+      vi.useFakeTimers();
+      const { sockets, dictation } = setup();
+      dictation.start();
+      const result = dictation.stop();
+      await vi.advanceTimersByTimeAsync(12_000);
+      sockets[0]!.serve({ type: "session.created" });
+      sockets[0]!.serve({ type: "session.updated" });
+      await vi.advanceTimersByTimeAsync(7_000);
+      sockets[0]!.serve({ type: "conversation.item.input_audio_transcription.completed", transcript: "慢慢连上了" });
+      await expect(result).resolves.toEqual({ ok: true, text: "慢慢连上了" });
+    });
+
+    it("each server event after commit restarts the 8 s wait, so a slow but answering server is not cut off (D7)", async () => {
+      const { socket, result } = released();
+      await vi.advanceTimersByTimeAsync(7_500);
+      socket.serve({ type: "input_audio_buffer.committed" });
+      await vi.advanceTimersByTimeAsync(7_500);
+      socket.serve({ type: "conversation.item.created" });
+      await vi.advanceTimersByTimeAsync(7_500);
+      socket.serve({ type: "conversation.item.input_audio_transcription.completed", transcript: "一直在回" });
+      await expect(result).resolves.toEqual({ ok: true, text: "一直在回" });
+    });
+
+    it("8 s with no event after commit is a timeout (D8)", async () => {
+      const { socket, settled } = released();
+      await vi.advanceTimersByTimeAsync(7_900);
+      expect(settled()).toBeNull();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(settled()).toMatchObject({ ok: false, reason: "timeout" });
+      expect(socket.closed).toBe(true);
+    });
+
+    it("events keep coming but no transcript: gives up 30 s after commit (D8)", async () => {
+      const { socket, settled } = released();
+
+      for (let at = 5_000; at <= 25_000; at += 5_000) {
+        await vi.advanceTimersByTimeAsync(5_000);
+        socket.serve({ type: "conversation.item.created" });
+      }
+
+      await vi.advanceTimersByTimeAsync(4_900);
+      expect(settled()).toBeNull();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(settled()).toMatchObject({ ok: false, reason: "timeout" });
+    });
   });
 
   it("cancel closes the socket and never commits", () => {
