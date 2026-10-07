@@ -2,8 +2,9 @@
 import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { Session } from "pi-session-084";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
+import { describeModelError } from "../../../shared/user-facing.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
-import type { createModelRuntime, ModelRuntime } from "./model-runtime.js";
+import { PROBE_TIMEOUT_MS, probeModel, type createModelRuntime, type ModelRuntime } from "./model-runtime.js";
 import { INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
@@ -33,6 +34,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let pendingCore: Promise<HostCore> | null = null;
   let selected: InprocModelConfig | null = null;
   let fastSelected: InprocModelConfig | null = null;
+  let storedCredentials: StoredCredentials = {};
   let voiceConfigured = false;
   let helloReceived = false;
   /** 配置模型前侧栏发来的新建会话：核心启动后补处理，否则侧栏一直「正在新建会话」。 */
@@ -184,7 +186,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (message.type === "inproc_config") {
       selected = message.config;
       fastSelected = message.fast ?? null;
-      await models.credentials.load(message.credentials ?? {});
+      storedCredentials = message.credentials ?? {};
+      await models.credentials.load(storedCredentials);
 
       if (!selected) return;
       const model = models.resolveModel(selected);
@@ -204,6 +207,16 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
+    if (message.type === "model_key_test") { void testKey(message);
+
+ return; }
+
+    // 侧栏刚换的 key 先用上再接着做：设置存储随后也会推来同一份，不等它，免得接着做时还拿旧 key。
+    if (message.type === "retry_after_error" && message.key && selected) {
+      storedCredentials = { ...storedCredentials, [selected.provider]: { type: "api_key", key: message.key } };
+      await models.credentials.load(storedCredentials);
+    }
+
     if (message.type === "hello") helloReceived = true;
 
     if (!selected) { sendUnavailable(message);
@@ -218,6 +231,32 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (message.type === "hello") core.sendHelloOk(connection!);
     else core.handleMessage(message);
+  }
+
+  /** 换 key 面板的「测试连接」：用另一份运行时试新 key，不动正在用的凭据。 */
+  async function testKey(message: Extract<ClientMessage, { type: "model_key_test" }>): Promise<void> {
+    const reply = (result: { ok: boolean; ms?: number; reason?: string; detail?: string }) =>
+      connection?.send({ type: "model_key_test_result", conversationId: message.conversationId, requestId: message.requestId, ...result });
+
+    if (!selected) return reply({ ok: false, reason: "还没有配置模型。" });
+    const config = selected;
+    const started = performance.now();
+    const probe = deps.createRuntime(() => undefined);
+    const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+
+    try {
+      await probe.credentials.load({ ...storedCredentials, [config.provider]: { type: "api_key", key: message.key } });
+      await probeModel(probe, config, timeout);
+      reply({ ok: true, ms: Math.round(performance.now() - started) });
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      const copy = describeModelError(`模型请求最终失败：${raw}`);
+
+      const reason = timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有回复，服务商可能正忙，可以再试一次。`
+        : copy?.kind === "auth" ? "这个 key 也不行：key 无效，或没有这个模型的权限。" : `${copy?.title ?? "连接失败"}。`;
+
+      reply({ ok: false, reason, detail: raw.slice(0, 2000) });
+    }
   }
 
   setInterval(() => port?.postMessage({ type: "inproc_keepalive" }), INPROC_KEEPALIVE_MS);

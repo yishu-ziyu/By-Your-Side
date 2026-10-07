@@ -23,6 +23,9 @@ kbd { font: 500 11px/1 var(--font); color: var(--text-tertiary); background: var
 
 .settings-status { margin: 0 2px; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--text-secondary); }
 .settings-status:empty { display: none; }
+.settings-tech { margin-top: 4px; color: var(--text-tertiary); }
+.settings-tech summary { cursor: pointer; width: fit-content; }
+.settings-tech pre { margin: 4px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--content-subtle); white-space: pre-wrap; word-break: break-all; font-size: 11px; }
 .settings-status[data-tone="ok"] { color: var(--ok); }
 .settings-status[data-tone="err"] { color: var(--err); }
 

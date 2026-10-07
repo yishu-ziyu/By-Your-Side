@@ -219,6 +219,9 @@ export async function createConversationRuntime(
       case "set_model":
         void handleSetModel(msg.model);
         break;
+      case "retry_after_error":
+        if (!session.retryAfterModelError()) sendCurrent({ type: "agent_event", event: { kind: "notice", message: "没有要接着做的出错任务：任务已经在跑，或已经结束。" } });
+        break;
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error, msg.executionFact);
         break;

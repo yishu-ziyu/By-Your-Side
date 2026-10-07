@@ -43,6 +43,7 @@ npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=barge-in
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录
 npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=after # 09-26 实拍的 10 个界面问题
 npx tsx scripts/acceptance/real-path/no-model-card.mts --headless # 没连模型就发消息：回复给「连一个模型」按钮
+npx tsx scripts/acceptance/real-path/error-recovery.mts --headless # 模型报 401/429/断网：错误卡上修好原因，从出错处接着做
 npx tsx scripts/acceptance/real-path/new-conversation-draft.mts --headless # 点「新会话」后马上打字，字不被清掉
 ```
 

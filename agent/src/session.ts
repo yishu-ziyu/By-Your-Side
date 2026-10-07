@@ -753,6 +753,27 @@ if(required.includes(key))candidates.set(key,attachment);
   isStreaming(): boolean {
     return !!this.displayWork || (this.session?.isStreaming ?? false);
   }
+
+  /**
+   * 模型出错、用户修好原因（换 key、换模型、网络恢复）后，从出错的那一轮接着做，不要用户重发（#74）。
+   * 去掉记录末尾那条出错的回复再接着跑：已完成的工具步骤和结果都还在上下文里，不重做。
+   * 只有空闲、没被接管、最后一条确实是出错的回复时才接着做；否则返回 false。
+   */
+  retryAfterModelError(): boolean {
+    const session = this.session;
+
+    if (!session || this.isStreaming() || this.hold.isHeld()) return false;
+    const messages = session.agent.state.messages;
+    const last = messages.at(-1);
+
+    if (last?.role !== "assistant" || last.stopReason !== "error") return false;
+    session.agent.state.messages = messages.slice(0, -1);
+    this.deliveredResultThisRun = false;
+    this.runTrace.record("retry_after_error", { error: last.errorMessage });
+    void (session.resume ? session.resume() : session.agent.continue()).catch(error => this.emitError(error));
+
+    return true;
+  }
   prepareRealtimeBrowserInput(text: string, context?: PageContext): void {
     this.activeGoal = text;
     this.activeGoalPage = context ? {tabId: context.tabId, url: context.url} : null;

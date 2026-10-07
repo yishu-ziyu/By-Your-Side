@@ -2,10 +2,8 @@
  * 模型选择器的纯逻辑（与 DOM 解耦，可单测）：
  * - groupModelsByProvider：把 agent 下发的扁平模型列表按 provider 分组（保留首现顺序）
  * - displayName / chipLabel / filterModels / providerMark：输入区芯片与搜索菜单
- * - humanizeModelError：把模型请求失败的裸错误（如 Not Found）改写成可行动的中文提示
  */
 import type { ModelOption } from "../../../shared/protocol.js";
-import { plainModelError } from "../../../shared/user-facing.js";
 
 export interface ModelGroup {
   provider: string;
@@ -113,14 +111,6 @@ export function providerMark(provider: string): { letter: string; hue: number } 
   for (let i = 0; i < provider.length; i++) h = (h * 31 + provider.charCodeAt(i)) >>> 0;
 
   return { letter, hue: h % 360 };
-}
-
-/**
- * 模型服务的报错改成人话（状态码、原始 JSON 不上侧栏，原文留在诊断记录里）；其他错误本来就是中文说明，原样返回。
- * agent 透传的模型错误形如 "模型请求最终失败（provider/id）：503: {...}"（见 agent/src/session.ts）。
- */
-export function humanizeModelError(message: string): string {
-  return /^模型请求最终失败(（[^）]+）)?：/.test(message) ? plainModelError(message) : message;
 }
 
 export type ReasoningTier = "unknown" | "native" | "effort" | "direct";

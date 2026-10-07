@@ -7,13 +7,12 @@
  */
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search } from "lucide";
-import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, type ProviderChoice } from "../inproc/model-runtime.js";
+import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
 import {
   CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
   STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
-import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from "../../../shared/voice-capture-core.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
@@ -23,9 +22,6 @@ import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
-
-/** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
-const TEST_TIMEOUT_MS = 60_000;
 
 async function writeCredential(providerId: string, credential: Credential | StoredCredential | undefined): Promise<void> {
   const key = `${INPROC_CREDENTIAL_PREFIX}${providerId}`;
@@ -285,9 +281,20 @@ oauthOk.append(svg(CircleCheck, 15));
 
 keySaved.querySelector(".key-ic")!.append(svg(KeyRound));
 
-function setStatus(el: HTMLElement, text: string, tone: "ok" | "err" | "busy" | "" = ""): void {
+/** detail：服务商原文，收进「技术详情」，不和人话拼在一起。 */
+function setStatus(el: HTMLElement, text: string, tone: "ok" | "err" | "busy" | "" = "", detail?: string): void {
   el.textContent = text;
   el.dataset.tone = tone;
+
+  if (!detail) return;
+  const details = document.createElement("details");
+  details.className = "settings-tech";
+  const summary = document.createElement("summary");
+  summary.textContent = "技术详情";
+  const pre = document.createElement("pre");
+  pre.textContent = detail;
+  details.append(summary, pre);
+  el.append(details);
 }
 
 const choiceOf = (providerId: string) => choices.find((c) => c.id === providerId);
@@ -613,15 +620,13 @@ function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: f
   return { ok: true, config: next, key };
 }
 
-/** 把服务商和网络层的报错翻成用户能处理的话，原文放在括号里便于排查。 */
+/** 把服务商和网络层的报错翻成用户能处理的话；原文只进「技术详情」。 */
 function explainFailure(raw: string): string {
-  const hint = /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) ? "key 无效，或这个 key 没有该模型的权限"
+  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) ? "key 无效，或这个 key 没有该模型的权限"
     : /\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(raw) ? "额度用完或请求太频繁，可以稍后再试或换个模型"
       : /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw) ? "找不到这个模型，检查模型名称"
         : /connection error|failed to fetch|fetch failed|network|ECONN|ENOTFOUND/i.test(raw) ? "连不上服务商（网络中断或对方没有响应），可以再试一次"
-          : "";
-
-  return hint ? `${hint}（${raw.slice(0, 160)}）` : raw;
+          : "服务商返回了错误";
 }
 
 async function testConnection(): Promise<void> {
@@ -634,23 +639,16 @@ async function testConnection(): Promise<void> {
   const ticker = setInterval(() => setStatus(modelStatus, `正在测试…已等 ${Math.round((performance.now() - started) / 1000)} 秒`, "busy"), 1000);
   // 测试不保存新填的 key；但若用的是已保存的订阅令牌，测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
-  const timeout = AbortSignal.timeout(TEST_TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
 
   try {
     await probe.credentials.load(value.key ? { ...credentials, [value.config.provider]: { type: "api_key", key: value.key } } : credentials);
-    const model = probe.resolveModel(value.config);
-    // 取能力表里最低的一档：不发档位时适配层会发「关闭思考」，始终思考的模型（GLM-5.3-flash）回 400。
-    const [lowest] = thinkingProfile(model).levels;
-
-    const reply = await probe.models.completeSimple(model, {
-      messages: [{ role: "user", content: "Reply with the single word OK.", timestamp: Date.now() }],
-    }, { maxTokens: 256, signal: timeout, headers: probe.headersFor(model), sessionId: probe.sessionId, reasoning: lowest === "off" ? undefined : lowest });
-
-    if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage ?? "服务商返回错误");
+    await probeModel(probe, value.config, timeout);
     setStatus(modelStatus, `连接正常（${((performance.now() - started) / 1000).toFixed(1)} 秒）。`, "ok");
   } catch (error) {
-    const reason = timeout.aborted ? `${TEST_TIMEOUT_MS / 1000} 秒内没有收到完整回复，服务商可能正忙，可以再试一次或换个模型` : explainFailure(error instanceof Error ? error.message : String(error));
-    setStatus(modelStatus, `连接失败：${reason}`, "err");
+    const raw = error instanceof Error ? error.message : String(error);
+    const reason = timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复，服务商可能正忙，可以再试一次或换个模型` : explainFailure(raw);
+    setStatus(modelStatus, `连接失败：${reason}`, "err", timeout.aborted ? undefined : raw);
   } finally {
     clearInterval(ticker);
   }

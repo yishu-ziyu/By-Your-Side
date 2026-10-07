@@ -17,7 +17,7 @@ import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex"
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
 import type { ModelPort } from "../../../agent/src/agent-loop.js";
 import { retryWhenBusy } from "../../../shared/provider-busy.js";
-import { measuredModelIds, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
+import { measuredModelIds, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
 import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
@@ -210,6 +210,25 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   };
 
   return runtime;
+}
+
+/** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
+export const PROBE_TIMEOUT_MS = 60_000;
+
+/**
+ * 向模型发一句「回 OK」，确认这组凭据能用：设置页「测试连接」和侧栏换 key 面板共用。
+ * 失败时抛出服务商原文；超时由调用方的 signal 决定。
+ */
+export async function probeModel(probe: ModelRuntime, config: InprocModelConfig, signal: AbortSignal): Promise<void> {
+  const model = probe.resolveModel(config);
+  // 取能力表里最低的一档：不发档位时适配层会发「关闭思考」，始终思考的模型（GLM-5.3-flash）回 400。
+  const [lowest] = thinkingProfile(model).levels;
+
+  const reply = await probe.models.completeSimple(model, {
+    messages: [{ role: "user", content: "Reply with the single word OK.", timestamp: Date.now() }],
+  }, { maxTokens: 256, signal, headers: probe.headersFor(model), sessionId: probe.sessionId, reasoning: lowest === "off" ? undefined : lowest });
+
+  if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage ?? "服务商返回错误");
 }
 
 /** 让扩展模型目录满足任务核心的模型接口，保留当前设置页的模型解析与 OpenCode 请求头。 */
