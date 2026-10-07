@@ -42,7 +42,7 @@ function reply(model: Model<"openai-completions">, stopReason: AssistantMessage[
 }
 
 /** 主模型怎么坏：一直不回（只在取消时结束）、429、流提前结束、Chrome 断网、连上后 20 秒才出字。 */
-type MainFailure = "hang" | "429" | "early-end" | "failed-to-fetch" | "slow-20s";
+type MainFailure = "hang" | "429" | "early-end" | "failed-to-fetch" | "slow-20s" | "stall-after-created";
 
 async function session(failure: MainFailure, withFast: boolean, main = MAIN) {
   const traceDir = mkdtempSync(join(tmpdir(), "bys-failover-"));
@@ -59,8 +59,17 @@ async function session(failure: MainFailure, withFast: boolean, main = MAIN) {
     if (model.id === FAST.id) {
       const done = reply(FAST, "stop", "你好！我在。");
       setTimeout(() => stream.push({ type: "done", reason: "stop", message: done }), 500);
+    } else if (failure === "stall-after-created" && calls.filter(id => id === main.id).length === 1) {
+      // 服务端说「已创建」后再无下文（10-07 实测 41 次请求里 2 次）；只有取消时结束。
+      setTimeout(() => stream.push({ type: "start", partial: reply(main, "stop", "") }), 200);
+      setTimeout(() => options?.onProviderStreamEvent?.({ type: "response.created" }, model), 1_000);
+      options?.signal?.addEventListener("abort", () => stream.push({ type: "error", reason: "aborted", error: reply(main, "aborted", "", "Request was aborted") }), { once: true });
+    } else if (failure === "stall-after-created") {
+      setTimeout(() => stream.push({ type: "done", reason: "stop", message: reply(main, "stop", "重试后答完。") }), 1_500);
     } else if (failure === "slow-20s") {
       setTimeout(() => stream.push({ type: "start", partial: reply(main, "stop", "") }), 200);
+      // 排队：「已创建」19.8 秒才来，随后很快答完（10-06 实测排队 16–17 秒）。
+      setTimeout(() => options?.onProviderStreamEvent?.({ type: "response.created" }, model), 19_800);
       const timer = setTimeout(() => stream.push({ type: "done", reason: "stop", message: reply(main, "stop", "排队后答完。") }), 20_000);
       options?.signal?.addEventListener("abort", () => { clearTimeout(timer); stream.push({ type: "error", reason: "aborted", error: reply(main, "aborted", "", "Request was aborted") }); }, { once: true });
     } else if (failure === "hang") {
@@ -142,6 +151,16 @@ describe("model failover: the user is not left waiting for minutes", () => {
     expect(JSON.stringify(step.emitted)).toContain("你好！我在。");
     expect(step.calls).toEqual([MAIN.id, FAST.id]);
     step.host.abort();
+  }, 30_000);
+
+  it("F6 server says created then goes silent: retried after about 10 s instead of waiting the full 30 s", async () => {
+    const h = await session("stall-after-created", false, LUNA);
+    const elapsed = await sayHello(h, 60_000);
+
+    expect(JSON.stringify(h.emitted)).toContain("重试后答完。");
+    expect(h.calls).toEqual([LUNA.id, LUNA.id]);
+    expect(elapsed).toBeLessThanOrEqual(14_000);
+    h.host.abort();
   }, 30_000);
 
   it.each(["429", "early-end", "failed-to-fetch"] as const)("F2 main fails with %s: switches on the first failure, answer within 3 s (W3)", async failure => {
