@@ -2712,6 +2712,15 @@ function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", r
   }
 }
 
+/** 「原来是…」只写变了的部分：新旧值在同一个「：」或空格之前完全相同，就省掉这一段（不在词中间截断）。 */
+function changedPart(now: string, before: string): string {
+  let cut = 0;
+
+  for (let i = 0; i < Math.min(now.length, before.length) && now[i] === before[i]; i++) if ("：: ".includes(now[i]!)) cut = i + 1;
+
+  return before.slice(cut) || before;
+}
+
 function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): HTMLElement {
   const receipt = document.createElement("div");
   receipt.className = `memory-receipt memory-receipt-${event.action}`;
@@ -2732,36 +2741,41 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
   const snapshots = event.entries.map((entry) => ({ ...entry, scope: { ...entry.scope } }));
   button.onclick = () => openMemoryDrawer({ action: event.action, entries: snapshots, message: event.message });
   receipt.append(mark, button);
-  const saved = event.action === "saved" && event.entries.length === 1 && !event.entries[0]!.experience ? event.entries[0]! : null;
+  const single = event.entries.length === 1 && !event.entries[0]!.experience ? event.entries[0]! : null;
+  const saved = event.action === "saved" ? single : null;
+  // 改了一条资料：回执写出新值和旧值，「撤销」把旧值恢复回来（YIS-85）。
+  const previous = event.action === "updated" && single && event.replaced?.length === 1 && !event.replaced[0]!.experience ? event.replaced[0]! : null;
+  const quick = saved ?? (previous && single);
 
-  // 自动记下的资料：回执直接写出记了什么，旁边给「撤销」（用户 2026-09-27 选择「自动记，给撤销」）。
-  if (saved) {
+  // 自动记下或改过的资料：回执直接写出记了什么，旁边给「撤销」（用户 2026-09-27 选择「自动记，给撤销」）。
+  if (quick) {
     const text = document.createElement("span");
     text.className = "memory-receipt-text";
-    text.textContent = `已记住：${saved.text}`;
+    text.textContent = previous ? `已更新：${quick.text}（原来是${changedPart(quick.text, previous.text)}）` : `已记住：${quick.text}`;
+    text.title = text.textContent;
     button.textContent = "查看";
     const undo = document.createElement("button");
     undo.type = "button";
-    undo.dataset.memoryUndo = saved.id;
+    undo.dataset.memoryUndo = quick.id;
     undo.textContent = "撤销";
     undo.onclick = () => {
       undo.disabled = true;
-      const message = memoryState.beginForget(selectedConversationId, saved);
+      const message = previous ? memoryState.beginRestore(selectedConversationId, previous) : memoryState.beginForget(selectedConversationId, quick);
       receiptUndos.set(message.requestId, (ok, error) => {
-        if (ok) { text.textContent = "已撤销，不再记住这条"; undo.remove(); button.remove();
+        if (ok) { text.textContent = previous ? `已撤销，还是${previous.text}` : "已撤销，不再记住这条"; text.title = text.textContent; undo.remove(); button.remove();
 
  return; }
 
         undo.disabled = false;
         text.textContent = `没能撤销：${error ?? "请重试"}`;
       });
-      dispatchMemoryRequest(message, { action: "forget", entryId: saved.id });
+      dispatchMemoryRequest(message, previous ? { action: "restore", entryId: previous.id } : { action: "forget", entryId: quick.id });
     };
 
     receipt.replaceChildren(mark, text, undo, button);
   }
 
-  if (event.entries.length === 1 && !saved) {
+  if (event.entries.length === 1 && !quick) {
     const scope = document.createElement("span");
     scope.className = "memory-receipt-scope";
     scope.textContent = memoryScopeLabel(event.entries[0]!.scope);

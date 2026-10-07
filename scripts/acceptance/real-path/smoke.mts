@@ -98,7 +98,7 @@ const storedMemories = async (): Promise<string[]> => {
 
   try {
     const ext = await rp.attach(target);
-    await until(async () => (await rp.evaluate(ext, `document.readyState === "complete"`)) || undefined, 10_000, "扩展页");
+    await until(async () => (await rp.evaluate(ext, `location.protocol === "chrome-extension:" && document.readyState === "complete"`)) || undefined, 10_000, "扩展页");
 
     // SAFETY: 页面脚本返回 kv 里 memories 的 JSON 文本，库或键不存在时返回空串。
     const raw = await rp.evaluate(ext, `(async () => {
