@@ -145,7 +145,8 @@ export async function followRoute(input: { route: TaskRoute; hosts: readonly str
 
       if (!step.target) return await halt("the route does not say which control.");
       // 「选哪一间」：值就是所在卡片的名字，换值即换卡片。
-      const want = step.action === "click" && step.value !== undefined ? { ...step.target, box: value ?? step.target.box } : step.target;
+      // 选的值在卡片名（box）上，或按文字点的就是文字本身（名字）。
+      const want = step.action !== "click" || step.value === undefined ? step.target : step.target.box ? { ...step.target, box: value ?? step.target.box } : { ...step.target, name: value ?? step.target.name };
 
       // 同一张卡片这次已经选过：不再点（会被当成重复操作拦下），旧做法里可能记了两次。
       if (step.action === "click" && step.value !== undefined && picked.has(JSON.stringify(want))) continue;

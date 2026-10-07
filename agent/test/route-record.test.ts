@@ -1,6 +1,7 @@
 // 走老路记做法（YIS-94）的代码裁判与存值规则。失败方式先列：
 // 1 密码一类的值进了做法；2 没做完、被停下、中途改方向也存了；3 改页面的步骤失败了也存了；
-// 4 有一步认不出控件也存了；5 用户这次说的值没标成「这次说的」，没说的却标了；6 用户话里的卡号留在做法里。
+// 4 有一步认不出控件也存了；5 用户这次说的值没标成「这次说的」，没说的却标了；6 用户话里的卡号留在做法里；
+// 7 按文字点了这次说的那一项（卡片标题「青松」），没当成选的值，下次还点「青松」（YIS-103）。
 import { describe, expect, it } from "vitest";
 import { judgeRoute, noteRouteStep, type RouteDraft, type RouteNote, type RouteVerdictInput } from "../src/route-record.js";
 import { redactTaskSecrets } from "../src/task-history.js";
@@ -51,7 +52,7 @@ describe("记做法的代码裁判", () => {
   });
 
   it("有一步认不出点的是哪个控件：整份不存", () => {
-    expect(judgeRoute({ ...ok, draft: draftOf([...booking.slice(0, 2), { action: "click", target: null, memory: false }, ...booking.slice(2)]) })).toEqual({ rejected: "有一步认不出点的是哪个控件" });
+    expect(judgeRoute({ ...ok, draft: draftOf([...booking.slice(0, 2), { action: "click", target: null, memory: false }, ...booking.slice(2)]) })).toEqual({ rejected: "有一步认不出点的是哪个控件（click 没有定位）" });
   });
 
   it("只打开了网址、没动手：不存", () => {
@@ -80,5 +81,11 @@ describe("同一张卡片点了两次", () => {
     const verdict = judgeRoute({ ...ok, draft: draftOf([pick, booking[2]!, pick, next, next]) });
 
     expect("route" in verdict && verdict.route.steps.map((s) => s.target?.name)).toEqual(["选择", "会议主题", "下一页", "下一页"]);
+  });
+
+  it("按文字点了这次说的那一项：文字就是选的值，标「这次说的」；没说过的文字照原样点", () => {
+    const verdict = judgeRoute({ ...ok, draft: draftOf([booking[0]!, { action: "click", target: { role: "heading", name: "青松", area: "", box: "" }, memory: false }, { action: "click", target: { role: "heading", name: "会议室", area: "", box: "" }, memory: false }, booking[4]!]) });
+
+    expect("route" in verdict && verdict.route.steps.slice(1, 3).map((s) => [s.value, s.valueFrom])).toEqual([["青松", "said"], [undefined, undefined]]);
   });
 });

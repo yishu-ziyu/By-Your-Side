@@ -1227,7 +1227,7 @@ return;}
   }
 
   /** 代码裁判的结论写进诊断记录：存了几步，或为什么没存。 */
-  traceRouteVerdict(runId: string, verdict: { saved: number } | { rejected: string }): void {
+  traceRouteVerdict(runId: string, verdict: { saved: number; bySelector: number } | { rejected: string }): void {
     this.runTrace.record("route_verdict", { runId, ...verdict });
   }
 

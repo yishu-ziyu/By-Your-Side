@@ -1,4 +1,4 @@
-import { ROUTE_STEPS_MAX, type RouteStep, type RouteTarget, type TaskRoute } from "../../shared/route.js";
+import { ROUTE_STEPS_MAX, ROUTE_TEXT_ROLES, type RouteStep, type RouteTarget, type TaskRoute } from "../../shared/route.js";
 import { resultHasWriteEffect, type TaskResultItem } from "../../shared/task-results.js";
 
 /**
@@ -21,12 +21,16 @@ export interface RouteNote {
   key?: string;
   /** 填的值来自本轮带上的记忆。 */
   memory: boolean;
+  /** 模型写的定位（@N 或选择器），只进诊断记录。 */
+  at?: string;
 }
 
 /** 一次任务里记下的步骤；broken 写明为什么这份做法不能存。 */
 export interface RouteDraft {
   steps: RouteStep[];
   broken?: string;
+  /** 用选择器（不是 @N）定位的步数，只进诊断记录（YIS-103）。 */
+  bySelector?: number;
 }
 
 /** 把一步动手记进草稿。 */
@@ -37,7 +41,7 @@ export function noteRouteStep(draft: RouteDraft, note: RouteNote): RouteDraft {
 
   if (note.action === "press_key") return note.key ? { steps: [...draft.steps, { action: "press_key", key: note.key.slice(0, 40) }] } : { ...draft, broken: "按键这一步没有键名" };
 
-  if (!note.target) return { ...draft, broken: "有一步认不出点的是哪个控件" };
+  if (!note.target) return { ...draft, broken: `有一步认不出点的是哪个控件（${note.action} ${note.at?.slice(0, 80) ?? "没有定位"}）` };
   const step: RouteStep = { action: note.action, target: note.target };
 
   if (note.label) step.label = note.label.slice(0, 120);
@@ -52,8 +56,9 @@ export function noteRouteStep(draft: RouteDraft, note: RouteNote): RouteDraft {
   }
 
   const steps = [...draft.steps, step];
+  const bySelector = (draft.bySelector ?? 0) + (note.at && !note.at.startsWith("@") ? 1 : 0);
 
-  return steps.length > ROUTE_STEPS_MAX ? { steps: draft.steps, broken: `超过 ${ROUTE_STEPS_MAX} 步` } : { steps };
+  return steps.length > ROUTE_STEPS_MAX ? { steps: draft.steps, broken: `超过 ${ROUTE_STEPS_MAX} 步` } : bySelector ? { steps, bySelector } : { steps };
 }
 
 export interface RouteVerdictInput {
@@ -88,7 +93,9 @@ export function judgeRoute(input: RouteVerdictInput): { route: TaskRoute } | { r
 
   const steps = unique.map((raw): RouteStep => {
     // 在几张同样的卡片里点了一张：卡片名就是这一步选的值，下次照走时可以换成别的卡片（YIS-95）。
-    const step = raw.action === "click" && raw.target?.box ? { ...raw, value: raw.target.box } : raw;
+    // 按文字点了用户这次说的那一项（卡片标题「青松」）：文字就是选的值，下次换成那次说的那一项（YIS-103）。
+    const step = raw.action === "click" && raw.target?.box ? { ...raw, value: raw.target.box }
+      : raw.action === "click" && raw.target && ROUTE_TEXT_ROLES.has(raw.target.role) && said.includes(raw.target.name.replace(/\s+/g, "")) ? { ...raw, value: raw.target.name } : raw;
 
     return step.value === undefined || step.valueFrom ? step : { ...step, valueFrom: step.value.trim() && said.includes(step.value.replace(/\s+/g, "")) ? "said" : "fixed" };
   });

@@ -819,10 +819,11 @@ return host?[host]:[];}))].slice(0,16);
     if(snap.goalPage?.title)raw.page=clip(snap.goalPage.title,200);
     // 走老路：代码裁判全过才存做法（YIS-94）；不过的原因写进诊断记录，不打扰用户。用户点过「不用记」的不再存。
     const session0=this.entries.get(id)?.runtime.session;
-    const verdict=judgeRoute({outcome:raw.outcome,revised:raw.revisions.length>0,results:snap.results??[],draft:session0?.routeDraft?.(snap.runId),said:[snap.goal,...raw.revisions].join('\n')});
+    const draft=session0?.routeDraft?.(snap.runId);
+    const verdict=judgeRoute({outcome:raw.outcome,revised:raw.revisions.length>0,results:snap.results??[],draft,said:[snap.goal,...raw.revisions].join('\n')});
 
     if('route' in verdict&&!this.routesDeclined.has(snap.runId))raw.route=verdict.route;
-    session0?.traceRouteVerdict?.(snap.runId,'route' in verdict?{saved:verdict.route.steps.length}:{rejected:verdict.rejected});
+    session0?.traceRouteVerdict?.(snap.runId,'route' in verdict?{saved:verdict.route.steps.length,bySelector:draft?.bySelector??0}:{rejected:verdict.rejected});
     // 像密码验证码的用户原话不进过往任务，也不交给判断日期的模型。
     const entry=redactTaskSecrets(raw);
     // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。

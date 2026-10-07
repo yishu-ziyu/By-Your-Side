@@ -390,7 +390,7 @@ export const TOOL_NAMES = [
   "accept_dialog",
   "dismiss_dialog",
   "dialog_info",
-  /** 走老路：给一个 @N 控件写出角色 + 名字 + 所在区域（只读，没有模型可见工具）。 */
+  /** 走老路：给一个控件（@N 或选择器）写出角色 + 名字 + 所在区域（只读，没有模型可见工具）。 */
   "describe_target",
   /** 走老路照走：在当前页按同一套描述找回控件，唯一时给出可执行的 @N（只读，没有模型可见工具）。 */
   "find_route_target",
