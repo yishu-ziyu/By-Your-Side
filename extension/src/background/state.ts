@@ -283,10 +283,13 @@ export function assertResourceAccess(resource: TabResource | undefined, key: str
   if (mayAccessResource(resource, key)) return;
   const who = parseExecutionKey(key);
 
-  if (resource?.conversationId !== who.conversationId) throw new Error(isLeadSession(who.sessionId) ? `${FOREIGN_TAB_ERROR}，请调用 take_tab 协调接手后操作` : "标签页属于其他会话，未分配给当前 worker");
+  // 归属检查在动页面之前：拦下就是没执行（工具已标「结果未知」也按没执行算，空闲的旧会话才能被自动接手）。
+  const blocked = (message: string) => Object.assign(new Error(message), { executionFact: "not_executed" as const });
 
-  if (isLeadSession(who.sessionId)) throw new Error("该页由同会话 worker 使用；请用 take_tab 接管后操作");
-  throw new Error("标签页未向当前成员共享，请由父 Agent 分配页面");
+  if (resource?.conversationId !== who.conversationId) throw blocked(isLeadSession(who.sessionId) ? `${FOREIGN_TAB_ERROR}，请调用 take_tab 协调接手后操作` : "标签页属于其他会话，未分配给当前 worker");
+
+  if (isLeadSession(who.sessionId)) throw blocked("该页由同会话 worker 使用；请用 take_tab 接管后操作");
+  throw blocked("标签页未向当前成员共享，请由父 Agent 分配页面");
 }
 
 /** 调用方已冻结并排空 worker。移交所有历史页面，不改变父 Agent 当前工作指针。 */
@@ -399,7 +402,7 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
 
   if (activeResource && !mayAccessResource(activeResource, normalized)) {
     try { assertResourceAccess(activeResource, normalized); }
-    catch (error) { throw new Error(`${error instanceof Error ? error.message : String(error)}；也可使用 open_tab 新建页面`); }
+    catch (error) { throw Object.assign(new Error(`${error instanceof Error ? error.message : String(error)}；也可使用 open_tab 新建页面`), { executionFact: "not_executed" as const }); }
   }
 
   await setWorkingTab(active.id, normalized);

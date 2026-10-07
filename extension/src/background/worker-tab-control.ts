@@ -34,7 +34,7 @@ export class WorkerTabControl {
     return job;
   }
 
-  async manage(params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }, leadKey: string, canTake: (keys: string[]) => Promise<void> = async () => {}) {
+  async manage(params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null; orActive?: boolean }, leadKey: string, canTake: (keys: string[]) => Promise<void> = async () => {}) {
     const lead = parseExecutionKey(leadKey);
 
     if (!isLeadSession(lead.sessionId)) throw new Error("只有父 Agent 可以管理 worker 页面");
@@ -50,7 +50,8 @@ export class WorkerTabControl {
     }
 
     if (params.action !== "inspect" && params.action !== "claim") throw new Error("无效的页面管理操作");
-    const tabId = params.tabId ?? await getWorkingTabId(leadKey);
+    // orActive：还没有工作页的新对话动手时用的是当前激活页（resolveWorkingTab 同样的取法），查归属也查这一页。
+    const tabId = params.tabId ?? await getWorkingTabId(leadKey) ?? (params.orActive ? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id ?? null : null);
 
     if (tabId == null) throw new Error("没有可接管的标签页");
     await chrome.tabs.get(tabId);
