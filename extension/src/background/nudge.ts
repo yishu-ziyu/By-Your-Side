@@ -1,11 +1,12 @@
 import { NUDGE_EXCERPT_LIMIT, NUDGE_RECENT_LIMIT, NUDGE_SELECTION_LIMIT, NUDGE_TEXT_LIMIT, type Nudge, type NudgeContext, type NudgeRecentPage, type NudgeResult } from '../../../shared/nudge.js';
-import type { ClientMessage } from '../../../shared/protocol.js';
+import type { ClientMessage, PageContext } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
-import { NUDGE_ACT, NUDGE_COOLDOWN_MS, NUDGE_DISMISS, NUDGE_DRAFT_KEY, NUDGE_KEY, NUDGE_PAGE, NUDGE_SHOW, isNudgeOn, nudgeableUrl, type NudgeCard } from '../shared/nudge.js';
+import { NUDGE_ACT, NUDGE_COOLDOWN_MS, NUDGE_DISMISS, NUDGE_DRAFT_KEY, NUDGE_KEY, NUDGE_PAGE, NUDGE_PANEL_KEY, NUDGE_SHOW, isNudgeOn, isNudgePanelOffer, nudgeableUrl, type NudgeCard, type NudgePanelOffer, type NudgePanelReply } from '../shared/nudge.js';
 
 /**
  * 主动建议卡（#52）的后台一半：记下这次会话最近看过的几页，在用户读一页够久又动过手时，
- * 请模型判断一次要不要建议；有建议才让页角出卡，点按钮打开侧栏并把建议的指令填进输入框，由用户自己发送（YIS-74）。
+ * 请模型判断一次要不要建议；有建议才出卡，点按钮打开侧栏并把建议的指令填进输入框，由用户自己发送（YIS-74）。
+ * 侧栏开着时卡放进侧栏对话流（YIS-106），不开时出在页角。
  *
  * 限频（本次浏览器会话，存 chrome.storage.session，不落盘）：同一网址只判断一次；两张卡至少隔 3 分钟；点过 × 的网址不再建议。
  */
@@ -13,9 +14,25 @@ import { NUDGE_ACT, NUDGE_COOLDOWN_MS, NUDGE_DISMISS, NUDGE_DRAFT_KEY, NUDGE_KEY
 type Deps = {
   send: (message: ClientMessage) => boolean;
   selected: () => string;
+  /** 这个标签页所在窗口的侧栏开着没有。 */
+  panelOpen: (windowId: number, tabId: number) => Promise<boolean>;
+  /** 按了侧栏卡的动词：把话交给这张卡所属的会话，返回是否送出。 */
+  act: (conversationId: string, text: string, card: NudgeCard, context?: PageContext) => Promise<boolean>;
 };
 
-type State = { recent: NudgeRecentPage[]; judged: string[]; dismissed: string[]; lastShownAt: number };
+/**
+ * 按动词就做（YIS-106 R2）：回复固定三句，接在卡下面原位说清。
+ * 写进交给助手的话里，不另开通道；侧栏这一轮画成卡，不显示这段原文。
+ */
+const CARD_REPLY = '回复只用三句短话：一、在做什么或做成了什么；二、一个具体细节，证明你理解了这件事；三、接下来会怎样，或没做成时的退路。用了存的账号或卡，写明是哪一个。没做成就直说原因，不要说做成了。';
+
+/** 存储里的侧栏卡：侧栏读公共部分；指令、出处页和标签页只有后台用。 */
+type StoredPanelOffer = NudgePanelOffer & { prompt: string; url: string; tabId: number };
+
+/** seenAt 只给出处行写「多久前」，不发给模型。 */
+type SeenPage = NudgeRecentPage & { seenAt?: number };
+
+type State = { recent: SeenPage[]; judged: string[]; dismissed: string[]; lastShownAt: number };
 
 const STATE_KEY = 'nudgeState';
 
@@ -39,8 +56,10 @@ const saveState = (state: State) => chrome.storage.session.set({ [STATE_KEY]: { 
 
 export function installNudge(deps: Deps) {
   const views = new Map<string, TaskView>();
-  const pending = new Map<string, { tabId: number; url: string; title: string; context: NudgeContext; conversationId: string }>();
+  const pending = new Map<string, { tabId: number; url: string; title: string; context: NudgeContext; conversationId: string; seen: SeenPage[] }>();
   const offers = new Map<number, { id: string; url: string; title: string; prompt: string }>();
+  // 正在交给助手的侧栏卡：两个侧栏同时按同一张卡，只开一次任务。
+  const acting = new Set<string>();
   // 状态读写串行：两个标签同时报到时不互相覆盖。
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -66,18 +85,19 @@ export function installNudge(deps: Deps) {
     return withState(state => {
       // 先取「之前看过的」，再把这一页记进去。
       const recent = state.recent.filter(page => pageKey(page.url) !== key).slice(-NUDGE_RECENT_LIMIT);
-      state.recent = [...recent, { title, url, excerpt: text.slice(0, NUDGE_EXCERPT_LIMIT) }].slice(-(NUDGE_RECENT_LIMIT + 1));
+      state.recent = [...recent, { title, url, excerpt: text.slice(0, NUDGE_EXCERPT_LIMIT), seenAt: Date.now() }].slice(-(NUDGE_RECENT_LIMIT + 1));
 
       if (raw.interacted !== true || state.judged.includes(key) || state.dismissed.includes(key)) return { again: raw.interacted !== true };
 
       if (Date.now() - state.lastShownAt < NUDGE_COOLDOWN_MS || taskRunningOn(tabId)) return { again: true };
       const requestId = crypto.randomUUID();
       const conversationId = deps.selected();
-      const context: NudgeContext = { page: selection ? { title, url, text, selection } : { title, url, text }, recent: recent.reverse() };
+      const seen = recent.reverse();
+      const context: NudgeContext = { page: selection ? { title, url, text, selection } : { title, url, text }, recent: seen.map(page => ({ title: page.title, url: page.url, excerpt: page.excerpt })) };
 
       if (!deps.send({ type: 'nudge_request', requestId, conversationId, context })) return { again: true };
       state.judged.push(key);
-      pending.set(requestId, { tabId, url, title, context, conversationId });
+      pending.set(requestId, { tabId, url, title, context, conversationId, seen });
 
       return { again: false };
     });
@@ -95,13 +115,27 @@ export function installNudge(deps: Deps) {
       // 判断回来时用户可能已经走开：换了页、切了标签、点过 ×、任务开跑，就不出卡。
       if (!tab?.active || !tab.url || pageKey(tab.url) !== key || state.dismissed.includes(key) || Date.now() - state.lastShownAt < NUDGE_COOLDOWN_MS || taskRunningOn(request.tabId)) return;
       const evidence = nudge.evidence[0]!;
-      const source = evidence.url === request.context.page.url ? request.context.page.title : request.context.recent.find(page => page.url === evidence.url)?.title ?? '';
-      const card: NudgeCard = { id: requestId, sentence: nudge.sentence, evidence: evidence.text, source, actionLabel: nudge.actionLabel };
-      const shown = await chrome.tabs.sendMessage(request.tabId, { type: NUDGE_SHOW, card }, { frameId: 0 }).then(() => true, () => false);
+      const current = evidence.url === request.context.page.url;
+      const earlier = request.seen.find(page => page.url === evidence.url);
+      const source = current ? request.context.page.title : earlier?.title ?? '';
+      const card: NudgeCard = {
+        id: requestId, sentence: nudge.sentence, evidence: evidence.text, source, actionLabel: nudge.actionLabel, url: evidence.url,
+        ...(nudge.party ? { party: nudge.party } : {}),
+        ...(!current && earlier?.seenAt ? { seenAt: earlier.seenAt } : {}),
+      };
 
-      if (!shown) return;
+      if (await deps.panelOpen(tab.windowId, request.tabId)) {
+        // 侧栏里同时只留一张卡；新卡顶掉旧卡。
+        const offer: StoredPanelOffer = { conversationId: request.conversationId, card, at: Date.now(), prompt: nudge.prompt, url: request.url, tabId: request.tabId };
+
+        await chrome.storage.session.set({ [NUDGE_PANEL_KEY]: offer });
+      } else {
+        const shown = await chrome.tabs.sendMessage(request.tabId, { type: NUDGE_SHOW, card }, { frameId: 0 }).then(() => true, () => false);
+
+        if (!shown) return;
+        offers.set(request.tabId, { id: requestId, url: request.url, title: request.title, prompt: nudge.prompt });
+      }
       state.lastShownAt = Date.now();
-      offers.set(request.tabId, { id: requestId, url: request.url, title: request.title, prompt: nudge.prompt });
     });
   };
 
@@ -109,6 +143,12 @@ export function installNudge(deps: Deps) {
     const type = message?.type;
 
     if (type !== NUDGE_PAGE && type !== NUDGE_ACT && type !== NUDGE_DISMISS) return;
+
+    if (sender.id === chrome.runtime.id && !sender.tab && sender.url?.startsWith(chrome.runtime.getURL('')) && type !== NUDGE_PAGE) {
+      void onPanel(type, message?.id).then(respond, () => respond({ ok: false }));
+
+      return true;
+    }
 
     if (sender.id !== chrome.runtime.id || !sender.tab?.id || sender.frameId !== 0 || !nudgeableUrl(sender.url)) return;
     const tabId = sender.tab.id;
@@ -131,6 +171,42 @@ export function installNudge(deps: Deps) {
       void chrome.storage.session.set({ [NUDGE_DRAFT_KEY]: offer.prompt });
     }
   });
+
+  const storedOffer = async (): Promise<StoredPanelOffer | null> => {
+    // SAFETY: 这个键只由上面的 show 写入，形状就是 StoredPanelOffer；公共字段再核对一次。
+    const stored = (await chrome.storage.session.get(NUDGE_PANEL_KEY))[NUDGE_PANEL_KEY] as StoredPanelOffer | undefined;
+
+    return isNudgePanelOffer(stored) && typeof stored.prompt === 'string' ? stored : null;
+  };
+
+  // 侧栏卡：点 × 收起；按动词就把事交给助手，不再问（用户 10-07 决定）。两种都让这一页本次不再建议。
+  // 这个会话正在做别的事、或没交给助手时，卡留着，可以再按。
+  const onPanel = async (type: string, id: unknown): Promise<NudgePanelReply> => {
+    const offer = await storedOffer();
+
+    if (!offer || offer.card.id !== id || acting.has(offer.card.id)) return { ok: false, reason: 'gone' };
+
+    if (type === NUDGE_ACT) {
+      // 按卡是开一件新事，不当作给正在做的任务的补充。
+      if (views.get(offer.conversationId)?.state === 'running') return { ok: false, reason: 'busy' };
+      acting.add(offer.card.id);
+
+      try {
+        const tab = await chrome.tabs.get(offer.tabId).catch(() => null);
+        const context: PageContext | undefined = tab?.id && tab.url ? { tabId: tab.id, title: tab.title ?? '', url: tab.url } : undefined;
+        // 第一行是卡上那句话：会话标题和记录里读到的是这件事，不是给助手的长指令。
+        const said = `${offer.card.actionLabel}${offer.card.sentence}${offer.card.party ? `（${offer.card.party}）` : ''}`;
+
+        if (!await deps.act(offer.conversationId, `${said}\n${offer.prompt}\n\n${CARD_REPLY}`, offer.card, context)) return { ok: false, reason: 'offline' };
+      } finally { acting.delete(offer.card.id); }
+    }
+
+    // 等待期间来了新卡就不动它。
+    if ((await storedOffer())?.card.id === offer.card.id) await chrome.storage.session.remove(NUDGE_PANEL_KEY);
+    void withState(state => { state.dismissed.push(pageKey(offer.url)); });
+
+    return { ok: true };
+  };
 
   chrome.tabs.onRemoved.addListener(tabId => offers.delete(tabId));
 

@@ -74,6 +74,7 @@ import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-fac
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
+import { installProactiveCard } from "./proactive-card.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
@@ -619,9 +620,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "session" && changes[NUDGE_DRAFT_KEY]?.newValue) void takeNudgeDraft();
 });
 
+/** 侧栏开着时的主动卡（YIS-106）：画在对话流最新处；点句子把这件事放进输入框，不发送。 */
+const proactiveCard = installProactiveCard({
+  mount: node => { appendToMessages(node); scrollToEnd(); },
+  selected: () => selectedConversationId,
+  ready: starterReady,
+  ask: text => {
+    inputEl.value = inputEl.value.trim() ? `${inputEl.value.trimEnd()}\n${text}` : text;
+    inputEl.dispatchEvent(new Event("input"));
+    inputEl.focus();
+    inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+  },
+});
+
 function updateStarterVisibility(): void {
   app.classList.toggle("starter-ready", starterReady());
   void takeNudgeDraft();
+  void proactiveCard.refresh();
   refreshOpenThreads();
 
   const tabId = starterTab();
@@ -3570,7 +3585,8 @@ function finishRun(): void {
   run.orbActivity.finish();
   const outcome = run.orbActivity.state();
   const hasResumeReceipt = !!run.body.querySelector(".receipt-history");
-  const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped";
+  // 按主动卡发起的一轮（YIS-106）：步骤就是卡上那件事的结果，即使只读也留着。
+  const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
 
   if (!hasSteps || !keepProcess) {
     run.root.remove();
@@ -3625,6 +3641,14 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   while (next instanceof HTMLElement && next !== root && (next.dataset.deliveryKind === "ack" || next.classList.contains("ctx-chips"))) next = next.nextElementSibling;
 
   if (next && next !== root) messagesEl.insertBefore(root, next);
+}
+
+function cardTurn(root: HTMLElement): boolean {
+  let node = root.previousElementSibling;
+
+  while (node && !node.matches(".msg.user")) node = node.previousElementSibling;
+
+  return !!node?.classList.contains("card-turn");
 }
 
 /** 步骤容器：run 进行中进聚合块，否则直接进消息流。 */
@@ -4982,7 +5006,8 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
 
-        if (entry.item.context) renderTurnContext(bubble, entry.item.context);
+        if (entry.item.card) proactiveCard.turn(entry.item.card, bubble, entry.occurredAt);
+        else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
 
         if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }

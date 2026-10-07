@@ -5,6 +5,7 @@
  */
 import type { Attachment, ClientMessage, ServerMessage, ViewportSectionUpdate } from "../../shared/protocol.js";
 import type { PendingAsk } from "./shared/ask-selection.js";
+import type { NudgeCard } from "./shared/nudge.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
 
@@ -19,7 +20,8 @@ export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" 
 
 /** 关闭侧栏后仍需要恢复的可见内容。 */
 export type PanelHistoryItem =
-  | { kind: "user"; text: string; attachments?: Attachment[]; undelivered?: { original: ClientMessage }; context?: UserTurnContext }
+  /** card：这一轮是按主动卡的动词发起的（YIS-106），侧栏把这一轮画成按下的那张卡，不画成用户气泡。 */
+  | { kind: "user"; text: string; attachments?: Attachment[]; undelivered?: { original: ClientMessage }; context?: UserTurnContext; card?: NudgeCard }
   | { kind: "server"; msg: PanelHistoryServerMessage };
 
 /** 这一轮随消息带给助手的页面与选段；侧栏画成用户消息下面的 chip。 */

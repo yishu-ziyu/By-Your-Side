@@ -74,7 +74,8 @@ export function installNudge(): void {
 
   const show = (next: NudgeCard) => {
     shown = next;
-    sentence.textContent = next.sentence;
+    // 句子是动词后面的宾语（YIS-106）：页角卡的标题把动词接回去。
+    sentence.textContent = `${next.actionLabel}${next.sentence}`;
     const quote = `「${next.evidence}」`;
     evidence.textContent = next.source && next.source !== next.evidence ? `${quote} · ${next.source}` : quote;
     action.textContent = next.actionLabel;

@@ -3278,3 +3278,60 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #think-menu button[aria-checked="true"] i { visibility: visible; }
 #think-menu hr { border: 0; border-top: 1px solid var(--glass-border); margin: 4px 6px; }
 #think-menu .think-more { font-size: 12.5px; color: var(--text-secondary); }
+
+/* 主动卡（YIS-106）：一句话，第一个词是按钮，下面一行出处；悬停出 × */
+.pc { position: relative; overflow: hidden; align-self: stretch; }
+.pc-face {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2);
+  padding: var(--s-2) 34px var(--s-2) var(--s-2);
+  background: var(--content-bg); border: 1px solid var(--glass-border); border-radius: var(--r-shape);
+  font-size: 14px; line-height: 1.5; color: var(--text-primary);
+}
+.pc-verb {
+  all: unset; cursor: pointer; flex: none;
+  padding: var(--s-2) var(--s-3); border-radius: 10px;
+  font: 600 13.5px/1 var(--font); color: var(--text-primary);
+  background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight);
+  transition: background var(--m-quick) var(--e-swift), color var(--m-quick) var(--e-swift), transform var(--m-quick) var(--e-swift);
+}
+.pc-verb:hover { background: var(--content-subtle-hover); }
+.pc-verb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pc-verb:active, .pc-verb.pressed { background: var(--text-primary); color: var(--content-bg); transform: scale(.96); }
+.pc-obj { flex: 1; min-width: 0; cursor: text; border-radius: 4px; }
+.pc-obj:hover { text-decoration: underline; text-decoration-color: var(--text-quaternary); text-underline-offset: 4px; }
+.pc-obj:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pc-who { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; color: var(--text-secondary); }
+.pc-icon { width: 16px; height: 16px; border-radius: 4px; flex: none; }
+.pc-src { flex-basis: 100%; padding-left: 2px; margin-top: -2px; font-size: var(--fs-micro); color: var(--text-tertiary); }
+.pc-x {
+  all: unset; cursor: pointer; position: absolute; right: 10px; top: 10px;
+  width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+  font-size: 14px; color: var(--text-quaternary); opacity: 0; transition: opacity var(--m-quick);
+}
+.pc:hover .pc-x, .pc-x:focus-visible { opacity: 1; }
+.pc-x:hover { background: var(--well); color: var(--text-primary); }
+.pc.gone { opacity: 0; transform: translateX(12px); transition: opacity var(--m-move) var(--e-swift), transform var(--m-move) var(--e-swift); }
+.pc.collapse { height: 0 !important; margin-top: calc(-1 * var(--gap-block)); transition: height var(--m-move) var(--e-swift), margin var(--m-move) var(--e-swift); }
+.pc-face { transition: background var(--m-morph) var(--e-out), border-color var(--m-morph) var(--e-out); }
+.pc-face > * { transition: opacity var(--m-quick) var(--e-swift); }
+/* 按下后：文字淡出，壳留在原位，等这一轮进对话 */
+.pc.fading .pc-face { background: var(--well); border-color: transparent; }
+.pc.fading .pc-face > * { opacity: 0; }
+.pc.fading .pc-x { display: none; }
+.pc-fail { flex-basis: 100%; padding-left: 2px; font-size: var(--fs-meta); color: var(--err); }
+/* 按卡发起的这一轮：用户消息画成按下的卡，动词实心，不是气泡 */
+.msg.user.card-turn {
+  align-self: stretch; max-width: none; padding: 0; border: 0; background: transparent; box-shadow: none;
+  border-radius: var(--r-shape); white-space: normal;
+}
+.msg.user.card-turn .pc-face { background: var(--well); border-color: transparent; box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); padding-right: var(--s-3); }
+.msg.user.card-turn .pc-face > * { animation: pc-in 300ms var(--e-swift) both; }
+.msg.user.card-turn .pc-obj { cursor: default; }
+.msg.user.card-turn .pc-obj:hover { text-decoration: none; }
+.pc-verb.done { cursor: default; background: var(--text-primary); color: var(--content-bg); box-shadow: none; }
+.msg.user.card-turn.growing { transition: height var(--m-morph) var(--e-out); }
+@keyframes pc-in { from { opacity: 0; filter: blur(2px); } }
+@media (prefers-reduced-motion: reduce) {
+  .pc-face, .pc-face > *, .pc.gone, .pc.collapse { transition: none; }
+  .msg.user.card-turn .pc-face > * { animation: none; }
+}
