@@ -3013,6 +3013,9 @@ details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: 
 .run-trail .trail-step, .run-trail .trail-more { display: flex; gap: 8px; align-items: baseline; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 .run-trail .trail-step::before { content: "✓"; color: var(--text-quaternary); font-size: 11px; }
 .run-trail .trail-step.failed::before { content: "!"; }
+/* 照上次的做法走，控件对不上、改为一步步看（YIS-96，对照 docs/previews/route-replay） */
+.run-trail .trail-step.route-miss::before { content: "↩"; }
+.run-trail .trail-step.route-miss .trail-text { color: var(--text-secondary); white-space: normal; }
 .run-trail .trail-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-trail .trail-dur { margin-left: auto; flex-shrink: 0; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
 .run-trail .trail-more { color: var(--text-quaternary); }

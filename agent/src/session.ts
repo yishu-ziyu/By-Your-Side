@@ -57,9 +57,10 @@ import type { Nudge, NudgeContext } from "../../shared/nudge.js";
 import { asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
-import type { MemoryValidity } from "../../shared/memory.js";
+import { localDateOf, type MemoryValidity } from "../../shared/memory.js";
 import { programFirstGuidance } from "./program-first.js";
 import { noteRouteStep, type RouteDraft, type RouteNote } from "./route-record.js";
+import { checkBeforeSubmit, literallyAsked, type CheckField, type CheckVerdict } from "./route-check.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand" }
@@ -1275,6 +1276,39 @@ return;}
     const sessionId = `${this.session.sessionId}-nudge`;
 
     return judgeNudge(this.sideHost()!, model, context, { sessionId, headers: opencodeSessionHeaders(model, sessionId), ...(signal ? { signal } : {}) });
+  }
+
+  /** 用户这次说的话：目标与之后的补充（原话）。 */
+  askedThisTime(): string[] {
+    const snapshot = this.conversationSnapshot();
+
+    return (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean);
+  }
+
+  /**
+   * 照走到提交前核对（YIS-96）：值都在用户这次的原话里就直接过；否则用快速模型做一次短判断。结论记进诊断记录。
+   */
+  async checkRouteBeforeSubmit(input: { fields: CheckField[]; submit: string }): Promise<CheckVerdict> {
+    const started = Date.now();
+    const asked = this.askedThisTime();
+
+    if (literallyAsked(input.fields, asked)) {
+      this.runTrace.record("route_check", { ok: true, literal: true, elapsedMs: 0 });
+
+      return { ok: true };
+    }
+
+    const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+
+    if (!model || !this.session) throw new Error("当前模型不可用");
+    const sessionId = `${this.session.sessionId}-route-check`;
+    const now = new Date();
+    const today = `${localDateOf(now.getTime())} 星期${"日一二三四五六"[now.getDay()]}`;
+    const verdict = await checkBeforeSubmit(this.sideHost()!, model, { asked, today, submit: input.submit, fields: input.fields }, { sessionId, headers: opencodeSessionHeaders(model, sessionId) });
+
+    this.runTrace.record("route_check", { ...verdict, literal: false, elapsedMs: Date.now() - started });
+
+    return verdict;
   }
 
   /** Separate no-tool completion; shares only model configuration, not task state/history. */
