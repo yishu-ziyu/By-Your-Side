@@ -37,6 +37,7 @@ import {memoryHostOfUrl} from '../../shared/memory.js';
 import {asksUser} from './goal-check.js';
 import {resultHasWriteEffect} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
+import {judgeRoute} from './route-record.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -778,6 +779,8 @@ return { kind: "silent" };}
   }
   /** 过往任务：宿主在 host-core 里接上；没有就不记。 */
   taskHistory?: TaskHistoryStore;
+  /** 用户点过「不用记」的任务：目标核对后重记这条过往任务时也不再存做法。 */
+  private routesDeclined = new Set<string>();
   /**
    * 任务一轮结束时留一条摘要。只记动手做过事的任务（列过目标或有执行记录），纯聊天和读页问答不记。
    * 同一任务接着做（恢复同一 runId）时覆盖原条目。写失败只丢这条摘要，不影响任务。
@@ -814,12 +817,20 @@ return host?[host]:[];}))].slice(0,16);
     };
 
     if(snap.goalPage?.title)raw.page=clip(snap.goalPage.title,200);
+    // 走老路：代码裁判全过才存做法（YIS-94）；不过的原因写进诊断记录，不打扰用户。用户点过「不用记」的不再存。
+    const session0=this.entries.get(id)?.runtime.session;
+    const verdict=judgeRoute({outcome:raw.outcome,revised:raw.revisions.length>0,results:snap.results??[],draft:session0?.routeDraft?.(snap.runId),said:[snap.goal,...raw.revisions].join('\n')});
+
+    if('route' in verdict&&!this.routesDeclined.has(snap.runId))raw.route=verdict.route;
+    session0?.traceRouteVerdict?.(snap.runId,'route' in verdict?{saved:verdict.route.steps.length}:{rejected:verdict.rejected});
     // 像密码验证码的用户原话不进过往任务，也不交给判断日期的模型。
     const entry=redactTaskSecrets(raw);
     // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。
     // 先立即写入（查「之前订了什么」不用等，也不会因等待被删后复活）；日期晚到时只补 date/validity。
     const session=this.entries.get(id)?.runtime.session;
     const written=history.record(entry).catch(()=>{});
+
+    if(entry.route)void written.then(()=>this.emit({type:'agent_event',conversationId:id,event:{kind:'route_saved',runId:entry.id,route:entry.route!}}));
     const dating=(session?.datePastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,dating]).then(([,dated])=>dated?history.patchDate(entry.id,entry.endedAt,dated):undefined).catch(()=>{});
     // 没做完的事：起短主题与下一步，给「继续上次的事」；晚到时只补这两个字段。
@@ -1604,7 +1615,7 @@ return;}
       return;
     }
 
-    if (message.type === "task_history_list" || message.type === "task_history_forget" || message.type === "task_history_site" || message.type === "task_history_restore") {
+    if (message.type === "task_history_list" || message.type === "task_history_forget" || message.type === "task_history_site" || message.type === "task_history_restore" || message.type === "task_history_route") {
       try {
         if (!this.taskHistory) throw new Error("过往任务记录不可用");
         const history = this.taskHistory;
@@ -1612,6 +1623,7 @@ return;}
         const tasks = message.type === "task_history_list" ? await history.list()
           : message.type === "task_history_site" ? await history.setNotHere(message.id, message.hostname, message.off)
             : message.type === "task_history_restore" ? await history.record(message.task).then(() => history.list())
+              : message.type === "task_history_route" ? (message.route ? this.routesDeclined.delete(message.id) : this.routesDeclined.add(message.id), await history.setRoute(message.id, message.route))
               : await history.forget(message.id);
 
         this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: true, tasks });
