@@ -114,6 +114,10 @@
          },
          {
           "type": "string",
+          "const": "visibleText"
+         },
+         {
+          "type": "string",
           "const": "value"
          },
          {
@@ -162,7 +166,7 @@
          }
         ]
        },
-       "maxItems": 13,
+       "maxItems": 14,
        "description": "Read these state properties; omit for complete text/value. Unsupported properties fail explicitly."
       },
       "expect": {
@@ -279,6 +283,10 @@
             },
             {
              "type": "string",
+             "const": "visibleText"
+            },
+            {
+             "type": "string",
              "const": "value"
             },
             {
@@ -304,6 +312,10 @@
             {
              "type": "string",
              "const": "textContent"
+            },
+            {
+             "type": "string",
+             "const": "visibleText"
             },
             {
              "type": "string",
