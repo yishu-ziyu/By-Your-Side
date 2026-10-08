@@ -454,6 +454,8 @@ let conversationRequest: string | null = null;
 
 /** 点「新会话」那一刻输入框里的字；会话建好前多打的字归新会话。 */
 let draftAtNewRequest: string | null = null;
+/** 新会话建好前按了发送：这条属于新会话，建好后再发。 */
+let sendAfterCreate = false;
 
 /**
  * 面板打开时恢复上次会话；没有可用会话才新建。
@@ -934,8 +936,9 @@ function requestNewConversation(): boolean {
     bootCreateTimer = null;
 
     if (conversationReady || conversationRequest === null) return;
-    // 后台迟迟没有回执：不把面板卡在"正在新建"，退回显示上一段。
+    // 后台迟迟没有回执：不把面板卡在"正在新建"，退回显示上一段。挂起的那条不发进旧会话，留在输入框。
     conversationRequest = null;
+    sendAfterCreate = false;
     renderConversations();
 
     if (bootInheritedId) selectConversation(bootInheritedId, false);
@@ -4775,6 +4778,8 @@ function handleServerMessage(raw: string): void {
     if (msg.type === "conversation_created" && msg.requestId === conversationRequest) {
       conversationRequest = null;
       selectConversation(msg.conversation.id);
+
+      if (sendAfterCreate) { sendAfterCreate = false; sendInput(); }
     }
 
     renderConversations();
@@ -5329,6 +5334,9 @@ function restoreLostSend(): void {
 /** quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。 */
 function sendInput(quick?: string): void {
   if (!conversationReady) return;
+
+  // 点「新会话」后、新会话建好前：选中的还是旧会话，现在发会落进旧会话。等建好再发。
+  if (conversationRequest && !quick) { sendAfterCreate = true; return; }
   const held=panelLive(sessionRun.values(), teamView).userHasPage;
 
   // 语音输入或粘贴偶尔带进看不见的控制字符（如退格 \b），发出去前去掉；换行和制表保留。
