@@ -1,0 +1,5 @@
+{
+  "name": "By Your Side",
+  "install": "bash .cursor/cloud-install.sh",
+  "chromeExecutablePath": "/usr/local/bin/google-chrome"
+}
