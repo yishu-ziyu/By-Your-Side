@@ -100,7 +100,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         // 没登录就报原因，不退回别的语音。
         if (resolveVoiceModel(voiceModel) === GPT_LIVE_MODEL) return chatgptAccess();
 
-        if (!voiceConfigured) throw new Error("还没有语音 key：打开右上角「更多 → 模型与语音」，在「实时语音」里填阶跃星辰的 key。");
+        if (!voiceConfigured) throw new Error("还没有语音 key：打开右上角「更多 → 模型与语音」，在「语音对话」里填阶跃星辰的 key。");
 
         return "injected-by-extension";
       },

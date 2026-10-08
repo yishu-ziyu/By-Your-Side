@@ -132,8 +132,8 @@ document.getElementById("settings")!.innerHTML = `
   </section>
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
-      <h2 id="voice-title">实时语音</h2>
-      <p class="sx-sub">语音对话使用阶跃星辰的实时语音。上面已经填了阶跃星辰的 key，这里就不用再填。</p>
+      <h2 id="voice-title">语音对话</h2>
+      <p class="sx-sub">用声音和助手交谈。语音对话使用阶跃星辰的实时语音。上面已经填了阶跃星辰的 key，这里就不用再填。</p>
     </div>
     <div class="surface rows">
       <div class="row">
@@ -157,10 +157,10 @@ document.getElementById("settings")!.innerHTML = `
         <div id="orb-list" class="radio-rows" role="radiogroup" aria-labelledby="orb-title"></div>
       </div>
       <div class="row stack">
-        <span class="row-main"><span id="persona-title" class="row-title">人设</span><span class="row-desc">只改变语音的语气和措辞；如实汇报、不乱问这些规则不变。下次开启语音时生效。</span></span>
+        <span class="row-main"><span id="persona-title" class="row-title">语音风格</span><span class="row-desc">只改语气和措辞，下次语音对话生效。</span></span>
         <div id="persona-list" class="radio-rows" role="radiogroup" aria-labelledby="persona-title"></div>
         <div id="persona-custom" class="persona-custom" hidden>
-          <textarea id="persona-text" class="d-input" rows="3" maxlength="${CUSTOM_PERSONA_MAX_CHARS}" placeholder="用几句话描述你想要的性格，比如：说话干脆，带点幽默"></textarea>
+          <textarea id="persona-text" class="d-input" rows="3" maxlength="${CUSTOM_PERSONA_MAX_CHARS}" placeholder="用几句话描述你想要的语气和措辞，比如：说话干脆，带点幽默"></textarea>
           <div class="d-actions">
             <span id="persona-count" class="d-hint"></span>
             <span class="grow"></span>
@@ -1134,7 +1134,7 @@ function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.
 async function savePersona(persona: VoicePersona): Promise<void> {
   await chrome.storage.local.set({ [VOICE_PERSONA_STORAGE_KEY]: persona });
   renderPersonas(persona);
-  setStatus(personaStatus, "已保存，下次开启语音时生效。", "ok");
+  setStatus(personaStatus, "已保存，下次语音对话生效。", "ok");
 }
 
 personaText.addEventListener("input", () => { personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`; });
@@ -1142,7 +1142,7 @@ personaText.addEventListener("input", () => { personaCount.textContent = `${pers
 $("persona-save").addEventListener("click", () => {
   const text = personaText.value.trim();
 
-  if (!text) return setStatus(personaStatus, "先写几句你想要的性格。", "err");
+  if (!text) return setStatus(personaStatus, "先写几句你想要的语气和措辞。", "err");
   void savePersona({ id: "custom", text });
 });
 

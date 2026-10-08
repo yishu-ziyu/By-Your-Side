@@ -395,8 +395,8 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   button.id = "reading-settings-btn";
   button.type = "button";
   button.className = "reading-settings-btn";
-  button.title = host.trigger ? "阅读外观" : "设置";
-  button.setAttribute("aria-label", host.trigger ? "阅读外观" : "设置");
+  button.title = host.trigger ? "字体字号" : "设置";
+  button.setAttribute("aria-label", host.trigger ? "字体字号" : "设置");
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", "reading-settings-panel");
@@ -407,13 +407,13 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   panel.id = "reading-settings-panel";
   panel.className = "reading-settings-panel";
   panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-label", "阅读外观");
+  panel.setAttribute("aria-label", "字体字号");
   panel.hidden = true;
 
   const head = doc.createElement("div");
   head.className = "reading-settings-head";
   const title = doc.createElement("h2");
-  title.textContent = "阅读外观";
+  title.textContent = "字体字号";
   const closeBtn = doc.createElement("button");
   closeBtn.id = "reading-settings-close";
   closeBtn.type = "button";
@@ -446,7 +446,7 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   const sizeField = field("字号", "reading-settings-size", READING_SIZE_OPTIONS);
   const hint = doc.createElement("p");
   hint.className = "reading-settings-hint";
-  hint.textContent = "只改回答正文。代码仍等宽，其他界面不变。";
+  hint.textContent = "调整回答正文的字体和大小。";
 
   const foot = doc.createElement("div");
   foot.className = "reading-settings-foot";

@@ -44,11 +44,11 @@ export function createMarginalia(select: HTMLSelectElement, rail: HTMLElement) {
 
       if (current !== generation) return;
 
-      if (!reply?.ok && mode() !== 'off') { rail.hidden = false; title.textContent = '边注未启用'; text.textContent = reply?.error ?? '当前网页无法连接。'; }
+      if (!reply?.ok && mode() !== 'off') { rail.hidden = false; title.textContent = '段落提示未启用'; text.textContent = reply?.error ?? '当前网页无法连接。'; }
 
     } catch { if (current !== generation) return;
 
-    if (mode() !== 'off') { rail.hidden = false; title.textContent = '边注未启用'; text.textContent = '扩展连接已断开。'; } }
+    if (mode() !== 'off') { rail.hidden = false; title.textContent = '段落提示未启用'; text.textContent = '扩展连接已断开。'; } }
   };
 
   select.onchange = () => void sync();
@@ -80,7 +80,7 @@ export function createMarginalia(select: HTMLSelectElement, rail: HTMLElement) {
           return; }
 
         rail.hidden = false;
-        title.textContent = `${mode() === 'ai' ? 'AI解释' : '原文摘录'} · 段落 ${update.index} · ${update.source.title}`;
+        title.textContent = `${mode() === 'ai' ? '解释段落' : '原文摘录'} · 段落 ${update.index} · ${update.source.title}`;
 
         if (mode() === 'source') { text.textContent = update.source.text; text.title = update.source.text; }
         else if (card.dataset.source !== update.source.id) { text.textContent = '正在解释当前段落…'; card.dataset.state = 'pending'; }
