@@ -3031,6 +3031,9 @@ details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: 
 .run-trail .trail-dur { margin-left: auto; flex-shrink: 0; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
 .run-trail .trail-more { color: var(--text-quaternary); }
 .run-trail .trail-aside { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+/* 跑完后代码裁判的一行（核对 n/3）：过程折叠区里的一句说明，没过时颜色略深。 */
+.run-body .run-check { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+.run-body .run-check.failed { color: var(--text-secondary); }
 .run-trail .trail-step:last-child { animation: trailIn .32s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes trailIn { from { opacity: 0; transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation: none; } }

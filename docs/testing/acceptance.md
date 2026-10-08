@@ -43,6 +43,10 @@ npx tsx scripts/acceptance/real-path/voice-plan.mts --headless --case=chat # 真
 npx tsx scripts/acceptance/real-path/voice-plan-output-boundaries.mts --headless --case=unknown-output # 真语音帧来源缺失；另有delayed-created/source-timeout
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=question --model=openai-codex/gpt-6-luna --lead=300 --first-utterance # 整句在就绪前说完仍自动问页；--plan 验现有套餐
 npx tsx scripts/acceptance/real-path/voice-first-utterance-stop.mts --headless # 连接前说完首句再结束，迟到就绪不补发旧话
+npx tsx scripts/acceptance/real-path/welcome-context.mts --headless     # 欢迎页跟着网页变，点击只填草稿，慢页面按时退回保底
+npx tsx scripts/acceptance/real-path/check-assert.mts --headless        # 只认看得见的文字，条件失败后的点击不发出
+npx tsx scripts/acceptance/real-path/target-gone.mts --headless         # 目标文字变了不点；新动作不沿用旧目标
+npx tsx scripts/acceptance/real-path/run-check.mts --headless           # 真侧栏里的核对行、文件个数与漏报失败
 npx tsx scripts/acceptance/real-path/step-icons.mts --headless          # 侧栏每一步都有自己的图标
 npx tsx scripts/acceptance/real-path/route-record.mts --headless # 做成一件事后记下做法，「不用记」可撤销，被停下的不记
 npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--first=selector] # 同一类事照上次的做法走、提交前核对；页面改了停下交回；--first=selector 第一次用选择器操作

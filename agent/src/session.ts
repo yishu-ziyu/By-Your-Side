@@ -56,6 +56,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
 import { asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
+import { refereeRun, RunStepLog } from "./run-referee.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import { localDateOf, type MemoryValidity } from "../../shared/memory.js";
@@ -184,6 +185,7 @@ export class BrowserAgentSession {
   private pendingToolFailure: UserDelivery | null = null;
   private noProgressPolicy: NoProgressPolicy | null = null;
   /** 文件归属；核对时从已有文件区取本任务的文本，不复制保存图片内容。 */
+  private refereeFileBaseline: { runId: string | null; names: Set<string> } | null = null;
   private savedFiles = new Map<string, { runId: string | null; chars: number; lines: number; savedAt: number }>();
   private goalObservations: { runId: string | null; items: Array<{ tool: string; text: string }> } = { runId: null, items: [] };
   private conversationSnapshot: () => TaskProgressSnapshot | null = () => null;
@@ -210,6 +212,7 @@ export class BrowserAgentSession {
 
     if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
     else {
+      if (!step.error?.startsWith(STALE_STEP_MESSAGE)) this.runSteps.note(this.deliveryRunId(), step.name, !!step.error, !!this.rpc?.wasRepeatRefused?.(step.id), step.params, step.parentId);
       this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
         executionFact:this.rpc?.getExecutionFact(step.id),
         resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX))});
@@ -2150,6 +2153,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         }
 
         case "tool_execution_start":
+          this.captureRefereeFileBaseline();
           if (this.toolArgs.size > 200) this.toolArgs.clear();
           this.toolArgs.set(event.toolCallId, asParams(event.args));
           emit({
@@ -2188,6 +2192,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           // 被拦下的重复不是“试过且失败”的做法，不写进催促模型换方法的清单。
           if (!this.rpc?.wasRepeatRefused?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
+          // 被插话作废的旧步骤没执行，不算失败的一步（同下面 tallyPageChange 的判断）。
+          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && (!this.runSteps.hasProgramSteps(event.toolCallId) || (event.isError && !this.runSteps.hasProgramFailure(event.toolCallId)))) this.runSteps.note(this.deliveryRunId(), event.toolName, event.isError, !!this.rpc?.wasRepeatRefused?.(event.toolCallId), this.toolArgs.get(event.toolCallId) ?? {});
+          this.runSteps.forgetProgram(event.toolCallId);
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
           // 被插话作废的旧步骤没碰页面，不算「改页面却没生效」（页面脚本被拦、一步没走的仍算）。
@@ -2212,6 +2219,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           emit({ kind: "turn_end" });
           break;
         case "agent_start":
+          this.runSteps.resetFor(this.deliveryRunId());
           if (
             this.handbackPromptEpoch !== null &&
             (this.handbackPromptEpoch !== this.controlEpoch || this.pendingHandback?.epoch !== this.handbackPromptEpoch)
@@ -2244,6 +2252,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           // 没做完且助手自己能做，就作为看得见的后续接着做（每个任务最多 2 次）；在等用户或做不到时只更新「还差」一行。
           {
             const checkGoal = this.goalCheckEligible(event.messages);
+
+            // 代码裁判先于模型裁判，且在 agent_end 之前下发：侧栏收尾时据此决定过程行留不留（docs/evals/20261008-check-assert-referee.md R4）。
+            const runId = this.deliveryRunId();
+            if (!this.memberId && !this.hold.isHeld() && !this.expectedStoppedAgentEnd && this.toolUseRun === runId && runId !== null) {
+              const baseline = this.refereeFileBaseline;
+              const newFileCount = baseline?.runId === runId ? (this.artifactStore?.names() ?? []).filter(name => !baseline.names.has(name)).length : 0;
+              const files = [...this.savedFiles].filter(([, file]) => file.runId === runId).map(([filename]) => ({ filename, content: this.artifactStore?.isImage(filename) ? undefined : this.artifactStore?.get(filename) }));
+              emit(refereeRun({ steps: this.runSteps.of(runId), reply: this.runReplyText(event.messages), fileCount: files.length, files, newFileCount, goal: this.askedThisTime() }));
+            }
             this.finishAgentEnd(event);
 
             if (checkGoal) void this.checkGoalAfterDelivery(event);
@@ -2293,6 +2310,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
   }
 
+  private captureRefereeFileBaseline(): void {
+    const runId = this.deliveryRunId();
+    if (this.refereeFileBaseline?.runId !== runId) this.refereeFileBaseline = { runId, names: new Set(this.artifactStore?.names() ?? []) };
+  }
+
   /** 记下文件区的改动（侧栏卡片事件）：存下的记本任务、字数、行数和时间，删掉的去掉。 */
   noteSavedFile(event: AgentUiEvent): void {
     if (event.kind !== "artifact") return;
@@ -2324,6 +2346,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   private goalContinues = 0;
   /** 本任务已尝试且失败的做法（工具名 + 失败原因摘要），催续做时带给模型，让它换做法（10-02 BYS-017 三次照原样重试）。 */
   private failedAttempts: { runId: string | null; items: Array<{ tool: string; reason: string }> } = { runId: null, items: [] };
+  /** 本任务按顺序记下的每一步，跑完后代码裁判用（run-referee.ts）。 */
+  private readonly runSteps = new RunStepLog();
 
   /**
    * 记下一次失败的做法：工具报错，或打开页面但文档没加载完（navigate 返回成功、details.readiness 为 timeout）。
