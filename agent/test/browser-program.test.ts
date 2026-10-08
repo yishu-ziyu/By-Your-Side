@@ -208,7 +208,7 @@ describe("check 与 assert（YIS-113：动作后不叫模型核对，断言失�
     expect(result.value).toMatchObject({ ok: true, polls: 2 });
     expect(call).toHaveBeenCalledTimes(2);
     expect(call.mock.calls[0]?.[0]).toBe("read_element");
-    expect(call.mock.calls[0]?.[1]).toMatchObject({ target: "body", expect: { property: "textContent", contains: "已提交" } });
+    expect(call.mock.calls[0]?.[1]).toMatchObject({ target: "body", expect: { property: "visibleText", contains: "已提交" } });
     expect(call.mock.calls[0]?.[3]).toBe("readonly-poll");
     expect(steps.map(s => [s.name, s.phase])).toEqual([["check", "start"], ["check", "end"]]);
     expect(steps[1]?.error).toBeUndefined();

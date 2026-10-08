@@ -127,6 +127,18 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       const excludedTags = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
       const renderedPath = new Map<Element, boolean>();
 
+      // 逐个文字节点检查折叠状态，不能让已缓存的 summary 可见状态放行正文。
+      const isAllowedByDetails = (node: Node): boolean => {
+        for (let ancestor = node.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          if (ancestor.tagName !== 'DETAILS' || (ancestor as HTMLDetailsElement).open) continue;
+
+          const summary = Array.from(ancestor.children).find(child => child.tagName === 'SUMMARY');
+          if (!summary?.contains(node)) return false;
+        }
+
+        return true;
+      };
+
       const isVisible = (element: Element): boolean => {
         const cached = renderedPath.get(element);
         if (cached === false) return false;
@@ -162,7 +174,7 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
       while (walker.nextNode()) {
         const node = walker.currentNode;
-        if (node.parentElement && isVisible(node.parentElement)) text += node.textContent ?? '';
+        if (node.parentElement && isAllowedByDetails(node) && isVisible(node.parentElement)) text += node.textContent ?? '';
       }
 
       return text;
