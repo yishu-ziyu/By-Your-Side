@@ -81,8 +81,7 @@ try{
  const originalId=String(await rp.evaluate(panel,'chrome.storage.local.get("selectedConversationId").then(v=>v.selectedConversationId ?? "default")'));
  const crossOffset=requests.length;
  await rp.click(panel,'#conversation-new');await until(async()=>String(await rp.evaluate(panel,'chrome.storage.local.get("selectedConversationId").then(v=>v.selectedConversationId)'))!==originalId,10000,'新会话就绪');
- // 像用户一样，等侧栏换成空的新会话再开口；后台先切、侧栏后清的间隙另记（docs/evals/20261008-e2e-only.md）。
- await until(async()=>!(await state()).text?.includes(code)||undefined,10000,'侧栏换成新会话');
+ // 不等侧栏换完就开口：新会话建好前发的这条，必须进新会话（docs/evals/20261009-new-conversation-send.md）。
  await send('恢复核对：读取resume.csv。','恢复核对完毕');
  const cross=requests.slice(crossOffset).filter(r=>r.tools?.length);assert.ok(cross.some(r=>JSON.stringify(r.messages).includes('找不到 resume.csv')),'新会话不能读旧文件');assert.ok(cross.every(r=>!JSON.stringify(r.messages).includes(code)),'会话模型上下文不混用');evidence.crossConversation=true;
  await rp.click(panel,'#conversation-switcher');await rp.click(panel,`[data-conversation-id="${originalId}"]`);await until(async()=>(await state()).text?.includes(code),10000,'切回原会话');
