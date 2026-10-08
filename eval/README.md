@@ -4,8 +4,6 @@
 
 2026-10-02 起 harness 只依赖扩展（[验收](../docs/evals/20261002-eval-extension-only.md)）；full-1 及更早的结果来自已删除的伴随进程架构，见文末。
 
-本目录原有的 `protected/`、`typesafe/`、`p0/`、`goal-evidence/`、`samples/` 是另一套评测，与这里无关，也没有改动。
-
 ## 目录
 
 | 路径 | 内容 |

@@ -14,17 +14,10 @@
     "accept:browser": "node scripts/acceptance/run.mjs",
     "smoke": "tsx scripts/acceptance/real-path/smoke.mts --headless",
     "accept:real-path": "tsx scripts/acceptance/real-path/run-all.mts",
-    "doctor": "tsx scripts/eval/doctor.mts",
-    "eval:offline": "tsx scripts/eval/offline.mts",
-    "eval:live": "tsx scripts/eval/live.mts",
-    "eval:report": "tsx scripts/eval/report.mts",
-    "release:verify": "tsx scripts/eval/release-verify.mts",
     "check:architecture": "node scripts/maintenance/check-boundaries.mjs",
     "check:docs": "node scripts/maintenance/check-docs.mjs",
     "dashboard": "node scripts/maintenance/dashboard.mjs",
-    "check": "npm run check:docs && npm run check:architecture && npm run typecheck && npm run build",
-    "eval:p0": "tsx scripts/eval/p0.mts",
-    "fixture:p0": "tsx scripts/acceptance/p0-fixture.mts"
+    "check": "npm run check:docs && npm run check:architecture && npm run typecheck && npm run build"
   },
   "devDependencies": {
     "marked": "18.0.11",
