@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>接着做 · 真实运行</title>
+<style>
+:root{font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#141413;background:#e8e6e0}
+*{box-sizing:border-box}body{margin:0;padding:20px}main{max-width:1020px;margin:auto}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}h1{font-size:18px;font-weight:600;margin:0}small{color:#77756d}
+nav{display:flex;gap:4px;padding:4px;background:#dddcd5;border-radius:24px;width:max-content;margin:16px 0}
+button{font:inherit;font-size:13px;background:none;border:0;padding:7px 15px;border-radius:20px;color:#5f5e58;cursor:pointer;transition:background .18s,transform .18s}button:active{transform:scale(.97)}button[aria-pressed=true]{background:#fff;color:#141413;box-shadow:0 1px 3px #14141312}
+.stage{display:flex;gap:32px;align-items:flex-start;padding:26px;background:#f9f8f5;border:1px solid #14141314;border-radius:20px}
+.screen{flex:none;width:360px;max-width:100%;overflow:hidden;border-radius:12px;border:1px solid #14141314;background:#fff;box-shadow:0 10px 30px #1414130a}
+video,img{display:block;width:100%;height:auto;max-height:65vh;object-fit:contain}[hidden]{display:none!important}.copy{max-width:400px;padding-top:28px}h2{font-size:23px;font-weight:500;line-height:1.4;margin:0 0 14px}p{color:#5f5e58;margin:0 0 18px}a{color:#2d4a86;text-decoration:none}a:hover{text-decoration:underline}
+.tag{display:inline-block;font-size:11px;color:#536453;background:#e8eee7;border-radius:20px;padding:4px 10px;margin-bottom:14px}.note{font-size:12px;margin-top:18px;color:#77756d}.copy button{background:#141413;color:white;padding:9px 16px;margin-bottom:20px}
+@media(max-width:740px){.stage{flex-direction:column;align-items:center;padding:16px;gap:12px}.copy{padding:10px 0}.screen{width:340px}nav{max-width:100%;flex-wrap:wrap;width:auto}body{padding:12px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<main>
+<header><h1>接着做</h1><small>真实扩展画面 · 隔离浏览器 · 脚本模型</small></header>
+<nav aria-label="查看场景">
+<button aria-pressed="true" data-case="check">跑完后核对</button>
+<button aria-pressed="false" data-case="rows">文件条数</button>
+<button aria-pressed="false" data-case="busy">忙时按卡</button>
+<button aria-pressed="false" data-case="offline">助手断开</button>
+<button aria-pressed="false" data-case="restart">后台重启</button>
+</nav>
+<section class="stage">
+<div class="screen"><video controls playsinline muted preload="metadata" poster="media/sidebar-a.png" src="media/panel.mp4"></video><img hidden alt="真实侧栏截图"></div>
+<div class="copy"><span class="tag">真实路径已通过</span><h2></h2><p id="detail"></p><button id="play">播放真实运行</button><p class="note">这是实际运行的录像与截图，不是模拟状态。日常 Chrome 尚未重载；语音听感和一周建议价值仍需你试。</p><a href="../proactive-card-verb.html">回看原来认可的主动卡动效预览 ↗</a></div>
+</section>
+</main>
+<script>
+const base='media/';
+const cases={check:{title:'回答先给你。可疑处留在过程里。',detail:'核对行放在“做了几件事”的折叠区。漏报失败、文件数量不对会标出来。没有记录证明改了几处，就明说无法核对。',video:true},rows:{title:'说了 830 条，文件只有 658 条。',detail:'打开过程就能看到具体不一致。CSV 的引号内换行不会多算记录；JSON 不按排版行数计数。',image:'rows-mismatch.png'},busy:{title:'助手正忙，这张卡不抢任务。',detail:'连续按了两次，卡仍留在原位，提醒做完再按。原任务没有收到补充，网站也没收到办理请求。',image:'2-busy.png'},offline:{title:'没连上，就原位说清楚。',detail:'实际关闭助手进程后按卡。卡没有消失，也没有假装开始。连接恢复后仍可再按。',image:'3-offline.png'},restart:{title:'后台重启，旧卡还能接着做。',detail:'实际回收并重启扩展后台后，按同一张旧卡。练习站只收到一次办理请求。',image:'4-restarted-done.png'}};
+const video=document.querySelector('video'),img=document.querySelector('img'),play=document.querySelector('#play');
+function show(key){const c=cases[key];document.querySelectorAll('nav button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.case===key)));document.querySelector('h2').textContent=c.title;document.querySelector('#detail').textContent=c.detail;video.pause();video.hidden=!c.video;img.hidden=!!c.video;play.hidden=!c.video;if(c.image)img.src=base+c.image}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.case));play.onclick=()=>{video.currentTime=0;video.play().catch(()=>{})};show('check');
+</script>
+</html>

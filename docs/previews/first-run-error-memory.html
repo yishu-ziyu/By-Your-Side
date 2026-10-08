@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第一眼 · 出错 · 记忆 — 优化方案预览</title>
+<style>
+  /* 与侧栏同一组 token：奶油纸面、12/20 圆角、黑胶囊按钮 */
+  :root {
+    --wallpaper: #f6f4ee;
+    --elevated: #fdfcf9;
+    --border: rgb(20 20 19 / .10);
+    --border-subtle: rgb(20 20 19 / .06);
+    --ink: #1c1b17;
+    --ink-2: #57534a;
+    --ink-3: #8a8375;
+    --ink-4: #b3ab9c;
+    --accent: #3c8a55;
+    --warn: #b54848;
+    --r: 12px;
+    --r-shape: 20px;
+    --pill: 999px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  body {
+    background: var(--wallpaper);
+    color: var(--ink);
+    font: 15px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    padding: 48px 24px 120px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 26px; letter-spacing: .01em; }
+  .lede { color: var(--ink-2); margin-top: 8px; max-width: 640px; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  section.problem { margin-top: 72px; }
+  .problem-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .problem-head h2 { font-size: 20px; }
+  .problem-head .tag { font-size: 12px; color: var(--ink-3); }
+  .problem-desc { color: var(--ink-2); margin-top: 6px; max-width: 720px; font-size: 14px; }
+  .problem-desc code { background: rgb(20 20 19 / .06); border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
+
+  .options { display: flex; gap: 28px; margin-top: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .option { width: 360px; }
+  .option-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .option-head .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: var(--pill);
+    border: 1px solid var(--border); color: var(--ink-2); background: var(--elevated);
+  }
+  .option-head .badge.rec { border-color: var(--accent); color: var(--accent); }
+  .option-head h3 { font-size: 15px; font-weight: 600; }
+  .option-note { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin-bottom: 12px; min-height: 60px; }
+  .option-note b { color: var(--ink); }
+
+  /* ── 侧栏真机框 ── */
+  .panel {
+    width: 340px; height: 560px; background: var(--wallpaper);
+    border: 1px solid var(--border); border-radius: var(--r-shape);
+    box-shadow: 0 8px 28px rgb(20 20 19 / .08);
+    display: flex; flex-direction: column; overflow: hidden; position: relative;
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border-subtle);
+    font-size: 14px; font-weight: 600; flex: none;
+  }
+  .panel-head .icons { margin-left: auto; display: flex; gap: 10px; color: var(--ink-3); font-size: 14px; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .composer {
+    flex: none; margin: 12px; border: 1px solid var(--border); border-radius: var(--r-shape);
+    background: var(--elevated); padding: 12px 14px; color: var(--ink-4); font-size: 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .composer .send {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: #fff;
+    display: grid; place-items: center; font-size: 14px; flex: none;
+  }
+
+  /* 消息 */
+  .msg-user {
+    align-self: flex-end; background: var(--elevated); border: 1px solid var(--border-subtle);
+    border-radius: var(--r-shape); padding: 8px 14px; font-size: 14px; max-width: 80%;
+  }
+  .msg-meta { font-size: 11.5px; color: var(--ink-3); align-self: flex-end; margin-top: -8px; }
+  .fold-line {
+    font-size: 13px; color: var(--ink-3); display: flex; gap: 6px; align-items: baseline; cursor: default;
+  }
+  .fold-line::before { content: "▸"; font-size: 10px; }
+  .err-text { font-size: 12.5px; color: var(--warn); line-height: 1.6; }
+
+  /* 卡片通用 */
+  .card {
+    background: var(--elevated); border: 1px solid var(--border);
+    border-radius: var(--r-shape); padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .card h4 { font-size: 14.5px; font-weight: 600; }
+  .card p { font-size: 13px; color: var(--ink-2); line-height: 1.65; }
+  .btn {
+    border: none; cursor: pointer; font: 600 13px/1 inherit;
+    padding: 10px 18px; border-radius: var(--pill); width: fit-content;
+    transition: transform .12s ease, opacity .12s ease;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--ink); color: #fff; }
+  .btn-quiet { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* 光球（CSS 版） */
+  .orb {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #d9d2c2, #8a8375 70%, #6b6558);
+    opacity: .9; flex: none;
+  }
+  .orb.small { width: 18px; height: 18px; }
+  .orb.spin { animation: orbPulse 2.4s ease-in-out infinite; }
+  @keyframes orbPulse { 50% { transform: scale(1.12); opacity: 1; } }
+
+  .starter-chips { display: flex; flex-direction: column; gap: 8px; }
+  .chip {
+    border: 1px solid var(--border); background: var(--elevated); border-radius: var(--pill);
+    padding: 8px 14px; font-size: 13px; color: var(--ink-2); width: fit-content; cursor: pointer;
+  }
+  .chip:hover { color: var(--ink); border-color: rgb(20 20 19 / .25); }
+  .chip.off { opacity: .45; pointer-events: none; }
+
+  /* 内联连接表单 */
+  .connect-form { display: flex; flex-direction: column; gap: 10px; }
+  .connect-form select, .connect-form input {
+    font: 13px/1.4 inherit; color: var(--ink); padding: 9px 12px;
+    border: 1px solid var(--border); border-radius: var(--r); background: var(--wallpaper);
+    outline: none; width: 100%;
+  }
+  .connect-form input:focus { border-color: rgb(20 20 19 / .35); }
+  .form-status { font-size: 12px; min-height: 18px; }
+  .form-status.busy { color: var(--ink-3); }
+  .form-status.ok { color: var(--accent); }
+  .form-status.err { color: var(--warn); }
+
+  /* 错误卡 */
+  .err-card { border-left: 3px solid var(--warn); }
+  .err-card .head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .err-card .head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
+  details.tech { font-size: 12px; color: var(--ink-3); }
+  details.tech summary { cursor: pointer; color: var(--ink-3); font-size: 12px; }
+  details.tech pre {
+    margin-top: 6px; background: rgb(20 20 19 / .05); border-radius: 8px; padding: 8px 10px;
+    font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: var(--ink-2);
+  }
+  .model-menu {
+    border: 1px solid var(--border); border-radius: var(--r); background: var(--elevated);
+    box-shadow: 0 6px 20px rgb(20 20 19 / .12); overflow: hidden; display: none;
+  }
+  .model-menu.open { display: block; }
+  .model-menu button {
+    display: block; width: 100%; text-align: left; border: none; background: none;
+    font: 13px/1.5 inherit; color: var(--ink); padding: 9px 14px; cursor: pointer;
+  }
+  .model-menu button:hover { background: rgb(20 20 19 / .05); }
+  .model-menu button .sub { color: var(--ink-3); font-size: 11.5px; margin-left: 6px; }
+
+  /* toast */
+  .toast {
+    position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%) translateY(8px);
+    background: var(--ink); color: #fff; font-size: 12.5px; padding: 8px 16px;
+    border-radius: var(--pill); opacity: 0; transition: opacity .2s, transform .2s;
+    pointer-events: none; white-space: nowrap; z-index: 5;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast button { background: none; border: none; color: #9fc5ff; font: 600 12.5px inherit; cursor: pointer; margin-left: 8px; }
+
+  /* 记忆抽屉 */
+  .mem-toolbar { display: flex; gap: 8px; align-items: center; }
+  .mem-toolbar input {
+    flex: 1; font: 13px/1.4 inherit; padding: 8px 12px; color: var(--ink);
+    border: 1px solid var(--border); border-radius: var(--pill); background: var(--elevated); outline: none;
+  }
+  .mem-group { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+  .mem-item {
+    background: var(--elevated); border: 1px solid var(--border-subtle);
+    border-radius: var(--r); padding: 10px 12px; font-size: 13px; line-height: 1.6;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .mem-item .mem-meta { font-size: 11px; color: var(--ink-3); }
+  .mem-item .mem-acts { display: flex; gap: 12px; }
+  .mem-item .mem-acts button {
+    border: none; background: none; font: 12px inherit; color: var(--ink-2);
+    cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px;
+  }
+  .mem-item .mem-acts button.danger { color: var(--warn); }
+  .mem-item textarea {
+    font: 13px/1.6 inherit; color: var(--ink); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; background: var(--wallpaper); outline: none;
+    resize: vertical; min-height: 54px; width: 100%;
+  }
+  .mem-item.hidden-by-search { display: none; }
+
+  /* 现状框（灰化） */
+  .panel.current { opacity: .8; }
+  .stamp {
+    position: absolute; top: 10px; right: 12px; font-size: 10.5px; color: var(--ink-4);
+    border: 1px dashed var(--border); border-radius: var(--pill); padding: 2px 8px; background: var(--elevated);
+  }
+  .footnote { margin-top: 40px; font-size: 12.5px; color: var(--ink-3); max-width: 720px; line-height: 1.8; }
+  .footnote b { color: var(--ink-2); }
+  @media (prefers-reduced-motion: reduce) { .orb.spin { animation: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>第一眼 · 出错 · 记忆 — 优化方案预览</h1>
+  <p class="lede">每个方案都是<b>可以点的</b>：按钮、菜单、折叠都能操作，走的是用户真实会走的路径。看完后按方案编号告诉我选哪个（或哪几个组合），我再写成 issue 交给工程。</p>
+
+  <!-- ═══════════ 问题一：第一次打开 ═══════════ -->
+  <section class="problem" id="p1">
+    <div class="problem-head">
+      <h2>一、第一次打开：装好后第一眼是空白</h2>
+      <span class="tag">现状：无欢迎页 · 未连模型时发送只回一行折起的灰字，没有按钮</span>
+    </div>
+    <p class="problem-desc">代码事实：没选模型时 <code>browser-host.ts:52</code> 抛「打开右上角『更多 → 模型与语音』」，用户要自己找三层入口。行业做法（Cherry Studio、ChatGPT）都是把「连模型」做成第一张卡，内置测试连接，而不是指路。</p>
+
+    <div class="options">
+      <!-- 现状 -->
+      <div class="option">
+        <div class="option-head"><span class="badge">现状</span><h3>空白 + 指路灰字</h3></div>
+        <p class="option-note">用户发了一句话，只得到一行折起的灰字，没有可以点的东西。</p>
+        <div class="panel current">
+          <span class="stamp">现状</span>
+          <div class="panel-head">新会话 <span class="icons">✎ ▤ ⋯</span></div>
+          <div class="panel-body">
+            <div class="msg-user">帮我概括这个页面</div>
+            <div class="msg-meta">周报 · 团队空间</div>
+            <div class="fold-line">还没有配置模型：打开右上角「更多 → 模型与语音」选择服务商。</div>
+          </div>
+          <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+        </div>
+      </div>
+
+      <!-- 方案 A -->
+      <div class="option">
+        <div class="option-head"><span class="badge rec">推荐</span><span class="badge">方案 A</span><h3>起点区就是引导卡</h3></div>
+        <p class="option-note">没连模型时，空状态本身变成「先连一个模型」卡：<b>按钮直接打开内联表单</b>（不跳设置页），测试通过后才亮出起点建议。连过一次就不再出现。点卡里的按钮试。</p>
+        <div class="panel" id="p1a">
+          <div class="panel-head">新会话 <span class="icons">✎ ▤ ⋯</span></div>
+          <div class="panel-body" id="p1a-body">
+            <!-- state: intro -->
+            <div class="card" data-state="intro" style="align-items:center;text-align:center;gap:14px;padding:28px 20px;margin-top:24px">
+              <div class="orb spin"></div>
+              <h4>先连一个模型，我就能开始干活</h4>
+              <p>你的 key 只存在这台电脑上。连一次，以后不用再管。</p>
+              <button class="btn btn-primary" onclick="p1aGo('form')">连一个模型</button>
+            </div>
+            <!-- state: form -->
+            <div class="card" data-state="form" hidden>
+              <h4>连一个模型</h4>
+              <div class="connect-form">
+                <select id="p1a-provider">
+                  <option>Kimi（月之暗面）</option>
+                  <option>DeepSeek</option>
+                  <option>OpenAI 兼容（自定义地址）</option>
+                </select>
+                <input id="p1a-key" type="password" placeholder="粘贴 API key（只存在本机）">
+                <div class="btn-row">
+                  <button class="btn btn-quiet" onclick="p1aTest()">测试连接</button>
+                  <button class="btn btn-primary" onclick="p1aSave()" disabled id="p1a-save">保存并使用</button>
+                </div>
+                <div class="form-status" id="p1a-status"></div>
+              </div>
+            </div>
+            <!-- state: done -->
+            <div data-state="done" hidden style="display:flex;flex-direction:column;gap:14px">
+              <div class="card" style="align-items:center;text-align:center;gap:12px;padding:24px 20px;margin-top:16px">
+                <div class="orb"></div>
+                <h4>连上了。想让我做点什么？</h4>
+              </div>
+              <div class="starter-chips" style="align-items:center">
+                <button class="chip">概括当前页，给我三个要点</button>
+                <button class="chip">这个页面里有什么值得存下来的？</button>
+                <button class="chip">帮我填这个表单</button>
+              </div>
+            </div>
+          </div>
+          <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+          <div class="toast" id="p1a-toast"></div>
+        </div>
+      </div>
+
+      <!-- 方案 B -->
+      <div class="option">
+        <div class="option-head"><span class="badge">方案 B</span><h3>消息内联引导卡</h3></div>
+        <p class="option-note">空状态不动；用户<b>直接发消息</b>时，回复不再是折起的灰字，而是一张带按钮的卡。改动最小，但第一眼空白的问题还在。适合作为 A 的兜底（A 之后仍绕过的人）。</p>
+        <div class="panel" id="p1b">
+          <div class="panel-head">新会话 <span class="icons">✎ ▤ ⋯</span></div>
+          <div class="panel-body">
+            <div class="msg-user">帮我概括这个页面</div>
+            <div class="msg-meta">周报 · 团队空间</div>
+            <div class="card" data-state="reply">
+              <h4>我还没有连上模型</h4>
+              <p>连一个就能继续。你的 key 只存在这台电脑上。</p>
+              <div class="btn-row">
+                <button class="btn btn-primary" onclick="p1bGo()">连一个模型</button>
+              </div>
+            </div>
+            <div class="card" data-state="form" hidden>
+              <h4>连一个模型</h4>
+              <div class="connect-form">
+                <select><option>Kimi（月之暗面）</option><option>DeepSeek</option></select>
+                <input type="password" placeholder="粘贴 API key（只存在本机）">
+                <div class="btn-row">
+                  <button class="btn btn-quiet" onclick="p1bTest(this)">测试连接</button>
+                </div>
+                <div class="form-status"></div>
+              </div>
+            </div>
+          </div>
+          <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+          <div class="toast"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 问题二：出错状态 ═══════════ -->
+  <section class="problem" id="p2">
+    <div class="problem-head">
+      <h2>二、出错：不管什么错，都只有「继续原任务」</h2>
+      <span class="tag">现状：401 点继续也没用 · 429 文案说「在下方换模型」但下方没有入口 · 测试失败露出原始 JSON</span>
+    </div>
+    <p class="problem-desc">原则：错误卡的按钮要<b>指向病因</b>。key 无效 → 去换 key；额度满 → 换模型或等；断网 → 重试 + 网络恢复自动重试。原始报错收进「技术详情」，默认不示人（Nielsen #9；ChatGPT/Claude 都是 Retry + Switch model 双按钮）。</p>
+
+    <div class="options">
+      <!-- 现状 -->
+      <div class="option">
+        <div class="option-head"><span class="badge">现状</span><h3>一个按钮应付所有错</h3></div>
+        <p class="option-note">401 的「继续原任务」点了还是 401；429 文案承诺的「下方换模型」不存在。</p>
+        <div class="panel current">
+          <span class="stamp">现状</span>
+          <div class="panel-head">触发401 <span class="icons">✎ ▤ ⋯</span></div>
+          <div class="panel-body">
+            <div class="card err-card">
+              <div class="head"><span class="dot"></span>运行出错</div>
+              <div class="btn-row"><button class="btn btn-primary">继续原任务</button></div>
+            </div>
+            <p class="err-text">模型服务拒绝了请求：key 无效，或没有这个模型的权限。可以在「更多 → 模型与语音」里检查。出错的模型：custom/demo-model。</p>
+          </div>
+          <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+        </div>
+      </div>
+
+      <!-- 方案 A -->
+      <div class="option">
+        <div class="option-head"><span class="badge rec">推荐</span><span class="badge">方案 A</span><h3>按错误类型给动作</h3></div>
+        <p class="option-note">同一张卡，按钮随错误类型换：<b>401 → 去换 key；429 → 换模型（内联菜单）；断网 → 重试 + 恢复后自动重试</b>。原始 JSON 收进「技术详情」。三种错误都能点开试。</p>
+        <div class="panel" id="p2a">
+          <div class="panel-head">
+            <select id="p2a-kind" onchange="p2aSwitch()" style="font:600 13px inherit;border:1px solid var(--border);border-radius:999px;padding:4px 10px;background:var(--elevated)">
+              <option value="401">401 · key 无效</option>
+              <option value="429">429 · 额度/太频繁</option>
+              <option value="net">断网 · 连不上</option>
+            </select>
+            <span class="icons">✎ ▤ ⋯</span>
+          </div>
+          <div class="panel-body">
+            <div class="msg-user" id="p2a-q">帮我概括这个页面</div>
+
+            <!-- 401 -->
+            <div data-kind="401">
+              <div class="card err-card">
+                <div class="head"><span class="dot"></span>模型拒绝了请求</div>
+                <p>key 无效，或这个 key 没有 demo-model 的权限。重试结果会一样，先去换 key。</p>
+                <div class="btn-row">
+                  <button class="btn btn-primary" onclick="p2aToast('打开「模型与语音」，光标落在 key 输入框')">去换 key</button>
+                  <button class="btn btn-quiet" onclick="p2aToast('还是 401：key 没换，重试没意义——所以它不是主按钮')">仍然重试</button>
+                </div>
+                <details class="tech"><summary>技术详情</summary><pre>401 Unauthorized {"error":{"message":"Invalid API key","type":"invalid_request_error"}} · custom/demo-model</pre></details>
+              </div>
+            </div>
+
+            <!-- 429 -->
+            <div data-kind="429" hidden>
+              <div class="card err-card">
+                <div class="head"><span class="dot"></span>额度用完，或请求太频繁</div>
+                <p>可以稍后再试，或换个模型立刻继续。</p>
+                <div class="btn-row" style="position:relative">
+                  <button class="btn btn-primary" onclick="document.getElementById('p2a-menu').classList.toggle('open')">换一个模型 ▾</button>
+                  <button class="btn btn-quiet" onclick="p2aToast('30 秒后自动重试了一次（遵循 Retry-After）')">稍后重试</button>
+                </div>
+                <div class="model-menu" id="p2a-menu">
+                  <button onclick="p2aPick('Kimi K2（已配置）')">Kimi K2 <span class="sub">已配置 · 快</span></button>
+                  <button onclick="p2aPick('DeepSeek V3（已配置）')">DeepSeek V3 <span class="sub">已配置</span></button>
+                  <button onclick="p2aPick('去设置里加新模型')">去设置里加新模型…</button>
+                </div>
+                <details class="tech"><summary>技术详情</summary><pre>429 Too Many Requests {"error":{"message":"quota exceeded"}} · custom/demo-model</pre></details>
+              </div>
+            </div>
+
+            <!-- 断网 -->
+            <div data-kind="net" hidden>
+              <div class="card err-card">
+                <div class="head"><span class="dot"></span>连不上模型服务</div>
+                <p>网络断了，或服务商没有响应。进度没有丢。</p>
+                <div class="btn-row">
+                  <button class="btn btn-primary" onclick="p2aToast('重试中…')">重试</button>
+                </div>
+                <p style="font-size:12px;color:var(--ink-3)">网络恢复后会自动重试一次，不用盯着。</p>
+                <details class="tech"><summary>技术详情</summary><pre>TypeError: Failed to fetch · custom/demo-model</pre></details>
+              </div>
+            </div>
+          </div>
+          <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+          <div class="toast" id="p2a-toast"></div>
+        </div>
+      </div>
+
+      <!-- 方案 B -->
+      <div class="option">
+        <div class="option-head"><span class="badge">方案 B</span><h3>错误卡 + 一键诊断</h3></div>
+        <p class="option-note">卡片上只有一个「帮我修」按钮，点开诊断面板：自动重测连接、列出可能原因和对应动作。信息更全，但<b>多一步点击</b>，且诊断面板本身是新界面。可作为 A 的二期增强。</p>
+        <div class="panel" id="p2b">
+          <div class="panel-head">触发401 <span class="icons">✎ ▤ ⋯</span></div>
+          <div class="panel-body">
+            <div class="card err-card" data-state="err">
+              <div class="head"><span class="dot"></span>模型拒绝了请求</div>
+              <p>key 无效，或没有这个模型的权限。</p>
+              <div class="btn-row">
+                <button class="btn btn-primary" onclick="p2bGo()">帮我修</button>
+              </div>
+            </div>
+            <div class="card" data-state="diag" hidden>
+              <h4>诊断</h4>
+              <p id="p2b-line">⏳ 正在用当前 key 重测连接…</p>
+              <div id="p2b-result" hidden>
+                <p>✗ 重测还是 401 — key 本身无效，不是网络波动。</p>
+                <div class="btn-row">
+                  <button class="btn btn-primary" onclick="p2bToast('打开「模型与语音」换 key')">去换 key</button>
+                  <button class="btn btn-quiet" onclick="p2bToast('已复制技术详情')">复制技术详情</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+          <div class="toast"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <div class="option-head"><span class="badge rec">推荐</span><span class="badge">顺手修</span><h3>设置页「测试连接」失败</h3></div>
+        <p class="option-note">现状把原始 JSON 直接铺给用户（<code>explainFailure</code> 的人话后面跟着 160 字原文）。改成：<b>人话为主，原文折叠</b>。点「测试连接」看失败态。</p>
+        <div class="panel" id="p2c">
+          <div class="panel-head">设置 · 模型与语音</div>
+          <div class="panel-body">
+            <div class="card">
+              <div class="connect-form">
+                <select><option>OpenAI 兼容（自定义地址）</option></select>
+                <input value="https://api.demo.example/v1" readonly>
+                <input type="password" value="sk-wrong-key-123" readonly>
+                <div class="btn-row">
+                  <button class="btn btn-quiet" onclick="p2cTest()">测试连接</button>
+                  <button class="btn btn-primary">保存并使用</button>
+                </div>
+                <div class="form-status" id="p2c-status"></div>
+                <details class="tech" id="p2c-tech" hidden>
+                  <summary>技术详情（给排查用）</summary>
+                  <pre>HTTP 401 · {"error":{"message":"Incorrect API key provided: sk-wron…-123. You can find your API key at https://platform.example.com/api-keys.","type":"invalid_request_error","code":"invalid_api_key"}}</pre>
+                </details>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 问题三：记忆管理 ═══════════ -->
+  <section class="problem" id="p3">
+    <div class="problem-head">
+      <h2>三、记忆：能看、能忘，但不能改、不能找</h2>
+      <span class="tag">更正一个事实：记忆抽屉已经存在（顶栏数据库图标），问题是发现性 + 缺编辑/搜索</span>
+    </div>
+    <p class="problem-desc">代码事实：<code>main.ts:193</code> 的 memory-drawer 已能列记忆、忘掉、恢复旧任务。缺的是：①入口太隐蔽（顶栏一个数据库图标，没有名字）②不能改内容，记错了只能整条忘掉 ③不能搜索筛选。对照 ChatGPT「Manage memories」：列表 + 逐条删除 + 总开关；Claude 还支持编辑。</p>
+
+    <div class="options">
+      <!-- 方案 A -->
+      <div class="option">
+        <div class="option-head"><span class="badge rec">推荐</span><span class="badge">方案 A</span><h3>抽屉补强：编辑 + 搜索</h3></div>
+        <p class="option-note">不加新界面，把现有抽屉补完整：<b>顶部搜索框、每条可「改」（内联编辑）、忘掉后可撤销</b>。分组按范围（全局 / 本站）。都可以点：试试搜索「马拉松」，或点「改」。</p>
+        <div class="panel" id="p3a">
+          <div class="panel-head">记忆 <span class="icons">✕</span></div>
+          <div class="panel-body">
+            <div class="mem-toolbar">
+              <input id="p3a-search" placeholder="搜索记忆…" oninput="p3aFilter()">
+            </div>
+            <div class="mem-group">全局 · <span id="p3a-count-g">2</span> 条</div>
+            <div class="mem-item" data-text="用户在准备 11 月的上海马拉松，月跑量 120 公里">
+              <span class="mem-text">在准备 11 月的上海马拉松，月跑量 120 公里</span>
+              <span class="mem-meta">来自 9 月 28 日的对话</span>
+              <div class="mem-acts">
+                <button onclick="p3aEdit(this)">改</button>
+                <button class="danger" onclick="p3aForget(this)">忘掉</button>
+              </div>
+            </div>
+            <div class="mem-item" data-text="用户偏好先给结论再给理由，不要客套话">
+              <span class="mem-text">偏好先给结论再给理由，不要客套话</span>
+              <span class="mem-meta">来自 10 月 2 日的纠正</span>
+              <div class="mem-acts">
+                <button onclick="p3aEdit(this)">改</button>
+                <button class="danger" onclick="p3aForget(this)">忘掉</button>
+              </div>
+            </div>
+            <div class="mem-group">本站（github.com） · 1 条</div>
+            <div class="mem-item" data-text="这个仓库的验收文件放在 docs/evals 下">
+              <span class="mem-text">这个仓库的验收文件放在 docs/evals 下</span>
+              <span class="mem-meta">来自 10 月 4 日的对话</span>
+              <div class="mem-acts">
+                <button onclick="p3aEdit(this)">改</button>
+                <button class="danger" onclick="p3aForget(this)">忘掉</button>
+              </div>
+            </div>
+          </div>
+          <div class="toast" id="p3a-toast"></div>
+        </div>
+      </div>
+
+      <!-- 方案 B -->
+      <div class="option">
+        <div class="option-head"><span class="badge">方案 B</span><h3>入口可见性：给图标一个名字</h3></div>
+        <p class="option-note">抽屉功能不动，只解决「没人找得到」：顶栏数据库图标加文字「记忆」；「用了 N 条记忆 ›」展开条的底部加「管理全部记忆 →」。<b>成本最低，建议无论选谁都带上。</b>点「用了 2 条记忆」展开。</p>
+        <div class="panel" id="p3b">
+          <div class="panel-head">新会话 <span class="icons">✎ <u style="text-underline-offset:3px">记忆</u> ⋯</span></div>
+          <div class="panel-body">
+            <div class="msg-user">下周训练怎么安排？</div>
+            <div class="card" style="gap:8px">
+              <p style="color:var(--ink)">下周以减量恢复为主：周中两次轻松跑，周末一次 14 公里有氧。
+                <button style="border:none;background:none;font:12px inherit;color:var(--ink-3);cursor:pointer;text-decoration:underline;text-underline-offset:3px" onclick="document.getElementById('p3b-list').hidden=!document.getElementById('p3b-list').hidden">用了 2 条记忆 ›</button>
+              </p>
+              <div id="p3b-list" hidden style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border-subtle);padding-top:8px">
+                <div class="mem-item"><span class="mem-text">在准备 11 月的上海马拉松…</span></div>
+                <div class="mem-item"><span class="mem-text">偏好先给结论再给理由…</span></div>
+                <button style="border:none;background:none;font:12.5px inherit;color:var(--ink-2);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px" onclick="p3bToast('打开记忆抽屉')">管理全部记忆 →</button>
+              </div>
+            </div>
+          </div>
+          <div class="composer">说说你想完成什么… <span class="send">↑</span></div>
+          <div class="toast" id="p3b-toast"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="footnote">
+    <b>选择方式：</b>每个问题选一个方案（或组合），回复例如「1A+1B 兜底、2A、3A+3B」。我推荐 <b>1A（1B 兜底）、2A（含测试连接顺手修）、3A+3B</b>——全是现有界面的补强，不新增页面，符合「克制、可依赖」的基调。方案确认后我写成 GitHub issue（含完成标准），工程团队照着实现；本预览不改任何产品代码。
+  </p>
+</div>
+
+<script>
+function toast(el, msg, undo) {
+  el.innerHTML = "";
+  el.append(document.createTextNode(msg));
+  if (undo) {
+    const b = document.createElement("button");
+    b.textContent = "撤销";
+    b.onclick = undo;
+    el.appendChild(b);
+  }
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 3200);
+}
+
+/* ── P1A ── */
+function p1aGo(state) {
+  const body = document.getElementById("p1a-body");
+  for (const el of body.querySelectorAll("[data-state]")) el.hidden = el.dataset.state !== state;
+}
+function p1aTest() {
+  const st = document.getElementById("p1a-status");
+  const key = document.getElementById("p1a-key").value.trim();
+  st.className = "form-status busy";
+  st.textContent = "正在测试…";
+  setTimeout(() => {
+    if (key.length < 8) {
+      st.className = "form-status err";
+      st.textContent = "连不上：key 无效，或没有这个模型的权限。技术详情已折叠在设置里。";
+      return;
+    }
+    st.className = "form-status ok";
+    st.textContent = "✓ 连上了（kimi-k2，延迟 0.8s）";
+    document.getElementById("p1a-save").disabled = false;
+  }, 900);
+}
+function p1aSave() {
+  p1aGo("done");
+  toast(document.getElementById("p1a-toast"), "已保存并使用 Kimi K2");
+}
+
+/* ── P1B ── */
+function p1bGo() {
+  const p = document.querySelectorAll("#p1b [data-state]");
+  p[0].hidden = true; p[1].hidden = false;
+}
+function p1bTest(btn) {
+  const st = btn.closest(".connect-form").querySelector(".form-status");
+  st.className = "form-status busy"; st.textContent = "正在测试…";
+  setTimeout(() => { st.className = "form-status ok"; st.textContent = "✓ 连上了，点「保存并使用」"; }, 900);
+}
+
+/* ── P2A ── */
+function p2aSwitch() {
+  const kind = document.getElementById("p2a-kind").value;
+  for (const el of document.querySelectorAll("#p2a [data-kind]")) el.hidden = el.dataset.kind !== kind;
+  document.getElementById("p2a-menu").classList.remove("open");
+}
+function p2aToast(msg) { toast(document.getElementById("p2a-toast"), msg); }
+function p2aPick(name) {
+  document.getElementById("p2a-menu").classList.remove("open");
+  p2aToast("已切到「" + name + "」，点「稍后重试」即可继续");
+}
+
+/* ── P2B ── */
+function p2bGo() {
+  document.querySelector('#p2b [data-state="diag"]').hidden = false;
+  setTimeout(() => {
+    document.getElementById("p2b-line").textContent = "✓ 网络正常，服务商在线";
+    document.getElementById("p2b-result").hidden = false;
+  }, 1100);
+}
+function p2bToast(msg) { toast(document.querySelector("#p2b .toast"), msg); }
+
+/* ── P2C ── */
+function p2cTest() {
+  const st = document.getElementById("p2c-status");
+  const tech = document.getElementById("p2c-tech");
+  tech.hidden = true;
+  st.className = "form-status busy"; st.textContent = "正在测试…已等 1 秒";
+  setTimeout(() => {
+    st.className = "form-status err";
+    st.textContent = "✗ key 无效，或这个 key 没有该模型的权限。检查 key 有没有复制完整。";
+    tech.hidden = false;
+  }, 1200);
+}
+
+/* ── P3A ── */
+function p3aFilter() {
+  const q = document.getElementById("p3a-search").value.trim().toLowerCase();
+  for (const item of document.querySelectorAll("#p3a .mem-item")) {
+    item.classList.toggle("hidden-by-search", !!q && !item.dataset.text.toLowerCase().includes(q));
+  }
+  for (const group of document.querySelectorAll("#p3a .mem-group")) {
+    let el = group.nextElementSibling, any = false;
+    while (el && !el.classList.contains("mem-group")) {
+      if (el.classList.contains("mem-item") && !el.classList.contains("hidden-by-search")) any = true;
+      el = el.nextElementSibling;
+    }
+    group.style.display = any ? "" : "none";
+  }
+}
+function p3aEdit(btn) {
+  const item = btn.closest(".mem-item");
+  const text = item.querySelector(".mem-text");
+  if (btn.textContent === "改") {
+    const ta = document.createElement("textarea");
+    ta.value = text.textContent;
+    text.replaceWith(ta);
+    ta.focus();
+    btn.textContent = "存";
+  } else {
+    const ta = item.querySelector("textarea");
+    const span = document.createElement("span");
+    span.className = "mem-text";
+    span.textContent = ta.value;
+    ta.replaceWith(span);
+    item.dataset.text = "用户" + ta.value;
+    btn.textContent = "改";
+    toast(document.getElementById("p3a-toast"), "已更新，下次回复生效");
+  }
+}
+function p3aForget(btn) {
+  const item = btn.closest(".mem-item");
+  item.style.opacity = ".4";
+  toast(document.getElementById("p3a-toast"), "已忘掉，不再用于新回复", () => {
+    item.style.opacity = "1";
+  });
+}
+
+/* ── P3B ── */
+function p3bToast(msg) { toast(document.getElementById("p3b-toast"), msg); }
+</script>
+</body>
+</html>

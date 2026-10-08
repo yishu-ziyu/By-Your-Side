@@ -38,6 +38,9 @@ npx tsx scripts/acceptance/real-path/ptt-dictation.mts --headless       # 网页
 npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless         # 按住说话的网页底部胶囊：在听 → 在做 → 结果（念出来），Esc 停；念结果连 MiniMax 订阅 Key
 npx tsx scripts/acceptance/real-path/reinject.mts --headless            # 重载扩展后，已打开的网页不刷新也能按住说话
 npx tsx scripts/acceptance/real-path/proactive-card.mts --headless      # 侧栏里的主动卡：动词即按钮，按下原位接着说；没成也原位说清；每次判断进诊断记录；全程录侧栏
+npx tsx scripts/acceptance/real-path/proactive-card-boundaries.mts --headless # 忙时不抢任务、助手断开留卡、扩展后台重启后旧卡只执行一次
+npx tsx scripts/acceptance/real-path/ptt-faults.mts --headless # 真实听写与朗读鉴权拒绝、关闭念结果
+npx tsx scripts/acceptance/real-path/ptt-playback-boundaries.mts --headless # 真听写+挂起合成请求，半开超时与过期回调
 npx tsx scripts/acceptance/real-path/voice-plan-settings.mts --headless # 语音选择持久、端点与无效值拒绝；不是音频验收
 npx tsx scripts/acceptance/real-path/voice-plan.mts --headless --case=chat # 真套餐语音；task/failure/cancel为其他场景
 npx tsx scripts/acceptance/real-path/voice-plan-output-boundaries.mts --headless --case=unknown-output # 真语音帧来源缺失；另有delayed-created/source-timeout

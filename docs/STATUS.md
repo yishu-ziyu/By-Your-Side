@@ -1,6 +1,6 @@
 # 当前状态
 
-复核日期：2026-10-07。开发预览版，尚无发布通过结论。
+复核日期：2026-10-08。开发预览版，尚无发布通过结论。
 
 会话恢复与菜单已部署（[部署](evals/20261003-session-deployment.md)）。本机模式已退役，产品仅为扩展（[退役验收](evals/20261001-retire-native-and-dead-code.md)）。
 
@@ -39,9 +39,10 @@
 
 1. 记忆与重启（10-07，#89–#98）：没说「记住」的改口也更新旧值；同一件事 3 个对话做过就弹卡问；后台重启后安全的任务自动续做；首次配好后的第一句不丢。合并前跑 `npm run smoke`。
 1. 记忆露出来、圈给它看（10-07，YIS-83/84 已关）：回执写新旧值可撤销；回答下面点名用了哪条；按记忆填的格子标「记得的」；「圈出来问」可连圈、带圈内文字，回答里的 ①② 能点回原处。
-1. 提速（10-07）：会动手的日常任务 98% 时间在等模型（[时间拆分](evals/20261007-time-breakdown.md)）；多页调研中位 34→10 秒（[验收](evals/20261007-navigate-returns-page.md)）。「走老路」不到提速门槛已关；提交前核对用到一步步做（[验收](evals/20261007-submit-check.md)）。
-1. 主动卡「动词即按钮」（YIS-106 已做，真实模型待试，[验收](evals/20261007-proactive-card-verb.md)）；动作后不经模型核对、跑完代码当裁判（YIS-113 待做，[验收](evals/20261008-check-assert-referee.md)）。
-2. PDF 下载（#25）：两模型通过（[验收与录像](evals/20261002-pdf-download.md)）。
+1. 提速（10-07）：会动手的日常任务 98% 时间在等模型（[时间拆分](evals/20261007-time-breakdown.md)）；多页调研中位 34→10 秒（[验收](evals/20261007-navigate-returns-page.md)）；「走老路」已关（[验收](evals/20261007-submit-check.md)）。
+1. 主动卡「动词即按钮」（YIS-106，真实模型待试，[验收](evals/20261007-proactive-card-verb.md)）；代码裁判待合并（#163）。
+1. 10-08 待合并：#161 下载回执、#164 语音套餐与首句、#165 欢迎页、#162 工具清单；更新日常扩展须用户同意。
+1. 学习实验收束；续接见[续接](evals/20261008-session-recovery.md)。
 3. #32 环境分类独占通过；#35 共 124 次运行判分完成（[环境验收](evals/20261002-eval-environment.md)）。
 4. 会话/文件恢复、40px 截图卡（[验收](evals/20261002-session-durability.md)）、会话菜单（[验收](evals/20261003-conversation-menu.md)）、MiniMax 记忆分类与备注提交（[分类](evals/20261003-memory-classification.md)、[执行](evals/20261003-method-form-enforcement.md)）、备注补填与撤销（[验收](evals/20261003-memory-rule-replacement.md)，下一步用在线 MiniMax 复测）均已部署。
 
