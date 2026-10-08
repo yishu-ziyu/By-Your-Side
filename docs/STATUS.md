@@ -25,7 +25,7 @@
 ## 仍需解决
 
 - 改口后改写已有成功回执有缺口；[接管/交还](evals/20261005-takeover-handback.md)、[药丸](evals/20261005-edge-pill.md)、[淡出](evals/20261005-chrome-quiet.md)真路径过；#48、50–52、54 已快查余[待测](guides/usage.md)；[复测](evals/20260922-computer-use-product-path.md)。
-- 扩展外跑任务核心的检查与调试通道已于 10-04 删除；`eval:live` 如实报 BLOCKED，需要在扩展里跑的真实模型评测（[删减验收](evals/20261004-cut-unused.md)）。
+- 10-08 删掉没启用过的发布评测（`doctor`、`eval:*`、`release:verify`），保留真实浏览器评测包 `eval/harness`。
 - 去掉批准卡后，网页注入可让助手在已登录网站上动手（[说明](browser-confirmation.md)），防护待定。
 - 上传本机文件、请帮手并行、富文本粘贴的代码已于 10-04 删除，要做应另起。DeepSeek 在字幕站找不到内嵌数据的接口，两次放弃（[数据存文件](evals/20261001-data-to-file.md)）。
 - 10-08 删掉全部单元与集成测试，`npm test` 只跑 10 个核心真实路径，不含语音（[验收](evals/20261008-e2e-only.md)）。新会话刚点就发，消息可能进旧对话，待复现。
