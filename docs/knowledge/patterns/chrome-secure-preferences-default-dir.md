@@ -19,15 +19,16 @@
 
 ## 适用条件
 
-macOS 上脚本化检查 Chrome/Chromium 系浏览器扩展状态。NOTES.md:310 提到过 Secure Preferences 但未记 `Default/` 这一层路径，本页补齐。
+macOS 上脚本化检查 Chrome/Chromium 系浏览器扩展状态。旧 NOTES 提到过 Secure Preferences 但未记 `Default/` 这一层路径，本页补齐。
 
 ## 相关未决问题（勿固化）
 
-「Chrome 重启后扩展消失」的根因在该会话中**未被证实**：证据只到 `getExtensionsInfo` 查无 SideAgent ID（2079）、reload 接口报 not found（2063）、Secure Preferences 只剩骨架条目（1974）。NOTES.md:310 的「清理旧 ID 时误删」只是推断，维持未决。
+「Chrome 重启后扩展消失」的根因在该会话中**未被证实**：证据只到 `getExtensionsInfo` 查无 SideAgent ID（2079）、reload 接口报 not found（2063）、Secure Preferences 只剩骨架条目（1974）。
+旧 NOTES 的「清理旧 ID 时误删」只是推断，维持未决。
 
 ## 文档卫生备注
 
-`docs/NOTES.md:270` 把重载脚本写成 `scripts/reload-ext.mts`，实际落盘与 package.json 注册的是 `scripts/reload-ext.mjs`（源会话 wire 2156–2158 创建、2172 注册；仓库现状亦为 `.mjs`）。本 agent 无文档写权限，留待用户顺手修正。
+已解决：旧 NOTES 曾把重载脚本写成 `.mts`；实际文件是 [`scripts/reload-ext.mjs`](../../../scripts/reload-ext.mjs)，现在的 NOTES 已不再提它。
 
 ## 来源
 

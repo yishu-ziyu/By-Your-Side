@@ -6,11 +6,13 @@
 
 ## 原因
 
-源码里写的是 `import ... from "./protocol.js"`。esbuild 解析时，磁盘上真有 `protocol.js` 就直接用它，不去找 `protocol.ts`；tsx 反过来优先 `.ts`。所以同一份导入，扩展构建和伴随进程拿到的是不同文件。本例有 7 个 `.js` 比对应 `.ts` 旧（`shared/control`、`execution-feedback`、`network`、`observe`、`pointer-input`、`protocol`、`task-view`），扩展里跑的就是旧逻辑。
+源码里写的是 `import ... from "./protocol.js"`。esbuild 解析时，磁盘上真有 `protocol.js` 就直接用它，不去找 `protocol.ts`；tsx 反过来优先 `.ts`。所以同一份导入，扩展构建和伴随进程拿到的是不同文件。
+本例有 7 个 `.js` 比对应 `.ts` 旧（`shared/control`、`execution-feedback`、`network`、`observe`、`pointer-input`、`protocol`、`task-view`），扩展里跑的就是旧逻辑。
 
 ## 方法
 
-- 构建或验收前列出 `git ls-files --others --exclude-standard 'shared/*.js' 'extension/src/**/*.js'` 里有同名 `.ts` 的文件，并比较修改时间；样板脚本 `scripts/acceptance/real-path/harness.mts` 的 `shadowedSources()` 会把这份清单写进 `result.json`。
+- 构建或验收前列出 `git ls-files --others --exclude-standard 'shared/*.js' 'extension/src/**/*.js'` 里有同名 `.ts` 的文件，并比较修改时间；
+  样板脚本 `scripts/acceptance/real-path/harness.mts` 的 `shadowedSources()` 会把这份清单写进 `result.json`。
 - 这些文件多半是别的会话或工具误编译产生的；删除前先确认来源，不替别的会话清理。
 
 ## 适用条件

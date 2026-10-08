@@ -26,5 +26,5 @@
 ## 落地（2026-09-11）
 
 - 修改文件：`AGENTS.md`「项目检查入口」新增该条约束，按上文原文落地。
-- 检查：`git diff AGENTS.md` 仅新增这一条；逐文件核对 `scripts/acceptance/` 无启动可见窗口者——自起 Chrome 的脚本都带 `--headless=new`，`accept:browser` / `accept:team` / `accept:sessions` 与语音类脚本连已运行的 Chrome，`parent-tab-model-run.mts` 的 `spawn` 是 agent worker 不是浏览器。
+- 检查：`git diff AGENTS.md` 仅新增这一条；逐文件核对 `scripts/acceptance/` 无启动可见窗口者——自起 Chrome 的脚本都带 `--headless=new`，`accept:browser` / `accept:team` / `accept:sessions` 与语音类脚本连已运行的 Chrome，`parent-tab-model-run.mts`（2026-09-23 删除）的 `spawn` 是 agent worker 不是浏览器。
 - 附带：新增的项目 skill `.pi/skills/sideagent-dev/SKILL.md` 同步写入了这条硬规矩。

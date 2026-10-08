@@ -45,7 +45,7 @@ description: 在本仓库编写或排查由 tsx 执行的一次性调试、验�
 
 ## 备注（不在本提案范围内）
 
-`docs/NOTES.md:270` 的 `scripts/reload-ext.mts` 应为 `.mjs`（事实不符），建议用户裁决时顺手修正；本 agent 无文档写权限，已在 pattern 页记录。
+`docs/NOTES.md:270` 的 `scripts/reload-ext.mts` 应为 `.mjs`（事实不符），建议用户裁决时顺手修正；本 agent 无文档写权限，已在 pattern 页记录。（后注：现在的 NOTES 已不再提这个脚本。）
 
 ## 裁决
 

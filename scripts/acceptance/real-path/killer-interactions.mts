@@ -1,5 +1,7 @@
 import type { TranslationCommand } from '../../../shared/page-translation.js';
-/** Real extension, native page/panel renderer targets; no visible Chrome window. */
+/** Real extension, native page/panel renderer targets; no visible Chrome window.
+ *   npx tsx scripts/acceptance/real-path/killer-interactions.mts --headless --run=final
+ * Translation batches come from a fixture, so this does not measure provider translation quality. */
 import { createServer } from 'node:http';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { transform } from 'esbuild';

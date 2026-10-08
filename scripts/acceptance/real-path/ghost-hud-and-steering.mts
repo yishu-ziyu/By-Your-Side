@@ -1,6 +1,10 @@
 /**
  * 直连按钮与改方向（docs/evals/20261005-ghost-hud-and-steering.md R1–R4）：只装扩展的隔离无头 Chrome、真侧栏、
  * 本机网页与本机脚本模型。按钮必须不经模型；改方向必须截断正在写的长文、同一轮换成新回答。
+ *
+ *   npx tsx scripts/acceptance/real-path/ghost-hud-and-steering.mts --headless --run=final
+ *
+ * --run= 只决定证据目录 out/acceptance/ghost-hud-and-steering/<run>/：不写时是 candidate（候选轮），最终验收用 final。
  */
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

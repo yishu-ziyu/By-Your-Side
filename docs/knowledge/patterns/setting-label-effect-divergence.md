@@ -6,15 +6,16 @@
 
 ## 原因
 
-- 同一个设置有两个默认值：侧栏 `main.ts` 是 boil（2026-09-09 用户决定），扩展后台 `mode.ts` 仍是 grow。storage 里没存过该设置时，两边各显示/执行各自的默认。
+- 同一个设置有两个默认值：侧栏 `main.ts` 是 boil（2026-09-09 用户决定），扩展后台 `mode.ts`（2026-10-04 删除）仍是 grow。storage 里没存过该设置时，两边各显示/执行各自的默认。
 - 扩展后台把设置缓存在模块变量里，只在自己的 setter 里更新；侧栏右击直接写 `chrome.storage.local`，扩展后台的缓存不知道。
-- 旧单测分别测了扩展后台 getter/setter 的往返，从没把「提示文字」和「画出来的结果」放在一起比。
+- 旧的单元测试分别测了扩展后台 getter/setter 的往返，从没把「提示文字」和「画出来的结果」放在一起比。
 
 ## 方法
 
 - 用户可见的设置，提示与效果读同一个来源；跨进程（侧栏和扩展后台）时每次现读 storage，不缓存，或订阅 `storage.onChanged`。
 - 默认值只定义一处；另一处应 import，不抄常量。
-- 验收断言「提示说的 == 实际发生的」，而且覆盖「未存偏好」和「切换一次后」两种状态：`scripts/acceptance/real-path/mark-motion-toggle.mts` 读按钮 title，再用 `DOM.getDocument({pierce:true})` 读封闭 shadow root 里圈画的 class。
+- 验收断言「提示说的 == 实际发生的」，而且覆盖「未存偏好」和「切换一次后」两种状态。
+  当时的验收用例 `mark-motion-toggle.mts`（2026-10-04 删除）读按钮 title，再用 `DOM.getDocument({pierce:true})` 读封闭 shadow root 里圈画的 class。
 
 ## 适用条件
 

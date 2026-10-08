@@ -12,7 +12,8 @@
 
 ## 方法
 
-- 对扩展自己画在页面上的东西（标注、翻译……），在内容脚本的隔离环境里留一个只读读数。再由 `snapshot` 带给核验：`window.__sideagent.marksState()` 进 `snapshot.marks`，再作为 `hostDrawnMarks` 交给复核。先例是 `readTranslationDisplay`。
+- 对扩展自己画在页面上的东西（标注、翻译……），在内容脚本的隔离环境里留一个只读读数。
+  再由 `snapshot` 带给核验：`window.__sideagent.marksState()` 进 `snapshot.marks`，再作为 `hostDrawnMarks` 交给复核。先例是 `readTranslationDisplay`。
 - 读数写「圈住了哪个元素（标签名、可读名字）、此刻是否显示」，不写 `@24` 这类传输编号。
 - 在工具说明里告诉模型：这类东西会自动出现在核验读数里，不要去 DOM 里找。
 - 判断是不是回归之前，先看失败的诊断记录：每轮调了什么，拿回了什么。「工具几毫秒就返回、模型每轮 30–50 秒」说明是在空转，不是卡在某次调用上。

@@ -27,8 +27,10 @@
 ## 验证
 
 - 失败：源会话 wire.jsonl **1545→1546**（指定模块未找到）、**1881→1882**（top-level await CJS 错）、**1890→1891**（ERR_MODULE_NOT_FOUND ws）。
-- 成功：1553→1554（落盘 + 源码绝对路径导入，输出 refCount: 98）。1913 改用内置 WebSocket 后，1923→1924 能执行脚本，但返回 `chrome.runtime.reload is not a function`，扩展重载仍未成功。最终项目内重载脚本在 **2217→2218** 才报告重载成功。
-- 2026-09-09 主代理反例检查：`npx tsx -e 'import { readFileSync } from "node:fs"; console.log("INLINE_IMPORT", typeof readFileSync)'` 输出 `INLINE_IMPORT function`，退出 0，推翻初稿的“内联 import 不可用”。初稿保留在本地 consolidate-first-draft.log，报告保留在 consolidate.log，未据此启用任何 skill。
+- 成功：1553→1554（落盘 + 源码绝对路径导入，输出 refCount: 98）。
+  1913 改用内置 WebSocket 后，1923→1924 能执行脚本，但返回 `chrome.runtime.reload is not a function`，扩展重载仍未成功。最终项目内重载脚本在 **2217→2218** 才报告重载成功。
+- 2026-09-09 主代理反例检查：`npx tsx -e 'import { readFileSync } from "node:fs"; console.log("INLINE_IMPORT", typeof readFileSync)'` 输出 `INLINE_IMPORT function`，退出 0，推翻初稿的“内联 import 不可用”。
+  初稿保留在本地 consolidate-first-draft.log，报告保留在 consolidate.log，未据此启用任何 skill。
 
 ## 适用条件
 

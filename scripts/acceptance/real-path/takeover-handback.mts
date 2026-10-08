@@ -1,6 +1,10 @@
 /**
  * 接管 / 交还（原名我来 / 你继续）（docs/evals/20261005-takeover-handback.md R1–R4）：只装扩展的隔离无头 Chrome、真侧栏、
  * 本机计数页与本机脚本模型。Agent 每 1.5 秒点一次左上角按钮；中途接手、改页面、交还，看它是否从改后的页面接着点。
+ *
+ *   npx tsx scripts/acceptance/real-path/takeover-handback.mts --headless --run=final
+ *
+ * --run= 只决定证据目录 out/acceptance/takeover-handback/<run>/：不写时是 candidate（候选轮），最终验收用 final。
  */
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

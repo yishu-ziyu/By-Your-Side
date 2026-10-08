@@ -1,6 +1,10 @@
 /**
  * 划词照常、拖多少由用户定（docs/evals/20261005-drag-feed-selection.md R1–R3）：只装扩展的隔离无头 Chrome、
  * 真侧栏、本机文章页；鼠标与拖拽都是 CDP 原生输入，拖拽数据真实跨渲染进程送到侧栏。
+ *
+ *   npx tsx scripts/acceptance/real-path/drag-feed-selection.mts --headless --run=final
+ *
+ * --run= 只决定证据目录 out/acceptance/drag-feed-selection/<run>/：不写时是 candidate（候选轮），最终验收用 final。
  */
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

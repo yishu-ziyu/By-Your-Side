@@ -1,38 +1,41 @@
 # 经验索引
 
-> 本目录 `docs/knowledge/` 是项目唯一经验库，由旧 `.kimi-code/wiki/` 迁入。当前主代理在开发任务验证后、最终交付前，按 [项目收尾规范](../../AGENTS.md#经验沉淀闭环任务收尾)直接维护这里。
-> 历史 Kimi 离线复盘也使用此库；Codex 收尾不依赖它。经验一事一页，纠正时保留依据；日常实现使用已生效规则和 skills，复盘与裁决时才定点读 wiki。
+`docs/knowledge/` 是项目唯一的经验库（由旧 `.kimi-code/wiki/` 迁入）。主代理在开发任务验证后、交给用户前，按[项目收尾规范](../../AGENTS.md#经验沉淀闭环任务收尾)维护这里。历史上 Kimi 离线复盘也用这个库；当前的收尾流程不依赖 Kimi。
 
-- `patterns/`：经过核对的经验及其适用条件、证据；不自动成为指令。
-- [收尾流程](closeout.md)：有新经验或需要纠正旧经验时按需读取。
-- [提案与裁决](proposal-workflow.md)：待审提案及接受、拒绝、修改后的处理。
+- 经验一事一页；纠正经验时保留依据。经验不自动成为指令。日常实现只用已生效的规则和 skills；复盘和裁决时才定点读经验。
+- [收尾流程](closeout.md)：有新经验或要纠正旧经验时读。
+- [提案与裁决](proposal-workflow.md)：形成提案，以及用户接受、拒绝、要求修改后的处理。
 - 待审提案：无（2026-10-01 三份均已裁决）。归档：[已采纳](proposal-archive/accepted/)、[已拒绝](proposal-archive/rejected/)。
-- [演化日志](logs.md)：记录知识和提案发生了什么变化；任务当前进度仍在 [STATUS](../../docs/STATUS.md)。
+- [演化日志](logs.md)：经验和提案的变化记录。任务当前进度只看 [STATUS](../STATUS.md)。
 
-| 经验 | 一句话 | 来源会话 | 日期 |
-|---|---|---|---|
-| [tsx-adhoc-probe-scripts](patterns/tsx-adhoc-probe-scripts.md) | 区分导入路径、模块格式和依赖位置；脚本运行与网页操作成功分别核验，内联 import 禁令已被反例推翻 | session_236968c3（复盘 f0b4980d） | 2026-09-09 |
-| [chrome-secure-preferences-default-dir](patterns/chrome-secure-preferences-default-dir.md) | 先确定实际 profile，再读取 Secure Preferences；本例为 Default，扩展消失根因仍未决 | session_236968c3（复盘 f0b4980d） | 2026-09-09 |
-| [acceptance-entry-mismatch](patterns/acceptance-entry-mismatch.md) | 在旧宿主验收成功不等于用户当前入口可用；先把实际入口写清再定方案 | Codex 本轮目的纠正与收尾验收 | 2026-09-09 |
-| [production-wiring-lowest-shared-module](patterns/production-wiring-lowest-shared-module.md) | 共享行为要接在所有入口都会构造的最低层生产模块，否则最小生产组合与验收驱动会漏掉 | 写入回执丢失 R1–R4 返工 | 2026-09-09 |
-| [quota-limited-storage-silent-failure](patterns/quota-limited-storage-silent-failure.md) | 配额写满后所有写入静默失败；按会话分键会被广播状态批量放大；预算要按 UTF-8 字节算 | 侧栏「未连接」排查与修复 | 2026-09-11 |
-| [observation-identity-mismatch](patterns/observation-identity-mismatch.md) | 按名字匹配命中别的扩展、共享 stderr 没有时间轴、并发工作区造出假回归；下结论前先钉死观测对象 | 同上 | 2026-09-11 |
-| [cross-process-session-closeout](patterns/cross-process-session-closeout.md) | 收盘顺序错、结果被收走、归属依赖任务绑定：跨进程会话的尾巴会丢 | 示范录制第一刀真机模拟 | 2026-09-11 |
-| [gui-test-window-steals-focus](patterns/gui-test-window-steals-focus.md) | 可见 GUI 测试窗口会抢用户前台；浏览器验收走 `--headless=new`，脚本自带拒绝 | 同上（用户反馈） | 2026-09-11 |
-| [pi-opencode-missing-session-header](patterns/pi-opencode-missing-session-header.md) | Prime Agent 的 refine/子代理请求缺 `x-opencode-session` 被 400 拒；不假设 refine 成功 | 用户截图报错排查 | 2026-09-11 |
-| [collapsed-details-animation-end](patterns/collapsed-details-animation-end.md) | 关闭的 `details` 里动画不启动，`animationend` 不会来；靠动画结束清状态要用定时器兜底，判断是否在跑看 `getAnimations()` | 面板运行态 A+B 动效 | 2026-09-11 |
-| [extension-harness-changes-observed-state](patterns/extension-harness-changes-observed-state.md) | 一直挂着的调试会话让扩展后台永不回收；标签页里的面板把自己当成当前页；要在真侧栏里测、会话只短暂挂 | 端到端测试基础设施小实验 | 2026-09-23 |
-| [chrome-fake-audio-file-sandbox](patterns/chrome-fake-audio-file-sandbox.md) | WAV 假麦克风默认静音，因为音频服务沙箱读不到文件；加 `--disable-features=AudioServiceSandbox`，用已知频率验 | 同上 | 2026-09-23 |
-| [model-gateway-check-with-real-tools](patterns/model-gateway-check-with-real-tools.md) | 新模型只用纯对话验会漏掉 schema 拒绝；带真实工具列表发一次，笼统 400 就录请求体二分 | 第一条真实路径样板用例 | 2026-09-23 |
-| [stray-js-shadows-ts-in-esbuild](patterns/stray-js-shadows-ts-in-esbuild.md) | 同名旧 `.js` 被 esbuild 打进扩展、tsx 却用 `.ts`，两边跑的代码不同；构建前列出并比较时间 | 同上 | 2026-09-23 |
-| [setting-label-effect-divergence](patterns/setting-label-effect-divergence.md) | 侧栏和后台各有一份默认值、后台还缓存，提示说 A 实际做 B；默认值只定义一处、跨进程现读，验收断言提示 == 效果 | 仓库清理 | 2026-09-23 |
-| [host-overlay-invisible-to-verification](patterns/host-overlay-invisible-to-verification.md) | 标注画在封闭 shadow root，核验看不到，复核又不认回执，agent 空转到超时；给核验留隔离层只读读数，并随 snapshot 带出 | 圈画完成证据 | 2026-09-23 |
-| [model-label-decides-safety-gate](patterns/model-label-decides-safety-gate.md) | 模型写的 label 顶替了元素真名，「点击发送按钮」绕过了发送确认；闸门只看页面事实，并用真实模型验 | 界面问题 10 项修复 | 2026-09-26 |
-| [restart-loses-in-memory-state](patterns/restart-loses-in-memory-state.md) | 扩展内 agent 的会话只在内存、交给停机 worker 的消息无声消失；端到端里主动关 offscreen / 停 worker，送达以回显为准 | 装日常前的端到端 | 2026-09-26 |
-| [provider-model-name-and-reasoning-quirks](patterns/provider-model-name-and-reasoning-quirks.md) | 调得通不等于名字对、档位对、指令被听；看响应 `model` 字段，档位/角色/收图按实测登记一处 | 答非所问排查与选模型 | 2026-10-01 |
-| [widened-check-needs-the-other-side](patterns/widened-check-needs-the-other-side.md) | 扩大检查范围只测了该拦的，没测「做不成但处理正确」的，结果把正确放弃的任务催回去重试 | 第一档缺口修复 | 2026-10-02 |
-| [worktree-workspace-link-builds-main-tree](patterns/worktree-workspace-link-builds-main-tree.md) | 工作树里构建旧版本时 workspaces 链接指回主仓库，打包的是新代码；旧版反例要先证明跑的真是旧代码 | 删掉半成品与预判 | 2026-10-04 |
-| [execute-script-waits-for-idle](patterns/execute-script-waits-for-idle.md) | 页面加载中注入脚本默认等空闲，读页卡数秒；只读注入加 `injectImmediately`，先拆单个调用计时再下结论 | #18 首个反馈 | 2026-10-06 |
-| [node-error-text-in-browser](patterns/node-error-text-in-browser.md) | 库按 Node 报错文字判断可重试，浏览器的「Failed to fetch」认不出；补浏览器反例，判断只放一处 | 同上 | 2026-10-06 |
-| [offline-preview-porting-pitfalls](patterns/offline-preview-porting-pitfalls.md) | 移植扩展模块做离线预览的四个坑：file:// 不能 import、引擎 `$` 撞名、display 覆盖 hidden、SVG inset 不撑满 | UX 三缺口预览 | 2026-10-06 |
-| [acceptance-picks-newest-chrome](patterns/acceptance-picks-newest-chrome.md) | 验收框架默认用版本号最高的 Chrome for Testing；新装的一版打不开网页时用例成批超时，先用最小探针判断，再用 `EGO_ACCEPTANCE_CHROME` 固定版本 | 升级 Pi 1.0 验收 | 2026-10-07 |
+## 经验列表
+
+每页的结论写在页内；本表只写什么时候该读。
+
+| 经验 | 什么时候读 | 日期 |
+|---|---|---|
+| [tsx-adhoc-probe-scripts](patterns/tsx-adhoc-probe-scripts.md) | 写一次性 tsx 探针脚本，或脚本报模块找不到时 | 2026-09-09 |
+| [chrome-secure-preferences-default-dir](patterns/chrome-secure-preferences-default-dir.md) | 用脚本读 Chrome 的 Secure Preferences 查扩展状态时 | 2026-09-09 |
+| [acceptance-entry-mismatch](patterns/acceptance-entry-mismatch.md) | 定验收方案前，确认用户实际用哪个入口时 | 2026-09-09 |
+| [production-wiring-lowest-shared-module](patterns/production-wiring-lowest-shared-module.md) | 给多个入口加共享行为时 | 2026-09-09 |
+| [quota-limited-storage-silent-failure](patterns/quota-limited-storage-silent-failure.md) | 写扩展存储、或存储写入没有报错却丢数据时 | 2026-09-11 |
+| [observation-identity-mismatch](patterns/observation-identity-mismatch.md) | 诊断时读日志、存储或测试结果，下结论之前 | 2026-09-11 |
+| [cross-process-session-closeout](patterns/cross-process-session-closeout.md) | 跨进程会话的收尾结果丢失时 | 2026-09-11 |
+| [gui-test-window-steals-focus](patterns/gui-test-window-steals-focus.md) | 写浏览器验收脚本、决定是否开可见窗口时 | 2026-09-11 |
+| [pi-opencode-missing-session-header](patterns/pi-opencode-missing-session-header.md) | OpenCode 请求被 400 拒绝时 | 2026-09-11 |
+| [collapsed-details-animation-end](patterns/collapsed-details-animation-end.md) | 靠 `animationend` 清界面状态时 | 2026-09-11 |
+| [extension-harness-changes-observed-state](patterns/extension-harness-changes-observed-state.md) | 搭扩展的端到端测试环境时 | 2026-09-23 |
+| [chrome-fake-audio-file-sandbox](patterns/chrome-fake-audio-file-sandbox.md) | 用音频文件当假麦克风测语音时 | 2026-09-23 |
+| [model-gateway-check-with-real-tools](patterns/model-gateway-check-with-real-tools.md) | 接入新模型或新网关时 | 2026-09-23 |
+| [stray-js-shadows-ts-in-esbuild](patterns/stray-js-shadows-ts-in-esbuild.md) | 构建结果和源码行为对不上时 | 2026-09-23 |
+| [setting-label-effect-divergence](patterns/setting-label-effect-divergence.md) | 一个设置在侧栏和扩展后台各有一份默认值时 | 2026-09-23 |
+| [host-overlay-invisible-to-verification](patterns/host-overlay-invisible-to-verification.md) | 页面标注画在封闭 shadow root、核验看不到时 | 2026-09-23 |
+| [model-label-decides-safety-gate](patterns/model-label-decides-safety-gate.md) | 让程序检查依据模型写的文字时 | 2026-09-26 |
+| [restart-loses-in-memory-state](patterns/restart-loses-in-memory-state.md) | 状态只存在内存里，或靠消息端口传用户输入时 | 2026-09-26 |
+| [provider-model-name-and-reasoning-quirks](patterns/provider-model-name-and-reasoning-quirks.md) | 选模型、配思考档，或模型答非所问时 | 2026-10-01 |
+| [widened-check-needs-the-other-side](patterns/widened-check-needs-the-other-side.md) | 扩大一项检查的范围时 | 2026-10-02 |
+| [worktree-workspace-link-builds-main-tree](patterns/worktree-workspace-link-builds-main-tree.md) | 在 git 工作树里构建或跑旧版本反例时 | 2026-10-04 |
+| [execute-script-waits-for-idle](patterns/execute-script-waits-for-idle.md) | 页面加载中注入脚本、读页变慢时 | 2026-10-06 |
+| [node-error-text-in-browser](patterns/node-error-text-in-browser.md) | 把为 Node 写的库放进浏览器、靠错误文字判断重试时 | 2026-10-06 |
+| [offline-preview-porting-pitfalls](patterns/offline-preview-porting-pitfalls.md) | 把扩展模块移植成离线预览页时 | 2026-10-06 |
+| [acceptance-picks-newest-chrome](patterns/acceptance-picks-newest-chrome.md) | 验收用例成批超时，或新装了 Chrome for Testing 时 | 2026-10-07 |

@@ -1,6 +1,10 @@
 /**
  * 侧栏关着时的小药丸（docs/evals/20261005-edge-pill.md R1–R4）：只装扩展的隔离无头 Chrome、真侧栏、
  * 本机计数页与本机脚本模型。任务运行中关掉侧栏，看页面右边缘的药丸、悬停展开、点「打开侧栏」回来。
+ *
+ *   npx tsx scripts/acceptance/real-path/edge-pill.mts --headless --run=final
+ *
+ * --run= 只决定证据目录 out/acceptance/edge-pill/<run>/：不写时是 candidate（候选轮），最终验收用 final。
  */
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
