@@ -38,32 +38,53 @@ sudo ln -sfn "$chrome" /usr/local/bin/chrome-for-testing
 
 # The VM's google-chrome command is the desktop browser. Branded Chrome 137+ ignores
 # --load-extension, so both launchers use Chrome for Testing and the unpacked build.
-write_launcher() {
-  local path="$1"
-  local extra="$2"
-  sudo tee "$path" >/dev/null <<EOF
+# Quoted heredocs keep "$ext" literal. An unquoted heredoc was escaping the quotes
+# and the desktop browser then refused to start.
+sudo tee /usr/local/bin/bys-chrome >/dev/null <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 ext=/workspace/extension/dist
-if [[ ! -f "\$ext/manifest.json" ]]; then
+if [[ ! -f "$ext/manifest.json" ]]; then
   echo "缺少 extension/dist。先在仓库根目录运行 npm run build。" >&2
   exit 1
 fi
-exec /usr/local/bin/chrome-for-testing \\
-  --no-sandbox \\
-  --disable-dev-shm-usage \\
-  --password-store=basic \\
-  --no-first-run \\
-  --no-default-browser-check \\
-  --load-extension="\$ext" \\
-  --disable-extensions-except="\$ext" \\
-  ${extra}"\$@"
+exec /usr/local/bin/chrome-for-testing \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --password-store=basic \
+  --no-first-run \
+  --no-default-browser-check \
+  --load-extension="$ext" \
+  --disable-extensions-except="$ext" \
+  "$@"
 EOF
-  sudo chmod 755 "$path"
-}
-
-write_launcher /usr/local/bin/bys-chrome ""
-# Same flags the desktop session already expects, plus the extension.
-write_launcher /usr/local/bin/google-chrome "--test-type --use-gl=angle --use-angle=swiftshader-webgl --remote-debugging-port=9222 --remote-allow-origins='*' --user-data-dir=/home/ubuntu/.config/bys-chrome --class=google-chrome --window-size=1820,1100 --window-position=50,50 "
+sudo tee /usr/local/bin/google-chrome >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+ext=/workspace/extension/dist
+if [[ ! -f "$ext/manifest.json" ]]; then
+  echo "缺少 extension/dist。先在仓库根目录运行 npm run build。" >&2
+  exit 1
+fi
+exec /usr/local/bin/chrome-for-testing \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --password-store=basic \
+  --no-first-run \
+  --no-default-browser-check \
+  --load-extension="$ext" \
+  --disable-extensions-except="$ext" \
+  --test-type \
+  --use-gl=angle \
+  --use-angle=swiftshader-webgl \
+  --remote-debugging-port=9222 \
+  --remote-allow-origins='*' \
+  --user-data-dir=/home/ubuntu/.config/bys-chrome \
+  --class=google-chrome \
+  --window-size=1820,1100 \
+  --window-position=50,50 \
+  "$@"
+EOF
+sudo chmod 755 /usr/local/bin/bys-chrome /usr/local/bin/google-chrome
 
 npm run build
