@@ -123,11 +123,56 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     const maskValue = (raw: string): string => (secretField ? (raw ? `<${raw.length} chars>` : '') : raw);
     const values: Partial<Record<ElementProperty, ElementValue>> = {};
+    const renderedText = (): string => {
+      const excludedTags = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
+      const renderedPath = new Map<Element, boolean>();
+
+      const isVisible = (element: Element): boolean => {
+        const cached = renderedPath.get(element);
+        if (cached === false) return false;
+        const path: Element[] = [];
+
+        for (let current: Element | null = element; current; current = current.parentElement) {
+          const known = renderedPath.get(current);
+          if (known === false) {
+            for (const item of path) renderedPath.set(item, false);
+            return false;
+          }
+          if (known === true) break;
+
+          const style = getComputedStyle(current);
+          const opacity = Number.parseFloat(style.opacity);
+          const hidden = excludedTags.has(current.tagName) || style.display === 'none'
+            || style.getPropertyValue('content-visibility') === 'hidden' || opacity === 0;
+
+          path.push(current);
+          if (hidden) {
+            for (const item of path) renderedPath.set(item, false);
+            return false;
+          }
+        }
+
+        for (const item of path) renderedPath.set(item, true);
+        const visibility = getComputedStyle(element).visibility;
+        return visibility !== 'hidden' && visibility !== 'collapse';
+      };
+
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      let text = '';
+
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.parentElement && isVisible(node.parentElement)) text += node.textContent ?? '';
+      }
+
+      return text;
+    };
 
     for (const property of properties) {
       let value: ElementValue | undefined;
 
       if (property === 'textContent') value = textContent;
+      else if (property === 'visibleText') value = renderedText();
       else if (property === 'value' && hasValue) value = maskValue(String(el.value ?? ''));
       else if (property === 'displayValue' && hasValue) {
         // 显示值：select 取当前选中项的可见文字，option 取自身文字，其余取字段值。

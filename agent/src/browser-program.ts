@@ -358,7 +358,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const target = selector ?? "body";
     // expect 只比较 properties 里读到的值，所以要一起要那个属性。
     const readParams = text
-      ? { target, properties: ["textContent"], expect: { property: "textContent", contains: text } }
+      ? { target, properties: ["visibleText"], expect: { property: "visibleText", contains: text } }
       : { target, properties: ["visible"], expect: { property: "visible", equals: true } };
 
     /** 条件此刻成立吗：目标不在（NOT_FOUND）或条件未满足（NOT_READY）都算不成立；其他错误照抛。 */
