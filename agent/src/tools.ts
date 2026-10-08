@@ -19,7 +19,7 @@ import { plainDownloadError } from "../../shared/user-facing.js";
 import { requiresControlGate } from "../../shared/effect-policy.js";
 import { RepeatRefusedError } from "../../shared/task-next-step.js";
 import type { ToolRpc } from "./rpc.js";
-import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type ProgramStep } from "./browser-program.js";
+import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, ProgramAssertError, type ProgramStep } from "./browser-program.js";
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
 import type { RouteNote } from "./route-record.js";
 
@@ -393,8 +393,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           Type.Object({ property: Type.Union(['visible','enabled','checked','selected','paused','ended'].map(p => Type.Literal(p))), equals: Type.Boolean({description:'Boolean true/false, never a quoted string.'}) }),
           Type.Object({ property: Type.Union([Type.Literal('expanded'),Type.Literal('pressed')]), equals: Type.Union([Type.Boolean(),Type.Literal('mixed')]) }),
           Type.Object({ property: Type.Union([Type.Literal('currentTime'),Type.Literal('duration')]), equals: Type.Number() }),
-          Type.Object({ property: Type.Union([Type.Literal('textContent'),Type.Literal('value'),Type.Literal('displayValue')]), equals: Type.String() }),
-          Type.Object({ property: Type.Union([Type.Literal('textContent'), Type.Literal('value'), Type.Literal('displayValue')]), contains: Type.String({ minLength: 1 }) }),
+          Type.Object({ property: Type.Union([Type.Literal('textContent'),Type.Literal('visibleText'),Type.Literal('value'),Type.Literal('displayValue')]), equals: Type.String() }),
+          Type.Object({ property: Type.Union([Type.Literal('textContent'), Type.Literal('visibleText'), Type.Literal('value'), Type.Literal('displayValue')]), contains: Type.String({ minLength: 1 }) }),
         ])),
         timeoutMs: Type.Optional(Type.Number({ minimum: 0, maximum: 5000, description: 'Optional bounded wait for expect; default 0 checks once. No model round trips while waiting.' })),
       }),
@@ -426,7 +426,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout), js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
+      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout), js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. browser.check({text, selector?, state:"appears"|"disappears", timeoutMs:3000}) polls for a text or target without a model round trip and returns {ok, waitedMs, polls} (ok:false on timeout, never an error) — use it right after an action to confirm the outcome instead of a new snapshot. browser.assert({ok, name, reason}) stops the whole program when ok is false: no later action runs, and the result says which step stopped and why. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -435,7 +435,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 组合调用一旦开始，整体结果就不再是“确定未执行”。
         rpc.noteToolFact?.(id, "unknown");
 
-        const result = await runBrowserProgram({ code: params.code,
+        let result: Awaited<ReturnType<typeof runBrowserProgram>>;
+
+        try {
+          result = await runBrowserProgram({ code: params.code,
           call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
           saveFile: files ? async (args) => {
             const store = files();
@@ -449,7 +452,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           } : undefined,
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
           onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
-        });
+          });
+        } catch (error) {
+          if (!(error instanceof ProgramAssertError)) throw error;
+          // assert 停下不是工具失败：前面的步骤已经做了，结果带结构交给模型。
+          // details.steps 保持是步数（侧栏按 Number(details.steps) 计数），步骤列表另放 programSteps。
+          rpc.noteToolFact?.(id, "executed");
+
+          return textResult(error.message, { assert: error.assert, steps: error.assert.failedAt, programSteps: error.steps });
+        }
 
         rpc.noteToolFact?.(id, "executed");
 

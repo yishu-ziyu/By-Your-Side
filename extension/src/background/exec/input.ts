@@ -792,7 +792,9 @@ async function locatePointerTarget(
       }
     }
 
-    if (!resolvedViaCdp && !point) {
+    // Even with an explicit point, resolve the named target afresh before clicking.
+    // This refreshes domops' identity lock without overwriting the user's point.
+    if (!resolvedViaCdp) {
       await ensureDomOps(tabId, beforeDispatch);
 
       const res = await callDom(
@@ -808,7 +810,7 @@ async function locatePointerTarget(
       if (!isDomRect(res.rect)) throw new Error(`未找到目标元素：${target}`);
 
       targetRect = res.rect;
-      point = pointInElementRect(targetRect, params.position);
+      if (!point) point = pointInElementRect(targetRect, params.position);
     }
   }
 
@@ -891,7 +893,8 @@ const HIT_TEST_AT_JS = `function(x, y) {
 }`;
 
 function isPrePressTargetError(e: unknown): boolean {
-  return /覆盖|已失效|可命中|不可见|不稳定|未找到目标|视口|坐标|替换/.test(oneLine(e));
+  // TARGET_GONE：text=/role 目标在按下前核对时文字不在了（domops 只读核对，没派发按下）。
+  return /覆盖|已失效|可命中|不可见|不稳定|未找到目标|视口|坐标|替换|TARGET_GONE/.test(oneLine(e));
 }
 
 /**

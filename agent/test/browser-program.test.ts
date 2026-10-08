@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runBrowserProgram, type ProgramStep } from "../src/browser-program.js";
+import { runBrowserProgram, ProgramAssertError, type ProgramStep } from "../src/browser-program.js";
 import { createBrowserTools } from "../src/tools.js";
 import { ToolRpc } from "../src/rpc.js";
 import { parseServerMessage } from "../../shared/protocol.js";
@@ -193,5 +193,87 @@ describe("browser programs", () => {
     const result = await runBrowserProgram({ code: 'return await browser.scrollToBottomUntil({condition:"true",maxSteps:3});', call });
     expect(result.value).toMatchObject({ matched: true, steps: 0 });
     expect(call.mock.calls.map(c => c[0])).toEqual(["js"]);
+  });
+});
+
+describe("check 与 assert（YIS-113：动作后不叫模型核对，断言失败停在那一步）", () => {
+  const missing = () => new Error("NOT_FOUND: 未找到目标 body");
+
+  it("check：第二次轮询命中就返回 ok:true，只读探测 body 文字，不叫模型", async () => {
+    const call = vi.fn()
+      .mockRejectedValueOnce(missing())
+      .mockResolvedValue({ check: { matched: true } });
+    const steps: ProgramStep[] = [];
+    const result = await runBrowserProgram({ code: 'return await browser.check({text:"已提交",timeoutMs:3000});', call, onStep: s => steps.push(s) });
+    expect(result.value).toMatchObject({ ok: true, polls: 2 });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call.mock.calls[0]?.[0]).toBe("read_element");
+    expect(call.mock.calls[0]?.[1]).toMatchObject({ target: "body", expect: { property: "visibleText", contains: "已提交" } });
+    expect(call.mock.calls[0]?.[3]).toBe("readonly-poll");
+    expect(steps.map(s => [s.name, s.phase])).toEqual([["check", "start"], ["check", "end"]]);
+    expect(steps[1]?.error).toBeUndefined();
+  });
+
+  it("check：到时没出现返回 ok:false 和等了多久，不抛错；disappears 在目标不在时立刻为真", async () => {
+    const never = vi.fn().mockRejectedValue(missing());
+    const result = await runBrowserProgram({ code: 'return await browser.check({text:"已提交",timeoutMs:60});', call: never });
+    expect(result.value).toMatchObject({ ok: false });
+    expect((result.value as { waitedMs: number }).waitedMs).toBeGreaterThanOrEqual(50);
+    expect((result.value as { polls: number }).polls).toBeGreaterThanOrEqual(1);
+
+    const gone = await runBrowserProgram({ code: 'return await browser.check({selector:"#spinner",state:"disappears"});', call: vi.fn().mockRejectedValue(missing()) });
+    expect(gone.value).toMatchObject({ ok: true, polls: 1 });
+  });
+
+  it("check：等待期间 abort 照旧停下程序，不吞成 ok:false", async () => {
+    const controller = new AbortController();
+    const call = vi.fn(async (_name: string) => { controller.abort(); throw missing(); });
+    await expect(runBrowserProgram({
+      code: 'try { await browser.check({text:"x",timeoutMs:2000}); } catch (e) { return String(e); } await browser.click({target:"#y"});',
+      call,
+      signal: controller.signal,
+    })).rejects.toThrow(/abort/i);
+    expect(call.mock.calls.every(c => c[0] !== "click")).toBe(true);
+  });
+
+  it("assert 不成立：后面的 click 不执行，错误带停在第几步、名字、原因、已完成几步", async () => {
+    const call = vi.fn(async () => ({ text: "page" }));
+    const steps: ProgramStep[] = [];
+    const run = runBrowserProgram({
+      code: 'await browser.snapshot(); await browser.hover({target:"#a"}); await browser.assert({ok:false,name:"登录态",reason:"没看到用户名"}); await browser.click({target:"#b"}); return "done";',
+      call,
+      onStep: s => steps.push(s),
+    });
+    await expect(run).rejects.toBeInstanceOf(ProgramAssertError);
+    const error = await run.catch((e: unknown) => e) as ProgramAssertError;
+    expect(error.assert).toEqual({ failedAt: 3, name: "登录态", reason: "没看到用户名", completed: 2 });
+    expect(error.message).toBe("程序在第 3 步「登录态」停下：没看到用户名（已完成 2 步）");
+    expect(error.steps.map(s => [s.name, s.error === undefined])).toEqual([["snapshot", true], ["hover", true], ["assert", false]]);
+    expect(call).not.toHaveBeenCalledWith("click", expect.anything(), expect.anything());
+    expect(steps.filter(s => s.name === "assert" && s.phase === "end")[0]?.error).toMatch(/登录态/);
+  });
+
+  it("assert：脚本 catch 住也不能继续点；成立时返回 ok:true 程序照常往下走", async () => {
+    const call = vi.fn(async () => ({ clicked: true }));
+    await expect(runBrowserProgram({
+      code: 'try { await browser.assert({ok:false,name:"前提"}); } catch {} await browser.click({target:"#b"}); return "done";',
+      call,
+    })).rejects.toBeInstanceOf(ProgramAssertError);
+    expect(call).not.toHaveBeenCalled();
+
+    const ok = await runBrowserProgram({ code: 'const a = await browser.assert({ok:true,name:"前提"}); await browser.click({target:"#b"}); return a;', call });
+    expect(ok.value).toEqual({ ok: true });
+    expect(ok.steps).toBe(2);
+    expect(call).toHaveBeenCalledWith("click", { target: "#b" }, "program/2");
+  });
+
+  it("browser_run 工具路径：assert 失败是带结构的结果，不是抛错，侧栏能读到步数", async () => {
+    const frames: unknown[] = [];
+    const rpc = new ToolRpc(frame => { frames.push(frame); setTimeout(() => rpc.handleResult(frame.id, true, { text: "ready" }), 0); });
+    const tool = createBrowserTools(rpc, "worker-assert").find(t => t.name === "browser_run")!;
+    const result = await tool.execute("parent-assert", { code: 'await browser.snapshot(); await browser.assert({ok:false,name:"有结果",reason:"列表为空"}); await browser.click({target:"#next"});' }, new AbortController().signal, () => {}, {} as never);
+    expect(result.details).toMatchObject({ assert: { failedAt: 2, name: "有结果", reason: "列表为空", completed: 1 }, steps: 2 });
+    expect(result.content[0]).toMatchObject({ type: "text", text: "程序在第 2 步「有结果」停下：列表为空（已完成 1 步）" });
+    expect(frames.map(f => (f as { name: string }).name)).toEqual(["snapshot"]);
   });
 });

@@ -1,11 +1,11 @@
 /** Fixed, read-only element properties. No model-supplied code or getters. */
-export const ELEMENT_PROPERTIES = ['textContent', 'value', 'displayValue', 'visible', 'enabled', 'checked', 'selected', 'expanded', 'pressed', 'paused', 'ended', 'currentTime', 'duration'] as const;
+export const ELEMENT_PROPERTIES = ['textContent', 'visibleText', 'value', 'displayValue', 'visible', 'enabled', 'checked', 'selected', 'expanded', 'pressed', 'paused', 'ended', 'currentTime', 'duration'] as const;
 
 export type ElementProperty = typeof ELEMENT_PROPERTIES[number];
 
 export type ElementValue = string | number | boolean;
 
-export type ElementExpectation = { property: ElementProperty; equals: ElementValue; contains?: never } | { property: 'textContent' | 'value' | 'displayValue'; contains: string; equals?: never };
+export type ElementExpectation = { property: ElementProperty; equals: ElementValue; contains?: never } | { property: 'textContent' | 'visibleText' | 'value' | 'displayValue'; contains: string; equals?: never };
 
 export interface ElementReadOptions {
   properties?: ElementProperty[];
@@ -30,9 +30,9 @@ export function validateElementRead(options: ElementReadOptions): ElementPropert
     if (('equals' in expected) === ('contains' in expected)) throw new Error('expect须且只能指定equals或contains。');
 
     if ('contains' in expected) {
-      if (!['textContent', 'value', 'displayValue'].includes(expected.property) || typeof expected.contains !== 'string' || !expected.contains.length) throw new Error('contains仅用于非空textContent/value/displayValue文字条件。');
+      if (!['textContent', 'visibleText', 'value', 'displayValue'].includes(expected.property) || typeof expected.contains !== 'string' || !expected.contains.length) throw new Error('contains仅用于非空textContent/visibleText/value/displayValue文字条件。');
     } else {
-      const kind = ['textContent','value','displayValue'].includes(expected.property) ? 'string' : ['currentTime','duration'].includes(expected.property) ? 'number' : 'boolean';
+      const kind = ['textContent','visibleText','value','displayValue'].includes(expected.property) ? 'string' : ['currentTime','duration'].includes(expected.property) ? 'number' : 'boolean';
       const mixed = ['expanded','pressed'].includes(expected.property) && expected.equals === 'mixed';
 
       if (!mixed && (typeof expected.equals !== kind || (kind === 'number' && !Number.isFinite(expected.equals)))) throw new Error(`${expected.property} 的 equals须为${kind}类型；true/false不能加引号，未开始等待。`);

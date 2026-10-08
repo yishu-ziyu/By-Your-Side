@@ -38,6 +38,8 @@ const ACTION_NAMES: Record<string, string> = {
   route_check: "提交前核对",
   route_miss: "改为一步步看",
   wait_for: "等待元素",
+  check: "核对页面",
+  assert: "核对条件",
   sleep: "等待",
   fill: "填写文本",
   page_operation: "填写并核对",
@@ -324,6 +326,11 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
   if (outcome === "stopped") return `已停止 · ${done}`;
 
   return done;
+}
+
+/** 过程折叠区里的代码裁判一行：全过只写「核对 3/3」，没过的条目用 · 接在后面。 */
+export function runCheckLine(passed: number, total: number, notes: readonly string[]): string {
+  return [`核对 ${passed}/${total}`, ...notes].join(" · ");
 }
 
 export function recordedDuration(start: number, end: number): string | null {
