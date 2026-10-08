@@ -41,7 +41,7 @@ type CaseResult = {
   screenshot: string;
 };
 
-async function runCase(name: string, renameOnHover: boolean): Promise<CaseResult> {
+async function runCase(name: string, renameOnHover: boolean, rerender = false): Promise<CaseResult> {
   let acks = 0;
   const rename = renameOnHover ? ` onpointerover="this.textContent='已读中…'"` : "";
 
@@ -62,9 +62,10 @@ async function runCase(name: string, renameOnHover: boolean): Promise<CaseResult
   const model = await startScriptedModel([{ match: MARK, steps: [
     { tool: { name: "tabs", args: { action: "active" } } },
     { tool: { name: "snapshot", args: {} } },
-    { tool: { name: "click", args: { target: "text=已读" } } },
+    { tool: { name: rerender ? "mark" : "click", args: { target: "text=已读" } } },
+    ...(rerender ? [{ tool: { name: "js", args: { code: "(() => { const old = document.querySelector('#ack'); const next = old.cloneNode(true); old.replaceWith(next); return next.textContent; })()" } } }] : []),
     // 紧接着用 CSS 再点一次：上一步若被记成「结果未知」，这一步会被锁拦下。
-    { tool: { name: "click", args: { target: "#ack" } } },
+    { tool: { name: "click", args: rerender ? { target: "text=已读", point: [40, 70] } : { target: "#ack" } } },
     { text: `【${MARK}结束】` },
   ] }], undefined, payload => {
     // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
@@ -115,10 +116,10 @@ async function runCase(name: string, renameOnHover: boolean): Promise<CaseResult
       assert.doesNotMatch(receipts[3] ?? "", /结果未知|未再次|没有重复执行/, "following CSS click was not blocked by the unknown-result lock");
     } else {
       assert.equal(buttonText, "已读", "control page keeps the text");
-      assert.equal(acksAtReceipt[3], 1, "text= click reached the site once");
+      assert.equal(acksAtReceipt[3], rerender ? 0 : 1, rerender ? "mark does not click the button" : "text= click reached the site once");
       assert.doesNotMatch(receipts[2] ?? "", /TARGET_GONE/, "no TARGET_GONE on the control page");
       assert.ok(!chips.some(c => c.error), "no failed step on the control page");
-      assert.equal(acksAtReceipt[4], 2, "following CSS click reached the site");
+      assert.equal(acksAtReceipt[rerender ? 5 : 4], rerender ? 1 : 2, rerender ? "new action with explicit point accepts the rerendered same-name button" : "following CSS click reached the site");
     }
   } catch (caught) {
     error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
@@ -133,7 +134,7 @@ async function runCase(name: string, renameOnHover: boolean): Promise<CaseResult
   return { name, status: error ? "FAIL" : "PASS", error, acksAtReceipt, acksFinal: acks, receipts, chips, screenshot };
 }
 
-const results = [await runCase("rename-on-hover", true), await runCase("control", false)];
+const results = [await runCase("rename-on-hover", true), await runCase("control", false), await runCase("mark-rerender-point", false, true)];
 const status = results.every(r => r.status === "PASS") ? "PASS" : "FAIL";
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify({ status, results }, null, 2));

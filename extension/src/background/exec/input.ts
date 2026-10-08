@@ -792,7 +792,9 @@ async function locatePointerTarget(
       }
     }
 
-    if (!resolvedViaCdp && !point) {
+    // Even with an explicit point, resolve the named target afresh before clicking.
+    // This refreshes domops' identity lock without overwriting the user's point.
+    if (!resolvedViaCdp) {
       await ensureDomOps(tabId, beforeDispatch);
 
       const res = await callDom(
@@ -808,7 +810,7 @@ async function locatePointerTarget(
       if (!isDomRect(res.rect)) throw new Error(`未找到目标元素：${target}`);
 
       targetRect = res.rect;
-      point = pointInElementRect(targetRect, params.position);
+      if (!point) point = pointInElementRect(targetRect, params.position);
     }
   }
 
