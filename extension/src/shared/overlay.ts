@@ -1,5 +1,5 @@
 /**
- * Overlay host 标识与几何：content script 与单测共用。
+ * Overlay host 标识与几何：content script 使用。
  * 扩展 reload 后旧 isolated world 销毁，但 DOM host 留在页面上——启动时按属性清掉。
  */
 

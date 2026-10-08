@@ -2,7 +2,7 @@
  * 动作效果证据采集（content script，ISOLATED world，重复注入幂等）。
  * 暴露 window.__sideagent.effect = { begin, diff, end }。
  *
- * 采集点在页面侧，因为只有这里能廉价地读 DOM；判定逻辑在 shared/effect.ts（纯函数，可单测）。
+ * 采集点在页面侧，因为只有这里能廉价地读 DOM；判定逻辑在 shared/effect.ts（纯函数）。
  * 元素身份用**操作落点**（background 传下来的视口坐标）解析：真实事件就派发给这个元素，
  * 它比任何定位串都更接近「刚才到底点了谁」。
  */

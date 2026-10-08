@@ -1,6 +1,6 @@
 /**
  * 标注上的确认/取消按钮：解析 mark.actions、点下去对应的用户文本、按危险词推导默认按钮。
- * 纯函数，可单测。视觉是光标名牌上的双键（手拿住目标，键跟手走）。
+ * 纯函数。视觉是光标名牌上的双键（手拿住目标，键跟手走）。
  */
 import type { MarkAction, MarkActionId } from "../../../shared/protocol.js";
 

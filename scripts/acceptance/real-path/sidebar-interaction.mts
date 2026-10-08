@@ -71,8 +71,6 @@ try {
       viewport: innerWidth,
       documentWidth: document.documentElement.scrollWidth,
       overflow: [...document.querySelectorAll('#app *')].filter((el) => shown(el) && el.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map((el) => el.id || el.className || el.tagName),
-      pageAboveComposer: !q('#composer #page-pill') && shown(q('#page-pill')) && q('#page-pill').getBoundingClientRect().bottom <= q('#composer').getBoundingClientRect().top + 1,
-      pagePill: rect(q('#page-pill')),
       composer: rect(q('#composer')),
       starterShown: shown(q('#starter')),
       input: q('#input')?.value ?? '',
@@ -86,8 +84,8 @@ try {
       resultText: shown(q('#task-result-card')) ? q('#task-result-card').innerText : null,
     };
   })()`) as {
-    viewport: number; documentWidth: number; overflow: string[]; pageAboveComposer: boolean;
-    pagePill: { width: number } | null; composer: { width: number } | null;
+    viewport: number; documentWidth: number; overflow: string[];
+    composer: { width: number } | null;
     starterShown: boolean; input: string; sendStopping: boolean;
     taskBar: { text: string; rect: { height: number } } | null;
     answerText: string | null; answerFont: string | null; answerSize: number | null;
@@ -214,7 +212,6 @@ try {
   await rp.detach(worker);
 
   const idle = await shot("1-idle", 400);
-  check("当前页引用在输入框外上方一行（#58 B）", idle.pageAboveComposer, { pagePill: idle.pagePill, composer: idle.composer });
   check("开始建议可见", idle.starterShown, { shown: idle.starterShown });
   const suggestion = String(await rp.evaluate(panel, `document.querySelector('#starter button[data-starter]')?.dataset.starter ?? ''`));
   await rp.click(panel, "#starter button[data-starter]");

@@ -4,7 +4,7 @@ import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const FIXTURE_DIR = dirname(
-  fileURLToPath(new URL("../../extension/test/fixtures/acceptance/index.html", import.meta.url)),
+  fileURLToPath(new URL("./fixtures/index.html", import.meta.url)),
 );
 
 /** 验收页白名单：默认仍是 index.html；新增能力对齐页按名放行，不开放任意路径。 */

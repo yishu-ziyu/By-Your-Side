@@ -1,5 +1,5 @@
 /**
- * 模型选择器的纯逻辑（与 DOM 解耦，可单测）：
+ * 模型选择器的纯逻辑（与 DOM 解耦）：
  * - groupModelsByProvider：把 agent 下发的扁平模型列表按 provider 分组（保留首现顺序）
  * - displayName / chipLabel / filterModels / providerMark：输入区芯片与搜索菜单
  */

@@ -1,5 +1,5 @@
 /**
- * 指针与按键参数形状与纯函数。只放类型与可单测的纯逻辑；执行（CDP）留在 extension。
+ * 指针与按键参数形状与纯函数。只放类型与纯逻辑；执行（CDP）留在 extension。
  */
 
 export type MouseButton = "left" | "middle" | "right";

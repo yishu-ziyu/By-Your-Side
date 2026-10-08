@@ -476,7 +476,7 @@ export class ResumeEntry {
 
 let stylesInjected = false;
 
-/** 侧栏样式已含同名规则时不再注入；面板验收与单测环境都能独立工作。 */
+/** 侧栏样式已含同名规则时不再注入；面板验收环境也能独立工作。 */
 function ensureStyles(): void {
   if (stylesInjected || typeof document === "undefined") return;
 

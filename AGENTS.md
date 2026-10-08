@@ -41,25 +41,16 @@ Explore broadly. Implement simply. Abstract late.
 
 ### 测试约定
 
-遵循家目录 `~/AGENTS.md` 的 Testing Rules（全局测试规范，冲突时以其为准）：
-
-- NEVER write unit tests after you write code.
-- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
-- If you must test a system in isolation, FIRST write all the ways it could fail, THEN write the code.
-
-本项目补充（仅在符合上述规范的前提下适用）：
-
-- 只测对外结果：输入→输出、状态变化、副作用，不测内部实现路径。判据：纯重构后测试仍通过。
-- 断言应可证伪：期望值来自独立 oracle（手算例子、规范、可信参照），不用空断言、不用实现重算当期望值、不用只记录现状的快照。判据：引入真 bug 时测试失败。
-- 两条同时满足才写；否则删掉，或把隐含契约显式化成对外行为再测。外部代价（调用次数、缓存、耗时上限）与实现即交付物（算法复杂度、生成结构、序列化格式）属于结果，照测；行覆盖率不作为测试目标。
+- 只写真实端到端测试：装真实扩展，在隔离无头 Chrome 里走用户路径（`scripts/acceptance/real-path/`）。不写单元测试和集成测试。2026-10-08 起删除全部 vitest 测试，依据见[验收](docs/evals/20261008-e2e-only.md)。
+- 用例只判用户看得到的结果：界面、文件、网站收到的请求。判据要可证伪：故意弄坏产品，用例必须失败。
+- 用例结束时在 `out/acceptance/real-path/` 留下可复查的证据。
 
 ### 项目检查入口
 
-- 按影响范围先跑定点检查；通过后只为新改动、失败或未决风险扩大验证。完整工程检查为 `npm run check`（文档、模块边界、类型、测试、构建），各专项命令和使用边界见[开发检查](docs/development/checks.md)；修改 `shared/protocol.ts` 时覆盖受影响的契约。发布评测入口为 `npm run doctor`、`npm run eval:offline`、`npm run eval:integration -- --headless`、`npm run eval:live`、`npm run eval:report`、`npm run release:verify`。门槛从 `eval/protected/quality-gates.json` 读取；缺凭据/预算/硬件为 BLOCKED，不算 PASS。
-- 浏览器验收入口为 `npm run accept:browser`、`npm run accept:real-path`（只装扩展的真实路径，逐套见[验收入口](docs/testing/acceptance.md)），按任务选择。隔离检查、合成输入与用户日常入口分别留证，不互相冒充；环境操作仍遵循有效授权。`accept:browser` 仍连接开发者 ChromeMain，不应当作正式发布全链路。
-- 浏览器验收默认无头运行（`--headless=new`，不创建窗口），脚本在没有无头参数时拒绝运行；涉及可见运动/动效的检查单独安排并先取得用户同意，不应靠 `--window-position` 之类方式隐藏窗口。
-- 纯文档修改检查差异与引用，不运行产品测试或构建。
-- 同一工作区可能同时存在其他工作线：跑全量检查前确认没有并行的构建、测试或扩展重载；出现失败先记录失败文件与用例名，在独占条件下单独复跑，再判断是否属于本次改动。独占条件下仍稳定复现的失败，照常按本次改动的问题处理。
+- `npm run check`：文档、模块边界、类型、构建。`npm test`：合并前必跑的核心真实路径用例。两者都过才合并。专项命令见[开发检查](docs/development/checks.md)，逐个用例见[验收入口](docs/testing/acceptance.md)。
+- 浏览器验收默认无头（`--headless=new`）。涉及可见动效的检查单独安排，先取得用户同意。
+- 纯文档修改只查差异与引用，不跑产品检查。
+- 同一工作区可能有其他工作线。跑检查前确认没有并行的构建或扩展重载；失败时先在独占条件下单独复跑，再判断是否属于本次改动。
 
 ### 完成标准格式
 

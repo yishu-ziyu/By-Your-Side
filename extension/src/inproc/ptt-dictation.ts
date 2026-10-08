@@ -9,7 +9,7 @@
 
 export const DICTATION_URL = "wss://api.stepfun.com/step_plan/v1/realtime?model=stepaudio-2.5-realtime";
 
-/** 浏览器 WebSocket 的最小子集；测试用假的。 */
+/** 浏览器 WebSocket 的最小子集。 */
 export interface DictationSocket {
   send: (data: string) => void;
   close: () => void;

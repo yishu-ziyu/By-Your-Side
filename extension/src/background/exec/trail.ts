@@ -29,8 +29,3 @@ export function trailForReplay(): StoredTrail | null {
 
   return null;
 }
-
-export function resetTrailsForTests(): void {
-  current = null;
-  last = null;
-}

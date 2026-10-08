@@ -255,7 +255,7 @@ export class DeliveryPresentationTiming {
 
 let stylesInjected = false;
 
-/** 侧栏样式已含同名规则时不再注入；单测环境不需要样式。 */
+/** 侧栏样式已含同名规则时不再注入。 */
 function ensureStyles(): void {
   if (stylesInjected || typeof document === "undefined" || typeof document.createElement !== "function") {
     return;
