@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>免按键套餐 · 先试交互</title>
+<style>
+:root{font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#141413;background:#e8e6e0}*{box-sizing:border-box}body{margin:0;padding:18px}main{max-width:1000px;margin:auto}h1{font-size:19px;margin:0 0 6px}p{margin:0;color:#5f5e58}.options{display:flex;gap:10px;margin:18px 0}.options button{text-align:left;flex:1;padding:14px;border-radius:14px;font:inherit;border:1px solid #14141318;background:#f9f8f5;color:#141413;cursor:pointer}.options button b{display:block;font-weight:600}.options button small{color:#77756d}.options button[aria-pressed=true]{border-color:#2d4a86;background:#eef0f5}.stage{display:flex;gap:28px}.controls{flex:1;padding:20px 0;min-width:0}.controls button{display:block;margin-top:10px;font:inherit;font-size:13px;background:#f9f8f5;border:1px solid #14141318;border-radius:20px;padding:8px 14px;color:#141413;cursor:pointer}.status{margin:20px 0 10px;font-size:15px;color:#2d4a86;min-height:30px}.explain{font-size:12px;max-width:420px}.panel{flex:none;width:360px;height:650px;border:1px solid #14141318;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px #1414130a}iframe{border:0;width:100%;height:100%}.note{font-size:12px;margin-top:18px}@media(max-width:740px){.stage{flex-direction:column}.panel{width:100%;height:550px}.controls{padding:0}.options{flex-direction:column}body{padding:12px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+<main><h1>免按键，也能选套餐。</h1><p>默认按量模式保留。这里先决定：选套餐后，闲聊由谁回答？</p>
+<div class="options"><button data-mode="native" aria-pressed="true"><b>A · 闲聊直接聊，做事交助手</b><small>推荐。每句先判断；操作交给助手，闲聊由语音模型回答。</small></button><button data-mode="host" aria-pressed="false"><b>B · 听到的话都交助手</b><small>链路更统一。闲聊也要等助手回答，套餐只负责听与说。</small></button></div>
+<div class="stage"><div class="controls"><button data-case="chat">“我有点累，陪我聊两句”</button><button data-case="task">“把这页供应商整理成表”</button><button data-case="failed">模拟分流失败</button><p class="status" aria-live="polite">选一句试试。</p><p class="explain">没有先确认这句话是闲聊，就不播放语音模型的回答。需要动手时，只派一次真实任务；结果由助手回执决定，不让它只说“我去做”却没做。</p><p class="note">流程预览，不发模型请求、不操作网页。动效时间仅为演示，不是实测速度；真实连续断句、任务唯一派发与扬声器仍要验证。</p><p class="note"><a href="../welcome-context/index.html">回到欢迎页预览</a></p></div><div class="panel"><iframe title="套餐语音的交互流程预览"></iframe></div></div>
+</main>
+<script>
+const panel=__PANEL__;
+let mode='native',generation=0;
+const iframe=document.querySelector('iframe'),status=document.querySelector('.status');
+document.querySelectorAll('[data-case]').forEach(b=>b.disabled=true);
+iframe.onload=()=>{iframe.contentDocument.querySelector('#send-btn').disabled=true;document.querySelectorAll('[data-case]').forEach(b=>b.disabled=false)};
+iframe.srcdoc=panel;
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+function bubble(doc,role,text){const p=doc.createElement('div');p.className='msg '+role;p.textContent=text;doc.querySelector('#messages').appendChild(p);return p}
+async function demo(kind){const token=++generation,doc=iframe.contentDocument;doc.querySelector('#messages').replaceChildren();doc.querySelector('#starter').hidden=true;doc.querySelector('#app').classList.remove('conversation-empty');const input=doc.querySelector('#input');input.value='';
+const phrase=kind==='chat'?'我有点累，陪我聊两句。':kind==='task'?'把这页供应商整理成表。':'这句话没有判断清楚。';bubble(doc,'user',phrase);status.textContent='听到你了 · 先留住回答，不让空头承诺先播出';await delay(750);if(token!==generation)return;
+if(kind==='failed'){status.textContent='判断没成功 · 不执行、不播放未确认的回答';bubble(doc,'assistant','刚才没判断清楚你想聊天还是做事。请再说一次；我没有操作页面。');return}
+const native=kind==='chat'&&mode==='native';status.textContent=native?'这是闲聊 · 语音模型接话':kind==='chat'?'交给助手 · 等助手回答':'这是网页任务 · 只交给助手一次';await delay(native?550:1100);if(token!==generation)return;
+const answer=kind==='chat'?'可以，先休息一下。想说说哪件事让你累吗？':'已整理好供应商和页面里显示的联系方式。没写出的信息，我标成“未提供”，没有猜。';const reply=bubble(doc,'assistant','');const motion=!matchMedia('(prefers-reduced-motion: reduce)').matches;for(const char of answer){if(token!==generation)return;reply.textContent+=char;if(motion)await delay(30)}status.textContent=native?'闲聊继续 · 没有网页任务':kind==='chat'?'助手答完 · 用套餐声音读给你':'真实任务回执 → 读结果（这里演示，不代表已执行）'}
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{generation++;mode=b.dataset.mode;document.querySelectorAll('[data-mode]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));status.textContent='换好了，选一句试试。'});document.querySelectorAll('[data-case]').forEach(b=>b.onclick=()=>demo(b.dataset.case));
+</script></html>

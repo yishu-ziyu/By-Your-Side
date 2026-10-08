@@ -38,6 +38,11 @@ npx tsx scripts/acceptance/real-path/ptt-dictation.mts --headless       # 网页
 npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless         # 按住说话的网页底部胶囊：在听 → 在做 → 结果（念出来），Esc 停；念结果连 MiniMax 订阅 Key
 npx tsx scripts/acceptance/real-path/reinject.mts --headless            # 重载扩展后，已打开的网页不刷新也能按住说话
 npx tsx scripts/acceptance/real-path/proactive-card.mts --headless      # 侧栏里的主动卡：动词即按钮，按下原位接着说；没成也原位说清；每次判断进诊断记录；全程录侧栏
+npx tsx scripts/acceptance/real-path/voice-plan-settings.mts --headless # 语音选择持久、端点与无效值拒绝；不是音频验收
+npx tsx scripts/acceptance/real-path/voice-plan.mts --headless --case=chat # 真套餐语音；task/failure/cancel为其他场景
+npx tsx scripts/acceptance/real-path/voice-plan-output-boundaries.mts --headless --case=unknown-output # 真语音帧来源缺失；另有delayed-created/source-timeout
+npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=question --model=openai-codex/gpt-6-luna --lead=300 --first-utterance # 整句在就绪前说完仍自动问页；--plan 验现有套餐
+npx tsx scripts/acceptance/real-path/voice-first-utterance-stop.mts --headless # 连接前说完首句再结束，迟到就绪不补发旧话
 npx tsx scripts/acceptance/real-path/step-icons.mts --headless          # 侧栏每一步都有自己的图标
 npx tsx scripts/acceptance/real-path/route-record.mts --headless # 做成一件事后记下做法，「不用记」可撤销，被停下的不记
 npx tsx scripts/acceptance/real-path/route-replay.mts --headless [--first=selector] # 同一类事照上次的做法走、提交前核对；页面改了停下交回；--first=selector 第一次用选择器操作
@@ -62,6 +67,8 @@ npx tsx scripts/acceptance/real-path/new-conversation-draft.mts --headless # 点
 `ux-fixes.mts` 只装扩展，用本机脚本模型。脚本像用户一样在设置页选「自定义地址」填写，所以工具调用、任务宿主核验和页面标注都是产品自己在跑。判据只看用户看得到的东西。`demo` 组依赖的技能存储已不在扩展里，要等技能接进扩展后改写。
 
 `real-path/harness.mts` 是共用驱动：隔离的无窗口 Chrome、真侧栏、只装扩展（从当前源码构建到临时目录）、真模型或脚本模型。不碰日常 Chrome 和 `extension/dist`。每条用例只看结果（页面、练习站收到的请求、侧栏状态、日常数据目录）。验收文件：`docs/evals/20260923-real-path-first-case.md`、`docs/evals/20260923-repo-cleanup.md`。
+
+验已准备的试用包时，用 `SIDEAGENT_ACCEPTANCE_DIST=/绝对路径/候选包` 运行原用例。驱动只复制该包到隔离目录，不重建、不修改原包；当前源码通过不代替试用包通过。首句问页另核对浏览器实际读取的侧栏文件，见[首句验收](../evals/20261008-voice-first-utterance.md)。
 
 `everyday-baseline.mts --headless --inproc=provider/id` 像用户一样从设置页填 key、测试连接、保存，再跑日常请求；模型请求只许发往所选服务商。跑完再像用户一样在设置页导出、清空诊断记录并核对。长文翻译用 `--only=translate-long`，需要 `CASE_LIMIT_MS=900000` 放宽单条时限。标注渲染的离线自检是 `node extension/test/overlay-check.mjs`（本机 Playwright Chromium 版本变了时用 `OVERLAY_CHROME` 指向当前那一份）。
 
