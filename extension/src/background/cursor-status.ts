@@ -276,12 +276,6 @@ export function workingTabBehindPill(senderTabId: number | null | undefined): nu
   return currentPill(senderTabId)?.entry.tabId ?? null;
 }
 
-export function cursorStatusForTests(key: string): LivingStatus | null {
-  const entry = living.get(key);
-
-  return entry ? { ...entry } : null;
-}
-
 // ── 执行反馈胶囊（V2）───────────────────────────────────────────────
 // 简单成功/未知/等待确认的宿主事实：画到用户正在看的那一页；动作回执另有目标页时也画过去。
 // 查看/重绘、回避旧结果覆盖、受限页降级由这里的台账与调用方负责。

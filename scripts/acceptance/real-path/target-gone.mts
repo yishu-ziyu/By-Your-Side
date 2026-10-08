@@ -7,6 +7,7 @@
  * 判据：改名轮服务器 /ack 计数为 0、回执以 TARGET_GONE 开头、侧栏那一步标失败；
  * 紧接着的 CSS 点击照常送达（结果未知锁没上，说明这一步记成了「没执行」）。对照轮 text= 点击送达一次。
  * 失败方式：改名后仍点下去（acks=1）；回执是泛泛的「未找到元素」；记成结果未知、后一步被锁拦下。
+ * 换元素轮：pointerover 时按钮被换成同名的另一个按钮（点了发 /wrong）。判据：/wrong 为 0、回执写明换到别的元素上。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -41,12 +42,16 @@ type CaseResult = {
   screenshot: string;
 };
 
-async function runCase(name: string, renameOnHover: boolean, rerender = false): Promise<CaseResult> {
+async function runCase(name: string, renameOnHover: boolean, rerender = false, swapOnHover = false): Promise<CaseResult> {
   let acks = 0;
-  const rename = renameOnHover ? ` onpointerover="this.textContent='已读中…'"` : "";
+  let wrong = 0;
+  const swap = ` onpointerover="const n=document.createElement('button');n.id='ack';n.textContent='已读';n.onclick=()=>fetch('/wrong');this.replaceWith(n)"`;
+  const rename = swapOnHover ? swap : renameOnHover ? ` onpointerover="this.textContent='已读中…'"` : "";
 
   const site = createServer((req, res) => {
     if (req.url === "/ack") { acks++; res.writeHead(204).end(); return; }
+
+    if (req.url === "/wrong") { wrong++; res.writeHead(204).end(); return; }
 
     if (req.url !== "/") { res.writeHead(404).end(); return; }
 
@@ -58,6 +63,7 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false): 
 
   const payloads: Payload[] = [];
   const acksAtReceipt: Record<number, number> = {};
+  const wrongAtReceipt: Record<number, number> = {};
 
   const model = await startScriptedModel([{ match: MARK, steps: [
     { tool: { name: "tabs", args: { action: "active" } } },
@@ -73,7 +79,7 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false): 
     payloads.push(p);
     const toolResults = (p.messages ?? []).filter(m => m.role === "tool").length;
 
-    if (p.tools?.length && toolResults > 0 && !(toolResults in acksAtReceipt)) acksAtReceipt[toolResults] = acks;
+    if (p.tools?.length && toolResults > 0 && !(toolResults in acksAtReceipt)) { acksAtReceipt[toolResults] = acks; wrongAtReceipt[toolResults] = wrong; }
   });
 
   const rp = await launchRealPath();
@@ -105,7 +111,14 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false): 
 
     const buttonText = String(await rp.evaluate(work, 'document.querySelector("#ack")?.textContent ?? ""'));
 
-    if (renameOnHover) {
+    if (swapOnHover) {
+      // 同名按钮在定位与按下之间被换掉：不点新按钮，回执写明换到别的元素上。
+      assert.equal(wrongAtReceipt[3], 0, "text= click did not reach the swapped-in button");
+      assert.match(receipts[2] ?? "", /^TARGET_GONE: .*「已读」已换到别的元素上/, "receipt says the text moved to another element");
+      assert.ok(chips.some(c => c.error), "sidebar marks the click step failed");
+      // 后一步 CSS 点击照常送达新按钮：没上结果未知锁。
+      assert.equal(wrongAtReceipt[4], 1, "following CSS click went through (no unknown-result lock)");
+    } else if (renameOnHover) {
       // R3：改名发生在定位与按下之间；没点、回执是 TARGET_GONE、侧栏那一步标失败。
       assert.equal(buttonText, "已读中…", "the page renamed the button during the click flow");
       assert.equal(acksAtReceipt[3], 0, "text= click did not reach the site");
@@ -134,7 +147,7 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false): 
   return { name, status: error ? "FAIL" : "PASS", error, acksAtReceipt, acksFinal: acks, receipts, chips, screenshot };
 }
 
-const results = [await runCase("rename-on-hover", true), await runCase("control", false), await runCase("mark-rerender-point", false, true)];
+const results = [await runCase("rename-on-hover", true), await runCase("swap-on-hover", false, false, true), await runCase("control", false), await runCase("mark-rerender-point", false, true)];
 const status = results.every(r => r.status === "PASS") ? "PASS" : "FAIL";
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify({ status, results }, null, 2));

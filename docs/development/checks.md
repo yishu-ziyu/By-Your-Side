@@ -2,38 +2,21 @@
 
 [文档导航](../README.md) · [文档维护](documentation.md) · [真实路径验收](../testing/acceptance.md)
 
-## 先按影响范围选择
+## 两道检查
 
-纯文档变更只查篇幅、引用、差异和语义，不运行产品构建或付费模型。修改检查脚本时，运行它自己的命令级验收；修改网页、语音或恢复逻辑时，再按实际入口选择对应产品验收。
+- `npm run check`：文档结构、模块边界、类型、构建。几分钟内跑完，只拦写坏的代码。
+- `npm test`：核心真实路径用例。只装扩展，用脚本模型，不要凭据。它是唯一检查产品行为的地方。
 
-```bash
-npm run check:docs                  # 位置、当前说明篇幅、文件链接
-npm run test:docs                   # 临时 Git 仓库中的文档检查反例
-npm run check:docs -- --all          # 额外审计历史记录中的文件链接
-```
+两者都过才合并。纯文档修改只跑 `npm run check:docs`。
 
-检查只管结构，不要求改代码时同步改文档；文档该写什么见[文档维护](documentation.md)。
+`check` 会重建日常加载的 `extension/dist`。只想核对打包时，用 `SIDEAGENT_BUILD_DIST` 指向临时目录。
 
-## 产品检查
+真实模型、真实供应商和真人体验分开留证。缺凭据或预算时如实写「没跑」。
 
-```bash
-npm run typecheck            # 扩展与宿主类型
-npm run test:unit            # 普通测试
-npm run test:scale           # 规模测试
-npm run check:architecture   # 模块边界
-npm run build                # 重建 extension/dist
-npm run check                # 文档、边界、类型、测试、构建
-```
+## 依赖
 
-`check` 包含构建，会影响日常加载的 dist，不是纯文档命令。真实浏览器验收默认无窗口；真实模型和真实依赖的使用边界按任务授权，缺凭据或预算如实标记。单测、真实供应商、真实页面结果和真人体验分开留证。
-
-只核对扩展打包时，设置 `SIDEAGENT_BUILD_DIST` 指向独立临时目录，再运行 `npm run build -w @sideagent/extension`，不碰日常加载的 dist。
-`package-lock.json` 应带上各平台的可选原生绑定（例如 `@rolldown/binding-darwin-arm64`）：缺了时已有的 `node_modules` 照常能跑，干净 `npm ci` 后 vitest 却起不来。改依赖后，在临时目录做一次干净 `npm ci` 再跑 `npm test` 核对。
-依赖审计用 `npm audit --registry=https://registry.npmjs.org`（命令级参数，不改全局源）。Pi 自带 npm-shrinkwrap，npm 10 下项目级 override 不能覆盖其中的版本；应以干净 `npm ci` 后的 `npm ls` 和 audit 结果核对，不凭根锁文件清零。当前直接依赖补丁与 Pi 内依赖分别记录，见[升级验收](../evals/20261003-issue-42-dependencies.md)。
-
-模型菜单动效的隔离浏览器检查与并排录制：运行 `node extension/test/model-picker-motion.mjs`（[脚本](../../extension/test/model-picker-motion.mjs)）。它不加载扩展或调用模型，不能替代日常 Chrome 侧栏验收。脚本默认复用本机 Playwright/CfT，其他安装路径需调整 Playwright 导入、用 `MODEL_PICKER_CHROME` 指定浏览器。
-
-隔离 worktree 复用依赖时，不应把整个 `node_modules` 直接指回主工作区：其中 `@sideagent` 的相对链接会让内部包解析回主源码，浏览器 shim 也可能失效。应在 worktree 建本地依赖目录，复用第三方包，把 `@sideagent/agent` 与 `extension` 链回本 worktree；不必改产品构建逻辑。
+- 依赖审计用 `npm audit --registry=https://registry.npmjs.org`，不改全局源。Pi 自带 npm-shrinkwrap，项目级 override 盖不住它，要在干净 `npm ci` 后用 `npm ls` 核对（[升级验收](../evals/20261003-issue-42-dependencies.md)）。
+- 在 worktree 里不要把整个 `node_modules` 指回主树：`@sideagent` 的链接会解析回主树源码。
 
 ## 前提小实验
 
@@ -63,10 +46,8 @@ npm run check                # 文档、边界、类型、测试、构建
 
 ## CI 与人工复核
 
-[Documentation 工作流](../../.github/workflows/docs.yml)运行文档命令级验收与结构检查。[E2E 工作流](../../.github/workflows/e2e.yml)手动触发，在 Linux 上跑不需要凭据的隔离验收门槛子集（场景列表写在工作流里）。工作流文件写入不代表已经在远端执行，也不等于启用了分支保护。
+- [Quality](../../.github/workflows/quality.yml)：PR 上跑 `check` 的各项。
+- [Documentation](../../.github/workflows/docs.yml)：文档结构检查。
+- [E2E](../../.github/workflows/e2e.yml)：手动触发，在 Linux 上跑 `npm test` 的用例。
 
-维护者按 [PR 模板](../../.github/pull_request_template.md)复核内容与实现；每个里程碑额外运行全量历史链接审计。所有当前进度和未决项只在 [STATUS](../STATUS.md) 维护。
-
-评测环境分类以[浏览器证据](../testing/eval-environment.md)为准；报表和复核页不应把普通任务失败移出分母。
-
-PR 的 `Quality` 工作流执行 typecheck、完整 npm test、模块边界、文档同步及构建。
+维护者按 [PR 模板](../../.github/pull_request_template.md)复核。当前进度只在 [STATUS](../STATUS.md) 维护。评测环境分类见[浏览器证据](../testing/eval-environment.md)。

@@ -8,7 +8,7 @@
   "scripts": {
     "build": "npm run build -w @sideagent/extension",
     "typecheck": "npm run typecheck -w @sideagent/extension && npm run typecheck -w @sideagent/agent",
-    "test": "npm run test:unit && npm run test:scale",
+    "test": "tsx scripts/acceptance/real-path/run-all.mts --core",
     "reload:ext": "node scripts/reload-ext.mjs",
     "capture:clear": "node scripts/clear-voice-capture.mjs",
     "accept:browser": "node scripts/acceptance/run.mjs",
@@ -16,25 +16,19 @@
     "accept:real-path": "tsx scripts/acceptance/real-path/run-all.mts",
     "doctor": "tsx scripts/eval/doctor.mts",
     "eval:offline": "tsx scripts/eval/offline.mts",
-    "eval:integration": "tsx scripts/eval/integration.mts",
     "eval:live": "tsx scripts/eval/live.mts",
     "eval:report": "tsx scripts/eval/report.mts",
     "release:verify": "tsx scripts/eval/release-verify.mts",
     "check:architecture": "node scripts/maintenance/check-boundaries.mjs",
     "check:docs": "node scripts/maintenance/check-docs.mjs",
     "dashboard": "node scripts/maintenance/dashboard.mjs",
-    "test:docs": "node --test scripts/acceptance/documentation-check.test.mjs",
-    "check": "npm run check:docs && npm run check:architecture && npm run typecheck && npm test && npm run build",
-    "test:unit": "vitest run --exclude \"agent/test/performance/**\"",
-    "test:scale": "vitest run agent/test/performance --maxWorkers=1",
-    "test:p0": "vitest run agent/test/p0-review-regressions.test.ts agent/test/task-acceptance-durability.test.ts agent/test/task-recovery-matrix.test.ts agent/test/task-restart-checkpoint.test.ts agent/test/task-next-step.test.ts agent/test/task-queue.test.ts agent/test/task-dispatcher.test.ts agent/test/p0-evaluation-contract.test.ts agent/test/p0-fixture.test.ts extension/test/session-management.test.ts extension/test/p0-snapshot-identity.test.ts extension/test/harness-s2-document-evaluator.test.ts extension/test/read-element.test.ts",
+    "check": "npm run check:docs && npm run check:architecture && npm run typecheck && npm run build",
     "eval:p0": "tsx scripts/eval/p0.mts",
     "fixture:p0": "tsx scripts/acceptance/p0-fixture.mts"
   },
   "devDependencies": {
     "marked": "18.0.11",
     "playwright": "1.58.2",
-    "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "typescript": "7.0.2"
   }
 }

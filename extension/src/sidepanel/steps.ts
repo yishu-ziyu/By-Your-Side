@@ -1,6 +1,6 @@
 /**
  * "执行步骤"聚合块的纯逻辑：工具人性化描述、步骤链、耗时格式化。
- * 与 DOM 解耦，便于单测；main.ts 负责渲染。
+ * 与 DOM 解耦；main.ts 负责渲染。
  */
 import { displayNameFor, personFor } from "../../../shared/cast.js";
 import { toolAction } from "../../../shared/user-facing.js";

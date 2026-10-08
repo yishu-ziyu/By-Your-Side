@@ -20,8 +20,8 @@ jobs:
         run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
       # The isolated tool-layer suite (accept:isolated) was deleted 2026-10-04 with the tools it covered
       # (docs/evals/20261004-cut-unused.md). Real-path cases install only the extension and use a scripted model.
-      # Not yet run on Linux. Filtered runs report ok=false by design; the exit code covers the executed set.
-      - run: npm run accept:real-path -- --only=north-star-research,script-friction,model-failover,data-to-file
+      # The core set lives in run-all.mts (CORE). Not yet run on Linux.
+      - run: npm test
       - if: always()
         uses: actions/upload-artifact@v4
         with:

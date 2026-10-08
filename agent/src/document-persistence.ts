@@ -1,6 +1,6 @@
 /**
  * 一份整存整取的小文档（记忆、过往任务）的存放处。
- * 逻辑层只认这个接口：扩展用 IndexedDB（extension/src/inproc/document-idb.ts），测试用文件（agent/test/fixtures/file-document.ts）。
+ * 逻辑层只认这个接口；扩展里的实现是 IndexedDB（extension/src/inproc/document-idb.ts）。
  */
 export interface DocumentPersistence {
   /** 读当前内容；从没写过时为 null。 */

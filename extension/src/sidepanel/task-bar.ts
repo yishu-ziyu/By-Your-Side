@@ -8,7 +8,7 @@
  * - 不显示百分比/剩余时间；接管与停止区分「请求中」与「已生效」，失败保留原状态可重试；
  * - 不新增任何动画：信息不依赖动效，prefers-reduced-motion 下完全等价。
  *
- * 纯逻辑（waitingCopy/buildTaskBarModel 等）与 DOM 装配同文件分层，便于无 DOM 单测。
+ * 纯逻辑（waitingCopy/buildTaskBarModel 等）与 DOM 装配同文件分层。
  */
 import type { TaskView } from "../../../shared/task-view.js";
 import type { TaskReceipt } from "../../../shared/task-actions.js";
@@ -268,7 +268,7 @@ function taskRows(set: TaskMaterialSet, resolvedPageLabel: string | null): Mater
   return rows;
 }
 
-/** 组装展示模型：纯函数，同一输入必得同一输出（可固定时钟单测）。 */
+/** 组装展示模型：纯函数，同一输入必得同一输出。 */
 export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   const { view, draft, sending, taskMaterials, control, now } = input;
   const unresolved = sending.filter((s) => s.status === "sending" || s.status === "unknown");

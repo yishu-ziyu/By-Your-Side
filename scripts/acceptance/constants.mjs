@@ -95,7 +95,7 @@ export function sideagentExtensionId() {
 }
 
 export function fixturePath() {
-  return join(repoRoot, "extension/test/fixtures/acceptance/index.html");
+  return join(repoRoot, "scripts/acceptance/fixtures/index.html");
 }
 
 export function loadFixtureHtml() {

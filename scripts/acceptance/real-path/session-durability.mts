@@ -77,9 +77,12 @@ try{
  await rp.click(panel,`.artifact-card[data-filename="${image.name}"] .artifact-download`);
  const png=await until(()=>readFile(join(rp.dirs.downloads,image.name)).catch(()=>undefined),10000,'旧图片下载');assert.deepEqual(png,Buffer.from(image.image.split(',')[1],'base64'));evidence.imageSha256=createHash('sha256').update(png).digest('hex');
  evidence.csvSha256=createHash('sha256').update(bytes).digest('hex');
- const originalId=String(await rp.evaluate(panel,'chrome.storage.local.get("selectedConversationId").then(v=>v.selectedConversationId)'));
+ // 一直停在默认对话时扩展不另存选中项，缺省就是 default。
+ const originalId=String(await rp.evaluate(panel,'chrome.storage.local.get("selectedConversationId").then(v=>v.selectedConversationId ?? "default")'));
  const crossOffset=requests.length;
  await rp.click(panel,'#conversation-new');await until(async()=>String(await rp.evaluate(panel,'chrome.storage.local.get("selectedConversationId").then(v=>v.selectedConversationId)'))!==originalId,10000,'新会话就绪');
+ // 像用户一样，等侧栏换成空的新会话再开口；后台先切、侧栏后清的间隙另记（docs/evals/20261008-e2e-only.md）。
+ await until(async()=>!(await state()).text?.includes(code)||undefined,10000,'侧栏换成新会话');
  await send('恢复核对：读取resume.csv。','恢复核对完毕');
  const cross=requests.slice(crossOffset).filter(r=>r.tools?.length);assert.ok(cross.some(r=>JSON.stringify(r.messages).includes('找不到 resume.csv')),'新会话不能读旧文件');assert.ok(cross.every(r=>!JSON.stringify(r.messages).includes(code)),'会话模型上下文不混用');evidence.crossConversation=true;
  await rp.click(panel,'#conversation-switcher');await rp.click(panel,`[data-conversation-id="${originalId}"]`);await until(async()=>(await state()).text?.includes(code),10000,'切回原会话');

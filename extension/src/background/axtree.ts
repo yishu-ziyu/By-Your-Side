@@ -1,6 +1,6 @@
 /**
  * CDP Accessibility 树 → 文本快照的纯转换层。
- * 不碰 chrome.* API，vitest 可直接覆盖。
+ * 不碰 chrome.* API。
  *
  * 输出格式（与 ego-browser 的 snapshotText 约定对齐）：
  *   [ref=N] role "name" key=value...   —— ref 直接是 backendDOMNodeId，跨快照保号

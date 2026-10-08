@@ -28,7 +28,7 @@
 - 扩展外跑任务核心的检查与调试通道已于 10-04 删除；`eval:live` 如实报 BLOCKED，需要在扩展里跑的真实模型评测（[删减验收](evals/20261004-cut-unused.md)）。
 - 去掉批准卡后，网页注入可让助手在已登录网站上动手（[说明](browser-confirmation.md)），防护待定。
 - 上传本机文件、请帮手并行、富文本粘贴的代码已于 10-04 删除，要做应另起。DeepSeek 在字幕站找不到内嵌数据的接口，两次放弃（[数据存文件](evals/20261001-data-to-file.md)）。
-- CAP-02 的 filechooser 停止清理、疑似重复测试未处理；见[清理记录](evals/20260923-repo-cleanup.md)。
+- 10-08 删掉全部单元与集成测试，`npm test` 只跑 10 个核心真实路径，不含语音（[验收](evals/20261008-e2e-only.md)）。新会话刚点就发，消息可能进旧对话，待复现。
 - 长任务与旧票组不因新专项通过自动关闭；见[产品复核](evals/20260919-product-review-repair.md)。
 
 ## 下一步
@@ -48,7 +48,7 @@
 
 进展见 [Linear](development/checks.md#给用户看的进展linear)。
 
-默认测试模型 gpt-6-luna（10-06）。
+默认测试模型 gpt-6-luna。
 
 ## 历史
 

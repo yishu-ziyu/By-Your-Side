@@ -4,8 +4,6 @@
 
 只保留当前仍能被团队找到和重复运行的验收入口。
 
-Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 只证明协议结果；生产仍使用 IndexedDB。不应以没有 IndexedDB 的 Node 环境跳过记忆钩子或放宽原协议断言。
-
 记忆误分类定点：`npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted`，用 `--only=` 选场景，证据见[验收](../evals/20261003-memory-classification.md)。真实模型仍通过同脚本 `--model=...` 定点核对。
 
 ## 正式入口
@@ -17,7 +15,6 @@ Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 只证�
 - `npx tsx scripts/acceptance/page-readouts.mts --headless [--live]`：截断文字的完整值与范围输入框的读数、越界填写回执，零模型请求（[规则](../page-readouts.md)）。
 - `npx tsx scripts/acceptance/real-path/answer-selfcheck.mts --headless [--live]`：只装扩展，默认脚本主模型故意给出错误草稿，真实 GLM 快速模型做目标核对；`--live` 改用真实 GLM 主模型。需本机已配置 GLM 凭据。固定页面检查不代替 #35 的完整产品评测（[标准](../evals/20261002-answer-selfcheck.md)）。
 - `npx tsx scripts/acceptance/real-path/pdf-download.mts --headless [--live|--arxiv]`：默认脚本模型走真实 PDF 阅读器和 Chrome 下载；`--live` 用真实 GLM，`--arxiv` 复现 #25 的 arXiv 论文地址（[标准](../evals/20261002-pdf-download.md)）。
-- `npm run eval:integration -- --headless`：发布集成评测。
 - `npm run eval:live`：需要真实供应商或真实环境的评测；原 Node 托管的评测套件已删除，有预算时也如实报 BLOCKED，真实模型的产品路径改用 real-path 的 `--live`。
 
 ## 真实路径用例（real-path）
