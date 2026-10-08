@@ -1,8 +1,10 @@
 # By Your Side
 
-陪你阅读，也帮你操作网页的 Chrome AI 助手。复用当前浏览器的登录状态，在侧栏对话、阅读网页并执行任务。
+陪你阅读、也帮你操作网页的 Chrome 扩展。助手复用当前浏览器的登录状态，在侧栏里对话、读页并执行任务。
 
-开发预览版。现有源码安装面向 macOS + Chrome；三系统成品分发仍是待完成目标。最新验证范围与已知问题只在 [当前状态](docs/STATUS.md) 维护。
+当前是开发预览版。源码安装只面向 macOS + Chrome；三系统成品分发还没完成。
+
+最新验证范围与已知问题只在[当前状态](docs/STATUS.md)维护。
 
 ## 文档导航
 
@@ -14,6 +16,7 @@
 | 找代码职责和调用链 | [架构](docs/architecture.md) · [协议](docs/protocol.md) |
 | 接着开发 | [当前状态](docs/STATUS.md) · [续接要点](docs/NOTES.md) |
 | 修改与验证 | [开发检查](docs/development/checks.md) · [文档维护](docs/development/documentation.md) |
+| 新功能怎么推进 | [协作方式](docs/development/collaboration.md) |
 
 ## 安装
 
@@ -33,8 +36,8 @@
 
 ## 实现结构
 
-`extension/` 负责浏览器与侧栏；`agent/` 是任务核心，构建时打包进扩展的 offscreen 文档；`shared/` 保存共享契约。详细职责只在[架构](docs/architecture.md)维护。
+各目录的职责只在[架构](docs/architecture.md)维护。
 
 ## 开发与验证
 
-先读 [AGENTS.md](AGENTS.md)，按[开发检查](docs/development/checks.md)选择验证范围。文档检查入口：`npm run check:docs`。
+先读 [AGENTS.md](AGENTS.md)，再按[开发检查](docs/development/checks.md)选择验证范围。

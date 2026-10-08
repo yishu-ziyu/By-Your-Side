@@ -2,6 +2,8 @@
  * 无头、只装扩展；脚本主模型故意写错，真实 GLM 快速模型核对。
  * F1 文件存在便判完成；F2 取到另一日期仍交付；F3 漏数量/来源；
  * F4 正确答案被催重做；F5 改正文却没改文件。期望来自手算及固定任务要求。
+ *   npx tsx scripts/acceptance/real-path/answer-selfcheck.mts --headless [--live]
+ * 需要本机已配置 GLM 凭据；--live 把主模型也换成真实 GLM。
  */
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";

@@ -6,7 +6,8 @@
 
 ## 原因
 
-npm workspaces 把 `node_modules/@sideagent/agent` 做成指回主仓库 `agent/` 的符号链接。扩展的 offscreen 入口经 `@sideagent/agent/browser-core` 导入任务核心，esbuild 顺着链接打包的是主仓库（新代码），只有扩展自身文件来自工作树。
+npm workspaces 把 `node_modules/@sideagent/agent` 做成指回主仓库 `agent/` 的符号链接。
+扩展的 offscreen 入口经 `@sideagent/agent/browser-core` 导入任务核心，esbuild 顺着链接打包的是主仓库（新代码），只有扩展自身文件来自工作树。
 
 ## 方法
 

@@ -1,6 +1,10 @@
 /**
  * 工具栏淡出（docs/evals/20261005-chrome-quiet.md R1–R4）：只装扩展的隔离无头 Chrome、真侧栏，
  * 真实键盘、鼠标移动与滚轮；读顶栏和按钮的实际不透明度。不需要模型。
+ *
+ *   npx tsx scripts/acceptance/real-path/chrome-quiet.mts --headless --run=final
+ *
+ * --run= 只决定证据目录 out/acceptance/chrome-quiet/<run>/：不写时是 candidate（候选轮），最终验收用 final。
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

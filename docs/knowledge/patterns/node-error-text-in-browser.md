@@ -19,4 +19,4 @@ pi-ai 的 `isRetryableAssistantError` 按文字匹配，认 Node 的「fetch fai
 
 ## 验证
 
-`agent/test/model-failover.test.ts` F2 的「Failed to fetch」：第一次就换快速模型；去掉补充后失败。见 [首个反馈](../../evals/20261006-first-feedback.md)。
+当时的一条单元测试（2026-10-08 删除）用「Failed to fetch」验证：第一次就换快速模型；去掉补充的判断后，这条测试失败。见 [首个反馈](../../evals/20261006-first-feedback.md)。

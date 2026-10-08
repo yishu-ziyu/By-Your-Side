@@ -12,7 +12,8 @@
 
 ## 本次处理
 
-晚到监听在 `BrowserAgentSession` 构造时注册到共享 RPC：Lead 用 `onLateResult`，worker 用 `addLateResultListener` 并按 `memberId` 过滤；会话发出 `tool_late_result` 事件，由既有 emit 链进入进度账本。`ConversationManager` 不需要再补一层接线。
+晚到监听在 `BrowserAgentSession` 构造时注册到共享 RPC：Lead 用 `onLateResult`，worker 用 `addLateResultListener` 并按 `memberId` 过滤；
+会话发出 `tool_late_result` 事件，由既有 emit 链进入进度账本。`ConversationManager` 不需要再补一层接线。
 
 ## 适用条件与限制
 
