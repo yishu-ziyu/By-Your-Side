@@ -38,6 +38,7 @@ npx tsx scripts/acceptance/real-path/ptt-dictation.mts --headless       # 网页
 npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless         # 按住说话的网页底部胶囊：在听 → 在做 → 结果（念出来），Esc 停；念结果连 MiniMax 订阅 Key
 npx tsx scripts/acceptance/real-path/reinject.mts --headless            # 重载扩展后，已打开的网页不刷新也能按住说话
 npx tsx scripts/acceptance/real-path/proactive-card.mts --headless      # 侧栏里的主动卡：动词即按钮，按下原位接着说；没成也原位说清；每次判断进诊断记录；全程录侧栏
+npx tsx scripts/acceptance/real-path/welcome-context.mts --headless     # 欢迎页跟着网页变，点击只填草稿，慢页面按时退回保底
 npx tsx scripts/acceptance/real-path/check-assert.mts --headless        # 只认看得见的文字，条件失败后的点击不发出
 npx tsx scripts/acceptance/real-path/target-gone.mts --headless         # 目标文字变了不点；新动作不沿用旧目标
 npx tsx scripts/acceptance/real-path/run-check.mts --headless           # 真侧栏里的核对行、文件个数与漏报失败

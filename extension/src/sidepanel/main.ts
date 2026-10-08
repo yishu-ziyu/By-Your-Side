@@ -272,8 +272,7 @@ app.innerHTML = `
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub">浏览器 AI 助手，帮你读页面、整理信息或操作网页。</p>
     <div id="starter-actions">
-      <button type="button" data-starter="请概括当前页面的要点。">概括当前页</button>
-      <button type="button" data-starter="请帮我填写当前页面的表单，提交前让我确认。">帮我填写表单</button>
+      <button type="button" data-starter="请概括当前页面的要点。">概括这一页</button>
     </div>
   </section>
   <div class="composer-dock-wrap">
@@ -676,18 +675,26 @@ async function refreshStarterSuggestions(tabId: number): Promise<void> {
   if (!conversationEmpty() || typeof chrome === "undefined" || !chrome.scripting?.executeScript) return;
   const probe = beginStarterProbe();
   let profile: PageProfile | null = null;
+  let timer = 0;
 
   try {
-    const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: probePageProfile });
+    const [frame] = await Promise.race([
+      chrome.scripting.executeScript({ target: { tabId }, func: probePageProfile }),
+      new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error("页面起点探测超时")), 1500); }),
+    ]);
     profile = frame?.result ?? null;
   } catch {
     profile = null;
+  } finally {
+    window.clearTimeout(timer);
   }
 
-  if (!isLatestStarterProbe(probe)) return;
+  if (!isLatestStarterProbe(probe) || starterTab() !== tabId || !conversationEmpty()) return;
   const box = document.getElementById("starter-actions");
+  const suggestions = suggestionsFor(profile);
+  if (box && [...box.querySelectorAll<HTMLButtonElement>("button")].map(b => b.dataset.starter).join("\n") === suggestions.map(s => s.prompt).join("\n")) return;
 
-  box?.replaceChildren(...suggestionsFor(profile).map((item) => {
+  box?.replaceChildren(...suggestions.map((item) => {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.starter = item.prompt;
