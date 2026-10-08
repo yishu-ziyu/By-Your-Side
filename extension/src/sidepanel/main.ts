@@ -2528,9 +2528,21 @@ function ctxChip(glyph: HTMLElement, label: string, title: string): HTMLElement 
 
 function appendToMessages(node: HTMLElement): void {
   const resumeRoot = document.getElementById("resume-entry-root");
+  const anchor = resumeRoot?.parentElement === messagesEl ? resumeRoot : null;
 
-  if (resumeRoot && resumeRoot.parentElement === messagesEl) {
-    messagesEl.insertBefore(node, resumeRoot);
+  if (node.parentElement === messagesEl && node.querySelector(".artifact-inline-frame")) {
+    // Chromium's state-preserving move keeps the iframe's JS state and form
+    // values. Move only the touched card, never the following messages or
+    // unrelated cards from earlier turns.
+    const container = messagesEl as HTMLElement & { moveBefore?: (child: Node, before: Node | null) => void };
+
+    if (typeof container.moveBefore === "function") container.moveBefore(node, anchor);
+    // Older engines: keep the live iframe in place rather than reloading it.
+    return;
+  }
+
+  if (anchor) {
+    messagesEl.insertBefore(node, anchor);
   } else {
     messagesEl.appendChild(node);
   }

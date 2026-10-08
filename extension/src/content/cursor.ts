@@ -27,7 +27,7 @@ import type { MarkAction } from "../../../shared/protocol.js";
 import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
 import { mountGrok, mountKenney } from "../shared/grok-bot.js";
 import { displayNameFor, personFor } from "../../../shared/cast.js";
-import { cursorLabelPosition } from "../shared/cursor-label.js";
+import { cursorLabelPosition, type CursorLabelPlacement } from "../shared/cursor-label.js";
 import {
   CURSOR_ARROW_PATH,
   CURSOR_STROKE_HALO,
@@ -88,6 +88,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     resting: boolean;
     raf?: number;
     parkTimer?: ReturnType<typeof setTimeout>;
+    labelAnimation?: Animation;
+    labelPlacement?: CursorLabelPlacement;
     pressTimer?: ReturnType<typeof setTimeout>;
     replayTimer?: ReturnType<typeof setTimeout>;
     replayGen?: number;
@@ -169,6 +171,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   function ensureDom(): void {
     if (host) return;
+    // @property 声明放在 ShadowRoot 内不会在所有 Chromium 版本注册到文档。
+    // 使用专属名称显式注册，旧版浏览器仍保留静态彩边作为降级。
+    try {
+      CSS.registerProperty({ name: "--sideagent-border-angle", syntax: "<angle>", inherits: false, initialValue: "0deg" });
+    } catch { /* 已注册或不支持时继续使用静态边框。 */ }
     host = document.createElement("div");
     host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CURSOR);
     host.setAttribute("aria-label", "助手操作与状态");
@@ -180,23 +187,41 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       .cursor {
         position: absolute; top: 0; left: 0;
         transition: opacity 160ms ease;
-        will-change: transform;
       }
+      /* 常驻的光标闲置时不长期占用独立合成层。 */
+      .cursor:not(.rest) { will-change: transform; }
       .cursor.hidden { opacity: 0; }
-      /* 页面边缘光：助手正在操作这一页。颜色跟随成员光标，结束后淡出。 */
+      /* C 柔和彩边：低饱和渐变缓慢流动；没有扫页光束和追踪亮点。 */
       .edge {
         position: absolute; inset: 0; pointer-events: none;
-        opacity: 0; transition: opacity 420ms ease;
-        box-shadow:
-          inset 0 0 0 1px color-mix(in srgb, var(--c) 28%, transparent),
-          inset 0 0 32px 2px color-mix(in srgb, var(--c) 16%, transparent);
+        opacity: 0; transition: opacity 420ms cubic-bezier(.16,1,.3,1);
+        overflow: hidden;
       }
-      .edge.on { opacity: 1; animation: edge-breathe 2.6s ease-in-out infinite; }
+      .edge::before {
+        content: ""; position: absolute; inset: 9px; border-radius: 18px;
+        padding: 2.5px;
+        background: conic-gradient(from var(--sideagent-border-angle, 0deg),
+          #c5dbe4 0%, #8aa9e2 26%, #b5a1d8 51%,
+          #dec2d5 70%, #a6cfc5 86%, #c5dbe4 100%);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask-composite: exclude;
+      }
+      .edge::after {
+        content: ""; position: absolute; inset: 10px; border-radius: 17px;
+        background: linear-gradient(125deg,
+          rgba(138, 169, 226, .025), rgba(181, 161, 216, .045) 55%,
+          rgba(166, 207, 197, .025));
+        box-shadow: inset 0 0 22px 1px rgba(124, 150, 194, .055);
+      }
+      .edge.on { opacity: 1; }
+      .edge.on::before { animation: soft-border-flow 7.2s linear infinite; }
       /* 新建即点亮：淡入由样式起点完成，不靠下一帧再改 class（后台页的下一帧可能很晚，晚到的改动会让已发出的确认判为页面已变）。 */
       @starting-style { .edge.on { opacity: 0; } }
-      @keyframes edge-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
-      @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge.on { animation: none; } }
-      .cursor.rest { opacity: .86; }
+      @keyframes soft-border-flow { to { --sideagent-border-angle: 360deg; } }
+      @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge::before { animation: none !important; } }
+      .cursor.rest { opacity: .78; }
       .cursor.rest .label { opacity: 0; }
       .cursor.flip .label { left: auto; right: ${Math.round(CURSOR_SVG_SIZE * 0.51)}px; }
       .svg-wrap {
@@ -283,7 +308,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       .xpage.on { display: block; }
       /* 状态统一在右上角；光标旁只挂「正在做的这一下」（#43），做完随光标回角落收起。 */
       .cursor:not(.holding):not(.acting) .label { display: none !important; }
-      .cursor.rest:not(.holding) { visibility: hidden; }
+      /* 主助手停靠时可见；多个协作光标闲置时仍收起，以免挡住正文。 */
+      .cursor.rest:not(.holding):not([data-primary="true"]) { visibility: hidden; }
       .cursor.holding .label { display:flex; flex-wrap:wrap; gap:6px; width:170px; max-width:calc(100vw - 48px); background:#ffffff; color:#141413; border:1px solid #e3e1d9; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px #2928210d; }
       .hold-prompt { flex-basis:100%; font-size:12px; white-space:normal; }
       .hold-action.confirm { background:#141413; color:#fff; }
@@ -495,6 +521,13 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     window.visualViewport?.addEventListener("scroll", onScroll, { passive: true });
   }
 
+  /** 主光标在右下角长期停靠；其他成员继续使用原有交错停靠点。 */
+  function homeFor(index: number, primary: boolean): { x: number; y: number } {
+    if (!primary) return restPoint(index, window.innerWidth);
+
+    return { x: Math.max(28, window.innerWidth - 41), y: Math.max(48, window.innerHeight - 102) };
+  }
+
   function onViewportResize(): void {
     for (const inst of instances.values()) {
       if (inst.action) {
@@ -510,7 +543,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       cancelFly(inst);
 
       if (inst.visible && !inst.hold) {
-        const home = restPoint(inst.restIndex, window.innerWidth);
+        const home = homeFor(inst.restIndex, inst.el.dataset.primary === "true");
         setPos(inst, home);
         setResting(inst, true);
       }
@@ -627,9 +660,10 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     el.replaceChildren(svgWrap, nameLabel);
     const color = cursorColor(id);
     el.style.setProperty("--c", color);
+    el.dataset.primary = String(id === DEFAULT_ID);
     shadow!.appendChild(el);
     const restIndex = instances.size;
-    const home = restPoint(restIndex, window.innerWidth);
+    const home = homeFor(restIndex, id === DEFAULT_ID);
 
     const inst: Instance = {
       el,
@@ -658,14 +692,18 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     if (!inst.action) return;
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
     const size = inst.labelSize ??= { width: label.offsetWidth, height: label.offsetHeight };
-    const p = cursorLabelPosition(inst.pos, size, { width: window.innerWidth, height: window.innerHeight });
+    const p = cursorLabelPosition(inst.pos, size, { width: window.innerWidth, height: window.innerHeight }, inst.action.rect, inst.labelPlacement);
+    inst.labelPlacement = p.placement;
     label.style.left = `${p.x - inst.pos.x}px`;
     label.style.top = `${p.y - inst.pos.y}px`;
   }
 
   function clearAction(inst: Instance): void {
+    inst.labelAnimation?.cancel();
+    inst.labelAnimation = undefined;
     inst.action = undefined;
     inst.labelSize = undefined;
+    inst.labelPlacement = undefined;
     inst.el.classList.remove("acting");
     inst.highlightEl?.remove();
     inst.highlightEl = undefined;
@@ -685,9 +723,20 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const name = document.createElement("span");
     name.className = "agent-name";
     name.textContent = sub;
+    inst.labelAnimation?.cancel();
+    inst.labelAnimation = undefined;
     label.replaceChildren(orb, line, name);
     inst.labelSize = undefined;
+    inst.labelPlacement = undefined;
     positionActionLabel(inst);
+
+    // A「纸面」：整句一次淡入；只描绘操作回执，不展示未经核验的页面事实。
+    if (inst.action && !reducedMotion.matches) {
+      inst.labelAnimation = label.animate(
+        [{ opacity: 0, transform: "translateY(3px)" }, { opacity: 1, transform: "translateY(0)" }],
+        { duration: 160, easing: "cubic-bezier(.16,1,.3,1)" },
+      );
+    }
   }
 
   /** 优先级：拿住双键 > 动作 > 状态 > 成员名。 */
@@ -877,7 +926,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   }
 
   function showAtRest(inst: Instance): void {
-    const home = restPoint(inst.restIndex, window.innerWidth);
+    const home = homeFor(inst.restIndex, inst.el.dataset.primary === "true");
     setPos(inst, home);
     setResting(inst, true);
     inst.el.classList.remove("hidden");
@@ -925,20 +974,36 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     return ms;
   }
 
-  function schedulePark(inst: Instance): void {
+  function schedulePark(inst: Instance, delay = PARK_AFTER_MS): void {
     clearTimeout(inst.parkTimer);
-    inst.parkTimer = setTimeout(() => parkNow(inst), PARK_AFTER_MS);
+    inst.parkTimer = setTimeout(() => parkNow(inst), delay);
   }
 
-  /** 立刻回待命角落（状态收完就是这么走的，不再多等一次 park 延迟）。 */
-  function parkNow(inst: Instance): void {
-    // 拿住等确认时不回角落：这一轮结束了，页面上的「发送 / 取消」仍要留给用户点。
-    if (inst.action?.phase === "active" || inst.hold) return;
-
+  /** 纸面气泡收完之后，统一回本分支的右下角常驻位置。 */
+  function finishPark(inst: Instance): void {
     if (inst.action?.phase === "done") clearAction(inst);
-    const home = restPoint(inst.restIndex, window.innerWidth);
+    const home = homeFor(inst.restIndex, inst.el.dataset.primary === "true");
     setResting(inst, true);
     flyTo(inst, home);
+  }
+
+  /** 保持动作结果约两秒，然后淡出 200ms；新动作取消旧回调。 */
+  function parkNow(inst: Instance): void {
+    if (inst.action?.phase === "active" || inst.hold) return;
+    if (!inst.action || reducedMotion.matches) { finishPark(inst); return; }
+
+    const actionId = inst.action.id;
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    inst.labelAnimation?.cancel();
+    const animation = label.animate(
+      [{ opacity: 1, transform: "translateY(0)" }, { opacity: 0, transform: "translateY(-3px)" }],
+      { duration: 200, easing: "ease-out", fill: "forwards" },
+    );
+    inst.labelAnimation = animation;
+    animation.onfinish = () => {
+      if (inst.labelAnimation !== animation || inst.action?.id !== actionId) return;
+      finishPark(inst);
+    };
   }
 
   function spawnRipple(x: number, y: number, cls: string, color: string): void {
@@ -1488,13 +1553,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   let crossPill: HTMLDivElement | null = null;
   let edge: HTMLDivElement | null = null;
-  /** 正在操作这一页的成员；第一个成员的颜色决定边缘光颜色。 */
+  /** 正在操作这一页的成员；只要仍有一位在工作，就保留选定的 C 彩边。 */
   const glowing = new Set<string>();
 
   function renderGlow(): void {
-    const first = glowing.values().next().value;
-
-    if (first === undefined) {
+    if (glowing.size === 0) {
       edge?.classList.remove("on");
 
       return;
@@ -1508,7 +1571,6 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       shadow!.prepend(edge);
     }
 
-    edge.style.setProperty("--c", cursorColor(first));
     edge.classList.add("on");
   }
 
@@ -1790,7 +1852,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     renderFeedbackPill();
   }
 
-  function teardown(): void {
+  function teardown(event: PageTransitionEvent): void {
     if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
     actionFrame = undefined;
 
@@ -1800,6 +1862,10 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       clearTimeout(inst.parkTimer);
       clearTimeout(inst.pressTimer);
       clearStatusTimers(inst);
+      // pagehide may freeze the page in BFCache; an old fade callback must
+      // never reach a newly restored cursor or a different action.
+      inst.labelAnimation?.cancel();
+      inst.labelAnimation = undefined;
     }
 
     remoteMembers = [];
@@ -1810,6 +1876,10 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     feedbackTimer = undefined;
     feedbackPillState = null;
     feedbackPill = null;
+    // Pagehide may freeze this Document in BFCache. Do not revive finished
+    // task lighting when pageshow later reuses the same content-script world.
+    glowing.clear();
+    edge = null;
     host?.remove();
     marksHost?.remove();
     controlHost?.remove();
@@ -1823,27 +1893,37 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     highlightLayer = null;
     rippleLayer = null;
     marksLayer = null;
-    ns.cursor = undefined;
-    ns.cursorHidden = undefined;
-    ns.cursorState = undefined;
-    ns.markLayout = undefined;
-    ns.markLayerCount = undefined;
-    ns.marksState = undefined;
-    ns.holdState = undefined;
-    ns.holdActionLabels = undefined;
-    ns.clickHoldAction = undefined;
-    ns.controlBanner = undefined;
-    ns.clickHandback = undefined;
-    ns.cursorStatus = undefined;
-    ns.crossPageState = undefined;
-    ns.feedbackState = undefined;
-    ns.clickCrossPage = undefined;
-    ns.setMarkConfig = undefined;
-    ns.getMarkConfig = undefined;
-    ns.markDetails = undefined;
+    // BFCache restoration does not rerun the content script. Keep only its
+    // API bindings, without preserving any old DOM, status, timer or glow.
+    if (!event.persisted) {
+      ns.cursor = undefined;
+      ns.cursorHidden = undefined;
+      ns.cursorState = undefined;
+      ns.markLayout = undefined;
+      ns.markLayerCount = undefined;
+      ns.marksState = undefined;
+      ns.holdState = undefined;
+      ns.holdActionLabels = undefined;
+      ns.clickHoldAction = undefined;
+      ns.controlBanner = undefined;
+      ns.clickHandback = undefined;
+      ns.cursorStatus = undefined;
+      ns.crossPageState = undefined;
+      ns.feedbackState = undefined;
+      ns.clickCrossPage = undefined;
+      ns.setMarkConfig = undefined;
+      ns.getMarkConfig = undefined;
+      ns.markDetails = undefined;
+    }
   }
 
   window.addEventListener("pagehide", teardown);
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted || !ns.cursor) return;
+    // A saved Document may be shown more than once. Rebuild the primary
+    // idle cursor once, without starting an action or re-enabling page glow.
+    if (!host?.isConnected || !instances.has(DEFAULT_ID)) ns.cursor.park?.();
+  });
 
   function api(id: string): SideAgentCursor {
     return {
@@ -1899,7 +1979,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
         renderActionLabel(inst);
         renderAmbient();
-        schedulePark(inst);
+        schedulePark(inst, 2000);
       },
       arrive(x, y): void {
         const inst = instances.get(id);
@@ -2055,6 +2135,9 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   }
 
   ns.cursor = api(DEFAULT_ID);
+  // 每个普通网页自动显示主光标的静态停靠态；不启动动画帧。
+  // 工作开始时复用这个实例，扩展重复注入不会再创建第二个光标。
+  ns.cursor.park?.();
   ns.cursorState = (id = DEFAULT_ID) => {
     const inst = instances.get(id);
 
