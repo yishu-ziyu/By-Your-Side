@@ -977,9 +977,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "mark",
       label: "Mark elements",
       description:
-        "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + optional label on target (\"look here\", highlights). One thing gets one mark; overlapping marks look like a scribble. When the user names a field that shows a value beside it (存储空间 → 3.2 GB), they want to see the value: pass the name ref as target and the value ref as through so one frame holds both. The same applies to any run of adjacent refs on one line. Never draw a second mark on the adjacent part. Use refs already in the snapshot; do not search for a wrapping container. For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object.",
+        "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + optional label on target (\"look here\", highlights). One thing gets one mark; overlapping marks look like a scribble. When the user names a field that shows a value beside it (存储空间 → 3.2 GB), they want to see the value: pass the name ref as target and the value ref as through so one frame holds both. The same applies to any run of adjacent refs on one line. Never draw a second mark on the adjacent part. Use refs already in the snapshot; do not search for a wrapping container. For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object. To circle words or phrases wherever they appear in the page text (e.g. \"圈出高频词\", \"把所有 X 圈出来\"), pass text instead of target: one call circles every visible occurrence of each term (exact, case-sensitive match) and labels each term once. The result gives the real count per term; report those counts, never count yourself.",
       parameters: Type.Object({
-        target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector; required unless clear is true' })),
+        target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector; required unless text or clear is set' })),
+        text: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 10, description: "Terms to circle everywhere they appear in the page text, instead of target; each term gets its own label with its count" })),
         through: Type.Optional(Type.String({ description: '"@N" ref ending a group on the same line as target (both must be snapshot refs); one frame covers target through this ref' })),
         label: Type.Optional(Type.String({ description: "Short label shown next to the mark, e.g. 待删除" })),
         actions: Type.Optional(
@@ -1000,7 +1001,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           return textResult("All marks cleared.", data);
         }
 
-        if (typeof params.target !== "string" || !params.target.trim()) throw new Error("mark 需要 target；只想清除标注时传 clear:true。");
+        if (params.text?.length) {
+          const data = (await call("mark", { text: params.text })) as ToolContract["mark"]["data"];
+          const counts = data.counts ?? [];
+
+          return textResult(`Circled on the page: ${counts.map((c) => `「${c.text}」 ${c.count} places`).join(", ")}. These are the real counts; report them as is.`, data);
+        }
+
+        if (typeof params.target !== "string" || !params.target.trim()) throw new Error("mark 需要 target；按文字圈时传 text；只想清除标注时传 clear:true。");
         const data = (await call("mark", { target: params.target, through: params.through, label: params.label, actions: params.actions })) as ToolContract["mark"]["data"];
 
         return textResult(`Marked ${params.target}.`, data);

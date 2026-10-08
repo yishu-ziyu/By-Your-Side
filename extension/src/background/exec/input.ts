@@ -2081,20 +2081,23 @@ export async function scroll(
 export async function mark(
   params: {
     tabId?: number;
-    target: string;
+    target?: string;
     through?: string;
     label?: string;
     actions?: unknown;
     style?: "rect" | "sketch";
     motion?: "grow" | "boil";
+    text?: string[];
   },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: DispatchGuard,
-): Promise<{ marked: true }> {
+): Promise<ToolContract["mark"]["data"]> {
   await beforeDispatch?.();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
+  if (params.text?.length) return markText(tab.id, params.text, sessionId, beforeDispatch);
+  if (!params.target) throw notExecuted(new Error("mark 需要 target 或 text"));
   const observedDocument = await assertObservedDocument(tab.id, sessionId, [params.target, params.through]);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
@@ -2216,6 +2219,68 @@ export async function mark(
     return { marked: true };
   } catch (error) {
     if (beforeDispatch && prepared) throw Object.assign(error instanceof Error ? error : new Error(String(error)), {executionFact: "unknown"});
+    throw error;
+  }
+}
+
+/**
+ * mark 按文字圈：每个词在页面文字里的每一处可见出现各圈一个，每个词只在第一处挂名牌（词 ×处数）。
+ * 只匹配单个文字节点内的原文（跨 <b>、<a> 断开的不算）；处数由页面实际画出的圈数给出，不由模型数。
+ */
+async function markText(tabId: number, terms: string[], sessionId: string, beforeDispatch?: DispatchGuard): Promise<ToolContract["mark"]["data"]> {
+  await ensureCursor(tabId, beforeDispatch);
+  const motion = await getMarkMotion();
+
+  try {
+    const counts = await callDom(
+      tabId,
+      (words: string[], id: string, overlay: string, opts: { style: "sketch"; motion?: "grow" | "boil" }) => {
+        const cursor = window.__sideagent?.cursor?.for(id);
+
+        if (!cursor?.mark) throw new Error("cursor 未注入");
+        const skip = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA"]);
+        const hits = words.map(() => [] as Range[]);
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+          acceptNode: (n) => {
+            const el = n.parentElement;
+
+            return !el || skip.has(el.tagName) || el.closest(`[${overlay}]`) || !el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+          },
+        });
+
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const text = n.textContent ?? "";
+
+          words.forEach((word, i) => {
+            for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + word.length)) {
+              const range = document.createRange();
+              range.setStart(n!, at);
+              range.setEnd(n!, at + word.length);
+              const r = range.getBoundingClientRect();
+
+              if (r.width && r.height) hits[i]!.push(range);
+            }
+          });
+        }
+
+        // 先把第一处滚进视口再量：画圈用视口坐标，量和画在同一帧里完成。
+        hits.flat()[0]?.startContainer.parentElement?.scrollIntoView({ block: "center" });
+
+        return words.map((word, i) => {
+          hits[i]!.forEach((range, k) => {
+            const r = range.getBoundingClientRect();
+            cursor.mark!({ x: r.x, y: r.y, width: r.width, height: r.height }, k === 0 ? `${word} ×${hits[i]!.length}` : undefined, `text=${word}`, undefined, opts, range);
+          });
+
+          return { text: word, count: hits[i]!.length };
+        });
+      },
+      [terms, cursorId(sessionId), OVERLAY_ATTR, { style: "sketch" as const, motion }], undefined, beforeDispatch,
+    );
+
+    return { marked: true, counts };
+  } catch (error) {
+    if (beforeDispatch) throw Object.assign(error instanceof Error ? error : new Error(String(error)), { executionFact: "unknown" });
     throw error;
   }
 }

@@ -722,7 +722,8 @@ export interface ToolContract {
     };
   };
   /** 在元素处画持久标注（描边框+名牌），锚定文档坐标，滚动不漂移；through 为同一行的结束 ref，一个框从 target 圈到它 */
-  mark: { params: { tabId?: number; target: string; through?: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
+  /** text：按文字圈，圈中每个词在页面文字里的每一处；counts 是页面上真实圈中的处数。 */
+  mark: { params: { tabId?: number; target?: string; through?: string; label?: string; actions?: MarkAction[]; text?: string[] }; data: { marked: true; counts?: Array<{ text: string; count: number }> } };
   /** 清除全部 mark 标注 */
   clear_marks: { params: {tabId?: number}; data: { cleared: true } };
 }

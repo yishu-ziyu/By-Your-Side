@@ -265,12 +265,12 @@ const FREQ_WORDS = ["全双工", "打断", "延迟", "回声"];
 /** 一个圈「圈中」某处词：词框中心在圈内，且圈不大于两行字（圈整段不算）。 */
 const tightOn = (m: DrawnMark, w: TextBox) => m.frame.h <= 60 && m.frame.w <= 220 && contains(m.frame, { x: w.x + w.w / 2, y: w.y + w.h / 2, w: 0, h: 0 });
 
-/** 回答里「词 … N 次」报的次数，与页面上实际出现次数对照。 */
+/** 回答里「词 … N 次」或「N 处」报的次数，与页面上实际出现次数对照。 */
 const CN_NUM: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 
 function reportedCounts(c: Ctx) {
   return FREQ_WORDS.flatMap((word) => {
-    const m = new RegExp(`${word}[」"”']?[^。；;\\n0-9一二两三四五六七八九十]{0,8}?([0-9]+|[一二两三四五六七八九十])\\s*次`).exec(c.answer);
+    const m = new RegExp(`${word}[」"”']?[^。；;\\n0-9一二两三四五六七八九十]{0,8}?([0-9]+|[一二两三四五六七八九十])\\s*[次处]`).exec(c.answer);
     if (!m) return [];
     const said = /\d/.test(m[1]!) ? Number(m[1]) : CN_NUM[m[1]!]!;
     return [{ word, said, actual: c.words.filter((w) => w.text === word).length }];
@@ -293,6 +293,7 @@ const VOICE_CASES: Case[] = [
       const m = freqMeasure(c);
       if (m.marks === 0) return "页面上没有圈画";
       if (!c.words.some((w) => w.text === "全双工" && c.marks.some((k) => tightOn(k, w)))) return "最高频的「全双工」一处都没圈中";
+      if (m.counts.length < FREQ_WORDS.length) return `回答没有报出每个高频词的次数（只认出 ${m.counts.map((k) => k.word).join("、") || "0 个"}）`;
       const wrong = m.counts.filter((k) => k.said !== k.actual);
       if (wrong.length) return `报的次数不对：${wrong.map((k) => `${k.word} 说 ${k.said} 实际 ${k.actual}`).join("，")}`;
       return m.recall < 0.8 ? `只圈中 ${m.covered}/${m.occurrences} 处` : null;

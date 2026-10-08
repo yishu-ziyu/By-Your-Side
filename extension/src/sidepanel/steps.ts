@@ -160,6 +160,9 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
         return { short: "清除标注", full: "清除标注" };
       }
 
+      const words = Array.isArray(params.text) ? params.text.filter((w): w is string => typeof w === "string") : [];
+
+      if (words.length) return { short, full: `圈出「${clip(words.join("、"))}」` };
       const label = str(params.label);
 
       return { short, full: label ? `标注「${clip(label)}」` : short };

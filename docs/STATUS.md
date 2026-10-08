@@ -22,7 +22,8 @@
 | 模型思考档与后台判断 | 后台判断用模型允许的最低档；主任务从中档开始，失败、打转、没做完或被用户纠正时升档 | 扩展里选 M3.1 对话待真人试；MiniMax-M3 的目标核对正确率 4/9 | [验收](evals/20261001-model-effort-and-side-judgments.md) · [说明](model-effort.md) |
 | 结果未知 | 一步的结果未知时，只拦会改动页面的操作，读页和导航照常；查不清时，任务宿主说明后停下 | 只读脚本超时仍记为结果未知 | [规则](unknown-results.md) |
 | 跑完后的核对 | 任务跑完后，程序核对失败是否说了、条数是否一致、要求保存时是否多了文件，结果写在过程折叠区（10-08 合并） | 回复里的错数仍会显示，核对只记一笔 | [验收](evals/20261008-check-assert-referee.md) |
-| 新会话 | 点「新会话」后马上发的消息，等新会话建好后发进新会话，不再落进旧会话（10-09，未合并） | 无 | [验收](evals/20261009-new-conversation-send.md) |
+| 新会话 | 点「新会话」后马上发的消息，等新会话建好后发进新会话，不再落进旧会话（10-09 合并） | 无 | [验收](evals/20261009-new-conversation-send.md) |
+| 圈画 | 说「把高频词圈出来」，每一处词单独圈中，回答的次数取自圈画回执；5/5 通过，耗时中位 7 秒（10-09，未合并） | 被 `<b>`、`<a>` 断开的词圈不到；真人没看过满屏圈的效果 | [验收](evals/20261009-mark-text.md) |
 | 欢迎页 | 按当前网页给起点，点击只填进输入框（10-08 合并） | 真人使用没验 | [验收](evals/20261008-welcome-context.md) |
 
 ## 仍需解决
@@ -42,7 +43,7 @@
 2. 决定助手要不要读已下载文件的内容：涉及文件访问权限，所以需要产品决定。
 3. 主动卡「动词即按钮」用真实模型试用（[验收](evals/20261007-proactive-card-verb.md)）。
 4. 提速：会动手的日常任务大部分时间在等模型（[时间拆分](evals/20261007-time-breakdown.md)）。
-5. 边说边做（YIS-134）：GPT-Live 用 ChatGPT 登录可用（[实验](research/20261009-gpt-live-chatgpt-login.md)）；圈词、查维基底子 0/5，先修按文字圈（YIS-135）和目标核对（YIS-136）（[底子](evals/20261009-voice-ideas-baseline.md)）。
+5. 边说边做（YIS-134）：GPT-Live 用 ChatGPT 登录可用（[实验](research/20261009-gpt-live-chatgpt-login.md)）；按文字圈（YIS-135）已做完待合并；接着修目标核对（YIS-136），查维基底子 0/5（[底子](evals/20261009-voice-ideas-baseline.md)）。
 
 进展同步在 [Linear](development/collaboration.md#给用户看的进展linear)。默认测试模型是 gpt-6-luna。
 
