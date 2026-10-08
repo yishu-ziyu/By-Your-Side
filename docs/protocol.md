@@ -27,7 +27,7 @@
 - `task_view.latestDelivery.unfinished` 只用于侧栏显示，不参与可续接判定或结果核验。
 - `tool_late_result` 是晚到或重复回执，只关联任务账本，不画新卡片。
 - `tool_end.repeatRefused`：重复已成功的写入被拦下。它没执行、不算失败、不留待办。
-- 点击效果证据只说明页面有反应，不说明业务成功（[验收](evals/20261004-honest-completion.md)）。
+- 点击效果证据只说明页面有反应，不说明业务成功（[验收](evals/20261004-honest-completion.md)）。点击期间开始的下载例外：回执写出 Chrome 报告的下载结果（[下载](downloads.md)）。
 
 ## 工具调用
 
