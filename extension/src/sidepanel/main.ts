@@ -33,6 +33,7 @@ import {
   historyEventTime,
   recordedDuration,
   finishedRunTitle,
+  runCheckLine,
   spokenDuration,
   loaderSubtitle,
   openedPageTitle,
@@ -2224,6 +2225,8 @@ interface RunHost {
   chipGroup: ChipGroup | null;
   /** 这一轮动过页面（标注、开标签、填写等）；只读回合结束后不留过程行。 */
   changedPage: boolean;
+  /** 跑完后代码裁判有一条没过：过程行要留下，让「核对 n/3」那句看得见。 */
+  checkFailed: boolean;
   /** 标题上次换字的时刻与排队中的下一句：每句至少停 RUN_TITLE_HOLD_MS，免得一闪而过。 */
   titleAt: number;
   titleTimer: number;
@@ -3300,6 +3303,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     orbActivity: new RunOrbActivity(),
     orbMark,
     changedPage: false,
+    checkFailed: false,
     titleAt: 0,
     titleTimer: 0,
     actIcon,
@@ -3598,7 +3602,7 @@ function finishRun(): void {
   const outcome = run.orbActivity.state();
   const hasResumeReceipt = !!run.body.querySelector(".receipt-history");
   // 按主动卡发起的一轮（YIS-106）：步骤就是卡上那件事的结果，即使只读也留着。
-  const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
+  const keepProcess = !!run.body.querySelector(".run-check") || run.changedPage || run.checkFailed || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
 
   if (!hasSteps || !keepProcess) {
     run.root.remove();
@@ -4215,6 +4219,20 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "goal_check":
       goalContinuing = ev.status === "continue" ? ev.remaining ?? "" : null;
       break;
+    case "run_check": {
+      // 代码裁判的一行只放在过程折叠区里，不进回答；在 agent_end 之前到达，收尾时据 checkFailed 决定过程行留不留。
+      // 没有进行中的过程行（异常顺序）就不另造一个，免得留下收不了尾的壳。
+      const run = currentRun;
+
+      if (!run) break;
+      const line = document.createElement("div");
+      line.className = ev.passed < ev.total ? "run-check failed" : "run-check";
+      line.textContent = runCheckLine(ev.passed, ev.total, ev.notes);
+      run.body.appendChild(line);
+
+      if (ev.passed < ev.total) run.checkFailed = true;
+      break;
+    }
     case "turn_end":
       closeBlocks();
       break;

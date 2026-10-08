@@ -4,8 +4,7 @@
  */
 export interface CsvTotalMismatch { column: string; reported: number; calculated: number }
 
-export function csvTotalMismatches(content: string): CsvTotalMismatch[] {
-  if (content.length > 12_000) return [];
+export function parseCsvRecords(content: string): string[][] | null {
   const rows: string[][] = [];
   let row: string[] = [], field = "", quoted = false;
 
@@ -22,9 +21,16 @@ export function csvTotalMismatches(content: string): CsvTotalMismatch[] {
     } else field += ch;
   }
 
-  if (quoted) return [];
+  if (quoted) return null;
 
   if (field || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+export function csvTotalMismatches(content: string): CsvTotalMismatch[] {
+  if (content.length > 12_000) return [];
+  const rows = parseCsvRecords(content);
+  if (!rows) return [];
 
   const table = rows.flatMap(r => r.some(cell => cell.trim()) ? [r.map(cell => cell.trim().replace(/^\uFEFF/, ""))] : []);
   const header = table[0], total = table.at(-1);
