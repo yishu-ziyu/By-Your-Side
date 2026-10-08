@@ -7,6 +7,7 @@
  * 念结果（docs/evals/20261007-ptt-speak.md）：设置页先拒绝一个按量格式的 key，再存 MiniMax 订阅 Key（~/.pi/agent/auth.json 的 minimax-cn）；
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
+ * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
  * 胶囊的 shadow root 是关着的：用它挂在宿主上的 data-phase / data-peak 判断步骤，内容看截图。
  */
 import assert from "node:assert/strict";
@@ -289,6 +290,25 @@ try {
   const spokenTexts = evidence.speechRequests.slice(before).map(request => request.text);
   assert.deepEqual(spokenTexts, [ANSWER4, `留给你的：${LEFT}`], "R1: the result, then only the left-for-you part");
   assert.ok((four.spoken as { ok?: boolean }).ok, `R1: left-for-you played ${JSON.stringify(four.spoken)}`);
+
+  // ── 第 5 轮：需要用户补数据，不冒充完成 ──
+  const missing = "请提供 Kite 的营收";
+  const waitingAnswer = "还缺 Kite 的营收，请你提供后再排序。";
+  rules.unshift({ match: `"lastReply":"${waitingAnswer.slice(0, 5)}`, steps: [{ text: JSON.stringify({ status: "needs_user", remaining: missing }) }] });
+  rule.steps = [{ tool: { name: "tabs", args: { action: "list" } } }, { text: waitingAnswer }];
+  await clickCapsuleButton(work, "✕").catch(() => {});
+  await sleep(500);
+  const five: Evidence["rounds"][number] = { phases: [], ms: {} };
+  evidence.rounds.push(five);
+  const beforeWaiting = evidence.speechRequests.length;
+  await holdAndSpeak(work, five, join(artifacts, "10-listening-fifth.png"));
+  await waitPhase(work, five, "waiting", DICTATION_MS + 15_000);
+  await until(async () => evidence.speechRequests.slice(beforeWaiting).some(request => request.text === `需要你：${missing}`) || undefined, 20_000, "具体缺项送到真实朗读接口");
+  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "需要你播报结束");
+  five.spoken = await lastSpeech(inproc);
+  assert.ok((five.spoken as { ok?: boolean; playedMs?: number }).ok && (five.spoken as { playedMs: number }).playedMs > 500, "需要你实际播放，不以发送请求算完成");
+  assert.equal((await capsuleState(work))?.phase, "waiting", "播完仍等用户，不恢复已完成");
+  await rp.screenshot(work, join(artifacts, "11-needs-user.png"));
 
   assert.ok(evidence.sockets.length > 0 && evidence.sockets.every(url => url.startsWith("wss://api.stepfun.com/step_plan/v1/realtime")), `dictation only on the plan URL ${JSON.stringify(evidence.sockets)}`);
 } catch (caught) {

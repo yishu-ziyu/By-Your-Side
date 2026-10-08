@@ -71,6 +71,8 @@ type PanelState = { connected: boolean; pill: string | null; setupVisible: boole
 
 type Verdict = { status: "yes" | "no" | "未确定"; evidence: JsonRecord };
 
+let panelSession: string | undefined;
+
 const verdict = (pass: boolean | null, evidence: JsonRecord): Verdict => ({ status: pass === null ? "未确定" : pass ? "yes" : "no", evidence });
 
 const result: JsonRecord = { case: "voice-page-question", command: "npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless", startedAt: startedAt.toISOString(), question: QUESTION, model: modelArg, path: "extension-only" };
@@ -95,6 +97,7 @@ try {
   await until(async () => ((await rp.evaluate(page, `!!document.querySelector("#note")`).catch(() => false)) ? true : undefined), 15_000, "练习页加载");
 
   const panel = await rp.attach(await rp.openSidePanel());
+  panelSession = panel;
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   // 相当于用户在设置里填好文字模型和语音密钥。
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ ...modelStorageItems(plan), inproc_voice_key: voiceKey })}).then(() => true)`);
@@ -135,6 +138,10 @@ try {
   result.diagnostics = { exportStatus, voiceLines: voice.split("\n").filter(Boolean).length, containsVoiceKey: voice.includes(voiceKey) };
 } catch (error) {
   result.error = error instanceof Error ? error.stack ?? error.message : String(error);
+  if (panelSession) await rp.screenshot(panelSession, join(artifacts, "failure.png")).catch(() => {});
+  result.failureDiagnostics = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"))
+    .then(({ exportStatus, voice }) => ({ exportStatus, voiceLines: voice.split("\n").filter(Boolean).length, containsVoiceKey: voice.includes(voiceKey) }))
+    .catch(caught => ({ error: String(caught) }));
 } finally {
   await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
   const closed = await rp.close();

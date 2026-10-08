@@ -44,9 +44,9 @@ const rp = await launchRealPath({ microphoneWav: wav });
 let error: string | null = null;
 
 /** 写进 result.json 的证据。 */
-interface Evidence { speechMs?: number; heldMs?: number; sockets: string[]; heard?: string | null; replyAfterReleaseMs?: number; panelUser?: string[]; panelAnswer?: string[] }
+interface Evidence { expected: string; speechMs?: number; heldMs?: number; sockets: string[]; heard?: string | null; replyAfterReleaseMs?: number; panelUser?: string[]; panelAnswer?: string[]; transcriptEvents: Array<{ type: string; transcript: string }> }
 
-const evidence: Evidence = { sockets: [] };
+const evidence: Evidence = { expected: SPOKEN, sockets: [], transcriptEvents: [] };
 
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -71,6 +71,13 @@ try {
   await rp.evaluate(settings, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget });
   rp.cdp.onEvent("Network.webSocketCreated", (message: { sessionId?: string; params?: { url?: string } }) => { if (message.sessionId === inproc && message.params?.url) evidence.sockets.push(message.params.url); });
+  rp.cdp.onEvent("Network.webSocketFrameReceived", (message: { sessionId?: string; params?: { response?: { payloadData?: string } } }) => {
+    if (message.sessionId !== inproc || !message.params?.response?.payloadData) return;
+    try {
+      const event = JSON.parse(message.params.response.payloadData);
+      if (/transcription.completed|audio_transcript.done|text.done$/.test(event.type)) evidence.transcriptEvents.push({ type: event.type, transcript: event.transcript ?? event.text ?? "" });
+    } catch { /* Binary audio frames are not transcript evidence. */ }
+  });
   await rp.cdp.send("Network.enable", {}, inproc);
   await sleep(1_500);
 
@@ -103,10 +110,12 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(ANSWER)}))`) || undefined, 30_000, "answer in panel");
   // SAFETY: 表达式返回字符串数组。
-  evidence.panelUser = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].map(m => m.textContent.trim())`) as string[];
+  evidence.panelUser = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user .user-msg-text")].map(m => m.textContent.trim())`) as string[];
   evidence.heard = evidence.panelUser.at(-1) ?? null;
   await rp.screenshot(panel, join(artifacts, "panel.png"));
-  assert.ok(evidence.heard?.includes("整理成一张表"), `R1: the spoken sentence reached the conversation (${evidence.heard})`);
+  const words = (text: string) => text.replace(/[\s，。,.！？!?]/g, "");
+  assert.ok(evidence.transcriptEvents.some(event => event.type === "conversation.item.input_audio_transcription.completed" && words(event.transcript) === words(SPOKEN)), "the real dictation service transcribed the complete source sentence");
+  assert.equal(words(evidence.heard ?? ""), words(SPOKEN), "R1: the complete spoken request reaches the conversation without added or missing words");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
