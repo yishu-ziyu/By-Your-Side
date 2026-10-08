@@ -169,14 +169,14 @@ export function createArtifactsTool(opts: ArtifactsToolOptions): ToolDefinition 
   const save = (filename: string, content: string, verb: string) => {
     store.save(filename, content);
 
-    return `${verb} ${filename}（${content.length} 字符），侧栏已显示文件卡片，用户可点击下载。`;
+    return `${verb} ${filename}（${content.length} 字符），侧栏已显示文件卡片，用户可点击${/\.(html|htm)$/i.test(filename) ? "交互预览、打开或下载" : "下载"}。`;
   };
 
   return defineTool({
     name: "artifacts",
     label: "Files for the user",
     description:
-      "Create text files the user can download from the side panel: .csv, .md, .txt, .json, .html, .svg, .js, .css. Use it when the user asks for a file, an export, a document, a table to download, or a small standalone tool. The file appears as a card with a download button; you do not trigger downloads yourself. Commands: create (filename + content; fails if it exists), update (replace old_str with new_str; preferred for small edits), rewrite (replace the whole content), get (read it back), delete. Files live only in this conversation. For CSV include a header row. Do not retype large data you already obtained with tools (page or API extraction longer than a few thousand characters): build the file inside browser_run with browser.saveFile({filename, content}) instead; it lands in this same file list, shows the same card, and you can get or update it here afterwards. Binary formats (pdf, docx, xlsx) are not supported.",
+      "Create text files the user can download from the side panel: .csv, .md, .txt, .json, .html, .svg, .js, .css. Use it when the user asks for a file, an export, a document, a table to download, or a small standalone tool. The file appears as a card with download/open buttons; HTML also has an opt-in in-conversation interactive preview in an isolated sandbox. A clickable choice inside HTML may call window.parent.postMessage({sideagentResultChoice:1,label:'Route B'}, '*'); this only offers the user a button to put that text in their unsent input draft and never executes a browser action. Never claim a choice has been submitted until the user actually sends it. Commands: create (filename + content; fails if it exists), update (replace old_str with new_str; preferred for small edits), rewrite (replace the whole content), get (read it back), delete. Files live only in this conversation. For CSV include a header row. Do not retype large data you already obtained with tools (page or API extraction longer than a few thousand characters): build the file inside browser_run with browser.saveFile({filename, content}) instead; it lands in this same file list, shows the same card, and you can get or update it here afterwards. Binary formats (pdf, docx, xlsx) are not supported.",
     parameters: Type.Object({
       command: Type.Unsafe<Command>(Type.String({ description: "create, update, rewrite, get or delete" })),
       filename: Type.String({ description: "File name with extension, no folders, e.g. products.csv" }),

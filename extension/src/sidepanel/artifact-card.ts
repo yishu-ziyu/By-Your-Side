@@ -60,7 +60,19 @@ export function download(filename: string, content: string, encoding?: "base64")
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-type Card = { root: HTMLElement; meta: HTMLElement; buttons: HTMLButtonElement[]; content: string; encoding?: "base64"; viewKey: string; opened: boolean; previewToggle: HTMLButtonElement };
+type Card = {
+  root: HTMLElement;
+  meta: HTMLElement;
+  buttons: HTMLButtonElement[];
+  content: string;
+  encoding?: "base64";
+  viewKey: string;
+  opened: boolean;
+  previewToggle: HTMLButtonElement;
+  inlineToggle: HTMLButtonElement;
+  inlineRoot: HTMLElement;
+  detachInline?: () => void;
+};
 
 export class ArtifactCards {
   private readonly cards = new Map<string, Card>();
@@ -68,9 +80,27 @@ export class ArtifactCards {
   private readonly touched = new Set<string>();
 
   private generation = 0;
-  reset(): void { this.generation += 1; this.cards.clear(); this.touched.clear(); this.revisions.clear(); }
+  reset(): void {
+    this.generation += 1;
+
+    for (const card of this.cards.values()) this.closeInline(card);
+
+    this.cards.clear(); this.touched.clear(); this.revisions.clear();
+  }
   private readonly revisions = new Map<string, number>();
-  constructor(private readonly append: (el: HTMLElement) => void, private readonly conversation: () => string = () => "default") {}
+  constructor(
+    private readonly append: (el: HTMLElement) => void,
+    private readonly conversation: () => string = () => "default",
+    /** 必须再次由用户点按钮，才把沙箱里的选择填进草稿；永不自动发送。 */
+    private readonly onChoice: (text: string) => void = (text) => {
+      const input = document.querySelector<HTMLTextAreaElement>("#input");
+
+      if (!input) return;
+      input.value = [input.value.trim(), `我选择：${text}`].filter(Boolean).join("\n");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+    },
+  ) {}
 
   apply(event: ArtifactEvent): void {
     const revision = (this.revisions.get(event.filename) ?? 0)+1;
@@ -91,6 +121,7 @@ export class ArtifactCards {
 
     if (event.action === "deleted") {
       if (!existing) return;
+      this.closeInline(existing);
       existing.root.dataset.deleted = "true";
       existing.meta.textContent = "已删除";
 
@@ -99,6 +130,7 @@ export class ArtifactCards {
       existing.root.querySelector(".artifact-preview")?.remove();
       existing.root.dataset.kind = "file";
       existing.previewToggle.hidden = true;
+      existing.inlineToggle.hidden = true;
 
       if (existing.opened) void chrome.storage.session.remove(existing.viewKey);
 
@@ -108,10 +140,11 @@ export class ArtifactCards {
     const content = event.content ?? "";
     const card = existing ?? this.create(event.filename);
     this.touched.add(event.filename);
+    const contentChanged = card.content !== content || card.encoding !== event.encoding;
     card.content = content;
     card.encoding = event.encoding;
     card.root.dataset.deleted = "false";
-    this.preview(card);
+    this.preview(card, contentChanged);
 
     for (const button of card.buttons) button.disabled = false;
 
@@ -119,7 +152,7 @@ export class ArtifactCards {
     card.meta.textContent = `${event.encoding === "base64" ? "图片" : lookup(KIND_LABEL, extensionOf(event.filename)) ?? "文件"} · ${sizeLabel(content, event.encoding)}`;
   }
 
-  /** 回合结束：把本轮动过的卡片按原顺序挪到消息流末尾（回答之后）。 */
+  /** 回合结束卡片在回答之后。已展开的 iframe 必须保持连接，排列方式由 append callback 决定。 */
   settleAfterTurn(): void {
     for (const filename of this.touched) {
       const card = this.cards.get(filename);
@@ -158,16 +191,31 @@ export class ArtifactCards {
     previewToggle.textContent = "展开";
     previewToggle.setAttribute("aria-expanded", "false");
     previewToggle.hidden = true;
-    const card: Card = { root, meta, previewToggle, buttons: [open, button, previewToggle], content: "", viewKey: `${VIEW_KEY_PREFIX}${crypto.randomUUID()}`, opened: false };
+    const inlineToggle = document.createElement("button");
+    inlineToggle.type = "button";
+    inlineToggle.className = "artifact-inline-toggle";
+    inlineToggle.textContent = "交互预览";
+    inlineToggle.setAttribute("aria-expanded", "false");
+    inlineToggle.hidden = true;
+    const inlineRoot = document.createElement("div");
+    inlineRoot.className = "artifact-inline-root";
+    inlineRoot.hidden = true;
+    const card: Card = { root, meta, previewToggle, inlineToggle, inlineRoot,
+      buttons: [open, button, previewToggle, inlineToggle], content: "",
+      viewKey: `${VIEW_KEY_PREFIX}${crypto.randomUUID()}`, opened: false };
     open.addEventListener("click", () => void this.open(filename, card));
     button.addEventListener("click", () => download(filename, card.content, card.encoding));
+    inlineToggle.addEventListener("click", () => {
+      if (card.inlineRoot.hidden) this.openInline(card);
+      else this.closeInline(card);
+    });
     previewToggle.addEventListener("click", () => {
       const expanded = root.dataset.expanded !== "true";
       root.dataset.expanded = String(expanded);
       previewToggle.setAttribute("aria-expanded", String(expanded));
       previewToggle.textContent = expanded ? "收起" : "展开";
     });
-    root.append(info, open, button, previewToggle);
+    root.append(info, open, button, inlineToggle, previewToggle, inlineRoot);
     this.cards.set(filename, card);
     this.append(root);
 
@@ -175,13 +223,27 @@ export class ArtifactCards {
   }
 
   /** 默认缩略图保留文件名与操作；展开用同一原图，不调用模型。点图打开查看页。 */
-  private preview(card: Card): void {
+  private preview(card: Card, contentChanged: boolean): void {
     const old = card.root.querySelector<HTMLImageElement>(".artifact-preview");
     card.previewToggle.hidden = card.encoding !== "base64";
+    const html = card.encoding !== "base64" && ["html", "htm"].includes(extensionOf(card.root.dataset.filename ?? ""));
+    const live = html && !card.inlineRoot.hidden;
+
+    if (live && contentChanged && !card.inlineRoot.querySelector(".artifact-inline-stale")) {
+      // HTML changed during this turn. Keep the running iframe and user input.
+      // Loading the new version is an explicit decision (close and reopen).
+      const notice = document.createElement("p");
+      notice.className = "artifact-inline-stale";
+      notice.textContent = "文件已更新。当前预览保留填写内容；收起后重新展开可查看新版。";
+      card.inlineRoot.appendChild(notice);
+    }
+
+    if (!live) this.closeInline(card);
+    card.inlineToggle.hidden = !html;
 
     if (card.encoding !== "base64") {
       old?.remove();
-      card.root.dataset.kind = "file";
+      card.root.dataset.kind = html ? "interactive-html" : "file";
 
       return;
     }
@@ -198,6 +260,77 @@ export class ArtifactCards {
       img.addEventListener("click", () => void this.open(filename, card));
       card.root.prepend(img);
     }
+  }
+
+  /** 只有主动展开才装入脚本；回传只准备本地草稿，不触发模型或网页动作。 */
+  private openInline(card: Card): void {
+    if (card.encoding || !["html", "htm"].includes(extensionOf(card.root.dataset.filename ?? ""))) return;
+    this.closeInline(card);
+    const frame = document.createElement("iframe");
+    frame.className = "artifact-inline-frame";
+    frame.title = `${card.root.dataset.filename ?? "网页"} · 独立交互预览`;
+    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("referrerpolicy", "no-referrer");
+    const feedback = document.createElement("div");
+    feedback.className = "artifact-inline-feedback";
+    feedback.hidden = true;
+    const choice = document.createElement("span");
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "artifact-apply-choice";
+    apply.textContent = "填入输入框";
+    let selected = "";
+    apply.addEventListener("click", () => {
+      if (!selected) return;
+      this.onChoice(selected);
+      apply.textContent = "已填入";
+      apply.disabled = true;
+    });
+    feedback.append(choice, apply);
+    card.inlineRoot.replaceChildren(frame, feedback);
+    card.inlineRoot.hidden = false;
+    card.inlineToggle.textContent = "收起预览";
+    card.inlineToggle.setAttribute("aria-expanded", "true");
+    let ready = false;
+    const onMessage = (event: MessageEvent<unknown>) => {
+      if (event.source !== frame.contentWindow || event.origin !== "null") return;
+      const data = event.data;
+
+      if (!data || typeof data !== "object") return;
+
+      if ("artifactSandbox" in data && data.artifactSandbox === "ready") {
+        if (ready) return;
+        ready = true;
+        frame.contentWindow?.postMessage({ html: card.content }, "*");
+
+        return;
+      }
+
+      if (!("sideagentResultChoice" in data) || data.sideagentResultChoice !== 1 ||
+        !("label" in data) || typeof data.label !== "string" || data.label.length > 120) return;
+      selected = data.label.replace(/\s+/g, " ").trim();
+
+      if (!selected) return;
+      choice.textContent = `已选：${selected}`;
+      feedback.hidden = false;
+      apply.textContent = "填入输入框";
+      apply.disabled = false;
+    };
+    window.addEventListener("message", onMessage);
+    card.detachInline = () => {
+      window.removeEventListener("message", onMessage);
+      frame.remove();
+    };
+    frame.src = chrome.runtime.getURL("artifact-sandbox.html");
+  }
+
+  private closeInline(card: Card): void {
+    card.detachInline?.();
+    card.detachInline = undefined;
+    card.inlineRoot.replaceChildren();
+    card.inlineRoot.hidden = true;
+    card.inlineToggle.textContent = "交互预览";
+    card.inlineToggle.setAttribute("aria-expanded", "false");
   }
 
   private share(filename: string, card: Card): Promise<void> {
