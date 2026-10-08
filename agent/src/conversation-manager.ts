@@ -396,6 +396,8 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
     const requestId=route?.requestId??randomUUID();
     const only=plan.steps.length===1?plan.steps[0]:undefined;
 
+    if(route?.nativeChat && only?.action==='chat') return {kind:'none',nativeChat:true};
+
     if(only?.action==='chat'&&route?.pendingDelegation)return {kind:'none',resumeReadOnly:'chat'};
 
     // 提交分支 reply：白名单句子的正文已经由最小请求产出，直接走现有交付通道播出。
@@ -636,7 +638,7 @@ return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snaps
     // 只有程序能确定"不需要任何外部事实"的封闭类别（问候/寒暄/致谢/告别/应答、纯算术）才走独立最小请求，
     // 由模型直接给一两句正文。两条路径都不发计划 JSON：白名单句子不发计划提示词（模型会误读"不要编事实"而拒答），
     // 其余句子走与旧分类逐字同形的精简协议，控制链/派发之前的固定成本不因合并而增加。
-    const protocol=isFactFreeClosedUtterance(text)?'free_reply' as const:'plan' as const;
+    const protocol=!route?.nativeChat&&isFactFreeClosedUtterance(text)?'free_reply' as const:'plan' as const;
     let prepared:VoiceTurnPreparation;
 
     try{

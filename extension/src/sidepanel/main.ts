@@ -33,6 +33,7 @@ import {
   historyEventTime,
   recordedDuration,
   finishedRunTitle,
+  runCheckLine,
   spokenDuration,
   loaderSubtitle,
   openedPageTitle,
@@ -271,8 +272,7 @@ app.innerHTML = `
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub">浏览器 AI 助手，帮你读页面、整理信息或操作网页。</p>
     <div id="starter-actions">
-      <button type="button" data-starter="请概括当前页面的要点。">概括当前页</button>
-      <button type="button" data-starter="请帮我填写当前页面的表单，提交前让我确认。">帮我填写表单</button>
+      <button type="button" data-starter="请概括当前页面的要点。">概括这一页</button>
     </div>
   </section>
   <div class="composer-dock-wrap">
@@ -675,18 +675,26 @@ async function refreshStarterSuggestions(tabId: number): Promise<void> {
   if (!conversationEmpty() || typeof chrome === "undefined" || !chrome.scripting?.executeScript) return;
   const probe = beginStarterProbe();
   let profile: PageProfile | null = null;
+  let timer = 0;
 
   try {
-    const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: probePageProfile });
+    const [frame] = await Promise.race([
+      chrome.scripting.executeScript({ target: { tabId }, func: probePageProfile }),
+      new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error("页面起点探测超时")), 1500); }),
+    ]);
     profile = frame?.result ?? null;
   } catch {
     profile = null;
+  } finally {
+    window.clearTimeout(timer);
   }
 
-  if (!isLatestStarterProbe(probe)) return;
+  if (!isLatestStarterProbe(probe) || starterTab() !== tabId || !conversationEmpty()) return;
   const box = document.getElementById("starter-actions");
+  const suggestions = suggestionsFor(profile);
+  if (box && [...box.querySelectorAll<HTMLButtonElement>("button")].map(b => b.dataset.starter).join("\n") === suggestions.map(s => s.prompt).join("\n")) return;
 
-  box?.replaceChildren(...suggestionsFor(profile).map((item) => {
+  box?.replaceChildren(...suggestions.map((item) => {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.starter = item.prompt;
@@ -2224,6 +2232,8 @@ interface RunHost {
   chipGroup: ChipGroup | null;
   /** 这一轮动过页面（标注、开标签、填写等）；只读回合结束后不留过程行。 */
   changedPage: boolean;
+  /** 跑完后代码裁判有一条没过：过程行要留下，让「核对 n/3」那句看得见。 */
+  checkFailed: boolean;
   /** 标题上次换字的时刻与排队中的下一句：每句至少停 RUN_TITLE_HOLD_MS，免得一闪而过。 */
   titleAt: number;
   titleTimer: number;
@@ -3300,6 +3310,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     orbActivity: new RunOrbActivity(),
     orbMark,
     changedPage: false,
+    checkFailed: false,
     titleAt: 0,
     titleTimer: 0,
     actIcon,
@@ -3598,7 +3609,7 @@ function finishRun(): void {
   const outcome = run.orbActivity.state();
   const hasResumeReceipt = !!run.body.querySelector(".receipt-history");
   // 按主动卡发起的一轮（YIS-106）：步骤就是卡上那件事的结果，即使只读也留着。
-  const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
+  const keepProcess = !!run.body.querySelector(".run-check") || run.changedPage || run.checkFailed || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
 
   if (!hasSteps || !keepProcess) {
     run.root.remove();
@@ -4215,6 +4226,20 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "goal_check":
       goalContinuing = ev.status === "continue" ? ev.remaining ?? "" : null;
       break;
+    case "run_check": {
+      // 代码裁判的一行只放在过程折叠区里，不进回答；在 agent_end 之前到达，收尾时据 checkFailed 决定过程行留不留。
+      // 没有进行中的过程行（异常顺序）就不另造一个，免得留下收不了尾的壳。
+      const run = currentRun;
+
+      if (!run) break;
+      const line = document.createElement("div");
+      line.className = ev.passed < ev.total ? "run-check failed" : "run-check";
+      line.textContent = runCheckLine(ev.passed, ev.total, ev.notes);
+      run.body.appendChild(line);
+
+      if (ev.passed < ev.total) run.checkFailed = true;
+      break;
+    }
     case "turn_end":
       closeBlocks();
       break;

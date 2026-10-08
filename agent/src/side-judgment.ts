@@ -202,7 +202,8 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
 
     if (effort !== "off") options.reasoning = effort;
 
-    if (spec.temperature !== undefined) options.temperature = spec.temperature;
+    // ChatGPT 账号通道不接受 temperature；传给适配层会让真实语音判断整轮失败。
+    if (spec.temperature !== undefined && model.api !== "openai-codex-responses") options.temperature = spec.temperature;
 
     if (spec.sessionId !== undefined) options.sessionId = spec.sessionId;
 

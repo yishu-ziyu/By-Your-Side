@@ -1,10 +1,15 @@
-import { REALTIME_VOICE_MODEL } from "@sideagent/agent/browser-core";
-
-const ENDPOINT = `wss://api.stepfun.com/v1/realtime?model=${REALTIME_VOICE_MODEL}`;
+import { resolveVoiceModel, type InprocVoiceModel } from "../shared.js";
 
 /** 浏览器 WebSocket 到语音会话所需 ws 子集的适配。鉴权头由 background 安装。 */
 export class BrowserSocket {
-  private readonly socket = new WebSocket(ENDPOINT);
+  private readonly socket: WebSocket;
+
+  constructor(model: InprocVoiceModel = "stepaudio-3-realtime-preview") {
+    const selected = resolveVoiceModel(model);
+    const path = selected === "stepaudio-2.5-realtime" ? "/step_plan/v1/realtime" : "/v1/realtime";
+
+    this.socket = new WebSocket(`wss://api.stepfun.com${path}?model=${selected}`);
+  }
 
   get readyState(): number { return this.socket.readyState; }
 

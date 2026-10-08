@@ -10,7 +10,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile, unlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, stat, writeFile, unlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -376,6 +376,7 @@ export async function exportDiagnosticsViaSettings(
  * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
  * withoutNativeHost：旧参数，保留只为兼容调用方；本机模式退役后一律只装扩展，传不传都一样。
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
+ * SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。
  */
 export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[] } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
@@ -391,10 +392,17 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
 
   // build.mjs 会先清空输出目录；不带 SIDEAGENT_BUILD_DIST 就会清掉日常 Chrome 正在加载的 extension/dist。
   const distBefore = await dailyDistStamp();
-  execFileSync(process.execPath, [join(REPO, "extension/build.mjs")], {
-    env: { ...process.env, SIDEAGENT_BUILD_DIST: dirs.extension },
-    stdio: ["ignore", "ignore", "pipe"],
-  });
+  const preparedDist = process.env.SIDEAGENT_ACCEPTANCE_DIST;
+  if (preparedDist) {
+    const source = resolve(preparedDist);
+    await readFile(join(source, "manifest.json"), "utf8");
+    await cp(source, dirs.extension, { recursive: true });
+  } else {
+    execFileSync(process.execPath, [join(REPO, "extension/build.mjs")], {
+      env: { ...process.env, SIDEAGENT_BUILD_DIST: dirs.extension },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  }
 
   if ((await dailyDistStamp()) !== distBefore) throw new Error("隔离构建期间 extension/dist 变了，停止运行");
 

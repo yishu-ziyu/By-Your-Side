@@ -12,7 +12,7 @@ import {
 } from "../../../shared/protocol.js";
 import type { ConnState, TransportKind } from "../relay.js";
 import {
-  INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
+  INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
 
 export interface UplinkHandlers {
@@ -43,7 +43,7 @@ export class Uplink {
       if (keys.some((key) => key === INPROC_CONFIG_KEY || key === INPROC_FAST_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushModelConfig();
 
       // 语音 key 可能沿用阶跃星辰模型的凭据，所以凭据变了也要重算。
-      if (keys.some((key) => key === INPROC_VOICE_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
+      if (keys.some((key) => key === INPROC_VOICE_KEY || key === INPROC_VOICE_MODEL_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
     });
     void this.connectInproc();
   }
@@ -186,8 +186,10 @@ export class Uplink {
   }
 
   private async pushVoiceKey(): Promise<void> {
-    const configured = await installVoiceHeaderRule(resolveVoiceKey(Object.entries(await chrome.storage.local.get(null)))).catch(() => false);
-    this.inprocPort?.postMessage({ type: "inproc_voice", configured });
+    const stored = await chrome.storage.local.get(null);
+    const configured = await installVoiceHeaderRule(resolveVoiceKey(Object.entries(stored))).catch(() => false);
+    // 不在这里修正无效选择：宿主须拒绝启动，不能偷偷回到按量接口。
+    this.inprocPort?.postMessage({ type: "inproc_voice", configured, model: stored[INPROC_VOICE_MODEL_KEY] });
   }
 
 }

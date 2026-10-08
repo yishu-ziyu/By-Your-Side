@@ -20,6 +20,7 @@
  *   npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
@@ -53,6 +54,10 @@ function parseVoiceLine(raw: string): VoiceLine | null {
 const isText = (value: Json | undefined): value is string => typeof value === "string";
 
 const caseName = process.argv.find((arg) => arg.startsWith("--case="))?.slice("--case=".length) ?? "question";
+const firstUtterance = process.argv.includes("--first-utterance");
+if (firstUtterance && caseName !== "question") throw new Error("首句验收只用于页面问答");
+const planVoice = process.argv.includes("--plan");
+if (planVoice && caseName !== "question") throw new Error("套餐首句验收只用于页面问答");
 
 const QUESTIONS = new Map([["question", "这个页面上的备注写的是什么"], ["mark", "帮我把保存按钮圈出来，不要点它"], ["stop-task", "终止任务"], ["chat", "我今天有点累，陪我聊两句吧。"], ["opinion", "你觉得这个页面做得怎么样？"], ["barge-in", "等一下，先不讲了，我想问你这个页面上的备注写的是什么"]]);
 
@@ -89,6 +94,7 @@ execFileSync("say", ["-v", "Tingting", "-o", wav, "--data-format=LEI16@24000", s
 
 /** 人声判定：20 ms 一窗，峰值超过它算有人声。静音和底噪都远低于它。 */
 const SPEECH_PEAK = 5000;
+let speechEndMs = 0;
 
 /** WAV 里有人声的总时长（毫秒），与发给服务端的音频比较，判断开口有没有被丢。 */
 const spokenMs = await readFile(wav).then((bytes) => {
@@ -100,7 +106,7 @@ const spokenMs = await readFile(wav).then((bytes) => {
 
     for (let i = at; i < at + 960; i += 2) peak = Math.max(peak, Math.abs(bytes.readInt16LE(i)));
 
-    if (peak > SPEECH_PEAK) ms += 20;
+    if (peak > SPEECH_PEAK) { ms += 20; speechEndMs = (at - data + 960) / 48; }
   }
 
   return ms;
@@ -124,7 +130,7 @@ const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("
 
 const plan = await loadModelPlan(modelArg);
 
-const voiceKey = (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim();
+const voiceKey = (await readFile(join(homedir(), planVoice ? ".sideagent/step-plan.key" : ".sideagent/stepfun-api.key"), "utf8")).trim();
 
 const PANEL_STATE = `(() => {
   const q = (s) => document.querySelector(s);
@@ -212,12 +218,17 @@ try {
   await until(async () => ((await rp.evaluate(page, `!!document.querySelector("#save")`).catch(() => false)) ? true : undefined), 15_000, "练习页加载");
 
   const panel = await rp.attach(await rp.openSidePanel());
+  if (process.env.SIDEAGENT_ACCEPTANCE_DIST) {
+    const expected = createHash("sha256").update(await readFile(join(process.env.SIDEAGENT_ACCEPTANCE_DIST, "sidepanel.js"))).digest("hex");
+    const actual = await rp.evaluate(panel, "fetch(chrome.runtime.getURL('sidepanel.js')).then(r=>r.arrayBuffer()).then(b=>crypto.subtle.digest('SHA-256',b)).then(b=>[...new Uint8Array(b)].map(v=>v.toString(16).padStart(2,'0')).join(''))");
+    verdicts.preparedPackageLoaded = verdict(actual === expected, { expected, actual });
+  }
   panelSession = panel;
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   // 相当于用户在设置里填好文字模型和语音密钥。
   // --shared-voice-key：不单独填语音 key，靠阶跃星辰模型的 key（需配合 --model=stepfun/…）。
   const sharedVoiceKey = process.argv.includes("--shared-voice-key");
-  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(sharedVoiceKey ? modelStorageItems(plan) : { ...modelStorageItems(plan), inproc_voice_key: voiceKey })}).then(() => true)`);
+  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(sharedVoiceKey ? modelStorageItems(plan) : { ...modelStorageItems(plan), inproc_voice_key: voiceKey, ...(planVoice ? { inproc_voice_model: 'stepaudio-2.5-realtime' } : {}) })}).then(() => true)`);
   await until(async () => {
     // SAFETY: PANEL_STATE 是本文件写的页面脚本，返回 PanelState；下同。
     const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
@@ -532,6 +543,22 @@ try {
   const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "扩展内 agent 文档");
   const off = await rp.attach(offscreen.targetId);
   await rp.cdp.send("Network.enable", {}, off);
+  if (firstUtterance) await rp.evaluate(off, `(() => {
+    window.__firstReadyGates=[];
+    const add=WebSocket.prototype.addEventListener;
+    WebSocket.prototype.addEventListener=function(type,listener,...rest){
+      if(type!=='message'||typeof listener!=='function')return add.call(this,type,listener,...rest);
+      return add.call(this,type,function(event){
+        if(JSON.parse(event.data).type==='session.updated'){
+          const gate={receivedAt:Date.now(),deliveredAt:null};window.__firstReadyGates.push(gate);
+          setTimeout(()=>{gate.deliveredAt=Date.now();listener.call(this,event);},Math.max(0,window.__firstReadyTargetAt-Date.now()));
+          return;
+        }
+        return listener.call(this,event);
+      },...rest);
+    };
+    return true;
+  })()`);
   let appended = false;
   const firstText = new Set<string>();
   const receivedBySecond = new Map<string, number>();
@@ -721,11 +748,23 @@ try {
     const voiceOnsetAt = await rp.evaluate(panel, "window.__voiceOnsetAt") as number | null;
     // 开口没被丢：发给服务端的人声至少是 WAV 里人声的八成（浏览器自动增益会让个别音节过线或不过线）。
     verdicts.speechDelivered = verdict(wire.spokenSentMs >= spokenMs * 0.8, { spokenMs, sentMs: wire.spokenSentMs });
+    if (firstUtterance) {
+      const gates = await rp.evaluate(off, "window.__firstReadyGates") as Array<{ receivedAt: number; deliveredAt: number | null }>;
+      const readyAt = gates[0]?.deliveredAt ?? undefined;
+      result.readyGates = gates;
+      verdicts.speechCompletedBeforeReady = verdict(micOpenedAt !== null && readyAt !== undefined && micOpenedAt + speechEndMs < readyAt, {
+        speechEndMs, readyMs: readyAt === undefined ? null : readyAt - t0,
+      });
+      const normalize = (text: string) => text.replace(/[\p{P}\s]/gu, "");
+      const heard = String(await rp.evaluate(panel, "document.querySelector('.voice-question')?.textContent ?? ''"));
+      verdicts.firstUtterancePreserved = verdict(normalize(heard).includes(normalize(QUESTION!)), { heard, expected: QUESTION });
+    }
     result.receivedBySecond = [...receivedBySecond].map(([key, count]) => `${key}×${count}`).join(" ");
     result.providerSessionIds = sessionIds;
     result.opening = { turnDetection: turnDetection ?? null, leadMs: lead, micOpened: micOpenedAt !== null, wire: { ...wire, lastAppendAt: wire.lastAppendAt - t0, lastReceivedAt: wire.lastReceivedAt - t0 }, loudness: loudness.map((c) => `${c.at - t0}:${c.peak}`).join(" "), voiceOnsetMs: voiceOnsetAt === null ? null : voiceOnsetAt - t0, events: opening.map((o) => ({ ms: o.at - t0, event: o.event, text: o.text })) };
   };
 
+  if (firstUtterance) await rp.evaluate(off, "window.__firstReadyTargetAt=Date.now()+12000;true");
   await rp.click(panel, ".voice-start");
   let settled = 0;
   let lastPanelStatus = "";
@@ -734,6 +773,7 @@ try {
     // SAFETY: PANEL_STATE 返回 PanelState。
     const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
     last = state;
+    if (firstUtterance && /再说一遍|重说/.test(state.voiceStatus)) throw new Error(`第一句话没有自动处理，要求用户重说：${state.voiceStatus}`);
 
     if (state.voiceState && states.at(-1) !== state.voiceState) states.push(state.voiceState);
 
@@ -746,7 +786,8 @@ try {
     if (state.voiceState === "error") return true;
     // 插话用例要等第二句的回答：假麦克风放完、侧栏听到的是第二句之后才开始算回答稳定。
     const secondTurn = caseName !== "barge-in" || (state.heard.includes("备注") && Date.now() - began > lead + 40_000);
-    const answered = secondTurn && !!state.answer && state.voiceState === "listening" && states.includes("speaking");
+    const answerMatches = caseName !== "question" || state.answer.includes(NOTE);
+    const answered = secondTurn && answerMatches && !!state.answer && state.voiceState === "listening" && states.includes("speaking");
     settled = answered ? settled + 1 : 0;
 
     return settled >= 4 ? true : undefined;
@@ -829,7 +870,9 @@ try {
 
   if (panelSession) await rp.screenshot(panelSession, join(artifacts, "panel-failed.png")).catch(() => {});
 } finally {
-  await recordOpening?.().catch(() => {});
+  await recordOpening?.().catch(error => {
+    if (firstUtterance) result.error ??= `首句取证失败：${String(error)}`;
+  });
   await recordBargeIn?.().catch((error: Error) => { result.bargeInError = String(error); });
   await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
   const closed = await rp.close();

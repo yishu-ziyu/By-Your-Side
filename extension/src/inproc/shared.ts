@@ -17,6 +17,20 @@ export const INPROC_KEEPALIVE_MS = 20_000;
 /** StepFun 实时语音的 API Key：只由 background 读取，写进请求头规则，不发给 offscreen 文档。 */
 export const INPROC_VOICE_KEY = "inproc_voice_key";
 
+/** 下一次开启实时语音使用的模型；缺项沿用原有按量 Realtime 3。 */
+export const INPROC_VOICE_MODEL_KEY = "inproc_voice_model";
+
+export type InprocVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime";
+
+/** 只给缺项默认值；坏的持久值不能静默切到按量语音。 */
+export function resolveVoiceModel(value: unknown): InprocVoiceModel {
+  if (value === undefined) return "stepaudio-3-realtime-preview";
+
+  if (value === "stepaudio-3-realtime-preview" || value === "stepaudio-2.5-realtime") return value;
+  throw new Error("语音模型设置无效，请在「模型与语音」重新选择后再开启。");
+}
+
+
 const VOICE_HEADER_RULE_ID = 7101;
 
 const PLAN_VOICE_HEADER_RULE_ID = 7102;
@@ -28,7 +42,7 @@ const PLAN_VOICE_HEADER_RULE_ID = 7102;
 export async function installVoiceHeaderRule(key: string): Promise<boolean> {
   const configured = key.trim().length > 0;
 
-  // 两条规则：按量的 /v1/realtime 只给免按键的 Realtime 3；按住说话的听写走套餐 /step_plan/v1/realtime（#125）。
+  // 两条规则：按量 Realtime 3 走 /v1/realtime；套餐 Realtime 2.5 与按住说话听写走 /step_plan/v1/realtime。
   const rule = (id: number, urlFilter: string): chrome.declarativeNetRequest.Rule => ({
     id, priority: 1,
     action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [{ header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` }] },

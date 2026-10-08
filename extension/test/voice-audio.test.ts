@@ -77,7 +77,11 @@ return true;},change,event);
  const commands=sent.map((m:any)=>m.command);
  expect(commands[0]).toEqual({kind:'start'});
  // 就绪前留下 10 帧（含别的会话就绪时那 5 帧）+ 就绪后 40 帧，全部按到达顺序送出。
- expect(commands.filter((c:any)=>c.kind==='audio')).toHaveLength(50);
+ // 积压的帧会合并成较少的几条发送（docs/evals/20261008-voice-first-utterance.md）；对外结果是采样一个不少、顺序不乱：前 10 帧有声（100），其后 40 帧里先 5 帧有声、再 35 帧静音。
+ const pcm=commands.filter((c:any)=>c.kind==='audio').flatMap((c:any)=>Array.from(new Int16Array(Uint8Array.from(Buffer.from(c.data,'base64')).buffer)));
+ expect(pcm).toHaveLength(50*480);
+ expect(pcm.slice(0,15*480).every((v:number)=>v===100)).toBe(true);
+ expect(pcm.slice(15*480).every((v:number)=>v===0)).toBe(true);
  expect(commands.filter((c:any)=>c.kind==='interrupt'||c.kind==='commit'||c.kind==='capture')).toHaveLength(0);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
  expect(change).toHaveBeenLastCalledWith('listening',undefined);

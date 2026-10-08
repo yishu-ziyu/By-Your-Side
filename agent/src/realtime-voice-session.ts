@@ -5,10 +5,11 @@ import type WebSocket from 'ws';
 import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voice-connection.js';
 import { isExplicitTaskAbort } from './voice-confirm.js';
 import type { TaskActionRequest } from '../../shared/task-actions.js';
-import type { VoiceCommand, VoiceEvent, VoiceInputContext, VoiceRouteContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
+import type { RealtimeVoiceModel, VoiceCommand, VoiceEvent, VoiceInputContext, VoiceRouteContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
 import { base64Bytes } from '../../shared/bytes.js';
 
 export type RealtimeVoiceDependencies = {
+  model?: RealtimeVoiceModel;
   voiceId?: string;
   /** Step timbre id chosen by the user. */
   voice?: string;
@@ -63,7 +64,7 @@ export class RealtimeVoiceSession {
     this.emit({ kind: 'state', state: 'connecting', detail: '正在连接语音服务' });
     const create = this.deps.createConnection ?? (o => new RealtimeVoiceConnection(o));
     this.connection = create({
-      key, connect: this.deps.connect, diagnostic: this.deps.diagnosticMode,
+      key, model: this.deps.model, connect: this.deps.connect, diagnostic: this.deps.diagnosticMode,
       send: e => this.receive(e),
       log: e => this.deps.diagnostic?.(String(e.type), { detail: JSON.stringify(e) }),
       voiceId: this.deps.voiceId,
@@ -72,6 +73,7 @@ export class RealtimeVoiceSession {
       holdForTranscript: () => !!this.deps.dispatchTask && this.controllable(),
       claimTranscript: text => !!this.deps.dispatchTask && this.controllable() && isExplicitTaskAbort(text),
       runClaimed: text => this.abortCurrent(text),
+      ...(this.deps.model === "stepaudio-2.5-realtime" && !this.deps.diagnosticMode ? { routeTranscript: (text: string, current: () => boolean) => this.routePlanTranscript(text, current) } : {}),
       tools: {
         ...(!this.deps.diagnosticMode && this.deps.browserTool ? { browserTool: async (call: Parameters<ExecuteRealtimeBrowserTool>[0], signal: AbortSignal) => {
           const origin = this.input;
@@ -163,6 +165,25 @@ export class RealtimeVoiceSession {
     })) {
       throw new Error('未执行的前后两段来自不同页面或任务状态，不能拼接操作；请明确当前完整要求。');
     }
+  }
+  /** 2.5 不调用任务工具；宿主对每条真实转写分类并派发，只有明确闲聊才返回原生语音。 */
+  private async routePlanTranscript(text: string, connectionCurrent: () => boolean): Promise<{ native: boolean; spokenText?: string }> {
+    const origin = this.input;
+    const current = () => !this.closed && this.input === origin && connectionCurrent();
+    await this.waitForInput(origin);
+    if (!current() || !this.deps.route) throw new Error('语音任务分流不可用，未执行。');
+    const snapshot = origin.snapshot;
+    const result = await this.deps.route(text, snapshot?.startedAt ?? null, current, {
+      nativeChat: true, requestId: randomUUID(), runId: snapshot?.runId ?? null,
+      controlVersion: snapshot?.controlVersion, voiceId: this.deps.voiceId ?? 'realtime-plan',
+      turn: origin.turn, input: origin.input, targets: origin.targets,
+    });
+    if (!current()) throw new Error('这句话已过期，未执行。');
+    if (result.kind === 'none' && result.nativeChat) return { native: true };
+    if (result.kind === 'none') return { native: false, spokenText: result.spokenText };
+    if (result.kind === 'clarify') return { native: false, spokenText: result.message };
+    if (result.kind === 'action' || result.kind === 'steer') return { native: false, ...(!result.awaitDelivery ? { spokenText: result.message } : {}) };
+    return { native: false };
   }
   private async dispatchTask(text: string, action: RealtimeTaskAction, sequences?: number[]): Promise<unknown> {
     const origin = this.input;

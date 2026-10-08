@@ -5,7 +5,7 @@ import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMess
 import { describeModelError } from "../../../shared/user-facing.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import { PROBE_TIMEOUT_MS, probeModel, type createModelRuntime, type ModelRuntime } from "./model-runtime.js";
-import { INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, type InprocModelConfig, type StoredCredentials } from "./shared.js";
+import { INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, resolveVoiceModel, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
@@ -16,7 +16,7 @@ import { IdbDocument } from "./document-idb.js";
 
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; credentials: StoredCredentials }
-  | { type: "inproc_voice"; configured: boolean };
+  | { type: "inproc_voice"; configured: boolean; model?: unknown };
 
 export interface InprocHostDeps {
   createRuntime: typeof createModelRuntime;
@@ -36,6 +36,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let fastSelected: InprocModelConfig | null = null;
   let storedCredentials: StoredCredentials = {};
   let voiceConfigured = false;
+  let voiceModel: unknown;
   let helloReceived = false;
   /** 配置模型前收到的阅读转侧栏（带 reading 的新建会话）：核心启动后补处理。 */
   const deferredCreates: ClientMessage[] = [];
@@ -98,11 +99,16 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
         return "injected-by-extension";
       },
-      voiceSession: voiceDeps => new RealtimeVoiceSession({
-        ...voiceDeps,
-        // SAFETY: BrowserSocket 实现了 RealtimeVoiceSession 实际用到的 ws 子集（readyState/on/send/close）。
-        connect: () => new BrowserSocket() as never,
-      }),
+      voiceSession: voiceDeps => {
+        const model = resolveVoiceModel(voiceModel);
+
+        return new RealtimeVoiceSession({
+          ...voiceDeps,
+          model,
+          // SAFETY: BrowserSocket 实现了 RealtimeVoiceSession 实际用到的 ws 子集（readyState/on/send/close）。
+          connect: () => new BrowserSocket(model) as never,
+        });
+      },
       enableVoiceTaskDispatch: true,
       observe: msg => { if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record); },
       onVoiceCommand: (msg, conversationId) => {
@@ -181,6 +187,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   async function handle(message: Inbound): Promise<void> {
     if (message.type === "inproc_voice") {
       voiceConfigured = message.configured;
+      voiceModel = message.model;
 
       return;
     }
@@ -207,6 +214,16 @@ export function startInprocHost(deps: InprocHostDeps): void {
       }
 
       return;
+    }
+
+    if (message.type === "voice" && message.command.kind === "start") {
+      try { resolveVoiceModel(voiceModel); }
+      catch (error) {
+        connection?.send({ type: "voice", voiceId: message.voiceId, conversationId: message.conversationId,
+          event: { kind: "state", state: "error", detail: error instanceof Error ? error.message : String(error) } });
+
+        return;
+      }
     }
 
     if (message.type === "model_key_test") { void testKey(message);

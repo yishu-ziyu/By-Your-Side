@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>这一页，能让它做什么？</title>
+<style>
+:root{font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#141413;background:#e8e6e0}*{box-sizing:border-box}body{margin:0;padding:18px}main{max-width:1000px;margin:auto}h1{font-size:19px;margin:0 0 6px;font-weight:600}p{margin:0;color:#5f5e58}.controls{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}select,button{font:inherit;font-size:12px;border:1px solid #14141315;border-radius:18px;background:#f9f8f5;padding:7px 12px;color:#5f5e58;cursor:pointer}button[aria-pressed=true]{background:#141413;color:white}.window{display:flex;height:650px;border-radius:16px;overflow:hidden;border:1px solid #1414131a;background:#fff;box-shadow:0 12px 28px #1414130b}.site{padding:36px 28px;flex:1;min-width:0;overflow:auto;background:#f4f5f7}.site h2{font-size:20px;margin:0 0 22px}.site article{font-size:13px;line-height:1.9;white-space:pre-line;color:#535761}.sidebar{width:360px;flex:none;border-left:1px solid #14141312}iframe{border:0;width:100%;height:100%;background:#faf9f6}.note{margin-top:14px;max-width:760px;font-size:12px}a{color:#2d4a86;text-decoration:none}@media(max-width:740px){.site{display:none}.sidebar{width:100%;border-left:0}.window{height:600px}body{padding:12px}}
+</style>
+<main><h1>这一页，能让它做什么？</h1><p>换个网页试试。点建议只填草稿，已有文字不覆盖。</p>
+<div class="controls"><select aria-label="示例网页"><option value="0">供应商列表</option><option value="1">招聘职位</option><option value="2">英文文章</option></select><button data-mode="before" aria-pressed="false">现在</button><button data-mode="rule" aria-pressed="true">建议方向 · 不调模型</button><button data-mode="model" aria-pressed="false">这次模型产物</button><button id="draft">已有草稿</button></div>
+<div class="window"><section class="site"><h2></h2><article></article></section><section class="sidebar"><iframe title="真实侧栏结构与样式的交互预览"></iframe></section></div>
+<p class="note" id="note"></p><p class="note">界面预览，尚未改进产品。侧栏结构与样式来自真实扩展；按钮只演示草稿交互。模型产物取自这三页的真实请求，不代表所有页面。</p>
+</main>
+<script>
+const data=__DATA__,panels=__PANELS__;
+const proposed=[
+[{label:'整理供应商',prompt:'把当前页面的供应商和已显示的联系方式整理成表格。'},{label:'对比供应商',prompt:'比较当前页面的供应商，区分已有信息和需要进一步确认的内容。'}],
+[{label:'整理招聘职位',prompt:'把当前页面的职位、地区和要求整理成表格。'},{label:'比较职位要求',prompt:'比较当前页面的职位要求，并指出有待确认的差异。'}],
+[{label:'翻译成中文',prompt:'把这个页面翻译成中文。'},{label:'提炼文章要点',prompt:'提炼当前文章的关键观点，并附对应原文。'}]];
+let mode='rule',index=0;
+const iframe=document.querySelector('iframe');
+function show(){const page=data.results[index];document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));document.querySelector('.site h2').textContent=page.title;document.querySelector('.site article').textContent=page.content;
+let suggestions=mode==='model'?page.suggestions:proposed[index];if(mode==='before')suggestions=page.labels.map(label=>({label,prompt:label==='翻译成中文'?'把这个页面翻译成中文。':'请概括当前页面的要点。'}));else suggestions=[...suggestions,{label:'概括这一页',prompt:'请概括当前页面的要点。'}];
+iframe.onload=()=>{const doc=iframe.contentDocument,box=doc.querySelector('#starter-actions'),input=doc.querySelector('#input');box.replaceChildren(...suggestions.map(s=>{const b=doc.createElement('button');b.type='button';b.textContent=s.label;b.onclick=()=>{if(!input.value.trim())input.value=s.prompt;input.focus()};return b}));doc.querySelector('#send-btn').disabled=true;};iframe.srcdoc=panels[index];
+document.querySelector('#note').textContent=mode==='model'?`本次模型生成用了 ${(page.elapsedMs/1000).toFixed(2)} 秒，超过 1.5 秒预算。不能直接等它生成再显示。` : mode==='before'?'这是真实扩展抓到的现状：列表和招聘页只有概括，缺少贴合页面的起点。':'建议先用标题和结构给少量起点，不增加模型等待。这里的具体文案还需你判断。';}
+document.querySelector('select').onchange=e=>{index=Number(e.target.value);show()};document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;show()});document.querySelector('#draft').onclick=()=>{iframe.contentDocument.querySelector('#input').value='我已经写好的问题，不要替我改掉。'};show();
+</script></html>

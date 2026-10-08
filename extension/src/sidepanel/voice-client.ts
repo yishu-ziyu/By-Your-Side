@@ -283,7 +283,14 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     if (this.drainTimer) return;
 
     this.drainTimer = setInterval(() => {
-      for (const frame of this.backlog.splice(0, BACKLOG_FRAMES_PER_TICK)) this.command({ kind: 'audio', turn: this.turn, data: pcmBase64(frame) });
+      const frames = this.backlog.splice(0, BACKLOG_FRAMES_PER_TICK);
+      const samples = new Int16Array(frames.reduce((sum, frame) => sum + frame.length, 0));
+      let offset = 0;
+      for (const frame of frames) {
+        samples.set(frame, offset);
+        offset += frame.length;
+      }
+      if (samples.length) this.command({ kind: 'audio', turn: this.turn, data: pcmBase64(samples) });
 
       if (this.backlog.length === 0) this.dropBacklog();
     }, 20);

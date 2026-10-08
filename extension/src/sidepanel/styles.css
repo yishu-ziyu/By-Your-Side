@@ -2866,6 +2866,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .voice-progress[data-state="speaking"] .voice-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .voice-progress[data-state="error"] .voice-state { color: var(--err); }
 .voice-progress .voice-hint, .voice-progress .voice-state-detail { display: none; }
+.voice-progress[data-state="error"] .voice-state-detail { display: block; margin-top: var(--s-1); font-size: var(--fs-meta); color: var(--err); }
 .voice-progress .voice-question { margin-top: var(--s-3); max-height: 72px; font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-secondary); text-align: left; }
 .voice-progress .voice-answer {
   margin-top: var(--s-2); max-height: 168px; padding: var(--s-3) var(--s-4);
@@ -3030,6 +3031,9 @@ details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: 
 .run-trail .trail-dur { margin-left: auto; flex-shrink: 0; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
 .run-trail .trail-more { color: var(--text-quaternary); }
 .run-trail .trail-aside { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+/* 跑完后代码裁判的一行（核对 n/3）：过程折叠区里的一句说明，没过时颜色略深。 */
+.run-body .run-check { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+.run-body .run-check.failed { color: var(--text-secondary); }
 .run-trail .trail-step:last-child { animation: trailIn .32s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes trailIn { from { opacity: 0; transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation: none; } }
