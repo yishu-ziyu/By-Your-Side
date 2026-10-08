@@ -2866,6 +2866,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .voice-progress[data-state="speaking"] .voice-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .voice-progress[data-state="error"] .voice-state { color: var(--err); }
 .voice-progress .voice-hint, .voice-progress .voice-state-detail { display: none; }
+.voice-progress[data-state="error"] .voice-state-detail { display: block; margin-top: var(--s-1); font-size: var(--fs-meta); color: var(--err); }
 .voice-progress .voice-question { margin-top: var(--s-3); max-height: 72px; font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-secondary); text-align: left; }
 .voice-progress .voice-answer {
   margin-top: var(--s-2); max-height: 168px; padding: var(--s-3) var(--s-4);

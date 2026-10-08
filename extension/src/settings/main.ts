@@ -9,7 +9,7 @@ import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earend
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search } from "lucide";
 import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
 import {
-  CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
+  CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, resolveVoiceKey, resolveVoiceModel,
   STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
@@ -143,6 +143,10 @@ document.getElementById("settings")!.innerHTML = `
           <button id="voice-save" type="button" class="btn">保存</button>
           <button id="voice-clear" type="button" class="btn btn-quiet" hidden>清除</button>
         </span>
+      </div>
+      <div class="row stack">
+        <span class="row-main"><span id="voice-model-title" class="row-title">语音模型</span><span id="voice-model-state" class="row-desc">沿用现有阶跃星辰 key；保存后下次开启语音时生效。</span></span>
+        <div id="voice-model-list" class="radio-rows" role="radiogroup" aria-labelledby="voice-model-title"></div>
       </div>
       <div class="row stack">
         <span class="row-main"><span id="timbre-title" class="row-title">音色</span><span class="row-desc">点一下就换，下次开启语音时生效。</span></span>
@@ -964,6 +968,7 @@ async function reload(): Promise<void> {
   speechInput.placeholder = ownSpeechKey ? "粘贴新的 key" : "粘贴 sk-cp- 开头的 key";
   speechClear.hidden = !ownSpeechKey;
   speakToggle.checked = stored[PTT_SPEAK_RESULT] !== false;
+  renderVoiceModels(stored[INPROC_VOICE_MODEL_KEY]);
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
   renderOrbStyles(parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]));
@@ -1009,6 +1014,31 @@ function radioRow(className: string, label: string, checked: boolean, meta = "")
   if (meta) pick.append(Object.assign(document.createElement("span"), { className: "radio-meta", textContent: meta }));
 
   return pick;
+}
+
+function renderVoiceModels(raw: unknown): void {
+  let current: string | null = null;
+
+  try { current = resolveVoiceModel(raw); } catch { /* 无效值保持未选；由用户明确纠正，不写回默认。 */ }
+  $("voice-model-state").textContent = current
+    ? "沿用现有阶跃星辰 key；需对应服务可用。下次开启语音时生效。"
+    : "语音模型设置无效，请重新选择后再开启。";
+  $("voice-model-list").replaceChildren(...[
+    { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "当前默认" },
+    { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊直接回答；网页操作交给助手" },
+  ].map(option => {
+    const pick = radioRow("voice-model-option", option.label, option.model === current, option.note);
+
+    pick.dataset.model = option.model;
+    pick.addEventListener("click", () => {
+      void chrome.storage.local.set({ [INPROC_VOICE_MODEL_KEY]: option.model }).then(() => {
+        renderVoiceModels(option.model);
+        setStatus(voiceStatus, "已保存，下次开启语音时生效。", "ok");
+      });
+    });
+
+    return pick;
+  }));
 }
 
 function renderTimbres(current: string): void {
@@ -1182,7 +1212,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, voiceStatus, (on) => (on ? "做完会�
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 form.remove();

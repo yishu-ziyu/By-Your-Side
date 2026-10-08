@@ -144,7 +144,11 @@ export interface TaskProgressSnapshot {
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}
 
+export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime";
+
 export interface VoiceRouteContext {
+  /** 套餐语音：明确闲聊仅返回分类，不生成宿主回答；其他分支照常执行。 */
+  nativeChat?: boolean;
   /** Keep pending delegation through conversational interjections, never through a new command. */
   awaitInputDecision?: () => Promise<void>;
   onInputDecision?: (readOnly: boolean, incomplete?:boolean) => void;
@@ -177,7 +181,7 @@ export type VoiceTurnBranch = 'reply' | 'control' | 'read_only';
 export type VoiceTurnProtocol = 'free_reply' | 'plan';
 
 export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBranch;phase:'COMMITTED'|'DISCARDED';protocol?:VoiceTurnProtocol}} & (
-  | {kind:'none';resumeTargetId?:string; resumeReadOnly?:'chat'|'observe'|'status'; snapshot?:TaskProgressSnapshot;spokenText?:string}
+  | {kind:'none';nativeChat?:true;resumeTargetId?:string; resumeReadOnly?:'chat'|'observe'|'status'; snapshot?:TaskProgressSnapshot;spokenText?:string}
   | {kind:'silent';quiet?:boolean}
   | {kind:'listening'}
   | {kind:'clarify';message:string}
