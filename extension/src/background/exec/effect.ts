@@ -3,7 +3,7 @@
  * 效果证据失败（页面禁止注入、导航换文档、SW 重启）绝不能拖垮动作本身：
  * 所有入口都吞掉异常并返回 undefined，让调用方按「没有证据」处理。
  */
-import { EMPTY_EFFECT_REPORT, requestEvidence, settleEffectReport, type EffectReport } from "../../../../shared/effect.js";
+import { EMPTY_EFFECT_REPORT, downloadEvidence, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport } from "../../../../shared/effect.js";
 import { networkRingFor } from "../network-log.js";
 
 const CONTENT_FILE = "content-effect.js";
@@ -80,7 +80,10 @@ export async function collectEffect(tabId: number, token: string | null): Promis
 
     const since = effectStarts.get(token);
     const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
-    const sent = since === undefined ? [] : requestEvidence(networkRingFor(tabId)?.entries ?? [], since, Date.now(), pageUrl);
+    const sent = since === undefined ? [] : [
+      ...requestEvidence(networkRingFor(tabId)?.entries ?? [], since, Date.now(), pageUrl),
+      ...downloadEvidence(await clickDownloads(tabId, since).catch(() => []), pageUrl),
+    ];
 
     if (!sent.length) return report;
     const base = report ?? EMPTY_EFFECT_REPORT;
@@ -95,4 +98,51 @@ export async function collectEffect(tabId: number, token: string | null): Promis
       /* 页面已经换了文档，会话自然消失 */
     }
   }
+}
+
+/** 点击后最多等多久：下载要先等跳转的响应头才出现，出现后再等 Chrome 报完成。 */
+const DOWNLOAD_WAIT_MS = 3000;
+
+/**
+ * 处理这次点击期间开始的下载。只在两种情况下等（最多 DOWNLOAD_WAIT_MS）：
+ * 同网站的下载还没报完成；或点击引起的文档跳转还没结束、或被中止（跳转变成下载时 CDP 报 ERR_ABORTED）。
+ * 普通跳转一加载完、普通点击没有下载，都只查一次就返回，不拖慢点击。拿不到下载记录时返回空，不影响点击本身。
+ */
+async function clickDownloads(tabId: number, since: number): Promise<EffectDownload[]> {
+  if (!chrome.downloads?.search) return [];
+  const startedAfter = new Date(since - 50).toISOString();
+  const deadline = Date.now() + DOWNLOAD_WAIT_MS;
+  let items: chrome.downloads.DownloadItem[] = [];
+
+  for (;;) {
+    items = await Promise.resolve(chrome.downloads.search({ startedAfter })).catch(() => []);
+    const pendingDownload = items.some(i => i.state === "in_progress");
+    const docs = (networkRingFor(tabId)?.entries ?? []).filter(e => e.startedAt >= since && e.resourceType === "document");
+    const mayBecomeDownload = items.length === 0 && docs.some(e => e.failed !== undefined || e.canceled || e.endedTs === undefined);
+
+    if ((!pendingDownload && !mayBecomeDownload) || Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+
+  return items.map(i => {
+    const base = i.filename.split(/[\\/]/).pop() || (() => {
+      try {
+        return decodeURIComponent(new URL(i.finalUrl || i.url).pathname.split("/").pop() ?? "");
+      } catch {
+        return "";
+      }
+    })();
+
+    return {
+      url: i.finalUrl || i.url,
+      referrer: i.referrer ?? "",
+      filename: base || "(no name yet)",
+      path: i.filename,
+      // SAFETY: chrome.downloads.State 只有这三个值。
+      state: i.state as EffectDownload["state"],
+      bytes: i.state === "complete" ? (i.fileSize >= 0 ? i.fileSize : i.bytesReceived) : undefined,
+      error: i.error,
+      danger: i.danger && i.danger !== "safe" && i.danger !== "accepted" ? i.danger : undefined,
+    };
+  });
 }

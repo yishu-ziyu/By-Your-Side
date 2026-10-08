@@ -157,7 +157,7 @@ const QUIET_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const QUIET_TYPES = new Set(["ping", "preflight", "cspviolationreport"]);
 
 /** 粗略的“同一网站”：主机名最后两段相同（IP 与单段主机按主机名本身）。多段公共后缀（如 .co.uk）会放宽，只影响是否计入证据。 */
-function siteOf(hostname: string): string {
+export function siteOf(hostname: string): string {
   if (/^[\d.]+$/.test(hostname) || hostname.includes(":")) return hostname;
 
   return hostname.split(".").slice(-2).join(".");
@@ -196,6 +196,55 @@ export function requestEvidence(requests: readonly EffectRequest[], since: numbe
   });
 
   return sent.length > 3 ? [...sent.slice(0, 3), `and ${sent.length - 3} more request(s)`] : sent;
+}
+
+/** 点击窗口里开始的一次浏览器下载（取自 chrome.downloads；filename 只留文件名）。 */
+export interface EffectDownload {
+  url: string;
+  referrer: string;
+  filename: string;
+  path: string;
+  state: "in_progress" | "interrupted" | "complete";
+  bytes?: number;
+  error?: string;
+  /** Chrome 判为危险、等用户在下载栏里选「保留」。 */
+  danger?: string;
+}
+
+/**
+ * 点击触发的下载算强证据，并如实写出 Chrome 报告的结果（10-08，docs/evals/20261008-download-result.md）。
+ * 没有先 arm_event 的下载原来不进任何回执：文件已存好，回执却说「页面没变化」，网络记录只剩一条 ERR_ABORTED 的跳转，
+ * 模型和目标核对都读成「没导出」，于是一再重导。只认与当前页面同一网站发起的下载；完成与否只认 chrome.downloads。
+ */
+export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: string): string[] {
+  let pageSite: string;
+
+  try {
+    pageSite = siteOf(new URL(pageUrl).hostname);
+  } catch {
+    return [];
+  }
+
+  const sameSite = (raw: string) => {
+    try {
+      return siteOf(new URL(raw).hostname) === pageSite;
+    } catch {
+      return false;
+    }
+  };
+
+  // 下载没有 tabId：说成「处理这次点击期间开始的」，不断言就是这次点击产生的；文件不对时仍可重做。
+  return downloads.filter(d => sameSite(d.referrer) || sameSite(d.url)).map(d => {
+    const head = `a download "${d.filename}" started while this click was processed`;
+
+    if (d.state === "complete") return `${head}; Chrome's downloads API reports it complete: saved to ${d.path}${d.bytes !== undefined ? ` (${d.bytes} B)` : ""}. If this is the file you meant to get, it is already saved: do not export it again just to confirm it`;
+
+    if (d.state === "interrupted") return `${head} but Chrome reports it failed (${d.error ?? "interrupted"}); no complete file was saved`;
+
+    if (d.danger) return `${head}; Chrome flagged it as ${d.danger} and holds it until the user chooses Keep in Chrome's downloads. Not saved yet`;
+
+    return `${head}; Chrome has not reported it finished yet, so it is not saved yet. Do not report it as saved`;
+  });
 }
 
 /** 给模型看的回执文案：有变化给清单，没变化明说并提示不要盲目重试。 */
