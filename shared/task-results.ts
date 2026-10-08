@@ -295,6 +295,7 @@ export function deriveResultDescription(name: string, params: Record<string, unk
     case "drag":
     case "hover":
     case "mark":
+      if (name === "mark" && Array.isArray(p.text) && p.text.length) { text = `${action}「${shortText(p.text.join("、"), 40)}」`; break; }
       text = label ? `${action}「${label}」` : shortText(target, 120) ? `${action} ${shortText(target, 120)}` : action;
       break;
     case "navigate":
