@@ -1,0 +1,21 @@
+{
+  "name": "agent-glass-confirm-prototype",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "smoke": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@glass-sdk/liquid-glass": "~0.0.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "playwright": "1.58.2",
+    "vite": "^7.1.9"
+  }
+}
