@@ -346,6 +346,8 @@ export type AgentUiEvent =
    * blocked 原因在助手和用户之外（站点连不上、页面不存在、服务端拒绝），不催续做，remaining 是给用户看的原因。
    */
   | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining?: string }
+  /** 跑完后的代码裁判（agent/src/run-referee.ts）：三条确定性核对，过了几条；notes 每条失败一句话。只标不拦。 */
+  | { kind: "run_check"; passed: number; total: number; notes: string[] }
   | { kind: "user_delivery"; delivery: UserDelivery }
   /**
    * 交给用户的文件：模型写的文本文件（artifacts 工具），或模型交给用户的截图（screenshot forUser，encoding 为 base64 的 PNG）。
