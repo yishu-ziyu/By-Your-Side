@@ -42,6 +42,7 @@
 2. 决定助手要不要读已下载文件的内容：涉及文件访问权限，所以需要产品决定。
 3. 主动卡「动词即按钮」用真实模型试用（[验收](evals/20261007-proactive-card-verb.md)）。
 4. 提速：会动手的日常任务大部分时间在等模型（[时间拆分](evals/20261007-time-breakdown.md)）。
+5. 边说边做（YIS-134）：GPT-Live 用 ChatGPT 登录可用（[实验](research/20261009-gpt-live-chatgpt-login.md)）；圈词、查维基底子 0/5，先修按文字圈（YIS-135）和目标核对（YIS-136）（[底子](evals/20261009-voice-ideas-baseline.md)）。
 
 进展同步在 [Linear](development/collaboration.md#给用户看的进展linear)。默认测试模型是 gpt-6-luna。
 

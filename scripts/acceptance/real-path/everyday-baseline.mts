@@ -37,7 +37,13 @@ const modelArg = process.argv.find((a) => a.startsWith("--model="))?.slice(8);
 const inprocModel = scriptedThrottle ? "custom/demo-model" : daily ? inprocArg : inprocArg ?? modelArg ?? DEFAULT_TEST_MODEL;
 
 /** --suite=sitegeist：换成 Sitegeist 官网与新手教程里宣传的任务（多页汇总、导出表格、改错字、提取会议、做小工具）。 */
-const suite = process.argv.find((a) => a.startsWith("--suite="))?.slice(8) === "sitegeist" ? "sitegeist" : "everyday";
+/** --suite=voice-ideas：边说边做的两个例子（圈高频词、查维基），量底子的快慢与准不准。 */
+const suiteArg = process.argv.find((a) => a.startsWith("--suite="))?.slice(8);
+
+const suite = suiteArg === "sitegeist" || suiteArg === "voice-ideas" ? suiteArg : "everyday";
+
+/** --repeat=N：每条用例连跑 N 次，各开新会话。 */
+const repeat = Math.max(1, Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 1);
 
 if (!daily) requireHeadless();
 
@@ -46,7 +52,7 @@ const CASE_LIMIT_MS = Number(process.env.CASE_LIMIT_MS) || 240_000;
 
 const startedAt = new Date();
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-everyday-baseline${suite === "sitegeist" ? "-sitegeist" : ""}${daily ? "-daily" : inprocModel ? "-inproc" : ""}`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-everyday-baseline${suite === "everyday" ? "" : `-${suite}`}${daily ? "-daily" : inprocModel ? "-inproc" : ""}-${process.pid}`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -84,7 +90,17 @@ ${Array.from({ length: 96 }, (_, i) => `<p>${longParagraph(i)}</p>`).join("\n")}
 /** 长文用例的判据：109 个段落块都要出现中文（双语或仅译文都算）。 */
 const LONG_BLOCKS = 109;
 
+/** voice-ideas 圈高频词的文章：四个词明显最多（全双工、打断、延迟、回声），其他词不超过 2 次；正文是纯段落，词不单独包标签。 */
+const FD_ARTICLE = `<article><h1>全双工语音，为什么这么难做</h1><p>林小舟 · 10 月 6 日</p>
+<p>打电话的时候，两个人可以同时说话，也可以随时打断对方。这就是全双工。可大多数语音助手做不到：它们要等你说完，才轮到自己开口。</p>
+<p>难点有三个。第一是延迟：从你停下到它回应，超过一秒，对话就像对讲机。第二是回声：它自己的声音被麦克风收回去，被误当成你在说话。第三是打断：你一开口，它要立刻闭嘴，而不是把一整段念完。</p>
+<h2>新一代全双工模型怎么做</h2>
+<p>全双工模型一边听一边说。它不靠「静音多久算说完」来判断轮次，而是像人一样理解语义，回应延迟压到了半秒左右。用户插话后约 0.2 秒，它就停了下来，打断终于像人。</p>
+<p>但全双工不等于万能。回声消除仍然要靠设备；网络延迟一抖，体验就退回半双工。更重要的是，听得懂之后，还得做得对。</p>
+<p>我的判断是：全双工负责「聊」，后台助手负责「做」。你随口一句话，它分得清哪句是闲聊、哪句要动手；被打断时，只停嘴，不停手。回声，交给工程去磨。</p></article>`;
+
 const PAGES = {
+  "/fd-article": page("全双工语音，为什么这么难做", FD_ARTICLE),
   "/long": page("Notes from a year of small civic fixes", LONG_BODY),
   "/article": page("远程办公的代价", `<article><h1>远程办公的代价</h1>
 <p>过去三年，我们团队全员远程。本文的核心观点是：远程办公明显提高了资深成员的专注时间，但严重削弱了新人的成长速度。</p>
@@ -153,10 +169,10 @@ type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
+type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
 
 /** stopAfterMs：发出后这么久像用户一样点停止（只在仍在运行时）。 */
-type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; check: (c: Ctx) => string | null };
+type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** 判据之外另记的量（如圈中率），写进结果。 */ measure?: (c: Ctx) => Record<string, unknown>; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; check: (c: Ctx) => string | null };
 
 const has = (text: string, ...needles: string[]) => needles.every((n) => text.includes(n));
 
@@ -244,9 +260,54 @@ const SITEGEIST_CASES: Case[] = [
 
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 
-const pool = suite === "sitegeist" ? SITEGEIST_CASES : CASES;
+const FREQ_WORDS = ["全双工", "打断", "延迟", "回声"];
 
-const selected = only ? pool.filter((c) => only.includes(c.id)) : pool;
+/** 一个圈「圈中」某处词：词框中心在圈内，且圈不大于两行字（圈整段不算）。 */
+const tightOn = (m: DrawnMark, w: TextBox) => m.frame.h <= 60 && m.frame.w <= 220 && contains(m.frame, { x: w.x + w.w / 2, y: w.y + w.h / 2, w: 0, h: 0 });
+
+/** 回答里「词 … N 次」报的次数，与页面上实际出现次数对照。 */
+const CN_NUM: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+
+function reportedCounts(c: Ctx) {
+  return FREQ_WORDS.flatMap((word) => {
+    const m = new RegExp(`${word}[」"”']?[^。；;\\n0-9一二两三四五六七八九十]{0,8}?([0-9]+|[一二两三四五六七八九十])\\s*次`).exec(c.answer);
+    if (!m) return [];
+    const said = /\d/.test(m[1]!) ? Number(m[1]) : CN_NUM[m[1]!]!;
+    return [{ word, said, actual: c.words.filter((w) => w.text === word).length }];
+  });
+}
+
+function freqMeasure(c: Ctx) {
+  const total = c.words.length;
+  const hit = c.words.filter((w) => c.marks.some((m) => tightOn(m, w))).length;
+  const onTarget = c.marks.filter((m) => c.words.some((w) => tightOn(m, w))).length;
+  return { occurrences: total, covered: hit, recall: total ? +(hit / total).toFixed(2) : 0, marks: c.marks.length, marksOnTarget: onTarget, precision: c.marks.length ? +(onTarget / c.marks.length).toFixed(2) : 0, counts: reportedCounts(c) };
+}
+
+/** 回音消除词条导言里的事实（2026-10-09 读取），用来核对回答是否来自查到的页面。 */
+const WIKI_FACTS = ["贝尔实验室", "50年代", "五十年代", "回音抑制器", "峡谷", "声学路径"];
+
+const VOICE_CASES: Case[] = [
+  { id: "freq-words", path: "/fd-article", prompt: "这篇文章不错，帮我把里面的高频词圈出来。", measure: freqMeasure,
+    check: (c) => {
+      const m = freqMeasure(c);
+      if (m.marks === 0) return "页面上没有圈画";
+      if (!c.words.some((w) => w.text === "全双工" && c.marks.some((k) => tightOn(k, w)))) return "最高频的「全双工」一处都没圈中";
+      const wrong = m.counts.filter((k) => k.said !== k.actual);
+      if (wrong.length) return `报的次数不对：${wrong.map((k) => `${k.word} 说 ${k.said} 实际 ${k.actual}`).join("，")}`;
+      return m.recall < 0.8 ? `只圈中 ${m.covered}/${m.occurrences} 处` : null;
+    } },
+  { id: "wiki-lookup", path: "/fd-article", prompt: "帮我把回声消除在维基百科查一下。",
+    measure: (c) => ({ wikiTabs: c.tabs.filter((u) => u.includes("wikipedia.org")).map((u) => decodeURIComponent(u)), facts: WIKI_FACTS.filter((f) => c.answer.includes(f)) }),
+    check: (c) => {
+      if (!c.tabs.some((u) => u.includes("wikipedia.org"))) return "没有打开维基百科";
+      return WIKI_FACTS.some((f) => c.answer.includes(f)) ? null : "回答里没有词条里的事实";
+    } },
+];
+
+const pool = suite === "sitegeist" ? SITEGEIST_CASES : suite === "voice-ideas" ? VOICE_CASES : CASES;
+
+const selected = (only ? pool.filter((c) => only.includes(c.id)) : pool).flatMap((c) => Array.from({ length: repeat }, (_, i) => (repeat > 1 ? { ...c, id: `${c.id}-${i + 1}` } : c)));
 
 /** 导出文件的一行必须带本机记录的公共字段（time、sessionId、type、整数 turn）；data.text 可缺省。 */
 const TraceLineSchema = Type.Object({
@@ -381,6 +442,7 @@ type CaseResult = {
   /** 翻译用例：页面上第一段译文出现的时刻，以及译文段数随时间的变化（毫秒相对发送时刻）。 */
   firstTranslatedMs?: number | null; firstMarkMs?: number | null; stopClearMs?: number | null; pendingMarks?: number; translatedTimeline?: Array<{ ms: number; blocks: number; pending: number }>;
   /** 只在 --inproc：本条发出的模型请求（毫秒相对发送时刻）。 */
+  measure?: Record<string, unknown>;
   modelCalls?: Array<{ host: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null }>;
 };
 
@@ -493,6 +555,19 @@ try {
     return out;
   })()`)) as TextBox[];
 
+  // SAFETY: 下面这段页面脚本只返回 { text, x, y, w, h } 数组：FREQ_WORDS 每处出现的视口框。
+  const readWords = async (): Promise<TextBox[]> => (await rp.evaluate(work, `(() => {
+    const words = ${JSON.stringify(FREQ_WORDS)}, out = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      for (const word of words) for (let at = n.textContent.indexOf(word); at >= 0; at = n.textContent.indexOf(word, at + word.length)) {
+        const range = document.createRange(); range.setStart(n, at); range.setEnd(n, at + word.length);
+        const r = range.getBoundingClientRect(); if (r.width && r.height) out.push({ text: word, x: r.x, y: r.y, w: r.width, h: r.height });
+      }
+    }
+    return out;
+  })()`)) as TextBox[];
+
   for (const item of selected) {
     saveRequests = 0;
     // 每条用例单独一个下载目录：判据只看这一条下载了什么。
@@ -500,6 +575,8 @@ try {
 
     await mkdir(caseDownloads, { recursive: true });
     await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: caseDownloads });
+    // 上一条新开的网页标签页关掉：判据里的标签页只算这一条开的。
+    for (const t of await rp.targets()) if (t.type === "page" && t.targetId !== blank.targetId && /^https?:/.test(t.url)) await rp.cdp.send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
     await rp.cdp.send("Page.navigate", { url: item.path.startsWith("https://") ? item.path : `${origin}${item.path}` }, work);
     // 上一条可能新开了标签页并让它成为当前页（open-tab）；每条都从自己的练习页开始。
     await rp.cdp.send("Page.bringToFront", {}, work);
@@ -537,6 +614,7 @@ try {
     let firstVisibleMs: number | null = null;
     let doneMs: number | null = null;
     let idle = 0;
+    let lastBusyAt = Date.now();
     let last: PanelState | null = null;
     let pageShots = 0;
     let panelShots = 0;
@@ -602,8 +680,11 @@ try {
         const busy = state.running || state.stopping || state.streaming;
         idle = !busy && state.userMessages.length > 0 && Date.now() - sentAt > 3000 ? idle + 1 : 0;
 
-        if (idle >= 6) {
-          doneMs = Date.now() - sentAt - 1500;
+        if (busy) lastBusyAt = Date.now();
+
+        // voice-ideas：回答后还有目标核对，没做完会自己接着做；空闲 8 秒才算结束，结束时刻取最后一次忙。
+        if (idle >= (suite === "voice-ideas" ? 32 : 6)) {
+          doneMs = suite === "voice-ideas" ? lastBusyAt - sentAt : Date.now() - sentAt - 1500;
           break;
         }
       }
@@ -654,7 +735,7 @@ try {
     // SAFETY: 同上，闪烁记录是对象数组，这里只数个数。
     const pendingFlickers = ((await rp.evaluate(work, "window.__bysPendingFlickers ?? []").catch(() => [])) as unknown[]);
     const pendingRose = pendingFlickers.length > 0;
-    const ctx: Ctx = { answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
+    const ctx: Ctx = { words: await readWords().catch(() => []), answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
@@ -667,7 +748,7 @@ try {
     // 设置页选的是哪家，请求就只能发往哪家：防「换了模型却仍用旧模型」。
     const wrongHost = inprocModel && modelCalls?.find((c) => c.host !== expectedHost);
     const finalReason = reason ?? (wrongHost ? `模型请求发往 ${wrongHost.host}，不是所选的 ${expectedHost}` : null);
-    const result: CaseResult = { id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls };
+    const result: CaseResult = { id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls, ...(item.measure ? { measure: item.measure(ctx) } : {}) };
 
     if (translating) Object.assign(result, { firstTranslatedMs, firstMarkMs, stopClearMs, pendingMarks, pendingRose, pendingLog: pendingLog.slice(0, 200), pendingFlickers: pendingFlickers.slice(0, 20), ...coverage, translatedTimeline });
     results.push(result);

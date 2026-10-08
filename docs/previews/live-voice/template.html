@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>边说边做 · 预览</title>
+<style>
+  :root {
+    --desk: #e8e6e0;
+    --ink: #141413; --ink-2: #5f5e58; --ink-3: #77756d;
+    --line: rgba(20,20,19,.10);
+    --ai: #2d4a86;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--desk); color: var(--ink); font: 13px/1.5 var(--font); display: flex; flex-direction: column; padding: 12px 14px 14px; gap: 10px; }
+
+  /* 预览控制条：不属于产品，压低存在感 */
+  .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: rgba(20,20,19,.06); border-radius: 999px; padding: 2px; }
+  .seg button, .ctl > button { font: 500 12.5px var(--font); border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(20,20,19,.10); }
+  .ctl > button { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .ctl > button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .ctl > button:disabled { opacity: .45; cursor: default; }
+  .ctl > button[aria-pressed="false"] { color: var(--ink-3); }
+  .narr { flex: 1 1 260px; min-width: 0; color: var(--ink-2); font-size: 12.5px; }
+  .narr b { color: var(--ink); font-weight: 600; }
+
+  /* 浏览器窗口 */
+  .win { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(20,20,19,.10), 0 10px 30px rgba(20,20,19,.10); position: relative; }
+  .tabbar { height: 38px; flex: none; background: #f1f0ec; display: flex; align-items: end; gap: 10px; padding: 0 12px; border-bottom: 1px solid rgba(20,20,19,.07); }
+  .lights { display: flex; gap: 6px; align-self: center; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #d9d7d0; }
+  .tabs { display: flex; gap: 2px; align-items: end; height: 100%; }
+  .tab { height: 30px; max-width: 200px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 8px 8px 0 0; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .2s; }
+  .tab.on { background: #fff; color: var(--ink); }
+  .tab i { width: 12px; height: 12px; border-radius: 3px; flex: none; background: #c9c6bd; }
+  .tab.wk i { background: #fff; border: 1px solid #a2a9b1; font: 700 8px/10px Georgia, serif; text-align: center; font-style: normal; color: #202122; }
+  .tab.new { animation: tabIn .28s ease-out; }
+  @keyframes tabIn { from { max-width: 0; opacity: 0; } to { max-width: 200px; opacity: 1; } }
+  .urlbar { height: 34px; flex: none; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid rgba(20,20,19,.07); }
+  .url { flex: 1; max-width: 520px; height: 26px; border-radius: 999px; background: #f6f5f2; display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--ink-2); gap: 6px; }
+  .body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .vp { flex: 1 1 auto; min-width: 0; position: relative; overflow: hidden; background: #fff; }
+  .side { width: 380px; flex: none; border-left: 1px solid rgba(20,20,19,.08); position: relative; }
+  .side iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* 网页一：一篇普通的中文技术博客（虚构） */
+  .blog { font: 15px/1.85 "PingFang SC", var(--font); color: #2b2b2b; max-width: 640px; margin: 0 auto; padding: 26px 32px 40px; }
+  .blog .kick { font-size: 12px; color: #8a8a8a; letter-spacing: .02em; }
+  .blog h1 { font-size: 24px; line-height: 1.35; margin: 6px 0 4px; color: #1a1a1a; }
+  .blog .by { font-size: 12.5px; color: #8a8a8a; margin-bottom: 18px; }
+  .blog p { margin: 0 0 14px; }
+  .blog h2 { font-size: 17px; margin: 22px 0 8px; color: #1a1a1a; }
+  .w { position: relative; display: inline-block; white-space: nowrap; line-height: 1.25; }
+
+  /* 网页二：百科词条（虚构的简化排版） */
+  .wiki { font: 14px/1.7 -apple-system, "PingFang SC", sans-serif; color: #202122; padding: 18px 32px 40px; max-width: 760px; }
+  .wiki .brand { display: flex; align-items: center; gap: 8px; color: #54595d; font-size: 12px; margin-bottom: 14px; }
+  .wiki .brand b { font: 600 15px Georgia, "Songti SC", serif; color: #202122; }
+  .wiki h1 { font: 400 26px/1.3 Georgia, "Songti SC", serif; margin: 0 0 2px; padding-bottom: 4px; border-bottom: 1px solid #a2a9b1; }
+  .wiki .from { font-size: 12px; color: #54595d; margin: 6px 0 14px; }
+  .wiki p { margin: 0 0 12px; }
+  .wiki a { color: #3366cc; text-decoration: none; }
+  .wiki .toc { display: inline-block; border: 1px solid #a2a9b1; background: #f8f9fa; padding: 8px 14px; font-size: 13px; margin: 4px 0 12px; }
+  .wiki .toc b { display: block; text-align: center; margin-bottom: 2px; }
+
+  /* 页面上的手绘圈与标签：笔触与产品 mark 同参数（#2d4a86，2.5px，roughness .9） */
+  #ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 3; }
+  #ink path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  #layer { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+  .tagcard { position: absolute; display: inline-flex; gap: 6px; align-items: center; background: #fff; color: #141413; border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px; padding: 3px 10px 3px 7px; font: 500 12px/1.45 var(--font); white-space: nowrap; box-shadow: 0 4px 14px rgba(20,20,19,.10); opacity: 0; transform: translateY(-3px); transition: opacity .18s, transform .18s; }
+  .tagcard.on { opacity: 1; transform: none; }
+
+  /* 光标层（与产品光标同形） */
+  .cursors { position: absolute; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+  .cur { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity .2s; will-change: transform; }
+  .cur.on { opacity: 1; }
+  .cur svg { position: absolute; left: -4px; top: -4.7px; overflow: visible; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 3px rgba(20,20,19,.32)); }
+  .cur .lbl { position: absolute; left: 13px; top: 14px; display: inline-flex; gap: 7px; align-items: center; background: #fff; color: #141413; border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px; padding: 6px 12px 6px 9px; font: 400 13px/1.45 var(--font); white-space: nowrap; box-shadow: 0 4px 14px rgba(20,20,19,.10); opacity: 0; transition: opacity .16s; }
+  .cur .lbl.on { opacity: 1; }
+  .orb-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); box-shadow: 0 0 6px rgba(129,140,248,.45); }
+
+  /* 「你在说话」的提示：预览专用，产品里就是你的嗓子 */
+  .mic { position: absolute; left: 16px; bottom: 16px; z-index: 6; display: inline-flex; align-items: center; gap: 8px; background: rgba(20,20,19,.82); color: #fff; border-radius: 999px; padding: 6px 14px 6px 10px; font: 13px/1.4 var(--font); opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; max-width: calc(100% - 32px); }
+  .mic.on { opacity: 1; transform: none; }
+  .mic .bars { display: inline-flex; gap: 2px; align-items: center; height: 14px; }
+  .mic .bars i { width: 3px; border-radius: 2px; background: #fff; animation: bar .5s ease-in-out infinite alternate; }
+  .mic .bars i:nth-child(2) { animation-delay: .15s; } .mic .bars i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bar { from { height: 4px; } to { height: 14px; } }
+  @media (prefers-reduced-motion: reduce) { .cur { transition: none; } .mic .bars i { animation: none; height: 10px; } }
+</style>
+</head>
+<body>
+  <div class="ctl">
+    <div class="seg" role="group" aria-label="场景">
+      <button type="button" data-sc="chat" aria-pressed="true">只是聊天</button>
+      <button type="button" data-sc="circle" aria-pressed="false">圈高频词</button>
+      <button type="button" data-sc="wiki" aria-pressed="false">查维基 · 中途插话</button>
+    </div>
+    <button type="button" id="play" class="primary">▶ 播放</button>
+    <button type="button" id="reset">重来</button>
+    <button type="button" id="sound" aria-pressed="true">声音 开</button>
+    <div class="narr" id="narr"></div>
+  </div>
+
+  <div class="win" id="win">
+    <div class="tabbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="tabs" id="tabs"></div>
+    </div>
+    <div class="urlbar"><div class="url"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#77756d" stroke-width="2.4"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="url"></span></div></div>
+    <div class="body">
+      <div class="vp" id="vp"><div id="site"></div><svg id="ink"></svg><div id="layer"></div><div class="mic" id="mic"><span class="bars"><i></i><i></i><i></i></span><span id="mic-text"></span></div></div>
+      <div class="side"><iframe id="panel" title="侧栏"></iframe></div>
+    </div>
+    <div class="cursors" id="cursors">
+      <div class="cur" id="ai"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linejoin="round"/><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#2d4a86" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg><span class="lbl"><span class="orb-dot"></span><span class="t"></span></span></div>
+    </div>
+  </div>
+
+<script>
+const PANEL_HTML = __PANEL__;
+</script>
+<script src="../circle-and-memory/rough.js"></script>
+<script src="preview.js"></script>
+</body>
+</html>
