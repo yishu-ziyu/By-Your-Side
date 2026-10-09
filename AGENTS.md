@@ -62,7 +62,8 @@ Explore broadly. Implement simply. Abstract late.
 
 ### 项目检查入口
 
-- `npm run check` 查文档、模块边界、类型、构建。`npm test` 跑合并前必跑的核心真实路径用例。两者都过才合并。
+- `npm run check` 查文档、模块边界、类型、构建，每次合并前都跑。单次合并只跑这次改到的真实路径用例。
+  `npm test` 跑全部核心用例：一批改动只跑一遍，放在更新日常扩展之前（10-10 用户决定：每次合并都跑全部，花的时间多于抓到的问题）。
   专项命令见[开发检查](docs/development/checks.md)，用例入口见[验收入口](docs/testing/acceptance.md)。
 - 浏览器验收默认无头（`--headless=new`）。涉及可见动效的检查单独安排，先取得用户同意。
 - 纯文档修改只查差异与引用，不跑产品检查。

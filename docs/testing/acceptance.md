@@ -7,7 +7,8 @@
 
 ## 怎样选入口
 
-- **合并前**：`npm test`。`npm test` 只跑核心用例：用例只装扩展、用脚本模型，不要凭据。
+- **合并前**：`npm run check` 和这次改到的用例。
+- **更新日常扩展前**：`npm test`，一批改动跑一遍。`npm test` 只跑核心用例：用例只装扩展、用脚本模型，不要凭据。
   用户在等结果时，把输出写进 `out/acceptance/test-run.log`，在仓库根目录起 `python3 -m http.server`，用侧边浏览器打开 [进度页](../../scripts/acceptance/real-path/progress.html)，让用户看到每项测什么、测到哪（10-10 用户要求）。新加核心用例时，在进度页里补一句它测什么。
   核心清单是 [`run-all.mts`](../../scripts/acceptance/real-path/run-all.mts) 的 `CORE`，选择依据见[验收](../evals/20261008-e2e-only.md)。
 - **全部真实路径用例**：`npm run accept:real-path`。加 `-- --only=a,b` 是过滤轮：没选的用例记为未跑，过滤轮永远不算整轮通过。
