@@ -3670,6 +3670,14 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   while (anchor && !anchor.classList.contains("user")) anchor = anchor.previousElementSibling;
 
   if (!anchor) return;
+  // 核对判继续后接着做的一轮：「核对发现」属于前一轮，续做的过程排在最后一条「核对发现」之后。
+  let fix: Element | null = null;
+
+  for (let node = anchor.nextElementSibling; node && node !== root; node = node.nextElementSibling) {
+    if (node.classList.contains("claim-fix")) fix = node;
+  }
+
+  if (fix) { if (fix.nextElementSibling !== root) fix.after(root); return; }
   let next = anchor.nextElementSibling;
 
   // chip 跟着用户消息（chip C），「收到」这类确认语也留在前面。
@@ -4210,12 +4218,16 @@ const claimHold = {
   unconfirmed: null as HTMLElement | null,
   /** 这一轮有一栏读回与要写的对不上：核对判做完也只按「结果还没确认」放出。 */
   mismatch: false,
+  /** 这一轮的扣住已有结局（结论、超时或不核对）：之后到的正文和交付马上显示，不再扣。 */
+  settled: false,
+  /** 超时或读回对不上而放出时还没有回答：之后到的第一条回答补标「结果还没确认」。 */
+  tagNext: false,
 };
 
 function resetClaimHold(): void {
   window.clearTimeout(claimHold.timer);
   claimHold.indicator?.remove();
-  Object.assign(claimHold, { wrote: false, checking: false, waiting: false, releasing: false, text: "", events: [], run: null, indicator: null, timer: 0, unconfirmed: null, mismatch: false });
+  Object.assign(claimHold, { wrote: false, checking: false, waiting: false, releasing: false, text: "", events: [], run: null, indicator: null, timer: 0, unconfirmed: null, mismatch: false, settled: false, tagNext: false });
 }
 
 function holdingSomething(): boolean {
@@ -4259,6 +4271,20 @@ function heldDeliveryText(): string {
   return claimHold.events.flatMap(({ ev }) => ev.kind === "user_delivery" ? [ev.delivery.text] : []).join("\n\n");
 }
 
+/** 「正在核对结果…」排在回答位置；等待期间第一次扣住东西时才放，不扣东西就不显示。 */
+function showClaimChecking(): void {
+  if (!claimHold.waiting || claimHold.indicator || !holdingSomething()) return;
+  const line = document.createElement("div");
+  line.className = "claim-checking";
+  line.setAttribute("role", "status");
+  const dot = document.createElement("span");
+  dot.className = "claim-checking-dot";
+  line.append(dot, "正在核对结果…");
+  appendToMessages(line);
+  claimHold.indicator = line;
+  scrollToEnd();
+}
+
 /** 放出扣住的回答。late：核对还没结论（超时或用户另起一轮），回答下面标「结果还没确认」。 */
 function releaseHeldClaim(late: boolean): void {
   const run = claimHold.run;
@@ -4268,6 +4294,7 @@ function releaseHeldClaim(late: boolean): void {
   claimHold.indicator = null;
   claimHold.waiting = false;
   claimHold.checking = false;
+  claimHold.settled = true;
 
   // 整轮已收尾：正文进执行过程，交付照原样显示。
   if (run) {
@@ -4276,12 +4303,18 @@ function releaseHeldClaim(late: boolean): void {
   }
 
   const before = new Set(deliveredBubbles.values());
+  const answerIds = claimHold.events.flatMap(({ ev }) => ev.kind === "user_delivery" && ev.delivery.kind !== "ack" ? [ev.delivery.id] : []);
   replayHeldClaim();
+  claimHold.tagNext = false;
 
   if (!late) return;
-  const answer = [...deliveredBubbles.values()].filter(bubble => !before.has(bubble) && bubble.dataset.deliveryKind !== "ack").at(-1);
+  // 流式回答的气泡在流开始时已登记，按交付编号找；没有就取新出现的气泡。
+  const answer = deliveredBubbles.get(answerIds.at(-1) ?? "") ?? [...deliveredBubbles.values()].filter(bubble => !before.has(bubble) && bubble.dataset.deliveryKind !== "ack").at(-1);
 
-  if (!answer) return;
+  // 还没有回答（迟到的补交还在路上）：之后到的第一条回答补标。
+  if (!answer) { claimHold.tagNext = true; return; }
+
+  if (answer.nextElementSibling?.classList.contains("claim-unconfirmed")) return;
   const tag = document.createElement("div");
   tag.className = "claim-unconfirmed";
   tag.textContent = "结果还没确认";
@@ -4296,6 +4329,7 @@ function correctHeldClaim(ev: Extract<AgentUiEvent, { kind: "goal_check" }>): vo
   claimHold.indicator = null;
   claimHold.waiting = false;
   claimHold.checking = false;
+  claimHold.settled = true;
   narrateIntoRun(claimHold.run, claimHold.text || heldDeliveryText());
   claimHold.text = "";
   claimHold.events = [];
@@ -4332,7 +4366,7 @@ function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | n
 
       return false;
     case "text_delta":
-      if (!claimHold.wrote || claimHold.waiting) return false;
+      if (!claimHold.wrote || claimHold.waiting || claimHold.settled) return false;
       claimHold.text += ev.delta;
 
       return true;
@@ -4341,7 +4375,19 @@ function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | n
       const kind = ev.kind === "user_delivery" ? ev.delivery.kind : ev.stream.kind;
 
       if (!claimHold.wrote || kind === "ack") return false;
+
+      // 结论之后到的（宿主补交、流式回答的后半段）马上显示；超时放出时还没回答，这一条补标「结果还没确认」。
+      if (claimHold.settled) {
+        if (!claimHold.tagNext || ev.kind !== "user_delivery") return false;
+        claimHold.events.push({ ev, sessionId, runId });
+        releaseHeldClaim(true);
+
+        return true;
+      }
+
+      // 整轮结束后、结论之前到的（宿主补交）：一样扣住，由结论或上限放出。
       claimHold.events.push({ ev, sessionId, runId });
+      showClaimChecking();
 
       return true;
     }
@@ -4356,37 +4402,29 @@ function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | n
         if (ev.status === "continue") correctHeldClaim(ev);
         // 代码核对只能把「做完」改成「没确认」：读回对不上时，模型核对判做完也标「结果还没确认」。
         else releaseHeldClaim(ev.status === "done" && claimHold.mismatch);
-      } else if (ev.status === "done" && claimHold.unconfirmed && !claimHold.mismatch) {
-        claimHold.unconfirmed.remove();
+      } else if (ev.status === "done" && !claimHold.mismatch) {
+        claimHold.unconfirmed?.remove();
         claimHold.unconfirmed = null;
+        claimHold.tagNext = false;
       }
 
       return false;
     case "agent_end":
-      if (!claimHold.wrote || !holdingSomething()) return false;
+      if (!claimHold.wrote || claimHold.settled) return false;
 
-      // 不核对的一轮（停止、出错、只读）：在 agent_end 之前原样放出，和原来顺序一样。
+      // 不核对的一轮（停止、出错、只读）：在 agent_end 之前原样放出，和原来顺序一样；之后到的也不再扣。
       if (!claimHold.checking) {
         replayHeldClaim();
+        claimHold.settled = true;
 
         return false;
       }
 
+      // 整轮结束后还没回答也要等：宿主可能随后补交回答，结论到了一起放出。
       claimHold.waiting = true;
       claimHold.run = currentRun ?? lastRun;
       // 在 agent_end 处理（收尾、过程归位）之后再放「正在核对结果…」，让它排在回答位置。
-      window.setTimeout(() => {
-        if (!claimHold.waiting || claimHold.indicator) return;
-        const line = document.createElement("div");
-        line.className = "claim-checking";
-        line.setAttribute("role", "status");
-        const dot = document.createElement("span");
-        dot.className = "claim-checking-dot";
-        line.append(dot, "正在核对结果…");
-        appendToMessages(line);
-        claimHold.indicator = line;
-        scrollToEnd();
-      }, 0);
+      window.setTimeout(showClaimChecking, 0);
       claimHold.timer = window.setTimeout(() => { if (claimHold.waiting) releaseHeldClaim(true); }, CLAIM_HOLD_CAP_MS);
 
       return false;
@@ -5293,6 +5331,9 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
       historyOccurredAt = entry.occurredAt;
 
       if (entry.item.kind === "user") {
+        // 核对还没结论用户就发了新消息：上一轮的回答放在上一轮的位置，排在这条新消息之前。
+        if (claimHold.waiting) releaseHeldClaim(true);
+
         if (!running) runStartAt = eventTime();
         else if (!entry.item.undelivered) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);

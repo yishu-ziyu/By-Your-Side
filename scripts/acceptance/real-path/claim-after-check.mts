@@ -11,6 +11,9 @@
  *   e) 填对、核对马上判完成：记下首个可见反馈和最终回答的耗时。
  *   f) 网页把输入清空，核对却判完成：读回对不上，回答只按「结果还没确认」放出。
  *   g) browser_run 程序里的 browser.fill：读回同样显示在侧栏。
+ *   h) 填完不写回答，宿主在整轮结束后补交「做成了 1 步」（核对扣 1.5 秒）：补交的回答出现，下一轮开始后仍在。
+ *   i) 核对扣 3 秒期间用户发新消息：上一轮的回答排在新消息之前，不在新问题下面。
+ *   j) a 续做之后的顺序：「Note」读回 < 「核对发现」 < 第二次读回 < 最终回答（「核对发现」属于第一轮）。
  * 失败方式：去掉侧栏的扣住，a 的那句话在核对结论前出现（反例结果见验收文件）。
  */
 import assert from "node:assert/strict";
@@ -55,6 +58,10 @@ const CASES = {
   e: { ask: "案例E：把蓝色 Note 框里的第一句英文复制到草稿框里，不要保存。", claim: "已把第一句填进草稿框 E。", path: "/note" },
   f: { ask: "案例F：在草稿框里写 keep me，不要保存。", claim: "草稿已写好 F。", path: "/strip" },
   g: { ask: "案例G：用一段程序在草稿框里写 from program，不要保存。", claim: "草稿已写好 G。", path: "/note" },
+  // h 的回答由宿主补交：模型没写回答，宿主按账本说「做成了 1 步」（conversation-manager 的兜底交付）。
+  h: { ask: "案例H：在草稿框里写 late answer，不要保存。", claim: "做成了 1 步", path: "/note" },
+  i: { ask: "案例I：在草稿框里写 hold me，不要保存。", claim: "草稿已写好 I。", path: "/note" },
+  i2: { ask: "案例I2：顺便问一句，今天适合写草稿吗？", claim: "I2 的回答：适合。", path: "/note" },
 };
 
 const FIXED = "已把第一句英文填入草稿框，没有保存。";
@@ -75,6 +82,9 @@ const model = await startScriptedModel([
   { match: CASES.c.ask, steps: [fill("Note C"), { text: CASES.c.claim }] },
   { match: CASES.e.ask, steps: [fill(NOTE_FIRST), { text: CASES.e.claim }] },
   { match: CASES.f.ask, steps: [fill("keep me"), { text: CASES.f.claim }] },
+  { match: CASES.h.ask, steps: [fill("late answer"), { text: "" }] },
+  { match: CASES.i2.ask, steps: [{ text: CASES.i2.claim }] },
+  { match: CASES.i.ask, steps: [fill("hold me"), { text: CASES.i.claim }] },
   { match: CASES.g.ask, steps: [{ tool: { name: "browser_run", args: { label: "写草稿", code: 'return await browser.fill({ target: "#draft", value: "from program" });' } } }, { text: CASES.g.claim }] },
   { match: "VERDICT-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION }) }] },
   { match: "VERDICT-DONE", steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
@@ -245,6 +255,23 @@ try {
   assert.deepEqual(caseA.runChecksAfterFirstRun, [], "d: no 「核对」 line for case a's first run");
   assert.deepEqual(caseA.runChecksAtEnd, [], "d: no 「核对」 line after the continuation either");
 
+  // j) 续做之后的顺序：「核对发现」属于第一轮，排在续做的过程和读回之前。
+  const orderA = await rp.evaluate(panel, `(() => {
+    const nodes = [...document.querySelectorAll("#messages > *")];
+    const at = pred => nodes.findIndex(pred);
+    return {
+      noteEvidence: at(n => n.matches(".fill-evidence") && n.textContent.includes("草稿现在是：「Note」")),
+      fix: at(n => n.matches(".claim-fix")),
+      secondProcess: nodes.findLastIndex(n => n.matches("details.run-steps")),
+      secondEvidence: at(n => n.matches(".fill-evidence") && n.textContent.includes(${JSON.stringify(NOTE_FIRST)})),
+      finalAnswer: at(n => n.matches(".msg.assistant[data-delivery-id]") && n.textContent.includes(${JSON.stringify(FIXED)})),
+      outline: nodes.map(n => n.className.split(" ")[0] + ":" + n.textContent.trim().slice(0, 24)),
+    };
+  })()`) as { noteEvidence: number; fix: number; secondProcess: number; secondEvidence: number; finalAnswer: number; outline: string[] };
+  evidence.j = orderA;
+  assert.ok(orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.fix && orderA.fix < orderA.secondProcess && orderA.secondProcess < orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
+    `j: order 「Note」 evidence < 核对发现 < second process < second evidence < final answer: ${JSON.stringify(orderA)}`);
+
   // b) 网页在输入时改成大写：读回的是网页里的值。
   const b = await runCase("b", s => s.answers.some(t => t.includes(CASES.b.claim)), { final: s => s.answers.some(t => t.includes(CASES.b.claim)) });
   evidence.b = { evidence: b.samples.at(-1)!.evidence, finalAnswerMs: b.samples.at(-1)!.t };
@@ -304,6 +331,65 @@ try {
   await sleep(1_000);
   (evidence.c as Record<string, unknown>).tagAfterLateDone = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].find(m => m.textContent.includes(${JSON.stringify(CASES.c.claim)}))?.nextElementSibling?.classList.contains("claim-unconfirmed") ?? null`);
   await rp.screenshot(panel, join(artifacts, "c-after-late-verdict.png"));
+
+  /** 某条用户消息之后、下一条用户消息之前的回答（不含「收到」），以及它们是否排在下一条用户消息之前。 */
+  const turnAnswers = (ask: string) => rp.evaluate(panel, `(() => {
+    const users = [...document.querySelectorAll("#messages .msg.user")];
+    const user = users.find(u => u.textContent.includes(${JSON.stringify(ask)}));
+    if (!user) return [];
+    const out = [];
+    for (let n = user.nextElementSibling; n && !n.matches(".msg.user"); n = n.nextElementSibling) {
+      if (n.matches(".msg.assistant[data-delivery-id]") && n.dataset.deliveryKind !== "ack") out.push({ text: n.textContent.trim(), unconfirmed: !!n.nextElementSibling?.matches(".claim-unconfirmed") });
+    }
+    return out;
+  })()`) as Promise<Array<{ text: string; unconfirmed: boolean }>>;
+
+  // h) 填完不写回答：宿主在整轮结束后补交回答；核对扣 1.5 秒，补交在结论前到，由结论放出。
+  verdicts.push({ holdMs: 1_500, probe: "VERDICT-DONE" });
+  const checksBeforeH = checks.length;
+  const h = await runCase("h", s => s.answers.some(t => t.includes(CASES.h.claim)), { released: s => s.answers.some(t => t.includes(CASES.h.claim)) }, 20_000);
+  const checkH = checks[checksBeforeH];
+  evidence.h = {
+    checkingFirstMs: first(h.samples, s => s.checking),
+    answerFirstMs: first(h.samples, s => s.answers.some(t => t.includes(CASES.h.claim))),
+    goalCheckReleasedMs: checkH ? checkH.releasedAt - h.sentAt : null,
+    answers: await turnAnswers(CASES.h.ask),
+  };
+
+  // i) 核对扣 3 秒期间用户发新消息：上一轮的回答放回上一轮的位置。
+  verdicts.push({ holdMs: 3_000, probe: "VERDICT-DONE" });
+  await settled();
+  await rp.cdp.send("Page.navigate", { url: `${origin}${CASES.i.path}` }, work);
+  await sleep(500);
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, CASES.i.ask);
+  const sentI = Date.now();
+  await rp.pressEnter(panel);
+  await until(async () => await rp.evaluate(panel, '[...document.querySelectorAll("#messages .claim-checking")].some(el => el.textContent.includes("正在核对结果"))') || undefined, 20_000, "i: checking line", 50);
+  const checkingI = Date.now() - sentI;
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 10_000, "i: send enabled", 50);
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, CASES.i2.ask);
+  const sentI2 = Date.now() - sentI;
+  await rp.pressEnter(panel);
+  await until(async () => await rp.evaluate(panel, `document.querySelector("#messages").textContent.includes(${JSON.stringify(CASES.i2.claim)})`) || undefined, 20_000, "i: second answer", 100);
+  await settled();
+  await sleep(500);
+  const positionI = await rp.evaluate(panel, `(() => {
+    const users = [...document.querySelectorAll("#messages .msg.user")];
+    const second = users.find(u => u.textContent.includes(${JSON.stringify(CASES.i2.ask)}));
+    const answer = [...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].find(m => m.textContent.includes(${JSON.stringify(CASES.i.claim)}));
+    return { answerFound: !!answer, secondUserFound: !!second, answerBeforeSecondUser: !!answer && !!second && !!(answer.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) };
+  })()`) as { answerFound: boolean; secondUserFound: boolean; answerBeforeSecondUser: boolean };
+  evidence.i = { checkingFirstMs: checkingI, secondSentMs: sentI2, ...positionI, firstTurnAnswers: await turnAnswers(CASES.i.ask) };
+  await rp.screenshot(panel, join(artifacts, "i-after-second-message.png"));
+  assert.ok(positionI.answerFound && positionI.secondUserFound, `i: run 1's answer and the second user message are both visible: ${JSON.stringify(positionI)}`);
+  assert.ok(positionI.answerBeforeSecondUser, `i: run 1's answer is placed before the second user message: ${JSON.stringify(evidence.i)}`);
+
+  // h 的补交回答在下一轮（i、i2）开始之后仍在。
+  const hAfter = await turnAnswers(CASES.h.ask);
+  (evidence.h as Record<string, unknown>).answersAfterNextRuns = hAfter;
+  assert.ok(hAfter.some(a => a.text.includes(CASES.h.claim)), `h: the host's late answer survives the next run: ${JSON.stringify(hAfter)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
