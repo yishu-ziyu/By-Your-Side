@@ -23,6 +23,11 @@ function chatgptAccountId(access: string): string | null {
   }
 }
 
+/** 送去念的文字要和侧栏渲染出的回答一致：链接只留文字，去掉裸网址和强调记号。 */
+function speechText(text: string): string {
+  return text.replace(/!?\[([^\]]*)\]\([^)\s]*\)/g, '$1').replace(/https?:\/\/[^\s)\]）。，；]+/g, '').replace(/\*\*|__|`/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
 type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: VoiceTarget[]; input?: VoiceInputContext; error?: string; ready: boolean };
 
 /** 一次委派：任务接下后记住 runId，等这个任务交付给用户的结果。 */
@@ -144,7 +149,9 @@ export class GptLiveSession {
 
     if (record.runId === undefined) record.done = true;
   }
-  private answer(record: Delegation, channel: 'speakable' | 'commentary', text: string): void {
+  private answer(record: Delegation, channel: 'speakable' | 'commentary', raw: string): void {
+    const text = channel === 'speakable' ? speechText(raw) : raw;
+
     if (this.closed || record.done || !text.trim()) return;
 
     if (channel === 'speakable') record.done = true;

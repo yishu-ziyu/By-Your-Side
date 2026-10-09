@@ -279,7 +279,7 @@ export type VoiceCommand =
    * Diagnostic capture is only ever opened by an explicit request; a backend that does not confirm must not receive audio.
    * `voice` is the user's chosen timbre; it applies to the session being started.
    */
-  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona }
+  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona; /** 侧栏看到的语音模型设置原值；与宿主不一致时拒绝开启。 */ model?: string }
   | { kind: "stop" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }
@@ -394,7 +394,7 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   const c = m.command;
 
   switch (c.kind) {
-    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true) && (c.voice === undefined || typeof c.voice === "string" && c.voice.length <= 64);
+    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true) && (c.voice === undefined || typeof c.voice === "string" && c.voice.length <= 64) && (c.model === undefined || typeof c.model === "string" && c.model.length <= 64);
     case "stop": return true;
     case "audio": return turn(c.turn) && validPCM(c.data) && (c.frame === undefined || Number.isSafeInteger(c.frame) && c.frame >= 0 && c.frame <= 1_000_000);
     case "commit": return turn(c.turn)&&(c.contextPending===undefined||typeof c.contextPending==='boolean');

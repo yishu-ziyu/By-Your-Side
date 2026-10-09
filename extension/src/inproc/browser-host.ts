@@ -236,7 +236,12 @@ export function startInprocHost(deps: InprocHostDeps): void {
     }
 
     if (message.type === "voice" && message.command.kind === "start") {
-      try { resolveVoiceModel(voiceModel); }
+      try {
+        resolveVoiceModel(voiceModel);
+
+        // 侧栏与宿主看到的设置不同（刚改过还没推到这里）：不开任何连接，免得选了 GPT-Live 却连上阶跃星辰。
+        if ((message.command.model ?? null) !== (typeof voiceModel === "string" ? voiceModel : null)) throw new Error("语音模型设置刚改过，还没生效：请再开一次语音。");
+      }
       catch (error) {
         connection?.send({ type: "voice", voiceId: message.voiceId, conversationId: message.conversationId,
           event: { kind: "state", state: "error", detail: error instanceof Error ? error.message : String(error) } });
