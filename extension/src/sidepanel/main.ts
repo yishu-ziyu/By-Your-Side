@@ -60,7 +60,7 @@ import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
-import { CLAIM_BOOKKEEPING_TOOLS, CLAIM_HOLD_CAP_MS, evidenceLine, holdsClaim, mergeEvidence, readbackFailed } from "./claim-hold.js";
+import { CLAIM_BOOKKEEPING_TOOLS, CLAIM_HOLD_CAP_MS, evidenceLine, findingForUser, holdsClaim, latestReadbackFailed, mergeEvidence, readbackFailed } from "./claim-hold.js";
 import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import type { RouteStep } from "../../../shared/route.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
@@ -4216,8 +4216,8 @@ const claimHold = {
   timer: 0,
   /** 超时先放出的回答上的「结果还没确认」；之后核对判做完时摘掉。 */
   unconfirmed: null as HTMLElement | null,
-  /** 这一轮有一栏读回与要写的对不上：核对判做完也只按「结果还没确认」放出。 */
-  mismatch: false,
+  /** 每一栏最新一次读回是否对不上（后来读回一致就改回 false）：有一栏对不上，核对判做完也只按「结果还没确认」放出。 */
+  readbacks: new Map<string, boolean>(),
   /** 这一轮的扣住已有结局（结论、超时或不核对）：之后到的正文和交付马上显示，不再扣。 */
   settled: false,
   /** 超时或读回对不上而放出时还没有回答：之后到的第一条回答补标「结果还没确认」。 */
@@ -4227,7 +4227,7 @@ const claimHold = {
 function resetClaimHold(): void {
   window.clearTimeout(claimHold.timer);
   claimHold.indicator?.remove();
-  Object.assign(claimHold, { wrote: false, checking: false, waiting: false, releasing: false, text: "", events: [], run: null, indicator: null, timer: 0, unconfirmed: null, mismatch: false, settled: false, tagNext: false });
+  Object.assign(claimHold, { wrote: false, checking: false, waiting: false, releasing: false, text: "", events: [], run: null, indicator: null, timer: 0, unconfirmed: null, readbacks: new Map<string, boolean>(), settled: false, tagNext: false });
 }
 
 function holdingSomething(): boolean {
@@ -4333,8 +4333,7 @@ function correctHeldClaim(ev: Extract<AgentUiEvent, { kind: "goal_check" }>): vo
   narrateIntoRun(claimHold.run, claimHold.text || heldDeliveryText());
   claimHold.text = "";
   claimHold.events = [];
-  const found = (ev.correction || ev.remaining || "还没做完").trim().replace(/[。.]$/, "");
-  addMsg("msg claim-fix", `核对发现：${found}。正在改…`);
+  addMsg("msg claim-fix", `核对发现：${findingForUser(ev.correction, ev.remaining)}。正在改…`);
 }
 
 /** 返回 true 表示这个事件先扣住，不往下渲染。 */
@@ -4362,7 +4361,7 @@ function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | n
 
       return false;
     case "tool_end":
-      if (ev.readback && !ev.isError && readbackFailed(ev.readback)) claimHold.mismatch = true;
+      if (ev.readback && !ev.isError) claimHold.readbacks.set(ev.readback.name || "这一栏", readbackFailed(ev.readback));
 
       return false;
     case "text_delta":
@@ -4400,9 +4399,9 @@ function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | n
 
       if (claimHold.waiting) {
         if (ev.status === "continue") correctHeldClaim(ev);
-        // 代码核对只能把「做完」改成「没确认」：读回对不上时，模型核对判做完也标「结果还没确认」。
-        else releaseHeldClaim(ev.status === "done" && claimHold.mismatch);
-      } else if (ev.status === "done" && !claimHold.mismatch) {
+        // 没结论（open、unavailable）和读回对不上都不能当成已确认；代码核对只能把「做完」改成「没确认」。
+        else releaseHeldClaim(ev.status === "open" || ev.status === "unavailable" || latestReadbackFailed(claimHold.readbacks));
+      } else if (ev.status === "done" && !latestReadbackFailed(claimHold.readbacks)) {
         claimHold.unconfirmed?.remove();
         claimHold.unconfirmed = null;
         claimHold.tagNext = false;

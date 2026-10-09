@@ -14,6 +14,10 @@
  *   h) 填完不写回答，宿主在整轮结束后补交「做成了 1 步」（核对扣 1.5 秒）：补交的回答出现，下一轮开始后仍在。
  *   i) 核对扣 3 秒期间用户发新消息：上一轮的回答排在新消息之前，不在新问题下面。
  *   j) a 续做之后的顺序：「Note」读回 < 「核对发现」 < 第二次读回 < 最终回答（「核对发现」属于第一轮）。
+ *   k) 第一次填写读回为空（网页第一次输入清空），模型读页后重填成功，核对判完成：回答不标「结果还没确认」（只看每栏最新一次读回）。
+ *   l) 回答自己说「还没完成」，核对判完成被改成 open：回答标「结果还没确认」。
+ *   m) 目标核对请求快速返回 HTTP 500（没结论 unavailable）：回答标「结果还没确认」。
+ *   n) a 的「核对发现」只有诊断：不含「请将」「请把」，含「Note」。
  * 失败方式：去掉侧栏的扣住，a 的那句话在核对结论前出现（反例结果见验收文件）。
  */
 import assert from "node:assert/strict";
@@ -38,6 +42,8 @@ const DRAFT = `<h2>我的草稿</h2><textarea id="draft" rows="4" cols="60" aria
 const site = createServer((req, res) => {
   const body = req.url === "/upper"
     ? page("大写草稿", `<main>${DRAFT}<script>document.getElementById("draft").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase(); });</script></main>`)
+    : req.url === "/once"
+    ? page("第一次留不住的草稿", `<main>${DRAFT}<script>let cleared = false; document.getElementById("draft").addEventListener("input", e => { if (!cleared) { cleared = true; e.target.value = ""; } });</script></main>`)
     : req.url === "/strip"
     ? page("留不住的草稿", `<main>${DRAFT}<script>document.getElementById("draft").addEventListener("input", e => { e.target.value = ""; });</script></main>`)
     : page("System One 与草稿", `<main><h1>System One</h1><div style="background:#e8f0ff;border:1px solid #6b8cff;padding:12px"><div><strong>Note</strong></div><p>${NOTE_FIRST} Image input is planned for a later release.</p></div>${DRAFT}</main>`);
@@ -61,12 +67,16 @@ const CASES = {
   // h 的回答由宿主补交：模型没写回答，宿主按账本说「做成了 1 步」（conversation-manager 的兜底交付）。
   h: { ask: "案例H：在草稿框里写 late answer，不要保存。", claim: "做成了 1 步", path: "/note" },
   i: { ask: "案例I：在草稿框里写 hold me，不要保存。", claim: "草稿已写好 I。", path: "/note" },
+  k: { ask: "案例K：在草稿框里写 second try K，不要保存。", claim: "草稿已写好 K。", path: "/once" },
+  l: { ask: "案例L：在草稿框里写 open L，不要保存。", claim: "草稿已写好 L，不过还没完成检查。", path: "/note" },
+  m: { ask: "案例M：在草稿框里写 broken check M，不要保存。", claim: "草稿已写好 M。", path: "/note" },
   i2: { ask: "案例I2：顺便问一句，今天适合写草稿吗？", claim: "I2 的回答：适合。", path: "/note" },
 };
 
 const FIXED = "已把第一句英文填入草稿框，没有保存。";
 
-const CORRECTION = "「Note」是框的标题，不是第一句";
+/** 核对写给助手的话：诊断在前，指令在后。侧栏只该给用户看诊断。 */
+const CORRECTION = "草稿框当前内容是“Note”，不是 Note 框英文原文的第一句。请将其替换为“Jev currently accepts text input only.”，不要保存。";
 
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
 
@@ -86,6 +96,9 @@ const model = await startScriptedModel([
   { match: CASES.i2.ask, steps: [{ text: CASES.i2.claim }] },
   { match: CASES.i.ask, steps: [fill("hold me"), { text: CASES.i.claim }] },
   { match: CASES.g.ask, steps: [{ tool: { name: "browser_run", args: { label: "写草稿", code: 'return await browser.fill({ target: "#draft", value: "from program" });' } } }, { text: CASES.g.claim }] },
+  { match: CASES.k.ask, steps: [fill("second try K"), { tool: { name: "snapshot", args: {} } }, fill("second try K"), { text: CASES.k.claim }] },
+  { match: CASES.l.ask, steps: [fill("open L"), { text: CASES.l.claim }] },
+  { match: CASES.m.ask, steps: [fill("broken check M"), { text: CASES.m.claim }] },
   { match: "VERDICT-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION }) }] },
   { match: "VERDICT-DONE", steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
 ], undefined, payload => {
@@ -97,7 +110,7 @@ const model = await startScriptedModel([
 });
 
 /** 接下来的目标核对依次怎么回：扣多久、什么结论。没排上的马上判完成。 */
-const verdicts: Array<{ holdMs: number; probe: "VERDICT-CONTINUE" | "VERDICT-DONE" }> = [];
+const verdicts: Array<{ holdMs: number; probe: "VERDICT-CONTINUE" | "VERDICT-DONE" | "HTTP-500" }> = [];
 
 const checks: Array<{ probe: string; receivedAt: number; releasedAt: number }> = [];
 
@@ -111,6 +124,15 @@ const proxy = createServer(async (req, res) => {
     const receivedAt = Date.now();
     const next = verdicts.shift() ?? { holdMs: 0, probe: "VERDICT-DONE" as const };
     await sleep(next.holdMs);
+
+    // 没结论：核对请求马上回 500（unavailable）。
+    if (next.probe === "HTTP-500") {
+      checks.push({ probe: next.probe, receivedAt, releasedAt: Date.now() });
+      res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "scripted failure" } }));
+
+      return;
+    }
+
     // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as Record<string, unknown>;
     forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: next.probe }] });
@@ -248,7 +270,9 @@ try {
   assert.equal(caseA.claimEverOutsideProcess, false, "a: after the continue verdict the claim is only inside the collapsed process section");
   assert.ok(caseA.checkingFirstMs !== null && caseA.checkingFirstMs < releaseMs, `a: 「正在核对结果」 visible during the hold (${caseA.checkingFirstMs} ms)`);
   assert.ok(caseA.fixFirstMs !== null && caseA.fixFirstMs >= releaseMs, `a: 「核对发现」 visible after the verdict (${caseA.fixFirstMs} ms)`);
-  assert.ok(caseA.fixText.some(t => t.includes(CORRECTION)), `a: the fix line carries the checker's correction: ${JSON.stringify(caseA.fixText)}`);
+  // n) 只给用户看诊断：不带写给助手的指令。
+  assert.ok(caseA.fixText.some(t => t.startsWith("核对发现") && t.includes("Note")), `n: the fix line carries the diagnosis: ${JSON.stringify(caseA.fixText)}`);
+  assert.ok(caseA.fixText.every(t => !t.includes("请将") && !t.includes("请把")), `n: the fix line has no instruction to the assistant: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.noteEvidenceFirstMs !== null, "a: 「草稿现在是：「Note」」 visible");
   assert.ok(caseA.finalEvidence.includes(`草稿现在是：「${NOTE_FIRST}」`), `a: final evidence shows the right sentence: ${JSON.stringify(caseA.finalEvidence)}`);
   // d) R4：只填写、没失败、没说数、没要求保存，第一轮没有「核对」一行。
@@ -390,6 +414,41 @@ try {
   const hAfter = await turnAnswers(CASES.h.ask);
   (evidence.h as Record<string, unknown>).answersAfterNextRuns = hAfter;
   assert.ok(hAfter.some(a => a.text.includes(CASES.h.claim)), `h: the host's late answer survives the next run: ${JSON.stringify(hAfter)}`);
+
+  /** 跑一个用例到回答出现，等 0.5 秒后读最终的标签。 */
+  async function finalTag(key: "k" | "l" | "m") {
+    const r = await runCase(key, s => s.answers.some(t => t.includes(CASES[key].claim)), { final: s => s.answers.some(t => t.includes(CASES[key].claim)) }, 30_000);
+    await sleep(500);
+    const end = await rp.evaluate(panel, SAMPLE_JS(CASES[key].claim)) as Omit<Sample, "t">;
+    // 标签只看紧跟这条回答的那个：前面用例留下的标签不算。
+    end.unconfirmed = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(CASES[key].claim)})).at(-1)?.nextElementSibling?.classList.contains("claim-unconfirmed") ?? false`) as boolean;
+    await rp.screenshot(panel, join(artifacts, `${key}-final.png`));
+
+    return { r, end };
+  }
+
+  // k) 第一次读回为空，模型读页后重填成功，核对判完成：最新读回一致，不标。
+  const checksBeforeK = checks.length;
+  const k = await finalTag("k");
+  const receiptsK = [...toolTexts].filter(t => t.includes("second try K"));
+  evidence.k = { evidence: k.end.evidence, unconfirmed: k.end.unconfirmed, verdict: checks[checksBeforeK]?.probe ?? null, receipts: receiptsK };
+  assert.equal(checks[checksBeforeK]?.probe, "VERDICT-DONE", "k: the scripted goal check said done");
+  assert.ok(k.end.evidence.includes("草稿现在是：「second try K」"), `k: the latest readback is the refilled value: ${JSON.stringify(k.end.evidence)}`);
+  assert.equal(k.end.unconfirmed, false, "k: latest readback matches and verdict is done, so no 「结果还没确认」 tag");
+
+  // l) 回答说还没完成而核对判完成：宿主改成 open，回答标「结果还没确认」。
+  const l = await finalTag("l");
+  evidence.l = { unconfirmed: l.end.unconfirmed, evidence: l.end.evidence };
+  assert.equal(l.end.unconfirmed, true, "l: verdict open leaves the answer tagged 「结果还没确认」");
+
+  // m) 核对请求马上失败（HTTP 500，没结论）：回答标「结果还没确认」。
+  verdicts.push({ holdMs: 0, probe: "HTTP-500" });
+  const checksBeforeM = checks.length;
+  const m = await finalTag("m");
+  evidence.m = { unconfirmed: m.end.unconfirmed, verdict: checks[checksBeforeM]?.probe ?? null, finalAnswerMs: m.r.samples.at(-1)!.t };
+  assert.equal(checks[checksBeforeM]?.probe, "HTTP-500", "m: the goal check request failed with HTTP 500");
+  assert.ok(m.r.samples.at(-1)!.t < 6_000, `m: the unavailable verdict released the answer before the 6 s cap (${m.r.samples.at(-1)!.t} ms)`);
+  assert.equal(m.end.unconfirmed, true, "m: verdict unavailable leaves the answer tagged 「结果还没确认」");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {

@@ -40,3 +40,21 @@ export function readbackFailed(readback: FieldReadback): boolean {
 export function mergeEvidence(lines: ReadonlyArray<{ field: string; value: string }>, next: { field: string; value: string }): Array<{ field: string; value: string }> {
   return [...lines.filter(line => line.field !== next.field), next].slice(-EVIDENCE_LINES);
 }
+
+/** 一栏读回的最新结果：同一栏后来读回一致，之前的对不上就不再算。key 是栏的显示名。 */
+export function latestReadbackFailed(latest: ReadonlyMap<string, boolean>): boolean {
+  return [...latest.values()].some(Boolean);
+}
+
+/** 核对说的话是写给助手的，带指令（请…、应…、Please…）。用户只看诊断部分：去掉指令句，最多两句，约 120 字。 */
+const FINDING_CLIP = 120;
+
+export function findingForUser(correction: string | undefined, remaining: string | undefined): string {
+  const sentences = (correction ?? "").split(/(?<=[。！？!?\n])|\.\s+(?=[A-Z])/).map(part => part.replace(/\s+/g, " ").trim().replace(/[。.!?！？]+$/, "")).filter(Boolean);
+  const diagnosis = sentences.filter(sentence => !/^(请|应|需要|要|please\b|you should\b)/i.test(sentence) && !/请将|请把/.test(sentence)).slice(0, 2).join("。");
+
+  if (diagnosis) return diagnosis.length > FINDING_CLIP ? `${diagnosis.slice(0, FINDING_CLIP)}…` : diagnosis;
+  const left = (remaining ?? "").trim().replace(/[。.]$/, "");
+
+  return left ? `还差：${left}` : "还没做完";
+}
