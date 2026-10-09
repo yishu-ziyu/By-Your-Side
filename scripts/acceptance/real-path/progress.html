@@ -1,0 +1,53 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>测试进度</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#faf9f6;--fg:#1f1e1c;--mute:#8a877f;--ok:#2f9e44;--bad:#e03131;--run:#f08c00;--line:#e7e4dc}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1b19;--fg:#ecebe6;--mute:#9a978f;--line:#34322e}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"PingFang SC",sans-serif;padding:20px 16px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mute);margin-bottom:16px}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-bottom:18px}.bar i{display:block;height:100%;background:var(--ok);transition:width .4s}
+.row{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.dot{width:22px;flex:none;text-align:center;font-weight:700}
+.t{flex:1}.t b{display:block;font-weight:600}.t span{color:var(--mute);font-size:13px}
+.s{flex:none;font-size:13px;color:var(--mute)}
+.ok .dot{color:var(--ok)}.bad .dot{color:var(--bad)}.run .dot{color:var(--run)}.run{background:color-mix(in srgb,var(--run) 10%,transparent)}
+.wait{opacity:.55}
+</style></head><body>
+<h1 id="title">合并前测试</h1><div class="sub" id="sub">读取中…</div><div class="bar"><i id="bar" style="width:0"></i></div><div id="list"></div>
+<script>
+const D={
+"claim-after-check":["改了网页后，先核对再说做完","填错了要改正，不能先说「做好了」"],
+"error-recovery":["出错后能接着做","模型报错时侧栏说清原因，不卡死"],
+"memory-used-line":["回答下面只点名有关的记忆","问邮箱才点名邮箱，问无关的话不出现"],
+"model-failover":["主模型坏了换备用模型","卡住、503 时换备用；401、额度用尽不换"],
+"pay-stop":["付款按钮由你自己点","助手点付款被拦下，网站收不到付款"],
+"pdf-download":["下载 PDF","点下载后文件真的下载下来"],
+"readback-privacy":["填写后显示实际内容，但不露密码","密码、卡号这类栏不显示内容"],
+"refill-after-check":["核对发现填错后能重填","重填一次，不反复乱填"],
+"run-check":["跑完后程序核对条数和失败","回答里的数字要和真实文件对得上"],
+"script-friction":["网页脚本程序能正常用","助手用脚本操作网页不出错"],
+"send-confirm":["点「发送」前先问你","你点「不发」就不发，草稿留着"],
+"session-durability":["会话不丢","关掉重开侧栏，对话还在"],
+"sidebar-interaction":["侧栏基本操作","输入、停止、新会话等按钮正常"],
+"submit-check":["提交前核对值","说「下周四」填错日期会被拦下"],
+"target-gone":["要点的东西不见了","页面变了时如实说明，不乱点"],
+"welcome-context":["欢迎页按当前网页给起点","点一下只填进输入框，不直接发"]};
+const q=new URLSearchParams(location.search);const log=q.get("log")||"/out/acceptance/test-run.log";
+document.getElementById("title").textContent=q.get("title")||"合并前测试";
+async function tick(){
+ let txt="";try{txt=await (await fetch(log+"?t="+Date.now())).text()}catch{}
+ const st={},tm={};let cur=null;
+ for(const l of txt.split("\n")){let m;
+  if(m=l.match(/^▶ (\S+)/)){cur=m[1];st[cur]="run"}
+  else if(m=l.match(/^✔ (\S+) \((\d+)s\)/)){st[m[1]]="ok";tm[m[1]]=m[2];cur=null}
+  else if(m=l.match(/^✖ (\S+)(?: \((\d+)s\))?/)){st[m[1]]="bad";tm[m[1]]=m[2]||"";cur=null}}
+ const names=Object.keys(D);for(const n of Object.keys(st))if(!D[n])names.push(n);
+ const done=names.filter(n=>st[n]==="ok"||st[n]==="bad").length,bad=names.filter(n=>st[n]==="bad").length;
+ document.getElementById("bar").style.width=(done/names.length*100)+"%";
+ const finished=/test exit=|运行结束|\d+\/\d+ pass/.test(txt)&&!cur;
+ document.getElementById("sub").textContent=`已完成 ${done}/${names.length}，失败 ${bad}`+(cur?`　正在测：${(D[cur]||[cur])[0]}`:finished?"　全部跑完":"");
+ document.getElementById("list").innerHTML=names.map(n=>{const s=st[n]||"wait";const d=D[n]||[n,""];
+  return `<div class="row ${s}"><div class="dot">${{ok:"✓",bad:"✗",run:"…",wait:"·"}[s]}</div><div class="t"><b>${d[0]}</b><span>${d[1]}</span></div><div class="s">${s==="ok"||s==="bad"?(tm[n]?tm[n]+" 秒":""):s==="run"?"正在测":"等待"}</div></div>`}).join("");
+}
+tick();setInterval(tick,2000);
+</script></body></html>
