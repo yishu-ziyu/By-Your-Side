@@ -18,7 +18,7 @@
 | 记忆 | 纠正后侧栏问「要我记住吗」，用户点「记住」后在该网站照做；回执写出新值和旧值，可撤销；回答下面写明用了哪几条记忆 | 已进日常构建，待真人试用；做法只作为上下文，执行和检索还要加强 | [纠正](evals/20261001-remember-corrections.md) · [加固](evals/20261001-memory-hardening.md) |
 | 网页操作 | 点击、填写、回车直接执行，不弹批准卡；下载完成或中断都如实回报；取到的数据可直接存成侧栏文件；原地打转时自己停下并说明 | 失败时会露出 Chrome 错误码；主模型出错后换快速模型这条路，没有在真故障下验证过 | [去掉批准卡](evals/20261004-remove-approvals.md) · [数据存文件](evals/20261001-data-to-file.md) |
 | 下载结果 | 点击引起的下载写进点击回执，所以助手做对后不再重复导出（10-08 合并） | 助手读不到已下载文件的内容，所以只有 20 条时仍可能说「全部完成」；要产品决定 | [验收](evals/20261008-download-result.md) |
-| 语音 | 插话后约 0.25 秒停声；连接前说的第一句话，连好后自动处理；免按键套餐可选（10-08 合并） | StepFun 傍晚常挂住；外放回声和真人听感没验 | [插话](evals/20260925-voice-barge-in.md) · [套餐](evals/20261008-voice-plan.md) · [首句](evals/20261008-voice-first-utterance.md) |
+| 语音 | 插话后约 0.25 秒停声；连接前说的第一句话，连好后自动处理；免按键套餐可选（10-08 合并）；免按键可选 GPT-Live，用 ChatGPT 登录，闲聊直接答，要动手交给助手（10-09 合并） | StepFun 傍晚常挂住；外放回声和真人听感没验；GPT-Live 连接前说的话会丢 | [插话](evals/20260925-voice-barge-in.md) · [套餐](evals/20261008-voice-plan.md) · [首句](evals/20261008-voice-first-utterance.md) · [GPT-Live](evals/20261009-gpt-live-voice.md) |
 | 模型思考档与后台判断 | 后台判断用模型允许的最低档；主任务从中档开始，失败、打转、没做完或被用户纠正时升档 | 扩展里选 M3.1 对话待真人试；MiniMax-M3 的目标核对正确率 4/9 | [验收](evals/20261001-model-effort-and-side-judgments.md) · [说明](model-effort.md) |
 | 结果未知 | 一步的结果未知时，只拦会改动页面的操作，读页和导航照常；查不清时，任务宿主说明后停下 | 只读脚本超时仍记为结果未知 | [规则](unknown-results.md) |
 | 跑完后的核对 | 任务跑完后，程序核对失败是否说了、条数是否一致、要求保存时是否多了文件，结果写在过程折叠区（10-08 合并） | 回复里的错数仍会显示，核对只记一笔 | [验收](evals/20261008-check-assert-referee.md) |
@@ -43,7 +43,7 @@
 2. 决定助手要不要读已下载文件的内容：涉及文件访问权限，所以需要产品决定。
 3. 主动卡「动词即按钮」用真实模型试用（[验收](evals/20261007-proactive-card-verb.md)）。
 4. 提速：会动手的日常任务大部分时间在等模型（[时间拆分](evals/20261007-time-breakdown.md)）。
-5. 边说边做（YIS-134）：GPT-Live 用 ChatGPT 登录可用（[实验](research/20261009-gpt-live-chatgpt-login.md)）；按文字圈（YIS-135）已合并；目标核对（YIS-136）已能催换说法、不再催死按钮，但查维基仍 0/5，因为主模型想不到只差一个字的词条名（[验收](evals/20261009-goal-check-rephrase.md)）（[底子](evals/20261009-voice-ideas-baseline.md)）。
+5. 边说边做（YIS-134）：GPT-Live 语音已接入，待真人在日常扩展里试听；按文字圈（YIS-135）已合并；目标核对（YIS-136）已能催换说法、不再催死按钮，但查维基仍 0/5，因为主模型想不到只差一个字的词条名（[验收](evals/20261009-goal-check-rephrase.md)）（[底子](evals/20261009-voice-ideas-baseline.md)）。
 
 进展同步在 [Linear](development/collaboration.md#给用户看的进展linear)。默认测试模型是 gpt-6-luna。
 

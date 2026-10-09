@@ -1,10 +1,11 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, useMemoryHabits, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, GptLiveSession, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, useMemoryHabits, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { SessionLogPort } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { describeModelError } from "../../../shared/user-facing.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import { PROBE_TIMEOUT_MS, probeModel, type createModelRuntime, type ModelRuntime } from "./model-runtime.js";
+import { GPT_LIVE_MODEL } from "../../../shared/voice.js";
 import { INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, resolveVoiceModel, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
@@ -95,12 +96,18 @@ export function startInprocHost(deps: InprocHostDeps): void {
         });
       },
       voiceKey: async () => {
+        // GPT-Live 不用阶跃星辰的 key：每次开启都取一次 ChatGPT 登录令牌（快过期时 pi-ai 刷新并经 background 写回）。
+        // 没登录就报原因，不退回别的语音。
+        if (resolveVoiceModel(voiceModel) === GPT_LIVE_MODEL) return chatgptAccess();
+
         if (!voiceConfigured) throw new Error("还没有语音 key：打开右上角「更多 → 模型与语音」，在「实时语音」里填阶跃星辰的 key。");
 
         return "injected-by-extension";
       },
       voiceSession: voiceDeps => {
         const model = resolveVoiceModel(voiceModel);
+
+        if (model === GPT_LIVE_MODEL) return new GptLiveSession(voiceDeps);
 
         return new RealtimeVoiceSession({
           ...voiceDeps,
@@ -133,6 +140,18 @@ export function startInprocHost(deps: InprocHostDeps): void {
     }).finally(() => { pendingCore = null; });
 
     return pendingCore;
+  }
+
+  /** 只认 ChatGPT 登录（OAuth）凭据；存的是 key 或取令牌失败，都当没登录。 */
+  async function chatgptAccess(): Promise<string> {
+    const missing = "GPT-Live 要先在设置里用 ChatGPT 登录：打开右上角「更多 → 模型与语音」登录后再开启语音。";
+
+    if ((await models.credentials.read("openai-codex"))?.type !== "oauth") throw new Error(missing);
+    const access = await models.models.getAuth("openai-codex").then(result => result?.auth.apiKey, () => undefined);
+
+    if (!access) throw new Error(missing);
+
+    return access;
   }
 
   function sendUnavailable(message: ClientMessage): void {
@@ -217,7 +236,15 @@ export function startInprocHost(deps: InprocHostDeps): void {
     }
 
     if (message.type === "voice" && message.command.kind === "start") {
-      try { resolveVoiceModel(voiceModel); }
+      try {
+        resolveVoiceModel(voiceModel);
+
+        // 侧栏与宿主看到的设置不同（刚改过还没推到这里）：不开任何连接，免得选了 GPT-Live 却连上阶跃星辰。
+        if ((message.command.model ?? null) !== (typeof voiceModel === "string" ? voiceModel : null)) throw new Error("语音模型设置刚改过，还没生效：请再开一次语音。");
+
+        // 诊断录音只走阶跃星辰的音频帧；GPT-Live 的声音不经过扩展，没有可录的东西。
+        if (message.command.diagnostic && voiceModel === GPT_LIVE_MODEL) throw new Error("GPT-Live 不支持诊断录音：先在「模型与语音」换回阶跃星辰语音。");
+      }
       catch (error) {
         connection?.send({ type: "voice", voiceId: message.voiceId, conversationId: message.conversationId,
           event: { kind: "state", state: "error", detail: error instanceof Error ? error.message : String(error) } });

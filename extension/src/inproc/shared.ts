@@ -1,4 +1,6 @@
 /** 扩展内 agent 实验：background 与 offscreen 文档共用的常量，单独成文件，避免把 agent 打进 background。 */
+import { GPT_LIVE_MODEL } from "../../../shared/voice.js";
+
 export const INPROC_PORT_NAME = "inproc-host";
 
 export const INPROC_CONFIG_KEY = "inproc_model_config";
@@ -20,13 +22,13 @@ export const INPROC_VOICE_KEY = "inproc_voice_key";
 /** 下一次开启实时语音使用的模型；缺项沿用原有按量 Realtime 3。 */
 export const INPROC_VOICE_MODEL_KEY = "inproc_voice_model";
 
-export type InprocVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime";
+export type InprocVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL;
 
 /** 只给缺项默认值；坏的持久值不能静默切到按量语音。 */
 export function resolveVoiceModel(value: unknown): InprocVoiceModel {
   if (value === undefined) return "stepaudio-3-realtime-preview";
 
-  if (value === "stepaudio-3-realtime-preview" || value === "stepaudio-2.5-realtime") return value;
+  if (value === "stepaudio-3-realtime-preview" || value === "stepaudio-2.5-realtime" || value === GPT_LIVE_MODEL) return value;
   throw new Error("语音模型设置无效，请在「模型与语音」重新选择后再开启。");
 }
 

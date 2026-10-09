@@ -40,6 +40,21 @@ type Input = {
   ready: boolean;
 };
 
+/**
+ * 交付给用户的结果怎么念：还没确认完的结果可能带着过度自信的完成说法，
+ * 这时只念宿主自己的未完成状态，详情留在侧栏；不丢事实，也不让另一个模型把这段话说得更满。
+ */
+export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' | 'facts'>, owner: TaskProgressSnapshot | null | undefined, currentConversationId: string | undefined): string {
+  const remaining = delivery.facts ? delivery.facts.remaining.length + (delivery.facts.omittedRemaining ?? 0) : 0;
+  const task = owner && owner.conversationId !== currentConversationId ? `「${owner.goal?.slice(0, 40) ?? '另一项任务'}」` : '这项任务';
+
+  if (delivery.kind === 'finding' && delivery.facts && delivery.facts.outcome !== 'complete') {
+    return remaining ? `${task}还有 ${remaining} 项结果没完成或还没确认，具体内容在侧栏。` : `${task}的结果还没确认，具体内容在侧栏。`;
+  }
+
+  return delivery.text;
+}
+
 /** Adapts native sidepanel protocol to the same continuous Realtime 3 connection used in the trial. */
 export class RealtimeVoiceSession {
   private connection: RealtimeVoiceConnection | null = null;
@@ -450,23 +465,7 @@ export class RealtimeVoiceSession {
     }
 
     this.notices.add(delivery.id);
-    // Partial/old unverified prose may contain an overconfident completion claim.
-    // Speak the host's unresolved state instead; keep the detailed report in the
-    // sidepanel. Never drop facts and let another model upgrade that prose.
-    const remaining = delivery.facts ? delivery.facts.remaining.length + (delivery.facts.omittedRemaining ?? 0) : 0;
-    const owner = this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' });
-    const task = owner && owner.conversationId !== this.deps.getSnapshot()?.conversationId ? `「${owner.goal?.slice(0, 40) ?? '另一项任务'}」` : '这项任务';
-    let text: string;
-
-    if (delivery.kind === 'finding' && delivery.facts && delivery.facts.outcome !== 'complete') {
-      if (remaining) {
-        text = `${task}还有 ${remaining} 项结果没完成或还没确认，具体内容在侧栏。`;
-      } else {
-        text = `${task}的结果还没确认，具体内容在侧栏。`;
-      }
-    } else {
-      text = delivery.text;
-    }
+    const text = spokenDeliveryText(delivery, this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' }), this.deps.getSnapshot()?.conversationId);
 
     this.connection?.notifyTask(text, delivery.id, () => {
       const current = this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' }) ?? this.deps.getSnapshot();

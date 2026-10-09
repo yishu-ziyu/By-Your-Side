@@ -9,6 +9,8 @@ export { createConversationRuntime } from "./conversation-runtime.js";
 
 export { RealtimeVoiceSession } from "./realtime-voice-session.js";
 
+export { GptLiveSession } from "./gpt-live-session.js";
+
 export { MODEL as REALTIME_VOICE_MODEL } from "./realtime-voice-connection.js";
 
 export { MemoryStore } from "./memory-store.js";
