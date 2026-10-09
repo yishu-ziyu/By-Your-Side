@@ -41,6 +41,7 @@
   `ghost-hud-and-steering` 不覆盖真实 YouTube/Bilibili 页面，也不覆盖供应商模型的改写质量。
 - **原生弹窗**：`dialog-recovery` 只核对原生 confirm/prompt 与恢复，不是供应商模型整链路。
 - **语音设置**：`voice-plan-settings` 只验设置的保存与拒绝，不是音频验收。
+- **GPT-Live 语音**：`gpt-live-voice` 用真实 GPT-Live 和 ChatGPT 登录，会用掉用户 ChatGPT 套餐的语音额度；声音来自合成语音，不代替真人试听。
 
 ## 当前缺口
 
