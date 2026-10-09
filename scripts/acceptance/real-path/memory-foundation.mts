@@ -588,8 +588,9 @@ async function d10(): Promise<Verdict> {
   let usable: JsonRecord = { skipped: "需要脚本模型看请求" };
 
   if (model) {
-    // 在酒店站说话：三条「所有网站」资料 + 酒店站自己的一条都应带给助手；过往任务里酒店站的也应出现。
-    const t = await turn("帮我看看这页");
+    // 在酒店站说话：三条「所有网站」资料 + 酒店站自己的一条都应带给助手；过往任务里酒店站的、和这句话对得上的（订单状态）也应出现。
+    // 10-10 起同一网站的过往任务要和这句话对得上才带（docs/evals/20261010-panel-tidy.md）。
+    const t = await turn("帮我看看这页的订单状态");
     const ctx = t.chat[0]?.context ?? "";
 
     usable = {

@@ -16,10 +16,10 @@ requireHeadless();
 const code=randomUUID(), csv=`代号,数量\n${code},7\n`, requests: Array<{messages?: unknown[];tools?: unknown[]}> = [];
 
 const model=await startScriptedModel([
- {match:'保存恢复材料',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'resume.csv',content:csv}}},{tool:{name:'screenshot',args:{forUser:true}}},{text:'材料已保存。'}]},
+ {match:'保存恢复材料',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'resume.csv',content:csv,deliver:true}}},{tool:{name:'screenshot',args:{forUser:true}}},{text:'材料已保存。'}]},
  {match:'恢复核对',steps:[{tool:{name:'artifacts',args:{command:'get',filename:'resume.csv'}}},{text:'恢复核对完毕。'}]},
  {match:'防重复验收',steps:[{tool:{name:'browser_run',args:{code:"return await browser.js({code: `fetch('/commit',{method:'POST'}).then(r=>r.text())`});"}}},{text:'防重复核对结束。'}]},
- {match:'保存故障验收',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'failure.csv',content:'item,count\nA,1\n'}}},{text:'存储故障已核对。'}]},
+ {match:'保存故障验收',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'failure.csv',content:'item,count\nA,1\n',deliver:true}}},{text:'存储故障已核对。'}]},
  {match:'删除恢复文件',steps:[{tool:{name:'artifacts',args:{command:'delete',filename:'resume.csv'}}},{text:'已删除恢复文件。'}]},
 ],undefined,p=>requests.push(p));
 

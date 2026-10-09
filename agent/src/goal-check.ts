@@ -75,6 +75,20 @@ export function claimsUnfinished(reply: string): boolean {
   return /还没(能|有)?(完成|点|收到|送达|到|确认|提交)|没能|未能|尚未(完成|收到|送达|确认)|没有(完成|收到|送达)|not (yet )?(done|finished|arrived|received|confirmed)|couldn'?t|could not|has(n'?t| not) arrived/i.test(reply);
 }
 
+/**
+ * 宿主催过续做之后，助手又说做不成（交付标了部分完成，或回答自己说没做成），而且网页和催之前一样：不再催。
+ * 10-09 空白画板上连催 5 次，侧栏留下 4 段几乎一样的「没能完成…」（docs/evals/20261010-panel-tidy.md）。
+ * 网页变没变只看宿主前后两次读到的地址和网页文字，不听模型的说法；读不到网页、还没催过、在问用户时都不算。
+ */
+export function gaveUpWithoutChange(input: { reply: string; partial: boolean; pageAtNudge: string | null; pageNow: string | null }): boolean {
+  // 读页结果里的元素编号（[ref=12]）不算网页内容：同一张网页两次读到的编号可能不同。
+  const content = (page: string | null) => page?.replace(/\[ref=[^\]]*\]\s?/g, "") ?? null;
+
+  if (!input.pageNow || content(input.pageAtNudge) !== content(input.pageNow) || asksUser(input.reply)) return false;
+
+  return input.partial || claimsUnfinished(input.reply);
+}
+
 /** 助手的回答说页面上的按钮不起作用。 */
 function claimsDeadControl(reply: string): boolean {
   return /没(有)?反应|不起作用|没(能)?(存上|生效|保存成功|翻)|保存失败|翻不过去|无法翻页|(无法|不能|没能)确认|没有.{0,8}(成功|变化|迹象)|仍(然)?(显示|是|停在)|点了.{0,6}(没用|无效)|did(n'?t| not) (work|respond|do anything|change)|no effect|nothing happened|still (shows|on)/i.test(reply);

@@ -57,7 +57,7 @@ const model = await startScriptedModel([{ match: MARK, steps: [
   // 这一步的模型回复压住 4 秒，驱动在此期间刷新页面：js 发出时页面已不是 snapshot 那份文档。
   { tool: { name: "js", args: { code: READ } }, delayMs: 4000 },
   { tool: { name: "click", args: { target: "#ack" } } },
-  { tool: { name: "js", args: { code: READ, saveAs: "page-data.txt" } } },
+  { tool: { name: "js", args: { code: READ, saveAs: "page-data.txt", deliver: true } } },
   { text: `【${MARK}结束】` },
 ] }], undefined, payload => {
   // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
@@ -107,8 +107,8 @@ try {
   assert.ok(!receipts.some(r => /页面文档已变化|STALE_DOCUMENT/.test(r)), "no stale-document refusal after reload");
   assert.ok(receipts[2]?.includes(`第${versionAtSnapshot + 1}版 第1行`), "js read the reloaded page");
   assert.equal(acks, 1, "CSS click on the reloaded page reached the site");
-  // R4：saveAs 的回执只有文件名、字数、行数；正文没回到模型。
-  assert.equal(receipts[4], JSON.stringify({ filename: "page-data.txt", chars: expected.length, lines: 120 }));
+  // R4：saveAs 的回执只有文件名、字数、行数和有没有卡片；正文没回到模型。
+  assert.equal(receipts[4], JSON.stringify({ filename: "page-data.txt", chars: expected.length, lines: 120, shown: true }));
 
   // 侧栏卡片：像用户一样点「下载」，文件内容与页面数据逐字相同。
   const dir = join(rp.dirs.downloads, "card");
