@@ -2,6 +2,7 @@
  * GPT-Live 免按键语音（docs/evals/20261009-gpt-live-voice.md）：真实隔离扩展 + 真实 GPT-Live + 真实主模型（ChatGPT 登录）。
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless                     # 闲聊、查维基、重复委派、插话
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=no-login     # 没用 ChatGPT 登录：说明原因、不连接
+ *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=api-key      # 存的是 API key 而不是登录：同上
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=barge-result # 播报任务结果时插话
  *   加 --extra-fact：回传时多加一个假事实，播报核对必须失败（反证）
  * 麦克风是设备静音与脚本放音混合的一路流：脚本何时放音就是「用户何时开口」，插话能放在播报中途。
@@ -16,10 +17,10 @@ import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, si
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
-const noLogin = process.argv.includes("--case=no-login"), bargeResult = process.argv.includes("--case=barge-result");
+const apiKey = process.argv.includes("--case=api-key"), noLogin = apiKey || process.argv.includes("--case=no-login"), bargeResult = process.argv.includes("--case=barge-result");
 const extraFact = process.argv.includes("--extra-fact") ? "另外，全双工技术最早由爱迪生在1873年提出。" : "";
 const VOICE_MODEL = "gpt-live-1-codex";
-const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-gpt-live-voice${noLogin ? "-no-login" : bargeResult ? "-barge-result" : extraFact ? "-extra-fact" : ""}`);
+const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-gpt-live-voice${apiKey ? "-api-key" : noLogin ? "-no-login" : bargeResult ? "-barge-result" : extraFact ? "-extra-fact" : ""}`);
 await mkdir(out, { recursive: true });
 
 /** 用 macOS say 合成一句话，返回 base64 WAV。 */
@@ -69,7 +70,8 @@ try {
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   const items = { ...modelStorageItems(plan), inproc_voice_model: VOICE_MODEL };
-  if (noLogin) delete (items as Record<string, unknown>)["inproc_cred:openai-codex"];
+  if (apiKey) (items as Record<string, unknown>)["inproc_cred:openai-codex"] = { type: "api_key", key: "sk-not-a-chatgpt-login" };
+  else if (noLogin) delete (items as Record<string, unknown>)["inproc_cred:openai-codex"];
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)})`);
   // 网络记录：侧栏向 chatgpt.com 建通话；任何页面（含离屏页）开出的语音 WebSocket 都记下，查是否退回别的语音。
   const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "离屏页");
