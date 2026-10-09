@@ -521,7 +521,7 @@ if(page)this.recoveryInput.page=page;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
         // 结果不确定时是否上锁由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 仍按 durableEffect 保护。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: fact,
-          effectful:started.durableEffect,valueHash:started.valueHash });
+          effectful:started.durableEffect,valueHash:started.valueHash,readback:e.readback });
 
         if((started.durableEffect||e.name==='fetch')&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 

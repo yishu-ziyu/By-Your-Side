@@ -12,7 +12,7 @@ import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_M
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
-import {randomUUID} from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 import {FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import {NoProgressPolicy, noProgressMessage} from "./no-progress-policy.js";
@@ -325,7 +325,9 @@ if(required.includes(key))candidates.set(key,attachment);
     if (this.checkpointReadFailed) throw new Error(TASK_CHECKPOINT_UNAVAILABLE);
     const snapshot=this.conversationSnapshot();
     // display-* 前缀即直连用户请求（语音/显示命令）：不继承旧任务的“已取消”生命周期；其余约束照旧。
-    assertTaskStepExecution(snapshot,name,params,false,_toolCallId?.startsWith('display-')===true);
+    // The guard lives in shared/ (no Node crypto there), so the hash of a fill value is made here.
+    const fillValueHash=name==='fill'&&typeof params.value==='string'?createHash('sha256').update(params.value).digest('hex'):undefined;
+    assertTaskStepExecution(snapshot,name,params,false,_toolCallId?.startsWith('display-')===true,fillValueHash);
   }
   private constructor(
     private readonly session: AgentLoop | null,
@@ -2753,6 +2755,8 @@ function fieldReadbackOf(data: unknown): { readback?: FieldReadback } {
   if (typeof readback.requested === "string") clean.requested = readback.requested.slice(0, FIELD_READBACK_MAX);
 
   if (readback.truncated === true) clean.truncated = true;
+
+  if (readback.select === true) clean.select = true;
 
   return { readback: clean };
 }

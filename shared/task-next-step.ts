@@ -166,7 +166,7 @@ export function partialResultNote(decision: TaskNextStep): string {
 /** Both lead and worker use the same control/uncertainty policy; replay checks retain their original scope.
  * freshDirect：直连的新用户请求（display-* 调用）不为旧任务的“已取消”生命周期买单；
  * 只豁免 cancelled 这一条原因，未知写入、运行时错误、重复回执与失败边界照常生效。 */
-export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, name: string, params: Record<string, unknown> = {}, worker = false, freshDirect = false): void {
+export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, name: string, params: Record<string, unknown> = {}, worker = false, freshDirect = false, fillValueHash?: string): void {
   // Host-authored read-only probes (exact code match) read like snapshot: they
   // neither redo nor extend an unknown page script.
   if (!snapshot || isHostPageProbe(name, params)) {
@@ -207,6 +207,16 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
     }
 
     const observedAfter = typeof snapshot.lastReadAt === 'number' && item.evidence?.observedAt !== undefined && snapshot.lastReadAt > item.evidence.observedAt;
+
+    // A corrected fill is not a repeat: its value differs from the earlier fill, or the page did not keep the earlier value.
+    // Only `fill`; clicks, submits and other writes keep the repeat guard (double-submit risk). A select refills only on a bad
+    // readback, because a different value would fire its change event (auto-submit) again.
+    const badReadback = item.evidence?.readback === 'not_held' || item.evidence?.readback === 'different';
+    const newValue = item.evidence?.valueHash !== undefined && fillValueHash !== undefined && item.evidence.valueHash !== fillValueHash;
+
+    if (name === 'fill' && !snapshot.restartRecovery && (badReadback || (newValue && !item.evidence?.selectField))) {
+      continue;
+    }
 
     if (snapshot.restartRecovery || (!worker && !observedAfter)) {
       // 重启前填好的也一样：这次没执行，原步骤已做成，不能在账上留成受阻待办。

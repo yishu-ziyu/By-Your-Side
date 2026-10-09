@@ -40,7 +40,7 @@ export function normalizeConversationId(id?: string | null): string { return id 
  */
 export type FieldReadbackMatch = "same" | "reformatted" | "not_held" | "different" | "unreadable";
 
-export interface FieldReadback { name: string; match: FieldReadbackMatch; requested?: string; observed?: string; sensitive?: true; truncated?: true }
+export interface FieldReadback { name: string; match: FieldReadbackMatch; requested?: string; observed?: string; sensitive?: true; truncated?: true; /** 这一栏是下拉框。 */ select?: true }
 
 export const FIELD_READBACK_MAX = 1000;
 

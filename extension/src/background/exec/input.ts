@@ -215,7 +215,7 @@ function filledResult(range: InputRangeReadout | null | undefined, readback?: Fi
 }
 
 /** 页面里读到的一栏：敏感栏不带 value；select 表示读的是选中项的文字。 */
-type PageField = { name: string; value?: string; sensitive?: true; truncated?: true; select?: true };
+type PageField = { name: string; value?: string; sensitive?: true; truncated?: true; select?: true; /** 下拉框选中项的 value（与可见文字不同时，要写的内容可能是它）。 */ optionValue?: string };
 
 /**
  * 写入之后从网页读回这一栏（页面在 input 事件里改了值，读到的是改过的）。在页面里执行，保持自包含。
@@ -254,13 +254,17 @@ function readFieldInPage(this: unknown, target: string | null, max: number, sens
 
   if (sensitive) return { name, sensitive: true };
   let value: string;
+  let optionValue: string | undefined;
 
-  if (tag === "select") value = [...field.selectedOptions].map((option) => option.text.trim()).join(", ");
+  if (tag === "select") {
+    value = [...field.selectedOptions].map((option) => option.text.trim()).join(", ");
+    optionValue = [...field.selectedOptions].map((option) => option.value).join(", ");
+  }
   else if (tag === "input" || tag === "textarea") value = String(field.value ?? "");
   else if (field.isContentEditable) value = field.innerText;
   else return null;
 
-  return { name, value: value.length > max ? value.slice(0, max) : value, ...(value.length > max ? { truncated: true as const } : {}), ...(tag === "select" ? { select: true as const } : {}) };
+  return { name, value: value.length > max ? value.slice(0, max) : value, ...(value.length > max ? { truncated: true as const } : {}), ...(tag === "select" ? { select: true as const, optionValue } : {}) };
 }
 
 /**
@@ -279,10 +283,12 @@ function classifyReadback(field: PageField | null, requested: string, mode: "rep
   if (observed === "" && requested !== "") match = "not_held";
   else if (mode === "insert") match = observed.includes(requested) ? "same" : norm(observed).includes(norm(requested)) ? "reformatted" : "different";
   else if (observed === wanted) match = "same";
+  // 下拉框：要写的是选项的 value（如 CN）而页面显示文字（中国）时，对上了选中项的 value 也算一样。
+  else if (field.select && norm(wanted) !== "" && (norm(wanted) === norm(observed) || norm(wanted) === norm(field.optionValue ?? ""))) match = "same";
   else if (norm(observed) === norm(wanted) || (field.select && wanted.trim() !== "" && (observed.includes(wanted.trim()) || wanted.includes(observed)))) match = "reformatted";
   else match = "different";
 
-  return { name: field.name, match, requested: requested.slice(0, FIELD_READBACK_MAX), observed, ...(field.truncated ? { truncated: true as const } : {}) };
+  return { name: field.name, match, requested: requested.slice(0, FIELD_READBACK_MAX), observed, ...(field.truncated ? { truncated: true as const } : {}), ...(field.select ? { select: true as const } : {}) };
 }
 
 /** 读回失败不影响写入结果：读不到记 unreadable。 */
