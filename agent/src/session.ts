@@ -489,7 +489,7 @@ if(required.includes(key))candidates.set(key,attachment);
         : null;
 
       let resultHost: BrowserAgentSession | null = null;
-      const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools()) : null;
+      const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools(), () => resultHost?.activeGoalPage?.url ?? null) : null;
       // 同一操作第二次出同样的错：调高思考档位，不停下本轮（10-10 去掉了「连续三次就停」）。
       const failurePolicy = new RepeatedToolFailurePolicy(() => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasSendDeclined?.(id) === true);
 

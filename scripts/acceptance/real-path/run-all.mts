@@ -21,7 +21,7 @@ const SKIP = new Set(["harness.mts", "run-all.mts"]);
 const CORE = [
   "sidebar-interaction", "script-friction", "target-gone", "pdf-download", "memory-used-line",
   "session-durability", "error-recovery", "model-failover", "welcome-context", "claim-after-check", "refill-after-check", "readback-privacy", "snapshot-privacy",
-  "send-confirm", "pay-stop", "handoff", "answer-straight", "retry-after-unknown",
+  "send-confirm", "pay-stop", "handoff", "answer-straight", "retry-after-unknown", "site-hint",
 ];
 
 const core = process.argv.includes("--core");
