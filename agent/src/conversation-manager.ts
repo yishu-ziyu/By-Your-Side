@@ -1,5 +1,4 @@
 import { realtimeBrowserError, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
-import { isSupersededUnknown } from '../../shared/task-results.js';
 import type { VoiceInputContext } from '../../shared/voice.js';
 import {TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
@@ -58,17 +57,14 @@ function isInterruptedResumeText(text:string):boolean { return continuationInput
 export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
 
 /** Identity is captured by each runtime's emitter, never read from the selected panel. */
-/** 旧会话能否让出标签页：没有进行中/等待交还/中断的任务、没有在途浏览器调用、没有未知结果的写入。 */
+/** 旧会话能否让出标签页：没有进行中/等待交还/中断的任务、没有在途浏览器调用。结果未知的写入不拦（10-10 用户裁决）。 */
 export function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | null }): boolean {
   if (input.busy) return false;
   const snapshot = input.snapshot;
 
   if (!snapshot) return true;
 
-  if (['running', 'paused', 'interrupted'].includes(snapshot.state) || snapshot.active.length) return false;
-  const results = snapshot.results ?? [];
-
-  return !results.some(item => item.status === 'unknown' && !isSupersededUnknown(item, results));
+  return !(['running', 'paused', 'interrupted'].includes(snapshot.state) || snapshot.active.length);
 }
 
 export class ConversationManager {
@@ -956,19 +952,12 @@ return;}
     const previous = this.directVoiceInputs.get(id);
 
     if (previous?.inputId === call.inputId && previous.runId !== snapshot.runId) throw realtimeBrowserError('原任务已变化，旧语音工具未执行。', 'not_executed');
-    const auditMissing = snapshot.runId && (snapshot.unresolvedEffect || snapshot.untrackedWritePending || snapshot.executionAuditComplete === false);
-
-    if (auditMissing && !readOnly) {
-      throw realtimeBrowserError(`原任务 ${snapshot.runId} 缺少可关联的执行记录，无法安全解除写入限制。可先读取页面或列出标签核查；历史记录不足时需人工核对原任务，不能用新语音清除风险。`, 'not_executed');
-    }
-
-    const unknown = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results ?? []));
 
     if (previous?.inputId !== call.inputId) {
       const before = snapshot;
 
-      // Inspection belongs to the unresolved run. Never reset its receipts on a new voice input.
-      if (!auditMissing && !unknown && snapshot.state !== 'interrupted') progress.request(call.text,input.context,input.attachments);
+      // An interrupted run waits for the user to resume it; a read-only voice look must not replace it.
+      if (snapshot.state !== 'interrupted') progress.request(call.text,input.context,input.attachments);
       else progress.recordUserTurn(call.text,call.inputId);
 
       try { await entry.runtime.session.persistAcceptedTask(progress.snapshot(),input.attachments); }
