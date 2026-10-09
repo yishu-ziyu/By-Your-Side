@@ -17,6 +17,9 @@
  * R3 点了只改界面 → 下一轮请求原文里不得有这条；换网站后请求里必须有（排除「整条删了」）；
  *    IndexedDB 里这条仍在；记忆面板这一行写「在 某网站 不用」，点「恢复」后同一网站又带上。
  * R4 点了只改界面 → 下一轮请求里没有；点「撤销」后再下一轮请求里又有。
+ * 修订（2026-10-09）只点名对得上这次任务的：问邮箱时只点名邮箱那条、不点名「回复用中文」；问一句与两条都无关的话，
+ *    不出这一行。假通过：少发了记忆所以没点名 → 两种情况都核对请求原文里两条都在。
+ *    没有回答（模型出错）的一轮：这一行不单独悬在消息流里 → 核对这一轮确实出过错、没有回答，且最后一条用户消息之后没有这一行。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -32,6 +35,15 @@ const SITE_A = "shop-a.test";
 const SITE_B = "shop-b.test";
 
 const ASK = "帮我看看这页";
+
+/** 和邮箱那条有共同的词，和「回复用中文」没有（memory-relevance.ts 的词重叠规则）。 */
+const ASK_EMAIL = `${ASK}，注册要填哪个邮箱`;
+
+/** 和两条记忆都没有共同的词。 */
+const ASK_OTHER = "总结一下这页";
+
+/** 脚本模型对这句回 400，这一轮没有回答。 */
+const ASK_FAIL = "模拟出错，注册邮箱填哪个";
 
 const EMAIL = "邮箱：yishu.line@example.test";
 
@@ -66,7 +78,7 @@ const DECISION_MARKER = "You interpret the CURRENT direct user message";
 
 const NONE = { action: "none", text: "", evidence: "", scope: { kind: "all" }, targets: [], taskRequested: false, about: { longTerm: false, date: null, onlyThisTask: false, explicitRequest: false } };
 
-const upstream = await startScriptedModel([{ match: ASK, steps: [{ text: "好的，这页是一个普通商品页。" }] }, { match: "DECISION::none", steps: [{ text: JSON.stringify(NONE) }] }]);
+const upstream = await startScriptedModel([{ match: ASK_FAIL, steps: [{ status: 400, body: JSON.stringify({ error: { message: "acceptance: scripted failure" } }) }] }, { match: ASK_OTHER, steps: [{ text: "好的，这页是一个普通商品页。" }] }, { match: ASK, steps: [{ text: "好的，这页是一个普通商品页。" }] }, { match: "DECISION::none", steps: [{ text: JSON.stringify(NONE) }] }]);
 
 /** 主任务请求（带工具表）的系统提示原文，按到达顺序。 */
 const mainRequests: string[] = [];
@@ -187,11 +199,11 @@ async function newConversation() {
 }
 
 /** 发一句话，等这一轮结束；返回这一轮第一条主任务请求的系统提示。 */
-async function turn(): Promise<string> {
+async function turn(ask = ASK_EMAIL): Promise<string> {
   const mark = mainRequests.length;
   const before = await read();
   await rp.click(panel, "#input");
-  await rp.typeText(panel, ASK);
+  await rp.typeText(panel, ask);
   await rp.pressEnter(panel);
   await until(async () => (await read()).userMessages > before.userMessages || undefined, 10_000, "消息发出");
   const started = Date.now();
@@ -288,7 +300,7 @@ try {
   await seed(false);
   await navigate(SITE_A);
   await newConversation();
-  const empty = await turn();
+  const empty = await turn(ASK);
   const emptyLine = await lastLine();
   check("R1", "记忆为空：回答下方没有这一行", emptyLine === null && empty.length > 0, { line: emptyLine, requestSeen: empty.length > 0 });
   check("R1", "记忆为空：请求里没有预置内容", !Object.values(has(empty)).some(Boolean), has(empty));
@@ -300,11 +312,12 @@ try {
   const first = await turn();
   const line1 = await lastLine();
   const sent = has(first);
-  const expectedN = Object.values(sent).filter(Boolean).length;
+  // 点名的是邮箱和过往任务；「回复用中文」照常发给模型，但和这句话对不上，不点名。
+  const expectedN = 2;
   check("R1", "请求里带了两条记忆和一条过往任务", sent.email && sent.lang && sent.task, sent);
   // YIS-86：行内点名第一条（「按你说过的「<原文>」」），多条加「等 N 条」。
   const named = /^按你说过的「(.+?)…?」等 (\d+) 条 ›$/.exec(line1?.text ?? "");
-  check("R1", `首句末尾显示「按你说过的「<某条原文>」等 ${expectedN} 条 ›」，N 等于请求里带的条数`, !!line1 && !!named && line1.count === expectedN && Number(named[2]) === expectedN && [EMAIL, LANG].some((t) => t.startsWith(named[1]!)), { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
+  check("R1", `问邮箱：首句末尾显示「按你说过的「邮箱…」等 ${expectedN} 条 ›」，不算「回复用中文」`, !!line1 && !!named && line1.count === expectedN && Number(named[2]) === expectedN && EMAIL.startsWith(named[1]!), { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
   check("R1", "灰字接在回答首句末尾，列表紧跟首句，默认折起", !!line1 && line1.inFirstSentence && line1.listHidden, { inFirstSentence: line1?.inFirstSentence ?? null, listHidden: line1?.listHidden ?? null });
   await shot("R1-collapsed");
 
@@ -315,7 +328,7 @@ try {
   await sleep(500);
   const line2 = await lastLine();
   const byId = (id: string) => line2?.items.find((i) => i.id === id);
-  check("R2", "展开后列出每条原文；过往任务显示摘要", !line2?.listHidden && byId("seed-email")?.text === EMAIL && byId("seed-lang")?.text === LANG && byId("seed-task")?.text === TASK_SUMMARY, { items: line2?.items ?? null });
+  check("R2", "展开后列出点名的每条原文；过往任务显示摘要；不列「回复用中文」", !line2?.listHidden && byId("seed-email")?.text === EMAIL && !byId("seed-lang") && byId("seed-task")?.text === TASK_SUMMARY, { items: line2?.items ?? null });
   check("R2", "每条都有「忘掉」和「这里别用」", !!line2 && line2.items.length === expectedN && line2.items.every((i) => i.buttons.includes("忘掉") && i.buttons.includes("这里别用")), { buttons: line2?.items.map((i) => i.buttons) ?? null });
   await shot("R2-expanded");
 
@@ -362,6 +375,23 @@ try {
   const afterUndo = has(await turn());
   check("R4", "点「撤销」后：库里这条回来了（原文不变），下一轮请求里又有", back?.text === EMAIL && back?.status === "active" && afterUndo.email, { back: back ?? null, afterUndo });
   await shot("R4-final");
+
+  // 修订反例：B 网站（没有过往任务）问一句和两条记忆都无关的话。
+  await navigate(SITE_B);
+  await newConversation();
+  const other = has(await turn(ASK_OTHER));
+  const otherLine = await lastLine();
+  const answered = await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll("#messages > *")]; const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true); return all.slice(lastUser + 1).some((n) => n.matches(".msg.assistant") && n.textContent.includes("普通商品页")); })()`);
+  check("R1", "问无关的话：有回答，回答下方没有这一行", otherLine === null && answered === true, { line: otherLine, answered });
+  check("R1", "问无关的话：两条记忆照常发给模型", other.email && other.lang, other);
+  await shot("R1-unrelated");
+
+  // 修订：模型出错、没有回答的一轮，这一行不单独挂在消息流里。
+  const failed = has(await turn(ASK_FAIL));
+  const tail = await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll("#messages > *")]; const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true); const after = all.slice(lastUser + 1);
+    return { answer: after.some((n) => n.matches(".msg.assistant:not(.opening-line)")), line: after.some((n) => n.matches(".memory-used-line") || !!n.querySelector(".memory-used-line")), text: after.map((n) => n.className + ": " + n.textContent.slice(0, 80)) }; })()`) as { answer: boolean; line: boolean; text: string[] };
+  check("R1", "没有回答的一轮（模型出错）：请求带了邮箱，消息流里没有悬空的这一行", failed.email && !tail.answer && !tail.line, { failed, tail });
+  await shot("R1-no-answer");
 } catch (error) {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(fatal);

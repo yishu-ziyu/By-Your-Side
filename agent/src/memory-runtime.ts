@@ -892,7 +892,8 @@ export class MemoryRuntime {
 
   /**
    * 决定点 B：按纯代码规则挑这一轮带的记忆（见 memory-context.ts），写一条决定记录，给带上的记忆记一次「用过」。
-   * 带了记忆或过往任务就发一条「用了」事件，列出带上的每一条：侧栏在回答下方显示「用了 N 条记忆」。
+   * 「用了」事件只点名和这次任务对得上的：每轮都带的「关于你」和到处适用的做事方法，要和这句话有共同的词才列出；
+   * 其余带上的照常列出。模型收到的记忆不受影响。没有可点名的就不发，侧栏不出这一行。
    */
   private async selectContext(turn: ActiveUserTurn): Promise<MemoryContextSelection | null> {
     const hostname = memoryHostOfUrl(turn.query.url);
@@ -910,6 +911,7 @@ export class MemoryRuntime {
     if (selection.tasks.length) await this.options.history?.markUsed(selection.tasks.map(({ task }) => task.id), Date.now()).catch(() => undefined);
     selection.entries = selection.entries.flatMap(item => (current.has(item.entry.id) ? [{ ...item, entry: current.get(item.entry.id)! }] : []));
     this.usedThisTurn = selection.entries.map(item => item.entry);
+    const shown = selection.entries.filter(({ entry, rule }) => rule !== "always" || isRelevantMemory(entry.text, turn.text)).map(item => item.entry);
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);
 
     this.onRecord?.("memory_context", {
@@ -920,13 +922,14 @@ export class MemoryRuntime {
       totalChars: selection.totalChars,
       maxChars: MEMORY_CONTEXT_MAX_CHARS,
       skipped: selection.skipped,
+      shown: shown.length + selection.tasks.length,
     });
 
-    const count = selection.entries.length + selection.tasks.length;
+    const count = shown.length + selection.tasks.length;
 
     if (count) {
       const used: Extract<AgentUiEvent, { kind: "memory" }> = {
-        kind: "memory", action: "used", entries: selection.entries.map(item => item.entry), tasks: selection.tasks.map(item => item.task),
+        kind: "memory", action: "used", entries: shown, tasks: selection.tasks.map(item => item.task),
         message: `本轮用了 ${count} 条记忆`, ...await this.rev(),
       };
 
