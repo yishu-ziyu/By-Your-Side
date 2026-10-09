@@ -15,9 +15,11 @@
  *   k) 用户点「不发」后，任务还在跑时插话「改好了，发吧」（同一个任务）：助手再点「发送」，确认框重新出现，用户确认后恰好 1 条。
  *   m) 确认框在时，网页自己 pushState、改 #：确认框还在；用户点「发送」后恰好 1 条。
  *   n) 同一条回复里并行点两次「发送」：只出一个确认框，第二次马上回「已有一个在等确认」；用户确认后恰好 1 条，第一次的结果是已发送。
+ * 侧栏（R2）：a 等确认时过程行标题是「等你在网页上确认发送」，用户决定后消失；b 那一步写「（你确认过）」；
+ *   c 那一步写「你没让发，草稿还在」，不标红、不写「没成功」，过程行标题也不写「没成功」。截图 a-panel-waiting / b-panel / c-panel。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
  * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
- * 「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 sendDeclined，c 被「连续三次」停下；网址一变就算离开，m 的确认框消失（反例结果见验收文件）。
+ * 不显示等确认的标题，a 的侧栏判据失败；「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 sendDeclined，c 被「连续三次」停下；网址一变就算离开，m 的确认框消失（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -168,6 +170,14 @@ try {
 
   const toolsSince = (from: number) => toolTexts.slice(from);
 
+  const WAITING = "等你在网页上确认发送";
+
+  /** 侧栏最后一个过程行：标题和每一步的文字、是否标成失败。 */
+  const lastRun = async () => (await rp.evaluate(panel, `(() => { const run = [...document.querySelectorAll(".run-steps")].at(-1); return run ? { title: run.querySelector(".run-title")?.textContent ?? "", steps: [...run.querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.querySelector(".chip-label")?.textContent ?? "", error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) } : null; })()`)) as { title: string; steps: Array<{ text: string; error: boolean }> } | null;
+
+  /** 展开最后一个过程行再截侧栏，截图里看得到每一步。 */
+  const panelShot = async (name: string) => { await rp.evaluate(panel, 'void ([...document.querySelectorAll(".run-steps")].at(-1)?.setAttribute("open", "")); true'); await sleep(300); await rp.screenshot(panel, join(out, name)); };
+
   // ── a/b：确认后发送 ──
   let from = toolTexts.length;
   await ask(ASK.a);
@@ -179,12 +189,21 @@ try {
 
   if (!boxA?.yes) throw new Error("没有确认框，后面的用例无从做起");
   await rp.screenshot(work, join(out, "a-confirm.png"));
+  const waitingA = await lastRun();
+  await rp.screenshot(panel, join(out, "a-panel-waiting.png"));
+  check("a 等确认时：侧栏过程行标题是「等你在网页上确认发送」", !!waitingA?.title.includes(WAITING), { run: waitingA });
   await userClick(boxA.yes!);
+  const goneA = await until(async () => { const run = await lastRun(); return run && !run.title.includes(WAITING) ? run : null; }, 5_000, "用户决定后等确认的标题消失", 100).catch(() => null);
+  check("a 用户决定后：等确认的标题 5 秒内消失", !!goneA, { run: goneA });
   await until(async () => sent() >= 1, 10_000, "确认后服务器收到发送");
   await answered("A 完成。");
   const toolA = toolsSince(from);
   check("b 用户点「发送」：服务器恰好 1 条，结果写明用户确认后才点", sent() === 1 && toolA.some(t => t.includes("The user confirmed sending on the page")), { sent: sent(), tool: toolA });
   check("b 确认框已收起", !(await confirmBox()), null);
+  const runB = await lastRun();
+  const sendStepB = runB?.steps.find(step => step.text.includes("发送"));
+  check("b 侧栏：那一步像普通点击，写「（你确认过）」，不标失败，没有等确认的标题", !!sendStepB?.text.includes("（你确认过）") && !sendStepB.error && !runB!.title.includes(WAITING) && !runB!.title.includes("没成功"), { run: runB });
+  await panelShot("b-panel.png");
 
   // ── c：不发，同一轮再点不再问 ──
   from = toolTexts.length;
@@ -203,6 +222,9 @@ try {
   check("c 同一轮再点同一个「发送」：仍 0 条，没有第二个确认框，直接说用户已选不发", !reappeared && sent() === sentBeforeC && toolC.some(t => t.includes("这一轮已经在网页上选了「不发」")), { reappeared, secondClickMs });
   const repeats = toolC.filter(t => t.includes("这一轮已经在网页上选了「不发」")).length;
   check("c 同一轮再点三次：都直接回用户已选不发，没有被当成连续出错停下", repeats === 3 && !/连续三次/.test(await panelText()), { repeats });
+  const runC = await lastRun();
+  check("c 侧栏：写「你没让发，草稿还在」，不标失败，过程行标题不写「没成功」", !!runC && runC.steps.filter(step => step.text.includes("你没让发，草稿还在")).length === 4 && runC.steps.every(step => !step.error) && !runC.title.includes("没成功") && !runC.title.includes(WAITING), { run: runC });
+  await panelShot("c-panel.png");
 
   // ── d：40 秒后才确认 ──
   from = toolTexts.length;

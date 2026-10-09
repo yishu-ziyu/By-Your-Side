@@ -43,6 +43,7 @@ import {
   isPrepTool,
   actionKind,
   pastAction,
+  sendDeclinedText,
   type ActionKind,
   isLiveViewportPinned,
   liveViewportOverflows,
@@ -4078,7 +4079,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; repeatRefused?: true }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; repeatRefused?: true; sendDeclined?: true; sendConfirmed?: true }): void {
   const run = currentRun ?? lastRun;
 
   if (run) {
@@ -4096,8 +4097,8 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   if (!entry) return;
-  // 用户拒绝授权的那一步照你的意思没做：不画成失败。
-  const failed = ev.isError && !ev.repeatRefused;
+  // 用户拒绝授权、没让发送的那一步照你的意思没做：不画成失败。
+  const failed = ev.isError && !ev.repeatRefused && !ev.sendDeclined;
   entry.dot.className = `chip-dot ${chipState(true, failed)}`;
   // B：收束——蓝边底色按 --m-move 退回常态
   entry.chip.classList.remove("running");
@@ -4138,6 +4139,18 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   if (ev.repeatRefused && label) label.append("（已做过，没再重复）");
+
+  // 发送确认（docs/evals/20261009-send-confirm.md R2）：确认过的照常写点了，没让发的写结果。
+  if (ev.sendConfirmed && label) {
+    entry.chip.dataset.past = `${entry.chip.dataset.past ?? ""}（你确认过）`;
+    label.append("（你确认过）");
+  }
+
+  if (ev.sendDeclined && label) {
+    const text = sendDeclinedText(ev.resultText ?? "");
+    entry.chip.dataset.past = text;
+    label.textContent = text;
+  }
 
   if (failed && label) {
     const note = document.createElement("span");
@@ -4493,6 +4506,14 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       onToolStart(ev);
       break;
+    case "send_confirm_wait": {
+      // 等用户在网页上确认发送：标题写明在等你；不等了，回到「做了几件事」（docs/evals/20261009-send-confirm.md R2）。
+      const run = currentRun;
+
+      // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
+      if (run) setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), true, ev.waiting ? undefined : "think");
+      break;
+    }
     case "tool_end":
       onToolEnd(ev);
 

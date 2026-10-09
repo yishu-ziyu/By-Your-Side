@@ -2211,6 +2211,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
             ...(event.isError && this.rpc?.wasRepeatRefused?.(event.toolCallId) ? { repeatRefused: true as const } : {}),
+            ...(event.isError && this.rpc?.wasSendDeclined?.(event.toolCallId) ? { sendDeclined: true as const } : {}),
+            ...(!event.isError && (event.result?.details as { sendConfirmed?: unknown } | undefined)?.sendConfirmed === true ? { sendConfirmed: true as const } : {}),
             ...(event.isError ? {} : fieldReadbackOf(event.result?.details)),
           });
           this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);
