@@ -3386,6 +3386,8 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
 
   if (flags.userHasPage !== lastUserHasPage) {
     lastUserHasPage = flags.userHasPage;
+
+    if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已停止");
   }
 
   // 同一个位置：Agent 在做时是「我来」，页面归你时是「你继续」。
@@ -3882,6 +3884,44 @@ const BOOKKEEPING_TOOLS = new Set(["send_user_message"]);
 /** 用户能在页面上看到后果的动作；滚动、悬停、事件监听只是为了读页。 */
 const PAGE_VIEWING_TOOLS = new Set(["scroll", "hover", "arm_event", "wait_event", "disarm_event"]);
 
+let handoffCard: HTMLElement | null = null;
+
+/** 「需要你来这一步」卡：交还前一直在；交还后收成一行灰字。 */
+function showHandoffCard(ask: string): void {
+  const card = document.createElement("div");
+  card.className = "handoff-card";
+  const title = document.createElement("strong");
+  title.textContent = "需要你来这一步";
+  const body = document.createElement("p");
+  body.className = "handoff-ask";
+  body.textContent = ask;
+  const note = document.createElement("p");
+  note.className = "handoff-note";
+  note.textContent = "交给你期间，我不读也不动这个页面。";
+  const actions = document.createElement("div");
+  actions.className = "handoff-actions";
+  const done = document.createElement("button");
+  done.type = "button";
+  done.className = "btn-primary";
+  done.textContent = "做好了，交还";
+  done.onclick = () => port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
+  const hint = document.createElement("span");
+  hint.className = "handoff-note";
+  hint.textContent = "或点页面上的「交还」";
+  actions.append(done, hint);
+  card.append(title, body, note, actions);
+  appendToMessages(card);
+  scrollToEnd();
+  handoffCard = card;
+}
+
+function collapseHandoffCard(text = "你已交还 · 我从你所在的页面接着做"): void {
+  if (!handoffCard) return;
+  handoffCard.className = "handoff-done";
+  handoffCard.textContent = text;
+  handoffCard = null;
+}
+
 function changesPage(name: string, tabsAction: string | undefined): boolean {
   // 开、关标签页也是用户看得见的后果；tabs 的其余动作只是查看。
   if (name === "tabs") return tabsAction === "open" || tabsAction === "close";
@@ -3893,6 +3933,18 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const action = describeTool(ev.name, ev.params);
   const run = ensureRun();
   closeBlocks();
+
+  // 助手把页面交给用户（docs/evals/20261010-hand-to-user.md R1）：不进步骤链，单独一张卡。
+  if (ev.name === "hand_to_user") {
+    run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
+    syncRunOrb(run);
+    showHandoffCard(String(ev.params.ask ?? ""));
+
+    return;
+  }
+
+  // 交还后助手又动手了（补放历史时也一样）：卡不能再留着可点的「交还」。
+  collapseHandoffCard();
 
   // 交付回答是助手的内部记账，不算用户看得懂的一步。
   if (BOOKKEEPING_TOOLS.has(ev.name)) {

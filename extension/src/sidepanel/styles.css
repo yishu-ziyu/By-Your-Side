@@ -3345,3 +3345,12 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .claim-fix { margin: 4px 0 8px; font-size: 13px; color: var(--warn); overflow-wrap: anywhere; }
 .claim-unconfirmed { display: inline-block; margin-top: 6px; padding: 1px 8px; border: 1px solid var(--content-border); border-radius: var(--radius-pill, 999px); font-size: 12px; color: var(--text-2); }
 @media (prefers-reduced-motion: reduce) { .claim-checking-dot { animation: none; } }
+
+/* 交给你（docs/evals/20261010-hand-to-user.md R1）：与错误卡同一种卡片，左边线用强调色。 */
+.handoff-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); }
+.handoff-card strong { font-size: var(--fs-ui); font-weight: 600; }
+.handoff-card > p { margin: 0; color: var(--text-primary); }
+.handoff-card .handoff-note { margin: 0; font-size: var(--fs-meta); color: var(--text-tertiary); }
+.handoff-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.handoff-card .btn-primary { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border: 0; border-radius: var(--r-pill); background: var(--text-primary); color: var(--content-bg); cursor: pointer; }
+.handoff-done { font-size: var(--fs-meta); color: var(--text-tertiary); }
