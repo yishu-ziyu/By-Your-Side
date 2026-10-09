@@ -8,7 +8,7 @@ type Result=Extract<ClientMessage,{type:'task_control_result'}>;
 export class TaskControlBroker {
   private readonly pending=new Map<string,{conversationId:string;requestId:string;action:TaskControlAction;runId:string;resolve:(r:Result)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
   constructor(private readonly emit:(m:ServerMessage)=>void,private readonly timeoutMs=45000){}
-  request(conversationId:string,requestId:string,action:TaskControlAction,runId:string,scope?:'task'|'page',tabId?:number):Promise<Result>{
+  request(conversationId:string,requestId:string,action:TaskControlAction,runId:string,scope?:'task'|'page',tabId?:number,ask?:string):Promise<Result>{
     const key=`${conversationId}:${requestId}`;
 
     if(this.pending.has(key))return Promise.reject(new Error('Control request already pending'));
@@ -23,6 +23,8 @@ export class TaskControlBroker {
         if(scope)message.scope=scope;
 
         if(tabId)message.tabId=tabId;
+
+        if(ask)message.ask=ask;
         this.emit(message);
       }
       catch(error){clearTimeout(timer);this.pending.delete(key);reject(error instanceof Error?error:new Error('Control unavailable'));}

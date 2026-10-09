@@ -718,6 +718,7 @@ export async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<
 export type ControlBannerView = {
   status?: string;
   sub?: string;
+  ask?: string;
   action?: string;
   actionEnabled?: boolean;
   members?: Array<{ id: string; initial: string; color: string }>;
