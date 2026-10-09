@@ -1,6 +1,8 @@
 import { realtimeBrowserError, REALTIME_FILL_READBACK_TIMEOUT_MS, type RealtimeFillReadback } from './realtime-browser-tools.js';
 import { classifyDirectExecutionFeedback, type ExecutionFeedback } from '../../shared/execution-feedback.js';
 import { isPageTextEvidence } from '../../shared/page-text-evidence.js';
+import { isTransientModelError } from "../../shared/provider-busy.js";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { toolAction } from '../../shared/user-facing.js';
 import { elementText, redactObservedText } from './task-evidence.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
@@ -1426,7 +1428,7 @@ return;}
   }
 
   /** 一次阅读回答，用该模型允许的最低思考档。失败抛 SideCallError，只带原因类别。 */
-  private async streamReading(model: NonNullable<AgentLoop["model"]>, transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void): Promise<string> {
+  private async streamReading(model: NonNullable<AgentLoop["model"]>, transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void, triedBackup = false): Promise<string> {
     const sessionId = `reading-${transcript.threadId}`;
     const request = new AbortController();
     signal = AbortSignal.any([signal, request.signal]);
@@ -1454,6 +1456,9 @@ return;}
       }
 
       const result = await stream.result();
+      const backup = !triedBackup && !text && !signal.aborted ? this.switchableBackup(model, result, 'reading') : undefined;
+
+      if (backup) return await this.streamReading(backup, transcript, signal, onText, true);
 
       if (result.stopReason === 'error' || result.stopReason === 'aborted') {
         throw new SideCallError(signal.aborted ? 'cancelled' : isParamRejection(result.errorMessage) ? 'rejected_params' : 'provider_error');
@@ -1481,6 +1486,19 @@ return;}
     }, {triggerTurn: false});
   }
 
+  /**
+   * 侧边流式调用（阅读回答、正式交付）的备用模型（R3）：这次调用暂时出错（与主任务同一判断，401、额度用尽不算），
+   * 且设置里的备用模型和这次用的不同，就返回备用模型，并在诊断记录里写明从谁换成了谁。短调用的备用在模型端口里。
+   */
+  private switchableBackup(model: NonNullable<AgentLoop["model"]>, result: AssistantMessage, call: string): NonNullable<AgentLoop["model"]> | undefined {
+    const backup = this.modelRuntime?.backupModel?.();
+
+    if (result.stopReason !== 'error' || !backup || `${backup.provider}/${backup.id}` === `${model.provider}/${model.id}` || !isTransientModelError(result)) return undefined;
+    this.runTrace.record('side_model_fallback', {call, from: `${model.provider}/${model.id}`, to: `${backup.provider}/${backup.id}`});
+
+    return backup;
+  }
+
   async composeUserDelivery(input: {
     question?: string | null;
     facts: string;
@@ -1502,17 +1520,24 @@ return;}
     let reply;
 
     if(onText){
-      const stream=this.modelRuntime.streamSimple(this.session.model,inputContext,options);let text='';
+      const run=async(model:NonNullable<AgentLoop['model']>,runOptions:typeof options)=>{
+        const stream=this.modelRuntime!.streamSimple(model,inputContext,runOptions);let text='';
 
-      for await(const event of stream){
-        if(event.type==='text_delta'){
-          text+=event.delta;
+        for await(const event of stream){
+          if(event.type==='text_delta'){
+            text+=event.delta;
 
-          if(text.length>2000||onText(text)===false){controller.abort();throw new Error('正式回答已取消或过长。');}
+            if(text.length>2000||onText(text)===false){controller.abort();throw new Error('正式回答已取消或过长。');}
+          }
         }
-      }
 
-      reply=await stream.result();
+        return {text,result:await stream.result()};
+      };
+      const first=await run(this.session.model,options);
+      // 主模型一个字都没出就暂时出错：在备用模型上再答一次。已经出了字就照旧报错，不把备用的回答接在半句后面。
+      const backup=!first.text&&!options.signal.aborted?this.switchableBackup(this.session.model,first.result,'delivery'):undefined;
+      const backupEffort=backup&&lowestEffort(backup,this.sideRejected);
+      reply=backup?(await run(backup,{...options,headers:opencodeSessionHeaders(backup,this.session.sessionId),reasoning:backupEffort==='off'?undefined:backupEffort})).result:first.result;
     }else reply=await this.modelRuntime.completeSimple(this.session.model,inputContext,options);
     deliveryMetrics.composeMs.push(Date.now() - started);
 

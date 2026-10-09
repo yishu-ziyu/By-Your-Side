@@ -2,10 +2,12 @@
  * 主模型卡住或暂时出错时，换设置页「备用模型」里选的另一家接着做（docs/evals/20261009-model-backup.md R1）。
  * 只装扩展、隔离构建、本机脚本模型：主模型是自定义地址，指向本机服务（挂起 / 回 503 / 回 401）；
  * 备用模型是阶跃星辰，发往 api.stepfun.com 的请求在 offscreen 文档里被 CDP 拦下，转给本机脚本模型回答。
- *   npx tsx scripts/acceptance/real-path/model-failover.mts --headless [--case=hang|503|401|quota|off|stop]
+ *   npx tsx scripts/acceptance/real-path/model-failover.mts --headless [--case=hang|503|401|quota|off|stop|return|side503|side401]
  * stop（R2）：主模型回 503，换模型那次写盘被拖慢，期间点「停」；备用模型不能收到任务请求。
  * return（R1 末句）：换到备用后，不满 5 分钟的下一条仍走备用；把扩展内 agent 的时钟往后拨 5 分钟（只改 Date.now，不碰产品代码），
  *   下一条先问主模型（仍回 503，于是再换备用），侧栏写「已换回」。
+ * side503 / side401（R3）：主模型照常回答任务，只对不带工具表的短调用（记忆判断等）回 503 / 401。用户说「记住我住在北京」：
+ *   503 时记忆判断由备用模型回答，侧栏出现「已记住…北京」的回执；401 时备用模型一个请求都收不到。
  * 每个用例单独启动一次 Chrome，证据各写一个目录。
  * 失败方式：侧栏一直等主模型；或报错而不是换备用；或 401、额度用尽也换了；或「不用备用」时也换了；或侧栏看不到切换。
  */
@@ -28,7 +30,15 @@ const BACKUP = { provider: "stepfun", modelId: "step-3.7-flash" };
 
 type Primary = "hang" | { status: number; body: string };
 
-type Case = { name: string; primary: Primary; backup: boolean; stopAfterMs?: number; slowSwitchMs?: number; switchBack?: boolean };
+/** side：主模型照常回答任务，只对短调用回这个错误码（R3）。 */
+type Case = { name: string; primary: Primary; backup: boolean; stopAfterMs?: number; slowSwitchMs?: number; switchBack?: boolean; side?: boolean };
+
+const REMEMBER = "记住我住在北京";
+
+const TASK_REPLY = "好的，这句我记下了。";
+
+/** 记忆判断的回答（形状同 memory-foundation.mts 的决定点 A）：按用户原话记下住在北京。 */
+const SAVE_DECISION = { action: "save", text: "住在北京", evidence: REMEMBER, scope: { kind: "all" }, targets: [], taskRequested: false, about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: true } };
 
 const UNAVAILABLE = { status: 503, body: JSON.stringify({ error: { message: "Service Unavailable", type: "server_error" } }) };
 
@@ -43,6 +53,8 @@ const CASES: Case[] = [
     // 「停」从侧栏到 agent 要上百毫秒，比换模型那段时间长（只靠点击时机，8 次一次也没碰到）；
   // 像磁盘慢一样把换模型记录的写盘拖 1.5 秒，让「停」稳定落在途中。
   ...[0, 1, 2].map(i => ({ name: `stop-${i}`, primary: UNAVAILABLE, backup: true, stopAfterMs: 300, slowSwitchMs: 1_500 })),
+  { name: "side503", primary: UNAVAILABLE, backup: true, side: true },
+  { name: "side401", primary: { status: 401, body: JSON.stringify({ error: { message: "Incorrect API key provided", type: "invalid_request_error", code: "invalid_api_key" } }) }, backup: true, side: true },
 ];
 
 const only = process.argv.find(a => a.startsWith("--case="))?.slice("--case=".length);
@@ -66,7 +78,13 @@ async function runCase(c: Case) {
   const artifacts = join(REPO, "out/acceptance/real-path", `${stamp}-model-failover-${c.name}`);
 
   await mkdir(artifacts, { recursive: true });
-  const backup = await startScriptedModel([{ match: MARK, steps: [{ text: ANSWER }] }]);
+  // side 用例：备用模型只会收到短调用，按记忆判断回答；任务请求由主模型那头的另一个脚本模型照常回答。
+  const backup = await startScriptedModel(c.side ? [{ match: REMEMBER, steps: [{ text: JSON.stringify(SAVE_DECISION) }] }] : [{ match: MARK, steps: [{ text: ANSWER }] }]);
+  const task = c.side ? await startScriptedModel([{ match: REMEMBER, steps: [{ text: TASK_REPLY }] }]) : backup;
+  const forward = async (to: { baseUrl: string }, url: string | undefined, method: string | undefined, body: string) =>
+    fetch(`${to.baseUrl.replace(/\/$/, "")}${(url ?? "").replace(/^\/v1/, "")}`, { method, headers: { "content-type": "application/json" }, body: method === "POST" ? body : undefined });
+  /** side 用例里主模型回了错误码的短调用。 */
+  const sideFailed: number[] = [];
   // 主模型：带工具表的任务请求按用例挂起或回错误码；其他请求（不带工具的内部判断）转给脚本模型。
   const primaryAsked: number[] = [];
   /** stop 用例：主模型回 503 之后点「停」，记下时间。 */
@@ -77,7 +95,23 @@ async function runCase(c: Case) {
 
     for await (const chunk of req) body += String(chunk);
 
-    if (req.method === "POST" && /"tools"\s*:\s*\[\s*\{/.test(body)) {
+    const tools = /"tools"\s*:\s*\[\s*\{/.test(body);
+
+    if (c.side && req.method === "POST" && c.primary !== "hang") {
+      if (!tools) {
+        sideFailed.push(Date.now());
+        res.writeHead(c.primary.status, { "content-type": "application/json" }).end(c.primary.body);
+
+        return;
+      }
+
+      const upstream = await forward(task, req.url, req.method, body);
+      res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await upstream.arrayBuffer()));
+
+      return;
+    }
+
+    if (req.method === "POST" && tools) {
       primaryAsked.push(Date.now());
 
       if (c.primary === "hang") {
@@ -94,7 +128,7 @@ async function runCase(c: Case) {
       return;
     }
 
-    const upstream = await fetch(`${backup.baseUrl.replace(/\/$/, "")}${(req.url ?? "").replace(/^\/v1/, "")}`, { method: req.method, headers: { "content-type": "application/json" }, body: req.method === "POST" ? body : undefined });
+    const upstream = await forward(backup, req.url, req.method, body);
     res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await upstream.arrayBuffer()));
   });
 
@@ -180,7 +214,7 @@ async function runCase(c: Case) {
     evidence.stage = "send";
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
     await rp.click(panel, "#input");
-    await rp.typeText(panel, MARK);
+    await rp.typeText(panel, c.side ? REMEMBER : MARK);
     const sentAt = Date.now();
     await rp.pressEnter(panel);
 
@@ -190,8 +224,15 @@ async function runCase(c: Case) {
       void rp.evaluate(panel, `(() => { const b = document.querySelector("#send-btn"); const stopping = b.classList.contains("stopping"); if (stopping) b.click(); return stopping; })()`).then(clicked => { evidence.stopClicked = clicked; });
     };
     const messages = () => rp.evaluate(panel, 'document.querySelector("#messages")?.textContent ?? ""').then(String);
+    const receipts = () => rp.evaluate(panel, '[...document.querySelectorAll(".memory-receipt")].map(e => e.innerText)') as Promise<string[]>;
 
-    if (c.stopAfterMs !== undefined) {
+    if (c.side) {
+      await until(async () => (await messages()).includes(TASK_REPLY) || undefined, 60_000, "task answer visible");
+
+      if (c.name === "side503") await until(async () => (await receipts()).find(r => /已记住.*北京/.test(r)), 30_000, "「已记住…北京」回执");
+      // 401：回答出来后再等 8 秒，让短调用都发完，看备用模型有没有收到请求。
+      else await new Promise(resolve => setTimeout(resolve, 8_000));
+    } else if (c.stopAfterMs !== undefined) {
       await until(async () => stopAt !== undefined && await rp.evaluate(panel, '!document.querySelector("#send-btn").classList.contains("stopping")') || undefined, 30_000, "sidebar idle after stop");
       // 停下后再等 5 秒，看备用模型有没有迟到的请求。
       await new Promise(resolve => setTimeout(resolve, 5_000));
@@ -210,6 +251,9 @@ async function runCase(c: Case) {
       visibleMs,
       primaryAskedAtMs: primaryAsked.map(at => at - sentAt),
       backupTaskRequestsAtMs: taskToBackup.map(r => r.at - sentAt),
+      sideFailedAtMs: sideFailed.map(at => at - sentAt),
+      backupSideRequestsAtMs: backupAsked.filter(r => !r.tools).map(r => r.at - sentAt),
+      receipts: await receipts(),
       switchNotice: text.match(/[^。]*切换到[^。]*。/)?.[0] ?? null,
       sidebarTail: text.slice(-400),
     });
@@ -247,7 +291,18 @@ async function runCase(c: Case) {
       await rp.screenshot(panel, join(artifacts, "sidebar-after-return.png"));
     }
 
-    if (c.stopAfterMs !== undefined) {
+    if (c.side) {
+      assert.ok(sideFailed.length >= 1, "主模型对短调用回了错误码");
+      assert.equal(taskToBackup.length, 0, "任务请求没有换到备用模型");
+
+      if (c.name === "side503") {
+        assert.ok(backupAsked.some(r => !r.tools), "备用模型（阶跃星辰）收到了短调用");
+        assert.ok((evidence.receipts as string[]).some(r => /已记住.*北京/.test(r)), "侧栏出现「已记住…北京」");
+      } else {
+        assert.equal(backupAsked.length, 0, "401 不换：备用模型一个请求都没收到");
+        assert.ok(!(evidence.receipts as string[]).some(r => /已记住/.test(r)), "没有记住");
+      }
+    } else if (c.stopAfterMs !== undefined) {
       evidence.stopAtMs = stopAt! - sentAt;
       evidence.idle = await rp.evaluate(panel, '!document.querySelector("#send-btn").classList.contains("stopping")');
       const witness = await rp.evaluate(offscreenSession, "globalThis.__r2 ?? null") as { at: number; stopped: boolean } | null;
@@ -276,6 +331,8 @@ async function runCase(c: Case) {
     await rp.close();
     await rp.remove();
     await backup.close();
+
+    if (task !== backup) await task.close();
     main.closeAllConnections();
     main.close();
   }
