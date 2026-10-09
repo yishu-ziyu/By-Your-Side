@@ -2237,7 +2237,7 @@ interface RunHost {
   chipGroup: ChipGroup | null;
   /** 这一轮动过页面（标注、开标签、填写等）；只读回合结束后不留过程行。 */
   changedPage: boolean;
-  /** 跑完后代码裁判有一条没过：过程行要留下，让「核对 n/3」那句看得见。 */
+  /** 跑完后代码裁判有一条没过：过程行要留下，让「核对 n/m」那句看得见。 */
   checkFailed: boolean;
   /** 标题上次换字的时刻与排队中的下一句：每句至少停 RUN_TITLE_HOLD_MS，免得一闪而过。 */
   titleAt: number;

@@ -360,7 +360,7 @@ export type AgentUiEvent =
    * correction：continue 时核对者说的具体出入，是诊断文字，只按纯文本显示。
    */
   | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; remaining?: string; correction?: string; /** 判继续时给用户看的一句诊断，不带指令。 */ finding?: string }
-  /** 跑完后的代码裁判（agent/src/run-referee.ts）：三条确定性核对，过了几条；notes 每条失败一句话。只标不拦。 */
+  /** 跑完后的代码裁判（agent/src/run-referee.ts）：只数这一轮适用的确定性核对，过了几条（一条都不适用就不发）；notes 每条失败一句话。只标不拦。 */
   | { kind: "run_check"; passed: number; total: number; notes: string[] }
   | { kind: "user_delivery"; delivery: UserDelivery }
   /**
