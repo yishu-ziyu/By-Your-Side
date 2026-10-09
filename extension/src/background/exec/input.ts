@@ -14,8 +14,9 @@ import { axBackendNodeFor, isAxRef } from "../axstate.js";
 import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
-import { isSendLabel, resolveImplicitMarkActions } from "../../shared/mark-actions.js";
+import { isPayLabel, isSendLabel, resolveImplicitMarkActions } from "../../shared/mark-actions.js";
 import { confirmSendIfNeeded, type SendGuard } from "../send-confirm.js";
+import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, collectEffect } from "./effect.js";
@@ -1373,6 +1374,10 @@ export async function click(
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
   const { plate: name, buttons } = await namesOfClickTarget(tabId, params, point);
+  // 付款按钮永远不点，用户在聊天里同意也不点（docs/evals/20261009-pay-stop.md）。
+  const payName = buttons.find(isPayLabel);
+
+  if (payName) await stopBeforePay(tabId, payName, point[0], point[1]);
   const sendName = buttons.find(isSendLabel) ?? "";
 
   if (sendName && (params.clickCount ?? 1) > 1) throw notExecuted(new Error(SEND_MULTI_CLICK));
@@ -1419,9 +1424,14 @@ export async function click(
     let effect: EffectReport | undefined;
 
     try {
-      // 重新定位后落点可能变了：派发前再读一次真正落点上的按钮，是「发送」就照样先问。
+      // 重新定位后落点可能变了：派发前再读一次真正落点上的按钮，是付款就不点，是「发送」就照样先问。
+      const finalButtons = x !== point[0] || y !== point[1] ? (await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] }))).buttons : [];
+      const finalPay = finalButtons.find(isPayLabel);
+
+      if (finalPay) await stopBeforePay(tabId, finalPay, x, y);
+
       if (!sendConfirmed && (x !== point[0] || y !== point[1])) {
-        const finalName = (await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] }))).buttons.find(isSendLabel) ?? "";
+        const finalName = finalButtons.find(isSendLabel) ?? "";
 
         if (finalName && clickCount > 1) throw notExecuted(new Error(SEND_MULTI_CLICK));
         sendConfirmed = await confirmSendIfNeeded(tabId, finalName, sendGuard, () => readSendContent(tabId, x, y));
@@ -1626,6 +1636,9 @@ export async function doubleClick(
 
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
   const { plate: name, buttons } = await namesOfClickTarget(tabId, params, point);
+  const payName = buttons.find(isPayLabel);
+
+  if (payName) await stopBeforePay(tabId, payName, point[0], point[1]);
 
   // 双击「发送」可能发两次，也不经过发送确认：不点，改用 click。
   if (buttons.some(isSendLabel)) throw notExecuted(new Error("「发送」按钮不能双击：双击可能发出两次，也不会先问用户。这次没有点；要发送请用 click 工具单击，扩展会先在网页上问用户。"));
@@ -1667,7 +1680,12 @@ export async function doubleClick(
     let effect: EffectReport | undefined;
 
     try {
-      if ((x !== point![0] || y !== point![1]) && (await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] }))).buttons.some(isSendLabel)) {
+      const finalButtons = x !== point![0] || y !== point![1] ? (await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] }))).buttons : [];
+      const finalPay = finalButtons.find(isPayLabel);
+
+      if (finalPay) await stopBeforePay(tabId, finalPay, x, y);
+
+      if (finalButtons.some(isSendLabel)) {
         throw notExecuted(new Error("「发送」按钮不能双击：双击可能发出两次，也不会先问用户。这次没有点；要发送请用 click 工具单击，扩展会先在网页上问用户。"));
       }
 

@@ -330,6 +330,9 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
 
 /** 用户没让发送的那一步：按扩展给助手的原因说一句人话，不当成失败（docs/evals/20261009-send-confirm.md R2）。 */
 export function sendDeclinedText(resultText: string): string {
+  // 付款按钮沿用这条路：助手不点，留给用户（docs/evals/20261009-pay-stop.md）。
+  if (resultText.includes("Stopped before payment")) return "停在付款前，等你自己点";
+
   if (resultText.includes("停下了任务")) return "没发：你停下了";
 
   if (resultText.includes("离开或关掉")) return "没发：你离开了网页";
