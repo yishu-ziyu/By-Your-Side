@@ -9,7 +9,7 @@ import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earend
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search } from "lucide";
 import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
 import {
-  CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, resolveVoiceKey, resolveVoiceModel,
+  CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, resolveVoiceKey, resolveVoiceModel,
   STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
@@ -67,9 +67,14 @@ document.getElementById("settings")!.innerHTML = `
         <span class="row-main"><span class="row-title">快速模型</span><span class="row-desc">划词解释、翻译这类要马上出结果的动作用它。</span></span>
         <span class="row-ctl"><select id="fast-model" class="sel" aria-label="快速模型"></select></span>
       </div>
+      <div class="row">
+        <span class="row-main"><span class="row-title">备用模型</span><span class="row-desc">主模型卡住或暂时出错时，换它接着做。对话内容会发给这一家。</span></span>
+        <span class="row-ctl"><select id="backup-model" class="sel" aria-label="备用模型"></select></span>
+      </div>
     </div>
     <p id="main-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
+    <p id="backup-status" class="settings-status" role="status" aria-live="polite"></p>
     <div class="surface plist">
       <div class="search">
         <input id="provider-search" type="search" placeholder="搜索服务商或模型，比如 glm、claude" aria-label="搜索服务商或模型" spellcheck="false" autocomplete="off" />
@@ -284,6 +289,12 @@ let fastConfig: InprocModelConfig | null = null;
 const fastSelect = $<HTMLSelectElement>("fast-model");
 
 const fastStatus = $("fast-status");
+
+let backupConfig: InprocModelConfig | null = null;
+
+const backupSelect = $<HTMLSelectElement>("backup-model");
+
+const backupStatus = $("backup-status");
 
 let credentials: StoredCredentials = {};
 
@@ -946,12 +957,33 @@ async function saveFastModel(): Promise<void> {
 
 fastSelect.addEventListener("change", () => void saveFastModel());
 
+/** 备用模型和快速模型一样只列已连接的服务商；默认不用备用。 */
+function renderBackupModels(): void {
+  backupSelect.replaceChildren(new Option("不用备用", ""), ...modelOptionGroups(backupConfig));
+  backupSelect.value = backupConfig ? JSON.stringify({ provider: backupConfig.provider, modelId: backupConfig.modelId }) : "";
+}
+
+async function saveBackupModel(): Promise<void> {
+  // SAFETY: 选项值只由 modelOptionGroups 生成，是 {provider, modelId} 的 JSON 或空串。
+  const next = backupSelect.value ? (JSON.parse(backupSelect.value) as InprocModelConfig) : null;
+
+  if (next) await chrome.storage.local.set({ [INPROC_BACKUP_CONFIG_KEY]: next });
+  else await chrome.storage.local.remove(INPROC_BACKUP_CONFIG_KEY);
+  backupConfig = next;
+  renderBackupModels();
+  setStatus(backupStatus, next ? `已保存。主模型卡住时换成 ${labelOf(next.provider)} · ${next.modelId}。` : "已关闭。主模型出错时不换模型。", "ok");
+}
+
+backupSelect.addEventListener("change", () => void saveBackupModel());
+
 async function reload(): Promise<void> {
   const stored = await chrome.storage.local.get(null);
   // SAFETY: 这个键只由本页 save() 写入，写入值就是 InprocModelConfig。
   config = (stored[INPROC_CONFIG_KEY] as InprocModelConfig | undefined) ?? null;
   // SAFETY: 这个键只由本页 saveFastModel() 写入，写入值就是 InprocModelConfig。
   fastConfig = (stored[INPROC_FAST_CONFIG_KEY] as InprocModelConfig | undefined) ?? null;
+  // SAFETY: 这个键只由本页 saveBackupModel() 写入，写入值就是 InprocModelConfig。
+  backupConfig = (stored[INPROC_BACKUP_CONFIG_KEY] as InprocModelConfig | undefined) ?? null;
   credentials = pickCredentials(Object.entries(stored));
   await runtime.credentials.load(credentials);
   const storedVoiceKey = stored[INPROC_VOICE_KEY];
@@ -982,6 +1014,7 @@ async function reload(): Promise<void> {
   renderCredentialState();
   renderProviders();
   renderFastModels();
+  renderBackupModels();
 }
 
 search.addEventListener("input", () => renderProviders());
@@ -1213,7 +1246,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, voiceStatus, (on) => (on ? "做完会�
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 form.remove();
