@@ -131,7 +131,7 @@ export class TabControl {
     return { tabId: info.tabId };
   }
 
-  /** 另一会话已空闲（没有进行中的任务、在途调用或未知写入）时接手它占着的页；否则不动，返回 false。 */
+  /** 另一会话已空闲（没有进行中的任务或在途调用）时接手它占着的页；否则不动，返回 false。 */
   async releaseIdleForeignTab(tabId?: number): Promise<boolean> {
     // 并行的几个调用同时被拦时共用一次接手，不让后到的那个因「归属已变化」报错。
     const key = tabId ?? "working";
