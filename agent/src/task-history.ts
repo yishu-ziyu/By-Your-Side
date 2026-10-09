@@ -81,6 +81,9 @@ export class TaskHistoryStore {
       const kept = tasks.filter(task => task.id !== entry.id);
       const carried: TaskHistoryEntry = { ...entry };
 
+      // 旧版存的 route 读出时被去掉：忘掉后撤销、同一任务再写回时，从存档里原样带回，不丢旧数据。
+      if (prev && "route" in prev && !("route" in carried)) Object.assign(carried, { route: (prev as TaskHistoryEntry & { route?: unknown }).route });
+
       if (prev?.useCount !== undefined) carried.useCount = prev.useCount;
 
       if (prev?.lastUsedAt !== undefined) carried.lastUsedAt = prev.lastUsedAt;
