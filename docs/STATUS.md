@@ -43,7 +43,8 @@
 2. 决定助手要不要读已下载文件的内容：涉及文件访问权限，所以需要产品决定。
 3. 主动卡「动词即按钮」用真实模型试用（[验收](evals/20261007-proactive-card-verb.md)）。
 4. 提速：会动手的日常任务大部分时间在等模型（[时间拆分](evals/20261007-time-breakdown.md)）。
-5. 边说边做（YIS-134）：GPT-Live 语音已接入，待真人在日常扩展里试听；按文字圈（YIS-135）已合并；目标核对（YIS-136）已能催换说法、不再催死按钮，但查维基仍 0/5，因为主模型想不到只差一个字的词条名（[验收](evals/20261009-goal-check-rephrase.md)）（[底子](evals/20261009-voice-ideas-baseline.md)）。
+5. 做得准（10-09 用户定的第一阶段方向）：每周攻[成绩表](evals/20261009-scoreboard-baseline.md)里最差的一条路；现在最差的是复制到草稿框（1/5，且 3 次说做到了）和查维基（0/5）。
+6. 边说边做（YIS-134）：GPT-Live 语音已接入，用户 10-09 试听基本没问题，细节后续修；按文字圈（YIS-135）已合并；目标核对（YIS-136）已能催换说法、不再催死按钮，但查维基仍 0/5，因为主模型想不到只差一个字的词条名（[验收](evals/20261009-goal-check-rephrase.md)）（[底子](evals/20261009-voice-ideas-baseline.md)）。
 
 进展同步在 [Linear](development/collaboration.md#给用户看的进展linear)。默认测试模型是 gpt-6-luna。
 
