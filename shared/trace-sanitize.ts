@@ -3,10 +3,15 @@ const SECRET_KEY = /^(?:password|passwd|pwd|secret|token|access[_-]?token|refres
 
 const SENSITIVE_TARGET = /password|passwd|pwd|secret|token|api[_-]?key|密码|口令/i;
 
+/** 字段名、标签、占位符里出现这些词，就当它是密码、验证码或卡号栏：不读回值。填写后读回（input.ts）用它。 */
+export const SENSITIVE_FIELD_NAME = /password|passwd|pwd|(?:^|[^a-z])otp(?:[^a-z]|$)|one-time|verification code|验证码|校验码|动态码|密码|口令|cvv|cvc|card number|卡号|安全码/i;
+
 const MAX_TEXT = 64_000;
 
 function cleanText(text: string): string {
   return text
+    // fill / type_text 回执里读回的网页内容（agent/src/tools.ts readbackNote）：和入参一样遮住。值里可能有 »，所以取到最后一个。
+    .replace(/(now contains:? )«[\s\S]*»/g, "$1«[redacted]»")
     .replace(/data:image\/[^;,\s]+;base64,[A-Za-z0-9+/=]+/g, "[image omitted]")
     .replace(/\bBearer\s+[^\s"'<>]+/gi, "Bearer [redacted]")
     .replace(/((?:password|passwd|pwd|secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|cookie|密码|口令)["']?\s*[:=：]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi, "$1[redacted]")
@@ -18,7 +23,7 @@ function cleanText(text: string): string {
 export function sanitizeTrace(value: unknown): unknown {
   const budget = { chars: 96_000, nodes: 1024 };
 
-  function visit(value: unknown, depth = 0, redactInput = false): unknown {
+  function visit(value: unknown, depth = 0, redactInput = false, inReadback = false): unknown {
     if (--budget.nodes < 0 || budget.chars <= 0) return "[truncated: shared budget]";
 
     if (depth > 12) return "[truncated: depth limit]";
@@ -81,8 +86,9 @@ export function sanitizeTrace(value: unknown): unknown {
       const safeKey = cleanText(key.slice(0, Math.min(256, budget.chars)));
       budget.chars -= safeKey.length;
       result[safeKey] = SECRET_KEY.test(key) || key === "signature" ||
-        ((sensitive || redactInput) && /^(text|value|code)$/.test(key))
-        ? "[redacted]" : visit(object[key], depth + 1, inputTool && /^(args|arguments|params)$/.test(key));
+        ((sensitive || redactInput) && /^(text|value|code)$/.test(key)) ||
+        (inReadback && /^(requested|observed)$/.test(key))
+        ? "[redacted]" : visit(object[key], depth + 1, inputTool && /^(args|arguments|params)$/.test(key), key === "readback");
 
       if (safeKey.length < key.length) result.traceTruncation = { truncated: true, reason: "key length limit" };
     }

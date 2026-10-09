@@ -3,6 +3,7 @@ import {assertObservedDocument, assertSameDocument} from "../observation-documen
 import {replaceEditableText} from "../../shared/editable-text.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
+import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
@@ -219,9 +220,10 @@ type PageField = { name: string; value?: string; sensitive?: true; truncated?: t
 /**
  * 写入之后从网页读回这一栏（页面在 input 事件里改了值，读到的是改过的）。在页面里执行，保持自包含。
  * this 是元素（CDP 按节点调用）；否则按 target 解析，target 为 null 时取当前焦点（type_text）。
- * 密码、验证码、卡号这类栏不读值（规则同 read-element.ts 的 secretField）。
+ * 密码、验证码、卡号这类栏不读值：type、autocomplete 同 read-element.ts 的 secretField，再加字段名（sensitiveName 是 SENSITIVE_FIELD_NAME 的正则源码）
+ * 和「这个页面里曾经是 password」的标记（data-bys-was-password，显示密码后 type 变成 text）。
  */
-function readFieldInPage(this: unknown, target: string | null, max: number): PageField | null {
+function readFieldInPage(this: unknown, target: string | null, max: number, sensitiveName: string): PageField | null {
   let el: Element | null | undefined = this instanceof Element ? this : null;
 
   if (!el && target) el = window.__sideagent?.dom?.resolve(target);
@@ -244,7 +246,11 @@ function readFieldInPage(this: unknown, target: string | null, max: number): Pag
     || (by ? by.split(/\s+/).map((id) => field.ownerDocument.getElementById(id)?.textContent ?? "").join(" ") : "")
     || ("labels" in field && field.labels?.[0]?.textContent) || field.getAttribute("placeholder") || field.getAttribute("title") || "")
     .replace(/\s+/g, " ").trim().slice(0, 40);
-  const sensitive = tag === "input" && (field.type === "password" || /one-time-code|cc-(number|csc|exp)/i.test(String(field.getAttribute("autocomplete") ?? "")));
+  const sensitive = tag === "input" && (field.type === "password" || field.hasAttribute("data-bys-was-password")
+    || /one-time-code|cc-(number|csc|exp)/i.test(String(field.getAttribute("autocomplete") ?? ""))
+    || new RegExp(sensitiveName, "i").test([field.name, field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].join(" ")));
+
+  if (tag === "input" && field.type === "password") field.setAttribute("data-bys-was-password", "");
 
   if (sensitive) return { name, sensitive: true };
   let value: string;
@@ -285,8 +291,8 @@ async function readBackField(tabId: number, where: { backendNodeId: number } | {
 
   try {
     field = "backendNodeId" in where
-      ? await callOnBackendNode<PageField | null>(tabId, where.backendNodeId, `function(max) { return (${readFieldInPage.toString()}).call(this, null, max); }`, [FIELD_READBACK_MAX])
-      : await callDom(tabId, readFieldInPage, [where.target, FIELD_READBACK_MAX]);
+      ? await callOnBackendNode<PageField | null>(tabId, where.backendNodeId, `function(max, sensitiveName) { return (${readFieldInPage.toString()}).call(this, null, max, sensitiveName); }`, [FIELD_READBACK_MAX, SENSITIVE_FIELD_NAME.source])
+      : await callDom(tabId, readFieldInPage, [where.target, FIELD_READBACK_MAX, SENSITIVE_FIELD_NAME.source]);
   } catch { /* 读不回不算写入失败 */ }
 
   return classifyReadback(field ?? null, requested, mode);
