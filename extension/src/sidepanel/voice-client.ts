@@ -37,14 +37,22 @@ type LiveCall = {
   /** 远端声音在静音之前的音量，用来判断助手是否正在出声。 */
   remoteMeter: AnalyserNode;
   remoteTrack: MediaStreamTrack | null;
-  turns: Map<string, { role: 'user' | 'assistant'; turn: number; text: string }>;
+  /** 接进 Web Audio 的麦克风与远端声音，关通话时断开。 */
+  sources: MediaStreamAudioSourceNode[];
+  /** muted = 这段回答播放中被静音过（停声或插话），这时不报告已念完。 */
+  turns: Map<string, { role: 'user' | 'assistant'; turn: number; text: string; muted?: boolean }>;
+  /**
+   * 送去播报的结果：sent = 已写进数据通道，appended = 服务端已确认收到，等它之后的第一段回答念完；
+   * turn = 那段回答的编号。
+   */
+  speakables: Map<string, { state: 'sent' | 'appended'; turn?: string }>;
   delegated: Set<string>;
   assistantTurn: string | null;
   /**
    * stop = 用户点了「停声」，只静音这一段回答；barge = 用户插话，等用户这句说完、GPT-Live 另起一段回答时再放声。
    * 两种都按回答编号放声：服务端插话后常接着念旧回答，旧回答不能再响。
    */
-  muted: { reason: 'stop' | 'barge'; turn: string | null; userDone: boolean } | null;
+  muted: { reason: 'stop' | 'barge'; turn: string | null; userDone: boolean; at: number; userHeard: boolean } | null;
   /** 最近一次听到助手出声的时刻（静音前测）。 */
   audibleAt: number;
   bargeTimer: ReturnType<typeof setInterval> | null;
@@ -54,6 +62,12 @@ type LiveCall = {
 const LIVE_AUDIBLE_RMS = 0.01;
 
 const LIVE_AUDIBLE_HOLD_MS = 500;
+
+/** 本地插话后这么久服务端还没听到用户说话，就当是咳嗽或回声，取消静音。 */
+const LIVE_FALSE_BARGE_MS = 2500;
+
+/** WebRTC 短暂 disconnected 常会自己恢复；超过这么久才按断线处理。 */
+const LIVE_DISCONNECT_GRACE_MS = 3000;
 
 /** 可选字段「存在才带上」时按具名类型分步赋值。 */
 type CaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
@@ -246,6 +260,11 @@ export class VoiceClient {
     }
 
     try {
+      // 换了语音（如 GPT-Live 断线后按阶跃星辰重连）：先关掉上一份麦克风和 AudioContext。
+      this.closeLive();
+      this.stream?.getTracks().forEach(t=>{t.onended=null;t.stop();});this.stream=null;
+
+      if(this.context)void this.context.close().catch(()=>{});
       const context = new AudioContext({sampleRate:24000}); this.context=context;
       await context.resume();
 
@@ -283,6 +302,8 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   private async startLive(id: string, bindTrackListeners: (stream: MediaStream) => void): Promise<void> {
     try {
       // 断线恢复时沿用还开着的麦克风和 AudioContext，不另开一份。
+      if (this.worklet) { this.worklet.port.onmessage = null; this.worklet.disconnect(); this.worklet = null; }
+
       if (this.context && this.context.state !== 'closed' && this.stream?.getTracks().some(t => t.readyState === 'live')) {
         await this.context.resume();
 
@@ -316,17 +337,17 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   private async connectLive(id: string, auth: Extract<VoiceEvent, { kind: 'gpt_live_auth' }>): Promise<void> {
     const context = this.context, stream = this.stream;
 
-    if (this.id !== id || this.live || !context || !stream || this.voiceModel !== GPT_LIVE_MODEL) return;
+    if (this.id !== id || this.live || !context || !stream || this.voiceModel !== GPT_LIVE_MODEL || this.diagSession) return;
     const pc = new RTCPeerConnection();
     const dc = pc.createDataChannel('oai-events');
     const gain = context.createGain();
     const mic = context.createAnalyser(); mic.fftSize = 256;
-    context.createMediaStreamSource(stream).connect(mic);
+    const micSource = context.createMediaStreamSource(stream); micSource.connect(mic);
     this.analyser = context.createAnalyser(); this.analyser.fftSize = 256;
     gain.connect(this.analyser); this.analyser.connect(context.destination);
     const sink = new Audio(); sink.muted = true;
     const remoteMeter = context.createAnalyser(); remoteMeter.fftSize = 256;
-    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, turns: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null };
+    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, sources: [micSource], turns: new Map(), speakables: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null };
     this.live = live;
     live.bargeTimer = setInterval(() => this.watchLiveBargeIn(live), 20);
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -335,9 +356,15 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       sink.srcObject = remote; void sink.play().catch(() => {});
       live.remoteTrack = remote.getAudioTracks()[0] ?? null;
       const source = context.createMediaStreamSource(remote);
-      source.connect(gain); source.connect(remoteMeter);
+      source.connect(gain); source.connect(remoteMeter); live.sources.push(source);
     };
-    pc.onconnectionstatechange = () => { if (this.live === live && pc.connectionState === 'failed') this.scheduleRecovery('GPT-Live 连接断开，正在恢复…'); };
+    // 通话断了（不是我们自己关的）：照阶跃星辰的断线路径提示并重连，不留在「在听」里悄悄丢结果。
+    const lost = () => { if (this.live === live) this.scheduleRecovery('GPT-Live 连接断开，正在恢复…'); };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') lost();
+      else if (pc.connectionState === 'disconnected') setTimeout(() => { if (pc.connectionState === 'disconnected') lost(); }, LIVE_DISCONNECT_GRACE_MS);
+    };
+    dc.onclose = lost;
     dc.onmessage = ({ data }) => { try { this.onLiveEvent(live, JSON.parse(String(data))); } catch { /* 不认识的事件不影响通话 */ } };
 
     try {
@@ -368,7 +395,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     }
   }
   /** GPT-Live 数据通道事件：转写进字幕，委派交给宿主，服务端切掉声音时回到在听。 */
-  private onLiveEvent(live: LiveCall, e: { type?: string; turn?: { id?: string; role?: string; transcript?: string }; turn_id?: string; delta?: string; item?: { id?: string; content?: Array<{ type?: string; text?: string }> } }): void {
+  private onLiveEvent(live: LiveCall, e: { type?: string; turn?: { id?: string; role?: string; transcript?: string }; turn_id?: string; delta?: string; delegation_item_id?: string; item?: { id?: string; content?: Array<{ type?: string; text?: string }> } }): void {
     if (this.live !== live) return;
     const turn = e.turn;
 
@@ -376,13 +403,17 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       const role = turn.role === 'user' ? 'user' : 'assistant';
 
       if (role === 'user') this.turn++;
+
+      if (role === 'user' && live.muted?.reason === 'barge') live.muted.userHeard = true;
       live.turns.set(turn.id, { role, turn: this.turn, text: turn.transcript ?? '' });
 
       if (role === 'assistant') {
         live.assistantTurn = turn.id;
 
-        // 新的一段回答不在「停声」范围里；插话后，用户那句说完再开口的回答也放声。
-        if (live.muted && live.muted.turn !== turn.id && (live.muted.reason === 'stop' || live.muted.userDone)) this.unmuteLive(live);
+        // 新的一段回答不在「停声」范围里；插话后，用户那句说完再开口的回答放声；误判窗口过后开始的回答也放声。
+        if (live.muted && live.muted.turn !== turn.id && (live.muted.reason === 'stop' || live.muted.userDone || Date.now() - live.muted.at > LIVE_FALSE_BARGE_MS)) this.unmuteLive(live);
+
+        for (const speakable of live.speakables.values()) if (speakable.state === 'appended' && !speakable.turn) speakable.turn = turn.id;
         this.showLiveAnswer(live, turn.id);
       }
 
@@ -415,8 +446,30 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       if (turn.role === 'assistant') {
         if (turn.transcript) this.event({ kind: 'text', turn: known?.turn ?? this.turn, role: 'assistant', text: turn.transcript });
 
+        // 结果之后那段回答念完：没被静音过才报告已播放；被打断的保持未播完，和阶跃星辰一样。
+        for (const [delegationId, speakable] of live.speakables) {
+          if (speakable.turn !== turn.id) continue;
+          live.speakables.delete(delegationId);
+
+          if (!known?.muted) this.command({ kind: 'playback_done', responseId: delegationId });
+        }
+
         if (live.assistantTurn === turn.id) { live.assistantTurn = null; this.setPhase('listening'); }
       }
+
+      return;
+    }
+
+    if (e.type === 'input_transcript.added' && live.muted?.reason === 'barge') {
+      live.muted.userHeard = true;
+
+      return;
+    }
+
+    if (e.type === 'delegation.context.appended' && e.delegation_item_id) {
+      const speakable = live.speakables.get(e.delegation_item_id);
+
+      if (speakable?.state === 'sent') speakable.state = 'appended';
 
       return;
     }
@@ -453,6 +506,12 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     if (rms(live.remoteMeter) > LIVE_AUDIBLE_RMS && live.remoteTrack?.enabled !== false) live.audibleAt = Date.now();
 
+    // 服务端一直没听到用户说话：本地那次插话是误判，恢复声音。
+    if (live.muted?.reason === 'barge' && !live.muted.userHeard && Date.now() - live.muted.at > LIVE_FALSE_BARGE_MS) {
+      this.unmuteLive(live);
+      this.diagnostic?.('local_barge_in_cleared', { turn: this.turn });
+    }
+
     if (live.muted || Date.now() - live.audibleAt > LIVE_AUDIBLE_HOLD_MS) {
       this.loudFrames = 0;
 
@@ -464,13 +523,16 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     if (this.loudFrames < BARGE_IN_FRAMES) return;
     this.loudFrames = 0;
-    this.muteLive(live, { reason: 'barge', turn: live.assistantTurn, userDone: false });
+    this.muteLive(live, { reason: 'barge', turn: live.assistantTurn, userDone: false, at: Date.now(), userHeard: false });
     this.diagnostic?.('local_barge_in', { turn: this.turn, rms: level });
     this.setPhase('listening');
   }
   /** 关掉远端音轨本身（不只是本地音量），侧栏里任何地方收到的远端声音都变成静音。 */
   private muteLive(live: LiveCall, muted: NonNullable<LiveCall['muted']>): void {
     live.muted = muted;
+    const current = muted.turn ? live.turns.get(muted.turn) : undefined;
+
+    if (current) current.muted = true;
     live.gain.gain.value = 0;
 
     if (live.remoteTrack) live.remoteTrack.enabled = false;
@@ -486,10 +548,11 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     if (!live) return;
     this.live = null;
-    live.dc.onmessage = null; live.pc.ontrack = null; live.pc.onconnectionstatechange = null;
+    live.dc.onmessage = null; live.dc.onclose = null; live.pc.ontrack = null; live.pc.onconnectionstatechange = null;
     live.pc.close();
     live.sink.srcObject = null;
     if (live.bargeTimer) clearInterval(live.bargeTimer);
+    live.sources.forEach(source => source.disconnect());
     live.gain.disconnect(); live.mic.disconnect(); live.remoteMeter.disconnect();
     this.analyser?.disconnect(); this.analyser = null;
   }
@@ -569,13 +632,13 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   }
   /** Normal sessions do not persist PCM. Diagnostic capture is an explicit second mode. */
   private startCommand(): VoiceCommand {
-    if (this.diagSession) return { kind: 'start', diagnostic: true };
-    const command: Extract<VoiceCommand, { kind: 'start' }> = { kind: 'start' };
+    // 宿主按自己收到的设置开会话；两边不一致时宿主拒绝，不会在选了 GPT-Live 时连上阶跃星辰。诊断录音同样核对。
+    const model = typeof this.voiceModel === 'string' ? { model: this.voiceModel } : {};
+
+    if (this.diagSession) return { kind: 'start', diagnostic: true, ...model };
+    const command: Extract<VoiceCommand, { kind: 'start' }> = { kind: 'start', ...model };
 
     if (this.voice) command.voice = this.voice;
-
-    // 宿主按自己收到的设置开会话；两边不一致时宿主拒绝，不会在选了 GPT-Live 时连上阶跃星辰。
-    if (typeof this.voiceModel === 'string') command.model = this.voiceModel;
 
     if (this.persona.id !== 'default') command.persona = this.persona;
 
@@ -802,7 +865,11 @@ return;}
 return;}
 
     if(e.kind==='delegation_context'){
-      if(this.live?.dc.readyState==='open')this.live.dc.send(JSON.stringify({type:'delegation.context.append',delegation_item_id:e.delegationId,channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+      if(this.live?.dc.readyState==='open'){
+        this.live.dc.send(JSON.stringify({type:'delegation.context.append',delegation_item_id:e.delegationId,channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+
+        if(e.channel==='speakable')this.live.speakables.set(e.delegationId,{state:'sent'});
+      }
 
       return;
     }
@@ -900,7 +967,7 @@ return;}
     if(!this.id||!this.ready)return;
 
     // GPT-Live 协议里没有取消回答的事件：只把这一段回答在本地静音，任务照常。
-    if(this.live){this.muteLive(this.live,{reason:'stop',turn:this.live.assistantTurn,userDone:false});this.setPhase('listening','已停声，后台任务继续');
+    if(this.live){this.muteLive(this.live,{reason:'stop',turn:this.live.assistantTurn,userDone:false,at:Date.now(),userHeard:false});this.setPhase('listening','已停声，后台任务继续');
 
 return;}
     this.player?.stop();this.command({kind:'interrupt',turn:this.turn});

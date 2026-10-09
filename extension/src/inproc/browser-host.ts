@@ -241,6 +241,9 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
         // 侧栏与宿主看到的设置不同（刚改过还没推到这里）：不开任何连接，免得选了 GPT-Live 却连上阶跃星辰。
         if ((message.command.model ?? null) !== (typeof voiceModel === "string" ? voiceModel : null)) throw new Error("语音模型设置刚改过，还没生效：请再开一次语音。");
+
+        // 诊断录音只走阶跃星辰的音频帧；GPT-Live 的声音不经过扩展，没有可录的东西。
+        if (message.command.diagnostic && voiceModel === GPT_LIVE_MODEL) throw new Error("GPT-Live 不支持诊断录音：先在「模型与语音」换回阶跃星辰语音。");
       }
       catch (error) {
         connection?.send({ type: "voice", voiceId: message.voiceId, conversationId: message.conversationId,

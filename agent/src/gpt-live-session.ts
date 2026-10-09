@@ -44,6 +44,8 @@ export class GptLiveSession {
   private readonly delegations = new Map<string, Delegation>();
   private readonly notices = new Set<string>();
   private readonly cancelled = new Set<string>();
+  /** 已送去播报的交付：委派编号 → 交付编号；侧栏报告 GPT-Live 念完后标记已播放。 */
+  private readonly speaking = new Map<string, string>();
   constructor(private readonly deps: RealtimeVoiceDependencies) {
   }
   /** `access` 是宿主刚取到的 ChatGPT 登录令牌；只经语音事件交给侧栏建通话，不记录。 */
@@ -78,6 +80,17 @@ export class GptLiveSession {
         void this.delegate(command.delegationId, command.text);
 
         return;
+      // 侧栏按委派编号报告：送回的结果之后那段回答已念完，且中途没被静音。
+      case 'playback_done': {
+        const delivery = this.speaking.get(command.responseId);
+
+        if (!delivery) return;
+        this.speaking.delete(command.responseId);
+        this.deps.onPlayback?.(delivery, 'played');
+
+        return;
+      }
+
       case 'commit': {
         const input = this.inputs.get(command.turn);
 
@@ -149,17 +162,31 @@ export class GptLiveSession {
 
     if (record.runId === undefined) record.done = true;
   }
-  private answer(record: Delegation, channel: 'speakable' | 'commentary', raw: string): void {
+  /** 返回是否真的送出。 */
+  private answer(record: Delegation, channel: 'speakable' | 'commentary', raw: string): boolean {
     const text = channel === 'speakable' ? speechText(raw) : raw;
 
-    if (this.closed || record.done || !text.trim()) return;
+    if (this.closed || record.done || !text.trim()) return false;
 
     if (channel === 'speakable') record.done = true;
     this.deps.diagnostic?.('gpt_live_delegation_context', { delegationId: record.id, channel, chars: text.length });
     this.deps.emit({ kind: 'delegation_context', delegationId: record.id, channel, text });
+
+    return true;
   }
-  private pending(runId: string | null | undefined): Delegation | undefined {
-    return [...this.delegations.values()].reverse().find(d => !d.done && !!d.runId && d.runId === runId);
+  /**
+   * 同一个任务的结果只念一次，交给最近那次委派；更早的委派（如对同一任务的补充）也随之结束，
+   * 只收到一条静默说明，免得 GPT-Live 一直等。返回要播报的那一次。
+   */
+  private settle(runId: string | null | undefined): Delegation | undefined {
+    const [latest, ...older] = [...this.delegations.values()].reverse().filter(d => !d.done && !!d.runId && d.runId === runId);
+
+    for (const record of older) {
+      this.answer(record, 'commentary', '这次委派的结果已随后一次委派送达，不用另外回答。');
+      record.done = true;
+    }
+
+    return latest;
   }
   private async waitForInput(origin: Input): Promise<void> {
     const end = Date.now() + 5000;
@@ -182,9 +209,9 @@ export class GptLiveSession {
     }
 
     // 任务出错、被终止或停下却没有交付：念宿主自己的状态说明，不让 GPT-Live 一直等。
-    const record = this.pending(snapshot.runId);
+    const record = ['error', 'aborted', 'idle'].includes(snapshot.state) ? this.settle(snapshot.runId) : undefined;
 
-    if (record && ['error', 'aborted', 'idle'].includes(snapshot.state)) this.answer(record, 'speakable', progressSpeech(snapshot));
+    if (record) this.answer(record, 'speakable', progressSpeech(snapshot));
   }
   streamDelivery(stream: UserDeliveryStream): void {
     if (stream.phase === 'cancelled') this.cancelled.add(stream.id);
@@ -192,11 +219,13 @@ export class GptLiveSession {
   /** 只把 GPT-Live 委派出去的那个任务的交付送回；文字规则与套餐语音相同。 */
   completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts'>): void {
     if (this.closed || delivery.kind === 'ack' || this.notices.has(delivery.id) || this.cancelled.has(delivery.id)) return;
-    const record = this.pending(delivery.runId);
+    const record = this.settle(delivery.runId);
 
     if (!record) return;
     this.notices.add(delivery.id);
-    this.answer(record, 'speakable', spokenDeliveryText(delivery, this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' }), this.deps.getSnapshot()?.conversationId));
+
+    if (!this.answer(record, 'speakable', spokenDeliveryText(delivery, this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' }), this.deps.getSnapshot()?.conversationId))) return;
+    this.speaking.set(record.id, delivery.id);
     this.deps.onPlayback?.(delivery.id, 'speaking');
   }
   close(emit = true): void {
