@@ -27,8 +27,9 @@ export class RunStepLog {
     this.runId = runId; this.items = []; this.programParents.clear(); this.failedProgramParents.clear(); this.truncated = false;
   }
 
-  note(runId: string | null, tool: string, isError: boolean, repeatRefused: boolean, params: Record<string, unknown>, parentId?: string): void {
-    if (repeatRefused || GOAL_CHECK_BOOKKEEPING_TOOLS.has(tool)) return;
+  /** 被拦下的重复、用户没让发送（不发、停、离开、超时）都没有执行，不算失败的一步。 */
+  note(runId: string | null, tool: string, isError: boolean, repeatRefused: boolean, sendDeclined: boolean, params: Record<string, unknown>, parentId?: string): void {
+    if (repeatRefused || sendDeclined || GOAL_CHECK_BOOKKEEPING_TOOLS.has(tool)) return;
     this.resetFor(runId);
     if (parentId) { this.programParents.add(parentId); if (isError) this.failedProgramParents.add(parentId); }
     this.items.push({ tool, ok: !isError, params });

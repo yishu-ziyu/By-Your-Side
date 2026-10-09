@@ -222,6 +222,11 @@ try {
   check("c 同一轮再点同一个「发送」：仍 0 条，没有第二个确认框，直接说用户已选不发", !reappeared && sent() === sentBeforeC && toolC.some(t => t.includes("这一轮已经在网页上选了「不发」")), { reappeared, secondClickMs });
   const repeats = toolC.filter(t => t.includes("这一轮已经在网页上选了「不发」")).length;
   check("c 同一轮再点三次：都直接回用户已选不发，没有被当成连续出错停下", repeats === 3 && !/连续三次/.test(await panelText()), { repeats });
+  // 核对行在回答之后、回到空闲之前下发，放在折叠的过程行里：等侧栏空闲，再读含折叠内容的全部文字（innerText 读不到折叠的行）。
+  await until(async () => !(await rp.evaluate(panel, 'document.querySelector("#send-btn").classList.contains("stopping")')), 10_000, "c 侧栏回到空闲", 50);
+  await sleep(1000);
+  const textC = String(await rp.evaluate(panel, 'document.querySelector("#messages").textContent'));
+  check("c 侧栏：你没让发的点击不算失败的改动，没有「有一步失败没说」「页面没有变化」", !textC.includes("有一步失败没说") && !textC.includes("页面没有变化"), { failedNotSaid: textC.includes("有一步失败没说"), pageUnchanged: textC.includes("页面没有变化") });
   const runC = await lastRun();
   check("c 侧栏：写「你没让发，草稿还在」，不标失败，过程行标题不写「没成功」", !!runC && runC.steps.filter(step => step.text.includes("你没让发，草稿还在")).length === 4 && runC.steps.every(step => !step.error) && !runC.title.includes("没成功") && !runC.title.includes(WAITING), { run: runC });
   await panelShot("c-panel.png");
