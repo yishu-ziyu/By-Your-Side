@@ -1283,8 +1283,16 @@ return;}
   },
 };
 
+/** 用户在这段对话里说到第几句：「不发」只管到用户再说话为止（docs/evals/20261009-send-confirm.md）。 */
+let userTurn = 0;
+
 const uplink = {
- sendClientMessage: (msg: ClientMessage) => transport.sendClientMessage({ ...msg, conversationId }),
+ sendClientMessage: (msg: ClientMessage) => {
+   // 新任务和运行中插话都从这里出去：插话不换任务身份，所以单独数。恢复、停这类控制不是用户说了新话，不算。
+   if (msg.type === "user_message" || msg.type === "steer" || (msg.type === "task_action" && (msg.request.action === "start" || msg.request.action === "steer"))) userTurn += 1;
+
+   return transport.sendClientMessage({ ...msg, conversationId });
+ },
  retry: () => transport.retry(),
 };
 
@@ -1373,7 +1381,7 @@ async function executeToolCall(
     // 等用户确认「发送」时：停、接管、控制轮次变了都马上结束等待，按「不发」处理。
     const sendGuard: SendGuard = {
       inProgram: !!programId,
-      task: runId ?? conversationId,
+      task: runId ? `${runId}\u0000${userTurn}` : undefined,
       cancelled: () => {
         try { checkIdentity(); } catch { return true; }
 

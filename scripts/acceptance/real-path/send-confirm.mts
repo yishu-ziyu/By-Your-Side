@@ -4,16 +4,18 @@
  * 练习页的「发送」「保存」都在表单里，点下去各发一条 POST；判据只看网页上的确认框、服务器收到的 POST、侧栏和助手收到的工具结果。
  *   a) 助手点「发送」：网页出现「要发送吗？」，用户决定前服务器收到 0 条。
  *   b) 用户点确认框上的「发送」：服务器恰好收到 1 条；助手收到的结果写明用户确认后才点。
- *   c) 用户点「不发」：0 条，结果写明用户没让发；同一轮助手再点同一个「发送」：仍是 0 条，不再出确认框。
+ *   c) 用户点「不发」：0 条，结果写明用户没让发；同一轮助手再点同一个「发送」三次：仍是 0 条，不再出确认框，也不被当成「连续三次出错」停下。
  *   d) 用户 40 秒后才点「发送」：1 条，侧栏没有「结果未知」。
  *   e) 助手（并行的一段程序）去点确认框上的「发送」：被拒绝，0 条。
  *   f) 「保存」直接点，不出确认框。
- *   g) 等确认时用户点侧栏「停」：0 条，确认框和任务很快结束（记下耗时）。
+ *   g) 等确认时用户点侧栏「停」：0 条，确认框和任务很快结束（记下耗时）；助手收到的结果写明用户停下、不要换办法发（下一轮请求的历史里看）。
  *   h) 助手点一个大容器（自己的名字不是发送），坐标落在里面的「发送」上：照样出确认框，用户决定前 0 条。
  *   i) 助手用 clickCount 2 点「发送」：不点、不出确认框，0 条，结果写明不能连点。
  *   j) 按钮 title 是「按 Ctrl+Enter 发送」、文字是「发送」：照样出确认框。
+ *   k) 用户点「不发」后，任务还在跑时插话「改好了，发吧」（同一个任务）：助手再点「发送」，确认框重新出现，用户确认后恰好 1 条。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
- * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到（反例结果见验收文件）。
+ * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
+ * 「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 sendDeclined，c 被「连续三次」停下（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -59,6 +61,7 @@ const ASK = {
   a: "案例A：把草稿发出去。", c: "案例C：把草稿发出去。", d: "案例D：把草稿发出去。",
   e: "案例E：把草稿发出去。", f: "案例F：把草稿保存一下。", g: "案例G：把草稿发出去。",
   h: "案例H：把草稿发出去。", i: "案例I：把草稿发出去。", j: "案例J：把草稿发出去。",
+  k: "案例K：把草稿发出去。", k2: "案例K2：草稿改好了，发吧。",
 };
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
@@ -72,7 +75,8 @@ const model = await startScriptedModel([
   // 目标核对的请求里带着用户原话：先认它，直接判完成，免得它匹配到下面的用例去点按钮。
   { match: '"goalPage"', steps: [{ text: DONE }] },
   { match: ASK.a, steps: [clickSend, { text: "A 完成。" }] },
-  { match: ASK.c, steps: [clickSend, clickSend, { text: "C 完成。" }] },
+  // 第 2–4 次点击回的是同一句「这一轮已经选了不发」：没有 sendDeclined 标记时，第 4 次凑满「连续三次」。
+  { match: ASK.c, steps: [clickSend, clickSend, clickSend, clickSend, { text: "C 完成。" }] },
   { match: ASK.d, steps: [clickSend, { text: "D 完成。" }] },
   // 两个工具结果把步数加 2：第 1 步是占位。
   { match: ASK.e, steps: [{ tools: [clickSend.tool, { name: "browser_run", args: { label: "点确认框", code: PROGRAM } }] }, { text: "E 完成。" }, { text: "E 完成。" }] },
@@ -82,6 +86,9 @@ const model = await startScriptedModel([
   { match: ASK.h, steps: [{ tool: { name: "click", args: { target: "#box", position: { x: 260, y: 30 }, label: "回复框" } } }, { text: "H 完成。" }] },
   { match: ASK.i, steps: [{ tool: { name: "click", args: { target: "#send", label: "发送", clickCount: 2 } } }, { text: "I 完成。" }] },
   { match: ASK.j, steps: [{ tool: { name: "click", args: { target: "#send-titled", label: "按钮" } } }, { text: "J 完成。" }] },
+  // 「不发」以后慢慢写一段话，留出插话的时间；插话进来以后按 K2 的步子走。
+  { match: ASK.k, steps: [clickSend, { text: "K：用户没让发，草稿还留着。我先说明一下现在的情况，等你的下一步安排。".repeat(8), chunkDelayMs: 400 }] },
+  { match: ASK.k2, steps: [clickSend, { text: "K2 完成。" }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -188,7 +195,8 @@ try {
   const toolC = toolsSince(from);
   check("c 用户点「不发」：服务器 0 条，结果写明用户没让发", sent() === sentBeforeC && toolC.some(t => t.includes("用户在网页上选了「不发」")), { sentDelta: sent() - sentBeforeC, tool: toolC });
   check("c 同一轮再点同一个「发送」：仍 0 条，没有第二个确认框，直接说用户已选不发", !reappeared && sent() === sentBeforeC && toolC.some(t => t.includes("这一轮已经在网页上选了「不发」")), { reappeared, secondClickMs });
-  check("c 没有被当成连续出错停下", !/连续三次/.test(await panelText()), null);
+  const repeats = toolC.filter(t => t.includes("这一轮已经在网页上选了「不发」")).length;
+  check("c 同一轮再点三次：都直接回用户已选不发，没有被当成连续出错停下", repeats === 3 && !/连续三次/.test(await panelText()), { repeats });
 
   // ── d：40 秒后才确认 ──
   from = toolTexts.length;
@@ -273,6 +281,9 @@ try {
   // ── h：点容器，落点在「发送」上 ──
   const h = await confirmThenDecline("h", "H 完成。");
   check("h 点容器、落点在「发送」上：出确认框，用户决定前 0 条", !!h.box?.includes("要发送吗？") && h.sentBeforeDecision === 0 && h.sentDelta === 0, h);
+  // g 停下后没有下一次模型请求；它的工具结果随 h 的请求历史送到模型这边。
+  const stoppedTool = toolTexts.find(t => t.includes("用户停下了任务"));
+  check("g 停下后，助手收到的结果写明用户停下、不要按回车或点别的按钮", !!stoppedTool?.includes("不要按回车"), { tool: stoppedTool ?? null });
 
   // ── i：clickCount 2 点「发送」──
   from = toolTexts.length;
@@ -291,6 +302,23 @@ try {
   // ── j：title 不以发送开头、文字是「发送」──
   const j = await confirmThenDecline("j", "J 完成。");
   check("j title「按 Ctrl+Enter 发送」、文字「发送」：出确认框，用户决定前 0 条", !!j.box?.includes("要发送吗？") && j.sentBeforeDecision === 0 && j.sentDelta === 0, j);
+
+  // ── k：「不发」以后用户插话让发，同一个任务里重新问 ──
+  from = toolTexts.length;
+  const sentBeforeK = sent();
+  await ask(ASK.k);
+  const boxK1 = await confirmShown();
+  await userClick(boxK1.no!);
+  // 模型拿到「不发」的结果后开始慢慢写：这时任务还在跑，插话不会开新任务。
+  await until(async () => model.requests.some(r => r.rule === ASK.k && r.step === 1 && r.firstTextAt !== undefined), 30_000, "不发以后助手还在写");
+  await ask(ASK.k2);
+  const boxK2 = await until(async () => { if (sent() > sentBeforeK) return { early: true } as const; const box = await confirmBox(); return box?.yes ? box : null; }, 30_000, "插话以后确认框重新出现", 100).catch(() => null);
+  const sentBeforeK2Decision = sent() - sentBeforeK;
+  if (boxK2 && "yes" in boxK2) { await rp.screenshot(work, join(out, "k-confirm-again.png")); await userClick(boxK2.yes!); await until(async () => sent() > sentBeforeK, 10_000, "插话后确认，服务器收到发送"); }
+  await answered("K2 完成。").catch(() => {});
+  await sleep(1000);
+  const toolK = toolsSince(from);
+  check("k 「不发」后插话让发：确认框重新出现，确认后恰好 1 条", !!boxK2 && "yes" in boxK2 && sentBeforeK2Decision === 0 && sent() - sentBeforeK === 1 && toolK.some(t => t.includes("The user confirmed sending on the page")), { confirmAgain: !!boxK2 && "yes" in boxK2, sentBeforeK2Decision, sentDelta: sent() - sentBeforeK, tool: toolK });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, measured, posts, toolTexts, notCovered: ["2 分钟没理自动不发（产品没有缩短等待的开关）", "真实网站", "按回车发送（第一版不拦）"], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));

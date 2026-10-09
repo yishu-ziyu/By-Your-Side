@@ -19,8 +19,8 @@ const POLL_MS = 150;
 export interface SendGuard {
   /** 网页脚本程序（browser_run）里的点击：程序有总期限，不能在里面等用户。 */
   inProgram: boolean;
-  /** 同一任务的身份：用户说过「不发」的按钮，这一轮不再问。 */
-  task: string;
+  /** 这一轮的身份（任务 + 用户说到第几句）：用户说过「不发」的按钮，到用户再说话之前不再问。没有任务身份时不记。 */
+  task: string | undefined;
   /** 停、接管、控制轮次变了：等确认要马上结束。 */
   cancelled(): boolean;
   /** 告诉宿主这次调用正在等用户（放宽期限）或已经不等了（恢复普通期限）。 */
@@ -29,18 +29,21 @@ export interface SendGuard {
 
 type Outcome = "send" | "decline" | "stopped" | "left" | "timeout";
 
+/** 每种「用户没让发」都带这句：别让助手改按回车或点别的按钮把它发出去。 */
+const NO_OTHER_WAY = "不要换别的办法发出去：不要按回车，也不要点别的按钮。";
+
 const TEXT: Record<Exclude<Outcome, "send">, string> = {
-  decline: "用户在网页上选了「不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮，也不要换别的办法发出去；在回复里告诉用户没有发送。",
-  stopped: "用户停下了任务或接管了页面：没有点「发送」，草稿还留在页面上。",
-  left: "用户离开或关掉了这个网页：没有点「发送」。",
-  timeout: "用户 2 分钟内没有在网页上确认：没有点「发送」，草稿还留在页面上。在回复里告诉用户还没发送，等用户自己决定。",
+  decline: `用户在网页上选了「不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
+  stopped: `用户停下了任务或接管了页面：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}`,
+  left: `用户离开或关掉了这个网页：没有点「发送」。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
+  timeout: `用户 2 分钟内没有在网页上确认：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}在回复里告诉用户还没发送，等用户自己决定。`,
 };
 
-const REPEAT_TEXT = "用户这一轮已经在网页上选了「不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮；在回复里告诉用户没有发送。";
+const REPEAT_TEXT = `用户这一轮已经在网页上选了「不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送；用户再说要发时才会重新问。`;
 
 const PROGRAM_TEXT = "网页脚本程序里不能点「发送」：发送前要等用户在网页上确认，程序等不了，所以这次没有点。请改用单独的 click 工具点这个按钮。";
 
-/** 没执行的结果：sendDeclined 标记让宿主不把「用户不让发」当成工具出错去连续计数。 */
+/** 没执行的结果：sendDeclined 标记让宿主不把「用户没让发」（不发、停、离开、超时）当成工具出错去连续计数，也不进「换个办法试」。 */
 function notSent(message: string, declined = false): Error {
   return Object.assign(new Error(message), { executionFact: "not_executed" as const }, declined ? { sendDeclined: true as const } : {});
 }
@@ -97,9 +100,9 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
   if (!guard || !isSendLabel(label)) return false;
 
   if (guard.inProgram) throw notSent(PROGRAM_TEXT);
-  const key = `${guard.task}\u0000${tabId}\u0000${label.trim()}`;
+  const key = guard.task === undefined ? null : `${guard.task}\u0000${tabId}\u0000${label.trim()}`;
 
-  if (declined.has(key)) throw notSent(REPEAT_TEXT, true);
+  if (key && declined.has(key)) throw notSent(REPEAT_TEXT, true);
   const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
   const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take }));
   let port: chrome.runtime.Port | null = null;
@@ -134,14 +137,15 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
   shown.disconnect();
   guard.waiting(false);
 
-  if (outcome === "send" && guard.cancelled()) throw notSent(TEXT.stopped);
+  if (outcome === "send" && guard.cancelled()) throw notSent(TEXT.stopped, true);
 
   if (outcome === "send") return true;
 
-  if (outcome === "decline") {
+  // 只记明确的「不发」；停、离开、超时不记，用户回来再让发时照常问。
+  if (outcome === "decline" && key) {
     if (declined.size >= 200) declined.delete(declined.values().next().value!);
     declined.add(key);
   }
 
-  throw notSent(TEXT[outcome], outcome === "decline");
+  throw notSent(TEXT[outcome], true);
 }
