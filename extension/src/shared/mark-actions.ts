@@ -64,6 +64,24 @@ export function isSendLabel(text: string): boolean {
   return t.startsWith("发送") || /^send(\s|$)/i.test(t);
 }
 
+/** 只是付款方式名字的按钮（选支付宝、微信支付这类选项）不算付款。 */
+const PAY_METHOD_ONLY = /^(支付宝|微信支付|银行卡|apple pay)$/i;
+
+/** 付款按钮：助手永远不点，留给用户自己点（docs/evals/20261009-pay-stop.md）。 */
+export function isPayLabel(text: string): boolean {
+  const t = text.trim().replace(/\s+/g, " ");
+
+  if (!t || PAY_METHOD_ONLY.test(t)) return false;
+
+  if (/^(确认|立即|去|马上)?(支付|付款)(?!宝|方式)/.test(t)) return true;
+
+  if (/下单并支付|提交订单并支付|确认并支付/.test(t)) return true;
+
+  if (/^(pay|place order|buy now|complete purchase|checkout)\b/i.test(t)) return true;
+
+  return /[¥￥$€£]\s?\d/.test(t) && /支付|付款|购买|下单|pay|buy|order/i.test(t);
+}
+
 export function confirmLabelForDestructive(text: string): string {
   const t = text.trim();
 
