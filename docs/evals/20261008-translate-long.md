@@ -50,6 +50,8 @@
 | `translate-resume` | `CASE_LIMIT_MS=600000 … --headless --scripted-throttle --only=translate-resume` | 通过：109/109，占位只减不增，结束 0 占位 |
 | `translate-long-stop` | `… --headless --only=translate-long-stop`（gpt-6-luna） | 通过：30 s 停止，0.35 s 收掉占位，已译 36 段保留 |
 
+10-09 复验（主干 dddc754，gpt-6-luna，同一命令连跑 3 次）：3 次都通过，132.8 s、132.4 s、141.8 s，676 段全部译完，未译 0 段。所以原来要求的「连跑 3 次都过」已满足（YIS-112 关闭）。
+
 检查：`npx tsc --noEmit -p extension`、`npx tsc --noEmit -p agent` 通过；`npx vitest run agent/test/page-translation.test.ts` 34/34 通过（未改测试）。
 
 ## 坑
