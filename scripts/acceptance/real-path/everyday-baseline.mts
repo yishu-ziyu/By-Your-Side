@@ -38,9 +38,13 @@ const inprocModel = scriptedThrottle ? "custom/demo-model" : daily ? inprocArg :
 
 /** --suite=sitegeist：换成 Sitegeist 官网与新手教程里宣传的任务（多页汇总、导出表格、改错字、提取会议、做小工具）。 */
 /** --suite=voice-ideas：边说边做的两个例子（圈高频词、查维基），量底子的快慢与准不准。 */
+/** --suite=goal-check：目标核对该催与不该催的场景（换说法再找、按钮没反应、网站连不上、真的不存在）；每次只跑一条，结果带上这一轮全部核对结论。 */
 const suiteArg = process.argv.find((a) => a.startsWith("--suite="))?.slice(8);
 
-const suite = suiteArg === "sitegeist" || suiteArg === "voice-ideas" ? suiteArg : "everyday";
+const suite = suiteArg === "sitegeist" || suiteArg === "voice-ideas" || suiteArg === "goal-check" ? suiteArg : "everyday";
+
+/** 回答之后还有目标核对，可能接着做：这两组要等更久才算结束。 */
+const settleLong = suite === "voice-ideas" || suite === "goal-check";
 
 /** --repeat=N：每条用例连跑 N 次，各开新会话。 */
 const repeat = Math.max(1, Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 1);
@@ -101,6 +105,10 @@ const FD_ARTICLE = `<article><h1>全双工语音，为什么这么难做</h1><p>
 
 const PAGES = {
   "/fd-article": page("全双工语音，为什么这么难做", FD_ARTICLE),
+  // goal-check：两个按钮都没有任何处理，页面永远不变；任何查询参数都返回同一页（10-09 死按钮实验）。
+  "/dead-save": page("通知设置", `<h1>通知设置</h1><label><input type="checkbox" checked> 邮件提醒</label><label><input type="checkbox"> 短信提醒</label>
+<button type="button">保存设置</button><p>状态：有未保存的更改</p>`),
+  "/dead-next": page("水果清单", `<h1>水果清单</h1><ol><li>苹果</li><li>香蕉</li><li>橙子</li></ol><p>第 1 页 / 共 3 页</p><button type="button">下一页</button>`),
   "/long": page("Notes from a year of small civic fixes", LONG_BODY),
   "/article": page("远程办公的代价", `<article><h1>远程办公的代价</h1>
 <p>过去三年，我们团队全员远程。本文的核心观点是：远程办公明显提高了资深成员的专注时间，但严重削弱了新人的成长速度。</p>
@@ -162,6 +170,9 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
+/** goal-check「网站连不上」：先占一个端口再放掉，这个地址之后拒绝连接。 */
+const closedPort = await new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const port = siteAddress(probe).port; probe.close(() => done(port)); }); });
+
 type Box = { x: number; y: number; w: number; h: number };
 
 /** 页面上一个标注的外框和名牌（视口坐标）；文字框取页面每个文字节点的行框。 */
@@ -172,7 +183,9 @@ type TextBox = Box & { text: string };
 type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
 
 /** stopAfterMs：发出后这么久像用户一样点停止（只在仍在运行时）。 */
-type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** 判据之外另记的量（如圈中率），写进结果。 */ measure?: (c: Ctx) => Record<string, unknown>; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; check: (c: Ctx) => string | null };
+type GoalCheckLine = { status: string; remaining: string | null; correction?: string };
+
+type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** 读这一轮导出记录里的全部目标核对结论再判一次（每次只跑这一条时才用）。 */ goal?: (verdicts: GoalCheckLine[], answer: string) => string | null; /** 判据之外另记的量（如圈中率），写进结果。 */ measure?: (c: Ctx) => Record<string, unknown>; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; check: (c: Ctx) => string | null };
 
 const has = (text: string, ...needles: string[]) => needles.every((n) => text.includes(n));
 
@@ -306,7 +319,31 @@ const VOICE_CASES: Case[] = [
     } },
 ];
 
-const pool = suite === "sitegeist" ? SITEGEIST_CASES : suite === "voice-ideas" ? VOICE_CASES : CASES;
+/** 助手如实说按钮不起作用：点了没反应、没存上、翻不过去。 */
+const SAYS_DEAD = /没(有)?反应|不起作用|没(能)?存上|没有保存|未保存|保存失败|翻不过去|无法翻页|没能翻|没有翻到|无法确认|不能确认|没法确认|没(有)?生效|不能用|无效/;
+
+/** 核对催「继续」超过 allowed 次就是白催：网站连不上不该催；按钮没反应时只点过一次，可以催一次换做法，换过之后不该再催（10-09 用户定）。 */
+const nudgesAtMost = (allowed: number) => (verdicts: GoalCheckLine[]) => {
+  const nudges = verdicts.filter((v) => v.status === "continue");
+  return nudges.length > allowed ? `核对催了 ${nudges.length} 次（最多 ${allowed} 次）：${nudges.map((v) => v.remaining ?? "").join("；")}` : null;
+};
+
+const GOAL_CASES: Case[] = [
+  VOICE_CASES.find((c) => c.id === "wiki-lookup")!,
+  { id: "dead-save", path: "/dead-save", prompt: "帮我点「保存设置」把设置存下来，然后告诉我存好没有。",
+    check: (c) => /已(经)?(保存|存好)|保存成功|存好了/.test(c.answer) && !SAYS_DEAD.test(c.answer) ? "说已保存，其实按钮没有作用" : SAYS_DEAD.test(c.answer) ? null : "没说清按钮不起作用",
+    goal: nudgesAtMost(1) },
+  { id: "dead-next", path: "/dead-next", prompt: "翻到第 2 页，告诉我第 2 页第一条是什么。",
+    check: (c) => SAYS_DEAD.test(c.answer) ? null : "没说清翻不过去",
+    goal: nudgesAtMost(1) },
+  { id: "unreachable", path: "/article", prompt: `打开 http://127.0.0.1:${closedPort}/policy ，告诉我那页写了什么。`,
+    check: (c) => /连不上|无法访问|打不开|拒绝(了)?连接|无法连接|ERR_CONNECTION/i.test(c.answer) ? null : "没说网站连不上",
+    goal: nudgesAtMost(0) },
+  { id: "wiki-missing", path: "/fd-article", prompt: "帮我在维基百科查一下「全双工芝士蛋糕定理」。",
+    check: (c) => c.tabs.some((u) => u.includes("wikipedia.org")) ? null : "没有打开维基百科" },
+];
+
+const pool = suite === "sitegeist" ? SITEGEIST_CASES : suite === "voice-ideas" ? VOICE_CASES : suite === "goal-check" ? GOAL_CASES : CASES;
 
 const selected = (only ? pool.filter((c) => only.includes(c.id)) : pool).flatMap((c) => Array.from({ length: repeat }, (_, i) => (repeat > 1 ? { ...c, id: `${c.id}-${i + 1}` } : c)));
 
@@ -345,7 +382,20 @@ async function checkTraceExport(modelPlan: ModelPlan) {
   const cleared = clearedStatus ?? "";
   const reason = !text ? `没有导出任务记录（${exportStatus}）` : missing.length ? `缺少这些用例的记录：${missing.join(", ")}` : malformed ? `${malformed} 行缺字段或不是 JSON` : leaked ? "导出里出现了 API key" : !cleared.startsWith("还没有") ? `清空后导出仍有内容：${cleared}` : null;
 
-  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared, translation: translationFacts(text) };
+  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared, translation: translationFacts(text), goalChecks: goalChecksOf(text) };
+}
+
+/** 导出文件里的目标核对结论（type goal_check），按时间顺序。 */
+function goalChecksOf(text: string): GoalCheckLine[] {
+  return text.split("\n").filter(Boolean).flatMap((raw) => {
+    try {
+      // SAFETY: 导出文件每行是 run-trace-core 写的 { type, data } 对象；只取 goal_check 行的 data。
+      const row = JSON.parse(raw) as { type: string; data?: GoalCheckLine };
+      return row.type === "goal_check" && row.data ? [{ status: row.data.status, remaining: row.data.remaining ?? null, correction: row.data.correction }] : [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /** 从导出文件读出翻译过程：每次翻译请求（批次、拆分层数、停止原因、耗时、用量）和每次 page_translation 工具调用的结果。 */
@@ -445,6 +495,8 @@ type CaseResult = {
   /** 只在 --inproc：本条发出的模型请求（毫秒相对发送时刻）。 */
   measure?: Record<string, unknown>;
   modelCalls?: Array<{ host: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null }>;
+  /** 这一轮导出记录里的目标核对结论，按时间顺序。 */
+  goalChecks?: GoalCheckLine[];
 };
 
 const results: CaseResult[] = [];
@@ -683,9 +735,9 @@ try {
 
         if (busy) lastBusyAt = Date.now();
 
-        // voice-ideas：回答后还有目标核对，没做完会自己接着做；空闲 8 秒才算结束，结束时刻取最后一次忙。
-        if (idle >= (suite === "voice-ideas" ? 32 : 6)) {
-          doneMs = suite === "voice-ideas" ? lastBusyAt - sentAt : Date.now() - sentAt - 1500;
+        // voice-ideas、goal-check：回答后还有目标核对，没做完会自己接着做；空闲 8 秒才算结束，结束时刻取最后一次忙。
+        if (idle >= (settleLong ? 32 : 6)) {
+          doneMs = settleLong ? lastBusyAt - sentAt : Date.now() - sentAt - 1500;
           break;
         }
       }
@@ -760,6 +812,16 @@ try {
   }
 
   if (inprocModel && plan) traceCheck = await checkTraceExport(plan);
+
+  // 每次只跑一条时，导出记录里的核对结论都属于这一条；先记下来，再按用例的 goal 判据补判。
+  if (traceCheck && results.length === 1) {
+    const only = results[0]!, item = selected[0]!;
+    only.goalChecks = traceCheck.goalChecks;
+    const goalReason = only.outcome === "pass" ? item.goal?.(traceCheck.goalChecks, only.answer) ?? null : null;
+
+    if (goalReason) Object.assign(only, { outcome: "fail", reason: goalReason });
+    console.log(`goal\t${only.outcome === "pass" ? "pass" : "FAIL"}\t${traceCheck.goalChecks.map((v) => v.status).join(",") || "-"}\t${goalReason ?? ""}`);
+  }
 } finally {
   await writeFile(join(artifacts, "hostlog.txt"), inproc ? inproc.logs() : await rp.hostLog()).catch(() => {});
 
