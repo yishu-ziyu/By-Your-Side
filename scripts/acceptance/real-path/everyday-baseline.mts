@@ -315,7 +315,10 @@ const VOICE_CASES: Case[] = [
     measure: (c) => ({ wikiTabs: c.tabs.filter((u) => u.includes("wikipedia.org")).map((u) => decodeURIComponent(u)), facts: WIKI_FACTS.filter((f) => c.answer.includes(f)) }),
     check: (c) => {
       if (!c.tabs.some((u) => u.includes("wikipedia.org"))) return "没有打开维基百科";
-      return WIKI_FACTS.some((f) => c.answer.includes(f)) ? null : "回答里没有词条里的事实";
+      // 10-09 用户定：只算中文维基。打开了中文「回音消除」词条，并且回答指向它、讲了内容，就算做对；不要求照抄导言原词。
+      const zhEntry = c.tabs.some((u) => decodeURIComponent(u).includes("zh.wikipedia.org/wiki/回音消除"));
+      if (!zhEntry) return "没有打开中文维基的「回音消除」词条";
+      return c.answer.includes("回音消除") && (WIKI_FACTS.some((f) => c.answer.includes(f)) || c.answer.length >= 40) ? null : "回答没有讲中文词条的内容";
     } },
 ];
 
