@@ -3,17 +3,16 @@ import { classifyDirectExecutionFeedback, type ExecutionFeedback } from '../../s
 import { isPageTextEvidence } from '../../shared/page-text-evidence.js';
 import { isTransientModelError } from "../../shared/provider-busy.js";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { toolAction } from '../../shared/user-facing.js';
 import { elementText, redactObservedText } from './task-evidence.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
-import {createTaskResultsTool, createVerifyUnknownResultTool, unconfirmedResultMessage} from "./task-results.js";
+import {createTaskResultsTool} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
-import {createHash,randomUUID} from "node:crypto";
+import {randomUUID} from "node:crypto";
 import {FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import {NoProgressPolicy, noProgressMessage} from "./no-progress-policy.js";
@@ -193,7 +192,6 @@ export class BrowserAgentSession {
     getSnapshot: () => TaskProgressSnapshot;
     register: (items: TaskResultRegistration[]) => void;
     stopAfterFailures?: () => void;
-    verify: (input: {id: string; expect: string; observation: {toolCallId: string; tool: string; text: string; at: number; target: string | null; tabId: number | null}}) => {ok: boolean; reason?: string};
     /** T06：交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
     deliveryFacts?: () => DeliveryFactInput;
     /** 这一轮读到或打开的页面（回答出处）。 */
@@ -212,7 +210,7 @@ export class BrowserAgentSession {
 
     if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
     else {
-      if (!step.error?.startsWith(STALE_STEP_MESSAGE)) this.runSteps.note(this.deliveryRunId(), step.name, !!step.error, !!this.rpc?.wasRepeatRefused?.(step.id), !!this.rpc?.wasSendDeclined?.(step.id), step.params, step.parentId);
+      if (!step.error?.startsWith(STALE_STEP_MESSAGE)) this.runSteps.note(this.deliveryRunId(), step.name, !!step.error, false, !!this.rpc?.wasSendDeclined?.(step.id), step.params, step.parentId);
       this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
         executionFact:this.rpc?.getExecutionFact(step.id),
         resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX)),
@@ -317,17 +315,15 @@ if(required.includes(key))candidates.set(key,attachment);
     }
   }
   /**
-   * 写操作的执行闸门：只拦真正的执行风险（未决写入、重复执行、任务已取消）。
-   * 登记与目标绑定由账本在真实执行事实到达时完成（见 TaskResultBook.resolveStartItem），
-   * 不再要求模型先登记，也不再用登记项精确匹配本次 target。
+   * 写操作的执行闸门：只拦控制权与生命周期（取消、接管、重启检查点、运行错误、原地打转停下）。
+   * 结果未知与重做同一步不拦（10-10 用户裁决）。登记与目标绑定由账本在真实执行事实到达时完成
+   * （见 TaskResultBook.resolveStartItem），不要求模型先登记。
    */
   assertTaskResultExecution(name: string, params: Record<string, unknown>, _toolCallId?: string): void {
     if (this.checkpointReadFailed) throw new Error(TASK_CHECKPOINT_UNAVAILABLE);
     const snapshot=this.conversationSnapshot();
     // display-* 前缀即直连用户请求（语音/显示命令）：不继承旧任务的“已取消”生命周期；其余约束照旧。
-    // The guard lives in shared/ (no Node crypto there), so the hash of a fill value is made here.
-    const fillValueHash=name==='fill'&&typeof params.value==='string'?createHash('sha256').update(params.value).digest('hex'):undefined;
-    assertTaskStepExecution(snapshot,name,params,false,_toolCallId?.startsWith('display-')===true,fillValueHash);
+    assertTaskStepExecution(snapshot,name,params,_toolCallId?.startsWith('display-')===true);
   }
   private constructor(
     private readonly session: AgentLoop | null,
@@ -499,9 +495,8 @@ if(required.includes(key))candidates.set(key,attachment);
 
       let resultHost: BrowserAgentSession | null = null;
       const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools()) : null;
-      let onRepeatedFailure: ConstructorParameters<typeof RepeatedToolFailurePolicy>[0] = () => {};
-
-      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure), () => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasRepeatRefused?.(id) === true || rpc.wasSendDeclined?.(id) === true);
+      // 同一操作第二次出同样的错：调高思考档位，不停下本轮（10-10 去掉了「连续三次就停」）。
+      const failurePolicy = new RepeatedToolFailurePolicy(() => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasSendDeclined?.(id) === true);
 
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
 
@@ -566,27 +561,6 @@ if(required.includes(key))candidates.set(key,attachment);
             toolHasTarget: name => { const schema = resultHost?.session?.getToolDefinition(name)?.parameters as {properties?: Record<string, unknown>} | undefined;
 
  return !!schema?.properties?.target; },
-          }), createVerifyUnknownResultTool({
-            getSnapshot: () => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线");
-
- return resultHost.taskResultsHost.getSnapshot(); },
-            read: async input => {
-              if (!resultHost?.isToolActive("read_element")) throw new Error("read_element 当前不可用，无法核查。");
-
-              return rpc.call("read_element", input.tabId === undefined ? { target: input.target } : { target: input.target, tabId: input.tabId }) as Promise<{ textContent?: string; value?: string }>;
-            },
-            verify: input => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线");
-
- return resultHost.taskResultsHost.verify(input); },
-            persist: () => { if (resultHost?.taskResultsHost) resultHost.persistTaskResults?.(resultHost.taskResultsHost.getSnapshot()); },
-            emit: callbacks.emit,
-            // 同一项核查过一次又要再查：宿主说明查不清并结束本轮（docs/evals/20261001-unknown-lock-scope.md 标准 3）。
-            stopUnconfirmed: item => {
-              if (!resultHost || resultHost.pendingToolFailure || !leadConversationId) return;
-              resultHost.runTrace.record("unconfirmed_result_stop", {id: item.id, tool: item.tool});
-              const facts = resultHost.deliveryFactsSnapshot();
-              resultHost.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text:unconfirmedResultMessage(item),unfinished:[item.description.slice(0, 200)],...(facts?{facts}:{})});
-            },
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
           ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
@@ -630,23 +604,11 @@ if(required.includes(key))candidates.set(key,attachment);
       deliveryEmit.current = event => wrapper.emitValidatedDelivery(event);
       wrapper.productContext = productContext;
       wrapper.failurePolicy = failurePolicy;
-      onRepeatedFailure = failure => {
-        wrapper.taskResultsHost?.stopAfterFailures?.();
-        wrapper.runTrace.record("repeated_tool_failure", {...failure});
-        const text = `「${toolAction(failure.toolName)}」连续三次出同样的错，已停止重试。这一步没有完成。`;
-
-        // T06：工具失败也必须带事实链（partial + 剩余项）；终止前的 nextStep 已因 failure_limit 变成 partial。
-        if (leadConversationId) {
-          const facts = wrapper.deliveryFactsSnapshot();
-          wrapper.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text,...(facts?{facts}:{})});
-        }
-        else callbacks.emit({kind:"error",message:text});
-      };
 
       wrapper.noProgressPolicy = noProgressPolicy;
       // 原地转圈（docs/evals/20261001-data-to-file.md 标准 7）：停下本轮，说清卡在哪一步、已有什么、还差什么。
       onNoProgress = stop => {
-        // 同一步已被连续失败保护停下并说明过，不再重复。
+        // 本轮已有一段停下说明，不再重复。
         if (wrapper.pendingToolFailure) return;
         wrapper.taskResultsHost?.stopAfterFailures?.();
         wrapper.runTrace.record("no_progress_stop", {...stop});
@@ -2185,10 +2147,10 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
 
-          // 被拦下的重复、用户没让发送，都不是“试过且失败”的做法，不写进催促模型换方法的清单。
-          if (!this.rpc?.wasRepeatRefused?.(event.toolCallId) && !this.rpc?.wasSendDeclined?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
+          // 用户没让发送不是“试过且失败”的做法，不写进催促模型换方法的清单。
+          if (!this.rpc?.wasSendDeclined?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
           // 被插话作废的旧步骤没执行，不算失败的一步（同下面 tallyPageChange 的判断）。
-          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && (!this.runSteps.hasProgramSteps(event.toolCallId) || (event.isError && !this.runSteps.hasProgramFailure(event.toolCallId)))) this.runSteps.note(this.deliveryRunId(), event.toolName, event.isError, !!this.rpc?.wasRepeatRefused?.(event.toolCallId), !!this.rpc?.wasSendDeclined?.(event.toolCallId), this.toolArgs.get(event.toolCallId) ?? {});
+          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && (!this.runSteps.hasProgramSteps(event.toolCallId) || (event.isError && !this.runSteps.hasProgramFailure(event.toolCallId)))) this.runSteps.note(this.deliveryRunId(), event.toolName, event.isError, false, !!this.rpc?.wasSendDeclined?.(event.toolCallId), this.toolArgs.get(event.toolCallId) ?? {});
           this.runSteps.forgetProgram(event.toolCallId);
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
@@ -2202,7 +2164,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             isError: event.isError,
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
-            ...(event.isError && this.rpc?.wasRepeatRefused?.(event.toolCallId) ? { repeatRefused: true as const } : {}),
             ...(event.isError && this.rpc?.wasSendDeclined?.(event.toolCallId) ? { sendDeclined: true as const } : {}),
             ...(!event.isError && (event.result?.details as { sendConfirmed?: unknown } | undefined)?.sendConfirmed === true ? { sendConfirmed: true as const } : {}),
             ...(event.isError ? {} : fieldReadbackOf(event.result?.details)),

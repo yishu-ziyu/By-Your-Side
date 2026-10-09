@@ -17,7 +17,6 @@ import { isLeadSession, type Attachment, type TabInfo, type ToolContract, type T
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
 import { requiresControlGate } from "../../shared/effect-policy.js";
-import { RepeatRefusedError } from "../../shared/task-next-step.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, ProgramAssertError, type ProgramStep } from "./browser-program.js";
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
@@ -247,8 +246,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       try {
         execution?.assertCall?.(name, target, sdkId);
       } catch (error) {
-        if (error instanceof RepeatRefusedError && sdkId) rpc.markCallRepeatRefused?.(sdkId);
-        else rejectCall();
+        rejectCall();
         throw error;
       }
     };

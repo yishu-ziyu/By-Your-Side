@@ -22,7 +22,7 @@ const out = join(REPO, 'out/acceptance/edge-pill', run);
 
 await mkdir(out, { recursive: true });
 
-// 每次点不同的按钮：同一按钮重复点会被「已有成功回执」挡住。#r 紧挨着右边缘药丸，用来证明药丸以外照常能点。
+// 每次点不同的按钮，各自的点击计数互不干扰。#r 紧挨着右边缘药丸，用来证明药丸以外照常能点。
 const html = '<!doctype html><meta charset="utf-8"><title>计数页</title>' + [1, 2, 3, 4, 5, 6].map(i => `<button id="b${i}" onclick="window.n=(window.n||0)+1">点我 ${i}</button>`).join('')
   + '<button id="r" style="position:fixed;right:28px;top:calc(50% - 12px);height:24px" onclick="window.rc=(window.rc||0)+1">右边</button>';
 

@@ -42,7 +42,8 @@
   `ghost-hud-and-steering` 不覆盖真实 YouTube/Bilibili 页面，也不覆盖供应商模型的改写质量。
 - **原生弹窗**：`dialog-recovery` 只核对原生 confirm/prompt 与恢复，不是供应商模型整链路。
 - **语音设置**：`voice-plan-settings` 只验设置的保存与拒绝，不是音频验收。
-- **先核对再说完成**：`claim-after-check` 的目标核对结论由本机转发服务换成脚本结论，只验证侧栏怎样扣住和放出回答，不代表快速模型核对得准不准。`refill-after-check` 验证改正时同一栏能重填一次、重复提交仍被拦；`readback-privacy` 验证读回的内容不进诊断导出、敏感栏不读回。
+- **先核对再说完成**：`claim-after-check` 的目标核对结论由本机转发服务换成脚本结论，只验证侧栏怎样扣住和放出回答，不代表快速模型核对得准不准。`refill-after-check` 验证同一栏重填、同一按钮再点都照常执行（10-10 起不再拦重复）；`readback-privacy` 验证读回的内容不进诊断导出、敏感栏不读回。
+- **结果未知后重试**：`retry-after-unknown` 让按钮在点击时短暂不可见来制造「结果未知」，只覆盖量不到元素位置这一种成因，不覆盖超时和断连。
 - **发送前确认**：`send-confirm` 在本机练习页上扮演用户点确认框，每次跑要多等 40 秒。它没有覆盖「2 分钟没理就不发」，因为产品没有缩短等待的开关，也不为测试加开关。
 - **GPT-Live 语音**：`gpt-live-voice` 用真实 GPT-Live 和 ChatGPT 登录，会用掉用户 ChatGPT 套餐的语音额度；声音来自合成语音，不代替真人试听。
 

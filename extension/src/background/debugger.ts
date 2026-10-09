@@ -250,7 +250,7 @@ export async function sendCommand<T = unknown>(
 
       // SAFETY: T 由调用方按它请求的那个 CDP 方法声明；这里只是给 ACK 或超时路径补上同一结果类型。
       return await (timeoutMs === undefined ? pending : withTimeout(pending, timeoutMs,
-        `CDP ${method} ACK ${timeoutMs}ms timeout; execution unknown; do not replay`)) as T;
+        `CDP ${method} ACK ${timeoutMs}ms timeout; execution unknown; re-read the page before retrying`)) as T;
     } catch (error) {
       const message = oneLine(error);
 

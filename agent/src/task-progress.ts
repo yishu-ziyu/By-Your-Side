@@ -3,11 +3,11 @@ import { TaskGoalBook } from './task-goals.js';
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
 import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
-import { deriveResultDescription, extractResultTarget, isPageIdentityTool, isSupersededUnknown, resultLocksWhenUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
+import { deriveResultDescription, extractResultTarget, isSupersededUnknown, resultLocksWhenUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
 import { sanitizeTrace } from "../../shared/trace-sanitize.js";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {isWriteTool} from '../../shared/control.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';
 import {isResultMetaTool} from '../../shared/task-results.js';
@@ -50,7 +50,7 @@ export class TaskProgress {
   private latestResult: NonNullable<VoiceConversationContext["latestResult"]> | null = null;
   private readonly ledger: UserDeliveryLedger;
   private readonly members = new Map<string, "running" | "paused" | "idle" | "error">();
-  private readonly tools = new Map<string, { member: string; name: string; action: string; since: number; target: string | null; tabId:number|null; readVersion:number; write:boolean; durableEffect:boolean; readOnlyScript?:boolean; tabAction?:string; valueHash?:string }>();
+  private readonly tools = new Map<string, { member: string; name: string; action: string; since: number; target: string | null; tabId:number|null; readVersion:number; write:boolean; durableEffect:boolean; readOnlyScript?:boolean; tabAction?:string }>();
   private readonly readback=new TaskReadback();
   private readonly completedReads=new Map<string,{name:string;readVersion:number}>();
   private failureLimit=false;
@@ -185,7 +185,7 @@ export class TaskProgress {
   }
   invalidatePage(tabId?:number,url?:string):void {
     this.goals.invalidatePage(tabId ?? null);
-    this.readback.restore(this.snapshot());this.results.notePageChange();this.completedReads.clear();this.lastReadAt=null;
+    this.readback.restore(this.snapshot());this.completedReads.clear();this.lastReadAt=null;
     const page=tabId!==undefined&&url?pageRecoveryKey(tabId,url):undefined;
 
     if(page&&this.recoveryInput)this.recoveryInput.page=page;
@@ -420,16 +420,6 @@ return;}
       // business state. An uncertain switch must be re-observed, but it must not
       // permanently lock unrelated form writes like an uncertain fill/click does.
       const durableEffect=resultToolHasWriteEffect(e.name)||(browserControl&&tabAction!=='switch')||(e.name==='fetch'&&classifyToolEffect(e.name,e.params).class==='write');
-      // The host hashes private skill inputs before redacting public tool parameters.
-      let valueHash: string | undefined;
-
-      if (e.name === 'fill') {
-        if (typeof e.valueHash === 'string' && /^[a-f0-9]{64}$/.test(e.valueHash)) {
-          valueHash = e.valueHash;
-        } else if (typeof e.params.value === 'string') {
-          valueHash = createHash('sha256').update(e.params.value).digest('hex');
-        }
-      }
 
       if(!this.aborted&&this.tools.size>=100&&(durableEffect||e.name==='fetch'))this.executionAuditComplete=false;
 
@@ -440,23 +430,16 @@ return;}
         tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction };
 
         if (e.name === 'js' && e.params.readonly === true) entry.readOnlyScript = true;
-
-        if (valueHash) entry.valueHash = valueHash;
         this.tools.set(`${member}:${e.toolCallId}`, entry);
       }
 
       if (!this.aborted) {
-        this.results.noteStart({ toolCallId: e.toolCallId, name: e.name, target, member, runId: this.runId, description: deriveResultDescription(e.name, e.params, target),effectful:durableEffect,recordResult:browserControl,valueHash });
-
-        // 页面/文档可能改变：旧读数不能再当作后续写入的前后对比基线。
-        if (isPageIdentityTool(e.name)) this.results.notePageChange();
+        this.results.noteStart({ toolCallId: e.toolCallId, name: e.name, target, member, runId: this.runId, description: deriveResultDescription(e.name, e.params, target),effectful:durableEffect,recordResult:browserControl });
       }
     } else if (e.kind === "tool_observation") {
       if (!this.aborted && this.runId) {
         // T06：只记真实读到的页面地址；模型正文里的链接不算来源。
         if (typeof e.url === "string") this.noteRunSource(e.url, e.title);
-
-        if((RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name))this.results.noteObservation({ toolCallId: e.toolCallId, tool: e.name, target: e.target, tabId: e.tabId, workingTab: e.workingTab, text: e.text, truncated: e.truncated, member, runId: this.runId });
         const key=`${member}:${e.toolCallId}`,read=this.completedReads.get(key);
 
         if(read?.name===e.name){
@@ -485,15 +468,7 @@ if(page)this.recoveryInput.page=page;
         if (!e.isError && e.executionFact === "executed") this.noteRunSource(pendingNav);
       }
 
-      // 重复一步已成功的写入被拦下：原步骤已成功，这次没执行，不算失败，也不留成待办（10-04 北极星 N2）。
-      // 被拦下的重复不覆盖上一步的成败：之前真失败过的一步仍要如实报告。
-      if (!this.aborted && e.repeatRefused) {
-        this.results.noteRepeatRefused({ toolCallId: e.toolCallId, member, runId: this.runId });
-
-        return;
-      }
-
-      // 声明只读的页面脚本超时或结果未知：只是没拿到读数，按「失败、没有副作用」记，不上锁（#22）。
+      // 声明只读的页面脚本超时或结果未知：只是没拿到读数，按「失败、没有副作用」记（#22）。
       const fact = started.readOnlyScript && e.executionFact === 'unknown' ? 'not_executed' as const : e.executionFact;
 
       if (!this.aborted) {
@@ -518,9 +493,9 @@ if(page)this.recoveryInput.page=page;
 
         if (!e.isError && (RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)) this.lastReadAt = this.lastAction.at;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
-        // 结果不确定时是否上锁由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 仍按 durableEffect 保护。
+        // 出错时记成结果未知还是失败由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 记成结果未知。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: fact,
-          effectful:started.durableEffect,valueHash:started.valueHash,readback:e.readback });
+          effectful:started.durableEffect });
 
         if((started.durableEffect||e.name==='fetch')&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 
@@ -536,14 +511,6 @@ if(page)this.recoveryInput.page=page;
   }
   handleLateResult(toolCallId: string, ok: boolean, data?: unknown): boolean {
     return this.results.resolveLateResult({ toolCallId, runId: this.runId ?? "", ok, data });
-  }
-  verifyUnknownResult(input: { id: string; expect: string; observation: { toolCallId: string; tool: string; text: string; at: number; target: string | null; tabId: number | null } }): { ok: boolean; reason?: string } {
-    const member=this.results.list().find(item=>item.id===input.id)?.evidence?.member;
-    const outcome=this.results.resolveVerifiedResult({ id: input.id, runId: this.runId ?? "", observation: input.observation, expect: input.expect });
-
-    if(outcome.ok&&member&&input.observation.tabId!==null)this.readback.verified(member,input.observation.tabId);
-
-    return outcome;
   }
   /** 用户确认后的受支持恢复：旧未知保留，新建（或复用）一条独立结果项并标记取代。 */
   snapshot(): TaskProgressSnapshot {
@@ -598,7 +565,7 @@ if(page)this.recoveryInput.page=page;
 
     if([...this.tools].some(([key,tool])=>tool.durableEffect&&!snapshot.results!.some(item=>`${item.evidence?.member}:${item.evidence?.toolCallId}`===key)))snapshot.untrackedWritePending=true;
     snapshot.nextStep=decideTaskNextStep(snapshot,{inFlight:[...this.tools.values()].some(tool=>!isResultMetaTool(tool.name)),
-      readbackRequired:this.readback.needsReadback(),verifiableUnknownIds:this.results.verifiableUnknownIds(),failureLimit:this.failureLimit,toolFailed:this.lastBrowserFailed});
+      readbackRequired:this.readback.needsReadback(),failureLimit:this.failureLimit,toolFailed:this.lastBrowserFailed});
 
     return snapshot;
   }
