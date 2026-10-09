@@ -86,11 +86,16 @@ const STRICT_JSON = "\n\nYour previous reply could not be used. Reply with ONLY 
 /** 只有思考没有正文时，下一次的输出额度放大到这个倍数。 */
 const EMPTY_REPLY_BUDGET_FACTOR = 5;
 
-/** 服务端因请求参数（思考档位等）拒绝：400 且提到参数/思考/档位。 */
+/**
+ * 服务端因请求参数（思考档位等）拒绝：400 且提到参数/思考/档位，
+ * 或 ChatGPT 账号通道不带状态码的「Unsupported value: … is not supported with the … model」。
+ */
 export function isParamRejection(message: string | undefined): boolean {
   if (!message) return false;
 
-  return /invalid[ _-]?(request[ _-]?)?param/i.test(message) || (/\b400\b/.test(message) && /param|thinking|reasoning|effort/i.test(message));
+  return /invalid[ _-]?(request[ _-]?)?param/i.test(message)
+    || (/\b400\b/.test(message) && /param|thinking|reasoning|effort/i.test(message))
+    || /unsupported value\b.*\bnot supported with the\b.*\bmodel/is.test(message);
 }
 
 /**

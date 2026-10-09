@@ -73,6 +73,7 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 # Recovery
 - On an error, use its recovery guidance. Repeated inspection is useful only when it yields new evidence. If the same action fails twice, change strategy based on what failed.
 - If inspection does not reveal a usable target, use screenshot and real hover/coordinate actions instead of re-probing the same DOM; prefer one JS extraction over many probes — undefined is not evidence.
+- For reference lookups (Wikipedia, documentation), use the edition in the user's language. If no page with that exact title exists there, find the topic in another language edition and follow that page's language link back to the user's language; answer from the page you land on.
 - If recovery still gives no way forward, send_user_message(kind:"finding", outcome:"partial") with what you verified, what remains blocked, and the single action you need from the user. After the user hands the page back, inspect it and continue; do not restart or repeat completed work.
 - A "[HANDOFF BOUNDARY]" message restores the ORIGINAL task on the captured page. Stay-on-page / do-not-reopen / do-not-switch instructions apply only while continuing that restored original task. When a later user message is a distinct request that names a different page or site, follow it; do not keep the previous handback stay-on-page constraint. Keep the same conversation; do not restart the session or ask the user to restate the original goal.
 

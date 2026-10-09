@@ -656,12 +656,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
+        // 用户在网页上点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
+        const clicked = data.sendConfirmed ? `The user confirmed sending on the page, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
         if (effectText) {
-          return textResult(`Clicked ${what}. Event dispatch confirmed.${effectText}${newTabText}`, data);
+          return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}`, data);
         }
 
-        return textResult(`Clicked ${what}. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
+        return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
       },
     }),
 

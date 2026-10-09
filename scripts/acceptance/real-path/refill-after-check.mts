@@ -4,7 +4,7 @@
  *   npx tsx scripts/acceptance/real-path/refill-after-check.mts --headless
  *   1) 填「Note」、核对判继续；续做不读页、直接对同一栏填对的句子：执行（草稿框最终是对的句子），回执里没有「不重复执行」。
  *   2) 填一句、核对判继续；续做直接再填同一句：仍被拒（回执含「不重复执行」）。
- *   3) 点发送按钮、核对判继续；续做直接再点：仍被拒（服务端 POST 计数停在 1）。
+ *   3) 点提交按钮、核对判继续；续做直接再点：仍被拒（服务端 POST 计数停在 1）。按钮不叫「发送」：点「发送」会先停下等用户确认（docs/evals/20261009-send-confirm.md），那不是这里要测的。
  *   4) 下拉框 <option value="CN">中国</option> 按 value「CN」填：助手收到的回执没有「Problem」。
  *   5) 网页在输入时把手机号加空格，读回是「不一样」：同一个值的重填执行一次（网页共收到 2 次 input），第三次同值重填被拒（仍是 2 次）。
  *   6) 下拉框一选就被网页换成别的元素，读回读不到：换一个值再选被拒（回执含「不重复执行」）。
@@ -39,7 +39,7 @@ const site = createServer((req, res) => {
   }
 
   const body = req.url === "/form"
-    ? page("发送", `<main><h1>发送</h1><button id="send" type="button" onclick="fetch('/submit', { method: 'POST' })">发送</button></main>`)
+    ? page("提交", `<main><h1>提交</h1><button id="send" type="button" onclick="fetch('/submit', { method: 'POST' })">提交</button></main>`)
     : req.url === "/mask"
     ? page("手机号", `<main><h1>手机号</h1><input id="phone" aria-label="手机号"><script>
 window.inputEvents = 0;
@@ -67,7 +67,7 @@ const fill = (target: string, value: string) => ({ tool: { name: "fill", args: {
 const CASES = {
   r1: { ask: "案例R1：把 Note 框里的第一句英文复制到草稿框里，不要保存。", path: "/note", first: "R1 第一轮：已填入。", final: "R1 最终：已改成第一句。" },
   r2: { ask: "案例R2：在草稿框里写第一句英文，不要保存。", path: "/note", first: "R2 第一轮：已填入。", final: "R2 最终：没有重复填写。" },
-  r3: { ask: "案例R3：点页面上的发送按钮，只发一次。", path: "/form", first: "R3 第一轮：已发送。", final: "R3 最终：没有重复发送。" },
+  r3: { ask: "案例R3：点页面上的提交按钮，只提交一次。", path: "/form", first: "R3 第一轮：已发送。", final: "R3 最终：没有重复发送。" },
   r4: { ask: "案例R4：国家选 CN。", path: "/select", first: "R4：国家已选好。", final: "" },
   r5: { ask: "案例R5：手机号填 13800138000。", path: "/mask", first: "R5 第一轮：已填入。", final: "R5 最终：没有再重复填。" },
   r6: { ask: "案例R6：套餐选基础。", path: "/vanish", first: "R6 第一轮：已选。", final: "R6 最终：没有再选。" },

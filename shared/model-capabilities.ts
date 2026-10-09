@@ -33,9 +33,13 @@ const MEASURED = new Map<string, MeasuredCapability>([
   // 高 12/12 中位 25 秒，中 11/12（一次没订却说订好了）21 秒，低 11/12（一次如实说没提交）22 秒，关 8/12 21 秒（docs/evals/20261007-effort-low.md）。
   // 更早的 10-06 两道核对题（高 7/8、中 0/7、低 2/6）只测判断题，不是浏览器操作。
   // 首个事件等 30 秒：服务端偶尔排队，10-06 实测 12 次有 2 次 16–17 秒才出第一个事件、随后正常答完；15 秒会误判挂起重来。
+  // gpt-6.1-sol 不能关闭思考：10-09 实测发 none 回「'none' is not supported … Supported values are: 'low', …」，最低 low。
   ...(["gpt-6-luna", "gpt-6-sol", "gpt-6-astra", "gpt-6.1-sol"] as const).map((id): [string, MeasuredCapability] => [
     `openai-codex/${id}`,
-    { reasoning: true, input: ["text", "image"], thinkingLevelMap: { xhigh: "xhigh", max: "max", minimal: "low" }, start: "low", firstEventMs: 30_000 },
+    {
+      reasoning: true, input: ["text", "image"], start: "low", firstEventMs: 30_000,
+      thinkingLevelMap: id === "gpt-6.1-sol" ? { off: null, minimal: null, xhigh: "xhigh", max: "max" } : { xhigh: "xhigh", max: "max", minimal: "low" },
+    },
   ]),
   // 不发档位时适配层发「关闭思考」，服务端 400「requires adaptive thinking」；low 起可用，最高 max；能看图。
   ["minimax-cn/MiniMax-M3.1-Flash-Preview", {

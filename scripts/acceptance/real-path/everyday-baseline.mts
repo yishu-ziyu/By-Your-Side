@@ -21,6 +21,7 @@ import { Check } from "typebox/value";
 import { REPO, attachDailyChrome, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
 import { DEFAULT_TEST_MODEL, configureViaSettings, loadModelPlan, modelStorageItems, type ModelPlan } from "./inproc-config.mts";
 import { startScriptedModel } from "./scripted-model.mts";
+import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../../../extension/src/shared/overlay.js";
 
 const daily = process.argv.includes("--daily");
 
@@ -180,7 +181,7 @@ type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
+type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; /** 网页上弹出过几次发送确认（助手点了「发送」）。 */ sendConfirms: number; files: Array<{ name: string; text: string }>; pageInputs: number };
 
 /** stopAfterMs：发出后这么久像用户一样点停止（只在仍在运行时）。 */
 type GoalCheckLine = { status: string; remaining: string | null; correction?: string };
@@ -257,7 +258,7 @@ const SITEGEIST_CASES: Case[] = [
       return missing.length ? `CSV 缺少：${missing.join("、")}` : null;
     } },
   { id: "fix-typos", path: "/compose", prompt: "帮我把草稿框里的错别字改好，其他字不要动，不要发送。",
-    check: (c) => (c.saves > 0 ? "点了发送" : c.draft === "各位好：我们明天下午三点在会议室开会，讨论新版本的上线计划，请大家准时参加，不要迟到。" ? null : `草稿框内容不对：${JSON.stringify(c.draft)}`) },
+    check: (c) => (c.saves > 0 || c.sendConfirms > 0 ? "点了发送" : c.draft === "各位好：我们明天下午三点在会议室开会，讨论新版本的上线计划，请大家准时参加，不要迟到。" ? null : `草稿框内容不对：${JSON.stringify(c.draft)}`) },
   { id: "meeting", path: "/chat", prompt: "从这段聊天里整理出会议的日期、时间、地点和参会人。",
     check: (c) => {
       const a = flat(c.answer);
@@ -315,7 +316,10 @@ const VOICE_CASES: Case[] = [
     measure: (c) => ({ wikiTabs: c.tabs.filter((u) => u.includes("wikipedia.org")).map((u) => decodeURIComponent(u)), facts: WIKI_FACTS.filter((f) => c.answer.includes(f)) }),
     check: (c) => {
       if (!c.tabs.some((u) => u.includes("wikipedia.org"))) return "没有打开维基百科";
-      return WIKI_FACTS.some((f) => c.answer.includes(f)) ? null : "回答里没有词条里的事实";
+      // 10-09 用户定：只算中文维基。打开了中文「回音消除」词条，并且回答指向它、讲了内容，就算做对；不要求照抄导言原词。
+      const zhEntry = c.tabs.some((u) => decodeURIComponent(u).includes("zh.wikipedia.org/wiki/回音消除"));
+      if (!zhEntry) return "没有打开中文维基的「回音消除」词条";
+      return c.answer.includes("回音消除") && (WIKI_FACTS.some((f) => c.answer.includes(f)) || c.answer.length >= 40) ? null : "回答没有讲中文词条的内容";
     } },
 ];
 
@@ -594,6 +598,33 @@ try {
     return drawn;
   };
 
+  const SEND_CONFIRM = `[${OVERLAY_ATTR}="${OVERLAY_KIND_SEND_CONFIRM}"]`;
+
+  /**
+   * 助手点了「发送」，网页上会先弹发送确认，点击不会到服务器。看到确认框就记一次，再像用户一样点「不发」，
+   * 免得这一轮干等确认框超时。确认框在封闭 shadow root 里：用 CDP 穿透找「不发」，按真实鼠标点下去。
+   */
+  const declineSendConfirm = async (shot: string): Promise<boolean> => {
+    if (!(await rp.evaluate(work, `!!document.querySelector(${JSON.stringify(SEND_CONFIRM)})`).catch(() => false))) return false;
+    await rp.screenshot(work, shot).catch(() => {});
+    // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
+    const { root } = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)) as { root: DomNode };
+    const attrOf = (node: DomNode, name: string) => { const attrs = node.attributes ?? []; const at = attrs.indexOf(name); return at >= 0 ? attrs[at + 1] ?? "" : ""; };
+    const find = (node: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => hit(node) ? node : [...(node.children ?? []), ...(node.shadowRoots ?? [])].map((c) => find(c, hit)).find(Boolean);
+    const host = find(root, (n) => attrOf(n, OVERLAY_ATTR) === OVERLAY_KIND_SEND_CONFIRM);
+    const no = host && find(host, (n) => /(^|\s)no(\s|$)/.test(attrOf(n, "class")));
+    const box = no ? await boxOf(no.nodeId).catch(() => null) : null;
+
+    if (box) {
+      const at = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+      await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at }, work);
+
+      for (const type of ["mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount: 1 }, work);
+    }
+
+    return true;
+  };
+
   // SAFETY: 下面这段页面脚本只返回 { text, x, y, w, h } 数组，字段与 TextBox 一致。
   const readTexts = async (): Promise<TextBox[]> => (await rp.evaluate(work, `(() => {
     const out = [];
@@ -623,6 +654,7 @@ try {
 
   for (const item of selected) {
     saveRequests = 0;
+    let sendConfirms = 0;
     // 每条用例单独一个下载目录：判据只看这一条下载了什么。
     const caseDownloads = join(artifacts, `downloads-${item.id}`);
 
@@ -689,6 +721,8 @@ try {
         if (state.inputValue?.includes(item.prompt) && !state.userMessages.length) await rp.pressEnter(panel);
 
         if (firstVisibleMs === null && state.answers.length) firstVisibleMs = Date.now() - sentAt;
+
+        if (await declineSendConfirm(join(artifacts, `${item.id}-page-send-confirm-${sendConfirms + 1}.png`)).catch(() => true)) sendConfirms += 1;
 
         // 用户在页面上看到译文的时刻：数页面里的译文节点，变化时记一笔。
         if (translating) {
@@ -788,7 +822,7 @@ try {
     // SAFETY: 同上，闪烁记录是对象数组，这里只数个数。
     const pendingFlickers = ((await rp.evaluate(work, "window.__bysPendingFlickers ?? []").catch(() => [])) as unknown[]);
     const pendingRose = pendingFlickers.length > 0;
-    const ctx: Ctx = { words: await readWords().catch(() => []), answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
+    const ctx: Ctx = { words: await readWords().catch(() => []), answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, sendConfirms, files, pageInputs };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
