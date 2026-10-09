@@ -2,7 +2,7 @@ import { LEAD_SESSION_ID, isLeadSession, type SwitchTabVerification, type TabInf
 import { ensureAttached } from "../debugger.js";
 import { getTabResource, getWorkingTabId, maybeActivateTab, resolveWorkingTab, setWorkingTab, shouldActivateForKey } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { waitForInteractive, type PageReadiness } from "./page-readiness.js";
+import { downloadNote, waitForInteractive, type PageReadiness } from "./page-readiness.js";
 
 export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ tabs: TabInfo[] }> {
   const workingId = await getWorkingTabId(sessionId);
@@ -47,7 +47,7 @@ export async function openTab(
   params: { url?: string },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ tabId: number; url: string; title: string; readiness?:PageReadiness["readiness"]; waitMs?:number; documentId?:string }> {
+): Promise<{ tabId: number; url: string; title: string; note?: string } & Partial<PageReadiness>> {
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   const tab = await chrome.tabs.create({ url: params.url, active: shouldActivateForKey(sessionId) });
@@ -58,10 +58,10 @@ export async function openTab(
   // 尽量在页面自己的请求发出前开始记录；attach 失败不影响打开。
   try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
 
-  const ready=params.url?await waitForInteractive(tab.id,10_000):undefined;
+  const ready=params.url?await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}):undefined;
   const after = await chrome.tabs.get(tab.id);
 
-  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready };
+  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready, ...(ready?.download ? { note: downloadNote(ready.download) } : {}) };
 }
 
 export async function switchTab(

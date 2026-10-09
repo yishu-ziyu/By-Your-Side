@@ -448,7 +448,7 @@
    "type": "function",
    "function": {
     "name": "navigate",
-    "description": "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL and take a snapshot before acting.",
+    "description": "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL and take a snapshot before acting. document: download means the address started a download instead of opening a page; the tab stays on its current page and the result says what Chrome reports about the file.",
     "parameters": {
      "type": "object",
      "required": [
