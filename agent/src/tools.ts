@@ -47,6 +47,23 @@ function textResult(text: string, details: unknown) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
+/** 写入后网页里这一栏的实际内容（扩展读回并与要写的比较，不是送去的参数）；敏感栏不带值。 */
+function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: string): string {
+  if (!readback) return "";
+
+  if (readback.sensitive) return ` The ${what} is sensitive; its value was not read back.`;
+
+  if (readback.match === "unreadable" || readback.observed === undefined) return ` Could not read the ${what} back from the page.`;
+  const clipped = readback.observed.length > 300 || readback.truncated;
+  const value = `«${readback.observed.slice(0, 300)}${clipped ? "…" : ""}»${clipped ? " (clipped)" : ""}`;
+
+  if (readback.match === "not_held") return ` Problem: the ${what} is empty after the write; the page did not keep what was requested.`;
+
+  if (readback.match === "different") return ` Problem: the ${what} now contains ${value}, not what was requested.`;
+
+  return ` The ${what} now contains: ${value}${readback.match === "reformatted" ? " (the page changed spacing or letter case)" : ""}.`;
+}
+
 /**
  * 页面下载的回执：只有 chrome.downloads 报 complete 才写「已保存」。
  * 中断直接报错，让这一步如实显示失败；还在下载就说还没下完。
@@ -842,7 +859,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
 
         // The browser rejects the value for the field's min/max/step: say so, never plain success.
-        return textResult(data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`, data);
+        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field"), data);
       },
     }),
 
@@ -856,7 +873,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("type_text", params)) as ToolContract["type_text"]["data"];
 
-        return textResult(`Typed ${params.text.length} character(s).`, data);
+        return textResult(`Typed ${params.text.length} character(s).` + readbackNote(data.readback, "focused field"), data);
       },
     }),
 

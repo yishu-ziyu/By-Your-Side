@@ -3,7 +3,8 @@ import {assertObservedDocument, assertSameDocument} from "../observation-documen
 import {replaceEditableText} from "../../shared/editable-text.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
-import { LEAD_SESSION_ID, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
+import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
+import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { sendCommand } from "../debugger.js";
@@ -207,16 +208,112 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
 }
 
 /** 填写回执：浏览器判定越界时带上 rangeIssue（值、问题、允许范围），不报成单纯成功。 */
-function filledResult(range: InputRangeReadout | null | undefined): ToolContract["fill"]["data"] {
+function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback, select?: boolean): ToolContract["fill"]["data"] {
   const rangeIssue = rangeIssueOf(range);
 
-  return rangeIssue ? { filled: true, rangeIssue } : { filled: true };
+  // An unreadable select (page re-rendered it) still fires change again on a repeat: the ledger must know it is a select.
+  if (readback && select && readback.match === "unreadable" && !readback.sensitive) readback = { ...readback, select: true };
+
+  return { filled: true, ...(rangeIssue ? { rangeIssue } : {}), ...(readback ? { readback } : {}) };
+}
+
+/** 页面里读到的一栏：敏感栏不带 value；select 表示读的是选中项的文字。 */
+type PageField = { name: string; value?: string; sensitive?: true; truncated?: true; select?: true; /** 下拉框选中项的 value（与可见文字不同时，要写的内容可能是它）。 */ optionValue?: string };
+
+/**
+ * 写入之后从网页读回这一栏（页面在 input 事件里改了值，读到的是改过的）。在页面里执行，保持自包含。
+ * this 是元素（CDP 按节点调用）；否则按 target 解析，target 为 null 时取当前焦点（type_text）。
+ * 密码、验证码、卡号这类栏不读值：type、autocomplete 同 read-element.ts 的 secretField，再加字段名（sensitiveName 是 SENSITIVE_FIELD_NAME 的正则源码）
+ * 和「这个页面里曾经是 password」的标记（data-bys-was-password，显示密码后 type 变成 text）。
+ */
+function readFieldInPage(this: unknown, target: string | null, max: number, sensitiveName: string): PageField | null {
+  let el: Element | null | undefined = this instanceof Element ? this : null;
+
+  if (!el && target) el = window.__sideagent?.dom?.resolve(target);
+
+  if (!el && !target) {
+    el = document.activeElement;
+
+    while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+  }
+
+  if (!el) return null;
+  const host = (el.getRootNode?.() as ShadowRoot | undefined)?.host;
+
+  if (host?.tagName === "INPUT" && (host as HTMLInputElement).type === "time") el = host;
+  // SAFETY: 下面按 tagName / isContentEditable 分支收窄后才读 value 或 innerText。
+  const field = el as HTMLElement & HTMLInputElement & { selectedOptions: HTMLCollectionOf<HTMLOptionElement> };
+  const tag = field.tagName.toLowerCase();
+  const by = field.getAttribute("aria-labelledby");
+  const name = (field.getAttribute("aria-label")
+    || (by ? by.split(/\s+/).map((id) => field.ownerDocument.getElementById(id)?.textContent ?? "").join(" ") : "")
+    || ("labels" in field && field.labels?.[0]?.textContent) || field.getAttribute("placeholder") || field.getAttribute("title") || "")
+    .replace(/\s+/g, " ").trim().slice(0, 40);
+  const editable = tag === "input" || tag === "textarea" || field.isContentEditable;
+  // 页面函数不能引用外部模块，所以拆驼峰、换分隔符、转小写在这里内联；SENSITIVE_FIELD_NAME 按这种规整后的文字写。
+  const normalize = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-.]+/g, " ").toLowerCase();
+  const sensitive = editable && ((tag === "input" && (field.type === "password" || field.hasAttribute("data-bys-was-password")))
+    || /one-time-code|cc-(number|csc|exp)/i.test(String(field.getAttribute("autocomplete") ?? ""))
+    || new RegExp(sensitiveName, "i").test([field.getAttribute("name"), field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].map((part) => normalize(String(part ?? ""))).join(" ")));
+
+  if (tag === "input" && field.type === "password") field.setAttribute("data-bys-was-password", "");
+
+  if (sensitive) return { name, sensitive: true };
+  let value: string;
+  let optionValue: string | undefined;
+
+  if (tag === "select") {
+    value = [...field.selectedOptions].map((option) => option.text.trim()).join(", ");
+    optionValue = [...field.selectedOptions].map((option) => option.value).join(", ");
+  }
+  else if (tag === "input" || tag === "textarea") value = String(field.value ?? "");
+  else if (field.isContentEditable) value = field.innerText;
+  else return null;
+
+  return { name, value: value.length > max ? value.slice(0, max) : value, ...(value.length > max ? { truncated: true as const } : {}), ...(tag === "select" ? { select: true as const, optionValue } : {}) };
+}
+
+/**
+ * 比较要写的与读回的（做法参考 Skyvern 的 field commit 核对）。fill 整栏替换，要求读回等于 requested；
+ * type_text 是在原有内容里插入，只要求读回里含有 requested；下拉框按选中项文字，包含关系也算对上（fill 会按部分文字挑选项）。
+ */
+function classifyReadback(field: PageField | null, requested: string, mode: "replace" | "insert"): FieldReadback {
+  if (!field) return { name: "", match: "unreadable" };
+
+  if (field.sensitive || field.value === undefined) return { name: field.name, match: "unreadable", sensitive: true };
+  const observed = field.value;
+  const wanted = field.truncated ? requested.slice(0, observed.length) : requested;
+  const norm = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+  let match: FieldReadback["match"];
+
+  if (observed === "" && requested !== "") match = "not_held";
+  else if (mode === "insert") match = observed.includes(requested) ? "same" : norm(observed).includes(norm(requested)) ? "reformatted" : "different";
+  else if (observed === wanted) match = "same";
+  // 下拉框：要写的是选项的 value（如 CN）而页面显示文字（中国）时，对上了选中项的 value 也算一样。
+  else if (field.select && norm(wanted) !== "" && (norm(wanted) === norm(observed) || norm(wanted) === norm(field.optionValue ?? ""))) match = "same";
+  else if (norm(observed) === norm(wanted) || (field.select && wanted.trim() !== "" && (observed.includes(wanted.trim()) || wanted.includes(observed)))) match = "reformatted";
+  else match = "different";
+
+  return { name: field.name, match, requested: requested.slice(0, FIELD_READBACK_MAX), observed, ...(field.truncated ? { truncated: true as const } : {}), ...(field.select ? { select: true as const } : {}) };
+}
+
+/** 读回失败不影响写入结果：读不到记 unreadable。 */
+async function readBackField(tabId: number, where: { backendNodeId: number } | { target: string | null }, requested: string, mode: "replace" | "insert"): Promise<FieldReadback> {
+  let field: PageField | null = null;
+
+  try {
+    field = "backendNodeId" in where
+      ? await callOnBackendNode<PageField | null>(tabId, where.backendNodeId, `function(max, sensitiveName) { return (${readFieldInPage.toString()}).call(this, null, max, sensitiveName); }`, [FIELD_READBACK_MAX, SENSITIVE_FIELD_NAME.source])
+      : await callDom(tabId, readFieldInPage, [where.target, FIELD_READBACK_MAX, SENSITIVE_FIELD_NAME.source]);
+  } catch { /* 读不回不算写入失败 */ }
+
+  return classifyReadback(field ?? null, requested, mode);
 }
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
-async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: DispatchGuard): Promise<InputRangeReadout | null | undefined> {
+async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: DispatchGuard): Promise<{ range?: InputRangeReadout | null; select?: true }> {
   // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报（#22/#27）。
-  const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null }>(
+  const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null; select?: true }>(
     tabId,
     backendNodeId,
     `function(v) {
@@ -245,7 +342,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
         el.value = match.value;
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
-        return { filled: true };
+        return { filled: true, select: true };
       }
       el.focus();
       if (tag === "input" || tag === "textarea") {
@@ -268,7 +365,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
   // 旧行为不看返回值：拿不到回值（undefined）时照旧当作已填写，只认明确的拒绝。
   if (outcome && "refused" in outcome) throw new FillRefused(outcome.refused);
 
-  return outcome?.range;
+  return { range: outcome?.range, ...(outcome && "select" in outcome && outcome.select ? { select: true as const } : {}) };
 }
 
 export async function ensureDomOps(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
@@ -1655,7 +1752,7 @@ export async function fill(
     if (backendNodeId !== undefined) {
       try {
         await beforeDispatch?.();
-        const range = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
+        const { range, select } = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
 
         if (targetRect) {
           await recordCursorTrail(
@@ -1671,7 +1768,7 @@ export async function fill(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        return filledResult(range);
+        return filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
       } catch (e) {
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
@@ -1704,7 +1801,9 @@ export async function fill(
           if (probe.value === "") return { refused: "时间格式无效，请使用 HH:mm（如 19:30）；原值保留，操作未执行" };
         }
 
-        return dom.fill(t, v);
+        const result = dom.fill(t, v);
+
+        return el?.tagName === "SELECT" && "filled" in result ? { ...result, select: true as const } : result;
       },
       [params.target, params.value],
       params.expectedDocumentId, beforeDispatch,
@@ -1726,7 +1825,7 @@ export async function fill(
 
     if (params.memory) await markMemoryField(tabId, params.memory, undefined, params.target);
 
-    return filledResult(filled?.range);
+    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true);
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
@@ -1930,7 +2029,7 @@ export async function typeText(
   params: { text: string; tabId?: number; },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ typed: true }> {
+): Promise<ToolContract["type_text"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -1938,8 +2037,8 @@ export async function typeText(
   await maybeActivateTab(tab, sessionId);
   await beforeDispatch?.();
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
-
-  return { typed: true };
+  // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
+  return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }
 
 export async function pressKey(

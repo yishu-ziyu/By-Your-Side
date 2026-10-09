@@ -244,7 +244,7 @@ export class TaskResultBook {
     else if (index >= 0) this.items[index]!.evidence = null;
   }
 
-  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; valueHash?:string }): void {
+  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; valueHash?:string; readback?:{match:string;select?:true} }): void {
     if (!input.runId) return;
     // 结果不确定时会不会上锁：只看这一步可能已造成的后果（见 commitsHarm），不看它是不是改过页面。
     const write=resultLocksWhenUnknown({tool:input.name,evidence:{effectful:input.effectful}});
@@ -293,6 +293,15 @@ export class TaskResultBook {
     if (input.effectful && !isWriteTool(input.name)) evidence.effectful = true;
 
     if (input.valueHash) evidence.valueHash = input.valueHash;
+
+    const match = input.readback?.match;
+
+    if (match === 'same' || match === 'reformatted' || match === 'not_held' || match === 'different') {
+      evidence.readback = match;
+    }
+
+    // Also when unreadable: a select's repeat fires its change event whatever the readback said.
+    if (input.readback?.select) evidence.selectField = true;
 
     item.evidence = evidence;
   }

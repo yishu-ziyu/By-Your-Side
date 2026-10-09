@@ -30,6 +30,10 @@ export interface TaskResultEvidence {
   effectful?: true;
   /** SHA-256 of the original fill value. Raw field contents are not copied into the result ledger. */
   valueHash?: string;
+  /** How the page held the filled value when the fill returned (only when it was readable). */
+  readback?: 'same' | 'reformatted' | 'not_held' | 'different';
+  /** The filled field is a select: a repeat fires its change event again. */
+  selectField?: true;
   /** 旧版本存档字段（2026-10-04 起不再产生，也不再使用）：只为旧任务记录仍能读入。 */
   awaitingConfirmation?: true;
 }
@@ -140,6 +144,8 @@ export function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
     && (e.observedAt === undefined || Number.isFinite(e.observedAt))
     && (e.effectful === undefined || e.effectful === true)
     && (e.valueHash === undefined || typeof e.valueHash === 'string' && /^[a-f0-9]{64}$/.test(e.valueHash))
+    && (e.readback === undefined || e.readback === 'same' || e.readback === 'reformatted' || e.readback === 'not_held' || e.readback === 'different')
+    && (e.selectField === undefined || e.selectField === true)
     && (e.awaitingConfirmation === undefined || e.awaitingConfirmation === true);
 }
 
