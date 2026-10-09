@@ -52,16 +52,20 @@ export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "
   providerName?: (provider: string) => string | undefined;
 };
 
+/** 换到备用模型多久之后，用户的下一条消息回主模型（用户 10-08 定的 5 分钟）。 */
+export const MODEL_SWITCH_BACK_AFTER_MS = 5 * 60_000;
+
 /**
  * 模型服务出错（挂起超时、连接错误、429、5xx、流提前结束）时，第一次失败就换备用模型接着做，每轮最多换一次。
  * 备用模型：显式给的 provider/id（须有凭据）；没给时用设置里的备用模型。和当前模型相同时不换。
  * 能换时不在原模型上重试（retryGate）；换过之后，备用模型照常自动重试。
+ * 换过去满 MODEL_SWITCH_BACK_AFTER_MS 后，用户的下一条消息先换回原模型（reason="restore"）；一轮中途不换回。
  */
 export function withModelFailover(
   loop: AgentLoop,
   models: ModelPort,
   backupPattern: string | undefined,
-  onSwitch: (from: string, to: string) => void,
+  onSwitch: (from: string, to: string, reason: "fallback" | "restore") => void,
 ): AgentLoop {
   if (!backupPattern && !models.backupModel) return loop;
 
@@ -75,13 +79,16 @@ class FailoverLoop implements AgentLoop {
   private running = false;
   private stopped = false;
   private switchedThisRun = false;
+  /** 换到备用模型的时间和原模型；用户自己换模型或已换回时清空。只在内存里。 */
+  private switchedAt: number | undefined;
+  private primary: Model<Api> | undefined;
   private readonly idleWaiters: Array<() => void> = [];
 
   constructor(
     private readonly inner: AgentLoop,
     private readonly models: ModelPort,
     private readonly backupPattern: string | undefined,
-    private readonly onSwitch: (from: string, to: string) => void,
+    private readonly onSwitch: (from: string, to: string, reason: "fallback" | "restore") => void,
   ) {
     this.unsubscribe = inner.subscribe(event => this.onEvent(event));
     inner.retryGate = message => !this.canSwitch(message);
@@ -111,7 +118,10 @@ class FailoverLoop implements AgentLoop {
 
     if (this.inner.isStreaming) return this.inner.prompt(...args);
 
-    return this.run(() => this.inner.prompt(...args));
+    return this.run(async () => {
+      await this.switchBackIfDue();
+      await this.inner.prompt(...args);
+    });
   }
 
   resume(): Promise<void> {
@@ -134,7 +144,12 @@ class FailoverLoop implements AgentLoop {
   getActiveToolNames() { return this.inner.getActiveToolNames(); }
   getToolDefinition(name: string) { return this.inner.getToolDefinition(name); }
   setActiveToolsByName(names: string[]) { return this.inner.setActiveToolsByName(names); }
-  setModel(model: Model<Api>) { return this.inner.setModel(model); }
+  setModel(model: Model<Api>) {
+    this.switchedAt = undefined;
+    this.primary = undefined;
+
+    return this.inner.setModel(model);
+  }
 
   subscribe(listener: AgentSessionEventListener): () => void {
     this.listeners.add(listener);
@@ -195,8 +210,10 @@ class FailoverLoop implements AgentLoop {
 
       const from = `${previous.provider}/${previous.id}`;
       const to = `${backup.provider}/${backup.id}`;
+      this.switchedAt = Date.now();
+      this.primary = previous;
       await this.inner.sessionManager.appendCustomEntry("sideagent-model-fallback-v1", { from, to });
-      this.onSwitch(from, to);
+      this.onSwitch(from, to, "fallback");
       // Pi's normal retry removes only the failed assistant from model context.
       // Tool results remain, so continuing cannot execute already finished tools again.
       this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
@@ -218,6 +235,21 @@ class FailoverLoop implements AgentLoop {
 
       for (const resolve of this.idleWaiters.splice(0)) resolve();
     }
+  }
+
+  /** 新的一次提问开始前：换到备用已满 MODEL_SWITCH_BACK_AFTER_MS，就先换回原模型。换不回去时留在备用上。 */
+  private async switchBackIfDue(): Promise<void> {
+    const primary = this.primary;
+    const backup = this.inner.model;
+
+    if (this.switchedAt === undefined || !primary || !backup || Date.now() - this.switchedAt < MODEL_SWITCH_BACK_AFTER_MS) return;
+
+    this.switchedAt = undefined;
+    this.primary = undefined;
+
+    if (!await this.inner.setModel(primary).then(() => true, () => false)) return;
+
+    this.onSwitch(`${backup.provider}/${backup.id}`, `${primary.provider}/${primary.id}`, "restore");
   }
 
   private onEvent(event: AgentSessionEvent): void {

@@ -87,7 +87,7 @@ export interface SessionCreateOptions {
   modelPattern?: string;
   /** 可用且有凭据时，在主模型可重试故障耗尽后仅自动切换一次。 */
   fallbackModelPattern?: string;
-  /** 宿主同步当前模型信息与任务摘要；只在真正切换后调用。 */
+  /** 宿主同步当前模型信息与任务摘要；只在真正切换（换到备用或换回原模型）后调用。 */
   onModelFailover?: (from: string, to: string) => void;
   mode?: AgentMode;
   sessionManager?: SessionManager;
@@ -604,16 +604,16 @@ if(required.includes(key))candidates.set(key,attachment);
         effort: model => resultHost?.mainEffort.level(model) ?? "off",
       });
 
-      session = withModelFailover(session, models, options?.fallbackModelPattern, (from, to) => {
+      session = withModelFailover(session, models, options?.fallbackModelPattern, (from, to, reason) => {
         const label = (pattern: string) => {
           const slash = pattern.indexOf("/");
           const name = models.providerName?.(pattern.slice(0, slash));
 
           return name ? `${name} · ${pattern.slice(slash + 1)}` : pattern;
         };
-        const message = `模型服务暂时不可用，已由 ${label(from)} 切换到 ${label(to)}，正在接着执行。`;
+        const message = reason === "restore" ? `已换回 ${label(to)}。` : `模型服务暂时不可用，已由 ${label(from)} 切换到 ${label(to)}，正在接着执行。`;
         callbacks.emit({ kind: "notice", message });
-        resultHost?.runTrace.record("model_fallback", { from, to });
+        resultHost?.runTrace.record("model_fallback", { from, to, reason });
         options?.onModelFailover?.(from, to);
       });
 
