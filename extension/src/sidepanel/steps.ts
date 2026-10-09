@@ -34,7 +34,6 @@ const ACTION_NAMES: Record<string, string> = {
   hover: "悬停",
   remember_user_preference: "记住偏好",
   browser_run: "连续操作",
-  route_check: "提交前核对",
   wait_for: "等待元素",
   check: "核对页面",
   assert: "核对条件",
@@ -342,11 +341,6 @@ export function sendDeclinedText(resultText: string): string {
   return "你没让发，草稿还在";
 }
 
-/** 过程折叠区里的代码裁判一行：全过只写「核对 n/n」，没过的条目用 · 接在后面。 */
-export function runCheckLine(passed: number, total: number, notes: readonly string[]): string {
-  return [`核对 ${passed}/${total}`, ...notes].join(" · ");
-}
-
 export function recordedDuration(start: number, end: number): string | null {
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;
 }
@@ -381,7 +375,7 @@ export function isPrepTool(name: string, params: Parameters<typeof describeTool>
 }
 
 /** 回执与步骤前的图标种类：每种动作都有自己的图标，认不出的工具用扳手（10-07 用户：不要有的有图标、有的只有一个点）。 */
-export type ActionKind = "open" | "fill" | "click" | "key" | "script" | "run" | "look" | "pick" | "mark" | "tab" | "close" | "translate" | "download" | "team" | "remember" | "route" | "other";
+export type ActionKind = "open" | "fill" | "click" | "key" | "script" | "run" | "look" | "pick" | "mark" | "tab" | "close" | "translate" | "download" | "team" | "remember" | "other";
 
 const KIND_OF_TOOL: Record<string, ActionKind> = {
   navigate: "open", open_tab: "open",
@@ -399,7 +393,6 @@ const KIND_OF_TOOL: Record<string, ActionKind> = {
   download_url: "download",
   spawn_worker: "team", list_workers: "team", stop_worker: "team", post: "team", await_message: "team",
   remember_user_preference: "remember",
-  route_check: "route",
 };
 
 export function actionKind(name: string, params: Parameters<typeof describeTool>[1]): ActionKind {
@@ -461,9 +454,6 @@ export function recentSteps(done: TrailStep[]): RecentSteps {
 
   return { shown, earlier: done.length - shown.length };
 }
-
-/** 提交前核对的说明行：在侧栏留一行字，不算「做了几件事」（YIS-96）。 */
-export const ROUTE_NOTES = new Set(["route_check"]);
 
 /** 一步做完、下一步还没开始时的标题：做过事就带上进度，不退回光秃秃的「正在思考」。 */
 export function betweenStepsTitle(doneCount: number): string {

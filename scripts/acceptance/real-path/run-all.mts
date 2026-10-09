@@ -4,7 +4,7 @@
  *
  *   npm run accept:real-path
  *   npm run accept:real-path -- --only=codename-no-save,data-to-file
- *   npm test                      # 只跑 CORE：合并前必跑，不要凭据
+ *   npm test                      # 只跑 CORE：一批改动跑一遍（更新日常扩展前），不要凭据
  *
  * 任一用例失败则整体退出码为 1。被 --only 过滤掉的用例记为未跑，不算通过。
  */
@@ -17,11 +17,11 @@ const HERE = join(REPO, "scripts/acceptance/real-path");
 
 const SKIP = new Set(["harness.mts", "run-all.mts"]);
 
-// 合并前必跑的核心用户路径：只装扩展、脚本模型、无需凭据。选择依据见 docs/evals/20261008-e2e-only.md。
+// 核心用户路径（一批改动跑一遍）：只装扩展、脚本模型、无需凭据。选择依据见 docs/evals/20261008-e2e-only.md。
 const CORE = [
-  "sidebar-interaction", "script-friction", "target-gone", "run-check", "pdf-download", "memory-used-line",
+  "sidebar-interaction", "script-friction", "target-gone", "pdf-download", "memory-used-line",
   "session-durability", "error-recovery", "model-failover", "welcome-context", "claim-after-check", "refill-after-check", "readback-privacy", "snapshot-privacy",
-  "send-confirm", "pay-stop", "submit-check", "handoff",
+  "send-confirm", "pay-stop", "handoff", "answer-straight",
 ];
 
 const core = process.argv.includes("--core");

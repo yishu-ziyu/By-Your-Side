@@ -16,7 +16,8 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mute);margin-bottom:16px}
 <h1 id="title">合并前测试</h1><div class="sub" id="sub">读取中…</div><div class="bar"><i id="bar" style="width:0"></i></div><div id="list"></div>
 <script>
 const D={
-"claim-after-check":["改了网页后，先核对再说做完","填错了要改正，不能先说「做好了」"],
+"answer-straight":["提交直接交给网站，回答马上显示","不再提交前拦下，也不挂「结果还没确认」这类标签"],
+"claim-after-check":["填写后显示网页里的实际内容","核对发现填错时说一句并接着改"],
 "error-recovery":["出错后能接着做","模型报错时侧栏说清原因，不卡死"],
 "memory-used-line":["回答下面只点名有关的记忆","问邮箱才点名邮箱，问无关的话不出现"],
 "model-failover":["主模型坏了换备用模型","卡住、503 时换备用；401、额度用尽不换"],
@@ -24,12 +25,10 @@ const D={
 "pdf-download":["下载 PDF","点下载后文件真的下载下来"],
 "readback-privacy":["填写后显示实际内容，但不露密码","密码、卡号这类栏不显示内容"],
 "refill-after-check":["核对发现填错后能重填","重填一次，不反复乱填"],
-"run-check":["跑完后程序核对条数和失败","回答里的数字要和真实文件对得上"],
 "script-friction":["网页脚本程序能正常用","助手用脚本操作网页不出错"],
 "send-confirm":["点「发送」前先问你","你点「不发」就不发，草稿留着"],
 "session-durability":["会话不丢","关掉重开侧栏，对话还在"],
 "sidebar-interaction":["侧栏基本操作","输入、停止、新会话等按钮正常"],
-"submit-check":["提交前核对值","说「下周四」填错日期会被拦下"],
 "snapshot-privacy":["读页面不外泄卡号","卡号、安全码、PIN 只告诉模型「已填」，不给值"],
 "handoff":["要你亲手做的一步交给你","卡号这类字段助手停下交给你，你交还后它接着做完"],
 "target-gone":["要点的东西不见了","页面变了时如实说明，不乱点"],

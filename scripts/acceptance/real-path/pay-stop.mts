@@ -3,7 +3,7 @@
  *   npx tsx scripts/acceptance/real-path/pay-stop.mts --headless
  * 练习页是报名表：选中「微信免密」，有「确认支付 ¥98.00 并报名」「下一步」「提交评论」三个按钮，各发一条 POST；还有一个「支付宝」单选项。
  *   a) 助手点付款按钮：服务器 /pay 收到 0 条；网页上有提示，写网站和按钮名；侧栏那一步写「停在付款前，等你自己点」，不标失败。
- *   b) 同一轮助手再点三次：仍是 0 条，不卡住，不被当成连续出错，侧栏没有「页面没有变化」。
+ *   b) 同一轮助手再点三次：仍是 0 条，不卡住，不被当成连续出错。
  *   e) 提示还在时，用户自己点付款按钮：/pay 恰好 1 条；用户点「知道了」，提示收起。
  *   c) 「下一步」「提交评论」照常点到（服务器各 1 条），「支付宝」单选项照常选中。
  *   d) 网页脚本程序（browser_run）去点付款按钮：被拒绝，/pay 不增加。
@@ -156,7 +156,7 @@ try {
   const textA = String(await rp.evaluate(panel, 'document.querySelector("#messages").textContent'));
   check("a 侧栏：那一步写「停在付款前，等你自己点」，不标失败", !!runA?.steps.some(s => s.text.includes(STOPPED)) && runA.steps.every(s => !s.error) && !runA.title.includes("没成功"), { run: runA });
   check("a 助手收到的结果：扩展不点付款按钮，用户自己点，不要换办法", toolA.length > 0 && toolA.every(t => t.includes("does not click payment buttons") && t.includes("do not press Enter")), { tool: toolA });
-  check("b 同一轮再点三次：仍 0 条，不当成连续出错，没有「页面没有变化」「有一步失败没说」", count("/pay") === 0 && toolA.length === 4 && !/连续三次/.test(textA) && !textA.includes("页面没有变化") && !textA.includes("有一步失败没说"), { pay: count("/pay"), tools: toolA.length, threeInRow: /连续三次/.test(textA), unchanged: textA.includes("页面没有变化"), failedNotSaid: textA.includes("有一步失败没说") });
+  check("b 同一轮再点三次：仍 0 条，不当成连续出错", count("/pay") === 0 && toolA.length === 4 && !/连续三次/.test(textA), { pay: count("/pay"), tools: toolA.length, threeInRow: /连续三次/.test(textA) });
   await panelShot("a-panel.png");
 
   // ── e：用户自己点付款按钮，再点「知道了」──
