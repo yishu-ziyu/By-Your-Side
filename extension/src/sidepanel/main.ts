@@ -2638,8 +2638,11 @@ function flushMemoryUsedLine(): void {
   if (!line || !line.items.size) return;
   const answer = latestAnswer();
 
+  // 这一轮没有回答（停止、出错）：不单独挂这一行，免得它悬在空处。
+  if (!answer) return;
+
   // 复制按钮在最终稿放完后才挂：有它说明正文不会再整段重渲染。
-  if (answer?.querySelector(".answer-actions")) {
+  if (answer.querySelector(".answer-actions")) {
     placeUsedLine(line, answer);
 
     return;
