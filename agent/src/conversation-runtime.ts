@@ -4,6 +4,8 @@ import { createTakeTabTool, TabControl } from "./tab-control.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
+import { defineTool } from "./define-tool.js";
+import { Type } from "typebox";
 import type { MemoryStore } from "./memory-store.js";
 import type { TaskHistoryStore } from "./task-history.js";
 
@@ -20,6 +22,27 @@ export async function createConversationRuntime(
 
   const control = new TabControl(rpc);
   let toolSession: BrowserAgentSession | undefined;
+  // 交给用户（docs/evals/20261010-hand-to-user.md R1）：走与侧栏「接管」相同的暂停通道，宿主接线后才可用。
+  let handToUser: ((ask: string) => Promise<void>) | undefined;
+
+  const handToUserTool = defineTool({
+    name: "hand_to_user",
+    label: "Hand the page to the user",
+    description: "Hand the page to the user for a step only they can do: login, captcha, 2FA, payment authorization, or card number / expiry / security code fields. Never type those values yourself. This pauses the task and ends your turn; when the user hands the page back you get their current page and continue the original task from there.",
+    parameters: Type.Object({
+      ask: Type.String({ description: "One plain sentence in the user's language: exactly what to do on the page and which button to press (at most 120 characters)." }),
+    }),
+    execute: async (_id, params) => {
+      const ask = String(params.ask ?? "").trim().slice(0, 120);
+
+      if (!ask) throw new Error("ask 不能为空：写清用户要在页面上做什么。");
+
+      if (!handToUser) throw new Error("现在不能把页面交给用户。");
+      await handToUser(ask);
+
+      return { content: [{ type: "text" as const, text: "The page is now the user's. Stop here; you will get the page back after the user hands it back." }], details: { ask }, terminate: true };
+    },
+  });
 
   const session = await BrowserAgentSession.create(
     rpc,
@@ -37,7 +60,7 @@ export async function createConversationRuntime(
       },
       customTools: [...createBrowserTools(rpc, undefined, tabId => control.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => control.releaseIdleForeignTab(tabId), epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), files: () => toolSession?.fileStore(), attachments: () => toolSession?.userAttachments() ?? [], memoryForValue: value => toolSession?.memoryForValue(value), noteRouteStep: note => toolSession?.noteRouteStep(note), writtenSinceCheck: () => toolSession?.writtenSinceCheck() ?? [], markWrittenChecked: () => toolSession?.markWrittenChecked(), checkRoute: input => toolSession ? toolSession.checkRouteBeforeSubmit(input) : Promise.reject(new Error("会话不可用")), askedNow: () => toolSession?.askedThisTime() ?? [] }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
 
- return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), createTakeTabTool(control)],
+ return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), createTakeTabTool(control), handToUserTool],
     },
   );
 
@@ -235,7 +258,7 @@ export async function createConversationRuntime(
     }
   };
 
-  return { session, control, rpc, handleMessage, dispose() { session.dispose(); } };
+  return { session, control, rpc, handleMessage, onHandToUser(fn: (ask: string) => Promise<void>) { handToUser = fn; }, dispose() { session.dispose(); } };
 }
 
 function frozenMembersFromTakeover(msg: Extract<ClientMessage, { type: "takeover" }>): ActiveMemberInput[] {

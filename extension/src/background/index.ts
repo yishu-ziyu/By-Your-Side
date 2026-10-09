@@ -654,14 +654,19 @@ function persistControl(): void {
   });
 }
 
+/** 助手调用 hand_to_user 时要用户做的事；页面条写在「现在归你」后面。下一次接管时重置。 */
+let handoffAsk: string | null = null;
+
 function teamBannerView() {
   const view = team.view();
+  const ask = handoffAsk ? { ask: handoffAsk } : {};
 
-  if (!view) return { status: "现在归你", action: "交还", actionEnabled: true };
+  if (!view) return { status: "现在归你", action: "交还", actionEnabled: true, ...ask };
   const owner = teamOwnerBanner(view);
 
   return {
     ...owner,
+    ...ask,
     members: view.members.map((m) => ({
       id: m.sessionId,
       initial: m.role === "lead" ? "L" : displayNameFor(m.sessionId).slice(0, 1).toUpperCase(),
@@ -1451,7 +1456,7 @@ function emitLocalStatus(state: AgentRunState): void {
   broadcastVisibleServer({ type: "status", state });
 }
 
-async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false): Promise<void> {
+async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false,ask?:string): Promise<void> {
   await controlReady;
 
   if (pendingControl) {
@@ -1459,6 +1464,8 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
     return;
   }
+
+  handoffAsk = ask ?? null;
 
   if (gate.isUser()) {
     void showUserControlGuarded();
@@ -1756,7 +1763,7 @@ return;}
       return;
     }
 
-    if(request.action==='pause')await handleTakeover(request.tabId,request.requestId,request.scope!=='page');else await handleHandback(request.requestId);
+    if(request.action==='pause')await handleTakeover(request.tabId,request.requestId,request.scope!=='page',request.ask);else await handleHandback(request.requestId);
 
     if(remoteControl===current&&pendingControl?.requestId!==request.requestId){
       if(request.action==='pause'&&gate.isUser())finishRemoteControl(true);

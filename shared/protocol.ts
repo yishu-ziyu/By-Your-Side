@@ -283,7 +283,7 @@ export interface HostFeatures { memory: boolean }
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | ReadingEvent
   | NudgeResult
-  | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
+  | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number;ask?:string}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   | VoiceServerMessage
   /** action=forget 成功时 entries 是删掉的那件事的全部条目（供撤销）。action=ask 是 memory_ask_answer 的结果：remember 成功时带 entry（新存的那条；alreadySaved 时是早已存在的同一条，这次没写入，不给撤销），once 成功时不带。 */
@@ -914,7 +914,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
     if (msg.type === 'nudge_result') return isNudgeResult(msg) ? msg : null;
 
-    if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
+    if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)&&(msg.ask===undefined||typeof msg.ask==='string'&&msg.ask.length<=200)?msg:null;
 
     if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
 

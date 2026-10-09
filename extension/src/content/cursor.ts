@@ -1405,7 +1405,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%;
         background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); filter: grayscale(1); opacity: .55;
       }
-      .bar b { font-weight: 400; color: #5f5e58; white-space: nowrap; }
+      .bar b { font-weight: 400; color: #5f5e58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
       .bar .sub { color: #7c828b; font: 500 11px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; white-space: nowrap; }
       .bar .stack { display: flex; margin-left: 1px; }
       .bar .avatar {
@@ -1455,6 +1455,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   function applyControlView(view?: {
     status?: string;
     sub?: string;
+    ask?: string;
     action?: string;
     actionEnabled?: boolean;
     members?: Array<{ id: string; initial: string; color: string }>;
@@ -1465,7 +1466,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     let sub = bar.querySelector<HTMLElement>(".sub");
     let stack = bar.querySelector<HTMLElement>(".stack");
 
-    if (status) status.textContent = view?.status || "现在归你";
+    // 助手交给用户时，用户要做的事直接写在「现在归你」后面（单个助手也显示）。
+    if (status) status.textContent = view?.ask ? `${view.status || "现在归你"} · ${view.ask}` : view?.status || "现在归你";
     const subText = view?.sub?.trim() ?? "";
 
     const members = view?.members ?? [];
@@ -1516,6 +1518,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   function showUserControl(view?: {
     status?: string;
     sub?: string;
+    ask?: string;
     action?: string;
     actionEnabled?: boolean;
     members?: Array<{ id: string; initial: string; color: string }>;
