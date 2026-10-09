@@ -275,6 +275,71 @@ function readFieldInPage(this: unknown, target: string | null, max: number, sens
 }
 
 /**
+ * 落点上的「发送」按钮属于哪一栏（R2 确认框上的内容）。在页面里执行，保持自包含。
+ * 有表单只在表单里找；没有表单从按钮往上找，第一个有输入栏的容器为准，到 body 就停。
+ * 只认唯一的一栏：多行栏（textarea、contenteditable）唯一就用它；没有多行栏时单行文字栏唯一才用。认不准就不给，不猜。
+ */
+function findSendFieldInPage(px: number, py: number): Element | null {
+  let el = document.elementFromPoint(px, py);
+
+  while (el?.shadowRoot) {
+    const inner = el.shadowRoot.elementFromPoint(px, py);
+
+    if (!inner || inner === el) break;
+    el = inner;
+  }
+
+  if (!el) return null;
+  const owner = el.closest('button,[role="button"],input[type="submit"],input[type="button"],a') ?? el;
+  const visible = (node: Element) => node.getClientRects().length > 0;
+  const pick = (scope: Element): Element | null | undefined => {
+    const multi: Element[] = [];
+    const single: Element[] = [];
+
+    for (const node of scope.querySelectorAll("textarea,input,[contenteditable]")) {
+      if (!visible(node)) continue;
+
+      if (node instanceof HTMLTextAreaElement) multi.push(node);
+      else if (node instanceof HTMLInputElement) { if (/^(text|search|email|url|tel)?$/.test(node.getAttribute("type")?.toLowerCase() ?? "")) single.push(node); }
+      else if (node instanceof HTMLElement && node.isContentEditable && !node.parentElement?.isContentEditable) multi.push(node);
+    }
+
+    if (multi.length + single.length === 0) return undefined;
+
+    return multi.length === 1 ? multi[0]! : multi.length === 0 && single.length === 1 ? single[0]! : null;
+  };
+  const form = ("form" in owner && owner.form instanceof HTMLFormElement ? owner.form : null) ?? owner.closest("form");
+
+  if (form) return pick(form) ?? null;
+
+  for (let node = owner.parentElement; node && node !== document.body && node !== document.documentElement; node = node.parentElement) {
+    const found = pick(node);
+
+    if (found !== undefined) return found;
+  }
+
+  return null;
+}
+
+const SEND_CONTENT_MAX = 120;
+
+/** 确认框上要发出去的内容：从网页读，敏感栏（readFieldInPage 判定）、空栏、认不准的都不给。读不到不影响确认。 */
+async function readSendContent(tabId: number, x: number, y: number): Promise<string | undefined> {
+  try {
+    const expression = `(() => { const field = (${findSendFieldInPage.toString()})(${x}, ${y}); return field ? (${readFieldInPage.toString()}).call(field, null, ${SEND_CONTENT_MAX * 2}, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}) : null; })()`;
+    const result = await sendCommand<{ result?: { value?: PageField | null } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true });
+    const field = result.result?.value;
+
+    if (!field || field.sensitive || field.value === undefined) return undefined;
+    const text = field.value.replace(/\s+/g, " ").trim();
+
+    if (!text) return undefined;
+
+    return text.length > SEND_CONTENT_MAX || field.truncated ? `${text.slice(0, SEND_CONTENT_MAX)}…` : text;
+  } catch { return undefined; }
+}
+
+/**
  * 比较要写的与读回的（做法参考 Skyvern 的 field commit 核对）。fill 整栏替换，要求读回等于 requested；
  * type_text 是在原有内容里插入，只要求读回里含有 requested；下拉框按选中项文字，包含关系也算对上（fill 会按部分文字挑选项）。
  */
@@ -1315,7 +1380,7 @@ export async function click(
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId, beforeDispatch);
   // 「发送」按钮：先在网页上等用户确认（页面先切到前台，用户才看得见）。用户点「发送」后，下面照常重新定位、核对命中再点。
-  let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard);
+  let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendContent(tabId, point[0], point[1]));
 
   let [x, y] = point!;
 
@@ -1359,7 +1424,7 @@ export async function click(
         const finalName = (await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] }))).buttons.find(isSendLabel) ?? "";
 
         if (finalName && clickCount > 1) throw notExecuted(new Error(SEND_MULTI_CLICK));
-        sendConfirmed = await confirmSendIfNeeded(tabId, finalName, sendGuard);
+        sendConfirmed = await confirmSendIfNeeded(tabId, finalName, sendGuard, () => readSendContent(tabId, x, y));
       }
 
       await beforeDispatch?.();

@@ -15,11 +15,13 @@
  *   k) 用户点「不发」后，任务还在跑时插话「改好了，发吧」（同一个任务）：助手再点「发送」，确认框重新出现，用户确认后恰好 1 条。
  *   m) 确认框在时，网页自己 pushState、改 #：确认框还在；用户点「发送」后恰好 1 条。
  *   n) 同一条回复里并行点两次「发送」：只出一个确认框，第二次马上回「已有一个在等确认」；用户确认后恰好 1 条，第一次的结果是已发送。
+ *   o) 没有表单、附近没有输入栏的「发送」：确认框只写网站和按钮名，没有内容行。
+ * 确认框内容（R2）：a 写网站、「发送」和同一表单里草稿的文字；表单外另有一栏备忘，不能出现在确认框上。
  * 侧栏（R2）：a 等确认时过程行标题是「等你在网页上确认发送」，用户决定后消失；b 那一步写「（你确认过）」；
  *   c 那一步写「你没让发，草稿还在」，不标红、不写「没成功」，过程行标题也不写「没成功」。截图 a-panel-waiting / b-panel / c-panel。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
  * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
- * 不显示等确认的标题，a 的侧栏判据失败；「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 sendDeclined，c 被「连续三次」停下；网址一变就算离开，m 的确认框消失（反例结果见验收文件）。
+ * 不显示等确认的标题，a 的侧栏判据失败；「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 sendDeclined，c 被「连续三次」停下；网址一变就算离开，m 的确认框消失；不按表单找输入栏，a 的确认框写成表单外备忘的文字（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -34,9 +36,11 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 await mkdir(out, { recursive: true });
 
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>留言练习页</title><body style="font:16px sans-serif;margin:40px">
+<div id="memo"><textarea id="note" rows="1" cols="40" aria-label="备忘">备忘：不要发出去。</textarea></div>
 <form id="f"><textarea id="draft" rows="3" cols="40" aria-label="留言">周五下午三点开会。</textarea><p><button id="save">保存</button> <button id="send">发送</button></p></form>
 <form id="box" style="position:relative;width:320px;height:60px;border:1px solid #ccc"><span>回复框</span><button id="send-in-box" style="position:absolute;left:220px;top:10px;width:80px;height:40px">发送</button></form>
 <form id="titled"><p><button id="send-titled" title="按 Ctrl+Enter 发送">发送</button></p></form>
+<div id="bare"><span>通知</span> <button id="send-bare" type="button">发送</button></div>
 <output id="status"></output>
 <script>document.querySelectorAll('form').forEach(f => f.addEventListener('submit', async e => { e.preventDefault(); const what = e.submitter.id;
   await fetch('/' + what, { method: 'POST', body: document.querySelector('#draft').value }); document.querySelector('#status').textContent = what.startsWith('send') ? '已发送' : '已保存'; }));</script></body></html>`;
@@ -56,9 +60,9 @@ const saved = () => posts.filter(p => p.path === "/save").length;
 
 const clickSend = { tool: { name: "click", args: { target: "#send", label: "发送" } } };
 
-/** 并行的程序：等确认框出来，再按它在网页上的位置去点确认框右边的「发送」。 */
+/** 并行的程序：等确认框出来，再按它在网页上的位置去点确认框右下角的「发送」。 */
 const PROGRAM = `await browser.sleep({ ms: 2500 });
-const at = (await browser.js({ code: "(() => { const r = document.querySelector('[data-sideagent-overlay=\\"send-confirm\\"]')?.getBoundingClientRect(); return r ? [r.right - 36, r.top + r.height / 2] : null; })()" })).value;
+const at = (await browser.js({ code: "(() => { const r = document.querySelector('[data-sideagent-overlay=\\"send-confirm\\"]')?.getBoundingClientRect(); return r ? [r.right - 36, r.bottom - 24] : null; })()" })).value;
 return await browser.click({ point: at });`;
 
 const ASK = {
@@ -66,7 +70,7 @@ const ASK = {
   e: "案例E：把草稿发出去。", f: "案例F：把草稿保存一下。", g: "案例G：把草稿发出去。",
   h: "案例H：把草稿发出去。", i: "案例I：把草稿发出去。", j: "案例J：把草稿发出去。",
   k: "案例K：把草稿发出去。", k2: "案例K2：草稿改好了，发吧。",
-  m: "案例M：把草稿发出去。", n: "案例N：把草稿发出去。",
+  m: "案例M：把草稿发出去。", n: "案例N：把草稿发出去。", o: "案例O：点一下发送。",
 };
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
@@ -97,6 +101,7 @@ const model = await startScriptedModel([
   { match: ASK.m, steps: [clickSend, { text: "M 完成。" }] },
   // 两个工具结果把步数加 2：第 1 步是占位。
   { match: ASK.n, steps: [{ tools: [clickSend.tool, clickSend.tool] }, { text: "N 完成。" }, { text: "N 完成。" }] },
+  { match: ASK.o, steps: [{ tool: { name: "click", args: { target: "#send-bare", label: "发送" } } }, { text: "O 完成。" }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -186,6 +191,8 @@ try {
   await sleep(1500);
   const boxA = await confirmBox();
   check("a 助手点「发送」：网页出现「要发送吗？」，用户决定前服务器 0 条", !!boxA?.text.includes("要发送吗？") && sent() === 0, { text: boxA?.text ?? null, sent: sent() });
+  const siteHost = `127.0.0.1:${siteAddress(site).port}`;
+  check("a 确认框写明网站、按钮名和表单里那一栏要发的内容，不写别的栏", !!boxA?.text.includes(`${siteHost} · 「发送」`) && !!boxA.text.includes("「周五下午三点开会。」") && !boxA.text.includes("备忘"), { text: boxA?.text ?? null, siteHost });
 
   if (!boxA?.yes) throw new Error("没有确认框，后面的用例无从做起");
   await rp.screenshot(work, join(out, "a-confirm.png"));
@@ -254,8 +261,8 @@ try {
   const sentBeforeE = sent();
   await ask(ASK.e);
   const boxE = await confirmShown();
-  // 程序的落点：确认框右边 36 像素处，要正好在「发送」上，这一项才有意义。
-  const programPoint = { x: boxE.host.right - 36, y: (boxE.host.top + boxE.host.bottom) / 2 };
+  // 程序的落点：确认框右边 36、底边 24 像素处，要正好在「发送」上，这一项才有意义。
+  const programPoint = { x: boxE.host.right - 36, y: boxE.host.bottom - 24 };
   const onYes = programPoint.x > boxE.yes!.left && programPoint.x < boxE.yes!.right && programPoint.y > boxE.yes!.top && programPoint.y < boxE.yes!.bottom;
   await sleep(6000);
   const stillE = !!(await confirmBox());
@@ -296,7 +303,7 @@ try {
   await rp.screenshot(panel, join(out, "g-panel.png"));
 
   /** 助手点下去以后：确认框或发送请求先到哪个算哪个；有确认框就停 1.5 秒看服务器，再由用户点「不发」。 */
-  const confirmThenDecline = async (key: "h" | "j", text: string) => {
+  const confirmThenDecline = async (key: "h" | "j" | "o", text: string) => {
     from = toolTexts.length;
     const before = sent();
     await ask(ASK[key]);
@@ -380,6 +387,10 @@ try {
   const busyN = toolN.filter(t => t.includes("已经有一个「发送」在等用户确认")).length;
   const sentN = toolN.filter(t => t.includes("The user confirmed sending on the page")).length;
   check("n 并行点两次「发送」：一个确认框，第二次马上被拒，确认后恰好 1 条，第一次回已发送", stillN?.id === boxN.id && busyN === 1 && sentN === 1 && toolN.length === 2 && sent() - sentBeforeN === 1, { sameBox: stillN?.id === boxN.id, busyN, sentN, sentDelta: sent() - sentBeforeN, tool: toolN });
+
+  // ── o：没有表单、附近没有输入栏的「发送」：确认框只写网站和按钮名，不写内容 ──
+  const o = await confirmThenDecline("o", "O 完成。");
+  check("o 按钮没有对应的输入栏：确认框有网站和按钮名，没有内容行", !!o.box?.includes("要发送吗？") && o.box.includes(`127.0.0.1:${siteAddress(site).port} · 「发送」`) && !o.box.includes("「周五") && !o.box.includes("备忘"), o);
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, measured, posts, toolTexts, notCovered: ["2 分钟没理自动不发（产品没有缩短等待的开关）", "真实网站", "按回车发送（第一版不拦）"], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));

@@ -69,19 +69,34 @@ chrome.runtime.onConnect.addListener(port => {
 });
 
 /** 在页面 ISOLATED world 里画确认框；序列化进页面，必须自包含。 */
-function showSendConfirm(attr: string, kind: string, portName: string): void {
+/** 确认框上写的网站、按钮名、内容都由程序从网页读出（R2），不用助手的话；页面文字只用 textContent 放进去。 */
+function showSendConfirm(attr: string, kind: string, portName: string, label: string, content: string | null): void {
   document.querySelectorAll(`[${attr}="${kind}"]`).forEach(node => node.remove());
   const host = document.createElement("div");
   host.setAttribute(attr, kind);
   host.style.cssText = "all:initial;display:block;position:fixed;z-index:2147483647;left:50%;bottom:24px;transform:translateX(-50%)";
   const root = host.attachShadow({ mode: "closed" });
   root.innerHTML = `<style>
-.cap{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:99px;background:rgba(20,20,19,.92);color:#fff;font:14px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+.cap{display:flex;flex-direction:column;gap:6px;max-width:min(420px,calc(100vw - 32px));padding:10px 8px 8px 16px;border-radius:20px;background:rgba(20,20,19,.92);color:#fff;font:14px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+.row{display:flex;align-items:center;gap:10px}
+.ask{flex:1}
+.site{padding-right:8px;font-size:12px;color:rgba(255,255,255,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.what{padding-right:8px;font-size:13px;color:rgba(255,255,255,.88);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
 button{all:unset;box-sizing:border-box;padding:6px 14px;border-radius:99px;background:rgba(255,255,255,.14);color:#fff;font-weight:600;cursor:pointer}
 button:hover{background:rgba(255,255,255,.22)}
 button.yes{background:#fff;color:#141413}
 button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
-</style><div class="cap" role="alertdialog" aria-label="要发送吗？"><span>要发送吗？</span><button class="no" type="button">不发</button><button class="yes" type="button" tabindex="-1">发送</button></div>`;
+</style><div class="cap" role="alertdialog" aria-label="要发送吗？" aria-describedby="site what"><div class="site" id="site"></div><div class="row"><span class="ask">要发送吗？</span><button class="no" type="button">不发</button><button class="yes" type="button" tabindex="-1">发送</button></div></div>`;
+  root.querySelector(".site")!.textContent = `${location.host} · 「${label.trim()}」`;
+
+  // 读不到要发的内容就不写这一行，不编。
+  if (content) {
+    const what = document.createElement("div");
+    what.className = "what";
+    what.id = "what";
+    what.textContent = `「${content}」`;
+    root.querySelector(".site")!.after(what);
+  }
   const port = chrome.runtime.connect({ name: portName });
   const close = () => host.remove();
   port.onDisconnect.addListener(close);
@@ -102,7 +117,7 @@ button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
  * 按钮名以「发送 / Send」开头时，先在网页上问用户；用户点「发送」才返回 true，其余结局都抛「没执行」。
  * 名字不是发送的按钮直接返回 false，不多等一步。
  */
-export async function confirmSendIfNeeded(tabId: number, label: string, guard: SendGuard | undefined): Promise<boolean> {
+export async function confirmSendIfNeeded(tabId: number, label: string, guard: SendGuard | undefined, readContent: () => Promise<string | undefined>): Promise<boolean> {
   if (!guard || !isSendLabel(label)) return false;
 
   if (guard.inProgram) throw notSent(PROGRAM_TEXT);
@@ -113,16 +128,16 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
   if (pendingTabs.has(tabId)) throw notSent(BUSY_TEXT, true);
   pendingTabs.add(tabId);
 
-  try { return await askUser(tabId, guard, key); } finally { pendingTabs.delete(tabId); }
+  try { return await askUser(tabId, guard, key, label, await readContent()); } finally { pendingTabs.delete(tabId); }
 }
 
-async function askUser(tabId: number, guard: SendGuard, key: string | null): Promise<boolean> {
+async function askUser(tabId: number, guard: SendGuard, key: string | null, label: string, content: string | undefined): Promise<boolean> {
   const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
   const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take }));
   let port: chrome.runtime.Port | null = null;
 
   try {
-    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showSendConfirm, args: [OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM, portName] });
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showSendConfirm, args: [OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM, portName, label, content ?? null] });
     port = await Promise.race([connected, new Promise<null>(done => setTimeout(() => done(null), SHOW_MS))]);
   } catch { /* 页面不让注入：下面按没显示出来处理 */ }
 
