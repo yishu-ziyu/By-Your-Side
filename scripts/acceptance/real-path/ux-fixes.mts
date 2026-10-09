@@ -5,7 +5,7 @@
  *
  * 每组一个隔离的无窗口 Chrome，只装扩展。模型是本机脚本模型（scripted-model.mts），
  * 像用户一样在设置页选「自定义地址」填写。2026-10-04 起网页操作不再弹批准卡、不再拿住点击，原第 2/3（授权卡）、4/5（页面待确认）与 real-confirm 组已删除。
- * 语音组的 key 从本机 ~/.sideagent/stepfun-api.key 读出，在设置页「实时语音」里填写，不打印、不落盘。
+ * 语音组的 key 从本机 ~/.sideagent/stepfun-api.key 读出，在设置页「语音对话」里填写，不打印、不落盘。
  *
  * 产物：out/acceptance/ux-fixes/<phase>/ 下每步一张侧栏或页面截图，summary.json 记下每步侧栏文字、页面浮层文字和判据。
  */
@@ -296,7 +296,7 @@ async function configureScripted(rp: RealPath, s: Session, model: { baseUrl: str
   return { test, settingsTargetId: target.targetId, settings };
 }
 
-/** 设置页「实时语音」里填 key 并保存。key 只经输入框进入扩展存储。 */
+/** 设置页「语音对话」里填 key 并保存。key 只经输入框进入扩展存储。 */
 async function saveVoiceKey(rp: RealPath, settings: string, fake?: string) {
   const key = fake ?? (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim();
   await rp.evaluate(settings, `document.querySelector("#voice-key").scrollIntoView({ block: "center" }); true`);
