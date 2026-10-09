@@ -2,7 +2,8 @@
  * 主模型卡住或暂时出错时，换设置页「备用模型」里选的另一家接着做（docs/evals/20261009-model-backup.md R1）。
  * 只装扩展、隔离构建、本机脚本模型：主模型是自定义地址，指向本机服务（挂起 / 回 503 / 回 401）；
  * 备用模型是阶跃星辰，发往 api.stepfun.com 的请求在 offscreen 文档里被 CDP 拦下，转给本机脚本模型回答。
- *   npx tsx scripts/acceptance/real-path/model-failover.mts --headless [--case=hang|503|401|quota|off]
+ *   npx tsx scripts/acceptance/real-path/model-failover.mts --headless [--case=hang|503|401|quota|off|stop]
+ * stop（R2）：主模型回 503，换模型那次写盘被拖慢，期间点「停」；备用模型不能收到任务请求。
  * 每个用例单独启动一次 Chrome，证据各写一个目录。
  * 失败方式：侧栏一直等主模型；或报错而不是换备用；或 401、额度用尽也换了；或「不用备用」时也换了；或侧栏看不到切换。
  */
@@ -25,7 +26,9 @@ const BACKUP = { provider: "stepfun", modelId: "step-3.7-flash" };
 
 type Primary = "hang" | { status: number; body: string };
 
-type Case = { name: string; primary: Primary; backup: boolean };
+type Case = { name: string; primary: Primary; backup: boolean; stopAfterMs?: number; slowSwitchMs?: number };
+
+const UNAVAILABLE = { status: 503, body: JSON.stringify({ error: { message: "Service Unavailable", type: "server_error" } }) };
 
 const CASES: Case[] = [
   { name: "hang", primary: "hang", backup: true },
@@ -34,19 +37,27 @@ const CASES: Case[] = [
   // 额度用尽常带 429，但不是「忙」：只报原因，不换。
   { name: "quota", primary: { status: 429, body: JSON.stringify({ error: { message: "You exceeded your current quota, please check your plan and billing details.", type: "insufficient_quota", code: "insufficient_quota" } }) }, backup: true },
   { name: "off", primary: { status: 503, body: JSON.stringify({ error: { message: "Service Unavailable", type: "server_error" } }) }, backup: false },
+    // 「停」从侧栏到 agent 要上百毫秒，比换模型那段时间长（只靠点击时机，8 次一次也没碰到）；
+  // 像磁盘慢一样把换模型记录的写盘拖 1.5 秒，让「停」稳定落在途中。
+  ...[0, 1, 2].map(i => ({ name: `stop-${i}`, primary: UNAVAILABLE, backup: true, stopAfterMs: 300, slowSwitchMs: 1_500 })),
 ];
 
 const only = process.argv.find(a => a.startsWith("--case="))?.slice("--case=".length);
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-const summary: Array<{ name: string; status: string; artifacts: string; error: string | null }> = [];
+const summary: Array<{ name: string; status: string; artifacts: string; error: string | null; raceHit?: unknown }> = [];
 
-for (const c of CASES.filter(c => !only || c.name === only)) summary.push(await runCase(c));
+for (const c of CASES.filter(c => !only || c.name === only || c.name.startsWith(`${only}-`))) summary.push(await runCase(c));
 
 console.log(JSON.stringify(summary, null, 2));
 
-if (summary.some(s => s.status !== "PASS")) process.exitCode = 1;
+const stops = summary.filter(s => s.name.startsWith("stop-"));
+
+if (stops.length) console.log(`stop：${stops.length} 次里有 ${stops.filter(s => s.raceHit === true).length} 次「停」落在换模型途中`);
+
+// stop 用例一次都没碰到换模型途中，就没有验到 R2，不算通过。
+if (summary.some(s => s.status !== "PASS") || (stops.length && !stops.some(s => s.raceHit === true))) process.exitCode = 1;
 
 async function runCase(c: Case) {
   const artifacts = join(REPO, "out/acceptance/real-path", `${stamp}-model-failover-${c.name}`);
@@ -55,6 +66,8 @@ async function runCase(c: Case) {
   const backup = await startScriptedModel([{ match: MARK, steps: [{ text: ANSWER }] }]);
   // 主模型：带工具表的任务请求按用例挂起或回错误码；其他请求（不带工具的内部判断）转给脚本模型。
   const primaryAsked: number[] = [];
+  /** stop 用例：主模型回 503 之后点「停」，记下时间。 */
+  let pressStop: (() => void) | undefined;
 
   const main = createServer(async (req, res) => {
     let body = "";
@@ -72,6 +85,8 @@ async function runCase(c: Case) {
       }
 
       res.writeHead(c.primary.status, { "content-type": "application/json" }).end(c.primary.body);
+
+      if (c.stopAfterMs !== undefined) setTimeout(() => pressStop?.(), c.stopAfterMs);
 
       return;
     }
@@ -104,6 +119,30 @@ async function runCase(c: Case) {
       })().catch(caught => { evidence.interceptError = String(caught); });
     });
     await rp.cdp.send("Fetch.enable", { patterns: [{ urlPattern: "https://api.stepfun.com/*", requestStage: "Request" }] }, offscreenSession);
+
+    if (c.stopAfterMs !== undefined) {
+      // 证人：在扩展内 agent 调切换提示那一行设一个不暂停的条件断点，记下那时有没有已经点了「停」。
+      // 切换提示之后同步接着让备用模型开始，所以这里看到「已停」，就是「停」落在换模型途中。产品代码里没有为测试加的东西。
+      const scripts: Array<{ scriptId: string; url: string }> = [];
+      rp.cdp.onEvent("Debugger.scriptParsed", (message: { sessionId?: string; params: { scriptId: string; url: string } }) => {
+        if (message.sessionId === offscreenSession) scripts.push(message.params);
+      });
+      await rp.cdp.send("Debugger.enable", {}, offscreenSession);
+      const script = await until(async () => scripts.find(s => s.url.endsWith("/inproc.js")), 10_000, "inproc.js 已加载");
+      const { scriptSource } = await rp.cdp.send("Debugger.getScriptSource", { scriptId: script.scriptId }, offscreenSession) as { scriptSource: string };
+      const lines = scriptSource.split("\n");
+      const lineNumber = lines.findIndex(line => line.includes("this.onSwitch(from, to);"));
+      assert.ok(lineNumber >= 0, "找到切换提示那一行");
+
+      if (c.slowSwitchMs) {
+        // 只拖慢这一次换模型记录的写盘（测试从外面经调试器做，产品代码不变）。
+        const write = lines.findIndex(line => line.includes('appendCustomEntry("sideagent-model-fallback-v1"'));
+        assert.ok(write >= 0, "找到换模型记录那一行");
+        await rp.cdp.send("Debugger.setBreakpoint", { location: { scriptId: script.scriptId, lineNumber: write, columnNumber: lines[write]!.search(/\S/) }, condition: `(() => { const sm = this.inner.sessionManager; const write = sm.appendCustomEntry; sm.appendCustomEntry = (...a) => { sm.appendCustomEntry = write; return new Promise(r => setTimeout(r, ${c.slowSwitchMs})).then(() => write.apply(sm, a)); }; })(), false` }, offscreenSession);
+      }
+
+      await rp.cdp.send("Debugger.setBreakpoint", { location: { scriptId: script.scriptId, lineNumber, columnNumber: lines[lineNumber]!.indexOf("this.onSwitch") }, condition: "(globalThis.__r2 = { at: Date.now(), stopped: this.stopped }), false" }, offscreenSession);
+    }
 
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
@@ -142,9 +181,18 @@ async function runCase(c: Case) {
     const sentAt = Date.now();
     await rp.pressEnter(panel);
 
+    let stopAt: number | undefined;
+    pressStop = () => {
+      stopAt = Date.now();
+      void rp.evaluate(panel, `(() => { const b = document.querySelector("#send-btn"); const stopping = b.classList.contains("stopping"); if (stopping) b.click(); return stopping; })()`).then(clicked => { evidence.stopClicked = clicked; });
+    };
     const messages = () => rp.evaluate(panel, 'document.querySelector("#messages")?.textContent ?? ""').then(String);
 
-    if (c.name === "hang" || c.name === "503") {
+    if (c.stopAfterMs !== undefined) {
+      await until(async () => stopAt !== undefined && await rp.evaluate(panel, '!document.querySelector("#send-btn").classList.contains("stopping")') || undefined, 30_000, "sidebar idle after stop");
+      // 停下后再等 5 秒，看备用模型有没有迟到的请求。
+      await new Promise(resolve => setTimeout(resolve, 5_000));
+    } else if (c.name === "hang" || c.name === "503") {
       await until(async () => (await messages()).includes(ANSWER) || undefined, 90_000, "answer visible");
     } else {
       await until(async () => await rp.evaluate(panel, '!!document.querySelector("#messages .error-card")') || undefined, 120_000, "error card visible");
@@ -163,7 +211,18 @@ async function runCase(c: Case) {
       sidebarTail: text.slice(-400),
     });
 
-    if (c.name === "hang" || c.name === "503") {
+    if (c.stopAfterMs !== undefined) {
+      evidence.stopAtMs = stopAt! - sentAt;
+      evidence.idle = await rp.evaluate(panel, '!document.querySelector("#send-btn").classList.contains("stopping")');
+      const witness = await rp.evaluate(offscreenSession, "globalThis.__r2 ?? null") as { at: number; stopped: boolean } | null;
+      evidence.switchWitness = witness && { atMs: witness.at - sentAt, stopped: witness.stopped };
+      // 没走到切换（「停」落在换模型之前）或走到时还没停（「停」落在备用开始之后），这一次都没碰到 R2 的那段时间。
+      evidence.raceHit = witness?.stopped === true;
+      assert.equal(evidence.idle, true, "侧栏停下了");
+      assert.ok(!text.includes(ANSWER), "没有备用模型的回答");
+
+      if (evidence.raceHit) assert.equal(taskToBackup.length, 0, "换模型途中点了「停」，备用模型没有收到任务请求");
+    } else if (c.name === "hang" || c.name === "503") {
       assert.equal(primaryAsked.length, 1, "主模型只被问一次，不在原模型上重试");
       assert.ok(taskToBackup.length >= 1, "备用模型（阶跃星辰）收到了任务请求");
       assert.ok(visibleMs <= (c.name === "503" ? 10_000 : BOUND_MS), `回答在时限内出现（${visibleMs} ms）`);
@@ -185,5 +244,5 @@ async function runCase(c: Case) {
     main.close();
   }
 
-  return { name: c.name, status: error ? "FAIL" : "PASS", artifacts, error: error?.split("\n")[0] ?? null };
+  return { name: c.name, status: error ? "FAIL" : "PASS", artifacts, error: error?.split("\n")[0] ?? null, ...(c.stopAfterMs !== undefined ? { raceHit: evidence.raceHit ?? null, backupTaskRequests: evidence.backupTaskRequestsAtMs ?? null } : {}) };
 }

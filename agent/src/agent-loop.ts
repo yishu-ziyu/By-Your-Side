@@ -185,6 +185,9 @@ class FailoverLoop implements AgentLoop {
       if (!backup || !await this.inner.setModel(backup).then(() => true, () => false)) {
         // 备用模型没有凭据或换不过去：回到原模型的自动重试，不因为没换成就少试。
         this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
+
+        if (this.stopped) return;
+
         await this.continueRun();
 
         return;
@@ -197,6 +200,10 @@ class FailoverLoop implements AgentLoop {
       // Pi's normal retry removes only the failed assistant from model context.
       // Tool results remain, so continuing cannot execute already finished tools again.
       this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
+
+      // 换模型要等写盘；这段时间里用户点了「停」，备用模型就不再发请求。
+      if (this.stopped) return;
+
       await this.continueRun();
     } catch (error) {
       if (this.heldEnd) return;
