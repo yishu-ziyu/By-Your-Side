@@ -32,7 +32,6 @@ import {isFactFreeClosedUtterance,isVoiceBackchannel,isVoiceSilenceRequest,type 
 import type {VoiceTurnPreparation} from './voice-model.js';
 import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
-import {partialResultNote} from '../../shared/task-next-step.js';
 import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
 import {memoryHostOfUrl} from '../../shared/memory.js';
 import {asksUser} from './goal-check.js';
@@ -908,7 +907,8 @@ return host?[host]:[];}))].slice(0,16);
 
       // 一步都没做成（常见于模型报错）：出错原因已在侧栏，单独一句「没做完」只是账本的话。
       if(!count)return;
-      this.publishDelivery(id,'finding',`做成了 ${count} 步。${partialResultNote(snap.nextStep)}`,
+      // 账本只有「填写 @4」这类步骤名，说不出用户的话；只说发生了什么，请用户看页面（10-09 用户定）。
+      this.publishDelivery(id,'finding','助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。',
         undefined,{runId:snap.runId,controlVersion:snap.controlVersion,states:['idle']});
 
       return;
