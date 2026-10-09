@@ -1,4 +1,3 @@
-import type { RouteStep, TaskRoute } from "../../shared/route.js";
 import { normalizeMemoryHostname, withNotOnHost } from "../../shared/memory.js";
 import { isTaskHistoryEntry, TASK_HISTORY_MAX, type TaskHistoryEntry } from "../../shared/task-history.js";
 import type { DocumentPersistence } from "./document-persistence.js";
@@ -48,19 +47,16 @@ export function redactTaskSecrets(entry: TaskHistoryEntry): TaskHistoryEntry {
 
   if (entry.page !== undefined) redacted.page = scrub(entry.page);
 
-  // 做法里填过这样的值：值不留，只记「这里要填」。
-  if (entry.route) {
-    redacted.route = { ...entry.route, steps: entry.route.steps.map(step => {
-      if (step.value === undefined || !values.some(v => step.value!.includes(v))) return step;
-      const hidden: RouteStep = { ...step, secret: true };
-      delete hidden.value;
-      delete hidden.valueFrom;
-
-      return hidden;
-    }) };
-  }
-
   return redacted;
+}
+
+/** 旧版「照上次的做法」（YIS-105 已删）在条目里存的 route：存档里原样留着，读出时去掉，不给模型、侧栏或别处。 */
+function withoutRoute(task: TaskHistoryEntry): TaskHistoryEntry {
+  if (!("route" in task)) return task;
+  // SAFETY: 只去掉旧字段 route；其余字段已由 isTaskHistoryEntry 核对。
+  const { route: _old, ...rest } = task as TaskHistoryEntry & { route?: unknown };
+
+  return rest;
 }
 
 /** 本机宿主的过往任务文件名；扩展版存在 IndexedDB 里，格式相同。 */
@@ -73,7 +69,7 @@ export class TaskHistoryStore {
   constructor(private readonly doc: DocumentPersistence) {}
 
   async list(): Promise<TaskHistoryEntry[]> {
-    return (await this.read()).sort((a, b) => b.endedAt - a.endedAt);
+    return (await this.read()).map(withoutRoute).sort((a, b) => b.endedAt - a.endedAt);
   }
 
   /** 同一任务（同一 runId）接着做完时覆盖原条目；用过次数与时间沿用，新条目没带日期时沿用原日期与有效期。 */
@@ -112,18 +108,6 @@ export class TaskHistoryStore {
   /** 没做完的任务：补上短主题与下一步（晚到时只改这两个字段）。 */
   async patchLabel(id: string, endedAt: number, label: { title: string; next: string }): Promise<void> {
     await this.mutate(tasks => tasks.map(task => (task.id === id && task.endedAt === endedAt ? { ...task, title: label.title, next: label.next } : task)));
-  }
-
-  /** 走老路：换掉或删掉一条过往任务的做法（「不用记」与撤销）。返回全部过往任务。 */
-  async setRoute(id: string, route: TaskRoute | null): Promise<TaskHistoryEntry[]> {
-    await this.mutate(tasks => tasks.map(task => {
-      if (task.id !== id) return task;
-      const { route: _old, ...rest } = task;
-
-      return route ? { ...rest, route } : rest;
-    }));
-
-    return this.list();
   }
 
   /** 这几条刚被带给助手：用过次数加 1、记下时间；已不存在的 id 跳过。 */
@@ -195,7 +179,7 @@ export class TaskHistoryStore {
       // 读不懂的条目原样写回，不因一次改动丢数据。
       await this.doc.write(JSON.stringify({ format: 1, tasks: [...next, ...(dropInvalid ? [] : invalid)] }) + "\n");
 
-      return next;
+      return next.map(withoutRoute);
     });
   }
 }

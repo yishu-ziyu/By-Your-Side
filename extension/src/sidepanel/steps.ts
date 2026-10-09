@@ -34,9 +34,7 @@ const ACTION_NAMES: Record<string, string> = {
   hover: "悬停",
   remember_user_preference: "记住偏好",
   browser_run: "连续操作",
-  follow_route: "照上次的做法",
   route_check: "提交前核对",
-  route_miss: "改为一步步看",
   wait_for: "等待元素",
   check: "核对页面",
   assert: "核对条件",
@@ -201,7 +199,6 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
 const CURSOR_VERBS = new Map([
   ["click", { verb: "点", unnamed: "点这里" }],
   ["fill", { verb: "填", unnamed: "填这一栏" }],
-  // 照上次的做法走时，选项这一步带着「日期 10 月 15 日」这样的名字（YIS-96）；模型直接调用时没有名字，仍写「选择选项」。
   ["select_option", { verb: "选", unnamed: "选择选项" }],
   ["hover", { verb: "看", unnamed: "看这里" }],
 ]);
@@ -399,7 +396,7 @@ const KIND_OF_TOOL: Record<string, ActionKind> = {
   download_url: "download",
   spawn_worker: "team", list_workers: "team", stop_worker: "team", post: "team", await_message: "team",
   remember_user_preference: "remember",
-  follow_route: "route", route_check: "route", route_miss: "route",
+  route_check: "route",
 };
 
 export function actionKind(name: string, params: Parameters<typeof describeTool>[1]): ActionKind {
@@ -451,7 +448,7 @@ export function openedPageTitle(resultText: string): string | null {
   return title.length > 30 ? `${title.slice(0, 29)}…` : title;
 }
 
-export interface TrailStep { text: string; dur: string; failed: boolean; /** 照走时控件对不上、改为一步步看的那一行。 */ miss?: boolean }
+export interface TrailStep { text: string; dur: string; failed: boolean }
 
 /** 进行中标题下方只露最近 3 步，更早的只计数（「+ 前面 N 步」）。 */
 export interface RecentSteps { shown: TrailStep[]; earlier: number }
@@ -462,17 +459,8 @@ export function recentSteps(done: TrailStep[]): RecentSteps {
   return { shown, earlier: done.length - shown.length };
 }
 
-/** 照上次的做法走时的说明行（核对、对不上）：在侧栏留一行字，不算「做了几件事」（YIS-96）。 */
-export const ROUTE_NOTES = new Set(["route_check", "route_miss"]);
-
-/** 照走的子步骤带着 route: { step, of }：标题写「照上次的做法 第 N/M 步」。 */
-export function routeProgressTitle(params: Parameters<typeof describeTool>[1]): string | null {
-  const at = params.route;
-
-  if (!(at instanceof Object) || !("step" in at) || !("of" in at)) return null;
-
-  return Number.isInteger(at.step) && Number.isInteger(at.of) ? `照上次的做法 第 ${String(at.step)}/${String(at.of)} 步` : null;
-}
+/** 提交前核对的说明行：在侧栏留一行字，不算「做了几件事」（YIS-96）。 */
+export const ROUTE_NOTES = new Set(["route_check"]);
 
 /** 一步做完、下一步还没开始时的标题：做过事就带上进度，不退回光秃秃的「正在思考」。 */
 export function betweenStepsTitle(doneCount: number): string {

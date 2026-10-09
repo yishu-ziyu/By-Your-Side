@@ -1,13 +1,11 @@
 import { LEAD_SESSION_ID, isLeadSession, type ClientMessage, type ServerMessage, type TeamView, type TeamMemberHandback } from "../../shared/protocol.js";
 import { fromTeamMemberHandback, type ActiveMemberInput } from "../../shared/control.js";
-import { ROUTE_REPLAY_ON } from "../../shared/route.js";
 import { createTakeTabTool, TabControl } from "./tab-control.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
 import type { MemoryStore } from "./memory-store.js";
 import type { TaskHistoryStore } from "./task-history.js";
-import { routeOfTask } from "./route-replay.js";
 
 const log = (message: string) => console.error(`[sideagent] ${message}`);
 
@@ -37,7 +35,7 @@ export async function createConversationRuntime(
         options?.onModelFailover?.(from, to);
         void toolSession?.availableModels().then(models => sendCurrent({ type: "model_info", model: to, models }));
       },
-      customTools: [...createBrowserTools(rpc, undefined, tabId => control.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => control.releaseIdleForeignTab(tabId), epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), files: () => toolSession?.fileStore(), attachments: () => toolSession?.userAttachments() ?? [], memoryForValue: value => toolSession?.memoryForValue(value), noteRouteStep: note => toolSession?.noteRouteStep(note), noteRouteFollowed: source => toolSession?.noteRouteFollowed(source), writtenSinceCheck: () => toolSession?.writtenSinceCheck() ?? [], markWrittenChecked: () => toolSession?.markWrittenChecked(), routeOf: options?.taskHistory && ROUTE_REPLAY_ON ? id => routeOfTask(options.taskHistory, id) : undefined, checkRoute: input => toolSession ? toolSession.checkRouteBeforeSubmit(input) : Promise.reject(new Error("会话不可用")), askedNow: () => toolSession?.askedThisTime() ?? [] }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
+      customTools: [...createBrowserTools(rpc, undefined, tabId => control.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => control.releaseIdleForeignTab(tabId), epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), files: () => toolSession?.fileStore(), attachments: () => toolSession?.userAttachments() ?? [], memoryForValue: value => toolSession?.memoryForValue(value), noteRouteStep: note => toolSession?.noteRouteStep(note), writtenSinceCheck: () => toolSession?.writtenSinceCheck() ?? [], markWrittenChecked: () => toolSession?.markWrittenChecked(), checkRoute: input => toolSession ? toolSession.checkRouteBeforeSubmit(input) : Promise.reject(new Error("会话不可用")), askedNow: () => toolSession?.askedThisTime() ?? [] }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
 
  return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), createTakeTabTool(control)],
     },
