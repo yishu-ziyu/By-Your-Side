@@ -60,6 +60,7 @@ import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
+import { CLAIM_BOOKKEEPING_TOOLS, CLAIM_HOLD_CAP_MS, evidenceLine, holdsClaim, mergeEvidence, readbackFailed } from "./claim-hold.js";
 import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import type { RouteStep } from "../../../shared/route.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
@@ -800,6 +801,7 @@ function resetConversationRender(): void {
   leadAnswerText = "";
   leadAnswerTurnClosed = false;
   leadToolUsed = false;
+  resetClaimHold();
   historyPrimed = false;
   currentDraftReady = false;
   currentCitationSource = null;
@@ -2246,6 +2248,9 @@ interface RunHost {
   trail: HTMLElement;
   /** 只对这一轮有用的说明（调试提示条，#103），跟在最近几步后面，随它收起。 */
   aside: string | null;
+  /** 填写之后从网页读回的几栏（「草稿现在是：「…」」），放在回答上方，不收进过程。 */
+  evidence: HTMLElement | null;
+  evidenceLines: Array<{ field: string; value: string }>;
 }
 
 const ACTION_ICONS = {
@@ -3319,6 +3324,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
     actIcon,
     trail,
     aside: null,
+    evidence: null,
+    evidenceLines: [],
   };
 
   return currentRun;
@@ -3644,6 +3651,8 @@ function finishRun(): void {
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
 
+  if (run.evidence) run.root.after(run.evidence);
+
   for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
     if (node instanceof HTMLElement && node.matches(".msg.assistant")) syncAnswerTime(node);
   }
@@ -3664,7 +3673,8 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   let next = anchor.nextElementSibling;
 
   // chip 跟着用户消息（chip C），「收到」这类确认语也留在前面。
-  while (next instanceof HTMLElement && next !== root && (next.dataset.deliveryKind === "ack" || next.classList.contains("ctx-chips"))) next = next.nextElementSibling;
+  // 核对判继续后接着做的一轮：排在前一轮的过程、读回和「核对发现」之后，不插到它们前面。
+  while (next instanceof HTMLElement && next !== root && (next.dataset.deliveryKind === "ack" || next.classList.contains("ctx-chips") || next.matches("details.run-steps.done, .fill-evidence, .claim-fix"))) next = next.nextElementSibling;
 
   if (next && next !== root) messagesEl.insertBefore(root, next);
 }
@@ -4154,9 +4164,242 @@ function groupProcessReceipts(): void {
   }
 }
 
+/** 填写之后网页里这一栏的实际内容：程序读回，不经助手转述（R1）。敏感栏不显示。 */
+function showReadback(readback: NonNullable<Extract<AgentUiEvent, { kind: "tool_end" }>["readback"]>): void {
+  const line = evidenceLine(readback);
+  const run = currentRun;
+
+  if (!line || !run) return;
+  run.evidenceLines = mergeEvidence(run.evidenceLines, line);
+
+  if (!run.evidence) {
+    run.evidence = document.createElement("div");
+    run.evidence.className = "fill-evidence";
+    (run.trail.isConnected ? run.trail : run.root).after(run.evidence);
+  }
+
+  run.evidence.replaceChildren(...run.evidenceLines.map(({ field, value }) => {
+    const row = document.createElement("div");
+    row.className = "fill-evidence-line";
+    const label = document.createElement("b");
+    label.textContent = `${field}现在是：`;
+    row.append(label, `「${value}」`);
+
+    return row;
+  }));
+  scrollToEnd();
+}
+
+/**
+ * 改过网页的一轮，回答先扣住（R2）：第一次改网页之后的正文、正式交付（「收到」除外）都不进界面。
+ * 宿主在交付前发 goal_check checking 表示要核对：整轮结束后显示「正在核对结果…」，等结论或 CLAIM_HOLD_CAP_MS。
+ * 判做完（或等用户、做不到、没结论）照原样放出；判继续就不当回答显示，收进这一轮的执行过程，并说核对发现了什么。
+ * 不核对的一轮在 agent_end 前原样放出，顺序与原来一样。
+ */
+const claimHold = {
+  wrote: false,
+  checking: false,
+  waiting: false,
+  releasing: false,
+  text: "",
+  events: [] as Array<{ ev: AgentUiEvent; sessionId?: string; runId?: string | null }>,
+  run: null as RunHost | null,
+  indicator: null as HTMLElement | null,
+  timer: 0,
+  /** 超时先放出的回答上的「结果还没确认」；之后核对判做完时摘掉。 */
+  unconfirmed: null as HTMLElement | null,
+  /** 这一轮有一栏读回与要写的对不上：核对判做完也只按「结果还没确认」放出。 */
+  mismatch: false,
+};
+
+function resetClaimHold(): void {
+  window.clearTimeout(claimHold.timer);
+  claimHold.indicator?.remove();
+  Object.assign(claimHold, { wrote: false, checking: false, waiting: false, releasing: false, text: "", events: [], run: null, indicator: null, timer: 0, unconfirmed: null, mismatch: false });
+}
+
+function holdingSomething(): boolean {
+  return claimHold.text.length > 0 || claimHold.events.length > 0;
+}
+
+/** 按原来的路径重放扣住的事件：正文先（过程里那段旁白），交付后。 */
+function replayHeldClaim(): void {
+  const { text, events } = claimHold;
+  claimHold.text = "";
+  claimHold.events = [];
+  claimHold.releasing = true;
+
+  try {
+    // 过程行还在跑就走原路；已收尾（状态先于 agent_end 回到空闲）就直接写进它的执行过程，不另起一行。
+    if (text && currentRun) handleAgentEvent({ kind: "text_delta", delta: text });
+    else narrateIntoRun(lastRun, text);
+
+    for (const item of events) handleAgentEvent(item.ev, item.sessionId, item.runId);
+  } finally {
+    claimHold.releasing = false;
+  }
+}
+
+/** 正文写进这一轮（已收尾）的执行过程，和它原本会在的位置一样；过程行不在了就不另造。 */
+function narrateIntoRun(run: RunHost | null, text: string): void {
+  if (!run || !text || !run.root.isConnected) return;
+  const details = document.createElement("details");
+  details.className = "thinking narration";
+  const summary = document.createElement("summary");
+  const label = document.createElement("span");
+  label.textContent = "执行过程";
+  summary.appendChild(label);
+  const pre = document.createElement("pre");
+  details.append(summary, pre);
+  run.body.appendChild(details);
+  appendTrace(pre, text);
+}
+
+function heldDeliveryText(): string {
+  return claimHold.events.flatMap(({ ev }) => ev.kind === "user_delivery" ? [ev.delivery.text] : []).join("\n\n");
+}
+
+/** 放出扣住的回答。late：核对还没结论（超时或用户另起一轮），回答下面标「结果还没确认」。 */
+function releaseHeldClaim(late: boolean): void {
+  const run = claimHold.run;
+  const text = claimHold.text;
+  window.clearTimeout(claimHold.timer);
+  claimHold.indicator?.remove();
+  claimHold.indicator = null;
+  claimHold.waiting = false;
+  claimHold.checking = false;
+
+  // 整轮已收尾：正文进执行过程，交付照原样显示。
+  if (run) {
+    claimHold.text = "";
+    narrateIntoRun(run, text);
+  }
+
+  const before = new Set(deliveredBubbles.values());
+  replayHeldClaim();
+
+  if (!late) return;
+  const answer = [...deliveredBubbles.values()].filter(bubble => !before.has(bubble) && bubble.dataset.deliveryKind !== "ack").at(-1);
+
+  if (!answer) return;
+  const tag = document.createElement("div");
+  tag.className = "claim-unconfirmed";
+  tag.textContent = "结果还没确认";
+  answer.after(tag);
+  claimHold.unconfirmed = tag;
+}
+
+/** 核对判继续：扣住的话不当回答，收进执行过程；说核对发现了什么、正在改。纯文本显示。 */
+function correctHeldClaim(ev: Extract<AgentUiEvent, { kind: "goal_check" }>): void {
+  window.clearTimeout(claimHold.timer);
+  claimHold.indicator?.remove();
+  claimHold.indicator = null;
+  claimHold.waiting = false;
+  claimHold.checking = false;
+  narrateIntoRun(claimHold.run, claimHold.text || heldDeliveryText());
+  claimHold.text = "";
+  claimHold.events = [];
+  const found = (ev.correction || ev.remaining || "还没做完").trim().replace(/[。.]$/, "");
+  addMsg("msg claim-fix", `核对发现：${found}。正在改…`);
+}
+
+/** 返回 true 表示这个事件先扣住，不往下渲染。 */
+function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): boolean {
+  if (claimHold.releasing) return false;
+
+  switch (ev.kind) {
+    case "agent_start":
+      // 核对还没结论用户就另起一轮：放出上一轮的回答并标「结果还没确认」，不让它消失。
+      if (claimHold.waiting) releaseHeldClaim(true);
+      resetClaimHold();
+
+      return false;
+    case "tool_start":
+      // 改网页之后又接着做：扣住的那段正文只是过程旁白，照原路进执行过程。记账类工具不算接着做。
+      if (claimHold.text && !claimHold.waiting && !CLAIM_BOOKKEEPING_TOOLS.has(ev.name)) {
+        const text = claimHold.text;
+        claimHold.text = "";
+        claimHold.releasing = true;
+
+        try { handleAgentEvent({ kind: "text_delta", delta: text }); } finally { claimHold.releasing = false; }
+      }
+
+      if (holdsClaim(ev.name, ev.params)) claimHold.wrote = true;
+
+      return false;
+    case "tool_end":
+      if (ev.readback && !ev.isError && readbackFailed(ev.readback)) claimHold.mismatch = true;
+
+      return false;
+    case "text_delta":
+      if (!claimHold.wrote || claimHold.waiting) return false;
+      claimHold.text += ev.delta;
+
+      return true;
+    case "user_delivery":
+    case "user_delivery_stream": {
+      const kind = ev.kind === "user_delivery" ? ev.delivery.kind : ev.stream.kind;
+
+      if (!claimHold.wrote || kind === "ack") return false;
+      claimHold.events.push({ ev, sessionId, runId });
+
+      return true;
+    }
+    case "goal_check":
+      if (ev.status === "checking") {
+        claimHold.checking = claimHold.wrote;
+
+        return true;
+      }
+
+      if (claimHold.waiting) {
+        if (ev.status === "continue") correctHeldClaim(ev);
+        // 代码核对只能把「做完」改成「没确认」：读回对不上时，模型核对判做完也标「结果还没确认」。
+        else releaseHeldClaim(ev.status === "done" && claimHold.mismatch);
+      } else if (ev.status === "done" && claimHold.unconfirmed && !claimHold.mismatch) {
+        claimHold.unconfirmed.remove();
+        claimHold.unconfirmed = null;
+      }
+
+      return false;
+    case "agent_end":
+      if (!claimHold.wrote || !holdingSomething()) return false;
+
+      // 不核对的一轮（停止、出错、只读）：在 agent_end 之前原样放出，和原来顺序一样。
+      if (!claimHold.checking) {
+        replayHeldClaim();
+
+        return false;
+      }
+
+      claimHold.waiting = true;
+      claimHold.run = currentRun ?? lastRun;
+      // 在 agent_end 处理（收尾、过程归位）之后再放「正在核对结果…」，让它排在回答位置。
+      window.setTimeout(() => {
+        if (!claimHold.waiting || claimHold.indicator) return;
+        const line = document.createElement("div");
+        line.className = "claim-checking";
+        line.setAttribute("role", "status");
+        const dot = document.createElement("span");
+        dot.className = "claim-checking-dot";
+        line.append(dot, "正在核对结果…");
+        appendToMessages(line);
+        claimHold.indicator = line;
+        scrollToEnd();
+      }, 0);
+      claimHold.timer = window.setTimeout(() => { if (claimHold.waiting) releaseHeldClaim(true); }, CLAIM_HOLD_CAP_MS);
+
+      return false;
+    default:
+      return false;
+  }
+}
+
 function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
   // 并行助手已删除：非主会话的事件不再出现，出现也不渲染。
   if (sessionId && !isLeadSession(sessionId)) return;
+
+  if (holdClaimEvent(ev, sessionId, runId)) return;
 
   const progressRun = currentRun ?? lastRun;
 
@@ -4197,6 +4440,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "tool_end":
       onToolEnd(ev);
+
+      if (ev.readback && !ev.isError) showReadback(ev.readback);
       break;
     case "agent_start":
       if (!citationRequestPending) currentCitationSource = null;

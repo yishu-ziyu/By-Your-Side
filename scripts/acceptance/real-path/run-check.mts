@@ -1,4 +1,5 @@
 /** R4 真实扩展侧栏验收；脚本模型仅替代回复，工具、文件区和裁判走产品路径。
+ * 10-09 起分母只数适用的核对（docs/evals/20261009-claim-after-check.md R4）：没有失败的一步时不数「失败说了没有」。
  * 重跑：npx tsx scripts/acceptance/real-path/run-check.mts --headless
  */
 import assert from "node:assert/strict";
@@ -37,21 +38,21 @@ const fail = { tool: { name: "fetch", args: { url: badUrl } } };
 const scenarios = [
   { mark: "场景A", steps: [fail, save("a.txt")], reply: "已保存 1 个文件。", expectLine: "核对 2/3 · 有一步失败没说" },
   { mark: "场景B", steps: [fail, save("b.txt")], reply: `fetch ${badUrl} 失败。已保存 1 个文件。`, expectLine: "核对 3/3" },
-  { mark: "场景C", steps: [save("c.txt")], reply: "已保存 2 个文件。", expectLine: "核对 2/3 · 回复说 2 个文件，本任务记录了 1 个文件" },
-  { mark: "场景D", steps: [save("c.txt")], reply: "已保存 1 个文件。", expectLine: "核对 2/3 · 要求保存，但新增了 0 个文件" },
-  { mark: "场景E", steps: [{ tool: { name: "browser_run", args: { label: "尝试接口后保存", code: `try { await browser.fetch({url: ${JSON.stringify(badUrl)}}); } catch {}\n${program("e.txt", 3)}` } } }], reply: "字幕处理结束。", expectLine: "核对 1/3 · 有一步失败没说 · 要求保存，但新增了 0 个文件" },
+  { mark: "场景C", steps: [save("c.txt")], reply: "已保存 2 个文件。", expectLine: "核对 1/2 · 回复说 2 个文件，本任务记录了 1 个文件" },
+  { mark: "场景D", steps: [save("c.txt")], reply: "已保存 1 个文件。", expectLine: "核对 1/2 · 要求保存，但新增了 0 个文件" },
+  { mark: "场景E", steps: [{ tool: { name: "browser_run", args: { label: "尝试接口后保存", code: `try { await browser.fetch({url: ${JSON.stringify(badUrl)}}); } catch {}\n${program("e.txt", 3)}` } } }], reply: "字幕处理结束。", expectLine: "核对 0/2 · 有一步失败没说 · 要求保存，但新增了 0 个文件" },
   { mark: "场景F", steps: [fail, save("f.txt")], reply: "别的操作失败了。已保存 1 个文件。", expectLine: "核对 2/3 · 有一步失败没说" },
   { mark: "场景H", steps: [
     { tool: { name: "browser_run", args: { label: "尝试读取", code: `await browser.js({code: '(() => { throw new Error("fixture failure"); })()', readonly: true});` } } },
     { tool: { name: "browser_run", args: { label: "读标题并保存", code: `await browser.js({code: 'document.title', readonly: true});\n${program("h.txt", 3)}` } } },
   ], reply: "已保存 1 个文件。", expectLine: "核对 2/3 · 有一步失败没说" },
-  { mark: "场景G", steps: [save("g.txt")], reply: "已保存 1 个文件，完成 2 处改动。", expectLine: "核对 2/3 · 回复中的改动处数暂无可核对记录" },
-  { mark: "条数反例", steps: [{ tool: { name: "browser_run", args: { code: program("rows.txt", 658) } } }], reply: "已保存 1 个文件。rows.txt 有 830 条字幕。", expectLine: "核对 2/3 · 回复说 830 条，文件 rows.txt 有 658 条" },
-  { mark: "条数对照", steps: [{ tool: { name: "browser_run", args: { code: program("correct.txt", 830) } } }], reply: "已保存 1 个文件。correct.txt 有 830 条字幕。", expectLine: "核对 3/3" },
-  { mark: "CSV换行", steps: [{ tool: { name: "browser_run", args: { code: "return await browser.saveFile(" + JSON.stringify({filename:"quoted.csv",content:'"A\nB",1\nC,2'}) + ");" } } }], reply: "已保存 1 个文件。quoted.csv 有 3 条记录。", expectLine: "核对 2/3 · 回复说 3 条，文件 quoted.csv 有 2 条" },
-  { mark: "JSON排版", steps: [{ tool: { name: "browser_run", args: { code: 'return await browser.saveFile({filename:"formatted.json",content:JSON.stringify([{name:"A"}],null,2)});' } } }], reply: "已保存 1 个文件。formatted.json 有 1 条记录。", expectLine: "核对 3/3" },
-  { mark: "无关条数", steps: [save("comments.txt")], reply: "页面存在 12 条评论。已保存 1 个文件。", expectLine: "核对 3/3" },
-  { mark: "中文文件数", steps: [save("chinese.txt")], reply: "已保存两个文件。", expectLine: "核对 2/3 · 回复说 2 个文件，本任务记录了 1 个文件" },
+  { mark: "场景G", steps: [save("g.txt")], reply: "已保存 1 个文件，完成 2 处改动。", expectLine: "核对 1/2 · 回复中的改动处数暂无可核对记录" },
+  { mark: "条数反例", steps: [{ tool: { name: "browser_run", args: { code: program("rows.txt", 658) } } }], reply: "已保存 1 个文件。rows.txt 有 830 条字幕。", expectLine: "核对 1/2 · 回复说 830 条，文件 rows.txt 有 658 条" },
+  { mark: "条数对照", steps: [{ tool: { name: "browser_run", args: { code: program("correct.txt", 830) } } }], reply: "已保存 1 个文件。correct.txt 有 830 条字幕。", expectLine: "核对 2/2" },
+  { mark: "CSV换行", steps: [{ tool: { name: "browser_run", args: { code: "return await browser.saveFile(" + JSON.stringify({filename:"quoted.csv",content:'"A\nB",1\nC,2'}) + ");" } } }], reply: "已保存 1 个文件。quoted.csv 有 3 条记录。", expectLine: "核对 1/2 · 回复说 3 条，文件 quoted.csv 有 2 条" },
+  { mark: "JSON排版", steps: [{ tool: { name: "browser_run", args: { code: 'return await browser.saveFile({filename:"formatted.json",content:JSON.stringify([{name:"A"}],null,2)});' } } }], reply: "已保存 1 个文件。formatted.json 有 1 条记录。", expectLine: "核对 2/2" },
+  { mark: "无关条数", steps: [save("comments.txt")], reply: "页面存在 12 条评论。已保存 1 个文件。", expectLine: "核对 2/2" },
+  { mark: "中文文件数", steps: [save("chinese.txt")], reply: "已保存两个文件。", expectLine: "核对 1/2 · 回复说 2 个文件，本任务记录了 1 个文件" },
 ];
 const rules: Rule[] = [
   { match: '"lastReply"', steps: [{ text: '{"status":"done","remaining":"","correction":""}' }] },

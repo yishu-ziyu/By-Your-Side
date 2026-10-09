@@ -32,6 +32,18 @@ export const DEFAULT_CONVERSATION_ID = "default";
 
 export function normalizeConversationId(id?: string | null): string { return id ?? DEFAULT_CONVERSATION_ID; }
 
+/**
+ * 填写或输入之后从网页读回的一栏：name 是这一栏的可读名字（aria-label、关联标签、占位文字），读不到为空。
+ * match 比较要写的内容（requested）与网页里的实际内容（observed）：same 一样；reformatted 只差空白或大小写（网页改了格式）；
+ * not_held 网页里是空的；different 不一样；unreadable 读不回（不算失败）。
+ * 密码、验证码、卡号这类栏不带 requested 和 observed，match 为 unreadable。observed 最多 FIELD_READBACK_MAX 字，超出时 truncated。
+ */
+export type FieldReadbackMatch = "same" | "reformatted" | "not_held" | "different" | "unreadable";
+
+export interface FieldReadback { name: string; match: FieldReadbackMatch; requested?: string; observed?: string; sensitive?: true; truncated?: true }
+
+export const FIELD_READBACK_MAX = 1000;
+
 export interface ConversationSummary {
   id: string; title: string; createdAt: number; updatedAt: number;
   state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
@@ -325,7 +337,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
@@ -344,8 +356,10 @@ export type AgentUiEvent =
   /**
    * 目标核对（宿主用快速模型判断用户要的结果达成没有）：done 做完；needs_user 等用户（回答、确认、登录）；continue 宿主让助手接着做；open 催满仍没做完；
    * blocked 原因在助手和用户之外（站点连不上、页面不存在、服务端拒绝），不催续做，remaining 是给用户看的原因。
+   * checking：这一轮交付前先说一声「要核对」（在交付与 agent_end 之前到达）；unavailable：核对没拿到结论。这两个不是结论，任务记录不存。
+   * correction：continue 时核对者说的具体出入，是诊断文字，只按纯文本显示。
    */
-  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining?: string }
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; remaining?: string; correction?: string }
   /** 跑完后的代码裁判（agent/src/run-referee.ts）：三条确定性核对，过了几条；notes 每条失败一句话。只标不拦。 */
   | { kind: "run_check"; passed: number; total: number; notes: string[] }
   | { kind: "user_delivery"; delivery: UserDelivery }
@@ -656,7 +670,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue } };
+  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {
@@ -673,7 +687,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; files: UploadFilePayload[] };
     data: { files: Array<{ name: string; size: number; type: string }> };
   };
-  type_text: { params: { tabId?: number; text: string; }; data: { typed: true } };
+  type_text: { params: { tabId?: number; text: string; }; data: { typed: true; /** The focused field, read from the page after typing. */ readback?: FieldReadback } };
   press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };

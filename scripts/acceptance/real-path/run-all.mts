@@ -20,7 +20,7 @@ const SKIP = new Set(["harness.mts", "run-all.mts"]);
 // 合并前必跑的核心用户路径：只装扩展、脚本模型、无需凭据。选择依据见 docs/evals/20261008-e2e-only.md。
 const CORE = [
   "sidebar-interaction", "script-friction", "target-gone", "run-check", "pdf-download", "memory-used-line",
-  "session-durability", "error-recovery", "model-failover", "welcome-context",
+  "session-durability", "error-recovery", "model-failover", "welcome-context", "claim-after-check",
 ];
 
 const core = process.argv.includes("--core");

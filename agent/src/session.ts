@@ -13,7 +13,7 @@ import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
 import {randomUUID} from "node:crypto";
-import {LEAD_SESSION_ID} from "../../shared/protocol.js";
+import {FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import {NoProgressPolicy, noProgressMessage} from "./no-progress-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
@@ -215,7 +215,8 @@ export class BrowserAgentSession {
       if (!step.error?.startsWith(STALE_STEP_MESSAGE)) this.runSteps.note(this.deliveryRunId(), step.name, !!step.error, !!this.rpc?.wasRepeatRefused?.(step.id), step.params, step.parentId);
       this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
         executionFact:this.rpc?.getExecutionFact(step.id),
-        resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX))});
+        resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX)),
+        ...(step.error ? {} : fieldReadbackOf(step.result))});
       this.emitReadObservation(step.id,step.name,step.params,step.result,!!step.error);
     }
   }
@@ -2208,6 +2209,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
             ...(event.isError && this.rpc?.wasRepeatRefused?.(event.toolCallId) ? { repeatRefused: true as const } : {}),
+            ...(event.isError ? {} : fieldReadbackOf(event.result?.details)),
           });
           this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);
           this.toolArgs.delete(event.toolCallId);
@@ -2253,13 +2255,18 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           {
             const checkGoal = this.goalCheckEligible(event.messages);
 
+            // 先说「要核对」，再交付：改过网页的一轮，侧栏据此扣住回答到核对出结论（docs/evals/20261009-claim-after-check.md R2）。
+            if (checkGoal) emit({ kind: "goal_check", status: "checking" });
+
             // 代码裁判先于模型裁判，且在 agent_end 之前下发：侧栏收尾时据此决定过程行留不留（docs/evals/20261008-check-assert-referee.md R4）。
             const runId = this.deliveryRunId();
             if (!this.memberId && !this.hold.isHeld() && !this.expectedStoppedAgentEnd && this.toolUseRun === runId && runId !== null) {
               const baseline = this.refereeFileBaseline;
               const newFileCount = baseline?.runId === runId ? (this.artifactStore?.names() ?? []).filter(name => !baseline.names.has(name)).length : 0;
               const files = [...this.savedFiles].filter(([, file]) => file.runId === runId).map(([filename]) => ({ filename, content: this.artifactStore?.isImage(filename) ? undefined : this.artifactStore?.get(filename) }));
-              emit(refereeRun({ steps: this.runSteps.of(runId), reply: this.runReplyText(event.messages), fileCount: files.length, files, newFileCount, goal: this.askedThisTime() }));
+              const check = refereeRun({ steps: this.runSteps.of(runId), reply: this.runReplyText(event.messages), fileCount: files.length, files, newFileCount, goal: this.askedThisTime() });
+
+              if (check) emit(check);
             }
             this.finishAgentEnd(event);
 
@@ -2421,16 +2428,20 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     if (!verdict && asksUser(this.runReplyText(event.messages))) verdict = { status: "needs_user", remaining: "回复助手的问题" };
 
     // 核对期间用户停止、接管、补充或另发了任务：这次核对作废，不再碰已交付的这一轮。
+    // 还是这一轮（接管、停止）时说一声没结论，侧栏放出扣着的回答；已开新一轮时侧栏在新一轮开始时已放出。
     const current = () => this.deliveryRunId() === runId && epoch === this.controlEpoch && !this.hold.isHeld();
+    const abandon = () => { if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "unavailable" }); };
 
-    if (!current()) return;
+    if (!current()) { abandon(); return; }
+
+    if (!verdict) emit({ kind: "goal_check", status: "unavailable" });
 
     if (runId && this.goalContinueRun !== runId) { this.goalContinueRun = runId; this.goalContinues = 0; }
 
     // 核对期间用户把标签页换到了别的网页：不在新网页上接着做，按「还差」收尾（10-07 翻译续做落到了下一个网页上）。
     const movedTo = verdict?.status === "continue" && endedOn && tabId !== null ? await this.tabMovedFrom(endedOn, tabId) : null;
 
-    if (!current()) return;
+    if (!current()) { abandon(); return; }
 
     if (verdict?.status === "continue" && this.goalContinues < GOAL_CONTINUE_MAX && this.session && !movedTo) {
       const session = this.session;
@@ -2438,11 +2449,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       // agent_end 回调返回后会话才真正空闲；稍等再发下一轮，最多等 3 秒。等的期间用户另有动作就作罢。
       for (let waited = 0; session.isStreaming && waited < 3_000; waited += 50) await new Promise(done => setTimeout(done, 50));
 
-      if (!current() || session.isStreaming) return;
+      if (!current() || session.isStreaming) { abandon(); return; }
       this.goalContinues += 1;
       const continuing: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: "continue" };
 
       if (verdict.remaining) continuing.remaining = verdict.remaining;
+
+      if (verdict.correction) continuing.correction = verdict.correction;
       emit(continuing);
       this.runTrace.record("goal_check", { ...verdict, attempt: this.goalContinues });
       this.mainEffort.raise(session.model, "goal_unfinished");
@@ -2723,6 +2736,27 @@ export function steerNeedsPageObservation(text: string): boolean {
 }
 
 /** 本轮最后一条助手消息里的正文（不含思考与工具调用）；没有正文时为空串。 */
+const READBACK_MATCHES: ReadonlySet<string> = new Set(["same", "reformatted", "not_held", "different", "unreadable"]);
+
+/** 填写、输入工具回执里扩展读回的那一栏，原样带给侧栏；不是这个形状就不带。 */
+function fieldReadbackOf(data: unknown): { readback?: FieldReadback } {
+  // SAFETY: 只读 readback 一个字段，逐项核对类型。
+  const readback = (data as { readback?: unknown } | null | undefined)?.readback as Partial<FieldReadback> | undefined;
+
+  if (!readback || typeof readback !== "object" || typeof readback.name !== "string" || !READBACK_MATCHES.has(String(readback.match))) return {};
+  const clean: FieldReadback = { name: readback.name.slice(0, 40), match: readback.match! };
+
+  if (readback.sensitive === true) return { readback: { ...clean, match: "unreadable", sensitive: true } };
+
+  if (typeof readback.observed === "string") clean.observed = readback.observed.slice(0, FIELD_READBACK_MAX);
+
+  if (typeof readback.requested === "string") clean.requested = readback.requested.slice(0, FIELD_READBACK_MAX);
+
+  if (readback.truncated === true) clean.truncated = true;
+
+  return { readback: clean };
+}
+
 function finalAssistantText(messages: ReadonlyArray<{ role: string; content?: unknown }>): string {
   const last = messages.filter(message => message.role === "assistant").at(-1);
 

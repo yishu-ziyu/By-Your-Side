@@ -820,6 +820,9 @@ return { kind: "silent" };}
    * 任务一轮结束时留一条摘要。只记动手做过事的任务（列过目标或有执行记录），纯聊天和读页问答不记。
    * 同一任务接着做（恢复同一 runId）时覆盖原条目。写失败只丢这条摘要，不影响任务。
    */
+  /** 这一轮在等目标核对结论的会话：结论到之前不记过往任务。 */
+  private readonly goalCheckPending = new Set<string>();
+
   private recordTaskHistory(id: string): void {
     const history=this.taskHistory,progress=this.progress.get(id),snap=this.getTaskProgress(id);
 
@@ -1398,8 +1401,13 @@ return receipt;
       if(carriesIdentity&&scoped.type!=='task_control'&&!freshDisplayCall)scoped.runId=progressSnapshot.runId;
       this.emit(scoped);
 
+      // 宿主说这一轮要核对（goal_check checking，先于 agent_end）：过往任务等核对结论再记，判继续时不记那句没核对过的回答。
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_start') this.goalCheckPending.delete(id);
+
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'checking') this.goalCheckPending.add(id);
+
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId)) {
-        void this.fulfillOwedDelivery(id).finally(()=>this.recordTaskHistory(id));
+        void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); });
 
         try{this.taskQueue.finish(id,progress.snapshot().state==='aborted'?'cancelled':progress.snapshot().state==='error'?'failed':'completed');}catch{this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务结束状态未能保存，请核对已有结果。'}});}
 
@@ -1407,7 +1415,7 @@ return receipt;
       }
 
       // 目标核对在交付之后才出结论：任务已空闲时按新结论重记这条过往任务（同一 runId 覆盖）。
-      if (message.type === 'agent_event' && message.event.kind === 'goal_check' && message.event.status !== 'continue' && isLeadSession(message.sessionId) && progress.snapshot().state === 'idle') this.recordTaskHistory(id);
+      if (message.type === 'agent_event' && message.event.kind === 'goal_check' && message.event.status !== 'continue' && message.event.status !== 'checking' && isLeadSession(message.sessionId) && progress.snapshot().state === 'idle') { this.goalCheckPending.delete(id); this.recordTaskHistory(id); }
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_start') this.emit({type:'conversation_updated',conversationId:id,conversation:{...summary}});
 

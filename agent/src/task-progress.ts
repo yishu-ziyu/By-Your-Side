@@ -353,7 +353,8 @@ return;}
         this.hostContinuation = false;
       }
     } else if (e.kind === "goal_check") {
-      if (lead) { this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() }; this.hostContinuation = e.status === "continue"; }
+      // checking / unavailable 不是结论：不改「还差」。
+      if (lead && e.status !== "checking" && e.status !== "unavailable") { this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() }; this.hostContinuation = e.status === "continue"; }
     } else if (e.kind === "artifact") {
       // 核对之后又存了文件：旧的「还差」可能已经做到，不再当现状。
       if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;

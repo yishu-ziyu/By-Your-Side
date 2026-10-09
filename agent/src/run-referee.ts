@@ -54,7 +54,6 @@ export interface RefereeInput {
   goal: string[];
 }
 export type RunCheckEvent = Extract<AgentUiEvent, { kind: "run_check" }>;
-export const RUN_CHECK_TOTAL = 3;
 const SENTENCE_SPLIT = /[。！？!?\n；;]/;
 const FAILURE = /失败|没能|未能|没成功|出错|报错|打不开|没打开|连不上|无法|超时|不可用|\bfailed\b|cannot|unable to|timed out|blocked/i;
 const SAVE_VERB = /保存|存成|存为|存下|save/i;
@@ -98,39 +97,58 @@ function recordsIn(file: { filename: string; content?: string }, unit: string, s
   return null;
 }
 
-/** 核对文件个数与明确归属的行／条数；多个未点名文件不猜对象。 */
-function countMismatch(reply: string, fileCount: number, files: RefereeInput["files"]): string | null {
+/**
+ * 核对文件个数与明确归属的行／条数；多个未点名文件不猜对象。
+ * stated：回复里说了能对照的数（文件个数、文件条数、改动处数）；没说时这条核对不适用。
+ */
+function countCheck(reply: string, fileCount: number, files: RefereeInput["files"]): { stated: boolean; note: string | null } {
+  let stated = false;
+
   for (const sentence of reply.split(SENTENCE_SPLIT)) {
     if (/保存|生成|存下|导出/.test(sentence)) {
       const match = /(\d+|[一二三四五六七八九十两百千万]+)\s*[个份]文件/.exec(sentence);
       const claimed = match ? numericCount(match[1]!) : null;
-      if (match && claimed === null) return "回复中的文件个数暂无可核对记录";
-      if (claimed !== null && claimed !== fileCount) return `回复说 ${claimed} 个文件，本任务记录了 ${fileCount} 个文件`;
+      if (match) stated = true;
+      if (match && claimed === null) return { stated, note: "回复中的文件个数暂无可核对记录" };
+      if (claimed !== null && claimed !== fileCount) return { stated, note: `回复说 ${claimed} 个文件，本任务记录了 ${fileCount} 个文件` };
     }
     const named = files.filter(file => sentence.includes(file.filename));
     if (named.length || /文件|字幕|保存|存成|存为/.test(sentence)) {
       const candidates = named.length ? named : files;
       for (const match of sentence.matchAll(/(\d+|[一二三四五六七八九十两百千万]+)\s*([条行])/g)) {
         if (/第\s*$/.test(sentence.slice(0, match.index))) continue;
-        if (candidates.length !== 1) return "回复中的文件条数暂无可核对记录";
+        stated = true;
+        if (candidates.length !== 1) return { stated, note: "回复中的文件条数暂无可核对记录" };
         const claimed = numericCount(match[1]!), file = candidates[0]!;
         const actual = recordsIn(file, match[2]!, sentence);
-        if (claimed === null || actual === null) return "回复中的文件条数暂无可核对记录";
-        if (claimed !== actual) return `回复说 ${claimed} ${match[2]}，文件 ${file.filename} 有 ${actual} ${match[2]}`;
+        if (claimed === null || actual === null) return { stated, note: "回复中的文件条数暂无可核对记录" };
+        if (claimed !== actual) return { stated, note: `回复说 ${claimed} ${match[2]}，文件 ${file.filename} 有 ${actual} ${match[2]}` };
       }
     }
     // 成功工具调用数不等于实际改动处数；没有权威记录时不可冒充核对通过。
-    if (/\d+\s*处(?:改动|修改)|(?:改动|修改)(?:了)?\s*\d+\s*处/.test(sentence)) return "回复中的改动处数暂无可核对记录";
+    if (/\d+\s*处(?:改动|修改)|(?:改动|修改)(?:了)?\s*\d+\s*处/.test(sentence)) return { stated: true, note: "回复中的改动处数暂无可核对记录" };
   }
-  return null;
+  return { stated, note: null };
 }
 
-export function refereeRun(input: RefereeInput): RunCheckEvent {
+/**
+ * 只数这一轮适用的核对（docs/evals/20261009-claim-after-check.md R4）：有一步失败才核对「失败说了没有」，
+ * 回复说了数才核对数，用户要求保存才核对保存。一项都不适用时返回 null，侧栏不显示核对行。
+ */
+export function refereeRun(input: RefereeInput): RunCheckEvent | null {
   const notes: string[] = [];
-  if (!failuresAccountedFor(input.steps, input.reply)) notes.push("有一步失败没说");
-  const mismatch = countMismatch(input.reply, input.fileCount, input.files);
-  if (mismatch) notes.push(mismatch);
+  let total = 0;
+  if (input.steps.some(step => !step.ok)) {
+    total += 1;
+    if (!failuresAccountedFor(input.steps, input.reply)) notes.push("有一步失败没说");
+  }
+  const count = countCheck(input.reply, input.fileCount, input.files);
+  if (count.stated) total += 1;
+  if (count.note) notes.push(count.note);
   const saveRequested = input.goal.some(text => text.split(SENTENCE_SPLIT).some(sentence => SAVE_VERB.test(sentence) && !SAVE_NEGATED.test(sentence) && SAVE_CONTENT.test(sentence)));
-  if (saveRequested && !asksUser(input.reply) && input.newFileCount !== 1) notes.push(`要求保存，但新增了 ${input.newFileCount} 个文件`);
-  return { kind: "run_check", passed: RUN_CHECK_TOTAL - notes.length, total: RUN_CHECK_TOTAL, notes };
+  if (saveRequested && !asksUser(input.reply)) {
+    total += 1;
+    if (input.newFileCount !== 1) notes.push(`要求保存，但新增了 ${input.newFileCount} 个文件`);
+  }
+  return total ? { kind: "run_check", passed: total - notes.length, total, notes } : null;
 }

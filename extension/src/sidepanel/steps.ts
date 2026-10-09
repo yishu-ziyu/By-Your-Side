@@ -331,7 +331,7 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
   return done;
 }
 
-/** 过程折叠区里的代码裁判一行：全过只写「核对 3/3」，没过的条目用 · 接在后面。 */
+/** 过程折叠区里的代码裁判一行：全过只写「核对 n/n」，没过的条目用 · 接在后面。 */
 export function runCheckLine(passed: number, total: number, notes: readonly string[]): string {
   return [`核对 ${passed}/${total}`, ...notes].join(" · ");
 }
