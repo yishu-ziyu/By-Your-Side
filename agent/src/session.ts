@@ -55,7 +55,7 @@ import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
-import { asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -2211,6 +2211,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   /** 最近一次用工具（GOAL_CHECK_BOOKKEEPING_TOOLS 除外）的任务；目标核对据此判断这一任务是否做过事。 */
   private toolUseRun: string | null = null;
   private goalContinues = 0;
+  /** 上次催续做时宿主读到的网页（地址 + 文字）；催过之后网页没变、助手又说做不成，就不再催（gaveUpWithoutChange）。 */
+  private nudgePage: { runId: string | null; page: string } | null = null;
   /** 本任务已尝试且失败的做法（工具名 + 失败原因摘要），催续做时带给模型，让它换做法（10-02 BYS-017 三次照原样重试）。 */
   private failedAttempts: { runId: string | null; items: Array<{ tool: string; reason: string }> } = { runId: null, items: [] };
 
@@ -2245,6 +2247,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const tabId = this.rpc?.getPageTarget?.(this.memberId) ?? null;
     /** 交付时标签页所在的网页；续做前据此判断用户有没有换走。 */
     let endedOn = "";
+    let pageNow: string | null = null;
 
     try {
       const model = this.modelRuntime!.fastModel?.() ?? this.session!.model;
@@ -2257,8 +2260,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const lastReply = this.runReplyText(event.messages);
       const pageText = page ? String(page.text ?? "") : "";
       endedOn = page ? String(page.url ?? "") : "";
+      pageNow = page ? `${endedOn}\n${pageText}` : null;
+      const delivery = snapshot?.conversationContext?.latestDelivery;
+      const partial = !!delivery && delivery.runId === runId && delivery.text === lastReply && (delivery.facts?.outcome === "partial" || !!delivery.unfinished?.length);
 
-      if (pageAwaitsEmailStep(pageText)) {
+      if (gaveUpWithoutChange({ reply: lastReply, partial, pageAtNudge: this.nudgePage?.runId === runId ? this.nudgePage.page : null, pageNow })) {
+        verdict = { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
+      } else if (pageAwaitsEmailStep(pageText)) {
         // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去（09-27 Kimi 这样问了就停住）。
         // 点名是哪个网站的确认邮件：收件箱里常有别的网站的同类邮件（09-27 Kimi 点了另一个列表的确认链接）。
         const site = snapshot?.goalPage ? (snapshot.goalPage.title.split(/\s[—–|-]\s/)[0]!.trim() || new URL(snapshot.goalPage.url).hostname) : "";
@@ -2309,6 +2317,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (!current() || session.isStreaming) { abandon(); return; }
       this.goalContinues += 1;
+      this.nudgePage = pageNow ? { runId, page: pageNow } : null;
       const continuing: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: "continue" };
 
       if (verdict.remaining) continuing.remaining = verdict.remaining;

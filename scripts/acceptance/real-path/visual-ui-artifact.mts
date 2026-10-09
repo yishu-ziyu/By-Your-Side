@@ -27,12 +27,12 @@ addEventListener("message", e => {
 </script>`;
 const model = await startScriptedModel([
   { match: "做一个互动结果卡", steps: [
-    {tool: {name:"artifacts", args:{command:"create",filename:"interactive-result.html",content:source}}},
+    {tool: {name:"artifacts", args:{command:"create",filename:"interactive-result.html",content:source,deliver:true}}},
     {text:"互动卡已生成，请主动打开交互预览。",delayMs:9000}
   ]},
   { match: "创建两张交互卡", steps: [
-    {tool:{name:"artifacts",args:{command:"create",filename:"card-A.html",content:multiHtml("A")}}},
-    {tool:{name:"artifacts",args:{command:"create",filename:"card-B.html",content:multiHtml("B")}}},
+    {tool:{name:"artifacts",args:{command:"create",filename:"card-A.html",content:multiHtml("A"),deliver:true}}},
+    {tool:{name:"artifacts",args:{command:"create",filename:"card-B.html",content:multiHtml("B"),deliver:true}}},
     {text:"两张卡片已生成，本轮完成。"}
   ]},
   { match: "只修改卡片 A", steps: [

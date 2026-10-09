@@ -393,7 +393,7 @@ const data = (await browser.js({ code: "fetch(" + JSON.stringify(url) + ").then(
 const pad = (n, w) => String(n).padStart(w, "0");
 const clock = (s) => { const ms = Math.round(s * 1000); return pad(Math.floor(ms / 3600000), 2) + ":" + pad(Math.floor(ms / 60000) % 60, 2) + ":" + pad(Math.floor(ms / 1000) % 60, 2) + "," + pad(ms % 1000, 3); };
 const srt = data.body.map((e, i) => (i + 1) + "\\n" + clock(e.from) + " --> " + clock(e.to) + "\\n" + e.content + "\\n").join("\\n");
-const receipt = await browser.saveFile({ filename: "subtitles.srt", content: srt });
+const receipt = await browser.saveFile({ filename: "subtitles.srt", content: srt, deliver: true });
 return { entries: data.body.length, receipt };
 `;
 

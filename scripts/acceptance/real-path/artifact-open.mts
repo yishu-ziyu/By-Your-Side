@@ -106,7 +106,7 @@ const MAKE = "做一组测试文件";
 const DELETE = "把 notes.md 删掉";
 
 const RULES: Rule[] = [
-  { match: MAKE, steps: [...FILES.map((f) => ({ tool: { name: "artifacts", args: { command: "create", filename: f.filename, content: f.content } } })), { text: "6 个文件都做好了。" }] },
+  { match: MAKE, steps: [...FILES.map((f) => ({ tool: { name: "artifacts", args: { command: "create", filename: f.filename, content: f.content, deliver: true } } })), { text: "6 个文件都做好了。" }] },
   { match: DELETE, steps: [{ tool: { name: "artifacts", args: { command: "delete", filename: "notes.md" } } }, { text: "notes.md 已删除。" }] },
 ];
 

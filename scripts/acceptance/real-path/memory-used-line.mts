@@ -36,7 +36,7 @@ const SITE_B = "shop-b.test";
 
 const ASK = "帮我看看这页";
 
-/** 和邮箱那条有共同的词，和「回复用中文」没有（memory-relevance.ts 的词重叠规则）。 */
+/** 和邮箱那条、过往任务都有共同的词（「邮箱」「注册」），和「回复用中文」没有（memory-relevance.ts 的词重叠规则）。 */
 const ASK_EMAIL = `${ASK}，注册要填哪个邮箱`;
 
 /** 和两条记忆都没有共同的词。 */
@@ -49,7 +49,8 @@ const EMAIL = "邮箱：yishu.line@example.test";
 
 const LANG = "回复用中文";
 
-const TASK_GOAL = "在 A 店订阅到货提醒";
+/** 和 ASK_EMAIL 共有「注册」：10-10 起同一网站的过往任务要和这句话对得上才带（docs/evals/20261010-panel-tidy.md）。 */
+const TASK_GOAL = "在 A 店注册并订阅到货提醒";
 
 const TASK_SUMMARY = "已在 A 店订阅了到货提醒，确认邮件已点过。";
 

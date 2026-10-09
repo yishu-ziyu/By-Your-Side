@@ -3,7 +3,7 @@
  *
  * - 总是带（always）：生效的「关于你」与到处适用的「做事的方法」；
  * - 有效期内（in-validity）：有效期没过的「做过的事」与过往任务，不论在哪个网站；
- * - 按网站带（site）：网站范围与当前网址主机名精确相同的记忆，以及这个网站最近几条过往任务；
+ * - 按网站带（site）：网站范围与当前网址主机名精确相同的记忆，以及这个网站最近几条和这句话对得上的过往任务；
  * - 问起过往（asked）：这句话在问「之前 / 上次」做过什么时，带最近几条过往任务（不限网站）。
  *
  * 每层各有上限，总字数不超过 MEMORY_CONTEXT_MAX_CHARS。被替换、失效、过期、别的网站的不带；用户在当前网站点过「这里别用」的也不带。
@@ -40,7 +40,7 @@ export interface MemoryContextSelection {
   tasks: Array<{ task: TaskHistoryEntry; rule: MemoryContextRule }>;
   totalChars: number;
   /** 没带的条数与原因，写进决定记录。 */
-  skipped: { replacedOrInvalid: number; expired: number; otherSite: number; notHere: number; overCap: number };
+  skipped: { replacedOrInvalid: number; expired: number; otherSite: number; notHere: number; overCap: number; notRelevant: number };
 }
 
 const ASKED_ABOUT_PAST = /之前|上次|以前|前几天|昨天|做过|订阅过|买过|填过|earlier|last time|before|previously|did you/i;
@@ -51,7 +51,7 @@ export function taskContextChars(task: TaskHistoryEntry): number {
 }
 
 export function selectMemoryContext(input: MemoryContextInput): MemoryContextSelection {
-  const skipped = { replacedOrInvalid: 0, expired: 0, otherSite: 0, notHere: 0, overCap: 0 };
+  const skipped = { replacedOrInvalid: 0, expired: 0, otherSite: 0, notHere: 0, overCap: 0, notRelevant: 0 };
   const pickedEntries: MemoryContextSelection["entries"] = [];
   const pickedTasks: MemoryContextSelection["tasks"] = [];
   let totalChars = 0;
@@ -138,6 +138,10 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
       if (here.used >= MEMORY_CONTEXT_CAPS.siteTasks.entries) break;
 
       if (chosen.has(task.id) || expiredIds.has(task.id) || !task.hosts.includes(input.hostname)) continue;
+
+      // 同一网站的过往任务要和这句话对得上（按用户原话比词，不比摘要：摘要会抄网页原文）。
+      // 10-09 实测不比就带，侧栏回答下挂着无关的旧任务「按上次做过的…」（docs/evals/20261010-panel-tidy.md）。
+      if (!isRelevantMemory([task.goal, ...task.revisions].join("\n"), input.text)) { skipped.notRelevant++; continue; }
 
       if (take(taskContextChars(task), here, MEMORY_CONTEXT_CAPS.siteTasks)) { pickedTasks.push({ task, rule: "site" }); chosen.add(task.id); }
     }

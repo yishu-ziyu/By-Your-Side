@@ -72,7 +72,7 @@ export const BROWSER_PROGRAM_HELPERS = [
   { name: "waitEvent", summary: "消费已 arm 的 token；须先 arm 再动作再 wait", composed: "wait_event" },
   { name: "disarmEvent", summary: "取消尚未消费的 arm", composed: "disarm_event" },
   { name: "consumeEvents", summary: "读清本页缓冲事件", composed: "consume_events" },
-  { name: "saveFile", summary: "saveFile({filename,content}) 把程序手上的文本存成本会话文件（与 artifacts 同一文件区、同一张侧栏卡片），返回 {filename,chars,lines,overwritten}，内容不回到上下文", composed: "宿主会话文件区" },
+  { name: "saveFile", summary: "saveFile({filename,content,deliver?}) 把程序手上的文本存成本会话文件（与 artifacts 同一文件区；deliver 为真才有侧栏卡片），返回 {filename,chars,lines,overwritten,shown}，内容不回到上下文", composed: "宿主会话文件区" },
 ] as const;
 
 /** saveFile 只在宿主接了本会话文件区时列；描述与白名单都从这里取。 */

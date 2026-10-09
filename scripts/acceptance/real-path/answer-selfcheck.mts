@@ -61,7 +61,7 @@ const main = createServer(async (req, res) => {
   let call: { name: string; arguments: object } | undefined;
 
   if (c && n === 0) call = { name: "snapshot", arguments: {} };
-  else if (c && n === 1 && (c.id === "sum" || c.id === "date" || c.id === "correct")) call = { name: "artifacts", arguments: { command: "create", filename: `${c.id}.csv`, content: c.id === "sum" ? wrongCsv : c.id === "correct" ? rightCsv : "date,total\n2026-09-30,33\n" } };
+  else if (c && n === 1 && (c.id === "sum" || c.id === "date" || c.id === "correct")) call = { name: "artifacts", arguments: { command: "create", deliver: true, filename: `${c.id}.csv`, content: c.id === "sum" ? wrongCsv : c.id === "correct" ? rightCsv : "date,total\n2026-09-30,33\n" } };
   else if (c && nudged) {
     if (c.id === "sum" && n === 3) call = { name: "artifacts", arguments: { command: "rewrite", filename: "sum.csv", content: rightCsv } };
     else if (c.id === "date" && n === 3) call = { name: "artifacts", arguments: { command: "delete", filename: "date.csv" } };
