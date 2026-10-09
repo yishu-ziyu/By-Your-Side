@@ -2625,7 +2625,7 @@ function noteMemoryUsed(event: Extract<AgentUiEvent, { kind: "memory" }>): void 
 /** 最后一条用户消息之后、消息流里的最后一个回答。 */
 function latestAnswer(): HTMLElement | null {
   for (let node = messagesEl.lastElementChild; node && !node.matches(".msg.user"); node = node.previousElementSibling) {
-    if (node instanceof HTMLElement && node.matches(".msg.assistant")) return node;
+    if (node instanceof HTMLElement && node.matches(".msg.assistant:not(.opening-line)")) return node;
   }
 
   return null;
@@ -3681,9 +3681,12 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   if (fix) { if (fix.nextElementSibling !== root) fix.after(root); return; }
   let next = anchor.nextElementSibling;
 
-  // chip 跟着用户消息（chip C），「收到」这类确认语也留在前面。
+  // chip 跟着用户消息（chip C），「收到」这类确认语和开场话也留在前面；夹在开场话前面的任务卡之后会移到回答后面，不挡住它。
   // 核对判继续后接着做的一轮：排在前一轮的过程、读回和「核对发现」之后，不插到它们前面。
-  while (next instanceof HTMLElement && next !== root && (next.dataset.deliveryKind === "ack" || next.classList.contains("ctx-chips") || next.matches("details.run-steps.done, .fill-evidence, .claim-fix"))) next = next.nextElementSibling;
+  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, details.run-steps.done, .fill-evidence, .claim-fix")
+    || (node.matches(".ai-task-card") && !!node.nextElementSibling?.matches(".opening-line"));
+
+  while (next instanceof HTMLElement && next !== root && keepsBefore(next)) next = next.nextElementSibling;
 
   if (next && next !== root) messagesEl.insertBefore(root, next);
 }
@@ -3796,6 +3799,18 @@ function foldLeadAnswer(): void {
   appendLeadDelta(text);
 
   if (turnClosed) closeLeadDraft();
+}
+
+/** 开场话定稿后放到过程行前面；之后的回答另起气泡，不接到它后面。 */
+function keepOpeningLine(line: HTMLElement): void {
+  revealText(line, leadAnswerText, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd });
+  line.classList.remove("streaming");
+  line.classList.add("opening-line");
+
+  if (currentRun) messagesEl.insertBefore(line, currentRun.root);
+  leadAnswer = null;
+  leadAnswerText = "";
+  leadAnswerTurnClosed = false;
 }
 
 /** 宿主交付的就是回答位置正在显示的那段正文：沿用这个气泡，不再另起一个。 */
@@ -4499,8 +4514,10 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "tool_start":
       // 正文之后又调了工具：那段正文是过渡话，先收进执行过程，再记这次工具调用。
+      // 第一次动手前的那句是开场话（做什么、不碰什么）：留在过程行前面，不收起，也不当回答。
       if (leadDeliveryMode === "explicit") {
-        foldLeadAnswer();
+        if (!leadToolUsed && leadAnswer && leadAnswerText.trim()) keepOpeningLine(leadAnswer);
+        else foldLeadAnswer();
         leadToolUsed = true;
       }
 
