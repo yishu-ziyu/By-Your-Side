@@ -12,9 +12,10 @@ import {toolAction} from '../../shared/user-facing.js';
  *   或错误文字已经见过（换了参数也算同一个错误）；
  * - 记半步：中间等待过（sleep/waitFor/waitForLoad 后）读到的同样内容：正常等待给加倍的余量，但不会无限等下去；
  * - 不计：第一次出现的错误（模型刚碰到环境限制）。
- * 累计满 NO_PROGRESS_LIMIT 步没进展就停下本轮。门槛按 10-01 B 站记录回放定，见验收文件的回放表。
+ * 累计满 NO_PROGRESS_LIMIT 步没进展就停下本轮。门槛最初按 10-01 B 站记录回放定（见验收文件的回放表）；
+ * 10-10 用户裁决放宽，让助手多试几步再停（docs/evals/20261010-drop-retry-locks.md）。
  */
-export const NO_PROGRESS_LIMIT = 6;
+export const NO_PROGRESS_LIMIT = 15;
 
 /** 新片段至少占结果片段的这个比例才算新信息：同一份数据重切重读只多出 ≤0.51% 的边界碎片（10-01 记录）。 */
 export const NOVELTY_MIN_SHARE = 0.02;

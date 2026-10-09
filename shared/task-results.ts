@@ -24,16 +24,10 @@ export interface TaskResultEvidence {
   target: string | null;
   member: string;
   runId: string;
-  /** 该结果被判定为未决的时刻；核查读数必须晚于它。旧快照可缺省。 */
+  /** 这条回执开始或结束的时刻。旧快照可缺省。 */
   observedAt?: number;
   /** Host-classified effects for aliases or parameter-dependent tools (tabs/fetch). */
   effectful?: true;
-  /** SHA-256 of the original fill value. Raw field contents are not copied into the result ledger. */
-  valueHash?: string;
-  /** How the page held the filled value when the fill returned (only when it was readable). */
-  readback?: 'same' | 'reformatted' | 'not_held' | 'different';
-  /** The filled field is a select: a repeat fires its change event again. */
-  selectField?: true;
   /** 旧版本存档字段（2026-10-04 起不再产生，也不再使用）：只为旧任务记录仍能读入。 */
   awaitingConfirmation?: true;
 }
@@ -41,10 +35,8 @@ export interface TaskResultEvidence {
 export interface TaskResultItem extends TaskResultRegistration {
   status: TaskResultItemStatus;
   evidence: TaskResultEvidence | null;
-  /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再阻塞写入与交付。 */
+  /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再算作未完成。 */
   supersededBy?: string;
-  /** 已核查过一次仍无法确认：保持未知，不再核查，交付时如实说明（10-01 用户裁决）。 */
-  checkFailed?: true;
 }
 
 /** Focus, scrolling and hovering require control, but do not create durable write obligations. */
@@ -58,9 +50,8 @@ export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>
 }
 
 /**
- * 写类工具里，再做一次也不会让同一件事多发生一次的：看页辅助（滚动、悬停、圈画、点选）、
+ * 写类工具里，出错或超时也不会留下业务后果的：看页辅助（滚动、悬停、圈画、点选）、
  * 换页（导航、开/切/关标签页、页面归属）、等页面事件、处理原生弹窗、松开按住的输入。
- * 10-01 用户裁决：结果不确定时只拦可能重复造成后果的操作（提交、付款、发送、删除、发帖……），这些照常。
  */
 const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
   'worker_tabs', 'navigate', 'open_tab', 'switch_tab', 'close_tab',
@@ -70,63 +61,30 @@ const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * 再执行一次可能重复造成后果（再提交、再付款、再发送、再删除）：结果不确定时被拦下的就是这些调用。
- * 按现有副作用分类：控制闸门的写类工具去掉上面那组，再加上 POST/带 body 的 fetch。其余（读页、GET 取数、存文件）不算。
+ * 这一步出错或超时时，后果可能已经发生（提交、付款、发送、删除、确认原生弹窗……）。
+ * 按现有副作用分类：控制闸门的写类工具去掉上面那组，再加上确认弹窗与 POST/带 body 的 fetch。
  */
-export function repeatsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
+export function commitsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
   if (name === 'fetch') return classifyToolEffect(name, params).class === 'write';
 
-  return isWriteTool(name) && !NO_REPEAT_HARM_WRITES.has(name);
+  return name === 'accept_dialog' || isWriteTool(name) && !NO_REPEAT_HARM_WRITES.has(name);
 }
 
 /**
- * 这一步若结果不确定，后果可能已经发生：结果不确定时由它上锁。
- * 比 repeatsHarm 多一个确认原生弹窗：它可能就是「确定付款/删除」的那一下，但弹窗只能确认一次，重来不会再发生，所以它本身不被锁拦。
+ * 账本项出错或超时时记成「结果未知」，而不是「失败」。这只是如实记账：不暂停写入，也不拦重做（10-10 用户裁决）。
+ * fetch 的副作用按参数判定：宿主把 POST/带 body 的 fetch 记在 evidence.effectful。
  */
-export function commitsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
-  return name === 'accept_dialog' || repeatsHarm(name, params);
-}
-
-/** 账本项结果不确定时是否上锁。fetch 的副作用按参数判定：宿主把 POST/带 body 的 fetch 记在 evidence.effectful。 */
 export function resultLocksWhenUnknown(item:{tool:string;evidence?:{effectful?:boolean}|null}):boolean {
   return commitsHarm(item.tool)||item.tool==='fetch'&&item.evidence?.effectful===true;
 }
 
-export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message", "resolve_unknown_result"] as const;
+export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message"] as const;
 
-/** 只有这些真实只读工具回执可以充当解除未决的页面证据。read_elements 是宿主按选择器的有界多元素读回，与 read_element 同级。 */
+/** 算作页面读回的真实只读工具。read_elements 是宿主按选择器的有界多元素读回，与 read_element 同级。 */
 export const RESULT_VERIFY_READ_TOOLS = ["read_element", "read_elements", "snapshot"] as const;
 
-/** 页面身份类工具：执行后当前文档/工作页可能改变，此前读数不能再当作前后对比基线。 */
-export const PAGE_IDENTITY_TOOLS = ["navigate", "open_tab", "switch_tab", "close_tab", "worker_tabs", "page_operation", "page_translation", "js", "cdp"] as const;
-
-/** 单条读数的完整文本上限；超过即标记截断，不能作为前后对比基线。 */
+/** 单条读数的完整文本上限；超过即标记截断。 */
 export const RESULT_OBSERVATION_TEXT_MAX = 50_000;
-
-/** 账本保留的最近读数条数。 */
-export const RESULT_OBSERVATION_KEEP = 8;
-
-export interface ResultPageObservation {
-  toolCallId: string;
-  tool: string;
-  target: string | null;
-  tabId: number | null;
-  /** 读数发生在该成员的工作页（未显式指定 tabId）；写入只发生在工作页，只有这种读数可作基线。 */
-  workingTab: boolean;
-  text: string;
-  truncated: boolean;
-  at: number;
-  member: string;
-  runId: string;
-}
-
-export function isPageIdentityTool(name: string): boolean {
-  return (PAGE_IDENTITY_TOOLS as readonly string[]).includes(name);
-}
-
-export function normalizeResultEvidence(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
 
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length >= 1 && v.length <= max;
 
@@ -143,9 +101,6 @@ export function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
     && (e.target === null || text(e.target, 500))
     && (e.observedAt === undefined || Number.isFinite(e.observedAt))
     && (e.effectful === undefined || e.effectful === true)
-    && (e.valueHash === undefined || typeof e.valueHash === 'string' && /^[a-f0-9]{64}$/.test(e.valueHash))
-    && (e.readback === undefined || e.readback === 'same' || e.readback === 'reformatted' || e.readback === 'not_held' || e.readback === 'different')
-    && (e.selectField === undefined || e.selectField === true)
     && (e.awaitingConfirmation === undefined || e.awaitingConfirmation === true);
 }
 
@@ -157,8 +112,7 @@ export function isTaskResultItem(v: unknown): v is TaskResultItem {
     && (r.target === null || text(r.target, 500))
     && TASK_RESULT_ITEM_STATUSES.includes(r.status)
     && (r.evidence === null || isTaskResultEvidence(r.evidence))
-    && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy))
-    && (r.checkFailed === undefined || r.checkFailed === true);
+    && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy));
 }
 
 /** 只有取代项本身已满足时，被取代的未知才不再阻塞；否则未知仍生效。 */
@@ -227,26 +181,27 @@ export const AUTO_RESULT_ID_PREFIX = "auto-";
 export const MAX_TASK_RESULTS = 64;
 
 export type ResultBinding =
-  /** 已有同工具同目标、尚无证据（或上次失败）的待办项：直接绑定。 */
+  /** 已有同工具同目标、尚无证据（或上次失败、结果未知）的待办项：直接绑定。 */
   | { kind: "exact"; itemId: string }
   /** 登记了意图但还没定位的同工具待办项（target=null，且尚无证据）：可把实际目标改绑到它。 */
   | { kind: "rebind"; itemId: string }
   /** 没有可复用的待办：调用方决定是否按真实动作新建自动项。 */
   | { kind: "create" }
-  /** 同工具同目标已有在途/未决的项：不新建、不改绑，交给执行闸门与核查流程。 */
+  /** 同工具同目标已有在途的项：不新建、不改绑。 */
   | { kind: "none" };
 
 /**
  * 从真实工具调用派生账本绑定（纯函数）。
- * 只复用「尚无证据的 pending」与「上次失败的 blocked」项；satisfied 是历史回执，
- * unknown 的身份必须留给核查，二者都不参与改绑。已写明 target 的登记项不静默漂移：
+ * 只复用「尚无证据的 pending」、「上次失败的 blocked」与「结果未知的 unknown」项：重做同一步时，
+ * 新回执落在原项上。satisfied 是历史回执，不参与改绑。已写明 target 的登记项不静默漂移：
  * 实际目标不同时新建自动项，原登记保持待办。歧义（多个未定位待办）不猜，交给调用方新建。
  */
 export function selectResultBinding(items: readonly TaskResultItem[], tool: string, target: string | null): ResultBinding {
   if (isResultMetaTool(tool)) return { kind: "none" };
 
-  const exact = items.find(item => (!item.evidence || item.status === "blocked")
-    && resultCanUseExecution(item.status === "blocked" ? { ...item, status: "pending" } : item, tool, target));
+  const retry = (item: TaskResultItem) => item.status === "blocked" || item.status === "unknown";
+  const exact = items.find(item => (!item.evidence || retry(item))
+    && resultCanUseExecution(retry(item) ? { ...item, status: "pending" } : item, tool, target));
 
   if (exact) return { kind: "exact", itemId: exact.id };
 

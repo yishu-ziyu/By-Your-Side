@@ -63,6 +63,4 @@ return;}
       if(write.tabId===null?observation.workingTab:write.tabId===observation.tabId)this.required.delete(key);
     }
   }
-  /** An actual successful unknown-result check is itself a scoped post-write read. */
-  verified(member:string,tabId:number):void { this.observed(member,{tabId,workingTab:true,truncated:false,text:'verified'},this.revision); }
 }

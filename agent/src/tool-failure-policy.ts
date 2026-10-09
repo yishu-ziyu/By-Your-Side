@@ -1,5 +1,4 @@
 import type {ExtensionFactory, ToolResultEvent} from '@earendil-works/pi-coding-agent';
-import {TOOL_FAILURE_LIMIT} from '../../shared/task-next-step.js';
 
 export interface RepeatedToolFailure {toolName:string;error:string;attempts:number}
 
@@ -10,18 +9,19 @@ function operationKey(event:Pick<ToolResultEvent,'toolName'|'input'>):string {
   return `${event.toolName}\u0000${JSON.stringify(args)}`;
 }
 
-/** Stop an unchanged failing operation; observations alone cannot make it retryable. */
+/**
+ * 同一操作第二次出同样的错：宿主调高主模型的思考档位。
+ * 不停下本轮：连续出错三次就停的规则已于 10-10 按用户裁决去掉（docs/evals/20261010-drop-retry-locks.md）。
+ */
 export class RepeatedToolFailurePolicy {
   private failures=new Map<string,{toolName:string;error:string;attempts:number}>();
-  private stopped=false;
-  /** onRepeat: the same operation just failed a second time in a row (not yet stopped) — the host raises the main thinking level. */
-  /** skip：这次出错不是失败（重复一步已成功的写入被闸门拦下），既不计数也不清零。 */
-  constructor(private readonly onStop:(failure:RepeatedToolFailure)=>void,private readonly onRepeat?:(failure:RepeatedToolFailure)=>void,private readonly skip?:(toolCallId:string)=>boolean) {}
-  reset():void {this.failures.clear();this.stopped=false;}
+  /** skip：这次出错不是失败（用户在网页上没让发送），既不计数也不清零。 */
+  constructor(private readonly onRepeat:(failure:RepeatedToolFailure)=>void,private readonly skip?:(toolCallId:string)=>boolean) {}
+  reset():void {this.failures.clear();}
   extension():ExtensionFactory {
     return pi=>{
-      pi.on('tool_result',(event,ctx)=>{
-        if(this.stopped||(event.isError&&this.skip?.(event.toolCallId)))return;
+      pi.on('tool_result',event=>{
+        if(event.isError&&this.skip?.(event.toolCallId))return;
 
         if(!event.isError){for(const [key,failure] of this.failures)if(failure.toolName===event.toolName)this.failures.delete(key);
 
@@ -33,13 +33,7 @@ return;}
         const attempts=previous?.error===error?previous.attempts+1:1;
         this.failures.set(key,{toolName:event.toolName,error,attempts});
 
-        if(attempts<TOOL_FAILURE_LIMIT){if(attempts===2)this.onRepeat?.({toolName:event.toolName,error,attempts});
-
-return;}
-
-        this.stopped=true;
-        this.onStop({toolName:event.toolName,error,attempts});
-        ctx.abort();
+        if(attempts===2)this.onRepeat({toolName:event.toolName,error,attempts});
       });
     };
   }

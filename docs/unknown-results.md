@@ -1,5 +1,7 @@
 # 结果未知的边界
 
+> 2026-10-10：用户决定去掉结果未知锁，本页规则已不再生效。结果未知现在只表示「先重读页面再决定」，见[去掉重试锁](evals/20261010-drop-retry-locks.md)。以下保留原文。
+
 [返回协议](protocol.md)
 
 本页是结果未知锁的唯一说明。哪些调用被锁拦，以 [`shared/task-results.ts`](../shared/task-results.ts) 为准。

@@ -91,8 +91,9 @@ try{
  await until(async()=>commits===1||undefined,20000,'真实提交已发生，回执挂起');
  await rp.restart({abrupt:true});await open();await sleep(500);assert.equal(commits,1,'重启不自动重放');
  const recoveryPage=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:recoveryPage.targetId});await sleep(300);
- const resumeOffset=requests.length;await send('继续原任务。','防重复核对结束');assert.equal(commits,1,'继续不重复提交');
- assert.ok(requests.slice(resumeOffset).some(r=>JSON.stringify(r.messages).includes('[RESTART CONTINUATION]') && JSON.stringify(r.messages).includes('unknown')),'恢复材料进入模型');evidence.noReplay={commits,browserCrash:true};
+ // 10-10 起结果未知不再拦重做（docs/evals/20261010-drop-retry-locks.md）：用户说继续后，模型重做这一步，宿主照常执行。
+ const resumeOffset=requests.length;await send('继续原任务。','防重复核对结束');assert.equal(commits,2,'继续后宿主不拦重做');
+ assert.ok(requests.slice(resumeOffset).some(r=>JSON.stringify(r.messages).includes('[RESTART CONTINUATION]') && JSON.stringify(r.messages).includes('unknown')),'恢复材料进入模型');evidence.noReplay={commitsAfterRestart:1,commitsAfterContinue:commits,browserCrash:true};
  const inproc=await until(async()=>(await rp.targets()).find(t=>t.url.endsWith('/inproc.html')),10000,'恢复核心');const ips=await rp.attach(inproc.targetId);
  await rp.evaluate(ips,`(()=>{const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(value,key){if(this.transaction.db.name==='sideagent-session-data'&&String(key).startsWith('artifact:'))throw new Error('acceptance-disk-failure');return put.call(this,value,key);};return true;})()`);
  const errorOffset=requests.length;await send('保存故障验收：生成failure.csv。','存储故障已核对');

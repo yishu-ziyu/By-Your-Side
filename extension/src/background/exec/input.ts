@@ -986,7 +986,7 @@ async function locatePointerTarget(
           if (e && typeof e === "object" && "executionFact" in e) {
             const fact = (e as {executionFact:unknown}).executionFact;
             if (fact === "not_executed") throw e;
-            throw Object.assign(new Error(`ref @${ref} 已失效，结果未知。请重新 snapshot，确认当前目标，不要重试旧 ref（${oneLine(e)}）`),{executionFact:fact});
+            throw Object.assign(new Error(`ref @${ref} 量不到位置，结果未知。请重新 snapshot 看页面：操作没生效就用当前的 ref 再做一次（${oneLine(e)}）`),{executionFact:fact});
           }
           throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
         }
@@ -1512,7 +1512,7 @@ export async function click(
       }
       if (cdpMousePressed) {
         throw new Error(
-          `点击可能已送达，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
+          `点击可能已送达，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：点击没生效就再点一次。`,
         );
       }
 
@@ -1522,7 +1522,7 @@ export async function click(
       if (cdpMouseMoved) {
         if (isPrePressTargetError(e)) throw notExecuted(e);
         throw new Error(
-          `点击是否送达无法确认，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
+          `点击是否送达无法确认，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：点击没生效就再点一次。`,
         );
       }
 
@@ -1772,7 +1772,7 @@ export async function doubleClick(
       }
     } catch (e) {
       if (pressed) {
-        throw new Error(`双击可能已送达，后续 CDP 返回异常，未再次双击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`);
+        throw new Error(`双击可能已送达，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：双击没生效就再双击一次。`);
       }
 
       // SAFETY: guard failures are Errors marked before any mouse press; only inspect their execution fact.
@@ -1780,7 +1780,7 @@ export async function doubleClick(
 
       if (dispatched) {
         if (isPrePressTargetError(e)) throw notExecuted(e);
-        throw new Error(`双击是否送达无法确认，后续 CDP 返回异常，未再次双击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`);
+        throw new Error(`双击是否送达无法确认，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：双击没生效就再双击一次。`);
       }
 
       // 尚未向页面派发任何 CDP 输入：按未执行上报；不允许 DOM dispatchEvent 伪造双击。

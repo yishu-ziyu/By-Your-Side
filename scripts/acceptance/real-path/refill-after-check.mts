@@ -1,15 +1,15 @@
 /**
- * 核对发现填错之后，改正的重填能执行；下拉框按选项 value 填写不被报成问题（docs/evals/20261009-claim-after-check.md）。
+ * 核对发现填错之后，重填与重点都能执行；下拉框按选项 value 填写不被报成问题（docs/evals/20261009-claim-after-check.md）。
+ * 10-10 起已有成功回执不再拦重做（docs/evals/20261010-drop-retry-locks.md R2）：用例 2、3、5、6 由「被拒」改判「照常执行」。
  * 只装扩展、隔离构建、本机脚本模型、本机转发服务（扣住并换掉目标核对）、本机练习页。
  *   npx tsx scripts/acceptance/real-path/refill-after-check.mts --headless
  *   1) 填「Note」、核对判继续；续做不读页、直接对同一栏填对的句子：执行（草稿框最终是对的句子），回执里没有「不重复执行」。
- *   2) 填一句、核对判继续；续做直接再填同一句：仍被拒（回执含「不重复执行」）。
- *   3) 点提交按钮、核对判继续；续做直接再点：仍被拒（服务端 POST 计数停在 1）。按钮不叫「发送」：点「发送」会先停下等用户确认（docs/evals/20261009-send-confirm.md），那不是这里要测的。
+ *   2) 填一句、核对判继续；续做直接再填同一句：照常执行（回执是「Filled」，没有「不重复执行」）。
+ *   3) 点提交按钮、核对判继续；续做直接再点：照常执行（服务端 POST 计数到 2）。按钮不叫「发送」：点「发送」会先停下等用户确认（docs/evals/20261009-send-confirm.md），那不是这里要测的。
  *   4) 下拉框 <option value="CN">中国</option> 按 value「CN」填：助手收到的回执没有「Problem」。
- *   5) 网页在输入时把手机号加空格，读回是「不一样」：同一个值的重填执行一次（网页共收到 2 次 input），第三次同值重填被拒（仍是 2 次）。
- *   6) 下拉框一选就被网页换成别的元素，读回读不到：换一个值再选被拒（回执含「不重复执行」）。
- * 失败方式：把 shared/task-next-step.ts 里「改正的重填不算重复」的放行去掉，用例 1 失败；
- * 把同值重填「每栏一次」的上限去掉，用例 5 失败（网页收到 3 次 input）；让读不到的下拉框也放行，用例 6 失败（反例结果见验收文件）。
+ *   5) 网页在输入时把手机号加空格，读回是「不一样」：同值重填两次都执行（网页共收到 3 次 input）。
+ *   6) 下拉框一选就被网页换成别的元素：换一个值再选不被闸门拦（回执没有「不重复执行」；落在替换后的元素上报什么照实记下）。
+ * 失败方式：恢复「已有成功回执，不重复执行」的闸门，用例 2、3、5、6 失败（反例结果见验收文件）。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -66,11 +66,11 @@ const fill = (target: string, value: string) => ({ tool: { name: "fill", args: {
 
 const CASES = {
   r1: { ask: "案例R1：把 Note 框里的第一句英文复制到草稿框里，不要保存。", path: "/note", first: "R1 第一轮：已填入。", final: "R1 最终：已改成第一句。" },
-  r2: { ask: "案例R2：在草稿框里写第一句英文，不要保存。", path: "/note", first: "R2 第一轮：已填入。", final: "R2 最终：没有重复填写。" },
-  r3: { ask: "案例R3：点页面上的提交按钮，只提交一次。", path: "/form", first: "R3 第一轮：已发送。", final: "R3 最终：没有重复发送。" },
+  r2: { ask: "案例R2：在草稿框里写第一句英文，不要保存。", path: "/note", first: "R2 第一轮：已填入。", final: "R2 最终：又填了一次。" },
+  r3: { ask: "案例R3：点页面上的提交按钮。", path: "/form", first: "R3 第一轮：已提交。", final: "R3 最终：又点了一次。" },
   r4: { ask: "案例R4：国家选 CN。", path: "/select", first: "R4：国家已选好。", final: "" },
-  r5: { ask: "案例R5：手机号填 13800138000。", path: "/mask", first: "R5 第一轮：已填入。", final: "R5 最终：没有再重复填。" },
-  r6: { ask: "案例R6：套餐选基础。", path: "/vanish", first: "R6 第一轮：已选。", final: "R6 最终：没有再选。" },
+  r5: { ask: "案例R5：手机号填 13800138000。", path: "/mask", first: "R5 第一轮：已填入。", final: "R5 最终：又填了两次。" },
+  r6: { ask: "案例R6：套餐选基础。", path: "/vanish", first: "R6 第一轮：已选。", final: "R6 最终：又选了一次。" },
 };
 
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
@@ -186,23 +186,23 @@ try {
   assert.ok(!toolTexts.some(t => t.includes(REFUSED)), `1: no 「${REFUSED}」 in any tool result: ${JSON.stringify(toolTexts)}`);
   assert.ok(fills1.some(t => t.includes(`«${SENTENCE}»`)), `1: the model saw the right sentence read back: ${JSON.stringify(fills1)}`);
 
-  // 2) 同一句重填：仍被拒。
+  // 2) 同一句重填：照常执行。
   const before2 = toolTexts.length;
   verdicts.push("PROBE-R2");
   await runCase("r2", CASES.r2.final);
   const after2 = toolTexts.slice(before2);
   evidence.r2 = { draft: await draft(), toolTexts: after2 };
-  assert.ok(after2.some(t => t.includes(REFUSED)), `2: the same-value refill was refused: ${JSON.stringify(after2)}`);
-  assert.equal(await draft(), SENTENCE, "2: textarea unchanged");
+  assert.ok(!after2.some(t => t.includes(REFUSED)), `2: the same-value refill was not refused: ${JSON.stringify(after2)}`);
+  assert.equal(await draft(), SENTENCE, "2: textarea holds the sentence");
 
-  // 3) 点击不放行：同一按钮再点仍被拒，服务端只收到一次。
+  // 3) 同一按钮再点：照常执行，服务端收到两次。
   const before3 = toolTexts.length;
   verdicts.push("PROBE-R3");
   await runCase("r3", CASES.r3.final);
   const after3 = toolTexts.slice(before3);
   evidence.r3 = { posts, toolTexts: after3 };
-  assert.ok(after3.some(t => t.includes(REFUSED)), `3: the repeated click was refused: ${JSON.stringify(after3)}`);
-  assert.equal(posts, 1, "3: the server received exactly one POST");
+  assert.ok(!after3.some(t => t.includes(REFUSED)), `3: the repeated click was not refused: ${JSON.stringify(after3)}`);
+  assert.equal(posts, 2, "3: the server received both POSTs");
 
   // 4) 下拉框按 value 填：回执没有问题。
   const before4 = toolTexts.length;
@@ -214,23 +214,23 @@ try {
   assert.ok(after4.some(t => t.startsWith("Filled #country")), `4: the fill returned a receipt: ${JSON.stringify(after4)}`);
   assert.ok(!after4.some(t => t.includes("Problem")), `4: no mismatch problem in the select receipt: ${JSON.stringify(after4)}`);
 
-  // 5) 网页给手机号加空格，读回「不一样」：同值重填执行一次，再重填被拒。
+  // 5) 网页给手机号加空格，读回「不一样」：同值重填两次都执行。
   const before5 = toolTexts.length;
   verdicts.push("PROBE-R5");
   await runCase("r5", CASES.r5.final);
   const after5 = toolTexts.slice(before5);
   const inputs5 = await rp.evaluate(work, "window.inputEvents");
   evidence.r5 = { inputs: inputs5, phone: await rp.evaluate(work, 'document.getElementById("phone").value'), toolTexts: after5 };
-  assert.equal(inputs5, 2, `5: the page saw 2 input events (first fill + one refill; the third attempt refused): ${JSON.stringify(after5)}`);
-  assert.ok(after5.some(t => t.includes(REFUSED)), `5: the second same-value refill was refused: ${JSON.stringify(after5)}`);
+  assert.equal(inputs5, 3, `5: the page saw 3 input events (first fill + two refills): ${JSON.stringify(after5)}`);
+  assert.ok(!after5.some(t => t.includes(REFUSED)), `5: no same-value refill was refused: ${JSON.stringify(after5)}`);
 
-  // 6) 下拉框被网页换掉、读回读不到：换值重选被拒。
+  // 6) 下拉框被网页换掉：换值重选不被闸门拦；落在替换后的元素上的结果照实记下。
   const before6 = toolTexts.length;
   verdicts.push("PROBE-R6");
   await runCase("r6", CASES.r6.final);
   const after6 = toolTexts.slice(before6);
   evidence.r6 = { toolTexts: after6 };
-  assert.ok(after6.some(t => t.includes(REFUSED)), `6: the different-value select refill was refused: ${JSON.stringify(after6)}`);
+  assert.ok(!after6.some(t => t.includes(REFUSED)), `6: the different-value select refill was not refused: ${JSON.stringify(after6)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
