@@ -105,10 +105,10 @@ export class TraceRecorder {
     }
 
     if (event.type === "tool_execution_update") {
-      // SAFETY: browser_run、follow_route 的进度事件把 programStep 放在 partialResult.details 下；缺省时下面的判断落空。
+      // SAFETY: browser_run 的进度事件把 programStep 放在 partialResult.details 下；缺省时下面的判断落空。
       const partial = event.partialResult as { details?: { programStep?: unknown } } | undefined;
 
-      if ((event.toolName === "browser_run" || event.toolName === "follow_route") && partial?.details?.programStep) {
+      if (event.toolName === "browser_run" && partial?.details?.programStep) {
         this.record("program_step", { parentToolCallId: event.toolCallId, step: partial.details.programStep });
       }
 

@@ -24,7 +24,6 @@ const READ_TOOLS = new Set([
   "consume_events",
   "dialog_info",
   "describe_target",
-  "find_route_target",
 ]);
 
 function methodOf(params?: Record<string, unknown>): string {
