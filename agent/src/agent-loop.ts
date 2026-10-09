@@ -46,11 +46,15 @@ export interface AgentLoop extends Pick<
 export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "getModel" | "streamSimple"> & {
   /** 即时动作（划词解释、网页翻译批次）用的快速模型，调用时不开思考；没有设置时返回 undefined，沿用会话主模型。 */
   fastModel?: () => Model<Api> | undefined;
+  /** 主任务的备用模型：用户在设置里选的；没选时返回 undefined，主模型出错不换。 */
+  backupModel?: () => Model<Api> | undefined;
+  /** 服务商在界面上的名字（如「阶跃星辰」），用于切换提示；不知道时返回 undefined。 */
+  providerName?: (provider: string) => string | undefined;
 };
 
 /**
  * 模型服务出错（挂起超时、连接错误、429、5xx、流提前结束）时，第一次失败就换备用模型接着做，每轮最多换一次。
- * 备用模型：显式给的 provider/id（须有凭据）；没给时用设置里的快速模型。和当前模型相同时不换。
+ * 备用模型：显式给的 provider/id（须有凭据）；没给时用设置里的备用模型。和当前模型相同时不换。
  * 能换时不在原模型上重试（retryGate）；换过之后，备用模型照常自动重试。
  */
 export function withModelFailover(
@@ -59,7 +63,7 @@ export function withModelFailover(
   backupPattern: string | undefined,
   onSwitch: (from: string, to: string) => void,
 ): AgentLoop {
-  if (!backupPattern && !models.fastModel) return loop;
+  if (!backupPattern && !models.backupModel) return loop;
 
   return new FailoverLoop(loop, models, backupPattern, onSwitch);
 }
@@ -241,7 +245,7 @@ class FailoverLoop implements AgentLoop {
   }
 
   private candidate(): Model<Api> | undefined {
-    if (!this.backupPattern) return this.models.fastModel?.();
+    if (!this.backupPattern) return this.models.backupModel?.();
 
     const slash = this.backupPattern.indexOf("/");
 
@@ -250,7 +254,7 @@ class FailoverLoop implements AgentLoop {
     return this.models.getModel(this.backupPattern.slice(0, slash), this.backupPattern.slice(slash + 1));
   }
 
-  /** 显式指定的备用模型要有凭据；快速模型是用户在设置里选的，划词、翻译也在用，直接用。 */
+  /** 显式指定的备用模型要有凭据；设置里的备用模型只列有凭据的服务商，直接用（没凭据时 setModel 失败，回到原模型重试）。 */
   private async usableBackup(): Promise<Model<Api> | undefined> {
     const candidate = this.candidate();
 

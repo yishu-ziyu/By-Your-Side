@@ -605,7 +605,13 @@ if(required.includes(key))candidates.set(key,attachment);
       });
 
       session = withModelFailover(session, models, options?.fallbackModelPattern, (from, to) => {
-        const message = `模型服务暂时不可用，已由 ${from} 切换到 ${to}，正在接着执行。`;
+        const label = (pattern: string) => {
+          const slash = pattern.indexOf("/");
+          const name = models.providerName?.(pattern.slice(0, slash));
+
+          return name ? `${name} · ${pattern.slice(slash + 1)}` : pattern;
+        };
+        const message = `模型服务暂时不可用，已由 ${label(from)} 切换到 ${label(to)}，正在接着执行。`;
         callbacks.emit({ kind: "notice", message });
         resultHost?.runTrace.record("model_fallback", { from, to });
         options?.onModelFailover?.(from, to);

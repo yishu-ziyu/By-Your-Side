@@ -17,7 +17,14 @@ type Completion = { stopReason: string; errorMessage?: string };
  * 工具参数写跑了（runaway tool call，见 pi-agent-loop）重来一次通常就好。
  */
 export function isTransientModelError(message: AssistantMessage): boolean {
+  // 额度用尽常带 429，但等多久都不会好，不能当「忙」：和 pi-ai 不重试的额度类错误同一组说法。
+  if (isQuotaError(message.errorMessage)) return false;
+
   return isRetryableAssistantError(message) || (message.stopReason === "error" && (isProviderBusyError(message.errorMessage) || /failed to fetch|runaway tool call/i.test(message.errorMessage ?? "")));
+}
+
+function isQuotaError(message: string | undefined): boolean {
+  return !!message && /insufficient_quota|quota exceeded|exceeded your current quota|usage.?limit|out of budget|billing|available balance|余额不足|额度(不足|用尽|已用完)/i.test(message);
 }
 
 /** 快速模型的短调用（记忆判断、目标核对、接续判断）遇到「忙」时等 1.5 s、3 s 各再试一次。 */
