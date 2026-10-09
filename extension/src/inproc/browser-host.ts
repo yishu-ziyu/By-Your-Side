@@ -16,7 +16,7 @@ import { openPiSession } from "./pi-session-idb.js";
 import { IdbDocument } from "./document-idb.js";
 
 type Inbound = ClientMessage
-  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; credentials: StoredCredentials }
+  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
   | { type: "inproc_voice"; configured: boolean; model?: unknown };
 
 export interface InprocHostDeps {
@@ -35,6 +35,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let pendingCore: Promise<HostCore> | null = null;
   let selected: InprocModelConfig | null = null;
   let fastSelected: InprocModelConfig | null = null;
+  let backupSelected: InprocModelConfig | null = null;
   let storedCredentials: StoredCredentials = {};
   let voiceConfigured = false;
   let voiceModel: unknown;
@@ -57,7 +58,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (pendingCore) return pendingCore;
 
-    const modelPort = models.createCoreModels(() => selected, () => fastSelected);
+    const modelPort = models.createCoreModels(() => selected, () => fastSelected, () => backupSelected);
     let pattern = "";
 
     // 新对话按建立时的设置取模型；核心启动后设置页可能已经换过（恢复的对话沿用自己记下的模型）。
@@ -87,7 +88,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
           files: {load:()=>listArtifacts(id),save:(item: Parameters<ArtifactPersistence["save"]>[0])=>writeArtifact(id,item),delete:(filename:string)=>deleteArtifact(id,filename)},
         };
 
-        // 不另设备用模型：主模型挂起或出错时换设置里的快速模型（withModelFailover）。
+        // 主模型挂起或暂时出错时换设置里的备用模型（withModelFailover）；没选备用就不换。
         return createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
         loop: { models: modelPort, cwd: "/", session: data.session },
         artifactPersistence: data.files,
@@ -214,6 +215,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (message.type === "inproc_config") {
       selected = message.config;
       fastSelected = message.fast ?? null;
+      backupSelected = message.backup ?? null;
       storedCredentials = message.credentials ?? {};
       await models.credentials.load(storedCredentials);
 
