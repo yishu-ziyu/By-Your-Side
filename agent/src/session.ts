@@ -56,12 +56,10 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
 import { asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
-import { refereeRun, RunStepLog } from "./run-referee.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
-import { localDateOf, type MemoryValidity } from "../../shared/memory.js";
+import type { MemoryValidity } from "../../shared/memory.js";
 import { programFirstGuidance } from "./program-first.js";
-import { checkBeforeSubmit, literallyAsked, type CheckField, type CheckVerdict, type RouteNote } from "./route-check.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand" }
@@ -183,8 +181,6 @@ export class BrowserAgentSession {
   private failurePolicy: RepeatedToolFailurePolicy | null = null;
   private pendingToolFailure: UserDelivery | null = null;
   private noProgressPolicy: NoProgressPolicy | null = null;
-  /** 文件归属；核对时从已有文件区取本任务的文本，不复制保存图片内容。 */
-  private refereeFileBaseline: { runId: string | null; names: Set<string> } | null = null;
   private savedFiles = new Map<string, { runId: string | null; chars: number; lines: number; savedAt: number }>();
   private goalObservations: { runId: string | null; items: Array<{ tool: string; text: string }> } = { runId: null, items: [] };
   private conversationSnapshot: () => TaskProgressSnapshot | null = () => null;
@@ -210,7 +206,6 @@ export class BrowserAgentSession {
 
     if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
     else {
-      if (!step.error?.startsWith(STALE_STEP_MESSAGE)) this.runSteps.note(this.deliveryRunId(), step.name, !!step.error, false, !!this.rpc?.wasSendDeclined?.(step.id), step.params, step.parentId);
       this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
         executionFact:this.rpc?.getExecutionFact(step.id),
         resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX)),
@@ -527,7 +522,6 @@ if(required.includes(key))candidates.set(key,attachment);
         // 没列目标计划时没有“用户目标清单”可对照：不附完成/未完成事实，也不拿动作回执冒充完成。
         getDeliveryFacts: () => resultHost?.conversationSnapshot()?.goalPlan?.coverage === 'verified' ? resultHost.taskResultsHost?.deliveryFacts?.() ?? null : null,
         getSources: () => resultHost?.taskResultsHost?.answerSources?.() ?? null,
-        getPageChanges: () => resultHost?.pageChangeFacts() ?? null,
         hasUnfinishedWork: () => {
           const snapshot = resultHost?.taskResultsHost?.getSnapshot();
 
@@ -547,7 +541,6 @@ if(required.includes(key))candidates.set(key,attachment);
             files: () => resultHost?.fileStore(),
             attachments: () => resultHost?.userAttachments() ?? [],
             memoryForValue: value => memoryRuntime?.memoryForValue(value),
-            noteRouteStep: note => resultHost?.noteRouteStep(note),
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -1189,50 +1182,6 @@ return;}
     return answerVoiceObservation(call, question, page, stillCurrent);
   }
 
-  /** 填值、点选成功后记一笔，给提交前核对。 */
-  noteRouteStep(note: RouteNote): void {
-    const runId = this.deliveryRunId();
-
-    if (!runId) return;
-    // 提交前核对（YIS-104）：记下这次填过、选过的值（选卡片时值是卡片名）。密码一类不交给核对。
-    const name = note.target?.name ?? note.label ?? "一栏";
-    const value = note.action === "click" ? note.target?.box || undefined : note.action === "fill" || note.action === "select_option" ? note.value : undefined;
-
-    if (value === undefined || /密码|验证码|卡号|password|otp|cvv|card number/i.test(name)) return;
-    const written = this.writtenThisRun.get(runId) ?? { fields: [], keys: [], checked: 0 };
-    // 同一栏改过：只认最后一次（10-07 实测：模型把 8 日改成 15 日后，核对还拿着 8 日，怎么都过不了）。卡片按控件名认，换一张卡片也算改。
-    const key = `${note.action === "click" ? "click" : "value"}\n${name}\n${note.target?.area ?? ""}`;
-    const earlier = written.fields.findIndex((field, i) => i >= written.checked && written.keys[i] === key);
-
-    if (earlier >= 0) {
-      written.fields.splice(earlier, 1);
-      written.keys.splice(earlier, 1);
-    }
-
-    written.fields.push({ step: written.fields.length + 1, field: note.action === "click" ? `${name}（${value}）` : name, value, from: note.memory ? "memory" : "chosen" });
-    written.keys.push(key);
-    this.writtenThisRun.set(runId, written);
-
-    while (this.writtenThisRun.size > 4) this.writtenThisRun.delete(this.writtenThisRun.keys().next().value!);
-  }
-
-  /** 本会话各任务填过的值，以及核对到第几个（YIS-104）。 */
-  private writtenThisRun = new Map<string, { fields: CheckField[]; keys: string[]; checked: number }>();
-
-  /** 上次核对之后新填的值；没有就不用核对。 */
-  writtenSinceCheck(): CheckField[] {
-    const written = this.writtenThisRun.get(this.deliveryRunId() ?? "");
-
-    return written ? written.fields.slice(written.checked) : [];
-  }
-
-  /** 核对过了：之前填的值不再重复核对。 */
-  markWrittenChecked(): void {
-    const written = this.writtenThisRun.get(this.deliveryRunId() ?? "");
-
-    if (written) written.checked = written.fields.length;
-  }
-
   /** 填进网页的值来自本轮带上的哪条记忆；见 MemoryRuntime.memoryForValue。 */
   memoryForValue(value: string): { id: string; text: string; createdAt: number } | undefined {
     return this.memoryRuntime?.memoryForValue(value);
@@ -1283,32 +1232,6 @@ return;}
     const snapshot = this.conversationSnapshot();
 
     return (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean);
-  }
-
-  /**
-   * 提交前核对（YIS-96）：值都在用户这次的原话里就直接过；否则用快速模型做一次短判断。结论记进诊断记录。
-   */
-  async checkRouteBeforeSubmit(input: { fields: CheckField[]; submit: string }): Promise<CheckVerdict> {
-    const started = Date.now();
-    const asked = this.askedThisTime();
-
-    if (literallyAsked(input.fields, asked)) {
-      this.runTrace.record("route_check", { ok: true, literal: true, elapsedMs: 0 });
-
-      return { ok: true };
-    }
-
-    const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
-
-    if (!model || !this.session) throw new Error("当前模型不可用");
-    const sessionId = `${this.session.sessionId}-route-check`;
-    const now = new Date();
-    const today = `${localDateOf(now.getTime())} 星期${"日一二三四五六"[now.getDay()]}`;
-    const verdict = await checkBeforeSubmit(this.sideHost()!, model, { asked, today, submit: input.submit, fields: input.fields }, { sessionId, headers: opencodeSessionHeaders(model, sessionId) });
-
-    this.runTrace.record("route_check", { ...verdict, literal: false, elapsedMs: Date.now() - started });
-
-    return verdict;
   }
 
   /** Separate no-tool completion; shares only model configuration, not task state/history. */
@@ -2110,7 +2033,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         }
 
         case "tool_execution_start":
-          this.captureRefereeFileBaseline();
           if (this.toolArgs.size > 200) this.toolArgs.clear();
           this.toolArgs.set(event.toolCallId, asParams(event.args));
           emit({
@@ -2149,9 +2071,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           // 用户没让发送不是“试过且失败”的做法，不写进催促模型换方法的清单。
           if (!this.rpc?.wasSendDeclined?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
-          // 被插话作废的旧步骤没执行，不算失败的一步（同下面 tallyPageChange 的判断）。
-          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && (!this.runSteps.hasProgramSteps(event.toolCallId) || (event.isError && !this.runSteps.hasProgramFailure(event.toolCallId)))) this.runSteps.note(this.deliveryRunId(), event.toolName, event.isError, false, !!this.rpc?.wasSendDeclined?.(event.toolCallId), this.toolArgs.get(event.toolCallId) ?? {});
-          this.runSteps.forgetProgram(event.toolCallId);
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
           // 被插话作废的旧步骤、用户没让发送的点击都没碰页面，不算「改页面却没生效」（页面脚本被拦、一步没走的仍算）。
@@ -2178,7 +2097,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           emit({ kind: "turn_end" });
           break;
         case "agent_start":
-          this.runSteps.resetFor(this.deliveryRunId());
           if (
             this.handbackPromptEpoch !== null &&
             (this.handbackPromptEpoch !== this.controlEpoch || this.pendingHandback?.epoch !== this.handbackPromptEpoch)
@@ -2208,23 +2126,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           if (event.willRetry) break;
 
           // 目标核对（2026-09-27；10-04 起不再拖住回答）：回答先交付、状态回到空闲，快速模型随后核对用户要的结果达成没有。
-          // 没做完且助手自己能做，就作为看得见的后续接着做（每个任务最多 2 次）；在等用户或做不到时只更新「还差」一行。
+          // 没做完且助手自己能做，就作为看得见的后续接着做（每个任务的次数上限见 GOAL_CONTINUE_MAX）；在等用户或做不到时只更新「还差」一行。
           {
             const checkGoal = this.goalCheckEligible(event.messages);
 
-            // 先说「要核对」，再交付：改过网页的一轮，侧栏据此扣住回答到核对出结论（docs/evals/20261009-claim-after-check.md R2）。
+            // 先说「要核对」，再交付：过往任务等核对结论再记（conversation-manager）。
             if (checkGoal) emit({ kind: "goal_check", status: "checking" });
 
-            // 代码裁判先于模型裁判，且在 agent_end 之前下发：侧栏收尾时据此决定过程行留不留（docs/evals/20261008-check-assert-referee.md R4）。
-            const runId = this.deliveryRunId();
-            if (!this.memberId && !this.hold.isHeld() && !this.expectedStoppedAgentEnd && this.toolUseRun === runId && runId !== null) {
-              const baseline = this.refereeFileBaseline;
-              const newFileCount = baseline?.runId === runId ? (this.artifactStore?.names() ?? []).filter(name => !baseline.names.has(name)).length : 0;
-              const files = [...this.savedFiles].filter(([, file]) => file.runId === runId).map(([filename]) => ({ filename, content: this.artifactStore?.isImage(filename) ? undefined : this.artifactStore?.get(filename) }));
-              const check = refereeRun({ steps: this.runSteps.of(runId), reply: this.runReplyText(event.messages), fileCount: files.length, files, newFileCount, goal: this.askedThisTime() });
-
-              if (check) emit(check);
-            }
             this.finishAgentEnd(event);
 
             if (checkGoal) void this.checkGoalAfterDelivery(event);
@@ -2274,11 +2182,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
   }
 
-  private captureRefereeFileBaseline(): void {
-    const runId = this.deliveryRunId();
-    if (this.refereeFileBaseline?.runId !== runId) this.refereeFileBaseline = { runId, names: new Set(this.artifactStore?.names() ?? []) };
-  }
-
   /** 记下文件区的改动（侧栏卡片事件）：存下的记本任务、字数、行数和时间，删掉的去掉。 */
   noteSavedFile(event: AgentUiEvent): void {
     if (event.kind !== "artifact") return;
@@ -2310,8 +2213,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   private goalContinues = 0;
   /** 本任务已尝试且失败的做法（工具名 + 失败原因摘要），催续做时带给模型，让它换做法（10-02 BYS-017 三次照原样重试）。 */
   private failedAttempts: { runId: string | null; items: Array<{ tool: string; reason: string }> } = { runId: null, items: [] };
-  /** 本任务按顺序记下的每一步，跑完后代码裁判用（run-referee.ts）。 */
-  private readonly runSteps = new RunStepLog();
 
   /**
    * 记下一次失败的做法：工具报错，或打开页面但文档没加载完（navigate 返回成功、details.readiness 为 timeout）。

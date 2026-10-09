@@ -1,5 +1,7 @@
 # 任务: 看 Sitegeist 宣传能做的事，我们的产品能不能做到
 
+> 2026-10-10：第 5 条（页面没变就补「页面没有变化」）已删除（用户决定功能优先），见[删除拦截与待确认标签](20261010-drop-blocking-labels.md)。下文是当时的记录。
+
 ## 背景
 
 2026-09-25 用户要求参考 [badlogic/sitegeist](https://github.com/badlogic/sitegeist)，并在我们的产品上复现它列出的功能。Sitegeist 同样是只装扩展的 Chrome 侧栏助手（同作者的 pi-mono 为底），核心工具很少：`repl`（在页面里执行代码）、`navigate`、`ask_user_which_element`、`extract_image`，加上按网站自动加载的「技能」、会话内可下载的「产物」（Markdown、HTML、CSV、PDF、Word）、每会话费用统计和全部数据导出导入。官网与新手教程演示的任务：多页调研汇总成带来源的文档、网页数据导出表格、改可编辑文字的错别字、YouTube 字幕总结、消息里提取会议写入日历、按份数换算配方的交互小工具。

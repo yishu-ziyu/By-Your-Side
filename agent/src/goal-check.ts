@@ -27,7 +27,7 @@ export const GOAL_CHECK_TIMEOUT_MS = 18_000;
 export const GOAL_CHECK_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_user_message", "user_memory", "task_goals", "record_task_results"]);
 
 /** 一个任务里宿主最多替用户催几次「接着做」，防止模型和核对来回打转。 */
-export const GOAL_CONTINUE_MAX = 2;
+export const GOAL_CONTINUE_MAX = 5;
 
 const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer), page (the page it ended on), observations (recent tool results from THIS task), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
 Before deciding done, check:

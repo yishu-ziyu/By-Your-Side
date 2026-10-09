@@ -3019,8 +3019,6 @@ details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: 
 .run-trail .trail-more { color: var(--text-quaternary); }
 .run-trail .trail-aside { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 /* 跑完后代码裁判的一行（核对 n/m）：过程折叠区里的一句说明，没过时颜色略深。 */
-.run-body .run-check { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
-.run-body .run-check.failed { color: var(--text-secondary); }
 .run-trail .trail-step:last-child { animation: trailIn .32s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes trailIn { from { opacity: 0; transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation: none; } }
@@ -3335,16 +3333,11 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   .pc-face, .pc-face > *, .pc.gone, .pc.collapse { transition: none; }
   .msg.user.card-turn .pc-face > * { animation: none; }
 }
-/* 改过网页的一轮：程序读回的这一栏、等核对、核对发现（docs/evals/20261009-claim-after-check.md） */
+/* 改过网页的一轮：程序读回的这一栏、核对发现（docs/evals/20261009-claim-after-check.md） */
 .fill-evidence { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--content-border); border-radius: var(--radius-sm); background: var(--content-bg); font-size: 13px; }
 .fill-evidence-line { overflow-wrap: anywhere; }
 .fill-evidence-line b { font-weight: 600; }
-.claim-checking { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 13px; color: var(--text-2); }
-.claim-checking-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-2); animation: claim-pulse 1.2s infinite; }
-@keyframes claim-pulse { 50% { opacity: .25; } }
 .claim-fix { margin: 4px 0 8px; font-size: 13px; color: var(--warn); overflow-wrap: anywhere; }
-.claim-unconfirmed { display: inline-block; margin-top: 6px; padding: 1px 8px; border: 1px solid var(--content-border); border-radius: var(--radius-pill, 999px); font-size: 12px; color: var(--text-2); }
-@media (prefers-reduced-motion: reduce) { .claim-checking-dot { animation: none; } }
 
 /* 交给你（docs/evals/20261010-hand-to-user.md R1）：与错误卡同一种卡片，左边线用强调色。 */
 .handoff-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); }
