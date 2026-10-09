@@ -61,7 +61,7 @@ export function installMarginalia(deps: Dependencies) {
         if (next) next.url = tab.url ?? '';
 
         return chrome.tabs.sendMessage(message.tabId, { type: message.type, action: 'track', enabled: !!next }, { frameId: 0 });
-      }).then(() => respond({ ok: true }), () => respond({ ok: false, error: '当前页面无法启用边注。' }));
+      }).then(() => respond({ ok: true }), () => respond({ ok: false, error: '当前页面无法启用段落提示。' }));
 
       return true;
     }

@@ -234,7 +234,7 @@ app.innerHTML = `
           <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
         </button>
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
-      <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
+      <button id="reading-settings-btn" type="button"><span>字体字号</span></button>
     </div>
   </header>
   <div id="ghost-bar" aria-label="直接操作当前页" hidden></div>
@@ -289,9 +289,9 @@ app.innerHTML = `
       </div>
     </div>
     <div id="attach-menu" class="action-menu-popover" hidden>
-      <div class="action-menu-item pressable" id="menu-action-screenshot">
+      <div class="action-menu-item pressable" id="menu-action-screenshot" title="只截当前网页中可见的部分。">
         <span class="action-menu-item-icon" data-icon="camera"></span>
-        <span class="action-menu-item-label">截取当前网页视口</span>
+        <span class="action-menu-item-label">网页截图</span>
       </div>
       <div class="action-menu-item pressable" id="menu-action-region" title="在网页上圈出想问的地方，可以圈好几处（Esc 退出）">
         <span class="action-menu-item-icon" data-icon="region"></span>
@@ -302,15 +302,15 @@ app.innerHTML = `
         <span class="action-menu-item-label">上传本地图片</span>
       </div>
       <hr />
-      <p class="composer-menu-label">边注</p>
+      <p class="composer-menu-label" title="显示当前段落的原文或解释。">段落提示</p>
       <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="off">关闭</button>
       <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="source">原文摘录</button>
-      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="ai">AI 解释<span>会调用模型</span></button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="ai">解释段落<span>让 AI 解释当前读到的段落。会调用模型</span></button>
       <hr />
       <button id="voice-diagnostics-open" class="action-menu-radio" type="button">语音诊断</button>
     </div>
     <input type="file" id="file-input" accept="image/*" multiple hidden />
-    <select id="marginalia-mode" aria-label="边注模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
+    <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会调用模型</option></select>
     <div id="task-bar-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
