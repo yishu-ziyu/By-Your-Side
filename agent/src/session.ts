@@ -2458,6 +2458,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (verdict.remaining) continuing.remaining = verdict.remaining;
 
       if (verdict.correction) continuing.correction = verdict.correction;
+
+      if (verdict.finding) continuing.finding = verdict.finding;
       emit(continuing);
       this.runTrace.record("goal_check", { ...verdict, attempt: this.goalContinues });
       this.mainEffort.raise(session.model, "goal_unfinished");

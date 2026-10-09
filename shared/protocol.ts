@@ -359,7 +359,7 @@ export type AgentUiEvent =
    * checking：这一轮交付前先说一声「要核对」（在交付与 agent_end 之前到达）；unavailable：核对没拿到结论。这两个不是结论，任务记录不存。
    * correction：continue 时核对者说的具体出入，是诊断文字，只按纯文本显示。
    */
-  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; remaining?: string; correction?: string }
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; remaining?: string; correction?: string; /** 判继续时给用户看的一句诊断，不带指令。 */ finding?: string }
   /** 跑完后的代码裁判（agent/src/run-referee.ts）：三条确定性核对，过了几条；notes 每条失败一句话。只标不拦。 */
   | { kind: "run_check"; passed: number; total: number; notes: string[] }
   | { kind: "user_delivery"; delivery: UserDelivery }

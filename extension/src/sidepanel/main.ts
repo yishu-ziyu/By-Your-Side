@@ -60,8 +60,8 @@ import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
-import { CLAIM_BOOKKEEPING_TOOLS, CLAIM_HOLD_CAP_MS, evidenceLine, findingForUser, holdsClaim, latestReadbackFailed, mergeEvidence, readbackFailed } from "./claim-hold.js";
-import type { AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import { CLAIM_BOOKKEEPING_TOOLS, CLAIM_HOLD_CAP_MS, evidenceLine, findingForUser, holdsClaim, latestReadbackFailed, mergeEvidence, nextWorkingTab, readbackFailed, readbackKey } from "./claim-hold.js";
+import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import type { RouteStep } from "../../../shared/route.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
@@ -2250,7 +2250,7 @@ interface RunHost {
   aside: string | null;
   /** 填写之后从网页读回的几栏（「草稿现在是：「…」」），放在回答上方，不收进过程。 */
   evidence: HTMLElement | null;
-  evidenceLines: Array<{ field: string; value: string }>;
+  evidenceLines: Array<{ key: string; field: string; value: string }>;
 }
 
 const ACTION_ICONS = {
@@ -4173,8 +4173,8 @@ function groupProcessReceipts(): void {
 }
 
 /** 填写之后网页里这一栏的实际内容：程序读回，不经助手转述（R1）。敏感栏不显示。 */
-function showReadback(readback: NonNullable<Extract<AgentUiEvent, { kind: "tool_end" }>["readback"]>): void {
-  const line = evidenceLine(readback);
+function showReadback(readback: NonNullable<Extract<AgentUiEvent, { kind: "tool_end" }>["readback"]>, key: string): void {
+  const line = evidenceLine(readback, key);
   const run = currentRun;
 
   if (!line || !run) return;
@@ -4333,7 +4333,7 @@ function correctHeldClaim(ev: Extract<AgentUiEvent, { kind: "goal_check" }>): vo
   narrateIntoRun(claimHold.run, claimHold.text || heldDeliveryText());
   claimHold.text = "";
   claimHold.events = [];
-  addMsg("msg claim-fix", `核对发现：${findingForUser(ev.correction, ev.remaining)}。正在改…`);
+  addMsg("msg claim-fix", `核对发现：${findingForUser(ev.finding, ev.remaining)}。正在改…`);
 }
 
 /** 返回 true 表示这个事件先扣住，不往下渲染。 */
@@ -4361,7 +4361,7 @@ function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | n
 
       return false;
     case "tool_end":
-      if (ev.readback && !ev.isError) claimHold.readbacks.set(ev.readback.name || "这一栏", readbackFailed(ev.readback));
+      if (ev.readback && !ev.isError) claimHold.readbacks.set(fieldKeyOf(ev.toolCallId, ev.readback), readbackFailed(ev.readback));
 
       return false;
     case "text_delta":
@@ -4432,9 +4432,27 @@ function holdClaimEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | n
   }
 }
 
+/** 读回按哪一栏记（R1、R2）：工具开始时记下填写的目标和当时的工作标签页，结束时用它区分同名的两栏。 */
+let workingTabKey = "tab-start";
+const fieldTargets = new Map<string, { target: unknown; tab: string }>();
+
+function noteFieldTarget(ev: AgentUiEvent): void {
+  if (ev.kind !== "tool_start") return;
+  workingTabKey = nextWorkingTab(workingTabKey, ev.name, ev.params, ev.toolCallId);
+  fieldTargets.set(ev.toolCallId, { target: ev.params.target, tab: workingTabKey });
+}
+
+function fieldKeyOf(toolCallId: string, readback: FieldReadback): string {
+  const start = fieldTargets.get(toolCallId);
+
+  return readbackKey(start?.target, start?.tab ?? workingTabKey, readback);
+}
+
 function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
   // 并行助手已删除：非主会话的事件不再出现，出现也不渲染。
   if (sessionId && !isLeadSession(sessionId)) return;
+
+  noteFieldTarget(ev);
 
   if (holdClaimEvent(ev, sessionId, runId)) return;
 
@@ -4478,7 +4496,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "tool_end":
       onToolEnd(ev);
 
-      if (ev.readback && !ev.isError) showReadback(ev.readback);
+      if (ev.readback && !ev.isError) showReadback(ev.readback, fieldKeyOf(ev.toolCallId, ev.readback));
+      fieldTargets.delete(ev.toolCallId);
       break;
     case "agent_start":
       if (!citationRequestPending) currentCitationSource = null;

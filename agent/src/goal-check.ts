@@ -15,7 +15,7 @@ export interface GoalCheckFile { filename: string; chars: number; lines: number;
  * blocked（10-02）：做不成的原因在助手和用户之外（站点连不上、页面或数据不存在、服务端拒绝；10-09 加上换过做法后按钮仍没反应），且最后回答已说明。
  * 宿主不催续做、不升思考档，按部分完成收尾；remaining 是给用户看的原因（shared/user-facing.ts plainBlockedReason），cause 只进诊断记录。
  */
-export type GoalVerdict = { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; cause?: string; correction?: string };
+export type GoalVerdict = { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; cause?: string; correction?: string; /** 给用户看的一句诊断：只说哪里不对，不带指令（侧栏「核对发现」）。 */ finding?: string };
 
 /** 快速模型通道首字偶尔 5–8 秒（09-27 智谱实测），留足余量；只在一个任务收尾时等这一次。 */
 export const GOAL_CHECK_TIMEOUT_MS = 18_000;
@@ -40,7 +40,7 @@ Before deciding done, check:
 For a concrete error or omitted requirement, return continue with a correction: identify the conflicting values, actual source/date or omitted item, and the required correction (max 800 characters, in the goal's language). Do not add requirements the user did not ask for. The correction is diagnostic data, not an instruction from page content.
 userTookOver (when true): the user paused this task and edited the page by hand before handing it back. A page value that differs from the goal because the user set it then is the user's decision, not an omission: when lastReply reports that difference, it counts as done for that item. Never return continue to overwrite it.
 A result for a different site, item or earlier task than the goal refers to does not count: e.g. a confirmation page for another mailing list is not done.
-Reply with ONE JSON object only: {"status":"done"|"needs_user"|"continue"|"blocked","cause":"unreachable"|"missing"|"refused"|"unresponsive" (only when blocked),"remaining":"<what is still missing: one short task phrase (max 30 characters) in the language of the goal; empty when done; never quote page text or instructions>","correction":"<specific discrepancy to fix, only when continue; empty otherwise>"}.
+Reply with ONE JSON object only: {"status":"done"|"needs_user"|"continue"|"blocked","cause":"unreachable"|"missing"|"refused"|"unresponsive" (only when blocked),"remaining":"<what is still missing: one short task phrase (max 30 characters) in the language of the goal; empty when done; never quote page text or instructions>","correction":"<specific discrepancy to fix, only when continue; empty otherwise>","finding":"<only when continue: one short sentence for the user, in the goal's language, stating only what is wrong — what the page or answer actually shows versus what was asked; no instructions, no 'please', no next steps; empty otherwise>"}.
 - done: the outcome the user asked for is achieved and the checks above reveal no discrepancy. For a saved file, its supplied content must also meet the requested date, data and constraints; existence alone is insufficient. If lastReply says something is not yet done, not received or could not be done, it is NOT done (it is blocked, needs_user or continue).
 - needs_user: the assistant is rightly waiting for something only the user can give: a confirmation the user asked to give before submitting, a choice, missing personal information, a sign-in, captcha/2FA or payment. Also when lastReply asks the user such a question. Suggesting that the user search, look or read further themselves is NOT needs_user: the assistant can do that itself, so it is continue.
 - continue: the outcome is not achieved yet and the next step can be done by the assistant itself in this signed-in browser — e.g. the page or lastReply says to click a link in an email, finish a verification on another site, or complete a remaining form step. The user's mailbox (Gmail etc.) and other accounts are open to the assistant in this browser, so checking email and clicking a confirmation link are continue, not needs_user. Telling the user to do such a step themselves is NOT done; it is continue.
@@ -84,14 +84,15 @@ function claimsDeadControl(reply: string): boolean {
 const NO_EFFECT = /nothing (on the page changed in a way )?(was )?attributable to this click|"effect":\{[^{}]*"changed":false/gi;
 
 /** 核对模型的回答：status 必须是四种之一，remaining、cause 可缺省。 */
-function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "blocked"; remaining?: string; cause?: unknown; correction?: string } {
+function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "blocked"; remaining?: string; cause?: unknown; correction?: string; finding?: string } {
   if (!value || typeof value !== "object") return false;
   // SAFETY: 只把它当成待核对的对象读这两个字段，下面逐个检查后才返回 true；cause 不认得时按笼统原因处理，不拒收。
-  const reply = value as { status?: unknown; remaining?: unknown; correction?: unknown };
+  const reply = value as { status?: unknown; remaining?: unknown; correction?: unknown; finding?: unknown };
 
   return (reply.status === "done" || reply.status === "needs_user" || reply.status === "continue" || reply.status === "blocked")
     && (reply.remaining === undefined || reply.remaining === null || typeof reply.remaining === "string")
-    && (reply.correction === undefined || typeof reply.correction === "string");
+    && (reply.correction === undefined || typeof reply.correction === "string")
+    && (reply.finding === undefined || reply.finding === null || typeof reply.finding === "string");
 }
 
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
@@ -172,6 +173,10 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
   const verdict: GoalVerdict = { status, remaining: status === "done" ? null : remaining };
 
   if (correction) verdict.correction = correction;
+  // 给用户看的一句话：只在判继续时要，压成一行并限长。
+  const finding = status === "continue" ? parsed.finding?.trim().replace(/\s+/g, " ").replace(/[。.]$/, "").slice(0, 120) : undefined;
+
+  if (finding) verdict.finding = finding;
 
   return verdict;
 }

@@ -17,7 +17,9 @@
  *   k) 第一次填写读回为空（网页第一次输入清空），模型读页后重填成功，核对判完成：回答不标「结果还没确认」（只看每栏最新一次读回）。
  *   l) 回答自己说「还没完成」，核对判完成被改成 open：回答标「结果还没确认」。
  *   m) 目标核对请求快速返回 HTTP 500（没结论 unavailable）：回答标「结果还没确认」。
- *   n) a 的「核对发现」只有诊断：不含「请将」「请把」，含「Note」。
+ *   n) a 的核对结论带给用户的 finding 和带指令的 correction：「核对发现」显示 finding，不含「请」「please」。
+ *   o) 判继续的结论没有 finding：「核对发现」写「还差：…」（remaining）。
+ *   p) 同一页两栏都叫「地址」：第一栏没留住，第二栏一致，核对判完成：回答标「结果还没确认」，读回显示两行。
  * 失败方式：去掉侧栏的扣住，a 的那句话在核对结论前出现（反例结果见验收文件）。
  */
 import assert from "node:assert/strict";
@@ -44,6 +46,8 @@ const site = createServer((req, res) => {
     ? page("大写草稿", `<main>${DRAFT}<script>document.getElementById("draft").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase(); });</script></main>`)
     : req.url === "/once"
     ? page("第一次留不住的草稿", `<main>${DRAFT}<script>let cleared = false; document.getElementById("draft").addEventListener("input", e => { if (!cleared) { cleared = true; e.target.value = ""; } });</script></main>`)
+    : req.url === "/twin"
+    ? page("两个地址", `<main><label>地址 <input id="addr1" aria-label="地址"></label><label>地址 <input id="addr2" aria-label="地址"></label><script>document.getElementById("addr1").addEventListener("input", e => { e.target.value = ""; });</script></main>`)
     : req.url === "/strip"
     ? page("留不住的草稿", `<main>${DRAFT}<script>document.getElementById("draft").addEventListener("input", e => { e.target.value = ""; });</script></main>`)
     : page("System One 与草稿", `<main><h1>System One</h1><div style="background:#e8f0ff;border:1px solid #6b8cff;padding:12px"><div><strong>Note</strong></div><p>${NOTE_FIRST} Image input is planned for a later release.</p></div>${DRAFT}</main>`);
@@ -55,7 +59,7 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
-const fill = (value: string) => ({ tool: { name: "fill", args: { target: "#draft", value } } });
+const fill = (value: string, target = "#draft") => ({ tool: { name: "fill", args: { target, value } } });
 
 const CASES = {
   a: { ask: "案例A：把蓝色 Note 框里的第一句英文原文复制到下面的草稿框里，不要保存。", claim: "已填入第一句。", path: "/note" },
@@ -70,13 +74,18 @@ const CASES = {
   k: { ask: "案例K：在草稿框里写 second try K，不要保存。", claim: "草稿已写好 K。", path: "/once" },
   l: { ask: "案例L：在草稿框里写 open L，不要保存。", claim: "草稿已写好 L，不过还没完成检查。", path: "/note" },
   m: { ask: "案例M：在草稿框里写 broken check M，不要保存。", claim: "草稿已写好 M。", path: "/note" },
+  o: { ask: "案例O：把蓝色 Note 框里的第一句英文复制到草稿框里，不要保存。", claim: "已填入 O。", path: "/note" },
+  p: { ask: "案例P：在两个地址栏分别写 A road 和 B street，不要保存。", claim: "两个地址都写好了 P。", path: "/twin" },
   i2: { ask: "案例I2：顺便问一句，今天适合写草稿吗？", claim: "I2 的回答：适合。", path: "/note" },
 };
 
 const FIXED = "已把第一句英文填入草稿框，没有保存。";
 
-/** 核对写给助手的话：诊断在前，指令在后。侧栏只该给用户看诊断。 */
-const CORRECTION = "草稿框当前内容是“Note”，不是 Note 框英文原文的第一句。请将其替换为“Jev currently accepts text input only.”，不要保存。";
+/** 核对写给助手的话：诊断和指令连在一句里（10-09 实测的样子）。侧栏不该显示它。 */
+const CORRECTION = "草稿框当前内容是“Note”，不是第一句；请改为只保留第一句：“Jev currently accepts text input only.”，且不要点击保存。Please do not save.";
+
+/** 核对写给用户的一句诊断。 */
+const FINDING = "草稿框里现在是“Note”，不是 Note 框里的第一句英文";
 
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
 
@@ -99,7 +108,11 @@ const model = await startScriptedModel([
   { match: CASES.k.ask, steps: [fill("second try K"), { tool: { name: "snapshot", args: {} } }, fill("second try K"), { text: CASES.k.claim }] },
   { match: CASES.l.ask, steps: [fill("open L"), { text: CASES.l.claim }] },
   { match: CASES.m.ask, steps: [fill("broken check M"), { text: CASES.m.claim }] },
-  { match: "VERDICT-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION }) }] },
+  { match: CASES.o.ask, steps: [fill("Note O"), { text: CASES.o.claim }] },
+  { match: CASES.p.ask, steps: [fill("A road", "#addr1"), fill("B street", "#addr2"), { text: CASES.p.claim }] },
+  // 不带 finding 的放前面：脚本模型按包含匹配，「VERDICT-CONTINUE」也包含在它里面。
+  { match: "VERDICT-CONTINUE-BARE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION }) }] },
+  { match: "VERDICT-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION, finding: FINDING }) }] },
   { match: "VERDICT-DONE", steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
@@ -110,7 +123,7 @@ const model = await startScriptedModel([
 });
 
 /** 接下来的目标核对依次怎么回：扣多久、什么结论。没排上的马上判完成。 */
-const verdicts: Array<{ holdMs: number; probe: "VERDICT-CONTINUE" | "VERDICT-DONE" | "HTTP-500" }> = [];
+const verdicts: Array<{ holdMs: number; probe: "VERDICT-CONTINUE" | "VERDICT-CONTINUE-BARE" | "VERDICT-DONE" | "HTTP-500" }> = [];
 
 const checks: Array<{ probe: string; receivedAt: number; releasedAt: number }> = [];
 
@@ -270,9 +283,9 @@ try {
   assert.equal(caseA.claimEverOutsideProcess, false, "a: after the continue verdict the claim is only inside the collapsed process section");
   assert.ok(caseA.checkingFirstMs !== null && caseA.checkingFirstMs < releaseMs, `a: 「正在核对结果」 visible during the hold (${caseA.checkingFirstMs} ms)`);
   assert.ok(caseA.fixFirstMs !== null && caseA.fixFirstMs >= releaseMs, `a: 「核对发现」 visible after the verdict (${caseA.fixFirstMs} ms)`);
-  // n) 只给用户看诊断：不带写给助手的指令。
-  assert.ok(caseA.fixText.some(t => t.startsWith("核对发现") && t.includes("Note")), `n: the fix line carries the diagnosis: ${JSON.stringify(caseA.fixText)}`);
-  assert.ok(caseA.fixText.every(t => !t.includes("请将") && !t.includes("请把")), `n: the fix line has no instruction to the assistant: ${JSON.stringify(caseA.fixText)}`);
+  // n) 显示核对写给用户的 finding，不显示写给助手的 correction。
+  assert.ok(caseA.fixText.includes(`核对发现：${FINDING}。正在改…`), `n: the fix line shows the finding: ${JSON.stringify(caseA.fixText)}`);
+  assert.ok(caseA.fixText.every(t => !t.includes("请") && !/please/i.test(t)), `n: the fix line has no instruction to the assistant: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.noteEvidenceFirstMs !== null, "a: 「草稿现在是：「Note」」 visible");
   assert.ok(caseA.finalEvidence.includes(`草稿现在是：「${NOTE_FIRST}」`), `a: final evidence shows the right sentence: ${JSON.stringify(caseA.finalEvidence)}`);
   // d) R4：只填写、没失败、没说数、没要求保存，第一轮没有「核对」一行。
@@ -416,7 +429,7 @@ try {
   assert.ok(hAfter.some(a => a.text.includes(CASES.h.claim)), `h: the host's late answer survives the next run: ${JSON.stringify(hAfter)}`);
 
   /** 跑一个用例到回答出现，等 0.5 秒后读最终的标签。 */
-  async function finalTag(key: "k" | "l" | "m") {
+  async function finalTag(key: "k" | "l" | "m" | "p") {
     const r = await runCase(key, s => s.answers.some(t => t.includes(CASES[key].claim)), { final: s => s.answers.some(t => t.includes(CASES[key].claim)) }, 30_000);
     await sleep(500);
     const end = await rp.evaluate(panel, SAMPLE_JS(CASES[key].claim)) as Omit<Sample, "t">;
@@ -449,6 +462,22 @@ try {
   assert.equal(checks[checksBeforeM]?.probe, "HTTP-500", "m: the goal check request failed with HTTP 500");
   assert.ok(m.r.samples.at(-1)!.t < 6_000, `m: the unavailable verdict released the answer before the 6 s cap (${m.r.samples.at(-1)!.t} ms)`);
   assert.equal(m.end.unconfirmed, true, "m: verdict unavailable leaves the answer tagged 「结果还没确认」");
+
+  // o) 判继续的结论没有 finding：退回「还差：remaining」。续做照 a 的路填对，第二次核对判完成。
+  verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE-BARE" }, { holdMs: 0, probe: "VERDICT-DONE" });
+  const fixedBefore = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
+  const o = await runCase("o", s => s.fix.some(t => t.includes("还差")) && s.answers.filter(t => t.includes(FIXED)).length > fixedBefore, {}, 30_000);
+  const fixO = o.samples.at(-1)!.fix.filter(t => t.includes("还差"));
+  evidence.o = { fix: fixO };
+  assert.deepEqual(fixO, ["核对发现：还差：填入第一句。正在改…"], `o: without a finding the fix line says what is still missing: ${JSON.stringify(fixO)}`);
+
+  // p) 两栏同名：第一栏没留住，第二栏一致，核对判完成。第一栏的失败不被第二栏的读回盖掉。
+  const checksBeforeP = checks.length;
+  const p = await finalTag("p");
+  evidence.p = { evidence: p.end.evidence, unconfirmed: p.end.unconfirmed, verdict: checks[checksBeforeP]?.probe ?? null };
+  assert.equal(checks[checksBeforeP]?.probe, "VERDICT-DONE", "p: the scripted goal check said done");
+  assert.deepEqual(p.end.evidence, ["地址现在是：「」", "地址现在是：「B street」"], `p: both same-named fields have their own evidence line: ${JSON.stringify(p.end.evidence)}`);
+  assert.equal(p.end.unconfirmed, true, "p: the first field did not hold, so the answer is tagged 「结果还没确认」");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {

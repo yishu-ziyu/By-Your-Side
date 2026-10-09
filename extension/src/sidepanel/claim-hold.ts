@@ -23,12 +23,12 @@ export const CLAIM_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_user_
 const EVIDENCE_LINES = 3;
 const EVIDENCE_CLIP = 80;
 
-/** 一栏的显示名与值；敏感栏、读不回的返回 null（不显示）。 */
-export function evidenceLine(readback: FieldReadback): { field: string; value: string } | null {
+/** 一栏的显示名与值；敏感栏、读不回的返回 null（不显示）。key 区分同名的两栏（见 readbackKey）。 */
+export function evidenceLine(readback: FieldReadback, key: string): { key: string; field: string; value: string } | null {
   if (readback.sensitive || readback.observed === undefined) return null;
   const value = readback.observed.replace(/\s+/g, " ").trim();
 
-  return { field: readback.name || "这一栏", value: value.length > EVIDENCE_CLIP || readback.truncated ? `${value.slice(0, EVIDENCE_CLIP)}…` : value };
+  return { key, field: readback.name || "这一栏", value: value.length > EVIDENCE_CLIP || readback.truncated ? `${value.slice(0, EVIDENCE_CLIP)}…` : value };
 }
 
 /** 读回与要写的对不上（网页没留住或改成了别的）：核对判做完也不能当做完显示（代码核对只能把通过改成不通过）。 */
@@ -36,24 +36,38 @@ export function readbackFailed(readback: FieldReadback): boolean {
   return readback.match === "not_held" || readback.match === "different";
 }
 
-/** 同一栏只留最新的值，最多 EVIDENCE_LINES 栏（最近写的在后）。 */
-export function mergeEvidence(lines: ReadonlyArray<{ field: string; value: string }>, next: { field: string; value: string }): Array<{ field: string; value: string }> {
-  return [...lines.filter(line => line.field !== next.field), next].slice(-EVIDENCE_LINES);
+/**
+ * 一次读回属于哪一栏：填写的目标（ref 按元素稳定）加标签页。两栏同名（或都没名字）时不互相覆盖。
+ * 没有目标（输入、程序里的填写）才按显示名。
+ */
+export function readbackKey(target: unknown, tab: string, readback: FieldReadback): string {
+  return typeof target === "string" && target ? `${tab}\u0000${target}` : `name\u0000${readback.name || "这一栏"}`;
 }
 
-/** 一栏读回的最新结果：同一栏后来读回一致，之前的对不上就不再算。key 是栏的显示名。 */
+/** 工作标签页的代号：切换用标签页 id，新开的用那次调用的 id；别的动作不变。 */
+export function nextWorkingTab(current: string, name: string, params: Record<string, unknown>, toolCallId: string): string {
+  if (name !== "tabs") return current;
+
+  if (params.action === "switch" && typeof params.tabId === "number") return `tab-${params.tabId}`;
+
+  return params.action === "open" ? `open-${toolCallId}` : current;
+}
+
+/** 同一栏只留最新的值，最多 EVIDENCE_LINES 栏（最近写的在后）。 */
+export function mergeEvidence<Line extends { key: string }>(lines: ReadonlyArray<Line>, next: Line): Line[] {
+  return [...lines.filter(line => line.key !== next.key), next].slice(-EVIDENCE_LINES);
+}
+
+/** 一栏读回的最新结果：同一栏后来读回一致，之前的对不上就不再算。key 见 readbackKey。 */
 export function latestReadbackFailed(latest: ReadonlyMap<string, boolean>): boolean {
   return [...latest.values()].some(Boolean);
 }
 
-/** 核对说的话是写给助手的，带指令（请…、应…、Please…）。用户只看诊断部分：去掉指令句，最多两句，约 120 字。 */
-const FINDING_CLIP = 120;
+/** 「核对发现」后面那句：核对写给用户的诊断；没有就说还差什么，再没有就说还没做完。 */
+export function findingForUser(finding: string | undefined, remaining: string | undefined): string {
+  const said = (finding ?? "").trim().replace(/[。.]$/, "");
 
-export function findingForUser(correction: string | undefined, remaining: string | undefined): string {
-  const sentences = (correction ?? "").split(/(?<=[。！？!?\n])|\.\s+(?=[A-Z])/).map(part => part.replace(/\s+/g, " ").trim().replace(/[。.!?！？]+$/, "")).filter(Boolean);
-  const diagnosis = sentences.filter(sentence => !/^(请|应|需要|要|please\b|you should\b)/i.test(sentence) && !/请将|请把/.test(sentence)).slice(0, 2).join("。");
-
-  if (diagnosis) return diagnosis.length > FINDING_CLIP ? `${diagnosis.slice(0, FINDING_CLIP)}…` : diagnosis;
+  if (said) return said;
   const left = (remaining ?? "").trim().replace(/[。.]$/, "");
 
   return left ? `还差：${left}` : "还没做完";
