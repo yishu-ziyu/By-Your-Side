@@ -1,4 +1,4 @@
-import {isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice,type VoicePersona,DEFAULT_VOICE_PERSONA} from '../../../shared/voice.js';
+import {GPT_LIVE_MODEL,isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice,type VoicePersona,DEFAULT_VOICE_PERSONA} from '../../../shared/voice.js';
 import { VoicePlayer } from './voice-player.js';
 import { pcmBase64 } from './voice-signal.js';
 import type { VoiceDiagnosticLog, VoiceDiagTrack } from './voice-diagnostic.js';
@@ -22,6 +22,24 @@ const BARGE_IN_RMS = 0.012;
 
 const BARGE_IN_FRAMES = 12;
 
+/** GPT-Live 建通话的地址与请求头（ChatGPT 登录、quicksilver v2 协议），与前提实验一致。 */
+const GPT_LIVE_CALLS = 'https://chatgpt.com/backend-api/codex/realtime/calls?intent=quicksilver&architecture=avas';
+
+/** GPT-Live 通话：声音直连 OpenAI，侧栏只转发委派和结果。 */
+type LiveCall = {
+  pc: RTCPeerConnection;
+  dc: RTCDataChannel;
+  /** 远端声音经它进扬声器；「停声」把它调成 0。 */
+  gain: GainNode;
+  mic: AnalyserNode;
+  /** Chrome 要远端流挂在媒体元素上，Web Audio 才拿得到声音；元素本身静音。 */
+  sink: HTMLAudioElement;
+  turns: Map<string, { role: 'user' | 'assistant'; turn: number; text: string }>;
+  delegated: Set<string>;
+  assistantTurn: string | null;
+  mutedTurn: string | null;
+};
+
 /** 可选字段「存在才带上」时按具名类型分步赋值。 */
 type CaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
@@ -43,6 +61,9 @@ export class VoiceClient {
   voice: StepVoice | undefined;
   /** 用户在设置页选的人设，下次开启语音时生效。 */
   persona: VoicePersona = DEFAULT_VOICE_PERSONA;
+  /** 用户在设置页选的语音模型，下次开启语音时生效；GPT-Live 走侧栏直连的 WebRTC。 */
+  voiceModel: unknown;
+  private live: LiveCall | null = null;
   private analyser: AnalyserNode | null = null;
   private inputLevel = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,6 +105,15 @@ export class VoiceClient {
   get diagnosticConfirmed(): boolean { return this.diagConfirmed; }
   get diagnosticRecording(): boolean { return this.recording; }
   get level(): number {
+    if (this.live) {
+      const analyser = this.phase === 'speaking' ? this.analyser : this.phase === 'listening' ? this.live.mic : null;
+
+      if (!analyser) return 0;
+      analyser.getFloatTimeDomainData(this.meter);
+
+      return Math.min(1, Math.sqrt(this.meter.reduce((s, x) => s + x*x, 0)/this.meter.length)*5);
+    }
+
     if (this.phase === 'speaking' && this.analyser) {
       this.analyser.getFloatTimeDomainData(this.meter);
 
@@ -160,6 +190,12 @@ export class VoiceClient {
       }:null;
     };
 
+    if (this.voiceModel === GPT_LIVE_MODEL && !diagnostic) {
+      await this.startLive(id, bindTrackListeners);
+
+      return;
+    }
+
     // Reuse existing microphone stream and context if still live
     if (this.context && this.context.state !== 'closed' && this.stream && this.stream.getTracks().some(t => t.readyState === 'live') && this.worklet && this.analyser) {
       try {
@@ -226,6 +262,169 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
       if(this.id===id)this.fail(error instanceof DOMException && error.name==='NotAllowedError'?'未获得麦克风权限，请允许后重试。':'麦克风未能启动，请检查设备后重试。');
     }
+  }
+
+  /** GPT-Live：先开麦克风，再请宿主取 ChatGPT 登录令牌；令牌到了才建通话（connectLive）。 */
+  private async startLive(id: string, bindTrackListeners: (stream: MediaStream) => void): Promise<void> {
+    try {
+      // 断线恢复时沿用还开着的麦克风和 AudioContext，不另开一份。
+      if (this.context && this.context.state !== 'closed' && this.stream?.getTracks().some(t => t.readyState === 'live')) {
+        await this.context.resume();
+
+        if (this.id !== id) return;
+        bindTrackListeners(this.stream);
+        this.command(this.startCommand());
+
+        return;
+      }
+
+      const context = new AudioContext(); this.context = context;
+      await context.resume();
+
+      if (this.id !== id) return;
+      const stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+
+      if (this.id !== id) { stream.getTracks().forEach(t => t.stop());
+
+ return; }
+
+      this.stream = stream;
+      bindTrackListeners(stream);
+      this.command(this.startCommand());
+    } catch (error) {
+      if (this.id === id) this.needsMicrophonePermission = error instanceof DOMException && error.name === 'NotAllowedError';
+
+      if (this.id === id) this.fail(error instanceof DOMException && error.name === 'NotAllowedError' ? '未获得麦克风权限，请允许后重试。' : '麦克风未能启动，请检查设备后重试。');
+    }
+  }
+  /** 照前提实验建 WebRTC：本地麦克风上行，远端声音播放，oai-events 数据通道收发事件。令牌只用于这一次请求。 */
+  private async connectLive(id: string, auth: Extract<VoiceEvent, { kind: 'gpt_live_auth' }>): Promise<void> {
+    const context = this.context, stream = this.stream;
+
+    if (this.id !== id || this.live || !context || !stream) return;
+    const pc = new RTCPeerConnection();
+    const dc = pc.createDataChannel('oai-events');
+    const gain = context.createGain();
+    const mic = context.createAnalyser(); mic.fftSize = 256;
+    context.createMediaStreamSource(stream).connect(mic);
+    this.analyser = context.createAnalyser(); this.analyser.fftSize = 256;
+    gain.connect(this.analyser); this.analyser.connect(context.destination);
+    const sink = new Audio(); sink.muted = true;
+    const live: LiveCall = { pc, dc, gain, mic, sink, turns: new Map(), delegated: new Set(), assistantTurn: null, mutedTurn: null };
+    this.live = live;
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    pc.ontrack = ({ streams: [remote] }) => {
+      if (!remote || this.live !== live) return;
+      sink.srcObject = remote; void sink.play().catch(() => {});
+      context.createMediaStreamSource(remote).connect(gain);
+    };
+    pc.onconnectionstatechange = () => { if (this.live === live && pc.connectionState === 'failed') this.scheduleRecovery('GPT-Live 连接断开，正在恢复…'); };
+    dc.onmessage = ({ data }) => { try { this.onLiveEvent(live, JSON.parse(String(data))); } catch { /* 不认识的事件不影响通话 */ } };
+
+    try {
+      await pc.setLocalDescription(await pc.createOffer());
+      await new Promise(done => { if (pc.iceGatheringState === 'complete') done(0); pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && done(0); setTimeout(done, 3000); });
+
+      if (this.live !== live) return;
+      const session = () => crypto.randomUUID();
+      const response = await fetch(GPT_LIVE_CALLS, { method: 'POST',
+        headers: { Authorization: `Bearer ${auth.access}`, 'chatgpt-account-id': auth.accountId, 'OpenAI-Alpha': 'quicksilver=v2', 'session-id': session(), 'thread-id': session(), 'x-session-id': session(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: pc.localDescription?.sdp, session: { model: GPT_LIVE_MODEL, instructions: auth.instructions, audio: { output: { voice: 'cove' } }, delegation: { type: 'client' } } }) });
+
+      if (this.live !== live) return;
+
+      if (!response.ok) {
+        this.fail(response.status === 401 || response.status === 403 ? 'ChatGPT 登录已失效：请在设置里重新登录后再开启语音。' : `GPT-Live 没有接通（${response.status}），请稍后重试。`);
+
+        return;
+      }
+
+      await pc.setRemoteDescription({ type: 'answer', sdp: await response.text() });
+
+      if (dc.readyState !== 'open') await new Promise(done => { dc.onopen = done; });
+
+      if (this.live === live) this.command({ kind: 'gpt_live_connected' });
+    } catch {
+      if (this.live === live) this.fail('GPT-Live 没有接通，请检查网络后重试。');
+    }
+  }
+  /** GPT-Live 数据通道事件：转写进字幕，委派交给宿主，服务端切掉声音时回到在听。 */
+  private onLiveEvent(live: LiveCall, e: { type?: string; turn?: { id?: string; role?: string; transcript?: string }; turn_id?: string; delta?: string; item?: { id?: string; content?: Array<{ type?: string; text?: string }> } }): void {
+    if (this.live !== live) return;
+    const turn = e.turn;
+
+    if (e.type === 'turn.created' && turn?.id) {
+      const role = turn.role === 'user' ? 'user' : 'assistant';
+
+      if (role === 'user') this.turn++;
+      live.turns.set(turn.id, { role, turn: this.turn, text: turn.transcript ?? '' });
+
+      if (role === 'assistant') {
+        live.assistantTurn = turn.id;
+
+        // 新的一段回答不在「停声」范围里。
+        if (live.mutedTurn !== turn.id) { live.mutedTurn = null; live.gain.gain.value = 1; }
+        this.showLiveAnswer(live, turn.id);
+      }
+
+      return;
+    }
+
+    if (e.type === 'turn.delta' && e.turn_id) {
+      const known = live.turns.get(e.turn_id);
+
+      if (known?.role !== 'assistant') return;
+      known.text += e.delta ?? '';
+      this.showLiveAnswer(live, e.turn_id);
+
+      return;
+    }
+
+    if (e.type === 'turn.done' && turn?.id) {
+      const known = live.turns.get(turn.id);
+      live.turns.delete(turn.id);
+
+      if (turn.role === 'user' && turn.transcript) this.event({ kind: 'text', turn: known?.turn ?? this.turn, role: 'user', text: turn.transcript });
+
+      if (turn.role === 'assistant') {
+        if (turn.transcript) this.event({ kind: 'text', turn: known?.turn ?? this.turn, role: 'assistant', text: turn.transcript });
+
+        if (live.assistantTurn === turn.id) { live.assistantTurn = null; this.setPhase('listening'); }
+      }
+
+      return;
+    }
+
+    if (e.type === 'output_audio_buffer.cleared') {
+      this.setPhase('listening');
+
+      return;
+    }
+
+    if (e.type === 'delegation.created' && e.item?.id && !live.delegated.has(e.item.id)) {
+      live.delegated.add(e.item.id);
+      const text = (e.item.content ?? []).filter(part => part.type === 'input_text').map(part => part.text ?? '').join('').trim();
+
+      if (text) this.command({ kind: 'delegation', delegationId: e.item.id, text });
+    }
+  }
+  private showLiveAnswer(live: LiveCall, turnId: string): void {
+    const known = live.turns.get(turnId);
+
+    if (known?.text) this.event({ kind: 'text', turn: known.turn, role: 'assistant', text: known.text });
+
+    if (live.mutedTurn !== turnId && this.phase !== 'speaking') this.setPhase('speaking');
+  }
+  private closeLive(): void {
+    const live = this.live;
+
+    if (!live) return;
+    this.live = null;
+    live.dc.onmessage = null; live.pc.ontrack = null; live.pc.onconnectionstatechange = null;
+    live.pc.close();
+    live.sink.srcObject = null;
+    live.gain.disconnect(); live.mic.disconnect();
+    this.analyser?.disconnect(); this.analyser = null;
   }
 
   /** One place where a raw 24k frame arrives. */
@@ -449,6 +648,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     this.dropBacklog();
     this.speaking = false;
     this.player?.stop();
+    this.closeLive();
     this.setPhase('connecting', detail);
     this.diagnostic?.('voice_recovering', { turn: this.turn, attempt: this.recoveryAttempts, at: performance.now() });
 
@@ -523,6 +723,21 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     const e=message.event;
 
     if(e.kind==='diag'){this.onDiagRecord(e.record);
+
+return;}
+
+    // GPT-Live：令牌到了就建通话；宿主为一次委派开的一轮按原握手补页面资料；结果写进数据通道。
+    if(e.kind==='gpt_live_auth'){void this.connectLive(message.voiceId,e);
+
+return;}
+
+    if(e.kind==='delegation_context'){
+      if(this.live?.dc.readyState==='open')this.live.dc.send(JSON.stringify({type:'delegation.context.append',delegation_item_id:e.delegationId,channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+
+      return;
+    }
+
+    if(e.kind==='input_turn'&&this.live){this.command({kind:'commit',turn:e.turn,input:this.getInput()});
 
 return;}
 
@@ -613,6 +828,11 @@ return;}
   }
   stopSpeaking():void{
     if(!this.id||!this.ready)return;
+
+    // GPT-Live 协议里没有取消回答的事件：只把这一段回答在本地静音，任务照常。
+    if(this.live){this.live.mutedTurn=this.live.assistantTurn;this.live.gain.gain.value=0;this.setPhase('listening','已停声，后台任务继续');
+
+return;}
     this.player?.stop();this.command({kind:'interrupt',turn:this.turn});
     this.setPhase('listening','已停声，后台任务继续');
   }
@@ -646,6 +866,8 @@ return;}
     this.dropBacklog();
 
     if(id&&notify)this.send({type:'voice',voiceId:id,conversationId:this.conversationId,command:{kind:'stop'}});
+
+    this.closeLive();
 
     if(this.worklet){this.worklet.port.onmessage=null;this.worklet.disconnect();this.worklet=null;}
 

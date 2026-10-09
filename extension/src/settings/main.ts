@@ -21,7 +21,7 @@ import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
-import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
+import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, GPT_LIVE_MODEL, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
 async function writeCredential(providerId: string, credential: Credential | StoredCredential | undefined): Promise<void> {
@@ -1020,12 +1020,13 @@ function renderVoiceModels(raw: unknown): void {
   let current: string | null = null;
 
   try { current = resolveVoiceModel(raw); } catch { /* 无效值保持未选；由用户明确纠正，不写回默认。 */ }
-  $("voice-model-state").textContent = current
-    ? "沿用现有阶跃星辰 key；需对应服务可用。下次开启语音时生效。"
-    : "语音模型设置无效，请重新选择后再开启。";
+  $("voice-model-state").textContent = !current ? "语音模型设置无效，请重新选择后再开启。"
+    : current === GPT_LIVE_MODEL ? "用 ChatGPT 登录，不用阶跃星辰 key；要先在上面用 ChatGPT 登录。下次开启语音时生效。"
+    : "沿用现有阶跃星辰 key；需对应服务可用。下次开启语音时生效。";
   $("voice-model-list").replaceChildren(...[
     { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "当前默认" },
     { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊直接回答；网页操作交给助手" },
+    { model: GPT_LIVE_MODEL, label: "GPT-Live（ChatGPT 登录）", note: "闲聊直接回答；要动手的交给助手" },
   ].map(option => {
     const pick = radioRow("voice-model-option", option.label, option.model === current, option.note);
 

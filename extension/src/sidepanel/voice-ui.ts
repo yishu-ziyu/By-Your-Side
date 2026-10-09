@@ -499,6 +499,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     setVoice: (value: StepVoice) => { client.voice = value; },
     /** 设置页选的人设：同样下次开启语音时生效。 */
     setPersona: (value: VoicePersona) => { client.persona = value; },
+    /** 设置页选的语音模型：同样下次开启语音时生效。 */
+    setVoiceModel: (value: unknown) => { client.voiceModel = value; },
     disconnect: () => {
       if (client.active) {
         client.onTransportDisconnected();

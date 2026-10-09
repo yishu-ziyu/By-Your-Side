@@ -144,7 +144,10 @@ export interface TaskProgressSnapshot {
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}
 
-export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime";
+/** GPT-Live：用 ChatGPT 登录、侧栏直连 OpenAI 的语音；闲聊它自己答，要动手的委派给任务宿主。 */
+export const GPT_LIVE_MODEL = "gpt-live-1-codex";
+
+export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL;
 
 export interface VoiceRouteContext {
   /** 套餐语音：明确闲聊仅返回分类，不生成宿主回答；其他分支照常执行。 */
@@ -290,7 +293,11 @@ export type VoiceCommand =
    * panel rendered, or a user mark. One turn may arrive as several commands; the agent merges them by
    * voiceId+turn, and nothing here changes what the voice session does.
    */
-  | { kind: "capture"; turn: number; data?: string; sampleRate?: number; serverText?: string; displayText?: string; mark?: true; note?: string };
+  | { kind: "capture"; turn: number; data?: string; sampleRate?: number; serverText?: string; displayText?: string; mark?: true; note?: string }
+  /** GPT-Live：侧栏与 OpenAI 的通话已建好，宿主据此宣布就绪。 */
+  | { kind: "gpt_live_connected" }
+  /** GPT-Live 委派的一句话（用户原话）；同一委派编号只开一次任务。 */
+  | { kind: "delegation"; delegationId: string; text: string };
 
 export interface VoiceClientMessage { type: "voice"; voiceId: string; command: VoiceCommand }
 
@@ -333,7 +340,11 @@ export type VoiceEvent =
   | { kind: "text"; turn: number; role: "user" | "assistant"; text: string }
   | { kind: "facts"; turn: number; snapshot: TaskProgressSnapshot }
   | { kind: "response_end"; turn: number; responseId: string }
-  | { kind: "diag"; record: VoiceDiagRecord };
+  | { kind: "diag"; record: VoiceDiagRecord }
+  /** GPT-Live：宿主刚取到（必要时刷新过）的 ChatGPT 登录令牌和会话说明，只在内存里用，不落盘。 */
+  | { kind: "gpt_live_auth"; access: string; accountId: string; instructions: string }
+  /** GPT-Live：送回这次委派的结果。speakable 由 GPT-Live 播报，commentary 只作背景。 */
+  | { kind: "delegation_context"; delegationId: string; channel: "speakable" | "commentary"; text: string };
 
 export interface VoiceServerMessage { type: "voice"; voiceId: string; event: VoiceEvent }
 
@@ -391,6 +402,9 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
     case "interrupt": return turn(c.turn) && (c.played === undefined || !!c.played && id(c.played.itemId) && Number.isFinite(c.played.ms) && c.played.ms >= 0);
     case "playback_done": return id(c.responseId);
     case "barge_in": return turn(c.turn);
+    case "gpt_live_connected": return true;
+    /** 委派编号要拼进任务请求编号，只收任务编号认的字符。 */
+    case "delegation": return id(c.delegationId) && c.delegationId.length <= 48 && shortText(c.text, 2000);
     /** A capture must carry at least one real fact; `note` alone is not evidence and is always optional. */
     case "capture": return turn(c.turn)
       && (c.data !== undefined || c.mark === true || c.serverText !== undefined || c.displayText !== undefined)
@@ -532,6 +546,8 @@ export function isVoiceServerMessage(v: unknown): v is VoiceServerMessage {
     case "response_end": return serverTurn(e.turn) && id(e.responseId);
     case "input_turn": return turn(e.turn);
     case "diag": return isVoiceDiagRecord(e.record);
+    case "gpt_live_auth": return shortText(e.access, 16384) && shortText(e.accountId, 128) && shortText(e.instructions, 8000);
+    case "delegation_context": return id(e.delegationId) && (e.channel === "speakable" || e.channel === "commentary") && shortText(e.text, USER_DELIVERY_TEXT_MAX);
     default: return false;
   }
 }

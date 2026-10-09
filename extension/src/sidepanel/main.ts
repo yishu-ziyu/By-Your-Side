@@ -53,7 +53,7 @@ import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.j
 import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTestResult } from "./error-card.js";
 import { describeModelError } from "../../../shared/user-facing.js";
-import { INPROC_CREDENTIAL_PREFIX } from "../inproc/shared.js";
+import { INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
 import { mountThinkingChip } from "./thinking-chip.js";
 import { mountReadingSettings } from "./reading-settings.js";
@@ -4691,6 +4691,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 void chrome.storage.local.get(VOICE_PERSONA_STORAGE_KEY).then((stored) => voiceUI.setPersona(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY])));
+
+// 侧栏只看选的是不是 GPT-Live（要走 WebRTC）；值是否有效由宿主判断。
+void chrome.storage.local.get(INPROC_VOICE_MODEL_KEY).then((stored) => voiceUI.setVoiceModel(stored[INPROC_VOICE_MODEL_KEY]));
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && INPROC_VOICE_MODEL_KEY in changes) voiceUI.setVoiceModel(changes[INPROC_VOICE_MODEL_KEY].newValue);
+});
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && VOICE_PERSONA_STORAGE_KEY in changes) voiceUI.setPersona(parseVoicePersona(changes[VOICE_PERSONA_STORAGE_KEY].newValue));

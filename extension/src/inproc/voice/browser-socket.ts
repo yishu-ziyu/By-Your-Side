@@ -4,7 +4,7 @@ import { resolveVoiceModel, type InprocVoiceModel } from "../shared.js";
 export class BrowserSocket {
   private readonly socket: WebSocket;
 
-  constructor(model: InprocVoiceModel = "stepaudio-3-realtime-preview") {
+  constructor(model: Exclude<InprocVoiceModel, "gpt-live-1-codex"> = "stepaudio-3-realtime-preview") {
     const selected = resolveVoiceModel(model);
     const path = selected === "stepaudio-2.5-realtime" ? "/step_plan/v1/realtime" : "/v1/realtime";
 
