@@ -1,0 +1,142 @@
+<html lang="zh-CN"><head>
+    <meta charset="utf-8">
+    <title>By Your Side</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <!-- SVG 滤镜定义 (物理级透镜折射) -->
+    <svg style="position: absolute; width: 0; height: 0; overflow: hidden;" aria-hidden="true">
+      <defs>
+        <filter id="liquid-refraction" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.008 0.008" numOctaves="2" result="noise" seed="7"></feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="G" result="displaced"></feDisplacementMap>
+          <feGaussianBlur in="displaced" stdDeviation="0.3" result="smooth"></feGaussianBlur>
+          <feMerge>
+            <feMergeNode in="smooth"></feMergeNode>
+          </feMerge>
+        </filter>
+      </defs>
+    </svg>
+    <div id="app" class="starter-ready">
+  <header id="topbar">
+    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false" title="帮我把 Nimbus 的开发者额度领了，账单没设好就先设好。"><span class="conversation-title">帮我把 Nimbus 的开发者额度领了，账单没设好就先设好。</span></button>
+    <div id="status-pill" class="activity-island status-on running" title="已连接" aria-label="已连接">
+      <span id="status-dot" class="dot island-pulse-dot on"></span>
+      <span id="status-text">已连接</span>
+    </div>
+    <button id="conversation-new" type="button" aria-label="新会话" title="新会话" aria-busy="false"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"></path></svg></button>
+    <button id="memory-open" type="button" title="看、改、删助手记住的事" aria-haspopup="dialog" aria-expanded="false">记忆</button>
+    <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg></button>
+    <div id="header-menu" popover="auto" aria-label="更多功能">
+        <button id="model-btn" type="button" title="切换模型（openai-codex/gpt-6-luna）" aria-label="切换当前模型" aria-haspopup="listbox" aria-expanded="false">
+          <span id="model-mark" class="model-mark" style="background: rgb(65, 103, 159);">C</span>
+          <span>当前模型</span>
+          <span id="model-name">GPT-6 Luna</span>
+          <span id="model-reasoning-tag" class="reasoning-tag" hidden=""></span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button id="model-settings-open" type="button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"></path><path d="M12 19H3"></path><path d="M14 3v4"></path><path d="M16 17v4"></path><path d="M21 12h-9"></path><path d="M21 19h-5"></path><path d="M21 5h-7"></path><path d="M8 10v4"></path><path d="M8 12H3"></path></svg><span>模型与语音</span></button>
+      <button id="reading-settings-btn" type="button" class="reading-settings-btn" title="阅读外观" aria-label="阅读外观" aria-haspopup="dialog" aria-expanded="false" aria-controls="reading-settings-panel"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"></path><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"></path></svg><span>阅读外观</span></button>
+    </div>
+  <div class="reading-settings"><section id="reading-settings-panel" class="reading-settings-panel" role="dialog" aria-label="阅读外观" hidden=""><div class="reading-settings-head"><h2>阅读外观</h2><button id="reading-settings-close" type="button">关闭</button></div><div class="reading-settings-row"><label for="reading-settings-font">字体</label><select id="reading-settings-font" class="reading-settings-select"><option value="song">宋体</option><option value="hei">黑体</option><option value="system">系统默认</option></select></div><div class="reading-settings-row"><label for="reading-settings-size">字号</label><select id="reading-settings-size" class="reading-settings-select"><option value="small">小 13px</option><option value="normal">标准 15px</option><option value="large">大 17px</option></select></div><p class="reading-settings-hint">只改回答正文。代码仍等宽，其他界面不变。</p><div class="reading-settings-foot"><button id="reading-settings-reset" type="button" class="reading-settings-reset">恢复默认</button><p id="reading-settings-status" class="reading-settings-status" role="status" aria-live="polite"></p><button id="reading-settings-retry" type="button" class="reading-settings-retry" hidden="">重试保存</button></div></section></div></header>
+  <div id="ghost-bar" aria-label="直接操作当前页" hidden=""><div class="ghost-actions"></div><span class="ghost-timing" role="status"></span></div>
+  <button id="conversation-background" type="button" hidden=""></button>
+  <div id="task-strip" aria-label="当前会话与结果" hidden="">
+    <div id="task-result-card" hidden="">
+      <div id="task-result-primary"></div>
+      <div id="task-result-secondary" hidden=""></div>
+    </div>
+  </div>
+  <div id="conversation-menu" role="menu" hidden=""><button type="button" role="menuitemradio" aria-checked="true" data-conversation-id="7704c093-db18-4359-8012-4411bac04eea" title="帮我把 Nimbus 的开发者额度领了，账单没设好就先设好。"><div class="conversation-menu-info"><span class="conversation-menu-title">帮我把 Nimbus 的开发者额度领了，账单没设好就先设好。</span><small class="conversation-menu-updated">更新于 2026/10/09 15:27</small></div><small>运行中</small></button><button type="button" role="menuitemradio" aria-checked="false" data-conversation-id="default" title="新会话"><div class="conversation-menu-info"><span class="conversation-menu-title">新会话</span><small class="conversation-menu-updated">更新于 2026/10/09 15:27</small></div><small>空闲</small></button></div>
+  <button id="memory-shade" type="button" aria-label="关闭记忆" hidden=""></button>
+  <section id="memory-drawer" role="dialog" aria-label="记忆" aria-modal="false" hidden="">
+    <div class="memory-drawer-head">
+      <div>
+        <h2 id="memory-title">记忆</h2>
+      </div>
+      <button id="memory-close" type="button">关闭</button>
+    </div>
+    <input id="memory-search" type="search" placeholder="搜索记忆和过往任务" aria-label="搜索记忆和过往任务" autocomplete="off">
+    <div id="knowledge-body">
+      <div id="memory-body"></div>
+    </div>
+  </section>
+  <div id="marginalia-rail" aria-label="伴读导轨" hidden=""><aside class="marginalia-card"><strong></strong><p></p></aside></div>
+  <div id="messages-frame" data-fade-top="false" data-fade-bottom="false">
+    <div id="messages"></div>
+    <div class="scroll-fade" data-edge="top" aria-hidden="true"></div>
+    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"></div>
+  </div>
+  <div id="team-card" hidden=""></div>
+  <section id="starter" aria-label="开始方式">
+    <canvas id="starter-orb" aria-hidden="true" height="56" width="56" data-orb-style="dusk"></canvas>
+    <p id="starter-title">说说你想完成什么</p>
+    <p id="starter-sub">浏览器 AI 助手，帮你读页面、整理信息或操作网页。</p>
+    <div id="starter-actions"><button type="button" data-starter="请概括当前页面的要点。">概括这一页</button></div>
+  <div id="open-threads" aria-label="继续上次的事" hidden=""></div></section>
+  <div class="composer-dock-wrap">
+    <div id="morph-sheet" class="page-morph-sheet" style="display: none;">
+      <div class="morph-sheet-head">
+        <span>当前活动标签页检查器</span>
+        <button type="button" id="close-morph-sheet" class="sheet-close-btn" title="关闭">✕</button>
+      </div>
+      <div class="morph-sheet-body" id="morph-sheet-body">
+        <div id="morph-sheet-title">标题：Kite 风筝</div>
+        <div id="morph-sheet-url">URL：http://127.0.0.1:63855/company/kite</div>
+        <div id="morph-sheet-status">状态：已就绪 (complete)</div>
+      </div>
+    </div>
+    <div id="attach-menu" class="action-menu-popover" hidden="">
+      <div class="action-menu-item pressable" id="menu-action-screenshot">
+        <span class="action-menu-item-icon" data-icon="camera"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"></path><circle cx="12" cy="13" r="3"></circle></svg></span>
+        <span class="action-menu-item-label">截取当前网页视口</span>
+      </div>
+      <div class="action-menu-item pressable" id="menu-action-region" title="在网页上圈出想问的地方，可以圈好几处（Esc 退出）">
+        <span class="action-menu-item-icon" data-icon="region"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z"></path><path d="M5 3a2 2 0 0 0-2 2"></path><path d="M19 3a2 2 0 0 1 2 2"></path><path d="M5 21a2 2 0 0 1-2-2"></path><path d="M9 3h1"></path><path d="M9 21h2"></path><path d="M14 3h1"></path><path d="M3 9v1"></path><path d="M21 9v2"></path><path d="M3 14v1"></path></svg></span>
+        <span class="action-menu-item-label">圈出来问 <span class="action-menu-item-key">⌘⇧S</span></span>
+      </div>
+      <div class="action-menu-item pressable" id="menu-action-upload">
+        <span class="action-menu-item-icon" data-icon="upload"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5h6"></path><path d="M19 2v6"></path><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"></path><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path><circle cx="9" cy="9" r="2"></circle></svg></span>
+        <span class="action-menu-item-label">上传本地图片</span>
+      </div>
+      <hr>
+      <p class="composer-menu-label">边注</p>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="off">关闭</button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="source">原文摘录</button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="ai">AI 解释<span>会调用模型</span></button>
+      <hr>
+      <button id="voice-diagnostics-open" class="action-menu-radio" type="button">语音诊断</button>
+    </div>
+    <input type="file" id="file-input" accept="image/*" multiple="" hidden="">
+    <select id="marginalia-mode" aria-label="边注模式" hidden=""><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">AI解释 · 会调用模型</option></select>
+    <div id="task-bar-root"><section class="task-bar" aria-label="当前任务" data-page-in-materials="" hidden=""><div class="tb-summary"><span class="tb-dot"></span><p class="tb-status" role="status" aria-live="polite"></p><button type="button" class="tb-expand" aria-expanded="false" aria-label="展开任务详情" title="展开任务详情" hidden=""></button></div><div class="tb-head"><span class="tb-goal" title="帮我把 Nimbus 的开发者额度领了，账单没设好就先设好。"></span><span class="tb-revisions" title=""></span></div><p class="tb-waiting" hidden=""></p><p class="tb-page" hidden=""></p><div class="tb-materials" hidden=""></div><p class="tb-control" hidden=""></p></section></div>
+    <div id="page-pill" class="morphing-page-pill pressable" hidden="" title="当前活动标签页（点击展开检查面板）">
+      <span id="tab-icon-sq" class="tab-icon-sq">1</span>
+      <span id="tab-title-text" class="tab-title-text">127.0.0.1:63855 · Kite 风筝</span>
+      <i class="tab-live-dot"></i>
+    </div>
+    <div class="pskill-menu" id="pskill-menu" role="listbox" aria-label="我的技能" hidden=""></div><div id="composer" class="composer-glass-dock steering-active"><div class="dropzone-hint" hidden="">松手添加网页材料，不自动发送</div>
+      <div id="ask-cite" hidden="">
+        <span id="ask-cite-host"></span>
+        <span id="ask-cite-text"></span>
+        <button type="button" id="ask-cite-close" aria-label="去掉这段引用" title="去掉这段引用">×</button>
+      </div>
+      <div id="attachments-strip" class="attachments-strip" hidden=""></div>
+      <div id="steer-ribbon"><div class="steer-ribbon-head"><span class="steer-ribbon-title">写到一半也能改方向</span><span class="steer-ribbon-hint">不用停，直接说</span></div><div class="steer-chips"><button type="button" class="steer-chip">✦ 改成对比表格</button><button type="button" class="steer-chip">✦ 浓缩成 3 句话</button></div></div><section class="voice-progress" hidden="" aria-label="语音问进度" data-state="idle"><canvas class="voice-orb" aria-label="语音光球" height="160" width="160" data-orb-style="dusk" data-orb-playing="true"></canvas><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources" hidden=""></div><div class="voice-actions"><button type="button" class="voice-stop-speech" title="只停止说话，后台任务继续" hidden="">停声</button><button class="voice-end" type="button">结束</button></div></section><div class="voice-record" hidden=""><details class="voice-diag"><summary class="voice-diag-summary">语音诊断</summary><div class="voice-diag-body"><div class="voice-record-head"><button class="voice-diag-mark" type="button" title="记录本轮问题：只写进语音诊断日志，不会重试或修改任务">记录本轮问题</button><span class="voice-diag-mark-help">仅记录问题，不会重试或修改任务</span><span class="voice-diag-mark-note" role="status"></span></div><div class="voice-diag-state" role="status">正常语音自动记录；手动复现未开启（点“开始录音”单独复现一条，期间不执行网页操作）。</div><div class="voice-diag-actions"><button class="voice-diag-start" type="button">开始录音</button><button class="voice-diag-stop" type="button" disabled="">结束录音</button><button class="voice-diag-export" type="button">导出JSON</button><button class="voice-diag-clear" type="button">清空</button></div><div class="voice-diag-list"><div class="voice-diag-empty">暂无记录。</div></div><div class="voice-diag-detail"><div class="voice-diag-row"><span class="voice-diag-label">状态</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">连续收音 C0</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">实际上行 C1</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">原始转写（过滤前）</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">服务端转发</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">侧栏收到</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">侧栏显示文字</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">一致性</span><span class="voice-diag-value"></span></div><div class="voice-diag-row"><span class="voice-diag-label">异常</span><span class="voice-diag-value"></span></div></div><div class="voice-diag-audio"><button class="voice-diag-load-c0" type="button">载入C0</button><audio class="voice-diag-player-c0" controls="" preload="none"></audio><button class="voice-diag-load-c1" type="button">载入C1</button><audio class="voice-diag-player-c1" controls="" preload="none"></audio></div></div></details></div><textarea id="input" rows="1" placeholder="补充或改方向…" aria-controls="pskill-menu" style="height: 44px;" aria-expanded="false"></textarea>
+      <div id="composer-bar">
+        <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button><button id="think-chip" type="button" title="当前模型与思考强度" aria-haspopup="menu" aria-expanded="false"><span class="think-model">GPT-6 Luna</span><span>· 快</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <span id="composer-spacer"></span><button type="button" class="voice-start" title="语音对话：问进度或调整当前任务" aria-label="打开语音问进度" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19v3"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><rect x="9" y="2" width="6" height="13" rx="3"></rect></svg></button>
+        <button id="takeover-btn" type="button" title="你来操作这个页面，Agent 先停手" data-mode="takeover">接管</button>
+        <button id="steer-send-btn" type="button" title="发出插话（Enter）" aria-label="发出插话" hidden=""><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg></button>
+        <button id="send-btn" class="kinetic-morph-button stopping" type="button" title="中止">
+          <span class="morph-icon-send"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg></span>
+          <span class="morph-icon-stop"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect></svg></span>
+        </button>
+      </div>
+    <div id="think-menu" role="menu" inert=""><div class="think-head">GPT-6 Luna</div><button type="button" role="menuitemradio" aria-checked="true"><span>快</span><small>低档 · 填表、订东西、点按</small><i aria-hidden="true">✓</i></button><button type="button" role="menuitemradio" aria-checked="false"><span>深入</span><small>高档 · 多步骤、要权衡的事</small><i aria-hidden="true">✓</i></button><hr><button type="button" class="think-more">换模型…</button></div><div role="status"></div></div>
+  </div>
+  <div id="model-popover" hidden="" inert=""></div>
+<button id="to-bottom" type="button" title="回到底部" hidden=""><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path></svg></button></div>
+    
+  
+
+<button class="pskill-shade" type="button" aria-label="关闭技能管理" hidden=""></button><section class="pskill-sheet" role="dialog" aria-label="我的技能" hidden=""></section></body></html>
