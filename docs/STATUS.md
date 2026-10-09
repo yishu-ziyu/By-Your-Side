@@ -33,6 +33,7 @@
 - 改口后改写已有的成功回执有缺口（[复测](evals/20260922-computer-use-product-path.md)）。
 - 上传本机文件、请帮手并行、富文本粘贴的代码已于 10-04 删除，要做需另起任务。
 - 长任务和旧票组不会因为新专项通过而自动关闭（[产品复核](evals/20260919-product-review-repair.md)）。
+- 读页面已不给模型卡号、密码这类栏的值，但页面脚本（`js`、`browser_run`）仍能读（[验收](evals/20261010-snapshot-privacy.md)）。
 
 ## 测试与检查
 

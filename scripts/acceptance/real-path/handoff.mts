@@ -127,6 +127,8 @@ try {
   await until(async () => claims === 1, 30000, '助手领取了 $30');
   const first = payloads[sentBefore] ?? '';
   check('交还后第一次模型请求带重读的账单页（已保存）和原目标', first.includes('账单账号已保存') && first.includes(GOAL), { saved: first.includes('账单账号已保存'), goal: first.includes(GOAL) });
+  // R4：用户在交给期间填的卡号，交还后的读页面也不给模型（docs/evals/20261010-snapshot-privacy.md）。
+  check('交还后发给模型的内容里没有用户填的卡号', !payloads.some(p => p.includes('4242424242424242')), { leaked: payloads.filter(p => p.includes('4242424242424242')).length });
   check('网站收到一次领取', claims === 1, { claims, posts: posts.map(p => p.path) });
   await until(async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("|")')).includes('已领取 $30。'), 30000, '最终回答');
   check('最终回答出现', true, String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("|")')));
