@@ -48,7 +48,6 @@ import {
   isLiveViewportPinned,
   liveViewportOverflows,
   ROUTE_NOTES,
-  routeProgressTitle,
 } from "./steps.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
@@ -63,7 +62,6 @@ import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
 import { CLAIM_BOOKKEEPING_TOOLS, CLAIM_HOLD_CAP_MS, evidenceLine, findingForUser, holdsClaim, latestReadbackFailed, mergeEvidence, nextWorkingTab, readbackFailed, readbackKey } from "./claim-hold.js";
 import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
-import type { RouteStep } from "../../../shared/route.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -2878,127 +2876,6 @@ function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", r
   }
 }
 
-/** 做法里的一步，写成给人看的一句（YIS-94）。这次说的值加粗；密码一类不显示值。 */
-function routeStepNode(step: RouteStep): HTMLElement {
-  const text = document.createElement("span");
-  text.className = "memory-used-text";
-  const name = step.target ? `「${step.target.name}」${step.target.box ? `（${step.target.box}）` : ""}` : "";
-  const value = document.createElement(step.valueFrom === "said" ? "b" : "span");
-  value.textContent = step.secret ? "（每次问你）" : `「${step.value ?? ""}」`;
-
-  if (step.action === "navigate") text.textContent = `打开 ${step.url?.replace(/^https?:\/\//, "").slice(0, 60) ?? ""}`;
-  else if (step.action === "press_key") text.textContent = `按 ${step.key ?? ""}`;
-  // 模型起的短名比「点「选择」（青松）」好读；短名只是控件名本身时补上「点」。
-  else if (step.action === "click") text.textContent = step.label && step.label !== step.target?.name ? step.label : `点${name}`;
-  else text.append(`在${name}${step.action === "fill" ? "填" : "选"}`, value);
-
-  text.title = text.textContent ?? "";
-
-  return text;
-}
-
-/** 照的是哪一次：「10 月 2 日」，当天的写「今天」。 */
-function routeSourceDay(at: number): string {
-  const day = new Date(at);
-
-  return day.toDateString() === new Date().toDateString() ? "今天" : `${day.getMonth() + 1} 月 ${day.getDate()} 日`;
-}
-
-/**
- * 回答下面的「记下了这次的做法 ›」：点开看每一步，「不用记」删掉这份做法，可撤销（YIS-94，对照 docs/previews/route-replay）。
- * 照着走的写「照 10 月 2 日那次的做法 · 上次 28 秒」，页面变了写「页面和上次不一样，已按这次的做法更新」，按钮是「下次别照旧」（YIS-97）。
- */
-function renderRouteSaved(event: Extract<AgentUiEvent, { kind: "route_saved" }>): void {
-  const answers = messagesEl.querySelectorAll<HTMLElement>(".msg.assistant.answer-latest");
-  const answer = answers[answers.length - 1];
-
-  if (!answer) return;
-  const box = messagesEl.querySelector<HTMLElement>(`.route-line[data-run-id="${CSS.escape(event.runId)}"]`) ?? document.createElement("div");
-  box.className = "memory-used-line route-line";
-  box.dataset.runId = event.runId;
-  let open = box.dataset.open === "true";
-  let kept = true;
-  let pending = false;
-  let error = "";
-
-  const draw = () => {
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "memory-used-toggle";
-    toggle.setAttribute("aria-expanded", String(open));
-    const chevron = document.createElement("span");
-    chevron.className = "memory-used-chevron";
-    chevron.textContent = "›";
-    const source = event.source;
-    const fresh = source?.freshFrom;
-    const seconds = source ? Math.round(source.ms / 1000) : 0;
-    const head = !source ? "记下了这次的做法，下次照着走" : fresh !== undefined ? "页面和上次不一样，已按这次的做法更新" : `照${routeSourceDay(source.at)}那次的做法${seconds ? ` · 上次 ${seconds} 秒` : ""}`;
-    toggle.append(kept ? `${head} ` : source ? "下次不照这份做法 " : "没有记下这次的做法 ", chevron);
-    toggle.onclick = () => { open = !open; box.dataset.open = String(open); draw(); };
-
-    const list = document.createElement("ul");
-    list.className = "memory-used-list";
-    list.hidden = !open;
-
-    event.route.steps.forEach((step, index) => {
-      const row = document.createElement("li");
-      // 页面变了之后这次重新想的步骤标出来。
-      row.className = fresh !== undefined && index >= fresh ? "memory-used-item changed" : "memory-used-item";
-      const glyph = document.createElement("span");
-      glyph.className = "memory-used-glyph route-step-num";
-      glyph.textContent = String(index + 1);
-      row.append(glyph, routeStepNode(step));
-      list.appendChild(row);
-    });
-
-    const foot = document.createElement("li");
-    foot.className = "route-foot";
-    const note = document.createElement("span");
-    const said = event.route.steps.some((step) => step.valueFrom === "said");
-    const followedNote = fresh === undefined ? (said ? "加粗的是换成你这次说的。" : "和上次一样走的。") : fresh > 0 ? `前 ${fresh} 步照旧，第 ${fresh + 1} 步起是这次重新想的。` : "这次每一步都是重新想的。";
-    note.textContent = error || (!kept ? (source ? "下次在这个网站上一步步来。" : "以后这类事照常一步步做。") : source ? followedNote : "只在这个网站、同一类事上用；页面对不上就照常一步步做。");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.routeAction = kept ? "decline" : "undo";
-    button.textContent = kept ? (source ? "下次别照旧" : "不用记") : "撤销";
-    button.disabled = pending;
-    button.onclick = () => {
-      const requestId = crypto.randomUUID();
-      const want = !kept;
-      pending = true;
-      error = "";
-      draw();
-
-      usedLineHandlers.set(requestId, (result) => {
-        pending = false;
-
-        if (result.ok) kept = want;
-        else error = `没改成：${result.error ?? "请重试"}`;
-        draw();
-      });
-
-      if (!send({ type: "task_history_route", requestId, conversationId: selectedConversationId, id: event.runId, route: want ? event.route : null, ...(source ? { site: true as const } : {}) })) {
-        usedLineHandlers.delete(requestId);
-        pending = false;
-        error = "连接不可用，请重试";
-        draw();
-      }
-    };
-
-    foot.append(note, button);
-    list.appendChild(foot);
-    box.replaceChildren(toggle, list);
-  };
-
-  draw();
-  // 跟在这次回答（以及「用了哪条记忆」那一行）后面。
-  let after: Element = answer;
-
-  while (after.nextElementSibling?.classList.contains("memory-used-line") && !after.nextElementSibling.classList.contains("route-line")) after = after.nextElementSibling;
-
-  if (!box.isConnected) after.after(box);
-}
-
 /** 「原来是…」只写变了的部分：新旧值在同一个「：」或空格之前完全相同，就省掉这一段（不在词中间截断）。 */
 function changedPart(now: string, before: string): string {
   let cut = 0;
@@ -3350,7 +3227,6 @@ function renderTrail(run: RunHost): void {
     text: chip.dataset.past ?? "",
     dur: chip.querySelector(".dur")?.textContent ?? "",
     failed: chip.classList.contains("error"),
-    miss: chip.classList.contains("route-miss"),
   }));
 
   const { shown, earlier } = recentSteps(done);
@@ -3363,7 +3239,7 @@ function renderTrail(run: RunHost): void {
 
   const rows = shown.map((step) => {
     const row = document.createElement("div");
-    row.className = step.failed ? "trail-step failed" : step.miss ? "trail-step route-miss" : "trail-step";
+    row.className = step.failed ? "trail-step failed" : "trail-step";
     const text = document.createElement("span");
     text.className = "trail-text";
     text.textContent = step.failed ? `${step.text} · 没成功` : step.text;
@@ -4044,15 +3920,15 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
 
   if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    // 照上次的做法走（YIS-96）：标题写第几步；核对时写核对哪几项。
-    const routeTitle = routeProgressTitle(ev.params) ?? (ev.name === "route_check" ? `提交前核对 ${String(ev.params.fields ?? "")}`.trim() : null);
+    // 提交前核对（YIS-96）：标题写核对哪几项。
+    const routeTitle = ev.name === "route_check" ? `提交前核对 ${String(ev.params.fields ?? "")}`.trim() : null;
 
     setRunTitle(run, routeTitle ?? `正在${actionCardLabel(ev.name, ev.params)}`, false, routeTitle ? "route" : kind);
   }
 
   const chip = document.createElement("button");
   chip.type = "button";
-  chip.className = prep ? "chip prep" : ROUTE_NOTES.has(ev.name) ? `chip note ${ev.name === "route_miss" ? "route-miss" : ""}`.trim() : "chip";
+  chip.className = prep ? "chip prep" : ROUTE_NOTES.has(ev.name) ? "chip note" : "chip";
   chip.dataset.kind = kind;
   chip.dataset.past = pastAction(ev.name, ev.params);
   chip.setAttribute("aria-expanded", "false");
@@ -4135,7 +4011,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (failed) entry.chip.classList.add("error");
 
-  // 照走的说明行（核对、对不上）：结果就是给人看的那句话，写成这一行的字。
+  // 提交前核对的说明行：结果就是给人看的那句话，写成这一行的字。
   if (ROUTE_NOTES.has(entry.name)) {
     const text = noteText(ev.resultText);
     const label = entry.chip.querySelector<HTMLElement>(".chip-label");
@@ -4143,8 +4019,6 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     entry.chip.dataset.past = text;
 
     if (label) label.textContent = text;
-
-    if (entry.name === "route_miss") entry.dur.textContent = "";
   }
 
   const label = entry.chip.querySelector<HTMLElement>(".chip-label");
@@ -4499,9 +4373,6 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "memory_ask":
       renderMemoryAsk(ev);
-      break;
-    case "route_saved":
-      renderRouteSaved(ev);
       break;
     case "text_delta":
       if (leadDeliveryMode === "explicit") {

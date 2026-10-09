@@ -6,7 +6,6 @@ import { elementText, redactObservedText } from './task-evidence.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
-import type { RouteSource } from "../../shared/route.js";
 import {createTaskResultsTool, createVerifyUnknownResultTool, unconfirmedResultMessage} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
@@ -61,8 +60,7 @@ import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import { localDateOf, type MemoryValidity } from "../../shared/memory.js";
 import { programFirstGuidance } from "./program-first.js";
-import { noteRouteStep, type RouteDraft, type RouteNote } from "./route-record.js";
-import { checkBeforeSubmit, literallyAsked, type CheckField, type CheckVerdict } from "./route-check.js";
+import { checkBeforeSubmit, literallyAsked, type CheckField, type CheckVerdict, type RouteNote } from "./route-check.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand" }
@@ -161,12 +159,12 @@ function loopModel(models: ModelPort, pattern: string | undefined) {
 
 /**
  * 会改变页面的工具（模型可见名）。滚动、悬停、等待事件、切标签等只看不改的不算；
- * browser_run、follow_route 另按执行步数判断。用于交付时纠正「页面没变却说做完了」。
+ * browser_run 另按执行步数判断。用于交付时纠正「页面没变却说做完了」。
  */
 const PAGE_CHANGE_TOOLS = new Set(["page_translation", "navigate", "open_tab", "click", "double_click", "fill", "type_text", "press_key", "js", "mark", "accept_dialog", "dismiss_dialog"]);
 
 /** 由多个浏览器步骤组成的工具：步骤作为子步骤上报，结果里带实际执行的步数。 */
-const PROGRAM_TOOLS = new Set(["browser_run", "follow_route"]);
+const PROGRAM_TOOLS = new Set(["browser_run"]);
 
 export class BrowserAgentSession {
   private activeGoal:string|null=null;
@@ -454,7 +452,7 @@ if(required.includes(key))candidates.set(key,attachment);
     return { ...this.pageChangeTally };
   }
 
-  /** 改页面的工具：出错不算生效；browser_run、follow_route 只有真的执行了浏览器步骤才算。 */
+  /** 改页面的工具：出错不算生效；browser_run 只有真的执行了浏览器步骤才算。 */
   private tallyPageChange(toolName: string, isError: boolean, steps: number): void {
     if (!PROGRAM_TOOLS.has(toolName) && !PAGE_CHANGE_TOOLS.has(toolName)) return;
     this.pageChangeTally.attempts += 1;
@@ -1227,17 +1225,11 @@ return;}
     return answerVoiceObservation(call, question, page, stillCurrent);
   }
 
-  /** 走老路：本会话各任务记下的步骤，按 runId；只留最近几个任务（结束时和目标核对后各取一次）。 */
-  private routeDrafts = new Map<string, RouteDraft>();
-
-  /** 动手成功后记一笔做法；见 route-record.ts。 */
+  /** 填值、点选成功后记一笔，给提交前核对。 */
   noteRouteStep(note: RouteNote): void {
     const runId = this.deliveryRunId();
 
     if (!runId) return;
-    this.routeDrafts.set(runId, noteRouteStep(this.routeDrafts.get(runId) ?? { steps: [] }, note));
-
-    while (this.routeDrafts.size > 4) this.routeDrafts.delete(this.routeDrafts.keys().next().value!);
     // 提交前核对（YIS-104）：记下这次填过、选过的值（选卡片时值是卡片名）。密码一类不交给核对。
     const name = note.target?.name ?? note.label ?? "一栏";
     const value = note.action === "click" ? note.target?.box || undefined : note.action === "fill" || note.action === "select_option" ? note.value : undefined;
@@ -1275,37 +1267,6 @@ return;}
     const written = this.writtenThisRun.get(this.deliveryRunId() ?? "");
 
     if (written) written.checked = written.fields.length;
-  }
-
-  /** 走老路：本会话各任务照着走的是哪一次（YIS-97），按 runId；同一任务照走过几次时记第一次。 */
-  private routeSources = new Map<string, RouteSource>();
-
-  /** 照走一次之后记下照的是哪一次；中途停下时，从此刻已记的步数起是这次重新想的。 */
-  noteRouteFollowed(source: { id: string; startedAt: number | null; endedAt: number; stopped: boolean }): void {
-    const runId = this.deliveryRunId();
-
-    if (!runId) return;
-    const known = this.routeSources.get(runId) ?? { id: source.id, at: source.startedAt ?? source.endedAt, ms: source.startedAt === null ? 0 : Math.max(0, source.endedAt - source.startedAt) };
-
-    if (source.stopped && known.freshFrom === undefined) known.freshFrom = this.routeDrafts.get(runId)?.steps.length ?? 0;
-    this.routeSources.set(runId, known);
-
-    while (this.routeSources.size > 4) this.routeSources.delete(this.routeSources.keys().next().value!);
-  }
-
-  /** 某个任务照着走的是哪一次；一步步做的没有。 */
-  routeSourceOf(runId: string): RouteSource | undefined {
-    return this.routeSources.get(runId);
-  }
-
-  /** 代码裁判的结论写进诊断记录：存了几步，或为什么没存。 */
-  traceRouteVerdict(runId: string, verdict: { saved: number; bySelector: number } | { rejected: string }): void {
-    this.runTrace.record("route_verdict", { runId, ...verdict });
-  }
-
-  /** 某个任务记下的步骤（给过往任务存做法）。 */
-  routeDraft(runId: string): RouteDraft | undefined {
-    return this.routeDrafts.get(runId);
   }
 
   /** 填进网页的值来自本轮带上的哪条记忆；见 MemoryRuntime.memoryForValue。 */
@@ -1361,7 +1322,7 @@ return;}
   }
 
   /**
-   * 照走到提交前核对（YIS-96）：值都在用户这次的原话里就直接过；否则用快速模型做一次短判断。结论记进诊断记录。
+   * 提交前核对（YIS-96）：值都在用户这次的原话里就直接过；否则用快速模型做一次短判断。结论记进诊断记录。
    */
   async checkRouteBeforeSubmit(input: { fields: CheckField[]; submit: string }): Promise<CheckVerdict> {
     const started = Date.now();

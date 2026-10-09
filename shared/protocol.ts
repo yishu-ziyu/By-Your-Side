@@ -10,7 +10,7 @@ import { isExecutionFeedback } from "./execution-feedback.js";
 
 import { isMemoryEntry, isMemoryScope, MEMORY_TEXT_MAX, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
-import { isRouteSource, isTaskRoute, type RouteSource, type RouteTarget, type TaskRoute } from "./route.js";
+import type { RouteTarget } from "./route.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 import { isTaskView } from "./task-view.js";
@@ -216,9 +216,6 @@ export type ClientMessage = ConversationEnvelope & (
   /** 过往任务的「这里别用」与撤销「忘掉」（放回删掉的那条）。结果都是 task_history_result。 */
   | { type: "task_history_site"; requestId: string; id: string; hostname: string; off: boolean }
   | { type: "task_history_restore"; requestId: string; task: TaskHistoryEntry }
-  /** 走老路：「不用记」删掉这条过往任务的做法（route=null），撤销时放回。结果是 task_history_result。 */
-  /** site：「下次别照旧」，同网站上别的做法一起关掉，撤销时一起放回。 */
-  | { type: "task_history_route"; requestId: string; id: string; route: TaskRoute | null; site?: true }
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
@@ -320,9 +317,6 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
-  /** 走老路：这次任务的做法已记下（过往任务 id = runId）。侧栏在回答下面写「记下了这次的做法」。 */
-  /** source：这次是照哪一次的做法走的（YIS-97）；没有就是一步步做的。 */
-  | { kind: "route_saved"; runId: string; route: TaskRoute; source?: RouteSource }
   | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number;
       /** action=used：这一轮一起带给助手的过往任务。 */ tasks?: TaskHistoryEntry[];
       /** action=used：这一轮所在的网站（「这里别用」按它记）；没有网页时省略。 */ hostname?: string;
@@ -416,10 +410,8 @@ export const TOOL_NAMES = [
   "accept_dialog",
   "dismiss_dialog",
   "dialog_info",
-  /** 走老路：给一个控件（@N 或选择器）写出角色 + 名字 + 所在区域（只读，没有模型可见工具）。 */
+  /** 提交前核对：给一个控件（@N 或选择器）写出角色 + 名字 + 所在区域（只读，没有模型可见工具）。 */
   "describe_target",
-  /** 走老路照走：在当前页按同一套描述找回控件，唯一时给出可执行的 @N（只读，没有模型可见工具）。 */
-  "find_route_target",
   "download_url",
   /** CAP-02C：原生 select 的 value/label/index、多选、清空（≠ 单值 fill）。 */
   "select_option",
@@ -659,11 +651,6 @@ export interface ToolContract {
     params: { tabId?: number; target: string };
     data: { target: RouteTarget | null };
   };
-  /** 不给 target 时只回当前网址；matches 是四项都相同的控件个数，恰好 1 个才给 ref。 */
-  find_route_target: {
-    params: { tabId?: number; target?: RouteTarget };
-    data: { url: string; ref: string | null; matches: number };
-  };
   /** 直接保存 HTTP(S) 链接，绕过 PDF 阅读器；完成只认 Chrome 下载状态。 */
   download_url: {
     params: { url: string; filename?: string; timeoutMs?: number; tabId?: number };
@@ -823,7 +810,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "task_history_restore" && !(validRequestId(msg.requestId) && isTaskHistoryEntry(msg.task))) return null;
 
-    if (msg.type === "task_history_route" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && (msg.route === null || isTaskRoute(msg.route)) && (msg.site === undefined || msg.site === true))) return null;
 
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
 
@@ -1029,7 +1015,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.habit !== undefined && event.habit !== true) return null;
     }
 
-    if (msg.type === "agent_event" && msg.event?.kind === "route_saved" && !(typeof msg.event.runId === "string" && isTaskRoute(msg.event.route) && (msg.event.source === undefined || isRouteSource(msg.event.source)))) return null;
 
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {
       const event = msg.event;
