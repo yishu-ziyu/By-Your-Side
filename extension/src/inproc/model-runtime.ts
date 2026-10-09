@@ -16,7 +16,7 @@ import { kimiCodingOAuth } from "@earendil-works/pi-ai/auth/oauth/kimi-coding";
 import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex";
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
 import type { ModelPort } from "../../../agent/src/agent-loop.js";
-import { retryWhenBusy } from "../../../shared/provider-busy.js";
+import { isTransientModelError, retryWhenBusy } from "../../../shared/provider-busy.js";
 import { measuredModelIds, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
 import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
@@ -281,6 +281,19 @@ function createCoreModelPort(
     },
     streamSimple: (model, context, options) => runtime.models.streamSimple(model, context, withHeaders(model, options)),
     // 记忆判断、目标核对这些短调用常和主模型同时发出：服务商回「忙」就等一下再试，不让判断悄悄失败。
-    completeSimple: (model, context, options) => retryWhenBusy(() => runtime.models.completeSimple(model, context, withHeaders(model, options)), options?.signal),
+    // 还是暂时出错（与主任务同一判断：401、额度用尽不算）时，有和它不同的备用模型就在备用上再问一次（R3）。
+    // 主任务只走 streamSimple，不经过这里，所以不会和主任务的换模型叠在一起。
+    async completeSimple(model, context, options) {
+      const reply = await retryWhenBusy(() => runtime.models.completeSimple(model, context, withHeaders(model, options)), options?.signal);
+      const backup = resolveOptional(backupConfig());
+
+      if (reply.stopReason !== "error" || options?.signal?.aborted || !backup || `${backup.provider}/${backup.id}` === `${model.provider}/${model.id}` || !isTransientModelError(reply)) return reply;
+
+      // 调用方按原模型定的思考档换了服务商可能被拒：备用取它能力表里最低的一档。
+      const [lowest] = thinkingProfile(backup).levels;
+      console.debug("[sideagent]", `side call switched to backup: ${model.provider}/${model.id} -> ${backup.provider}/${backup.id}`);
+
+      return runtime.models.completeSimple(backup, context, withHeaders(backup, { ...options, reasoning: lowest === "off" ? undefined : lowest }));
+    },
   };
 }
