@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>先说一句 · 交给你</title>
+<style>
+  :root {
+    --desk: #e8e6e0;
+    --ink: #141413; --ink-2: #5f5e58; --ink-3: #77756d;
+    --line: rgba(20,20,19,.10);
+    --ai: #2d4a86;
+    --you: #d2602a;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--desk); color: var(--ink); font: 13px/1.5 var(--font); display: flex; flex-direction: column; padding: 12px 14px 14px; gap: 10px; }
+  /* 预览控制条：不属于产品，压低存在感 */
+  .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: rgba(20,20,19,.06); border-radius: 999px; padding: 2px; }
+  .seg button, .ctl > button { font: 500 12.5px var(--font); border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(20,20,19,.10); }
+  .ctl > button { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .ctl > button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .ctl > button:disabled { opacity: .45; cursor: default; }
+  .ctl > button[hidden] { display: none; }
+  .narr { flex: 1 1 260px; min-width: 0; color: var(--ink-2); font-size: 12.5px; }
+  .narr b { color: var(--ink); font-weight: 600; }
+  .narr .new { display: inline-block; font: 600 10.5px/1 var(--font); color: #fff; background: var(--ai); border-radius: 4px; padding: 3px 5px; margin-right: 6px; vertical-align: 1px; }
+
+  /* 浏览器窗口 */
+  .win { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(20,20,19,.10), 0 10px 30px rgba(20,20,19,.10); position: relative; }
+  .tabbar { height: 38px; flex: none; background: #f1f0ec; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid rgba(20,20,19,.07); }
+  .lights { display: flex; gap: 6px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #d9d7d0; }
+  .url { flex: 1; max-width: 520px; height: 26px; border-radius: 999px; background: #fff; border: 1px solid rgba(20,20,19,.08); display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--ink-2); gap: 6px; }
+  .body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .vp { flex: 1 1 auto; min-width: 0; position: relative; overflow: auto; background: #f7f8fa; }
+  .side { width: 380px; flex: none; border-left: 1px solid rgba(20,20,19,.08); position: relative; }
+  .side iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* 页面四周的归属框：助手在做 = 蓝；归你 = 橙。只是一圈细框，不挡内容 */
+  .frame { position: absolute; inset: 0; pointer-events: none; border-radius: 0; box-shadow: inset 0 0 0 0 transparent; transition: box-shadow .3s ease; z-index: 3; }
+  .vp.agent .frame { box-shadow: inset 0 0 0 2px rgba(45,74,134,.55), inset 0 0 22px rgba(45,74,134,.12); }
+  .vp.yours .frame { box-shadow: inset 0 0 0 2px rgba(210,96,42,.6), inset 0 0 22px rgba(210,96,42,.10); }
+  /* 页面底部的状态胶囊（产品已有的白胶囊同款） */
+  .pill { position: sticky; left: 50%; bottom: 16px; float: left; margin-left: 50%; transform: translate(-50%, 8px); opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 4;
+    background: #fff; border: 1px solid rgba(20,20,19,.08); border-radius: 999px; padding: 5px 6px 5px 14px; font: 400 12.5px/1.5 var(--font); color: var(--ink-2); box-shadow: 0 2px 12px rgba(20,20,19,.10); white-space: nowrap; display: inline-flex; gap: 10px; align-items: center; }
+  .pill.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .pill b { color: var(--ink); font-weight: 600; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ai); }
+  .vp.yours .pill .dot { background: var(--you); }
+  .pill button { font: 500 12px var(--font); border: 1px solid rgba(20,20,19,.12); background: #fff; color: var(--ink); border-radius: 999px; padding: 3px 11px; cursor: pointer; }
+  .pill button.dark { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  /* 虚构网站：Nimbus 云开发者中心（不是任何真实品牌） */
+  .site { min-height: 100%; font: 14px/1.55 -apple-system, "PingFang SC", sans-serif; color: #1f2733; }
+  .site header { height: 56px; background: #fff; border-bottom: 1px solid #e6e9ef; display: flex; align-items: center; padding: 0 28px; gap: 22px; }
+  .site .logo { font-weight: 700; font-size: 16px; color: #27407a; display: flex; gap: 8px; align-items: center; }
+  .site .logo i { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #6c8cff, #27407a); }
+  .site nav { display: flex; gap: 18px; color: #5b6475; font-size: 13.5px; }
+  .site nav span.on { color: #1f2733; font-weight: 600; }
+  .site .acct { margin-left: auto; font-size: 12.5px; color: #5b6475; }
+  .site main { max-width: 720px; margin: 28px auto 90px; padding: 0 28px; }
+  .site h1 { font-size: 22px; margin: 0 0 6px; }
+  .site .sub { color: #5b6475; margin: 0 0 22px; }
+  .card { background: #fff; border: 1px solid #e3e7ee; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 4px; }
+  .credit-rows { margin: 12px 0 16px; display: grid; gap: 6px; }
+  .credit-row { display: flex; justify-content: space-between; color: #5b6475; font-size: 13px; border-top: 1px dashed #e6e9ef; padding-top: 6px; }
+  .credit-row b { color: #1f2733; }
+  .btn { font: 600 13.5px -apple-system, "PingFang SC", sans-serif; border: 0; border-radius: 8px; padding: 9px 18px; background: #27407a; color: #fff; cursor: pointer; }
+  .btn.ghost { background: #eef2fb; color: #27407a; }
+  .note { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #fff6e8; color: #8a5a12; font-size: 13px; display: none; }
+  .note.on { display: block; }
+  .ok { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #eaf7ee; color: #1d6b3a; font-size: 13px; display: none; }
+  .ok.on { display: block; }
+  .form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; margin-top: 14px; }
+  .form label { display: grid; gap: 5px; font-size: 12.5px; color: #5b6475; }
+  .form label.wide { grid-column: 1 / -1; }
+  .form input, .form select { font: 14px -apple-system, "PingFang SC", sans-serif; padding: 9px 11px; border: 1px solid #d3d9e3; border-radius: 8px; background: #fff; color: #1f2733; outline: none; }
+  .form input:focus { border-color: #6c8cff; box-shadow: 0 0 0 3px rgba(108,140,255,.18); }
+  .form input.need { border-color: #e2a35d; background: #fffaf3; }
+  .form .row-end { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+  .secure { font-size: 12px; color: #77809a; }
+  [data-view] { display: none; }
+  [data-view].on { display: block; }
+
+  /* 光标层 */
+  .cursors { position: absolute; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+  .cur { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity .2s; will-change: transform; }
+  .cur.on { opacity: 1; }
+  .cur svg { position: absolute; left: -4px; top: -4.7px; overflow: visible; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 3px rgba(20,20,19,.32)); }
+  .cur .lbl { position: absolute; left: 13px; top: 14px; display: inline-flex; gap: 7px; align-items: center; background: #fff; color: #141413; border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px; padding: 6px 12px 6px 9px; font: 400 13px/1.45 var(--font); white-space: nowrap; box-shadow: 0 4px 14px rgba(20,20,19,.10); opacity: 0; transition: opacity .16s; }
+  .cur .lbl.on { opacity: 1; }
+  .orb-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); box-shadow: 0 0 6px rgba(129,140,248,.45); }
+  .ripple { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; border: 2px solid var(--c, #141413); animation: rip .5s ease-out forwards; }
+  @keyframes rip { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.6); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .cur, .pill, .frame { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="ctl">
+    <div class="seg" role="group" aria-label="场景">
+      <button type="button" data-scene="new" aria-pressed="true">新：先说一句 + 交给你</button>
+      <button type="button" data-scene="empty" aria-pressed="false">新：没填就交还</button>
+      <button type="button" data-scene="old" aria-pressed="false">对照：现在的产品</button>
+    </div>
+    <button type="button" id="play" class="primary">▶ 播放</button>
+    <button type="button" id="fake-fill" hidden>模拟你填好并保存</button>
+    <button type="button" id="fake-continue" hidden>模拟你输入「继续」</button>
+    <button type="button" id="reset">重来</button>
+    <div class="narr" id="narr"></div>
+  </div>
+  <div class="win" id="win">
+    <div class="tabbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="url"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#77756d" stroke-width="2.4"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="url">console.nimbus-cloud.example/benefits</span></div>
+    </div>
+    <div class="body">
+      <div class="vp" id="vp">
+        <div class="frame"></div>
+        <div class="site">
+          <header><span class="logo"><i></i>Nimbus 云</span><nav><span id="nav-benefits" class="on">我的权益</span><span id="nav-billing">账单</span><span>项目</span></nav><span class="acct">ap.m@example.com</span></header>
+          <main>
+            <section data-view="benefits" class="on">
+              <h1>我的权益</h1>
+              <p class="sub">你的开发者订阅每月附带用量额度，领取后一年内有效。</p>
+              <div class="card">
+                <h2>每月开发者额度</h2>
+                <div class="credit-rows">
+                  <div class="credit-row"><span>2026 年 7 月</span><b>$10</b></div>
+                  <div class="credit-row"><span>2026 年 9 月</span><b>$10</b></div>
+                  <div class="credit-row"><span>2026 年 10 月</span><b>$10</b></div>
+                </div>
+                <button class="btn" id="claim">领取 $30</button>
+                <div class="note" id="claim-note">还没有可用的账单账号。领取前需要先 <a href="#" id="to-billing">设置账单</a>。</div>
+                <div class="ok" id="claim-ok">已领取 $30，已存入账单账号「我的账单」。</div>
+              </div>
+            </section>
+            <section data-view="billing">
+              <h1>设置账单账号</h1>
+              <p class="sub">用量超出额度后才会从这张卡扣费。</p>
+              <div class="card">
+                <h2>账单信息</h2>
+                <div class="form">
+                  <label class="wide">账号名称<input id="f-name" placeholder="例如：我的账单"></label>
+                                    <label class="wide">卡号<input id="f-card" inputmode="numeric" placeholder="1234 5678 9012 3456" autocomplete="off"></label>
+                  <label>有效期<input id="f-exp" placeholder="MM/YY" autocomplete="off"></label>
+                  <label>安全码<input id="f-cvc" placeholder="3 位数字" autocomplete="off"></label>
+                  <div class="row-end"><button class="btn" id="save">保存</button><span class="secure">🔒 卡信息直接发给 Nimbus，不经过助手</span></div>
+                </div>
+                <div class="note" id="save-note">请填写卡号、有效期和安全码。</div>
+                <div class="ok" id="save-ok">银行卡已保存。</div>
+              </div>
+            </section>
+          </main>
+        </div>
+        <div class="pill" id="pill"><span class="dot"></span><span id="pill-text"></span><button type="button" id="pill-btn"></button></div>
+      </div>
+      <div class="side"><iframe id="panel" title="侧栏"></iframe></div>
+    </div>
+    <div class="cursors" id="cursors">
+      <div class="cur" id="ai"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linejoin="round"/><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#2d4a86" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg><span class="lbl"><span class="orb-dot"></span><span class="t"></span></span></div>
+    </div>
+  </div>
+
+<script>
+const PANEL_HTML = __PANEL__;
+</script>
+<script src="preview.js"></script>
+</body>
+</html>
