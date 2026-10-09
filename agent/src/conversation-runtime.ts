@@ -227,6 +227,11 @@ export async function createConversationRuntime(
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error, msg.executionFact);
         break;
+      case "tool_waiting_user":
+        rpc.waitingForUser(msg.id, msg.waiting);
+        // 侧栏据此写「等你在网页上确认发送」（docs/evals/20261009-send-confirm.md R2）。
+        sendCurrent({ type: "agent_event", event: { kind: "send_confirm_wait", waiting: msg.waiting } });
+        break;
       default:
         break;
     }
