@@ -43,8 +43,8 @@ const suiteArg = process.argv.find((a) => a.startsWith("--suite="))?.slice(8);
 
 const suite = suiteArg === "sitegeist" || suiteArg === "voice-ideas" || suiteArg === "goal-check" ? suiteArg : "everyday";
 
-/** 回答之后还有目标核对，可能接着做：这两组要等更久才算结束。 */
-const settleLong = suite === "voice-ideas" || suite === "goal-check";
+/** 回答之后还有目标核对，可能接着做：这两组要等更久才算结束；别的组加 --settle 也这样等，量用户最后看到的结果。 */
+const settleLong = suite === "voice-ideas" || suite === "goal-check" || process.argv.includes("--settle");
 
 /** --repeat=N：每条用例连跑 N 次，各开新会话。 */
 const repeat = Math.max(1, Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 1);
