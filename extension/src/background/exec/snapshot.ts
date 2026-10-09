@@ -17,6 +17,7 @@ import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
+import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 
 /** 交给调用方的 snapshot 正文：页面内容与身份，不含采集预算字段。 */
 interface SnapshotBody {
@@ -231,8 +232,9 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   const nodes = result.nodes ?? [];
 
   if (nodes.length === 0) throw new Error("Accessibility.getFullAXTree 返回空树");
-  const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes));
-  const textEvidence=axTextEvidence(nodes);
+  const secret = await readSecretFields(tabId, nodes);
+  const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes), secret);
+  const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
 
   if(!decision){
     recordAxSnapshot(tabId, backendIds);
@@ -306,6 +308,85 @@ async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Pro
   }
 
   return ranges;
+}
+
+/** 可能装着用户输入的角色：只有它们去页面里查是不是密码、卡号、验证码这类栏。 */
+const FIELD_ROLES = new Set(["textbox", "searchbox", "spinbutton", "combobox"]);
+
+/**
+ * AX 树照抄输入框里的值（卡号、安全码、PIN 等），快照又会原样交给模型。这里按 backendDOMNodeId
+ * 到页面里查哪些栏是敏感栏，规则同 exec/input.ts 的 readFieldInPage。查不到的栏按敏感处理：宁可少给模型一个值。
+ */
+async function readSecretFields(tabId: number, nodes: readonly AxNodeLite[]): Promise<Set<number>> {
+  const ids = nodes.flatMap(n => !n.ignored && n.backendDOMNodeId !== undefined && FIELD_ROLES.has(n.role?.value ?? "") ? [n.backendDOMNodeId] : []);
+  const secret = new Set(ids);
+
+  if (!ids.length) return secret;
+  const objectGroup = `bys-secret-fields-${crypto.randomUUID()}`;
+
+  try {
+    await withTimeout((async () => {
+      const executionContextId = await isolatedReadContext(tabId);
+      const resolved = (await Promise.all(ids.map(id => sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: id, objectGroup, executionContextId })
+        .then(node => node.object?.objectId ? { id, objectId: node.object.objectId } : null, () => null))))
+        .filter((r): r is { id: number; objectId: string } => r !== null);
+
+      if (!resolved.length) return;
+
+      const response = await sendCommand<{ result?: { value?: boolean[] } }>(tabId, "Runtime.callFunctionOn", {
+        objectId: resolved[0]!.objectId,
+        functionDeclaration: `function(sensitiveName, ...elements){return elements.map(el => (${isSecretFieldInPage.toString()})(el, sensitiveName));}`,
+        arguments: [{ value: SENSITIVE_FIELD_NAME.source }, ...resolved.map(r => ({ objectId: r.objectId }))],
+        returnByValue: true,
+      });
+
+      response.result?.value?.forEach((isSecret, i) => { if (isSecret === false) secret.delete(resolved[i]!.id); });
+    })(), 3_000, "敏感栏判定 3 秒内没有返回");
+  } catch {
+    // 判定失败时所有输入栏都按敏感处理，快照照常输出，只是不带这些值。
+  } finally {
+    await sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
+
+  return secret;
+}
+
+/** 在页面里执行，保持自包含。规则与 exec/input.ts 的 readFieldInPage 相同，包括给密码栏打「曾经是 password」的标记。 */
+function isSecretFieldInPage(el: Element, sensitiveName: string): boolean {
+  // SAFETY: 只读 input/textarea 的通用属性；tagName 与 isContentEditable 决定是否可编辑。
+  const field = el as HTMLElement & HTMLInputElement;
+  const tag = field.tagName.toLowerCase();
+
+  if (!(tag === "input" || tag === "textarea" || field.isContentEditable)) return false;
+
+  if (tag === "input" && field.type === "password") field.setAttribute("data-bys-was-password", "");
+  const by = field.getAttribute("aria-labelledby");
+  const name = field.getAttribute("aria-label")
+    || (by ? by.split(/\s+/).map((id) => field.ownerDocument.getElementById(id)?.textContent ?? "").join(" ") : "")
+    || ("labels" in field && field.labels?.[0]?.textContent) || "";
+  const normalize = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-.]+/g, " ").toLowerCase();
+
+  return (tag === "input" && (field.type === "password" || field.hasAttribute("data-bys-was-password")))
+    || /one-time-code|cc-(number|csc|exp)/i.test(String(field.getAttribute("autocomplete") ?? ""))
+    || new RegExp(sensitiveName, "i").test([field.getAttribute("name"), field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].map((part) => normalize(String(part ?? ""))).join(" "));
+}
+
+/** 去掉敏感栏下面的节点（输入框里的文字就是值），给页面原文证据用。 */
+function withoutSecretText(nodes: readonly AxNodeLite[], secret: ReadonlySet<number>): AxNodeLite[] {
+  if (!secret.size) return [...nodes];
+  const byId = new Map(nodes.map(n => [n.nodeId, n]));
+  const drop = new Set<string>();
+  const stack = nodes.filter(n => n.backendDOMNodeId !== undefined && secret.has(n.backendDOMNodeId)).flatMap(n => n.childIds ?? []);
+
+  while (stack.length) {
+    const id = stack.pop()!;
+
+    if (drop.has(id)) continue;
+    drop.add(id);
+    stack.push(...(byId.get(id)?.childIds ?? []));
+  }
+
+  return nodes.filter(n => !drop.has(n.nodeId));
 }
 
 /** 旧实现：注入 content-snapshot.js（幂等）后调用 window.__sideagent.snapshot(scope)。 */

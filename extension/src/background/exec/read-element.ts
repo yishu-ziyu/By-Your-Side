@@ -7,6 +7,7 @@ import { parseTarget as sharedParseTarget, resolveArgs, resolveTargetSelector } 
 import { sendCommand } from "../debugger.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { getWorkingTabId, resolveReadableTab } from "../state.js";
+import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 
 const MAX_ELEMENT_CHARS = 1_000_000;
 
@@ -45,13 +46,13 @@ export function typedReadElementError(error: unknown): Error {
 }
 
 /** Serialized unchanged into either CDP or executeScript; no closure or page-supplied code. */
-function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied?: Element | null, readback?: {deadline:number} | null): ReadReply {
+function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied: Element | null, readback: {deadline:number} | null, sensitiveName: string): ReadReply {
   try {
     if(readback&&Date.now()>=readback.deadline)throw new Error('READBACK_TIMEOUT');
 
     // An adjunct read must receive the original CDP object, never re-query a locator.
     if(readback && !supplied?.isConnected)throw new Error('READBACK_NODE_DETACHED');
-    let element = supplied;
+    let element: Element | null | undefined = supplied;
 
     if (!element && kind === 'ref') {
       element = window.__sideagent?.refs?.get(ref ?? -1);
@@ -76,9 +77,16 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     const tagName = element.nodeType === 3 ? '#text' : String(element.tagName || '').toLowerCase();
     const hasValue = ['input', 'textarea', 'select', 'option'].includes(tagName);
 
-    // 密码/验证码字段的**值**不进模型上下文，也只报位数：这类字段读回来没有正当用途。
-    const secretField = tagName === 'input' && (el.type === 'password'
-      || /one-time-code|cc-(number|csc|exp)/i.test(String(el.getAttribute?.('autocomplete') ?? '')));
+    // 密码/验证码/卡号字段的**值**不进模型上下文，也只报位数：这类字段读回来没有正当用途。
+    // 规则同 exec/input.ts 的 readFieldInPage：type、autocomplete、字段名（sensitiveName 是 SENSITIVE_FIELD_NAME 的正则源码）、「曾经是 password」的标记。
+    const labelledBy = el.getAttribute?.('aria-labelledby');
+    const label = el.getAttribute?.('aria-label')
+      || (labelledBy ? labelledBy.split(/\s+/).map((id) => el.ownerDocument.getElementById(id)?.textContent ?? '').join(' ') : '')
+      || ('labels' in el && el.labels?.[0]?.textContent) || '';
+    const normalize = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_\-.]+/g, ' ').toLowerCase();
+    const secretField = (tagName === 'input' || tagName === 'textarea') && ((tagName === 'input' && (el.type === 'password' || el.hasAttribute('data-bys-was-password')))
+      || /one-time-code|cc-(number|csc|exp)/i.test(String(el.getAttribute?.('autocomplete') ?? ''))
+      || new RegExp(sensitiveName, 'i').test([el.getAttribute('name'), el.id, label, el.getAttribute('placeholder'), el.getAttribute('aria-label'), el.getAttribute('title')].map((part) => normalize(String(part ?? ''))).join(' ')));
 
     if(readback) {
       if(secretField)throw new Error('READBACK_PROTECTED');
@@ -352,7 +360,7 @@ async function readResolvedNode(
       exceptionDetails?: { exception?: { description?: string }; text?: string };
     }>(tabId, "Runtime.callFunctionOn", {
       objectId,
-      functionDeclaration: `function() { return (${readInPage.toString()})("css", null, null, ${JSON.stringify(properties)}, this, null); }`,
+      functionDeclaration: `function() { return (${readInPage.toString()})("css", null, null, ${JSON.stringify(properties)}, this, null, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}); }`,
       returnByValue: true,
     });
 
@@ -404,7 +412,7 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
       exceptionDetails?: { exception?: { description?: string }; text?: string };
     }>(tabId, "Runtime.callFunctionOn", {
       objectId,
-      functionDeclaration: `function() { return (${readInPage.toString()})("ref", ${ref}, null, ${JSON.stringify(properties)}, this, ${JSON.stringify(readback??null)}); }`,
+      functionDeclaration: `function() { return (${readInPage.toString()})("ref", ${ref}, null, ${JSON.stringify(properties)}, this, ${JSON.stringify(readback??null)}, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}); }`,
       returnByValue: true,
     });
 
@@ -424,7 +432,7 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
 async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<ElementRead> {
   check();
 
-  const args: Parameters<typeof readInPage> = [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null];
+  const args: Parameters<typeof readInPage> = [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null, SENSITIVE_FIELD_NAME.source];
 
   const injection: chrome.scripting.ScriptInjection<Parameters<typeof readInPage>, ReadReply> = {
     target: readback ? { tabId, documentIds: [readback.documentId] } : { tabId },

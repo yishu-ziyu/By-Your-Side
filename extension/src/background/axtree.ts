@@ -90,7 +90,7 @@ function staticTextOf(node: AxNodeLite): string | null {
 }
 
 /** 节点自身是否值得占一行（不含 ref 前缀）。 */
-function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: ReadonlyMap<number, InputRangeReadout>): string | null {
+function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>): string | null {
   const role = node.role?.value ?? "";
 
   if (DROP_SUBTREE_ROLES.has(role)) return null;
@@ -115,13 +115,16 @@ function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: Read
   if (name) parts.push(`"${clip(name, MAX_NAME)}"${fullPart}`);
   const value = node.value?.value;
   const hasValue = value !== undefined && value !== null && value !== "";
-
-  if (hasValue) parts.push(`value=${JSON.stringify(clip(String(value), MAX_NAME))}`);
   const range = node.backendDOMNodeId === undefined ? undefined : inputs.get(node.backendDOMNodeId);
+  // 密码、卡号、验证码这类栏（判定见 exec/snapshot.ts）：只说填了，不给值。
+  const hidden = node.backendDOMNodeId !== undefined && secret.has(node.backendDOMNodeId);
+
+  if (hidden) { if (hasValue || range?.value) parts.push("value=<filled, hidden>"); }
+  else if (hasValue) parts.push(`value=${JSON.stringify(clip(String(value), MAX_NAME))}`);
 
   if (range) {
     // AX 树不给时间/日期框的值与 min/max/step：用 DOM 读数补上，越界时直接标出浏览器的判定。
-    if (!hasValue && range.value) parts.push(`value=${JSON.stringify(clip(range.value, MAX_NAME))}`);
+    if (!hasValue && !hidden && range.value) parts.push(`value=${JSON.stringify(clip(range.value, MAX_NAME))}`);
     parts.push(rangeAttributes(range).trim());
 
     if (range.problem) parts.push(`invalid=${range.problem}`);
@@ -212,7 +215,7 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
 }
 
 /** 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。 */
-export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map()): AxTextResult {
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set()): AxTextResult {
   const byId = new Map<string, AxNodeLite>();
 
   for (const n of nodes) byId.set(n.nodeId, n);
@@ -245,7 +248,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
       return;
     }
 
-    const described = describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs);
+    const described = describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs, secret);
     const name = String(node.name?.value ?? "");
     const textPayload = staticTextOf(node);
     let childDepth = depth;
@@ -274,7 +277,10 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
       }
     }
 
-    for (const id of node.childIds ?? []) {
+    // 敏感栏的子节点（输入框里的文字）就是值本身，不展开。
+    const children = node.backendDOMNodeId !== undefined && secret.has(node.backendDOMNodeId) ? [] : node.childIds ?? [];
+
+    for (const id of children) {
       const child = byId.get(id);
 
       if (child) walk(child, childDepth);
