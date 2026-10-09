@@ -5,6 +5,7 @@
  */
 import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
 import { isSendLabel } from "../shared/mark-actions.js";
+import { readCurrentDocument } from "./exec/page-readiness.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
 export const SEND_CONFIRM_MS = 120_000;
@@ -41,6 +42,8 @@ const TEXT: Record<Exclude<Outcome, "send">, string> = {
 
 const REPEAT_TEXT = `用户这一轮已经在网页上选了「不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送；用户再说要发时才会重新问。`;
 
+const BUSY_TEXT = `这个网页上已经有一个「发送」在等用户确认：这次没有点，也没有再出确认框。等那个确认有了结果再说。${NO_OTHER_WAY}`;
+
 const PROGRAM_TEXT = "网页脚本程序里不能点「发送」：发送前要等用户在网页上确认，程序等不了，所以这次没有点。请改用单独的 click 工具点这个按钮。";
 
 /** 没执行的结果：sendDeclined 标记让宿主不把「用户没让发」（不发、停、离开、超时）当成工具出错去连续计数，也不进「换个办法试」。 */
@@ -49,6 +52,9 @@ function notSent(message: string, declined = false): Error {
 }
 
 const declined = new Set<string>();
+
+/** 正在等确认的标签页：同一页同时只问一个，第二个确认框会盖掉第一个，用户点了也回不到第一个等待。 */
+const pendingTabs = new Set<number>();
 
 const waitingPorts = new Map<string, { tabId: number; take: (port: chrome.runtime.Port) => void }>();
 
@@ -103,6 +109,14 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
   const key = guard.task === undefined ? null : `${guard.task}\u0000${tabId}\u0000${label.trim()}`;
 
   if (key && declined.has(key)) throw notSent(REPEAT_TEXT, true);
+
+  if (pendingTabs.has(tabId)) throw notSent(BUSY_TEXT, true);
+  pendingTabs.add(tabId);
+
+  try { return await askUser(tabId, guard, key); } finally { pendingTabs.delete(tabId); }
+}
+
+async function askUser(tabId: number, guard: SendGuard, key: string | null): Promise<boolean> {
   const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
   const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take }));
   let port: chrome.runtime.Port | null = null;
@@ -125,7 +139,11 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
     });
     shown.onDisconnect.addListener(() => done("left"));
     const removed = (closed: number) => { if (closed === tabId) done("left"); };
-    const updated = (changed: number, info: { url?: string; status?: string }) => { if (changed === tabId && (info.url !== undefined || info.status === "loading")) done("left"); };
+    // 网页自己改网址（pushState、#）不换文档，确认框还在；只有顶层文档换了才算离开。
+    const updated = (changed: number, info: { url?: string; status?: string }) => {
+      if (changed !== tabId || (info.url === undefined && info.status !== "loading")) return;
+      void readCurrentDocument(tabId).then(now => { if (now && now.documentId !== shown.sender?.documentId) done("left"); });
+    };
     chrome.tabs.onRemoved.addListener(removed);
     chrome.tabs.onUpdated.addListener(updated);
     const poll = setInterval(() => { if (guard.cancelled()) done("stopped"); }, POLL_MS);

@@ -13,9 +13,11 @@
  *   i) 助手用 clickCount 2 点「发送」：不点、不出确认框，0 条，结果写明不能连点。
  *   j) 按钮 title 是「按 Ctrl+Enter 发送」、文字是「发送」：照样出确认框。
  *   k) 用户点「不发」后，任务还在跑时插话「改好了，发吧」（同一个任务）：助手再点「发送」，确认框重新出现，用户确认后恰好 1 条。
+ *   m) 确认框在时，网页自己 pushState、改 #：确认框还在；用户点「发送」后恰好 1 条。
+ *   n) 同一条回复里并行点两次「发送」：只出一个确认框，第二次马上回「已有一个在等确认」；用户确认后恰好 1 条，第一次的结果是已发送。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
  * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
- * 「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 sendDeclined，c 被「连续三次」停下（反例结果见验收文件）。
+ * 「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 sendDeclined，c 被「连续三次」停下；网址一变就算离开，m 的确认框消失（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -62,6 +64,7 @@ const ASK = {
   e: "案例E：把草稿发出去。", f: "案例F：把草稿保存一下。", g: "案例G：把草稿发出去。",
   h: "案例H：把草稿发出去。", i: "案例I：把草稿发出去。", j: "案例J：把草稿发出去。",
   k: "案例K：把草稿发出去。", k2: "案例K2：草稿改好了，发吧。",
+  m: "案例M：把草稿发出去。", n: "案例N：把草稿发出去。",
 };
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
@@ -89,6 +92,9 @@ const model = await startScriptedModel([
   // 「不发」以后慢慢写一段话，留出插话的时间；插话进来以后按 K2 的步子走。
   { match: ASK.k, steps: [clickSend, { text: "K：用户没让发，草稿还留着。我先说明一下现在的情况，等你的下一步安排。".repeat(8), chunkDelayMs: 400 }] },
   { match: ASK.k2, steps: [clickSend, { text: "K2 完成。" }] },
+  { match: ASK.m, steps: [clickSend, { text: "M 完成。" }] },
+  // 两个工具结果把步数加 2：第 1 步是占位。
+  { match: ASK.n, steps: [{ tools: [clickSend.tool, clickSend.tool] }, { text: "N 完成。" }, { text: "N 完成。" }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -142,7 +148,7 @@ try {
 
     // 确认框正在收起时，节点可能在两次 CDP 调用之间被移走：当作已经没有确认框。
     try {
-      return { text: textOf(host).replace(/\s+/g, " ").trim(), host: await center(host), no: no ? await center(no) : null, yes: yes ? await center(yes) : null };
+      return { id: host.backendNodeId, text: textOf(host).replace(/\s+/g, " ").trim(), host: await center(host), no: no ? await center(no) : null, yes: yes ? await center(yes) : null };
     } catch { return null; }
   };
 
@@ -319,6 +325,34 @@ try {
   await sleep(1000);
   const toolK = toolsSince(from);
   check("k 「不发」后插话让发：确认框重新出现，确认后恰好 1 条", !!boxK2 && "yes" in boxK2 && sentBeforeK2Decision === 0 && sent() - sentBeforeK === 1 && toolK.some(t => t.includes("The user confirmed sending on the page")), { confirmAgain: !!boxK2 && "yes" in boxK2, sentBeforeK2Decision, sentDelta: sent() - sentBeforeK, tool: toolK });
+
+  // ── m：确认框在时，网页自己改网址（不换文档）──
+  from = toolTexts.length;
+  const sentBeforeM = sent();
+  await ask(ASK.m);
+  const boxM = await confirmShown();
+  const urlM = await rp.evaluate(work, 'history.pushState({ draft: 1 }, "", "/draft/123"); location.hash = "saved"; new Promise(r => setTimeout(() => r(location.href), 1500))');
+  const stillM = await confirmBox();
+  if (stillM?.yes) { await userClick(stillM.yes); await until(async () => sent() > sentBeforeM, 10_000, "改网址后确认，服务器收到发送"); }
+  await answered("M 完成。").catch(() => {});
+  await sleep(1000);
+  const toolM = toolsSince(from);
+  check("m 网页自己 pushState、改 #：确认框还在，确认后恰好 1 条", stillM?.id === boxM.id && sent() - sentBeforeM === 1 && toolM.some(t => t.includes("The user confirmed sending on the page")), { url: urlM as Json, stillShown: !!stillM, sentDelta: sent() - sentBeforeM, tool: toolM });
+
+  // ── n：同一条回复里并行点两次「发送」──
+  from = toolTexts.length;
+  const sentBeforeN = sent();
+  await ask(ASK.n);
+  const boxN = await confirmShown();
+  await sleep(2000);
+  const stillN = await confirmBox();
+  if (stillN?.yes) { await userClick(stillN.yes); await until(async () => sent() > sentBeforeN, 10_000, "并行点击后确认，服务器收到发送"); }
+  await answered("N 完成。").catch(() => {});
+  await sleep(1000);
+  const toolN = toolsSince(from);
+  const busyN = toolN.filter(t => t.includes("已经有一个「发送」在等用户确认")).length;
+  const sentN = toolN.filter(t => t.includes("The user confirmed sending on the page")).length;
+  check("n 并行点两次「发送」：一个确认框，第二次马上被拒，确认后恰好 1 条，第一次回已发送", stillN?.id === boxN.id && busyN === 1 && sentN === 1 && toolN.length === 2 && sent() - sentBeforeN === 1, { sameBox: stillN?.id === boxN.id, busyN, sentN, sentDelta: sent() - sentBeforeN, tool: toolN });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, measured, posts, toolTexts, notCovered: ["2 分钟没理自动不发（产品没有缩短等待的开关）", "真实网站", "按回车发送（第一版不拦）"], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
