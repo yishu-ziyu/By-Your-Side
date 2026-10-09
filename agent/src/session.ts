@@ -501,7 +501,7 @@ if(required.includes(key))candidates.set(key,attachment);
       const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools()) : null;
       let onRepeatedFailure: ConstructorParameters<typeof RepeatedToolFailurePolicy>[0] = () => {};
 
-      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure), () => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasRepeatRefused?.(id) === true);
+      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure), () => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasRepeatRefused?.(id) === true || rpc.wasSendDeclined?.(id) === true);
 
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
 
@@ -2193,8 +2193,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
 
-          // 被拦下的重复不是“试过且失败”的做法，不写进催促模型换方法的清单。
-          if (!this.rpc?.wasRepeatRefused?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
+          // 被拦下的重复、用户没让发送，都不是“试过且失败”的做法，不写进催促模型换方法的清单。
+          if (!this.rpc?.wasRepeatRefused?.(event.toolCallId) && !this.rpc?.wasSendDeclined?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
           // 被插话作废的旧步骤没执行，不算失败的一步（同下面 tallyPageChange 的判断）。
           if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && (!this.runSteps.hasProgramSteps(event.toolCallId) || (event.isError && !this.runSteps.hasProgramFailure(event.toolCallId)))) this.runSteps.note(this.deliveryRunId(), event.toolName, event.isError, !!this.rpc?.wasRepeatRefused?.(event.toolCallId), this.toolArgs.get(event.toolCallId) ?? {});
           this.runSteps.forgetProgram(event.toolCallId);

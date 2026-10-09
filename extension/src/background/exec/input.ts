@@ -14,7 +14,8 @@ import { axBackendNodeFor, isAxRef } from "../axstate.js";
 import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
-import { resolveImplicitMarkActions } from "../../shared/mark-actions.js";
+import { isSendLabel, resolveImplicitMarkActions } from "../../shared/mark-actions.js";
+import { confirmSendIfNeeded, type SendGuard } from "../send-confirm.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, collectEffect } from "./effect.js";
@@ -607,7 +608,7 @@ type KeyEventParams = {
   text?: string;
 };
 
-type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog };
+type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog; sendConfirmed?: true };
 
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   try {
@@ -778,53 +779,72 @@ export async function cancelMarkHold(sessionId: string = LEAD_SESSION_ID): Promi
   await releaseHold(sessionId);
 }
 
-/** 光标名牌上显示的目标名：先取页面上元素自己的名字，读不到再用模型写的 label。 */
-async function nameOfClickTarget(tabId: number, params: ClickParams): Promise<string> {
-  return (await pageNameOfClickTarget(tabId, params)) || (params.label?.trim() ?? "");
+/**
+ * plate：光标名牌上显示的目标名，先取页面上元素自己的名字，读不到再用模型写的 label。
+ * button：点下去那个按钮自己的文字（表单里的按钮也取原文，不换成「提交表单」），只用来判断是不是「发送」；不取模型写的 label。
+ * 按坐标点时读落点上的元素，所以换成坐标也绕不过发送确认。
+ */
+async function namesOfClickTarget(tabId: number, params: ClickParams, point: [number, number] | undefined): Promise<{ plate: string; button: string }> {
+  const names = await pageNamesOfClickTarget(tabId, params, point);
+
+  return { plate: names.plate || (params.label?.trim() ?? ""), button: names.button };
 }
 
-async function pageNameOfClickTarget(
+async function pageNamesOfClickTarget(
   tabId: number,
   params: ClickParams,
-): Promise<string> {
+  point: [number, number] | undefined,
+): Promise<{ plate: string; button: string }> {
   const target = params.target;
-
-  if (!target) return "";
-  const ref = parseRef(target);
-  const backendNodeId = axBackendNodeFor(tabId, ref);
+  const none = { plate: "", button: "" };
 
   const read = `function() {
     const el = this;
-    if (el.form && (el.type === "submit" || el.type === "image")) return "提交表单";
-    const t = (el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title"))) || el.innerText || el.textContent || "";
-    return String(t).trim().replace(/\\s+/g, " ").slice(0, 40);
+    const text = n => String((n.getAttribute && (n.getAttribute("aria-label") || n.getAttribute("title"))) || n.innerText || n.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 40);
+    const owner = (el.closest && el.closest('button,[role="button"],input[type="submit"],input[type="button"],a')) || el;
+    const button = String((owner.getAttribute && (owner.getAttribute("aria-label") || owner.getAttribute("title"))) || owner.innerText || owner.value || owner.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 40);
+    if (el.form && (el.type === "submit" || el.type === "image")) return { plate: "提交表单", button };
+    return { plate: text(el), button };
   }`;
 
-  try {
-    if (backendNodeId !== undefined) {
-      return (await callOnBackendNode<string>(tabId, backendNodeId, read)) ?? "";
+  const readInPage = (t: string | null, px: number, py: number): { plate: string; button: string } => {
+    let el: Element | null | undefined;
+
+    if (t !== null) el = window.__sideagent?.dom?.resolve(t);
+    else {
+      el = document.elementFromPoint(px, py);
+
+      // 开放的 shadow DOM 里继续往下找落点；closed shadow 找不进去。
+      while (el?.shadowRoot) {
+        const inner = el.shadowRoot.elementFromPoint(px, py);
+
+        if (!inner || inner === el) break;
+        el = inner;
+      }
     }
+
+    if (!el) return { plate: "", button: "" };
+    const label = (n: Element, withValue: boolean) => String(n.getAttribute("aria-label") || n.getAttribute("title") || (n as HTMLElement).innerText || (withValue ? (n as HTMLInputElement).value : "") || n.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40);
+    const owner = el.closest('button,[role="button"],input[type="submit"],input[type="button"],a') ?? el;
+    const button = label(owner, true);
+
+    if ("form" in el && el.form && "type" in el && (el.type === "submit" || el.type === "image")) return { plate: "提交表单", button };
+
+    return { plate: t === null ? "" : label(el, false), button };
+  };
+
+  try {
+    if (target) {
+      const backendNodeId = axBackendNodeFor(tabId, parseRef(target));
+
+      if (backendNodeId !== undefined) return (await callOnBackendNode<{ plate: string; button: string }>(tabId, backendNodeId, read)) ?? none;
+    } else if (!point) return none;
 
     await ensureDomOps(tabId);
 
-    return await callDom(
-      tabId,
-      (t: string): string => {
-        const el = window.__sideagent?.dom?.resolve(t);
-
-        if (!el) return "";
-        if ("form" in el && el.form && "type" in el && (el.type === "submit" || el.type === "image")) return "提交表单";
-
-        const raw =
-          (el.getAttribute("aria-label") || el.getAttribute("title") || (el as HTMLElement).innerText || el.textContent || "") +
-          "";
-
-        return raw.trim().replace(/\s+/g, " ").slice(0, 40);
-      },
-      [target],
-    );
+    return await callDom(tabId, readInPage, [target ?? null, point?.[0] ?? 0, point?.[1] ?? 0]);
   } catch {
-    return "";
+    return none;
   }
 }
 
@@ -1241,6 +1261,7 @@ export async function click(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+  sendGuard?: SendGuard,
 ): Promise<ClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1265,10 +1286,12 @@ export async function click(
 
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
-  const name = await nameOfClickTarget(tabId, params);
+  const { plate: name, button: buttonName } = await namesOfClickTarget(tabId, params, point);
 
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId, beforeDispatch);
+  // 「发送」按钮：先在网页上等用户确认（页面先切到前台，用户才看得见）。用户点「发送」后，下面照常重新定位、核对命中再点。
+  const sendConfirmed = await confirmSendIfNeeded(tabId, buttonName, sendGuard);
 
   let [x, y] = point!;
 
@@ -1366,7 +1389,7 @@ export async function click(
           pressing.catch(() => {});
           void endCursorAction(tabId, cid, actionId, "done", [x, y]);
 
-          return { clicked: true, dialog: settled.dialog };
+          return { clicked: true, dialog: settled.dialog, ...(sendConfirmed ? { sendConfirmed: true as const } : {}) };
         }
 
         effect = settled.effect;
@@ -1432,7 +1455,7 @@ export async function click(
             fallbackClick.catch(() => {});
             void endCursorAction(tabId, cid, actionId, "done", [x, y]);
 
-            return { clicked: true, dialog: fallbackSettled.dialog };
+            return { clicked: true, dialog: fallbackSettled.dialog, ...(sendConfirmed ? { sendConfirmed: true as const } : {}) };
           }
 
           fallbackEffect = fallbackSettled.effect;
@@ -1443,6 +1466,8 @@ export async function click(
         const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
         if (fallbackEffect) clicked.effect = fallbackEffect;
+
+        if (sendConfirmed) clicked.sendConfirmed = true;
 
         return clicked;
       }
@@ -1459,6 +1484,8 @@ export async function click(
     if (effect) clicked.effect = effect;
 
     if (newTab) clicked.newTab = newTab;
+
+    if (sendConfirmed) clicked.sendConfirmed = true;
 
     return clicked;
   } catch (error) {
@@ -1501,7 +1528,10 @@ export async function doubleClick(
   const { point } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
-  const name = await nameOfClickTarget(tabId, params);
+  const { plate: name, button: buttonName } = await namesOfClickTarget(tabId, params, point);
+
+  // 双击「发送」可能发两次，也不经过发送确认：不点，改用 click。
+  if (isSendLabel(buttonName)) throw notExecuted(new Error("「发送」按钮不能双击：双击可能发出两次，也不会先问用户。这次没有点；要发送请用 click 工具单击，扩展会先在网页上问用户。"));
 
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);

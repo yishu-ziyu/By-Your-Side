@@ -227,6 +227,9 @@ export async function createConversationRuntime(
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error, msg.executionFact);
         break;
+      case "tool_waiting_user":
+        rpc.waitingForUser(msg.id, msg.waiting);
+        break;
       default:
         break;
     }

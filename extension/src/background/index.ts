@@ -69,6 +69,7 @@ import { describeTarget, findRouteTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
+import type { SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
 import { PendingControlTimeout } from "./control-pending.js";
@@ -1355,6 +1356,8 @@ async function executeToolCall(
       dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeDispatch),
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
       fetch:p=>fetchUrl(p,{beforeDispatch}),
+      // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子（docs/evals/20261009-send-confirm.md）。
+      click:(p,s)=>click(p,s,undefined,sendGuard),
     };
 
     const handler = name === "observe_page"
@@ -1366,6 +1369,18 @@ async function executeToolCall(
     if (programId && gate.isSessionBlocked(sid)) throw new Error("页面现在归你，操作未执行");
     setSessionClaimBlocked(sid, gate.isSessionBlocked(sid));
     const operationGeneration = gate.gen;
+
+    // 等用户确认「发送」时：停、接管、控制轮次变了都马上结束等待，按「不发」处理。
+    const sendGuard: SendGuard = {
+      inProgram: !!programId,
+      task: runId ?? conversationId,
+      cancelled: () => {
+        try { checkIdentity(); } catch { return true; }
+
+        return gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid));
+      },
+      waiting: on => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on }); },
+    };
 
     const execute = async () => {
       checkIdentity();
@@ -1412,6 +1427,9 @@ async function executeToolCall(
   } catch (e) {
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
+
+    // 用户不让发：宿主据此不把它当成连续出错（docs/evals/20261009-send-confirm.md）。
+    if (e && typeof e === "object" && "sendDeclined" in e) result.data = { sendDeclined: true };
   }
 
   // 已完成写操作的身份跨 SW 重启保留，重复投递不会二次落地。

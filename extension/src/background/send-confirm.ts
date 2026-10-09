@@ -1,0 +1,147 @@
+/**
+ * 点「发送」前停下，在网页上问用户（docs/evals/20261009-send-confirm.md R1）。
+ * 发出去的消息收不回来，所以只有用户在网页上点「发送」才放行；「不发」、停、接管、离开网页、2 分钟没理都不点。
+ * 确认框画在网页的 closed shadow 里，带 overlay 标记：助手的点击落在上面会被 assertNotOwnOverlay 拒绝。
+ */
+import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
+import { isSendLabel } from "../shared/mark-actions.js";
+
+/** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
+export const SEND_CONFIRM_MS = 120_000;
+
+const PORT_PREFIX = "send-confirm:";
+
+/** 确认框没在这么久内连上后台，就当没显示出来，不点。 */
+const SHOW_MS = 5_000;
+
+const POLL_MS = 150;
+
+export interface SendGuard {
+  /** 网页脚本程序（browser_run）里的点击：程序有总期限，不能在里面等用户。 */
+  inProgram: boolean;
+  /** 同一任务的身份：用户说过「不发」的按钮，这一轮不再问。 */
+  task: string;
+  /** 停、接管、控制轮次变了：等确认要马上结束。 */
+  cancelled(): boolean;
+  /** 告诉宿主这次调用正在等用户（放宽期限）或已经不等了（恢复普通期限）。 */
+  waiting(on: boolean): void;
+}
+
+type Outcome = "send" | "decline" | "stopped" | "left" | "timeout";
+
+const TEXT: Record<Exclude<Outcome, "send">, string> = {
+  decline: "用户在网页上选了「不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮，也不要换别的办法发出去；在回复里告诉用户没有发送。",
+  stopped: "用户停下了任务或接管了页面：没有点「发送」，草稿还留在页面上。",
+  left: "用户离开或关掉了这个网页：没有点「发送」。",
+  timeout: "用户 2 分钟内没有在网页上确认：没有点「发送」，草稿还留在页面上。在回复里告诉用户还没发送，等用户自己决定。",
+};
+
+const REPEAT_TEXT = "用户这一轮已经在网页上选了「不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮；在回复里告诉用户没有发送。";
+
+const PROGRAM_TEXT = "网页脚本程序里不能点「发送」：发送前要等用户在网页上确认，程序等不了，所以这次没有点。请改用单独的 click 工具点这个按钮。";
+
+/** 没执行的结果：sendDeclined 标记让宿主不把「用户不让发」当成工具出错去连续计数。 */
+function notSent(message: string, declined = false): Error {
+  return Object.assign(new Error(message), { executionFact: "not_executed" as const }, declined ? { sendDeclined: true as const } : {});
+}
+
+const declined = new Set<string>();
+
+const waitingPorts = new Map<string, { tabId: number; take: (port: chrome.runtime.Port) => void }>();
+
+chrome.runtime.onConnect.addListener(port => {
+  if (!port.name.startsWith(PORT_PREFIX)) return;
+  const waiting = waitingPorts.get(port.name);
+
+  // 只认这次确认框所在标签页的顶层文档。
+  if (!waiting || port.sender?.id !== chrome.runtime.id || port.sender.tab?.id !== waiting.tabId || port.sender.frameId !== 0) { port.disconnect(); return; }
+  waitingPorts.delete(port.name);
+  waiting.take(port);
+});
+
+/** 在页面 ISOLATED world 里画确认框；序列化进页面，必须自包含。 */
+function showSendConfirm(attr: string, kind: string, portName: string): void {
+  document.querySelectorAll(`[${attr}="${kind}"]`).forEach(node => node.remove());
+  const host = document.createElement("div");
+  host.setAttribute(attr, kind);
+  host.style.cssText = "all:initial;display:block;position:fixed;z-index:2147483647;left:50%;bottom:24px;transform:translateX(-50%)";
+  const root = host.attachShadow({ mode: "closed" });
+  root.innerHTML = `<style>
+.cap{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:99px;background:rgba(20,20,19,.92);color:#fff;font:14px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+button{all:unset;box-sizing:border-box;padding:6px 14px;border-radius:99px;background:rgba(255,255,255,.14);color:#fff;font-weight:600;cursor:pointer}
+button:hover{background:rgba(255,255,255,.22)}
+button.yes{background:#fff;color:#141413}
+button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
+</style><div class="cap" role="alertdialog" aria-label="要发送吗？"><span>要发送吗？</span><button class="no" type="button">不发</button><button class="yes" type="button" tabindex="-1">发送</button></div>`;
+  const port = chrome.runtime.connect({ name: portName });
+  const close = () => host.remove();
+  port.onDisconnect.addListener(close);
+
+  // 「发送」只认真实的鼠标点击：不进 Tab 顺序，键盘触发（detail 为 0）不算，防止按键把它按下去。
+  const answer = (choice: "send" | "decline") => (event: MouseEvent) => {
+    if (!event.isTrusted || (choice === "send" && event.detail === 0)) return;
+    close();
+    port.postMessage({ choice });
+  };
+
+  root.querySelector<HTMLButtonElement>(".no")!.addEventListener("click", answer("decline"));
+  root.querySelector<HTMLButtonElement>(".yes")!.addEventListener("click", answer("send"));
+  (document.body ?? document.documentElement).appendChild(host);
+}
+
+/**
+ * 按钮名以「发送 / Send」开头时，先在网页上问用户；用户点「发送」才返回 true，其余结局都抛「没执行」。
+ * 名字不是发送的按钮直接返回 false，不多等一步。
+ */
+export async function confirmSendIfNeeded(tabId: number, label: string, guard: SendGuard | undefined): Promise<boolean> {
+  if (!guard || !isSendLabel(label)) return false;
+
+  if (guard.inProgram) throw notSent(PROGRAM_TEXT);
+  const key = `${guard.task}\u0000${tabId}\u0000${label.trim()}`;
+
+  if (declined.has(key)) throw notSent(REPEAT_TEXT, true);
+  const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
+  const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take }));
+  let port: chrome.runtime.Port | null = null;
+
+  try {
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showSendConfirm, args: [OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM, portName] });
+    port = await Promise.race([connected, new Promise<null>(done => setTimeout(() => done(null), SHOW_MS))]);
+  } catch { /* 页面不让注入：下面按没显示出来处理 */ }
+
+  waitingPorts.delete(portName);
+
+  if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。");
+  const shown = port;
+  guard.waiting(true);
+  const cleanups: Array<() => void> = [];
+
+  const outcome = await new Promise<Outcome>(done => {
+    shown.onMessage.addListener((message: { choice?: unknown }) => {
+      if (message?.choice === "send" || message?.choice === "decline") done(message.choice);
+    });
+    shown.onDisconnect.addListener(() => done("left"));
+    const removed = (closed: number) => { if (closed === tabId) done("left"); };
+    const updated = (changed: number, info: { url?: string; status?: string }) => { if (changed === tabId && (info.url !== undefined || info.status === "loading")) done("left"); };
+    chrome.tabs.onRemoved.addListener(removed);
+    chrome.tabs.onUpdated.addListener(updated);
+    const poll = setInterval(() => { if (guard.cancelled()) done("stopped"); }, POLL_MS);
+    const timer = setTimeout(() => done("timeout"), SEND_CONFIRM_MS);
+    cleanups.push(() => { chrome.tabs.onRemoved.removeListener(removed); chrome.tabs.onUpdated.removeListener(updated); clearInterval(poll); clearTimeout(timer); });
+  });
+
+  for (const cleanup of cleanups) cleanup();
+  shown.disconnect();
+  guard.waiting(false);
+
+  if (outcome === "send" && guard.cancelled()) throw notSent(TEXT.stopped);
+
+  if (outcome === "send") return true;
+
+  if (outcome === "decline") {
+    if (declined.size >= 200) declined.delete(declined.values().next().value!);
+    declined.add(key);
+  }
+
+  throw notSent(TEXT[outcome], outcome === "decline");
+}

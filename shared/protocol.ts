@@ -255,7 +255,9 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "retry_after_error"; key?: string }
   /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
   | { type: "model_key_test"; requestId: string; key: string }
-  | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact });
+  | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact }
+  /** 点「发送」前在网页上等用户确认（docs/evals/20261009-send-confirm.md）：waiting 时宿主放宽这次调用的期限，结束时恢复普通期限。 */
+  | { type: "tool_waiting_user"; id: string; waiting: boolean });
 
 export interface ConversationEnvelope { conversationId?: string }
 
@@ -571,7 +573,7 @@ export interface ToolContract {
     };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。
      *  dialog = 点击后页面弹出了原生对话框（点击已送达，页面等对话框处理）；此时不等效果采样。 */
-    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
+    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string }; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true };
   };
   /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2。 */
   double_click: {

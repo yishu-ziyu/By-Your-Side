@@ -11,6 +11,12 @@ export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 
 export const SLOW_TOOL_TIMEOUT_MS = 60_000;
 
+/**
+ * 扩展报告这次点击在网页上等用户确认「发送」时放宽到的期限（docs/evals/20261009-send-confirm.md）。
+ * 比扩展自己的 2 分钟等待长，所以总是扩展先回「没点」，不会在这边记成结果未知。
+ */
+export const USER_CONFIRM_TIMEOUT_MS = 130_000;
+
 /** navigate/screenshot 涉及页面加载或渲染，放宽到 60s（见 docs/protocol.md）。 */
 const SLOW_TOOLS: ReadonlySet<string> = new Set(["navigate", "screenshot"]);
 
@@ -40,6 +46,8 @@ interface Pending {
   startedAt: number;
   sessionId?: string;
   cleanup?: () => void;
+  /** 期限到了要做的事；重新计时（等用户确认）时复用。 */
+  onTimeout: () => void;
 }
 
 export interface FillReadbackTarget {
@@ -67,6 +75,8 @@ interface DispatchedCall {
   prepareFillReadback?: boolean;
   readTarget?: FillReadbackTarget;
   fillTarget?: FillReadbackTarget;
+  /** 用户在网页上没让发送：没执行，也不算工具出错。 */
+  sendDeclined?: true;
 }
 
 export type LateResultHandler = (info: {
@@ -259,6 +269,22 @@ export class ToolRpc {
     return this.dispatched.get(id)?.state === "repeat_refused";
   }
 
+  wasSendDeclined(id: string): boolean {
+    return this.dispatched.get(id)?.sendDeclined === true;
+  }
+
+  /**
+   * 扩展报告这次调用在网页上等用户确认（waiting），或已经不等了：重新计时。
+   * 等的时候放宽到 USER_CONFIRM_TIMEOUT_MS；不等以后按普通期限从现在起算，卡住的点击照旧超时。
+   */
+  waitingForUser(id: string, waiting: boolean): void {
+    const entry = this.pending.get(id);
+
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(entry.onTimeout, waiting ? USER_CONFIRM_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS);
+  }
+
   /** 组合调用进入执行时更新事实（例如 browser_run 整体）。 */
   noteToolFact(id: string, fact: ToolExecutionFact): void {
     const entry = this.dispatched.get(id);
@@ -331,7 +357,7 @@ export class ToolRpc {
         reject(Object.assign(new Error('Readback cancelled'), {executionFact:'unknown'}));
       };
 
-      const timer = setTimeout(() => {
+      const onTimeout = () => {
         this.pending.get(id)?.cleanup?.();
         this.pending.delete(id);
         const disp = this.dispatched.get(id);
@@ -344,9 +370,11 @@ export class ToolRpc {
         const err: ToolExecutionError = new Error(`Tool call "${name}" timed out after ${timeout}ms`);
         err.executionFact = "unknown";
         reject(err);
-      }, timeout);
+      };
 
-      const pendingEntry: Pending = { resolve, reject, timer, name, startedAt: Date.now(), sessionId };
+      const timer = setTimeout(onTimeout, timeout);
+
+      const pendingEntry: Pending = { resolve, reject, timer, name, startedAt: Date.now(), sessionId, onTimeout };
 
       if (signal) pendingEntry.cleanup = () => signal.removeEventListener('abort', abort);
       this.pending.set(id, pendingEntry);
@@ -475,6 +503,8 @@ export class ToolRpc {
     if (disp) {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
+
+      if (!ok && fact === "not_executed" && (data as { sendDeclined?: unknown } | undefined)?.sendDeclined === true) disp.sendDeclined = true;
 
       if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
 
