@@ -212,7 +212,7 @@ export class BrowserAgentSession {
 
     if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
     else {
-      if (!step.error?.startsWith(STALE_STEP_MESSAGE)) this.runSteps.note(this.deliveryRunId(), step.name, !!step.error, !!this.rpc?.wasRepeatRefused?.(step.id), step.params, step.parentId);
+      if (!step.error?.startsWith(STALE_STEP_MESSAGE)) this.runSteps.note(this.deliveryRunId(), step.name, !!step.error, !!this.rpc?.wasRepeatRefused?.(step.id), !!this.rpc?.wasSendDeclined?.(step.id), step.params, step.parentId);
       this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
         executionFact:this.rpc?.getExecutionFact(step.id),
         resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX)),
@@ -501,7 +501,7 @@ if(required.includes(key))candidates.set(key,attachment);
       const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools()) : null;
       let onRepeatedFailure: ConstructorParameters<typeof RepeatedToolFailurePolicy>[0] = () => {};
 
-      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure), () => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasRepeatRefused?.(id) === true);
+      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure), () => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasRepeatRefused?.(id) === true || rpc.wasSendDeclined?.(id) === true);
 
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
 
@@ -2193,15 +2193,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
 
-          // 被拦下的重复不是“试过且失败”的做法，不写进催促模型换方法的清单。
-          if (!this.rpc?.wasRepeatRefused?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
+          // 被拦下的重复、用户没让发送，都不是“试过且失败”的做法，不写进催促模型换方法的清单。
+          if (!this.rpc?.wasRepeatRefused?.(event.toolCallId) && !this.rpc?.wasSendDeclined?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
           // 被插话作废的旧步骤没执行，不算失败的一步（同下面 tallyPageChange 的判断）。
-          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && (!this.runSteps.hasProgramSteps(event.toolCallId) || (event.isError && !this.runSteps.hasProgramFailure(event.toolCallId)))) this.runSteps.note(this.deliveryRunId(), event.toolName, event.isError, !!this.rpc?.wasRepeatRefused?.(event.toolCallId), this.toolArgs.get(event.toolCallId) ?? {});
+          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && (!this.runSteps.hasProgramSteps(event.toolCallId) || (event.isError && !this.runSteps.hasProgramFailure(event.toolCallId)))) this.runSteps.note(this.deliveryRunId(), event.toolName, event.isError, !!this.rpc?.wasRepeatRefused?.(event.toolCallId), !!this.rpc?.wasSendDeclined?.(event.toolCallId), this.toolArgs.get(event.toolCallId) ?? {});
           this.runSteps.forgetProgram(event.toolCallId);
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
-          // 被插话作废的旧步骤没碰页面，不算「改页面却没生效」（页面脚本被拦、一步没走的仍算）。
-          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE))) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
+          // 被插话作废的旧步骤、用户没让发送的点击都没碰页面，不算「改页面却没生效」（页面脚本被拦、一步没走的仍算）。
+          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && !this.rpc?.wasSendDeclined?.(event.toolCallId)) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
 
           emit({
             kind: "tool_end",
@@ -2211,6 +2211,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
             ...(event.isError && this.rpc?.wasRepeatRefused?.(event.toolCallId) ? { repeatRefused: true as const } : {}),
+            ...(event.isError && this.rpc?.wasSendDeclined?.(event.toolCallId) ? { sendDeclined: true as const } : {}),
+            ...(!event.isError && (event.result?.details as { sendConfirmed?: unknown } | undefined)?.sendConfirmed === true ? { sendConfirmed: true as const } : {}),
             ...(event.isError ? {} : fieldReadbackOf(event.result?.details)),
           });
           this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);

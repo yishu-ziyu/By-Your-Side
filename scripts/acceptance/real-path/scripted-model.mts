@@ -17,7 +17,8 @@ type ToolCall = { name: string; args: JsonRecord };
  */
 export type TextStep = { text: string; delayMs?: number; chunkDelayMs?: number; thenTool?: ToolCall; reasoning?: string };
 
-export type Step = TextStep | { tool: ToolCall; delayMs?: number } | { status: number; body: string };
+/** tools：同一条回复里并行调用几个工具；每个工具结果都让后面的步数加一，所以它后面要按工具个数留占位步。 */
+export type Step = TextStep | { tool: ToolCall; delayMs?: number } | { tools: ToolCall[]; delayMs?: number } | { status: number; body: string };
 
 export type Rule = { match: string; steps: Step[] };
 
@@ -53,7 +54,10 @@ const chunk = (delta: JsonRecord, finish: string | null = null) => `data: ${JSON
   choices: [{ index: 0, delta, finish_reason: finish }],
 })}\n\n`;
 
-async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall }, callId: string, record?: ModelRequest): Promise<void> {
+const toolCalls = (step: { tool: ToolCall } | { tools: ToolCall[] }, callId: string) => ("tools" in step ? step.tools : [step.tool])
+  .map((tool, index) => ({ index, id: index ? `${callId}_${index}` : callId, type: "function", function: { name: tool.name, arguments: JSON.stringify(tool.args) } }));
+
+async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall } | { tools: ToolCall[] }, callId: string, record?: ModelRequest): Promise<void> {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
   res.write(chunk({ role: "assistant", content: "" }));
 
@@ -72,7 +76,7 @@ async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall }, 
       res.write(chunk({}, "tool_calls"));
     } else res.write(chunk({}, "stop"));
   } else {
-    res.write(chunk({ tool_calls: [{ index: 0, id: callId, type: "function", function: { name: step.tool.name, arguments: JSON.stringify(step.tool.args) } }] }));
+    res.write(chunk({ tool_calls: toolCalls(step, callId) }));
     res.write(chunk({}, "tool_calls"));
   }
 
@@ -80,9 +84,9 @@ async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall }, 
   res.end("data: [DONE]\n\n");
 }
 
-function json(res: ServerResponse, step: TextStep | { tool: ToolCall }, callId: string): void {
+function json(res: ServerResponse, step: TextStep | { tool: ToolCall } | { tools: ToolCall[] }, callId: string): void {
   const message = "text" in step ? { role: "assistant", content: step.text }
-    : { role: "assistant", content: null, tool_calls: [{ id: callId, type: "function", function: { name: step.tool.name, arguments: JSON.stringify(step.tool.args) } }] };
+    : { role: "assistant", content: null, tool_calls: toolCalls(step, callId).map(({ index: _index, ...call }) => call) };
 
   res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
     id: "chatcmpl-scripted", object: "chat.completion", created: 0, model: "demo-model",

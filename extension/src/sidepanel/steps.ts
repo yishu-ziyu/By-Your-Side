@@ -331,6 +331,17 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
   return done;
 }
 
+/** 用户没让发送的那一步：按扩展给助手的原因说一句人话，不当成失败（docs/evals/20261009-send-confirm.md R2）。 */
+export function sendDeclinedText(resultText: string): string {
+  if (resultText.includes("停下了任务")) return "没发：你停下了";
+
+  if (resultText.includes("离开或关掉")) return "没发：你离开了网页";
+
+  if (resultText.includes("2 分钟内没有")) return "没发：2 分钟没确认";
+
+  return "你没让发，草稿还在";
+}
+
 /** 过程折叠区里的代码裁判一行：全过只写「核对 n/n」，没过的条目用 · 接在后面。 */
 export function runCheckLine(passed: number, total: number, notes: readonly string[]): string {
   return [`核对 ${passed}/${total}`, ...notes].join(" · ");

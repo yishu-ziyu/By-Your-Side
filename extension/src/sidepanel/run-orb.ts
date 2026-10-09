@@ -18,7 +18,8 @@ export class RunOrbActivity {
     } else if (event.kind === "tool_end") {
       this.tools.delete(event.toolCallId);
 
-      if (event.isError && !event.repeatRefused) this.failed = true;
+      // 用户没让发送不是失败（docs/evals/20261009-send-confirm.md R2）。
+      if (event.isError && !event.repeatRefused && !event.sendDeclined) this.failed = true;
     } else if (event.kind === "error") {
       this.failed = true;
     } else if (event.kind === "agent_end") {

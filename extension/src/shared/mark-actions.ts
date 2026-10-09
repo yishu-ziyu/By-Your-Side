@@ -57,6 +57,13 @@ export function isDestructiveLabel(text: string): boolean {
   return false;
 }
 
+/** 只取上面危险词里的「发送 / Send」：点这类按钮前先停下问用户（docs/evals/20261009-send-confirm.md）。 */
+export function isSendLabel(text: string): boolean {
+  const t = text.trim().replace(/\s+/g, " ");
+
+  return t.startsWith("发送") || /^send(\s|$)/i.test(t);
+}
+
 export function confirmLabelForDestructive(text: string): string {
   const t = text.trim();
 
