@@ -9,8 +9,11 @@
  *   e) 助手（并行的一段程序）去点确认框上的「发送」：被拒绝，0 条。
  *   f) 「保存」直接点，不出确认框。
  *   g) 等确认时用户点侧栏「停」：0 条，确认框和任务很快结束（记下耗时）。
+ *   h) 助手点一个大容器（自己的名字不是发送），坐标落在里面的「发送」上：照样出确认框，用户决定前 0 条。
+ *   i) 助手用 clickCount 2 点「发送」：不点、不出确认框，0 条，结果写明不能连点。
+ *   j) 按钮 title 是「按 Ctrl+Enter 发送」、文字是「发送」：照样出确认框。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
- * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST（反例结果见验收文件）。
+ * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -26,9 +29,11 @@ await mkdir(out, { recursive: true });
 
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>留言练习页</title><body style="font:16px sans-serif;margin:40px">
 <form id="f"><textarea id="draft" rows="3" cols="40" aria-label="留言">周五下午三点开会。</textarea><p><button id="save">保存</button> <button id="send">发送</button></p></form>
+<form id="box" style="position:relative;width:320px;height:60px;border:1px solid #ccc"><span>回复框</span><button id="send-in-box" style="position:absolute;left:220px;top:10px;width:80px;height:40px">发送</button></form>
+<form id="titled"><p><button id="send-titled" title="按 Ctrl+Enter 发送">发送</button></p></form>
 <output id="status"></output>
-<script>document.querySelector('#f').addEventListener('submit', async e => { e.preventDefault(); const what = e.submitter.id;
-  await fetch('/' + what, { method: 'POST', body: document.querySelector('#draft').value }); document.querySelector('#status').textContent = what === 'send' ? '已发送' : '已保存'; });</script></body></html>`;
+<script>document.querySelectorAll('form').forEach(f => f.addEventListener('submit', async e => { e.preventDefault(); const what = e.submitter.id;
+  await fetch('/' + what, { method: 'POST', body: document.querySelector('#draft').value }); document.querySelector('#status').textContent = what.startsWith('send') ? '已发送' : '已保存'; }));</script></body></html>`;
 
 const posts: Array<{ path: string; at: number }> = [];
 
@@ -39,7 +44,7 @@ const site = createServer(async (req, res) => {
 
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
-const sent = () => posts.filter(p => p.path === "/send").length;
+const sent = () => posts.filter(p => p.path.startsWith("/send")).length;
 
 const saved = () => posts.filter(p => p.path === "/save").length;
 
@@ -53,6 +58,7 @@ return await browser.click({ point: at });`;
 const ASK = {
   a: "案例A：把草稿发出去。", c: "案例C：把草稿发出去。", d: "案例D：把草稿发出去。",
   e: "案例E：把草稿发出去。", f: "案例F：把草稿保存一下。", g: "案例G：把草稿发出去。",
+  h: "案例H：把草稿发出去。", i: "案例I：把草稿发出去。", j: "案例J：把草稿发出去。",
 };
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
@@ -72,6 +78,10 @@ const model = await startScriptedModel([
   { match: ASK.e, steps: [{ tools: [clickSend.tool, { name: "browser_run", args: { label: "点确认框", code: PROGRAM } }] }, { text: "E 完成。" }, { text: "E 完成。" }] },
   { match: ASK.f, steps: [{ tool: { name: "click", args: { target: "#save", label: "保存" } } }, { text: "F 完成。" }] },
   { match: ASK.g, steps: [clickSend, { text: "G 不该出现。" }] },
+  // 容器 #box 自己的文字是「回复框 发送」，不以发送开头；坐标 (260, 30) 落在里面的「发送」上。
+  { match: ASK.h, steps: [{ tool: { name: "click", args: { target: "#box", position: { x: 260, y: 30 }, label: "回复框" } } }, { text: "H 完成。" }] },
+  { match: ASK.i, steps: [{ tool: { name: "click", args: { target: "#send", label: "发送", clickCount: 2 } } }, { text: "I 完成。" }] },
+  { match: ASK.j, steps: [{ tool: { name: "click", args: { target: "#send-titled", label: "按钮" } } }, { text: "J 完成。" }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -123,7 +133,10 @@ try {
     const no = walk(host, n => n.nodeName === "BUTTON" && textOf(n).trim() === "不发");
     const yes = walk(host, n => n.nodeName === "BUTTON" && textOf(n).trim() === "发送");
 
-    return { text: textOf(host).replace(/\s+/g, " ").trim(), host: await center(host), no: no ? await center(no) : null, yes: yes ? await center(yes) : null };
+    // 确认框正在收起时，节点可能在两次 CDP 调用之间被移走：当作已经没有确认框。
+    try {
+      return { text: textOf(host).replace(/\s+/g, " ").trim(), host: await center(host), no: no ? await center(no) : null, yes: yes ? await center(yes) : null };
+    } catch { return null; }
   };
 
   const userClick = async (at: { x: number; y: number }) => {
@@ -240,6 +253,44 @@ try {
   measured.stopConfirmGoneMs = confirmGoneMs; measured.stopPanelIdleMs = idleMs;
   check("g 等确认时点「停」：服务器 0 条，确认框和任务 2 秒内结束", sent() === sentBeforeG && confirmGoneMs <= 2000 && idleMs <= 2000 && !(await panelText()).includes("G 不该出现。"), { sentDelta: sent() - sentBeforeG, confirmGoneMs, idleMs });
   await rp.screenshot(panel, join(out, "g-panel.png"));
+
+  /** 助手点下去以后：确认框或发送请求先到哪个算哪个；有确认框就停 1.5 秒看服务器，再由用户点「不发」。 */
+  const confirmThenDecline = async (key: "h" | "j", text: string) => {
+    from = toolTexts.length;
+    const before = sent();
+    await ask(ASK[key]);
+    await until(async () => sent() > before || (await confirmBox())?.yes, 30_000, "确认框或发送请求", 100);
+    await sleep(1500);
+    const box = await confirmBox();
+    const sentBeforeDecision = sent() - before;
+
+    if (box?.no) { await rp.screenshot(work, join(out, `${key}-confirm.png`)); await userClick(box.no); }
+    await answered(text);
+
+    return { box: box?.text ?? null, sentBeforeDecision, sentDelta: sent() - before, tool: toolsSince(from) };
+  };
+
+  // ── h：点容器，落点在「发送」上 ──
+  const h = await confirmThenDecline("h", "H 完成。");
+  check("h 点容器、落点在「发送」上：出确认框，用户决定前 0 条", !!h.box?.includes("要发送吗？") && h.sentBeforeDecision === 0 && h.sentDelta === 0, h);
+
+  // ── i：clickCount 2 点「发送」──
+  from = toolTexts.length;
+  const sentBeforeI = sent();
+  let confirmI = false;
+  await ask(ASK.i);
+  let doneI = false;
+  const watchI = (async () => { while (!doneI) { if (await confirmBox()) confirmI = true; await sleep(100); } })();
+  await answered("I 完成。");
+  await sleep(1000);
+  doneI = true;
+  await watchI;
+  const toolI = toolsSince(from);
+  check("i clickCount 2 点「发送」：不点，不出确认框，0 条", !confirmI && sent() === sentBeforeI && toolI.some(t => t.includes("不能连点")), { confirmI, sentDelta: sent() - sentBeforeI, tool: toolI });
+
+  // ── j：title 不以发送开头、文字是「发送」──
+  const j = await confirmThenDecline("j", "J 完成。");
+  check("j title「按 Ctrl+Enter 发送」、文字「发送」：出确认框，用户决定前 0 条", !!j.box?.includes("要发送吗？") && j.sentBeforeDecision === 0 && j.sentDelta === 0, j);
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, measured, posts, toolTexts, notCovered: ["2 分钟没理自动不发（产品没有缩短等待的开关）", "真实网站", "按回车发送（第一版不拦）"], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
