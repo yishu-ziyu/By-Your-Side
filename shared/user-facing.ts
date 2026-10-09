@@ -113,7 +113,7 @@ export function plainDownloadError(code: string | null | undefined): string {
 }
 
 /** 目标核对判「受阻」的原因类别（goal-check.ts）：站点连不上、要的页面或数据不存在、服务端拒绝。 */
-export const BLOCKED_CAUSES = ["unreachable", "missing", "refused"] as const;
+export const BLOCKED_CAUSES = ["unreachable", "missing", "refused", "unresponsive"] as const;
 
 export type BlockedCause = typeof BLOCKED_CAUSES[number];
 
@@ -121,6 +121,7 @@ const BLOCKED_REASONS: Record<BlockedCause, string> = {
   unreachable: "网站现在连不上，稍后可以让我再试",
   missing: "网站上没有要找的页面或内容",
   refused: "网站拒绝了访问，稍后可以让我再试",
+  unresponsive: "页面上的按钮没有反应，这次做不成",
 };
 
 /** 受阻原因 → 任务条和过往任务里的那一句。核对模型没给出能认的类别时说笼统但真实的话。 */
