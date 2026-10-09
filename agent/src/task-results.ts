@@ -298,9 +298,10 @@ export class TaskResultBook {
 
     if (match === 'same' || match === 'reformatted' || match === 'not_held' || match === 'different') {
       evidence.readback = match;
-
-      if (input.readback?.select) evidence.selectField = true;
     }
+
+    // Also when unreadable: a select's repeat fires its change event whatever the readback said.
+    if (input.readback?.select) evidence.selectField = true;
 
     item.evidence = evidence;
   }

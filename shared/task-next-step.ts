@@ -209,13 +209,20 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
     const observedAfter = typeof snapshot.lastReadAt === 'number' && item.evidence?.observedAt !== undefined && snapshot.lastReadAt > item.evidence.observedAt;
 
     // A corrected fill is not a repeat: its value differs from the earlier fill, or the page did not keep the earlier value.
-    // Only `fill`; clicks, submits and other writes keep the repeat guard (double-submit risk). A select refills only on a bad
-    // readback, because a different value would fire its change event (auto-submit) again.
+    // Only `fill`; clicks, submits and other writes keep the repeat guard (double-submit risk). A select refills only on a known bad
+    // readback (an unreadable one proves nothing), because a different value would fire its change event (auto-submit) again.
+    // The same value after a bad readback runs once per field: a masked or reformatted input reads back `different` every time,
+    // and each refill would re-fire the page's input/change handlers.
     const badReadback = item.evidence?.readback === 'not_held' || item.evidence?.readback === 'different';
     const newValue = item.evidence?.valueHash !== undefined && fillValueHash !== undefined && item.evidence.valueHash !== fillValueHash;
+    const corrected = item.evidence?.selectField ? badReadback : (newValue || badReadback);
 
-    if (name === 'fill' && !snapshot.restartRecovery && (badReadback || (newValue && !item.evidence?.selectField))) {
-      continue;
+    if (name === 'fill' && !snapshot.restartRecovery && corrected) {
+      const sameValueFills = (snapshot.results ?? []).filter(r => r.tool === 'fill' && r.status === 'satisfied' && r.target === target && fillValueHash !== undefined && r.evidence?.valueHash === fillValueHash).length;
+
+      if (newValue || sameValueFills < 2) {
+        continue;
+      }
     }
 
     if (snapshot.restartRecovery || (!worker && !observedAfter)) {

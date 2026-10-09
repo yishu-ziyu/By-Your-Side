@@ -3,8 +3,12 @@ const SECRET_KEY = /^(?:password|passwd|pwd|secret|token|access[_-]?token|refres
 
 const SENSITIVE_TARGET = /password|passwd|pwd|secret|token|api[_-]?key|密码|口令/i;
 
-/** 字段名、标签、占位符里出现这些词，就当它是密码、验证码或卡号栏：不读回值。填写后读回（input.ts）用它。 */
-export const SENSITIVE_FIELD_NAME = /password|passwd|pwd|(?:^|[^a-z])otp(?:[^a-z]|$)|one-time|verification code|验证码|校验码|动态码|密码|口令|cvv|cvc|card number|卡号|安全码/i;
+/**
+ * 字段名、标签、占位符里出现这些词，就当它是密码、验证码、卡号、身份证栏：不读回值。填写后读回（input.ts）用它。
+ * 匹配前，input.ts 先拆开驼峰、把 _ - . 换成空格并转小写，所以 card_number、cardNumber 都命中；
+ * pin、ssn、otp 只认整词，shipping、spinner 不会命中。
+ */
+export const SENSITIVE_FIELD_NAME = /password|passwd|pwd|\b(?:otp|pin|ssn)\b|one-time|(?:verification|security|sms) ?code|验证码|校验码|动态码|密码|口令|cvv|cvc|card ?number|卡号|安全码|身份证|银行卡/i;
 
 const MAX_TEXT = 64_000;
 

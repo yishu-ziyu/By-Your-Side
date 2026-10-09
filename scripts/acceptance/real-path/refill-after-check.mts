@@ -6,7 +6,10 @@
  *   2) 填一句、核对判继续；续做直接再填同一句：仍被拒（回执含「不重复执行」）。
  *   3) 点发送按钮、核对判继续；续做直接再点：仍被拒（服务端 POST 计数停在 1）。
  *   4) 下拉框 <option value="CN">中国</option> 按 value「CN」填：助手收到的回执没有「Problem」。
- * 失败方式：把 shared/task-next-step.ts 里「改正的重填不算重复」的放行去掉，用例 1 失败（反例结果见验收文件）。
+ *   5) 网页在输入时把手机号加空格，读回是「不一样」：同一个值的重填执行一次（网页共收到 2 次 input），第三次同值重填被拒（仍是 2 次）。
+ *   6) 下拉框一选就被网页换成别的元素，读回读不到：换一个值再选被拒（回执含「不重复执行」）。
+ * 失败方式：把 shared/task-next-step.ts 里「改正的重填不算重复」的放行去掉，用例 1 失败；
+ * 把同值重填「每栏一次」的上限去掉，用例 5 失败（网页收到 3 次 input）；让读不到的下拉框也放行，用例 6 失败（反例结果见验收文件）。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -37,6 +40,17 @@ const site = createServer((req, res) => {
 
   const body = req.url === "/form"
     ? page("发送", `<main><h1>发送</h1><button id="send" type="button" onclick="fetch('/submit', { method: 'POST' })">发送</button></main>`)
+    : req.url === "/mask"
+    ? page("手机号", `<main><h1>手机号</h1><input id="phone" aria-label="手机号"><script>
+window.inputEvents = 0;
+const phone = document.getElementById("phone");
+phone.addEventListener("input", () => { window.inputEvents += 1; const d = phone.value.replace(/\\D/g, ""); phone.value = d.replace(/^(\\d{3})(\\d{4})(\\d*)$/, "$1 $2 $3").trim(); });
+</script></main>`)
+    : req.url === "/vanish"
+    ? page("套餐", `<main><h1>套餐</h1><select id="plan" aria-label="套餐"><option value="">请选择</option><option value="basic">基础</option><option value="pro">专业</option></select><script>
+const plan = document.getElementById("plan");
+plan.addEventListener("change", () => { const replacement = document.createElement("div"); replacement.id = "plan"; replacement.textContent = "已选"; plan.replaceWith(replacement); });
+</script></main>`)
     : req.url === "/select"
     ? page("国家", `<main><h1>国家</h1><select id="country" aria-label="国家"><option value="">请选择</option><option value="US">美国</option><option value="CN">中国</option></select></main>`)
     : page("草稿", `<main><h1>System One</h1><div><strong>Note</strong></div><p>${SENTENCE} Image input is planned for a later release.</p><textarea id="draft" rows="4" cols="60" aria-label="草稿"></textarea></main>`);
@@ -55,6 +69,8 @@ const CASES = {
   r2: { ask: "案例R2：在草稿框里写第一句英文，不要保存。", path: "/note", first: "R2 第一轮：已填入。", final: "R2 最终：没有重复填写。" },
   r3: { ask: "案例R3：点页面上的发送按钮，只发一次。", path: "/form", first: "R3 第一轮：已发送。", final: "R3 最终：没有重复发送。" },
   r4: { ask: "案例R4：国家选 CN。", path: "/select", first: "R4：国家已选好。", final: "" },
+  r5: { ask: "案例R5：手机号填 13800138000。", path: "/mask", first: "R5 第一轮：已填入。", final: "R5 最终：没有再重复填。" },
+  r6: { ask: "案例R6：套餐选基础。", path: "/vanish", first: "R6 第一轮：已选。", final: "R6 最终：没有再选。" },
 };
 
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
@@ -69,10 +85,16 @@ const model = await startScriptedModel([
   { match: "MARK-R1", steps: [fill("#draft", SENTENCE), { text: CASES.r1.final }] },
   { match: "MARK-R2", steps: [fill("#draft", SENTENCE), { text: CASES.r2.final }] },
   { match: "MARK-R3", steps: [{ tool: { name: "click", args: { target: "#send" } } }, { text: CASES.r3.final }] },
+  { match: "MARK-R5", steps: [fill("#phone", "13800138000"), fill("#phone", "13800138000"), { text: CASES.r5.final }] },
+  { match: "MARK-R6", steps: [fill("#plan", "pro"), { text: CASES.r6.final }] },
   { match: CASES.r1.ask, steps: [fill("#draft", "Note"), { text: CASES.r1.first }] },
   { match: CASES.r2.ask, steps: [fill("#draft", SENTENCE), { text: CASES.r2.first }] },
   { match: CASES.r3.ask, steps: [{ tool: { name: "click", args: { target: "#send" } } }, { text: CASES.r3.first }] },
   { match: CASES.r4.ask, steps: [fill("#country", "CN"), { text: CASES.r4.first }] },
+  { match: CASES.r5.ask, steps: [fill("#phone", "13800138000"), { text: CASES.r5.first }] },
+  { match: CASES.r6.ask, steps: [fill("#plan", "basic"), { text: CASES.r6.first }] },
+  { match: "PROBE-R5", steps: [{ text: verdictJson("MARK-R5") }] },
+  { match: "PROBE-R6", steps: [{ text: verdictJson("MARK-R6") }] },
   { match: "PROBE-R1", steps: [{ text: verdictJson("MARK-R1") }] },
   { match: "PROBE-R2", steps: [{ text: verdictJson("MARK-R2") }] },
   { match: "PROBE-R3", steps: [{ text: verdictJson("MARK-R3") }] },
@@ -191,6 +213,24 @@ try {
   assert.equal(selected, "CN", "4: the select holds CN");
   assert.ok(after4.some(t => t.startsWith("Filled #country")), `4: the fill returned a receipt: ${JSON.stringify(after4)}`);
   assert.ok(!after4.some(t => t.includes("Problem")), `4: no mismatch problem in the select receipt: ${JSON.stringify(after4)}`);
+
+  // 5) 网页给手机号加空格，读回「不一样」：同值重填执行一次，再重填被拒。
+  const before5 = toolTexts.length;
+  verdicts.push("PROBE-R5");
+  await runCase("r5", CASES.r5.final);
+  const after5 = toolTexts.slice(before5);
+  const inputs5 = await rp.evaluate(work, "window.inputEvents");
+  evidence.r5 = { inputs: inputs5, phone: await rp.evaluate(work, 'document.getElementById("phone").value'), toolTexts: after5 };
+  assert.equal(inputs5, 2, `5: the page saw 2 input events (first fill + one refill; the third attempt refused): ${JSON.stringify(after5)}`);
+  assert.ok(after5.some(t => t.includes(REFUSED)), `5: the second same-value refill was refused: ${JSON.stringify(after5)}`);
+
+  // 6) 下拉框被网页换掉、读回读不到：换值重选被拒。
+  const before6 = toolTexts.length;
+  verdicts.push("PROBE-R6");
+  await runCase("r6", CASES.r6.final);
+  const after6 = toolTexts.slice(before6);
+  evidence.r6 = { toolTexts: after6 };
+  assert.ok(after6.some(t => t.includes(REFUSED)), `6: the different-value select refill was refused: ${JSON.stringify(after6)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {

@@ -208,8 +208,11 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
 }
 
 /** 填写回执：浏览器判定越界时带上 rangeIssue（值、问题、允许范围），不报成单纯成功。 */
-function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback): ToolContract["fill"]["data"] {
+function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback, select?: boolean): ToolContract["fill"]["data"] {
   const rangeIssue = rangeIssueOf(range);
+
+  // An unreadable select (page re-rendered it) still fires change again on a repeat: the ledger must know it is a select.
+  if (readback && select && readback.match === "unreadable" && !readback.sensitive) readback = { ...readback, select: true };
 
   return { filled: true, ...(rangeIssue ? { rangeIssue } : {}), ...(readback ? { readback } : {}) };
 }
@@ -246,9 +249,12 @@ function readFieldInPage(this: unknown, target: string | null, max: number, sens
     || (by ? by.split(/\s+/).map((id) => field.ownerDocument.getElementById(id)?.textContent ?? "").join(" ") : "")
     || ("labels" in field && field.labels?.[0]?.textContent) || field.getAttribute("placeholder") || field.getAttribute("title") || "")
     .replace(/\s+/g, " ").trim().slice(0, 40);
-  const sensitive = tag === "input" && (field.type === "password" || field.hasAttribute("data-bys-was-password")
+  const editable = tag === "input" || tag === "textarea" || field.isContentEditable;
+  // 页面函数不能引用外部模块，所以拆驼峰、换分隔符、转小写在这里内联；SENSITIVE_FIELD_NAME 按这种规整后的文字写。
+  const normalize = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-.]+/g, " ").toLowerCase();
+  const sensitive = editable && ((tag === "input" && (field.type === "password" || field.hasAttribute("data-bys-was-password")))
     || /one-time-code|cc-(number|csc|exp)/i.test(String(field.getAttribute("autocomplete") ?? ""))
-    || new RegExp(sensitiveName, "i").test([field.name, field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].join(" ")));
+    || new RegExp(sensitiveName, "i").test([field.getAttribute("name"), field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].map((part) => normalize(String(part ?? ""))).join(" ")));
 
   if (tag === "input" && field.type === "password") field.setAttribute("data-bys-was-password", "");
 
@@ -305,9 +311,9 @@ async function readBackField(tabId: number, where: { backendNodeId: number } | {
 }
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
-async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: DispatchGuard): Promise<InputRangeReadout | null | undefined> {
+async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: DispatchGuard): Promise<{ range?: InputRangeReadout | null; select?: true }> {
   // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报（#22/#27）。
-  const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null }>(
+  const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null; select?: true }>(
     tabId,
     backendNodeId,
     `function(v) {
@@ -336,7 +342,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
         el.value = match.value;
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
-        return { filled: true };
+        return { filled: true, select: true };
       }
       el.focus();
       if (tag === "input" || tag === "textarea") {
@@ -359,7 +365,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
   // 旧行为不看返回值：拿不到回值（undefined）时照旧当作已填写，只认明确的拒绝。
   if (outcome && "refused" in outcome) throw new FillRefused(outcome.refused);
 
-  return outcome?.range;
+  return { range: outcome?.range, ...(outcome && "select" in outcome && outcome.select ? { select: true as const } : {}) };
 }
 
 export async function ensureDomOps(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
@@ -1746,7 +1752,7 @@ export async function fill(
     if (backendNodeId !== undefined) {
       try {
         await beforeDispatch?.();
-        const range = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
+        const { range, select } = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
 
         if (targetRect) {
           await recordCursorTrail(
@@ -1762,7 +1768,7 @@ export async function fill(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        return filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"));
+        return filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
       } catch (e) {
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
@@ -1795,7 +1801,9 @@ export async function fill(
           if (probe.value === "") return { refused: "时间格式无效，请使用 HH:mm（如 19:30）；原值保留，操作未执行" };
         }
 
-        return dom.fill(t, v);
+        const result = dom.fill(t, v);
+
+        return el?.tagName === "SELECT" && "filled" in result ? { ...result, select: true as const } : result;
       },
       [params.target, params.value],
       params.expectedDocumentId, beforeDispatch,
@@ -1817,7 +1825,7 @@ export async function fill(
 
     if (params.memory) await markMemoryField(tabId, params.memory, undefined, params.target);
 
-    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"));
+    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true);
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;

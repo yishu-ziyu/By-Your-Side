@@ -5,7 +5,10 @@
  *   2) 标签「验证码」、name=otp、没有 autocomplete 的栏：侧栏、助手收到的回执、导出里都没有值。
  *   3) 密码栏先填一次，再点「显示密码」变成 type=text，换个标签叫「输入」再填：同上（靠「曾经是 password」的标记）。
  *   4) 同一类栏换个说法：type=text、name=password，没有任何先前读取：同上（靠字段名）。
- * 失败方式：去掉 shared/trace-sanitize.ts 里对读回值的遮挡，1 的导出检查失败；去掉 input.ts 的字段名判断，2 和 4 失败。
+ *   5) 标签中性、只有字段名 card_number、id cardNumber、name sms_code 的 input，和标签「身份证」的 textarea：同上（下划线、驼峰、多词、textarea）。
+ *   6) 反例：name=shipping_address 的普通栏，侧栏和助手看得到值，导出里没有（不能把普通栏一起遮掉）。
+ * 失败方式：去掉 shared/trace-sanitize.ts 里对读回值的遮挡，1 的导出检查失败；去掉 input.ts 的字段名判断，2 和 4 失败；
+ * 把 SENSITIVE_FIELD_NAME 换回旧版正则（没有拆分下划线和驼峰的整词匹配），5 的 card_number 失败。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -20,7 +23,7 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOStri
 
 await mkdir(artifacts, { recursive: true });
 
-const MARK = { normal: "ZQMARK-normal-7431", otp: "ZQMARK-otp-5528", toggled: "ZQMARK-toggled-9042", named: "ZQMARK-named-1865" };
+const MARK = { normal: "ZQMARK-normal-7431", otp: "ZQMARK-otp-5528", toggled: "ZQMARK-toggled-9042", named: "ZQMARK-named-1865", card: "ZQMARK-card-3317", camel: "ZQMARK-camel-6620", sms: "ZQMARK-sms-8841", idnote: "ZQMARK-idnote-2275", ship: "ZQMARK-ship-4096" };
 
 const site = createServer((_req, res) => {
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>隐私读回练习页</title></head><body><main>
@@ -28,7 +31,12 @@ const site = createServer((_req, res) => {
 <label>草稿 <textarea id="draft" rows="3" cols="40"></textarea></label><br>
 <label>验证码 <input id="code" name="otp" type="text"></label><br>
 <label>登录凭证 <input id="pw" type="password"></label> <button id="show" onclick="document.getElementById('pw').type='text';document.getElementById('pw').setAttribute('aria-label','输入');">显示密码</button><br>
-<label>登录 <input id="acct" name="password" type="text"></label>
+<label>登录 <input id="acct" name="password" type="text"></label><br>
+<label>字段甲 <input id="card" name="card_number" type="text"></label><br>
+<label>字段乙 <input id="cardNumber" type="text"></label><br>
+<label>字段丙 <input id="sms" name="sms_code" type="text"></label><br>
+<label>身份证 <textarea id="idnote" rows="2" cols="40"></textarea></label><br>
+<label>字段丁 <input id="ship" name="shipping_address" type="text"></label>
 </main></body></html>`);
 });
 
@@ -38,9 +46,9 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 
 const fill = (target: string, value: string) => ({ tool: { name: "fill", args: { target, value } } });
 
-const ASK = { normal: "隐私案例一：在草稿框里写一句话。", otp: "隐私案例二：在验证码框里写一串字。", toggled: "隐私案例三：先在登录凭证框里写 warmup，再点显示密码，再在输入框里写一串字。", named: "隐私案例四：在登录框里写一串字。" };
+const ASK = { normal: "隐私案例一：在草稿框里写一句话。", otp: "隐私案例二：在验证码框里写一串字。", toggled: "隐私案例三：先在登录凭证框里写 warmup，再点显示密码，再在输入框里写一串字。", named: "隐私案例四：在登录框里写一串字。", card: "隐私案例五：在字段甲里写一串字。", camel: "隐私案例六：在字段乙里写一串字。", sms: "隐私案例七：在字段丙里写一串字。", idnote: "隐私案例八：在身份证框里写一串字。", ship: "隐私案例九：在字段丁里写一串字。" };
 
-const DONE = { normal: "草稿写好了一。", otp: "验证码框写好了二。", toggled: "凭证框写好了三。", named: "登录框写好了四。" };
+const DONE = { normal: "草稿写好了一。", otp: "验证码框写好了二。", toggled: "凭证框写好了三。", named: "登录框写好了四。", card: "字段甲写好了五。", camel: "字段乙写好了六。", sms: "字段丙写好了七。", idnote: "身份证框写好了八。", ship: "字段丁写好了九。" };
 
 /** 助手（脚本模型）收到的 fill 回执原文。 */
 const toolTexts: string[] = [];
@@ -50,6 +58,11 @@ const model = await startScriptedModel([
   { match: ASK.otp, steps: [fill("#code", MARK.otp), { text: DONE.otp }] },
   { match: ASK.toggled, steps: [fill("#pw", "warmup"), { tool: { name: "click", args: { target: "#show" } } }, { tool: { name: "snapshot", args: {} } }, fill("#pw", MARK.toggled), { text: DONE.toggled }] },
   { match: ASK.named, steps: [fill("#acct", MARK.named), { text: DONE.named }] },
+  { match: ASK.card, steps: [fill("#card", MARK.card), { text: DONE.card }] },
+  { match: ASK.camel, steps: [fill("#cardNumber", MARK.camel), { text: DONE.camel }] },
+  { match: ASK.sms, steps: [fill("#sms", MARK.sms), { text: DONE.sms }] },
+  { match: ASK.idnote, steps: [fill("#idnote", MARK.idnote), { text: DONE.idnote }] },
+  { match: ASK.ship, steps: [fill("#ship", MARK.ship), { text: DONE.ship }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -96,7 +109,7 @@ try {
     return text;
   }
 
-  const sidebar = { normal: await run("normal"), otp: await run("otp"), toggled: await run("toggled"), named: await run("named") };
+  const sidebar = { normal: await run("normal"), otp: await run("otp"), toggled: await run("toggled"), named: await run("named"), card: await run("card"), camel: await run("camel"), sms: await run("sms"), idnote: await run("idnote"), ship: await run("ship") };
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
   await writeFile(join(artifacts, "export.jsonl"), traces);
   const receipts = (mark: string) => toolTexts.filter(t => t.includes(mark));
@@ -110,14 +123,21 @@ try {
   assert.ok(receipts(MARK.normal).length > 0, `1: the model receipt carries the value: ${JSON.stringify(toolTexts)}`);
   assert.ok(!traces.includes(MARK.normal), "1: the diagnostic export does not contain the value");
 
-  // 2、3、4) 敏感栏：哪里都没有；助手被告知没有读回。
-  for (const key of ["otp", "toggled", "named"] as const) {
+  // 2、3、4、5) 敏感栏：哪里都没有；助手被告知没有读回。
+  const sensitiveKeys = ["otp", "toggled", "named", "card", "camel", "sms", "idnote"] as const;
+
+  for (const key of sensitiveKeys) {
     assert.ok(!sidebar[key].includes(MARK[key]), `${key}: sidebar does not show the value`);
     assert.equal(receipts(MARK[key]).length, 0, `${key}: no model receipt carries the value`);
     assert.ok(!traces.includes(MARK[key]), `${key}: the diagnostic export does not contain the value`);
   }
 
-  assert.ok(toolTexts.filter(t => t.includes("value was not read back")).length >= 3, `sensitive receipts say the value was not read back: ${JSON.stringify(toolTexts)}`);
+  // 6) 反例：shipping_address 是普通栏，值照常显示。
+  assert.ok(sidebar.ship.includes(MARK.ship), "6: sidebar shows the shipping_address value");
+  assert.ok(receipts(MARK.ship).length > 0, `6: the model receipt carries the shipping_address value: ${JSON.stringify(toolTexts)}`);
+  assert.ok(!traces.includes(MARK.ship), "6: the diagnostic export does not contain the value");
+
+  assert.ok(toolTexts.filter(t => t.includes("value was not read back")).length >= sensitiveKeys.length, `sensitive receipts say the value was not read back: ${JSON.stringify(toolTexts)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
