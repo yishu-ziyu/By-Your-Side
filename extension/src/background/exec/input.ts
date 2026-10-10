@@ -11,7 +11,9 @@ import { sendCommand } from "../debugger.js";
 import { bringForwardForUser, putBackUserTab } from "../foreground.js";
 import { getWorkingTabId, resolveWorkingTab } from "../state.js";
 import { resolveKey, type KeyInfo } from "../../shared/keymap.js";
-import { axBackendNodeFor, isAxRef } from "../axstate.js";
+import { addAxRefs, axBackendNodeFor, isAxRef } from "../axstate.js";
+import type { AxNodeLite } from "../axtree.js";
+import { wrapPageContent } from "../../../../shared/untrusted.js";
 import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
@@ -1064,6 +1066,11 @@ function targetOwnsHit(el, top, x, y) {
     node = node.parentElement;
   }
   return false;
+}
+function assertUsable(el) {
+  var control = el.closest("button,input,select,textarea,option,optgroup");
+  if ((control && control.matches(":disabled")) || el.closest('[inert],[aria-disabled="true"]')) throw new Error("目标不可用（disabled），操作未执行。点了也不会有反应：先满足页面的条件（例如填完必填项）再点，或换别的目标。");
+  if (el.checkVisibility && !el.checkVisibility({ checkVisibilityCSS: true })) throw new Error("目标不可见，操作未执行。请重新 snapshot 确认当前目标。");
 }`;
 
 // 快照里的编号可能落在按钮里的文字节点上（BYS-143 弹窗的「Close」）：按包住它的元素来点。
@@ -1071,6 +1078,7 @@ const CONFIRM_CLICK_JS = `function() {
   ${TARGET_OWNS_HIT_JS}
   const el = this && this.nodeType === 3 ? this.parentElement : this;
   if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
+  assertUsable(el);
   if (typeof el.scrollIntoViewIfNeeded === "function") el.scrollIntoViewIfNeeded({ block: "center", inline: "center" });
   else el.scrollIntoView({ block: "center", inline: "center" });
   const r = el.getBoundingClientRect();
@@ -1089,6 +1097,7 @@ const HIT_TEST_AT_JS = `function(x, y) {
   ${TARGET_OWNS_HIT_JS}
   const el = this && this.nodeType === 3 ? this.parentElement : this;
   if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
+  assertUsable(el);
   const top = document.elementFromPoint(x, y);
   if (!top) throw new Error("目标处没有可命中的元素，操作未执行。请重新 snapshot 确认当前目标。");
   if (!targetOwnsHit(el, top, x, y)) {
@@ -1099,7 +1108,66 @@ const HIT_TEST_AT_JS = `function(x, y) {
 
 function isPrePressTargetError(e: unknown): boolean {
   // TARGET_GONE：text=/role 目标在按下前核对时文字不在了（domops 只读核对，没派发按下）。
-  return /覆盖|已失效|可命中|不可见|不稳定|未找到目标|视口|坐标|替换|TARGET_GONE/.test(oneLine(e));
+  return /覆盖|挡住|已失效|可命中|不可见|不可用|不稳定|未找到目标|视口|坐标|替换|TARGET_GONE/.test(oneLine(e));
+}
+
+/** 只读核对自己抛出的「被挡、失效、不可见、不可用」：页面没动，确定没执行。 */
+const TARGET_CHECK_REFUSAL = /已失效|覆盖|可命中|不可见|不可用/;
+
+/** 页面里命中的最上层元素（穿过开放的 shadow DOM）。point 缺省时取目标中心，同 CONFIRM_CLICK_JS。 */
+const TOP_AT_JS = `function(point) {
+  const el = this && this.nodeType === 3 ? this.parentElement : this;
+  const r = el.getBoundingClientRect();
+  const x = point ? point[0] : r.x + r.width / 2, y = point ? point[1] : r.y + r.height / 2;
+  let top = document.elementFromPoint(x, y);
+  while (top && top.shadowRoot) { const inner = top.shadowRoot.elementFromPoint(x, y); if (!inner || inner === top) break; top = inner; }
+  return top;
+}`;
+
+/**
+ * 「被覆盖」改写成「被 @N 角色 挡住」并带上名字：模型据此先处理挡住的元素。
+ * 从页面里的命中元素出发；按坐标问 CDP（DOM.getNodeForLocation）会命中扩展自己画的状态层（docs/evals/20261011-click-blocked-reason.md）。
+ * 读不到就保留原说明。
+ */
+async function explainRefusal(tabId: number, backendNodeId: number, error: unknown, point?: [number, number]): Promise<string> {
+  // 页面脚本抛出的错误带着调用栈（"Error: … at assertUsable …"），对模型没用，只留说明。
+  const message = oneLine(error).replace(/^Error:\s*/, "").split(/\s+at\s+\S+\s+\(/)[0]!.trim();
+
+  if (!/覆盖/.test(message)) return message;
+  const objectGroup = `bys-covered-${crypto.randomUUID()}`;
+
+  try {
+    const target = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId, objectGroup });
+
+    if (!target.object?.objectId) return message;
+    const top = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.callFunctionOn", { objectId: target.object.objectId, functionDeclaration: TOP_AT_JS, arguments: [{ value: point ?? null }], objectGroup });
+
+    if (!top.result?.objectId) return message;
+    const hit = (await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: top.result.objectId })).node.backendNodeId;
+    const { nodes } = await sendCommand<{ nodes: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId: hit, fetchRelatives: true });
+    const byId = new Map(nodes.map(n => [n.nodeId, n]));
+    const first = nodes.find(n => n.backendDOMNodeId === hit);
+    let named = first;
+
+    // 往上找第一个有名字或是对话框的节点；到整页还没有，就用命中的元素本身。
+    while (named && named.role?.value !== "RootWebArea" && (named.ignored || !(String(named.name?.value ?? "").trim() || /dialog/.test(named.role?.value ?? "")))) {
+      named = named.parentId ? byId.get(named.parentId) : undefined;
+    }
+
+    if (!named || named.role?.value === "RootWebArea") named = first;
+    const id = named?.backendDOMNodeId;
+
+    if (!named || id === undefined) return message;
+    const ownText = named.childIds?.map(c => byId.get(c)).find(c => c?.role?.value === "StaticText")?.name?.value;
+    const name = String(named.name?.value || ownText || "").replace(/\s+/g, " ").trim().slice(0, 40);
+    addAxRefs(tabId, [id]);
+
+    return `目标被 @${id} ${named.role?.value ?? "元素"} 挡住，操作未执行，挡住它的元素也没有被点。${name ? `挡住的元素名字：${wrapPageContent(name)}` : ""}先处理挡住的元素（例如关掉弹层），再重新 snapshot 确认目标。`;
+  } catch {
+    return message;
+  } finally {
+    await sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
 }
 
 /**
@@ -1138,8 +1206,8 @@ async function checkPointerTarget(
       };
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
-        // 只读的目标核对自己抛出的「被挡、失效、不可见」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
-        if (/已失效|覆盖|可命中|不可见/.test(oneLine(e))) throw notExecuted(new Error(oneLine(e)));
+        // 只读的目标核对自己抛出的「被挡、失效、不可见、不可用」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
+        if (TARGET_CHECK_REFUSAL.test(oneLine(e))) throw notExecuted(new Error(await explainRefusal(tabId, backendNodeId, e)));
 
         if (e && typeof e === "object" && "executionFact" in e) throw e;
         const msg = oneLine(e);
@@ -1196,8 +1264,8 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
       return;
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
-        // 只读的目标核对自己抛出的「被挡、失效、不可见」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
-        if (/已失效|覆盖|可命中|不可见/.test(oneLine(e))) throw notExecuted(new Error(oneLine(e)));
+        // 只读的目标核对自己抛出的「被挡、失效、不可见、不可用」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
+        if (TARGET_CHECK_REFUSAL.test(oneLine(e))) throw notExecuted(new Error(await explainRefusal(tabId, backendNodeId, e, [x, y])));
 
         if (e && typeof e === "object" && "executionFact" in e) throw e;
         const msg = oneLine(e);
