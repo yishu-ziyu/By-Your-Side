@@ -14,6 +14,7 @@
 | 问题 | 权威说明／证据 |
 |---|---|
 | 最近会话如何续接 | 从[当前状态](STATUS.md)接。只做已确认场景，排期不等于同时开工；规格 PR 联动可能误关总任务，按实物复核；汇报方式见[管理验收](evals/20261008-project-management.md)。提交署名不应含 Agent |
+| 修问题的方式 | 10-10 用户决定：先找通用原因，不为每个现象加一个例外。代码给能力和事实，由助手按用户的话判断，只硬拦发送、付款这类撤不回的动作。反例：[不抢前台](evals/20261010-keep-foreground.md)的三种例外挡住了「切到某页」（[对比实验](evals/20261010-ego-vs-extension.md)） |
 | 网页操作与核验 | [协议](protocol.md) · [REV 记录](evals/20260922-browser-capability-integration-v2.md) |
 | 来源、改口与恢复 | [目标证据链](evals/20260921-goal-evidence-contract.md) · [Computer Use 复测](evals/20260922-computer-use-product-path.md) |
 | 语音、胶囊与开口 | [语音架构](voice-architecture.md) · [V2.3](evals/20260922-v22-spoken-result-shadow.md)：动作成功、胶囊足够、整项要求无需口答分别判断 |

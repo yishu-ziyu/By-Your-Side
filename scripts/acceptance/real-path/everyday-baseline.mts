@@ -42,7 +42,14 @@ const inprocModel = scriptedThrottle ? "custom/demo-model" : daily ? inprocArg :
 /** --suite=goal-check：目标核对该催与不该催的场景（换说法再找、按钮没反应、网站连不上、真的不存在）；每次只跑一条，结果带上这一轮全部核对结论。 */
 const suiteArg = process.argv.find((a) => a.startsWith("--suite="))?.slice(8);
 
-const suite = suiteArg === "sitegeist" || suiteArg === "voice-ideas" || suiteArg === "goal-check" ? suiteArg : "everyday";
+/** --suite=compare：与 Codex CLI + ego-browser 同模型对照的用例（另一边用 --serve-only 起同一套练习页）。 */
+const suite = suiteArg === "sitegeist" || suiteArg === "voice-ideas" || suiteArg === "goal-check" || suiteArg === "compare" ? suiteArg : "everyday";
+
+/** --deep：配好模型后在输入框旁的开关选「深入」，每条记下实际发出的思考强度。 */
+const deep = process.argv.includes("--deep");
+
+/** --serve-only：只起练习站（全部练习页、保存接口与计数，另加 /__stats），不开 Chrome，直到收到 SIGINT/SIGTERM。 */
+const serveOnly = process.argv.includes("--serve-only");
 
 /** 回答之后还有目标核对，可能接着做：这两组要等更久才算结束；别的组加 --settle 也这样等，量用户最后看到的结果。 */
 const settleLong = suite === "voice-ideas" || suite === "goal-check" || process.argv.includes("--settle");
@@ -50,7 +57,7 @@ const settleLong = suite === "voice-ideas" || suite === "goal-check" || process.
 /** --repeat=N：每条用例连跑 N 次，各开新会话。 */
 const repeat = Math.max(1, Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 1);
 
-if (!daily) requireHeadless();
+if (!daily && !serveOnly) requireHeadless();
 
 /** 长文翻译要跑几分钟：CASE_LIMIT_MS 可临时放宽单条时限。 */
 const CASE_LIMIT_MS = Number(process.env.CASE_LIMIT_MS) || 240_000;
@@ -59,7 +66,7 @@ const startedAt = new Date();
 
 const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-everyday-baseline${suite === "everyday" ? "" : `-${suite}`}${daily ? "-daily" : inprocModel ? "-inproc" : ""}-${process.pid}`);
 
-await mkdir(artifacts, { recursive: true });
+if (!serveOnly) await mkdir(artifacts, { recursive: true });
 
 const NOTE_FIRST = "Jev currently accepts text input only.";
 
@@ -146,6 +153,8 @@ const PAGES = {
 <li><b>小林</b>：下周三下午两点半碰一下新版本的事？</li>
 <li><b>阿杰</b>：可以，地点就定望京 SOHO T3 12 层的小会议室吧</li>
 <li><b>我</b>：好，那就 10 月 8 日（周三）14:30，小林、阿杰和我三个人</li></ul></main>`),
+  "/dy": page("抖音-记录美好生活", `<main><h1>抖音</h1><video width="360" height="640" poster="" aria-label="短视频"></video><p>@小鹿日常 · 周末去爬山，山顶的云海太美了</p><p>❤ 12.3万 · 💬 2,041</p></main>`),
+  "/yt": page("YouTube", `<main><h1>YouTube</h1><video width="640" height="360" aria-label="视频"></video><h2>How to brew pour-over coffee at home</h2><p>1.2M views · 3 days ago</p></main>`),
   "/recipe": page("巧克力曲奇", `<main><h1>巧克力曲奇（24 块）</h1><ul><li>黄油 115 克</li><li>红糖 100 克</li><li>白砂糖 50 克</li><li>鸡蛋 1 个</li><li>面粉 190 克</li><li>巧克力豆 170 克</li></ul></main>`),
 } satisfies Record<string, string>;
 
@@ -155,6 +164,16 @@ let saveRequests = 0;
 
 const site = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
+
+  // 外部跑法读同一个「点了几次保存」事实；只在 --serve-only 时存在。
+  if (serveOnly && req.method === "GET" && path === "/__stats") {
+    const saves = saveRequests;
+
+    if (new URLSearchParams((req.url ?? "").split("?")[1] ?? "").get("reset") === "1") saveRequests = 0;
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ saves }));
+
+    return;
+  }
 
   if (req.method === "POST" && path === "/save") {
     saveRequests += 1;
@@ -171,6 +190,14 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
+if (serveOnly) {
+  console.log(JSON.stringify({ origin }));
+  await new Promise<void>((done) => { process.once("SIGINT", () => done()); process.once("SIGTERM", () => done()); });
+  site.closeAllConnections();
+  site.close();
+  process.exit(0);
+}
+
 /** goal-check「网站连不上」：先占一个端口再放掉，这个地址之后拒绝连接。 */
 const closedPort = await new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const port = siteAddress(probe).port; probe.close(() => done(port)); }); });
 
@@ -181,12 +208,12 @@ type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; /** 网页上弹出过几次发送确认（助手点了「发送」）。 */ sendConfirms: number; files: Array<{ name: string; text: string }>; pageInputs: number };
+type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; /** 网页上弹出过几次发送确认（助手点了「发送」）。 */ sendConfirms: number; files: Array<{ name: string; text: string }>; pageInputs: number; /** 窗口里的活动标签页（用户正看着的）网址。 */ activeUrl: string | null };
 
 /** stopAfterMs：发出后这么久像用户一样点停止（只在仍在运行时）。 */
 type GoalCheckLine = { status: string; remaining: string | null; correction?: string };
 
-type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** 读这一轮导出记录里的全部目标核对结论再判一次（每次只跑这一条时才用）。 */ goal?: (verdicts: GoalCheckLine[], answer: string) => string | null; /** 判据之外另记的量（如圈中率），写进结果。 */ measure?: (c: Ctx) => Record<string, unknown>; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; check: (c: Ctx) => string | null };
+type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** 读这一轮导出记录里的全部目标核对结论再判一次（每次只跑这一条时才用）。 */ goal?: (verdicts: GoalCheckLine[], answer: string) => string | null; /** 判据之外另记的量（如圈中率），写进结果。 */ measure?: (c: Ctx) => Record<string, unknown>; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; /** 发出前在后台另开这一页，再把工作页放回前台。 */ openTab?: string; check: (c: Ctx) => string | null };
 
 const has = (text: string, ...needles: string[]) => needles.every((n) => text.includes(n));
 
@@ -347,7 +374,16 @@ const GOAL_CASES: Case[] = [
     check: (c) => c.tabs.some((u) => u.includes("wikipedia.org")) ? null : "没有打开维基百科" },
 ];
 
-const pool = suite === "sitegeist" ? SITEGEIST_CASES : suite === "voice-ideas" ? VOICE_CASES : suite === "goal-check" ? GOAL_CASES : CASES;
+const byId = (cases: Case[], id: string) => cases.find((c) => c.id === id)!;
+
+const COMPARE_CASES: Case[] = [
+  byId(CASES, "three-repos"), byId(CASES, "copy-no-save"), byId(SITEGEIST_CASES, "fix-typos"), byId(SITEGEIST_CASES, "research"), byId(GOAL_CASES, "dead-next"), byId(CASES, "open-tab"),
+  // 用户在看 /dy，/yt 在后台标签：说「切到youtube」后，用户看到的应是 /yt。
+  { id: "switch-tab", path: "/dy", openTab: "/yt", prompt: "切到youtube",
+    check: (c) => (c.activeUrl?.startsWith(`${origin}/yt`) ? null : `活动标签页是 ${c.activeUrl ?? "无"}，不是 /yt`) },
+];
+
+const pool = suite === "compare" ? COMPARE_CASES : suite === "sitegeist" ? SITEGEIST_CASES : suite === "voice-ideas" ? VOICE_CASES : suite === "goal-check" ? GOAL_CASES : CASES;
 
 const selected = (only ? pool.filter((c) => only.includes(c.id)) : pool).flatMap((c) => Array.from({ length: repeat }, (_, i) => (repeat > 1 ? { ...c, id: `${c.id}-${i + 1}` } : c)));
 
@@ -384,9 +420,28 @@ async function checkTraceExport(modelPlan: ModelPlan) {
   const leaked = key.length > 8 && text.includes(key);
   const sessions = new Set(lines.map((line) => line?.sessionId)).size;
   const cleared = clearedStatus ?? "";
+  if (suite === "compare") await writeFile(join(artifacts, "trace.jsonl"), text);
   const reason = !text ? `没有导出任务记录（${exportStatus}）` : missing.length ? `缺少这些用例的记录：${missing.join(", ")}` : malformed ? `${malformed} 行缺字段或不是 JSON` : leaked ? "导出里出现了 API key" : !cleared.startsWith("还没有") ? `清空后导出仍有内容：${cleared}` : null;
 
-  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared, translation: translationFacts(text), goalChecks: goalChecksOf(text) };
+  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared, translation: translationFacts(text), goalChecks: goalChecksOf(text), efforts: effortsOf(text) };
+}
+
+/** 每条提示词实际发出的思考强度：run_start 文字含提示词的那些轮里，model_request 行的 effort（读法同 thinking-chip.mts）。 */
+function effortsOf(text: string) {
+  const rows = text.split("\n").filter(Boolean).flatMap((raw) => {
+    try {
+      // SAFETY: 导出文件每行是 { runId, type, data } 的 JSON；解析失败的行丢弃。
+      return [JSON.parse(raw) as { runId?: string; type: string; data?: { text?: string; effort?: string } }];
+    } catch {
+      return [];
+    }
+  });
+
+  return (prompt: string) => {
+    const runs = new Set(rows.filter((r) => r.type === "run_start" && r.data?.text?.includes(prompt)).map((r) => r.runId));
+
+    return rows.filter((r) => runs.has(r.runId) && r.type === "model_request").map((r) => r.data?.effort ?? "?");
+  };
 }
 
 /** 导出文件里的目标核对结论（type goal_check），按时间顺序。 */
@@ -501,6 +556,10 @@ type CaseResult = {
   modelCalls?: Array<{ host: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null }>;
   /** 这一轮导出记录里的目标核对结论，按时间顺序。 */
   goalChecks?: GoalCheckLine[];
+  /** 只在 --suite=compare：完整回答。 */
+  answerFull?: string;
+  /** 只在 --deep：这一条每次模型请求的思考强度（取自导出的诊断记录）。 */
+  efforts?: string[];
 };
 
 const results: CaseResult[] = [];
@@ -515,6 +574,9 @@ let scripted: Awaited<ReturnType<typeof startScriptedModel>> | null = null;
 
 /** 只在 --inproc：设置页导出的诊断记录是否覆盖每条用例、不含密钥、清空后为空。 */
 let traceCheck: Awaited<ReturnType<typeof checkTraceExport>> | null = null;
+
+/** 只在 --deep：选「深入」后输入框旁开关上的文字。 */
+let deepChip: string | null = null;
 
 try {
   const blank = "workTargetId" in rp ? { targetId: rp.workTargetId } : await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -555,6 +617,21 @@ try {
   }
 
   await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上 agent", 500);
+
+  // 选「深入」的做法与 thinking-chip.mts 的 pick("深入") 相同。
+  if (deep) {
+    const chipText = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
+    await until(async () => (await chipText()) || undefined, 60_000, "输入框旁出现模型与思考强度");
+    await rp.click(panel, "#think-chip");
+    await sleep(350);
+    await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === "深入").click(), true`);
+    await sleep(300);
+    deepChip = await chipText();
+    await rp.screenshot(panel, join(artifacts, "deep-chip.png")).catch(() => {});
+
+    if (!deepChip.includes("· 深入")) throw new Error(`选了深入，开关仍写着：${deepChip}`);
+    console.log(`deep\t${deepChip}`);
+  }
 
   const boxOf = async (nodeId: number): Promise<Box | null> => {
     // SAFETY: CDP 规范里 DOM.getBoxModel 返回 { model: { border: Quad } }，Quad 为 4 个点 8 个数。
@@ -663,6 +740,8 @@ try {
     // 上一条新开的网页标签页关掉：判据里的标签页只算这一条开的。
     for (const t of await rp.targets()) if (t.type === "page" && t.targetId !== blank.targetId && /^https?:/.test(t.url)) await rp.cdp.send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
     await rp.cdp.send("Page.navigate", { url: item.path.startsWith("https://") ? item.path : `${origin}${item.path}` }, work);
+
+    if (item.openTab) await rp.cdp.send("Target.createTarget", { url: `${origin}${item.openTab}`, background: true });
     // 上一条可能新开了标签页并让它成为当前页（open-tab）；每条都从自己的练习页开始。
     await rp.cdp.send("Page.bringToFront", {}, work);
     await sleep(1500);
@@ -795,6 +874,8 @@ try {
     const pageText = String(await rp.evaluate(work, "document.body?.innerText ?? ''").catch(() => ""));
     const draftValue = await rp.evaluate(work, "document.querySelector('#draft')?.value ?? null").catch(() => null);
     const tabs = (await rp.targets()).filter((t) => t.type === "page").map((t) => t.url);
+    // 读法同 keep-foreground.mts：浏览器自己记的活动标签（侧栏是扩展页，能直接查 chrome.tabs）。
+    const activeUrl = await rp.evaluate(panel, "chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t?.url ?? null)").catch(() => null);
     const answer = final?.answers.join("\n\n") ?? "";
     // 像用户一样点侧栏文件卡片上的「下载」，文件才会落到下载目录。
     // SAFETY: 这段页面脚本只返回卡片 data-filename 组成的字符串数组。
@@ -822,7 +903,7 @@ try {
     // SAFETY: 同上，闪烁记录是对象数组，这里只数个数。
     const pendingFlickers = ((await rp.evaluate(work, "window.__bysPendingFlickers ?? []").catch(() => [])) as unknown[]);
     const pendingRose = pendingFlickers.length > 0;
-    const ctx: Ctx = { words: await readWords().catch(() => []), answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, sendConfirms, files, pageInputs };
+    const ctx: Ctx = { words: await readWords().catch(() => []), answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, sendConfirms, files, pageInputs, activeUrl: activeUrl == null ? null : String(activeUrl) };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
@@ -835,7 +916,7 @@ try {
     // 设置页选的是哪家，请求就只能发往哪家：防「换了模型却仍用旧模型」。
     const wrongHost = inprocModel && modelCalls?.find((c) => c.host !== expectedHost);
     const finalReason = reason ?? (wrongHost ? `模型请求发往 ${wrongHost.host}，不是所选的 ${expectedHost}` : null);
-    const result: CaseResult = { id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls, ...(item.measure ? { measure: item.measure(ctx) } : {}) };
+    const result: CaseResult = { id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls, ...(item.measure ? { measure: item.measure(ctx) } : {}), ...(suite === "compare" ? { answerFull: answer } : {}) };
 
     if (translating) Object.assign(result, { firstTranslatedMs, firstMarkMs, stopClearMs, pendingMarks, pendingRose, pendingLog: pendingLog.slice(0, 200), pendingFlickers: pendingFlickers.slice(0, 20), ...coverage, translatedTimeline });
     results.push(result);
@@ -846,6 +927,8 @@ try {
   }
 
   if (inprocModel && plan) traceCheck = await checkTraceExport(plan);
+
+  if (deep && traceCheck) for (const r of results) { r.efforts = traceCheck.efforts(r.prompt); console.log(`efforts\t${r.id}\t${r.efforts.join(",") || "-"}`); }
 
   // 每次只跑一条时，导出记录里的核对结论都属于这一条；先记下来，再按用例的 goal 判据补判。
   if (traceCheck && results.length === 1) {
@@ -869,7 +952,7 @@ try {
 
 const summary = {
   case: "everyday-baseline", startedAt: startedAt.toISOString(), model: inprocModel ?? (daily ? "daily extension settings" : "unknown"), browser: daily ? "daily Chrome" : "isolated headless, extension only",
-  passed: results.filter((r) => r.outcome === "pass").length, total: results.length, results, traceCheck,
+  passed: results.filter((r) => r.outcome === "pass").length, total: results.length, results, traceCheck, ...(deep ? { deepChip } : {}),
 };
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify(summary, null, 2));
