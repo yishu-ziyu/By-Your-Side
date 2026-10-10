@@ -29,6 +29,8 @@
 
 ## 结果
 
+- T1 已完成（10-10）：用例 `reading-correction`。改前在 main 上四项检查都失败（`out/acceptance/real-path/2026-10-10T08-53-45-661Z-reading-correction/`），改后都通过（`out/acceptance/real-path/2026-10-10T08-57-00-919Z-reading-correction/`）。
+
 ### 四项能力
 
 | 能力 | 已实现 | 实际通过 | 存在缺口 | 没有验证 |
