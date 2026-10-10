@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>伴读改口预览</title>
+<style>
+  :root { --bg:#ecebe8; --chrome:#dcdad6; --ink:#232326; --muted:#77777d; --new:#b4532a; --accent:#5181d9; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+  #guide { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:10px 14px; background:#fff; border-bottom:1px solid #e2e2e5; }
+  #guide b { margin-right:4px; }
+  .step { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:14px; border:1px solid #e3e3e6; color:var(--muted); background:#fafafa; }
+  .step.on { color:var(--ink); border-color:var(--ink); background:#fff; }
+  .step.done { color:#3c7a4b; border-color:#cfe3d4; background:#f3faf4; }
+  .new { color:#fff; background:var(--new); font-size:10px; border-radius:4px; padding:0 4px; }
+  #guide .spacer { flex:1; }
+  #guide button { font:inherit; border:1px solid #d6d6da; background:#fff; border-radius:14px; padding:4px 10px; cursor:pointer; }
+  #guide label { display:inline-flex; gap:4px; align-items:center; color:var(--muted); }
+  #hint { width:100%; color:var(--muted); font-size:12px; padding-top:2px; }
+  #stage { display:flex; height:calc(100% - 78px); min-height:620px; }
+  #browser { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--chrome); }
+  #tabs { display:flex; gap:2px; padding:6px 8px 0; }
+  .tab { display:flex; align-items:center; gap:6px; max-width:220px; padding:6px 12px; border-radius:8px 8px 0 0; background:#cfcdc9; color:#555; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tab.active { background:#fff; color:var(--ink); }
+  .tab .busy { width:7px; height:7px; border-radius:50%; background:var(--accent); animation:pulse 1s infinite; }
+  .tab.enter { animation:tab-in 220ms ease-out; }
+  @keyframes pulse { 50% { opacity:.3; } }
+  @keyframes tab-in { from { opacity:0; transform:translateY(4px); } }
+  #page { flex:1; overflow:auto; background:#fff; position:relative; }
+  article, .evidence { max-width:640px; margin:0 auto; padding:36px 28px 400px; font:17px/1.85 Georgia, "Songti SC", serif; }
+  article h1, .evidence h1 { font-size:28px; line-height:1.3; }
+  #para { cursor:text; border-radius:3px; transition:background-color 200ms; }
+  #para:hover { background:#f6f4ec; }
+  #para.hl { background:#dfe8fb; }
+  #para.flash { background:#c9d9fb; }
+  .evidence { display:none; }
+  #panel { width:360px; flex:none; border:0; border-left:1px solid #d9d9dc; background:#f7f6f3; }
+  .note-new { position:absolute; z-index:3; font:11px/1.4 -apple-system, sans-serif; color:#fff; background:var(--new); border-radius:6px; padding:3px 7px; pointer-events:none; box-shadow:0 2px 6px #0002; }
+</style>
+</head>
+<body>
+<div id="guide">
+  <b>伴读改口</b>
+  <span class="step" data-step="1">1 解释一段</span>
+  <span class="step" data-step="2">2 中途改口 <span class="new">新</span></span>
+  <span class="step" data-step="3">3 找依据 <span class="new">新</span></span>
+  <span class="step" data-step="4">4 记住偏好 <span class="new">新</span></span>
+  <span class="step" data-step="5">5 新会话照做 <span class="new">新</span></span>
+  <span class="spacer"></span>
+  <label><input type="checkbox" id="today"> 对照：现在的产品</label>
+  <button id="restart">从头再来</button>
+  <div id="hint"></div>
+</div>
+<div id="stage">
+  <div id="browser">
+    <div id="tabs"><div class="tab active" data-tab="a">城市为什么更热</div></div>
+    <div id="page">
+      <article id="tab-a">
+        <h1>城市为什么更热</h1>
+        <p>夏天走进市中心，常常觉得比郊外闷热。这种感觉不是错觉。</p>
+        <p id="para">城市中心的气温常比郊区高出两到三度，这被称为城市热岛效应；差距在夜里最明显。</p>
+        <p>多种树、用浅色屋顶、给路面留出透水的缝隙，都可以缓解这个问题。一些城市已经把这些做法写进了建设标准。</p>
+        <p>下一节我们会看看，不同城市的温差为什么差别这么大。</p>
+      </article>
+      <div class="evidence" id="tab-b">
+        <h1>热岛观测报告</h1>
+        <p>2025 年夏季，全市 42 个站点连续观测。市中心夜间气温平均比郊区高 2.6 度，白天高 1.1 度。</p>
+        <p id="evidence-line">分析认为，沥青路面和混凝土建筑白天储存的热量在夜间释放，是夜间温差的主要来源。</p>
+      </div>
+    </div>
+  </div>
+  <iframe id="panel" title="侧栏"></iframe>
+</div>
+<script>
+const PANEL_HTML = __PANEL__;
+const ASK_STYLES = __ASK_STYLES__;
+__PREVIEW_JS__
+</script>
+</body>
+</html>
