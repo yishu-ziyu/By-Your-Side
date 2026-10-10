@@ -28,4 +28,4 @@
 - Ego 的 switch-tab-1：第一次重读时 YouTube 在前台，第二次重读时抖音在前台，原因没查明，所以记 13 或 14。
 - 按写定的规则，差距是 1 或 2 次，落在边界上。差距全部来自切页这一条：扩展的切页工具按[不抢前台](20261010-keep-foreground.md)只换工作页，不切用户眼前的页。其余 6 条两边都全对。
 - 扩展每条快约 6 倍。Codex 每条都先读说明书、再写脚本、再自己核对一遍。
-- 证据：扩展 `out/acceptance/real-path/2026-10-10T10-51-09-228Z-everyday-baseline-compare-inproc-2292/`；Ego `out/acceptance/compare/ego/result.rescored.json`。
+- 证据：原始产物在实验工作树里，收尾删工作树时一并删掉了，只剩本页的数字。要复查就按「规则」里的命令重跑。
