@@ -30,6 +30,7 @@
 ## 结果
 
 - T1 已完成（10-10）：用例 `reading-correction`。改前在 main 上五项检查都失败（`out/acceptance/real-path/2026-10-10T09-20-01-179Z-reading-correction/`），改后都通过（`out/acceptance/real-path/2026-10-10T09-22-46-187Z-reading-correction/`）。
+- 更新扩展后的阅读卡（10-10）：更新扩展前就打开的网页里，用户点进阅读卡输入框打字，原文段落高亮马上消失，因为补装后旧阅读卡仍在接点击。已修好，用例 `reading-card-after-reinject`：改前高亮检查失败（`out/acceptance/real-path/2026-10-10T09-36-21-365Z-reading-card-after-reinject/`），改后通过（`out/acceptance/real-path/2026-10-10T09-40-18-583Z-reading-card-after-reinject/`）。
 
 ### 四项能力
 
