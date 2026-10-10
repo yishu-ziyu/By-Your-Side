@@ -573,7 +573,7 @@ export interface ToolContract {
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
   get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
   open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string; /** 地址变成下载，Chrome 关掉了这个新标签页；它不再是工作标签页。 */ tabClosed?: true } };
-  switch_tab: { params: { tabId: number }; data: { tabId: number; verification?: SwitchTabVerification } };
+  switch_tab: { params: { tabId: number; /** 同时切到用户眼前（tabs show，用户要看这一页时）。 */ show?: boolean }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string } };
   snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string; /** With viewScopeId: collect the page again, then show that partition if it still exists. */ fresh?: boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
