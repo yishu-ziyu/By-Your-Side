@@ -121,10 +121,16 @@ function boot(): void {
   let renderedTurns = 0;
 
   const answers: Array<{
+    turn: HTMLElement;
+    question: HTMLElement;
     node: HTMLElement;
     status: HTMLElement;
     text: string;
+    statusKey: string;
   }> = [];
+
+  /** 被改口停下的旧回答默认折叠；这里记用户展开了哪几轮。 */
+  const unfolded = new Set<number>();
 
   const drafts = new Map<string, string>();
   let pinned = false;
@@ -264,6 +270,7 @@ function boot(): void {
     if (renderedThread !== record?.threadId || renderedTurns > (record?.turns.length ?? 0)) {
       messages.replaceChildren();
       answers.length = 0;
+      unfolded.clear();
       renderedThread = record?.threadId ?? '';
       renderedTurns = 0;
     }
@@ -282,10 +289,21 @@ function boot(): void {
         status.setAttribute('role', 'status');
         wrapper.append(question, node, status);
         messages.append(wrapper);
-        answers.push({ node, status, text: '' });
+        answers.push({ turn: wrapper, question, node, status, text: '', statusKey: '' });
       }
 
       const item = answers[index]!;
+      const corrected = record?.correctedTurns ?? [];
+
+      if (corrected.includes(index) && !item.question.querySelector('.tag')) {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = '已改口';
+        item.question.append(tag);
+      }
+
+      const foldable = turn.state === 'stopped' && corrected.includes(index + 1);
+      item.turn.classList.toggle('folded', foldable && !unfolded.has(index));
 
       if (item.text !== turn.answer) {
         item.node.innerHTML = DOMPurify.sanitize(renderMarkdownHtml(turn.answer), { FORBID_TAGS: ['img', 'video', 'audio', 'iframe', 'style', 'form', 'input', 'button'] });
@@ -298,7 +316,24 @@ function boot(): void {
         item.text = turn.answer;
       }
 
-      item.status.textContent = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在生成…' : turn.state === 'stopped' ? '已停止，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
+      const statusText = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在生成…' : turn.state === 'stopped' ? '已停止，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
+      const foldLabel = foldable ? unfolded.has(index) ? '收起' : '展开' : '';
+
+      // 只在内容变了时重建：生成中每段文字都会重画，重建会让正在点的「展开」按钮消失。
+      if (item.statusKey !== `${statusText}|${foldLabel}`) {
+        item.status.textContent = statusText;
+
+        if (foldLabel) {
+          const toggle = document.createElement('button');
+          toggle.className = 'fold';
+          toggle.dataset.act = 'fold';
+          toggle.dataset.turn = String(index);
+          toggle.textContent = foldLabel;
+          item.status.append(toggle);
+        }
+
+        item.statusKey = `${statusText}|${foldLabel}`;
+      }
     }
 
     renderedTurns = record?.turns.length ?? 0;
@@ -309,9 +344,12 @@ function boot(): void {
 
     const busy = readingBusy(record);
     const last = record?.turns.at(-1);
-    submit.replaceChildren(icon(busy ? Square : ArrowUp));
-    submit.setAttribute('aria-label', busy ? '停止回答' : '发送问题');
-    submit.title = busy ? '停止回答' : '发送问题';
+    // 生成中输入框有字时，按钮是改口；空着时才是停止。
+    const stops = busy && !input.value.trim();
+    const label = stops ? '停止回答' : busy ? '改口：停下旧回答，按这句重答' : '发送问题';
+    submit.replaceChildren(icon(stops ? Square : ArrowUp));
+    submit.setAttribute('aria-label', label);
+    submit.title = label;
     submit.disabled = sending || (!busy && !input.value.trim());
     input.placeholder = record?.turns.length ? '继续问这段文字…' : '问问这段文字…';
     el<HTMLButtonElement>('[data-act="handoff"]').disabled = busy || sending;
@@ -358,7 +396,7 @@ function boot(): void {
     render();
 
     try {
-      const result = await rpc('reading_send', { question, retry });
+      const result = await rpc('reading_send', { question, retry, correction: readingBusy(record) });
 
       if (record?.threadId !== threadId) {
         return;
@@ -381,7 +419,8 @@ function boot(): void {
   }
 
   root.addEventListener('click', event => {
-    const action = (event.target as Element).closest('[data-act]')?.getAttribute('data-act');
+    const target = (event.target as Element).closest<HTMLElement>('[data-act]');
+    const action = target?.getAttribute('data-act');
 
     if (!action) {
       return;
@@ -423,6 +462,15 @@ function boot(): void {
         show();
         highlight();
       }
+      else if (action === 'fold') {
+        const index = Number(target!.dataset.turn);
+
+        if (!unfolded.delete(index)) {
+          unfolded.add(index);
+        }
+
+        render();
+      }
       else if (action === 'copy') {
         await navigator.clipboard.writeText(record?.turns.at(-1)?.answer ?? '');
         el('[data-act="copy"]').lastChild!.textContent = '已复制';
@@ -462,7 +510,7 @@ function boot(): void {
   el<HTMLFormElement>('.composer').addEventListener('submit', event => {
     event.preventDefault();
 
-    if (readingBusy(record)) {
+    if (readingBusy(record) && !input.value.trim()) {
       void rpc('reading_stop').then(result => update(result.record)).catch(err => report(err.message));
     }
     else {
@@ -478,10 +526,8 @@ function boot(): void {
   input.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
-
-      if (!readingBusy(record)) {
-        void send(input.value);
-      }
+      // 空回车在生成中什么也不做；有字就发出，生成中即改口。
+      void send(input.value);
     }
   });
 

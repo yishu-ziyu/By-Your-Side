@@ -40,11 +40,12 @@ export function installReading(deps: Dependencies) {
     void chrome.tabs.sendMessage(record.source.tabId, {type: 'reading_update', record}, options).catch(() => {});
   };
 
-  const stop = (record: ReadingRecord) => {
+  const stop = (record: ReadingRecord, announce = true) => {
     if (!record.requestId || !readingBusy(record)) return;
     deps.send({type: 'reading_cancel', threadId: record.threadId, requestId: record.requestId});
     record.turns.at(-1)!.state = 'stopped';
-    publish(record);
+
+    if (announce) publish(record);
   };
 
   const documentKey = (sender: chrome.runtime.MessageSender) => sender.documentId ? `document:${sender.documentId}` : `url:${sender.url}`;
@@ -102,7 +103,10 @@ export function installReading(deps: Dependencies) {
  return {ok: true, record}; }
 
       if (raw.type === 'reading_send') {
-        if (readingBusy(record)) throw new Error('请先停止当前回答。');
+        // 生成中发来的问题是改口：停下旧回答和发出新问题在同一步里完成，旧回答没有继续写的间隙。
+        const correction = readingBusy(record);
+
+        if (correction && raw.correction !== true) throw new Error('请先停止当前回答。');
         const question = typeof raw.question === 'string' ? raw.question.trim() : '';
 
         if (!question || question.length > 2000) throw new Error('请输入 1–2000 字的问题。');
@@ -115,6 +119,11 @@ export function installReading(deps: Dependencies) {
         const candidate = {...record, turns: [...previousTurns, turn]};
 
         if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('阅读记录已较长，请在侧栏继续。');
+        if (correction) {
+          stop(record, false);
+          record.correctedTurns = [...(record.correctedTurns ?? []), candidate.turns.length - 1];
+        }
+
         record.turns = candidate.turns;
         record.requestId = crypto.randomUUID();
         record.transferredConversationId = undefined;

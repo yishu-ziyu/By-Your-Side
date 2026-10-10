@@ -41,6 +41,9 @@ button.icon { width: 36px; padding: 0; }
 .answer table { display: block; max-width: 100%; overflow: auto; border-collapse: collapse; } .answer td,.answer th { padding: 5px 8px; border: 1px solid #e8e8eb; }
 .status { display: flex; align-items: center; gap: 5px; color: #888890; font-size: 12px; min-height: 24px; }
 .status:empty { display: none; }
+.turn.folded .answer { max-height: 3.4em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 40%, transparent); mask-image: linear-gradient(#000 40%, transparent); }
+.fold { font-size: 11px; color: #5779bf; min-height: 22px; padding: 0 6px; margin-left: -6px; }
+.tag { display: inline-block; font-size: 11px; color: #b4532a; background: #fbeee8; border-radius: 4px; padding: 0 5px; margin-left: 6px; font-weight: 500; }
 .composer { display: flex; gap: 6px; align-items: flex-end; margin: 0 8px 8px; padding: 5px 5px 5px 10px; border: 1px solid #ececef; border-radius: 23px; background: #fafafb; }
 textarea { resize: none; width: 100%; flex: 1; min-width: 0; min-height: 34px; max-height: 100px; padding: 7px 0; border: 0; background: transparent; outline: none; line-height: 20px; }
 textarea::placeholder { color: #919198; }
