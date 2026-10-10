@@ -21,7 +21,7 @@
  *   c 那一步写「你没让发，草稿还在」，不标红、不写「没成功」，过程行标题也不写「没成功」；g 那一步写「没发：你停下了」；n 第二次写「没发：前一个确认还在等你」。截图 a-panel-waiting / b-panel / c-panel / g-panel。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
  * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
- * 不显示等确认的标题，a 的侧栏判据失败；「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 heldReason，c 被「连续三次」停下；网址一变就算离开，m 的确认框消失；不按表单找输入栏，a 的确认框写成表单外备忘的文字（反例结果见验收文件）。
+ * 不显示等确认的标题，a 的侧栏判据失败；「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 heldReason，c 的侧栏那几步标成「没成功」；网址一变就算离开，m 的确认框消失；不按表单找输入栏，a 的确认框写成表单外备忘的文字（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -84,7 +84,7 @@ const model = await startScriptedModel([
   // 目标核对的请求里带着用户原话：先认它，直接判完成，免得它匹配到下面的用例去点按钮。
   { match: '"goalPage"', steps: [{ text: DONE }] },
   { match: ASK.a, steps: [clickSend, { text: "A 完成。" }] },
-  // 第 2–4 次点击回的是同一句「这一轮已经选了不发」：没有 heldReason 时，第 4 次凑满「连续三次」。
+  // 第 2–4 次点击回的是同一句「这一轮已经选了不发」：没有 heldReason 时，这几步在侧栏标成「没成功」。
   { match: ASK.c, steps: [clickSend, clickSend, clickSend, clickSend, { text: "C 完成。" }] },
   { match: ASK.d, steps: [clickSend, { text: "D 完成。" }] },
   // 两个工具结果把步数加 2：第 1 步是占位。
