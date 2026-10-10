@@ -8,7 +8,7 @@ const FIXTURE_DIR = dirname(
 );
 
 /** 验收页白名单：默认仍是 index.html；新增能力对齐页按名放行，不开放任意路径。 */
-const FIXTURE_FILES = new Set(["index.html", "cursor-visibility.html", "parity.html", "downloads.html"]);
+const FIXTURE_FILES = new Set(["index.html", "downloads.html"]);
 
 /** downloads.html 上的两个文件：一个完整下完；一个声明 64 KB、发 4 KB 后断开，Chrome 记为下载中断。 */
 export const DOWNLOAD_FIXTURES = {
