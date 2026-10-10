@@ -8,6 +8,7 @@
  *   a 被挡：回执写出挡住它的 dialog 和名字「Cookie 设置」，名字包在网页内容标记里；服务器收不到保存，也收不到弹层。
  *   b 不可用：两次回执都写「不可用」，不写「页面没有变化」；服务器收不到「下一步」（aria-disabled 不拦事件，点到就会报）。
  *   c 普通按钮：照常点到，服务器恰好 1 次。
+ *   d 「确认地址」在「编辑地址」对话框里，被对话框里一层无名遮罩盖住：回执不能叫模型关掉装着目标的对话框。
  * 失败方式：去掉写名字的代码，a 失败；去掉不可用检查，b 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -31,6 +32,10 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>设
 </div>
 <p><button id="submit" type="button" disabled onclick="${hit("submit")}">提交</button></p>
 <p><span id="next" role="button" tabindex="0" aria-disabled="true" style="padding:6px 12px;border:1px solid #888" onclick="${hit("next")}">下一步</span></p>
+<div role="dialog" aria-label="编辑地址" style="position:relative;width:320px;padding:24px;margin-top:16px;border:1px solid #ccc">
+  <button id="addr" type="button" onclick="${hit("addr")}">确认地址</button>
+  <div class="mask" onclick="${hit("mask")}" style="position:absolute;inset:0;background:rgba(255,255,255,.6)"></div>
+</div>
 <p><button id="plain" type="button" onclick="${hit("plain")}">普通按钮</button></p>
 </body></html>`;
 
@@ -44,11 +49,11 @@ const site = createServer((req, res) => {
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
-const ASK = "点不了验收：读页面，然后依次点保存设置、提交、下一步、普通按钮。";
+const ASK = "点不了验收：读页面，然后依次点保存设置、提交、下一步、确认地址、普通按钮。";
 const FINAL = "四个按钮都试过了。";
 // 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
-const clicks = { save: { target: "" }, submit: { target: "" }, next: { target: "" }, plain: { target: "" } };
-const NAMES = { save: "保存设置", submit: "提交", next: "下一步", plain: "普通按钮" } as const;
+const clicks = { save: { target: "" }, submit: { target: "" }, next: { target: "" }, addr: { target: "" }, plain: { target: "" } };
+const NAMES = { save: "保存设置", submit: "提交", next: "下一步", addr: "确认地址", plain: "普通按钮" } as const;
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
@@ -57,6 +62,7 @@ const model = await startScriptedModel([
     { tool: { name: "click", args: clicks.save } },
     { tool: { name: "click", args: clicks.submit } },
     { tool: { name: "click", args: clicks.next } },
+    { tool: { name: "click", args: clicks.addr } },
     { tool: { name: "click", args: clicks.plain } },
     { text: FINAL },
   ] },
@@ -114,6 +120,8 @@ try {
   check("a 被挡：回执写出挡住它的 dialog「Cookie 设置」，名字包在网页内容标记里；保存和弹层都没被点", /挡住/.test(save) && /dialog/.test(save) && /<page-content untrusted>\s*Cookie 设置\s*<\/page-content>/.test(save) && count("save") === 0 && count("overlay") === 0, { receipt: save, save: count("save"), overlay: count("overlay") });
   const submit = clickReceipt("submit"), next = clickReceipt("next");
   check("b 不可用：两次回执都写不可用，不写页面没有变化；下一步没被点", [submit, next].every(t => /不可用/.test(t) && !/Nothing on the page changed/.test(t)) && count("next") === 0, { submit, next, nextHits: count("next") });
+  const addr = clickReceipt("addr");
+  check("d 挡住目标的是它所在对话框里的无名遮罩：回执不把对话框「编辑地址」说成挡住它的东西；按钮和遮罩都没被点", /挡住/.test(addr) && !/编辑地址/.test(addr) && count("addr") === 0 && count("mask") === 0, { receipt: addr, addr: count("addr"), mask: count("mask") });
   const plain = clickReceipt("plain");
   check("c 普通按钮照常点到，服务器恰好 1 次", /Clicked/.test(plain) && count("plain") === 1, { receipt: plain, plain: count("plain") });
   await rp.screenshot(panel, join(out, "panel.png"));

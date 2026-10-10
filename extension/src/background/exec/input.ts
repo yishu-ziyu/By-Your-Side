@@ -1146,23 +1146,28 @@ async function explainRefusal(tabId: number, backendNodeId: number, error: unkno
     const hit = (await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: top.result.objectId })).node.backendNodeId;
     const { nodes } = await sendCommand<{ nodes: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId: hit, fetchRelatives: true });
     const byId = new Map(nodes.map(n => [n.nodeId, n]));
+    // 目标自己的祖先（例如装着目标的对话框）不能算挡住它的东西：叫模型关掉它，等于关掉目标所在的弹窗。
+    const targetTree = await sendCommand<{ nodes: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true });
+    const holdsTarget = new Set(targetTree.nodes.map(n => n.nodeId));
     const first = nodes.find(n => n.backendDOMNodeId === hit);
     let named = first;
 
-    // 往上找第一个有名字或是对话框的节点；到整页还没有，就用命中的元素本身。
-    while (named && named.role?.value !== "RootWebArea" && (named.ignored || !(String(named.name?.value ?? "").trim() || /dialog/.test(named.role?.value ?? "")))) {
+    // 往上找第一个有名字或是对话框的节点；碰到目标的祖先或到了整页还没有，就用命中的元素本身。
+    while (named && named.role?.value !== "RootWebArea" && !holdsTarget.has(named.nodeId) && (named.ignored || !(String(named.name?.value ?? "").trim() || /dialog/.test(named.role?.value ?? "")))) {
       named = named.parentId ? byId.get(named.parentId) : undefined;
     }
 
-    if (!named || named.role?.value === "RootWebArea") named = first;
+    if (!named || named.role?.value === "RootWebArea" || holdsTarget.has(named.nodeId)) named = first;
     const id = named?.backendDOMNodeId;
 
     if (!named || id === undefined) return message;
     const ownText = named.childIds?.map(c => byId.get(c)).find(c => c?.role?.value === "StaticText")?.name?.value;
     const name = String(named.name?.value || ownText || "").replace(/\s+/g, " ").trim().slice(0, 40);
-    addAxRefs(tabId, [id]);
 
-    return `目标被 @${id} ${named.role?.value ?? "元素"} 挡住，操作未执行，挡住它的元素也没有被点。${name ? `挡住的元素名字：${wrapPageContent(name)}` : ""}先处理挡住的元素（例如关掉弹层），再重新 snapshot 确认目标。`;
+    // 等这几次 CDP 调用时页面可能已换（导航、DOM 快照）：目标编号仍登记着才登记新编号，不把旧编号带回来。
+    if (isAxRef(tabId, backendNodeId)) addAxRefs(tabId, [id]);
+
+    return `目标被 @${id} ${named.ignored ? "元素" : named.role?.value ?? "元素"} 挡住，操作未执行，挡住它的元素也没有被点。${name ? `挡住的元素名字：${wrapPageContent(name)}` : ""}先处理挡住的元素（例如关掉弹层），再重新 snapshot 确认目标。`;
   } catch {
     return message;
   } finally {
