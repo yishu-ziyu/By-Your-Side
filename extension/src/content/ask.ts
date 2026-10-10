@@ -19,6 +19,8 @@ import { createReadAloud } from './read-aloud.js';
 
 const HOST = 'data-sideagent-ask';
 
+const RETIRED = 'data-sideagent-ask-retired';
+
 interface SelectionSnapshot {
   source: ReadingSource;
   range: Range | null;
@@ -75,7 +77,9 @@ function boot(): void {
   installEdgePill();
   installLinkPreview();
   installNudge();
-  document.querySelector(`[${HOST}]`)?.remove();
+  const previous = document.querySelector(`[${HOST}]`);
+  previous?.setAttribute(RETIRED, '1');
+  previous?.remove();
   const host = document.createElement('div');
   host.setAttribute(HOST, '1');
   host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483645';
@@ -541,6 +545,10 @@ function boot(): void {
   void chrome.storage.local.get(SELECTION_BAR_KEY).then(stored => applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]))).catch(() => {
   });
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (retired()) {
+      return;
+    }
+
     if (area === 'local' && SELECTION_BAR_KEY in changes) {
       applyBarSetting(isSelectionBarOff(changes[SELECTION_BAR_KEY]!.newValue));
     }
@@ -568,44 +576,73 @@ function boot(): void {
     show(keyboard);
   }
 
+  // 扩展更新或重载后，后台给已打开的网页再装一份阅读卡（background/reinject.ts）。新的一份给旧宿主打上记号再删掉。
+  // 旧的一份见到记号就撤掉自己的监听，不再接点击、选区和按键：否则用户点进新卡片时，旧卡片会收起并删掉两份共用的段落高亮。
+  // 只认记号，不认宿主断开：有的网页会删掉 <html> 下的外来节点，那时这一份仍是网页里唯一的阅读卡。
+  const listening = new AbortController();
+  const { signal } = listening;
+  const resizes = new ResizeObserver(position);
+
+  function retired(): boolean {
+    if (!host.hasAttribute(RETIRED)) {
+      return false;
+    }
+
+    listening.abort();
+    resizes.disconnect();
+    clearInterval(navigationTimer);
+
+    return true;
+  }
+
   document.addEventListener('pointerdown', event => {
-    if (!event.composedPath().includes(host)) {
+    if (!retired() && !event.composedPath().includes(host)) {
       hide();
     }
-  }, true);
+  }, { capture: true, signal });
   document.addEventListener('pointerup', event => {
-    if (!event.composedPath().includes(host)) {
+    if (!retired() && !event.composedPath().includes(host)) {
       setTimeout(() => changedSelection(), 0);
     }
-  });
+  }, { signal });
   document.addEventListener('keyup', event => {
-    if (event.key === 'Shift' || event.key.startsWith('Arrow')) {
+    if (!retired() && (event.key === 'Shift' || event.key.startsWith('Arrow'))) {
       changedSelection(true);
     }
-  });
+  }, { signal });
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
+    if (!retired() && event.key === 'Escape') {
       hide();
     }
-  });
+  }, { signal });
   window.addEventListener('scroll', () => {
+    if (retired()) {
+      return;
+    }
+
     if (expanded) {
       position();
     }
     else if (visible) {
       hide();
     }
-  }, true);
-  window.addEventListener('resize', position);
-  new ResizeObserver(position).observe(surface);
+  }, { capture: true, signal });
+  window.addEventListener('resize', () => {
+    if (!retired()) {
+      position();
+    }
+  }, { signal });
+  resizes.observe(surface);
   window.addEventListener('pagehide', () => {
-    void rpc('reading_leave').catch(() => {
-    });
-  });
+    if (!retired()) {
+      void rpc('reading_leave').catch(() => {
+      });
+    }
+  }, { signal });
 
   // SPA navigation has no content-script reinjection; release the old document UI.
   const navigation = () => {
-    if (location.href === pageUrl) {
+    if (retired() || location.href === pageUrl) {
       return;
     }
 
@@ -620,9 +657,13 @@ function boot(): void {
     restore.hidden = true;
   };
 
-  window.addEventListener('popstate', navigation);
-  setInterval(navigation, 1000);
+  window.addEventListener('popstate', navigation, { signal });
+  const navigationTimer = setInterval(navigation, 1000);
   chrome.runtime.onMessage.addListener(raw => {
+    if (retired()) {
+      return;
+    }
+
     if (raw?.type === 'reading_update' && raw.record?.threadId === record?.threadId) {
       update(raw.record);
     }

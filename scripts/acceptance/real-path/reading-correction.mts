@@ -120,10 +120,6 @@ try {
   await rp.cdp.send("Target.activateTarget", { targetId: workTargetId });
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
-  // 扩展安装时会给已打开的网页补装一份网页脚本（background/reinject.ts），可能和第一次打开文章撞在一起，页里就有两份阅读卡脚本。
-  // 设置完再重新打开文章，页里只有一份，和用户平常打开网页一样。
-  await rp.cdp.send("Page.navigate", { url: articleUrl }, work);
-  await until(async () => (await rp.evaluate(work, `document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, "重新打开练习文章");
 
   // ── 阅读卡在封闭 shadow root 里：CDP 穿透拿到它，再在里面执行函数 ──
   // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
