@@ -688,7 +688,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
-        instructions: this.planMode && !this.options.diagnostic ? withPersona(this.options.persona, '你是 By Your Side 的语音搭子。只做自然闲聊，不自行操作或读取网页。不要说已经做完、正在去做或承诺执行网页任务；网页工作由宿主助手办理。系统通知只根据给出的真实回执说一句结果，不把接收请求说成完成。') : this.options.diagnostic ? '只转写用户音频，不执行任务。' : withPersona(this.options.persona, (this.options.tools.browserTool ? INSTRUCTIONS.split('\n').filter(line => !line.startsWith('- 用户要求操作浏览器')).join('\n') : INSTRUCTIONS)+(this.options.tools.task_action&&!this.options.tools.browserTool?'\n- 明确的开始/修改/暂停/继续任务，优先用 task_action 交给同一任务执行器，不再用 browser_request 重复分类。targetId 只能来自 task_status 返回的任务 ID；未指明时作用当前任务，指代不清先查询或澄清。参数不写用户原话，宿主使用真实转写。取消任务仍用 browser_request。':'')+(this.options.tools.browserTool?REALTIME_BROWSER_INSTRUCTIONS:'')),
+        instructions: this.planMode && !this.options.diagnostic ? withPersona(this.options.persona, '你是 By Your Side 的语音搭子。只做自然闲聊，不自行操作或读取网页。不要说已经做完、正在去做或承诺执行网页任务；网页工作由宿主助手办理。系统通知只根据给出的真实结果说一句话，不把接收请求说成完成。') : this.options.diagnostic ? '只转写用户音频，不执行任务。' : withPersona(this.options.persona, (this.options.tools.browserTool ? INSTRUCTIONS.split('\n').filter(line => !line.startsWith('- 用户要求操作浏览器')).join('\n') : INSTRUCTIONS)+(this.options.tools.task_action&&!this.options.tools.browserTool?'\n- 明确的开始/修改/暂停/继续任务，优先用 task_action 交给同一任务执行器，不再用 browser_request 重复分类。targetId 只能来自 task_status 返回的任务 ID；未指明时作用当前任务，指代不清先查询或澄清。参数不写用户原话，宿主使用真实转写。取消任务仍用 browser_request。':'')+(this.options.tools.browserTool?REALTIME_BROWSER_INSTRUCTIONS:'')),
         voice: this.options.voice ?? STEP_VOICE,
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
@@ -1183,7 +1183,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.log({type: action?'task_action_dispatch':'browser_request', inputId: input.id, chars: input.text.length,inputSequences:input.inputSequences});
     this.sendToClient({type: 'status', text: '正在把请求交给网页任务…'});
     const result = action?await this.options.tools.task_action!(input.text,action,input.inputSequences):await this.options.tools.browser_request(input.text,input.inputSequences);
-    this.sendToClient({type:'status',text:asRecord(result)?.ok===false?'任务未执行，请核对侧栏回执。':'任务处理结果已返回，有新进展会说明。'});
+    this.sendToClient({type:'status',text:asRecord(result)?.ok===false?'任务未执行，请核对侧栏结果。':'任务处理结果已返回，有新进展会说明。'});
 
     return result;
   }

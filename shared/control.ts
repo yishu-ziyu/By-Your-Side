@@ -516,7 +516,7 @@ export class ControlGate {
     if (done.status === "resolved") return done.value as T;
 
     if (done.status === "rejected") throw done.error;
-    const error = new Error("该操作已在之前的扩展进程中执行过，本次未重复执行；结果以原回执为准。");
+    const error = new Error("该操作已在之前的扩展进程中执行过，本次未重复执行；以原来的结果为准。");
     // 跨进程只能证明“执行过”，不能证明结果；沿错误对象携带结构化事实。
     (error as Error & { executionFact?: string }).executionFact = "unknown";
     throw error;

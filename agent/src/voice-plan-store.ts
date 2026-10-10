@@ -14,7 +14,7 @@ interface Record {id:string;source:string;fingerprint:string;steps:VoicePlanStep
 
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
 
-const uncertain=():VoiceRouteResult=>({kind:'action',ok:false,status:'unknown',message:'这份语音计划的结果无法确认，请查询已有回执；不会重新分类或执行。'});
+const uncertain=():VoiceRouteResult=>({kind:'action',ok:false,status:'unknown',message:'这份语音计划的结果无法确认，请查询已有结果；不会重新分类或执行。'});
 
 /** Claim before classification; step journal before effects; replay never resumes an unfinished plan. */
 export class VoicePlanStore {

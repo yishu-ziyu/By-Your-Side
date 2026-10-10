@@ -234,7 +234,7 @@ return value?this.store.receipt(value):undefined;
  if (error instanceof TaskActionRejected && error.allowNewConversation && request.action === 'start') receipt.newConversationRequest = structuredClone(request); }
 
       try { this.store.finish(key,{fingerprint,pending:false,receipt}); }
-      catch { return {...receipt,status:'unknown' as const,message:'回执未能保存，执行结果尚无法确认；不会自动重做。'}; }
+      catch { return {...receipt,status:'unknown' as const,message:'请求结果未能保存，执行情况尚无法确认；不会自动重做。'}; }
 
       return receipt;
     });
