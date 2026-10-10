@@ -2316,7 +2316,7 @@ export async function pressKey(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: DispatchGuard,
-): Promise<{ pressed: true; dialog?: OpenedDialog } | { pressed: false; dialog: OpenedDialog }> {
+): Promise<{ pressed: true; dialog?: OpenedDialog; effect?: EffectReport } | { pressed: false; dialog: OpenedDialog }> {
   const info = resolveKey(params.key);
 
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
@@ -2378,13 +2378,18 @@ export async function pressKey(
     return { dialog };
   });
 
+  // 只有回车常提交表单、发请求，所以只给回车报页面变化；方向键、Tab 连按时每下多等 600 毫秒不值得。
+  const effectToken = info.key === "Enter" ? await beginEffect(keyboardTabId) : null;
+
   const pressing = (async () => {
     await sendCommand(keyboardTabId, "Input.dispatchKeyEvent", rawKeyDown,sequenceGuard);
     await sendCommand(keyboardTabId, "Input.dispatchKeyEvent", { type: "keyUp", ...base },sequenceGuard);
+
+    return await collectEffect(keyboardTabId, effectToken);
   })();
 
   try {
-    const settled = await Promise.race([pressing.then(() => ({})), opened]);
+    const settled = await Promise.race([pressing.then(effect => ({ effect })), opened]);
 
     if ("dialog" in settled) {
       pressing.catch(() => {});
@@ -2392,7 +2397,7 @@ export async function pressKey(
       return nativeInputs ? { pressed: true, dialog: settled.dialog } : { pressed: false, dialog: settled.dialog };
     }
 
-    return { pressed: true };
+    return settled.effect ? { pressed: true, effect: settled.effect } : { pressed: true };
   } finally {
     dialogWatch.stop();
   }

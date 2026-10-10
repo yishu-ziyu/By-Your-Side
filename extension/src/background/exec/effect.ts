@@ -3,7 +3,7 @@
  * 效果证据失败（页面禁止注入、导航换文档、SW 重启）绝不能拖垮动作本身：
  * 所有入口都吞掉异常并返回 undefined，让调用方按「没有证据」处理。
  */
-import { EMPTY_EFFECT_REPORT, downloadEvidence, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport } from "../../../../shared/effect.js";
+import { EMPTY_EFFECT_REPORT, downloadEvidence, pendingRequests, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport } from "../../../../shared/effect.js";
 import { networkRingFor } from "../network-log.js";
 
 const CONTENT_FILE = "content-effect.js";
@@ -65,21 +65,25 @@ export async function beginEffect(
   }
 }
 
-/** 动作后收集：有强证据立即返回，否则等到超时；拿不到任何读数返回 undefined。 */
+/** 动作后收集：有强证据、且动作后发出的同网站请求都已完成就返回，否则等到超时；拿不到任何读数返回 undefined。 */
 export async function collectEffect(tabId: number, token: string | null): Promise<EffectReport | undefined> {
   if (!token) return undefined;
 
   try {
-    const report = await settleEffectReport(async () => {
+    const since = effectStarts.get(token);
+    const startUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
+
+    const settled = await settleEffectReport(async () => {
       try {
         return await callPage(tabId, (t: string) => window.__sideagent?.effect?.diff?.(t) ?? null, [token]);
       } catch {
         return null;
       }
-    });
+    }, { pending: () => since === undefined ? 0 : pendingRequests(networkRingFor(tabId)?.entries ?? [], since, startUrl) });
 
-    const since = effectStarts.get(token);
     const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
+    const report = await withDocumentChange(tabId, token, settled, startUrl, pageUrl);
+
     const sent = since === undefined ? [] : [
       ...requestEvidence(networkRingFor(tabId)?.entries ?? [], since, Date.now(), pageUrl),
       ...downloadEvidence(await clickDownloads(tabId, since).catch(() => []), pageUrl),
@@ -98,6 +102,23 @@ export async function collectEffect(tabId: number, token: string | null): Promis
       /* 页面已经换了文档，会话自然消失 */
     }
   }
+}
+
+const withoutHash = (url: string) => url.split("#")[0];
+
+/**
+ * 动作让页面换了地址或换了文档（提交 GET 表单、点链接）时，最后读到的是旧文档在跳转前的读数，
+ * 会把「换页了」说成「没变化」。这里改成明确的「加载了新文档」（docs/evals/20261011-settle-after-requests.md）。
+ */
+async function withDocumentChange(tabId: number, token: string, report: EffectReport | undefined, startUrl: string, pageUrl: string): Promise<EffectReport | undefined> {
+  const moved = !!startUrl && !!pageUrl && withoutHash(startUrl) !== withoutHash(pageUrl);
+  // 新文档里没有这次的读数会话：读数变成 null，说明文档被换掉了。
+  const replaced = report !== undefined && await callPage(tabId, (t: string) => window.__sideagent?.effect?.diff?.(t) ?? null, [token]).then(r => r === null, () => true);
+
+  if (!moved && !replaced) return report;
+  const base = report ?? EMPTY_EFFECT_REPORT;
+
+  return { ...base, changed: true, evidence: [...base.evidence, "the page loaded a new document"] };
 }
 
 /** 点击后最多等多久：下载要先等跳转的响应头才出现，出现后再等 Chrome 报完成。 */

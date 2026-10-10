@@ -21,6 +21,9 @@ export const EFFECT_SETTLE_INTERVAL_MS = 100;
 
 export const EFFECT_SETTLE_TIMEOUT_MS = 600;
 
+/** 点击后网站的请求还没回来时，最多等这么久（docs/evals/20261011-settle-after-requests.md）。 */
+export const EFFECT_SETTLE_MAX_MS = 3000;
+
 /** 弱证据阈值：全局 DOM 节点数 / 全局正文长度。 */
 export const EFFECT_WEAK_DOM_DELTA = 3;
 
@@ -149,6 +152,11 @@ export interface EffectRequest {
   url: string;
   resourceType: string;
   startedAt: number;
+  /** 下面四项来自被动网络记录：都没有时，网站还没回应。 */
+  status?: number;
+  endedTs?: number;
+  failed?: string;
+  canceled?: boolean;
 }
 
 /** 不算页面对点击的反应：取数类方法，以及浏览器标明的打点、跨域预检与安全报告。 */
@@ -196,6 +204,34 @@ export function requestEvidence(requests: readonly EffectRequest[], since: numbe
   });
 
   return sent.length > 3 ? [...sent.slice(0, 3), `and ${sent.length - 3} more request(s)`] : sent;
+}
+
+/** 只等页面取数和换文档；脚本、图片、字体这类附属资源不等，否则一次跳转要多等好几秒。 */
+const WAITED_TYPES = new Set(["xhr", "fetch", "document"]);
+
+/**
+ * 动作之后开始、网站还没回应的同网站请求有几条。GET 也算：它不能证明页面有反应，但结果常在它回来之后才画出来。
+ * 收到响应头就算回应了：流式回复、长轮询的正文可能一直不结束，等正文结束会让每次点击都等满上限。
+ * 读不出页面网站时按 0 处理，即不多等。
+ */
+export function pendingRequests(requests: readonly EffectRequest[], since: number, pageUrl: string): number {
+  let pageSite: string;
+
+  try {
+    pageSite = siteOf(new URL(pageUrl).hostname);
+  } catch {
+    return 0;
+  }
+
+  return requests.filter(r => {
+    if (r.startedAt < since || r.status !== undefined || r.endedTs !== undefined || r.failed !== undefined || r.canceled || !WAITED_TYPES.has(r.resourceType)) return false;
+
+    try {
+      return siteOf(new URL(r.url).hostname) === pageSite;
+    } catch {
+      return false;
+    }
+  }).length;
 }
 
 /** 点击窗口里开始的一次浏览器下载（取自 chrome.downloads；filename 只留文件名）。 */
@@ -247,46 +283,58 @@ export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: 
   });
 }
 
-/** 给模型看的回执文案：有变化给清单，没变化明说并提示不要盲目重试。 */
-export function formatEffectReport(report: EffectReport | undefined): string {
+/** 给模型看的工具结果文字：有变化给清单，没变化明说并提示不要盲目重试。action 是动作的英文名（click、key press）。 */
+export function formatEffectReport(report: EffectReport | undefined, action = "click"): string {
   if (!report) return "";
   const detail = [...report.evidence, ...report.weak].join("; ");
 
   if (report.changed) return ` Page reacted: ${detail}.`;
 
   const tail = report.volatile
-    ? " The page itself keeps changing, but nothing was attributable to this click"
-    : " Nothing on the page changed in a way attributable to this click";
+    ? ` The page itself keeps changing, but nothing was attributable to this ${action}`
+    : ` Nothing on the page changed in a way attributable to this ${action}`;
 
   const weak = report.weak.length ? ` (${report.weak.join("; ")})` : "";
 
-  return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly click the same target again — observe the page first.`;
+  return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly ${action === "click" ? "click the same target" : `repeat the same ${action}`} again — observe the page first.`;
 }
 
 /**
- * 早停轮询：每 intervalMs 取一次报告，出现强证据立即返回；否则到 timeoutMs 返回最后一次。
+ * 轮询：每 intervalMs 取一次报告，出现强证据就返回；否则到 timeoutMs 返回最后一次。
+ * pending 报告动作后发出的请求还有几条没完成：有就接着等，完成后再看一次（结果常在请求回来后才画出），
+ * 最多等到 maxMs。以前一看到「加载中」就返回、或在请求回来前判「没变化」（docs/evals/20261011-settle-after-requests.md）。
  * 一次都没拿到报告（poll 一直返回 null/抛错，例如页面已经导航）时返回 undefined——
  * 不能把「拿不到证据」说成「没有变化」。
  */
 export async function settleEffectReport(
   poll: () => Promise<EffectReport | null | undefined>,
-  opts: { now?: () => number; sleep?: (ms: number) => Promise<void>; timeoutMs?: number; intervalMs?: number } = {},
+  opts: { now?: () => number; sleep?: (ms: number) => Promise<void>; timeoutMs?: number; intervalMs?: number; maxMs?: number; pending?: () => number } = {},
 ): Promise<EffectReport | undefined> {
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const timeoutMs = opts.timeoutMs ?? EFFECT_SETTLE_TIMEOUT_MS;
   const intervalMs = opts.intervalMs ?? EFFECT_SETTLE_INTERVAL_MS;
-  const deadline = now() + timeoutMs;
+  const start = now();
+  const deadline = start + timeoutMs;
+  const hardDeadline = start + (opts.maxMs ?? EFFECT_SETTLE_MAX_MS);
   let last: EffectReport | undefined;
+  let waited = false;
 
   for (;;) {
     const report = await poll();
 
     if (report) last = report;
+    const busy = (opts.pending?.() ?? 0) > 0;
 
-    if (last?.changed) return last;
+    if (busy) {
+      waited = true;
 
-    if (now() >= deadline) return last;
+      if (now() >= hardDeadline) return last;
+    } else if (waited) {
+      // 请求刚回来：页面多半还没画出结果，隔一拍再看一次。
+      waited = false;
+    } else if (last?.changed || now() >= deadline) return last;
+
     await sleep(intervalMs);
   }
 }
