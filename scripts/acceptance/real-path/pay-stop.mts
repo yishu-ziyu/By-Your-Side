@@ -57,7 +57,7 @@ const toolIds = new Set<string>();
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: DONE }] },
-  // 第 2–4 次点击：没有 sendDeclined 标记时，第 4 次凑满「连续三次」。
+  // 第 2–4 次点击：没有 heldReason 时，第 4 次凑满「连续三次」。
   { match: ASK.a, steps: [clickPay, clickPay, clickPay, clickPay, { text: "A 完成。" }] },
   { match: ASK.c, steps: [
     { tool: { name: "click", args: { target: "#next", label: "下一步" } } },

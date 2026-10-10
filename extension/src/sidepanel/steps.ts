@@ -4,6 +4,7 @@
  */
 import { displayNameFor, personFor } from "../../../shared/cast.js";
 import { toolAction } from "../../../shared/user-facing.js";
+import type { HeldReason } from "../../../shared/protocol.js";
 
 export interface ToolAction {
   /** 步骤链里用的短动作名，如 "读取页面结构"。 */
@@ -327,19 +328,20 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
   return done;
 }
 
-/** 用户没让发送的那一步：按扩展给助手的原因说一句人话，不当成失败（docs/evals/20261009-send-confirm.md R2）。 */
-export function sendDeclinedText(resultText: string): string {
-  // 付款按钮沿用这条路：助手不点，留给用户（docs/evals/20261009-pay-stop.md）。
-  if (resultText.includes("Stopped before payment")) return "停在付款前，等你自己点";
-
-  if (resultText.includes("停下了任务")) return "没发：你停下了";
-
-  if (resultText.includes("离开或关掉")) return "没发：你离开了网页";
-
-  if (resultText.includes("2 分钟内没有")) return "没发：2 分钟没确认";
-
-  return "你没让发，草稿还在";
-}
+/**
+ * 因为用户没执行的那一步：按扩展给出的原因说一句人话，不当成失败（docs/evals/20261009-send-confirm.md R2）。
+ * 只看原因，不读给助手的文字：改写给助手的话不会让侧栏说错。
+ */
+export const HELD_TEXT: Record<HeldReason, string> = {
+  // 付款按钮：助手不点，留给用户（docs/evals/20261009-pay-stop.md）。
+  pay: "停在付款前，等你自己点",
+  stopped: "没发：你停下了",
+  left: "没发：你离开了网页",
+  timeout: "没发：2 分钟没确认",
+  declined: "你没让发，草稿还在",
+  repeat: "你没让发，草稿还在",
+  busy: "你没让发，草稿还在",
+};
 
 export function recordedDuration(start: number, end: number): string | null {
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;

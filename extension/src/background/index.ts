@@ -1441,8 +1441,8 @@ async function executeToolCall(
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
 
-    // 用户不让发：宿主据此不把它当成连续出错（docs/evals/20261009-send-confirm.md）。
-    if (e && typeof e === "object" && "sendDeclined" in e) result.data = { sendDeclined: true };
+    // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话（docs/evals/20261009-send-confirm.md）。
+    if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason };
   }
 
   // 已完成写操作的身份跨 SW 重启保留，重复投递不会二次落地。

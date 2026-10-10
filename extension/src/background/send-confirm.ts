@@ -7,6 +7,7 @@ import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
 import { isSendLabel } from "../shared/mark-actions.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
 import { bringForwardForUser } from "./foreground.js";
+import type { HeldReason } from "../../../shared/protocol.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
 export const SEND_CONFIRM_MS = 120_000;
@@ -47,9 +48,9 @@ const BUSY_TEXT = `这个网页上已经有一个「发送」在等用户确认�
 
 const PROGRAM_TEXT = "网页脚本程序里不能点「发送」：发送前要等用户在网页上确认，程序等不了，所以这次没有点。请改用单独的 click 工具点这个按钮。";
 
-/** 没执行的结果：sendDeclined 标记让宿主不把「用户没让发」（不发、停、离开、超时）当成工具出错去连续计数，也不进「换个办法试」。 */
-function notSent(message: string, declined = false): Error {
-  return Object.assign(new Error(message), { executionFact: "not_executed" as const }, declined ? { sendDeclined: true as const } : {});
+/** 没执行的结果：带 heldReason 时，宿主不把「用户没让发」（不发、停、离开、超时）当成工具出错去连续计数，也不进「换个办法试」；侧栏按它写给用户看的那句话。 */
+function notSent(message: string, heldReason?: HeldReason): Error {
+  return Object.assign(new Error(message), { executionFact: "not_executed" as const }, heldReason ? { heldReason } : {});
 }
 
 const declined = new Set<string>();
@@ -124,9 +125,9 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
   if (guard.inProgram) throw notSent(PROGRAM_TEXT);
   const key = guard.task === undefined ? null : `${guard.task}\u0000${tabId}\u0000${label.trim()}`;
 
-  if (key && declined.has(key)) throw notSent(REPEAT_TEXT, true);
+  if (key && declined.has(key)) throw notSent(REPEAT_TEXT, "repeat");
 
-  if (pendingTabs.has(tabId)) throw notSent(BUSY_TEXT, true);
+  if (pendingTabs.has(tabId)) throw notSent(BUSY_TEXT, "busy");
   pendingTabs.add(tabId);
 
   try {
@@ -176,7 +177,7 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
   shown.disconnect();
   guard.waiting(false);
 
-  if (outcome === "send" && guard.cancelled()) throw notSent(TEXT.stopped, true);
+  if (outcome === "send" && guard.cancelled()) throw notSent(TEXT.stopped, "stopped");
 
   if (outcome === "send") return true;
 
@@ -186,5 +187,5 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
     declined.add(key);
   }
 
-  throw notSent(TEXT[outcome], true);
+  throw notSent(TEXT[outcome], outcome === "decline" ? "declined" : outcome);
 }

@@ -195,6 +195,18 @@ export type TeamMemberHandback =
 
 export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
 
+/**
+ * 这一步因为用户没执行，也不算失败：pay 付款按钮留给用户点；declined 用户在网页上选了「不发」；repeat 这一轮已选过「不发」；
+ * busy 同一页已有一个「发送」在等用户确认；stopped 用户停下或接管；left 用户离开或关掉网页；timeout 用户 2 分钟没确认。
+ * 由做出这个决定的地方给出，侧栏按它选给用户看的那句话，不读给助手的文字。
+ */
+const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout"] as const;
+export type HeldReason = typeof HELD_REASONS[number];
+
+export function isHeldReason(v: unknown): v is HeldReason {
+  return (HELD_REASONS as readonly unknown[]).includes(v);
+}
+
 export type ClientMessage = ConversationEnvelope & (
   | VoiceClientMessage
   | ReadingClientMessage
@@ -333,7 +345,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 用户在网页上没让发送（不发、停、离开、超时）：没执行，也不是失败。 */ sendDeclined?: true; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */

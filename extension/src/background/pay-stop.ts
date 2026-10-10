@@ -5,6 +5,7 @@
  */
 import { OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP } from "../shared/overlay.js";
 import { bringForwardForUser } from "./foreground.js";
+import type { HeldReason } from "../../../shared/protocol.js";
 
 /** 在页面 ISOLATED world 里画提示和按钮外圈；序列化进页面，必须自包含。页面文字只用 textContent 放进去。 */
 function showPayStop(attr: string, kind: string, label: string, x: number, y: number): void {
@@ -45,7 +46,7 @@ const PAY_TEXT = (label: string) =>
 
 /**
  * 付款按钮：在网页上圈出按钮、留提示，然后抛「没执行」。
- * sendDeclined 标记沿用「用户没让发」那条路：宿主不把它当成出错、不连续计数、不算「页面没有变化」。
+ * heldReason 沿用「用户没让发」那条路：宿主不把它当成出错、不连续计数、不算「页面没有变化」。
  */
 export async function stopBeforePay(tabId: number, label: string, x: number, y: number): Promise<never> {
   // 工作页可能在后台：先按平常的规矩切到前台（不抢别的窗口），用户才看得到圈出的按钮。
@@ -55,5 +56,5 @@ export async function stopBeforePay(tabId: number, label: string, x: number, y: 
     await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showPayStop, args: [OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP, label, x, y] });
   } catch { /* 页面不让注入：照样不点，只是网页上没有提示 */ }
 
-  throw Object.assign(new Error(PAY_TEXT(label)), { executionFact: "not_executed" as const, sendDeclined: true as const });
+  throw Object.assign(new Error(PAY_TEXT(label)), { executionFact: "not_executed" as const, heldReason: "pay" satisfies HeldReason });
 }
