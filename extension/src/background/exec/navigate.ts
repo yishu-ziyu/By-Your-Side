@@ -38,5 +38,7 @@ export async function navigate(
 
   if (ready.download) result.note = downloadNote(ready.download);
 
+  if (ready.readiness==='error_page') result.note = "Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
+
   return result;
 }

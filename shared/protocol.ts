@@ -471,8 +471,8 @@ export interface TabInfo {
   working: boolean;
 }
 
-/** navigate / open_tab 等到的结果。download：打开的地址变成了一次下载，标签页留在原页面。 */
-export type PageReadinessValue = "interactive" | "complete" | "timeout" | "download";
+/** navigate / open_tab 等到的结果。download：打开的地址变成了一次下载，没有打开页面。error_page：Chrome 显示了自己的错误页（如连不上网站）。 */
+export type PageReadinessValue = "interactive" | "complete" | "timeout" | "download" | "error_page";
 
 /** 打开的地址变成的那次下载。filename 只留文件名；state 只认 chrome.downloads 的报告。 */
 export interface NavigationDownload {
@@ -560,7 +560,7 @@ export interface ToolContract {
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
   get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
-  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string } };
+  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string; /** 地址变成下载，Chrome 关掉了这个新标签页；它不再是工作标签页。 */ tabClosed?: true } };
   switch_tab: { params: { tabId: number }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string } };

@@ -47,7 +47,8 @@ export async function openTab(
   params: { url?: string },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ tabId: number; url: string; title: string; note?: string } & Partial<PageReadiness>> {
+): Promise<{ tabId: number; url: string; title: string; note?: string; tabClosed?: true } & Partial<PageReadiness>> {
+  const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   const tab = await chrome.tabs.create({ url: params.url, active: shouldActivateForKey(sessionId) });
@@ -59,7 +60,19 @@ export async function openTab(
   try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
 
   const ready=params.url?await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}):undefined;
-  const after = await chrome.tabs.get(tab.id);
+  let after: chrome.tabs.Tab;
+
+  try {
+    after = await chrome.tabs.get(tab.id);
+  } catch (error) {
+    // 地址变成下载时，Chrome 会关掉为它新开的标签页。如实说下载结果，工作标签页回到打开之前那一页，不留在已关的页上。
+    if (!ready?.download) throw error;
+    const working = await getWorkingTabId(sessionId);
+
+    if (working === tab.id || working == null) await setWorkingTab(previous, sessionId);
+
+    return { tabId: tab.id, url: params.url ?? "", title: "", ...ready, note: downloadNote(ready.download, "closed"), tabClosed: true };
+  }
 
   return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready, ...(ready?.download ? { note: downloadNote(ready.download) } : {}) };
 }
