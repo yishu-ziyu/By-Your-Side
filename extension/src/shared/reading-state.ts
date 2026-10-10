@@ -7,6 +7,8 @@ export interface ReadingRecord extends ReadingTranscript {
   handoffRequestId?: string;
   handoffError?: string;
   transferredConversationId?: string;
+  /** 改口发出的轮次（下标）：这一轮带「已改口」，它前面被停下的一轮折叠。 */
+  correctedTurns?: number[];
   updatedAt: number;
 }
 
