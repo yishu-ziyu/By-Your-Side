@@ -2,7 +2,7 @@ import { LEAD_SESSION_ID, isLeadSession, type SwitchTabVerification, type TabInf
 import { ensureAttached } from "../debugger.js";
 import { getTabResource, getWorkingTabId, resolveWorkingTab, setWorkingTab } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { waitForInteractive, type PageReadiness } from "./page-readiness.js";
+import { downloadNote, waitForInteractive, type PageReadiness } from "./page-readiness.js";
 
 export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ tabs: TabInfo[] }> {
   const workingId = await getWorkingTabId(sessionId);
@@ -47,7 +47,8 @@ export async function openTab(
   params: { url?: string },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ tabId: number; url: string; title: string; readiness?:PageReadiness["readiness"]; waitMs?:number; documentId?:string }> {
+): Promise<{ tabId: number; url: string; title: string; note?: string; tabClosed?: true } & Partial<PageReadiness>> {
+  const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   // 助手开的页留在后台，不换走用户正在看的标签页（docs/evals/20261010-keep-foreground.md）。
@@ -59,10 +60,22 @@ export async function openTab(
   // 尽量在页面自己的请求发出前开始记录；attach 失败不影响打开。
   try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
 
-  const ready=params.url?await waitForInteractive(tab.id,10_000):undefined;
-  const after = await chrome.tabs.get(tab.id);
+  const ready=params.url?await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}):undefined;
+  let after: chrome.tabs.Tab;
 
-  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready };
+  try {
+    after = await chrome.tabs.get(tab.id);
+  } catch (error) {
+    // 地址变成下载时，Chrome 会关掉为它新开的标签页。如实说下载结果，工作标签页回到打开之前那一页，不留在已关的页上。
+    if (!ready?.download) throw error;
+    const working = await getWorkingTabId(sessionId);
+
+    if (working === tab.id || working == null) await setWorkingTab(previous, sessionId);
+
+    return { tabId: tab.id, url: params.url ?? "", title: "", ...ready, note: downloadNote(ready.download, "closed"), tabClosed: true };
+  }
+
+  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready, ...(ready?.download ? { note: downloadNote(ready.download) } : {}) };
 }
 
 export async function switchTab(

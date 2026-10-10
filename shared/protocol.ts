@@ -471,6 +471,20 @@ export interface TabInfo {
   working: boolean;
 }
 
+/** navigate / open_tab 等到的结果。download：打开的地址变成了一次下载，没有打开页面。error_page：Chrome 显示了自己的错误页（如连不上网站）。 */
+export type PageReadinessValue = "interactive" | "complete" | "timeout" | "download" | "error_page";
+
+/** 打开的地址变成的那次下载。filename 只留文件名；state 只认 chrome.downloads 的报告。 */
+export interface NavigationDownload {
+  filename: string;
+  path: string;
+  state: "in_progress" | "interrupted" | "complete";
+  bytes?: number;
+  error?: string;
+  /** Chrome 判为危险、等用户在下载栏里选「保留」。 */
+  danger?: string;
+}
+
 /**
  * switch_tab 执行后读回的浏览器事实：只证明核验这一刻的状态——目标标签是其所属
  * 已聚焦窗口的活动标签、工作目标仍指向它；不宣称页面已加载、内容已读取或之后不会被切走。
@@ -546,10 +560,10 @@ export interface ToolContract {
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
   get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
-  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
+  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string; /** 地址变成下载，Chrome 关掉了这个新标签页；它不再是工作标签页。 */ tabClosed?: true } };
   switch_tab: { params: { tabId: number }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
-  navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
+  navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string } };
   snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string; /** With viewScopeId: collect the page again, then show that partition if it still exists. */ fresh?: boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
   click: {
     params: {

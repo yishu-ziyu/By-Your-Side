@@ -2217,14 +2217,14 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   private failedAttempts: { runId: string | null; items: Array<{ tool: string; reason: string }> } = { runId: null, items: [] };
 
   /**
-   * 记下一次失败的做法：工具报错，或打开页面但文档没加载完（navigate 返回成功、details.readiness 为 timeout）。
+   * 记下一次失败的做法：工具报错，或打开页面但文档没加载完或是错误页（navigate 返回成功、details.readiness 为 timeout 或 error_page）。
    * 只留错误原文的前 120 字（空白压成一个空格），遇到页面原文标记就截断，不把页面内容（含注入）带进催续提示；同样的做法只留最近一次，最多 6 条。
    */
   private noteFailedAttempt(tool: string, isError: boolean, result: unknown): void {
     if (GOAL_CHECK_BOOKKEEPING_TOOLS.has(tool)) return;
     // SAFETY: 只读 details.readiness 一个字段，类型不对按没有处理。
     const readiness = (result as { details?: { readiness?: unknown } } | null)?.details?.readiness;
-    const raw = isError ? firstText(result) : readiness === "timeout" ? "page did not finish loading (document timeout)" : null;
+    const raw = isError ? firstText(result) : readiness === "timeout" ? "page did not finish loading (document timeout)" : readiness === "error_page" ? "page did not open (Chrome error page)" : null;
 
     if (raw === null) return;
     const reason = (raw.split(/<page-content|<\/?untrusted/i)[0] ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "failed";

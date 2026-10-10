@@ -701,8 +701,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         guard();
         let value = result;
 
-        // 与模型直调的 navigate 一致：新页面就绪后顺手读一次，text 即新页面快照，程序里不必再调 snapshot。
-        if (canonical === "navigate" && result && typeof result === "object" && (result as { readiness?: unknown }).readiness !== "timeout") {
+        // 与模型直调的 navigate 一致：新页面就绪后顺手读一次，text 即新页面快照，程序里不必再调 snapshot。地址变成下载或 Chrome 显示错误页时不读。
+        if (canonical === "navigate" && result && typeof result === "object" && !["timeout", "download", "error_page"].includes(String((result as { readiness?: unknown }).readiness))) {
           try {
             const page = await options.call("snapshot", {}, nextSubId(id)(), "readonly-poll") as { text?: unknown };
 
