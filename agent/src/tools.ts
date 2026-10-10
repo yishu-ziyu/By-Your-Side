@@ -831,7 +831,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. The dialog type and message are given here; use accept_dialog or dismiss_dialog as the user asked (browser.pageInfo() in browser_run also reports a pending dialog).`, data);
 
-        return textResult(`Pressed ${params.key}.${formatEffectReport("effect" in data ? data.effect : undefined, "key press")}`, data);
+        // 回车没引起变化时不说「没变化、别再按」：多行输入框里回车只是换行，页面读数看不出来。
+        const effect = "effect" in data && data.effect?.changed ? data.effect : undefined;
+
+        return textResult(`Pressed ${params.key}.${formatEffectReport(effect, "key press")}`, data);
       },
     }),
 

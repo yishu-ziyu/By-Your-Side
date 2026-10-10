@@ -95,7 +95,7 @@ function claimsDeadControl(reply: string): boolean {
 }
 
 /** 宿主报告点击后页面没有可归因的变化：click 工具的文字回执（shared/effect.ts formatEffectReport），或程序步骤里点击结果的 changed:false。 */
-const NO_EFFECT = /nothing (on the page changed in a way )?(was )?attributable to this (?:click|key press)|"effect":\{[^{}]*"changed":false/gi;
+const NO_EFFECT = /nothing (on the page changed in a way )?(was )?attributable to this click|"effect":\{[^{}]*"changed":false/gi;
 
 /** 核对模型的回答：status 必须是四种之一，remaining、cause 可缺省。 */
 function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "blocked"; remaining?: string; cause?: unknown; correction?: string; finding?: string } {

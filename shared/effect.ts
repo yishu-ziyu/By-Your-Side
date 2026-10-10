@@ -152,7 +152,8 @@ export interface EffectRequest {
   url: string;
   resourceType: string;
   startedAt: number;
-  /** 下面三项来自被动网络记录：都没有时，请求还没完成。 */
+  /** 下面四项来自被动网络记录：都没有时，网站还没回应。 */
+  status?: number;
   endedTs?: number;
   failed?: string;
   canceled?: boolean;
@@ -205,11 +206,12 @@ export function requestEvidence(requests: readonly EffectRequest[], since: numbe
   return sent.length > 3 ? [...sent.slice(0, 3), `and ${sent.length - 3} more request(s)`] : sent;
 }
 
-/** 长连接与媒体流本来就不结束，等它们没有意义。 */
-const ENDLESS_TYPES = new Set(["websocket", "eventsource", "media", "ping"]);
+/** 只等页面取数和换文档；脚本、图片、字体这类附属资源不等，否则一次跳转要多等好几秒。 */
+const WAITED_TYPES = new Set(["xhr", "fetch", "document"]);
 
 /**
- * 动作之后开始、还没完成的同网站请求有几条。GET 也算：它不能证明页面有反应，但结果常在它回来之后才画出来。
+ * 动作之后开始、网站还没回应的同网站请求有几条。GET 也算：它不能证明页面有反应，但结果常在它回来之后才画出来。
+ * 收到响应头就算回应了：流式回复、长轮询的正文可能一直不结束，等正文结束会让每次点击都等满上限。
  * 读不出页面网站时按 0 处理，即不多等。
  */
 export function pendingRequests(requests: readonly EffectRequest[], since: number, pageUrl: string): number {
@@ -222,7 +224,7 @@ export function pendingRequests(requests: readonly EffectRequest[], since: numbe
   }
 
   return requests.filter(r => {
-    if (r.startedAt < since || r.endedTs !== undefined || r.failed !== undefined || r.canceled || ENDLESS_TYPES.has(r.resourceType)) return false;
+    if (r.startedAt < since || r.status !== undefined || r.endedTs !== undefined || r.failed !== undefined || r.canceled || !WAITED_TYPES.has(r.resourceType)) return false;
 
     try {
       return siteOf(new URL(r.url).hostname) === pageSite;

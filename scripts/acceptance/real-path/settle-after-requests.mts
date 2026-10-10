@@ -13,7 +13,8 @@
  *   b 模型收到「刷新列表」的工具结果，晚于服务器送出 /items 的结果。
  *   c 回车的工具结果写页面有反应。
  *   d 「开始同步」的点击在 5 秒内回到模型。
- *   e 「什么也不做」写页面没有变化。
+ *   e 「什么也不做」写页面没有变化，并且很快返回（不等别处没回来的请求）。
+ *   f 站内搜索（GET 表单）回车后跳到新页面：工具结果写加载了新文档，不写没有变化。
  * 失败方式：去掉等请求的代码，a、b 失败；去掉回车的变化报告，c 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -35,6 +36,7 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>列
 <section><h2>搜索</h2><form id="f"><input id="q" aria-label="搜索" type="search"></form><ul id="hits"></ul></section>
 <section><h2>同步</h2><button id="sync" type="button">开始同步</button></section>
 <section><h2>其他</h2><button id="noop" type="button">什么也不做</button></section>
+<section><h2>站内搜索</h2><form action="/results" method="get"><input name="w" aria-label="站内搜索" type="search"></form></section>
 <script>
 const add = (ul, n, w) => { for (let i = 1; i <= n; i++) { const li = document.createElement("li"); li.textContent = w + " " + i; ul.append(li); } };
 more.onclick = async () => { await fetch("/items?for=more"); add(items, 5, "商品"); };
@@ -49,17 +51,18 @@ const site = createServer((req, res) => {
   if (url.pathname === "/items") { setTimeout(() => { res.writeHead(200, { "content-type": "application/json" }).end("[]"); served[`items-${url.searchParams.get("for")}`] = Date.now(); }, 900); return; }
   if (url.pathname === "/search") { served.searchStarted = Date.now(); setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end("[]"), 300); return; }
   if (url.pathname === "/hang") { served.hangStarted = Date.now(); return; }
+  if (url.pathname === "/results") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><meta charset="utf-8"><title>搜索结果</title><h1>搜索结果</h1><p>找到 2 条</p>`); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
-const ASK = "等请求验收：读页面，然后点加载更多、刷新列表，搜索猫并回车，再点开始同步和什么也不做。";
+const ASK = "等请求验收：读页面，然后点加载更多、刷新列表，搜索猫并回车，再点开始同步和什么也不做，最后站内搜索狗并回车。";
 const FINAL = "都试过了。";
 // 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
-const t = { more: { target: "" }, refresh: { target: "" }, q: { target: "", value: "猫" }, sync: { target: "" }, noop: { target: "" } };
-const NAMES = { more: 'button "加载更多"', refresh: 'button "刷新列表"', q: 'searchbox "搜索"', sync: 'button "开始同步"', noop: 'button "什么也不做"' } as const;
+const t = { more: { target: "" }, refresh: { target: "" }, q: { target: "", value: "猫" }, sync: { target: "" }, noop: { target: "" }, w: { target: "", value: "狗" } };
+const NAMES = { more: 'button "加载更多"', refresh: 'button "刷新列表"', q: 'searchbox "搜索"', sync: 'button "开始同步"', noop: 'button "什么也不做"', w: 'searchbox "站内搜索"' } as const;
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
@@ -71,6 +74,8 @@ const model = await startScriptedModel([
     { tool: { name: "press_key", args: { key: "Enter" } } },
     { tool: { name: "click", args: t.sync } },
     { tool: { name: "click", args: t.noop } },
+    { tool: { name: "fill", args: t.w } },
+    { tool: { name: "press_key", args: { key: "Enter" } } },
     { text: FINAL },
   ] },
 ], undefined, payload => onPayload(payload));
@@ -105,6 +110,7 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
   }
 }
 
+const all = (name: string) => receipts.filter(r => r.name === name);
 const of = (name: string, key?: keyof typeof t) => receipts.find(r => r.name === name && (!key || r.args.includes(`"${t[key].target}"`)));
 const reacted = (text = "") => /Page reacted/.test(text);
 
@@ -132,7 +138,11 @@ try {
   const sync = of("click", "sync");
   check("d 「开始同步」请求永不返回：点击 5 秒内回到模型", !!sync && served.hangStarted !== undefined && sync.seenAt - served.hangStarted < 5000, { waitedMs: sync && served.hangStarted ? sync.seenAt - served.hangStarted : null, result: sync?.text ?? null });
   const noop = of("click", "noop");
-  check("e 「什么也不做」：工具结果写页面没有变化", /Nothing on the page changed/.test(noop?.text ?? ""), { result: noop?.text ?? null });
+  // 从上一个工具结果到这一个，包括脚本模型回复、光标移动和点击本身；一直等满 3 秒的实现会超过 2.5 秒。
+  const noopMs = noop && sync ? noop.seenAt - sync.seenAt : null;
+  check("e 「什么也不做」：工具结果写页面没有变化，并且 2.5 秒内回到模型", /Nothing on the page changed/.test(noop?.text ?? "") && noopMs !== null && noopMs < 2500, { ms: noopMs, result: noop?.text ?? null });
+  const nav = all("press_key")[1];
+  check("f 站内搜索回车跳到新页面：工具结果写加载了新文档，不写没有变化", /new document/.test(nav?.text ?? "") && !/Nothing on the page changed/.test(nav?.text ?? ""), { result: nav?.text ?? null });
   await rp.screenshot(work, join(out, "page.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice page", checks, served, receipts, modelRequests: model.requests }, null, 2));
