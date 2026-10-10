@@ -4,7 +4,7 @@
  * 提示画在网页的 closed shadow 里，带 overlay 标记：助手的点击落在提示上会被 assertNotOwnOverlay 拒绝。
  */
 import { OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP } from "../shared/overlay.js";
-import { activateTab } from "./state.js";
+import { bringForwardForUser } from "./foreground.js";
 
 /** 在页面 ISOLATED world 里画提示和按钮外圈；序列化进页面，必须自包含。页面文字只用 textContent 放进去。 */
 function showPayStop(attr: string, kind: string, label: string, x: number, y: number): void {
@@ -49,7 +49,7 @@ const PAY_TEXT = (label: string) =>
  */
 export async function stopBeforePay(tabId: number, label: string, x: number, y: number): Promise<never> {
   // 工作页可能在后台：先按平常的规矩切到前台（不抢别的窗口），用户才看得到圈出的按钮。
-  await chrome.tabs.get(tabId).then(tab => activateTab(tab)).catch(() => undefined);
+  await bringForwardForUser(tabId, "pay_stop");
 
   try {
     await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showPayStop, args: [OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP, label, x, y] });
