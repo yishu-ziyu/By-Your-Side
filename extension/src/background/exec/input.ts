@@ -1324,7 +1324,6 @@ export async function hover(
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId, [params.target]);
   const { point: [x, y] } = await resolvePointerTarget(tab.id, params, beforeDispatch);
-  await maybeActivateTab(tab, sessionId, beforeDispatch);
   const cid = cursorId(sessionId);
   const actionId = beforeDispatch ? "" : await beginCursorAction(tab.id, cid, "hover", params.target, params.label);
 
@@ -1384,7 +1383,6 @@ export async function click(
   if (sendName && (params.clickCount ?? 1) > 1) throw notExecuted(new Error(SEND_MULTI_CLICK));
 
   await beforeDispatch?.();
-  await maybeActivateTab(tab, sessionId, beforeDispatch);
   // 「发送」按钮：先在网页上等用户确认（页面先切到前台，用户才看得见）。用户点「发送」后，下面照常重新定位、核对命中再点。
   let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendContent(tabId, point[0], point[1]));
 
@@ -1645,7 +1643,6 @@ export async function doubleClick(
   if (buttons.some(isSendLabel)) throw notExecuted(new Error("「发送」按钮不能双击：双击可能发出两次，也不会先问用户。这次没有点；要发送请用 click 工具单击，扩展会先在网页上问用户。"));
 
   await beforeDispatch?.();
-  await maybeActivateTab(tab, sessionId);
 
   let [x, y] = point!;
 
@@ -1840,7 +1837,6 @@ export async function fill(
   const tabId = tab.id;
   const cid = cursorId(sessionId);
   await beforeDispatch?.();
-  await maybeActivateTab(tab, sessionId, beforeDispatch);
 
   // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
   const ref = parseRef(params.target);
@@ -2014,7 +2010,6 @@ export async function selectOption(
   await assertObservedDocument(tab.id, sessionId, [params.target]);
   const tabId = tab.id;
   await beforeDispatch?.();
-  await maybeActivateTab(tab, sessionId, beforeDispatch);
 
   const ref = parseRef(params.target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
@@ -2156,7 +2151,6 @@ export async function uploadFile(
   const tabId = tab.id;
   await assertObservedDocument(tabId, sessionId, [params.target]);
   await beforeDispatch?.();
-  await maybeActivateTab(tab, sessionId, beforeDispatch);
 
   const target = params.target ?? null;
   const backendNodeId = target === null ? undefined : axBackendNodeFor(tabId, parseRef(target));
@@ -2184,7 +2178,6 @@ export async function typeText(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
-  await maybeActivateTab(tab, sessionId);
   await beforeDispatch?.();
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
   // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
@@ -2203,7 +2196,6 @@ export async function pressKey(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
-  await maybeActivateTab(tab, sessionId);
 
   const heldMods = modifierMaskFor(sessionId, tab.id);
 

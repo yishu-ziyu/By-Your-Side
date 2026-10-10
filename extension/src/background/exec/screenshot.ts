@@ -2,7 +2,7 @@ import type { DispatchGuard } from "./input.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
-import { maybeActivateTab, resolveWorkingTab } from "../state.js";
+import { resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
 import { readCurrentDocument } from "./page-readiness.js";
 import { withTimeout } from "../timeout.js";
@@ -375,9 +375,6 @@ export async function screenshot(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  // worker 透传 sessionId：maybeActivateTab 对非 Lead 直接返回，绝不抢用户前台。
-  if (beforeDispatch) await maybeActivateTab(tab, sessionId, beforeDispatch);
-  else await maybeActivateTab(tab, sessionId);
   const pre = await chrome.tabs.get(tab.id);
   const documentBefore = await readCurrentDocument(tab.id);
 

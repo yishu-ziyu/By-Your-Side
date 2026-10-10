@@ -1,6 +1,6 @@
 import { LEAD_SESSION_ID, isLeadSession, type SwitchTabVerification, type TabInfo } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
-import { getTabResource, getWorkingTabId, maybeActivateTab, resolveWorkingTab, setWorkingTab, shouldActivateForKey } from "../state.js";
+import { getTabResource, getWorkingTabId, resolveWorkingTab, setWorkingTab } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { waitForInteractive, type PageReadiness } from "./page-readiness.js";
 
@@ -50,7 +50,8 @@ export async function openTab(
 ): Promise<{ tabId: number; url: string; title: string; readiness?:PageReadiness["readiness"]; waitMs?:number; documentId?:string }> {
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
-  const tab = await chrome.tabs.create({ url: params.url, active: shouldActivateForKey(sessionId) });
+  // 助手开的页留在后台，不换走用户正在看的标签页（docs/evals/20261010-keep-foreground.md）。
+  const tab = await chrome.tabs.create({ url: params.url, active: false });
 
   if (tab.id == null) throw new Error("创建标签页失败");
   await setWorkingTab(tab.id, sessionId);
@@ -69,16 +70,18 @@ export async function switchTab(
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ tabId: number; verification?: SwitchTabVerification }> {
-  const tab = await resolveWorkingTab(params.tabId, sessionId);
-  await maybeActivateTab(tab, sessionId, beforeDispatch);
+  await resolveWorkingTab(params.tabId, sessionId);
+  // 只换工作目标，不切前台：助手在后台标签里做事（docs/evals/20261010-keep-foreground.md）。
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
 
   return { tabId: params.tabId, verification: await readSwitchVerification(params.tabId, sessionId) };
 }
 
 /**
  * 执行后读一次浏览器当前事实：工作目标、目标窗口内实际活动的标签、窗口焦点。
- * 只证明核验这一刻的状态：不等待页面加载、不轮询重试、不抢焦点（激活规则沿用
- * shouldActivateForKey / mayActivateTabInWindow，核验只读不改）。目标消失或读取
+ * 只证明核验这一刻的状态：不等待页面加载、不轮询重试、不抢焦点（switch 本身不切前台，
+ * 核验只读不改）。目标消失或读取
  * 失败时如实返回 verified:false（不带事实字段），不伪造成功结论。
  */
 async function readSwitchVerification(tabId: number, sessionId: string): Promise<SwitchTabVerification> {

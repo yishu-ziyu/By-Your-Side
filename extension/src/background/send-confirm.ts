@@ -6,6 +6,7 @@
 import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
 import { isSendLabel } from "../shared/mark-actions.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
+import { activateTab } from "./state.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
 export const SEND_CONFIRM_MS = 120_000;
@@ -128,7 +129,12 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
   if (pendingTabs.has(tabId)) throw notSent(BUSY_TEXT, true);
   pendingTabs.add(tabId);
 
-  try { return await askUser(tabId, guard, key, label, await readContent()); } finally { pendingTabs.delete(tabId); }
+  try {
+    // 助手平时在后台标签里做事；要用户在网页上回答时，先把这页切到其窗口内前台（不抢别的窗口）。
+    await chrome.tabs.get(tabId).then(tab => activateTab(tab)).catch(() => undefined);
+
+    return await askUser(tabId, guard, key, label, await readContent());
+  } finally { pendingTabs.delete(tabId); }
 }
 
 async function askUser(tabId: number, guard: SendGuard, key: string | null, label: string, content: string | undefined): Promise<boolean> {
