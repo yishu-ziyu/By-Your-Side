@@ -9,8 +9,8 @@
  *   d) 助手切回表单页再交给用户（hand_to_user）：切换后活动页仍是「我的页面」；侧栏出现「需要你来这一步」时，表单页已是活动页。
  *   c) 助手点 target=_blank 的链接：Chrome 会把新页设成活动页，打开者记成用户的页。扩展仍跟到新页（点击结果写明新页已是工作页），
  *      并把「我的页面」放回活动页：点击结果回到模型时，活动标签是「我的页面」。
- *   e) 助手切回表单页再点付款按钮：切换后活动页仍是「我的页面」；网页上出现付款提示时，表单页已是活动页，网站没收到付款；
- *      整段没有窗口焦点变化（扩展后台监听 chrome.windows.onFocusChanged，前后窗口状态一致）。
+ *   e) 助手切回表单页再点付款按钮：切换后活动页仍是「我的页面」；网页上出现付款提示时，表单页已是活动页，网站没收到付款。
+ *   无头 Chrome 只有一个窗口且一直聚焦，所以「不聚焦窗口」这一条本用例证伪不了，不设检查。
  * 判据只读 Chrome 自己的状态（扩展后台的 chrome.tabs.query）、网站收到的请求和页面读回。
  * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页；不认「打开者是用户的页」的新页，c 跟不上新页；
  * 付款前停下或交给用户时不切前台，e 或 d 的活动页仍是「我的页面」（反例结果见验收文件）。
@@ -214,13 +214,10 @@ try {
   check("c 点 target=_blank：助手跟到新开的说明页，点击结果写明新页已是工作页", popup.length === 1 && clickReceipt.includes(`A new tab opened (tab ${popup[0]!.id}`) && clickReceipt.includes("now your working tab"), { popup, clickReceipt });
   check("c 点击结果回到模型时，活动标签已回到「我的页面」", afterClick?.activeId === userId, { afterClick: afterClick as unknown as Json, userId, popupActive: popup[0]?.active ?? null, activeTitles: [...new Set(cPolls.map(s => s.activeTitle))] });
 
-  // ── e：付款前停下时，把表单页切到前台；不动窗口焦点 ──
+  // ── e：付款前停下时，把表单页切到前台 ──
   part = "e";
   await rp.cdp.send("Page.bringToFront", {}, user);
   await sleep(300);
-  const windowsNow = async () => (await rp.evaluate(sw, "chrome.windows.getAll().then(ws => ws.map(w => ({ id: w.id, focused: w.focused })))")) as Json;
-  await rp.evaluate(sw, "(globalThis.__focusChanges = [], chrome.windows.onFocusChanged.addListener(id => globalThis.__focusChanges.push(id)), true)");
-  const windowsBefore = await windowsNow();
   await ask(ASK.e);
   /** 付款提示在 closed shadow 里：用 CDP 穿透找带付款标记的提示。 */
   const payNote = async () => {
@@ -237,9 +234,6 @@ try {
   const eSwitch = samples.find(s => s.part === "e" && s.after === "tabs 结果");
   const payReceipt = receipts.filter(r => r.name === "click").at(-1)?.text ?? "";
   check("e 助手切回表单页后活动页仍是「我的页面」；付款前停下时表单页已是活动标签，网站没收到付款", eSwitch?.activeId === userId && atPayStop.activeId === formId && count("/pay") === 0 && payReceipt.includes("Stopped before payment"), { afterSwitch: eSwitch as unknown as Json, atPayStop: atPayStop as unknown as Json, formId, paid: count("/pay"), payReceipt });
-  const focusChanges = (await rp.evaluate(sw, "globalThis.__focusChanges")) as number[];
-  const windowsAfter = await windowsNow();
-  check("e 整段没有窗口焦点变化", focusChanges.length === 0 && JSON.stringify(windowsBefore) === JSON.stringify(windowsAfter), { focusChanges, windowsBefore, windowsAfter });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice pages", checks, samples, polls, posts, receipts, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();
