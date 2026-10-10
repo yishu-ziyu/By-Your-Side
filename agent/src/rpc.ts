@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { normalizeResultTarget } from '../../shared/task-results.js';
-import { LEAD_SESSION_ID, isLeadSession, type ToolExecutionFact, type ToolName, type ToolContract } from "../../shared/protocol.js";
+import { LEAD_SESSION_ID, isHeldReason, isLeadSession, type HeldReason, type ToolExecutionFact, type ToolName, type ToolContract } from "../../shared/protocol.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 
@@ -75,8 +75,8 @@ interface DispatchedCall {
   prepareFillReadback?: boolean;
   readTarget?: FillReadbackTarget;
   fillTarget?: FillReadbackTarget;
-  /** 用户在网页上没让发送：没执行，也不算工具出错。 */
-  sendDeclined?: true;
+  /** 这一步因为用户没执行（付款留给用户、没让发送）：也不算工具出错。 */
+  heldReason?: HeldReason;
 }
 
 export type LateResultHandler = (info: {
@@ -259,8 +259,8 @@ export class ToolRpc {
     if (entry && entry.state === "preparing") entry.state = "rejected";
   }
 
-  wasSendDeclined(id: string): boolean {
-    return this.dispatched.get(id)?.sendDeclined === true;
+  heldReason(id: string): HeldReason | undefined {
+    return this.dispatched.get(id)?.heldReason;
   }
 
   /**
@@ -494,7 +494,9 @@ export class ToolRpc {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
 
-      if (!ok && fact === "not_executed" && (data as { sendDeclined?: unknown } | undefined)?.sendDeclined === true) disp.sendDeclined = true;
+      const heldReason = (data as { heldReason?: unknown } | undefined)?.heldReason;
+
+      if (!ok && fact === "not_executed" && isHeldReason(heldReason)) disp.heldReason = heldReason;
 
       if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
 

@@ -42,7 +42,7 @@ import {
   isPrepTool,
   actionKind,
   pastAction,
-  sendDeclinedText,
+  HELD_TEXT,
   type ActionKind,
   isLiveViewportPinned,
   liveViewportOverflows,
@@ -59,7 +59,7 @@ import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
 import { evidenceLine, findingForUser, mergeEvidence, nextWorkingTab, readbackKey } from "./claim-hold.js";
-import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, HeldReason, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -4007,7 +4007,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; repeatRefused?: true; sendDeclined?: true; sendConfirmed?: true }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true }): void {
+  // 10-09/10-10 存下的侧栏历史只有旧标记 sendDeclined、没有原因：按「不发」画，不画成失败；那段历史不再要紧时删掉这一行。
+  if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
 
   if (run) {
@@ -4026,7 +4028,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (!entry) return;
   // 用户拒绝授权、没让发送的那一步照你的意思没做：不画成失败。
-  const failed = ev.isError && !ev.repeatRefused && !ev.sendDeclined;
+  const failed = ev.isError && !ev.repeatRefused && !ev.heldReason;
   entry.dot.className = `chip-dot ${chipState(true, failed)}`;
   // B：收束——蓝边底色按 --m-move 退回常态
   entry.chip.classList.remove("running");
@@ -4063,8 +4065,8 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     label.append("（你确认过）");
   }
 
-  if (ev.sendDeclined && label) {
-    const text = sendDeclinedText(ev.resultText ?? "");
+  if (ev.heldReason && label) {
+    const text = HELD_TEXT[ev.heldReason];
     entry.chip.dataset.past = text;
     label.textContent = text;
   }

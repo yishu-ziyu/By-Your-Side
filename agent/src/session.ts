@@ -491,7 +491,7 @@ if(required.includes(key))candidates.set(key,attachment);
       let resultHost: BrowserAgentSession | null = null;
       const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools(), () => resultHost?.activeGoalPage?.url ?? null) : null;
       // 同一操作第二次出同样的错：调高思考档位，不停下本轮（10-10 去掉了「连续三次就停」）。
-      const failurePolicy = new RepeatedToolFailurePolicy(() => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasSendDeclined?.(id) === true);
+      const failurePolicy = new RepeatedToolFailurePolicy(() => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.heldReason?.(id) !== undefined);
 
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
 
@@ -2070,12 +2070,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
 
           // 用户没让发送不是“试过且失败”的做法，不写进催促模型换方法的清单。
-          if (!this.rpc?.wasSendDeclined?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
+          if (!this.rpc?.heldReason?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
           // 被插话作废的旧步骤、用户没让发送的点击都没碰页面，不算「改页面却没生效」（页面脚本被拦、一步没走的仍算）。
-          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && !this.rpc?.wasSendDeclined?.(event.toolCallId)) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
+          if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && !this.rpc?.heldReason?.(event.toolCallId)) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
 
+          const heldReason = event.isError ? this.rpc?.heldReason?.(event.toolCallId) : undefined;
           emit({
             kind: "tool_end",
             toolCallId: event.toolCallId,
@@ -2083,7 +2084,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             isError: event.isError,
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
-            ...(event.isError && this.rpc?.wasSendDeclined?.(event.toolCallId) ? { sendDeclined: true as const } : {}),
+            ...(heldReason ? { heldReason } : {}),
             ...(!event.isError && (event.result?.details as { sendConfirmed?: unknown } | undefined)?.sendConfirmed === true ? { sendConfirmed: true as const } : {}),
             ...(event.isError ? {} : fieldReadbackOf(event.result?.details)),
           });
