@@ -7,9 +7,10 @@
  *      浏览器里的活动标签都还是「我的页面」；同时网站收到保存和按键、名字读回一致、页面滚动了、新页存在且不是活动页。
  *   b) 助手切回表单页（tabs switch）再点「发送」：切换后活动页仍是「我的页面」；确认框出现时，表单页已是活动页；用户点「发送」后网站收到 1 条。
  *   d) 助手切回表单页再交给用户（hand_to_user）：切换后活动页仍是「我的页面」；侧栏出现「需要你来这一步」时，表单页已是活动页。
- *   c) 记录：助手点 target=_blank 的链接时，Chrome 自己把新页设为活动页与否（只记录，不判）。
+ *   c) 助手点 target=_blank 的链接：Chrome 会把新页设成活动页，打开者记成用户的页。扩展仍跟到新页（点击结果写明新页已是工作页），
+ *      并把「我的页面」放回活动页：点击结果回到模型时，活动标签是「我的页面」。
  * 判据只读 Chrome 自己的状态（扩展后台的 chrome.tabs.query）、网站收到的请求和页面读回。
- * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页（反例结果见验收文件）。
+ * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页；不认「打开者是用户的页」的新页，c 跟不上新页（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -193,7 +194,7 @@ try {
   await rp.click(panel, ".handoff-card .btn-primary");
   await answered(FINAL.d);
 
-  // ── c：只记录 Chrome 对 target=_blank 的做法 ──
+  // ── c：点 target=_blank 的链接：跟到新页，并把用户的页放回前台 ──
   part = "c";
   await rp.cdp.send("Page.bringToFront", {}, user);
   polling = true; void poll();
@@ -203,7 +204,10 @@ try {
   await Promise.all(pending);
   const popup = (await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => ts.filter(t => t.url === ${JSON.stringify(`${origin}/popup`)}).map(t => ({ id: t.id, active: t.active, openerTabId: t.openerTabId })))`)) as Array<{ id: number; active: boolean }>;
   const cPolls = polls.filter(s => s.part === "c");
-  check("c 记录：点 target=_blank 打开了说明页（谁是活动页、是否跟到新页只记录不判）", popup.length === 1, { popup, formId, userId, clickReceipt: receipts.at(-1)?.text ?? "", activeTitles: [...new Set(cPolls.map(s => s.activeTitle))], afterClick: samples.filter(s => s.part === "c" && s.after === "click 结果") as unknown as Json });
+  const clickReceipt = receipts.at(-1)?.text ?? "";
+  const afterClick = samples.find(s => s.part === "c" && s.after === "click 结果");
+  check("c 点 target=_blank：助手跟到新开的说明页，点击结果写明新页已是工作页", popup.length === 1 && clickReceipt.includes(`A new tab opened (tab ${popup[0]!.id}`) && clickReceipt.includes("now your working tab"), { popup, clickReceipt });
+  check("c 点击结果回到模型时，活动标签已回到「我的页面」", afterClick?.activeId === userId, { afterClick: afterClick as unknown as Json, userId, popupActive: popup[0]?.active ?? null, activeTitles: [...new Set(cPolls.map(s => s.activeTitle))] });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice pages", checks, samples, polls, posts, receipts, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();

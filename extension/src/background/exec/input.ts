@@ -1234,18 +1234,65 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
 }
 
 /**
+ * 点击期间工作页自己打开的新窗口（CDP Page.windowOpen）和点击前该窗口的活动页。
+ * 工作页在后台时，Chrome 把新页的打开者记成当时的活动页（多半是用户的页），不是工作页；
+ * 所以只凭打开者认不出新页（docs/evals/20261010-keep-foreground.md）。
+ */
+type OpenWatch = { workingTabId: number; windowId: number; activeBefore?: number; windowOpens: number; stop: () => void };
+
+async function watchOpenedTabs(tab: chrome.tabs.Tab & { id: number }): Promise<OpenWatch> {
+  const watch: OpenWatch = { workingTabId: tab.id, windowId: tab.windowId, windowOpens: 0, stop: () => {} };
+
+  try { watch.activeBefore = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0]?.id; } catch { /* 读不到就只按打开者认 */ }
+  const onEvent = (source: chrome.debugger.Debuggee, method: string) => { if (source.tabId === tab.id && method === "Page.windowOpen") watch.windowOpens += 1; };
+  // Chrome 会把点开的新页设成活动页：一出现就把用户原来在看的页放回去，不等点击做完。
+  const onCreated = (created: chrome.tabs.Tab) => { if (created.id !== undefined && openedByAssistant(created, watch, false)) void restoreForeground(created.id, watch); };
+
+  try {
+    chrome.debugger.onEvent.addListener(onEvent);
+    chrome.tabs.onCreated.addListener(onCreated);
+    watch.stop = () => { chrome.debugger.onEvent.removeListener(onEvent); chrome.tabs.onCreated.removeListener(onCreated); };
+  } catch { /* 监听不可用：退回只按打开者认 */ }
+
+  return watch;
+}
+
+/** 新页是不是工作页这一下点开的。allowUnknownOpener：跟随时沿用旧规则，打开者缺省也认；放回前台时不认，免得把用户自己新开的页换走。 */
+function openedByAssistant(tab: chrome.tabs.Tab, watch: OpenWatch, allowUnknownOpener: boolean): boolean {
+  if (tab.openerTabId === watch.workingTabId) return true;
+
+  if (tab.openerTabId === undefined) return allowUnknownOpener;
+
+  return watch.windowOpens > 0 && tab.openerTabId === watch.activeBefore && tab.windowId === watch.windowId;
+}
+
+/** 新页被 Chrome 设成了活动页，而用户点击前在看别的页：把那一页放回活动页。用户自己已经换过页就不动；从不聚焦窗口。 */
+async function restoreForeground(openedId: number, watch: OpenWatch): Promise<void> {
+  if (watch.activeBefore === undefined || watch.activeBefore === openedId) return;
+
+  try {
+    const [active] = await chrome.tabs.query({ active: true, windowId: watch.windowId });
+
+    if (active?.id !== openedId) return;
+    await chrome.tabs.update(watch.activeBefore, { active: true });
+  } catch { /* 原页已关：不动 */ }
+}
+
+/**
  * 点开新标签页时跟随：`target="_blank"` / `window.open` 会把结果放在隔壁——
  * 不跟的话 agent 会对着「什么都没变」的原页反复重试。归属校验失败（被别人占）只报告不跟随。
  */
-async function followOpenedTab(before: ReadonlySet<number>, targetTabId: number, sessionId: string): Promise<{ tabId: number; url?: string } | undefined> {
+async function followOpenedTab(before: ReadonlySet<number>, watch: OpenWatch, sessionId: string): Promise<{ tabId: number; url?: string } | undefined> {
   try {
     const tabs = await chrome.tabs.query({});
 
-    const opened = tabs.find((tab) => tab.id !== undefined && tab.id !== targetTabId && !before.has(tab.id)
-      && (tab.openerTabId === undefined || tab.openerTabId === targetTabId)
+    const opened = tabs.find((tab) => tab.id !== undefined && tab.id !== watch.workingTabId && !before.has(tab.id)
+      && openedByAssistant(tab, watch, true)
       && tab.id > (before.size ? Math.max(...before) : 0));
 
     if (opened?.id === undefined) return undefined;
+
+    if (openedByAssistant(opened, watch, false)) await restoreForeground(opened.id, watch);
 
     try {
       await switchTab({ tabId: opened.id }, sessionId);
@@ -1398,6 +1445,7 @@ export async function click(
   const modifiers = modifierMaskFor(sessionId, tab.id);
 
   const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", target, name);
+  const opens = await watchOpenedTabs({ ...tab, id: tabId });
 
   try {
     // 目标边框与浅弧移动并行；不再为高亮和预播放波纹额外等待。
@@ -1583,7 +1631,7 @@ export async function click(
 
     await endCursorAction(tabId, cid, actionId, "done", [x, y]);
     await recordCursorTrail(tabId, sessionId, x, y, true);
-    const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, tabId, sessionId) : undefined;
+    const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, opens, sessionId) : undefined;
 
     const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
@@ -1598,6 +1646,8 @@ export async function click(
     const unknown = /可能已送达|是否送达无法确认/.test(oneLine(error));
     await endCursorAction(tabId, cid, actionId, unknown ? "unknown" : "failed");
     throw error;
+  } finally {
+    opens.stop();
   }
 }
 
@@ -1654,6 +1704,7 @@ export async function doubleClick(
   const force = params.force === true;
   const modifiers = modifierMaskFor(sessionId, tab.id);
   const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", params.target, name);
+  const opens = await watchOpenedTabs({ ...tab, id: tabId });
 
   try {
     if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
@@ -1787,7 +1838,7 @@ export async function doubleClick(
 
     await endCursorAction(tabId, cid, actionId, "done", [x, y]);
     await recordCursorTrail(tabId, sessionId, x, y, true);
-    const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, tabId, sessionId) : undefined;
+    const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, opens, sessionId) : undefined;
 
     const doubleClicked: Extract<DoubleClickResult, { doubleClicked: true }> = { doubleClicked: true };
 
@@ -1800,6 +1851,8 @@ export async function doubleClick(
     const unknown = /可能已送达|是否送达无法确认/.test(oneLine(error));
     await endCursorAction(tabId, cid, actionId, unknown ? "unknown" : "failed");
     throw error;
+  } finally {
+    opens.stop();
   }
 }
 
