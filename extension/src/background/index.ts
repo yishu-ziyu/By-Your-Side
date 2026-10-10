@@ -67,7 +67,8 @@ import { oneLine } from "./util.js";
 import { setDebugBannerNotice } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
-import { activateTab, getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
+import { bringForwardForUser } from "./foreground.js";
+import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
 import type { SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
@@ -1509,7 +1510,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   emitTeam();
 
   // 助手交给用户（hand_to_user 带 ask）：先把这页切到其窗口内前台，用户才看得到要做的事。侧栏「接管」不带 ask，不在这里切。
-  if (ask && targetTabId != null) await chrome.tabs.get(targetTabId).then(tab => activateTab(tab)).catch(() => undefined);
+  if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
   void showUserControlGuarded();
   const draining=targetTabId != null ? Promise.resolve({generation:gate.gen, superseded:false}) : gate.beginTakeover();
 

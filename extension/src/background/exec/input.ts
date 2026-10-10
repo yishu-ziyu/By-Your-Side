@@ -8,7 +8,8 @@ import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type PageInter
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { sendCommand } from "../debugger.js";
-import { getWorkingTabId, maybeActivateTab, resolveWorkingTab } from "../state.js";
+import { bringForwardForUser, putBackUserTab } from "../foreground.js";
+import { getWorkingTabId, resolveWorkingTab } from "../state.js";
 import { resolveKey, type KeyInfo } from "../../shared/keymap.js";
 import { axBackendNodeFor, isAxRef } from "../axstate.js";
 import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
@@ -575,11 +576,12 @@ export async function playLastTrail(
   if (pts.length === 0) return { steps: 0, reason: "empty" };
 
   try {
-    const tab = await chrome.tabs.get(trail.tabId);
-    await maybeActivateTab(tab, sessionId);
+    await chrome.tabs.get(trail.tabId);
   } catch {
     return { steps: 0, reason: "tab-gone" };
   }
+
+  await bringForwardForUser(trail.tabId, { trailReplay: sessionId });
 
   await ensureCursor(trail.tabId);
   const cid = cursorId(trail.sessionId);
@@ -1274,7 +1276,7 @@ async function restoreForeground(openedId: number, watch: OpenWatch): Promise<vo
     const [active] = await chrome.tabs.query({ active: true, windowId: watch.windowId });
 
     if (active?.id !== openedId) return;
-    await chrome.tabs.update(watch.activeBefore, { active: true });
+    await putBackUserTab(watch.activeBefore);
   } catch { /* 原页已关：不动 */ }
 }
 

@@ -1,5 +1,5 @@
 /**
- * 助手在后台标签里做事，不换走用户正在看的标签页；只在要用户回答时把自己的页切到前台（docs/evals/20261010-keep-foreground.md）。
+ * 助手在后台标签里做事，不换走用户正在看的标签页；只在需要用户时把自己的页切到前台（docs/evals/20261010-keep-foreground.md）。
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/keep-foreground.mts --headless
  * 同一个窗口里两个标签页：助手的工作页「表单页」和用户自己的「我的页面」。助手读过表单页（认领为工作页）后，用户切回「我的页面」。
@@ -9,8 +9,11 @@
  *   d) 助手切回表单页再交给用户（hand_to_user）：切换后活动页仍是「我的页面」；侧栏出现「需要你来这一步」时，表单页已是活动页。
  *   c) 助手点 target=_blank 的链接：Chrome 会把新页设成活动页，打开者记成用户的页。扩展仍跟到新页（点击结果写明新页已是工作页），
  *      并把「我的页面」放回活动页：点击结果回到模型时，活动标签是「我的页面」。
+ *   e) 助手切回表单页再点付款按钮：切换后活动页仍是「我的页面」；网页上出现付款提示时，表单页已是活动页，网站没收到付款；
+ *      整段没有窗口焦点变化（扩展后台监听 chrome.windows.onFocusChanged，前后窗口状态一致）。
  * 判据只读 Chrome 自己的状态（扩展后台的 chrome.tabs.query）、网站收到的请求和页面读回。
- * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页；不认「打开者是用户的页」的新页，c 跟不上新页（反例结果见验收文件）。
+ * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页；不认「打开者是用户的页」的新页，c 跟不上新页；
+ * 付款前停下或交给用户时不切前台，e 或 d 的活动页仍是「我的页面」（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -28,6 +31,7 @@ const FORM = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>表
 <p><label>名字 <input id="name" aria-label="名字"></label> <button id="save" onclick="fetch('/save',{method:'POST',body:name.value})">保存</button></p>
 <p><a id="pop" href="/popup" target="_blank">打开说明页</a></p>
 <form id="f"><textarea id="draft" aria-label="留言">周五开会。</textarea><button id="send">发送</button></form>
+<p><button id="pay" type="button" onclick="fetch('/pay',{method:'POST',body:'x'})">确认支付 ¥98.00 并报名</button></p>
 <div style="height:3000px"></div>
 <script>document.addEventListener('keydown', e => fetch('/key', { method: 'POST', body: e.key }));
 document.querySelector('#f').addEventListener('submit', e => { e.preventDefault(); fetch('/send', { method: 'POST', body: draft.value }); });</script></body></html>`;
@@ -44,8 +48,8 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 const count = (path: string) => posts.filter(p => p.path === path).length;
 
-const ASK = { a: "保持前台A：在表单页保存、填名字张三、按回车、往下滚，再开一个新页。", b: "保持前台B：回表单页把留言发出去。", c: "保持前台C：打开说明页。", d: "保持前台D：在表单页填我的验证码。" };
-const FINAL = { a: "A 完成。", b: "B 完成。", c: "C 完成。", d: "D 完成。" };
+const ASK = { a: "保持前台A：在表单页保存、填名字张三、按回车、往下滚，再开一个新页。", b: "保持前台B：回表单页把留言发出去。", c: "保持前台C：打开说明页。", d: "保持前台D：在表单页填我的验证码。", e: "保持前台E：回表单页帮我付款报名。" };
+const FINAL = { a: "A 完成。", b: "B 完成。", c: "C 完成。", d: "D 完成。", e: "E 完成。" };
 const HANDOFF_ASK = "在表单页填好验证码。";
 const switchBack = { tool: { name: "tabs", args: { action: "switch", tabId: 0 } } };
 
@@ -69,6 +73,7 @@ const model = await startScriptedModel([
   // 用户在「我的页面」上发新消息，任务先指向那一页：助手先切回表单页。
   { match: ASK.d, steps: [switchBack, { tool: { name: "hand_to_user", args: { ask: HANDOFF_ASK } } }, { text: "（不该走到这一步）" }] },
   { match: ASK.c, steps: [switchBack, { tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: { target: "#pop", label: "打开说明页" } } }, { text: FINAL.c }] },
+  { match: ASK.e, steps: [switchBack, { tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: { target: "#pay", label: "确认支付 ¥98.00 并报名" } } }, { text: FINAL.e }] },
 ], undefined, payload => onPayload(payload));
 
 const rp = await launchRealPath();
@@ -208,6 +213,33 @@ try {
   const afterClick = samples.find(s => s.part === "c" && s.after === "click 结果");
   check("c 点 target=_blank：助手跟到新开的说明页，点击结果写明新页已是工作页", popup.length === 1 && clickReceipt.includes(`A new tab opened (tab ${popup[0]!.id}`) && clickReceipt.includes("now your working tab"), { popup, clickReceipt });
   check("c 点击结果回到模型时，活动标签已回到「我的页面」", afterClick?.activeId === userId, { afterClick: afterClick as unknown as Json, userId, popupActive: popup[0]?.active ?? null, activeTitles: [...new Set(cPolls.map(s => s.activeTitle))] });
+
+  // ── e：付款前停下时，把表单页切到前台；不动窗口焦点 ──
+  part = "e";
+  await rp.cdp.send("Page.bringToFront", {}, user);
+  await sleep(300);
+  const windowsNow = async () => (await rp.evaluate(sw, "chrome.windows.getAll().then(ws => ws.map(w => ({ id: w.id, focused: w.focused })))")) as Json;
+  await rp.evaluate(sw, "(globalThis.__focusChanges = [], chrome.windows.onFocusChanged.addListener(id => globalThis.__focusChanges.push(id)), true)");
+  const windowsBefore = await windowsNow();
+  await ask(ASK.e);
+  /** 付款提示在 closed shadow 里：用 CDP 穿透找带付款标记的提示。 */
+  const payNote = async () => {
+    // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
+    const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
+    return walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000pay-stop")) ?? null;
+  };
+  await until(payNote, 45_000, "网页上出现付款提示", 100);
+  const atPayStop = await sample("付款提示出现");
+  samples.push(atPayStop);
+  await rp.screenshot(work, join(out, "e-pay-stop.png"));
+  await answered(FINAL.e);
+  await Promise.all(pending);
+  const eSwitch = samples.find(s => s.part === "e" && s.after === "tabs 结果");
+  const payReceipt = receipts.filter(r => r.name === "click").at(-1)?.text ?? "";
+  check("e 助手切回表单页后活动页仍是「我的页面」；付款前停下时表单页已是活动标签，网站没收到付款", eSwitch?.activeId === userId && atPayStop.activeId === formId && count("/pay") === 0 && payReceipt.includes("Stopped before payment"), { afterSwitch: eSwitch as unknown as Json, atPayStop: atPayStop as unknown as Json, formId, paid: count("/pay"), payReceipt });
+  const focusChanges = (await rp.evaluate(sw, "globalThis.__focusChanges")) as number[];
+  const windowsAfter = await windowsNow();
+  check("e 整段没有窗口焦点变化", focusChanges.length === 0 && JSON.stringify(windowsBefore) === JSON.stringify(windowsAfter), { focusChanges, windowsBefore, windowsAfter });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice pages", checks, samples, polls, posts, receipts, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();

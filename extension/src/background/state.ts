@@ -1,6 +1,5 @@
 /** 工作标签页和会话页资源；storage.session 让扩展 SW 重启后可恢复。 */
 import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, isLeadSession } from "../../../shared/protocol.js";
-import { mayActivateTabInWindow } from "./foreground.js";
 import { CLAIM_BLOCKED_ERROR, FOREIGN_TAB_ERROR } from "../../../shared/control.js";
 import {
   applyTabBinding,
@@ -408,24 +407,6 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
   await setWorkingTab(active.id, normalized);
 
   return active;
-}
-
-export async function activateTab(tab: chrome.tabs.Tab, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<void> {
-  if (tab.id == null) return;
-
-  try {
-    const win = await chrome.windows.get(tab.windowId);
-
-    if (!mayActivateTabInWindow(win.focused === true)) return;
-    await beforeDispatch?.();
-    beforeDispatch?.checkNow?.();
-    await chrome.tabs.update(tab.id, { active: true });
-  } catch (error) { if (beforeDispatch) throw error; /* tab/window disappeared */ }
-}
-
-export async function maybeActivateTab(tab: chrome.tabs.Tab, key: string = LEAD_SESSION_ID, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<void> {
-  if (!shouldActivateForKey(key)) return;
-  await activateTab(tab, beforeDispatch);
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {

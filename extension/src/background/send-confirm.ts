@@ -6,7 +6,7 @@
 import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
 import { isSendLabel } from "../shared/mark-actions.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
-import { activateTab } from "./state.js";
+import { bringForwardForUser } from "./foreground.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
 export const SEND_CONFIRM_MS = 120_000;
@@ -131,7 +131,7 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
 
   try {
     // 助手平时在后台标签里做事；要用户在网页上回答时，先把这页切到其窗口内前台（不抢别的窗口）。
-    await chrome.tabs.get(tabId).then(tab => activateTab(tab)).catch(() => undefined);
+    await bringForwardForUser(tabId, "send_confirm");
 
     return await askUser(tabId, guard, key, label, await readContent());
   } finally { pendingTabs.delete(tabId); }

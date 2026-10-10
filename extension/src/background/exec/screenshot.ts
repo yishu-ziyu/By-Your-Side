@@ -355,7 +355,7 @@ async function visibleFallback(tab: chrome.tabs.Tab, cdpError: unknown): Promise
 
   if (active?.id !== tab.id) {
     throw new Error(
-      `工作页截图失败且工作页当前不在前台，已拒绝可见捕获回退（工作页 tab=${tab.id}，同窗口活动页 tab=${active?.id ?? "无"}），未返回其他页面图片。请先 switch_tab 到工作页或将其切到前台再试。CDP 错误：${oneLine(cdpError)}`,
+      `工作页截图失败且工作页当前不在前台，已拒绝可见捕获回退（工作页 tab=${tab.id}，同窗口活动页 tab=${active?.id ?? "无"}），未返回其他页面图片。助手不能把工作页切到前台，请改用 snapshot 读取工作页内容。CDP 错误：${oneLine(cdpError)}`,
     );
   }
 
