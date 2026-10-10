@@ -18,7 +18,7 @@
 | 范围 | 说明 |
 |---|---|
 | 总体职责、运行时与记忆 | [架构](architecture.md) |
-| 消息、页面归属、工具与核验 | [协议](protocol.md) · [目标核对](goal-check.md) · [结果不确定的边界](unknown-results.md) |
+| 消息、页面归属、工具与核验 | [协议](protocol.md) · [网页操作](web-actions.md) · [目标核对](goal-check.md) · [结果不确定的边界](unknown-results.md) |
 | 记忆 | [记忆模型](memory-model.md) · [记忆与任务跨轮](memory-and-tasks.md) |
 | 模型与执行 | [模型与思考档](model-effort.md) · [组合执行](browser-program.md) |
 | 文件与翻译 | [文件卡片与截图](artifacts.md) · [整页翻译](page-translation.md) |
