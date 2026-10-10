@@ -491,7 +491,7 @@ function forkReceipt(receipt: TaskReceipt): Promise<void> {
   const creationId = crypto.randomUUID();
 
   const promise = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => { receiptForks.delete(creationId); reject(new Error('新会话回执未到达，未自动发送原请求；请检查会话列表。')); }, 15000);
+    const timer = setTimeout(() => { receiptForks.delete(creationId); reject(new Error('新会话的创建结果未到达，未自动发送原请求；请检查会话列表。')); }, 15000);
     receiptForks.set(creationId, {request, resolve, reject, timer});
 
     if (!send({type:'conversation_create',requestId:creationId})) {

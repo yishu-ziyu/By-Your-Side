@@ -124,12 +124,12 @@ export function nextStepInstruction(decision: TaskNextStep): string {
     case 'failure_limit': return '原地打转，已停下；说明卡点并请用户决定。';
     case 'unknown_with_baseline':
     case 'unknown_without_baseline': return '有一步的结果未知（可能已经生效）。先重新读页面：没生效就重做或换方法，已经生效就继续。';
-    case 'in_flight': return '仍有浏览器步骤在执行，等待真实回执后再交付，不能提前结束。';
+    case 'in_flight': return '仍有浏览器步骤在执行，等待真实结果后再交付，不能提前结束。';
     case 'runtime_error': return '运行遇到错误，保留已有事实，只能如实交付部分结果。';
     case 'tool_failed': return '有一步失败或结果未知；先重新读页面，再重做这一步或换方法，复用原待办 id。无法恢复时明确交付部分结果。';
-    case 'remaining': return '用户目标仍有未完成或未核验项；用 task_goals 检查具体目标，不把动作回执当成完成。';
-    case 'readback_required': return '已有执行回执，但缺少动作后的页面读回；先用 snapshot 或 read_element 核对实际用户目标，再交付。';
-    case 'receipts_reviewed': return '已取得执行回执与所需读回；对照用户要求交付有来源的报告。读回不自动证明全部业务目标成功。';
+    case 'remaining': return '用户目标仍有未完成或未核验项；用 task_goals 检查具体目标，不把工具结果当成完成。';
+    case 'readback_required': return '已有工具结果，但缺少动作后的页面读回；先用 snapshot 或 read_element 核对实际用户目标，再交付。';
+    case 'receipts_reviewed': return '已取得工具结果与所需读回；对照用户要求交付有来源的报告。读回不自动证明全部业务目标成功。';
     case 'open_task': return '继续回答用户或执行所需步骤，不强制预登记。纯问答可直接交付；不能靠省略登记隐藏未完成项。';
   }
 }

@@ -300,7 +300,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     materials = {
       rows,
       head: pendingRows.length && confirmedRows.length ? `${head}（另有 ${pendingRows.length} 项材料待确认）` : head,
-      status: pendingEntry ? (pendingEntry.status === "unknown" ? "这一条接收状态未知，等待回执核对" : "发送中，尚未确认接收") : null,
+      status: pendingEntry ? (pendingEntry.status === "unknown" ? "这一条接收状态未知，等待结果核对" : "发送中，尚未确认接收") : null,
       note: null,
     };
   }

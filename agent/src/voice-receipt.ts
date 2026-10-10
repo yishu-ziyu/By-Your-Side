@@ -38,7 +38,7 @@ export function progressSpeech(snapshot: TaskProgressSnapshot): string {
           return `${actions}的执行结果还无法确认，我不会自动重做。${pending?`仍需处理：${pending}。`:''}`;
         }
 
-        return `还有未完成的要求：${names}。${remaining.some(item => item.status === 'blocked') ? '执行遇到阻碍。' : snapshot.goalPlan?'目标尚未完成核验。':'目前还没有对应的完成回执。'}`;
+        return `还有未完成的要求：${names}。${remaining.some(item => item.status === 'blocked') ? '执行遇到阻碍。' : snapshot.goalPlan?'目标尚未完成核验。':'目前还没有对应的完成结果。'}`;
       }
 
       const delivery = snapshot.conversationContext?.latestDelivery;

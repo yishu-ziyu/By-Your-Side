@@ -19,7 +19,7 @@ export async function pageTranslation(params: TranslationCommand, sessionId: str
   beforeDispatch?.checkNow?.();
   const [frame] = await chrome.scripting.executeScript({target: {tabId}, world: 'ISOLATED', func: translationInPage, args: [params]});
 
-  if (!frame?.result) throw new Error('页面翻译未收到执行回执，结果未知；请先核查当前页面。');
+  if (!frame?.result) throw new Error('页面翻译没有返回结果，结果未知；请先核查当前页面。');
 
   if ('error' in frame.result) throw Object.assign(new Error(frame.result.error), {executionFact: frame.result.executionFact});
 

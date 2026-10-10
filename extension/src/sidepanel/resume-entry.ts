@@ -226,7 +226,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
 
     if (view.state === "aborted") return "已按你的要求停止；历史保留，需要的话请重新说明新任务。";
 
-    if (unknown) return "未知项需要核对可靠回执或由你决定；在得到依据前不会重复提交。";
+    if (unknown) return "未知项需要核对可靠结果或由你决定；在得到依据前不会重复提交。";
 
     if (blocked) return "按当前页面新观察换方法继续；无法恢复的部分会如实说明。";
 
@@ -242,7 +242,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   if (checkpointUnavailable) gaps.push("原任务检查点无法恢复；原记录未被覆盖，本会话不会执行它，其他独立任务可以另开会话");
   else if (view.state !== "interrupted" && view.state !== "running" && view.state !== "aborted" && view.state !== "paused") gaps.push(resume.reason ?? "");
 
-  if (unknown) gaps.push(`${unknown} 项操作结果未知；不会重复提交，需要可靠回执或你的决定`);
+  if (unknown) gaps.push(`${unknown} 项操作结果未知；不会重复提交，需要可靠结果或你的决定`);
 
   if (blocked) gaps.push(`${blocked} 项执行受阻，需要换方法`);
 

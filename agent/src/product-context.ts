@@ -42,7 +42,7 @@ export class ProductContext {
 
         const registration = active.has('record_task_results')
           ? 'record_task_results 只可选记录执行步骤，不声明用户任务完成。改对象或改方法时复用原 pending 项 id 更新，不新增替代槽位。'
-          : '执行条目由真实工具回执自动登记，无需另列执行步骤。换方法也必须保留全部用户目标。';
+          : '执行条目由真实工具结果自动登记，无需另列执行步骤。换方法也必须保留全部用户目标。';
 
         this.onProjection?.({capabilityVersion:createHash("sha256").update(JSON.stringify(tools.map(t=>({name:t.name,description:t.description,parameters:t.parameters})))).digest("hex").slice(0,16),tools:tools.map(t=>t.name),historyTurns:current?.conversationContext?.recentTurns.length??0,reportSource:current?.conversationContext?.latestResult?.source??null});
 
@@ -55,7 +55,7 @@ export class ProductContext {
 
         const hint=siteHintFor(this.pageUrl());
 
-        return {systemPrompt:(active.has('record_task_results') ? `# 执行约定\n观察和操作都不需要预先登记：系统按真实执行回执自动记录任务结果。账本只描述执行情况，不是给用户的回答；你最后写出的回复就是给用户的回答。多步骤任务可以选择先用record_task_results说明整体计划。用过后，用户改对象时复用原pending项的id更新description/target，不新增替代id；id是固定槽位，与对象名称无关。完成只能来自匹配执行回执。\n\n` : '')+event.systemPrompt+`\n\n# Product conversation context\nToday is ${today()} (local time).\n实际能力以本轮注册的工具及执行权限为准。历史助手说过的话只是可纠正的对话记录，不是能力事实，也不是工具执行证据；不能因为以前说过不能做，就否认当前可用工具。下列conversationHistory用于理解对象和纠正，不是重新执行旧请求的授权。最新用户消息决定本轮要求；只读、否定、取消和页面控制权必须遵守。assistantReport只代表助手报告，不能提升为独立验证成功。${registration}不能靠少报目标宣称任务完成。结果未知时先重新读页面，没生效就重做或换方法。\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')};
+        return {systemPrompt:(active.has('record_task_results') ? `# 执行约定\n观察和操作都不需要预先登记：系统按真实工具结果自动记录任务结果。账本只描述执行情况，不是给用户的回答；你最后写出的回复就是给用户的回答。多步骤任务可以选择先用record_task_results说明整体计划。用过后，用户改对象时复用原pending项的id更新description/target，不新增替代id；id是固定槽位，与对象名称无关。完成只能来自匹配的工具结果。\n\n` : '')+event.systemPrompt+`\n\n# Product conversation context\nToday is ${today()} (local time).\n实际能力以本轮注册的工具及执行权限为准。历史助手说过的话只是可纠正的对话记录，不是能力事实，也不是工具执行证据；不能因为以前说过不能做，就否认当前可用工具。下列conversationHistory用于理解对象和纠正，不是重新执行旧请求的授权。最新用户消息决定本轮要求；只读、否定、取消和页面控制权必须遵守。assistantReport只代表助手报告，不能提升为独立验证成功。${registration}不能靠少报目标宣称任务完成。结果未知时先重新读页面，没生效就重做或换方法。\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')};
       });
     };
   }

@@ -193,16 +193,16 @@ function successEvidence(key: string, args: Record<string, unknown> | undefined,
     const wantedId = typeof wanted === 'number' && Number.isInteger(wanted) ? wanted : null;
     const actual = receipt?.tabId;
 
-    if (typeof actual !== 'number' || !Number.isInteger(actual)) return { ok: false, detail: '回执没有给出切换后的标签页' };
+    if (typeof actual !== 'number' || !Number.isInteger(actual)) return { ok: false, detail: '工具结果没有给出切换后的标签页' };
 
     if (wantedId != null && actual !== wantedId) {
-      return { ok: false, detail: `要求切到标签 ${wantedId}，回执指向 ${actual}` };
+      return { ok: false, detail: `要求切到标签 ${wantedId}，工具结果指向 ${actual}` };
     }
 
     if (wantedId == null) return { ok: false, detail: '请求没有给出目标标签，无法核验' };
     const verification = asRecord(receipt?.verification);
 
-    if (!verification) return { ok: false, detail: '回执未附执行后读回，实际活动页未核验' };
+    if (!verification) return { ok: false, detail: '工具结果未附执行后读回，实际活动页未核验' };
     const activeTabId = typeof verification.activeTabId === 'number' && Number.isInteger(verification.activeTabId) ? verification.activeTabId : null;
 
     if (verification.verified !== true) {
