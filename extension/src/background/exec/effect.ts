@@ -3,7 +3,7 @@
  * 效果证据失败（页面禁止注入、导航换文档、SW 重启）绝不能拖垮动作本身：
  * 所有入口都吞掉异常并返回 undefined，让调用方按「没有证据」处理。
  */
-import { EMPTY_EFFECT_REPORT, downloadEvidence, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport } from "../../../../shared/effect.js";
+import { EMPTY_EFFECT_REPORT, downloadEvidence, pendingRequests, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport } from "../../../../shared/effect.js";
 import { networkRingFor } from "../network-log.js";
 
 const CONTENT_FILE = "content-effect.js";
@@ -65,21 +65,24 @@ export async function beginEffect(
   }
 }
 
-/** 动作后收集：有强证据立即返回，否则等到超时；拿不到任何读数返回 undefined。 */
+/** 动作后收集：有强证据、且动作后发出的同网站请求都已完成就返回，否则等到超时；拿不到任何读数返回 undefined。 */
 export async function collectEffect(tabId: number, token: string | null): Promise<EffectReport | undefined> {
   if (!token) return undefined;
 
   try {
+    const since = effectStarts.get(token);
+    const startUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
+
     const report = await settleEffectReport(async () => {
       try {
         return await callPage(tabId, (t: string) => window.__sideagent?.effect?.diff?.(t) ?? null, [token]);
       } catch {
         return null;
       }
-    });
+    }, { pending: () => since === undefined ? 0 : pendingRequests(networkRingFor(tabId)?.entries ?? [], since, startUrl) });
 
-    const since = effectStarts.get(token);
     const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
+
     const sent = since === undefined ? [] : [
       ...requestEvidence(networkRingFor(tabId)?.entries ?? [], since, Date.now(), pageUrl),
       ...downloadEvidence(await clickDownloads(tabId, since).catch(() => []), pageUrl),

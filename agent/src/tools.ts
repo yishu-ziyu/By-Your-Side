@@ -831,7 +831,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. The dialog type and message are given here; use accept_dialog or dismiss_dialog as the user asked (browser.pageInfo() in browser_run also reports a pending dialog).`, data);
 
-        return textResult(`Pressed ${params.key}.`, data);
+        return textResult(`Pressed ${params.key}.${formatEffectReport("effect" in data ? data.effect : undefined, "key press")}`, data);
       },
     }),
 
