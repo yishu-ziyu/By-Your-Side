@@ -234,7 +234,8 @@ export class ToolRpc {
     if (name === "switch_tab") tabId = numberField(params, "tabId");
     else if (name === "worker_tabs") tabId = params?.action === "claim" ? numberField(data, "tabId") : null;
     else if (name === "click" || name === "double_click") tabId = numberField((data as {newTab?:unknown} | undefined)?.newTab, "tabId");
-    else tabId = numberField(data, "tabId");
+    // 新标签页打开的地址变成下载、被 Chrome 关掉：缺省页不换到已关的页上。
+    else tabId = (data as { tabClosed?: unknown } | undefined)?.tabClosed === true ? null : numberField(data, "tabId");
 
     if (tabId == null) return;
     this.pageTargets.set(key, { tabId, seq: targetSeq });

@@ -2,7 +2,7 @@ import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
 import { resolveWorkingTab } from "../state.js";
 
-import {readCurrentDocument,waitForInteractive,type PageReadiness} from "./page-readiness.js";
+import {downloadNote,readCurrentDocument,waitForInteractive,type PageReadiness} from "./page-readiness.js";
 
 export async function navigate(
   params: {
@@ -25,8 +25,8 @@ export async function navigate(
 
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
-  await chrome.tabs.update(tab.id, { url: params.url });
-  const ready=await waitForInteractive(tab.id,timeoutMs,before?.documentId);
+  const tabId = tab.id;
+  const ready=await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:params.url,dispatch:()=>chrome.tabs.update(tabId, { url: params.url })});
 
   const after = await chrome.tabs.get(tab.id);
   const data = { url: after.url ?? params.url, title: after.title ?? "" };
@@ -35,6 +35,10 @@ export async function navigate(
 
   // 超时不算失败：页面可能已部分可用
   if (ready.readiness==='timeout') result.note = "document readiness timeout; page may still be loading";
+
+  if (ready.download) result.note = downloadNote(ready.download);
+
+  if (ready.readiness==='error_page') result.note = "Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
 
   return result;
 }
