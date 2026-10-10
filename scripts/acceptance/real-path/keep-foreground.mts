@@ -10,6 +10,7 @@
  *   c) 助手点 target=_blank 的链接：Chrome 会把新页设成活动页，打开者记成用户的页。扩展仍跟到新页（点击结果写明新页已是工作页），
  *      并把「我的页面」放回活动页：点击结果回到模型时，活动标签是「我的页面」。
  *   e) 助手切回表单页再点付款按钮：切换后活动页仍是「我的页面」；网页上出现付款提示时，表单页已是活动页，网站没收到付款。
+ *   f) 用户在「我的页面」说「给我看表单页」，助手用 tabs show：结果回到模型时表单页已是活动页，结果写明用户已在这一页（docs/evals/20261011-show-page-to-user.md）。
  *   无头 Chrome 只有一个窗口且一直聚焦，所以「不聚焦窗口」这一条本用例证伪不了，不设检查。
  * 判据只读 Chrome 自己的状态（扩展后台的 chrome.tabs.query）、网站收到的请求和页面读回。
  * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页；不认「打开者是用户的页」的新页，c 跟不上新页；
@@ -48,10 +49,11 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 const count = (path: string) => posts.filter(p => p.path === path).length;
 
-const ASK = { a: "保持前台A：在表单页保存、填名字张三、按回车、往下滚，再开一个新页。", b: "保持前台B：回表单页把留言发出去。", c: "保持前台C：打开说明页。", d: "保持前台D：在表单页填我的验证码。", e: "保持前台E：回表单页帮我付款报名。" };
-const FINAL = { a: "A 完成。", b: "B 完成。", c: "C 完成。", d: "D 完成。", e: "E 完成。" };
+const ASK = { a: "保持前台A：在表单页保存、填名字张三、按回车、往下滚，再开一个新页。", b: "保持前台B：回表单页把留言发出去。", c: "保持前台C：打开说明页。", d: "保持前台D：在表单页填我的验证码。", e: "保持前台E：回表单页帮我付款报名。", f: "保持前台F：给我看表单页。" };
+const FINAL = { a: "A 完成。", b: "B 完成。", c: "C 完成。", d: "D 完成。", e: "E 完成。", f: "F 完成。" };
 const HANDOFF_ASK = "在表单页填好验证码。";
 const switchBack = { tool: { name: "tabs", args: { action: "switch", tabId: 0 } } };
+const showForm = { tool: { name: "tabs", args: { action: "show", tabId: 0 } } };
 
 const model = await startScriptedModel([
   // 目标核对的请求带着用户原话：先认它，直接判完成。
@@ -73,6 +75,7 @@ const model = await startScriptedModel([
   // 用户在「我的页面」上发新消息，任务先指向那一页：助手先切回表单页。
   { match: ASK.d, steps: [switchBack, { tool: { name: "hand_to_user", args: { ask: HANDOFF_ASK } } }, { text: "（不该走到这一步）" }] },
   { match: ASK.c, steps: [switchBack, { tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: { target: "#pop", label: "打开说明页" } } }, { text: FINAL.c }] },
+  { match: ASK.f, steps: [showForm, { text: FINAL.f }] },
   { match: ASK.e, steps: [switchBack, { tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: { target: "#pay", label: "确认支付 ¥98.00 并报名" } } }, { text: FINAL.e }] },
 ], undefined, payload => onPayload(payload));
 
@@ -130,6 +133,7 @@ try {
   const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ id: t.id, url: t.url, active: t.active })))")) as Array<{ id: number; url: string; active: boolean }>;
   const formId = tabs.find(t => t.url === `${origin}/`)!.id, userId = tabs.find(t => t.url === `${origin}/mine`)!.id;
   switchBack.tool.args.tabId = formId;
+  showForm.tool.args.tabId = formId;
 
   const ask = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); };
   const answered = (text: string) => until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(text)}))`)) as boolean, 90_000, `回答「${text}」`);
@@ -234,6 +238,17 @@ try {
   const eSwitch = samples.find(s => s.part === "e" && s.after === "tabs 结果");
   const payReceipt = receipts.filter(r => r.name === "click").at(-1)?.text ?? "";
   check("e 助手切回表单页后活动页仍是「我的页面」；付款前停下时表单页已是活动标签，网站没收到付款", eSwitch?.activeId === userId && atPayStop.activeId === formId && count("/pay") === 0 && payReceipt.includes("Stopped before payment"), { afterSwitch: eSwitch as unknown as Json, atPayStop: atPayStop as unknown as Json, formId, paid: count("/pay"), payReceipt });
+
+  // ── f：用户要看表单页，助手用 tabs show 把它放到用户眼前（docs/evals/20261011-show-page-to-user.md） ──
+  part = "f";
+  await rp.cdp.send("Page.bringToFront", {}, user);
+  await sleep(300);
+  await ask(ASK.f);
+  await answered(FINAL.f);
+  await Promise.all(pending);
+  const fShow = samples.find(s => s.part === "f" && s.after === "tabs 结果");
+  const showReceipt = receipts.filter(r => r.name === "tabs").at(-1)?.text ?? "";
+  check("f 用户说给我看表单页：tabs show 的结果回到模型时，表单页已是活动标签，结果写明用户已在这一页", fShow?.activeId === formId && showReceipt.includes("the user was on this page"), { afterShow: fShow as unknown as Json, formId, showReceipt });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice pages", checks, samples, polls, posts, receipts, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();

@@ -1,5 +1,6 @@
 import { LEAD_SESSION_ID, isLeadSession, type SwitchTabVerification, type TabInfo } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
+import { bringForwardForUser } from "../foreground.js";
 import { getTabResource, getWorkingTabId, resolveWorkingTab, setWorkingTab } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { downloadNote, waitForInteractive, type PageReadiness } from "./page-readiness.js";
@@ -79,14 +80,17 @@ export async function openTab(
 }
 
 export async function switchTab(
-  params: { tabId: number },
+  params: { tabId: number; show?: boolean },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ tabId: number; verification?: SwitchTabVerification }> {
   await resolveWorkingTab(params.tabId, sessionId);
-  // 只换工作目标，不切前台：助手在后台标签里做事（docs/evals/20261010-keep-foreground.md）。
+  // 平时只换工作目标，不切前台：助手在后台标签里做事（docs/evals/20261010-keep-foreground.md）。
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
+
+  // 用户要看这一页（tabs show）：切到它所在窗口的前台（docs/evals/20261011-show-page-to-user.md）。
+  if (params.show === true) await bringForwardForUser(params.tabId, "user_asked");
 
   return { tabId: params.tabId, verification: await readSwitchVerification(params.tabId, sessionId) };
 }
