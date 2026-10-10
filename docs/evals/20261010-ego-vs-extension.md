@@ -1,0 +1,31 @@
+# 任务: 同一个模型下，扩展是不是比「Codex 终端 + Ego」笨
+
+来源：2026-10-10 用户在侧栏说「切到youtube」，助手没切，反而叫用户自己点。用户说：「这肯定是我们的框架把它弄得太傻逼了」，并对比终端里 Codex 通过 Ego 控制浏览器「非常丝滑」。
+
+## 规则
+
+- R1 两边用同一模型 gpt-6.1-sol、同一思考强度 high、同一批本机练习页、同样的话、同样的判据，各跑 7 条任务 × 2 次。判定规则在跑之前写定：扩展做对的次数比 Ego 少 2 次以上，或推给用户的次数多 2 次以上，算框架拖累；两项差距都不超过 1 次，算不是框架。
+  - 例子(正)：扩展一边 `npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --suite=compare --deep --model=openai-codex/gpt-6.1-sol --repeat=2`；Ego 一边 `node scripts/probes/ego-arm.mjs <origin> <out> --repeat=2`，练习页由 `--serve-only` 提供，跑完用 `scripts/probes/ego-rescore.mjs` 重读 — 谁检查：两个脚本
+  - 例子(反)：switch-tab 用例在扩展上失败（产品不切前台），证明判据能抓到问题 — 谁检查：同一命令
+
+## 技术前提
+
+- 前提：Ego 能在一个新任务空间里开两个标签页并把指定页放到前台。小实验：`scripts/probes/ego-arm.mjs` 的 setup。结果：通过。
+- 前提：Codex 必须关掉电脑操控类插件和 MCP，否则它会改用电脑操控在用户屏幕上点 Ego 窗口，比的就不是 Ego。结果：关掉后只走 ego-browser 命令行。
+
+## 边界与不做
+
+- 任务全是本机练习页，而且是扩展测试集里的旧任务，扩展可能已经为它们调过。真实网站（画板、真实表单）没有比。
+- Ego 一边的话前面多一句「我在任务空间 N 的 p1 页」，因为扩展自动知道用户在看哪页。
+
+## 结果（10-10）
+
+| | 做对 | 推给用户 | 用时中位数 |
+|---|---|---|---|
+| 扩展 | 12/14（两次失败都是切到 youtube） | 0 | 11 秒 |
+| Codex + Ego | 13 或 14/14 | 0 | 67 秒 |
+
+- Ego 的 switch-tab-1：第一次重读时 YouTube 在前台，第二次重读时抖音在前台，原因没查明，所以记 13 或 14。
+- 按写定的规则，差距是 1 或 2 次，落在边界上。差距全部来自切页这一条：扩展的切页工具按[不抢前台](20261010-keep-foreground.md)只换工作页，不切用户眼前的页。其余 6 条两边都全对。
+- 扩展每条快约 6 倍。Codex 每条都先读说明书、再写脚本、再自己核对一遍。
+- 证据：扩展 `out/acceptance/real-path/2026-10-10T10-51-09-228Z-everyday-baseline-compare-inproc-2292/`；Ego `out/acceptance/compare/ego/result.rescored.json`。
