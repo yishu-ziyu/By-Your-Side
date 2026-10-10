@@ -8,10 +8,11 @@
  *
  * 判据只读模型收到的请求原文和阅读卡里用户看得到的界面：
  *   请求  回车后 1.5 s 内模型收到含改口原话的请求，请求里有段落标记句、有一轮 state 为 stopped 的旧回答。
+ *   取消  回车后 1.5 s 内，模型那边旧请求的连接没写完就关了（产品真的取消了旧请求，不只是界面不再显示）。
  *   停止  旧回答在回车后 1 s 内停止变长，一直看到旧回答在服务端写完为止也不再变长；新回答里没有旧回答的文字。
- *   界面  旧回答显示「已停止，内容已保留」并折叠，「展开/收起」能用；新回答带「已改口」；段落高亮回车前后都在。
+ *   界面  旧回答显示「已停止，内容已保留」并折叠，「展开/收起」能用、点完焦点不丢、不在状态播报区里；新回答带「已改口」；段落高亮回车前后都在。
  *   按钮  生成中输入框空时是停止键；输入了文字时是发送键（改口）。
- * 失败方式：生成中回车被吞掉（今天的 main），请求、停止、界面、按钮四类检查都失败。
+ * 失败方式：生成中回车被吞掉（T1 之前的 main），请求、停止、界面、按钮都失败；改口时不取消旧请求，取消一项失败。
  */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -91,12 +92,12 @@ const check = (name: string, pass: boolean, detail: Json) => {
 
 type DomNode = { nodeName: string; backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 
-type Turn = { question: string; tag: string; answer: string; status: string; folded: boolean; clipped: boolean; fold: string | null };
+type Turn = { question: string; tag: string; answer: string; status: string; folded: boolean; clipped: boolean; fold: string | null; expanded: string | null; foldInStatus: boolean; foldFocused: boolean };
 
 type CardState = { turns: Turn[]; textarea: string; focused: boolean; sendLabel: string | null; sendIcon: "stop" | "send" | null; text: string };
 
 const CARD_STATE = `function(){
-  const turns=[...this.querySelectorAll('.turn')].map(t=>{const a=t.querySelector('.answer');return {question:t.querySelector('.question')?.textContent??'',tag:t.querySelector('.question .tag')?.textContent??'',answer:a?.textContent??'',status:t.querySelector('.status')?.textContent??'',folded:t.classList.contains('folded'),clipped:!!a&&a.scrollHeight>a.clientHeight+4,fold:t.querySelector('.status .fold')?.textContent??null};});
+  const turns=[...this.querySelectorAll('.turn')].map(t=>{const a=t.querySelector('.answer');const f=t.querySelector('.fold');return {question:t.querySelector('.question')?.textContent??'',tag:t.querySelector('.question .tag')?.textContent??'',answer:a?.textContent??'',status:t.querySelector('.status')?.textContent??'',folded:t.classList.contains('folded'),clipped:!!a&&a.scrollHeight>a.clientHeight+4,fold:f&&!f.hidden?f.textContent:null,expanded:f?.getAttribute('aria-expanded')??null,foldInStatus:!!t.querySelector('[role=status] button'),foldFocused:!!f&&this.activeElement===f};});
   const ta=this.querySelector('textarea');
   const send=this.querySelector('.send');
   const svg=send?.querySelector('svg');
@@ -207,6 +208,12 @@ try {
   const lenAt1s = [...timeline].reverse().find((p) => p.ms <= 1000)?.len ?? lenAtEnter;
   const lenMaxAfter1s = Math.max(lenAt1s, ...timeline.filter((p) => p.ms > 1000).map((p) => p.len));
 
+  // ── 旧请求被取消：模型那边的连接没写完就关了。只看界面分不出来，因为界面也会丢掉旧请求的迟到片段。 ──
+  const oldRequest = model.requests.find((r) => r.rule === "解释这段选中的文字");
+  check("取消：回车后 1.5 s 内旧请求的连接没写完就关了",
+    !!oldRequest?.closedAt && oldRequest.closedAt - tEnter <= 1500 && oldRequest.finished === false,
+    { closedAfterEnterMs: oldRequest?.closedAt ? oldRequest.closedAt - tEnter : null, finished: oldRequest?.finished ?? null });
+
   // ── 请求 ──
   const req = captured.find((c) => c.reading && c.at >= tEnter && c.messages.some((m) => textOf(m.content).includes(CORRECTION)));
   let requestDetail: Json = { request: null };
@@ -244,18 +251,18 @@ try {
 
   // ── 界面：旧回答停住并折叠，展开/收起能用；新回答带「已改口」；高亮还在 ──
   const old = final.turns[0];
-  const before = { status: old?.status ?? null, folded: old?.folded ?? false, clipped: old?.clipped ?? false, fold: old?.fold ?? null };
+  const before = { status: old?.status ?? null, folded: old?.folded ?? false, clipped: old?.clipped ?? false, fold: old?.fold ?? null, expanded: old?.expanded ?? null, foldInStatus: old?.foldInStatus ?? null };
   let opened: Partial<Turn> | null = null;
   let closed: Partial<Turn> | null = null;
   const toggle = async () => {
-    const point = await cardPoint(".turn .status .fold");
+    const point = await cardPoint(".turn .fold:not([hidden])");
 
     if (!point) return null;
     await mouseClick(point);
     await sleep(200);
     const t = (await card()).turns[0]!;
 
-    return { folded: t.folded, clipped: t.clipped, fold: t.fold };
+    return { folded: t.folded, clipped: t.clipped, fold: t.fold, expanded: t.expanded, foldFocused: t.foldFocused };
   };
 
   if (before.fold) {
@@ -265,10 +272,11 @@ try {
   }
 
   const highlightAfter = await highlighted();
+  // 展开键不在状态播报区里（读屏只念「已停止，内容已保留」），点完焦点还在它上面，aria-expanded 跟着变。
   check("界面：旧回答「已停止，内容已保留」并折叠，展开/收起能用；新回答带「已改口」；高亮回车前后都在",
-    !!before.status?.includes("已停止，内容已保留") && before.folded && before.clipped && before.fold === "展开"
-      && opened?.folded === false && opened.clipped === false && opened.fold === "收起"
-      && closed?.folded === true && closed.fold === "展开"
+    before.status === "已停止，内容已保留" && before.folded && before.clipped && before.fold === "展开" && before.expanded === "false" && before.foldInStatus === false
+      && opened?.folded === false && opened.clipped === false && opened.fold === "收起" && opened.expanded === "true" && opened.foldFocused === true
+      && closed?.folded === true && closed.fold === "展开" && closed.expanded === "false" && closed.foldFocused === true
       && final.turns[1]?.tag === "已改口" && highlightBefore && highlightAfter,
     { old: before, afterFirstClick: opened, afterSecondClick: closed, newTag: final.turns[1]?.tag ?? null, newQuestion: final.turns[1]?.question ?? null, highlightBefore, highlightAfter });
   record.finalTurns = final.turns.map((t) => ({ question: t.question, tag: t.tag, answerChars: t.answer.length, answerHead: t.answer.slice(0, 80), status: t.status, folded: t.folded }));

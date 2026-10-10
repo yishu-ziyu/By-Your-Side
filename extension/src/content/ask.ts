@@ -125,8 +125,8 @@ function boot(): void {
     question: HTMLElement;
     node: HTMLElement;
     status: HTMLElement;
+    fold: HTMLButtonElement;
     text: string;
-    statusKey: string;
   }> = [];
 
   /** 被改口停下的旧回答默认折叠；这里记用户展开了哪几轮。 */
@@ -287,9 +287,18 @@ function boot(): void {
         const status = document.createElement('div');
         status.className = 'status';
         status.setAttribute('role', 'status');
-        wrapper.append(question, node, status);
+        // 展开键放在状态播报区外面，读屏不会把它念进状态；只建一次，点完焦点还在它上面。
+        const fold = document.createElement('button');
+        fold.className = 'fold';
+        fold.dataset.act = 'fold';
+        fold.dataset.turn = String(index);
+        fold.hidden = true;
+        const foot = document.createElement('div');
+        foot.className = 'foot';
+        foot.append(status, fold);
+        wrapper.append(question, node, foot);
         messages.append(wrapper);
-        answers.push({ turn: wrapper, question, node, status, text: '', statusKey: '' });
+        answers.push({ turn: wrapper, question, node, status, fold, text: '' });
       }
 
       const item = answers[index]!;
@@ -302,8 +311,11 @@ function boot(): void {
         item.question.append(tag);
       }
 
-      const foldable = turn.state === 'stopped' && corrected.includes(index + 1);
+      const foldable = turn.state === 'stopped' && corrected.includes(index + 1) && Boolean(turn.answer.trim());
       item.turn.classList.toggle('folded', foldable && !unfolded.has(index));
+      item.fold.hidden = !foldable;
+      item.fold.textContent = unfolded.has(index) ? '收起' : '展开';
+      item.fold.setAttribute('aria-expanded', String(unfolded.has(index)));
 
       if (item.text !== turn.answer) {
         item.node.innerHTML = DOMPurify.sanitize(renderMarkdownHtml(turn.answer), { FORBID_TAGS: ['img', 'video', 'audio', 'iframe', 'style', 'form', 'input', 'button'] });
@@ -316,24 +328,7 @@ function boot(): void {
         item.text = turn.answer;
       }
 
-      const statusText = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在生成…' : turn.state === 'stopped' ? '已停止，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
-      const foldLabel = foldable ? unfolded.has(index) ? '收起' : '展开' : '';
-
-      // 只在内容变了时重建：生成中每段文字都会重画，重建会让正在点的「展开」按钮消失。
-      if (item.statusKey !== `${statusText}|${foldLabel}`) {
-        item.status.textContent = statusText;
-
-        if (foldLabel) {
-          const toggle = document.createElement('button');
-          toggle.className = 'fold';
-          toggle.dataset.act = 'fold';
-          toggle.dataset.turn = String(index);
-          toggle.textContent = foldLabel;
-          item.status.append(toggle);
-        }
-
-        item.statusKey = `${statusText}|${foldLabel}`;
-      }
+      item.status.textContent = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在生成…' : turn.state === 'stopped' ? '已停止，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
     }
 
     renderedTurns = record?.turns.length ?? 0;
@@ -385,7 +380,8 @@ function boot(): void {
     input.focus({ preventScroll: true });
   }
 
-  async function send(question: string, retry = false): Promise<void> {
+  /** correction 只由输入框发出（打字后回车或点发送）：再点一次「解释」不算改口。 */
+  async function send(question: string, retry = false, correction = false): Promise<void> {
     if (!record || sending || !question.trim()) {
       return;
     }
@@ -396,7 +392,7 @@ function boot(): void {
     render();
 
     try {
-      const result = await rpc('reading_send', { question, retry, correction: readingBusy(record) });
+      const result = await rpc('reading_send', { question, retry, correction });
 
       if (record?.threadId !== threadId) {
         return;
@@ -514,7 +510,7 @@ function boot(): void {
       void rpc('reading_stop').then(result => update(result.record)).catch(err => report(err.message));
     }
     else {
-      void send(input.value);
+      void send(input.value, false, readingBusy(record));
     }
   });
   input.addEventListener('input', () => {
@@ -527,7 +523,7 @@ function boot(): void {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       // 空回车在生成中什么也不做；有字就发出，生成中即改口。
-      void send(input.value);
+      void send(input.value, false, readingBusy(record));
     }
   });
 

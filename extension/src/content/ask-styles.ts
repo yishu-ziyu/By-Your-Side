@@ -42,6 +42,7 @@ button.icon { width: 36px; padding: 0; }
 .status { display: flex; align-items: center; gap: 5px; color: #888890; font-size: 12px; min-height: 24px; }
 .status:empty { display: none; }
 .turn.folded .answer { max-height: 3.4em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 40%, transparent); mask-image: linear-gradient(#000 40%, transparent); }
+.foot { display: flex; align-items: center; gap: 5px; }
 .fold { font-size: 11px; color: #5779bf; min-height: 22px; padding: 0 6px; margin-left: -6px; }
 .tag { display: inline-block; font-size: 11px; color: #b4532a; background: #fbeee8; border-radius: 4px; padding: 0 5px; margin-left: 6px; font-weight: 500; }
 .composer { display: flex; gap: 6px; align-items: flex-end; margin: 0 8px 8px; padding: 5px 5px 5px 10px; border: 1px solid #ececef; border-radius: 23px; background: #fafafb; }

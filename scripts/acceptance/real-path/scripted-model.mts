@@ -27,8 +27,11 @@ type ContentPart = { type?: string; text?: string };
 /** OpenAI 兼容请求里的一条消息：content 是字符串或分段数组。 */
 type ChatMessage = { role: string; content?: string | ContentPart[] | null };
 
-/** firstTextAt / lastTextAt：首段、末段正文写出时的本机时间（Date.now()），供「侧栏多久后出字」比对；tools：请求带工具表（主任务请求）。 */
-export type ModelRequest = { atMs: number; rule: string | null; step: number; status: number; firstTextAt?: number; lastTextAt?: number; tools?: boolean };
+/**
+ * firstTextAt / lastTextAt：首段、末段正文写出时的本机时间（Date.now()），供「侧栏多久后出字」比对；tools：请求带工具表（主任务请求）。
+ * closedAt：这次回复的连接关闭时的本机时间；finished：关闭时回复已经写完。没写完就关了，说明产品中途取消了这次请求。
+ */
+export type ModelRequest = { atMs: number; rule: string | null; step: number; status: number; firstTextAt?: number; lastTextAt?: number; tools?: boolean; closedAt?: number; finished?: boolean };
 
 const textOf = (content: ChatMessage["content"]): string => Array.isArray(content) ? content.map((part) => part.text ?? "").join("") : content ?? "";
 
@@ -187,6 +190,7 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
 
     const record: ModelRequest = { atMs, rule: found?.rule.match ?? null, step: found?.step ?? 0, status: 200, tools: !!payload.tools?.length };
     requests.push(record);
+    res.on("close", () => { record.closedAt = Date.now(); record.finished = res.writableFinished; });
 
     if (step.delayMs) await new Promise((done) => setTimeout(done, step.delayMs));
     const callId = `call_${++calls}`;
