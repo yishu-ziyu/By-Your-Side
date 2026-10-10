@@ -340,7 +340,7 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   timeout: "没发：2 分钟没确认",
   declined: "你没让发，草稿还在",
   repeat: "你没让发，草稿还在",
-  busy: "你没让发，草稿还在",
+  busy: "没发：前一个确认还在等你",
 };
 
 export function recordedDuration(start: number, end: number): string | null {

@@ -4008,6 +4008,8 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
 }
 
 function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true }): void {
+  // 10-09/10-10 存下的侧栏历史只有旧标记 sendDeclined、没有原因：按「不发」画，不画成失败；那段历史不再要紧时删掉这一行。
+  if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
 
   if (run) {

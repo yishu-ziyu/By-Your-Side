@@ -18,7 +18,7 @@
  *   o) 没有表单、附近没有输入栏的「发送」：确认框只写网站和按钮名，没有内容行。
  * 确认框内容（R2）：a 写网站、「发送」和同一表单里草稿的文字；表单外另有一栏备忘，不能出现在确认框上。
  * 侧栏（R2）：a 等确认时过程行标题是「等你在网页上确认发送」，用户决定后消失；b 那一步写「（你确认过）」；
- *   c 那一步写「你没让发，草稿还在」，不标红、不写「没成功」，过程行标题也不写「没成功」；g 那一步写「没发：你停下了」。截图 a-panel-waiting / b-panel / c-panel / g-panel。
+ *   c 那一步写「你没让发，草稿还在」，不标红、不写「没成功」，过程行标题也不写「没成功」；g 那一步写「没发：你停下了」；n 第二次写「没发：前一个确认还在等你」。截图 a-panel-waiting / b-panel / c-panel / g-panel。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
  * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
  * 不显示等确认的标题，a 的侧栏判据失败；「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 heldReason，c 被「连续三次」停下；网址一变就算离开，m 的确认框消失；不按表单找输入栏，a 的确认框写成表单外备忘的文字（反例结果见验收文件）。
@@ -387,6 +387,8 @@ try {
   const busyN = toolN.filter(t => t.includes("已经有一个「发送」在等用户确认")).length;
   const sentN = toolN.filter(t => t.includes("The user confirmed sending on the page")).length;
   check("n 并行点两次「发送」：一个确认框，第二次马上被拒，确认后恰好 1 条，第一次回已发送", stillN?.id === boxN.id && busyN === 1 && sentN === 1 && toolN.length === 2 && sent() - sentBeforeN === 1, { sameBox: stillN?.id === boxN.id, busyN, sentN, sentDelta: sent() - sentBeforeN, tool: toolN });
+  const runN = await lastRun();
+  check("n 侧栏：第二次写「没发：前一个确认还在等你」，不标失败", runN?.steps.filter(step => step.text.includes("没发：前一个确认还在等你")).length === 1 && runN.steps.every(step => !step.error), { run: runN });
 
   // ── o：没有表单、附近没有输入栏的「发送」：确认框只写网站和按钮名，不写内容 ──
   const o = await confirmThenDecline("o", "O 完成。");
