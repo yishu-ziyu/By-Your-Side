@@ -64,3 +64,4 @@ R1、R2、R3 做完（10-10），用例没有进 `npm test` 的核心清单。
 - 用例加了 e（付款停下），11 项全过，证据在 `out/acceptance/real-path/2026-10-10T06-57-59-523Z-keep-foreground/`。审查后删掉了一项证伪不了的窗口焦点检查。
 - 反例：只让付款停下不切页，e 失败，证据在 `out/acceptance/real-path/2026-10-10T06-44-27-029Z-keep-foreground/`。只让交给用户不切页，d 失败，后面的流程也卡住，证据在 `out/acceptance/real-path/2026-10-10T06-45-01-771Z-keep-foreground/`。改回后复跑通过。
 - 复跑通过：`pay-stop`、`send-confirm`、`handoff`，前提小实验 `scripts/probes/cross-site-tabs.mts`。
+- 双击开新页（10-10）：扩展跟到了双击打开的新页，但 Agent 一侧的缺省页只在单击时更换，所以双击后不带标签页的读页仍读原页。新用例 `double-click-new-tab` 在改前的 main 上主段失败（单击对照通过），证据在 `out/acceptance/real-path/2026-10-10T07-13-30-049Z-double-click-new-tab/`；修复后通过，证据在 `out/acceptance/real-path/2026-10-10T07-13-48-642Z-double-click-new-tab/`。
