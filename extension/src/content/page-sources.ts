@@ -1,6 +1,17 @@
 import type { PageElementSource } from '../../../shared/protocol.js';
 
-const documentToken = crypto.randomUUID();
+/** 编号（UUID v4 格式）。普通 http 网页不是安全上下文，没有 crypto.randomUUID；crypto.getRandomValues 在那里也可用。 */
+export function newId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+const documentToken = newId();
 
 export const documentIdentity = () => ({ document: documentToken, url: location.href });
 
@@ -45,7 +56,7 @@ export function registerSource(element: HTMLElement, kind: PageElementSource['ki
   if (!text) return null;
   let id = ids.get(element);
 
-  if (!id) { id = crypto.randomUUID(); ids.set(element, id); }
+  if (!id) { id = newId(); ids.set(element, id); }
 
   targets.set(id, element);
 
@@ -83,7 +94,7 @@ export function registerSelection(range: Range): PageElementSource | null {
   const start = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
 
   if (!text || text.length > 8000 || !start || start.closest('[data-bys-translation],[data-bys-pending],input,textarea,[contenteditable]')) return null;
-  const id = crypto.randomUUID();
+  const id = newId();
   selections.set(id, range.cloneRange());
 
   if (selections.size > 32) selections.delete(selections.keys().next().value!);

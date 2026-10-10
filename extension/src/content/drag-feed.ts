@@ -1,5 +1,5 @@
 import { isPageElementSource, type PageElementSource } from '../../../shared/protocol.js';
-import { registerSelection, registerSource, resolveSource } from './page-sources.js';
+import { newId, registerSelection, registerSource, resolveSource } from './page-sources.js';
 import { extensionAlive } from './alive.js';
 
 export const FEED_PREFIX = 'by-your-side-feed:';
@@ -31,7 +31,7 @@ const GRIP_STYLE = `
 const DOTS = '<svg viewBox="0 0 12 14" fill="currentColor" aria-hidden="true"><circle cx="3" cy="2" r="1.3"/><circle cx="9" cy="2" r="1.3"/><circle cx="3" cy="7" r="1.3"/><circle cx="9" cy="7" r="1.3"/><circle cx="3" cy="12" r="1.3"/><circle cx="9" cy="12" r="1.3"/></svg>';
 
 const offer = (event: DragEvent, source: PageElementSource) => {
-  const token = crypto.randomUUID();
+  const token = newId();
   event.dataTransfer!.effectAllowed = 'copy';
   event.dataTransfer!.setData('application/x-by-your-side-feed', token);
 
