@@ -110,7 +110,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /** 成功后就明确改变工作目标的调用；失败不改缺省页。 */
-const TARGET_CHANGING_TOOLS: ReadonlySet<string> = new Set(["switch_tab", "open_tab", "worker_tabs", "click"]);
+const TARGET_CHANGING_TOOLS: ReadonlySet<string> = new Set(["switch_tab", "open_tab", "worker_tabs", "click", "double_click"]);
 
 function numberField(source: unknown, field: string): number | null {
   if (!source || typeof source !== "object") return null;
