@@ -177,6 +177,42 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
     return docs;
   }
 
+  /**
+   * 歧义时列出前 5 个候选，每个带只指向它的 loc=css 路径（唯一 id 优先，否则逐层 :nth-child）。
+   * 只说「请 snapshot」时模型要再花一轮读页、再一轮操作（#257）；有了路径下一步直接用。
+   */
+  function choices(pool: Element[]): string {
+    const lines = pool.slice(0, 5).map((el, i) => {
+      let path = "";
+
+      try {
+        const doc = el.ownerDocument;
+        const parts: string[] = [];
+
+        for (let node: Element | null = el; node && node !== doc.documentElement && !path; node = node.parentElement) {
+          const id = node.getAttribute("id");
+          const parent = node.parentElement;
+
+          if (id && doc.querySelectorAll("#" + CSS.escape(id)).length === 1) parts.unshift("#" + CSS.escape(id));
+          else parts.unshift(parent ? node.tagName.toLowerCase() + ":nth-child(" + (Array.prototype.indexOf.call(parent.children, node) + 1) + ")" : node.tagName.toLowerCase());
+
+          const css = parts.join(" > ");
+
+          if (doc.querySelectorAll(css).length === 1 && doc.querySelector(css) === el) path = css;
+        }
+      } catch {
+        path = "";
+      }
+
+      const text = normalize(accessibleName(el) || el.textContent || "").slice(0, 60);
+      const href = el.getAttribute("href");
+
+      return (i + 1) + ") " + (path && el.ownerDocument === document ? "loc=css:" + path : "（同源 frame 内，没有顶层路径）") + " <" + el.tagName.toLowerCase() + "> \"" + text + "\"" + (href ? " href=" + href.slice(0, 80) : "") + (isVisible(el) ? "" : "（隐藏）");
+    });
+
+    return "候选：" + lines.join("；") + (pool.length > 5 ? "；另有 " + (pool.length - 5) + " 个" : "") + "。";
+  }
+
   function pickUnique(pool: Element[], label: string): Element {
     if (pool.length === 0) {
       throw new Error(
@@ -194,7 +230,7 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
           pool.length +
           " 个元素: " +
           label +
-          "。操作未执行。请 snapshot 确认目标，使用目标 ref 或更具体的唯一定位；跨 frame/区域同名不会自动选择第一个匹配。",
+          "。操作未执行；跨 frame/区域同名不会自动选择第一个匹配。" + choices(pool) + "选定一个，用它的 loc=css 直接操作。",
       );
     }
 
@@ -214,7 +250,7 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
           top.length +
           " 个元素: " +
           label +
-          "。操作未执行。请 snapshot 确认目标，使用目标 ref 或更具体的唯一 CSS；不会自动选择第一个匹配。",
+          "。操作未执行；不会自动选择第一个匹配。" + choices(top) + "选定一个，用它的 loc=css 直接操作。",
       );
     }
 
@@ -422,7 +458,7 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
             pool.length +
             " 个元素: " +
             label +
-            "。操作未执行。请 snapshot 确认目标，使用目标 ref 或更具体的唯一定位；重复名字不会自动选择第一个匹配。",
+            "。操作未执行；重复名字不会自动选择第一个匹配。" + choices(pool) + "选定一个，用它的 loc=css 直接操作。",
         );
       }
 

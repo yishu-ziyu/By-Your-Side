@@ -41,18 +41,16 @@ interface ProgramOptions {
   saveFile?(params: SaveFileParams): SavedFileReceipt | Promise<SavedFileReceipt>;
 }
 
-/** browser.* 的 camelCase 别名：程序里用 EGO 风格名字，账本仍记规范 RPC 名。 */
-export const RPC_ALIASES: Record<string, string> = {
-  doubleClick: "double_click",
-  armEvent: "arm_event",
-  waitEvent: "wait_event",
-  disarmEvent: "disarm_event",
-  consumeEvents: "consume_events",
-  acceptDialog: "accept_dialog",
-  dismissDialog: "dismiss_dialog",
-  dialogInfo: "dialog_info",
-  selectOption: "select_option",
-};
+/** 程序里不能用的工具：教学一步要等用户自己点（最多 2 分钟），点完由模型看页面再定下一步，不能放进程序里连着跑。 */
+const NOT_IN_PROGRAMS = new Set<string>(["worker_tabs", "guide_step", "page_text"]);
+
+/**
+ * browser.* 的 camelCase 别名：每个 snake_case 方法都认它的 camelCase 写法，账本仍记规范 RPC 名。
+ * 模型按 JS 习惯写 pressKey、readElement，只认一部分时它猜错一次就多一轮（#257）。
+ */
+export const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
+  .filter(name => name.includes("_") && !NOT_IN_PROGRAMS.has(name))
+  .map(name => [name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()), name]));
 
 /**
  * browser_run 组合 helper 的能力事实源：METHODS 白名单与 browser_run 描述文本都从这里取，
@@ -87,8 +85,7 @@ export function availableRpcAliases(): string[] {
 
 function programMethods(offer: { saveFile: boolean }): string[] {
   return [
-    // 教学一步要等用户自己点（最多 2 分钟），点完由模型看页面再定下一步，不能放进程序里连着跑。
-    ...TOOL_NAMES.filter(name => name !== "worker_tabs" && name !== "guide_step" && name !== "page_text"),
+    ...TOOL_NAMES.filter(name => !NOT_IN_PROGRAMS.has(name)),
     ...availableRpcAliases(),
     ...availableProgramHelpers(offer).map(h => h.name),
   ];

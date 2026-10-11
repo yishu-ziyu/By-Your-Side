@@ -18,7 +18,7 @@ import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
 import { requiresControlGate } from "../../shared/effect-policy.js";
 import { USER_CONFIRM_TIMEOUT_MS, type ToolRpc } from "./rpc.js";
-import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, ProgramAssertError, type ProgramStep } from "./browser-program.js";
+import { runBrowserProgram, availableProgramHelpers, ProgramAssertError, type ProgramStep } from "./browser-program.js";
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
@@ -378,7 +378,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout, download or error_page), js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content, deliver}) saves text the program already holds as a file in this conversation (same file list as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten, shown}. Set deliver: true only when the user asked for this file (an export, download or table to keep): only then it shows as a side-panel card; without it the file is a working file the user does not see (e.g. one you will upload). For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. browser.check({text, selector?, state:"appears"|"disappears", timeoutMs:3000}) polls for a text or target without a model round trip and returns {ok, waitedMs, polls} (ok:false on timeout, never an error) — use it right after an action to confirm the outcome instead of a new snapshot. browser.assert({ok, name, reason}) stops the whole program when ok is false: no later action runs, and the result says which step stopped and why. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
+      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout, download or error_page), js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content, deliver}) saves text the program already holds as a file in this conversation (same file list as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten, shown}. Set deliver: true only when the user asked for this file (an export, download or table to keep): only then it shows as a side-panel card; without it the file is a working file the user does not see (e.g. one you will upload). For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' Every snake_case method also answers to its camelCase name (pressKey = press_key, readElement = read_element). browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. browser.check({text, selector?, state:"appears"|"disappears", timeoutMs:3000}) polls for a text or target without a model round trip and returns {ok, waitedMs, polls} (ok:false on timeout, never an error) — use it right after an action to confirm the outcome instead of a new snapshot. browser.assert({ok, name, reason}) stops the whole program when ok is false: no later action runs, and the result says which step stopped and why. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -388,6 +388,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         rpc.noteToolFact?.(id, "unknown");
 
         let result: Awaited<ReturnType<typeof runBrowserProgram>>;
+        // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」（#257）。
+        // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。
+        const endedOn = async (): Promise<string> => {
+          try {
+            const { tabs } = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
+            const working = tabs.find(tab => tab.working);
+
+            const url = URL.canParse(working?.url ?? "") ? new URL(working!.url) : null;
+
+            // 和点击回执一样只给标题前 120 字和 origin+pathname（标题来自网页，网址的查询串可能带私人信息）。
+            return working ? `\n[After this program the working tab ${working.id} shows "${(working.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}" — ${url ? `${url.origin}${url.pathname}` : "(no address)"}; that is the page now.]` : "";
+          } catch { return ""; }
+        };
 
         try {
           result = await runBrowserProgram({ code: params.code,
@@ -406,12 +419,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
           });
         } catch (error) {
-          if (!(error instanceof ProgramAssertError)) throw error;
+          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${await endedOn()}`, { cause: error });
           // assert 停下不是工具失败：前面的步骤已经做了，结果带结构交给模型。
           // details.steps 保持是步数（侧栏按 Number(details.steps) 计数），步骤列表另放 programSteps。
           rpc.noteToolFact?.(id, "executed");
 
-          return textResult(error.message, { assert: error.assert, steps: error.assert.failedAt, programSteps: error.steps });
+          return textResult(`${error.message}${await endedOn()}`, { assert: error.assert, steps: error.assert.failedAt, programSteps: error.steps });
         }
 
         rpc.noteToolFact?.(id, "executed");
@@ -423,7 +436,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           ? `${json.slice(0, MAX_JS_RESULT_CHARS)}… [truncated: showed ${MAX_JS_RESULT_CHARS} of ${json.length} chars; the rest is missing — return less (slice each page) or save it with browser.saveFile]`
           : json;
 
-        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) }, ...result.images], details: { value: result.value, steps: result.steps } };
+        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) + await endedOn() }, ...result.images], details: { value: result.value, steps: result.steps } };
       },
     }),
 
