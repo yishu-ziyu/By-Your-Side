@@ -18,7 +18,7 @@ import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { mountVoiceOrb } from "../shared/orb-style.js";
-import { renderReceipt } from "./receipt-view.js";
+import { markNeedsModelResent, noteNeedsModelManual, renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
@@ -53,13 +53,14 @@ import { mountErrorCards, type KeyTestResult } from "./error-card.js";
 import { describeModelError } from "../../../shared/user-facing.js";
 import { INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
+import { chipLabel } from "./models.js";
 import { mountThinkingChip } from "./thinking-chip.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
 import { evidenceLine, findingForUser, mergeEvidence, nextWorkingTab, readbackKey } from "./claim-hold.js";
-import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, HeldReason, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, HeldReason, ModelOption, PageContext, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -272,6 +273,7 @@ app.innerHTML = `
     <div id="starter-actions">
       <button type="button" data-starter="请概括当前页面的要点。">概括这一页</button>
     </div>
+    <button type="button" id="starter-connect">连一个模型</button>
   </section>
   <div class="composer-dock-wrap">
     <div id="morph-sheet" class="page-morph-sheet" style="display: none;">
@@ -292,7 +294,7 @@ app.innerHTML = `
       </div>
       <div class="action-menu-item pressable" id="menu-action-region" title="在网页上圈出想问的地方，可以圈好几处（Esc 退出）">
         <span class="action-menu-item-icon" data-icon="region"></span>
-        <span class="action-menu-item-label">圈出来问 <span class="action-menu-item-key">⌘⇧S</span></span>
+        <span class="action-menu-item-label">圈出来问 <span class="action-menu-item-key" id="region-key">⌘⇧S</span></span>
       </div>
       <div class="action-menu-item pressable" id="menu-action-upload">
         <span class="action-menu-item-icon" data-icon="upload"></span>
@@ -381,6 +383,9 @@ const inputEl = document.getElementById("input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 
 sendBtn.disabled = true;
+
+// 「圈出来问」的按键由侧栏自己处理（attachments.ts），不是 Chrome 快捷键：按系统写法显示（#236）。
+document.getElementById("region-key")!.textContent = /Mac/i.test(navigator.platform) ? "⌘⇧S" : "Ctrl+Shift+S";
 
 const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
 
@@ -644,6 +649,60 @@ function updateStarterVisibility(): void {
   if (starterReady() && tabId != null) void refreshStarterSuggestions(tabId);
 }
 
+/** 有没有连模型：null 表示还没收到 hello_ok。只在确知没连时，起点引导换成「先连一个模型」（#233）。 */
+let modelConnected: boolean | null = null;
+
+function paintStarterModelState(): void {
+  const none = modelConnected === false;
+  app.classList.toggle("no-model", none);
+  document.getElementById("starter-title")!.textContent = none ? "先连一个模型" : "说说你想完成什么";
+  document.getElementById("starter-sub")!.textContent = none ? "连好以后，就能读这一页、整理信息或操作网页。" : "浏览器 AI 助手，帮你读页面、整理信息或操作网页。";
+}
+
+document.getElementById("starter-connect")!.onclick = () => void chrome.runtime.openOptionsPage();
+
+/**
+ * 没连模型时发出的话（#233）：卡片承诺「连好以后，这句话会自动发出」。只存在内存里，按会话分开；
+ * 用户自己再发任何话就作废。resending 是已交出、还没在历史里见到的那一次重发：它的历史不再画第二个用户气泡。
+ */
+const resendAfterConnect = new Map<string, { text: string; page: Promise<PageContext | undefined>; card: HTMLElement; bubble: HTMLElement | null }>();
+
+/** 这个面板最近交出的一条话问的是哪一页；没连模型的回执按 requestId 认领它。 */
+let lastSentPage: { requestId: string; page: Promise<PageContext | undefined> } | null = null;
+
+let resending: { conversationId: string; text: string; bubble: HTMLElement | null } | null = null;
+
+/** hello_ok / model_info 告诉侧栏有没有模型。目录（models）比 model 可靠：别的会话回放的 hello_ok 可能不带 model。 */
+function noteModelPresence(model: string | undefined, models: ModelOption[] | undefined): void {
+  const was = modelConnected;
+  modelConnected = !!model || !!models?.length;
+  paintStarterModelState();
+
+  if (bootFreshSession && !modelConnected && bootInheritedId !== null) resolveBootSession(bootInheritedId, conversations.size > 0);
+
+  if (was !== false || !modelConnected) return;
+  const pending = resendAfterConnect.get(selectedConversationId);
+  resendAfterConnect.clear();
+
+  // 卡片已不在当前会话的消息里（换过会话或重开过）：不替用户发。
+  if (!pending || !pending.card.isConnected) return;
+  const conversationId = selectedConversationId;
+
+  void pending.page.then((page) => {
+    if (conversationId !== selectedConversationId || !pending.card.isConnected) return;
+    resending = { conversationId, text: pending.text, bubble: pending.bubble };
+
+    if (sendInput(pending.text, page)) markNeedsModelResent(pending.card, currentModelId ? chipLabel(currentModelId, knownModels) : null);
+    else resending = null;
+  });
+}
+
+function lastUserBubble(): HTMLElement | null {
+  const bubbles = messagesEl.querySelectorAll<HTMLElement>(".msg.user");
+
+  return bubbles[bubbles.length - 1] ?? null;
+}
+
 function bindStarterButton(button: HTMLButtonElement): void {
   button.onclick = () => {
     // 还没恢复完就点（引导不可见时的键盘/事件竞态）：不写草稿，别覆盖正在恢复的原草稿。
@@ -867,10 +926,12 @@ function resolveBootSession(inheritedId: string, listKnown: boolean): void {
   if (!bootFreshSession) return;
   bootInheritedId = inheritedId;
   const inherited = conversations.get(inheritedId);
+  // 没连模型时宿主不建会话，空清单就是真的空：直接用后台选中的会话，不等两段兜底时限（#233）。
+  const noModel = modelConnected === false;
 
-  if (!inherited && !listKnown) return;
+  if (!inherited && !listKnown && !noModel) return;
 
-  if (inherited) {
+  if (inherited || noModel) {
     finishBootSession();
     selectConversation(inheritedId, false);
 
@@ -1965,6 +2026,14 @@ function syncSteerSend(): void {
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
 
   if (steer && send && input) steer.hidden = !send.classList.contains("stopping") || !input.value.trim();
+
+  // 没字也没附件时发送键看起来不能点（#236）。不动 disabled：它只表示会话是否就绪。
+  if (send && input) {
+    const idle = !send.classList.contains("stopping") && !input.value.trim() && !attachments?.getAttachments().length;
+
+    if (idle) send.setAttribute("aria-disabled", "true");
+    else send.removeAttribute("aria-disabled");
+  }
 }
 
 document.getElementById("reading-settings-btn")!.prepend(icon(BookOpen));
@@ -4364,6 +4433,13 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         if (!previous || !copy.inProcess) messagesEl.append(receipt);
         receiptMessages.set(key, receipt);
 
+        // 只认领这个面板刚交出的那条：知道它问的是哪一页才自动重发。回放的旧卡片、语音发的话都请用户自己再发。
+        if (ev.receipt.needsModel && ev.receipt.text.trim()) {
+          if (!replayingHistory && lastSentPage?.requestId === ev.receipt.requestId) {
+            resendAfterConnect.set(ev.receipt.conversationId, { text: ev.receipt.text, page: lastSentPage.page, card: receipt, bubble: lastUserBubble() });
+          } else noteNeedsModelManual(receipt);
+        }
+
         if (restoreFocus) receipt.querySelector<HTMLElement>('summary,button')?.focus({preventScroll:true});
         scrollToEnd();
       } else addMsg("msg notice", ev.message);
@@ -4838,11 +4914,14 @@ function handleServerMessage(raw: string): void {
       applyHostFeatures(msg.features);
       modelPicker.apply(msg.model, msg.models);
       noteModelInfo(msg.model, msg.models);
+      noteModelPresence(msg.model, msg.models);
       thinkingChip.connected();
       break;
     case "model_info":
       modelPicker.update(msg.model, msg.models);
       noteModelInfo(msg.model, msg.models);
+
+      if (msg.model || msg.models?.length) noteModelPresence(msg.model, msg.models);
       break;
     case "model_key_test_result":
       keyTests.get(msg.requestId)?.(msg);
@@ -5073,7 +5152,11 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         if (!running) runStartAt = eventTime();
         else if (!entry.item.undelivered) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);
-        const bubble = addUserMsg(entry.item.text, entry.item.attachments);
+        const resent = resending && resending.conversationId === selectedConversationId && resending.text === entry.item.text ? resending : null;
+        resending = null;
+        resendAfterConnect.delete(selectedConversationId);
+        // 连好模型后的自动重发：原话的气泡已经在上面，不再画第二个。
+        const bubble = resent?.bubble?.isConnected ? resent.bubble : addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
 
@@ -5188,6 +5271,8 @@ function autoResize(): void {
   inputEl.style.height = "auto";
   inputEl.style.height = `${Math.min(inputEl.scrollHeight, 140)}px`;
   modelPicker.reposition();
+  // 程序改输入框（恢复草稿、起点建议、附件增减）都经过这里：发送键的样子跟着变。
+  syncSteerSend();
 }
 
 attachments = new AttachmentsManager({
@@ -5360,12 +5445,15 @@ function restoreLostSend(): void {
   noticeSendFailed();
 }
 
-/** quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。 */
-function sendInput(quick?: string): void {
-  if (!conversationReady) return;
+/**
+ * quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。
+ * quickPage：quick 这句话问的是哪一页（连好模型后重发时用原来那页）。返回是否交了出去。
+ */
+function sendInput(quick?: string, quickPage?: PageContext): boolean {
+  if (!conversationReady) return false;
 
   // 点「新会话」后、新会话建好前：选中的还是旧会话，现在发会落进旧会话。等建好再发。
-  if (conversationRequest && !quick) { sendAfterCreate = true; return; }
+  if (conversationRequest && !quick) { sendAfterCreate = true; return false; }
   const held=panelLive(sessionRun.values(), teamView).userHasPage;
 
   // 语音输入或粘贴偶尔带进看不见的控制字符（如退格 \b），发出去前去掉；换行和制表保留。
@@ -5377,12 +5465,12 @@ function sendInput(quick?: string): void {
 
   const pendingAtts = quick ? [] : attachments.getAttachments();
 
-  if (!text && pendingAtts.length === 0) return;
+  if (!text && pendingAtts.length === 0) return false;
 
   // steer 归入进行中的 run，不动计时起点；新消息重开计时
   if (!running&&!held) runStartAt = Date.now();
 
-  const context = pendingAsk && !quick
+  const context: PageContext | undefined = quickPage ?? (pendingAsk && !quick
     ? {
         tabId: pendingAsk.tabId,
         title: pendingAsk.title,
@@ -5390,7 +5478,7 @@ function sendInput(quick?: string): void {
         // 只挂了来源页、没定位到段落时没有选段：只带页面。
         ...(pendingAsk.text ? { selection: { text: pendingAsk.text } } : {}),
       }
-    : undefined;
+    : undefined);
 
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
@@ -5414,7 +5502,7 @@ function sendInput(quick?: string): void {
 
   if (!sent) { noticeSendFailed();
 
- return; }
+ return false; }
 
   marginalia.showConversation();
   const citationPage = context ?? activeTabInfo;
@@ -5428,28 +5516,36 @@ function sendInput(quick?: string): void {
   taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
 
   // 没有选区引用时，后台会附当前页面上下文：把这一页也补进材料，界面与实际上行一致。
-  if (!context) {
-    void (async () => {
-      try {
-        const id = await activeTabId();
+  // 同一页也记给这次请求：没连模型被退回时，连好后照这一页重发，而不是重发时开着的设置页（#233）。
+  const page = context ? Promise.resolve(context) : (async () => {
+    try {
+      const id = await activeTabId();
 
-        // 期间切了会话就不再补这条材料（任务条已重置）。
-        if (id == null || conversation !== selectedConversationId) return;
-        const info = (await resolveTabPage(id)) ?? { title: "", url: "" };
-        taskBar.noteRequestPage(request.requestId, { tabId: id, title: info.title ?? "", url: info.url ?? "" });
-      } catch { /* 拿不到页面信息就只展示已知材料，不猜 */ }
-    })();
-  }
+      if (id == null) return undefined;
+      const info = (await resolveTabPage(id)) ?? { title: "", url: "" };
+
+      return { tabId: id, title: info.title ?? "", url: info.url ?? "" };
+    } catch { return undefined; /* 拿不到页面信息就只展示已知材料，不猜 */ }
+  })();
+
+  lastSentPage = { requestId: request.requestId, page };
+
+  // 期间切了会话就不再补这条材料（任务条已重置）。
+  if (!context) void page.then((known) => { if (known && conversation === selectedConversationId) taskBar.noteRequestPage(request.requestId, known); });
 
   sendFailNotifiedFor = null;
+  // 用户自己又发了话：没连模型时记下的那句不再自动重发。
+  resendAfterConnect.delete(conversation);
 
-  if (quick) return;
+  if (quick) return true;
   inputEl.value = "";
   syncSteerSend();
   clearPendingAsk();
   attachments.clear();
   autoResize();
   saveDraft();
+
+  return true;
 }
 
 function stopCurrentTask(): void {

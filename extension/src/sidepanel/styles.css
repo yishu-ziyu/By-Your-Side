@@ -1524,6 +1524,11 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 #starter-actions button:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
 #starter-actions button:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
+/* 没连模型（#233）：建议收起，只留「连一个模型」 */
+#starter-connect { display: none; border: 0; border-radius: 12px; background: var(--text-primary); color: var(--content-bg); font-size: 12px; padding: 6px 12px; cursor: pointer; }
+#starter-connect:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
+#app.no-model #starter-actions { display: none; }
+#app.no-model #starter-connect { display: inline-flex; }
 
 /* ── 输入区：暖白纸面 ─────────────────────── */
 .composer-dock-wrap {
@@ -3139,6 +3144,8 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 #send-btn.kinetic-morph-button { width: 32px; height: 32px; }
 #send-btn.kinetic-morph-button:hover { background: color-mix(in srgb, var(--text-primary) 82%, var(--content-bg)); color: var(--content-bg); }
 #send-btn.kinetic-morph-button.stopping { border-radius: 999px; background: var(--text-primary) !important; color: var(--content-bg) !important; }
+/* 没字也没附件：和 :disabled 同一个样子（#236）。放在 hover 规则后面，悬停也不变黑。 */
+#send-btn.kinetic-morph-button[aria-disabled="true"]:not(.stopping) { background: var(--content-subtle); color: var(--text-quaternary); cursor: default; transform: none; }
 #send-btn.kinetic-morph-button.stopping .morph-icon-stop svg { width: 12px; height: 12px; fill: currentColor; }
 
 /* ＋ 菜单：添加文件 + 边注 + 语音诊断，细线图标 */
