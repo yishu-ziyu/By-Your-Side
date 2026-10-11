@@ -3,7 +3,7 @@
  *   npx tsx scripts/eval/time-breakdown.mts <everyday-baseline 产物目录 或 日常导出的 .jsonl> [--out=<表格.md>]
  * 等模型：每轮从发出请求到模型回完（含重试）；动手：每个工具从开始到结束；其他：总耗时减去前两项（准备上下文、记忆判断等），单独列出，不摊进前两项。
  * 首个正文字：发送到第一个正文 token（#264 的首字口径，不含思考）；
- * 每次调用：主循环每轮送进模型的 token 数 / 其中命中缓存的数（#258；论文对照第 0 项）；最大上下文取其中最大的；继续：目标核对判「继续」的次数。
+ * 每次调用：主循环每轮送进模型的 token 数 / 其中命中缓存的数（#258；论文对照第 0 项）；最大上下文取其中最大的；继续：目标核对判「继续」后真的多跑了一轮的次数。
  * 回答后：第一次 agent_end 到这次运行最后一条后台记录（核对目标、记忆判断）（#259）。
  */
 import { readdir, readFile, writeFile } from "node:fs/promises";
@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 type Usage = { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
 
-type Line = { time: string; runId: string | null; turn: number; type: string; data?: { text?: string; elapsedMs?: number; toolName?: string; usage?: Usage; status?: string } };
+type Line = { time: string; runId: string | null; turn: number; type: string; data?: { text?: string; elapsedMs?: number; toolName?: string; usage?: Usage; status?: string; attempt?: number } };
 
 type Row = { id: string; prompt: string; totalMs: number; modelMs: number; firstTokenMs: number[]; firstTextMs: number | null; calls: Array<{ context: number; cached: number }>; continues: number; afterMs: number; toolMs: number; turns: number; tools: Record<string, { n: number; ms: number }> };
 
@@ -76,7 +76,8 @@ for (const run of byRun.values()) {
     // 10-11 以前的导出 turn_end 不带 usage：calls 留空，表里显示「—」。
     if (l.type === "turn_end" && l.data?.usage) { const u = l.data.usage; row.calls.push({ context: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), cached: u.cacheRead ?? 0 }); }
 
-    if (l.type === "goal_check" && l.data?.status === "continue") row.continues++;
+    // 催满次数或换了网页时，收尾记录里 status 仍是 continue，但没有多跑；只有带 attempt 的那条才开了新一轮。
+    if (l.type === "goal_check" && l.data?.status === "continue" && l.data.attempt !== undefined) row.continues++;
 
     if (l.type === "tool_execution_end") {
       const name = String(l.data?.toolName ?? "?");

@@ -18,7 +18,7 @@
 ## 技术前提
 
 - 前提：主循环每轮的 `turn_end` 记录带 `usage`（#264 起）。小实验：读 `shared/run-trace-core.ts` 的 `turn_end` 分支。结果：通过。
-- 前提：发给 ChatGPT 的缓存键稳定。小实验：读代码，`PiAgentLoop` 的 `sessionId` 取会话 ID（`agent/src/session.ts` 构造 `PiAgentLoop` 处），pi-ai 把它作为 `prompt_cache_key`（`openai-codex-responses.js:171`、`:397`）。结果：通过；抓到的请求正文里第一个会话的键是 `default`（`shared/protocol.ts` 的 `DEFAULT_CONVERSATION_ID`）。
+- 前提：发给 ChatGPT 的缓存键稳定。小实验：读代码，主循环的会话 ID 由 pi-ai 作为 `prompt_cache_key` 发出。结果：通过；抓到的请求正文里第一个会话的键是 `default`（`shared/protocol.ts` 的 `DEFAULT_CONVERSATION_ID`）。
 
 ## 边界与不做
 
@@ -40,6 +40,6 @@
 
 ## 后续（另起任务）
 
-- 让历史只追加：另一条工作线已在 10-11 做完（#276，[验收](20261011-history-prefix.md)），同一页没变时也不再带第二份快照。它在阶跃上第 2 条消息首个正文字中位 6.8 → 4.0 秒，比本文件按 gpt-6-luna 估的「每条约快 0.2–0.4 秒」大；本文件的估算用的是 gpt-6-luna 的耗时分组，没有在阶跃上量。
+- 让历史只追加：另一条工作线已在 10-11 做完（#276，[验收](20261011-history-prefix.md)），同一页没变时也不再带第二份快照。它在阶跃上第 2 条消息首个正文字中位 6.8 → 4.0 秒，比本文件估的大。本文件按 gpt-6-luna 的耗时分组估每条约快 0.2–0.4 秒，没有在阶跃上量。
 - 目标核对判「继续」也会开新一轮：#276 之后上下文留在历史里，这一轮也应只追加（推断，没测）。
 - 前缀相同也不命中的那部分：改请求内容解决不了。假设：整个安装用一个固定缓存键，新会话的第一次调用也能命中系统提示词和工具定义（约 1 万 token）。没有验证。
