@@ -53,6 +53,7 @@ import {assertBrowserDecision} from './browser-observation.js';
 import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
 import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
+import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
 import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
@@ -114,6 +115,7 @@ const handlers: Record<ToolName, Handler> = {
   close_tab: (p, sid) => closeTab(p, sid),
   navigate: (p, sid) => navigate(p, sid),
   snapshot: (p, sid) => snapshot(p, sid),
+  page_text: (p, sid) => pageText(p, sid),
   click: (p, sid) => click(p, sid),
   double_click: (p, sid) => doubleClick(p, sid),
   arm_event: (p, sid) => armEvent(p, sid),
@@ -499,7 +501,7 @@ async function hidePresence(keys: string[]): Promise<void> {
 }
 
 /** 读页面的工具：光标显示「正在读这个页面」。 */
-const READ_TOOLS = new Set(["snapshot", "read_element", "read_elements", "screenshot", "observe_page", "network"]);
+const READ_TOOLS = new Set(["snapshot", "page_text", "read_element", "read_elements", "screenshot", "observe_page", "network"]);
 
 async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
   await showCursorStatus({

@@ -14,6 +14,7 @@ export interface EffectDecision {
 
 const READ_TOOLS = new Set([
   "snapshot",
+  "page_text",
   "read_element",
   "read_elements",
   "list_tabs",

@@ -1057,21 +1057,23 @@ return;}
     const epoch=this.controlEpoch,run=this.deliveryRunId();
 
     try {
-      const data = (await this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS)) as { text?: unknown };
+      // 读正文，不读整棵 AX 树：AX 树前 12,000 字大多是导航和元素编号，模型不信它，又重读 2–3 轮（#255）；取 AX 树还要挂调试器（#260）。
+      const data = (await this.rpc.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS)) as { text?: unknown; totalChars?: unknown };
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
       const text = typeof data?.text === "string" ? data.text.trim() : "";
 
       if (!text) return null;
       this.emitReadObservation(id, 'snapshot', { tabId }, data, false);
+      const total = typeof data.totalChars === "number" ? data.totalChars : text.length;
 
-      const clipped = text.length > PRE_OBSERVATION_TEXT_MAX
-        ? `${text.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[same-page observation truncated]`
+      const clipped = total > text.length
+        ? `${text}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part.]`
         : text;
 
       this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: clipped.length });
 
-      return freshPageObservationText(context, clipped);
+      return freshPageObservationText(context, clipped, true);
     } catch (error) {
       this.runTrace.record("pre_observation_failed", {
         phase,
@@ -2541,12 +2543,15 @@ export function extractImages(attachments?: Attachment[]): SessionImageContent[]
  * 新任务首条消息尾部的当前页观察：模型可以直接动手，不必再花一轮 snapshot。
  * 页面内容走不可信边界包裹，凭据样式文本先脱敏（与 snapshot 工具回执同一处理）。
  */
-export function freshPageObservationText(context: PageContext, snapshotText: string): string {
+/** mainText：发送前读的页面正文（没有元素编号）；否则是重启时读的快照（带编号）。 */
+export function freshPageObservationText(context: PageContext, snapshotText: string, mainText = false): string {
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
 
   return [
     "[FRESH PAGE OBSERVATION — read by the runtime just now, before this task started]",
-    `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
+    mainText
+      ? `[This is the main text of tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Answer questions about it from this text in your first round; do not re-read it. It has no element refs: to act on the page, snapshot it first or inside browser_run.]`
+      : `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
     wrapPageContent(redactCredentialText(snapshotText), { tabId: context.tabId, title: context.title, url: context.url }),
   ].join("\n");
 }
