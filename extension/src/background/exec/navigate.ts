@@ -13,6 +13,12 @@ export async function navigate(
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ url: string; title: string; note?: string } & PageReadiness> {
+  // 没有完整网址时 Chrome 不会打开新文档，下面会白等到超时（#256）：立刻报错，并点明程序里常见的取错值。
+  const url = typeof params.url === "string" ? params.url.trim() : "";
+
+  if (!url) throw new Error("navigate 需要 url。在 browser_run 里 browser.js 返回 {value}：网址在 .value 里，先取出来再传给 navigate。");
+
+  if (!URL.canParse(url)) throw new Error(`navigate 的 url 不是完整网址：${url.slice(0, 200)}。要写成 https://… 这样的完整地址。`);
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -26,10 +32,10 @@ export async function navigate(
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   const tabId = tab.id;
-  const ready=await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:params.url,dispatch:()=>chrome.tabs.update(tabId, { url: params.url })});
+  const ready=await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })});
 
   const after = await chrome.tabs.get(tab.id);
-  const data = { url: after.url ?? params.url, title: after.title ?? "" };
+  const data = { url: after.url ?? url, title: after.title ?? "" };
 
   const result: { url: string; title: string; note?: string } & PageReadiness = {...data,...ready};
 

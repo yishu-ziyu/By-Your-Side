@@ -23,6 +23,9 @@
   - 例子(正)：助手用 tabs open 新开一个按附件回 `report.csv` 的地址，那么回执不是报错，写着开始了下载、Chrome 关掉了新标签页；下一步打开地址仍在原来的标签页上做 — 谁检查：`navigate-wait.mts` (e)(f)
   - 例子(正)：附件慢慢发完，助手把等待上限设成 1 秒，那么回执写着「document: download」和「还没存好」，不是 timeout — 谁检查：`navigate-wait.mts` (f)
   - 例子(反)：去掉等待里的浏览器通知，只留注入脚本的轮询，那么 (a)(b) 各等满 30 秒，回执是「document: timeout」，用例失败 — 谁检查：同上，故意弄坏产品复跑
+- R2 没有完整网址时，navigate 立刻报错，不打开页面、不等新文档（#256）。报错点明 `browser.js` 的结果在 `.value` 里，因为模型常把 `{value}` 当成值本身。
+  - 例子(正)：browser_run 里 `browser.js` 返回 `{value: null}`，程序拿它的 `.url` 去 navigate，那么几百毫秒内报错「navigate 需要 url…网址在 .value 里」 — 谁检查：`navigate-wait.mts` (g)
+  - 例子(反)：去掉这条检查，那么 (g) 等满 30 秒，程序还报「done」 — 谁检查：同上，故意弄坏产品复跑
 
 ## 还没答上的问题
 
@@ -75,3 +78,8 @@ R1 做完（10-10）。`npm run check` 通过。
 - 全部改完后通过，15 项全过，证据 `out/acceptance/real-path/2026-10-10T05-28-54-080Z-navigate-wait/`。
 - 反例：让等待上限一到就只报 timeout，(f) 失败，回执是「document: timeout」，证据 `out/acceptance/real-path/2026-10-10T05-29-17-805Z-navigate-wait/`。改回后复跑通过，证据 `out/acceptance/real-path/2026-10-10T05-30-59-181Z-navigate-wait/`。
 - 同时复跑 `pdf-download`，7 项全过，证据 `out/acceptance/pdf-download/2026-10-10T05-30-17-580Z/`。`npm run check` 通过。
+
+### R2（10-11，#256）
+
+- `navigate-wait.mts` 全部通过，(g) 104 毫秒返回，回执是上面那句报错。
+- 反例：撤掉检查复跑，(g) 等了 30.1 秒，程序回执 `{"value":"done"}`，和 #256 的现场一致。
