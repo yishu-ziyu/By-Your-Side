@@ -349,6 +349,11 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   declined: "你没让发，草稿还在",
   repeat: "你没让发，草稿还在",
   busy: "没发：前一个确认还在等你",
+  // 教学一步没完成（docs/evals/20261011-guided-teaching.md）：照实说，不画成失败。
+  guide_stopped: "你停下了，这一步没做完",
+  guide_left: "你离开了网页，这一步没做完",
+  guide_no_change: "点了两次，页面都没有变化",
+  guide_timeout: "2 分钟没点，这一步先放着",
 };
 
 export function recordedDuration(start: number, end: number): string | null {

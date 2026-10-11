@@ -27,6 +27,8 @@ const NOT_CLICKED = "工具没有替用户点任何东西。";
 const TEXT = {
   stopped: `用户停下了任务或接管了页面：这一步教学已经结束，圈和光标都收起了。${NOT_CLICKED}不要替用户点，也不要接着教下一步，等用户的新要求。`,
   left: `用户离开或关掉了这个网页：这一步教学已经结束。${NOT_CLICKED}在回复里告诉用户教到了哪一步，需要时可以从这一步重新开始。`,
+  no_change: `用户点了两次圈出的目标，页面都没有变化：这一步没完成。${NOT_CLICKED}不要原样重复这一步；先看一下页面，向用户解释可能的原因，或换一个办法。`,
+  timeout: `用户 2 分钟内没有点圈出的目标：这一步先放着，圈和光标已收起。${NOT_CLICKED}简短告诉用户你在等，好了说一声就从这一步继续。`,
   busy: "这个网页上已经有一步教学在等用户点：这次没有再圈。等那一步有了结果再继续。",
   program: "网页脚本程序里不能教一步：教学要等用户在网页上自己点，程序等不了。请单独调用 guide_step。",
   notShown: "没能在网页上圈出这一步（页面不让显示），没有开始等待。",
@@ -49,7 +51,7 @@ chrome.runtime.onConnect.addListener(port => {
 
 type Params = ToolContract["guide_step"]["params"];
 
-type Ending = { outcome: GuideStepResult["outcome"]; changed?: GuideStepResult["changed"] } | { outcome: "stopped" | "left" };
+type Ending = { outcome: "done"; changed?: GuideStepResult["changed"] } | { outcome: "stopped" | "left" | "no_change" | "timeout" };
 
 export async function guideStep(params: Params, sessionId: string, guard: SendGuard): Promise<GuideStepResult> {
   if (typeof params.target !== "string" || !params.target.trim()) throw notExecuted(new Error("guide_step 需要 target：要用户点的那个元素。"));
@@ -134,7 +136,8 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
   shown.disconnect();
   guard.waiting(false, wait);
 
-  if (ending.outcome === "stopped" || ending.outcome === "left") throw notExecuted(new Error(TEXT[ending.outcome]));
+  // 没完成的四种结局都带原因：侧栏不画成失败，宿主也不把它们算进连续出错。
+  if (ending.outcome !== "done") throw Object.assign(notExecuted(new Error(TEXT[ending.outcome])), { heldReason: `guide_${ending.outcome}` as const });
 
   return { outcome: ending.outcome, misses, noChangeClicks, ...("changed" in ending && ending.changed ? { changed: ending.changed } : {}) };
 }

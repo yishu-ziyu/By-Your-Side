@@ -198,9 +198,10 @@ export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
 /**
  * 这一步因为用户没执行，也不算失败：pay 付款按钮留给用户点；declined 用户在网页上选了「不发」；repeat 这一轮已选过「不发」；
  * busy 同一页已有一个「发送」在等用户确认；stopped 用户停下或接管；left 用户离开或关掉网页；timeout 用户 2 分钟没确认。
+ * guide_*：教学一步没完成（用户停下、离开、点了两次页面都没变化、2 分钟没点），也不是助手出错。
  * 由做出这个决定的地方给出，侧栏按它选给用户看的那句话，不读给助手的文字。
  */
-const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout"] as const;
+const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout", "guide_stopped", "guide_left", "guide_no_change", "guide_timeout"] as const;
 export type HeldReason = typeof HELD_REASONS[number];
 
 export function isHeldReason(v: unknown): v is HeldReason {
@@ -761,8 +762,8 @@ export interface ToolContract {
   clear_marks: { params: {tabId?: number}; data: { cleared: true } };
   /**
    * 教一步：圈出 target、在名牌上写 say，光标停在目标旁，等用户自己点。点在目标外：页面提示，不返回。
-   * 点中后 3 秒内页面有变化（DOM、地址或换了文档）→ done；点中两次都没变化 → no_change；2 分钟没点中 → timeout。
-   * 用户停止、接管、关页时按「没执行」结束。工具自己从不点击。
+   * 点中后 3 秒内页面有变化（DOM、地址或换了文档）→ done。点中两次都没变化、2 分钟没点中、用户停止/接管/关页，
+   * 都按「没执行」结束并带 guide_* 原因：这一步没完成，但不是出错。工具自己从不点击。
    */
   guide_step: { params: { tabId?: number; target: string; say: string; step: number }; data: GuideStepResult };
 }
@@ -771,7 +772,7 @@ export interface ToolContract {
 export interface GuideWait { step: number; say: string; state: "waiting" | "no_change"; /** 目标在网页上的可见名字（截短），没有就省略。 */ target?: string }
 
 export interface GuideStepResult {
-  outcome: "done" | "no_change" | "timeout";
+  outcome: "done";
   /** 点在目标外的次数。 */
   misses: number;
   /** 点中了但 3 秒内页面没变化的次数。 */

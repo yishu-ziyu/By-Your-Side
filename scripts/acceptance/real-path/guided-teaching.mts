@@ -7,7 +7,7 @@
  *      光标飞过去（第一次读到圈时光标还不在目标旁），停在目标右下角。正常页面上点中后不出现「没有生效」。
  *   M) R2：点在目标外：工具不返回，圈旁改成「这里不是要点的位置…」，光标停在目标右下角；用户一动鼠标，光标松开、离开目标；再点中才推进，结果里 misses=1。
  *   R) R2 反例：减少动态效果时，第一次读到圈时光标已经在目标旁（不飞行）。
- *   B) R3：开关点了没反应：3 秒左右圈旁改成「好像没有生效…」，侧栏出现「点了「Dark theme」，页面没有变化」；第二次仍没变化，工具返回 no_change。
+ *   B) R3：开关点了没反应：3 秒左右圈旁改成「好像没有生效…」，侧栏出现「点了「Dark theme」，页面没有变化」；第二次仍没变化，这一步按「没完成」结束（guide_no_change），侧栏写「点了两次，页面都没有变化」，不画成失败。
  *   Q) 网页按下就切换并重画面板（像 Radix 标签）：点中照样算完成，三步走完、页面是深色。
  *   S) R4：等用户点的时候点侧栏「停」：等待马上结束，圈和停住的光标都清掉；之后再点原目标，网页上什么都不出现；模型收到「用户停下了」。
  * --model：换成真实模型（~/.sideagent/providers.local.json），只跑 N 的自然说法；用户按圈出来的位置点，最多 6 步。
@@ -251,8 +251,10 @@ try {
 
     await idle().catch(() => {});
     await rp.screenshot(panel, join(out, "real-panel.png"));
-    measured.realTranscript = String(await rp.evaluate(panel, 'document.querySelector("#messages").innerText'));
+    const transcript = String(await rp.evaluate(panel, 'document.querySelector("#messages").innerText'));
+    measured.realTranscript = transcript;
     check("真实模型：页面最后是深色", await dark(), { steps });
+    check("真实模型：正常页面上没有出现「页面没有变化」的误报", !transcript.includes("页面没有变化") && !transcript.includes("点了两次"), { steps });
     check("真实模型：网页收到的点击数等于用户点的次数（助手没替用户点）", (await pageClicks()) - clicksBefore === userClicks - userBefore, { page: (await pageClicks()) - clicksBefore, user: userClicks - userBefore });
   } else {
     // ── N：正常走完三步 ──
@@ -357,7 +359,9 @@ try {
     await rp.screenshot(panel, join(out, "b-no-change-panel.png"));
     await userClick((await markCenter())!);
     await answered("B 完成。", 15_000);
-    check("B 第二次仍没变化：工具返回 no_change（noChangeClicks=2）", !!toolsSince(from)[0]?.includes("Step 3 not done") && toolsSince(from)[0]!.includes("noChangeClicks=2"), { tool: toolsSince(from) });
+    check("B 第二次仍没变化：这一步没完成，模型收到「页面都没有变化」", !!toolsSince(from)[0]?.includes("页面都没有变化"), { tool: toolsSince(from) });
+    const bChip = await rp.evaluate(panel, '(() => { const c = [...document.querySelectorAll(".chip:not(.prep)")].at(-1); return c ? { text: c.textContent.trim(), error: c.classList.contains("error") || !!c.querySelector(".act-failed") } : null; })()') as { text: string; error: boolean } | null;
+    check("B 侧栏这一步写「点了两次，页面都没有变化」，不画成失败", !!bChip?.text.includes("点了两次，页面都没有变化") && !bChip.error, { chip: bChip });
     check("B 结束后：网页上没有圈、光标没有停住", (await markCount()) === 0 && !(await hold())?.guide, { marks: await markCount(), hold: await hold() });
     await idle();
 
@@ -397,9 +401,10 @@ try {
     const after = await hold();
     check("S 停下以后再点原目标：网页上不再出圈、光标不停住，网页照常处理这次点击", (await markCount()) === 0 && !after?.guide && !after?.holding && (await pageClicks()) - clicksBefore === userClicks - userBefore && !(await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes("S 不该出现。"))`)), { marks: await markCount(), hold: after });
     await rp.screenshot(work, join(out, "s-after-stop.png"));
-    // 只记录、不判：停下的那一步在侧栏怎么写由侧栏决定（没执行的结果没有 heldReason）。
     measured.stopStepChips = await rp.evaluate(panel, '[...document.querySelectorAll(".run-steps")].at(-1)?.querySelectorAll(".chip:not(.prep)") ? [...[...document.querySelectorAll(".run-steps")].at(-1).querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.textContent.trim(), error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) : null');
     await rp.screenshot(panel, join(out, "s-panel.png"));
+    const stopChips = (measured.stopStepChips ?? []) as Array<{ text: string; error: boolean }>;
+    check("S 侧栏把停下的那一步写成「你停下了，这一步没做完」，不画成失败", stopChips.some(c => c.text.includes("你停下了，这一步没做完") && !c.error), { chips: stopChips });
     // S 停下后没有下一次模型请求；它的工具结果随下一次请求的历史送到模型这边。
     await openPage("");
     await ask(ASK.r);

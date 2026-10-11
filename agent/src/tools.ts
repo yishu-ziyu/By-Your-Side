@@ -991,12 +991,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         // 扩展最多等用户 2 分钟；宿主收到 tool_waiting_user 才放宽期限，这里先按同一上限发出，免得等待开始前就被普通期限截断。
         const data = (await call("guide_step", { tabId: params.tabId, target: params.target, say: params.say, step: params.step }, undefined, undefined, undefined, USER_CONFIRM_TIMEOUT_MS)) as ToolContract["guide_step"]["data"];
-        const tries = `misses=${data.misses}, noChangeClicks=${data.noChangeClicks}`;
-
-        if (data.outcome === "done") return textResult(`Step ${params.step} done: the user clicked and the page changed (${data.changed ? `${data.changed}; ` : ""}${tries}). Snapshot the page, then give the next step or finish in one sentence.`, data);
-        if (data.outcome === "no_change") return textResult(`Step ${params.step} not done: the user clicked twice and the page did not change (${tries}). Explain or try another way; do not repeat this step blindly.`, data);
-
-        return textResult(`Step ${params.step} timed out: the user did not act for 2 minutes (${tries}). Say briefly that you are waiting.`, data);
+        // 只有 done 是结果；没变化、超时、停下、离开都由扩展按「没执行」结束，原因和下一步怎么做写在那条错误里。
+        return textResult(`Step ${params.step} done: the user clicked and the page changed (${data.changed ? `${data.changed}; ` : ""}misses=${data.misses}, noChangeClicks=${data.noChangeClicks}). Snapshot the page, then give the next step or finish in one sentence.`, data);
       },
     }),
     defineTool({
