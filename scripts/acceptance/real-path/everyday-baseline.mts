@@ -115,6 +115,13 @@ const FD_ARTICLE = `<article><h1>全双工语音，为什么这么难做</h1><p>
 <p>我的判断是：全双工负责「聊」，后台助手负责「做」。你随口一句话，它分得清哪句是闲聊、哪句要动手；被打断时，只停嘴，不停手。回声，交给工程去磨。</p></article>`;
 
 const PAGES = {
+  // 10-11 对照 ax.ts 之后的三类页面（docs/evals/20261011-after-ax-compare.md）：结果晚到、回车搜索、填完才能点。
+  "/slow-shop": page("杂货铺", `<main><h1>杂货铺</h1><ol id="goods"><li>竹编篮</li><li>粗陶杯</li><li>麻布袋</li><li>木汤勺</li><li>铜书签</li></ol><button id="more">加载更多</button></main>
+<script>more.onclick = async () => { const r = await fetch("/api/slow-goods"); for (const g of await r.json()) { const li = document.createElement("li"); li.textContent = g; goods.append(li); } };</script>`),
+  "/enter-search": page("站内搜索", `<main><h1>站内搜索</h1><form id="f"><input id="q" aria-label="搜索" type="search"></form><ol id="hits"></ol></main>
+<script>f.onsubmit = async (e) => { e.preventDefault(); const r = await fetch("/api/search?q=" + encodeURIComponent(q.value)); hits.replaceChildren(...(await r.json()).map(t => Object.assign(document.createElement("li"), { textContent: t }))); };</script>`),
+  "/signup": page("活动报名", `<main><h1>周末徒步报名</h1><label>名字 <input id="who" aria-label="名字"></label><p><button id="go" disabled>提交报名</button></p><p id="done"></p></main>
+<script>who.oninput = () => { go.disabled = !who.value.trim(); }; go.onclick = () => { done.textContent = "报名成功：" + who.value.trim(); };</script>`),
   "/fd-article": page("全双工语音，为什么这么难做", FD_ARTICLE),
   // goal-check：两个按钮都没有任何处理，页面永远不变；任何查询参数都返回同一页（10-09 死按钮实验）。
   "/dead-save": page("通知设置", `<h1>通知设置</h1><label><input type="checkbox" checked> 邮件提醒</label><label><input type="checkbox"> 短信提醒</label>
@@ -177,6 +184,10 @@ const site = createServer((req, res) => {
 
     return;
   }
+
+  // 结果晚到：900 毫秒才回；回车搜索：300 毫秒才回（docs/evals/20261011-after-ax-compare.md）。
+  if (path === "/api/slow-goods") { setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(["青花瓷碗", "藤编扇"])), 900); return; }
+  if (path === "/api/search") { setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(["猫咪护理入门", "猫砂怎么选"])), 300); return; }
 
   if (req.method === "POST" && path === "/save") {
     saveRequests += 1;
@@ -384,6 +395,12 @@ const COMPARE_CASES: Case[] = [
   // 用户在看 /dy，/yt 在后台标签：说「切到youtube」后，用户看到的应是 /yt。
   { id: "switch-tab", path: "/dy", openTab: "/yt", prompt: "切到youtube",
     check: (c) => (c.activeUrl?.startsWith(`${origin}/yt`) ? null : `活动标签页是 ${c.activeUrl ?? "无"}，不是 /yt`) },
+  { id: "slow-more", path: "/slow-shop", prompt: "点加载更多，告诉我第 6 件商品是什么。",
+    check: (c) => (c.answer.includes("青花瓷碗") ? null : "回答里没有第 6 件「青花瓷碗」") },
+  { id: "enter-search", path: "/enter-search", prompt: "在这页搜索「猫」，告诉我第一条结果。",
+    check: (c) => (c.answer.includes("猫咪护理入门") ? null : "回答里没有第一条结果「猫咪护理入门」") },
+  { id: "signup", path: "/signup", prompt: "帮我报名，名字填张三。",
+    check: (c) => (c.pageText.includes("报名成功：张三") ? null : "页面上没有出现「报名成功：张三」") },
 ];
 
 const pool = suite === "compare" ? COMPARE_CASES : suite === "sitegeist" ? SITEGEIST_CASES : suite === "voice-ideas" ? VOICE_CASES : suite === "goal-check" ? GOAL_CASES : CASES;

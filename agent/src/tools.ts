@@ -433,12 +433,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         sid
           ? 'One tool for browser tabs. action:"list" lists the tabs assigned to you; other members\' and user tabs are not available to workers.'
-          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) and claims it as the working tab; action:"switch" makes tabId the working tab; action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
+          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) and claims it as the working tab; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user asks to see or go to a page ("切到…", "给我看…", "打开那一页给我"); action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
       parameters: Type.Object({
-        action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("close")], {
-          description: "list | active | open | switch | close",
+        action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("show"), Type.Literal("close")], {
+          description: "list | active | open | switch | show | close",
         }),
-        tabId: Type.Optional(Type.Number({ description: 'Tab id (required for "switch"; optional for "close", which defaults to the working tab)' })),
+        tabId: Type.Optional(Type.Number({ description: 'Tab id (required for "switch" and "show"; optional for "close", which defaults to the working tab)' })),
         url: Type.Optional(Type.String({ description: 'URL to open for "open"; omit for a blank tab' })),
         decisionGuard: Type.Optional(Type.Object({
           observationId: Type.String(),
@@ -469,10 +469,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           return textResult(`${opened}; document: ${data.readiness ?? "not checked"}${(data.readiness === "download" || data.readiness === "error_page") && data.note ? `\n${data.note}` : ""}`, data);
         }
 
-        if (params.action === "switch") {
-          if (typeof params.tabId !== "number") throw new Error('tabs action:"switch" 需要 tabId。');
+        if (params.action === "switch" || params.action === "show") {
+          if (typeof params.tabId !== "number") throw new Error(`tabs action:"${params.action}" 需要 tabId。`);
 
-          const switchParams = params.decisionGuard ? { tabId: params.tabId, decisionGuard: params.decisionGuard } : { tabId: params.tabId };
+          const show = params.action === "show" ? { show: true } : {};
+          const switchParams = params.decisionGuard ? { tabId: params.tabId, decisionGuard: params.decisionGuard, ...show } : { tabId: params.tabId, ...show };
           const data = (await call("switch_tab", switchParams)) as ToolContract["switch_tab"]["data"];
 
           return textResult(switchResultText(data), data);
