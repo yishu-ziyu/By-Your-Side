@@ -24,3 +24,4 @@
 - 2026-10-06 | [首个反馈](../../docs/evals/20261006-first-feedback.md) | 新建 patterns/execute-script-waits-for-idle.md、patterns/node-error-text-in-browser.md，更新 index.md | 无新提案
 - 2026-10-06 | [出错恢复](../../docs/evals/20261006-error-states.md)、[记忆管理](../../docs/evals/20261006-memory-management.md) 预览 | 新建 patterns/offline-preview-porting-pitfalls.md，更新 index.md | 无新提案
 - 2026-10-08 | [同页新开对话](../../docs/evals/20261007-same-tab-new-conversation.md) | 更新 patterns/worktree-workspace-link-builds-main-tree.md（第三次，加 scripts/worktree-deps.mjs） | 无新提案
+- 2026-10-11 | [历史只追加](../../docs/evals/20261011-history-prefix.md)、[一个月对照](../../docs/evals/20261011-month-time-machine.md) | 新建 patterns/own-overlay-leaks-into-snapshot.md、patterns/same-model-old-code-comparison.md，更新 index.md | 无新提案

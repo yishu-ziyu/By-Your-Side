@@ -38,4 +38,6 @@
 | [execute-script-waits-for-idle](patterns/execute-script-waits-for-idle.md) | 页面加载中注入脚本、读页变慢时 | 2026-10-06 |
 | [node-error-text-in-browser](patterns/node-error-text-in-browser.md) | 把为 Node 写的库放进浏览器、靠错误文字判断重试时 | 2026-10-06 |
 | [offline-preview-porting-pitfalls](patterns/offline-preview-porting-pitfalls.md) | 把扩展模块移植成离线预览页时 | 2026-10-06 |
+| [own-overlay-leaks-into-snapshot](patterns/own-overlay-leaks-into-snapshot.md) | 同一页两次读数总对不上，或扩展在页面里画了东西又要读页时 | 2026-10-11 |
+| [same-model-old-code-comparison](patterns/same-model-old-code-comparison.md) | 要回答「是代码变好了还是换了模型」时 | 2026-10-11 |
 | [acceptance-picks-newest-chrome](patterns/acceptance-picks-newest-chrome.md) | 验收用例成批超时，或新装了 Chrome for Testing 时 | 2026-10-07 |
