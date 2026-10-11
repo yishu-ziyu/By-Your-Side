@@ -103,6 +103,8 @@ interface SideAgentCursor {
     options?: MarkOptions,
     observedNode?: Node | Range,
   ): void;
+  /** 教学一步：圈出目标、名牌写 say、光标停在目标右下角，连上后台的 portName 报告用户的点击。返回目标的可见名字。 */
+  guide?(rect: SideAgentRect, say: string, target: string, portName: string, options?: MarkOptions, observedNode?: Node): { name: string };
   /** 松开：摘掉按住姿态、名牌恢复成员名，随后照常 park */
   releaseHold?(): void;
   /** 清除全部 mark 标注 */
@@ -138,6 +140,8 @@ interface SideAgentNamespace {
     hidden: boolean;
     x: number;
     y: number;
+    /** 这个光标正在教一步：圈旁的说明、点错次数、光标是否停在目标旁、是否正在看点中后的页面变化。 */
+    guide: { label: string; misses: number; parkedAtTarget: boolean; checking: boolean } | null;
   } | null;
   holdActionLabels?: () => Array<{ id: string; label: string }>;
   clickHoldAction?: (id: string) => boolean;

@@ -87,7 +87,8 @@ export function availableRpcAliases(): string[] {
 
 function programMethods(offer: { saveFile: boolean }): string[] {
   return [
-    ...TOOL_NAMES.filter(name => name !== "worker_tabs"),
+    // 教学一步要等用户自己点（最多 2 分钟），点完由模型看页面再定下一步，不能放进程序里连着跑。
+    ...TOOL_NAMES.filter(name => name !== "worker_tabs" && name !== "guide_step"),
     ...availableRpcAliases(),
     ...availableProgramHelpers(offer).map(h => h.name),
   ];

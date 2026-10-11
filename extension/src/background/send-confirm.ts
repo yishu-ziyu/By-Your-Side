@@ -7,7 +7,7 @@ import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
 import { isSendLabel } from "../shared/mark-actions.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
 import { bringForwardForUser } from "./foreground.js";
-import type { HeldReason } from "../../../shared/protocol.js";
+import type { GuideWait, HeldReason } from "../../../shared/protocol.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
 export const SEND_CONFIRM_MS = 120_000;
@@ -26,8 +26,8 @@ export interface SendGuard {
   task: string | undefined;
   /** 停、接管、控制轮次变了：等确认要马上结束。 */
   cancelled(): boolean;
-  /** 告诉宿主这次调用正在等用户（放宽期限）或已经不等了（恢复普通期限）。 */
-  waiting(on: boolean): void;
+  /** 告诉宿主这次调用正在等用户（放宽期限）或已经不等了（恢复普通期限）。guide：教学这一步在等用户点（guide_step 也用这个钩子）。 */
+  waiting(on: boolean, guide?: GuideWait): void;
 }
 
 type Outcome = "send" | "decline" | "stopped" | "left" | "timeout";
