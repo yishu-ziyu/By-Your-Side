@@ -189,7 +189,7 @@ document.getElementById("settings")!.innerHTML = `
   <section class="sx" aria-labelledby="selection-title">
     <div class="sx-head"><h2 id="selection-title">划词</h2></div>
     <div class="surface rows">
-      ${toggleRow("selection-bar", "选中文字后显示「问 AI / 解释」", "关掉后按 ⌘J 或右键「问 By Your Side」仍然可用。已打开的网页立即生效。")}
+      ${toggleRow("selection-bar", "选中文字后显示「问 AI / 解释」", `<span id="ask-shortcut-note">关掉后右键「问 By Your Side」仍然可用。</span>已打开的网页立即生效。`)}
       ${toggleRow("link-preview", "按住 Shift 停在链接上，预览目标页", "卡片写目标页的标题和几行要点，不打开新标签；读页面时不带你的登录状态。")}
       ${toggleRow("nudge", "主动建议", "看出能帮上忙时，在页面右下角递一张小卡，点一下交给侧栏去做。每次判断会把这一页和最近几页的摘录发给你选的模型；同一页只看一次。")}
     </div>
@@ -1228,6 +1228,13 @@ const nudgeToggle = $<HTMLInputElement>("nudge");
 const openThreads = $<HTMLInputElement>("open-threads");
 
 bindToggle(selectionBar, SELECTION_BAR_KEY, selectionStatus, (on) => (on ? "已开启。" : "已关闭。"));
+
+// 划词快捷键按用户实际设的写（可在 chrome://extensions/shortcuts 改）；getAll 给的已是本系统的写法，如 Ctrl+J、⌘J。
+void chrome.commands.getAll().then((commands) => {
+  const shortcut = commands.find((c) => c.name === "ask-selection")?.shortcut;
+  $("ask-shortcut-note").textContent = shortcut ? `关掉后按 ${shortcut} 或右键「问 By Your Side」仍然可用。`
+    : "关掉后右键「问 By Your Side」仍然可用。快捷键还没有设置，可以在 chrome://extensions/shortcuts 里给「问选中的文字」设一个。";
+});
 
 bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接预览已开启。" : "链接预览已关闭。"));
 
