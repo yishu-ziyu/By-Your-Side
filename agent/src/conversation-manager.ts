@@ -795,6 +795,25 @@ return { kind: "silent" };}
    */
   /** 这一轮在等目标核对结论的会话：结论到之前不记过往任务。 */
   private readonly goalCheckPending = new Set<string>();
+  /** 回答已交付、目标核对判「没做完」后自己接着做的会话。用户另发新任务而名额已满时，先停这些（10-11 用户定：新任务优先）。 */
+  private readonly goalContinuing = new Set<string>();
+
+  /** 名额已满时停掉其他会话里回答后的自动续做，一次停一个，直到让出一个名额给用户刚发的新任务。 */
+  private async yieldGoalContinues(except: string, full: () => boolean): Promise<void> {
+    for (const id of [...this.goalContinuing]) {
+      if (!full()) return;
+      const entry = this.entries.get(id);
+
+      // 续做已判定但还没开始跑（isStreaming 仍为假）时不占名额，留在名单里，下次还能让出。
+      if (id === except || !entry?.runtime.session.isStreaming() || entry.runtime.session.isHeld()) continue;
+      this.goalContinuing.delete(id);
+      this.controlVersions.set(id, (this.controlVersions.get(id) ?? 0) + 1);
+      this.progress.get(id)?.abort();
+      entry.runtime.handleMessage({ type: 'abort' });
+      await entry.runtime.session.waitForStop?.().catch(() => {});
+      this.emit({ type: 'agent_event', conversationId: id, event: { kind: 'notice', message: '你另发了新任务，这条回答之后的接着做已停下；回答保持不变。' } });
+    }
+  }
 
   private recordTaskHistory(id: string): void {
     const history=this.taskHistory,progress=this.progress.get(id),snap=this.getTaskProgress(id);
@@ -974,6 +993,9 @@ return;}
   async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
 
+    // 用户对这个会话发了新任务、插话或停止：这一轮归用户，不再当作可让出的续做。
+    if (['start', 'steer', 'abort'].includes(request.action)) this.goalContinuing.delete(request.conversationId);
+
     const waiting=this.taskQueue.get(request.conversationId);
 
     if(waiting&&['queued','suspended'].includes(waiting.state)&&request.action!=='start'){
@@ -1139,6 +1161,8 @@ return receipt;
         if((this.pendingStarts.has(request.conversationId)&&!ownsReservation)||snapshot.state==='running'||entry.runtime.session.isStreaming())throw new TaskActionRejected('当前任务还在执行。要另开会话处理这个新任务吗？', true);
 
         if(snapshot.state==='paused'||entry.runtime.session.isHeld())throw new TaskActionRejected('页面现在归你。请继续原任务，或另开会话。');
+
+        if(this.runningTasks()-(ownsReservation?1:0)>=2)await this.yieldGoalContinues(request.conversationId,()=>this.runningTasks()-(ownsReservation?1:0)>=2);
 
         if(this.runningTasks()-(ownsReservation?1:0)>=2)throw new TaskActionRejected('当前执行名额已满，请等待运行中的任务完成。');
 
@@ -1355,6 +1379,11 @@ return receipt;
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_start') this.goalCheckPending.delete(id);
 
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'checking') this.goalCheckPending.add(id);
+
+      // 续做这一轮跑完就不再算续做；下一次核对再判继续时重新记上。
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'continue') this.goalContinuing.add(id);
+
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_end') this.goalContinuing.delete(id);
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId)) {
         void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); });
@@ -1667,6 +1696,8 @@ return;}
       return;
     }
 
+    if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()&&this.runningTasks()>=2)await this.yieldGoalContinues(id,()=>this.runningTasks()>=2);
+
     if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()&&this.runningTasks()>=2){
       this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'当前执行名额已满，这项新任务尚未接收；请等待运行中的任务完成。'}});
 
@@ -1690,6 +1721,9 @@ return;
     }
 
     if (message.type === "abort") {this.pendingStarts.delete(id);this.checkpointResumes.delete(id);this.progress.get(id)?.abort();}
+
+    // 用户在这个会话里补充或停止了：这一轮归用户，不再当作可让出的续做。
+    if (message.type === 'user_message' || message.type === 'steer' || message.type === 'abort') this.goalContinuing.delete(id);
 
     if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld())this.pendingStarts.add(id);
 

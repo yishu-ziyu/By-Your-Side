@@ -51,8 +51,11 @@ const deep = process.argv.includes("--deep");
 /** --serve-only：只起练习站（全部练习页、保存接口与计数，另加 /__stats），不开 Chrome，直到收到 SIGINT/SIGTERM。 */
 const serveOnly = process.argv.includes("--serve-only");
 
-/** 回答之后还有目标核对，可能接着做：这两组要等更久才算结束；别的组加 --settle 也这样等，量用户最后看到的结果。 */
-const settleLong = suite === "voice-ideas" || suite === "goal-check" || process.argv.includes("--settle");
+/**
+ * 回答之后还有目标核对，可能接着做：这几组要等更久才算结束；别的组加 --settle 也这样等，量用户最后看到的结果。
+ * compare 组也要等：核对约 3 秒后才接着做，侧栏这期间显示空闲；不等就开下一条，上一条在后台续做占住执行名额（10-11 对照组 6 次被拒）。
+ */
+const settleLong = suite === "voice-ideas" || suite === "goal-check" || suite === "compare" || process.argv.includes("--settle");
 
 /** --repeat=N：每条用例连跑 N 次，各开新会话。 */
 const repeat = Math.max(1, Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 1);
