@@ -914,12 +914,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       promptGuidelines: ["Wrap code in a single IIFE that returns a JSON-serializable value."],
       parameters: Type.Object({
         code: Type.String({ description: "JavaScript to evaluate; use an IIFE with a return value" }),
+        purpose: Type.Optional(Type.String({ description: 'A few words, in the user\'s language, saying what this code is for, shown to the user as the step name, e.g. "读出作品表" or "找到搜索框"' })),
         readonly: Type.Optional(Type.Boolean({ description: "true only when the script only reads the page; a timeout is then reported as failed with no effect" })),
         ...(files ? { saveAs: Type.Optional(Type.String({ description: 'Save the return value as this conversation file, e.g. "subtitles.txt"; you get only {filename, chars, lines, shown}' })), deliver: Type.Optional(Type.Boolean({ description: "With saveAs: true only when the user asked for this file; it then shows as a side-panel card" })) } : {}),
       }),
       execute: async (_id, params) => {
         // SAFETY: saveAs、deliver 只在有文件区时进入参数 schema，类型是可选字符串与可选布尔，Pi 已按 schema 校验。
-        const { saveAs, deliver, ...pageParams } = params as typeof params & { saveAs?: string; deliver?: boolean };
+        // purpose 只给侧栏当步骤名（#263），不送进页面。
+        const { saveAs, deliver, purpose: _purpose, ...pageParams } = params as typeof params & { saveAs?: string; deliver?: boolean };
 
         if (saveAs !== undefined) {
           // 文件区与文件名在跑脚本之前核对：存不了就不动页面。

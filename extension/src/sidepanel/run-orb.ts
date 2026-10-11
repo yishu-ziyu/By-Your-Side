@@ -5,7 +5,10 @@ export type RunOrbState = "thinking" | "executing" | "waiting" | "user" | "compl
 /** 同一执行块的真实在途工具；并行工具未结束时，不被其他成员的思考帧盖掉。 */
 export class RunOrbActivity {
   private tools = new Map<string, { sessionId: string; waiting: boolean }>();
+  /** 最近一步没做成：下一步开始就清掉；整轮结束时还在，结论才是出错。 */
   private failed = false;
+  /** 整轮出错（模型或连接）：马上就是出错。 */
+  private errored = false;
   private stopped = false;
   private finished = false;
 
@@ -21,7 +24,7 @@ export class RunOrbActivity {
       // 用户没让发送不是失败（docs/evals/20261009-send-confirm.md R2）。
       if (event.isError && !event.repeatRefused && !event.heldReason) this.failed = true;
     } else if (event.kind === "error") {
-      this.failed = true;
+      this.errored = true;
     } else if (event.kind === "agent_end") {
       for (const [id, tool] of this.tools) if (tool.sessionId === sessionId) this.tools.delete(id);
     }
@@ -33,7 +36,7 @@ export class RunOrbActivity {
   state(userHasPage = false): RunOrbState {
     if (this.stopped) return "stopped";
 
-    if (this.finished) return this.failed ? "failed" : "completed";
+    if (this.finished) return this.failed || this.errored ? "failed" : "completed";
 
     if (userHasPage) return "user";
 
@@ -41,9 +44,10 @@ export class RunOrbActivity {
 
     if (this.tools.size) return "waiting";
 
-    if (this.failed) return "failed";
+    // 一步没做成、模型还在想下一步：仍是在想，不是出错（#263：换了做法的那段思考要照常计时）。
+    if (this.errored) return "failed";
 
-    return this.finished ? "completed" : "thinking";
+    return "thinking";
   }
 }
 

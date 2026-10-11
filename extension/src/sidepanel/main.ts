@@ -36,8 +36,7 @@ import {
   spokenDuration,
   loaderSubtitle,
   openedPageTitle,
-  recentSteps,
-  betweenStepsTitle,
+  shortAction,
   splitAction,
   isPrepTool,
   actionKind,
@@ -2327,8 +2326,14 @@ interface RunHost {
   titleTimer: number;
   /** 标题前的动作图标：跟着当前动作换，收尾后是那一件事或「多步」。 */
   actIcon: HTMLElement;
-  /** 进行中标题下方的最近几步（#102）；收尾时移除，过程照旧收进 ›。 */
+  /** 进行中标题下方的说明行（调试提示条、教学没变化）；收尾时移除。做过的步骤只在 › 里（#263）。 */
   trail: HTMLElement;
+  /** 进行中的第二行小字「已做 N 步 ›」（#263）；收尾后隐藏。 */
+  metaEl: HTMLElement;
+  /** 正在算的这段思考从何时开始（上一步结束，或发送时刻）；不在想时为 NaN。 */
+  thinkFrom: number;
+  /** 想过的每一段：记录里 ≥3 秒的单列「想了 N 秒」，末行合计全部（#263）。 */
+  thinkSegments: Array<{ start: number; end: number }>;
   /** 只对这一轮有用的说明（调试提示条，#103），跟在最近几步后面，随它收起。 */
   aside: string | null;
   /** 教学这一步点了但页面没变化（橙色），跟在最近几步后面；不等了就清掉。 */
@@ -3247,7 +3252,11 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const chevron = document.createElement("span");
   chevron.className = "run-chevron";
   chevron.appendChild(icon(ChevronRight));
-  summary.append(iconBox, actIcon, title, chainEl, timeEl, chevron);
+  // 第二行小字：已做几步（#263 A）。整行可点，和 › 一样展开记录。
+  const meta = document.createElement("span");
+  meta.className = "run-meta";
+  meta.hidden = true;
+  summary.append(iconBox, actIcon, title, chainEl, timeEl, chevron, meta);
   const body = document.createElement("div");
   body.className = "run-body";
   runBodyPinned = true;
@@ -3264,11 +3273,10 @@ function ensureRun(): NonNullable<typeof currentRun> {
   trail.hidden = true;
   root.after(trail);
   const start = runStartAt || eventTime();
-  timeEl.textContent = spokenDuration(start, eventTime()) ?? "";
 
-  // 唯一状态行的耗时读数，按秒走
+  // 第一行的秒数只数「现在这件事」：在想就从这段开始数，在跑一步就数这一步（≥3 秒才写），不数整轮（#263）。
   const timer = window.setInterval(() => {
-    timeEl.textContent = spokenDuration(start, Date.now()) ?? "";
+    if (currentRun?.timer === timer) timeEl.textContent = liveSeconds(currentRun);
   }, 1000);
 
   currentRun = {
@@ -3291,6 +3299,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
     titleTimer: 0,
     actIcon,
     trail,
+    metaEl: meta,
+    thinkFrom: start,
+    thinkSegments: [],
     aside: null,
     guideHint: null,
     evidence: null,
@@ -3300,42 +3311,14 @@ function ensureRun(): NonNullable<typeof currentRun> {
   return currentRun;
 }
 
-/** 进行中标题下方：做完的最近 3 步（名称 + 耗时），更早的只计数。准备动作不算，和收尾的「做了 N 件事」一致。 */
+/** 进行中标题下方的说明行（调试提示条、教学点了没变化）。做过的步骤不再列在这里，只在 › 里（#263）。 */
 function renderTrail(run: RunHost): void {
-  const done = Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.running)")).map((chip) => ({
-    text: chip.dataset.past ?? "",
-    dur: chip.querySelector(".dur")?.textContent ?? "",
-    failed: chip.classList.contains("error"),
-  }));
-
-  const { shown, earlier } = recentSteps(done);
-  // 准备动作结束也会走到这里：内容没变就不重画，免得最后一步反复淡入。
-  const key = JSON.stringify([shown, earlier, run.aside, run.guideHint]);
+  const key = JSON.stringify([run.aside, run.guideHint]);
 
   if (run.trail.dataset.key === key) return;
 
   run.trail.dataset.key = key;
-
-  const rows = shown.map((step) => {
-    const row = document.createElement("div");
-    row.className = step.failed ? "trail-step failed" : "trail-step";
-    const text = document.createElement("span");
-    text.className = "trail-text";
-    text.textContent = step.failed ? `${step.text} · 没做成` : step.text;
-    const dur = document.createElement("span");
-    dur.className = "trail-dur";
-    dur.textContent = step.dur;
-    row.append(text, dur);
-
-    return row;
-  });
-
-  if (earlier > 0) {
-    const more = document.createElement("div");
-    more.className = "trail-more";
-    more.textContent = `+ 前面 ${earlier} 步`;
-    rows.unshift(more);
-  }
+  const rows: HTMLElement[] = [];
 
   if (run.aside) {
     const aside = document.createElement("div");
@@ -3355,6 +3338,104 @@ function renderTrail(run: RunHost): void {
   run.trail.hidden = rows.length === 0;
 
   if (run.root.nextElementSibling !== run.trail) run.root.after(run.trail);
+}
+
+/** 记录里秒数的门槛：一步、一段思考不到 3 秒都不写秒数，思考段也不单列（#263）。 */
+const SHOW_SECS_MS = 3_000;
+
+/** 两步之间短于这个就不算想过（工具连着调）。 */
+const THINK_MIN_MS = 100;
+
+/** 第一行的秒数：在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
+function liveSeconds(run: RunHost): string {
+  const now = Date.now();
+
+  if (Number.isFinite(run.thinkFrom)) return now - run.thinkFrom >= 1_000 ? spokenDuration(run.thinkFrom, now) ?? "" : "";
+  const running = [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
+
+  return running && Number.isFinite(running.start) && now - running.start >= SHOW_SECS_MS ? spokenDuration(running.start, now) ?? "" : "";
+}
+
+/** 结束正在算的这段思考：≥3 秒的在记录里单列一行「想了 N 秒」。 */
+function closeThink(run: RunHost, at: number): void {
+  const from = run.thinkFrom;
+  run.thinkFrom = Number.NaN;
+
+  if (!Number.isFinite(from) || !Number.isFinite(at) || at - from < THINK_MIN_MS) return;
+  run.thinkSegments.push({ start: from, end: at });
+
+  if (at - from < SHOW_SECS_MS) return;
+  // 模型写了思考过程的：就在那块的标题上写，点开还能看原文。
+  const block = run.body.querySelector<HTMLElement>(`details.thinking[data-think-from="${from}"] > summary > span`);
+
+  if (block) { block.textContent = `想了 ${spokenDuration(from, at)}`;
+
+ return; }
+  const row = document.createElement("div");
+  row.className = "run-think";
+  row.textContent = `想了 ${spokenDuration(from, at)}`;
+  (run.chipGroup?.row ?? run.body).appendChild(row);
+}
+
+/** 开始算一段思考（上一步结束、用户交还页面）。已经在算就不重开。 */
+function openThink(run: RunHost, at: number): void {
+  if (!Number.isFinite(run.thinkFrom)) run.thinkFrom = at;
+}
+
+/** 做完的步骤（不算准备动作和说明行）。 */
+function doneSteps(run: RunHost): HTMLElement[] {
+  return Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.note):not(.running)"));
+}
+
+/** 第二行小字：「已做 N 步 ›」，有换了做法的步骤时跟一句。一步还没做完时不显示。 */
+function renderRunMeta(run: RunHost): void {
+  const done = doneSteps(run);
+  const failed = done.filter(chip => chip.classList.contains("error")).length;
+  const text = done.length ? `已做 ${done.length - failed} 步${failed ? ` · ${failed} 步换了做法` : ""}` : "";
+
+  if (run.metaEl.textContent !== text) run.metaEl.textContent = text;
+  run.metaEl.hidden = !text;
+}
+
+/**
+ * 收尾回执：「做了 6 步：打开词条 → … → 圈出 11 部」（#263 C）。短名链放不下时从中间省略，头尾优先留；
+ * 头尾都放不下只留最后一个，再放不下只写步数。末尾「· N 步换了做法」从不省略。不写耗时。
+ * 侧栏宽度会变（拖宽、切会话后才显示），所以每次尺寸变化重排一次。
+ */
+function paintReceipt(title: HTMLElement, head: string, names: string[], tail: string): void {
+  const verb = document.createElement("span");
+  verb.className = "act-verb";
+  const chain = document.createElement("span");
+  chain.className = "act-object run-chain-names";
+  const warn = document.createElement("span");
+  warn.className = "run-receipt-tail";
+  warn.textContent = tail;
+  title.classList.add("run-receipt");
+  title.replaceChildren(verb, chain, warn);
+
+  const fit = () => {
+    const fits = () => chain.scrollWidth <= chain.clientWidth + 1 && title.scrollWidth <= title.clientWidth + 1;
+    verb.textContent = names.length > 1 ? `${head}：` : head;
+
+    if (names.length < 2) { chain.textContent = ""; return; }
+
+    for (let k = names.length; k >= 2; k--) {
+      const front = Math.ceil(k / 2), back = k - front;
+      chain.textContent = k === names.length ? names.join(" → ") : [...names.slice(0, front), "…", ...names.slice(names.length - back)].join(" → ");
+
+      if (fits()) return;
+    }
+
+    chain.textContent = `… → ${names[names.length - 1]}`;
+
+    if (fits()) return;
+    chain.textContent = "";
+    verb.textContent = head;
+  };
+
+  fit();
+  const observer = new ResizeObserver(() => { if (title.isConnected) fit(); else observer.disconnect(); });
+  observer.observe(title.closest("details.run-steps") ?? title);
 }
 
 const sessionRun = new Map<string, AgentRunState>();
@@ -3578,7 +3659,10 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
-  // 收尾后过程只留「做了 N 件事 ›」，进行中的最近几步不再单列。
+  const endedAt = eventTime();
+  // 停下、出错、答完：正在算的那段思考在这一刻结束（#263 E6）。
+  closeThink(run, endedAt);
+  // 收尾后过程只留回执，进行中的说明行不再单列。
   run.trail.remove();
   // 空 run（纯文本回复，无思考/工具步骤）不留壳；只读回合（问答、读页）正常结束也不留过程行，
   // 用户看回答和页面本身即可。动过页面、失败或被停止时才保留「查看执行过程」。
@@ -3610,12 +3694,32 @@ function finishRun(): void {
     const only = done.length === 1 && ended === "completed" ? done[0] : null;
     // SAFETY: data-kind 由 onToolStart 写入，取值就是 IconKind。
     setActionIcon(run.actIcon, only ? (only.dataset.kind as IconKind) : "many");
-    setRunTitle(run, hasResumeReceipt && done.length === 0 && ended === "completed"
-      ? "恢复记录"
-      : only?.dataset.past ?? finishedRunTitle(done.length, ended), true);
+    clearTimeout(run.titleTimer);
+
+    if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, "恢复记录", true);
+    else if (only?.dataset.past) setRunTitle(run, only.dataset.past, true);
+    else {
+      // 回执：「做了 6 步：打开词条 → … → 圈出 11 部 · 1 步换了做法」（#263 C）。出错结束只写步数和「有 1 步没做成」。
+      const failed = done.filter(chip => chip.classList.contains("error")).length;
+      const names = ended === "failed" ? [] : done.filter(chip => !chip.classList.contains("error")).map(chip => chip.dataset.short ?? "").filter(Boolean);
+      // 换了做法的那步不算进「做了几步」，单独写在末尾。
+      const head = finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended);
+      paintReceipt(title, head, names, ended === "completed" && failed ? ` · ${failed} 步换了做法` : "");
+    }
   }
 
-  run.timeEl.textContent = spokenDuration(run.start, eventTime()) ?? "";
+  // 回执不写耗时（10-06）；总时长和想了多久写在展开记录的末行。历史回放没有时钟时不写（#263 E1）。
+  run.timeEl.textContent = "";
+  run.metaEl.hidden = true;
+  const total = spokenDuration(run.start, endedAt);
+
+  if (total && hasSteps) {
+    const thought = run.thinkSegments.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+    const line = document.createElement("div");
+    line.className = "run-total";
+    line.textContent = thought >= 1_000 ? `共 ${total}，其中想了 ${spokenDuration(0, thought)}` : `共 ${total}`;
+    run.body.appendChild(line);
+  }
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
 
@@ -3860,6 +3964,9 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       const details = document.createElement("details");
       details.className = "thinking streaming";
       details.open = true;
+
+      // 这段思考结束时（closeThink）把标题改成「想了 N 秒」，不再另加一行（#263）。
+      if (currentRun && Number.isFinite(currentRun.thinkFrom)) details.dataset.thinkFrom = String(currentRun.thinkFrom);
       const summary = document.createElement("summary");
       const orb = createOrb("composing", ORB_BOX_THINKING);
 
@@ -4019,6 +4126,8 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const action = describeTool(ev.name, ev.params);
   const run = ensureRun();
   closeBlocks();
+  // 想完了，开始动手（交付、交给用户也算）：这段思考到此为止（#263）。
+  closeThink(run, eventTime());
 
   // 助手把页面交给用户（docs/evals/20261010-hand-to-user.md R1）：不进步骤链，单独一张卡。
   if (ev.name === "hand_to_user") {
@@ -4067,6 +4176,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   chip.className = prep ? "chip prep" : "chip";
   chip.dataset.kind = kind;
   chip.dataset.past = pastAction(ev.name, ev.params);
+  chip.dataset.short = shortAction(ev.name, ev.params);
   chip.setAttribute("aria-expanded", "false");
 
   // A：正在跑的那个 chip 才有蓝边和底色；历史回放不进入运行态
@@ -4122,10 +4232,10 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
 
-  // 这一步做完、下一步还没开始：模型在想下一步，标题不该停在刚结束的动作上（「正在读取页面结构 54 秒」），
-  // 也不退回光秃秃的「正在思考」：带上已做几件事（#102）。此时没有在跑的工具，所以每个非准备 chip 都已做完。
+  // 这一步做完、下一步还没开始：模型在想下一步。第一行只写「正在思考」并从这里开始数秒，做了几步在第二行（#263）。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    setRunTitle(run, betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), false, "think");
+    setRunTitle(run, "正在思考", false, "think");
+    openThink(run, eventTime());
   }
 
   if (!entry) return;
@@ -4143,9 +4253,11 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     window.setTimeout(() => entry.dot.classList.remove("settling"), 500);
   }
 
-  const duration = recordedDuration(entry.start, eventTime());
-  entry.dur.hidden = duration === null;
-  entry.dur.textContent = duration ?? "";
+  const end = eventTime();
+  // 记录里只给 ≥3 秒的一步写秒数（#263）；历史回放没有时钟就不写。
+  const slow = Number.isFinite(entry.start) && Number.isFinite(end) && end - entry.start >= SHOW_SECS_MS;
+  entry.dur.hidden = !slow;
+  entry.dur.textContent = slow ? spokenDuration(entry.start, end) ?? "" : "";
 
   if (failed) entry.chip.classList.add("error");
 
@@ -4156,6 +4268,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (pageTitle && label) {
     entry.chip.dataset.past = `打开了 ${pageTitle}`;
+    entry.chip.dataset.short = shortAction("navigate", {}, pageTitle);
     paintAction(label, `打开页面 ${pageTitle}`);
   }
 
@@ -4187,7 +4300,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   // 详情正展开着这个 chip 时实时补上结果
   if (entry.group.expanded === entry) renderChipDetail(entry);
 
-  if (run && run === currentRun) renderTrail(run);
+  if (run && run === currentRun) renderRunMeta(run);
 
   scrollToEnd();
 }
@@ -4268,6 +4381,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       renderMemoryAsk(ev);
       break;
     case "text_delta":
+      // 回答开始出字：这段思考结束（#263）。
+      if (currentRun) closeThink(currentRun, eventTime());
+
       if (leadDeliveryMode === "explicit") {
         if (leadToolUsed) appendLeadDelta(ev.delta);
         else appendLeadAnswer(ev.delta);
@@ -4295,7 +4411,13 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       const run = currentRun;
 
       // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
-      if (run) setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), true, ev.waiting ? undefined : "think");
+      // 等你确认的时间不算「想了」（#263）。
+      if (run) {
+        setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
+
+        if (ev.waiting) closeThink(run, eventTime());
+        else openThink(run, eventTime());
+      }
 
       // 「不等了」不一定带 guide，到这里的也可能是教学一步结束：橙字一起清掉。
       if (run && !ev.waiting && run.guideHint) {
@@ -4311,7 +4433,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       if (!run) break;
       const waiting = ev.waiting && ev.guide;
-      setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), true, waiting ? undefined : "think");
+      setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : "正在思考", true, waiting ? undefined : "think");
+
+      // 等你自己点的时间不算「想了」（#263）。
+      if (waiting) closeThink(run, eventTime());
+      else openThink(run, eventTime());
       run.guideHint = waiting && waiting.state === "no_change" ? (waiting.target ? `点了「${waiting.target}」，页面没有变化` : "点了，页面没有变化") : null;
       renderTrail(run);
       break;
@@ -4955,6 +5081,12 @@ function handleServerMessage(raw: string): void {
       break;
     case "status":
       setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
+
+      // 页面归你的时间不算「想了」；交还后模型接着想，从交还那一刻数（#263 E12）。
+      if ((msg.sessionId ?? LEAD_SESSION_ID) === LEAD_SESSION_ID && currentRun) {
+        if (msg.state === "user") closeThink(currentRun, eventTime());
+        else if (msg.state === "running" && !toolChips.size) openThink(currentRun, eventTime());
+      }
 
       // 模型开始前后台要先读页（大页面几秒）：一报「运行中」就出过程行，agent_start 沿用这一行。
       // 不排除补放历史：新会话第一轮正是经补放到达的。
