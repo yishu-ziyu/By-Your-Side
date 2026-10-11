@@ -125,7 +125,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
   const rec = { id: task.id, model, main_model: null, fast_model: null, category: task.category, site_url: task.site_url, prompt: task.prompt,
     status: "error", timestamps: {}, load_at_start: os.loadavg().map((x) => Math.round(x * 10) / 10), seconds_to_first_output: null, seconds_total: null,
     steps: [], final_answer_verbatim: "", panel_messages: [], confirmations: [], errors: [],
-    site_observations: [], environment: null, final_page: null, downloads: [], screenshots: [], trace_model: null, trace_export: null, secret_scan: null,
+    site_observations: [], environment: null, final_page: null, downloads: [], screenshots: [], panel_wait: [], trace_model: null, trace_export: null, secret_scan: null,
     harness: { mode: "extension-only", browser: null, extension_id: null, stored_config: null } };
 
   const t = (ms) => ms == null ? null : Math.round((ms - rec._t0) / 100) / 10;
@@ -424,6 +424,14 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       }
 
       const visible = afterUser.some((m) => m.text) || snap.runs.some((r) => r.chips.length || (r.title && !r.title.startsWith("正在")) || r.thinking);
+
+      // 等待期间每 2 秒拍一次侧栏，最多 15 张，和日常全套一致（#239）：复看页据此判过程界面看不看得懂。
+      if ((snap.running || snap.streaming || snap.abortVisible) && rec.panel_wait.length < 15 && now - rec._t0 >= (rec.panel_wait.length + 1) * 2000) {
+        const file = `${task.id}-panel-wait-${(rec.panel_wait.length + 1) * 2}s.png`;
+        const process = snap.runs.map((r) => [r.title, ...r.chips.map((c) => c.label)].filter(Boolean).join(" · ")).filter(Boolean).join(" | ");
+        await rp.screenshot(ps, join(outDir, file)).catch(() => {});
+        rec.panel_wait.push({ at_s: t(Date.now()), file, process: process.slice(0, 300) });
+      }
 
       if (!rec.timestamps.first_status && snap.runs.some((r) => r.title)) { rec.timestamps.first_status = iso(now); rec.seconds_to_first_status = t(now); }
 

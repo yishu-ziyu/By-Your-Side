@@ -41,7 +41,10 @@ const CAP_MIN = meta.capMs ? Math.round(meta.capMs / 60000) : 4;
 
 const DECISIONS = join(RUN, "review-decisions.jsonl");
 
-const decisionLine = (d) => JSON.stringify({ runId: RUN_ID, task: d.task, spec: d.spec ?? d.config, mark: d.mark ?? null, note: d.note ?? "", first_failure: d.first_failure ?? "", reviewer: d.reviewer ?? "owner", at: d.at ?? new Date().toISOString() });
+/** 过程界面的三个问题（#239），各标过 / 不过；标的是等待时侧栏，不是答案。 */
+const PROCESS_QUESTIONS = { doing: "看得出它现在在干嘛吗？", done: "看得出已经做成了什么（有证据）吗？", todo: "看得出我需要做什么吗？" };
+
+const decisionLine = (d) => JSON.stringify({ runId: RUN_ID, task: d.task, spec: d.spec ?? d.config, mark: d.mark ?? null, note: d.note ?? "", first_failure: d.first_failure ?? "", process: d.process ?? {}, reviewer: d.reviewer ?? "owner", at: d.at ?? new Date().toISOString() });
 
 // One-shot commands: run and exit without writing the page.
 if (flag("import")) {
@@ -237,6 +240,16 @@ function shotHtml(r) {
   return `<div class="shots">${imgs.map(([f, label]) => `<figure><img loading="lazy" src="${esc(relUrl(r.slug, f))}" alt="${esc(label)}截图" data-zoom><figcaption>${esc(label)}（结束时）</figcaption></figure>`).join("")}</div>`;
 }
 
+function processHtml(r) {
+  const shots = (r.tr.panel_wait ?? []).filter((p) => existsSync(join(RUN, r.slug, p.file)));
+  const timeline = shots.length
+    ? `<div class="wait">${shots.map((p) => `<figure><img loading="lazy" src="${esc(relUrl(r.slug, p.file))}" alt="${esc(p.at_s)} 秒时的侧栏" data-zoom><figcaption><b>${esc(p.at_s)} 秒</b> ${esc(p.process || "（没有过程文字）")}</figcaption></figure>`).join("")}</div>`
+    : `<p class="muted small">没有过程截图</p>`;
+  const questions = Object.entries(PROCESS_QUESTIONS).map(([k, q]) => `<div class="pq" data-q="${k}"><span>${esc(q)}</span><button type="button" data-v="pass">过</button><button type="button" data-v="fail">不过</button></div>`).join("");
+
+  return `<details class="process"><summary>过程（${shots.length} 张侧栏截图）</summary>${timeline}${questions}</details>`;
+}
+
 function columnHtml(r) {
   const [vLabel, vCls] = VERDICT[r.verdict] ?? VERDICT.none;
   const tags = guessCauses(r);
@@ -252,6 +265,7 @@ function columnHtml(r) {
 ${tags.length ? `<div class="row guess"><span class="label">初步猜测（只看记录推断，不一定对）</span><ul>${tags.map(([t, d]) => `<li>${esc(t)}${d ? `<div class="muted small">${esc(d)}</div>` : ""}</li>`).join("")}</ul></div>` : ""}
 ${shotHtml(r)}
 <div class="decide" data-key="${esc(key)}" data-task="${esc(r.tr.id)}" data-config="${esc(r.model)}">
+${processHtml(r)}
 <button type="button" data-mark="accept">能接受</button><button type="button" data-mark="reject">不能接受</button><button type="button" data-mark="misjudged">判错了</button>
 <input type="text" data-field="note" placeholder="一句话备注（可不填）" maxlength="300">
 <input type="text" data-field="first_failure" placeholder="第一处不对：只写最早出错的一处" maxlength="300">
@@ -368,6 +382,10 @@ h3.sub{margin:22px 0 10px;font-size:14px;color:var(--muted);font-weight:600}
 .decide button.on[data-mark=accept]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
 .decide button.on[data-mark=reject]{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
 .decide button.on[data-mark=misjudged]{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.process{flex:1 1 100%;min-width:0;max-width:100%;margin:4px 0}.process summary{cursor:pointer;color:var(--accent);font-size:14px}
+.wait{display:flex;gap:8px;overflow-x:auto;padding:6px 0}.wait figure{margin:0;flex:0 0 150px}.wait img{width:150px;border:1px solid var(--line);border-radius:6px;cursor:zoom-in}.wait figcaption{font-size:12px;color:var(--muted)}
+.pq{display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0}.pq span{flex:1}
+.pq button.on[data-v=pass]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}.pq button.on[data-v=fail]{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
 .decide.current{outline:2px solid var(--accent);outline-offset:6px;border-radius:6px}
 .decide input{flex:1 1 200px;font:inherit;font-size:14px;padding:4px 10px;border:1px solid var(--line);border-radius:8px}
 .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);border-top:1px solid var(--line);padding:10px 32px;display:flex;justify-content:center;gap:24px;align-items:center;font-size:14px}
@@ -387,14 +405,15 @@ const save = (k, v) => {
   try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); } catch {}
   if (!SERVED) return;
   const box = boxes.find((b) => b.dataset.key === k);
-  fetch("decisions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task: box.dataset.task, spec: box.dataset.config, mark: v.mark ?? null, note: v.note ?? "", first_failure: v.first_failure ?? "" }) })
+  fetch("decisions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task: box.dataset.task, spec: box.dataset.config, mark: v.mark ?? null, note: v.note ?? "", first_failure: v.first_failure ?? "", process: v.process ?? {} }) })
     .then((r) => { if (!r.ok) throw new Error(r.status); document.getElementById("saved").textContent = "已写进 review-decisions.jsonl"; })
     .catch(() => { document.getElementById("saved").textContent = "没写进文件，只存在浏览器里"; });
 };
 const boxes = [...document.querySelectorAll(".decide")];
 function paint(box) {
   const d = load(box.dataset.key);
-  box.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.mark === d.mark));
+  box.querySelectorAll("button[data-mark]").forEach((b) => b.classList.toggle("on", b.dataset.mark === d.mark));
+  box.querySelectorAll(".pq").forEach((q) => q.querySelectorAll("button").forEach((b) => b.classList.toggle("on", (d.process || {})[q.dataset.q] === b.dataset.v)));
   box.querySelectorAll("input").forEach((input) => { if (document.activeElement !== input) input.value = d[input.dataset.field] || ""; });
 }
 function progress() {
@@ -404,6 +423,8 @@ function progress() {
 boxes.forEach((box) => {
   paint(box);
   box.addEventListener("click", (e) => {
+    const pb = e.target.closest(".pq button");
+    if (pb) { const d = load(box.dataset.key); const k = pb.closest(".pq").dataset.q; d.process = { ...(d.process || {}) }; d.process[k] = d.process[k] === pb.dataset.v ? undefined : pb.dataset.v; save(box.dataset.key, d); paint(box); return; }
     const b = e.target.closest("button[data-mark]");
     if (!b) return;
     const d = load(box.dataset.key);
@@ -418,7 +439,7 @@ if (SERVED) fetch("decisions").then((r) => r.json()).then((rows) => {
   for (const row of rows) {
     const box = boxes.find((b) => b.dataset.task === row.task && b.dataset.config === row.spec);
     if (!box) continue;
-    try { localStorage.setItem(PREFIX + box.dataset.key, JSON.stringify({ mark: row.mark ?? undefined, note: row.note, first_failure: row.first_failure })); } catch {}
+    try { localStorage.setItem(PREFIX + box.dataset.key, JSON.stringify({ mark: row.mark ?? undefined, note: row.note, first_failure: row.first_failure, process: row.process ?? {} })); } catch {}
     paint(box);
   }
   progress();
@@ -435,7 +456,7 @@ document.addEventListener("keydown", (e) => {
 if (boxes.length) focusBox(0);
 function exportDecisions() {
   const decisions = boxes.map((b) => ({ task: b.dataset.task, config: b.dataset.config, ...load(b.dataset.key) }))
-    .filter((d) => d.mark || d.note || d.first_failure).map((d) => ({ task: d.task, config: d.config, mark: d.mark || null, note: d.note || "", first_failure: d.first_failure || "" }));
+    .filter((d) => d.mark || d.note || d.first_failure || Object.values(d.process || {}).some(Boolean)).map((d) => ({ task: d.task, config: d.config, mark: d.mark || null, note: d.note || "", first_failure: d.first_failure || "", process: d.process || {} }));
   return { runId: RUN_ID, decisions };
 }
 document.getElementById("export").addEventListener("click", () => {
