@@ -397,6 +397,9 @@ try {
     const after = await hold();
     check("S 停下以后再点原目标：网页上不再出圈、光标不停住，网页照常处理这次点击", (await markCount()) === 0 && !after?.guide && !after?.holding && (await pageClicks()) - clicksBefore === userClicks - userBefore && !(await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes("S 不该出现。"))`)), { marks: await markCount(), hold: after });
     await rp.screenshot(work, join(out, "s-after-stop.png"));
+    // 只记录、不判：停下的那一步在侧栏怎么写由侧栏决定（没执行的结果没有 heldReason）。
+    measured.stopStepChips = await rp.evaluate(panel, '[...document.querySelectorAll(".run-steps")].at(-1)?.querySelectorAll(".chip:not(.prep)") ? [...[...document.querySelectorAll(".run-steps")].at(-1).querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.textContent.trim(), error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) : null');
+    await rp.screenshot(panel, join(out, "s-panel.png"));
     // S 停下后没有下一次模型请求；它的工具结果随下一次请求的历史送到模型这边。
     await openPage("");
     await ask(ASK.r);
