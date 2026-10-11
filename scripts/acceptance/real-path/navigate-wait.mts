@@ -9,6 +9,7 @@
  * (e) 不是报错，回执说开始了下载、Chrome 关掉了新标签页，下载目录里真有这个文件；
  * (f) 等待上限先到，回执仍说开始了下载、还没存好，不是 timeout，也不说存好。
  * (g) browser_run 里 browser.js 返回 {value: null}，程序按 #256 的写法拿它的 .url 去 navigate：几秒内报错，报错点明 .value，不等满 30 秒。
+ * (h) 任务做完、侧栏回到空闲后 5 秒内，扩展断开调试器（页面顶上的横幅随之消失，#260），不等满 15 秒。
  * 失败方式：去掉等待里的浏览器通知，(a)(b) 都等满 30 秒、回执是 timeout；把错误页当成加载完，(d) 回执是 complete（反例结果见验收文件）。
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -89,6 +90,7 @@ const screenshot = join(artifacts, "sidebar.png");
 let error: string | null = null;
 let receipts: string[] = [];
 let durations: number[] = [];
+let detachMs = NaN;
 let downloaded: string[] = [];
 const checks: Array<{ name: string; pass: boolean }> = [];
 const check = (name: string, pass: boolean) => { checks.push({ name, pass }); };
@@ -102,12 +104,19 @@ try {
   const configured = await configureViaSettings(rp, panel, { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-demo-no-secret" } }, { baseUrl: model.baseUrl });
   await rp.cdp.send("Target.closeTarget", { targetId: configured.settingsTargetId });
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
+  // 记下扩展每次断开调试器的时刻：页面横幅什么时候消失，只有扩展自己知道。
+  const worker = await rp.attach((await rp.serviceWorker())!.targetId);
+  await rp.evaluate(worker, `(() => { globalThis.__detachAt = []; const detach = chrome.debugger.detach.bind(chrome.debugger); chrome.debugger.detach = (...args) => { globalThis.__detachAt.push(Date.now()); return detach(...args); }; return true; })()`);
   await rp.click(panel, "#input");
   await rp.typeText(panel, `${MARK}：打开导出地址、下载页和第二页。`);
   await rp.pressEnter(panel);
 
   // 反例里两次导航各等满 30 秒，所以这里给足时间，让失败落在判据上而不是等待上。
   await until(async () => await rp.evaluate(panel, `!document.querySelector("#status-pill")?.classList.contains("running") && document.querySelector("#send-btn")?.disabled===false && document.querySelector("#messages")?.textContent.includes(${JSON.stringify(FINAL)})`) || undefined, 150_000, "final answer");
+  const idleAt = Date.now();
+  // 反例要等满 15 秒，所以这里最多等 20 秒，让失败落在判据上。
+  const detachedAt = await until(async () => ((await rp.evaluate(worker, "globalThis.__detachAt")) as number[]).find(at => at >= idleAt - 1000) ?? undefined, 20_000, "debugger detach").catch(() => NaN);
+  detachMs = detachedAt - idleAt;
   await sleep(1500);
 
   const last = payloads.at(-1);
@@ -146,6 +155,9 @@ try {
   // (g) 程序拿 {value} 包装当网址：很快报错，报错说网址在 .value 里。
   check(`(g) navigate without url returned in ${durations[6]} ms`, durations[6]! < LIMIT_MS);
   check("(g) receipt says navigate needs a url and points at .value", /navigate 需要 url/.test(g) && /\.value/.test(g));
+
+  // (h) 做完以后调试器很快断开。
+  check(`(h) debugger detached ${detachMs} ms after the panel went idle`, detachMs < 5000);
 
   if (checks.some(item => !item.pass)) throw new Error(`failed: ${checks.filter(item => !item.pass).map(item => item.name).join(" | ")}`);
 } catch (caught) {
