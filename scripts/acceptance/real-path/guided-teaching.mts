@@ -9,11 +9,15 @@
  *   R) R2 反例：减少动态效果时，第一次读到圈时光标已经在目标旁（不飞行）。
  *   B) R3：开关点了没反应：3 秒左右圈旁改成「好像没有生效…」，侧栏出现「点了「Dark theme」，页面没有变化」；第二次仍没变化，这一步按「没完成」结束（guide_no_change），侧栏写「点了两次，页面都没有变化」，不画成失败。
  *   Q) 网页按下就切换并重画面板（像 Radix 标签）：点中照样算完成，三步走完、页面是深色。
+ *   QR) 同 Q，但目标是快照里的 @ref，并且等用户点开关时面板晚到地整块重画一次：圈和光标跟到新开关上，点中算完成。
+ *   L) 慢网页：开关点下 4 秒后才生效。3 秒出「没有生效」提示，之后页面变了，这一步照样算完成，提示收起。
+ *   N 另查：完成结果告诉模型点完以后目标的状态（标签 aria-selected=true、开关 aria-checked=true）。
  *   S) R4：等用户点的时候点侧栏「停」：等待马上结束，圈和停住的光标都清掉；之后再点原目标，网页上什么都不出现；模型收到「用户停下了」。
  * --model：换成真实模型（~/.sideagent/providers.local.json），只跑 N 的自然说法；用户按圈出来的位置点，最多 6 步。
+ *   判据：最后是深色；不超过 4 步；用户只点了 1 次 Dark theme 开关（模型没让用户把打开的开关再点回去）；助手没替用户点。
  * 失败方式：去掉「点中才返回」，N 的「没点之前不返回」失败；去掉点错提示或让开，M 失败；
  * 停下后不撤监听，S 再点原目标时会重新出圈或光标。实测抓到过：只听 click 时 Q 第 2 步一直不返回（按下就重画，浏览器不发 click）；
- * 画圈后的 resize 打断飞行时，N 的「半路」判据失败。
+ * 画圈后的 resize 打断飞行时，N 的「半路」判据失败；@ref 目标被重画后按 @ref 找不回时，QR 的「圈跟到新开关」失败（反例结果见验收文件）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -30,7 +34,10 @@ await mkdir(out, { recursive: true });
 
 const modelArg = process.argv.find(arg => arg.startsWith("--model="))?.slice(8);
 
-/** 练习页：?broken 时 Dark theme 开关点了什么都不变；?rerender 时标签在按下时就切换，并整块重画面板。网页记下收到的每一次点击。 */
+/**
+ * 练习页：?broken 时 Dark theme 开关点了什么都不变；?rerender 时标签在按下时就切换，并整块重画面板；
+ * ?late 时切到 Display 2.5 秒后面板再整块重画一次（像晚到的数据）；?slow 时开关点下 4 秒后才生效。网页记下收到的每一次点击。
+ */
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>主题练习页</title>
 <style>body{font:15px/1.6 -apple-system,"PingFang SC",sans-serif;margin:0;background:#fff;color:#111}body.dark{background:#16181d;color:#eee}
 header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid #ccc}main{padding:20px 20px;max-width:520px}
@@ -41,22 +48,25 @@ header{display:flex;justify-content:space-between;align-items:center;padding:12p
 <main><h1>欢迎</h1><p id="intro">这是一段正文，和设置无关。主题在右上角的设置里。</p></main>
 <div id="panel" hidden></div>
 <script>
-const q = new URLSearchParams(location.search), broken = q.has("broken"), rerender = q.has("rerender");
+const q = new URLSearchParams(location.search), broken = q.has("broken"), rerender = q.has("rerender"), late = q.has("late"), slow = q.has("slow");
+window.lateRenders = 0;
 window.clicks = [];
 document.addEventListener("click", e => clicks.push({ id: e.target.id || e.target.tagName, trusted: e.isTrusted }), true);
 const panel = document.getElementById("panel");
 let tab = "general";
 const pane = t => t === "general" ? '<section id="pane-general"><p>Language: English</p></section>'
   : '<section id="pane-display"><p><label for="dark">Dark theme</label><button id="dark" type="button" class="switch" role="switch" aria-label="Dark theme" aria-checked="' + document.body.classList.contains("dark") + '"></button></p></section>';
-function render() { panel.innerHTML = '<div class="tabs" role="tablist"><button id="t-general" type="button" role="tab" class="' + (tab === "general" ? "sel" : "") + '">General</button><button id="t-display" type="button" role="tab" class="' + (tab === "display" ? "sel" : "") + '">Display</button></div>' + (rerender ? pane(tab) : pane("general") + pane("display")); if (!rerender) document.getElementById("pane-display").hidden = tab !== "display"; }
+const tabButton = (id, label) => '<button id="t-' + id + '" type="button" role="tab" aria-selected="' + (tab === id) + '" class="' + (tab === id ? "sel" : "") + '">' + label + '</button>';
+function render() { panel.innerHTML = '<div class="tabs" role="tablist">' + tabButton("general", "General") + tabButton("display", "Display") + '</div>' + (rerender ? pane(tab) : pane("general") + pane("display")); if (!rerender) document.getElementById("pane-display").hidden = tab !== "display"; }
 render();
 document.getElementById("settings").addEventListener("click", () => { panel.hidden = false; });
 const pick = e => { const id = e.target.id; if (id !== "t-general" && id !== "t-display") return; tab = id.slice(2);
-  if (rerender) { render(); return; }
-  document.getElementById("t-general").classList.toggle("sel", tab === "general"); document.getElementById("t-display").classList.toggle("sel", tab === "display");
+  if (rerender) { render(); if (late && tab === "display") setTimeout(() => { render(); lateRenders += 1; }, 2500); return; }
+  for (const t of ["general", "display"]) { const b = document.getElementById("t-" + t); b.classList.toggle("sel", tab === t); b.setAttribute("aria-selected", String(tab === t)); }
   document.getElementById("pane-general").hidden = tab !== "general"; document.getElementById("pane-display").hidden = tab !== "display"; };
 panel.addEventListener(rerender ? "pointerdown" : "click", pick);
-panel.addEventListener("click", e => { if (e.target.id !== "dark" || broken) return; document.body.classList.toggle("dark"); e.target.setAttribute("aria-checked", String(document.body.classList.contains("dark"))); });
+const toggle = sw => { document.body.classList.toggle("dark"); sw.setAttribute("aria-checked", String(document.body.classList.contains("dark"))); };
+panel.addEventListener("click", e => { if (e.target.id !== "dark" || broken) return; const sw = e.target; if (slow) setTimeout(() => toggle(sw), 4000); else toggle(sw); });
 </script></body></html>`;
 
 const site = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE));
@@ -82,7 +92,16 @@ const ASK = {
   b: "案例B：教我打开深色主题，开关在这里。",
   q: "案例Q：教我打开深色主题，一步一步指给我看，我自己点。",
   s: "案例S：教我打开深色主题，一步一步指给我看，我自己点。",
+  qr: "案例QR：教我打开深色主题，一步一步指给我看，我自己点。",
+  l: "案例L：教我打开深色主题，开关在这里。",
 };
+
+/** QR 用快照里的 @ref：每次快照结果回来，按可访问名找出三个目标的 ref，填进后面的 guide_step。 */
+const REF_NAMES = ['button "⚙ Settings"', 'tab "Display"', 'switch "Dark theme"'];
+
+const refCalls = [0, 1, 2].map(i => ({ tool: { name: "guide_step", args: { target: "@0", say: SAY[i]!, step: i + 1 } } }));
+
+const snapshotCall = { tool: { name: "snapshot", args: {} } };
 
 const REAL_ASK = "教我打开深色主题，一步一步指给我看，我自己点。";
 
@@ -102,7 +121,19 @@ const scripted = modelArg ? null : await startScriptedModel([
   { match: ASK.b, steps: [guideCall(2), { text: "B 完成。" }] },
   { match: ASK.q, steps: [guideCall(0), guideCall(1), guideCall(2), { text: "Q 完成。" }] },
   { match: ASK.s, steps: [guideCall(0), { text: "S 不该出现。" }] },
+  { match: ASK.qr, steps: [snapshotCall, refCalls[0]!, snapshotCall, refCalls[1]!, snapshotCall, refCalls[2]!, { text: "QR 完成。" }] },
+  { match: ASK.l, steps: [guideCall(2), { text: "L 完成。" }] },
 ], undefined, payload => {
+  const last = [...(payload.messages ?? [])].reverse().find(m => m.role === "tool");
+  const lastText = typeof last?.content === "string" ? last.content : Array.isArray(last?.content) ? last.content.map(p => p.text ?? "").join("") : "";
+
+  REF_NAMES.forEach((name, i) => {
+    // 名字里没有正则特殊字符，原样拼进去。
+    const ref = lastText.match(new RegExp(`\\[ref=(\\d+)\\] ${name}`))?.[1];
+
+    if (ref) refCalls[i]!.tool.args.target = `@${ref}`;
+  });
+
   for (const m of payload.messages ?? []) {
     // SAFETY: OpenAI 兼容的 tool 消息带 tool_call_id。
     const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
@@ -187,7 +218,7 @@ try {
 
   const dark = async () => Boolean(await rp.evaluate(work, 'document.body.classList.contains("dark")'));
 
-  const nearCorner = (h: Hold | null, r: Box | null) => !!h && !!r && Math.abs(h.x - (r.right - 6)) <= 3 && Math.abs(h.y - (r.bottom - 6)) <= 3;
+  const nearCorner = (h: { x: number; y: number } | null, r: Box | null) => !!h && !!r && Math.abs(h.x - (r.right - 6)) <= 3 && Math.abs(h.y - (r.bottom - 6)) <= 3;
 
   const panel = await rp.attach(await rp.openSidePanel());
   const items = modelArg ? modelStorageItems(await loadModelPlan(modelArg)) : { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: scripted!.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
@@ -255,6 +286,8 @@ try {
     measured.realTranscript = transcript;
     check("真实模型：页面最后是深色", await dark(), { steps });
     check("真实模型：正常页面上没有出现「页面没有变化」的误报", !transcript.includes("页面没有变化") && !transcript.includes("点了两次"), { steps });
+    const darkClicks = Number(await rp.evaluate(work, 'window.clicks.filter(c => c.id === "dark").length'));
+    check("真实模型：不超过 4 步，Dark theme 开关只让用户点了 1 次（没有把打开的开关再点回去）", steps <= 4 && darkClicks === 1, { steps, darkClicks });
     check("真实模型：网页收到的点击数等于用户点的次数（助手没替用户点）", (await pageClicks()) - clicksBefore === userClicks - userBefore, { page: (await pageClicks()) - clicksBefore, user: userClicks - userBefore });
   } else {
     // ── N：正常走完三步 ──
@@ -269,7 +302,7 @@ try {
     for (let i = 0; i < 3; i++) {
       const { path } = await guideShown(SAY[i]!);
       const r = await rectOf(TARGETS[i]!);
-      const atCorner = (p: { x: number; y: number }) => nearCorner({ ...p } as Hold, r);
+      const atCorner = (p: { x: number; y: number }) => nearCorner(p, r);
 
       // 半路：既不在出发点，也不在目标旁。只看到出发点和终点就是跳过去的。
       const midway = path.filter(p => !atCorner(p) && Math.hypot(p.x - path[0]!.x, p.y - path[0]!.y) > 5);
@@ -292,6 +325,7 @@ try {
     await answered("N 完成。");
     const toolN = toolsSince(from);
     check("N 三步都等用户点中、页面有变化后才返回（done）", toolN.length === 3 && toolN.every((t, i) => t.includes(`Step ${i + 1} done`)), { tool: toolN });
+    check("N 完成结果写明点完以后目标的状态：标签已选中、开关已打开", toolN[1]?.includes("aria-selected=true") === true && toolN[2]?.includes("aria-checked=true") === true, { tool: toolN });
     check("N 正常页面：点中后没有「没有生效」提示", !sawWarn && toolN.every(t => t.includes("noChangeClicks=0")), { sawWarn });
     check("N 最后页面是深色；网页收到的点击数等于用户点的次数（助手 0 次）", (await dark()) && (await pageClicks()) - clicksBefore === userClicks - userBefore, { dark: await dark(), page: (await pageClicks()) - clicksBefore, user: userClicks - userBefore });
     check("N 结束后：网页上没有圈、光标没有停住", (await markCount()) === 0 && !(await hold())?.holding && !(await hold())?.guide, { marks: await markCount(), hold: await hold() });
@@ -333,7 +367,7 @@ try {
     await ask(ASK.r);
     const reduced = await guideShown(SAY[0]!);
     const rRect = await rectOf("#settings");
-    check("R 减少动态效果：圈出现时光标已经在目标右下角，之后一直不动（不飞行）", reduced.path.every(p => nearCorner({ ...p } as Hold, rRect)), { path: reduced.path.filter((_, k) => k % 5 === 0), samples: reduced.path.length, target: rRect });
+    check("R 减少动态效果：圈出现时光标已经在目标右下角，之后一直不动（不飞行）", reduced.path.every(p => nearCorner(p, rRect)), { path: reduced.path.filter((_, k) => k % 5 === 0), samples: reduced.path.length, target: rRect });
     await userClick((await markCenter())!);
     await answered("R 完成。");
     await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, work);
@@ -380,6 +414,52 @@ try {
     await answered("Q 完成。");
     check("Q 网页按下就切换并重画：三步都算完成，页面是深色", toolsSince(from).length === 3 && toolsSince(from).every((t, i) => t.includes(`Step ${i + 1} done`)) && (await dark()), { tool: toolsSince(from), dark: await dark() });
     await idle();
+
+    // ── QR：@ref 目标，等用户点的时候面板晚到地重画 ──
+    await openPage("?rerender=1&late=1");
+    from = toolTexts.length;
+    await ask(ASK.qr);
+    const guidesQR = () => toolsSince(from).filter(t => t.includes(" done:"));
+
+    for (let i = 0; i < 3; i++) {
+      await guideShown(SAY[i]!);
+
+      if (i === 2) {
+        const rendersAtShown = Number(await rp.evaluate(work, "window.lateRenders"));
+        await until(async () => Number(await rp.evaluate(work, "window.lateRenders")) > 0 || undefined, 6_000, "面板晚到地重画", 100);
+        await sleep(800);
+        const marks = await probe<Array<{ label: string; element: { tag: string; name: string } | null; shown: boolean }>>("ns.marksState()");
+        const h = await hold();
+        const r = await rectOf("#dark");
+        check("QR 等用户点时 @ref 目标被重画：圈跟到新开关上，光标停在新开关右下角", rendersAtShown === 0 && marks?.length === 1 && marks[0]!.shown && marks[0]!.element?.name === "Dark theme" && nearCorner(h, r), { rendersAtShown, marks, hold: h, target: r, targets: refCalls.map(c => c.tool.args.target) });
+        await rp.screenshot(work, join(out, "qr-after-rerender.png"));
+      } else await sleep(500);
+      await userClick((await markCenter())!);
+      await until(async () => guidesQR().length > i || undefined, 10_000, `QR 第 ${i + 1} 步点中后工具返回`, 50).catch(() => null);
+    }
+
+    await answered("QR 完成。", 20_000).catch(() => {});
+    check("QR @ref 目标：三步都算完成，页面是深色", guidesQR().length === 3 && guidesQR().every((t, i) => t.includes(`Step ${i + 1} done`)) && (await dark()), { tool: toolsSince(from), dark: await dark(), targets: refCalls.map(c => c.tool.args.target) });
+    await idle().catch(() => {});
+
+    // ── L：慢网页，开关 4 秒后才生效 ──
+    await openPage("?slow=1");
+    await userClickOn("#settings");
+    await userClickOn("#t-display");
+    from = toolTexts.length;
+    await ask(ASK.l);
+    await guideShown(SAY[2]!);
+    await sleep(800);
+    await userClick((await markCenter())!);
+    const slowAt = Date.now();
+    const hinted = await until(async () => (await hold())?.guide?.label === NO_CHANGE_TEXT || undefined, 6_000, "L 先出「没有生效」提示", 50).catch(() => false);
+    await until(async () => toolsSince(from).length > 0 || undefined, 8_000, "L 页面晚到的变化让这一步完成", 50).catch(() => null);
+    const slowMs = Date.now() - slowAt;
+    measured.slowDoneMs = slowMs;
+    await answered("L 完成。", 15_000).catch(() => {});
+    await sleep(500);
+    check("L 慢网页：先出提示，4 秒后页面变了，这一步照样算完成，提示和圈都收起", !!hinted && !!toolsSince(from)[0]?.includes("Step 3 done") && (await dark()) && (await markCount()) === 0 && !(await warnRow()), { hinted: !!hinted, slowMs, tool: toolsSince(from), dark: await dark(), marks: await markCount(), warn: await warnRow() });
+    await idle().catch(() => {});
 
     // ── S：等用户点的时候点「停」──
     await openPage("");

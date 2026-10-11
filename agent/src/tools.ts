@@ -992,7 +992,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 扩展最多等用户 2 分钟；宿主收到 tool_waiting_user 才放宽期限，这里先按同一上限发出，免得等待开始前就被普通期限截断。
         const data = (await call("guide_step", { tabId: params.tabId, target: params.target, say: params.say, step: params.step }, undefined, undefined, undefined, USER_CONFIRM_TIMEOUT_MS)) as ToolContract["guide_step"]["data"];
         // 只有 done 是结果；没变化、超时、停下、离开都由扩展按「没执行」结束，原因和下一步怎么做写在那条错误里。
-        return textResult(`Step ${params.step} done: the user clicked and the page changed (${data.changed ? `${data.changed}; ` : ""}misses=${data.misses}, noChangeClicks=${data.noChangeClicks}). Snapshot the page, then give the next step or finish in one sentence.`, data);
+        // after 是点完以后从网页读出的目标状态（如开关已打开）：模型据此不再让用户把同一个开关点回去。它来自网页，按页面内容包起来。
+        const now = data.after ? ` The target now reads: ${wrapPageContent(data.after)}` : "";
+
+        return textResult(`Step ${params.step} done: the user clicked and the page changed (${data.changed ? `${data.changed}; ` : ""}misses=${data.misses}, noChangeClicks=${data.noChangeClicks}).${now} Snapshot the page, then give the next step or finish in one sentence; do not guide a step that is already done.`, data);
       },
     }),
     defineTool({

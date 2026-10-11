@@ -779,6 +779,8 @@ export interface GuideStepResult {
   noChangeClicks: number;
   /** done 时，是什么变了。 */
   changed?: "dom" | "url" | "document";
+  /** 点完以后目标的样子（角色、名字、aria-checked 之类的状态，网址变了再加网址），从网页读出：模型据此知道这一步已生效，不再让用户点一遍。 */
+  after?: string;
 }
 
 // ── 编解码守卫 ─────────────────────────────────────────────────────

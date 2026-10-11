@@ -1230,9 +1230,14 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     inst: Instance;
     node: Node;
     target: string;
+    /** 网页重画目标后，在页面里重新找到它的定位串。@ref 只对快照有效，页面里找不回，所以开始时换成能找回同一个元素的定位串。 */
+    relocate: string | null;
     name: string;
     options?: MarkOptions;
     mark: HTMLDivElement | null;
+    label: string;
+    /** 目标最后一次量到的位置：目标被换掉、新节点又找不到时，按这里判断点中没有。 */
+    rect: DOMRect | null;
     port: chrome.runtime.Port;
     observer: MutationObserver;
     misses: number;
@@ -1243,8 +1248,11 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     down: { at: number; url: string } | null;
     /** 松开后等 click：网页在按下时把目标整块重画，浏览器就不发 click，这时按松开算这一下。 */
     upTimer?: ReturnType<typeof setTimeout>;
-    /** 点中以后在看页面有没有变化。 */
-    checking: { since: number; url: string; timer: ReturnType<typeof setTimeout>; poll: ReturnType<typeof setInterval> } | null;
+    /**
+     * 点中以后在看页面有没有变化。settled：3 秒没变化、提示已经出了，仍接着看到用户下一次按下：
+     * 慢的网页晚一点才变，也算这次点中生效。
+     */
+    watch: { since: number; url: string; timer: ReturnType<typeof setTimeout>; poll: ReturnType<typeof setInterval>; settled: boolean } | null;
   }
 
   let guide: GuideSession | null = null;
@@ -1253,6 +1261,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   /** 按下到松开超过这么久就不算同一次点：只把这段时间里网页的变化算给这次点击（有的网页在按下时就切换）。 */
   const GUIDE_PRESS_MS = 1500;
+
+  /** 点完以后告诉模型的目标状态：开关、标签、展开这些状态，模型据此知道这一步已经生效，不再让用户点一遍。 */
+  const GUIDE_STATES = ["aria-checked", "aria-selected", "aria-expanded", "aria-pressed"];
 
   function guideMissText(name: string): string {
     return name ? `这里不是要点的位置。请点圈出来的「${name}」。` : "这里不是要点的位置。请点圈出来的地方。";
@@ -1276,12 +1287,62 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     return r.width && r.height ? r : null;
   }
 
-  /** 网页重画了目标：按定位串重新找一次（@ref 在页面里找不回就留着旧节点）。 */
+  function guideRole(el: Element): string {
+    const explicit = el.getAttribute("role")?.trim().split(/\s+/)[0];
+
+    if (explicit) return explicit;
+    const type = el instanceof HTMLInputElement ? el.type : "";
+
+    if (el.matches("button, input[type=button], input[type=submit]")) return "button";
+    if (el.matches("a[href]")) return "link";
+    if (type === "checkbox" || type === "radio") return type;
+    if (el instanceof HTMLSelectElement) return "combobox";
+
+    return "";
+  }
+
+  /** CSS 路径：从最近的带 id 祖先（或 body）往下按 nth-of-type 走。网页按原样重画时，新节点还在同一个位置。 */
+  function guideCssPath(el: Element): string {
+    const parts: string[] = [];
+
+    for (let at: Element | null = el; at && at !== document.body && at !== document.documentElement; at = at.parentElement) {
+      if (at.id && at !== el) { parts.unshift(`#${CSS.escape(at.id)}`); break; }
+      const tag = at.tagName.toLowerCase();
+      const same = at.parentElement ? [...at.parentElement.children].filter((c) => c.tagName === at!.tagName) : [at];
+      parts.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(at) + 1})` : tag);
+    }
+
+    return parts.join(" > ");
+  }
+
+  /** @ref 换成页面里能找回同一个元素的定位串：按角色和名字、id、CSS 路径依次试，只留此刻确实找回它本身的那个。 */
+  function guideLocator(node: Node, target: string): string | null {
+    if (!target.startsWith("@")) return target;
+    const el = guideElement(node);
+    const dom = window.__sideagent?.dom;
+
+    if (!el || !dom) return null;
+    const role = guideRole(el);
+    const name = (el.getAttribute("aria-label") || el.textContent || "").trim().replace(/\s+/g, " ");
+    const candidates = [role && name && !name.includes('"') ? `loc=role:${role}[name="${name}"]` : "", el.id ? `#${CSS.escape(el.id)}` : "", guideCssPath(el)];
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+
+      try {
+        if (dom.resolve(candidate) === el) return candidate;
+      } catch { /* 这个定位串找不到或不唯一：试下一个 */ }
+    }
+
+    return null;
+  }
+
+  /** 网页重画了目标：用定位串重新找一次，找不回就留着旧节点。 */
   function liveGuideNode(g: GuideSession): Node {
-    if (g.node.isConnected) return g.node;
+    if (g.node.isConnected || !g.relocate) return g.node;
 
     try {
-      const fresh = window.__sideagent?.dom?.resolve?.(g.target);
+      const fresh = window.__sideagent?.dom?.resolve?.(g.relocate);
 
       if (fresh) g.node = fresh;
     } catch { /* 找不到：保留旧节点 */ }
@@ -1290,9 +1351,13 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   }
 
   function drawGuideMark(g: GuideSession, label: string): void {
+    g.label = label;
+
     if (g.mark) removeMark(g.mark);
     const node = liveGuideNode(g);
     const r = nodeRect(node);
+
+    if (r) g.rect = r;
     g.mark = r ? spawnMark(g.inst, r, label, g.target, g.options, node) : null;
   }
 
@@ -1303,7 +1368,17 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
     if (!el || !r) return;
     const p = holdPoint(r, true);
-    holdInst(g.inst, p.x, p.y, null, g.target, null, el);
+    holdInst(g.inst, p.x, p.y, null, g.relocate ?? undefined, null, el);
+  }
+
+  /** 等用户点的时候目标被换成新节点：圈和光标跟到新节点上。 */
+  function followGuideNode(g: GuideSession): void {
+    const before = g.node;
+
+    if (before.isConnected || liveGuideNode(g) === before) return;
+    drawGuideMark(g, g.label);
+
+    if (g.inst.hold?.corner) holdAtGuide(g);
   }
 
   function postGuide(g: GuideSession, message: Record<string, unknown>): void {
@@ -1321,30 +1396,56 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     });
   }
 
-  function checkGuide(g: GuideSession): void {
-    const c = g.checking;
+  /** 点完以后目标的样子：角色、名字、状态（不读输入框里的文字），最多 120 字。 */
+  function guideAfter(g: GuideSession): string | undefined {
+    const el = guideElement(liveGuideNode(g));
 
-    if (!c) return;
-    const changed = location.href !== c.url ? "url" : g.lastChange >= c.since ? "dom" : null;
+    if (!el?.isConnected) return undefined;
+    const name = actionName(el).slice(0, 40);
+    const states = GUIDE_STATES.flatMap((a) => (el.hasAttribute(a) ? [`${a}=${el.getAttribute(a)}`] : []));
+
+    if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) states.push(`checked=${el.checked}`);
+    if (el instanceof HTMLSelectElement) states.push(`value="${(el.selectedOptions[0]?.textContent ?? "").trim().slice(0, 30)}"`);
+
+    return [guideRole(el) || el.tagName.toLowerCase(), name ? `"${name}"` : "", ...states].filter(Boolean).join(" ").slice(0, 120);
+  }
+
+  function stopWatch(g: GuideSession): void {
+    if (!g.watch) return;
+    clearTimeout(g.watch.timer);
+    clearInterval(g.watch.poll);
+    g.watch = null;
+  }
+
+  function checkGuide(g: GuideSession): void {
+    const w = g.watch;
+
+    if (!w) return;
+    const changed = location.href !== w.url ? "url" : g.lastChange >= w.since ? "dom" : null;
 
     if (!changed) return;
-    postGuide(g, { kind: "done", changed });
+    const after = guideAfter(g);
+    postGuide(g, { kind: "done", changed, ...(after ? { after } : {}), ...(changed === "url" ? { url: location.href } : {}) });
     endGuide(g);
   }
 
   function guideNoChange(g: GuideSession): void {
-    const c = g.checking;
+    const w = g.watch;
 
-    if (!c) return;
-    clearTimeout(c.timer);
-    clearInterval(c.poll);
-    g.checking = null;
+    if (!w || w.settled) return;
+    w.settled = true;
     drawGuideMark(g, GUIDE_NO_CHANGE_TEXT);
     postGuide(g, { kind: "no_change" });
   }
 
   function onGuideDown(ev: PointerEvent): void {
-    if (guide && ev.isTrusted) guide.down = { at: performance.now(), url: location.href };
+    const g = guide;
+
+    if (!g || !ev.isTrusted) return;
+    g.down = { at: performance.now(), url: location.href };
+
+    // 用户又按下了：上一次点击晚到的变化不再算给它，这一下重新判断。
+    if (g.watch?.settled) stopWatch(g);
   }
 
   function onGuideMove(ev: PointerEvent): void {
@@ -1365,31 +1466,34 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
     if (!g || !ev.isTrusted || ev.button !== 0) return;
     clearTimeout(g.upTimer);
-    // click 紧跟在松开后同步派发；到这个定时器时还没来，就是浏览器不会发了。
-    g.upTimer = setTimeout(() => onGuidePress(ev), 50);
+    // 事件路径只在派发期间可读：先记下。click 紧跟在松开后同步派发；到这个定时器时还没来，就是浏览器不会发了。
+    const path = ev.composedPath();
+    g.upTimer = setTimeout(() => onGuidePress(ev, path), 50);
   }
 
   function onGuideClick(ev: MouseEvent): void {
     if (!guide || !ev.isTrusted) return;
     clearTimeout(guide.upTimer);
-    onGuidePress(ev);
+    onGuidePress(ev, ev.composedPath());
   }
 
-  function onGuidePress(ev: MouseEvent): void {
+  function onGuidePress(ev: MouseEvent, path: EventTarget[]): void {
     const g = guide;
 
-    if (!g || g.checking) return;
-    const path = ev.composedPath();
+    if (!g || (g.watch && !g.watch.settled)) return;
 
     // 点在助手自己的浮层上（停止条、确认框）不算这一步的点击。
     if (path.some((n) => n instanceof Element && n.hasAttribute(OVERLAY_ATTR))) return;
+    stopWatch(g);
     const node = liveGuideNode(g);
     const el = guideElement(node);
     const labels = el && "labels" in el ? [...((el as HTMLInputElement).labels ?? [])] : [];
-    const r = nodeRect(node);
+    const onPath = (!!el && path.includes(el)) || labels.some((label) => path.includes(label));
+    // 坐标只在没有事件路径、或目标被换掉又找不回时兜底：否则盖在目标上的东西（比如 cookie 横幅）也会被当成点中。
+    const r = !node.isConnected || path.length === 0 ? nodeRect(node) ?? g.rect : null;
     const inside = !!r && ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 && ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4;
 
-    if (!((el && path.includes(el)) || labels.some((label) => path.includes(label)) || inside)) {
+    if (!onPath && !inside) {
       g.misses += 1;
       g.missed = true;
       drawGuideMark(g, guideMissText(g.name));
@@ -1403,11 +1507,12 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     postGuide(g, { kind: "hit" });
     const now = performance.now();
     const pressed = g.down && now - g.down.at < GUIDE_PRESS_MS ? g.down : null;
-    g.checking = {
+    g.watch = {
       since: pressed?.at ?? now,
       url: pressed?.url ?? location.href,
       timer: setTimeout(() => guideNoChange(g), EFFECT_SETTLE_MAX_MS),
       poll: setInterval(() => checkGuide(g), 100),
+      settled: false,
     };
     checkGuide(g);
   }
@@ -1422,12 +1527,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     window.removeEventListener("pointerup", onGuideUp, true);
     clearTimeout(g.upTimer);
     g.observer.disconnect();
-
-    if (g.checking) {
-      clearTimeout(g.checking.timer);
-      clearInterval(g.checking.poll);
-      g.checking = null;
-    }
+    stopWatch(g);
 
     if (g.mark) removeMark(g.mark);
     g.mark = null;
@@ -1452,18 +1552,23 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
     const g: GuideSession = {
       inst, node, target, options, port,
+      relocate: guideLocator(node, target),
       name: full.length > 20 ? `${full.slice(0, 19)}…` : full,
       mark: null,
+      label: say,
+      rect: null,
       observer: new MutationObserver((records) => {
         if (!pageMutated(records)) return;
         g.lastChange = performance.now();
         checkGuide(g);
+
+        if (guide === g) followGuideNode(g);
       }),
       misses: 0,
       missed: false,
       lastChange: -1,
       down: null,
-      checking: null,
+      watch: null,
     };
 
     guide = g;
@@ -2560,7 +2665,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       hidden: inst.el.classList.contains("hidden") || !inst.visible,
       x: inst.pos.x,
       y: inst.pos.y,
-      guide: guide?.inst === inst ? { label: guide.mark?.querySelector(".mark-label")?.textContent ?? "", misses: guide.misses, parkedAtTarget: Boolean(inst.hold?.corner), checking: Boolean(guide.checking) } : null,
+      guide: guide?.inst === inst ? { label: guide.mark?.querySelector(".mark-label")?.textContent ?? "", misses: guide.misses, parkedAtTarget: Boolean(inst.hold?.corner), checking: Boolean(guide.watch && !guide.watch.settled) } : null,
     };
   };
 

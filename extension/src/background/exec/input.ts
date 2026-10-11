@@ -2604,6 +2604,8 @@ async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number;
 export async function showGuide(tabId: number, target: string, say: string, portName: string, sessionId: string): Promise<{ name: string }> {
   const observedDocument = await assertObservedDocument(tabId, sessionId, [target]);
   const located = await locateTarget(tabId, target);
+  // @ref 走 CDP 时不会注入 domops；页面要靠它在网页重画后重新找到目标。
+  await ensureDomOps(tabId);
   await ensureCursor(tabId);
   const motion = await getMarkMotion();
   await assertSameDocument(tabId, observedDocument);

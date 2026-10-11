@@ -51,7 +51,9 @@ chrome.runtime.onConnect.addListener(port => {
 
 type Params = ToolContract["guide_step"]["params"];
 
-type Ending = { outcome: "done"; changed?: GuideStepResult["changed"] } | { outcome: "stopped" | "left" | "no_change" | "timeout" };
+type Ending = { outcome: "done"; changed?: GuideStepResult["changed"]; after?: string } | { outcome: "stopped" | "left" | "no_change" | "timeout" };
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 export async function guideStep(params: Params, sessionId: string, guard: SendGuard): Promise<GuideStepResult> {
   if (typeof params.target !== "string" || !params.target.trim()) throw notExecuted(new Error("guide_step 需要 target：要用户点的那个元素。"));
@@ -79,7 +81,9 @@ export async function guideStep(params: Params, sessionId: string, guard: SendGu
 
 async function waitForUser(tabId: number, params: Params, sessionId: string, guard: SendGuard): Promise<GuideStepResult> {
   const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
-  const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take }));
+  // 页面可能已经连上、画了圈，之后画的那一步才报错：留着这个 port，出错时断开它，页面才会撤圈、摘监听。
+  let taken: chrome.runtime.Port | null = null;
+  const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take: p => { taken = p; take(p); } }));
   let port: chrome.runtime.Port | null = null;
   let name = "";
 
@@ -88,7 +92,9 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
     port = await Promise.race([connected, new Promise<null>(done => setTimeout(() => done(null), SHOW_MS))]);
   } catch (error) {
     waitingPorts.delete(portName);
-    throw notExecuted(error);
+    (taken as chrome.runtime.Port | null)?.disconnect();
+    // 只画了圈、断开后就撤掉，网页上没有留下任何改动：确实没执行，不记成结果未知。
+    throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), { executionFact: "not_executed" as const });
   }
 
   waitingPorts.delete(portName);
@@ -99,24 +105,30 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
   guard.waiting(true, wait);
   let misses = 0;
   let noChangeClicks = 0;
-  // 点中以后、页面还没报变化之前：这时换了文档，就是这次点击换的页。
+  // 点中以后、用户下一次点错之前：这时换了文档，就是这次点击换的页（慢的网页可能在「没有变化」提示之后才换）。
   let hitPending = false;
   const cleanups: Array<() => void> = [];
 
   const ending = await new Promise<Ending>(done => {
-    shown.onMessage.addListener((message: { kind?: unknown; changed?: unknown }) => {
-      if (message?.kind === "miss") misses += 1;
+    shown.onMessage.addListener((message: { kind?: unknown; changed?: unknown; after?: unknown; url?: unknown }) => {
+      if (message?.kind === "miss") { misses += 1; hitPending = false; }
       else if (message?.kind === "hit") hitPending = true;
       else if (message?.kind === "no_change") {
-        hitPending = false;
         noChangeClicks += 1;
 
         if (noChangeClicks >= NO_CHANGE_LIMIT) { done({ outcome: "no_change" }); return; }
         wait = { ...wait, state: "no_change" };
         guard.waiting(true, wait);
-      } else if (message?.kind === "done") done({ outcome: "done", changed: message.changed === "url" ? "url" : "dom" });
+      } else if (message?.kind === "done") {
+        const url = typeof message.url === "string" ? ` · url ${clip(message.url, 200)}` : "";
+        done({ outcome: "done", changed: message.changed === "url" ? "url" : "dom", after: typeof message.after === "string" ? clip(message.after, 120) + url : url.slice(3) || undefined });
+      }
     });
-    const gone = () => done(hitPending ? { outcome: "done", changed: "document" } : { outcome: "left" });
+    const gone = () => {
+      if (!hitPending) { done({ outcome: "left" }); return; }
+      // 换了文档：目标已经不在了，告诉模型现在是哪一页。
+      void chrome.tabs.get(tabId).then(tab => tab.url, () => undefined).then(url => done({ outcome: "done", changed: "document", ...(url ? { after: `new page · url ${clip(url, 200)}` } : {}) }));
+    };
     shown.onDisconnect.addListener(gone);
     const removed = (closed: number) => { if (closed === tabId) done({ outcome: "left" }); };
     // 网页自己改网址（pushState、#）不换文档，页面里的监听还在，由页面报变化；只有顶层文档换了才在这里结束。
@@ -139,5 +151,5 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
   // 没完成的四种结局都带原因：侧栏不画成失败，宿主也不把它们算进连续出错。
   if (ending.outcome !== "done") throw Object.assign(notExecuted(new Error(TEXT[ending.outcome])), { heldReason: `guide_${ending.outcome}` as const });
 
-  return { outcome: ending.outcome, misses, noChangeClicks, ...("changed" in ending && ending.changed ? { changed: ending.changed } : {}) };
+  return { outcome: ending.outcome, misses, noChangeClicks, ...(ending.changed ? { changed: ending.changed } : {}), ...(ending.after ? { after: ending.after } : {}) };
 }
