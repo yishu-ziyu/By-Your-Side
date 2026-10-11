@@ -947,7 +947,7 @@ $("main-pick").addEventListener("click", () => {
   search.focus({ preventScroll: true });
 });
 
-/** 阶跃的三个文字模型每次都先思考（10-11 实测，step-3.5-flash 也一样），官方接口关不掉。 */
+/** 阶跃的三个文字模型每次都先思考（10-11 实测），官方接口关不掉。 */
 const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PROVIDER_ID;
 
 const THINKS_NOTE = "阶跃模型总会先想一下，解释和翻译因此会慢几秒。还嫌慢，可以选一个快速模型。";

@@ -53,8 +53,9 @@ const MEASURED = new Map<string, MeasuredCapability>([
   // 能看图（同一张图实测答对）。10-11 实测：reasoning_effort 接受 low / medium / high，low 出字最快（2.7 秒，中档 6.0 秒），
   // 所以起始档用低档（用户 10-11 定）；developer 角色里「只回 JSON」5 次全被忽略，system 角色 5 次全守。
   ["stepfun/step-5-preview", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null, minimal: null }, systemRole: true, start: "low" }],
-  // 发图回 400「doesn't support image input」。10-11 实测：各档都回 200，但思考长短与档位无关（low 比 high 想得更长），所以不登记档位。
-  ["stepfun/step-3.5-flash", { reasoning: false, input: ["text"] }],
+  // 10-11 用户定：取代 step-3.5-flash（旧的发图回 400，档位不起作用）。文档只写 low / high；developer 角色里「只回 JSON」被忽略，所以用 system 角色。
+  // 看图未测，按保守默认只收文字。
+  ["stepfun/step-3.5-flash-2603", { reasoning: true, input: ["text"], thinkingLevelMap: { off: null, minimal: null, medium: null }, systemRole: true }],
 ]);
 
 const key = (model: Pick<Model<Api>, "provider" | "id">) => `${model.provider}/${model.id}`;
