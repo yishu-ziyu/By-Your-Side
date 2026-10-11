@@ -1,6 +1,6 @@
 /**
  * 时间花在哪（YIS-93）：读日常全套导出的诊断记录，把每个任务拆成「等模型」「动手」「其他」。
- *   npx tsx scripts/eval/time-breakdown.mts <everyday-baseline 产物目录> [--out=<表格.md>]
+ *   npx tsx scripts/eval/time-breakdown.mts <everyday-baseline 产物目录 或 日常导出的 .jsonl> [--out=<表格.md>]
  * 等模型：每轮从发出请求到模型回完（含重试）；动手：每个工具从开始到结束；其他：总耗时减去前两项（准备上下文、记忆判断等），单独列出，不摊进前两项。
  */
 import { readdir, readFile, writeFile } from "node:fs/promises";
@@ -16,15 +16,20 @@ if (!dir) throw new Error("用法：time-breakdown.mts <everyday-baseline 产物
 
 const out = process.argv.find((a) => a.startsWith("--out="))?.slice(6);
 
-// SAFETY: summary.json 由 everyday-baseline.mts 写出，results 带 id 与 prompt。
-const summary = JSON.parse(await readFile(join(dir, "summary.json"), "utf8")) as { model: string; startedAt: string; results: Array<{ id: string; prompt: string }> };
+// 参数是日常 Chrome 从设置页导出的 .jsonl 时，没有 summary.json：任务名用 runId 的前 8 位，原话取 run_start。
+const single = dir.endsWith(".jsonl");
 
-const traceFile = (await readdir(join(dir, "downloads"))).find((n) => n.startsWith("by-your-side-traces-"));
+const traceFile = single ? dir : (await readdir(join(dir, "downloads"))).find((n) => n.startsWith("by-your-side-traces-"));
 
 if (!traceFile) throw new Error("产物里没有导出的诊断记录");
 
 // SAFETY: 诊断记录一行一个 JSON 对象，字段见 shared/run-trace-core.ts。
-const lines = (await readFile(join(dir, "downloads", traceFile), "utf8")).split("\n").filter(Boolean).map((l) => JSON.parse(l) as Line);
+const lines = (await readFile(single ? dir : join(dir, "downloads", traceFile), "utf8")).split("\n").filter(Boolean).map((l) => JSON.parse(l) as Line);
+
+// SAFETY: summary.json 由 everyday-baseline.mts 写出，results 带 id 与 prompt。
+const summary = single
+  ? { model: "日常导出", startedAt: lines[0]?.time ?? "", results: [] as Array<{ id: string; prompt: string }> }
+  : JSON.parse(await readFile(join(dir, "summary.json"), "utf8")) as { model: string; startedAt: string; results: Array<{ id: string; prompt: string }> };
 
 const ms = (l: Line) => Date.parse(l.time);
 
@@ -42,7 +47,7 @@ for (const run of byRun.values()) {
   const text = String(start.data?.text ?? "");
   // 几条翻译任务开头相同：取原文被包含、且最长的那条。
   const known = summary.results.filter((r) => text.includes(r.prompt)).sort((a, b) => b.prompt.length - a.prompt.length)[0];
-  const row: Row = { id: known?.id ?? "?", prompt: text.slice(0, 40), totalMs: ms(end) - ms(start), modelMs: 0, firstTokenMs: [], toolMs: 0, turns: 0, tools: {} };
+  const row: Row = { id: known?.id ?? (single ? String(start.runId).slice(0, 8) : "?"), prompt: text.slice(0, 40), totalMs: ms(end) - ms(start), modelMs: 0, firstTokenMs: [], toolMs: 0, turns: 0, tools: {} };
   let asked: number | null = null;
 
   for (const l of run) {
