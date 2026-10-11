@@ -143,6 +143,8 @@ try {
   check("e 「什么也不做」：工具结果写页面没有变化，并且 2.5 秒内回到模型", /Nothing on the page changed/.test(noop?.text ?? "") && noopMs !== null && noopMs < 2500, { ms: noopMs, result: noop?.text ?? null });
   const nav = all("press_key")[1];
   check("f 站内搜索回车跳到新页面：工具结果写加载了新文档，不写没有变化", /new document/.test(nav?.text ?? "") && !/Nothing on the page changed/.test(nav?.text ?? ""), { result: nav?.text ?? null });
+  // #257：写明换到了哪一页（标题和路径，不带查询参数），模型不必再跑一轮确认。
+  check("f 工具结果写出新页面的标题和路径，不带查询参数", /new document: "搜索结果" — http:\/\/[^ ]+\/results/.test(nav?.text ?? "") && !/\/results\?/.test(nav?.text ?? ""), { result: nav?.text ?? null });
   await rp.screenshot(work, join(out, "page.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice page", checks, served, receipts, modelRequests: model.requests }, null, 2));
