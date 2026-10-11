@@ -13,11 +13,14 @@ const FAMILIES: Array<{ name: string; members: Array<[string, string]> }> = [
   { name: "Xiaomi Token Plan", members: [["xiaomi-token-plan-cn", "中国"], ["xiaomi-token-plan-sgp", "新加坡"], ["xiaomi-token-plan-ams", "阿姆斯特丹"]] },
 ];
 
-/** 服务商 id → icons/providers/ 里的文件名（@lobehub/icons-static-svg，MIT）。没有的用首字（小米的图标是文字标，小尺寸看不清）。 */
+/**
+ * 服务商 id → icons/providers/ 里的文件名（@lobehub/icons-static-svg 1.95.1，MIT）。没有的用首字，留给目录以后新增的服务商。
+ * 小米（xiaomi、Xiaomi Token Plan）仍用首字：这一版只有 MiMo 的文字标（xiaomimimo），18px 下看不清（10-11 核对过）。
+ */
 const ICONS = new Map(Object.entries({
   stepfun: "stepfun", "opencode-go": "opencode", opencode: "opencode", "zai-coding-cn": "zhipu", zai: "zai", "kimi-coding": "kimi",
-  "ant-ling": "antgroup", anthropic: "anthropic", baseten: "baseten", cerebras: "cerebras", deepseek: "deepseek", fireworks: "fireworks",
-  "github-copilot": "githubcopilot", google: "gemini", groq: "groq", huggingface: "huggingface", minimax: "minimax", "minimax-cn": "minimax",
+  "ant-ling": "antgroup", anthropic: "anthropic", azure: "azure", baseten: "baseten", cerebras: "cerebras", deepseek: "deepseek", fireworks: "fireworks",
+  "github-copilot": "githubcopilot", google: "gemini", groq: "groq", huggingface: "huggingface", meta: "meta", minimax: "minimax", "minimax-cn": "minimax",
   mistral: "mistral", moonshotai: "moonshot", "moonshotai-cn": "moonshot", nvidia: "nvidia", openai: "openai", "openai-codex": "openai",
   openrouter: "openrouter", "qwen-token-plan": "qwen", "qwen-token-plan-cn": "qwen", "qwen-token-plan-individual": "qwen", together: "together",
   "vercel-ai-gateway": "vercel", xai: "xai",
