@@ -16,8 +16,8 @@
   - 例子(反)：全新配置下页面文字含「已经填了阶跃星辰的 key」或「沿用」 — 谁检查：用例第 1 步
   - 例子(正)：存入阶跃星辰 key 后，语音区说明和语音模型说明都写「正在沿用」 — 谁检查：用例第 3 步
   - 例子(反)：放回写死的「上面已经填了阶跃星辰的 key」，用例必须失败 — 谁检查：故意弄坏产品复跑（10-11 做过，失败）
-- R4（#236 P2）列表里没有 TypeSafe。目录里还没有图标的服务商补上品牌图标；只有小米仍用首字（见技术前提）。
-  - 例子(正)：展开的列表里只有小米两行是首字 — 谁检查：用例第 1 步读 DOM；人看 `2b-provider-list-full.png`
+- R4（#236 P2）列表里没有 TypeSafe。目录里还没有图标的服务商补上品牌图标。
+  - 例子(正)：展开的列表里没有首字图标 — 谁检查：用例第 1 步读 DOM；人看 `2b-provider-list-full.png`
 - R5（#236 P3）「划词」一行的快捷键按 `chrome.commands.getAll()` 读到的写。没有设快捷键时，写怎样在 chrome://extensions/shortcuts 设。
   - 例子(正)：Linux 无头 Chrome 里页面文字含「Ctrl+J」、不含「⌘」 — 谁检查：用例第 1 步（只在 Linux 上判这一条）
   - 例子(正)：macOS 上页面写 `getAll` 给的「⌘J」 — 谁检查：同上
@@ -30,7 +30,7 @@
 
 - 前提：扩展的设置页能直接调用 `chrome.commands.getAll()`，读到的快捷键已是本系统的写法。结果：通过。macOS 无头 Chrome 读到「⌘J」，所以 Linux 的「Ctrl+J」这一条在本机没有跑。
 - 前提：TypeSafe 只有分类模型。结果：通过。pi-ai 目录里 TypeSafe 的对话模型是 0 个，分类模型只有 `jev-latest`。
-- 前提：@lobehub/icons-static-svg 有小米在 18px 下看得清的单色图标。结果：不成立。最新版 1.95.1 只有 `xiaomimimo`，它是「Xiaomi MiMo」两行文字，18px 下看不清。所以小米保留首字。Azure 和 Meta 的图标在 18px 下看得清。
+- 前提：@lobehub/icons-static-svg 有小米在 18px 下看得清的单色图标。结果：不成立。最新版 1.95.1 只有 `xiaomimimo`，它是「Xiaomi MiMo」两行文字，18px 下看不清。所以小米改用 simple-icons 的 MI 标（CC0）。Azure 和 Meta 的图标在 18px 下看得清。
 
 ## 边界与不做
 

@@ -14,8 +14,8 @@ const rp = await launchRealPath();
 const evidence: Record<string, unknown> = {};
 let error: string | null = null;
 
-/** 小米只有文字标，看不清，仍用首字（providers.ts 的 ICONS 注释）；其他行出现首字就是缺图标。 */
-const LETTER_ALLOWED = ["xiaomi", "xiaomi-token-plan-cn"];
+/** 列表里出现首字就是缺图标。 */
+const LETTER_ALLOWED: string[] = [];
 
 try {
   const { targetId } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` });
@@ -58,7 +58,7 @@ try {
   assert.match(first.voiceNote, /只给语音用/);
   assert.ok(first.mainPick && !first.mainSelect, "主模型一行是「去选服务商」按钮，不是只有一项的下拉");
   assert.ok(!first.typesafe && !body.includes("TypeSafe"), "列表里没有已退役的 TypeSafe");
-  assert.deepEqual(first.letters, LETTER_ALLOWED, "除小米外每家都有品牌图标");
+  assert.deepEqual(first.letters, LETTER_ALLOWED, "每家都有品牌图标");
   assert.ok(shortcut, "全新配置有默认快捷键");
 
   if (process.platform === "linux") assert.ok(body.includes("Ctrl+J") && !body.includes("⌘"), "Linux 上写 Ctrl+J，不写 ⌘");
