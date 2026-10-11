@@ -201,7 +201,7 @@ try {
 
   const runTitle = async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".run-steps")].at(-1)?.querySelector(".run-title")?.textContent ?? ""'));
 
-  const warnRow = async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".run-steps")].at(-1)?.querySelector(".trail-aside.warn")?.textContent ?? ""'));
+  const warnRow = async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".run-trail .trail-aside.warn")].at(-1)?.textContent ?? ""'));
 
   /** 打开练习页的新文档，等扩展的光标脚本就位。 */
   const openPage = async (query: string) => {
@@ -211,18 +211,15 @@ try {
     await rp.cdp.send("Page.bringToFront", {}, work);
   };
 
-  /** 等第 step 步出现在网页上（圈旁写着 say），同时尽快记下光标第一次的位置。 */
+  /** 等第 step 步出现在网页上（圈旁写着 say），接着连续记下光标 600 毫秒内的位置（看它是飞过去还是直接到位）。 */
   const guideShown = async (say: string) => {
-    let first: Hold | null = null;
-    const shown = await until(async () => {
-      const h = await hold();
+    const first = await until(async () => { const h = await hold(); return h?.guide?.label === say ? h : null; }, 30_000, `网页上出现「${say}」`, 0);
+    const path: Array<{ ms: number; x: number; y: number }> = [{ ms: 0, x: first.x, y: first.y }];
+    const startedAt = Date.now();
 
-      if (h?.guide?.label === say) { first ??= h; return h; }
+    while (Date.now() - startedAt < 600) { const h = await hold(); if (h) path.push({ ms: Date.now() - startedAt, x: h.x, y: h.y }); }
 
-      return null;
-    }, 30_000, `网页上出现「${say}」`, 0);
-
-    return { first: first ?? shown };
+    return { first, path };
   };
 
   const toolsSince = (from: number) => toolTexts.slice(from);
@@ -233,6 +230,7 @@ try {
     const clicksBefore = await pageClicks();
     const userBefore = userClicks;
     await ask(REAL_ASK);
+    await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn").classList.contains("stopping")'), 15_000, "任务开始");
     let steps = 0;
 
     for (; steps < 6; steps++) {
@@ -252,6 +250,7 @@ try {
 
     await idle().catch(() => {});
     await rp.screenshot(panel, join(out, "real-panel.png"));
+    measured.realTranscript = String(await rp.evaluate(panel, 'document.querySelector("#messages").innerText'));
     check("真实模型：页面最后是深色", await dark(), { steps });
     check("真实模型：网页收到的点击数等于用户点的次数（助手没替用户点）", (await pageClicks()) - clicksBefore === userClicks - userBefore, { page: (await pageClicks()) - clicksBefore, user: userClicks - userBefore });
   } else {
@@ -265,10 +264,14 @@ try {
     let sawWarn = false;
 
     for (let i = 0; i < 3; i++) {
-      const { first } = await guideShown(SAY[i]!);
+      const { path } = await guideShown(SAY[i]!);
       const r = await rectOf(TARGETS[i]!);
+      const atCorner = (p: { x: number; y: number }) => nearCorner({ ...p } as Hold, r);
 
-      if (i === 0) check("N 光标飞过去：第一次读到圈时光标还不在目标旁", !nearCorner(first, r), { first, target: r });
+      // 半路：既不在出发点，也不在目标旁。只看到出发点和终点就是跳过去的。
+      const midway = path.filter(p => !atCorner(p) && Math.hypot(p.x - path[0]!.x, p.y - path[0]!.y) > 5);
+
+      if (i === 0) check("N 光标飞过去：圈出现后能看到光标在半路，最后停到目标旁", midway.length >= 2 && atCorner(path.at(-1)!), { midway: midway.slice(0, 8), samples: path.length, start: path[0]!, target: r });
       await sleep(1500);
       const parked = await hold();
       titles.push(await runTitle());
@@ -327,7 +330,7 @@ try {
     await ask(ASK.r);
     const reduced = await guideShown(SAY[0]!);
     const rRect = await rectOf("#settings");
-    check("R 减少动态效果：第一次读到圈时光标已经在目标右下角（不飞行）", nearCorner(reduced.first, rRect), { first: reduced.first, target: rRect });
+    check("R 减少动态效果：圈出现时光标已经在目标右下角，之后一直不动（不飞行）", reduced.path.every(p => nearCorner({ ...p } as Hold, rRect)), { path: reduced.path.filter((_, k) => k % 5 === 0), samples: reduced.path.length, target: rRect });
     await userClick((await markCenter())!);
     await answered("R 完成。");
     await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, work);

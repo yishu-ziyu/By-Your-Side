@@ -541,7 +541,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         inst.highlightEl = undefined;
       }
 
-      cancelFly(inst);
+      // 教学的光标正在飞往目标：交给 relayoutHolds 决定要不要改航线，不在这里打断。
+      if (!inst.hold?.corner) cancelFly(inst);
 
       if (inst.visible && !inst.hold) {
         const home = homeFor(inst.restIndex, inst.el.dataset.primary === "true");
@@ -628,10 +629,18 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
       if (!hold) continue;
       const anchor = liveAnchor(hold);
+      const before = hold.point;
 
       if (anchor) hold.point = holdPoint(anchor.getBoundingClientRect(), hold.corner);
 
       if (inst.visible) inst.el.classList.remove("hidden");
+
+      // 教学的光标还在飞：画圈时常跟着一次尺寸没变的 resize，直接跳到终点就看不到它飞过去了。
+      if (hold.corner && inst.raf !== undefined) {
+        if (Math.hypot(hold.point.x - before.x, hold.point.y - before.y) > 1) flyTo(inst, hold.point);
+        continue;
+      }
+
       cancelFly(inst);
       setPos(inst, hold.point);
     }
@@ -1232,6 +1241,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     /** 网页上次变化（不算助手自己的浮层）的时刻。 */
     lastChange: number;
     down: { at: number; url: string } | null;
+    /** 松开后等 click：网页在按下时把目标整块重画，浏览器就不发 click，这时按松开算这一下。 */
+    upTimer?: ReturnType<typeof setTimeout>;
     /** 点中以后在看页面有没有变化。 */
     checking: { since: number; url: string; timer: ReturnType<typeof setTimeout>; poll: ReturnType<typeof setInterval> } | null;
   }
@@ -1349,10 +1360,25 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     }
   }
 
-  function onGuideClick(ev: MouseEvent): void {
+  function onGuideUp(ev: PointerEvent): void {
     const g = guide;
 
-    if (!g || !ev.isTrusted || g.checking) return;
+    if (!g || !ev.isTrusted || ev.button !== 0) return;
+    clearTimeout(g.upTimer);
+    // click 紧跟在松开后同步派发；到这个定时器时还没来，就是浏览器不会发了。
+    g.upTimer = setTimeout(() => onGuidePress(ev), 50);
+  }
+
+  function onGuideClick(ev: MouseEvent): void {
+    if (!guide || !ev.isTrusted) return;
+    clearTimeout(guide.upTimer);
+    onGuidePress(ev);
+  }
+
+  function onGuidePress(ev: MouseEvent): void {
+    const g = guide;
+
+    if (!g || g.checking) return;
     const path = ev.composedPath();
 
     // 点在助手自己的浮层上（停止条、确认框）不算这一步的点击。
@@ -1393,6 +1419,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     window.removeEventListener("click", onGuideClick, true);
     window.removeEventListener("pointerdown", onGuideDown, true);
     window.removeEventListener("pointermove", onGuideMove, true);
+    window.removeEventListener("pointerup", onGuideUp, true);
+    clearTimeout(g.upTimer);
     g.observer.disconnect();
 
     if (g.checking) {
@@ -1444,6 +1472,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     window.addEventListener("click", onGuideClick, true);
     window.addEventListener("pointerdown", onGuideDown, true);
     window.addEventListener("pointermove", onGuideMove, true);
+    window.addEventListener("pointerup", onGuideUp, true);
     drawGuideMark(g, say);
     holdAtGuide(g);
 
