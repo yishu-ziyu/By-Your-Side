@@ -947,8 +947,10 @@ $("main-pick").addEventListener("click", () => {
   search.focus({ preventScroll: true });
 });
 
-/** 阶跃的文字模型每次都先思考，官方接口关不掉；用作即时动作会让解释、翻译等十几秒才出字。 */
+/** 阶跃的三个文字模型每次都先思考（10-11 实测，step-3.5-flash 也一样），官方接口关不掉。 */
 const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PROVIDER_ID;
+
+const THINKS_NOTE = "阶跃模型总会先想一下，解释和翻译因此会慢几秒。还嫌慢，可以选一个快速模型。";
 
 /** 只列已填 key 或已登录的服务商的模型，选了就能用；另保留当前已存的选择。 */
 function renderFastModels(): void {
@@ -957,8 +959,8 @@ function renderFastModels(): void {
   const slow = fastConfig ? alwaysThinks(fastConfig) : alwaysThinks(config);
 
   // 保存会触发存储变化、重新渲染：只增减「会很慢」的提醒，不清掉刚显示的「已保存」。
-  if (slow) setStatus(fastStatus, "阶跃模型每次回答前都会先思考，解释和翻译要十几秒才出字。换一个快速模型会快很多。", "err");
-  else if (fastStatus.dataset.tone === "err") setStatus(fastStatus, "");
+  if (slow) setStatus(fastStatus, THINKS_NOTE);
+  else if (fastStatus.textContent === THINKS_NOTE) setStatus(fastStatus, "");
 }
 
 async function saveFastModel(): Promise<void> {

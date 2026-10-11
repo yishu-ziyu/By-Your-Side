@@ -50,9 +50,10 @@ const MEASURED = new Map<string, MeasuredCapability>([
   ["opencode-go/mimo-v2.6-flash", { reasoning: true, input: ["text"], thinkingLevelMap: { minimal: null } }],
   // 始终思考，接受 reasoning_effort minimal–high；developer 角色里的指令被忽略、直接和用户聊天，system 角色正常；能看图。
   ["stepfun/step-3.7-flash", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null }, systemRole: true }],
-  // 能看图（同一张图实测答对）；思考参数未测，按保守默认不发。
-  ["stepfun/step-5-preview", { reasoning: false, input: ["text", "image"] }],
-  // 发图回 400「doesn't support image input」。
+  // 能看图（同一张图实测答对）。10-11 实测：reasoning_effort 接受 low / medium / high，low 出字最快（2.7 秒，中档 6.0 秒），
+  // 所以起始档用低档（用户 10-11 定）；developer 角色里「只回 JSON」5 次全被忽略，system 角色 5 次全守。
+  ["stepfun/step-5-preview", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null, minimal: null }, systemRole: true, start: "low" }],
+  // 发图回 400「doesn't support image input」。10-11 实测：各档都回 200，但思考长短与档位无关（low 比 high 想得更长），所以不登记档位。
   ["stepfun/step-3.5-flash", { reasoning: false, input: ["text"] }],
 ]);
 
