@@ -16,6 +16,10 @@
 - P3（#236 侧栏部分）「圈出来问」的按键按系统写：Mac 写 ⌘⇧S，其他系统写 Ctrl+Shift+S — 谁检查：同一命令，本机一次、模拟 Linux 一次
 - P4（#236）设置页和侧栏声明不翻译 — 谁检查：人，在英文界面的真实 Chrome 里打开设置页，看不到翻译栏（本次没查）
 
+## 还没答上的问题
+
+- 无。#233 的 Q1 由用户裁决为自动发送；Q2（连模型期间又打了新的话）按「重发原话，新草稿留在输入框不动」处理。
+
 ## 技术前提
 
 - 前提：脚本模型能在无头 Chrome 里经设置页真实连上（`configureViaSettings` 填自定义地址）。结果：通过，`welcome-context` 已在用。
@@ -39,5 +43,8 @@
 
 ## 结果（10-11，分支 fix/first-run-sidepanel）
 
-- `first-run-sidepanel.mts`：15 项全部通过。证据：`out/acceptance/real-path/*-first-run-sidepanel/`（截图 01 空侧栏、03 卡片、04 重发后、05 新会话）。
-- 把后台修复改回原样再跑：R1 失败，其他项通过；恢复后通过。
+- `first-run-sidepanel.mts`：16 项全部通过。证据：`out/acceptance/real-path/2026-10-11T08-14-45-365Z-first-run-sidepanel/`（截图 01 空侧栏、03 卡片、04 重发后、05 新会话）。
+- 把后台修复改回原样再跑：R1 失败（20 秒都没出现），其他项通过；恢复后通过。
+- 同批跑过且通过：`no-model-card`、`new-conversation-draft`、`welcome-context`、`proactive-card`、`sidebar-interaction`、`session-durability`、`same-tab-new-conversation`。
+- `offline-send-and-model-menu` 失败。它在 main `6a8587b` 上同样失败（点 `#model-btn` 后模型菜单不展开），与本次改动无关。
+- 没跑 `smoke`：它要真实模型凭据。
