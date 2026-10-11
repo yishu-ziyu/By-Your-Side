@@ -8,6 +8,7 @@
  * (c) 的回执仍是 interactive/complete，并带新页面的快照；(d) 的回执说 Chrome 显示了错误页，不说 complete；
  * (e) 不是报错，回执说开始了下载、Chrome 关掉了新标签页，下载目录里真有这个文件；
  * (f) 等待上限先到，回执仍说开始了下载、还没存好，不是 timeout，也不说存好。
+ * (g) browser_run 里 browser.js 返回 {value: null}，程序按 #256 的写法拿它的 .url 去 navigate：几秒内报错，报错点明 .value，不等满 30 秒。
  * 失败方式：去掉等待里的浏览器通知，(a)(b) 都等满 30 秒、回执是 timeout；把错误页当成加载完，(d) 回执是 complete（反例结果见验收文件）。
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -65,6 +66,7 @@ const steps: Step[] = [
   { tool: { name: "navigate", args: { url: unreachable } } },
   { tool: { name: "tabs", args: { action: "open", url: `${origin}/report?month=1` } } },
   { tool: { name: "navigate", args: { url: `${origin}/slow`, timeout: 1 } } },
+  { tool: { name: "browser_run", args: { code: 'const first = await browser.js({code: "null"}); if (first) await browser.navigate({url: first.url}); return "done";' } } },
   { text: FINAL },
 ];
 
@@ -110,13 +112,13 @@ try {
 
   const last = payloads.at(-1);
   receipts = (last?.messages ?? []).filter(m => m.role === "tool").map(m => textOf(m.content));
-  durations = [0, 1, 2, 3, 4, 5].map(k => (requestAt[k + 1] ?? NaN) - (requestAt[k] ?? NaN));
+  durations = [0, 1, 2, 3, 4, 5, 6].map(k => (requestAt[k + 1] ?? NaN) - (requestAt[k] ?? NaN));
   downloaded = await readdir(rp.dirs.downloads);
   await rp.screenshot(panel, screenshot);
 
   const file = await until(async () => (await readFile(join(rp.dirs.downloads, "list.csv")).catch(() => null)) ?? undefined, 5_000, "list.csv in downloads").catch(() => Buffer.alloc(0));
   const report = await until(async () => (await readFile(join(rp.dirs.downloads, "report.csv")).catch(() => null)) ?? undefined, 5_000, "report.csv in downloads").catch(() => Buffer.alloc(0));
-  const [a = "", b = "", c = "", d = "", e = "", f = ""] = receipts;
+  const [a = "", b = "", c = "", d = "", e = "", f = "", g = ""] = receipts;
 
   // (a) 导出地址变成下载：很快返回，回执说开始了下载并写出文件名，文件真存在且字节相同。
   check(`(a) attachment navigate returned in ${durations[0]} ms`, durations[0]! < LIMIT_MS);
@@ -140,6 +142,10 @@ try {
 
   // (f) 等待上限先到、下载还没完：回执仍带这次下载，如实说还没存好。
   check("(f) receipt keeps the download and says it is not saved yet", /document: download/.test(f) && f.includes('"slow.csv"') && /not saved yet/.test(f) && !/reports it complete/.test(f));
+
+  // (g) 程序拿 {value} 包装当网址：很快报错，报错说网址在 .value 里。
+  check(`(g) navigate without url returned in ${durations[6]} ms`, durations[6]! < LIMIT_MS);
+  check("(g) receipt says navigate needs a url and points at .value", /navigate 需要 url/.test(g) && /\.value/.test(g));
 
   if (checks.some(item => !item.pass)) throw new Error(`failed: ${checks.filter(item => !item.pass).map(item => item.name).join(" | ")}`);
 } catch (caught) {
