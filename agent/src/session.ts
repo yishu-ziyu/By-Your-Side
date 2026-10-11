@@ -2270,6 +2270,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown; url?: unknown; title?: unknown }>).catch(() => null)
         : null;
 
+      // 只有读页要用调试器：读完就告诉扩展，横幅不用陪着等模型的几秒（#259）。
+      if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "checking", pageRead: true });
+
       const lastReply = this.runReplyText(event.messages);
       const pageText = page ? String(page.text ?? "") : "";
       endedOn = page ? String(page.url ?? "") : "";
