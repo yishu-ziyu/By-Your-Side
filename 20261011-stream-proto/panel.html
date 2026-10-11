@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>侧栏 · 回答流式</title>
+<link rel="stylesheet" href="product-styles.css">
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<div class="panel">
+  <div id="messages-frame">
+    <div id="messages"></div>
+    <div class="scroll-fade" data-edge="top" aria-hidden="true"></div>
+    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"></div>
+  </div>
+  <div class="composer-stub"><span>补充或改方向…</span><i></i></div>
+</div>
+<script src="vendor/marked.umd.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="stream.js"></script>
+<script src="current.js"></script>
+<script src="new.js"></script>
+<script src="panel.js"></script>
+</body>
+</html>
