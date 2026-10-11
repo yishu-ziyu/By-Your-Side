@@ -89,11 +89,11 @@ try {
   const shownAfterMs = Date.now() - opened;
   await rp.screenshot(panel, join(out, "01-empty-no-model.png"));
   const first = empty ?? await view(panel);
-  check("R1 没连模型、没输入时，2 秒内显示「先连一个模型」和「连一个模型」按钮，建议收起", !!empty && shownAfterMs <= 2000 && first.title === "先连一个模型" && first.connectText === "连一个模型" && !first.suggestionsShown, { shownAfterMs, title: first.title, connect: first.connectText, suggestions: first.suggestionsShown });
+  check("R1 没连模型、没输入时，2 秒内显示「先连接模型」和「连接模型」按钮，建议收起", !!empty && shownAfterMs <= 2000 && first.title === "先连接模型" && first.connectText === "连接模型" && !first.suggestionsShown, { shownAfterMs, title: first.title, connect: first.connectText, suggestions: first.suggestionsShown });
 
   await rp.click(panel, "#starter-connect");
   const starterSettings = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "入口打开设置页").catch(() => null);
-  check("R1 点「连一个模型」打开模型设置页", !!starterSettings);
+  check("R1 点「连接模型」打开模型设置页", !!starterSettings);
   if (starterSettings) await rp.cdp.send("Target.closeTarget", { targetId: starterSettings.targetId });
 
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled === false') || undefined, 30_000, "会话就绪");

@@ -24,7 +24,7 @@ try {
   await until(async () => await rp.evaluate(panel, '!!document.querySelector(".receipt-decision button")') || undefined, 30_000, '连模型卡片');
   await sleep(300);
   await rp.screenshot(panel, join(out, 'card.png'));
-  results.push(['回复是带按钮的卡片，不是折起的灰字', await rp.evaluate(panel, 'document.querySelector(".receipt-decision button").textContent === "连一个模型" && !document.querySelector("details.receipt")')]);
+  results.push(['回复是带按钮的卡片，不是折起的灰字', await rp.evaluate(panel, 'document.querySelector(".receipt-decision button").textContent === "连接模型" && !document.querySelector("details.receipt")')]);
   results.push(['卡片说连好以后这句话会自动发出（#233）', await rp.evaluate(panel, 'document.querySelector(".receipt-decision p")?.textContent === "连好以后，这句话会自动发出。"')]);
   await rp.click(panel, '.receipt-decision button');
   const settings = await until(async () => (await rp.targets()).find((t) => t.url.endsWith('/settings.html')), 10_000, '设置页').catch(() => undefined);

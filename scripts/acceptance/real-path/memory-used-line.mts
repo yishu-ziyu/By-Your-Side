@@ -330,13 +330,13 @@ try {
   const line2 = await lastLine();
   const byId = (id: string) => line2?.items.find((i) => i.id === id);
   check("R2", "展开后列出点名的每条原文；过往任务显示摘要；不列「回复用中文」", !line2?.listHidden && byId("seed-email")?.text === EMAIL && !byId("seed-lang") && byId("seed-task")?.text === TASK_SUMMARY, { items: line2?.items ?? null });
-  check("R2", "每条都有「忘掉」和「这里别用」", !!line2 && line2.items.length === expectedN && line2.items.every((i) => i.buttons.includes("忘掉") && i.buttons.includes("这里别用")), { buttons: line2?.items.map((i) => i.buttons) ?? null });
+  check("R2", "每条都有「忘记」和「在这个网站不用」", !!line2 && line2.items.length === expectedN && line2.items.every((i) => i.buttons.includes("忘记") && i.buttons.includes("在这个网站不用")), { buttons: line2?.items.map((i) => i.buttons) ?? null });
   await shot("R2-expanded");
 
   // R3：A 店「这里别用」。
-  await clickLine("seed-email", "这里别用");
+  await clickLine("seed-email", "在这个网站不用");
   const marked = await lastLine();
-  check("R3", "点「这里别用」后这条写明在 A 店不用", marked?.items.find((i) => i.id === "seed-email")?.state === "not-here" && marked.items.find((i) => i.id === "seed-email")?.note === `在 ${SITE_A} 不用`, { item: marked?.items.find((i) => i.id === "seed-email") ?? null });
+  check("R3", "点「在这个网站不用」后这条写明在 A 店不用", marked?.items.find((i) => i.id === "seed-email")?.state === "not-here" && marked.items.find((i) => i.id === "seed-email")?.note === `在 ${SITE_A} 不用`, { item: marked?.items.find((i) => i.id === "seed-email") ?? null });
   await shot("R3-not-here-clicked");
   const aAgain = has(await turn());
   check("R3", "同一网站下一轮：请求里没有这条，别的照常带", !aAgain.email && aAgain.lang, aAgain);
@@ -358,10 +358,10 @@ try {
   check("R3", "面板里点「恢复」后：标注消失，A 店下一轮又带这条", !rowAfter.includes("不用") && restored.email, { rowAfter, restored });
 
   // R4：忘掉 → 撤销。
-  await clickLine("seed-email", "忘掉");
+  await clickLine("seed-email", "忘记");
   const forgot = await lastLine();
   const forgotItem = forgot?.items.find((i) => i.id === "seed-email");
-  check("R4", "点「忘掉」后这条写明已忘掉，并给「撤销」", forgotItem?.state === "forgotten" && forgotItem.buttons.includes("撤销"), { item: forgotItem ?? null });
+  check("R4", "点「忘记」后这条写明已忘记，并给「撤销」", forgotItem?.state === "forgotten" && forgotItem.buttons.includes("撤销"), { item: forgotItem ?? null });
   await shot("R4-forgotten");
   const gone = (await storedMemories()).some((e) => e.id === "seed-email");
   const afterForget = has(await turn());

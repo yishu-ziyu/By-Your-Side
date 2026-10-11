@@ -69,7 +69,7 @@ export function shareResource(map: TabResourceMap, tabId: number, ownerKey: stri
   const collaborators = [...new Set([ownerKey, ...(current?.collaborators ?? []), ...collaboratorKeys])];
 
   for (const key of collaborators) {
-    if (parseExecutionKey(key).conversationId !== owner.conversationId) throw new Error("标签页只能与同一会话的执行成员共享");
+    if (parseExecutionKey(key).conversationId !== owner.conversationId) throw new Error("标签页只能和同一会话里的助手共享");
   }
 
   return { ...map, [String(tabId)]: { tabId, conversationId: owner.conversationId, mode: "shared", collaborators } };

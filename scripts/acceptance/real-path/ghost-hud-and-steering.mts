@@ -145,14 +145,14 @@ try {
   const steerAt = steered.findIndex(m => m.role === 'user' && text(m).includes('把正在写的回答改成对比表格'));
   check('新请求带原半截正文（长文前缀、没写完）和改方向原话', half.length > 0 && LONG.startsWith(half) && half.length < LONG.length && steerAt > steered.findIndex(m => m.role === 'assistant'), { half: half.length, total: LONG.length, steerAt });
   const view = await rp.evaluate(panel, '({table:!!document.querySelector(".msg.assistant table"),tag:document.querySelector(".steer-tag")?.textContent??null,errors:[...document.querySelectorAll(".msg.error")].map(e=>e.textContent),tail:document.querySelector("#messages").textContent.includes(' + JSON.stringify(TAIL) + '),answers:document.querySelectorAll(".answer-actions").length,users:[...document.querySelectorAll(".msg.user")].map(u=>u.textContent)})');
-  check('回答换成表格并挂改方向标记', view.table && view.tag === '⚡ 已改方向：改成对比表格', view);
+  check('回答换成表格并挂改方向标记', view.table && view.tag === '已改方向：改成对比表格', view);
   check('不出错误、原长文末句没写出来', view.errors.length === 0 && !view.tail, view);
   const mainRequests = model.requests.filter(r => r.tools).map(r => r.rule);
   check('同一轮：主模型只调两次（被截断的一次 + 重写），只有一个最终回答，历史里有改方向原话', JSON.stringify(mainRequests) === JSON.stringify(['对比 Ingress', '改成对比表格']) && view.answers === 1 && view.users.some((u: string) => u.includes('改成对比表格')), { mainRequests, answers: view.answers });
   await rp.cdp.send('Page.reload', {}, panel);
   await until(async () => await rp.evaluate(panel, '!!document.querySelector(".msg.assistant table")'), 20000, 'history');
   const replay = await rp.evaluate(panel, '({tag:document.querySelector(".steer-tag")?.textContent??null,users:[...document.querySelectorAll(".msg.user")].map(u=>u.textContent).length,conversations:document.querySelector("#conversation-switcher").textContent})');
-  check('重开侧栏后历史保留改方向与表格', replay.tag === '⚡ 已改方向：改成对比表格' && replay.users === 2, replay);
+  check('重开侧栏后历史保留改方向与表格', replay.tag === '已改方向：改成对比表格' && replay.users === 2, replay);
 } catch (error) { check('流程完成', false, String(error)); } finally {
   await writeFile(join(out, 'result.json'), JSON.stringify({ checks, notCovered: ['真实 YouTube/Bilibili 页面', '供应商模型改写质量', '动效手感（人看）'], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(r => site.close(() => r()));

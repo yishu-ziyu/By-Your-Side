@@ -306,7 +306,8 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
 
 /** 按住说话没成的那一行说明（#125 R4）。 */
 function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
- if (reply.reason === "empty") return "按住右 ⌥ 说话时没有听到声音，再说一次试试。";
+ // 按住说话认的是右 Alt（macOS 上叫右 ⌥）：只有 macOS 写符号。
+ if (reply.reason === "empty") return `按住${/Mac/i.test(navigator.userAgent) ? "右 ⌥" : "右 Alt"}说话时，没有听到声音。再说一次。`;
 
  if (reply.reason === "timeout") return "听写超时了，再说一次试试。";
 
@@ -929,7 +930,7 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
 }
 
 // 提示条只在助手操作页面时出现：说明跟着这一轮走，结束后不再压在回答上方（#103）。
-setDebugBannerNotice(() => broadcastVisibleServer({ type: "agent_event", event: { kind: "notice", aside: true, message: "Chrome 顶部的“正在调试此浏览器”是助手在操作页面，任务结束后可以关掉，不影响你的数据。" } }));
+setDebugBannerNotice(() => broadcastVisibleServer({ type: "agent_event", event: { kind: "notice", aside: true, message: "Chrome 顶部的“正在调试此浏览器”，表示助手在操作页面。任务结束后，可以关掉这条提示，不影响你的数据。" } }));
 
 /** T03：每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
 const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();
@@ -1001,7 +1002,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       void showUserControlGuarded(pending.tabId);
     }
 
-    emitNotice(msg.reason ?? `${msg.action === "takeover" ? "接管" : "交还"}没有被 Agent 接受。`, "error");
+    emitNotice(msg.reason ?? `${msg.action === "takeover" ? "接管" : "交还"}没有被助手接受。`, "error");
 
     return;
   }
@@ -1028,7 +1029,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       cancelTakeover(pending);
       team.clear();
       emitLocalStatus(pending.fallbackStatus);
-      emitNotice("接管确认与本地状态不一致，已停止切换控制权。", "error");
+      emitNotice("接管没有完成。页面控制没有改变。", "error");
 
       return;
     }
@@ -1073,7 +1074,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
   if (!msg.ok && !anyRestored) {
     emitLocalStatus("user");
     void showUserControlGuarded(pending.tabId);
-    emitNotice(msg.reason ?? "交还没有被 Agent 接受。", "error");
+    emitNotice(msg.reason ?? "交还没有被助手接受。", "error");
     emitTeam();
 
     return;
@@ -1206,7 +1207,7 @@ return;}
         const current=team.view();
 
         if(current?.phase==='restored')finishRemoteControl(true);
-        else if(current?.phase==='partial'&&!current.members.some(m=>m.phase==='restoring'))finishRemoteControl(false,'部分成员未能恢复，请查看仍然暂停的页面。',false,current.members.some(m=>m.phase==='restored'));
+        else if(current?.phase==='partial'&&!current.members.some(m=>m.phase==='restoring'))finishRemoteControl(false,'有的页面没有交还成功。看一下还在暂停的页面。',false,current.members.some(m=>m.phase==='restored'));
       }
     } else if (msg.type === "control_result") {
       handleControlResult(msg);
@@ -1541,7 +1542,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     groupId: frozen?.groupId,
     fallbackStatus,
     timeout: new PendingControlTimeout(CONTROL_TIMEOUT_MS, () =>
-      failPendingControl(requestId, "Agent 没有确认接管，控制权没有切换。"),
+      failPendingControl(requestId, "助手没有确认接管。页面还在助手手里。"),
     ),
   };
   pendingControl.timeout.arm();
@@ -1562,7 +1563,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
     if (pending?.action === "takeover" && pending.pageTabId == null) gate.commitTakeover(result.generation);
     emitLocalStatus("user");
-    emitNotice("本地已接管。Agent 未连接，页面写入已停。");
+    emitNotice("已接管。助手没有连接，不会再改页面。");
   }
 }
 
@@ -1570,7 +1571,7 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   await controlReady;
 
   if (handbackCapture) {
-    emitNotice("正在读取绑定页，请稍候。");
+    emitNotice("正在读原任务的页面…");
 
     return;
   }
@@ -1633,7 +1634,7 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
         snapshot = (await snapshotTab(bound.id)).text;
       } catch (e) {
         snapshotError = oneLine(e);
-        emitNotice(`读不了 ${displayNameFor(member.sessionId)} 的页面：${snapshotError}。该成员仍归你。`, "error");
+        emitNotice(`读不了 ${displayNameFor(member.sessionId)} 的页面：${snapshotError}。这个页面仍归你。`, "error");
       }
     }
 
@@ -1662,7 +1663,7 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
     requestId,
     tabId: leadPage && leadPage.ok ? leadPage.context.tabId : activeId ?? 0,
     timeout: new PendingControlTimeout(CONTROL_TIMEOUT_MS, () =>
-      failPendingControl(requestId, "Agent 没有确认交还，页面仍归你。"),
+      failPendingControl(requestId, "助手没有确认交还。页面仍归你。"),
     ),
   };
   pendingControl.timeout.arm();
@@ -1740,7 +1741,7 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   if (taskRequestId) abort.taskRequestId = taskRequestId;
   const sent=uplink.sendClientMessage(abort);
 
-  if(taskRequestId&&!sent)throw new Error('终止请求未送达Agent。');
+  if(taskRequestId&&!sent)throw new Error('中止请求没有送到助手。');
   await completion;
 }
 
@@ -1767,7 +1768,7 @@ return;}
       const backend=new Promise<boolean>(resolve=>current.abortAck=resolve);
       await handleAbort(request.requestId);const stopped=await backend;
 
-      if(remoteControl===current)finishRemoteControl(stopped,stopped?undefined:'Agent停止状态未能确认。',!stopped);
+      if(remoteControl===current)finishRemoteControl(stopped,stopped?undefined:'还不能确认助手已中止。',!stopped);
 
       return;
     }
@@ -1778,7 +1779,7 @@ return;}
       if(request.action==='pause'&&gate.isUser())finishRemoteControl(true);
       else if(request.action==='resume'&&team.view()?.members.some(m=>m.phase==='restoring'))return;
       else if(request.action==='resume'&&team.view()?.phase==='restored')finishRemoteControl(true);
-      else finishRemoteControl(false,'页面控制没有启动，原有控制权保持不变。');
+      else finishRemoteControl(false,'页面控制没有改变。');
     }
   }catch(error){if(remoteControl===current)finishRemoteControl(false,oneLine(error),true);}
 }
@@ -2095,7 +2096,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     if (!sender.tab?.id || sender.frameId !== 0 || typeof msg.text !== "string") return;
     const text = clipSelection(msg.text);
 
-    if (!text) { sendResponse({ ok: false, error: "请先选择文字。" });
+    if (!text) { sendResponse({ ok: false, error: "先选中一段文字。" });
 
       return; }
     // Open synchronously in the originating gesture; trust sender metadata, not page payload.
@@ -2123,7 +2124,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         sendResponse({
           ok: true,
           dataUrl,
-          title: tab.title ?? "网页截屏",
+          title: tab.title ?? "页面截图",
           url: tab.url ?? "",
         });
       } catch (err) {
@@ -2158,7 +2159,7 @@ async function importReading(record: ReadingRecord): Promise<void> {
 
     if (turn.answer) recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'text_delta', delta: turn.answer}, conversationId}});
 
-    if (turn.state === 'stopped' || turn.state === 'error') recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'notice', message: turn.state === 'stopped' ? '这条阅读回答已停止。' : '这条阅读回答未完成。'}, conversationId}});
+    if (turn.state === 'stopped' || turn.state === 'error') recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'notice', message: turn.state === 'stopped' ? '已停止回答。' : '这条阅读回答未完成。'}, conversationId}});
     recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'agent_end'}, conversationId}});
   }
 

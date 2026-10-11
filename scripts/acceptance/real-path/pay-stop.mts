@@ -154,7 +154,7 @@ try {
   const toolA = toolTexts.slice(from);
   const runA = await lastRun();
   const textA = String(await rp.evaluate(panel, 'document.querySelector("#messages").textContent'));
-  check("a 侧栏：那一步写「停在付款前，等你自己点」，不标失败", !!runA?.steps.some(s => s.text.includes(STOPPED)) && runA.steps.every(s => !s.error) && !runA.title.includes("没成功"), { run: runA });
+  check("a 侧栏：那一步写「停在付款前，等你自己点」，不标失败", !!runA?.steps.some(s => s.text.includes(STOPPED)) && runA.steps.every(s => !s.error) && !runA.title.includes("没做成"), { run: runA });
   check("a 助手收到的结果：扩展不点付款按钮，用户自己点，不要换办法", toolA.length > 0 && toolA.every(t => t.includes("does not click payment buttons") && t.includes("do not press Enter")), { tool: toolA });
   check("b 同一轮再点三次：仍 0 条，不当成连续出错", count("/pay") === 0 && toolA.length === 4 && !/连续三次/.test(textA), { pay: count("/pay"), tools: toolA.length, threeInRow: /连续三次/.test(textA) });
   await panelShot("a-panel.png");

@@ -484,7 +484,7 @@ try {
     measured.stopStepChips = await rp.evaluate(panel, '[...document.querySelectorAll(".run-steps")].at(-1)?.querySelectorAll(".chip:not(.prep)") ? [...[...document.querySelectorAll(".run-steps")].at(-1).querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.textContent.trim(), error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) : null');
     await rp.screenshot(panel, join(out, "s-panel.png"));
     const stopChips = (measured.stopStepChips ?? []) as Array<{ text: string; error: boolean }>;
-    check("S 侧栏把停下的那一步写成「你停下了，这一步没做完」，不画成失败", stopChips.some(c => c.text.includes("你停下了，这一步没做完") && !c.error), { chips: stopChips });
+    check("S 侧栏把停下的那一步写成「你中止了，这一步没做完」，不画成失败", stopChips.some(c => c.text.includes("你中止了，这一步没做完") && !c.error), { chips: stopChips });
     // S 停下后没有下一次模型请求；它的工具结果随下一次请求的历史送到模型这边。
     await openPage("");
     await ask(ASK.r);

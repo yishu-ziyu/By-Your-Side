@@ -326,7 +326,7 @@ export class MemoryRuntime {
   private visitedUrls: () => string[] = () => [];
   /** 之前几轮最近操作过的网站：本轮没碰网页时的后备。 */
   private lastWebHost: string | null = null;
-  /** 这一轮带给助手的资料：填表的值和其中一条对上，网页上那一格标「记得的」（YIS-87）。 */
+  /** 这一轮带给助手的资料：填表的值和其中一条对上，网页上那一格标「来自记忆」（YIS-87）。 */
   private usedThisTurn: MemoryEntry[] = [];
 
   constructor(
@@ -988,7 +988,7 @@ export class MemoryRuntime {
 
   /**
    * 改过页面的任务结束时：问快速模型这是哪一类会反复做的事（key + 一句做法），计入习惯计数。
-   * 同一 key 出现在 3 个不同对话里时，用纠正询问那张卡问一次「你好像总是…，要我记住吗」；只有点「记住」才保存。
+   * 同一 key 出现在 3 个不同对话里时，用纠正询问那张卡问一次「你好像每次都这样做：…。要我记住吗」；只有点「记住」才保存。
    */
   async noticeHabit(task: Pick<TaskHistoryEntry, "goal" | "revisions" | "hosts" | "summary">): Promise<void> {
     if (!this.complete || looksSecret(task.goal)) return;

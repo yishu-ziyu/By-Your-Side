@@ -89,7 +89,7 @@ export function mountErrorCards(host: ErrorCardHost) {
 
     const settings = document.createElement("button");
     settings.type = "button";
-    settings.textContent = "去设置里加新模型…";
+    settings.textContent = "去设置里连接其他模型…";
     settings.addEventListener("click", () => { menu.hidden = true; void chrome.runtime.openOptionsPage(); });
     menu.append(settings);
     trigger.addEventListener("click", () => { menu.hidden = !menu.hidden; });
@@ -104,7 +104,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     const tick = () => {
       if (!b.isConnected) return;
 
-      if (left === 0) return recover("已稍后重试");
+      if (left === 0) return recover("已重试");
       b.textContent = `${left} 秒后自动重试…`;
       left -= 1;
       setTimeout(tick, 1000);
@@ -126,7 +126,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     root.append(head, text, row);
 
     if (copy.kind === "auth") {
-      const fix = button("去换 key", "fix-key", true);
+      const fix = button("换密钥", "fix-key", true);
       fix.addEventListener("click", () => openKeySheet(copy));
       const again = button("仍然重试", "retry-anyway");
       again.addEventListener("click", () => recover("已重试"));
@@ -152,7 +152,7 @@ export function mountErrorCards(host: ErrorCardHost) {
       row.append(again);
       const note = document.createElement("p");
       note.className = "error-card-note";
-      note.textContent = "网络恢复后会自动重试一次，不用盯着。";
+      note.textContent = "网络恢复后，助手会自动重试一次。";
       root.append(note);
       const online = () => recover("网络恢复后已自动重试");
       addEventListener("online", online, { once: true });
@@ -177,11 +177,11 @@ export function mountErrorCards(host: ErrorCardHost) {
     const sheet = document.createElement("section");
     sheet.id = "key-sheet";
     sheet.setAttribute("role", "dialog");
-    sheet.setAttribute("aria-label", "换一个 key");
-    sheet.innerHTML = `<span class="key-sheet-grab"></span><h3>换一个 key</h3>
+    sheet.setAttribute("aria-label", "换密钥");
+    sheet.innerHTML = `<span class="key-sheet-grab"></span><h3>换密钥</h3>
       <div class="key-sheet-model"><span></span><span></span></div>
-      <input id="key-sheet-input" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴新的 API key">
-      <p class="key-sheet-note">key 只存在这台电脑。用账号登录的服务，也可以<button type="button" class="key-sheet-link">去设置里重新登录</button>。</p>
+      <input id="key-sheet-input" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴新密钥">
+      <p class="key-sheet-note">密钥只存在这个浏览器里。如果你用账号登录，就<button type="button" class="key-sheet-link">去设置里重新登录</button>。</p>
       <div class="key-sheet-actions">
         <button type="button" id="key-sheet-test" class="btn-quiet">测试连接</button>
         <button type="button" id="key-sheet-save" class="btn-primary" disabled>保存并继续</button>
@@ -205,7 +205,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     test.addEventListener("click", async () => {
       const key = input.value.trim();
 
-      if (!key) { status.dataset.tone = "err"; status.textContent = "先粘贴新的 key。";
+      if (!key) { status.dataset.tone = "err"; status.textContent = "先粘贴新密钥。";
 
  return; }
 
@@ -244,7 +244,7 @@ export function mountErrorCards(host: ErrorCardHost) {
       save.disabled = true;
       await host.saveKey(provider, key);
       close();
-      recover("已换 key", key);
+      recover("已换密钥", key);
     });
     host.app.append(sheet);
     requestAnimationFrame(() => { sheet.classList.add("is-open"); input.focus(); });

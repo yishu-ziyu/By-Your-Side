@@ -234,7 +234,7 @@ export class ArtifactCards {
       // Loading the new version is an explicit decision (close and reopen).
       const notice = document.createElement("p");
       notice.className = "artifact-inline-stale";
-      notice.textContent = "文件已更新。当前预览保留填写内容；收起后重新展开可查看新版。";
+      notice.textContent = "文件已更新。预览里还是你填的内容。收起再展开，就能看新版。";
       card.inlineRoot.appendChild(notice);
     }
 

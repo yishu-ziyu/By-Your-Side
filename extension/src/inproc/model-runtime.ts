@@ -155,7 +155,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   const sessionId = crypto.randomUUID();
 
   function resolveModel(config: InprocModelConfig | null): Model<Api> {
-    if (!config?.provider || !config.modelId) throw new Error("还没有配置模型：打开右上角「更多 → 模型与语音」选择服务商。");
+    if (!config?.provider || !config.modelId) throw new Error("还没有连接模型。打开「更多 → 模型与语音」，选一个服务商。");
 
     if (config.provider === CUSTOM_PROVIDER_ID) {
       if (!config.baseUrl) throw new Error("自定义服务缺少地址：在「模型与语音」里填写。");

@@ -33,7 +33,7 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
   }
 
   if (c.state === 'running') {
-    return '后台运行中';
+    return '正在运行';
   }
 
   if (c.state === 'user') {
@@ -41,7 +41,7 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
   }
 
   // 顶部条挂在当前对话上方，要说清这是另一个对话（#103）。
-  return '另一个对话结束了';
+  return '另一个会话的任务结束了';
 }
 
 /** 结果卡：摘要是主信息，剩余项和声音失败弱化。没有摘要时整张卡不出现。 */
@@ -67,7 +67,7 @@ export function resultCardCopy(opts: {
   if (summary) {
     primary = summary;
   } else if (opts.unknown) {
-    primary = "这次结果还没法确认";
+    primary = "这次结果未知";
   } else if (remaining.length) {
     primary = `还剩${remaining.join("、")}`;
   } else {

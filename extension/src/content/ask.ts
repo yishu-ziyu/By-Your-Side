@@ -86,7 +86,7 @@ function boot(): void {
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar"><button class="ask" data-act="ask"><span class="identity"></span>问 AI</button><button class="explain" data-act="explain">解释</button><button data-act="read">朗读</button><button data-act="transfer">转入侧栏</button></div>
+      <div class="bar"><button class="ask" data-act="ask"><span class="identity"></span>问助手</button><button class="explain" data-act="explain">解释</button><button data-act="read">朗读</button><button data-act="transfer">在侧栏继续</button></div>
       <div class="header" hidden><span class="identity"></span><span class="site"></span><button class="icon" data-act="close" aria-label="收起阅读" title="收起阅读"></button></div>
       <details class="quote" hidden><summary></summary><p></p><div class="limit" hidden>已截取前 8000 字</div></details>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
@@ -164,7 +164,7 @@ function boot(): void {
     const result = await chrome.runtime.sendMessage({ type, threadId: record?.threadId, ...extra });
 
     if (!result?.ok) {
-      throw new Error(result?.error ?? '扩展连接已断开，请刷新页面后重试。');
+      throw new Error(result?.error ?? '扩展断开了。刷新页面，再试一次。');
     }
 
     return result;
@@ -311,7 +311,7 @@ function boot(): void {
       if (corrected.includes(index) && !item.question.querySelector('.tag')) {
         const tag = document.createElement('span');
         tag.className = 'tag';
-        tag.textContent = '已改口';
+        tag.textContent = '已按新问题重答';
         item.question.append(tag);
       }
 
@@ -332,7 +332,7 @@ function boot(): void {
         item.text = turn.answer;
       }
 
-      item.status.textContent = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在生成…' : turn.state === 'stopped' ? '已停止，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
+      item.status.textContent = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在回答…' : turn.state === 'stopped' ? '已停止回答，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
     }
 
     renderedTurns = record?.turns.length ?? 0;
@@ -345,7 +345,7 @@ function boot(): void {
     const last = record?.turns.at(-1);
     // 生成中输入框有字时，按钮是改口；空着时才是停止。
     const stops = busy && !input.value.trim();
-    const label = stops ? '停止回答' : busy ? '改口：停下旧回答，按这句重答' : '发送问题';
+    const label = stops ? '停止回答' : busy ? '停止这条回答，按新问题重新回答' : '发送问题';
     submit.replaceChildren(icon(stops ? Square : ArrowUp));
     submit.setAttribute('aria-label', label);
     submit.title = label;
@@ -452,7 +452,7 @@ function boot(): void {
         const restored = await rpc('reading_get');
 
         if (!restored.record) {
-          throw new Error('阅读记录已过期，请重新划词。');
+          throw new Error('这段问答已过期。重新选中文字。');
         }
 
         record = restored.record;
@@ -482,7 +482,7 @@ function boot(): void {
         if (action === 'transfer' || !record?.turns.length) {
           const source = snapshot?.source ?? record?.source;
 
-          if (!source) throw new Error('请先选择文字。');
+          if (!source) throw new Error('先选中一段文字。');
           await rpc('ASK_SELECTION_TO_PANEL', { text: source.text });
           hide();
 
@@ -492,7 +492,7 @@ function boot(): void {
         await rpc('reading_handoff');
 
         if (!record?.transferredConversationId) {
-          report('正在交接阅读记录…', true);
+          report('正在转到侧栏…', true);
         }
       }
     })().catch(err => {

@@ -7,7 +7,7 @@ import { toolAction } from "../../../shared/user-facing.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
 export interface ToolAction {
-  /** 步骤链里用的短动作名，如 "读取页面结构"。 */
+  /** 步骤链里用的短动作名，如 "读页"。 */
   short: string;
   /** 工具卡标题，带得上关键参数就带，如 "点击「结算服务」"。 */
   full: string;
@@ -23,41 +23,41 @@ const ACTION_NAMES: Record<string, string> = {
   switch_tab: "切换标签页",
   close_tab: "关闭标签页",
   navigate: "打开页面",
-  snapshot: "读取页面结构",
-  judge_browser_action: "判断页面操作",
-  read_element: "读取完整内容",
-  read_elements: "读回多个元素",
+  snapshot: "读页",
+  judge_browser_action: "决定下一步操作",
+  read_element: "读完整内容",
+  read_elements: "读多处内容",
   click: "点击",
   double_click: "双击",
   drag: "拖动",
   upload_file: "上传文件",
-  cdp: "调用浏览器",
+  cdp: "直接操作浏览器",
   hover: "悬停",
-  remember_user_preference: "记住偏好",
+  remember_user_preference: "存入记忆",
   browser_run: "连续操作",
-  wait_for: "等待元素",
-  check: "核对页面",
-  assert: "核对条件",
+  wait_for: "等页面内容出现",
+  check: "核验页面",
+  assert: "核验页面状态",
   sleep: "等待",
   fill: "填写文本",
-  page_operation: "填写并核对",
-  page_translation: "翻译网页",
-  share_tab: "安排同页协作",
-  take_tab: "接管页面",
+  page_operation: "填写并核验",
+  page_translation: "翻译页面",
+  share_tab: "共享这个标签页",
+  take_tab: "接手标签页",
   type_text: "输入文本",
   press_key: "按键",
   scroll: "滚动页面",
-  js: "执行脚本",
+  js: "在页面里运行代码",
   screenshot: "截图",
-  mark: "标注元素",
-  clear_marks: "清除标注",
-  arm_event: "准备接收页面事件",
-  wait_event: "等待页面事件",
-  spawn_worker: "请了人",
-  list_workers: "名册",
-  stop_worker: "停下",
-  post: "投递工件",
-  await_message: "等待工件",
+  mark: "圈出内容",
+  clear_marks: "清除圈画",
+  arm_event: "准备等页面变化",
+  wait_event: "等页面变化",
+  spawn_worker: "安排助手",
+  list_workers: "查看助手列表",
+  stop_worker: "中止助手的任务",
+  post: "发送结果",
+  await_message: "等待结果",
 };
 
 function clip(text: string, max = 16): string {
@@ -89,7 +89,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
 
   switch (name) {
     case "page_translation": {
-      const full = params.action === 'restore' ? '恢复网页原文'
+      const full = params.action === 'restore' ? '恢复页面原文'
         : params.action === 'display' ? [params.mode === 'translated' ? '只显示译文' : params.mode === 'bilingual' ? '显示双语' : '调整译文', typeof params.fontSize === 'number' ? `字号 ${params.fontSize}` : ''].filter(Boolean).join(' · ')
           : short;
 
@@ -129,7 +129,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
     case "hover": {
       const label = str(params.label);
 
-      return { short, full: label ? `${short}「${clip(label)}」` : `${short}元素` };
+      return { short, full: label ? `${short}「${clip(label)}」` : `${short}内容` };
     }
 
     case "arm_event":
@@ -155,7 +155,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
 
     case "mark": {
       if (params.clear === true) {
-        return { short: "清除标注", full: "清除标注" };
+        return { short: "清除圈画", full: "清除圈画" };
       }
 
       const words = Array.isArray(params.text) ? params.text.filter((w): w is string => typeof w === "string") : [];
@@ -163,7 +163,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       if (words.length) return { short, full: `圈出「${clip(words.join("、"))}」` };
       const label = str(params.label);
 
-      return { short, full: label ? `标注「${clip(label)}」` : short };
+      return { short, full: label ? `圈出「${clip(label)}」` : short };
     }
 
     case "guide_step": {
@@ -182,7 +182,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       const id = str(params.id);
       const name = id ? personFor(id)?.name : null;
 
-      return { short, full: name ? `让 ${name} 停下` : short };
+      return { short, full: name ? `让 ${name} 中止任务` : short };
     }
 
     case "post": {
@@ -222,7 +222,7 @@ export function actionCardLabel(name: string, params: Parameters<typeof describe
 
 /**
  * 步骤链：相邻重复去重，超长时只保留最近几步（前缀 "…"）。
- * 例：思考 → 读取页面结构 → 思考 → 点击
+ * 例：思考 → 读页 → 思考 → 点击
  */
 export class StepChain {
   private steps: string[] = [];
@@ -325,13 +325,13 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
-/** 过程行标题：做了几件事，以及失败/停止。 */
+/** 过程行标题：做了几步，以及没做成/中止。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed"): string {
-  const done = steps > 0 ? `做了 ${steps} 件事` : "查看执行过程";
+  const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
 
-  if (outcome === "failed") return `${done}，有一件没成功`;
+  if (outcome === "failed") return `${done}，有 1 步没做成`;
 
-  if (outcome === "stopped") return `已停止 · ${done}`;
+  if (outcome === "stopped") return `已中止 · ${done}`;
 
   return done;
 }
@@ -343,15 +343,15 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
 export const HELD_TEXT: Record<HeldReason, string> = {
   // 付款按钮：助手不点，留给用户（docs/evals/20261009-pay-stop.md）。
   pay: "停在付款前，等你自己点",
-  stopped: "没发：你停下了",
-  left: "没发：你离开了网页",
+  stopped: "没发：你中止了任务",
+  left: "没发：你离开了这个页面",
   timeout: "没发：2 分钟没确认",
   declined: "你没让发，草稿还在",
   repeat: "你没让发，草稿还在",
   busy: "没发：前一个确认还在等你",
   // 教学一步没完成（docs/evals/20261011-guided-teaching.md）：照实说，不画成失败。
-  guide_stopped: "你停下了，这一步没做完",
-  guide_left: "你离开了网页，这一步没做完",
+  guide_stopped: "你中止了，这一步没做完",
+  guide_left: "你离开了这个页面，这一步没做完",
   guide_no_change: "点了两次，页面都没有变化",
   guide_timeout: "2 分钟没点，这一步先放着",
 };
@@ -421,7 +421,7 @@ export function pastAction(name: string, params: Parameters<typeof describeTool>
   if (actionKind(name, params) === "open") {
     const host = hostOf(params.url);
 
-    return host ? `打开了 ${host.replace(/^www\./, "")}` : "打开了一个网页";
+    return host ? `打开了 ${host.replace(/^www\./, "")}` : "打开了一个页面";
   }
 
   const words = CURSOR_VERBS.get(name);
@@ -472,5 +472,5 @@ export function recentSteps(done: TrailStep[]): RecentSteps {
 
 /** 一步做完、下一步还没开始时的标题：做过事就带上进度，不退回光秃秃的「正在思考」。 */
 export function betweenStepsTitle(doneCount: number): string {
-  return doneCount > 0 ? `正在思考 · 已做 ${doneCount} 件事` : "正在思考";
+  return doneCount > 0 ? `正在思考 · 已做 ${doneCount} 步` : "正在思考";
 }

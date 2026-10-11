@@ -193,11 +193,11 @@ const PLACEHOLDER_IDLE = "说说你想完成什么…";
 
 const PLACEHOLDER_RUNNING = "补充或改方向…";
 
-const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；点「交还」后生效";
+const PLACEHOLDER_USER = "补充要求，按 Enter 保存。点「交还」后生效";
 
-const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
+const PLACEHOLDER_DRAINING = "正在接管，助手不再做新的操作。";
 
-const PLACEHOLDER_PARTIAL = "部分成员已恢复。未续跑的人仍归你。";
+const PLACEHOLDER_PARTIAL = "部分页面已交还。其余页面仍归你。";
 
 
 // 渲染出的链接一律新开标签页
@@ -225,9 +225,9 @@ app.innerHTML = `
     <button id="memory-open" type="button" title="看、改、删助手记住的事" aria-haspopup="dialog" aria-expanded="false">记忆</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
-        <button id="model-btn" type="button" title="切换模型" aria-label="切换当前模型" hidden aria-haspopup="listbox" aria-expanded="false">
+        <button id="model-btn" type="button" title="切换模型" aria-label="换主模型" hidden aria-haspopup="listbox" aria-expanded="false">
           <span id="model-mark" class="model-mark" hidden></span>
-          <span>当前模型</span>
+          <span>主模型</span>
           <span id="model-name"></span>
           <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
         </button>
@@ -257,7 +257,7 @@ app.innerHTML = `
       <div id="memory-body"></div>
     </div>
   </section>
-  <div id="marginalia-rail" aria-label="伴读导轨" hidden></div>
+  <div id="marginalia-rail" aria-label="段落提示" hidden></div>
   <div id="messages-frame">
     <div id="messages">
       <div id="resume-entry-root"></div>
@@ -269,11 +269,11 @@ app.innerHTML = `
   <section id="starter" aria-label="开始方式">
     <canvas id="starter-orb" aria-hidden="true"></canvas>
     <p id="starter-title">说说你想完成什么</p>
-    <p id="starter-sub">浏览器 AI 助手，帮你读页面、整理信息或操作网页。</p>
+    <p id="starter-sub">浏览器助手。可以读页面、整理信息、在页面上操作。</p>
     <div id="starter-actions">
       <button type="button" data-starter="请概括当前页面的要点。">概括这一页</button>
     </div>
-    <button type="button" id="starter-connect">连一个模型</button>
+    <button type="button" id="starter-connect">连接模型</button>
   </section>
   <div class="composer-dock-wrap">
     <div id="morph-sheet" class="page-morph-sheet" style="display: none;">
@@ -290,7 +290,7 @@ app.innerHTML = `
     <div id="attach-menu" class="action-menu-popover" hidden>
       <div class="action-menu-item pressable" id="menu-action-screenshot" title="只截当前网页中可见的部分。">
         <span class="action-menu-item-icon" data-icon="camera"></span>
-        <span class="action-menu-item-label">网页截图</span>
+        <span class="action-menu-item-label">页面截图</span>
       </div>
       <div class="action-menu-item pressable" id="menu-action-region" title="在网页上圈出想问的地方，可以圈好几处（Esc 退出）">
         <span class="action-menu-item-icon" data-icon="region"></span>
@@ -298,18 +298,18 @@ app.innerHTML = `
       </div>
       <div class="action-menu-item pressable" id="menu-action-upload">
         <span class="action-menu-item-icon" data-icon="upload"></span>
-        <span class="action-menu-item-label">上传本地图片</span>
+        <span class="action-menu-item-label">添加电脑里的图片</span>
       </div>
       <hr />
       <p class="composer-menu-label" title="显示当前段落的原文或解释。">段落提示</p>
       <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="off">关闭</button>
       <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="source">原文摘录</button>
-      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="ai">解释段落<span>让 AI 解释当前读到的段落。会调用模型</span></button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="ai">解释段落<span>让助手解释正在读的段落。这会把段落发给模型</span></button>
       <hr />
       <button id="voice-diagnostics-open" class="action-menu-radio" type="button">语音诊断</button>
     </div>
     <input type="file" id="file-input" accept="image/*" multiple hidden />
-    <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会调用模型</option></select>
+    <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会发给模型</option></select>
     <div id="task-bar-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -325,9 +325,9 @@ app.innerHTML = `
       <div id="attachments-strip" class="attachments-strip" hidden></div>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
-        <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button>
+        <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截图" aria-haspopup="true">+</button>
         <span id="composer-spacer"></span>
-        <button id="takeover-btn" type="button" title="接管页面：助手先停手，你来操作；弄完点「交还」" hidden>接管</button>
+        <button id="takeover-btn" type="button" title="接管：助手暂停，由你操作页面。操作完，点「交还」。" hidden>接管</button>
         <button id="steer-send-btn" type="button" title="发出插话（Enter）" aria-label="发出插话" hidden></button>
         <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
           <span class="morph-icon-send"></span>
@@ -496,7 +496,7 @@ function forkReceipt(receipt: TaskReceipt): Promise<void> {
   const creationId = crypto.randomUUID();
 
   const promise = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => { receiptForks.delete(creationId); reject(new Error('新会话的创建结果未到达，未自动发送原请求；请检查会话列表。')); }, 15000);
+    const timer = setTimeout(() => { receiptForks.delete(creationId); reject(new Error('新会话可能没有建好，原来的消息没有发出。打开会话列表看一下。')); }, 15000);
     receiptForks.set(creationId, {request, resolve, reject, timer});
 
     if (!send({type:'conversation_create',requestId:creationId})) {
@@ -649,14 +649,14 @@ function updateStarterVisibility(): void {
   if (starterReady() && tabId != null) void refreshStarterSuggestions(tabId);
 }
 
-/** 有没有连模型：null 表示还没收到 hello_ok。只在确知没连时，起点引导换成「先连一个模型」（#233）。 */
+/** 有没有连模型：null 表示还没收到 hello_ok。只在确知没连时，起点引导换成「先连接模型」（#233）。 */
 let modelConnected: boolean | null = null;
 
 function paintStarterModelState(): void {
   const none = modelConnected === false;
   app.classList.toggle("no-model", none);
-  document.getElementById("starter-title")!.textContent = none ? "先连一个模型" : "说说你想完成什么";
-  document.getElementById("starter-sub")!.textContent = none ? "连好以后，就能读这一页、整理信息或操作网页。" : "浏览器 AI 助手，帮你读页面、整理信息或操作网页。";
+  document.getElementById("starter-title")!.textContent = none ? "先连接模型" : "说说你想完成什么";
+  document.getElementById("starter-sub")!.textContent = none ? "连接以后，助手就能读这个页面、整理信息、在页面上操作。" : "浏览器助手。可以读页面、整理信息、在页面上操作。";
 }
 
 document.getElementById("starter-connect")!.onclick = () => void chrome.runtime.openOptionsPage();
@@ -1128,7 +1128,7 @@ function renderMemoryInspection(): HTMLElement | null {
   title.textContent = inspection.action === "used"
     ? `这次回复使用了 ${inspection.entries.length} 条记忆`
     : inspection.action === "forgotten"
-      ? "忘记记录"
+      ? "已忘记的记忆"
       : inspection.action === "updated"
         ? "更新的记忆"
         : "保存的记忆";
@@ -1140,7 +1140,7 @@ function renderMemoryInspection(): HTMLElement | null {
     section.appendChild(message);
   } else if (inspection.action === "forgotten") {
     const message = document.createElement("p");
-    message.textContent = "这条记忆不再用于新请求。旧聊天仍然保留。";
+    message.textContent = "这条记忆不再用于新请求。以前的会话和回答不受影响。";
     section.appendChild(message);
   }
 
@@ -1254,7 +1254,7 @@ function renderMemoryForgetConfirm(entry: MemoryEntry, state: MemoryForget): HTM
   const heading = document.createElement("strong");
   heading.textContent = "忘记这条记忆？";
   const explanation = document.createElement("p");
-  explanation.textContent = "以后不再从记忆中使用它。旧聊天和已经生成的回复仍会保留。";
+  explanation.textContent = "以后不再用这条记忆。以前的会话和回答不受影响。";
   const error = document.createElement("p");
   error.className = "memory-error";
   error.hidden = !state.error;
@@ -1335,7 +1335,7 @@ function renderMemoryEntry(entry: MemoryEntry, inGroup = false): HTMLElement {
 
   const actions = document.createElement("div");
   actions.append(
-    memoryButton(card.classList.contains("show-source") ? "收起来源" : "查看来源", "source", entry.id),
+    memoryButton(card.classList.contains("show-source") ? "收起原话" : "查看原话", "source", entry.id),
     memoryButton("修改", "edit", entry.id),
     memoryButton("忘记", "forget", entry.id),
   );
@@ -1421,7 +1421,7 @@ let pastTasksError = "";
 
 let pastTasksConfirmClear = false;
 
-const PAST_TASK_OUTCOME: Record<TaskHistoryEntry["outcome"], string> = { complete: "做完了", partial: "还差一些", stopped: "你停止了", error: "出错" };
+const PAST_TASK_OUTCOME: Record<TaskHistoryEntry["outcome"], string> = { complete: "做完了", partial: "还差一些", stopped: "你中止了", error: "出错" };
 
 function requestPastTasks(forget?: string | null): void {
   pastTasksRequestId = crypto.randomUUID();
@@ -1433,7 +1433,7 @@ function requestPastTasks(forget?: string | null): void {
 
   if (!send(message)) {
     pastTasksRequestId = null;
-    pastTasksError = "连接不可用，请重试";
+    pastTasksError = "侧栏和扩展后台断开了。稍后再试。";
   }
 }
 
@@ -1444,7 +1444,7 @@ function requestPastTaskSite(id: string, hostname: string): void {
 
   if (!send({ type: "task_history_site", requestId: pastTasksRequestId, conversationId: selectedConversationId, id, hostname, off: false })) {
     pastTasksRequestId = null;
-    pastTasksError = "连接不可用，请重试";
+    pastTasksError = "侧栏和扩展后台断开了。稍后再试。";
   }
 }
 
@@ -1480,7 +1480,7 @@ function renderPastTasks(shown: TaskHistoryEntry[]): HTMLElement {
   section.appendChild(head);
   const intro = document.createElement("p");
   intro.className = "memory-quiet";
-  intro.textContent = "动手做过的任务结束后留一条摘要，之后它能想起做过什么、在哪做的。只存在这台电脑上。";
+  intro.textContent = "助手做完一个任务，会在这里留一条摘要。以后助手能查到做过什么、在哪个网站做的。只存在这个浏览器里。";
 
   if (!memoryQuery) section.appendChild(intro);
 
@@ -1545,7 +1545,7 @@ function renderPastTasks(shown: TaskHistoryEntry[]): HTMLElement {
     if (task.unfinished.length) {
       const open = document.createElement("p");
       open.className = "memory-quiet";
-      open.textContent = `还差：${task.unfinished.join("；")}`;
+      open.textContent = `还差：${task.unfinished.join("、")}`;
       row.appendChild(open);
     }
 
@@ -1679,7 +1679,7 @@ function renderMemoryFacts(): number {
 
   const intro = document.createElement("p");
   intro.className = "memory-quiet memory-intro";
-  intro.textContent = "你在对话里说过的邮箱、姓名、偏好和带日期的安排会自动记在这里。关于你的每轮都会用上；带日期的到那天过后不再主动用，仍能查到。可以纠正或忘记。";
+  intro.textContent = "你在会话里说过的邮箱、姓名、偏好和日程，会自动记在这里。关于你的记忆，每次回答都会用。带日期的记忆，过了那天就不再用。你可以修改或忘记任何一条。";
 
   if (!memoryQuery) memoryBody.appendChild(intro);
 
@@ -1716,7 +1716,7 @@ function renderMemoryFacts(): number {
     const heading = document.createElement("strong");
     heading.textContent = "还没有保存的记忆";
     const text = document.createElement("p");
-    text.textContent = "你在对话里说过的邮箱、姓名等资料会自动记在这里。";
+    text.textContent = "你在会话里说过的邮箱、姓名，会自动记在这里。";
     empty.append(heading, text);
 
     if (!methods.length && !memoryQuery) memoryBody.appendChild(empty);
@@ -1820,7 +1820,7 @@ function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_l
   memoryUiRequests.set(message.requestId, ui);
 
   if (send(message)) return;
-  processMemoryOutcome(memoryState.rejectLocally(message.requestId, "连接不可用，请重试"));
+  processMemoryOutcome(memoryState.rejectLocally(message.requestId, "侧栏和扩展后台断开了。稍后再试。"));
 }
 
 function requestMemoryList(): void {
@@ -1927,7 +1927,7 @@ memoryBody.addEventListener("click", (event) => {
     const text = memoryEdit.text.trim();
 
     if (!text) {
-      memoryEdit.error = "记忆内容不能为空。";
+      memoryEdit.error = "写一句要记住的话。";
       renderMemoryDrawer();
 
       return;
@@ -1946,7 +1946,7 @@ memoryBody.addEventListener("click", (event) => {
       const hostname = normalizeMemoryHostname(memoryEdit.hostname);
 
       if (!hostname) {
-        memoryEdit.error = "请输入网站域名，例如 example.com。";
+        memoryEdit.error = "填网站域名，例如 example.com。";
         renderMemoryDrawer();
 
         return;
@@ -2851,14 +2851,14 @@ function renderUsedItem(line: MemoryUsedLine, item: UsedItem): HTMLElement {
   const rerender = () => { if (line.el.isConnected || line === pendingUsedLine) renderUsedLine(line); };
 
   if (item.state === "used") {
-    actions.append(usedButton("忘掉", "forget", item, () => runUsedAction(item, "forget", rerender)));
+    actions.append(usedButton("忘记", "forget", item, () => runUsedAction(item, "forget", rerender)));
 
     // 没有当前网站（扩展页、空白页）就没有「这里」可言。
-    if (line.hostname) actions.append(usedButton("这里别用", "not-here", item, () => runUsedAction(item, "not-here", rerender, line.hostname!)));
+    if (line.hostname) actions.append(usedButton("在这个网站不用", "not-here", item, () => runUsedAction(item, "not-here", rerender, line.hostname!)));
   } else {
     const note = document.createElement("span");
     note.className = "memory-used-note";
-    note.textContent = item.state === "forgotten" ? "已忘掉" : `在 ${line.hostname} 不用`;
+    note.textContent = item.state === "forgotten" ? "已忘记" : `在 ${line.hostname} 不用`;
     actions.append(note, usedButton("撤销", "undo", item, () => runUsedAction(item, "undo", rerender, line.hostname ?? undefined)));
   }
 
@@ -2927,7 +2927,7 @@ function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", r
         if (current) item.entry = current;
       }
     } else {
-      item.error = `${action === "forget" ? "没有忘掉" : action === "not-here" ? "没有改成这里别用" : "没有撤销"}：${result.error ?? "请重试"}`;
+      item.error = `${action === "forget" ? "没能忘记" : action === "not-here" ? "没能改成在这个网站不用" : "没能撤销"}：${result.error ?? "再试一次"}`;
     }
 
     rerender();
@@ -2958,7 +2958,7 @@ function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", r
 
   if (!send(message)) {
     usedLineHandlers.delete(requestId);
-    done({ ok: false, error: "连接不可用，请重试" });
+    done({ ok: false, error: "侧栏和扩展后台断开了。稍后再试。" });
   }
 }
 
@@ -2987,7 +2987,7 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
       ? event.entries.some(entry => entry.experience) ? "旧做法已停用 · 查看" : "已忘记 · 查看"
       : event.action === "updated"
         ? "记忆已更新 · 查看"
-        : event.entries.some(entry => entry.experience) ? "已整理这次纠正 · 查看" : "已记住 · 查看";
+        : event.entries.some(entry => entry.experience) ? "已记下这次纠正 · 查看" : "已记住 · 查看";
   const snapshots = event.entries.map((entry) => ({ ...entry, scope: { ...entry.scope } }));
   button.onclick = () => openMemoryDrawer({ action: event.action, entries: snapshots, message: event.message });
   receipt.append(mark, button);
@@ -3099,7 +3099,9 @@ function buildMemoryAsk(askId: string): HTMLElement {
   const scopeLabel = (scope: MemoryScope): string => scope.kind === "all" ? "所有网站" : "这个网站";
 
   if (card.phase === "open" || card.phase === "closed") {
-    line.textContent = `${card.ask.habit ? "你好像总是" : ""}${card.ask.rule.trim().replace(/[。.!！?？，,；;]+$/u, "")}，要我记住吗？`;
+    const rule = card.ask.rule.trim().replace(/[。.!！?？，,；;]+$/u, "");
+    // 习惯是不带主语的短句（「在 B 站提取字幕并保存」）；纠正是助手第一人称的承诺（「以后我都…」），不加前缀。
+    line.textContent = card.ask.habit ? `你好像每次都这样做：${rule}。要我记住吗？` : `${rule}，要我记住吗？`;
 
     if (card.ask.replaces) {
       const replaces = document.createElement("p");
@@ -3319,7 +3321,7 @@ function renderTrail(run: RunHost): void {
     row.className = step.failed ? "trail-step failed" : "trail-step";
     const text = document.createElement("span");
     text.className = "trail-text";
-    text.textContent = step.failed ? `${step.text} · 没成功` : step.text;
+    text.textContent = step.failed ? `${step.text} · 没做成` : step.text;
     const dur = document.createElement("span");
     dur.className = "trail-dur";
     dur.textContent = step.dur;
@@ -3471,14 +3473,14 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   if (flags.userHasPage !== lastUserHasPage) {
     lastUserHasPage = flags.userHasPage;
 
-    if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已停止");
+    if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已中止");
   }
 
   // 同一个位置：Agent 在做时是「我来」，页面归你时是「你继续」。
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
   takeoverBtn.dataset.mode = flags.userHasPage ? "handback" : "takeover";
   takeoverBtn.textContent = flags.userHasPage ? "交还" : "接管";
-  takeoverBtn.title = flags.userHasPage ? "交还页面，Agent 先重读页面再接着做" : "你来操作这个页面，Agent 先停手";
+  takeoverBtn.title = flags.userHasPage ? "交还：助手先重读页面，再接着做。" : "接管：助手暂停，由你操作页面。操作完，点「交还」。";
   steerRibbon.setRunning(running && !flags.userHasPage);
 
   // Send / Stop in-place morphing
@@ -3543,8 +3545,8 @@ function addChainStep(label: string): void {
 const RUN_ORB_MARKS = {
   user: { icon: Hand, label: "已暂停 · 页面归你" },
   completed: { icon: Check, label: "本轮结束" },
-  failed: { icon: CircleAlert, label: "执行失败" },
-  stopped: { icon: Square, label: "已停止" },
+  failed: { icon: CircleAlert, label: "出错" },
+  stopped: { icon: Square, label: "已中止" },
 } as const;
 
 function syncRunOrb(run: RunHost): void {
@@ -4174,7 +4176,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   if (failed && label) {
     const note = document.createElement("span");
     note.className = "act-failed";
-    note.textContent = " · 没成功";
+    note.textContent = " · 没做成";
     label.append(note);
   }
 
@@ -4352,7 +4354,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       goalContinuing = ev.status === "continue" ? ev.remaining ?? "" : null;
 
       // 核对判继续：回答已经显示，这里只补一句核对发现了什么、正在改。纯文本显示。
-      if (ev.status === "continue") addMsg("msg claim-fix", `核对发现：${findingForUser(ev.finding, ev.remaining)}。正在改…`);
+      if (ev.status === "continue") addMsg("msg claim-fix", `目标核对发现：${findingForUser(ev.finding, ev.remaining)}。助手正在补做…`);
       break;
     case "turn_end":
       closeBlocks();
@@ -4414,7 +4416,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         if (currentRun && !applyingHistory) setRunTitle(currentRun, ev.message);
       } else if(ev.plan){
         const key=`plan:${ev.plan.conversationId}:${ev.plan.id}`;
-        const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果待确认':'未执行')}\n${s.text}`).join('\n');
+        const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果未知':'没做')}\n${s.text}`).join('\n');
         const previous=receiptMessages.get(key);
 
 if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
@@ -4683,7 +4685,7 @@ function renderStreamTaskCard(view: TaskView): void {
   card.querySelector(".task-status-badge")!.textContent = `${stateHeadline(view.state, view.resumable)}${items.size ? ` (${done}/${items.size})` : ""}`;
   const list = card.querySelector(".task-items")!;
   list.replaceChildren();
-  const labels = { satisfied: "已完成", pending: "待执行", blocked: "受阻", unknown: "结果未知" };
+  const labels = { satisfied: "做完了", pending: "还没做", blocked: "没做成", unknown: "结果未知" };
 
   for (const item of items.values()) {
     const row = document.createElement("div");
@@ -4713,7 +4715,7 @@ function renderStreamTaskCard(view: TaskView): void {
     const chip = document.createElement("span");
     chip.className = "source-chip";
     chip.textContent = material.label;
-    chip.title = "已随任务送入的材料，不代表内容已经核实";
+    chip.title = "这些材料已发给助手。助手没有核对材料内容。";
     sources.append(chip);
   }
 
@@ -4896,7 +4898,7 @@ function handleServerMessage(raw: string): void {
         const moved: TaskActionRequest = {requestId:crypto.randomUUID(),conversationId:msg.conversation.id,source:'text',action:'start',expectedRunId:null,forkedFrom:{conversationId:request.conversationId,requestId:request.requestId},text:request.text,context:request.context,attachments:request.attachments};
 
         if (send({type:'task_action',conversationId:msg.conversation.id,request:moved})) { pending.resolve(); selectConversation(msg.conversation.id); }
-        else pending.reject(new Error('新会话已创建，但原请求尚未发出；连接恢复后可重试。'));
+        else pending.reject(new Error('新会话已建好，原来的消息还没发出。连接恢复后，再发一次。'));
       }
     }
 
@@ -5428,7 +5430,7 @@ let sendFailNotifiedFor: string | null = null;
 function noticeSendFailed(): void {
   if (sendFailNotifiedFor === selectedConversationId) return;
   sendFailNotifiedFor = selectedConversationId;
-  addMsg("msg notice", "这条没有发出去：与后台的连接断了。正文和引用都还在，恢复连接后重新发送即可。");
+  addMsg("msg notice", "这条消息没有发出。侧栏和扩展后台断开了。你的文字和引用都还在。连接恢复后，再发送一次。");
 }
 
 /**

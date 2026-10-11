@@ -283,12 +283,12 @@ export class AttachmentsManager {
         throw new Error(res.error || "截取视口失败");
       }
 
-      const name = `${(res.title || "网页截屏").replace(/[/\\?%*:|"<>]/g, "_")}.png`;
+      const name = `${(res.title || "页面截图").replace(/[/\\?%*:|"<>]/g, "_")}.png`;
       await this.addFromDataUrl(res.dataUrl, name, scope);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
 
-      if (this.onError) this.onError(`截屏失败: ${msg}`);
+      if (this.onError) this.onError(`截图失败：${msg}`);
       else console.error("[sideagent-attachments] captureActiveTab failed:", err);
     }
   }

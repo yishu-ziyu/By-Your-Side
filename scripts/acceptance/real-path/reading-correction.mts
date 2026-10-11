@@ -10,7 +10,7 @@
  *   请求  回车后 1.5 s 内模型收到含改口原话的请求，请求里有段落标记句、有一轮 state 为 stopped 的旧回答。
  *   取消  回车后 1.5 s 内，模型那边旧请求的连接没写完就关了（产品真的取消了旧请求，不只是界面不再显示）。
  *   停止  旧回答在回车后 1 s 内停止变长，一直看到旧回答在服务端写完为止也不再变长；新回答里没有旧回答的文字。
- *   界面  旧回答显示「已停止，内容已保留」并折叠，「展开/收起」能用、点完焦点不丢、不在状态播报区里；新回答带「已改口」；段落高亮回车前后都在。
+ *   界面  旧回答显示「已停止回答，内容已保留」并折叠，「展开/收起」能用、点完焦点不丢、不在状态播报区里；新回答带「已按新问题重答」；段落高亮回车前后都在。
  *   按钮  生成中输入框空时是停止键；输入了文字时是发送键（改口）。
  * 失败方式：生成中回车被吞掉（T1 之前的 main），请求、停止、界面、按钮都失败；改口时不取消旧请求，取消一项失败。
  */
@@ -168,7 +168,7 @@ try {
     const t = (await card()).turns[0];
 
     // 写出几行再改口：旧回答要比折叠后的高度长，折叠才看得出来。
-    return t && t.status.includes("正在生成") && t.answer.length > 120 ? t : undefined;
+    return t && t.status.includes("正在回答") && t.answer.length > 120 ? t : undefined;
   }, 30_000, "阅读卡正在生成且已写出 120 字以上", 100);
   const oldStart = captured.find((c) => c.reading)!.at;
   const highlightBefore = await highlighted();
@@ -182,7 +182,7 @@ try {
   await rp.typeText(work, `不是定义，${CORRECTION}`);
   const typed = await until(async () => { const s = await card(); return s.textarea.includes(CORRECTION) ? s : undefined; }, 3_000, "改口已输入");
   check("按钮：生成中输入框空时是停止键，输入改口后是发送键",
-    emptyInput.sendIcon === "stop" && emptyInput.sendLabel === "停止回答" && typed.sendIcon === "send" && !!typed.sendLabel?.includes("改口") && typed.turns[0]!.status.includes("正在生成"),
+    emptyInput.sendIcon === "stop" && emptyInput.sendLabel === "停止回答" && typed.sendIcon === "send" && !!typed.sendLabel?.includes("按新问题") && typed.turns[0]!.status.includes("正在回答"),
     { empty: { icon: emptyInput.sendIcon, label: emptyInput.sendLabel }, withText: { icon: typed.sendIcon, label: typed.sendLabel }, stillGenerating: typed.turns[0]!.status });
   await rp.screenshot(work, join(out, "2-typed.png"));
 
@@ -245,7 +245,7 @@ try {
     { lenAtEnter, lenAt1s, lenMaxAfter1s, oldLenAtEnd: oldFinal.length, newAnswerDone: !!done, newHasOldText: newFinal.includes("旧定义"), oldTailAnywhere: final.text.includes(OLD_TAIL), turns: final.turns.length });
   await rp.screenshot(work, join(out, "4-done.png"));
 
-  // ── 界面：旧回答停住并折叠，展开/收起能用；新回答带「已改口」；高亮还在 ──
+  // ── 界面：旧回答停住并折叠，展开/收起能用；新回答带「已按新问题重答」；高亮还在 ──
   const old = final.turns[0];
   const before = { status: old?.status ?? null, folded: old?.folded ?? false, clipped: old?.clipped ?? false, fold: old?.fold ?? null, expanded: old?.expanded ?? null, foldInStatus: old?.foldInStatus ?? null };
   let opened: Partial<Turn> | null = null;
@@ -268,12 +268,12 @@ try {
   }
 
   const highlightAfter = await highlighted();
-  // 展开键不在状态播报区里（读屏只念「已停止，内容已保留」），点完焦点还在它上面，aria-expanded 跟着变。
-  check("界面：旧回答「已停止，内容已保留」并折叠，展开/收起能用；新回答带「已改口」；高亮回车前后都在",
-    before.status === "已停止，内容已保留" && before.folded && before.clipped && before.fold === "展开" && before.expanded === "false" && before.foldInStatus === false
+  // 展开键不在状态播报区里（读屏只念「已停止回答，内容已保留」），点完焦点还在它上面，aria-expanded 跟着变。
+  check("界面：旧回答「已停止回答，内容已保留」并折叠，展开/收起能用；新回答带「已按新问题重答」；高亮回车前后都在",
+    before.status === "已停止回答，内容已保留" && before.folded && before.clipped && before.fold === "展开" && before.expanded === "false" && before.foldInStatus === false
       && opened?.folded === false && opened.clipped === false && opened.fold === "收起" && opened.expanded === "true" && opened.foldFocused === true
       && closed?.folded === true && closed.fold === "展开" && closed.expanded === "false" && closed.foldFocused === true
-      && final.turns[1]?.tag === "已改口" && highlightBefore && highlightAfter,
+      && final.turns[1]?.tag === "已按新问题重答" && highlightBefore && highlightAfter,
     { old: before, afterFirstClick: opened, afterSecondClick: closed, newTag: final.turns[1]?.tag ?? null, newQuestion: final.turns[1]?.question ?? null, highlightBefore, highlightAfter });
   record.finalTurns = final.turns.map((t) => ({ question: t.question, tag: t.tag, answerChars: t.answer.length, answerHead: t.answer.slice(0, 80), status: t.status, folded: t.folded }));
   record.timeline = timeline.filter((_, i) => i % 5 === 0).map((p) => `${p.ms}:${p.len}`).join(" ");

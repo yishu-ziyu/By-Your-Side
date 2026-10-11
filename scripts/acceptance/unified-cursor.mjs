@@ -92,7 +92,7 @@ await page.evaluate(()=>{const el=document.querySelector('h1'),r=el.getBoundingC
 await check('action text lives in status entry not cursor',()=>window.roots[0].querySelector('.xpage').textContent.includes('正在点击')&&getComputedStyle(window.roots[0].querySelector('.cursor .label')).display==='none');
 await page.evaluate(()=>window.__sideagent.cursor.endAction('one','unknown'));
 await page.waitForTimeout(1800);
-await check('unknown outcome remains visible',()=>window.roots[0].querySelector('.xpage').textContent.includes('结果待确认'));
+await check('unknown outcome remains visible',()=>window.roots[0].querySelector('.xpage').textContent.includes('结果未知'));
 await page.evaluate(()=>{window.__sideagent.cursor.releaseHold();window.__sideagent.cursor.hide();window.__sideagent.cursor.setStatus({state:'done'})});
 await page.waitForTimeout(1700);
 await check('end hint expires',()=>window.__sideagent.crossPageState()===null);

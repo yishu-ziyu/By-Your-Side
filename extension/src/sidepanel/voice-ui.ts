@@ -9,14 +9,14 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const region = document.createElement('section');
   region.className = 'voice-progress';
   region.hidden = true;
-  region.setAttribute('aria-label', '语音问进度');
+  region.setAttribute('aria-label', '语音对话');
   region.innerHTML = '<canvas class="voice-orb" aria-label="语音光球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div><div class="voice-actions"></div>';
   composer.querySelector('#input')!.before(region);
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'voice-start';
   button.title = '语音对话：问进度或调整当前任务';
-  button.setAttribute('aria-label', '打开语音问进度');
+  button.setAttribute('aria-label', '开始语音对话');
   button.setAttribute('aria-expanded', 'false');
   // 输入框里只放一个话筒图标（Gemini、ChatGPT 的做法）；光球只在进入语音后的大界面里。
   button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>';
@@ -27,7 +27,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   stopSpeech.type = 'button';
   stopSpeech.className = 'voice-stop-speech';
   stopSpeech.textContent = '停声';
-  stopSpeech.title = '只停止说话，后台任务继续';
+  stopSpeech.title = '停声。任务继续。';
   stopSpeech.hidden = true;
   // 停声、结束放在底部居中，和光球、字幕同一条中线。
   region.querySelector('.voice-actions')!.append(stopSpeech, end);
@@ -127,7 +127,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const recordHead = node('div', 'voice-record-head');
   const markButton = node('button', 'voice-diag-mark', '记录本轮问题') as HTMLButtonElement;
   markButton.type = 'button';
-  markButton.title = '记录本轮问题：只写进语音诊断日志，不会重试或修改任务';
+  markButton.title = '把这一轮标成有问题。只写进诊断记录，不改任务。';
   const markHelp = node('span', 'voice-diag-mark-help', '仅记录问题，不会重试或修改任务');
   const markNote = node('span', 'voice-diag-mark-note', '');
   markNote.setAttribute('role', 'status');
@@ -369,7 +369,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
     region.hidden = next === 'idle';
     button.setAttribute('aria-expanded', String(next !== 'idle'));
-    button.setAttribute('aria-label', next === 'idle' ? '打开语音问进度' : '结束语音问进度');
+    button.setAttribute('aria-label', next === 'idle' ? '开始语音对话' : '结束语音对话');
     // #55 状态由光球自己的动法表达，球下只留一个灰字：在听 / 在想（有具体说明就写说明，如「在读这个页面」）/ 在说（字幕在说话，只给读屏）。
     const plainDetail = detail && detail !== '正在处理这句话' ? detail : '';
     const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '连接失败' };

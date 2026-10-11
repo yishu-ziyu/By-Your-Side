@@ -21,21 +21,21 @@ import { formatDuration } from "./steps.js";
 /** 阻塞/等待原因 → 人话。直接取 task_view 的真实 reason，不合并成含糊「思考中」。 */
 export function waitingCopy(reason: string, detail: string | null): { text: string; detail: string | null } {
   const map: Record<string, string> = {
-    human_control: "页面已交给你，Agent 暂停等待",
-    restart_checkpoint: "上次会话中断，任务停在检查点",
-    cancelled: "已按你的停止要求结束",
-    failure_limit: "连续失败达到上限，已停住等你决定",
-    unknown_with_baseline: "结果未知，等待核对",
-    unknown_without_baseline: "结果未知，且没有可对比的基线",
-    readback_required: "Agent 尚需核对页面结果",
-    tool_failed: "上一步工具失败",
-    runtime_error: "运行出错",
+    human_control: "页面现在归你，助手在等你交还",
+    restart_checkpoint: "上次会话断开了，任务停在中途",
+    cancelled: "你中止了任务",
+    failure_limit: "连续几步没做成，助手在等你决定",
+    unknown_with_baseline: "有 1 步结果未知，助手要先核验",
+    unknown_without_baseline: "有 1 步结果未知，助手没有改动前的记录，不会自己重做",
+    readback_required: "助手还要核验页面",
+    tool_failed: "上一步没做成",
+    runtime_error: "出错了",
   };
 
   const detailMap: Record<string, string> = {
-    host_restart: "伴随进程当时停止了",
-    connection_lost: "与伴随进程的连接断了",
-    manual_continuation: "按你的要求停在这里",
+    host_restart: "扩展后台重启了",
+    connection_lost: "扩展后台断开了",
+    manual_continuation: "你中止了任务",
   };
 
   return {
@@ -47,10 +47,10 @@ export function waitingCopy(reason: string, detail: string | null): { text: stri
 /** 状态层：一句话说清现在该谁行动。interrupted 必须区分有无真实恢复依据（与 T05 接续入口同口径）。 */
 export function stateHeadline(state: TaskView["state"], resumable?: boolean): string {
   switch (state) {
-    case "running": return "正在执行";
+    case "running": return "正在做";
     case "paused": return "已暂停 · 页面归你";
     case "interrupted": return resumable === false ? "已中断 · 没有可恢复的依据" : "已中断 · 可继续";
-    case "aborted": return "已停止";
+    case "aborted": return "已中止";
     case "error": return "出错";
     case "idle": return "本轮已结束";
     default: return "";
@@ -121,26 +121,26 @@ export function controlCopy(control: ControlState, state: TaskView["state"] | nu
     const waited = control.takeover.since != null ? now - control.takeover.since : 0;
 
     return waited > CONTROL_PENDING_TIMEOUT_MS
-      ? { phase: "unconfirmed", tone: "fail", retry: "takeover", text: "接管请求还没得到确认，页面可能仍由 Agent 控制" }
-      : { phase: "requested", tone: "pending", retry: "takeover", text: "已请求接管：正在让 Agent 停下手上动作…" };
+      ? { phase: "unconfirmed", tone: "fail", retry: "takeover", text: "接管还没生效。助手可能还在操作页面。" }
+      : { phase: "requested", tone: "pending", retry: "takeover", text: "正在接管，等助手暂停…" };
   }
 
   if (control.stop.failReason) {
-    return { phase: "unconfirmed", tone: "fail", retry: "stop", text: `停止未生效：${clip(control.stop.failReason, 40)}` };
+    return { phase: "unconfirmed", tone: "fail", retry: "stop", text: `中止没有生效：${clip(control.stop.failReason, 40)}` };
   }
 
   if (control.stop.pending && state === "running") {
     const waited = control.stop.since != null ? now - control.stop.since : 0;
 
     if (waited > CONTROL_PENDING_TIMEOUT_MS) {
-      return { phase: "unconfirmed", tone: "fail", retry: "stop", text: "停止请求还没得到确认，任务可能仍在执行" };
+      return { phase: "unconfirmed", tone: "fail", retry: "stop", text: "还没确认中止。任务可能还在运行。" };
     }
 
     return {
       phase: "requested",
       tone: "pending",
       retry: "stop",
-      text: control.stop.accepted ? "停止已受理：正在停下当前任务…" : "已请求停止：等 Agent 收手…",
+      text: "正在中止任务…",
     };
   }
 
@@ -296,11 +296,11 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     const rows = [...confirmedRows, ...pendingRows];
     // 普通发送的页面材料要等页面快照回来才认识；这段时间也必须先有「发送中」，
     // 不能因为还没行就整块不显示（本地反馈不能靠异步查页面来决定有没有）。
-    const head = confirmedRows.length ? `已随任务送入 · ${confirmedRows.length} 项` : rows.length ? `随这条消息发送 · ${rows.length} 项` : "正在发送";
+    const head = confirmedRows.length ? `已发给助手的材料 · ${confirmedRows.length} 项` : rows.length ? `要一起发送的材料 · ${rows.length} 项` : "正在发送";
     materials = {
       rows,
       head: pendingRows.length && confirmedRows.length ? `${head}（另有 ${pendingRows.length} 项材料待确认）` : head,
-      status: pendingEntry ? (pendingEntry.status === "unknown" ? "这一条接收状态未知，等待结果核对" : "发送中，尚未确认接收") : null,
+      status: pendingEntry ? (pendingEntry.status === "unknown" ? "助手还没确认收到这一条" : "正在发送，助手还没确认收到") : null,
       note: null,
     };
   }
@@ -312,7 +312,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     const rows = onlyPage ? [] : draftRows(draft);
 
     if (rows.length) {
-      materials = { rows, head: `发送时一起带上 · ${rows.length} 项`, status: null, note: "发送前可移除" };
+      materials = { rows, head: `要一起发送的材料 · ${rows.length} 项`, status: null, note: "发送前可移除" };
     }
   }
 
@@ -353,7 +353,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     }
 
     if (!activity && view.lastAction && Number.isFinite(view.lastAction.at) && now >= view.lastAction.at) {
-      activity = view.lastAction.failed ? "上一步失败" : null;
+      activity = view.lastAction.failed ? "上一步没做成" : null;
     }
   }
 
@@ -361,7 +361,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   let idleAge: string | null = null;
 
   if (view?.state === "running" && !view.active.length && view.lastAction && Number.isFinite(view.lastAction.at) && now - view.lastAction.at >= 15_000) {
-    idleAge = `距上次动作 ${formatDuration(now - view.lastAction.at)}`;
+    idleAge = `上一步在 ${formatDuration(now - view.lastAction.at)}前`;
   }
 
   const waiting = view?.waiting ? waitingCopy(view.waiting.reason, view.waiting.detail) : null;
@@ -787,7 +787,7 @@ export class TaskBar {
     this.headEl.hidden = !model.goal && !this.view?.revisions.length;
     this.goalEl.textContent = model.goal ?? "";
     this.goalEl.title = model.goalTitle ?? model.goal ?? "";
-    this.revisionsEl.textContent = this.view?.revisions.length ? `+${this.view.revisions.length} 修订` : "";
+    this.revisionsEl.textContent = this.view?.revisions.length ? `改过 ${this.view.revisions.length} 次` : "";
     this.revisionsEl.title = this.view?.revisions.length ? this.view.revisions.join("\n") : "";
     const statusBits = [model.headline, model.activity, model.idleAge].filter(Boolean);
     // 还没有任务状态（草稿、发送中）时，摘要行说材料那一句，材料区不再重复这句标题。
@@ -798,7 +798,7 @@ export class TaskBar {
     this.waitingEl.hidden = !model.waiting;
     this.waitingEl.textContent = model.waiting ? `等待：${model.waiting.text}${model.waiting.detail ? `（${model.waiting.detail}）` : ""}` : "";
     this.pageEl.hidden = !model.page;
-    this.pageEl.textContent = model.page ? `作用于：${model.page.label}` : "";
+    this.pageEl.textContent = model.page ? `页面：${model.page.label}` : "";
     this.renderMaterials(model.materials);
     // 只有已送入、不可再改的材料才收进详情；发送中、可移除的草稿材料要一直看得见。
     const settledMaterials = !!model.materials && !model.materials.status && !model.materials.rows.some((row) => row.removable);
@@ -835,7 +835,7 @@ export class TaskBar {
       retry.className = "tb-control-retry";
       retry.textContent = "再试";
       retry.setAttribute("data-retry-control", control.retry);
-      retry.setAttribute("aria-label", `${control.retry === "stop" ? "停止" : "接管"}再试一次`);
+      retry.setAttribute("aria-label", `${control.retry === "stop" ? "中止" : "接管"}再试一次`);
       this.controlEl.appendChild(retry);
     }
 

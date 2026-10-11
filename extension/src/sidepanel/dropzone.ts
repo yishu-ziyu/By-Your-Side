@@ -7,7 +7,7 @@ export function installDropzone(composer: HTMLElement, accept: (source: PageElem
   const hint = document.createElement('div');
   hint.className = 'dropzone-hint';
   hint.hidden = true;
-  hint.textContent = '松手添加网页材料，不自动发送';
+  hint.textContent = '松开就添加材料，不会自动发送';
   composer.prepend(hint);
   const error = document.createElement('div');
   error.setAttribute('role', 'status');
@@ -36,7 +36,7 @@ export function installDropzone(composer: HTMLElement, accept: (source: PageElem
     const current = ++generation;
 
     if (!before.ready) {
-      error.textContent = '草稿还在恢复，材料未添加；请稍后重新拖入。';
+      error.textContent = '草稿还在恢复，材料没有添加。稍后再拖一次。';
 
       return;
     }
@@ -61,7 +61,7 @@ export function installDropzone(composer: HTMLElement, accept: (source: PageElem
 
       accept(reply.source, reply.tabId);
     }, () => {
-      if (current === generation && draft().scope === before.scope) error.textContent = '扩展连接已断开，材料未添加。';
+      if (current === generation && draft().scope === before.scope) error.textContent = '扩展断开了，材料没有添加。';
     });
   });
   document.addEventListener('dragend', clear);

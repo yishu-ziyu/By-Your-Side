@@ -58,12 +58,12 @@ function needsModelCard(resends: boolean): HTMLElement {
   const card = document.createElement('section');
   card.className = 'msg receipt-decision';
   const title = document.createElement('strong');
-  title.textContent = '还没连模型';
+  title.textContent = '还没有连接模型';
   const description = document.createElement('p');
   description.textContent = resends ? '连好以后，这句话会自动发出。' : '连好以后，把刚才的话再发一次。';
   const actions = document.createElement('div');
   const connect = document.createElement('button');
-  connect.type = 'button'; connect.textContent = '连一个模型';
+  connect.type = 'button'; connect.textContent = '连接模型';
   connect.onclick = () => void chrome.runtime.openOptionsPage();
   actions.append(connect); card.append(title, description, actions);
 

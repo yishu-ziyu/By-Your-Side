@@ -1,5 +1,5 @@
 /**
- * 侧栏「做了 N 件事」里每一步都有自己的图标，不再有的只是一个点（docs/evals/20261007-reinject-and-step-icons.md R2）。
+ * 侧栏「做了 N 步」里每一步都有自己的图标，不再有的只是一个点（docs/evals/20261007-reinject-and-step-icons.md R2）。
  *   npx tsx scripts/acceptance/real-path/step-icons.mts --headless
  * 脚本模型依次调用打开页面、执行脚本、连续操作、悬停、按键、标注、点击，再回一句话；展开过程，截图并读出每一步的图标种类。
  */
@@ -54,8 +54,8 @@ try {
   await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(m => m.textContent.includes("都走了一遍"))`) || undefined, 90_000, "answer");
   await sleep(1_500);
-  // 展开「做了 N 件事」。
-  await rp.evaluate(panel, `(() => { const t = [...document.querySelectorAll("#messages button, #messages summary")].find(b => /^做了 \\d+ 件事/.test(b.textContent.trim())); t?.click(); return !!t; })()`);
+  // 展开「做了 N 步」。
+  await rp.evaluate(panel, `(() => { const t = [...document.querySelectorAll("#messages button, #messages summary")].find(b => /^做了 \\d+ 步/.test(b.textContent.trim())); t?.click(); return !!t; })()`);
   await sleep(600);
   // SAFETY: 表达式返回字符串数组。
   evidence.kinds = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .chip:not(.prep)")].map(c => c.dataset.kind)`) as string[];

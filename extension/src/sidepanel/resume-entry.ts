@@ -14,7 +14,7 @@ import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import type { PageContext } from "../../../shared/protocol.js";
 import { plainStep } from "../../../shared/user-facing.js";
 
-const STATUS_LABEL: Record<string, string> = { pending: "未完成", blocked: "执行受阻", unknown: "结果未知", satisfied: "已完成" };
+const STATUS_LABEL: Record<string, string> = { pending: "还没做", blocked: "没做成", unknown: "结果未知", satisfied: "做完了" };
 
 export const RESUME_TIMING_SAMPLE_MAX = 100;
 
@@ -25,21 +25,21 @@ export function resultStatusLabel(status: string): string {
 }
 
 const WAITING_TEXT: Record<string, string> = {
-  human_control: "页面已交给你，点「交还」后再接着做",
-  restart_checkpoint: "任务中断在检查点，等你说继续",
-  cancelled: "已按你的要求停止，不会自动复活",
-  failure_limit: "连续失败达到上限，已停住等你决定",
-  unknown_with_baseline: "有操作结果未知，先核对再继续",
-  unknown_without_baseline: "有操作结果未知且缺少可对比基线，不会自动重做",
-  readback_required: "执行过了，但还没读回核对",
-  tool_failed: "上一步执行失败，需要换方法",
-  runtime_error: "运行出错，只能如实交付已有事实",
+  human_control: "页面现在归你，点「交还」后再接着做",
+  restart_checkpoint: "任务中断了，说「继续」就接着做",
+  cancelled: "你中止了任务，助手不会自己重新开始",
+  failure_limit: "连续几步没做成，助手在等你决定",
+  unknown_with_baseline: "有 1 步结果未知，助手先核验再继续",
+  unknown_without_baseline: "有 1 步结果未知，助手没有改动前的记录，不会自己重做",
+  readback_required: "做了，但助手还没核验",
+  tool_failed: "上一步没做成，助手要换个做法",
+  runtime_error: "出错了，助手只给你已确认的结果",
 };
 
 const INTERRUPTION_DETAIL: Record<string, string> = {
-  host_restart: "本地进程重启",
-  connection_lost: "与伴随进程的连接断开",
-  manual_continuation: "按你的要求停在这里",
+  host_restart: "扩展后台重启了",
+  connection_lost: "扩展后台断开了",
+  manual_continuation: "你中止了任务",
 };
 
 export function waitingText(reason: string, detail: string | null): string {
@@ -63,21 +63,21 @@ export interface ResumeAvailability {
 export function resumeAvailability(view: TaskView | null, checkpointUnavailable: boolean): ResumeAvailability {
   if (!view) return { available: false, reason: "还没有当前任务的状态" };
 
-  if (checkpointUnavailable) return { available: false, reason: "原任务检查点无法恢复，不会自动重做；其他任务可另开会话" };
+  if (checkpointUnavailable) return { available: false, reason: "原任务无法接着做。新任务要另开一个会话。" };
 
-  if (view.state === "running") return { available: false, reason: "任务正在执行" };
+  if (view.state === "running") return { available: false, reason: "任务正在做" };
 
-  if (view.state === "paused") return { available: false, reason: "页面已交给你；点「交还」后我会继续原任务" };
+  if (view.state === "paused") return { available: false, reason: "页面现在归你。点「交还」后，我会继续原任务。" };
 
-  if (view.state === "aborted") return { available: false, reason: "任务已停止，这个入口不会把它复活" };
+  if (view.state === "aborted") return { available: false, reason: "任务已中止。这里不能重新开始它。" };
 
   // 模型已在回答里说明哪些没做完：接下来要你补信息或换页面，直接在输入框回复，不给「继续」重跑。
   if (declaredUnfinished(view).length) return { available: false, reason: "回答里已说明没做完的部分，直接回复就行" };
 
   if (view.state === "interrupted" || ["idle", "error"].includes(view.state)) {
-    if (!view.resumable) return { available: false, reason: "没有可恢复的原始依据，不会自动继续" };
+    if (!view.resumable) return { available: false, reason: "找不到原任务的记录，不会自己继续" };
 
-    if (!view.runId) return { available: false, reason: "缺少原任务身份，不能续接" };
+    if (!view.runId) return { available: false, reason: "找不到原任务，不能接着做" };
 
     return { available: true, reason: null };
   }
@@ -133,7 +133,7 @@ function clipText(text: string, max: number): string {
 }
 
 function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: ResumeSummary["remaining"], blocking: string | null): string {
-  if (checkpointUnavailable) return "原任务检查点无法恢复，不会自动重做";
+  if (checkpointUnavailable) return "原任务无法接着做，不会自己重做";
 
   if (view.state === "paused") return "页面现在归你，点「交还」后接着做";
   const declared = declaredUnfinished(view);
@@ -156,28 +156,28 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 停在一步中间（结果未知）不是「还没做」：页面上可能已经留下了部分结果（#103，整页翻译停下时已翻好几百段）。
   const midway = !told && remaining.length > 0 && remaining.every((r) => r.status === "unknown");
 
-  if (view.state === "aborted" && midway) return `已停止，${clipText(listed[0]!, 24)}${listed.length > 1 ? ` 等 ${listed.length} 件` : ""}停在中途，不会自动继续`;
+  if (view.state === "aborted" && midway) return `已中止，${clipText(listed[0]!, 24)}${listed.length > 1 ? ` 等 ${listed.length} 件` : ""}停在中途，不会自己继续`;
 
-  if (view.state === "aborted") return left ? `已停止，${left}，不会自动继续` : "已停止";
+  if (view.state === "aborted") return left ? `已中止，${left}，不会自己继续` : "已中止";
 
   if (view.state === "interrupted") return left ? `任务中断了，${left}` : "任务中断了";
 
-  if (view.state === "error") return left ? `运行出错，${left}` : "运行出错";
+  if (view.state === "error") return left ? `出错了，${left}` : "出错了";
 
-  if (left) return remaining.some(r => r.status === "unknown") ? `${left}（结果待确认）` : left;
+  if (left) return remaining.some(r => r.status === "unknown") ? `${left}（结果未知）` : left;
 
   return blocking ?? "这一轮还需要你看一下";
 }
 
 function headlineFor(view: TaskView, checkpointUnavailable: boolean, remainingCount: number): { tone: ResumeSummary["tone"]; headline: string } {
-  if (checkpointUnavailable) return { tone: "stopped", headline: "原任务检查点无法恢复" };
+  if (checkpointUnavailable) return { tone: "stopped", headline: "原任务无法接着做" };
 
   switch (view.state) {
-    case "running": return { tone: "running", headline: "正在执行" };
+    case "running": return { tone: "running", headline: "正在做" };
     case "paused": return { tone: "waiting", headline: "已暂停 · 页面归你" };
     case "interrupted": return { tone: "waiting", headline: "已中断 · 可继续" };
-    case "aborted": return { tone: "stopped", headline: "已停止" };
-    case "error": return { tone: "blocked", headline: "运行出错" };
+    case "aborted": return { tone: "stopped", headline: "已中止" };
+    case "error": return { tone: "blocked", headline: "出错了" };
     case "idle": return remainingCount || view.waiting || view.resumable
       ? { tone: "waiting", headline: "任务已结束 · 仍需处理" }
       : { tone: "running", headline: "任务已结束" };
@@ -199,52 +199,52 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   const checkedDone = checkedRemaining(view)?.length === 0;
 
   const remaining = view.outstanding.filter((r) => !(checkedDone && unverifiedGoal(view, r)))
-    .map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: unverifiedGoal(view, r) ? "未确认完成" : resultStatusLabel(r.status) }));
+    .map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: unverifiedGoal(view, r) ? "还没核验" : resultStatusLabel(r.status) }));
 
   const tone = headlineFor(view, checkpointUnavailable, remaining.length);
   const unknown = remaining.filter((r) => r.status === "unknown").length;
   const blocked = remaining.filter((r) => r.status === "blocked").length;
   const interruptionDetail = view.waiting?.reason === "restart_checkpoint" && view.waiting.detail ? (INTERRUPTION_DETAIL[view.waiting.detail] ?? view.waiting.detail) : null;
-  const blocking = view.waiting ? waitingText(view.waiting.reason, view.waiting.detail) : unknown ? "有操作结果未知，不会自动重做" : blocked ? "有步骤执行受阻" : null;
+  const blocking = view.waiting ? waitingText(view.waiting.reason, view.waiting.detail) : unknown ? "有 1 步结果未知，不会自己重做" : blocked ? "有 1 步没做成" : null;
   const resume = resumeAvailability(view, checkpointUnavailable);
 
   const nextStep = (() => {
-    if (checkpointUnavailable) return "不会自动重做原任务；没有覆盖原记录，其他独立任务可以另开会话。";
+    if (checkpointUnavailable) return "原任务无法接着做。原来的记录还在。新任务要另开一个会话。";
 
     // 后台自动续做只在原标签页还在时发生（extension/src/background/auto-resume.ts），侧栏看不到标签页，按两种情况都说清。
-    if (resume.available && view.state === "interrupted" && canAutoResume(view)) return "后台刚重启。原页面还开着的话，我会自动接着做，已完成的步骤不会重做；没有动静就点「继续原任务」。";
+    if (resume.available && view.state === "interrupted" && canAutoResume(view)) return "扩展后台刚重启。如果原页面还开着，我会自动接着做。做完的步骤不会重做。如果一直没有变化，就点「继续原任务」。";
 
     if (resume.available) {
       return unknown || blocked
-        ? "可以点「继续原任务」重新读取当前页面并核对；未知项需要可靠依据或你的决定，不会重复提交。"
-        : "点「继续原任务」：先重新读取当前页面，再完成剩余项；已完成的步骤不会重做。";
+        ? "点「继续原任务」，助手先重读当前页面，再核验。结果未知的步骤，要等你决定。助手不会重复提交。"
+        : "点「继续原任务」，助手先重读当前页面，再做剩下的步骤。做完的步骤不会重做。";
     }
 
-    if (view.state === "running") return remaining.length ? `正在处理剩余 ${remaining.length} 项。` : "正在执行；完成后会交给你可核对的结果。";
+    if (view.state === "running") return remaining.length ? `正在做剩下的 ${remaining.length} 步。` : "正在做。做完后，你会看到能核对的结果。";
 
     if (view.state === "paused") return "点「交还」后，我会先重读页面，再做原任务剩下的部分。";
 
-    if (view.state === "aborted") return "已按你的要求停止；历史保留，需要的话请重新说明新任务。";
+    if (view.state === "aborted") return "你中止了任务。会话记录还在。要做新任务，就重新说一遍。";
 
-    if (unknown) return "未知项需要核对可靠结果或由你决定；在得到依据前不会重复提交。";
+    if (unknown) return "结果未知的步骤，要等你决定。助手不会重复提交。";
 
-    if (blocked) return "按当前页面新观察换方法继续；无法恢复的部分会如实说明。";
+    if (blocked) return "助手会看当前页面，换个做法继续。做不到的部分，助手会告诉你。";
 
-    if (remaining.length) return "还有未完成项；可以用「继续原任务」从剩余部分继续（如果原依据仍在）。";
+    if (remaining.length) return "还有步骤没做完。点「继续原任务」，从剩下的部分接着做。";
 
-    if (view.waiting || view.resumable) return "这一轮已经结束，仍需核对或处理；请按阻塞说明继续。";
+    if (view.waiting || view.resumable) return "这一轮结束了。还有事要你看一下。";
 
-    return "这一轮已经结束；登记的步骤没有待办，不代表所有要求都已核验。";
+    return "这一轮结束了。列出的步骤都做完了。这不代表每个要求都核验过。";
   })();
 
   const gaps: string[] = [];
 
-  if (checkpointUnavailable) gaps.push("原任务检查点无法恢复；原记录未被覆盖，本会话不会执行它，其他独立任务可以另开会话");
+  if (checkpointUnavailable) gaps.push("原任务无法接着做。原来的记录还在。新任务要另开一个会话");
   else if (view.state !== "interrupted" && view.state !== "running" && view.state !== "aborted" && view.state !== "paused") gaps.push(resume.reason ?? "");
 
-  if (unknown) gaps.push(`${unknown} 项操作结果未知；不会重复提交，需要可靠结果或你的决定`);
+  if (unknown) gaps.push(`${unknown} 步结果未知。助手不会重复提交，要等你决定`);
 
-  if (blocked) gaps.push(`${blocked} 项执行受阻，需要换方法`);
+  if (blocked) gaps.push(`${blocked} 步没做成，助手要换个做法`);
 
   // 运行中由顶部任务条负责；这张卡只在需要用户处理时出现（页面归你、中断、出错、停止或结束后仍有剩余）。
   const visible = checkpointUnavailable

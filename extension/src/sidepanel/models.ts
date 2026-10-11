@@ -32,8 +32,8 @@ export function groupModelsByProvider(models: readonly ModelOption[]): ModelGrou
 
 /** provider id → 面板分组显示名；未收录的原样显示 id。 */
 const PROVIDER_LABELS: Record<string, string> = {
-  cliproxy: "本地池",
-  "cli-proxy": "本地池",
+  cliproxy: "本机代理",
+  "cli-proxy": "本机代理",
   "minimax-cn": "MiniMax",
   minimax: "MiniMax",
   "openai-codex": "Codex",

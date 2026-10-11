@@ -1,8 +1,8 @@
 /**
- * 按记忆填的那一格带「记得的」记号，点开小卡能「这次不用」「忘掉」（YIS-87）。真实模型，只装扩展，无头。
+ * 按记忆填的那一格带「来自记忆」记号，点开小卡能「这次不用」「忘记」（YIS-87）。真实模型，只装扩展，无头。
  *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/memory-field-mark.mts --headless [--model=provider/id]
  * 失败方式：按记忆填的邮箱没有记号；不是记忆的备注也带了记号；记号改了网页的值或留下属性；你自己改了这一格记号还在；
- *   「这次不用」没清空或删了记忆；「忘掉」没清空、记忆库里还在，或侧栏没写已忘掉。
+ *   「这次不用」没清空或删了记忆；「忘记」没清空、记忆库里还在，或侧栏没写已忘记。
  */
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -167,7 +167,7 @@ try {
 
   // 点标签出小卡，点「这次不用」：这一格清空，记号消失，记忆还在。
   await refill();
-  await clickInMark((a) => a.class === "tag", "记得的");
+  await clickInMark((a) => a.class === "tag", "来自记忆");
   await rp.screenshot(work, join(artifacts, "card.png"));
   await clickInMark((a) => a["data-action"] === "once", "这次不用");
   const once = await page();
@@ -176,20 +176,20 @@ try {
   assert.equal(once.marks.length, 0, "「这次不用」后记号消失");
   assert.ok((await active()).some((t) => t.includes(email)), "「这次不用」不删记忆");
 
-  // 再填一次，点「忘掉」：这一格清空，记忆库里没有了，侧栏那一行写已忘掉。
+  // 再填一次，点「忘记」：这一格清空，记忆库里没有了，侧栏那一行写已忘记。
   await refill();
-  await clickInMark((a) => a.class === "tag", "记得的");
-  await clickInMark((a) => a["data-action"] === "forget", "忘掉");
-  await until(async () => (await page()).marks.length === 0 || undefined, 10_000, "「忘掉」后记号消失");
+  await clickInMark((a) => a.class === "tag", "来自记忆");
+  await clickInMark((a) => a["data-action"] === "forget", "忘记");
+  await until(async () => (await page()).marks.length === 0 || undefined, 10_000, "「忘记」后记号消失");
   const forgot = await page();
   const memories = await active();
   // SAFETY: 页面脚本返回字符串。
   const panelRow = await rp.evaluate(panel, `[...document.querySelectorAll('.memory-used-item[data-state="forgotten"]')].at(-1)?.innerText ?? ""`) as string;
   evidence.forgot = { ...forgot, memories, panelRow };
   await rp.screenshot(panel, join(artifacts, "panel-forgotten.png"));
-  assert.equal(forgot.email, "", "「忘掉」清空这一格");
-  assert.ok(!memories.some((t) => t.includes(email)), "「忘掉」后记忆库里没有这条");
-  assert.match(panelRow, /已忘掉/, "侧栏那一行写已忘掉");
+  assert.equal(forgot.email, "", "「忘记」清空这一格");
+  assert.ok(!memories.some((t) => t.includes(email)), "「忘记」后记忆库里没有这条");
+  assert.match(panelRow, /已忘记/, "侧栏那一行写已忘记");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 

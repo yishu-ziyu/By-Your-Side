@@ -237,7 +237,7 @@ try {
     goalCheckReleasedMs: releaseMs,
     claimFirstShownMs: first(a.samples, s => s.claimOutsideProcess),
     noteEvidenceFirstMs: first(a.samples, s => s.evidence.includes("草稿现在是：「Note」")),
-    fixFirstMs: first(a.samples, s => s.fix.some(t => t.startsWith("核对发现"))),
+    fixFirstMs: first(a.samples, s => s.fix.some(t => t.startsWith("目标核对发现"))),
     fixText: a.samples.at(-1)!.fix,
     finalAnswerMs: a.samples.at(-1)!.t,
     finalEvidence: a.samples.at(-1)!.evidence,
@@ -248,7 +248,7 @@ try {
   assert.ok(caseA.claimFirstShownMs !== null && caseA.claimFirstShownMs < releaseMs, `a: the answer is shown before the verdict (${releaseMs} ms); first shown ${caseA.claimFirstShownMs} ms`);
   assert.ok(caseA.fixFirstMs !== null && caseA.fixFirstMs >= releaseMs, `a: 「核对发现」 visible after the verdict (${caseA.fixFirstMs} ms)`);
   // n) 显示核对写给用户的 finding，不显示写给助手的 correction。
-  assert.ok(caseA.fixText.includes(`核对发现：${FINDING}。正在改…`), `n: the fix line shows the finding: ${JSON.stringify(caseA.fixText)}`);
+  assert.ok(caseA.fixText.includes(`目标核对发现：${FINDING}。助手正在补做…`), `n: the fix line shows the finding: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.fixText.every(t => !t.includes("请") && !/please/i.test(t)), `n: the fix line has no instruction to the assistant: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.noteEvidenceFirstMs !== null, "a: 「草稿现在是：「Note」」 visible");
   assert.ok(caseA.finalEvidence.includes(`草稿现在是：「${NOTE_FIRST}」`), `a: final evidence shows the right sentence: ${JSON.stringify(caseA.finalEvidence)}`);
@@ -345,7 +345,7 @@ try {
   const o = await runCase("o", s => s.fix.some(t => t.includes("还差")) && s.answers.filter(t => t.includes(FIXED)).length > fixedBefore, {}, 30_000);
   const fixO = o.samples.at(-1)!.fix.filter(t => t.includes("还差"));
   evidence.o = { fix: fixO };
-  assert.deepEqual(fixO, ["核对发现：还差：填入第一句。正在改…"], `o: without a finding the fix line says what is still missing: ${JSON.stringify(fixO)}`);
+  assert.deepEqual(fixO, ["目标核对发现：还差：填入第一句。助手正在补做…"], `o: without a finding the fix line says what is still missing: ${JSON.stringify(fixO)}`);
 
   // p) 两栏同名：第一栏没留住，第二栏一致。两栏各有一行读回，第一栏不被第二栏盖掉。
   const p = await finalRead("p");

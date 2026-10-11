@@ -811,7 +811,7 @@ return { kind: "silent" };}
       this.progress.get(id)?.abort();
       entry.runtime.handleMessage({ type: 'abort' });
       await entry.runtime.session.waitForStop?.().catch(() => {});
-      this.emit({ type: 'agent_event', conversationId: id, event: { kind: 'notice', message: '你另发了新任务，这条回答之后的接着做已停下；回答保持不变。' } });
+      this.emit({ type: 'agent_event', conversationId: id, event: { kind: 'notice', message: '你发了新任务，这条回答不再接着做。回答保持不变。' } });
     }
   }
 

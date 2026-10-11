@@ -56,7 +56,7 @@ document.getElementById("settings")!.innerHTML = `
   <section class="sx" aria-labelledby="model-title">
     <div class="sx-head">
       <h2 id="model-title">模型</h2>
-      <p class="sx-sub">用你自己的套餐调用模型。密钥只保存在这个浏览器里。</p>
+      <p class="sx-sub">用你自己的账号或套餐连接模型。密钥只存在这个浏览器里。</p>
     </div>
     <div class="surface rows">
       <div class="row">
@@ -68,7 +68,7 @@ document.getElementById("settings")!.innerHTML = `
         <span class="row-ctl"><select id="fast-model" class="sel" aria-label="快速模型"></select></span>
       </div>
       <div class="row">
-        <span class="row-main"><span class="row-title">备用模型</span><span class="row-desc">主模型卡住或暂时出错时，换它接着做。对话内容会发给这一家。</span></span>
+        <span class="row-main"><span class="row-title">备用模型</span><span class="row-desc">如果主模型出错，就换它接着做。会话内容会发给这个服务商。</span></span>
         <span class="row-ctl"><select id="backup-model" class="sel" aria-label="备用模型"></select></span>
       </div>
     </div>
@@ -108,14 +108,14 @@ document.getElementById("settings")!.innerHTML = `
       </div>
       <div id="key-saved" class="d-cred" hidden>
         <span class="key-ic"></span>
-        <span class="d-cred-text">已填 key<span id="key-tail" class="d-mono"></span></span>
+        <span class="d-cred-text">已存密钥<span id="key-tail" class="d-mono"></span></span>
         <span class="d-cred-acts">
           <button id="key-change" type="button" class="btn btn-quiet">更换</button>
           <button id="key-delete" type="button" class="btn btn-quiet">删除</button>
         </span>
       </div>
       <label id="key-row" class="d-field">
-        <span id="key-label" class="d-label">API key</span>
+        <span id="key-label" class="d-label">密钥</span>
         <input id="api-key" class="d-input" type="password" autocomplete="off" spellcheck="false" />
       </label>
       <div class="d-field">
@@ -142,9 +142,9 @@ document.getElementById("settings")!.innerHTML = `
     </div>
     <div class="surface rows">
       <div class="row">
-        <span class="row-main"><span class="row-title">StepFun API key</span><span id="voice-state" class="row-desc"></span></span>
+        <span class="row-main"><span class="row-title">阶跃星辰密钥（语音用）</span><span id="voice-state" class="row-desc"></span></span>
         <span class="row-ctl inline">
-          <input id="voice-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="StepFun API key" />
+          <input id="voice-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="阶跃星辰密钥（语音用）" />
           <button id="voice-save" type="button" class="btn">保存</button>
           <button id="voice-clear" type="button" class="btn btn-quiet" hidden>清除</button>
         </span>
@@ -158,7 +158,7 @@ document.getElementById("settings")!.innerHTML = `
         <div id="timbre-list" class="radio-rows" role="radiogroup" aria-labelledby="timbre-title"></div>
       </div>
       <div class="row stack">
-        <span class="row-main"><span id="orb-title" class="row-title">光球</span><span class="row-desc">欢迎页和语音里的光球，点一下立即换。</span></span>
+        <span class="row-main"><span id="orb-title" class="row-title">光球</span><span class="row-desc">侧栏首屏和语音里的光球。点一下就换。</span></span>
         <div id="orb-list" class="radio-rows" role="radiogroup" aria-labelledby="orb-title"></div>
       </div>
       <div class="row stack">
@@ -174,14 +174,14 @@ document.getElementById("settings")!.innerHTML = `
         </div>
       </div>
       <div class="row">
-        <span class="row-main"><span class="row-title">MiniMax 订阅 Key</span><span id="speech-state" class="row-desc"></span></span>
+        <span class="row-main"><span class="row-title">MiniMax 订阅密钥</span><span id="speech-state" class="row-desc"></span></span>
         <span class="row-ctl inline">
-          <input id="speech-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="MiniMax 订阅 Key" />
+          <input id="speech-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="MiniMax 订阅密钥" />
           <button id="speech-save" type="button" class="btn">保存</button>
           <button id="speech-clear" type="button" class="btn btn-quiet" hidden>清除</button>
         </span>
       </div>
-      ${toggleRow("ptt-speak", "按住说话的事做完，念出结果", "念回答的第一句和「留给你的」，用 MiniMax speech-2.8-hd。只接受 Token Plan 订阅 Key（sk-cp- 开头），不走按量计费。")}
+      ${toggleRow("ptt-speak", "念出按住说话的结果", "念回答的第一句和「留给你的」。要用 MiniMax 订阅密钥（sk-cp- 开头）。")}
     </div>
     <p id="voice-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
@@ -189,16 +189,16 @@ document.getElementById("settings")!.innerHTML = `
   <section class="sx" aria-labelledby="selection-title">
     <div class="sx-head"><h2 id="selection-title">划词</h2></div>
     <div class="surface rows">
-      ${toggleRow("selection-bar", "选中文字后显示「问 AI / 解释」", `<span id="ask-shortcut-note">关掉后右键「问 By Your Side」仍然可用。</span>已打开的网页立即生效。`)}
-      ${toggleRow("link-preview", "按住 Shift 停在链接上，预览目标页", "卡片写目标页的标题和几行要点，不打开新标签；读页面时不带你的登录状态。")}
-      ${toggleRow("nudge", "主动建议", "看出能帮上忙时，在页面右下角递一张小卡，点一下交给侧栏去做。每次判断会把这一页和最近几页的摘录发给你选的模型；同一页只看一次。")}
+      ${toggleRow("selection-bar", "选中文字后显示「问助手 / 解释」", `<span id="ask-shortcut-note">关掉后右键「问 By Your Side」仍然可用。</span>已打开的页面立即生效。`)}
+      ${toggleRow("link-preview", "按住 Shift 停在链接上，预览目标页", "卡片显示目标页面的标题和要点。预览不打开新标签页，也不带你的登录状态。")}
+      ${toggleRow("nudge", "主动建议", "如果助手能帮上忙，就在页面右下角显示一张小卡。点小卡，侧栏就开始做。每次判断会把当前页面和最近页面的摘录发给快速模型，没设快速模型时发给主模型。同一个页面只判断一次。")}
     </div>
     <p id="selection-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="open-threads-title">
     <div class="sx-head"><h2 id="open-threads-title">继续上次的事</h2></div>
     <div class="surface rows">
-      ${toggleRow("open-threads", "新对话里显示没做完的事", "最多 3 张，只来自这台电脑上的记录：中断的任务、交给你的页面、没答完的追问。单张点 × 后 7 天内不再出现。")}
+      ${toggleRow("open-threads", "新会话里显示没做完的事", "最多显示 3 张卡：中断的任务、归你的页面、没答完的追问。卡片来自这个浏览器里的记录。点 ×，这张卡 7 天内不再显示。")}
     </div>
     <p id="open-threads-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
@@ -206,7 +206,7 @@ document.getElementById("settings")!.innerHTML = `
     <div class="sx-head"><h2 id="trace-title">诊断记录</h2></div>
     <div class="surface rows">
       <div class="row">
-        <span class="row-main"><span class="row-title">任务步骤与语音识别记录</span><span class="row-desc">留在这台电脑的浏览器里，密码和密钥已去掉，不存录音，不上传。任务保留最近 ${TRACE_SESSIONS_KEPT} 个会话，语音保留 ${VOICE_CAPTURE_MAX_AGE_DAYS} 天。排查问题时导出给开发者。</span></span>
+        <span class="row-main"><span class="row-title">任务步骤与语音识别记录</span><span class="row-desc">只存在这个浏览器里，不上传。导出前，我们去掉能识别出的密码和密钥。不存录音。任务保留最近 ${TRACE_SESSIONS_KEPT} 个会话，语音保留 ${VOICE_CAPTURE_MAX_AGE_DAYS} 天。排查问题时导出给开发者。</span></span>
         <span class="row-ctl inline">
           <button id="trace-export" type="button" class="btn">导出</button>
           <button id="trace-clear" type="button" class="btn btn-quiet">清空</button>
@@ -347,19 +347,19 @@ function labelOf(providerId: string): string {
   return entry ? region ? `${entry.name}（${region}）` : entry.name : providerId;
 }
 
-function credentialNote(providerId: string): "已登录" | "已填 key" | "" {
+function credentialNote(providerId: string): "已登录" | "已存密钥" | "" {
   const credential = credentials[providerId];
 
   if (credential?.type === "oauth") return "已登录";
 
-  if (credential?.type === "api_key" && credential.key) return "已填 key";
+  if (credential?.type === "api_key" && credential.key) return "已存密钥";
 
   return "";
 }
 
 const connected = (entry: Entry) => entry.members.some((m) => credentialNote(m.id) || m.id === config?.provider);
 
-/** 一行的状态：使用中 > 已登录 > 已填 key。 */
+/** 一行的状态：使用中 > 已登录 > 已存密钥。 */
 interface EntryStatus { kind: "use" | "oauth" | "key" | ""; text: string; region?: string }
 
 function entryStatus(entry: Entry): EntryStatus {
@@ -367,7 +367,7 @@ function entryStatus(entry: Entry): EntryStatus {
 
   if (use) return { kind: "use", text: "使用中", region: use.region };
 
-  for (const [kind, text] of [["oauth", "已登录"], ["key", "已填 key"]] as const) {
+  for (const [kind, text] of [["oauth", "已登录"], ["key", "已存密钥"]] as const) {
     const member = entry.members.find((m) => credentialNote(m.id) === text);
 
     if (member) return { kind, text, region: member.region };
@@ -517,13 +517,13 @@ function renderCredentialState(): void {
   oauthLogout.hidden = !loggedIn || login !== null;
   oauthOk.hidden = !loggedIn || login !== null;
 
-  if (login === null) oauthState.textContent = loggedIn ? "已登录，令牌会自动续期。" : "会打开服务商的网页，在那里确认即可。";
+  if (login === null) oauthState.textContent = loggedIn ? "已登录。" : "点登录后，会打开服务商的页面。在那个页面确认登录。";
 
   keySaved.hidden = !selected.apiKey || !saved || changingKey;
   keyTail.textContent = saved ? ` · 末四位 ${saved.slice(-4)}` : "";
   keyRow.hidden = !selected.apiKey || loggedIn || !!saved && !changingKey;
-  keyLabel.textContent = selected.id === CUSTOM_PROVIDER_ID ? "API key（本机服务可以不填）" : selected.oauthLabel ? "或者填写 API key" : "API key";
-  keyInput.placeholder = saved ? "粘贴新的 key，留空则沿用" : "粘贴 key";
+  keyLabel.textContent = selected.id === CUSTOM_PROVIDER_ID ? "密钥（本机服务可以不填）" : selected.oauthLabel ? "或者填密钥" : "密钥";
+  keyInput.placeholder = saved ? "粘贴新密钥。留空就继续用旧的。" : "粘贴密钥";
 }
 
 function select(choice: ProviderChoice): void {
@@ -536,7 +536,7 @@ function select(choice: ProviderChoice): void {
   baseUrlInput.value = choice.id === CUSTOM_PROVIDER_ID ? config?.baseUrl ?? "" : "";
   keyInput.value = "";
   modelInput.value = defaultModel(choice);
-  modelMeta.textContent = choice.models.length ? `目录 ${choice.models.length} 个，也可以直接输入` : "填写模型名称";
+  modelMeta.textContent = choice.models.length ? `列表里有 ${choice.models.length} 个模型，也可以直接填模型名` : "填模型名";
   closeModelList();
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
@@ -573,7 +573,7 @@ function renderModelList(): void {
   });
 
   const note = Object.assign(document.createElement("div"), { className: "combo-note" });
-  note.textContent = !models.length ? "这家没有模型目录，直接填写模型名称。" : !shown.length ? `目录里没有「${modelFilter}」，保存时按你填的名称调用。` : `${shown.length} 个模型`;
+  note.textContent = !models.length ? "这个服务商没有模型列表。直接填模型名。" : !shown.length ? `列表里没有「${modelFilter}」。保存时用你填的模型名。` : `${shown.length} 个模型`;
   modelOptions.replaceChildren(note, ...rows);
 }
 
@@ -656,7 +656,7 @@ function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: f
   const key = keyInput.value.trim();
 
   if (!key && !credentials[selected.id] && selected.id !== CUSTOM_PROVIDER_ID) {
-    return { ok: false, error: selected.oauthLabel ? "先登录，或填写 API key。" : "填写 API key。" };
+    return { ok: false, error: selected.oauthLabel ? "先登录，或填密钥。" : "填密钥。" };
   }
 
   return { ok: true, config: next, key };
@@ -664,10 +664,10 @@ function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: f
 
 /** 把服务商和网络层的报错翻成用户能处理的话；原文只进「技术详情」。 */
 function explainFailure(raw: string): string {
-  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) ? "key 无效，或这个 key 没有该模型的权限"
-    : /\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(raw) ? "额度用完或请求太频繁，可以稍后再试或换个模型"
+  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) ? "服务商不接受这个密钥。如果密钥没错，就检查它能不能用这个模型。"
+    : /\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(raw) ? "服务商拒绝了请求：额度用完或请求太频繁。稍后再试，或换一个模型。"
       : /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw) ? "找不到这个模型，检查模型名称"
-        : /connection error|failed to fetch|fetch failed|network|ECONN|ENOTFOUND/i.test(raw) ? "连不上服务商（网络中断或对方没有响应），可以再试一次"
+        : /connection error|failed to fetch|fetch failed|network|ECONN|ENOTFOUND/i.test(raw) ? "连不上服务商。检查网络后再试一次。"
           : "服务商返回了错误";
 }
 
@@ -689,7 +689,7 @@ async function testConnection(): Promise<void> {
     setStatus(modelStatus, `连接正常（${((performance.now() - started) / 1000).toFixed(1)} 秒）。`, "ok");
   } catch (error) {
     const raw = error instanceof Error ? error.message : String(error);
-    const reason = timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复，服务商可能正忙，可以再试一次或换个模型` : explainFailure(raw);
+    const reason = timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复。服务商可能正忙。再试一次，或换一个模型。` : explainFailure(raw);
     setStatus(modelStatus, `连接失败：${reason}`, "err", timeout.aborted ? undefined : raw);
   } finally {
     clearInterval(ticker);
@@ -706,7 +706,7 @@ async function save(): Promise<void> {
   keyInput.value = "";
   changingKey = false;
   setStatus(mainStatus, "");
-  setStatus(modelStatus, `已保存。侧栏接下来的任务会使用 ${labelOf(value.config.provider)} · ${value.config.modelId}。`, "ok");
+  setStatus(modelStatus, `已保存。之后的任务用 ${labelOf(value.config.provider)} · ${value.config.modelId}。`, "ok");
 }
 
 /** 保存这家的凭据并把所填模型设为快速模型；主模型不变。 */
@@ -727,7 +727,7 @@ async function deleteKey(): Promise<void> {
   const inUse = config?.provider === selected.id;
   await runtime.credentials.delete(selected.id);
   await reload();
-  setStatus(modelStatus, inUse ? "已删除 key。主模型还是这家，填新 key 或换个模型后才能用。" : "已删除 key。", inUse ? "err" : "");
+  setStatus(modelStatus, inUse ? "已删除密钥。主模型现在不能用。填新密钥，或换一个模型。" : "已删除密钥。", inUse ? "err" : "");
 }
 
 function flowLine(text: string, className = "oauth-line"): HTMLElement {
@@ -863,7 +863,7 @@ async function logout(): Promise<void> {
 async function saveVoiceKey(): Promise<void> {
   const key = voiceInput.value.trim();
 
-  if (!key) return setStatus(voiceStatus, "填写 StepFun API key。", "err");
+  if (!key) return setStatus(voiceStatus, "填阶跃星辰密钥。", "err");
   await chrome.storage.local.set({ [INPROC_VOICE_KEY]: key });
   voiceInput.value = "";
   await reload();
@@ -900,13 +900,13 @@ function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGrou
 async function saveSpeechKey(): Promise<void> {
   const key = speechInput.value.trim();
 
-  if (!key) return setStatus(voiceStatus, "填写 MiniMax 订阅 Key。", "err");
+  if (!key) return setStatus(voiceStatus, "填 MiniMax 订阅密钥。", "err");
 
-  if (!isSubscriptionKey(key)) return setStatus(voiceStatus, "只接受 MiniMax Token Plan 的订阅 Key（sk-cp- 开头）。按量计费的 key 不能用。", "err");
+  if (!isSubscriptionKey(key)) return setStatus(voiceStatus, "只能用 Token Plan 订阅密钥（sk-cp- 开头）。按量计费的密钥不能用。", "err");
   await chrome.storage.local.set({ [PTT_SPEECH_KEY]: key });
   speechInput.value = "";
   await reload();
-  setStatus(voiceStatus, "已保存。按住说话的事做完会念出结果。", "ok");
+  setStatus(voiceStatus, "已保存。按住说话的任务做完后，会念出结果。", "ok");
 }
 
 async function clearSpeechKey(): Promise<void> {
@@ -925,7 +925,7 @@ function renderMainModel(): void {
   mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...groups);
   mainSelect.value = config ? JSON.stringify({ provider: config.provider, modelId: config.modelId }) : "";
   $("main-icon").replaceChildren(...config ? [config.provider === CUSTOM_PROVIDER_ID ? svg(Link, 15) : providerIcon(config.provider, labelOf(config.provider))] : []);
-  $("main-desc").textContent = config ? labelOf(config.provider) : none ? "还没有连接服务商。在服务商列表里选一家，登录或填好 key 后保存。" : "在下面选一个服务商，登录或填好 key 后保存。";
+  $("main-desc").textContent = config ? labelOf(config.provider) : none ? "还没有连接服务商。在服务商列表里选一家，登录或填好密钥后保存。" : "在服务商列表里选一家。登录或填好密钥后保存。";
 }
 
 async function saveMainModel(): Promise<void> {
@@ -936,7 +936,7 @@ async function saveMainModel(): Promise<void> {
   // 自定义地址的服务地址只存在主模型配置里：换回同一家时带上。
   if (next.provider === config?.provider && config.baseUrl) next.baseUrl = config.baseUrl;
   await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: next });
-  setStatus(mainStatus, `已换成 ${labelOf(next.provider)} · ${next.modelId}。侧栏接下来的任务会用它。`, "ok");
+  setStatus(mainStatus, `已保存。之后的任务用 ${labelOf(next.provider)} · ${next.modelId}。`, "ok");
 }
 
 mainSelect.addEventListener("change", () => void saveMainModel());
@@ -952,7 +952,7 @@ const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PR
 
 const THINKS_NOTE = "阶跃模型总会先想一下，解释和翻译因此会慢几秒。还嫌慢，可以选一个快速模型。";
 
-/** 只列已填 key 或已登录的服务商的模型，选了就能用；另保留当前已存的选择。 */
+/** 只列已存密钥或已登录的服务商的模型，选了就能用；另保留当前已存的选择。 */
 function renderFastModels(): void {
   fastSelect.replaceChildren(new Option("和主模型相同", ""), ...modelOptionGroups(fastConfig));
   fastSelect.value = fastConfig ? JSON.stringify({ provider: fastConfig.provider, modelId: fastConfig.modelId }) : "";
@@ -991,7 +991,7 @@ async function saveBackupModel(): Promise<void> {
   else await chrome.storage.local.remove(INPROC_BACKUP_CONFIG_KEY);
   backupConfig = next;
   renderBackupModels();
-  setStatus(backupStatus, next ? `已保存。主模型卡住时换成 ${labelOf(next.provider)} · ${next.modelId}。` : "已关闭。主模型出错时不换模型。", "ok");
+  setStatus(backupStatus, next ? `已保存。如果主模型出错，就换成 ${labelOf(next.provider)} · ${next.modelId}。` : "已关闭。主模型出错时不换模型。", "ok");
 }
 
 backupSelect.addEventListener("change", () => void saveBackupModel());
@@ -1010,17 +1010,17 @@ async function reload(): Promise<void> {
   const ownVoiceKey = isText(storedVoiceKey) ? storedVoiceKey : "";
   const voiceKey = resolveVoiceKey(Object.entries(stored));
   voiceKeySource = ownVoiceKey ? "own" : voiceKey ? "model" : "";
-  $("voice-key-note").textContent = voiceKeySource === "model" ? "正在沿用上面阶跃星辰模型的 key，下面的 key 框可以不填。"
-    : voiceKeySource === "own" ? "" : "下面的 key 只给语音用。主模型的 key 在上面的服务商列表里填。";
-  $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)}` : voiceKey ? "正在沿用阶跃星辰模型的 key，可以不填。" : "还没有 key。";
+  $("voice-key-note").textContent = voiceKeySource === "model" ? "正在用阶跃星辰模型的密钥，下面的密钥可以不填。"
+    : voiceKeySource === "own" ? "" : "下面的密钥只给语音用。主模型的密钥在服务商列表里填。";
+  $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)}` : voiceKey ? "正在用阶跃星辰模型的密钥，可以不填。" : "还没有密钥。";
   $("voice-state").dataset.tone = voiceKey ? "ok" : "";
-  voiceInput.placeholder = ownVoiceKey ? "粘贴新的 key" : "粘贴 key";
+  voiceInput.placeholder = ownVoiceKey ? "粘贴新密钥" : "粘贴密钥";
   voiceClear.hidden = !ownVoiceKey;
   const speechKey = stored[PTT_SPEECH_KEY];
   const ownSpeechKey = isText(speechKey) && isSubscriptionKey(speechKey) ? speechKey : "";
-  $("speech-state").textContent = ownSpeechKey ? `已保存 · 末四位 ${ownSpeechKey.slice(-4)}` : "还没有 key，做完不念。";
+  $("speech-state").textContent = ownSpeechKey ? `已保存 · 末四位 ${ownSpeechKey.slice(-4)}` : "还没有密钥，做完不念。";
   $("speech-state").dataset.tone = ownSpeechKey ? "ok" : "";
-  speechInput.placeholder = ownSpeechKey ? "粘贴新的 key" : "粘贴 sk-cp- 开头的 key";
+  speechInput.placeholder = ownSpeechKey ? "粘贴新密钥" : "粘贴 sk-cp- 开头的密钥";
   speechClear.hidden = !ownSpeechKey;
   speakToggle.checked = stored[PTT_SPEAK_RESULT] !== false;
   renderVoiceModels(stored[INPROC_VOICE_MODEL_KEY]);
@@ -1076,15 +1076,15 @@ function renderVoiceModels(raw: unknown): void {
   let current: string | null = null;
 
   try { current = resolveVoiceModel(raw); } catch { /* 无效值保持未选；由用户明确纠正，不写回默认。 */ }
-  $("voice-model-state").textContent = !current ? "语音模型设置无效，请重新选择后再开启。"
-    : current === GPT_LIVE_MODEL ? "用 ChatGPT 登录，不用阶跃星辰 key；要先在上面用 ChatGPT 登录。下次开启语音时生效。"
-    : voiceKeySource === "model" ? "正在沿用阶跃星辰模型的 key；需对应服务可用。下次开启语音时生效。"
-    : voiceKeySource === "own" ? "用上面保存的 StepFun API key；需对应服务可用。下次开启语音时生效。"
-    : "要先有阶跃星辰 key：填在上面一行，或在服务商列表里连上阶跃星辰。下次开启语音时生效。";
+  $("voice-model-state").textContent = !current ? "没有读到语音模型。重新选一个，再开启语音。"
+    : current === GPT_LIVE_MODEL ? "这个语音模型用 ChatGPT 账号，不用阶跃星辰密钥。先在服务商列表里用 ChatGPT 登录。下次开启语音时生效。"
+    : voiceKeySource === "model" ? "用阶跃星辰模型的密钥。下次开启语音时生效。"
+    : voiceKeySource === "own" ? "用语音那一行保存的阶跃星辰密钥。下次开启语音时生效。"
+    : "要先有阶跃星辰密钥。填在「阶跃星辰密钥（语音用）」，或在服务商列表里连接阶跃星辰。下次开启语音时生效。";
   $("voice-model-list").replaceChildren(...[
     { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "当前默认" },
-    { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊直接回答；网页操作交给助手" },
-    { model: GPT_LIVE_MODEL, label: "GPT-Live（ChatGPT 登录）", note: "闲聊直接回答；要动手的交给助手" },
+    { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊由语音模型回答。页面操作交给助手。" },
+    { model: GPT_LIVE_MODEL, label: "GPT-Live（ChatGPT 登录）", note: "闲聊由语音模型回答。页面操作交给助手。" },
   ].map(option => {
     const pick = radioRow("voice-model-option", option.label, option.model === current, option.note);
 

@@ -1,5 +1,5 @@
 /**
- * 同一件事在 3 个不同对话里做过，侧栏才问「你好像总是…，要我记住吗？」；点「记住」才存。
+ * 同一件事在 3 个不同对话里做过，侧栏才问「你好像每次都这样做：…。要我记住吗？」；点「记住」才存。
  * 只装扩展、隔离构建、本机脚本模型；只有模型回复是脚本（习惯判断答固定的 key）。
  *   npx tsx scripts/acceptance/real-path/habit-ask.mts --headless
  * 失败方式：第 1、2 次就问；第 3 次不问；卡片文字不是那句做法；点「记住」后记忆里没有这条做法。
@@ -102,7 +102,7 @@ try {
   evidence.saves = saves;
   assert.equal(saves, 3, "each task really clicked save on the page");
 
-  // 第 3 个对话：问一次，文字是「你好像总是<做法>，要我记住吗？」。
+  // 第 3 个对话：问一次，文字是「你好像每次都这样做：<做法>。要我记住吗？」。
   evidence.stage = "ask";
   await until(async () => await cards() > 0 || undefined, 20_000, "ask card after task 3");
   evidence.cardsAfter!.push(await cards());
@@ -110,7 +110,7 @@ try {
   await rp.evaluate(panel, `document.querySelector("[data-memory-ask]").scrollIntoView({block:"center"}); true`);
   await sleep(300);
   await rp.screenshot(panel, join(artifacts, "habit-ask-card.png"));
-  assert.equal(evidence.cardText, `你好像总是${HABIT}，要我记住吗？`);
+  assert.equal(evidence.cardText, `你好像每次都这样做：${HABIT}。要我记住吗？`);
 
   // 点「记住」才存：存成一条这个网站的做法。
   evidence.stage = "remember";
