@@ -266,7 +266,7 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "model_key_test"; requestId: string; key: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact }
   /** 点「发送」前在网页上等用户确认（docs/evals/20261009-send-confirm.md）：waiting 时宿主放宽这次调用的期限，结束时恢复普通期限。 */
-  | { type: "tool_waiting_user"; id: string; waiting: boolean });
+  | { type: "tool_waiting_user"; id: string; waiting: boolean; /** 教学这一步在等用户点；没有它就是在等用户确认「发送」。 */ guide?: GuideWait });
 
 export interface ConversationEnvelope { conversationId?: string }
 
@@ -351,6 +351,8 @@ export type AgentUiEvent =
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
   /** 扩展在网页上等用户确认「发送」（true），或不等了（false）。同一页同时只等一个。 */
   | { kind: "send_confirm_wait"; waiting: boolean }
+  /** 教学：第 step 步在网页上等用户自己点（waiting true），或不等了（false）。state 为 no_change：用户点了，页面没变化。 */
+  | { kind: "guide_wait"; waiting: boolean; guide?: GuideWait }
   | { kind: "tool_late_result"; toolCallId: string; name: string; ok: boolean; executionFact: ToolExecutionFact }
   /**
    * 宿主执行反馈出口（V2）：简单成功进胶囊、失败／未知／等待确认保留可找到的文字入口。
@@ -411,6 +413,8 @@ export const TOOL_NAMES = [
   "observe_page",
   "mark",
   "clear_marks",
+  /** 教一步：圈出目标、光标停在旁边，等用户自己点（docs/evals/20261011-guided-teaching.md）。 */
+  "guide_step",
   "double_click",
   /** CAP-02A：宿主签发 token 的事件订阅（popup/download/filechooser）。 */
   "arm_event",
@@ -755,6 +759,25 @@ export interface ToolContract {
   mark: { params: { tabId?: number; target?: string; through?: string; label?: string; actions?: MarkAction[]; text?: string[] }; data: { marked: true; counts?: Array<{ text: string; count: number }> } };
   /** 清除全部 mark 标注 */
   clear_marks: { params: {tabId?: number}; data: { cleared: true } };
+  /**
+   * 教一步：圈出 target、在名牌上写 say，光标停在目标旁，等用户自己点。点在目标外：页面提示，不返回。
+   * 点中后 3 秒内页面有变化（DOM、地址或换了文档）→ done；点中两次都没变化 → no_change；2 分钟没点中 → timeout。
+   * 用户停止、接管、关页时按「没执行」结束。工具自己从不点击。
+   */
+  guide_step: { params: { tabId?: number; target: string; say: string; step: number }; data: GuideStepResult };
+}
+
+/** 教学一步在等用户：侧栏据此写「第 N 步 · 等你操作」，no_change 时写「点了「target」，页面没有变化」。 */
+export interface GuideWait { step: number; say: string; state: "waiting" | "no_change"; /** 目标在网页上的可见名字（截短），没有就省略。 */ target?: string }
+
+export interface GuideStepResult {
+  outcome: "done" | "no_change" | "timeout";
+  /** 点在目标外的次数。 */
+  misses: number;
+  /** 点中了但 3 秒内页面没变化的次数。 */
+  noChangeClicks: number;
+  /** done 时，是什么变了。 */
+  changed?: "dom" | "url" | "document";
 }
 
 // ── 编解码守卫 ─────────────────────────────────────────────────────

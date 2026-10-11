@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教学模式预览</title>
+<style>
+  :root { --ink:#2d4a86; --bg:#ecebe6; --fg:#1d2126; --muted:#6b7280; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }
+  .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 16px; background:#fff; border-bottom:1px solid #ddd; position:sticky; top:0; z-index:10; }
+  .bar b { font-size:14px; margin-right:8px; }
+  .bar button { font:inherit; border:1px solid #d4d0c8; background:#fff; border-radius:8px; padding:5px 12px; cursor:pointer; }
+  .bar button.on { background:var(--fg); color:#fff; border-color:var(--fg); }
+  .caption { flex-basis:100%; color:var(--muted); min-height:20px; }
+  .judge { padding:8px 16px; color:#4b5563; background:#f7f6f2; border-bottom:1px solid #e3e0d8; }
+  .judge ol { margin:2px 0 0; padding-left:18px; }
+  .stage { display:grid; grid-template-columns:1fr 380px; gap:14px; padding:14px 16px; }
+  .browser { background:#fff; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.08); overflow:hidden; display:flex; flex-direction:column; height:780px; }
+  .chrome { display:flex; align-items:center; gap:8px; padding:8px 12px; background:#f1f0ec; border-bottom:1px solid #e3e0d8; }
+  .chrome i { width:10px; height:10px; border-radius:50%; background:#d6d3cc; display:inline-block; }
+  .chrome .url { flex:1; background:#fff; border-radius:6px; padding:3px 10px; color:#6b7280; }
+  .viewport { position:relative; flex:1; overflow:hidden; }
+  .panel-frame { width:380px; height:780px; border:0; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.08); background:#fff; }
+
+  /* sample page (stands in for any site) */
+  .page { --p-bg:#fff; --p-fg:#1b1f24; --p-card:#f4f2ee; --p-line:#d9d4cc; position:absolute; inset:0; background:var(--p-bg); color:var(--p-fg); font:15px/1.6 system-ui,sans-serif; transition:background .3s,color .3s; }
+  .page.dark { --p-bg:#121417; --p-fg:#e8e6e3; --p-card:#1e2226; --p-line:#343a40; }
+  .page header { display:flex; justify-content:space-between; align-items:center; padding:12px 22px; background:var(--p-card); border-bottom:1px solid var(--p-line); }
+  .page h1 { font-size:18px; margin:0; }
+  .page button { font:inherit; padding:6px 12px; border-radius:8px; border:1px solid var(--p-line); background:var(--p-bg); color:var(--p-fg); }
+  .page main { max-width:560px; margin:0 auto; padding:22px; }
+  .spanel { position:absolute; top:62px; right:22px; width:300px; background:var(--p-card); border:1px solid var(--p-line); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.18); padding:14px; }
+  .tabs { display:flex; gap:6px; margin:8px 0 12px; }
+  .tabs button.sel { background:var(--p-fg); color:var(--p-bg); }
+  .sw-row { display:flex; justify-content:space-between; align-items:center; margin:10px 0; }
+  .sw { width:46px; height:26px; border-radius:13px; padding:0 !important; position:relative; }
+  .sw::after { content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:var(--p-fg); transition:left .15s; }
+  .sw.on::after { left:23px; }
+
+  /* overlay drawn by the extension: ring, label bubble, AI cursor; plus the user's own pointer */
+  .overlay { position:absolute; inset:0; pointer-events:none; }
+  .overlay svg.ring { position:absolute; left:0; top:0; width:100%; height:100%; overflow:visible; }
+  .ring .halo { fill:none; stroke:#fff; stroke-width:6; stroke-opacity:.9; stroke-linecap:round; }
+  .ring .ink { fill:none; stroke:var(--ink); stroke-width:2.6; stroke-linecap:round; }
+  .bubble { position:absolute; max-width:260px; padding:7px 11px; border-radius:10px; background:#fff; color:#141413; border:1px solid rgb(20 20 19 / .12); box-shadow:0 6px 20px rgba(0,0,0,.14); font:13px/1.5 -apple-system,"PingFang SC",sans-serif; transition:opacity .2s; }
+  .bubble b { display:block; font-size:11px; color:var(--ink); font-weight:600; }
+  .bubble.warn { border-color:#e5a54a; }
+  .bubble.warn b { color:#b7791f; }
+  .ai-cursor, .me { position:absolute; left:0; top:0; width:22px; height:22px; will-change:transform; }
+  .me { width:18px; height:18px; transition:transform .55s cubic-bezier(.3,.7,.3,1); }
+  .me.press { filter:drop-shadow(0 0 0 #000); }
+  .me .ripple { position:absolute; left:-10px; top:-10px; width:20px; height:20px; border-radius:50%; border:2px solid rgba(0,0,0,.35); opacity:0; }
+  .me.clicking .ripple { animation:rip .45s ease-out; }
+  @keyframes rip { from { transform:scale(.3); opacity:1; } to { transform:scale(1.6); opacity:0; } }
+  .tag { position:absolute; font:600 10px -apple-system,sans-serif; padding:1px 5px; border-radius:6px; white-space:nowrap; }
+  .ai-cursor .tag { left:20px; top:18px; background:var(--ink); color:#fff; }
+  .me .tag { left:16px; top:16px; background:#111; color:#fff; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>教学模式预览</b>
+  <button data-s="normal">① 正常走完（T1）</button>
+  <button data-s="miss">② 点错位置（T1 + T2）</button>
+  <button data-s="noeffect">③ 点了没反应（T3）</button>
+  <button data-s="reset">重置</button>
+  <span class="caption" id="caption">选一个场景。墨蓝色箭头是助手的光标；黑色小箭头代表你的鼠标。</span>
+</div>
+<div class="judge">这次请判断三件事：
+  <ol>
+    <li>教学进度放在侧栏底部任务栏（"第 2/3 步 · 等你操作"），对话里只留开头一句，这个位置是否合适。</li>
+    <li>页面上的说明气泡、墨蓝手绘圈、停在目标右下角的助手光标，三者放在一起的观感。</li>
+    <li>"点了没反应"时 3 秒后提示的时机和措辞（场景 ③）。</li>
+  </ol>
+</div>
+<div class="stage">
+  <div class="browser">
+    <div class="chrome"><i></i><i></i><i></i><span class="url">acme-notes.example / 示例网页</span></div>
+    <div class="viewport" id="vp">
+      <div class="page" id="page">
+        <header><h1>Acme Notes</h1><div><button>Help</button> <button id="t-settings">⚙ Settings</button></div></header>
+        <main><h2>Welcome back</h2><p>示例网页：右上角有设置，设置里有 General 和 Display 两个标签，Display 里可以开深色主题。</p><p><button>New note</button> <button>Share</button></p></main>
+        <div class="spanel" id="spanel" hidden>
+          <strong>Settings</strong>
+          <div class="tabs"><button class="sel" id="t-general">General</button><button id="t-display">Display</button></div>
+          <div id="pane-general"><div class="sw-row"><span>Notifications</span><button class="sw"></button></div></div>
+          <div id="pane-display" hidden><div class="sw-row"><span>Compact mode</span><button class="sw"></button></div><div class="sw-row"><span>Dark theme</span><button class="sw" id="t-dark"></button></div></div>
+        </div>
+      </div>
+      <div class="overlay" id="ov">
+        <svg class="ring" id="ring" style="display:none"><g id="ringg"><path class="halo"/><path class="ink"/></g></svg>
+        <div class="bubble" id="bubble" hidden><b></b><span></span></div>
+        <svg class="ai-cursor" id="ai" viewBox="0 0 24 24" style="display:none"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linejoin="round"/><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#2d4a86" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg>
+        <div class="me" id="me"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 3l14 7-6 1.5L10 18z" fill="#111" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg><span class="ripple"></span><span class="tag">你</span></div>
+      </div>
+    </div>
+  </div>
+  <iframe class="panel-frame" id="panel"></iframe>
+</div>
+<script src="../circle-and-memory/rough.js"></script>
+<script>
+const PANEL = __PANEL__;
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const vp = $("vp"), ov = $("ov");
+let run = 0; // cancels a running scenario when another starts
+
+// ---------- side panel (real DOM + real styles.css), teaching progress injected ----------
+const panel = $("panel");
+panel.srcdoc = PANEL;
+let P = null;
+panel.onload = () => {
+  const d = panel.contentDocument;
+  d.getElementById("app").classList.remove("conversation-empty");
+  d.getElementById("starter")?.setAttribute("hidden", "");
+  const st = d.createElement("style");
+  st.textContent = `.teach-steps{margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--text-secondary,#555)} .teach-steps li{margin:2px 0} .teach-steps li.ok{color:var(--text-tertiary,#888)} .teach-steps li.ok::marker{content:"✓  ";color:var(--ok,#1f8a4c)} .teach-steps li.now{color:var(--text-primary,#141413);font-weight:500} .teach-actions{display:flex;gap:6px;margin-top:8px} .teach-actions button{font:inherit;font-size:12px;border:1px solid var(--glass-border);background:transparent;border-radius:999px;padding:2px 10px;color:inherit}`;
+  d.head.append(st);
+  P = d;
+  resetPanel();
+};
+function resetPanel() {
+  if (!P) return;
+  const m = P.getElementById("messages");
+  m.querySelectorAll(".msg").forEach((n) => n.remove());
+  P.querySelector(".task-bar")?.remove();
+}
+function panelStart(goal) {
+  resetPanel();
+  const m = P.getElementById("messages");
+  const u = P.createElement("div"); u.className = "msg user"; u.innerHTML = `<div class="user-msg-text"></div>`; u.firstChild.textContent = goal;
+  const a = P.createElement("div"); a.className = "msg assistant"; a.textContent = "好，我在页面上一步一步圈给你，你自己点，点完我再往下走。";
+  m.append(u, a);
+  const tb = P.createElement("div");
+  tb.className = "task-bar"; tb.dataset.state = "running";
+  tb.innerHTML = `<div class="tb-summary"><span class="tb-dot"></span><p class="tb-status"></p></div><p class="tb-waiting" hidden></p><ol class="teach-steps"></ol><div class="teach-actions"><button>暂停</button><button>再说一遍</button><button>结束</button></div>`;
+  P.querySelector(".composer-dock-wrap").before(tb);
+}
+function panelStep(steps, now, status, waiting) {
+  const tb = P.querySelector(".task-bar"); if (!tb) return;
+  tb.querySelector(".tb-status").textContent = status;
+  const w = tb.querySelector(".tb-waiting"); w.hidden = !waiting; w.textContent = waiting || "";
+  tb.querySelector(".teach-steps").innerHTML = steps.map((s, i) => `<li class="${i < now ? "ok" : i === now ? "now" : ""}">${s}</li>`).join("");
+}
+function panelDone(text) {
+  const tb = P.querySelector(".task-bar"); if (!tb) return;
+  tb.dataset.state = "done"; tb.dataset.outcome = "done";
+  tb.querySelector(".tb-status").textContent = text;
+  tb.querySelector(".teach-actions").remove();
+}
+
+// ---------- page overlay ----------
+const box = (el) => { const r = el.getBoundingClientRect(), v = vp.getBoundingClientRect(); return { x: r.left - v.left, y: r.top - v.top, w: r.width, h: r.height }; };
+let ringSeed = 7;
+function ringOn(el) {
+  const b = box(el);
+  const { d, frame } = Rough.sketchFrame({ x: 0, y: 0, w: b.w, h: b.h }, { seed: ringSeed += 101, roughness: 1.6 });
+  const g = $("ringg"); g.querySelectorAll("path").forEach((p) => p.setAttribute("d", d));
+  g.setAttribute("transform", `translate(${b.x} ${b.y})`);
+  $("ring").style.display = "";
+  const len = g.querySelector(".ink").getTotalLength();
+  g.querySelectorAll("path").forEach((p) => p.animate([{ strokeDasharray: len, strokeDashoffset: len }, { strokeDasharray: len, strokeDashoffset: 0 }], { duration: 380, easing: "cubic-bezier(.3,.7,.4,1)" }));
+  return { x: b.x + frame.x, y: b.y + frame.y, w: frame.w, h: frame.h };
+}
+function bubbleAt(frame, title, text, warn = false, side = "below") {
+  const bu = $("bubble");
+  bu.querySelector("b").textContent = title; bu.querySelector("span").textContent = text;
+  bu.classList.toggle("warn", warn); bu.hidden = false;
+  const bw = bu.offsetWidth, bh = bu.offsetHeight, W = vp.clientWidth;
+  let left = side === "left" ? frame.x - bw - 12 : Math.min(frame.x, W - bw - 10);
+  let top = side === "left" ? frame.y + frame.h / 2 - bh / 2 : frame.y + frame.h + 10;
+  if (side === "under-panel") { const pb = box($("spanel")); left = Math.min(pb.x + pb.w - bw, W - bw - 10); top = pb.y + pb.h + 10; }
+  bu.style.left = `${Math.max(8, left)}px`; bu.style.top = `${top}px`;
+}
+function clearMarks() { $("ring").style.display = "none"; $("bubble").hidden = true; }
+
+// AI cursor: arc + underdamped spring (By-Your-Side shared/cursor-path.ts), parks at the frame's lower-right.
+const ai = { pos: { x: 640, y: 40 }, state: "hidden", follow: null };
+function placeAI(p) { const el = $("ai"); el.style.display = ""; el.style.transform = `translate(${p.x - 4.4}px, ${p.y - 5.1}px)`; }
+function arcCtl(a, b) { const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, s = Math.max(8, Math.min(36, d * .12)); return { x: (a.x + b.x) / 2 - dy / d * s, y: (a.y + b.y) / 2 + dx / d * s }; }
+async function flyAI(frame, my) {
+  ai.state = "flying"; ai.follow = null;
+  const from = { ...ai.pos }, to = { x: frame.x + frame.w - 6, y: frame.y + frame.h - 6 }, c = arcCtl(from, to);
+  const ms = Math.max(220, Math.min(480, 90 + 160 * Math.log2(Math.hypot(to.x - from.x, to.y - from.y) / 44 + 1)));
+  const wn = 6 / (.75 * ms / 1000), k = wn * wn, cc = 1.5 * wn;
+  let s = 0, v = 0, last = performance.now();
+  while (my === run) {
+    await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 20); }); // rAF pauses in hidden panes
+    const now = performance.now(), dt = Math.min(.05, (now - last) / 1000); last = now;
+    v += ((1 - s) * k - v * cc) * dt; s += v * dt;
+    const t = Math.max(0, s), u = 1 - t;
+    ai.pos = { x: u * u * from.x + 2 * u * t * c.x + t * t * to.x, y: u * u * from.y + 2 * u * t * c.y + t * t * to.y };
+    placeAI(ai.pos);
+    if (Math.abs(1 - s) < .002 && Math.abs(v) < .05) break;
+  }
+  ai.pos = to; placeAI(to); ai.state = "parked";
+}
+function aiGiveWay() { ai.state = "follow"; }
+(function followLoop() {
+  if (ai.state === "follow" && me.pos) { const to = { x: me.pos.x + 16, y: me.pos.y + 18 }; ai.pos = { x: ai.pos.x + (to.x - ai.pos.x) * .18, y: ai.pos.y + (to.y - ai.pos.y) * .18 }; placeAI(ai.pos); }
+  requestAnimationFrame(followLoop);
+})();
+
+// The user's own pointer.
+const me = { pos: { x: 300, y: 420 } };
+function placeMe() { $("me").style.transform = `translate(${me.pos.x - 5}px, ${me.pos.y - 3}px)`; }
+async function moveMe(p) { me.pos = p; placeMe(); await sleep(600); }
+async function clickMe() { const el = $("me"); el.classList.remove("clicking"); void el.offsetWidth; el.classList.add("clicking"); await sleep(250); }
+const centerOf = (el) => { const b = box(el); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; };
+
+// ---------- the sample page's own behavior ----------
+function resetPage() {
+  $("page").classList.remove("dark"); $("spanel").hidden = true;
+  $("t-general").classList.add("sel"); $("t-display").classList.remove("sel");
+  $("pane-general").hidden = false; $("pane-display").hidden = true; $("t-dark").classList.remove("on");
+}
+const act = {
+  settings: () => { $("spanel").hidden = false; },
+  display: () => { $("t-general").classList.remove("sel"); $("t-display").classList.add("sel"); $("pane-general").hidden = true; $("pane-display").hidden = false; },
+  dark: (broken) => { if (broken) return; $("t-dark").classList.add("on"); $("page").classList.add("dark"); },
+};
+
+const GOAL = "教我打开深色主题，一步一步指给我看，我自己点。";
+const STEPS = ["打开右上角的 Settings", "点 Display 标签", "打开 Dark theme 开关"];
+const TARGETS = [() => $("t-settings"), () => $("t-display"), () => $("t-dark")];
+const SAY = ["点右上角的「⚙ Settings」，打开设置。", "点「Display」标签，主题选项在这里。", "点「Dark theme」开关，打开深色主题。"];
+const caption = (t) => ($("caption").textContent = t);
+
+async function showStep(i, my) {
+  panelStep(STEPS, i, `教我打开深色主题 · 第 ${i + 1}/${STEPS.length} 步 · 等你操作`);
+  const frame = ringOn(TARGETS[i]());
+  bubbleAt(frame, `第 ${i + 1} 步`, SAY[i], false, ["below", "left", "under-panel"][i]);
+  await flyAI(frame, my);
+  return frame;
+}
+async function userDoes(i, my, { broken = false } = {}) {
+  await moveMe(centerOf(TARGETS[i]())); if (my !== run) return;
+  await clickMe();
+  [act.settings, act.display, () => act.dark(broken)][i]();
+}
+
+async function start(my) {
+  resetPage(); clearMarks(); ai.state = "hidden"; $("ai").style.display = "none"; ai.pos = { x: 640, y: 40 };
+  me.pos = { x: 300, y: 420 }; placeMe();
+  panelStart(GOAL);
+  panelStep(STEPS.slice(0, 0), 0, "正在看页面…");
+  await sleep(700);
+}
+
+const scenarios = {
+  async normal(my) {
+    caption("① 正常走完：每步圈出目标、光标飞过去停住；你点对了，页面稳定后自动进入下一步。");
+    await start(my);
+    for (let i = 0; i < 3 && my === run; i++) {
+      await showStep(i, my); await sleep(500);
+      await userDoes(i, my); clearMarks();
+      panelStep(STEPS, i + 1, "页面有变化，正在看下一步…"); await sleep(1100);
+    }
+    if (my !== run) return;
+    panelStep(STEPS, 3, ""); panelDone("教我打开深色主题 · 完成：页面已是深色");
+    aiGiveWay(); caption("① 完成：页面已经变成深色。侧栏任务栏显示完成，三步都打了勾。");
+  },
+  async miss(my) {
+    caption("② 点错位置：步骤不前进，气泡改成提示；助手光标先停着，你一动鼠标它就让开。");
+    await start(my);
+    const frame = await showStep(0, my); await sleep(500);
+    await moveMe({ x: 260, y: 230 }); await clickMe(); if (my !== run) return;
+    bubbleAt(frame, "第 1 步", "这里不是要点的位置。请点圈出来的「⚙ Settings」。", true);
+    ringOn(TARGETS[0]());
+    caption("② 点在正文上：气泡换成提示，圈重新画一遍，助手光标仍停在目标旁。");
+    await sleep(1800);
+    aiGiveWay(); await moveMe({ x: 420, y: 330 });
+    caption("② 你移动鼠标后，助手光标让开、跟着你的鼠标，不再挡视线；圈还在。");
+    await sleep(1600); if (my !== run) return;
+    await userDoes(0, my); clearMarks();
+    panelStep(STEPS, 1, "页面有变化，正在看下一步…"); await sleep(900);
+    await showStep(1, my);
+    caption("② 这次点对了，进入第 2 步，光标从当前位置飞向新目标。");
+  },
+  async noeffect(my) {
+    caption("③ 点了没反应：开关点了，页面 3 秒内没有任何变化，立刻提示，不等模型绕几轮。");
+    await start(my);
+    act.settings(); act.display(); panelStep(STEPS, 2, ""); await sleep(300);
+    const frame = await showStep(2, my); await sleep(500);
+    await userDoes(2, my, { broken: true }); if (my !== run) return;
+    await moveMe({ x: me.pos.x - 120, y: me.pos.y + 110 });
+    panelStep(STEPS, 2, "教我打开深色主题 · 第 3/3 步 · 正在看页面有没有变化…");
+    for (let s = 3; s > 0 && my === run; s--) { caption(`③ 已点击，页面没有变化…（${s}）`); await sleep(1000); }
+    if (my !== run) return;
+    bubbleAt(frame, "第 3 步", "好像没有生效：点了之后页面没有变化。再点一次试试；还不行就告诉我。", true, "under-panel");
+    panelStep(STEPS, 2, "教我打开深色主题 · 第 3/3 步 · 等你操作", "点了「Dark theme」，页面没有变化");
+    caption("③ 3 秒没变化：气泡提示，侧栏任务栏出现橙色的等待说明。这一步不打勾。");
+  },
+};
+
+document.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("[data-s]").forEach((x) => x.classList.toggle("on", x === b && b.dataset.s !== "reset"));
+  const my = ++run;
+  if (b.dataset.s === "reset") { resetPage(); clearMarks(); $("ai").style.display = "none"; resetPanel(); caption("选一个场景。墨蓝色箭头是助手的光标；黑色小箭头代表你的鼠标。"); return; }
+  scenarios[b.dataset.s](my);
+});
+placeMe();
+</script>
+</body>
+</html>
