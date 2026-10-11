@@ -4205,6 +4205,13 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
       if (run) setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), true, ev.waiting ? undefined : "think");
+
+      // 「不等了」不一定带 guide，到这里的也可能是教学一步结束：橙字一起清掉。
+      if (run && !ev.waiting && run.guideHint) {
+        run.guideHint = null;
+        renderTrail(run);
+      }
+
       break;
     }
     case "guide_wait": {
