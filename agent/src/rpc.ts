@@ -106,7 +106,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
   "page_operation",
   "page_translation",
   "close_tab", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll",
-  "js", "navigate", "screenshot", "mark", "clear_marks", "ask_user_to_point",
+  "js", "navigate", "screenshot", "mark", "clear_marks", "guide_step", "ask_user_to_point",
 ]);
 
 /** 成功后就明确改变工作目标的调用；失败不改缺省页。 */

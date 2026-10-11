@@ -166,6 +166,14 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: label ? `标注「${clip(label)}」` : short };
     }
 
+    case "guide_step": {
+      const say = str(params.say);
+
+      if (!say) return { short, full: short };
+
+      return { short, full: typeof params.step === "number" ? `第 ${params.step} 步：${clip(say, 24)}` : clip(say, 24) };
+    }
+
     case "spawn_worker": {
       return { short, full: "安排助手" };
     }
@@ -388,7 +396,7 @@ const KIND_OF_TOOL: Record<string, ActionKind> = {
   browser_run: "run",
   hover: "look",
   select_option: "pick",
-  mark: "mark",
+  mark: "mark", guide_step: "mark",
   switch_tab: "tab", worker_tabs: "tab", share_tab: "tab", take_tab: "tab",
   close_tab: "close",
   page_translation: "translate",

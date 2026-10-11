@@ -250,8 +250,8 @@ export async function createConversationRuntime(
         break;
       case "tool_waiting_user":
         rpc.waitingForUser(msg.id, msg.waiting);
-        // 侧栏据此写「等你在网页上确认发送」（docs/evals/20261009-send-confirm.md R2）。
-        sendCurrent({ type: "agent_event", event: { kind: "send_confirm_wait", waiting: msg.waiting } });
+        // 侧栏据此写「第 N 步 · 等你操作」（docs/evals/20261011-guided-teaching.md R1）或「等你在网页上确认发送」（docs/evals/20261009-send-confirm.md R2）。
+        sendCurrent({ type: "agent_event", event: msg.guide ? { kind: "guide_wait", waiting: msg.waiting, guide: msg.guide } : { kind: "send_confirm_wait", waiting: msg.waiting } });
         break;
       default:
         break;
