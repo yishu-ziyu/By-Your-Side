@@ -61,7 +61,7 @@ document.getElementById("settings")!.innerHTML = `
     <div class="surface rows">
       <div class="row">
         <span class="row-main"><span class="row-title">主模型</span><span id="main-desc" class="row-desc"></span></span>
-        <span class="row-ctl pick"><span id="main-icon"></span><select id="main-model" class="sel" aria-label="主模型"></select></span>
+        <span class="row-ctl pick"><span id="main-icon"></span><select id="main-model" class="sel" aria-label="主模型"></select><button id="main-pick" type="button" class="btn" hidden>去选服务商</button></span>
       </div>
       <div class="row">
         <span class="row-main"><span class="row-title">快速模型</span><span class="row-desc">划词解释、翻译这类要马上出结果的动作用它。</span></span>
@@ -138,7 +138,7 @@ document.getElementById("settings")!.innerHTML = `
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
       <h2 id="voice-title">语音对话</h2>
-      <p class="sx-sub">用声音和助手交谈。语音对话使用阶跃星辰的实时语音。上面已经填了阶跃星辰的 key，这里就不用再填。</p>
+      <p class="sx-sub">用声音和助手交谈。语音对话使用阶跃星辰的实时语音。<span id="voice-key-note"></span></p>
     </div>
     <div class="surface rows">
       <div class="row">
@@ -150,7 +150,7 @@ document.getElementById("settings")!.innerHTML = `
         </span>
       </div>
       <div class="row stack">
-        <span class="row-main"><span id="voice-model-title" class="row-title">语音模型</span><span id="voice-model-state" class="row-desc">沿用现有阶跃星辰 key；保存后下次开启语音时生效。</span></span>
+        <span class="row-main"><span id="voice-model-title" class="row-title">语音模型</span><span id="voice-model-state" class="row-desc"></span></span>
         <div id="voice-model-list" class="radio-rows" role="radiogroup" aria-labelledby="voice-model-title"></div>
       </div>
       <div class="row stack">
@@ -189,7 +189,7 @@ document.getElementById("settings")!.innerHTML = `
   <section class="sx" aria-labelledby="selection-title">
     <div class="sx-head"><h2 id="selection-title">划词</h2></div>
     <div class="surface rows">
-      ${toggleRow("selection-bar", "选中文字后显示「问 AI / 解释」", "关掉后按 ⌘J 或右键「问 By Your Side」仍然可用。已打开的网页立即生效。")}
+      ${toggleRow("selection-bar", "选中文字后显示「问 AI / 解释」", `<span id="ask-shortcut-note">关掉后右键「问 By Your Side」仍然可用。</span>已打开的网页立即生效。`)}
       ${toggleRow("link-preview", "按住 Shift 停在链接上，预览目标页", "卡片写目标页的标题和几行要点，不打开新标签；读页面时不带你的登录状态。")}
       ${toggleRow("nudge", "主动建议", "看出能帮上忙时，在页面右下角递一张小卡，点一下交给侧栏去做。每次判断会把这一页和最近几页的摘录发给你选的模型；同一页只看一次。")}
     </div>
@@ -308,6 +308,9 @@ let changingKey = false;
 
 let login: AbortController | null = null;
 
+/** 语音用的阶跃星辰 key 从哪来（resolveVoiceKey 的结果）：语音自己存的、借主模型的阶跃星辰 key、还没有。 */
+let voiceKeySource: "own" | "model" | "" = "";
+
 $("model-toggle").append(svg(ChevronDown));
 
 $("provider-search").before(svg(Search));
@@ -423,7 +426,10 @@ function groupLabel(text: string): HTMLElement {
   return Object.assign(document.createElement("div"), { className: "grp", textContent: text });
 }
 
-/** 已连接的在上（正在用的第一），自定义地址其次，其余折起；搜索时只留命中的行，并展开其余。 */
+/** 只在页面第一次渲染时决定默认展开；之后用户收起就保持收起。 */
+let firstRender = true;
+
+/** 已连接的在上（正在用的第一），自定义地址其次，其余折起；一家都没连时默认展开；搜索时只留命中的行，并展开其余。 */
 function renderProviders(): void {
   const query = search.value.trim();
   const matches = entries.filter((e) => e.key !== CUSTOM_PROVIDER_ID).map((e) => [e, matchEntry(e, choices, query)] as const).filter(([, m]) => m.hit);
@@ -435,11 +441,12 @@ function renderProviders(): void {
   $("provider-connected").replaceChildren(...mine.length ? [groupLabel(`已连接 · ${mine.length}`), ...mine.map(([e, m]) => providerRow(e, m.models))] : []);
   $("provider-others").replaceChildren(...rest.map(([e, m]) => providerRow(e, m.models)));
   more.hidden = !rest.length;
-  $("provider-more-names").replaceChildren(groupLabel(`其余服务商 · ${rest.length}`), Object.assign(document.createElement("span"), {
+  $("provider-more-names").replaceChildren(groupLabel(`${mine.length ? "其余服务商" : "选一个服务商"} · ${rest.length}`), Object.assign(document.createElement("span"), {
     className: "more-names", textContent: `${rest.slice(0, 4).map(([e]) => e.name).join("、")}${rest.length > 4 ? ` 等 ${rest.length} 家` : ""}`,
   }));
 
-  if (query || rest.some(([e]) => e.key === openKey)) more.open = true;
+  if (query || rest.some(([e]) => e.key === openKey) || firstRender && !mine.length) more.open = true;
+  firstRender = false;
   const empty = $("provider-empty");
   empty.hidden = matches.length > 0;
   empty.textContent = `没有找到「${query}」。OpenAI 兼容的服务可以用下面的「自定义地址」接入。`;
@@ -910,10 +917,15 @@ async function clearSpeechKey(): Promise<void> {
 
 /** 主模型：只列已连接的，选了就换，不用再进服务商详情。 */
 function renderMainModel(): void {
-  mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...modelOptionGroups(config));
+  const groups = modelOptionGroups(config);
+  // 一家都没连时下拉里只有「还没有选择」：换成一个按钮，直接带到服务商列表。
+  const none = !config && !groups.length;
+  mainSelect.hidden = none;
+  $("main-pick").hidden = !none;
+  mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...groups);
   mainSelect.value = config ? JSON.stringify({ provider: config.provider, modelId: config.modelId }) : "";
   $("main-icon").replaceChildren(...config ? [config.provider === CUSTOM_PROVIDER_ID ? svg(Link, 15) : providerIcon(config.provider, labelOf(config.provider))] : []);
-  $("main-desc").textContent = config ? labelOf(config.provider) : "在下面选一个服务商，登录或填好 key 后保存。";
+  $("main-desc").textContent = config ? labelOf(config.provider) : none ? "还没有连接服务商。在服务商列表里选一家，登录或填好 key 后保存。" : "在下面选一个服务商，登录或填好 key 后保存。";
 }
 
 async function saveMainModel(): Promise<void> {
@@ -928,6 +940,12 @@ async function saveMainModel(): Promise<void> {
 }
 
 mainSelect.addEventListener("change", () => void saveMainModel());
+
+$("main-pick").addEventListener("click", () => {
+  more.open = true;
+  search.scrollIntoView({ block: "start", behavior: "smooth" });
+  search.focus({ preventScroll: true });
+});
 
 /** 阶跃的文字模型每次都先思考，官方接口关不掉；用作即时动作会让解释、翻译等十几秒才出字。 */
 const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PROVIDER_ID;
@@ -989,6 +1007,9 @@ async function reload(): Promise<void> {
   const storedVoiceKey = stored[INPROC_VOICE_KEY];
   const ownVoiceKey = isText(storedVoiceKey) ? storedVoiceKey : "";
   const voiceKey = resolveVoiceKey(Object.entries(stored));
+  voiceKeySource = ownVoiceKey ? "own" : voiceKey ? "model" : "";
+  $("voice-key-note").textContent = voiceKeySource === "model" ? "正在沿用上面阶跃星辰模型的 key，下面的 key 框可以不填。"
+    : voiceKeySource === "own" ? "" : "下面的 key 只给语音用。主模型的 key 在上面的服务商列表里填。";
   $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)}` : voiceKey ? "正在沿用阶跃星辰模型的 key，可以不填。" : "还没有 key。";
   $("voice-state").dataset.tone = voiceKey ? "ok" : "";
   voiceInput.placeholder = ownVoiceKey ? "粘贴新的 key" : "粘贴 key";
@@ -1055,7 +1076,9 @@ function renderVoiceModels(raw: unknown): void {
   try { current = resolveVoiceModel(raw); } catch { /* 无效值保持未选；由用户明确纠正，不写回默认。 */ }
   $("voice-model-state").textContent = !current ? "语音模型设置无效，请重新选择后再开启。"
     : current === GPT_LIVE_MODEL ? "用 ChatGPT 登录，不用阶跃星辰 key；要先在上面用 ChatGPT 登录。下次开启语音时生效。"
-    : "沿用现有阶跃星辰 key；需对应服务可用。下次开启语音时生效。";
+    : voiceKeySource === "model" ? "正在沿用阶跃星辰模型的 key；需对应服务可用。下次开启语音时生效。"
+    : voiceKeySource === "own" ? "用上面保存的 StepFun API key；需对应服务可用。下次开启语音时生效。"
+    : "要先有阶跃星辰 key：填在上面一行，或在服务商列表里连上阶跃星辰。下次开启语音时生效。";
   $("voice-model-list").replaceChildren(...[
     { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "当前默认" },
     { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊直接回答；网页操作交给助手" },
@@ -1205,6 +1228,13 @@ const nudgeToggle = $<HTMLInputElement>("nudge");
 const openThreads = $<HTMLInputElement>("open-threads");
 
 bindToggle(selectionBar, SELECTION_BAR_KEY, selectionStatus, (on) => (on ? "已开启。" : "已关闭。"));
+
+// 划词快捷键按用户实际设的写（可在 chrome://extensions/shortcuts 改）；getAll 给的已是本系统的写法，如 Ctrl+J、⌘J。
+void chrome.commands.getAll().then((commands) => {
+  const shortcut = commands.find((c) => c.name === "ask-selection")?.shortcut;
+  $("ask-shortcut-note").textContent = shortcut ? `关掉后按 ${shortcut} 或右键「问 By Your Side」仍然可用。`
+    : "关掉后右键「问 By Your Side」仍然可用。快捷键还没有设置，可以在 chrome://extensions/shortcuts 里给「问选中的文字」设一个。";
+});
 
 bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接预览已开启。" : "链接预览已关闭。"));
 

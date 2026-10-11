@@ -40,6 +40,9 @@ const LOGIN_LABELS = new Map([["kimi-coding", "用 Kimi Code 账号登录"], ["x
 /** 需要额外账号参数（区域、网关编号、云凭据）的服务商，第一版设置页不提供。 */
 const NEEDS_EXTRA_CONFIG = new Set(["amazon-bedrock", "google-vertex", "azure-openai-responses", "cloudflare-ai-gateway", "cloudflare-workers-ai", "radius"]);
 
+/** TypeSafe 只提供给 Jev 用的分类接口，不能当对话模型；Jev 已于 2026-10-01 退役（docs/ROADMAP.md 第 9 条），设置页不列它。 */
+const RETIRED_JEV_PROVIDER = "typesafe";
+
 /** 设置页置顶的套餐，按用户实际在用的排序；默认模型是已在扩展内跑通「圈出保存按钮」的那个。 */
 export const FEATURED_PROVIDERS: ReadonlyArray<{ id: string; label: string; defaultModel: string }> = [
   // 阶跃星辰排第一：同一个 key 还能用于实时语音；step-3.7-flash 实测约 1 秒返回且工具调用正确。
@@ -192,7 +195,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     const featured = new Map(FEATURED_PROVIDERS.map((p, i) => [p.id, i]));
 
     const choices = models.getProviders()
-      .filter((p) => !NEEDS_EXTRA_CONFIG.has(p.id) && p.id !== CUSTOM_PROVIDER_ID)
+      .filter((p) => !NEEDS_EXTRA_CONFIG.has(p.id) && p.id !== RETIRED_JEV_PROVIDER && p.id !== CUSTOM_PROVIDER_ID)
       .map((p): ProviderChoice => ({
         id: p.id,
         name: FEATURED_PROVIDERS.find((f) => f.id === p.id)?.label ?? p.name,
