@@ -559,7 +559,8 @@ async function startRecordingModel() {
       // SAFETY: OpenAI 兼容请求体。
       const payload = JSON.parse(payloadText) as { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] };
       const messages = payload.messages ?? [];
-      const system = messages.filter((m) => m.role === "system" || m.role === "developer" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文"))).map((m) => textOf(m.content)).join("\n");
+      // 只看本次运行的上下文（最后一段）；之前消息前的那些留在历史里（#271）。
+      const system = messages.filter((m, i, all) => m.role === "system" || m.role === "developer" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文") && !all.slice(i + 1).some(n => n.role === "user" && textOf(n.content).startsWith("本次运行的上下文")))).map((m) => textOf(m.content)).join("\n");
       const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
       const lastUser = lastUserIndex >= 0 ? textOf(messages[lastUserIndex]!.content) : "";
 

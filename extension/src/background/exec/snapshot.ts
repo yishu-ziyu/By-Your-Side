@@ -18,6 +18,7 @@ import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
+import { overlayHostSelector } from "../../shared/overlay.js";
 
 /** 交给调用方的 snapshot 正文：页面内容与身份，不含采集预算字段。 */
 interface SnapshotBody {
@@ -229,9 +230,8 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
     "Accessibility.getFullAXTree 8 秒内没有返回",
   );
 
-  const nodes = result.nodes ?? [];
-
-  if (nodes.length === 0) throw new Error("Accessibility.getFullAXTree 返回空树");
+  if ((result.nodes ?? []).length === 0) throw new Error("Accessibility.getFullAXTree 返回空树");
+  const nodes = withoutSubtrees(result.nodes!, await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, nodes);
   const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes), secret);
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
@@ -257,6 +257,45 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
     collectionComplete: collected.collectionComplete,
     collectionLimitReached: collected.collectionLimitReached,
   };
+}
+
+/**
+ * 助手自己挂在页面上的浮层（光标和名牌、中止按钮、圈注）不是网页内容：模型不该读到、点到它们。
+ * 它们每次运行重新挂上、编号会变，留在树里同一页每次读出来都不一样，历史里就去不了重（#271）。
+ */
+async function ownOverlayHosts(tabId: number): Promise<Set<number>> {
+  const objectGroup = `bys-own-overlay-${crypto.randomUUID()}`;
+
+  try {
+    const list = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression: `[...document.querySelectorAll(${JSON.stringify(overlayHostSelector())})]`, objectGroup });
+
+    if (!list.result?.objectId) return new Set();
+    const { result } = await sendCommand<{ result: Array<{ name: string; value?: { objectId?: string } }> }>(tabId, "Runtime.getProperties", { objectId: list.result.objectId, ownProperties: true });
+    const hosts = result.flatMap(p => /^\d+$/.test(p.name) && p.value?.objectId ? [p.value.objectId] : []);
+
+    return new Set(await Promise.all(hosts.map(async objectId => (await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId })).node.backendNodeId)));
+  } catch {
+    return new Set();
+  } finally {
+    void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
+}
+
+function withoutSubtrees(nodes: AxNodeLite[], hosts: Set<number>): AxNodeLite[] {
+  if (hosts.size === 0) return nodes;
+  const byId = new Map(nodes.map(n => [n.nodeId, n]));
+  const drop = new Set<string>();
+  const stack = nodes.filter(n => n.backendDOMNodeId !== undefined && hosts.has(n.backendDOMNodeId)).map(n => n.nodeId);
+
+  while (stack.length) {
+    const id = stack.pop()!;
+
+    if (drop.has(id)) continue;
+    drop.add(id);
+    stack.push(...(byId.get(id)?.childIds ?? []));
+  }
+
+  return nodes.filter(n => !drop.has(n.nodeId));
 }
 
 /** 一次快照最多补读的范围输入框；页面再多也只多花有限几次 CDP 往返。 */

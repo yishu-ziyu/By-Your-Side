@@ -46,7 +46,8 @@ const model = await startScriptedModel([
   const messages = (payload.messages ?? []) as Message[];
   const ask = [ON_SITE, OFF_SITE].find(text => messages.some(m => m.role === "user" && textOf(m.content).includes(text)));
 
-  if (ask && !firstPrompt.has(ask)) firstPrompt.set(ask, messages.filter(m => m.role === "system" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文"))).map(m => textOf(m.content)).join("\n"));
+  // 只看本次运行的上下文（最后一段）；之前消息前的那些留在历史里（#271）。
+  if (ask && !firstPrompt.has(ask)) firstPrompt.set(ask, messages.filter((m, i, all) => m.role === "system" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文") && !all.slice(i + 1).some(n => n.role === "user" && textOf(n.content).startsWith("本次运行的上下文")))).map(m => textOf(m.content)).join("\n"));
 });
 
 const rp = await launchRealPath();

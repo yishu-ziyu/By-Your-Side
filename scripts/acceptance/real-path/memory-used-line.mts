@@ -92,7 +92,8 @@ const proxy = createServer(async (req, res) => {
   if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
     // SAFETY: OpenAI 兼容请求体。
     const payload = JSON.parse(body) as { messages?: ChatMessage[]; tools?: unknown[] };
-    const system = (payload.messages ?? []).filter((m) => m.role === "system" || m.role === "developer" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文"))).map((m) => textOf(m.content)).join("\n");
+    // 只看本次运行的上下文（最后一段）；之前消息前的那些留在历史里（#271）。
+    const system = (payload.messages ?? []).filter((m, i, all) => m.role === "system" || m.role === "developer" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文") && !all.slice(i + 1).some(n => n.role === "user" && textOf(n.content).startsWith("本次运行的上下文")))).map((m) => textOf(m.content)).join("\n");
 
     if (payload.tools?.length) mainRequests.push(system);
 

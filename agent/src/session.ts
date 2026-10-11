@@ -1078,9 +1078,12 @@ return;}
         ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
       ].filter(Boolean).join("\n\n");
 
-      this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: body.length, mainText: text.length, tree: ax.length });
+      const observation = freshPageObservationText(context, body, text ? (ax ? "both" : "text") : "tree");
+      // 同一页没变时历史里已有一字不差的这一段：再带一份只会让历史变长，换成一行指回去（#271）。
+      const repeat = this.session?.agent.state.messages.some(m => (m.role === "user" || m.role === "custom") && (typeof m.content === "string" ? m.content : m.content.map(p => p.type === "text" ? p.text : "").join("")).includes(observation)) ?? false;
+      this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: body.length, mainText: text.length, tree: ax.length, repeat });
 
-      return freshPageObservationText(context, body, text ? (ax ? "both" : "text") : "tree");
+      return repeat ? unchangedPageObservationText(context) : observation;
     } catch (error) {
       this.runTrace.record("pre_observation_failed", {
         phase,
@@ -2562,6 +2565,16 @@ export function freshPageObservationText(context: PageContext, snapshotText: str
       ? `[This is the main text of tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Answer questions about it from this text in your first round; do not re-read it. It has no element refs: to act on the page, snapshot it first or inside browser_run.]`
       : `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
     wrapPageContent(redactCredentialText(snapshotText), { tabId: context.tabId, title: context.title, url: context.url }),
+  ].join("\n");
+}
+
+/** 这一页和对话里之前读过的一字不差时，代替整段正文和 AX 树。 */
+export function unchangedPageObservationText(context: PageContext): string {
+  const title = (context.title || "(untitled)").replace(/\s+/g, " ");
+
+  return [
+    "[FRESH PAGE OBSERVATION — read by the runtime just now, before this task started]",
+    `[Tab ${context.tabId} "${title}" — ${context.url} is unchanged since your earlier observation of it in this conversation: same main text, same accessibility tree, same refs. Use that observation; read again only if the question needs a part it does not show.]`,
   ].join("\n");
 }
 
