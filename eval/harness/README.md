@@ -22,7 +22,9 @@ Failure review page for the product owner: node eval/harness/review.mjs eval/run
   fail / undeterminable / judge_error in some spec, plus N passed results drawn with a fixed seed (default 5, marked
   随机抽查的通过; --all: every result, incl. passed and not yet judged), grouped
   by tier then category; failing specs side by side. Each card: prompt, site, success rule, final reply, verdict +
-  reason, page + panel screenshots (click to enlarge), time/tool calls, and a data-only 初步猜测 (timeout, no reply,
+  reason, page + panel screenshots (click to enlarge), a folded 过程 timeline (panel shot every 2 s while the task runs,
+  max 15, `<id>-panel-wait-<s>s.png` with the process text in the result's `panel_wait`; three 过 / 不过 questions about
+  the process UI, stored as `process` with the marks), time/tool calls, and a data-only 初步猜测 (timeout, no reply,
   tool errors, 当前写入已暂停, failed side_call, panel error, denied confirmation, setup not applied, judge error).
   Marks 能接受 / 不能接受 / 判错了 (keys 1/2/3, N = next) + note + 第一处不对 are kept in localStorage
   (key bys-review:<runId>|<task>|<spec>). With --serve the page is served on 127.0.0.1 and every change is also
