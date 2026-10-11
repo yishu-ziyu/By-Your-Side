@@ -1,7 +1,7 @@
 import { chromium } from '/Users/mahaoxuan/tools/gstack/node_modules/playwright/index.mjs';
 import { mkdir,writeFile,readFile,readdir } from 'node:fs/promises';
 
-const out='docs/evals/20260916-unified-cursor';
+const out='out/acceptance/unified-cursor';
 
 await mkdir(out,{recursive:true});
 
