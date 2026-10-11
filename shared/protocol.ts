@@ -372,7 +372,7 @@ export type AgentUiEvent =
    * checking：这一轮交付前先说一声「要核对」（在交付与 agent_end 之前到达）；unavailable：核对没拿到结论。这两个不是结论，任务记录不存。
    * correction：continue 时核对者说的具体出入，是诊断文字，只按纯文本显示。
    */
-  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; remaining?: string; correction?: string; /** 判继续时给用户看的一句诊断，不带指令。 */ finding?: string }
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; /** 和 checking 一起：核对已读完页面，剩下只等模型，不再用调试器。 */ pageRead?: boolean; remaining?: string; correction?: string; /** 判继续时给用户看的一句诊断，不带指令。 */ finding?: string }
   | { kind: "user_delivery"; delivery: UserDelivery }
   /**
    * 交给用户的文件：模型写的文本文件（artifacts 工具），或模型交给用户的截图（screenshot forUser，encoding 为 base64 的 PNG）。

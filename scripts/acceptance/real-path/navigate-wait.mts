@@ -9,7 +9,8 @@
  * (e) 不是报错，回执说开始了下载、Chrome 关掉了新标签页，下载目录里真有这个文件；
  * (f) 等待上限先到，回执仍说开始了下载、还没存好，不是 timeout，也不说存好。
  * (g) browser_run 里 browser.js 返回 {value: null}，程序按 #256 的写法拿它的 .url 去 navigate：几秒内报错，报错点明 .value，不等满 30 秒。
- * (h) 任务做完、侧栏回到空闲后 5 秒内，扩展断开调试器（页面顶上的横幅随之消失，#260），不等满 15 秒。
+ * (h) 任务做完、侧栏回到空闲后 3 秒内，扩展断开调试器（页面顶上的横幅随之消失，#260），不等满 15 秒；
+ *     目标核对的结论故意晚 8 秒才回，核对读完页就放开调试器，不陪着等（#259）。
  * 失败方式：去掉等待里的浏览器通知，(a)(b) 都等满 30 秒、回执是 timeout；把错误页当成加载完，(d) 回执是 complete（反例结果见验收文件）。
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -75,7 +76,13 @@ const payloads: Payload[] = [];
 /** 第 k 项：带 k 条工具结果的主任务请求到达脚本模型的时刻。相邻两项之差就是第 k 次 navigate 从发出到回执的上限。 */
 const requestAt: Record<number, number> = {};
 
-const model = await startScriptedModel([{ match: MARK, steps }], undefined, payload => {
+/** 目标核对晚回的时长：调试器若等核对结论才断开，(h) 一定超时。 */
+const CHECK_DELAY_MS = 8_000;
+
+const model = await startScriptedModel([
+  { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }), delayMs: CHECK_DELAY_MS }] },
+  { match: MARK, steps },
+], undefined, payload => {
   // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
   const p = payload as Payload;
 
@@ -91,6 +98,8 @@ let error: string | null = null;
 let receipts: string[] = [];
 let durations: number[] = [];
 let detachMs = NaN;
+/** 调试器断开时，目标核对的结论还没回：比结论早多少毫秒（负数或 NaN 说明是等结论才断开，或核对没发生）。 */
+let beforeVerdictMs = NaN;
 let downloaded: string[] = [];
 const checks: Array<{ name: string; pass: boolean }> = [];
 const check = (name: string, pass: boolean) => { checks.push({ name, pass }); };
@@ -117,6 +126,8 @@ try {
   // 反例要等满 15 秒，所以这里最多等 20 秒，让失败落在判据上。
   const detachedAt = await until(async () => ((await rp.evaluate(worker, "globalThis.__detachAt")) as number[]).find(at => at >= idleAt - 1000) ?? undefined, 20_000, "debugger detach").catch(() => NaN);
   detachMs = detachedAt - idleAt;
+  const verdictAt = await until(async () => model.requests.find(r => r.rule === '"goalPage"')?.firstTextAt, 15_000, "goal check verdict").catch(() => NaN);
+  beforeVerdictMs = verdictAt - detachedAt;
   await sleep(1500);
 
   const last = payloads.at(-1);
@@ -157,7 +168,7 @@ try {
   check("(g) receipt says navigate needs a url and points at .value", /navigate 需要 url/.test(g) && /\.value/.test(g));
 
   // (h) 做完以后调试器很快断开。
-  check(`(h) debugger detached ${detachMs} ms after the panel went idle`, detachMs < 5000);
+  check(`(h) debugger detached ${detachMs} ms after the panel went idle, ${beforeVerdictMs} ms before the goal check verdict`, detachMs < 3000 && beforeVerdictMs > 0);
 
   if (checks.some(item => !item.pass)) throw new Error(`failed: ${checks.filter(item => !item.pass).map(item => item.name).join(" | ")}`);
 } catch (caught) {

@@ -474,7 +474,7 @@ void (async () => {
  transport.start();
 })();
 
-/** 在跑任务的对话、回答后还在核对目标的对话。两者都空时，调试器很快断开，不等满 15 秒（#260）。 */
+/** 在跑任务的对话、回答后核对目标还在读页的对话。两者都空时，调试器很快断开，不等满 15 秒（#260、#259）。 */
 const busyConversations = new Set<string>();
 const checkingConversations = new Set<string>();
 
@@ -1273,7 +1273,7 @@ return;}
     } else if (msg.type === "agent_event") {
       const sid = msg.sessionId ?? LEAD_SESSION_ID;
 
-      if (msg.event.kind === "goal_check") noteRunSettle(conversationId, { checking: msg.event.status === "checking" });
+      if (msg.event.kind === "goal_check") noteRunSettle(conversationId, { checking: msg.event.status === "checking" && !msg.event.pageRead });
 
       if (msg.event.kind === "tool_start") {
         activityBySession.set(sid, msg.event.name === "await_message" ? "waiting_message" : "waiting_tool");
