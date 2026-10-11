@@ -2242,6 +2242,8 @@ interface RunHost {
   trail: HTMLElement;
   /** 只对这一轮有用的说明（调试提示条，#103），跟在最近几步后面，随它收起。 */
   aside: string | null;
+  /** 教学这一步点了但页面没变化（橙色），跟在最近几步后面；不等了就清掉。 */
+  guideHint: string | null;
   /** 填写之后从网页读回的几栏（「草稿现在是：「…」」），放在回答上方，不收进过程。 */
   evidence: HTMLElement | null;
   evidenceLines: Array<{ key: string; field: string; value: string }>;
@@ -3199,6 +3201,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     actIcon,
     trail,
     aside: null,
+    guideHint: null,
     evidence: null,
     evidenceLines: [],
   };
@@ -3216,7 +3219,7 @@ function renderTrail(run: RunHost): void {
 
   const { shown, earlier } = recentSteps(done);
   // 准备动作结束也会走到这里：内容没变就不重画，免得最后一步反复淡入。
-  const key = JSON.stringify([shown, earlier, run.aside]);
+  const key = JSON.stringify([shown, earlier, run.aside, run.guideHint]);
 
   if (run.trail.dataset.key === key) return;
 
@@ -3248,6 +3251,13 @@ function renderTrail(run: RunHost): void {
     aside.className = "trail-aside";
     aside.textContent = run.aside;
     rows.push(aside);
+  }
+
+  if (run.guideHint) {
+    const hint = document.createElement("div");
+    hint.className = "trail-aside warn";
+    hint.textContent = run.guideHint;
+    rows.push(hint);
   }
 
   run.trail.replaceChildren(...rows);
@@ -3951,7 +3961,8 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
   syncRunOrb(run);
 
-  if (changesPage(ev.name, typeof ev.params.action === "string" ? ev.params.action : undefined)) run.changedPage = true;
+  // 教学的步骤行就是这一轮的结果（用户自己点过的每一步），收尾时要留下。
+  if (ev.name === "guide_step" || changesPage(ev.name, typeof ev.params.action === "string" ? ev.params.action : undefined)) run.changedPage = true;
 
   const prep = isPrepTool(ev.name, ev.params);
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
@@ -4194,6 +4205,17 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
       if (run) setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), true, ev.waiting ? undefined : "think");
+      break;
+    }
+    case "guide_wait": {
+      // 教学一步在等用户自己点：标题写第几步在等你；点了没变化再加一行橙字；不等了回到「做了几件事」（docs/evals/20261011-guided-teaching.md R1、R3）。
+      const run = currentRun;
+
+      if (!run) break;
+      const waiting = ev.waiting && ev.guide;
+      setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : betweenStepsTitle(run.body.querySelectorAll(".chip:not(.prep):not(.note)").length), true, waiting ? undefined : "think");
+      run.guideHint = waiting && waiting.state === "no_change" ? (waiting.target ? `点了「${waiting.target}」，页面没有变化` : "点了，页面没有变化") : null;
+      renderTrail(run);
       break;
     }
     case "tool_end":

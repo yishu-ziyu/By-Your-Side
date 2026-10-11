@@ -17,7 +17,7 @@ import { isLeadSession, type Attachment, type TabInfo, type ToolContract, type T
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
 import { requiresControlGate } from "../../shared/effect-policy.js";
-import type { ToolRpc } from "./rpc.js";
+import { USER_CONFIRM_TIMEOUT_MS, type ToolRpc } from "./rpc.js";
 import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, ProgramAssertError, type ProgramStep } from "./browser-program.js";
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
 
@@ -975,6 +975,28 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("mark", { target: params.target, through: params.through, label: params.label, actions: params.actions })) as ToolContract["mark"]["data"];
 
         return textResult(`Marked ${params.target}.`, data);
+      },
+    }),
+    defineTool({
+      name: "guide_step",
+      label: "Guide one step",
+      description:
+        "Teach the user one step on the page: circles target, shows say beside it, then WAITS (up to 2 minutes) for the USER to click target themselves. You never click for them. One call = one click; never combine actions. Outcomes: done = the user clicked and the page changed — snapshot the page again, then give the next step or finish; no_change = the user clicked twice and nothing changed — explain or try another way, do not repeat the same step blindly; timeout = the user did not act for 2 minutes — say briefly that you are waiting. target accepts the same locator forms as click; use a ref from the latest snapshot.",
+      parameters: Type.Object({
+        tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use the working tab" })),
+        target: Type.String({ minLength: 1, description: '"@N" ref, "loc=css:..." locator, or raw CSS selector of the one thing the user should click' }),
+        say: Type.String({ minLength: 1, description: "One short instruction in the user's language naming the visible label, e.g. 点右上角的 Settings" }),
+        step: Type.Integer({ minimum: 1, description: "1-based step number in this lesson" }),
+      }),
+      execute: async (_id, params) => {
+        // 扩展最多等用户 2 分钟；宿主收到 tool_waiting_user 才放宽期限，这里先按同一上限发出，免得等待开始前就被普通期限截断。
+        const data = (await call("guide_step", { tabId: params.tabId, target: params.target, say: params.say, step: params.step }, undefined, undefined, undefined, USER_CONFIRM_TIMEOUT_MS)) as ToolContract["guide_step"]["data"];
+        const tries = `misses=${data.misses}, noChangeClicks=${data.noChangeClicks}`;
+
+        if (data.outcome === "done") return textResult(`Step ${params.step} done: the user clicked and the page changed (${data.changed ? `${data.changed}; ` : ""}${tries}). Snapshot the page, then give the next step or finish in one sentence.`, data);
+        if (data.outcome === "no_change") return textResult(`Step ${params.step} not done: the user clicked twice and the page did not change (${tries}). Explain or try another way; do not repeat this step blindly.`, data);
+
+        return textResult(`Step ${params.step} timed out: the user did not act for 2 minutes (${tries}). Say briefly that you are waiting.`, data);
       },
     }),
     defineTool({
