@@ -117,8 +117,12 @@ async function withDocumentChange(tabId: number, token: string, report: EffectRe
 
   if (!moved && !replaced) return report;
   const base = report ?? EMPTY_EFFECT_REPORT;
+  // 写明换到了哪一页：只说「加载了新文档」时，模型会再跑一轮去确认是不是要的那页（#257）。地址不带查询参数。
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const url = URL.canParse(tab?.url ?? pageUrl) ? new URL(tab?.url ?? pageUrl) : null;
+  const where = [tab?.title ? `"${tab.title.slice(0, 120)}"` : "", url ? `${url.origin}${url.pathname}` : ""].filter(Boolean).join(" — ");
 
-  return { ...base, changed: true, evidence: [...base.evidence, "the page loaded a new document"] };
+  return { ...base, changed: true, evidence: [...base.evidence, where ? `the page loaded a new document: ${where}` : "the page loaded a new document"] };
 }
 
 /** 点击后最多等多久：下载要先等跳转的响应头才出现，出现后再等 Chrome 报完成。 */
