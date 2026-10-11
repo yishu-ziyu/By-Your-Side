@@ -1,0 +1,1998 @@
+[
+ {
+  "run": "action-fast-r0",
+  "scenario": "action",
+  "error": null,
+  "firstText": 8072,
+  "uiDoneReal": 31018,
+  "uiShown": "31 秒",
+  "chips": [
+   "在 Wikipedia 搜索 Studio Ghibli 并打… | 1.0s",
+   "打开页面 Studio Ghibli - Wikipedia | 0.9s",
+   "确认 Studio Ghibli 条目内容 | 0.0s",
+   "执行脚本 | 0.0s"
+  ],
+  "thinkingLabels": [
+   "思考过程 6.4s",
+   "思考过程 3.7s"
+  ],
+  "counterLagMaxS": 0.9,
+  "pageOpened": 10683,
+  "preObsMs": 232,
+  "preObsChars": 12034,
+  "agentEnd": 30875.0,
+  "toolsTrace": [
+   [
+    "browser_run",
+    969
+   ],
+   [
+    "browser_run",
+    33
+   ],
+   [
+    "send_user_message",
+    9
+   ]
+  ],
+  "firstResponse": [
+   3856,
+   10593,
+   3806
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 330,
+    "ttfb": 3819,
+    "firstEvt": 3822,
+    "reason": 3835,
+    "out": 2543,
+    "total": 10200,
+    "pt": 18778,
+    "ct": 557,
+    "cached": 3328,
+    "rc": 1387,
+    "cc": 50,
+    "tools": [
+     "browser_run"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70992,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 13818,
+    "toolmsg": 0
+   },
+   {
+    "p": "main",
+    "start": 11524,
+    "ttfb": 10565,
+    "firstEvt": 10567,
+    "reason": 2595,
+    "out": 1114,
+    "total": 14276,
+    "pt": 19717,
+    "ct": 292,
+    "cached": 18432,
+    "rc": 755,
+    "cc": 0,
+    "tools": [
+     "browser_run"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 74676,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 14197,
+    "toolmsg": 819
+   },
+   {
+    "p": "main",
+    "start": 25849,
+    "ttfb": 3696,
+    "firstEvt": 3790,
+    "reason": 0,
+    "out": 1197,
+    "total": 4987,
+    "pt": 20182,
+    "ct": 107,
+    "cached": 18944,
+    "rc": 0,
+    "cc": 0,
+    "tools": [
+     "send_user_message"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 76576,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 14505,
+    "toolmsg": 1002
+   },
+   {
+    "p": "goal_check",
+    "start": 31503,
+    "ttfb": 1061,
+    "firstEvt": 1061,
+    "reason": 916,
+    "out": 152,
+    "total": 2129,
+    "pt": 2967,
+    "ct": 128,
+    "cached": 0,
+    "rc": 445,
+    "cc": 72,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 11993,
+    "sys": 6509,
+    "toolsChars": 2,
+    "user": 4775,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:habit",
+    "start": 33632,
+    "ttfb": 547,
+    "firstEvt": 548,
+    "reason": 10206,
+    "out": 0,
+    "total": 10754,
+    "pt": 349,
+    "ct": 1600,
+    "cached": 0,
+    "rc": 6551,
+    "cc": 0,
+    "tools": [],
+    "fin": "length",
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 1421,
+    "sys": 892,
+    "toolsChars": 2,
+    "user": 280,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:habit",
+    "start": 44386,
+    "ttfb": 538,
+    "firstEvt": 540,
+    "reason": 706,
+    "out": 0,
+    "total": 1246,
+    "pt": 407,
+    "ct": 94,
+    "cached": 0,
+    "rc": 392,
+    "cc": 0,
+    "tools": [],
+    "fin": null,
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 1701,
+    "sys": 1030,
+    "toolsChars": 2,
+    "user": 418,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    85
+   ],
+   [
+    "detach",
+    46449
+   ]
+  ],
+  "axTree": [
+   [
+    87,
+    179
+   ],
+   [
+    10879,
+    550
+   ],
+   [
+    30892,
+    556
+   ]
+  ]
+ },
+ {
+  "run": "action-r0",
+  "scenario": "action",
+  "error": null,
+  "firstText": 22525,
+  "uiDoneReal": 30112,
+  "uiShown": "30 秒",
+  "chips": [
+   "打开页面 Studio Ghibli - Wikipedia | 0.9s"
+  ],
+  "thinkingLabels": [
+   "思考过程 20s",
+   "思考过程 3.1s",
+   "执行过程"
+  ],
+  "counterLagMaxS": 1.2,
+  "pageOpened": 23139,
+  "preObsMs": 174,
+  "preObsChars": 12034,
+  "agentEnd": 30056.0,
+  "toolsTrace": [
+   [
+    "navigate",
+    null
+   ]
+  ],
+  "firstResponse": [
+   2694,
+   3044
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 306,
+    "ttfb": 2657,
+    "firstEvt": 2664,
+    "reason": 19520,
+    "out": 508,
+    "total": 22692,
+    "pt": 18871,
+    "ct": 1647,
+    "cached": 0,
+    "rc": 6816,
+    "cc": 60,
+    "tools": [
+     "navigate"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70953,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 13779,
+    "toolmsg": 0
+   },
+   {
+    "p": "main",
+    "start": 23900,
+    "ttfb": 3017,
+    "firstEvt": 3018,
+    "reason": 694,
+    "out": 2436,
+    "total": 6148,
+    "pt": 28723,
+    "ct": 237,
+    "cached": 18432,
+    "rc": 173,
+    "cc": 364,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 103534,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 14142,
+    "toolmsg": 24129
+   },
+   {
+    "p": "goal_check",
+    "start": 30890,
+    "ttfb": 1716,
+    "firstEvt": 1718,
+    "reason": 1965,
+    "out": 113,
+    "total": 3796,
+    "pt": 5577,
+    "ct": 178,
+    "cached": 0,
+    "rc": 519,
+    "cc": 72,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 19747,
+    "sys": 6509,
+    "toolsChars": 2,
+    "user": 12206,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:date",
+    "start": 34685,
+    "ttfb": 727,
+    "firstEvt": 729,
+    "reason": 5903,
+    "out": 0,
+    "total": 6632,
+    "pt": 352,
+    "ct": 547,
+    "cached": 0,
+    "rc": 2196,
+    "cc": 13,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1164,
+    "sys": 479,
+    "toolsChars": 2,
+    "user": 466,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:habit",
+    "start": 34685,
+    "ttfb": 732,
+    "firstEvt": 733,
+    "reason": 9975,
+    "out": 129,
+    "total": 10837,
+    "pt": 477,
+    "ct": 908,
+    "cached": 0,
+    "rc": 3652,
+    "cc": 77,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1611,
+    "sys": 892,
+    "toolsChars": 2,
+    "user": 474,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    122
+   ],
+   [
+    "detach",
+    15241
+   ],
+   [
+    "attach",
+    23046
+   ],
+   [
+    "detach",
+    45819
+   ]
+  ],
+  "axTree": [
+   [
+    124,
+    117
+   ],
+   [
+    23284,
+    525
+   ],
+   [
+    30145,
+    674
+   ]
+  ]
+ },
+ {
+  "run": "action-r1",
+  "scenario": "action",
+  "error": null,
+  "firstText": 7999,
+  "uiDoneReal": 14797,
+  "uiShown": "15 秒",
+  "chips": [
+   " | 1.0s"
+  ],
+  "thinkingLabels": [
+   "",
+   "",
+   ""
+  ],
+  "counterLagMaxS": 1.0,
+  "pageOpened": 8305,
+  "preObsMs": 263,
+  "preObsChars": 12034,
+  "agentEnd": 14727.0,
+  "toolsTrace": [
+   [
+    "navigate",
+    null
+   ]
+  ],
+  "firstResponse": [
+   3679,
+   1809
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 443,
+    "ttfb": 3602,
+    "firstEvt": 3603,
+    "reason": 3843,
+    "out": 324,
+    "total": 7770,
+    "pt": 18887,
+    "ct": 379,
+    "cached": 3328,
+    "rc": 1439,
+    "cc": 30,
+    "tools": [
+     "navigate"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70998,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 13824,
+    "toolmsg": 0
+   },
+   {
+    "p": "main",
+    "start": 9259,
+    "ttfb": 1783,
+    "firstEvt": 1787,
+    "reason": 1294,
+    "out": 2370,
+    "total": 5451,
+    "pt": 27470,
+    "ct": 276,
+    "cached": 18432,
+    "rc": 382,
+    "cc": 323,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 98107,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 14187,
+    "toolmsg": 24129
+   },
+   {
+    "p": "goal_check",
+    "start": 15393,
+    "ttfb": 1120,
+    "firstEvt": 1121,
+    "reason": 2630,
+    "out": 112,
+    "total": 3863,
+    "pt": 5568,
+    "ct": 228,
+    "cached": 1024,
+    "rc": 927,
+    "cc": 72,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 19708,
+    "sys": 6509,
+    "toolsChars": 2,
+    "user": 12166,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:date",
+    "start": 19256,
+    "ttfb": 768,
+    "firstEvt": 769,
+    "reason": 8338,
+    "out": 4,
+    "total": 9111,
+    "pt": 343,
+    "ct": 740,
+    "cached": 0,
+    "rc": 3156,
+    "cc": 13,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1123,
+    "sys": 479,
+    "toolsChars": 2,
+    "user": 425,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:habit",
+    "start": 19256,
+    "ttfb": 1295,
+    "firstEvt": 1296,
+    "reason": 10703,
+    "out": 0,
+    "total": 11999,
+    "pt": 468,
+    "ct": 1001,
+    "cached": 0,
+    "rc": 3886,
+    "cc": 0,
+    "tools": [],
+    "fin": null,
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1570,
+    "sys": 892,
+    "toolsChars": 2,
+    "user": 433,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    126
+   ],
+   [
+    "detach",
+    30342
+   ]
+  ],
+  "axTree": [
+   [
+    136,
+    174
+   ],
+   [
+    8523,
+    633
+   ],
+   [
+    14803,
+    538
+   ]
+  ]
+ },
+ {
+  "run": "action-r2",
+  "scenario": "action",
+  "error": null,
+  "firstText": 14814,
+  "uiDoneReal": 53625,
+  "uiShown": "53 秒",
+  "chips": [
+   " | 31s",
+   " | 1.1s",
+   " | 0.0s",
+   " | 30s",
+   " | 0.0s"
+  ],
+  "thinkingLabels": [
+   "",
+   "",
+   ""
+  ],
+  "counterLagMaxS": 0.9,
+  "pageOpened": 17424,
+  "preObsMs": 398,
+  "preObsChars": 12034,
+  "agentEnd": 53487.0,
+  "toolsTrace": [
+   [
+    "browser_run",
+    31187
+   ]
+  ],
+  "firstResponse": [
+   3564,
+   3781
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 571,
+    "ttfb": 3491,
+    "firstEvt": 3495,
+    "reason": 10623,
+    "out": 2509,
+    "total": 16627,
+    "pt": 18870,
+    "ct": 1241,
+    "cached": 3328,
+    "rc": 3966,
+    "cc": 49,
+    "tools": [
+     "browser_run"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70953,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 13779,
+    "toolmsg": 0
+   },
+   {
+    "p": "main",
+    "start": 48405,
+    "ttfb": 3758,
+    "firstEvt": 3760,
+    "reason": 633,
+    "out": 684,
+    "total": 5077,
+    "pt": 20625,
+    "ct": 112,
+    "cached": 18432,
+    "rc": 222,
+    "cc": 170,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 77866,
+    "sys": 16085,
+    "toolsChars": 40564,
+    "user": 15092,
+    "toolmsg": 273
+   },
+   {
+    "p": "goal_check",
+    "start": 54184,
+    "ttfb": 1554,
+    "firstEvt": 1555,
+    "reason": 1511,
+    "out": 118,
+    "total": 3184,
+    "pt": 2702,
+    "ct": 161,
+    "cached": 1024,
+    "rc": 652,
+    "cc": 72,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 11053,
+    "sys": 6509,
+    "toolsChars": 2,
+    "user": 3957,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:habit",
+    "start": 57367,
+    "ttfb": 2309,
+    "firstEvt": 2311,
+    "reason": 5950,
+    "out": 144,
+    "total": 8405,
+    "pt": 351,
+    "ct": 566,
+    "cached": 0,
+    "rc": 2205,
+    "cc": 81,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1431,
+    "sys": 892,
+    "toolsChars": 2,
+    "user": 286,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    158
+   ],
+   [
+    "detach",
+    15408
+   ],
+   [
+    "attach",
+    17263
+   ],
+   [
+    "detach",
+    33349
+   ],
+   [
+    "attach",
+    48367
+   ],
+   [
+    "detach",
+    69127
+   ]
+  ],
+  "axTree": [
+   [
+    165,
+    242
+   ],
+   [
+    17598,
+    648
+   ],
+   [
+    53530,
+    597
+   ]
+  ]
+ },
+ {
+  "run": "explain-fast-r0",
+  "scenario": "explain",
+  "error": null,
+  "firstText": 6138,
+  "done": 6529,
+  "uiShown": null,
+  "pageOpened": null,
+  "preObsMs": null,
+  "preObsChars": null,
+  "agentEnd": null,
+  "toolsTrace": [],
+  "firstResponse": [],
+  "calls": [
+   {
+    "p": "explain",
+    "start": 45,
+    "ttfb": 1474,
+    "firstEvt": 1475,
+    "reason": 4114,
+    "out": 531,
+    "total": 6120,
+    "pt": 567,
+    "ct": 602,
+    "cached": 0,
+    "rc": 909,
+    "cc": 178,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 2089,
+    "sys": 195,
+    "toolsChars": 2,
+    "user": 1661,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [],
+  "axTree": []
+ },
+ {
+  "run": "explain-r0",
+  "scenario": "explain",
+  "error": null,
+  "firstText": 8350,
+  "done": 10164,
+  "uiShown": null,
+  "pageOpened": null,
+  "preObsMs": null,
+  "preObsChars": null,
+  "agentEnd": null,
+  "toolsTrace": [],
+  "firstResponse": [],
+  "calls": [
+   {
+    "p": "explain",
+    "start": 50,
+    "ttfb": 1808,
+    "firstEvt": 1815,
+    "reason": 6244,
+    "out": 1763,
+    "total": 9822,
+    "pt": 566,
+    "ct": 668,
+    "cached": 0,
+    "rc": 1852,
+    "cc": 313,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 2089,
+    "sys": 195,
+    "toolsChars": 2,
+    "user": 1661,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [],
+  "axTree": []
+ },
+ {
+  "run": "explain-r1",
+  "scenario": "explain",
+  "error": null,
+  "firstText": 7500,
+  "done": 9392,
+  "uiShown": null,
+  "pageOpened": null,
+  "preObsMs": null,
+  "preObsChars": null,
+  "agentEnd": null,
+  "toolsTrace": [],
+  "firstResponse": [],
+  "calls": [
+   {
+    "p": "explain",
+    "start": 47,
+    "ttfb": 2843,
+    "firstEvt": 2844,
+    "reason": 4255,
+    "out": 1968,
+    "total": 9067,
+    "pt": 566,
+    "ct": 468,
+    "cached": 0,
+    "rc": 667,
+    "cc": 311,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 2089,
+    "sys": 195,
+    "toolsChars": 2,
+    "user": 1661,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [],
+  "axTree": []
+ },
+ {
+  "run": "explain-r2",
+  "scenario": "explain",
+  "error": null,
+  "firstText": 8786,
+  "done": 10228,
+  "uiShown": null,
+  "pageOpened": null,
+  "preObsMs": null,
+  "preObsChars": null,
+  "agentEnd": null,
+  "toolsTrace": [],
+  "firstResponse": [],
+  "calls": [
+   {
+    "p": "explain",
+    "start": 46,
+    "ttfb": 3900,
+    "firstEvt": 3901,
+    "reason": 4501,
+    "out": 1544,
+    "total": 9946,
+    "pt": 567,
+    "ct": 524,
+    "cached": 0,
+    "rc": 761,
+    "cc": 274,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 2090,
+    "sys": 195,
+    "toolsChars": 2,
+    "user": 1662,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [],
+  "axTree": []
+ },
+ {
+  "run": "gist-r0",
+  "scenario": "gist",
+  "error": null,
+  "firstText": 4637,
+  "uiDoneReal": 5712,
+  "uiShown": "5 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "思考过程 1.9s"
+  ],
+  "counterLagMaxS": 0.9,
+  "pageOpened": null,
+  "preObsMs": 31,
+  "preObsChars": 373,
+  "agentEnd": 5548.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   3552
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 132,
+    "ttfb": 3514,
+    "firstEvt": 3517,
+    "reason": 956,
+    "out": 938,
+    "total": 5411,
+    "pt": 15164,
+    "ct": 164,
+    "cached": 3328,
+    "rc": 330,
+    "cc": 169,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 58785,
+    "sys": 16021,
+    "toolsChars": 40564,
+    "user": 1675,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    72
+   ]
+  ],
+  "axTree": [
+   [
+    74,
+    5
+   ]
+  ]
+ },
+ {
+  "run": "gist-r1",
+  "scenario": "gist",
+  "error": null,
+  "firstText": 4129,
+  "uiDoneReal": 5511,
+  "uiShown": "5 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "正在思考…"
+  ],
+  "counterLagMaxS": 0.9,
+  "pageOpened": null,
+  "preObsMs": 43,
+  "preObsChars": 373,
+  "agentEnd": 5502.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   2749
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 139,
+    "ttfb": 2713,
+    "firstEvt": 2718,
+    "reason": 1245,
+    "out": 1396,
+    "total": 5359,
+    "pt": 15172,
+    "ct": 219,
+    "cached": 3328,
+    "rc": 380,
+    "cc": 219,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 58793,
+    "sys": 16021,
+    "toolsChars": 40564,
+    "user": 1683,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    77
+   ]
+  ],
+  "axTree": [
+   [
+    79,
+    5
+   ]
+  ]
+ },
+ {
+  "run": "gist-step-3.5-flash-r0",
+  "scenario": "gist",
+  "error": null,
+  "firstText": 5305,
+  "uiDoneReal": 6073,
+  "uiShown": "5 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "正在思考…"
+  ],
+  "counterLagMaxS": 0.9,
+  "pageOpened": null,
+  "preObsMs": 49,
+  "preObsChars": 373,
+  "agentEnd": 6051.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   3759
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 170,
+    "ttfb": 3712,
+    "firstEvt": 3715,
+    "reason": 1349,
+    "out": 812,
+    "total": 5876,
+    "pt": 15165,
+    "ct": 315,
+    "cached": 3648,
+    "rc": 1029,
+    "cc": 185,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 58793,
+    "sys": 16021,
+    "toolsChars": 40564,
+    "user": 1683,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    92
+   ]
+  ],
+  "axTree": [
+   [
+    95,
+    6
+   ]
+  ]
+ },
+ {
+  "run": "summary-fast-r0",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 11722,
+  "uiDoneReal": 13716,
+  "uiShown": "13 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "正在思考…"
+  ],
+  "counterLagMaxS": 1.0,
+  "pageOpened": null,
+  "preObsMs": 1757,
+  "preObsChars": 12034,
+  "agentEnd": 13601.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   7224
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 1835,
+    "ttfb": 7185,
+    "firstEvt": 7186,
+    "reason": 2583,
+    "out": 1993,
+    "total": 11762,
+    "pt": 19115,
+    "ct": 411,
+    "cached": 3328,
+    "rc": 839,
+    "cc": 737,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70974,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13822,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    44
+   ],
+   [
+    "detach",
+    16676
+   ]
+  ],
+  "axTree": [
+   [
+    46,
+    1629
+   ]
+  ]
+ },
+ {
+  "run": "summary-fast-r1",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 42455,
+  "uiDoneReal": 42455,
+  "uiShown": "42 秒",
+  "chips": [
+   " | 0.1s",
+   " | 0.1s"
+  ],
+  "thinkingLabels": [
+   "",
+   "",
+   "",
+   ""
+  ],
+  "counterLagMaxS": 0.9,
+  "pageOpened": null,
+  "preObsMs": 2188,
+  "preObsChars": 12034,
+  "agentEnd": 42380.0,
+  "toolsTrace": [
+   [
+    "fetch",
+    61
+   ],
+   [
+    "fetch",
+    106
+   ]
+  ],
+  "firstResponse": [
+   3944,
+   4800,
+   8235
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 2286,
+    "ttfb": 3900,
+    "firstEvt": 3902,
+    "reason": 8202,
+    "out": 49,
+    "total": 12153,
+    "pt": 19146,
+    "ct": 646,
+    "cached": 0,
+    "rc": 2539,
+    "cc": 0,
+    "tools": [
+     "fetch"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 71013,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13861,
+    "toolmsg": 0
+   },
+   {
+    "p": "main",
+    "start": 14523,
+    "ttfb": 4767,
+    "firstEvt": 4771,
+    "reason": 10591,
+    "out": 83,
+    "total": 15445,
+    "pt": 20484,
+    "ct": 742,
+    "cached": 18688,
+    "rc": 2936,
+    "cc": 0,
+    "tools": [
+     "fetch"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 76653,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13861,
+    "toolmsg": 2592
+   },
+   {
+    "p": "main",
+    "start": 30115,
+    "ttfb": 8198,
+    "firstEvt": 8201,
+    "reason": 485,
+    "out": 3566,
+    "total": 12252,
+    "pt": 26045,
+    "ct": 366,
+    "cached": 19712,
+    "rc": 98,
+    "cc": 1362,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 96340,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13861,
+    "toolmsg": 18892
+   },
+   {
+    "p": "goal_check",
+    "start": 44275,
+    "ttfb": 1539,
+    "firstEvt": 1540,
+    "reason": 7691,
+    "out": 0,
+    "total": 9231,
+    "pt": 6043,
+    "ct": 1600,
+    "cached": 1344,
+    "rc": 6609,
+    "cc": 0,
+    "tools": [],
+    "fin": "length",
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 23138,
+    "sys": 6509,
+    "toolsChars": 2,
+    "user": 15699,
+    "toolmsg": 0
+   },
+   {
+    "p": "goal_check",
+    "start": 53506,
+    "ttfb": 3786,
+    "firstEvt": 3787,
+    "reason": 4980,
+    "out": 0,
+    "total": 8767,
+    "pt": 6101,
+    "ct": 959,
+    "cached": 0,
+    "rc": 4025,
+    "cc": 0,
+    "tools": [],
+    "fin": null,
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 23418,
+    "sys": 6647,
+    "toolsChars": 2,
+    "user": 15837,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    66
+   ],
+   [
+    "detach",
+    17042
+   ],
+   [
+    "attach",
+    42499
+   ],
+   [
+    "detach",
+    59133
+   ]
+  ],
+  "axTree": [
+   [
+    69,
+    1971
+   ],
+   [
+    42500,
+    1633
+   ]
+  ]
+ },
+ {
+  "run": "summary-r0",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 8101,
+  "uiDoneReal": 10396,
+  "uiShown": "10 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "正在思考…"
+  ],
+  "counterLagMaxS": 0.9,
+  "pageOpened": null,
+  "preObsMs": 1605,
+  "preObsChars": 12034,
+  "agentEnd": 10252.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   3157
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 1704,
+    "ttfb": 3116,
+    "firstEvt": 3117,
+    "reason": 3263,
+    "out": 2162,
+    "total": 8542,
+    "pt": 19115,
+    "ct": 430,
+    "cached": 0,
+    "rc": 1072,
+    "cc": 244,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70966,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13814,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    65
+   ],
+   [
+    "detach",
+    16546
+   ]
+  ],
+  "axTree": [
+   [
+    67,
+    1478
+   ]
+  ]
+ },
+ {
+  "run": "summary-r1",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 11741,
+  "uiDoneReal": 14048,
+  "uiShown": "13 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "正在思考…"
+  ],
+  "counterLagMaxS": 1.0,
+  "pageOpened": null,
+  "preObsMs": 1857,
+  "preObsChars": 12034,
+  "agentEnd": 13924.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   6781
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 1960,
+    "ttfb": 6733,
+    "firstEvt": 6737,
+    "reason": 2975,
+    "out": 2247,
+    "total": 11959,
+    "pt": 19101,
+    "ct": 475,
+    "cached": 3328,
+    "rc": 905,
+    "cc": 840,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70970,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13818,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    64
+   ],
+   [
+    "detach",
+    16778
+   ]
+  ],
+  "axTree": [
+   [
+    66,
+    1711
+   ]
+  ]
+ },
+ {
+  "run": "summary-r2",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 55049,
+  "uiDoneReal": 55049,
+  "uiShown": "55 秒",
+  "chips": [
+   "切换标签页 | 0.0s",
+   "执行脚本 | 0.0s",
+   "发送网络请求 | 0.2s"
+  ],
+  "thinkingLabels": [
+   "思考过程 15s",
+   "思考过程 1.5s",
+   "思考过程 9.7s",
+   "思考过程 5.9s",
+   "执行过程"
+  ],
+  "counterLagMaxS": 0.8,
+  "pageOpened": null,
+  "preObsMs": 1785,
+  "preObsChars": 12034,
+  "agentEnd": 54713.0,
+  "toolsTrace": [
+   [
+    "tabs",
+    43
+   ],
+   [
+    "js",
+    25
+   ],
+   [
+    "fetch",
+    188
+   ]
+  ],
+  "firstResponse": [
+   3287,
+   2865,
+   6312,
+   7561
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 1890,
+    "ttfb": 3240,
+    "firstEvt": 3243,
+    "reason": 15282,
+    "out": 188,
+    "total": 18713,
+    "pt": 19117,
+    "ct": 1126,
+    "cached": 3328,
+    "rc": 4631,
+    "cc": 0,
+    "tools": [
+     "tabs"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70974,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13822,
+    "toolmsg": 0
+   },
+   {
+    "p": "main",
+    "start": 20660,
+    "ttfb": 2845,
+    "firstEvt": 2846,
+    "reason": 698,
+    "out": 835,
+    "total": 4379,
+    "pt": 20415,
+    "ct": 161,
+    "cached": 18688,
+    "rc": 148,
+    "cc": 0,
+    "tools": [
+     "js"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 76424,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 14162,
+    "toolmsg": 143
+   },
+   {
+    "p": "main",
+    "start": 25083,
+    "ttfb": 6290,
+    "firstEvt": 6291,
+    "reason": 9396,
+    "out": 315,
+    "total": 16002,
+    "pt": 20708,
+    "ct": 773,
+    "cached": 19712,
+    "rc": 2966,
+    "cc": 0,
+    "tools": [
+     "fetch"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 77569,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 14468,
+    "toolmsg": 200
+   },
+   {
+    "p": "main",
+    "start": 41310,
+    "ttfb": 7528,
+    "firstEvt": 7529,
+    "reason": 3609,
+    "out": 2248,
+    "total": 13386,
+    "pt": 25307,
+    "ct": 545,
+    "cached": 0,
+    "rc": 1243,
+    "cc": 956,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 97441,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 14468,
+    "toolmsg": 16575
+   },
+   {
+    "p": "goal_check",
+    "start": 57184,
+    "ttfb": 4023,
+    "firstEvt": 4024,
+    "reason": 7221,
+    "out": 119,
+    "total": 11364,
+    "pt": 4743,
+    "ct": 742,
+    "cached": 1024,
+    "rc": 3090,
+    "cc": 72,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 19947,
+    "sys": 6509,
+    "toolsChars": 2,
+    "user": 12764,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:habit",
+    "start": 68548,
+    "ttfb": 2032,
+    "firstEvt": 2033,
+    "reason": 9966,
+    "out": 0,
+    "total": 11999,
+    "pt": 375,
+    "ct": 836,
+    "cached": 0,
+    "rc": 3373,
+    "cc": 0,
+    "tools": [],
+    "fin": null,
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1638,
+    "sys": 892,
+    "toolsChars": 2,
+    "user": 501,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    78
+   ],
+   [
+    "detach",
+    16710
+   ],
+   [
+    "attach",
+    25053
+   ],
+   [
+    "detach",
+    40059
+   ],
+   [
+    "attach",
+    55109
+   ],
+   [
+    "detach",
+    72009
+   ]
+  ],
+  "axTree": [
+   [
+    82,
+    1627
+   ],
+   [
+    55114,
+    1895
+   ]
+  ]
+ },
+ {
+  "run": "summary-r3",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 8746,
+  "uiDoneReal": 22231,
+  "uiShown": "22 秒",
+  "chips": [
+   " | 0.0s",
+   " | 0.0s"
+  ],
+  "thinkingLabels": [
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  "counterLagMaxS": 1.0,
+  "pageOpened": null,
+  "preObsMs": 1805,
+  "preObsChars": 12034,
+  "agentEnd": 22167.0,
+  "toolsTrace": [
+   [
+    "js",
+    41
+   ],
+   [
+    "js",
+    23
+   ]
+  ],
+  "firstResponse": [
+   2987,
+   1426,
+   2010
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 1917,
+    "ttfb": 2940,
+    "firstEvt": 2941,
+    "reason": 3732,
+    "out": 898,
+    "total": 7571,
+    "pt": 19115,
+    "ct": 379,
+    "cached": 3328,
+    "rc": 1143,
+    "cc": 20,
+    "tools": [
+     "js"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 70974,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13822,
+    "toolmsg": 0
+   },
+   {
+    "p": "main",
+    "start": 9573,
+    "ttfb": 1379,
+    "firstEvt": 1384,
+    "reason": 4865,
+    "out": 903,
+    "total": 7152,
+    "pt": 19623,
+    "ct": 463,
+    "cached": 18688,
+    "rc": 1441,
+    "cc": 16,
+    "tools": [
+     "js"
+    ],
+    "fin": "tool_calls",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 73033,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 14131,
+    "toolmsg": 41
+   },
+   {
+    "p": "main",
+    "start": 16766,
+    "ttfb": 1992,
+    "firstEvt": 1992,
+    "reason": 694,
+    "out": 2707,
+    "total": 5393,
+    "pt": 20812,
+    "ct": 262,
+    "cached": 19200,
+    "rc": 160,
+    "cc": 358,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 77822,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 14437,
+    "toolmsg": 2460
+   },
+   {
+    "p": "goal_check",
+    "start": 23750,
+    "ttfb": 1266,
+    "firstEvt": 1267,
+    "reason": 4372,
+    "out": 130,
+    "total": 5769,
+    "pt": 3387,
+    "ct": 451,
+    "cached": 1024,
+    "rc": 1706,
+    "cc": 72,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 13356,
+    "sys": 6509,
+    "toolsChars": 2,
+    "user": 6308,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:date",
+    "start": 29518,
+    "ttfb": 1510,
+    "firstEvt": 1511,
+    "reason": 3707,
+    "out": 0,
+    "total": 5218,
+    "pt": 378,
+    "ct": 340,
+    "cached": 0,
+    "rc": 1343,
+    "cc": 13,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1148,
+    "sys": 479,
+    "toolsChars": 2,
+    "user": 450,
+    "toolmsg": 0
+   },
+   {
+    "p": "memory:habit",
+    "start": 29518,
+    "ttfb": 722,
+    "firstEvt": 723,
+    "reason": 11275,
+    "out": 0,
+    "total": 11998,
+    "pt": 503,
+    "ct": 1006,
+    "cached": 0,
+    "rc": 4002,
+    "cc": 0,
+    "tools": [],
+    "fin": null,
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 1595,
+    "sys": 892,
+    "toolsChars": 2,
+    "user": 458,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    77
+   ],
+   [
+    "detach",
+    38635
+   ]
+  ],
+  "axTree": [
+   [
+    79,
+    1661
+   ],
+   [
+    22216,
+    1418
+   ]
+  ]
+ },
+ {
+  "run": "summary-r4",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 5737,
+  "uiDoneReal": 7571,
+  "uiShown": "7 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "正在思考…"
+  ],
+  "counterLagMaxS": 1.0,
+  "pageOpened": null,
+  "preObsMs": 1853,
+  "preObsChars": 12034,
+  "agentEnd": 7517.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   3234
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 1937,
+    "ttfb": 3194,
+    "firstEvt": 3196,
+    "reason": 542,
+    "out": 1834,
+    "total": 5572,
+    "pt": 19147,
+    "ct": 219,
+    "cached": 3328,
+    "rc": 194,
+    "cc": 689,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-5-preview",
+    "eff": null,
+    "body": 71010,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13858,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    52
+   ]
+  ],
+  "axTree": [
+   [
+    54,
+    1693
+   ]
+  ]
+ },
+ {
+  "run": "summary-step-3.5-flash-r0",
+  "scenario": "summary",
+  "error": null,
+  "firstText": 7648,
+  "uiDoneReal": 8572,
+  "uiShown": "8 秒",
+  "chips": [],
+  "thinkingLabels": [
+   "正在思考…"
+  ],
+  "counterLagMaxS": 1.0,
+  "pageOpened": null,
+  "preObsMs": 2001,
+  "preObsChars": 12034,
+  "agentEnd": 8516.0,
+  "toolsTrace": [],
+  "firstResponse": [
+   3775
+  ],
+  "calls": [
+   {
+    "p": "main",
+    "start": 2089,
+    "ttfb": 3736,
+    "firstEvt": 3739,
+    "reason": 1698,
+    "out": 986,
+    "total": 6423,
+    "pt": 19114,
+    "ct": 379,
+    "cached": 0,
+    "rc": 956,
+    "cc": 229,
+    "tools": [],
+    "fin": "stop",
+    "model": "step-3.5-flash",
+    "eff": null,
+    "body": 70970,
+    "sys": 16063,
+    "toolsChars": 40564,
+    "user": 13818,
+    "toolmsg": 0
+   }
+  ],
+  "debugger": [
+   [
+    "attach",
+    62
+   ]
+  ],
+  "axTree": [
+   [
+    65,
+    1859
+   ]
+  ]
+ }
+]

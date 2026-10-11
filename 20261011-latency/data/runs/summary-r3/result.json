@@ -1,0 +1,3098 @@
+{
+  "scenario": "summary",
+  "round": "3",
+  "prompt": "Summarize this page in 3 sentences",
+  "startUrl": "https://en.wikipedia.org/wiki/Hayao_Miyazaki",
+  "browser": "Chrome/145.0.7632.6",
+  "fast": null,
+  "panelText": "Summarize this page in 3 sentences\n存成技能\nHayao Miyazaki - Wikipedia\n\n我先读一下开头的导语部分，确保总结准确。\n\n做了 2 件事\n\n三句话总结 Hayao Miyazaki – Wikipedia：\n\n宫崎骏（1941年1月5日生于东京市）是日本动画师、电影导演和漫画家，联合创立吉卜力工作室并任名誉会长，被广泛视为动画史上最杰出的电影人之一。\n他1963年加入东映动画，从补间动画师和原画师做起，后参与《鲁邦三世》《未来少年柯南》，1979年执导首部长片《卡里奥斯特罗之城》，并于1982–1994年创作漫画《风之谷》。\n1985年共同创立吉卜力后，他编导了《天空之城》《龙猫》《魔女宅急便》《红猪》等作品；《幽灵公主》首获日本电影学院奖最佳影片，《千与千寻》获奥斯卡最佳动画长片，2023年复出之作《你想活出怎样的人生》再获该奖。\n22 秒",
+  "panelStepsHtml": "做了 2 件事",
+  "samples": [
+    {
+      "t": -38,
+      "running": false,
+      "pill": "已连接",
+      "runs": [],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 115,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "1 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 2163,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "2 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 3081,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "3 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 4153,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "4 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 4920,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "4 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5072,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 6138,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "6 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 7208,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "7 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8133,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8746,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 20,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9208,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "9 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 20,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9516,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在执行脚本",
+          "time": "9 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [
+        " | "
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9672,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "9 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 10131,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "10 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 11049,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "10 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 11201,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "11 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 12118,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "12 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 13191,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "13 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 14110,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "14 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 15178,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "15 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 15941,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "15 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 16094,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "16 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 16860,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "16 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 17167,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "17 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 18089,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "18 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 18853,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "18 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 19158,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "19 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 19470,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "19 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 20085,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "20 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 21160,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "21 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 22077,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 2 件事",
+          "time": "22 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "执行脚本 0.0s",
+        "执行脚本 0.0s"
+      ],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 20,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 22231,
+      "running": false,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "做了 2 件事",
+          "time": "22 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [
+        " | 0.0s",
+        " | 0.0s"
+      ],
+      "thinking": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 326,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    }
+  ],
+  "pages": [
+    {
+      "t": -37,
+      "tabs": "https://en.wikipedia.org/wiki/Hayao_Miyazaki :: Hayao Miyazaki - Wikipedia"
+    }
+  ],
+  "t0": 1791706995873,
+  "exportStatus": "已导出 1 个会话、48 条任务记录，0 条语音记录。",
+  "calls": [
+    {
+      "id": "643617.18",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 1917,
+      "reasoningChars": 1143,
+      "contentChars": 20,
+      "toolArgChars": 281,
+      "chunks": 149,
+      "toolNames": [
+        "js"
+      ],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 16384,
+        "bodyChars": 70974,
+        "messages": 3,
+        "roles": "system,user,user",
+        "systemChars": 16063,
+        "userChars": 13822,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 32,
+        "toolsChars": 40564,
+        "toolNames": [
+          "page_translation",
+          "read_element",
+          "read_elements",
+          "browser_run",
+          "tabs",
+          "navigate",
+          "snapshot",
+          "hover",
+          "click",
+          "double_click",
+          "select_option",
+          "upload_file",
+          "arm_event",
+          "wait_event",
+          "accept_dialog",
+          "dismiss_dialog",
+          "download_url",
+          "fill",
+          "type_text",
+          "press_key",
+          "scroll",
+          "fetch",
+          "network",
+          "js",
+          "mark",
+          "guide_step",
+          "screenshot",
+          "take_tab",
+          "hand_to_user",
+          "user_memory",
+          "send_user_message",
+          "artifacts"
+        ],
+        "lastUserHead": "[object Object]",
+        "systemHead": "You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on",
+        "bodyIndex": 0
+      },
+      "firstByte": 4857,
+      "status": 200,
+      "lastChunk": 9478,
+      "usage": {
+        "cached_tokens": 3328,
+        "prompt_tokens": 19115,
+        "completion_tokens": 379,
+        "total_tokens": 19494,
+        "prompt_tokens_details": {
+          "cached_tokens": 3328
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 4858,
+      "reasoningHead": "The user wants a 3-sentence summary of the Hayao Miyazaki Wikipedia page. I have the fresh page observation with the lead content. The page content is truncated, but I have enough from the lead: birth, career, Studio Ghibli co-founding, films. Let me possibly read a bit more to cover awards/legacy — but the instruction says don't re-extract if I already have complete source. The lead is truncated at \"",
+      "firstContent": 8590,
+      "content": "我先读一下开头的导语部分，确保总结准确。",
+      "firstTool": 8803,
+      "finish": "tool_calls",
+      "end": 9488,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "643617.19",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 9573,
+      "reasoningChars": 1441,
+      "contentChars": 16,
+      "toolArgChars": 333,
+      "chunks": 185,
+      "toolNames": [
+        "js"
+      ],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 16384,
+        "bodyChars": 73033,
+        "messages": 5,
+        "roles": "system,user,assistant,tool,user",
+        "systemChars": 16063,
+        "userChars": 14131,
+        "toolMsgChars": 41,
+        "assistantChars": 1629,
+        "tools": 32,
+        "toolsChars": 40564,
+        "toolNames": [
+          "page_translation",
+          "read_element",
+          "read_elements",
+          "browser_run",
+          "tabs",
+          "navigate",
+          "snapshot",
+          "hover",
+          "click",
+          "double_click",
+          "select_option",
+          "upload_file",
+          "arm_event",
+          "wait_event",
+          "accept_dialog",
+          "dismiss_dialog",
+          "download_url",
+          "fill",
+          "type_text",
+          "press_key",
+          "scroll",
+          "fetch",
+          "network",
+          "js",
+          "mark",
+          "guide_step",
+          "screenshot",
+          "take_tab",
+          "hand_to_user",
+          "user_memory",
+          "send_user_message",
+          "artifacts"
+        ],
+        "lastUserHead": "[object Object]",
+        "systemHead": "You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on",
+        "bodyIndex": 1
+      },
+      "firstByte": 10952,
+      "status": 200,
+      "lastChunk": 16725,
+      "usage": {
+        "cached_tokens": 18688,
+        "prompt_tokens": 19623,
+        "completion_tokens": 463,
+        "total_tokens": 20086,
+        "prompt_tokens_details": {
+          "cached_tokens": 18688
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 10957,
+      "reasoningHead": "The js call returned empty page content — the result was empty (the page content came back as empty). Hmm, the js result shows an empty untrusted page-content block, meaning it returned nothing useful (maybe the selector didn't match or returned empty string). I have the fresh page observation which includes most of the lead, but truncated at Princess Mononoke.\n\nI can still write a 3-sentence summary based",
+      "firstContent": 15822,
+      "content": "我换个方式把导语剩余部分读出来。",
+      "firstTool": 15822,
+      "finish": "tool_calls",
+      "end": 16725,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "643617.20",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 16766,
+      "reasoningChars": 160,
+      "contentChars": 358,
+      "toolArgChars": 0,
+      "chunks": 110,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 16384,
+        "bodyChars": 77822,
+        "messages": 7,
+        "roles": "system,user,assistant,tool,assistant,tool,user",
+        "systemChars": 16063,
+        "userChars": 14437,
+        "toolMsgChars": 2460,
+        "assistantChars": 3603,
+        "tools": 32,
+        "toolsChars": 40564,
+        "toolNames": [
+          "page_translation",
+          "read_element",
+          "read_elements",
+          "browser_run",
+          "tabs",
+          "navigate",
+          "snapshot",
+          "hover",
+          "click",
+          "double_click",
+          "select_option",
+          "upload_file",
+          "arm_event",
+          "wait_event",
+          "accept_dialog",
+          "dismiss_dialog",
+          "download_url",
+          "fill",
+          "type_text",
+          "press_key",
+          "scroll",
+          "fetch",
+          "network",
+          "js",
+          "mark",
+          "guide_step",
+          "screenshot",
+          "take_tab",
+          "hand_to_user",
+          "user_memory",
+          "send_user_message",
+          "artifacts"
+        ],
+        "lastUserHead": "[object Object]",
+        "systemHead": "You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on",
+        "bodyIndex": 2
+      },
+      "firstByte": 18758,
+      "status": 200,
+      "lastChunk": 22159,
+      "usage": {
+        "cached_tokens": 19200,
+        "prompt_tokens": 20812,
+        "completion_tokens": 262,
+        "total_tokens": 21074,
+        "prompt_tokens_details": {
+          "cached_tokens": 19200
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 18758,
+      "reasoningHead": "The user asked: Summarize this page in 3 sentences. I have the lead content. Now write the 3-sentence summary, citing the URL.\n\nKeep it to 3 sentences, concise.",
+      "firstContent": 19452,
+      "content": "三句话总结 [Hayao Miyazaki – Wikipedia](https://en.wikipedia.org/wiki/Hayao_Miyazaki)：\n\n1. 宫崎骏（1941年1月5日生于东京市）是日本动画师、电影导演和漫画家，联合创立吉卜力工作室并任名誉会长，被广泛视为动画史上最杰出的电影人之一。\n2. 他1963年加入东映动画，从补间动画师和原画师做起，后参与《鲁邦三世》《未来少年柯南》，1979年执导首部长片《卡里奥斯特罗之城》，并于1982–1994年创作漫画《风之谷》。\n3. 1985年共同创立吉卜力后，他编导了《天空之城》《龙猫》《魔女宅急便》《红猪》等作品；《幽灵公主》首获日本电影学院奖最佳影片，《千与千寻》获奥斯卡最佳动画长片，2023年复出之作《你想活出怎样的人生》再获该奖。",
+      "finish": "stop",
+      "end": 22159,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "643617.21",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 23750,
+      "reasoningChars": 1706,
+      "contentChars": 72,
+      "toolArgChars": 0,
+      "chunks": 151,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 1600,
+        "bodyChars": 13356,
+        "messages": 2,
+        "roles": "system,user",
+        "systemChars": 6509,
+        "userChars": 6308,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 0,
+        "toolsChars": 2,
+        "toolNames": [],
+        "lastUserHead": "{\"goal\":[\"Summarize this page in 3 sentences\"],\"goalPage\":{\"title\":\"Hayao Miyazaki - Wikipedia\",\"url\":\"https://en.wikipedia.org/wiki/Hayao_Miyazaki\"},\"lastReply\":\"三句话总结 [Hayao Miyazaki – Wikipedia](https://en.wikipedia.org/wiki/Hayao_Miyazaki)：\\n\\n1. 宫崎骏（1941年1月5日生于东京市）是日本动画师、电影导演和漫画家，联合创立吉卜力工作室并任名誉",
+        "systemHead": "You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, p",
+        "bodyIndex": 3
+      },
+      "firstByte": 25016,
+      "status": 200,
+      "lastChunk": 29517,
+      "usage": {
+        "cached_tokens": 1024,
+        "prompt_tokens": 3387,
+        "completion_tokens": 451,
+        "total_tokens": 3838,
+        "prompt_tokens_details": {
+          "cached_tokens": 1024
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 25017,
+      "reasoningHead": "The user wants me to evaluate whether the browser assistant successfully completed the goal of summarizing the Hayao Miyazaki Wikipedia page in 3 sentences.\n\nLet me check:\n1. Goal: Summarize this page in 3 sentences\n2. The last reply provides a 3-sentence summary in Chinese\n3. The content matches the Wikipedia page about Hayao Miyazaki\n4. The facts appear to align with the page content:\n   - Born January",
+      "firstContent": 29389,
+      "content": "{\"status\":\"done\",\"cause\":\"\",\"remaining\":\"\",\"correction\":\"\",\"finding\":\"\"}",
+      "finish": "stop",
+      "end": 29519,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "643617.22",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 29518,
+      "reasoningChars": 1343,
+      "contentChars": 13,
+      "toolArgChars": 0,
+      "chunks": 122,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 1600,
+        "bodyChars": 1148,
+        "messages": 2,
+        "roles": "system,user",
+        "systemChars": 479,
+        "userChars": 450,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 0,
+        "toolsChars": 2,
+        "toolNames": [],
+        "lastUserHead": "{\"today\":\"2026-10-11\",\"goal\":\"Summarize this page in 3 sentences\",\"revisions\":[],\"result\":\"三句话总结 [Hayao Miyazaki – Wikipedia](https://en.wikipedia.org/wiki/Hayao_Miyazaki)： 1. 宫崎骏（1941年1月5日生于东京市）是日本动画师、电影导演和漫画家，联合创立吉卜力工作室并任名誉会长，被广泛视为动画史上最杰出的电影人之一。 2. 他1963年加入东映动画，从补间动画师和原画师做起，后参与《鲁邦三世》《未来少年柯南》，1979年",
+        "systemHead": "A browser task the assistant did for the user has just ended. Answer ONE narrow question: which single calendar date is the RESULT about — e.g. the day a booked flight departs, the day of a booked app",
+        "bodyIndex": 4
+      },
+      "firstByte": 31028,
+      "status": 200,
+      "lastChunk": 34736,
+      "usage": {
+        "prompt_tokens": 378,
+        "completion_tokens": 340,
+        "total_tokens": 718,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 31029,
+      "reasoningHead": "The user wants me to identify a single calendar date that the RESULT is about, based on the input provided. Today is 2026-10-11.\n\nLooking at the result: it's a summary of Hayao Miyazaki's Wikipedia page in 3 sentences. The text mentions several dates:\n- Born January 5, 1941\n- Joined Toei Animation in 1963\n- Directed first feature film in 1979\n- Manga Nausicaä from 1982–1994\n- Co-founded Ghibli in 198",
+      "firstContent": 34736,
+      "content": "{\"date\":null}",
+      "finish": "stop",
+      "end": 34736,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "643617.23",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 29518,
+      "reasoningChars": 4002,
+      "contentChars": 0,
+      "toolArgChars": 0,
+      "chunks": 370,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 1600,
+        "bodyChars": 1595,
+        "messages": 2,
+        "roles": "system,user",
+        "systemChars": 892,
+        "userChars": 458,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 0,
+        "toolsChars": 2,
+        "toolNames": [],
+        "lastUserHead": "{\"goal\":\"Summarize this page in 3 sentences\",\"revisions\":[],\"hosts\":[\"en.wikipedia.org\"],\"result\":\"三句话总结 [Hayao Miyazaki – Wikipedia](https://en.wikipedia.org/wiki/Hayao_Miyazaki)： 1. 宫崎骏（1941年1月5日生于东京市）是日本动画师、电影导演和漫画家，联合创立吉卜力工作室并任名誉会长，被广泛视为动画史上最杰出的电影人之一。 2. 他1963年加入东映动画，从补间动画师和原画师做起，后参与《鲁邦三世》《未来少年柯",
+        "systemHead": "A browser task the assistant did for the user has just ended and it changed pages. Decide whether it is a KIND of task the user may repeat (e.g. \"extract the subtitles of a Bilibili video and save the",
+        "bodyIndex": 5
+      },
+      "firstByte": 30240,
+      "status": 200,
+      "lastChunk": 41415,
+      "usage": {
+        "prompt_tokens": 503,
+        "completion_tokens": 1006,
+        "total_tokens": 1509,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 30241,
+      "reasoningHead": "The user wants me to analyze a browser task and determine if it's a kind of task that may be repeated.\n\nTask details:\n- goal: \"Summarize this page in 3 sentences\"\n- host: en.wikipedia.org\n- result: A summary of Hayao Miyazaki's Wikipedia page in 3 sentences (Chinese).\n\nIs this a repeatable task kind? \n\"Summarize this page in 3 sentences\" is a generic task that could apply to any page. However, the key",
+      "end": 41516,
+      "failed": "net::ERR_ABORTED"
+    }
+  ],
+  "events": [
+    {
+      "at": 1791706995873,
+      "src": "harness",
+      "kind": "send",
+      "t": 0
+    },
+    {
+      "at": 1791706995876,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995877,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706995876,
+        "tab": 1612198514,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791706995876,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995877,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706995876,
+        "tab": 1612198514,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791706995876,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995878,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706995876,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791706995876,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995878,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706995876,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791706995914,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995915,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706995914,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 41
+    },
+    {
+      "at": 1791706995914,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995915,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706995914,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 41
+    },
+    {
+      "at": 1791706995922,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995925,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706995922,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706995922,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995925,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706995922,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706995922,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995925,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791706995922,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706995922,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706995925,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791706995922,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706995922,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995926,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706995922,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706995922,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995926,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706995922,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706995925,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995926,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706995925,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 52
+    },
+    {
+      "at": 1791706995925,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995926,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706995925,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 52
+    },
+    {
+      "at": 1791706995926,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995927,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706995926,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 53
+    },
+    {
+      "at": 1791706995926,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995927,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706995926,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 53
+    },
+    {
+      "at": 1791706995947,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995949,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706995947,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 74
+    },
+    {
+      "at": 1791706995947,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706995949,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706995947,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 74
+    },
+    {
+      "at": 1791706995950,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706995951,
+        "k": "attach",
+        "ms": 1,
+        "start": 1791706995950,
+        "tab": 1612198514
+      },
+      "t": 77
+    },
+    {
+      "at": 1791706995950,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706995951,
+        "k": "attach",
+        "ms": 1,
+        "start": 1791706995950,
+        "tab": 1612198514
+      },
+      "t": 77
+    },
+    {
+      "at": 1791706995951,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706995952,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706995951,
+        "tab": 1612198514,
+        "method": "Network.enable"
+      },
+      "t": 78
+    },
+    {
+      "at": 1791706995951,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706995952,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706995951,
+        "tab": 1612198514,
+        "method": "Network.enable"
+      },
+      "t": 78
+    },
+    {
+      "at": 1791706995952,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706995952,
+        "k": "sendCommand",
+        "ms": 0,
+        "start": 1791706995952,
+        "tab": 1612198514,
+        "method": "Page.enable"
+      },
+      "t": 79
+    },
+    {
+      "at": 1791706995952,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706995952,
+        "k": "sendCommand",
+        "ms": 0,
+        "start": 1791706995952,
+        "tab": 1612198514,
+        "method": "Page.enable"
+      },
+      "t": 79
+    },
+    {
+      "at": 1791706995952,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706997613,
+        "k": "sendCommand",
+        "ms": 1661,
+        "start": 1791706995952,
+        "tab": 1612198514,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 79
+    },
+    {
+      "at": 1791706995952,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706997613,
+        "k": "sendCommand",
+        "ms": 1661,
+        "start": 1791706995952,
+        "tab": 1612198514,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 79
+    },
+    {
+      "at": 1791706997712,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997714,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706997712,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1839
+    },
+    {
+      "at": 1791706997712,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997714,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706997712,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1839
+    },
+    {
+      "at": 1791706997714,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997714,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706997714,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1841
+    },
+    {
+      "at": 1791706997714,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997714,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706997714,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1841
+    },
+    {
+      "at": 1791706997715,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997715,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706997715,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1842
+    },
+    {
+      "at": 1791706997715,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997715,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706997715,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1842
+    },
+    {
+      "at": 1791706997724,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool snapshot session=main ok 1777ms",
+      "t": 1851
+    },
+    {
+      "at": 1791706997743,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997747,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706997743,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1870
+    },
+    {
+      "at": 1791706997743,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997747,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706997743,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1870
+    },
+    {
+      "at": 1791706997744,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997748,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706997744,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1871
+    },
+    {
+      "at": 1791706997744,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997748,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706997744,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1871
+    },
+    {
+      "at": 1791706997744,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997748,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706997744,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1871
+    },
+    {
+      "at": 1791706997744,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997748,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706997744,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1871
+    },
+    {
+      "at": 1791706997747,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997749,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706997747,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1874
+    },
+    {
+      "at": 1791706997747,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997749,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706997747,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1874
+    },
+    {
+      "at": 1791706997748,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997749,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706997748,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1875
+    },
+    {
+      "at": 1791706997748,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997749,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706997748,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1875
+    },
+    {
+      "at": 1791706997748,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997749,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706997748,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1875
+    },
+    {
+      "at": 1791706997748,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997749,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706997748,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1875
+    },
+    {
+      "at": 1791706997749,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997751,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706997749,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1876
+    },
+    {
+      "at": 1791706997749,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997751,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706997749,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1876
+    },
+    {
+      "at": 1791706997751,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997751,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706997751,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1878
+    },
+    {
+      "at": 1791706997751,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706997751,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706997751,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 1878
+    },
+    {
+      "at": 1791707005359,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707005360,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707005359,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 9486
+    },
+    {
+      "at": 1791707005359,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707005360,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707005359,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 9486
+    },
+    {
+      "at": 1791707005358,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005361,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707005358,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9485
+    },
+    {
+      "at": 1791707005358,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005361,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707005358,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9485
+    },
+    {
+      "at": 1791707005361,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005362,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707005361,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9488
+    },
+    {
+      "at": 1791707005361,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005362,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707005361,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9488
+    },
+    {
+      "at": 1791707005389,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707005392,
+        "k": "sendCommand",
+        "ms": 3,
+        "start": 1791707005389,
+        "tab": 1612198514,
+        "method": "Runtime.enable"
+      },
+      "t": 9516
+    },
+    {
+      "at": 1791707005389,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707005392,
+        "k": "sendCommand",
+        "ms": 3,
+        "start": 1791707005389,
+        "tab": 1612198514,
+        "method": "Runtime.enable"
+      },
+      "t": 9516
+    },
+    {
+      "at": 1791707005392,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707005393,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791707005392,
+        "tab": 1612198514,
+        "method": "Runtime.compileScript"
+      },
+      "t": 9519
+    },
+    {
+      "at": 1791707005392,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707005393,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791707005392,
+        "tab": 1612198514,
+        "method": "Runtime.compileScript"
+      },
+      "t": 9519
+    },
+    {
+      "at": 1791707005393,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707005395,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791707005393,
+        "tab": 1612198514,
+        "method": "Runtime.evaluate"
+      },
+      "t": 9520
+    },
+    {
+      "at": 1791707005393,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707005395,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791707005393,
+        "tab": 1612198514,
+        "method": "Runtime.evaluate"
+      },
+      "t": 9520
+    },
+    {
+      "at": 1791707005399,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool js session=main ok 14ms",
+      "t": 9526
+    },
+    {
+      "at": 1791707005400,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005402,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707005400,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9527
+    },
+    {
+      "at": 1791707005400,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005402,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707005400,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9527
+    },
+    {
+      "at": 1791707005400,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707005402,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791707005400,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 9527
+    },
+    {
+      "at": 1791707005400,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707005402,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791707005400,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 9527
+    },
+    {
+      "at": 1791707005402,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005402,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791707005402,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9529
+    },
+    {
+      "at": 1791707005402,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707005402,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791707005402,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 9529
+    },
+    {
+      "at": 1791707012598,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707012599,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707012598,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 16725
+    },
+    {
+      "at": 1791707012598,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707012599,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707012598,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 16725
+    },
+    {
+      "at": 1791707012614,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707012614,
+        "k": "sendCommand",
+        "ms": 0,
+        "start": 1791707012614,
+        "tab": 1612198514,
+        "method": "Runtime.enable"
+      },
+      "t": 16741
+    },
+    {
+      "at": 1791707012614,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707012614,
+        "k": "sendCommand",
+        "ms": 0,
+        "start": 1791707012614,
+        "tab": 1612198514,
+        "method": "Runtime.enable"
+      },
+      "t": 16741
+    },
+    {
+      "at": 1791707012614,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707012615,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791707012614,
+        "tab": 1612198514,
+        "method": "Runtime.compileScript"
+      },
+      "t": 16741
+    },
+    {
+      "at": 1791707012614,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707012615,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791707012614,
+        "tab": 1612198514,
+        "method": "Runtime.compileScript"
+      },
+      "t": 16741
+    },
+    {
+      "at": 1791707012615,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707012617,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791707012615,
+        "tab": 1612198514,
+        "method": "Runtime.evaluate"
+      },
+      "t": 16742
+    },
+    {
+      "at": 1791707012615,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707012617,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791707012615,
+        "tab": 1612198514,
+        "method": "Runtime.evaluate"
+      },
+      "t": 16742
+    },
+    {
+      "at": 1791707012618,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool js session=main ok 7ms",
+      "t": 16745
+    },
+    {
+      "at": 1791707012619,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707012623,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791707012619,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 16746
+    },
+    {
+      "at": 1791707012619,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707012623,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791707012619,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 16746
+    },
+    {
+      "at": 1791707012620,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707012623,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791707012620,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 16747
+    },
+    {
+      "at": 1791707012620,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707012623,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791707012620,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 16747
+    },
+    {
+      "at": 1791707012623,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707012623,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791707012623,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 16750
+    },
+    {
+      "at": 1791707012623,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707012623,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791707012623,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 16750
+    },
+    {
+      "at": 1791707018045,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018047,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707018045,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22172
+    },
+    {
+      "at": 1791707018045,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018047,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707018045,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22172
+    },
+    {
+      "at": 1791707018046,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018048,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707018046,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22173
+    },
+    {
+      "at": 1791707018046,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018048,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707018046,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22173
+    },
+    {
+      "at": 1791707018047,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707018048,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707018047,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 22174
+    },
+    {
+      "at": 1791707018047,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707018048,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707018047,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 22174
+    },
+    {
+      "at": 1791707018048,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018067,
+        "k": "executeScript",
+        "ms": 19,
+        "start": 1791707018048,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22175
+    },
+    {
+      "at": 1791707018048,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018067,
+        "k": "executeScript",
+        "ms": 19,
+        "start": 1791707018048,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22175
+    },
+    {
+      "at": 1791707018067,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707018087,
+        "k": "sendMessage",
+        "ms": 20,
+        "start": 1791707018067,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 22194
+    },
+    {
+      "at": 1791707018067,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707018087,
+        "k": "sendMessage",
+        "ms": 20,
+        "start": 1791707018067,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 22194
+    },
+    {
+      "at": 1791707018067,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018088,
+        "k": "executeScript",
+        "ms": 21,
+        "start": 1791707018067,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22194
+    },
+    {
+      "at": 1791707018067,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018088,
+        "k": "executeScript",
+        "ms": 21,
+        "start": 1791707018067,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22194
+    },
+    {
+      "at": 1791707018083,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018089,
+        "k": "executeScript",
+        "ms": 6,
+        "start": 1791707018083,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22210
+    },
+    {
+      "at": 1791707018083,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707018089,
+        "k": "executeScript",
+        "ms": 6,
+        "start": 1791707018083,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 22210
+    },
+    {
+      "at": 1791707018089,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707018096,
+        "k": "sendMessage",
+        "ms": 7,
+        "start": 1791707018089,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 22216
+    },
+    {
+      "at": 1791707018089,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707018096,
+        "k": "sendMessage",
+        "ms": 7,
+        "start": 1791707018089,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 22216
+    },
+    {
+      "at": 1791707018089,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707019507,
+        "k": "sendCommand",
+        "ms": 1418,
+        "start": 1791707018089,
+        "tab": 1612198514,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 22216
+    },
+    {
+      "at": 1791707018089,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707019507,
+        "k": "sendCommand",
+        "ms": 1418,
+        "start": 1791707018089,
+        "tab": 1612198514,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 22216
+    },
+    {
+      "at": 1791707018097,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019593,
+        "k": "sendMessage",
+        "ms": 1496,
+        "start": 1791707018097,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 22224
+    },
+    {
+      "at": 1791707018097,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019593,
+        "k": "sendMessage",
+        "ms": 1496,
+        "start": 1791707018097,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 22224
+    },
+    {
+      "at": 1791707019593,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707019594,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707019593,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 23720
+    },
+    {
+      "at": 1791707019593,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707019594,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707019593,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 23720
+    },
+    {
+      "at": 1791707019594,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707019595,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707019594,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 23721
+    },
+    {
+      "at": 1791707019594,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707019595,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707019594,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 23721
+    },
+    {
+      "at": 1791707019594,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019611,
+        "k": "sendMessage",
+        "ms": 17,
+        "start": 1791707019594,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23721
+    },
+    {
+      "at": 1791707019594,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019611,
+        "k": "sendMessage",
+        "ms": 17,
+        "start": 1791707019594,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23721
+    },
+    {
+      "at": 1791707019595,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707019611,
+        "k": "executeScript",
+        "ms": 16,
+        "start": 1791707019595,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 23722
+    },
+    {
+      "at": 1791707019595,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707019611,
+        "k": "executeScript",
+        "ms": 16,
+        "start": 1791707019595,
+        "tab": 1612198514,
+        "world": "ISOLATED"
+      },
+      "t": 23722
+    },
+    {
+      "at": 1791707019617,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool snapshot session=main ok 1534ms",
+      "t": 23744
+    },
+    {
+      "at": 1791707019615,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019630,
+        "k": "sendMessage",
+        "ms": 15,
+        "start": 1791707019615,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23742
+    },
+    {
+      "at": 1791707019615,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019630,
+        "k": "sendMessage",
+        "ms": 15,
+        "start": 1791707019615,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23742
+    },
+    {
+      "at": 1791707019631,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019645,
+        "k": "sendMessage",
+        "ms": 14,
+        "start": 1791707019631,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23758
+    },
+    {
+      "at": 1791707019631,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019645,
+        "k": "sendMessage",
+        "ms": 14,
+        "start": 1791707019631,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23758
+    },
+    {
+      "at": 1791707019646,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019660,
+        "k": "sendMessage",
+        "ms": 14,
+        "start": 1791707019646,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23773
+    },
+    {
+      "at": 1791707019646,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707019660,
+        "k": "sendMessage",
+        "ms": 14,
+        "start": 1791707019646,
+        "tab": 1612198514,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 23773
+    },
+    {
+      "at": 1791707025388,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707025389,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707025388,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 29515
+    },
+    {
+      "at": 1791707025388,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707025389,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707025388,
+        "tab": 1612198514,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 29515
+    },
+    {
+      "at": 1791707034508,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791707034509,
+        "k": "detach",
+        "ms": 1,
+        "start": 1791707034508,
+        "tab": 1612198514
+      },
+      "t": 38635
+    },
+    {
+      "at": 1791707034508,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791707034509,
+        "k": "detach",
+        "ms": 1,
+        "start": 1791707034508,
+        "tab": 1612198514
+      },
+      "t": 38635
+    },
+    {
+      "at": 1791707043702,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043711,
+        "k": "sendMessage",
+        "ms": 9,
+        "start": 1791707043702,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1612198517,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 47829
+    },
+    {
+      "at": 1791707043702,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043711,
+        "k": "sendMessage",
+        "ms": 9,
+        "start": 1791707043702,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1612198517,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 47829
+    },
+    {
+      "at": 1791707043715,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707043715,
+        "k": "tabUpdated",
+        "tab": 1612198517,
+        "status": "loading",
+        "url": "chrome-extension://kdneibahoafpknedcgacgckpihclfoag/settings.html"
+      },
+      "t": 47842
+    },
+    {
+      "at": 1791707043715,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707043715,
+        "k": "tabUpdated",
+        "tab": 1612198517,
+        "status": "loading",
+        "url": "chrome-extension://kdneibahoafpknedcgacgckpihclfoag/settings.html"
+      },
+      "t": 47842
+    },
+    {
+      "at": 1791707043714,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043718,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791707043714,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1612198517,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 47841
+    },
+    {
+      "at": 1791707043714,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043718,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791707043714,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1612198517,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 47841
+    },
+    {
+      "at": 1791707043713,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043719,
+        "k": "sendMessage",
+        "ms": 6,
+        "start": 1791707043713,
+        "tab": 1612198514,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 47840
+    },
+    {
+      "at": 1791707043713,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043719,
+        "k": "sendMessage",
+        "ms": 6,
+        "start": 1791707043713,
+        "tab": 1612198514,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 47840
+    },
+    {
+      "at": 1791707043727,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043732,
+        "k": "sendMessage",
+        "ms": 5,
+        "start": 1791707043727,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1612198517,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 47854
+    },
+    {
+      "at": 1791707043727,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707043732,
+        "k": "sendMessage",
+        "ms": 5,
+        "start": 1791707043727,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1612198517,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 47854
+    },
+    {
+      "at": 1791707043843,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707043843,
+        "k": "tabUpdated",
+        "tab": 1612198517,
+        "status": "complete"
+      },
+      "t": 47970
+    },
+    {
+      "at": 1791707043843,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707043843,
+        "k": "tabUpdated",
+        "tab": 1612198517,
+        "status": "complete"
+      },
+      "t": 47970
+    }
+  ]
+}

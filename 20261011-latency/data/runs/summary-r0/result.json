@@ -1,0 +1,1672 @@
+{
+  "scenario": "summary",
+  "round": "0",
+  "prompt": "Summarize this page in 3 sentences",
+  "startUrl": "https://en.wikipedia.org/wiki/Hayao_Miyazaki",
+  "browser": "Chrome/145.0.7632.6",
+  "panelText": "Summarize this page in 3 sentences\n存成技能\nHayao Miyazaki - Wikipedia\n\n宮崎駿（1941年1月5日生于东京）是日本动画师、电影导演和漫画家，1985年共同创立吉卜力工作室并任名誉会长，被广泛视为动画史上最杰出的电影人之一。他1963年加入东映动画，从原画师起步，历经A-Pro、日本动画、东京Movie新社等公司，1979年执导首部长片《鲁邦三世：卡里奥斯特罗之城》，并创作了《风之谷》漫画及1984年同名电影。在吉卜力时期，他编剧并执导了《天空之城》《龙猫》《魔女宅急便》《红猪》《幽灵公主》以及享誉国际的《千与千寻》等作品，成为日本动画黄金时代的代表人物。",
+  "panelStepsHtml": "",
+  "samples": [
+    {
+      "t": -39,
+      "running": false,
+      "pill": "已连接",
+      "runs": [],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 113,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "1 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 2116,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "2 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 3201,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "3 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 4122,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "4 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 4888,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "4 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5193,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 6110,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "6 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 7177,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "7 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8101,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 1,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8406,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 25,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8560,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 46,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8712,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 69,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8864,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 89,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9171,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "9 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 115,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9323,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "9 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 135,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9629,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "9 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 156,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9782,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "9 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 177,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9937,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "9 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 198,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 10089,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "10 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 220,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 10245,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "10 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 232,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 10396,
+      "running": false,
+      "pill": "已连接",
+      "runs": [],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 244,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    }
+  ],
+  "pages": [
+    {
+      "t": -39,
+      "tabs": "https://en.wikipedia.org/wiki/Hayao_Miyazaki :: Hayao Miyazaki - Wikipedia"
+    }
+  ],
+  "t0": 1791706395814,
+  "exportStatus": "已导出 1 个会话、23 条任务记录，0 条语音记录。",
+  "calls": [
+    {
+      "id": "620373.18",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 1704,
+      "reasoningChars": 1072,
+      "contentChars": 244,
+      "toolArgChars": 0,
+      "chunks": 179,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 16384,
+        "bodyChars": 70966,
+        "messages": 3,
+        "roles": "system,user,user",
+        "systemChars": 16063,
+        "userChars": 13814,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 32,
+        "toolsChars": 40564,
+        "toolNames": [
+          "page_translation",
+          "read_element",
+          "read_elements",
+          "browser_run",
+          "tabs",
+          "navigate",
+          "snapshot",
+          "hover",
+          "click",
+          "double_click",
+          "select_option",
+          "upload_file",
+          "arm_event",
+          "wait_event",
+          "accept_dialog",
+          "dismiss_dialog",
+          "download_url",
+          "fill",
+          "type_text",
+          "press_key",
+          "scroll",
+          "fetch",
+          "network",
+          "js",
+          "mark",
+          "guide_step",
+          "screenshot",
+          "take_tab",
+          "hand_to_user",
+          "user_memory",
+          "send_user_message",
+          "artifacts"
+        ],
+        "lastUserHead": "[object Object]",
+        "systemHead": "You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on"
+      },
+      "firstByte": 4820,
+      "status": 200,
+      "lastChunk": 10241,
+      "usage": {
+        "prompt_tokens": 19115,
+        "completion_tokens": 430,
+        "total_tokens": 19545,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 4821,
+      "reasoningHead": "The user wants a 3-sentence summary of the Wikipedia page on Hayao Miyazaki. The page content was provided (truncated but sufficient for lead + infobox). I don't need more tools. Just answer with 3 sentences in Chinese.\n\nLet me craft the summary based on the observed content.\n\nSentence 1: Hayao Miyazaki (born January 5, 1941, Tokyo) is a Japanese animator, filmmaker and manga artist, co-founder of Studio Ghib",
+      "firstContent": 8084,
+      "content": "宮崎駿（1941年1月5日生于东京）是日本动画师、电影导演和漫画家，1985年共同创立吉卜力工作室并任名誉会长，被广泛视为动画史上最杰出的电影人之一。他1963年加入东映动画，从原画师起步，历经A-Pro、日本动画、东京Movie新社等公司，1979年执导首部长片《鲁邦三世：卡里奥斯特罗之城》，并创作了《风之谷》漫画及1984年同名电影。在吉卜力时期，他编剧并执导了《天空之城》《龙猫》《魔女宅急便》《红猪》《幽灵公主》以及享誉国际的《千与千寻》等作品，成为日本动画黄金时代的代表人物。",
+      "finish": "stop",
+      "end": 10246,
+      "failed": "net::ERR_ABORTED"
+    }
+  ],
+  "events": [
+    {
+      "at": 1791706395814,
+      "src": "harness",
+      "kind": "send",
+      "t": 0
+    },
+    {
+      "at": 1791706395818,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395819,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706395818,
+        "tab": 30900252,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 4
+    },
+    {
+      "at": 1791706395818,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395819,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706395818,
+        "tab": 30900252,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 4
+    },
+    {
+      "at": 1791706395818,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395819,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706395818,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 4
+    },
+    {
+      "at": 1791706395818,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395819,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706395818,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 4
+    },
+    {
+      "at": 1791706395853,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395854,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706395853,
+        "tab": 30900252,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 39
+    },
+    {
+      "at": 1791706395853,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395854,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706395853,
+        "tab": 30900252,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 39
+    },
+    {
+      "at": 1791706395859,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395862,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706395859,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 45
+    },
+    {
+      "at": 1791706395859,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395862,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706395859,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 45
+    },
+    {
+      "at": 1791706395860,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395862,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706395860,
+        "tab": 30900252,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 46
+    },
+    {
+      "at": 1791706395860,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706395862,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706395860,
+        "tab": 30900252,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 46
+    },
+    {
+      "at": 1791706395859,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395863,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706395859,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 45
+    },
+    {
+      "at": 1791706395859,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395863,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706395859,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 45
+    },
+    {
+      "at": 1791706395862,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395863,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706395862,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 48
+    },
+    {
+      "at": 1791706395862,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395863,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706395862,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 48
+    },
+    {
+      "at": 1791706395863,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395864,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706395863,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706395863,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395864,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706395863,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 49
+    },
+    {
+      "at": 1791706395877,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395877,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706395877,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 63
+    },
+    {
+      "at": 1791706395877,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706395877,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706395877,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 63
+    },
+    {
+      "at": 1791706395879,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706395880,
+        "k": "attach",
+        "ms": 1,
+        "start": 1791706395879,
+        "tab": 30900252
+      },
+      "t": 65
+    },
+    {
+      "at": 1791706395879,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706395880,
+        "k": "attach",
+        "ms": 1,
+        "start": 1791706395879,
+        "tab": 30900252
+      },
+      "t": 65
+    },
+    {
+      "at": 1791706395880,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706395881,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706395880,
+        "tab": 30900252,
+        "method": "Network.enable"
+      },
+      "t": 66
+    },
+    {
+      "at": 1791706395880,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706395881,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706395880,
+        "tab": 30900252,
+        "method": "Network.enable"
+      },
+      "t": 66
+    },
+    {
+      "at": 1791706395881,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706395882,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706395881,
+        "tab": 30900252,
+        "method": "Page.enable"
+      },
+      "t": 67
+    },
+    {
+      "at": 1791706395881,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706395882,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706395881,
+        "tab": 30900252,
+        "method": "Page.enable"
+      },
+      "t": 67
+    },
+    {
+      "at": 1791706395881,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706397359,
+        "k": "sendCommand",
+        "ms": 1478,
+        "start": 1791706395881,
+        "tab": 30900252,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 67
+    },
+    {
+      "at": 1791706395881,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706397359,
+        "k": "sendCommand",
+        "ms": 1478,
+        "start": 1791706395881,
+        "tab": 30900252,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 67
+    },
+    {
+      "at": 1791706397452,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397454,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706397452,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1638
+    },
+    {
+      "at": 1791706397452,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397454,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706397452,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1638
+    },
+    {
+      "at": 1791706397454,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397455,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706397454,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1640
+    },
+    {
+      "at": 1791706397454,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397455,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706397454,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1640
+    },
+    {
+      "at": 1791706397455,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397456,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706397455,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1641
+    },
+    {
+      "at": 1791706397455,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397456,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706397455,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1641
+    },
+    {
+      "at": 1791706397463,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool snapshot session=main ok 1586ms",
+      "t": 1649
+    },
+    {
+      "at": 1791706397478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397481,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706397478,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1664
+    },
+    {
+      "at": 1791706397478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397481,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706397478,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1664
+    },
+    {
+      "at": 1791706397478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397482,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706397478,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1664
+    },
+    {
+      "at": 1791706397478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397482,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706397478,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1664
+    },
+    {
+      "at": 1791706397478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791706397478,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1664
+    },
+    {
+      "at": 1791706397478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791706397478,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1664
+    },
+    {
+      "at": 1791706397481,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706397481,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1667
+    },
+    {
+      "at": 1791706397481,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706397481,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1667
+    },
+    {
+      "at": 1791706397482,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706397482,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1668
+    },
+    {
+      "at": 1791706397482,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706397482,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1668
+    },
+    {
+      "at": 1791706397483,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706397483,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1669
+    },
+    {
+      "at": 1791706397483,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397483,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706397483,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1669
+    },
+    {
+      "at": 1791706397483,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397485,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706397483,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1669
+    },
+    {
+      "at": 1791706397483,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397485,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706397483,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1669
+    },
+    {
+      "at": 1791706397485,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397485,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706397485,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1671
+    },
+    {
+      "at": 1791706397485,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706397485,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706397485,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 1671
+    },
+    {
+      "at": 1791706406069,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706406071,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706406069,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 10255
+    },
+    {
+      "at": 1791706406069,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706406071,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706406069,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 10255
+    },
+    {
+      "at": 1791706406071,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406079,
+        "k": "sendMessage",
+        "ms": 8,
+        "start": 1791706406071,
+        "tab": 30900252,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 10257
+    },
+    {
+      "at": 1791706406071,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406079,
+        "k": "sendMessage",
+        "ms": 8,
+        "start": 1791706406071,
+        "tab": 30900252,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 10257
+    },
+    {
+      "at": 1791706406071,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706406082,
+        "k": "executeScript",
+        "ms": 11,
+        "start": 1791706406071,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 10257
+    },
+    {
+      "at": 1791706406071,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706406082,
+        "k": "executeScript",
+        "ms": 11,
+        "start": 1791706406071,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 10257
+    },
+    {
+      "at": 1791706406082,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406101,
+        "k": "sendMessage",
+        "ms": 19,
+        "start": 1791706406082,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10268
+    },
+    {
+      "at": 1791706406082,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406101,
+        "k": "sendMessage",
+        "ms": 19,
+        "start": 1791706406082,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10268
+    },
+    {
+      "at": 1791706406082,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706406101,
+        "k": "executeScript",
+        "ms": 19,
+        "start": 1791706406082,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 10268
+    },
+    {
+      "at": 1791706406082,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706406101,
+        "k": "executeScript",
+        "ms": 19,
+        "start": 1791706406082,
+        "tab": 30900252,
+        "world": "ISOLATED"
+      },
+      "t": 10268
+    },
+    {
+      "at": 1791706406103,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406127,
+        "k": "sendMessage",
+        "ms": 24,
+        "start": 1791706406103,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10289
+    },
+    {
+      "at": 1791706406103,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406127,
+        "k": "sendMessage",
+        "ms": 24,
+        "start": 1791706406103,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10289
+    },
+    {
+      "at": 1791706406129,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406139,
+        "k": "sendMessage",
+        "ms": 10,
+        "start": 1791706406129,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10315
+    },
+    {
+      "at": 1791706406129,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406139,
+        "k": "sendMessage",
+        "ms": 10,
+        "start": 1791706406129,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10315
+    },
+    {
+      "at": 1791706406141,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406189,
+        "k": "sendMessage",
+        "ms": 48,
+        "start": 1791706406141,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10327
+    },
+    {
+      "at": 1791706406141,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406189,
+        "k": "sendMessage",
+        "ms": 48,
+        "start": 1791706406141,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10327
+    },
+    {
+      "at": 1791706406190,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406209,
+        "k": "sendMessage",
+        "ms": 19,
+        "start": 1791706406190,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10376
+    },
+    {
+      "at": 1791706406190,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706406209,
+        "k": "sendMessage",
+        "ms": 19,
+        "start": 1791706406190,
+        "tab": 30900252,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 10376
+    },
+    {
+      "at": 1791706412360,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791706412361,
+        "k": "detach",
+        "ms": 1,
+        "start": 1791706412360,
+        "tab": 30900252
+      },
+      "t": 16546
+    },
+    {
+      "at": 1791706412360,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791706412361,
+        "k": "detach",
+        "ms": 1,
+        "start": 1791706412360,
+        "tab": 30900252
+      },
+      "t": 16546
+    },
+    {
+      "at": 1791706412508,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412518,
+        "k": "sendMessage",
+        "ms": 10,
+        "start": 1791706412508,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 30900255,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 16694
+    },
+    {
+      "at": 1791706412508,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412518,
+        "k": "sendMessage",
+        "ms": 10,
+        "start": 1791706412508,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 30900255,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 16694
+    },
+    {
+      "at": 1791706412518,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412521,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791706412518,
+        "tab": 30900252,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 16704
+    },
+    {
+      "at": 1791706412518,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412521,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791706412518,
+        "tab": 30900252,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 16704
+    },
+    {
+      "at": 1791706412522,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706412522,
+        "k": "tabUpdated",
+        "tab": 30900255,
+        "status": "loading",
+        "url": "chrome-extension://foegncmlemkofmmkedfklmhgifhgjimh/settings.html"
+      },
+      "t": 16708
+    },
+    {
+      "at": 1791706412522,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706412522,
+        "k": "tabUpdated",
+        "tab": 30900255,
+        "status": "loading",
+        "url": "chrome-extension://foegncmlemkofmmkedfklmhgifhgjimh/settings.html"
+      },
+      "t": 16708
+    },
+    {
+      "at": 1791706412518,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412524,
+        "k": "sendMessage",
+        "ms": 6,
+        "start": 1791706412518,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 30900255,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 16704
+    },
+    {
+      "at": 1791706412518,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412524,
+        "k": "sendMessage",
+        "ms": 6,
+        "start": 1791706412518,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 30900255,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 16704
+    },
+    {
+      "at": 1791706412529,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412529,
+        "k": "sendMessage",
+        "ms": 0,
+        "start": 1791706412529,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 30900255,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 16715
+    },
+    {
+      "at": 1791706412529,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706412529,
+        "k": "sendMessage",
+        "ms": 0,
+        "start": 1791706412529,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 30900255,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 16715
+    },
+    {
+      "at": 1791706412650,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706412650,
+        "k": "tabUpdated",
+        "tab": 30900255,
+        "status": "complete"
+      },
+      "t": 16836
+    },
+    {
+      "at": 1791706412650,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706412650,
+        "k": "tabUpdated",
+        "tab": 30900255,
+        "status": "complete"
+      },
+      "t": 16836
+    }
+  ]
+}
