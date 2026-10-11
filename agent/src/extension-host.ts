@@ -33,6 +33,12 @@ export interface HookEvent {
 
 export interface HookResult {
   systemPrompt?: string;
+  /**
+   * before_agent_start：只属于这一次运行的上下文（日期、记忆、任务状态），字段同 Pi。
+   * 和 Pi 不同：宿主把它放在本次用户消息前，只在本次运行里带，不写进会话记录（过期的日期和任务状态不留在历史里）。
+   * 它不进系统提示词，免得打碎前缀缓存（#258）。
+   */
+  message?: { customType: string; content?: HookValue; display?: boolean };
   messages?: readonly HookMessage[];
   block?: boolean;
   reason?: string;
@@ -99,13 +105,16 @@ export class ExtensionHost {
     await this.each("input", () => ({ type: "input", prompt }), () => {});
   }
 
-  async beforeAgentStart(prompt: string, systemPrompt: string): Promise<string> {
+  async beforeAgentStart(prompt: string, systemPrompt: string): Promise<{ systemPrompt: string; context: string[] }> {
     let current = systemPrompt;
+    const context: string[] = [];
     await this.each("before_agent_start", () => ({ type: "before_agent_start", prompt, systemPrompt: current }), result => {
       if (result.systemPrompt !== undefined) current = result.systemPrompt;
+
+      if (typeof result.message?.content === "string" && result.message.content) context.push(result.message.content);
     });
 
-    return current;
+    return { systemPrompt: current, context };
   }
 
   async context(messages: readonly HookMessage[]): Promise<readonly HookMessage[]> {
