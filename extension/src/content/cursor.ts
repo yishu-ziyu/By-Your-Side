@@ -58,6 +58,7 @@ import {
 } from "../shared/overlay.js";
 import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type FeedbackPillView } from "../shared/feedback-pill.js";
+import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
 (function () {
   const ns = (window.__sideagent ??= {});
@@ -100,7 +101,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     /** 状态层：一轮任务里"在等 / 在读 / 完成 / 失败"。动作名牌优先于它显示。 */
     status?: CursorStatus;
     /** 拿住态：就地确认期间光标按住目标不放，名牌变双键；scroll/resize 按 anchor 重定位 */
-    hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string; mark?: HTMLDivElement };
+    hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string; mark?: HTMLDivElement; /** 教学：停在目标右下角，不压住目标中间。 */ corner?: boolean };
   }
 
   type CursorStatusState = "waiting" | "reading" | "done" | "failed";
@@ -628,10 +629,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       if (!hold) continue;
       const anchor = liveAnchor(hold);
 
-      if (anchor) {
-        const r = anchor.getBoundingClientRect();
-        hold.point = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
-      }
+      if (anchor) hold.point = holdPoint(anchor.getBoundingClientRect(), hold.corner);
 
       if (inst.visible) inst.el.classList.remove("hidden");
       cancelFly(inst);
@@ -1159,7 +1157,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     if (!hold) return;
     inst.hold = undefined;
     clearTimeout(inst.pressTimer);
-    inst.el.classList.remove("pressing", "holding");
+    inst.el.classList.remove("pressing", "holding", "guiding");
     delete inst.el.dataset.armed;
 
     // 确认锚框跟着拿住态一起走：用户确认/取消或动作换手后，"待确认"不该留在页面上
@@ -1168,14 +1166,23 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     renderAmbient();
   }
 
-  /** 拿住：飞到目标点进入持久按住态（不弹回、不 park、rest/flip 不藏名牌），名牌变双键。 */
+  /** 拿住时手放在哪：确认放目标中间；教学放右下角，箭头尖落在目标边上，不挡住要点的字。 */
+  function holdPoint(r: SideAgentRect, corner?: boolean): { x: number; y: number } {
+    return corner ? { x: Math.round(r.x + r.width - 6), y: Math.round(r.y + r.height - 6) } : { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  }
+
+  /**
+   * 拿住：飞到目标点进入持久按住态（不弹回、不 park、rest/flip 不藏名牌）。
+   * 带 actions 时名牌变双键；教学（actions 为 null）只停在目标右下角，不显示名牌、没有按钮。
+   */
   function holdInst(
     inst: Instance,
     x: number,
     y: number,
-    actions: MarkAction[],
+    actions: MarkAction[] | null,
     target?: string,
     anchorMark?: HTMLDivElement | null,
+    guideAnchor?: Element,
   ): void {
     releaseHoldInst(inst);
 
@@ -1191,14 +1198,256 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     inst.hold = {
       point: { x, y },
       target,
-      anchor: resolveAnchor({ x: x - 1, y: y - 1, width: 2, height: 2 }, target),
+      anchor: guideAnchor ?? resolveAnchor({ x: x - 1, y: y - 1, width: 2, height: 2 }, target),
       name,
       mark: anchorMark ?? undefined,
+      corner: guideAnchor ? true : undefined,
     };
-    armHoldLabel(inst, actions);
-    inst.el.classList.add("pressing", "holding");
+
+    // 教学不挂名牌（guiding 不显示 .label）：说明写在圈旁，光标旁再多一块牌子只会挡住页面。
+    if (actions) {
+      armHoldLabel(inst, actions);
+      inst.el.classList.add("pressing", "holding");
+    } else inst.el.classList.add("guiding");
     renderAmbient();
     flyTo(inst, { x, y });
+  }
+
+  // ── 教学一步（guide_step，docs/evals/20261011-guided-teaching.md）────────────
+  // 圈出目标、光标停在右下角，等用户自己点。点击只听不拦：捕获期先看到，不阻止网页自己处理。
+  // 后台通过 port 等结果；port 断开（后台结束、停下、离开）就收场，所以每条结束路径都走 endGuide。
+
+  interface GuideSession {
+    inst: Instance;
+    node: Node;
+    target: string;
+    name: string;
+    options?: MarkOptions;
+    mark: HTMLDivElement | null;
+    port: chrome.runtime.Port;
+    observer: MutationObserver;
+    misses: number;
+    /** 点错以后，用户下一次移动鼠标时光标让开。 */
+    missed: boolean;
+    /** 网页上次变化（不算助手自己的浮层）的时刻。 */
+    lastChange: number;
+    down: { at: number; url: string } | null;
+    /** 点中以后在看页面有没有变化。 */
+    checking: { since: number; url: string; timer: ReturnType<typeof setTimeout>; poll: ReturnType<typeof setInterval> } | null;
+  }
+
+  let guide: GuideSession | null = null;
+
+  const GUIDE_NO_CHANGE_TEXT = "好像没有生效：点了之后页面没有变化。再点一次试试；还不行就告诉我。";
+
+  /** 按下到松开超过这么久就不算同一次点：只把这段时间里网页的变化算给这次点击（有的网页在按下时就切换）。 */
+  const GUIDE_PRESS_MS = 1500;
+
+  function guideMissText(name: string): string {
+    return name ? `这里不是要点的位置。请点圈出来的「${name}」。` : "这里不是要点的位置。请点圈出来的地方。";
+  }
+
+  function guideElement(node: Node): Element | null {
+    return node instanceof Element ? node : node.parentElement;
+  }
+
+  function nodeRect(node: Node): DOMRect | null {
+    if (!node.isConnected) return null;
+    let r: DOMRect;
+
+    if (node instanceof Element) r = node.getBoundingClientRect();
+    else {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      r = range.getBoundingClientRect();
+    }
+
+    return r.width && r.height ? r : null;
+  }
+
+  /** 网页重画了目标：按定位串重新找一次（@ref 在页面里找不回就留着旧节点）。 */
+  function liveGuideNode(g: GuideSession): Node {
+    if (g.node.isConnected) return g.node;
+
+    try {
+      const fresh = window.__sideagent?.dom?.resolve?.(g.target);
+
+      if (fresh) g.node = fresh;
+    } catch { /* 找不到：保留旧节点 */ }
+
+    return g.node;
+  }
+
+  function drawGuideMark(g: GuideSession, label: string): void {
+    if (g.mark) removeMark(g.mark);
+    const node = liveGuideNode(g);
+    const r = nodeRect(node);
+    g.mark = r ? spawnMark(g.inst, r, label, g.target, g.options, node) : null;
+  }
+
+  function holdAtGuide(g: GuideSession): void {
+    const node = liveGuideNode(g);
+    const el = guideElement(node);
+    const r = nodeRect(node);
+
+    if (!el || !r) return;
+    const p = holdPoint(r, true);
+    holdInst(g.inst, p.x, p.y, null, g.target, null, el);
+  }
+
+  function postGuide(g: GuideSession, message: Record<string, unknown>): void {
+    try { g.port.postMessage(message); } catch { /* 后台已断开：onDisconnect 收场 */ }
+  }
+
+  /** 页面变化里去掉助手自己的浮层（光标、圈、确认框都挂在带 OVERLAY_ATTR 的 host 上）。 */
+  function pageMutated(records: MutationRecord[]): boolean {
+    const own = (n: Node) => n instanceof Element && n.hasAttribute(OVERLAY_ATTR);
+
+    return records.some((r) => {
+      if (guideElement(r.target)?.closest(`[${OVERLAY_ATTR}]`)) return false;
+
+      return !(r.type === "childList" && [...r.addedNodes, ...r.removedNodes].every(own));
+    });
+  }
+
+  function checkGuide(g: GuideSession): void {
+    const c = g.checking;
+
+    if (!c) return;
+    const changed = location.href !== c.url ? "url" : g.lastChange >= c.since ? "dom" : null;
+
+    if (!changed) return;
+    postGuide(g, { kind: "done", changed });
+    endGuide(g);
+  }
+
+  function guideNoChange(g: GuideSession): void {
+    const c = g.checking;
+
+    if (!c) return;
+    clearTimeout(c.timer);
+    clearInterval(c.poll);
+    g.checking = null;
+    drawGuideMark(g, GUIDE_NO_CHANGE_TEXT);
+    postGuide(g, { kind: "no_change" });
+  }
+
+  function onGuideDown(ev: PointerEvent): void {
+    if (guide && ev.isTrusted) guide.down = { at: performance.now(), url: location.href };
+  }
+
+  function onGuideMove(ev: PointerEvent): void {
+    const g = guide;
+
+    if (!g || !ev.isTrusted || !g.missed) return;
+    g.missed = false;
+
+    // 让开：松开、回停靠位，圈留在原处。
+    if (g.inst.hold?.corner) {
+      releaseHoldInst(g.inst);
+      finishPark(g.inst);
+    }
+  }
+
+  function onGuideClick(ev: MouseEvent): void {
+    const g = guide;
+
+    if (!g || !ev.isTrusted || g.checking) return;
+    const path = ev.composedPath();
+
+    // 点在助手自己的浮层上（停止条、确认框）不算这一步的点击。
+    if (path.some((n) => n instanceof Element && n.hasAttribute(OVERLAY_ATTR))) return;
+    const node = liveGuideNode(g);
+    const el = guideElement(node);
+    const labels = el && "labels" in el ? [...((el as HTMLInputElement).labels ?? [])] : [];
+    const r = nodeRect(node);
+    const inside = !!r && ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 && ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4;
+
+    if (!((el && path.includes(el)) || labels.some((label) => path.includes(label)) || inside)) {
+      g.misses += 1;
+      g.missed = true;
+      drawGuideMark(g, guideMissText(g.name));
+      holdAtGuide(g);
+      postGuide(g, { kind: "miss", misses: g.misses });
+
+      return;
+    }
+
+    // 先报「点中了」：点下去就换页时，后台据此把换文档算作完成。
+    postGuide(g, { kind: "hit" });
+    const now = performance.now();
+    const pressed = g.down && now - g.down.at < GUIDE_PRESS_MS ? g.down : null;
+    g.checking = {
+      since: pressed?.at ?? now,
+      url: pressed?.url ?? location.href,
+      timer: setTimeout(() => guideNoChange(g), EFFECT_SETTLE_MAX_MS),
+      poll: setInterval(() => checkGuide(g), 100),
+    };
+    checkGuide(g);
+  }
+
+  /** 收场：撤圈、松开光标、摘掉监听。重复调用无害。 */
+  function endGuide(g: GuideSession): void {
+    if (guide !== g) return;
+    guide = null;
+    window.removeEventListener("click", onGuideClick, true);
+    window.removeEventListener("pointerdown", onGuideDown, true);
+    window.removeEventListener("pointermove", onGuideMove, true);
+    g.observer.disconnect();
+
+    if (g.checking) {
+      clearTimeout(g.checking.timer);
+      clearInterval(g.checking.poll);
+      g.checking = null;
+    }
+
+    if (g.mark) removeMark(g.mark);
+    g.mark = null;
+
+    if (g.inst.hold?.corner) {
+      releaseHoldInst(g.inst);
+      schedulePark(g.inst);
+    }
+  }
+
+  function startGuide(inst: Instance, node: Node, say: string, target: string, portName: string, options?: MarkOptions): { name: string } {
+    if (guide) {
+      const old = guide;
+      endGuide(old);
+
+      try { old.port.disconnect(); } catch { /* 已断开 */ }
+    }
+
+    const el = guideElement(node);
+    const full = actionName(el ?? undefined);
+    const port = chrome.runtime.connect({ name: portName });
+
+    const g: GuideSession = {
+      inst, node, target, options, port,
+      name: full.length > 20 ? `${full.slice(0, 19)}…` : full,
+      mark: null,
+      observer: new MutationObserver((records) => {
+        if (!pageMutated(records)) return;
+        g.lastChange = performance.now();
+        checkGuide(g);
+      }),
+      misses: 0,
+      missed: false,
+      lastChange: -1,
+      down: null,
+      checking: null,
+    };
+
+    guide = g;
+    port.onDisconnect.addListener(() => endGuide(g));
+    g.observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    window.addEventListener("click", onGuideClick, true);
+    window.addEventListener("pointerdown", onGuideDown, true);
+    window.addEventListener("pointermove", onGuideMove, true);
+    drawGuideMark(g, say);
+    holdAtGuide(g);
+
+    return { name: g.name };
   }
 
   function spawnMark(
@@ -1856,6 +2105,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   }
 
   function teardown(event: PageTransitionEvent): void {
+    if (guide) endGuide(guide);
+
     if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
     actionFrame = undefined;
 
@@ -2126,6 +2377,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         }
       },
 
+      guide(rect: SideAgentRect, say: string, target: string, portName: string, options?: MarkOptions, observedNode?: Node): { name: string } {
+        const node = observedNode ?? resolveAnchor(rect, target);
+
+        if (!node) throw new Error(`未找到目标元素：${target}`);
+
+        return startGuide(getInstance(id), node, say, target, portName, options);
+      },
+
       clearMarks(): void {
         liveMarks.length = 0;
         marksLayer?.replaceChildren();
@@ -2272,6 +2531,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       hidden: inst.el.classList.contains("hidden") || !inst.visible,
       x: inst.pos.x,
       y: inst.pos.y,
+      guide: guide?.inst === inst ? { label: guide.mark?.querySelector(".mark-label")?.textContent ?? "", misses: guide.misses, parkedAtTarget: Boolean(inst.hold?.corner), checking: Boolean(guide.checking) } : null,
     };
   };
 

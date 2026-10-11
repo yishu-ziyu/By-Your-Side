@@ -2477,65 +2477,17 @@ export async function mark(
   const cid = cursorId(sessionId);
 
   // 与 click 同样的解析策略：AX 快照 ref 走 CDP，其余走 domops 页面内解析
-  const ref = parseRef(params.target);
-  const backendNodeId = axBackendNodeFor(tabId, ref);
+  const backendNodeId = axBackendNodeFor(tabId, parseRef(params.target));
   const throughNodeId = params.through === undefined ? undefined : axBackendNodeFor(tabId, parseRef(params.through));
 
   if (params.through !== undefined && (backendNodeId === undefined || throughNodeId === undefined)) {
     throw notExecuted(new Error(`through 只能配合当前快照里的 @ref：target 和 through 都要是同一张快照的 @N（收到 ${params.target} → ${params.through}）`));
   }
 
-  let rect: DomRect | undefined;
   let prepared = false;
   try {
-
-    if (backendNodeId !== undefined) {
-      try {
-        rect = await rectOfBackendNode(tabId, backendNodeId, true, beforeDispatch);
-        prepared = true;
-      } catch (e) {
-        if (!isDebuggerUnavailable(e)) {
-          if (e && typeof e === "object" && "executionFact" in e) throw e;
-          throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
-        }
-      }
-    }
-
-    if (!rect) {
-      await ensureDomOps(tabId, beforeDispatch);
-
-      const res = await callDom(
-        tabId,
-        (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
-          const dom = window.__sideagent?.dom;
-
-          if (!dom) return { ok: false, error: "domops 未注入" };
-
-          try {
-            const element = dom.resolve(t);
-
-            if (element === document.body || element === document.documentElement) throw new Error("请定位具体内容元素，不能用整页作为标注目标");
-
-            return { ok: true, rect: dom.rectOf(t) };
-          } catch (e: any) {
-            return { ok: false, error: e?.message ?? String(e) };
-          }
-        },
-        [params.target], undefined, beforeDispatch,
-      );
-
-      // 只是定位，还没画任何东西：失败一律是「未执行」，不能记成结果未知而锁住重画。
-      if (!res || !res.ok) {
-        throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`));
-      }
-
-      if (!res.rect || typeof res.rect.x !== "number") {
-        throw notExecuted(new Error(`未找到目标元素：${params.target}`));
-      }
-
-      rect = res.rect;
-      prepared = true;
-    }
+    const located = await locateTarget(tabId, params.target, beforeDispatch);
+    prepared = true;
 
     await ensureCursor(tabId, beforeDispatch);
     const actions = resolveImplicitMarkActions(params.label, params.actions) ?? null;
@@ -2561,40 +2513,102 @@ export async function mark(
       return { marked: true };
     }
 
-    if (backendNodeId !== undefined) {
-      const contextId = await cursorContext(tabId);
-      await assertSameDocument(tabId, observedDocument);
-      await callOnBackendNode(tabId, backendNodeId, `function(label,target,id,actions,options) {
-        const rect = (${observedNodeRect.toString()}).call(this,true);
-        window.__sideagent.cursor.for(id).mark(rect,label ?? undefined,target,actions ?? undefined,options,this);
-      }`, [params.label ?? null,params.target,cid,actions,{style,motion}], contextId, undefined, beforeDispatch);
-
-      return {marked:true};
-    }
-
-    await callDom(
-      tabId,
-      (
-        r: DomRect,
-        l: string | null,
-        t: string,
-        id: string,
-        a: Array<{ id: "confirm" | "cancel"; label: string }> | null,
-        opts: { style?: "rect" | "sketch"; motion?: "grow" | "boil" },
-      ) => {
-        const cursor = window.__sideagent?.cursor?.for(id);
-
-        if (!cursor?.mark) throw new Error("cursor 未注入");
-        cursor.mark(r, l ?? undefined, t, a ?? undefined, opts);
-      },
-      [rect, params.label ?? null, params.target, cid, actions, { style, motion }], undefined, beforeDispatch,
-    );
+    await callCursorAt(tabId, located, cid, "mark", [params.label ?? null, params.target, actions, { style, motion }], observedDocument, beforeDispatch);
 
     return { marked: true };
   } catch (error) {
     if (beforeDispatch && prepared) throw Object.assign(error instanceof Error ? error : new Error(String(error)), {executionFact: "unknown"});
     throw error;
   }
+}
+
+/** mark 与 guide_step 共用的定位：只找目标、量位置，不画。失败一律是「未执行」。 */
+async function locateTarget(tabId: number, target: string, beforeDispatch?: DispatchGuard): Promise<{ backendNodeId?: number; rect: DomRect }> {
+  const ref = parseRef(target);
+  const backendNodeId = axBackendNodeFor(tabId, ref);
+
+  if (backendNodeId !== undefined) {
+    try {
+      return { backendNodeId, rect: await rectOfBackendNode(tabId, backendNodeId, true, beforeDispatch) };
+    } catch (e) {
+      if (!isDebuggerUnavailable(e)) {
+        if (e && typeof e === "object" && "executionFact" in e) throw e;
+        throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
+      }
+    }
+  }
+
+  await ensureDomOps(tabId, beforeDispatch);
+
+  const res = await callDom(
+    tabId,
+    (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
+      const dom = window.__sideagent?.dom;
+
+      if (!dom) return { ok: false, error: "domops 未注入" };
+
+      try {
+        const element = dom.resolve(t);
+
+        if (element === document.body || element === document.documentElement) throw new Error("请定位具体内容元素，不能用整页作为标注目标");
+
+        return { ok: true, rect: dom.rectOf(t) };
+      } catch (e: any) {
+        return { ok: false, error: e?.message ?? String(e) };
+      }
+    },
+    [target], undefined, beforeDispatch,
+  );
+
+  if (!res || !res.ok) throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${target}`));
+
+  if (!res.rect || typeof res.rect.x !== "number") throw notExecuted(new Error(`未找到目标元素：${target}`));
+
+  // 原样带回 backendNodeId：debugger 一时不可用、改用页面内定位时，画的时候照旧按快照里的节点画。
+  return { backendNodeId, rect: res.rect };
+}
+
+/**
+ * 在定位好的目标上调用页面光标的 mark / guide：参数接在视口 rect 之后（null 换成 undefined）。
+ * AX ref 时节点本身作为最后一个参数传进去，标注跟着这个节点；其余由页面按 target 重新找。返回页面函数的结果。
+ */
+async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number; rect: DomRect }, cid: string, method: "mark" | "guide", args: unknown[], observedDocument: string | null, beforeDispatch?: DispatchGuard): Promise<T> {
+  if (located.backendNodeId !== undefined) {
+    const contextId = await cursorContext(tabId);
+    await assertSameDocument(tabId, observedDocument);
+
+    return callOnBackendNode<T>(tabId, located.backendNodeId, `function(id,method,args) {
+      const rect = (${observedNodeRect.toString()}).call(this,true);
+      return window.__sideagent.cursor.for(id)[method](rect,...args.map(a => a ?? undefined),this);
+    }`, [cid, method, args], contextId, undefined, beforeDispatch);
+  }
+
+  return callDom(
+    tabId,
+    (r: DomRect, id: string, m: "mark" | "guide", a: unknown[]) => {
+      const cursor = window.__sideagent?.cursor?.for(id);
+      const fn = cursor?.[m] as ((...values: unknown[]) => unknown) | undefined;
+
+      if (!fn) throw new Error("cursor 未注入");
+
+      return fn.call(cursor, r, ...a.map(v => v ?? undefined));
+    },
+    [located.rect, cid, method, args], undefined, beforeDispatch,
+  ) as Promise<T>;
+}
+
+/**
+ * guide_step 的画法：按 mark 的方式找到 target，圈出来、名牌写 say、光标停在目标右下角，页面连上 portName 等用户自己点。
+ * 不带 beforeDispatch：它会把之后的「停下、离开」记成结果未知，而这里从不派发输入。返回目标在网页上的可见名字。
+ */
+export async function showGuide(tabId: number, target: string, say: string, portName: string, sessionId: string): Promise<{ name: string }> {
+  const observedDocument = await assertObservedDocument(tabId, sessionId, [target]);
+  const located = await locateTarget(tabId, target);
+  await ensureCursor(tabId);
+  const motion = await getMarkMotion();
+  await assertSameDocument(tabId, observedDocument);
+
+  return callCursorAt(tabId, located, cursorId(sessionId), "guide", [say, target, portName, { style: "sketch", motion }], observedDocument);
 }
 
 /**

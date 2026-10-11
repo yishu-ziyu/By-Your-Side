@@ -55,7 +55,8 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
 import { downloadUrl } from "./exec/download.js";
@@ -136,6 +137,8 @@ const handlers: Record<ToolName, Handler> = {
   screenshot: (p, sid) => screenshot(p, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (p, sid) => clearMarks(sid, p.tabId),
+  // 教学要在任务里等用户：只走下面 guardedHandlers 里带等待钩子的那一个。
+  guide_step: async () => { throw notExecuted(new Error("guide_step 只能在任务里调用")); },
 };
 
 let selectedConversationId = "default";
@@ -532,7 +535,7 @@ async function applyCursorStatusEvent(
         return;
       }
 
-      if (name === "click" || name === "fill" || name === "hover" || name === "mark") {
+      if (name === "click" || name === "fill" || name === "hover" || name === "mark" || name === "guide_step") {
         await clearCursorStatus(key(sid));
       }
 
@@ -1371,6 +1374,8 @@ async function executeToolCall(
       fetch:p=>fetchUrl(p,{beforeDispatch}),
       // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子（docs/evals/20261009-send-confirm.md）。
       click:(p,s)=>click(p,s,undefined,sendGuard),
+      // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
+      guide_step:(p,s)=>guideStep(p,s,sendGuard),
     };
 
     const handler = name === "observe_page"
@@ -1392,7 +1397,7 @@ async function executeToolCall(
 
         return gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid));
       },
-      waiting: on => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on }); },
+      waiting: (on, guide) => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on, ...(guide ? { guide } : {}) }); },
     };
 
     const execute = async () => {
