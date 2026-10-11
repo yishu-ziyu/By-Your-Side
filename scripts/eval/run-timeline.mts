@@ -1,6 +1,6 @@
 /**
  * 单次任务的时间线页面（YIS-99）：读日常全套导出的诊断记录，每个任务生成一段时间线，一眼看出哪一步最慢、花了多少钱。
- *   npx tsx scripts/eval/run-timeline.mts <everyday-baseline 产物目录> [--out=<页面.html>]
+ *   npx tsx scripts/eval/run-timeline.mts <everyday-baseline 产物目录 或 日常导出的 .jsonl> [--out=<页面.html>]
  * 默认写到 <产物目录>/timeline.html。解析口径与 time-breakdown.mts 一致：等模型 = 每轮从发出请求到第一个工具开始或本轮结束；动手 = 工具执行。
  */
 import { readdir, readFile, writeFile } from "node:fs/promises";
@@ -32,17 +32,22 @@ const dir = process.argv[2];
 
 if (!dir) throw new Error("用法：run-timeline.mts <everyday-baseline 产物目录> [--out=<页面.html>]");
 
-const out = process.argv.find((a) => a.startsWith("--out="))?.slice(6) ?? join(dir, "timeline.html");
+const out = process.argv.find((a) => a.startsWith("--out="))?.slice(6) ?? (dir.endsWith(".jsonl") ? dir.replace(/\.jsonl$/, ".timeline.html") : join(dir, "timeline.html"));
 
-// SAFETY: summary.json 由 everyday-baseline.mts 写出，results 带 id 与 prompt。
-const summary = JSON.parse(await readFile(join(dir, "summary.json"), "utf8")) as { model: string; startedAt: string; results: Array<{ id: string; prompt: string }> };
+// 参数是日常 Chrome 从设置页导出的 .jsonl 时，没有 summary.json：任务名用 runId 的前 8 位，原话取 run_start。
+const single = dir.endsWith(".jsonl");
 
-const traceFile = (await readdir(join(dir, "downloads"))).find((n) => n.startsWith("by-your-side-traces-"));
+const traceFile = single ? dir : (await readdir(join(dir, "downloads"))).find((n) => n.startsWith("by-your-side-traces-"));
 
 if (!traceFile) throw new Error("产物里没有导出的诊断记录");
 
 // SAFETY: 诊断记录一行一个 JSON 对象，字段见 shared/run-trace-core.ts。
-const lines = (await readFile(join(dir, "downloads", traceFile), "utf8")).split("\n").filter(Boolean).map((l) => JSON.parse(l) as Line);
+const lines = (await readFile(single ? dir : join(dir, "downloads", traceFile), "utf8")).split("\n").filter(Boolean).map((l) => JSON.parse(l) as Line);
+
+// SAFETY: summary.json 由 everyday-baseline.mts 写出，results 带 id 与 prompt。
+const summary = single
+  ? { model: "日常导出", startedAt: lines[0]?.time ?? "", results: [] as Array<{ id: string; prompt: string }> }
+  : JSON.parse(await readFile(join(dir, "summary.json"), "utf8")) as { model: string; startedAt: string; results: Array<{ id: string; prompt: string }> };
 
 const ms = (l: Line) => Date.parse(l.time);
 
@@ -63,7 +68,7 @@ for (const lns of byRun.values()) {
   const t0 = ms(start);
   const text = String(start.data?.text ?? "");
   const known = summary.results.filter((r) => text.includes(r.prompt)).sort((a, b) => b.prompt.length - a.prompt.length)[0];
-  const run: Run = { id: known?.id ?? "?", prompt: text, totalMs: ms(end) - t0, turns: 0, modelMs: 0, toolMs: 0, usesInnerModel: false, spans: [], marks: [], costTotal: 0 };
+  const run: Run = { id: known?.id ?? (single ? String(start.runId).slice(0, 8) : "?"), prompt: text, totalMs: ms(end) - t0, turns: 0, modelMs: 0, toolMs: 0, usesInnerModel: false, spans: [], marks: [], costTotal: 0 };
   const turnStart = new Map<number, number>();
   const usage = new Map<number, { input: number; output: number; cost: number }>();
   const toolStart = new Map<string, number>();

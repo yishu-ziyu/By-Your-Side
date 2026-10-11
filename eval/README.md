@@ -9,7 +9,7 @@
 | 路径 | 内容 |
 |---|---|
 | `harness/` | 运行、判分、汇总、画图的脚本，细节见 [harness/README.md](harness/README.md) |
-| `tasks/` | 171 道任务（BYS-142–150、171 是复杂度阶梯新题，151–170 是记忆小考，分级见 `ladder.json`）（`tasks.jsonl`，v2）、修改记录 `tasks_changes.md`、生成脚本 `gen_tasks.py`（生成的是 v1，重新生成会覆盖 v2 的修改）、类别分布图 |
+| `tasks/` | 175 道任务（BYS-142–150、171 是复杂度阶梯新题，151–170 是记忆小考，172–175 是记忆小考的更新题，分级见 `ladder.json`）（`tasks.jsonl`，v2）、修改记录 `tasks_changes.md`、生成脚本 `gen_tasks.py`（生成的是 v1，重新生成会覆盖 v2 的修改）、类别分布图 |
 | `splits/` | train / held-out 切分（`train.txt`、`heldout.txt`）、切分规则 `README.md`、修正后的基线 `baseline_judge_v3.json` |
 | `judge_validation/` | judge v3 与人工结论的对照 `summary.md` |
 | `research/` | 竞品调研 `competitors.md`、Go 套餐额度估算图 `cost.png` |
@@ -45,6 +45,12 @@ JUDGE_CONC=4 eval/harness/finalize.sh eval/runs/my-run
 | `BYS_PRICES` | 价格表 JSON（`服务商/模型` → 每百万 token 美元），有它才算成本 | `harness/prices.json`（目前没有） |
 | `BYS_CJK_FONT` | 画图用的中文字体文件 | Noto CJK，macOS 退到冬青黑体/华文黑体 |
 | `JUDGE_CONC` | `finalize.sh` 同时跑几个 Codex 判分 | 4 |
+
+## 从日常 Chrome 导出轨迹
+
+做错误分析要看真实使用的轨迹，所以除了 harness 的 `<题号>.trace.jsonl`，也读日常 Chrome 的诊断记录：设置页 → 诊断记录 →「导出」，得到 `by-your-side-traces-<时间>.jsonl`。扩展只保留最近 20 个会话，所以超过 20 个会话要分几次导。导出文件含页面内容，不入库。
+
+`scripts/eval/time-breakdown.mts` 和 `scripts/eval/run-timeline.mts` 都直接接受这个文件：任务名是 runId 的前 8 位，原话取自 `run_start`。
 
 ## 测量规则（2026-10-02 用户确认）
 
