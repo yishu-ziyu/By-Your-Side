@@ -4,7 +4,7 @@
  * pi-coding-agent 的 AgentSession 打进扩展要 7.8 MB 并拉入终端界面、undici、30 多个 Node 内置模块，所以这里
  * 按 0.84.4 源码（dist/core/agent-session.js）复刻 session.ts 实际用到的行为：
  * - prompt：input 钩子 → 运行中按 streamingBehavior 排队 → 组装用户消息与「下一轮」消息 →
- *   before_agent_start 钩子只对本轮替换系统提示词 → 运行；
+ *   before_agent_start 钩子只对本轮替换系统提示词、给出本次运行的上下文 → 运行；
  * - 运行：每轮结束后可重试的错误按 2 次、0.5 秒起翻倍重试，再 continue；结束时写入暂存的自定义消息；
  * - sendCustomMessage 的五个分支、插话记账、agent_end 的 willRetry、auto_retry_start/end 事件；
  * - 切换工具时用 composeSystemPrompt 重建系统提示词；Pi 1.0 起每次请求开头拼一条 system 消息带上它和工具清单。
@@ -46,6 +46,9 @@ export interface PiAgentLoopOptions {
 
 /** 宿主插入的消息：pi-coding-agent 已给 Agent 的消息联合加上 custom 角色（core/messages.d.ts）；convertToLlm 把它转成 user 消息。 */
 type CustomAppMessage = Extract<AgentMessage, { role: "custom" }>;
+
+/** 本次运行上下文消息的开头：告诉模型这是数据，不是用户说的话。 */
+const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。";
 
 type CustomDetails = Parameters<SessionManager["appendCustomEntry"]>[1];
 
@@ -110,6 +113,8 @@ export class PiAgentLoop implements AgentLoop {
   private active: string[];
   private base = "";
   private override: string | undefined;
+  /** 这次运行的上下文消息（见 HookResult.message），每次请求都插在 anchor（本次用户消息）前；运行结束清空。 */
+  private runContext: { anchor: AgentMessage; message: CustomAppMessage } | undefined;
   /** 这一轮的系统提示词。Pi 1.0 把提示词放进消息里的 system 消息；我们每次请求前重新拼一条，不写进会话记录。 */
   systemPrompt = "";
   private steering: string[] = [];
@@ -155,7 +160,7 @@ export class PiAgentLoop implements AgentLoop {
         return [this.systemMessage(), ...legacyMessages(messages.filter(message => message.role !== "system"))];
       },
       transformContext: async messages => {
-        const explained = this.explainUnknownTools(messages);
+        const explained = this.withRunContext(this.explainUnknownTools(messages));
 
         return this.hooks.has("context") ? this.contextThroughHooks(explained) : explained;
       },
@@ -242,8 +247,9 @@ export class PiAgentLoop implements AgentLoop {
     const messages: AgentMessage[] = [{ role: "user", content: [{ type: "text", text }, ...(images ?? [])], timestamp: Date.now() }, ...this.pendingNextTurn];
     this.pendingNextTurn = [];
 
-    const systemPrompt = this.hooks.has("before_agent_start") ? await this.hooks.beforeAgentStart(text, this.base) : this.base;
+    const { systemPrompt, context } = this.hooks.has("before_agent_start") ? await this.hooks.beforeAgentStart(text, this.base) : { systemPrompt: this.base, context: [] };
     this.override = systemPrompt === this.base ? undefined : systemPrompt;
+    this.runContext = context.length ? { anchor: messages[0]!, message: { role: "custom", customType: "run-context", content: [RUN_CONTEXT_HEADER, ...context].join("\n\n"), display: false, timestamp: messages[0]!.timestamp } } : undefined;
     this.systemPrompt = systemPrompt;
     await this.run(messages);
   }
@@ -321,6 +327,7 @@ export class PiAgentLoop implements AgentLoop {
       while (await this.afterRun()) await this.agent.continue();
     } finally {
       this.override = undefined;
+      this.runContext = undefined;
       this.flushCustom();
 
       try { await this.flushPersistence(); } finally {
@@ -453,6 +460,16 @@ export class PiAgentLoop implements AgentLoop {
 
       return { ...message, content: [{ type: "text", text: `工具 ${message.toolName} 不存在，没有执行。可用工具：${this.active.join("、")}。操作页面请用 browser_run。` }] };
     });
+  }
+
+  /** 本次运行的上下文放在本次用户消息前：系统提示词和工具定义每次一样，之前的历史也不动，都能命中前缀缓存。找不到那条消息（被压缩掉）时放在最前。 */
+  private withRunContext(messages: AgentMessage[]): AgentMessage[] {
+    const run = this.runContext;
+
+    if (!run) return messages;
+    const at = messages.findIndex(message => message === run.anchor || (message.role === run.anchor.role && message.timestamp === run.anchor.timestamp));
+
+    return at < 0 ? [run.message, ...messages] : [...messages.slice(0, at), run.message, ...messages.slice(at)];
   }
 
   private async contextThroughHooks(messages: AgentMessage[]): Promise<AgentMessage[]> {
