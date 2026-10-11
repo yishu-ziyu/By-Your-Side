@@ -15,8 +15,8 @@ export const DELIVERY_TIMING_SAMPLE_MAX = 100;
 export const DELIVERY_FACT_LIST_MAX = 4;
 
 export const REMAINING_STATUS_LABEL: Record<string, string> = {
-  pending: "未完成",
-  blocked: "执行受阻",
+  pending: "还没做",
+  blocked: "没做成",
   unknown: "结果未知",
 };
 
@@ -80,7 +80,7 @@ export function buildDeliveryFactView(facts: UserDeliveryFacts | undefined | nul
   if (facts.outcome === "partial") {
     headline = remainingTotal ? `部分完成 · 还有 ${remainingTotal} 项未完成` : "部分完成";
   } else if (facts.outcome === "unverified") {
-    headline = "已交付 · 完成情况未核验";
+    headline = "已交付 · 助手没有核验是否做完";
   } else {
     headline = sources.length ? `已交付 · 来源 ${sources.length}` : "已交付";
   }

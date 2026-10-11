@@ -16,7 +16,7 @@ function openDb(): Promise<IDBDatabase> {
 
     req.onsuccess = () => resolve(req.result);
 
-    req.onerror = () => reject(req.error ?? new Error("记忆存储打不开"));
+    req.onerror = () => reject(req.error ?? new Error("记忆没能打开"));
   });
 }
 
@@ -28,8 +28,8 @@ function isStoredText(value: unknown): value is string {
 function done(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("记忆写入失败"));
-    tx.onabort = () => reject(tx.error ?? new Error("记忆写入被中止"));
+    tx.onerror = () => reject(tx.error ?? new Error("记忆没能保存"));
+    tx.onabort = () => reject(tx.error ?? new Error("记忆没能保存"));
   });
 }
 
@@ -52,7 +52,7 @@ export class IdbDocument implements DocumentPersistence {
 
     return new Promise((resolve, reject) => {
       req.onsuccess = () => resolve(isStoredText(req.result) ? req.result : null);
-      req.onerror = () => reject(req.error ?? new Error("记忆读取失败"));
+      req.onerror = () => reject(req.error ?? new Error("记忆没能读出"));
     });
   }
 

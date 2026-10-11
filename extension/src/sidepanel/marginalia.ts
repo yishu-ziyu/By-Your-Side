@@ -35,7 +35,7 @@ export function createMarginalia(select: HTMLSelectElement, rail: HTMLElement) {
     update = null; rail.hidden = mode() === 'off';
 
 
-    if (mode() !== 'off') { title.textContent = '伴读 · 正在寻找当前段落'; text.textContent = ''; }
+    if (mode() !== 'off') { title.textContent = '正在找当前段落'; text.textContent = ''; }
 
     if (!page) return;
 
@@ -48,7 +48,7 @@ export function createMarginalia(select: HTMLSelectElement, rail: HTMLElement) {
 
     } catch { if (current !== generation) return;
 
-    if (mode() !== 'off') { rail.hidden = false; title.textContent = '段落提示未启用'; text.textContent = '扩展连接已断开。'; } }
+    if (mode() !== 'off') { rail.hidden = false; title.textContent = '段落提示未启用'; text.textContent = '扩展断开了。'; } }
   };
 
   select.onchange = () => void sync();

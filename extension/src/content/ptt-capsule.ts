@@ -6,7 +6,7 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttCapsuleAction } from '
 
 /**
  * 按住说话的网页底部胶囊（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）。
- * 光球旁只放一个状态词：在听 / 听写中 / 在做 / 等你 / 结果 / 已停下 / 没成。按住、听写中由按键直接驱动；
+ * 光球旁只放一个状态词：在听 / 听写中 / 正在做 / 等你 / 结果 / 已中止 / 没做成。按住、听写中由按键直接驱动；
  * 之后的内容都由后台按真实事件推来。shadow root 关着，网页读不到听写的话；data-phase / data-speaking 只给验收看现在是哪一步。
  * 念结果时（docs/evals/20261007-ptt-speak.md）光球是在说的样子，念完才开始倒计时收起；念的时候 Esc 只停声音。
  */
@@ -16,7 +16,7 @@ const BARS = 18;
 /** 自动收起：结果给人读完的时间；需要你动手的（等你、可重发）不自动收。 */
 const CLOSE_AFTER_MS: Partial<Record<PttCapsule['phase'], number>> = { done: 10_000, stopped: 4_000, failed: 6_000 };
 
-const WORD: Record<PttCapsule['phase'], string> = { listening: '在听', transcribing: '听写中', doing: '在做', waiting: '等你', done: '结果', stopped: '已停下', failed: '没成' };
+const WORD: Record<PttCapsule['phase'], string> = { listening: '在听', transcribing: '听写中', doing: '正在做', waiting: '等你', done: '结果', stopped: '已中止', failed: '没做成' };
 
 const ORB_STATE: Record<PttCapsule['phase'], OrbState> = { listening: 'listening', transcribing: 'thinking', doing: 'thinking', waiting: 'idle', done: 'idle', stopped: 'idle', failed: 'error' };
 
@@ -152,7 +152,7 @@ export function createPttCapsule() {
 
     if (capsule.phase === 'listening') side.innerHTML = '松开发送 · <kbd>Esc</kbd> 取消';
 
-    if (capsule.phase === 'doing') side.append(button('停', () => send('stop')), Object.assign(document.createElement('kbd'), { textContent: 'Esc' }));
+    if (capsule.phase === 'doing') side.append(button('中止', () => send('stop')), Object.assign(document.createElement('kbd'), { textContent: 'Esc' }));
 
     if (capsule.phase === 'failed' && capsule.heard) { const text = capsule.heard; side.append(button('重发', () => send('resend', text), 'primary')); }
 

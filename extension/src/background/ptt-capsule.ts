@@ -4,7 +4,7 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '..
 
 /**
  * 按住说话的网页底部胶囊（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）：后台只管松开以后。
- * 按住、听写中由网页自己画；话交给助手后，按这个会话的任务视图和交付换成 在做 / 等你 / 结果 / 已停下。
+ * 按住、听写中由网页自己画；话交给助手后，按这个会话的任务视图和交付换成 正在做 / 等你 / 结果 / 已中止。
  * 只读任务视图和交付，不是第二套任务状态；胶囊只在说话的那个标签页上。
  * 结果和等你同时念出来（docs/evals/20261007-ptt-speak.md）：念的时候胶囊带 speaking，念完再去掉。
  */
@@ -131,7 +131,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
       silence(t);
       show(t.tabId, { phase: 'doing', heard: t.heard, step: stepOf(view) });
     } else if (view.state === 'paused') {
-      showAndSay(t, { phase: 'waiting', heard: t.heard, reason: '页面交给你了，做完回侧栏点继续。' });
+      showAndSay(t, { phase: 'waiting', heard: t.heard, reason: '页面现在归你。操作完，点「交还」。' });
     } else if (t.sawRun && (view.state === 'idle' || view.state === 'aborted' || view.state === 'error')) {
       t.settle = setTimeout(() => settle(view), SETTLE_MS);
     }

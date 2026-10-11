@@ -87,9 +87,9 @@ function clip(text: string, max: number): string {
 
 const PAST_OUTCOME_LINE: Record<TaskHistoryEntry["outcome"], string> = {
   complete: "做完了",
-  partial: "上次停在一半",
-  stopped: "你让它停下了",
-  error: "上次运行出错停下了",
+  partial: "上次没做完",
+  stopped: "你中止了任务",
+  error: "上次出错，任务停在中途",
 };
 
 /** 纯函数：记录 → 至多 3 张卡。只收有依据的线索，新的在前。 */
@@ -104,10 +104,10 @@ export function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
     const title = clip(c.title || "未命名会话", 40);
 
     if (c.checkpoint === "interrupted") {
-      out.push({ id: `conv:${c.id}:${c.runId ?? ""}`, title, where: "任务中断了；回去后可点「继续原任务」", label: "回到这个任务", at: c.updatedAt, action: { kind: "conversation", conversationId: c.id } });
+      out.push({ id: `conv:${c.id}:${c.runId ?? ""}`, title, where: "任务中断了。打开会话后，点「继续原任务」", label: "回到这个任务", at: c.updatedAt, action: { kind: "conversation", conversationId: c.id } });
       claimed.add(c.id);
     } else if (c.state === "user") {
-      out.push({ id: `user:${c.id}:${c.runId ?? ""}`, title, where: "页面交给了你，它在等你接着说", label: "回到这个对话", at: c.updatedAt, action: { kind: "conversation", conversationId: c.id } });
+      out.push({ id: `user:${c.id}:${c.runId ?? ""}`, title, where: "页面现在归你。助手在等你回复", label: "回到这个会话", at: c.updatedAt, action: { kind: "conversation", conversationId: c.id } });
       claimed.add(c.id);
     }
   }

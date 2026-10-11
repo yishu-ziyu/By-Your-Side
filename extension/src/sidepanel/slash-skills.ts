@@ -333,7 +333,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
   function renderManageList(): void {
     editing = false;
     manage.replaceChildren(sheetHead("我的技能"));
-    manage.append(el("p", "pskill-note", "在输入框开头敲 / 就能调出这些技能，对当前标签页运行。只存在这台电脑上。"));
+    manage.append(el("p", "pskill-note", "在输入框开头输入 /，就能用这些技能。技能只存在这个浏览器里。"));
     const list = el("div", "pskill-list");
 
     for (const skill of skills) {
@@ -395,7 +395,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     const body = el("textarea");
     body.rows = 4;
     body.value = skill?.body ?? seed;
-    body.placeholder = "要 AI 对当前页面做什么";
+    body.placeholder = "要助手对当前页面做什么";
     field("提示词", body);
     const q1 = field("运行前先问（可选）", text(skill?.questions?.[0] ?? "", "例如：预算多少？"));
     const q2 = field("再问一个（可选）", text(skill?.questions?.[1] ?? ""));
@@ -491,7 +491,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     if (!text.trim() || bubble.querySelector(".pskill-save")) return;
     const btn = el("button", "pskill-save", "存成技能");
     btn.type = "button";
-    btn.title = "把这句话存成技能，以后在输入框敲 / 就能对当前页面再跑一次";
+    btn.title = "把这句话存成技能。以后在输入框输入 /，就能对当前页面再用一次";
     btn.addEventListener("click", (e) => { e.stopPropagation(); saveFromMessage(text); });
     bubble.append(btn);
   }

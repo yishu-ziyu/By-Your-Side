@@ -58,7 +58,7 @@ export function createSteerRibbon(composer: HTMLElement, before: HTMLElement, se
       if (!pending) return;
       const tag = document.createElement('div');
       tag.className = 'steer-tag';
-      tag.textContent = `⚡ 已改方向：${pending}`;
+      tag.textContent = `已改方向：${pending}`;
       bubble.before(tag);
 
       if (animate) bubble.classList.add('steer-morph');
@@ -69,7 +69,7 @@ export function createSteerRibbon(composer: HTMLElement, before: HTMLElement, se
       const tag = bubble.previousElementSibling;
 
       if (!tag?.classList.contains('steer-tag')) return;
-      pending = tag.textContent?.replace('⚡ 已改方向：', '') ?? null;
+      pending = tag.textContent?.replace('已改方向：', '') ?? null;
       tag.remove();
     },
     reset() {

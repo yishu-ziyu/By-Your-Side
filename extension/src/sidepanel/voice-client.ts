@@ -294,7 +294,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     } catch(error) {
       if(this.id===id)this.needsMicrophonePermission=error instanceof DOMException && error.name==='NotAllowedError';
 
-      if(this.id===id)this.fail(error instanceof DOMException && error.name==='NotAllowedError'?'未获得麦克风权限，请允许后重试。':'麦克风未能启动，请检查设备后重试。');
+      if(this.id===id)this.fail(error instanceof DOMException && error.name==='NotAllowedError'?'Chrome 没有允许使用麦克风。允许后再试一次。':'麦克风没有启动。检查麦克风后再试一次。');
     }
   }
 
@@ -330,7 +330,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     } catch (error) {
       if (this.id === id) this.needsMicrophonePermission = error instanceof DOMException && error.name === 'NotAllowedError';
 
-      if (this.id === id) this.fail(error instanceof DOMException && error.name === 'NotAllowedError' ? '未获得麦克风权限，请允许后重试。' : '麦克风未能启动，请检查设备后重试。');
+      if (this.id === id) this.fail(error instanceof DOMException && error.name === 'NotAllowedError' ? 'Chrome 没有允许使用麦克风。允许后再试一次。' : '麦克风没有启动。检查麦克风后再试一次。');
     }
   }
   /** 照前提实验建 WebRTC：本地麦克风上行，远端声音播放，oai-events 数据通道收发事件。令牌只用于这一次请求。 */

@@ -39,7 +39,7 @@ function openDb(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("诊断记录库打不开"));
+    request.onerror = () => reject(request.error ?? new Error("诊断记录没能打开"));
   });
   // 打开失败时清掉缓存，下一次写入重新尝试；失败照样交给调用方（诊断写入会吞掉它）。
   opening.catch(() => { opening = null; });
@@ -51,15 +51,15 @@ function openDb(): Promise<IDBDatabase> {
 function done(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("诊断记录写入失败"));
-    tx.onabort = () => reject(tx.error ?? new Error("诊断记录写入中止"));
+    tx.onerror = () => reject(tx.error ?? new Error("诊断记录没能保存"));
+    tx.onabort = () => reject(tx.error ?? new Error("诊断记录没能保存"));
   });
 }
 
 function result<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("诊断记录读取失败"));
+    request.onerror = () => reject(request.error ?? new Error("诊断记录没能读出"));
   });
 }
 

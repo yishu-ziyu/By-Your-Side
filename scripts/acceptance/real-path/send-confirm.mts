@@ -18,7 +18,7 @@
  *   o) 没有表单、附近没有输入栏的「发送」：确认框只写网站和按钮名，没有内容行。
  * 确认框内容（R2）：a 写网站、「发送」和同一表单里草稿的文字；表单外另有一栏备忘，不能出现在确认框上。
  * 侧栏（R2）：a 等确认时过程行标题是「等你在网页上确认发送」，用户决定后消失；b 那一步写「（你确认过）」；
- *   c 那一步写「你没让发，草稿还在」，不标红、不写「没成功」，过程行标题也不写「没成功」；g 那一步写「没发：你停下了」；n 第二次写「没发：前一个确认还在等你」。截图 a-panel-waiting / b-panel / c-panel / g-panel。
+ *   c 那一步写「你没让发，草稿还在」，不标红、不写「没做成」，过程行标题也不写「没成功」；g 那一步写「没发：你中止了任务」；n 第二次写「没发：前一个确认还在等你」。截图 a-panel-waiting / b-panel / c-panel / g-panel。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
  * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
  * 不显示等确认的标题，a 的侧栏判据失败；「不发」的记忆跨过用户插话，k 不出确认框；「不发」不带 heldReason，c 的侧栏那几步标成「没成功」；网址一变就算离开，m 的确认框消失；不按表单找输入栏，a 的确认框写成表单外备忘的文字（反例结果见验收文件）。
@@ -209,7 +209,7 @@ try {
   check("b 确认框已收起", !(await confirmBox()), null);
   const runB = await lastRun();
   const sendStepB = runB?.steps.find(step => step.text.includes("发送"));
-  check("b 侧栏：那一步像普通点击，写「（你确认过）」，不标失败，没有等确认的标题", !!sendStepB?.text.includes("（你确认过）") && !sendStepB.error && !runB!.title.includes(WAITING) && !runB!.title.includes("没成功"), { run: runB });
+  check("b 侧栏：那一步像普通点击，写「（你确认过）」，不标失败，没有等确认的标题", !!sendStepB?.text.includes("（你确认过）") && !sendStepB.error && !runB!.title.includes(WAITING) && !runB!.title.includes("没做成"), { run: runB });
   await panelShot("b-panel.png");
 
   // ── c：不发，同一轮再点不再问 ──
@@ -233,7 +233,7 @@ try {
   await until(async () => !(await rp.evaluate(panel, 'document.querySelector("#send-btn").classList.contains("stopping")')), 10_000, "c 侧栏回到空闲", 50);
   await sleep(1000);
   const runC = await lastRun();
-  check("c 侧栏：写「你没让发，草稿还在」，不标失败，过程行标题不写「没成功」", !!runC && runC.steps.filter(step => step.text.includes("你没让发，草稿还在")).length === 4 && runC.steps.every(step => !step.error) && !runC.title.includes("没成功") && !runC.title.includes(WAITING), { run: runC });
+  check("c 侧栏：写「你没让发，草稿还在」，不标失败，过程行标题不写「没做成」", !!runC && runC.steps.filter(step => step.text.includes("你没让发，草稿还在")).length === 4 && runC.steps.every(step => !step.error) && !runC.title.includes("没做成") && !runC.title.includes(WAITING), { run: runC });
   await panelShot("c-panel.png");
 
   // ── d：40 秒后才确认 ──
@@ -299,7 +299,7 @@ try {
   measured.stopConfirmGoneMs = confirmGoneMs; measured.stopPanelIdleMs = idleMs;
   check("g 等确认时点「停」：服务器 0 条，确认框和任务 2 秒内结束", sent() === sentBeforeG && confirmGoneMs <= 2000 && idleMs <= 2000 && !(await panelText()).includes("G 不该出现。"), { sentDelta: sent() - sentBeforeG, confirmGoneMs, idleMs });
   const runG = await lastRun();
-  check("g 侧栏：那一步写「没发：你停下了」，不标失败", !!runG?.steps.some(step => step.text.includes("没发：你停下了")) && runG.steps.every(step => !step.error), { run: runG });
+  check("g 侧栏：那一步写「没发：你中止了任务」，不标失败", !!runG?.steps.some(step => step.text.includes("没发：你中止了任务")) && runG.steps.every(step => !step.error), { run: runG });
   await panelShot("g-panel.png");
 
   /** 助手点下去以后：确认框或发送请求先到哪个算哪个；有确认框就停 1.5 秒看服务器，再由用户点「不发」。 */

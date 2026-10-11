@@ -780,8 +780,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     const target = action.kind === "click" ? `「${name}」` : name;
 
     const text = action.phase === "active" ? (name ? `我在${verb}${target}` : { click: "我在点这里", fill: "我在填这一栏", hover: "我在看这里" }[action.kind])
-      : action.phase === "failed" ? `没${verb}成`
-      : action.phase === "unknown" ? "结果待确认"
+      : action.phase === "failed" ? "没做成"
+      : action.phase === "unknown" ? "结果未知"
       : `${verb}好了`;
 
     paintLabel(inst, text, "");
@@ -1128,7 +1128,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     labelEl.replaceChildren();
     const prompt = document.createElement("span");
     prompt.className = "hold-prompt";
-    prompt.textContent = "确认执行此操作？";
+    prompt.textContent = "要做这一步吗？";
     labelEl.appendChild(prompt);
     inst.el.dataset.armed = "1";
 
@@ -1257,7 +1257,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   let guide: GuideSession | null = null;
 
-  const GUIDE_NO_CHANGE_TEXT = "好像没有生效：点了之后页面没有变化。再点一次试试；还不行就告诉我。";
+  const GUIDE_NO_CHANGE_TEXT = "点了之后，页面没有变化。再点一次。如果还是没变化，就在侧栏告诉我。";
 
   /** 按下到松开超过这么久就不算同一次点：只把这段时间里网页的变化算给这次点击（有的网页在按下时就切换）。 */
   const GUIDE_PRESS_MS = 1500;
@@ -1266,7 +1266,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   const GUIDE_STATES = ["aria-checked", "aria-selected", "aria-expanded", "aria-pressed"];
 
   function guideMissText(name: string): string {
-    return name ? `这里不是要点的位置。请点圈出来的「${name}」。` : "这里不是要点的位置。请点圈出来的地方。";
+    return name ? `这里不是要点的地方。点圈出来的「${name}」。` : "这里不是要点的地方。点圈出来的地方。";
   }
 
   function guideElement(node: Node): Element | null {
@@ -2047,8 +2047,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
       if (inst.action) {
         const a = inst.action;
-        const verb = {click:"点击", fill:"填写", hover:"定位"}[a.kind];
-        const text = a.phase === "active" ? `正在${verb}` : a.phase === "unknown" ? "结果待确认" : a.phase === "failed" ? "操作未完成" : `${verb}结束`;
+        const verb = {click:"点", fill:"填", hover:"看"}[a.kind];
+        const text = a.phase === "active" ? `正在${verb}` : a.phase === "unknown" ? "结果未知" : a.phase === "failed" ? "没做成" : `${verb}完了`;
         members.push({sessionId:id, title:text, local:true, detail:a.name ? `${text} · ${a.name}` : text});
       } else if (inst.status) members.push({sessionId:id, title:inst.status.text, local:true, detail:inst.status.detail || inst.status.sub || inst.status.text});
     }
@@ -2133,15 +2133,15 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     const stop = document.createElement("button");
     stop.type = "button";
     stop.className = "xstop";
-    stop.textContent = "停下";
+    stop.textContent = "中止";
     stop.onclick = (ev) => {
       ev.stopPropagation();
       stop.disabled = true;
-      stop.textContent = "正在停";
+      stop.textContent = "正在中止";
 
       try {
         chrome.runtime.sendMessage({ type: "page_stop_click" }, (res: { ok?: boolean } | undefined) => {
-          if (chrome.runtime.lastError || res?.ok !== true) { stop.disabled = false; stop.textContent = "停下"; }
+          if (chrome.runtime.lastError || res?.ok !== true) { stop.disabled = false; stop.textContent = "中止"; }
         });
       } catch { /* 自检页没有扩展运行时。 */ }
     };
@@ -2156,7 +2156,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     renderAmbient();
   }
 
-  // ── 执行反馈胶囊：宿主事实短语（切好了 / 已填入 / 结果待确认…）────────────
+  // ── 执行反馈胶囊：宿主事实短语（切好了 / 已填入 / 结果未知…）────────────
   // 成功一次轻微回弹后收起；待处理保留可找到的文字入口；同一结果重绘不回弹。
 
   let feedbackPill: HTMLDivElement | null = null;

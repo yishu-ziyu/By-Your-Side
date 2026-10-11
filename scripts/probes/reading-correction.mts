@@ -209,7 +209,7 @@ try {
     const s = await card();
     const t = s.turns[0];
 
-    return t && t.status.includes("正在生成") && t.answer.length > 20 ? s : undefined;
+    return t && t.status.includes("正在回答") && t.answer.length > 20 ? s : undefined;
   }, 30_000, "阅读卡正在生成且已写出 20 字以上", 100);
   record.cardFirstTextAfterExplainMs = Date.now() - tExplain;
   await rp.screenshot(work, join(out, "A1-card-generating.png"));

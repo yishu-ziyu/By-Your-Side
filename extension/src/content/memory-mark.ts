@@ -4,7 +4,7 @@ import { OVERLAY_ATTR } from '../shared/overlay.js';
 /**
  * 按记忆填的那一格：淡蓝底、细边和「记得的」小标签（YIS-87，样子见 docs/previews/circle-and-memory）。
  * 画在页面上面的一层里，不改这一格的值和网页结构；你动手改了这一格，或这一格不在了，记号就消失。
- * 点标签弹出小卡：改一下（选中这一格让你改）/ 这次不用（清空，记忆还在）/ 忘掉（清空，并交给侧栏忘掉这条）。
+ * 点标签弹出小卡：改一下（选中这一格让你改）/ 这次不用（清空，记忆还在）/ 忘记（清空，并交给侧栏忘记这条）。
  */
 const FIELD_ATTR = 'data-sideagent-memory-field';
 
@@ -50,8 +50,8 @@ export function installMemoryMark(): void {
     const tag = document.createElement('button');
     tag.type = 'button';
     tag.className = 'tag';
-    tag.textContent = '记得的';
-    tag.setAttribute('aria-label', `记得的：按你说过的「${memory.text}」填的，点开可以改`);
+    tag.textContent = '来自记忆';
+    tag.setAttribute('aria-label', `来自记忆：按你说过的「${memory.text}」填写。点开可以修改。`);
     let pop: HTMLElement | null = null;
     shadow.append(style, tint, tag);
     document.documentElement.appendChild(host);
@@ -113,7 +113,7 @@ export function installMemoryMark(): void {
       button.disabled = false;
       const err = pop?.querySelector('.err') ?? pop?.appendChild(Object.assign(document.createElement('div'), { className: 'err' }));
 
-      if (err) err.textContent = '没能忘掉：请打开侧栏，在「记忆」里删掉这条。';
+      if (err) err.textContent = '没能忘记。打开侧栏，在「记忆」里删掉这条。';
     };
 
     tag.onclick = () => {
@@ -132,7 +132,7 @@ export function installMemoryMark(): void {
       const acts = document.createElement('div');
       acts.className = 'acts';
 
-      for (const [action, label] of [['edit', '改一下'], ['once', '这次不用'], ['forget', '忘掉']] as const) {
+      for (const [action, label] of [['edit', '改一下'], ['once', '这次不用'], ['forget', '忘记']] as const) {
         const button = document.createElement('button');
         button.type = 'button';
         button.dataset.action = action;

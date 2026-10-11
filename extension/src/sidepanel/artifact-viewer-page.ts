@@ -119,7 +119,7 @@ function render(item: ArtifactViewItem | undefined): void {
     const title = document.createElement("strong");
     title.textContent = "文件已不在了";
     const hint = document.createElement("div");
-    hint.textContent = "它可能已在对话里被删除，或浏览器重启后清掉了。回到侧栏让助手重新生成即可。";
+    hint.textContent = "这个文件可能已从会话里删掉，或在浏览器重启时清掉了。回到侧栏，让助手重新生成。";
     missing.append(title, hint);
     view.replaceChildren(missing);
 

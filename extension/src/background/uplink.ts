@@ -148,7 +148,7 @@ export class Uplink {
       }
     } catch (err) {
       this.connecting = false;
-      const detail = `扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`;
+      const detail = `助手没有启动：${err instanceof Error ? err.message : String(err)}`;
 
       // 按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），不能停在「未连接」等用户重载扩展。
       this.handleDisconnect(detail);
@@ -171,7 +171,7 @@ export class Uplink {
     });
     port.onDisconnect.addListener(() => {
       if (this.inprocPort !== port) return;
-      this.handleDisconnect(chrome.runtime.lastError?.message ?? "扩展内 agent 连接断开");
+      this.handleDisconnect(chrome.runtime.lastError?.message ?? "助手断开了");
     });
     await this.pushModelConfig();
     await this.pushVoiceKey();

@@ -73,7 +73,7 @@ export function installReading(deps: Dependencies) {
       if (raw.type === 'reading_open') {
         const source: ReadingSource = {...raw.source, tabId: tab.id!, title: (tab.title ?? '').slice(0, 500), url: sender.url ?? tab.url ?? ''};
 
-        if (!isReadingTranscript({threadId: 'validate', source, turns: []})) throw new Error('选区内容无效或过长。');
+        if (!isReadingTranscript({threadId: 'validate', source, turns: []})) throw new Error('选中的文字太长，或读不出来。');
         record = [...records.values()].find(r => owned(r) && r.source.text === source.text);
 
         for (const r of records.values()) if (owned(r) && r.threadId !== record?.threadId) stop(r);
@@ -82,7 +82,7 @@ export function installReading(deps: Dependencies) {
           if (records.size >= 16) {
             const oldest = [...records.values()].filter(r => !readingBusy(r)).sort((a,b) => a.updatedAt - b.updatedAt)[0];
 
-            if (!oldest) throw new Error('阅读窗口过多，请先停止一个。');
+            if (!oldest) throw new Error('打开的阅读卡太多了。先关掉一张。');
             records.delete(oldest.threadId);
           }
 
@@ -96,7 +96,7 @@ export function installReading(deps: Dependencies) {
         return {ok: true, record};
       }
 
-      if (!record) throw new Error('这段阅读已过期，请重新选择文字。');
+      if (!record) throw new Error('这段问答已过期。重新选中文字。');
 
       if (raw.type === 'reading_stop') { stop(record);
 
@@ -106,19 +106,19 @@ export function installReading(deps: Dependencies) {
         // 生成中发来的问题是改口：停下旧回答和发出新问题在同一步里完成，旧回答没有继续写的间隙。
         const correction = readingBusy(record);
 
-        if (correction && raw.correction !== true) throw new Error('请先停止当前回答。');
+        if (correction && raw.correction !== true) throw new Error('先点「停止回答」。');
         const question = typeof raw.question === 'string' ? raw.question.trim() : '';
 
-        if (!question || question.length > 2000) throw new Error('请输入 1–2000 字的问题。');
+        if (!question || question.length > 2000) throw new Error('问题要在 1–2000 字之间。');
         const last = record.turns.at(-1);
         const retry = last && (raw.retry === true || last.state === 'error') && ['stopped', 'error'].includes(last.state) && last.question === question;
         const previousTurns = retry ? record.turns.slice(0, -1) : record.turns;
 
-        if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段阅读已较长，请在侧栏继续。');
+        if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段问答太长了。点「在侧栏继续」。');
         const turn = {question, answer: '', state: 'pending' as const};
         const candidate = {...record, turns: [...previousTurns, turn]};
 
-        if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('阅读记录已较长，请在侧栏继续。');
+        if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('这段问答太长了。点「在侧栏继续」。');
         if (correction) {
           stop(record, false);
           record.correctedTurns = [...(record.correctedTurns ?? []), candidate.turns.length - 1];
@@ -141,7 +141,7 @@ export function installReading(deps: Dependencies) {
       if (raw.type === 'reading_handoff') {
         await opened;
 
-        if (readingBusy(record)) throw new Error('请先停止或等回答完成，再在侧栏继续。');
+        if (readingBusy(record)) throw new Error('先停止回答，或等回答写完，再在侧栏继续。');
 
         if (record.transferredConversationId) { opening = false; deps.select(record.transferredConversationId);
 
@@ -151,7 +151,7 @@ export function installReading(deps: Dependencies) {
         record.handoffRequestId ??= crypto.randomUUID();
         persist();
 
-        if (!deps.send({type: 'conversation_create', requestId: record.handoffRequestId, title: `阅读 · ${record.source.text.slice(0, 28)}`, reading: record})) throw new Error('未连接到助手，暂时无法转到侧栏。');
+        if (!deps.send({type: 'conversation_create', requestId: record.handoffRequestId, title: `阅读 · ${record.source.text.slice(0, 28)}`, reading: record})) throw new Error('没有连接到助手，现在不能转到侧栏。');
 
         return {ok: true, record};
       }
@@ -179,7 +179,7 @@ export function installReading(deps: Dependencies) {
         const record = records.get(event.threadId);
 
         if (record && record.handoffRequestId === event.requestId && event.state === 'error') {
-          opening = false; record.handoffError = event.error ?? '无法转到侧栏，请重试。'; record.handoffRequestId = undefined; publish(record);
+          opening = false; record.handoffError = event.error ?? '没能转到侧栏。再试一次。'; record.handoffRequestId = undefined; publish(record);
 
  return;
         }

@@ -23,7 +23,7 @@ type StoredValue = ConversationSummary[] | Record<string, ReadingTranscript>;
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error("会话目录读写失败"));
+    req.onerror = () => reject(req.error ?? new Error("会话列表没能保存"));
   });
 }
 
@@ -35,7 +35,7 @@ function openDb(): Promise<IDBDatabase> {
 
     req.onsuccess = () => resolve(req.result);
 
-    req.onerror = () => reject(req.error ?? new Error("会话目录打不开"));
+    req.onerror = () => reject(req.error ?? new Error("会话列表没能打开"));
   });
 }
 

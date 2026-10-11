@@ -54,7 +54,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   async function ensureCore(): Promise<HostCore> {
     if (core) return core;
 
-    if (!selected) throw new Error("还没有配置模型：打开右上角「更多 → 模型与语音」选择服务商。");
+    if (!selected) throw new Error("还没有连接模型。打开「更多 → 模型与语音」，选一个服务商。");
 
     if (pendingCore) return pendingCore;
 
@@ -101,7 +101,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         // 没登录就报原因，不退回别的语音。
         if (resolveVoiceModel(voiceModel) === GPT_LIVE_MODEL) return chatgptAccess();
 
-        if (!voiceConfigured) throw new Error("还没有语音 key：打开右上角「更多 → 模型与语音」，在「语音对话」里填阶跃星辰的 key。");
+        if (!voiceConfigured) throw new Error("还没有语音密钥。打开「更多 → 模型与语音」，在「语音对话」里填阶跃星辰密钥。");
 
         return "injected-by-extension";
       },
@@ -179,7 +179,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (message.type === "task_action") {
       const request: TaskActionRequest = message.request;
-      const detail = "还没有配置模型：打开右上角「更多 → 模型与语音」选择服务商。";
+      const detail = "还没有连接模型。打开「更多 → 模型与语音」，选一个服务商。";
 
       const receipt: TaskReceipt = {
         requestId: request.requestId, conversationId: request.conversationId, source: request.source,
@@ -200,7 +200,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     }
 
     if (message.type !== "task_view_query" && message.type !== "task_receipt_query") {
-      connection?.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "请先在「模型与语音」里配置模型。" } });
+      connection?.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "先在「模型与语音」里连接模型。" } });
     }
   }
 
@@ -286,7 +286,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const reply = (result: { ok: boolean; ms?: number; reason?: string; detail?: string }) =>
       connection?.send({ type: "model_key_test_result", conversationId: message.conversationId, requestId: message.requestId, ...result });
 
-    if (!selected) return reply({ ok: false, reason: "还没有配置模型。" });
+    if (!selected) return reply({ ok: false, reason: "还没有连接模型。" });
     const config = selected;
     const started = performance.now();
     const probe = deps.createRuntime(() => undefined);
@@ -301,7 +301,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       const copy = describeModelError(`模型请求最终失败：${raw}`);
 
       const reason = timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有回复，服务商可能正忙，可以再试一次。`
-        : copy?.kind === "auth" ? "这个 key 也不行：key 无效，或没有这个模型的权限。" : `${copy?.title ?? "连接失败"}。`;
+        : copy?.kind === "auth" ? "这个密钥也不能用。服务商不接受它，或它不能用这个模型。" : `${copy?.title ?? "连接失败"}。`;
 
       reply({ ok: false, reason, detail: raw.slice(0, 2000) });
     }

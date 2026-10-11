@@ -169,14 +169,14 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     toggle.textContent = showAllModels ? "只看常用" : "显示全部";
     toggle.title = showAllModels
       ? "收起，只显示常用模型"
-      : "展开所有已配置凭据的模型（按 provider 分组，可用搜索过滤）";
+      : "显示所有已连接服务商的模型";
     toggle.addEventListener("click", () => {
       showAllModels = !showAllModels;
       toggle.setAttribute("aria-pressed", String(showAllModels));
       toggle.textContent = showAllModels ? "只看常用" : "显示全部";
       toggle.title = showAllModels
         ? "收起，只显示常用模型"
-        : "展开所有已配置凭据的模型（按 provider 分组，可用搜索过滤）";
+        : "显示所有已连接服务商的模型";
       renderModelList();
     });
     search.append(toggle);
@@ -229,7 +229,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
       // 目录本身为空（不是搜索滤空）：告诉用户是数据没到，不是没有模型可选。
       if (modelQuery.trim()) empty.textContent = "无匹配模型";
-      else if (modelState?.model) empty.textContent = "模型目录还没拿到，暂时没法切换";
+      else if (modelState?.model) empty.textContent = "还没读到模型列表，现在不能切换";
       else empty.textContent = "暂无可用模型";
       list.appendChild(empty);
 

@@ -77,7 +77,7 @@ export function beginTabTransfer(tabId: number, claimKey: string): () => void {
   const current = tabTransfers.get(tabId);
 
   if (current !== undefined) throw Object.assign(
-    new Error(current === owner ? "该页正在移交，请稍候再试" : "该页正在由其他会话接手，请稍后再试"),
+    new Error("这个页面正在给另一个会话，稍后再试"),
     {executionFact: "not_executed" as const},
   );
   tabTransfers.set(tabId, owner);
@@ -89,7 +89,7 @@ export function beginTabTransfer(tabId: number, claimKey: string): () => void {
 export function assertTabNotTransferring(tabId: number, key: string): void {
   const owner = tabTransfers.get(tabId);
 
-  if (owner !== undefined && owner !== keyOf(key)) throw new Error("该页正在移交给其他会话，操作未执行");
+  if (owner !== undefined && owner !== keyOf(key)) throw new Error("这个页面正在给另一个会话，操作未执行");
 }
 
 async function loadMap(): Promise<TabBindingMap> {
@@ -164,7 +164,7 @@ export async function resolveReadableTab(tabId: number | undefined, key: string)
 
 /** 原成员已停止并排空；用检查时的归属防止并发接手互相覆盖。 */
 export async function claimGlobalTab(tabId: number, key: string, expectedConversationId: string | null): Promise<void> {
-  if (!isLeadSession(parseExecutionKey(key).sessionId)) throw new Error("只有主 Agent 可以接手页面");
+  if (!isLeadSession(parseExecutionKey(key).sessionId)) throw new Error("只有主助手可以接手页面");
   assertTabNotTransferring(tabId, key);
   await mutateState(async () => {
     let map = await loadMap();
@@ -295,7 +295,7 @@ export function assertResourceAccess(resource: TabResource | undefined, key: str
 export async function reclaimWorkerTabs(leadKey: string, workerKey: string): Promise<number[]> {
   const lead = parseExecutionKey(leadKey);
 
-  if (!isLeadSession(lead.sessionId) || parseExecutionKey(workerKey).conversationId !== lead.conversationId) throw new Error("不能跨会话移交页面");
+  if (!isLeadSession(lead.sessionId) || parseExecutionKey(workerKey).conversationId !== lead.conversationId) throw new Error("不能把页面交给另一个会话");
 
   return mutateState(async () => {
     let map = await loadMap();
