@@ -114,7 +114,11 @@ export type TranslateOptions = { maxConcurrent?: number; delayMs?: number; /** �
 
 const THROTTLE_BODY = JSON.stringify({ error: { type: "permission_error", message: "You've reached your concurrent request limit. Please wait for your ongoing requests to finish and try again." }, type: "error" });
 
-export async function startScriptedModel(rules: Rule[], translate?: TranslateOptions, inspect?: (payload: { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] }) => void) {
+/** OpenAI 兼容服务超窗口时的回复；pi-ai 按 "maximum context length is N tokens" 认出超窗口。 */
+const OVERFLOW_BODY = JSON.stringify({ error: { message: "This model's maximum context length is 8192 tokens. However, your messages resulted in 9000 tokens.", type: "invalid_request_error", code: "context_length_exceeded" } });
+
+/** overflow：主任务请求的原文让它返回 true 时，回超窗口错误（模拟上下文窗口满了）。 */
+export async function startScriptedModel(rules: Rule[], translate?: TranslateOptions, inspect?: (payload: { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] }) => void, overflow?: (raw: string) => boolean) {
   const origin = Date.now();
   const requests: ModelRequest[] = [];
   let calls = 0;
@@ -136,9 +140,17 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     }
 
     // SAFETY: OpenAI 兼容请求体，messages 为消息数组。
-    const payload = JSON.parse(await body(req)) as { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] };
+    const raw = await body(req);
+    const payload = JSON.parse(raw) as { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] };
     const messages = payload.messages ?? [];
     inspect?.(payload);
+
+    if (overflow && payload.tools?.length && overflow(raw)) {
+      requests.push({ atMs: Date.now() - origin, rule: "overflow", step: 0, status: 400, tools: true });
+      res.writeHead(400, { "content-type": "application/json" }).end(OVERFLOW_BODY);
+
+      return;
+    }
 
     if (translate && messages.some((m) => m.role === "system" && textOf(m.content).startsWith("Translate the supplied webpage text"))) {
       const atMs = Date.now() - origin;

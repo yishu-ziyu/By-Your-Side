@@ -47,6 +47,12 @@ export interface PiAgentLoopOptions {
 /** 宿主插入的消息：pi-coding-agent 已给 Agent 的消息联合加上 custom 角色（core/messages.d.ts）；convertToLlm 把它转成 user 消息。 */
 type CustomAppMessage = Extract<AgentMessage, { role: "custom" }>;
 
+/** 读页结果或页面快照短于这个字数就不删：省下的不够，还丢了信息。 */
+const ELIDE_MIN_CHARS = 1000;
+
+/** 用户消息里页面快照的开头（session.ts 的 freshPageObservationText）；超窗口时从这里删到消息末尾。 */
+const PAGE_OBSERVATION_MARK = "[FRESH PAGE OBSERVATION";
+
 /** 本次运行上下文消息的开头：告诉模型这是数据，不是用户说的话；历史里每条消息前都有一段，只有最后一段是现状。 */
 const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。之前消息前的同类段落只是历史，现状以这一段为准。";
 
@@ -121,6 +127,10 @@ export class PiAgentLoop implements AgentLoop {
   private pendingNextTurn: CustomAppMessage[] = [];
   private lastAssistant: AssistantMessage | undefined;
   private retryAttempt = 0;
+  /** 这一轮从历史的第几条开始：超窗口时只删它之前的旧内容。 */
+  private runStart = 0;
+  /** 这一轮已经因超窗口删过一次：再超就照常报错。 */
+  private elided = false;
   /** 见 AgentLoop.retryGate：返回 false 时这次失败不在同一模型上重试（由外层换备用模型）。 */
   retryGate: ((message: AssistantMessage) => boolean) | undefined;
   private retryAbort: AbortController | undefined;
@@ -251,6 +261,8 @@ export class PiAgentLoop implements AgentLoop {
     this.systemPrompt = systemPrompt;
     // 上下文和用户消息一起写进历史、不再拿掉：下一条消息的请求是这一条的前缀延伸，整段历史都命中缓存（#271）。
     const runContext: CustomAppMessage[] = context.length ? [{ role: "custom", customType: "run-context", content: [RUN_CONTEXT_HEADER, ...context].join("\n\n"), display: false, timestamp: user.timestamp }] : [];
+    this.runStart = this.agent.state.messages.length;
+    this.elided = false;
     await this.run([...runContext, user, ...next]);
   }
 
@@ -344,6 +356,12 @@ export class PiAgentLoop implements AgentLoop {
 
     if (!message) return false;
 
+    if (this.willElide(message)) {
+      this.elideEarlierContent();
+
+      return true;
+    }
+
     if (this.retryable(message) && this.retryGate?.(message) !== false && await this.prepareRetry(message)) return true;
 
     if (message.stopReason === "error" && this.retryAttempt > 0) {
@@ -352,6 +370,77 @@ export class PiAgentLoop implements AgentLoop {
     }
 
     return this.agent.hasQueuedMessages();
+  }
+
+  /**
+   * 模型报超窗口错误、这一轮还没删过、而且之前有能删的内容：删完再请求一次。
+   * 只看报错：pi-ai 把「成功回答但输入超过配置的窗口」也算超窗口，那条回答已经给了用户，不能删掉重问。
+   */
+  private willElide(message: AssistantMessage): boolean {
+    return message.stopReason === "error" && !this.elided && isContextOverflow(message, this.model?.contextWindow ?? 0) && this.elidedEarlier() !== null;
+  }
+
+  /**
+   * 超窗口时把这一轮之前的大段内容（读页结果、页面快照、运行上下文）各换成一行占位，去掉出错的回复，再请求一次。
+   * 平时不删：删会改历史前缀、丢掉缓存（#271）。只改内存里的历史，会话记录不变。
+   */
+  private elideEarlierContent(): void {
+    const earlier = this.elidedEarlier();
+
+    if (!earlier) return;
+    this.elided = true;
+    this.emit({ type: "compaction_start", reason: "overflow" });
+    // 出错的那条回复不留在历史里，重试的请求以删过的历史加这一轮的内容结尾。
+    const current = this.agent.state.messages.slice(this.runStart);
+    this.agent.state.messages = [...earlier, ...(current.at(-1)?.role === "assistant" ? current.slice(0, -1) : current)];
+    this.emit({ type: "compaction_end", reason: "overflow", result: undefined, aborted: false, willRetry: true });
+  }
+
+  /** 这一轮之前的历史删掉大段内容后的样子；没有能删的就返回 null。 */
+  private elidedEarlier(): AgentMessage[] | null {
+    const messages = this.agent.state.messages;
+    let elided = 0;
+    const stub = (chars: number): TextContent => ({ type: "text", text: `[Earlier content elided to fit the context window: ${chars} chars. The page may have changed since; read it again if needed.]` });
+    const earlier = messages.slice(0, this.runStart).map(message => {
+      if (message.role === "toolResult") {
+        const chars = message.content.reduce((sum, part) => sum + (part.type === "text" ? part.text.length : ELIDE_MIN_CHARS), 0);
+
+        if (chars < ELIDE_MIN_CHARS) return message;
+        elided += 1;
+
+        return { ...message, content: [stub(chars)] };
+      }
+
+      if (message.role === "user" && Array.isArray(message.content)) {
+        let changed = false;
+        const content = message.content.flatMap(part => {
+          if (part.type === "image") { changed = true;
+
+            return [stub(ELIDE_MIN_CHARS)]; }
+          const at = part.text.indexOf(PAGE_OBSERVATION_MARK);
+
+          if (at < 0 || part.text.length - at < ELIDE_MIN_CHARS) return [part];
+          changed = true;
+
+          return [{ ...part, text: `${part.text.slice(0, at)}${stub(part.text.length - at).text}` }];
+        });
+
+        if (!changed) return message;
+        elided += 1;
+
+        return { ...message, content };
+      }
+
+      if (message.role === "custom" && message.customType === "run-context" && typeof message.content === "string" && message.content.length >= ELIDE_MIN_CHARS) {
+        elided += 1;
+
+        return { ...message, content: stub(message.content.length).text };
+      }
+
+      return message;
+    });
+
+    return elided ? earlier : null;
   }
 
   private retryable(message: AssistantMessage): boolean {
@@ -426,12 +515,10 @@ export class PiAgentLoop implements AgentLoop {
   }
 
   private willRetry(messages: AgentMessage[]): boolean {
-    if (this.retryAttempt >= this.retry.maxRetries) return false;
-
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const message = messages[i]!;
 
-      if (message.role === "assistant") return this.retryable(message) && this.retryGate?.(message) !== false;
+      if (message.role === "assistant") return this.willElide(message) || (this.retryAttempt < this.retry.maxRetries && this.retryable(message) && this.retryGate?.(message) !== false);
     }
 
     return false;
