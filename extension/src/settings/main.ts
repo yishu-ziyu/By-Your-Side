@@ -61,7 +61,7 @@ document.getElementById("settings")!.innerHTML = `
     <div class="surface rows">
       <div class="row">
         <span class="row-main"><span class="row-title">主模型</span><span id="main-desc" class="row-desc"></span></span>
-        <span class="row-ctl pick"><span id="main-icon"></span><select id="main-model" class="sel" aria-label="主模型"></select></span>
+        <span class="row-ctl pick"><span id="main-icon"></span><select id="main-model" class="sel" aria-label="主模型"></select><button id="main-pick" type="button" class="btn" hidden>去选服务商</button></span>
       </div>
       <div class="row">
         <span class="row-main"><span class="row-title">快速模型</span><span class="row-desc">划词解释、翻译这类要马上出结果的动作用它。</span></span>
@@ -423,7 +423,10 @@ function groupLabel(text: string): HTMLElement {
   return Object.assign(document.createElement("div"), { className: "grp", textContent: text });
 }
 
-/** 已连接的在上（正在用的第一），自定义地址其次，其余折起；搜索时只留命中的行，并展开其余。 */
+/** 只在页面第一次渲染时决定默认展开；之后用户收起就保持收起。 */
+let firstRender = true;
+
+/** 已连接的在上（正在用的第一），自定义地址其次，其余折起；一家都没连时默认展开；搜索时只留命中的行，并展开其余。 */
 function renderProviders(): void {
   const query = search.value.trim();
   const matches = entries.filter((e) => e.key !== CUSTOM_PROVIDER_ID).map((e) => [e, matchEntry(e, choices, query)] as const).filter(([, m]) => m.hit);
@@ -435,11 +438,12 @@ function renderProviders(): void {
   $("provider-connected").replaceChildren(...mine.length ? [groupLabel(`已连接 · ${mine.length}`), ...mine.map(([e, m]) => providerRow(e, m.models))] : []);
   $("provider-others").replaceChildren(...rest.map(([e, m]) => providerRow(e, m.models)));
   more.hidden = !rest.length;
-  $("provider-more-names").replaceChildren(groupLabel(`其余服务商 · ${rest.length}`), Object.assign(document.createElement("span"), {
+  $("provider-more-names").replaceChildren(groupLabel(`${mine.length ? "其余服务商" : "选一个服务商"} · ${rest.length}`), Object.assign(document.createElement("span"), {
     className: "more-names", textContent: `${rest.slice(0, 4).map(([e]) => e.name).join("、")}${rest.length > 4 ? ` 等 ${rest.length} 家` : ""}`,
   }));
 
-  if (query || rest.some(([e]) => e.key === openKey)) more.open = true;
+  if (query || rest.some(([e]) => e.key === openKey) || firstRender && !mine.length) more.open = true;
+  firstRender = false;
   const empty = $("provider-empty");
   empty.hidden = matches.length > 0;
   empty.textContent = `没有找到「${query}」。OpenAI 兼容的服务可以用下面的「自定义地址」接入。`;
@@ -910,10 +914,15 @@ async function clearSpeechKey(): Promise<void> {
 
 /** 主模型：只列已连接的，选了就换，不用再进服务商详情。 */
 function renderMainModel(): void {
-  mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...modelOptionGroups(config));
+  const groups = modelOptionGroups(config);
+  // 一家都没连时下拉里只有「还没有选择」：换成一个按钮，直接带到服务商列表。
+  const none = !config && !groups.length;
+  mainSelect.hidden = none;
+  $("main-pick").hidden = !none;
+  mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...groups);
   mainSelect.value = config ? JSON.stringify({ provider: config.provider, modelId: config.modelId }) : "";
   $("main-icon").replaceChildren(...config ? [config.provider === CUSTOM_PROVIDER_ID ? svg(Link, 15) : providerIcon(config.provider, labelOf(config.provider))] : []);
-  $("main-desc").textContent = config ? labelOf(config.provider) : "在下面选一个服务商，登录或填好 key 后保存。";
+  $("main-desc").textContent = config ? labelOf(config.provider) : none ? "还没有连接服务商。在服务商列表里选一家，登录或填好 key 后保存。" : "在下面选一个服务商，登录或填好 key 后保存。";
 }
 
 async function saveMainModel(): Promise<void> {
@@ -928,6 +937,12 @@ async function saveMainModel(): Promise<void> {
 }
 
 mainSelect.addEventListener("change", () => void saveMainModel());
+
+$("main-pick").addEventListener("click", () => {
+  more.open = true;
+  search.scrollIntoView({ block: "start", behavior: "smooth" });
+  search.focus({ preventScroll: true });
+});
 
 /** 阶跃的文字模型每次都先思考，官方接口关不掉；用作即时动作会让解释、翻译等十几秒才出字。 */
 const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PROVIDER_ID;
