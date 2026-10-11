@@ -15,7 +15,7 @@
   - 例子(反)：主干构建这时第一行是「出错」 — 谁检查：`process-block.mts` a 的反例
 
 ## 还没答上的问题
-- 无。E8（一步没做、只想了 ≥3 秒时留一行「想了 N 秒」）和 10-06 定的「只读回合不留过程行」相反，这次没做，交用户定。
+- 无。E8（一步没做、只想了 ≥3 秒时留一行「想了 N 秒」）不做：10-11 用户定，保持 10-06「只读回合不留过程行」，因为回答下面一排已经写了耗时。
 
 ## 技术前提
 - 前提：过程块收尾时能量出标题放不放得下。小实验：原型 `receipt()` 的做法（`scrollWidth <= clientWidth`），侧栏宽度变了用 ResizeObserver 重排。结果：通过（`process-block.mts` c、c2）。
@@ -31,4 +31,4 @@
 - 受影响的现有用例：step-icons、retry-after-unknown、artifact-open、proactive-card、habit-ask、sidebar-interaction、answer-straight、send-confirm、pay-stop、handoff、panel-tidy、memory-used-line 通过。
 - 没通过但和这次无关：memory-proactive 要 Kimi 登录（令牌快过期）；guided-teaching 在主干构建上同样 3 项失败；session-durability 时好时坏，新构建 4 次里 2 次过，主干构建 3 次里 1 次过，失败都卡在重启后等原会话历史。
 - 用例覆盖了 issue 边界表的 E1/E2（回放）、E4、E9（只单列长思考）、E14、E16、E18。没有逐条写用例的：E3 减弱动态、E5 出错结束、E6 中止、E7 只做一步、E10、E11 准备动作、E12 接管、E13 插话、E15 长短名、E17、E19 30 步；代码按表处理，没有机器证据。
-- E8 没做（见上）。
+- E8 不做（用户 10-11 定，见上）。
