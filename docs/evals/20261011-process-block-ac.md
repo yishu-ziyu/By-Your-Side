@@ -29,6 +29,6 @@
 - R1–R5 通过：`process-block.mts` 6 项通过（截图在证据目录：进行中、380px 和 300px 回执、展开记录）。用主干构建跑同一用例，a–d 失败：第一行是「出错 9 秒」、侧栏有「0.0s」、回执只有「做了 4 步」、记录里没有思考段；e 两边都通过，只防回放出问题。
 - R6 通过：同一用例 a。改动在 `run-orb.ts`：一步没做成只在整轮结束时算出错。
 - 受影响的现有用例：step-icons、retry-after-unknown、artifact-open、proactive-card、habit-ask、sidebar-interaction、answer-straight、send-confirm、pay-stop、handoff、panel-tidy、memory-used-line 通过。
-- 没通过但和这次无关：memory-proactive 要 Kimi 登录（令牌快过期）；guided-teaching 在主干构建上同样 3 项失败；session-durability 时好时坏，新构建 4 次里 2 次过，主干构建 3 次里 1 次过，失败都卡在重启后等原会话历史。
+- 没通过但和这次无关：memory-proactive 要 Kimi 登录（令牌快过期）；guided-teaching 在主干构建上同样 3 项失败；session-durability 时好时坏，新构建 4 次里 2 次过，主干构建 3 次里 1 次过，10-11 改动之前的版本 6 次里也失败 3 次；失败都卡在重启后侧栏把上次会话当空会话、不回放历史。
 - 用例覆盖了 issue 边界表的 E1/E2（回放）、E4、E9（只单列长思考）、E14、E16、E18。没有逐条写用例的：E3 减弱动态、E5 出错结束、E6 中止、E7 只做一步、E10、E11 准备动作、E12 接管、E13 插话、E15 长短名、E17、E19 30 步；代码按表处理，没有机器证据。
 - E8 不做（用户 10-11 定，见上）。
