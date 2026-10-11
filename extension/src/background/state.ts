@@ -350,7 +350,7 @@ export async function setWorkingTab(id: number | null, key: string = LEAD_SESSIO
 export async function guardToolAccess(name: string, key: string, explicitTabId?: number): Promise<void> {
   if (name === "worker_tabs" || name === "list_tabs" || name === "get_active_tab") return;
 
-  if (isLeadSession(parseExecutionKey(key).sessionId) && ["snapshot", "read_element", "read_elements"].includes(name)) return;
+  if (isLeadSession(parseExecutionKey(key).sessionId) && ["snapshot", "page_text", "read_element", "read_elements"].includes(name)) return;
   const normalized = keyOf(key);
   const tabId = explicitTabId ?? await getWorkingTabId(normalized);
 

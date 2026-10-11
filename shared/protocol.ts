@@ -403,6 +403,7 @@ export const TOOL_NAMES = [
   "close_tab",
   "navigate",
   "snapshot",
+  "page_text",
   "click",
   "hover",
   "fill",
@@ -582,6 +583,8 @@ export interface ToolContract {
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; documentId?:string; download?: NavigationDownload; note?: string } };
   snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string; /** With viewScopeId: collect the page again, then show that partition if it still exists. */ fresh?: boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
+  /** 发送前读页用的页面正文（宿主调用，不挂调试器）；模型自己读页用 snapshot。 */
+  page_text: { params: { tabId?: number; max?: number }; data: { text: string; totalChars: number; tabId: number; url?: string; title?: string } };
   click: {
     params: {
       tabId?: number;
