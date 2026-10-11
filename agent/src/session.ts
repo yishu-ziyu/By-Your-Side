@@ -1057,23 +1057,30 @@ return;}
     const epoch=this.controlEpoch,run=this.deliveryRunId();
 
     try {
-      // 读正文，不读整棵 AX 树：AX 树前 12,000 字大多是导航和元素编号，模型不信它，又重读 2–3 轮（#255）；取 AX 树还要挂调试器（#260）。
-      const data = (await this.rpc.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS)) as { text?: unknown; totalChars?: unknown };
+      // 正文和 AX 树都给（10-11 用户定）：只给 AX 树时正文被导航和编号挤掉，模型不信、重读 2–3 轮（#255）；
+      // 只给正文时动作任务没有编号，中位从 3 轮变成 7 轮（docs/evals/20261011-read-main-text.md）。哪一样读失败就只给另一样。
+      const [main, tree] = await Promise.all([
+        (this.rpc.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown }>).catch(() => null),
+        (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown }>).catch(() => null),
+      ]);
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
-      const text = typeof data?.text === "string" ? data.text.trim() : "";
+      const text = typeof main?.text === "string" ? main.text.trim() : "";
+      const ax = typeof tree?.text === "string" ? tree.text.trim() : "";
 
-      if (!text) return null;
-      this.emitReadObservation(id, 'snapshot', { tabId }, data, false);
-      const total = typeof data.totalChars === "number" ? data.totalChars : text.length;
+      if (!text && !ax) throw new Error("读不到这个页面");
+      this.emitReadObservation(id, 'snapshot', { tabId }, ax ? tree : main, false);
+      const total = typeof main?.totalChars === "number" ? main.totalChars : text.length;
+      const clip = (value: string, what: string) => value.length > PRE_OBSERVATION_TEXT_MAX ? `${value.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[${what} shortened to its first ${PRE_OBSERVATION_TEXT_MAX} characters.]` : value;
 
-      const clipped = total > text.length
-        ? `${text}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part.]`
-        : text;
+      const body = [
+        text && (total > text.length ? `${text}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part.]` : text),
+        ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
+      ].filter(Boolean).join("\n\n");
 
-      this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: clipped.length });
+      this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: body.length, mainText: text.length, tree: ax.length });
 
-      return freshPageObservationText(context, clipped, true);
+      return freshPageObservationText(context, body, text ? (ax ? "both" : "text") : "tree");
     } catch (error) {
       this.runTrace.record("pre_observation_failed", {
         phase,
@@ -2543,13 +2550,15 @@ export function extractImages(attachments?: Attachment[]): SessionImageContent[]
  * 新任务首条消息尾部的当前页观察：模型可以直接动手，不必再花一轮 snapshot。
  * 页面内容走不可信边界包裹，凭据样式文本先脱敏（与 snapshot 工具回执同一处理）。
  */
-/** mainText：发送前读的页面正文（没有元素编号）；否则是重启时读的快照（带编号）。 */
-export function freshPageObservationText(context: PageContext, snapshotText: string, mainText = false): string {
+/** kind：发送前读的是正文加 AX 树（both）、只有正文（text），还是只有 AX 树（tree，重启续做时也是它）。 */
+export function freshPageObservationText(context: PageContext, snapshotText: string, kind: "both" | "text" | "tree" = "tree"): string {
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
 
   return [
     "[FRESH PAGE OBSERVATION — read by the runtime just now, before this task started]",
-    mainText
+    kind === "both"
+      ? `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at: its main text, then its accessibility tree with element refs. Answer questions about it from the main text in your first round; do not re-read it. Act on it with the refs in the tree.]`
+      : kind === "text"
       ? `[This is the main text of tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Answer questions about it from this text in your first round; do not re-read it. It has no element refs: to act on the page, snapshot it first or inside browser_run.]`
       : `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
     wrapPageContent(redactCredentialText(snapshotText), { tabId: context.tabId, title: context.title, url: context.url }),
