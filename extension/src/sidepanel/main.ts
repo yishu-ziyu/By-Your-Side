@@ -51,7 +51,7 @@ import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.j
 import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTestResult } from "./error-card.js";
 import { describeModelError } from "../../../shared/user-facing.js";
-import { INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
+import { INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
 import { chipLabel } from "./models.js";
 import { mountThinkingChip } from "./thinking-chip.js";
@@ -672,15 +672,35 @@ let lastSentPage: { requestId: string; page: Promise<PageContext | undefined> } 
 
 let resending: { conversationId: string; text: string; bubble: HTMLElement | null } | null = null;
 
+/**
+ * 用户存过主模型。宿主列模型失败时 hello_ok 也会是空目录：存过就不当成「没连」（#244 审阅）。
+ * 只用来否决「没连」，不触发重发：刚存好时宿主可能还没就绪，重发要等它带着模型回 hello_ok。
+ */
+let modelSaved: boolean | null = null;
+
+/** 宿主上一次报的有没有模型：自动重发只看它从没有变成有。 */
+let hostReportedModel: boolean | null = null;
+
+void chrome.storage.local.get(INPROC_CONFIG_KEY).then((stored) => {
+  modelSaved = !!stored[INPROC_CONFIG_KEY];
+
+  if (modelSaved && modelConnected === false) { modelConnected = true; paintStarterModelState(); }
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && INPROC_CONFIG_KEY in changes) modelSaved = !!changes[INPROC_CONFIG_KEY]!.newValue;
+});
+
 /** hello_ok / model_info 告诉侧栏有没有模型。目录（models）比 model 可靠：别的会话回放的 hello_ok 可能不带 model。 */
 function noteModelPresence(model: string | undefined, models: ModelOption[] | undefined): void {
-  const was = modelConnected;
-  modelConnected = !!model || !!models?.length;
+  const was = hostReportedModel;
+  hostReportedModel = !!model || !!models?.length;
+  modelConnected = hostReportedModel || modelSaved === true;
   paintStarterModelState();
 
   if (bootFreshSession && !modelConnected && bootInheritedId !== null) resolveBootSession(bootInheritedId, conversations.size > 0);
 
-  if (was !== false || !modelConnected) return;
+  if (was !== false || !hostReportedModel) return;
   const pending = resendAfterConnect.get(selectedConversationId);
   resendAfterConnect.clear();
 
@@ -5428,6 +5448,9 @@ function restoreLostSend(): void {
 
   if (!lost || lost.postedOn === "queued" || lost.postedOn === port || lost.conversationId !== selectedConversationId) return;
   unconfirmedSend = null;
+
+  // 自动重发那次没送到：之后用户自己再发同一句，要画新气泡，不能接回上面的旧气泡。
+  if (resending?.conversationId === lost.conversationId && resending.text === lost.text) resending = null;
 
   // 用户已经在写新内容就不覆盖，只提示。
   if (!inputEl.value.trim() && !pendingAsk) {
