@@ -2055,9 +2055,8 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
           }
         }
 
-        const entries = panelHistory.since(afterSeq ?? 0);
-
-        if (entries.length > 0) port.postMessage({ kind: "history", entries, replay: true } satisfies BgToPanel);
+        // 没有记录也要回一条：侧栏收到 history 才算回放完，起点引导等它才出现（#233）。
+        port.postMessage({ kind: "history", entries: panelHistory.since(afterSeq ?? 0), replay: true } satisfies BgToPanel);
         port.postMessage({ kind: "server", msg: { type: "status", state: lastStatus } } satisfies BgToPanel);
 
         if (team.view()) {

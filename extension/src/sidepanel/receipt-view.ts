@@ -18,7 +18,7 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   detail.textContent = copy.detail;
   root.append(summary, detail);
 
-  if (receipt.needsModel) return needsModelCard();
+  if (receipt.needsModel) return needsModelCard(receipt.text.trim() !== '');
 
   if (!receipt.newConversationRequest || receipt.status !== 'rejected') return root;
   summary.textContent = '查看原请求';
@@ -50,14 +50,17 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   return decision;
 }
 
-/** 没连模型时的回复：一个能点的入口，不让用户自己去找「更多 → 模型与语音」。 */
-function needsModelCard(): HTMLElement {
+/**
+ * 没连模型时的回复：一个能点的入口，不让用户自己去找「更多 → 模型与语音」。
+ * 有原话时，侧栏在连好模型后自动重发它（main.ts 的 resendAfterConnect）；只有图片没有字时不重发。
+ */
+function needsModelCard(resends: boolean): HTMLElement {
   const card = document.createElement('section');
   card.className = 'msg receipt-decision';
   const title = document.createElement('strong');
   title.textContent = '还没连模型';
   const description = document.createElement('p');
-  description.textContent = '连好以后，把刚才的话再发一次。';
+  description.textContent = resends ? '连好以后，这句话会自动发出。' : '连好以后，把刚才的话再发一次。';
   const actions = document.createElement('div');
   const connect = document.createElement('button');
   connect.type = 'button'; connect.textContent = '连一个模型';
@@ -65,4 +68,20 @@ function needsModelCard(): HTMLElement {
   actions.append(connect); card.append(title, description, actions);
 
   return card;
+}
+
+/** 侧栏不会替用户重发这句（回放的旧卡片、不是这个面板发的话）：改回请用户自己再发。 */
+export function noteNeedsModelManual(card: HTMLElement): void {
+  const description = card.querySelector('p');
+
+  if (description) description.textContent = '连好以后，把刚才的话再发一次。';
+}
+
+/** 连好模型后侧栏已重发原话：卡片只留结果，不再提示去连模型。 */
+export function markNeedsModelResent(card: HTMLElement, model: string | null): void {
+  const title = card.querySelector('strong');
+
+  if (title) title.textContent = model ? `已用 ${model} 重新发送` : '已重新发送';
+  card.querySelector('p')?.remove();
+  card.querySelector('div')?.remove();
 }
