@@ -33,6 +33,7 @@ export class TraceRecorder {
   private started = 0;
   private turnStarted = 0;
   private firstResponse = false;
+  private firstText = false;
   private tools = new Map<string, number>();
   private queue = Promise.resolve();
   private prepared = false;
@@ -51,6 +52,7 @@ export class TraceRecorder {
     this.turn = 0;
     this.started = Date.now();
     this.firstResponse = false;
+    this.firstText = false;
     this.tools.clear();
     this.record("run_start", { text, context, model });
   }
@@ -101,6 +103,13 @@ export class TraceRecorder {
         this.record("first_response", { elapsedMs: now - this.turnStarted });
       }
 
+      // 首个正文字：first_response 含思考，用户看到的是正文（#264 的首字口径）。
+      // SAFETY: pi-ai 的 message_update 带 assistantMessageEvent；没有时下面的判断落空。
+      if (!this.firstText && (event.assistantMessageEvent as { type?: string } | undefined)?.type === "text_delta") {
+        this.firstText = true;
+        this.record("first_text", { elapsedMs: now - this.turnStarted });
+      }
+
       return;
     }
 
@@ -119,6 +128,7 @@ export class TraceRecorder {
       this.turn++;
       this.turnStarted = now;
       this.firstResponse = false;
+      this.firstText = false;
     }
 
     if (event.type === "tool_execution_start") this.tools.set(String(event.toolCallId), now);
@@ -132,6 +142,10 @@ export class TraceRecorder {
     }
 
     if (event.type === "turn_end") {
+      // 只留用量：缓存命中（cacheRead）要看得出提示词前缀有没有被打碎（#258）。
+      // SAFETY: turn_end 的 message 是 pi-ai 的 AssistantMessage；没有 usage 时记 undefined。
+      const usage = (event.message as { usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } } | undefined)?.usage;
+      data.usage = usage && { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite };
       delete data.message;
       delete data.toolResults;
       data.elapsedMs = now - this.turnStarted;
