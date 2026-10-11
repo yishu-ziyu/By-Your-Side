@@ -1,20 +1,31 @@
 #!/usr/bin/env node
 /**
- * Failure-review page for one eval run: node eval/harness/review.mjs <runDir> [--all]
+ * Failure-review page for one eval run: node eval/harness/review.mjs <runDir> [--all] [--sample-pass=N] [--serve[=port]]
  * Writes <runDir>/review.html (one self-contained file; screenshots are relative <img> links into the run dir).
  * One card per task that did not pass (fail / undeterminable / judge_error) in some model spec, grouped by tier
- * then category; --all also shows passed and not-yet-judged results. The reviewer marks each result
- * 能接受 / 不能接受 / 判错了 (+ optional note); marks live in the browser's localStorage and are exported as
- * review-<runId>.json. Reads only: <spec slug>/<task>.json, .trace.jsonl, -page.png, -panel.png, .png and
+ * then category, plus N passed results drawn with a fixed seed (default 5) so passes get spot-checked too;
+ * --all shows every result. The reviewer marks each result 能接受 / 不能接受 / 判错了 (keys 1/2/3, N = next)
+ * with a note and the first thing that went wrong.
+ * Marks always go to the browser's localStorage. With --serve the page is served from 127.0.0.1 and every mark is
+ * also appended to <runDir>/review-decisions.jsonl and read back on load, so marks survive a cleared browser (#241).
+ *   --import=<review-<runId>.json>  convert an older browser export into review-decisions.jsonl
+ *   --labels                        copy review-decisions.jsonl to eval/judge_validation/labels/<runId>.jsonl Reads only: <spec slug>/<task>.json, .trace.jsonl, -page.png, -panel.png, .png and
  * judge/<spec slug>/<task>.json (see job.mjs, judge.mjs); pass rates follow analyze.py.
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { basename, extname, join, resolve, sep } from "node:path";
 import { EVAL_DIR, TASKS_FILE } from "./paths.mjs";
 
 const args = process.argv.slice(2);
 
 const SHOW_ALL = args.includes("--all");
+
+const flag = (name) => args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`))?.split("=")[1];
+
+const SAMPLE_PASS = SHOW_ALL ? 0 : Number(flag("sample-pass") ?? 5);
+
+const SERVE = args.some((a) => a === "--serve" || a.startsWith("--serve="));
 
 const runArg = args.find((a) => !a.startsWith("--"));
 
@@ -27,6 +38,28 @@ const meta = existsSync(join(RUN, "run.json")) ? JSON.parse(readFileSync(join(RU
 const RUN_ID = meta.runId ?? basename(RUN);
 
 const CAP_MIN = meta.capMs ? Math.round(meta.capMs / 60000) : 4;
+
+const DECISIONS = join(RUN, "review-decisions.jsonl");
+
+const decisionLine = (d) => JSON.stringify({ runId: RUN_ID, task: d.task, spec: d.spec ?? d.config, mark: d.mark ?? null, note: d.note ?? "", first_failure: d.first_failure ?? "", reviewer: d.reviewer ?? "owner", at: d.at ?? new Date().toISOString() });
+
+// One-shot commands: run and exit without writing the page.
+if (flag("import")) {
+  const old = JSON.parse(readFileSync(resolve(flag("import")), "utf8"));
+  appendFileSync(DECISIONS, (old.decisions ?? []).map((d) => decisionLine(d) + "\n").join(""));
+  console.log(`${DECISIONS}  (+${old.decisions?.length ?? 0} marks from ${flag("import")})`);
+  process.exit(0);
+}
+
+if (args.includes("--labels")) {
+  if (!existsSync(DECISIONS)) { console.error(`no ${DECISIONS}; mark something with --serve first`); process.exit(1); }
+  const dir = join(EVAL_DIR, "judge_validation", "labels");
+  mkdirSync(dir, { recursive: true });
+  const target = join(dir, `${RUN_ID.replaceAll("/", "_")}.jsonl`);
+  copyFileSync(DECISIONS, target);
+  console.log(`${target}\n提交前看一遍备注：不要留下密钥、密码或个人信息。`);
+  process.exit(0);
+}
 
 
 // Same labels as scripts/maintenance/dashboard.mjs.
@@ -212,7 +245,7 @@ function columnHtml(r) {
   const tools = r.tr.n_tool_calls ?? r.tr.n_steps;
 
   return `<div class="col">
-<div class="cfg">${esc(configLabel(r.model))}</div>
+<div class="cfg">${esc(configLabel(r.model))}${SAMPLED.has(r) ? ` <span class="chip">随机抽查的通过</span>` : ""}</div>
 <div class="row"><span class="label">判分结果</span><span class="verdict ${vCls}">${esc(vLabel)}</span>${r.judge?.reason ? `<div class="reason">${esc(r.judge.reason)}</div>` : ""}</div>
 <div class="row"><span class="label">助手最后的回复</span>${answer ? `<div class="answer">${esc(answer)}</div>` : `<div class="muted">（没有回复）</div>`}</div>
 <div class="row meta muted small">用时 ${r.tr.seconds_total == null ? "—" : `${esc(r.tr.seconds_total)} 秒`} · 调用了 ${tools == null ? "—" : esc(tools)} 次工具 · 状态 ${esc(r.tr.status)}</div>
@@ -220,7 +253,8 @@ ${tags.length ? `<div class="row guess"><span class="label">初步猜测（只�
 ${shotHtml(r)}
 <div class="decide" data-key="${esc(key)}" data-task="${esc(r.tr.id)}" data-config="${esc(r.model)}">
 <button type="button" data-mark="accept">能接受</button><button type="button" data-mark="reject">不能接受</button><button type="button" data-mark="misjudged">判错了</button>
-<input type="text" placeholder="一句话备注（可不填）" maxlength="300">
+<input type="text" data-field="note" placeholder="一句话备注（可不填）" maxlength="300">
+<input type="text" data-field="first_failure" placeholder="第一处不对：只写最早出错的一处" maxlength="300">
 </div>
 </div>`;
 }
@@ -237,6 +271,21 @@ function cardHtml(task, rs, others) {
 </article>`;
 }
 
+/** Passed results to spot-check: a fixed-seed shuffle, so the same run always samples the same ones. */
+function samplePasses() {
+  const passed = results.filter((r) => r.verdict === "pass").sort((a, b) => `${a.tr.id}|${a.model}`.localeCompare(`${b.tr.id}|${b.model}`));
+  let seed = 241;
+  const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648;
+
+    return seed / 2147483648; };
+
+  for (let i = passed.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [passed[i], passed[j]] = [passed[j], passed[i]]; }
+
+  return new Set(passed.slice(0, SAMPLE_PASS));
+}
+
+const SAMPLED = samplePasses();
+
 function cardsHtml() {
   const byTask = new Map();
 
@@ -248,7 +297,7 @@ function cardsHtml() {
 
   for (const [, rs] of [...byTask].sort(([a], [b]) => a.localeCompare(b))) {
     rs.sort((a, b) => order(a) - order(b));
-    const review = SHOW_ALL ? rs : rs.filter((r) => r.verdict !== "pass" && r.verdict !== "none");
+    const review = SHOW_ALL ? rs : rs.filter((r) => (r.verdict !== "pass" && r.verdict !== "none") || SAMPLED.has(r));
 
     if (!review.length) continue;
     const others = rs.filter((r) => !review.includes(r));
@@ -319,6 +368,7 @@ h3.sub{margin:22px 0 10px;font-size:14px;color:var(--muted);font-weight:600}
 .decide button.on[data-mark=accept]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
 .decide button.on[data-mark=reject]{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
 .decide button.on[data-mark=misjudged]{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.decide.current{outline:2px solid var(--accent);outline-offset:6px;border-radius:6px}
 .decide input{flex:1 1 200px;font:inherit;font-size:14px;padding:4px 10px;border:1px solid var(--line);border-radius:8px}
 .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);border-top:1px solid var(--line);padding:10px 32px;display:flex;justify-content:center;gap:24px;align-items:center;font-size:14px}
 .bar button{font:inherit;font-size:14px;padding:6px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
@@ -331,13 +381,21 @@ const JS = `
 const RUN_ID = ${JSON.stringify(RUN_ID).replaceAll("<", "\\u003c")};
 const PREFIX = "bys-review:";
 const load = (k) => { try { return JSON.parse(localStorage.getItem(PREFIX + k)) || {}; } catch { return {}; } };
-const save = (k, v) => localStorage.setItem(PREFIX + k, JSON.stringify(v));
+// Opened through --serve: every change is also appended to review-decisions.jsonl next to the run.
+const SERVED = location.protocol.startsWith("http");
+const save = (k, v) => {
+  try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); } catch {}
+  if (!SERVED) return;
+  const box = boxes.find((b) => b.dataset.key === k);
+  fetch("decisions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task: box.dataset.task, spec: box.dataset.config, mark: v.mark ?? null, note: v.note ?? "", first_failure: v.first_failure ?? "" }) })
+    .then((r) => { if (!r.ok) throw new Error(r.status); document.getElementById("saved").textContent = "已写进 review-decisions.jsonl"; })
+    .catch(() => { document.getElementById("saved").textContent = "没写进文件，只存在浏览器里"; });
+};
 const boxes = [...document.querySelectorAll(".decide")];
 function paint(box) {
   const d = load(box.dataset.key);
   box.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.mark === d.mark));
-  const input = box.querySelector("input");
-  if (document.activeElement !== input) input.value = d.note || "";
+  box.querySelectorAll("input").forEach((input) => { if (document.activeElement !== input) input.value = d[input.dataset.field] || ""; });
 }
 function progress() {
   const done = boxes.filter((b) => load(b.dataset.key).mark).length;
@@ -352,12 +410,32 @@ boxes.forEach((box) => {
     d.mark = d.mark === b.dataset.mark ? undefined : b.dataset.mark;
     save(box.dataset.key, d); paint(box); progress();
   });
-  box.querySelector("input").addEventListener("input", (e) => { const d = load(box.dataset.key); d.note = e.target.value; save(box.dataset.key, d); });
+  box.querySelectorAll("input").forEach((input) => input.addEventListener("change", (e) => { const d = load(box.dataset.key); d[e.target.dataset.field] = e.target.value; save(box.dataset.key, d); }));
 });
 progress();
+// Marks written to the file win over this browser: a cleared or different browser gets them back.
+if (SERVED) fetch("decisions").then((r) => r.json()).then((rows) => {
+  for (const row of rows) {
+    const box = boxes.find((b) => b.dataset.task === row.task && b.dataset.config === row.spec);
+    if (!box) continue;
+    try { localStorage.setItem(PREFIX + box.dataset.key, JSON.stringify({ mark: row.mark ?? undefined, note: row.note, first_failure: row.first_failure })); } catch {}
+    paint(box);
+  }
+  progress();
+}).catch(() => {});
+// Keys: 1 能接受, 2 不能接受, 3 判错了, N next card. Not while typing.
+let current = 0;
+const focusBox = (i) => { boxes.forEach((b) => b.classList.remove("current")); current = Math.max(0, Math.min(boxes.length - 1, i)); boxes[current]?.classList.add("current"); boxes[current]?.scrollIntoView({ block: "center", behavior: "smooth" }); };
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey || !boxes.length) return;
+  const mark = { 1: "accept", 2: "reject", 3: "misjudged" }[e.key];
+  if (mark) { boxes[current].querySelector("button[data-mark=" + mark + "]").click(); focusBox(current); }
+  else if (e.key === "n" || e.key === "N") focusBox(current + 1);
+});
+if (boxes.length) focusBox(0);
 function exportDecisions() {
   const decisions = boxes.map((b) => ({ task: b.dataset.task, config: b.dataset.config, ...load(b.dataset.key) }))
-    .filter((d) => d.mark || d.note).map((d) => ({ task: d.task, config: d.config, mark: d.mark || null, note: d.note || "" }));
+    .filter((d) => d.mark || d.note || d.first_failure).map((d) => ({ task: d.task, config: d.config, mark: d.mark || null, note: d.note || "", first_failure: d.first_failure || "" }));
   return { runId: RUN_ID, decisions };
 }
 document.getElementById("export").addEventListener("click", () => {
@@ -380,12 +458,12 @@ const html = `<!doctype html>
 <title>评测复核 · ${esc(RUN_ID)}</title><style>${CSS}</style></head>
 <body><main>
 <h1>评测复核</h1>
-<p class="lead">逐题看助手${SHOW_ALL ? "的全部结果" : "没做对的地方"}，判断这个结果你能不能接受，或者是判分本身判错了。判断只存在这台电脑的浏览器里，看完点底部「导出我的判断」。</p>
+<p class="lead">逐题看助手${SHOW_ALL ? "的全部结果" : "没做对的地方"}，判断这个结果你能不能接受，或者是判分本身判错了。${SERVE ? "每标一条就写进运行目录的 review-decisions.jsonl。" : "判断只存在这个浏览器里，看完点底部「导出我的判断」；用 --serve 打开时会直接写进文件。"}键盘：1 能接受，2 不能接受，3 判错了，N 下一条。</p>
 ${summaryHtml()}
 ${cardsHtml()}
 <p class="evidence">生成于 ${esc(localTime(Date.now()))} · node eval/harness/review.mjs ${esc(runArg)}${SHOW_ALL ? " --all" : ""}</p>
 </main>
-<div class="bar"><span id="progress"></span><button type="button" id="export">导出我的判断</button></div>
+<div class="bar"><span id="progress"></span><span id="saved" class="muted"></span><button type="button" id="export">导出我的判断</button></div>
 <div class="zoom" id="zoom"><img alt="放大的截图"></div>
 <script>${JS}</script>
 </body></html>
@@ -395,4 +473,40 @@ const out = join(RUN, "review.html");
 
 writeFileSync(out, html);
 
-console.log(`${out}  (${results.length} results, ${(html.match(/class="decide"/g) ?? []).length} to review)`);
+console.log(`${out}  (${results.length} results, ${(html.match(/class="decide"/g) ?? []).length} to review, ${SAMPLED.size} passes sampled)`);
+
+if (SERVE) {
+  const TYPES = { ".html": "text/html; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".json": "application/json", ".jsonl": "text/plain; charset=utf-8" };
+  const server = createServer((req, res) => {
+    const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+
+    if (path === "/decisions" && req.method === "GET") {
+      // Last line per (task, spec) wins.
+      const rows = existsSync(DECISIONS) ? readFileSync(DECISIONS, "utf8").split("\n").filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }) : [];
+      const latest = new Map(rows.map((r) => [`${r.task}|${r.spec}`, r]));
+
+      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify([...latest.values()]));
+    }
+
+    if (path === "/decisions" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 20_000) req.destroy(); });
+      req.on("end", () => {
+        try { const d = JSON.parse(body);
+
+          if (typeof d.task !== "string" || typeof d.spec !== "string") throw new Error("task/spec");
+          appendFileSync(DECISIONS, decisionLine(d) + "\n");
+          res.writeHead(204).end(); } catch { res.writeHead(400).end(); }
+      });
+
+      return;
+    }
+
+    const file = resolve(RUN, "." + (path === "/" ? "/review.html" : path));
+
+    if (!file.startsWith(RUN + sep) || !existsSync(file)) return res.writeHead(404).end();
+    res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" }).end(readFileSync(file));
+  });
+  const port = Number(flag("serve") ?? 0);
+  server.listen(port, "127.0.0.1", () => console.log(`http://127.0.0.1:${server.address().port}/  (Ctrl+C to stop; marks go to ${DECISIONS})`));
+}

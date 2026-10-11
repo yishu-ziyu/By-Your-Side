@@ -16,15 +16,19 @@ Judge results whose verdict is missing, stale or judge_error, then rebuild repor
    each verdict stores judge_version + result_sha, so a judge bump or a rerun result is re-judged)
 Old-vs-new judge chart: python3 eval/harness/chart_rejudge.py [out.png]  (reads eval/splits/baseline_judge_v3.json)
 Re-group failure reasons (codex):   python3 eval/harness/cluster.py eval/runs/<run-id>  (then finalize.sh again)
-Failure review page for the product owner: node eval/harness/review.mjs eval/runs/<run-id> [--all]
+Failure review page for the product owner: node eval/harness/review.mjs eval/runs/<run-id> [--all] [--sample-pass=N] [--serve[=port]]
   -> runs/<run>/review.html (self-contained; screenshots are relative links, so open it inside the run dir).
   Top: pass rate per model spec x tier vs eval/tasks/tiers.json target (analyze.py rules). One card per task that is
-  fail / undeterminable / judge_error in some spec (--all: every result, incl. passed and not yet judged), grouped
+  fail / undeterminable / judge_error in some spec, plus N passed results drawn with a fixed seed (default 5, marked
+  随机抽查的通过; --all: every result, incl. passed and not yet judged), grouped
   by tier then category; failing specs side by side. Each card: prompt, site, success rule, final reply, verdict +
   reason, page + panel screenshots (click to enlarge), time/tool calls, and a data-only 初步猜测 (timeout, no reply,
   tool errors, 当前写入已暂停, failed side_call, panel error, denied confirmation, setup not applied, judge error).
-  Marks 能接受 / 不能接受 / 判错了 + note are kept in localStorage (key bys-review:<runId>|<task>|<spec>);
-  导出我的判断 downloads review-<runId>.json = {runId, decisions:[{task, config, mark: accept|reject|misjudged, note}]}.
+  Marks 能接受 / 不能接受 / 判错了 (keys 1/2/3, N = next) + note + 第一处不对 are kept in localStorage
+  (key bys-review:<runId>|<task>|<spec>). With --serve the page is served on 127.0.0.1 and every change is also
+  appended to runs/<run>/review-decisions.jsonl = {runId, task, spec, mark, note, first_failure, reviewer, at}
+  (last line per task+spec wins) and read back on load. --import=review-<runId>.json converts an older download;
+  --labels copies the file to eval/judge_validation/labels/ for judge validation (check notes for secrets first).
 
 Complexity ladder (docs/evals/20261006-complexity-ladder.md): node eval/harness/ladder.mjs --tag X --models openai-codex/gpt-6-luna [--repeats 3]
   runs eval/tasks/ladder.json level by level and writes runs/ladder-X/ladder.md. Task fields it adds: `level`; `takeover` {when, edit}
