@@ -11,6 +11,8 @@ Evaluator:  人评并排 HTML。机器：资源存在性、无控制台报错、
 Evidence:   本卡 + docs/evals/20260905-lil-pix-composer.html + docs/evals/assets/lil-pix/*.png
 ```
 
+> 2026-10-11：小精灵方案未进产品，`assets/lil-pix/` 和 `assets/rauno_video.mp4` 已删除，需要时从 git 历史取回。
+
 ## 这一步真正要判断的 3 件事
 
 1. **三种边框游走动线，哪种节奏感最好、最可爱且不干扰日常使用**：
