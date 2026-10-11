@@ -130,7 +130,7 @@ try {
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#key-sheet-save").disabled === false') || undefined, 20_000, "good key test passes");
   await rp.screenshot(panel, join(artifacts, "auth-sheet.png"));
   await rp.click(panel, "#key-sheet-save");
-  await recovered("auth", /出过错.*换.*key.*从出错处继续/);
+  await recovered("auth", /出过错.*换.*密钥.*从出错处继续/);
   evidence.storedKey = await rp.evaluate(panel, 'chrome.storage.local.get("inproc_cred:custom").then(v => v["inproc_cred:custom"]?.key)');
   assert.equal(evidence.storedKey, "good-key", "the new key is saved for later tasks");
   await rp.screenshot(panel, join(artifacts, "auth-final.png"));
