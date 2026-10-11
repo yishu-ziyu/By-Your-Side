@@ -14,6 +14,9 @@ const PROTOCOL_VERSION = "1.3";
 
 const IDLE_MS = 15_000;
 
+/** 所有对话都做完、回答后的核对也结束时的空闲断开等待（#260）。 */
+const SETTLED_IDLE_MS = 1_000;
+
 const attached = new Set<number>();
 
 const inFlight = new Map<number, Promise<void>>();
@@ -51,6 +54,16 @@ async function detachIdle(): Promise<void> {
   await Promise.all(targets.map((id) => detach(id)));
 
   if (attached.size > 0) scheduleIdleDetach();
+}
+
+/** 没有任务在用调试器了：不等满 15 秒，很快断开，页面顶上的横幅随之消失。之后再有命令，照常按 15 秒重新计时。 */
+export function detachSoon(): void {
+  if (attached.size === 0) return;
+
+  if (idleTimer !== null) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    void detachIdle();
+  }, SETTLED_IDLE_MS);
 }
 
 /** 事件 arm 期间保持 attach；成对 releaseAttachHold。 */

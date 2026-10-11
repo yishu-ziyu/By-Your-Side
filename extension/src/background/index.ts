@@ -66,7 +66,7 @@ import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
-import { setDebugBannerNotice } from "./debugger.js";
+import { detachSoon, setDebugBannerNotice } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
@@ -473,6 +473,18 @@ void (async () => {
 
  transport.start();
 })();
+
+/** 在跑任务的对话、回答后还在核对目标的对话。两者都空时，调试器很快断开，不等满 15 秒（#260）。 */
+const busyConversations = new Set<string>();
+const checkingConversations = new Set<string>();
+
+function noteRunSettle(conversationId: string, change: { busy?: boolean; checking?: boolean }): void {
+  if (change.busy !== undefined) (change.busy ? busyConversations.add(conversationId) : busyConversations.delete(conversationId));
+
+  if (change.checking !== undefined) (change.checking ? checkingConversations.add(conversationId) : checkingConversations.delete(conversationId));
+
+  if (!busyConversations.size && !checkingConversations.size) detachSoon();
+}
 
 function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
@@ -1244,6 +1256,8 @@ return;}
       else if (msg.state === "idle") activityBySession.delete(sid);
       lastStatus = aggregateRunState(statusBySession.values());
       persistControl();
+      // 新一轮开始时，上一轮没发结论就作废的核对也算结束。
+      noteRunSettle(conversationId, msg.state === "running" ? { busy: true, checking: false } : { busy: lastStatus !== "idle" });
 
       if (msg.state === "idle") commitTrail(key(sid));
 
@@ -1258,6 +1272,8 @@ return;}
       }
     } else if (msg.type === "agent_event") {
       const sid = msg.sessionId ?? LEAD_SESSION_ID;
+
+      if (msg.event.kind === "goal_check") noteRunSettle(conversationId, { checking: msg.event.status === "checking" });
 
       if (msg.event.kind === "tool_start") {
         activityBySession.set(sid, msg.event.name === "await_message" ? "waiting_message" : "waiting_tool");
