@@ -139,7 +139,7 @@ function openAICompatible(id: string, name: string, baseUrl: string, modelIds: r
   return { provider, models };
 }
 
-const STEPFUN_MODELS = ["step-3.7-flash", "step-3.5-flash", "step-5-preview"];
+const STEPFUN_MODELS = ["step-3.7-flash", "step-3.5-flash-2603", "step-5-preview"];
 
 /**
  * 文字模型只走 Step Plan 通道，扣套餐 Credit。同一个 key 发到普通 `/v1` 也能成功，但扣的是 API 余额，
