@@ -132,6 +132,12 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: label ? `${short}「${clip(label)}」` : `${short}内容` };
     }
 
+    case "js": {
+      const purpose = str(params.purpose);
+
+      return { short, full: purpose ? clip(purpose, 32) : short };
+    }
+
     case "arm_event":
       return params.type === "download" ? { short: "准备接收下载", full: "准备接收下载" } : { short, full: short };
 
@@ -325,11 +331,11 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
-/** 过程行标题：做了几步，以及没做成/中止。 */
+/** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链（#263）。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed"): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
 
-  if (outcome === "failed") return `${done}，有 1 步没做成`;
+  if (outcome === "failed") return `${done} · 有 1 步没做成`;
 
   if (outcome === "stopped") return `已中止 · ${done}`;
 
@@ -429,6 +435,8 @@ export function pastAction(name: string, params: Parameters<typeof describeTool>
 
   if (words && label) return `${words.verb}了「${clip(label)}」`;
 
+  if (name === "js" && str(params.purpose)) return clip(str(params.purpose)!, 32);
+
   return describeTool(name, params).full;
 }
 
@@ -459,18 +467,45 @@ export function openedPageTitle(resultText: string): string | null {
   return title.length > 30 ? `${title.slice(0, 29)}…` : title;
 }
 
-export interface TrailStep { text: string; dur: string; failed: boolean }
+/**
+ * 回执里的短名，四五个字（#263）：「打开 Studio Gh…」「点作品」「圈出 11 处」。
+ * 有中文时最多 6 个字（英文字母算半个），纯英文最多 14 个字符，超出加「…」。
+ * pageTitle：打开页面这一步结束后取到的标题，没有时用域名。
+ */
+export function shortAction(name: string, params: Parameters<typeof describeTool>[1], pageTitle?: string | null): string {
+  const label = str(params.label);
+  let text: string;
 
-/** 进行中标题下方只露最近 3 步，更早的只计数（「+ 前面 N 步」）。 */
-export interface RecentSteps { shown: TrailStep[]; earlier: number }
+  if (actionKind(name, params) === "open") {
+    const page = pageTitle ?? hostOf(params.url)?.replace(/^www\./, "") ?? "页面";
 
-export function recentSteps(done: TrailStep[]): RecentSteps {
-  const shown = done.slice(-3);
+    text = `打开${/^[\x00-\x7f]/.test(page) ? " " : ""}${page}`;
+  }
+  else if (CURSOR_VERBS.has(name)) text = label ? `${CURSOR_VERBS.get(name)!.verb}${label}` : CURSOR_VERBS.get(name)!.unnamed;
+  else if (name === "type_text") text = label ? `填${label}` : "输入文字";
+  else if (name === "js") text = str(params.purpose) ?? "运行代码";
+  else if (name === "browser_run") text = label ?? "连续操作";
+  else if (name === "press_key") text = str(params.key) ? `按${str(params.key)}` : "按键";
+  else if (name === "mark" && params.clear !== true) {
+    const words = Array.isArray(params.text) ? params.text.length : 0;
 
-  return { shown, earlier: done.length - shown.length };
+    text = words > 1 ? `圈出 ${words} 处` : label ? `圈出${label}` : "圈出内容";
+  } else text = describeTool(name, params).short;
+
+  return shortClip(text);
 }
 
-/** 一步做完、下一步还没开始时的标题：做过事就带上进度，不退回光秃秃的「正在思考」。 */
-export function betweenStepsTitle(doneCount: number): string {
-  return doneCount > 0 ? `正在思考 · 已做 ${doneCount} 步` : "正在思考";
+function shortClip(text: string): string {
+  const t = text.replace(/\s+/g, " ").trim();
+
+  if (!/[\u3400-\u9fff]/.test(t)) return t.length > 14 ? `${t.slice(0, 13)}…` : t;
+  let units = 0;
+
+  for (let i = 0; i < t.length; i++) {
+    units += /[\x00-\x7f]/.test(t[i]!) ? 0.5 : 1;
+
+    if (units > 6) return `${t.slice(0, i)}…`;
+  }
+
+  return t;
 }
