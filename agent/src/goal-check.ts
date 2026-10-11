@@ -29,7 +29,7 @@ export const GOAL_CHECK_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_
 /** 一个任务里宿主最多替用户催几次「接着做」，防止模型和核对来回打转。 */
 export const GOAL_CONTINUE_MAX = 5;
 
-const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer), page (the page it ended on), observations (recent tool results from THIS task), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
+const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer), page (the page it ended on), observations (recent page reads and tool results in this conversation, newest first; page_at_start is the page read when a request began; earlier: true marks reads from an earlier request in this conversation, and that page may have changed since), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
 Before deciding done, check:
 - Numbers and dates repeated in the answer must agree. Recompute totals from the listed components. Counts must use one stated field/criterion throughout; do not mix title and description counts.
 - Source identity, date, scope and units must match the user's request. A CSV for another date does not satisfy a request for a specific date, even if the file exists and the assistant says it is done.
@@ -110,7 +110,7 @@ function isGoalReply(value: unknown): value is { status: "done" | "needs_user" |
 }
 
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
-export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { goal: string[]; goalPage?: { title: string; url: string } | null; lastReply: string; page: { title: string; url: string; text: string } | null; files?: GoalCheckFile[]; observations?: Array<{ tool: string; text: string }>; userTookOver?: boolean }, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
+export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { goal: string[]; goalPage?: { title: string; url: string } | null; lastReply: string; page: { title: string; url: string; text: string } | null; files?: GoalCheckFile[]; observations?: Array<{ tool: string; text: string; earlier?: boolean }>; userTookOver?: boolean }, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
   // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
   const wantsEscapedText = input.goal.some(text => /转义|escaped|literal/i.test(text));
 
@@ -128,7 +128,8 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
   if (totals.length && !asksUser(input.lastReply)) return { status: "continue", remaining: "修正文件的合计", correction: `${totals.slice(0, 4).join("；")}。按原数据重新计算并修正文件，说明纠正。`.slice(0, 800) };
   // 按钮点了没反应（10-09 死按钮实验）：宿主至少两次报告点击后页面没有变化，回答也如实说了，就不再催重试。
   // 次数是宿主的证据，不是模型的说法；不让模型判，因为它在这种情况下 8 次里 7 次催「继续」，把耗时拉到 2–3 倍。
-  const deadClicks = (input.observations ?? []).reduce((count, item) => count + (item.text.match(NO_EFFECT)?.length ?? 0), 0);
+  // 只数这一轮的：前几轮点过没反应的按钮，不代表这一轮也卡住了。
+  const deadClicks = (input.observations ?? []).filter(item => !item.earlier).reduce((count, item) => count + (item.text.match(NO_EFFECT)?.length ?? 0), 0);
 
   if (deadClicks >= 2 && claimsDeadControl(input.lastReply) && !asksUser(input.lastReply)) return { status: "blocked", remaining: plainBlockedReason("unresponsive"), cause: "unresponsive" };
   let fileBudget = 12_000;
@@ -148,12 +149,21 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
       return { filename: file.filename.slice(0, 120), chars: file.chars, lines: file.lines, savedAt: new Date(file.savedAt).toISOString(),
         content: text, truncated: text === undefined ? undefined : text.length < file.content!.length };
     }),
-    observations: (input.observations ?? []).slice(-6).reverse().map(item => {
-      const text = item.text.slice(0, observationBudget);
-      observationBudget -= text.length;
+    // 程序替助手读的页面先各留 4,000 字，余下的按新到旧分给工具结果：否则一轮里后面几次大读数会把开头读的页面挤成空文本。
+    observations: (() => {
+      const items = (input.observations ?? []).slice(-8).reverse();
+      const pageShare = new Map(items.filter(item => item.tool.startsWith("page_")).map(item => [item, Math.min(item.text.length, 4_000)]));
+      observationBudget -= [...pageShare.values()].reduce((sum, n) => sum + n, 0);
 
-      return { tool: item.tool, text, truncated: text.length < item.text.length || undefined };
-    }),
+      return items.map(item => {
+        const share = pageShare.get(item) ?? Math.max(0, Math.min(item.text.length, observationBudget));
+
+        if (!pageShare.has(item)) observationBudget -= share;
+        const text = item.text.slice(0, share);
+
+        return { tool: item.tool, earlier: item.earlier, text, truncated: text.length < item.text.length || undefined };
+      });
+    })(),
   });
 
   const parsed = await sideJudgment(host, model, {

@@ -32,7 +32,13 @@ const result = rows.map(row => {
   const corrections = continues.length;
   // 最后一段回答取诊断记录里助手最后写的正文，不读侧栏（侧栏里链接和「按上次做过的」会粘在同一行）。
   const answer = own.filter(l => l.type === "message_end" && l.data?.message?.role === "assistant").map(l => (l.data?.message?.content ?? []).filter(p => p.type === "text").map(p => p.text).join("").trim()).filter(Boolean).at(-1) ?? "";
-  const named = [...answer.matchAll(/(青羽|云帆|星河|极光|晨风)[^，。；*]{0,8}\**最轻|最轻的?是?\**[^，。；]{0,4}(青羽|云帆|星河|极光|晨风)/g)].map(m => m[1] ?? m[2]);
+  // 每个「最轻」认它前面 80 字里最近的型号，或紧跟的「最轻的是…」。
+  const MODELS = /青羽|云帆|星河|极光|晨风/g;
+  const named = [...answer.matchAll(/最轻/g)].map(m => {
+    const after = answer.slice(m.index!, m.index! + 12).match(/^最轻的?是?\**\s*(青羽|云帆|星河|极光|晨风)/)?.[1];
+
+    return after ?? [...answer.slice(Math.max(0, m.index! - 80), m.index!).matchAll(MODELS)].at(-1)?.[0];
+  }).filter(Boolean);
   const ok = row.task === "addinfo" ? named.length > 0 && named.every(n => n === "晨风") : row.ok;
   const sec = (l?: Line) => l ? Number(((at(l) - row.turnAt) / 1000).toFixed(1)) : null;
 

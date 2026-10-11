@@ -182,7 +182,26 @@ export class BrowserAgentSession {
   private pendingToolFailure: UserDelivery | null = null;
   private noProgressPolicy: NoProgressPolicy | null = null;
   private savedFiles = new Map<string, { runId: string | null; chars: number; lines: number; savedAt: number }>();
-  private goalObservations: { runId: string | null; items: Array<{ tool: string; text: string }> } = { runId: null, items: [] };
+  /**
+   * 交给目标核对的读数：这个会话里最近读过的页面和工具结果，带上读的时间。
+   * 不只留这一次请求的：用户答完补一句时，人数、投影仪这些条件常常是上一次读到的；只给这一次的，核对看不到就叫助手回去再核实（10-11 实测 6 次续做里 4 次白跑）。
+   */
+  private goalObservations: Array<{ at: number; tool: string; text: string }> = [];
+
+  /** 用户这一次请求从什么时候开始（开始任务、接着做、插话）：之前记的读数交给核对时标「更早」。 */
+  private requestStartedAt = 0;
+
+  /**
+   * 记一条读数给目标核对。程序替助手读的页面（page_*）也算：它不是工具结果，但人数、价格常常就在这一页上。
+   * 留最近 2 次页面和最近 6 条工具结果：只按条数留时，一轮里多做几步就把开头读的页面挤掉了。
+   * 「这一页和之前读的一样」那一行不记：它没有内容，之前那次完整读数还在。
+   */
+  private noteGoalObservation(tool: string, text: string): void {
+    if (tool.startsWith("page_") && text.includes("is unchanged since your earlier observation")) return;
+    const all = [...this.goalObservations, { at: Date.now(), tool, text: redactCredentialText(text.slice(0, 8_000)) + (text.length > 8_000 ? "\n[truncated tool result]" : "") }];
+    const pages = all.filter(item => item.tool.startsWith("page_")).slice(-2), tools = all.filter(item => !item.tool.startsWith("page_")).slice(-6);
+    this.goalObservations = all.filter(item => pages.includes(item) || tools.includes(item));
+  }
   private conversationSnapshot: () => TaskProgressSnapshot | null = () => null;
   private taskResultsHost: {
     getSnapshot: () => TaskProgressSnapshot;
@@ -1005,9 +1024,12 @@ return;}
     const preparationEpoch=this.controlEpoch,preparationRun=this.deliveryRunId();
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
+    this.requestStartedAt = Date.now();
     const observation = await this.readUserPageForPrompt(context, "task");
 
     if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
+
+    if (observation) this.noteGoalObservation("page_at_start", observation);
 
     const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)
       +(context && typeof context.tabId === "number" ? programFirstGuidance() : "");
@@ -1588,6 +1610,8 @@ return;}
     ].join("\n");
 
     const prompt = `${withPageContext(continuation, context)}\n\n${freshPageObservationText(context, clipped)}`;
+    this.requestStartedAt = Date.now();
+    this.noteGoalObservation("page_at_start", freshPageObservationText(context, clipped));
     const images = extractImages(restoredAttachments);
     void session.prompt(prompt, images.length > 0 ? { images } : undefined).catch((error: unknown) => this.emitError(error));
   }
@@ -1740,6 +1764,9 @@ return {kind:'model'};
       const observation = steerNeedsPageObservation(text) ? await this.readUserPageForPrompt(context, "steer") : null;
 
       if(!current())throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
+      this.requestStartedAt = Date.now();
+
+      if (observation) this.noteGoalObservation("page_at_steer", observation);
       const asked = withCircleNotes(withPageContext(text, context), attachments);
       const base = observation ? `${asked}\n\n${observation}` : asked;
       // 契约随整条载荷进 Pi（steeringMode "all" 的排队 drain 也走同一载荷）。销账只认 Pi 原样回显的
@@ -2056,9 +2083,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           break;
         case "tool_execution_end":
           if (!GOAL_CHECK_BOOKKEEPING_TOOLS.has(event.toolName)) {
-            const runId = this.deliveryRunId();
-
-            if (this.goalObservations.runId !== runId) this.goalObservations = { runId, items: [] };
             const parts: unknown = event.result?.content;
 
             const text = Array.isArray(parts) ? parts.flatMap((part: unknown) => {
@@ -2067,7 +2091,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
               return [part.text];
             }).join("\n") : "";
 
-            if (text) this.goalObservations.items = [...this.goalObservations.items, { tool: event.toolName, text: redactCredentialText(text.slice(0, 8_000)) + (text.length > 8_000 ? "\n[truncated tool result]" : "") }].slice(-6);
+            if (text) this.noteGoalObservation(event.toolName, text);
           }
 
           if(event.toolName==='send_user_message'&&event.isError)this.emitDeliveryStream({id:toolDeliveryId(event.toolCallId),runId:this.deliveryRunId(),kind:'finding',text:'',phase:'cancelled'});
@@ -2293,7 +2317,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           goal: snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""],
           goalPage: snapshot?.goalPage ?? null,
           files: this.runFiles(),
-          observations: this.goalObservations.runId === runId ? this.goalObservations.items : [],
+          observations: this.goalObservations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < this.requestStartedAt ? { earlier: true } : {}) })),
           lastReply,
           page: page ? { title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
           userTookOver: runId !== null && this.handbackRunId === runId,
