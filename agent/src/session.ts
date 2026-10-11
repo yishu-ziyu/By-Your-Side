@@ -2155,7 +2155,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         }
 
         case "compaction_start":
-          emit({ kind: "notice", message: "正在压缩上下文", progress: true });
+          emit({ kind: "notice", message: "对话太长，正在省略较早读过的内容", progress: true });
           break;
         case "auto_retry_start":
           // 接管/中止的尾声与"本轮已经交付过结果"的自动重试都不再刷"请求失败"：
