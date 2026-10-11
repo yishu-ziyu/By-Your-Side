@@ -138,7 +138,7 @@ document.getElementById("settings")!.innerHTML = `
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
       <h2 id="voice-title">语音对话</h2>
-      <p class="sx-sub">用声音和助手交谈。语音对话使用阶跃星辰的实时语音。上面已经填了阶跃星辰的 key，这里就不用再填。</p>
+      <p class="sx-sub">用声音和助手交谈。语音对话使用阶跃星辰的实时语音。<span id="voice-key-note"></span></p>
     </div>
     <div class="surface rows">
       <div class="row">
@@ -150,7 +150,7 @@ document.getElementById("settings")!.innerHTML = `
         </span>
       </div>
       <div class="row stack">
-        <span class="row-main"><span id="voice-model-title" class="row-title">语音模型</span><span id="voice-model-state" class="row-desc">沿用现有阶跃星辰 key；保存后下次开启语音时生效。</span></span>
+        <span class="row-main"><span id="voice-model-title" class="row-title">语音模型</span><span id="voice-model-state" class="row-desc"></span></span>
         <div id="voice-model-list" class="radio-rows" role="radiogroup" aria-labelledby="voice-model-title"></div>
       </div>
       <div class="row stack">
@@ -307,6 +307,9 @@ let openKey: string | null = null;
 let changingKey = false;
 
 let login: AbortController | null = null;
+
+/** 语音用的阶跃星辰 key 从哪来（resolveVoiceKey 的结果）：语音自己存的、借主模型的阶跃星辰 key、还没有。 */
+let voiceKeySource: "own" | "model" | "" = "";
 
 $("model-toggle").append(svg(ChevronDown));
 
@@ -1004,6 +1007,9 @@ async function reload(): Promise<void> {
   const storedVoiceKey = stored[INPROC_VOICE_KEY];
   const ownVoiceKey = isText(storedVoiceKey) ? storedVoiceKey : "";
   const voiceKey = resolveVoiceKey(Object.entries(stored));
+  voiceKeySource = ownVoiceKey ? "own" : voiceKey ? "model" : "";
+  $("voice-key-note").textContent = voiceKeySource === "model" ? "正在沿用上面阶跃星辰模型的 key，下面的 key 框可以不填。"
+    : voiceKeySource === "own" ? "" : "下面的 key 只给语音用。主模型的 key 在上面的服务商列表里填。";
   $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)}` : voiceKey ? "正在沿用阶跃星辰模型的 key，可以不填。" : "还没有 key。";
   $("voice-state").dataset.tone = voiceKey ? "ok" : "";
   voiceInput.placeholder = ownVoiceKey ? "粘贴新的 key" : "粘贴 key";
@@ -1070,7 +1076,9 @@ function renderVoiceModels(raw: unknown): void {
   try { current = resolveVoiceModel(raw); } catch { /* 无效值保持未选；由用户明确纠正，不写回默认。 */ }
   $("voice-model-state").textContent = !current ? "语音模型设置无效，请重新选择后再开启。"
     : current === GPT_LIVE_MODEL ? "用 ChatGPT 登录，不用阶跃星辰 key；要先在上面用 ChatGPT 登录。下次开启语音时生效。"
-    : "沿用现有阶跃星辰 key；需对应服务可用。下次开启语音时生效。";
+    : voiceKeySource === "model" ? "正在沿用阶跃星辰模型的 key；需对应服务可用。下次开启语音时生效。"
+    : voiceKeySource === "own" ? "用上面保存的 StepFun API key；需对应服务可用。下次开启语音时生效。"
+    : "要先有阶跃星辰 key：填在上面一行，或在服务商列表里连上阶跃星辰。下次开启语音时生效。";
   $("voice-model-list").replaceChildren(...[
     { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "当前默认" },
     { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊直接回答；网页操作交给助手" },
