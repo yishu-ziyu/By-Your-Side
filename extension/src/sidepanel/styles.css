@@ -3054,7 +3054,7 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
 .run-graph-node.done { background: var(--text-tertiary); border-color: var(--text-tertiary); animation: graphPop 360ms var(--e-spring); }
 .run-graph-node.dead { border-style: dashed; border-color: var(--text-quaternary); background: transparent; }
 .run-graph-node.dead::after { content: "×"; display: block; margin: -7px 0 0 8px; color: var(--text-quaternary); font-size: 11px; line-height: 1; }
-.run-graph-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-ui); line-height: 22px; color: var(--text-tertiary); }
+.run-graph-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-ui); line-height: 22px; color: var(--text-secondary); }
 .run-graph-row[data-state="dead"] .run-graph-label { color: var(--text-quaternary); }
 .run-graph-fan { display: flex; align-items: flex-start; gap: 16px; padding: 4px 8px 2px; animation: graphIn 320ms var(--e-swift) both; }
 .run-tab-tile { position: relative; display: flex; flex-direction: column; align-items: center; width: 30px; animation: graphIn 320ms var(--e-swift) both; }
