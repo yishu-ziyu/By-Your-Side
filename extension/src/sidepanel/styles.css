@@ -3012,6 +3012,28 @@ details.run-steps:not(.done) .run-title {
   animation: runShine 2.4s cubic-bezier(.4, 0, .2, 1) infinite;
 }
 @keyframes runShine { from { -webkit-mask-position: 110% 0; mask-position: 110% 0; } to { -webkit-mask-position: -10% 0; mask-position: -10% 0; } }
+/* #263 思考心跳：转圈 0.9s 一圈，秒数同拍闪一下。沿用现有两行，不加新皮肤。 */
+.run-beat {
+  display: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--text-quaternary) 75%, transparent);
+  border-top-color: var(--text-secondary);
+}
+details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
+details.run-steps:not(.done)[data-phase="waiting"] .run-beat {
+  display: inline-block;
+  animation: runBeat 0.9s linear infinite;
+}
+@keyframes runBeat { to { transform: rotate(1turn); } }
+details.run-steps:not(.done)[data-phase="thinking"] .run-time,
+details.run-steps:not(.done)[data-phase="waiting"] .run-time {
+  animation: runTimeBeat 0.9s var(--e-glide) infinite;
+}
+@keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
 details.run-steps:not(.done) .run-time { margin-left: auto; font-size: var(--fs-meta); color: var(--text-quaternary); }
 details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: hidden; }
 /* #102 进行中标题下方的最近几步：一条细线下的灰字，新的一步淡入；收尾时整块移除。 */
@@ -3049,7 +3071,16 @@ details.run-steps .run-body .chip { min-height: 0; height: auto; padding: 0; bor
 .run-body .chip:hover .chip-label .act-object { color: var(--text-tertiary); }
 .run-body .act-failed { color: var(--text-secondary); }
 details.run-steps .run-body details.thinking.narration > pre, details.run-steps.done .run-body > details.thinking.narration > pre { font-family: var(--font); font-size: var(--fs-ui); line-height: 20px; color: var(--text-tertiary); }
-@media (prefers-reduced-motion: reduce) { details.run-steps:not(.done) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; } }
+@media (prefers-reduced-motion: reduce) {
+  details.run-steps:not(.done) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
+  details.run-steps:not(.done) .run-beat,
+  details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
+  details.run-steps:not(.done)[data-phase="waiting"] .run-beat,
+  details.run-steps:not(.done)[data-phase="thinking"] .run-time,
+  details.run-steps:not(.done)[data-phase="waiting"] .run-time { animation: none; }
+  details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
+  details.run-steps:not(.done)[data-phase="waiting"] .run-beat { background: var(--text-quaternary); border-color: var(--text-quaternary); }
+}
 
 /* #263 AC：进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }

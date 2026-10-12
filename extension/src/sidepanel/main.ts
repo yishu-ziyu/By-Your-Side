@@ -3225,6 +3225,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   if (currentRun) return currentRun;
   const root = document.createElement("details");
   root.className = "run-steps";
+  root.dataset.phase = "thinking";
   // 过程默认收起，工具与协作任务使用同一个展开入口。
   root.open = false;
   const summary = document.createElement("summary");
@@ -3242,6 +3243,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const actIcon = document.createElement("span");
   actIcon.className = "run-act-icon";
   setActionIcon(actIcon, "think");
+  const beat = document.createElement("span");
+  beat.className = "run-beat";
+  beat.setAttribute("aria-hidden", "true");
   const title = document.createElement("span");
   title.className = "run-title";
   paintAction(title, `正在${loaderSubtitle(null)}`);
@@ -3256,7 +3260,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const meta = document.createElement("span");
   meta.className = "run-meta";
   meta.hidden = true;
-  summary.append(iconBox, actIcon, title, chainEl, timeEl, chevron, meta);
+  summary.append(iconBox, actIcon, beat, title, chainEl, timeEl, chevron, meta);
   const body = document.createElement("div");
   body.className = "run-body";
   runBodyPinned = true;
@@ -3632,6 +3636,7 @@ const RUN_ORB_MARKS = {
 
 function syncRunOrb(run: RunHost): void {
   const state = run.orbActivity.state(lastUserHasPage);
+  run.root.dataset.phase = state;
   const mark = state in RUN_ORB_MARKS ? RUN_ORB_MARKS[state as keyof typeof RUN_ORB_MARKS] : null;
   run.orbMark.hidden = !mark;
 
