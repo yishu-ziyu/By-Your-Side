@@ -112,9 +112,8 @@ const TASKS: Task[] = [
       return { ok, why: `有效预订：${a.map(b => `${b.date} ${b.time} ${b.room}`).join("、") || "无"}；12 日订过 ${bookings.filter(b => b.date === "10 月 12 日").length} 次` }; },
     oldDirection: since => bookings.filter(b => b.at > since && b.date === "10 月 12 日").length },
   { id: "addinfo", start: "/laptops", ask: "看看这 5 款笔记本，告诉我哪款最轻。", turn: "只看 6000 元以下的。", when: path => path.startsWith("/laptop/"),
-    // 只看最后一段回答（跳过回答下面「按上次做过的…」那行和只有来源链接的一行）：说最轻的是晨风，而且没把别的型号说成最轻。
-    // 10-12 回答末尾带「[晨风 E13 参数](…) · [青羽 A14 参数](…)」时，最后一行只剩链接，正确回答被判错（docs/evals/20261012-finish-before-stopping.md）。
-    judge: answer => { const last = answer.split("\n").filter(l => l.trim() && !l.startsWith("按上次做过的") && !/^(来源|\d+ 秒)/.test(l.trim()) && !/^(\[[^\]]*\]\([^)]*\)|[\s·、,，])+$/.test(l.trim())).at(-1) ?? ""; const named = [...last.matchAll(/(青羽|云帆|星河|极光|晨风)[^，。；]{0,8}最轻|最轻的?是?[^，。；]{0,4}(青羽|云帆|星河|极光|晨风)/g)].map(m => m[1] ?? m[2]);
+    // 只看最后一段回答（跳过回答下面「按上次做过的…」那行）：说最轻的是晨风，而且没把别的型号说成最轻。
+    judge: answer => { const last = answer.split("\n").filter(l => l.trim() && !l.startsWith("按上次做过的") && !/^(来源|\d+ 秒)/.test(l.trim())).at(-1) ?? ""; const named = [...last.matchAll(/(青羽|云帆|星河|极光|晨风)[^，。；]{0,8}最轻|最轻的?是?[^，。；]{0,4}(青羽|云帆|星河|极光|晨风)/g)].map(m => m[1] ?? m[2]);
 
       return { ok: named.length > 0 && named.every(n => n === "晨风"), why: last.slice(0, 160) }; },
     oldDirection: since => hits.filter(h => h.at > since && LAPTOPS.some(l => h.path === `/laptop/${l.id}` && l.price > 6000)).length },
@@ -159,7 +158,16 @@ try {
     await waitIdle(`${task.id}-${i}`);
     await sleep(4000);
     const doneAt = Date.now();
-    const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText).join("\\n")`));
+    // 取回答文字：去掉侧栏附加的部分（出处面板、「按上次做过的…」按钮和展开条），按段落分行，再去掉只由链接组成的段落。
+    // 10-12 回答末尾带「晨风 E13 · 青羽 A14」一串链接，判分只读最后一行，正确回答被判错（docs/evals/20261012-finish-before-stopping.md）。
+    const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => {
+      const c = m.cloneNode(true);
+      c.querySelectorAll(".answer-panel,.memory-used-line,.memory-used-toggle").forEach(e => e.remove());
+      const blocks = [...c.querySelectorAll("p,li,h1,h2,h3,h4,h5,h6,pre,td")].filter(b => !b.querySelector("p,li"));
+      const links = [...c.querySelectorAll("a")].map(a => a.textContent.trim()).filter(Boolean);
+      return (blocks.length ? blocks : [c]).map(b => b.textContent.trim())
+        .filter(line => { const rest = links.reduce((r, l) => r.split(l).join(""), line); return rest === line || /[^\\s·、,，|]/.test(rest); }).join("\\n");
+    }).join("\\n")`));
 
     const verdict = task.judge(answer);
     rows.push({ task: task.id, run: i, askedAt, turnAt, doneAt, ok: verdict.ok, why: verdict.why, oldDirectionSteps: task.oldDirection(turnAt), firstAskToTurnMs: turnAt - askedAt });

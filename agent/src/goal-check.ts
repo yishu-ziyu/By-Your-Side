@@ -64,9 +64,13 @@ export function asksUser(reply: string): boolean {
 /**
  * 助手没用工具就说「这页看不出、还不能判断」或「我会去查看」，然后停下：这一轮不交给核对，就没人叫它回去。
  * 10-12 笔记本题「哪款最轻」两组各 5 次都这样停住，测试脚本等了约 178 秒（docs/evals/20261012-finish-before-stopping.md）。
+ * 只看结尾约 160 字，而且要提到页面或「逐一」：「我无法确定明天股市」「我会核对一下格式」这类普通聊天不算，免得触发用户没要求的续做。
  */
 export function defersWork(reply: string): boolean {
-  return /(无法|还不能|不能|没法)(仅凭[^，。]{0,12})?(判断|确定|比较)|(还|暂时|目前)(无法|不能|没法)|我(会|再|先)(逐一|逐个|去|再)?(查看|打开|查一?下|看一?下|核对)|(can'?t|cannot|unable to) (tell|determine|compare)|I('ll| will) (check|look|open)/i.test(reply);
+  const tail = reply.trimEnd().slice(-160);
+  const defers = /(无法|还不能|不能|没法)(仅凭[^，。]{0,12})?(判断|确定|比较)|(我|接下来我?|让我)(会|再|先|去|这就|马上)*(逐一|逐个)?(去)?(查看|打开|查一?下|看一?下|核对)|\b(cannot|unable to) (determine|compare)|\bI('ll| will) (check|open)/i.test(tail);
+
+  return defers && (/页|列表|详情|网页|网站|\bpage|\blist|\bdetail/i.test(reply) || /逐一|逐个|one by one/i.test(tail));
 }
 
 /**
