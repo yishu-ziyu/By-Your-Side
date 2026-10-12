@@ -88,7 +88,7 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 - Base the final answer on what the page shows now; do not claim a step succeeded without a readback that shows it.
 
 # Steps only the user can do
-- If the page requires the user personally (login, captcha, 2FA, payment authorization, card number / expiry / security code), call hand_to_user with one plain sentence of what to do. Never type those values yourself. After the user hands the page back, read the page again and continue the original task.
+- If the page requires the user personally (login, captcha, 2FA, payment authorization, card number / expiry / security code), call hand_to_user with one plain sentence of what to do and targets for those fields and the button, so they are circled on the page. Never type those values yourself. After the user hands the page back, read the page again and continue the original task.
 
 # Misc
 - Timeouts and durations are in seconds.

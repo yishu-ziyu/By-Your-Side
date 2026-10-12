@@ -105,6 +105,10 @@ interface SideAgentCursor {
   ): void;
   /** 教学一步：圈出目标、名牌写 say、光标停在目标右下角，连上后台的 portName 报告用户的点击。返回目标的可见名字。 */
   guide?(rect: SideAgentRect, say: string, target: string, portName: string, options?: MarkOptions, observedNode?: Node): { name: string };
+  /** 交给用户时圈出一个要用户填的栏或点的按钮（橙色）；页面条没显示时不画。填好、点过就淡出，页面条收起时清掉。 */
+  handoffMark?(rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void;
+  /** 圈都画好后摆名牌：第一个还空着的栏写「你来填 · …」，按钮写「填完点这里」或「点这里」。 */
+  handoffLabels?(): void;
   /** 松开：摘掉按住姿态、名牌恢复成员名，随后照常 park */
   releaseHold?(): void;
   /** 清除全部 mark 标注 */
@@ -133,6 +137,8 @@ interface SideAgentNamespace {
   markLayerCount?: () => number;
   /** 宿主自画标注的只读读数，供核验「圈给用户看」；页面脚本读不到。 */
   marksState?: () => import("../../shared/host-marks.js").HostDrawnMark[];
+  /** 交给用户时画的圈的只读读数，供验收核对；页面脚本读不到。 */
+  handoffState?: () => Array<{ kind: "field" | "button"; name: string; label: string; labelRect: SideAgentRect | null; faded: boolean; shown: boolean }>;
   /** overlay 自检：拿住态光标与名牌双键（生产路径不用） */
   holdState?: (instanceId?: string) => {
     holding: boolean;

@@ -757,13 +757,13 @@ return { kind: "silent" };}
 
     return null;
   }
-  /** 模型调用 hand_to_user：与侧栏「接管」同一条暂停通道，扩展确认页面已归用户后才返回。 */
-  private async handToUser(id:string,ask:string):Promise<void>{
+  /** 模型调用 hand_to_user：与侧栏「接管」同一条暂停通道，扩展确认页面已归用户后才返回。targets 由扩展在页面上圈出。 */
+  private async handToUser(id:string,ask:string,targets?:string[]):Promise<void>{
     const runId=this.getTaskProgress(id)?.runId;
 
     if(!runId)throw new Error('没有正在执行的任务，页面没有交给用户。');
     this.controlVersions.set(id,(this.controlVersions.get(id)??0)+1);
-    const result=await this.controls.request(id,randomUUID(),'pause',runId,'page',undefined,ask);
+    const result=await this.controls.request(id,randomUUID(),'pause',runId,'page',undefined,ask,targets);
 
     if(!result.ok)throw new Error(result.reason??'页面没有交给用户。');
   }
@@ -1413,7 +1413,7 @@ return receipt;
       if (message.type === "status" || message.type === "model_info") this.store?.save(this.list());
     }, summary).then((runtime) => {
       summary.model = runtime.session.modelName();
-      runtime.onHandToUser?.(ask => this.handToUser(id, ask));
+      runtime.onHandToUser?.((ask, targets) => this.handToUser(id, ask, targets));
       runtime.control.setTabCoordinator?.(async (owner, members) => {
         const source = this.entries.get(owner)?.runtime;
 
