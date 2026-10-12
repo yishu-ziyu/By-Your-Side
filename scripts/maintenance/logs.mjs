@@ -13,9 +13,17 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CCL = "git+https://github.com/cclgroupltd/ccl_chromium_reader.git@ef840de30221c4d65bc96d2f4d9057e9ef2f526d";
+// 解码库和它的依赖全部钉死版本，按 --no-deps 装，换版本只改这里。
+const REQUIREMENTS = [
+  "ccl_chromium_reader @ git+https://github.com/cclgroupltd/ccl_chromium_reader.git@ef840de30221c4d65bc96d2f4d9057e9ef2f526d",
+  "ccl_simplesnappy @ git+https://github.com/cclgroupltd/ccl_simplesnappy.git@3d085230baa8c46cf2090ebba29bf6e8eab31087",
+  "Brotli==1.2.0",
+  "zstd==1.5.7.2",
+];
 const VENV = join(homedir(), ".cache/bys-logs-venv");
 const SUPPORT = join(homedir(), "Library/Application Support");
+/** 只在这些浏览器的数据目录里找配置；Google 下只看 Chrome 开头的目录（Chrome、ChromeMain、Chrome Beta…）。 */
+const BROWSER_DIRS = ["Citro Labs", "Dia", "BraveSoftware", "Microsoft Edge", "Arc"];
 
 const args = process.argv.slice(2);
 const option = (name) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
@@ -27,27 +35,36 @@ else if (sinceArg) { since = new Date(sinceArg); if (Number.isNaN(since.getTime(
 
 function fail(message) { console.error(message); process.exit(1); }
 
-const git = (...a) => execFileSync("git", a, { encoding: "utf8" }).trim();
+const git = (...a) => {
+  try { return execFileSync("git", a, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch (error) {
+    fail(error.code === "ENOENT" ? "没找到 git，先装 git 再运行。" : "要在本仓库（或它的工作树）里运行。");
+  }
+};
 // 日常扩展从主目录的 extension/dist 加载；输出写进当前工作树的 out/。
 const mainCheckout = dirname(resolve(git("rev-parse", "--git-common-dir")));
 const repo = git("rev-parse", "--show-toplevel");
 const real = (p) => { try { return realpathSync(p).replace(/\/+$/, ""); } catch { return resolve(p).replace(/\/+$/, ""); } };
 const dist = real(join(mainCheckout, "extension/dist"));
 
-/** Application Support 下几层以内的 Secure Preferences（Chrome、Dia、ego 等的配置目录）。 */
+const list = (dir) => { try { return readdirSync(dir, { withFileTypes: true }); } catch { return []; } };
+
+/** 浏览器数据目录下几层以内的 Secure Preferences（每个配置一份）。 */
 function preferenceFiles(dir, depth = 0, found = []) {
-  let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return found; }
-  for (const entry of entries) {
+  for (const entry of list(dir)) {
     if (entry.isFile() && entry.name === "Secure Preferences") found.push(join(dir, entry.name));
-    else if (entry.isDirectory() && depth < 4) preferenceFiles(join(dir, entry.name), depth + 1, found);
+    else if (entry.isDirectory() && depth < 3) preferenceFiles(join(dir, entry.name), depth + 1, found);
   }
   return found;
 }
 
+const browserRoots = [
+  ...list(join(SUPPORT, "Google")).filter((entry) => entry.isDirectory() && entry.name.startsWith("Chrome")).map((entry) => join(SUPPORT, "Google", entry.name)),
+  ...BROWSER_DIRS.map((name) => join(SUPPORT, name)),
+];
+
 const newest = (dir) => Math.max(0, ...readdirSync(dir).map((name) => { try { return statSync(join(dir, name)).mtimeMs; } catch { return 0; } }));
 
-const candidates = preferenceFiles(SUPPORT).flatMap((file) => {
+const candidates = browserRoots.flatMap((root) => preferenceFiles(root)).flatMap((file) => {
   let settings;
   try { settings = JSON.parse(readFileSync(file, "utf8")).extensions?.settings ?? {}; } catch { return []; }
   const profile = dirname(file);
@@ -60,17 +77,36 @@ const candidates = preferenceFiles(SUPPORT).flatMap((file) => {
 if (!candidates.length) fail(`没找到加载 ${dist} 且有诊断记录的浏览器配置。`);
 const pick = candidates.sort((a, b) => b.mtime - a.mtime)[0];
 
+const runs = (bin, code) => { try { execFileSync(bin, ["-I", "-c", code], { stdio: "ignore" }); return true; } catch { return false; } };
+
+/** 找一个 3.10 以上的 Python 来建环境：先找带版本号的，再找 Homebrew 的，最后才是 python3。 */
+function systemPython() {
+  const names = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "/opt/homebrew/bin/python3", "/usr/local/bin/python3", "python3"];
+  const found = names.find((bin) => runs(bin, "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"));
+  return found ?? fail("要 Python 3.10 或更新的版本（例如 brew install python），没找到。");
+}
+
+/** 解码环境：第一次运行时建好；钉的版本变了就在原环境里重装，不删环境。 */
 function python() {
   const bin = join(VENV, "bin/python");
-  try { execFileSync(bin, ["-I", "-c", "import ccl_chromium_reader"], { stdio: "ignore" }); return bin; } catch { /* 第一次运行或环境坏了 */ }
-  console.error(`第一次运行：在 ${VENV} 装 ccl_chromium_reader（要从 GitHub 下载）…`);
-  execFileSync("python3", ["-m", "venv", "--clear", VENV], { stdio: "inherit" });
-  execFileSync(bin, ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", CCL], { stdio: "inherit" });
+  const stamp = join(VENV, "bys-requirements.txt");
+  const wanted = REQUIREMENTS.join("\n");
+  if (existsSync(stamp) && readFileSync(stamp, "utf8") === wanted && runs(bin, "import ccl_chromium_reader")) return bin;
+  if (!existsSync(bin)) {
+    console.error(`第一次运行：在 ${VENV} 建 Python 环境并装解码库（要从 GitHub 下载）…`);
+    try { execFileSync(systemPython(), ["-m", "venv", VENV], { stdio: "inherit" }); } catch { fail(`没能在 ${VENV} 建 Python 环境。`); }
+  } else console.error(`在 ${VENV} 装钉住版本的解码库…`);
+  try { execFileSync(bin, ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--no-deps", ...REQUIREMENTS], { stdio: "inherit" }); } catch {
+    fail(`解码库没装上（要能连 GitHub）；环境坏了可以删掉 ${VENV} 再运行。`);
+  }
+  writeFileSync(stamp, wanted);
   return bin;
 }
 
+const py = python();
 const temp = mkdtempSync(join(tmpdir(), "bys-logs-"));
 const records = [];
+let decodeFailed = false;
 try {
   // 只复制这个扩展的 IndexedDB；去掉 LOCK，解码库才不会以为别人正在用。
   const leveldb = join(temp, "db.leveldb");
@@ -79,11 +115,12 @@ try {
   let blob = "-";
   if (existsSync(pick.blob)) { blob = join(temp, "db.blob"); cpSync(pick.blob, blob, { recursive: true }); }
   const decoded = join(temp, "records.jsonl");
-  execFileSync(python(), ["-I", join(dirname(fileURLToPath(import.meta.url)), "logs-decode.py"), leveldb, blob, decoded], { stdio: ["ignore", "ignore", "inherit"] });
-  for (const line of readFileSync(decoded, "utf8").split("\n")) if (line) records.push(JSON.parse(line));
+  try { execFileSync(py, ["-I", join(dirname(fileURLToPath(import.meta.url)), "logs-decode.py"), leveldb, blob, decoded], { stdio: ["ignore", "ignore", "inherit"] }); } catch { decodeFailed = true; }
+  if (!decodeFailed) for (const line of readFileSync(decoded, "utf8").split("\n")) if (line) records.push(JSON.parse(line));
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }
+if (decodeFailed) fail("诊断库没解码出来，原因见上面 Python 的报错。");
 
 const parse = (line) => { try { return JSON.parse(line); } catch { return null; } };
 const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);

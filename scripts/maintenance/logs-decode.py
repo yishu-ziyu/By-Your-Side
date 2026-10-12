@@ -31,7 +31,16 @@ def main():
         for store in STORES:
             if store not in names:
                 continue
+            # 这个版本的 iterate_records 不管 live_only，会把同一主键的每个旧版本和删除标记都给出来。
+            # 按主键只留序号最大的一版；那一版是删除（已清空、已轮换掉的会话），就整条不要。
+            latest = {}
             for record in db[store].iterate_records():
+                kept = latest.get(record.key.raw_key)
+                if kept is None or record.ldb_seq_no > kept.ldb_seq_no:
+                    latest[record.key.raw_key] = record
+            for record in latest.values():
+                if not record.is_live or record.value is None:
+                    continue
                 f.write(json.dumps({"store": store, "key": plain(record.key.value), "value": plain(record.value)}, ensure_ascii=False) + "\n")
 
 
