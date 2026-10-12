@@ -11,7 +11,7 @@ import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
 import { formatEffectReport } from "../../shared/effect.js";
-import { formatFetchReply, type FetchReply } from "./fetch-result.js";
+import { formatFetchReply, fetchFailureReason, type FetchReply } from "./fetch-result.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type Attachment, type TabInfo, type ToolContract, type ToolName, type UploadFilePayload } from "../../shared/protocol.js";
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
@@ -895,8 +895,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
+        const text = formatFetchReply(data as FetchReply);
+        // 没拿到内容（status 0 / 非 2xx / 空 body）这一步算失败：isError + 给侧栏的人话原因；给模型的文字不变（#304）。
+        const reason = fetchFailureReason(data as FetchReply);
 
-        return textResult(formatFetchReply(data as FetchReply), data);
+        return reason
+          ? { content: [{ type: "text" as const, text }], details: { ...data, reason }, isError: true as const }
+          : textResult(text, data);
       },
     }),
 

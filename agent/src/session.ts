@@ -12,6 +12,7 @@ import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_M
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
+import {plainToolError} from "../../shared/user-facing.js";
 import {randomUUID} from "node:crypto";
 import {FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
@@ -225,10 +226,12 @@ export class BrowserAgentSession {
 
     if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
     else {
+      const held = step.error ? this.rpc?.heldReason?.(step.id) : undefined;
       this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
         executionFact:this.rpc?.getExecutionFact(step.id),
         resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX)),
-        ...(step.error ? {} : fieldReadbackOf(step.result))});
+        ...(held ? {heldReason:held} : {}),
+        ...(step.error ? (held ? {} : {reason:plainToolError(step.error)}) : fieldReadbackOf(step.result))});
       this.emitReadObservation(step.id,step.name,step.params,step.result,!!step.error);
     }
   }
@@ -1059,12 +1062,17 @@ return;}
       const result=await tool.execute(id,input,signal);
 
       if(name==='read_element'&&input.readback&&!current())throw new Error('READBACK_STALE');
-      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:firstText(result),executionFact:this.rpc?.getExecutionFact(id)});
-      this.emitReadObservation(id,name,input,result,false);
+      const failed=result.isError===true;
+      const detailReason=(result.details as {reason?:unknown}|undefined)?.reason;
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:failed,resultText:firstText(result),
+        ...(failed?{reason:typeof detailReason==='string'&&detailReason?detailReason:plainToolError(firstResultText(result))}:{}),
+        executionFact:this.rpc?.getExecutionFact(id)});
+      this.emitReadObservation(id,name,input,result,failed);
 
       return result;
     }catch(error){
-      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:this.rpc?.getExecutionFact(id)});throw error;
+      const message=error instanceof Error?error.message:String(error);
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:message,reason:plainToolError(message),executionFact:this.rpc?.getExecutionFact(id)});throw error;
     }finally{
       if(this.authorizedDisplayCall===id)this.authorizedDisplayCall=previous;
     }
@@ -1534,19 +1542,19 @@ return;}
       page = await this.rpc.call("snapshot", params, PRE_OBSERVATION_TIMEOUT_MS) as { text?: unknown; tabId?: unknown; url?:unknown };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      this.callbacks.emit({ kind: "tool_end", toolCallId: observationId, name: "snapshot", isError: true, resultText: reason.slice(0, RESULT_TEXT_MAX), executionFact: "not_executed" });
+      this.callbacks.emit({ kind: "tool_end", toolCallId: observationId, name: "snapshot", isError: true, resultText: reason.slice(0, RESULT_TEXT_MAX), reason: plainToolError(reason), executionFact: "not_executed" });
       throw new TaskActionRejected(`继续前没有读到当前页面，原任务仍保持中断：${reason.slice(0, 160)}`);
     }
 
     if(!page||page.tabId!==context.tabId||expectedPage&&(typeof page.url!=='string'||pageRecoveryKey(context.tabId,page.url)?.urlHash!==expectedPage.urlHash)){
-      this.callbacks.emit({kind:'tool_end',toolCallId:observationId,name:'snapshot',isError:true,resultText:'当前页面身份已变化或无法核对，原检查点保留。',executionFact:'not_executed'});
+      this.callbacks.emit({kind:'tool_end',toolCallId:observationId,name:'snapshot',isError:true,resultText:'当前页面身份已变化或无法核对，原检查点保留。',reason:'当前页面身份已变化或无法核对',executionFact:'not_executed'});
       throw new TaskActionRejected('当前页面身份已变化或无法核对，原检查点保留，没有继续执行。');
     }
 
     const pageText = typeof page.text === "string" ? page.text.trim() : "";
 
     if (!pageText) {
-      this.callbacks.emit({ kind: "tool_end", toolCallId: observationId, name: "snapshot", isError: true, resultText: "当前页面没有可读取内容。", executionFact: "not_executed" });
+      this.callbacks.emit({ kind: "tool_end", toolCallId: observationId, name: "snapshot", isError: true, resultText: "当前页面没有可读取内容。", reason: "当前页面没有可读取内容", executionFact: "not_executed" });
       throw new TaskActionRejected("继续前没有读到当前页面内容，原任务仍保持中断。");
     }
 
@@ -2113,6 +2121,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && !this.rpc?.heldReason?.(event.toolCallId)) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
 
           const heldReason = event.isError ? this.rpc?.heldReason?.(event.toolCallId) : undefined;
+          // 失败的人话原因给侧栏：工具自己写在 details.reason（如 fetch），否则从错误原文取一句（#304）。
+          const detailReason = event.isError ? (event.result?.details as { reason?: unknown } | undefined)?.reason : undefined;
+          const failureReason = event.isError && !heldReason
+            ? (typeof detailReason === "string" && detailReason ? detailReason : plainToolError(firstResultText(event.result)))
+            : undefined;
           emit({
             kind: "tool_end",
             toolCallId: event.toolCallId,
@@ -2120,6 +2133,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             isError: event.isError,
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
+            ...(failureReason ? { reason: failureReason } : {}),
             ...(heldReason ? { heldReason } : {}),
             ...(!event.isError && (event.result?.details as { sendConfirmed?: unknown } | undefined)?.sendConfirmed === true ? { sendConfirmed: true as const } : {}),
             ...(event.isError ? {} : fieldReadbackOf(event.result?.details)),
