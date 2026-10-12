@@ -32,21 +32,21 @@
     }
   },
   "latency": {
-    "_doc": "速度线（#264 预算表，按题目类别）。metric：first_text = 发送到侧栏回答区第一个正文字，total = 发送到侧栏空闲。max_s 是「最慢」一栏，每条结果超过它就判速度不过；p50_s 是「典型」一栏，只和中位数对照。值为 null 或类别不在表里时只记录、不判。",
+    "_doc": "速度线（10-12 用户定，按用户能等多久，不按模型现在能做到多少）。metric：first_text = 发送到侧栏回答区第一个正文字，total = 发送到侧栏空闲。max_s 是最慢线，每条结果超过它就判速度不过；p50_s 是典型线，只和中位数对照。值为 null 或类别不在表里时只记录、不判。",
     "page_understanding": {
       "metric": "first_text",
-      "p50_s": 8,
-      "max_s": 15
+      "p50_s": 3,
+      "max_s": 10
     },
     "selection_ask": {
       "metric": "first_text",
-      "p50_s": 8,
-      "max_s": 15
+      "p50_s": 3,
+      "max_s": 10
     },
     "browser_action_single": {
       "metric": "total",
-      "p50_s": 15,
-      "max_s": 30
+      "p50_s": 10,
+      "max_s": 20
     }
   }
 }
