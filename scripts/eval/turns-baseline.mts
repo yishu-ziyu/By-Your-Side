@@ -158,7 +158,16 @@ try {
     await waitIdle(`${task.id}-${i}`);
     await sleep(4000);
     const doneAt = Date.now();
-    const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText).join("\\n")`));
+    // 取回答文字：去掉侧栏附加的部分（出处面板、「按上次做过的…」按钮和展开条），按段落分行，再去掉只由链接组成的段落。
+    // 10-12 回答末尾带「晨风 E13 · 青羽 A14」一串链接，判分只读最后一行，正确回答被判错（docs/evals/20261012-finish-before-stopping.md）。
+    const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => {
+      const c = m.cloneNode(true);
+      c.querySelectorAll(".answer-panel,.memory-used-line,.memory-used-toggle").forEach(e => e.remove());
+      const blocks = [...c.querySelectorAll("p,li,h1,h2,h3,h4,h5,h6,pre,td")].filter(b => !b.querySelector("p,li"));
+      const links = [...c.querySelectorAll("a")].map(a => a.textContent.trim()).filter(Boolean);
+      return (blocks.length ? blocks : [c]).map(b => b.textContent.trim())
+        .filter(line => { const rest = links.reduce((r, l) => r.split(l).join(""), line); return rest === line || /[^\\s·、,，|]/.test(rest); }).join("\\n");
+    }).join("\\n")`));
 
     const verdict = task.judge(answer);
     rows.push({ task: task.id, run: i, askedAt, turnAt, doneAt, ok: verdict.ok, why: verdict.why, oldDirectionSteps: task.oldDirection(turnAt), firstAskToTurnMs: turnAt - askedAt });
