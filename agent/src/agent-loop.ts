@@ -34,7 +34,8 @@ export interface AgentLoop extends Pick<
   resume?(): Promise<void>;
   /**
    * 模型正在写正文（还没开始写工具调用）时，把已写的部分当成这次调用的完整回复收下，让循环立刻读排队的插话。
-   * 截断了返回 true；没有正在写的正文时返回 false，插话照旧等这一步结束。
+   * 模型还一个字没写（在思考或还没回话）时，丢掉这次调用，收下一条空回复，循环同样立刻读插话。
+   * 截断了返回 true；已开始写工具调用、或没有正在进行的模型调用时返回 false，插话照旧等这一步结束。
    */
   interruptText?(): boolean;
 }

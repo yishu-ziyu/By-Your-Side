@@ -166,7 +166,9 @@ try {
     await rp.screenshot(panel, join(out, `${task.id}-${i}-panel.png`)).catch(() => {});
   }
 
-  const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
+  const { traces, exportStatus } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
+  // 没有诊断记录就读不出秒数：说清导出结果，不留一个空文件冒充读数。
+  if (!traces.trim()) throw new Error(`诊断记录导出为空：${exportStatus}（读数目录 ${out}）`);
   await writeFile(join(out, "traces.jsonl"), traces);
 } finally {
   await writeFile(join(out, "rows.json"), JSON.stringify({ model: modelId, rows }, null, 2));
