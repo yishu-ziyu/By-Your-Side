@@ -17,6 +17,7 @@ import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { createCdp, fetchJson, findServiceWorker } from "../cdp.mjs";
 import { trackTempDir } from "../temp-profile.mjs";
+import "../runs-ledger.mjs";
 
 export const REPO = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../..");
 
