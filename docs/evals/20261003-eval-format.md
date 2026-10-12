@@ -1,6 +1,6 @@
 # 任务：完成标准使用规则、例子与问题，新验收缺章时文档检查失败
 
-[文档维护](../development/documentation.md) · [项目模板](../../AGENTS.md#完成标准格式)
+[文档维护](../development/documentation.md) · [项目模板](../development/documentation.md#验收文件模板)
 
 ## 规则
 
