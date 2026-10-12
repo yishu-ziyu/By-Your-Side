@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
-import { capturePng, copyArtifacts, readProcess, recordClip } from "./record-clip.mts";
+import { copyArtifacts, readProcess, recordClip } from "./record-clip.mts";
 
 requireHeadless();
 
@@ -52,7 +52,7 @@ const READ_MARK = `(() => {
   };
 })()`;
 
-const FONT = "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc";
+const FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 const inventory: Record<string, unknown> = { prev };
 const rp = await launchRealPath();
 
@@ -81,29 +81,20 @@ try {
   if (!live?.meta) throw new Error(`录屏时没有第二行：${JSON.stringify(live)}`);
   inventory.live = live;
 
-  const clip = await recordClip(rp, panel, out, "v3-now", 6_000, 10);
+  const clip = await recordClip(rp, panel, out, "v3-now", 6_000, 10, (read) => read.headerBox);
   const twoLine = clip.reads.filter((read) => /已做 \d+ 步/.test(read.meta)).length;
   inventory.twoLineFrames = twoLine;
   if (twoLine < 8) throw new Error(`6 秒里只有 ${twoLine} 帧看得到第二行`);
 
   const markBox = await rp.evaluate(panel, READ_MARK) as { x: number; y: number; width: number; height: number; display: string; widthPx: number } | null;
   if (!markBox || markBox.display === "none" || markBox.widthPx < 14) throw new Error(`墨点没有按 16px 画出来：${JSON.stringify(markBox)}`);
-  const markRaw = join(out, "mark-raw.png");
-  await capturePng(rp, panel, markRaw, markBox);
+  const mark = join(out, "mark-2x.png");
   const { data } = await rp.cdp.send("Page.captureScreenshot", {
     format: "png", fromSurface: true,
     clip: { x: markBox.x, y: markBox.y, width: markBox.width, height: markBox.height, scale: 4 },
   }, panel);
   if (!data) throw new Error("墨点放大截图没有数据");
-  await writeFile(markRaw, Buffer.from(data, "base64"));
-
-  const mark = join(out, "mark-2x.png");
-  const zoom = spawnSync("ffmpeg", [
-    "-y", "-i", markRaw,
-    "-vf", "scale=iw*2:ih*2:flags=neighbor,pad=160:160:(ow-iw)/2:(oh-ih)/2:white",
-    mark,
-  ], { encoding: "utf8" });
-  if (zoom.status !== 0) throw new Error(`ffmpeg 放大墨点失败：${zoom.stderr.slice(-400)}`);
+  await writeFile(mark, Buffer.from(data, "base64"));
 
   const still = join(out, "v3-twoline.png");
   const mid = clip.reads.map((read, index) => ({ read, index })).filter((item) => /已做 \d+ 步/.test(item.read.meta));
@@ -111,12 +102,13 @@ try {
   await copyFile(join(out, "v3-now-frames", `${String(pick.index).padStart(4, "0")}.png`), still);
 
   const compare = join(out, "v3-compare.mp4");
-  const font = `fontfile=${FONT}:fontsize=18:fontcolor=0x5f5e58`;
+  const font = `fontfile=${FONT}:fontsize=22:fontcolor=0x5f5e58`;
+  const side = "scale=760:168:force_original_aspect_ratio=decrease,pad=760:200:0:32:white,setsar=1";
   const stack = spawnSync("ffmpeg", [
     "-y", "-t", "6", "-i", prev, "-t", "6", "-i", clip.mp4,
     "-filter_complex",
-    `[0:v]scale=380:180:force_original_aspect_ratio=decrease,pad=380:180:0:28:white,setsar=1,drawtext=text='之前 V3':x=10:y=6:${font}[a];` +
-    `[1:v]scale=380:180:force_original_aspect_ratio=decrease,pad=380:180:0:28:white,setsar=1,drawtext=text='现在 V3':x=10:y=6:${font}[b];` +
+    `[0:v]${side},drawtext=text='prev V3':x=12:y=6:${font}[a];` +
+    `[1:v]${side},drawtext=text='now V3':x=12:y=6:${font}[b];` +
     `[a][b]hstack=inputs=2`,
     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart", compare,
   ], { encoding: "utf8" });

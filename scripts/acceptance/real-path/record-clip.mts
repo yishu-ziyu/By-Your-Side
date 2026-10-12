@@ -19,6 +19,7 @@ export type ProcessRead = {
   phase: string;
   height: number;
   box: ClipBox | null;
+  headerBox: ClipBox | null;
   text: string;
   groups: GraphGroupRead[];
 };
@@ -41,6 +42,7 @@ export const READ_PROCESS = `(() => {
     phase: d.dataset.phase ?? "",
     height: Math.round(r.height + (liveR?.height ?? 0)),
     box: { x: 0, y: top, width: Math.min(innerWidth, 380), height: Math.max(48, bottom - top) },
+    headerBox: { x: 0, y: Math.max(0, Math.floor(d.getBoundingClientRect().y - 8)), width: Math.min(innerWidth, 380), height: Math.max(56, Math.ceil(d.getBoundingClientRect().height + 16)) },
     text: d.textContent,
     groups: [...host.querySelectorAll(".run-graph-group")].map((g) => ({
       kind: g.dataset.kind ?? "",
@@ -77,6 +79,7 @@ export async function recordClip(
   name: string,
   durationMs: number,
   fps = 10,
+  pickBox?: (read: ProcessRead) => ClipBox | null | undefined,
 ): Promise<{ mp4: string; frames: string[]; reads: ProcessRead[] }> {
   const framesDir = join(outDir, `${name}-frames`);
   await mkdir(framesDir, { recursive: true });
@@ -88,7 +91,7 @@ export async function recordClip(
   while (Date.now() - started < durationMs) {
     const read = await readProcess(rp, panel);
     if (read) reads.push(read);
-    const box = read?.box ?? { x: 0, y: 72, width: 380, height: 160 };
+    const box = pickBox?.(read!) ?? read?.box ?? { x: 0, y: 72, width: 380, height: 160 };
     await capturePng(rp, panel, join(framesDir, `${String(i).padStart(4, "0")}.png`), box);
     i += 1;
     const used = Date.now() - started;
