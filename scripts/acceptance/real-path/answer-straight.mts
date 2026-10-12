@@ -1,11 +1,12 @@
 /**
  * 提交直接交给网站，回答直接显示，不挂拦截的标签（docs/evals/20261010-drop-blocking-labels.md）。只装扩展、隔离构建、本机脚本模型、本机预订页。
  *   npx tsx scripts/acceptance/real-path/answer-straight.mts --headless
- * 用户说「下周四」，脚本模型先点一个不存在的按钮（这一步失败，回答也不提），再把日期填成 10 月 8 日，点「提交」，然后回答。
+ * 用户说「下周四」，脚本模型先点一个不存在的按钮、再 fetch 一个 404 地址（这两步失败，回答也不提），再把日期填成 10 月 8 日，点「提交」，然后回答。
  * 目标核对的结论故意晚 4 秒才回（判做完）。
  *   a) 网站收到这次提交，日期就是模型填的 10 月 8 日（提交前不再核对、不拦）。
  *   b) 模型写完回答后 1.5 秒内，侧栏显示这句回答（不等核对结论）。
  *   c) 侧栏任何地方（含折叠的执行过程）都没有「结果还没确认」「有一步失败没说」「页面没有变化」「核对没过」。
+ *   d) 失败那一步写人话原因「没找到目标」，不照搬回执里的选择子 `#gone`（#304）。
  * 失败方式：恢复侧栏扣住回答（claim hold），b 失败（回答要等核对结论，约 4 秒）；恢复提交前核对，a 失败（网站收不到提交）。反例结果见验收文件。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -30,12 +31,16 @@ const bookings: string[] = [];
 
 const site = createServer(async (req, res) => {
   if (req.method === "POST") { let body = ""; for await (const part of req) body += part; bookings.push(body); res.end("ok"); return; }
+  if (req.url === "/missing") { res.writeHead(404, { "content-type": "text/plain" }).end("not found"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
 const ASK = "案例：在当前网页订下周四的会议室，直接点提交。";
+
+// fetch 拒抓私有地址（shared/fetch.ts），用 host-resolver-rules 把一个公网名字映回本机测试站。
+const FETCH_HOST = "fixture-missing.test";
 
 const WRONG = "2026-10-08";
 
@@ -51,13 +56,14 @@ const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }), delayMs: CHECK_DELAY_MS }] },
   { match: ASK, steps: [
     { tool: { name: "click", args: { target: "#gone", label: "不存在的按钮" } } },
+    { tool: { name: "fetch", args: { url: `http://${FETCH_HOST}:${siteAddress(site).port}/missing` } } },
     { tool: { name: "fill", args: { target: "#date", value: WRONG, label: "日期" } } },
     { tool: { name: "click", args: { target: "#submit", label: "提交" } } },
     { text: ANSWER },
   ] },
 ]);
 
-const rp = await launchRealPath();
+const rp = await launchRealPath({ chromeArgs: [`--host-resolver-rules=MAP ${FETCH_HOST} 127.0.0.1`, "--no-proxy-server"] });
 
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 
@@ -91,8 +97,8 @@ try {
     await sleep(50);
   }
 
-  // 模型写完回答的时刻：主任务第 4 步（3 个工具结果之后）的末段正文。
-  const delivered = model.requests.find(r => r.rule === ASK && r.step === 3 && r.lastTextAt !== undefined)?.lastTextAt ?? null;
+  // 模型写完回答的时刻：主任务第 5 步（4 个工具结果之后）的末段正文。
+  const delivered = model.requests.find(r => r.rule === ASK && r.step === 4 && r.lastTextAt !== undefined)?.lastTextAt ?? null;
   const shownAt = samples.find(s => s.answer)?.at ?? null;
   const lagMs = delivered !== null && shownAt !== null ? shownAt - delivered : null;
 
@@ -108,6 +114,10 @@ try {
   const text = String(await rp.evaluate(panel, 'document.querySelector("#messages").textContent'));
   const found = FORBIDDEN.filter(word => text.includes(word));
   check("c 侧栏没有拦截或待确认的标签", found.length === 0 && text.includes(ANSWER), { found, tail: text.slice(-600) });
+
+  // #304：失败那步写人话原因；只查失败尾巴，不查详情展开区（详情给模型看的原文留着）。
+  const failedNote = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .act-failed")].map(n => n.textContent).join(" | ")`));
+  check("d 失败步骤写人话原因，不带选择子", /没找到目标/.test(failedNote) && /页面不存在（404）/.test(failedNote) && !failedNote.includes("#gone"), { failedNote });
   await rp.evaluate(panel, 'void ([...document.querySelectorAll(".run-steps")].at(-1)?.setAttribute("open", "")); true');
   await rp.screenshot(panel, join(out, "c-panel.png"));
   await writeFile(join(out, "messages.html"), String(await rp.evaluate(panel, 'document.querySelector("#messages")?.outerHTML ?? ""')));

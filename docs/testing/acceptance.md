@@ -32,6 +32,7 @@
 
 ## 容易误判的地方
 
+- **Chrome 版本会换目标的种类**：有的 Chrome 把 MV3 service worker 报成 `background_page`（目标 URL 是 `background.html`），用例等待 `service_worker` 会超时而扩展本身没问题。Linux 上跑不通时，用 `EGO_ACCEPTANCE_CHROME` 指向 Playwright 的 chromium（`~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome`）可恢复正常目标（10-12 实测）。
 - **试用包不等于当前源码**：验已准备的试用包时，用 `SIDEAGENT_ACCEPTANCE_DIST` 指向试用包。当前源码通过，不代表试用包通过。
   首句问页还要核对浏览器实际读取的侧栏文件，见[首句验收](../evals/20261008-voice-first-utterance.md)。
 - **日常 Chrome**：`everyday-baseline --daily` 连到用户已开的日常 Chrome。只在用户同意后运行。

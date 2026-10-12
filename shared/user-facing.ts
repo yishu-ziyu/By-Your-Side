@@ -112,6 +112,57 @@ export function plainDownloadError(code: string | null | undefined): string {
   return (code && DOWNLOAD_REASONS.get(code)) || "下载中断了";
 }
 
+/**
+ * 工具失败 → 侧栏那一句人话原因（≤16 字）。
+ * 错误原文是给模型看的：先认已知的说法，认不出就取第一小句、剥掉英文括注和不可信标记；
+ * 整句没有一点中文就只说「没做成」，不照搬原文（#304）。
+ */
+const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
+  [/已取消/, "已取消"],
+  [/timed out|超时/i, "这一步超时了"],
+  [/not connected|disconnected/i, "连接断开了"],
+  [/ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_TIMED_OUT|CONNECTION_RESET|ADDRESS_UNREACHABLE|INTERNET_DISCONNECTED|NETWORK_FAILED)/, "连不上这个地址"],
+  [/ERR_(CERT|SSL)/, "页面证书有问题"],
+  [/fetch 请求已发出/, "结果未知"],
+  [/fetch 请求失败/, "网络没通"],
+  [/Download failed/i, "没下载成"],
+  [/目标被|被其他元素覆盖/, "被别的东西挡住"],
+  [/未找到目标|未找到元素|ref 已失效|节点无法解析|无法获取元素位置|无法获取操作坐标|无法确认目标位置/, "没找到目标"],
+  [/目标不可用/, "目标现在不可用"],
+  [/不可见/, "目标不可见"],
+  [/控制轮次已失效|原任务已停止|worker 已停止/i, "任务已经变了"],
+  [/未知工具/, "没有这个动作"],
+];
+
+export function plainToolError(errorText: string): string {
+  const text = errorText.trim();
+
+  if (!text) return "没做成";
+
+  // 挡住它的元素名字是网页原文（不可信）：只取 ≤11 字显示，标签只作文字（input.ts 的「被挡住」回执）。
+  const blockedBy = /元素名字：<page-content[^>]*>\s*([^<]{1,40}?)\s*<\//.exec(text)?.[1]?.trim();
+  if (blockedBy) return `被「${blockedBy.slice(0, 11)}」挡住`;
+
+  const download = /^Download failed[^:]*:\s*([^.。\n]{1,20})/.exec(text)?.[1]?.trim();
+  if (download && /[一-鿿]/.test(download)) return download;
+
+  for (const [pattern, reason] of TOOL_ERROR_REASONS) if (pattern.test(text)) return reason;
+
+  const first = text
+    .split(/[\n，。；,;]/, 1)[0]!
+    .replace(/[：:].*$/s, "")
+    .replace(/（[A-Za-z][^）]*）/g, "")
+    .replace(/<\/?(?:page-content|untrusted)[^>]*>/g, "")
+    .replace(/loc=\S+|@\d+|\bref\b/g, "")
+    .replace(/已停止/g, "已中止")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!/[一-鿿]/.test(first)) return "没做成";
+
+  return first.length <= 16 ? first : `${first.slice(0, 15)}…`;
+}
+
 /** 目标核对判「受阻」的原因类别（goal-check.ts）：站点连不上、要的页面或数据不存在、服务端拒绝。 */
 export const BLOCKED_CAUSES = ["unreachable", "missing", "refused", "unresponsive"] as const;
 
