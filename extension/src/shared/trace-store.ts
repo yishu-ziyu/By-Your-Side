@@ -7,7 +7,7 @@
  * 设置页可以导出（任务、语音各一个 jsonl）或清空。
  */
 import { TRACE_SESSIONS_KEPT, type TraceSink } from "../../../shared/run-trace-core.js";
-import { sanitizeTrace } from "../../../shared/trace-sanitize.js";
+import { redactStoredTrace } from "../../../shared/trace-sanitize.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS, voiceCaptureDayKey, type VoiceCaptureSink } from "../../../shared/voice-capture-core.js";
 
 const DB_NAME = "sideagent-diagnostics";
@@ -159,14 +159,14 @@ function redactLine(line: string): string {
   try {
     event = JSON.parse(line);
   } catch {
-    return `${JSON.stringify(sanitizeTrace(line.trimEnd()))}\n`;
+    return `${JSON.stringify(redactStoredTrace(line.trimEnd()))}\n`;
   }
 
-  // 只重写 data：行首的时间、编号与存储时一致，深度和节点限额也与存储时同一起点。
+  // 只重写 data：行首的时间、编号与存储时一致。
   // SAFETY: 本表的行都是 run-trace-core.ts 写的 JSON 对象；别的形状整行脱敏。
   const record = event as Record<string, unknown> | null;
 
-  return `${JSON.stringify(record && typeof record === "object" && !Array.isArray(record) && "data" in record ? { ...record, data: sanitizeTrace(record.data) } : sanitizeTrace(event))}\n`;
+  return `${JSON.stringify(record && typeof record === "object" && !Array.isArray(record) && "data" in record ? { ...record, data: redactStoredTrace(record.data) } : redactStoredTrace(event))}\n`;
 }
 
 /** 任务记录与语音记录各拼成一个 jsonl，按写入顺序；每行自带会话或语音编号，可再拆开。 */

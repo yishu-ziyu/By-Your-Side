@@ -23,8 +23,9 @@ function cleanCredentials(text: string): string {
 }
 
 function cleanText(text: string, full: boolean): string {
-  // fill / type_text 回执里读回的网页内容（agent/src/tools.ts readbackNote）：导出时和入参一样遮住。值里可能有 »，所以取到最后一个。
-  return cleanCredentials(full ? text.replace(/(now contains:? )«[\s\S]*»/g, "$1«[redacted]»") : text);
+  // fill / type_text 回执里读回的网页内容（agent/src/tools.ts readbackNote）：导出时和入参一样遮住。值里可能有 »，所以取到最后一个；
+  // 存储时被截断、没有 » 的，遮到字符串末尾。
+  return cleanCredentials(full ? text.replace(/(now contains:? )«(?:[\s\S]*»|[\s\S]*$)/g, "$1«[redacted]»") : text);
 }
 
 /**
@@ -32,27 +33,36 @@ function cleanText(text: string, full: boolean): string {
  * Best-effort diagnostic redaction; arbitrary unlabelled secrets cannot be classified reliably.
  */
 export function sanitizeTrace(value: unknown): unknown {
-  return scrubTrace(value, true);
+  return scrubTrace(value, true, true);
+}
+
+/**
+ * 导出已存的诊断记录时用：和 sanitizeTrace 一样遮住内容，但不再套长度限额。
+ * 存储时已经限过长；再限一次会为存储时留下的截断外壳多扣额度，把读回值从中间截开，遮挡规则就认不出来了。
+ */
+export function redactStoredTrace(value: unknown): unknown {
+  return scrubTrace(value, true, false);
 }
 
 /**
  * 写进本机诊断记录时用：保留原文，只遮凭据（密码栏的值、密钥、令牌、Cookie、网址里的账号密码），并照样限长、去掉图片数据。
- * 导出时再对每行跑一遍 sanitizeTrace（extension/src/shared/trace-store.ts）。
+ * 导出时再对每行跑一遍 redactStoredTrace（extension/src/shared/trace-store.ts）。
  */
 export function sanitizeTraceForStore(value: unknown): unknown {
-  return scrubTrace(value, false);
+  return scrubTrace(value, false, true);
 }
 
-function scrubTrace(value: unknown, full: boolean): unknown {
-  const budget = { chars: 96_000, nodes: 1024 };
+function scrubTrace(value: unknown, full: boolean, limits: boolean): unknown {
+  const budget = limits ? { chars: 96_000, nodes: 1024 } : { chars: Infinity, nodes: Infinity };
+  const max = limits ? { text: MAX_TEXT, depth: 12, entries: 256, key: 256 } : { text: Infinity, depth: Infinity, entries: Infinity, key: Infinity };
 
   function visit(value: unknown, depth = 0, redactInput = false, inReadback = false): unknown {
     if (--budget.nodes < 0 || budget.chars <= 0) return "[truncated: shared budget]";
 
-    if (depth > 12) return "[truncated: depth limit]";
+    if (depth > max.depth) return "[truncated: depth limit]";
 
     if (typeof value === "string") {
-      const count = Math.min(value.length, MAX_TEXT, budget.chars);
+      const count = Math.min(value.length, max.text, budget.chars);
       budget.chars -= count;
       const text = cleanText(value.slice(0, count), full);
 
@@ -65,7 +75,7 @@ function scrubTrace(value: unknown, full: boolean): unknown {
       const items: unknown[] = [];
       let count = 0;
 
-      while (count < value.length && count < 256 && budget.nodes > 0 && budget.chars > 0) {
+      while (count < value.length && count < max.entries && budget.nodes > 0 && budget.chars > 0) {
         items.push(visit(value[count++], depth + 1));
       }
 
@@ -104,12 +114,12 @@ function scrubTrace(value: unknown, full: boolean): unknown {
     for (const key in object) {
       if (!Object.hasOwn(object, key)) continue;
 
-      if (count++ >= 256 || budget.nodes <= 0 || budget.chars <= 0) {
+      if (count++ >= max.entries || budget.nodes <= 0 || budget.chars <= 0) {
         result.traceTruncation = { truncated: true, reason: "shared budget or object entry limit" };
         break;
       }
 
-      const safeKey = cleanText(key.slice(0, Math.min(256, budget.chars)), full);
+      const safeKey = cleanText(key.slice(0, Math.min(max.key, budget.chars)), full);
       budget.chars -= safeKey.length;
       result[safeKey] = SECRET_KEY.test(key) || key === "signature" ||
         ((sensitive || redactInput) && /^(text|value|code)$/.test(key)) ||
