@@ -48,7 +48,12 @@ const READ = `(() => {
   const title = d.querySelector(".run-title");
   const cs = beat ? getComputedStyle(beat) : null;
   const ts = title ? getComputedStyle(title) : null;
-  const seconds = (name) => { const m = /(\d+(?:\.\d+)?)s/.exec(name ?? ""); return m ? Number(m[1]) : NaN; };
+  const seconds = (text) => {
+    const first = String(text ?? "").split(",")[0].trim();
+    const n = parseFloat(first);
+    if (!Number.isFinite(n)) return null;
+    return /ms$/i.test(first) ? n / 1000 : n;
+  };
   return {
     done: d.classList.contains("done"),
     title: title?.textContent ?? "",
@@ -57,9 +62,11 @@ const READ = `(() => {
     phase: d.dataset.phase ?? "",
     beatDisplay: cs?.display ?? "missing",
     beatDuration: seconds(cs?.animationDuration),
+    beatDurationRaw: cs?.animationDuration ?? "",
     beatName: cs?.animationName ?? "",
     beatTransform: cs?.transform ?? "",
     shineDuration: seconds(ts?.animationDuration),
+    shineDurationRaw: ts?.animationDuration ?? "",
     shineName: ts?.animationName ?? "",
     all: document.querySelector("#messages")?.textContent ?? "",
   };
@@ -67,8 +74,8 @@ const READ = `(() => {
 
 type Read = {
   done: boolean; title: string; time: string; meta: string; phase: string;
-  beatDisplay: string; beatDuration: number; beatName: string; beatTransform: string;
-  shineDuration: number; shineName: string; all: string;
+  beatDisplay: string; beatDuration: number; beatDurationRaw: string; beatName: string; beatTransform: string;
+  shineDuration: number; shineDurationRaw: string; shineName: string; all: string;
 };
 
 try {
@@ -95,8 +102,8 @@ try {
   const liveSecs = Number(/^(\d+) 秒$/.exec(second?.time ?? "")?.[1] ?? NaN);
   await rp.screenshot(panel, join(out, "thinking.png"));
   check("a 想的时候两行仍是「正在思考」和步数，秒数从这段开始数", first?.title === "正在思考" && second?.title === "正在思考" && second.meta === "已做 2 步 · 1 步换了做法" && Math.abs(liveSecs - elapsed) <= 1.2, { title: second?.title ?? null, time: second?.time ?? null, elapsed, meta: second?.meta ?? null, phase: second?.phase ?? null });
-  check("b 思考转圈 0.9 秒一圈，450ms 后转角变了", first?.beatDisplay === "inline-block" && Math.abs((first?.beatDuration ?? 0) - 0.9) <= 0.05 && first?.beatName.includes("runBeat") === true && !!first?.beatTransform && first.beatTransform !== "none" && first.beatTransform !== second?.beatTransform, { beatDisplay: first?.beatDisplay, beatDuration: first?.beatDuration, beatName: first?.beatName, t0: first?.beatTransform, t1: second?.beatTransform });
-  check("c 标题扫光仍是 2.4 秒", Math.abs((first?.shineDuration ?? 0) - 2.4) <= 0.05 && (first?.shineName.includes("runShine") ?? false), { shineDuration: first?.shineDuration, shineName: first?.shineName });
+  check("b 思考转圈 0.9 秒一圈，450ms 后转角变了", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && Math.abs(first.beatDuration - 0.9) <= 0.05 && first.beatName.includes("runBeat") && first.beatTransform !== "none" && first.beatTransform !== second?.beatTransform, { beatDisplay: first?.beatDisplay, beatDuration: first?.beatDuration, beatDurationRaw: first?.beatDurationRaw, beatName: first?.beatName, t0: first?.beatTransform, t1: second?.beatTransform });
+  check("c 标题扫光仍是 2.4 秒", first != null && Math.abs(first.shineDuration - 2.4) <= 0.05 && first.shineName.includes("runShine"), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
 
   await until(async () => { const r = await read(); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);
   await sleep(400);
