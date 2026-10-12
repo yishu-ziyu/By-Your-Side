@@ -39,7 +39,8 @@
 ## 文档
 
 - 代码能还原的不写进文档；只写为什么、放弃了什么、用户看到什么、现在做到哪、踩过什么坑。一个事实只放一处。写法见[文档维护](docs/development/documentation.md)。
-- [STATUS](docs/STATUS.md) 是当前进度的唯一入口，恢复工作先读它。实质性任务的标准和证据存 `docs/evals/YYYYMMDD-<任务名>.md`，格式见[验收文件模板](docs/development/documentation.md#验收文件模板)。改了文档就跑 `npm run check:docs`。
+- [STATUS](docs/STATUS.md) 是当前进度的唯一入口，恢复工作先读它；只在更新日常扩展或换方向时一次性更新，不逐个 PR 改。
+- 新功能、换方向写验收文件（[模板](docs/development/documentation.md#验收文件模板)）；修 bug、改开发环境把标准和证据写在 PR 描述里。改了文档就跑 `npm run check:docs`。
 - 关键决策、受阻或交接时更新 [NOTES](docs/NOTES.md)；方向被实测推翻时写 `docs/devlog/`；可复用的失败经验按[收尾流程](docs/knowledge/closeout.md)处理。
 
 ## 设计
