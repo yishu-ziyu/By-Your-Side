@@ -56,7 +56,7 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
@@ -992,6 +992,8 @@ function failPendingControl(requestId: string, reason: string): void {
     cancelTakeover(pending);
     team.clear();
     emitLocalStatus(pending.fallbackStatus);
+    // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
+    void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
   } else {
     emitLocalStatus("user");
     void showUserControlGuarded(pending.tabId);
@@ -1011,6 +1013,8 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       cancelTakeover(pending);
       team.clear();
       emitLocalStatus(msg.state === "running" ? "running" : "idle");
+      // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
+      void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
     } else {
       emitLocalStatus("user");
       void showUserControlGuarded(pending.tabId);
@@ -1043,6 +1047,8 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       cancelTakeover(pending);
       team.clear();
       emitLocalStatus(pending.fallbackStatus);
+      // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
+      void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
       emitNotice("接管没有完成。页面控制没有改变。", "error");
 
       return;
@@ -1481,7 +1487,7 @@ function emitLocalStatus(state: AgentRunState): void {
   broadcastVisibleServer({ type: "status", state });
 }
 
-async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false,ask?:string): Promise<void> {
+async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false,ask?:string,targets?:string[]): Promise<void> {
   await controlReady;
 
   if (pendingControl) {
@@ -1535,7 +1541,16 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
   // 助手交给用户（hand_to_user 带 ask）：先把这页切到其窗口内前台，用户才看得到要做的事。侧栏「接管」不带 ask，不在这里切。
   if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
-  void showUserControlGuarded();
+  const shown = showUserControlGuarded();
+
+  // 页面条画好后圈出要用户填的栏和按钮（docs/evals/20261012-handoff-circle.md）。不等、不报错：圈不上不挡交还。
+  // 按这页所属的成员找 @ref；页面条收起时页面自己清圈。
+  if (ask && targetTabId != null && targets?.length) {
+    const owner = members.find(m => m.role === "lead") ?? members[0];
+    const tabId = targetTabId;
+
+    if (owner) void shown.then(() => showHandoffMarks(tabId, targets, key(owner.sessionId))).catch(() => {});
+  }
   const draining=targetTabId != null ? Promise.resolve({generation:gate.gen, superseded:false}) : gate.beginTakeover();
 
   if(wholeTask)await Promise.all([...new Set(members.flatMap(m=>m.tabId==null?[]:[m.tabId]))].map(tabId=>takeoverTab(tabId)));
@@ -1791,7 +1806,7 @@ return;}
       return;
     }
 
-    if(request.action==='pause')await handleTakeover(request.tabId,request.requestId,request.scope!=='page',request.ask);else await handleHandback(request.requestId);
+    if(request.action==='pause')await handleTakeover(request.tabId,request.requestId,request.scope!=='page',request.ask,request.targets);else await handleHandback(request.requestId);
 
     if(remoteControl===current&&pendingControl?.requestId!==request.requestId){
       if(request.action==='pause'&&gate.isUser())finishRemoteControl(true);

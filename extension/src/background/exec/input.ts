@@ -2572,7 +2572,7 @@ async function locateTarget(tabId: number, target: string, beforeDispatch?: Disp
  * 在定位好的目标上调用页面光标的 mark / guide：参数接在视口 rect 之后（null 换成 undefined）。
  * AX ref 时节点本身作为最后一个参数传进去，标注跟着这个节点；其余由页面按 target 重新找。返回页面函数的结果。
  */
-async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number; rect: DomRect }, cid: string, method: "mark" | "guide", args: unknown[], observedDocument: string | null, beforeDispatch?: DispatchGuard): Promise<T> {
+async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number; rect: DomRect }, cid: string, method: "mark" | "guide" | "handoffMark", args: unknown[], observedDocument: string | null, beforeDispatch?: DispatchGuard): Promise<T> {
   if (located.backendNodeId !== undefined) {
     const contextId = await cursorContext(tabId);
     await assertSameDocument(tabId, observedDocument);
@@ -2585,7 +2585,7 @@ async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number;
 
   return callDom(
     tabId,
-    (r: DomRect, id: string, m: "mark" | "guide", a: unknown[]) => {
+    (r: DomRect, id: string, m: "mark" | "guide" | "handoffMark", a: unknown[]) => {
       const cursor = window.__sideagent?.cursor?.for(id);
       const fn = cursor?.[m] as ((...values: unknown[]) => unknown) | undefined;
 
@@ -2611,6 +2611,31 @@ export async function showGuide(tabId: number, target: string, say: string, port
   await assertSameDocument(tabId, observedDocument);
 
   return callCursorAt(tabId, located, cursorId(sessionId), "guide", [say, target, portName, { style: "sketch", motion }], observedDocument);
+}
+
+/**
+ * 交给用户时圈出要用户填的栏和要点的按钮（docs/evals/20261012-handoff-circle.md）。按 mark 的方式逐个找目标；
+ * 找不到的跳过，不报错（R4）。圈都画好后再摆名牌，名牌才能躲开别的圈。页面条收起时页面自己清掉这些圈。
+ */
+export async function showHandoffMarks(tabId: number, targets: string[], sessionId: string): Promise<void> {
+  try {
+    await ensureDomOps(tabId);
+    await ensureCursor(tabId);
+  } catch {
+    return; // 页面禁止注入（如 chrome://）：没法圈，页面照常交给用户。
+  }
+
+  const cid = cursorId(sessionId);
+  const motion = await getMarkMotion();
+
+  for (const target of targets) {
+    try {
+      const located = await locateTarget(tabId, target);
+      await callCursorAt(tabId, located, cid, "handoffMark", [target, { style: "sketch", motion }], null);
+    } catch { /* 这个目标圈不上，其余照常圈。 */ }
+  }
+
+  await callDom(tabId, () => window.__sideagent?.cursor?.handoffLabels?.(), []).catch(() => {});
 }
 
 /**

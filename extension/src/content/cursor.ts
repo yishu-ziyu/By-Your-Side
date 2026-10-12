@@ -498,7 +498,11 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         box-shadow: 0 0 0 1.5px #fff, 0 3px 10px rgba(15,23,42,.28);
         white-space: nowrap;
       }
+      /* 交给用户时的圈：填好、点过就淡出。 */
+      .mark.handoff { transition: opacity .35s ease; }
+      .mark.handoff.faded { opacity: 0; }
       @media (prefers-reduced-motion: reduce) {
+        .mark.handoff { transition: none; }
         .mark.sketch.grow path { animation: none !important; stroke-dashoffset: 0 !important; }
         .mark.sketch.boil .sketch-svg { animation: none !important; }
         .mark.sketch.boil .boil-path { opacity: 1 !important; }
@@ -618,8 +622,10 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     mark.drawn = { w: rect.width, h: rect.height };
     const frame = drawSketchPaths(mark.el, { x: mark.pad, y: mark.pad, w: rect.width, h: rect.height }, mark.seed ?? 1);
     const labelEl = mark.el.querySelector<HTMLElement>(".sketch-label");
+    const handoff = handoffMarks.find((m) => m.el === mark.el);
 
-    if (labelEl) placeSketchLabel(mark.el, labelEl, frame);
+    if (labelEl && handoff) placeHandoffLabel(handoff, labelEl, frame);
+    else if (labelEl) placeSketchLabel(mark.el, labelEl, frame);
   }
 
   /** 拿住期间手跟目标走：若锚点有效则跟随目标最新位置；若锚点暂不可解（如 AX ref 或外部滚动），保持当前拿住点不误隐藏。 */
@@ -1912,8 +1918,193 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   }
 
   function hideUserControl(): void {
+    // 页面条收起 = 页面不再归用户：交给用户时画的圈一起清掉（docs/evals/20261012-handoff-circle.md R3）。
+    clearHandoff();
+
     if (!controlBar) return;
     controlBar.classList.remove("on");
+  }
+
+  // ── 交给用户时的圈（docs/evals/20261012-handoff-circle.md）──────────────
+  // 橙色表示「轮到你」；用户自己填好的栏、点过的按钮，圈就淡出。名牌只挂在还空着的第一栏和按钮上。
+
+  const HANDOFF_COLOR = "#d2602a";
+
+  const HANDOFF_INNER_FIELD = "input:not([type=button],[type=submit],[type=reset],[type=image],[type=hidden]),textarea,select,[contenteditable]:not([contenteditable=false])";
+
+  /** node：模型给的目标；control：判断填没填的控件（包着输入框的 label、div 取里面第一个）。touched：交给用户以后用户自己动过它。 */
+  interface HandoffMark { el: HTMLDivElement; node: Element; control: Element; kind: "field" | "button"; name: string; touched: boolean; done: boolean }
+
+  let handoffMarks: HandoffMark[] = [];
+  let handoffListening = false;
+
+  function isHandoffField(el: Element): boolean {
+    if (el instanceof HTMLInputElement) return !["button", "submit", "reset", "image"].includes(el.type);
+
+    return el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || (el instanceof HTMLElement && el.isContentEditable);
+  }
+
+  /** iframe 里面看不到，按要填的栏算、但不淡出；包着输入框的元素按里面第一个输入框算。 */
+  function handoffKind(node: Element): { kind: "field" | "button"; control: Element } {
+    if (isHandoffField(node) || node instanceof HTMLIFrameElement) return { kind: "field", control: node };
+
+    if (node.matches("button,a,input,[role=button]")) return { kind: "button", control: node };
+    const inner = node.querySelector(HANDOFF_INNER_FIELD);
+
+    return inner ? { kind: "field", control: inner } : { kind: "button", control: node };
+  }
+
+  /** 只判断有没有值，不读出值。 */
+  function isHandoffFilled(el: Element): boolean {
+    if (el instanceof HTMLIFrameElement) return false;
+
+    if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) return el.checked;
+
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return el.value.trim() !== "";
+
+    return (el.textContent ?? "").trim() !== "";
+  }
+
+  function addHandoffMark(inst: Instance, rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void {
+    // 页面条没显示，说明页面已经不归用户（交还或停止抢在了前面）：不画。
+    if (!controlBar?.classList.contains("on")) return;
+    const node = observedNode instanceof Element ? observedNode : resolveAnchor(rect, target);
+
+    if (!node || handoffMarks.some((m) => m.node === node)) return;
+    const { kind, control } = handoffKind(node);
+    // 已经有值的栏也圈（下拉框的默认值、浏览器自动填的）：用户自己改过才算填好。
+    const el = spawnMark(inst, rect, undefined, target, { ...options, style: "sketch" }, observedNode);
+
+    if (!el) return;
+    el.style.setProperty("--c", HANDOFF_COLOR);
+    el.classList.add("handoff");
+    handoffMarks.push({ el, node, control, kind, name: actionName(control) || actionName(node), touched: false, done: false });
+
+    if (!handoffListening) {
+      handoffListening = true;
+      window.addEventListener("input", onHandoffInput, true);
+      window.addEventListener("change", onHandoffInput, true);
+      window.addEventListener("click", onHandoffClick, true);
+    }
+  }
+
+  /** 名牌下面有没有可操作的控件（文字不算）。 */
+  function coversControl(r: { x: number; y: number; w: number; h: number }): boolean {
+    for (let i = 0; i <= 4; i++) {
+      for (let j = 0; j <= 2; j++) {
+        const hit = document.elementsFromPoint(r.x + 1 + ((r.w - 2) * i) / 4, r.y + 1 + ((r.h - 2) * j) / 2).find((e) => !e.closest(`[${OVERLAY_ATTR}]`));
+
+        if (hit?.closest("input,textarea,select,button,a,iframe")) return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 名牌只贴着自己的圈：上下的位置要和圈横向重叠，左右的要和圈纵向重叠，否则会被读成在指旁边别的控件。
+   * 先找不压文字、不压控件、不压别的圈的位置；没有就只要求不压控件；还没有就用默认位置。名牌之间始终不互相压。
+   */
+  function placeHandoffLabel(m: HandoffMark, labelEl: HTMLElement, frame: { x: number; y: number; w: number; h: number }): void {
+    const size = labelEl.getBoundingClientRect();
+    const label = { w: size.width, h: size.height };
+    const originX = (parseFloat(m.el.style.left) || 0) - window.scrollX;
+    const originY = (parseFloat(m.el.style.top) || 0) - window.scrollY;
+    type Box = { x: number; y: number; w: number; h: number };
+    const toView = (b: Box) => ({ x: originX + b.x, y: originY + b.y, w: b.w, h: b.h });
+    const inView = (b: Box) => {
+      const v = toView(b);
+
+      return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight;
+    };
+    const adjacent = (b: Box) => (b.x < frame.x + frame.w && b.x + b.w > frame.x) || (b.y < frame.y + frame.h && b.y + b.h > frame.y);
+    const others = handoffMarks.filter((o) => o !== m && !o.done);
+    const hits = (rects: DOMRect[], v: Box) => rects.some((r) => Math.min(r.right, v.x + v.w) > Math.max(r.left, v.x) && Math.min(r.bottom, v.y + v.h) > Math.max(r.top, v.y));
+    const rings = others.map((o) => o.el.getBoundingClientRect());
+    const labels = others.flatMap((o) => o.el.querySelector(".mark-label")?.getBoundingClientRect() ?? []);
+    const best = (b: Box) => adjacent(b) && !hits(labels, toView(b)) && !coversPageContent(toView(b)) && !hits(rings, toView(b));
+    let at = sketchLabelPosition(frame, label, { inView, clear: best });
+
+    if (!best({ x: at.left, y: at.top, ...label })) at = sketchLabelPosition(frame, label, { inView, clear: (b) => adjacent(b) && !hits(labels, toView(b)) && !coversControl(toView(b)) });
+    labelEl.style.left = `${at.left}px`;
+    labelEl.style.top = `${at.top}px`;
+  }
+
+  /** 改名牌：撤掉旧的，按同一框线摆新的。 */
+  function setHandoffLabel(m: HandoffMark, text: string | undefined): void {
+    const live = liveMarks.find((l) => l.el === m.el);
+    const current = m.el.querySelector<HTMLElement>(".mark-label");
+
+    if (!live || (current?.textContent ?? undefined) === text) return;
+    current?.remove();
+    live.label = text;
+
+    if (!text) return;
+    const labelEl = document.createElement("div");
+    labelEl.className = "mark-label sketch-label";
+    labelEl.textContent = text;
+    m.el.appendChild(labelEl);
+    placeHandoffLabel(m, labelEl, drawSketchPaths(m.el, { x: live.pad, y: live.pad, w: live.drawn?.w ?? 0, h: live.drawn?.h ?? 0 }, live.seed ?? 1));
+  }
+
+  function syncHandoff(): void {
+    for (const m of handoffMarks) {
+      if (m.kind === "field") m.done = m.touched && isHandoffFilled(m.control);
+      m.el.classList.toggle("faded", m.done);
+    }
+
+    const left = handoffMarks.filter((m) => m.kind === "field" && !m.done);
+    const names = left.map((m) => m.name).filter(Boolean);
+    const anyField = handoffMarks.some((m) => m.kind === "field");
+
+    // 按钮的名牌先摆：按钮小、能放的位置少；栏的名牌再躲开它。
+    for (const m of handoffMarks) if (m.kind === "button") setHandoffLabel(m, anyField ? "填完点这里" : "点这里");
+
+    for (const m of handoffMarks) if (m.kind === "field") setHandoffLabel(m, m === left[0] ? (names.length ? `你来填 · ${names.join("、")}` : "你来填") : undefined);
+  }
+
+  /** 只认用户自己的输入（isTrusted）：页面脚本改值、交给用户之前就有的值都不算填好。 */
+  function onHandoffInput(event: Event): void {
+    if (!event.isTrusted) return;
+    const path = event.composedPath();
+
+    for (const m of handoffMarks) if (m.kind === "field" && path.includes(m.node)) m.touched = true;
+    syncHandoff();
+  }
+
+  /** 只认用户真点（isTrusted）：页面脚本模拟的点击不算。 */
+  function onHandoffClick(event: MouseEvent): void {
+    if (!event.isTrusted) return;
+    const path = event.composedPath();
+    let hit = false;
+
+    for (const m of handoffMarks) {
+      if (m.kind === "button" && !m.done && path.includes(m.node)) { m.done = true; hit = true; }
+    }
+
+    if (hit) syncHandoff();
+  }
+
+  /** 圈都画好后再摆名牌，名牌才能躲开所有圈。 */
+  function placeHandoffLabels(): void {
+    if (!controlBar?.classList.contains("on")) { clearHandoff(); return; }
+    const first = handoffMarks.find((m) => m.kind === "field") ?? handoffMarks[0];
+
+    first?.node.scrollIntoView({ block: "nearest" });
+    syncHandoff();
+  }
+
+  /** 只撤交给用户时画的圈，不碰模型画的其他标注。 */
+  function clearHandoff(): void {
+    if (handoffListening) {
+      handoffListening = false;
+      window.removeEventListener("input", onHandoffInput, true);
+      window.removeEventListener("change", onHandoffInput, true);
+      window.removeEventListener("click", onHandoffClick, true);
+    }
+
+    for (const m of handoffMarks) removeMark(m.el);
+    handoffMarks = [];
   }
 
   function hide(inst: Instance): void {
@@ -2240,6 +2431,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   function teardown(event: PageTransitionEvent): void {
     if (guide) endGuide(guide);
+    clearHandoff();
 
     if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
     actionFrame = undefined;
@@ -2290,6 +2482,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       ns.markLayout = undefined;
       ns.markLayerCount = undefined;
       ns.marksState = undefined;
+      ns.handoffState = undefined;
       ns.holdState = undefined;
       ns.holdActionLabels = undefined;
       ns.clickHoldAction = undefined;
@@ -2519,7 +2712,16 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         return startGuide(getInstance(id), node, say, target, portName, options);
       },
 
+      handoffMark(rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void {
+        addHandoffMark(getInstance(id), rect, target, options, observedNode);
+      },
+
+      handoffLabels(): void {
+        placeHandoffLabels();
+      },
+
       clearMarks(): void {
+        clearHandoff();
         liveMarks.length = 0;
         marksLayer?.replaceChildren();
       },
@@ -2698,6 +2900,20 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         label: m.label ?? "",
         element: anchor?.isConnected ? { tag: anchor.tagName.toLowerCase(), name: actionName(anchor) } : null,
         shown: m.el.isConnected && m.el.style.visibility !== "hidden",
+      };
+    });
+  /** 交给用户时画的圈的读数：页面脚本读不到；只读，不改圈。 */
+  ns.handoffState = () =>
+    handoffMarks.map((m) => {
+      const r = m.el.querySelector(".mark-label")?.getBoundingClientRect();
+
+      return {
+        kind: m.kind,
+        name: m.name,
+        label: m.el.querySelector(".mark-label")?.textContent ?? "",
+        labelRect: r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null,
+        faded: m.el.classList.contains("faded"),
+        shown: m.el.isConnected,
       };
     });
   ns.setMarkConfig = (opts: MarkOptions) => {

@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>交给你时圈出要填的栏</title>
+<style>
+  :root {
+    --desk: #e8e6e0;
+    --ink: #141413; --ink-2: #5f5e58; --ink-3: #77756d;
+    --line: rgba(20,20,19,.10);
+    --ai: #2d4a86;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--desk); color: var(--ink); font: 13px/1.5 var(--font); display: flex; flex-direction: column; padding: 12px 14px 14px; gap: 10px; }
+
+  /* 预览控制条：不属于产品 */
+  .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: rgba(20,20,19,.06); border-radius: 999px; padding: 2px; }
+  .seg button, .ctl > button { font: 500 12.5px var(--font); border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(20,20,19,.10); }
+  .ctl > button { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .ctl > button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .ctl > button[hidden] { display: none; }
+  .ctl .lab { color: var(--ink-3); font-size: 12px; margin-left: 6px; }
+  .narr { flex-basis: 100%; color: var(--ink-2); font-size: 12.5px; min-height: 19px; }
+  .narr b { color: var(--ink); font-weight: 600; }
+  .judge { color: var(--ink-2); font-size: 12.5px; background: rgba(255,255,255,.55); border-radius: 10px; padding: 7px 12px; }
+  .judge ol { margin: 2px 0 0; padding-left: 18px; }
+
+  /* 浏览器窗口 */
+  .win { flex: 1 1 auto; min-height: 560px; display: flex; flex-direction: column; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(20,20,19,.10), 0 10px 30px rgba(20,20,19,.10); position: relative; }
+  .tabbar { height: 38px; flex: none; background: #f1f0ec; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid rgba(20,20,19,.07); }
+  .lights { display: flex; gap: 6px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #d9d7d0; }
+  .url { flex: 1; max-width: 520px; height: 26px; border-radius: 999px; background: #fff; border: 1px solid rgba(20,20,19,.08); display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--ink-2); gap: 6px; }
+  .body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .vp { flex: 1 1 auto; min-width: 0; position: relative; overflow: auto; background: #f7f8fa; }
+  .side { width: 380px; flex: none; border-left: 1px solid rgba(20,20,19,.08); position: relative; }
+  .side iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* 页面右上角「现在归你」胶囊：照抄 content/cursor.ts 的 .bar */
+  .bar { position: absolute; right: 20px; top: 20px; z-index: 6; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 40px);
+    background: #fff; color: #141413; border: 1px solid rgba(20,20,19,.08); border-radius: 999px; padding: 5px 5px 5px 11px;
+    box-shadow: 0 2px 8px rgba(20,20,19,.06); font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    opacity: 0; transform: translateY(-6px); transition: opacity 160ms ease, transform 160ms ease; pointer-events: none; }
+  .bar.on { opacity: 1; transform: none; pointer-events: auto; }
+  .bar::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); filter: grayscale(1); opacity: .55; }
+  .bar b { font-weight: 400; color: #5f5e58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .bar button { font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; border: 1px solid rgba(20,20,19,.14); border-radius: 999px; padding: 3px 12px; background: #fff; color: #141413; cursor: pointer; flex: none; }
+  .bar button:hover { background: #f0eee6; }
+
+  /* 虚构网站：Nimbus 云（不是任何真实品牌） */
+  .site { position: relative; min-height: 100%; font: 14px/1.55 -apple-system, "PingFang SC", sans-serif; color: #1f2733; }
+  .site header { height: 56px; background: #fff; border-bottom: 1px solid #e6e9ef; display: flex; align-items: center; padding: 0 28px; gap: 22px; }
+  .site .logo { font-weight: 700; font-size: 16px; color: #27407a; display: flex; gap: 8px; align-items: center; }
+  .site .logo i { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #6c8cff, #27407a); }
+  .site nav { display: flex; gap: 18px; color: #5b6475; font-size: 13.5px; }
+  .site nav span.on { color: #1f2733; font-weight: 600; }
+  .site main { max-width: 640px; margin: 28px auto 90px; padding: 0 28px; }
+  .site h1 { font-size: 22px; margin: 0 0 6px; }
+  .site .sub { color: #5b6475; margin: 0 0 22px; }
+  .card { background: #fff; border: 1px solid #e3e7ee; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 4px; }
+  .btn { font: 600 13.5px -apple-system, "PingFang SC", sans-serif; border: 0; border-radius: 8px; padding: 9px 18px; background: #27407a; color: #fff; cursor: pointer; }
+  .form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; margin-top: 14px; }
+  .form label { display: grid; gap: 5px; font-size: 12.5px; color: #5b6475; }
+  .form label.wide { grid-column: 1 / -1; }
+  .form input { font: 14px -apple-system, "PingFang SC", sans-serif; padding: 9px 11px; border: 1px solid #d3d9e3; border-radius: 8px; background: #fff; color: #1f2733; outline: none; }
+  .form input:focus { border-color: #6c8cff; box-shadow: 0 0 0 3px rgba(108,140,255,.18); }
+  .form .row-end { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+  .secure { font-size: 12px; color: #77809a; }
+  .note { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #fff6e8; color: #8a5a12; font-size: 13px; display: none; }
+  .ok { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #eaf7ee; color: #1d6b3a; font-size: 13px; display: none; }
+  .note.on, .ok.on { display: block; }
+
+  /* 扩展画在网页上的圈和名牌：照抄 content/cursor.ts 的 .sketch-svg 与 .mark-label.sketch-label */
+  .marks { position: absolute; inset: 0; pointer-events: none; z-index: 5; --c: #d2602a; }
+  .mark { position: absolute; transition: opacity .35s ease; }
+  .mark.gone { opacity: 0; }
+  .mark svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  .mark path { fill: none; stroke: var(--c); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .mark-label { position: absolute; padding: 3px 10px; border-radius: 999px; background: var(--c); color: #fff; font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; box-shadow: 0 0 0 1.5px #fff, 0 3px 10px rgba(15,23,42,.28); white-space: nowrap; }
+
+  /* 助手光标（交给你之前在填账号名称） */
+  .cursors { position: absolute; inset: 0; pointer-events: none; z-index: 7; overflow: hidden; }
+  .cur { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity .2s; will-change: transform; }
+  .cur.on { opacity: 1; }
+  .cur svg { position: absolute; left: -4px; top: -4.7px; overflow: visible; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 3px rgba(20,20,19,.32)); }
+  .cur .lbl { position: absolute; left: 13px; top: 14px; display: inline-flex; gap: 7px; align-items: center; background: #fff; color: #141413; border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px; padding: 6px 12px 6px 9px; font: 400 13px/1.45 var(--font); white-space: nowrap; box-shadow: 0 4px 14px rgba(20,20,19,.10); opacity: 0; transition: opacity .16s; }
+  .cur .lbl.on { opacity: 1; }
+  .orb-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); }
+  @media (prefers-reduced-motion: reduce) { .cur, .bar, .mark { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="ctl">
+    <div class="seg" role="group" aria-label="场景">
+      <button type="button" data-scene="new" aria-pressed="true">新：交给你时圈出要填的栏</button>
+      <button type="button" data-scene="stop" aria-pressed="false">新：交给你后点了停止</button>
+      <button type="button" data-scene="old" aria-pressed="false">对照：现在</button>
+    </div>
+    <button type="button" id="play" class="primary">▶ 播放</button>
+    <button type="button" id="fake-fill" hidden>模拟你填好并保存</button>
+    <button type="button" id="reset">重来</button>
+    <span class="lab">圈的颜色</span>
+    <div class="seg" role="group" aria-label="圈的颜色">
+      <button type="button" data-color="#d2602a" aria-pressed="true">橙（轮到你）</button>
+      <button type="button" data-color="#2d4a86" aria-pressed="false">墨蓝（助手色）</button>
+    </div>
+    <div class="narr" id="narr"></div>
+  </div>
+  <div class="judge">这次请判断三件事：
+    <ol>
+      <li>交给你时，一眼能不能看出该填哪几栏、最后点哪个按钮。</li>
+      <li>圈用橙色（表示"轮到你"）还是助手平时的墨蓝。右上角可切换。</li>
+      <li>你填好一栏，那一栏的圈就淡出，只剩还没做的。这样有用，还是太花。</li>
+    </ol>
+  </div>
+  <div class="win" id="win">
+    <div class="tabbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="url"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#77756d" stroke-width="2.4"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>console.nimbus-cloud.example/billing</span></div>
+    </div>
+    <div class="body">
+      <div class="vp" id="vp">
+        <div class="bar" id="bar"><b id="bar-text">现在归你</b><button type="button" id="bar-btn">交还</button></div>
+        <div class="site" id="site">
+          <header><span class="logo"><i></i>Nimbus 云</span><nav><span>我的权益</span><span class="on">账单</span><span>项目</span></nav></header>
+          <main>
+            <h1>设置账单账号</h1>
+            <p class="sub">用量超出额度后才会从这张卡扣费。</p>
+            <div class="card">
+              <h2>账单信息</h2>
+              <div class="form">
+                <label class="wide">账号名称<input id="f-name" placeholder="例如：我的账单"></label>
+                <label class="wide">卡号<input id="f-card" inputmode="numeric" placeholder="1234 5678 9012 3456" autocomplete="off"></label>
+                <label>有效期<input id="f-exp" placeholder="MM/YY" autocomplete="off"></label>
+                <label>安全码<input id="f-cvc" placeholder="3 位数字" autocomplete="off"></label>
+                <div class="row-end"><button class="btn" id="save">保存</button><span class="secure">🔒 卡信息直接发给 Nimbus，不经过助手</span></div>
+              </div>
+              <div class="note" id="save-note">请填写卡号、有效期和安全码。</div>
+              <div class="ok" id="save-ok">银行卡已保存。</div>
+            </div>
+          </main>
+          <div class="marks" id="marks"></div>
+        </div>
+      </div>
+      <div class="side"><iframe id="panel" title="侧栏"></iframe></div>
+    </div>
+    <div class="cursors">
+      <div class="cur" id="ai"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linejoin="round"/><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#2d4a86" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg><span class="lbl"><span class="orb-dot"></span><span class="t"></span></span></div>
+    </div>
+  </div>
+
+<script src="../circle-and-memory/rough.js"></script>
+<script>
+const PANEL = __PANEL__;
+const $ = (s) => document.querySelector(s);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const narr = (html) => ($("#narr").innerHTML = html);
+
+let scene = "new";
+let run = 0;          // 每次重来递增，旧动画自己停
+let P = null;         // 侧栏 document
+let waiting = null;   // 交给你期间：{ card, cont }
+let saved = false;
+const ASK = "帮我把 Nimbus 的开发者额度领了，账单没设好就先设好。";
+const HAND_ASK = "在左边填好卡号、有效期和安全码，点「保存」。";
+
+/* ── 网页 ── */
+const FIELDS = ["f-card", "f-exp", "f-cvc"];
+function resetPage() {
+  for (const id of ["f-name", ...FIELDS]) $("#" + id).value = "";
+  $("#save-note").classList.remove("on"); $("#save-ok").classList.remove("on");
+  saved = false; bar(false); clearMarks();
+}
+$("#save").onclick = () => {
+  const full = FIELDS.every((id) => $("#" + id).value.trim());
+  $("#save-note").classList.toggle("on", !full);
+  $("#save-ok").classList.toggle("on", full);
+  if (full) saved = true;
+  syncMarks();
+};
+for (const id of FIELDS) $("#" + id).addEventListener("input", syncMarks);
+function bar(on, text) {
+  $("#bar").classList.toggle("on", on);
+  if (text) $("#bar-text").textContent = text;
+}
+$("#bar-btn").onclick = () => handBack();
+
+/* ── 圈：产品的 sketchFrame（pad 10、roughness 0.9）与 sketchLabelPosition ── */
+let marks = []; // { key, el }
+let seed = 11;
+function boxOf(el) {
+  const r = el.getBoundingClientRect(), s = $("#site").getBoundingClientRect();
+  return { x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height };
+}
+function ring(key, el) {
+  const b = boxOf(el), pad = 10;
+  const { d, frame } = Rough.sketchFrame({ x: pad, y: pad, w: b.w, h: b.h }, { seed: seed += 97, roughness: 0.9 });
+  const m = document.createElement("div");
+  m.className = "mark";
+  m.style.left = `${b.x - pad}px`; m.style.top = `${b.y - pad}px`;
+  m.style.width = `${b.w + pad * 2}px`; m.style.height = `${b.h + pad * 2}px`;
+  m.innerHTML = `<svg width="${b.w + pad * 2}" height="${b.h + pad * 2}"><path d="${d}"/></svg>`;
+  $("#marks").append(m);
+  const path = m.querySelector("path"), len = path.getTotalLength();
+  path.animate([{ strokeDasharray: len, strokeDashoffset: len }, { strokeDasharray: len, strokeDashoffset: 0 }], { duration: 420, easing: "cubic-bezier(.16,1,.3,1)" });
+  const mark = { key, el: m, frame };
+  marks.push(mark);
+  return mark;
+}
+// 名牌：候选位置同产品 sketchLabelPosition；不压别的圈，也不压页面文字和控件（产品 coversPageContent 的做法）。
+function labelOn(mark, text) {
+  const m = mark.el, l = document.createElement("div");
+  l.className = "mark-label"; l.textContent = text; m.append(l);
+  const ox = parseFloat(m.style.left), oy = parseFloat(m.style.top), W = $("#site").clientWidth;
+  const at = Rough.sketchLabelPosition(mark.frame, { w: l.offsetWidth, h: l.offsetHeight }, {
+    inView: (q) => ox + q.x >= 4 && ox + q.x + q.w <= W - 4 && oy + q.y >= 0,
+    clear: (q) => {
+      const g = { x: ox + q.x, y: oy + q.y, w: q.w, h: q.h };
+      return !marks.some((o) => overlaps(o.el, g)) && !coversContent(g);
+    },
+  });
+  l.style.left = `${at.left}px`; l.style.top = `${at.top}px`;
+  l.animate([{ opacity: 0, transform: "translateY(3px)" }, { opacity: 1, transform: "none" }], { duration: 220, fill: "backwards" });
+}
+function coversContent(g) {
+  const s = $("#site").getBoundingClientRect();
+  for (const el of $("#site").querySelectorAll("input,button,h1,h2,p,.secure,label,.note.on,.ok.on")) {
+    const rects = el.matches("label") ? [...el.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim()).map((n) => { const r = document.createRange(); r.selectNodeContents(n); return r.getBoundingClientRect(); }) : [el.getBoundingClientRect()];
+    for (const r of rects) {
+      const x = r.left - s.left, y = r.top - s.top;
+      if (Math.min(x + r.width, g.x + g.w) > Math.max(x, g.x) && Math.min(y + r.height, g.y + g.h) > Math.max(y, g.y)) return true;
+    }
+  }
+  return false;
+}
+function overlaps(el, q) {
+  const x = parseFloat(el.style.left), y = parseFloat(el.style.top), w = parseFloat(el.style.width), h = parseFloat(el.style.height);
+  return Math.min(x + w, q.x + q.w) > Math.max(x, q.x) && Math.min(y + h, q.y + q.h) > Math.max(y, q.y);
+}
+function clearMarks() { $("#marks").replaceChildren(); marks = []; }
+// 填好一栏，那一栏的圈淡出；保存成功后「保存」的圈也淡出。
+const NAMES = { "f-card": "卡号", "f-exp": "有效期", "f-cvc": "安全码" };
+function syncMarks() {
+  for (const m of marks) {
+    const done = m.key === "save" ? saved : $("#" + m.key).value.trim() !== "";
+    m.el.classList.toggle("gone", done);
+  }
+  // 「你来填」名牌跟着还没填的第一栏走，写的是还剩哪几栏。
+  const left = marks.filter((m) => m.key !== "save" && !m.el.classList.contains("gone"));
+  const text = left.length ? `你来填 · ${left.map((m) => NAMES[m.key]).join("、")}` : "";
+  const now = marks.find((m) => m.key !== "save" && m.el.querySelector(".mark-label"));
+  if (now && (now !== left[0] || now.el.querySelector(".mark-label").textContent !== text)) now.el.querySelector(".mark-label").remove();
+  if (left[0] && !left[0].el.querySelector(".mark-label")) labelOn(left[0], text);
+}
+async function circleNeeded(my) {
+  const empty = FIELDS.filter((id) => !$("#" + id).value.trim());
+  const drawn = [];
+  for (const id of empty) {
+    if (my !== run) return;
+    drawn.push(ring(id, $("#" + id)));
+    await sleep(140);
+  }
+  if (my !== run) return;
+  const save = ring("save", $("#save"));
+  await sleep(260); if (my !== run) return;
+  // 圈都画好后再摆名牌，名牌才能躲开所有圈。
+  if (drawn.length) labelOn(drawn[0], `你来填 · ${empty.map((k) => NAMES[k]).join("、")}`);
+  labelOn(save, "填完点这里");
+}
+
+/* ── 助手光标 ── */
+const pos = { x: 300, y: 120 };
+function place(p) { pos.x = p.x; pos.y = p.y; $("#ai").style.transform = `translate(${p.x}px, ${p.y}px)`; }
+function cursorOn(on, text = "") { $("#ai").classList.toggle("on", on); const l = $("#ai .lbl"); l.querySelector(".t").textContent = text; l.classList.toggle("on", on && !!text); }
+function ptOf(el) { const r = el.getBoundingClientRect(), w = $("#win").getBoundingClientRect(); return { x: r.left - w.left + r.width * .5, y: r.top - w.top + r.height * .55 }; }
+async function moveTo(el, my, ms = 650) {
+  const to = ptOf(el), from = { ...pos }, t0 = performance.now();
+  const dx = to.x - from.x, dy = to.y - from.y, d = Math.hypot(dx, dy) || 1, bend = Math.min(70, d * .18);
+  const cx = from.x + dx / 2 - dy / d * bend, cy = from.y + dy / 2 + dx / d * bend;
+  while (my === run) {
+    const t = Math.min(1, (performance.now() - t0) / ms), e = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    place({ x: (1 - e) ** 2 * from.x + 2 * (1 - e) * e * cx + e * e * to.x, y: (1 - e) ** 2 * from.y + 2 * (1 - e) * e * cy + e * e * to.y });
+    if (t >= 1) break;
+    await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 20); });
+  }
+}
+
+/* ── 侧栏：真实 DOM + 真实 styles.css；「需要你来这一步」卡用 sidepanel/main.ts 的结构 ── */
+function loadPanel() {
+  return new Promise((res) => {
+    const f = $("#panel");
+    f.onload = () => {
+      P = f.contentDocument;
+      P.getElementById("starter")?.setAttribute("hidden", "");
+      P.getElementById("takeover-btn").addEventListener("click", () => handBack());
+      P.getElementById("send-btn").addEventListener("click", () => { if (waiting) stopTask(); });
+      res();
+    };
+    f.srcdoc = PANEL;
+  });
+}
+const msgs = () => P.getElementById("messages");
+const scrollEnd = () => { const f = P.getElementById("messages-frame"); if (f) f.scrollTop = 1e6; };
+function node(html) { const t = P.createElement("div"); t.innerHTML = html.trim(); return t.firstElementChild; }
+function composer(state) { // idle | running | yours
+  const send = P.getElementById("send-btn"), tk = P.getElementById("takeover-btn"), input = P.getElementById("input");
+  send.disabled = state === "idle"; send.classList.toggle("stopping", state !== "idle");
+  tk.hidden = state === "idle"; tk.textContent = state === "yours" ? "交还" : "接管"; tk.dataset.mode = state === "yours" ? "handback" : "takeover";
+  input.placeholder = state === "yours" ? "补充要求，按 Enter 保存。点「交还」后生效" : state === "running" ? "补充或改方向..." : "说说你想完成什么…";
+}
+function userMsg(text) {
+  P.getElementById("app").classList.remove("conversation-empty");
+  const m = node(`<div class="msg user"><div class="user-msg-text"></div></div>`); m.firstChild.textContent = text; msgs().append(m); scrollEnd();
+}
+function aiLine(text) { const m = node(`<div class="msg assistant markdown"><p></p></div>`); m.firstChild.textContent = text; msgs().append(m); scrollEnd(); return m; }
+function handoffCard(ask) {
+  const c = node(`<div class="handoff-card"><strong>需要你来这一步</strong><p class="handoff-ask"></p><p class="handoff-note">交给你期间，我不读也不动这个页面。</p><div class="handoff-actions"><button type="button" class="btn-primary">做好了，交还</button><span class="handoff-note">或点页面上的「交还」</span></div></div>`);
+  c.querySelector(".handoff-ask").textContent = ask;
+  c.querySelector(".btn-primary").onclick = () => handBack();
+  msgs().append(c); scrollEnd(); return c;
+}
+function collapse(card, text) { card.className = "handoff-done"; card.textContent = text; }
+
+/* ── 交给你 / 交还 / 停止 ── */
+async function handTo(my, ask, withRings) {
+  cursorOn(false); composer("yours");
+  bar(true, `现在归你 · ${ask}`);
+  const card = handoffCard(ask);
+  waiting = { card, my };
+  $("#fake-fill").hidden = false;
+  if (withRings) await circleNeeded(my);
+}
+async function handBack() {
+  const w = waiting; if (!w) return;
+  waiting = null; $("#fake-fill").hidden = true;
+  clearMarks(); bar(false); collapse(w.card, "你已交还 · 我从你所在的页面接着做");
+  const my = w.my; composer("running");
+  place(ptOf($("#save"))); cursorOn(true, "读页面");
+  await sleep(900); if (my !== run) return;
+  if (!saved) {
+    aiLine("卡号和安全码还没保存，页面还在等你。");
+    narr("<b>没填就交还</b>：助手重读页面，再交给你一次，这次<b>只圈还空着的栏</b>。");
+    await handTo(my, "还差银行卡：填好卡号、有效期和安全码，点「保存」。", scene !== "old");
+    return;
+  }
+  cursorOn(true, "确认 银行卡已保存"); await sleep(900); if (my !== run) return;
+  cursorOn(false); composer("idle");
+  aiLine("银行卡是你填写并保存的，我没有读卡号。接着回到权益页领取 $30。");
+  narr("交还后圈马上清掉，助手从你所在的页面接着做。点「重来」可以再试。");
+}
+function stopTask() {
+  const w = waiting; if (!w) return;
+  waiting = null; $("#fake-fill").hidden = true;
+  clearMarks(); bar(false); collapse(w.card, "任务已停止"); composer("idle");
+  narr("<b>点了停止</b>：圈、名牌和页面胶囊一起清掉，网页上不留东西。");
+}
+$("#fake-fill").onclick = async () => {
+  const my = run;
+  for (const [id, v] of [["f-card", "4111 1111 1111 1111"], ["f-exp", "09/28"], ["f-cvc", "123"]]) {
+    const i = $("#" + id); i.value = "";
+    for (const ch of v) { if (my !== run) return; i.value += ch; i.dispatchEvent(new Event("input")); await sleep(28); }
+    await sleep(250);
+  }
+  $("#save").click();
+  narr("保存好了，圈都淡出了。现在点 <b>「做好了，交还」</b>（侧栏卡片、页面右上角、输入框旁任选一个）。");
+};
+
+/* ── 场景 ── */
+async function play(my) {
+  composer("idle"); userMsg(ASK); await sleep(500); if (my !== run) return;
+  composer("running");
+  aiLine("先建账单账号。卡号和安全码交给你填，我不会替你付款。");
+  place({ x: 420, y: 90 }); cursorOn(true, "填写账号名称");
+  await moveTo($("#f-name"), my); if (my !== run) return;
+  for (const ch of "我的账单") { if (my !== run) return; $("#f-name").value += ch; await sleep(70); }
+  await sleep(400); if (my !== run) return;
+  await handTo(my, HAND_ASK, scene !== "old");
+  if (scene === "new") narr("<b>新</b>：交给你时，要填的三栏和「保存」被圈出来。<b>直接在左边表单里打字试试</b>：填好一栏，那一栏的圈就淡出。也可以点「模拟你填好并保存」，或不填直接交还。");
+  if (scene === "old") narr("<b>现在的产品</b>：只有右上角一行字和侧栏卡片，要填哪几栏得你自己找。");
+  if (scene === "stop") {
+    narr("<b>新</b>：交给你之后，2 秒后模拟你点侧栏右下角的停止键。");
+    await sleep(2200); if (my !== run || !waiting) return;
+    stopTask();
+  }
+}
+async function reset() {
+  run++; waiting = null; $("#fake-fill").hidden = true;
+  resetPage(); cursorOn(false);
+  await loadPanel(); composer("idle");
+  narr("点 <b>▶ 播放</b>。助手先填账号名称，然后把卡号这一步交给你。");
+}
+document.querySelectorAll("[data-scene]").forEach((b) => (b.onclick = () => {
+  scene = b.dataset.scene;
+  document.querySelectorAll("[data-scene]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  reset();
+}));
+document.querySelectorAll("[data-color]").forEach((b) => (b.onclick = () => {
+  $("#marks").style.setProperty("--c", b.dataset.color);
+  document.querySelectorAll("[data-color]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+}));
+$("#play").onclick = async () => { await reset(); play(run); };
+$("#reset").onclick = reset;
+reset();
+</script>
+</body>
+</html>

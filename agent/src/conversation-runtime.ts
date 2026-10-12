@@ -23,22 +23,25 @@ export async function createConversationRuntime(
   const control = new TabControl(rpc);
   let toolSession: BrowserAgentSession | undefined;
   // 交给用户（docs/evals/20261010-hand-to-user.md R1）：走与侧栏「接管」相同的暂停通道，宿主接线后才可用。
-  let handToUser: ((ask: string) => Promise<void>) | undefined;
+  let handToUser: ((ask: string, targets?: string[]) => Promise<void>) | undefined;
 
   const handToUserTool = defineTool({
     name: "hand_to_user",
     label: "Hand the page to the user",
-    description: "Hand the page to the user for a step only they can do: login, captcha, 2FA, payment authorization, or card number / expiry / security code fields. Never type those values yourself. This pauses the task and ends your turn; when the user hands the page back you get their current page and continue the original task from there.",
+    description: "Hand the page to the user for a step only they can do: login, captcha, 2FA, payment authorization, or card number / expiry / security code fields. Never type those values yourself. Pass targets for the fields and the button the user must use; they are circled on the page. This pauses the task and ends your turn; when the user hands the page back you get their current page and continue the original task from there.",
     parameters: Type.Object({
       ask: Type.String({ description: "One plain sentence in the user's language: exactly what to do on the page and which button to press (at most 120 characters)." }),
+      targets: Type.Optional(Type.Array(Type.String(), { description: "The fields the user must fill, in order, then the button to press (up to 6; extra ones are not circled). Same locators as click: @N ref from the latest snapshot, loc=..., or CSS." })),
     }),
     execute: async (_id, params) => {
       const ask = String(params.ask ?? "").trim().slice(0, 120);
+      // 圈不上不挡交还（docs/evals/20261012-handoff-circle.md R4）：格式不对的目标直接丢掉，不报错。
+      const targets = (Array.isArray(params.targets) ? params.targets : []).map(t => String(t ?? "").trim()).filter(t => t && t.length <= 200).slice(0, 6);
 
       if (!ask) throw new Error("ask 不能为空：写清用户要在页面上做什么。");
 
       if (!handToUser) throw new Error("现在不能把页面交给用户。");
-      await handToUser(ask);
+      await handToUser(ask, targets);
 
       return { content: [{ type: "text" as const, text: "The page is now the user's. Stop here; you will get the page back after the user hands it back." }], details: { ask }, terminate: true };
     },
@@ -258,7 +261,7 @@ export async function createConversationRuntime(
     }
   };
 
-  return { session, control, rpc, handleMessage, onHandToUser(fn: (ask: string) => Promise<void>) { handToUser = fn; }, dispose() { session.dispose(); } };
+  return { session, control, rpc, handleMessage, onHandToUser(fn: (ask: string, targets?: string[]) => Promise<void>) { handToUser = fn; }, dispose() { session.dispose(); } };
 }
 
 function frozenMembersFromTakeover(msg: Extract<ClientMessage, { type: "takeover" }>): ActiveMemberInput[] {
