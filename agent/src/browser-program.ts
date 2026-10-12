@@ -63,7 +63,7 @@ export const BROWSER_PROGRAM_HELPERS = [
   { name: "assert", summary: "assert({ok,name,reason}) 条件不成立就停下整个程序，后面的动作一个都不执行；结果带停在第几步、名字、原因、已完成几步", composed: "宿主停止路径" },
   { name: "sleep", summary: "有界等待毫秒（纯宿主，不伪造浏览器动作）", composed: "host timer" },
   { name: "pageInfo", summary: "url/title/readyState/视口/滚动/工作页/未处理 JS dialog（身份一致才返回）", composed: "list_tabs + js + dialog_info" },
-  { name: "waitForLoad", summary: "等当前文档的 domcontentloaded / load 就绪", composed: "js(document.readyState+timeOrigin)" },
+  { name: "waitForLoad", summary: "等当前文档就绪：默认 domcontentloaded（内容可读可点）；要等图片等全部资源再传 state:'load'", composed: "js(document.readyState+timeOrigin)" },
   { name: "waitForNetworkIdle", summary: "纳入范围的在途请求为 0 且持续静默；捕获不完整不冒充空闲（≠业务完成）", composed: "network 在途集合轮询" },
   { name: "scrollToBottomUntil", summary: "滚动直到条件成立或到底", composed: "scroll + read_element / js 条件" },
   { name: "armEvent", summary: "触发前订阅 popup/download/filechooser；返回宿主 token（串行队列不阻塞）", composed: "arm_event" },
@@ -451,10 +451,13 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     return options.call("arm_event", callParams, stepId);
   }
 
-  /** waitForLoad：等当前这次文档到达 domcontentloaded/load；旧文档 complete 不能在文档替换后冒充就绪。 */
+  /**
+   * waitForLoad：等当前这次文档到达 domcontentloaded/load；旧文档 complete 不能在文档替换后冒充就绪。
+   * 默认 domcontentloaded：模型几乎从不传 state，按 load 会陪图片和广告干等（10-13 必应结果页内容出来后又等了约 6 秒）。
+   */
   async function waitForLoad(params: Record<string, unknown>, stepId: string): Promise<unknown> {
-    const state = params.state === undefined || params.state === "load" ? "load"
-      : params.state === "domcontentloaded" ? "domcontentloaded"
+    const state = params.state === "load" ? "load"
+      : params.state === undefined || params.state === "domcontentloaded" ? "domcontentloaded"
       : null;
 
     if (!state) throw new Error("INVALID_ARGUMENT: waitForLoad.state 只支持 domcontentloaded 或 load；network-idle 请用 waitForNetworkIdle");
