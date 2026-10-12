@@ -3012,22 +3012,41 @@ details.run-steps:not(.done) .run-title {
   animation: runShine 2.4s cubic-bezier(.4, 0, .2, 1) infinite;
 }
 @keyframes runShine { from { -webkit-mask-position: 110% 0; mask-position: 110% 0; } to { -webkit-mask-position: -10% 0; mask-position: -10% 0; } }
-/* #263 思考心跳：转圈 0.9s 一圈，秒数同拍闪一下。沿用现有两行，不加新皮肤。 */
+/* #263 思考心跳：v1/v3 四个墨点呼吸并收成十字；v2 只换动词。秒数同拍闪一下。 */
 .run-beat {
   display: none;
-  box-sizing: border-box;
-  width: 10px;
-  height: 10px;
+  position: relative;
+  width: 12px;
+  height: 12px;
   flex: none;
-  border-radius: 50%;
-  border: 1.5px solid color-mix(in srgb, var(--text-quaternary) 75%, transparent);
-  border-top-color: var(--text-secondary);
 }
-details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
-details.run-steps:not(.done)[data-phase="waiting"] .run-beat {
+.run-beat[data-variant="v2"] { width: 0; height: 0; overflow: hidden; }
+details.run-steps:not(.done)[data-phase="thinking"] .run-beat:not([data-variant="v2"]),
+details.run-steps:not(.done)[data-phase="waiting"] .run-beat:not([data-variant="v2"]) {
   display: inline-block;
-  animation: runBeat 0.9s linear infinite;
+  animation: markTurn 4.8s var(--e-glide) infinite;
 }
+.run-beat i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  animation: markBreathe 1.8s var(--e-glide) infinite, markMorph 2.4s var(--e-swift) infinite;
+}
+.run-beat i:nth-child(1) { --x: 4.5px; --y: 0px; --x2: 4.5px; --y2: 3px; }
+.run-beat i:nth-child(2) { --x: 9px; --y: 4.5px; --x2: 6px; --y2: 4.5px; }
+.run-beat i:nth-child(3) { --x: 4.5px; --y: 9px; --x2: 4.5px; --y2: 6px; }
+.run-beat i:nth-child(4) { --x: 0px; --y: 4.5px; --x2: 3px; --y2: 4.5px; }
+@keyframes markBreathe {
+  0%, 100% { opacity: 0.38; transform: scale(0.82); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+@keyframes markMorph {
+  0%, 100% { left: var(--x); top: var(--y); }
+  50% { left: var(--x2); top: var(--y2); }
+}
+@keyframes markTurn { 0% { transform: rotate(0deg); } 100% { transform: rotate(90deg); } }
 @keyframes runBeat { to { transform: rotate(1turn); } }
 details.run-steps:not(.done)[data-phase="thinking"] .run-time,
 details.run-steps:not(.done)[data-phase="waiting"] .run-time {
@@ -3131,10 +3150,11 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
   details.run-steps:not(.done) .run-beat,
   details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
   details.run-steps:not(.done)[data-phase="waiting"] .run-beat,
+  details.run-steps:not(.done) .run-beat i,
   details.run-steps:not(.done)[data-phase="thinking"] .run-time,
   details.run-steps:not(.done)[data-phase="waiting"] .run-time { animation: none; }
-  details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
-  details.run-steps:not(.done)[data-phase="waiting"] .run-beat { background: var(--text-quaternary); border-color: var(--text-quaternary); }
+  details.run-steps:not(.done)[data-phase="thinking"] .run-beat i,
+  details.run-steps:not(.done)[data-phase="waiting"] .run-beat i { opacity: 0.7; left: var(--x); top: var(--y); }
 }
 
 /* #263 AC：进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */

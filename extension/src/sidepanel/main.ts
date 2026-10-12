@@ -4,6 +4,8 @@ import { attachSourceCitations, captureCitationContext, type CitationContext } f
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
+import { currentHeartbeatVariant, heartbeatTitle, paintBeatMark, VERB_MS, type HeartbeatVariant } from "./run-heartbeat.js";
+import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -2344,6 +2346,12 @@ interface RunHost {
   evidenceLines: Array<{ key: string; field: string; value: string }>;
   /** 并行/死路/接管的分叉层，挂在两行标题下面；单步回合是空的。 */
   graph: LiveGraph;
+  beatEl: HTMLElement;
+  heartbeat: HeartbeatVariant;
+  heartbeatTimer: number;
+  heartbeatTick: number;
+  semanticTitle: string;
+  lastToolName: string | null;
 }
 
 const ACTION_ICONS = {
@@ -2387,7 +2395,9 @@ function setRunTitle(run: RunHost, text: string, now = false, kind?: IconKind): 
   const wait = now || applyingHistory ? 0 : run.titleAt + RUN_TITLE_HOLD_MS - Date.now();
 
   const paint = () => {
-    paintAction(run.titleEl, text);
+    run.semanticTitle = text;
+    run.heartbeatTick = 0;
+    paintAction(run.titleEl, heartbeatTitle(run.heartbeat, text, run.lastToolName ?? undefined, 0, reducedMotion()));
 
     if (kind) setActionIcon(run.actIcon, kind);
     run.titleAt = Date.now();
@@ -3249,6 +3259,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const beat = document.createElement("span");
   beat.className = "run-beat";
   beat.setAttribute("aria-hidden", "true");
+  const heartbeat = currentHeartbeatVariant();
+  paintBeatMark(beat, heartbeat);
   const title = document.createElement("span");
   title.className = "run-title";
   paintAction(title, `正在${loaderSubtitle(null)}`);
@@ -3289,6 +3301,13 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const timer = window.setInterval(() => {
     if (currentRun?.timer === timer) timeEl.textContent = liveSeconds(currentRun);
   }, 1000);
+  const heartbeatTimer = window.setInterval(() => {
+    const live = currentRun;
+    if (!live || live.heartbeatTimer !== heartbeatTimer || live.root.classList.contains("done")) return;
+    if (live.heartbeat === "v1" || reducedMotion()) return;
+    live.heartbeatTick += 1;
+    paintAction(live.titleEl, heartbeatTitle(live.heartbeat, live.semanticTitle, live.lastToolName ?? undefined, live.heartbeatTick, false));
+  }, VERB_MS);
 
   currentRun = {
     root,
@@ -3318,6 +3337,12 @@ function ensureRun(): NonNullable<typeof currentRun> {
     evidence: null,
     evidenceLines: [],
     graph,
+    beatEl: beat,
+    heartbeat,
+    heartbeatTimer,
+    heartbeatTick: 0,
+    semanticTitle: `正在${loaderSubtitle(null)}`,
+    lastToolName: null,
   };
 
   return currentRun;
@@ -3674,6 +3699,7 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
+  clearInterval(run.heartbeatTimer);
   const endedAt = eventTime();
   // 停下、出错、答完：正在算的那段思考在这一刻结束（#263 E6）。
   closeThink(run, endedAt);
@@ -4188,6 +4214,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const prep = isPrepTool(ev.name, ev.params);
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
 
+  run.lastToolName = ev.name;
   if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
     setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`, false, kind);
   }
@@ -4262,6 +4289,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   // 这一步做完、下一步还没开始：模型在想下一步。第一行只写「正在思考」并从这里开始数秒，做了几步在第二行（#263）。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
+    run.lastToolName = null;
     setRunTitle(run, "正在思考", false, "think");
     openThink(run, eventTime());
   }
