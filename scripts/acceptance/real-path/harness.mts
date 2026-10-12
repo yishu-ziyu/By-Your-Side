@@ -379,7 +379,7 @@ export async function exportDiagnosticsViaSettings(
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  * SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。
  */
-export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[] } = {}) {
+export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[]; headed?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
   const tempDir = trackTempDir(root);
@@ -419,7 +419,8 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
   for (const name of ["STEPFUN_API_KEY", "SIDEAGENT_STEP_PLAN_KEY", "TYPESAFE_API_KEY", "SIDEAGENT_DATA_DIR"]) delete env[name];
 
   const spawnChrome = () => spawn(resolveChrome(), [
-    "--headless=new",
+    // headed：只给无头 Chrome 复现不了的情况用（例如从没显示过的后台标签页不渲染，输入会丢）。
+    ...(headed ? [] : ["--headless=new"]),
     // macOS：不读钥匙串里的「Chrome Safe Storage」，否则每启动一次就弹一次钥匙串授权框。
     "--use-mock-keychain",
     // Ubuntu runners deny Chrome's unprivileged namespace sandbox (same as isolated-extension).
