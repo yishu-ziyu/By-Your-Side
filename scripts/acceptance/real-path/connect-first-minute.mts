@@ -119,7 +119,7 @@ try {
 
   const settings = await saveCustom(first, panel, denyUrl, "sk-invalid-0000");
   const fail = await until(async () => {
-    const state = await first.evaluate(settings, `({`)
+    const state = await first.evaluate(settings, `({
       hidden: document.querySelector("#key-reason").hidden,
       reason: document.querySelector("#key-reason-text")?.textContent ?? "",
       wait: document.querySelector(".key-reason-wait")?.textContent ?? "",
