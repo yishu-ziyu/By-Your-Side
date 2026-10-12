@@ -21,7 +21,8 @@
     "check": "npm run check:docs && npm run check:copy && npm run check:architecture && npm run typecheck && npm run build",
     "runs": "node scripts/maintenance/runs.mjs",
     "task": "node scripts/maintenance/task.mjs",
-    "lines": "node scripts/maintenance/lines.mjs"
+    "lines": "node scripts/maintenance/lines.mjs",
+    "logs": "node scripts/maintenance/logs.mjs"
   },
   "devDependencies": {
     "marked": "18.0.11",
