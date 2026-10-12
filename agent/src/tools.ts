@@ -95,6 +95,30 @@ function formatTabs(tabs: TabInfo[]): string {
 }
 
 /**
+ * 已开着的同一网站的标签页：主机名相同，或网址主域名（www.youtube.com 的 youtube）出现在标题或网址里。
+ * 主域名短于 3 个字（x.com、qq.com）时只比主机名，否则几乎每页都会匹配。
+ */
+function sameSiteTabs(tabs: TabInfo[], url: string): TabInfo[] {
+  let host: string;
+
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return []; }
+  const labels = host.split(".").slice(0, -1);
+
+  // co.uk、com.cn 这类两段后缀：去掉倒数第二段（www.bbc.com 的 bbc 不是后缀，不能去）。
+  if (labels.length > 1 && /^(co|com|net|org|gov|edu|ac)$/.test(labels.at(-1) ?? "")) labels.pop();
+  const last = labels.at(-1) ?? "";
+  const label = /^\d+$/.test(last) ? "" : last;
+
+  return tabs.filter((t) => {
+    let tabHost = "";
+
+    try { tabHost = new URL(t.url).hostname.toLowerCase(); } catch { /* 无效网址只按标题比 */ }
+
+    return tabHost === host || (label.length >= 3 && `${t.title} ${t.url}`.toLowerCase().includes(label));
+  });
+}
+
+/**
  * 工作目标与可见结果分开表达：`Working tab is now N` 只是执行事实（工作目标已指向 N）；
  * 用户此刻是否看得到，只按执行后读回的核验事实说。未核验/核验不通过时明确说未确认或
  * 不在前台，不让模型把工作目标转述成「用户已经看到目标页」，也不声称页面已加载完成。
@@ -446,7 +470,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         sid
           ? 'One tool for browser tabs. action:"list" lists the tabs assigned to you; other members\' and user tabs are not available to workers.'
-          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) and claims it as the working tab; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user asks to see or go to a page ("切到…", "给我看…", "打开那一页给我"); action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
+          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; when the user asks to go to or see a site, list the open tabs first and use action:"show" on a tab that already has it; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user asks to see or go to a page ("切到…", "给我看…", "打开那一页给我"); action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("show"), Type.Literal("close")], {
           description: "list | active | open | switch | show | close",
@@ -478,8 +502,34 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           const data = (await call("open_tab", params.url ? { url: params.url } : {})) as ToolContract["open_tab"]["data"];
 
           const opened = data.tabClosed ? `Opened ${data.url} in a new tab, which Chrome then closed` : `Created tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}`;
+          const text = `${opened}; document: ${data.readiness ?? "not checked"}${(data.readiness === "download" || data.readiness === "error_page") && data.note ? `\n${data.note}` : ""}`;
 
-          return textResult(`${opened}; document: ${data.readiness ?? "not checked"}${(data.readiness === "download" || data.readiness === "error_page") && data.note ? `\n${data.note}` : ""}`, data);
+          if (sid || data.tabClosed) return textResult(text, data);
+
+          // 读回用户眼前是哪一页、已开着哪些同一网站的页：新页开在后台时，模型据此决定要不要 show 已有的页。
+          // 只读补读不挂本次调用身份（同 navigate）；哪一项读失败就不写那一句，不猜。
+          const [active, listed] = await Promise.allSettled([
+            readAfterNavigate("get_active_tab", {}) as Promise<ToolContract["get_active_tab"]["data"]>,
+            readAfterNavigate("list_tabs", {}) as Promise<ToolContract["list_tabs"]["data"]>,
+          ]);
+          const front = active.status === "fulfilled" ? active.value.tab : null;
+          const notes: string[] = [];
+
+          if (front) {
+            notes.push(front.id === data.tabId
+              ? "The user is looking at this new tab."
+              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}».`);
+          }
+
+          if (listed.status === "fulfilled" && data.url) {
+            const existing = sameSiteTabs(listed.value.tabs.filter((t) => t.id !== data.tabId && t.id !== front?.id), data.url).slice(0, 5);
+
+            if (existing.length > 0) {
+              notes.push(`Already open on the same site:\n${formatTabs(existing)}\ntabs action:"show" with one of these tabIds puts that tab in front of the user.`);
+            }
+          }
+
+          return textResult(notes.length > 0 ? `${text}\n${notes.join("\n")}` : text, data);
         }
 
         if (params.action === "switch" || params.action === "show") {
