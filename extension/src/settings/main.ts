@@ -14,6 +14,7 @@ import {
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
 import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
+import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from "../../../shared/voice-capture-core.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
@@ -75,6 +76,13 @@ document.getElementById("settings")!.innerHTML = `
     <p id="main-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="backup-status" class="settings-status" role="status" aria-live="polite"></p>
+    <div class="surface rows">
+      <div class="row">
+        <span class="row-main"><span class="row-title">各模型速度</span><span class="row-desc">用同一个简单问题问一遍已连接的模型，看几秒开口、答没答对。</span></span>
+        <span class="row-ctl"><button id="speed-test" type="button" class="btn">测一下</button></span>
+      </div>
+      <div id="speed-results" class="speed" hidden></div>
+    </div>
     <div class="surface plist">
       <div class="search">
         <input id="provider-search" type="search" placeholder="搜索服务商或模型，比如 glm、claude" aria-label="搜索服务商或模型" spellcheck="false" autocomplete="off" />
@@ -995,6 +1003,137 @@ async function saveBackupModel(): Promise<void> {
 }
 
 backupSelect.addEventListener("change", () => void saveBackupModel());
+
+/** 每家服务商拿来比的模型：日常可选的主力和它的快速版本。不在表里的服务商只测已选作主、快速、备用的那个。 */
+const SPEED_MODELS: Record<string, readonly string[]> = {
+  "kimi-coding": ["kimi-for-coding", "kimi-for-coding-highspeed", "k3"],
+  "openai-codex": ["gpt-6-luna", "gpt-6.1-sol"],
+  stepfun: ["step-5-preview", "step-3.7-flash"],
+  "minimax-cn": ["MiniMax-M2.7-highspeed"],
+};
+
+const SPEED_QUESTION = "网页上写着：『会议室金桂可容纳 9 人，带投影仪。』金桂能坐 8 个人开带投影的会吗？先答「能」或「不能」，再用一句话说明。";
+
+/** 正确答案是“能”：只看第一句，因为后面常补一句“但不能超过 9 人”。 */
+function speedAnswerRight(text: string): boolean {
+  const head = text.trim().split(/[，,。.!！？?\n]/)[0] ?? "";
+
+  return /能|可以|没问题|yes/i.test(head) && !/不能|不可以|无法|^no\b/i.test(head);
+}
+
+function speedCandidates(): Array<{ config: InprocModelConfig; role: string }> {
+  const out: Array<{ config: InprocModelConfig; role: string }> = [];
+  const add = (c: InprocModelConfig | null, role: string) => {
+    if (!c || c.provider === CUSTOM_PROVIDER_ID || out.some((o) => o.config.provider === c.provider && o.config.modelId === c.modelId)) return;
+    out.push({ config: { provider: c.provider, modelId: c.modelId }, role });
+  };
+
+  add(config, "主模型");
+  add(fastConfig, "快速模型");
+  add(backupConfig, "备用模型");
+
+  for (const [provider, ids] of Object.entries(SPEED_MODELS)) {
+    if (credentialNote(provider)) for (const modelId of ids) add({ provider, modelId }, "");
+  }
+
+  return out;
+}
+
+async function runSpeedTest(): Promise<void> {
+  const list = speedCandidates();
+  const box = $("speed-results");
+  const button = $<HTMLButtonElement>("speed-test");
+  box.hidden = false;
+
+  if (!list.length) {
+    box.textContent = "还没有连接服务商。先在下面的服务商列表里登录或填好密钥。";
+    return;
+  }
+  button.disabled = true;
+
+  try {
+    await measureSpeeds(list, box);
+  } finally {
+    button.disabled = false;
+    button.textContent = "再测一次";
+  }
+}
+
+async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: string }>, box: HTMLElement): Promise<void> {
+  // 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
+  const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
+  await probe.credentials.load(credentials);
+  const started = performance.now();
+  const rows = list.map(({ config: c, role }) => {
+    const row = document.createElement("div");
+    row.className = "speed-row";
+    row.dataset.model = `${c.provider}/${c.modelId}`;
+    const name = Object.assign(document.createElement("span"), { className: "speed-name" });
+    name.append(
+      Object.assign(document.createElement("span"), { className: "speed-id", textContent: c.modelId }),
+      Object.assign(document.createElement("span"), { className: "speed-meta", textContent: role ? `${role} · ${labelOf(c.provider)}` : labelOf(c.provider) }),
+    );
+    const bar = Object.assign(document.createElement("span"), { className: "speed-bar" });
+    const result = Object.assign(document.createElement("span"), { className: "speed-result", textContent: "在问…" });
+    row.append(name, bar, result);
+    return { c, row, bar, result, first: null as number | null };
+  });
+  box.replaceChildren(...rows.map((r) => r.row));
+  const longest = () => Math.max(10, ...rows.map((r) => r.first ?? 0));
+  const redraw = () => rows.forEach((r) => { if (r.first != null) r.bar.style.setProperty("--w", `${(r.first / longest()) * 100}%`); });
+
+  await Promise.all(rows.map(async (r) => {
+    const t0 = performance.now();
+    const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    let text = "";
+    let cutShort = false;
+
+    try {
+      const model = probe.resolveModel(r.c);
+      const [lowest] = thinkingProfile(model).levels;
+      const stream = probe.models.streamSimple(model, { messages: [{ role: "user", content: SPEED_QUESTION, timestamp: Date.now() }] }, {
+        maxTokens: 2048, signal, headers: probe.headersFor(model), sessionId: probe.sessionId,
+        reasoning: lowest === "off" ? undefined : lowest,
+        // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
+        ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
+      });
+
+      for await (const event of stream) {
+        if (event.type === "text_delta") {
+          if (r.first == null && event.delta.trim()) { r.first = (performance.now() - t0) / 1000; redraw(); r.result.textContent = `${r.first.toFixed(1)} 秒开口…`; }
+          text += event.delta;
+        }
+
+        if (event.type === "error") throw new Error(event.error.errorMessage ?? "服务商返回了错误");
+
+        if (event.type === "done" && event.reason === "length") cutShort = true;
+      }
+
+      if (r.first == null) {
+        r.row.dataset.state = "fail";
+        r.result.textContent = cutShort ? "能连上，但思考太长，没来得及回答" : "能连上，但没有回答";
+        return;
+      }
+      const right = speedAnswerRight(text);
+      r.row.dataset.state = right ? "ok" : "wrong";
+      r.result.textContent = `${r.first.toFixed(1)} 秒开口 · ${right ? "答对" : "答错"}`;
+      r.result.title = text.trim();
+    } catch (error) {
+      r.row.dataset.state = "fail";
+
+      if (signal.aborted) {
+        r.result.textContent = r.first != null ? `${r.first.toFixed(1)} 秒开口 · ${PROBE_TIMEOUT_MS / 1000} 秒内没答完` : `${PROBE_TIMEOUT_MS / 1000} 秒内没开口`;
+        return;
+      }
+      r.result.textContent = `不能用：${explainFailure(error instanceof Error ? error.message : String(error))}`;
+      r.result.title = error instanceof Error ? error.message : String(error);
+    }
+  }));
+
+  box.append(Object.assign(document.createElement("p"), { className: "speed-note", textContent: `共用 ${((performance.now() - started) / 1000).toFixed(0)} 秒。同一个模型每次快慢会差好几秒，拿不准就再测一次。` }));
+}
+
+$("speed-test").addEventListener("click", () => void runSpeedTest());
 
 async function reload(): Promise<void> {
   const stored = await chrome.storage.local.get(null);
