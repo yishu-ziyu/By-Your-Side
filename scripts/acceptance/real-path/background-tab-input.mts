@@ -7,6 +7,7 @@
  * 用户停在「我的页面」。脚本模型让助手 tabs open 一个搜索页（后台打开，从没到前台），在搜索框填「天气」，点「搜索」。
  * 判据：网站收到 /results?q=天气（搜索真的提交了）；点击结果没有说「页面没有变化」。
  * 前提：点击做完之前活动标签一直是「我的页面」；新页到过前台就渲染过了，那次运行不算数。
+ * 运行时别点弹出的测试窗口：10-13 前 6 次运行里有 3 次新页中途到了前台；提醒用户别点窗口、并记下扩展的切页调用（activations.json）后连跑 3 次都没再出现，多半是人点了窗口（没证实）。
  * 失败方式：去掉附加调试器时的焦点模拟，网站收不到搜索，点击结果写「Nothing on the page changed」。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -65,6 +66,10 @@ const model = await startScriptedModel([
   }
 });
 
+const SPY = `(() => { if (globalThis.__acts) return true; globalThis.__acts = [];
+  for (const [ns, fn] of [["tabs", "update"], ["tabs", "highlight"], ["windows", "update"]]) { const orig = chrome[ns][fn].bind(chrome[ns]);
+    chrome[ns][fn] = (...a) => { __acts.push({ t: Date.now(), call: ns + "." + fn, args: JSON.stringify(a).slice(0, 200), stack: (new Error().stack || "").split("\\n").slice(2, 7).join(" | ") }); return orig(...a); }; }
+  chrome.tabs.onActivated.addListener((i) => __acts.push({ t: Date.now(), activated: i.tabId })); return true; })()`;
 const rp = await launchRealPath({ headed: true });
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
@@ -74,7 +79,9 @@ try {
   await rp.cdp.send("Page.navigate", { url: `${origin}/mine` }, user);
   const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "service worker")).targetId);
   await until(async () => await rp.evaluate(sw, "typeof chrome === 'object' && !!chrome.tabs").catch(() => false), 15_000, "扩展后台就绪");
+  await rp.evaluate(sw, SPY);
   const panel = await rp.attach(await rp.openSidePanel());
+  await rp.evaluate(panel, SPY);
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "侧栏就绪");
@@ -91,6 +98,8 @@ try {
   polling = false;
   await poll;
   await rp.screenshot(panel, join(out, "panel.png"));
+  const acts = { sw: await rp.evaluate(sw, "globalThis.__acts"), panel: await rp.evaluate(panel, "globalThis.__acts"), searchedAt, receiptAt: Object.fromEntries(receiptAt), samples: activeSamples };
+  await writeFile(join(out, "activations.json"), JSON.stringify(acts, null, 2));
 
   const searched = gets.filter(u => u.startsWith("/results"));
   check("网站收到搜索：/results?q=天气", searched.some(u => decodeURIComponent(u).includes("q=天气")), { gets });
