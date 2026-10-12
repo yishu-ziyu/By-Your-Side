@@ -110,7 +110,11 @@ try {
   // 前提：搜索提交之前（没提交就是点击结果回来之前），新页一直在后台。新页一旦到过前台就渲染过了，这次运行证明不了什么。
   const clickDoneAt = Math.min(searchedAt, receiptAt.get("click") ?? Infinity);
   const beforeClick = activeSamples.filter(s => s.at <= clickDoneAt);
-  check("前提：搜索提交之前，活动标签一直是「我的页面」", beforeClick.length > 5 && beforeClick.every(s => s.title === "我的页面"), { samples: beforeClick.length, other: beforeClick.filter(s => s.title !== "我的页面").map(s => s.title) });
+  // 采样每 100 ms 一次会漏掉短暂切换；扩展后台的 onActivated 记录不会漏。
+  const swActs = ((await rp.evaluate(sw, "globalThis.__acts")) ?? []) as Array<{ t: number; activated?: number }>;
+  const userTabId = (await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => ts.find(t => t.title === "我的页面")?.id ?? null)`)) as number | null;
+  const flips = swActs.filter(a => a.activated != null && a.activated !== userTabId && a.t <= clickDoneAt);
+  check("前提：搜索提交之前，活动标签一直是「我的页面」", beforeClick.length > 5 && beforeClick.every(s => s.title === "我的页面") && flips.length === 0, { samples: beforeClick.length, other: beforeClick.filter(s => s.title !== "我的页面").map(s => s.title), activated: flips as unknown as Json });
   const after = activeSamples.filter(s => s.at > clickDoneAt && s.title !== "我的页面");
   console.log(after.length ? `注意：点击之后新页到过前台 ${after.length} 次（${after[0]!.title}）` : "点击之后新页也一直在后台");
 } catch (error) { check("流程完成", false, String(error)); } finally {
