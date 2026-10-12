@@ -97,8 +97,18 @@ async function sendHeld(rp: RealPath, panel: string): Promise<PanelView> {
 }
 
 async function saveCustom(rp: RealPath, panel: string, baseUrl: string, key: string): Promise<string> {
+  await sleep(400);
+  await rp.evaluate(panel, `document.querySelector(".needs-model-old button")?.scrollIntoView({ block: "center" }); true`);
   await rp.click(panel, ".needs-model-old button");
-  const target = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页");
+  const target = await until(async () => {
+    const found = (await rp.targets()).find((t) => t.url.endsWith("/settings.html"));
+
+    return found;
+  }, 4_000, "设置页").catch(async () => {
+    await rp.evaluate(panel, `document.querySelector(".needs-model-old button")?.click()`, { userGesture: true });
+
+    return until(async () => (await rp.targets()).find((t) => t.url.endsWith("/settings.html")), 12_000, "设置页");
+  });
   const page = await rp.attach(target.targetId);
   await fillCustom(rp, page, baseUrl, key);
   await rp.evaluate(page, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
