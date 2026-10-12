@@ -21,12 +21,12 @@ try {
   await rp.click(panel, '#input');
   await rp.typeText(panel, '这篇文章的核心观点是什么？');
   await rp.pressEnter(panel);
-  await until(async () => await rp.evaluate(panel, '!!document.querySelector(".needs-model-old button")') || undefined, 30_000, '连模型卡片');
+  await until(async () => await rp.evaluate(panel, '!!document.querySelector(".needs-model-connect")') || undefined, 30_000, '连模型卡片');
   await sleep(300);
   await rp.screenshot(panel, join(out, 'card.png'));
-  results.push(['回复是带按钮的卡片，不是折起的灰字', await rp.evaluate(panel, 'document.querySelector(".needs-model-old button")?.textContent === "连接模型" && !document.querySelector("details.receipt")')]);
+  results.push(['回复是带按钮的卡片，不是折起的灰字', await rp.evaluate(panel, 'document.querySelector(".needs-model-connect")?.textContent === "连接模型" && !document.querySelector("details.receipt")')]);
   results.push(['卡片说连好以后这句话会自动发出（#233）', await rp.evaluate(panel, 'document.querySelector(".needs-model-old p")?.textContent === "连好以后，这句话会自动发出。"')]);
-  await rp.click(panel, '.needs-model-old button');
+  await rp.click(panel, '.needs-model-connect');
   const settings = await until(async () => (await rp.targets()).find((t) => t.url.endsWith('/settings.html')), 10_000, '设置页').catch(() => undefined);
 
   results.push(['点按钮打开模型设置页', !!settings]);

@@ -77,6 +77,7 @@ function needsModelCard(resends: boolean): HTMLElement {
   const actions = document.createElement("div");
   const connect = document.createElement("button");
   connect.type = "button";
+  connect.className = "needs-model-connect";
   connect.textContent = "连接模型";
   connect.onclick = () => void chrome.runtime.openOptionsPage();
   actions.append(connect);

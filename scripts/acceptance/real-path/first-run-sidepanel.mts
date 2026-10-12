@@ -121,7 +121,7 @@ try {
   check("卡片写「连好以后，这句话会自动发出。」", carded.cards[0]?.includes("连好以后，这句话会自动发出。") === true, carded.cards);
 
   // 3. 打开设置页、不连模型就关掉。
-  await rp.click(panel, ".needs-model-old button");
+  await rp.click(panel, ".needs-model-connect");
   const settings = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页打开");
   await sleep(1500);
   await rp.cdp.send("Target.closeTarget", { targetId: settings.targetId });
