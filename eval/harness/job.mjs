@@ -179,6 +179,22 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     await rp.cdp.send("Page.bringToFront", {}, pageSid).catch(() => {});
     await sleep(1000);
     await until(async () => (await evalIn(ps, PANEL_PROBE)).connected, 90000, "panel connected to the in-extension agent");
+
+    // BYS_SCREENCAST=1: record the task page and the side panel as JPEG frames (<id>-cast/{page,panel}-<Date.now()>.jpg)
+    // so a run can be watched as video; same clock as page_log and interjections.
+    if (process.env.BYS_SCREENCAST) {
+      const castDir = join(outDir, `${task.id}-cast`);
+      mkdirSync(castDir, { recursive: true });
+      for (const [name, sid] of [["page", pageSid], ["panel", ps]]) {
+        rp.cdp.onEvent("Page.screencastFrame", ({ sessionId, params }) => {
+          if (sessionId !== sid) return;
+          writeFileSync(join(castDir, `${name}-${Date.now()}.jpg`), Buffer.from(params.data, "base64"));
+          rp.cdp.send("Page.screencastFrameAck", { sessionId: params.sessionId }, sid).catch(() => {});
+        });
+        await rp.cdp.send("Page.enable", {}, sid).catch(() => {});
+        await rp.cdp.send("Page.startScreencast", { format: "jpeg", quality: 70, everyNthFrame: 1 }, sid).catch((e) => rec.errors.push(`screencast ${name}: ${e.message}`));
+      }
+    }
     const initialSite = await observeSite(navigation.errorText ?? "");
     const initialBlock = siteBlock(initialSite);
 
