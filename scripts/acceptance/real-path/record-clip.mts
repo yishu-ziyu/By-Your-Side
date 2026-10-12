@@ -9,6 +9,8 @@ import { sleep } from "./harness.mts";
 
 export type ClipBox = { x: number; y: number; width: number; height: number };
 
+export type GraphGroupRead = { kind: string; state: string; lanes: number };
+
 export type ProcessRead = {
   done: boolean;
   title: string;
@@ -18,6 +20,7 @@ export type ProcessRead = {
   height: number;
   box: ClipBox | null;
   text: string;
+  groups: GraphGroupRead[];
 };
 
 export const READ_PROCESS = `(() => {
@@ -39,6 +42,11 @@ export const READ_PROCESS = `(() => {
     height: Math.round(r.height + (liveR?.height ?? 0)),
     box: { x: 0, y: top, width: Math.min(innerWidth, 380), height: Math.max(48, bottom - top) },
     text: d.textContent,
+    groups: [...host.querySelectorAll(".run-graph-group")].map((g) => ({
+      kind: g.dataset.kind ?? "",
+      state: g.dataset.state ?? "",
+      lanes: g.querySelectorAll(".run-graph-row, .run-tab-tile").length,
+    })),
   };
 })()`;
 
@@ -105,6 +113,21 @@ export async function recordClip(
   }
 
   return { mp4, frames, reads };
+}
+
+/** 从已录的帧里抽出第一张满足条件的关键帧；没有则返回 null。 */
+export async function copyKeyedFrame(
+  outDir: string,
+  name: string,
+  reads: ProcessRead[],
+  dest: string,
+  match: (read: ProcessRead) => boolean,
+): Promise<string | null> {
+  const hits = reads.map((read, index) => ({ read, index })).filter((item) => match(item.read));
+  if (!hits.length) return null;
+  const pick = hits[Math.min(hits.length - 1, Math.max(0, Math.floor(hits.length / 2)))];
+  await copyFile(join(outDir, `${name}-frames`, `${String(pick!.index).padStart(4, "0")}.png`), dest);
+  return dest;
 }
 
 export async function copyArtifacts(files: string[], destDir: string): Promise<string[]> {
