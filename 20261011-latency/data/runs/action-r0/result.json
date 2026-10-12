@@ -1,0 +1,3043 @@
+{
+  "scenario": "action",
+  "round": "0",
+  "prompt": "search Studio Ghibli on Wikipedia and open it",
+  "startUrl": "https://en.wikipedia.org/wiki/Main_Page",
+  "browser": "Chrome/145.0.7632.6",
+  "panelText": "search Studio Ghibli on Wikipedia and open it\n存成技能\nWikipedia, the free encyclopedia\n\n我去打开 Studio Ghibli 的维基百科条目页，就在你现在这个 Wikipedia 标签页里跳转，不动其他页面。\n\n打开了 Studio Ghibli - Wikipedia\n\n搞定了，Studio Ghibli 的条目已经在你现在的标签页里打开了：\nStudio Ghibli - Wikipedia。\n\n页面里能看到这家工作室的关键信息：\n\n基本信息：1985 年 6 月 15 日由宫崎骏、高畑勋、铃木敏夫等人创立，总部在东京小金井，现为日本电视台体系的子公司\n代表作：《龙猫》《幽灵公主》《千与千寻》《哈尔的移动城堡》《悬崖上的金鱼姬》《你想活出怎样的人生》等\n名字由来：宫崎骏取自意大利语「ghibli」（撒哈拉沙漠的热风），也是意大利卡普罗尼 Ca.309 侦察机的绰号，寓意「给动画业界吹入新风」\n\n需要我把页面翻译成中文，或者找里面某部作品的条目，直接说一声就行。\n\n来源\n30 秒",
+  "panelStepsHtml": "打开了 Studio Ghibli - Wikipedia",
+  "samples": [
+    {
+      "t": -50,
+      "running": false,
+      "pill": "已连接",
+      "runs": [],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 103,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "1 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 2099,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "2 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 3179,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "2 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 3331,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "3 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 4098,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "4 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5165,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 6234,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "6 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 7146,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "7 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 8217,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "8 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 9129,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "9 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 10197,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "10 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 11111,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "11 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 12188,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "12 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 13102,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "13 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 14186,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "14 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 15102,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "15 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 16187,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "16 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 17105,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "17 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 18189,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "18 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 19116,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "19 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 20198,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "20 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 21129,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "21 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 22220,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "22 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 22525,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "22 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 24,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 22678,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "22 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 48,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 22986,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "22 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 60,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 23138,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在打开页面 en.wikipedia.org",
+          "time": "23 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [
+        " | "
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 23932,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "23 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 24237,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "24 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 25154,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "25 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 26226,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "26 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 26990,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "26 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 27142,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "27 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        "",
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 27758,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "27 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 28216,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "28 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 29185,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考 · 已做 1 件事",
+          "time": "29 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [
+        "打开了 Studio Ghibli - Wikipedia 0.9s"
+      ],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 60,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 30112,
+      "running": false,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "打开了 Studio Ghibli - Wikipedia",
+          "time": "30 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [
+        " | 0.9s"
+      ],
+      "thinking": [
+        "",
+        "",
+        ""
+      ],
+      "answerChars": 370,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 51718,
+      "running": false,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "打开了 Studio Ghibli - Wikipedia",
+          "time": "30 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [
+        "打开页面 Studio Ghibli - Wikipedia | 0.9s"
+      ],
+      "thinking": [
+        "思考过程 20s",
+        "思考过程 3.1s",
+        "执行过程"
+      ],
+      "answerChars": 370,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    }
+  ],
+  "pages": [
+    {
+      "t": -50,
+      "tabs": "https://en.wikipedia.org/wiki/Main_Page :: Wikipedia, the free encyclopedia"
+    },
+    {
+      "t": 23139,
+      "tabs": "https://en.wikipedia.org/wiki/Studio_Ghibli :: Studio Ghibli - Wikipedia"
+    }
+  ],
+  "t0": 1791706434885,
+  "exportStatus": "已导出 1 个会话、38 条任务记录，0 条语音记录。",
+  "calls": [
+    {
+      "id": "622415.18",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 306,
+      "reasoningChars": 6816,
+      "contentChars": 60,
+      "toolArgChars": 54,
+      "chunks": 641,
+      "toolNames": [
+        "navigate"
+      ],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 16384,
+        "bodyChars": 70953,
+        "messages": 3,
+        "roles": "system,user,user",
+        "systemChars": 16085,
+        "userChars": 13779,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 32,
+        "toolsChars": 40564,
+        "toolNames": [
+          "page_translation",
+          "read_element",
+          "read_elements",
+          "browser_run",
+          "tabs",
+          "navigate",
+          "snapshot",
+          "hover",
+          "click",
+          "double_click",
+          "select_option",
+          "upload_file",
+          "arm_event",
+          "wait_event",
+          "accept_dialog",
+          "dismiss_dialog",
+          "download_url",
+          "fill",
+          "type_text",
+          "press_key",
+          "scroll",
+          "fetch",
+          "network",
+          "js",
+          "mark",
+          "guide_step",
+          "screenshot",
+          "take_tab",
+          "hand_to_user",
+          "user_memory",
+          "send_user_message",
+          "artifacts"
+        ],
+        "lastUserHead": "[object Object]",
+        "systemHead": "You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on"
+      },
+      "firstByte": 2963,
+      "status": 200,
+      "lastChunk": 22998,
+      "usage": {
+        "prompt_tokens": 18871,
+        "completion_tokens": 1647,
+        "total_tokens": 20518,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 2970,
+      "reasoningHead": "The user is on Wikipedia's main page (tab 2018092600). The task: search Studio Ghibli on Wikipedia and open it.\n\nFirst, I need to make sure I'm working on tab 2018092600. Let me switch to it, then navigate to the Studio Ghibli article. Actually, the simplest approach: navigate directly to https://en.wikipedia.org/wiki/Studio_Ghibli — that's the article for Studio Ghibli. But the user said \"search ...",
+      "firstContent": 22490,
+      "content": "我去打开 Studio Ghibli 的维基百科条目页，就在你现在这个 Wikipedia 标签页里跳转，不动其他页面。",
+      "firstTool": 22905,
+      "finish": "tool_calls",
+      "end": 22998,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "622415.20",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 23900,
+      "reasoningChars": 173,
+      "contentChars": 364,
+      "toolArgChars": 0,
+      "chunks": 100,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 16384,
+        "bodyChars": 103534,
+        "messages": 5,
+        "roles": "system,user,assistant,tool,user",
+        "systemChars": 16085,
+        "userChars": 14142,
+        "toolMsgChars": 24129,
+        "assistantChars": 7193,
+        "tools": 32,
+        "toolsChars": 40564,
+        "toolNames": [
+          "page_translation",
+          "read_element",
+          "read_elements",
+          "browser_run",
+          "tabs",
+          "navigate",
+          "snapshot",
+          "hover",
+          "click",
+          "double_click",
+          "select_option",
+          "upload_file",
+          "arm_event",
+          "wait_event",
+          "accept_dialog",
+          "dismiss_dialog",
+          "download_url",
+          "fill",
+          "type_text",
+          "press_key",
+          "scroll",
+          "fetch",
+          "network",
+          "js",
+          "mark",
+          "guide_step",
+          "screenshot",
+          "take_tab",
+          "hand_to_user",
+          "user_memory",
+          "send_user_message",
+          "artifacts"
+        ],
+        "lastUserHead": "[object Object]",
+        "systemHead": "You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on"
+      },
+      "firstByte": 26917,
+      "status": 200,
+      "lastChunk": 30047,
+      "usage": {
+        "cached_tokens": 18432,
+        "prompt_tokens": 28723,
+        "completion_tokens": 237,
+        "total_tokens": 28960,
+        "prompt_tokens_details": {
+          "cached_tokens": 18432
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 26918,
+      "reasoningHead": "The task is complete. The Studio Ghibli article is open on tab 2018092600. I should give a final reply confirming what happened, with the source URL. No need for more tools.",
+      "firstContent": 27612,
+      "content": "搞定了，Studio Ghibli 的条目已经在你现在的标签页里打开了：[Studio Ghibli - Wikipedia](https://en.wikipedia.org/wiki/Studio_Ghibli)。\n\n页面里能看到这家工作室的关键信息：\n- **基本信息**：1985 年 6 月 15 日由宫崎骏、高畑勋、铃木敏夫等人创立，总部在东京小金井，现为日本电视台体系的子公司\n- **代表作**：《龙猫》《幽灵公主》《千与千寻》《哈尔的移动城堡》《悬崖上的金鱼姬》《你想活出怎样的人生》等\n- **名字由来**：宫崎骏取自意大利语「ghibli」（撒哈拉沙漠的热风），也是意大利卡普罗尼 Ca.309 侦察机的绰号，寓意「给动画业界吹入新风」\n\n需要我把页面翻译成中文，或者找里面某部作品的条目，直接说一声就行。",
+      "finish": "stop",
+      "end": 30048,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "622415.27",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 30890,
+      "reasoningChars": 519,
+      "contentChars": 72,
+      "toolArgChars": 0,
+      "chunks": 68,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 1600,
+        "bodyChars": 19747,
+        "messages": 2,
+        "roles": "system,user",
+        "systemChars": 6509,
+        "userChars": 12206,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 0,
+        "toolsChars": 2,
+        "toolNames": [],
+        "lastUserHead": "{\"goal\":[\"search Studio Ghibli on Wikipedia and open it\"],\"goalPage\":{\"title\":\"Wikipedia, the free encyclopedia\",\"url\":\"https://en.wikipedia.org/wiki/Main_Page\"},\"lastReply\":\"搞定了，Studio Ghibli 的条目已经在你现在的标签页里打开了：[Studio Ghibli - Wikipedia](https://en.wikipedia.org/wiki/Studio_Ghibli)。\\n\\n页面里能看到这家工作室的",
+        "systemHead": "You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, p"
+      },
+      "firstByte": 32606,
+      "status": 200,
+      "lastChunk": 34684,
+      "usage": {
+        "prompt_tokens": 5577,
+        "completion_tokens": 178,
+        "total_tokens": 5755,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 32608,
+      "reasoningHead": "The user asked to \"search Studio Ghibli on Wikipedia and open it.\" The page is now at https://en.wikipedia.org/wiki/Studio_Ghibli, and the last reply confirms it. The page content shows the Studio Ghibli article with infobox, founded June 15, 1985, founders Hayao Miyazaki, Toshio Suzuki, Isao Takahata, Yasuyoshi Tokuma, etc. This matches the goal. No discrepancies noted; the lastReply includes details",
+      "firstContent": 34573,
+      "content": "{\"status\":\"done\",\"cause\":\"\",\"remaining\":\"\",\"correction\":\"\",\"finding\":\"\"}",
+      "finish": "stop",
+      "end": 34686,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "622415.28",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 34685,
+      "reasoningChars": 2196,
+      "contentChars": 13,
+      "toolArgChars": 0,
+      "chunks": 197,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 1600,
+        "bodyChars": 1164,
+        "messages": 2,
+        "roles": "system,user",
+        "systemChars": 479,
+        "userChars": 466,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 0,
+        "toolsChars": 2,
+        "toolNames": [],
+        "lastUserHead": "{\"today\":\"2026-10-11\",\"goal\":\"search Studio Ghibli on Wikipedia and open it\",\"revisions\":[],\"result\":\"搞定了，Studio Ghibli 的条目已经在你现在的标签页里打开了：[Studio Ghibli - Wikipedia](https://en.wikipedia.org/wiki/Studio_Ghibli)。 页面里能看到这家工作室的关键信息： - **基本信息**：1985 年 6 月 15 日由宫崎骏、高畑勋、铃木敏夫等人创立，总部在东京小金井，现为日本电视台体系的子公司 - *",
+        "systemHead": "A browser task the assistant did for the user has just ended. Answer ONE narrow question: which single calendar date is the RESULT about — e.g. the day a booked flight departs, the day of a booked app"
+      },
+      "firstByte": 35412,
+      "status": 200,
+      "lastChunk": 41317,
+      "usage": {
+        "prompt_tokens": 352,
+        "completion_tokens": 547,
+        "total_tokens": 899,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 35414,
+      "reasoningHead": "The user wants me to identify a single calendar date that the RESULT is about, not the day the task was done. The result is a summary of the Wikipedia page for Studio Ghibli. It mentions \"1985 年 6 月 15 日由宫崎骏、高畑勋、铃木敏夫等人创立\" (founded on June 15, 1985 by Hayao Miyazaki, Isao Takahata, Toshio Suzuki, etc.). So the result contains the founding date of Studio Ghibli: June 15, 1985. However, is the RESULT \"",
+      "firstContent": 41317,
+      "content": "{\"date\":null}",
+      "finish": "stop",
+      "end": 41317,
+      "failed": "net::ERR_ABORTED"
+    },
+    {
+      "id": "622415.29",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 34685,
+      "reasoningChars": 3652,
+      "contentChars": 77,
+      "toolArgChars": 0,
+      "chunks": 332,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-5-preview",
+        "stream": true,
+        "max_tokens": 1600,
+        "bodyChars": 1611,
+        "messages": 2,
+        "roles": "system,user",
+        "systemChars": 892,
+        "userChars": 474,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 0,
+        "toolsChars": 2,
+        "toolNames": [],
+        "lastUserHead": "{\"goal\":\"search Studio Ghibli on Wikipedia and open it\",\"revisions\":[],\"hosts\":[\"en.wikipedia.org\"],\"result\":\"搞定了，Studio Ghibli 的条目已经在你现在的标签页里打开了：[Studio Ghibli - Wikipedia](https://en.wikipedia.org/wiki/Studio_Ghibli)。 页面里能看到这家工作室的关键信息： - **基本信息**：1985 年 6 月 15 日由宫崎骏、高畑勋、铃木敏夫等人创立，总部在东京小金井，现为日本电视台体系",
+        "systemHead": "A browser task the assistant did for the user has just ended and it changed pages. Decide whether it is a KIND of task the user may repeat (e.g. \"extract the subtitles of a Bilibili video and save the"
+      },
+      "firstByte": 35417,
+      "status": 200,
+      "lastChunk": 45521,
+      "usage": {
+        "prompt_tokens": 477,
+        "completion_tokens": 908,
+        "total_tokens": 1385,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 35418,
+      "reasoningHead": "The user wants me to classify the task \"search Studio Ghibli on Wikipedia and open it\" into a stable task kind with a key and habit phrase.\n\nLet me analyze:\n- Goal: search Studio Ghibli on Wikipedia and open it\n- Hosts: en.wikipedia.org\n- Action: Searching for a specific topic/entity on Wikipedia and opening the page\n\nIs this a repeatable kind of task? Yes, searching for a topic on Wikipedia and opening",
+      "firstContent": 45393,
+      "content": "{\"key\":\"wikipedia:search-open\",\"habit\":\"search Wikipedia and open the topic\"}",
+      "finish": "stop",
+      "end": 45522,
+      "failed": "net::ERR_ABORTED"
+    }
+  ],
+  "events": [
+    {
+      "at": 1791706434885,
+      "src": "harness",
+      "kind": "send",
+      "t": 0
+    },
+    {
+      "at": 1791706434897,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434900,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791706434897,
+        "tab": 2018092600,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12
+    },
+    {
+      "at": 1791706434897,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434900,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791706434897,
+        "tab": 2018092600,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12
+    },
+    {
+      "at": 1791706434898,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434902,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791706434898,
+        "tab": 2018092600,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 13
+    },
+    {
+      "at": 1791706434898,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434902,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791706434898,
+        "tab": 2018092600,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 13
+    },
+    {
+      "at": 1791706434957,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434958,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706434957,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 72
+    },
+    {
+      "at": 1791706434957,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434958,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706434957,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 72
+    },
+    {
+      "at": 1791706434968,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434971,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706434968,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 83
+    },
+    {
+      "at": 1791706434968,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434971,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706434968,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 83
+    },
+    {
+      "at": 1791706434969,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434971,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706434969,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 84
+    },
+    {
+      "at": 1791706434969,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706434971,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706434969,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 84
+    },
+    {
+      "at": 1791706434969,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434973,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706434969,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 84
+    },
+    {
+      "at": 1791706434969,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434973,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791706434969,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 84
+    },
+    {
+      "at": 1791706434971,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434973,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706434971,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 86
+    },
+    {
+      "at": 1791706434971,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434973,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706434971,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 86
+    },
+    {
+      "at": 1791706434973,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434975,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706434973,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 88
+    },
+    {
+      "at": 1791706434973,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706434975,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706434973,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 88
+    },
+    {
+      "at": 1791706434990,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435003,
+        "k": "executeScript",
+        "ms": 13,
+        "start": 1791706434990,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 105
+    },
+    {
+      "at": 1791706434990,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435003,
+        "k": "executeScript",
+        "ms": 13,
+        "start": 1791706434990,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 105
+    },
+    {
+      "at": 1791706435007,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706435008,
+        "k": "attach",
+        "ms": 1,
+        "start": 1791706435007,
+        "tab": 2018092600
+      },
+      "t": 122
+    },
+    {
+      "at": 1791706435007,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706435008,
+        "k": "attach",
+        "ms": 1,
+        "start": 1791706435007,
+        "tab": 2018092600
+      },
+      "t": 122
+    },
+    {
+      "at": 1791706435008,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706435009,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706435008,
+        "tab": 2018092600,
+        "method": "Network.enable"
+      },
+      "t": 123
+    },
+    {
+      "at": 1791706435008,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706435009,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791706435008,
+        "tab": 2018092600,
+        "method": "Network.enable"
+      },
+      "t": 123
+    },
+    {
+      "at": 1791706435009,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706435011,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791706435009,
+        "tab": 2018092600,
+        "method": "Page.enable"
+      },
+      "t": 124
+    },
+    {
+      "at": 1791706435009,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706435011,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791706435009,
+        "tab": 2018092600,
+        "method": "Page.enable"
+      },
+      "t": 124
+    },
+    {
+      "at": 1791706435009,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706435126,
+        "k": "sendCommand",
+        "ms": 117,
+        "start": 1791706435009,
+        "tab": 2018092600,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 124
+    },
+    {
+      "at": 1791706435009,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706435126,
+        "k": "sendCommand",
+        "ms": 117,
+        "start": 1791706435009,
+        "tab": 2018092600,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 124
+    },
+    {
+      "at": 1791706435135,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435135,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706435135,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 250
+    },
+    {
+      "at": 1791706435135,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435135,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706435135,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 250
+    },
+    {
+      "at": 1791706435136,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435136,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706435136,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 251
+    },
+    {
+      "at": 1791706435136,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435136,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706435136,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 251
+    },
+    {
+      "at": 1791706435136,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435137,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435136,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 251
+    },
+    {
+      "at": 1791706435136,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435137,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435136,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 251
+    },
+    {
+      "at": 1791706435141,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool snapshot session=main ok 151ms",
+      "t": 256
+    },
+    {
+      "at": 1791706435155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435157,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706435155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 270
+    },
+    {
+      "at": 1791706435155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435157,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706435155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 270
+    },
+    {
+      "at": 1791706435155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435158,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706435155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 270
+    },
+    {
+      "at": 1791706435155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435158,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706435155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 270
+    },
+    {
+      "at": 1791706435155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435158,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706435155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 270
+    },
+    {
+      "at": 1791706435155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435158,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706435155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 270
+    },
+    {
+      "at": 1791706435158,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435158,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706435158,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 273
+    },
+    {
+      "at": 1791706435158,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435158,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706435158,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 273
+    },
+    {
+      "at": 1791706435158,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435159,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435158,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 273
+    },
+    {
+      "at": 1791706435158,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435159,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435158,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 273
+    },
+    {
+      "at": 1791706435158,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435159,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435158,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 273
+    },
+    {
+      "at": 1791706435158,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435159,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435158,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 273
+    },
+    {
+      "at": 1791706435159,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435161,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706435159,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 274
+    },
+    {
+      "at": 1791706435159,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435161,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706435159,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 274
+    },
+    {
+      "at": 1791706435161,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435162,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435161,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 276
+    },
+    {
+      "at": 1791706435161,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706435162,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706435161,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 276
+    },
+    {
+      "at": 1791706450126,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791706450136,
+        "k": "detach",
+        "ms": 10,
+        "start": 1791706450126,
+        "tab": 2018092600
+      },
+      "t": 15241
+    },
+    {
+      "at": 1791706450126,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791706450136,
+        "k": "detach",
+        "ms": 10,
+        "start": 1791706450126,
+        "tab": 2018092600
+      },
+      "t": 15241
+    },
+    {
+      "at": 1791706457880,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706457882,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706457880,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 22995
+    },
+    {
+      "at": 1791706457880,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706457882,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706457880,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 22995
+    },
+    {
+      "at": 1791706457880,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457883,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706457880,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 22995
+    },
+    {
+      "at": 1791706457880,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457883,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706457880,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 22995
+    },
+    {
+      "at": 1791706457883,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457884,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706457883,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 22998
+    },
+    {
+      "at": 1791706457883,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457884,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706457883,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 22998
+    },
+    {
+      "at": 1791706457928,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457930,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706457928,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23043
+    },
+    {
+      "at": 1791706457928,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457930,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706457928,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23043
+    },
+    {
+      "at": 1791706457931,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706457931,
+        "k": "attach",
+        "ms": 0,
+        "start": 1791706457931,
+        "tab": 2018092600
+      },
+      "t": 23046
+    },
+    {
+      "at": 1791706457931,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791706457931,
+        "k": "attach",
+        "ms": 0,
+        "start": 1791706457931,
+        "tab": 2018092600
+      },
+      "t": 23046
+    },
+    {
+      "at": 1791706457931,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706457933,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791706457931,
+        "tab": 2018092600,
+        "method": "Network.enable"
+      },
+      "t": 23046
+    },
+    {
+      "at": 1791706457931,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706457933,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791706457931,
+        "tab": 2018092600,
+        "method": "Network.enable"
+      },
+      "t": 23046
+    },
+    {
+      "at": 1791706457931,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706457933,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791706457931,
+        "tab": 2018092600,
+        "method": "Page.enable"
+      },
+      "t": 23046
+    },
+    {
+      "at": 1791706457931,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706457933,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791706457931,
+        "tab": 2018092600,
+        "method": "Page.enable"
+      },
+      "t": 23046
+    },
+    {
+      "at": 1791706457932,
+      "src": "sw",
+      "kind": "update",
+      "data": {
+        "at": 1791706457937,
+        "k": "update",
+        "ms": 5,
+        "start": 1791706457932,
+        "url": "https://en.wikipedia.org/wiki/Studio_Ghibli"
+      },
+      "t": 23047
+    },
+    {
+      "at": 1791706457932,
+      "src": "sw",
+      "kind": "update",
+      "data": {
+        "at": 1791706457937,
+        "k": "update",
+        "ms": 5,
+        "start": 1791706457932,
+        "url": "https://en.wikipedia.org/wiki/Studio_Ghibli"
+      },
+      "t": 23047
+    },
+    {
+      "at": 1791706457937,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457939,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706457937,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23052
+    },
+    {
+      "at": 1791706457937,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706457939,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706457937,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23052
+    },
+    {
+      "at": 1791706457951,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706457951,
+        "k": "tabUpdated",
+        "tab": 2018092600,
+        "status": "loading",
+        "url": "https://en.wikipedia.org/wiki/Studio_Ghibli"
+      },
+      "t": 23066
+    },
+    {
+      "at": 1791706457951,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706457951,
+        "k": "tabUpdated",
+        "tab": 2018092600,
+        "status": "loading",
+        "url": "https://en.wikipedia.org/wiki/Studio_Ghibli"
+      },
+      "t": 23066
+    },
+    {
+      "at": 1791706457963,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706457979,
+        "k": "sendMessage",
+        "ms": 16,
+        "start": 1791706457963,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092600,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 23078
+    },
+    {
+      "at": 1791706457963,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706457979,
+        "k": "sendMessage",
+        "ms": 16,
+        "start": 1791706457963,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092600,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 23078
+    },
+    {
+      "at": 1791706458040,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458155,
+        "k": "executeScript",
+        "ms": 115,
+        "start": 1791706458040,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23155
+    },
+    {
+      "at": 1791706458040,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458155,
+        "k": "executeScript",
+        "ms": 115,
+        "start": 1791706458040,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23155
+    },
+    {
+      "at": 1791706458155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458164,
+        "k": "executeScript",
+        "ms": 9,
+        "start": 1791706458155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23270
+    },
+    {
+      "at": 1791706458155,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458164,
+        "k": "executeScript",
+        "ms": 9,
+        "start": 1791706458155,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23270
+    },
+    {
+      "at": 1791706458167,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool navigate session=main ok 267ms",
+      "t": 23282
+    },
+    {
+      "at": 1791706458168,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458169,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458168,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23283
+    },
+    {
+      "at": 1791706458168,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458169,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458168,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23283
+    },
+    {
+      "at": 1791706458169,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706458694,
+        "k": "sendCommand",
+        "ms": 525,
+        "start": 1791706458169,
+        "tab": 2018092600,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 23284
+    },
+    {
+      "at": 1791706458169,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706458694,
+        "k": "sendCommand",
+        "ms": 525,
+        "start": 1791706458169,
+        "tab": 2018092600,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 23284
+    },
+    {
+      "at": 1791706458736,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706458736,
+        "k": "tabUpdated",
+        "tab": 2018092600,
+        "status": "complete"
+      },
+      "t": 23851
+    },
+    {
+      "at": 1791706458736,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706458736,
+        "k": "tabUpdated",
+        "tab": 2018092600,
+        "status": "complete"
+      },
+      "t": 23851
+    },
+    {
+      "at": 1791706458737,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458738,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458737,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23852
+    },
+    {
+      "at": 1791706458737,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458738,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458737,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23852
+    },
+    {
+      "at": 1791706458738,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458739,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458738,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23853
+    },
+    {
+      "at": 1791706458738,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458739,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458738,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23853
+    },
+    {
+      "at": 1791706458739,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458739,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706458739,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23854
+    },
+    {
+      "at": 1791706458739,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458739,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706458739,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23854
+    },
+    {
+      "at": 1791706458745,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool snapshot session=main ok 577ms",
+      "t": 23860
+    },
+    {
+      "at": 1791706458751,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458754,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706458751,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23866
+    },
+    {
+      "at": 1791706458751,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458754,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706458751,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23866
+    },
+    {
+      "at": 1791706458754,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706458755,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706458754,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 23869
+    },
+    {
+      "at": 1791706458754,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706458755,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706458754,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 23869
+    },
+    {
+      "at": 1791706458754,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458755,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458754,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23869
+    },
+    {
+      "at": 1791706458754,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706458755,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706458754,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 23869
+    },
+    {
+      "at": 1791706464952,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464955,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706464952,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30067
+    },
+    {
+      "at": 1791706464952,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464955,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791706464952,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30067
+    },
+    {
+      "at": 1791706464953,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464955,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706464953,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30068
+    },
+    {
+      "at": 1791706464953,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464955,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706464953,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30068
+    },
+    {
+      "at": 1791706464955,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706464956,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706464955,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 30070
+    },
+    {
+      "at": 1791706464955,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706464956,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791706464955,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 30070
+    },
+    {
+      "at": 1791706464955,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464992,
+        "k": "executeScript",
+        "ms": 37,
+        "start": 1791706464955,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30070
+    },
+    {
+      "at": 1791706464955,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464992,
+        "k": "executeScript",
+        "ms": 37,
+        "start": 1791706464955,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30070
+    },
+    {
+      "at": 1791706464992,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464993,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706464992,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30107
+    },
+    {
+      "at": 1791706464992,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706464993,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706464992,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30107
+    },
+    {
+      "at": 1791706465030,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465030,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706465030,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30145
+    },
+    {
+      "at": 1791706465030,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465030,
+        "k": "executeScript",
+        "ms": 0,
+        "start": 1791706465030,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30145
+    },
+    {
+      "at": 1791706465030,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706465704,
+        "k": "sendCommand",
+        "ms": 674,
+        "start": 1791706465030,
+        "tab": 2018092600,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 30145
+    },
+    {
+      "at": 1791706465030,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791706465704,
+        "k": "sendCommand",
+        "ms": 674,
+        "start": 1791706465030,
+        "tab": 2018092600,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 30145
+    },
+    {
+      "at": 1791706465754,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465755,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706465754,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30869
+    },
+    {
+      "at": 1791706465754,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465755,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791706465754,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30869
+    },
+    {
+      "at": 1791706465755,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465757,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706465755,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30870
+    },
+    {
+      "at": 1791706465755,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465757,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791706465755,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30870
+    },
+    {
+      "at": 1791706465757,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465762,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791706465757,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30872
+    },
+    {
+      "at": 1791706465757,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791706465762,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791706465757,
+        "tab": 2018092600,
+        "world": "ISOLATED"
+      },
+      "t": 30872
+    },
+    {
+      "at": 1791706465769,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool snapshot session=main ok 739ms",
+      "t": 30884
+    },
+    {
+      "at": 1791706469567,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706469569,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706469567,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 34682
+    },
+    {
+      "at": 1791706469567,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706469569,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791706469567,
+        "tab": 2018092600,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 34682
+    },
+    {
+      "at": 1791706480704,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791706480705,
+        "k": "detach",
+        "ms": 1,
+        "start": 1791706480704,
+        "tab": 2018092600
+      },
+      "t": 45819
+    },
+    {
+      "at": 1791706480704,
+      "src": "sw",
+      "kind": "detach",
+      "data": {
+        "at": 1791706480705,
+        "k": "detach",
+        "ms": 1,
+        "start": 1791706480704,
+        "tab": 2018092600
+      },
+      "t": 45819
+    },
+    {
+      "at": 1791706486784,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486794,
+        "k": "sendMessage",
+        "ms": 10,
+        "start": 1791706486784,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092603,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 51899
+    },
+    {
+      "at": 1791706486784,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486794,
+        "k": "sendMessage",
+        "ms": 10,
+        "start": 1791706486784,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092603,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 51899
+    },
+    {
+      "at": 1791706486799,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706486799,
+        "k": "tabUpdated",
+        "tab": 2018092603,
+        "status": "loading",
+        "url": "chrome-extension://mcndfajlacbajdmenpdlfncklhlffmgb/settings.html"
+      },
+      "t": 51914
+    },
+    {
+      "at": 1791706486799,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706486799,
+        "k": "tabUpdated",
+        "tab": 2018092603,
+        "status": "loading",
+        "url": "chrome-extension://mcndfajlacbajdmenpdlfncklhlffmgb/settings.html"
+      },
+      "t": 51914
+    },
+    {
+      "at": 1791706486795,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486801,
+        "k": "sendMessage",
+        "ms": 6,
+        "start": 1791706486795,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092603,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 51910
+    },
+    {
+      "at": 1791706486795,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486801,
+        "k": "sendMessage",
+        "ms": 6,
+        "start": 1791706486795,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092603,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 51910
+    },
+    {
+      "at": 1791706486794,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486802,
+        "k": "sendMessage",
+        "ms": 8,
+        "start": 1791706486794,
+        "tab": 2018092600,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 51909
+    },
+    {
+      "at": 1791706486794,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486802,
+        "k": "sendMessage",
+        "ms": 8,
+        "start": 1791706486794,
+        "tab": 2018092600,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 51909
+    },
+    {
+      "at": 1791706486805,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486805,
+        "k": "sendMessage",
+        "ms": 0,
+        "start": 1791706486805,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092603,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 51920
+    },
+    {
+      "at": 1791706486805,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791706486805,
+        "k": "sendMessage",
+        "ms": 0,
+        "start": 1791706486805,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 2018092603,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 51920
+    },
+    {
+      "at": 1791706486936,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706486936,
+        "k": "tabUpdated",
+        "tab": 2018092603,
+        "status": "complete"
+      },
+      "t": 52051
+    },
+    {
+      "at": 1791706486936,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791706486936,
+        "k": "tabUpdated",
+        "tab": 2018092603,
+        "status": "complete"
+      },
+      "t": 52051
+    }
+  ]
+}

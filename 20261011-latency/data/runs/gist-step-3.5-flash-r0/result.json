@@ -1,0 +1,1378 @@
+{
+  "scenario": "gist",
+  "round": "0",
+  "prompt": "这篇文章的核心观点是什么？",
+  "startUrl": "http://127.0.0.1:37399/article",
+  "browser": "Chrome/145.0.7632.6",
+  "fast": null,
+  "panelText": "这篇文章的核心观点是什么？\n存成技能\n远程办公的代价\n\n这篇文章的核心观点是：远程办公对团队内部产生了明显的分化效应——资深成员的专注力显著提升（每周不被打断的整块时间从 9 小时增至 21 小时），但新人的成长速度严重受挫（首次独立交付功能的时间从 6 周拖长到 14 周）。\n\n文章认为，根本原因是远程工作消除了新人旁听和随手提问的机会。因此，作者团队的对策是每周安排两天集中办公，专门用于带新人。",
+  "panelStepsHtml": "",
+  "samples": [
+    {
+      "t": -51,
+      "running": false,
+      "pill": "已连接",
+      "runs": [],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 103,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "1 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 2093,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "2 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 3163,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "3 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 3926,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "3 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 4078,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "4 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5152,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": false
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        ""
+      ],
+      "answerChars": 0,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5305,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 25,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5458,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 42,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5612,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 87,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5768,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 127,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 5922,
+      "running": true,
+      "pill": "已连接",
+      "runs": [
+        {
+          "title": "正在思考",
+          "time": "5 秒",
+          "hidden": true
+        }
+      ],
+      "trail": [],
+      "chips": [],
+      "thinking": [
+        "正在思考…"
+      ],
+      "answerChars": 143,
+      "streaming": true,
+      "taskbar": "",
+      "notices": []
+    },
+    {
+      "t": 6073,
+      "running": false,
+      "pill": "已连接",
+      "runs": [],
+      "trail": [],
+      "chips": [],
+      "thinking": [],
+      "answerChars": 173,
+      "streaming": false,
+      "taskbar": "",
+      "notices": []
+    }
+  ],
+  "pages": [
+    {
+      "t": -50,
+      "tabs": "http://127.0.0.1:37399/article :: 远程办公的代价"
+    }
+  ],
+  "t0": 1791707189349,
+  "exportStatus": "已导出 1 个会话、23 条任务记录，0 条语音记录。",
+  "calls": [
+    {
+      "id": "653071.17",
+      "url": "https://api.stepfun.com/step_plan/v1/chat/completions",
+      "start": 170,
+      "reasoningChars": 1029,
+      "contentChars": 185,
+      "toolArgChars": 0,
+      "chunks": 126,
+      "toolNames": [],
+      "streamed": true,
+      "req": {
+        "model": "step-3.5-flash",
+        "stream": true,
+        "max_tokens": 16384,
+        "bodyChars": 58793,
+        "messages": 3,
+        "roles": "system,user,user",
+        "systemChars": 16021,
+        "userChars": 1683,
+        "toolMsgChars": 0,
+        "assistantChars": 0,
+        "tools": 32,
+        "toolsChars": 40564,
+        "toolNames": [
+          "page_translation",
+          "read_element",
+          "read_elements",
+          "browser_run",
+          "tabs",
+          "navigate",
+          "snapshot",
+          "hover",
+          "click",
+          "double_click",
+          "select_option",
+          "upload_file",
+          "arm_event",
+          "wait_event",
+          "accept_dialog",
+          "dismiss_dialog",
+          "download_url",
+          "fill",
+          "type_text",
+          "press_key",
+          "scroll",
+          "fetch",
+          "network",
+          "js",
+          "mark",
+          "guide_step",
+          "screenshot",
+          "take_tab",
+          "hand_to_user",
+          "user_memory",
+          "send_user_message",
+          "artifacts"
+        ],
+        "lastUserHead": "[object Object]",
+        "systemHead": "You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on",
+        "bodyIndex": 0
+      },
+      "firstByte": 3882,
+      "status": 200,
+      "lastChunk": 6036,
+      "usage": {
+        "cached_tokens": 3648,
+        "prompt_tokens": 15165,
+        "completion_tokens": 315,
+        "total_tokens": 15480,
+        "prompt_tokens_details": {
+          "cached_tokens": 3648
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "firstReasoning": 3885,
+      "reasoningHead": "The user wants me to identify the core argument of the article \"远程办公的代价\" (The Cost of Remote Work). The fresh page observation already provides the key content. Let me analyze what the article says:\n\nFrom the page content:\n1. The team has been fully remote for three years\n2. Core thesis: Remote work significantly increased uninterrupted focus time for senior members, but severely weakened the growth",
+      "firstContent": 5234,
+      "content": "这篇文章的核心观点是：**远程办公对团队内部产生了明显的分化效应**——资深成员的专注力显著提升（每周不被打断的整块时间从 9 小时增至 21 小时），但新人的成长速度严重受挫（首次独立交付功能的时间从 6 周拖长到 14 周）。\n\n文章认为，根本原因是**远程工作消除了新人旁听和随手提问的机会**。因此，作者团队的对策是**每周安排两天集中办公，专门用于带新人**。",
+      "finish": "stop",
+      "end": 6046,
+      "failed": "net::ERR_ABORTED"
+    }
+  ],
+  "events": [
+    {
+      "at": 1791707189349,
+      "src": "harness",
+      "kind": "send",
+      "t": 0
+    },
+    {
+      "at": 1791707189352,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189353,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707189352,
+        "tab": 1808697226,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791707189352,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189353,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707189352,
+        "tab": 1808697226,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791707189352,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189353,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707189352,
+        "tab": 1808697226,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791707189352,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189353,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707189352,
+        "tab": 1808697226,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 3
+    },
+    {
+      "at": 1791707189389,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189390,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707189389,
+        "tab": 1808697226,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 40
+    },
+    {
+      "at": 1791707189389,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189390,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707189389,
+        "tab": 1808697226,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 40
+    },
+    {
+      "at": 1791707189411,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189413,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791707189411,
+        "tab": 1808697226,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 62
+    },
+    {
+      "at": 1791707189411,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707189413,
+        "k": "sendMessage",
+        "ms": 2,
+        "start": 1791707189411,
+        "tab": 1808697226,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 62
+    },
+    {
+      "at": 1791707189410,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189415,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791707189410,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 61
+    },
+    {
+      "at": 1791707189410,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189415,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791707189410,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 61
+    },
+    {
+      "at": 1791707189411,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189417,
+        "k": "executeScript",
+        "ms": 6,
+        "start": 1791707189411,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 62
+    },
+    {
+      "at": 1791707189411,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189417,
+        "k": "executeScript",
+        "ms": 6,
+        "start": 1791707189411,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 62
+    },
+    {
+      "at": 1791707189415,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189418,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707189415,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 66
+    },
+    {
+      "at": 1791707189415,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189418,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707189415,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 66
+    },
+    {
+      "at": 1791707189418,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189420,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707189418,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 69
+    },
+    {
+      "at": 1791707189418,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189420,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707189418,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 69
+    },
+    {
+      "at": 1791707189437,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189438,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189437,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 88
+    },
+    {
+      "at": 1791707189437,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189438,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189437,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 88
+    },
+    {
+      "at": 1791707189441,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791707189443,
+        "k": "attach",
+        "ms": 2,
+        "start": 1791707189441,
+        "tab": 1808697226
+      },
+      "t": 92
+    },
+    {
+      "at": 1791707189441,
+      "src": "sw",
+      "kind": "attach",
+      "data": {
+        "at": 1791707189443,
+        "k": "attach",
+        "ms": 2,
+        "start": 1791707189441,
+        "tab": 1808697226
+      },
+      "t": 92
+    },
+    {
+      "at": 1791707189443,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707189445,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791707189443,
+        "tab": 1808697226,
+        "method": "Network.enable"
+      },
+      "t": 94
+    },
+    {
+      "at": 1791707189443,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707189445,
+        "k": "sendCommand",
+        "ms": 2,
+        "start": 1791707189443,
+        "tab": 1808697226,
+        "method": "Network.enable"
+      },
+      "t": 94
+    },
+    {
+      "at": 1791707189444,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707189445,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791707189444,
+        "tab": 1808697226,
+        "method": "Page.enable"
+      },
+      "t": 95
+    },
+    {
+      "at": 1791707189444,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707189445,
+        "k": "sendCommand",
+        "ms": 1,
+        "start": 1791707189444,
+        "tab": 1808697226,
+        "method": "Page.enable"
+      },
+      "t": 95
+    },
+    {
+      "at": 1791707189444,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707189450,
+        "k": "sendCommand",
+        "ms": 6,
+        "start": 1791707189444,
+        "tab": 1808697226,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 95
+    },
+    {
+      "at": 1791707189444,
+      "src": "sw",
+      "kind": "sendCommand",
+      "data": {
+        "at": 1791707189450,
+        "k": "sendCommand",
+        "ms": 6,
+        "start": 1791707189444,
+        "tab": 1808697226,
+        "method": "Accessibility.getFullAXTree"
+      },
+      "t": 95
+    },
+    {
+      "at": 1791707189452,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189453,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189452,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 103
+    },
+    {
+      "at": 1791707189452,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189453,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189452,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 103
+    },
+    {
+      "at": 1791707189453,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189454,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189453,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 104
+    },
+    {
+      "at": 1791707189453,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189454,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189453,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 104
+    },
+    {
+      "at": 1791707189454,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189455,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189454,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 105
+    },
+    {
+      "at": 1791707189454,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189455,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189454,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 105
+    },
+    {
+      "at": 1791707189458,
+      "src": "inproc",
+      "kind": "console",
+      "data": "[sideagent] tool snapshot session=main ok 23ms",
+      "t": 109
+    },
+    {
+      "at": 1791707189475,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189477,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707189475,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 126
+    },
+    {
+      "at": 1791707189475,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189477,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707189475,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 126
+    },
+    {
+      "at": 1791707189475,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189478,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707189475,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 126
+    },
+    {
+      "at": 1791707189475,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189478,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707189475,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 126
+    },
+    {
+      "at": 1791707189475,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189479,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791707189475,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 126
+    },
+    {
+      "at": 1791707189475,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189479,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791707189475,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 126
+    },
+    {
+      "at": 1791707189478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189479,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189478,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 129
+    },
+    {
+      "at": 1791707189478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189479,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189478,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 129
+    },
+    {
+      "at": 1791707189478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189480,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707189478,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 129
+    },
+    {
+      "at": 1791707189478,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189480,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707189478,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 129
+    },
+    {
+      "at": 1791707189479,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189484,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791707189479,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 130
+    },
+    {
+      "at": 1791707189479,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189484,
+        "k": "executeScript",
+        "ms": 5,
+        "start": 1791707189479,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 130
+    },
+    {
+      "at": 1791707189480,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189484,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791707189480,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 131
+    },
+    {
+      "at": 1791707189480,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189484,
+        "k": "executeScript",
+        "ms": 4,
+        "start": 1791707189480,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 131
+    },
+    {
+      "at": 1791707189484,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189485,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189484,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 135
+    },
+    {
+      "at": 1791707189484,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707189485,
+        "k": "executeScript",
+        "ms": 1,
+        "start": 1791707189484,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 135
+    },
+    {
+      "at": 1791707195402,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707195412,
+        "k": "executeScript",
+        "ms": 10,
+        "start": 1791707195402,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 6053
+    },
+    {
+      "at": 1791707195402,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707195412,
+        "k": "executeScript",
+        "ms": 10,
+        "start": 1791707195402,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 6053
+    },
+    {
+      "at": 1791707195404,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707195412,
+        "k": "sendMessage",
+        "ms": 8,
+        "start": 1791707195404,
+        "tab": 1808697226,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 6055
+    },
+    {
+      "at": 1791707195404,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707195412,
+        "k": "sendMessage",
+        "ms": 8,
+        "start": 1791707195404,
+        "tab": 1808697226,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 6055
+    },
+    {
+      "at": 1791707195412,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707195415,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707195412,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 6063
+    },
+    {
+      "at": 1791707195412,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707195415,
+        "k": "executeScript",
+        "ms": 3,
+        "start": 1791707195412,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 6063
+    },
+    {
+      "at": 1791707195413,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707195417,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791707195413,
+        "tab": 1808697226,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 6064
+    },
+    {
+      "at": 1791707195413,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707195417,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791707195413,
+        "tab": 1808697226,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 6064
+    },
+    {
+      "at": 1791707195415,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707195417,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707195415,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 6066
+    },
+    {
+      "at": 1791707195415,
+      "src": "sw",
+      "kind": "executeScript",
+      "data": {
+        "at": 1791707195417,
+        "k": "executeScript",
+        "ms": 2,
+        "start": 1791707195415,
+        "tab": 1808697226,
+        "world": "ISOLATED"
+      },
+      "t": 6066
+    },
+    {
+      "at": 1791707195418,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707195419,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707195418,
+        "tab": 1808697226,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 6069
+    },
+    {
+      "at": 1791707195418,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707195419,
+        "k": "sendMessage",
+        "ms": 1,
+        "start": 1791707195418,
+        "tab": 1808697226,
+        "type": "PINPOINT_DOM_TARGET"
+      },
+      "t": 6069
+    },
+    {
+      "at": 1791707201746,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201757,
+        "k": "sendMessage",
+        "ms": 11,
+        "start": 1791707201746,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1808697229,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 12397
+    },
+    {
+      "at": 1791707201746,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201757,
+        "k": "sendMessage",
+        "ms": 11,
+        "start": 1791707201746,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1808697229,
+        "type": "EDGE_PILL_SHOW"
+      },
+      "t": 12397
+    },
+    {
+      "at": 1791707201757,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201760,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791707201757,
+        "tab": 1808697226,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12408
+    },
+    {
+      "at": 1791707201757,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201760,
+        "k": "sendMessage",
+        "ms": 3,
+        "start": 1791707201757,
+        "tab": 1808697226,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12408
+    },
+    {
+      "at": 1791707201757,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201761,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791707201757,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1808697229,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12408
+    },
+    {
+      "at": 1791707201757,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201761,
+        "k": "sendMessage",
+        "ms": 4,
+        "start": 1791707201757,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1808697229,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12408
+    },
+    {
+      "at": 1791707201765,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707201765,
+        "k": "tabUpdated",
+        "tab": 1808697229,
+        "status": "loading",
+        "url": "chrome-extension://cnlmcjkpochogfndcgbolocffkblhkee/settings.html"
+      },
+      "t": 12416
+    },
+    {
+      "at": 1791707201765,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707201765,
+        "k": "tabUpdated",
+        "tab": 1808697229,
+        "status": "loading",
+        "url": "chrome-extension://cnlmcjkpochogfndcgbolocffkblhkee/settings.html"
+      },
+      "t": 12416
+    },
+    {
+      "at": 1791707201773,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201773,
+        "k": "sendMessage",
+        "ms": 0,
+        "start": 1791707201773,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1808697229,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12424
+    },
+    {
+      "at": 1791707201773,
+      "src": "sw",
+      "kind": "sendMessage",
+      "data": {
+        "at": 1791707201773,
+        "k": "sendMessage",
+        "ms": 0,
+        "start": 1791707201773,
+        "err": "Could not establish connection. Receiving end does not exist.",
+        "tab": 1808697229,
+        "type": "VIEWPORT_ACTIVE_SECTION"
+      },
+      "t": 12424
+    },
+    {
+      "at": 1791707201991,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707201991,
+        "k": "tabUpdated",
+        "tab": 1808697229,
+        "status": "complete"
+      },
+      "t": 12642
+    },
+    {
+      "at": 1791707201991,
+      "src": "sw",
+      "kind": "tabUpdated",
+      "data": {
+        "at": 1791707201991,
+        "k": "tabUpdated",
+        "tab": 1808697229,
+        "status": "complete"
+      },
+      "t": 12642
+    }
+  ]
+}

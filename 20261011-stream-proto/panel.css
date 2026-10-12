@@ -1,0 +1,49 @@
+/* 原型外壳 + 右边「改后」新增的几条。只用 product-styles.css 里已有的 token。 */
+html, body { height: 100%; }
+body { margin: 0; background: var(--wallpaper); overflow: hidden; }
+.panel { height: 100vh; display: flex; flex-direction: column; }
+#messages { scrollbar-width: none; }
+#messages::-webkit-scrollbar { display: none; }
+.composer-stub { flex: none; display: flex; align-items: flex-end; justify-content: space-between; margin: 0 12px 12px; height: 74px; padding: 12px 14px 10px; border-radius: var(--r-shape); background: var(--content-bg); box-shadow: inset 0 0 0 1px var(--glass-border), var(--glass-shadow); color: var(--text-quaternary); font-size: var(--fs-ui); }
+.composer-stub span { align-self: flex-start; }
+.composer-stub i { width: 28px; height: 28px; border-radius: 50%; background: var(--text-primary); opacity: .12; }
+
+/* 正文衬线开关（两边都能开）：等于「阅读外观 → 宋体」那一档，Linux 录像机上落到 Noto Serif CJK。 */
+:root[data-serif="1"] { --reading-font: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif; }
+
+/* ── 改后：按 Claude 实测 ───────────────────────────── */
+/* 每段 400ms 匀速淡入，不位移、不模糊 */
+.chunk-fade { animation: chunkFade 400ms linear both; }
+@keyframes chunkFade { from { opacity: 0; } }
+
+/* 整条回答：上浮 10px + 淡入，1.1s 弹簧（约 16% 过冲；前半段是实测原值，后半段按趋势补齐） */
+:root[data-variant="new"] .msg.assistant.enter {
+  animation: answerRise 1.1s linear(0, .0706 3.67%, .1921 6.42%, .3452 9.17%, .5097 11.93%, .6698 14.68%, .8139 17.43%, .935 20.18%, 1.0296 22.94%, 1.0971 25.69%, 1.1394 28.44%, 1.1597 31.19%, 1.163 33.03%, 1.1561 35.78%, 1.1387 38.53%, 1.115 41.28%, 1.0884 44.04%, 1.06 47%, 1.03 55%, 1.01 66%, 1 80%, 1) both;
+}
+@keyframes answerRise { from { opacity: 0; transform: translateY(10px); } }
+
+/* 复制等按钮：等 100ms，再 120ms 淡入（正好是 --m-quick） */
+.answer-actions.enter { animation: actionsIn var(--m-quick) linear 100ms both; }
+@keyframes actionsIn { from { opacity: 0; } }
+
+/* 思考行：光带 3 秒一圈（15%～85% 扫过，两头停一下）；秒数紧跟在字后面 */
+:root[data-variant="new"] details.run-steps:not(.done) .run-title { animation: runShine3 3s infinite; }
+@keyframes runShine3 {
+  0%, 15% { -webkit-mask-position: 110% 0; mask-position: 110% 0; animation-timing-function: cubic-bezier(.714, .121, .211, .888); }
+  85%, 100% { -webkit-mask-position: -10% 0; mask-position: -10% 0; }
+}
+:root[data-variant="new"] details.run-steps:not(.done) .run-time { margin-left: 2px; }
+:root[data-variant="new"] details.run-steps:not(.done) .run-chevron { display: none; }
+:root[data-variant="new"] details.run-steps.done .run-time { display: none; }
+
+/* 状态换字：旧字上移 3px 淡出、新字从下 3px 淡入，宽度同时补间，180ms */
+.run-title { position: relative; }
+.run-title .ttl { display: inline-block; }
+.run-title .ttl-out { position: absolute; left: 0; top: 0; animation: ttlOut 180ms var(--e-swift) both; }
+.run-title .ttl-in { animation: ttlIn 180ms var(--e-swift) both; }
+@keyframes ttlOut { to { opacity: 0; transform: translateY(-3px); } }
+@keyframes ttlIn { from { opacity: 0; transform: translateY(3px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .chunk-fade, :root[data-variant="new"] .msg.assistant.enter, .answer-actions.enter, .run-title .ttl-out, .run-title .ttl-in { animation: none; }
+}

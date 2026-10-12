@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>过程块 · 三种改法</title>
+<link rel="stylesheet" href="product-styles.css">
+<link rel="stylesheet" href="proto.css">
+<style>
+/* 展示页外壳（不属于侧栏）：沿用 docs/previews 的米色展板。 */
+html, body { height: auto; background: #eeede7; }
+body.page { margin: 0; padding: 24px; color: #22211f; font: 14px/1.6 var(--font); }
+.page main { max-width: 1040px; margin: auto; }
+.page h1 { font-size: 20px; font-weight: 550; margin: 0; }
+.page header p { color: #77746e; margin: 6px 0 18px; }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.bar .lbl { font-size: 12px; color: #868279; margin-right: 2px; }
+.bar button { font: inherit; font-size: 13px; cursor: pointer; border: 1px solid #25231e14; border-radius: 22px; background: transparent; padding: 6px 14px; color: #77746e; }
+.bar button[aria-pressed="true"] { background: #fff; color: #25231e; }
+.bar input[type=range] { flex: 1; min-width: 200px; accent-color: #25231e; }
+.bar .clock { font-variant-numeric: tabular-nums; font-size: 12px; color: #77746e; min-width: 90px; }
+.stage { background: #faf9f5; border: 1px solid #25231e12; border-radius: 24px; padding: 24px; display: flex; gap: 32px; align-items: flex-start; }
+.screen { flex-shrink: 0; border: 1px solid #25231e18; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px #25231e08; }
+.copy { max-width: 520px; font-size: 13.5px; }
+.copy h2 { font-size: 19px; font-weight: 550; margin: 0 0 10px; }
+.copy .card { display: grid; grid-template-columns: 3em 1fr; gap: 3px 10px; padding: 12px 14px; border-radius: 12px; background: #f1efe8; margin-bottom: 14px; }
+.copy .card b { font-weight: 550; color: #5f5e58; }
+.copy ul { padding-left: 18px; margin: 6px 0; color: #4d4b45; }
+.copy .hint { color: #868279; font-size: 12px; }
+footer { font-size: 12px; color: #868279; margin-top: 16px; }
+
+/* 录像：只留一条说明 + 侧栏 */
+body.rec { margin: 0; background: var(--wallpaper); }
+.rec-cap { height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 14px; font: 12px/1 var(--font); color: var(--text-tertiary); border-bottom: 1px solid var(--content-border); background: var(--chrome-frame); }
+.rec-cap b { color: var(--text-primary); font-weight: 600; }
+.rec-cap .ff { margin-left: auto; padding: 3px 7px; border-radius: 6px; background: var(--content-subtle); color: var(--text-secondary); opacity: 0; transition: opacity 160ms; font-variant-numeric: tabular-nums; }
+.rec-cap .ff.on { opacity: 1; }
+
+/* 截图拼板 */
+body.grid { width: max-content; margin: 0; padding: 20px; background: #eeede7; font: 13px/1.5 var(--font); color: #22211f; height: auto; }
+.g-title { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+.g-sub { color: #77746e; margin: 0 0 16px; font-size: 12.5px; }
+.g-table { display: grid; gap: 14px; align-items: start; }
+.g-head { font-size: 12.5px; font-weight: 600; color: #4d4b45; padding: 0 2px; }
+.g-row-label { font-size: 13px; font-weight: 600; color: #25231e; writing-mode: vertical-rl; transform: rotate(180deg); justify-self: center; align-self: center; letter-spacing: 2px; }
+.g-cell { border: 1px solid #25231e18; border-radius: 12px; overflow: hidden; background: var(--wallpaper); }
+.g-cell .proto-panel .composer-dock-wrap { display: none; }
+.g-shot { border: 1px solid #25231e18; border-radius: 12px; overflow: hidden; background: #faf9f5; padding: 10px; }
+.g-shot img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+<script src="runs.js"></script>
+<script src="proto.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

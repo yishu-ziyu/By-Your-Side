@@ -1,0 +1,20 @@
+{"n": 205, "readonly_ref": 58, "rules_pred_readonly": 31, "tp": 26, "fp_action_sent_to_readonly": 5, "fn_readonly_kept_on_full": 32, "precision": 0.839, "recall": 0.448}
+--- false positives (action/task-lane requests the rules would strip tools from):
+  task | 你可以截个图看一下在哪。
+  task | 这个视频的字幕你能获取到吗？
+  task | 我觉得你可以看一下这个。 他的这条推特的底下的大家的评价是怎么样的？
+  task | 定位到当前页面，怎么进入他们的官网？就可以看到账单的那个官网。
+  task | 你要自己找一下，好吧？自己找一下在哪里看额度啊？这种自我学习能力是要有的。
+--- sample false negatives:
+  answer | 点击并且帮我确认一下这个GPT的image2.5目前是不是网页端可用，还是说它只能在API端用？
+  chat | 呃，你倒是可以搜一下像是X或者是一些其他的这个AI社区或者是Reddit。
+  page_question | 然后向我汇报说目前为止消费的金额总量和当天的消费金额。
+  chat | 我给圈的有点太大了吧。
+  chat | 嗨你好呀。
+  chat | 嗨，你好。
+  page_question | 请告诉我当前页面的标题。
+  page_question | 我说，请告诉我当前的标题。
+  page_question | 现在请你重新检查当前的页面，然后并且读出这个页面的第一句话。
+  chat | 你好。
+  chat | 当前对你现在其实是对的。
+  answer | 什么叫做ACP啊？你可以在输入框中继续问ChatGPT。点击发送，让它思考。

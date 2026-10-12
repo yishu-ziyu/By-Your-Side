@@ -1,0 +1,15 @@
+{"firstEvent": 3.68, "firstOutput": 8.92, "firstKind": "tool", "total": 9.94, "prompt": 19108, "cached": 0, "err": null, "variant": "A_orig_fresh_runId", "rep": 0}
+{"firstEvent": 3.23, "firstOutput": 3.68, "firstKind": "text", "total": 5.74, "prompt": 19111, "cached": 0, "err": null, "variant": "A_orig_fresh_runId", "rep": 1}
+{"firstEvent": 4.44, "firstOutput": 4.9, "firstKind": "text", "total": 7.17, "prompt": 19112, "cached": 3328, "err": null, "variant": "A_orig_fresh_runId", "rep": 2}
+{"firstEvent": 3.28, "firstOutput": 9.82, "firstKind": "tool", "total": 9.95, "prompt": 19106, "cached": 16384, "err": null, "variant": "A2_identical_repeat", "rep": 0}
+{"firstEvent": 2.89, "firstOutput": 7.0, "firstKind": "text", "total": 7.55, "prompt": 19106, "cached": 18688, "err": null, "variant": "A2_identical_repeat", "rep": 1}
+{"firstEvent": 2.22, "firstOutput": 8.27, "firstKind": "tool", "total": 9.24, "prompt": 19106, "cached": 18688, "err": null, "variant": "A2_identical_repeat", "rep": 2}
+{"firstEvent": 3.31, "firstOutput": 6.49, "firstKind": "tool", "total": 7.51, "prompt": 19117, "cached": 2816, "err": null, "variant": "B_tail_moved_to_user", "rep": 0}
+{"firstEvent": 3.02, "firstOutput": 6.08, "firstKind": "text", "total": 8.03, "prompt": 19114, "cached": 14080, "err": null, "variant": "B_tail_moved_to_user", "rep": 1}
+{"firstEvent": 2.39, "firstOutput": 6.32, "firstKind": "text", "total": 8.32, "prompt": 19120, "cached": 14080, "err": null, "variant": "B_tail_moved_to_user", "rep": 2}
+{"firstEvent": 2.86, "firstOutput": 5.93, "firstKind": "tool", "total": 6.45, "prompt": 12163, "cached": 2816, "err": null, "variant": "C_read_tools_only", "rep": 0}
+{"firstEvent": 2.69, "firstOutput": 6.51, "firstKind": "text", "total": 8.16, "prompt": 12166, "cached": 7168, "err": null, "variant": "C_read_tools_only", "rep": 1}
+{"firstEvent": 6.85, "firstOutput": 9.35, "firstKind": "text", "total": 12.1, "prompt": 12161, "cached": 0, "err": null, "variant": "C_read_tools_only", "rep": 2}
+{"firstEvent": 2.02, "firstOutput": 3.9, "firstKind": "text", "total": 5.78, "prompt": 4639, "cached": 0, "err": null, "variant": "D_no_tools_short_sys", "rep": 0}
+{"firstEvent": 8.07, "firstOutput": 14.22, "firstKind": "text", "total": 15.06, "prompt": 4639, "cached": 4352, "err": null, "variant": "D_no_tools_short_sys", "rep": 1}
+{"firstEvent": 2.75, "firstOutput": 3.56, "firstKind": "text", "total": 5.52, "prompt": 4639, "cached": 4352, "err": null, "variant": "D_no_tools_short_sys", "rep": 2}

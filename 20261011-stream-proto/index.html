@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>回答流式 · 现在 vs 按 Claude 实测</title>
+<link rel="stylesheet" href="product-styles.css">
+<style>
+html, body { height: auto; }
+body { margin: 0; background: #eeede7; color: #22211f; font: 13px/1.5 var(--font); }
+main { width: max-content; margin: 0 auto; padding: 18px 20px 16px; }
+h1 { font-size: 16px; font-weight: 600; margin: 0; }
+.sub { color: #77746e; margin: 2px 0 12px; font-size: 12.5px; }
+.bar { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
+.bar button { font: inherit; cursor: pointer; border: 1px solid #25231e18; border-radius: 22px; background: transparent; padding: 5px 14px; color: #55524b; }
+.bar button[aria-pressed="true"] { background: #fff; color: #25231e; }
+.bar .clock { margin-left: auto; font-variant-numeric: tabular-nums; color: #77746e; }
+.duo { display: grid; grid-template-columns: 380px 380px; gap: 24px; }
+.col h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.col h2 small { font-weight: 400; color: #868279; font-size: 11.5px; }
+iframe { display: block; width: 380px; height: 640px; border: 1px solid #25231e18; border-radius: 14px; background: var(--wallpaper); box-shadow: 0 10px 30px #25231e08; }
+.stat { margin-top: 6px; font-size: 11.5px; color: #77746e; min-height: 18px; font-variant-numeric: tabular-nums; }
+.tl { margin-top: 10px; background: #faf9f5; border: 1px solid #25231e12; border-radius: 12px; padding: 8px 10px 6px; }
+.tl svg { display: block; }
+.tl text { font: 11px var(--font); fill: #77746e; }
+body.rec .bar { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>By Your Side · 回答怎么流出来</h1>
+  <p class="sub">同一段回答、同一条模型到达时间表（一阵一阵，第二段中间卡 1 秒）。侧栏 380px，样式是仓库 styles.css @ 6a8587b 原样。</p>
+  <div class="bar">
+    <button id="play">▶ 重新播放</button>
+    <button id="serif" aria-pressed="false">正文衬线（宋体）</button>
+    <span class="clock" id="clock">0.0s</span>
+  </div>
+  <div class="duo">
+    <div class="col"><h2>现在 <small>逐字放出 · 300ms 淡入+模糊 · 光标</small></h2><iframe id="cur" src="panel.html?v=cur&wait=1"></iframe><div class="stat" id="stat-cur"></div></div>
+    <div class="col"><h2>改后 <small>节拍器 · 每段 400ms 淡入 · 淡完拆壳 · 弹簧入场</small></h2><iframe id="new" src="panel.html?v=new&wait=1"></iframe><div class="stat" id="stat-new"></div></div>
+  </div>
+  <div class="tl"><svg id="tl" width="784" height="96"></svg></div>
+</main>
+<script src="stream.js"></script>
+<script>
+const S = window.BYS_STREAM, q = new URLSearchParams(location.search);
+if (q.has("rec")) document.body.classList.add("rec");
+const frames = { cur: document.getElementById("cur"), new: document.getElementById("new") };
+const svg = document.getElementById("tl"), NS = "http://www.w3.org/2000/svg";
+const W = 784, L = 70, T0 = S.T.answer - 300, T1 = S.T.answer + 7200;
+const x = (t) => L + (t - T0) / (T1 - T0) * (W - L - 6);
+const rows = { arr: 18, cur: 50, new: 82 };
+function node(tag, attrs, text) { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text) n.textContent = text; svg.append(n); return n; }
+let head;
+function drawBase() {
+  svg.replaceChildren();
+  node("text", { x: 0, y: rows.arr + 4 }, "模型到达");
+  node("text", { x: 0, y: rows.cur + 4 }, "现在放出");
+  node("text", { x: 0, y: rows.new + 4 }, "改后放出");
+  for (const k in rows) node("line", { x1: L, x2: W - 6, y1: rows[k] + 10, y2: rows[k] + 10, stroke: "#25231e14" });
+  // 卡顿区间
+  let stallT = 0, p = 0; for (const a of S.arrivals) { p += a.text.length; if (p === S.STALL_AT) { stallT = a.t; break; } }
+  node("rect", { x: x(S.T.answer + stallT), y: rows.arr - 12, width: x(S.T.answer + stallT + S.STALL_MS) - x(S.T.answer + stallT), height: 22, fill: "#b7453614", rx: 3 });
+  node("text", { x: x(S.T.answer + stallT) + 6, y: rows.arr + 4, style: "fill:#a55146" }, "卡 1 秒");
+  for (let s = 0; s <= 7; s++) node("text", { x: x(S.T.answer + s * 1000) - 6, y: 95, style: "font-size:9.5px;fill:#a9a59b" }, s + "s");
+  head = node("line", { x1: x(T0), x2: x(T0), y1: 2, y2: 92, stroke: "#25231e55", "stroke-width": 1 });
+}
+function tick(row, t, n, color) { const h = Math.min(20, 2 + n * 0.75); node("rect", { x: x(t) - 0.75, y: rows[row] + 10 - h, width: 1.5, height: h, fill: color }); }
+let start = 0, raf = 0;
+function loop() { const t = performance.now() - start; document.getElementById("clock").textContent = (t / 1000).toFixed(1) + "s"; const xx = Math.max(L, Math.min(W - 6, x(t))); head.setAttribute("x1", xx); head.setAttribute("x2", xx); raf = requestAnimationFrame(loop); }
+const counts = { cur: 0, new: 0 };
+window.addEventListener("message", (e) => {
+  const m = e.data; if (!m || !m.type) return;
+  if (m.type === "arr" && m.v === "cur") tick("arr", m.t, m.n, "#5f5e58");
+  if (m.type === "rel") { counts[m.v]++; tick(m.v, m.t, m.n, m.v === "cur" ? "#9b682b" : "#2d4a86"); document.getElementById("stat-" + m.v).textContent = m.v === "cur" ? `已放出 ${counts.cur} 次（每 32ms 一次，每次整段重渲染）` : `已放出 ${counts.new} 段`; }
+  if (m.type === "done") {
+    const s = m.stats;
+    document.getElementById("stat-" + m.v).textContent = m.v === "cur"
+      ? `放出 ${counts.cur} 次 · 整段 innerHTML 重渲染 ${s.paints} 次`
+      : `放出 ${counts.new} 段 · 直接追加 ${s.fast} 次 · 只重渲染当前段 ${s.slow} 次`;
+  }
+  if (m.type === "end" && m.v === "new") { window.__recDone = true; cancelAnimationFrame(raf); }
+});
+function play() {
+  counts.cur = counts.new = 0; drawBase(); window.__recDone = false;
+  document.getElementById("stat-cur").textContent = ""; document.getElementById("stat-new").textContent = "";
+  start = performance.now(); cancelAnimationFrame(raf); loop();
+  for (const k in frames) frames[k].contentWindow.postMessage({ type: "play" }, "*");
+}
+document.getElementById("play").onclick = play;
+const serifBtn = document.getElementById("serif");
+function setSerif(on) { serifBtn.setAttribute("aria-pressed", String(on)); frames.new.contentWindow.postMessage({ type: "serif", on }, "*"); }
+serifBtn.onclick = () => setSerif(serifBtn.getAttribute("aria-pressed") !== "true");
+window.__start = play;
+let loaded = 0;
+for (const k in frames) frames[k].addEventListener("load", () => { if (++loaded === 2) { if (q.get("serif") === "1") setSerif(true); drawBase(); if (!q.has("rec")) setTimeout(play, 300); } });
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+/* 原型专用：只用 product-styles.css 里的 token（--text-*、--content-*、--apple-*、--fs-*、--e-*、--m-*），不另起一套颜色。 */
+
+/* ── 一块侧栏 ── */
+.proto-panel {
+  width: var(--pw, 380px); height: var(--ph, 660px);
+  display: flex; flex-direction: column; overflow: hidden; position: relative;
+  background: var(--wallpaper); color: var(--text-primary);
+  font-family: var(--font); font-size: var(--fs-ui); line-height: var(--lh-ui);
+}
+.proto-panel #messages { scrollbar-width: none; }
+.proto-panel #messages::-webkit-scrollbar { display: none; }
+.proto-panel .msg.assistant p { margin: 0 0 8px; font-size: var(--fs-read); line-height: var(--lh-read); }
+.proto-panel .msg.assistant p:last-child { margin-bottom: 0; }
+.proto-block { display: flex; flex-direction: column; align-self: stretch; min-width: 0; }
+.proto-panel[data-variant="cur"] .proto-block { gap: var(--gap-turn); }
+.proto-block[hidden], .proto-block [hidden] { display: none !important; }
+
+/* 三个改法共用：展开箭头朝下转 90°，不翻成朝左 */
+details.run-steps.pa[open] .run-chevron, details.run-steps.pb[open] .run-chevron, details.run-steps.pc[open] .run-chevron { transform: rotate(90deg); }
+.pa .run-chevron, .pb .run-chevron, .pc .run-chevron { transition: transform var(--m-move) var(--e-swift); }
+/* 提示句（没找到按钮，换办法）：动词换成橙色，其余不变 */
+details.run-steps.warn .run-title .act-verb, .pb-row.live.warn .run-title .act-verb { color: var(--apple-orange); }
+details.run-steps.warn .run-title, .pb-row.live.warn .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
+
+/* ── A：一行「现在」+ 收起的人话记录 ── */
+details.run-steps.pa:not(.done) > summary { flex-direction: column; align-items: stretch; gap: 1px; }
+.pa-now { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pa .run-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-sec, .pc-sec { flex-shrink: 0; font-size: var(--fs-meta); color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
+details.run-steps.pa:not(.done) .pa-now .run-chevron { display: none; }
+details.run-steps.pa.done .pa-now { align-items: center; gap: 6px; }
+.pa-meta { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--m-move) var(--e-swift), opacity var(--m-move) var(--e-swift); }
+.pa-meta.show { grid-template-rows: 1fr; opacity: 1; }
+.pa-meta-in { min-height: 0; overflow: hidden; display: flex; align-items: center; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+.pa-total { color: var(--text-tertiary); }
+.pa-mchev { display: inline-flex; margin-left: 2px; color: var(--text-quaternary); transition: transform var(--m-move) var(--e-swift); }
+.pa-mchev svg { width: 12px; height: 12px; }
+details.run-steps.pa[open] .pa-mchev { transform: rotate(90deg); }
+details.run-steps.pa summary:hover .pa-meta-in, details.run-steps.pa summary:hover .pa-mchev { color: var(--text-secondary); }
+details.run-steps.done.pa > summary, details.run-steps.done.pb > summary, details.run-steps.done.pc > summary { max-width: 100%; }
+
+.pa-log { gap: 0; margin: 6px 0 4px 5px; padding: 2px 0 2px 12px; }
+.pa-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: var(--fs-meta); line-height: 21px; color: var(--text-tertiary); }
+.pa-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-v { color: var(--text-secondary); }
+.pa-o { color: var(--text-tertiary); }
+.pa-mark { flex-shrink: 0; width: 10px; font-style: normal; text-align: center; }
+.pa-mark::before { content: "✓"; font-size: 11px; color: var(--text-quaternary); }
+.pa-row.think .pa-v, .pa-row.think .pa-o { color: var(--text-tertiary); }
+.pa-row.think .pa-mark::before { content: "◦"; font-size: 13px; }
+.pa-row.failed .pa-mark::before { content: "✕"; color: var(--apple-red); }
+.pa-row.failed .pa-v { color: var(--text-secondary); }
+.pa-why { color: var(--apple-red); }
+.pa-dur { margin-left: auto; flex-shrink: 0; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
+.pa-sum { margin-top: 4px; font-size: var(--fs-micro); line-height: 18px; color: var(--text-quaternary); }
+.run-body[data-empty]::before { content: "还没做完一件事"; font-size: var(--fs-meta); color: var(--text-quaternary); }
+
+/* ── B：紧凑时间线，现在在最底下 ── */
+details.run-steps.pb > summary { gap: 8px; }
+details.run-steps.pb:not(.done) > summary .run-title { -webkit-mask-image: none; mask-image: none; animation: none; font-size: var(--fs-meta); line-height: 20px; }
+details.run-steps.pb:not(.done) > summary .run-title .act-verb { color: var(--text-tertiary); font-weight: 400; }
+details.run-steps.pb > summary .run-time { margin-left: 0; font-size: var(--fs-meta); color: var(--text-quaternary); }
+details.run-steps.pb:not(.done) > summary .run-chevron { visibility: visible; color: var(--text-quaternary); }
+.pb-strip { flex: 1 1 auto; min-width: 48px; height: 4px; display: flex; gap: 1px; border-radius: 2px; overflow: hidden; align-self: center; transition: flex-basis var(--m-morph) var(--e-swift); }
+details.run-steps.pb.done .pb-strip { flex: 0 0 96px; }
+.pb-seg { flex-basis: 0; height: 100%; background: var(--text-secondary); opacity: .85; transition: flex-grow 160ms linear; }
+.pb-seg.think { background: var(--text-quaternary); opacity: .4; }
+.pb-seg.failed { background: var(--apple-red); opacity: .75; }
+.pb-seg.live { opacity: .9; animation: pbPulse 1.4s ease-in-out infinite; }
+@keyframes pbPulse { 50% { opacity: .45; } }
+
+.pb-tail, .pb-log { display: flex; flex-direction: column; gap: 0; }
+.pb-tail { margin-top: 4px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px); mask-image: linear-gradient(to bottom, transparent 0, #000 14px); }
+details.run-steps .run-body.pb-log { margin: 6px 0 4px; padding: 0; border-left: 0; }
+.pb-row { position: relative; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-left: 16px; font-size: var(--fs-meta); line-height: 21px; color: var(--text-tertiary); transition: opacity var(--m-move) var(--e-swift); }
+.pb-row::before { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: var(--content-border); }
+.pb-row:first-child::before { top: 10px; }
+.pb-row.live::before { bottom: auto; height: 12px; }
+.pb-dot { position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--text-quaternary); }
+.pb-row.think .pb-dot { background: var(--wallpaper); box-shadow: inset 0 0 0 1px var(--text-quaternary); }
+.pb-row.failed .pb-dot { background: var(--apple-red); }
+.pb-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-v { color: var(--text-secondary); }
+.pb-why { color: var(--apple-red); }
+.pb-sec { margin-left: auto; flex-shrink: 0; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
+.pb-row.live { padding-top: 2px; }
+.pb-row.live .pb-dot { top: 11px; width: 6px; height: 6px; left: 1.5px; background: var(--text-primary); animation: pbBreath 1.6s ease-in-out infinite; }
+@keyframes pbBreath { 50% { transform: scale(.6); opacity: .5; } }
+.pb-row.live .run-title { font-size: var(--fs-read); line-height: 22px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  -webkit-mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%); mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
+  -webkit-mask-size: 260% 100%; mask-size: 260% 100%; animation: runShine 2.4s cubic-bezier(.4, 0, .2, 1) infinite; }
+.pb-row.live .pb-sec { font-size: var(--fs-meta); }
+.pb-wrap.open .pb-tail { display: none; }
+.pb-legend { margin-top: 4px; padding-left: 16px; font-size: var(--fs-micro); line-height: 18px; color: var(--text-quaternary); }
+
+/* ── C：一串胶囊，收尾收成一行回执 ── */
+.pc .run-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.run-steps.pc:not(.done) > summary .pa-sec { margin-left: 0; }
+.pc-strip { display: grid; grid-template-rows: 1fr; margin-top: 6px; transition: grid-template-rows var(--m-morph) var(--e-swift), opacity var(--m-move) var(--e-swift), margin var(--m-morph) var(--e-swift); }
+.pc-wrap.done .pc-strip { grid-template-rows: 0fr; opacity: 0; margin-top: 0; }
+.pc-track { min-height: 0; overflow: hidden; display: flex; gap: 4px; }
+.pc-track.over { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 40px); mask-image: linear-gradient(to right, transparent 0, #000 40px); }
+.pc-chip { flex: none; display: inline-flex; align-items: center; gap: 4px; max-width: 220px; overflow: hidden; white-space: nowrap; padding: 0 7px; border: 1px solid var(--content-border); border-radius: 7px; font-size: var(--fs-micro); line-height: 20px; color: var(--text-secondary); background: transparent; }
+.pc-mark { font-style: normal; }
+.pc-mark::before { content: "✓"; font-size: 10px; color: var(--text-quaternary); }
+.pc-chip.think { border-style: dashed; color: var(--text-tertiary); }
+.pc-chip.failed { background: var(--apple-red-soft); border-color: color-mix(in srgb, var(--apple-red) 35%, transparent); }
+.pc-chip.failed .pc-mark::before { content: "✕"; color: var(--apple-red); }
+.pc-d { color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
+.pc-chip.pc-in { animation: pcIn 390ms var(--e-spring-run) both; }
+@keyframes pcIn { from { max-width: 0; opacity: 0; filter: blur(2px); padding-inline: 0; border-color: transparent; } to { max-width: 220px; } }
+details.run-steps .run-body.pc-grid { flex-direction: row !important; flex-wrap: wrap; gap: 6px 4px !important; margin: 8px 0 4px !important; padding: 0 !important; border-left: 0 !important; }
+.pc-sum { flex-basis: 100%; margin-top: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pb-seg.live, .pb-row.live .pb-dot, .pb-row.live .run-title, .pc-chip.pc-in { animation: none; }
+}
+details.run-steps.pa.done .pa-meta { display: none; }
+
+/* ── AC：进行中同 A；收尾是一行回执（短名 + 箭头，中间省略） ── */
+details.run-steps.pa.done .run-title.ac-receipt { display: flex; align-items: baseline; min-width: 0; max-width: 100%; white-space: nowrap; }
+.ac-receipt .act-verb { flex-shrink: 0; }
+.ac-receipt .ac-chain { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-receipt .ac-warn { flex-shrink: 0; color: var(--text-tertiary); }
+details.run-steps.pa.done > summary:has(.ac-receipt) { width: auto; max-width: 100%; }
+details.run-steps.pa.done > summary:has(.ac-receipt) .pa-now { min-width: 0; max-width: 100%; }
