@@ -47,6 +47,8 @@ export function redactTaskSecrets(entry: TaskHistoryEntry): TaskHistoryEntry {
 
   if (entry.page !== undefined) redacted.page = scrub(entry.page);
 
+  if (entry.done !== undefined) redacted.done = scrub(entry.done);
+
   return redacted;
 }
 
@@ -88,6 +90,9 @@ export class TaskHistoryStore {
 
       if (prev?.lastUsedAt !== undefined) carried.lastUsedAt = prev.lastUsedAt;
 
+      // 同一任务再写入时先沿用上次摘出的「做成了什么」，新的晚到再覆盖；这次摘不出来也不丢。
+      if (entry.done === undefined && prev?.done !== undefined) carried.done = prev.done;
+
       if (entry.date === undefined && entry.validity === undefined) {
         if (prev?.date !== undefined) carried.date = prev.date;
 
@@ -106,6 +111,17 @@ export class TaskHistoryStore {
    */
   async patchDate(id: string, endedAt: number, dated: { date: string; validity: NonNullable<TaskHistoryEntry["validity"]> }): Promise<void> {
     await this.mutate(tasks => tasks.map(task => (task.id === id && task.endedAt === endedAt ? { ...task, date: dated.date, validity: dated.validity } : task)));
+  }
+
+  /** 补上「做成了什么」（晚到时只改这一个字段）。 */
+  async patchDone(id: string, endedAt: number, done: string): Promise<void> {
+    // 隐去密码类值后可能变长：超过上限就截短，免得整条任务读回时校验不过而消失。
+    await this.mutate(tasks => tasks.map(task => {
+      if (task.id !== id || task.endedAt !== endedAt) return task;
+      const redacted = redactTaskSecrets({ ...task, done });
+
+      return redacted.done && redacted.done.length > 200 ? { ...redacted, done: `${redacted.done.slice(0, 199)}…` } : redacted;
+    }));
   }
 
   /** 没做完的任务：补上短主题与下一步（晚到时只改这两个字段）。 */
@@ -188,12 +204,20 @@ export class TaskHistoryStore {
 }
 
 /** 给模型看的过往任务，一行一条。 */
-export function formatTaskHistory(tasks: TaskHistoryEntry[]): string {
+/**
+ * 带给助手的过往任务：只写做成了什么，不写当时的回答。回答里有当时页面上读到的结论，
+ * 10-12 测评里助手 20 次有 16 次没看页面就照抄了上次的「最轻的是晨风 E13」（#305）。
+ * 用户问起过往（user_memory history）时 withReply 附上当时的回答，标明是旧的。
+ */
+export function formatTaskHistory(tasks: TaskHistoryEntry[], withReply = false): string {
   return tasks.map(task => {
     const date = new Date(task.endedAt).toISOString().slice(0, 10);
     const outcome = { complete: "done", partial: "partly done", stopped: "stopped by user", error: "failed" }[task.outcome];
     const rest = task.unfinished.length ? `; still open: ${task.unfinished.join(" / ")}` : "";
 
-    return `- ${date} [${outcome}] ${task.page ? `(on page "${task.page}") ` : ""}${task.goal}${task.revisions.length ? ` (+ ${task.revisions.join(" / ")})` : ""} @ ${task.hosts.join(", ") || "no site"} → ${task.summary}${rest}`;
+    const done = task.done ? ` → ${task.done}` : "";
+    const reply = withReply && task.summary ? `; your reply then (page facts in it may be outdated): ${task.summary}` : "";
+
+    return `- ${date} [${outcome}] ${task.page ? `(on page "${task.page}") ` : ""}${task.goal}${task.revisions.length ? ` (+ ${task.revisions.join(" / ")})` : ""} @ ${task.hosts.join(", ") || "no site"}${done}${reply}${rest}`;
   }).join("\n");
 }
