@@ -199,7 +199,7 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
   return {
     el,
     start(tool) {
-      const next = { ...tool, host: tool.host ?? hostOfUrl(tool.url ?? tool.params.url), url: tool.url ?? (typeof tool.params.url === "string" ? tool.params.url : undefined) };
+      const next = { ...tool, host: tool.host ?? hostOfUrl(tool.url ?? tool.params.url) ?? undefined, url: tool.url ?? (typeof tool.params.url === "string" ? tool.params.url : undefined) };
       open.push(next);
       if (you) return;
       if (current && current.kind !== "you" && current.root.dataset.state === "live") {
