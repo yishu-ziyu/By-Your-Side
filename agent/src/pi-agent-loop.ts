@@ -659,18 +659,25 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   if (!started) arm(timeoutMs, `first response timeout: ${model.provider}/${model.id} sent nothing within ${Math.round(timeoutMs / 1000)} s`);
 
   // 用户改方向：正在写的正文按「写完了」收下（stopReason stop），旧请求取消、晚到的字丢弃；
-  // 循环随即读排队的插话，同一轮里重写。已开始写工具调用、还没写出正文时不截断。
+  // 循环随即读排队的插话，同一轮里重写。还没写出正文和工具调用时（多半在思考），丢掉整条，收下空回复：
+  // 否则要等它按旧方向写完、旧步骤被挡下才轮到插话，多等 3–5 秒（#285）。没写完的思考不留，供应商不认残缺的思考。
+  // 已开始写工具调用时不截断。
   let partial: AssistantMessage | null = null;
   let cut = false;
   const blanks = new Map<number, number>();
 
   const cutText = (): boolean => {
-    if (cut || !partial || partial.content.some(part => part.type === "toolCall")
-      || !partial.content.some(part => part.type === "text" && part.text.trim())) return false;
+    if (cut || partial?.content.some(part => part.type === "toolCall")) return false;
+    const written = !!partial?.content.some(part => part.type === "text" && part.text.trim());
     cut = true;
     clearTimeout(timer);
     // 深拷贝：取消请求后供应商还会就地改它的流式对象，收下的这条消息不能跟着变。
-    out.push({ type: "done", reason: "stop", message: { ...structuredClone(partial), stopReason: "stop" } });
+    const message: AssistantMessage = written ? { ...structuredClone(partial!), stopReason: "stop" } : {
+      role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
+      usage: partial ? structuredClone(partial.usage) : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    out.push({ type: "done", reason: "stop", message });
     out.end();
     controller.abort();
 
