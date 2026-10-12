@@ -4,7 +4,7 @@ import { attachSourceCitations, captureCitationContext, type CitationContext } f
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
-import { currentHeartbeatVariant, heartbeatTitle, paintBeatMark, VERB_MS, type HeartbeatVariant } from "./run-heartbeat.js";
+import { heartbeatTitle, paintBeatMark, VERB_MS } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
@@ -2347,7 +2347,6 @@ interface RunHost {
   /** 并行/死路/接管的分叉层，挂在两行标题下面；单步回合是空的。 */
   graph: LiveGraph;
   beatEl: HTMLElement;
-  heartbeat: HeartbeatVariant;
   heartbeatTimer: number;
   heartbeatTick: number;
   semanticTitle: string;
@@ -2397,7 +2396,7 @@ function setRunTitle(run: RunHost, text: string, now = false, kind?: IconKind): 
   const paint = () => {
     run.semanticTitle = text;
     run.heartbeatTick = 0;
-    paintAction(run.titleEl, heartbeatTitle(run.heartbeat, text, run.lastToolName ?? undefined, 0, reducedMotion()));
+    paintAction(run.titleEl, heartbeatTitle(text, run.lastToolName ?? undefined, 0, reducedMotion()));
 
     if (kind) setActionIcon(run.actIcon, kind);
     run.titleAt = Date.now();
@@ -3259,8 +3258,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const beat = document.createElement("span");
   beat.className = "run-beat";
   beat.setAttribute("aria-hidden", "true");
-  const heartbeat = currentHeartbeatVariant();
-  paintBeatMark(beat, heartbeat);
+  paintBeatMark(beat);
   const title = document.createElement("span");
   title.className = "run-title";
   paintAction(title, `正在${loaderSubtitle(null)}`);
@@ -3304,9 +3302,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const heartbeatTimer = window.setInterval(() => {
     const live = currentRun;
     if (!live || live.heartbeatTimer !== heartbeatTimer || live.root.classList.contains("done")) return;
-    if (live.heartbeat === "v1" || reducedMotion()) return;
+    if (reducedMotion()) return;
     live.heartbeatTick += 1;
-    paintAction(live.titleEl, heartbeatTitle(live.heartbeat, live.semanticTitle, live.lastToolName ?? undefined, live.heartbeatTick, false));
+    paintAction(live.titleEl, heartbeatTitle(live.semanticTitle, live.lastToolName ?? undefined, live.heartbeatTick, false));
   }, VERB_MS);
 
   currentRun = {
@@ -3338,7 +3336,6 @@ function ensureRun(): NonNullable<typeof currentRun> {
     evidenceLines: [],
     graph,
     beatEl: beat,
-    heartbeat,
     heartbeatTimer,
     heartbeatTick: 0,
     semanticTitle: `正在${loaderSubtitle(null)}`,

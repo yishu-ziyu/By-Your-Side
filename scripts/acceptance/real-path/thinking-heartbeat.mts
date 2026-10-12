@@ -1,9 +1,9 @@
 /**
- * 思考心跳：进行中两行不变，思考时多一个 0.9s 转圈，扫光仍是 2.4s（#263）。
+ * 思考心跳：进行中两行不变，思考时行首 16px 墨点在 4 点与十字之间收合，扫光仍是 2.4s（#263）。
  *   npx tsx scripts/acceptance/real-path/thinking-heartbeat.mts --headless
  * 脚本模型：想 4 秒 → 打开页 B → 点不存在的按钮 → 想 8 秒 → 点「作品」→ 回答。
- *   a) 想的时候第一行是思考动词（默认 v3：想想怎么说 / 理一理 / 看看下一步），秒数从这段开始数，第二行仍是「已做 2 步 · 1 步换了做法」。
- *   b) `.run-beat` 四个墨点在呼吸；450ms 后点的 transform 变了。
+ *   a) 想的时候第一行是思考动词（想想怎么说 / 理一理 / 看看下一步），秒数从这段开始数，第二行仍是「已做 2 步 · 1 步换了做法」。
+ *   b) `.run-beat` 是 14–16px 主墨色四点；450ms 后点的位置或缩放变了；收合 1.2s。
  *   c) 标题扫光仍是 2.4±0.05s。
  *   d) 回执仍是一行「做了 3 步：… · 1 步换了做法」；收尾后墨点不再显示。
  */
@@ -64,11 +64,16 @@ const READ = `(() => {
     phase: d.dataset.phase ?? "",
     beatDisplay: cs?.display ?? "missing",
     beatDots: beat?.querySelectorAll("i").length ?? 0,
-    beatVariant: beat?.dataset.variant ?? "",
+    beatWidth: cs ? parseFloat(cs.width) : 0,
+    beatHeight: cs ? parseFloat(cs.height) : 0,
+    beatInk: ds?.backgroundColor ?? "",
     beatDuration: seconds(ds?.animationDuration),
     beatDurationRaw: ds?.animationDuration ?? "",
     beatName: ds?.animationName ?? "",
+    beatFold: cs?.animationName ?? "",
     beatTransform: ds?.transform ?? "",
+    beatLeft: ds?.left ?? "",
+    beatTop: ds?.top ?? "",
     shineDuration: seconds(ts?.animationDuration),
     shineDurationRaw: ts?.animationDuration ?? "",
     shineName: ts?.animationName ?? "",
@@ -78,7 +83,7 @@ const READ = `(() => {
 
 type Read = {
   done: boolean; title: string; time: string; meta: string; phase: string;
-  beatDisplay: string; beatDots: number; beatVariant: string; beatDuration: number; beatDurationRaw: string; beatName: string; beatTransform: string;
+  beatDisplay: string; beatDots: number; beatWidth: number; beatHeight: number; beatInk: string; beatDuration: number; beatDurationRaw: string; beatName: string; beatFold: string; beatTransform: string; beatLeft: string; beatTop: string;
   shineDuration: number; shineDurationRaw: string; shineName: string; all: string;
 };
 
@@ -107,7 +112,9 @@ try {
   await rp.screenshot(panel, join(out, "thinking.png"));
   const think = (title: string) => title === "正在思考" || ["想想怎么说", "理一理", "看看下一步"].includes(title);
   check("a 想的时候两行仍是思考动词和步数，秒数从这段开始数", !!first && think(first.title) && think(second?.title ?? "") && second?.meta === "已做 2 步 · 1 步换了做法" && Math.abs(liveSecs - elapsed) <= 1.2, { title: second?.title ?? null, time: second?.time ?? null, elapsed, meta: second?.meta ?? null, phase: second?.phase ?? null });
-  check("b 墨点在呼吸，450ms 后样子变了", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatDots === 4 && /markBreathe/.test(first.beatName) && first.beatTransform !== "none" && first.beatTransform !== second?.beatTransform, { beatDisplay: first?.beatDisplay, beatDots: first?.beatDots, beatVariant: first?.beatVariant, beatName: first?.beatName, t0: first?.beatTransform, t1: second?.beatTransform });
+  const moved = first != null && (first.beatTransform !== second?.beatTransform || first.beatLeft !== second?.beatLeft || first.beatTop !== second?.beatTop);
+  const ink = /rgba?\(\s*20\s*,\s*20\s*,\s*19/.test(first?.beatInk ?? "");
+  check("b 16px 主墨色四点在收合，450ms 后样子变了", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatDots === 4 && first.beatWidth >= 14 && first.beatWidth <= 16 && first.beatHeight >= 14 && first.beatHeight <= 16 && ink && /markMorph/.test(first.beatName) && /markFold/.test(first.beatFold) && Math.abs(first.beatDuration - 1.2) <= 0.05 && moved, { beatDisplay: first?.beatDisplay, beatDots: first?.beatDots, beatWidth: first?.beatWidth, beatHeight: first?.beatHeight, beatInk: first?.beatInk, beatName: first?.beatName, beatFold: first?.beatFold, beatDuration: first?.beatDuration, t0: first?.beatTransform, t1: second?.beatTransform, left0: first?.beatLeft, left1: second?.beatLeft });
   check("c 标题扫光仍是 2.4 秒", first != null && Math.abs(first.shineDuration - 2.4) <= 0.05 && first.shineName.includes("runShine"), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
 
   await until(async () => { const r = await read(); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);

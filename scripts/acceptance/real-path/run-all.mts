@@ -15,7 +15,10 @@ import { REPO } from "./harness.mts";
 
 const HERE = join(REPO, "scripts/acceptance/real-path");
 
-const SKIP = new Set(["harness.mts", "run-all.mts"]);
+const SKIP = new Set([
+  "harness.mts", "run-all.mts", "record-clip.mts",
+  "process-block-record.mts", "process-graph-record.mts", "round2-record.mts", "v3-mark-record.mts",
+]);
 
 // 核心用户路径（一批改动跑一遍）：只装扩展、脚本模型、无需凭据。选择依据见 docs/evals/20261008-e2e-only.md。
 const CORE = [
