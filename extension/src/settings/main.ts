@@ -1012,10 +1012,14 @@ const SPEED_MODELS: Record<string, readonly string[]> = {
   "minimax-cn": ["MiniMax-M2.7-highspeed"],
 };
 
-const SPEED_QUESTION = "网页上写着：『会议室金桂可容纳 9 人，带投影仪。』请用一句话回答：金桂能坐 8 个人开带投影的会吗？";
+const SPEED_QUESTION = "网页上写着：『会议室金桂可容纳 9 人，带投影仪。』金桂能坐 8 个人开带投影的会吗？先答「能」或「不能」，再用一句话说明。";
 
-/** 正确答案是“能”：答“能/可以”且没有“不能/不可以/无法”算对。 */
-const speedAnswerRight = (text: string) => /能|可以/.test(text) && !/不能|不可以|无法/.test(text);
+/** 正确答案是“能”：只看第一句，因为后面常补一句“但不能超过 9 人”。 */
+function speedAnswerRight(text: string): boolean {
+  const head = text.trim().split(/[，,。.!！？?\n]/)[0] ?? "";
+
+  return /能|可以|没问题|yes/i.test(head) && !/不能|不可以|无法|^no\b/i.test(head);
+}
 
 function speedCandidates(): Array<{ config: InprocModelConfig; role: string }> {
   const out: Array<{ config: InprocModelConfig; role: string }> = [];
@@ -1046,6 +1050,16 @@ async function runSpeedTest(): Promise<void> {
     return;
   }
   button.disabled = true;
+
+  try {
+    await measureSpeeds(list, box);
+  } finally {
+    button.disabled = false;
+    button.textContent = "再测一次";
+  }
+}
+
+async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: string }>, box: HTMLElement): Promise<void> {
   // 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   await probe.credentials.load(credentials);
@@ -1070,13 +1084,15 @@ async function runSpeedTest(): Promise<void> {
 
   await Promise.all(rows.map(async (r) => {
     const t0 = performance.now();
+    const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
     let text = "";
+    let cutShort = false;
 
     try {
       const model = probe.resolveModel(r.c);
       const [lowest] = thinkingProfile(model).levels;
       const stream = probe.models.streamSimple(model, { messages: [{ role: "user", content: SPEED_QUESTION, timestamp: Date.now() }] }, {
-        maxTokens: 512, signal: AbortSignal.timeout(PROBE_TIMEOUT_MS), headers: probe.headersFor(model), sessionId: probe.sessionId,
+        maxTokens: 2048, signal, headers: probe.headersFor(model), sessionId: probe.sessionId,
         reasoning: lowest === "off" ? undefined : lowest,
         // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
         ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
@@ -1089,22 +1105,31 @@ async function runSpeedTest(): Promise<void> {
         }
 
         if (event.type === "error") throw new Error(event.error.errorMessage ?? "服务商返回了错误");
+
+        if (event.type === "done" && event.reason === "length") cutShort = true;
       }
 
-      if (r.first == null) throw new Error("没有回答");
+      if (r.first == null) {
+        r.row.dataset.state = "fail";
+        r.result.textContent = cutShort ? "能连上，但思考太长，没来得及回答" : "能连上，但没有回答";
+        return;
+      }
       const right = speedAnswerRight(text);
       r.row.dataset.state = right ? "ok" : "wrong";
       r.result.textContent = `${r.first.toFixed(1)} 秒开口 · ${right ? "答对" : "答错"}`;
       r.result.title = text.trim();
     } catch (error) {
       r.row.dataset.state = "fail";
+
+      if (signal.aborted) {
+        r.result.textContent = r.first != null ? `${r.first.toFixed(1)} 秒开口 · ${PROBE_TIMEOUT_MS / 1000} 秒内没答完` : `${PROBE_TIMEOUT_MS / 1000} 秒内没开口`;
+        return;
+      }
       r.result.textContent = `不能用：${explainFailure(error instanceof Error ? error.message : String(error))}`;
       r.result.title = error instanceof Error ? error.message : String(error);
     }
   }));
 
-  button.disabled = false;
-  button.textContent = "再测一次";
   box.append(Object.assign(document.createElement("p"), { className: "speed-note", textContent: `共用 ${((performance.now() - started) / 1000).toFixed(0)} 秒。同一个模型每次快慢会差好几秒，拿不准就再测一次。` }));
 }
 
