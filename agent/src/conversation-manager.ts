@@ -33,7 +33,7 @@ import {pageRecoveryKey} from './task-recovery.js';
 import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
 import {memoryHostOfUrl} from '../../shared/memory.js';
 import {asksUser} from './goal-check.js';
-import {resultHasWriteEffect} from '../../shared/task-results.js';
+import {resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
@@ -820,11 +820,11 @@ return { kind: "silent" };}
 
     if(!history||!progress||!snap?.runId||!snap.goal||!['idle','aborted','error'].includes(snap.state))return;
 
-    // 只记动手做过事的任务（有改动页面的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
+    // 只记做成了事的任务（提交、填写、点按钮这类会留下后果的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
     // 09-27 阶跃实测「我的手机号是 …」被记成一条过往任务，撤销记忆后号码仍留在过往任务里。
+    // 打开页面、滚动不算：10-12 笔记本查询因打开了详情页被记下，回答里的旧结论被下一次照抄（#305）。
     const acted=(snap.results??[]).some(item=>resultHasWriteEffect(item));
-
-    if(!acted&&(!snap.goalCheck||snap.goalCheck.status==='done'))return;
+    const committed=(snap.results??[]).some(item=>resultLocksWhenUnknown(item));
     const view=projectTaskView(snap);
     const delivery=snap.conversationContext?.latestDelivery;
     const lastReply=[...(snap.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
@@ -852,6 +852,11 @@ return host?[host]:[];}))].slice(0,16);
     // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。
     // 先立即写入（查「之前订了什么」不用等，也不会因等待被删后复活）；日期晚到时只补 date/validity。
     const session=this.entries.get(id)?.runtime.session;
+
+    // 改过页面的任务计入习惯（打开页面也算，不跟着上面收紧）：同一件事在 3 个对话里做过，就问一次要不要记住。
+    if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
+
+    if(!committed&&(!snap.goalCheck||snap.goalCheck.status==='done'))return;
     const written=history.record(entry).catch(()=>{});
 
     const dating=(session?.datePastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
@@ -859,9 +864,10 @@ return host?[host]:[];}))].slice(0,16);
     // 没做完的事：起短主题与下一步，给「继续上次的事」；晚到时只补这两个字段。
     const labeling=(session?.labelPastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,labeling]).then(([,label])=>label?history.patchLabel(entry.id,entry.endedAt,label):undefined).catch(()=>{});
+    // 做成了什么：带给助手的只有这句，不是当时的回答；晚到时只补这一个字段。
+    const describing=(session?.describePastTaskDone?.(entry)??Promise.resolve(null)).catch(()=>null);
+    void Promise.all([written,describing]).then(([,done])=>done?history.patchDone(entry.id,entry.endedAt,done):undefined).catch(()=>{});
 
-    // 改过页面的任务计入习惯：同一件事在 3 个对话里做过，就问一次要不要记住。
-    if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
   }
   private async fulfillOwedDelivery(id: string): Promise<void> {
     const progress = this.progress.get(id);

@@ -1479,7 +1479,7 @@ function renderPastTasks(shown: TaskHistoryEntry[]): HTMLElement {
   section.appendChild(head);
   const intro = document.createElement("p");
   intro.className = "memory-quiet";
-  intro.textContent = "助手做完一个任务，会在这里留一条摘要。以后助手能查到做过什么、在哪个网站做的。只存在这个浏览器里。";
+  intro.textContent = "助手替你订了、交了、取消了什么，会在这里留一条；只打开、浏览页面的问题不留。以后助手能查到做过什么、在哪个网站做的。只存在这个浏览器里。";
 
   if (!memoryQuery) section.appendChild(intro);
 
@@ -2780,7 +2780,7 @@ const USED_GLYPHS: Record<"past" | "profile" | "method", string> = {
 /** 行内点名用上的第一条（带给助手时排第一），多条时加「等 N 条」（YIS-86）。太长的截断，全文在展开里。 */
 function usedLineLabel(line: MemoryUsedLine): string {
   const first = line.items.values().next().value!;
-  const text = first.kind === "entry" ? first.entry.text : first.task.summary || first.task.goal;
+  const text = first.kind === "entry" ? first.entry.text : first.task.done || first.task.goal;
   const short = text.length > 16 ? `${text.slice(0, 15)}…` : text;
 
   return `${first.kind === "entry" ? "按你说过的" : "按上次做过的"}「${short}」${line.items.size > 1 ? `等 ${line.items.size} 条` : ""}`;
@@ -2848,8 +2848,8 @@ function renderUsedItem(line: MemoryUsedLine, item: UsedItem): HTMLElement {
   glyph.innerHTML = USED_GLYPHS[item.kind === "entry" ? item.entry.kind : "past"];
   const text = document.createElement("span");
   text.className = "memory-used-text";
-  // 过往任务显示摘要（做成了什么），没有摘要时显示原话目标。一行放不下就截断，悬停看全文。
-  text.textContent = item.kind === "entry" ? item.entry.text : item.task.summary || item.task.goal;
+  // 过往任务显示做成了什么（和带给助手的一样），没有时显示原话目标。一行放不下就截断，悬停看全文。
+  text.textContent = item.kind === "entry" ? item.entry.text : item.task.done || item.task.goal;
   text.title = text.textContent;
   const actions = document.createElement("span");
   actions.className = "memory-used-actions";

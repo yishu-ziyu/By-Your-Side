@@ -1,7 +1,7 @@
 import { isMemoryValidity, validLocalDate, validNotOnHosts, type MemoryValidity } from "./memory.js";
 
 /**
- * 过往任务：每个动手做过事的任务结束时留一条摘要，助手之后能想起「之前做过什么、在哪做的、做成没有」。
+ * 过往任务：每个做成了事（提交、填写、点按钮这类会留下后果）的任务结束时留一条，助手之后能想起「之前做过什么、在哪做的、做成没有」。
  * 只存在本机（扩展 IndexedDB / 本机宿主文件），侧栏「技能与记忆 → 过往任务」可删除。
  */
 export interface TaskHistoryEntry {
@@ -17,8 +17,11 @@ export interface TaskHistoryEntry {
   /** 任务涉及的网站主机名 */
   hosts: string[];
   outcome: "complete" | "partial" | "stopped" | "error";
-  /** 最后给用户的回答，截短 */
+  /** 最后给用户的回答，截短。里面混着当时页面上读到的东西（价格、重量…），只在用户问起过往时给助手看。 */
   summary: string;
+  /** 这件任务做成了什么（「订了金桂会议室，10 月 12 日 15:00」），任务结束时由快速模型从回答里摘出，不含页面上读到的东西；
+   *  平时带给助手、侧栏「按上次做过的…」都用它。什么也没做成、旧条目、摘不出来时缺省（#305）。 */
+  done?: string;
   /** 没做完的事（用户口吻） */
   unfinished: string[];
   startedAt: number | null;
@@ -71,6 +74,7 @@ export function isTaskHistoryEntry(value: unknown): value is TaskHistoryEntry {
     && (e.date === undefined || validLocalDate(e.date)) && (e.validity === undefined || isMemoryValidity(e.validity))
     && (e.useCount === undefined || (Number.isInteger(e.useCount) && e.useCount >= 0)) && (e.lastUsedAt === undefined || Number.isFinite(e.lastUsedAt))
     && (e.notOnHosts === undefined || validNotOnHosts(e.notOnHosts))
+    && (e.done === undefined || (typeof e.done === "string" && e.done.length > 0 && e.done.length <= 200))
     && (e.title === undefined || validTaskLabel(e.title)) && (e.next === undefined || validTaskLabel(e.next))
     && (e.startedAt === null || Number.isFinite(e.startedAt)) && Number.isFinite(e.endedAt);
 }

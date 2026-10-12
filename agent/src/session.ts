@@ -1226,6 +1226,11 @@ return;}
     return this.memoryRuntime?.datePastTask(task) ?? null;
   }
 
+  /** 任务结束时：做成了什么；见 MemoryRuntime.describePastTaskDone。没有记忆运行时返回 null。 */
+  async describePastTaskDone(task: Pick<TaskHistoryEntry, "goal" | "revisions" | "summary" | "unfinished">): Promise<string | null> {
+    return this.memoryRuntime?.describePastTaskDone(task) ?? null;
+  }
+
   /** 没做完的任务结束时：短主题与下一步；见 MemoryRuntime.labelPastTask。没有记忆运行时返回 null。 */
   async labelPastTask(task: Pick<TaskHistoryEntry, "goal" | "revisions" | "summary" | "unfinished" | "outcome">): Promise<{ title: string; next: string } | null> {
     return this.memoryRuntime?.labelPastTask(task) ?? null;
