@@ -18,7 +18,7 @@ import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { mountVoiceOrb } from "../shared/orb-style.js";
-import { markNeedsModelResent, noteNeedsModelManual, renderReceipt } from "./receipt-view.js";
+import { holdPendingMessage, noteNeedsModelManual, playConnectArrival, renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
@@ -707,12 +707,18 @@ function noteModelPresence(model: string | undefined, models: ModelOption[] | un
   if (!pending || !pending.card.isConnected) return;
   const conversationId = selectedConversationId;
 
-  void pending.page.then((page) => {
+  void pending.page.then(async (page) => {
     if (conversationId !== selectedConversationId || !pending.card.isConnected) return;
     resending = { conversationId, text: pending.text, bubble: pending.bubble };
+    await playConnectArrival(pending.card, currentModelId ? chipLabel(currentModelId, knownModels) : null, pending.bubble);
 
-    if (sendInput(pending.text, page)) markNeedsModelResent(pending.card, currentModelId ? chipLabel(currentModelId, knownModels) : null);
-    else resending = null;
+    if (conversationId !== selectedConversationId) {
+      resending = null;
+
+      return;
+    }
+
+    if (!sendInput(pending.text, page)) resending = null;
   });
 }
 
@@ -720,6 +726,19 @@ function lastUserBubble(): HTMLElement | null {
   const bubbles = messagesEl.querySelectorAll<HTMLElement>(".msg.user");
 
   return bubbles[bubbles.length - 1] ?? null;
+}
+
+function lastUserBubbleFor(text: string): HTMLElement | null {
+  const bubbles = messagesEl.querySelectorAll<HTMLElement>(".msg.user");
+
+  for (let i = bubbles.length - 1; i >= 0; i -= 1) {
+    const bubble = bubbles[i]!;
+    const body = bubble.querySelector(".user-msg-text")?.textContent ?? bubble.textContent ?? "";
+
+    if (body.includes(text)) return bubble;
+  }
+
+  return lastUserBubble();
 }
 
 function bindStarterButton(button: HTMLButtonElement): void {
@@ -4584,7 +4603,9 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         // 只认领这个面板刚交出的那条：知道它问的是哪一页才自动重发。回放的旧卡片、语音发的话都请用户自己再发。
         if (ev.receipt.needsModel && ev.receipt.text.trim()) {
           if (!replayingHistory && lastSentPage?.requestId === ev.receipt.requestId) {
-            resendAfterConnect.set(ev.receipt.conversationId, { text: ev.receipt.text, page: lastSentPage.page, card: receipt, bubble: lastUserBubble() });
+            const bubble = lastUserBubbleFor(ev.receipt.text);
+            holdPendingMessage(receipt, bubble);
+            resendAfterConnect.set(ev.receipt.conversationId, { text: ev.receipt.text, page: lastSentPage.page, card: receipt, bubble });
           } else noteNeedsModelManual(receipt);
         }
 
@@ -5309,8 +5330,10 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         const resent = resending && resending.conversationId === selectedConversationId && resending.text === entry.item.text ? resending : null;
         resending = null;
         resendAfterConnect.delete(selectedConversationId);
+        const held = messagesEl.querySelector<HTMLElement>(".msg.user.held-pending");
+        const reuse = resent?.bubble?.isConnected ? resent.bubble : held && entry.item.text && (held.querySelector(".user-msg-text")?.textContent ?? held.textContent ?? "").includes(entry.item.text) ? held : null;
         // 连好模型后的自动重发：原话的气泡已经在上面，不再画第二个。
-        const bubble = resent?.bubble?.isConnected ? resent.bubble : addUserMsg(entry.item.text, entry.item.attachments);
+        const bubble = reuse ?? addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
 
