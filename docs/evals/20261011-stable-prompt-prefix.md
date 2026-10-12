@@ -12,7 +12,7 @@
 - 无。
 
 ## 技术前提
-- 前提：阶跃按前缀匹配缓存，工具定义排在 system 之后，所以 system 末尾一变，工具定义也失去缓存。小实验：#258 里的 `cache_probe.py` A/B（分支 `assets/latency-20261011`）。结果：通过，B 变体命中 14,080。
+- 前提：阶跃按前缀匹配缓存，工具定义排在 system 之后，所以 system 末尾一变，工具定义也失去缓存。小实验：#258 里的 `cache_probe.py` A/B（`assets` 分支的 `20261011-intent/`）。结果：通过，B 变体命中 14,080。
 - 前提：pi-ai 把阶跃的 `cached_tokens` 读进 `usage.cacheRead`。小实验：读 `openai-completions.js` 的用量换算，再看真实导出。结果：通过。
 
 ## 边界与不做
