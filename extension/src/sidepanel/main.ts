@@ -1479,7 +1479,7 @@ function renderPastTasks(shown: TaskHistoryEntry[]): HTMLElement {
   section.appendChild(head);
   const intro = document.createElement("p");
   intro.className = "memory-quiet";
-  intro.textContent = "助手替你订了、交了、取消了什么，会在这里留一条；只查看页面的问题不留。以后助手能查到做过什么、在哪个网站做的。只存在这个浏览器里。";
+  intro.textContent = "助手替你订了、交了、取消了什么，会在这里留一条；只打开、浏览页面的问题不留。以后助手能查到做过什么、在哪个网站做的。只存在这个浏览器里。";
 
   if (!memoryQuery) section.appendChild(intro);
 
