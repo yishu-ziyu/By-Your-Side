@@ -59,7 +59,7 @@
   - `miyazaki.txt`：正文抽取样本。
   - 脚本读 `/workspace/bys-trace/runs/summary-r1/bodies.json`，换机器改成 `20261011-latency/data/runs/summary-r1/bodies.json`。
 
-## 20261011-stream-proto/、20261011-proto-steps/、20261011-latency-trace/ 原型与延迟报告
+## 20261011-stream-proto/、20261011-proto-steps/ 原型
 
 （原分支 `assets/proto-20261011`）
 
@@ -67,6 +67,6 @@
 
 - `20261011-stream-proto/`：回答流式手感，现在 vs 按 Claude 实测参数改后（节拍器、按段淡入、拆壳、弹簧入场）。`index.html` 直接打开；录像 `compare.mp4`、`compare-serif.mp4`；静图 `compare.png`、`stills/`；说明 `README.md`。
 - `20261011-proto-steps/`：过程块三种改法 + 用户选定的 AC（进行中一行「现在」，做完收成一行回执）。`index.html` 直接打开；录像 `videos/AC.mp4`、`videos/AC-err.mp4`；静图 `stills/AC.png`、`stills/compare-AC.png`；说明 `README.md`。
-- `20261011-latency-trace/`：延迟追踪报告 `REPORT.md` 和瀑布图。原始运行数据（请求体、诊断记录）没有放上来。
+- `20261011-latency-trace/`：延迟报告的旧版，和 `20261011-latency/` 重复，10-12 删掉。issue 里的链接写的是提交 `77dadfc`，照常能打开。
 
 两个原型的 `product-styles.css` 是当时仓库 `extension/src/sidepanel/styles.css` 的副本。`vendor/` 里是 marked（MIT）和 DOMPurify（Apache-2.0 / MPL-2.0）的发行文件。原型里的界面文字写于 #247 文案审校之前，落地时按 #247 的核准词表改（例如「做了 N 件事」→「做了 N 步」）。
