@@ -123,7 +123,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
   const { launchRealPath, until, exportDiagnosticsViaSettings } = await driver();
 
   const rec = { id: task.id, model, main_model: null, fast_model: null, category: task.category, site_url: task.site_url, prompt: task.prompt,
-    status: "error", timestamps: {}, load_at_start: os.loadavg().map((x) => Math.round(x * 10) / 10), seconds_to_first_output: null, seconds_total: null,
+    status: "error", timestamps: {}, load_at_start: os.loadavg().map((x) => Math.round(x * 10) / 10), seconds_to_first_output: null, seconds_to_first_answer_text: null, seconds_total: null,
     steps: [], final_answer_verbatim: "", panel_messages: [], confirmations: [], errors: [],
     site_observations: [], environment: null, final_page: null, downloads: [], screenshots: [], panel_wait: [], trace_model: null, trace_export: null, secret_scan: null,
     harness: { mode: "extension-only", browser: null, extension_id: null, stored_config: null } };
@@ -394,7 +394,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       if (selected) {
         const r = await evalIn(ps, READING_PROBE).catch(() => null);
 
-        if (r?.answer && !firstOut) { firstOut = now; rec.timestamps.first_visible_output = iso(now); }
+        if (r?.answer && !firstOut) { firstOut = now; rec.timestamps.first_visible_output = rec.timestamps.first_answer_text = iso(now); rec.seconds_to_first_answer_text = t(now); }
 
         if (r && !["pending", "streaming"].includes(r.state)) { ended = now; break; }
 
@@ -434,6 +434,9 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       }
 
       if (!rec.timestamps.first_status && snap.runs.some((r) => r.title)) { rec.timestamps.first_status = iso(now); rec.seconds_to_first_status = t(now); }
+
+      // 首字（#264 口径）：回答区第一个正文字，流式中的也算；不含步骤和思考。
+      if (!rec.timestamps.first_answer_text && afterUser.some((m) => /assistant/.test(m.cls) && m.text)) { rec.timestamps.first_answer_text = iso(now); rec.seconds_to_first_answer_text = t(now); }
 
       if (!firstOut && (afterUser.some((m) => m.text) || snap.runs.some((r) => r.chips.length || r.thinking))) { firstOut = now; rec.timestamps.first_visible_output = iso(now); }
 

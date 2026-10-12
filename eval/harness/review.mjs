@@ -90,6 +90,22 @@ const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
 
+// 速度判定只在 analyze.py 里算（#238）；复看页读它写的 report.json，没跑过 analyze 就不显示。
+const REPORT = readJson(join(RUN, "report.json"));
+
+const SPEED = new Map((REPORT?.per_task ?? []).map((p) => [`${p.model}|${p.task}`, p]));
+
+function speedHtml(r) {
+  const p = SPEED.get(`${r.model}|${r.tr.id}`);
+  const line = p?.speed_line;
+
+  if (p?.speed !== "fail" || !line) return "";
+  const [label, value] = line.metric === "first_text" ? ["首字", p.first_text_s] : ["总耗时", p.total_s];
+  const detail = r.tr.status === "timeout" ? "超时" : `${label} ${Number(value).toFixed(1)} 秒 > ${line.max_s} 秒`;
+
+  return `<span class="verdict bad">速度不过：${esc(detail)}</span>`;
+}
+
 const pct = (x) => `${Math.round(x * 100)}%`;
 
 const short = (s, n) => { const t = String(s ?? "").replace(/\s+/g, " ").trim();
@@ -191,6 +207,26 @@ function guessCauses(r) {
 
 function e2name(e) { return e.data?.toolName ?? "操作"; }
 
+// ---------- speed (#238): numbers come from report.json ----------
+
+function speedSummaryHtml() {
+  const sec = (v) => (v == null ? "—" : `${Number(v).toFixed(1)} 秒`);
+  const verdict = { pass: "过", fail: "不过", unmeasured: "未量到" };
+  const blocks = Object.entries(REPORT?.all_valid ?? {}).filter(([, s]) => s?.speed).map(([c, s]) => {
+    const tiers = Object.entries(s.by_tier).map(([t, v]) => `第 ${esc(t)} 档 ${v.speed.pass_rate == null ? "—" : pct(v.speed.pass_rate)}（${v.speed.passed}/${v.speed.n_judged} 过${v.speed.unmeasured ? `，${v.speed.unmeasured} 条未量到` : ""}）`).join(" · ");
+    const lines = Object.entries(s.latency_by_category).map(([cat, v]) => `<li>${esc(CATEGORY_LABELS[cat] ?? cat)}，${v.metric === "first_text" ? "首字" : "总耗时"}：中位 ${sec(v.median_s)}（典型线 ${esc(v.p50_target_s)} 秒）· 最慢 10% ${sec(v.p90_s)}（线 ${esc(v.max_s)} 秒）</li>`).join("");
+    const slow = s.slowest.map((x) => `<tr><td class="mono">${esc(x.task)}</td><td>${sec(x.total_s)}</td><td>${sec(x.phases?.model_s)}</td><td>${sec(x.phases?.tool_s)}</td><td>${sec(x.phases?.other_s)}</td><td>${sec(x.first_text_s)}</td><td>${esc(verdict[x.speed] ?? "不判")}</td></tr>`).join("");
+
+    return `<h3>${esc(configLabel(c))}</h3><p>速度通过率：${tiers || "没有可判的题"}</p>${lines ? `<ul class="small">${lines}</ul>` : ""}
+<table class="rates"><tr><th>最慢 5 条</th><th>总耗时</th><th>等模型</th><th>动手</th><th>其他</th><th>首字</th><th>速度</th></tr>${slow}</table>`;
+  });
+
+  if (!blocks.length) return "";
+
+  return `<details class="speed"><summary>速度（按 tiers.json 的速度线判）</summary>${blocks.join("")}
+<p class="caveat">每条结果超过「最慢」线判不过，超时算不过；没量到首字的不进分母。等模型、动手、其他按诊断记录拆，所以三段之和可能和「总耗时」差几秒（总耗时从按回车算到侧栏不再变化）。</p></details>`;
+}
+
 // ---------- summary: pass rate per config x tier (same rules as analyze.py) ----------
 
 function summaryHtml() {
@@ -223,7 +259,8 @@ function summaryHtml() {
 
   return `<div class="topline"><span>本次评测 <b class="mono">${esc(RUN_ID)}</b></span><span>已跑完 ${n}${planned ? ` / 计划 ${planned}` : ""} 条</span><span>其中没判为做对的 ${notPass} 条</span>${meta.started_at ? `<span class="muted">开始于 ${esc(localTime(meta.started_at))}</span>` : ""}</div>
 <table class="rates">${head}${rows}</table>
-<p class="caveat">通过率 = 判为做对 / 已判出结果的题（无法确定算没做对；站点不可用、判分程序出错和环境没跑起来的不计入）。绿色达到目标，红色未达。</p>`;
+<p class="caveat">通过率 = 判为做对 / 已判出结果的题（无法确定算没做对；站点不可用、判分程序出错和环境没跑起来的不计入）。绿色达到目标，红色未达。</p>
+${speedSummaryHtml()}`;
 }
 
 // ---------- cards ----------
@@ -261,7 +298,7 @@ function columnHtml(r) {
 <div class="cfg">${esc(configLabel(r.model))}${SAMPLED.has(r) ? ` <span class="chip">随机抽查的通过</span>` : ""}</div>
 <div class="row"><span class="label">判分结果</span><span class="verdict ${vCls}">${esc(vLabel)}</span>${r.judge?.reason ? `<div class="reason">${esc(r.judge.reason)}</div>` : ""}</div>
 <div class="row"><span class="label">助手最后的回复</span>${answer ? `<div class="answer">${esc(answer)}</div>` : `<div class="muted">（没有回复）</div>`}</div>
-<div class="row meta muted small">用时 ${r.tr.seconds_total == null ? "—" : `${esc(r.tr.seconds_total)} 秒`} · 调用了 ${tools == null ? "—" : esc(tools)} 次工具 · 状态 ${esc(r.tr.status)}</div>
+<div class="row meta muted small">${speedHtml(r)} 用时 ${r.tr.seconds_total == null ? "—" : `${esc(r.tr.seconds_total)} 秒`}${r.tr.seconds_to_first_answer_text == null ? "" : ` · 首字 ${esc(r.tr.seconds_to_first_answer_text)} 秒`} · 调用了 ${tools == null ? "—" : esc(tools)} 次工具 · 状态 ${esc(r.tr.status)}</div>
 ${tags.length ? `<div class="row guess"><span class="label">初步猜测（只看记录推断，不一定对）</span><ul>${tags.map(([t, d]) => `<li>${esc(t)}${d ? `<div class="muted small">${esc(d)}</div>` : ""}</li>`).join("")}</ul></div>` : ""}
 ${shotHtml(r)}
 <div class="decide" data-key="${esc(key)}" data-task="${esc(r.tr.id)}" data-config="${esc(r.model)}">
