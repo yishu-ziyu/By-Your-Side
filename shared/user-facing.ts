@@ -135,9 +135,12 @@ const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
 ];
 
 export function plainToolError(errorText: string): string {
-  const text = errorText.trim();
+  const text = errorText.replace(/^(?:Uncaught\s+)?(?:\w*Error)\s*[:：]\s*/i, "").trim();
 
   if (!text) return "没做成";
+
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (/[一-鿿]/.test(compact) && compact.length <= 16 && !/loc=|@\d+|\bref\b/.test(compact)) return compact;
 
   // 挡住它的元素名字是网页原文（不可信）：只取 ≤11 字显示，标签只作文字（input.ts 的「被挡住」回执）。
   const blockedBy = /元素名字：<page-content[^>]*>\s*([^<]{1,40}?)\s*<\//.exec(text)?.[1]?.trim();

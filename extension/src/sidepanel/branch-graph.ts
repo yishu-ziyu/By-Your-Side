@@ -29,11 +29,19 @@ export type GraphTool = {
   result?: string;
 };
 
+export function isLocalHost(host: string): boolean {
+  const name = host.replace(/:\d+$/, "").toLowerCase();
+
+  return name === "localhost" || name === "0.0.0.0" || name === "::1" || name.startsWith("127.") || /^(\d{1,3}\.){3}\d{1,3}$/.test(name);
+}
+
 export function hostOfUrl(url: unknown): string | null {
   if (typeof url !== "string" || !url) return null;
 
   try {
-    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host.replace(/^www\./, "");
+    const host = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host.replace(/^www\./, "");
+
+    return isLocalHost(host) ? null : host;
   } catch {
     return null;
   }

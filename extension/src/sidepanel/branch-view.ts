@@ -96,9 +96,15 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
     current = group;
     groups.push(group);
     el.append(root);
+    pack();
     show();
 
     return group;
+  };
+
+  const pack = () => {
+    const busy = groups.some((g) => g.root.dataset.state === "live" || g.root.dataset.state === "merging" || g.root.dataset.state === "folding");
+    for (const g of groups) g.root.hidden = busy && g.root.dataset.state === "folded";
   };
 
   const addLane = (group: Group, tool: GraphTool, index: number): void => {
@@ -178,6 +184,7 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
       const rows = group.root.querySelector(".run-graph-rows, .run-graph-fan") as HTMLElement | null;
       if (rows) rows.hidden = true;
       if (current === group) current = null;
+      pack();
 
       return;
     }
@@ -192,6 +199,7 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
         if (rows) rows.hidden = true;
         group.timer = 0;
         if (current === group) current = null;
+        pack();
       }, FOLD_MS);
     }, FOLD_HOLD_MS);
   };
