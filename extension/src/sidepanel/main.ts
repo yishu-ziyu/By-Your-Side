@@ -3,6 +3,7 @@ import { installDropzone } from "./dropzone.js";
 import { attachSourceCitations, captureCitationContext, type CitationContext } from "./sonar-citations.js";
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
+import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -2341,6 +2342,8 @@ interface RunHost {
   /** 填写之后从网页读回的几栏（「草稿现在是：「…」」），放在回答上方，不收进过程。 */
   evidence: HTMLElement | null;
   evidenceLines: Array<{ key: string; field: string; value: string }>;
+  /** 并行/死路/接管的分叉层，挂在两行标题下面；单步回合是空的。 */
+  graph: LiveGraph;
 }
 
 const ACTION_ICONS = {
@@ -3270,7 +3273,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const reveal = document.createElement("div");
   reveal.className = "run-reveal";
   reveal.append(body);
-  root.append(summary, reveal);
+  const graph = mountLiveGraph({ history: () => applyingHistory });
+  root.append(summary, graph.el, reveal);
   messagesEl.appendChild(root);
   const trail = document.createElement("div");
   trail.className = "run-trail";
@@ -3310,6 +3314,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     guideHint: null,
     evidence: null,
     evidenceLines: [],
+    graph,
   };
 
   return currentRun;
@@ -3557,6 +3562,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
 
   if (flags.userHasPage !== lastUserHasPage) {
     lastUserHasPage = flags.userHasPage;
+    currentRun?.graph.user(flags.userHasPage);
 
     if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已中止");
   }
@@ -4138,6 +4144,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   if (ev.name === "hand_to_user") {
     run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
     syncRunOrb(run);
+    run.graph.user(true);
     showHandoffCard(String(ev.params.ask ?? ""));
 
     return;
@@ -4221,6 +4228,13 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   chip.onclick = () => toggleChipDetail(entry);
   group.row.appendChild(chip);
   toolChips.set(ev.toolCallId, entry);
+  run.graph.start({
+    id: ev.toolCallId,
+    name: ev.name,
+    params: ev.params,
+    label: shortAction(ev.name, ev.params),
+    url: typeof ev.params.url === "string" ? ev.params.url : undefined,
+  });
   scrollToEnd();
 }
 
@@ -4296,6 +4310,15 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     note.className = "act-failed";
     note.textContent = ` · ${ev.reason ?? "没做成"}`;
     label.append(note);
+  }
+
+  if (run) {
+    run.graph.end(ev.toolCallId, {
+      failed,
+      reason: ev.reason,
+      result: pageTitle ?? (failed ? undefined : entry.chip.dataset.short),
+      label: entry.chip.dataset.short ?? undefined,
+    });
   }
 
   const text = ev.resultText ?? "";

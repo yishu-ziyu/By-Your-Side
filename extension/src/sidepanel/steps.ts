@@ -34,6 +34,7 @@ const ACTION_NAMES: Record<string, string> = {
   cdp: "直接操作浏览器",
   hover: "悬停",
   remember_user_preference: "存入记忆",
+  fetch: "抓取",
   browser_run: "连续操作",
   wait_for: "等页面内容出现",
   check: "核验页面",
@@ -151,6 +152,12 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       const host = hostOf(params.url);
 
       return { short, full: host ? `打开标签页 ${host}` : short };
+    }
+
+    case "fetch": {
+      const host = hostOf(params.url)?.replace(/^www\./, "");
+
+      return { short: host ? `抓取 ${host}` : "抓取", full: host ? `抓取 ${host}` : "抓取" };
     }
 
     case "press_key": {
@@ -484,6 +491,11 @@ export function shortAction(name: string, params: Parameters<typeof describeTool
   else if (CURSOR_VERBS.has(name)) text = label ? `${CURSOR_VERBS.get(name)!.verb}${label}` : CURSOR_VERBS.get(name)!.unnamed;
   else if (name === "type_text") text = label ? `填${label}` : "输入文字";
   else if (name === "js") text = str(params.purpose) ?? "运行代码";
+  else if (name === "fetch") {
+    const host = hostOf(params.url)?.replace(/^www\./, "") ?? "接口";
+
+    text = `抓取 ${host}`;
+  }
   else if (name === "browser_run") text = label ?? "连续操作";
   else if (name === "press_key") text = str(params.key) ? `按${str(params.key)}` : "按键";
   else if (name === "mark" && params.clear !== true) {
