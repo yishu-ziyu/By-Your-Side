@@ -444,7 +444,8 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
   const spawnChrome = () => {
     if (!headed || process.platform !== "darwin") return spawn(resolveChrome(), chromeArgsFor(), { stdio: ["ignore", "ignore", "pipe"], env });
     const app = resolveChrome().replace(/(\.app)\/Contents\/MacOS\/.*$/, "$1");
-    const child = spawn("open", ["-g", "-n", "-W", "--stderr", join(root, "chrome-stderr.log"), "-a", app, "--args", ...chromeArgsFor()], { stdio: ["ignore", "ignore", "pipe"], env });
+    // BYS_TEST_BROWSER_FRONT=1：用户要盯着看时，启动那一下放到最前面（只这一下，之后不再抢）。
+    const child = spawn("open", [...(process.env.BYS_TEST_BROWSER_FRONT === "1" ? [] : ["-g"]), "-n", "-W", "--stderr", join(root, "chrome-stderr.log"), "-a", app, "--args", ...chromeArgsFor()], { stdio: ["ignore", "ignore", "pipe"], env });
     const endOpen = child.kill.bind(child);
     child.kill = (signal?: NodeJS.Signals | number) => {
       const pids = spawnSync("pgrep", ["-f", "--", `--user-data-dir=${dirs.profile}`], { encoding: "utf8" }).stdout.split("\n").filter(Boolean).map(Number);
