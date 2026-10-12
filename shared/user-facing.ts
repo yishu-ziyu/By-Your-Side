@@ -135,7 +135,10 @@ const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
 ];
 
 export function plainToolError(errorText: string): string {
-  const text = errorText.replace(/^(?:Uncaught\s+)?(?:\w*Error)\s*[:：]\s*/i, "").trim();
+  const text = errorText
+    .replace(/^(?:Uncaught\s+)?(?:\w*Error)\s*[:：]\s*/i, "")
+    .replace(/\s+at\s+[\s\S]*$/, "")
+    .trim();
 
   if (!text) return "没做成";
 
