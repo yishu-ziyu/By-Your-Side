@@ -1714,7 +1714,7 @@ return;}
   /**
    * 运行中修改统一入口：先登记（挡住在途旧写入），再按原路交给 Pi。语音与文字都走这里，不另开任务。
    */
-  /** rewrite：侧栏文字改方向。模型正在写正文时当场截断，同一轮按新要求重写（见 AgentLoop.interruptText）。 */
+  /** rewrite：侧栏文字改方向。模型正在写正文、或还一个字没写时当场截断，同一轮按新要求重写（见 AgentLoop.interruptText）。 */
   async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[], options?: { rewrite?: boolean }): Promise<SteerOutcome> {
     const session = this.session;
     this.rememberAttachments(attachments);
