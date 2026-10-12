@@ -214,7 +214,7 @@ function speedSummaryHtml() {
   const verdict = { pass: "过", fail: "不过", unmeasured: "未量到" };
   const blocks = Object.entries(REPORT?.all_valid ?? {}).filter(([, s]) => s?.speed).map(([c, s]) => {
     const tiers = Object.entries(s.by_tier).map(([t, v]) => `第 ${esc(t)} 档 ${v.speed.pass_rate == null ? "—" : pct(v.speed.pass_rate)}（${v.speed.passed}/${v.speed.n_judged} 过${v.speed.unmeasured ? `，${v.speed.unmeasured} 条未量到` : ""}）`).join(" · ");
-    const lines = Object.entries(s.latency_by_category).map(([cat, v]) => `<li>${esc(CATEGORY_LABELS[cat] ?? cat)}，${v.metric === "first_text" ? "首字" : "总耗时"}：中位 ${sec(v.median_s)}（典型线 ${esc(v.p50_target_s)} 秒）· 最慢 10% ${sec(v.p90_s)}（线 ${esc(v.max_s)} 秒）</li>`).join("");
+    const lines = Object.entries(s.latency_by_category).map(([cat, v]) => `<li>${esc(CATEGORY_LABELS[cat] ?? cat)}，${v.metric === "first_text" ? "首字" : "总耗时"}：中位 ${sec(v.median_s)}（典型线 ${esc(v.p50_target_s)} 秒${v.median_over_target ? "，超" : ""}）· 最慢 10% ${sec(v.p90_s)}（线 ${esc(v.max_s)} 秒）</li>`).join("");
     const slow = s.slowest.map((x) => `<tr><td class="mono">${esc(x.task)}</td><td>${sec(x.total_s)}</td><td>${sec(x.phases?.model_s)}</td><td>${sec(x.phases?.tool_s)}</td><td>${sec(x.phases?.other_s)}</td><td>${sec(x.first_text_s)}</td><td>${esc(verdict[x.speed] ?? "不判")}</td></tr>`).join("");
 
     return `<h3>${esc(configLabel(c))}</h3><p>速度通过率：${tiers || "没有可判的题"}</p>${lines ? `<ul class="small">${lines}</ul>` : ""}
@@ -222,9 +222,10 @@ function speedSummaryHtml() {
   });
 
   if (!blocks.length) return "";
+  const stale = results.some((r) => r.judge && !r.invalid && !SPEED.has(`${r.model}|${r.tr.id}`));
 
-  return `<details class="speed"><summary>速度（按 tiers.json 的速度线判）</summary>${blocks.join("")}
-<p class="caveat">每条结果超过「最慢」线判不过，超时算不过；没量到首字的不进分母。等模型、动手、其他按诊断记录拆，所以三段之和可能和「总耗时」差几秒（总耗时从按回车算到侧栏不再变化）。</p></details>`;
+  return `<details class="speed"><summary>速度（按 tiers.json 的速度线判）</summary>${stale ? `<p class="caveat">report.json 比结果旧：有判过分的结果不在里面。先跑 analyze.py 再看速度。</p>` : ""}${blocks.join("")}
+<p class="caveat">每条结果超过「最慢」线判不过；超时、一直没出回答都算不过；旧运行没记首字的判「未量到」，不进分母。中位和最慢 10% 只用有读数的结果。等模型、动手、其他按诊断记录拆，所以三段之和可能和「总耗时」差几秒（总耗时从按回车算到侧栏不再变化）。</p></details>`;
 }
 
 // ---------- summary: pass rate per config x tier (same rules as analyze.py) ----------
@@ -348,7 +349,7 @@ function cardsHtml() {
 
   for (const [, rs] of [...byTask].sort(([a], [b]) => a.localeCompare(b))) {
     rs.sort((a, b) => order(a) - order(b));
-    const review = SHOW_ALL ? rs : rs.filter((r) => (r.verdict !== "pass" && r.verdict !== "none") || SAMPLED.has(r));
+    const review = SHOW_ALL ? rs : rs.filter((r) => (r.verdict !== "pass" && r.verdict !== "none") || SAMPLED.has(r) || SPEED.get(`${r.model}|${r.tr.id}`)?.speed === "fail");
 
     if (!review.length) continue;
     const others = rs.filter((r) => !review.includes(r));

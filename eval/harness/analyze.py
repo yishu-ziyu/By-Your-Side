@@ -20,8 +20,10 @@ PRICE_FILE = os.environ.get('BYS_PRICES') or os.path.join(HERE, 'prices.json')
 PRICE = json.load(open(PRICE_FILE)) if os.path.exists(PRICE_FILE) else None
 # 能力档位（docs/ROADMAP.md 第 11 条）与速度线（#264，按类别）。BYS_TIERS 可换一份阈值试判。
 TIERS_DOC = json.load(open(os.environ.get('BYS_TIERS') or os.path.join(HERE, '..', 'tasks', 'tiers.json')))
-TIERS, LATENCY = TIERS_DOC['tiers'], {k: v for k, v in TIERS_DOC.get('latency', {}).items() if not k.startswith('_')}
+TIERS, LATENCY = TIERS_DOC['tiers'], {k: v for k, v in (TIERS_DOC.get('latency') or {}).items() if not k.startswith('_')}
 METRIC_FIELD = {'first_text': 'seconds_to_first_answer_text', 'total': 'seconds_total'}
+for c, spec in LATENCY.items():
+    if spec and spec.get('metric') not in METRIC_FIELD: sys.exit(f"tiers.json latency.{c}.metric must be one of {list(METRIC_FIELD)}")
 
 def phase_breakdown(paths):
     """逐段时间只用 scripts/eval/time-breakdown.mts 一份口径：一次调用读全部诊断记录。"""
@@ -40,12 +42,15 @@ def phases_of(runs, prompt):
                 model_first_text_s=sec(r['firstTextMs']), after_answer_s=sec(r['afterMs']), turns=r['turns'], continues=r['continues'])
 
 def speed_check(category, tr, verdict):
-    """过 / 不过 / 未量到；表里没有的类别、阈值为 null、环境类失败不判（None）。超时算不过。"""
+    """过 / 不过 / 未量到；表里没有的类别、阈值为 null、环境类失败不判（None）。
+    超时算不过。字段不存在（旧运行）是未量到；新运行字段为 null 表示一直没出回答，算不过。"""
     spec = LATENCY.get(category)
     if not spec or spec.get('max_s') is None or verdict == 'environment': return None, None
-    if tr['status'] == 'timeout': return 'fail', None
-    v = tr.get(METRIC_FIELD[spec['metric']])
-    if v is None: return 'unmeasured', None
+    field = METRIC_FIELD[spec['metric']]
+    v = tr.get(field)
+    if tr['status'] == 'timeout': return 'fail', v
+    if field not in tr: return 'unmeasured', None
+    if v is None: return 'fail', None
     return ('pass' if v <= spec['max_s'] else 'fail'), v
 
 def usage_cost(trace_path):
@@ -89,7 +94,7 @@ for jf, slug in result_files():
     j = json.load(open(jpath))
     tp = jf[:-5] + '.trace.jsonl'
     uc = usage_cost(tp) if os.path.exists(tp) else usage_cost(os.devnull)
-    ph = phases_of(PHASES.get(tp), TASKS[tr['id']].get('prompt'))
+    ph = phases_of(PHASES.get(tp), tr.get('typed_prompt') or tr.get('prompt') or TASKS[tr['id']].get('prompt'))
     # 三段由差值得出，「其他」明显为负说明重复计时（例如工具并行），口径要先修。
     if ph and ph['other_s'] < -1: sys.exit(f"phase overlap: {tr['model']} {tr['id']} other_s={ph['other_s']} ({tp})")
     speed, speed_value = speed_check(TASKS[tr['id']]['category'], tr, j.get('verdict'))
