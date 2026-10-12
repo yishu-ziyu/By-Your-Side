@@ -81,9 +81,9 @@ const TARGETS = ["#settings", "#t-display", "#dark"];
 
 const guideCall = (i: number) => ({ tool: { name: "guide_step", args: { target: TARGETS[i]!, say: SAY[i]!, step: i + 1 } } });
 
-const MISS_TEXT = "这里不是要点的位置。请点圈出来的「⚙ Settings」。";
+const MISS_TEXT = "这里不是要点的地方。点圈出来的「⚙ Settings」。";
 
-const NO_CHANGE_TEXT = "好像没有生效：点了之后页面没有变化。再点一次试试；还不行就告诉我。";
+const NO_CHANGE_TEXT = "点了之后，页面没有变化。再点一次。如果还是没变化，就在侧栏告诉我。";
 
 const ASK = {
   n: "案例N：教我打开深色主题，一步一步指给我看，我自己点。",
@@ -383,7 +383,7 @@ try {
     await sleep(1000);
     await userClick((await markCenter())!);
     const clickedAt = Date.now();
-    await until(async () => (await hold())?.guide?.label === NO_CHANGE_TEXT || undefined, 6_000, "圈旁出现「好像没有生效」", 50);
+    await until(async () => (await hold())?.guide?.label === NO_CHANGE_TEXT || undefined, 6_000, "圈旁出现「页面没有变化」提示", 50);
     const hintMs = Date.now() - clickedAt;
     measured.noChangeHintMs = hintMs;
     check("B 点了没变化：3 秒左右圈旁改成「好像没有生效…」，这一步不算完成", hintMs >= 2500 && hintMs <= 3600 && toolsSince(from).length === 0, { hintMs, toolResults: toolsSince(from).length });
@@ -452,7 +452,7 @@ try {
     await sleep(800);
     await userClick((await markCenter())!);
     const slowAt = Date.now();
-    const hinted = await until(async () => (await hold())?.guide?.label === NO_CHANGE_TEXT || undefined, 6_000, "L 先出「没有生效」提示", 50).catch(() => false);
+    const hinted = await until(async () => (await hold())?.guide?.label === NO_CHANGE_TEXT || undefined, 6_000, "L 先出「页面没有变化」提示", 50).catch(() => false);
     await until(async () => toolsSince(from).length > 0 || undefined, 8_000, "L 页面晚到的变化让这一步完成", 50).catch(() => null);
     const slowMs = Date.now() - slowAt;
     measured.slowDoneMs = slowMs;
