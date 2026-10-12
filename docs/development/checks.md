@@ -41,7 +41,7 @@
 
 - `npm run reload:ext` 需要 Chrome 的远程调试入口，只在明确的加载范围内执行。
 - 配置和构建产物存在，不证明正在运行的扩展已经采用了它们。
-- `npm run logs`（[脚本](../../scripts/maintenance/logs.mjs)）直接读日常 Chrome 里 By Your Side 的诊断记录，不用在设置页导出，给代理查问题用。脚本只复制这个扩展的诊断库到临时目录再读，不打开浏览器正在用的文件，也不读 Cookie 和别的网站数据。输出留在本工作树的 `out/daily-logs/`，保留原文（凭据除外），所以不要提交或外传。第一次运行要从 GitHub 装一个 Python 解码库，要等一两分钟。
+- `npm run logs`（[脚本](../../scripts/maintenance/logs.mjs)）直接读日常 Chrome 里 By Your Side 的诊断记录，不用在设置页导出，给代理查问题用。输出保留原文（凭据除外），所以不要提交或外传。第一次运行要从 GitHub 装 Python 解码库，比较慢。
 
 ## 项目看板
 
