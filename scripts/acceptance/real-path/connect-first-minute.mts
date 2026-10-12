@@ -40,7 +40,7 @@ const asked = () => model.requests.filter((r) => r.rule === QUESTION && r.tools)
 const viewSrc = `(() => ({
   held: !!document.querySelector('[data-f01="held"]'),
   hint: document.querySelector(".held-hint")?.textContent ?? "",
-  unconnected: document.body.innerText.includes("还没有连接模型"),
+  unconnected: [...document.querySelectorAll(".needs-model-card:not(.needs-model-connected)")].length > 0,
   pill: document.querySelector('[data-f01="pill"]')?.textContent?.trim() ?? "",
   heldPending: !!document.querySelector(".held-pending"),
   users: [...document.querySelectorAll(".msg.user")].map((b) => (b.querySelector(".user-msg-text")?.textContent ?? b.textContent).trim()),
@@ -97,7 +97,7 @@ async function sendHeld(rp: RealPath, panel: string): Promise<PanelView> {
 }
 
 async function saveCustom(rp: RealPath, panel: string, baseUrl: string, key: string): Promise<string> {
-  await rp.click(panel, ".needs-model-card button, .receipt-decision button");
+  await rp.click(panel, ".needs-model-old button");
   const target = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页");
   const page = await rp.attach(target.targetId);
   await fillCustom(rp, page, baseUrl, key);
@@ -107,16 +107,19 @@ async function saveCustom(rp: RealPath, panel: string, baseUrl: string, key: str
   return page;
 }
 
+let rp: RealPath | undefined;
+let reduced: RealPath | undefined;
 try {
-  const rp = await launchRealPath();
-  const panel = await openFreshPanel(rp);
-  const held = await sendHeld(rp, panel);
-  await rp.screenshot(panel, join(out, "01-held.png"));
+  const first = await launchRealPath();
+  rp = first;
+  const panel = await openFreshPanel(first);
+  const held = await sendHeld(first, panel);
+  await first.screenshot(panel, join(out, "01-held.png"));
   check("R1 未连接卡里的话带「连好后自动发」", held.held && held.hint.includes("连好后自动发") && held.users.some((u) => u.startsWith(QUESTION)), held);
 
-  const settings = await saveCustom(rp, panel, denyUrl, "sk-invalid-0000");
+  const settings = await saveCustom(first, panel, denyUrl, "sk-invalid-0000");
   const fail = await until(async () => {
-    const state = await rp.evaluate(settings, `({
+    const state = await first.evaluate(settings, `({`)
       hidden: document.querySelector("#key-reason").hidden,
       reason: document.querySelector("#key-reason-text")?.textContent ?? "",
       wait: document.querySelector(".key-reason-wait")?.textContent ?? "",
@@ -127,41 +130,43 @@ try {
 
     return !state.hidden && state.reason ? state : undefined;
   }, 45_000, "密钥原因");
-  await rp.screenshot(settings, join(out, "02-invalid-key.png"));
+  await first.screenshot(settings, join(out, "02-invalid-key.png"));
   check("密钥无效：框下一行原因，不写红色「连接失败」", fail.reason.includes("服务商不接受这个密钥") && fail.wait.includes("侧栏里那句话还在等你") && fail.warn && !fail.status.includes("连接失败") && fail.tone !== "err", fail);
-  check("密钥无效：没有保存，侧栏仍在等", (await readView(rp, panel)).unconnected && asked() === 0);
+  check("密钥无效：没有保存，侧栏仍在等", (await readView(first, panel)).unconnected && asked() === 0);
 
-  await rp.evaluate(panel, watchSrc);
-  await fillCustom(rp, settings, model.baseUrl, "local-fixture");
-  await rp.evaluate(settings, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
-  await rp.click(settings, "#model-save");
-  await until(async () => String(await rp.evaluate(settings, `document.querySelector("#model-status").textContent`)).startsWith("已保存") || undefined, 45_000, "保存成功");
-  const answered = await until(async () => { const v = await readView(rp, panel); return v.text.includes(ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "自动发出后的回答");
+  await first.evaluate(panel, watchSrc);
+  await fillCustom(first, settings, model.baseUrl, "local-fixture");
+  await first.evaluate(settings, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
+  await first.click(settings, "#model-save");
+  await until(async () => String(await first.evaluate(settings, `document.querySelector("#model-status").textContent`)).startsWith("已保存") || undefined, 45_000, "保存成功");
+  const answered = await until(async () => { const v = await readView(first, panel); return v.text.includes(ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "自动发出后的回答");
   await sleep(400);
-  const after = await readView(rp, panel);
-  await rp.screenshot(panel, join(out, "03-connected.png"));
+  const after = await readView(first, panel);
+  await first.screenshot(panel, join(out, "03-connected.png"));
   check("R2 连好后未连接卡不再出现", !after.unconnected && after.pill.includes("已连上"), after);
   check("R3 原话只发出一次，只有一个用户气泡", asked() === 1 && after.users.length === 1 && after.users[0]!.startsWith(QUESTION) && !!answered, { asked: asked(), users: after.users });
   check("R4 变形 240ms±20", after.morph != null && after.morph >= 220 && after.morph <= 260, after.morph);
   check("R4 FLIP 320ms±20", after.flip != null && after.flip >= 300 && after.flip <= 340, after.flip);
-  await rp.close();
-  await rp.remove();
+  await first.close();
+  await first.remove();
+  rp = undefined;
 
-  const reduced = await launchRealPath();
-  const rpanel = await openFreshPanel(reduced, true);
-  await sendHeld(reduced, rpanel);
-  await reduced.evaluate(rpanel, watchSrc);
-  const rsettings = await saveCustom(reduced, rpanel, model.baseUrl, "local-fixture");
-  await until(async () => String(await reduced.evaluate(rsettings, `document.querySelector("#model-status").textContent`)).startsWith("已保存") || undefined, 45_000, "减少动效已保存");
-  const rdone = await until(async () => { const v = await readView(reduced, rpanel); return v.text.includes(ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "减少动效结束态");
-  await reduced.screenshot(rpanel, join(out, "04-reduced-motion.png"));
+  const second = await launchRealPath();
+  reduced = second;
+  const rpanel = await openFreshPanel(second, true);
+  await sendHeld(second, rpanel);
+  await second.evaluate(rpanel, watchSrc);
+  const rsettings = await saveCustom(second, rpanel, model.baseUrl, "local-fixture");
+  await until(async () => String(await second.evaluate(rsettings, `document.querySelector("#model-status").textContent`)).startsWith("已保存") || undefined, 45_000, "减少动效已保存");
+  const rdone = await until(async () => { const v = await readView(second, rpanel); return v.text.includes(ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "减少动效结束态");
+  await second.screenshot(rpanel, join(out, "04-reduced-motion.png"));
   check("R4 减少动效：直接到结束态，不报变形时长", rdone.pill.includes("已连上") && !rdone.heldPending && rdone.morph == null && rdone.flip == null, rdone);
-  await reduced.close();
-  await reduced.remove();
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
   await writeFile(join(out, "summary.json"), JSON.stringify({ status: error || results.some(([, pass]) => !pass) ? "FAIL" : "PASS", results, asked: asked(), error }, null, 2));
+  if (rp) { await rp.close().catch(() => {}); await rp.remove().catch(() => {}); }
+  if (reduced) { await reduced.close().catch(() => {}); await reduced.remove().catch(() => {}); }
   deny.closeAllConnections();
   deny.close();
   site.closeAllConnections();
