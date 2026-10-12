@@ -48,3 +48,8 @@
 - 同批跑过且通过：`no-model-card`、`new-conversation-draft`、`welcome-context`、`proactive-card`、`sidebar-interaction`、`session-durability`、`same-tab-new-conversation`。
 - `offline-send-and-model-menu` 失败。它在 main `6a8587b` 上同样失败（点 `#model-btn` 后模型菜单不展开），与本次改动无关。
 - 没跑 `smoke`：它要真实模型凭据。
+
+## 结果（10-12，F01 修订）
+
+- `first-run-sidepanel.mts`：16 项全部通过，含修订后的 R4（未连接卡变成「已连上」，不再留「还没有连接模型」）。证据：`out/acceptance/real-path/2026-10-12T08-21-34-943Z-first-run-sidepanel/`。
+- 同批 `no-model-card.mts` 通过。完整动效与密钥无效见 [F01](20261012-connect-first-minute.md)。
