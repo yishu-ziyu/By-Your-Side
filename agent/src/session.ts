@@ -55,7 +55,7 @@ import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
-import { asksUser, checkGoal, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -2204,17 +2204,18 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return delivery && delivery.runId === snapshot?.runId ? delivery.text : "";
   }
 
-  /** 目标核对只看主会话里用过工具（交付、记忆、目标记账除外）或最后在问用户的任务：纯聊天、用户停止、接管、出错都不核对。 */
+  /** 目标核对只看主会话里用过工具（交付、记忆、目标记账除外）、最后在问用户或说还没查的任务：纯聊天、用户停止、接管、出错都不核对。 */
   private goalCheckEligible(messages: ReadonlyArray<{ role: string; content?: unknown }>): boolean {
     if (this.memberId || !this.session || !this.modelRuntime || !this.activeGoal) return false;
 
     if (this.expectedStoppedAgentEnd || this.pendingToolFailure || this.hold.isHeld() || lastAssistantError(messages)) return false;
     const snapshot = this.conversationSnapshot();
 
-    // 这一任务用过浏览器或页面工具（读页、改页、跑程序、存文件都算），或这一轮最后在问用户（问邮箱、问要不要提交）。
+    // 这一任务用过浏览器或页面工具（读页、改页、跑程序、存文件都算），或这一轮最后在问用户（问邮箱、问要不要提交），
+    // 或没用工具就说「还不能判断」「我会去查看」（defersWork）。
     // 只读任务也核对：10-01 读完 flomo 笔记后交付了上一个任务的 Drive 状态，旧规则（只看改页面、存文件）直接收尾了。
     // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒（docs/evals/20261001-offtopic-reply-diagnostics.md）。
-    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)))) return false;
+    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
 
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
   }
