@@ -35,6 +35,8 @@ export interface TaskResultEvidence {
 export interface TaskResultItem extends TaskResultRegistration {
   status: TaskResultItemStatus;
   evidence: TaskResultEvidence | null;
+  /** 这一步没做成的人话原因（≤16 字，tool_end.reason，#304）；成功或未失败时缺省。 */
+  reason?: string;
   /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再算作未完成。 */
   supersededBy?: string;
 }
@@ -112,6 +114,7 @@ export function isTaskResultItem(v: unknown): v is TaskResultItem {
     && (r.target === null || text(r.target, 500))
     && TASK_RESULT_ITEM_STATUSES.includes(r.status)
     && (r.evidence === null || isTaskResultEvidence(r.evidence))
+    && (r.reason === undefined || text(r.reason, 100))
     && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy));
 }
 

@@ -92,7 +92,7 @@ export interface ResumeSummary {
   goal: string | null;
   revisions: string[];
   done: { id: string; description: string }[];
-  remaining: { id: string; description: string; status: string; statusLabel: string }[];
+  remaining: { id: string; description: string; status: string; statusLabel: string; reason?: string }[];
   blocking: string | null;
   interruptionDetail: string | null;
   nextStep: string;
@@ -143,7 +143,8 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 中断或停下的任务不是「没做成」，只是还没做到。
   const verb = view.state === "interrupted" || view.state === "aborted" ? "还没做" : "没做成";
   const phrase = (head: string, items: string[]) => `${head}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
-  const notDone = (items: string[]) => phrase(verb, items);
+  // 失败的人话原因（「目标现在不可用」，#304）比只说步骤名更有用：有它就顶替行内的步骤名。
+  const notDone = (items: string[], reason?: string) => phrase(verb, reason ? [reason, ...items.slice(1)] : items);
 
   const told = checkedRemaining(view) ?? (declared.length ? declared : view.latestDelivery?.unfinished?.length ? view.latestDelivery.unfinished : null);
 
@@ -151,7 +152,7 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 描述已在 buildResumeSummary 里翻成人话（不带工具名、元素编号）。
   const unverifiedOnly = remaining.length > 0 && remaining.every((r) => unverifiedGoal(view, r));
   const listed = remaining.map((r) => r.description);
-  const left = told ? (told.length ? notDone(told) : null) : listed.length ? (unverifiedOnly ? phrase("还没确认完成", listed) : notDone(listed)) : null;
+  const left = told ? (told.length ? notDone(told) : null) : listed.length ? (unverifiedOnly ? phrase("还没确认完成", listed) : notDone(listed, remaining.find((r) => r.reason)?.reason)) : null;
 
   // 停在一步中间（结果未知）不是「还没做」：页面上可能已经留下了部分结果（#103，整页翻译停下时已翻好几百段）。
   const midway = !told && remaining.length > 0 && remaining.every((r) => r.status === "unknown");
@@ -199,7 +200,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   const checkedDone = checkedRemaining(view)?.length === 0;
 
   const remaining = view.outstanding.filter((r) => !(checkedDone && unverifiedGoal(view, r)))
-    .map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: unverifiedGoal(view, r) ? "还没核验" : resultStatusLabel(r.status) }));
+    .map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: unverifiedGoal(view, r) ? "还没核验" : resultStatusLabel(r.status), ...(r.reason ? { reason: r.reason } : {}) }));
 
   const tone = headlineFor(view, checkpointUnavailable, remaining.length);
   const unknown = remaining.filter((r) => r.status === "unknown").length;

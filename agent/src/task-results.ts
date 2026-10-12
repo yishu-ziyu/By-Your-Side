@@ -181,7 +181,7 @@ export class TaskResultBook {
     return item;
   }
 
-  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean }): void {
+  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; /** 失败的人话原因（≤16 字）：给侧栏「没做成」那行用，成功时清掉。 */ reason?: string }): void {
     if (!input.runId) return;
     // 出错时记成「结果未知」还是「失败」：只看这一步可能已造成的后果（见 commitsHarm），不看它是不是改过页面。
     const write=resultLocksWhenUnknown({tool:input.name,evidence:{effectful:input.effectful}});
@@ -202,6 +202,8 @@ export class TaskResultBook {
     if (item.evidence && (item.evidence.member !== input.member || item.evidence.runId !== input.runId || item.evidence.tool !== input.name)) return;
 
     if (!input.failed) {
+      delete item.reason;
+
       if (input.executionFact === "not_executed") {
         // 工具成功返回却说没有派发：不是完成证据，退回待做。
         item.status = "pending";
@@ -212,6 +214,7 @@ export class TaskResultBook {
         item.status = write&&input.executionFact==='unknown'?'unknown':"satisfied";
       }
     } else {
+      if (input.reason) item.reason = input.reason;
       if (input.executionFact === "not_executed" || (input.name === "page_translation" && input.executionFact === "executed")) {
         // Translation may fail while generating its next batch after acknowledged earlier batches.
         // It resumes by collecting only untranslated paragraphs; an unknown RPC still stays unknown below.
@@ -235,6 +238,8 @@ export class TaskResultBook {
 
     if (!item) return false;
     item.status = input.executionFact==='not_executed'?'blocked':'satisfied';
+
+    if (item.status === 'satisfied') delete item.reason;
 
     return true;
   }

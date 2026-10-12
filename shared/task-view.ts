@@ -17,7 +17,7 @@ export const TASK_VIEW_STATES = ["none", "running", "paused", "interrupted", "id
 
 export interface TaskViewPage { tabId: number; urlHash: string }
 
-export interface TaskViewResultItem { id: string; description: string; status: TaskResultItemStatus; }
+export interface TaskViewResultItem { id: string; description: string; status: TaskResultItemStatus; /** 这一步没做成的人话原因（#304）；只有执行账本项才有，目标项没有。 */ reason?: string }
 
 export interface TaskView {
   conversationId: string;
@@ -101,7 +101,12 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   // 未列计划时的占位目标不是用户目标清单：只看执行记录，占位目标不算未完成项（与 nextStepIgnoringPlaceholder 同口径）。
   const rawResults = snapshot.goalPlan?.coverage === 'verified' ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
 
-  const results = rawResults.map((item): TaskViewResultItem => ({ id: item.id, description: item.description, status: item.status }));
+  // 失败原因只取执行账本项的：目标项的 reason 是核对台账（「恢复后需要重新核对」），不是给用户看的。
+  const results = rawResults.map((item): TaskViewResultItem => {
+    const reason = 'tool' in item ? item.reason : undefined;
+
+    return { id: item.id, description: item.description, status: item.status, ...(reason ? { reason } : {}) };
+  });
 
   const outstanding=results.filter((item,i)=>OPEN_STATUSES.has(item.status)&&!('tool' in rawResults[i]!&&isSupersededUnknown(rawResults[i] as import('./task-results.js').TaskResultItem,executionResults)));
 
@@ -183,7 +188,8 @@ export function isTaskView(value: unknown): value is TaskView {
     // SAFETY: 下面逐个字段核对类型，不信任断言本身。
     const item = x as TaskViewResultItem;
 
-    return typeof item.id === "string" && typeof item.description === "string" && TASK_RESULT_ITEM_STATUSES.includes(item.status);
+    return typeof item.id === "string" && typeof item.description === "string" && TASK_RESULT_ITEM_STATUSES.includes(item.status)
+      && (item.reason === undefined || typeof item.reason === "string");
   };
 
   if (!Array.isArray(v.results) || !v.results.every(itemOk)) return false;

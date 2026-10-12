@@ -182,10 +182,16 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
 
   // 模型自己说了没做完：正文原样，部分完成记在 outcome/facts 上，由侧栏续做行说明。
   // 模型声称做完而宿主知道没做完：正文会误导用户（语音里也会被念出来），这时才补一句纠正。
+  // 但宿主会为同一批没做完的项出「没做成 · 继续原任务」卡时，正文不再重复同一句话（#286）；
+  // 卡不会出现的场景（没有剩余项、也不是部分交付判定）照旧补。
   if (input.kind === "finding" && !complete && requested === "complete") {
-    const note = next ? partialResultNote(next) : "（这件事还没全部完成。）";
+    const openItems = open ? open.remaining.length + (open.omittedRemaining ?? 0) : 0;
 
-    text = clampDeliveryText(`${text}\n\n${note}`);
+    if (next?.delivery !== "partial" && openItems === 0) {
+      const note = next ? partialResultNote(next) : "（这件事还没全部完成。）";
+
+      text = clampDeliveryText(`${text}\n\n${note}`);
+    }
   }
 
   const deliveryInput: Parameters<typeof createUserDelivery>[0] = {

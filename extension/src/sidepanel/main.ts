@@ -2215,7 +2215,7 @@ function noteModelInfo(model: string | undefined, models: ModelOption[] | undefi
 }
 
 const errorCards = mountErrorCards({
-  messages: messagesEl,
+  mount: (el) => appendToMessages(el),
   app,
   models: () => knownModels,
   currentModel: () => currentModelId,

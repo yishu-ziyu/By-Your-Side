@@ -3234,7 +3234,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 }
 
 /* 错误卡（#74）：按错误种类给能修掉原因的动作；原文收进「技术详情」。 */
-.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--m-morph) var(--e-spring); }
+.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in 200ms var(--e-spring); }
 .error-card strong { font-size: var(--fs-ui); font-weight: 600; }
 .error-card > p { margin: 0; color: var(--text-secondary); }
 .error-card .error-card-note { font-size: var(--fs-meta); color: var(--text-tertiary); }
