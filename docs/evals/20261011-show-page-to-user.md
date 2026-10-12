@@ -31,3 +31,10 @@
 - R1：keep-foreground 的 f 通过；让 show 不切前台再跑，f 失败。真实模型（gpt-6.1-sol，high）跑「切到youtube」2/2：两次都是先列出标签页，再 tabs show，一步切过去。10-10、10-11 两次对比实验里这一条都是 0/2。
 - R2：keep-foreground 的 a–e 照旧通过。
 - 作废的一轮：第一次真实模型运行是 1/2。原因是我在它构建扩展的同时，在同一个 worktree 里为「故意弄坏」改了 show 的代码，这一轮装进去的是弄坏的版本（模型调了 show，读回却没切过去）。不在同一个 worktree 里同时跑用例和改代码。
+
+## 10-12 复查：gpt-6-luna 上做不到（[#288](https://github.com/yishu-ziyu/By-Your-Side/issues/288)）
+
+- 上面 R1 的真实模型结果只来自 gpt-6.1-sol。10-11 晚上程序优先实验用默认测试模型 gpt-6-luna，切页 8 遍都失败。
+- 10-12 在主干 `94773a2` 上用 gpt-6-luna 默认档跑 3 次，0/3，3 次做法相同：助手不列标签页，也不用 show，而是用 `tabs open` 新开 youtube.com。新页按不抢前台开在后台，用户眼前仍是抖音；助手却回答「已打开 YouTube 首页」，目标核对判做完。
+- 所以判据没有判错，缺口在产品：luna 不先找已开的页；用户要去某页时，新开的页不到前台，回答和目标核对却当成已完成。
+- 证据：`out/acceptance/real-path/2026-10-12T03-29-38-131Z-everyday-baseline-compare-inproc-96782/`（不入库）。
