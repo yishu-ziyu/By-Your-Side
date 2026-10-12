@@ -3034,7 +3034,8 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat 0.9s var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
-details.run-steps:not(.done) { max-height: 176px; overflow: hidden; }
+.run-bundle { display: flex; flex-direction: column; align-self: stretch; min-width: 0; }
+.run-bundle:has(details.run-steps:not(.done)) { max-height: 176px; overflow: hidden; }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 132px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
 .run-graph-group { position: relative; min-width: 0; }

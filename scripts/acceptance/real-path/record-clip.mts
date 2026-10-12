@@ -24,8 +24,9 @@ export const READ_PROCESS = `(() => {
   const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
   if (!d) return null;
   const title = d.querySelector(".run-title");
-  const r = d.getBoundingClientRect();
-  const live = d.querySelector(".run-live-graph");
+  const host = d.closest(".run-bundle") ?? d;
+  const r = host.getBoundingClientRect();
+  const live = host.querySelector(".run-live-graph");
   const liveR = live?.getBoundingClientRect();
   const top = Math.max(0, Math.floor(r.y - 8));
   const bottom = Math.min(innerHeight, Math.ceil((liveR && liveR.height ? liveR.bottom : r.bottom) + 8));

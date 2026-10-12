@@ -50,7 +50,7 @@ import {
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTestResult } from "./error-card.js";
-import { describeModelError } from "../../../shared/user-facing.js";
+import { describeModelError, plainToolError } from "../../../shared/user-facing.js";
 import { INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
 import { chipLabel } from "./models.js";
@@ -3274,12 +3274,15 @@ function ensureRun(): NonNullable<typeof currentRun> {
   reveal.className = "run-reveal";
   reveal.append(body);
   const graph = mountLiveGraph({ history: () => applyingHistory });
-  root.append(summary, graph.el, reveal);
-  messagesEl.appendChild(root);
+  root.append(summary, reveal);
+  const bundle = document.createElement("div");
+  bundle.className = "run-bundle";
+  bundle.append(root, graph.el);
+  messagesEl.appendChild(bundle);
   const trail = document.createElement("div");
   trail.className = "run-trail";
   trail.hidden = true;
-  root.after(trail);
+  bundle.after(trail);
   const start = runStartAt || eventTime();
 
   // 第一行的秒数只数「现在这件事」：在想就从这段开始数，在跑一步就数这一步（≥3 秒才写），不数整轮（#263）。
@@ -3346,7 +3349,8 @@ function renderTrail(run: RunHost): void {
   run.trail.replaceChildren(...rows);
   run.trail.hidden = rows.length === 0;
 
-  if (run.root.nextElementSibling !== run.trail) run.root.after(run.trail);
+  const host = bundleOf(run.root);
+  if (host.nextElementSibling !== run.trail) host.after(run.trail);
 }
 
 /** 记录里秒数的门槛：一步、一段思考不到 3 秒都不写秒数，思考段也不单列（#263）。 */
@@ -3685,7 +3689,7 @@ function finishRun(): void {
   const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
 
   if (!hasSteps || !keepProcess) {
-    run.root.remove();
+    bundleOf(run.root).remove();
 
     if (lastRun === run) lastRun = null;
 
@@ -3734,7 +3738,7 @@ function finishRun(): void {
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
 
-  if (run.evidence) run.root.after(run.evidence);
+  if (run.evidence) bundleOf(run.root).after(run.evidence);
 
   for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
     if (node instanceof HTMLElement && node.matches(".msg.assistant")) syncAnswerTime(node);
@@ -3747,8 +3751,13 @@ function finishRun(): void {
  * 过程行放在这一轮用户消息（和它的 chip、「收到」这类确认语）之后、回答之前：先看到做了什么，再看结论。
  * 回答可能在过程块创建前就已开始渲染，所以结束时按位置规则摆放，而不是依赖事件先后。
  */
+function bundleOf(root: HTMLElement): HTMLElement {
+  return root.parentElement?.classList.contains("run-bundle") ? root.parentElement : root;
+}
+
 function placeProcessBeforeAnswer(root: HTMLElement): void {
-  let anchor: Element | null = root.previousElementSibling;
+  const moving = bundleOf(root);
+  let anchor: Element | null = moving.previousElementSibling;
 
   while (anchor && !anchor.classList.contains("user")) anchor = anchor.previousElementSibling;
 
@@ -3756,21 +3765,21 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   // 核对判继续后接着做的一轮：「核对发现」属于前一轮，续做的过程排在最后一条「核对发现」之后。
   let fix: Element | null = null;
 
-  for (let node = anchor.nextElementSibling; node && node !== root; node = node.nextElementSibling) {
+  for (let node = anchor.nextElementSibling; node && node !== moving; node = node.nextElementSibling) {
     if (node.classList.contains("claim-fix")) fix = node;
   }
 
-  if (fix) { if (fix.nextElementSibling !== root) fix.after(root); return; }
+  if (fix) { if (fix.nextElementSibling !== moving) fix.after(moving); return; }
   let next = anchor.nextElementSibling;
 
   // chip 跟着用户消息（chip C），「收到」这类确认语和开场话也留在前面；夹在开场话前面的任务卡之后会移到回答后面，不挡住它。
   // 核对判继续后接着做的一轮：排在前一轮的过程、读回和「核对发现」之后，不插到它们前面。
-  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, details.run-steps.done, .fill-evidence, .claim-fix")
+  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, details.run-steps.done, .run-bundle, .fill-evidence, .claim-fix")
     || (node.matches(".ai-task-card") && !!node.nextElementSibling?.matches(".opening-line"));
 
-  while (next instanceof HTMLElement && next !== root && keepsBefore(next)) next = next.nextElementSibling;
+  while (next instanceof HTMLElement && next !== moving && keepsBefore(next)) next = next.nextElementSibling;
 
-  if (next && next !== root) messagesEl.insertBefore(root, next);
+  if (next && next !== moving) messagesEl.insertBefore(moving, next);
 }
 
 function cardTurn(root: HTMLElement): boolean {
@@ -4308,14 +4317,14 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   if (failed && label) {
     const note = document.createElement("span");
     note.className = "act-failed";
-    note.textContent = ` · ${ev.reason ?? "没做成"}`;
+    note.textContent = ` · ${ev.reason ?? (failed ? plainToolError(ev.resultText ?? "") : "没做成")}`;
     label.append(note);
   }
 
   if (run) {
     run.graph.end(ev.toolCallId, {
       failed,
-      reason: ev.reason,
+      reason: ev.reason ?? (failed ? plainToolError(ev.resultText ?? "") : undefined),
       result: pageTitle ?? (failed ? undefined : entry.chip.dataset.short),
       label: entry.chip.dataset.short ?? undefined,
     });

@@ -65,7 +65,8 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 const READ = `(() => {
   const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
   if (!d) return null;
-  const groups = [...d.querySelectorAll(".run-graph-group")].map((g) => {
+  const host = d.closest(".run-bundle") ?? d;
+  const groups = [...host.querySelectorAll(".run-graph-group")].map((g) => {
     const rows = [...g.querySelectorAll(".run-graph-row, .run-tab-tile")];
     const delays = rows.map((row) => parseFloat(getComputedStyle(row).animationDelay) || 0);
     return {
@@ -81,7 +82,7 @@ const READ = `(() => {
       fold: g.querySelector(".run-graph-fold")?.textContent ?? "",
     };
   });
-  const box = d.getBoundingClientRect();
+  const box = host.getBoundingClientRect();
   return {
     title: d.querySelector(".run-title")?.textContent ?? "",
     height: Math.round(box.height),
