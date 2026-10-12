@@ -9,7 +9,7 @@
 
 每次合并前跑 `npm run check` 和这次改到的用例。`npm test` 一批改动只跑一遍，放在更新日常扩展之前，因为每次合并都跑全部时，花的时间多于抓到的问题（10-10 用户决定）。纯文档修改只跑 `npm run check:docs`。
 
-每次运行真实路径用例都记进主目录的运行流水，`npm run runs` 看今天每个用例跑了几次、过了几次。同一用例、同样参数、同样代码失败 2 次后，第 3 次会被拦下，因为再跑只是在测模型的随机性；先看失败原因，确实要跑时加 `BYS_RERUN=1`。7 天前、没被文档引用的运行目录在下次运行时自动清理（[运行流水](../evals/20261012-test-runs-ledger.md)）。
+每次运行真实路径用例都记进主目录的运行流水，`npm run runs` 看今天每个用例跑了几次、过了几次。同一用例、同样参数、同样代码失败 2 次后，第 3 次会被拦下，因为再跑只是在测模型的随机性；先看失败原因，确实要跑时加 `BYS_RERUN=1`。7 天前、没被文档引用的运行目录在下次运行时自动清理。
 
 `npm run smoke` 用真实模型走一遍日常路径，需要凭据，不是合并门槛。
 
@@ -20,7 +20,7 @@
 ## 依赖
 
 - 依赖审计用 `npm audit --registry=https://registry.npmjs.org`，不改全局源。
-- Pi 自带 npm-shrinkwrap，所以项目级 override 盖不住 Pi 的依赖版本。要在干净 `npm ci` 后用 `npm ls` 核对（[升级验收](../evals/20261003-issue-42-dependencies.md)）。
+- Pi 自带 npm-shrinkwrap，所以项目级 override 盖不住 Pi 的依赖版本。要在干净 `npm ci` 后用 `npm ls` 核对。
 - 在 worktree 里不要把整个 `node_modules` 指回主树：`@sideagent` 的链接会解析回主树源码，扩展构建里的代理部分就成了主树的旧代码，而类型检查照样通过。
   要建真实的 `node_modules` 目录：其他包逐个链回主树，`@sideagent/agent` 和 `@sideagent/extension` 链到 worktree 自己（10-11 任务 2 踩过）。`npm run task` 开工作树时会这样建好。
 
