@@ -672,6 +672,9 @@ function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: f
 
 /** 把服务商和网络层的报错翻成用户能处理的话；原文只进「技术详情」。 */
 function explainFailure(raw: string): string {
+  // Kimi 套餐超过同时请求上限时回 403 permission_error，不是密钥问题。
+  if (/concurrent request limit|too many concurrent/i.test(raw)) return "同时发的请求太多，服务商拒绝了这一个。等前面的请求做完再试。";
+
   return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) ? "服务商不接受这个密钥。如果密钥没错，就检查它能不能用这个模型。"
     : /\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(raw) ? "服务商拒绝了请求：额度用完或请求太频繁。稍后再试，或换一个模型。"
       : /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw) ? "找不到这个模型，检查模型名称"
@@ -1082,7 +1085,15 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
   const longest = () => Math.max(10, ...rows.map((r) => r.first ?? 0));
   const redraw = () => rows.forEach((r) => { if (r.first != null) r.bar.style.setProperty("--w", `${(r.first / longest()) * 100}%`); });
 
-  await Promise.all(rows.map(async (r) => {
+  // 同一家的模型一个接一个测：有的套餐限制同时请求数（Kimi 回 403）；不同家之间同时测。
+  const byProvider = new Map<string, typeof rows>();
+  for (const r of rows) byProvider.set(r.c.provider, [...byProvider.get(r.c.provider) ?? [], r]);
+
+  await Promise.all([...byProvider.values()].map(async (group) => {
+    for (const r of group) await measureOne(r);
+  }));
+
+  async function measureOne(r: (typeof rows)[number]): Promise<void> {
     const t0 = performance.now();
     const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
     let text = "";
@@ -1128,7 +1139,7 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
       r.result.textContent = `不能用：${explainFailure(error instanceof Error ? error.message : String(error))}`;
       r.result.title = error instanceof Error ? error.message : String(error);
     }
-  }));
+  }
 
   box.append(Object.assign(document.createElement("p"), { className: "speed-note", textContent: `共用 ${((performance.now() - started) / 1000).toFixed(0)} 秒。同一个模型每次快慢会差好几秒，拿不准就再测一次。` }));
 }
