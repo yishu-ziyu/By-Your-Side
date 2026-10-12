@@ -64,11 +64,15 @@ type PanelView = { held: boolean; hint: string; unconnected: boolean; pill: stri
 
 const readView = (rp: RealPath, panel: string) => rp.evaluate(panel, viewSrc) as Promise<PanelView>;
 
+const formOpenSrc = `!!document.querySelector("#provider-form") && !document.querySelector("#provider-form").hidden`;
+
 async function fillCustom(rp: RealPath, page: string, baseUrl: string, key: string): Promise<void> {
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页服务商");
-  await rp.evaluate(page, `(() => { const more = document.querySelector("#provider-more"); if (more) more.open = true; return true; })()`);
-  await rp.click(page, `.provider-option[data-provider="custom"]`);
-  await until(async () => await rp.evaluate(page, `!document.querySelector("#provider-form").hidden`) || undefined, 5_000, "自定义表单");
+  if (!await rp.evaluate(page, formOpenSrc)) {
+    await rp.evaluate(page, `(() => { const more = document.querySelector("#provider-more"); if (more) more.open = true; return true; })()`);
+    await rp.click(page, `.provider-option[data-provider="custom"]`);
+    await until(async () => await rp.evaluate(page, formOpenSrc) || undefined, 5_000, "自定义表单");
+  }
   for (const [id, value] of [["#base-url", baseUrl], ["#api-key", key], ["#model-id", "fixture"]] as const) {
     await rp.evaluate(page, `document.querySelector(${JSON.stringify(id)}).scrollIntoView({ block: "center" }); true`);
     await rp.click(page, id);
