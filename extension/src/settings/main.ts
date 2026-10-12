@@ -1054,7 +1054,11 @@ async function runSpeedTest(): Promise<void> {
     const row = document.createElement("div");
     row.className = "speed-row";
     row.dataset.model = `${c.provider}/${c.modelId}`;
-    const name = Object.assign(document.createElement("span"), { className: "speed-name", textContent: `${labelOf(c.provider)} · ${c.modelId}${role ? `（${role}）` : ""}` });
+    const name = Object.assign(document.createElement("span"), { className: "speed-name" });
+    name.append(
+      Object.assign(document.createElement("span"), { className: "speed-id", textContent: c.modelId }),
+      Object.assign(document.createElement("span"), { className: "speed-meta", textContent: role ? `${role} · ${labelOf(c.provider)}` : labelOf(c.provider) }),
+    );
     const bar = Object.assign(document.createElement("span"), { className: "speed-bar" });
     const result = Object.assign(document.createElement("span"), { className: "speed-result", textContent: "在问…" });
     row.append(name, bar, result);

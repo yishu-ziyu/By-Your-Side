@@ -33,13 +33,13 @@ try {
   await rp.click(page, "#speed-test");
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".speed-row").length`)) > 0 || undefined, 5000, "出现测速列表");
   await until(async () => (await rp.evaluate(page, `[...document.querySelectorAll(".speed-row")].every((r) => r.dataset.state)`)) || undefined, 120_000, "每一行都有结果");
-  rows = (await rp.evaluate(page, `[...document.querySelectorAll(".speed-row")].map((r) => ({ model: r.dataset.model, state: r.dataset.state, result: r.querySelector(".speed-name").textContent + " → " + r.querySelector(".speed-result").textContent }))`)) as typeof rows;
+  rows = (await rp.evaluate(page, `[...document.querySelectorAll(".speed-row")].map((r) => ({ model: r.dataset.model, state: r.dataset.state, result: r.querySelector(".speed-id").textContent + "（" + r.querySelector(".speed-meta").textContent + "） → " + r.querySelector(".speed-result").textContent }))`)) as typeof rows;
   await rp.screenshot(page, join(out, "speed.png"));
   const models = rows.map((r) => r.model);
 
   assert.deepEqual(models.slice(0, 2), ["stepfun/step-5-preview", "openai-codex/gpt-6-luna"], "主模型、快速模型排在最前");
-  assert.match(rows[0]!.result, /（主模型）/, "主模型那一行标出「主模型」");
-  assert.match(rows[1]!.result, /（快速模型）/, "快速模型那一行标出「快速模型」");
+  assert.match(rows[0]!.result, /（主模型 · /, "主模型那一行标出「主模型」");
+  assert.match(rows[1]!.result, /（快速模型 · /, "快速模型那一行标出「快速模型」");
   for (const m of ["stepfun/step-3.7-flash", "openai-codex/gpt-6.1-sol", "minimax-cn/MiniMax-M2.7-highspeed"]) assert.ok(models.includes(m), `测了 ${m}`);
   assert.ok(!models.some((m) => m.startsWith("kimi-coding/") || m.startsWith("opencode-go/")), "没连的服务商不测");
   assert.equal(rows.find((r) => r.model === "minimax-cn/MiniMax-M2.7-highspeed")?.state, "fail", "坏 key 那一行写「不能用」");
