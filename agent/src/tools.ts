@@ -446,7 +446,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         sid
           ? 'One tool for browser tabs. action:"list" lists the tabs assigned to you; other members\' and user tabs are not available to workers.'
-          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) and claims it as the working tab; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user asks to see or go to a page ("切到…", "给我看…", "打开那一页给我"); action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
+          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; when the user asks to go to or see a site, list the open tabs first and use action:"show" on a tab that already has it; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user asks to see or go to a page ("切到…", "给我看…", "打开那一页给我"); action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("show"), Type.Literal("close")], {
           description: "list | active | open | switch | show | close",
@@ -478,8 +478,22 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           const data = (await call("open_tab", params.url ? { url: params.url } : {})) as ToolContract["open_tab"]["data"];
 
           const opened = data.tabClosed ? `Opened ${data.url} in a new tab, which Chrome then closed` : `Created tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}`;
+          const text = `${opened}; document: ${data.readiness ?? "not checked"}${(data.readiness === "download" || data.readiness === "error_page") && data.note ? `\n${data.note}` : ""}`;
 
-          return textResult(`${opened}; document: ${data.readiness ?? "not checked"}${(data.readiness === "download" || data.readiness === "error_page") && data.note ? `\n${data.note}` : ""}`, data);
+          if (sid || data.tabClosed) return textResult(text, data);
+
+          // 新页开在后台：读回用户眼前是哪一页，模型和目标核对才知道用户其实没看到它。读失败就不写，不猜。
+          // 只读补读不挂本次调用身份（同 navigate）。
+          const front = await (readAfterNavigate("get_active_tab", {}) as Promise<ToolContract["get_active_tab"]["data"]>).then((d) => d.tab, () => null);
+          const notes: string[] = [];
+
+          if (front) {
+            notes.push(front.id === data.tabId
+              ? "The user is looking at this new tab."
+              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}».`);
+          }
+
+          return textResult(notes.length > 0 ? `${text}\n${notes.join("\n")}` : text, data);
         }
 
         if (params.action === "switch" || params.action === "show") {
