@@ -3,6 +3,7 @@
  *
  * - 每次运行在 out/acceptance/real-path/runs.jsonl 记一行：用例、参数、代码状态、通过与否、耗时。`npm run runs` 汇总。
  * - 同一用例、同样参数、同样代码已经失败 2 次，就拒绝第 3 次：再跑只是在测模型的随机性。确实要跑时加 BYS_RERUN=1。
+ *   Ctrl-C 或被杀掉的运行不进流水，所以也不计入失败。
  * - 清理 7 天前、没被 docs/scripts/eval 引用的运行目录。
  */
 import { createHash } from "node:crypto";
@@ -59,13 +60,20 @@ function readLedger() {
   });
 }
 
-function prune(out) {
-  let cited = "";
-  try {
-    cited = git(["grep", "-ohE", "out/acceptance/real-path/[^ )`'\"]+", "--", "docs", "scripts", "eval"]);
-  } catch {
-    return; // 查不到引用时不删任何东西
+// 引用同时查工作树和主目录，包括还没提交的文件：主目录里新写的文档也可能引用旧运行。
+function citations() {
+  const found = [];
+  for (const cwd of new Set([REPO, MAIN])) {
+    try {
+      found.push(execFileSync("git", ["grep", "--untracked", "-ohE", "out/acceptance/real-path/[^ )`'\"]+", "--", "docs", "scripts", "eval"], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }));
+    } catch (error) {
+      if (error.status !== 1) return null; // 查引用出错时不删任何东西；1 只表示没有匹配
+    }
   }
+  return found.join("\n");
+}
+
+function prune(out, cited) {
   const keep = cited.split("\n").filter(Boolean).map((ref) => ref.slice("out/acceptance/real-path/".length).split("/")[0])
     // 只认带日期的具体运行；`*`、`<时间>-<用例>` 这类写法是在说明用法，不是引用证据。
     .filter((part) => /^\d{4}-\d\d-\d\d/.test(part))
@@ -102,14 +110,17 @@ function start() {
   }
 
   try {
-    for (const out of new Set([OUT, MAIN_OUT])) prune(out);
+    const cited = citations();
+    if (cited !== null) for (const out of new Set([OUT, MAIN_OUT])) prune(out, cited);
   } catch (error) {
     console.error(`[runs] 清理旧目录失败：${error.message}`);
   }
 
   const startedAt = Date.now();
   process.on("exit", (code) => {
-    const ok = (code ?? process.exitCode ?? 0) === 0;
+    const exit = code ?? process.exitCode ?? 0;
+    // 退出码 2 是用法错误或前提不满足（没加 --headless、缺凭据），用例没真正跑，不算失败。
+    const ok = exit === 0 ? true : exit === 2 ? null : false;
     appendFileSync(LEDGER, `${JSON.stringify({ case: name, args, code: state, at: new Date(startedAt).toISOString(), ok, seconds: Math.round((Date.now() - startedAt) / 1000) })}\n`);
   });
 }

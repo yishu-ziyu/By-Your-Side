@@ -17,7 +17,13 @@ since.setHours(0, 0, 0, 0);
 since.setDate(since.getDate() - (days - 1));
 
 const rows = existsSync(ledger)
-  ? readFileSync(ledger, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((row) => new Date(row.at) >= since)
+  ? readFileSync(ledger, "utf8").split("\n").filter(Boolean).flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return []; // 写到一半被打断的行
+      }
+    }).filter((row) => new Date(row.at) >= since)
   : [];
 
 if (!rows.length) {
@@ -28,19 +34,20 @@ if (!rows.length) {
 const byCase = new Map();
 for (const row of rows) {
   const key = [row.case, ...row.args].join(" ");
-  const item = byCase.get(key) ?? { 用例: key, 运行: 0, 通过: 0, 失败: 0, 被拦: 0, 分钟: 0 };
+  const item = byCase.get(key) ?? { 用例: key, 运行: 0, 通过: 0, 失败: 0, 被拦: 0, 没跑起来: 0, 分钟: 0 };
   item.运行 += 1;
   if (row.blocked) item.被拦 += 1;
-  else if (row.ok) item.通过 += 1;
-  else item.失败 += 1;
+  else if (row.ok === true) item.通过 += 1;
+  else if (row.ok === false) item.失败 += 1;
+  else item.没跑起来 += 1;
   item.分钟 += row.seconds / 60;
   byCase.set(key, item);
 }
 
 const table = [...byCase.values()].sort((a, b) => b.运行 - a.运行).map((item) => ({ ...item, 分钟: Math.round(item.分钟) }));
-const judged = rows.filter((row) => !row.blocked);
+const judged = rows.filter((row) => typeof row.ok === "boolean");
 const passed = judged.filter((row) => row.ok).length;
 const minutes = Math.round(rows.reduce((sum, row) => sum + row.seconds, 0) / 60);
 
 console.table(table);
-console.log(`${days === 1 ? "今天" : `${days} 天内`}：运行 ${rows.length} 次，通过 ${passed}/${judged.length}（${judged.length ? Math.round((passed / judged.length) * 100) : 0}%），被拦 ${rows.length - judged.length} 次，累计 ${minutes} 分钟。`);
+console.log(`${days === 1 ? "今天" : `${days} 天内`}：运行 ${rows.length} 次，通过 ${passed}/${judged.length}（${judged.length ? Math.round((passed / judged.length) * 100) : 0}%），被拦或没跑起来 ${rows.length - judged.length} 次，累计 ${minutes} 分钟。`);
