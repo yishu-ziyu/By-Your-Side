@@ -8,7 +8,7 @@
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
- * 结果卡片：第 1 轮回答没有卡片，胶囊上方不出现；第 6 轮回答带一张表格卡片，胶囊上方出现精简卡片（标题、标了「最高」的一行排第一、
+ * 结果卡片：第 1 轮回答没有卡片，胶囊上方不出现；第 3 轮之后加一轮，回答带一张表格卡片，胶囊上方出现精简卡片（标题、标了「最高」的一行排第一、
  * 共 3 行、「还有 1 项」），念的仍只是正文；点 ✕ 卡片和胶囊一起收起。
  * 确认句（松开后马上应一句）：这句话有两个分句，没把握复述，每轮先念通用句「好，马上做。」，且只请求一次；
  * 第 1 轮任务步骤在跑时它照样念完，念的时候「正在做」后面是它、光球在说，念完换回当前步骤；第 3 轮结果马上到，确认句被打断。
@@ -132,7 +132,10 @@ const findClass = (node: DomNode, name: string): DomNode | null => {
 /** 胶囊上方的精简卡片：显示着就返回标题、每行文字、「还有」那一行；没有或藏着为 null。 */
 async function capsuleCard(session: string): Promise<{ title: string; rows: string[]; tagged: string[]; more: string } | null> {
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as { root: DomNode };
-  const card = findClass(root, "card");
+  // 只在胶囊宿主自己的 shadow root 里找，页面或别的浮层里的 .card 不算。
+  const findHost = (node: DomNode): DomNode | null => node.attributes?.includes("ptt-capsule") ? node : [...(node.children ?? [])].reduce<DomNode | null>((hit, child) => hit ?? findHost(child), null);
+  const host = findHost(root);
+  const card = host?.shadowRoots?.map(shadow => findClass(shadow, "card")).find(Boolean) ?? null;
 
   if (!card || card.attributes?.includes("hidden")) return null;
   const rows = findClass(card, "rows")?.children ?? [];
@@ -372,6 +375,27 @@ try {
   assert.ok(three.ms.ackCutAfter < one.ms.ackDone! - one.ms.ackSpeaking! - 300, `ack: the result came before the ack could finish (${three.ms.ackCutAfter} ms vs a full ack of ${one.ms.ackDone! - one.ms.ackSpeaking!} ms)`);
   await rp.screenshot(work, join(artifacts, "7-hushed.png"));
 
+  // ── 卡片轮（第 4 轮之前，还没有目标核对规则）：回答带卡片，胶囊上方出现精简卡片 ──
+  rule.steps = [{ text: CARD_ANSWER }];
+  await clickCapsuleButton(work, "✕").catch(() => {});
+  await sleep(500);
+  const six: Evidence["rounds"][number] = { phases: [], ms: {} };
+  evidence.rounds.push(six);
+  const beforeCard = resultSpeech().length;
+  await holdAndSpeak(work, six, join(artifacts, "7b-listening-card.png"));
+  await waitPhase(work, six, "done", DICTATION_MS + 15_000);
+  const shown = await until(async () => await capsuleCard(work) ?? undefined, 3_000, "card above the capsule");
+  six.spoken = shown;
+  assert.deepEqual(shown, { title: "三家公司营收", rows: ["Lumen|最高|¥42 亿 · 12%", "Harbor|¥31 亿 · 8%", "Kite|¥18 亿 · 5%"], tagged: ["Lumen"], more: "还有 1 项" }, `card: title and rows from the answer, the tagged row first ${JSON.stringify(shown)}`);
+  await until(async () => resultSpeech().length > beforeCard || undefined, 10_000, "card answer spoken");
+  assert.equal(resultSpeech()[beforeCard]!.text, "已经按营收排好了，Lumen 最高。", "card: speech is still the prose only");
+  await sleep(400);
+  await rp.screenshot(work, join(artifacts, "7c-done-with-card.png"));
+  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "card answer speech finished");
+  await clickCapsuleButton(work, "✕");
+  await until(async () => (await capsuleState(work)) === null || undefined, 3_000, "capsule closed by ✕");
+  assert.equal(await capsuleCard(work), null, "card: ✕ closes the card with the capsule");
+
   // ── 第 4 轮：留给你的，目标核对晚到 ──
   // 目标核对的请求内容是 JSON，里面有 "lastReply":"<回答>"；它排在最前，先于按任务原话匹配的规则。
   rules.unshift({ match: `"lastReply":"${ANSWER4.slice(0, 5)}`, steps: [{ text: JSON.stringify({ status: "done", remaining: LEFT }), delayMs: 2_000 }] });
@@ -412,27 +436,6 @@ try {
   assert.ok((five.spoken as { ok?: boolean; playedMs?: number }).ok && (five.spoken as { playedMs: number }).playedMs > 500, "需要你实际播放，不以发送请求算完成");
   assert.equal((await capsuleState(work))?.phase, "waiting", "播完仍等用户，不恢复已完成");
   await rp.screenshot(work, join(artifacts, "11-needs-user.png"));
-
-  // ── 第 6 轮：回答带卡片，胶囊上方出现精简卡片 ──
-  rule.steps = [{ text: CARD_ANSWER }];
-  await clickCapsuleButton(work, "✕").catch(() => {});
-  await sleep(500);
-  const six: Evidence["rounds"][number] = { phases: [], ms: {} };
-  evidence.rounds.push(six);
-  const beforeCard = resultSpeech().length;
-  await holdAndSpeak(work, six, join(artifacts, "12-listening-sixth.png"));
-  await waitPhase(work, six, "done", DICTATION_MS + 15_000);
-  const shown = await until(async () => await capsuleCard(work) ?? undefined, 3_000, "card above the capsule");
-  six.spoken = shown;
-  assert.deepEqual(shown, { title: "三家公司营收", rows: ["Lumen|最高|¥42 亿 · 12%", "Harbor|¥31 亿 · 8%", "Kite|¥18 亿 · 5%"], tagged: ["Lumen"], more: "还有 1 项" }, `card: title and rows from the answer, the tagged row first ${JSON.stringify(shown)}`);
-  await until(async () => resultSpeech().length > beforeCard || undefined, 10_000, "card answer spoken");
-  assert.equal(resultSpeech()[beforeCard]!.text, "已经按营收排好了，Lumen 最高。", "card: speech is still the prose only");
-  await sleep(400);
-  await rp.screenshot(work, join(artifacts, "13-done-with-card.png"));
-  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "card answer speech finished");
-  await clickCapsuleButton(work, "✕");
-  await until(async () => (await capsuleState(work)) === null || undefined, 3_000, "capsule closed by ✕");
-  assert.equal(await capsuleCard(work), null, "card: ✕ closes the card with the capsule");
 
   const perRound = roundStarts.map((from, i) => ackRequests(from) - (roundStarts[i + 1] === undefined ? 0 : ackRequests(roundStarts[i + 1]!)));
   assert.deepEqual(perRound, [1, 1, 1, 1, 1, 1], "ack: exactly one ack request per round");
