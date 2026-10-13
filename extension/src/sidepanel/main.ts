@@ -292,7 +292,7 @@ app.innerHTML = `
     <button type="button" id="starter-connect">连接模型</button>
   </section>
   <div class="composer-dock-wrap">
-    <div id="morph-sheet" class="page-morph-sheet" style="display: none;">
+    <div id="morph-sheet" class="page-morph-sheet" hidden>
       <div class="morph-sheet-head">
         <span>当前活动标签页检查器</span>
         <button type="button" id="close-morph-sheet" class="sheet-close-btn" title="关闭">✕</button>
@@ -2327,8 +2327,8 @@ async function refreshActiveTabPill(): Promise<void> {
 
 function toggleMorphSheet(open?: boolean): void {
   if (!morphSheet) return;
-  const willOpen = open !== undefined ? open : morphSheet.style.display === "none" || !morphSheet.style.display;
-  morphSheet.style.display = willOpen ? "flex" : "none";
+  const willOpen = open !== undefined ? open : morphSheet.hidden;
+  morphSheet.hidden = !willOpen;
 
   if (willOpen) void refreshActiveTabPill();
 }
@@ -2343,7 +2343,7 @@ closeMorphSheetBtn?.addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   if (
     morphSheet &&
-    morphSheet.style.display === "flex" &&
+    !morphSheet.hidden &&
     !morphSheet.contains(e.target as Node) &&
     !pagePill?.contains(e.target as Node)
   ) {
