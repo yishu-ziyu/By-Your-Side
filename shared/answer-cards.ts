@@ -137,10 +137,13 @@ function parseCard(source: string, closed: boolean): Card | undefined {
    */
   const resolve = (raw: string, unit?: string): { value: string; computed?: number; formula?: string } => {
     if (!raw.startsWith("=")) return { value: withUnit(raw, unit) };
-    const expression = raw.slice(1);
+    // 模型有时把货币符号或「元」也写进算式（=¥1699-50）：先拿掉再算，符号当单位用。
+    const symbol = /[¥￥$€£]/.exec(raw)?.[0];
+    const expression = raw.slice(1).replace(/[¥￥$€£]/g, "").replace(/\s*元\s*$/, "");
     const n = calc(expression);
+    unit ??= symbol ?? (/元\s*$/.test(raw) ? "元" : undefined);
 
-    if (n === undefined) return { value: withUnit(expression.trim(), unit) };
+    if (n === undefined) return { value: withUnit(raw.slice(1).trim(), unit === symbol ? undefined : unit) };
     card.numbers.add(String(n));
     const formula = /[-+*/×÷−]/.test(expression.replace(/^\s*-/, "")) ? prettyFormula(expression) : undefined;
 
