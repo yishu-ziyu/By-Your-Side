@@ -125,7 +125,7 @@ const slugDirs = readdirSync(RUN, { withFileTypes: true }).filter((d) => d.isDir
 const results = []; // one per (config, task)
 
 for (const slug of slugDirs) {
-  for (const f of readdirSync(join(RUN, slug)).filter((f) => /^BYS-\d+\.json$/.test(f))) {
+  for (const f of readdirSync(join(RUN, slug)).filter((f) => /^BYS-D?\d+\.json$/.test(f))) {
     const tr = readJson(join(RUN, slug, f));
 
     if (!tr?.id) continue;

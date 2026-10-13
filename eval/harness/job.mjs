@@ -179,6 +179,22 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     await rp.cdp.send("Page.bringToFront", {}, pageSid).catch(() => {});
     await sleep(1000);
     await until(async () => (await evalIn(ps, PANEL_PROBE)).connected, 90000, "panel connected to the in-extension agent");
+
+    // BYS_SCREENCAST=1: record the task page and the side panel as JPEG frames (<id>-cast/{page,panel}-<Date.now()>.jpg)
+    // so a run can be watched as video; same clock as page_log and interjections.
+    if (process.env.BYS_SCREENCAST) {
+      const castDir = join(outDir, `${task.id}-cast`);
+      mkdirSync(castDir, { recursive: true });
+      for (const [name, sid] of [["page", pageSid], ["panel", ps]]) {
+        rp.cdp.onEvent("Page.screencastFrame", ({ sessionId, params }) => {
+          if (sessionId !== sid) return;
+          writeFileSync(join(castDir, `${name}-${Date.now()}.jpg`), Buffer.from(params.data, "base64"));
+          rp.cdp.send("Page.screencastFrameAck", { sessionId: params.sessionId }, sid).catch(() => {});
+        });
+        await rp.cdp.send("Page.enable", {}, sid).catch(() => {});
+        await rp.cdp.send("Page.startScreencast", { format: "jpeg", quality: 70, everyNthFrame: 1 }, sid).catch((e) => rec.errors.push(`screencast ${name}: ${e.message}`));
+      }
+    }
     const initialSite = await observeSite(navigation.errorText ?? "");
     const initialBlock = siteBlock(initialSite);
 
@@ -376,6 +392,18 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.takeover = { at: t(at), paused_ms: paused - at, edited: task.takeover.edit, value_after_edit: await evalIn(pageSid, `document.querySelector(${JSON.stringify(task.takeover.edit.selector)}).value`) };
     };
 
+    // --- 插话（eval/tasks/duplex.md）：页面满足 `when`，或发出后过了 `after_ms`，用户在输入框里补一句（text），或点停止（stop）---
+    const pendingInterjections = (task.interject ?? []).map((x) => ({ ...x }));
+    rec.interjections = [];
+
+    const interject = async (x) => {
+      const at = Date.now();
+
+      if (x.stop) await rp.click(ps, "#send-btn"); // 运行中发送键就是停止键
+      else { await rp.click(ps, "#input"); await rp.typeText(ps, x.text); await rp.pressEnter(ps); }
+      rec.interjections.push({ kind: x.kind ?? (x.stop ? "stop" : "text"), text: x.text ?? null, at: t(at), at_ms: at });
+    };
+
     // --- watch panel DOM + extension diagnostics ---
     const seen = new Set();
 
@@ -408,6 +436,15 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       if (task.takeover && !rec.takeover && await evalIn(pageSid, task.takeover.when).catch(() => false)) {
         await takeover().catch((e) => { rec.takeover = { error: e.message }; rec.errors.push(`takeover: ${e.message}`); });
+        lastChange = Date.now();
+      }
+
+      // 一次轮询最多插一句；条件按顺序检查，所以第二句不会抢在第一句前面
+      const next = pendingInterjections.find((x) => !x.done);
+
+      if (next && (next.after_ms != null ? now - rec._t0 >= next.after_ms : await evalIn(pageSid, next.when).catch(() => false))) {
+        next.done = true;
+        await interject(next).catch((e) => rec.errors.push(`interject: ${e.message}`));
         lastChange = Date.now();
       }
 
@@ -484,6 +521,12 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     if (snap && !snap.error) {
       const afterUser = snap.msgs.slice(snap.msgs.findLastIndex((m) => /\buser\b/.test(m.cls)) + 1);
       rec.panel_messages = afterUser;
+
+      // 有插话时，「最后一个用户气泡之后」只剩插话之后的部分；整段从原始要求那个气泡算起另存一份
+      if (task.interject) {
+        const userIdx = snap.msgs.map((m, i) => (/\buser\b/.test(m.cls) ? i : -1)).filter((i) => i >= 0);
+        rec.panel_messages_all = snap.msgs.slice((userIdx[askedBefore] ?? -1) + 1);
+      }
       // 首字（#264 口径）：最后留在回答区的第一个回答气泡开始出字的时刻。开场话（.opening-line）、ack 交付、
       // 被收进过程的前导正文都不算，所以要等跑完、看清哪个气泡是回答再定。没有回答时保持 null。
       const reply = afterUser.find((m) => /assistant/.test(m.cls) && !/opening-line|error/.test(m.cls) && m.kind !== "ack" && m.text);
@@ -538,6 +581,12 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
         sleep(5000).then(() => null)]).catch(() => null);
 
       if (pageB) rec.final_page_text = `[tab 1] ${rec.final_page_text ?? ""}\n\n[tab 2] ${await evalIn(pageB, "(document.body?.innerText ?? '').slice(0, 15000)").catch(() => "")}`;
+
+      if (task.interject) {
+        // 没等到条件、任务就结束了的插话：这题没测到插话，不能当通过或失败看
+        for (const x of pendingInterjections.filter((y) => !y.done)) rec.interjections.push({ kind: x.kind ?? (x.stop ? "stop" : "text"), text: x.text ?? null, missed: true });
+        rec.page_log = await evalIn(pageSid, "JSON.parse(localStorage.getItem('duplexLog') || 'null')").catch(() => null);
+      }
     } catch (e) { rec.errors.push(`final page: ${e.message}`); }
 
     if (task.before_turns || task.memory_check) {
