@@ -3,7 +3,7 @@ import { ensureAttached } from "../debugger.js";
 import { bringForwardForUser } from "../foreground.js";
 import { getTabResource, getWorkingTabId, resolveWorkingTab, setWorkingTab } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { downloadNote, settlesContent, waitForInteractive, waitForQuietDom, type PageReadiness } from "./page-readiness.js";
+import { ERROR_PAGE_NOTE, downloadNote, settlesContent, waitForInteractive, waitForQuietDom, type PageReadiness } from "./page-readiness.js";
 
 export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ tabs: TabInfo[] }> {
   const workingId = await getWorkingTabId(sessionId);
@@ -79,7 +79,7 @@ export async function openTab(
     return { tabId: tab.id, url: params.url ?? "", title: "", ...ready, note: downloadNote(ready.download, "closed"), tabClosed: true };
   }
 
-  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready, ...(ready?.download ? { note: downloadNote(ready.download) } : {}) };
+  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready, ...(ready?.download ? { note: downloadNote(ready.download) } : ready?.readiness === "error_page" ? { note: ERROR_PAGE_NOTE } : {}) };
 }
 
 export async function switchTab(
