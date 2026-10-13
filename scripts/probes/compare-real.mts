@@ -2,11 +2,12 @@
 // --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
 // --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md).   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
 // Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
-const [root, outDir, arm] = process.argv.slice(2);
+const [rootArg, outDir, arm] = process.argv.slice(2);
+const root = resolve(rootArg); // an absolute path: "scripts/..." joined onto "." would be read as a package name
 const repeat = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 2;
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const learn = process.argv.includes("--learn");
