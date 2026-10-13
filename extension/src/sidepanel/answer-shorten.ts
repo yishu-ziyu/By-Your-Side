@@ -16,6 +16,8 @@ const CARD_GROUPS: Array<[group: string, item: string, pick: string]> = [
   [".gc-stats", ".gc-stat", ".best"],
   [".gc-table tbody", "tr", ".best"],
 ];
+/** 量不到高度时，少于这么多字算不到三行（侧栏一行约 25 个字）。 */
+const SHORT_CHARS = 75;
 /** 拖多远换一层。 */
 const STEP_PX = 36;
 /** 阅读速度：每秒约读 9 个字（不算空白）。 */
@@ -39,14 +41,12 @@ function splitFirstSentence(p: HTMLElement): void {
 
     if (tail) range.setEndBefore(tail);
     else range.setEnd(p, p.childNodes.length);
-    const rest = range.cloneContents();
-
-    if (!rest.textContent?.trim()) return;
-    range.deleteContents();
+    if (!range.toString().trim()) return;
+    // extractContents 会把句末所在的 <strong>/<a> 拆成两半；span 挂在 p 下面，不进这些行内元素里。
     const span = document.createElement("span");
     span.className = "shorten-rest";
-    span.append(rest);
-    range.insertNode(span);
+    span.append(range.extractContents());
+    p.insertBefore(span, tail ?? null);
 
     return;
   }
@@ -88,6 +88,7 @@ function markLevels(answer: HTMLElement): boolean {
 }
 
 function apply(answer: HTMLElement, next: Level): void {
+  if (level.has(answer)) answer.dataset.shortenMoved = "";
   level.set(answer, next);
   answer.dataset.shortenLevel = String(next);
 
@@ -96,9 +97,11 @@ function apply(answer: HTMLElement, next: Level): void {
   const grip = answer.querySelector<HTMLElement>(".shorten-grip");
   const label = answer.querySelector<HTMLElement>(".shorten-level");
 
-  grip?.setAttribute("aria-valuenow", String(next));
+  // 上键收短：aria 值按“短的程度”算，上键让值变大，合 slider 惯例。
+  grip?.setAttribute("aria-valuenow", String(4 - next));
   grip?.setAttribute("aria-valuetext", LEVELS[next]);
   if (label) label.textContent = `${LEVELS[next]} · 约 ${readSeconds(answer)} 秒读完`;
+  answer.dispatchEvent(new CustomEvent("answer-shorten"));
 }
 
 /** 现在看得到的正文（去掉界面元素和收起的部分）。复制按这一份。 */
@@ -148,8 +151,13 @@ export function visibleMarkdown(body: HTMLElement): string {
     if (el.classList.contains("gen-card")) {
       const title = el.querySelector(".gc-title");
       const items = Array.from(el.querySelectorAll(".gc-option,.gc-stat,.gc-step,.gc-check,.gc-callout,.gc-table tbody tr"));
+      // 卡片项由名字、价格、理由等几格拼成，格之间补上分隔。
+      const cells = (item: Element) => {
+        const parts = Array.from(item.querySelectorAll(".name,.price,.meta,.gc-why,.k > span:first-child,.v,.n,.t,.d,td")).map(line).filter(Boolean);
+        return parts.length ? parts.join(" · ") : line(item);
+      };
 
-      return [title ? `**${line(title)}**` : "", ...items.map((item) => `- ${line(item)}`)].filter(Boolean).join("\n");
+      return [title ? `**${line(title)}**` : "", ...items.map((item) => `- ${cells(item)}`)].filter(Boolean).join("\n");
     }
 
     return line(el);
@@ -166,7 +174,11 @@ export function attachShorten(answer: HTMLElement): void {
   if (!actions || actions.querySelector(".shorten-grip")) return;
   const lineHeight = parseFloat(getComputedStyle(answer).lineHeight) || 24;
 
-  if (answer.getBoundingClientRect().height - actions.getBoundingClientRect().height < lineHeight * 3) return;
+  const height = answer.getBoundingClientRect().height - actions.getBoundingClientRect().height;
+  // 侧栏批注栏开着时对话区不渲染，高度是 0：按字数估三行。
+  const short = height > 0 ? height < lineHeight * 3 : (answer.textContent ?? "").replace(/\s/g, "").length < SHORT_CHARS;
+
+  if (short) return;
   if (!markLevels(answer)) return;
 
   if (!answer.querySelector('[data-shorten="3"]')) {
@@ -183,6 +195,7 @@ export function attachShorten(answer: HTMLElement): void {
   grip.setAttribute("aria-label", "回答长短");
   grip.setAttribute("aria-valuemin", "1");
   grip.setAttribute("aria-valuemax", "3");
+  grip.setAttribute("aria-orientation", "vertical");
   grip.title = "上下拖动调长短";
   grip.append(document.createElement("i"));
   const label = document.createElement("span");
@@ -196,6 +209,7 @@ export function attachShorten(answer: HTMLElement): void {
   let moved = false;
 
   grip.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
     startY = e.clientY; startLevel = level.get(answer) ?? 3; moved = false;
     grip.setPointerCapture(e.pointerId);
     grip.classList.add("dragging");
