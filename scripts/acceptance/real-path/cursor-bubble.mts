@@ -94,25 +94,56 @@ async function observed(page: Page, selector: string) {
 
 try {
   // 助手在干活（彩边亮着）时，用户鼠标轻抖不让位，真挪开才让位。落点远离停靠的助手光标。
-  const hand = await setup(1100);
-  await hand.evaluate(() => (window as any).__sideagent.cursor.setGlow(true));
-  await hand.waitForTimeout(400);
-  const yielded = () => hand.evaluate(() => {
-    const host = document.querySelector('[data-sideagent-overlay="cursor"]');
-    const edge = ((window as any).__cursorRoots?.at(-1) as ShadowRoot)?.querySelector(".edge") as HTMLElement;
-    return { userActive: !!host?.classList.contains("user-active"), edge: Number(getComputedStyle(edge).opacity) };
-  });
-  await hand.mouse.move(300, 200);
-  await hand.waitForTimeout(100);
-  await hand.mouse.move(301, 200);
-  await hand.waitForTimeout(300);
-  const jitter = await yielded();
-  expectUserResult("1px mouse jitter while assistant works keeps glow bright", jitter, !jitter.userActive && jitter.edge > .9);
-  await hand.mouse.move(311, 200);
-  await hand.waitForTimeout(300);
-  const nudge = await yielded();
-  expectUserResult("10px mouse move while assistant works dims glow", nudge, nudge.userActive && nudge.edge < .5);
-  await hand.close();
+  const working = async () => {
+    const page = await setup(1100);
+    await page.evaluate(() => (window as any).__sideagent.cursor.setGlow(true));
+    await page.waitForTimeout(400);
+    await page.mouse.move(300, 200);
+    await page.waitForTimeout(100);
+    const yielded = () => page.evaluate(() => {
+      const host = document.querySelector('[data-sideagent-overlay="cursor"]');
+      const edge = ((window as any).__cursorRoots?.at(-1) as ShadowRoot)?.querySelector(".edge") as HTMLElement;
+      return { userActive: !!host?.classList.contains("user-active"), edge: Number(getComputedStyle(edge).opacity) };
+    });
+    return { page, yielded };
+  };
+  const bright = (o: { userActive: boolean; edge: number }) => !o.userActive && o.edge > .9;
+  const dimmed = (o: { userActive: boolean; edge: number }) => o.userActive && o.edge < .5;
+
+  const hand = await working();
+  await hand.page.mouse.move(301, 200);
+  await hand.page.waitForTimeout(300);
+  const jitter = await hand.yielded();
+  expectUserResult("1px mouse jitter while assistant works keeps glow bright", jitter, bright(jitter));
+  await hand.page.mouse.move(311, 200);
+  await hand.page.waitForTimeout(300);
+  const nudge = await hand.yielded();
+  expectUserResult("10px mouse move while assistant works dims glow", nudge, dimmed(nudge));
+  await hand.page.close();
+
+  const drift = await working();
+  for (let i = 1; i <= 8; i++) { await drift.page.mouse.move(300 + i, 200); await drift.page.waitForTimeout(40); }
+  await drift.page.waitForTimeout(300);
+  const drifted = await drift.yielded();
+  expectUserResult("eight quick 1px moves add up and dim glow", drifted, dimmed(drifted));
+  await drift.page.close();
+
+  const press = await working();
+  await press.page.mouse.down();
+  await press.page.mouse.up();
+  await press.page.waitForTimeout(300);
+  const pressed = await press.yielded();
+  expectUserResult("pressing the mouse in place dims glow", pressed, dimmed(pressed));
+  await press.page.close();
+
+  const rest = await working();
+  await rest.page.mouse.move(305, 200);
+  await rest.page.waitForTimeout(1200);
+  await rest.page.mouse.move(307, 200);
+  await rest.page.waitForTimeout(300);
+  const rested = await rest.yielded();
+  expectUserResult("5px move, 1.2s pause, then 2px jitter keeps glow bright", rested, bright(rested));
+  await rest.page.close();
 
   const normal = await setup(1100);
   await phase(normal, "#center", "normal");
