@@ -210,6 +210,9 @@ export function attachShorten(answer: HTMLElement): void {
 
   grip.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
+    // 鼠标拖不留焦点框：不让按下聚焦，键盘留下的焦点也放掉（焦点框只给键盘用）。
+    e.preventDefault();
+    if (document.activeElement === grip) grip.blur();
     startY = e.clientY; startLevel = level.get(answer) ?? 3; moved = false;
     grip.setPointerCapture(e.pointerId);
     grip.classList.add("dragging");

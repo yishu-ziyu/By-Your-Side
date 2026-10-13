@@ -155,6 +155,24 @@ try {
     assert.ok(up.level === "2" && down.level === "3", `上下键换层: ${JSON.stringify(evidence.keys)}`);
     assert.equal(await rp.evaluate(panel, `${ANSWER_JS}[0].querySelector(".shorten-grip").getAttribute("aria-valuetext")`), "全文", "把手 aria 跟着层走");
 
+    // 鼠标拖完不留焦点框（键盘刚把焦点放在把手上也一样）。
+    await drag(-40);
+    await drag(40);
+    const ring = await rp.evaluate(panel, `(() => { const g = ${ANSWER_JS}[0].querySelector(".shorten-grip"); return { focused: document.activeElement === g, outline: getComputedStyle(g).outlineStyle }; })()`) as { focused: boolean; outline: string };
+    evidence.ringAfterDrag = ring;
+    assert.ok(!ring.focused && ring.outline === "none", `鼠标拖完把手周围没有焦点框 ${JSON.stringify(ring)}`);
+
+    // 滚到回答中间，文末一排贴在底部：它的底色不透明，正文不和按钮、文字叠在一起。
+    const stuck = await rp.evaluate(panel, `(() => { const a = ${ANSWER_JS}[0], box = document.querySelector("#messages"); box.scrollTop = a.offsetTop - box.offsetTop + 40;
+      const row = a.querySelector(".answer-actions"), r = row.getBoundingClientRect(), b = box.getBoundingClientRect();
+      return { stuckAtBottom: Math.abs(r.bottom - b.bottom) < 40 && a.getBoundingClientRect().bottom > b.bottom + 20, background: getComputedStyle(row).backgroundColor }; })()`) as { stuckAtBottom: boolean; background: string };
+    evidence.stuckRow = stuck;
+    await rp.screenshot(panel, join(artifacts, "stuck-row.png"));
+    const alpha = /rgba\(.*,\s*([\d.]+)\)$/.exec(stuck.background)?.[1];
+    assert.ok(stuck.stuckAtBottom && stuck.background !== "rgba(0, 0, 0, 0)" && (alpha === undefined || Number(alpha) === 1), `贴底时这一排底色不透明 ${JSON.stringify(stuck)}`);
+    await rp.evaluate(panel, `document.querySelector("#messages").scrollTop = 1e9, true`);
+    await sleep(200);
+
     if (process.argv.includes("--record")) {
       // 现在是全文：往上拖到要点、再到一句，再往下拖回全文；每步停一会儿，让人看清。
       const stop = await recordScreen(rp.cdp, panel, join(artifacts, "drag.mp4"));
