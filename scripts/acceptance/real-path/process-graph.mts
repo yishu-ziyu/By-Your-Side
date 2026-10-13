@@ -5,7 +5,8 @@
  *   a) 先出现 B3 扇形 4 格，后出现 B1 竖向 ≥5 路；单步回合并不画分叉（见 process-block）。
  *   b) 5 路长出：第 1 路与第 5 路 animation-delay 差 280±40ms；分叉 450±50ms。
  *   c) 两条死路带人话原因，不出现「出错」。
- *   d) 各组汇合后 1.25±0.2 秒内收起，收起后对话里不留分叉行；过程块高度 ≤176px。
+ *   d) 各组汇合后收起，收起后对话里不留分叉行；过程块高度 ≤176px。
+ *   e) B1 从主轨弯出曲线（不是直角）。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -70,6 +71,7 @@ const READ = `(() => {
   const groups = [...(graph?.querySelectorAll(".run-graph-group") ?? [])].map((g) => {
     const rows = [...g.querySelectorAll(".run-graph-row, .run-tab-tile")];
     const delays = rows.map((row) => parseFloat(getComputedStyle(row).animationDelay) || 0);
+    const paths = [...g.querySelectorAll("svg path")].map((p) => p.getAttribute("d") ?? "");
     return {
       kind: g.dataset.kind ?? "",
       state: g.dataset.state ?? "",
@@ -79,6 +81,10 @@ const READ = `(() => {
       foldMs: Number(g.dataset.foldMs ?? NaN),
       delayMin: Math.min(...delays, 0),
       delayMax: Math.max(...delays, 0),
+      curves: paths.filter((d) => d.includes("C")).length,
+      dashed: [...g.querySelectorAll("svg path")].filter((p) => (p.getAttribute("stroke-dasharray") ?? "").startsWith("2")).length,
+      ring: !!g.querySelector(".run-graph-ring"),
+      you: [...g.querySelectorAll("[data-user]")].map((row) => row.textContent?.replace(/\\s+/g, " ").trim() ?? ""),
       dead: [...g.querySelectorAll("[data-state=dead]")].map((row) => row.textContent?.replace(/\\s+/g, " ").trim() ?? ""),
       fold: g.querySelector(".run-graph-fold")?.textContent ?? "",
     };
@@ -95,7 +101,7 @@ const READ = `(() => {
   };
 })()`;
 
-type Read = { title: string; height: number; graphShown: boolean; overflowX: boolean; text: string; groups: Array<{ kind: string; state: string; lanes: number; forkMs: number; foldHold: number; foldMs: number; delayMin: number; delayMax: number; dead: string[]; fold: string }> };
+type Read = { title: string; height: number; graphShown: boolean; overflowX: boolean; text: string; groups: Array<{ kind: string; state: string; lanes: number; forkMs: number; foldHold: number; foldMs: number; delayMin: number; delayMax: number; curves: number; dashed: number; ring: boolean; you: string[]; dead: string[]; fold: string }> };
 
 try {
   const work = await rp.attach((await rp.targets()).find((t) => t.url === "about:blank")!.targetId);
@@ -112,13 +118,16 @@ try {
 
   const read = async () => (await rp.evaluate(panel, READ)) as Read | null;
   const b3 = await until(async () => { const r = await read(); return r?.groups.some((g) => g.kind === "b3" && g.lanes >= 4) ? r : undefined; }, 30_000, "B3 扇形", 50);
+  await sleep(400);
   await rp.screenshot(panel, join(out, "b3.png"));
-  const b1 = await until(async () => { const r = await read(); return r?.groups.some((g) => g.kind === "b1" && g.lanes >= 5) ? r : undefined; }, 30_000, "B1 竖向", 50);
+  const b1 = await until(async () => { const r = await read(); return r?.groups.some((g) => g.kind === "b1" && g.lanes >= 5 && g.curves >= 5) ? r : undefined; }, 30_000, "B1 竖向", 50);
+  await sleep(400);
   await rp.screenshot(panel, join(out, "b1.png"));
   const fan = b3.groups.find((g) => g.kind === "b3")!;
   const vert = b1.groups.find((g) => g.kind === "b1" && g.lanes >= 5)!;
   check("a 先 B3 四页、后 B1 五路", fan.lanes >= 4 && vert.lanes >= 5 && b3.height <= 176, { b3: fan, b1: { kind: vert.kind, lanes: vert.lanes }, height: b3.height });
   check("b 五路错开 280±40ms，分叉 450±50ms", Math.abs((vert.delayMax - vert.delayMin) * 1000 - 280) <= 40 && Math.abs(vert.forkMs - 450) <= 50, { delayMin: vert.delayMin, delayMax: vert.delayMax, forkMs: vert.forkMs });
+  check("e 竖线用曲线离开主轨", vert.curves >= 5, { curves: vert.curves, dashed: vert.dashed });
 
   await until(async () => { const r = await read(); return r?.text.includes(ANSWER) ? r : undefined; }, 60_000, "回答", 100);
   await sleep(1_400);
