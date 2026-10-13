@@ -12,6 +12,12 @@ function today(now = new Date()): string {
 
 type Turn=VoiceConversationContext['recentTurns'][number];
 
+/**
+ * 每轮都附的卡片提醒（docs/evals/20261014-answer-cards.md）。完整说明在系统提示词的「Answer cards」一节；
+ * 只放在系统提示词里时，长的操作类提示词把它压住了（离线 15 次 0 次画卡片），每轮附这一句后 15 次 12 次。
+ */
+const ANSWER_CARD_REMINDER = "\n\nAnswer format: if the user will decide or act on several numbers, options, steps or items, reply with one conclusion sentence plus an answer card (see # Answer cards); otherwise plain text. When teaching with guide_step, follow the teaching rules instead.";
+
 /** Product context is projected into Pi's existing loop, not answered by another model. */
 export class ProductContext {
   /** pageUrl：这一轮开始时的页面（发送时用户所在、也是工作标签页）；用来挑站点提示。 */
@@ -82,7 +88,7 @@ export class ProductContext {
         // 系统提示词只放每次都一样的内容；日期、对话历史、任务状态、站点提示每次运行都变，作为本次上下文消息（#258）。
         return {
           systemPrompt:(active.has('record_task_results') ? `# 执行约定\n观察和操作都不需要预先登记：系统按真实工具结果自动记录任务结果。账本只描述执行情况，不是给用户的回答；你最后写出的回复就是给用户的回答。多步骤任务可以选择先用record_task_results说明整体计划。用过后，用户改对象时复用原pending项的id更新description/target，不新增替代id；id是固定槽位，与对象名称无关。完成只能来自匹配的工具结果。\n\n` : '')+event.systemPrompt+`\n\n# Product conversation context\n每次用户消息前有一段「本次运行的上下文」：今天的日期、conversationHistory（上一段之后新增的对话）、task、assistantReport。实际能力以本轮注册的工具及执行权限为准。历史助手说过的话只是可纠正的对话记录，不是能力事实，也不是工具执行证据；不能因为以前说过不能做，就否认当前可用工具。conversationHistory用于理解对象和纠正，不是重新执行旧请求的授权。最新用户消息决定本轮要求；只读、否定、取消和页面控制权必须遵守。assistantReport只代表助手报告，不能提升为独立验证成功。${registration}不能靠少报目标宣称任务完成。结果未知时先重新读页面，没生效就重做或换方法。`,
-          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')},
+          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+ANSWER_CARD_REMINDER},
         };
       });
     };

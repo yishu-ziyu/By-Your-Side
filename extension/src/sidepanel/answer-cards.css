@@ -1,0 +1,84 @@
+/* 回答里的卡片（answer-cards.ts）。用侧栏现有的纸面、墨色、字号档，不另起一套。
+   组件不单独做入场动画：流式时整段回答每帧重画，动画会反复重来；新字的淡入由 stream-reveal 负责。 */
+.gen-card {
+  margin: var(--s-1) 0 var(--gap-block);
+  border: 1px solid var(--content-border);
+  border-radius: var(--r);
+  background: var(--content-bg);
+  font-family: var(--font);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  overflow: hidden;
+}
+.gen-card:last-child { margin-bottom: 0; }
+.gc-head { padding: var(--s-3) 14px 0; }
+.gc-title { font-weight: 600; color: var(--text-primary); }
+.gc-sub { font-size: var(--fs-meta); color: var(--text-tertiary); }
+.gc-body { padding: 10px 14px var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
+
+/* 数字格 */
+.gc-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; container-type: inline-size; }
+.gc-stat { display: flex; flex-direction: column; padding: var(--s-2) 10px 9px; border-radius: 10px; background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline); }
+.gc-stat .k { flex: 1; display: flex; align-items: flex-start; gap: var(--s-1); font-size: var(--fs-micro); color: var(--text-tertiary); }
+.gc-stat .k > span:first-child { min-width: 0; }
+.gc-stat .tag { margin-left: auto; flex-shrink: 0; font-weight: 600; color: var(--apple-green); white-space: nowrap; }
+.gc-stat .v { margin-top: 1px; white-space: nowrap; font-size: clamp(15px, 4.6cqi, 19px); font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.gc-stat .n { font-size: var(--fs-micro); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.gc-stat.best { background: var(--content-bg); box-shadow: inset 0 0 0 1.5px var(--apple-green); }
+
+/* 步骤与清单：用 .msg.assistant.markdown 前缀压过正文的 ol/ul/li 排版 */
+.msg.assistant.markdown .gc-steps, .msg.assistant.markdown .gc-checks { list-style: none; margin: 0; padding: 0; }
+.msg.assistant.markdown .gc-step { display: grid; grid-template-columns: 22px 1fr; column-gap: 10px; margin: 0; padding: 7px 0; border-top: 1px solid var(--content-border); line-height: var(--lh-ui); }
+.msg.assistant.markdown .gc-step:first-child { border-top: 0; padding-top: 2px; }
+.gc-step .num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; font-size: var(--fs-micro); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-secondary); background: var(--well); }
+.gc-step .t, .gc-check .t { display: block; color: var(--text-primary); font-weight: 500; }
+.gc-step .d, .gc-check .d { display: block; font-size: var(--fs-meta); color: var(--text-tertiary); }
+.msg.assistant.markdown .gc-check { margin: 0; padding: 6px 0; border-top: 1px solid var(--content-border); line-height: var(--lh-ui); }
+.msg.assistant.markdown .gc-check:first-child { border-top: 0; padding-top: 0; }
+.gc-check label { display: grid; grid-template-columns: 18px 1fr; gap: var(--s-2); cursor: pointer; }
+.gc-check input { width: 15px; height: 15px; margin: 3px 0 0; accent-color: var(--apple-green); }
+.gc-check .t { font-weight: 400; }
+.gc-check:has(input:checked) .t { color: var(--text-tertiary); text-decoration: line-through; }
+
+/* 选项 */
+.gc-options { display: flex; flex-direction: column; gap: 6px; }
+.gc-option { padding: 9px 11px; border-radius: 10px; border: 1px solid var(--content-border); }
+.gc-option .gc-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--s-2); }
+.gc-option .name { white-space: nowrap; font-weight: 600; color: var(--text-primary); }
+.gc-option .badge { font-size: 10.5px; font-weight: 600; color: var(--accent); }
+.gc-option .price { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.gc-option .meta { flex-basis: 100%; font-size: var(--fs-meta); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.gc-option .gc-why { margin-top: 3px; font-size: var(--fs-meta); color: var(--text-tertiary); }
+.gc-option.pick { border-color: var(--accent); background: var(--accent-soft); }
+.gc-option.pick .gc-why { color: var(--accent); }
+
+/* 表格 */
+.msg.assistant.markdown .gc-table { display: table; width: 100%; border-collapse: collapse; font-size: var(--fs-meta); line-height: 1.5; font-variant-numeric: tabular-nums; }
+.msg.assistant.markdown .gc-table th { padding: var(--s-1) 6px; text-align: left; font-weight: 500; color: var(--text-tertiary); border-bottom: 1px solid var(--content-border); }
+.msg.assistant.markdown .gc-table td { padding: 6px; line-height: 1.5; color: var(--text-primary); border-bottom: 1px solid var(--content-border); }
+.msg.assistant.markdown .gc-table tr:last-child td { border-bottom: 0; }
+.msg.assistant.markdown .gc-table tr.best td { background: var(--apple-green-soft); font-weight: 500; }
+
+/* 提示 */
+.gc-callout { padding: 7px 10px; border-radius: var(--s-2); font-size: var(--fs-meta); line-height: 1.5; background: var(--accent-soft); color: var(--accent); }
+.gc-callout.warn { background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); }
+
+/* 按钮：主按钮沿用「连接模型」的墨色，次按钮描边 */
+.gc-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px var(--s-3); }
+.gc-btn {
+  display: inline-flex; align-items: center; min-height: 30px; padding: 5px var(--s-3);
+  border-radius: 10px; border: 1px solid var(--content-border); background: var(--content-bg); color: var(--text-primary);
+  font: 500 12.5px/1.3 var(--font); cursor: pointer;
+  transition: background var(--m-quick) var(--e-swift), transform var(--m-quick) var(--e-swift);
+}
+.gc-btn:hover { background: var(--content-subtle); }
+.gc-btn:active { transform: scale(.97); }
+.gc-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gc-btn.primary { background: var(--text-primary); border-color: var(--text-primary); color: var(--content-bg); }
+.gc-btn.primary:hover { background: color-mix(in srgb, var(--text-primary) 88%, white); }
+.gc-foot { padding: var(--s-2) 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-micro); color: var(--text-tertiary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .gc-btn { transition: none; }
+  .gc-btn:active { transform: none; }
+}
