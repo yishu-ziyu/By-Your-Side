@@ -1,13 +1,12 @@
 /**
  * A3：要写页面或跨站时，在任务条上放一行计划「会去 … · 不会做 …」，任务照常马上开始。
- * 不停下来等「开始」（10-13 用户定）：快、少等优先；要拦就点停止，付款和没授权的提交仍走发送前确认。
+ * 不停下来等「开始」（10-13 用户定）：快、少等优先；要拦就点停止。付款和发消息前助手仍会先停下问。
  * 「会做」就是用户气泡里的原话，这一行不再说一遍。
  */
 import { hostOf } from "./tab-mentions.js";
 
 export interface TaskPlanLines {
   go: string;
-  do: string;
   dont: string;
 }
 
@@ -52,13 +51,12 @@ export function planLines(text: string, pages: Array<{ title: string; url: strin
     if (name && !names.includes(name)) names.push(name);
   }
   const go = names.join("、") || "当前页";
-  const doLine = clip(text.replace(/[。！？.!?]+$/u, ""), 28) || "按你刚才说的做";
-  return { go, do: doLine, dont: notAuthorized(text) };
+  return { go, dont: notAuthorized(text) };
 }
 
 /**
  * 「不会做」只列用户这句话没授权的动作：助手把原话里的「提交」「下单」当授权（agent/src/prompt.ts），
- * 计划卡不能一边写「不会做 提交」一边让它真去提交。
+ * 计划行不能一边写「不会做 提交」一边让它真去提交。
  */
 function notAuthorized(text: string): string {
   // 先去掉名词（「报名表」「订单」不是要提交），再去掉否定说法（「不要直接提交」不是授权）。
