@@ -6,7 +6,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
@@ -41,7 +41,11 @@ const site = createServer((_req, res) => {
 await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 const pageUrl = `http://127.0.0.1:${siteAddress(site).port}/`;
 
-const model = await startScriptedModel([{ match: QUESTION, steps: [{ text: ANSWER, chunkDelayMs: 20 }] }]);
+const EARLIER_ANSWER = "这页先看过了。";
+const model = await startScriptedModel([
+  { match: QUESTION, steps: [{ text: ANSWER, chunkDelayMs: 20 }] },
+  { match: EARLIER, steps: [{ text: EARLIER_ANSWER, chunkDelayMs: 20 }] },
+]);
 const asked = () => model.requests.filter((r) => r.rule === QUESTION && r.tools).length;
 /** 所有主任务请求（带工具），不管匹不匹配脚本：连发两句时 EARLIER 被自动发出也算得到。 */
 const mainRequests = () => model.requests.filter((r) => r.tools).length;
@@ -173,16 +177,18 @@ try {
   const rpanel = await openFreshPanel(second, true);
   reducedPanel = rpanel;
   const requestsBefore = mainRequests();
-  // 连模型前连发两句：只自动发最新那句，前一张卡写明那句没发出。
+  // 连模型前连发两句：两句都自动发出。
+  const stopTwo = await recordScreen(second.cdp, rpanel, join(out, "two-queued.mp4"));
   await sendHeld(second, rpanel, EARLIER);
   await sendHeld(second, rpanel);
   await second.evaluate(rpanel, watchSrc);
   const rsettings = await saveCustom(second, rpanel, model.baseUrl, "local-fixture");
   await until(async () => String(await second.evaluate(rsettings, `document.querySelector("#model-status").textContent`)).startsWith("已保存") || undefined, 45_000, "减少动效已保存");
-  const rdone = await until(async () => { const v = await readView(second, rpanel); return v.text.includes(ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "减少动效结束态");
+  const rdone = await until(async () => { const v = await readView(second, rpanel); return v.text.includes(ANSWER) && v.text.includes(EARLIER_ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "减少动效结束态");
   await second.screenshot(rpanel, join(out, "04-reduced-motion.png"));
+  console.log("two-queued.mp4", await stopTwo());
   check("R4 减少动效：直接到结束态，不报变形时长", rdone.pill.includes("已连上") && !rdone.heldPending && rdone.morph == null && rdone.flip == null, rdone);
-  check("R1 连发两句：只自动发最新那句，前一句写明没发出，不留「连好后自动发」", asked() === 2 && mainRequests() - requestsBefore === 1 && !rdone.hint && rdone.dropped.includes("这句没有发出") && rdone.users.length === 2 && rdone.users[0]!.startsWith(EARLIER), { asked: asked(), mainRequests: mainRequests() - requestsBefore, hint: rdone.hint, dropped: rdone.dropped, users: rdone.users });
+  check("R2 连发两句：两句都自动发出，不留「这句没有发出」", asked() === 2 && mainRequests() - requestsBefore === 2 && !rdone.hint && !rdone.dropped && rdone.users.length === 2 && rdone.users[0]!.startsWith(EARLIER) && rdone.users[1]!.startsWith(QUESTION), { asked: asked(), mainRequests: mainRequests() - requestsBefore, hint: rdone.hint, dropped: rdone.dropped, users: rdone.users });
 
   // 先试连再保存：限流不算密钥错，照样保存，并说刚才没连上。
   await fillCustom(second, rsettings, busyUrl, "sk-busy-0000");
