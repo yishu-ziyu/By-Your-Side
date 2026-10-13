@@ -20,6 +20,7 @@ import { renderMarkdownHtml } from "./markdown.js";
 import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
+import { adoptFillUndo, noteFillUndo, resetFillUndo, setFillUndoSender } from "./fill-undo.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
@@ -165,6 +166,7 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   adoptUsedLine(answer);
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
+  adoptFillUndo(answer);
 
   // 补放历史时不给：那一页早已不是这次回答的结果页。
   if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
@@ -1077,6 +1079,7 @@ function resetConversationRender(): void {
 }
 
 function selectConversation(id: string, notify = true): void {
+  resetFillUndo();
   const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
 
   if (id !== selectedConversationId) voiceUI.stop();
@@ -5728,7 +5731,26 @@ function handleServerMessage(raw: string): void {
   }
 }
 
+/** 还原状态属于这一轮的回答：最新一条用户消息后面还没有写完的回答时，先不挂，等回答写完再补（adoptFillUndo）。 */
+function fillUndoAnswer(): HTMLElement | null {
+  const answer = messagesEl.querySelector<HTMLElement>(".msg.assistant.answer-latest");
+  const user = Array.from(messagesEl.querySelectorAll<HTMLElement>(".msg.user")).pop();
+
+  if (!answer || (user && answer.compareDocumentPosition(user) & Node.DOCUMENT_POSITION_FOLLOWING)) return null;
+
+  return answer;
+}
+
+setFillUndoSender(() => port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg));
+
 function handleBgMessage(envelope: BgToPanel): void {
+  if (envelope.kind === "fill_undo") {
+    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
+    noteFillUndo(envelope.undo, envelope.refused, fillUndoAnswer());
+
+    return;
+  }
+
   if (envelope.kind === "pong") {
     lastPong = performance.now();
     pingSentAt = null;

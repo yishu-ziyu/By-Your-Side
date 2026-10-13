@@ -1,7 +1,8 @@
-import { createElement as icon, Ellipsis } from "lucide";
+import { createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
+import { fillUndoLabel, fillUndoOf, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。 */
 const CHROME = ".gc-actions,.answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
@@ -60,15 +61,19 @@ export async function copyAnswerTable(answer: HTMLElement): Promise<void> {
 
 export function listResultActions(answer: HTMLElement): ResultAction[] {
   const actions: ResultAction[] = [];
+  const undo = fillUndoOf(answer);
+
+  // 这一轮填过表、还没提交：最可能要做的是把填错的改回去，所以它当主动作。
+  if (undo?.state === "ready") actions.push({ id: "undo-fill", label: fillUndoLabel(undo), primary: true, run: requestFillUndo });
   const table = tableTsv(answer);
   const pageBtn = answer.querySelector<HTMLButtonElement>(".answer-show-tab");
-  if (table) actions.push({ id: "copy-table", label: "复制为表格", shortcut: "↵", primary: true, run: copyAnswerTable });
+  if (table) actions.push({ id: "copy-table", label: "复制为表格", shortcut: actions.length ? undefined : "↵", primary: !actions.length, run: copyAnswerTable });
   if (pageBtn) {
     actions.push({
       id: "show-page",
       label: "在页面上查看",
-      shortcut: table ? undefined : "↵",
-      primary: !table,
+      shortcut: actions.some((a) => a.primary) ? undefined : "↵",
+      primary: !actions.some((a) => a.primary),
       run: async () => { pageBtn.click(); },
     });
   }
@@ -88,12 +93,17 @@ export function listResultActions(answer: HTMLElement): ResultAction[] {
 export function refreshPrimaryAction(answer: HTMLElement): void {
   const primary = answer.querySelector<HTMLButtonElement>(".answer-primary");
   if (!primary) return;
-  const action = listResultActions(answer).find((a) => a.primary);
-  if (!action) return;
-  primary.dataset.action = action.id;
+  const undo = fillUndoOf(answer);
+  // 还原过、已提交、页面变了：按钮灰掉，写为什么不能再点；正在还原时也灰掉。
+  const stuck = undo && (undo.state !== "ready" || isFillUndoPending(answer));
+  const action = stuck ? null : listResultActions(answer).find((a) => a.primary);
+  if (!stuck && !action) return;
+  primary.dataset.action = action?.id ?? "undo-fill";
+  primary.disabled = !!stuck;
   primary.replaceChildren();
+  if (undo) primary.append(icon(Undo2));
   const label = document.createElement("span");
-  label.textContent = action.label;
+  label.textContent = action?.label ?? (isFillUndoPending(answer) ? "正在还原…" : fillUndoLabel(undo!));
   const hint = document.createElement("span");
   hint.className = "answer-enter-hint";
   hint.textContent = "↵";
@@ -111,6 +121,8 @@ export async function runPrimaryAction(answer: HTMLElement): Promise<void> {
     if (feedback) feedback.textContent = "没做成";
   }
 }
+
+onFillUndoChange(refreshPrimaryAction);
 
 const SECTION_TITLES = { sources: "读过的网页" } as const;
 
