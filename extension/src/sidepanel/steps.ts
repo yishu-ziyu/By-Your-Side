@@ -332,10 +332,10 @@ export function spokenDuration(start: number, end: number): string | null {
 }
 
 /** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链（#263）。 */
-export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed"): string {
+export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed", failed = 1): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
 
-  if (outcome === "failed") return `${done} · 有 1 步没做成`;
+  if (outcome === "failed") return `${done} · 有 ${Math.max(failed, 1)} 步没做成`;
 
   if (outcome === "stopped") return `已中止 · ${done}`;
 

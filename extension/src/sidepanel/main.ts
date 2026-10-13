@@ -2350,7 +2350,7 @@ interface RunHost {
   /** 目标核对到哪了：checking 核对中；continued 判继续、由下一块过程接着做；unavailable 没有结论。 */
   check: "checking" | "done" | "not_done" | "needs_user" | "continued" | "unavailable" | null;
   /** 收尾时定下的回执材料，收起回答后的过程行据此重画（做了几步 · 耗时 · 核对状态）。 */
-  receipt: { head: string; total: string | null; failed: number; ended: "completed" | "failed" | "stopped" } | null;
+  receipt: { head: string; total: string | null; steps: number; failed: number; ended: "completed" | "failed" | "stopped" } | null;
 }
 
 const ACTION_ICONS = {
@@ -3713,8 +3713,8 @@ function finishRun(): void {
     // 换了做法的那步不算进「做了几步」，单独写在末尾。
     const head = hasResumeReceipt && done.length === 0 && ended === "completed" ? "恢复记录"
       : only?.dataset.past ? only.dataset.past
-      : finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended);
-    run.receipt = { head, total: spokenDuration(run.start, endedAt), failed, ended };
+      : finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended, failed);
+    run.receipt = { head, total: spokenDuration(run.start, endedAt), steps: done.length, failed, ended };
 
     if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, head, true);
     else if (only?.dataset.past) setRunTitle(run, head, true);
@@ -3782,6 +3782,12 @@ function foldAnsweredRun(run: RunHost): void {
   const answer = run.answer;
 
   if (!answer || !run.receipt) return;
+
+  // 最后一步没做成、随后交了回答：这一轮做完了，过程行照常写核对结论，没做成的那几步在展开的过程里。
+  if (run.receipt.ended === "failed" && run.orbActivity.onlyStepFailed()) {
+    run.receipt.ended = "completed";
+    run.receipt.head = finishedRunTitle(run.receipt.steps - run.receipt.failed, "completed");
+  }
   const openings: HTMLElement[] = [];
 
   for (let node = run.root.previousElementSibling; node && !node.matches(".msg.user, details.run-steps, .claim-fix"); node = node.previousElementSibling) {
