@@ -44,7 +44,7 @@ import {
 } from "../../../shared/control.js";
 import { dimPage, glowPage } from "./page-glow.js";
 import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
-import type { PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
+import type { PanelHistoryEntry, PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
 import { autoResumeIfSafe } from "./auto-resume.js";
@@ -1867,6 +1867,39 @@ return;
  * user_message / steer 转发前附上发送那一刻用户正在看的标签页（"这页面"类指代的锚点）。
  * 查询失败或无活动标签时原样发送，不阻塞主流程。
  */
+async function readMentionedPages(entry: PanelHistoryEntry, pages: PageContext[], currentTabId?: number): Promise<void> {
+  const owner = conversationId;
+  // 结果写回这一条历史再落盘：重开侧栏、后台重启后胶囊仍是已读或读不到，不会退回待读。
+  const settle = (tabId: number, status: "read" | "unread", reason?: string): void => {
+    if (conversationId !== owner || entry.item.kind !== "user") return;
+    const page = entry.item.context?.pages?.find((p) => p.tabId === tabId);
+    if (page) {
+      page.status = status;
+      if (reason) page.reason = reason;
+      flushHistory();
+    }
+    broadcast({ kind: "mention_status", seq: entry.seq, tabId, status, ...(reason ? { reason } : {}) });
+  };
+
+  for (const page of pages) {
+    if (page.tabId === currentTabId) {
+      settle(page.tabId, "read");
+      continue;
+    }
+
+    try {
+      const got = await pageText({ tabId: page.tabId, max: 4_000 });
+      if (!got.text.trim()) throw new Error("这一页没有可读的正文");
+      settle(page.tabId, "read");
+    } catch (error) {
+      const reason = error instanceof Error && /无效|关掉|不存在|No tab/.test(error.message)
+        ? "那一页已经关掉了"
+        : "读不到这一页";
+      settle(page.tabId, "unread", reason);
+    }
+  }
+}
+
 async function attachPageContext<T extends Extract<ClientMessage, { type: "user_message" | "steer" }>>(
   msg: T,
 ): Promise<T> {
@@ -2036,15 +2069,20 @@ function attachPanel(port: chrome.runtime.Port) {
           void stopTrailReplay(key());
 
           void attachPageContext(client).then((enriched) => {
+            const mentioned = wireClient.type === "task_action" ? wireClient.request.pages : undefined;
             // 页面要等查完活动标签页才知道：补进这一条历史，侧栏当场的 chip 和重开后的回放都用它。
-            if (enriched.context && entry.item.kind === "user") {
-              const { title, url, selection } = enriched.context;
+            if (entry.item.kind === "user" && (enriched.context || mentioned?.length)) {
+              const { title, url, selection } = enriched.context ?? { title: "", url: "", selection: undefined };
               const context: UserTurnContext = { title, url };
 
               if (selection?.text) context.selection = selection.text;
+              if (mentioned?.length) {
+                context.pages = mentioned.map((page) => ({ title: page.title, url: page.url, tabId: page.tabId, status: "pending" as const }));
+              }
               entry.item.context = context;
               flushHistory();
               broadcast({ kind: "turn_context", seq: entry.seq, context: entry.item.context });
+              if (mentioned?.length) void readMentionedPages(entry, mentioned, enriched.context?.tabId);
             }
 
             // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，

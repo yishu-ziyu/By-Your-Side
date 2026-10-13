@@ -87,6 +87,9 @@ import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
+import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
+import { mountTaskPlan } from "./task-plan.js";
+import { mountAnswerCommand } from "./answer-command.js";
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
 
@@ -335,6 +338,7 @@ app.innerHTML = `
       </div>
       <div id="attachments-strip" class="attachments-strip" hidden></div>
       <p id="handoff-banner" hidden role="status"></p>
+      <div id="mention-strip" class="mention-strip" hidden></div>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
         <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截图" aria-haspopup="true">+</button>
@@ -415,6 +419,40 @@ const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(t
 const slashSkills = mountSlashSkills({
   composerEl, inputEl,
   run: (text) => { inputEl.value = text; inputEl.dispatchEvent(new Event("input")); sendInput(); },
+});
+
+const tabMentions = mountTabMentions({
+  composerEl,
+  inputEl,
+  stripEl: document.getElementById("mention-strip")!,
+  onChange: () => saveDraft(),
+});
+
+let pendingContinueDraft: string | null = null;
+
+const taskPlan = mountTaskPlan({
+  root: document.getElementById("task-bar-root")!,
+  inputEl,
+  onStart: (text) => {
+    inputEl.value = text;
+    inputEl.dispatchEvent(new Event("input"));
+    sendInput(undefined, undefined, { skipPlan: true });
+  },
+});
+
+const answerCommand = mountAnswerCommand({
+  inputEl,
+  latestAnswer: () => document.querySelector<HTMLElement>(".msg.assistant.answer-latest"),
+  saveSkill: (text) => slashSkills.saveFromText(text),
+  continueInNew: (text) => {
+    pendingContinueDraft = `接着刚才：${text}`;
+    document.getElementById("conversation-new")?.click();
+  },
+});
+
+document.addEventListener("answer-command", (event) => {
+  const answer = (event.target as HTMLElement | null)?.closest<HTMLElement>(".msg.assistant");
+  answerCommand.open(answer);
 });
 
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
@@ -542,7 +580,7 @@ const memoryTitle = document.getElementById("memory-title") as HTMLElement;
 
 const memoryBody = document.getElementById("memory-body") as HTMLElement;
 
-type ConversationDraft = { text: string; attachments: Attachment[]; ask: PendingAsk | null };
+type ConversationDraft = { text: string; attachments: Attachment[]; ask: PendingAsk | null; pages?: MentionedTab[] };
 
 const conversationDrafts = new Map<string, ConversationDraft>();
 
@@ -562,7 +600,7 @@ const DRAFT_KEY = "sideagent_conversation_draft:";
 function saveDraft(): void {
   if (restoringDraft || !attachments) return;
   const id = selectedConversationId;
-  const draft: ConversationDraft = { text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk };
+  const draft: ConversationDraft = { text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk, pages: tabMentions.items() };
   const fingerprint = JSON.stringify(draft);
 
   if (draftFingerprints.get(id) === fingerprint) return;
@@ -589,12 +627,13 @@ async function restoreDraft(id: string): Promise<void> {
   try {
     inputEl.value = typeof draft?.text === "string" ? draft.text : "";
     attachments.restore(draft?.attachments ?? [], id);
+    tabMentions.restore(Array.isArray(draft?.pages) ? draft.pages : []);
     pendingAsk = draft?.ask ?? null;
 
     if (pendingAsk) applyPendingAsk(pendingAsk);
     else if (askCiteEl) askCiteEl.hidden = true;
     autoResize();
-    draftFingerprints.set(id, JSON.stringify({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk }));
+    draftFingerprints.set(id, JSON.stringify({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk, pages: tabMentions.items() }));
     currentDraftReady = true;
     updateStarterVisibility();
   } finally { restoringDraft = false; }
@@ -1073,6 +1112,7 @@ function selectConversation(id: string, notify = true): void {
 
     if (askCiteEl) askCiteEl.hidden = true;
     attachments.restore([], id);
+    tabMentions.clear();
     restoringDraft = false;
     modelPicker.reset();
 
@@ -1083,6 +1123,7 @@ function selectConversation(id: string, notify = true): void {
   renderConversations();
   renderTaskStrip();
   taskBar.reset();
+  taskPlan.reset();
   queryTaskView();
 
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
@@ -2871,6 +2912,21 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
     chips.push(chip);
   }
 
+  for (const page of context.pages ?? []) {
+    const glyph = siteGlyph(page.url, hostOf(page.url));
+    glyph.className = "cg";
+    const chip = ctxChip(glyph, page.title || hostOf(page.url), [page.title, page.url, page.reason].filter(Boolean).join("\n"));
+    chip.dataset.tabId = String(page.tabId);
+    chip.dataset.status = page.status ?? "pending";
+    if (page.status === "read") {
+      const ok = document.createElement("span");
+      ok.className = "ctx-ok";
+      ok.textContent = "✓";
+      chip.append(ok);
+    }
+    chips.push(chip);
+  }
+
   if (context.selection) {
     const glyph = document.createElement("span");
     glyph.className = "cg";
@@ -3959,6 +4015,8 @@ function finishRun(): void {
   runStartAt = 0;
 
   if (!run) return;
+  // 计划那一行只陪这一轮任务；做完、停下、出错都收掉，不挂到下一件事上。
+  taskPlan.endRun();
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
@@ -5580,6 +5638,14 @@ function handleServerMessage(raw: string): void {
       conversationRequest = null;
       selectConversation(msg.conversation.id);
 
+      if (pendingContinueDraft) {
+        inputEl.value = pendingContinueDraft;
+        pendingContinueDraft = null;
+        inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+        autoResize();
+        saveDraft();
+      }
+
       if (sendAfterCreate) { sendAfterCreate = false; sendInput(); }
     }
 
@@ -5748,6 +5814,27 @@ function handleBgMessage(envelope: BgToPanel): void {
     const bubble = userBubbles.get(envelope.seq);
 
     if (bubble) renderTurnContext(bubble, envelope.context);
+
+    return;
+  }
+
+  if (envelope.kind === "mention_status") {
+    if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
+    // 同一标签页可能被好几条消息 @ 过：只改这一条消息下面的胶囊。
+    const row = userBubbles.get(envelope.seq)?.nextElementSibling;
+    const chip = row instanceof HTMLElement && row.matches(".ctx-chips")
+      ? row.querySelector<HTMLElement>(`.ctx-chip[data-tab-id="${envelope.tabId}"]`)
+      : null;
+    if (chip) {
+      chip.dataset.status = envelope.status;
+      if (envelope.status === "read" && !chip.querySelector(".ctx-ok")) {
+        const ok = document.createElement("span");
+        ok.className = "ctx-ok";
+        ok.textContent = "✓";
+        chip.append(ok);
+      }
+      if (envelope.reason) chip.title = `${chip.title}\n${envelope.reason}`;
+    }
 
     return;
   }
@@ -6180,7 +6267,7 @@ function restoreLostSend(): void {
  * quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。
  * quickPage：quick 这句话问的是哪一页（连好模型后重发时用原来那页）。返回是否交了出去。
  */
-function sendInput(quick?: string, quickPage?: PageContext): boolean {
+function sendInput(quick?: string, quickPage?: PageContext, opts?: { skipPlan?: boolean }): boolean {
   if (!conversationReady) return false;
 
   // 点「新会话」后、新会话建好前：选中的还是旧会话，现在发会落进旧会话。等建好再发。
@@ -6211,6 +6298,20 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
       }
     : undefined);
 
+  const mentioned = quick ? [] : tabMentions.pages();
+  if (!quick && !opts?.skipPlan && !running && !held) {
+    if (taskPlan.visible()) {
+      taskPlan.confirm();
+      return true;
+    }
+    const currentUrl = pendingAsk?.url || activeTabInfo?.url || "";
+    const currentTitle = pendingAsk?.title || activeTabInfo?.title || "";
+    if (taskPlan.shouldAsk(text, mentioned, currentUrl)) {
+      taskPlan.show(text, tabMentions.items(), currentUrl, currentTitle);
+      return true;
+    }
+  }
+
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
   const circled = pendingAtts.flatMap(att => (att.circle ? [att.circle] : []));
@@ -6226,6 +6327,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
     expectedRunId: conversations.get(selectedConversationId)?.runId ?? null,
     text,
     context,
+    pages: mentioned.length ? mentioned : undefined,
     attachments: clientAttachments,
   };
 
@@ -6275,6 +6377,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
   if (quick) return true;
   inputEl.value = "";
+  tabMentions.clear();
   syncSteerSend();
   clearPendingAsk();
   attachments.clear();
@@ -6304,12 +6407,19 @@ inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBar
 window.addEventListener("pagehide", saveDraft);
 
 inputEl.addEventListener("keydown", (e) => {
+  if (taskPlan.handleKeydown(e)) return;
+  if (tabMentions.handleKeydown(e)) return;
   if (slashSkills.handleKeydown(e)) return;
+  if (answerCommand.handleKeydown(e)) return;
 
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     sendInput();
   }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (answerCommand.handleKeydown(e)) return;
 });
 
 function requestTakeover(): void {
