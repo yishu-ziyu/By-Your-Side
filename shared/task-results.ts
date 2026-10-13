@@ -80,6 +80,30 @@ export function resultLocksWhenUnknown(item:{tool:string;evidence?:{effectful?:b
   return commitsHarm(item.tool)||item.tool==='fetch'&&item.evidence?.effectful===true;
 }
 
+const FILL_RESULT_TOOLS = new Set(["fill", "type_text", "page_operation", "select_option"]);
+
+const SUBMIT_HINT = /提交|发送|submit|send/i;
+
+/** 会话列表用的一句结局：有填写就说填了几栏、交没交；没有就按任务结局。 */
+export function endingFromResults(
+  results: ReadonlyArray<Pick<TaskResultItem, "tool" | "status" | "target" | "description" | "evidence">>,
+  outcome: "complete" | "partial" | "stopped" | "error",
+): string {
+  const fills = results.filter((item) => FILL_RESULT_TOOLS.has(item.tool) && item.status === "satisfied");
+  const submitted = results.some((item) => item.status === "satisfied" && (
+    (item.tool === "click" && SUBMIT_HINT.test(`${item.target ?? ""} ${item.description}`))
+    || item.tool === "fetch" && item.evidence?.effectful === true
+  ));
+
+  if (fills.length) return submitted ? `填好 ${fills.length} 栏并提交了` : `填好 ${fills.length} 栏，没提交`;
+  if (outcome === "stopped") return "你中止了任务";
+  if (outcome === "error") return "上次出错";
+  if (outcome === "partial") return "上次没做完";
+  if (outcome === "complete") return "做完了";
+
+  return "";
+}
+
 export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message"] as const;
 
 /** 算作页面读回的真实只读工具。read_elements 是宿主按选择器的有界多元素读回，与 read_element 同级。 */
