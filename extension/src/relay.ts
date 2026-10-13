@@ -25,7 +25,12 @@ export type PanelHistoryItem =
   | { kind: "server"; msg: PanelHistoryServerMessage };
 
 /** 这一轮随消息带给助手的页面与选段；侧栏画成用户消息下面的 chip。 */
-export interface UserTurnContext { title: string; url: string; selection?: string }
+export interface UserTurnContext {
+  title: string;
+  url: string;
+  selection?: string;
+  pages?: Array<{ title: string; url: string; tabId: number; status?: "pending" | "read" | "unread"; reason?: string }>;
+}
 
 /** background 分配的单调序号是增量同步游标。 */
 export interface PanelHistoryEntry {
@@ -46,7 +51,9 @@ export type PanelToBg =
   /** 请重连。 */
   | { kind: "retry" }
   /** 端口存活探测：service worker 被 Chrome 停掉后，面板手里的端口不一定会收到断开事件。 */
-  | { kind: "ping" };
+  | { kind: "ping" }
+  /** 悬停/聚焦过程步骤：在网页上圈出当时点过的元素；target 空则收起。 */
+  | { kind: "inspect_step"; target?: string; tabId?: number; url?: string; caption?: string };
 
 export type BgToPanel = BgToPanelPayload & { conversationId?: string };
 
@@ -73,5 +80,11 @@ type BgToPanelPayload =
   | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
   /** 用户那一条历史补上了这一轮带的页面（见 UserTurnContext）。 */
   | { kind: "turn_context"; seq: number; context: UserTurnContext }
+  /** @ 拉进来的标签页：扩展后台真读到正文才标已读。 */
+  | { kind: "mention_status"; seq: number; tabId: number; status: "read" | "unread"; reason?: string }
   /** 一次同步回放结束：面板据此核对旧端口上的消息是否丢了。 */
-  | { kind: "synced" };
+  | { kind: "synced" }
+  /** 步骤对照：找到了就圈，找不到回 ok=false，侧栏写「页面已变」。 */
+  | { kind: "inspect_step_result"; ok: boolean }
+  /** 接管/交还编排：离开 → 你在操作 → 重读 → 助手回来。由真实事件推进。 */
+  | { kind: "handoff_phase"; phase: "leaving" | "user" | "rereading" | "agent" };

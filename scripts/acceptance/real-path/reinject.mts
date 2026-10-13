@@ -1,7 +1,7 @@
 /**
  * 扩展重载后，已经打开的网页不刷新也能用（docs/evals/20261007-reinject-and-step-icons.md R1）。
  *   npx tsx scripts/acceptance/real-path/reinject.mts --headless
- * 先打开网页，再用 CDP Extensions.loadUnpacked 从同一目录重新加载扩展（等同于在扩展管理页点重载），然后不刷新网页、直接按住右 ⌥：
+ * 先打开网页，再让扩展自己重载（chrome.runtime.reload，等同于在扩展管理页点重载），然后不刷新网页、直接按住右 ⌥：
  * 网页底部出现「在听」的胶囊，而且只有一个（旧脚本断开后不再接按键）。
  */
 import assert from "node:assert/strict";
@@ -45,7 +45,8 @@ try {
   const workerOf = async () => (await rp.targets()).find(t => t.type === "service_worker" && t.url.includes(rp.extensionId))?.targetId;
   const oldWorker = await workerOf();
   const reloadedAt = Date.now();
-  await rp.cdp.send("Extensions.loadUnpacked", { path: rp.dirs.extension });
+  // 让扩展自己重载（等同于扩展管理页点重载）。10-12 起测试用的 Chrome for Testing 不再开放 CDP Extensions.loadUnpacked。
+  await rp.evaluate(await rp.attach(oldWorker!), "chrome.runtime.reload(), true").catch(() => { /* 后台随重载断开 */ });
   await until(async () => { const now = await workerOf(); return now && now !== oldWorker ? now : undefined; }, 30_000, "new background after reload");
   await sleep(1_500);
   evidence.reloadMs = Date.now() - reloadedAt;

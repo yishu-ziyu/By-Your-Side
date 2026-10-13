@@ -95,6 +95,8 @@ export interface SlashSkills {
   handleKeydown: (event: KeyboardEvent) => boolean;
   /** 给已发出的用户消息加「存成技能」。 */
   decorateUserMessage: (bubble: HTMLElement, text: string) => void;
+  /** 把一段文字打开技能编辑（结果动作列表用）。 */
+  saveFromText: (text: string) => void;
 }
 
 export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOptions): SlashSkills {
@@ -496,5 +498,5 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     bubble.append(btn);
   }
 
-  return { handleKeydown, decorateUserMessage };
+  return { handleKeydown, decorateUserMessage, saveFromText: saveFromMessage };
 }

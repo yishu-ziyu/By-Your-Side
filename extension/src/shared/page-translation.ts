@@ -51,8 +51,11 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   const clear = () => { if (state?.blocks.size) mutated = true; state?.restore(); delete world.__bysTranslation; };
 
+  // The agent's own partial translations (js, data-bys-translation="manual") are not tool state: restore and a whole-page run remove them, so no paragraph shows two translations.
+  const dropManual = () => { for (const el of document.querySelectorAll('[data-bys-translation="manual"]')) { el.remove(); mutated = true; } };
+
   if (command.action === 'restore') {
-    clear();
+    clear(); dropManual();
 
     return {document: '', language: '', mode: 'bilingual', fontSize: null, translated: 0, remaining: 0, unsupported: 0, blocks: []};
   }
@@ -70,6 +73,8 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
     return {document: state?.token ?? '', language: state?.language ?? '', mode: state?.mode ?? 'bilingual', fontSize: state?.fontSize ?? null, translated: 0, remaining: 0, unsupported: 0, blocks: []};
   }
+
+  if (command.action === 'begin') dropManual();
 
   if (command.action === 'begin' && state && command.language && state.language !== command.language) { clear(); state = undefined; }
 

@@ -33,7 +33,7 @@ export interface SendGuard {
 type Outcome = "send" | "decline" | "stopped" | "left" | "timeout";
 
 /** 每种「用户没让发」都带这句：别让助手改按回车或点别的按钮把它发出去。 */
-const NO_OTHER_WAY = "不要换别的办法发出去：不要按回车，也不要点别的按钮。";
+const NO_OTHER_WAY = "不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。";
 
 const TEXT: Record<Exclude<Outcome, "send">, string> = {
   decline: `用户在网页上选了「不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,

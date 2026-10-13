@@ -2,7 +2,7 @@ import { goalsSatisfied } from '../../shared/task-goals.js';
 import { TaskGoalBook } from './task-goals.js';
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
-import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
+import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX, deliveryTextWithNote } from "../../shared/voice.js";
 import { deriveResultDescription, extractResultTarget, isSupersededUnknown, resultLocksWhenUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
@@ -360,7 +360,8 @@ return;}
       if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;
     } else if (e.kind === "user_delivery") {
       if (lead && this.ledger.record(e.delivery)) {
-        this.pushTurn("assistant", e.delivery.text);
+        // 旁路模型看到的对话原文仍带宿主补的一句，与 10-13 之前一致。
+        this.pushTurn("assistant", deliveryTextWithNote(e.delivery));
 
         if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
       }
@@ -401,7 +402,7 @@ return;}
       const target = extractResultTarget(e.params, e.name);
 
       // T06：导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
-      if ((e.name === "navigate" || e.name === "open_tab") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
+      if ((e.name === "navigate" || e.name === "open_tab" || e.name === "tabs" && e.params?.action === "open") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
       let tabAction: string | undefined;
 
       if (e.name === 'tabs') {
@@ -495,7 +496,7 @@ if(page)this.recoveryInput.page=page;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
         // 出错时记成结果未知还是失败由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 记成结果未知。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: fact,
-          effectful:started.durableEffect });
+          effectful:started.durableEffect, reason:e.reason });
 
         if((started.durableEffect||e.name==='fetch')&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 
