@@ -243,7 +243,8 @@ try {
   await writeFile(join(artifacts, "export.jsonl"), traces);
   evidence.toolTexts = toolTexts;
   assert.ok(toolTexts.some(t => t.includes("上海")), `5: the receipts are captured (so the absence check is not vacuous) ${JSON.stringify(toolTexts)}`);
-  assert.ok(traces.includes("上海"), "5: the export holds this run's form activity (so the absence check is not vacuous)");
+  // 导出会遮住填写的值（「上海」也在内），所以按工具的目标判断导出里有本次的填写记录。
+  assert.ok(traces.includes('"#city"') && traces.includes('"fill"'), "5: the export holds this run's fill of the city field (so the absence check is not vacuous)");
   const views = String(await rp.evaluate(panel, "JSON.stringify(window.__undo.views)"));
   evidence.viewsChars = views.length;
   assert.ok(views.includes("城市") && !views.includes(ORIG), "5: the restore states the sidebar received name the fields but never carry the original value");
