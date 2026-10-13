@@ -27,6 +27,8 @@ export type GraphTool = {
   failed?: boolean;
   reason?: string;
   result?: string;
+  /** 交给用户的蓝色通道，不是助手自己的一步。 */
+  user?: boolean;
 };
 
 export function isLocalHost(host: string): boolean {
@@ -63,33 +65,35 @@ export function classifyKind(tools: readonly GraphTool[]): GraphKind | null {
 }
 
 export function clipReason(reason: string): string {
-  const text = reason.replace(/\s+/g, " ").trim();
+  const text = reason.replace(/\s+/g, " ").replace(/\s+at\s+\S.*/, "").trim();
 
   return text.length <= 16 ? text : `${text.slice(0, 15)}…`;
 }
 
-/** 汇合后那一行：查了几路、几路没成。 */
+/** 汇合后那一行：查了几路、几路没成。只读页写「看了」，真开新页才写「开了」。 */
 export function groupSummary(kind: GraphKind, tools: readonly GraphTool[]): string {
-  if (kind === "you") return "你交还了";
-  const dead = tools.filter((tool) => tool.failed).length;
-  const live = tools.length - dead;
+  const yours = tools.filter((tool) => tool.user || tool.id === "you");
+  const rest = tools.filter((tool) => !tool.user && tool.id !== "you");
+  if (!rest.length) return "你交还了";
+  const dead = rest.filter((tool) => tool.failed).length;
+  const live = rest.length - dead;
+  const you = yours.length ? " · 你交还了" : "";
 
   if (kind === "b3") {
-    // 只有真开新页才算「开了」；切过去或读已开着的页算「看了」。
     const opens = (tool: GraphTool) => tool.name === "open_tab" || (tool.name === "tabs" && tool.params.action === "open");
-    const opened = tools.filter((tool) => !tool.failed && opens(tool)).length;
+    const opened = rest.filter((tool) => !tool.failed && opens(tool)).length;
     const looked = live - opened;
     const tail = dead ? ` · ${dead} 页没打开` : "";
-    if (!live) return `${dead} 页都没打开`;
+    if (!live) return `${dead} 页都没打开${you}`;
     const head = opened && looked ? `开了 ${opened} 个、看了 ${looked} 个标签页` : opened ? `开了 ${opened} 个标签页` : `看了 ${looked} 个标签页`;
 
-    return `${head}${tail}`;
+    return `${head}${tail}${you}`;
   }
 
-  if (!live) return `${dead} 路都没成`;
+  if (!live) return `${dead} 路都没成${you}`;
   const tail = dead ? ` · ${dead} 个接口没回` : "";
 
-  return `查了 ${live} 路${tail}`;
+  return `查了 ${live} 路${tail}${you}`;
 }
 
 export function reducedMotion(): boolean {
