@@ -5,7 +5,7 @@
  *   a) 先出现 B3 扇形 4 格，后出现 B1 竖向 ≥5 路；单步回合并不画分叉（见 process-block）。
  *   b) 5 路长出：第 1 路与第 5 路 animation-delay 差 280±40ms；分叉 450±50ms。
  *   c) 两条死路带人话原因，不出现「出错」。
- *   d) 各组汇合后 1.25±0.2 秒内折成 1 行；过程块高度 ≤176px。
+ *   d) 各组汇合后 1.25±0.2 秒内收起，收起后对话里不留分叉行；过程块高度 ≤176px。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -88,13 +88,14 @@ const READ = `(() => {
   return {
     title: d.querySelector(".run-title")?.textContent ?? "",
     height: Math.round(bottom - top),
+    graphShown: !!graph && graph.getClientRects().length > 0,
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     text: document.querySelector("#messages")?.textContent ?? "",
     groups,
   };
 })()`;
 
-type Read = { title: string; height: number; overflowX: boolean; text: string; groups: Array<{ kind: string; state: string; lanes: number; forkMs: number; foldHold: number; foldMs: number; delayMin: number; delayMax: number; dead: string[]; fold: string }> };
+type Read = { title: string; height: number; graphShown: boolean; overflowX: boolean; text: string; groups: Array<{ kind: string; state: string; lanes: number; forkMs: number; foldHold: number; foldMs: number; delayMin: number; delayMax: number; dead: string[]; fold: string }> };
 
 try {
   const work = await rp.attach((await rp.targets()).find((t) => t.url === "about:blank")!.targetId);
@@ -125,7 +126,7 @@ try {
   await rp.screenshot(panel, join(out, "folded.png"));
   const dead = done.groups.flatMap((g) => g.dead).join(" ");
   check("c 死路带人话原因，不写出错", /接口没回|连不上/.test(dead) && !done.text.includes("出错"), { dead: done.groups.flatMap((g) => g.dead), fold: done.groups.map((g) => g.fold) });
-  check("d 折成一行，高度不超过 176", done.groups.some((g) => g.kind === "b1" || g.kind === "b3") && done.groups.filter((g) => g.kind === "b1" || g.kind === "b3").every((g) => g.state === "folded") && done.height <= 176 && !done.overflowX, { states: done.groups.map((g) => `${g.kind}:${g.state}`), height: done.height, overflowX: done.overflowX });
+  check("d 收起后不留分叉行，高度不超过 176", done.groups.some((g) => g.kind === "b1" || g.kind === "b3") && done.groups.filter((g) => g.kind === "b1" || g.kind === "b3").every((g) => g.state === "folded") && !done.graphShown && done.height <= 176 && !done.overflowX, { states: done.groups.map((g) => `${g.kind}:${g.state}`), graphShown: done.graphShown, height: done.height, overflowX: done.overflowX });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every((c) => c.pass) ? "PASS" : "FAIL", checks, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>((done) => site.close(() => done()));

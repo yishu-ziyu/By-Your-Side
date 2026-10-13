@@ -62,6 +62,10 @@ export interface ConversationSummary {
   state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
   /** A durable task checkpoint exists after the local host stopped mid-run. */
   checkpoint?: "interrupted" | "unavailable";
+  /** 这一轮怎么结束的一句（「填好 4 栏，没提交」）；会话列表用，不写「空闲」。 */
+  ending?: string;
+  /** 这一轮做过的网站主机名，给会话列表站点图标。 */
+  site?: string;
 }
 
 export function isLeadSession(sessionId?: string | null): boolean {
@@ -359,7 +363,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback; /** 点/填/看过的页面元素：侧栏步骤对照用，模型看不见。 */ pageTarget?: { target: string; label: string; tabId: number; url: string } }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */

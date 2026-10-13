@@ -157,7 +157,8 @@ try {
   await until(async () => !!(await pageBar()), 10000, '页面条出现');
   const shown = await card();
   check('侧栏卡写明这一步、承诺和「做好了，交还」', !!shown && String(shown.text).includes('需要你来这一步') && String(shown.text).includes(ASK) && String(shown.text).includes('交给你期间，我不读也不动这个页面。') && shown.button === '做好了，交还' && String(shown.text).includes('或点页面上的「交还」'), shown);
-  const bar = await pageBar();
+  // 光标先退场再交给用户（docs/evals/20261013-uiux-top3.md R3），页面条会先写约 0.1 秒「正在停住」；最多等 2 秒。
+  const bar = await until(async () => { const v = await pageBar(); return v?.includes('现在归你') ? v : undefined; }, 2000, '页面条写现在归你').catch(async () => await pageBar());
   check('页面条显示「现在归你 · 在左边填好…」和「交还」', !!bar && bar.includes(`现在归你 · ${ASK}`) && bar.endsWith('交还'), bar);
   check('助手填了账号名称', (await rp.evaluate(work, 'acct.value')) === '测试账号', await rp.evaluate(work, 'acct.value'));
   // R1 + R4：页面上不存在的目标跳过，其余 4 个照常圈出，名牌按预览写。

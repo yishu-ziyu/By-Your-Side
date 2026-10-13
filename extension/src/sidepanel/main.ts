@@ -4,7 +4,7 @@ import { attachSourceCitations, captureCitationContext, type CitationContext } f
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
-import { heartbeatTitle, paintBeatMark, VERB_MS } from "./run-heartbeat.js";
+import { paintBeatMark } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
@@ -58,16 +58,17 @@ import { mountModelPicker } from "./model-picker.js";
 import { chipLabel } from "./models.js";
 import { mountThinkingChip } from "./thinking-chip.js";
 import { mountReadingSettings } from "./reading-settings.js";
+import { D_TAP } from "../shared/motion-tokens.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
-import { evidenceLine, findingForUser, mergeEvidence, nextWorkingTab, readbackKey } from "./claim-hold.js";
+import { checkNoteForUser, evidenceLine, mergeEvidence, nextWorkingTab, readbackKey } from "./claim-hold.js";
 import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, HeldReason, ModelOption, PageContext, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
+import { conversationBackgroundLabel, conversationDayGroup, conversationOutcome, conversationRelativeTime, resultCardCopy } from "./selectors.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
@@ -280,7 +281,10 @@ app.innerHTML = `
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub">浏览器助手。可以读页面、整理信息、在页面上操作。</p>
     <div id="starter-actions">
-      <button type="button" data-starter="请概括当前页面的要点。">概括这一页</button>
+      <button type="button" class="starter-chip" data-starter="请概括当前页面的要点。" data-effect="read">
+        <span class="starter-chip-main"><span class="starter-chip-label">概括这一页</span><span class="starter-chip-tag" data-effect="read">只读</span></span>
+        <span class="starter-chip-hint-wrap"><span class="starter-chip-hint">会读这一页的正文 → 写成摘要，不改页面</span></span>
+      </button>
     </div>
     <button type="button" id="starter-connect">连接模型</button>
   </section>
@@ -332,6 +336,7 @@ app.innerHTML = `
         <button type="button" id="ask-cite-close" aria-label="去掉这段引用" title="去掉这段引用">×</button>
       </div>
       <div id="attachments-strip" class="attachments-strip" hidden></div>
+      <p id="handoff-banner" hidden role="status"></p>
       <div id="mention-strip" class="mention-strip" hidden></div>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
@@ -842,11 +847,30 @@ async function refreshStarterSuggestions(tabId: number): Promise<void> {
   const suggestions = suggestionsFor(profile);
   if (box && [...box.querySelectorAll<HTMLButtonElement>("button")].map(b => b.dataset.starter).join("\n") === suggestions.map(s => s.prompt).join("\n")) return;
 
-  box?.replaceChildren(...suggestions.map((item) => {
+  box?.replaceChildren(...suggestions.map((item, index) => {
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "starter-chip";
     button.dataset.starter = item.prompt;
-    button.textContent = item.label;
+    button.dataset.effect = item.effect;
+    button.style.setProperty("--starter-delay", `${index * 30}ms`);
+    const main = document.createElement("span");
+    main.className = "starter-chip-main";
+    const label = document.createElement("span");
+    label.className = "starter-chip-label";
+    label.textContent = item.label;
+    const tag = document.createElement("span");
+    tag.className = "starter-chip-tag";
+    tag.dataset.effect = item.effect;
+    tag.textContent = item.effect === "read" ? "只读" : item.effect === "fill" ? "会改页面 · 提交前问你" : "会改页面";
+    main.append(label, tag);
+    const hintWrap = document.createElement("span");
+    hintWrap.className = "starter-chip-hint-wrap";
+    const hint = document.createElement("span");
+    hint.className = "starter-chip-hint";
+    hint.textContent = item.hint;
+    hintWrap.append(hint);
+    button.append(main, hintWrap);
     bindStarterButton(button);
 
     return button;
@@ -862,6 +886,24 @@ function upsertConversation(c: ConversationSummary): void {
   if (c.id === selectedConversationId) noteRunStarted(c.runId);
 }
 
+let conversationFilter = "";
+/** 筛选框只建一次：每次重画都换一个新框，中文输入法打到一半会断。 */
+let conversationFilterEl: HTMLInputElement | null = null;
+let conversationRowsSig = "";
+
+const conversationOutcomeWas = new Map<string, string>();
+
+function latestTaskFor(id: string): TaskHistoryEntry | undefined {
+  let latest: TaskHistoryEntry | undefined;
+
+  for (const task of pastTasks) {
+    if (task.conversationId !== id) continue;
+    if (!latest || task.endedAt > latest.endedAt) latest = task;
+  }
+
+  return latest;
+}
+
 function renderConversations(): void {
   const current = conversations.get(selectedConversationId);
   const currentTitle = document.createElement("span");
@@ -874,37 +916,112 @@ function renderConversations(): void {
   conversationNew.setAttribute("aria-label", conversationRequest ? "正在新建会话" : "新会话");
   conversationNew.setAttribute("aria-busy", String(!!conversationRequest));
   conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
-  const list = [...conversations.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  const now = Date.now();
+  const list = [...conversations.values()].sort((a, b) => {
+    const waitA = conversationOutcome(a, { completed: completedConversations.has(a.id), task: latestTaskFor(a.id) }).kind === "waiting";
+    const waitB = conversationOutcome(b, { completed: completedConversations.has(b.id), task: latestTaskFor(b.id) }).kind === "waiting";
+    if (waitA !== waitB) return waitA ? -1 : 1;
 
-  const updatedTimeFormat = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    return b.updatedAt - a.updatedAt;
   });
+  const query = conversationFilter.trim().toLowerCase();
+  const shown = list.filter((c) => {
+    if (!query) return true;
+    const outcome = conversationOutcome(c, { completed: completedConversations.has(c.id), task: latestTaskFor(c.id) });
 
-  const rows = list.map((c) => {
+    return (c.title || "新会话").toLowerCase().includes(query) || outcome.line.toLowerCase().includes(query) || (c.site ?? "").toLowerCase().includes(query);
+  });
+  if (!conversationFilterEl) {
+    const el = document.createElement("input");
+    el.type = "search";
+    el.className = "conversation-menu-filter";
+    el.placeholder = "筛选会话";
+    el.setAttribute("aria-label", "筛选会话");
+    el.oninput = () => { conversationFilter = el.value; renderConversations(); };
+    // 回车选中筛出来的第一条。
+    el.onkeydown = (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      conversationMenu.querySelector<HTMLButtonElement>("button[data-conversation-id]")?.click();
+    };
+    conversationFilterEl = el;
+  }
+  const filter = conversationFilterEl;
+  if (filter.value !== conversationFilter) filter.value = conversationFilter;
+  const nodes: HTMLElement[] = [];
+  const sig: string[] = [];
+  let lastGroup = "";
+
+  for (const c of shown) {
+    const outcome = conversationOutcome(c, { completed: completedConversations.has(c.id), task: latestTaskFor(c.id) });
+    const group = outcome.kind === "waiting" ? "等你" : conversationDayGroup(c.updatedAt, now);
+
+    if (group !== lastGroup) {
+      lastGroup = group;
+      const head = document.createElement("div");
+      head.className = "conversation-menu-group";
+      head.textContent = group;
+      nodes.push(head);
+      sig.push(group);
+    }
+
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("role", "menuitemradio");
     button.setAttribute("aria-checked", String(c.id === selectedConversationId));
     button.dataset.conversationId = c.id;
+    button.dataset.outcome = outcome.kind;
     button.title = c.title || "新会话";
+    const mark = document.createElement("span");
+    mark.className = "conversation-menu-mark";
+    mark.dataset.kind = outcome.kind;
+    mark.textContent = outcome.icon;
+    if (outcome.kind === "waiting") {
+      const dot = document.createElement("i");
+      dot.className = "conversation-menu-wait-dot";
+      mark.append(dot);
+    }
     const info = document.createElement("div");
     info.className = "conversation-menu-info";
     const title = document.createElement("span");
     title.className = "conversation-menu-title";
     title.textContent = c.title || "新会话";
+    const ending = document.createElement("small");
+    ending.className = "conversation-menu-ending";
+    ending.textContent = outcome.line;
+    info.append(title, ending);
+    const meta = document.createElement("div");
+    meta.className = "conversation-menu-meta";
+    if (c.site) {
+      const site = document.createElement("span");
+      site.className = "conversation-menu-site";
+      site.textContent = c.site.charAt(0).toUpperCase();
+      site.title = c.site;
+      meta.append(site);
+    }
     const updated = document.createElement("small");
     updated.className = "conversation-menu-updated";
-    updated.textContent = `更新于 ${updatedTimeFormat.format(c.updatedAt)}`;
-    info.append(title, updated);
-    const state = document.createElement("small");
-    state.textContent = conversationStateLabel(c);
-    button.append(info, state);
+    updated.textContent = conversationRelativeTime(c.updatedAt, now);
+    meta.append(updated);
+    button.append(mark, info, meta);
     button.onclick = () => selectConversation(c.id);
+    const prev = conversationOutcomeWas.get(c.id);
+    const flash = !!prev && prev !== outcome.kind && !conversationMenu.hidden;
+    if (flash) button.classList.add("conversation-row-flash");
+    conversationOutcomeWas.set(c.id, outcome.kind);
+    nodes.push(button);
+    sig.push([c.id, c.title, c.site ?? "", outcome.kind, outcome.line, updated.textContent, c.id === selectedConversationId, flash].join("\u0001"));
+  }
 
-    return button;
-  });
+  // 内容没变就不重画：打开列表后过往任务的结果才到，重画会换掉鼠标正按着的那一行，这次点击就丢了。
+  const signature = sig.join("\u0002");
 
-  conversationMenu.replaceChildren(...rows);
+  if (filter.parentElement !== conversationMenu || signature !== conversationRowsSig) {
+    conversationRowsSig = signature;
+    if (filter.parentElement !== conversationMenu) conversationMenu.replaceChildren(filter);
+    while (filter.nextSibling) filter.nextSibling.remove();
+    conversationMenu.append(...nodes);
+  }
 
   const other = list.find((c) => c.id !== selectedConversationId && c.state === "running")
     ?? list.find((c) => c.id !== selectedConversationId && c.state === "user")
@@ -920,7 +1037,7 @@ function renderConversations(): void {
 }
 
 function resetConversationRender(): void {
-  if (currentRun) { clearInterval(currentRun.timer); clearInterval(currentRun.heartbeatTimer); currentRun.orb.dispose(); }
+  if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
 
   closeBlocks();
   currentRun = null;
@@ -946,6 +1063,7 @@ function resetConversationRender(): void {
   leadAnswerText = "";
   leadAnswerTurnClosed = false;
   leadToolUsed = false;
+  goalNote = null;
   historyPrimed = false;
   currentDraftReady = false;
   currentCitationSource = null;
@@ -1100,6 +1218,13 @@ function requestNewConversation(): boolean {
 conversationSwitcher.onclick = () => {
   conversationMenu.hidden = !conversationMenu.hidden;
   conversationSwitcher.setAttribute("aria-expanded", String(!conversationMenu.hidden));
+  if (conversationMenu.hidden) conversationFilter = "";
+  else {
+    conversationFilter = "";
+    if (!pastTasksRequestId) requestPastTasks();
+    renderConversations();
+    conversationFilterEl?.focus();
+  }
 };
 
 conversationNew.onclick = () => {
@@ -1108,7 +1233,9 @@ conversationNew.onclick = () => {
 };
 
 document.addEventListener("click", (e) => {
-  if (!conversationMenu.contains(e.target as Node) && !conversationSwitcher.contains(e.target as Node)) {
+  // 打开列表时会重画标题按钮里的字，点中的那段字已不在文档里；按点击发生时的路径判断，不按现在的 DOM。
+  const path = e.composedPath();
+  if (!path.includes(conversationMenu) && !path.includes(conversationSwitcher)) {
     conversationMenu.hidden = true;
     conversationSwitcher.setAttribute("aria-expanded", "false");
   }
@@ -1634,6 +1761,7 @@ function handlePastTasksResult(msg: Extract<ServerMessage, { type: "task_history
   else pastTasksError = `未能读取过往任务：${msg.error ?? "未知原因"}`;
 
   if (!memoryDrawer.hidden) renderMemoryDrawer();
+  if (!conversationMenu.hidden) renderConversations();
 }
 
 /** 被替换、失效的旧记忆：留作历史，不再带给助手；被替换的可以撤销替换。 */
@@ -2402,6 +2530,8 @@ interface RunHost {
   trail: HTMLElement;
   /** 进行中的第二行小字「已做 N 步 ›」（#263）；收尾后隐藏。 */
   metaEl: HTMLElement;
+  /** 核对判继续后续做的这一轮：第二行开头写核对发现了什么（「核对发现：…」），代替单独一行橙字。 */
+  checkNote: string | null;
   /** 正在算的这段思考从何时开始（上一步结束，或发送时刻）；不在想时为 NaN。 */
   thinkFrom: number;
   /** 想过的每一段：记录里 ≥3 秒的单列「想了 N 秒」，末行合计全部（#263）。 */
@@ -2422,9 +2552,6 @@ interface RunHost {
   /** 并行/死路/接管的分叉层：紧跟在过程块后面（不放进 details，收起时也看得见）；单步回合是空的。 */
   graph: LiveGraph;
   beatEl: HTMLElement;
-  heartbeatTimer: number;
-  heartbeatTick: number;
-  semanticTitle: string;
   lastToolName: string | null;
 }
 
@@ -2469,9 +2596,7 @@ function setRunTitle(run: RunHost, text: string, now = false, kind?: IconKind): 
   const wait = now || applyingHistory ? 0 : run.titleAt + RUN_TITLE_HOLD_MS - Date.now();
 
   const paint = () => {
-    run.semanticTitle = text;
-    run.heartbeatTick = 0;
-    paintAction(run.titleEl, heartbeatTitle(text, run.lastToolName ?? undefined, 0, reducedMotion()));
+    paintAction(run.titleEl, text);
 
     if (kind) setActionIcon(run.actIcon, kind);
     run.titleAt = Date.now();
@@ -2517,7 +2642,8 @@ let leadAnswerTurnClosed = false;
 let leadToolUsed = false;
 
 /** 目标核对判「没做完」、宿主马上接着做时记下还差的事；下一轮开始时写进过程行。 */
-let goalContinuing: string | null = null;
+/** 核对判继续：下一轮过程行第二行要写的那句（checkNoteForUser）。 */
+let goalNote: string | null = null;
 
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
@@ -2541,6 +2667,87 @@ interface ToolChipEntry {
 }
 
 const toolChips = new Map<string, ToolChipEntry>();
+
+let inspectTimer = 0;
+let inspectChip: HTMLButtonElement | null = null;
+
+function pageTargetOf(chip: HTMLButtonElement): { target: string; tabId?: number; url?: string; caption: string } | null {
+  const target = chip.dataset.pageTarget;
+
+  if (!target) return null;
+  const tabId = Number(chip.dataset.pageTab);
+  const step = chip.dataset.stepIndex ?? "";
+  const past = chip.dataset.past ?? chip.querySelector(".chip-label")?.textContent?.trim() ?? "点击";
+
+  return {
+    target,
+    tabId: Number.isFinite(tabId) && tabId > 0 ? tabId : undefined,
+    url: chip.dataset.pageUrl || undefined,
+    caption: step ? `第 ${step} 步 · ${past}` : past,
+  };
+}
+
+function sendInspect(chip: HTMLButtonElement | null): void {
+  inspectChip = chip;
+  const found = chip ? pageTargetOf(chip) : null;
+
+  if (!found) {
+    port?.postMessage({ kind: "inspect_step" } satisfies PanelToBg);
+
+    return;
+  }
+
+  port?.postMessage({
+    kind: "inspect_step",
+    target: found.target,
+    tabId: found.tabId,
+    url: found.url,
+    caption: found.caption,
+  } satisfies PanelToBg);
+}
+
+function queueInspect(chip: HTMLButtonElement | null): void {
+  window.clearTimeout(inspectTimer);
+  inspectTimer = window.setTimeout(() => sendInspect(chip), D_TAP);
+}
+
+function bindStepInspect(chip: HTMLButtonElement): void {
+  chip.addEventListener("pointerenter", () => queueInspect(chip));
+  chip.addEventListener("pointerleave", () => queueInspect(null));
+  chip.addEventListener("focus", () => queueInspect(chip));
+  chip.addEventListener("blur", () => queueInspect(null));
+}
+
+function markChipPageGone(chip: HTMLButtonElement, gone: boolean): void {
+  chip.classList.toggle("page-gone", gone);
+  let note = chip.querySelector<HTMLElement>(".chip-gone");
+
+  if (!gone) {
+    note?.remove();
+
+    return;
+  }
+
+  if (!note) {
+    note = document.createElement("span");
+    note.className = "chip-gone";
+    chip.append(note);
+  }
+
+  note.textContent = "页面已变";
+}
+
+function applyHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): void {
+  const banner = document.getElementById("handoff-banner");
+
+  if (!banner) return;
+  banner.hidden = phase === "leaving" || phase === "agent";
+  banner.dataset.phase = phase;
+  banner.textContent = phase === "user" ? "你在操作 · 助手在旁边等" : phase === "rereading" ? "助手先重读页面" : "";
+  document.getElementById("composer")?.classList.toggle("you-operating", phase === "user");
+  // 这一行写「你在操作」时，任务条不再说一遍「已暂停 · 页面归你」。
+  taskBar.setHandoffShown(phase === "user");
+}
 
 /** 工具名 → 图标；未知名称回退扳手。 */
 // ── 渲染 ───────────────────────────────────────────────────────────
@@ -2691,10 +2898,15 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
   const chips: HTMLElement[] = [];
   const host = hostOf(context.url);
 
-  if (context.title || host) {
+  const pageTitle = [context.title, context.url].filter(Boolean).join("\n");
+
+  // 和上一句是同一页时不再带页面卡：只在换了页面时说一次。
+  if ((context.title || host) && previousPageChipTitle(bubble) !== pageTitle) {
     const glyph = siteGlyph(context.url, host);
     glyph.className = "cg";
-    chips.push(ctxChip(glyph, context.title || host, [context.title, context.url].filter(Boolean).join("\n")));
+    const chip = ctxChip(glyph, context.title || host, pageTitle);
+    chip.classList.add("page");
+    chips.push(chip);
   }
 
   for (const page of context.pages ?? []) {
@@ -2722,6 +2934,26 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
   row.replaceChildren(...chips);
 
   if (chips.length && row !== next) bubble.after(row);
+}
+
+/** 前面最近一张页面卡的 title（「标题\n网址」）；中间几句没带卡说明还是同一页，接着往前找。 */
+function previousPageChipTitle(bubble: HTMLElement): string | null {
+  for (let node = bubble.previousElementSibling; node; node = node.previousElementSibling) {
+    const chip = node.matches(".ctx-chips") ? node.querySelector<HTMLElement>(".ctx-chip.page") : null;
+
+    if (chip) return chip.title;
+  }
+
+  return null;
+}
+
+/** 任务进行中发出的话会交给正在做的这一轮：在气泡下说一声收到了，免得看不出它是在排队还是被忽略了。 */
+function markSteerReceived(bubble: HTMLElement): void {
+  const note = document.createElement("div");
+  note.className = "steer-received";
+  note.textContent = "已收到 · 接在当前任务里处理";
+  const chips = bubble.nextElementSibling;
+  (chips instanceof HTMLElement && chips.matches(".ctx-chips") ? chips : bubble).after(note);
 }
 
 function ctxChip(glyph: HTMLElement, label: string, title: string): HTMLElement {
@@ -3390,13 +3622,6 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const timer = window.setInterval(() => {
     if (currentRun?.timer === timer) timeEl.textContent = liveSeconds(currentRun);
   }, 1000);
-  const heartbeatTimer = window.setInterval(() => {
-    const live = currentRun;
-
-    if (!live || live.heartbeatTimer !== heartbeatTimer || live.root.classList.contains("done") || reducedMotion()) return;
-    live.heartbeatTick += 1;
-    paintAction(live.titleEl, heartbeatTitle(live.semanticTitle, live.lastToolName ?? undefined, live.heartbeatTick, false));
-  }, VERB_MS);
 
   currentRun = {
     root,
@@ -3419,6 +3644,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     actIcon,
     trail,
     metaEl: meta,
+    checkNote: null,
     thinkFrom: start,
     thinkSegments: [],
     aside: null,
@@ -3430,9 +3656,6 @@ function ensureRun(): NonNullable<typeof currentRun> {
     receipt: null,
     graph,
     beatEl: beat,
-    heartbeatTimer,
-    heartbeatTick: 0,
-    semanticTitle: `正在${loaderSubtitle(null)}`,
     lastToolName: null,
   };
 
@@ -3519,7 +3742,8 @@ function doneSteps(run: RunHost): HTMLElement[] {
 function renderRunMeta(run: RunHost): void {
   const done = doneSteps(run);
   const failed = done.filter(chip => chip.classList.contains("error")).length;
-  const text = done.length ? `已做 ${done.length - failed} 步${failed ? ` · ${failed} 步换了做法` : ""}` : "";
+  const steps = done.length ? `已做 ${done.length - failed} 步${failed ? ` · ${failed} 步换了做法` : ""}` : "";
+  const text = [run.checkNote, steps].filter(Boolean).join(" · ");
 
   if (run.metaEl.textContent !== text) run.metaEl.textContent = text;
   run.metaEl.hidden = !text;
@@ -3603,7 +3827,8 @@ function renderTeamCard(): void {
   if (!el) return;
   const view = teamView;
 
-  if (!shouldShowTeamCard(view?.phase)) {
+  // 只有一个助手时，「1 个 Agent 已暂停」「全队已恢复」只是在重复任务条和过程行；多个助手并行时才需要这张卡。
+  if (!shouldShowTeamCard(view?.phase) || (view?.members.length ?? 0) < 2) {
     el.hidden = true;
     el.replaceChildren();
 
@@ -3753,7 +3978,8 @@ function addChainStep(label: string): void {
 }
 
 const RUN_ORB_MARKS = {
-  user: { icon: Hand, label: "已暂停 · 页面归你" },
+  // 页面归谁由输入框上方那一行说；过程行只记这一轮停着。
+  user: { icon: Hand, label: "已暂停" },
   completed: { icon: Check, label: "本轮结束" },
   failed: { icon: CircleAlert, label: "出错" },
   stopped: { icon: Square, label: "已中止" },
@@ -3789,7 +4015,6 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
-  clearInterval(run.heartbeatTimer);
   const endedAt = eventTime();
   // 停下、出错、答完：正在算的那段思考在这一刻结束（#263 E6）。
   closeThink(run, endedAt);
@@ -3847,6 +4072,7 @@ function finishRun(): void {
   // 回执不写耗时（10-06）；总时长和想了多久写在展开记录的末行。历史回放没有时钟时不写（#263 E1）。
   run.timeEl.textContent = "";
   run.metaEl.hidden = true;
+  mergeRepeatedSteps(run);
   const total = spokenDuration(run.start, endedAt);
 
   if (total && hasSteps) {
@@ -3893,6 +4119,59 @@ function noteRunAnswer(delivery: UserDelivery, el: HTMLElement): void {
   if (run !== currentRun && run.root.isConnected && run.root.classList.contains("done")) foldAnsweredRun(run);
 }
 
+/** 收尾后，紧挨着的同一步（同样的字、同样的成败）在记录里合成一行，末尾写 ×N。回执的步数照旧按实际次数算。 */
+function mergeRepeatedSteps(run: RunHost): void {
+  const key = (chip: Element) => `${chip.classList.contains("error")}|${chip.querySelector(".chip-label")?.textContent ?? ""}`;
+
+  for (const row of run.body.querySelectorAll<HTMLElement>(".chip-row")) {
+    let first: HTMLElement | null = null;
+    let count = 1;
+
+    const flush = () => {
+      if (first && count > 1) first.querySelector(".chip-label")?.append(` ×${count}`);
+    };
+
+    for (const node of Array.from(row.children)) {
+      if (first && node.matches(".chip") && key(node) === key(first)) {
+        node.remove();
+        count += 1;
+        continue;
+      }
+      flush();
+      first = node instanceof HTMLElement && node.matches(".chip") ? node : null;
+      count = 1;
+    }
+    flush();
+  }
+}
+
+/**
+ * 核对判继续时，上一份回答不再算数：从对话里拿掉，屏幕上同一件事只留一份回答。
+ * 那一轮留着过程时收进它的过程；只读的一轮收尾时不留过程，就直接拿掉最近那份回答。
+ */
+function supersedeAnswer(run: RunHost | null): void {
+  const el = run?.answer?.el ?? latestAnswerEl();
+
+  if (!el?.isConnected) return;
+
+  if (run?.answer) {
+    const old = document.createElement("div");
+    old.className = "run-superseded";
+    old.textContent = `第一次的回答：${run.answer.text.replace(/\s+/g, " ").trim()}`;
+    run.body.insertBefore(old, run.body.querySelector(":scope > .run-total"));
+  }
+  el.remove();
+}
+
+/** 最近一条用户消息之后的最后一份正式回答（不含「收到」这类确认语和开场话）。 */
+function latestAnswerEl(): HTMLElement | null {
+  for (let node = messagesEl.lastElementChild; node && !node.matches(".msg.user"); node = node.previousElementSibling) {
+    if (node instanceof HTMLElement && node.matches(".msg.assistant[data-delivery-id]:not(.opening-line)") && node.dataset.deliveryKind !== "ack") return node;
+  }
+
+  return null;
+}
+
 /** 比较旁白和回答时不看空白和 Markdown 记号。 */
 function comparableText(text: string): string {
   return text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[\s*_`#>~|-]/g, "");
@@ -3914,7 +4193,7 @@ function foldAnsweredRun(run: RunHost): void {
   }
   const openings: HTMLElement[] = [];
 
-  for (let node = run.root.previousElementSibling; node && !node.matches(".msg.user, details.run-steps, .claim-fix"); node = node.previousElementSibling) {
+  for (let node = run.root.previousElementSibling; node && !node.matches(".msg.user, details.run-steps, .redo-anchor"); node = node.previousElementSibling) {
     if (node instanceof HTMLElement && node.matches(".opening-line")) openings.unshift(node);
   }
 
@@ -3937,7 +4216,14 @@ function foldAnsweredRun(run: RunHost): void {
   paintAnsweredTitle(run);
 }
 
-/** 过程行上的核对状态：核对中…、已核对页面（绿）、有 N 步没做成（橙）。没核对也没有宿主补充时不写。 */
+/** 「继续原任务」卡这时在对话里显示着。 */
+function resumeCardShown(): boolean {
+  const root = document.getElementById("resume-entry-root");
+
+  return !!root?.isConnected && !root.hidden && root.childElementCount > 0 && !!root.closest("#messages");
+}
+
+/** 过程行上的核对状态：核对中…、已核对页面（绿）；没做完时写有 N 步没做成（橙），已有续做卡时由卡说。 */
 function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | null } | null {
   if (!run.receipt || run.receipt.ended !== "completed") return null;
 
@@ -3946,7 +4232,8 @@ function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | nul
   if (run.check === "done") return { text: "已核对页面", tone: "ok" };
   const notDone = run.receipt.failed ? `有 ${run.receipt.failed} 步没做成` : "还没做成";
 
-  if (run.check === "not_done") return { text: notDone, tone: "warn" };
+  // 核对判没做完：回答下面有「继续原任务」卡时由它说还差什么并给按钮，过程行不说第二遍；没有卡时过程行说。
+  if (run.check === "not_done") return resumeCardShown() ? null : { text: notDone, tone: "warn" };
 
   // 判继续：下一块过程接着做；等用户回答：回答里已经在问。这两种这一行都不下结论。没核对或核对没结论时，宿主补过一句就照它说没做成。
   if (run.check !== "continued" && run.check !== "needs_user" && run.answer?.hostNote) return { text: notDone, tone: "warn" };
@@ -3985,19 +4272,19 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   while (anchor && !anchor.classList.contains("user")) anchor = anchor.previousElementSibling;
 
   if (!anchor) return;
-  // 核对判继续后接着做的一轮：「核对发现」属于前一轮，续做的过程排在最后一条「核对发现」之后。
-  let fix: Element | null = null;
+  // 核对判继续后接着做的一轮：排在判继续那一刻留下的定位点之后。
+  let redo: Element | null = null;
 
   for (let node = anchor.nextElementSibling; node && node !== root; node = node.nextElementSibling) {
-    if (node.classList.contains("claim-fix")) fix = node;
+    if (node.classList.contains("redo-anchor")) redo = node;
   }
 
-  if (fix) { if (fix.nextElementSibling !== root) fix.after(root); return; }
+  if (redo) { if (redo.nextElementSibling !== root) redo.after(root); return; }
   let next = anchor.nextElementSibling;
 
   // chip 跟着用户消息（chip C），「收到」这类确认语和开场话也留在前面；夹在开场话前面的任务卡之后会移到回答后面，不挡住它。
-  // 核对判继续后接着做的一轮：排在前一轮的过程、读回和「核对发现」之后，不插到它们前面。
-  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, details.run-steps.done, .run-live-graph, .fill-evidence, .claim-fix")
+  // 核对判继续后接着做的一轮：排在前一轮的过程和读回之后，不插到它们前面。
+  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, .steer-received, details.run-steps.done, .run-live-graph, .fill-evidence")
     || (node.matches(".ai-task-card") && !!node.nextElementSibling?.matches(".opening-line"));
 
   while (next instanceof HTMLElement && next !== root && keepsBefore(next)) next = next.nextElementSibling;
@@ -4446,6 +4733,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   more.className = "chip-more";
   more.appendChild(icon(ChevronRight));
   chip.append(dot, iconBox, label, dur, more);
+  if (typeof ev.params.target === "string" && ev.params.target) chip.dataset.pageTarget = ev.params.target;
+  chip.dataset.stepIndex = String(group.row.querySelectorAll(".chip").length + 1);
+  bindStepInspect(chip);
 
   const entry: ToolChipEntry = {
     chip,
@@ -4472,7 +4762,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string } }): void {
   // 10-09/10-10 存下的侧栏历史只有旧标记 sendDeclined、没有原因：按「不发」画，不画成失败；那段历史不再要紧时删掉这一行。
   if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
@@ -4515,10 +4805,22 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (failed) entry.chip.classList.add("error");
 
+  if (ev.pageTarget) {
+    if (ev.pageTarget.target) entry.chip.dataset.pageTarget = ev.pageTarget.target;
+    if (ev.pageTarget.url) entry.chip.dataset.pageUrl = ev.pageTarget.url;
+    if (ev.pageTarget.tabId) entry.chip.dataset.pageTab = String(ev.pageTarget.tabId);
+  }
 
   const label = entry.chip.querySelector<HTMLElement>(".chip-label");
   // 打开页面：拿到标题后用页面名，不用网址（#102）。页面标题来自网页，只作文字显示。
   const pageTitle = !failed && entry.chip.dataset.kind === "open" ? openedPageTitle(ev.resultText ?? "") : null;
+
+  if (ev.pageTarget?.label && label && !pageTitle && !ev.heldReason) {
+    const next = actionCardLabel(entry.name, {}, ev.pageTarget.label);
+    entry.chip.dataset.past = next;
+    entry.chip.dataset.short = next;
+    paintAction(label, next);
+  }
 
   if (pageTitle && label) {
     entry.chip.dataset.past = `打开了 ${pageTitle}`;
@@ -4734,18 +5036,18 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 新会话第一轮的开头经补放历史到达，所以补放时也建；补放到 agent_end 会照常收尾。
       ensureRun();
 
-      // 回答之后宿主自己接着做：标题说明为什么又动起来，还差的事留在过程下面直到这一轮结束（#105）。
-      if (goalContinuing !== null) {
+      // 回答之后宿主自己接着做：标题说明为什么又动起来，第二行写核对发现了什么，直到这一轮结束（#105）。
+      if (goalNote !== null) {
         const run = ensureRun();
         setRunTitle(run, "还没做完，接着做", true, "think");
-        run.aside = goalContinuing ? `还差：${goalContinuing}` : null;
-        renderTrail(run);
-        goalContinuing = null;
+        run.checkNote = goalNote;
+        renderRunMeta(run);
+        goalNote = null;
       }
 
       break;
     case "goal_check": {
-      goalContinuing = ev.status === "continue" ? ev.remaining ?? "" : null;
+      goalNote = ev.status === "continue" ? checkNoteForUser(ev.finding, ev.remaining) : null;
       // 核对结论写在这一轮的过程行上（核对中… → 已核对页面 / 有 N 步没做成）。checking 在 agent_end 之前到，结论在收尾之后到。
       const checked = currentRun ?? lastRun;
 
@@ -4755,8 +5057,15 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         if (checked.answer && checked !== currentRun && checked.root.classList.contains("done")) paintAnsweredTitle(checked);
       }
 
-      // 核对判继续：回答已经显示，这里只补一句核对发现了什么、正在改。纯文本显示。
-      if (ev.status === "continue") addMsg("msg claim-fix", `目标核对发现：${findingForUser(ev.finding, ev.remaining)}。助手正在补做…`);
+      // 核对判继续：这份回答不算数了，收进它那一轮的过程（只读的一轮不留过程，直接拿掉）；核对发现写在续做那一轮的过程行上。
+      // 续做的过程排在这一刻的对话末尾之后：留一个看不见的定位点，代替原来那行「核对发现」。
+      if (ev.status === "continue") {
+        supersedeAnswer(checked?.answer ? checked : null);
+        const anchor = document.createElement("div");
+        anchor.className = "redo-anchor";
+        anchor.hidden = true;
+        appendToMessages(anchor);
+      }
       break;
     }
     case "turn_end":
@@ -5387,6 +5696,9 @@ function handleServerMessage(raw: string): void {
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
 
+      // 续做卡出现或消失后，上一轮过程行的核对状态跟着改：没做完只说一次。
+      if (lastRun?.answer && lastRun.receipt && lastRun.root.classList.contains("done") && lastRun.root.isConnected) paintAnsweredTitle(lastRun);
+
       if (msg.view.conversationId === selectedConversationId) renderStreamTaskCard(msg.view);
       renderTaskStrip();
 
@@ -5505,6 +5817,24 @@ function handleBgMessage(envelope: BgToPanel): void {
       }
       if (envelope.reason) chip.title = `${chip.title}\n${envelope.reason}`;
     }
+
+    return;
+  }
+
+  if (envelope.kind === "inspect_step_result") {
+    for (const el of messagesEl.querySelectorAll(".chip.inspecting")) el.classList.remove("inspecting");
+
+    if (inspectChip) {
+      markChipPageGone(inspectChip, !envelope.ok);
+      inspectChip.classList.toggle("inspecting", envelope.ok);
+    }
+
+    return;
+  }
+
+  if (envelope.kind === "handoff_phase") {
+    applyHandoffPhase(envelope.phase);
+
     return;
   }
 
@@ -5610,8 +5940,10 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
       historyOccurredAt = entry.occurredAt;
 
       if (entry.item.kind === "user") {
+        const steering = running && !entry.item.undelivered;
+
         if (!running) runStartAt = eventTime();
-        else if (!entry.item.undelivered) steerRibbon.noteSteer(entry.item.text);
+        else if (steering) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);
         const resent = resending && resending.conversationId === selectedConversationId && resending.text === entry.item.text ? resending : null;
         resending = null;
@@ -5625,6 +5957,8 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
         if (entry.item.card) proactiveCard.turn(entry.item.card, bubble, entry.occurredAt);
         else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
+
+        if (steering && !reuse) markSteerReceived(bubble);
 
         if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }

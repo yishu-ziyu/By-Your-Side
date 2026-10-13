@@ -38,12 +38,12 @@ export function mergeEvidence<Line extends { key: string }>(lines: ReadonlyArray
   return [...lines.filter(line => line.key !== next.key), next].slice(-EVIDENCE_LINES);
 }
 
-/** 「核对发现」后面那句：核对写给用户的诊断；没有就说还差什么，再没有就说还没做完。 */
-export function findingForUser(finding: string | undefined, remaining: string | undefined): string {
+/** 核对判继续后，续做那一轮过程行第二行开头的一句：核对写给用户的诊断；没有就说还差什么。 */
+export function checkNoteForUser(finding: string | undefined, remaining: string | undefined): string {
   const said = (finding ?? "").trim().replace(/[。.]$/, "");
 
-  if (said) return said;
+  if (said) return `核对发现：${said}`;
   const left = (remaining ?? "").trim().replace(/[。.]$/, "");
 
-  return left ? `还差：${left}` : "还没做完";
+  return left ? `还差：${left}` : "核对发现还没做完";
 }
