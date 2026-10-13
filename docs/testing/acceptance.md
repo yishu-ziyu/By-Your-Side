@@ -25,7 +25,6 @@
 
 ## 容易误判的地方
 
-- **Chrome 版本会换目标的种类**：有的 Chrome 把 MV3 service worker 报成 `background_page`（目标 URL 是 `background.html`），用例等待 `service_worker` 会超时而扩展本身没问题。Linux 上跑不通时，用 `EGO_ACCEPTANCE_CHROME` 指向 Playwright 的 chromium（`~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome`）可恢复正常目标（10-12 实测）。
 - **试用包不等于当前源码**：验试用包时，用 `SIDEAGENT_ACCEPTANCE_DIST` 指向试用包。当前源码通过，不代表试用包通过。
 - **日常 Chrome**：`everyday-baseline --daily` 连到用户已开的日常 Chrome。只在用户同意后运行。
 - **只能有窗口跑**：`background-tab-input --headed` 会弹出测试窗口，不进整轮。从没显示过的后台标签页不渲染、输入会丢，无头 Chrome 复现不了。运行时别点那个窗口，点了会让新页到前台，这次不算数。
