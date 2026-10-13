@@ -9,7 +9,8 @@
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
  * 结果卡片：第 1 轮回答没有卡片，胶囊上方不出现；第 3 轮之后加一轮，回答带一张表格卡片，胶囊上方出现精简卡片（标题、标了「最高」的一行排第一、
- * 共 3 行、「还有 1 项」），念的仍只是正文；点 ✕ 卡片和胶囊一起收起。
+ * 共 3 行、「还有 1 项」），念的仍只是正文；卡片在胶囊正上方、同宽、整块在视口里；鼠标停在卡片上时后台刷新一次（念完），
+ * 过了自动收起的时间卡片仍在，移开后才收起。第 4 轮的回答也带卡片，念完按 Esc，卡片和胶囊一起收起。
  * 确认句（松开后马上应一句）：这句话有两个分句，没把握复述，每轮先念通用句「好，马上做。」，且只请求一次；
  * 第 1 轮任务步骤在跑时它照样念完，念的时候「正在做」后面是它、光球在说，念完换回当前步骤；第 3 轮结果马上到，确认句被打断。
  * 胶囊的 shadow root 是关着的：用它挂在宿主上的 data-phase / data-peak 判断步骤，内容看截图。
@@ -59,6 +60,9 @@ const speechKey = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.jso
 const ANSWER3 = "表格已经放在页面下方，三家都按去年营收从高到低排好了，数字来自各家官网的年报。";
 
 const ANSWER4 = "表格做好了，Kite 的营收还没能确认。";
+
+/** 第 4 轮的回答原文：正文 ANSWER4 加一张卡片（念的仍只是正文），念完用 Esc 收起卡片和胶囊。 */
+const ANSWER4_WITH_CARD = `${ANSWER4}\n<card title="营收"><option name="Lumen" value="¥42 亿" why="最高" pick/><option name="Kite" value="待确认" why="没找到年报"/></card>`;
 
 const LEFT = "确认 Kite 的营收";
 
@@ -148,6 +152,23 @@ async function capsuleCard(session: string): Promise<{ title: string; rows: stri
     more: more && !more.attributes?.includes("hidden") ? textOf(more) : "",
   };
 }
+
+type Box = { left: number; right: number; top: number; bottom: number };
+
+/** 胶囊宿主里某个 class 的元素在视口里的位置。 */
+async function capsuleBox(session: string, name: string): Promise<Box | null> {
+  const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as { root: DomNode };
+  const findHost = (node: DomNode): DomNode | null => node.attributes?.includes("ptt-capsule") ? node : [...(node.children ?? [])].reduce<DomNode | null>((hit, child) => hit ?? findHost(child), null);
+  const node = findHost(root)?.shadowRoots?.map(shadow => findClass(shadow, name)).find(Boolean);
+
+  if (!node) return null;
+  const { model } = await rp.cdp.send("DOM.getBoxModel", { nodeId: node.nodeId }, session) as { model: { border: number[] } };
+
+  return { left: model.border[0]!, top: model.border[1]!, right: model.border[2]!, bottom: model.border[5]! };
+}
+
+/** 把鼠标移到某处（悬停）。 */
+const moveMouse = (session: string, x: number, y: number) => rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, session);
 
 /** 胶囊第一行「正在做」后面那段文字（关着的 shadow root 里，CDP 能穿透，网页脚本不能）。 */
 async function capsuleDetail(session: string): Promise<string | null> {
@@ -391,16 +412,29 @@ try {
   assert.equal(resultSpeech()[beforeCard]!.text, "已经按营收排好了，Lumen 最高。", "card: speech is still the prose only");
   await sleep(400);
   await rp.screenshot(work, join(artifacts, "7c-done-with-card.png"));
+  // 位置：卡片在胶囊正上方约 8px、左右对齐、整块在视口里。
+  const cardBox = (await capsuleBox(work, "card"))!, capBox = (await capsuleBox(work, "cap"))!;
+  // SAFETY: 表达式返回数字。
+  const viewport = await rp.evaluate(work, "innerHeight") as number;
+  six.ms.cardGap = Math.round(capBox.top - cardBox.bottom);
+  assert.ok(six.ms.cardGap >= 4 && six.ms.cardGap <= 12 && Math.abs(cardBox.left - capBox.left) <= 1 && Math.abs(cardBox.right - capBox.right) <= 1 && cardBox.top >= 0 && cardBox.bottom <= viewport && cardBox.bottom - cardBox.top <= 220, `card: right above the capsule, same width, inside the viewport ${JSON.stringify({ cardBox, capBox, viewport })}`);
+  // 悬停：念的时候把鼠标停在卡片上；念完后台会刷新一次胶囊，过了自动收起的 10 秒卡片仍在。
+  await moveMouse(work, (cardBox.left + cardBox.right) / 2, (cardBox.top + cardBox.bottom) / 2);
   await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "card answer speech finished");
-  await clickCapsuleButton(work, "✕");
-  await until(async () => (await capsuleState(work)) === null || undefined, 3_000, "capsule closed by ✕");
-  assert.equal(await capsuleCard(work), null, "card: ✕ closes the card with the capsule");
+  await sleep(11_000);
+  assert.ok(await capsuleCard(work), "card: stays while the pointer rests on it, even after a refresh");
+  // 移开后才开始倒计时：移开 1 秒还在，10 秒左右收起，卡片和胶囊一起。
+  await moveMouse(work, 5, 5);
+  await sleep(1_000);
+  assert.ok(await capsuleCard(work), "card: does not vanish the moment the pointer leaves");
+  await until(async () => (await capsuleState(work)) === null || undefined, 13_000, "capsule closes after the pointer leaves");
+  assert.equal(await capsuleCard(work), null, "card: closes with the capsule");
 
   // ── 第 4 轮：留给你的，目标核对晚到 ──
   // 目标核对的请求内容是 JSON，里面有 "lastReply":"<回答>"；它排在最前，先于按任务原话匹配的规则。
   rules.unshift({ match: `"lastReply":"${ANSWER4.slice(0, 5)}`, steps: [{ text: JSON.stringify({ status: "done", remaining: LEFT }), delayMs: 2_000 }] });
   // 先动一步再回答：只回一句话的问答不做目标核对。
-  rule.steps = [{ tool: { name: "tabs", args: { action: "list" } } }, { text: ANSWER4 }];
+  rule.steps = [{ tool: { name: "tabs", args: { action: "list" } } }, { text: ANSWER4_WITH_CARD }];
   await clickCapsuleButton(work, "✕").catch(() => {});
   await sleep(500);
   const four: Evidence["rounds"][number] = { phases: [], ms: {} };
@@ -417,6 +451,12 @@ try {
   const spokenTexts = resultSpeech().slice(before).map(request => request.text);
   assert.deepEqual(spokenTexts, [ANSWER4, `留给你的：${LEFT}`], "R1: the result, then only the left-for-you part");
   assert.ok((four.spoken as { ok?: boolean }).ok, `R1: left-for-you played ${JSON.stringify(four.spoken)}`);
+  // Esc：念完后按 Esc，卡片和胶囊一起收起。
+  assert.ok(await capsuleCard(work), "card: round 4 shows its card");
+  await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
+  await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
+  await until(async () => (await capsuleState(work)) === null || undefined, 3_000, "Esc closes the capsule");
+  assert.equal(await capsuleCard(work), null, "card: Esc closes the card with the capsule");
 
   // ── 第 5 轮：需要用户补数据，不冒充完成 ──
   const missing = "请提供 Kite 的营收";

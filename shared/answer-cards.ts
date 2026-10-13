@@ -318,7 +318,7 @@ export type CardPreview = { title: string; rows: Array<{ label: string; value?: 
 
 /**
  * 回答里第一张写完的卡片的精简版（语音胶囊用）；没有卡片时为 null。字和数原样取自卡片，不改写。
- * 取第一个能列成行的块：选项、表格、数字格、步骤、清单；只有提示条时就用提示条那一句。
+ * 取第一个列出来非空的块：选项、表格、数字格、步骤、清单；只有提示条时就用提示条那一句。标题和行都空时为 null，不画空框。
  */
 export function cardPreview(text: string, maxRows = 3): CardPreview | null {
   if (!/<card[\s>]/.test(text)) return null;
@@ -336,8 +336,10 @@ export function cardPreview(text: string, maxRows = 3): CardPreview | null {
       case "callout": return [{ label: b.text }];
     }
   };
-  const block = card.blocks.find((b) => b.kind !== "callout") ?? card.blocks[0];
+  const block = card.blocks.find((b) => b.kind !== "callout" && rowsOf(b).length) ?? card.blocks.find((b) => rowsOf(b).length);
   const all = block ? rowsOf(block) : [];
+
+  if (!card.title && !all.length) return null;
   // 步骤有先后，不挪；其他把标了的一项提到最前。
   const tagged = block?.kind === "steps" ? -1 : all.findIndex((r) => r.tag);
   const ordered = tagged > 0 ? [all[tagged]!, ...all.slice(0, tagged), ...all.slice(tagged + 1)] : all;
