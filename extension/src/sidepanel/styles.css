@@ -2283,12 +2283,12 @@ details.run-steps.done .chip.error { background: transparent; }
   /* A+B 新增的持续/一次性动效：减少动态时只留状态色，不动位移与呼吸 */
   canvas.orb-live,
   canvas.orb-settle,
-  details.thinking.streaming::before {
+  details.thinking.streaming::before,
+  .settle-once {
     animation: none;
   }
 
   .reveal-fade,
-  .settle-once,
   .tile-landing {
     animation-name: fadeOnlyIn;
   }
@@ -3038,8 +3038,8 @@ details.thinking.narration { padding-left: 0; }
 details.run-steps.done .run-body > details.thinking.narration { display: block; margin: 4px 0; }
 details.run-steps.done .run-body > details.thinking.narration > pre { color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) {
-  .chip, .chip .dur, .chip-dot.settling, .chip-more { animation: none; transition: none; }
-  .chip .dur { animation-name: fadeOnlyIn; }
+  .chip, .chip-dot.settling, .chip-more { animation: none; transition: none; }
+  .chip .dur { animation-name: fadeOnlyIn; transition: none; }
 }
 
 /* #51 技能 */
@@ -3712,7 +3712,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .run-body .chip.inspecting { box-shadow: inset 2px 0 0 var(--text-primary); }
 .run-body .chip-gone { margin-left: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 @media (prefers-reduced-motion: reduce) {
-  #handoff-banner:not([hidden]) { animation-name: fadeOnlyIn; transform: none; }
+  #handoff-banner:not([hidden]) { animation-name: fadeOnlyIn; opacity: 1; transform: none; }
 }
 /* ── 10-13 设计审视：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
    依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
