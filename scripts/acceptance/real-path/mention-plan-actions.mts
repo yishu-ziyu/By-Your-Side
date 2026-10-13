@@ -93,7 +93,8 @@ try {
     return text ? text : undefined;
   }, 5_000, "提交任务的计划");
   check("用户说了提交，计划的不会做里没有提交", /不会做/.test(submitPlan) && !/不会做 [^开]*提交/.test(submitPlan), submitPlan);
-  const sentBeforeEdit = model.requests.length;
+  const userCount = async () => Number(await rp.evaluate(panel, `document.querySelectorAll("#messages .msg.user").length`));
+  const sentBeforeEdit = await userCount();
   await rp.evaluate(panel, `(() => { const i = document.querySelector("#input"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
   await rp.click(panel, "#input");
   await rp.typeText(panel, EDITED);
@@ -104,7 +105,7 @@ try {
 
     return text ? text : undefined;
   }, 5_000, "改过之后的计划");
-  check("改了输入，旧计划收掉；回车按新话出卡，还没发出", staleGone === true && /李四/.test(editedPlan) && /不会做 提交/.test(editedPlan) && model.requests.length === sentBeforeEdit, { staleGone, editedPlan });
+  check("改了输入，旧计划收掉；回车按新话出卡，还没发出", staleGone === true && /李四/.test(editedPlan) && /不会做 提交/.test(editedPlan) && (await userCount()) === sentBeforeEdit, { staleGone, editedPlan });
   await rp.click(panel, ".task-plan-start");
   await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(EDITED_DONE)})`)) || undefined, 60_000, "改过之后的回答");
   const users = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].map(u => u.innerText)`) as string[];
@@ -162,8 +163,7 @@ try {
   await rp.click(panel, "#input");
   await rp.typeText(panel, "@");
   await until(async () => (await rp.evaluate(panel, `document.querySelectorAll("#tab-mention-menu .tab-mention-item").length`)) as number > 1 || undefined, 5_000, "运行中的标签页列表");
-  await key("ArrowDown", "ArrowDown", 40);
-  await rp.pressEnter(panel);
+  await rp.evaluate(panel, `(() => { [...document.querySelectorAll("#tab-mention-menu .tab-mention-item")].find(r => r.innerText.includes("会议笔记"))?.click(); return true; })()`);
   await sleep(300);
   await rp.typeText(panel, STEER);
   await rp.pressEnter(panel);
