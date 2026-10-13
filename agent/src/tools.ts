@@ -169,8 +169,10 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 这个网址所在网站的站点笔记（这一轮还没带过时）；附在打开、跳转结果后面。 */ siteNotesFor?: (url: string) => Promise<string | null> }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
+  /** 站点笔记只给主会话（docs/evals/20261013-site-notes.md）；放在页面原文标记之外，取不到就不附。 */
+  const siteNotesAfter = async (url: string): Promise<string> => (sid ? null : await execution?.siteNotesFor?.(url).catch(() => null)) ?? "";
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
@@ -454,15 +456,17 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
             if (!working) return { text: "" };
             const url = URL.canParse(working.url) ? new URL(working.url) : null;
-            const moved = !!startUrls && startUrls.get(working.id) !== working.url && !programAlreadyRead(working.url);
+            const changed = !!startUrls && startUrls.get(working.id) !== working.url;
+            const moved = changed && !programAlreadyRead(working.url);
             const page = moved ? await pageAfter(working.id) : null;
+            const notes = changed ? await siteNotesAfter(working.url) : "";
 
             // 和点击回执一样只给标题前 120 字和 origin+pathname（标题来自网页，网址的查询串可能带私人信息）。
             const text = `\n[After this program the working tab ${working.id} shows "${(working.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}" — ${url ? `${url.origin}${url.pathname}` : "(no address)"}; that is the page now.]`;
 
             return page
-              ? { text: `${text}\n\n${PROGRAM_PAGE_LABEL}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, page }
-              : { text };
+              ? { text: `${text}\n\n${PROGRAM_PAGE_LABEL}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${notes}`, page }
+              : { text: text + notes };
           } catch { return { text: "" }; }
         };
 
@@ -569,14 +573,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           const head = notes.length > 0 ? `${text}\n${notes.join("\n")}` : text;
 
           if (data.readiness === "download" || data.readiness === "error_page") return textResult(head, data);
+          const siteNotes = await siteNotesAfter(data.url);
 
           // 和 navigate 一样顺手读一次新页：10-13 真实网站 12 次里 9 次 open 后专门花一轮 snapshot。读失败只退回原结果。
           try {
             const page = (await readAfterNavigate("snapshot", { tabId: data.tabId })) as ToolContract["snapshot"]["data"];
 
-            return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
+            return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${siteNotes}`, { ...data, page });
           } catch {
-            return textResult(head, data);
+            return textResult(head + siteNotes, data);
           }
         }
 
@@ -613,14 +618,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         // 协作成员（sid）就绪超时照旧只给结果行。
         if (sid && data.readiness === "timeout") return textResult(head, data);
+        const notes = await siteNotesAfter(data.url);
 
         // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot；就绪超时也读，但标明可能不全。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
         try {
           const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
 
-          return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
+          return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${notes}`, { ...data, page });
         } catch {
-          return textResult(head, data);
+          return textResult(head + notes, data);
         }
       },
     }),

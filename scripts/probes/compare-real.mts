@@ -1,4 +1,5 @@
-// npx tsx scripts/probes/compare-real.mts . <outDir> <ext|ego> [--repeat=2] [--only=S1,R1]   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
+// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--learn]
+// --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md).   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
 // Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -7,13 +8,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 const [root, outDir, arm] = process.argv.slice(2);
 const repeat = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 2;
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
+const learn = process.argv.includes("--learn");
 const MODEL = "openai-codex/gpt-6.1-sol";
 const START = "https://example.com/";
 const dec = (u: string) => { try { return decodeURIComponent(u); } catch { return u; } };
 
 type Tab = { url: string; title: string };
 type Ctx = { answer: string; tabs: Tab[]; probe: unknown; truth: Record<string, string> };
-type Task = { id: string; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; check(c: Ctx): string | null };
+type Task = { id: string; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
 
 const ghTop = async () => { const h = await (await fetch("https://github.com/trending", { headers: { "user-agent": "Mozilla/5.0" } })).text(); return h.match(/<h2 class="h3 lh-condensed">[\s\S]*?href="\/([^"]+)"/)?.[1] ?? ""; };
 const hnTop = async () => { const h = await (await fetch("https://news.ycombinator.com/")).text(); return (h.match(/<span class="titleline"><a [^>]*>([^<]+)<\/a>/)?.[1] ?? "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); };
@@ -21,9 +23,11 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
 const TASKS: Task[] = [
   { id: "S1", group: "搜索", name: "必应搜天气", prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 天气。",
-    check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("天气")) ? null : "没有到必应“天气”的结果页" },
+    check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("天气")) ? null : "没有到必应“天气”的结果页",
+    second: { prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 新闻。", check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("新闻")) ? null : "没有到必应“新闻”的结果页" } },
   { id: "S2", group: "搜索", name: "维基百科搜长城", prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“长城”，打开“长城”这个条目。",
-    check: (c) => c.tabs.some((t) => /wikipedia\.org\/(wiki|zh-[a-z]+)\/长城$/.test(dec(t.url).split("#")[0])) ? null : "没有打开“长城”条目" },
+    check: (c) => c.tabs.some((t) => /wikipedia\.org\/(wiki|zh-[a-z]+)\/长城$/.test(dec(t.url).split("#")[0])) ? null : "没有打开“长城”条目",
+    second: { prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“故宫”，打开“故宫”这个条目。", check: (c) => c.tabs.some((t) => /wikipedia\.org\/(wiki|zh-[a-z]+)\/(故宫|故宮|北京故宫)/.test(dec(t.url).split("#")[0])) ? null : "没有打开“故宫”条目" } },
   { id: "R1", group: "读取", name: "HN 第一条", prompt: "打开 https://news.ycombinator.com ，告诉我现在排第一的帖子标题（保留英文原文）。",
     truth: async () => ({ before: await hnTop() }),
     check: (c) => [c.truth.before, c.truth.after].some((t) => t && norm(c.answer).includes(norm(t))) ? null : `回答里没有第一条标题（应为 ${c.truth.before}）` },
@@ -31,10 +35,12 @@ const TASKS: Task[] = [
     truth: async () => ({ before: await ghTop() }),
     check: (c) => [c.truth.before, c.truth.after].some((t) => t && norm(c.answer).replace(/\s*\/\s*/g, "/").includes(norm(t))) ? null : `回答里没有 ${c.truth.before}` },
   { id: "F1", group: "填写", name: "测试表单提交", prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 张三，Textarea 填 你好世界，Dropdown (select) 选 Two，然后点 Submit 提交。",
-    check: (c) => { const t = c.tabs.find((x) => x.url.includes("submitted-form")); if (!t) return "没有提交"; const q = new URL(t.url).searchParams; const bad = [["my-text", "张三"], ["my-textarea", "你好世界"], ["my-select", "2"]].filter(([k, v]) => q.get(k) !== v).map(([k]) => k); return bad.length ? `提交的值不对：${bad.join("、")}` : null; } },
+    check: (c) => { const t = c.tabs.find((x) => x.url.includes("submitted-form")); if (!t) return "没有提交"; const q = new URL(t.url).searchParams; const bad = [["my-text", "张三"], ["my-textarea", "你好世界"], ["my-select", "2"]].filter(([k, v]) => q.get(k) !== v).map(([k]) => k); return bad.length ? `提交的值不对：${bad.join("、")}` : null; },
+    second: { prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 李四，Textarea 填 早上好，Dropdown (select) 选 Three，然后点 Submit 提交。", check: (c) => { const t = [...c.tabs].reverse().find((x) => x.url.includes("submitted-form")); if (!t) return "没有提交"; const q = new URL(t.url).searchParams; const bad = [["my-text", "李四"], ["my-textarea", "早上好"], ["my-select", "3"]].filter(([k, v]) => q.get(k) !== v).map(([k]) => k); return bad.length ? `提交的值不对：${bad.join("、")}` : null; } } },
   { id: "F2", group: "填写", name: "TodoMVC 待办", prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买牛奶、交电费，然后把“买牛奶”标记为已完成。",
     probeUrl: /todomvc\.com\/examples\/react/, probe: `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`,
-    check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; const s = JSON.stringify(items); return items.length === 2 && items.some((i) => i.t === "买牛奶" && i.done) && items.some((i) => i.t === "交电费" && !i.done) ? null : `待办是 ${s}`; } },
+    check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; const s = JSON.stringify(items); return items.length === 2 && items.some((i) => i.t === "买牛奶" && i.done) && items.some((i) => i.t === "交电费" && !i.done) ? null : `待办是 ${s}`; },
+    second: { prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买面包、修自行车，然后把“修自行车”标记为已完成。", check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; return items.some((i) => i.t === "修自行车" && i.done) && items.some((i) => i.t === "买面包" && !i.done) ? null : `待办是 ${JSON.stringify(items)}`; } } },
 ].filter((t) => !only || only.includes(t.id));
 
 // ---------- progress page shared by both arms (each arm writes its own json, page merges) ----------
@@ -77,26 +83,46 @@ async function runExt(task: Task, id: string, dir: string) {
     if (!(await chip()).includes("深入")) throw new Error(`没选上深入：${await chip()}`);
     await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
 
-    const t0 = Date.now();
-    await rp.click(panel, "#input"); await rp.typeText(panel, task.prompt); await rp.pressEnter(panel);
-    const busy = `(() => { const q = (s) => document.querySelector(s); return (q("#status-pill")?.classList.contains("running") ?? false) || (q("#send-btn")?.classList.contains("stopping") ?? false) || !!q(".msg.assistant.streaming, .msg.assistant[data-revealing], .thinking.streaming"); })()`;
-    await until(async () => await rp.evaluate(panel, busy), 20_000, "started").catch(() => {});
-    let quietSince = 0;
-    while (Date.now() - t0 < 240_000) { const b = await rp.evaluate(panel, busy); quietSince = b ? 0 : (quietSince || Date.now()); if (quietSince && Date.now() - quietSince > 4000) break; await sleep(250); }
-    const ms = (quietSince || Date.now()) - t0;
-    const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText.trim()).join("\\n---\\n")`));
-    const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ url: t.url || t.pendingUrl || '', title: t.title || '' })))")) as Tab[];
-    let probe: unknown = null;
-    if (task.probe) { const tg = (await rp.targets()).find((t: { url: string; type: string }) => t.type === "page" && task.probeUrl!.test(t.url)); if (tg) probe = await rp.evaluate(await rp.attach(tg.targetId), task.probe); }
-    const trace = String(await rp.evaluate(panel, `new Promise((ok) => { const r = indexedDB.open("sideagent-diagnostics"); r.onsuccess = () => { const q = r.result.transaction("trace-lines").objectStore("trace-lines").getAll(); q.onsuccess = () => ok(q.result.map(x => x.line).join("")); }; r.onerror = () => ok(""); })`));
-    await writeFile(join(dir, "trace.jsonl"), trace);
-    const lines = trace.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return {}; } });
-    const rounds = lines.filter((l) => l.type === "model_request").length;
-    const tools = lines.filter((l) => l.type === "tool_execution_start").map((l) => l.data?.toolName);
-    await rp.screenshot(panel, join(dir, "panel.png")).catch(() => {});
-    const usage = lines.filter((l) => l.type === "turn_end").map((l) => l.data?.usage ?? {});
-    const cacheShare = +(usage.reduce((n, u) => n + (u.cacheRead ?? 0), 0) / Math.max(1, usage.reduce((n, u) => n + (u.input ?? 0) + (u.cacheRead ?? 0), 0))).toFixed(2);
-    return { ms, answer, tabs, probe, rounds, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel), cacheShare, cacheReadByRound: usage.map((u) => u.cacheRead ?? 0) };
+    const traceLines = async () => String(await rp.evaluate(panel, `new Promise((ok) => { const r = indexedDB.open("sideagent-diagnostics"); r.onsuccess = () => { const q = r.result.transaction("trace-lines").objectStore("trace-lines").getAll(); q.onsuccess = () => ok(q.result.map(x => x.line).join("")); }; r.onerror = () => ok(""); })`));
+    let seenLines = 0;
+    // One task in the current conversation; trace lines are cumulative, so each ask takes only the lines after the previous one.
+    const ask = async (prompt: string, probeCode: string | undefined, tag: string) => {
+      const t0 = Date.now();
+      await rp.click(panel, "#input"); await rp.typeText(panel, prompt); await rp.pressEnter(panel);
+      const busy = `(() => { const q = (s) => document.querySelector(s); return (q("#status-pill")?.classList.contains("running") ?? false) || (q("#send-btn")?.classList.contains("stopping") ?? false) || !!q(".msg.assistant.streaming, .msg.assistant[data-revealing], .thinking.streaming"); })()`;
+      await until(async () => await rp.evaluate(panel, busy), 20_000, "started").catch(() => {});
+      let quietSince = 0;
+      while (Date.now() - t0 < 240_000) { const b = await rp.evaluate(panel, busy); quietSince = b ? 0 : (quietSince || Date.now()); if (quietSince && Date.now() - quietSince > 4000) break; await sleep(250); }
+      const ms = (quietSince || Date.now()) - t0;
+      const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText.trim()).join("\\n---\\n")`));
+      const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ url: t.url || t.pendingUrl || '', title: t.title || '' })))")) as Tab[];
+      let probe: unknown = null;
+      // The newest matching tab: an earlier run's tab may still be open with a stale page.
+      if (probeCode) { const tg = (await rp.targets()).filter((t: { url: string; type: string }) => t.type === "page" && task.probeUrl!.test(t.url)).at(-1); if (tg) probe = await rp.evaluate(await rp.attach(tg.targetId), probeCode); }
+      const all = (await traceLines()).split("\n").filter(Boolean);
+      const mine = all.slice(seenLines); seenLines = all.length;
+      await writeFile(join(dir, `trace${tag}.jsonl`), mine.join("\n") + "\n");
+      const lines = mine.map((l) => { try { return JSON.parse(l); } catch { return {}; } });
+      const rounds = lines.filter((l) => l.type === "model_request").length;
+      const tools = lines.filter((l) => l.type === "tool_execution_start").map((l) => l.data?.toolName);
+      await rp.screenshot(panel, join(dir, `panel${tag}.png`)).catch(() => {});
+      const usage = lines.filter((l) => l.type === "turn_end").map((l) => l.data?.usage ?? {});
+      const cacheShare = +(usage.reduce((n, u) => n + (u.cacheRead ?? 0), 0) / Math.max(1, usage.reduce((n, u) => n + (u.input ?? 0) + (u.cacheRead ?? 0), 0))).toFixed(2);
+      const siteNotes = lines.filter((l) => l.type === "site_notes" && l.data?.phase === "used").map((l) => l.data.host);
+      return { ms, answer, tabs, probe, rounds, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel), cacheShare, cacheReadByRound: usage.map((u) => u.cacheRead ?? 0), siteNotes };
+    };
+    const first = await ask(task.prompt, task.probe, "");
+    if (!learn) return first;
+    // Same browser, new conversation, sibling task: site notes learned from the first run should make it shorter.
+    // Notes are written after the goal check, a few seconds after the reply; wait for them (at most 45 s) as a person would pause between tasks.
+    const learnBy = Date.now() + 45_000;
+    while (Date.now() < learnBy && !(await traceLines()).includes('"phase":"learned"')) await sleep(1000);
+    await rp.click(panel, "#conversation-new"); await sleep(800);
+    await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#messages .msg.assistant")'), 30_000, "new conversation");
+    await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
+    const sib = task.second ?? { prompt: task.prompt, probe: task.probe, check: task.check };
+    const second = await ask(sib.prompt, sib.probe ?? task.probe, "-2");
+    return { ...first, second: { ...second, reason: sib.check({ answer: second.answer, tabs: second.tabs, probe: second.probe, truth: {} }) } };
   } finally { await rp.close(); await rp.remove(); }
 }
 
@@ -187,7 +213,8 @@ for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {
     const row = { id, arm, task: task.name, outcome: reason ? "fail" : "pass", reason, seconds: +(r.ms / 1000).toFixed(1), ...r, truth };
     results.push(row);
     await writeStatus(id, reason ? "fail" : "pass", `${row.seconds} 秒 · ${r.browserCalls} 次浏览器操作${reason ? " · " + reason : ""}`);
-    console.log(`${reason ? "✖" : "✔"} ${arm} ${id} ${row.seconds}s calls=${r.browserCalls}${reason ? " — " + reason : ""}`);
+    const sec = (r as any).second;
+    console.log(`${reason ? "✖" : "✔"} ${arm} ${id} ${row.seconds}s rounds=${(r as any).rounds} calls=${r.browserCalls}${reason ? " — " + reason : ""}${sec ? ` | second ${sec.reason ? "✖ " + sec.reason : "✔"} ${(sec.ms / 1000).toFixed(1)}s rounds=${sec.rounds} notes=${sec.siteNotes.join(",") || "none"}` : ""}`);
   } catch (e) {
     results.push({ id, arm, task: task.name, outcome: "error", error: String(e) });
     await writeStatus(id, "err", String(e).slice(0, 120));

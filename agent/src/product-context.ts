@@ -16,6 +16,8 @@ type Turn=VoiceConversationContext['recentTurns'][number];
 export class ProductContext {
   /** pageUrl：这一轮开始时的页面（发送时用户所在、也是工作标签页）；用来挑站点提示。 */
   constructor(private readonly refreshTools:()=>void = ()=>{}, private readonly pageUrl:()=>string|null = ()=>null) {}
+  /** 站点笔记：这一轮开始时的页面所在网站有笔记就返回要附上的一段（docs/evals/20261013-site-notes.md）；接线方限时约 1 秒。 */
+  siteNotes?: (url: string | null) => Promise<string | null>;
   onProjection?: (data: {capabilityVersion:string;tools:string[];historyTurns:number;reportSource:string|null})=>void;
   private snapshot:()=>TaskProgressSnapshot|null=()=>null;
   /** 上一段本次运行的上下文给过的对话轮次：那段留在历史里，这次只给之后新增的（#271）。 */
@@ -55,7 +57,9 @@ export class ProductContext {
 
         return { messages };
       });
-      pi.on('before_agent_start',event=>{
+      pi.on('before_agent_start',async event=>{
+        // 先读站点笔记（读不到 1 秒就不带），再动下面会改状态的 newTurns、onProjection：等待期间不留半截状态。
+        const notes=await this.siteNotes?.(this.pageUrl()).catch(()=>null)??null;
         const current=this.snapshot();
         const active=new Set(pi.getActiveTools());
         const tools=pi.getAllTools().filter(tool=>active.has(tool.name));
@@ -78,7 +82,7 @@ export class ProductContext {
         // 系统提示词只放每次都一样的内容；日期、对话历史、任务状态、站点提示每次运行都变，作为本次上下文消息（#258）。
         return {
           systemPrompt:(active.has('record_task_results') ? `# 执行约定\n观察和操作都不需要预先登记：系统按真实工具结果自动记录任务结果。账本只描述执行情况，不是给用户的回答；你最后写出的回复就是给用户的回答。多步骤任务可以选择先用record_task_results说明整体计划。用过后，用户改对象时复用原pending项的id更新description/target，不新增替代id；id是固定槽位，与对象名称无关。完成只能来自匹配的工具结果。\n\n` : '')+event.systemPrompt+`\n\n# Product conversation context\n每次用户消息前有一段「本次运行的上下文」：今天的日期、conversationHistory（上一段之后新增的对话）、task、assistantReport。实际能力以本轮注册的工具及执行权限为准。历史助手说过的话只是可纠正的对话记录，不是能力事实，也不是工具执行证据；不能因为以前说过不能做，就否认当前可用工具。conversationHistory用于理解对象和纠正，不是重新执行旧请求的授权。最新用户消息决定本轮要求；只读、否定、取消和页面控制权必须遵守。assistantReport只代表助手报告，不能提升为独立验证成功。${registration}不能靠少报目标宣称任务完成。结果未知时先重新读页面，没生效就重做或换方法。`,
-          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')},
+          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')},
         };
       });
     };
