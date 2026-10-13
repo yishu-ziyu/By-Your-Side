@@ -22,6 +22,8 @@
     "check": "npm run check:docs && npm run check:copy && npm run check:motion && npm run check:architecture && npm run typecheck && npm run build",
     "runs": "node scripts/maintenance/runs.mjs",
     "task": "node scripts/maintenance/task.mjs",
+    "kimi:login": "NODE_USE_ENV_PROXY=1 node scripts/maintenance/kimi-login.mjs --login",
+    "kimi:keep": "NODE_USE_ENV_PROXY=1 node scripts/maintenance/kimi-login.mjs --install",
     "lines": "node scripts/maintenance/lines.mjs",
     "logs": "node scripts/maintenance/logs.mjs"
   },
