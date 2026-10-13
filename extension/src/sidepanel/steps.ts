@@ -224,17 +224,17 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
 
 /** 侧栏动作卡的一行字。点/填/看与页面光标旁的话同一套动词（content/cursor.ts renderActionLabel）。 */
 const CURSOR_VERBS = new Map([
-  ["click", { verb: "点", unnamed: "点这里" }],
-  ["fill", { verb: "填", unnamed: "填这一栏" }],
+  ["click", { verb: "点", unnamed: "点击" }],
+  ["fill", { verb: "填", unnamed: "填写" }],
   ["select_option", { verb: "选", unnamed: "选择选项" }],
-  ["hover", { verb: "看", unnamed: "看这里" }],
+  ["hover", { verb: "看", unnamed: "查看" }],
 ]);
 
-export function actionCardLabel(name: string, params: Parameters<typeof describeTool>[1]): string {
+export function actionCardLabel(name: string, params: Parameters<typeof describeTool>[1], plate?: string): string {
   const words = CURSOR_VERBS.get(name);
 
   if (!words) return describeTool(name, params).full;
-  const label = str(params.label);
+  const label = (plate || str(params.label) || "").trim();
 
   return label ? `${words.verb}「${clip(label)}」` : words.unnamed;
 }

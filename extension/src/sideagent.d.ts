@@ -67,7 +67,7 @@ interface SideAgentCursor {
   showCrossPage?(view?: CrossPageView): void;
   hideCrossPage?(): void;
   /** 页面边缘光：这个成员正在操作本页时亮，结束时灭。 */
-  setGlow?(on: boolean): void;
+  setGlow?(on: boolean): void | Promise<void>;
   /** 执行反馈胶囊（V2）：宿主事实短语；成功一次轻微回弹，不抢焦点、不配音、不循环。 */
   showFeedback?(view?: import("./shared/feedback-pill.js").FeedbackPillView): void;
   hideFeedback?(): void;
@@ -85,6 +85,13 @@ interface SideAgentCursor {
   replay?(points: Array<{ x: number; y: number; click: boolean }>): void;
   stopReplay?(): void;
   hide(): void;
+  /** 接管：朝侧栏方向退场，等动画结束后再 hide。 */
+  leaveTowardPanel?(): Promise<void>;
+  /** 交还：重读完成后从侧栏边回到待命位置。 */
+  returnFromPanel?(): Promise<void>;
+  /** 步骤对照：持久描边，不自动消失。 */
+  inspect?(rect: SideAgentRect, caption?: string): void;
+  clearInspect?(): Promise<void>;
   /** 页顶「现在归你 / 交还」条。接管确认后显示，交还或中止后收掉。 */
   showUserControl?(view?: {
     status?: string;
@@ -141,6 +148,7 @@ interface SideAgentNamespace {
   marksState?: () => import("../../shared/host-marks.js").HostDrawnMark[];
   /** 交给用户时画的圈的只读读数，供验收核对；页面脚本读不到。 */
   handoffState?: () => Array<{ kind: "field" | "button"; name: string; label: string; labelRect: SideAgentRect | null; faded: boolean; shown: boolean }>;
+  inspectState?: () => { shown: boolean; caption: string; x: number; y: number; width: number; height: number } | null;
   /** overlay 自检：拿住态光标与名牌双键（生产路径不用） */
   holdState?: (instanceId?: string) => {
     holding: boolean;

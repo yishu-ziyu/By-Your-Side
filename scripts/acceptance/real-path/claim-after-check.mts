@@ -4,18 +4,20 @@
  *   npx tsx scripts/acceptance/real-path/claim-after-check.mts --headless
  * 做法：模型地址指向本机转发服务；目标核对请求（系统提示词以核对说明开头）在这里按用例扣住，再换成脚本结论。
  * 每 50 毫秒读一次侧栏，记下什么时候出现了什么。
- *   a) 填错「Note」并说「已填入第一句」，核对扣 3 秒判继续：这句回答在核对结论前就显示；之后有「核对发现」；
+ *   a) 填错「Note」并说「已填入第一句」，核对扣 3 秒判继续：这句回答在核对结论前就显示；判继续后它收进第一轮的过程，
+ *      续做那一轮过程行第二行写「核对发现：…」，屏幕上任何时候只有一份回答；
  *      读回显示「草稿现在是：「Note」」；续做填对后第二次核对判完成，回答出现。
  *   b) 网页在输入时改成大写：读回显示大写值。
  *   e) 填对、核对马上判完成：读回显示对的句子。
  *   f) 网页把输入清空：读回显示空值。
  *   g) browser_run 程序里的 browser.fill：读回同样显示在侧栏。
  *   h) 填完不写回答，宿主在整轮结束后补交「助手没给出最后的回答就停了…」：补交的回答出现，下一轮开始后仍在。
- *   j) a 续做之后的顺序：「Note」读回 < 「核对发现」 < 第二次读回 < 最终回答（「核对发现」属于第一轮）。
+ *   j) a 续做之后的顺序：「Note」读回 < 第一轮过程（收着第一次的回答） < 续做过程（含第二次读回） < 最终回答。
  *   k) 第一次填写读回为空（网页第一次输入清空），模型读页后重填成功：读回显示重填的值。
- *   n) a 的核对结论带给用户的 finding 和带指令的 correction：「核对发现」显示 finding，不含「请」「please」。
- *   o) 判继续的结论没有 finding：「核对发现」写「还差：…」（remaining）。
+ *   n) a 的核对结论带给用户的 finding 和带指令的 correction：过程行显示 finding，不含「请」「please」。
+ *   o) 判继续的结论没有 finding：过程行第二行写「还差：…」（remaining）。
  *   p) 同一页两栏都叫「地址」：读回显示两行。
+ *   r) 只读的一轮（只读页、不改页面，收尾不留过程块）答错、核对判继续：那份回答同样被拿掉，新旧两份从不同时出现。
  * 失败方式：恢复侧栏扣住回答，a 的回答要等到核对结论之后才出现（反例结果见 docs/evals/20261010-drop-blocking-labels.md）。
  */
 import assert from "node:assert/strict";
@@ -68,6 +70,7 @@ const CASES = {
   k: { ask: "案例K：在草稿框里写 second try K，不要保存。", claim: "草稿已写好 K。", path: "/once" },
   o: { ask: "案例O：把蓝色 Note 框里的第一句英文复制到草稿框里，不要保存。", claim: "已填入 O。", path: "/note" },
   p: { ask: "案例P：在两个地址栏分别写 A road 和 B street，不要保存。", claim: "两个地址都写好了 P。", path: "/twin" },
+  r: { ask: "案例R：这页 Note 框里第一句英文是什么？", claim: "第一句是 Wrong R。", path: "/note" },
 };
 
 const FIXED = "已把第一句英文填入草稿框，没有保存。";
@@ -95,6 +98,7 @@ const model = await startScriptedModel([
   { match: CASES.g.ask, steps: [{ tool: { name: "browser_run", args: { label: "写草稿", code: 'return await browser.fill({ target: "#draft", value: "from program" });' } } }, { text: CASES.g.claim }] },
   { match: CASES.k.ask, steps: [fill("second try K"), { tool: { name: "snapshot", args: {} } }, fill("second try K"), { text: CASES.k.claim }] },
   { match: CASES.o.ask, steps: [fill("Note O"), { text: CASES.o.claim }] },
+  { match: CASES.r.ask, steps: [{ tool: { name: "snapshot", args: {} } }, { text: CASES.r.claim }] },
   { match: CASES.p.ask, steps: [fill("A road", "#addr1"), fill("B street", "#addr2"), { text: CASES.p.claim }] },
   // 不带 finding 的放前面：脚本模型按包含匹配，「VERDICT-CONTINUE」也包含在它里面。
   { match: "VERDICT-CONTINUE-BARE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION }) }] },
@@ -146,6 +150,9 @@ const rp = await launchRealPath();
 /** 侧栏一次读数（毫秒相对发出那一刻）。 */
 type Sample = { t: number; claimOutsideProcess: boolean; fix: string[]; evidence: string[]; answers: string[] };
 
+/** 判继续后续做那一轮过程行第二行的开头（「核对发现：…」或「还差：…」），去掉后面的「已做 N 步」。 */
+const fixHead = (t: string) => t.split(" · ")[0]!;
+
 const SAMPLE_JS = (claim: string) => `(() => {
   const m = document.querySelector("#messages");
   const vis = el => el.getClientRects().length > 0;
@@ -156,7 +163,7 @@ const SAMPLE_JS = (claim: string) => `(() => {
   const lastEvidence = [...m.querySelectorAll(".fill-evidence")].filter(el => vis(el) || el.closest("details.run-steps")).at(-1);
   return {
     claimOutsideProcess: outside.textContent.includes(${JSON.stringify(claim)}),
-    fix: texts(".claim-fix"),
+    fix: texts("details.run-steps:not(.done) > summary > .run-meta").filter(t => /^(核对发现|还差)/.test(t)),
     evidence: lastEvidence ? [...lastEvidence.querySelectorAll(".fill-evidence-line")].map(el => el.textContent.trim()) : [],
     answers: texts(".msg.assistant[data-delivery-id]"),
   };
@@ -238,8 +245,10 @@ try {
     goalCheckReleasedMs: releaseMs,
     claimFirstShownMs: first(a.samples, s => s.claimOutsideProcess),
     noteEvidenceFirstMs: first(a.samples, s => s.evidence.includes("草稿现在是：「Note」")),
-    fixFirstMs: first(a.samples, s => s.fix.some(t => t.startsWith("目标核对发现"))),
-    fixText: a.samples.at(-1)!.fix,
+    fixFirstMs: first(a.samples, s => s.fix.some(t => t.startsWith("核对发现"))),
+    fixText: [...a.samples].reverse().find(s => s.fix.length)?.fix ?? [],
+    twoAnswersMs: first(a.samples, s => s.answers.some(t => t.includes(CASES.a.claim)) && s.answers.some(t => t.includes(FIXED))),
+    claimAfterVerdictMs: first(a.samples, s => s.t > releaseMs + 500 && s.claimOutsideProcess),
     finalAnswerMs: a.samples.at(-1)!.t,
     finalEvidence: a.samples.at(-1)!.evidence,
     samples: a.samples.length,
@@ -247,9 +256,12 @@ try {
   evidence.a = caseA;
 
   assert.ok(caseA.claimFirstShownMs !== null && caseA.claimFirstShownMs < releaseMs, `a: the answer is shown before the verdict (${releaseMs} ms); first shown ${caseA.claimFirstShownMs} ms`);
-  assert.ok(caseA.fixFirstMs !== null && caseA.fixFirstMs >= releaseMs, `a: 「核对发现」 visible after the verdict (${caseA.fixFirstMs} ms)`);
+  assert.ok(caseA.fixFirstMs !== null && caseA.fixFirstMs >= releaseMs, `a: 「核对发现」 visible on the process line after the verdict (${caseA.fixFirstMs} ms)`);
+  // 屏幕上同一件事只留一份回答：判继续后第一次的回答离开对话，收进第一轮的过程。
+  assert.equal(caseA.twoAnswersMs, null, `a: the first and the fixed answer are never shown together (${caseA.twoAnswersMs} ms)`);
+  assert.equal(caseA.claimAfterVerdictMs, null, `a: the first answer leaves the conversation after the verdict (${caseA.claimAfterVerdictMs} ms)`);
   // n) 显示核对写给用户的 finding，不显示写给助手的 correction。
-  assert.ok(caseA.fixText.includes(`目标核对发现：${FINDING}。助手正在补做…`), `n: the fix line shows the finding: ${JSON.stringify(caseA.fixText)}`);
+  assert.ok(caseA.fixText.map(fixHead).includes(`核对发现：${FINDING}`), `n: the process line shows the finding: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.fixText.every(t => !t.includes("请") && !/please/i.test(t)), `n: the fix line has no instruction to the assistant: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.noteEvidenceFirstMs !== null, "a: 「草稿现在是：「Note」」 visible");
   assert.ok(caseA.finalEvidence.includes(`草稿现在是：「${NOTE_FIRST}」`), `a: final evidence shows the right sentence: ${JSON.stringify(caseA.finalEvidence)}`);
@@ -262,16 +274,16 @@ try {
     const evidenceAt = text => at(n => [n, ...n.querySelectorAll(".fill-evidence")].some(e => e.matches(".fill-evidence") && e.textContent.includes(text)));
     return {
       noteEvidence: evidenceAt("草稿现在是：「Note」"),
-      fix: at(n => n.matches(".claim-fix")),
+      firstProcess: at(n => n.matches("details.run-steps") && !!n.querySelector(".run-superseded")?.textContent.includes(${JSON.stringify(CASES.a.claim)})),
       secondProcess: nodes.findLastIndex(n => n.matches("details.run-steps")),
       secondEvidence: evidenceAt(${JSON.stringify(NOTE_FIRST)}),
       finalAnswer: at(n => n.matches(".msg.assistant[data-delivery-id]") && n.textContent.includes(${JSON.stringify(FIXED)})),
       outline: nodes.map(n => n.className.split(" ")[0] + ":" + n.textContent.trim().slice(0, 24)),
     };
-  })()`) as { noteEvidence: number; fix: number; secondProcess: number; secondEvidence: number; finalAnswer: number; outline: string[] };
+  })()`) as { noteEvidence: number; firstProcess: number; secondProcess: number; secondEvidence: number; finalAnswer: number; outline: string[] };
   evidence.j = orderA;
-  assert.ok(orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.fix && orderA.fix < orderA.secondProcess && orderA.secondProcess === orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
-    `j: order 「Note」 evidence < 核对发现 < second process (holding the second evidence) < final answer: ${JSON.stringify(orderA)}`);
+  assert.ok(orderA.firstProcess >= 0 && orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.secondProcess && orderA.firstProcess < orderA.secondProcess && orderA.secondProcess === orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
+    `j: order 「Note」 evidence and the first process (holding the first answer) < second process (holding the second evidence) < final answer: ${JSON.stringify(orderA)}`);
 
   // b) 网页在输入时改成大写：读回的是网页里的值。
   const b = await runCase("b", s => s.answers.some(t => t.includes(CASES.b.claim)), { final: s => s.answers.some(t => t.includes(CASES.b.claim)) });
@@ -345,10 +357,24 @@ try {
   // o) 判继续的结论没有 finding：退回「还差：remaining」。续做照 a 的路填对，第二次核对判完成。
   verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE-BARE" }, { holdMs: 0, probe: "VERDICT-DONE" });
   const fixedBefore = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
-  const o = await runCase("o", s => s.fix.some(t => t.includes("还差")) && s.answers.filter(t => t.includes(FIXED)).length > fixedBefore, {}, 30_000);
-  const fixO = o.samples.at(-1)!.fix.filter(t => t.includes("还差"));
-  evidence.o = { fix: fixO };
-  assert.deepEqual(fixO, ["目标核对发现：还差：填入第一句。助手正在补做…"], `o: without a finding the fix line says what is still missing: ${JSON.stringify(fixO)}`);
+  let sawFixO = false;
+  const o = await runCase("o", s => (sawFixO ||= s.fix.some(t => t.includes("还差"))) && s.answers.filter(t => t.includes(FIXED)).length > fixedBefore, {}, 30_000);
+  const fixO = o.samples.flatMap(s => s.fix).filter(t => t.includes("还差")).map(fixHead);
+  evidence.o = { fix: [...new Set(fixO)] };
+  assert.deepEqual([...new Set(fixO)], ["还差：填入第一句"], `o: without a finding the process line says what is still missing: ${JSON.stringify(fixO)}`);
+
+  // r) 只读的一轮答错、判继续：收尾不留过程块，那份回答也要拿掉；续做照 a 的路填对，第二次核对判完成。
+  verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE" }, { holdMs: 0, probe: "VERDICT-DONE" });
+  const fixedBeforeR = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
+  const fixedR = (s: Sample) => s.answers.filter(t => t.includes(FIXED)).length > fixedBeforeR;
+  const r = await runCase("r", s => fixedR(s) && !s.answers.some(t => t.includes(CASES.r.claim)), {}, 30_000);
+  evidence.r = {
+    claimShownMs: first(r.samples, s => s.answers.some(t => t.includes(CASES.r.claim))),
+    twoAnswersMs: first(r.samples, s => fixedR(s) && s.answers.some(t => t.includes(CASES.r.claim))),
+    fix: [...new Set(r.samples.flatMap(s => s.fix).map(fixHead))],
+  };
+  assert.ok((evidence.r as { claimShownMs: number | null }).claimShownMs !== null, `r: the read-only answer was shown first: ${JSON.stringify(evidence.r)}`);
+  assert.equal((evidence.r as { twoAnswersMs: number | null }).twoAnswersMs, null, `r: the read-only answer and the fixed one are never shown together: ${JSON.stringify(evidence.r)}`);
 
   // p) 两栏同名：第一栏没留住，第二栏一致。两栏各有一行读回，第一栏不被第二栏盖掉。
   const p = await finalRead("p");

@@ -12,7 +12,7 @@ const RETRY_EMPTY_MS = 1500;
 const TIMING_VISIBLE_MS = 4000;
 
 function label(action: GhostQuickAction, state: { playing: boolean; codeFolded: boolean }): string {
-  if (action === 'toggle_play') return state.playing ? '⏸ 暂停' : '▶ 播放';
+  if (action === 'toggle_play') return state.playing ? '⏸ 暂停视频' : '▶ 播放视频';
 
   if (action === 'next') return '⏭ 下一个';
 

@@ -107,8 +107,8 @@ try {
   const elapsed = (Date.now() - thinkingSince) / 1000;
   const liveSecs = Number(/^(\d+) 秒$/.exec(live?.time ?? "")?.[1] ?? NaN);
   await rp.screenshot(panel, join(out, "a-thinking.png"));
-  const think = (title: string) => title === "正在思考" || ["想想怎么说", "理一理", "看看下一步"].includes(title);
-  check("a 想的时候第一行只写思考动词，秒数从这段开始数，第二行写步数", !!live && think(live.title) && Math.abs(liveSecs - elapsed) <= 1.2 && live.meta === "已做 2 步 · 1 步换了做法", { title: live?.title ?? null, time: live?.time ?? null, elapsed, meta: live?.meta ?? null });
+  const think = (title: string) => title === "正在思考";
+  check("a 想的时候第一行只写「正在思考」，秒数从这段开始数，第二行写步数", !!live && think(live.title) && Math.abs(liveSecs - elapsed) <= 1.2 && live.meta === "已做 2 步 · 1 步换了做法", { title: live?.title ?? null, time: live?.time ?? null, elapsed, meta: live?.meta ?? null });
 
   await until(async () => { const r = await read(); if (r) for (const word of FORBIDDEN) if (r.all.includes(word)) seen.add(word); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);
   const endedAt = Date.now();

@@ -104,7 +104,8 @@ const PANEL = `(() => {
     lastTurn: all.slice(lastUser + 1).map(n => n.textContent.trim()).join("\\n"),
     usedLine: [...all.slice(lastUser + 1)].map(n => n.matches(".memory-used-toggle") ? n : n.querySelector(".memory-used-toggle")).find(Boolean)?.textContent.trim() ?? null,
     answers: [...m.querySelectorAll(".msg.assistant[data-delivery-id]")].map(n => n.textContent.trim()),
-    fixes: [...m.querySelectorAll(".claim-fix")].map(n => n.textContent.trim()),
+    // 判继续后续做那一轮过程行第二行的「核对发现：… / 还差：…」（收尾后隐藏，文字还在）。
+    fixes: [...m.querySelectorAll("details.run-steps > summary > .run-meta")].map(n => n.textContent.trim()).filter(t => /^(核对发现|还差)/.test(t)),
     cards: [...document.querySelectorAll(".artifact-card")].map(n => n.dataset.filename),
   };
 })()`;
