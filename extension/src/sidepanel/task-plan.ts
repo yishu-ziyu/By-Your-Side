@@ -65,9 +65,12 @@ export function planLines(text: string, pages: Array<{ title: string; url: strin
  * 计划卡不能一边写「不会做 提交」一边让它真去提交。
  */
 function notAuthorized(text: string): string {
-  const asked = text.replace(/(?:不要|别|不用|先不|无需|不)(?:点|去|帮我)?(?:提交|付款|支付|下单|购买|发帖|发表)/g, "");
+  // 先去掉名词（「报名表」「订单」不是要提交），再去掉否定说法（「不要直接提交」不是授权）。
+  const asked = text
+    .replace(/报名表|报名页|订单|订阅/g, "")
+    .replace(/(?:不要|别|不用|不需要|先不|无需|不)(?:直接|马上|帮我|去|点击|点)*(?:提交|报名|预订|预约|订|付款|支付|下单|购买|发帖|发表|发送)/g, "");
   const left = [
-    !/提交|发帖|发表|下单/.test(asked) && "提交",
+    !/提交|报名|预订|预约|订|发帖|发表|发送|下单/.test(asked) && "提交",
     !/付款|支付|下单|购买|买下/.test(asked) && "付款",
   ].filter(Boolean);
   return left.length ? left.join("、") : "你没说的事";

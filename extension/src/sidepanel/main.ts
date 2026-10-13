@@ -5820,7 +5820,6 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "mention_status") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
-    tabMentions.setStatus(envelope.tabId, envelope.status, envelope.reason);
     // 同一标签页可能被好几条消息 @ 过：只改这一条消息下面的胶囊。
     const row = userBubbles.get(envelope.seq)?.nextElementSibling;
     const chip = row instanceof HTMLElement && row.matches(".ctx-chips")
