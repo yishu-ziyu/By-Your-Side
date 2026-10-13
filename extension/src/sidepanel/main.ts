@@ -758,7 +758,7 @@ function noteModelPresence(model: string | undefined, models: ModelOption[] | un
       }
 
       // 动画播完才真发；动画期间用户自己发了新话，或者发不出：卡片改写成「这句没有发出」。
-      if (userSentAt > startedAt || !sendInput(item.text, page)) {
+      if (userSentAt > startedAt || !sendInput(item.text, page, true)) {
         resending = null;
         dropPendingMessage(item.card, item.bubble);
         if (userSentAt > startedAt) {
@@ -770,14 +770,13 @@ function noteModelPresence(model: string | undefined, models: ModelOption[] | un
         continue;
       }
 
-      // 下一句等这一句进了历史、并且侧栏已经拿到这一轮的 runId。
-      // 还在跑就按插话发；已经结束就按新任务发。太早发会因为 expectedRunId 对不上被拒。
+      // 下一句等这一句做完：连发的几句都按新任务发，第一句还在跑时发第二句会被拒。
       if (i < pending.length - 1) {
         await waitFlag(() => resending === null || userSentAt > startedAt, 20_000);
         await waitFlag(() => {
           const snap = conversations.get(conversationId);
-          return !!snap?.runId && (running || snap.state === "idle" || snap.state === "error" || userSentAt > startedAt);
-        }, 20_000);
+          return !!snap?.runId && !running && (snap.state === "idle" || snap.state === "error" || userSentAt > startedAt);
+        }, 30_000);
       }
     }
 
@@ -5894,7 +5893,7 @@ function restoreLostSend(): void {
  * quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。
  * quickPage：quick 这句话问的是哪一页（连好模型后重发时用原来那页）。返回是否交了出去。
  */
-function sendInput(quick?: string, quickPage?: PageContext): boolean {
+function sendInput(quick?: string, quickPage?: PageContext, forceStart = false): boolean {
   if (!conversationReady) return false;
 
   // 点「新会话」后、新会话建好前：选中的还是旧会话，现在发会落进旧会话。等建好再发。
@@ -5936,7 +5935,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
     requestId: crypto.randomUUID(),
     conversationId: selectedConversationId,
     source: 'text' as const,
-    action: (running||held ? 'steer' : 'start') as "steer" | "start",
+    action: (!forceStart && (running||held) ? 'steer' : 'start') as "steer" | "start",
     expectedRunId: conversations.get(selectedConversationId)?.runId ?? null,
     text,
     context,
