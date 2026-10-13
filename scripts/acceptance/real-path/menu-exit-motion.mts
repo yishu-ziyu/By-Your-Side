@@ -82,6 +82,13 @@ try {
     check(`减少动效 · ${m.name}：仍淡出，没有位移和缩放`, closing(closed) && still(closed) && gone(closed), summary(closed));
   }
 
+  // 入场动画换成只淡入后，原来靠关键帧终点显示的元素不能停在透明。接管横幅由脚本直接显示，只看它的样子。
+  await rp.evaluate(panel, 'document.querySelector("#handoff-banner").hidden = false');
+  await sleep(600);
+  const banner = Number(await rp.evaluate(panel, 'getComputedStyle(document.querySelector("#handoff-banner")).opacity'));
+  check("减少动效 · 接管横幅出现后看得见", banner === 1, banner);
+  await rp.evaluate(panel, 'document.querySelector("#handoff-banner").hidden = true');
+
   if (process.argv.includes("--record")) {
     // 放慢 10 倍，人眼才看得清 140ms 的收回；只用于录屏。
     await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] }, panel);
