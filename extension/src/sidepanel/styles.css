@@ -3545,3 +3545,62 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .handoff-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .handoff-card .btn-primary { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border: 0; border-radius: var(--r-pill); background: var(--text-primary); color: var(--content-bg); cursor: pointer; }
 .handoff-done { font-size: var(--fs-meta); color: var(--text-tertiary); }
+
+/* ── 10-13 设计审视（草稿，待用户确认后并回各自规则）──────────────
+   依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
+   「Semantics are secondary」；NN/g「How to communicate errors」；Apple HIG Toolbars / Text fields。 */
+
+/* 间距分组：一轮之内 8，轮与轮之间 28。原来所有块一律 24，看不出哪些是一组。 */
+#messages { gap: var(--s-2); }
+#messages > .msg.user:not(:first-child) { margin-top: 20px; }
+.ctx-chips { margin-top: -4px; }
+
+/* 你说的话：消息不能点，去掉立体的高光和描边，只留浅底。 */
+.msg.user { box-shadow: none; border-color: transparent; }
+
+/* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
+.run-title { font-size: var(--fs-ui); line-height: 20px; }
+details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-ui); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+/* 系统说明（调试横幅）：不再挂在过程的竖线下面像引用的回答，改成一条浅底小提示。 */
+.run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
+.run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--content-subtle); color: var(--text-secondary); }
+
+/* 输入框：空着时一行高，打字后随内容长高；白纸底 + 细边 + 很浅的影子，是整屏唯一浮起来的东西。 */
+#input { min-height: 22px; line-height: 22px; font-size: 14px; }
+#composer { gap: 6px; padding: 10px 8px 8px 14px; background: var(--content-bg); border-color: var(--glass-border); box-shadow: 0 1px 2px rgb(20 20 19 / .04), 0 4px 16px rgb(20 20 19 / .05); }
+#composer:focus-within { box-shadow: 0 1px 2px rgb(20 20 19 / .05), 0 6px 20px rgb(20 20 19 / .07); }
+
+/* 「接管」和旁边的图标按钮同一种样子（无边框），停止仍是唯一的实心圆。 */
+#takeover-btn { box-shadow: none; color: var(--text-secondary); padding: 0 10px; }
+
+/* 顶栏：三样都用图标。「记忆」从文字换成书签图标（悬停仍显示说明）。 */
+#memory-open { width: 28px; padding: 0; font-size: 0; color: var(--text-secondary); }
+#memory-open::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; }
+
+/* 空白页：光球和问候留在正中（用户 10-13 定），建议贴到输入框上方，左对齐成一列。 */
+#app.starter-ready.conversation-empty #starter { justify-content: flex-start; padding-bottom: 4px; }
+#starter-orb { margin-top: auto; }
+#starter-actions { margin-top: auto; padding-top: 24px; flex-direction: column; flex-wrap: nowrap; align-self: stretch; align-items: stretch; gap: 2px; }
+#starter-actions button { text-align: left; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); font-size: 13.5px; padding: 9px 10px; }
+#starter-actions button:first-child { background: var(--content-bg); box-shadow: 0 0 0 1px var(--content-border); }
+
+/* 用到的记忆：不再接在回答句子后面，单独一行小字放在回答下面。 */
+.memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }
+
+/* 出错：服务出错不是用户的错，用温和的浅底，不用红色粗边和阴影；红色只留在标题前的小点。 */
+.error-card { border: 0; border-radius: var(--r); background: var(--content-subtle); padding: 12px 14px; gap: 6px; box-shadow: none; }
+.error-card strong { display: flex; align-items: center; gap: 7px; font-weight: 550; }
+.error-card strong::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--err); flex: none; }
+.error-card > p { padding-left: 14px; }
+.error-card-actions { padding-left: 14px; }
+.error-card .btn-primary, .error-card .btn-quiet { padding: 7px 12px; font-weight: 500; }
+
+/* 文件卡：墨蓝留给助手在页面上的动作；按钮改成中性浅底，和其他次要按钮一个样子。 */
+.artifact-open, .artifact-download, .artifact-preview-toggle, .artifact-inline-toggle { border: 0; background: var(--content-subtle); color: var(--text-primary); }
+.artifact-open:hover, .artifact-download:hover, .artifact-preview-toggle:hover, .artifact-inline-toggle:hover { background: var(--content-subtle-hover); }
+
+/* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
+#messages { overflow-x: hidden; }
+/* 图片卡：「打开」和「下载」「收起」排在同一侧，不再一个居中一个靠右。 */
+.artifact-card[data-kind="image"] .artifact-open { justify-self: end; }
