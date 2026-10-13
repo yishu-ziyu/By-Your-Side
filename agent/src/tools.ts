@@ -987,7 +987,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
         const text = formatFetchReply(data as FetchReply);
-        // 没拿到内容（status 0 / 非 2xx / 空 body）这一步算失败：isError + 给侧栏的人话原因；给模型的文字不变（#304）。
+        // 对方答了非 2xx 这一步算失败（判定见 fetchFailureReason）：isError + 给侧栏的人话原因；给模型的文字不变（#304）。
         const reason = fetchFailureReason(data as FetchReply);
 
         return reason

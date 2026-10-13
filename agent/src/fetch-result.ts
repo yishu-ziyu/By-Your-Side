@@ -34,20 +34,16 @@ export function formatFetchReply(reply: FetchReply): string {
 }
 
 /**
- * fetch 回执的失败判定：没拿到 HTTP 响应或状态不是 2xx，这一步算失败，并给侧栏一句 ≤16 字的人话原因。
- * status 0 是请求没拿到 HTTP 响应（网络错误或被拦）；非 2xx 按状态说。
- * 2xx 但正文空（如 204）是对方正常答了「没有内容」，不算失败。返回 null 表示成功。
+ * fetch 回执的失败判定：对方答了非 2xx，这一步算失败，并给侧栏一句人话原因。
+ * 不算失败的：2xx 但正文空（如 204），对方正常答了「没有内容」；status 0，扩展不跟随跳转（redirect:"manual"）时
+ * 拿到的就是它，常见于 POST 成功后 302，当失败会让模型重交。网络错误不走这里，fetch-url.ts 直接抛错。返回 null 表示成功。
  */
 export function fetchFailureReason(reply: FetchReply): string | null {
-  if (reply.status === 0) return "连不上这个地址";
+  if (reply.ok || reply.status === 0) return null;
 
-  if (!reply.ok) {
-    if (reply.status === 401 || reply.status === 403) return "要登录才能下";
-    if (reply.status === 404) return "页面不存在（404）";
-    if (reply.status >= 500) return `对方服务器出错（${reply.status}）`;
+  if (reply.status === 401 || reply.status === 403) return "要登录才能下";
+  if (reply.status === 404) return "页面不存在（404）";
+  if (reply.status >= 500) return `对方服务器出错（${reply.status}）`;
 
-    return `没拿到内容（${reply.status}）`;
-  }
-
-  return null;
+  return `没拿到内容（${reply.status}）`;
 }
