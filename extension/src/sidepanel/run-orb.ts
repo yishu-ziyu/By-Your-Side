@@ -30,6 +30,9 @@ export class RunOrbActivity {
     }
   }
 
+  /** 收尾时只是最后一步没做成（模型和连接没出错）：这一轮已经交了回答时，结论按做完算，那一步在过程里标没做成。 */
+  onlyStepFailed(): boolean { return this.failed && !this.errored && !this.stopped; }
+
   stop(): void { this.stopped = true; }
   finish(): void { this.finished = true; this.tools.clear(); }
 
