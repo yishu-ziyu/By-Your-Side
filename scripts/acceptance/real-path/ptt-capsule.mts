@@ -8,6 +8,7 @@
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
+ * 确认句（松开后马上应一句）：每轮交给助手时先念「好，按营收排。」；第 1 轮任务步骤在跑时它照样念完，胶囊在做时显示正在说。
  * 胶囊的 shadow root 是关着的：用它挂在宿主上的 data-phase / data-peak 判断步骤，内容看截图。
  */
 import assert from "node:assert/strict";
@@ -58,6 +59,12 @@ const ANSWER4 = "表格做好了，Kite 的营收还没能确认。";
 
 const LEFT = "确认 Kite 的营收";
 
+/** 按 SPOKEN 本地取出的确认句。 */
+const ACK = "好，按营收排。";
+
+/** 去掉确认句以后的朗读请求：结果、留给你的、需要你。 */
+const resultSpeech = () => evidence.speechRequests.filter(request => request.text !== ACK);
+
 const rp = await launchRealPath({ microphoneWav: wav });
 
 let error: string | null = null;
@@ -67,7 +74,7 @@ let failShot: (() => Promise<void>) | null = null;
 
 /** 写进 result.json 的证据：每轮看到的步骤顺序、声波最高、各步耗时。 */
 interface Evidence {
-  speechMs: number; rounds: Array<{ phases: string[]; peakPx?: number; pillDuringCapsule?: string | null; ms: Record<string, number>; spoken?: unknown }>;
+  speechMs: number; rounds: Array<{ phases: string[]; peakPx?: number; pillDuringCapsule?: string | null; ms: Record<string, number>; spoken?: unknown; ack?: unknown }>;
   panelOpened?: boolean; sockets: string[]; payGoKeyRejected?: string; speechRequests: Array<{ url: string; model?: string; text?: string }>;
 }
 
@@ -200,8 +207,18 @@ try {
   await waitPhase(work, one, "transcribing", 2_000);
   await waitPhase(work, one, "doing", DICTATION_MS);
   one.ms.doing = Date.now() - released;
-  await sleep(600);
+  // 确认句：在做时光球在说；任务步骤（列标签页）在这期间跑，确认句不被掐掉，完整念完。
+  await until(async () => { const state = await capsuleState(work); return state?.phase === "doing" && state.speaking || undefined; }, 5_000, "ack speaking while doing");
+  one.ms.ackSpeaking = Date.now() - released;
+  await sleep(300);
   await rp.screenshot(work, join(artifacts, "2-doing.png"));
+  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 10_000, "ack finished");
+  one.ms.ackDone = Date.now() - released;
+  one.ack = await lastSpeech(inproc);
+  assert.equal((await capsuleState(work))?.phase, "doing", "ack: finished before the result");
+  assert.ok((one.ack as { ok?: boolean; playedMs?: number }).ok && (one.ack as { playedMs: number }).playedMs > 300, `ack: played in full while the task ran ${JSON.stringify(one.ack)}`);
+  assert.ok(model.requests.some(r => r.rule === rule.match && r.step === 1), "ack: the task step ran while the ack was spoken");
+  assert.deepEqual(evidence.speechRequests.map(request => request.text), [ACK], "ack: spoken first, from the local rule");
   // SAFETY: 表达式返回字符串或 null。
   one.pillDuringCapsule = await rp.evaluate(work, `document.querySelector('[data-sideagent-overlay="edge-pill"]')?.dataset.state ?? null`) as string | null;
   assert.equal(one.pillDuringCapsule, null, "R4: the edge pill stays hidden on the capsule's page");
@@ -219,8 +236,8 @@ try {
   one.spoken = await lastSpeech(inproc);
   assert.ok((one.spoken as { ok?: boolean; playedMs?: number }).ok && (one.spoken as { playedMs: number }).playedMs > 1_500, `R1: the result was played ${JSON.stringify(one.spoken)}`);
   assert.equal((await capsuleState(work))?.phase, "done", "R3: capsule stays after speaking");
-  assert.ok(evidence.speechRequests.length === 1 && evidence.speechRequests[0]!.url === "https://api.minimaxi.com/v1/t2a_v2" && evidence.speechRequests[0]!.model === "speech-2.8-hd", `R2: one request to the subscription endpoint ${JSON.stringify(evidence.speechRequests)}`);
-  assert.ok(evidence.speechRequests[0]!.text?.startsWith("已经按营收排好了表，Lumen 最高。") && !evidence.speechRequests[0]!.text.includes("第二句"), `R1: spoke only the first sentence ${evidence.speechRequests[0]!.text}`);
+  assert.ok(evidence.speechRequests.length === 2 && evidence.speechRequests.every(request => request.url === "https://api.minimaxi.com/v1/t2a_v2" && request.model === "speech-2.8-hd"), `R2: ack + result to the subscription endpoint ${JSON.stringify(evidence.speechRequests)}`);
+  assert.ok(evidence.speechRequests[1]!.text?.startsWith("已经按营收排好了表，Lumen 最高。") && !evidence.speechRequests[1]!.text.includes("第二句"), `R1: spoke only the first sentence ${evidence.speechRequests[1]!.text}`);
 
   // R3：点「在侧栏看」打开侧栏，对话里有这句话。
   await clickCapsuleButton(work, "在侧栏看");
@@ -247,7 +264,7 @@ try {
   two.ms.doing = escAt - released2;
   await rp.screenshot(work, join(artifacts, "5-stopped.png"));
   await sleep(1_500);
-  assert.equal(evidence.speechRequests.length, 1, "R1: a stopped task is not spoken");
+  assert.equal(resultSpeech().length, 1, "R1: a stopped task is not spoken");
 
   // ── 第 3 轮：念到一半按 Esc ──
   rule.steps = [{ text: ANSWER3 }];
@@ -278,16 +295,16 @@ try {
   await sleep(500);
   const four: Evidence["rounds"][number] = { phases: [], ms: {} };
   evidence.rounds.push(four);
-  const before = evidence.speechRequests.length;
+  const before = resultSpeech().length;
   await holdAndSpeak(work, four, join(artifacts, "8-listening-fourth.png"));
   await waitPhase(work, four, "done", DICTATION_MS + 15_000);
-  await until(async () => evidence.speechRequests.length >= before + 2 || undefined, 20_000, "left-for-you spoken after the result");
+  await until(async () => resultSpeech().length >= before + 2 || undefined, 20_000, "left-for-you spoken after the result");
   await sleep(600);
   await rp.screenshot(work, join(artifacts, "9-left-speaking.png"));
   await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "fourth speech finished");
   four.spoken = await lastSpeech(inproc);
   await sleep(500);
-  const spokenTexts = evidence.speechRequests.slice(before).map(request => request.text);
+  const spokenTexts = resultSpeech().slice(before).map(request => request.text);
   assert.deepEqual(spokenTexts, [ANSWER4, `留给你的：${LEFT}`], "R1: the result, then only the left-for-you part");
   assert.ok((four.spoken as { ok?: boolean }).ok, `R1: left-for-you played ${JSON.stringify(four.spoken)}`);
 

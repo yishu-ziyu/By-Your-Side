@@ -142,7 +142,8 @@ export function createPttCapsule() {
     const said = 'heard' in capsule ? capsule.heard ?? '' : '';
     heard.textContent = said ? `“${said}”` : '';
     heard.hidden = !said;
-    detail.textContent = capsule.phase === 'doing' ? capsule.step ?? '交给助手了' : capsule.phase === 'waiting' ? capsule.reason
+    // 在做：念确认句时显示那一句，念完显示当前步骤。
+    detail.textContent = capsule.phase === 'doing' ? (capsule.speaking ? capsule.ack : capsule.step ?? capsule.ack) : capsule.phase === 'waiting' ? capsule.reason
       : capsule.phase === 'done' ? capsule.result : capsule.phase === 'failed' ? capsule.reason : capsule.phase === 'transcribing' ? '…' : '';
     detail.hidden = !detail.textContent;
     left.hidden = !(capsule.phase === 'done' && capsule.left);
