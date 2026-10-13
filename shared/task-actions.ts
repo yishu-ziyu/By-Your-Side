@@ -17,6 +17,8 @@ export interface TaskActionRequest {
   tabId?:number;
   text?: string;
   context?: PageContext;
+  /** 用户用 @ 拉进来的其他标签页（不含当前页）。 */
+  pages?: PageContext[];
   attachments?: Attachment[];
 }
 

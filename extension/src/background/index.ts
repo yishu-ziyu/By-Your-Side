@@ -1837,6 +1837,26 @@ return;
  * user_message / steer 转发前附上发送那一刻用户正在看的标签页（"这页面"类指代的锚点）。
  * 查询失败或无活动标签时原样发送，不阻塞主流程。
  */
+async function readMentionedPages(seq: number, pages: PageContext[], currentTabId?: number): Promise<void> {
+  for (const page of pages) {
+    if (page.tabId === currentTabId) {
+      broadcast({ kind: "mention_status", seq, tabId: page.tabId, status: "read" });
+      continue;
+    }
+
+    try {
+      const got = await pageText({ tabId: page.tabId, max: 4_000 });
+      if (!got.text.trim()) throw new Error("这一页没有可读的正文");
+      broadcast({ kind: "mention_status", seq, tabId: page.tabId, status: "read" });
+    } catch (error) {
+      const reason = error instanceof Error && /无效|关掉|不存在|No tab/.test(error.message)
+        ? "那一页已经关掉了"
+        : "读不到这一页";
+      broadcast({ kind: "mention_status", seq, tabId: page.tabId, status: "unread", reason });
+    }
+  }
+}
+
 async function attachPageContext<T extends Extract<ClientMessage, { type: "user_message" | "steer" }>>(
   msg: T,
 ): Promise<T> {
@@ -2006,15 +2026,20 @@ function attachPanel(port: chrome.runtime.Port) {
           void stopTrailReplay(key());
 
           void attachPageContext(client).then((enriched) => {
+            const mentioned = wireClient.type === "task_action" ? wireClient.request.pages : undefined;
             // 页面要等查完活动标签页才知道：补进这一条历史，侧栏当场的 chip 和重开后的回放都用它。
-            if (enriched.context && entry.item.kind === "user") {
-              const { title, url, selection } = enriched.context;
+            if (entry.item.kind === "user" && (enriched.context || mentioned?.length)) {
+              const { title, url, selection } = enriched.context ?? { title: "", url: "", selection: undefined };
               const context: UserTurnContext = { title, url };
 
               if (selection?.text) context.selection = selection.text;
+              if (mentioned?.length) {
+                context.pages = mentioned.map((page) => ({ title: page.title, url: page.url, tabId: page.tabId, status: "pending" as const }));
+              }
               entry.item.context = context;
               flushHistory();
               broadcast({ kind: "turn_context", seq: entry.seq, context: entry.item.context });
+              if (mentioned?.length) void readMentionedPages(entry.seq, mentioned, enriched.context?.tabId);
             }
 
             // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，

@@ -839,6 +839,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
       return isTaskActionRequest(r) && r.conversationId === msg.conversationId
         && (r.context === undefined || isPageContext(r.context))
+        && (r.pages === undefined || Array.isArray(r.pages) && r.pages.length <= 8 && r.pages.every(isPageContext))
         && (r.attachments === undefined || Array.isArray(r.attachments) && r.attachments.every(isAttachment)) ? msg : null;
     }
 

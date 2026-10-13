@@ -1,9 +1,109 @@
-import { createElement as icon, Copy } from "lucide";
+import { createElement as icon, Ellipsis } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { toast } from "./sonar-citations.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。 */
 const CHROME = ".answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
+
+export function resultCommandShortcut(): string {
+  return /Mac/i.test(navigator.platform) ? "⇧⌘K" : "Ctrl+Shift+K";
+}
+
+export interface ResultAction {
+  id: string;
+  label: string;
+  shortcut?: string;
+  primary?: boolean;
+  run: (answer: HTMLElement) => Promise<void>;
+}
+
+function answerBody(answer: HTMLElement): HTMLElement {
+  const body = answer.cloneNode(true) as HTMLElement;
+  body.querySelectorAll(CHROME).forEach((node) => node.remove());
+  return body;
+}
+
+async function writeClipboard(text: string): Promise<void> {
+  await navigator.clipboard.writeText(text);
+}
+
+export async function copyAnswerText(answer: HTMLElement): Promise<void> {
+  const body = answerBody(answer);
+  await writeClipboard(body.innerText.trim() || body.textContent?.trim() || "");
+}
+
+export async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
+  const body = answerBody(answer);
+  await writeClipboard(body.innerText.trim());
+}
+
+export function tableTsv(answer: HTMLElement): string | null {
+  const table = answer.querySelector("table");
+  if (!table) return null;
+  return [...table.querySelectorAll("tr")].map((row) =>
+    [...row.querySelectorAll("th,td")].map((cell) => (cell.textContent ?? "").replace(/\s+/g, " ").trim()).join("\t"),
+  ).join("\n");
+}
+
+export async function copyAnswerTable(answer: HTMLElement): Promise<void> {
+  const tsv = tableTsv(answer);
+  if (!tsv) throw new Error("没有表格");
+  await writeClipboard(tsv);
+}
+
+export function listResultActions(answer: HTMLElement): ResultAction[] {
+  const actions: ResultAction[] = [];
+  const table = tableTsv(answer);
+  const pageBtn = answer.querySelector<HTMLButtonElement>(".answer-show-tab");
+  if (table) actions.push({ id: "copy-table", label: "复制为表格", shortcut: "↵", primary: true, run: copyAnswerTable });
+  if (pageBtn) {
+    actions.push({
+      id: "show-page",
+      label: "在页面上查看",
+      shortcut: table ? undefined : "↵",
+      primary: !table,
+      run: async () => { pageBtn.click(); },
+    });
+  }
+  if (!actions.some((a) => a.primary)) {
+    actions.unshift({ id: "copy", label: "复制", shortcut: "↵", primary: true, run: copyAnswerText });
+  } else {
+    actions.push({ id: "copy", label: "复制", run: copyAnswerText });
+  }
+  actions.push({ id: "copy-md", label: "复制为 Markdown", run: copyAnswerMarkdown });
+  const sources = answer.querySelector<HTMLButtonElement>(".answer-sources-btn");
+  if (sources && !sources.hidden) {
+    actions.push({ id: "sources", label: "打开来源", run: async () => { sources.click(); } });
+  }
+  return actions;
+}
+
+export function refreshPrimaryAction(answer: HTMLElement): void {
+  const primary = answer.querySelector<HTMLButtonElement>(".answer-primary");
+  if (!primary) return;
+  const action = listResultActions(answer).find((a) => a.primary);
+  if (!action) return;
+  primary.dataset.action = action.id;
+  primary.replaceChildren();
+  const label = document.createElement("span");
+  label.textContent = action.label;
+  const hint = document.createElement("span");
+  hint.className = "answer-enter-hint";
+  hint.textContent = "↵";
+  hint.hidden = true;
+  primary.append(label, hint);
+}
+
+export async function runPrimaryAction(answer: HTMLElement): Promise<void> {
+  const action = listResultActions(answer).find((a) => a.primary);
+  const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
+  try {
+    await action?.run(answer);
+    if (feedback && action?.id.startsWith("copy")) feedback.textContent = "已复制";
+  } catch {
+    if (feedback) feedback.textContent = "没做成";
+  }
+}
 
 const SECTION_TITLES = { sources: "读过的网页" } as const;
 
@@ -16,11 +116,19 @@ export function attachAnswerActions(answer: HTMLElement): void {
   if (answer.querySelector(".answer-actions") || !answer.textContent?.trim()) return;
   const actions = document.createElement("div");
   actions.className = "answer-actions";
-  const copy = document.createElement("button");
-  copy.type = "button";
-  copy.setAttribute("aria-label", "复制回答");
-  copy.title = "复制回答";
-  copy.append(icon(Copy));
+  const primary = document.createElement("button");
+  primary.type = "button";
+  primary.className = "answer-primary";
+  primary.addEventListener("click", () => { void runPrimaryAction(answer); });
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "answer-command-btn";
+  more.setAttribute("aria-label", "更多动作");
+  more.title = resultCommandShortcut();
+  more.append(icon(Ellipsis));
+  more.addEventListener("click", () => {
+    answer.dispatchEvent(new CustomEvent("answer-command", { bubbles: true }));
+  });
   const sources = document.createElement("button");
   sources.type = "button";
   sources.className = "answer-sources-btn";
@@ -35,34 +143,19 @@ export function attachAnswerActions(answer: HTMLElement): void {
   panel.className = "answer-panel";
   panel.hidden = true;
 
-  copy.onclick = async () => {
-    copy.disabled = true;
-    // SAFETY: cloneNode 保持原节点类型，answer 是 HTMLElement。
-    const body = answer.cloneNode(true) as HTMLElement;
-    body.querySelectorAll(CHROME).forEach(node => node.remove());
-
-    try {
-      await navigator.clipboard.writeText(body.innerText.trim() || body.textContent?.trim() || "");
-      feedback.textContent = "已复制";
-    } catch {
-      feedback.textContent = "复制失败，请选中文字复制";
-    } finally {
-      copy.disabled = false;
-    }
-  };
-
   sources.onclick = () => {
     panel.hidden = !panel.hidden;
     sources.setAttribute("aria-expanded", String(!panel.hidden));
 
-    // 面板常在最后一条回答下面，展开时滚到看得见。
+    // 来源列表常在最后一条回答下面，展开时滚到看得见。
     if (!panel.hidden) panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
 
-  actions.append(copy, sources, time, feedback);
+  actions.append(primary, more, sources, time, feedback);
   answer.append(actions, panel);
   document.querySelectorAll(".answer-latest").forEach(node => node.classList.remove("answer-latest"));
   answer.classList.add("answer-latest");
+  refreshPrimaryAction(answer);
 }
 
 /** 「来源」面板里的一节；回答还没有文末一排时返回 null。 */
@@ -190,6 +283,7 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
   };
 
   time.before(button);
+  refreshPrimaryAction(answer);
 }
 
 /** 那一页关了或已经在眼前：去掉指向它的「切过去看」。 */
