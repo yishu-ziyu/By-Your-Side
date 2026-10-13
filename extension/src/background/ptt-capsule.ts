@@ -175,7 +175,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
       showAndSay(t, { phase: 'waiting', heard: t.heard, reason: '页面现在归你。操作完，点「交还」。' });
     } else if (t.sawRun && (view.state === 'idle' || view.state === 'aborted' || view.state === 'error')) {
       // 中止、出错马上停声音（多半是确认句听出理解错了），胶囊照旧稍后再换。
-      if (view.state !== 'idle') silence(t);
+      if (view.state !== 'idle') { silence(t); show(t.tabId, { phase: 'doing', heard: t.heard, step: stepOf(view), ack: t.ack }); }
       t.settle = setTimeout(() => settle(view), SETTLE_MS);
     }
   };
