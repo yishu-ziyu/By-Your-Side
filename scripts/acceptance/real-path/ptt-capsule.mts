@@ -8,7 +8,7 @@
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
- * 确认句（松开后马上应一句）：每轮交给助手时先念「好，按营收排。」；第 1 轮任务步骤在跑时它照样念完，胶囊在做时显示正在说。
+ * 确认句（松开后马上应一句）：每轮交给助手时先念「好，按营收排。」；第 1 轮任务步骤在跑时它照样念完，念的时候「正在做」后面是它、光球在说，念完换回当前步骤。
  * 胶囊的 shadow root 是关着的：用它挂在宿主上的 data-phase / data-peak 判断步骤，内容看截图。
  */
 import assert from "node:assert/strict";
@@ -89,7 +89,21 @@ const capsuleState = (session: string) => rp.evaluate(session, `(() => { const h
 /** 离屏文档上一次念的结果（ptt-speech.ts 写在根元素上）。 */
 const lastSpeech = async (inproc: string) => JSON.parse(String(await rp.evaluate(inproc, `document.documentElement.dataset.pttSpeech ?? "null"`)));
 
-type DomNode = { nodeId: number; nodeName: string; nodeValue?: string; children?: DomNode[]; shadowRoots?: DomNode[] };
+type DomNode = { nodeId: number; nodeName: string; nodeValue?: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
+
+/** 胶囊第一行「正在做」后面那段文字（关着的 shadow root 里，CDP 能穿透，网页脚本不能）。 */
+async function capsuleDetail(session: string): Promise<string | null> {
+  const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as { root: DomNode };
+  const find = (node: DomNode): DomNode | null => {
+    if (node.nodeName === "SPAN" && node.attributes?.includes("detail")) return node;
+
+    for (const child of [...(node.shadowRoots ?? []), ...(node.children ?? [])]) { const hit = find(child); if (hit) return hit; }
+
+    return null;
+  };
+
+  return find(root)?.children?.map(child => child.nodeValue ?? "").join("") ?? null;
+}
 
 /** 关着的 shadow root 里按文字找按钮，点它的中心（CDP 能穿透，网页脚本不能）。 */
 async function clickCapsuleButton(session: string, label: string): Promise<void> {
@@ -212,10 +226,14 @@ try {
   one.ms.ackSpeaking = Date.now() - released;
   await sleep(300);
   await rp.screenshot(work, join(artifacts, "2-doing.png"));
+  assert.equal(await capsuleDetail(work), ACK, "ack: shown after 正在做 while spoken");
   await until(async () => (await capsuleState(work))?.speaking === false || undefined, 10_000, "ack finished");
   one.ms.ackDone = Date.now() - released;
   one.ack = await lastSpeech(inproc);
   assert.equal((await capsuleState(work))?.phase, "doing", "ack: finished before the result");
+  // 念完换回当前步骤：后半段仍看得到在做什么（列标签页这一步在侧栏叫「查看标签页」）。
+  assert.equal(await capsuleDetail(work), "查看标签页", "ack: the current step returns after the ack");
+  await rp.screenshot(work, join(artifacts, "2b-doing-step.png"));
   assert.ok((one.ack as { ok?: boolean; playedMs?: number }).ok && (one.ack as { playedMs: number }).playedMs > 300, `ack: played in full while the task ran ${JSON.stringify(one.ack)}`);
   assert.ok(model.requests.some(r => r.rule === rule.match && r.step === 1), "ack: the task step ran while the ack was spoken");
   assert.deepEqual(evidence.speechRequests.map(request => request.text), [ACK], "ack: spoken first, from the local rule");

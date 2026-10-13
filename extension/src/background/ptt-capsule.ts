@@ -24,8 +24,10 @@ interface Tracked {
   spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: Extract<PttCapsule, { phase: 'doing' | 'done' | 'waiting' }>; ack: string; ackUtterance?: number;
 }
 
-/** 确认句不准时的说法。 */
+/** 确认句不准时的说法；问句用 ACK_QUESTION。 */
 const ACK_FALLBACK = '好，马上做。';
+
+const ACK_QUESTION = '好，我看一下。';
 
 /** 确认句里事情部分最多几个字；再长多半是整段口述，取不准。 */
 const ACK_MAX = 14;
@@ -35,7 +37,7 @@ const ACK_MAX = 14;
  * 取最后一个分句，去掉请求口头语；问句、太短或太长都用通用句，宁可笼统也不说错。
  */
 export function ackFor(heard: string): string {
-  if (/[?？]|吗|什么|怎么|为什么|多少|哪/.test(heard)) return ACK_FALLBACK;
+  if (/[?？]|吗|什么|怎么|为什么|多少|哪/.test(heard)) return ACK_QUESTION;
   const clause = heard.split(/[，,。！!；;\n]/).map(part => part.trim()).filter(Boolean).at(-1) ?? '';
   const task = clause
     .replace(/^(那|嗯|呃|好|你|请|麻烦|帮忙|帮我|给我|替我|能不能|可以|再)+/, '')
