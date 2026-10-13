@@ -254,7 +254,7 @@ async function runCase(c: Case) {
       sideFailedAtMs: sideFailed.map(at => at - sentAt),
       backupSideRequestsAtMs: backupAsked.filter(r => !r.tools).map(r => r.at - sentAt),
       receipts: await receipts(),
-      switchNotice: text.match(/[^。]*切换到[^。]*。/)?.[0] ?? null,
+      switchNotice: text.match(/[^。]*换成[^。]*接着做。/)?.[0] ?? null,
       sidebarTail: text.slice(-400),
     });
 
@@ -287,7 +287,7 @@ async function runCase(c: Case) {
       assert.equal(primaryThird.length, 1, "满 5 分钟后的下一条先问主模型");
       assert.ok(backupThird.length >= 1 && backupThird.every(r => r.at >= primaryThird[0]!), "主模型又出错，之后才换回备用");
       assert.match(text, /已换回 .*primary-model/, "侧栏写明换回了主模型");
-      assert.equal(text.match(/切换到 阶跃星辰/g)?.length, 2, "主模型再出错时又换到备用");
+      assert.equal(text.match(/换成 阶跃星辰/g)?.length, 2, "主模型再出错时又换到备用");
       await rp.screenshot(panel, join(artifacts, "sidebar-after-return.png"));
     }
 
@@ -317,10 +317,10 @@ async function runCase(c: Case) {
       assert.equal(primaryAsked.length, 1, "主模型只被问一次，不在原模型上重试");
       assert.ok(taskToBackup.length >= 1, "备用模型（阶跃星辰）收到了任务请求");
       assert.ok(visibleMs <= (c.name === "503" ? 10_000 : BOUND_MS), `回答在时限内出现（${visibleMs} ms）`);
-      assert.match(text, /已由 .*primary-model 切换到 阶跃星辰 · step-3\.7-flash/, "侧栏写明从谁换成了谁");
+      assert.match(text, /主模型暂时不可用，换成 阶跃星辰 · step-3\.7-flash 接着做/, "侧栏写明换成了哪个模型");
     } else if (!c.switchBack) {
       assert.equal(taskToBackup.length, 0, "没有换到备用模型");
-      assert.ok(!/切换到/.test(text), "侧栏没有切换提示");
+      assert.ok(!/换成 .* 接着做/.test(text), "侧栏没有切换提示");
       assert.ok(!text.includes(ANSWER), "没有备用模型的回答");
     }
   } catch (caught) {
