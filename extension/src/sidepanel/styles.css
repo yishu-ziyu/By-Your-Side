@@ -3686,3 +3686,33 @@ details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-u
 
 /* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
 #messages { overflow-x: hidden; }
+
+/* 说话输入：边说边出字（docs/evals/20261013-live-dictation.md）。说的时候输入框换成实时文字，工具栏换成声波。 */
+#composer.dictating { box-shadow: 0 0 0 1px var(--text-primary); }
+#composer.dictating #input, #composer.dictating #composer-bar { display: none; }
+#dictation-text { min-height: 22px; max-height: 160px; overflow-y: auto; font-size: 14px; line-height: 22px; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
+#dictation-text[hidden], #dictation-row[hidden] { display: none; }
+#dictation-text[data-empty]::before { content: "正在听…"; color: var(--text-tertiary); }
+#dictation-text .dictation-final { color: var(--text-secondary); }
+#dictation-text .dictation-interim { color: var(--text-tertiary); }
+#dictation-text .dictation-caret { display: inline-block; width: 1.5px; height: 15px; margin-left: 1px; background: var(--text-primary); vertical-align: -2px; animation: dictationBlink 1s steps(1) infinite; }
+@keyframes dictationBlink { 50% { opacity: 0; } }
+#dictation-row { display: flex; align-items: center; gap: 6px; height: 32px; animation: dictationRowIn var(--d-state) var(--e-enter) both; }
+@keyframes dictationRowIn { from { opacity: 0; transform: translateY(4px); } }
+#dictation-row .dictation-wave { flex: 1; min-width: 0; height: 28px; --wave-base: var(--content-border); --wave: var(--text-tertiary); --wave-hot: var(--text-secondary); }
+#dictation-row .dictation-hint { font-size: var(--fs-micro); color: var(--text-tertiary); white-space: nowrap; }
+#dictation-row .dictation-hint:empty { display: none; }
+#dictation-row .dictation-time { width: 30px; text-align: right; font: 12px/1 var(--mono); color: var(--text-tertiary); }
+#dictation-row button { width: 30px; height: 30px; border: 0; border-radius: 999px; display: inline-grid; place-items: center; cursor: pointer; flex-shrink: 0; transition: transform var(--d-tap) var(--e-enter), background var(--d-micro) var(--e-enter); }
+#dictation-row button:active { transform: scale(0.94); }
+#dictation-row button svg { width: 16px; height: 16px; }
+#dictation-row .dictation-cancel { background: transparent; color: var(--text-secondary); }
+#dictation-row .dictation-cancel:hover { background: var(--content-subtle); color: var(--text-primary); }
+#dictation-row .dictation-ok { background: var(--text-primary); color: var(--content-bg); }
+#dictate-btn { width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0; display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+#dictate-btn:hover { background: var(--content-subtle); color: var(--text-primary); }
+#dictate-btn svg { width: 17px; height: 17px; stroke-width: 1.8; }
+@media (prefers-reduced-motion: reduce) {
+  #dictation-row { animation: none; }
+  #dictation-text .dictation-caret { animation: none; }
+}
