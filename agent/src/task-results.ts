@@ -14,6 +14,7 @@ import {
   resultStateOf,
   resultLocksWhenUnknown,
   selectResultBinding,
+  withoutFailureReasons,
   type TaskResultEvidence,
   type TaskResultItem,
   type TaskResultRegistration,
@@ -85,6 +86,7 @@ export class TaskResultBook {
 
       if (existing.status === "pending" && existing.evidence) continue; // A running call owns its binding until its receipt.
       Object.assign(existing, intent, { status: "pending", evidence: null });
+      delete existing.reason;
     }
   }
 
@@ -97,6 +99,8 @@ export class TaskResultBook {
       item.status = "pending";
       item.target = null;
       item.evidence = null;
+      // 换了做法重做：上一次失败的原因不再属于它。
+      delete item.reason;
     }
   }
 
@@ -124,6 +128,9 @@ export class TaskResultBook {
 
       if (item.supersededBy) mapped.supersededBy = item.supersededBy;
 
+      // 后台重启后侧栏仍要说出没做成的原因。
+      if (item.reason) mapped.reason = item.reason;
+
       return mapped;
     });
   }
@@ -137,6 +144,7 @@ export class TaskResultBook {
     if (!item) return;
 
     item.status = "pending";
+    delete item.reason;
     const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
 
     if (input.effectful && !isWriteTool(input.name)) evidence.effectful = true;
@@ -181,7 +189,7 @@ export class TaskResultBook {
     return item;
   }
 
-  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean }): void {
+  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; /** 失败的人话原因（≤16 字）：给侧栏「没做成」那行用，成功时清掉。 */ reason?: string }): void {
     if (!input.runId) return;
     // 出错时记成「结果未知」还是「失败」：只看这一步可能已造成的后果（见 commitsHarm），不看它是不是改过页面。
     const write=resultLocksWhenUnknown({tool:input.name,evidence:{effectful:input.effectful}});
@@ -202,6 +210,8 @@ export class TaskResultBook {
     if (item.evidence && (item.evidence.member !== input.member || item.evidence.runId !== input.runId || item.evidence.tool !== input.name)) return;
 
     if (!input.failed) {
+      delete item.reason;
+
       if (input.executionFact === "not_executed") {
         // 工具成功返回却说没有派发：不是完成证据，退回待做。
         item.status = "pending";
@@ -212,6 +222,9 @@ export class TaskResultBook {
         item.status = write&&input.executionFact==='unknown'?'unknown':"satisfied";
       }
     } else {
+      // 每次失败都换成这一次的原因：没有原因时不留上一次的。
+      if (input.reason) item.reason = input.reason;
+      else delete item.reason;
       if (input.executionFact === "not_executed" || (input.name === "page_translation" && input.executionFact === "executed")) {
         // Translation may fail while generating its next batch after acknowledged earlier batches.
         // It resumes by collecting only untranslated paragraphs; an unknown RPC still stays unknown below.
@@ -235,6 +248,8 @@ export class TaskResultBook {
 
     if (!item) return false;
     item.status = input.executionFact==='not_executed'?'blocked':'satisfied';
+
+    if (item.status === 'satisfied') delete item.reason;
 
     return true;
   }
@@ -278,7 +293,7 @@ export function createTaskResultsTool(opts: {
 
       opts.register(registered);
       const snapshot = opts.getSnapshot();
-      const details = { executionState: snapshot.executionState ?? snapshot.resultState ?? "unregistered", resultState: snapshot.resultState ?? "unregistered", results: snapshot.results ?? [] };
+      const details = { executionState: snapshot.executionState ?? snapshot.resultState ?? "unregistered", resultState: snapshot.resultState ?? "unregistered", results: withoutFailureReasons(snapshot.results ?? []) };
 
       return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
     },
