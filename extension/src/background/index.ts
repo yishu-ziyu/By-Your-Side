@@ -56,7 +56,7 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, restoreFills, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
@@ -288,6 +288,25 @@ chrome.runtime.onConnect.addListener(port => {
 
   if (msg.kind === "ping") port.postMessage({ kind: "pong" } satisfies BgToPanel);
  });
+});
+
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+  if (!raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "UNDO_FILLS") return;
+  if (sender.id !== chrome.runtime.id || sender.url?.split("?")[0] !== chrome.runtime.getURL("sidepanel.html")) return;
+  const fields = (raw as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) { sendResponse({ ok: false, error: "没有可撤回的填写" }); return; }
+  const clean = fields.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const field = item as { tabId?: unknown; target?: unknown; value?: unknown };
+    if (!Number.isSafeInteger(field.tabId) || Number(field.tabId) <= 0) return [];
+    if (typeof field.target !== "string" || !field.target || field.target.length > 500) return [];
+    if (typeof field.value !== "string" || field.value.length > 1000) return [];
+
+    return [{ tabId: Number(field.tabId), target: field.target, value: field.value }];
+  }).slice(0, 8);
+  void restoreFills(clean).then(sendResponse);
+
+  return true;
 });
 
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {

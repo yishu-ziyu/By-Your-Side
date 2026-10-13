@@ -2833,6 +2833,10 @@ function fieldReadbackOf(data: unknown): { readback?: FieldReadback } {
 
   if (typeof readback.requested === "string") clean.requested = readback.requested.slice(0, FIELD_READBACK_MAX);
 
+  if (typeof readback.previous === "string") clean.previous = readback.previous.slice(0, FIELD_READBACK_MAX);
+
+  if (typeof readback.target === "string" && readback.target) clean.target = readback.target.slice(0, 500);
+
   if (readback.truncated === true) clean.truncated = true;
 
   if (readback.select === true) clean.select = true;

@@ -67,7 +67,7 @@ import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
+import { conversationBackgroundLabel, conversationDayGroup, conversationOutcome, conversationRelativeTime, resultCardCopy } from "./selectors.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
@@ -277,7 +277,10 @@ app.innerHTML = `
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub">浏览器助手。可以读页面、整理信息、在页面上操作。</p>
     <div id="starter-actions">
-      <button type="button" data-starter="请概括当前页面的要点。">概括这一页</button>
+      <button type="button" class="starter-chip" data-starter="请概括当前页面的要点。" data-effect="read">
+        <span class="starter-chip-main"><span class="starter-chip-label">概括这一页</span><span class="starter-chip-tag" data-effect="read">只读</span></span>
+        <span class="starter-chip-hint-wrap"><span class="starter-chip-hint">会读这一页的正文 → 写成摘要，不改页面</span></span>
+      </button>
     </div>
     <button type="button" id="starter-connect">连接模型</button>
   </section>
@@ -805,11 +808,30 @@ async function refreshStarterSuggestions(tabId: number): Promise<void> {
   const suggestions = suggestionsFor(profile);
   if (box && [...box.querySelectorAll<HTMLButtonElement>("button")].map(b => b.dataset.starter).join("\n") === suggestions.map(s => s.prompt).join("\n")) return;
 
-  box?.replaceChildren(...suggestions.map((item) => {
+  box?.replaceChildren(...suggestions.map((item, index) => {
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "starter-chip";
     button.dataset.starter = item.prompt;
-    button.textContent = item.label;
+    button.dataset.effect = item.effect;
+    button.style.setProperty("--starter-delay", `${index * 30}ms`);
+    const main = document.createElement("span");
+    main.className = "starter-chip-main";
+    const label = document.createElement("span");
+    label.className = "starter-chip-label";
+    label.textContent = item.label;
+    const tag = document.createElement("span");
+    tag.className = "starter-chip-tag";
+    tag.dataset.effect = item.effect;
+    tag.textContent = item.effect === "read" ? "只读" : item.effect === "fill" ? "会改页面 · 提交前问你" : "会改页面";
+    main.append(label, tag);
+    const hintWrap = document.createElement("span");
+    hintWrap.className = "starter-chip-hint-wrap";
+    const hint = document.createElement("span");
+    hint.className = "starter-chip-hint";
+    hint.textContent = item.hint;
+    hintWrap.append(hint);
+    button.append(main, hintWrap);
     bindStarterButton(button);
 
     return button;
@@ -825,6 +847,21 @@ function upsertConversation(c: ConversationSummary): void {
   if (c.id === selectedConversationId) noteRunStarted(c.runId);
 }
 
+let conversationFilter = "";
+
+const conversationOutcomeWas = new Map<string, string>();
+
+function latestTaskFor(id: string): TaskHistoryEntry | undefined {
+  let latest: TaskHistoryEntry | undefined;
+
+  for (const task of pastTasks) {
+    if (task.conversationId !== id) continue;
+    if (!latest || task.endedAt > latest.endedAt) latest = task;
+  }
+
+  return latest;
+}
+
 function renderConversations(): void {
   const current = conversations.get(selectedConversationId);
   const currentTitle = document.createElement("span");
@@ -837,37 +874,91 @@ function renderConversations(): void {
   conversationNew.setAttribute("aria-label", conversationRequest ? "正在新建会话" : "新会话");
   conversationNew.setAttribute("aria-busy", String(!!conversationRequest));
   conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
-  const list = [...conversations.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  const now = Date.now();
+  const list = [...conversations.values()].sort((a, b) => {
+    const waitA = conversationOutcome(a, { completed: completedConversations.has(a.id), task: latestTaskFor(a.id) }).kind === "waiting";
+    const waitB = conversationOutcome(b, { completed: completedConversations.has(b.id), task: latestTaskFor(b.id) }).kind === "waiting";
+    if (waitA !== waitB) return waitA ? -1 : 1;
 
-  const updatedTimeFormat = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    return b.updatedAt - a.updatedAt;
   });
+  const query = conversationFilter.trim().toLowerCase();
+  const shown = list.filter((c) => {
+    if (!query) return true;
+    const outcome = conversationOutcome(c, { completed: completedConversations.has(c.id), task: latestTaskFor(c.id) });
 
-  const rows = list.map((c) => {
+    return (c.title || "新会话").toLowerCase().includes(query) || outcome.line.toLowerCase().includes(query) || (c.site ?? "").toLowerCase().includes(query);
+  });
+  const filter = document.createElement("input");
+  filter.type = "search";
+  filter.className = "conversation-menu-filter";
+  filter.placeholder = "筛选会话";
+  filter.setAttribute("aria-label", "筛选会话");
+  filter.value = conversationFilter;
+  filter.oninput = () => { conversationFilter = filter.value; renderConversations(); };
+  const nodes: HTMLElement[] = [filter];
+  let lastGroup = "";
+
+  for (const c of shown) {
+    const outcome = conversationOutcome(c, { completed: completedConversations.has(c.id), task: latestTaskFor(c.id) });
+    const group = outcome.kind === "waiting" ? "等你" : conversationDayGroup(c.updatedAt, now);
+
+    if (group !== lastGroup) {
+      lastGroup = group;
+      const head = document.createElement("div");
+      head.className = "conversation-menu-group";
+      head.textContent = group;
+      nodes.push(head);
+    }
+
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("role", "menuitemradio");
     button.setAttribute("aria-checked", String(c.id === selectedConversationId));
     button.dataset.conversationId = c.id;
+    button.dataset.outcome = outcome.kind;
     button.title = c.title || "新会话";
+    const mark = document.createElement("span");
+    mark.className = "conversation-menu-mark";
+    mark.dataset.kind = outcome.kind;
+    mark.textContent = outcome.icon;
+    if (outcome.kind === "waiting") {
+      const dot = document.createElement("i");
+      dot.className = "conversation-menu-wait-dot";
+      mark.append(dot);
+    }
     const info = document.createElement("div");
     info.className = "conversation-menu-info";
     const title = document.createElement("span");
     title.className = "conversation-menu-title";
     title.textContent = c.title || "新会话";
+    const ending = document.createElement("small");
+    ending.className = "conversation-menu-ending";
+    ending.textContent = outcome.line;
+    info.append(title, ending);
+    const meta = document.createElement("div");
+    meta.className = "conversation-menu-meta";
+    if (c.site) {
+      const site = document.createElement("span");
+      site.className = "conversation-menu-site";
+      site.textContent = c.site.charAt(0).toUpperCase();
+      site.title = c.site;
+      meta.append(site);
+    }
     const updated = document.createElement("small");
     updated.className = "conversation-menu-updated";
-    updated.textContent = `更新于 ${updatedTimeFormat.format(c.updatedAt)}`;
-    info.append(title, updated);
-    const state = document.createElement("small");
-    state.textContent = conversationStateLabel(c);
-    button.append(info, state);
+    updated.textContent = conversationRelativeTime(c.updatedAt, now);
+    meta.append(updated);
+    button.append(mark, info, meta);
     button.onclick = () => selectConversation(c.id);
+    const prev = conversationOutcomeWas.get(c.id);
+    if (prev && prev !== outcome.kind && !conversationMenu.hidden) button.classList.add("conversation-row-flash");
+    conversationOutcomeWas.set(c.id, outcome.kind);
+    nodes.push(button);
+  }
 
-    return button;
-  });
-
-  conversationMenu.replaceChildren(...rows);
+  conversationMenu.replaceChildren(...nodes);
+  if (!conversationMenu.hidden) filter.focus();
 
   const other = list.find((c) => c.id !== selectedConversationId && c.state === "running")
     ?? list.find((c) => c.id !== selectedConversationId && c.state === "user")
@@ -1061,6 +1152,12 @@ function requestNewConversation(): boolean {
 conversationSwitcher.onclick = () => {
   conversationMenu.hidden = !conversationMenu.hidden;
   conversationSwitcher.setAttribute("aria-expanded", String(!conversationMenu.hidden));
+  if (conversationMenu.hidden) conversationFilter = "";
+  else {
+    conversationFilter = "";
+    if (!pastTasksRequestId) requestPastTasks();
+    renderConversations();
+  }
 };
 
 conversationNew.onclick = () => {
@@ -1595,6 +1692,7 @@ function handlePastTasksResult(msg: Extract<ServerMessage, { type: "task_history
   else pastTasksError = `未能读取过往任务：${msg.error ?? "未知原因"}`;
 
   if (!memoryDrawer.hidden) renderMemoryDrawer();
+  if (!conversationMenu.hidden) renderConversations();
 }
 
 /** 被替换、失效的旧记忆：留作历史，不再带给助手；被替换的可以撤销替换。 */
@@ -2104,6 +2202,16 @@ function clipTitle(text: string, max = 16): string {
 
 /** 活动标签页快照：页面标牌与任务条材料共用同一份事实，不重复假设。 */
 let activeTabInfo: { id: number; title: string; url: string } | null = null;
+/** 侧栏聚焦时 chrome.tabs.query 可能拿不到当前页；填写撤回用最近一次见到的标签页。 */
+let lastKnownTabId: number | undefined;
+
+function rememberTab(id?: number | null): void {
+  if (typeof id === "number" && Number.isSafeInteger(id) && id > 0) lastKnownTabId = id;
+}
+
+function knownWorkTabId(): number | undefined {
+  return lastKnownTabId ?? activeTabInfo?.id ?? starterTab() ?? undefined;
+}
 
 async function refreshActiveTabPill(): Promise<void> {
   if (typeof chrome === "undefined" || !chrome.tabs?.query) {
@@ -2119,6 +2227,7 @@ async function refreshActiveTabPill(): Promise<void> {
 
     if (tab.id != null) {
       activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
+      rememberTab(tab.id);
       ghostBar.setTab(activeTabInfo);
       marginalia.setPage(activeTabInfo);
       noteStarterTab(tab.id);
@@ -2373,7 +2482,9 @@ interface RunHost {
   guideHint: string | null;
   /** 填写之后从网页读回的几栏（「草稿现在是：「…」」）：进行中跟在过程行下面，回答出现后收进过程。 */
   evidence: HTMLElement | null;
-  evidenceLines: Array<{ key: string; field: string; value: string }>;
+  evidenceLines: Array<{ key: string; field: string; value: string; previous?: string; undoable?: true; target?: string; tabId?: number }>;
+  submitted: boolean;
+  undoArmed: boolean;
   /** 这一轮的回答（finding）：回答出现且这一轮已收尾后，开场话、读回、重复回答的旁白收进过程（foldAnsweredRun）。 */
   answer: { text: string; el: HTMLElement; hostNote: boolean } | null;
   /** 目标核对到哪了：checking 核对中；continued 判继续、由下一块过程接着做；unavailable 没有结论。 */
@@ -3371,6 +3482,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
     guideHint: null,
     evidence: null,
     evidenceLines: [],
+    submitted: false,
+    undoArmed: false,
     answer: null,
     check: null,
     receipt: null,
@@ -3811,6 +3924,7 @@ function finishRun(): void {
   else run.root.after(run.graph.el);
 
   if (run.evidence) (run.graph.el.isConnected ? run.graph.el : run.root).after(run.evidence);
+  armFillUndo(run);
 
   for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
     if (node instanceof HTMLElement && node.matches(".msg.assistant")) syncAnswerTime(node);
@@ -3870,7 +3984,7 @@ function foldAnsweredRun(run: RunHost): void {
     run.body.prepend(line);
   }
 
-  if (run.evidence && run.evidence.parentElement !== run.body) run.body.insertBefore(run.evidence, run.body.querySelector(":scope > .run-total"));
+  if (run.evidence && run.evidence.parentElement !== run.body && !run.undoArmed && !run.evidence.querySelector(".fill-undo-live")) run.body.insertBefore(run.evidence, run.body.querySelector(":scope > .run-total"));
   const said = comparableText(answer.text);
   const shown = comparableText(answer.el.textContent ?? "");
 
@@ -4353,6 +4467,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
 
   // 教学的步骤行就是这一轮的结果（用户自己点过的每一步），收尾时要留下。
   if (ev.name === "guide_step" || changesPage(ev.name, typeof ev.params.action === "string" ? ev.params.action : undefined)) run.changedPage = true;
+  if (ev.name === "click" && /提交|发送|submit|send/i.test(String(ev.params.target ?? ""))) run.submitted = true;
 
   const prep = isPrepTool(ev.name, ev.params);
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
@@ -4526,13 +4641,24 @@ function groupProcessReceipts(): void {
   }
 }
 
+function tabIdFromKey(tab: string): number | undefined {
+  const matched = /^tab-(\d+)$/.exec(tab);
+
+  return matched ? Number(matched[1]) : undefined;
+}
+
 /** 填写之后网页里这一栏的实际内容：程序读回，不经助手转述（R1）。敏感栏不显示。 */
-function showReadback(readback: NonNullable<Extract<AgentUiEvent, { kind: "tool_end" }>["readback"]>, key: string): void {
+function showReadback(readback: NonNullable<Extract<AgentUiEvent, { kind: "tool_end" }>["readback"]>, key: string, toolCallId: string): void {
   const line = evidenceLine(readback, key);
   const run = currentRun;
 
   if (!line || !run) return;
-  run.evidenceLines = mergeEvidence(run.evidenceLines, line);
+  const start = fieldTargets.get(toolCallId);
+  const target = (typeof start?.target === "string" && start.target ? start.target : undefined) ?? line.target ?? takeFillLocator();
+  const tabId = start?.tabId ?? (start ? tabIdFromKey(start.tab) : undefined) ?? knownWorkTabId();
+  rememberTab(tabId);
+  if (target) consumeFillLocator(target);
+  run.evidenceLines = mergeEvidence(run.evidenceLines, { ...line, ...(target ? { target } : {}), ...(tabId ? { tabId } : {}) });
 
   if (!run.evidence) {
     run.evidence = document.createElement("div");
@@ -4549,17 +4675,115 @@ function showReadback(readback: NonNullable<Extract<AgentUiEvent, { kind: "tool_
 
     return row;
   }));
+  run.undoArmed = false;
+  armFillUndo(run);
   scrollToEnd();
+}
+
+/** 这一轮结束后：还没提交的填写给 8 秒撤回。已经发出的不装。标签页在点击时再解析，不靠过程行上的 tab-start。 */
+function armFillUndo(run: RunHost): void {
+  if (replayingHistory || run.undoArmed || run.submitted || !run.evidence) return;
+  for (const line of run.evidenceLines) {
+    if (!line.target && fillLocators.length) line.target = fillLocators.shift();
+  }
+  const fields = run.evidenceLines.filter((line): line is typeof line & { target: string; previous: string } =>
+    !!line.undoable && typeof line.target === "string" && line.previous !== undefined);
+  if (!fields.length) return;
+  run.undoArmed = true;
+  const card = document.createElement("div");
+  card.className = "fill-undo fill-undo-live";
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "fill-undo-action";
+  action.textContent = "撤回这次填写";
+  const line = document.createElement("div");
+  line.className = "fill-undo-line";
+  const bar = document.createElement("i");
+  line.append(bar);
+  card.append(action, line);
+  const settle = (word: string) => {
+    card.classList.remove("fill-undo-live");
+    card.classList.add("fill-undo-done");
+    card.replaceChildren();
+    card.textContent = word;
+  };
+  action.onclick = () => {
+    action.disabled = true;
+    action.textContent = "正在撤回…";
+    void (async () => {
+      let fallback = knownWorkTabId();
+      if (!fallback) {
+        const tabs = await chrome.tabs.query({ lastFocusedWindow: true });
+        fallback = tabs.find((tab) => tab.id && tab.url && /^https?:/.test(tab.url))?.id
+          ?? tabs.find((tab) => tab.active && tab.id)?.id;
+        rememberTab(fallback);
+      }
+      if (!fallback && fields.some((field) => !field.tabId)) {
+        action.disabled = false;
+        action.textContent = "没能撤回";
+        return;
+      }
+      const reply = await chrome.runtime.sendMessage({
+        type: "UNDO_FILLS",
+        fields: fields.map((field) => ({ tabId: field.tabId ?? fallback, target: field.target, value: field.previous })),
+      }) as { ok?: boolean; error?: string } | undefined;
+      if (reply?.ok) {
+        for (const field of fields) {
+          const row = [...run.evidence!.querySelectorAll(".fill-evidence-line")].find((node) => node.textContent?.includes(field.field));
+          if (row) row.childNodes[1] && (row.childNodes[1].textContent = `「${field.previous || "（空）"}」`);
+        }
+        settle("已撤回");
+      } else {
+        action.disabled = false;
+        action.textContent = reply?.error ?? "没能撤回";
+      }
+    })().catch(() => {
+      action.disabled = false;
+      action.textContent = "没能撤回";
+    });
+  };
+  bar.addEventListener("animationend", () => { if (card.classList.contains("fill-undo-live")) settle("已填写"); });
+  run.evidence.append(card);
 }
 
 /** 读回按哪一栏记（R1、R2）：工具开始时记下填写的目标和当时的工作标签页，结束时用它区分同名的两栏。 */
 let workingTabKey = "tab-start";
-const fieldTargets = new Map<string, { target: unknown; tab: string }>();
+const fieldTargets = new Map<string, { target: unknown; tab: string; tabId?: number }>();
+const fillLocators: string[] = [];
+
+function fillLocatorOf(params: Record<string, unknown>): string | undefined {
+  if (typeof params.target === "string" && params.target) return params.target;
+  const raw = params.arguments;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as { target?: unknown };
+      if (typeof parsed.target === "string" && parsed.target) return parsed.target;
+    } catch { /* 入参不是 JSON */ }
+  } else if (raw && typeof raw === "object" && typeof (raw as { target?: unknown }).target === "string") {
+    const target = (raw as { target: string }).target;
+    if (target) return target;
+  }
+
+  return undefined;
+}
+
+function takeFillLocator(): string | undefined {
+  return fillLocators[0];
+}
+
+function consumeFillLocator(target: string): void {
+  const index = fillLocators.indexOf(target);
+  if (index >= 0) fillLocators.splice(index, 1);
+}
 
 function noteFieldTarget(ev: AgentUiEvent): void {
   if (ev.kind !== "tool_start") return;
   workingTabKey = nextWorkingTab(workingTabKey, ev.name, ev.params, ev.toolCallId);
-  fieldTargets.set(ev.toolCallId, { target: ev.params.target, tab: workingTabKey });
+  const tabId = typeof ev.params.tabId === "number" ? ev.params.tabId : undefined;
+  rememberTab(tabId);
+  const target = fillLocatorOf(ev.params);
+  if ((ev.name === "fill" || ev.name === "select_option") && target) fillLocators.push(target);
+  fieldTargets.set(ev.toolCallId, { target: target ?? ev.params.target, tab: workingTabKey, ...(tabId ? { tabId } : {}) });
 }
 
 function fieldKeyOf(toolCallId: string, readback: FieldReadback): string {
@@ -4652,7 +4876,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "tool_end":
       onToolEnd(ev);
 
-      if (ev.readback && !ev.isError) showReadback(ev.readback, fieldKeyOf(ev.toolCallId, ev.readback));
+      if (ev.readback && !ev.isError) showReadback(ev.readback, fieldKeyOf(ev.toolCallId, ev.readback), ev.toolCallId);
+      if (!ev.isError && ev.sendConfirmed) {
+        const run = currentRun ?? lastRun;
+        if (run) run.submitted = true;
+      }
       fieldTargets.delete(ev.toolCallId);
       break;
     case "agent_start":

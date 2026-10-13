@@ -214,13 +214,25 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
 }
 
 /** 填写回执：浏览器判定越界时带上 rangeIssue（值、问题、允许范围），不报成单纯成功。 */
-function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback, select?: boolean): ToolContract["fill"]["data"] {
+function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback, select?: boolean, previous?: string, target?: string): ToolContract["fill"]["data"] {
   const rangeIssue = rangeIssueOf(range);
 
   // An unreadable select (page re-rendered it) still fires change again on a repeat: the ledger must know it is a select.
   if (readback && select && readback.match === "unreadable" && !readback.sensitive) readback = { ...readback, select: true };
+  if (readback && previous !== undefined && !readback.sensitive) readback = { ...readback, previous };
+  if (readback && target && !readback.sensitive) readback = { ...readback, target };
 
   return { filled: true, ...(rangeIssue ? { rangeIssue } : {}), ...(readback ? { readback } : {}) };
+}
+
+async function readPreviousValue(tabId: number, where: { backendNodeId: number } | { target: string | null }): Promise<string | undefined> {
+  try {
+    const prior = await readBackField(tabId, where, "", "replace");
+
+    return prior.sensitive || prior.observed === undefined ? undefined : prior.observed;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 页面里读到的一栏：敏感栏不带 value；select 表示读的是选中项的文字。 */
@@ -2018,6 +2030,7 @@ export async function fill(
   }
 
   const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "fill", params.target);
+  const previous = await readPreviousValue(tabId, backendNodeId !== undefined ? { backendNodeId } : { target: params.target });
 
   try {
     if (targetRect) {
@@ -2049,7 +2062,7 @@ export async function fill(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        const filled = filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
+        const filled = filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select, previous, params.target);
 
         return refound ? { ...filled, refound } : filled;
       } catch (e) {
@@ -2108,7 +2121,7 @@ export async function fill(
 
     if (params.memory) await markMemoryField(tabId, params.memory, undefined, params.target);
 
-    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true);
+    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true, previous, params.target);
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
@@ -2317,9 +2330,49 @@ export async function typeText(
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
   await beforeDispatch?.();
+  const previous = await readPreviousValue(tab.id, { target: null });
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
   // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
-  return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
+  const readback = await readBackField(tab.id, { target: null }, params.text, "insert");
+
+  return { typed: true, readback: previous !== undefined && !readback.sensitive ? { ...readback, previous } : readback };
+}
+
+/** 用户撤回这一轮还没提交的填写：逐栏写回原值，网页上闪一下。不走助手、不记步骤。 */
+export async function restoreFills(fields: ReadonlyArray<{ tabId: number; target: string; value: string }>): Promise<{ ok: boolean; restored: number; error?: string }> {
+  let restored = 0;
+
+  for (const [index, field] of fields.entries()) {
+    if (index) await new Promise((done) => setTimeout(done, 40));
+
+    try {
+      await ensureDomOps(field.tabId);
+      const result = await callDom(
+        field.tabId,
+        (target: string, value: string) => {
+          const dom = window.__sideagent?.dom;
+
+          if (!dom) return { refused: "页面脚本未就绪" };
+          const written = dom.fill(target, value);
+          const el = dom.resolve(target);
+
+          if (el instanceof HTMLElement) {
+            el.animate(
+              [{ backgroundColor: "#FBE3DE" }, { backgroundColor: "transparent" }],
+              { duration: 300, easing: "cubic-bezier(0.4, 0, 1, 1)" },
+            );
+          }
+
+          return written;
+        },
+        [field.target, field.value],
+      );
+
+      if (result && "filled" in result) restored += 1;
+    } catch { /* 这一栏没写回，继续下一栏 */ }
+  }
+
+  return restored ? { ok: true, restored } : { ok: false, restored: 0, error: "没有写回原来的值" };
 }
 
 export async function pressKey(

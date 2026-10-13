@@ -9,11 +9,23 @@ const EVIDENCE_LINES = 3;
 const EVIDENCE_CLIP = 80;
 
 /** 一栏的显示名与值；敏感栏、读不回的返回 null（不显示）。key 区分同名的两栏（见 readbackKey）。 */
-export function evidenceLine(readback: FieldReadback, key: string): { key: string; field: string; value: string } | null {
+export function evidenceLine(readback: FieldReadback, key: string): { key: string; field: string; value: string; previous?: string; undoable?: true; target?: string } | null {
   if (readback.sensitive || readback.observed === undefined) return null;
   const value = readback.observed.replace(/\s+/g, " ").trim();
+  const requested = typeof readback.requested === "string" ? readback.requested.replace(/\s+/g, " ").trim() : "";
+  let previous = typeof readback.previous === "string" ? readback.previous.replace(/\s+/g, " ").trim() : "";
+  // 写入前没读到时，previous 会变成写后的值；空表单按原值是空来撤回。
+  if (previous === value && requested === value) previous = "";
+  const target = typeof readback.target === "string" && readback.target ? readback.target : undefined;
 
-  return { key, field: readback.name || "这一栏", value: value.length > EVIDENCE_CLIP || readback.truncated ? `${value.slice(0, EVIDENCE_CLIP)}…` : value };
+  return {
+    key,
+    field: readback.name || "这一栏",
+    value: value.length > EVIDENCE_CLIP || readback.truncated ? `${value.slice(0, EVIDENCE_CLIP)}…` : value,
+    previous,
+    ...(target ? { target } : {}),
+    ...(previous !== value ? { undoable: true as const } : {}),
+  };
 }
 
 /**
