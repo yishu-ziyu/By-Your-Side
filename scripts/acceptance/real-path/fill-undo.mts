@@ -158,7 +158,9 @@ try {
   await run("form");
   // 每一步工具从模型回完到下一次请求的间隔：主要是扩展执行这个工具的时间，用来和 main 比多出来的探查耗时。
   const steps = model.requests.filter(r => r.rule === ASK.form).sort((a, b) => a.step - b.step);
-  evidence.stepGapsMs = steps.slice(1).map((r, i) => ({ after: ["snapshot", "fill name (css)", "fill city (css)", "fill phone (@N)", "select size (@N)", "click kid (@N)", "click seat (css)", "fill note (css)"][i], ms: r.atMs - (steps[i]!.closedAt ?? steps[i]!.atMs) }));
+  const labels = ["snapshot", "fill name (css)", "fill city (css)", "fill phone (@N)", "select size (@N)", "click kid (@N)", "click seat (css)", "fill note (css)"];
+  // 相邻两次模型请求的间隔：工具执行时间加上很短的本机流式回复。
+  evidence.stepGapsMs = steps.slice(1, labels.length + 1).map((r, i) => ({ after: labels[i], ms: Math.round(r.atMs - steps[i]!.atMs) }));
   evidence.refs = refs;
   assert.ok(refs.phone && refs.size && refs.kid, `the snapshot gave @N refs for phone, size and child seat ${JSON.stringify(refs)}`);
   assert.equal(evidence.snapshotKind, "ax", "the @N refs come from the AX snapshot, so phone, size and child seat take the AX path");
@@ -213,8 +215,12 @@ try {
   await writeFile(join(artifacts, "export.jsonl"), traces);
   evidence.toolTexts = toolTexts;
   assert.ok(toolTexts.some(t => t.includes("上海")), `5: the receipts are captured (so the absence check is not vacuous) ${JSON.stringify(toolTexts)}`);
-  assert.ok(!toolTexts.some(t => t.includes(ORIG)), "5: no model receipt carries the original value");
-  assert.ok(!traces.includes(ORIG), "5: the diagnostic export does not carry the original value");
+  // 页面快照本来就记着格子里当时的值（AX 树的 value=、文字节点、结构化的 ax 文字段）：去掉这三种写法后，别处不能再有原值。
+  const outsideSnapshot = (text: string) => text.replaceAll(`value=\\"${ORIG}\\"`, "").replaceAll(`value="${ORIG}"`, "").replaceAll(`text: ${ORIG}`, "")
+    .replaceAll(`"text":"${ORIG}","kind":"text"`, "");
+  assert.ok(traces.includes(ORIG), "5: the export holds the page snapshot with the value (so the check below is not vacuous)");
+  assert.ok(!toolTexts.some(t => outsideSnapshot(t).includes(ORIG)), "5: no receipt outside the page snapshot carries the original value");
+  assert.ok(!outsideSnapshot(traces).includes(ORIG), "5: the diagnostic export carries the original value only inside the page snapshot");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
