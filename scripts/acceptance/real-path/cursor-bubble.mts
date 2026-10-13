@@ -93,6 +93,27 @@ async function observed(page: Page, selector: string) {
 }
 
 try {
+  // 助手在干活（彩边亮着）时，用户鼠标轻抖不让位，真挪开才让位。落点远离停靠的助手光标。
+  const hand = await setup(1100);
+  await hand.evaluate(() => (window as any).__sideagent.cursor.setGlow(true));
+  await hand.waitForTimeout(400);
+  const yielded = () => hand.evaluate(() => {
+    const host = document.querySelector('[data-sideagent-overlay="cursor"]');
+    const edge = ((window as any).__cursorRoots?.at(-1) as ShadowRoot)?.querySelector(".edge") as HTMLElement;
+    return { userActive: !!host?.classList.contains("user-active"), edge: Number(getComputedStyle(edge).opacity) };
+  });
+  await hand.mouse.move(300, 200);
+  await hand.waitForTimeout(100);
+  await hand.mouse.move(301, 200);
+  await hand.waitForTimeout(300);
+  const jitter = await yielded();
+  expectUserResult("1px mouse jitter while assistant works keeps glow bright", jitter, !jitter.userActive && jitter.edge > .9);
+  await hand.mouse.move(311, 200);
+  await hand.waitForTimeout(300);
+  const nudge = await yielded();
+  expectUserResult("10px mouse move while assistant works dims glow", nudge, nudge.userActive && nudge.edge < .5);
+  await hand.close();
+
   const normal = await setup(1100);
   await phase(normal, "#center", "normal");
   const entrance = await observed(normal, "#center");
@@ -184,27 +205,6 @@ try {
   expectUserResult("pagehide cancels active bubble animations and BFCache restores only idle cursor", restored,
     restored.hosts===1 && restored.cursor?.resting && !restored.cursor?.action &&
     restored.oldFade===0 && !restored.glow);
-
-  // 助手在干活（彩边亮着）时，用户鼠标轻抖不让位，真挪开才让位。落点远离停靠的助手光标。
-  const hand = await setup(1100);
-  await hand.evaluate(() => (window as any).__sideagent.cursor.setGlow(true));
-  await hand.waitForTimeout(400);
-  const yielded = () => hand.evaluate(() => {
-    const host = document.querySelector('[data-sideagent-overlay="cursor"]');
-    const edge = ((window as any).__cursorRoots?.at(-1) as ShadowRoot)?.querySelector(".edge") as HTMLElement;
-    return { userActive: !!host?.classList.contains("user-active"), edge: Number(getComputedStyle(edge).opacity) };
-  });
-  await hand.mouse.move(300, 200);
-  await hand.waitForTimeout(100);
-  await hand.mouse.move(301, 200);
-  await hand.waitForTimeout(300);
-  const jitter = await yielded();
-  expectUserResult("1px mouse jitter while assistant works keeps glow bright", jitter, !jitter.userActive && jitter.edge > .9);
-  await hand.mouse.move(311, 200);
-  await hand.waitForTimeout(300);
-  const nudge = await yielded();
-  expectUserResult("10px mouse move while assistant works dims glow", nudge, nudge.userActive && nudge.edge < .5);
-  await hand.close();
 
   const accessible = await setup(780, true);
   await phase(accessible, "#center", "reduce");
