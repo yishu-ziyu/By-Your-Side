@@ -104,7 +104,7 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const requirements = snapshot.recoveryInput?.requirements ?? [];
   const executionResults = snapshot.results ?? [];
   // 未列计划时的占位目标不是用户目标清单：只看执行记录，占位目标不算未完成项（与 nextStepIgnoringPlaceholder 同口径）。
-  const rawResults = snapshot.goalPlan?.coverage === 'verified' ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'blocked' || item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
+  const rawResults = snapshot.goalPlan?.coverage === 'verified' ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
 
   // 失败原因只取执行账本项的：目标项的 reason 是核对台账（「恢复后需要重新核对」），不是给用户看的。
   const results = rawResults.map((item): TaskViewResultItem => {
