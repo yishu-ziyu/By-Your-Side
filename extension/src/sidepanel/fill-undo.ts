@@ -5,7 +5,7 @@
  */
 import type { FillUndoNote, FillUndoView } from "../relay.js";
 
-/** 回答 → 挂在它下面的还原状态。新一轮开始时后台推 null，没还原过的回答换回平常的主动作。 */
+/** 回答 → 挂在它下面的还原状态。新一轮开始时后台推 null：还能点的「还原填写」换回平常的主动作；已还原、已提交、页面变了是这条回答的状态，留着。 */
 const views = new WeakMap<HTMLElement, FillUndoView>();
 /** 点了还原、后台还没回话。 */
 const pending = new WeakSet<HTMLElement>();
@@ -93,13 +93,13 @@ function paint(answer: HTMLElement, busy = false): void {
 }
 
 /**
- * 后台推来这一轮的还原状态。挂到这一轮的回答（侧栏里最新的那条）上；还原过的回答保留“已还原”和变淡。
+ * 后台推来这一轮的还原状态。挂到这一轮的回答（侧栏里最新的那条）上；已经定下来的旧状态留在原来的回答上。
  * 回答还没写完时先记下，文末一排挂上时 adopt 再补。
  */
 export function noteFillUndo(view: FillUndoView | null, refused: "busy" | undefined, answer: HTMLElement | null): void {
   latest = view;
 
-  if (owner && owner !== answer && views.get(owner)?.state !== "restored") {
+  if (owner && owner !== answer && views.get(owner)?.state === "ready") {
     const old = owner;
     views.delete(old);
     paint(old);
@@ -109,7 +109,7 @@ export function noteFillUndo(view: FillUndoView | null, refused: "busy" | undefi
   pending.delete(answer);
 
   if (!view) {
-    if (views.get(answer)?.state !== "restored") { views.delete(answer); paint(answer); }
+    if (views.get(answer)?.state === "ready") { views.delete(answer); paint(answer); }
     owner = null;
 
     return;
@@ -129,7 +129,15 @@ export async function requestFillUndo(answer: HTMLElement): Promise<void> {
   if (views.get(answer)?.state !== "ready" || pending.has(answer)) return;
   pending.add(answer);
   refresh(answer);
-  send();
+
+  try {
+    send();
+  } catch (error) {
+    // 面板端口刚断开：按钮回到可点，让用户再点一次。
+    pending.delete(answer);
+    refresh(answer);
+    throw error;
+  }
 }
 
 /** 换会话：上一个会话的状态不带过来，等后台按新会话补发。 */

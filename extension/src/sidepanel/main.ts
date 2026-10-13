@@ -166,7 +166,7 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   adoptUsedLine(answer);
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
-  adoptFillUndo(answer);
+  if (!replayingHistory && answer === fillUndoAnswer()) adoptFillUndo(answer);
 
   // 补放历史时不给：那一页早已不是这次回答的结果页。
   if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
@@ -1036,6 +1036,7 @@ function renderConversations(): void {
 }
 
 function resetConversationRender(): void {
+  resetFillUndo();
   if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
 
   closeBlocks();
@@ -1079,7 +1080,6 @@ function resetConversationRender(): void {
 }
 
 function selectConversation(id: string, notify = true): void {
-  resetFillUndo();
   const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
 
   if (id !== selectedConversationId) voiceUI.stop();
@@ -5811,6 +5811,10 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "synced") {
     // 同步回放总以 synced 收尾（background syncPanel）：此时历史已补齐，可以判断旧端口上的消息是否丢了。
     restoreLostSend();
+    // 后台先补发还原状态、再回放历史：历史放完后才知道哪条是这一轮的回答。
+    const undoAnswer = fillUndoAnswer();
+
+    if (undoAnswer) adoptFillUndo(undoAnswer);
 
     return;
   }

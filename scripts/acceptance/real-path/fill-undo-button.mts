@@ -6,6 +6,8 @@
  *      下一轮开始后，这条回答仍是“已还原”、仍变淡。
  *   2) 助手填完，用户自己点网页的提交：按钮灰掉写「已提交，收不回」，下面写为什么。
  *   3) 助手填完，页面刷新：按钮灰掉写「页面变了，收不回」。
+ *   4) 助手填完、用户没点还原就开始下一轮：那条回答的按钮换回「复制」。已提交、页面变了的回答保留原状态。
+ *   另：空输入框按回车不会还原（只能点按钮）；还原后重开侧栏，只有这一轮的回答是“已还原”，更早的回答不变淡。
  * 后台怎样记、怎样写回由 fill-undo.mts 验收；这里只看侧栏用户看得到的样子。
  */
 import assert from "node:assert/strict";
@@ -36,13 +38,16 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 const tool = (name: string, args: Record<string, string>) => ({ tool: { name, args } });
-const ASK = { form: "按钮案例一：帮我把预约填好，先别提交。", submit: "按钮案例二：只填姓名。", reload: "按钮案例三：只填手机号。" };
-const DONE = { form: "填好了：4 个人，联系人王小明。还没有点提交，你核对一下。", submit: "姓名填好了。", reload: "手机号填好了。" };
+const ASK = { chat: "按钮案例零：你好。", form: "按钮案例一：帮我把预约填好，先别提交。", submit: "按钮案例二：只填姓名。", reload: "按钮案例三：只填手机号。", left: "按钮案例四：只填人数。", next: "按钮案例五：好的。" };
+const DONE = { chat: "你好，要我帮你做什么？", form: "填好了：4 个人，联系人王小明。还没有点提交，你核对一下。", submit: "姓名填好了。", reload: "手机号填好了。", left: "人数填好了。", next: "好的，有事再叫我。" };
 
 const model = await startScriptedModel([
   { match: ASK.form, steps: [tool("fill", { target: "#name", value: "13812345678" }), tool("fill", { target: "#phone", value: "王小明" }), tool("select_option", { target: "#size", values: "4 人" }), { text: DONE.form }] },
   { match: ASK.submit, steps: [tool("fill", { target: "#name", value: "李四" }), { text: DONE.submit }] },
   { match: ASK.reload, steps: [tool("fill", { target: "#phone", value: "13900000000" }), { text: DONE.reload }] },
+  { match: ASK.chat, steps: [{ text: DONE.chat }] },
+  { match: ASK.left, steps: [tool("select_option", { target: "#size", values: "3 人" }), { text: DONE.left }] },
+  { match: ASK.next, steps: [{ text: DONE.next }] },
 ]);
 
 const rp = await launchRealPath();
@@ -67,10 +72,13 @@ try {
   const waitButton = (done: string, text: string) => until(async () => { const s = await seen(done); return s.button.includes(text) ? s : undefined; }, 15_000, `button ${text}`, 100);
   const page = (expr: string) => rp.evaluate(work, expr);
 
-  async function run(key: keyof typeof ASK): Promise<void> {
+  async function run(key: keyof typeof ASK, fresh = true): Promise<void> {
     await settled();
-    await rp.cdp.send("Page.navigate", { url: origin }, work);
-    await until(async () => await rp.evaluate(work, 'document.readyState==="complete"') || undefined, 10_000, "page loaded");
+
+    if (fresh) {
+      await rp.cdp.send("Page.navigate", { url: origin }, work);
+      await until(async () => await rp.evaluate(work, 'document.readyState==="complete"') || undefined, 10_000, "page loaded");
+    }
     await rp.click(panel, "#input");
     await rp.typeText(panel, ASK[key]);
     await rp.pressEnter(panel);
@@ -78,12 +86,22 @@ try {
     await settled();
   }
 
+  await run("chat", false);
+
   // 1) 填错了，用户改过姓名，点侧栏的还原。
   await run("form");
   const ready = await waitButton(DONE.form, "还原填写（3 处）");
   evidence.ready = ready;
   assert.ok(!ready.disabled && !ready.result && ready.faded === 1, `1: 主按钮是还原填写，可以点 ${JSON.stringify(ready)}`);
   await rp.screenshot(panel, join(artifacts, "1-ready.png"));
+
+  // 空输入框按回车：以前是复制；还原会改网页，只能点按钮。
+  await rp.click(panel, "#input");
+  await rp.pressEnter(panel);
+  await sleep(600);
+  const afterEnter = { page: await page(`document.getElementById("phone").value`), button: (await seen(DONE.form)).button };
+  evidence.afterEnter = afterEnter;
+  assert.deepEqual(afterEnter, { page: "王小明", button: "还原填写（3 处）" }, `1: 空输入框按回车不还原 ${JSON.stringify(afterEnter)}`);
 
   await rp.click(work, "#name");
   for (const type of ["keyDown", "keyUp"]) await rp.cdp.send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35 }, work);
@@ -99,6 +117,15 @@ try {
   assert.equal(after.result, "还原了 2 处。「姓名」你后来改过，没动。", "1: 结果行说清还原了几处、哪一栏没动");
   assert.ok(after.faded < 0.6, `1: 上面那段回答变淡 ${after.faded}`);
   assert.deepEqual(evidence.pageAfterRestore, { name: "13812345678先生", phone: "", size: "2 人" }, "1: 网页里只有用户没改过的栏回到原样");
+
+  // 还原后重开侧栏：后台先补发状态、再回放历史，只有这一轮的回答是“已还原”。
+  await rp.cdp.send("Page.reload", {}, panel);
+  await until(async () => await rp.evaluate(panel, `!!${answerOf(DONE.form)}?.querySelector(".answer-actions") && !!${answerOf(DONE.chat)}?.querySelector(".answer-actions")`) || undefined, 30_000, "history replayed", 100);
+  await sleep(600);
+  const reopened = { chat: await seen(DONE.chat), form: await seen(DONE.form) };
+  evidence.reopened = reopened;
+  assert.ok(reopened.form.button.includes("已还原") && reopened.form.faded < 0.6 && reopened.chat.faded === 1 && !reopened.chat.button.includes("还原"),
+    `1: 重开侧栏后只有这一轮的回答是已还原 ${JSON.stringify(reopened)}`);
 
   // 2) 用户自己点了提交。
   await run("submit");
@@ -124,6 +151,16 @@ try {
   evidence.pageChanged = changed;
   assert.ok(changed.disabled && changed.result.startsWith("页面已经换了"), `3: 页面变了时灰掉并写原因 ${JSON.stringify(changed)}`);
   await rp.screenshot(panel, join(artifacts, "3-page-changed.png"));
+
+  // 4) 填完没点还原就开始下一轮：可点的还原按钮换回复制；已定下来的状态留着。
+  await run("left");
+  await waitButton(DONE.left, "还原填写（1 处）");
+  await run("next", false);
+  const left = await until(async () => { const s = await seen(DONE.left); return s.button === "复制" ? s : undefined; }, 15_000, "button back to copy", 100);
+  const kept = { submitted: (await seen(DONE.submit)).button, changed: (await seen(DONE.reload)).button };
+  evidence.nextRound = { left, kept };
+  assert.ok(!left.disabled && !left.result, `4: 没点过的还原按钮换回复制 ${JSON.stringify(left)}`);
+  assert.deepEqual(kept, { submitted: "已提交，收不回", changed: "页面变了，收不回" }, "4: 已提交、页面变了的回答保留原状态");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
