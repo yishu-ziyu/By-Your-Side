@@ -2226,8 +2226,12 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   // 用户一动鼠标，彩边和光标让位，停下约 1 秒再亮回来（ego 的 user-in-control 预设）。
   // 助手经调试协议发出的鼠标事件也是可信事件，但总落在光标刚飞到的点上，据此排除。
   // 不移动光标就派发的鼠标事件（受保护的悬停）先经 expect() 登记落点。
+  // 手搭在触控板或鼠标上的抖动通常 1–3px；离上次算数的位置超过 6px 才算用户在用，
+  // 与上面排除助手光标的 6px 同一个量级。按下鼠标不设门槛。
+  const USER_MOVE_PX = 6;
   let userIdle: ReturnType<typeof setTimeout> | undefined;
   let expected: Array<{ x: number; y: number; at: number }> = [];
+  let userAnchor: { x: number; y: number } | null = null;
 
   function onUserPointer(e: PointerEvent): void {
     const now = Date.now();
@@ -2239,6 +2243,18 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     for (const inst of instances.values()) {
       if (near(inst.aim) || near(inst.pos)) return;
     }
+
+    // 锚点只在算数时更新：慢慢挪也会累计到门槛。第一次移动只记位置。
+    const anchor = userAnchor;
+    const moved = !!anchor && Math.hypot(e.clientX - anchor.x, e.clientY - anchor.y) > USER_MOVE_PX;
+
+    if (e.type !== "pointerdown" && !moved) {
+      if (!anchor) userAnchor = { x: e.clientX, y: e.clientY };
+
+      return;
+    }
+
+    userAnchor = { x: e.clientX, y: e.clientY };
 
     if (!host?.classList.contains("user-active")) host?.classList.add("user-active");
     clearTimeout(userIdle);
@@ -2255,6 +2271,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
     window.removeEventListener("pointermove", onUserPointer, { capture: true });
     window.removeEventListener("pointerdown", onUserPointer, { capture: true });
+    userAnchor = null;
     clearTimeout(userIdle);
     host?.classList.remove("user-active");
   }

@@ -614,7 +614,6 @@ html, body {
   #model-popover,
   #model-popover[hidden] {
     transform: none;
-    transition: none;
   }
   @starting-style { #model-popover:not([hidden]) { transform: none; } }
 }
@@ -1705,19 +1704,28 @@ details.run-steps.done .chip.error { background: transparent; }
   padding: 13px 15px;
   flex-direction: column;
   gap: 8px;
+  display: flex;
   transform-origin: bottom left;
-  animation: morphSpringIn var(--d-layout) var(--spring-bounce);
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--d-layout) var(--e-enter), transform var(--d-layout) var(--spring-bounce),
+              display var(--d-layout) allow-discrete;
   z-index: 15;
 }
 
-@keyframes morphSpringIn {
-  from {
+/* 退场和 #model-popover 同一写法：hidden 立即生效，display 等收回播完才切。 */
+.page-morph-sheet[hidden] {
+  opacity: 0;
+  transform: scale(0.95) translateY(4px);
+  pointer-events: none;
+  transition-timing-function: var(--e-exit);
+  transition-duration: var(--d-micro);
+}
+
+@starting-style {
+  .page-morph-sheet:not([hidden]) {
     opacity: 0;
     transform: scale(0.95) translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
   }
 }
 
@@ -1987,14 +1995,35 @@ details.run-steps.done .chip.error { background: transparent; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  animation: menuFadeIn var(--d-state) var(--e-move);
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--d-state) var(--e-move), transform var(--d-state) var(--e-move),
+              display var(--d-state) allow-discrete;
 }
 .action-menu-popover[hidden] {
-  display: none !important;
+  opacity: 0;
+  transform: translateY(4px) scale(0.95);
+  pointer-events: none;
+  transition-timing-function: var(--e-exit);
+  transition-duration: var(--d-micro);
 }
-@keyframes menuFadeIn {
-  from { opacity: 0; transform: translateY(4px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+@starting-style {
+  .action-menu-popover:not([hidden]) {
+    opacity: 0;
+    transform: translateY(4px) scale(0.95);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-morph-sheet,
+  .page-morph-sheet[hidden],
+  .action-menu-popover,
+  .action-menu-popover[hidden] {
+    transform: none;
+  }
+  @starting-style {
+    .page-morph-sheet:not([hidden]),
+    .action-menu-popover:not([hidden]) { transform: none; }
+  }
 }
 .action-menu-item {
   display: flex;
@@ -2233,8 +2262,11 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 
 /* ── 减弱动态偏好 ────────────────────────────────────────────────── */
+/* 入场 / 退场只留透明度：换成这两条，保留原时长和曲线；循环动效照旧关掉。 */
+@keyframes fadeOnlyIn { from { opacity: 0; } }
+@keyframes fadeOnlyOut { to { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .msg,
   .chip-group,
   details.thinking,
   details.run-steps {
@@ -2243,7 +2275,6 @@ details.run-steps.done .chip.error { background: transparent; }
 
   .msg.assistant.streaming:not(:has([data-tail]))::after,
   .msg.assistant.streaming [data-tail]::after,
-  .reveal-fade,
   .dot.retry,
   .chip-dot.running {
     animation: none;
@@ -2252,9 +2283,14 @@ details.run-steps.done .chip.error { background: transparent; }
   /* A+B 新增的持续/一次性动效：减少动态时只留状态色，不动位移与呼吸 */
   canvas.orb-live,
   canvas.orb-settle,
-  details.thinking.streaming::before,
-  .settle-once {
+  details.thinking.streaming::before {
     animation: none;
+  }
+
+  .reveal-fade,
+  .settle-once,
+  .tile-landing {
+    animation-name: fadeOnlyIn;
   }
 
   .run-chevron {
@@ -2304,7 +2340,6 @@ details.run-steps.done .chip.error { background: transparent; }
 @keyframes convMenuIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes convRowFlash { from { background: var(--accent-soft); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) {
-  #conversation-menu { animation: none; }
   #conversation-menu button.conversation-row-flash { animation: none; }
 }
 #topbar #conversation-switcher:focus-visible, #topbar #conversation-new:focus-visible, #conversation-menu button:focus-visible, #conversation-background:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
@@ -2410,7 +2445,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-used-error { flex-basis:100%; padding:0 0 4px 25px; color:var(--err); font-size:11px; }
 .memory-used-line .memory-used-more { display:flex; align-items:center; min-height:22px; padding-left:25px; }
 .memory-used-more button { color:var(--text-quaternary); font-size:12px; }
-@media (prefers-reduced-motion: reduce) { .memory-used-line .memory-used-item { animation:none; } }
+@media (prefers-reduced-motion: reduce) { .memory-used-line .memory-used-item { animation-name:fadeOnlyIn; } }
 .memory-not-here { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; margin-top:6px; color:var(--text-tertiary); font-size:10.5px; }
 .memory-not-here button { padding:2px 6px; }
 .memory-receipt { display:flex; align-items:center; gap:6px; margin:-8px 0 14px; color:var(--text-secondary); font-size:10.5px; }
@@ -2450,7 +2485,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .past-task .memory-row-meta > button { flex-shrink:0; white-space:nowrap; }
 .past-task > .memory-quiet { margin:6px 0 0; }
 @media (max-height: 560px) { #memory-drawer { top:92px; } }
-@media (prefers-reduced-motion: reduce) { #memory-drawer { animation:none; } }
+@media (prefers-reduced-motion: reduce) { #memory-drawer { animation-name:fadeOnlyIn; } }
 
 /* 回答默认跟随界面字体；阅读外观设置仍可覆盖这两个变量。 */
 :root {
@@ -2602,7 +2637,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .reading-settings-status { margin: 0 0 0 auto; font-size: 10.5px; color: var(--text-tertiary); }
 .reading-settings-status[data-state="saved"] { color: var(--ok); }
 .reading-settings-status[data-state="error"] { color: var(--err); }
-@media (prefers-reduced-motion: reduce) { .reading-settings-panel { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .reading-settings-panel { animation-name: fadeOnlyIn; } }
 @media (max-width: 340px) {
   .reading-settings-panel { width: min(236px, calc(100vw - 12px)); padding: 10px 11px; }
   .reading-settings-row { grid-template-columns: 30px minmax(0, 1fr); gap: 6px; }
@@ -2622,7 +2657,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .voice-start:focus-visible,.voice-end:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .voice-progress:not([hidden]){animation:voice-reveal var(--d-state) var(--e-enter)}
 @keyframes voice-reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-@media(prefers-reduced-motion:reduce){.voice-progress:not([hidden]){animation:none}}
+@media(prefers-reduced-motion:reduce){.voice-progress:not([hidden]){animation-name:fadeOnlyIn}}
 @media (max-width: 360px) {
   .voice-start span { display: none; }
   .voice-start { padding: 0; }
@@ -2733,7 +2768,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 .msg.assistant[data-delivery-kind="start_ack"] { font-family: var(--font); font-size: 12px; color: var(--text-secondary); }
 /* 开场话是助手说要怎么做，不是回答：用小一号的说明字，回答才用正文大小。 */
 .msg.assistant.markdown.opening-line { font-family: var(--font); font-size: var(--fs-ui); line-height: 1.6; color: var(--text-secondary); }
-@media (prefers-reduced-motion: reduce) { .msg { animation: none; } }
 
 /* 原生 details 保留键盘语义；内容包裹层允许自然高度折叠。 */
 @supports selector(details::details-content) {
@@ -2901,7 +2935,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .ai-task-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #page-pill { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
-  .ai-task-card, #ask-cite { animation: none; }
+  .ai-task-card, #ask-cite { animation-name: fadeOnlyIn; }
   button:not(:disabled), .pressable, .source-chip, .tab-chip, .ai-task-reveal, .task-chevron, .ai-task-footer .resume-action { transition: none; }
 }
 
@@ -2963,7 +2997,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .steer-tag { align-self:flex-start; display:inline-flex; align-items:center; gap:4px; margin:0 0 -10px; padding:2px 8px; border-radius:6px; background:color-mix(in srgb, var(--apple-orange) 12%, transparent); color:var(--apple-orange); font-size:11px; font-weight:600; }
 @keyframes steer-morph-in { from { opacity:0; filter:blur(3px); transform:translateY(4px); } to { opacity:1; filter:none; transform:none; } }
 .msg.steer-morph { animation:steer-morph-in var(--d-layout) var(--e-out); }
-@media(prefers-reduced-motion:reduce) { .msg.steer-morph { animation:none; } #ghost-bar .ghost-action, .steer-chip { transition:none; } }
+@media(prefers-reduced-motion:reduce) { .msg.steer-morph { animation-name:fadeOnlyIn; } #ghost-bar .ghost-action, .steer-chip { transition:none; } }
 
 /* #55 语音：光球居中、球下一个灰字、字幕卡里当前句墨色、说过的退成静默色；不加彩色胶囊。 */
 .voice-progress .voice-state { margin-top: var(--s-1); font-size: var(--fs-meta); color: var(--text-tertiary); }
@@ -3005,6 +3039,7 @@ details.run-steps.done .run-body > details.thinking.narration { display: block; 
 details.run-steps.done .run-body > details.thinking.narration > pre { color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) {
   .chip, .chip .dur, .chip-dot.settling, .chip-more { animation: none; transition: none; }
+  .chip .dur { animation-name: fadeOnlyIn; }
 }
 
 /* #51 技能 */
@@ -3221,7 +3256,8 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
 @keyframes graphGrow { to { stroke-dashoffset: 0; } }
 @keyframes graphRing { 0% { transform: scale(.72); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) {
-  .run-graph-row, .run-tab-tile, .run-graph-fan, .run-graph-grow, .run-graph-spin, .run-graph-ring, .run-graph-flip, .run-tab-tile[data-state="running"]::before { animation: none; }
+  .run-graph-fan, .run-graph-grow, .run-graph-spin, .run-graph-ring, .run-tab-tile[data-state="running"]::before { animation: none; }
+  .run-graph-row, .run-tab-tile { animation-name: fadeOnlyIn; }
   .run-graph-grow { stroke-dashoffset: 0; }
   .run-graph-group[data-state="folding"] .run-graph-rows,
   .run-graph-group[data-state="folding"] .run-graph-fan,
@@ -3243,7 +3279,7 @@ details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: 
 /* 跑完后代码裁判的一行（核对 n/m）：过程折叠区里的一句说明，没过时颜色略深。 */
 .run-trail .trail-step:last-child { animation: trailIn var(--d-layout) var(--e-move) both; }
 @keyframes trailIn { from { opacity: 0; transform: translateY(3px); } }
-@media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation-name: fadeOnlyIn; } }
 details.run-steps.done summary { width: max-content; max-width: 100%; margin: 0 -4px; padding: 2px 4px; border-radius: 6px; }
 details.run-steps.done summary:hover { background: var(--content-subtle-hover); }
 details.run-steps.done .run-title { font-size: var(--fs-ui); line-height: 20px; }
@@ -3465,7 +3501,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .msg.assistant .memory-used-line .memory-used-glyph svg { width: 9px; height: 9px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .msg.assistant .memory-used-toggle { animation: none; }
+  .msg.assistant .memory-used-toggle { animation-name: fadeOnlyIn; }
   .msg.assistant .memory-used-line, .msg.assistant .memory-used-line[data-open=true] { transition: none; }
 }
 
@@ -3511,7 +3547,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #key-sheet-status[data-tone="ok"] { color: var(--ok); display: flex; align-items: center; gap: 6px; }
 #key-sheet-status[data-tone="ok"] svg { width: 14px; height: 14px; }
 #key-sheet-status[data-tone="err"] { color: var(--err); }
-@media (prefers-reduced-motion: reduce) { .error-card { animation: none; } #key-sheet { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .error-card { animation-name: fadeOnlyIn; } #key-sheet { transition: none; } }
 
 /* 输入框左下角「6 Luna · 快」（thinking-chip.ts）：静时是一行灰字，悬停和打开时有浅底。 */
 #composer { position: relative; }
@@ -3589,7 +3625,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 @keyframes pc-in { from { opacity: 0; filter: blur(2px); } }
 @media (prefers-reduced-motion: reduce) {
   .pc-face, .pc-face > *, .pc.gone, .pc.collapse { transition: none; }
-  .msg.user.card-turn .pc-face > * { animation: none; }
+  .msg.user.card-turn .pc-face > * { animation-name: fadeOnlyIn; }
 }
 /* 改过网页的一轮：程序读回的这一栏、核对发现（docs/evals/20261009-claim-after-check.md） */
 .fill-evidence { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--content-border); border-radius: var(--radius-sm); background: var(--content-bg); font-size: 13px; }
@@ -3656,7 +3692,8 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .answer-command-empty { padding: 10px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 
 @media (prefers-reduced-motion: reduce) {
-  .tab-mention-menu.tab-mention-in, .tab-mention-menu.tab-mention-out, .answer-command-menu.answer-command-in, .answer-command-menu.answer-command-out { animation: none; }
+  .tab-mention-menu.tab-mention-in, .answer-command-menu.answer-command-in { animation-name: fadeOnlyIn; }
+  .tab-mention-menu.tab-mention-out, .answer-command-menu.answer-command-out { animation-name: fadeOnlyOut; }
   .tab-mention-chip { transition: none; }
 }
 #handoff-banner {
@@ -3675,7 +3712,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .run-body .chip.inspecting { box-shadow: inset 2px 0 0 var(--text-primary); }
 .run-body .chip-gone { margin-left: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 @media (prefers-reduced-motion: reduce) {
-  #handoff-banner:not([hidden]) { animation: none; opacity: 1; transform: none; }
+  #handoff-banner:not([hidden]) { animation-name: fadeOnlyIn; transform: none; }
 }
 /* ── 10-13 设计审视：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
    依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
@@ -3779,6 +3816,6 @@ details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-u
 #dictate-btn:hover { background: var(--content-subtle); color: var(--text-primary); }
 #dictate-btn svg { width: 17px; height: 17px; stroke-width: 1.8; }
 @media (prefers-reduced-motion: reduce) {
-  #dictation-row { animation: none; }
+  #dictation-row { animation-name: fadeOnlyIn; }
   #dictation-text .dictation-caret { animation: none; }
 }
