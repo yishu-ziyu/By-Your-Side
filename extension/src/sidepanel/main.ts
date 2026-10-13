@@ -909,6 +909,7 @@ function resetConversationRender(): void {
   leadAnswerText = "";
   leadAnswerTurnClosed = false;
   leadToolUsed = false;
+  goalNote = null;
   historyPrimed = false;
   currentDraftReady = false;
   currentCitationSource = null;
@@ -2656,7 +2657,9 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
   if ((context.title || host) && previousPageChipTitle(bubble) !== pageTitle) {
     const glyph = siteGlyph(context.url, host);
     glyph.className = "cg";
-    chips.push(ctxChip(glyph, context.title || host, pageTitle));
+    const chip = ctxChip(glyph, context.title || host, pageTitle);
+    chip.classList.add("page");
+    chips.push(chip);
   }
 
   if (context.selection) {
@@ -2671,12 +2674,12 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
   if (chips.length && row !== next) bubble.after(row);
 }
 
-/** 上一句用户消息带的页面卡（title 里是「标题\n网址」）；没有就返回 null。 */
+/** 前面最近一张页面卡的 title（「标题\n网址」）；中间几句没带卡说明还是同一页，接着往前找。 */
 function previousPageChipTitle(bubble: HTMLElement): string | null {
   for (let node = bubble.previousElementSibling; node; node = node.previousElementSibling) {
-    if (node.matches(".ctx-chips")) return node.querySelector<HTMLElement>(".ctx-chip")?.title ?? null;
+    const chip = node.matches(".ctx-chips") ? node.querySelector<HTMLElement>(".ctx-chip.page") : null;
 
-    if (node.matches(".msg.user")) return null;
+    if (chip) return chip.title;
   }
 
   return null;
@@ -3878,16 +3881,31 @@ function mergeRepeatedSteps(run: RunHost): void {
   }
 }
 
-/** 核对判继续时，这一轮的回答不再算数：从对话里拿掉，收进这一轮的过程，屏幕上同一件事只留一份回答。 */
-function supersedeAnswer(run: RunHost): void {
-  const answer = run.answer;
+/**
+ * 核对判继续时，上一份回答不再算数：从对话里拿掉，屏幕上同一件事只留一份回答。
+ * 那一轮留着过程时收进它的过程；只读的一轮收尾时不留过程，就直接拿掉最近那份回答。
+ */
+function supersedeAnswer(run: RunHost | null): void {
+  const el = run?.answer?.el ?? latestAnswerEl();
 
-  if (!answer?.el.isConnected) return;
-  const old = document.createElement("div");
-  old.className = "run-superseded";
-  old.textContent = `第一次的回答：${answer.text.replace(/\s+/g, " ").trim()}`;
-  run.body.insertBefore(old, run.body.querySelector(":scope > .run-total"));
-  answer.el.remove();
+  if (!el?.isConnected) return;
+
+  if (run?.answer) {
+    const old = document.createElement("div");
+    old.className = "run-superseded";
+    old.textContent = `第一次的回答：${run.answer.text.replace(/\s+/g, " ").trim()}`;
+    run.body.insertBefore(old, run.body.querySelector(":scope > .run-total"));
+  }
+  el.remove();
+}
+
+/** 最近一条用户消息之后的最后一份正式回答（不含「收到」这类确认语和开场话）。 */
+function latestAnswerEl(): HTMLElement | null {
+  for (let node = messagesEl.lastElementChild; node && !node.matches(".msg.user"); node = node.previousElementSibling) {
+    if (node instanceof HTMLElement && node.matches(".msg.assistant[data-delivery-id]:not(.opening-line)") && node.dataset.deliveryKind !== "ack") return node;
+  }
+
+  return null;
 }
 
 /** 比较旁白和回答时不看空白和 Markdown 记号。 */
@@ -3911,7 +3929,7 @@ function foldAnsweredRun(run: RunHost): void {
   }
   const openings: HTMLElement[] = [];
 
-  for (let node = run.root.previousElementSibling; node && !node.matches(".msg.user, details.run-steps"); node = node.previousElementSibling) {
+  for (let node = run.root.previousElementSibling; node && !node.matches(".msg.user, details.run-steps, .redo-anchor"); node = node.previousElementSibling) {
     if (node instanceof HTMLElement && node.matches(".opening-line")) openings.unshift(node);
   }
 
@@ -3934,7 +3952,14 @@ function foldAnsweredRun(run: RunHost): void {
   paintAnsweredTitle(run);
 }
 
-/** 过程行上的核对状态：核对中…、已核对页面（绿）；没核对、只有宿主补充时写有 N 步没做成（橙）。没做完由续做卡说。 */
+/** 「继续原任务」卡这时在对话里显示着。 */
+function resumeCardShown(): boolean {
+  const root = document.getElementById("resume-entry-root");
+
+  return !!root?.isConnected && !root.hidden && root.childElementCount > 0 && !!root.closest("#messages");
+}
+
+/** 过程行上的核对状态：核对中…、已核对页面（绿）；没做完时写有 N 步没做成（橙），已有续做卡时由卡说。 */
 function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | null } | null {
   if (!run.receipt || run.receipt.ended !== "completed") return null;
 
@@ -3943,8 +3968,8 @@ function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | nul
   if (run.check === "done") return { text: "已核对页面", tone: "ok" };
   const notDone = run.receipt.failed ? `有 ${run.receipt.failed} 步没做成` : "还没做成";
 
-  // 核对判没做完时，回答下面的「继续原任务」卡会说还差什么并给按钮；过程行不再说第二遍。
-  if (run.check === "not_done") return null;
+  // 核对判没做完：回答下面有「继续原任务」卡时由它说还差什么并给按钮，过程行不说第二遍；没有卡时过程行说。
+  if (run.check === "not_done") return resumeCardShown() ? null : { text: notDone, tone: "warn" };
 
   // 判继续：下一块过程接着做；等用户回答：回答里已经在问。这两种这一行都不下结论。没核对或核对没结论时，宿主补过一句就照它说没做成。
   if (run.check !== "continued" && run.check !== "needs_user" && run.answer?.hostNote) return { text: notDone, tone: "warn" };
@@ -3983,11 +4008,19 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
   while (anchor && !anchor.classList.contains("user")) anchor = anchor.previousElementSibling;
 
   if (!anchor) return;
+  // 核对判继续后接着做的一轮：排在判继续那一刻留下的定位点之后。
+  let redo: Element | null = null;
+
+  for (let node = anchor.nextElementSibling; node && node !== root; node = node.nextElementSibling) {
+    if (node.classList.contains("redo-anchor")) redo = node;
+  }
+
+  if (redo) { if (redo.nextElementSibling !== root) redo.after(root); return; }
   let next = anchor.nextElementSibling;
 
   // chip 跟着用户消息（chip C），「收到」这类确认语和开场话也留在前面；夹在开场话前面的任务卡之后会移到回答后面，不挡住它。
   // 核对判继续后接着做的一轮：排在前一轮的过程和读回之后，不插到它们前面。
-  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, details.run-steps.done, .run-live-graph, .fill-evidence")
+  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, .steer-received, details.run-steps.done, .run-live-graph, .fill-evidence")
     || (node.matches(".ai-task-card") && !!node.nextElementSibling?.matches(".opening-line"));
 
   while (next instanceof HTMLElement && next !== root && keepsBefore(next)) next = next.nextElementSibling;
@@ -4745,8 +4778,15 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         if (checked.answer && checked !== currentRun && checked.root.classList.contains("done")) paintAnsweredTitle(checked);
       }
 
-      // 核对判继续：这份回答不算数了，收进它那一轮的过程；核对发现写在续做那一轮的过程行上。
-      if (ev.status === "continue" && checked) supersedeAnswer(checked);
+      // 核对判继续：这份回答不算数了，收进它那一轮的过程（只读的一轮不留过程，直接拿掉）；核对发现写在续做那一轮的过程行上。
+      // 续做的过程排在这一刻的对话末尾之后：留一个看不见的定位点，代替原来那行「核对发现」。
+      if (ev.status === "continue") {
+        supersedeAnswer(checked?.answer ? checked : null);
+        const anchor = document.createElement("div");
+        anchor.className = "redo-anchor";
+        anchor.hidden = true;
+        appendToMessages(anchor);
+      }
       break;
     }
     case "turn_end":
@@ -5368,6 +5408,9 @@ function handleServerMessage(raw: string): void {
     case "task_view":
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
+
+      // 续做卡出现或消失后，上一轮过程行的核对状态跟着改：没做完只说一次。
+      if (lastRun?.answer && lastRun.receipt && lastRun.root.classList.contains("done") && lastRun.root.isConnected) paintAnsweredTitle(lastRun);
 
       if (msg.view.conversationId === selectedConversationId) renderStreamTaskCard(msg.view);
       renderTaskStrip();

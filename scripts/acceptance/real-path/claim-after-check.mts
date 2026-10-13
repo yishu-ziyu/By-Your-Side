@@ -17,6 +17,7 @@
  *   n) a 的核对结论带给用户的 finding 和带指令的 correction：过程行显示 finding，不含「请」「please」。
  *   o) 判继续的结论没有 finding：过程行第二行写「还差：…」（remaining）。
  *   p) 同一页两栏都叫「地址」：读回显示两行。
+ *   r) 只读的一轮（只读页、不改页面，收尾不留过程块）答错、核对判继续：那份回答同样被拿掉，新旧两份从不同时出现。
  * 失败方式：恢复侧栏扣住回答，a 的回答要等到核对结论之后才出现（反例结果见 docs/evals/20261010-drop-blocking-labels.md）。
  */
 import assert from "node:assert/strict";
@@ -69,6 +70,7 @@ const CASES = {
   k: { ask: "案例K：在草稿框里写 second try K，不要保存。", claim: "草稿已写好 K。", path: "/once" },
   o: { ask: "案例O：把蓝色 Note 框里的第一句英文复制到草稿框里，不要保存。", claim: "已填入 O。", path: "/note" },
   p: { ask: "案例P：在两个地址栏分别写 A road 和 B street，不要保存。", claim: "两个地址都写好了 P。", path: "/twin" },
+  r: { ask: "案例R：这页 Note 框里第一句英文是什么？", claim: "第一句是 Wrong R。", path: "/note" },
 };
 
 const FIXED = "已把第一句英文填入草稿框，没有保存。";
@@ -96,6 +98,7 @@ const model = await startScriptedModel([
   { match: CASES.g.ask, steps: [{ tool: { name: "browser_run", args: { label: "写草稿", code: 'return await browser.fill({ target: "#draft", value: "from program" });' } } }, { text: CASES.g.claim }] },
   { match: CASES.k.ask, steps: [fill("second try K"), { tool: { name: "snapshot", args: {} } }, fill("second try K"), { text: CASES.k.claim }] },
   { match: CASES.o.ask, steps: [fill("Note O"), { text: CASES.o.claim }] },
+  { match: CASES.r.ask, steps: [{ tool: { name: "snapshot", args: {} } }, { text: CASES.r.claim }] },
   { match: CASES.p.ask, steps: [fill("A road", "#addr1"), fill("B street", "#addr2"), { text: CASES.p.claim }] },
   // 不带 finding 的放前面：脚本模型按包含匹配，「VERDICT-CONTINUE」也包含在它里面。
   { match: "VERDICT-CONTINUE-BARE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION }) }] },
@@ -359,6 +362,19 @@ try {
   const fixO = o.samples.flatMap(s => s.fix).filter(t => t.includes("还差")).map(fixHead);
   evidence.o = { fix: [...new Set(fixO)] };
   assert.deepEqual([...new Set(fixO)], ["还差：填入第一句"], `o: without a finding the process line says what is still missing: ${JSON.stringify(fixO)}`);
+
+  // r) 只读的一轮答错、判继续：收尾不留过程块，那份回答也要拿掉；续做照 a 的路填对，第二次核对判完成。
+  verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE" }, { holdMs: 0, probe: "VERDICT-DONE" });
+  const fixedBeforeR = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
+  const fixedR = (s: Sample) => s.answers.filter(t => t.includes(FIXED)).length > fixedBeforeR;
+  const r = await runCase("r", s => fixedR(s) && !s.answers.some(t => t.includes(CASES.r.claim)), {}, 30_000);
+  evidence.r = {
+    claimShownMs: first(r.samples, s => s.answers.some(t => t.includes(CASES.r.claim))),
+    twoAnswersMs: first(r.samples, s => fixedR(s) && s.answers.some(t => t.includes(CASES.r.claim))),
+    fix: [...new Set(r.samples.flatMap(s => s.fix).map(fixHead))],
+  };
+  assert.ok((evidence.r as { claimShownMs: number | null }).claimShownMs !== null, `r: the read-only answer was shown first: ${JSON.stringify(evidence.r)}`);
+  assert.equal((evidence.r as { twoAnswersMs: number | null }).twoAnswersMs, null, `r: the read-only answer and the fixed one are never shown together: ${JSON.stringify(evidence.r)}`);
 
   // p) 两栏同名：第一栏没留住，第二栏一致。两栏各有一行读回，第一栏不被第二栏盖掉。
   const p = await finalRead("p");
