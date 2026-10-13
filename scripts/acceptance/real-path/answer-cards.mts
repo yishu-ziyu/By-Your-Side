@@ -39,6 +39,8 @@ const card = (tabId: number) => `一年共花 {=total}；心算的 ¥2,714 不�
 <stat id="total" label="一年合计" value="=68*12+398" unit="¥" tag="合计" />
 <stat label="算不出来" value="=68*abc" />
 <option name="缺理由的选项" />
+<option name="Notion 年付" value="=68*12-100" unit="¥" why="比月付一年省 100" />
+<table cols="订阅|一年"><tr cells="Notion|=68*12" /><tr cells="Duolingo|398" /><tr cells="Calm|=¥12*12" /></table>
 <checklist><check text="取消 Calm" note="140 天没打开" /><check text="" /></checklist>
 <marquee>不在目录里</marquee>
 <button action="say" primary>${FOLLOW}</button>
@@ -107,19 +109,20 @@ try {
     return {
       title: card?.querySelector(".gc-title")?.textContent,
       stats: [...(card?.querySelectorAll(".gc-stat") ?? [])].map(s => ({ label: s.querySelector(".k span")?.textContent, value: s.querySelector(".v")?.textContent, note: s.querySelector(".n")?.textContent, best: s.classList.contains("best") })),
-      options: card?.querySelectorAll(".gc-option").length ?? -1,
+      options: [...(card?.querySelectorAll(".gc-option") ?? [])].map(o => ({ name: o.querySelector(".name")?.textContent, price: o.querySelector(".price")?.textContent })),
+      cells: [...(card?.querySelectorAll(".gc-table td") ?? [])].map(td => td.textContent),
       checks: [...(card?.querySelectorAll(".gc-check") ?? [])].map(c => ({ text: c.querySelector(".t")?.textContent, box: c.querySelector("input[type=checkbox]") ? "checkbox" : "none" })),
       buttons: [...(card?.querySelectorAll(".gc-btn") ?? [])].map(b => b.textContent),
       cardText: card?.innerText ?? "",
       prose,
     };
-  })()`) as { title?: string; stats: Array<{ label: string; value: string; note: string; best: boolean }>; options: number; checks: Array<{ text: string; box: string }>; buttons: string[]; cardText: string; prose: string };
+  })()`) as { title?: string; stats: Array<{ label: string; value: string; note: string; best: boolean }>; options: Array<{ name: string; price?: string }>; cells: string[]; checks: Array<{ text: string; box: string }>; buttons: string[]; cardText: string; prose: string };
   Object.assign(evidence, { leaks: leaks.length, seen });
 
   assert.equal(leaks.length, 0, `R1: tag text leaked while streaming: ${leaks[0]}`);
   assert.equal(seen.title, "订阅一年花多少", "R1: card drawn");
   assert.deepEqual(seen.stats.map(s => s.label), ["Notion", "Duolingo", "一年合计"], "R1: invalid stat dropped, valid ones kept in order");
-  assert.equal(seen.options, 0, "R1: option without a reason is not drawn");
+  assert.deepEqual(seen.options.map(o => o.name), ["Notion 年付"], "R1: option without a reason is not drawn");
   assert.deepEqual(seen.checks, [{ text: "取消 Calm", box: "checkbox" }], `R1: checklist drawn with a tickable box, empty item dropped: ${JSON.stringify(seen.checks)}`);
   assert.ok(!seen.cardText.includes("不在目录里"), "R1: unknown tag not drawn");
   assert.equal(seen.stats[0]!.value, "¥816", "R2: formula computed");
@@ -132,6 +135,10 @@ try {
   assert.ok(seen.prose.includes("预算 ¥3000 以内"), `R2: the user's budget is not replaced: ${seen.prose}`);
   assert.ok(seen.prose.includes("{id}"), `R2: ordinary braces in prose are untouched: ${seen.prose}`);
   assert.equal(seen.stats[1]!.value, "¥398", "R2: currency unit goes before a plain value");
+  // 模型也会把算式写进选项的价和表格格子（10-14 真模型比价卡片露出「=1699-50」）：这些地方同样算出来。
+  assert.equal(seen.options[0]!.price, "¥716", `R2: formula in an option value computed: ${JSON.stringify(seen.options)}`);
+  assert.deepEqual(seen.cells, ["Notion", "816", "Duolingo", "398", "Calm", "¥144"], `R2: formula in a table cell computed: ${JSON.stringify(seen.cells)}`);
+  assert.ok(!/=\s*\d/.test(seen.cardText), `R2: no raw formula shown anywhere in the card: ${seen.cardText}`);
   assert.deepEqual(seen.buttons, [FOLLOW, "切到订阅页看", "切到已关掉的页"], "R3: buttons drawn");
 
   // R3：切到已关掉的页 → 提示，不切页。
