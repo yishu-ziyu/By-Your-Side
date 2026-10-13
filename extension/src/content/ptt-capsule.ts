@@ -9,6 +9,7 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttCapsuleAction } from '
  * 光球旁只放一个状态词：在听 / 听写中 / 正在做 / 等你 / 结果 / 已中止 / 没做成。按住、听写中由按键直接驱动；
  * 之后的内容都由后台按真实事件推来。shadow root 关着，网页读不到听写的话；data-phase / data-speaking 只给验收看现在是哪一步。
  * 念结果时（docs/evals/20261007-ptt-speak.md）光球是在说的样子，念完才开始倒计时收起；念的时候 Esc 只停声音。
+ * 结果带卡片时，胶囊上方长出一张同材质、同宽的精简卡片（标题 + 最多 3 行），和胶囊一起出现、一起收起。
  */
 
 const BARS = 18;
@@ -22,12 +23,24 @@ const ORB_STATE: Record<PttCapsule['phase'], OrbState> = { listening: 'listening
 
 const STYLE = `
 :host{all:initial}
-.cap{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);box-sizing:border-box;display:flex;align-items:center;gap:12px;
-  min-width:300px;max-width:min(560px,calc(100vw - 32px));padding:9px 12px 9px 9px;border-radius:24px;
-  background:rgba(24,24,22,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.12);
-  box-shadow:0 18px 48px rgba(0,0,0,.34);color:#fff;font:13px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+.wrap{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;
+  max-width:min(560px,calc(100vw - 32px));color:#fff;font:13px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
   z-index:2147483647;animation:in .22s cubic-bezier(.23,1,.32,1)}
 @keyframes in{from{opacity:0;transform:translate(-50%,8px) scale(.97)}}
+.cap,.card{box-sizing:border-box;background:rgba(24,24,22,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.12)}
+.cap{display:flex;align-items:center;gap:12px;min-width:300px;padding:9px 12px 9px 9px;border-radius:24px;box-shadow:0 18px 48px rgba(0,0,0,.34)}
+/* 卡片不撑宽：宽度跟着胶囊走。 */
+.card{width:0;min-width:100%;max-height:220px;overflow:hidden;padding:12px 14px;border-radius:18px;box-shadow:0 12px 32px rgba(0,0,0,.26);
+  display:flex;flex-direction:column;gap:6px;animation:grow .22s cubic-bezier(.23,1,.32,1)}
+@keyframes grow{from{opacity:0;transform:translateY(6px)}}
+.card .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rows{display:flex;flex-direction:column;gap:2px;margin:0 -6px}
+.row{display:flex;gap:10px;align-items:baseline;min-width:0;padding:3px 6px;border-radius:8px;color:rgba(255,255,255,.86)}
+.row.tagged{background:rgba(255,255,255,.1);color:#fff}
+.row .label{flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .tag{flex:none;font-size:11px;font-weight:600;color:#141413;background:#f2c27b;border-radius:99px;padding:0 6px}
+.row .value{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
+.card .more{font-size:12px;color:rgba(255,255,255,.58)}
 canvas{width:36px;height:36px;flex:none}
 .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .line{display:flex;gap:8px;align-items:baseline;min-width:0}
@@ -49,7 +62,8 @@ button.x{padding:4px 7px;background:transparent;color:rgba(255,255,255,.55);font
 button.x:hover{color:#fff;background:rgba(255,255,255,.1)}
 button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
 [hidden]{display:none!important}
-@media (prefers-reduced-motion:reduce){.cap{animation:none}.bars i{transition:none}}`;
+@media (prefers-reduced-motion:reduce){.wrap{animation:fade .2s ease-out}.card{animation:fade .2s ease-out}.bars i{transition:none}}
+@keyframes fade{from{opacity:0}}`;
 
 const send = (action: PttCapsuleAction['action'], text?: string) => {
   const message: PttCapsuleAction = text ? { type: 'ptt_capsule_action', action, text } : { type: 'ptt_capsule_action', action };
@@ -61,12 +75,14 @@ export function createPttCapsule() {
   host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_PTT_CAPSULE);
   host.style.cssText = 'all:initial;position:fixed;z-index:2147483647';
   const root = host.attachShadow({ mode: 'closed' });
-  root.innerHTML = `<style>${STYLE}</style><div class="cap" role="status" aria-live="polite"><canvas aria-hidden="true"></canvas>
+  root.innerHTML = `<style>${STYLE}</style><div class="wrap"><div class="card" hidden><div class="title"></div><div class="rows"></div><div class="more"></div></div><div class="cap" role="status" aria-live="polite"><canvas aria-hidden="true"></canvas>
 <div class="bars" aria-hidden="true">${'<i></i>'.repeat(BARS)}</div>
 <div class="body"><div class="line"><span class="word"></span><span class="detail"></span></div><div class="left"><b>留给你的：</b><span></span></div><div class="heard"></div></div>
-<div class="side"></div></div>`;
+<div class="side"></div></div></div>`;
   const $ = <T extends Element>(selector: string) => root.querySelector<T>(selector)!;
+  const wrap = $<HTMLElement>('.wrap');
   const cap = $<HTMLElement>('.cap');
+  const card = $<HTMLElement>('.card');
   const canvas = $<HTMLCanvasElement>('canvas');
   const bars = [...root.querySelectorAll<HTMLElement>('.bars i')];
   const word = $<HTMLElement>('.word');
@@ -125,8 +141,30 @@ export function createPttCapsule() {
     if (after && !(shown?.phase === 'failed' && shown.heard)) closeTimer = setTimeout(() => hide(), after);
   };
 
-  cap.addEventListener('pointerenter', () => clearTimeout(closeTimer));
-  cap.addEventListener('pointerleave', scheduleClose);
+  wrap.addEventListener('pointerenter', () => clearTimeout(closeTimer));
+  wrap.addEventListener('pointerleave', scheduleClose);
+
+  /** 胶囊上方的精简卡片：字都用 textContent 填，原样取自回答。 */
+  const drawCard = (preview: Extract<PttCapsule, { phase: 'done' }>['card']) => {
+    card.hidden = !preview;
+
+    if (!preview) return;
+    card.querySelector('.title')!.textContent = preview.title;
+    (card.querySelector('.title') as HTMLElement).hidden = !preview.title;
+    card.querySelector('.rows')!.replaceChildren(...preview.rows.map(row => {
+      const line = Object.assign(document.createElement('div'), { className: row.tag ? 'row tagged' : 'row' });
+      line.append(Object.assign(document.createElement('span'), { className: 'label', textContent: row.label }));
+
+      if (row.tag) line.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: row.tag }));
+
+      if (row.value) line.append(Object.assign(document.createElement('span'), { className: 'value', textContent: row.value }));
+
+      return line;
+    }));
+    const more = card.querySelector<HTMLElement>('.more')!;
+    more.textContent = preview.more ? `还有 ${preview.more} 项` : '';
+    more.hidden = !preview.more;
+  };
 
   const show = (capsule: PttCapsule | null) => {
     if (!capsule) return hide(false);
@@ -148,6 +186,7 @@ export function createPttCapsule() {
     detail.hidden = !detail.textContent;
     left.hidden = !(capsule.phase === 'done' && capsule.left);
     left.querySelector('span')!.textContent = capsule.phase === 'done' ? capsule.left ?? '' : '';
+    drawCard(capsule.phase === 'done' ? capsule.card : undefined);
 
     side.replaceChildren();
 

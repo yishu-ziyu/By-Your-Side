@@ -2,6 +2,7 @@
  * 按住说话在网页、后台、离屏文档之间传的消息（#125，docs/evals/20261007-ptt-dictation.md）。
  * 网页 → 后台：PttPageMessage；后台 → 离屏文档：PttCommand，回 PttReply。
  */
+import type { CardPreview } from "../../../shared/answer-cards.js";
 import type { DictationResult } from "../inproc/ptt-dictation.js";
 
 /** 网页脚本发给后台：按住开始、松开、取消。 */
@@ -22,6 +23,7 @@ export const isPttPageMessage = (raw: Partial<PttPageMessage> | null | undefined
 /**
  * 网页底部胶囊现在显示什么（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）。heard 是听写出的那句话。
  * failed 带 heard：话没交给助手，可以重发；不带：没听到或听写失败。speaking：正在念这一条（docs/evals/20261007-ptt-speak.md）。
+ * done 的 card：回答里有卡片时，胶囊上方显示第一张的精简版（cardPreview）；没有就不显示。
  * doing 的 ack：松开后马上应的一句短确认（按原话本地取，不问模型；取消或犹豫的话为 null，不念），念的时候显示它，之后显示当前步骤。
  */
 export type PttCapsule =
@@ -30,7 +32,7 @@ export type PttCapsule =
   | { phase: "failed"; reason: string; heard?: string }
   | { phase: "doing"; heard: string; step: string | null; ack: string | null; speaking?: true }
   | { phase: "waiting"; heard: string; reason: string; speaking?: true }
-  | { phase: "done"; heard: string; result: string; left: string | null; speaking?: true }
+  | { phase: "done"; heard: string; result: string; left: string | null; card?: CardPreview; speaking?: true }
   | { phase: "stopped"; heard: string };
 
 /** 后台 → 网页：换胶囊内容，capsule 为 null 时收起。 */
