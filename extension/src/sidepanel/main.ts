@@ -20,7 +20,7 @@ import { renderMarkdownHtml } from "./markdown.js";
 import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
-import { adoptFillUndo, noteFillUndo, resetFillUndo, setFillUndoSender } from "./fill-undo.js";
+import { adoptFillUndo, noteFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
@@ -5741,7 +5741,10 @@ function fillUndoAnswer(): HTMLElement | null {
   return answer;
 }
 
-setFillUndoSender(() => port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg));
+setFillUndoHost({
+  send: () => port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg),
+  follow: () => scrollToEnd(),
+});
 
 function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "fill_undo") {

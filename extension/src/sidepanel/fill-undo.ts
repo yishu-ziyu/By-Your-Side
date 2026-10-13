@@ -13,10 +13,12 @@ let owner: HTMLElement | null = null;
 let latest: FillUndoView | null = null;
 let refresh: (answer: HTMLElement) => void = () => {};
 let send: () => void = () => {};
+let follow: () => void = () => {};
 
-/** main.ts 给出“请后台还原”的发送方式（面板端口）。 */
-export function setFillUndoSender(fn: () => void): void {
-  send = fn;
+/** main.ts 给出“请后台还原”的发送方式（面板端口），和侧栏的贴底（对话停在底部时，加了行也保持在底部）。 */
+export function setFillUndoHost(host: { send: () => void; follow: () => void }): void {
+  send = host.send;
+  follow = host.follow;
 }
 
 /** 有按钮可言的状态。ready 但 count 为 0 只是说明（例如编辑器里的文字没还原），不出按钮。 */
@@ -94,6 +96,8 @@ function paint(answer: HTMLElement, busy = false): void {
   strong.textContent = text[0];
   line.replaceChildren(...(text[0] ? [strong] : []), text[1]);
   refresh(answer);
+  // 这几行在回答写完、已经滚到底之后才加上：对话本来停在底部，就跟着贴底，免得落在输入框下面看不见。
+  follow();
 }
 
 /**
