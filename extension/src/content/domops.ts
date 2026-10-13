@@ -15,13 +15,15 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
   if (ns.dom) return;
   ns.refs ??= new Map<number, Element>();
 
-  // 还原填写（background/fill-undo.ts）：助手填过的格子所在的表单被提交（用户点的、网页自己 requestSubmit 的都算），告诉后台收不回了。
+  // 还原填写（background/fill-undo.ts）：表单真的提交了（浏览器发出的 submit，用户点的、按回车、网页 requestSubmit 都算；脚本伪造的不算），
+  // 把这张表单里格子的记号告诉后台，后台只关掉账本里还开着的那几格。
   document.addEventListener("submit", (event) => {
     const form = event.target;
 
-    if (form instanceof HTMLFormElement && [...form.elements].some((el) => el.hasAttribute("data-sideagent-undo"))) {
-      void chrome.runtime.sendMessage({ type: FILL_UNDO_SUBMIT }).catch(() => { /* 后台在重启 */ });
-    }
+    if (!event.isTrusted || !(form instanceof HTMLFormElement)) return;
+    const tokens = [...form.elements].flatMap((el) => el.getAttribute("data-sideagent-undo") ?? []);
+
+    if (tokens.length) void chrome.runtime.sendMessage({ type: FILL_UNDO_SUBMIT, tokens }).catch(() => { /* 后台在重启 */ });
   }, true);
 
   function mustResolve(target: string): Element {

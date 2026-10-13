@@ -1721,6 +1721,8 @@ export async function click(
       heldOf(sessionId).pointer = [x, y];
       // 基线与命中核对并行：60ms 的页面活跃度采样不额外压在一次点击的串行等待上。
       const effectPending = beginEffect(tabId, { point: [x, y] });
+      // 还原填写：点的是勾选框、单选框就记下点之前的样子。和效果采样一起跑，不拉长命中核对到按下之间的时间。
+      const undoPending = beforeWrite(sessionId, tabId, { point: [x, y] });
 
       // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
       // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
@@ -1732,9 +1734,8 @@ export async function click(
         }
       }
 
-      const effectToken = await effectPending;
-      // 还原填写：点的是勾选框、单选框就记下点之前的样子；是表单的提交按钮，点完就算收不回。
-      undo = await beforeWrite(sessionId, tabId, { point: [x, y] });
+      const [effectToken, undoMark] = await Promise.all([effectPending, undoPending]);
+      undo = undoMark;
       // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（#23 等满 30 秒）。
       // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
       const dialogWatch = watchDialog(tabId);
@@ -1867,7 +1868,7 @@ export async function click(
       throw e;
     }
 
-    await undo?.done(undo.submits);
+    await undo?.done();
     await endCursorAction(tabId, cid, actionId, "done", [x, y]);
     await recordCursorTrail(tabId, sessionId, x, y, true);
     const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, opens, sessionId) : undefined;
@@ -2566,8 +2567,6 @@ export async function pressKey(
 
   // 只有回车常提交表单、发请求，所以只给回车报页面变化；方向键、Tab 连按时每下多等 600 毫秒不值得。
   const effectToken = info.key === "Enter" ? await beginEffect(keyboardTabId) : null;
-  // 在助手填过的表单里按回车：算提交了，还原填写收不回。
-  const undo = info.key === "Enter" ? await beforeWrite(sessionId, keyboardTabId, { focused: true }) : null;
 
   const pressing = (async () => {
     await sendCommand(keyboardTabId, "Input.dispatchKeyEvent", rawKeyDown,sequenceGuard);
@@ -2584,8 +2583,6 @@ export async function pressKey(
 
       return nativeInputs ? { pressed: true, dialog: settled.dialog } : { pressed: false, dialog: settled.dialog };
     }
-
-    await undo?.done(undo.enterSubmits);
 
     return settled.effect ? { pressed: true, effect: settled.effect } : { pressed: true };
   } finally {
