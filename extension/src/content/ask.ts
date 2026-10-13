@@ -7,6 +7,7 @@ import { installNudge } from "./nudge.js";
 import { installSonarPinpoint } from "./sonar-pinpoint.js";
 import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
+import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, PanelRight, RotateCcw } from 'lucide';
 import DOMPurify from 'dompurify';
@@ -125,8 +126,30 @@ function gutterBlank(host: HTMLElement, block: Element, region: { left: number; 
   return true;
 }
 
+/** 本页已装的那份网页脚本留下的存活检查（同一扩展的网页脚本共用这个 window）。 */
+const BOOTED = '__sideagentContentAlive';
+
+/**
+ * 同一页面只装一份：网页在安装时正在加载，Chrome 按 manifest 装一份，background/reinject.ts 又补装一份，两份都连着扩展，
+ * 胶囊、边缘光条、按键就都成了两份。旧的那份还连着就不再装；断开了（扩展重载、更新后）照常装，补装不受影响。
+ */
+function installedAlready(): boolean {
+  const slot = window as unknown as Record<string, (() => boolean) | undefined>;
+  let alive = false;
+
+  try {
+    alive = !!slot[BOOTED]?.();
+  } catch {
+    alive = false;
+  }
+
+  if (!alive) slot[BOOTED] = extensionAlive;
+
+  return alive;
+}
+
 function boot(): void {
-  if (window !== window.top || document.contentType !== 'text/html') {
+  if (window !== window.top || document.contentType !== 'text/html' || installedAlready()) {
     return;
   }
 
