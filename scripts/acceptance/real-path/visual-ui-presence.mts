@@ -7,11 +7,16 @@ import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, until, sleep } from "./harness.mts";
+import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 const out = join(REPO, "out/acceptance/visual-ui-production/real-extension");
 await mkdir(out, { recursive: true });
-const site = createServer((_, res) => {
+// /hover：网页自己记下光效浮层有没有进入过「用户接手」，覆盖助手不移动光标就派发的悬停。
+const HOVER_PAGE = '<!doctype html><meta charset="utf-8"><title>悬停让位</title><h1 id="title" style="margin:200px 0 0 300px">悬停目标</h1><script>window.__everUserActive=false;new MutationObserver(()=>{const h=document.querySelector("[data-sideagent-overlay=cursor]");if(h&&h.classList.contains("user-active"))window.__everUserActive=true}).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class"]})</script>';
+const HOVER_TASK = "把鼠标停在标题上";
+const site = createServer((req, res) => {
+  if (req.url === "/hover") return void res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(HOVER_PAGE);
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
     .end('<!doctype html><meta charset="utf-8"><title>真实扩展光标验收</title><button id="tap" onclick="window.taps=(window.taps||0)+1">网页点击</button><p>网页主体不受浮层影响。</p><script>window.__restoredFromCache=false;addEventListener("pageshow",e=>{if(e.persisted)window.__restoredFromCache=true})</script>');
 });
@@ -39,8 +44,8 @@ try {
     shadowRoots?: DomNode[];
     contentDocument?: DomNode;
   };
-  const edgeClasses = async (): Promise<string[]> => {
-    const response = await rp!.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, page) as {
+  const edgeClasses = async (session = page): Promise<string[]> => {
+    const response = await rp!.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as {
       root: DomNode;
     };
     const classes: string[] = [];
@@ -75,6 +80,22 @@ try {
   const first = await readFile(join(out, "01-parked.png"));
   const second = await readFile(join(out, "02-reading-glow.png"));
   assert.notEqual(Buffer.compare(first, second), 0, "亮起彩边后真实网页像素应发生变化");
+  // 让位：助手的鼠标事件落在光标刚飞到的点上，不算用户；用户自己动鼠标，彩边和光标退淡，停下后亮回。
+  const receded = () => rp!.evaluate(page, 'document.querySelector("[data-sideagent-overlay=cursor]")?.classList.contains("user-active") === true') as Promise<boolean>;
+  const flight = await isolated("return window.__sideagent.cursor.move(120, 90);") as number;
+  await sleep(flight + 150);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 120, y: 90 }, page);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 120, y: 90, button: "left", clickCount: 1 }, page);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 120, y: 90, button: "left", clickCount: 1 }, page);
+  await sleep(100);
+  assert.equal(await receded(), false, "助手在光标落点的点击不能让彩边让位");
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 400, y: 260 }, page);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 430, y: 280 }, page);
+  await until(async () => (await receded()) || undefined, 2_000, "用户动鼠标后彩边让位");
+  await rp.screenshot(page, join(out, "02b-user-active.png"));
+  assert.notEqual(Buffer.compare(await readFile(join(out, "02-reading-glow.png")), await readFile(join(out, "02b-user-active.png"))), 0,
+    "让位时网页上的彩边像素应变化");
+  await until(async () => !(await receded()) || undefined, 3_000, "用户停下后彩边亮回");
   await isolated("window.__sideagent.cursor.setGlow(false); window.__sideagent.cursor.hide(); return true;");
   assert.equal((await state())?.hidden, true, "显式停止必须隐藏光标");
   // Chrome BFCache 恢复的是同一个 Document；不会重新执行 content script。
@@ -113,6 +134,43 @@ try {
     "真实后退返回旧 Document 后，也不得恢复上一轮的彩边");
   const usedBfCache = await rp.evaluate(page, 'window.__restoredFromCache===true') as boolean;
   console.log("HISTORY_BACK", JSON.stringify({ usedBfCache, cursorVisible: true }));
+  // 真实工具路径：脚本模型打开 /hover，再悬停标题（受保护的悬停不移动光标）。光效亮着，但不能让位。
+  const model = await startScriptedModel([{ match: HOVER_TASK, steps: [
+    { tool: { name: "navigate", args: { url: `http://127.0.0.1:${port}/hover` } } },
+    // 光效跟着文档走、在工具开始时异步点亮：先读一次新页面让它亮起，再隔一会儿悬停，像真模型那样。
+    { tool: { name: "js", args: { code: "document.title" } } },
+    { tool: { name: "hover", args: { target: "#title", label: "标题" } }, delayMs: 1500 },
+    { tool: { name: "hover", args: { target: "#title", label: "标题" } }, delayMs: 800 },
+    { text: "停好了。" },
+  ] }]);
+  try {
+    await rp.cdp.send("Target.activateTarget", { targetId: siteTarget });
+    await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
+    await until(async () => await rp!.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "侧栏可发送");
+    await rp.click(panel, "#input");
+    await rp.typeText(panel, HOVER_TASK);
+    await rp.pressEnter(panel);
+    // 跳到新网页后彩边要在新文档上亮起（以前同一标签页只画一次，跳页后整轮都没有彩边）。
+    let litAfterNavigate = false;
+    const answered = () => rp!.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(m => m.textContent.includes("停好了"))`) as Promise<boolean>;
+    for (const t0 = Date.now(); Date.now() - t0 < 60_000 && !(await answered()); await sleep(150)) {
+      const t = (await rp.targets()).find((x: { url: string }) => x.url.endsWith("/hover"));
+      if (!t || litAfterNavigate) continue;
+      try {
+        const s = await rp.attach(t.targetId);
+        await rp.cdp.send("DOM.enable", {}, s);
+        litAfterNavigate = (await edgeClasses(s)).some(c => c.split(/\s+/).includes("on"));
+      } catch { /* 页面正在加载 */ }
+    }
+    await until(async () => (await answered()) || undefined, 5_000, "悬停任务答复");
+    assert(litAfterNavigate, "跳到新网页后彩边应在新页面上亮起");
+    const hoverTab = (await rp.targets()).find((t: { url: string }) => t.url.endsWith("/hover"));
+    assert(hoverTab, "脚本模型应打开 /hover");
+    const hp = await rp.attach(hoverTab.targetId);
+    assert.equal(await rp.evaluate(hp, "document.querySelector('[data-sideagent-overlay=cursor]') !== null"), true, "悬停时光效浮层应在页面上");
+    assert.equal(await rp.evaluate(hp, "window.__everUserActive"), false, "助手的悬停不能让彩边让位");
+  } finally { await model.close(); }
+
   await writeFile(join(out, "result.json"), JSON.stringify({
     passed: ["真实扩展自动驻留", "点击穿透", "彩边渲染", "显式停止", "BFCache 合成生命周期两轮与旧彩边清理", "Chrome 历史后退"],
     usedBfCache, extensionId: rp.extensionId,

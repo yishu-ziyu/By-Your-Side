@@ -1,5 +1,5 @@
 /** 工作标签页和会话页资源；storage.session 让扩展 SW 重启后可恢复。 */
-import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, isLeadSession } from "../../../shared/protocol.js";
+import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, isLeadSession, WORKING_TABS_STORAGE_KEY } from "../../../shared/protocol.js";
 import { CLAIM_BLOCKED_ERROR, FOREIGN_TAB_ERROR } from "../../../shared/control.js";
 import {
   applyTabBinding,
@@ -16,7 +16,7 @@ import {
 
 export { executionKey, parseExecutionKey } from "./tab-bindings.js";
 
-const STORAGE_KEY = "workingTabs";
+const STORAGE_KEY = WORKING_TABS_STORAGE_KEY;
 
 const RESOURCE_STORAGE_KEY = "tabResources";
 

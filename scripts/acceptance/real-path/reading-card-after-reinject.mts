@@ -4,7 +4,7 @@
  *
  * 真扩展、隔离无头 Chrome、本机练习文章、本机脚本模型；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/reading-card-after-reinject.mts --headless
- * 更新用 CDP Extensions.loadUnpacked 从同一目录再加载扩展（和 reinject.mts 一样，等同于扩展管理页点重载），走产品自己的补装路径。
+ * 更新用 chrome.runtime.reload 让扩展自己重载（和 reinject.mts 一样，等同于扩展管理页点重载），走产品自己的补装路径。
  *
  * 判据：
  *   补装  网页没刷新；旧阅读卡宿主已不在网页里，网页里只有一个阅读卡宿主。
@@ -89,7 +89,8 @@ try {
   // ── 更新扩展：从同一目录再加载一次，后台在 onInstalled 里给这个已打开的网页补装网页脚本 ──
   const workerOf = async () => (await rp.targets()).find((t) => t.type === "service_worker" && t.url.includes(rp.extensionId))?.targetId;
   const oldWorker = await workerOf();
-  await rp.cdp.send("Extensions.loadUnpacked", { path: rp.dirs.extension });
+  // 让扩展自己重载（等同于扩展管理页点重载）。10-12 起测试用的 Chrome for Testing 不再开放 CDP Extensions.loadUnpacked。
+  await rp.evaluate(await rp.attach(oldWorker!), "chrome.runtime.reload(), true").catch(() => { /* 后台随重载断开 */ });
   await until(async () => { const now = await workerOf(); return now && now !== oldWorker ? now : undefined; }, 30_000, "扩展更新后的新后台");
   await until(async () => (await rp.evaluate(work, `!document.querySelector("[data-before-update]") && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, "补装的新阅读卡宿主");
 
@@ -175,7 +176,7 @@ try {
 } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({
     status: checks.length && checks.every((c) => c.pass) ? "PASS" : "FAIL",
-    dependency: "isolated real extension reloaded via Extensions.loadUnpacked; scripted local model; local practice article",
+    dependency: "isolated real extension reloaded via chrome.runtime.reload; scripted local model; local practice article",
     checks,
     modelRequests: model.requests,
   }, null, 2));

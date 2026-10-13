@@ -3,7 +3,7 @@
  * 每个会话一份记录，一行一个事件；只观察，不参与任何控制决定。
  */
 import { utf8ByteLength } from "./bytes.js";
-import { sanitizeTrace } from "./trace-sanitize.js";
+import { sanitizeTraceForStore } from "./trace-sanitize.js";
 
 /** 保留最近多少个会话的记录（新会话第一次写入时删掉更早的）。 */
 export const TRACE_SESSIONS_KEPT = 20;
@@ -179,7 +179,7 @@ export class TraceRecorder {
 
     try {
       const droppedPiece = this.dropped ? { droppedEvents: this.dropped } : {};
-      const trace = { time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn, type, data: sanitizeTrace(data), ...droppedPiece };
+      const trace = { time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn, type, data: sanitizeTraceForStore(data), ...droppedPiece };
       let line = JSON.stringify(trace) + "\n";
 
       this.dropped = 0;

@@ -57,7 +57,8 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
           signal: controller.signal,
         });
       } catch (error) {
-        if (controller.signal.aborted) throw new Error("fetch 已取消或超时，请求结果未知。");
+        // 用户取消和我们自己的时限分开说：侧栏据此写「已取消」或「超时」。
+        if (controller.signal.aborted) throw new Error(opts?.signal?.aborted ? "fetch 已取消，请求结果未知。" : `fetch 超时（${FETCH_READ_DEADLINE_MS / 1000} 秒没有回应），请求结果未知。`);
         throw new Error(`fetch 请求失败（送达情况未知或网络错误）：${oneLine(error)}。不是页面结果，不要据此判断接口不存在。`);
       }
 

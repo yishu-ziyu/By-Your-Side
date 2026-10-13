@@ -115,8 +115,9 @@ export function installReading(deps: Dependencies) {
         const previousTurns = retry ? record.turns.slice(0, -1) : record.turns;
 
         if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段问答太长了。点「在侧栏继续」。');
+        const depth = raw.depth === 'deep' ? 'deep' as const : 'fast' as const;
         const turn = {question, answer: '', state: 'pending' as const};
-        const candidate = {...record, turns: [...previousTurns, turn]};
+        const candidate = {...record, depth, turns: [...previousTurns, turn]};
 
         if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('这段问答太长了。点「在侧栏继续」。');
         if (correction) {
@@ -124,6 +125,7 @@ export function installReading(deps: Dependencies) {
           record.correctedTurns = [...(record.correctedTurns ?? []), candidate.turns.length - 1];
         }
 
+        record.depth = depth;
         record.turns = candidate.turns;
         record.requestId = crypto.randomUUID();
         record.transferredConversationId = undefined;

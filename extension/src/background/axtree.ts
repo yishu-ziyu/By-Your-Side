@@ -215,7 +215,7 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
 }
 
 /** 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。 */
-export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set()): AxTextResult {
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map()): AxTextResult {
   const byId = new Map<string, AxNodeLite>();
 
   for (const n of nodes) byId.set(n.nodeId, n);
@@ -232,31 +232,40 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
     if (next > 0) spoken.set(text, next); else spoken.delete(text);
   };
 
-  const walk = (node: AxNodeLite, depth: number): void => {
+  // parentFlat：父节点是零尺寸节点。
+  const walk = (node: AxNodeLite, depth: number, parentFlat = false): void => {
     const role = node.role?.value ?? "";
 
     if (DROP_SUBTREE_ROLES.has(role)) return;
+    const zero = node.backendDOMNodeId === undefined ? undefined : zeroSize.get(node.backendDOMNodeId);
+    const flatSelf = zero !== undefined;
 
     if (node.ignored) {
       // ignored 节点：子节点仍可能有内容（如 display:contents 容器），继续下钻
       for (const id of node.childIds ?? []) {
         const child = byId.get(id);
 
-        if (child) walk(child, depth);
+        if (child) walk(child, depth, flatSelf);
       }
 
       return;
     }
 
-    const described = describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs, secret);
     const name = String(node.name?.value ?? "");
+    // 零尺寸节点（宽或高为 0）点不到也填不进：不给 ref。有名字的留一行并标 zero-size（如勾选状态），
+    // 没名字的和零尺寸文字不占行；子节点照常展开，它们有自己的盒子。
+    // 零尺寸控件自己的文字（提交按钮的「Go」）也不给 ref：点它落到的是那个零尺寸控件。
+    // 原生下拉框和文件框（zero 为 true）照常给 ref 并出行，只标 zero-size：对它们的动作不用坐标。
+    const flat = zero === false || (parentFlat && role === "StaticText");
+    const shown = zero === false && (!name || role === "StaticText") ? null : describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs, secret);
+    const described = shown !== null && flatSelf ? `${shown} zero-size` : shown;
     const textPayload = staticTextOf(node);
     let childDepth = depth;
     const words: string[] = [];
 
     if (described !== null) {
       const backendId = node.backendDOMNodeId;
-      const hasRef = backendId !== undefined && role !== "RootWebArea" && role !== "WebArea";
+      const hasRef = backendId !== undefined && role !== "RootWebArea" && role !== "WebArea" && !flat;
       // 同一个字符串在同一路径上已经出现过（父节点名字与子静态文本重复）就不再输出。
       const repeatedText = textPayload !== null && textPayload.length > 0 && (spoken.get(textPayload) ?? 0) > 0;
 
@@ -283,7 +292,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
     for (const id of children) {
       const child = byId.get(id);
 
-      if (child) walk(child, childDepth);
+      if (child) walk(child, childDepth, flatSelf);
     }
 
     for (const word of words) unsay(word);

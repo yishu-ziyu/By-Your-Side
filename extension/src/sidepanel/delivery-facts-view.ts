@@ -277,7 +277,7 @@ function ensureStyles(): void {
     ".delivery-facts .delivery-facts-remaining li{width:100%;padding:4px 8px;border-radius:6px;background:var(--content-subtle,#ece7de);font-size:11.5px}",
     ".delivery-facts .delivery-facts-more{color:var(--text-tertiary,#8a8175)}",
     ".delivery-facts .delivery-facts-sources-label{color:var(--text-tertiary,#8a8175);font-size:11px;align-self:center;margin-right:2px}",
-    ".delivery-facts a.delivery-source{color:var(--text-secondary,#686459);text-decoration:none;background:var(--content-subtle,#ece7de);border:1px solid var(--content-border,#ded8cd);border-radius:6px;padding:2px 8px;font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:all .12s}",
+    ".delivery-facts a.delivery-source{color:var(--text-secondary,#686459);text-decoration:none;background:var(--content-subtle,#ece7de);border:1px solid var(--content-border,#ded8cd);border-radius:6px;padding:2px 8px;font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:all var(--d-tap)}",
     ".delivery-facts a.delivery-source:hover{background:var(--content-subtle-hover,#e4ddd1);color:var(--text-primary,#292821)}",
   ].join("");
   document.head?.append(style);

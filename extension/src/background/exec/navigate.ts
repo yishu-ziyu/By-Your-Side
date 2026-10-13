@@ -2,7 +2,7 @@ import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
 import { resolveWorkingTab } from "../state.js";
 
-import {downloadNote,readCurrentDocument,waitForInteractive,type PageReadiness} from "./page-readiness.js";
+import {ERROR_PAGE_NOTE,downloadNote,readCurrentDocument,settlesContent,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
 
 export async function navigate(
   params: {
@@ -34,6 +34,9 @@ export async function navigate(
   const tabId = tab.id;
   const ready=await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })});
 
+  // 等页面把内容画完，宿主附带的快照才不是半张空页；多等的时间算进 waitMs。
+  if (settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tabId);
+
   const after = await chrome.tabs.get(tab.id);
   const data = { url: after.url ?? url, title: after.title ?? "" };
 
@@ -44,7 +47,7 @@ export async function navigate(
 
   if (ready.download) result.note = downloadNote(ready.download);
 
-  if (ready.readiness==='error_page') result.note = "Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
+  if (ready.readiness==='error_page') result.note = ERROR_PAGE_NOTE;
 
   return result;
 }

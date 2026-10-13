@@ -8,6 +8,7 @@ import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import type { MemoryStore } from "./memory-store.js";
 import type { TaskHistoryStore } from "./task-history.js";
+import type { SiteNotesStore } from "./site-notes.js";
 
 const log = (message: string) => console.error(`[sideagent] ${message}`);
 
@@ -15,7 +16,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore },
+  options?: Pick<SessionCreateOptions, "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; siteNotes?: SiteNotesStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
@@ -61,7 +62,7 @@ export async function createConversationRuntime(
         options?.onModelFailover?.(from, to);
         void toolSession?.availableModels().then(models => sendCurrent({ type: "model_info", model: to, models }));
       },
-      customTools: [...createBrowserTools(rpc, undefined, tabId => control.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => control.releaseIdleForeignTab(tabId), epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), files: () => toolSession?.fileStore(), attachments: () => toolSession?.userAttachments() ?? [], memoryForValue: value => toolSession?.memoryForValue(value) }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
+      customTools: [...createBrowserTools(rpc, undefined, tabId => control.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => control.releaseIdleForeignTab(tabId), epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), files: () => toolSession?.fileStore(), attachments: () => toolSession?.userAttachments() ?? [], memoryForValue: value => toolSession?.memoryForValue(value), siteNotesFor: url => toolSession?.siteNotesFor(url) ?? Promise.resolve(null) }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
 
  return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), createTakeTabTool(control), handToUserTool],
     },

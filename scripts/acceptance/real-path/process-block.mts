@@ -4,7 +4,7 @@
  * 脚本模型：想 4 秒 → 打开页 B → js（带用途「读出标题」）→ 点一个不存在的按钮（没做成）→ 想 8 秒 → 点「作品」→ 回答。
  *   a) 想 8 秒那段：第一行只写「正在思考」，秒数从这段开始数（和真实时间差 ≤1.2 秒）；第二行「已做 2 步 · 1 步换了做法」。
  *   b) 侧栏任何时候都没有「执行脚本」「0.0s」「+ 前面」「件事」。
- *   c) 回执「做了 3 步：打开 Page B → 读出标题 → 点作品 · 1 步换了做法」（放不下时中间换成「…」）：不写秒数；380px 和 300px 宽都是一行，「1 步换了做法」都在。
+ *   c) 回执「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式，换了做法的那步在展开的过程里）；380px 和 300px 宽都是一行。
  *   d) 展开的记录：「想了 N 秒」只列两段长的（4 秒、8 秒左右），末行「共 N 秒，其中想了 M 秒」，N 与发送到结束差 ≤1 秒。
  *   e) 重开侧栏（回放历史）后，过程块的文字和回放前一样；回放没有时钟时不写任何秒数。
  * 失败方式：标题仍拼「· 已做 N 步」、秒数数整轮、回执只写步数或写了耗时，对应的项失败。反例结果见验收文件。
@@ -107,20 +107,21 @@ try {
   const elapsed = (Date.now() - thinkingSince) / 1000;
   const liveSecs = Number(/^(\d+) 秒$/.exec(live?.time ?? "")?.[1] ?? NaN);
   await rp.screenshot(panel, join(out, "a-thinking.png"));
-  check("a 想的时候第一行只写「正在思考」，秒数从这段开始数，第二行写步数", live?.title === "正在思考" && Math.abs(liveSecs - elapsed) <= 1.2 && live.meta === "已做 2 步 · 1 步换了做法", { title: live?.title ?? null, time: live?.time ?? null, elapsed, meta: live?.meta ?? null });
+  const think = (title: string) => title === "正在思考";
+  check("a 想的时候第一行只写「正在思考」，秒数从这段开始数，第二行写步数", !!live && think(live.title) && Math.abs(liveSecs - elapsed) <= 1.2 && live.meta === "已做 2 步 · 1 步换了做法", { title: live?.title ?? null, time: live?.time ?? null, elapsed, meta: live?.meta ?? null });
 
   await until(async () => { const r = await read(); if (r) for (const word of FORBIDDEN) if (r.all.includes(word)) seen.add(word); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);
   const endedAt = Date.now();
   await sleep(800);
   const done = (await read())!;
   check("b 侧栏没有「执行脚本」「0.0s」「+ 前面」「件事」", seen.size === 0 && !FORBIDDEN.some(w => done.all.includes(w)), { seen: [...seen] });
-  check("c 回执列出短名链和「1 步换了做法」，不写秒数，380px 一行", /^做了 3 步：打开 Page B → (读出标题|…) → 点作品 · 1 步换了做法$/.test(done.title) && done.oneLine, { title: done.title, oneLine: done.oneLine });
+  check("c 回执「做了 3 步 · 耗时 · 核对状态」，380px 一行", /^做了 3 步 · \d[^·]*秒 · (核对中…|已核对页面)$/.test(done.title) && done.oneLine, { title: done.title, oneLine: done.oneLine });
   await rp.screenshot(panel, join(out, "c-receipt-380.png"));
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 300, height: 760, deviceScaleFactor: 2, mobile: false }, panel);
   await sleep(500);
   const narrow = (await read())!;
   await rp.screenshot(panel, join(out, "c-receipt-300.png"));
-  check("c2 300px 宽：回执仍是一行，「1 步换了做法」还在", narrow.oneLine && narrow.title.endsWith(" · 1 步换了做法") && narrow.title.startsWith("做了 3 步"), { title: narrow.title, oneLine: narrow.oneLine });
+  check("c2 300px 宽：回执仍是一行", narrow.oneLine && /^做了 3 步 · \d[^·]*秒 · (核对中…|已核对页面)$/.test(narrow.title), { title: narrow.title, oneLine: narrow.oneLine });
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 380, height: 760, deviceScaleFactor: 2, mobile: false }, panel);
 
   await rp.evaluate(panel, '[...document.querySelectorAll("#messages details.run-steps")].at(-1).open = true; true');

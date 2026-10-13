@@ -80,7 +80,7 @@ try {
       answerFont: style?.fontFamily ?? null,
       answerSize: style ? Number.parseFloat(style.fontSize) : null,
       answerLineHeight: style ? Number.parseFloat(style.lineHeight) : null,
-      actions: actions ? { rect: rect(actions), opacity: Number(getComputedStyle(actions).opacity), button: actions.querySelector('button')?.getAttribute('aria-label') ?? null, buttonRect: rect(actions.querySelector('button')) } : null,
+      actions: actions ? { rect: rect(actions), opacity: Number(getComputedStyle(actions).opacity), button: ((b) => b ? (b.getAttribute('aria-label') ?? b.textContent.replace('↵', '').trim()) : null)(actions.querySelector('button')), buttonRect: rect(actions.querySelector('button')) } : null,
       resultText: shown(q('#task-result-card')) ? q('#task-result-card').innerText : null,
     };
   })()`) as {
@@ -132,6 +132,8 @@ try {
   await rp.evaluate(settings, `document.querySelector('#model-save').scrollIntoView({ block: 'center' }); true`);
   await rp.click(settings, "#model-save");
   await until(async () => String(await rp!.evaluate(settings, `document.querySelector('#model-status').textContent`)).startsWith("已保存") || undefined, 10_000, "模型保存");
+  // 保存前会先试连一次（10-13）：之后的「不发模型请求」从这里数起。
+  const afterSave = model.requests.length;
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId });
   await sleep(600);
 
@@ -203,7 +205,7 @@ try {
   await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...point, button:"left", clickCount:1 }, work);
   await until(async () => await rp!.evaluate(panel, `!document.querySelector('#ask-cite').hidden`) || undefined, 5000, "选区转入引用");
   const cite = await rp.evaluate(panel, `({ text:document.querySelector('#ask-cite-text').textContent, host:document.querySelector('#ask-cite-host').textContent, focus:document.activeElement.id })`);
-  check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === 0, cite);
+  check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === afterSave, cite);
   await rp.typeText(panel, "引用草稿");
   await rp.screenshot(panel, join(artifacts, "selection-cite.png"));
   await rp.click(panel, "#ask-cite-close");
@@ -216,7 +218,7 @@ try {
   const suggestion = String(await rp.evaluate(panel, `document.querySelector('#starter button[data-starter]')?.dataset.starter ?? ''`));
   await rp.click(panel, "#starter button[data-starter]");
   const draft = await read();
-  check("开始建议只填草稿", !!suggestion && draft.input === suggestion && model.requests.length === 0, { input: draft.input, modelRequests: model.requests.length });
+  check("开始建议只填草稿", !!suggestion && draft.input === suggestion && model.requests.length === afterSave, { input: draft.input, modelRequests: model.requests.length - afterSave });
   await rp.click(panel, "#conversation-new");
   await until(async () => (await read()).input === "" || undefined, 10_000, "新会话草稿为空");
   check("新会话不继承上一段草稿", (await read()).input === "", { input: (await read()).input });
@@ -244,11 +246,12 @@ try {
   const currentReading = await read();
   check("阅读判据校准：系统栈通过、红基线宋体失败", systemReading(currentReading) && !systemReading(baselineReading), { current: { font: currentReading.answerFont, size: currentReading.answerSize, lineHeight: currentReading.answerLineHeight }, baseline: baselineReading });
 
+  // 每个回答一个主动作（#351），是一个短的文字按钮「复制」，不再是 32px 的图标。
   for (const width of [360, 400, 440]) {
     const done = await shot("3-done", width);
     check(`${width}px 无横向溢出`, done.documentWidth <= width + 1 && done.overflow.length === 0, { documentWidth: done.documentWidth, overflow: done.overflow });
     check(`${width}px 回答为系统字体 15px、约 26px 行高`, systemReading(done), { font: done.answerFont, size: done.answerSize, lineHeight: done.answerLineHeight });
-    check(`${width}px 复制操作可见且紧凑`, !!done.actions && done.actions.opacity >= 0.9 && done.actions.rect.height <= 30 && done.actions.button === "复制回答" && !!done.actions.buttonRect && done.actions.buttonRect.width <= 32, done.actions);
+    check(`${width}px 复制操作可见且紧凑`, !!done.actions && done.actions.opacity >= 0.9 && done.actions.rect.height <= 30 && /^复制/.test(done.actions.button ?? "") && !!done.actions.buttonRect && done.actions.buttonRect.width <= 64, done.actions);
     check(`${width}px 完成后输入框上方不重复已完成`, !done.taskBar && !(done.resultText ?? "").includes("已完成"), { taskBar: done.taskBar, resultText: done.resultText });
   }
 

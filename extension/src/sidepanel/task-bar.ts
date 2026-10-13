@@ -405,6 +405,7 @@ export interface TaskBarOptions {
  */
 export class TaskBar {
   private view: TaskView | null = null;
+  private handoffShown = false;
   private draft: DraftMaterials | null = null;
   private readonly sent = new Map<string, SentRequestMaterials>();
   private taskMaterials: TaskMaterialSet | null = null;
@@ -479,6 +480,12 @@ export class TaskBar {
 
     if (this.tickTimer !== null) clearInterval(this.tickTimer);
     this.tickTimer = null;
+  }
+
+  setHandoffShown(shown: boolean): void {
+    if (this.handoffShown === shown) return;
+    this.handoffShown = shown;
+    this.render();
   }
 
   /** task_view 下行。同一 run 内重复/重放同一视图幂等。 */
@@ -752,7 +759,8 @@ export class TaskBar {
 
     // 进行中、已结束由对话里那一行过程灰字讲（#58 C）；任务条只在有它独有的事时出现：
     // 页面归你、停止/接管回执、还没送入的材料。任务页不是你在看的页时不提醒：过程行和回答已说明（10-06 用户删）。
-    const own = model.state === "paused" || !!model.control
+    // 页面归你时，输入框上方的「你在操作」已经说了；侧栏重开、没有那一行时，任务条照旧说。
+    const own = model.state === "paused" && !this.handoffShown || !!model.control
       || !!model.materials && (!!model.materials.status || model.materials.rows.some((row) => row.removable));
 
     this.el.hidden = !model.visible || !own;
