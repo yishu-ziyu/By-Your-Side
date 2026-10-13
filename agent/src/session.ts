@@ -243,7 +243,7 @@ export class BrowserAgentSession {
         executionFact:this.rpc?.getExecutionFact(step.id),
         resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX)),
         ...(held ? {heldReason:held} : {}),
-        ...(step.error ? (held ? {} : {reason:plainToolError(step.error)}) : fieldReadbackOf(step.result))});
+        ...(step.error ? (held ? {} : {reason:step.reason??plainToolError(step.error)}) : fieldReadbackOf(step.result))});
       this.emitReadObservation(step.id,step.name,step.params,step.result,!!step.error);
     }
   }
