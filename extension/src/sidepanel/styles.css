@@ -3158,62 +3158,72 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat calc(var(--d-emph) * 2) var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
-.run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 132px; overflow: hidden; }
+.run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 176px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
 /* 收尾后的分叉不留「查了 N 路」这类行：做过的事在展开的过程里，默认视图只留过程行和回答。 */
 .run-graph-group[data-state="folded"] { display: none; }
 .run-live-graph:not(:has(> .run-graph-group:not([data-state="folded"]))) { display: none; }
 .run-graph-group { position: relative; min-width: 0; }
-.run-graph-group[data-kind="you"] { color: var(--apple-blue); }
-.run-graph-rows { display: flex; flex-direction: column; }
+.run-graph-svg { position: absolute; inset: 0 auto auto 0; overflow: visible; pointer-events: none; }
+.run-graph-rows { display: flex; flex-direction: column; padding-top: 4px; }
 .run-graph-row {
-  display: flex; align-items: center; gap: 7px; height: 22px; min-width: 0;
+  display: flex; align-items: center; gap: 6px; height: 22px; min-width: 0;
   padding-left: calc(22px + 11px * min(5, var(--lanes, 1)) + 4px);
-  animation: graphIn var(--d-layout) var(--e-swift) both;
-  animation-delay: calc(var(--i, 0) * var(--d-tap));
+  animation: graphIn var(--d-layout) var(--e-enter) both;
 }
-.run-graph-node {
-  box-sizing: border-box; width: 8px; height: 8px; flex: none; border-radius: 50%;
-  border: 1.5px solid var(--text-tertiary);
-}
-.run-graph-node.running { border-top-color: var(--text-secondary); animation: runBeat calc(var(--d-emph) * 2) linear infinite; }
-.run-graph-node.done { background: var(--text-tertiary); border-color: var(--text-tertiary); animation: graphPop var(--d-emph) var(--e-spring); }
-.run-graph-node.dead { border-style: dashed; border-color: var(--text-quaternary); background: transparent; }
-.run-graph-node.dead::after { content: "×"; display: block; margin: -7px 0 0 8px; color: var(--text-quaternary); font-size: 11px; line-height: 1; }
+.run-graph-fav { width: 14px; height: 14px; flex: none; border-radius: 3px; overflow: hidden; }
+.run-graph-fav img { width: 100%; height: 100%; object-fit: cover; }
 .run-graph-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-ui); line-height: 22px; color: var(--text-secondary); }
 .run-graph-row[data-state="dead"] .run-graph-label { color: var(--text-quaternary); }
-.run-graph-fan { display: flex; align-items: flex-start; gap: 16px; padding: 4px 8px 2px; animation: graphIn var(--d-layout) var(--e-swift) both; }
-.run-tab-tile { position: relative; display: flex; flex-direction: column; align-items: center; width: 30px; animation: graphIn var(--d-layout) var(--e-swift) both; }
+.run-graph-row[data-user] .run-graph-label { color: var(--apple-blue); }
+.run-graph-flip { display: inline; animation: graphFlip var(--d-state) var(--e-enter) both; }
+.run-graph-join { height: 22px; }
+.run-graph-fan { position: relative; display: flex; align-items: flex-start; gap: 16px; padding: 18px 8px 4px 28px; }
+.run-tab-tile { position: relative; display: flex; flex-direction: column; align-items: center; width: 30px; animation: graphIn var(--d-layout) var(--e-enter) both; }
 .run-tab-glyph {
   display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
   box-shadow: inset 0 0 0 1px var(--content-border); background: var(--content-subtle);
   color: var(--text-secondary); font-size: 12px; font-weight: 600;
 }
-.run-tab-tile[data-state="running"] .run-tab-glyph { animation: runBeat calc(var(--d-emph) * 2) linear infinite; box-shadow: inset 0 0 0 1.5px var(--text-tertiary); }
-.run-tab-tile[data-state="dead"] { opacity: .45; }
+.run-tab-glyph-you { background: var(--apple-blue); color: #fff; box-shadow: none; border-radius: 50%; }
+.run-tab-tile[data-state="running"]::before {
+  content: ""; position: absolute; inset: -3px auto auto -3px; width: 36px; height: 36px; border-radius: 10px;
+  border: 1.3px solid var(--text-secondary); border-bottom-color: transparent;
+  animation: runBeat calc(var(--d-emph) * 2) linear infinite;
+}
+.run-tab-tile[data-state="dead"] { opacity: .45; filter: grayscale(1); }
 .run-tab-status { margin-top: 2px; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 12px; color: var(--text-quaternary); }
 .run-tab-badge { position: absolute; right: -3px; top: 20px; width: 11px; height: 11px; border-radius: 50%; background: var(--content-bg); color: var(--text-tertiary); font-size: 9px; line-height: 11px; text-align: center; }
-.run-tab-tile[data-state="done"] .run-tab-badge::before { content: "✓"; }
+.run-tab-tile[data-state="done"] .run-tab-badge::before { content: ""; display: block; width: 4.5px; height: 2.4px; margin: 3px 0 0 2.5px; border: solid var(--text-tertiary); border-width: 0 0 1.3px 1.3px; transform: rotate(-45deg); }
 .run-tab-tile[data-state="dead"] .run-tab-badge::before { content: "×"; color: var(--text-quaternary); }
+.run-tab-tile[data-user][data-state="done"] .run-tab-badge::before { border-color: var(--apple-blue); }
 .run-graph-more { height: 22px; padding-left: 8px; color: var(--text-quaternary); font-size: var(--fs-meta); line-height: 22px; }
 .run-graph-fold {
   display: block; width: max-content; max-width: 100%; margin: 0; padding: 0; border: 0;
   background: none; color: var(--text-tertiary); font: inherit; font-size: var(--fs-ui); line-height: 22px; cursor: pointer;
 }
 .run-graph-fold:hover { color: var(--text-secondary); }
+.run-graph-grow { stroke-dasharray: 1; stroke-dashoffset: 1; animation: graphGrow var(--fork-ms, var(--d-emph)) var(--e-move) forwards; }
+.run-graph-spin { transform-box: fill-box; transform-origin: center; animation: runBeat calc(var(--d-emph) * 2) linear infinite; }
+.run-graph-ring { transform-box: fill-box; transform-origin: center; animation: graphRing var(--d-state) var(--e-spring) both; }
 .run-graph-group[data-state="folding"] .run-graph-rows,
-.run-graph-group[data-state="folding"] .run-graph-fan {
+.run-graph-group[data-state="folding"] .run-graph-fan,
+.run-graph-group[data-state="folding"] .run-graph-join,
+.run-graph-group[data-state="folding"] .run-graph-svg {
   max-height: 0; opacity: 0; overflow: hidden;
-  transition: max-height var(--d-emph) var(--e-swift), opacity var(--d-emph) var(--e-swift);
+  transition: max-height var(--d-emph) var(--e-move), opacity var(--d-emph) var(--e-move);
 }
-.run-graph-group[data-kind="you"] .run-graph-node { border-color: var(--apple-blue); }
-.run-graph-group[data-kind="you"] .run-graph-label { color: var(--apple-blue); }
-@keyframes graphIn { from { opacity: 0; transform: translateY(3px); } }
-@keyframes graphPop { 0% { transform: scale(1); } 40% { transform: scale(1.6); } 100% { transform: scale(1); } }
+@keyframes graphIn { from { opacity: 0; transform: translateY(4px); } }
+@keyframes graphFlip { from { opacity: 0; } }
+@keyframes graphGrow { to { stroke-dashoffset: 0; } }
+@keyframes graphRing { 0% { transform: scale(.72); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) {
-  .run-graph-row, .run-tab-tile, .run-graph-fan, .run-graph-node.running, .run-graph-node.done, .run-tab-tile[data-state="running"] .run-tab-glyph { animation: none; }
+  .run-graph-row, .run-tab-tile, .run-graph-fan, .run-graph-grow, .run-graph-spin, .run-graph-ring, .run-graph-flip, .run-tab-tile[data-state="running"]::before { animation: none; }
+  .run-graph-grow { stroke-dashoffset: 0; }
   .run-graph-group[data-state="folding"] .run-graph-rows,
-  .run-graph-group[data-state="folding"] .run-graph-fan { transition: none; }
+  .run-graph-group[data-state="folding"] .run-graph-fan,
+  .run-graph-group[data-state="folding"] .run-graph-join,
+  .run-graph-group[data-state="folding"] .run-graph-svg { transition: none; }
 }
 details.run-steps:not(.done) .run-time { margin-left: auto; font-size: var(--fs-meta); color: var(--text-quaternary); }
 details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: hidden; }
@@ -3751,3 +3761,33 @@ details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-u
 
 /* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
 #messages { overflow-x: hidden; }
+
+/* 说话输入：边说边出字（docs/evals/20261013-live-dictation.md）。说的时候输入框换成实时文字，工具栏换成声波。 */
+#composer.dictating { box-shadow: 0 0 0 1px var(--text-primary); }
+#composer.dictating #input, #composer.dictating #composer-bar { display: none; }
+#dictation-text { min-height: 22px; max-height: 160px; overflow-y: auto; font-size: 14px; line-height: 22px; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
+#dictation-text[hidden], #dictation-row[hidden] { display: none; }
+#dictation-text[data-empty]::before { content: "正在听…"; color: var(--text-tertiary); }
+#dictation-text .dictation-final { color: var(--text-secondary); }
+#dictation-text .dictation-interim { color: var(--text-tertiary); }
+#dictation-text .dictation-caret { display: inline-block; width: 1.5px; height: 15px; margin-left: 1px; background: var(--text-primary); vertical-align: -2px; animation: dictationBlink 1s steps(1) infinite; }
+@keyframes dictationBlink { 50% { opacity: 0; } }
+#dictation-row { display: flex; align-items: center; gap: 6px; height: 32px; animation: dictationRowIn var(--d-state) var(--e-enter) both; }
+@keyframes dictationRowIn { from { opacity: 0; transform: translateY(4px); } }
+#dictation-row .dictation-wave { flex: 1; min-width: 0; height: 28px; --wave-base: var(--content-border); --wave: var(--text-tertiary); --wave-hot: var(--text-secondary); }
+#dictation-row .dictation-hint { font-size: var(--fs-micro); color: var(--text-tertiary); white-space: nowrap; }
+#dictation-row .dictation-hint:empty { display: none; }
+#dictation-row .dictation-time { width: 30px; text-align: right; font: 12px/1 var(--mono); color: var(--text-tertiary); }
+#dictation-row button { width: 30px; height: 30px; border: 0; border-radius: 999px; display: inline-grid; place-items: center; cursor: pointer; flex-shrink: 0; transition: transform var(--d-tap) var(--e-enter), background var(--d-micro) var(--e-enter); }
+#dictation-row button:active { transform: scale(0.94); }
+#dictation-row button svg { width: 16px; height: 16px; }
+#dictation-row .dictation-cancel { background: transparent; color: var(--text-secondary); }
+#dictation-row .dictation-cancel:hover { background: var(--content-subtle); color: var(--text-primary); }
+#dictation-row .dictation-ok { background: var(--text-primary); color: var(--content-bg); }
+#dictate-btn { width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0; display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+#dictate-btn:hover { background: var(--content-subtle); color: var(--text-primary); }
+#dictate-btn svg { width: 17px; height: 17px; stroke-width: 1.8; }
+@media (prefers-reduced-motion: reduce) {
+  #dictation-row { animation: none; }
+  #dictation-text .dictation-caret { animation: none; }
+}

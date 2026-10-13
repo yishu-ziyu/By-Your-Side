@@ -31,7 +31,9 @@ button.icon { width: 36px; padding: 0; }
 .question { font-size: 12px; font-weight: 550; line-height: 1.55; margin-bottom: 10px; color: #5e5e66; overflow-wrap: anywhere; white-space: pre-wrap; }
 .answer { font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
 .answer > :first-child { margin-top: 0; } .answer > :last-child { margin-bottom: 0; }
-.answer p { margin: 9px 0; } .answer h1,.answer h2,.answer h3 { font-size: 15px; line-height: 1.5; margin: 14px 0 7px; }
+.answer p { margin: 9px 0; }
+.answer > p.lead { font-weight: 550; color: #1a1a1e; background-image: linear-gradient(#dfe8f8, #dfe8f8); background-repeat: no-repeat; background-size: 100% 0.36em; background-position: 0 1.22em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.answer h1,.answer h2,.answer h3 { font-size: 15px; line-height: 1.5; margin: 14px 0 7px; }
 .answer ul,.answer ol { padding-left: 21px; margin: 8px 0; } .answer li { margin: 4px 0; }
 .answer code { font: 12px/1.65 ui-monospace, SFMono-Regular, monospace; background: #f4f4f6; border-radius: 4px; padding: 1px 3px; }
 .answer pre { background: #f5f5f7; border: 1px solid #ececef; border-radius: 10px; padding: 10px; overflow: auto; }
@@ -45,7 +47,12 @@ button.icon { width: 36px; padding: 0; }
 .foot { display: flex; align-items: center; gap: 5px; }
 .fold { font-size: 11px; color: #5779bf; min-height: 22px; padding: 0 6px; margin-left: -6px; }
 .tag { display: inline-block; font-size: 11px; color: #b4532a; background: #fbeee8; border-radius: 4px; padding: 0 5px; margin-left: 6px; font-weight: 500; }
-.composer { display: flex; gap: 6px; align-items: flex-end; margin: 0 8px 8px; padding: 5px 5px 5px 10px; border: 1px solid #ececef; border-radius: 23px; background: #fafafb; }
+.composer { display: flex; gap: 6px; align-items: flex-end; margin: 0 8px 8px; padding: 5px 5px 5px 6px; border: 1px solid #ececef; border-radius: 23px; background: #fafafb; }
+.depth { display: flex; flex: none; align-self: center; padding: 2px; border-radius: 999px; background: #efeff2; }
+.depth button { min-height: 28px; padding: 0 9px; border-radius: 999px; font-size: 12px; color: #6e6e76; }
+.depth button[aria-checked="true"] { background: #fff; color: #232326; font-weight: 550; box-shadow: 0 1px 2px #17171a12; }
+.link { position: fixed; z-index: 1; height: 1px; margin-top: 0; background: #8ea4cc; pointer-events: none; }
+.link::before { content: ""; position: absolute; left: -2.5px; top: -2.5px; width: 5px; height: 5px; border-radius: 50%; background: #8ea4cc; }
 textarea { resize: none; width: 100%; flex: 1; min-width: 0; min-height: 34px; max-height: 100px; padding: 7px 0; border: 0; background: transparent; outline: none; line-height: 20px; }
 textarea::placeholder { color: #919198; }
 button.send { color: white; background: #222225; width: 34px; min-height: 34px; padding: 0; }
