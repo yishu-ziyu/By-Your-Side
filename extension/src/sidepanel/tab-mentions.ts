@@ -21,6 +21,8 @@ export interface TabMentions {
   pages: () => Array<{ tabId: number; title: string; url: string }>;
   items: () => MentionedTab[];
   clear: () => void;
+  /** 切回会话时放回这段会话没发出去的 @ 页面。 */
+  restore: (items: MentionedTab[]) => void;
   setStatus: (tabId: number, status: MentionStatus, reason?: string) => void;
   isOpen: () => boolean;
 }
@@ -60,6 +62,8 @@ export function mountTabMentions(opts: {
   composerEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
   stripEl: HTMLElement;
+  /** 用户去掉了一页：草稿要跟着存。 */
+  onChange?: () => void;
 }): TabMentions {
   const { composerEl, inputEl, stripEl } = opts;
   const host = composerEl.parentElement ?? composerEl;
@@ -103,6 +107,7 @@ export function mountTabMentions(opts: {
       const i = picked.findIndex((p) => p.tabId === item.tabId);
       if (i >= 0) picked.splice(i, 1);
       syncStrip();
+      opts.onChange?.();
     });
     chip.append(remove);
     return chip;
@@ -270,6 +275,14 @@ export function mountTabMentions(opts: {
     pages: () => picked.filter((p) => p.status !== "unread").map(({ tabId, title, url }) => ({ tabId, title, url })),
     items: () => picked.map((p) => ({ ...p })),
     clear: () => { picked.length = 0; syncStrip(); close(); },
+    restore: (items) => {
+      picked.length = 0;
+      for (const item of items.slice(0, MAX)) {
+        if (typeof item?.tabId === "number") picked.push({ ...item, status: "pending", reason: undefined });
+      }
+      syncStrip();
+      close();
+    },
     setStatus: (tabId, status, reason) => {
       const item = picked.find((p) => p.tabId === tabId);
       if (!item) return;

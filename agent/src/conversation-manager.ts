@@ -1146,7 +1146,7 @@ return receipt;
 
           if(!this.connected||!stillCurrent()||!now||now.runId!==snapshot.runId||now.state!=='interrupted'||version!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('原检查点已取消或发生变化，恢复任务未启动。');
           this.progress.get(request.conversationId)!.prepareResume();
-          await entry.runtime.session.resumeInterruptedTask(snapshot,request.context,request.attachments);
+          await entry.runtime.session.resumeInterruptedTask(snapshot,request.context,request.attachments,request.pages);
         }
         catch(error){this.pendingStarts.delete(request.conversationId);this.checkpointResumes.delete(request.conversationId);throw error;}
 
@@ -1278,7 +1278,7 @@ return receipt;
         const originRun=snapshot.runId;
         this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
         await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
-        entry.runtime.session.queueSteerForResume(request.text??'',request.context,request.attachments);
+        entry.runtime.session.queueSteerForResume(request.text??'',request.context,request.attachments,request.pages);
 
         if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
           this.progress.get(request.conversationId)?.reviseResults();
@@ -1298,7 +1298,7 @@ return receipt;
       const revokeRequirement=this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
       await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
 
-      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments,{rewrite:request.source==='text'});}
+      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments,{rewrite:request.source==='text',pages:request.pages});}
       catch(error){
         if(error instanceof TaskActionRejected){
           revokeRequirement();
