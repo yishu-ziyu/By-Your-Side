@@ -2,7 +2,7 @@ import { goalsSatisfied } from '../../shared/task-goals.js';
 import { TaskGoalBook } from './task-goals.js';
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
-import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
+import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX, deliveryTextWithNote } from "../../shared/voice.js";
 import { deriveResultDescription, extractResultTarget, isSupersededUnknown, resultLocksWhenUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
@@ -360,7 +360,8 @@ return;}
       if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;
     } else if (e.kind === "user_delivery") {
       if (lead && this.ledger.record(e.delivery)) {
-        this.pushTurn("assistant", e.delivery.text);
+        // 旁路模型看到的对话原文仍带宿主补的一句，与 10-13 之前一致。
+        this.pushTurn("assistant", deliveryTextWithNote(e.delivery));
 
         if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
       }
