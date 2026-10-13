@@ -71,6 +71,9 @@ const toolTexts: string[] = [];
 const byRef = { phone: tool("fill", { target: "@0", value: "13812345678" }), size: tool("select_option", { target: "@0", values: "4 人" }), kid: tool("click", { target: "@0" }) };
 const refs: Record<string, string> = {};
 
+/** 第 1 轮里每次模型请求到达的时间和带着几条工具回执：相邻两次的差 ≈ 扩展执行这一步工具的时间（脚本模型马上回）。 */
+const formArrivals: Array<{ tools: number; at: number }> = [];
+
 const model = await startScriptedModel([
   { match: ASK.form, steps: [
     tool("snapshot", {}),
@@ -87,7 +90,13 @@ const model = await startScriptedModel([
   { match: ASK.userSubmit, steps: [tool("fill", { target: "#name", value: "李四" }), { text: DONE.userSubmit }] },
   { match: ASK.reload, steps: [tool("fill", { target: "#city", value: "北京" }), { text: DONE.reload }] },
 ], undefined, payload => {
-  for (const m of payload.messages ?? []) {
+  const messages = payload.messages ?? [];
+  const lastUser = [...messages].reverse().find(m => m.role === "user");
+  const lastUserText = typeof lastUser?.content === "string" ? lastUser.content : Array.isArray(lastUser?.content) ? lastUser.content.map(p => p.text ?? "").join("") : "";
+
+  if (lastUserText.includes(ASK.form)) formArrivals.push({ tools: messages.filter(m => m.role === "tool").length, at: Date.now() });
+
+  for (const m of messages) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
 
     if (m.role === "tool" && !toolTexts.includes(text)) toolTexts.push(text);
@@ -157,10 +166,12 @@ try {
   // 1) 填表、用户改一栏、还原。
   await run("form");
   // 每一步工具从模型回完到下一次请求的间隔：主要是扩展执行这个工具的时间，用来和 main 比多出来的探查耗时。
-  const steps = model.requests.filter(r => r.rule === ASK.form).sort((a, b) => a.step - b.step);
   const labels = ["snapshot", "fill name (css)", "fill city (css)", "fill phone (@N)", "select size (@N)", "click kid (@N)", "click seat (css)", "fill note (css)"];
-  // 相邻两次模型请求的间隔：工具执行时间加上很短的本机流式回复。
-  evidence.stepGapsMs = steps.slice(1, labels.length + 1).map((r, i) => ({ after: labels[i], ms: Math.round(r.atMs - steps[i]!.atMs) }));
+  const arrivalAt = (tools: number) => formArrivals.find(a => a.tools === tools)?.at;
+  evidence.stepGapsMs = labels.map((label, i) => { const from = arrivalAt(i), to = arrivalAt(i + 1); return { step: label, ms: from && to ? to - from : null }; });
+  const gaps = evidence.stepGapsMs as Array<{ step: string; ms: number | null }>;
+  const median = (kind: string) => { const list = gaps.filter(g => g.step.startsWith(kind) && g.ms !== null).map(g => g.ms!).sort((a, b) => a - b); return list.length ? list[Math.floor(list.length / 2)]! : null; };
+  evidence.medianMs = { fill: median("fill"), select: median("select"), click: median("click") };
   evidence.refs = refs;
   assert.ok(refs.phone && refs.size && refs.kid, `the snapshot gave @N refs for phone, size and child seat ${JSON.stringify(refs)}`);
   assert.equal(evidence.snapshotKind, "ax", "the @N refs come from the AX snapshot, so phone, size and child seat take the AX path");
