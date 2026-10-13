@@ -58,7 +58,7 @@ const rp = await launchRealPath();
 const evidence: Record<string, unknown> = {};
 let error: string | null = null;
 
-type Seen = { button: string; disabled: boolean; result: string; faded: number; row: number };
+type Seen = { button: string; disabled: boolean; result: string; faded: number; row: number; inView: boolean };
 
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
@@ -72,7 +72,10 @@ try {
   const answerOf = (done: string) => `[...document.querySelectorAll("#messages .msg.assistant")].find(m => m.textContent.includes(${JSON.stringify(done)}))`;
   const seen = async (done: string): Promise<Seen> => await rp.evaluate(panel, `(() => { const a = ${answerOf(done)}; const b = a?.querySelector(".answer-primary");
     return { button: b?.querySelector("span")?.textContent ?? "", disabled: !!b?.disabled, result: a?.querySelector(".fill-undo-result")?.textContent ?? "", faded: Number(getComputedStyle(a.querySelector("p")).opacity),
-      row: Number(getComputedStyle(a.querySelector(".answer-actions")).opacity) }; })()`) as Seen;
+      row: Number(getComputedStyle(a.querySelector(".answer-actions")).opacity),
+      // 结果行整行在对话区里、没被输入框挡住。
+      inView: (() => { const line = a?.querySelector(".fill-undo-result"); if (!line) return false; const r = line.getBoundingClientRect(), box = document.querySelector("#messages").getBoundingClientRect();
+        return r.height > 0 && r.top >= box.top && r.bottom <= box.bottom; })() }; })()`) as Seen;
   const waitButton = (done: string, text: string) => until(async () => { const s = await seen(done); return s.button.includes(text) ? s : undefined; }, 15_000, `button ${text}`, 100);
   const page = (expr: string) => rp.evaluate(work, expr);
 
@@ -119,6 +122,7 @@ try {
   await rp.screenshot(panel, join(artifacts, "1-restored.png"));
   assert.ok(restored.disabled, "1: 还原后按钮灰掉");
   assert.equal(after.result, "还原了 2 处。「姓名」你后来改过，没动。", "1: 结果行说清还原了几处、哪一栏没动");
+  assert.ok(after.inView, `1: 结果行在视野里 ${JSON.stringify(after)}`);
   assert.ok(after.faded < 0.6, `1: 上面那段回答变淡 ${after.faded}`);
   assert.deepEqual(evidence.pageAfterRestore, { name: "13812345678先生", phone: "", size: "2 人" }, "1: 网页里只有用户没改过的栏回到原样");
 
@@ -144,7 +148,7 @@ try {
   await rp.click(work, "#submit");
   const submitted = await waitButton(DONE.submit, "已提交，收不回");
   evidence.submitted = submitted;
-  assert.ok(submitted.disabled && submitted.result.startsWith("表单已经交给网站") && submitted.faded === 1, `2: 已提交时灰掉并写原因，回答不变淡 ${JSON.stringify(submitted)}`);
+  assert.ok(submitted.disabled && submitted.result.startsWith("表单已经交给网站") && submitted.faded === 1 && submitted.inView, `2: 已提交时灰掉并写原因（在视野里），回答不变淡 ${JSON.stringify(submitted)}`);
   await rp.screenshot(panel, join(artifacts, "2-submitted.png"));
 
   // 3) 页面刷新。
@@ -153,7 +157,7 @@ try {
   await rp.cdp.send("Page.reload", {}, work);
   const changed = await waitButton(DONE.reload, "页面变了，收不回");
   evidence.pageChanged = changed;
-  assert.ok(changed.disabled && changed.result.startsWith("页面已经换了"), `3: 页面变了时灰掉并写原因 ${JSON.stringify(changed)}`);
+  assert.ok(changed.disabled && changed.result.startsWith("页面已经换了") && changed.inView, `3: 页面变了时灰掉并写原因（在视野里） ${JSON.stringify(changed)}`);
   await rp.screenshot(panel, join(artifacts, "3-page-changed.png"));
 
   // 4) 填完没点还原就开始下一轮：可点的还原按钮换回复制；已定下来的状态留着。
@@ -168,9 +172,12 @@ try {
 
   // 5) 只有说明、没有能还原的格子。
   await run("note");
-  const note = await until(async () => { const s = await seen(DONE.note); return s.result ? s : undefined; }, 15_000, "note line", 100);
+  await until(async () => (await seen(DONE.note)).result || undefined, 15_000, "note line", 100);
+  await sleep(400);
+  const note = await seen(DONE.note);
   evidence.noteOnly = note;
   assert.ok(note.button === "复制" && note.result === "编辑器里的文字没还原。", `5: 只有说明时不出还原按钮，只写说明 ${JSON.stringify(note)}`);
+  assert.ok(note.inView, `5: 说明行在视野里，没落在输入框下面 ${JSON.stringify(note)}`);
   await rp.screenshot(panel, join(artifacts, "5-note-only.png"));
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
