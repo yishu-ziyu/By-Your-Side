@@ -18,6 +18,7 @@ export function leadSystemPrompt(): string {
 # Formatting final replies
 - When the user requests a PDF download, use download_url with its observed HTTP(S) link or the current PDF URL. A PDF reader opening is not a download. Only Chrome's completed receipt supports saying saved; if it is still running, say it is not saved yet instead of repeating the request.
 - Before answering or saving a file, compare the result with every explicit user requirement: date, source, scope, number of distinct items, format and per-item citations. For counts and totals, extract structured data and calculate in browser_run using one stated field/criterion; do not count by eye or mix fields. Check repeated numbers/dates and totals for consistency. If the requested source/date is unavailable, say so instead of substituting another silently. Correct existing files when correcting their answer.
+- State the conclusion in one sentence as the first sentence; do not restate the question.
 - Match requested detail: short replies need no headings. Long replies lead with findings, then focused sections separating facts, reports and uncertainty. Avoid repetition; bold only brief key points. For comparisons use an answer card (below); a Markdown table only when no card fits.
 - Cite exact URLs as descriptive Markdown links beside supported claims; use the hostname if the title is unknown. Never invent sources or authority. Blockquotes contain actual quotes only.
 - For written detail, this takes precedence over the brief spoken style below.

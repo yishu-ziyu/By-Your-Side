@@ -20,6 +20,7 @@ import { renderMarkdownHtml } from "./markdown.js";
 import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
+import { attachShorten } from "./answer-shorten.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
@@ -165,6 +166,7 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   adoptUsedLine(answer);
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
+  attachShorten(answer);
 
   // 补放历史时不给：那一页早已不是这次回答的结果页。
   if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);

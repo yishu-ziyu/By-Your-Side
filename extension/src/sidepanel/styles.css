@@ -3364,6 +3364,28 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .answer-actions button { width: 28px; height: 28px; border-radius: 7px; }
 .answer-actions .answer-sources-btn { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[hidden] { display: none; }
+
+/* 拖短回答（answer-shorten.ts）：把手和层名在文末一排，长回答时贴着侧栏底部。收起展开用 layout 档；减少动效只淡入淡出。 */
+.msg.assistant [data-shorten], .msg.assistant .shorten-rest {
+  interpolate-size: allow-keywords;
+  transition: height var(--d-layout) var(--e-move), margin-block var(--d-layout) var(--e-move), padding-block var(--d-layout) var(--e-move),
+              opacity var(--d-state) var(--e-enter), display var(--d-layout) allow-discrete;
+}
+.msg.assistant .shorten-off { display: none; height: 0; margin-block: 0; padding-block: 0; opacity: 0; overflow: hidden; }
+@starting-style {
+  .msg.assistant [data-shorten]:not(.shorten-off) { height: 0; opacity: 0; }
+  .msg.assistant .shorten-rest:not(.shorten-off) { opacity: 0; }
+}
+.answer-actions.has-grip { position: sticky; bottom: 0; z-index: 1; background: linear-gradient(to bottom, transparent, var(--wallpaper) 35%); }
+.shorten-grip { display: flex; align-items: center; margin: 0 auto; padding: 6px 18px; border-radius: var(--r); cursor: ns-resize; touch-action: none; user-select: none; }
+.shorten-grip i { display: block; width: 30px; height: 4px; border-radius: var(--r-pill); background: var(--text-quaternary); transition: background var(--d-micro) var(--e-enter), width var(--d-micro) var(--e-enter); }
+.shorten-grip:hover i, .shorten-grip.dragging i { width: 36px; background: var(--text-secondary); }
+.shorten-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shorten-level { min-width: 96px; text-align: right; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .msg.assistant [data-shorten], .msg.assistant .shorten-rest { transition-property: opacity, display; }
+  .shorten-grip i { transition: none; }
+}
 .answer-actions .answer-show-tab { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[aria-expanded=true] { background: var(--content-subtle); }
 .answer-actions .answer-source-glyph { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; background: rgb(0 0 0 / .06); color: var(--text-secondary); font-size: 9px; font-weight: 600; line-height: 1; }
