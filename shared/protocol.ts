@@ -62,6 +62,10 @@ export interface ConversationSummary {
   state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
   /** A durable task checkpoint exists after the local host stopped mid-run. */
   checkpoint?: "interrupted" | "unavailable";
+  /** 这一轮怎么结束的一句（「填好 4 栏，没提交」）；会话列表用，不写「空闲」。 */
+  ending?: string;
+  /** 这一轮做过的网站主机名，给会话列表站点图标。 */
+  site?: string;
 }
 
 export function isLeadSession(sessionId?: string | null): boolean {

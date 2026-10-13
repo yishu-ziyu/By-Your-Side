@@ -18,13 +18,19 @@ export interface PageProfile {
   cjkRatio: number;
 }
 
+export type StarterEffect = "read" | "fill" | "mutate";
+
 export interface StarterSuggestion {
   label: string;
   prompt: string;
+  /** 只读 / 会填表（提交前问你）/ 会改页面。标签来自分支本身，不靠模型猜。 */
+  effect: StarterEffect;
+  /** 悬停或聚焦时展开的范围说明。 */
+  hint: string;
 }
 
 export const DEFAULT_SUGGESTIONS: StarterSuggestion[] = [
-  { label: "概括这一页", prompt: "请概括当前页面的要点。" },
+  { label: "概括这一页", prompt: "请概括当前页面的要点。", effect: "read", hint: "会读这一页的正文 → 写成摘要，不改页面" },
 ];
 
 const MAX_SUGGESTIONS = 3;
@@ -51,20 +57,20 @@ export function suggestionsFor(profile: PageProfile | null): StarterSuggestion[]
   const list = profile.tables >= 1 || profile.listItems >= 8 || (profile.paragraphs < 3 && (profile.headings ?? 0) >= 3);
 
   if (list && /供应商|suppliers?|vendors?/i.test(title)) {
-    out.push({ label: "整理供应商", prompt: "把当前页面的供应商和已显示的联系方式整理成表格。" });
-    out.push({ label: "对比供应商", prompt: "比较当前页面的供应商，区分已有信息和需要进一步确认的内容。" });
+    out.push({ label: "整理供应商", prompt: "把当前页面的供应商和已显示的联系方式整理成表格。", effect: "read", hint: "会读这一页的表格 → 整理成表，不改页面" });
+    out.push({ label: "对比供应商", prompt: "比较当前页面的供应商，区分已有信息和需要进一步确认的内容。", effect: "read", hint: "会读这一页的供应商信息 → 写成对比，不改页面" });
   } else if (list && /招聘|职位|careers?|jobs?|vacanc/i.test(title)) {
-    out.push({ label: "整理招聘职位", prompt: "把当前页面的职位、地区和要求整理成表格。" });
-    out.push({ label: "比较职位要求", prompt: "比较当前页面的职位要求，并指出有待确认的差异。" });
+    out.push({ label: "整理招聘职位", prompt: "把当前页面的职位、地区和要求整理成表格。", effect: "read", hint: "会读这一页的职位列表 → 整理成表，不改页面" });
+    out.push({ label: "比较职位要求", prompt: "比较当前页面的职位要求，并指出有待确认的差异。", effect: "read", hint: "会读这一页的职位要求 → 写成对比，不改页面" });
   } else {
 
-    if (profile.inputs >= 2) out.push({ label: "帮我填写表单", prompt: "请帮我填写当前页面的表单，提交前让我确认。" });
+    if (profile.inputs >= 2) out.push({ label: "帮我填写表单", prompt: "请帮我填写当前页面的表单，提交前让我确认。", effect: "fill", hint: "会改这一页的输入栏 → 提交前问你" });
 
-    if (profile.paragraphs >= 3 && foreign) out.push({ label: "翻译成中文", prompt: "把这个页面翻译成中文。" });
+    if (profile.paragraphs >= 3 && foreign) out.push({ label: "翻译成中文", prompt: "把这个页面翻译成中文。", effect: "mutate", hint: "会把这一页改成中文" });
 
-    if (profile.paragraphs >= 3) out.push({ label: "提炼文章要点", prompt: "提炼当前文章的关键观点，并附对应原文。" });
+    if (profile.paragraphs >= 3) out.push({ label: "提炼文章要点", prompt: "提炼当前文章的关键观点，并附对应原文。", effect: "read", hint: "会读这一页的文章 → 提炼要点，不改页面" });
 
-    if (list) out.push({ label: "整理成表格", prompt: "把这一页的主要条目整理成表格。" });
+    if (list) out.push({ label: "整理成表格", prompt: "把这一页的主要条目整理成表格。", effect: "read", hint: "会读这一页的条目 → 整理成表，不改页面" });
   }
 
   return [...out.slice(0, MAX_SUGGESTIONS - 1), ...DEFAULT_SUGGESTIONS];

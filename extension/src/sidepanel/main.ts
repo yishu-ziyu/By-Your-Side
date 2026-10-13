@@ -68,7 +68,7 @@ import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
+import { conversationBackgroundLabel, conversationDayGroup, conversationOutcome, conversationRelativeTime, resultCardCopy } from "./selectors.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
@@ -278,7 +278,10 @@ app.innerHTML = `
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub">浏览器助手。可以读页面、整理信息、在页面上操作。</p>
     <div id="starter-actions">
-      <button type="button" data-starter="请概括当前页面的要点。">概括这一页</button>
+      <button type="button" class="starter-chip" data-starter="请概括当前页面的要点。" data-effect="read">
+        <span class="starter-chip-main"><span class="starter-chip-label">概括这一页</span><span class="starter-chip-tag" data-effect="read">只读</span></span>
+        <span class="starter-chip-hint-wrap"><span class="starter-chip-hint">会读这一页的正文 → 写成摘要，不改页面</span></span>
+      </button>
     </div>
     <button type="button" id="starter-connect">连接模型</button>
   </section>
@@ -807,11 +810,30 @@ async function refreshStarterSuggestions(tabId: number): Promise<void> {
   const suggestions = suggestionsFor(profile);
   if (box && [...box.querySelectorAll<HTMLButtonElement>("button")].map(b => b.dataset.starter).join("\n") === suggestions.map(s => s.prompt).join("\n")) return;
 
-  box?.replaceChildren(...suggestions.map((item) => {
+  box?.replaceChildren(...suggestions.map((item, index) => {
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "starter-chip";
     button.dataset.starter = item.prompt;
-    button.textContent = item.label;
+    button.dataset.effect = item.effect;
+    button.style.setProperty("--starter-delay", `${index * 30}ms`);
+    const main = document.createElement("span");
+    main.className = "starter-chip-main";
+    const label = document.createElement("span");
+    label.className = "starter-chip-label";
+    label.textContent = item.label;
+    const tag = document.createElement("span");
+    tag.className = "starter-chip-tag";
+    tag.dataset.effect = item.effect;
+    tag.textContent = item.effect === "read" ? "只读" : item.effect === "fill" ? "会改页面 · 提交前问你" : "会改页面";
+    main.append(label, tag);
+    const hintWrap = document.createElement("span");
+    hintWrap.className = "starter-chip-hint-wrap";
+    const hint = document.createElement("span");
+    hint.className = "starter-chip-hint";
+    hint.textContent = item.hint;
+    hintWrap.append(hint);
+    button.append(main, hintWrap);
     bindStarterButton(button);
 
     return button;
@@ -827,6 +849,24 @@ function upsertConversation(c: ConversationSummary): void {
   if (c.id === selectedConversationId) noteRunStarted(c.runId);
 }
 
+let conversationFilter = "";
+/** 筛选框只建一次：每次重画都换一个新框，中文输入法打到一半会断。 */
+let conversationFilterEl: HTMLInputElement | null = null;
+let conversationRowsSig = "";
+
+const conversationOutcomeWas = new Map<string, string>();
+
+function latestTaskFor(id: string): TaskHistoryEntry | undefined {
+  let latest: TaskHistoryEntry | undefined;
+
+  for (const task of pastTasks) {
+    if (task.conversationId !== id) continue;
+    if (!latest || task.endedAt > latest.endedAt) latest = task;
+  }
+
+  return latest;
+}
+
 function renderConversations(): void {
   const current = conversations.get(selectedConversationId);
   const currentTitle = document.createElement("span");
@@ -839,37 +879,112 @@ function renderConversations(): void {
   conversationNew.setAttribute("aria-label", conversationRequest ? "正在新建会话" : "新会话");
   conversationNew.setAttribute("aria-busy", String(!!conversationRequest));
   conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
-  const list = [...conversations.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  const now = Date.now();
+  const list = [...conversations.values()].sort((a, b) => {
+    const waitA = conversationOutcome(a, { completed: completedConversations.has(a.id), task: latestTaskFor(a.id) }).kind === "waiting";
+    const waitB = conversationOutcome(b, { completed: completedConversations.has(b.id), task: latestTaskFor(b.id) }).kind === "waiting";
+    if (waitA !== waitB) return waitA ? -1 : 1;
 
-  const updatedTimeFormat = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    return b.updatedAt - a.updatedAt;
   });
+  const query = conversationFilter.trim().toLowerCase();
+  const shown = list.filter((c) => {
+    if (!query) return true;
+    const outcome = conversationOutcome(c, { completed: completedConversations.has(c.id), task: latestTaskFor(c.id) });
 
-  const rows = list.map((c) => {
+    return (c.title || "新会话").toLowerCase().includes(query) || outcome.line.toLowerCase().includes(query) || (c.site ?? "").toLowerCase().includes(query);
+  });
+  if (!conversationFilterEl) {
+    const el = document.createElement("input");
+    el.type = "search";
+    el.className = "conversation-menu-filter";
+    el.placeholder = "筛选会话";
+    el.setAttribute("aria-label", "筛选会话");
+    el.oninput = () => { conversationFilter = el.value; renderConversations(); };
+    // 回车选中筛出来的第一条。
+    el.onkeydown = (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      conversationMenu.querySelector<HTMLButtonElement>("button[data-conversation-id]")?.click();
+    };
+    conversationFilterEl = el;
+  }
+  const filter = conversationFilterEl;
+  if (filter.value !== conversationFilter) filter.value = conversationFilter;
+  const nodes: HTMLElement[] = [];
+  const sig: string[] = [];
+  let lastGroup = "";
+
+  for (const c of shown) {
+    const outcome = conversationOutcome(c, { completed: completedConversations.has(c.id), task: latestTaskFor(c.id) });
+    const group = outcome.kind === "waiting" ? "等你" : conversationDayGroup(c.updatedAt, now);
+
+    if (group !== lastGroup) {
+      lastGroup = group;
+      const head = document.createElement("div");
+      head.className = "conversation-menu-group";
+      head.textContent = group;
+      nodes.push(head);
+      sig.push(group);
+    }
+
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("role", "menuitemradio");
     button.setAttribute("aria-checked", String(c.id === selectedConversationId));
     button.dataset.conversationId = c.id;
+    button.dataset.outcome = outcome.kind;
     button.title = c.title || "新会话";
+    const mark = document.createElement("span");
+    mark.className = "conversation-menu-mark";
+    mark.dataset.kind = outcome.kind;
+    mark.textContent = outcome.icon;
+    if (outcome.kind === "waiting") {
+      const dot = document.createElement("i");
+      dot.className = "conversation-menu-wait-dot";
+      mark.append(dot);
+    }
     const info = document.createElement("div");
     info.className = "conversation-menu-info";
     const title = document.createElement("span");
     title.className = "conversation-menu-title";
     title.textContent = c.title || "新会话";
+    const ending = document.createElement("small");
+    ending.className = "conversation-menu-ending";
+    ending.textContent = outcome.line;
+    info.append(title, ending);
+    const meta = document.createElement("div");
+    meta.className = "conversation-menu-meta";
+    if (c.site) {
+      const site = document.createElement("span");
+      site.className = "conversation-menu-site";
+      site.textContent = c.site.charAt(0).toUpperCase();
+      site.title = c.site;
+      meta.append(site);
+    }
     const updated = document.createElement("small");
     updated.className = "conversation-menu-updated";
-    updated.textContent = `更新于 ${updatedTimeFormat.format(c.updatedAt)}`;
-    info.append(title, updated);
-    const state = document.createElement("small");
-    state.textContent = conversationStateLabel(c);
-    button.append(info, state);
+    updated.textContent = conversationRelativeTime(c.updatedAt, now);
+    meta.append(updated);
+    button.append(mark, info, meta);
     button.onclick = () => selectConversation(c.id);
+    const prev = conversationOutcomeWas.get(c.id);
+    const flash = !!prev && prev !== outcome.kind && !conversationMenu.hidden;
+    if (flash) button.classList.add("conversation-row-flash");
+    conversationOutcomeWas.set(c.id, outcome.kind);
+    nodes.push(button);
+    sig.push([c.id, c.title, c.site ?? "", outcome.kind, outcome.line, updated.textContent, c.id === selectedConversationId, flash].join("\u0001"));
+  }
 
-    return button;
-  });
+  // 内容没变就不重画：打开列表后过往任务的结果才到，重画会换掉鼠标正按着的那一行，这次点击就丢了。
+  const signature = sig.join("\u0002");
 
-  conversationMenu.replaceChildren(...rows);
+  if (filter.parentElement !== conversationMenu || signature !== conversationRowsSig) {
+    conversationRowsSig = signature;
+    if (filter.parentElement !== conversationMenu) conversationMenu.replaceChildren(filter);
+    while (filter.nextSibling) filter.nextSibling.remove();
+    conversationMenu.append(...nodes);
+  }
 
   const other = list.find((c) => c.id !== selectedConversationId && c.state === "running")
     ?? list.find((c) => c.id !== selectedConversationId && c.state === "user")
@@ -1064,6 +1179,13 @@ function requestNewConversation(): boolean {
 conversationSwitcher.onclick = () => {
   conversationMenu.hidden = !conversationMenu.hidden;
   conversationSwitcher.setAttribute("aria-expanded", String(!conversationMenu.hidden));
+  if (conversationMenu.hidden) conversationFilter = "";
+  else {
+    conversationFilter = "";
+    if (!pastTasksRequestId) requestPastTasks();
+    renderConversations();
+    conversationFilterEl?.focus();
+  }
 };
 
 conversationNew.onclick = () => {
@@ -1072,7 +1194,9 @@ conversationNew.onclick = () => {
 };
 
 document.addEventListener("click", (e) => {
-  if (!conversationMenu.contains(e.target as Node) && !conversationSwitcher.contains(e.target as Node)) {
+  // 打开列表时会重画标题按钮里的字，点中的那段字已不在文档里；按点击发生时的路径判断，不按现在的 DOM。
+  const path = e.composedPath();
+  if (!path.includes(conversationMenu) && !path.includes(conversationSwitcher)) {
     conversationMenu.hidden = true;
     conversationSwitcher.setAttribute("aria-expanded", "false");
   }
@@ -1598,6 +1722,7 @@ function handlePastTasksResult(msg: Extract<ServerMessage, { type: "task_history
   else pastTasksError = `未能读取过往任务：${msg.error ?? "未知原因"}`;
 
   if (!memoryDrawer.hidden) renderMemoryDrawer();
+  if (!conversationMenu.hidden) renderConversations();
 }
 
 /** 被替换、失效的旧记忆：留作历史，不再带给助手；被替换的可以撤销替换。 */
