@@ -56,10 +56,10 @@ try {
   await rp.click(panel, "#takeover-btn");
   const leaving = await rp.evaluate(panel, `document.querySelector("#handoff-banner")?.textContent ?? ""`) as string;
   await until(async () => (await rp.evaluate(panel, "document.querySelector(\"#handoff-banner\")?.textContent")) === "你在操作 · 助手在旁边等" || undefined, 20_000, "写出你在操作");
-  const you = await rp.evaluate(panel, `({ banner: document.querySelector("#handoff-banner")?.textContent ?? "", hidden: document.querySelector("#handoff-banner")?.hidden === false, cursorGone: true })`);
+  const you = await rp.evaluate(panel, `document.querySelector("#handoff-banner")?.hidden ? "" : document.querySelector("#handoff-banner")?.textContent ?? ""`) as string;
   const afterLeave = await cursorHidden(work);
   await rp.screenshot(panel, join(out, "you-operating.png"));
-  check("接管后先退场再写你在操作", afterLeave && String(you).includes("你在操作"), { beforeLeave, afterLeave, leaving, you });
+  check("接管后先退场再写你在操作", afterLeave && you === "你在操作 · 助手在旁边等", { beforeLeave, afterLeave, leaving, you });
   await rp.click(panel, "#takeover-btn");
   await until(async () => (await rp.evaluate(panel, "document.querySelector(\"#handoff-banner\")?.textContent")) === "助手先重读页面" || undefined, 20_000, "写出先重读");
   const rereading = await rp.evaluate(panel, `document.querySelector("#handoff-banner")?.textContent ?? ""`) as string;
