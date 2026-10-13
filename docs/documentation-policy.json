@@ -5,10 +5,12 @@
     "README.md": 3000,
     "AGENTS.md": 6000,
     "docs/README.md": 3000,
-    "docs/STATUS.md": 5000,
-    "docs/NOTES.md": 3500
+    "docs/STATUS.md": 5000
   },
-  "historicalPrefixes": ["docs/history/", "docs/evals/", "docs/tasks/", "docs/work/", "docs/reviews/", "docs/diagnostics/", "docs/research/", "docs/evidence/", "docs/previews/", "docs/devlog/"],
+  "historicalPrefixes": [
+    "docs/evals/",
+    "docs/evidence/"
+  ],
   "locationExceptions": {
     "README.md": "仓库概览与文档目录",
     "AGENTS.md": "编码代理自动读取的规则入口",

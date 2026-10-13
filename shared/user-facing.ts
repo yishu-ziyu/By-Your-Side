@@ -117,14 +117,14 @@ export function plainDownloadError(code: string | null | undefined): string {
  * 错误原文是给模型看的：先认已知的说法，认不出就取第一小句、剥掉英文括注和不可信标记；
  * 整句没有一点中文就只说「没做成」，不照搬原文（#304）。
  */
+// 按顺序认第一条：fetch 抛错时外面还包着一层「fetch 请求已发出，结果未知：…」，里面的具体原因（连不上、超时）要先认。
 const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
-  [/已取消/, "已取消"],
+  [/fetch 请求失败|Failed to fetch|ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_TIMED_OUT|CONNECTION_RESET|ADDRESS_UNREACHABLE|INTERNET_DISCONNECTED|NETWORK_FAILED)/, "连不上这个地址"],
   [/timed out|超时/i, "这一步超时了"],
+  [/已取消/, "已取消"],
   [/not connected|disconnected/i, "连接断开了"],
-  [/ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_TIMED_OUT|CONNECTION_RESET|ADDRESS_UNREACHABLE|INTERNET_DISCONNECTED|NETWORK_FAILED)/, "连不上这个地址"],
   [/ERR_(CERT|SSL)/, "页面证书有问题"],
   [/fetch 请求已发出/, "结果未知"],
-  [/fetch 请求失败/, "网络没通"],
   [/Download failed/i, "没下载成"],
   [/目标被|被其他元素覆盖/, "被别的东西挡住"],
   [/未找到目标|未找到元素|ref 已失效|节点无法解析|无法获取元素位置|无法获取操作坐标|无法确认目标位置/, "没找到目标"],
@@ -148,9 +148,9 @@ export function plainToolError(errorText: string): string {
 
   for (const [pattern, reason] of TOOL_ERROR_REASONS) if (pattern.test(text)) return reason;
 
-  const first = text
-    .split(/[\n，。；,;]/, 1)[0]!
-    .replace(/[：:].*$/s, "")
+  // 取冒号前那一小句；它没有中文时（如页面脚本抛的「Error: 接口没回」）取冒号后第一段有中文的。
+  const clauses = text.split(/[\n，。；,;]/, 1)[0]!.split(/[：:]/);
+  const first = (clauses.find((clause) => /[一-鿿]/.test(clause)) ?? clauses[0]!)
     .replace(/（[A-Za-z][^）]*）/g, "")
     .replace(/<\/?(?:page-content|untrusted)[^>]*>/g, "")
     .replace(/loc=\S+|@\d+|\bref\b/g, "")

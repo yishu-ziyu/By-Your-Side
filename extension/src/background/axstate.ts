@@ -9,9 +9,22 @@ const byTab = new Map<number, Set<number>>();
 
 const latestKind = new Map<number, "ax" | "dom">();
 
+/** 页面重渲染后重新找到的节点：ref → 新的 backendDOMNodeId。下一次快照重新编号时作废。 */
+const movedByTab = new Map<number, Map<number, number>>();
+
 export function recordAxSnapshot(tabId: number, backendIds: number[]): void {
   byTab.set(tabId, new Set(backendIds));
   latestKind.set(tabId, "ax");
+  movedByTab.delete(tabId);
+}
+
+/** ref 原来的节点被页面换掉、已按原身份找回唯一的新节点：之后这个 ref 指向新节点。 */
+export function moveAxRef(tabId: number, ref: number, backendNodeId: number): void {
+  if (!isAxRef(tabId, ref)) return;
+  const moved = movedByTab.get(tabId) ?? new Map<number, number>();
+
+  moved.set(ref, backendNodeId);
+  movedByTab.set(tabId, moved);
 }
 
 /** 同一次 AX 采集的补充登记（续读、控件清单）：并入而不是替换，正文里给过的 ref 仍可执行。 */
@@ -27,6 +40,11 @@ export function isAxRef(tabId: number, ref: number): boolean {
   return byTab.get(tabId)?.has(ref) ?? false;
 }
 
+/** backendDOMNodeId 属于这一页当前的 AX 登记：快照里的 ref 本身，或某个 ref 被找回后指向的新节点。 */
+export function isAxNode(tabId: number, backendNodeId: number): boolean {
+  return isAxRef(tabId, backendNodeId) || [...(movedByTab.get(tabId)?.values() ?? [])].includes(backendNodeId);
+}
+
 /**
  * 执行动作前取 AX ref 的 backendDOMNodeId：属于当前标签页就返回它，DOM 快照的 ref 或非 ref 返回 undefined（走 domops）。
  * ref 不在当前标签页、却是另一个标签页 AX 快照里的 ref 时直接拒绝：动作没带 tabId 落到了工作标签页，
@@ -35,7 +53,7 @@ export function isAxRef(tabId: number, ref: number): boolean {
 export function axBackendNodeFor(tabId: number, ref: number | null): number | undefined {
   if (ref === null) return undefined;
 
-  if (isAxRef(tabId, ref)) return ref;
+  if (isAxRef(tabId, ref)) return movedByTab.get(tabId)?.get(ref) ?? ref;
 
   if (latestKind.get(tabId) === "dom") return undefined;
   const owner = [...byTab].find(([otherTab, refs]) => otherTab !== tabId && refs.has(ref))?.[0];
@@ -53,6 +71,7 @@ export function axBackendNodeFor(tabId: number, ref: number | null): number | un
  */
 export function clearAxSnapshot(tabId: number): void {
   byTab.delete(tabId);
+  movedByTab.delete(tabId);
   latestKind.set(tabId, "dom");
 }
 
@@ -62,10 +81,11 @@ export function snapshotRefKind(tabId: number): "ax" | "dom" | undefined {
 
 // 导航后 backendDOMNodeId 全部失效，整表作废
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === "loading") { byTab.delete(tabId); latestKind.delete(tabId); }
+  if (info.status === "loading") { byTab.delete(tabId); movedByTab.delete(tabId); latestKind.delete(tabId); }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   byTab.delete(tabId);
+  movedByTab.delete(tabId);
   latestKind.delete(tabId);
 });

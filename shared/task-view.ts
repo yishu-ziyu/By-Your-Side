@@ -57,6 +57,11 @@ export interface TaskView {
    * blocked 原因在助手和用户之外（网站连不上等），remaining 是给用户看的原因。remaining 是用户口吻的一句。没核对过时缺省。
    */
   goalStatus?: { status: "done" | "waiting" | "open" | "blocked"; remaining: string | null };
+  /**
+   * 第一个没做成（受阻或结果未知）的执行步骤的人话原因（tool_end.reason，#304）。只取执行账本项：目标项的 reason 是核对台账，
+   * 不给用户看。按计划列目标时受阻的执行项不成行（只有目标），原因也要从这里带到侧栏。没有就缺省。
+   */
+  failureReason?: string;
   /** 有写入步骤说不清是否已执行（中断时没登记结果）。只在为真时出现。 */
   unresolvedEffect?: true;
 }
@@ -130,6 +135,10 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && ((snapshot.nextStep ? nextStepIgnoringPlaceholder(snapshot).delivery : undefined) === "partial"||outstanding.length>0||(!!snapshot.goalCheck&&snapshot.goalCheck.status!=="done")))) && !!snapshot.recoveryInput,
     ...(snapshot.goalCheck ? { goalStatus: { status: snapshot.goalCheck.status === "done" ? "done" as const : snapshot.goalCheck.status === "needs_user" ? "waiting" as const : snapshot.goalCheck.status === "blocked" ? "blocked" as const : "open" as const, remaining: snapshot.goalCheck.remaining } } : {}),
   };
+
+  const failed = executionResults.find(item => item.reason && (item.status === 'blocked' || item.status === 'unknown' && !isSupersededUnknown(item, executionResults)));
+
+  if (failed?.reason) view.failureReason = failed.reason;
 
   if (snapshot.unresolvedEffect || snapshot.untrackedWritePending) view.unresolvedEffect = true;
   const materials = snapshot.recoveryInput?.materials;
@@ -208,6 +217,8 @@ export function isTaskView(value: unknown): value is TaskView {
   if (v.latestDelivery?.unfinished !== undefined && !(Array.isArray(v.latestDelivery.unfinished) && v.latestDelivery.unfinished.every(isUnfinishedItem))) return false;
 
   if (typeof v.resumable !== "boolean") return false;
+
+  if (v.failureReason !== undefined && (typeof v.failureReason !== "string" || v.failureReason.length > 100)) return false;
 
   if (v.goalsListed !== undefined && v.goalsListed !== true && v.goalsListed !== false) return false;
 

@@ -14,6 +14,7 @@ import {
   resultStateOf,
   resultLocksWhenUnknown,
   selectResultBinding,
+  withoutFailureReasons,
   type TaskResultEvidence,
   type TaskResultItem,
   type TaskResultRegistration,
@@ -85,6 +86,7 @@ export class TaskResultBook {
 
       if (existing.status === "pending" && existing.evidence) continue; // A running call owns its binding until its receipt.
       Object.assign(existing, intent, { status: "pending", evidence: null });
+      delete existing.reason;
     }
   }
 
@@ -97,6 +99,8 @@ export class TaskResultBook {
       item.status = "pending";
       item.target = null;
       item.evidence = null;
+      // 换了做法重做：上一次失败的原因不再属于它。
+      delete item.reason;
     }
   }
 
@@ -124,6 +128,9 @@ export class TaskResultBook {
 
       if (item.supersededBy) mapped.supersededBy = item.supersededBy;
 
+      // 后台重启后侧栏仍要说出没做成的原因。
+      if (item.reason) mapped.reason = item.reason;
+
       return mapped;
     });
   }
@@ -137,6 +144,7 @@ export class TaskResultBook {
     if (!item) return;
 
     item.status = "pending";
+    delete item.reason;
     const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
 
     if (input.effectful && !isWriteTool(input.name)) evidence.effectful = true;
@@ -214,7 +222,9 @@ export class TaskResultBook {
         item.status = write&&input.executionFact==='unknown'?'unknown':"satisfied";
       }
     } else {
+      // 每次失败都换成这一次的原因：没有原因时不留上一次的。
       if (input.reason) item.reason = input.reason;
+      else delete item.reason;
       if (input.executionFact === "not_executed" || (input.name === "page_translation" && input.executionFact === "executed")) {
         // Translation may fail while generating its next batch after acknowledged earlier batches.
         // It resumes by collecting only untranslated paragraphs; an unknown RPC still stays unknown below.
@@ -283,7 +293,7 @@ export function createTaskResultsTool(opts: {
 
       opts.register(registered);
       const snapshot = opts.getSnapshot();
-      const details = { executionState: snapshot.executionState ?? snapshot.resultState ?? "unregistered", resultState: snapshot.resultState ?? "unregistered", results: snapshot.results ?? [] };
+      const details = { executionState: snapshot.executionState ?? snapshot.resultState ?? "unregistered", resultState: snapshot.resultState ?? "unregistered", results: withoutFailureReasons(snapshot.results ?? []) };
 
       return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
     },

@@ -15,7 +15,8 @@ import { REPO } from "./harness.mts";
 
 const HERE = join(REPO, "scripts/acceptance/real-path");
 
-const SKIP = new Set(["harness.mts", "run-all.mts"]);
+// background-tab-input 只能在有窗口的 Chrome 里跑（会弹窗），不进整轮。
+const SKIP = new Set(["harness.mts", "run-all.mts", "background-tab-input.mts"]);
 
 // 核心用户路径（一批改动跑一遍）：只装扩展、脚本模型、无需凭据。选择依据见 docs/evals/20261008-e2e-only.md。
 const CORE = [

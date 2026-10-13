@@ -118,6 +118,11 @@ export function isTaskResultItem(v: unknown): v is TaskResultItem {
     && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy));
 }
 
+/** 失败原因只给侧栏：交给模型的账本副本不带它，模型看到的与加原因之前一样。 */
+export function withoutFailureReasons(items: readonly TaskResultItem[]): TaskResultItem[] {
+  return items.map(({ reason: _reason, ...item }) => item);
+}
+
 /** 只有取代项本身已满足时，被取代的未知才不再阻塞；否则未知仍生效。 */
 export function isSupersededUnknown(item: Pick<TaskResultItem,'id'|'status'|'supersededBy'>, items: readonly TaskResultItem[]): boolean {
   return item.status === 'unknown' && typeof item.supersededBy === 'string'

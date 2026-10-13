@@ -9,6 +9,7 @@ import {
   USER_DELIVERY_TEXT_MAX,
   USER_DELIVERY_FACT_ITEM_MAX,
   USER_DELIVERY_FACT_DESCRIPTION_MAX,
+  deliveryTextWithNote,
   isUserDelivery,
   isUserDeliveryFacts,
   type UserDelivery,
@@ -81,6 +82,7 @@ export function createUserDelivery(input: {
   facts?: UserDeliveryFacts;
   unfinished?: string[];
   sources?: UserDeliverySourceRef[];
+  hostNote?: string;
 }): UserDelivery {
   const delivery = {
     conversationId: input.conversationId,
@@ -99,6 +101,8 @@ export function createUserDelivery(input: {
   if (input.unfinished?.length) delivery.unfinished = input.unfinished;
 
   if (input.sources?.length) delivery.sources = input.sources.map((source) => ({ ...source }));
+
+  if (input.hostNote) delivery.hostNote = input.hostNote;
 
   if (!RECORD_KINDS.includes(input.kind as (typeof RECORD_KINDS)[number])) throw new Error("kind 必须是 ack、finding 或 reply。");
 
@@ -161,7 +165,7 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
     throw new Error("kind 必须是 ack 或 finding。任务最终结果用 finding，不要发 reply。");
   }
 
-  let text = assertDeliveryText(input.content);
+  const text = assertDeliveryText(input.content);
   const requested = input.outcome ?? "complete";
 
   if (!["complete", "partial"].includes(requested)) throw new Error("outcome 必须是 complete 或 partial。");
@@ -181,22 +185,17 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   const facts = projected && isUserDeliveryFacts(projected) ? projected : undefined;
 
   // 模型自己说了没做完：正文原样，部分完成记在 outcome/facts 上，由侧栏续做行说明。
-  // 模型声称做完而宿主知道没做完：正文会误导用户（语音里也会被念出来），这时才补一句纠正。
-  // 但宿主会为同一批没做完的项出「没做成 · 继续原任务」卡时，正文不再重复同一句话（#286）；
-  // 卡不会出现的场景（没有剩余项、也不是部分交付判定）照旧补。
-  if (input.kind === "finding" && !complete && requested === "complete") {
-    const openItems = open ? open.remaining.length + (open.omittedRemaining ?? 0) : 0;
-
-    if (next?.delivery !== "partial" && openItems === 0) {
-      const note = next ? partialResultNote(next) : "（这件事还没全部完成。）";
-
-      text = clampDeliveryText(`${text}\n\n${note}`);
-    }
-  }
+  // 模型声称做完而宿主知道没做完：补一句纠正，记在 hostNote 上，不改正文。侧栏在过程行说完成情况（目标核对判做完时不再提）；
+  // 念出来、旁路模型和过往任务仍用正文加这一句（deliveryTextWithNote）。
+  const hostNote = input.kind === "finding" && !complete && requested === "complete"
+    ? (next ? partialResultNote(next) : "（这件事还没全部完成。）")
+    : undefined;
 
   const deliveryInput: Parameters<typeof createUserDelivery>[0] = {
     id: input.id, conversationId: opts.conversationId, runId, kind: input.kind as UserDeliveryKind, text, replyTo, composedAt: (opts.clock ?? Date.now)(),
   };
+
+  if (hostNote) deliveryInput.hostNote = hostNote;
 
   if (facts) deliveryInput.facts = facts;
 
@@ -256,13 +255,6 @@ export function createSendUserMessageTool(opts: SendUserMessageOptions): ToolDef
   });
 }
 
-/** 附加的纠正说明不能把一条合法正文挤成超长而被丢弃；超出时截掉正文尾部并标明。 */
-function clampDeliveryText(text: string): string {
-  if (text.length <= USER_DELIVERY_TEXT_MAX) return text;
-
-  return `${text.slice(0, USER_DELIVERY_TEXT_MAX - 12)}…（后文已截断）`;
-}
-
 export const COMPOSE_USER_DELIVERY_PROMPT =
   "你根据来源事实组织一句给用户的正式回答。通常1至3句自然中文口语。先说具体发现，保留读取范围与未确认部分。来源是助手报告，不是独立核验成功。不要改写来源里的实体关系。不要Markdown、内部ID或工具名。只输出要对人说的正文。" + VOICE_PERSONALITY;
 
@@ -276,6 +268,6 @@ export function composeUserDeliveryInput(input: {
     question: input.question ?? null,
     facts: input.facts,
     recentTurns: input.recentTurns,
-    latestDelivery: input.latestDelivery ? { kind: input.latestDelivery.kind, text: input.latestDelivery.text } : null,
+    latestDelivery: input.latestDelivery ? { kind: input.latestDelivery.kind, text: deliveryTextWithNote(input.latestDelivery) } : null,
   });
 }
