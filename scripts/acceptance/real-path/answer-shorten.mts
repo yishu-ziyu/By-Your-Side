@@ -78,9 +78,9 @@ try {
     await sleep(800);
   };
   const ANSWER_JS = `[...document.querySelectorAll("#messages .msg.assistant")].filter(m => m.querySelector(".answer-actions"))`;
-  // 用户看得到的正文：innerText 按样式算，收起的部分不在里面。
+  // 用户看得到的正文：innerText 按样式算；但不渲染的元素的 innerText 会退回全部文字，所以先跳过整块收起的。
   const seen = async (n = 0): Promise<Seen> => await rp.evaluate(panel, `(() => { const a = ${ANSWER_JS}[${n}];
-    const text = [...a.children].filter(c => !c.matches(".answer-actions,.answer-panel")).map(c => c.innerText).join("\\n").trim();
+    const text = [...a.children].filter(c => !c.matches(".answer-actions,.answer-panel") && getComputedStyle(c).display !== "none").map(c => c.innerText).join("\\n").trim();
     return { level: a.dataset.shortenLevel ?? null, label: a.querySelector(".shorten-level")?.textContent ?? "", text, grip: !!a.querySelector(".shorten-grip") }; })()`) as Seen;
   const gripAt = async () => await rp.evaluate(panel, `(() => { const r = ${ANSWER_JS}[0].querySelector(".shorten-grip").getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`) as { x: number; y: number };
   const mouse = (type: string, x: number, y: number) => rp.cdp.send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 }, panel);
