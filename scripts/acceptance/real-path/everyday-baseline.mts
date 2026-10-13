@@ -1,7 +1,7 @@
 /**
  * 日常请求底线：10 条取自真实使用记录的请求，逐条在新会话里发出，只看用户看得到的结果。
  *
- *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math]   # 只装扩展，设置页配模型
+ *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math] [--wait-shots]   # 只装扩展，设置页配模型
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --model=stepfun/step-3.7-flash --suite=sitegeist   # Sitegeist 宣传的 5 类任务
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --daily [--only=...]   # 用户已开的日常 Chrome（9222），需用户同意
  *   加 --direct-config：不走设置页界面，直接写模型配置（API key 服务商目前只能这样配）
@@ -59,6 +59,8 @@ const settleLong = suite === "voice-ideas" || suite === "goal-check" || suite ==
 
 /** --repeat=N：每条用例连跑 N 次，各开新会话。 */
 const repeat = Math.max(1, Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 1);
+
+const waitShots = process.argv.includes("--wait-shots");
 
 if (!daily && !serveOnly) requireHeadless();
 
@@ -857,8 +859,8 @@ try {
           await rp.screenshot(work, join(artifacts, `${item.id}-page-running-${pageShots}.png`)).catch(() => {});
         }
 
-        // 等待期间每 2 秒给侧栏拍照并存下结构（最多 30 秒）：看用户等的时候看到什么（#102）。
-        if ((state.running || state.stopping || state.streaming) && panelShots < 15 && Date.now() - sentAt >= (panelShots + 1) * 2000) {
+        // 加 --wait-shots 时，等待期间每 2 秒给侧栏拍照并存下结构（最多 30 秒）：看用户等的时候看到什么（#102）。默认不拍，因为它让 out/ 涨得最快。
+        if (waitShots && (state.running || state.stopping || state.streaming) && panelShots < 15 && Date.now() - sentAt >= (panelShots + 1) * 2000) {
           panelShots += 1;
           await capturePanel(`${item.id}-panel-wait-${panelShots * 2}s`);
         }

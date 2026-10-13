@@ -14,6 +14,7 @@ requireHeadless();
 type RealPath = Awaited<ReturnType<typeof launchRealPath>>;
 
 const QUESTION = "概括当前页";
+const EARLIER = "先看看这页讲什么";
 const ANSWER = "这是周报页，三件事都列在上面。";
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-connect-first-minute`);
 await mkdir(out, { recursive: true });
@@ -21,6 +22,12 @@ await mkdir(out, { recursive: true });
 const results: Array<[string, boolean, unknown?]> = [];
 const check = (name: string, pass: boolean, detail?: unknown) => { results.push([name, pass, detail]); };
 let error: string | null = null;
+
+const busy = createServer((_req, res) => {
+  res.writeHead(429, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "Rate limit reached", type: "rate_limit" } }));
+});
+await new Promise<void>((done) => busy.listen(0, "127.0.0.1", done));
+const busyUrl = `http://127.0.0.1:${siteAddress(busy).port}/v1`;
 
 const deny = createServer((_req, res) => {
   res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "Invalid API key", type: "unauthorized" } }));
@@ -36,11 +43,14 @@ const pageUrl = `http://127.0.0.1:${siteAddress(site).port}/`;
 
 const model = await startScriptedModel([{ match: QUESTION, steps: [{ text: ANSWER, chunkDelayMs: 20 }] }]);
 const asked = () => model.requests.filter((r) => r.rule === QUESTION && r.tools).length;
+/** 所有主任务请求（带工具），不管匹不匹配脚本：连发两句时 EARLIER 被自动发出也算得到。 */
+const mainRequests = () => model.requests.filter((r) => r.tools).length;
 
 const viewSrc = `(() => ({
   held: !!document.querySelector('[data-f01="held"]'),
   hint: document.querySelector(".held-hint")?.textContent ?? "",
-  unconnected: [...document.querySelectorAll(".needs-model-card:not(.needs-model-connected)")].length > 0,
+  unconnected: [...document.querySelectorAll(".needs-model-card:not(.needs-model-connected):not(.needs-model-dropped)")].length > 0,
+  dropped: document.querySelector(".needs-model-dropped")?.innerText ?? "",
   pill: document.querySelector('[data-f01="pill"]')?.textContent?.trim() ?? "",
   heldPending: !!document.querySelector(".held-pending"),
   users: [...document.querySelectorAll(".msg.user")].map((b) => (b.querySelector(".user-msg-text")?.textContent ?? b.textContent).trim()),
@@ -60,7 +70,7 @@ const watchSrc = `(() => {
   return true;
 })()`;
 
-type PanelView = { held: boolean; hint: string; unconnected: boolean; pill: string; heldPending: boolean; users: string[]; text: string; morph: number | null; flip: number | null };
+type PanelView = { dropped: string; held: boolean; hint: string; unconnected: boolean; pill: string; heldPending: boolean; users: string[]; text: string; morph: number | null; flip: number | null };
 
 const readView = (rp: RealPath, panel: string) => rp.evaluate(panel, viewSrc) as Promise<PanelView>;
 
@@ -92,12 +102,12 @@ async function openFreshPanel(rp: RealPath, reduced = false): Promise<string> {
   return panel;
 }
 
-async function sendHeld(rp: RealPath, panel: string): Promise<PanelView> {
+async function sendHeld(rp: RealPath, panel: string, text = QUESTION): Promise<PanelView> {
   await rp.click(panel, "#input");
-  await rp.typeText(panel, QUESTION);
+  await rp.typeText(panel, text);
   await rp.pressEnter(panel);
 
-  return until(async () => { const v = await readView(rp, panel); return v.unconnected && v.users.some((u) => u.includes(QUESTION)) ? v : undefined; }, 30_000, "未连接卡");
+  return until(async () => { const v = await readView(rp, panel); return v.unconnected && v.users.some((u) => u.startsWith(text)) ? v : undefined; }, 30_000, "未连接卡");
 }
 
 async function saveCustom(rp: RealPath, panel: string, baseUrl: string, key: string): Promise<string> {
@@ -113,6 +123,7 @@ async function saveCustom(rp: RealPath, panel: string, baseUrl: string, key: str
 
 let rp: RealPath | undefined;
 let reduced: RealPath | undefined;
+let reducedPanel: string | undefined;
 try {
   const first = await launchRealPath();
   rp = first;
@@ -136,7 +147,8 @@ try {
   }, 45_000, "密钥原因");
   await first.screenshot(settings, join(out, "02-invalid-key.png"));
   check("密钥无效：框下一行原因，不写红色「连接失败」", fail.reason.includes("服务商不接受这个密钥") && fail.wait.includes("侧栏里那句话还在等你") && fail.warn && !fail.status.includes("连接失败") && fail.tone !== "err", fail);
-  check("密钥无效：没有保存，侧栏仍在等", (await readView(first, panel)).unconnected && asked() === 0);
+  const storedAfterDeny = await first.evaluate(settings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
+  check("密钥无效：没有保存，侧栏仍在等", (await readView(first, panel)).unconnected && asked() === 0 && storedAfterDeny !== denyUrl, { storedAfterDeny });
 
   await first.evaluate(panel, watchSrc);
   await fillCustom(first, settings, model.baseUrl, "local-fixture");
@@ -149,8 +161,9 @@ try {
   await first.screenshot(panel, join(out, "03-connected.png"));
   check("R2 连好后未连接卡不再出现", !after.unconnected && after.pill.includes("已连上"), after);
   check("R3 原话只发出一次，只有一个用户气泡", asked() === 1 && after.users.length === 1 && after.users[0]!.startsWith(QUESTION) && !!answered, { asked: asked(), users: after.users });
-  check("R4 变形 240ms±20", after.morph != null && after.morph >= 220 && after.morph <= 260, after.morph);
-  check("R4 FLIP 320ms±20", after.flip != null && after.flip >= 300 && after.flip <= 340, after.flip);
+  // 测得的时长只会因为计时和调度变长：下限 -20，上限 +50。
+  check("R4 变形 240ms（-20/+50）", after.morph != null && after.morph >= 220 && after.morph <= 290, after.morph);
+  check("R4 FLIP 320ms（-20/+50）", after.flip != null && after.flip >= 300 && after.flip <= 370, after.flip);
   await first.close();
   await first.remove();
   rp = undefined;
@@ -158,6 +171,10 @@ try {
   const second = await launchRealPath();
   reduced = second;
   const rpanel = await openFreshPanel(second, true);
+  reducedPanel = rpanel;
+  const requestsBefore = mainRequests();
+  // 连模型前连发两句：只自动发最新那句，前一张卡写明那句没发出。
+  await sendHeld(second, rpanel, EARLIER);
   await sendHeld(second, rpanel);
   await second.evaluate(rpanel, watchSrc);
   const rsettings = await saveCustom(second, rpanel, model.baseUrl, "local-fixture");
@@ -165,12 +182,31 @@ try {
   const rdone = await until(async () => { const v = await readView(second, rpanel); return v.text.includes(ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "减少动效结束态");
   await second.screenshot(rpanel, join(out, "04-reduced-motion.png"));
   check("R4 减少动效：直接到结束态，不报变形时长", rdone.pill.includes("已连上") && !rdone.heldPending && rdone.morph == null && rdone.flip == null, rdone);
+  check("R1 连发两句：只自动发最新那句，前一句写明没发出，不留「连好后自动发」", asked() === 2 && mainRequests() - requestsBefore === 1 && !rdone.hint && rdone.dropped.includes("这句没有发出") && rdone.users.length === 2 && rdone.users[0]!.startsWith(EARLIER), { asked: asked(), mainRequests: mainRequests() - requestsBefore, hint: rdone.hint, dropped: rdone.dropped, users: rdone.users });
+
+  // 先试连再保存：限流不算密钥错，照样保存，并说刚才没连上。
+  await fillCustom(second, rsettings, busyUrl, "sk-busy-0000");
+  await second.evaluate(rsettings, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
+  await second.click(rsettings, "#model-save");
+  const busySaved = await until(async () => {
+    const status = String(await second.evaluate(rsettings, `document.querySelector("#model-status").textContent`));
+    return status.startsWith("已保存") ? status : undefined;
+  }, 45_000, "限流时保存");
+  const stored = await second.evaluate(rsettings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
+  await second.screenshot(rsettings, join(out, "05-saved-while-busy.png"));
+  check("密钥试连：限流时照样保存，并写刚才没连上", busySaved.includes("刚才没连上") && stored === busyUrl, { busySaved, stored });
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
+  if (reduced && reducedPanel) {
+    await reduced.screenshot(reducedPanel, join(out, "fail-reduced.png")).catch(() => {});
+    results.push(["失败时的侧栏", false, await readView(reduced, reducedPanel).catch(() => null)]);
+  }
 } finally {
   await writeFile(join(out, "summary.json"), JSON.stringify({ status: error || results.some(([, pass]) => !pass) ? "FAIL" : "PASS", results, asked: asked(), error }, null, 2));
   if (rp) { await rp.close().catch(() => {}); await rp.remove().catch(() => {}); }
   if (reduced) { await reduced.close().catch(() => {}); await reduced.remove().catch(() => {}); }
+  busy.closeAllConnections();
+  busy.close();
   deny.closeAllConnections();
   deny.close();
   site.closeAllConnections();

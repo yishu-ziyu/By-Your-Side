@@ -98,6 +98,21 @@ export function noteNeedsModelManual(card: HTMLElement): void {
   if (description) description.textContent = "连好以后，把刚才的话再发一次。";
 }
 
+/** 同一会话又发了一句没连模型的话：旧卡不再自动发，暂存的那句放回原处，卡上改成请用户自己再发。 */
+export function dropPendingMessage(card: HTMLElement, bubble: HTMLElement | null): void {
+  if (bubble?.classList.contains("held-pending")) releaseHeld(bubble, card);
+  // 已经变成「已连上」的卡（连好后发不出）：变回原来的卡，写明没发出。
+  card.classList.remove("needs-model-connected");
+  card.dataset.f01 = "card";
+  card.querySelector(".needs-model-new")?.setAttribute("aria-hidden", "true");
+  card.classList.add("needs-model-dropped");
+  const title = card.querySelector(".needs-model-old strong");
+  const description = card.querySelector(".needs-model-old p");
+
+  if (title) title.textContent = "这句没有发出";
+  if (description) description.textContent = "连好后只自动发最后一句。这句要的话，再发一次。";
+}
+
 /** 把刚发出的用户气泡收进未连接卡，显示成「连好后自动发」的虚线胶囊。 */
 export function holdPendingMessage(card: HTMLElement, bubble: HTMLElement | null): void {
   if (!bubble || !card.isConnected || bubble.classList.contains("held-pending")) return;

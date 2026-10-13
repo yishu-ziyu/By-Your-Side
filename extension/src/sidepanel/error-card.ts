@@ -3,7 +3,8 @@
  * - auth：「去换 key」打开底部面板，测试连接通过才能「保存并继续」；「仍然重试」原样再试。
  * - busy：「换一个模型」就在卡上选；「稍后重试」倒计时后自动接着做。missing 只有换模型。
  * - network：「重试」；网络恢复时自动重试一次。
- * 接着做之后卡片收成一行状态；答案送达时换成回执「出过错 · …，已从出错处继续」。再出错就换一张新卡并抖一下。
+ * 接着做之后卡片收成一行状态；答案送达时卡片在原地收成一行回执「出过错 · …，已从出错处继续」，
+ * 行留在出错的位置，续写的答案跟在它下面。再出错不换新卡：同一张卡原地换内容、淡一下，不抖也不重新进场（#286）。
  */
 import { createElement as icon, Check } from "lucide";
 import type { ModelOption } from "../../../shared/protocol.js";
@@ -13,10 +14,13 @@ import { displayName } from "./models.js";
 /** 限流时等多久再自动重试：循环自己已在 0.5、1 秒各重试过一次，再等太短多半还是 429。 */
 const LATER_SECONDS = 8;
 
+const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
 export interface KeyTestResult { ok: boolean; ms?: number; reason?: string; detail?: string }
 
 export interface ErrorCardHost {
-  messages: HTMLElement;
+  /** 把卡插进消息流的当前位置（接续锚点之前），让之后到达的答案自然跟在它下面。 */
+  mount(el: HTMLElement): void;
   /** 底部换 key 面板挂在这里（侧栏根容器）。 */
   app: HTMLElement;
   models(): ModelOption[];
@@ -251,34 +255,49 @@ export function mountErrorCards(host: ErrorCardHost) {
   }
 
   return {
-    /** 模型出错：出一张新卡。上一张还在（接着做又失败）就替换它并抖一下，让人知道点上了但还没好。 */
+    /** 模型出错：没有卡就在消息流末尾出一张（rise 进场）。上一张还在就原地换内容、淡一下：位置不动，不抖也不重新进场（#286）。 */
     show(copy: ModelErrorCopy): void {
       clearOnline();
-      const previous = card;
-      const retried = recovering !== null;
       recovering = null;
+
+      if (card?.isConnected) {
+        const fresh = render(copy);
+        card.className = fresh.className;
+        card.replaceChildren(...fresh.childNodes);
+
+        if (!reducedMotion()) card.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: 180, easing: "ease-out" });
+        host.scrollToEnd();
+
+        return;
+      }
+
       card = render(copy);
-
-      if (previous?.isConnected) previous.replaceWith(card);
-      else host.messages.append(card);
-
-      if (retried) card.animate([{ transform: "translateX(0)" }, { transform: "translateX(-5px)" }, { transform: "translateX(4px)" }, { transform: "translateX(-2px)" }, { transform: "translateX(0)" }], { duration: 420, easing: "ease-out" });
+      host.mount(card);
       host.scrollToEnd();
     },
-    /** 答案送达：接着做成功了，收起卡片，在答案后面留回执。 */
+    /** 答案送达：接着做成功了，卡在原地收成一行回执，行留在出错的位置，续写的答案跟在它下面。 */
     delivered(): void {
       if (!card) return;
       const source = recovering;
-      card.remove();
+      const el = card;
       card = null;
       clearOnline();
-
-      if (source === null) return;
       recovering = null;
-      const receipt = document.createElement("p");
-      receipt.className = "msg error-receipt";
-      receipt.append(icon(Check), document.createTextNode(`出过错 · ${source}，已从出错处继续`));
-      host.messages.append(receipt);
+
+      if (source === null) { el.remove(); return; }
+      const from = el.getBoundingClientRect().height;
+      el.className = "msg error-receipt";
+      el.removeAttribute("role");
+      el.replaceChildren(icon(Check), document.createTextNode(`出过错 · ${source}，已从出错处继续`));
+      const to = el.getBoundingClientRect().height;
+
+      if (!reducedMotion() && to !== from) {
+        el.animate(
+          [{ height: `${from}px`, opacity: 0.4, overflow: "hidden" }, { height: `${to}px`, opacity: 1, overflow: "hidden" }],
+          { duration: 180, easing: "ease-out" },
+        );
+      }
+
       host.scrollToEnd();
     },
     /** 用户另发了新任务：旧卡只留作记录，按钮不再可点。 */

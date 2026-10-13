@@ -33,17 +33,23 @@ export function glowPage(key: string, tabId: number | null): Promise<void> {
   if (!watching) {
     watching = true;
 
-    try { chrome.tabs.onRemoved.addListener(forgetGlowTab); } catch { /* 测试环境没有标签页事件 */ }
+    try {
+      chrome.tabs.onRemoved.addListener(forgetGlowTab);
+      // 同一标签页跳到新网页后，新文档没有彩边；加载完补画。
+      chrome.tabs.onUpdated.addListener((id, info) => {
+        if (info.status !== "complete") return;
+        for (const [k, litTab] of lit) if (litTab === id) void paint(id, k);
+      });
+    } catch { /* 测试环境没有标签页事件 */ }
   }
 
   const previous = lit.get(key);
 
   if (tabId == null) return Promise.resolve();
-
-  if (previous === tabId) return paints.get(tabId) ?? Promise.resolve();
   lit.set(key, tabId);
 
-  return Promise.all([previous != null ? paint(previous, key) : null, paint(tabId, key)]).then(() => {});
+  // 同一标签页也重画：上次画的可能是已经离开的旧文档。画是幂等的。
+  return Promise.all([previous != null && previous !== tabId ? paint(previous, key) : null, paint(tabId, key)]).then(() => {});
 }
 
 export function dimPage(key: string): Promise<void> {

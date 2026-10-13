@@ -1,6 +1,6 @@
 /**
  * 先说一句（docs/evals/20261009-speak-first.md，R1–R4）：会动手的任务，侧栏在第一步出现前先显示助手的一句话，
- * 说要做什么、不碰什么，而且这句话和第一个页面动作在同一次模型回复里；这句话留在过程行前面，不收进「执行过程」。只问问题的请求不加这句。
+ * 说要做什么、不碰什么，而且这句话和第一个页面动作在同一次模型回复里；这句话在第一步前出现；回答出现后收进过程第一行（#334）。只问问题的请求不加这句。
  *
  *   npx tsx scripts/acceptance/real-path/speak-first.mts --headless [--model=provider/id] [--repeat=3]
  *
@@ -58,11 +58,12 @@ const WATCH = `(() => { window.__speakObs?.disconnect(); const s = window.__spea
     if (s.stepAt === null && step) s.stepAt = now; };
   window.__speakObs = new MutationObserver(seen); window.__speakObs.observe(document.getElementById('messages'), { subtree: true, childList: true, characterData: true }); return true; })()`;
 
-const STATE = `(() => { const q = (s) => document.querySelector(s); const line = q('#messages > .msg.assistant.opening-line'); const run = q('#messages > .run-steps');
+const STATE = `(() => { const q = (s) => document.querySelector(s); const run = q('#messages > .run-steps'); const folded = q('#messages > .run-steps .run-body > .opening-line.run-plan'); const line = q('#messages > .msg.assistant.opening-line') ?? folded;
   return { ...window.__speak, busy: !!q('#status-pill.running, #send-btn.stopping, .msg.assistant.streaming, .msg.assistant[data-revealing]'),
     users: document.querySelectorAll('.msg.user').length, openings: document.querySelectorAll('#messages .opening-line, #messages [data-delivery-kind="ack"]').length,
-    openingText: line?.innerText.trim() ?? null, openingVisible: !!line && line.getClientRects().length > 0 && !line.closest('details'),
-    openingBeforeRun: !!line && !!run && !!(line.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING),
+    openingText: line?.innerText.trim() ?? null, // 回答出现后开场这句收进过程顶部（#334）：留在过程行前面可见，或排在过程第一行，都算留下了。
+    openingVisible: !!line && (line === folded ? line.parentElement.firstElementChild === line : line.getClientRects().length > 0 && !line.closest('details')),
+    openingBeforeRun: !!line && !!run && (line === folded || !!(line.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING)),
     answer: [...document.querySelectorAll('#messages > .msg.assistant:not(.opening-line)')].map((el) => el.innerText.trim()).join('\\n') }; })()`;
 
 type PanelState = { textBeforeStepAt: number | null; openingAt: number | null; stepAt: number | null; busy: boolean; users: number; openings: number; openingText: string | null; openingVisible: boolean; openingBeforeRun: boolean; answer: string };

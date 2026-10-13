@@ -440,7 +440,7 @@ async function cardBox(rp: RealPath, work: string) {
 // ── 语音组 ──────────────────────────────────────────────────
 
 async function voiceGroup(kind: "nokey" | "mic" | "conn" | "ready") {
-  const wav = join(REPO, "docs/evals/20260913-voice-greeting-fix-evidence/greeting-after-page.wav");
+  const wav = join(REPO, "scripts/acceptance/fixtures/greeting-after-page.wav");
   const model = await startScriptedModel(RULES);
 
   const rp = await launchRealPath({

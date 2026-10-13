@@ -34,6 +34,7 @@ const ACTION_NAMES: Record<string, string> = {
   cdp: "直接操作浏览器",
   hover: "悬停",
   remember_user_preference: "存入记忆",
+  fetch: "抓取",
   browser_run: "连续操作",
   wait_for: "等页面内容出现",
   check: "核验页面",
@@ -72,7 +73,13 @@ function hostOf(url: unknown): string | null {
   }
 
   try {
-    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host;
+    const host = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host.replace(/^www\./, "");
+    const name = host.replace(/:\d+$/, "").toLowerCase();
+
+    // 本机地址不当域名写给用户。
+    if (name === "localhost" || name === "0.0.0.0" || name === "[::1]" || name.startsWith("127.") || /^(\d{1,3}\.){3}\d{1,3}$/.test(name)) return null;
+
+    return host;
   }
   catch {
     return null;
@@ -151,6 +158,12 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       const host = hostOf(params.url);
 
       return { short, full: host ? `打开标签页 ${host}` : short };
+    }
+
+    case "fetch": {
+      const host = hostOf(params.url);
+
+      return { short: host ? `抓取 ${host}` : "抓取", full: host ? `抓取 ${host}` : "抓取" };
     }
 
     case "press_key": {
@@ -332,10 +345,10 @@ export function spokenDuration(start: number, end: number): string | null {
 }
 
 /** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链（#263）。 */
-export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed"): string {
+export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed", failed = 1): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
 
-  if (outcome === "failed") return `${done} · 有 1 步没做成`;
+  if (outcome === "failed") return `${done} · 有 ${Math.max(failed, 1)} 步没做成`;
 
   if (outcome === "stopped") return `已中止 · ${done}`;
 
@@ -484,6 +497,7 @@ export function shortAction(name: string, params: Parameters<typeof describeTool
   else if (CURSOR_VERBS.has(name)) text = label ? `${CURSOR_VERBS.get(name)!.verb}${label}` : CURSOR_VERBS.get(name)!.unnamed;
   else if (name === "type_text") text = label ? `填${label}` : "输入文字";
   else if (name === "js") text = str(params.purpose) ?? "运行代码";
+  else if (name === "fetch") text = `抓取 ${hostOf(params.url) ?? "接口"}`;
   else if (name === "browser_run") text = label ?? "连续操作";
   else if (name === "press_key") text = str(params.key) ? `按${str(params.key)}` : "按键";
   else if (name === "mark" && params.clear !== true) {

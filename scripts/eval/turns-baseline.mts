@@ -1,6 +1,6 @@
 /**
  * 三种转折的读数（不是验收）：答完补一句、做到一半改方向、做到一半补信息（docs/evals/20261011-turns-baseline.md）。
- *   npx tsx scripts/eval/turns-baseline.mts --headless [--model=provider/id] [--repeat=N] [--only=follow,redirect,addinfo]
+ *   npx tsx scripts/eval/turns-baseline.mts --headless [--model=provider/id] [--repeat=N] [--only=follow,redirect,addinfo] [--keep-memory]
  * 本机练习站：会议室一览、预订表单、我的预订（可取消）、5 款笔记本的列表和详情页；服务器记下每次预订、取消和页面访问。
  * 每题一个新会话。插话的时机由服务器触发：助手第一次打开预订表单或某个笔记本详情页时，像用户一样在侧栏打字回车。
  * 读数取自诊断记录和服务器：你说完到助手收到（听到）、到下一段正文出字、到做完，插话之后旧方向又做了几步，最后对不对。
@@ -20,6 +20,9 @@ const modelId = arg("model") ?? DEFAULT_TEST_MODEL;
 const repeat = Number(arg("repeat") ?? 1);
 
 const only = arg("only")?.split(",");
+
+// 每次会话前清空记忆与过往任务，前一次的回答不漏进后一次（#305）。--keep-memory 保留，用来复现记忆带来的问题。
+const keepMemory = process.argv.includes("--keep-memory");
 
 const out = join(REPO, "out/eval/turns", new Date().toISOString().replace(/[:.]/g, "-"));
 
@@ -140,6 +143,9 @@ try {
 
   for (const task of TASKS.filter(t => !only || only.includes(t.id))) for (let i = 1; i <= repeat; i++) {
     bookings = []; hits = [];
+
+    if (!keepMemory) await rp.evaluate(panel, `indexedDB.databases().then(dbs => dbs.some(d => d.name === "sideagent-memory") && new Promise((res, rej) => { const r = indexedDB.open("sideagent-memory"); r.onerror = () => rej(r.error);
+      r.onsuccess = () => { const db = r.result; if (!db.objectStoreNames.contains("kv")) { db.close(); return res(true); } const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").clear(); tx.oncomplete = () => { db.close(); res(true); }; tx.onerror = () => rej(tx.error); }; }))`);
     await rp.click(panel, "#conversation-new");
     await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-new")?.getAttribute("aria-busy") === "false" && ${IDLE}`) || undefined, 60_000, "新会话");
     await rp.cdp.send("Page.navigate", { url: `${origin}${task.start}` }, work);

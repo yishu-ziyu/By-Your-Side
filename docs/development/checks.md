@@ -9,6 +9,8 @@
 
 每次合并前跑 `npm run check` 和这次改到的用例。`npm test` 一批改动只跑一遍，放在更新日常扩展之前，因为每次合并都跑全部时，花的时间多于抓到的问题（10-10 用户决定）。纯文档修改只跑 `npm run check:docs`。
 
+每次运行真实路径用例都记进主目录的运行流水，`npm run runs` 看今天每个用例跑了几次、过了几次。同一用例、同样参数、同样代码失败 2 次后，第 3 次会被拦下，因为再跑只是在测模型的随机性；先看失败原因，确实要跑时加 `BYS_RERUN=1`。7 天前、没被文档引用的运行目录在下次运行时自动清理。
+
 `npm run smoke` 用真实模型走一遍日常路径，需要凭据，不是合并门槛。
 
 `check` 会重建日常加载的 `extension/dist`。只想核对打包时，用 `SIDEAGENT_BUILD_DIST` 指向临时目录。
@@ -18,9 +20,9 @@
 ## 依赖
 
 - 依赖审计用 `npm audit --registry=https://registry.npmjs.org`，不改全局源。
-- Pi 自带 npm-shrinkwrap，所以项目级 override 盖不住 Pi 的依赖版本。要在干净 `npm ci` 后用 `npm ls` 核对（[升级验收](../evals/20261003-issue-42-dependencies.md)）。
+- Pi 自带 npm-shrinkwrap，所以项目级 override 盖不住 Pi 的依赖版本。要在干净 `npm ci` 后用 `npm ls` 核对。
 - 在 worktree 里不要把整个 `node_modules` 指回主树：`@sideagent` 的链接会解析回主树源码，扩展构建里的代理部分就成了主树的旧代码，而类型检查照样通过。
-  要建真实的 `node_modules` 目录：其他包逐个链回主树，`@sideagent/agent` 和 `@sideagent/extension` 链到 worktree 自己（10-11 任务 2 踩过）。
+  要建真实的 `node_modules` 目录：其他包逐个链回主树，`@sideagent/agent` 和 `@sideagent/extension` 链到 worktree 自己（10-11 任务 2 踩过）。`npm run task` 开工作树时会这样建好。
 
 ## 前提小实验
 
@@ -39,6 +41,7 @@
 
 - `npm run reload:ext` 需要 Chrome 的远程调试入口，只在明确的加载范围内执行。
 - 配置和构建产物存在，不证明正在运行的扩展已经采用了它们。
+- `npm run logs`（[脚本](../../scripts/maintenance/logs.mjs)）直接读日常 Chrome 里 By Your Side 的诊断记录，不用在设置页导出，给代理查问题用。输出保留原文（凭据除外），所以不要提交或外传。第一次运行要从 GitHub 装 Python 解码库，比较慢。
 
 ## 项目看板
 

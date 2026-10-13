@@ -47,7 +47,7 @@ const ASKED_ABOUT_PAST = /之前|上次|以前|前几天|昨天|做过|订阅过
 
 /** 过往任务给模型看的一行有多长：与 formatTaskHistory 的内容一致，只用来计字数上限。 */
 export function taskContextChars(task: TaskHistoryEntry): number {
-  return [task.page ?? "", task.goal, ...task.revisions, ...task.hosts, task.summary, ...task.unfinished].join(" ").length + 40;
+  return [task.page ?? "", task.goal, ...task.revisions, ...task.hosts, task.done ?? "", ...task.unfinished].join(" ").length + 40;
 }
 
 export function selectMemoryContext(input: MemoryContextInput): MemoryContextSelection {

@@ -14,6 +14,7 @@ import {
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
 import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
+import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from "../../../shared/voice-capture-core.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
@@ -75,6 +76,13 @@ document.getElementById("settings")!.innerHTML = `
     <p id="main-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="backup-status" class="settings-status" role="status" aria-live="polite"></p>
+    <div class="surface rows">
+      <div class="row">
+        <span class="row-main"><span class="row-title">各模型速度</span><span class="row-desc">用同一个简单问题问一遍已连接的模型，看几秒开口、答没答对。</span></span>
+        <span class="row-ctl"><button id="speed-test" type="button" class="btn">测一下</button></span>
+      </div>
+      <div id="speed-results" class="speed" hidden></div>
+    </div>
     <div class="surface plist">
       <div class="search">
         <input id="provider-search" type="search" placeholder="搜索服务商或模型，比如 glm、claude" aria-label="搜索服务商或模型" spellcheck="false" autocomplete="off" />
@@ -118,11 +126,11 @@ document.getElementById("settings")!.innerHTML = `
         <span id="key-label" class="d-label">密钥</span>
         <input id="api-key" class="d-input" type="password" autocomplete="off" spellcheck="false" />
       </label>
-      <p id="key-reason" class="key-reason" hidden>
+      <p id="key-reason" class="key-reason" role="status" aria-live="polite" hidden>
         <span class="key-reason-icon" aria-hidden="true">i</span>
         <span class="key-reason-copy">
           <span id="key-reason-text"></span>
-          <span class="key-reason-wait">密钥没有保存，侧栏里那句话还在等你。</span>
+          <span class="key-reason-wait">没有保存，侧栏里那句话还在等你。</span>
         </span>
       </p>
       <div class="d-field">
@@ -674,6 +682,9 @@ function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: f
 
 /** 把服务商和网络层的报错翻成用户能处理的话；原文只进「技术详情」。 */
 function explainFailure(raw: string): string {
+  // Kimi 套餐超过同时请求上限时回 403 permission_error，不是密钥问题。
+  if (/concurrent request limit|too many concurrent/i.test(raw)) return "同时发的请求太多，服务商拒绝了这一个。等前面的请求做完再试。";
+
   return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) ? "服务商不接受这个密钥。如果密钥没错，就检查它能不能用这个模型。"
     : /\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(raw) ? "服务商拒绝了请求：额度用完或请求太频繁。稍后再试，或换一个模型。"
       : /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw) ? "找不到这个模型，检查模型名称"
@@ -687,14 +698,25 @@ function hideKeyReason(): void {
 }
 
 function showKeyReason(reason: string, raw?: string): void {
-  keyReasonText.textContent = reason;
+  // 密钥框不在（订阅登录、已保存的密钥）：原因写在状态行，不挂在看不见的框下面。
+  if (!keyInput.offsetParent) return setStatus(modelStatus, `没有保存：${reason}`, "err", raw);
   keyReason.hidden = false;
+  // 先显示区域再写字，读屏才会念出来。
+  requestAnimationFrame(() => { keyReasonText.textContent = reason; });
   keyInput.classList.add("warn");
   setStatus(modelStatus, "", "", raw);
+  keyInput.focus();
 }
 
 type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number };
-type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string };
+/** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
+type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean; config?: InprocModelConfig; key?: string };
+
+function rejectsConfig(raw: string): boolean {
+  if (/concurrent request limit|too many concurrent/i.test(raw)) return false;
+
+  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|api.?key.*(not valid|invalid)|API_KEY_INVALID|forbidden/i.test(raw) || /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw);
+}
 
 async function runProbe(): Promise<ProbeOk | ProbeFail> {
   const value = draft();
@@ -719,6 +741,10 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
       ok: false,
       reason: timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复。服务商可能正忙。再试一次，或换一个模型。` : explainFailure(raw),
       raw: timeout.aborted ? undefined : raw,
+      definite: !timeout.aborted && rejectsConfig(raw),
+      // 试的是哪份配置就存哪份：试连期间改了表单，不存没试过的值。
+      config: value.config,
+      key: value.key,
     };
   } finally {
     clearInterval(ticker);
@@ -730,7 +756,9 @@ async function testConnection(): Promise<void> {
 
   if (!result.ok) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
-    return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+    // 只有服务商明确不接受时才挂在密钥框下；超时、限流、网络问题不是密钥的错。
+    if (result.definite) return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+    return setStatus(modelStatus, `连接失败：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
   }
 
   hideKeyReason();
@@ -740,18 +768,23 @@ async function testConnection(): Promise<void> {
 async function save(): Promise<void> {
   const result = await runProbe();
 
-  if (!result.ok) {
+  // 先试连再保存：只有服务商明确不接受（密钥被拒、模型不存在）才不保存；超时、限流、网络问题照样保存，并说刚才没连上（用户 10-13 定）。
+  if (!result.ok && (result.local || result.definite)) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
     return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
   }
 
-  if (result.key) await runtime.credentials.modify(result.config.provider, async () => ({ type: "api_key", key: result.key }));
-  await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: result.config });
+  const value = result.ok ? result : { config: result.config!, key: result.key ?? "" };
+
+  if (value.key) await runtime.credentials.modify(value.config.provider, async () => ({ type: "api_key", key: value.key }));
+  await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: value.config });
   keyInput.value = "";
   changingKey = false;
   hideKeyReason();
   setStatus(mainStatus, "");
-  setStatus(modelStatus, `已保存。之后的任务用 ${labelOf(result.config.provider)} · ${result.config.modelId}。`, "ok");
+
+  if (result.ok) setStatus(modelStatus, `已保存。之后的任务用 ${labelOf(value.config.provider)} · ${value.config.modelId}。`, "ok");
+  else setStatus(modelStatus, `已保存，但刚才没连上：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
 }
 
 /** 保存这家的凭据并把所填模型设为快速模型；主模型不变。 */
@@ -1040,6 +1073,145 @@ async function saveBackupModel(): Promise<void> {
 }
 
 backupSelect.addEventListener("change", () => void saveBackupModel());
+
+/** 每家服务商拿来比的模型：日常可选的主力和它的快速版本。不在表里的服务商只测已选作主、快速、备用的那个。 */
+const SPEED_MODELS: Record<string, readonly string[]> = {
+  "kimi-coding": ["kimi-for-coding", "kimi-for-coding-highspeed", "k3"],
+  "openai-codex": ["gpt-6-luna", "gpt-6.1-sol"],
+  stepfun: ["step-5-preview", "step-3.7-flash"],
+  "minimax-cn": ["MiniMax-M2.7-highspeed"],
+};
+
+const SPEED_QUESTION = "网页上写着：『会议室金桂可容纳 9 人，带投影仪。』金桂能坐 8 个人开带投影的会吗？先答「能」或「不能」，再用一句话说明。";
+
+/** 正确答案是“能”：只看第一句，因为后面常补一句“但不能超过 9 人”。 */
+function speedAnswerRight(text: string): boolean {
+  const head = text.trim().split(/[，,。.!！？?\n]/)[0] ?? "";
+
+  return /能|可以|没问题|yes/i.test(head) && !/不能|不可以|无法|^no\b/i.test(head);
+}
+
+function speedCandidates(): Array<{ config: InprocModelConfig; role: string }> {
+  const out: Array<{ config: InprocModelConfig; role: string }> = [];
+  const add = (c: InprocModelConfig | null, role: string) => {
+    if (!c || c.provider === CUSTOM_PROVIDER_ID || out.some((o) => o.config.provider === c.provider && o.config.modelId === c.modelId)) return;
+    out.push({ config: { provider: c.provider, modelId: c.modelId }, role });
+  };
+
+  add(config, "主模型");
+  add(fastConfig, "快速模型");
+  add(backupConfig, "备用模型");
+
+  for (const [provider, ids] of Object.entries(SPEED_MODELS)) {
+    if (credentialNote(provider)) for (const modelId of ids) add({ provider, modelId }, "");
+  }
+
+  return out;
+}
+
+async function runSpeedTest(): Promise<void> {
+  const list = speedCandidates();
+  const box = $("speed-results");
+  const button = $<HTMLButtonElement>("speed-test");
+  box.hidden = false;
+
+  if (!list.length) {
+    box.textContent = "还没有连接服务商。先在下面的服务商列表里登录或填好密钥。";
+    return;
+  }
+  button.disabled = true;
+
+  try {
+    await measureSpeeds(list, box);
+  } finally {
+    button.disabled = false;
+    button.textContent = "再测一次";
+  }
+}
+
+async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: string }>, box: HTMLElement): Promise<void> {
+  // 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
+  const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
+  await probe.credentials.load(credentials);
+  const started = performance.now();
+  const rows = list.map(({ config: c, role }) => {
+    const row = document.createElement("div");
+    row.className = "speed-row";
+    row.dataset.model = `${c.provider}/${c.modelId}`;
+    const name = Object.assign(document.createElement("span"), { className: "speed-name" });
+    name.append(
+      Object.assign(document.createElement("span"), { className: "speed-id", textContent: c.modelId }),
+      Object.assign(document.createElement("span"), { className: "speed-meta", textContent: role ? `${role} · ${labelOf(c.provider)}` : labelOf(c.provider) }),
+    );
+    const bar = Object.assign(document.createElement("span"), { className: "speed-bar" });
+    const result = Object.assign(document.createElement("span"), { className: "speed-result", textContent: "在问…" });
+    row.append(name, bar, result);
+    return { c, row, bar, result, first: null as number | null };
+  });
+  box.replaceChildren(...rows.map((r) => r.row));
+  const longest = () => Math.max(10, ...rows.map((r) => r.first ?? 0));
+  const redraw = () => rows.forEach((r) => { if (r.first != null) r.bar.style.setProperty("--w", `${(r.first / longest()) * 100}%`); });
+
+  // 同一家的模型一个接一个测：有的套餐限制同时请求数（Kimi 回 403）；不同家之间同时测。
+  const byProvider = new Map<string, typeof rows>();
+  for (const r of rows) byProvider.set(r.c.provider, [...byProvider.get(r.c.provider) ?? [], r]);
+
+  await Promise.all([...byProvider.values()].map(async (group) => {
+    for (const r of group) await measureOne(r);
+  }));
+
+  async function measureOne(r: (typeof rows)[number]): Promise<void> {
+    const t0 = performance.now();
+    const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    let text = "";
+    let cutShort = false;
+
+    try {
+      const model = probe.resolveModel(r.c);
+      const [lowest] = thinkingProfile(model).levels;
+      const stream = probe.models.streamSimple(model, { messages: [{ role: "user", content: SPEED_QUESTION, timestamp: Date.now() }] }, {
+        maxTokens: 2048, signal, headers: probe.headersFor(model), sessionId: probe.sessionId,
+        reasoning: lowest === "off" ? undefined : lowest,
+        // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
+        ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
+      });
+
+      for await (const event of stream) {
+        if (event.type === "text_delta") {
+          if (r.first == null && event.delta.trim()) { r.first = (performance.now() - t0) / 1000; redraw(); r.result.textContent = `${r.first.toFixed(1)} 秒开口…`; }
+          text += event.delta;
+        }
+
+        if (event.type === "error") throw new Error(event.error.errorMessage ?? "服务商返回了错误");
+
+        if (event.type === "done" && event.reason === "length") cutShort = true;
+      }
+
+      if (r.first == null) {
+        r.row.dataset.state = "fail";
+        r.result.textContent = cutShort ? "能连上，但思考太长，没来得及回答" : "能连上，但没有回答";
+        return;
+      }
+      const right = speedAnswerRight(text);
+      r.row.dataset.state = right ? "ok" : "wrong";
+      r.result.textContent = `${r.first.toFixed(1)} 秒开口 · ${right ? "答对" : "答错"}`;
+      r.result.title = text.trim();
+    } catch (error) {
+      r.row.dataset.state = "fail";
+
+      if (signal.aborted) {
+        r.result.textContent = r.first != null ? `${r.first.toFixed(1)} 秒开口 · ${PROBE_TIMEOUT_MS / 1000} 秒内没答完` : `${PROBE_TIMEOUT_MS / 1000} 秒内没开口`;
+        return;
+      }
+      r.result.textContent = `不能用：${explainFailure(error instanceof Error ? error.message : String(error))}`;
+      r.result.title = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  box.append(Object.assign(document.createElement("p"), { className: "speed-note", textContent: `共用 ${((performance.now() - started) / 1000).toFixed(0)} 秒。同一个模型每次快慢会差好几秒，拿不准就再测一次。` }));
+}
+
+$("speed-test").addEventListener("click", () => void runSpeedTest());
 
 async function reload(): Promise<void> {
   const stored = await chrome.storage.local.get(null);

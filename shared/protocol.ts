@@ -30,6 +30,19 @@ export const LEAD_SESSION_ID = "main";
 
 export const DEFAULT_CONVERSATION_ID = "default";
 
+/** 后台把每个执行成员的工作标签页存在 chrome.storage.session 这个键下（执行身份 → 标签页 id）；侧栏只读，用来给回答挂「切过去看」。 */
+export const WORKING_TABS_STORAGE_KEY = "workingTabs";
+
+/** 默认会话保留既有 main/worker key；其他会话使用可逆复合 key。 */
+export function executionKey(conversationId: string, sessionId: string = LEAD_SESSION_ID): string {
+  const cid = conversationId || DEFAULT_CONVERSATION_ID;
+  const sid = sessionId || LEAD_SESSION_ID;
+
+  if (cid === DEFAULT_CONVERSATION_ID) return encodeURIComponent(sid);
+
+  return `${encodeURIComponent(cid)}::${encodeURIComponent(sid)}`;
+}
+
 export function normalizeConversationId(id?: string | null): string { return id ?? DEFAULT_CONVERSATION_ID; }
 
 /**
@@ -346,7 +359,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
@@ -693,7 +706,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback } };
+  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback; /** 快照里这个 ref 的输入框被页面重渲染换掉，已按原输入框的名字找回唯一的新输入框并在它上面填写。 */ refound?: true } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {
@@ -703,7 +716,7 @@ export interface ToolContract {
       expectedDocumentId?: string;
       expectedBackendNodeId?: number;
     };
-    data: { selected: string[]; labels: string[] };
+    data: { selected: string[]; labels: string[]; /** 同 fill.refound。 */ refound?: true };
   };
   /** 把本会话的文件放进页面上的一个 <input type=file>：文件在页面里构造，不经本机磁盘；回执是从文件框读回的文件。 */
   upload_file: {
