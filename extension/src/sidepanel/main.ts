@@ -58,6 +58,7 @@ import { mountModelPicker } from "./model-picker.js";
 import { chipLabel } from "./models.js";
 import { mountThinkingChip } from "./thinking-chip.js";
 import { mountReadingSettings } from "./reading-settings.js";
+import { D_TAP } from "../shared/motion-tokens.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
@@ -329,6 +330,7 @@ app.innerHTML = `
         <button type="button" id="ask-cite-close" aria-label="去掉这段引用" title="去掉这段引用">×</button>
       </div>
       <div id="attachments-strip" class="attachments-strip" hidden></div>
+      <p id="handoff-banner" hidden role="status"></p>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
         <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截图" aria-haspopup="true">+</button>
@@ -2503,6 +2505,85 @@ interface ToolChipEntry {
 
 const toolChips = new Map<string, ToolChipEntry>();
 
+let inspectTimer = 0;
+let inspectChip: HTMLButtonElement | null = null;
+
+function pageTargetOf(chip: HTMLButtonElement): { target: string; tabId?: number; url?: string; caption: string } | null {
+  const target = chip.dataset.pageTarget;
+
+  if (!target) return null;
+  const tabId = Number(chip.dataset.pageTab);
+  const step = chip.dataset.stepIndex ?? "";
+  const past = chip.dataset.past ?? chip.querySelector(".chip-label")?.textContent?.trim() ?? "点击";
+
+  return {
+    target,
+    tabId: Number.isFinite(tabId) && tabId > 0 ? tabId : undefined,
+    url: chip.dataset.pageUrl || undefined,
+    caption: step ? `第 ${step} 步 · ${past}` : past,
+  };
+}
+
+function sendInspect(chip: HTMLButtonElement | null): void {
+  inspectChip = chip;
+  const found = chip ? pageTargetOf(chip) : null;
+
+  if (!found) {
+    port?.postMessage({ kind: "inspect_step" } satisfies PanelToBg);
+
+    return;
+  }
+
+  port?.postMessage({
+    kind: "inspect_step",
+    target: found.target,
+    tabId: found.tabId,
+    url: found.url,
+    caption: found.caption,
+  } satisfies PanelToBg);
+}
+
+function queueInspect(chip: HTMLButtonElement | null): void {
+  window.clearTimeout(inspectTimer);
+  inspectTimer = window.setTimeout(() => sendInspect(chip), D_TAP);
+}
+
+function bindStepInspect(chip: HTMLButtonElement): void {
+  chip.addEventListener("pointerenter", () => queueInspect(chip));
+  chip.addEventListener("pointerleave", () => queueInspect(null));
+  chip.addEventListener("focus", () => queueInspect(chip));
+  chip.addEventListener("blur", () => queueInspect(null));
+}
+
+function markChipPageGone(chip: HTMLButtonElement, gone: boolean): void {
+  chip.classList.toggle("page-gone", gone);
+  let note = chip.querySelector<HTMLElement>(".chip-gone");
+
+  if (!gone) {
+    note?.remove();
+
+    return;
+  }
+
+  if (!note) {
+    note = document.createElement("span");
+    note.className = "chip-gone";
+    chip.append(note);
+  }
+
+  note.textContent = "页面已变";
+}
+
+function applyHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): void {
+  const banner = document.getElementById("handoff-banner");
+
+  if (!banner) return;
+  banner.hidden = phase === "leaving" || phase === "agent";
+  banner.dataset.phase = phase;
+  banner.textContent = phase === "user" ? "你在操作 · 助手在旁边等" : phase === "rereading" ? "助手先重读页面" : "";
+  document.getElementById("composer")?.classList.toggle("you-operating", phase === "user");
+}
+
 /** 工具名 → 图标；未知名称回退扳手。 */
 // ── 渲染 ───────────────────────────────────────────────────────────
 
@@ -4392,6 +4473,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   more.className = "chip-more";
   more.appendChild(icon(ChevronRight));
   chip.append(dot, iconBox, label, dur, more);
+  if (typeof ev.params.target === "string" && ev.params.target) chip.dataset.pageTarget = ev.params.target;
+  chip.dataset.stepIndex = String(group.row.querySelectorAll(".chip").length + 1);
+  bindStepInspect(chip);
 
   const entry: ToolChipEntry = {
     chip,
@@ -4418,7 +4502,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string } }): void {
   // 10-09/10-10 存下的侧栏历史只有旧标记 sendDeclined、没有原因：按「不发」画，不画成失败；那段历史不再要紧时删掉这一行。
   if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
@@ -4461,10 +4545,22 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (failed) entry.chip.classList.add("error");
 
+  if (ev.pageTarget) {
+    if (ev.pageTarget.target) entry.chip.dataset.pageTarget = ev.pageTarget.target;
+    if (ev.pageTarget.url) entry.chip.dataset.pageUrl = ev.pageTarget.url;
+    if (ev.pageTarget.tabId) entry.chip.dataset.pageTab = String(ev.pageTarget.tabId);
+  }
 
   const label = entry.chip.querySelector<HTMLElement>(".chip-label");
   // 打开页面：拿到标题后用页面名，不用网址（#102）。页面标题来自网页，只作文字显示。
   const pageTitle = !failed && entry.chip.dataset.kind === "open" ? openedPageTitle(ev.resultText ?? "") : null;
+
+  if (ev.pageTarget?.label && label && !pageTitle && !ev.heldReason) {
+    const next = actionCardLabel(entry.name, {}, ev.pageTarget.label);
+    entry.chip.dataset.past = next;
+    entry.chip.dataset.short = next;
+    paintAction(label, next);
+  }
 
   if (pageTitle && label) {
     entry.chip.dataset.past = `打开了 ${pageTitle}`;
@@ -5426,6 +5522,23 @@ function handleBgMessage(envelope: BgToPanel): void {
     const bubble = userBubbles.get(envelope.seq);
 
     if (bubble) renderTurnContext(bubble, envelope.context);
+
+    return;
+  }
+
+  if (envelope.kind === "inspect_step_result") {
+    for (const el of messagesEl.querySelectorAll(".chip.inspecting")) el.classList.remove("inspecting");
+
+    if (inspectChip) {
+      markChipPageGone(inspectChip, !envelope.ok);
+      inspectChip.classList.toggle("inspecting", envelope.ok);
+    }
+
+    return;
+  }
+
+  if (envelope.kind === "handoff_phase") {
+    applyHandoffPhase(envelope.phase);
 
     return;
   }
