@@ -63,10 +63,12 @@ const view = (panel: string) => rp.evaluate(panel, `(() => {
     greyBg,
     users: [...document.querySelectorAll(".msg.user")].map((b) => b.textContent.trim()),
     cards: [...document.querySelectorAll(".receipt-decision")].map((c) => c.textContent.trim()),
+    unconnected: [...document.querySelectorAll(".needs-model-card:not(.needs-model-connected)")].length > 0,
+    pill: document.querySelector("[data-f01='pill']")?.textContent.trim() ?? "",
     input: document.querySelector("#input").value,
     text: document.querySelector("#messages").innerText,
   };
-})()`) as Promise<{ starterShown: boolean; title: string; connectShown: boolean; connectText: string; suggestionsShown: boolean; sendAriaDisabled: string | null; sendStopping: boolean; sendBg: string; greyBg: string; users: string[]; cards: string[]; input: string; text: string }>;
+})()`) as Promise<{ starterShown: boolean; title: string; connectShown: boolean; connectText: string; suggestionsShown: boolean; sendAriaDisabled: string | null; sendStopping: boolean; sendBg: string; greyBg: string; users: string[]; cards: string[]; unconnected: boolean; pill: string; input: string; text: string }>;
 
 const backspace = async (panel: string) => {
   const key = { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 };
@@ -119,7 +121,7 @@ try {
   check("卡片写「连好以后，这句话会自动发出。」", carded.cards[0]?.includes("连好以后，这句话会自动发出。") === true, carded.cards);
 
   // 3. 打开设置页、不连模型就关掉。
-  await rp.click(panel, ".receipt-decision button");
+  await rp.click(panel, ".needs-model-connect");
   const settings = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页打开");
   await sleep(1500);
   await rp.cdp.send("Target.closeTarget", { targetId: settings.targetId });
@@ -137,8 +139,9 @@ try {
   await rp.screenshot(panel, join(out, "04-resent.png"));
   check("R3 连好模型后原话自动发出，模型只收到一次", !!answered && asked(QUESTION) === 1, { requests: asked(QUESTION), save: config.saveStatus });
   check("R3 会话里只有一个用户气泡", after.users.length === 1 && after.users[0]?.startsWith(QUESTION) === true, after.users);
-  check("R3 重发问的是原来那页，不是重发时开着的设置页", askedTexts.length === 1 && askedTexts[0]!.includes("宫崎骏") && !askedTexts[0]!.includes("模型与语音"), askedTexts.map((t) => t.slice(0, 400)));
-  check("R4 卡片说明「已用 <模型> 重新发送」", after.cards.some((c) => /^已用 .+ 重新发送$/.test(c)), after.cards);
+  // 只看「当前页」那一行：标签页清单里本来就列着开着的设置页。
+  check("R3 重发问的是原来那页，不是重发时开着的设置页", askedTexts.length === 1 && /User's current page: tab \d+ "宫崎骏"/.test(askedTexts[0]!) && !/User's current page:[^\n]*模型与语音/.test(askedTexts[0]!), askedTexts.map((t) => /User's current page:[^\n]*/.exec(t)?.[0] ?? t.slice(0, 400)));
+  check("R4 连好后未连接卡变成「已连上」，不再写还没连接", after.pill.includes("已连上") && !after.unconnected && !after.cards.some((c) => /已用 .+ 重新发送/.test(c)), { cards: after.cards, pill: after.pill });
   check("连模型期间打的草稿原样留着", after.input === "草稿别动", after.input);
   await rp.cdp.send("Target.closeTarget", { targetId: config.settingsTargetId }).catch(() => {});
 

@@ -18,8 +18,7 @@ jobs:
       - run: npx --yes playwright install --with-deps chromium
       - name: Locate Chrome for Testing
         run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
-      # The isolated tool-layer suite (accept:isolated) was deleted 2026-10-04 with the tools it covered
-      # (docs/evals/20261004-cut-unused.md). Real-path cases install only the extension and use a scripted model.
+      # Real-path cases install only the extension and use a scripted model.
       # The core set lives in run-all.mts (CORE). Not yet run on Linux.
       - run: npm test
       - if: always()

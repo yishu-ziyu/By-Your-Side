@@ -219,6 +219,14 @@ export async function ensureAttached(tabId: number): Promise<void> {
       }
     }
 
+    // 从没显示过的后台标签页不渲染，CDP 的鼠标和键盘输入会丢，确认却照常返回（10-13 日常 Chrome 里新开百度点「百度一下」不动）。
+    // 焦点模拟让页面按「正被看着」渲染和收输入；代价是连着调试器期间这一页的 visibilityState 恒为 visible，
+    // 所以只给接手时在后台的页开（用户正在看的页已经渲染过）。必须在第一次输入前生效，所以等它；
+    // 页面被对话框挡住时渲染进程可能不回，设超时。先解冻（浏览器进程处理），再开焦点模拟（要渲染进程回复）。
+    if (!(await chrome.tabs.get(tabId).then(t => t.active, () => true))) {
+      await withTimeout(chrome.debugger.sendCommand({ tabId }, "Page.setWebLifecycleState", { state: "active" }), 1500, "lifecycle").catch(() => undefined);
+      await withTimeout(chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }), 1500, "focus emulation").catch(() => undefined);
+    }
     attached.add(tabId);
     scheduleIdleDetach();
     // 默认 late：没有记录 ≠ 没有请求。导航产生的 Document 请求会把 integrity 提升为 ok。

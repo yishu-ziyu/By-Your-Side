@@ -5,7 +5,7 @@
  *   a) 想的时候第一行是思考动词（想想怎么说 / 理一理 / 看看下一步），秒数从这段开始数，第二行仍是「已做 2 步 · 1 步换了做法」。
  *   b) `.run-beat` 是 14–16px 主墨色四点；450ms 后点的位置或缩放变了；收合 1.2s。
  *   c) 标题扫光仍是 2.4±0.05s。
- *   d) 回执仍是一行「做了 3 步：… · 1 步换了做法」；收尾后墨点不再显示。
+ *   d) 回执是一行「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式）；收尾后墨点不再显示。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -121,7 +121,7 @@ try {
   await sleep(400);
   const done = (await read())!;
   await rp.screenshot(panel, join(out, "receipt.png"));
-  check("d 回执仍是一行短名链；转圈收掉", /^做了 3 步：打开 Page B → (读出标题|…) → 点作品 · 1 步换了做法$/.test(done.title) && done.beatDisplay === "none", { title: done.title, beatDisplay: done.beatDisplay, done: done.done });
+  check("d 回执是一行「做了 3 步 · 耗时 · 核对状态」；转圈收掉", /^做了 3 步 · \d[^·]*秒 · (核对中…|已核对页面)$/.test(done.title) && done.beatDisplay === "none", { title: done.title, beatDisplay: done.beatDisplay, done: done.done });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every((c) => c.pass) ? "PASS" : "FAIL", checks, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>((done) => site.close(() => done()));

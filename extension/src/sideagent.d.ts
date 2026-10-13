@@ -71,6 +71,8 @@ interface SideAgentCursor {
   /** 执行反馈胶囊（V2）：宿主事实短语；成功一次轻微回弹，不抢焦点、不配音、不循环。 */
   showFeedback?(view?: import("./shared/feedback-pill.js").FeedbackPillView): void;
   hideFeedback?(): void;
+  /** 登记助手即将派发鼠标事件的落点（光标不飞过去时），页面光效不把它当成用户。 */
+  expect?(x: number, y: number): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
   /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */

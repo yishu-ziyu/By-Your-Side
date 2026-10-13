@@ -75,11 +75,18 @@ export function groupSummary(kind: GraphKind, tools: readonly GraphTool[]): stri
   const live = tools.length - dead;
 
   if (kind === "b3") {
+    // 只有真开新页才算「开了」；切过去或读已开着的页算「看了」。
+    const opens = (tool: GraphTool) => tool.name === "open_tab" || (tool.name === "tabs" && tool.params.action === "open");
+    const opened = tools.filter((tool) => !tool.failed && opens(tool)).length;
+    const looked = live - opened;
     const tail = dead ? ` · ${dead} 页没打开` : "";
+    if (!live) return `${dead} 页都没打开`;
+    const head = opened && looked ? `开了 ${opened} 个、看了 ${looked} 个标签页` : opened ? `开了 ${opened} 个标签页` : `看了 ${looked} 个标签页`;
 
-    return `开了 ${live} 个标签页${tail}`;
+    return `${head}${tail}`;
   }
 
+  if (!live) return `${dead} 路都没成`;
   const tail = dead ? ` · ${dead} 个接口没回` : "";
 
   return `查了 ${live} 路${tail}`;

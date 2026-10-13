@@ -1,5 +1,5 @@
 import { projectTaskView } from '../../shared/task-view.js';
-import type {TaskProgressSnapshot,VoiceConversationContext} from '../../shared/voice.js';
+import {deliveryTextWithNote,type TaskProgressSnapshot,type VoiceConversationContext} from '../../shared/voice.js';
 
 export const normalizeSpeech=(text:string)=>text.replace(/[\p{P}\p{Z}\s]/gu,'');
 
@@ -44,7 +44,8 @@ export function progressSpeech(snapshot: TaskProgressSnapshot): string {
       const delivery = snapshot.conversationContext?.latestDelivery;
 
       if (snapshot.runId && delivery && (delivery.kind === 'finding' || delivery.kind === 'reply') && delivery.runId === snapshot.runId && delivery.text.trim()) {
-        return delivery.text.trim();
+        // 宿主补的一句：目标核对还没判做完时才念。
+        return (snapshot.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery)).trim();
       }
 
       const result = snapshot.conversationContext?.latestResult;

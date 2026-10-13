@@ -2724,6 +2724,63 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 .receipt-decision button:disabled { opacity:.5; cursor:default; }
 .receipt-decision > .receipt { margin-top:10px; color:var(--text-secondary); font-size:11px; }
 
+.needs-model-card {
+  position: relative;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--content-border);
+  border-radius: 12px;
+  background: var(--content-subtle);
+  transform-origin: 0 0;
+}
+.needs-model-card > .needs-model-old, .needs-model-card > .needs-model-new { display: block; gap: 0; }
+.needs-model-card .held-slot:empty { display: none; }
+.needs-model-card .held-slot { margin: 8px 0; }
+.needs-model-card > .needs-model-new { display: none; }
+.needs-model-new {
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font: 600 12.5px/1 var(--font);
+  color: var(--apple-green);
+}
+.needs-model-new svg { flex: none; }
+.needs-model-card.needs-model-connected {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border-color: color-mix(in oklab, var(--content-border) 72%, var(--apple-green));
+  background: var(--apple-green-soft);
+  color: var(--apple-green);
+  font: 600 12.5px/1 var(--font);
+}
+.needs-model-card.needs-model-connected > .needs-model-old { display: none; }
+.needs-model-card.needs-model-connected > .needs-model-new { display: flex; }
+
+.msg.user.held-pending {
+  align-self: flex-start;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px dashed var(--text-quaternary);
+  border-radius: var(--r-pill);
+  background: var(--content-bg);
+  box-shadow: none;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  transform-origin: 0 0;
+}
+.msg.user.held-pending .held-hint { font-size: 11px; color: var(--text-tertiary); font-style: normal; }
+@media (prefers-reduced-motion: reduce) {
+  .needs-model-card, .msg.user.held-pending { transition: none; }
+}
+
 .msg.receipt.notice { align-self:stretch; }
 
 /* 模型写给用户的文件：一行文件名 + 类型大小，右侧「下载」用墨蓝，是这张卡片唯一的强调。 */
@@ -3052,8 +3109,6 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat 0.9s var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
-.run-bundle { display: flex; flex-direction: column; align-self: stretch; min-width: 0; }
-.run-bundle:has(details.run-steps:not(.done)) { max-height: 176px; overflow: hidden; }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 132px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
 .run-graph-group { position: relative; min-width: 0; }
@@ -3166,6 +3221,13 @@ details.run-steps.done > summary > .run-meta { display: none; }
 .run-receipt .act-verb { flex-shrink: 0; }
 .run-receipt .run-chain-names { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
 .run-receipt .run-receipt-tail { flex-shrink: 0; color: var(--text-tertiary); white-space: pre; }
+.run-receipt .run-check { flex-shrink: 0; color: var(--text-tertiary); white-space: pre; transition: color var(--m-move) var(--e-glide); }
+.run-receipt .run-check[data-tone="ok"] { color: var(--ok); }
+.run-receipt .run-check[data-tone="warn"] { color: var(--warn); }
+/* 回答出现后收进过程的开场话：一行安静的计划，不是气泡。 */
+.run-body > .run-plan { margin: 2px 0 6px; padding: 0; border: 0; background: none; font-size: var(--fs-ui); line-height: 1.6; color: var(--text-tertiary); }
+.run-body > .run-plan p { margin: 0; }
+.run-body > .fill-evidence { margin: 6px 0 4px; }
 .run-body .run-think { font-size: var(--fs-ui); line-height: 20px; color: var(--text-quaternary); }
 .run-body .run-total { margin-top: 2px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-quaternary); }
 .run-body .chip .dur:not([hidden]) { display: inline; margin-left: 6px; font-size: var(--fs-meta); color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
@@ -3200,6 +3262,7 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .answer-actions button { width: 28px; height: 28px; border-radius: 7px; }
 .answer-actions .answer-sources-btn { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[hidden] { display: none; }
+.answer-actions .answer-show-tab { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[aria-expanded=true] { background: var(--content-subtle); }
 .answer-actions .answer-source-glyph { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; background: rgb(0 0 0 / .06); color: var(--text-secondary); font-size: 9px; font-weight: 600; line-height: 1; }
 .answer-time { margin-left: 6px; font-size: 11.5px; color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
@@ -3235,6 +3298,8 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 
 /* 用户气泡：「存成技能」悬停时浮在气泡下方，不撑出空白。 */
 .msg.user { position: relative; padding: 8px 14px; line-height: 1.6; }
+.msg.user.held-pending { padding: 4px 10px; line-height: 1.4; }
+.msg.user.held-pending .pskill-save { display: none; }
 .msg.user .pskill-save { position: absolute; right: 4px; top: 100%; margin: 3px 0 0; }
 
 /* 思考摘要、旁白里的小标题（模型写的 **粗体**）：比正文深一档，不放大。 */
@@ -3339,7 +3404,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 }
 
 /* 错误卡（#74）：按错误种类给能修掉原因的动作；原文收进「技术详情」。 */
-.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--m-morph) var(--e-spring); }
+.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in 200ms var(--e-spring); }
 .error-card strong { font-size: var(--fs-ui); font-weight: 600; }
 .error-card > p { margin: 0; color: var(--text-secondary); }
 .error-card .error-card-note { font-size: var(--fs-meta); color: var(--text-tertiary); }

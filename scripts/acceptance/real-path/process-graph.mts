@@ -65,8 +65,9 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 const READ = `(() => {
   const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
   if (!d) return null;
-  const host = d.closest(".run-bundle") ?? d;
-  const groups = [...host.querySelectorAll(".run-graph-group")].map((g) => {
+  // 分叉层紧跟在过程块后面（不放进收起的 details 里）。
+  const graph = d.nextElementSibling?.matches(".run-live-graph") ? d.nextElementSibling : null;
+  const groups = [...(graph?.querySelectorAll(".run-graph-group") ?? [])].map((g) => {
     const rows = [...g.querySelectorAll(".run-graph-row, .run-tab-tile")];
     const delays = rows.map((row) => parseFloat(getComputedStyle(row).animationDelay) || 0);
     return {
@@ -82,10 +83,11 @@ const READ = `(() => {
       fold: g.querySelector(".run-graph-fold")?.textContent ?? "",
     };
   });
-  const box = host.getBoundingClientRect();
+  const top = d.getBoundingClientRect().top;
+  const bottom = (graph && !graph.hidden ? graph : d).getBoundingClientRect().bottom;
   return {
     title: d.querySelector(".run-title")?.textContent ?? "",
-    height: Math.round(box.height),
+    height: Math.round(bottom - top),
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     text: document.querySelector("#messages")?.textContent ?? "",
     groups,
@@ -122,8 +124,8 @@ try {
   const done = (await read())!;
   await rp.screenshot(panel, join(out, "folded.png"));
   const dead = done.groups.flatMap((g) => g.dead).join(" ");
-  check("c 死路带人话原因，不写出错", /接口没回|连不上/.test(dead + done.text) && !done.text.includes("出错"), { dead: done.groups.flatMap((g) => g.dead), fold: done.groups.map((g) => g.fold) });
-  check("d 折成一行，高度不超过 176", done.groups.filter((g) => g.kind === "b1" || g.kind === "b3").every((g) => g.state === "folded") && done.height <= 176 && !done.overflowX, { states: done.groups.map((g) => `${g.kind}:${g.state}`), height: done.height, overflowX: done.overflowX });
+  check("c 死路带人话原因，不写出错", /接口没回|连不上/.test(dead) && !done.text.includes("出错"), { dead: done.groups.flatMap((g) => g.dead), fold: done.groups.map((g) => g.fold) });
+  check("d 折成一行，高度不超过 176", done.groups.some((g) => g.kind === "b1" || g.kind === "b3") && done.groups.filter((g) => g.kind === "b1" || g.kind === "b3").every((g) => g.state === "folded") && done.height <= 176 && !done.overflowX, { states: done.groups.map((g) => `${g.kind}:${g.state}`), height: done.height, overflowX: done.overflowX });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every((c) => c.pass) ? "PASS" : "FAIL", checks, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>((done) => site.close(() => done()));

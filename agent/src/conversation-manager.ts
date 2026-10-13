@@ -13,6 +13,7 @@ import {
   type ClientMessage, type ConversationSummary, type ServerMessage,
 } from "../../shared/protocol.js";
 import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
+import { deliveryTextWithNote } from "../../shared/voice.js";
 import { createUserDelivery, projectDeliveryFacts, factsForDelivery } from "./user-delivery.js";
 import type { ConversationPersistence } from "./conversation-persistence.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
@@ -842,7 +843,7 @@ return host?[host]:[];}))].slice(0,16);
       revisions:(snap.recoveryInput?.requirements??[]).filter(text=>text!==snap.goal).slice(-16).map(text=>clip(text,600)),
       hosts,
       outcome:snap.state==='aborted'?'stopped':snap.state==='error'?'error':snap.goalCheck?(snap.goalCheck.status==='done'?'complete':'partial'):view.resumable||unfinished.length?'partial':'complete',
-      summary:clip((delivery?.text||lastReply).replace(/\s+/g,' ').trim(),600),
+      summary:clip(((delivery?deliveryTextWithNote(delivery):'')||lastReply).replace(/\s+/g,' ').trim(),600),
       unfinished,startedAt:snap.startedAt,endedAt:Date.now(),
     };
 
@@ -855,6 +856,12 @@ return host?[host]:[];}))].slice(0,16);
 
     // 改过页面的任务计入习惯（打开页面也算，不跟着上面收紧）：同一件事在 3 个对话里做过，就问一次要不要记住。
     if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
+
+    // 站点笔记（docs/evals/20261013-site-notes.md R4）：只从核对判做成的任务里学；没核对、没做成、用户停下的都不学，
+    // 这一轮的回答自己说只做成一部分或列了没做完的事，也不学。宿主账本补的 hostNote 不算：核对判做成就以核对为准（#334）。
+    const partialDelivery=delivery?.runId===snap.runId&&((delivery.facts?.outcome==='partial'&&!delivery.hostNote)||!!delivery.unfinished?.length);
+
+    if(snap.goalCheck?.status==='done'&&snap.state==='idle'&&snap.startedAt!==null&&hosts.length&&!partialDelivery)void session?.learnSiteNotes?.({runId:snap.runId,startedAt:snap.startedAt,hosts,request:[entry.goal,...entry.revisions]}).catch(()=>{});
 
     if(!committed&&(!snap.goalCheck||snap.goalCheck.status==='done'))return;
     const written=history.record(entry).catch(()=>{});

@@ -1,4 +1,6 @@
 import { createElement as icon, Copy } from "lucide";
+import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
+import { toast } from "./sonar-citations.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。 */
 const CHROME = ".answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
@@ -132,6 +134,67 @@ export function siteGlyph(url: string, host: string): HTMLElement {
   glyph.append(img);
 
   return glyph;
+}
+
+/** 后台把每个对话的工作标签页记在 storage.session 的这个键下（background/state.ts），侧栏只读。 */
+/**
+ * 结果页在后台时，最新回答的文末一排加「切过去看」：助手不替用户切标签（10-13 用户决定），由用户点。
+ * 只给普通网页、这一轮读过或打开过它的网站、且侧栏所在窗口没在看它时出现：工作页跨任务保留，纯问答不该挂上一次的结果页。
+ * 点过、页面关了、用户自己切过去就去掉（main.ts 监听标签事件）。
+ */
+export async function offerWorkingTab(answer: HTMLElement, conversationId: string, sources: ReadonlyArray<{ url: string }>): Promise<void> {
+  if (!chrome.storage?.session || !chrome.tabs?.get) return;
+  const stored = await chrome.storage.session.get(WORKING_TABS_STORAGE_KEY).catch(() => null);
+  // SAFETY: 后台在这个键下只写「执行身份 → 标签页 id」；下面仍按数字核对。
+  const map = stored?.[WORKING_TABS_STORAGE_KEY] as Record<string, unknown> | undefined;
+  const tabId = map?.[executionKey(conversationId)];
+
+  if (typeof tabId !== "number") return;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const current = await chrome.windows.getCurrent().catch(() => null);
+
+  if (!tab?.url || !/^https?:/.test(tab.url) || (tab.active && tab.windowId === current?.id)) return;
+  const origin = (url: string) => { try { return new URL(url).origin; } catch { return null; } };
+
+  if (!sources.some(source => origin(source.url) === origin(tab.url!))) return;
+  const time = answer.querySelector<HTMLElement>(":scope > .answer-actions > .answer-time");
+
+  if (!time || !answer.isConnected || !answer.classList.contains("answer-latest") || answer.querySelector(".answer-show-tab")) return;
+  // 只有最新一条回答带这个按钮。
+  document.querySelectorAll(".answer-show-tab").forEach(node => node.remove());
+  let host = tab.url;
+
+  try { host = new URL(tab.url).host.replace(/^www\./, ""); } catch { /* 上面已确认是网址 */ }
+  const title = (tab.title || host).trim();
+  const label = `切过去看：${title.length > 30 ? `${title.slice(0, 30)}…` : title}`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "answer-show-tab";
+  button.dataset.tabId = String(tabId);
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.append(siteGlyph(tab.url, host), "切过去看");
+
+  button.onclick = async () => {
+    button.remove();
+    const now = await chrome.tabs.get(tabId).catch(() => null);
+
+    if (!now) { toast("那一页已经关掉了");
+
+ return; }
+
+    const win = await chrome.windows.getCurrent().catch(() => null);
+    await chrome.tabs.update(tabId, { active: true }).catch(() => undefined);
+
+    if (now.windowId !== win?.id) await chrome.windows.update(now.windowId, { focused: true }).catch(() => undefined);
+  };
+
+  time.before(button);
+}
+
+/** 那一页关了或已经在眼前：去掉指向它的「切过去看」。 */
+export function dropShowTab(tabId: number): void {
+  document.querySelectorAll(`.answer-show-tab[data-tab-id="${tabId}"]`).forEach(node => node.remove());
 }
 
 export function setAnswerTime(answer: HTMLElement, text: string): void {

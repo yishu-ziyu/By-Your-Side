@@ -9,7 +9,7 @@ import type { TranslationBlock, TranslationSegment } from "../../shared/page-tra
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createTaskResultsTool} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
-import {isTaskProgressSnapshot} from "../../shared/voice.js";
+import {deliveryTextWithNote, isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
 import {plainToolError} from "../../shared/user-facing.js";
@@ -39,7 +39,7 @@ import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
 import { PiAgentLoop } from "./pi-agent-loop.js";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
@@ -61,6 +61,7 @@ import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
 import { programFirstGuidance } from "./program-first.js";
+import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand" }
@@ -101,6 +102,8 @@ export interface SessionCreateOptions {
   memoryStore?: MemoryStore;
   /** 过往任务：开始时带上当前网站做过的事，并供 user_memory 查询。 */
   taskHistory?: TaskHistoryStore;
+  /** 站点笔记（docs/evals/20261013-site-notes.md）：只给主会话；做成的任务写，打开这个网站时带上。 */
+  siteNotes?: SiteNotesStore;
   conversationId?: string;
   /** 共享同一 RPC 的成员身份；Lead 不传，worker 传自己的 sessionId。 */
   memberId?: string;
@@ -224,6 +227,15 @@ export class BrowserAgentSession {
   observeProgramStep(step: ProgramStep): void {
     this.noProgressPolicy?.noteProgramStep(step);
 
+    // 程序里填的值也是这次任务的具体值：写站点笔记时据此过滤（R3）。
+    if (step.phase === 'start' && this.siteNotes) {
+      const values = typedValuesOf(step.name, step.params);
+      const runId = this.deliveryRunId();
+
+      if (values.length && this.programTyped.runId !== runId) this.programTyped = { runId, values: [] };
+      this.programTyped.values.push(...values);
+    }
+
     if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
     else {
       const held = step.error ? this.rpc?.heldReason?.(step.id) : undefined;
@@ -231,7 +243,7 @@ export class BrowserAgentSession {
         executionFact:this.rpc?.getExecutionFact(step.id),
         resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX)),
         ...(held ? {heldReason:held} : {}),
-        ...(step.error ? (held ? {} : {reason:plainToolError(step.error)}) : fieldReadbackOf(step.result))});
+        ...(step.error ? (held ? {} : {reason:step.reason??plainToolError(step.error)}) : fieldReadbackOf(step.result))});
       this.emitReadObservation(step.id,step.name,step.params,step.result,!!step.error);
     }
   }
@@ -563,6 +575,7 @@ if(required.includes(key))candidates.set(key,attachment);
             files: () => resultHost?.fileStore(),
             attachments: () => resultHost?.userAttachments() ?? [],
             memoryForValue: value => memoryRuntime?.memoryForValue(value),
+            siteNotesFor: url => resultHost?.siteNotesFor(url) ?? Promise.resolve(null),
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -649,6 +662,9 @@ if(required.includes(key))candidates.set(key,attachment);
       };
 
       if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);
+      wrapper.siteNotes = options?.memberId ? null : options?.siteNotes ?? null;
+
+      if (productContext && wrapper.siteNotes) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
       wrapper.bindDeliveryRun = (getRunId) => { runIdSlot.current = getRunId; wrapper.deliveryRunId = getRunId; };
 
       wrapper.subscribeEvents();
@@ -1028,13 +1044,15 @@ return;}
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
-    const observation = await this.readUserPageForPrompt(context, "task");
+    const [observation, openTabs] = await Promise.all([this.readUserPageForPrompt(context, "task"), this.readOpenTabsForPrompt(context)]);
 
     if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
 
     if (observation) this.noteGoalObservation("page_at_start", observation);
 
-    const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)
+    // 标签页清单放在页面观察之前：页面观察超窗口时会被整段删掉，清单很短，留着。
+    const withTabs = openTabs ? `${finalText}\n\n${openTabs}` : finalText;
+    const promptText = (observation ? `${withTabs}\n\n${observation}` : withTabs)
       +(context && typeof context.tabId === "number" ? programFirstGuidance() : "");
 
     try {
@@ -1075,6 +1093,22 @@ return;}
       this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:message,reason:plainToolError(message),executionFact:this.rpc?.getExecutionFact(id)});throw error;
     }finally{
       if(this.authorizedDisplayCall===id)this.authorizedDisplayCall=previous;
+    }
+  }
+
+  /**
+   * 新任务开始前替主代理读一次全部标签页：10-13 真实网站 12 次里 10 次第一轮先花在 tabs list 上。
+   * 只给主代理；读失败就不写，不猜。不当作模型工具调用记账。
+   */
+  private async readOpenTabsForPrompt(context: PageContext | undefined): Promise<string | null> {
+    if (!this.rpc || this.memberId) return null;
+
+    try {
+      const data = (await this.rpc.call("list_tabs", {}, PRE_OBSERVATION_TIMEOUT_MS)) as { tabs?: TabInfo[] };
+
+      return Array.isArray(data?.tabs) ? openTabsAtStartText(data.tabs, context?.tabId) : null;
+    } catch {
+      return null;
     }
   }
 
@@ -1227,6 +1261,74 @@ return;}
   /** 填进网页的值来自本轮带上的哪条记忆；见 MemoryRuntime.memoryForValue。 */
   memoryForValue(value: string): { id: string; text: string; createdAt: number } | undefined {
     return this.memoryRuntime?.memoryForValue(value);
+  }
+
+  /** 站点笔记的存放处；工人会话没有。 */
+  private siteNotes: SiteNotesStore | null = null;
+  /** 这一轮已经带过笔记的网站：每个网站每轮只带一次。 */
+  private siteNotesShown: { runId: string | null; hosts: Set<string> } = { runId: null, hosts: new Set() };
+  /** 已经为它写过笔记的任务：同一任务结束时可能被记两次，只问一次模型。 */
+  private readonly siteNotesLearned = new Set<string>();
+  /** 这一轮 browser_run 里填过的值。 */
+  private programTyped: { runId: string | null; values: string[] } = { runId: null, values: [] };
+
+  /**
+   * 打开、跳转到这个网址，或任务开始时就在这个网址：这个网站有笔记、这一轮还没带过，就返回要附上的那一段。
+   * 写一条 site_notes{phase:"used"} 诊断。
+   */
+  async siteNotesFor(url: string | null, timeoutMs?: number): Promise<string | null> {
+    if (!this.siteNotes || !url) return null;
+    const empty = { host: "", notes: [] as string[] };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = this.siteNotes.notesFor(url).catch(() => empty);
+    // 限时读（任务开始时用）：超时就当没有笔记，也不记成「这一轮带过」，之后打开这个网站时还能带上。
+    const { host, notes } = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<typeof empty>(resolve => { timer = setTimeout(() => resolve(empty), timeoutMs); })]).finally(() => clearTimeout(timer));
+
+    if (!host || !notes.length) return null;
+    const runId = this.deliveryRunId();
+
+    if (this.siteNotesShown.runId !== runId) this.siteNotesShown = { runId, hosts: new Set() };
+
+    if (this.siteNotesShown.hosts.has(siteKey(host))) return null;
+    this.siteNotesShown.hosts.add(siteKey(host));
+    this.runTrace.record("site_notes", { phase: "used", host, count: notes.length });
+
+    return formatSiteNotes(host, notes);
+  }
+
+  /**
+   * 任务判做成后：用快速模型从这一轮的操作记录里写出不超过 3 条这个网站的通用做法，过滤后存下。
+   * 只有两轮以内、没出错的任务没什么可学，不问；用户接管过的不学。只为这一轮动过手的网站写（开始时所在的页面没动过就不算）。
+   * 用户的原话不交给模型（只在本地用来过滤引号里的内容）。写一条 site_notes{phase:"learned"} 诊断。
+   */
+  async learnSiteNotes(task: { runId: string; startedAt: number; hosts: string[]; request: string[] }): Promise<void> {
+    const store = this.siteNotes, session = this.session, side = this.sideHost();
+
+    // 用户中途接管过的任务不学：那几步是用户做的（R4）。
+    if (!store || !session || !side || !task.hosts.length || this.siteNotesLearned.has(task.runId) || this.handbackRunId === task.runId) return;
+    this.siteNotesLearned.add(task.runId);
+    const model = this.modelRuntime?.fastModel?.() ?? session.model;
+
+    if (!model) return;
+    const messages = session.agent.state.messages.filter(message => "timestamp" in message && message.timestamp >= task.startedAt);
+    const digest = siteNotesDigest(messages, this.programTyped.runId === task.runId ? this.programTyped.values : []);
+
+    const hosts = operatedHosts(messages, this.activeGoalPage?.url ?? null);
+
+    if ((digest.rounds <= 2 && digest.errors === 0) || !hosts.length) return;
+    const sessionId = `${session.sessionId}-site-notes`;
+
+    const reply = await sideJudgment(side, model, {
+      purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "none",
+      content: JSON.stringify({ visitedHosts: hosts, steps: digest.steps }),
+      sessionId, headers: opencodeSessionHeaders(model, sessionId), parse: text => parseJsonReply(text, isJsonObject),
+    });
+
+    for (const [host, notes] of filterSiteNotes(reply, { hosts, typed: digest.typed, request: task.request })) {
+      const count = await store.add(host, notes, task.runId);
+
+      if (count) this.runTrace.record("site_notes", { phase: "learned", host, count });
+    }
   }
 
   /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */
@@ -2220,7 +2322,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const snapshot = this.conversationSnapshot();
     const delivery = snapshot?.conversationContext?.latestDelivery;
 
-    return delivery && delivery.runId === snapshot?.runId ? delivery.text : "";
+    return delivery && delivery.runId === snapshot?.runId ? deliveryTextWithNote(delivery) : "";
   }
 
   /** 目标核对只看主会话里用过工具（交付、记忆、目标记账除外）、最后在问用户或说还没查的任务：纯聊天、用户停止、接管、出错都不核对。 */
@@ -2322,7 +2424,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       endedOn = page ? String(page.url ?? "") : "";
       pageNow = page ? `${endedOn}\n${pageText}` : null;
       const delivery = snapshot?.conversationContext?.latestDelivery;
-      const partial = !!delivery && delivery.runId === runId && delivery.text === lastReply && (delivery.facts?.outcome === "partial" || !!delivery.unfinished?.length);
+      const partial = !!delivery && delivery.runId === runId && deliveryTextWithNote(delivery) === lastReply && (delivery.facts?.outcome === "partial" || !!delivery.unfinished?.length);
 
       if (gaveUpWithoutChange({ reply: lastReply, partial, pageAtNudge: this.nudgePage?.runId === runId ? this.nudgePage.page : null, pageNow })) {
         verdict = { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
@@ -2515,8 +2617,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       return;
     }
 
-    // navigate 结果里带着新页面的快照：按一次 snapshot 读数记账（排在导航的 tool_end 之后，旧读数已失效）。
-    if (name === 'navigate') {
+    // navigate 和 tabs open 的结果里带着新页面的快照：按一次 snapshot 读数记账（排在导航的 tool_end 之后，旧读数已失效）。
+    // browser_run 换了页时结尾附的那一页同样记账（程序里各步骤自己的读数走 observeProgramStep）。
+    if (name === 'navigate' || name === 'tabs' && params?.action === 'open' || name === 'browser_run') {
       const page = (result as { details?: { page?: unknown } } | null)?.details?.page;
 
       if (page) this.emitReadObservation(toolCallId, 'snapshot', {}, page, false);
@@ -2612,6 +2715,40 @@ export function freshPageObservationText(context: PageContext, snapshotText: str
       ? `[This is the main text of tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Answer questions about it from this text in your first round; do not re-read it. It has no element refs: to act on the page, snapshot it first or inside browser_run.]`
       : `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
     wrapPageContent(redactCredentialText(snapshotText), { tabId: context.tabId, title: context.title, url: context.url }),
+  ].join("\n");
+}
+
+const OPEN_TABS_AT_START_MAX = 20;
+const OPEN_TAB_TITLE_MAX = 80;
+
+/** 只留网址的 origin+pathname：查询串和锚点可能带私人信息。chrome:// 这类的 origin 是 "null"，改用协议加主机。 */
+function tabAddress(url: string): string {
+  if (!URL.canParse(url)) return url ? "(unreadable address)" : "(no address)";
+  const u = new URL(url);
+  const address = u.origin !== "null" ? `${u.origin}${u.pathname}` : `${u.protocol}${u.host ? `//${u.host}` : ""}${u.pathname}`;
+
+  return address.length > 200 ? `${address.slice(0, 200)}…` : address;
+}
+
+/**
+ * 任务开始时的全部标签页（格式同 tabs list）：最多 20 个，用户当前页一定在内，标题截到 80 字。
+ * 标题来自网页，和页面正文一样放进不可信边界并遮掉凭据样式文本。
+ */
+export function openTabsAtStartText(tabs: readonly TabInfo[], currentTabId?: number): string {
+  const current = tabs.find(t => t.id === currentTabId);
+  const shown = tabs.slice(0, OPEN_TABS_AT_START_MAX);
+
+  if (current && !shown.includes(current)) shown[shown.length - 1] = current;
+  const lines = shown.map(t => {
+    const title = (t.title || "(untitled)").replace(/\s+/g, " ");
+    const marks = [t.id === currentTabId ? "user's current tab" : "", t.working ? "working" : ""].filter(Boolean).join(", ");
+
+    return `[${t.id}] ${title.length > OPEN_TAB_TITLE_MAX ? `${title.slice(0, OPEN_TAB_TITLE_MAX)}…` : title} — ${tabAddress(t.url)}${marks ? ` (${marks})` : ""}`;
+  });
+
+  return [
+    `[OPEN TABS — every open tab at task start, read by the runtime just now${tabs.length > shown.length ? ` (showing ${shown.length} of ${tabs.length})` : ""}. No need to call tabs action:"list" unless tabs may have changed since.]`,
+    lines.length > 0 ? wrapPageContent(redactCredentialText(lines.join("\n"))) : "No open tabs.",
   ].join("\n");
 }
 
