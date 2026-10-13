@@ -139,7 +139,8 @@ try {
   await rp.screenshot(panel, join(out, "04-resent.png"));
   check("R3 连好模型后原话自动发出，模型只收到一次", !!answered && asked(QUESTION) === 1, { requests: asked(QUESTION), save: config.saveStatus });
   check("R3 会话里只有一个用户气泡", after.users.length === 1 && after.users[0]?.startsWith(QUESTION) === true, after.users);
-  check("R3 重发问的是原来那页，不是重发时开着的设置页", askedTexts.length === 1 && askedTexts[0]!.includes("宫崎骏") && !askedTexts[0]!.includes("模型与语音"), askedTexts.map((t) => t.slice(0, 400)));
+  // 只看「当前页」那一行：标签页清单里本来就列着开着的设置页。
+  check("R3 重发问的是原来那页，不是重发时开着的设置页", askedTexts.length === 1 && /User's current page: tab \d+ "宫崎骏"/.test(askedTexts[0]!) && !/User's current page:[^\n]*模型与语音/.test(askedTexts[0]!), askedTexts.map((t) => /User's current page:[^\n]*/.exec(t)?.[0] ?? t.slice(0, 400)));
   check("R4 连好后未连接卡变成「已连上」，不再写还没连接", after.pill.includes("已连上") && !after.unconnected && !after.cards.some((c) => /已用 .+ 重新发送/.test(c)), { cards: after.cards, pill: after.pill });
   check("连模型期间打的草稿原样留着", after.input === "草稿别动", after.input);
   await rp.cdp.send("Target.closeTarget", { targetId: config.settingsTargetId }).catch(() => {});
