@@ -75,3 +75,8 @@ export class MainEffort {
     if (model && from !== this.level(model)) this.record("effort_change", { from: from!, to: this.level(model), signal: "new_task" });
   }
 }
+
+/** 主任务在新任务上、没有输入框旁「快 / 深入」时的档。阅读卡的深度档用它，不读这一路已经升过的档。 */
+export function restingEffort(model: Model<Api>): ModelThinkingLevel {
+  return new MainEffort(() => {}).level(model);
+}

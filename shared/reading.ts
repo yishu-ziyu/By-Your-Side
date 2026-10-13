@@ -23,10 +23,14 @@ export interface ReadingTurn {
   error?: string;
 }
 
+/** 阅读卡的回答档。旧记录没有这个字段，按快速处理。 */
+export type ReadingDepth = 'fast' | 'deep';
+
 export interface ReadingTranscript {
   threadId: string;
   source: ReadingSource;
   turns: ReadingTurn[];
+  depth?: ReadingDepth;
 }
 
 export type ReadingClientMessage =
@@ -52,6 +56,7 @@ export function isReadingTranscript(v: unknown): v is ReadingTranscript {
     && string(s.text, READING_SELECTION_LIMIT) && !!s.text.trim()
     && string(s.surrounding, READING_CONTEXT_LIMIT) && typeof s.truncated === 'boolean'
     && Number.isSafeInteger(s.tabId) && s.tabId >= 0 && string(s.title, 500) && string(s.url, 4000)
+    && (t.depth === undefined || t.depth === 'fast' || t.depth === 'deep')
     && Array.isArray(t.turns) && t.turns.length <= READING_TURN_LIMIT
     && t.turns.every(turn => turn && string(turn.question, 2000) && !!turn.question.trim()
       && string(turn.answer, READING_ANSWER_LIMIT) && states.includes(turn.state)
@@ -74,7 +79,9 @@ export function isReadingEvent(v: ReadingEvent): boolean {
 }
 
 export function readingContext(transcript: ReadingTranscript): string {
-  return JSON.stringify({ source: transcript.source, conversation: transcript.turns.map(({question, answer, state}) => ({question, answer, state})) });
+  const depth = transcript.depth === 'deep' ? 'deep' : transcript.depth === 'fast' ? 'fast' : undefined;
+
+  return JSON.stringify({ ...(depth ? { depth } : {}), source: transcript.source, conversation: transcript.turns.map(({question, answer, state}) => ({question, answer, state})) });
 }
 
 export function readingHandoffContext(transcript: ReadingTranscript): string {
