@@ -367,10 +367,12 @@ try {
   verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE" }, { holdMs: 0, probe: "VERDICT-DONE" });
   const fixedBeforeR = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
   const fixedR = (s: Sample) => s.answers.filter(t => t.includes(FIXED)).length > fixedBeforeR;
-  const r = await runCase("r", s => fixedR(s) && !s.answers.some(t => t.includes(CASES.r.claim)), {}, 30_000);
+  // 回答逐字淡入（#358）：脚本模型的核对几乎立刻判继续，整句常常只放出头一个字就被续做顶替；放出了任意开头就算显示过。
+  const claimR = (t: string) => t.includes(CASES.r.claim) || (!!t.trim() && CASES.r.claim.startsWith(t.trim()));
+  const r = await runCase("r", s => fixedR(s) && !s.answers.some(claimR), {}, 30_000);
   evidence.r = {
-    claimShownMs: first(r.samples, s => s.answers.some(t => t.includes(CASES.r.claim))),
-    twoAnswersMs: first(r.samples, s => fixedR(s) && s.answers.some(t => t.includes(CASES.r.claim))),
+    claimShownMs: first(r.samples, s => s.answers.some(claimR)),
+    twoAnswersMs: first(r.samples, s => fixedR(s) && s.answers.some(claimR)),
     fix: [...new Set(r.samples.flatMap(s => s.fix).map(fixHead))],
   };
   assert.ok((evidence.r as { claimShownMs: number | null }).claimShownMs !== null, `r: the read-only answer was shown first: ${JSON.stringify(evidence.r)}`);
