@@ -3377,8 +3377,9 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
   .msg.assistant[data-shorten-moved] [data-shorten]:not(.shorten-off) { height: 0; opacity: 0; }
   .msg.assistant[data-shorten-moved] .shorten-rest:not(.shorten-off) { opacity: 0; }
 }
-.answer-actions.has-grip { position: sticky; bottom: 0; z-index: 1; background: var(--wallpaper); }
-/* 贴底时正文不透到按钮和字下面：这一排本身不透明，只在上沿留一窄条渐隐。 */
+.answer-actions.has-grip { position: sticky; bottom: calc(-1 * var(--s-5)); z-index: 1; padding-bottom: var(--s-5); margin-bottom: calc(-1 * var(--s-5)); background: var(--wallpaper); }
+/* 贴底时正文不透到按钮和字下面：这一排本身不透明，只在上沿留一窄条渐隐；
+   #messages 底部有 --s-5 的内边距，贴底的位置放低这么多、底色也往下补这么多，内边距里不再透出正文。 */
 .answer-actions.has-grip::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--s-3); background: linear-gradient(to bottom, transparent, var(--wallpaper)); pointer-events: none; }
 .shorten-grip { display: flex; align-items: center; margin: 0 auto; padding: 6px 18px; border-radius: var(--r); cursor: ns-resize; touch-action: none; user-select: none; }
 .shorten-grip i { display: block; width: 30px; height: 4px; border-radius: var(--r-pill); background: var(--text-quaternary); transition: background var(--d-micro) var(--e-enter), width var(--d-micro) var(--e-enter); }
