@@ -40,7 +40,7 @@ const card = (tabId: number) => `一年共花 {=total}；心算的 ¥2,714 不�
 <stat label="算不出来" value="=68*abc" />
 <option name="缺理由的选项" />
 <option name="Notion 年付" value="=68*12-100" unit="¥" why="比月付一年省 100" />
-<table cols="订阅|一年"><tr cells="Notion|=68*12" /><tr cells="Duolingo|398" /></table>
+<table cols="订阅|一年"><tr cells="Notion|=68*12" /><tr cells="Duolingo|398" /><tr cells="Calm|=¥12*12" /></table>
 <checklist><check text="取消 Calm" note="140 天没打开" /><check text="" /></checklist>
 <marquee>不在目录里</marquee>
 <button action="say" primary>${FOLLOW}</button>
@@ -137,7 +137,7 @@ try {
   assert.equal(seen.stats[1]!.value, "¥398", "R2: currency unit goes before a plain value");
   // 模型也会把算式写进选项的价和表格格子（10-14 真模型比价卡片露出「=1699-50」）：这些地方同样算出来。
   assert.equal(seen.options[0]!.price, "¥716", `R2: formula in an option value computed: ${JSON.stringify(seen.options)}`);
-  assert.deepEqual(seen.cells, ["Notion", "816", "Duolingo", "398"], `R2: formula in a table cell computed: ${JSON.stringify(seen.cells)}`);
+  assert.deepEqual(seen.cells, ["Notion", "816", "Duolingo", "398", "Calm", "¥144"], `R2: formula in a table cell computed: ${JSON.stringify(seen.cells)}`);
   assert.ok(!/=\s*\d/.test(seen.cardText), `R2: no raw formula shown anywhere in the card: ${seen.cardText}`);
   assert.deepEqual(seen.buttons, [FOLLOW, "切到订阅页看", "切到已关掉的页"], "R3: buttons drawn");
 
