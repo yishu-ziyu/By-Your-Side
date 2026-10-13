@@ -876,8 +876,9 @@ html, body {
   padding: 2px 0;
 }
 
-/* 流式输出中的闪烁光标 */
-.msg.assistant.streaming::after {
+/* 流式输出中的闪烁光标：跟在最后一个字后面（stream-reveal.ts 的 data-tail），还没有字时挂在气泡上 */
+.msg.assistant.streaming:not(:has([data-tail]))::after,
+.msg.assistant.streaming [data-tail]::after {
   content: "▍";
   color: var(--accent);
   animation: blink 1s steps(2, start) infinite;
@@ -2239,7 +2240,8 @@ details.run-steps.done .chip.error { background: transparent; }
     animation: none;
   }
 
-  .msg.assistant.streaming::after,
+  .msg.assistant.streaming:not(:has([data-tail]))::after,
+  .msg.assistant.streaming [data-tail]::after,
   .reveal-fade,
   .dot.retry,
   .chip-dot.running {
