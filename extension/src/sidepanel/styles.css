@@ -3634,18 +3634,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip .ctx-ok { color: var(--ok); font-size: 11px; }
 
 /* A3 三行计划 */
-.task-plan { flex: 0 0 auto; margin: 0 0 8px; padding: 12px 14px 12px; border: 1px solid var(--content-border); border-radius: 14px; background: var(--content-bg); box-shadow: var(--sh-1); }
-.task-plan.task-plan-in { animation: taskPlanIn var(--d-layout) var(--e-enter); }
-@keyframes taskPlanIn { from { opacity: 0; transform: translateY(6px); } }
-.task-plan-kicker { margin: 0 0 8px; font-size: var(--fs-micro); letter-spacing: .06em; text-transform: uppercase; color: var(--text-tertiary); }
-.task-plan-lines { display: flex; flex-direction: column; gap: 4px; }
-.task-plan-line { display: grid; grid-template-columns: 3.2em 1fr; gap: 8px; margin: 0; font-size: var(--fs-ui); }
-.task-plan-key { color: var(--text-tertiary); }
-.task-plan-val { color: var(--text-primary); }
-.task-plan-actions { display: flex; gap: 8px; margin-top: 12px; }
-.task-plan-start, .task-plan-edit { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border-radius: var(--r-pill); cursor: pointer; }
-.task-plan-start { border: 0; background: var(--text-primary); color: var(--content-bg); }
-.task-plan-edit { border: 1px solid var(--content-border); background: transparent; color: var(--text-primary); }
 .task-plan-goal { margin: 0 0 6px; padding: 4px 2px; font-size: var(--fs-meta); color: var(--text-secondary); transition: transform var(--d-layout) var(--e-move), opacity var(--d-layout) var(--e-move); }
 
 /* A8 主动作 + 动作列表 */
@@ -3665,7 +3653,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .answer-command-empty { padding: 10px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 
 @media (prefers-reduced-motion: reduce) {
-  .tab-mention-menu.tab-mention-in, .tab-mention-menu.tab-mention-out, .task-plan.task-plan-in, .answer-command-menu.answer-command-in, .answer-command-menu.answer-command-out { animation: none; }
+  .tab-mention-menu.tab-mention-in, .tab-mention-menu.tab-mention-out, .answer-command-menu.answer-command-in, .answer-command-menu.answer-command-out { animation: none; }
   .tab-mention-chip, .task-plan-goal { transition: none; }
 }
 #handoff-banner {
