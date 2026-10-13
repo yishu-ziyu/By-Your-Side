@@ -3681,6 +3681,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .answer-actions button.answer-primary svg { width: 14px; height: 14px; }
 .answer-actions button.answer-primary:disabled { opacity: 1; color: var(--text-quaternary); }
 /* 还原填写（fill-undo.ts）：结果写在文末一排下面；还原后上面那段回答变淡，表示它说的已经不作数。 */
+.msg.assistant.fill-undo-settled > .answer-actions { opacity: 1; }
 .fill-undo-result { margin-top: 2px; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); }
 .fill-undo-result b { font-weight: 600; color: var(--text-secondary); }
 .msg.assistant > :is(p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre, blockquote, .gen-card) { transition: opacity var(--d-state) var(--e-enter); }

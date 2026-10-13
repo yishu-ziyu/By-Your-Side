@@ -71,6 +71,8 @@ function resultLine(view: FillUndoView): [string, string] | null {
 function paint(answer: HTMLElement, busy = false): void {
   const view = views.get(answer);
   answer.classList.toggle("fill-undone", view?.state === "restored");
+  // 已还原 / 已提交 / 页面变了是这条回答的状态，文末一排一直显示，不等悬停。
+  answer.classList.toggle("fill-undo-settled", !!view && view.state !== "ready");
   let line = answer.querySelector<HTMLElement>(":scope > .fill-undo-result");
   const text = busy ? ["助手还在做事", "，做完后再点还原。"] as [string, string] : view ? resultLine(view) : null;
 
