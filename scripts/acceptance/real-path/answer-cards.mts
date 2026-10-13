@@ -1,9 +1,9 @@
 /**
  * 回答里的卡片（docs/evals/20261014-answer-cards.md R1–R3）。
- *   npx tsx scripts/acceptance/real-path/answer-cards.mts --headless [--live]
+ *   npx tsx scripts/acceptance/real-path/answer-cards.mts --headless [--live] [--model=服务商/模型]
  * 脚本模型分段写出一张订阅卡：边写边看侧栏不露出标签原文；写完后看算式算出的数、正文 {total} 填数、
  * 心算的错金额换掉、不合格的组件不画；再点三个按钮：替我说一句、切到那一页、切到已关掉的页。
- * --live（R4）：主模型换成真实 gpt-6-luna（本机 ChatGPT 登录），在练习页上问一道比价题（应画出带标记的卡片）
+ * --live（R4）：主模型换成真实模型（默认 gpt-6-luna，本机 ChatGPT 登录；--model= 换别的），在练习页上问一道比价题（应画出带标记的卡片）
  * 和一道一句话题（不应画卡片）。只证明这一个模型在这两道题上的表现，不代表其他模型。
  */
 import assert from "node:assert/strict";
@@ -39,6 +39,7 @@ const card = (tabId: number) => `一年共花 {=total}；心算的 ¥2,714 不�
 <stat id="total" label="一年合计" value="=68*12+398" unit="¥" tag="合计" />
 <stat label="算不出来" value="=68*abc" />
 <option name="缺理由的选项" />
+<checklist><check text="取消 Calm" note="140 天没打开" /><check text="" /></checklist>
 <marquee>不在目录里</marquee>
 <button action="say" primary>${FOLLOW}</button>
 <button action="tab" target="${tabId}">切到订阅页看</button>
@@ -107,17 +108,19 @@ try {
       title: card?.querySelector(".gc-title")?.textContent,
       stats: [...(card?.querySelectorAll(".gc-stat") ?? [])].map(s => ({ label: s.querySelector(".k span")?.textContent, value: s.querySelector(".v")?.textContent, note: s.querySelector(".n")?.textContent, best: s.classList.contains("best") })),
       options: card?.querySelectorAll(".gc-option").length ?? -1,
+      checks: [...(card?.querySelectorAll(".gc-check") ?? [])].map(c => ({ text: c.querySelector(".t")?.textContent, box: c.querySelector("input[type=checkbox]") ? "checkbox" : "none" })),
       buttons: [...(card?.querySelectorAll(".gc-btn") ?? [])].map(b => b.textContent),
       cardText: card?.innerText ?? "",
       prose,
     };
-  })()`) as { title?: string; stats: Array<{ label: string; value: string; note: string; best: boolean }>; options: number; buttons: string[]; cardText: string; prose: string };
+  })()`) as { title?: string; stats: Array<{ label: string; value: string; note: string; best: boolean }>; options: number; checks: Array<{ text: string; box: string }>; buttons: string[]; cardText: string; prose: string };
   Object.assign(evidence, { leaks: leaks.length, seen });
 
   assert.equal(leaks.length, 0, `R1: tag text leaked while streaming: ${leaks[0]}`);
   assert.equal(seen.title, "订阅一年花多少", "R1: card drawn");
   assert.deepEqual(seen.stats.map(s => s.label), ["Notion", "Duolingo", "一年合计"], "R1: invalid stat dropped, valid ones kept in order");
   assert.equal(seen.options, 0, "R1: option without a reason is not drawn");
+  assert.deepEqual(seen.checks, [{ text: "取消 Calm", box: "checkbox" }], `R1: checklist drawn with a tickable box, empty item dropped: ${JSON.stringify(seen.checks)}`);
   assert.ok(!seen.cardText.includes("不在目录里"), "R1: unknown tag not drawn");
   assert.equal(seen.stats[0]!.value, "¥816", "R2: formula computed");
   assert.equal(seen.stats[2]!.value, "¥1,214", "R2: total computed");
@@ -170,9 +173,10 @@ async function live(): Promise<never> {
 <ul><li>京东自营 ¥1699，免运费，次日达</li><li>天猫 Apple 官方旗舰店 ¥1699，店铺券满1500减50，包邮，2天到</li><li>拼多多百亿补贴 ¥1529，运费 ¥0，第三方店铺，3天到</li></ul>
 <footer>© 2026 比价小站 由 Lumen Labs, Inc. 运营</footer>`));
   await new Promise<void>(resolve => shop.listen(0, "127.0.0.1", resolve));
-  const plan = await loadModelPlan(DEFAULT_TEST_MODEL);
+  const modelArg = process.argv.find(a => a.startsWith("--model="))?.slice("--model=".length) ?? DEFAULT_TEST_MODEL;
+  const plan = await loadModelPlan(modelArg);
   const rp = await launchRealPath();
-  const out: Record<string, unknown> = { model: DEFAULT_TEST_MODEL };
+  const out: Record<string, unknown> = { model: modelArg };
   let failure: string | null = null;
   const ask = async (panel: string, text: string, n: number) => {
     await rp.click(panel, "#input");
