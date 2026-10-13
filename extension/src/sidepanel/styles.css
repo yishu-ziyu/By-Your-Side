@@ -1,4 +1,5 @@
 @import url("./motion-tokens.css");
+@import url("./answer-cards.css");
 
 /* 暖纸与墨色。沿用既有 token 名，避免设置、语音和模型选择各自维护配色。 */
 :root {

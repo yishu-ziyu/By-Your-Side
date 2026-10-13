@@ -1,9 +1,10 @@
 import { createElement as icon, Ellipsis } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { toast } from "./sonar-citations.js";
+import { answerMarkdown } from "../../../shared/answer-cards.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。 */
-const CHROME = ".answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
+const CHROME = ".gc-actions,.answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
 export function resultCommandShortcut(): string {
   return /Mac/i.test(navigator.platform) ? "⇧⌘K" : "Ctrl+Shift+K";
@@ -33,7 +34,7 @@ export async function copyAnswerText(answer: HTMLElement): Promise<void> {
 }
 
 export async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
-  await writeClipboard(answer.dataset.markdown?.trim() || answerBody(answer).innerText.trim());
+  await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown).trim() : answerBody(answer).innerText.trim());
 }
 
 /** 去掉「切过去看」后主按钮要跟着换，否则按钮还写「在页面上查看」，点下去却是复制。 */

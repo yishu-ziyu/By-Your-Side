@@ -1,3 +1,4 @@
+import { answerSpeech } from '../../../shared/answer-cards.js';
 import type { ServerMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '../shared/ptt.js';
@@ -174,7 +175,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     server(msg: ServerMessage) {
       if (msg.type === 'task_view') onView(msg.view);
 
-      if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') tracked.result = msg.event.delivery.text;
+      if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') tracked.result = answerSpeech(msg.event.delivery.text);
     },
   };
 }
