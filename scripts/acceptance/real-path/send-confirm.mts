@@ -232,8 +232,9 @@ try {
   // 等侧栏空闲再读过程行。
   await until(async () => !(await rp.evaluate(panel, 'document.querySelector("#send-btn").classList.contains("stopping")')), 10_000, "c 侧栏回到空闲", 50);
   await sleep(1000);
+  // 连续相同的几步合成一条「… ×4」（#345）：按次数数，不按条数数。
   const runC = await lastRun();
-  check("c 侧栏：写「你没让发，草稿还在」，不标失败，过程行标题不写「没做成」", !!runC && runC.steps.filter(step => step.text.includes("你没让发，草稿还在")).length === 4 && runC.steps.every(step => !step.error) && !runC.title.includes("没做成") && !runC.title.includes(WAITING), { run: runC });
+  check("c 侧栏：写「你没让发，草稿还在」，不标失败，过程行标题不写「没做成」", !!runC && runC.steps.filter(step => step.text.includes("你没让发，草稿还在")).reduce((n, step) => n + Number(/×(\d+)/.exec(step.text)?.[1] ?? 1), 0) === 4 && runC.steps.every(step => !step.error) && !runC.title.includes("没做成") && !runC.title.includes(WAITING), { run: runC });
   await panelShot("c-panel.png");
 
   // ── d：40 秒后才确认 ──
