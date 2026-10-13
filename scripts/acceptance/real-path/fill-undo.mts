@@ -91,10 +91,11 @@ const model = await startScriptedModel([
   { match: ASK.reload, steps: [tool("fill", { target: "#city", value: "北京" }), { text: DONE.reload }] },
 ], undefined, payload => {
   const messages = payload.messages ?? [];
-  const lastUser = [...messages].reverse().find(m => m.role === "user");
-  const lastUserText = typeof lastUser?.content === "string" ? lastUser.content : Array.isArray(lastUser?.content) ? lastUser.content.map(p => p.text ?? "").join("") : "";
+  const textOf = (m: (typeof messages)[number]) => typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
+  // 同脚本模型挑规则的办法：从后往前找第一条带案例原话的用户消息（产品会在中间插别的用户消息），数它后面的工具结果。
+  const asked = messages.findLastIndex(m => m.role === "user" && Object.values(ASK).some(ask => textOf(m).includes(ask)));
 
-  if (lastUserText.includes(ASK.form)) formArrivals.push({ tools: messages.filter(m => m.role === "tool").length, at: Date.now() });
+  if (asked >= 0 && textOf(messages[asked]!).includes(ASK.form)) formArrivals.push({ tools: messages.slice(asked + 1).filter(m => m.role === "tool").length, at: Date.now() });
 
   for (const m of messages) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -173,6 +174,7 @@ try {
   evidence.stepGapsMs = labels.map((label, i) => { const from = replyClosedAt(i), to = arrivalAt(i + 1); return { step: label, ms: from && to ? to - from : null }; });
   const gaps = evidence.stepGapsMs as Array<{ step: string; ms: number | null }>;
   const median = (kind: string) => { const list = gaps.filter(g => g.step.startsWith(kind) && g.ms !== null).map(g => g.ms!).sort((a, b) => a - b); return list.length ? list[Math.floor(list.length / 2)]! : null; };
+  evidence.formArrivals = formArrivals.length;
   evidence.medianMs = { fill: median("fill"), select: median("select"), click: median("click") };
   evidence.refs = refs;
   assert.ok(refs.phone && refs.size && refs.kid, `the snapshot gave @N refs for phone, size and child seat ${JSON.stringify(refs)}`);
