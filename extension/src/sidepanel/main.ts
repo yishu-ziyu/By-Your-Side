@@ -3,6 +3,9 @@ import { installDropzone } from "./dropzone.js";
 import { attachSourceCitations, captureCitationContext, type CitationContext } from "./sonar-citations.js";
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
+import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
+import { heartbeatTitle, paintBeatMark, VERB_MS } from "./run-heartbeat.js";
+import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -49,7 +52,7 @@ import {
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTestResult } from "./error-card.js";
-import { describeModelError } from "../../../shared/user-facing.js";
+import { describeModelError, plainToolError } from "../../../shared/user-facing.js";
 import { INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
 import { mountModelPicker } from "./model-picker.js";
 import { chipLabel } from "./models.js";
@@ -2351,6 +2354,13 @@ interface RunHost {
   check: "checking" | "done" | "not_done" | "needs_user" | "continued" | "unavailable" | null;
   /** 收尾时定下的回执材料，收起回答后的过程行据此重画（做了几步 · 耗时 · 核对状态）。 */
   receipt: { head: string; total: string | null; steps: number; failed: number; ended: "completed" | "failed" | "stopped" } | null;
+  /** 并行/死路/接管的分叉层：紧跟在过程块后面（不放进 details，收起时也看得见）；单步回合是空的。 */
+  graph: LiveGraph;
+  beatEl: HTMLElement;
+  heartbeatTimer: number;
+  heartbeatTick: number;
+  semanticTitle: string;
+  lastToolName: string | null;
 }
 
 const ACTION_ICONS = {
@@ -2394,7 +2404,9 @@ function setRunTitle(run: RunHost, text: string, now = false, kind?: IconKind): 
   const wait = now || applyingHistory ? 0 : run.titleAt + RUN_TITLE_HOLD_MS - Date.now();
 
   const paint = () => {
-    paintAction(run.titleEl, text);
+    run.semanticTitle = text;
+    run.heartbeatTick = 0;
+    paintAction(run.titleEl, heartbeatTitle(text, run.lastToolName ?? undefined, 0, reducedMotion()));
 
     if (kind) setActionIcon(run.actIcon, kind);
     run.titleAt = Date.now();
@@ -3235,6 +3247,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   if (currentRun) return currentRun;
   const root = document.createElement("details");
   root.className = "run-steps";
+  root.dataset.phase = "thinking";
   // 过程默认收起，工具与协作任务使用同一个展开入口。
   root.open = false;
   const summary = document.createElement("summary");
@@ -3252,6 +3265,10 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const actIcon = document.createElement("span");
   actIcon.className = "run-act-icon";
   setActionIcon(actIcon, "think");
+  const beat = document.createElement("span");
+  beat.className = "run-beat";
+  beat.setAttribute("aria-hidden", "true");
+  paintBeatMark(beat);
   const title = document.createElement("span");
   title.className = "run-title";
   paintAction(title, `正在${loaderSubtitle(null)}`);
@@ -3266,7 +3283,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const meta = document.createElement("span");
   meta.className = "run-meta";
   meta.hidden = true;
-  summary.append(iconBox, actIcon, title, chainEl, timeEl, chevron, meta);
+  summary.append(iconBox, actIcon, beat, title, chainEl, timeEl, chevron, meta);
   const body = document.createElement("div");
   body.className = "run-body";
   runBodyPinned = true;
@@ -3281,16 +3298,25 @@ function ensureRun(): NonNullable<typeof currentRun> {
   // 否则插在过程块前面的开场话会落到入口后面，收尾时收不进过程。实时时入口很快被任务卡收走，保持原样。
   if (replayingHistory) appendToMessages(root);
   else messagesEl.appendChild(root);
+  const graph = mountLiveGraph({ history: () => applyingHistory });
+  root.after(graph.el);
   const trail = document.createElement("div");
   trail.className = "run-trail";
   trail.hidden = true;
-  root.after(trail);
+  graph.el.after(trail);
   const start = runStartAt || eventTime();
 
   // 第一行的秒数只数「现在这件事」：在想就从这段开始数，在跑一步就数这一步（≥3 秒才写），不数整轮（#263）。
   const timer = window.setInterval(() => {
     if (currentRun?.timer === timer) timeEl.textContent = liveSeconds(currentRun);
   }, 1000);
+  const heartbeatTimer = window.setInterval(() => {
+    const live = currentRun;
+
+    if (!live || live.heartbeatTimer !== heartbeatTimer || live.root.classList.contains("done") || reducedMotion()) return;
+    live.heartbeatTick += 1;
+    paintAction(live.titleEl, heartbeatTitle(live.semanticTitle, live.lastToolName ?? undefined, live.heartbeatTick, false));
+  }, VERB_MS);
 
   currentRun = {
     root,
@@ -3322,6 +3348,12 @@ function ensureRun(): NonNullable<typeof currentRun> {
     answer: null,
     check: null,
     receipt: null,
+    graph,
+    beatEl: beat,
+    heartbeatTimer,
+    heartbeatTick: 0,
+    semanticTitle: `正在${loaderSubtitle(null)}`,
+    lastToolName: null,
   };
 
   return currentRun;
@@ -3353,7 +3385,7 @@ function renderTrail(run: RunHost): void {
   run.trail.replaceChildren(...rows);
   run.trail.hidden = rows.length === 0;
 
-  if (run.root.nextElementSibling !== run.trail) run.root.after(run.trail);
+  if (run.graph.el.nextElementSibling !== run.trail) run.graph.el.after(run.trail);
 }
 
 /** 记录里秒数的门槛：一步、一段思考不到 3 秒都不写秒数，思考段也不单列（#263）。 */
@@ -3569,6 +3601,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
 
   if (flags.userHasPage !== lastUserHasPage) {
     lastUserHasPage = flags.userHasPage;
+    currentRun?.graph.user(flags.userHasPage);
 
     if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已中止");
   }
@@ -3648,6 +3681,7 @@ const RUN_ORB_MARKS = {
 
 function syncRunOrb(run: RunHost): void {
   const state = run.orbActivity.state(lastUserHasPage);
+  run.root.dataset.phase = state;
   const mark = state in RUN_ORB_MARKS ? RUN_ORB_MARKS[state as keyof typeof RUN_ORB_MARKS] : null;
   run.orbMark.hidden = !mark;
 
@@ -3675,6 +3709,7 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
+  clearInterval(run.heartbeatTimer);
   const endedAt = eventTime();
   // 停下、出错、答完：正在算的那段思考在这一刻结束（#263 E6）。
   closeThink(run, endedAt);
@@ -3691,6 +3726,7 @@ function finishRun(): void {
 
   if (!hasSteps || !keepProcess) {
     run.root.remove();
+    run.graph.el.remove();
 
     if (lastRun === run) lastRun = null;
 
@@ -3742,8 +3778,10 @@ function finishRun(): void {
   }
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
+  // 分叉层跟着过程块走：紧跟在它后面，读回再跟在分叉层后面。
+  run.root.after(run.graph.el);
 
-  if (run.evidence) run.root.after(run.evidence);
+  if (run.evidence) run.graph.el.after(run.evidence);
 
   for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
     if (node instanceof HTMLElement && node.matches(".msg.assistant")) syncAnswerTime(node);
@@ -3876,7 +3914,7 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
 
   // chip 跟着用户消息（chip C），「收到」这类确认语和开场话也留在前面；夹在开场话前面的任务卡之后会移到回答后面，不挡住它。
   // 核对判继续后接着做的一轮：排在前一轮的过程、读回和「核对发现」之后，不插到它们前面。
-  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, details.run-steps.done, .fill-evidence, .claim-fix")
+  const keepsBefore = (node: HTMLElement) => node.dataset.deliveryKind === "ack" || node.matches(".opening-line, .ctx-chips, details.run-steps.done, .run-live-graph, .fill-evidence, .claim-fix")
     || (node.matches(".ai-task-card") && !!node.nextElementSibling?.matches(".opening-line"));
 
   while (next instanceof HTMLElement && next !== root && keepsBefore(next)) next = next.nextElementSibling;
@@ -4255,6 +4293,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   if (ev.name === "hand_to_user") {
     run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
     syncRunOrb(run);
+    run.graph.user(true);
     showHandoffCard(String(ev.params.ask ?? ""));
 
     return;
@@ -4288,6 +4327,8 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
 
   const prep = isPrepTool(ev.name, ev.params);
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
+
+  run.lastToolName = ev.name;
 
   if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
     setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`, false, kind);
@@ -4338,6 +4379,13 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   chip.onclick = () => toggleChipDetail(entry);
   group.row.appendChild(chip);
   toolChips.set(ev.toolCallId, entry);
+  run.graph.start({
+    id: ev.toolCallId,
+    name: ev.name,
+    params: ev.params,
+    label: shortAction(ev.name, ev.params),
+    url: typeof ev.params.url === "string" ? ev.params.url : undefined,
+  });
   scrollToEnd();
 }
 
@@ -4356,6 +4404,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   // 这一步做完、下一步还没开始：模型在想下一步。第一行只写「正在思考」并从这里开始数秒，做了几步在第二行（#263）。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
+    run.lastToolName = null;
     setRunTitle(run, "正在思考", false, "think");
     openThink(run, eventTime());
   }
@@ -4414,6 +4463,13 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     note.textContent = ` · ${ev.reason ?? "没做成"}`;
     label.append(note);
   }
+
+  run?.graph.end(ev.toolCallId, {
+    failed,
+    reason: ev.reason ?? (failed ? plainToolError(ev.resultText ?? "") : undefined),
+    result: pageTitle ?? (failed ? undefined : entry.chip.dataset.short),
+    label: entry.chip.dataset.short ?? undefined,
+  });
 
   const text = ev.resultText ?? "";
 
