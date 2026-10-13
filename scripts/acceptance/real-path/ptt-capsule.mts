@@ -172,7 +172,7 @@ try {
   };
   const rejected = await saveSpeechKey("eyJhbGciOiJSUzI1NiJ9.pay-as-you-go-shaped");
   evidence.payGoKeyRejected = rejected.status;
-  assert.ok(!rejected.stored && rejected.status.includes("只接受"), `R2: pay-as-you-go key rejected ${JSON.stringify(rejected)}`);
+  assert.ok(!rejected.stored && rejected.status.includes("订阅密钥"), `R2: pay-as-you-go key rejected ${JSON.stringify(rejected)}`);
   assert.ok((await saveSpeechKey(speechKey)).stored, "R2: subscription key saved");
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget });
   rp.cdp.onEvent("Network.webSocketCreated", (message: { sessionId?: string; params?: { url?: string } }) => { if (message.sessionId === inproc && message.params?.url) evidence.sockets.push(message.params.url); });
