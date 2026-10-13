@@ -1124,16 +1124,16 @@ return;}
    * 所以哪条路径收到 @ 页面，模型都读得到。读不到的页跳过；没有就返回空串。
    */
   private async mentionedPagesText(pages: PageContext[] | undefined, context: PageContext | undefined): Promise<string> {
-    const extras = (pages ?? []).filter((page) => page.tabId !== context?.tabId);
+    const extras = (pages ?? []).filter((page, i, all) => page.tabId !== context?.tabId && all.findIndex((p) => p.tabId === page.tabId) === i);
 
     if (!extras.length) return "";
-    const parts = await Promise.all(extras.map((page) => this.readUserPageForPrompt(page, "task")));
+    const parts = await Promise.all(extras.map((page) => this.readUserPageForPrompt(page, "task", "mentioned")));
     const text = parts.filter((part): part is string => !!part).join("\n\n");
 
     return text ? `\n\n[MENTIONED TABS — pages the user pulled in with @]\n${text}` : "";
   }
 
-  private async readUserPageForPrompt(context: PageContext | undefined, phase: "task" | "steer"): Promise<string | null> {
+  private async readUserPageForPrompt(context: PageContext | undefined, phase: "task" | "steer", role: PageRole = "current"): Promise<string | null> {
     const tabId = context?.tabId;
 
     if (!this.rpc || !context || typeof tabId !== "number") return null;
@@ -1162,7 +1162,7 @@ return;}
         ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
       ].filter(Boolean).join("\n\n");
 
-      const observation = freshPageObservationText(context, body, text ? (ax ? "both" : "text") : "tree");
+      const observation = freshPageObservationText(context, body, text ? (ax ? "both" : "text") : "tree", role);
       // 同一页没变时历史里已有一字不差的这一段：再带一份只会让历史变长，换成一行指回去（#271）。
       const repeat = this.session?.agent.state.messages.some(m => (m.role === "user" || m.role === "custom") && (typeof m.content === "string" ? m.content : m.content.map(p => p.type === "text" ? p.text : "").join("")).includes(observation)) ?? false;
       this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: body.length, mainText: text.length, tree: ax.length, repeat });
@@ -1900,7 +1900,8 @@ return {kind:'model'};
       // 纠正类插话常靠"这个页面/不是这个/刚才那个"指代：先补一次只读观察，
       // 否则模型会拿自己上一轮的前提继续推理（实测把 ChatGPT 页当成扩展管理页讲了四轮）。
       const [observation, mentioned] = await Promise.all([
-        steerNeedsPageObservation(text) ? this.readUserPageForPrompt(context, "steer") : Promise.resolve(null),
+        // 用户 @ 了当前页，就是要它读这一页：和「这页」类指代一样补读。
+        steerNeedsPageObservation(text) || options?.pages?.some((page) => page.tabId === context?.tabId) ? this.readUserPageForPrompt(context, "steer") : Promise.resolve(null),
         this.mentionedPagesText(options?.pages, context),
       ]);
 
@@ -2738,16 +2739,22 @@ export function extractImages(attachments?: Attachment[]): SessionImageContent[]
  * 页面内容走不可信边界包裹，凭据样式文本先脱敏（与 snapshot 工具回执同一处理）。
  */
 /** kind：发送前读的是正文加 AX 树（both）、只有正文（text），还是只有 AX 树（tree，重启续做时也是它）。 */
-export function freshPageObservationText(context: PageContext, snapshotText: string, kind: "both" | "text" | "tree" = "tree"): string {
+/** current：用户正在看的页；mentioned：用户用 @ 拉进来的另一页，不是用户正在看的，也不该切过去。 */
+export type PageRole = "current" | "mentioned";
+
+export function freshPageObservationText(context: PageContext, snapshotText: string, kind: "both" | "text" | "tree" = "tree", role: PageRole = "current"): string {
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
+  const which = role === "mentioned" ? "a page the user pulled in with @ (not the page they are looking at)" : "the page the user is looking at";
 
   return [
     "[FRESH PAGE OBSERVATION — read by the runtime just now, before this task started]",
     kind === "both"
-      ? `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at: its main text, then its accessibility tree with element refs. Answer questions about it from the main text in your first round; do not re-read it. Act on it with the refs in the tree.]`
+      ? `[This is tab ${context.tabId} "${title}" — ${context.url}, ${which}: its main text, then its accessibility tree with element refs. Answer questions about it from the main text in your first round; do not re-read it. Act on it with the refs in the tree.]`
       : kind === "text"
-      ? `[This is the main text of tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Answer questions about it from this text in your first round; do not re-read it. It has no element refs: to act on the page, snapshot it first or inside browser_run.]`
-      : `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
+      ? `[This is the main text of tab ${context.tabId} "${title}" — ${context.url}, ${which}. Answer questions about it from this text in your first round; do not re-read it. It has no element refs: to act on the page, snapshot it first or inside browser_run.]`
+      : role === "mentioned"
+      ? `[This is tab ${context.tabId} "${title}" — ${context.url}, ${which}. Use this observation; do not spend a round re-reading it.]`
+      : `[This is tab ${context.tabId} "${title}" — ${context.url}, ${which}. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
     wrapPageContent(redactCredentialText(snapshotText), { tabId: context.tabId, title: context.title, url: context.url }),
   ].join("\n");
 }

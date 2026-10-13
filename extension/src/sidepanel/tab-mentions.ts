@@ -23,7 +23,6 @@ export interface TabMentions {
   clear: () => void;
   /** 切回会话时放回这段会话没发出去的 @ 页面。 */
   restore: (items: MentionedTab[]) => void;
-  setStatus: (tabId: number, status: MentionStatus, reason?: string) => void;
   isOpen: () => boolean;
 }
 
@@ -282,17 +281,6 @@ export function mountTabMentions(opts: {
       }
       syncStrip();
       close();
-    },
-    setStatus: (tabId, status, reason) => {
-      const item = picked.find((p) => p.tabId === tabId);
-      if (!item) return;
-      item.status = status;
-      item.reason = reason;
-      const chip = stripEl.querySelector<HTMLElement>(`.tab-mention-chip[data-tab-id="${tabId}"]`);
-      if (chip) {
-        chip.dataset.status = status;
-        syncStrip();
-      }
     },
     isOpen,
   };
