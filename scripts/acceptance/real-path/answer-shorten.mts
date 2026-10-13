@@ -25,7 +25,8 @@ const TASK = "这三家哪家到手最便宜？算上运费，再看看值不值
 const SHORT = "这个网站是哪家公司运营的？";
 const FIRST = "拼多多百亿补贴到手最便宜，¥1529（含运费）。";
 
-const ANSWER = `${FIRST}天猫用券后 ¥1649，京东 ¥1699，两家都包邮。
+// 加粗跨过第一句的句末：拆开后，后半句不能跑进加粗或链接里。
+const ANSWER = `**${FIRST}天猫用券后 ¥1649**，京东 ¥1699，两家都包邮。
 <card title="到手价（含运费）">
 <option name="拼多多百亿补贴" value="¥1529" meta="第三方店铺 · 3 天到" why="三家里最便宜" pick />
 <option name="天猫 Apple 官方旗舰店" value="¥1649" meta="用券后 · 2 天到" why="官方店，售后走 Apple" />
@@ -106,6 +107,10 @@ try {
     const full = await seen();
     await rp.screenshot(panel, join(artifacts, "level-3-full.png"));
     assert.ok(full.grip && full.level === "3" && /^全文 · 约 \d+ 秒读完$/.test(full.label), `有把手，默认全文: ${JSON.stringify(full)}`);
+    const split = await rp.evaluate(panel, `(() => { const p = ${ANSWER_JS}[0].querySelector("p"); const rest = p.querySelector(".shorten-rest");
+      return { restParent: rest?.parentElement?.tagName, bold: [...p.querySelectorAll("strong")].map(s => s.textContent) }; })()`) as { restParent?: string; bold: string[] };
+    evidence.split = split;
+    assert.deepEqual(split, { restParent: "P", bold: [FIRST, "天猫用券后 ¥1649"] }, `拆第一句不改加粗范围: ${JSON.stringify(split)}`);
 
     await drag(-40);
     const points = await seen();

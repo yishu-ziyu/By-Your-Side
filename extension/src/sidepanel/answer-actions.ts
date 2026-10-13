@@ -53,14 +53,14 @@ export function tableTsv(answer: HTMLElement): string | null {
 }
 
 export async function copyAnswerTable(answer: HTMLElement): Promise<void> {
-  const tsv = tableTsv(answer);
+  const tsv = tableTsv(answerBody(answer));
   if (!tsv) throw new Error("没有表格");
   await writeClipboard(tsv);
 }
 
 export function listResultActions(answer: HTMLElement): ResultAction[] {
   const actions: ResultAction[] = [];
-  const table = tableTsv(answer);
+  const table = tableTsv(answerBody(answer));
   const pageBtn = answer.querySelector<HTMLButtonElement>(".answer-show-tab");
   if (table) actions.push({ id: "copy-table", label: "复制为表格", shortcut: "↵", primary: true, run: copyAnswerTable });
   if (pageBtn) {
@@ -159,6 +159,8 @@ export function attachAnswerActions(answer: HTMLElement): void {
   };
 
   actions.append(primary, more, sources, time, feedback);
+  // 收短后主动作跟着当前层：一句层里看不到的表格不再是“复制为表格”。
+  answer.addEventListener("answer-shorten", () => refreshPrimaryAction(answer));
   answer.append(actions, panel);
   document.querySelectorAll(".answer-latest").forEach(node => node.classList.remove("answer-latest"));
   answer.classList.add("answer-latest");

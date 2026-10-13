@@ -3372,9 +3372,10 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
               opacity var(--d-state) var(--e-enter), display var(--d-layout) allow-discrete;
 }
 .msg.assistant .shorten-off { display: none; height: 0; margin-block: 0; padding-block: 0; opacity: 0; overflow: hidden; }
+/* 只在用户换过层之后才从 0 展开：回答刚写完、历史回放时新插入的元素不闪。 */
 @starting-style {
-  .msg.assistant [data-shorten]:not(.shorten-off) { height: 0; opacity: 0; }
-  .msg.assistant .shorten-rest:not(.shorten-off) { opacity: 0; }
+  .msg.assistant[data-shorten-moved] [data-shorten]:not(.shorten-off) { height: 0; opacity: 0; }
+  .msg.assistant[data-shorten-moved] .shorten-rest:not(.shorten-off) { opacity: 0; }
 }
 .answer-actions.has-grip { position: sticky; bottom: 0; z-index: 1; background: linear-gradient(to bottom, transparent, var(--wallpaper) 35%); }
 .shorten-grip { display: flex; align-items: center; margin: 0 auto; padding: 6px 18px; border-radius: var(--r); cursor: ns-resize; touch-action: none; user-select: none; }
