@@ -56,7 +56,7 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
@@ -507,9 +507,13 @@ async function statusTabId(sid: string, explicit?: unknown): Promise<number | nu
   }
 }
 
-/** 接管、停止时光标与页面边缘光一起收起。 */
-async function hidePresence(keys: string[]): Promise<void> {
-  await Promise.all([hideCursorsForSessions(keys), ...keys.map(dimPage)]);
+/** 接管、停止时光标与页面边缘光一起收起。接管走退场动画，停任务仍立刻藏起。 */
+async function hidePresence(keys: string[], animated = false): Promise<void> {
+  await Promise.all([animated ? leaveCursorsForSessions(keys) : hideCursorsForSessions(keys), ...keys.map(dimPage)]);
+}
+
+function emitHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): void {
+  broadcast({ kind: "handoff_phase", phase } satisfies BgToPanel);
 }
 
 /** 读页面的工具：光标显示「正在读这个页面」。 */
@@ -653,6 +657,8 @@ function cancelTakeover(pending: Extract<PendingControl, {action:"takeover"}>) {
 
   handbackTab(pending.pageTabId);
  } else gate.cancelTakeover(pending.generation);
+ // 接管没成：侧栏收掉「你在操作」。
+ emitHandoffPhase("agent");
 }
 
 function nextControlRequestId(action: "takeover" | "handback"): string {
@@ -994,7 +1000,9 @@ function failPendingControl(requestId: string, reason: string): void {
     // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
     void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
   } else {
+    // 交还没成：页面仍归你，侧栏回到「你在操作」，不停在「助手先重读页面」。
     emitLocalStatus("user");
+    emitHandoffPhase("user");
     void showUserControlGuarded(pending.tabId);
   }
 
@@ -1016,6 +1024,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
     } else {
       emitLocalStatus("user");
+      emitHandoffPhase("user");
       void showUserControlGuarded(pending.tabId);
     }
 
@@ -1284,6 +1293,12 @@ return;}
         activityBySession.set(sid, msg.event.name === "await_message" ? "waiting_message" : "waiting_tool");
       } else if (msg.event.kind === "tool_end") {
         activityBySession.set(sid, "running");
+
+        if (msg.event.name === "click" || msg.event.name === "fill" || msg.event.name === "hover") {
+          const plate = takeLastActionTarget();
+
+          if (plate) msg.event = { ...msg.event, pageTarget: plate };
+        }
       }
 
       // 胶囊画不上（受限页等）时用侧栏文字降级；画不上不等于任务失败。
@@ -1561,7 +1576,9 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     return;
   }
 
-  await hidePresence(members.map((m) => key(m.sessionId)));
+  emitHandoffPhase("leaving");
+  await hidePresence(members.map((m) => key(m.sessionId)), true);
+  emitHandoffPhase("user");
 
   for (const m of members) void suppressCursorStatus(key(m.sessionId));
   const requestId = remoteRequestId ?? nextControlRequestId("takeover");
@@ -1633,10 +1650,14 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   const token = ++handbackCaptureSeq;
   const generation = gate.gen;
   handbackCapture = { token, generation, tabId: activeId ?? 0 };
+  emitHandoffPhase("rereading");
   const pages = [];
 
+  // 这次重读被取消（断线、中止）时，侧栏那一行按页面现在归谁改回去；之后又有一次交还开始过，就不动它。
+  const settleCancelled = () => { if (handbackCaptureSeq === token + 1 || handbackCapture?.token === token) emitHandoffPhase(teamHeld() ? "user" : "agent"); };
+
   for (const member of frozen) {
-    if (handbackCapture?.token !== token) return;
+    if (handbackCapture?.token !== token) { settleCancelled(); return; }
     const boundId = await getWorkingTabId(member.sessionId);
     let bound: { id: number; title: string; url: string } | null = null;
 
@@ -1683,10 +1704,19 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   }
 
   if (handbackCapture?.token !== token || handbackCapture.generation !== generation || !teamHeld()) {
+    settleCancelled();
+
     return;
   }
 
   handbackCapture = null;
+  await returnCursorsForSessions(frozen.map((member) => key(member.sessionId)));
+
+  for (const page of pages) {
+    if (page.ok && page.context?.tabId != null) void glowPage(key(page.sessionId), page.context.tabId);
+  }
+
+  emitHandoffPhase("agent");
   const leadPage = pages.find((p) => isLeadSession(p.sessionId) && p.ok);
   const members = pages.map(toTeamMemberHandback);
   const requestId = remoteRequestId ?? nextControlRequestId("handback");
@@ -1729,6 +1759,7 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
 
   if(runId)abortedRuns.add(runId);
   cancelHandbackCapture();
+  emitHandoffPhase("agent");
 
   if (pendingControl) {
     const pending = clearPendingControl(pendingControl.requestId);
@@ -2050,6 +2081,30 @@ function attachPanel(port: chrome.runtime.Port) {
       case "retry":
         uplink.retry();
         break;
+      case "inspect_step": {
+        void (async () => {
+          if (!msg.target) {
+            const tabId = msg.tabId ?? await getWorkingTabId() ?? undefined;
+
+            if (tabId != null) await clearStepInspect(tabId);
+            broadcast({ kind: "inspect_step_result", ok: true } satisfies BgToPanel);
+
+            return;
+          }
+
+          const tabId = msg.tabId ?? await getWorkingTabId() ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id;
+
+          if (tabId == null) {
+            broadcast({ kind: "inspect_step_result", ok: false } satisfies BgToPanel);
+
+            return;
+          }
+
+          const ok = await inspectStepTarget(tabId, msg.target, msg.caption ?? "", msg.url);
+          broadcast({ kind: "inspect_step_result", ok } satisfies BgToPanel);
+        })();
+        break;
+      }
     }
   }
 

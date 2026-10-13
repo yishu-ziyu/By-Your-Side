@@ -7,7 +7,6 @@ import {
   FOLD_HOLD_MS,
   FOLD_MS,
   FORK_MS,
-  FORK_STAGGER_MS,
   MAX_LANES,
   MAX_TABS,
   MERGE_MS,
@@ -125,7 +124,7 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
     row.dataset.state = tool.failed ? "dead" : "running";
     row.style.setProperty("--i", String(index));
     row.style.setProperty("--lanes", String(Math.min(group.tools.length, group.kind === "b3" ? MAX_TABS : MAX_LANES)));
-    row.style.animationDelay = reducedMotion() ? "0ms" : `${index * FORK_STAGGER_MS}ms`;
+    if (reducedMotion()) row.style.animationDelay = "0s";
     if (!shown) {
       row.className = "run-graph-more";
       row.textContent = `+${extra}`;
