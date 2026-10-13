@@ -86,6 +86,7 @@ export class TaskResultBook {
 
       if (existing.status === "pending" && existing.evidence) continue; // A running call owns its binding until its receipt.
       Object.assign(existing, intent, { status: "pending", evidence: null });
+      delete existing.reason;
     }
   }
 
@@ -98,6 +99,8 @@ export class TaskResultBook {
       item.status = "pending";
       item.target = null;
       item.evidence = null;
+      // 换了做法重做：上一次失败的原因不再属于它。
+      delete item.reason;
     }
   }
 
@@ -141,6 +144,7 @@ export class TaskResultBook {
     if (!item) return;
 
     item.status = "pending";
+    delete item.reason;
     const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
 
     if (input.effectful && !isWriteTool(input.name)) evidence.effectful = true;

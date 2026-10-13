@@ -9,7 +9,8 @@
  *   三 只重启扩展内 agent（关掉 offscreen 文档）：重启后那行仍写「目标现在不可用」（检查点恢复带着原因）。
  *   四 把这条会话的检查点改成 10-04 以前按计划列目标的旧记录（一个还没核验的目标），再重启：受阻的步骤在投影里不成行，
  *      那行仍写「没做成：目标现在不可用」，不写「还没确认完成：…」。现行产品已不会新建这种计划，只有旧会话恢复时会遇到。
- * 失败方式：恢复时不抄原因，三失败；原因只从投影出来的行里取，四失败。
+ *   五 再问一句：发给模型的任务快照里没有侧栏用的人话原因（它可能取自网页原文）。
+ * 失败方式：恢复时不抄原因，三失败；原因只从投影出来的行里取，四失败；快照不剥掉原因，五失败。
  * 产物：OUT/*.png、OUT/error.mp4、OUT/notdone.mp4、OUT/result.json。
  */
 import assert from "node:assert/strict";
@@ -26,13 +27,18 @@ await mkdir(OUT, { recursive: true });
 const ASK_NET = "出错恢复演示：总结这页";
 const ASK_DONE = "出错恢复演示：点提交";
 const REASON = "目标现在不可用";
+const ASK_FOLLOW = "出错恢复演示：刚才哪一步没成";
+/** 模型收到的全部文字：侧栏用的人话原因不能出现在里面（它可能取自网页原文）。 */
+const modelTexts: string[] = [];
 const target = { target: "" };
 const model = await startScriptedModel([
   { match: ASK_NET, steps: [{ text: "这页讲的是三条退货规则：七天无理由、拆封不退、运费买家出。", chunkDelayMs: 120 }] },
   { match: ASK_DONE, steps: [{ tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: target } }, { text: "已经点了「提交」，表单提交好了。" }] },
+  { match: ASK_FOLLOW, steps: [{ text: "是点「提交」那一步。" }] },
 ], undefined, (payload) => {
   for (const m of payload.messages ?? []) {
-    const text = typeof m.content === "string" ? m.content : "";
+    const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((part) => part.text ?? "").join("") : "";
+    modelTexts.push(text);
     const ref = /\[ref=(\d+)\] button "提交"/.exec(text)?.[1];
     if (m.role === "tool" && ref) target.target = `@${ref}`;
   }
@@ -164,6 +170,13 @@ try {
   const legacy = await restartAgent("9-legacy-plan");
   evidence.legacyPlan = legacy;
   assert.equal(legacy, `没做成：${REASON}`, "四：按计划列目标的旧检查点恢复后仍写人话原因");
+
+  // 下一句话带着任务快照发给模型：快照里不能有侧栏用的人话原因。
+  await send(ASK_FOLLOW);
+  await until(async () => /是点「提交」那一步/.test(String(await rp.evaluate(panel, 'document.querySelector("#messages").textContent'))) || undefined, 60_000, "follow-up answer");
+  const leaked = modelTexts.filter((text) => text.includes(REASON)).map((text) => text.slice(Math.max(0, text.indexOf(REASON) - 80), text.indexOf(REASON) + 40));
+  evidence.modelLeak = leaked;
+  assert.equal(leaked.length, 0, `五：模型收到的内容里没有侧栏用的原因：${JSON.stringify(leaked)}`);
 } catch (e) {
   failure = String(e);
   console.error(e);

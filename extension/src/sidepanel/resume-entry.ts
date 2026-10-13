@@ -146,8 +146,8 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 中断或停下的任务不是「没做成」，只是还没做到。
   const verb = view.state === "interrupted" || view.state === "aborted" ? "还没做" : "没做成";
   const phrase = (head: string, items: string[]) => `${head}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
-  // 失败的人话原因（「目标现在不可用」，#304）比只说步骤名更有用：有它就顶替行内的步骤名。
-  const notDone = (items: string[], reason?: string) => phrase(verb, reason ? [reason, ...items.slice(1)] : items);
+  // 失败的人话原因（「目标现在不可用」，#304）比只说步骤名更有用：说「没做成」时有它就顶替行内的步骤名；「还没做」时仍说是哪件事。
+  const notDone = (items: string[], reason?: string) => phrase(verb, reason && verb === "没做成" ? [reason, ...items.slice(1)] : items);
 
   const told = checkedRemaining(view) ?? (declared.length ? declared : view.latestDelivery?.unfinished?.length ? view.latestDelivery.unfinished : null);
 
