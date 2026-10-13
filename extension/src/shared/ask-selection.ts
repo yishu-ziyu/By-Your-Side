@@ -17,7 +17,7 @@ export function isSelectionBarOff(stored: unknown): stored is false {
   return stored === false;
 }
 
-export const EXPLAIN_PROMPT = "解释这段选中的文字。用读者能懂的话说它在主张什么。不要操作页面。";
+export const EXPLAIN_PROMPT = "解释这段选中的文字。第一句用一句话写出结论，不要复述问题，不要写「解释如下」。再用读者能懂的话说它在主张什么。不要操作页面。";
 
 export interface PendingAsk {
   element?: import("../../../shared/protocol.js").PageElementSource;
