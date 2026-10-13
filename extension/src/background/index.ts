@@ -657,6 +657,8 @@ function cancelTakeover(pending: Extract<PendingControl, {action:"takeover"}>) {
 
   handbackTab(pending.pageTabId);
  } else gate.cancelTakeover(pending.generation);
+ // 接管没成：侧栏收掉「你在操作」。
+ emitHandoffPhase("agent");
 }
 
 function nextControlRequestId(action: "takeover" | "handback"): string {
@@ -998,7 +1000,9 @@ function failPendingControl(requestId: string, reason: string): void {
     // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
     void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
   } else {
+    // 交还没成：页面仍归你，侧栏回到「你在操作」，不停在「助手先重读页面」。
     emitLocalStatus("user");
+    emitHandoffPhase("user");
     void showUserControlGuarded(pending.tabId);
   }
 
@@ -1020,6 +1024,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
     } else {
       emitLocalStatus("user");
+      emitHandoffPhase("user");
       void showUserControlGuarded(pending.tabId);
     }
 
@@ -1648,8 +1653,11 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   emitHandoffPhase("rereading");
   const pages = [];
 
+  // 这次重读被取消（断线、中止）时，侧栏那一行按页面现在归谁改回去；之后又有一次交还开始过，就不动它。
+  const settleCancelled = () => { if (handbackCaptureSeq === token + 1 || handbackCapture?.token === token) emitHandoffPhase(teamHeld() ? "user" : "agent"); };
+
   for (const member of frozen) {
-    if (handbackCapture?.token !== token) return;
+    if (handbackCapture?.token !== token) { settleCancelled(); return; }
     const boundId = await getWorkingTabId(member.sessionId);
     let bound: { id: number; title: string; url: string } | null = null;
 
@@ -1696,6 +1704,8 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   }
 
   if (handbackCapture?.token !== token || handbackCapture.generation !== generation || !teamHeld()) {
+    settleCancelled();
+
     return;
   }
 
@@ -1749,6 +1759,7 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
 
   if(runId)abortedRuns.add(runId);
   cancelHandbackCapture();
+  emitHandoffPhase("agent");
 
   if (pendingControl) {
     const pending = clearPendingControl(pendingControl.requestId);

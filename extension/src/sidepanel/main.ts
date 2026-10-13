@@ -2581,6 +2581,8 @@ function applyHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): v
   banner.dataset.phase = phase;
   banner.textContent = phase === "user" ? "你在操作 · 助手在旁边等" : phase === "rereading" ? "助手先重读页面" : "";
   document.getElementById("composer")?.classList.toggle("you-operating", phase === "user");
+  // 这一行写「你在操作」时，任务条不再说一遍「已暂停 · 页面归你」。
+  taskBar.setHandoffShown(phase === "user");
 }
 
 /** 工具名 → 图标；未知名称回退扳手。 */
@@ -3646,7 +3648,8 @@ function renderTeamCard(): void {
   if (!el) return;
   const view = teamView;
 
-  if (!shouldShowTeamCard(view?.phase)) {
+  // 只有一个助手时，「1 个 Agent 已暂停」「全队已恢复」只是在重复任务条和过程行；多个助手并行时才需要这张卡。
+  if (!shouldShowTeamCard(view?.phase) || (view?.members.length ?? 0) < 2) {
     el.hidden = true;
     el.replaceChildren();
 
@@ -3796,7 +3799,8 @@ function addChainStep(label: string): void {
 }
 
 const RUN_ORB_MARKS = {
-  user: { icon: Hand, label: "已暂停 · 页面归你" },
+  // 页面归谁由输入框上方那一行说；过程行只记这一轮停着。
+  user: { icon: Hand, label: "已暂停" },
   completed: { icon: Check, label: "本轮结束" },
   failed: { icon: CircleAlert, label: "出错" },
   stopped: { icon: Square, label: "已中止" },

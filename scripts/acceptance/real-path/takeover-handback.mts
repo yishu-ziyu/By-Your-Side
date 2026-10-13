@@ -57,6 +57,9 @@ try {
   await rp.cdp.send('Page.bringToFront', {}, work);
 
   const count = async () => Number(await rp.evaluate(work, 'window.n||0'));
+  const dock = async () => String(await rp.evaluate(panel, '(document.querySelector(".composer-dock-wrap").innerText||"").replace(/\\s+/g," ")'));
+  /** 接管后说「页面归谁」的地方：任务条、对话里的接续提示、助手卡、过程行、输入框上方那一行；只该剩最后一个。 */
+  const ownerLines = async () => rp.evaluate(panel, '["#task-bar-root","#resume-entry-root","#team-card","#messages .run-title","#handoff-banner"].filter(s=>{const e=[...document.querySelectorAll(s)].at(-1);return !!e&&e.offsetParent!==null&&/归你|你在操作|Agent 已暂停/.test(e.innerText)})');
   const taskBar = async () => String(await rp.evaluate(panel, '(document.querySelector("#task-bar-root").innerText||"").replace(/\\s+/g," ")'));
   const sideButton = () => rp.evaluate(panel, '(()=>{const b=document.querySelector("#takeover-btn");return b.hidden?null:b.textContent})()');
   const mouseClick = async (at: { x: number; y: number }) => { for (const type of ['mousePressed', 'mouseReleased']) await rp.cdp.send('Input.dispatchMouseEvent', { type, ...at, button: 'left', clickCount: 1 }, work); };
@@ -89,7 +92,7 @@ try {
   const takeOver = async () => {
     const at = Date.now();
     await rp.click(panel, '#takeover-btn');
-    await until(async () => (await taskBar()).includes('已暂停 · 页面归你'), 10000, '已暂停');
+    await until(async () => (await dock()).includes('你在操作 · 助手在旁边等'), 10000, '你在操作');
 
     return Date.now() - at;
   };
@@ -99,7 +102,8 @@ try {
   await rp.screenshot(panel, join(out, 'running-panel.png'));
   check('运行中侧栏按钮是「接管」', (await sideButton()) === '接管', { button: await sideButton(), bar: await taskBar(), n: await count(), messages: String(await rp.evaluate(panel, 'document.querySelector("#messages").innerText')).slice(0, 300) });
   const pausedMs = await takeOver();
-  check('点「接管」1 秒内显示已暂停', pausedMs <= 1000, pausedMs);
+  check('点「接管」1 秒内显示你在操作', pausedMs <= 1000, pausedMs);
+  check('页面归你只在输入框上方说一次', JSON.stringify(await ownerLines()) === '["#handoff-banner"]', await ownerLines());
   check('暂停后侧栏同位置变成「交还」', (await sideButton()) === '交还', await sideButton());
   const bar = await pageBar();
   check('页面条显示「现在归你」和「交还」', !!bar && bar.text.includes('现在归你') && bar.button === '交还', bar);
