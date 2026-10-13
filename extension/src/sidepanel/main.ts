@@ -430,15 +430,7 @@ const tabMentions = mountTabMentions({
 
 let pendingContinueDraft: string | null = null;
 
-const taskPlan = mountTaskPlan({
-  root: document.getElementById("task-bar-root")!,
-  inputEl,
-  onStart: (text) => {
-    inputEl.value = text;
-    inputEl.dispatchEvent(new Event("input"));
-    sendInput(undefined, undefined, { skipPlan: true });
-  },
-});
+const taskPlan = mountTaskPlan({ root: document.getElementById("task-bar-root")! });
 
 const answerCommand = mountAnswerCommand({
   inputEl,
@@ -5143,6 +5135,8 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
 
         // 插话没被采纳：下一段回答不是按它写的，不挂「已改方向」。
         if (ev.receipt.action === "steer" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed")) steerRibbon.reset();
+        // 新任务没被接下（例如还没连模型）：这一轮不会开始，计划行也不该留着。
+        if (ev.receipt.action === "start" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed") && ev.receipt.conversationId === selectedConversationId) taskPlan.endRun();
 
         if (ev.receipt.conversationId === selectedConversationId) {
           if (ev.receipt.action === "abort") {
@@ -6243,6 +6237,7 @@ function restoreLostSend(): void {
 
   if (!lost || lost.postedOn === "queued" || lost.postedOn === port || lost.conversationId !== selectedConversationId) return;
   unconfirmedSend = null;
+  taskPlan.endRun();
 
   // 自动重发那次没送到：之后用户自己再发同一句，要画新气泡，不能接回上面的旧气泡。
   if (resending?.conversationId === lost.conversationId && resending.text === lost.text) resending = null;
@@ -6267,7 +6262,7 @@ function restoreLostSend(): void {
  * quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。
  * quickPage：quick 这句话问的是哪一页（连好模型后重发时用原来那页）。返回是否交了出去。
  */
-function sendInput(quick?: string, quickPage?: PageContext, opts?: { skipPlan?: boolean }): boolean {
+function sendInput(quick?: string, quickPage?: PageContext): boolean {
   if (!conversationReady) return false;
 
   // 点「新会话」后、新会话建好前：选中的还是旧会话，现在发会落进旧会话。等建好再发。
@@ -6299,18 +6294,10 @@ function sendInput(quick?: string, quickPage?: PageContext, opts?: { skipPlan?: 
     : undefined);
 
   const mentioned = quick ? [] : tabMentions.pages();
-  if (!quick && !opts?.skipPlan && !running && !held) {
-    if (taskPlan.visible()) {
-      taskPlan.confirm();
-      return true;
-    }
-    const currentUrl = pendingAsk?.url || activeTabInfo?.url || "";
-    const currentTitle = pendingAsk?.title || activeTabInfo?.title || "";
-    if (taskPlan.shouldAsk(text, mentioned, currentUrl)) {
-      taskPlan.show(text, tabMentions.items(), currentUrl, currentTitle);
-      return true;
-    }
-  }
+  const planUrl = pendingAsk?.url || activeTabInfo?.url || "";
+  const planTitle = pendingAsk?.title || activeTabInfo?.title || "";
+  const planPages = tabMentions.items();
+  const announcePlan = !quick && !running && !held && taskPlan.shouldAsk(text, mentioned, planUrl);
 
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
@@ -6336,6 +6323,8 @@ function sendInput(quick?: string, quickPage?: PageContext, opts?: { skipPlan?: 
   if (!sent) { noticeSendFailed();
 
  return false; }
+
+  if (announcePlan) taskPlan.announce(text, planPages, planUrl, planTitle);
 
   marginalia.showConversation();
   const citationPage = context ?? activeTabInfo;
@@ -6407,7 +6396,6 @@ inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBar
 window.addEventListener("pagehide", saveDraft);
 
 inputEl.addEventListener("keydown", (e) => {
-  if (taskPlan.handleKeydown(e)) return;
   if (tabMentions.handleKeydown(e)) return;
   if (slashSkills.handleKeydown(e)) return;
   if (answerCommand.handleKeydown(e)) return;
