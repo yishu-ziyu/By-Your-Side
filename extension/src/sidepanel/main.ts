@@ -4026,7 +4026,8 @@ function finishRun(): void {
   // 按主动卡发起的一轮（YIS-106）：步骤就是卡上那件事的结果，即使只读也留着。
   const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
 
-  if (!hasSteps || !keepProcess) {
+  // 核对判继续后续做的这一轮：即使没有步骤也留着，「核对发现：…」只写在这一行上，拿掉用户就看不到为什么又动起来。
+  if (!run.checkNote && (!hasSteps || !keepProcess)) {
     run.root.remove();
     run.graph.el.remove();
 

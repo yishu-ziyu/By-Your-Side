@@ -36,7 +36,8 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   const config = await configureViaSettings(rp, panel, { providerId: "custom", modelId: "fixture", credential: { type: "api_key", key: "local-fixture" } }, { baseUrl: model.baseUrl });
   await rp.cdp.send("Target.closeTarget", { targetId: config.settingsTargetId });
-  const read = () => rp.evaluate(panel, '({labels:[...document.querySelectorAll("#starter-actions button")].map(b=>b.textContent),draft:document.querySelector("#input").value,users:document.querySelectorAll(".msg.user").length})');
+  // 按钮里还有「只读 / 会改页面」标签和悬停说明（#350），这里只比建议名。
+  const read = () => rp.evaluate(panel, '({labels:[...document.querySelectorAll("#starter-actions button")].map(b=>b.querySelector(".starter-chip-label")?.textContent??b.textContent),draft:document.querySelector("#input").value,users:document.querySelectorAll(".msg.user").length})');
   const requestsBefore = model.requests.length;
   for (const [i, c] of fixtures.entries()) {
     await rp.cdp.send("Page.navigate", { url: `${origin}/${i}` }, work);
