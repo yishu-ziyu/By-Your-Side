@@ -2348,7 +2348,7 @@ interface RunHost {
   /** 这一轮的回答（finding）：回答出现且这一轮已收尾后，开场话、读回、重复回答的旁白收进过程（foldAnsweredRun）。 */
   answer: { text: string; el: HTMLElement; hostNote: boolean } | null;
   /** 目标核对到哪了：checking 核对中；continued 判继续、由下一块过程接着做；unavailable 没有结论。 */
-  check: "checking" | "done" | "not_done" | "continued" | "unavailable" | null;
+  check: "checking" | "done" | "not_done" | "needs_user" | "continued" | "unavailable" | null;
   /** 收尾时定下的回执材料，收起回答后的过程行据此重画（做了几步 · 耗时 · 核对状态）。 */
   receipt: { head: string; total: string | null; failed: number; ended: "completed" | "failed" | "stopped" } | null;
 }
@@ -3818,8 +3818,8 @@ function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | nul
 
   if (run.check === "not_done") return { text: notDone, tone: "warn" };
 
-  // 判继续：下一块过程接着做，这一行不下结论。没核对或核对没结论时，宿主补过一句就照它说没做成。
-  if (run.check !== "continued" && run.answer?.hostNote) return { text: notDone, tone: "warn" };
+  // 判继续：下一块过程接着做；等用户回答：回答里已经在问。这两种这一行都不下结论。没核对或核对没结论时，宿主补过一句就照它说没做成。
+  if (run.check !== "continued" && run.check !== "needs_user" && run.answer?.hostNote) return { text: notDone, tone: "warn" };
 
   return null;
 }
@@ -4567,6 +4567,13 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       citationRequestPending = false;
 
       if (!runId || runId === conversations.get(selectedConversationId)?.runId) noteRunStarted(runId);
+
+      // 上一轮还在「核对中…」就开始了新一轮（含不动手的问答）：那次核对作废、不会再有结论，过程行不再写核对中。
+      if (lastRun && lastRun !== currentRun && lastRun.check === "checking" && lastRun.root.dataset.runId !== runId) {
+        lastRun.check = "unavailable";
+
+        if (lastRun.answer && lastRun.root.isConnected) paintAnsweredTitle(lastRun);
+      }
       foldLeadAnswer();
       leadDeliveryMode = (ev as { deliveryMode?: "explicit" }).deliveryMode ?? null;
       leadToolUsed = false;
@@ -4595,7 +4602,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       const checked = currentRun ?? lastRun;
 
       if (checked) {
-        checked.check = ev.status === "checking" ? "checking" : ev.status === "done" ? "done" : ev.status === "continue" ? "continued" : ev.status === "unavailable" ? "unavailable" : "not_done";
+        checked.check = ev.status === "checking" ? "checking" : ev.status === "done" ? "done" : ev.status === "continue" ? "continued" : ev.status === "needs_user" ? "needs_user" : ev.status === "unavailable" ? "unavailable" : "not_done";
 
         if (checked.answer && checked !== currentRun && checked.root.classList.contains("done")) paintAnsweredTitle(checked);
       }
@@ -4794,7 +4801,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
     existing!.dataset.deliveryStatus = delivery.status;
     voiceUI.deliver?.(delivery);
 
-    if (!staleForStrip) noteRunAnswer(delivery, answer);
+    noteRunAnswer(delivery, answer);
     scrollToEnd();
     scheduleDeliveryVisible(existing!, receivedAt);
 
@@ -4814,7 +4821,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
   deliveredBubbles.set(delivery.id, bubble);
   placeStartAcknowledgement(bubble, delivery.kind);
 
-  if (!staleForStrip) noteRunAnswer(delivery, bubble);
+  noteRunAnswer(delivery, bubble);
   scrollToEnd();
   scheduleDeliveryVisible(bubble, receivedAt);
 }

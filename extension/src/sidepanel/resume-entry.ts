@@ -259,7 +259,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
     || ["paused", "interrupted", "error"].includes(view.state)
     || (view.state === "aborted" && (remaining.length > 0 || !!view.waiting))
     // 模型在回答里自己交代的没做完（declaredUnfinished）不另出卡：回答已经说了，「继续」也不提供（#103）。
-    || (view.state === "idle" && ((remaining.length > 0 && !coveredByCheck) || waitingShows));
+    || (view.state === "idle" && (remaining.some((r) => !(coveredByCheck && (r.status === "unknown" || r.status === "blocked"))) || waitingShows));
 
   return {
     visible,

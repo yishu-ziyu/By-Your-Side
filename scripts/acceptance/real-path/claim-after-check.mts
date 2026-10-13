@@ -270,8 +270,8 @@ try {
     };
   })()`) as { noteEvidence: number; fix: number; secondProcess: number; secondEvidence: number; finalAnswer: number; outline: string[] };
   evidence.j = orderA;
-  assert.ok(orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.fix && orderA.fix < orderA.secondProcess && orderA.secondProcess <= orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
-    `j: order 「Note」 evidence < 核对发现 < second process < second evidence < final answer: ${JSON.stringify(orderA)}`);
+  assert.ok(orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.fix && orderA.fix < orderA.secondProcess && orderA.secondProcess === orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
+    `j: order 「Note」 evidence < 核对发现 < second process (holding the second evidence) < final answer: ${JSON.stringify(orderA)}`);
 
   // b) 网页在输入时改成大写：读回的是网页里的值。
   const b = await runCase("b", s => s.answers.some(t => t.includes(CASES.b.claim)), { final: s => s.answers.some(t => t.includes(CASES.b.claim)) });

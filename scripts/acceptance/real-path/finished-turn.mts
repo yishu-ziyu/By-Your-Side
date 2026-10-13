@@ -6,6 +6,8 @@
  *   A) 核对扣 2.5 秒后判做完：回答里没有「还有没做完」「没全部完成」；没有「继续原任务」；开场话和读回在过程块里；
  *      过程行核对期间写「核对中…」，之后写「已核对页面」；过程里不再重复回答原文。
  *   B) 同样的路径，核对判没做到（blocked）：出现「继续原任务」，过程行写「没做成」。
+ *   C) 核对还没出结论，用户又问了一句：那次核对作废，上一轮的过程行不再一直写「核对中…」。
+ *   D) 重新打开侧栏：较早的一轮也收起（开场话、读回在过程里）。
  * 判据只看侧栏里用户看得到的内容。
  * 失败方式：去掉「核对判做完后不出卡」，A 的「继续原任务」仍在（反例结果写在 PR 描述里）。
  */
@@ -35,7 +37,10 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 const CASES = {
   a: { ask: "案例甲：在草稿框里写 hello，再点「显示答案」。", opening: "我先填草稿，再点显示答案，不碰别的。甲", final: "已写好草稿并显示了答案。【甲完成】" },
   b: { ask: "案例乙：在草稿框里写 hello，再点「显示答案」。", opening: "我先填草稿，再点显示答案，不碰别的。乙", final: "已写好草稿并显示了答案。【乙完成】" },
+  c: { ask: "案例丙：在草稿框里写 hello，再点「显示答案」。", opening: "我先填草稿，再点显示答案，不碰别的。丙", final: "已写好草稿并显示了答案。【丙完成】" },
 };
+
+const FOLLOW_UP = { ask: "案例丁：刚才那个答案是多少？", final: "答案是 42。【丁】" };
 
 /** 一步没做成（目标不存在）→ 填写（有读回）→ 点按钮成功 → 说做完了。 */
 const steps = (c: { opening: string; final: string }): Step[] => [
@@ -50,6 +55,8 @@ const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished th
 const model = await startScriptedModel([
   { match: CASES.a.ask, steps: steps(CASES.a) },
   { match: CASES.b.ask, steps: steps(CASES.b) },
+  { match: CASES.c.ask, steps: steps(CASES.c) },
+  { match: FOLLOW_UP.ask, steps: [{ text: FOLLOW_UP.final }] },
   { match: "VERDICT-DONE", steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: "VERDICT-BLOCKED", steps: [{ text: JSON.stringify({ status: "blocked", cause: "unresponsive", remaining: "点显示答案" }) }] },
 ]);
@@ -175,6 +182,38 @@ try {
   evidence.b = b;
   assert.ok(b.end.resumeVisible, `b: 继续原任务 shows when the goal check says not done: ${JSON.stringify(b.end)}`);
   assert.match(b.end.summary ?? "", /没做成/, `b: summary says a step did not work: ${JSON.stringify(b.end.summary)}`);
+
+  // C) 核对扣住时用户追问：那次核对作废。
+  await settled();
+  await rp.cdp.send("Page.navigate", { url: origin }, work);
+  await sleep(500);
+  verdict = { holdMs: 8_000, probe: "VERDICT-DONE" };
+  const beforeC = checks.length;
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, CASES.c.ask);
+  await rp.pressEnter(panel);
+  const readC = async () => await rp.evaluate(panel, TURN_JS(CASES.c.ask, CASES.c.final)) as Turn;
+  const cChecking = await until(async () => { const t = await readC(); return t.answer && t.summary?.includes("核对中…") ? t : undefined; }, 60_000, "c: answer shown while checking", 100);
+  verdict = { holdMs: 0, probe: "VERDICT-DONE" };
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 30_000, "c: can send while checking", 100);
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, FOLLOW_UP.ask);
+  await rp.pressEnter(panel);
+  await until(async () => (await rp.evaluate(panel, `document.querySelector("#messages")?.innerText.includes(${JSON.stringify(FOLLOW_UP.final)})`)) || undefined, 30_000, "c: follow-up answered", 100);
+  await until(async () => checks.length > beforeC || undefined, 30_000, "c: held goal check released", 100);
+  await sleep(1_500);
+  const cEnd = await readC();
+  await rp.screenshot(panel, join(artifacts, "c-after-follow-up.png"));
+  evidence.c = { whileChecking: cChecking.summary, end: cEnd.summary };
+  assert.ok(!(cEnd.summary ?? "").includes("核对中…"), `c: the earlier turn no longer says 核对中… after a follow-up: ${JSON.stringify(cEnd.summary)}`);
+
+  // D) 重新打开侧栏（从记录恢复）：较早的一轮也是收起后的样子，不只最后一轮。
+  await rp.evaluate(panel, "location.reload()").catch(() => {});
+  const restored = await until(async () => { const t = await rp.evaluate(panel, TURN_JS(CASES.a.ask, CASES.a.final)).catch(() => null) as Turn | null; return t?.answer ? t : undefined; }, 30_000, "d: history restored", 200);
+  await sleep(1_000);
+  const aRestored = await rp.evaluate(panel, TURN_JS(CASES.a.ask, CASES.a.final)) as Turn;
+  evidence.d = { ...aRestored, panelText: undefined, firstSeen: restored.summary };
+  assert.ok(aRestored.openingInProcess && !aRestored.openingOutsideVisible && aRestored.evidenceInProcess && !aRestored.evidenceOutside, `d: the first turn is folded after reopening: ${JSON.stringify(evidence.d)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
