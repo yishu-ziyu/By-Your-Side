@@ -36,7 +36,8 @@ const site = createServer((_req, res) => {
 <label>手机号 <input id="phone"></label><br>
 <label>人数 <select id="size"><option>1 人</option><option selected>2 人</option><option>3 人</option><option>4 人</option></select></label><br>
 <label><input id="kid" type="checkbox"> 儿童座椅</label><br>
-<label><input id="seat-in" type="radio" name="seat" checked> 室内</label> <label><input id="seat-out" type="radio" name="seat"> 室外</label><br>
+<fieldset><legend>座位</legend><label><input id="seat-in" type="radio" name="seat" checked> 室内</label> <label><input id="seat-out" type="radio" name="seat"> 室外</label> <label><input id="seat-room" type="radio" name="seat"> 包间</label></fieldset>
+<button id="add-row" onclick="event.preventDefault()">加一行</button><br>
 <div id="note" contenteditable="true" aria-label="备注">原备注</div>
 <button id="submit" type="submit">提交预约</button>
 <p id="sent" hidden>已提交</p>
@@ -83,6 +84,8 @@ const model = await startScriptedModel([
     byRef.size,
     byRef.kid,
     tool("click", { target: "#seat-out" }),
+    tool("click", { target: "#seat-room" }),
+    tool("click", { target: "#add-row" }),
     tool("fill", { target: "#note", value: "新备注" }),
     { text: DONE.form },
   ] },
@@ -127,7 +130,7 @@ type View = { state: string; count?: number; fields?: string[]; restored?: strin
 
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
-  const work = await rp.attach(blank.targetId);
+  let work = await rp.attach(blank.targetId);
   await rp.cdp.send("Page.enable", {}, work);
   const panel = await rp.attach(await rp.openSidePanel());
 
@@ -167,7 +170,7 @@ try {
   // 1) 填表、用户改一栏、还原。
   await run("form");
   // 每一步工具从模型回完到下一次请求的间隔：主要是扩展执行这个工具的时间，用来和 main 比多出来的探查耗时。
-  const labels = ["snapshot", "fill name (css)", "fill city (css)", "fill phone (@N)", "select size (@N)", "click kid (@N)", "click seat (css)", "fill note (css)"];
+  const labels = ["snapshot", "fill name (css)", "fill city (css)", "fill phone (@N)", "select size (@N)", "click kid (@N)", "click seat out (css)", "click seat room (css)", "click add row (css)", "fill note (css)"];
   // 工具本身的耗时：从脚本模型把带第 i 个工具调用的回复发完（连接关闭），到下一次请求带着这个工具的结果到达。
   const arrivalAt = (tools: number) => formArrivals.find(a => a.tools === tools)?.at;
   const replyClosedAt = (step: number) => model.requests.find(r => r.rule === ASK.form && r.step === step)?.closedAt;
@@ -190,13 +193,23 @@ try {
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "End", code: "End", windowsVirtualKeyCode: 35 }, work);
   await rp.typeText(work, "先生");
 
+  // 还原不接调试器（接上页面顶部会出「正在调试」提示条）：先断开用例自己的连接，等扩展空闲断开，
+  // 还原前后浏览器都报这一页没有调试客户端。
+  await rp.detach(work);
+  const debuggerOn = async () => Boolean((await rp.cdp.send("Target.getTargets", {}) as { targetInfos: Array<{ targetId: string; attached: boolean }> }).targetInfos.find(t => t.targetId === blank.targetId)?.attached);
+  await until(async () => !(await debuggerOn()) || undefined, 30_000, "extension debugger detached after the turn", 200);
   await rp.evaluate(panel, "window.__undo.request()");
   const restored = await waitView("restored", "restored view");
   evidence.restored = restored;
-  await sleep(600);
+  const attachedDuringRestore: boolean[] = [];
+
+  for (let i = 0; i < 6; i++) { attachedDuringRestore.push(await debuggerOn()); await sleep(100); }
+  evidence.attachedDuringRestore = attachedDuringRestore;
+  assert.ok(attachedDuringRestore.every(on => !on), `1: restoring does not attach the debugger ${JSON.stringify(attachedDuringRestore)}`);
+  work = await rp.attach(blank.targetId);
   const page = await field(`JSON.stringify({ name: document.getElementById("name").value, city: document.getElementById("city").value, phone: document.getElementById("phone").value,
     size: document.getElementById("size").value, kid: document.getElementById("kid").checked, seatIn: document.getElementById("seat-in").checked,
-    seatOut: document.getElementById("seat-out").checked, note: document.getElementById("note").innerText.trim() })`).then(text => JSON.parse(String(text)));
+    seatOut: document.getElementById("seat-out").checked, seatRoom: document.getElementById("seat-room").checked, note: document.getElementById("note").innerText.trim() })`).then(text => JSON.parse(String(text)));
   evidence.pageAfterRestore = page;
   await rp.screenshot(work, join(artifacts, "1-restored.png"));
   assert.equal(page.name, "王小明先生", "1: the field the user changed afterwards is left alone");
@@ -204,7 +217,7 @@ try {
   assert.equal(page.phone, "", "1: the React-style phone field is empty again and does not bounce back");
   assert.equal(page.size, "2 人", "1: the party size is back to 2");
   assert.equal(page.kid, false, "1: the child seat is unchecked again");
-  assert.ok(page.seatIn && !page.seatOut, "1: the indoor seat is selected again");
+  assert.ok(page.seatIn && !page.seatOut && !page.seatRoom, "1: after two clicks in the seat group, the indoor seat is selected again");
   assert.equal(page.note, "新备注", "1: the editor text is not touched");
   assert.equal(restored.restored?.length, 5, `1: five fields restored ${JSON.stringify(restored)}`);
   assert.deepEqual(restored.skipped?.map(s => s.reason), ["user_changed"], `1: only the user's field is skipped ${JSON.stringify(restored)}`);
@@ -230,6 +243,10 @@ try {
   await writeFile(join(artifacts, "export.jsonl"), traces);
   evidence.toolTexts = toolTexts;
   assert.ok(toolTexts.some(t => t.includes("上海")), `5: the receipts are captured (so the absence check is not vacuous) ${JSON.stringify(toolTexts)}`);
+  assert.ok(traces.includes("上海"), "5: the export holds this run's form activity (so the absence check is not vacuous)");
+  const views = String(await rp.evaluate(panel, "JSON.stringify(window.__undo.views)"));
+  evidence.viewsChars = views.length;
+  assert.ok(views.includes("城市") && !views.includes(ORIG), "5: the restore states the sidebar received name the fields but never carry the original value");
   // 页面快照本来就记着格子里当时的值（AX 树的 value=、文字节点、结构化的 ax 文字段）：去掉这三种写法后，别处不能再有原值。
   const outsideSnapshot = (text: string) => text.replaceAll(`value=\\"${ORIG}\\"`, "").replaceAll(`value="${ORIG}"`, "").replaceAll(`text: ${ORIG}`, "")
     .replaceAll(`"text":"${ORIG}","kind":"text"`, "");
