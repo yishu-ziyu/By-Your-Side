@@ -75,6 +75,20 @@ try {
   const first = await readFile(join(out, "01-parked.png"));
   const second = await readFile(join(out, "02-reading-glow.png"));
   assert.notEqual(Buffer.compare(first, second), 0, "亮起彩边后真实网页像素应发生变化");
+  // 让位：助手的鼠标事件落在光标刚飞到的点上，不算用户；用户自己动鼠标，彩边和光标退淡，停下后亮回。
+  const receded = () => rp!.evaluate(page, 'document.querySelector("[data-sideagent-overlay=cursor]")?.classList.contains("user-active") === true') as Promise<boolean>;
+  const flight = await isolated("return window.__sideagent.cursor.move(120, 90);") as number;
+  await sleep(flight + 150);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 120, y: 90 }, page);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 120, y: 90, button: "left", clickCount: 1 }, page);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 120, y: 90, button: "left", clickCount: 1 }, page);
+  await sleep(100);
+  assert.equal(await receded(), false, "助手在光标落点的点击不能让彩边让位");
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 400, y: 260 }, page);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 430, y: 280 }, page);
+  await until(async () => (await receded()) || undefined, 2_000, "用户动鼠标后彩边让位");
+  await rp.screenshot(page, join(out, "02b-user-active.png"));
+  await until(async () => !(await receded()) || undefined, 3_000, "用户停下后彩边亮回");
   await isolated("window.__sideagent.cursor.setGlow(false); window.__sideagent.cursor.hide(); return true;");
   assert.equal((await state())?.hidden, true, "显式停止必须隐藏光标");
   // Chrome BFCache 恢复的是同一个 Document；不会重新执行 content script。
