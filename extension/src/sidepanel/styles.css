@@ -2682,6 +2682,8 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 .run-steps .thinking::before { background: var(--content-border); animation: none; }
 .run-steps .thinking summary { font-size: 11px; }
 .msg.assistant[data-delivery-kind="start_ack"] { font-family: var(--font); font-size: 12px; color: var(--text-secondary); }
+/* 开场话是助手说要怎么做，不是回答：用小一号的说明字，回答才用正文大小。 */
+.msg.assistant.markdown.opening-line { font-family: var(--font); font-size: var(--fs-ui); line-height: 1.6; color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) { .msg { animation: none; } }
 
 /* 原生 details 保留键盘语义；内容包裹层允许自然高度折叠。 */
@@ -2908,6 +2910,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .steer-chip:hover { background:color-mix(in srgb, var(--apple-orange) 8%, var(--content-bg)); }
 .steer-chip:active { transform:scale(.96); }
 .steer-chip:focus-visible { outline:2px solid var(--apple-orange); outline-offset:1px; }
+.steer-received { align-self:flex-end; margin:-6px 4px 0; font-size:11px; color:var(--text-tertiary); }
 .steer-tag { align-self:flex-start; display:inline-flex; align-items:center; gap:4px; margin:0 0 -10px; padding:2px 8px; border-radius:6px; background:color-mix(in srgb, var(--apple-orange) 12%, transparent); color:var(--apple-orange); font-size:11px; font-weight:600; }
 @keyframes steer-morph-in { from { opacity:0; filter:blur(3px); transform:translateY(4px); } to { opacity:1; filter:none; transform:none; } }
 .msg.steer-morph { animation:steer-morph-in 320ms var(--e-out); }
@@ -3111,6 +3114,9 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 132px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
+/* 收尾后的分叉不留「查了 N 路」这类行：做过的事在展开的过程里，默认视图只留过程行和回答。 */
+.run-graph-group[data-state="folded"] { display: none; }
+.run-live-graph:not(:has(> .run-graph-group:not([data-state="folded"]))) { display: none; }
 .run-graph-group { position: relative; min-width: 0; }
 .run-graph-group[data-kind="you"] { color: var(--apple-blue); }
 .run-graph-rows { display: flex; flex-direction: column; }
@@ -3213,7 +3219,7 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
 
 /* #263 AC：进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }
-details.run-steps > summary > .run-meta { flex-basis: 100%; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+details.run-steps > summary > .run-meta { flex-basis: 100%; overflow-wrap: anywhere; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 details.run-steps > summary > .run-meta::after { content: " ›"; color: var(--text-quaternary); }
 details.run-steps > summary:hover > .run-meta { color: var(--text-secondary); }
 details.run-steps.done > summary > .run-meta { display: none; }
@@ -3529,7 +3535,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .fill-evidence { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--content-border); border-radius: var(--radius-sm); background: var(--content-bg); font-size: 13px; }
 .fill-evidence-line { overflow-wrap: anywhere; }
 .fill-evidence-line b { font-weight: 600; }
-.claim-fix { margin: 4px 0 8px; font-size: 13px; color: var(--warn); overflow-wrap: anywhere; }
+.run-superseded { margin: 2px 0; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-tertiary); overflow-wrap: anywhere; }
 
 /* 交给你（docs/evals/20261010-hand-to-user.md R1）：与错误卡同一种卡片，左边线用强调色。 */
 .handoff-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); }
