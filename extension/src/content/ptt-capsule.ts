@@ -38,6 +38,7 @@ const STYLE = `
 .row{display:flex;gap:10px;align-items:baseline;min-width:0;padding:3px 6px;border-radius:8px;color:rgba(255,255,255,.86)}
 .row.tagged{background:rgba(255,255,255,.1);color:#fff}
 .row .label{flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.solo .label{flex:1;max-width:none}
 .row .tag{flex:none;font-size:11px;font-weight:600;color:#141413;background:#f2c27b;border-radius:99px;padding:0 6px}
 .row .value{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
 .card .more{font-size:12px;color:rgba(255,255,255,.58)}
@@ -122,6 +123,7 @@ export function createPttCapsule() {
   const hide = (tell = true) => {
     if (!shown) return;
     shown = null;
+    hovering = false;
     clearTimeout(closeTimer);
     disposeOrb?.(); disposeOrb = null;
     host.remove();
@@ -133,16 +135,21 @@ export function createPttCapsule() {
 
   const speaking = () => !!shown && 'speaking' in shown && !!shown.speaking;
 
+  /** 鼠标停在胶囊或卡片上：不倒计时，后台刷新也不重新开始，移开后才计时。 */
+  let hovering = false;
+
   const scheduleClose = () => {
     clearTimeout(closeTimer);
+
+    if (hovering) return;
     const after = shown && !speaking() && CLOSE_AFTER_MS[shown.phase];
 
     // 可以重发的失败留着，等你决定。
     if (after && !(shown?.phase === 'failed' && shown.heard)) closeTimer = setTimeout(() => hide(), after);
   };
 
-  wrap.addEventListener('pointerenter', () => clearTimeout(closeTimer));
-  wrap.addEventListener('pointerleave', scheduleClose);
+  wrap.addEventListener('pointerenter', () => { hovering = true; clearTimeout(closeTimer); });
+  wrap.addEventListener('pointerleave', () => { hovering = false; scheduleClose(); });
 
   /** 胶囊上方的精简卡片：字都用 textContent 填，原样取自回答。 */
   const drawCard = (preview: Extract<PttCapsule, { phase: 'done' }>['card']) => {
@@ -152,7 +159,8 @@ export function createPttCapsule() {
     card.querySelector('.title')!.textContent = preview.title;
     (card.querySelector('.title') as HTMLElement).hidden = !preview.title;
     card.querySelector('.rows')!.replaceChildren(...preview.rows.map(row => {
-      const line = Object.assign(document.createElement('div'), { className: row.tag ? 'row tagged' : 'row' });
+      // 没有右侧数值的行（步骤、清单）让名称占满整行。
+      const line = Object.assign(document.createElement('div'), { className: ['row', row.tag && 'tagged', !row.value && 'solo'].filter(Boolean).join(' ') });
       line.append(Object.assign(document.createElement('span'), { className: 'label', textContent: row.label }));
 
       if (row.tag) line.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: row.tag }));

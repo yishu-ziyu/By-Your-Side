@@ -228,7 +228,9 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
 
       if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') {
         tracked.result = answerSpeech(msg.event.delivery.text);
-        tracked.card = cardPreview(msg.event.delivery.text);
+        const card = cardPreview(msg.event.delivery.text);
+        // 回答只有卡片时，胶囊那一句就是卡片标题：卡片不再重复标题，只列行。
+        tracked.card = card && tracked.result.split('；').includes(card.title) ? { ...card, title: '' } : card;
       }
     },
   };
