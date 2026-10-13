@@ -65,8 +65,9 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 const READ = `(() => {
   const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
   if (!d) return null;
-  const host = d.closest(".run-bundle") ?? d;
-  const groups = [...host.querySelectorAll(".run-graph-group")].map((g) => {
+  // 分叉层紧跟在过程块后面（不放进收起的 details 里）。
+  const graph = d.nextElementSibling?.matches(".run-live-graph") ? d.nextElementSibling : null;
+  const groups = [...(graph?.querySelectorAll(".run-graph-group") ?? [])].map((g) => {
     const rows = [...g.querySelectorAll(".run-graph-row, .run-tab-tile")];
     const delays = rows.map((row) => parseFloat(getComputedStyle(row).animationDelay) || 0);
     return {
@@ -82,10 +83,11 @@ const READ = `(() => {
       fold: g.querySelector(".run-graph-fold")?.textContent ?? "",
     };
   });
-  const box = host.getBoundingClientRect();
+  const top = d.getBoundingClientRect().top;
+  const bottom = (graph && !graph.hidden ? graph : d).getBoundingClientRect().bottom;
   return {
     title: d.querySelector(".run-title")?.textContent ?? "",
-    height: Math.round(box.height),
+    height: Math.round(bottom - top),
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     text: document.querySelector("#messages")?.textContent ?? "",
     groups,
