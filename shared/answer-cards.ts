@@ -312,3 +312,35 @@ export function answerMarkdown(text: string): string {
 
   return parts.map((p) => ("prose" in p ? resolveProse(p.prose, cards) : p.card ? `\n\n${md(p.card)}\n\n` : "")).join("").replace(/\n{3,}/g, "\n\n").trim();
 }
+
+/** 网页底部胶囊上方的精简卡片：标题，加上最多几行；推荐、最高这类标了的一项排第一并高亮。 */
+export type CardPreview = { title: string; rows: Array<{ label: string; value?: string; tag?: string }>; more: number };
+
+/**
+ * 回答里第一张写完的卡片的精简版（语音胶囊用）；没有卡片时为 null。字和数原样取自卡片，不改写。
+ * 取第一个能列成行的块：选项、表格、数字格、步骤、清单；只有提示条时就用提示条那一句。
+ */
+export function cardPreview(text: string, maxRows = 3): CardPreview | null {
+  if (!/<card[\s>]/.test(text)) return null;
+  const card = splitAnswer(text).flatMap((p) => ("card" in p && p.card?.closed ? [p.card] : []))[0];
+
+  if (!card) return null;
+  type Row = CardPreview["rows"][number];
+  const rowsOf = (b: Block): Row[] => {
+    switch (b.kind) {
+      case "options": return b.items.map((o) => ({ label: o.name, value: o.value ?? o.meta, tag: o.pick ? "推荐" : undefined }));
+      case "table": return b.rows.map((r) => ({ label: r.cells[0] ?? "", value: r.cells.slice(1).filter(Boolean).join(" · ") || undefined, tag: r.tag }));
+      case "stats": return b.items.map((s) => ({ label: s.label, value: s.value, tag: s.tag }));
+      case "steps": return b.items.map((s, i) => ({ label: `${i + 1}. ${s.title}` }));
+      case "checks": return b.items.map((c) => ({ label: c.text }));
+      case "callout": return [{ label: b.text }];
+    }
+  };
+  const block = card.blocks.find((b) => b.kind !== "callout") ?? card.blocks[0];
+  const all = block ? rowsOf(block) : [];
+  // 步骤有先后，不挪；其他把标了的一项提到最前。
+  const tagged = block?.kind === "steps" ? -1 : all.findIndex((r) => r.tag);
+  const ordered = tagged > 0 ? [all[tagged]!, ...all.slice(0, tagged), ...all.slice(tagged + 1)] : all;
+
+  return { title: card.title, rows: ordered.slice(0, maxRows), more: Math.max(0, ordered.length - maxRows) };
+}

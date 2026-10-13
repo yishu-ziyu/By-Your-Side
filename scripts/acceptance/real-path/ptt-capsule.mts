@@ -8,6 +8,8 @@
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
+ * 结果卡片：第 1 轮回答没有卡片，胶囊上方不出现；第 6 轮回答带一张表格卡片，胶囊上方出现精简卡片（标题、标了「最高」的一行排第一、
+ * 共 3 行、「还有 1 项」），念的仍只是正文；点 ✕ 卡片和胶囊一起收起。
  * 确认句（松开后马上应一句）：这句话有两个分句，没把握复述，每轮先念通用句「好，马上做。」，且只请求一次；
  * 第 1 轮任务步骤在跑时它照样念完，念的时候「正在做」后面是它、光球在说，念完换回当前步骤；第 3 轮结果马上到，确认句被打断。
  * 胶囊的 shadow root 是关着的：用它挂在宿主上的 data-phase / data-peak 判断步骤，内容看截图。
@@ -60,6 +62,16 @@ const ANSWER4 = "表格做好了，Kite 的营收还没能确认。";
 
 const LEFT = "确认 Kite 的营收";
 
+/** 第 6 轮的回答：正文一句，加一张 4 行的表格卡片，第二行标了「最高」。 */
+const CARD_ANSWER = `已经按营收排好了，Lumen 最高。
+<card title="三家公司营收">
+<table cols="公司|营收|增长"/>
+<tr cells="Harbor|¥31 亿|8%"/>
+<tr cells="Lumen|¥42 亿|12%" tag="最高"/>
+<tr cells="Kite|¥18 亿|5%"/>
+<tr cells="Orbit|¥12 亿|3%"/>
+</card>`;
+
 /** SPOKEN 有两个分句，本地规则没把握复述，用通用句。 */
 const ACK = "好，马上做。";
 
@@ -102,6 +114,37 @@ const roundStarts: number[] = [];
 const ackRequests = (from: number) => evidence.speechRequests.slice(from).filter(request => request.text === ACK).length;
 
 type DomNode = { nodeId: number; nodeName: string; nodeValue?: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
+
+/** 节点里的全部文字。 */
+const textOf = (node: DomNode): string => node.nodeName === "#text" ? node.nodeValue ?? "" : [...(node.children ?? [])].map(textOf).join("");
+
+/** 按 class 在关着的 shadow root 里找一个元素。 */
+const findClass = (node: DomNode, name: string): DomNode | null => {
+  const classes = node.attributes ? node.attributes[node.attributes.indexOf("class") + 1]?.split(" ") : undefined;
+
+  if (node.attributes?.includes("class") && classes?.includes(name)) return node;
+
+  for (const child of [...(node.shadowRoots ?? []), ...(node.children ?? [])]) { const hit = findClass(child, name); if (hit) return hit; }
+
+  return null;
+};
+
+/** 胶囊上方的精简卡片：显示着就返回标题、每行文字、「还有」那一行；没有或藏着为 null。 */
+async function capsuleCard(session: string): Promise<{ title: string; rows: string[]; tagged: string[]; more: string } | null> {
+  const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as { root: DomNode };
+  const card = findClass(root, "card");
+
+  if (!card || card.attributes?.includes("hidden")) return null;
+  const rows = findClass(card, "rows")?.children ?? [];
+  const more = findClass(card, "more");
+
+  return {
+    title: textOf(findClass(card, "title")!),
+    rows: rows.map(row => [...(row.children ?? [])].map(textOf).join("|")),
+    tagged: rows.filter(row => row.attributes?.[row.attributes.indexOf("class") + 1]?.includes("tagged")).map(row => textOf(row.children![0]!)),
+    more: more && !more.attributes?.includes("hidden") ? textOf(more) : "",
+  };
+}
 
 /** 胶囊第一行「正在做」后面那段文字（关着的 shadow root 里，CDP 能穿透，网页脚本不能）。 */
 async function capsuleDetail(session: string): Promise<string | null> {
@@ -268,6 +311,7 @@ try {
   one.spoken = await lastSpeech(inproc);
   assert.ok((one.spoken as { ok?: boolean; playedMs?: number }).ok && (one.spoken as { playedMs: number }).playedMs > 1_500, `R1: the result was played ${JSON.stringify(one.spoken)}`);
   assert.equal((await capsuleState(work))?.phase, "done", "R3: capsule stays after speaking");
+  assert.equal(await capsuleCard(work), null, "card: an answer without a card shows no card above the capsule");
   assert.ok(evidence.speechRequests.length === 2 && evidence.speechRequests.every(request => request.url === "https://api.minimaxi.com/v1/t2a_v2" && request.model === "speech-2.8-hd"), `R2: ack + result to the subscription endpoint ${JSON.stringify(evidence.speechRequests)}`);
   assert.ok(evidence.speechRequests[1]!.text?.startsWith("已经按营收排好了表，Lumen 最高。") && !evidence.speechRequests[1]!.text.includes("第二句"), `R1: spoke only the first sentence ${evidence.speechRequests[1]!.text}`);
 
@@ -367,9 +411,31 @@ try {
   five.spoken = await lastSpeech(inproc);
   assert.ok((five.spoken as { ok?: boolean; playedMs?: number }).ok && (five.spoken as { playedMs: number }).playedMs > 500, "需要你实际播放，不以发送请求算完成");
   assert.equal((await capsuleState(work))?.phase, "waiting", "播完仍等用户，不恢复已完成");
-  const perRound = roundStarts.map((from, i) => ackRequests(from) - (roundStarts[i + 1] === undefined ? 0 : ackRequests(roundStarts[i + 1]!)));
-  assert.deepEqual(perRound, [1, 1, 1, 1, 1], "ack: exactly one ack request per round");
   await rp.screenshot(work, join(artifacts, "11-needs-user.png"));
+
+  // ── 第 6 轮：回答带卡片，胶囊上方出现精简卡片 ──
+  rule.steps = [{ text: CARD_ANSWER }];
+  await clickCapsuleButton(work, "✕").catch(() => {});
+  await sleep(500);
+  const six: Evidence["rounds"][number] = { phases: [], ms: {} };
+  evidence.rounds.push(six);
+  const beforeCard = resultSpeech().length;
+  await holdAndSpeak(work, six, join(artifacts, "12-listening-sixth.png"));
+  await waitPhase(work, six, "done", DICTATION_MS + 15_000);
+  const shown = await until(async () => await capsuleCard(work) ?? undefined, 3_000, "card above the capsule");
+  six.spoken = shown;
+  assert.deepEqual(shown, { title: "三家公司营收", rows: ["Lumen|最高|¥42 亿 · 12%", "Harbor|¥31 亿 · 8%", "Kite|¥18 亿 · 5%"], tagged: ["Lumen"], more: "还有 1 项" }, `card: title and rows from the answer, the tagged row first ${JSON.stringify(shown)}`);
+  await until(async () => resultSpeech().length > beforeCard || undefined, 10_000, "card answer spoken");
+  assert.equal(resultSpeech()[beforeCard]!.text, "已经按营收排好了，Lumen 最高。", "card: speech is still the prose only");
+  await sleep(400);
+  await rp.screenshot(work, join(artifacts, "13-done-with-card.png"));
+  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "card answer speech finished");
+  await clickCapsuleButton(work, "✕");
+  await until(async () => (await capsuleState(work)) === null || undefined, 3_000, "capsule closed by ✕");
+  assert.equal(await capsuleCard(work), null, "card: ✕ closes the card with the capsule");
+
+  const perRound = roundStarts.map((from, i) => ackRequests(from) - (roundStarts[i + 1] === undefined ? 0 : ackRequests(roundStarts[i + 1]!)));
+  assert.deepEqual(perRound, [1, 1, 1, 1, 1, 1], "ack: exactly one ack request per round");
 
   assert.ok(evidence.sockets.length > 0 && evidence.sockets.every(url => url.startsWith("wss://api.stepfun.com/step_plan/v1/realtime")), `dictation only on the plan URL ${JSON.stringify(evidence.sockets)}`);
 } catch (caught) {
