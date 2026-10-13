@@ -94,7 +94,9 @@ async function runExt(task: Task, id: string, dir: string) {
     const rounds = lines.filter((l) => l.type === "model_request").length;
     const tools = lines.filter((l) => l.type === "tool_execution_start").map((l) => l.data?.toolName);
     await rp.screenshot(panel, join(dir, "panel.png")).catch(() => {});
-    return { ms, answer, tabs, probe, rounds, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel) };
+    const usage = lines.filter((l) => l.type === "turn_end").map((l) => l.data?.usage ?? {});
+    const cacheShare = +(usage.reduce((n, u) => n + (u.cacheRead ?? 0), 0) / Math.max(1, usage.reduce((n, u) => n + (u.input ?? 0) + (u.cacheRead ?? 0), 0))).toFixed(2);
+    return { ms, answer, tabs, probe, rounds, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel), cacheShare, cacheReadByRound: usage.map((u) => u.cacheRead ?? 0) };
   } finally { await rp.close(); await rp.remove(); }
 }
 
@@ -198,6 +200,6 @@ if (arm === "ext") {
   const sum = (k: string) => ok.reduce((n, r) => n + (r.wasted?.[k] ?? 0), 0);
   const secs = ok.map((r) => r.seconds).sort((a, b) => a - b);
   console.log(JSON.stringify({ pass: ok.filter((r) => r.outcome === "pass").length, of: results.length, rounds: ok.reduce((n, r) => n + r.rounds, 0), medianSeconds: secs[Math.floor(secs.length / 2)],
-    wasted: Object.fromEntries(["tabsList", "tabsShow", "lookAfterOpen", "zeroSize", "staleRef"].map((k) => [k, sum(k)])), buttonOk: ok.filter((r) => r.button?.ok).length }));
+    wasted: Object.fromEntries(["tabsList", "tabsShow", "lookAfterOpen", "zeroSize", "staleRef"].map((k) => [k, sum(k)])), buttonOk: ok.filter((r) => r.button?.ok).length, cacheShare: +(ok.reduce((n, r) => n + (r.cacheShare ?? 0), 0) / Math.max(1, ok.length)).toFixed(2) }));
 }
 console.log(`done ${arm}`);
