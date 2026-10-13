@@ -33,8 +33,14 @@ export async function copyAnswerText(answer: HTMLElement): Promise<void> {
 }
 
 export async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
-  const body = answerBody(answer);
-  await writeClipboard(body.innerText.trim());
+  await writeClipboard(answer.dataset.markdown?.trim() || answerBody(answer).innerText.trim());
+}
+
+/** 去掉「切过去看」后主按钮要跟着换，否则按钮还写「在页面上查看」，点下去却是复制。 */
+function removeShowTab(button: Element): void {
+  const answer = button.closest<HTMLElement>(".msg.assistant");
+  button.remove();
+  if (answer) refreshPrimaryAction(answer);
 }
 
 export function tableTsv(answer: HTMLElement): string | null {
@@ -254,7 +260,7 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
 
   if (!time || !answer.isConnected || !answer.classList.contains("answer-latest") || answer.querySelector(".answer-show-tab")) return;
   // 只有最新一条回答带这个按钮。
-  document.querySelectorAll(".answer-show-tab").forEach(node => node.remove());
+  document.querySelectorAll(".answer-show-tab").forEach(removeShowTab);
   let host = tab.url;
 
   try { host = new URL(tab.url).host.replace(/^www\./, ""); } catch { /* 上面已确认是网址 */ }
@@ -269,7 +275,7 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
   button.append(siteGlyph(tab.url, host), "切过去看");
 
   button.onclick = async () => {
-    button.remove();
+    removeShowTab(button);
     const now = await chrome.tabs.get(tabId).catch(() => null);
 
     if (!now) { toast("那一页已经关掉了");
@@ -288,7 +294,7 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
 
 /** 那一页关了或已经在眼前：去掉指向它的「切过去看」。 */
 export function dropShowTab(tabId: number): void {
-  document.querySelectorAll(`.answer-show-tab[data-tab-id="${tabId}"]`).forEach(node => node.remove());
+  document.querySelectorAll(`.answer-show-tab[data-tab-id="${tabId}"]`).forEach(removeShowTab);
 }
 
 export function setAnswerTime(answer: HTMLElement, text: string): void {

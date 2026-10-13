@@ -175,7 +175,7 @@ export class BrowserAgentSession {
   private displayAbort:AbortController|null=null;
   private authorizedDisplayCall:string|null=null;
   private displayWork:Promise<void>|null=null;
-  private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[]}>=[];
+  private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[];pages?:PageContext[]}>=[];
   private deliveryRunId: () => string | null = () => null;
   private explicitDelivery = false;
   /** 主会话的交付选项；为 null 时（工人会话）没有面向用户的交付。 */
@@ -955,7 +955,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
   /** 空闲时发起新任务；运行中自动转为插话。异步不阻塞，错误捕获为 error 事件。 */
   sendUserMessage(text: string, context?: PageContext, attachments?: Attachment[], inputOptions?: UserInputOptions): void {
-    if(this.displayWork){void this.steerCurrentTask(text,context,attachments).catch(error=>this.emitError(error));
+    if(this.displayWork){void this.steerCurrentTask(text,context,attachments,{pages:inputOptions?.pages}).catch(error=>this.emitError(error));
 
 return;}
 
@@ -1005,7 +1005,7 @@ return;}
     if (session.isStreaming) {
       this.memoryRuntime?.invalidateUserTurn("steer");
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
-      void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
+      void this.steerCurrentTask(text, context, attachments, { pages: inputOptions?.pages }).catch((err: unknown) => this.emitError(err));
 
       return;
     }
@@ -1045,11 +1045,10 @@ return;}
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
-    const extras = (pages ?? []).filter((page) => page.tabId !== context?.tabId);
     const [observation, openTabs, mentioned] = await Promise.all([
       this.readUserPageForPrompt(context, "task"),
       this.readOpenTabsForPrompt(context),
-      extras.length ? Promise.all(extras.map((page) => this.readUserPageForPrompt(page, "task"))) : Promise.resolve([] as Array<string | null>),
+      this.mentionedPagesText(pages, context),
     ]);
 
     if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
@@ -1057,9 +1056,8 @@ return;}
     if (observation) this.noteGoalObservation("page_at_start", observation);
 
     // 标签页清单放在页面观察之前：页面观察超窗口时会被整段删掉，清单很短，留着。
-    const mentionedText = mentioned.filter((part): part is string => !!part).join("\n\n");
     const withTabs = openTabs ? `${finalText}\n\n${openTabs}` : finalText;
-    const withMentions = mentionedText ? `${withTabs}\n\n[MENTIONED TABS — pages the user pulled in with @]\n${mentionedText}` : withTabs;
+    const withMentions = withTabs + mentioned;
     const promptText = (observation ? `${withMentions}\n\n${observation}` : withMentions)
       +(context && typeof context.tabId === "number" ? programFirstGuidance() : "");
 
@@ -1121,6 +1119,20 @@ return;}
   }
 
   /** 预观察只读当前页（不接管、不改工作标签）；结果进 trace，失败静默降级。 */
+  /**
+   * 用户用 @ 拉进来的其他标签页：开新任务、运行中插话、暂停后交还、续做都走这里，
+   * 所以哪条路径收到 @ 页面，模型都读得到。读不到的页跳过；没有就返回空串。
+   */
+  private async mentionedPagesText(pages: PageContext[] | undefined, context: PageContext | undefined): Promise<string> {
+    const extras = (pages ?? []).filter((page) => page.tabId !== context?.tabId);
+
+    if (!extras.length) return "";
+    const parts = await Promise.all(extras.map((page) => this.readUserPageForPrompt(page, "task")));
+    const text = parts.filter((part): part is string => !!part).join("\n\n");
+
+    return text ? `\n\n[MENTIONED TABS — pages the user pulled in with @]\n${text}` : "";
+  }
+
   private async readUserPageForPrompt(context: PageContext | undefined, phase: "task" | "steer"): Promise<string | null> {
     const tabId = context?.tabId;
 
@@ -1605,7 +1617,7 @@ return;}
    * explicitly continue it. Re-read the current page before prompting the model and
    * keep the original run/results identity so execution gates can prevent replays.
    */
-  async resumeInterruptedTask(snapshot: TaskProgressSnapshot, context?: PageContext, attachments?: Attachment[]): Promise<void> {
+  async resumeInterruptedTask(snapshot: TaskProgressSnapshot, context?: PageContext, attachments?: Attachment[], pages?: PageContext[]): Promise<void> {
     const resumeEpoch=this.controlEpoch;
 
     if (snapshot.state !== "interrupted" || !snapshot.runId || !snapshot.goal) {
@@ -1675,6 +1687,7 @@ return;}
       throw new TaskActionRejected("继续前没有读到当前页面内容，原任务仍保持中断。");
     }
 
+    const mentioned = await this.mentionedPagesText(pages, context);
     const current = this.conversationSnapshot();
 
     if (this.controlEpoch!==resumeEpoch||this.hold.isHeld()||current && (current.runId !== snapshot.runId || current.state !== "interrupted" || (current.controlVersion??0)!==(snapshot.controlVersion??0))) {
@@ -1734,16 +1747,16 @@ return;}
       "Current page references must come from this fresh observation. A failed obsolete method does not erase a user goal. Verify the requested state before final delivery.",
     ].join("\n");
 
-    const prompt = `${withPageContext(continuation, context)}\n\n${freshPageObservationText(context, clipped)}`;
+    const prompt = `${withPageContext(continuation, context)}${mentioned}\n\n${freshPageObservationText(context, clipped)}`;
     this.requestStartedAt = Date.now();
     this.noteGoalObservation("page_at_start", freshPageObservationText(context, clipped));
     const images = extractImages(restoredAttachments);
     void session.prompt(prompt, images.length > 0 ? { images } : undefined).catch((error: unknown) => this.emitError(error));
   }
 
-  queueSteerForResume(text:string,context?:PageContext,attachments?:Attachment[]):void{
+  queueSteerForResume(text:string,context?:PageContext,attachments?:Attachment[],pages?:PageContext[]):void{
     if(!this.hold.isHeld())throw new TaskActionRejected('任务没有暂停，补充要求未保存。');
-    this.deferredSteers.push({text,context,attachments});this.runTrace.record('steer_queued',{text,context,attachments});
+    this.deferredSteers.push({text,context,attachments,...(pages?.length?{pages}:{})});this.runTrace.record('steer_queued',{text,context,attachments});
   }
 
   /**
@@ -1840,7 +1853,7 @@ return;}
    * 运行中修改统一入口：先登记（挡住在途旧写入），再按原路交给 Pi。语音与文字都走这里，不另开任务。
    */
   /** rewrite：侧栏文字改方向。模型正在写正文、或还一个字没写时当场截断，同一轮按新要求重写（见 AgentLoop.interruptText）。 */
-  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[], options?: { rewrite?: boolean }): Promise<SteerOutcome> {
+  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[], options?: { rewrite?: boolean; pages?: PageContext[] }): Promise<SteerOutcome> {
     const session = this.session;
     this.rememberAttachments(attachments);
 
@@ -1852,7 +1865,7 @@ return;}
 
       if(!session||this.hold.isHeld()||runId!==this.deliveryRunId())throw new TaskActionRejected('原任务已变化，修改未执行。');
       const updated=`原任务：${this.activeGoal}\n用户最新修改：${text}`;
-      await this.promptWithFreshPageObservation(session,withPageContext(updated,context),context,extractImages(attachments));
+      await this.promptWithFreshPageObservation(session,withPageContext(updated,context),context,extractImages(attachments),options?.pages);
 
 return {kind:'model'};
     }
@@ -1886,13 +1899,16 @@ return {kind:'model'};
     try{
       // 纠正类插话常靠"这个页面/不是这个/刚才那个"指代：先补一次只读观察，
       // 否则模型会拿自己上一轮的前提继续推理（实测把 ChatGPT 页当成扩展管理页讲了四轮）。
-      const observation = steerNeedsPageObservation(text) ? await this.readUserPageForPrompt(context, "steer") : null;
+      const [observation, mentioned] = await Promise.all([
+        steerNeedsPageObservation(text) ? this.readUserPageForPrompt(context, "steer") : Promise.resolve(null),
+        this.mentionedPagesText(options?.pages, context),
+      ]);
 
       if(!current())throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
       this.requestStartedAt = Date.now();
 
       if (observation) this.noteGoalObservation("page_at_steer", observation);
-      const asked = withCircleNotes(withPageContext(text, context), attachments);
+      const asked = withCircleNotes(withPageContext(text, context), attachments) + mentioned;
       const base = observation ? `${asked}\n\n${observation}` : asked;
       // 契约随整条载荷进 Pi（steeringMode "all" 的排队 drain 也走同一载荷）。销账只认 Pi 原样回显的
       // 精确文本（见 consumeCorrection），所以 record.input 必须与实际载荷完全一致。
@@ -2016,7 +2032,7 @@ return {kind:'model'};
     void this.promptHandbackAfterStop(epoch, finalText,extractImages([
       ...unconsumedRecords.flatMap(record=>record.attachments??[]),
       ...queued.flatMap(q=>q.attachments??[]),
-    ]));
+    ]),context,queued.flatMap(q=>q.pages??[]));
     void started.then(ok=>{if(ok)this.deferredSteers.splice(0,queued.length);});
 
     return started;
@@ -2067,7 +2083,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return tracked;
   }
 
-  private async promptHandbackAfterStop(epoch: number, text: string, images:ReturnType<typeof extractImages>=[]): Promise<void> {
+  private async promptHandbackAfterStop(epoch: number, text: string, images:ReturnType<typeof extractImages>=[], context?: PageContext, pages: PageContext[]=[]): Promise<void> {
     const session = this.session;
 
     if (!session) return;
@@ -2077,13 +2093,21 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (epoch !== this.controlEpoch || this.pendingHandback?.epoch !== epoch) return;
       this.hold.releaseToAgent();
+      // 暂停时 @ 进来的页面：交还后页面归助手了才读得到。
+      const mentioned = await this.mentionedPagesText(pages, context);
+
+      if (epoch !== this.controlEpoch || this.pendingHandback?.epoch !== epoch) return;
+      const prompt = text + mentioned;
+
+      // 销账按 Pi 原样回显的整段文本对（见 handbackDelivery），追加了页面就一起改。
+      if (mentioned && this.handbackDelivery?.text === text) this.handbackDelivery = { ...this.handbackDelivery, text: prompt };
       // 交还后是新的一次续跑要求：重新判断这一轮有没有真正交付。
       this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
       this.handbackPromptEpoch = epoch;
       this.armHandbackRestoreTimer(epoch);
 
-      if(images.length)await session.prompt(text,{images});else await session.prompt(text);
+      if(images.length)await session.prompt(prompt,{images});else await session.prompt(prompt);
 
       if (this.handbackPromptEpoch === epoch) this.failPendingHandback(epoch);
     } catch (err) {

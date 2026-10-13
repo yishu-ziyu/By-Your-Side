@@ -1,6 +1,7 @@
 /**
  * 输入 @ 拉进别的标签页；改页面前先给三行计划，点开始才发，计划那一行随这一轮结束收掉；
  * 每个回答一个主动作，其余在 Ctrl/⌘+Shift+K 动作列表（docs/evals/20261013-uiux-a2-a3-a8.md）。
+ * 计划的「不会做」不和用户的授权打架；出卡后改了输入，发出去的是新话；任务运行中 @ 的页面模型读得到。
  *   npx tsx scripts/acceptance/real-path/mention-plan-actions.mts --headless
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -25,7 +26,17 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 const FILL = "把张三填进报名表，不要提交";
 const FILLED = "填好了姓名，没有点提交。";
 const TABLE = "把这页的报名信息整理成表格";
+const SUBMIT = "把张三填进报名表并提交";
+const EDITED = "把李四填进报名表，不要提交";
+const EDITED_DONE = "李四填好了，没有提交。";
+const SLOW = "慢慢介绍一下这个活动";
+const STEER = "顺便核对一下我 @ 的笔记";
+// 只有笔记页的正文进了模型的请求，脚本模型才会写这一句。
+const NOTES_SEEN = "笔记要求周五前确认名单。";
 const model = await startScriptedModel([
+  { match: "周五前确认报名名单", steps: [{ text: NOTES_SEEN }] },
+  { match: EDITED, steps: [{ tool: { name: "fill", args: { target: "#name", value: "李四", label: "姓名" } } }, { text: EDITED_DONE }] },
+  { match: SLOW, steps: [{ text: Array.from({ length: 30 }, (_, i) => `第 ${i + 1} 段：这个活动报名截止到本周五。`).join("\n\n"), chunkDelayMs: 300 }] },
   { match: FILL, steps: [{ tool: { name: "fill", args: { target: "#name", value: "张三", label: "姓名" } } }, { text: FILLED }] },
   { match: TABLE, steps: [{ text: "| 项目 | 内容 |\n| --- | --- |\n| 截止 | 本周五 |\n| 需填 | 姓名、城市 |" }] },
 ]);
@@ -72,6 +83,33 @@ try {
   const goalLeft = await until(async () => (await rp.evaluate(panel, `!document.querySelector(".task-plan-goal")`)) || undefined, 3_000, "计划那一行收掉").catch(() => false);
   check("这一轮做完后计划那一行收掉", goalLeft === true, await rp.evaluate(panel, `document.querySelector(".task-plan-goal")?.textContent ?? null`));
 
+  // (d) 用户明说「并提交」：计划不能写「不会做 提交」。出卡后改了输入再回车：旧计划作废，按新话出卡，发出去的是新话。
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, SUBMIT);
+  await rp.pressEnter(panel);
+  const submitPlan = await until(async () => {
+    const text = await rp.evaluate(panel, `document.querySelector(".task-plan")?.innerText.replace(/\\s+/g, " ") ?? ""`) as string;
+
+    return text ? text : undefined;
+  }, 5_000, "提交任务的计划");
+  check("用户说了提交，计划的不会做里没有提交", /不会做/.test(submitPlan) && !/不会做 [^开]*提交/.test(submitPlan), submitPlan);
+  const sentBeforeEdit = model.requests.length;
+  await rp.evaluate(panel, `(() => { const i = document.querySelector("#input"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, EDITED);
+  const staleGone = await rp.evaluate(panel, `!document.querySelector(".task-plan")`);
+  await rp.pressEnter(panel);
+  const editedPlan = await until(async () => {
+    const text = await rp.evaluate(panel, `document.querySelector(".task-plan")?.innerText.replace(/\\s+/g, " ") ?? ""`) as string;
+
+    return text ? text : undefined;
+  }, 5_000, "改过之后的计划");
+  check("改了输入，旧计划收掉；回车按新话出卡，还没发出", staleGone === true && /李四/.test(editedPlan) && /不会做 提交/.test(editedPlan) && model.requests.length === sentBeforeEdit, { staleGone, editedPlan });
+  await rp.click(panel, ".task-plan-start");
+  await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(EDITED_DONE)})`)) || undefined, 60_000, "改过之后的回答");
+  const users = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].map(u => u.innerText)`) as string[];
+  check("发出去的是改过的话，不是出卡时的旧话", users.some((u) => u.includes("李四")) && !users.some((u) => u.includes("并提交")), users);
+
   // (b) 只读的表格回答：没有计划卡；主动作是「复制为表格」；Ctrl+K 不开动作列表，⌘/Ctrl+Shift+K 开，Esc 关。
   const n = await answers();
   await rp.click(panel, "#input");
@@ -114,6 +152,26 @@ try {
   await sleep(500);
   const chip = await rp.evaluate(panel, `({ chip: document.querySelector(".tab-mention-chip")?.innerText.replace(/\\s+/g, " ") ?? "", input: document.querySelector("#input").value })`) as { chip: string; input: string };
   check("回车后输入区出现页面胶囊，@ 从输入框消失", chip.chip.includes("活动报名表") && !chip.input.includes("@"), chip);
+  await rp.evaluate(panel, `document.querySelector(".tab-mention-remove")?.click() ?? true`);
+
+  // (e) 任务运行中 @ 另一页再插话：模型真的读到那一页（脚本模型看到笔记正文才写 NOTES_SEEN），胶囊打勾。
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, SLOW);
+  await rp.pressEnter(panel);
+  await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes("第 2 段")`)) || undefined, 30_000, "慢回答开始");
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, "@");
+  await until(async () => (await rp.evaluate(panel, `document.querySelectorAll("#tab-mention-menu .tab-mention-item").length`)) as number > 1 || undefined, 5_000, "运行中的标签页列表");
+  await key("ArrowDown", "ArrowDown", 40);
+  await rp.pressEnter(panel);
+  await sleep(300);
+  await rp.typeText(panel, STEER);
+  await rp.pressEnter(panel);
+  const seen = await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(NOTES_SEEN)})`)) || undefined, 60_000, "模型读到笔记").catch(() => false);
+  await sleep(1_500);
+  const steerChip = await rp.evaluate(panel, `(() => { const u = [...document.querySelectorAll("#messages .msg.user")].find(m => m.innerText.includes(${JSON.stringify(STEER)})); const row = u?.nextElementSibling; const c = row?.matches(".ctx-chips") ? row.querySelector(".ctx-chip[data-tab-id]") : null; return c ? { text: c.innerText, status: c.dataset.status } : null; })()`);
+  await rp.screenshot(panel, join(out, "steer-mention.png"));
+  check("运行中 @ 笔记页再插话：模型读到笔记正文，这条消息下的胶囊打勾", seen === true && (steerChip as { status?: string } | null)?.status === "read", { seen, steerChip });
 } catch (error) {
   check("流程完成", false, String(error));
 } finally {

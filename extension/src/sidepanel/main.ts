@@ -87,7 +87,7 @@ import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
-import { mountTabMentions } from "./tab-mentions.js";
+import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 
@@ -425,6 +425,7 @@ const tabMentions = mountTabMentions({
   composerEl,
   inputEl,
   stripEl: document.getElementById("mention-strip")!,
+  onChange: () => saveDraft(),
 });
 
 let pendingContinueDraft: string | null = null;
@@ -579,7 +580,7 @@ const memoryTitle = document.getElementById("memory-title") as HTMLElement;
 
 const memoryBody = document.getElementById("memory-body") as HTMLElement;
 
-type ConversationDraft = { text: string; attachments: Attachment[]; ask: PendingAsk | null };
+type ConversationDraft = { text: string; attachments: Attachment[]; ask: PendingAsk | null; pages?: MentionedTab[] };
 
 const conversationDrafts = new Map<string, ConversationDraft>();
 
@@ -599,7 +600,7 @@ const DRAFT_KEY = "sideagent_conversation_draft:";
 function saveDraft(): void {
   if (restoringDraft || !attachments) return;
   const id = selectedConversationId;
-  const draft: ConversationDraft = { text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk };
+  const draft: ConversationDraft = { text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk, pages: tabMentions.items() };
   const fingerprint = JSON.stringify(draft);
 
   if (draftFingerprints.get(id) === fingerprint) return;
@@ -626,12 +627,13 @@ async function restoreDraft(id: string): Promise<void> {
   try {
     inputEl.value = typeof draft?.text === "string" ? draft.text : "";
     attachments.restore(draft?.attachments ?? [], id);
+    tabMentions.restore(Array.isArray(draft?.pages) ? draft.pages : []);
     pendingAsk = draft?.ask ?? null;
 
     if (pendingAsk) applyPendingAsk(pendingAsk);
     else if (askCiteEl) askCiteEl.hidden = true;
     autoResize();
-    draftFingerprints.set(id, JSON.stringify({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk }));
+    draftFingerprints.set(id, JSON.stringify({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk, pages: tabMentions.items() }));
     currentDraftReady = true;
     updateStarterVisibility();
   } finally { restoringDraft = false; }
@@ -1110,6 +1112,7 @@ function selectConversation(id: string, notify = true): void {
 
     if (askCiteEl) askCiteEl.hidden = true;
     attachments.restore([], id);
+    tabMentions.clear();
     restoringDraft = false;
     modelPicker.reset();
 
@@ -1121,7 +1124,6 @@ function selectConversation(id: string, notify = true): void {
   renderTaskStrip();
   taskBar.reset();
   taskPlan.reset();
-  tabMentions.clear();
   queryTaskView();
 
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
@@ -5817,8 +5819,13 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
 
   if (envelope.kind === "mention_status") {
+    if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
     tabMentions.setStatus(envelope.tabId, envelope.status, envelope.reason);
-    const chip = document.querySelector<HTMLElement>(`.ctx-chip[data-tab-id="${envelope.tabId}"]`);
+    // 同一标签页可能被好几条消息 @ 过：只改这一条消息下面的胶囊。
+    const row = userBubbles.get(envelope.seq)?.nextElementSibling;
+    const chip = row instanceof HTMLElement && row.matches(".ctx-chips")
+      ? row.querySelector<HTMLElement>(`.ctx-chip[data-tab-id="${envelope.tabId}"]`)
+      : null;
     if (chip) {
       chip.dataset.status = envelope.status;
       if (envelope.status === "read" && !chip.querySelector(".ctx-ok")) {

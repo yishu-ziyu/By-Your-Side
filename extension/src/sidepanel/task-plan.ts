@@ -57,10 +57,20 @@ export function planLines(text: string, pages: Array<{ title: string; url: strin
   }
   const go = names.join("、") || "当前页";
   const doLine = clip(text.replace(/[。！？.!?]+$/u, ""), 28) || "按你刚才说的做";
-  const dont = /不要提交|别提交|不要点提交/.test(text) ? "提交"
-    : /不要付款|别付款|不要下单/.test(text) ? "付款"
-    : "提交、付款";
-  return { go, do: doLine, dont };
+  return { go, do: doLine, dont: notAuthorized(text) };
+}
+
+/**
+ * 「不会做」只列用户这句话没授权的动作：助手把原话里的「提交」「下单」当授权（agent/src/prompt.ts），
+ * 计划卡不能一边写「不会做 提交」一边让它真去提交。
+ */
+function notAuthorized(text: string): string {
+  const asked = text.replace(/(?:不要|别|不用|先不|无需|不)(?:点|去|帮我)?(?:提交|付款|支付|下单|购买|发帖|发表)/g, "");
+  const left = [
+    !/提交|发帖|发表|下单/.test(asked) && "提交",
+    !/付款|支付|下单|购买|买下/.test(asked) && "付款",
+  ].filter(Boolean);
+  return left.length ? left.join("、") : "你没说的事";
 }
 
 export function needsTaskPlan(text: string, pages: Array<{ url: string }>, currentUrl: string): boolean {
@@ -83,12 +93,18 @@ export function mountTaskPlan(opts: {
   let card: HTMLElement | null = null;
   let goal: HTMLElement | null = null;
   let pending: string | null = null;
+  let shownDraft = "";
 
   const hide = (): void => {
     card?.remove();
     card = null;
     pending = null;
   };
+
+  // 计划是对出卡那一刻输入框里的话做的：用户接着改了输入，旧计划作废，下次发送按新话重新判断。
+  opts.inputEl.addEventListener("input", () => {
+    if (card && opts.inputEl.value !== shownDraft) hide();
+  });
 
   const renderGoal = (lines: TaskPlanLines): HTMLElement => {
     goal?.remove();
@@ -105,6 +121,7 @@ export function mountTaskPlan(opts: {
     hide();
     const lines = planLines(text, pages, currentUrl, currentTitle);
     pending = text;
+    shownDraft = opts.inputEl.value;
     const next = el("section", "task-plan");
     next.setAttribute("aria-label", "动手前的计划");
     next.append(el("p", "task-plan-kicker", "动手前看一眼范围"));
