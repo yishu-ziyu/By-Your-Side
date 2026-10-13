@@ -142,7 +142,8 @@ export function createPttCapsule() {
     const said = 'heard' in capsule ? capsule.heard ?? '' : '';
     heard.textContent = said ? `“${said}”` : '';
     heard.hidden = !said;
-    detail.textContent = capsule.phase === 'doing' ? capsule.step ?? '交给助手了' : capsule.phase === 'waiting' ? capsule.reason
+    // 在做：念确认句时显示那一句，念完显示当前步骤。
+    detail.textContent = capsule.phase === 'doing' ? (capsule.speaking && capsule.ack ? capsule.ack : capsule.step ?? capsule.ack ?? '交给助手了') : capsule.phase === 'waiting' ? capsule.reason
       : capsule.phase === 'done' ? capsule.result : capsule.phase === 'failed' ? capsule.reason : capsule.phase === 'transcribing' ? '…' : '';
     detail.hidden = !detail.textContent;
     left.hidden = !(capsule.phase === 'done' && capsule.left);
@@ -166,11 +167,11 @@ export function createPttCapsule() {
     scheduleClose();
   };
 
-  // 任务在跑时 Esc 停下；正在念时 Esc 只停声音；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
+  // 任务在跑时 Esc 中止（念着确认句也是：听出理解错了就叫停）；念结果时 Esc 只停声音；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
   addEventListener('keydown', event => {
     if (event.key !== 'Escape' || !shown) return;
 
-    if (shown.phase === 'doing') send('stop');
+    if (shown.phase === 'doing') { send('stop'); if (speaking()) send('hush'); }
     else if (speaking()) send('hush');
     else if (shown.phase !== 'listening' && shown.phase !== 'transcribing') hide();
   }, true);

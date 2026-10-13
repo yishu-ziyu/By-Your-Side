@@ -8,6 +8,7 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '..
  * 按住、听写中由网页自己画；话交给助手后，按这个会话的任务视图和交付换成 正在做 / 等你 / 结果 / 已中止。
  * 只读任务视图和交付，不是第二套任务状态；胶囊只在说话的那个标签页上。
  * 结果和等你同时念出来（docs/evals/20261007-ptt-speak.md）：念的时候胶囊带 speaking，念完再去掉。
+ * 交给助手的那一刻先念一句短确认（ackFor，取消或犹豫的话不念），免得用户等结果时半天没声音；结果、等你、停下一到就掐掉它。
  */
 
 /** 任务停下后等这么久再出结果：目标核对和交付可能随后才到。 */
@@ -16,11 +17,52 @@ const SETTLE_MS = 800;
 /**
  * spokenText：已经交去念的整句，同一句不再念（目标核对、交付会让胶囊刷新几遍）。
  * 晚到的「留给你的」只是在原句后面多一段：排在 queue 里，等前一句念完接着念那一段，不从头重念。
- * utterance：每念一句加一，念完的回调只认自己那一句，旧的一句被打断或过期时不再改胶囊。
+ * utterance：每念一句加一，念完的回调只认自己那一句，旧的一句被打断或过期时不再改胶囊。ackUtterance：确认句是哪一句。
  */
 interface Tracked {
   tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; settle?: ReturnType<typeof setTimeout>;
-  spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: PttCapsule;
+  spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: Extract<PttCapsule, { phase: 'doing' | 'done' | 'waiting' }>; ack: string | null; ackUtterance?: number;
+}
+
+/** 确认句没把握时的说法；问句用 ACK_QUESTION。 */
+const ACK_FALLBACK = '好，马上做。';
+
+const ACK_QUESTION = '好，我看一下。';
+
+/** 确认句里事情部分最多几个字；再长多半是整段口述，取不准。 */
+const ACK_MAX = 14;
+
+/** 句首的请求口头语，按整词、长的先去；「那个表」「好好」「你的」里的字不算口头语。 */
+const ACK_FILLER = /^(?:能不能帮我|可不可以帮我|能不能|可不可以|麻烦你|麻烦|帮忙|请你|请|帮我|给我|替我|嗯|呃|(?:那|好|你)(?![个的们好]))/;
+
+/** 只是应声、不是事情的分句。 */
+const ACK_BARE = /^(?:嗯+|呃+|啊+|那个|这个|好的?|好吧|行|对|ok|okay)$/i;
+
+/** 取消或犹豫的话：回「好，马上做」是反着的，不念确认句。 */
+const ACK_HESITANT = /不用|算了|想想|没事|等等|等一下|先别|取消/;
+
+/** 复述不了的：有人称（要换成「你」才对）、否定、只是补充条件。 */
+const ACK_UNSAFE = /[我你他她]|不要|别|就行|就好|就可以|即可|也行|都行|最好/;
+
+/**
+ * 松开后马上念的确认句：从听写原话本地取，不问模型，所以不拖慢结果。
+ * 只在有把握时复述：去掉口头语后正好一个分句、没有人称、含汉字、长短合适；否则说通用句，宁可笼统也不说错。
+ * 取消或犹豫的话返回 null：不出声。
+ */
+export function ackFor(heard: string): string | null {
+  if (ACK_HESITANT.test(heard)) return null;
+
+  if (/[?？]|吗|什么|怎么|为什么|多少|哪/.test(heard)) return ACK_QUESTION;
+  const clauses = heard.split(/[，,。！!；;…\n]+/).map(part => part.trim()).filter(part => part && !ACK_BARE.test(part)).map(part => {
+    let rest = part;
+
+    for (let before = ''; before !== rest;) { before = rest; rest = rest.replace(ACK_FILLER, ''); }
+
+    return rest.replace(/一下/g, '').replace(/(?:吧|呢|啊|呀|哦|啦|谢谢)+$/, '').trim();
+  }).filter(Boolean);
+  const task = clauses.length === 1 ? clauses[0]! : '';
+
+  return task.length >= 2 && task.length <= ACK_MAX && /[\u4e00-\u9fff]/.test(task) && !ACK_UNSAFE.test(task) ? `好，${task}。` : ACK_FALLBACK;
 }
 
 /** 回答的第一句；太长就截断。 */
@@ -35,8 +77,8 @@ function firstSentence(text: string): string {
 /** 当前步骤：和侧栏任务栏一样取正在做的动作，没有就是上一步。 */
 const stepOf = (view: TaskView) => view.active.at(-1)?.action ?? view.lastAction?.action ?? null;
 
-/** 念结果：speak 在不念（没 Key、关了）时返回 null，否则等念完；hush 马上停。 */
-export interface PttVoice { speak(text: string, conversationId: string): Promise<PttSpeechReply> | null; hush(): void }
+/** 念结果：speak 在不念（没 Key、关了）时返回 null，否则等念完；quiet 时念失败也不在侧栏提示（确认句）。hush 马上停。 */
+export interface PttVoice { speak(text: string, conversationId: string, quiet?: boolean): Promise<PttSpeechReply> | null; hush(): void }
 
 /** 要念的那一句：结果 + 留给你的；等你时说需要你做什么。 */
 export function speechFor(capsule: PttCapsule): string | null {
@@ -58,9 +100,10 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
   const current = (t: Tracked) => t.last ? (t.speaking ? { ...t.last, speaking: true as const } : t.last) : null;
 
   /** 念一句；念完接着念排队的下一段。被打断（Esc、✕、新的一句）或失败就清掉队列。 */
-  const start = (t: Tracked, text: string) => {
+  const start = (t: Tracked, text: string, ack = false) => {
     const id = ++t.utterance;
-    const speaking = voice.speak(text, t.conversationId);
+    t.ackUtterance = ack ? id : undefined;
+    const speaking = voice.speak(text, t.conversationId, ack);
     t.speaking = !!speaking;
     void speaking?.then(reply => {
       if (t.utterance !== id) return;
@@ -93,11 +136,13 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     show(t.tabId, current(t)!);
   };
 
-  /** 任务又跑起来、停下或出错：正在念的那句作废，旧结果不再回到胶囊上。 */
-  const silence = (t: Tracked) => {
-    if (t.speaking) voice.hush();
-    t.utterance += 1;
-    t.speaking = false;
+  /** 任务又跑起来、停下或出错：正在念的那句作废，旧结果不再回到胶囊上。任务刚跑起来时（keepAck）确认句接着念完。 */
+  const silence = (t: Tracked, keepAck = false) => {
+    if (!(keepAck && t.speaking && t.ackUtterance === t.utterance)) {
+      if (t.speaking) voice.hush();
+      t.utterance += 1;
+      t.speaking = false;
+    }
     t.queue = [];
     t.spokenText = undefined;
     t.last = undefined;
@@ -129,11 +174,14 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
 
     if (view.state === 'running') {
       t.sawRun = true;
-      silence(t);
-      show(t.tabId, { phase: 'doing', heard: t.heard, step: stepOf(view) });
+      silence(t, true);
+      t.last = { phase: 'doing', heard: t.heard, step: stepOf(view), ack: t.ack };
+      show(t.tabId, current(t)!);
     } else if (view.state === 'paused') {
       showAndSay(t, { phase: 'waiting', heard: t.heard, reason: '页面现在归你。操作完，点「交还」。' });
     } else if (t.sawRun && (view.state === 'idle' || view.state === 'aborted' || view.state === 'error')) {
+      // 中止、出错马上停声音（多半是确认句听出理解错了），胶囊照旧稍后再换。
+      if (view.state !== 'idle') { silence(t); show(t.tabId, { phase: 'doing', heard: t.heard, step: stepOf(view), ack: t.ack }); }
       t.settle = setTimeout(() => settle(view), SETTLE_MS);
     }
   };
@@ -152,8 +200,11 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     /** 松开后的结局：交给了助手（开始跟踪），或没成（直接显示原因）。 */
     handedOff(tabId: number, conversationId: string, heard: string) {
       recordingTab = null;
-      tracked = { tabId, conversationId, heard, sawRun: false, result: null, utterance: 0, queue: [] };
-      show(tabId, { phase: 'doing', heard, step: null });
+      const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, utterance: 0, queue: [], ack: ackFor(heard) };
+      tracked = t;
+      t.last = { phase: 'doing', heard, step: null, ack: t.ack };
+      if (t.ack) start(t, t.ack, true);
+      show(tabId, current(t)!);
       onChange();
     },
     failed(tabId: number, reason: string, heard?: string) {

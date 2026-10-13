@@ -8,6 +8,8 @@
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
+ * 确认句（松开后马上应一句）：这句话有两个分句，没把握复述，每轮先念通用句「好，马上做。」，且只请求一次；
+ * 第 1 轮任务步骤在跑时它照样念完，念的时候「正在做」后面是它、光球在说，念完换回当前步骤；第 3 轮结果马上到，确认句被打断。
  * 胶囊的 shadow root 是关着的：用它挂在宿主上的 data-phase / data-peak 判断步骤，内容看截图。
  */
 import assert from "node:assert/strict";
@@ -58,6 +60,12 @@ const ANSWER4 = "表格做好了，Kite 的营收还没能确认。";
 
 const LEFT = "确认 Kite 的营收";
 
+/** SPOKEN 有两个分句，本地规则没把握复述，用通用句。 */
+const ACK = "好，马上做。";
+
+/** 去掉确认句以后的朗读请求：结果、留给你的、需要你。 */
+const resultSpeech = () => evidence.speechRequests.filter(request => request.text !== ACK);
+
 const rp = await launchRealPath({ microphoneWav: wav });
 
 let error: string | null = null;
@@ -67,8 +75,8 @@ let failShot: (() => Promise<void>) | null = null;
 
 /** 写进 result.json 的证据：每轮看到的步骤顺序、声波最高、各步耗时。 */
 interface Evidence {
-  speechMs: number; rounds: Array<{ phases: string[]; peakPx?: number; pillDuringCapsule?: string | null; ms: Record<string, number>; spoken?: unknown }>;
-  panelOpened?: boolean; sockets: string[]; payGoKeyRejected?: string; speechRequests: Array<{ url: string; model?: string; text?: string }>;
+  speechMs: number; rounds: Array<{ phases: string[]; peakPx?: number; pillDuringCapsule?: string | null; ms: Record<string, number>; spoken?: unknown; ack?: unknown }>;
+  panelOpened?: boolean; sockets: string[]; payGoKeyRejected?: string; speechRequests: Array<{ url: string; model?: string; text?: string; at: number }>; speechReplies?: unknown[];
 }
 
 const evidence: Evidence = { speechMs, rounds: [], sockets: [], speechRequests: [] };
@@ -80,9 +88,34 @@ const dictationFrames: Array<{ socket: string; at: number; type: string }> = [];
 const capsuleState = (session: string) => rp.evaluate(session, `(() => { const h = document.querySelector('[data-sideagent-overlay="ptt-capsule"]'); return h ? { phase: h.dataset.phase ?? null, peak: Number(h.dataset.peak ?? 0), speaking: h.dataset.speaking === "true" } : null; })()`) as Promise<{ phase: string | null; peak: number; speaking: boolean } | null>;
 
 /** 离屏文档上一次念的结果（ptt-speech.ts 写在根元素上）。 */
+let inprocSession: string | null = null;
+
 const lastSpeech = async (inproc: string) => JSON.parse(String(await rp.evaluate(inproc, `document.documentElement.dataset.pttSpeech ?? "null"`)));
 
-type DomNode = { nodeId: number; nodeName: string; nodeValue?: string; children?: DomNode[]; shadowRoots?: DomNode[] };
+/** 离屏文档念过的每一句的结果，按先后（lastSpeech 只留最后一句，被下一句打断的确认句要从这里看）。 */
+const speechReplies = async (inproc: string) => JSON.parse(String(await rp.evaluate(inproc, `JSON.stringify(window.__pttReplies ?? [])`))) as Array<{ ok: boolean; reason?: string; playedMs?: number }>;
+
+/** 每轮按住时已有几个朗读请求：按轮数确认句请求。 */
+const roundStarts: number[] = [];
+
+/** 从 from 起确认句请求了几次。 */
+const ackRequests = (from: number) => evidence.speechRequests.slice(from).filter(request => request.text === ACK).length;
+
+type DomNode = { nodeId: number; nodeName: string; nodeValue?: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
+
+/** 胶囊第一行「正在做」后面那段文字（关着的 shadow root 里，CDP 能穿透，网页脚本不能）。 */
+async function capsuleDetail(session: string): Promise<string | null> {
+  const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as { root: DomNode };
+  const find = (node: DomNode): DomNode | null => {
+    if (node.nodeName === "SPAN" && node.attributes?.includes("detail")) return node;
+
+    for (const child of [...(node.shadowRoots ?? []), ...(node.children ?? [])]) { const hit = find(child); if (hit) return hit; }
+
+    return null;
+  };
+
+  return find(root)?.children?.map(child => child.nodeValue ?? "").join("") ?? null;
+}
 
 /** 关着的 shadow root 里按文字找按钮，点它的中心（CDP 能穿透，网页脚本不能）。 */
 async function clickCapsuleButton(session: string, label: string): Promise<void> {
@@ -106,6 +139,7 @@ async function clickCapsuleButton(session: string, label: string): Promise<void>
 async function holdAndSpeak(session: string, round: Evidence["rounds"][number], shot: string): Promise<number> {
   const key = { key: "Alt", code: "AltRight", windowsVirtualKeyCode: 18, location: 2 };
   const pressedAt = Date.now();
+  roundStarts.push(evidence.speechRequests.length);
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...key }, session);
   let shotTaken = false;
 
@@ -148,7 +182,7 @@ try {
   await rp.cdp.send("Page.enable", {}, work);
   await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/suppliers` }, work);
 
-  const inproc = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.endsWith("/inproc.html")), 30_000, "offscreen document")).targetId);
+  const inproc = inprocSession = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.endsWith("/inproc.html")), 30_000, "offscreen document")).targetId);
   const items = { inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" }, inproc_voice_key: planKey };
   // SAFETY: CDP Target.createTarget 返回 { targetId }。
   const { targetId: settingsTarget } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` }) as { targetId: string };
@@ -165,7 +199,7 @@ try {
   };
   const rejected = await saveSpeechKey("eyJhbGciOiJSUzI1NiJ9.pay-as-you-go-shaped");
   evidence.payGoKeyRejected = rejected.status;
-  assert.ok(!rejected.stored && rejected.status.includes("只接受"), `R2: pay-as-you-go key rejected ${JSON.stringify(rejected)}`);
+  assert.ok(!rejected.stored && rejected.status.includes("订阅密钥"), `R2: pay-as-you-go key rejected ${JSON.stringify(rejected)}`);
   assert.ok((await saveSpeechKey(speechKey)).stored, "R2: subscription key saved");
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget });
   rp.cdp.onEvent("Network.webSocketCreated", (message: { sessionId?: string; params?: { url?: string } }) => { if (message.sessionId === inproc && message.params?.url) evidence.sockets.push(message.params.url); });
@@ -185,9 +219,10 @@ try {
     if (message.sessionId !== inproc || !request?.url.includes("minimax")) return;
     // SAFETY: 念结果的请求体是 { model, text, ... } 的 JSON。
     const body = request.postData ? JSON.parse(request.postData) as { model?: string; text?: string } : {};
-    evidence.speechRequests.push({ url: request.url, model: body.model, text: body.text });
+    evidence.speechRequests.push({ url: request.url, model: body.model, text: body.text, at: Date.now() });
   });
   await rp.cdp.send("Network.enable", {}, inproc);
+  await rp.evaluate(inproc, `(() => { window.__pttReplies = []; new MutationObserver(() => window.__pttReplies.push(JSON.parse(document.documentElement.dataset.pttSpeech))).observe(document.documentElement, { attributes: true, attributeFilter: ["data-ptt-speech"] }); return true; })()`);
   await sleep(1_500);
   await rp.cdp.send("Runtime.evaluate", { expression: "document.body.click(), true" }, work);
 
@@ -200,8 +235,22 @@ try {
   await waitPhase(work, one, "transcribing", 2_000);
   await waitPhase(work, one, "doing", DICTATION_MS);
   one.ms.doing = Date.now() - released;
-  await sleep(600);
+  // 确认句：在做时光球在说；任务步骤（列标签页）在这期间跑，确认句不被掐掉，完整念完。
+  await until(async () => { const state = await capsuleState(work); return state?.phase === "doing" && state.speaking || undefined; }, 5_000, "ack speaking while doing");
+  one.ms.ackSpeaking = Date.now() - released;
+  await sleep(300);
   await rp.screenshot(work, join(artifacts, "2-doing.png"));
+  assert.equal(await capsuleDetail(work), ACK, "ack: shown after 正在做 while spoken");
+  await until(async () => (await capsuleState(work))?.speaking === false || undefined, 10_000, "ack finished");
+  one.ms.ackDone = Date.now() - released;
+  one.ack = await lastSpeech(inproc);
+  assert.equal((await capsuleState(work))?.phase, "doing", "ack: finished before the result");
+  // 念完换回当前步骤：后半段仍看得到在做什么（列标签页这一步在侧栏叫「查看标签页」）。
+  assert.equal(await capsuleDetail(work), "查看标签页", "ack: the current step returns after the ack");
+  await rp.screenshot(work, join(artifacts, "2b-doing-step.png"));
+  assert.ok((one.ack as { ok?: boolean; playedMs?: number }).ok && (one.ack as { playedMs: number }).playedMs > 300, `ack: played in full while the task ran ${JSON.stringify(one.ack)}`);
+  assert.ok(model.requests.some(r => r.rule === rule.match && r.step === 1), "ack: the model was already asked for the step after the tool when the ack finished");
+  assert.deepEqual(evidence.speechRequests.map(request => request.text), [ACK], "ack: spoken first, from the local rule");
   // SAFETY: 表达式返回字符串或 null。
   one.pillDuringCapsule = await rp.evaluate(work, `document.querySelector('[data-sideagent-overlay="edge-pill"]')?.dataset.state ?? null`) as string | null;
   assert.equal(one.pillDuringCapsule, null, "R4: the edge pill stays hidden on the capsule's page");
@@ -219,8 +268,8 @@ try {
   one.spoken = await lastSpeech(inproc);
   assert.ok((one.spoken as { ok?: boolean; playedMs?: number }).ok && (one.spoken as { playedMs: number }).playedMs > 1_500, `R1: the result was played ${JSON.stringify(one.spoken)}`);
   assert.equal((await capsuleState(work))?.phase, "done", "R3: capsule stays after speaking");
-  assert.ok(evidence.speechRequests.length === 1 && evidence.speechRequests[0]!.url === "https://api.minimaxi.com/v1/t2a_v2" && evidence.speechRequests[0]!.model === "speech-2.8-hd", `R2: one request to the subscription endpoint ${JSON.stringify(evidence.speechRequests)}`);
-  assert.ok(evidence.speechRequests[0]!.text?.startsWith("已经按营收排好了表，Lumen 最高。") && !evidence.speechRequests[0]!.text.includes("第二句"), `R1: spoke only the first sentence ${evidence.speechRequests[0]!.text}`);
+  assert.ok(evidence.speechRequests.length === 2 && evidence.speechRequests.every(request => request.url === "https://api.minimaxi.com/v1/t2a_v2" && request.model === "speech-2.8-hd"), `R2: ack + result to the subscription endpoint ${JSON.stringify(evidence.speechRequests)}`);
+  assert.ok(evidence.speechRequests[1]!.text?.startsWith("已经按营收排好了表，Lumen 最高。") && !evidence.speechRequests[1]!.text.includes("第二句"), `R1: spoke only the first sentence ${evidence.speechRequests[1]!.text}`);
 
   // R3：点「在侧栏看」打开侧栏，对话里有这句话。
   await clickCapsuleButton(work, "在侧栏看");
@@ -247,7 +296,7 @@ try {
   two.ms.doing = escAt - released2;
   await rp.screenshot(work, join(artifacts, "5-stopped.png"));
   await sleep(1_500);
-  assert.equal(evidence.speechRequests.length, 1, "R1: a stopped task is not spoken");
+  assert.equal(resultSpeech().length, 1, "R1: a stopped task is not spoken");
 
   // ── 第 3 轮：念到一半按 Esc ──
   rule.steps = [{ text: ANSWER3 }];
@@ -255,6 +304,8 @@ try {
   await sleep(500);
   const three: Evidence["rounds"][number] = { phases: [], ms: {} };
   evidence.rounds.push(three);
+  const requestsBefore3 = evidence.speechRequests.length;
+  const repliesBefore3 = (await speechReplies(inproc)).length;
   await holdAndSpeak(work, three, join(artifacts, "6-listening-third.png"));
   await waitPhase(work, three, "done", DICTATION_MS + 15_000);
   await until(async () => (await capsuleState(work))?.speaking || undefined, 10_000, "third speaking");
@@ -267,6 +318,14 @@ try {
   three.spoken = await lastSpeech(inproc);
   assert.deepEqual(three.spoken, { ok: false, reason: "hushed" }, "R3: Esc hushed the speech");
   assert.equal((await capsuleState(work))?.phase, "done", "R3: Esc while speaking keeps the capsule");
+  // 结果马上到（没有工具步、没有延时）：确认句还在念就被结果打断，回复是 hushed，只放了很短一段。
+  const asked3 = evidence.speechRequests.slice(requestsBefore3);
+  const replies3 = (await speechReplies(inproc)).slice(repliesBefore3);
+  three.ack = { requests: asked3.map(request => request.text), replies: replies3 };
+  assert.ok(asked3.length === 2 && asked3[0]!.text === ACK && asked3[1]!.text === ANSWER3, `ack: one ack, then the result ${JSON.stringify(three.ack)}`);
+  three.ms.ackCutAfter = asked3[1]!.at - asked3[0]!.at;
+  assert.deepEqual(replies3[0], { ok: false, reason: "hushed" }, `ack: cut off when the result arrived ${JSON.stringify(three.ack)}`);
+  assert.ok(three.ms.ackCutAfter < one.ms.ackDone! - one.ms.ackSpeaking! - 300, `ack: the result came before the ack could finish (${three.ms.ackCutAfter} ms vs a full ack of ${one.ms.ackDone! - one.ms.ackSpeaking!} ms)`);
   await rp.screenshot(work, join(artifacts, "7-hushed.png"));
 
   // ── 第 4 轮：留给你的，目标核对晚到 ──
@@ -278,16 +337,16 @@ try {
   await sleep(500);
   const four: Evidence["rounds"][number] = { phases: [], ms: {} };
   evidence.rounds.push(four);
-  const before = evidence.speechRequests.length;
+  const before = resultSpeech().length;
   await holdAndSpeak(work, four, join(artifacts, "8-listening-fourth.png"));
   await waitPhase(work, four, "done", DICTATION_MS + 15_000);
-  await until(async () => evidence.speechRequests.length >= before + 2 || undefined, 20_000, "left-for-you spoken after the result");
+  await until(async () => resultSpeech().length >= before + 2 || undefined, 20_000, "left-for-you spoken after the result");
   await sleep(600);
   await rp.screenshot(work, join(artifacts, "9-left-speaking.png"));
   await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "fourth speech finished");
   four.spoken = await lastSpeech(inproc);
   await sleep(500);
-  const spokenTexts = evidence.speechRequests.slice(before).map(request => request.text);
+  const spokenTexts = resultSpeech().slice(before).map(request => request.text);
   assert.deepEqual(spokenTexts, [ANSWER4, `留给你的：${LEFT}`], "R1: the result, then only the left-for-you part");
   assert.ok((four.spoken as { ok?: boolean }).ok, `R1: left-for-you played ${JSON.stringify(four.spoken)}`);
 
@@ -308,6 +367,8 @@ try {
   five.spoken = await lastSpeech(inproc);
   assert.ok((five.spoken as { ok?: boolean; playedMs?: number }).ok && (five.spoken as { playedMs: number }).playedMs > 500, "需要你实际播放，不以发送请求算完成");
   assert.equal((await capsuleState(work))?.phase, "waiting", "播完仍等用户，不恢复已完成");
+  const perRound = roundStarts.map((from, i) => ackRequests(from) - (roundStarts[i + 1] === undefined ? 0 : ackRequests(roundStarts[i + 1]!)));
+  assert.deepEqual(perRound, [1, 1, 1, 1, 1], "ack: exactly one ack request per round");
   await rp.screenshot(work, join(artifacts, "11-needs-user.png"));
 
   assert.ok(evidence.sockets.length > 0 && evidence.sockets.every(url => url.startsWith("wss://api.stepfun.com/step_plan/v1/realtime")), `dictation only on the plan URL ${JSON.stringify(evidence.sockets)}`);
@@ -315,6 +376,7 @@ try {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   await failShot?.().catch(() => {});
 } finally {
+  if (inprocSession) evidence.speechReplies = await speechReplies(inprocSession).catch(() => []);
   await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, modelRequests: model.requests.map(r => `${r.rule ?? "-"}#${r.step}${r.tools ? "" : " (no tools)"}`), dictationFrames, error }, null, 2));
   await rp.close();
   await rp.remove();
