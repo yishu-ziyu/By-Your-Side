@@ -6,6 +6,7 @@
 - 引用这里文件的 issue 用 `blob/assets/<文件夹>/<文件>` 链接。
 - 某个文件夹不再被任何开着的 issue 引用时，可以删掉；历史提交里仍能取回。
 - 2026-10-12 由原来的 4 条 `assets/*-20261011` 分支合并而来，原分支的提交都是本分支的父提交。
+- 2026-10-14 并入 `assets-branch-proto-20261012`（同样是父提交），文件夹改名为 `20261012-branch-proto/`。
 
 ## 20261011-dogfood/ 新用户首启走查截图
 
@@ -70,3 +71,9 @@
 - `20261011-latency-trace/`：延迟报告的旧版，和 `20261011-latency/` 重复，10-12 删掉。issue 里的链接写的是提交 `77dadfc`，照常能打开。
 
 两个原型的 `product-styles.css` 是当时仓库 `extension/src/sidepanel/styles.css` 的副本。`vendor/` 里是 marked（MIT）和 DOMPurify（Apache-2.0 / MPL-2.0）的发行文件。原型里的界面文字写于 #247 文案审校之前，落地时按 #247 的核准词表改（例如「做了 N 件事」→「做了 N 步」）。
+
+## 20261012-branch-proto/ 分支过程原型
+
+（原分支 `assets-branch-proto-20261012`，原文件夹名 `branch-proto-20261012/`）
+
+#263 过程块的分支图原型：标签页扇形、并行抓取分叉与汇合、你接管的蓝色通道。录像 `compare.mp4`（对照）、`cur.mp4`（当时的界面）、`git.mp4`、`tabs.mp4`、`you.mp4`；静图 `contact.png`、`*-fork-merge.png`、`you-takeover.png`；`branch-stats.json` 是原型用的数据。这个原型已由 #355 做进产品。
