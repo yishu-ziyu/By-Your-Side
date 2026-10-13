@@ -1,4 +1,4 @@
-import { answerSpeech } from '../../../shared/answer-cards.js';
+import { answerSpeech, cardPreview, type CardPreview } from '../../../shared/answer-cards.js';
 import type { ServerMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '../shared/ptt.js';
@@ -20,7 +20,7 @@ const SETTLE_MS = 800;
  * utterance：每念一句加一，念完的回调只认自己那一句，旧的一句被打断或过期时不再改胶囊。ackUtterance：确认句是哪一句。
  */
 interface Tracked {
-  tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; settle?: ReturnType<typeof setTimeout>;
+  tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; card: CardPreview | null; settle?: ReturnType<typeof setTimeout>;
   spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: Extract<PttCapsule, { phase: 'doing' | 'done' | 'waiting' }>; ack: string | null; ackUtterance?: number;
 }
 
@@ -163,7 +163,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
 
     if (goal?.status === 'waiting') return showAndSay(t, { phase: 'waiting', heard: t.heard, reason: goal.remaining ?? '需要你回一句' });
     const left = goal && goal.status !== 'done' ? goal.remaining ?? view.latestDelivery?.unfinished?.[0] ?? null : null;
-    showAndSay(t, { phase: 'done', heard: t.heard, result: t.result ? firstSentence(t.result) : '做完了。', left });
+    showAndSay(t, { phase: 'done', heard: t.heard, result: t.result ? firstSentence(t.result) : '做完了。', left, ...t.card ? { card: t.card } : {} });
   };
 
   const onView = (view: TaskView) => {
@@ -200,7 +200,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     /** 松开后的结局：交给了助手（开始跟踪），或没成（直接显示原因）。 */
     handedOff(tabId: number, conversationId: string, heard: string) {
       recordingTab = null;
-      const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, utterance: 0, queue: [], ack: ackFor(heard) };
+      const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, card: null, utterance: 0, queue: [], ack: ackFor(heard) };
       tracked = t;
       t.last = { phase: 'doing', heard, step: null, ack: t.ack };
       if (t.ack) start(t, t.ack, true);
@@ -226,7 +226,12 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     server(msg: ServerMessage) {
       if (msg.type === 'task_view') onView(msg.view);
 
-      if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') tracked.result = answerSpeech(msg.event.delivery.text);
+      if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') {
+        tracked.result = answerSpeech(msg.event.delivery.text);
+        const card = cardPreview(msg.event.delivery.text);
+        // 回答只有卡片时，胶囊那一句就是卡片标题：卡片不再重复标题，只列行。
+        tracked.card = card && tracked.result.split('；').includes(card.title) ? { ...card, title: '' } : card;
+      }
     },
   };
 }
