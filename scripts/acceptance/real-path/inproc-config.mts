@@ -4,8 +4,9 @@
  * - 快速路径：直接写扩展存储（与设置页写入的格式相同）。
  * - 设置页路径：像用户一样从侧栏「更多 → 模型与语音」打开设置页，点选服务商、输入 key 和模型、测试连接、保存。
  *
- * 套餐清单在 ~/.sideagent/providers.local.json。Kimi 是订阅登录，只借用 Pi 里当前有效的令牌，不在测试里刷新，
- * 避免和 Pi CLI 抢令牌轮换；设备码登录要真人在 Kimi 网页上确认，设置页路径不支持它。
+ * 套餐清单在 ~/.sideagent/providers.local.json。Kimi 是订阅登录：访问令牌只活约 15 分钟，刷新令牌用一次就作废，
+ * 所以经 scripts/maintenance/kimi-login.mjs 在 Pi 的文件锁里续期后，只把访问令牌交给测试扩展、不带刷新令牌，
+ * 免得测试扩展自己续期让 Pi 手里那份作废。登录失效时运行 npm run kimi:login；设置页路径不支持设备码登录。
  *
  * `--model=custom/<模型>` 走设置页里的「自定义 OpenAI 兼容」：地址与 key 从环境变量
  * SIDEAGENT_CUSTOM_BASE_URL、SIDEAGENT_CUSTOM_KEY 读（不进套餐清单，不落盘），例如 MiniMax token plan。
@@ -47,6 +48,16 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
   const plan = providerId === "stepfun" && !plans.stepfun ? { key: (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim() } : providerId === "openai-codex" ? plans[providerId] ?? { source: "pi-auth" } : plans[providerId];
 
   if (plan?.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: plan.key } };
+
+  if (providerId === "kimi-coding") {
+    // 留 10 分钟给一次验收；测试扩展拿不到刷新令牌，跑超过令牌寿命会报登录过期，而不是悄悄换掉 Pi 的登录。
+    const { renewKimi } = await import("../../maintenance/kimi-login.mjs");
+    const kimi = await renewKimi(10 * 60_000);
+
+    if (!kimi) throw new Error("Pi 里没有 Kimi 登录：先运行 npm run kimi:login");
+
+    return { providerId, modelId: idParts.join("/"), credential: { type: "oauth", access: kimi.access, refresh: "", expires: kimi.expires } };
+  }
 
   // SAFETY: Pi 的 auth.json 按服务商存订阅登录 { access, refresh, expires } 或填的 key { type: "api_key", key }。
   const login = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { type?: string; key?: string; access: string; refresh: string; expires: number; accountId?: string } | undefined>)[providerId];
