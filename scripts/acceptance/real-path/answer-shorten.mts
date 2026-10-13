@@ -97,7 +97,10 @@ try {
   if (live) {
     await ask("这三家哪家到手最便宜？算上运费", 1);
     await rp.screenshot(panel, join(artifacts, "live-answer.png"));
-    evidence.live = await seen();
+    const answer = await seen();
+    evidence.live = answer;
+    // 真模型常把结论写成只有一句的第一段，后面跟卡片：这时也要能收短。
+    assert.ok(answer.grip, `真模型的长回答有把手: ${JSON.stringify(answer)}`);
   } else {
     await ask(TASK, 1);
     const full = await seen();

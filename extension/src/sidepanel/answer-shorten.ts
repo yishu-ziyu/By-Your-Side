@@ -23,8 +23,8 @@ const CHARS_PER_SECOND = 9;
 
 const level = new WeakMap<HTMLElement, Level>();
 
-/** 第一段的第一句：在第一个句末标点处把后面的内容包进 .shorten-rest。英文句点后要跟空白，小数点不切。 */
-function splitFirstSentence(p: HTMLElement): boolean {
+/** 第一段的第一句：在第一个句末标点处把后面的内容包进 .shorten-rest。英文句点后要跟空白，小数点不切。第一段只有一句时不拆。 */
+function splitFirstSentence(p: HTMLElement): void {
   const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => node.parentElement?.closest(CHROME) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
@@ -41,17 +41,15 @@ function splitFirstSentence(p: HTMLElement): boolean {
     else range.setEnd(p, p.childNodes.length);
     const rest = range.cloneContents();
 
-    if (!rest.textContent?.trim()) return false;
+    if (!rest.textContent?.trim()) return;
     range.deleteContents();
     const span = document.createElement("span");
     span.className = "shorten-rest";
     span.append(rest);
     range.insertNode(span);
 
-    return true;
+    return;
   }
-
-  return false;
 }
 
 /** 给顶层块标出最短在哪一层可见；返回能不能分层。 */
@@ -84,7 +82,9 @@ function markLevels(answer: HTMLElement): boolean {
     }
   }
 
-  return splitFirstSentence(first);
+  splitFirstSentence(first);
+
+  return true;
 }
 
 function apply(answer: HTMLElement, next: Level): void {
