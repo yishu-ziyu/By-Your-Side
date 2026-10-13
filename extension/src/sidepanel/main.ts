@@ -775,7 +775,7 @@ function noteModelPresence(model: string | undefined, models: ModelOption[] | un
         await waitFlag(() => resending === null || userSentAt > startedAt, 20_000);
         await waitFlag(() => {
           const snap = conversations.get(conversationId);
-          return !!snap?.runId && !running && (snap.state === "idle" || snap.state === "error" || userSentAt > startedAt);
+          return !!snap?.runId && !running && (snap.state === "idle" || userSentAt > startedAt);
         }, 30_000);
       }
     }
