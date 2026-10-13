@@ -5584,10 +5584,11 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         if (!running) runStartAt = eventTime();
         else if (!entry.item.undelivered) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);
-        const resent = resending && resending.conversationId === selectedConversationId && resending.text === entry.item.text ? resending : null;
+        const sentText = entry.item.text;
+        const resent = resending && resending.conversationId === selectedConversationId && resending.text === sentText ? resending : null;
         if (resent) resending = null;
         const helds = [...messagesEl.querySelectorAll<HTMLElement>(".msg.user.held-pending")];
-        const held = helds.find((node) => entry.item.text && (node.querySelector(".user-msg-text")?.textContent ?? node.textContent ?? "").trim() === entry.item.text.trim()) ?? null;
+        const held = helds.find((node) => sentText && (node.querySelector(".user-msg-text")?.textContent ?? node.textContent ?? "").trim() === sentText.trim()) ?? null;
         const reuse = resent?.bubble?.isConnected ? resent.bubble : held;
         // 连好模型后的自动重发：原话的气泡已经在上面，不再画第二个。
         const bubble = reuse ?? addUserMsg(entry.item.text, entry.item.attachments);
