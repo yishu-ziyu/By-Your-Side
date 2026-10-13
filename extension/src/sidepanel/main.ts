@@ -857,7 +857,7 @@ function renderConversations(): void {
 }
 
 function resetConversationRender(): void {
-  if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
+  if (currentRun) { clearInterval(currentRun.timer); clearInterval(currentRun.heartbeatTimer); currentRun.orb.dispose(); }
 
   closeBlocks();
   currentRun = null;
@@ -3778,10 +3778,13 @@ function finishRun(): void {
   }
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
-  // 分叉层跟着过程块走：紧跟在它后面，读回再跟在分叉层后面。
-  run.root.after(run.graph.el);
+  // 分叉层跟着过程块走：紧跟在它后面，读回再跟在分叉层后面；这一轮没画分叉就不留空节点。
+  run.graph.finish();
 
-  if (run.evidence) run.graph.el.after(run.evidence);
+  if (run.graph.el.hidden) run.graph.el.remove();
+  else run.root.after(run.graph.el);
+
+  if (run.evidence) (run.graph.el.isConnected ? run.graph.el : run.root).after(run.evidence);
 
   for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
     if (node instanceof HTMLElement && node.matches(".msg.assistant")) syncAnswerTime(node);

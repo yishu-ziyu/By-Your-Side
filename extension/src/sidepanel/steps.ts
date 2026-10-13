@@ -77,7 +77,7 @@ function hostOf(url: unknown): string | null {
     const name = host.replace(/:\d+$/, "").toLowerCase();
 
     // 本机地址不当域名写给用户。
-    if (name === "localhost" || name === "0.0.0.0" || name === "::1" || name.startsWith("127.") || /^(\d{1,3}\.){3}\d{1,3}$/.test(name)) return null;
+    if (name === "localhost" || name === "0.0.0.0" || name === "[::1]" || name.startsWith("127.") || /^(\d{1,3}\.){3}\d{1,3}$/.test(name)) return null;
 
     return host;
   }

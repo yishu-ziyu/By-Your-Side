@@ -80,11 +80,13 @@ export function groupSummary(kind: GraphKind, tools: readonly GraphTool[]): stri
     const opened = tools.filter((tool) => !tool.failed && opens(tool)).length;
     const looked = live - opened;
     const tail = dead ? ` · ${dead} 页没打开` : "";
+    if (!live) return `${dead} 页都没打开`;
     const head = opened && looked ? `开了 ${opened} 个、看了 ${looked} 个标签页` : opened ? `开了 ${opened} 个标签页` : `看了 ${looked} 个标签页`;
 
     return `${head}${tail}`;
   }
 
+  if (!live) return `${dead} 路都没成`;
   const tail = dead ? ` · ${dead} 个接口没回` : "";
 
   return `查了 ${live} 路${tail}`;

@@ -124,8 +124,8 @@ try {
   const done = (await read())!;
   await rp.screenshot(panel, join(out, "folded.png"));
   const dead = done.groups.flatMap((g) => g.dead).join(" ");
-  check("c 死路带人话原因，不写出错", /接口没回|连不上/.test(dead + done.text) && !done.text.includes("出错"), { dead: done.groups.flatMap((g) => g.dead), fold: done.groups.map((g) => g.fold) });
-  check("d 折成一行，高度不超过 176", done.groups.filter((g) => g.kind === "b1" || g.kind === "b3").every((g) => g.state === "folded") && done.height <= 176 && !done.overflowX, { states: done.groups.map((g) => `${g.kind}:${g.state}`), height: done.height, overflowX: done.overflowX });
+  check("c 死路带人话原因，不写出错", /接口没回|连不上/.test(dead) && !done.text.includes("出错"), { dead: done.groups.flatMap((g) => g.dead), fold: done.groups.map((g) => g.fold) });
+  check("d 折成一行，高度不超过 176", done.groups.some((g) => g.kind === "b1" || g.kind === "b3") && done.groups.filter((g) => g.kind === "b1" || g.kind === "b3").every((g) => g.state === "folded") && done.height <= 176 && !done.overflowX, { states: done.groups.map((g) => `${g.kind}:${g.state}`), height: done.height, overflowX: done.overflowX });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every((c) => c.pass) ? "PASS" : "FAIL", checks, modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>((done) => site.close(() => done()));

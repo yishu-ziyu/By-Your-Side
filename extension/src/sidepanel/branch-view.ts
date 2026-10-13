@@ -26,6 +26,8 @@ export type LiveGraph = {
   start: (tool: GraphTool) => void;
   end: (id: string, update: Partial<Pick<GraphTool, "failed" | "reason" | "result" | "label">>) => void;
   user: (on: boolean) => void;
+  /** 这一轮收尾：还开着的分支按结束画，并收成一行，不留在转的节点。 */
+  finish: () => void;
 };
 
 type Group = {
@@ -246,6 +248,8 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
     end(id, update) {
       const tool = open.find((item) => item.id === id);
       if (!tool) return;
+      // 已经结束的一步不再和下一步凑成「同时」：只有同时在跑的才画分叉（历史回放也是先开始、后结束、再开始下一步）。
+      burst = burst.filter((item) => item.id !== id);
       Object.assign(tool, update);
       if (update.failed) tool.failed = true;
       if (update.result !== undefined || update.failed) tool.result = update.result ?? tool.result ?? "";
@@ -254,6 +258,20 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
       if (!group) return;
       paintEnd(group, tool);
       closeIfIdle(group);
+    },
+    finish() {
+      window.clearTimeout(burstTimer);
+      burst = [];
+
+      for (const group of groups) {
+        for (const tool of group.tools) {
+          if (tool.result !== undefined || tool.failed) continue;
+          tool.result = tool.id === "you" ? "你交还了" : "";
+          paintEnd(group, tool);
+        }
+        closeIfIdle(group);
+      }
+      you = null;
     },
     user(on) {
       if (on) {
