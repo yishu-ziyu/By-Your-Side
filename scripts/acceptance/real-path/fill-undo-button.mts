@@ -67,7 +67,7 @@ try {
   const settled = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "turn settled", 100);
   const answerOf = (done: string) => `[...document.querySelectorAll("#messages .msg.assistant")].find(m => m.textContent.includes(${JSON.stringify(done)}))`;
   const seen = async (done: string): Promise<Seen> => await rp.evaluate(panel, `(() => { const a = ${answerOf(done)}; const b = a?.querySelector(".answer-primary");
-    return { button: b?.textContent ?? "", disabled: !!b?.disabled, result: a?.querySelector(".fill-undo-result")?.textContent ?? "", faded: Number(getComputedStyle(a.querySelector("p")).opacity),
+    return { button: b?.querySelector("span")?.textContent ?? "", disabled: !!b?.disabled, result: a?.querySelector(".fill-undo-result")?.textContent ?? "", faded: Number(getComputedStyle(a.querySelector("p")).opacity),
       row: Number(getComputedStyle(a.querySelector(".answer-actions")).opacity) }; })()`) as Seen;
   const waitButton = (done: string, text: string) => until(async () => { const s = await seen(done); return s.button.includes(text) ? s : undefined; }, 15_000, `button ${text}`, 100);
   const page = (expr: string) => rp.evaluate(work, expr);
