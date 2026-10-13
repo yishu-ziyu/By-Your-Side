@@ -217,8 +217,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       .edge.on { opacity: 1; }
       .edge.on::before { animation: soft-border-flow 6.5s linear infinite; }
       :host(.user-active) .edge.on { opacity: .18; transition-duration: 250ms; }
-      :host(.user-active) .cursor:not(.holding) { opacity: .3; }
-      :host(.user-active) .cursor:not(.holding) .label { opacity: 0; }
+      :host(.user-active) .cursor:not(.holding):not(.guiding):not(.hidden) { opacity: .3; }
+      :host(.user-active) .cursor:not(.holding):not(.guiding):not(.hidden) .label { opacity: 0; }
       /* 新建即点亮：淡入由样式起点完成，不靠下一帧再改 class（后台页的下一帧可能很晚，晚到的改动会让已发出的确认判为页面已变）。 */
       @starting-style { .edge.on { opacity: 0; } }
       @keyframes soft-border-flow { to { --sideagent-border-angle: 360deg; } }
@@ -2137,16 +2137,22 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   // 用户一动鼠标，彩边和光标让位，停下约 1 秒再亮回来（ego 的 user-in-control 预设）。
   // 助手经调试协议发出的鼠标事件也是可信事件，但总落在光标刚飞到的点上，据此排除。
+  // 不移动光标就派发的鼠标事件（受保护的悬停）先经 expect() 登记落点。
   let userIdle: ReturnType<typeof setTimeout> | undefined;
+  let expected: Array<{ x: number; y: number; at: number }> = [];
 
   function onUserPointer(e: PointerEvent): void {
+    const now = Date.now();
+    expected = expected.filter(p => now - p.at < 3000);
+    const near = (p?: { x: number; y: number }) => !!p && Math.abs(p.x - e.clientX) <= 6 && Math.abs(p.y - e.clientY) <= 6;
+
+    if (expected.some(near)) return;
+
     for (const inst of instances.values()) {
-      for (const p of [inst.aim, inst.pos]) {
-        if (p && Math.abs(p.x - e.clientX) <= 6 && Math.abs(p.y - e.clientY) <= 6) return;
-      }
+      if (near(inst.aim) || near(inst.pos)) return;
     }
 
-    host?.classList.add("user-active");
+    if (!host?.classList.contains("user-active")) host?.classList.add("user-active");
     clearTimeout(userIdle);
     userIdle = setTimeout(() => host?.classList.remove("user-active"), 1100);
   }
@@ -2605,6 +2611,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
         if (inst.action) inst.action.arrived = true;
         setPos(inst, { x, y });
+      },
+      expect(x: number, y: number): void {
+        expected.push({ x, y, at: Date.now() });
       },
       move(x: number, y: number): number {
         const inst = getInstance(id);

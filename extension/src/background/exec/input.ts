@@ -1453,8 +1453,11 @@ export async function hover(
 
   try {
     if (!beforeDispatch) await cursorMove(tab.id, x, y, cid);
-    if (beforeDispatch) await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, beforeDispatch);
-    else await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    if (beforeDispatch) {
+      // 光标不飞过去时，先登记落点，页面光效才不会把这次移动当成用户接手。
+      await callDom(tab.id, (px: number, py: number, id: string) => { window.__sideagent?.cursor?.for(id)?.expect?.(px, py); }, [x, y, cid]).catch(() => {});
+      await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, beforeDispatch);
+    } else await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     await endCursorAction(tab.id, cid, actionId, "done");
   } catch (error) {
     await endCursorAction(tab.id, cid, actionId, "failed");
