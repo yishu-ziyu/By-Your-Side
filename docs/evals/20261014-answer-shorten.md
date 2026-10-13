@@ -22,7 +22,7 @@
 
 ## 技术前提
 
-- 前提：块收起展开用 `interpolate-size: allow-keywords` 让高度能过渡到 `auto`，退场用 `display` 的 allow-discrete 过渡。小实验：没单独写，直接在 `answer-shorten.mts` 里观察。结果：待测
+- 前提：块收起展开用 `interpolate-size: allow-keywords` 让高度能过渡到 `auto`，退场用 `display` 的 allow-discrete 过渡。小实验：没单独写，在 `answer-shorten.mts` 的隔离 Chrome 里看三层截图。结果：通过（收起的块最后不渲染，展开后一字不差）
 
 ## 边界与不做
 
