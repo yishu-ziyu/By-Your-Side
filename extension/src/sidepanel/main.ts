@@ -770,8 +770,15 @@ function noteModelPresence(model: string | undefined, models: ModelOption[] | un
         continue;
       }
 
-      // 下一句等这一句进了历史再发：两句都是 start 时，第一句还在启动会把第二句拒掉。
-      if (i < pending.length - 1) await waitFlag(() => resending === null || userSentAt > startedAt, 20_000);
+      // 下一句等这一句进了历史、并且侧栏已经拿到这一轮的 runId。
+      // 还在跑就按插话发；已经结束就按新任务发。太早发会因为 expectedRunId 对不上被拒。
+      if (i < pending.length - 1) {
+        await waitFlag(() => resending === null || userSentAt > startedAt, 20_000);
+        await waitFlag(() => {
+          const snap = conversations.get(conversationId);
+          return !!snap?.runId && (running || snap.state === "idle" || snap.state === "error" || userSentAt > startedAt);
+        }, 20_000);
+      }
     }
 
     if (conversationId === selectedConversationId) inputEl.focus({ preventScroll: true });
