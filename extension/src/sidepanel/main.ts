@@ -4236,7 +4236,7 @@ function placeProcessBeforeAnswer(root: HTMLElement): void {
 
   while (next instanceof HTMLElement && next !== root && keepsBefore(next)) next = next.nextElementSibling;
 
-  if (next && next !== root) messagesEl.insertBefore(root, next);
+  if (next && next !== root && next.parentNode === messagesEl) messagesEl.insertBefore(root, next);
 }
 
 function cardTurn(root: HTMLElement): boolean {
