@@ -21,8 +21,9 @@ export class RunOrbActivity {
     } else if (event.kind === "tool_end") {
       this.tools.delete(event.toolCallId);
 
+      // 最近结束的一步说了算：成功的一步清掉前面的失败（browser_run 里一次 fetch 没拿到内容、程序本身跑完，这轮不算没做成）。
       // 用户没让发送不是失败（docs/evals/20261009-send-confirm.md R2）。
-      if (event.isError && !event.repeatRefused && !event.heldReason) this.failed = true;
+      this.failed = event.isError && !event.repeatRefused && !event.heldReason;
     } else if (event.kind === "error") {
       this.errored = true;
     } else if (event.kind === "agent_end") {
