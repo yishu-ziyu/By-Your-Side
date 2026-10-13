@@ -21,7 +21,7 @@ import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { mountVoiceOrb } from "../shared/orb-style.js";
-import { markNeedsModelResent, noteNeedsModelManual, renderReceipt } from "./receipt-view.js";
+import { dropPendingMessage, holdPendingMessage, noteNeedsModelManual, playConnectArrival, renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
@@ -671,6 +671,8 @@ document.getElementById("starter-connect")!.onclick = () => void chrome.runtime.
  * 没连模型时发出的话（#233）：卡片承诺「连好以后，这句话会自动发出」。只存在内存里，按会话分开；
  * 用户自己再发任何话就作废。resending 是已交出、还没在历史里见到的那一次重发：它的历史不再画第二个用户气泡。
  */
+/** 用户最近一次自己发话的时刻：连好后的自动重发在动画期间被它抢先时，旧那句不再补发。 */
+let userSentAt = 0;
 const resendAfterConnect = new Map<string, { text: string; page: Promise<PageContext | undefined>; card: HTMLElement; bubble: HTMLElement | null }>();
 
 /** 这个面板最近交出的一条话问的是哪一页；没连模型的回执按 requestId 认领它。 */
@@ -714,12 +716,23 @@ function noteModelPresence(model: string | undefined, models: ModelOption[] | un
   if (!pending || !pending.card.isConnected) return;
   const conversationId = selectedConversationId;
 
-  void pending.page.then((page) => {
+  void pending.page.then(async (page) => {
     if (conversationId !== selectedConversationId || !pending.card.isConnected) return;
     resending = { conversationId, text: pending.text, bubble: pending.bubble };
+    const startedAt = performance.now();
+    await playConnectArrival(pending.card, currentModelId ? chipLabel(currentModelId, knownModels) : null, pending.bubble);
 
-    if (sendInput(pending.text, page)) markNeedsModelResent(pending.card, currentModelId ? chipLabel(currentModelId, knownModels) : null);
-    else resending = null;
+    if (conversationId !== selectedConversationId) {
+      resending = null;
+
+      return;
+    }
+
+    // 动画播完才真发；动画期间用户自己发了新话，或者发不出：卡片改写成「这句没有发出」，不让它看起来已经发了，也不排到新话后面。
+    if (userSentAt > startedAt || !sendInput(pending.text, page)) {
+      resending = null;
+      dropPendingMessage(pending.card, pending.bubble);
+    }
   });
 }
 
@@ -727,6 +740,19 @@ function lastUserBubble(): HTMLElement | null {
   const bubbles = messagesEl.querySelectorAll<HTMLElement>(".msg.user");
 
   return bubbles[bubbles.length - 1] ?? null;
+}
+
+function lastUserBubbleFor(text: string): HTMLElement | null {
+  const bubbles = messagesEl.querySelectorAll<HTMLElement>(".msg.user");
+
+  for (let i = bubbles.length - 1; i >= 0; i -= 1) {
+    const bubble = bubbles[i]!;
+    const body = bubble.querySelector(".user-msg-text")?.textContent ?? bubble.textContent ?? "";
+
+    if (body.trim() === text.trim()) return bubble;
+  }
+
+  return lastUserBubble();
 }
 
 function bindStarterButton(button: HTMLButtonElement): void {
@@ -4781,7 +4807,9 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         // 只认领这个面板刚交出的那条：知道它问的是哪一页才自动重发。回放的旧卡片、语音发的话都请用户自己再发。
         if (ev.receipt.needsModel && ev.receipt.text.trim()) {
           if (!replayingHistory && lastSentPage?.requestId === ev.receipt.requestId) {
-            resendAfterConnect.set(ev.receipt.conversationId, { text: ev.receipt.text, page: lastSentPage.page, card: receipt, bubble: lastUserBubble() });
+            const bubble = lastUserBubbleFor(ev.receipt.text);
+            holdPendingMessage(receipt, bubble);
+            resendAfterConnect.set(ev.receipt.conversationId, { text: ev.receipt.text, page: lastSentPage.page, card: receipt, bubble });
           } else noteNeedsModelManual(receipt);
         }
 
@@ -5510,8 +5538,10 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         const resent = resending && resending.conversationId === selectedConversationId && resending.text === entry.item.text ? resending : null;
         resending = null;
         resendAfterConnect.delete(selectedConversationId);
+        const held = messagesEl.querySelector<HTMLElement>(".msg.user.held-pending");
+        const reuse = resent?.bubble?.isConnected ? resent.bubble : held && entry.item.text && (held.querySelector(".user-msg-text")?.textContent ?? held.textContent ?? "").trim() === entry.item.text.trim() ? held : null;
         // 连好模型后的自动重发：原话的气泡已经在上面，不再画第二个。
-        const bubble = resent?.bubble?.isConnected ? resent.bubble : addUserMsg(entry.item.text, entry.item.attachments);
+        const bubble = reuse ?? addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
 
@@ -5892,8 +5922,13 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   if (!context) void page.then((known) => { if (known && conversation === selectedConversationId) taskBar.noteRequestPage(request.requestId, known); });
 
   sendFailNotifiedFor = null;
-  // 用户自己又发了话：没连模型时记下的那句不再自动重发。
+  // 用户自己又发了话（连没连模型都算，同一句再发一次也算）：没连模型时记下的那句不再自动重发，它的卡改成「这句没有发出」。
+  // 连好后的自动重发不会走到这里：那时记录已经取走。
+  const superseded = resendAfterConnect.get(conversation);
+
+  if (superseded) dropPendingMessage(superseded.card, superseded.bubble);
   resendAfterConnect.delete(conversation);
+  if (!quick) userSentAt = performance.now();
 
   if (quick) return true;
   inputEl.value = "";

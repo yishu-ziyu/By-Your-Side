@@ -2724,6 +2724,63 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 .receipt-decision button:disabled { opacity:.5; cursor:default; }
 .receipt-decision > .receipt { margin-top:10px; color:var(--text-secondary); font-size:11px; }
 
+.needs-model-card {
+  position: relative;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--content-border);
+  border-radius: 12px;
+  background: var(--content-subtle);
+  transform-origin: 0 0;
+}
+.needs-model-card > .needs-model-old, .needs-model-card > .needs-model-new { display: block; gap: 0; }
+.needs-model-card .held-slot:empty { display: none; }
+.needs-model-card .held-slot { margin: 8px 0; }
+.needs-model-card > .needs-model-new { display: none; }
+.needs-model-new {
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font: 600 12.5px/1 var(--font);
+  color: var(--apple-green);
+}
+.needs-model-new svg { flex: none; }
+.needs-model-card.needs-model-connected {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border-color: color-mix(in oklab, var(--content-border) 72%, var(--apple-green));
+  background: var(--apple-green-soft);
+  color: var(--apple-green);
+  font: 600 12.5px/1 var(--font);
+}
+.needs-model-card.needs-model-connected > .needs-model-old { display: none; }
+.needs-model-card.needs-model-connected > .needs-model-new { display: flex; }
+
+.msg.user.held-pending {
+  align-self: flex-start;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px dashed var(--text-quaternary);
+  border-radius: var(--r-pill);
+  background: var(--content-bg);
+  box-shadow: none;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  transform-origin: 0 0;
+}
+.msg.user.held-pending .held-hint { font-size: 11px; color: var(--text-tertiary); font-style: normal; }
+@media (prefers-reduced-motion: reduce) {
+  .needs-model-card, .msg.user.held-pending { transition: none; }
+}
+
 .msg.receipt.notice { align-self:stretch; }
 
 /* 模型写给用户的文件：一行文件名 + 类型大小，右侧「下载」用墨蓝，是这张卡片唯一的强调。 */
@@ -3241,6 +3298,8 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 
 /* 用户气泡：「存成技能」悬停时浮在气泡下方，不撑出空白。 */
 .msg.user { position: relative; padding: 8px 14px; line-height: 1.6; }
+.msg.user.held-pending { padding: 4px 10px; line-height: 1.4; }
+.msg.user.held-pending .pskill-save { display: none; }
 .msg.user .pskill-save { position: absolute; right: 4px; top: 100%; margin: 3px 0 0; }
 
 /* 思考摘要、旁白里的小标题（模型写的 **粗体**）：比正文深一档，不放大。 */
