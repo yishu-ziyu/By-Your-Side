@@ -1027,7 +1027,8 @@ async function pageNamesOfClickTarget(
     const base = el && el.nodeType === 3 ? el.parentElement : el;
     const owner = (base && base.closest && base.closest('button,[role="button"],input[type="submit"],input[type="button"],a')) || base;
     const buttons = owner && owner.getAttribute ? [owner.getAttribute("aria-label"), owner.getAttribute("title"), owner.innerText || owner.value || owner.textContent].map(clean).filter(Boolean) : [];
-    if (el.form && (el.type === "submit" || el.type === "image")) return { plate: "提交表单", buttons };
+    // 表单里的提交按钮有自己的名字（「发送」「报名」）就写它；只有没名字时才写「提交表单」。
+    if (el.form && (el.type === "submit" || el.type === "image")) return { plate: buttons[buttons.length - 1] || "提交表单", buttons };
     return { plate: text(el), buttons };
   }`;
 
@@ -1077,7 +1078,7 @@ function readNamesInPage(t: string | null, px: number, py: number): { plate: str
   const owner = el.closest('button,[role="button"],input[type="submit"],input[type="button"],a') ?? el;
   const buttons = [owner.getAttribute("aria-label"), owner.getAttribute("title"), (owner as HTMLElement).innerText || (owner as HTMLInputElement).value || owner.textContent].map(clean).filter(Boolean);
 
-  if ("form" in el && el.form && "type" in el && (el.type === "submit" || el.type === "image")) return { plate: "提交表单", buttons };
+  if ("form" in el && el.form && "type" in el && (el.type === "submit" || el.type === "image")) return { plate: buttons[buttons.length - 1] || "提交表单", buttons };
 
   return { plate: t === null ? "" : label(el), buttons };
 }
