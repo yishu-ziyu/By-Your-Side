@@ -152,7 +152,8 @@ const SAMPLE_JS = (claim: string) => `(() => {
   const texts = sel => [...m.querySelectorAll(sel)].filter(vis).map(el => el.textContent.trim());
   const outside = m.cloneNode(true);
   outside.querySelectorAll("details.run-steps").forEach(n => n.remove());
-  const lastEvidence = [...m.querySelectorAll(".fill-evidence")].filter(vis).at(-1);
+  // 回答出现后读回收进过程（展开可见），也算显示了。
+  const lastEvidence = [...m.querySelectorAll(".fill-evidence")].filter(el => vis(el) || el.closest("details.run-steps")).at(-1);
   return {
     claimOutsideProcess: outside.textContent.includes(${JSON.stringify(claim)}),
     fix: texts(".claim-fix"),
@@ -257,17 +258,19 @@ try {
   const orderA = await rp.evaluate(panel, `(() => {
     const nodes = [...document.querySelectorAll("#messages > *")];
     const at = pred => nodes.findIndex(pred);
+    // 读回在回答出现后收进它那一轮的过程块里：按包含它的顶层节点排位置。
+    const evidenceAt = text => at(n => [n, ...n.querySelectorAll(".fill-evidence")].some(e => e.matches(".fill-evidence") && e.textContent.includes(text)));
     return {
-      noteEvidence: at(n => n.matches(".fill-evidence") && n.textContent.includes("草稿现在是：「Note」")),
+      noteEvidence: evidenceAt("草稿现在是：「Note」"),
       fix: at(n => n.matches(".claim-fix")),
       secondProcess: nodes.findLastIndex(n => n.matches("details.run-steps")),
-      secondEvidence: at(n => n.matches(".fill-evidence") && n.textContent.includes(${JSON.stringify(NOTE_FIRST)})),
+      secondEvidence: evidenceAt(${JSON.stringify(NOTE_FIRST)}),
       finalAnswer: at(n => n.matches(".msg.assistant[data-delivery-id]") && n.textContent.includes(${JSON.stringify(FIXED)})),
       outline: nodes.map(n => n.className.split(" ")[0] + ":" + n.textContent.trim().slice(0, 24)),
     };
   })()`) as { noteEvidence: number; fix: number; secondProcess: number; secondEvidence: number; finalAnswer: number; outline: string[] };
   evidence.j = orderA;
-  assert.ok(orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.fix && orderA.fix < orderA.secondProcess && orderA.secondProcess < orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
+  assert.ok(orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.fix && orderA.fix < orderA.secondProcess && orderA.secondProcess <= orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
     `j: order 「Note」 evidence < 核对发现 < second process < second evidence < final answer: ${JSON.stringify(orderA)}`);
 
   // b) 网页在输入时改成大写：读回的是网页里的值。
