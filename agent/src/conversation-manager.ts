@@ -856,6 +856,12 @@ return host?[host]:[];}))].slice(0,16);
     // 改过页面的任务计入习惯（打开页面也算，不跟着上面收紧）：同一件事在 3 个对话里做过，就问一次要不要记住。
     if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
 
+    // 站点笔记（docs/evals/20261013-site-notes.md R4）：只从核对判做成的任务里学；没核对、没做成、用户停下的都不学，
+    // 这一轮的回答自己说只做成一部分或列了没做完的事，也不学。
+    const partialDelivery=delivery?.runId===snap.runId&&(delivery.facts?.outcome==='partial'||!!delivery.unfinished?.length);
+
+    if(snap.goalCheck?.status==='done'&&snap.state==='idle'&&snap.startedAt!==null&&hosts.length&&!partialDelivery)void session?.learnSiteNotes?.({runId:snap.runId,startedAt:snap.startedAt,hosts,request:[entry.goal,...entry.revisions]}).catch(()=>{});
+
     if(!committed&&(!snap.goalCheck||snap.goalCheck.status==='done'))return;
     const written=history.record(entry).catch(()=>{});
 
