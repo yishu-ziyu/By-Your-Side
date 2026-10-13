@@ -101,6 +101,10 @@ export function noteNeedsModelManual(card: HTMLElement): void {
 /** 同一会话又发了一句没连模型的话：旧卡不再自动发，暂存的那句放回原处，卡上改成请用户自己再发。 */
 export function dropPendingMessage(card: HTMLElement, bubble: HTMLElement | null): void {
   if (bubble?.classList.contains("held-pending")) releaseHeld(bubble, card);
+  // 已经变成「已连上」的卡（连好后发不出）：变回原来的卡，写明没发出。
+  card.classList.remove("needs-model-connected");
+  card.dataset.f01 = "card";
+  card.querySelector(".needs-model-new")?.setAttribute("aria-hidden", "true");
   card.classList.add("needs-model-dropped");
   const title = card.querySelector(".needs-model-old strong");
   const description = card.querySelector(".needs-model-old p");

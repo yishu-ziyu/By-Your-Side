@@ -43,6 +43,8 @@ const pageUrl = `http://127.0.0.1:${siteAddress(site).port}/`;
 
 const model = await startScriptedModel([{ match: QUESTION, steps: [{ text: ANSWER, chunkDelayMs: 20 }] }]);
 const asked = () => model.requests.filter((r) => r.rule === QUESTION && r.tools).length;
+/** 所有主任务请求（带工具），不管匹不匹配脚本：连发两句时 EARLIER 被自动发出也算得到。 */
+const mainRequests = () => model.requests.filter((r) => r.tools).length;
 
 const viewSrc = `(() => ({
   held: !!document.querySelector('[data-f01="held"]'),
@@ -145,7 +147,8 @@ try {
   }, 45_000, "密钥原因");
   await first.screenshot(settings, join(out, "02-invalid-key.png"));
   check("密钥无效：框下一行原因，不写红色「连接失败」", fail.reason.includes("服务商不接受这个密钥") && fail.wait.includes("侧栏里那句话还在等你") && fail.warn && !fail.status.includes("连接失败") && fail.tone !== "err", fail);
-  check("密钥无效：没有保存，侧栏仍在等", (await readView(first, panel)).unconnected && asked() === 0);
+  const storedAfterDeny = await first.evaluate(settings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
+  check("密钥无效：没有保存，侧栏仍在等", (await readView(first, panel)).unconnected && asked() === 0 && storedAfterDeny !== denyUrl, { storedAfterDeny });
 
   await first.evaluate(panel, watchSrc);
   await fillCustom(first, settings, model.baseUrl, "local-fixture");
@@ -169,6 +172,7 @@ try {
   reduced = second;
   const rpanel = await openFreshPanel(second, true);
   reducedPanel = rpanel;
+  const requestsBefore = mainRequests();
   // 连模型前连发两句：只自动发最新那句，前一张卡写明那句没发出。
   await sendHeld(second, rpanel, EARLIER);
   await sendHeld(second, rpanel);
@@ -178,7 +182,7 @@ try {
   const rdone = await until(async () => { const v = await readView(second, rpanel); return v.text.includes(ANSWER) && !v.unconnected ? v : undefined; }, 45_000, "减少动效结束态");
   await second.screenshot(rpanel, join(out, "04-reduced-motion.png"));
   check("R4 减少动效：直接到结束态，不报变形时长", rdone.pill.includes("已连上") && !rdone.heldPending && rdone.morph == null && rdone.flip == null, rdone);
-  check("R1 连发两句：只自动发最新那句，前一句写明没发出，不留「连好后自动发」", asked() === 2 && !rdone.hint && rdone.dropped.includes("这句没有发出") && rdone.users.length === 2 && rdone.users[0]!.startsWith(EARLIER), { asked: asked(), hint: rdone.hint, dropped: rdone.dropped, users: rdone.users });
+  check("R1 连发两句：只自动发最新那句，前一句写明没发出，不留「连好后自动发」", asked() === 2 && mainRequests() - requestsBefore === 1 && !rdone.hint && rdone.dropped.includes("这句没有发出") && rdone.users.length === 2 && rdone.users[0]!.startsWith(EARLIER), { asked: asked(), mainRequests: mainRequests() - requestsBefore, hint: rdone.hint, dropped: rdone.dropped, users: rdone.users });
 
   // 先试连再保存：限流不算密钥错，照样保存，并说刚才没连上。
   await fillCustom(second, rsettings, busyUrl, "sk-busy-0000");

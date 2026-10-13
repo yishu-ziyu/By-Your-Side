@@ -130,7 +130,7 @@ document.getElementById("settings")!.innerHTML = `
         <span class="key-reason-icon" aria-hidden="true">i</span>
         <span class="key-reason-copy">
           <span id="key-reason-text"></span>
-          <span class="key-reason-wait">密钥没有保存，侧栏里那句话还在等你。</span>
+          <span class="key-reason-wait">没有保存，侧栏里那句话还在等你。</span>
         </span>
       </p>
       <div class="d-field">
@@ -698,8 +698,11 @@ function hideKeyReason(): void {
 }
 
 function showKeyReason(reason: string, raw?: string): void {
-  keyReasonText.textContent = reason;
+  // 密钥框不在（订阅登录、已保存的密钥）：原因写在状态行，不挂在看不见的框下面。
+  if (!keyInput.offsetParent) return setStatus(modelStatus, `没有保存：${reason}`, "err", raw);
   keyReason.hidden = false;
+  // 先显示区域再写字，读屏才会念出来。
+  requestAnimationFrame(() => { keyReasonText.textContent = reason; });
   keyInput.classList.add("warn");
   setStatus(modelStatus, "", "", raw);
   keyInput.focus();
@@ -707,12 +710,12 @@ function showKeyReason(reason: string, raw?: string): void {
 
 type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number };
 /** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
-type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean };
+type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean; config?: InprocModelConfig; key?: string };
 
 function rejectsConfig(raw: string): boolean {
   if (/concurrent request limit|too many concurrent/i.test(raw)) return false;
 
-  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) || /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw);
+  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|api.?key.*(not valid|invalid)|API_KEY_INVALID|forbidden/i.test(raw) || /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw);
 }
 
 async function runProbe(): Promise<ProbeOk | ProbeFail> {
@@ -739,6 +742,9 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
       reason: timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复。服务商可能正忙。再试一次，或换一个模型。` : explainFailure(raw),
       raw: timeout.aborted ? undefined : raw,
       definite: !timeout.aborted && rejectsConfig(raw),
+      // 试的是哪份配置就存哪份：试连期间改了表单，不存没试过的值。
+      config: value.config,
+      key: value.key,
     };
   } finally {
     clearInterval(ticker);
@@ -750,7 +756,9 @@ async function testConnection(): Promise<void> {
 
   if (!result.ok) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
-    return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+    // 只有服务商明确不接受时才挂在密钥框下；超时、限流、网络问题不是密钥的错。
+    if (result.definite) return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+    return setStatus(modelStatus, `连接失败：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
   }
 
   hideKeyReason();
@@ -766,9 +774,7 @@ async function save(): Promise<void> {
     return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
   }
 
-  const value = result.ok ? result : draft();
-
-  if (!value.ok) return setStatus(modelStatus, value.error, "err");
+  const value = result.ok ? result : { config: result.config!, key: result.key ?? "" };
 
   if (value.key) await runtime.credentials.modify(value.config.provider, async () => ({ type: "api_key", key: value.key }));
   await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: value.config });
