@@ -1,5 +1,7 @@
 /** 执行成员到标签页的稳定绑定。Chrome groupId 只负责展示，不进入持久身份。 */
-import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID } from "../../../shared/protocol.js";
+import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, executionKey } from "../../../shared/protocol.js";
+
+export { executionKey };
 
 export type TabBindingMap = Record<string, number>;
 
@@ -14,16 +16,6 @@ export type TabResourceMap = Record<string, TabResource>;
 
 function decodePart(value: string): string {
   try { return decodeURIComponent(value); } catch { return value; }
-}
-
-/** 默认会话保留既有 main/worker key；其他会话使用可逆复合 key。 */
-export function executionKey(conversationId: string, sessionId: string = LEAD_SESSION_ID): string {
-  const cid = conversationId || DEFAULT_CONVERSATION_ID;
-  const sid = sessionId || LEAD_SESSION_ID;
-
-  if (cid === DEFAULT_CONVERSATION_ID) return encodeURIComponent(sid);
-
-  return `${encodeURIComponent(cid)}::${encodeURIComponent(sid)}`;
 }
 
 export function parseExecutionKey(key: string): { conversationId: string; sessionId: string } {

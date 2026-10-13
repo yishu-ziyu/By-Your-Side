@@ -3,7 +3,7 @@ import { ensureAttached } from "../debugger.js";
 import { bringForwardForUser } from "../foreground.js";
 import { getTabResource, getWorkingTabId, resolveWorkingTab, setWorkingTab } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { downloadNote, waitForInteractive, type PageReadiness } from "./page-readiness.js";
+import { downloadNote, settlesContent, waitForInteractive, waitForQuietDom, type PageReadiness } from "./page-readiness.js";
 
 export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ tabs: TabInfo[] }> {
   const workingId = await getWorkingTabId(sessionId);
@@ -62,6 +62,9 @@ export async function openTab(
   try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
 
   const ready=params.url?await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}):undefined;
+
+  // 同 navigate：等页面画完再返回，多等的时间算进 waitMs。
+  if (ready && settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tab.id);
   let after: chrome.tabs.Tab;
 
   try {

@@ -13,7 +13,7 @@ import { createOrb, type OrbHandle } from "./orb.js";
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
 import { renderMarkdownHtml } from "./markdown.js";
-import { attachAnswerActions as attachCopyActions, setAnswerTime, siteGlyph } from "./answer-actions.js";
+import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
@@ -148,12 +148,16 @@ function linkifyCircleRefs(answer: HTMLElement): void {
   }
 }
 
-function attachAnswerActions(answer: HTMLElement): void {
+/** delivered：这是一次正式交付（本轮的最终回答），不是过渡文字；带上它这一轮读过或打开的页面。 */
+function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): void {
   attachCopyActions(answer);
   linkifyCircleRefs(answer);
   adoptUsedLine(answer);
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
+
+  // 补放历史时不给：那一页早已不是这次回答的结果页。
+  if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
   const source = answerSources.get(answer);
 
   if (source) void source.then(context => attachSourceCitations(answer, context));
@@ -2155,14 +2159,14 @@ document.addEventListener("click", (e) => {
 });
 
 if (typeof chrome !== "undefined" && chrome.tabs) {
-  chrome.tabs.onActivated?.addListener(() => { void refreshActiveTabPill(); taskBar.noteTabsChanged(); });
+  chrome.tabs.onActivated?.addListener((info) => { dropShowTab(info.tabId); void refreshActiveTabPill(); taskBar.noteTabsChanged(); });
   chrome.tabs.onUpdated?.addListener((_tabId, changeInfo) => {
     if (changeInfo.status || changeInfo.title || changeInfo.url) {
       void refreshActiveTabPill();
       taskBar.noteTabsChanged();
     }
   });
-  chrome.tabs.onRemoved?.addListener(() => taskBar.noteTabsChanged());
+  chrome.tabs.onRemoved?.addListener((tabId) => { dropShowTab(tabId); taskBar.noteTabsChanged(); });
 }
 
 void refreshActiveTabPill();
@@ -4666,7 +4670,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
     const answer = existing!;
     delete answer.dataset.streaming;
     revealText(answer, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
-      after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(answer); attachDeliverySources(answer, delivery); } } });
+      after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(answer, delivery); attachDeliverySources(answer, delivery); } } });
     existing!.dataset.deliveryKind = delivery.kind;
     placeStartAcknowledgement(existing!, delivery.kind);
     existing!.dataset.deliveryStatus = delivery.status;
@@ -4683,7 +4687,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
   steerRibbon.decorate(bubble, !applyingHistory);
   // 整段一次送达的回答也按同样节奏放出来，不一下子整块冒出。
   revealText(bubble, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
-    after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(bubble); attachDeliverySources(bubble, delivery); } } });
+    after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(bubble, delivery); attachDeliverySources(bubble, delivery); } } });
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
   bubble.dataset.deliveryStatus = delivery.status;
