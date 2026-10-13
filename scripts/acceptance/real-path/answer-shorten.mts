@@ -165,7 +165,7 @@ try {
     // 滚到回答中间，文末一排贴在底部：它的底色不透明，正文不和按钮、文字叠在一起。
     const stuck = await rp.evaluate(panel, `(() => { const a = ${ANSWER_JS}[0], box = document.querySelector("#messages"); box.scrollTop = a.offsetTop - box.offsetTop + 40;
       const row = a.querySelector(".answer-actions"), r = row.getBoundingClientRect(), b = box.getBoundingClientRect();
-      return { stuckAtBottom: Math.abs(r.bottom - b.bottom) < 40 && a.getBoundingClientRect().bottom > b.bottom + 20, background: getComputedStyle(row).backgroundColor }; })()`) as { stuckAtBottom: boolean; background: string };
+      return { stuckAtBottom: Math.abs(r.bottom - b.bottom) < 2 && a.getBoundingClientRect().bottom > b.bottom + 20, background: getComputedStyle(row).backgroundColor }; })()`) as { stuckAtBottom: boolean; background: string };
     evidence.stuckRow = stuck;
     await rp.screenshot(panel, join(artifacts, "stuck-row.png"));
     const alpha = /rgba\(.*,\s*([\d.]+)\)$/.exec(stuck.background)?.[1];
