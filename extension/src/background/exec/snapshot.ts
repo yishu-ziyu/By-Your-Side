@@ -17,8 +17,14 @@ import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
+import { waitForInteractive } from "./page-readiness.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 import { overlayHostSelector } from "../../shared/overlay.js";
+
+const URL_MOVED_DURING_READ = '读取期间页面地址已变化，请重新读取当前页面。';
+
+/** 读页时撞上跳转：最多等这么久让新页面能交互。 */
+const PAGE_MOVE_WAIT_MS = 4_000;
 
 /** 交给调用方的 snapshot 正文：页面内容与身份，不含采集预算字段。 */
 interface SnapshotBody {
@@ -52,26 +58,27 @@ export async function snapshot(
   params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean; cursor?: string; viewScopeId?: string; fresh?: boolean },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ text: string; tabId: number; documentId?:string; textEvidence?:PageTextEvidence; url?:string; title?:string; translation?:TranslationDisplayState|null; marks?:HostDrawnMark[]; observation?:BrowserObservation }> {
-  const tab = await resolveReadableTab(params.tabId, sessionId);
+  let tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  assertNoPendingDialog(tab.id);
+  const tabId = tab.id;
+  assertNoPendingDialog(tabId);
 
   if(params.decision&&params.scope==='viewport')throw new Error('DECISION_UNSUPPORTED: 决策观察需要完整控件树，不能退回 viewport DOM 身份。');
 
-  const captured=await withObservedDocumentIdentity(tab.id, sessionId, async () => {
-    const result=await snapshotTab(tab.id!,params.scope,params.decision);
-    const current=await chrome.tabs.get(tab.id!);
+  const read = (seen: chrome.tabs.Tab) => withObservedDocumentIdentity(tabId, sessionId, async () => {
+    const result=await snapshotTab(tabId,params.scope,params.decision);
+    const current=await chrome.tabs.get(tabId);
 
     // SPA URL changes do not necessarily replace the document. Do not label the
     // new content with the address observed before the read began.
-    if(current.id!==tab.id||current.url!==tab.url)throw new Error('读取期间页面地址已变化，请重新读取当前页面。');
+    if(current.id!==seen.id||current.url!==seen.url)throw new Error(URL_MOVED_DURING_READ);
     // 不等页面空闲：页面还在加载时默认注入会卡到加载完（少数派冷启动实测 6.4 秒），开工前读页因此超时。
-    const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},injectImmediately:true,world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
+    const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
 
-    const marks=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},injectImmediately:true,world:'ISOLATED',func:readMarksDisplay})).then(r=>r[0]?.result??[]).catch(()=>[]);
+    const marks=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:readMarksDisplay})).then(r=>r[0]?.result??[]).catch(()=>[]);
 
-    const snapshotValue: SnapshotRead = {...result,tabId:tab.id!};
+    const snapshotValue: SnapshotRead = {...result,tabId};
 
     if(translation) snapshotValue.translation=translation;
 
@@ -82,6 +89,19 @@ export async function snapshot(
     return snapshotValue;
   });
 
+  let captured: Awaited<ReturnType<typeof read>>;
+
+  try {
+    captured = await read(tab);
+  } catch (error) {
+    if (!(error instanceof Error) || (error.message !== URL_MOVED_DURING_READ && (error as {code?: unknown}).code !== 'STALE_DOCUMENT')) throw error;
+    // 读的时候页面在跳转（常见是刚点的链接还在打开）：等新页面能交互了再读一次，到时限还在变才报错。
+    if ((await waitForInteractive(tabId, PAGE_MOVE_WAIT_MS)).readiness === 'timeout') throw error;
+    tab = await chrome.tabs.get(tabId);
+    assertNoPendingDialog(tabId);
+    captured = await read(tab);
+  }
+
   const {controls,truncated,controlsTruncated,dialogs,collectionComplete,collectionLimitReached,...value}=captured.value;
   const identified: SnapshotBody = {...value};
 
@@ -90,7 +110,7 @@ export async function snapshot(
   if(!params.decision)return identified;
 
   if(!captured.documentId||!value.url||!controls)throw new Error('DECISION_UNSUPPORTED: 缺少文档身份或结构化控件。');
-  const viewport=await chrome.scripting.executeScript({target:{tabId:tab.id},world:'ISOLATED',func:readDecisionViewport});
+  const viewport=await chrome.scripting.executeScript({target:{tabId},world:'ISOLATED',func:readDecisionViewport});
 
   if(viewport[0]?.documentId!==captured.documentId)throw new Error('DECISION_STALE: 页面在观察期间变化。');
   const tabs=(await listTabs(sessionId)).tabs.filter(t=>!t.url.startsWith(chrome.runtime.getURL('')));
@@ -98,7 +118,7 @@ export async function snapshot(
   if (params.fresh && params.cursor) throw new Error('DECISION_CURSOR: 新采集不能带续读游标。');
   // fresh + viewScopeId: collect again, then show that partition if it still exists.
   const continuing = !params.fresh && !!(params.cursor || params.viewScopeId);
-  const active = continuing ? browserObservations.readActive(sessionId, tab.id) : undefined;
+  const active = continuing ? browserObservations.readActive(sessionId, tabId) : undefined;
 
   if (continuing) {
     if (!active) throw new Error('DECISION_CURSOR: 没有可续读的采集。');
@@ -137,10 +157,10 @@ export async function snapshot(
 
   // Register every collected AX identity for execution — not only text-rendered refs.
   // Merge: the text refs of this capture were registered by axSnapshot and stay executable (e.g. mark on a text node).
-  addAxRefs(tab.id, collectedControls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
+  addAxRefs(tabId, collectedControls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
 
   const page: Omit<BrowserObservation, "id" | "observedAt"> = {
-    tabId:tab.id,
+    tabId,
     documentId:captured.documentId,
     url:value.url,
     text: continuing ? active!.page.text : value.text,
@@ -224,6 +244,8 @@ export async function snapshotTab(
 }
 
 async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
+  // 布局盒子与无障碍树同时去取，不多等一轮。
+  const zeroSizeRead = readZeroSizeNodes(tabId);
   const result = decision?{nodes:await readDecisionTree(tabId)}:await withTimeout(
     sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.getFullAXTree"),
     8_000,
@@ -233,7 +255,8 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   if ((result.nodes ?? []).length === 0) throw new Error("Accessibility.getFullAXTree 返回空树");
   const nodes = withoutSubtrees(result.nodes!, await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, nodes);
-  const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes), secret);
+  const zeroSize = await zeroSizeRead;
+  const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes), secret, zeroSize);
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
 
   if(!decision){
@@ -245,6 +268,8 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   // Decision controls come from the AX tree itself — never from text-budget keptRefs.
   // Text refs shown to the model are executable too (mark/read a text node), so register both.
   const collected = collectDecisionControls(nodes);
+  // 与正文同一规则：零尺寸控件不给可执行的 ref。
+  collected.controls = collected.controls.filter(c => zeroSize.get(Number(c.ref.slice(1))) !== false);
   recordAxSnapshot(tabId, [...backendIds, ...collected.controls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n))]);
 
   return {
@@ -296,6 +321,62 @@ function withoutSubtrees(nodes: AxNodeLite[], hosts: Set<number>): AxNodeLite[] 
   }
 
   return nodes.filter(n => !drop.has(n.nodeId));
+}
+
+/**
+ * 宽或高为 0 的节点（Bing 藏起来的提交按钮）：给了 ref 也点不到、填不进，动作只会报「元素不可见（零尺寸）」。
+ * 一次 DOMSnapshot 拿全部布局盒子；盒子是文档坐标、不按视口裁，滚出视口的元素尺寸照旧，不受影响。
+ * 没有布局盒子的节点（display:contents、跨进程 iframe）不算零尺寸。读不到时返回空表，快照照常输出。
+ * 值为 true 的是原生下拉框和文件框：select_option、upload_file、read_element 直接对节点操作、不用坐标，留着 ref。
+ */
+async function readZeroSizeNodes(tabId: number): Promise<Map<number, boolean>> {
+  const zero = new Map<number, boolean>();
+  // 一个节点可能有几段布局（被块级元素拆开的行内元素）：任何一段有面积就不算零尺寸。
+  const sized = new Set<number>();
+
+  try {
+    const snap = await withTimeout(
+      sendCommand<{ strings?: string[]; documents?: Array<{ nodes?: { backendNodeId?: number[]; nodeName?: number[]; attributes?: number[][] }; layout?: { nodeIndex?: number[]; bounds?: number[][] } }> }>(tabId, "DOMSnapshot.captureSnapshot", { computedStyles: [] }),
+      3_000,
+      "布局盒子读取 3 秒内没有返回",
+    );
+
+    const strings = snap.strings ?? [];
+
+    for (const doc of snap.documents ?? []) {
+      const ids = doc.nodes?.backendNodeId ?? [];
+      const bounds = doc.layout?.bounds ?? [];
+
+      const keepsRef = (index: number) => {
+        const tag = strings[doc.nodes?.nodeName?.[index] ?? -1];
+
+        if (tag === "SELECT") return true;
+        const attrs = doc.nodes?.attributes?.[index] ?? [];
+
+        for (let a = 0; tag === "INPUT" && a + 1 < attrs.length; a += 2) {
+          if (strings[attrs[a]!] === "type") return strings[attrs[a + 1]!]?.toLowerCase() === "file";
+        }
+
+        return false;
+      };
+
+      doc.layout?.nodeIndex?.forEach((index, i) => {
+        const box = bounds[i];
+        const id = ids[index];
+
+        if (!box || id === undefined) return;
+
+        if (box[2] === 0 || box[3] === 0) zero.set(id, keepsRef(index)); else sized.add(id);
+      });
+    }
+
+    for (const id of sized) zero.delete(id);
+  } catch {
+    // 只是少了零尺寸过滤，不让整次快照失败。
+    zero.clear();
+  }
+
+  return zero;
 }
 
 /** 一次快照最多补读的范围输入框；页面再多也只多花有限几次 CDP 往返。 */

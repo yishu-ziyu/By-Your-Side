@@ -2,7 +2,7 @@ import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
 import { resolveWorkingTab } from "../state.js";
 
-import {downloadNote,readCurrentDocument,waitForInteractive,type PageReadiness} from "./page-readiness.js";
+import {downloadNote,readCurrentDocument,settlesContent,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
 
 export async function navigate(
   params: {
@@ -33,6 +33,9 @@ export async function navigate(
   beforeDispatch?.checkNow?.();
   const tabId = tab.id;
   const ready=await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })});
+
+  // 等页面把内容画完，宿主附带的快照才不是半张空页；多等的时间算进 waitMs。
+  if (settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tabId);
 
   const after = await chrome.tabs.get(tab.id);
   const data = { url: after.url ?? url, title: after.title ?? "" };

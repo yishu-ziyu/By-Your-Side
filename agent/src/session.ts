@@ -38,7 +38,7 @@ import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
 import { PiAgentLoop } from "./pi-agent-loop.js";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
@@ -1025,13 +1025,15 @@ return;}
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
-    const observation = await this.readUserPageForPrompt(context, "task");
+    const [observation, openTabs] = await Promise.all([this.readUserPageForPrompt(context, "task"), this.readOpenTabsForPrompt(context)]);
 
     if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
 
     if (observation) this.noteGoalObservation("page_at_start", observation);
 
-    const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)
+    // 标签页清单放在页面观察之前：页面观察超窗口时会被整段删掉，清单很短，留着。
+    const withTabs = openTabs ? `${finalText}\n\n${openTabs}` : finalText;
+    const promptText = (observation ? `${withTabs}\n\n${observation}` : withTabs)
       +(context && typeof context.tabId === "number" ? programFirstGuidance() : "");
 
     try {
@@ -1067,6 +1069,22 @@ return;}
       this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:this.rpc?.getExecutionFact(id)});throw error;
     }finally{
       if(this.authorizedDisplayCall===id)this.authorizedDisplayCall=previous;
+    }
+  }
+
+  /**
+   * 新任务开始前替主代理读一次全部标签页：10-13 真实网站 12 次里 10 次第一轮先花在 tabs list 上。
+   * 只给主代理；读失败就不写，不猜。不当作模型工具调用记账。
+   */
+  private async readOpenTabsForPrompt(context: PageContext | undefined): Promise<string | null> {
+    if (!this.rpc || this.memberId) return null;
+
+    try {
+      const data = (await this.rpc.call("list_tabs", {}, PRE_OBSERVATION_TIMEOUT_MS)) as { tabs?: TabInfo[] };
+
+      return Array.isArray(data?.tabs) ? openTabsAtStartText(data.tabs, context?.tabId) : null;
+    } catch {
+      return null;
     }
   }
 
@@ -2501,8 +2519,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       return;
     }
 
-    // navigate 结果里带着新页面的快照：按一次 snapshot 读数记账（排在导航的 tool_end 之后，旧读数已失效）。
-    if (name === 'navigate') {
+    // navigate 和 tabs open 的结果里带着新页面的快照：按一次 snapshot 读数记账（排在导航的 tool_end 之后，旧读数已失效）。
+    // browser_run 换了页时结尾附的那一页同样记账（程序里各步骤自己的读数走 observeProgramStep）。
+    if (name === 'navigate' || name === 'tabs' && params?.action === 'open' || name === 'browser_run') {
       const page = (result as { details?: { page?: unknown } } | null)?.details?.page;
 
       if (page) this.emitReadObservation(toolCallId, 'snapshot', {}, page, false);
@@ -2598,6 +2617,40 @@ export function freshPageObservationText(context: PageContext, snapshotText: str
       ? `[This is the main text of tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Answer questions about it from this text in your first round; do not re-read it. It has no element refs: to act on the page, snapshot it first or inside browser_run.]`
       : `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
     wrapPageContent(redactCredentialText(snapshotText), { tabId: context.tabId, title: context.title, url: context.url }),
+  ].join("\n");
+}
+
+const OPEN_TABS_AT_START_MAX = 20;
+const OPEN_TAB_TITLE_MAX = 80;
+
+/** 只留网址的 origin+pathname：查询串和锚点可能带私人信息。chrome:// 这类的 origin 是 "null"，改用协议加主机。 */
+function tabAddress(url: string): string {
+  if (!URL.canParse(url)) return url ? "(unreadable address)" : "(no address)";
+  const u = new URL(url);
+  const address = u.origin !== "null" ? `${u.origin}${u.pathname}` : `${u.protocol}${u.host ? `//${u.host}` : ""}${u.pathname}`;
+
+  return address.length > 200 ? `${address.slice(0, 200)}…` : address;
+}
+
+/**
+ * 任务开始时的全部标签页（格式同 tabs list）：最多 20 个，用户当前页一定在内，标题截到 80 字。
+ * 标题来自网页，和页面正文一样放进不可信边界并遮掉凭据样式文本。
+ */
+export function openTabsAtStartText(tabs: readonly TabInfo[], currentTabId?: number): string {
+  const current = tabs.find(t => t.id === currentTabId);
+  const shown = tabs.slice(0, OPEN_TABS_AT_START_MAX);
+
+  if (current && !shown.includes(current)) shown[shown.length - 1] = current;
+  const lines = shown.map(t => {
+    const title = (t.title || "(untitled)").replace(/\s+/g, " ");
+    const marks = [t.id === currentTabId ? "user's current tab" : "", t.working ? "working" : ""].filter(Boolean).join(", ");
+
+    return `[${t.id}] ${title.length > OPEN_TAB_TITLE_MAX ? `${title.slice(0, OPEN_TAB_TITLE_MAX)}…` : title} — ${tabAddress(t.url)}${marks ? ` (${marks})` : ""}`;
+  });
+
+  return [
+    `[OPEN TABS — every open tab at task start, read by the runtime just now${tabs.length > shown.length ? ` (showing ${shown.length} of ${tabs.length})` : ""}. No need to call tabs action:"list" unless tabs may have changed since.]`,
+    lines.length > 0 ? wrapPageContent(redactCredentialText(lines.join("\n"))) : "No open tabs.",
   ].join("\n");
 }
 

@@ -2,7 +2,7 @@ import {isolatedReadContext} from '../isolated-read-context.js';
 import {withObservedDocumentIdentity, recordObservedDocument, assertSameDocument} from "../observation-document.js";
 import {elementMatches, validateElementRead, type ElementProperty, type ElementValue} from "../../../../shared/element-state.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
-import { isAxRef, snapshotRefKind } from "../axstate.js";
+import { axBackendNodeFor, isAxRef, snapshotRefKind } from "../axstate.js";
 import { parseTarget as sharedParseTarget, resolveArgs, resolveTargetSelector } from "../../shared/target.js";
 import { sendCommand } from "../debugger.js";
 import { assertNoPendingDialog } from "../page-events.js";
@@ -395,9 +395,11 @@ function assertComplete(data: ElementData): ElementData {
 
 async function readAxRef(tabId: number, ref: number, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<ElementData> {
   check();
+  // 填写时被找回的 ref 指向页面换上的新节点，读它而不是已离开文档的旧节点。
+  const backendNodeId=axBackendNodeFor(tabId,ref)??ref;
   const executionContextId=await isolatedReadContext(tabId);
   check();
-  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: ref,executionContextId });
+  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId,executionContextId });
   const objectId = resolved.object?.objectId;
 
   if (!objectId) throw new Error(readback?'READBACK_NODE_UNRESOLVED':`ref @${ref} 已过期；请重新 snapshot`);
@@ -425,7 +427,7 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
 
     if (!reply.ok) throw new Error(reply.error);
 
-    return {...assertComplete(reply.data),nodeIdentity:{kind:'ax',backendNodeId:ref}};
+    return {...assertComplete(reply.data),nodeIdentity:{kind:'ax',backendNodeId}};
   } finally { await sendCommand(tabId, 'Runtime.releaseObject', {objectId}).catch(() => {}); }
 }
 
@@ -524,8 +526,8 @@ async function readElementInner(
   await checkDocument();
 
   if(readback && (readback.nodeIdentity?.kind!=='ax' || target.kind!=='ref'
-    || !Number.isSafeInteger(readback.nodeIdentity.backendNodeId) || readback.nodeIdentity.backendNodeId!==target.ref
-    || !isAxRef(tabId,target.ref)))throw new Error('READBACK_NODE_IDENTITY_UNVERIFIABLE');
+    || !Number.isSafeInteger(readback.nodeIdentity.backendNodeId) || target.ref===undefined
+    || !isAxRef(tabId,target.ref) || readback.nodeIdentity.backendNodeId!==axBackendNodeFor(tabId,target.ref)))throw new Error('READBACK_NODE_IDENTITY_UNVERIFIABLE');
 
   const read = async (): Promise<{data:ElementData;documentId?:string}> => {
     check();

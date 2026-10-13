@@ -82,6 +82,29 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}… [truncated]` : text;
 }
 
+/**
+ * tabs 说明里只对文字任务成立的两句：任务首条消息带着标签页清单、回复带「切过去看」按钮。
+ * 语音的工具清单（realtime-browser-tool-defs.ts）按这两个常量把它们去掉。
+ */
+export const TABS_LIST_AT_START = "; the open tabs at task start are already in the task's first message, so call list only if tabs may have changed since";
+export const TABS_RESULT_IN_BACKGROUND = ' A result left in a background tab is expected: the reply automatically gives the user a "切过去看" button for the working tab, so never call show just to deliver a result.';
+
+/** browser_run 结束时附上的新页快照的标题行（tool-failure-policy 按它和 "\n[After this program" 截掉尾巴再比较错误）。 */
+export const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no separate snapshot needed):";
+
+/** 程序里不会换页的步骤：等待、核对和宿主组合的只读帮手。其余按 effect-policy 判断，未声明只读的都当作可能换页。 */
+const PROGRAM_QUIET_STEPS: ReadonlySet<string> = new Set(["sleep", "wait_for", "check", "assert", "pageInfo", "waitForLoad", "waitForNetworkIdle", "saveFile"]);
+
+/**
+ * 工具结果里顺手附上的新页快照的标题行。就绪超时时导航可能还没换页：写明读到的是哪个地址、在确认就绪之前读的、可能不全。
+ */
+function freshSnapshotLabel(page: ToolContract["snapshot"]["data"], readiness?: string): string {
+  if (readiness !== "timeout") return "Fresh snapshot of the new page (no separate snapshot needed):";
+  const what = page.url ? `tab ${page.tabId} as it is now (${page.url})` : `tab ${page.tabId} as it is now (its address was not confirmed)`;
+
+  return `Fresh snapshot of ${what}, taken before readiness was confirmed — navigation may not have finished and it may be partial; check this address before acting:`;
+}
+
 function formatTabs(tabs: TabInfo[]): string {
   if (tabs.length === 0) return "No open tabs.";
 
@@ -388,18 +411,59 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         rpc.noteToolFact?.(id, "unknown");
 
         let result: Awaited<ReturnType<typeof runBrowserProgram>>;
+        // 开始前记下各标签页的地址，结束时才知道程序有没有让工作页换了页。只读补读，不挂本次调用身份；读失败就不比较。
+        const startUrls = sid ? null : await (readAfterNavigate("list_tabs", {}) as Promise<ToolContract["list_tabs"]["data"]>)
+          .then(d => new Map(d.tabs.map(tab => [tab.id, tab.url])), () => null);
+        // 程序换了页（包括中途因文档变化失败）时顺手读一次新页：10-13 真实网站有 2 次程序跳转后专门花一轮 snapshot。
+        // 没有现成的「等文档就绪」宿主接口（waitForLoad 在程序内部），读失败就隔 500ms 再试，最多 3 次，都失败只退回原回执。
+        const pageAfter = async (tabId: number): Promise<ToolContract["snapshot"]["data"] | null> => {
+          for (let attempt = 0; attempt < 3 && !signal?.aborted; attempt++) {
+            if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 500));
+
+            try {
+              return (await readAfterNavigate("snapshot", { tabId })) as ToolContract["snapshot"]["data"];
+            } catch { /* 页面还在换文档，稍后再读 */ }
+          }
+
+          return null;
+        };
+        // 已结束的步骤：程序自己在最后一次可能换页的步骤之后已经读过这一页，就不再附一份（一份快照可达数万字）。
+        const endedSteps: ProgramStep[] = [];
+
+        const programAlreadyRead = (finalUrl: string): boolean => {
+          for (let i = endedSteps.length - 1; i >= 0; i--) {
+            const step = endedSteps[i]!;
+            const data = (step.result ?? {}) as { url?: unknown; readiness?: unknown };
+
+            if (!step.error && step.name === "snapshot" && data.url === finalUrl) return true;
+
+            // 程序里的 navigate 就绪后已经顺手读了新页（browser-program.ts）。
+            if (!step.error && step.name === "navigate" && (data.readiness === "interactive" || data.readiness === "complete") && data.url === finalUrl) return true;
+
+            if (!PROGRAM_QUIET_STEPS.has(step.name) && requiresControlGate(step.name, step.params)) return false;
+          }
+
+          return false;
+        };
         // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」（#257）。
-        // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。
-        const endedOn = async (): Promise<string> => {
+        // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。page 放进 details，会话把它记成一次页面读数。
+        const endedOn = async (): Promise<{ text: string; page?: ToolContract["snapshot"]["data"] }> => {
           try {
             const { tabs } = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
             const working = tabs.find(tab => tab.working);
 
-            const url = URL.canParse(working?.url ?? "") ? new URL(working!.url) : null;
+            if (!working) return { text: "" };
+            const url = URL.canParse(working.url) ? new URL(working.url) : null;
+            const moved = !!startUrls && startUrls.get(working.id) !== working.url && !programAlreadyRead(working.url);
+            const page = moved ? await pageAfter(working.id) : null;
 
             // 和点击回执一样只给标题前 120 字和 origin+pathname（标题来自网页，网址的查询串可能带私人信息）。
-            return working ? `\n[After this program the working tab ${working.id} shows "${(working.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}" — ${url ? `${url.origin}${url.pathname}` : "(no address)"}; that is the page now.]` : "";
-          } catch { return ""; }
+            const text = `\n[After this program the working tab ${working.id} shows "${(working.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}" — ${url ? `${url.origin}${url.pathname}` : "(no address)"}; that is the page now.]`;
+
+            return page
+              ? { text: `${text}\n\n${PROGRAM_PAGE_LABEL}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, page }
+              : { text };
+          } catch { return { text: "" }; }
         };
 
         try {
@@ -416,15 +480,22 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             return receipt;
           } : undefined,
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
-          onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
+          onStep: programStep => {
+            if (programStep.phase === "end") endedSteps.push(programStep);
+
+            return execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } });
+          },
           });
         } catch (error) {
-          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${await endedOn()}`, { cause: error });
+          // 抛错的结果没有 details（Pi 只留错误文字），这里附的新页只进模型看到的文字，不进页面读数。
+          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${(await endedOn()).text}`, { cause: error });
           // assert 停下不是工具失败：前面的步骤已经做了，结果带结构交给模型。
           // details.steps 保持是步数（侧栏按 Number(details.steps) 计数），步骤列表另放 programSteps。
           rpc.noteToolFact?.(id, "executed");
 
-          return textResult(`${error.message}${await endedOn()}`, { assert: error.assert, steps: error.assert.failedAt, programSteps: error.steps });
+          const ended = await endedOn();
+
+          return textResult(`${error.message}${ended.text}`, { assert: error.assert, steps: error.assert.failedAt, programSteps: error.steps, ...(ended.page ? { page: ended.page } : {}) });
         }
 
         rpc.noteToolFact?.(id, "executed");
@@ -436,7 +507,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           ? `${json.slice(0, MAX_JS_RESULT_CHARS)}… [truncated: showed ${MAX_JS_RESULT_CHARS} of ${json.length} chars; the rest is missing — return less (slice each page) or save it with browser.saveFile]`
           : json;
 
-        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) + await endedOn() }, ...result.images], details: { value: result.value, steps: result.steps } };
+        const ended = await endedOn();
+
+        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) + ended.text }, ...result.images], details: { value: result.value, steps: result.steps, ...(ended.page ? { page: ended.page } : {}) } };
       },
     }),
 
@@ -446,7 +519,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         sid
           ? 'One tool for browser tabs. action:"list" lists the tabs assigned to you; other members\' and user tabs are not available to workers.'
-          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; when the user asks to go to or see a site, list the open tabs first and use action:"show" on a tab that already has it; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user asks to see or go to a page ("切到…", "给我看…", "打开那一页给我"); action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
+          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them' + TABS_LIST_AT_START + '; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user explicitly asks to switch to a page right now ("切到…", "切过去", "给我看那一页"); action:"close" closes tabId or the working tab.' + TABS_RESULT_IN_BACKGROUND + ' Open returns when the document is interactive, not when all resources finish, and its result already contains a fresh snapshot of the new page; a readiness timeout is not confirmed success — check the URL in that result before acting.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("show"), Type.Literal("close")], {
           description: "list | active | open | switch | show | close",
@@ -490,10 +563,21 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           if (front) {
             notes.push(front.id === data.tabId
               ? "The user is looking at this new tab."
-              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}».`);
+              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}». The user keeps their page; the reply will offer a 切过去看 button, so do not call show for it.`);
           }
 
-          return textResult(notes.length > 0 ? `${text}\n${notes.join("\n")}` : text, data);
+          const head = notes.length > 0 ? `${text}\n${notes.join("\n")}` : text;
+
+          if (data.readiness === "download" || data.readiness === "error_page") return textResult(head, data);
+
+          // 和 navigate 一样顺手读一次新页：10-13 真实网站 12 次里 9 次 open 后专门花一轮 snapshot。读失败只退回原结果。
+          try {
+            const page = (await readAfterNavigate("snapshot", { tabId: data.tabId })) as ToolContract["snapshot"]["data"];
+
+            return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
+          } catch {
+            return textResult(head, data);
+          }
         }
 
         if (params.action === "switch" || params.action === "show") {
@@ -515,7 +599,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "navigate",
       label: "Navigate",
-      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL and take a snapshot before acting. document: download means the address started a download instead of opening a page; the tab stays on its current page and the result says what Chrome reports about the file. document: error_page means Chrome showed its own error page (for example the site could not be reached).",
+      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL in the result, and treat the attached snapshot as possibly partial. document: download means the address started a download instead of opening a page; the tab stays on its current page and the result says what Chrome reports about the file. document: error_page means Chrome showed its own error page (for example the site could not be reached).",
       parameters: Type.Object({
         url: Type.String({ description: "Absolute URL" }),
         timeout: Type.Optional(Type.Number({ description: "Load timeout in seconds" })),
@@ -524,16 +608,17 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
         const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`;
 
-        if (data.readiness === "timeout") return textResult(head, data);
-
         // 地址变成了下载（页面没换）或 Chrome 显示错误页：不补读快照，只说 Chrome 报告的结果。
         if (data.readiness === "download" || data.readiness === "error_page") return textResult(data.note ? `${head}\n${data.note}` : head, data);
 
-        // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
+        // 协作成员（sid）就绪超时照旧只给结果行。
+        if (sid && data.readiness === "timeout") return textResult(head, data);
+
+        // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot；就绪超时也读，但标明可能不全。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
         try {
           const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
 
-          return textResult(`${head}\n\nFresh snapshot of the new page (no separate snapshot needed):\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
+          return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
         } catch {
           return textResult(head, data);
         }
@@ -546,7 +631,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
-        "Take a snapshot after actions that change the page; navigate already returns a fresh snapshot of the new page.",
+        "Take a snapshot after actions that change the page; navigate and tabs action:\"open\" already return a fresh snapshot of the new page.",
         "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
         "Viewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
       ],

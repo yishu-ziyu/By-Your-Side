@@ -94,8 +94,35 @@ async function runExt(task: Task, id: string, dir: string) {
     const rounds = lines.filter((l) => l.type === "model_request").length;
     const tools = lines.filter((l) => l.type === "tool_execution_start").map((l) => l.data?.toolName);
     await rp.screenshot(panel, join(dir, "panel.png")).catch(() => {});
-    return { ms, answer, tabs, probe, rounds, browserCalls: tools.length, tools };
+    return { ms, answer, tabs, probe, rounds, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel) };
   } finally { await rp.close(); await rp.remove(); }
+}
+
+// Rounds a better harness makes unnecessary, classified from the diagnostics trace (same rules before and after a change).
+function wastedRounds(lines: any[]) {
+  const calls = lines.filter((l) => l.type === "message_end" && l.data?.message?.role === "assistant").flatMap((l) => l.data.message.content.filter((c: any) => c.type === "toolCall"));
+  const results = lines.filter((l) => l.type === "message_end" && l.data?.message?.role === "toolResult").map((l) => l.data.message.content.map((c: any) => c.text ?? "").join(""));
+  const opens = (c: any) => c?.name === "navigate" || (c?.name === "tabs" && c.arguments?.action === "open");
+  const looksOnly = (c: any) => c?.name === "snapshot" || (c?.name === "browser_run" && /snapshot|pageInfo/.test(c.arguments?.code ?? "") && !/fill|click|press|type|select|check|hover|scroll|tabs/.test(c.arguments?.code ?? ""));
+  return {
+    tabsList: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "list").length,
+    tabsShow: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "show").length,
+    lookAfterOpen: calls.filter((c: any, i: number) => i > 0 && looksOnly(c) && opens(calls.slice(0, i).reverse().find((x: any) => !(x.name === "tabs" && x.arguments?.action !== "open")))).length,
+    zeroSize: results.filter((t: string) => t.includes("零尺寸")).length,
+    staleRef: results.filter((t: string) => /节点已离开文档|页面文档已变化|读取期间页面地址已变化/.test(t)).length,
+  };
+}
+
+// The 切过去看 button (user decision 10-13): present exactly when the result is in a background tab; clicking it brings that tab forward.
+async function showTabButton(rp: any, sw: string, panel: string) {
+  const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ id: t.id, url: t.url || '', active: t.active })))")) as { id: number; url: string; active: boolean }[];
+  const expected = tabs.length > 1 && (tabs.find((t) => t.active)?.url ?? "") === START;
+  const tabId = await rp.evaluate(panel, `(() => { const b = document.querySelector(".msg.assistant:last-of-type .answer-show-tab, .answer-latest .answer-show-tab"); return b ? Number(b.dataset.tabId) : null; })()`);
+  if (tabId == null) return { expected, shown: false, ok: !expected };
+  await rp.evaluate(panel, `document.querySelector(".answer-latest .answer-show-tab, .msg.assistant:last-of-type .answer-show-tab").click(), true`);
+  await new Promise((r) => setTimeout(r, 800));
+  const active = (await rp.evaluate(sw, "chrome.tabs.query({ active: true }).then(ts => ts.map(t => t.id))")) as number[];
+  return { expected, shown: true, tabId, broughtForward: active.includes(tabId), ok: expected && active.includes(tabId) };
 }
 
 // ---------- ego arm ----------
@@ -165,5 +192,12 @@ for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {
     console.log(`! ${arm} ${id} ${String(e).slice(0, 200)}`);
   }
   await writeFile(join(outDir, `result-${arm}.json`), JSON.stringify(results, null, 2));
+}
+if (arm === "ext") {
+  const ok = (results as any[]).filter((r) => r.outcome !== "error");
+  const sum = (k: string) => ok.reduce((n, r) => n + (r.wasted?.[k] ?? 0), 0);
+  const secs = ok.map((r) => r.seconds).sort((a, b) => a - b);
+  console.log(JSON.stringify({ pass: ok.filter((r) => r.outcome === "pass").length, of: results.length, rounds: ok.reduce((n, r) => n + r.rounds, 0), medianSeconds: secs[Math.floor(secs.length / 2)],
+    wasted: Object.fromEntries(["tabsList", "tabsShow", "lookAfterOpen", "zeroSize", "staleRef"].map((k) => [k, sum(k)])), buttonOk: ok.filter((r) => r.button?.ok).length }));
 }
 console.log(`done ${arm}`);

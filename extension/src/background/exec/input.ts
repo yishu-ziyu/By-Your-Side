@@ -11,10 +11,11 @@ import { sendCommand } from "../debugger.js";
 import { bringForwardForUser, putBackUserTab } from "../foreground.js";
 import { getWorkingTabId, resolveWorkingTab } from "../state.js";
 import { resolveKey, type KeyInfo } from "../../shared/keymap.js";
-import { addAxRefs, axBackendNodeFor, isAxRef } from "../axstate.js";
+import { addAxRefs, axBackendNodeFor, isAxNode } from "../axstate.js";
 import type { AxNodeLite } from "../axtree.js";
 import { wrapPageContent } from "../../../../shared/untrusted.js";
 import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
+import { refindDetachedRef } from "../ref-refind.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
 import { isPayLabel, isSendLabel, resolveImplicitMarkActions } from "../../shared/mark-actions.js";
@@ -515,10 +516,11 @@ async function beginCursorAction(
   try {
     await ensureCursor(tabId);
     const ref = target ? parseRef(target) : null;
+    const backendNodeId = axBackendNodeFor(tabId, ref);
 
-    if (ref !== null && isAxRef(tabId, ref)) {
+    if (backendNodeId !== undefined) {
       const contextId = await cursorContext(tabId);
-      await callOnBackendNode(tabId, ref, `function(cid, id, kind, label) {
+      await callOnBackendNode(tabId, backendNodeId, `function(cid, id, kind, label) {
         const r = this.getBoundingClientRect();
         window.__sideagent?.cursor?.for(cid)?.beginAction(id, kind,
           { x:r.x, y:r.y, width:r.width, height:r.height }, this, label);
@@ -1165,7 +1167,7 @@ async function explainRefusal(tabId: number, backendNodeId: number, error: unkno
     const name = String(named.name?.value || ownText || "").replace(/\s+/g, " ").trim().slice(0, 40);
 
     // 等这几次 CDP 调用时页面可能已换（导航、DOM 快照）：目标编号仍登记着才登记新编号，不把旧编号带回来。
-    if (isAxRef(tabId, backendNodeId)) addAxRefs(tabId, [id]);
+    if (isAxNode(tabId, backendNodeId)) addAxRefs(tabId, [id]);
 
     return `目标被 @${id} ${named.ignored ? "元素" : named.role?.value ?? "元素"} 挡住，操作未执行，挡住它的元素也没有被点。${name ? `挡住的元素名字：${wrapPageContent(name)}` : ""}先处理挡住的元素（例如关掉弹层），再重新 snapshot 确认目标。`;
   } catch {
@@ -1966,6 +1968,8 @@ export async function fill(
   const cid = cursorId(sessionId);
   await beforeDispatch?.();
 
+  // 宿主绑定了原节点身份时不找替身：换了节点就该按「身份无法核对」拒绝。
+  const refound = params.expectedBackendNodeId === undefined && await refindDetachedRef(tabId, params.target);
   // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
   const ref = parseRef(params.target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
@@ -2042,7 +2046,9 @@ export async function fill(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        return filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
+        const filled = filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
+
+        return refound ? { ...filled, refound } : filled;
       } catch (e) {
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
@@ -2122,7 +2128,7 @@ export async function selectOption(
   },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ selected: string[]; labels: string[] }> {
+): Promise<{ selected: string[]; labels: string[]; refound?: true }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -2139,6 +2145,7 @@ export async function selectOption(
   const tabId = tab.id;
   await beforeDispatch?.();
 
+  const refound = params.expectedBackendNodeId === undefined && await refindDetachedRef(tabId, params.target);
   const ref = parseRef(params.target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
 
@@ -2190,7 +2197,7 @@ export async function selectOption(
         params.expectedDocumentId, beforeDispatch,
       );
 
-      return result;
+      return refound ? { ...result, refound } : result;
     } catch (e) {
       if (params.expectedBackendNodeId !== undefined || !isDebuggerUnavailable(e)) {
         throw new Error(`ref @${ref} selectOption 失败（${oneLine(e)}）`);

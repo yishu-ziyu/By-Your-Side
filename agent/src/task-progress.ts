@@ -401,7 +401,7 @@ return;}
       const target = extractResultTarget(e.params, e.name);
 
       // T06：导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
-      if ((e.name === "navigate" || e.name === "open_tab") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
+      if ((e.name === "navigate" || e.name === "open_tab" || e.name === "tabs" && e.params?.action === "open") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
       let tabAction: string | undefined;
 
       if (e.name === 'tabs') {
