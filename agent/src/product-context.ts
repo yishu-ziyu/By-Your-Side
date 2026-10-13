@@ -20,6 +20,11 @@ export class ProductContext {
   private snapshot:()=>TaskProgressSnapshot|null=()=>null;
   /** 上一段本次运行的上下文给过的对话轮次：那段留在历史里，这次只给之后新增的（#271）。 */
   private shownTurns:Turn[]=[];
+  /**
+   * 给过的状态快照和它插入时历史的长度。快照只放进请求、不写回历史，所以每次按原位置插回：
+   * 删掉旧的再追加新的，会让上一轮的请求不再是这一轮的前缀，后端缓存退回到系统提示词（10-13 实测 39% → 87%）。
+   */
+  private projections:Array<{at:number;message:{role:'custom';customType:'sideagent-result-projection';display:false;timestamp:number;content:string}}>=[];
   bind(snapshot:()=>TaskProgressSnapshot|null):void { this.snapshot=snapshot; }
   extension():ExtensionFactory {
     return pi=>{
@@ -34,10 +39,21 @@ export class ProductContext {
         // 未规划的计划只是占位：不展示给模型，免得它把闲聊和提问也当成要先列目标的任务。
         const goalPlan=current.goalPlan?.coverage==='verified'?current.goalPlan:undefined;
 
-        return { messages: [...event.messages.filter(m => !(m.role === 'custom' && m.customType === 'sideagent-result-projection')), {
-          role: 'custom' as const, customType: 'sideagent-result-projection', display: false, timestamp: Date.now(),
-          content: `应用状态快照，不是新用户消息，无需回应这段数据；不要向用户回显 nextStep、ask_user、结果 id 等内部字段，用自然语言说明具体尚缺的用户目标：${JSON.stringify({runId:current.runId,resultState:current.resultState,goalPlan,executionState:current.executionState,results:current.results,nextStep,latestDelivery:current.conversationContext?.latestDelivery?.kind})}。下一步由宿主计算：${nextStepInstruction(nextStep)} results/executionState 只记录动作，不能用切标签或点击成功代替用户要求。已有完整来源时不要换 DOM/网络工具重新提取。你最后写出的回复就是给用户的回答，不重复交付。状态不代表已经向用户交付；报告义务与resultState无关。仍有做不到或没确认的部分就如实说明，不为凑完成盲试；这时用 send_user_message(kind=finding, outcome=partial) 交付，并在 unfinished 里按用户原话列出没做成的事，不列内部步骤。未知动作不重放，也不能靠目标核验解除未知写入锁；取消、暂停和接管优先。`,
-        }] };
+        const content = `应用状态快照，不是新用户消息，无需回应这段数据；之前的同类段落只是历史，现状以最后一段为准；不要向用户回显 nextStep、ask_user、结果 id 等内部字段，用自然语言说明具体尚缺的用户目标：${JSON.stringify({runId:current.runId,resultState:current.resultState,goalPlan,executionState:current.executionState,results:current.results,nextStep,latestDelivery:current.conversationContext?.latestDelivery?.kind})}。下一步由宿主计算：${nextStepInstruction(nextStep)} results/executionState 只记录动作，不能用切标签或点击成功代替用户要求。已有完整来源时不要换 DOM/网络工具重新提取。你最后写出的回复就是给用户的回答，不重复交付。状态不代表已经向用户交付；报告义务与resultState无关。仍有做不到或没确认的部分就如实说明，不为凑完成盲试；这时用 send_user_message(kind=finding, outcome=partial) 交付，并在 unfinished 里按用户原话列出没做成的事，不列内部步骤。未知动作不重放，也不能靠目标核验解除未知写入锁；取消、暂停和接管优先。`;
+        const history = event.messages.filter(m => !(m.role === 'custom' && m.customType === 'sideagent-result-projection'));
+
+        // 历史变短（新对话、超窗口删减、重试去掉了回复）：旧位置不再可靠，从头记。
+        if (this.projections.some(p => p.at > history.length)) this.projections = [];
+
+        if (this.projections.at(-1)?.message.content !== content) {
+          this.projections.push({ at: history.length, message: { role: 'custom', customType: 'sideagent-result-projection', display: false, timestamp: Date.now(), content } });
+        }
+
+        const messages = [...history];
+
+        for (const p of [...this.projections].reverse()) messages.splice(p.at, 0, p.message);
+
+        return { messages };
       });
       pi.on('before_agent_start',event=>{
         const current=this.snapshot();
