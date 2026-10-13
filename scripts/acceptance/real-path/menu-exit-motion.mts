@@ -71,6 +71,20 @@ try {
     check(`${m.name}：关闭途中采到半透明的一帧，最后收起`, closing(closed) && gone(closed), summary(closed));
   }
 
+  // 关闭途中又点开：菜单回到完全可见，而且接得住点击。
+  await rp.click(panel, "#attach-btn");
+  await sleep(400);
+  await rp.click(panel, "#attach-btn");
+  await sleep(40);
+  const reopening = await clickAndWatch("#attach-menu", "#attach-btn", 400);
+  const hit = await rp.evaluate(panel, `(() => { const m = document.querySelector("#attach-menu"); const r = m.getBoundingClientRect();
+    const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { inside: !!at && m.contains(at), pointerEvents: getComputedStyle(m).pointerEvents }; })()`) as { inside: boolean; pointerEvents: string };
+  const end = reopening.at(-1);
+  check("「+」附件菜单：关闭途中再点开，回到完全可见并接得住点击",
+    closing(reopening) && !!end && !end.hidden && end.display !== "none" && end.opacity === 1 && hit.inside && hit.pointerEvents !== "none", { ...summary(reopening) as object, hit } as Json);
+  await rp.click(panel, "#attach-btn");
+  await sleep(400);
+
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, panel);
   await sleep(200);
 
