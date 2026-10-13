@@ -22,12 +22,13 @@ export const isPttPageMessage = (raw: Partial<PttPageMessage> | null | undefined
 /**
  * 网页底部胶囊现在显示什么（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）。heard 是听写出的那句话。
  * failed 带 heard：话没交给助手，可以重发；不带：没听到或听写失败。speaking：正在念这一条（docs/evals/20261007-ptt-speak.md）。
+ * doing 的 ack：松开后马上应的一句短确认（按原话本地取，不问模型），念的时候显示它，之后显示当前步骤。
  */
 export type PttCapsule =
   | { phase: "listening" }
   | { phase: "transcribing" }
   | { phase: "failed"; reason: string; heard?: string }
-  | { phase: "doing"; heard: string; step: string | null }
+  | { phase: "doing"; heard: string; step: string | null; ack: string; speaking?: true }
   | { phase: "waiting"; heard: string; reason: string; speaking?: true }
   | { phase: "done"; heard: string; result: string; left: string | null; speaking?: true }
   | { phase: "stopped"; heard: string };
