@@ -500,7 +500,7 @@ function ensureStyles(): void {
     "resume-entry .resume-line{margin:0;flex:1 1 auto;min-width:0}",
     "resume-entry[data-tone=blocked] .resume-line{color:var(--err,#b74536)}",
     "resume-entry .resume-note{margin:0;flex-basis:100%;order:3;font-size:11.5px;color:var(--warn,#9b682b)}",
-    "resume-entry .resume-action{flex:none;padding:3px 12px;border-radius:999px;border:1px solid var(--content-border,#ded8cd);background:transparent;color:var(--text-primary,#292821);font:inherit;font-size:12px;cursor:pointer;transition:background .15s ease,border-color .15s ease}",
+    "resume-entry .resume-action{flex:none;padding:3px 12px;border-radius:999px;border:1px solid var(--content-border,#ded8cd);background:transparent;color:var(--text-primary,#292821);font:inherit;font-size:12px;cursor:pointer;transition:background var(--d-micro) var(--e-enter),border-color var(--d-micro) var(--e-enter)}",
     "resume-entry .resume-action:hover:not([disabled]){background:var(--content-subtle,#ece7de)}",
     "resume-entry .resume-action:focus-visible{outline:2px solid var(--accent,#79523b);outline-offset:2px}",
     "resume-entry .resume-action[disabled]{opacity:.6;cursor:default}",
