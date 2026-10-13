@@ -64,7 +64,11 @@ otherwise tokens only (Token Plans are subscriptions). pass_rate excludes judge_
 
 Timing: seconds_* are from the Enter keypress in the panel. first_output = first assistant text,
 tool chip or thinking in the panel (seconds_to_first_status = first status line).
+first_answer_text = first text in the panel answer area, streaming included (#264's 首字; needs runs from 2026-10-12 on).
 seconds_total = last panel change once the panel is idle (not running, send button not in stop mode, not streaming).
+Speed (#238): tiers.json `latency` holds #264's lines per category; analyze.py judges each result pass / fail /
+unmeasured against `max_s` (BYS_TIERS swaps in another file) and splits it into model / tool / other with
+scripts/eval/time-breakdown.mts, the only definition of those phases. review.html shows it when report.json exists.
 A timed-out task is stopped with the panel's stop button before evidence is collected.
 Confirmations: since 2026-10-04 web actions run without approval cards or held clicks, so the harness
 answers nothing on the user's behalf; `confirmations` stays empty for new runs (older transcripts keep theirs).

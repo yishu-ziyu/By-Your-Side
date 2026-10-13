@@ -36,6 +36,9 @@ const WAITING_TEXT: Record<string, string> = {
   runtime_error: "出错了，助手只给你已确认的结果",
 };
 
+/** 只是在复述某个结果未知、受阻的执行项的等待原因：目标核对判做完后不再为它出卡。 */
+const CHECK_COVERS_WAITING = new Set(["tool_failed", "unknown_with_baseline", "unknown_without_baseline"]);
+
 const INTERRUPTION_DETAIL: Record<string, string> = {
   host_restart: "扩展后台重启了",
   connection_lost: "扩展后台断开了",
@@ -143,7 +146,8 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 中断或停下的任务不是「没做成」，只是还没做到。
   const verb = view.state === "interrupted" || view.state === "aborted" ? "还没做" : "没做成";
   const phrase = (head: string, items: string[]) => `${head}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
-  const notDone = (items: string[]) => phrase(verb, items);
+  // 失败的人话原因（「目标现在不可用」，#304）比只说步骤名更有用：说「没做成」时有它就顶替行内的步骤名；「还没做」时仍说是哪件事。
+  const notDone = (items: string[], reason?: string) => phrase(verb, reason && verb === "没做成" ? [reason, ...items.slice(1)] : items);
 
   const told = checkedRemaining(view) ?? (declared.length ? declared : view.latestDelivery?.unfinished?.length ? view.latestDelivery.unfinished : null);
 
@@ -151,7 +155,9 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 描述已在 buildResumeSummary 里翻成人话（不带工具名、元素编号）。
   const unverifiedOnly = remaining.length > 0 && remaining.every((r) => unverifiedGoal(view, r));
   const listed = remaining.map((r) => r.description);
-  const left = told ? (told.length ? notDone(told) : null) : listed.length ? (unverifiedOnly ? phrase("还没确认完成", listed) : notDone(listed)) : null;
+  // 按计划列目标时，没核验的目标旁边有一步真没做成：说没做成和原因，不说「还没确认完成」。
+  const reason = view.failureReason;
+  const left = told ? (told.length ? notDone(told) : null) : listed.length ? (unverifiedOnly && !reason ? phrase("还没确认完成", listed) : notDone(listed, reason)) : null;
 
   // 停在一步中间（结果未知）不是「还没做」：页面上可能已经留下了部分结果（#103，整页翻译停下时已翻好几百段）。
   const midway = !told && remaining.length > 0 && remaining.every((r) => r.status === "unknown");
@@ -195,7 +201,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   }
 
   const done = view.results.filter((r) => r.status === "satisfied").map((r) => ({ id: r.id, description: plainStep(r.description) }));
-  // 核对判做完：没核对过的计划目标不再算剩余（结果未知、受阻的执行项照旧保留）。
+  // 核对判做完：没核对过的计划目标不再算剩余。结果未知、受阻的执行项仍列在摘要里，但结束后的卡片不再为它们出现（见下方 visible）。
   const checkedDone = checkedRemaining(view)?.length === 0;
 
   const remaining = view.outstanding.filter((r) => !(checkedDone && unverifiedGoal(view, r)))
@@ -247,11 +253,16 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   if (blocked) gaps.push(`${blocked} 步没做成，助手要换个做法`);
 
   // 运行中由顶部任务条负责；这张卡只在需要用户处理时出现（页面归你、中断、出错、停止或结束后仍有剩余）。
+  // 结束后目标核对判做完（#334，主会话 10-13 定）：结果未知、受阻的执行项不再出卡，那一步的状态只留在展开的过程里
+  // （它的 chip 已写「没做成」）；发送类动作另有发送前确认把关。只是复述这些执行项的等待原因同样不出卡，其他等待照旧出卡。
+  const coveredByCheck = checkedDone && view.state === "idle";
+  const waitingShows = !!view.waiting && !(coveredByCheck && CHECK_COVERS_WAITING.has(view.waiting.reason));
+
   const visible = checkpointUnavailable
     || ["paused", "interrupted", "error"].includes(view.state)
     || (view.state === "aborted" && (remaining.length > 0 || !!view.waiting))
     // 模型在回答里自己交代的没做完（declaredUnfinished）不另出卡：回答已经说了，「继续」也不提供（#103）。
-    || (view.state === "idle" && (remaining.length > 0 || !!view.waiting));
+    || (view.state === "idle" && (remaining.some((r) => !(coveredByCheck && (r.status === "unknown" || r.status === "blocked"))) || waitingShows));
 
   return {
     visible,

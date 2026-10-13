@@ -5,8 +5,9 @@ import type WebSocket from 'ws';
 import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voice-connection.js';
 import { isExplicitTaskAbort } from './voice-confirm.js';
 import type { TaskActionRequest } from '../../shared/task-actions.js';
-import type { RealtimeVoiceModel, VoiceCommand, VoiceEvent, VoiceInputContext, VoiceRouteContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
+import { deliveryTextWithNote, type RealtimeVoiceModel, type VoiceCommand, type VoiceEvent, type VoiceInputContext, type VoiceRouteContext, type VoiceRouteResult, type VoiceTarget, type TaskProgressSnapshot, type UserDelivery, type UserDeliveryStream } from '../../shared/voice.js';
 import { base64Bytes } from '../../shared/bytes.js';
+import { withoutFailureReasons } from '../../shared/task-results.js';
 
 export type RealtimeVoiceDependencies = {
   model?: RealtimeVoiceModel;
@@ -44,7 +45,7 @@ type Input = {
  * 交付给用户的结果怎么念：还没确认完的结果可能带着过度自信的完成说法，
  * 这时只念宿主自己的未完成状态，详情留在侧栏；不丢事实，也不让另一个模型把这段话说得更满。
  */
-export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' | 'facts'>, owner: TaskProgressSnapshot | null | undefined, currentConversationId: string | undefined): string {
+export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' | 'facts' | 'hostNote'>, owner: TaskProgressSnapshot | null | undefined, currentConversationId: string | undefined): string {
   const remaining = delivery.facts ? delivery.facts.remaining.length + (delivery.facts.omittedRemaining ?? 0) : 0;
   const task = owner && owner.conversationId !== currentConversationId ? `「${owner.goal?.slice(0, 40) ?? '另一项任务'}」` : '这项任务';
 
@@ -52,7 +53,8 @@ export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' 
     return remaining ? `${task}还有 ${remaining} 项结果没完成或还没确认，具体内容在侧栏。` : `${task}的结果还没确认，具体内容在侧栏。`;
   }
 
-  return delivery.text;
+  // 宿主补的一句（hostNote）：目标核对还没判做完时才接在正文后面念。
+  return owner?.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery);
 }
 
 /** Adapts native sidepanel protocol to the same continuous Realtime 3 connection used in the trial. */
@@ -134,7 +136,9 @@ export class RealtimeVoiceSession {
           return this.deps.readPage(origin.input);
         },
         task_status: async () => {
-          return { snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.() ?? [] };
+          const snapshot = this.deps.getSnapshot();
+
+          return { snapshot: snapshot?.results ? { ...snapshot, results: withoutFailureReasons(snapshot.results) } : snapshot, targets: this.deps.getTargets?.() ?? [] };
         },
       }
     });
@@ -457,7 +461,7 @@ export class RealtimeVoiceSession {
       this.cancelled.add(stream.id);
     }
   }
-  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts'> & {
+  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'> & {
     voiceTurn?: number;
   }): void {
     if (this.closed || this.deps.diagnosticMode || this.notices.has(delivery.id) || this.cancelled.has(delivery.id)) {

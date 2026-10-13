@@ -14,7 +14,7 @@
 | 安装与配置 | [源码安装](docs/guides/getting-started.md) |
 | 了解交互与权限 | [使用说明](docs/guides/usage.md) |
 | 找代码职责和调用链 | [架构](docs/architecture.md) · [协议](docs/protocol.md) |
-| 接着开发 | [当前状态](docs/STATUS.md) · [续接要点](docs/NOTES.md) |
+| 接着开发 | [当前状态](docs/STATUS.md) |
 | 修改与验证 | [开发检查](docs/development/checks.md) · [文档维护](docs/development/documentation.md) |
 | 新功能怎么推进 | [协作方式](docs/development/collaboration.md) |
 

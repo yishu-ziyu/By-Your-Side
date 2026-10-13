@@ -34,7 +34,11 @@ export const slugOf = (model) => model.replace(/[^a-z0-9.-]+/gi, "_");
 const PANEL_PROBE = `(() => {
   const txt = (el) => (el?.innerText ?? "").trim();
   const q = (s) => document.querySelector(s);
-  const msgs = [...document.querySelectorAll("#messages .msg")].map((el) => ({ cls: el.className, text: txt(el) }));
+  // 每个气泡一个稳定编号，评测据此记它第一次出字的时刻（首字）；kind 区分 ack 交付。
+  const msgs = [...document.querySelectorAll("#messages .msg")].map((el) => {
+    if (!el.dataset.evalId) el.dataset.evalId = String(window.__evalSeq = (window.__evalSeq ?? 0) + 1);
+    return { id: el.dataset.evalId, kind: el.dataset.deliveryKind ?? "", cls: el.className, text: txt(el) };
+  });
   const runs = [...document.querySelectorAll("details.run-steps")].map((d) => ({
     title: txt(d.querySelector(".run-title")), chain: txt(d.querySelector(".run-chain")), time: txt(d.querySelector(".run-time")),
     chips: [...d.querySelectorAll(".chip")].map((c) => ({ label: txt(c.querySelector(".chip-label")) || txt(c), detail: txt(c.querySelector(".chip-detail")), cls: c.className })),
@@ -123,7 +127,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
   const { launchRealPath, until, exportDiagnosticsViaSettings } = await driver();
 
   const rec = { id: task.id, model, main_model: null, fast_model: null, category: task.category, site_url: task.site_url, prompt: task.prompt,
-    status: "error", timestamps: {}, load_at_start: os.loadavg().map((x) => Math.round(x * 10) / 10), seconds_to_first_output: null, seconds_total: null,
+    status: "error", timestamps: {}, load_at_start: os.loadavg().map((x) => Math.round(x * 10) / 10), seconds_to_first_output: null, seconds_to_first_answer_text: null, seconds_total: null,
     steps: [], final_answer_verbatim: "", panel_messages: [], confirmations: [], errors: [],
     site_observations: [], environment: null, final_page: null, downloads: [], screenshots: [], panel_wait: [], trace_model: null, trace_export: null, secret_scan: null,
     harness: { mode: "extension-only", browser: null, extension_id: null, stored_config: null } };
@@ -383,6 +387,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.steps.push({ t: t(at), at: iso(at), source, text: String(text).slice(0, 500) });
     };
 
+    const firstSeen = new Map(); // 气泡编号 -> 第一次出字的时刻
     let firstOut = null, lastChange = Date.now(), lastSig = "", ended = null, lastTraceRead = 0;
     const deadline = rec._t0 + capMs;
     let snap;
@@ -394,7 +399,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       if (selected) {
         const r = await evalIn(ps, READING_PROBE).catch(() => null);
 
-        if (r?.answer && !firstOut) { firstOut = now; rec.timestamps.first_visible_output = iso(now); }
+        if (r?.answer && !firstOut) { firstOut = now; rec.timestamps.first_visible_output = rec.timestamps.first_answer_text = iso(now); rec.seconds_to_first_answer_text = t(now); }
 
         if (r && !["pending", "streaming"].includes(r.state)) { ended = now; break; }
 
@@ -434,6 +439,8 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       }
 
       if (!rec.timestamps.first_status && snap.runs.some((r) => r.title)) { rec.timestamps.first_status = iso(now); rec.seconds_to_first_status = t(now); }
+
+      for (const m of afterUser) if (/assistant/.test(m.cls) && m.text && !firstSeen.has(m.id)) firstSeen.set(m.id, now);
 
       if (!firstOut && (afterUser.some((m) => m.text) || snap.runs.some((r) => r.chips.length || r.thinking))) { firstOut = now; rec.timestamps.first_visible_output = iso(now); }
 
@@ -477,6 +484,11 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     if (snap && !snap.error) {
       const afterUser = snap.msgs.slice(snap.msgs.findLastIndex((m) => /\buser\b/.test(m.cls)) + 1);
       rec.panel_messages = afterUser;
+      // 首字（#264 口径）：最后留在回答区的第一个回答气泡开始出字的时刻。开场话（.opening-line）、ack 交付、
+      // 被收进过程的前导正文都不算，所以要等跑完、看清哪个气泡是回答再定。没有回答时保持 null。
+      const reply = afterUser.find((m) => /assistant/.test(m.cls) && !/opening-line|error/.test(m.cls) && m.kind !== "ack" && m.text);
+
+      if (reply) { const at = firstSeen.get(reply.id) ?? endAt; rec.timestamps.first_answer_text = iso(at); rec.seconds_to_first_answer_text = t(at); }
       const answers = snap.msgs.filter((m) => /assistant/.test(m.cls) && m.text);
       rec.final_answer_verbatim = answers.at(-1)?.text ?? "";
       rec.panel_runs = snap.runs;

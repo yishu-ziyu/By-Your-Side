@@ -52,7 +52,10 @@ const LANG = "回复用中文";
 /** 和 ASK_EMAIL 共有「注册」：10-10 起同一网站的过往任务要和这句话对得上才带（docs/evals/20261010-panel-tidy.md）。 */
 const TASK_GOAL = "在 A 店注册并订阅到货提醒";
 
-const TASK_SUMMARY = "已在 A 店订阅了到货提醒，确认邮件已点过。";
+const TASK_SUMMARY = "已在 A 店订阅了到货提醒，确认邮件已点过。这款现价 299 元。";
+
+/** 过往任务做成了什么：侧栏点名和带给助手的都是这句，不是当时的回答（#305）。 */
+const TASK_DONE = "在 A 店订阅了到货提醒";
 
 const artifacts = join(REPO, "out/acceptance/memory-used-line");
 
@@ -181,7 +184,7 @@ const memory = (id: string, text: string): JsonRecord => ({ id, factId: id, vers
 
 async function seed(withMemory: boolean) {
   await putDoc("memories", JSON.stringify({ format: 3, rev: 1, entries: withMemory ? [memory("seed-email", EMAIL), memory("seed-lang", LANG)] : [] }) + "\n");
-  const task = { id: "seed-task", conversationId: "seed", goal: TASK_GOAL, revisions: [], hosts: [SITE_A], outcome: "complete", summary: TASK_SUMMARY, unfinished: [], startedAt: NOW - 3_600_000, endedAt: NOW - 3_000_000 };
+  const task = { id: "seed-task", conversationId: "seed", goal: TASK_GOAL, revisions: [], hosts: [SITE_A], outcome: "complete", summary: TASK_SUMMARY, done: TASK_DONE, unfinished: [], startedAt: NOW - 3_600_000, endedAt: NOW - 3_000_000 };
   await putDoc("tasks", JSON.stringify({ format: 1, tasks: withMemory ? [task] : [] }) + "\n");
 }
 
@@ -278,7 +281,7 @@ async function openMemoryPanel(): Promise<string> {
   return String(await rp.evaluate(panel, `[...document.querySelectorAll(".memory-row")].find((r) => r.dataset.memoryId === "seed-email")?.innerText ?? ""`));
 }
 
-const has = (prompt: string) => ({ email: prompt.includes(EMAIL), lang: prompt.includes(LANG), task: prompt.includes(TASK_GOAL) });
+const has = (prompt: string) => ({ email: prompt.includes(EMAIL), lang: prompt.includes(LANG), task: prompt.includes(TASK_GOAL), oldReply: prompt.includes("299 元") });
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -317,6 +320,7 @@ try {
   // 点名的是邮箱和过往任务；「回复用中文」照常发给模型，但和这句话对不上，不点名。
   const expectedN = 2;
   check("R1", "请求里带了两条记忆和一条过往任务", sent.email && sent.lang && sent.task, sent);
+  check("R1", "过往任务只带做成了什么，不带当时回答里的页面信息（「299 元」）", !sent.oldReply, sent);
   // YIS-86：行内点名第一条（「按你说过的「<原文>」」），多条加「等 N 条」。
   const named = /^按你说过的「(.+?)…?」等 (\d+) 条 ›$/.exec(line1?.text ?? "");
   check("R1", `问邮箱：首句末尾显示「按你说过的「邮箱…」等 ${expectedN} 条 ›」，不算「回复用中文」`, !!line1 && !!named && line1.count === expectedN && Number(named[2]) === expectedN && EMAIL.startsWith(named[1]!), { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
@@ -330,7 +334,7 @@ try {
   await sleep(500);
   const line2 = await lastLine();
   const byId = (id: string) => line2?.items.find((i) => i.id === id);
-  check("R2", "展开后列出点名的每条原文；过往任务显示摘要；不列「回复用中文」", !line2?.listHidden && byId("seed-email")?.text === EMAIL && !byId("seed-lang") && byId("seed-task")?.text === TASK_SUMMARY, { items: line2?.items ?? null });
+  check("R2", "展开后列出点名的每条原文；过往任务显示做成了什么；不列「回复用中文」", !line2?.listHidden && byId("seed-email")?.text === EMAIL && !byId("seed-lang") && byId("seed-task")?.text === TASK_DONE, { items: line2?.items ?? null });
   check("R2", "每条都有「忘记」和「在这个网站不用」", !!line2 && line2.items.length === expectedN && line2.items.every((i) => i.buttons.includes("忘记") && i.buttons.includes("在这个网站不用")), { buttons: line2?.items.map((i) => i.buttons) ?? null });
   await shot("R2-expanded");
 

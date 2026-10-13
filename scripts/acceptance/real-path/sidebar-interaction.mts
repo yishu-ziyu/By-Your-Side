@@ -132,6 +132,8 @@ try {
   await rp.evaluate(settings, `document.querySelector('#model-save').scrollIntoView({ block: 'center' }); true`);
   await rp.click(settings, "#model-save");
   await until(async () => String(await rp!.evaluate(settings, `document.querySelector('#model-status').textContent`)).startsWith("已保存") || undefined, 10_000, "模型保存");
+  // 保存前会先试连一次（10-13）：之后的「不发模型请求」从这里数起。
+  const afterSave = model.requests.length;
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId });
   await sleep(600);
 
@@ -203,7 +205,7 @@ try {
   await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...point, button:"left", clickCount:1 }, work);
   await until(async () => await rp!.evaluate(panel, `!document.querySelector('#ask-cite').hidden`) || undefined, 5000, "选区转入引用");
   const cite = await rp.evaluate(panel, `({ text:document.querySelector('#ask-cite-text').textContent, host:document.querySelector('#ask-cite-host').textContent, focus:document.activeElement.id })`);
-  check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === 0, cite);
+  check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === afterSave, cite);
   await rp.typeText(panel, "引用草稿");
   await rp.screenshot(panel, join(artifacts, "selection-cite.png"));
   await rp.click(panel, "#ask-cite-close");
@@ -216,7 +218,7 @@ try {
   const suggestion = String(await rp.evaluate(panel, `document.querySelector('#starter button[data-starter]')?.dataset.starter ?? ''`));
   await rp.click(panel, "#starter button[data-starter]");
   const draft = await read();
-  check("开始建议只填草稿", !!suggestion && draft.input === suggestion && model.requests.length === 0, { input: draft.input, modelRequests: model.requests.length });
+  check("开始建议只填草稿", !!suggestion && draft.input === suggestion && model.requests.length === afterSave, { input: draft.input, modelRequests: model.requests.length - afterSave });
   await rp.click(panel, "#conversation-new");
   await until(async () => (await read()).input === "" || undefined, 10_000, "新会话草稿为空");
   check("新会话不继承上一段草稿", (await read()).input === "", { input: (await read()).input });

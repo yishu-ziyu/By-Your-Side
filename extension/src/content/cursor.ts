@@ -86,6 +86,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     visible: boolean;
     restIndex: number;
     pos: { x: number; y: number };
+    /** 最近一次飞向的点：助手的真实鼠标事件落在这里，用来和用户自己动鼠标区分。 */
+    aim?: { x: number; y: number };
     resting: boolean;
     raf?: number;
     parkTimer?: ReturnType<typeof setTimeout>;
@@ -192,32 +194,31 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       /* 常驻的光标闲置时不长期占用独立合成层。 */
       .cursor:not(.rest) { will-change: transform; }
       .cursor.hidden { opacity: 0; }
-      /* C 柔和彩边：低饱和渐变缓慢流动；没有扫页光束和追踪亮点。 */
+      /* 贴边柔光（10-13 用户选定 A）：墨蓝从视口边缘向内晕开，一段亮光沿边慢走；
+         参照 Gemini in Chrome / ego 的边框光。用户动鼠标时整层让位到很淡。 */
       .edge {
         position: absolute; inset: 0; pointer-events: none;
-        opacity: 0; transition: opacity 420ms cubic-bezier(.16,1,.3,1);
-        overflow: hidden;
+        opacity: 0; transition: opacity 600ms cubic-bezier(.16,1,.3,1);
+        box-shadow: inset 0 0 0 1px rgba(45,74,134,.30), inset 0 0 16px 1px rgba(52,88,160,.20),
+          inset 0 0 46px 6px rgba(80,120,200,.10);
       }
       .edge::before {
-        content: ""; position: absolute; inset: 9px; border-radius: 18px;
-        padding: 2.5px;
+        content: ""; position: absolute; inset: 0; padding: 3px;
         background: conic-gradient(from var(--sideagent-border-angle, 0deg),
-          #c5dbe4 0%, #8aa9e2 26%, #b5a1d8 51%,
-          #dec2d5 70%, #a6cfc5 86%, #c5dbe4 100%);
+          transparent 0deg, transparent 230deg, rgba(96,140,225,0) 250deg,
+          rgba(96,140,225,.85) 300deg, rgba(160,195,255,.95) 318deg,
+          rgba(96,140,225,0) 345deg, transparent 360deg);
         -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
         -webkit-mask-composite: xor;
         mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
         mask-composite: exclude;
-      }
-      .edge::after {
-        content: ""; position: absolute; inset: 10px; border-radius: 17px;
-        background: linear-gradient(125deg,
-          rgba(138, 169, 226, .025), rgba(181, 161, 216, .045) 55%,
-          rgba(166, 207, 197, .025));
-        box-shadow: inset 0 0 22px 1px rgba(124, 150, 194, .055);
+        filter: blur(4px);
       }
       .edge.on { opacity: 1; }
-      .edge.on::before { animation: soft-border-flow 7.2s linear infinite; }
+      .edge.on::before { animation: soft-border-flow 6.5s linear infinite; }
+      :host(.user-active) .edge.on { opacity: .18; transition-duration: 250ms; }
+      :host(.user-active) .cursor:not(.holding):not(.guiding):not(.hidden) { opacity: .3; }
+      :host(.user-active) .cursor:not(.holding):not(.guiding):not(.hidden) .label { opacity: 0; }
       /* 新建即点亮：淡入由样式起点完成，不靠下一帧再改 class（后台页的下一帧可能很晚，晚到的改动会让已发出的确认判为页面已变）。 */
       @starting-style { .edge.on { opacity: 0; } }
       @keyframes soft-border-flow { to { --sideagent-border-angle: 360deg; } }
@@ -948,6 +949,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   function flyTo(inst: Instance, to: { x: number; y: number }): number {
     cancelFly(inst);
+    inst.aim = to;
     const from = inst.pos;
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
 
@@ -2133,9 +2135,46 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   /** 正在操作这一页的成员；只要仍有一位在工作，就保留选定的 C 彩边。 */
   const glowing = new Set<string>();
 
+  // 用户一动鼠标，彩边和光标让位，停下约 1 秒再亮回来（ego 的 user-in-control 预设）。
+  // 助手经调试协议发出的鼠标事件也是可信事件，但总落在光标刚飞到的点上，据此排除。
+  // 不移动光标就派发的鼠标事件（受保护的悬停）先经 expect() 登记落点。
+  let userIdle: ReturnType<typeof setTimeout> | undefined;
+  let expected: Array<{ x: number; y: number; at: number }> = [];
+
+  function onUserPointer(e: PointerEvent): void {
+    const now = Date.now();
+    expected = expected.filter(p => now - p.at < 3000);
+    const near = (p?: { x: number; y: number }) => !!p && Math.abs(p.x - e.clientX) <= 6 && Math.abs(p.y - e.clientY) <= 6;
+
+    if (expected.some(near)) return;
+
+    for (const inst of instances.values()) {
+      if (near(inst.aim) || near(inst.pos)) return;
+    }
+
+    if (!host?.classList.contains("user-active")) host?.classList.add("user-active");
+    clearTimeout(userIdle);
+    userIdle = setTimeout(() => host?.classList.remove("user-active"), 1100);
+  }
+
+  function watchUser(on: boolean): void {
+    if (on) {
+      window.addEventListener("pointermove", onUserPointer, { capture: true, passive: true });
+      window.addEventListener("pointerdown", onUserPointer, { capture: true, passive: true });
+
+      return;
+    }
+
+    window.removeEventListener("pointermove", onUserPointer, { capture: true });
+    window.removeEventListener("pointerdown", onUserPointer, { capture: true });
+    clearTimeout(userIdle);
+    host?.classList.remove("user-active");
+  }
+
   function renderGlow(): void {
     if (glowing.size === 0) {
       edge?.classList.remove("on");
+      watchUser(false);
 
       return;
     }
@@ -2149,6 +2188,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     }
 
     edge.classList.add("on");
+    watchUser(true);
   }
 
   let crossPillSession = "";
@@ -2459,6 +2499,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     // Pagehide may freeze this Document in BFCache. Do not revive finished
     // task lighting when pageshow later reuses the same content-script world.
     glowing.clear();
+    watchUser(false);
     edge = null;
     host?.remove();
     marksHost?.remove();
@@ -2570,6 +2611,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
         if (inst.action) inst.action.arrived = true;
         setPos(inst, { x, y });
+      },
+      expect(x: number, y: number): void {
+        expected.push({ x, y, at: Date.now() });
       },
       move(x: number, y: number): number {
         const inst = getInstance(id);

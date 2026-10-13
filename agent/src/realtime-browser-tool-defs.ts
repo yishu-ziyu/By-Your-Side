@@ -4,7 +4,7 @@
  * 扩展内构建用 extension/src/inproc/voice/ 下的同名导出替换，内容来自导出的 JSON。
  */
 import { Type } from 'typebox';
-import { createBrowserTools } from './tools.js';
+import { createBrowserTools, TABS_LIST_AT_START, TABS_RESULT_IN_BACKGROUND } from './tools.js';
 import { ToolRpc } from './rpc.js';
 
 // Reuse production tool schemas. This list exposes browser primitives, not another agent loop.
@@ -38,11 +38,16 @@ function providerParameters(value: unknown): Record<string, unknown> {
   }
 }
 
+/** 语音没有任务首条消息里的标签页清单，也没有回复里的「切过去看」按钮：去掉 tabs 说明里只对文字任务成立的两句。 */
+function voiceDescription(tool: { name: string; description: string }): string {
+  return tool.name === 'tabs' ? tool.description.replace(TABS_LIST_AT_START, '').replace(TABS_RESULT_IN_BACKGROUND, '') : tool.description;
+}
+
 export const REALTIME_BROWSER_TOOLS = tools.map(tool => ({
   type: 'function' as const,
   function: {
     name: tool.name,
-    description: [tool.description, ...(tool.promptGuidelines ?? [])].join('\n'),
+    description: [voiceDescription(tool), ...(tool.promptGuidelines ?? [])].join('\n'),
     parameters: providerParameters(tool.parameters),
   },
 }));
