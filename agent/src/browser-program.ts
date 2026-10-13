@@ -398,7 +398,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     if (params.ok) return { ok: true };
     const reason = typeof params.reason === "string" ? params.reason : "";
-    const completed = trail.filter(step => !step.error).length;
+    // 停下前已经做过的步数：没拿到内容的 fetch 也算（它做了，只是对方答了非 2xx，程序照常往下跑）。
+    const completed = trail.length;
 
     // trail 按引用交出：这一步的 end 随后也会记进去，宿主看到的步骤列表含 assert 本身。
     throw new ProgramAssertError({ failedAt, name: params.name.trim(), reason, completed }, trail);
