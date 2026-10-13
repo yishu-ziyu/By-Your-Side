@@ -23,13 +23,13 @@ export function createPttVoice(notice: (conversationId: string, message: string)
     (chrome.runtime.sendMessage(command) as Promise<PttSpeechReply | undefined>).catch(() => undefined);
 
   return {
-    speak(text, conversationId) {
+    speak(text, conversationId, quiet) {
       if (!on || !key) return null;
 
       return send({ target: PTT_SPEECH_TARGET, action: 'speak', text, key }).then(reply => {
         const result: PttSpeechReply = reply ?? { ok: false, reason: 'failed', message: '助手还没启动好' };
 
-        if (!result.ok && result.reason === 'failed') notice(conversationId, `结果没念出来：${result.message}`);
+        if (!result.ok && result.reason === 'failed' && !quiet) notice(conversationId, `结果没念出来：${result.message}`);
 
         return result;
       });
