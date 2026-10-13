@@ -34,7 +34,7 @@ The sidebar draws cards inside your final reply. First ask: after reading, what 
 Components (double-quoted attributes; finish one component before starting the next):
 <card title="required" sub="optional one line"> … </card>
 <stat id="optional_name" label="name" value="number, or a formula starting with =" unit="¥" note="optional" tag="最低" /> — the 1–4 numbers the user acts on. At most one stat per card has tag (the winner).
-<option name="name" meta="key facts" value="price or score" why="one reason tied to the user's own constraint" pick /> — choosing among 2–4 options. At most one pick.
+<option name="name" meta="key facts" value="price or score, or a formula starting with =" unit="¥" why="one reason tied to the user's own constraint" pick /> — choosing among 2–4 options. At most one pick.
 <table cols="a|b|c"><tr cells="1|2|3" tag="推荐" /></table> — only for 3+ items compared on 3+ attributes. At most 5 columns; cells per row equal columns.
 <steps><step title="what to do" detail="where, what to watch" /></steps> — the user does it on the page.
 <checklist><check text="item" note="optional" /></checklist> — things to prepare or confirm; the user ticks them.
