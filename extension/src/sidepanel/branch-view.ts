@@ -164,7 +164,7 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
     if (tool.user || tool.id === "you") row.dataset.user = "1";
     row.style.setProperty("--i", String(index));
     row.style.setProperty("--lanes", String(Math.min(group.tools.length, cap)));
-    row.style.animationDelay = reducedMotion() ? "0ms" : `${index * FORK_STAGGER_MS}ms`;
+    row.style.animationDelay = reducedMotion() ? "" : `${index * FORK_STAGGER_MS}ms`;
     if (!shown) {
       row.className = "run-graph-more";
       row.textContent = `+${extra}`;
