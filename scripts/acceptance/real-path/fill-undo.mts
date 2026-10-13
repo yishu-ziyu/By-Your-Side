@@ -56,22 +56,29 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 
-const tool = (name: string, args: Record<string, unknown>) => ({ tool: { name, args } });
+const tool = (name: string, args: Record<string, string>) => ({ tool: { name, args } });
 
 const ASK = { form: "还原案例一：帮我把预约表填好。", agentSubmit: "还原案例二：填好姓名并提交。", userSubmit: "还原案例三：只填姓名。", reload: "还原案例四：只填城市。" };
 
 const DONE = { form: "预约表填好了一。", agentSubmit: "已经提交了二。", userSubmit: "姓名填好了三。", reload: "城市填好了四。" };
 
+const evidence: Record<string, unknown> = {};
+
 /** 助手（脚本模型）收到的工具回执原文。 */
 const toolTexts: string[] = [];
 
+// 真实模型多半按页面快照里的 @N 引用填（AX 路线，CDP 在页面主环境里执行）：手机号、人数、儿童座椅用 @N，读到快照后改写这三步。
+const byRef = { phone: tool("fill", { target: "@0", value: "13812345678" }), size: tool("select_option", { target: "@0", values: "4 人" }), kid: tool("click", { target: "@0" }) };
+const refs: Record<string, string> = {};
+
 const model = await startScriptedModel([
   { match: ASK.form, steps: [
+    tool("snapshot", {}),
     tool("fill", { target: "#name", value: "王小明" }),
     tool("fill", { target: "#city", value: "上海" }),
-    tool("fill", { target: "#phone", value: "13812345678" }),
-    tool("select_option", { target: "#size", values: "4 人" }),
-    tool("click", { target: "#kid" }),
+    byRef.phone,
+    byRef.size,
+    byRef.kid,
     tool("click", { target: "#seat-out" }),
     tool("fill", { target: "#note", value: "新备注" }),
     { text: DONE.form },
@@ -85,13 +92,26 @@ const model = await startScriptedModel([
 
     if (m.role === "tool" && !toolTexts.includes(text)) toolTexts.push(text);
   }
+
+  const snapshot = (payload.messages ?? []).filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "").find(t => t.includes('"手机号"'));
+
+  if (snapshot && !refs.phone) {
+    // 下拉框的可访问名称可能连着当前选项（「人数 2 人」），所以按角色加名称里的字找。
+    const refOf = (role: string, label: string) => snapshot.split(/\\n|\n/).find(line => line.includes(role) && line.includes(label) && /\[ref=\d+\]/.test(line))?.match(/\[ref=(\d+)\]/)?.[1];
+    const [phone, size, kid] = [refOf("textbox", "手机号"), refOf("combobox", "人数"), refOf("checkbox", "儿童座椅")];
+    evidence.snapshotKind = snapshot.includes("DOM 快照编号") ? "dom" : "ax";
+
+    if (phone && size && kid) {
+      refs.phone = `@${phone}`; refs.size = `@${size}`; refs.kid = `@${kid}`;
+      byRef.phone.tool.args.target = refs.phone; byRef.size.tool.args.target = refs.size; byRef.kid.tool.args.target = refs.kid;
+    }
+  }
 });
 
 const rp = await launchRealPath();
 
 let error: string | null = null;
 
-const evidence: Record<string, unknown> = {};
 
 type View = { state: string; count?: number; fields?: string[]; restored?: string[]; skipped?: Array<{ field: string; reason: string }>; notes?: string[] } | null;
 
@@ -138,7 +158,10 @@ try {
   await run("form");
   // 每一步工具从模型回完到下一次请求的间隔：主要是扩展执行这个工具的时间，用来和 main 比多出来的探查耗时。
   const steps = model.requests.filter(r => r.rule === ASK.form).sort((a, b) => a.step - b.step);
-  evidence.stepGapsMs = steps.slice(1).map((r, i) => ({ after: ["fill name", "fill city", "fill phone", "select size", "click kid", "click seat", "fill note"][i], ms: r.atMs - (steps[i]!.closedAt ?? steps[i]!.atMs) }));
+  evidence.stepGapsMs = steps.slice(1).map((r, i) => ({ after: ["snapshot", "fill name (css)", "fill city (css)", "fill phone (@N)", "select size (@N)", "click kid (@N)", "click seat (css)", "fill note (css)"][i], ms: r.atMs - (steps[i]!.closedAt ?? steps[i]!.atMs) }));
+  evidence.refs = refs;
+  assert.ok(refs.phone && refs.size && refs.kid, `the snapshot gave @N refs for phone, size and child seat ${JSON.stringify(refs)}`);
+  assert.equal(evidence.snapshotKind, "ax", "the @N refs come from the AX snapshot, so phone, size and child seat take the AX path");
   const ready = await waitView("ready", "ready view after the form turn");
   evidence.ready = ready;
   assert.equal(ready.count, 6, `1: six fields can be restored ${JSON.stringify(ready)}`);
