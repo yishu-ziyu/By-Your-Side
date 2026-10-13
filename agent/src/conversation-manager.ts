@@ -1225,7 +1225,8 @@ return receipt;
         this.pendingStarts.add(request.conversationId);
 
         try{
-          if(inputOptions)entry.runtime.session.startTask(request.text??'',request.context,request.attachments,inputOptions);
+          const options = request.pages?.length ? { ...inputOptions, pages: request.pages } : inputOptions;
+          if(options)entry.runtime.session.startTask(request.text??'',request.context,request.attachments,options);
           else entry.runtime.session.startTask(request.text??'',request.context,request.attachments);
         }catch(error){this.pendingStarts.delete(request.conversationId);throw error;}
 

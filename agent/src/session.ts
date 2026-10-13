@@ -64,7 +64,7 @@ import { programFirstGuidance } from "./program-first.js";
 import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
-export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand" }
+export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[] }
 
 /** What a runtime steering request actually did; the manager turns it into a receipt. */
 export type SteerOutcome={kind:'model'};
@@ -1023,7 +1023,7 @@ return;}
       const reply = `${finalText}\n\n[Conversation reply: respond to the user's message. The page is background context, not a request for a page summary or a new task. Use tools if needed to answer the actual question.]`;
       void session.prompt(reply, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
     } else {
-      const work=this.promptWithFreshPageObservation(session, finalText, context, images);
+      const work=this.promptWithFreshPageObservation(session, finalText, context, images, inputOptions?.pages);
 
       if(this.displayAbort)this.displayWork=work;
       void work.catch((err: unknown) => this.emitError(err)).finally(()=>{if(this.displayWork===work)this.displayWork=null;});
@@ -1039,20 +1039,28 @@ return;}
     finalText: string,
     context: PageContext | undefined,
     images: SessionImageContent[],
+    pages?: PageContext[],
   ): Promise<void> {
     const preparationEpoch=this.controlEpoch,preparationRun=this.deliveryRunId();
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
-    const [observation, openTabs] = await Promise.all([this.readUserPageForPrompt(context, "task"), this.readOpenTabsForPrompt(context)]);
+    const extras = (pages ?? []).filter((page) => page.tabId !== context?.tabId);
+    const [observation, openTabs, mentioned] = await Promise.all([
+      this.readUserPageForPrompt(context, "task"),
+      this.readOpenTabsForPrompt(context),
+      extras.length ? Promise.all(extras.map((page) => this.readUserPageForPrompt(page, "task"))) : Promise.resolve([] as Array<string | null>),
+    ]);
 
     if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
 
     if (observation) this.noteGoalObservation("page_at_start", observation);
 
     // 标签页清单放在页面观察之前：页面观察超窗口时会被整段删掉，清单很短，留着。
+    const mentionedText = mentioned.filter((part): part is string => !!part).join("\n\n");
     const withTabs = openTabs ? `${finalText}\n\n${openTabs}` : finalText;
-    const promptText = (observation ? `${withTabs}\n\n${observation}` : withTabs)
+    const withMentions = mentionedText ? `${withTabs}\n\n[MENTIONED TABS — pages the user pulled in with @]\n${mentionedText}` : withTabs;
+    const promptText = (observation ? `${withMentions}\n\n${observation}` : withMentions)
       +(context && typeof context.tabId === "number" ? programFirstGuidance() : "");
 
     try {

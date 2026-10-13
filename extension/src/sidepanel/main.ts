@@ -85,6 +85,9 @@ import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
+import { mountTabMentions } from "./tab-mentions.js";
+import { mountTaskPlan } from "./task-plan.js";
+import { mountAnswerCommand } from "./answer-command.js";
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
 
@@ -329,6 +332,7 @@ app.innerHTML = `
         <button type="button" id="ask-cite-close" aria-label="去掉这段引用" title="去掉这段引用">×</button>
       </div>
       <div id="attachments-strip" class="attachments-strip" hidden></div>
+      <div id="mention-strip" class="mention-strip" hidden></div>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
         <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截图" aria-haspopup="true">+</button>
@@ -409,6 +413,39 @@ const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(t
 const slashSkills = mountSlashSkills({
   composerEl, inputEl,
   run: (text) => { inputEl.value = text; inputEl.dispatchEvent(new Event("input")); sendInput(); },
+});
+
+const tabMentions = mountTabMentions({
+  composerEl,
+  inputEl,
+  stripEl: document.getElementById("mention-strip")!,
+});
+
+let pendingContinueDraft: string | null = null;
+
+const taskPlan = mountTaskPlan({
+  root: document.getElementById("task-bar-root")!,
+  inputEl,
+  onStart: (text) => {
+    inputEl.value = text;
+    inputEl.dispatchEvent(new Event("input"));
+    sendInput(undefined, undefined, { skipPlan: true });
+  },
+});
+
+const answerCommand = mountAnswerCommand({
+  inputEl,
+  latestAnswer: () => document.querySelector<HTMLElement>(".msg.assistant.answer-latest"),
+  saveSkill: (text) => slashSkills.saveFromText(text),
+  continueInNew: (text) => {
+    pendingContinueDraft = `接着刚才：${text}`;
+    document.getElementById("conversation-new")?.click();
+  },
+});
+
+document.addEventListener("answer-command", (event) => {
+  const answer = (event.target as HTMLElement | null)?.closest<HTMLElement>(".msg.assistant");
+  answerCommand.open(answer);
 });
 
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
@@ -964,6 +1001,8 @@ function selectConversation(id: string, notify = true): void {
   renderConversations();
   renderTaskStrip();
   taskBar.reset();
+  taskPlan.reset();
+  tabMentions.clear();
   queryTaskView();
 
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
@@ -2656,6 +2695,21 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
     const glyph = siteGlyph(context.url, host);
     glyph.className = "cg";
     chips.push(ctxChip(glyph, context.title || host, [context.title, context.url].filter(Boolean).join("\n")));
+  }
+
+  for (const page of context.pages ?? []) {
+    const glyph = siteGlyph(page.url, hostOf(page.url));
+    glyph.className = "cg";
+    const chip = ctxChip(glyph, page.title || hostOf(page.url), [page.title, page.url, page.reason].filter(Boolean).join("\n"));
+    chip.dataset.tabId = String(page.tabId);
+    chip.dataset.status = page.status ?? "pending";
+    if (page.status === "read") {
+      const ok = document.createElement("span");
+      ok.className = "ctx-ok";
+      ok.textContent = "✓";
+      chip.append(ok);
+    }
+    chips.push(chip);
   }
 
   if (context.selection) {
@@ -5261,6 +5315,14 @@ function handleServerMessage(raw: string): void {
       conversationRequest = null;
       selectConversation(msg.conversation.id);
 
+      if (pendingContinueDraft) {
+        inputEl.value = pendingContinueDraft;
+        pendingContinueDraft = null;
+        inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+        autoResize();
+        saveDraft();
+      }
+
       if (sendAfterCreate) { sendAfterCreate = false; sendInput(); }
     }
 
@@ -5427,6 +5489,22 @@ function handleBgMessage(envelope: BgToPanel): void {
 
     if (bubble) renderTurnContext(bubble, envelope.context);
 
+    return;
+  }
+
+  if (envelope.kind === "mention_status") {
+    tabMentions.setStatus(envelope.tabId, envelope.status, envelope.reason);
+    const chip = document.querySelector<HTMLElement>(`.ctx-chip[data-tab-id="${envelope.tabId}"]`);
+    if (chip) {
+      chip.dataset.status = envelope.status;
+      if (envelope.status === "read" && !chip.querySelector(".ctx-ok")) {
+        const ok = document.createElement("span");
+        ok.className = "ctx-ok";
+        ok.textContent = "✓";
+        chip.append(ok);
+      }
+      if (envelope.reason) chip.title = `${chip.title}\n${envelope.reason}`;
+    }
     return;
   }
 
@@ -5837,7 +5915,7 @@ function restoreLostSend(): void {
  * quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。
  * quickPage：quick 这句话问的是哪一页（连好模型后重发时用原来那页）。返回是否交了出去。
  */
-function sendInput(quick?: string, quickPage?: PageContext): boolean {
+function sendInput(quick?: string, quickPage?: PageContext, opts?: { skipPlan?: boolean }): boolean {
   if (!conversationReady) return false;
 
   // 点「新会话」后、新会话建好前：选中的还是旧会话，现在发会落进旧会话。等建好再发。
@@ -5868,6 +5946,20 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
       }
     : undefined);
 
+  const mentioned = quick ? [] : tabMentions.pages();
+  if (!quick && !opts?.skipPlan && !running && !held) {
+    if (taskPlan.visible()) {
+      taskPlan.confirm();
+      return true;
+    }
+    const currentUrl = pendingAsk?.url || activeTabInfo?.url || "";
+    const currentTitle = pendingAsk?.title || activeTabInfo?.title || "";
+    if (taskPlan.shouldAsk(text, mentioned, currentUrl)) {
+      taskPlan.show(text, tabMentions.items(), currentUrl, currentTitle);
+      return true;
+    }
+  }
+
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
   const circled = pendingAtts.flatMap(att => (att.circle ? [att.circle] : []));
@@ -5883,6 +5975,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
     expectedRunId: conversations.get(selectedConversationId)?.runId ?? null,
     text,
     context,
+    pages: mentioned.length ? mentioned : undefined,
     attachments: clientAttachments,
   };
 
@@ -5932,6 +6025,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
   if (quick) return true;
   inputEl.value = "";
+  tabMentions.clear();
   syncSteerSend();
   clearPendingAsk();
   attachments.clear();
@@ -5961,12 +6055,19 @@ inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBar
 window.addEventListener("pagehide", saveDraft);
 
 inputEl.addEventListener("keydown", (e) => {
+  if (taskPlan.handleKeydown(e)) return;
+  if (tabMentions.handleKeydown(e)) return;
   if (slashSkills.handleKeydown(e)) return;
+  if (answerCommand.handleKeydown(e)) return;
 
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     sendInput();
   }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (answerCommand.handleKeydown(e)) return;
 });
 
 function requestTakeover(): void {
