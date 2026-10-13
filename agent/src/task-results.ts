@@ -218,7 +218,9 @@ export class TaskResultBook {
         item.status = write&&input.executionFact==='unknown'?'unknown':"satisfied";
       }
     } else {
+      // 每次失败都换成这一次的原因：没有原因时不留上一次的。
       if (input.reason) item.reason = input.reason;
+      else delete item.reason;
       if (input.executionFact === "not_executed" || (input.name === "page_translation" && input.executionFact === "executed")) {
         // Translation may fail while generating its next batch after acknowledged earlier batches.
         // It resumes by collecting only untranslated paragraphs; an unknown RPC still stays unknown below.
