@@ -4306,7 +4306,7 @@ function closeBlocks(): void {
   if (currentAssistant) {
     const answer = currentAssistant;
     // 最终稿放完后再挂复制按钮：放字期间每帧重渲染正文，先挂的按钮会被冲掉。
-    revealText(answer, currentAssistantText, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd, after: () => attachAnswerActions(answer) });
+    revealText(answer, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd, after: () => attachAnswerActions(answer) });
   }
 
   // 流式光标移除；进行中的思考块折叠并落定文案（带耗时）
@@ -4369,11 +4369,11 @@ function appendLeadAnswer(delta: string): void {
     leadAnswer = addMsg("msg assistant markdown streaming", "");
     leadAnswerText = "";
     leadAnswerTurnClosed = false;
-    steerRibbon.decorate(leadAnswer, !applyingHistory);
+    steerRibbon.decorate(leadAnswer, !replayingHistory);
   }
 
   leadAnswerText += delta;
-  revealText(leadAnswer, leadAnswerText, { render: renderMarkdown, live: !applyingHistory, final: false, onProgress: scrollToEnd });
+  revealText(leadAnswer, leadAnswerText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
 }
 
 /**
@@ -4401,7 +4401,7 @@ function foldLeadAnswer(): void {
 
 /** 开场话定稿后放到过程行前面；之后的回答另起气泡，不接到它后面。 */
 function keepOpeningLine(line: HTMLElement): void {
-  revealText(line, leadAnswerText, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd });
+  revealText(line, leadAnswerText, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd });
   line.classList.remove("streaming");
   line.classList.add("opening-line");
 
@@ -4483,7 +4483,7 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
     // 流式 Markdown：累积原文，每个 delta 重渲染（marked 为同步解析，量小无压力）
     if (!currentAssistant) currentAssistant = addMsg("msg assistant markdown streaming", "");
     currentAssistantText += delta;
-    revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !applyingHistory, final: false, onProgress: scrollToEnd });
+    revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
   } else {
     if (!currentThinking) {
       addChainStep("思考");
@@ -5104,7 +5104,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if(!bubble){target.dataset.deliveryId=s.id;target.dataset.deliveryKind=s.kind;deliveredBubbles.set(s.id,target);}
 
       target.dataset.streaming='true';
-      revealText(target, s.text, { render: renderMarkdown, live: !applyingHistory, final: false, onProgress: scrollToEnd });placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
+      revealText(target, s.text, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
     }
 
     case "turn_start":
@@ -5252,7 +5252,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
   if (plan === 'update_text') {
     const answer = existing!;
     delete answer.dataset.streaming;
-    revealText(answer, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
+    revealText(answer, delivery.text, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd,
       after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(answer, delivery); attachDeliverySources(answer, delivery); } } });
     existing!.dataset.deliveryKind = delivery.kind;
     placeStartAcknowledgement(existing!, delivery.kind);
@@ -5269,9 +5269,9 @@ function handleUserDelivery(delivery: UserDelivery): void {
   voiceUI.deliver?.(delivery);
 
   const bubble = addMsg("msg assistant markdown", "");
-  steerRibbon.decorate(bubble, !applyingHistory);
+  steerRibbon.decorate(bubble, !replayingHistory);
   // 整段一次送达的回答也按同样节奏放出来，不一下子整块冒出。
-  revealText(bubble, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
+  revealText(bubble, delivery.text, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd,
     after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(bubble, delivery); attachDeliverySources(bubble, delivery); } } });
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
