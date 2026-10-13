@@ -34,7 +34,7 @@ import {pageRecoveryKey} from './task-recovery.js';
 import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
 import {memoryHostOfUrl} from '../../shared/memory.js';
 import {asksUser} from './goal-check.js';
-import {resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
+import {endingFromResults,resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
@@ -848,6 +848,13 @@ return host?[host]:[];}))].slice(0,16);
     };
 
     if(snap.goalPage?.title)raw.page=clip(snap.goalPage.title,200);
+    const entrySummary = this.entries.get(id)?.summary;
+    if (entrySummary) {
+      const line = endingFromResults(snap.results ?? [], raw.outcome);
+      if (line) entrySummary.ending = line;
+      if (hosts[0]) entrySummary.site = hosts[0];
+      this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...entrySummary } });
+    }
     // 像密码验证码的用户原话不进过往任务，也不交给判断日期的模型。
     const entry=redactTaskSecrets(raw);
     // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。
@@ -1415,6 +1422,9 @@ return receipt;
         states.set(message.sessionId ?? "main", message.state);
         summary.state = [...states.values()].includes("running") ? "running" : [...states.values()].includes("user") ? "user" : "idle";
         summary.updatedAt = Date.now();
+        // 页面归你只在那段时间里是结局；交还后回到运行或空闲就去掉，等这一轮结束再写真正的结局。
+        if (summary.state === "user") summary.ending = "页面现在归你";
+        else if (summary.ending === "页面现在归你") delete summary.ending;
         this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...summary } });
       }
 
