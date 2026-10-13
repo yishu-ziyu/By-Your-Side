@@ -114,6 +114,7 @@ for (const [from, to] of [
   ["artifact-sandbox.html", "artifact-sandbox.html"],
   ["src/sidepanel/styles.css", "styles.css"],
   ["src/sidepanel/motion-tokens.css", "motion-tokens.css"],
+  ["src/sidepanel/answer-cards.css", "answer-cards.css"],
 ]) {
   await copyFile(path.join(root, from), path.join(dist, to));
 }
