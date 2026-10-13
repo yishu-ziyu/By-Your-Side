@@ -131,6 +131,26 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   let tagged = false;
   let picked = false;
   let primary = false;
+  /**
+   * 卡片里任何一处值（数字格、选项的价、表格格子）写成算式（= 开头）时都在这里算：模型会把算式也写进选项和表格，不只数字格。
+   * 算不出就去掉 =，原样显示，不把「=1699-50」露给用户。
+   */
+  const resolve = (raw: string, unit?: string): { value: string; computed?: number; formula?: string } => {
+    if (!raw.startsWith("=")) return { value: withUnit(raw, unit) };
+    // 模型有时把货币符号或「元」也写进算式（=¥1699-50）：先拿掉再算，符号当单位用。
+    const symbol = /[¥￥$€£]/.exec(raw)?.[0];
+    const expression = raw.slice(1).replace(/[¥￥$€£]/g, "").replace(/\s*元\s*$/, "");
+    const n = calc(expression);
+    unit ??= symbol ?? (/元\s*$/.test(raw) ? "元" : undefined);
+
+    if (n === undefined) return { value: withUnit(raw.slice(1).trim(), unit === symbol ? undefined : unit) };
+    card.numbers.add(String(n));
+    const formula = /[-+*/×÷−]/.test(expression.replace(/^\s*-/, "")) ? prettyFormula(expression) : undefined;
+
+    if (formula) card.formulas = true;
+
+    return { value: withUnit(formatNumber(n), unit), computed: n, formula };
+  };
   const last = () => card.blocks.at(-1);
   const group = <K extends Block["kind"]>(kind: K, make: () => Extract<Block, { kind: K }>): Extract<Block, { kind: K }> => {
     const b = last();
@@ -154,18 +174,11 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       const raw = str(a.value);
 
       if (!label || !raw) continue;
-      const stat: Stat = { id: str(a.id), label, value: withUnit(raw, str(a.unit)), note: str(a.note) };
+      const v = resolve(raw, str(a.unit));
 
-      if (raw.startsWith("=")) {
-        const n = calc(raw.slice(1));
-
-        if (n === undefined) continue;
-        stat.computed = n;
-        stat.value = withUnit(formatNumber(n), str(a.unit));
-
-        if (/[-+*/×÷−]/.test(raw.slice(1).replace(/^\s*-/, ""))) { stat.formula = prettyFormula(raw.slice(1)); card.formulas = true; }
-        card.numbers.add(String(n));
-      }
+      // 数字格的算式算不出就不画这一格：它就是给人照着做决定的数。
+      if (raw.startsWith("=") && v.computed === undefined) continue;
+      const stat: Stat = { id: str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note) };
 
       if (str(a.tag) && !tagged) { stat.tag = str(a.tag); tagged = true; }
 
@@ -182,7 +195,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       if (!name || !why) continue;
       const pick: boolean = a.pick !== undefined && !picked;
       picked ||= pick;
-      group("options", () => ({ kind: "options", items: [] })).items.push({ name, meta: str(a.meta), value: str(a.value), why, pick });
+      group("options", () => ({ kind: "options", items: [] })).items.push({ name, meta: str(a.meta), value: a.value === undefined ? undefined : str(resolve(str(a.value) ?? "", str(a.unit)).value), why, pick });
     } else if (tag === "table") {
       const cols = (str(a.cols) ?? "").split("|").map((c) => c.trim()).slice(0, MAX_COLS);
 
@@ -193,7 +206,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
       if (table?.kind !== "table" || cells.length < 2) continue;
       const rowTag = str(a.tag) && !table.rows.some((r) => r.tag) ? str(a.tag) : undefined;
-      table.rows.push({ cells: Array.from({ length: table.cols.length }, (_, i) => cells[i] ?? ""), tag: rowTag });
+      table.rows.push({ cells: Array.from({ length: table.cols.length }, (_, i) => resolve(cells[i] ?? "").value), tag: rowTag });
     } else if (tag === "check") {
       const t = str(a.text);
 
