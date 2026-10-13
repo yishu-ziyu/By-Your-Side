@@ -171,7 +171,7 @@ try {
   await edge.evaluate(() => (window as any).__sideagent.cursor.endAction("long", "unknown"));
   const unknown = await observed(edge, "#center");
   expectUserResult("unknown result is not presented as success", unknown,
-    unknown.text.includes("待确认") && !unknown.text.includes("好了"));
+    unknown.text.includes("结果未知") && !unknown.text.includes("好了"));
   await edge.screenshot({ path: out + "/unknown.png" });
   await phase(edge, "#edge", "replacement");
   await edge.waitForTimeout(1600);
