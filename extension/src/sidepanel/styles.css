@@ -3061,6 +3061,13 @@ details.run-steps.done > summary > .run-meta { display: none; }
 .run-receipt .act-verb { flex-shrink: 0; }
 .run-receipt .run-chain-names { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
 .run-receipt .run-receipt-tail { flex-shrink: 0; color: var(--text-tertiary); white-space: pre; }
+.run-receipt .run-check { flex-shrink: 0; color: var(--text-tertiary); white-space: pre; transition: color var(--m-move) var(--e-glide); }
+.run-receipt .run-check[data-tone="ok"] { color: var(--ok); }
+.run-receipt .run-check[data-tone="warn"] { color: var(--warn); }
+/* 回答出现后收进过程的开场话：一行安静的计划，不是气泡。 */
+.run-body > .run-plan { margin: 2px 0 6px; padding: 0; border: 0; background: none; font-size: var(--fs-ui); line-height: 1.6; color: var(--text-tertiary); }
+.run-body > .run-plan p { margin: 0; }
+.run-body > .fill-evidence { margin: 6px 0 4px; }
 .run-body .run-think { font-size: var(--fs-ui); line-height: 20px; color: var(--text-quaternary); }
 .run-body .run-total { margin-top: 2px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-quaternary); }
 .run-body .chip .dur:not([hidden]) { display: inline; margin-left: 6px; font-size: var(--fs-meta); color: var(--text-quaternary); font-variant-numeric: tabular-nums; }
