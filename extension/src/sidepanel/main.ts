@@ -7,6 +7,7 @@ import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
 import { paintBeatMark } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
+import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
  * side panel 入口：原生 TS + DOM，无框架。
@@ -5462,6 +5463,15 @@ const inputContext = (): VoiceInputContext => {
 };
 
 const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send, inputContext);
+// 话筒是说话输入（边说边出字，说完自己发）；声波按钮是语音对话。ChatGPT 的输入框也这样分（docs/evals/20261013-live-dictation.md）。
+mountDictation({
+  composer: composerEl,
+  inputEl,
+  before: composerEl.querySelector<HTMLElement>(".voice-start")!,
+  notice: (text) => addMsg("msg notice", text),
+  conversation: () => selectedConversationId,
+  voiceBusy: () => document.querySelector<HTMLElement>(".voice-progress")?.hidden === false,
+});
 
 void chrome.storage.local.get(STEP_VOICE_STORAGE_KEY).then((stored) => {
   const voice = stored[STEP_VOICE_STORAGE_KEY];
