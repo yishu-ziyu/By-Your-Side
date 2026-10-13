@@ -2,7 +2,7 @@ import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
 import { resolveWorkingTab } from "../state.js";
 
-import {downloadNote,readCurrentDocument,settlesContent,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
+import {ERROR_PAGE_NOTE,downloadNote,readCurrentDocument,settlesContent,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
 
 export async function navigate(
   params: {
@@ -47,7 +47,7 @@ export async function navigate(
 
   if (ready.download) result.note = downloadNote(ready.download);
 
-  if (ready.readiness==='error_page') result.note = "Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
+  if (ready.readiness==='error_page') result.note = ERROR_PAGE_NOTE;
 
   return result;
 }

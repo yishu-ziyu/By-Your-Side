@@ -35,6 +35,9 @@ function unscriptableByDesign(url:string|undefined):boolean {
   }catch{return false;}
 }
 
+/** 给模型看的一句话：Chrome 显示了它自己的错误页，页面没打开。navigate 和新开标签页共用。 */
+export const ERROR_PAGE_NOTE="Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
+
 /** Chrome 拒绝往它自己的错误页注入时给的原因（连不上网站、DNS 失败等）。 */
 const ERROR_PAGE=/showing error page/i;
 
@@ -157,9 +160,20 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
 
   const poll=async():Promise<PageReadiness>=>{
     while(!stopped){
-      const first=await readCurrentDocument(tabId);
+      const probe=await probeDocument(tabId);
+      const first=probe.doc;
 
       if(stopped)break;
+
+      // 读不到是因为 Chrome 显示了错误页：只在标签页已停在要打开的地址、没有待提交的跳转时认。
+      // 新开标签页时「开始加载」通知常早于监听装好，上面的 loaded 收不到，不在这里认就只能等到超时。
+      if(!first&&probe.error&&ERROR_PAGE.test(probe.error)){
+        const tab=await chrome.tabs.get(tabId).catch(()=>null);
+
+        if(stopped)break;
+
+        if(tab&&tab.status==='complete'&&!tab.pendingUrl&&(!requested||sameUrl(tab.url,requested)))return {readiness:'error_page',waitMs:Date.now()-started};
+      }
 
       if(first&&first.documentId!==previousDocumentId&&first.url!=='about:blank'&&first.readyState!=='loading'){
         const second=await readCurrentDocument(tabId);
