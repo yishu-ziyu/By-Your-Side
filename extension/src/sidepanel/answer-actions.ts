@@ -5,7 +5,7 @@ import { answerMarkdown } from "../../../shared/answer-cards.js";
 import { fillUndoLabel, fillUndoOf, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。 */
-const CHROME = ".gc-actions,.answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
+const CHROME = ".gc-actions,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
 export function resultCommandShortcut(): string {
   return /Mac/i.test(navigator.platform) ? "⇧⌘K" : "Ctrl+Shift+K";
@@ -111,7 +111,11 @@ export function refreshPrimaryAction(answer: HTMLElement): void {
   primary.append(label, hint);
 }
 
-export async function runPrimaryAction(answer: HTMLElement): Promise<void> {
+/** keyboard：空输入框按回车。还原会改网页里的格子，只能点按钮，回车不触发；按钮灰着时回车什么也不做。 */
+export async function runPrimaryAction(answer: HTMLElement, { keyboard = false } = {}): Promise<void> {
+  const undo = fillUndoOf(answer);
+
+  if (undo && (undo.state !== "ready" || isFillUndoPending(answer) || keyboard)) return;
   const action = listResultActions(answer).find((a) => a.primary);
   const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
   try {
