@@ -4012,6 +4012,8 @@ function finishRun(): void {
   runStartAt = 0;
 
   if (!run) return;
+  // 计划那一行只陪这一轮任务；做完、停下、出错都收掉，不挂到下一件事上。
+  taskPlan.endRun();
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
