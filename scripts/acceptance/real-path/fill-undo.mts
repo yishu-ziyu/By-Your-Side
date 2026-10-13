@@ -71,7 +71,7 @@ const toolTexts: string[] = [];
 const byRef = { phone: tool("fill", { target: "@0", value: "13812345678" }), size: tool("select_option", { target: "@0", values: "4 人" }), kid: tool("click", { target: "@0" }) };
 const refs: Record<string, string> = {};
 
-/** 第 1 轮里每次模型请求到达的时间和带着几条工具回执：相邻两次的差 ≈ 扩展执行这一步工具的时间（脚本模型马上回）。 */
+/** 第 1 轮里每次模型请求到达的本机时间，和它带着几条工具结果。 */
 const formArrivals: Array<{ tools: number; at: number }> = [];
 
 const model = await startScriptedModel([
@@ -167,8 +167,10 @@ try {
   await run("form");
   // 每一步工具从模型回完到下一次请求的间隔：主要是扩展执行这个工具的时间，用来和 main 比多出来的探查耗时。
   const labels = ["snapshot", "fill name (css)", "fill city (css)", "fill phone (@N)", "select size (@N)", "click kid (@N)", "click seat (css)", "fill note (css)"];
+  // 工具本身的耗时：从脚本模型把带第 i 个工具调用的回复发完（连接关闭），到下一次请求带着这个工具的结果到达。
   const arrivalAt = (tools: number) => formArrivals.find(a => a.tools === tools)?.at;
-  evidence.stepGapsMs = labels.map((label, i) => { const from = arrivalAt(i), to = arrivalAt(i + 1); return { step: label, ms: from && to ? to - from : null }; });
+  const replyClosedAt = (step: number) => model.requests.find(r => r.rule === ASK.form && r.step === step)?.closedAt;
+  evidence.stepGapsMs = labels.map((label, i) => { const from = replyClosedAt(i), to = arrivalAt(i + 1); return { step: label, ms: from && to ? to - from : null }; });
   const gaps = evidence.stepGapsMs as Array<{ step: string; ms: number | null }>;
   const median = (kind: string) => { const list = gaps.filter(g => g.step.startsWith(kind) && g.ms !== null).map(g => g.ms!).sort((a, b) => a - b); return list.length ? list[Math.floor(list.length / 2)]! : null; };
   evidence.medianMs = { fill: median("fill"), select: median("select"), click: median("click") };
