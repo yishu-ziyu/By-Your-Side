@@ -10,13 +10,15 @@
  *   5) 助手只改了编辑器里的文字（没有能还原的格子）：不出还原按钮，回答下写“编辑器里的文字没还原。”。
  * “已提交”只认网页真的提交表单：2) 里是用户真实点击提交按钮、网页发出 submit 事件。
  *   另：空输入框按回车不会还原（只能点按钮）；还原后重开侧栏，只有这一轮的回答是“已还原”，更早的回答不变淡。
+ * --record：录下第 1 段（填表 → 用户改一格 → 点还原）的侧栏和网页，合成左右并排的 restore.mp4，只给人看，不参与判定。
  * 后台怎样记、怎样写回由 fill-undo.mts 验收；这里只看侧栏用户看得到的样子。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { execFileSync } from "node:child_process";
+import { REPO, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
@@ -26,7 +28,7 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOStri
 await mkdir(artifacts, { recursive: true });
 
 const site = createServer((_req, res) => {
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>预约到店</title></head><body><main>
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>预约到店</title><style>body{margin:0;padding:32px 40px;font:22px/2 sans-serif;color:#222}input,select,button{font:inherit;padding:2px 8px}#note{border:1px solid #ccc;padding:4px 8px;width:420px}</style></head><body><main>
 <form id="form" onsubmit="event.preventDefault(); document.getElementById('sent').hidden = false;">
 <label>姓名 <input id="name"></label><br>
 <label>手机号 <input id="phone"></label><br>
@@ -96,11 +98,14 @@ try {
   await run("chat", false);
 
   // 1) 填错了，用户改过姓名，点侧栏的还原。
+  const record = process.argv.includes("--record");
+  const stops = record ? [await recordScreen(rp.cdp, panel, join(artifacts, "panel.mp4")), await recordScreen(rp.cdp, work, join(artifacts, "page.mp4"))] : [];
   await run("form");
   const ready = await waitButton(DONE.form, "还原填写（3 处）");
   evidence.ready = ready;
   assert.ok(!ready.disabled && !ready.result && ready.faded === 1, `1: 主按钮是还原填写，可以点 ${JSON.stringify(ready)}`);
   await rp.screenshot(panel, join(artifacts, "1-ready.png"));
+  if (record) await sleep(2000);
 
   // 空输入框按回车：以前是复制；还原会改网页，只能点按钮。
   await rp.click(panel, "#input");
@@ -113,6 +118,8 @@ try {
   await rp.click(work, "#name");
   for (const type of ["keyDown", "keyUp"]) await rp.cdp.send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35 }, work);
   await rp.typeText(work, "先生");
+  await rp.screenshot(work, join(artifacts, "1-page-before-restore.png"));
+  if (record) await sleep(1500);
   await rp.click(panel, `.msg.assistant .answer-primary[data-action="undo-fill"]`);
   const restored = await waitButton(DONE.form, "已还原");
   await sleep(400);
@@ -120,6 +127,19 @@ try {
   evidence.restored = after;
   evidence.pageAfterRestore = JSON.parse(String(await page(`JSON.stringify({ name: document.getElementById("name").value, phone: document.getElementById("phone").value, size: document.getElementById("size").value })`)));
   await rp.screenshot(panel, join(artifacts, "1-restored.png"));
+  await rp.screenshot(work, join(artifacts, "1-page-after-restore.png"));
+
+  if (record) {
+    await sleep(2000);
+    const [panelVideo, pageVideo] = await Promise.all(stops.map(stop => stop()));
+
+    // 两段同时开始录，左右并排成一段；高度对齐到侧栏。
+    if (panelVideo && pageVideo) {
+      execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", pageVideo, "-i", panelVideo, "-filter_complex",
+        "[0:v][1:v]scale2ref=oh*mdar:ih[page][panel];[page][panel]hstack=inputs=2,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p", join(artifacts, "restore.mp4")]);
+      evidence.recording = join(artifacts, "restore.mp4");
+    }
+  }
   assert.ok(restored.disabled, "1: 还原后按钮灰掉");
   assert.equal(after.result, "还原了 2 处。「姓名」你后来改过，没动。", "1: 结果行说清还原了几处、哪一栏没动");
   assert.ok(after.inView, `1: 结果行在视野里 ${JSON.stringify(after)}`);
