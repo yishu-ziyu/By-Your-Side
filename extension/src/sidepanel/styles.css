@@ -1,3 +1,5 @@
+@import url("./motion-tokens.css");
+
 /* 暖纸与墨色。沿用既有 token 名，避免设置、语音和模型选择各自维护配色。 */
 :root {
   /* 字号 4 档、圆角 3 档、间距 5 步。预览 overlay 的数量收紧，写进生产变量。 */
@@ -88,24 +90,8 @@
   --btn-border-hover: rgba(0, 0, 0, 0.14);
   --popover-shadow: 0 10px 28px rgba(20, 20, 19, .1);
 
-  /* ── Motion Language：3 个时长 + 3 条曲线 ──────────────────────────
-     quick  手指一碰就该有反应（按下 / 悬停 / 开关）
-     move   结构变化（展开 / 收束 / 位移）
-     morph  身份变化（一个控件变成另一个）
-     swift  快起慢停，不过冲 —— 位移与形变默认
-     spring 带回弹，只用于按压回复
-     glide  首尾都缓，可进可出的场合 */
-  --m-quick: 120ms;
-  --m-move: 240ms;
-  --m-morph: 360ms;
-  --e-swift: cubic-bezier(0.16, 1, 0.3, 1);
-  --e-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --e-glide: cubic-bezier(0.4, 0, 0.2, 1);
-  /* 兼容既有引用（值统一到上面的曲线，不再各写各的） */
-  --spring-bounce: var(--e-spring);
-  --spring-fluid: var(--e-swift);
+  /* 动效时长和曲线见 motion-tokens.css（--d-* / --e-*）。 */
   --radius-dock: var(--r-shape);
-  --e-out: cubic-bezier(0.23, 1, 0.32, 1);
   --card-padding: var(--s-1);
   --radius-inner: var(--s-2);
   --radius-card: calc(var(--radius-inner) + var(--card-padding));
@@ -530,7 +516,7 @@ html, body {
   color: var(--text-3);
   margin-left: 1px;
   flex-shrink: 0;
-  transition: transform 0.25s var(--spring-fluid), color 0.2s ease;
+  transition: transform var(--d-layout) var(--spring-fluid), color var(--d-state) ease;
 }
 
 #model-btn[aria-expanded="true"] .lucide {
@@ -604,8 +590,8 @@ html, body {
   transform-origin: 46px bottom;
   opacity: 1;
   transform: scale(1);
-  transition: opacity 180ms var(--e-swift), transform 180ms var(--e-swift),
-              display 180ms allow-discrete;
+  transition: opacity var(--d-state) var(--e-swift), transform var(--d-state) var(--e-swift),
+              display var(--d-state) allow-discrete;
 }
 
 /* hidden 立即更新逻辑状态；display 在退场完成后才切换，无延迟回调竞态。 */
@@ -613,7 +599,7 @@ html, body {
   opacity: 0;
   transform: scale(.95);
   pointer-events: none;
-  transition-duration: 110ms;
+  transition-duration: var(--d-micro);
 }
 
 @starting-style {
@@ -721,7 +707,7 @@ html, body {
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--d-micro) ease;
 }
 
 .model-item:hover,
@@ -904,9 +890,9 @@ html, body {
 }
 
 /* 回答逐字浮现：透明度与轻微模糊一起收；时长与 stream-reveal.ts 的 FADE_MS 一致 */
-/* 流式淡入：一段 300ms 从透明、2px 模糊到清楚，不位移。 */
+/* 流式淡入：一段 var(--d-layout) 从透明、2px 模糊到清楚，不位移。 */
 .reveal-fade {
-  animation: revealFade 300ms var(--e-swift) both;
+  animation: revealFade var(--d-layout) var(--e-swift) both;
 }
 
 @keyframes revealFade {
@@ -1064,11 +1050,11 @@ details.thinking.streaming::before {
 
 /* A：运行中的光球放大呼吸（18 → 20px），结束一次性收束回原位；只动 transform/opacity */
 canvas.orb-live {
-  animation: orbBreathe 0.9s ease-in-out infinite;
+  animation: orbBreathe calc(var(--d-emph) * 2) var(--e-enter) infinite;
 }
 
 canvas.orb-settle {
-  animation: orbSettle 200ms var(--e-spring);
+  animation: orbSettle var(--d-state) var(--e-spring);
 }
 
 @keyframes orbBreathe {
@@ -1083,7 +1069,7 @@ canvas.orb-settle {
 
 /* B：完成是收束——行内文案落定一次，不反向播放 */
 .settle-once {
-  animation: settleIn 200ms var(--e-swift);
+  animation: settleIn var(--d-state) var(--e-swift);
 }
 
 @keyframes settleIn {
@@ -1253,7 +1239,7 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 }
 
 .kn.live i {
-  animation: kn-blink 5.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation: kn-blink 5.2s var(--e-move) infinite;
 }
 
 @keyframes gb-tilt {
@@ -1525,8 +1511,8 @@ details.run-steps.done .chip.error { background: transparent; }
   padding: 7px 10px;
   cursor: pointer;
   text-align: left;
-  animation: starterChipIn 160ms var(--e-out) both;
-  animation-delay: var(--starter-delay, 0ms);
+  animation: starterChipIn var(--d-micro) var(--e-enter) both;
+  animation-delay: var(--starter-delay, 0s);
 }
 #starter-actions .starter-chip-main { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 #starter-actions .starter-chip-label { color: var(--text-primary); }
@@ -1539,7 +1525,7 @@ details.run-steps.done .chip.error { background: transparent; }
   white-space: nowrap;
 }
 #starter-actions .starter-chip-tag[data-effect="fill"],
-#starter-actions .starter-chip-tag[data-effect="mutate"] { color: var(--err); }
+#starter-actions .starter-chip-tag[data-effect="mutate"] { color: var(--text-secondary); }
 #starter-actions .starter-chip-tag[data-effect="fill"]::before,
 #starter-actions .starter-chip-tag[data-effect="mutate"]::before {
   content: "";
@@ -1548,17 +1534,17 @@ details.run-steps.done .chip.error { background: transparent; }
   height: 5px;
   margin-right: 5px;
   border-radius: 50%;
-  background: var(--err);
+  background: var(--text-secondary);
   vertical-align: 1px;
 }
 #starter-actions .starter-chip-hint-wrap {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 160ms var(--e-out);
+  transition: grid-template-rows var(--d-micro) var(--e-enter);
 }
 #starter-actions .starter-chip:hover .starter-chip-hint-wrap,
 #starter-actions .starter-chip:focus-visible .starter-chip-hint-wrap { grid-template-rows: 1fr; }
-#starter-actions .starter-chip:not(:hover):not(:focus-visible) .starter-chip-hint-wrap { transition-duration: 110ms; transition-timing-function: cubic-bezier(0.4, 0, 1, 1); }
+#starter-actions .starter-chip:not(:hover):not(:focus-visible) .starter-chip-hint-wrap { transition-duration: var(--d-tap); transition-timing-function: var(--e-exit); }
 #starter-actions .starter-chip-hint { overflow: hidden; padding-top: 4px; font-size: 11px; line-height: 1.4; color: var(--text-tertiary); }
 @keyframes starterChipIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 #starter-actions button:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
@@ -1671,7 +1657,7 @@ details.run-steps.done .chip.error { background: transparent; }
   background: var(--content-subtle);
   border: 1px solid var(--content-border);
   border-left: 2px solid var(--accent);
-  animation: naturalEnter 200ms var(--e-out);
+  animation: naturalEnter var(--d-state) var(--e-out);
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.4;
@@ -1718,7 +1704,7 @@ details.run-steps.done .chip.error { background: transparent; }
   flex-direction: column;
   gap: 8px;
   transform-origin: bottom left;
-  animation: morphSpringIn 0.32s var(--spring-bounce);
+  animation: morphSpringIn var(--d-layout) var(--spring-bounce);
   z-index: 15;
 }
 
@@ -1750,7 +1736,7 @@ details.run-steps.done .chip.error { background: transparent; }
   font-size: 12px;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: color 0.15s;
+  transition: color var(--d-micro);
 }
 
 .sheet-close-btn:hover {
@@ -1832,12 +1818,12 @@ details.run-steps.done .chip.error { background: transparent; }
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   user-select: none;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 0.2s,
-              box-shadow 0.2s,
-              margin 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              width 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--d-layout) var(--e-move),
+              border-color var(--d-state),
+              box-shadow var(--d-state),
+              margin var(--d-layout) var(--e-move),
+              width var(--d-layout) var(--e-move),
+              opacity var(--d-layout) var(--e-move);
 }
 .tile-56:hover {
   border-color: rgba(255, 255, 255, 0.28);
@@ -1867,7 +1853,7 @@ details.run-steps.done .chip.error { background: transparent; }
   stroke-dasharray: 194;
   stroke-dashoffset: 194;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.12s linear, opacity 0.3s ease, stroke 0.3s ease;
+  transition: stroke-dashoffset var(--d-micro) linear, opacity var(--d-layout) var(--e-enter), stroke var(--d-layout) var(--e-enter);
 }
 .tile-56.complete .tile-ring-path {
   stroke-dashoffset: 0;
@@ -1886,9 +1872,9 @@ details.run-steps.done .chip.error { background: transparent; }
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.6);
   line-height: 1;
   pointer-events: none;
-  transition: filter 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: filter var(--d-layout) var(--e-move),
+              opacity var(--d-layout) var(--e-move),
+              transform var(--d-layout) var(--e-move);
 }
 .tile-56.complete .tile-progress-text {
   filter: blur(6px);
@@ -1921,10 +1907,10 @@ details.run-steps.done .chip.error { background: transparent; }
   opacity: 0;
   transform: scale(0.7);
   pointer-events: none;
-  transition: filter 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              background 0.15s ease;
+  transition: filter var(--d-layout) var(--e-move),
+              opacity var(--d-layout) var(--e-move),
+              transform var(--d-layout) var(--e-move),
+              background var(--d-micro) ease;
 }
 .tile-56.complete .tile-dismiss-btn {
   filter: blur(0);
@@ -1952,7 +1938,7 @@ details.run-steps.done .chip.error { background: transparent; }
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 .tile-landing {
-  animation: tileLand 0.38s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+  animation: tileLand var(--d-emph) var(--e-spring) backwards;
 }
 
 #attach-btn {
@@ -1999,7 +1985,7 @@ details.run-steps.done .chip.error { background: transparent; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  animation: menuFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: menuFadeIn var(--d-state) var(--e-move);
 }
 .action-menu-popover[hidden] {
   display: none !important;
@@ -2017,7 +2003,7 @@ details.run-steps.done .chip.error { background: transparent; }
   font-size: 12px;
   color: var(--text-primary);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--d-micro);
   user-select: none;
 }
 .action-menu-item:hover {
@@ -2043,7 +2029,7 @@ details.run-steps.done .chip.error { background: transparent; }
   object-fit: cover;
   border: 1px solid var(--glass-border);
   cursor: pointer;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+  transition: transform var(--d-state) var(--e-move), box-shadow var(--d-state);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 .user-msg-img-thumb:hover {
@@ -2135,7 +2121,7 @@ details.run-steps.done .chip.error { background: transparent; }
   flex-shrink: 0;
   font: 500 12px/1 var(--font);
   box-shadow: 0 2px 6px var(--apple-blue-soft);
-  transition: transform var(--m-move) var(--e-spring), opacity var(--m-quick) ease;
+  transition: transform var(--d-tap) var(--e-enter), opacity var(--d-micro) var(--e-enter);
 }
 
 #takeover-btn:hover {
@@ -2145,7 +2131,7 @@ details.run-steps.done .chip.error { background: transparent; }
 
 #takeover-btn:active {
   transform: scale(0.95);
-  transition: transform var(--m-quick) var(--e-swift);
+  transition: transform var(--d-tap) var(--e-enter);
 }
 
 /* 位置 1：Send ↑ / Stop ■ 原位形变按钮 (Motion In-Place Morphing Button) */
@@ -2195,7 +2181,7 @@ details.run-steps.done .chip.error { background: transparent; }
   position: absolute;
   display: grid;
   place-items: center;
-  transition: opacity 0.2s ease, transform 0.32s var(--spring-bounce);
+  transition: opacity var(--d-state) ease, transform var(--d-layout) var(--spring-bounce);
 }
 
 #send-btn.kinetic-morph-button.stopping .morph-icon-send {
@@ -2209,7 +2195,7 @@ details.run-steps.done .chip.error { background: transparent; }
   place-items: center;
   opacity: 0;
   transform: scale(0.3) rotate(-90deg);
-  transition: opacity 0.2s ease, transform 0.32s var(--spring-bounce);
+  transition: opacity var(--d-state) ease, transform var(--d-layout) var(--spring-bounce);
 }
 
 #send-btn.kinetic-morph-button.stopping .morph-icon-stop {
@@ -2293,7 +2279,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #conversation-switcher:hover, #conversation-new:hover:not(:disabled) { background:var(--content-subtle-hover); }
 #conversation-background { display:block; width:calc(100% - 28px); margin:0 14px 4px; padding:7px 0; text-align:left; border:0; border-bottom:1px solid var(--content-border); background:none; color:var(--text-secondary); font:inherit; font-size:11px; cursor:pointer; }
 #conversation-background[hidden], #conversation-menu[hidden] { display:none; }
-#conversation-menu { position:absolute; top:40px; left:10px; right:10px; z-index:30; padding:6px; max-height:55vh; overflow:auto; background:var(--glass-surface-elevated); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border-subtle); border-radius:11px; box-shadow:var(--popover-shadow); animation: convMenuIn 100ms var(--e-out); }
+#conversation-menu { position:absolute; top:40px; left:10px; right:10px; z-index:30; padding:6px; max-height:55vh; overflow:auto; background:var(--glass-surface-elevated); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border-subtle); border-radius:11px; box-shadow:var(--popover-shadow); animation: convMenuIn var(--d-tap) var(--e-enter); }
 #conversation-menu .conversation-menu-filter { display:block; width:100%; margin:0 0 6px; padding:7px 8px; border:1px solid var(--content-border); border-radius:8px; background:var(--content-bg); color:var(--text-primary); font:inherit; font-size:12px; }
 #conversation-menu .conversation-menu-group { padding:8px 8px 4px; font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--text-tertiary); text-transform:uppercase; }
 #conversation-menu button { display:flex; align-items:center; gap:10px; width:100%; padding:11px 9px; border:0; border-radius:6px; font:inherit; color:var(--text-primary); background:none; text-align:left; cursor:pointer; }
@@ -2311,7 +2297,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #conversation-menu button small { color:var(--text-secondary); font-size:10px; white-space:nowrap; }
 #conversation-menu button:hover { background:var(--content-subtle-hover); }
 #conversation-menu button[aria-checked=true] { background:var(--accent-soft); }
-#conversation-menu button.conversation-row-flash { animation: convRowFlash 200ms var(--e-out); }
+#conversation-menu button.conversation-row-flash { animation: convRowFlash var(--d-state) var(--e-enter); }
 @keyframes convMenuIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes convRowFlash { from { background: var(--accent-soft); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) {
@@ -2330,7 +2316,7 @@ details.run-steps.done .chip.error { background: transparent; }
 /* 跨会话记忆 A：会话内回执 + 管理抽屉。 */
 #memory-shade { position:absolute; inset:0; z-index:34; border:0; padding:0; background:rgba(23,34,52,.18); cursor:default; }
 #memory-shade[hidden], #memory-drawer[hidden] { display:none; }
-#memory-drawer { position:absolute; inset:148px 0 0; z-index:35; display:flex; min-height:0; flex-direction:column; overflow:hidden; border:1px solid var(--glass-border-subtle); border-bottom:0; border-radius:20px 20px 0 0; background:var(--content-bg); box-shadow:0 -10px 34px rgba(31,42,60,.14),var(--glass-specular); animation:memoryDrawerIn 180ms var(--spring-fluid); }
+#memory-drawer { position:absolute; inset:148px 0 0; z-index:35; display:flex; min-height:0; flex-direction:column; overflow:hidden; border:1px solid var(--glass-border-subtle); border-bottom:0; border-radius:20px 20px 0 0; background:var(--content-bg); box-shadow:0 -10px 34px rgba(31,42,60,.14),var(--glass-specular); animation:memoryDrawerIn var(--d-state) var(--spring-fluid); }
 @keyframes memoryDrawerIn { from { transform:translateY(18px); opacity:.7; } to { transform:none; opacity:1; } }
 .memory-drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:17px 18px 11px; border-bottom:1px solid var(--content-border); flex-shrink:0; }
 #memory-search { margin: 10px 18px 2px; padding: 7px 12px; border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-subtle); font: var(--fs-ui)/var(--lh-ui) var(--font); color: var(--text-primary); outline: none; flex-shrink: 0; }
@@ -2401,8 +2387,8 @@ details.run-steps.done .chip.error { background: transparent; }
 #messages > .memory-used-line > .memory-used-toggle { margin-left:0; }
 .msg.assistant.markdown .memory-used-list, .memory-used-line .memory-used-list { list-style:none; margin:2px 0 10px; padding:0; }
 .msg.assistant.markdown .memory-used-item, .memory-used-line .memory-used-item { display:flex; flex-wrap:wrap; align-items:center; column-gap:9px; min-height:26px; margin:0 -6px; padding:0 6px; border-radius:7px; color:var(--text-secondary); font-size:12.5px; line-height:1.4; transition:background var(--m-quick) var(--e-swift); animation:memoryUsedRise var(--m-move) var(--e-swift) both; }
-.memory-used-line .memory-used-item:nth-child(2) { animation-delay:30ms; }
-.memory-used-line .memory-used-item:nth-child(3) { animation-delay:60ms; }
+.memory-used-line .memory-used-item:nth-child(2) { animation-delay:calc(var(--d-tap) / 3); }
+.memory-used-line .memory-used-item:nth-child(3) { animation-delay:calc(var(--d-tap) * 2 / 3); }
 @keyframes memoryUsedRise { from { opacity:0; transform:translateY(-3px); } }
 .memory-used-line .memory-used-item:hover, .memory-used-line .memory-used-item:focus-within { background:var(--content-subtle); }
 .memory-used-glyph { display:grid; flex:none; width:16px; height:16px; place-items:center; border-radius:4px; background:var(--content-subtle); color:var(--text-tertiary); }
@@ -2631,7 +2617,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .voice-transcript{font-size:12px;color:var(--text-secondary);max-height:60px;overflow:auto;text-align:left;margin-top:6px;overflow-wrap:anywhere}.voice-transcript:empty,.voice-facts:empty{display:none}
 .voice-progress[data-state="error"] .voice-state{color:var(--err)}
 .voice-start:focus-visible,.voice-end:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.voice-progress:not([hidden]){animation:voice-reveal 200ms cubic-bezier(.23,1,.32,1)}
+.voice-progress:not([hidden]){animation:voice-reveal var(--d-state) var(--e-enter)}
 @keyframes voice-reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.voice-progress:not([hidden]){animation:none}}
 @media (max-width: 360px) {
@@ -2686,7 +2672,7 @@ details.run-steps.done .chip.error { background: transparent; }
 details.disc { margin-top: 8px; }
 details.disc > summary { list-style: none; cursor: pointer; color: var(--text-secondary); font-size: 11px; display: flex; align-items: center; gap: 5px; padding: 3px 0; }
 details.disc > summary::-webkit-details-marker { display: none; }
-details.disc > summary::before { content: "▸"; font-size: 9px; color: var(--text-tertiary); transition: transform 140ms var(--spring-fluid, ease); }
+details.disc > summary::before { content: "▸"; font-size: 9px; color: var(--text-tertiary); transition: transform var(--d-micro) var(--spring-fluid, ease); }
 details.disc[open] > summary::before { transform: rotate(90deg); }
 .disc-body { padding: 6px 0 0 14px; }
 .disc-body ol { margin: 0 0 8px; padding-left: 16px; font-size: 11.5px; line-height: 1.75; color: var(--text-secondary); }
@@ -2742,21 +2728,23 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 .run-steps .thinking::before { background: var(--content-border); animation: none; }
 .run-steps .thinking summary { font-size: 11px; }
 .msg.assistant[data-delivery-kind="start_ack"] { font-family: var(--font); font-size: 12px; color: var(--text-secondary); }
+/* 开场话是助手说要怎么做，不是回答：用小一号的说明字，回答才用正文大小。 */
+.msg.assistant.markdown.opening-line { font-family: var(--font); font-size: var(--fs-ui); line-height: 1.6; color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) { .msg { animation: none; } }
 
 /* 原生 details 保留键盘语义；内容包裹层允许自然高度折叠。 */
 @supports selector(details::details-content) {
-  /* 过程行 A：打开走弹簧（stiffness 420 / damping 34，约 390ms），收起 180ms。曲线由弹簧方程采样成 linear()，不引入动效库。 */
+  /* 过程行 A：打开走弹簧（stiffness 420 / damping 34，约 var(--d-emph)），收起 var(--d-state)。曲线由弹簧方程采样成 linear()，不引入动效库。 */
   details.run-steps::details-content {
     display: grid;
     grid-template-rows: 0fr;
     content-visibility: hidden;
-    transition: grid-template-rows 180ms cubic-bezier(.4, 0, .2, 1), content-visibility 180ms allow-discrete;
+    transition: grid-template-rows var(--d-state) var(--e-enter), content-visibility var(--d-state) allow-discrete;
   }
   details.run-steps[open]::details-content {
     grid-template-rows: 1fr;
     content-visibility: visible;
-    transition: grid-template-rows 390ms var(--e-spring-run), content-visibility 390ms allow-discrete;
+    transition: grid-template-rows var(--d-emph) var(--e-spring-run), content-visibility var(--d-emph) allow-discrete;
   }
   .run-reveal { min-height: 0; overflow: hidden; }
   @media (prefers-reduced-motion: reduce) {
@@ -2876,7 +2864,7 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 
 /* Interaction craft: scoped to actionable controls, never disabled ones. */
 button:not(:disabled), .pressable:not(:disabled):not([aria-disabled="true"]), .source-chip, .tab-chip {
-  transition: transform 140ms var(--e-out), background-color 140ms var(--e-out), border-color 140ms var(--e-out);
+  transition: transform var(--d-micro) var(--e-out), background-color var(--d-micro) var(--e-out), border-color var(--d-micro) var(--e-out);
 }
 button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disabled="true"]), .source-chip:active, .tab-chip:active {
   transform: scale(0.96) !important;
@@ -2885,7 +2873,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
   from { opacity: 0; transform: scale(0.95) translateY(4px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
-.ai-task-card { margin: 12px 0; padding: var(--card-padding); border: 1px solid var(--content-border); border-radius: var(--radius-card); background: var(--content-bg); box-shadow: var(--sh-1); animation: naturalEnter 240ms var(--e-out); }
+.ai-task-card { margin: 12px 0; padding: var(--card-padding); border: 1px solid var(--content-border); border-radius: var(--radius-card); background: var(--content-bg); box-shadow: var(--sh-1); animation: naturalEnter var(--d-layout) var(--e-out); }
 .ai-task-trigger { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 8px; border: 0; border-radius: var(--radius-inner); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
 .ai-task-trigger:hover { background: var(--content-subtle); }
 .trigger-top-row, .trigger-right, .target-scope { display: flex; align-items: center; gap: 6px; }
@@ -2893,10 +2881,10 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .target-scope { min-width: 0; font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .target-scope .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .task-status-badge { font-size: 10px; color: var(--text-secondary); background: var(--content-subtle); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
-.task-chevron { transition: transform 200ms var(--e-out); }
+.task-chevron { transition: transform var(--d-state) var(--e-out); }
 .ai-task-card.expanded .task-chevron { transform: rotate(180deg); }
 .task-goal-line { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
-.ai-task-reveal { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 200ms var(--e-out), visibility 200ms; }
+.ai-task-reveal { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows var(--d-state) var(--e-out), visibility var(--d-state); }
 .ai-task-card.expanded .ai-task-reveal { grid-template-rows: 1fr; visibility: visible; }
 .ai-task-content { min-height: 0; overflow: hidden; }
 .task-items { display: flex; flex-direction: column; gap: 8px; padding: 10px 8px; margin-top: 6px; background: var(--content-subtle); border-radius: var(--radius-inner); }
@@ -2906,7 +2894,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .sources-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
 .source-chip { max-width: 100%; padding: 2px 8px; border: 1px solid var(--content-border); border-radius: 6px; background: var(--content-subtle); color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
 .ai-task-footer:has(#resume-entry-root:not([hidden])) { padding: 8px; border-top: 1px solid var(--content-border); }
-.ai-task-footer .resume-action { border-radius: var(--radius-inner); background: var(--accent); color: #fff; transition: transform 140ms var(--e-out), background-color 140ms var(--e-out); }
+.ai-task-footer .resume-action { border-radius: var(--radius-inner); background: var(--accent); color: #fff; transition: transform var(--d-micro) var(--e-out), background-color var(--d-micro) var(--e-out); }
 .ai-task-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #page-pill { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
@@ -2923,7 +2911,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 #ask-cite.feed-token { align-self:flex-start; max-width:100%; border:1px solid var(--content-border); border-radius:8px; }
 #ask-cite.feed-token #ask-cite-text { display:block; white-space:nowrap; text-overflow:ellipsis; }
 #marginalia-rail { position:relative; flex:1; min-height:0; margin:0 14px 8px; border-left:1px solid color-mix(in srgb,var(--accent) 20%,transparent); overflow:hidden; }
-.marginalia-card { position:absolute; inset:0 0 auto 8px; padding:8px 10px; border:1px solid var(--content-border); border-radius:10px; background:var(--content-bg); box-shadow:var(--sh-1); transition:transform 240ms var(--e-out); }
+.marginalia-card { position:absolute; inset:0 0 auto 8px; padding:8px 10px; border:1px solid var(--content-border); border-radius:10px; background:var(--content-bg); box-shadow:var(--sh-1); transition:transform var(--d-layout) var(--e-out); }
 .marginalia-card::before { content:""; position:absolute; width:8px; height:1px; left:-9px; top:50%; background:var(--accent); opacity:.35; }
 .marginalia-card strong { display:block; font-size:11px; color:var(--accent); }
 .marginalia-card p { margin:4px 0 0; font-size:12px; line-height:1.5; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
@@ -2948,7 +2936,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 #ghost-bar { display:flex; align-items:center; gap:8px; padding:4px 10px 6px; background:var(--chrome-frame); flex-shrink:0; }
 #ghost-bar[hidden] { display:none; }
 #ghost-bar .ghost-actions { display:flex; gap:6px; flex-shrink:0; }
-#ghost-bar .ghost-action { white-space:nowrap; padding:3px 10px; border:1px solid var(--content-border); border-radius:999px; background:var(--content-bg); color:var(--text-primary); font:inherit; font-size:12px; cursor:pointer; transition:background var(--m-quick) ease, transform 120ms var(--e-out); }
+#ghost-bar .ghost-action { white-space:nowrap; padding:3px 10px; border:1px solid var(--content-border); border-radius:999px; background:var(--content-bg); color:var(--text-primary); font:inherit; font-size:12px; cursor:pointer; transition:background var(--m-quick) ease, transform var(--d-micro) var(--e-out); }
 #ghost-bar .ghost-action:hover { background:var(--content-subtle-hover); }
 #ghost-bar .ghost-action:active { transform:scale(.96); }
 #ghost-bar .ghost-action:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
@@ -2964,13 +2952,14 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .steer-ribbon-title { color:var(--apple-orange); font-weight:600; }
 .steer-ribbon-hint { color:var(--text-tertiary); }
 .steer-chips { display:flex; flex-wrap:wrap; gap:6px; }
-.steer-chip { padding:3px 10px; border:1px solid color-mix(in srgb, var(--apple-orange) 45%, var(--content-border)); border-radius:999px; background:var(--content-bg); color:var(--apple-orange); font:inherit; font-size:12px; cursor:pointer; transition:background var(--m-quick) ease, transform 120ms var(--e-out); }
+.steer-chip { padding:3px 10px; border:1px solid color-mix(in srgb, var(--apple-orange) 45%, var(--content-border)); border-radius:999px; background:var(--content-bg); color:var(--apple-orange); font:inherit; font-size:12px; cursor:pointer; transition:background var(--m-quick) ease, transform var(--d-micro) var(--e-out); }
 .steer-chip:hover { background:color-mix(in srgb, var(--apple-orange) 8%, var(--content-bg)); }
 .steer-chip:active { transform:scale(.96); }
 .steer-chip:focus-visible { outline:2px solid var(--apple-orange); outline-offset:1px; }
+.steer-received { align-self:flex-end; margin:-6px 4px 0; font-size:11px; color:var(--text-tertiary); }
 .steer-tag { align-self:flex-start; display:inline-flex; align-items:center; gap:4px; margin:0 0 -10px; padding:2px 8px; border-radius:6px; background:color-mix(in srgb, var(--apple-orange) 12%, transparent); color:var(--apple-orange); font-size:11px; font-weight:600; }
 @keyframes steer-morph-in { from { opacity:0; filter:blur(3px); transform:translateY(4px); } to { opacity:1; filter:none; transform:none; } }
-.msg.steer-morph { animation:steer-morph-in 320ms var(--e-out); }
+.msg.steer-morph { animation:steer-morph-in var(--d-layout) var(--e-out); }
 @media(prefers-reduced-motion:reduce) { .msg.steer-morph { animation:none; } #ghost-bar .ghost-action, .steer-chip { transition:none; } }
 
 /* #55 语音：光球居中、球下一个灰字、字幕卡里当前句墨色、说过的退成静默色；不加彩色胶囊。 */
@@ -3126,7 +3115,7 @@ details.run-steps:not(.done) .run-title {
   mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
   -webkit-mask-size: 260% 100%;
   mask-size: 260% 100%;
-  animation: runShine 2.4s cubic-bezier(.4, 0, .2, 1) infinite;
+  animation: runShine 2.4s var(--e-enter) infinite;
 }
 @keyframes runShine { from { -webkit-mask-position: 110% 0; mask-position: 110% 0; } to { -webkit-mask-position: -10% 0; mask-position: -10% 0; } }
 /* #263 思考心跳：16px 墨点在 4 点与十字之间收合，1.2s 一拍，不用转圈。秒数同拍闪一下。 */
@@ -3166,37 +3155,41 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-beat {
 @keyframes runBeat { to { transform: rotate(1turn); } }
 details.run-steps:not(.done)[data-phase="thinking"] .run-time,
 details.run-steps:not(.done)[data-phase="waiting"] .run-time {
-  animation: runTimeBeat 0.9s var(--e-glide) infinite;
+  animation: runTimeBeat calc(var(--d-emph) * 2) var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 132px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
+/* 收尾后的分叉不留「查了 N 路」这类行：做过的事在展开的过程里，默认视图只留过程行和回答。 */
+.run-graph-group[data-state="folded"] { display: none; }
+.run-live-graph:not(:has(> .run-graph-group:not([data-state="folded"]))) { display: none; }
 .run-graph-group { position: relative; min-width: 0; }
 .run-graph-group[data-kind="you"] { color: var(--apple-blue); }
 .run-graph-rows { display: flex; flex-direction: column; }
 .run-graph-row {
   display: flex; align-items: center; gap: 7px; height: 22px; min-width: 0;
   padding-left: calc(22px + 11px * min(5, var(--lanes, 1)) + 4px);
-  animation: graphIn 320ms var(--e-swift) both;
+  animation: graphIn var(--d-layout) var(--e-swift) both;
+  animation-delay: calc(var(--i, 0) * var(--d-tap));
 }
 .run-graph-node {
   box-sizing: border-box; width: 8px; height: 8px; flex: none; border-radius: 50%;
   border: 1.5px solid var(--text-tertiary);
 }
-.run-graph-node.running { border-top-color: var(--text-secondary); animation: runBeat 0.9s linear infinite; }
-.run-graph-node.done { background: var(--text-tertiary); border-color: var(--text-tertiary); animation: graphPop 360ms var(--e-spring); }
+.run-graph-node.running { border-top-color: var(--text-secondary); animation: runBeat calc(var(--d-emph) * 2) linear infinite; }
+.run-graph-node.done { background: var(--text-tertiary); border-color: var(--text-tertiary); animation: graphPop var(--d-emph) var(--e-spring); }
 .run-graph-node.dead { border-style: dashed; border-color: var(--text-quaternary); background: transparent; }
 .run-graph-node.dead::after { content: "×"; display: block; margin: -7px 0 0 8px; color: var(--text-quaternary); font-size: 11px; line-height: 1; }
 .run-graph-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-ui); line-height: 22px; color: var(--text-secondary); }
 .run-graph-row[data-state="dead"] .run-graph-label { color: var(--text-quaternary); }
-.run-graph-fan { display: flex; align-items: flex-start; gap: 16px; padding: 4px 8px 2px; animation: graphIn 320ms var(--e-swift) both; }
-.run-tab-tile { position: relative; display: flex; flex-direction: column; align-items: center; width: 30px; animation: graphIn 320ms var(--e-swift) both; }
+.run-graph-fan { display: flex; align-items: flex-start; gap: 16px; padding: 4px 8px 2px; animation: graphIn var(--d-layout) var(--e-swift) both; }
+.run-tab-tile { position: relative; display: flex; flex-direction: column; align-items: center; width: 30px; animation: graphIn var(--d-layout) var(--e-swift) both; }
 .run-tab-glyph {
   display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
   box-shadow: inset 0 0 0 1px var(--content-border); background: var(--content-subtle);
   color: var(--text-secondary); font-size: 12px; font-weight: 600;
 }
-.run-tab-tile[data-state="running"] .run-tab-glyph { animation: runBeat 0.9s linear infinite; box-shadow: inset 0 0 0 1.5px var(--text-tertiary); }
+.run-tab-tile[data-state="running"] .run-tab-glyph { animation: runBeat calc(var(--d-emph) * 2) linear infinite; box-shadow: inset 0 0 0 1.5px var(--text-tertiary); }
 .run-tab-tile[data-state="dead"] { opacity: .45; }
 .run-tab-status { margin-top: 2px; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 12px; color: var(--text-quaternary); }
 .run-tab-badge { position: absolute; right: -3px; top: 20px; width: 11px; height: 11px; border-radius: 50%; background: var(--content-bg); color: var(--text-tertiary); font-size: 9px; line-height: 11px; text-align: center; }
@@ -3211,7 +3204,7 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
 .run-graph-group[data-state="folding"] .run-graph-rows,
 .run-graph-group[data-state="folding"] .run-graph-fan {
   max-height: 0; opacity: 0; overflow: hidden;
-  transition: max-height 550ms var(--e-swift), opacity 550ms var(--e-swift);
+  transition: max-height var(--d-emph) var(--e-swift), opacity var(--d-emph) var(--e-swift);
 }
 .run-graph-group[data-kind="you"] .run-graph-node { border-color: var(--apple-blue); }
 .run-graph-group[data-kind="you"] .run-graph-label { color: var(--apple-blue); }
@@ -3235,7 +3228,7 @@ details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: 
 .run-trail .trail-aside { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 .run-trail .trail-aside.warn { color: var(--apple-orange); }
 /* 跑完后代码裁判的一行（核对 n/m）：过程折叠区里的一句说明，没过时颜色略深。 */
-.run-trail .trail-step:last-child { animation: trailIn .32s cubic-bezier(.2, .8, .2, 1) both; }
+.run-trail .trail-step:last-child { animation: trailIn var(--d-layout) var(--e-move) both; }
 @keyframes trailIn { from { opacity: 0; transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation: none; } }
 details.run-steps.done summary { width: max-content; max-width: 100%; margin: 0 -4px; padding: 2px 4px; border-radius: 6px; }
@@ -3273,7 +3266,7 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
 
 /* #263 AC：进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }
-details.run-steps > summary > .run-meta { flex-basis: 100%; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+details.run-steps > summary > .run-meta { flex-basis: 100%; overflow-wrap: anywhere; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 details.run-steps > summary > .run-meta::after { content: " ›"; color: var(--text-quaternary); }
 details.run-steps > summary:hover > .run-meta { color: var(--text-secondary); }
 details.run-steps.done > summary > .run-meta { display: none; }
@@ -3437,20 +3430,20 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip .cl { min-width: 0; max-width: 22em; overflow: hidden; text-overflow: ellipsis; }
 
 /* 记忆 D + X1：句尾灰字淡入，点开在首段下面弹簧撑开小条（Dia 密度：14px 图标 + 12px 灰字）。 */
-.msg.assistant .memory-used-toggle { animation: citePop 300ms var(--e-swift) both; }
+.msg.assistant .memory-used-toggle { animation: citePop var(--d-layout) var(--e-swift) both; }
 @keyframes citePop { from { opacity: 0; filter: blur(2px); } }
 .msg.assistant .memory-used-line {
   display: grid;
   grid-template-rows: 0fr;
   visibility: hidden;
   margin: 0;
-  transition: grid-template-rows 160ms cubic-bezier(.4, 0, .2, 1), margin 160ms cubic-bezier(.4, 0, .2, 1), visibility 160ms allow-discrete;
+  transition: grid-template-rows var(--d-state) var(--e-enter), margin var(--d-state) var(--e-enter), visibility var(--d-state) allow-discrete;
 }
 .msg.assistant .memory-used-line[data-open=true] {
   grid-template-rows: 1fr;
   visibility: visible;
   margin-bottom: 12px;
-  transition: grid-template-rows 420ms var(--e-spring-memory), margin 420ms var(--e-spring-memory), visibility 0ms;
+  transition: grid-template-rows var(--d-emph) var(--e-spring-memory), margin var(--d-emph) var(--e-spring-memory), visibility 0s;
 }
 .msg.assistant.markdown :is(p, h1, h2, h3, h4, h5, h6):has(+ .memory-used-line[data-open=true]) { margin-bottom: 6px; }
 .msg.assistant .memory-used-line > .memory-used-list { min-height: 0; overflow: hidden; margin: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -3464,7 +3457,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 }
 
 /* 错误卡（#74）：按错误种类给能修掉原因的动作；原文收进「技术详情」。 */
-.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in 200ms var(--e-spring); }
+.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--d-state) var(--e-spring); }
 .error-card strong { font-size: var(--fs-ui); font-weight: 600; }
 .error-card > p { margin: 0; color: var(--text-secondary); }
 .error-card .error-card-note { font-size: var(--fs-meta); color: var(--text-tertiary); }
@@ -3575,7 +3568,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   border-radius: var(--r-shape); white-space: normal;
 }
 .msg.user.card-turn .pc-face { background: var(--well); border-color: transparent; box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); padding-right: var(--s-3); }
-.msg.user.card-turn .pc-face > * { animation: pc-in 300ms var(--e-swift) both; }
+.msg.user.card-turn .pc-face > * { animation: pc-in var(--d-layout) var(--e-swift) both; }
 .msg.user.card-turn .pc-obj { cursor: default; }
 .msg.user.card-turn .pc-obj:hover { text-decoration: none; }
 .pc-verb.done { cursor: default; background: var(--text-primary); color: var(--content-bg); box-shadow: none; }
@@ -3589,33 +3582,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .fill-evidence { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--content-border); border-radius: var(--radius-sm); background: var(--content-bg); font-size: 13px; }
 .fill-evidence-line { overflow-wrap: anywhere; }
 .fill-evidence-line b { font-weight: 600; }
-.fill-undo { margin-top: 8px; }
-.fill-undo-action {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--text-primary);
-  border-radius: 8px;
-  padding: 5px 10px;
-  background: var(--content-bg);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.fill-undo-action:disabled { opacity: .6; cursor: default; }
-.fill-undo-line { height: 2px; margin-top: 10px; background: var(--content-border); overflow: hidden; }
-.fill-undo-line i {
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: var(--text-primary);
-  transform-origin: left center;
-  animation: fillUndoLine 8000ms linear forwards;
-}
-.fill-undo-live:hover .fill-undo-line i { animation-play-state: paused; }
-.fill-undo-done { font-size: 12px; color: var(--text-tertiary); transition: opacity 160ms cubic-bezier(0.4, 0, 1, 1); }
-@keyframes fillUndoLine { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-.claim-fix { margin: 4px 0 8px; font-size: 13px; color: var(--warn); overflow-wrap: anywhere; }
+.run-superseded { margin: 2px 0; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-tertiary); overflow-wrap: anywhere; }
 
 /* 交给你（docs/evals/20261010-hand-to-user.md R1）：与错误卡同一种卡片，左边线用强调色。 */
 .handoff-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); }
@@ -3625,3 +3592,97 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .handoff-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .handoff-card .btn-primary { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border: 0; border-radius: var(--r-pill); background: var(--text-primary); color: var(--content-bg); cursor: pointer; }
 .handoff-done { font-size: var(--fs-meta); color: var(--text-tertiary); }
+
+#handoff-banner {
+  margin: 0 0 6px;
+  font: var(--fs-meta)/1.4 var(--font);
+  color: var(--text-secondary);
+  transform: translateY(-4px);
+  opacity: 0;
+}
+#handoff-banner:not([hidden]) {
+  animation: handoffBannerIn var(--d-state) var(--e-enter) both;
+  animation-delay: calc(var(--d-tap) / 2);
+}
+@keyframes handoffBannerIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+#composer.you-operating { box-shadow: inset 0 0 0 1px var(--text-primary); }
+.run-body .chip.inspecting { box-shadow: inset 2px 0 0 var(--text-primary); }
+.run-body .chip-gone { margin-left: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
+@media (prefers-reduced-motion: reduce) {
+  #handoff-banner:not([hidden]) { animation: none; opacity: 1; transform: none; }
+}
+/* ── 10-13 设计审视：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
+   依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
+   「Semantics are secondary」；NN/g「How to communicate errors」；Apple HIG Toolbars / Text fields。 */
+
+/* 间距分组：一轮之内 8，轮与轮之间 28。原来所有块一律 24，看不出哪些是一组。 */
+#messages { gap: var(--s-2); }
+#messages > .msg.user:not(:first-child) { margin-top: 20px; }
+.ctx-chips { margin-top: -4px; }
+
+/* 你说的话：消息不能点，去掉立体的高光和描边，只留浅底。 */
+.msg.user { box-shadow: none; border-color: transparent; }
+
+/* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
+.run-title { font-size: var(--fs-ui); line-height: 20px; }
+details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-ui); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+/* 系统说明（调试横幅）：不再挂在过程的竖线下面像引用的回答，改成一条浅底小提示。 */
+.run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
+.run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--content-subtle); color: var(--text-secondary); }
+
+/* 输入框：空着时一行高，打字后随内容长高；白纸底 + 细边 + 很浅的影子，是整屏唯一浮起来的东西。 */
+#input { min-height: 22px; line-height: 22px; font-size: 14px; }
+#composer { gap: 6px; padding: 10px 8px 8px 14px; background: var(--content-bg); border-color: var(--glass-border); box-shadow: 0 1px 2px rgb(20 20 19 / .04), 0 4px 16px rgb(20 20 19 / .05); }
+#composer:focus-within { box-shadow: 0 1px 2px rgb(20 20 19 / .05), 0 6px 20px rgb(20 20 19 / .07); }
+
+/* 「接管」和旁边的图标按钮同一种样子（无边框），停止仍是唯一的实心圆。 */
+#takeover-btn { box-shadow: none; color: var(--text-secondary); padding: 0 10px; }
+
+/* 顶栏：三样都用图标。「记忆」从文字换成书签图标（悬停仍显示说明）。 */
+#memory-open { width: 28px; padding: 0; font-size: 0; color: var(--text-secondary); }
+#memory-open::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; }
+
+/* 空白页：光球和问候留在正中（用户 10-13 定），建议贴到输入框上方，左对齐成一列。 */
+#app.starter-ready.conversation-empty #starter { justify-content: flex-start; padding-bottom: 4px; }
+#starter-orb { margin-top: auto; }
+#starter-actions { margin-top: auto; padding-top: 24px; flex-direction: column; flex-wrap: nowrap; align-self: stretch; align-items: stretch; gap: 2px; }
+#starter-actions button { text-align: left; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); font-size: 13.5px; padding: 9px 10px; }
+#starter-actions button:first-child { background: var(--content-bg); box-shadow: 0 0 0 1px var(--content-border); }
+
+/* 用到的记忆：不再接在回答句子后面，单独一行小字放在回答下面。 */
+.memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }
+
+/* 出错：服务出错不是用户的错，用温和的浅底，不用红色粗边和阴影；红色只留在标题前的小点。 */
+.error-card { border: 0; border-radius: var(--r); background: var(--content-subtle); padding: 12px 14px; gap: 6px; box-shadow: none; }
+.error-card strong { display: flex; align-items: center; gap: 7px; font-weight: 550; }
+.error-card strong::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--err); flex: none; }
+.error-card > p { padding-left: 14px; }
+.error-card-actions { padding-left: 14px; }
+.error-card .btn-primary, .error-card .btn-quiet { padding: 7px 12px; font-weight: 500; }
+
+/* 文件卡：一行排开，左边类型图标（图片用缩略图），右边灰色图标按钮（打开、下载、展开）。
+   墨蓝留给助手在页面上的动作；次要操作用图标，不做成一排带底色的按钮（Refactoring UI「Semantics are secondary」）。 */
+.artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border-color: var(--content-border); }
+.artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: 8px; background: var(--content-subtle) center / 16px no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
+.artifact-open, .artifact-download, .artifact-preview-toggle { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 0; display: inline-grid; place-items: center; }
+.artifact-open::before, .artifact-download::before, .artifact-preview-toggle::before { content: ""; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
+.artifact-open { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E"); }
+.artifact-download { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 15V3M7 10l5 5 5-5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3C/svg%3E"); }
+.artifact-preview-toggle { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7'/%3E%3C/svg%3E"); }
+.artifact-card[data-expanded="true"] .artifact-preview-toggle { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7'/%3E%3C/svg%3E"); }
+.artifact-open + .artifact-download { margin-left: -6px; }
+.artifact-open:hover, .artifact-download:hover, .artifact-preview-toggle:hover { background: var(--content-subtle); color: var(--text-primary); }
+.artifact-inline-toggle { border: 0; background: var(--content-subtle); color: var(--text-primary); }
+.artifact-card[data-kind="image"] { grid-template-columns: 36px minmax(0, 1fr) auto auto auto; gap: 8px 4px; align-items: center; }
+.artifact-card[data-kind="image"] .artifact-info { grid-column: 2; grid-row: 1; padding-left: 6px; }
+.artifact-card[data-kind="image"] .artifact-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artifact-card[data-kind="image"] .artifact-open { grid-column: 3; grid-row: 1; justify-self: auto; }
+.artifact-card[data-kind="image"] .artifact-download { grid-column: 4; grid-row: 1; margin-left: 0; }
+.artifact-card[data-kind="image"] .artifact-preview-toggle { grid-column: 5; grid-row: 1; }
+.artifact-card[data-kind="image"] .artifact-preview { grid-row: 1; width: 36px; height: 36px; border-radius: 8px; }
+.artifact-card[data-kind="image"][data-expanded="true"] .artifact-info { grid-column: 1 / 3; padding-left: 4px; }
+.artifact-card[data-kind="image"][data-expanded="true"] .artifact-preview { grid-column: 1 / -1; grid-row: 2; width: 100%; height: auto; border-radius: 8px; }
+
+/* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
+#messages { overflow-x: hidden; }

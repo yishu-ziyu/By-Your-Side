@@ -1,4 +1,5 @@
 import type { TaskReceipt } from '../../../shared/task-actions.js';
+import { D_LAYOUT, D_STATE, E_ENTER } from "../shared/motion-tokens.js";
 import { receiptCopy } from './receipt-copy.js';
 
 /** Receipt identity is kept; only ordinary accepted records are folded away. */
@@ -52,9 +53,8 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   return decision;
 }
 
-export const CONNECT_MORPH_MS = 240;
-export const CONNECT_FLIP_MS = 320;
-const E_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+export const CONNECT_MORPH_MS = D_STATE;
+export const CONNECT_FLIP_MS = D_LAYOUT;
 
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
@@ -148,7 +148,7 @@ async function playTransform(el: HTMLElement, from: string, ms: number): Promise
 
   const anim = el.animate(
     [{ transform: from }, { transform: "translate(0, 0) scale(1, 1)" }],
-    { duration: ms, easing: E_OUT, fill: "forwards" },
+    { duration: ms, easing: E_ENTER, fill: "forwards" },
   );
 
   try { await anim.finished; } catch { /* 被取消时落到结束态 */ }

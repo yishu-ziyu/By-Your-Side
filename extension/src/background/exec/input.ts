@@ -214,25 +214,13 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
 }
 
 /** 填写回执：浏览器判定越界时带上 rangeIssue（值、问题、允许范围），不报成单纯成功。 */
-function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback, select?: boolean, previous?: string, target?: string): ToolContract["fill"]["data"] {
+function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback, select?: boolean): ToolContract["fill"]["data"] {
   const rangeIssue = rangeIssueOf(range);
 
   // An unreadable select (page re-rendered it) still fires change again on a repeat: the ledger must know it is a select.
   if (readback && select && readback.match === "unreadable" && !readback.sensitive) readback = { ...readback, select: true };
-  if (readback && previous !== undefined && !readback.sensitive) readback = { ...readback, previous };
-  if (readback && target && !readback.sensitive) readback = { ...readback, target };
 
   return { filled: true, ...(rangeIssue ? { rangeIssue } : {}), ...(readback ? { readback } : {}) };
-}
-
-async function readPreviousValue(tabId: number, where: { backendNodeId: number } | { target: string | null }): Promise<string | undefined> {
-  try {
-    const prior = await readBackField(tabId, where, "", "replace");
-
-    return prior.sensitive || prior.observed === undefined ? undefined : prior.observed;
-  } catch {
-    return undefined;
-  }
 }
 
 /** 页面里读到的一栏：敏感栏不带 value；select 表示读的是选中项的文字。 */
@@ -712,6 +700,26 @@ async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   }
 }
 
+export type PageTarget = { target: string; label: string; tabId: number; url: string };
+
+let lastActionTarget: PageTarget | null = null;
+
+export function takeLastActionTarget(): PageTarget | null {
+  const next = lastActionTarget;
+  lastActionTarget = null;
+
+  return next;
+}
+
+export async function rememberActionTarget(tabId: number, target: string | undefined, label: string): Promise<PageTarget> {
+  let url = "";
+
+  try { url = (await chrome.tabs.get(tabId)).url ?? ""; } catch { /* 标签没了就空着 */ }
+  lastActionTarget = { target: target ?? "", label, tabId, url };
+
+  return lastActionTarget;
+}
+
 export async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<void> {
   const cid = cursorId(sessionId);
   const tabId = await resolveOverlayTabId(sessionId);
@@ -730,6 +738,125 @@ export async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<
     );
   } catch {
     /* 页面禁止注入则跳过 */
+  }
+}
+
+export async function leaveCursorsTowardPanel(sessionId: string = LEAD_SESSION_ID): Promise<void> {
+  const cid = cursorId(sessionId);
+  const tabId = await resolveOverlayTabId(sessionId);
+
+  if (tabId == null) return;
+
+  try {
+    await ensureCursor(tabId);
+    await callDom(
+      tabId,
+      (id: string) => {
+        const leave = window.__sideagent?.cursor?.for(id)?.leaveTowardPanel?.() ?? window.__sideagent?.cursor?.leaveTowardPanel?.();
+
+        return leave ?? Promise.resolve();
+      },
+      [cid],
+    );
+  } catch {
+    /* 页面禁止注入则跳过 */
+  }
+}
+
+export async function returnCursorsFromPanel(sessionId: string = LEAD_SESSION_ID): Promise<void> {
+  const cid = cursorId(sessionId);
+  const tabId = await resolveOverlayTabId(sessionId);
+
+  if (tabId == null) return;
+
+  try {
+    await ensureCursor(tabId);
+    await callDom(
+      tabId,
+      (id: string) => {
+        const back = window.__sideagent?.cursor?.for(id)?.returnFromPanel?.() ?? window.__sideagent?.cursor?.returnFromPanel?.();
+
+        return back ?? Promise.resolve();
+      },
+      [cid],
+    );
+  } catch {
+    /* 页面禁止注入则跳过 */
+  }
+}
+
+export async function inspectStepTarget(tabId: number, target: string, caption: string, expectedUrl?: string): Promise<boolean> {
+  let url = "";
+
+  try { url = (await chrome.tabs.get(tabId)).url ?? ""; } catch { return false; }
+
+  if (expectedUrl && url && stripHash(expectedUrl) !== stripHash(url)) {
+    await clearStepInspect(tabId);
+
+    return false;
+  }
+
+  try {
+    await ensureCursor(tabId);
+    const found = await callDom(
+      tabId,
+      async (t: string, say: string): Promise<boolean> => {
+        const dom = window.__sideagent?.dom;
+        const cursor = window.__sideagent?.cursor;
+
+        if (!dom || !cursor) return false;
+
+        try {
+          const el = dom.resolve(t);
+
+          if (!el || el === document.body || el === document.documentElement) return false;
+          const box = el.getBoundingClientRect();
+          const off = box.bottom < 0 || box.top > innerHeight || box.right < 0 || box.left > innerWidth;
+
+          if (off) {
+            const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+            el.scrollIntoView({ block: "center", inline: "nearest", behavior: reduced ? "auto" : "smooth" });
+
+            if (!reduced) await new Promise<void>((done) => document.addEventListener("scrollend", () => done(), { once: true }));
+          }
+
+          const now = el.getBoundingClientRect();
+
+          if (!now.width && !now.height) return false;
+          cursor.inspect?.({ x: now.x, y: now.y, width: now.width, height: now.height }, say);
+
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      [target, caption],
+    );
+
+    if (!found) await clearStepInspect(tabId);
+
+    return found === true;
+  } catch {
+    await clearStepInspect(tabId).catch(() => {});
+
+    return false;
+  }
+}
+
+export async function clearStepInspect(tabId: number): Promise<void> {
+  try {
+    await callDom(tabId, () => window.__sideagent?.cursor?.clearInspect?.() ?? Promise.resolve(), []);
+  } catch { /* 页关了就不必收 */ }
+}
+
+function stripHash(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+
+    return parsed.href;
+  } catch {
+    return url;
   }
 }
 
@@ -828,6 +955,14 @@ export async function showTeamControlBanners(tabIds: Iterable<number>, view?: Co
 
 export async function hideCursorsForSessions(sessionIds: Iterable<string>): Promise<void> {
   await Promise.all([...sessionIds].map(id => hideCursors(id)));
+}
+
+export async function leaveCursorsForSessions(sessionIds: Iterable<string>): Promise<void> {
+  await Promise.all([...sessionIds].map(id => leaveCursorsTowardPanel(id)));
+}
+
+export async function returnCursorsForSessions(sessionIds: Iterable<string>): Promise<void> {
+  await Promise.all([...sessionIds].map(id => returnCursorsFromPanel(id)));
 }
 
 /** 清理该会话实际展示过的全部页；其他会话的控制条重新按其状态绘制。 */
@@ -1477,6 +1612,7 @@ export async function hover(
   }
 
   if (!beforeDispatch) await recordCursorTrail(tab.id, sessionId, x, y, false);
+  await rememberActionTarget(tab.id, params.target, params.label?.trim() ?? "");
 
   return { hovered: true };
 }
@@ -1635,6 +1771,8 @@ export async function click(
           pressing.catch(() => {});
           void endCursorAction(tabId, cid, actionId, "done", [x, y]);
 
+          await rememberActionTarget(tabId, target, name);
+
           return { clicked: true, dialog: settled.dialog, ...(sendConfirmed ? { sendConfirmed: true as const } : {}) };
         }
 
@@ -1701,6 +1839,8 @@ export async function click(
             fallbackClick.catch(() => {});
             void endCursorAction(tabId, cid, actionId, "done", [x, y]);
 
+            await rememberActionTarget(tabId, target, name);
+
             return { clicked: true, dialog: fallbackSettled.dialog, ...(sendConfirmed ? { sendConfirmed: true as const } : {}) };
           }
 
@@ -1714,6 +1854,7 @@ export async function click(
         if (fallbackEffect) clicked.effect = fallbackEffect;
 
         if (sendConfirmed) clicked.sendConfirmed = true;
+        await rememberActionTarget(tabId, target, name);
 
         return clicked;
       }
@@ -1732,6 +1873,7 @@ export async function click(
     if (newTab) clicked.newTab = newTab;
 
     if (sendConfirmed) clicked.sendConfirmed = true;
+    await rememberActionTarget(tabId, target, name);
 
     return clicked;
   } catch (error) {
@@ -2030,7 +2172,6 @@ export async function fill(
   }
 
   const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "fill", params.target);
-  const previous = await readPreviousValue(tabId, backendNodeId !== undefined ? { backendNodeId } : { target: params.target });
 
   try {
     if (targetRect) {
@@ -2062,7 +2203,8 @@ export async function fill(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        const filled = filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select, previous, params.target);
+        const filled = filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
+        await rememberActionTarget(tabId, params.target, params.target);
 
         return refound ? { ...filled, refound } : filled;
       } catch (e) {
@@ -2121,7 +2263,9 @@ export async function fill(
 
     if (params.memory) await markMemoryField(tabId, params.memory, undefined, params.target);
 
-    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true, previous, params.target);
+    await rememberActionTarget(tabId, params.target, params.target);
+
+    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true);
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
@@ -2330,49 +2474,9 @@ export async function typeText(
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
   await beforeDispatch?.();
-  const previous = await readPreviousValue(tab.id, { target: null });
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
   // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
-  const readback = await readBackField(tab.id, { target: null }, params.text, "insert");
-
-  return { typed: true, readback: previous !== undefined && !readback.sensitive ? { ...readback, previous } : readback };
-}
-
-/** 用户撤回这一轮还没提交的填写：逐栏写回原值，网页上闪一下。不走助手、不记步骤。 */
-export async function restoreFills(fields: ReadonlyArray<{ tabId: number; target: string; value: string }>): Promise<{ ok: boolean; restored: number; error?: string }> {
-  let restored = 0;
-
-  for (const [index, field] of fields.entries()) {
-    if (index) await new Promise((done) => setTimeout(done, 40));
-
-    try {
-      await ensureDomOps(field.tabId);
-      const result = await callDom(
-        field.tabId,
-        (target: string, value: string) => {
-          const dom = window.__sideagent?.dom;
-
-          if (!dom) return { refused: "页面脚本未就绪" };
-          const written = dom.fill(target, value);
-          const el = dom.resolve(target);
-
-          if (el instanceof HTMLElement) {
-            el.animate(
-              [{ backgroundColor: "#FBE3DE" }, { backgroundColor: "transparent" }],
-              { duration: 300, easing: "cubic-bezier(0.4, 0, 1, 1)" },
-            );
-          }
-
-          return written;
-        },
-        [field.target, field.value],
-      );
-
-      if (result && "filled" in result) restored += 1;
-    } catch { /* 这一栏没写回，继续下一栏 */ }
-  }
-
-  return restored ? { ok: true, restored } : { ok: false, restored: 0, error: "没有写回原来的值" };
+  return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }
 
 export async function pressKey(

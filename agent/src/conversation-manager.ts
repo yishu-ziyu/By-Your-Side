@@ -1422,7 +1422,9 @@ return receipt;
         states.set(message.sessionId ?? "main", message.state);
         summary.state = [...states.values()].includes("running") ? "running" : [...states.values()].includes("user") ? "user" : "idle";
         summary.updatedAt = Date.now();
+        // 页面归你只在那段时间里是结局；交还后回到运行或空闲就去掉，等这一轮结束再写真正的结局。
         if (summary.state === "user") summary.ending = "页面现在归你";
+        else if (summary.ending === "页面现在归你") delete summary.ending;
         this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...summary } });
       }
 

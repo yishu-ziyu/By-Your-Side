@@ -613,7 +613,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
           return name ? `${name} · ${pattern.slice(slash + 1)}` : pattern;
         };
-        const message = reason === "restore" ? `已换回 ${label(to)}。` : `模型服务暂时不可用，已由 ${label(from)} 切换到 ${label(to)}，正在接着执行。`;
+        const message = reason === "restore" ? `已换回 ${label(to)}。` : `主模型暂时不可用，换成 ${label(to)} 接着做。`;
         callbacks.emit({ kind: "notice", message });
         resultHost?.runTrace.record("model_fallback", { from, to, reason });
         options?.onModelFailover?.(from, to);
@@ -2588,7 +2588,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           emit({
             kind: "notice",
             message: hasFinalText ? "执行已结束，正式结果尚未交付。"
-              : "模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试",
+              : "模型这次没有回答，可能是请求太频繁或服务暂时不可用。可以再发一次，或换一个模型。",
           });
         }
       }
@@ -2832,10 +2832,6 @@ function fieldReadbackOf(data: unknown): { readback?: FieldReadback } {
   if (typeof readback.observed === "string") clean.observed = readback.observed.slice(0, FIELD_READBACK_MAX);
 
   if (typeof readback.requested === "string") clean.requested = readback.requested.slice(0, FIELD_READBACK_MAX);
-
-  if (typeof readback.previous === "string") clean.previous = readback.previous.slice(0, FIELD_READBACK_MAX);
-
-  if (typeof readback.target === "string" && readback.target) clean.target = readback.target.slice(0, 500);
 
   if (readback.truncated === true) clean.truncated = true;
 

@@ -9,23 +9,11 @@ const EVIDENCE_LINES = 3;
 const EVIDENCE_CLIP = 80;
 
 /** 一栏的显示名与值；敏感栏、读不回的返回 null（不显示）。key 区分同名的两栏（见 readbackKey）。 */
-export function evidenceLine(readback: FieldReadback, key: string): { key: string; field: string; value: string; previous?: string; undoable?: true; target?: string } | null {
+export function evidenceLine(readback: FieldReadback, key: string): { key: string; field: string; value: string } | null {
   if (readback.sensitive || readback.observed === undefined) return null;
   const value = readback.observed.replace(/\s+/g, " ").trim();
-  const requested = typeof readback.requested === "string" ? readback.requested.replace(/\s+/g, " ").trim() : "";
-  let previous = typeof readback.previous === "string" ? readback.previous.replace(/\s+/g, " ").trim() : "";
-  // 写入前没读到时，previous 会变成写后的值；空表单按原值是空来撤回。
-  if (previous === value && requested === value) previous = "";
-  const target = typeof readback.target === "string" && readback.target ? readback.target : undefined;
 
-  return {
-    key,
-    field: readback.name || "这一栏",
-    value: value.length > EVIDENCE_CLIP || readback.truncated ? `${value.slice(0, EVIDENCE_CLIP)}…` : value,
-    previous,
-    ...(target ? { target } : {}),
-    ...(previous !== value ? { undoable: true as const } : {}),
-  };
+  return { key, field: readback.name || "这一栏", value: value.length > EVIDENCE_CLIP || readback.truncated ? `${value.slice(0, EVIDENCE_CLIP)}…` : value };
 }
 
 /**
@@ -50,12 +38,12 @@ export function mergeEvidence<Line extends { key: string }>(lines: ReadonlyArray
   return [...lines.filter(line => line.key !== next.key), next].slice(-EVIDENCE_LINES);
 }
 
-/** 「核对发现」后面那句：核对写给用户的诊断；没有就说还差什么，再没有就说还没做完。 */
-export function findingForUser(finding: string | undefined, remaining: string | undefined): string {
+/** 核对判继续后，续做那一轮过程行第二行开头的一句：核对写给用户的诊断；没有就说还差什么。 */
+export function checkNoteForUser(finding: string | undefined, remaining: string | undefined): string {
   const said = (finding ?? "").trim().replace(/[。.]$/, "");
 
-  if (said) return said;
+  if (said) return `核对发现：${said}`;
   const left = (remaining ?? "").trim().replace(/[。.]$/, "");
 
-  return left ? `还差：${left}` : "还没做完";
+  return left ? `还差：${left}` : "核对发现还没做完";
 }
