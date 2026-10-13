@@ -79,6 +79,7 @@ import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
 import { workerTabControl } from "./worker-tab-control.js";
+import { fillUndoView, resetFillUndo, restoreFills, watchFillUndo } from "./fill-undo.js";
 import {
   clearCursorStatus,
   clearAmbientCursorStatus,
@@ -488,6 +489,7 @@ function noteRunSettle(conversationId: string, change: { busy?: boolean; checkin
 
 function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
+watchFillUndo(conversationId, undo => broadcast({ kind: "fill_undo", undo }));
 const getWorkingTabId = (sid: string = LEAD_SESSION_ID) => workingTabForKey(key(sid));
 const setSessionClaimBlocked = (sid: string, blocked: boolean) => blockKey(key(sid), blocked);
 
@@ -1338,6 +1340,9 @@ const uplink = {
    // 新任务和运行中插话都从这里出去：插话不换任务身份，所以单独数。恢复、停这类控制不是用户说了新话，不算。
    if (msg.type === "user_message" || msg.type === "steer" || (msg.type === "task_action" && (msg.request.action === "start" || msg.request.action === "steer"))) userTurn += 1;
 
+   // 新任务开始：上一轮的「还原填写」作废。插话还是同一轮，不算。
+   if (msg.type === "user_message" || (msg.type === "task_action" && msg.request.action === "start")) resetFillUndo(conversationId);
+
    return transport.sendClientMessage({ ...msg, conversationId });
  },
  retry: () => transport.retry(),
@@ -2119,6 +2124,11 @@ function attachPanel(port: chrome.runtime.Port) {
       case "retry":
         uplink.retry();
         break;
+      // 还原填写只在任务空闲时做：助手还在填，写回去会和它抢。
+      case "fill_undo":
+        if (lastStatus !== "idle") broadcast({ kind: "fill_undo", undo: fillUndoView(conversationId), refused: "busy" });
+        else void restoreFills(conversationId);
+        break;
       case "inspect_step": {
         void (async () => {
           if (!msg.target) {
@@ -2159,6 +2169,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
   };
 
         port.postMessage({ kind: "conn", ...lastConn } satisfies BgToPanel);
+        port.postMessage({ kind: "fill_undo", undo: fillUndoView(conversationId) } satisfies BgToPanel);
         void chrome.storage.session.get(ASK_STORE).then((stored) => {
           const ask = stored[ASK_STORE] as PendingAsk | undefined;
 

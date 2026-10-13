@@ -2,6 +2,7 @@ import {replaceEditableText} from "../shared/editable-text.js";
 import { readInputRange } from "../shared/range-input.js";
 import type { InputRangeReadout } from "../../../shared/page-readout.js";
 import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/target.js";
+import { FILL_UNDO_SUBMIT } from "../relay.js";
 
 /**
  * DOM 操作 content script（ISOLATED world，重复注入幂等）。
@@ -13,6 +14,15 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
 
   if (ns.dom) return;
   ns.refs ??= new Map<number, Element>();
+
+  // 还原填写（background/fill-undo.ts）：助手填过的格子所在的表单被提交（用户点的、网页自己 requestSubmit 的都算），告诉后台收不回了。
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+
+    if (form instanceof HTMLFormElement && [...form.elements].some((el) => el.hasAttribute("data-sideagent-undo"))) {
+      void chrome.runtime.sendMessage({ type: FILL_UNDO_SUBMIT }).catch(() => { /* 后台在重启 */ });
+    }
+  }, true);
 
   function mustResolve(target: string): Element {
     if (target.startsWith("@")) {
