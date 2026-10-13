@@ -136,6 +136,9 @@ try {
 
   // 1) 填表、用户改一栏、还原。
   await run("form");
+  // 每一步工具从模型回完到下一次请求的间隔：主要是扩展执行这个工具的时间，用来和 main 比多出来的探查耗时。
+  const steps = model.requests.filter(r => r.rule === ASK.form).sort((a, b) => a.step - b.step);
+  evidence.stepGapsMs = steps.slice(1).map((r, i) => ({ after: ["fill name", "fill city", "fill phone", "select size", "click kid", "click seat", "fill note"][i], ms: r.atMs - (steps[i]!.closedAt ?? steps[i]!.atMs) }));
   const ready = await waitView("ready", "ready view after the form turn");
   evidence.ready = ready;
   assert.equal(ready.count, 6, `1: six fields can be restored ${JSON.stringify(ready)}`);
