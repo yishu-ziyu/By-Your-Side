@@ -3596,11 +3596,28 @@ details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-u
 .error-card-actions { padding-left: 14px; }
 .error-card .btn-primary, .error-card .btn-quiet { padding: 7px 12px; font-weight: 500; }
 
-/* 文件卡：墨蓝留给助手在页面上的动作；按钮改成中性浅底，和其他次要按钮一个样子。 */
-.artifact-open, .artifact-download, .artifact-preview-toggle, .artifact-inline-toggle { border: 0; background: var(--content-subtle); color: var(--text-primary); }
-.artifact-open:hover, .artifact-download:hover, .artifact-preview-toggle:hover, .artifact-inline-toggle:hover { background: var(--content-subtle-hover); }
+/* 文件卡：一行排开，左边类型图标（图片用缩略图），右边灰色图标按钮（打开、下载、展开）。
+   墨蓝留给助手在页面上的动作；次要操作用图标，不做成一排带底色的按钮（Refactoring UI「Semantics are secondary」）。 */
+.artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border-color: var(--content-border); }
+.artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: 8px; background: var(--content-subtle) center / 16px no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
+.artifact-open, .artifact-download, .artifact-preview-toggle { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 0; display: inline-grid; place-items: center; }
+.artifact-open::before, .artifact-download::before, .artifact-preview-toggle::before { content: ""; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
+.artifact-open { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E"); }
+.artifact-download { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 15V3M7 10l5 5 5-5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3C/svg%3E"); }
+.artifact-preview-toggle { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7'/%3E%3C/svg%3E"); }
+.artifact-card[data-expanded="true"] .artifact-preview-toggle { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7'/%3E%3C/svg%3E"); }
+.artifact-open + .artifact-download { margin-left: -6px; }
+.artifact-open:hover, .artifact-download:hover, .artifact-preview-toggle:hover { background: var(--content-subtle); color: var(--text-primary); }
+.artifact-inline-toggle { border: 0; background: var(--content-subtle); color: var(--text-primary); }
+.artifact-card[data-kind="image"] { grid-template-columns: 36px minmax(0, 1fr) auto auto auto; gap: 8px 4px; align-items: center; }
+.artifact-card[data-kind="image"] .artifact-info { grid-column: 2; grid-row: 1; padding-left: 6px; }
+.artifact-card[data-kind="image"] .artifact-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artifact-card[data-kind="image"] .artifact-open { grid-column: 3; grid-row: 1; justify-self: auto; }
+.artifact-card[data-kind="image"] .artifact-download { grid-column: 4; grid-row: 1; margin-left: 0; }
+.artifact-card[data-kind="image"] .artifact-preview-toggle { grid-column: 5; grid-row: 1; }
+.artifact-card[data-kind="image"] .artifact-preview { grid-row: 1; width: 36px; height: 36px; border-radius: 8px; }
+.artifact-card[data-kind="image"][data-expanded="true"] .artifact-info { grid-column: 1 / 3; padding-left: 4px; }
+.artifact-card[data-kind="image"][data-expanded="true"] .artifact-preview { grid-column: 1 / -1; grid-row: 2; width: 100%; height: auto; border-radius: 8px; }
 
 /* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
 #messages { overflow-x: hidden; }
-/* 图片卡：「打开」和「下载」「收起」排在同一侧，不再一个居中一个靠右。 */
-.artifact-card[data-kind="image"] .artifact-open { justify-self: end; }
