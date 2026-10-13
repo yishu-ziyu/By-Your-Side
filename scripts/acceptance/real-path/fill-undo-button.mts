@@ -49,7 +49,7 @@ const rp = await launchRealPath();
 const evidence: Record<string, unknown> = {};
 let error: string | null = null;
 
-type Seen = { button: string; disabled: boolean; result: string; faded: number };
+type Seen = { button: string; disabled: boolean; result: string; faded: number; row: number };
 
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
@@ -62,7 +62,8 @@ try {
   const settled = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "turn settled", 100);
   const answerOf = (done: string) => `[...document.querySelectorAll("#messages .msg.assistant")].find(m => m.textContent.includes(${JSON.stringify(done)}))`;
   const seen = async (done: string): Promise<Seen> => await rp.evaluate(panel, `(() => { const a = ${answerOf(done)}; const b = a?.querySelector(".answer-primary");
-    return { button: b?.textContent ?? "", disabled: !!b?.disabled, result: a?.querySelector(".fill-undo-result")?.textContent ?? "", faded: Number(getComputedStyle(a.querySelector("p")).opacity) }; })()`) as Seen;
+    return { button: b?.textContent ?? "", disabled: !!b?.disabled, result: a?.querySelector(".fill-undo-result")?.textContent ?? "", faded: Number(getComputedStyle(a.querySelector("p")).opacity),
+      row: Number(getComputedStyle(a.querySelector(".answer-actions")).opacity) }; })()`) as Seen;
   const waitButton = (done: string, text: string) => until(async () => { const s = await seen(done); return s.button.includes(text) ? s : undefined; }, 15_000, `button ${text}`, 100);
   const page = (expr: string) => rp.evaluate(work, expr);
 
@@ -104,6 +105,10 @@ try {
   const keep = await seen(DONE.form);
   evidence.firstAfterNextTurn = keep;
   assert.ok(keep.button.includes("已还原") && keep.faded < 0.6, `1: 下一轮开始后，还原过的回答仍是已还原、仍变淡 ${JSON.stringify(keep)}`);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 }, panel);
+  await sleep(300);
+  const unhovered = await seen(DONE.form);
+  assert.equal(unhovered.row, 1, `1: 不是最新一条、鼠标也不在上面时，“已还原”那一排照样看得见 ${JSON.stringify(unhovered)}`);
   await waitButton(DONE.submit, "还原填写（1 处）");
   await rp.click(work, "#submit");
   const submitted = await waitButton(DONE.submit, "已提交，收不回");
