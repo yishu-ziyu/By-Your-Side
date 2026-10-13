@@ -2,6 +2,7 @@ import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from "qui
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
 import { HOST_PAGE_PROBES } from "../../shared/effect-policy.js";
 import { isSaveFileParams, rejectSaveFileParams, type SaveFileParams, type SavedFileReceipt } from "./artifacts-tool.js";
+import { fetchFailureReason, type FetchReply } from "./fetch-result.js";
 
 export interface ProgramStep {
   parentId: string;
@@ -11,6 +12,8 @@ export interface ProgramStep {
   params: Record<string, unknown>;
   result?: unknown;
   error?: string;
+  /** 失败的人话原因（给侧栏）；只在宿主能直接判定时写，比如没拿到内容的 fetch。 */
+  reason?: string;
   elapsedMs?: number;
 }
 
@@ -395,7 +398,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     if (params.ok) return { ok: true };
     const reason = typeof params.reason === "string" ? params.reason : "";
-    const completed = trail.filter(step => !step.error).length;
+    // 停下前已经做过的步数：没拿到内容的 fetch 也算（它做了，只是对方答了非 2xx，程序照常往下跑）。
+    const completed = trail.length;
 
     // trail 按引用交出：这一步的 end 随后也会记进去，宿主看到的步骤列表含 assert 本身。
     throw new ProgramAssertError({ failedAt, name: params.name.trim(), reason, completed }, trail);
@@ -732,7 +736,11 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         const handle = vm.newString(json);
         deferred.resolve(handle);
         handle.dispose();
-        emit({ ...step, phase: "end", result, elapsedMs: Date.now() - started });
+        // 与直调的 fetch 同一判定：没拿到内容这一步记为失败并带原因；程序照常拿到原始回执、继续往下跑（可以自己看 status），不因此停下（#304）。
+        const fetchFailed = canonical === "fetch" && result && typeof result === "object" ? fetchFailureReason(result as FetchReply) : null;
+        emit(fetchFailed
+          ? { ...step, phase: "end", result, error: `HTTP ${(result as FetchReply).status} (not ok)`, reason: fetchFailed, elapsedMs: Date.now() - started }
+          : { ...step, phase: "end", result, elapsedMs: Date.now() - started });
       } catch (error) {
         const text = message(error);
         // A caught RPC error is not a license to keep writing. The host owns this
