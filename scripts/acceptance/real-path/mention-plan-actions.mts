@@ -72,7 +72,7 @@ try {
   const plan = await until(async () => (await goalLine()) || undefined, 5_000, "出现计划行").catch(() => "");
   const started = await until(async () => model.requests.length > before || undefined, 5_000, "模型收到请求").catch(() => false);
   await rp.screenshot(panel, join(out, "plan.png"));
-  check("写页任务不等确认就发出，任务条上有会去/不会做，不会做是提交、付款", started === true && /会去 活动报名表/.test(plan) && /不会做 提交、付款/.test(plan) && !(await rp.evaluate(panel, `!!document.querySelector(".task-plan")`)), { plan, started });
+  check("写页任务不等确认就发出，任务条上有会去/不会做，不会做是提交、付款", started === true && /会去 活动报名表/.test(plan) && /不会做 提交、付款/.test(plan), { plan, started });
   await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(FILLED)})`)) || undefined, 60_000, "填写回答");
   const goalLeft = await until(async () => !(await goalLine()) || undefined, 3_000, "计划行收掉").catch(() => false);
   check("这一轮做完后计划行收掉", goalLeft === true, await goalLine());

@@ -5135,6 +5135,8 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
 
         // 插话没被采纳：下一段回答不是按它写的，不挂「已改方向」。
         if (ev.receipt.action === "steer" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed")) steerRibbon.reset();
+        // 新任务没被接下（例如还没连模型）：这一轮不会开始，计划行也不该留着。
+        if (ev.receipt.action === "start" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed") && ev.receipt.conversationId === selectedConversationId) taskPlan.endRun();
 
         if (ev.receipt.conversationId === selectedConversationId) {
           if (ev.receipt.action === "abort") {
@@ -6235,6 +6237,7 @@ function restoreLostSend(): void {
 
   if (!lost || lost.postedOn === "queued" || lost.postedOn === port || lost.conversationId !== selectedConversationId) return;
   unconfirmedSend = null;
+  taskPlan.endRun();
 
   // 自动重发那次没送到：之后用户自己再发同一句，要画新气泡，不能接回上面的旧气泡。
   if (resending?.conversationId === lost.conversationId && resending.text === lost.text) resending = null;
