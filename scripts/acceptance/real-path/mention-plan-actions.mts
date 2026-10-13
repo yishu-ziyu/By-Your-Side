@@ -7,7 +7,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type Json } from "./harness.mts";
+import { REPO, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until, type Json } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
@@ -43,6 +43,7 @@ const model = await startScriptedModel([
 
 const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
+let stopRecording: (() => Promise<string | null>) | null = null;
 const check = (name: string, pass: boolean, actual: Json) => {
   checks.push({ name, pass, actual });
   console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual));
@@ -55,6 +56,7 @@ try {
   await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}/` }, work);
   await rp.cdp.send("Page.bringToFront", {}, work);
   const panel = await rp.attach(await rp.openSidePanel());
+  stopRecording = await recordScreen(rp.cdp, panel, join(out, "run.mp4"));
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false`), 60_000, "侧栏就绪");
@@ -92,6 +94,7 @@ try {
 
     return text ? text : undefined;
   }, 5_000, "提交任务的计划");
+  await rp.screenshot(panel, join(out, "plan-submit.png"));
   check("用户说了提交，计划的不会做里没有提交", /不会做/.test(submitPlan) && !/不会做 [^开]*提交/.test(submitPlan), submitPlan);
   const userCount = async () => Number(await rp.evaluate(panel, `document.querySelectorAll("#messages .msg.user").length`));
   const sentBeforeEdit = await userCount();
@@ -104,10 +107,13 @@ try {
     const text = await rp.evaluate(panel, `document.querySelector(".task-plan")?.innerText.replace(/\\s+/g, " ") ?? ""`) as string;
 
     return text ? text : undefined;
-  }, 5_000, "改过之后的计划");
+  }, 5_000, "改过之后的计划").catch(() => "");
+  await rp.screenshot(panel, join(out, "plan-edited.png"));
   check("改了输入，旧计划收掉；回车按新话出卡，还没发出", staleGone === true && /李四/.test(editedPlan) && /不会做 提交/.test(editedPlan) && (await userCount()) === sentBeforeEdit, { staleGone, editedPlan });
-  await rp.click(panel, ".task-plan-start");
-  await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(EDITED_DONE)})`)) || undefined, 60_000, "改过之后的回答");
+  if (editedPlan) await rp.click(panel, ".task-plan-start");
+  await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(EDITED_DONE)})`)) || undefined, 20_000, "改过之后的回答").catch(() => false);
+  await sleep(1_000);
+  await rp.screenshot(panel, join(out, "plan-edited-sent.png"));
   const users = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].map(u => u.innerText)`) as string[];
   check("发出去的是改过的话，不是出卡时的旧话", users.some((u) => u.includes("李四")) && !users.some((u) => u.includes("并提交")), users);
 
@@ -175,6 +181,7 @@ try {
 } catch (error) {
   check("流程完成", false, String(error));
 } finally {
+  await stopRecording?.().catch(() => null);
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every((c) => c.pass) ? "PASS" : "FAIL", checks }, null, 2));
   await rp.close();
   await rp.remove();
