@@ -148,9 +148,9 @@ export function plainToolError(errorText: string): string {
 
   for (const [pattern, reason] of TOOL_ERROR_REASONS) if (pattern.test(text)) return reason;
 
-  const first = text
-    .split(/[\n，。；,;]/, 1)[0]!
-    .replace(/[：:].*$/s, "")
+  // 取冒号前那一小句；它没有中文时（如页面脚本抛的「Error: 接口没回」）取冒号后第一段有中文的。
+  const clauses = text.split(/[\n，。；,;]/, 1)[0]!.split(/[：:]/);
+  const first = (clauses.find((clause) => /[一-鿿]/.test(clause)) ?? clauses[0]!)
     .replace(/（[A-Za-z][^）]*）/g, "")
     .replace(/<\/?(?:page-content|untrusted)[^>]*>/g, "")
     .replace(/loc=\S+|@\d+|\bref\b/g, "")
