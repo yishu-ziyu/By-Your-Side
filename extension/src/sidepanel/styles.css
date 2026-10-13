@@ -3546,7 +3546,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .handoff-card .btn-primary { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border: 0; border-radius: var(--r-pill); background: var(--text-primary); color: var(--content-bg); cursor: pointer; }
 .handoff-done { font-size: var(--fs-meta); color: var(--text-tertiary); }
 
-/* ── 10-13 设计审视（草稿，待用户确认后并回各自规则）──────────────
+/* ── 10-13 设计审视：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
    依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
    「Semantics are secondary」；NN/g「How to communicate errors」；Apple HIG Toolbars / Text fields。 */
 
