@@ -19,6 +19,8 @@ export interface TaskPlan {
   confirm: () => void;
   handleKeydown: (event: KeyboardEvent) => boolean;
   hide: () => void;
+  /** 这一轮结束：收起计划留下的那一行。 */
+  endRun: () => void;
   reset: () => void;
 }
 
@@ -92,7 +94,8 @@ export function mountTaskPlan(opts: {
     goal?.remove();
     const row = el("div", "task-plan-goal");
     row.setAttribute("aria-label", "这次的计划");
-    row.textContent = `会去 ${lines.go} · 会做 ${lines.do} · 不会做 ${lines.dont}`;
+    // 「会做」就是上面用户气泡里的原话，这一行不再说一遍。
+    row.textContent = `会去 ${lines.go} · 不会做 ${lines.dont}`;
     opts.root.prepend(row);
     goal = row;
     return row;
@@ -162,6 +165,7 @@ export function mountTaskPlan(opts: {
     visible: () => !!card,
     confirm: () => { card?.querySelector<HTMLButtonElement>(".task-plan-start")?.click(); },
     hide,
+    endRun: () => { goal?.remove(); goal = null; },
     reset: () => { hide(); goal?.remove(); goal = null; },
     handleKeydown: (e) => {
       if (!card || e.isComposing) return false;
