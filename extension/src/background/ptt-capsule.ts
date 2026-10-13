@@ -8,7 +8,7 @@ import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '..
  * 按住、听写中由网页自己画；话交给助手后，按这个会话的任务视图和交付换成 正在做 / 等你 / 结果 / 已中止。
  * 只读任务视图和交付，不是第二套任务状态；胶囊只在说话的那个标签页上。
  * 结果和等你同时念出来（docs/evals/20261007-ptt-speak.md）：念的时候胶囊带 speaking，念完再去掉。
- * 交给助手的那一刻先念一句短确认（ackFor），免得用户等结果时半天没声音；结果、等你、停下一到就掐掉它。
+ * 交给助手的那一刻先念一句短确认（ackFor，取消或犹豫的话不念），免得用户等结果时半天没声音；结果、等你、停下一到就掐掉它。
  */
 
 /** 任务停下后等这么久再出结果：目标核对和交付可能随后才到。 */
@@ -21,7 +21,7 @@ const SETTLE_MS = 800;
  */
 interface Tracked {
   tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; settle?: ReturnType<typeof setTimeout>;
-  spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: Extract<PttCapsule, { phase: 'doing' | 'done' | 'waiting' }>; ack: string; ackUtterance?: number;
+  spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: Extract<PttCapsule, { phase: 'doing' | 'done' | 'waiting' }>; ack: string | null; ackUtterance?: number;
 }
 
 /** 确认句没把握时的说法；问句用 ACK_QUESTION。 */
@@ -38,14 +38,20 @@ const ACK_FILLER = /^(?:能不能帮我|可不可以帮我|能不能|可不可�
 /** 只是应声、不是事情的分句。 */
 const ACK_BARE = /^(?:嗯+|呃+|啊+|那个|这个|好的?|好吧|行|对|ok|okay)$/i;
 
-/** 复述不了的：有人称（要换成「你」才对）、取消或犹豫、只是补充条件。 */
-const ACK_UNSAFE = /[我你他她]|不用|算了|想想|没事|等等|等一下|先别|取消|不要|别|就行|就好|就可以|即可|也行|都行|最好/;
+/** 取消或犹豫的话：回「好，马上做」是反着的，不念确认句。 */
+const ACK_HESITANT = /不用|算了|想想|没事|等等|等一下|先别|取消/;
+
+/** 复述不了的：有人称（要换成「你」才对）、否定、只是补充条件。 */
+const ACK_UNSAFE = /[我你他她]|不要|别|就行|就好|就可以|即可|也行|都行|最好/;
 
 /**
  * 松开后马上念的确认句：从听写原话本地取，不问模型，所以不拖慢结果。
- * 只在有把握时复述：去掉口头语后正好一个分句、没有人称、不是取消、含汉字、长短合适；否则说通用句，宁可笼统也不说错。
+ * 只在有把握时复述：去掉口头语后正好一个分句、没有人称、含汉字、长短合适；否则说通用句，宁可笼统也不说错。
+ * 取消或犹豫的话返回 null：不出声。
  */
-export function ackFor(heard: string): string {
+export function ackFor(heard: string): string | null {
+  if (ACK_HESITANT.test(heard)) return null;
+
   if (/[?？]|吗|什么|怎么|为什么|多少|哪/.test(heard)) return ACK_QUESTION;
   const clauses = heard.split(/[，,。！!；;…\n]+/).map(part => part.trim()).filter(part => part && !ACK_BARE.test(part)).map(part => {
     let rest = part;
@@ -197,7 +203,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
       const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, utterance: 0, queue: [], ack: ackFor(heard) };
       tracked = t;
       t.last = { phase: 'doing', heard, step: null, ack: t.ack };
-      start(t, t.ack, true);
+      if (t.ack) start(t, t.ack, true);
       show(tabId, current(t)!);
       onChange();
     },
