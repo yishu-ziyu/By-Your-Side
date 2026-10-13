@@ -1,7 +1,7 @@
 /**
  * 专用工具做不到的要求，助手改用脚本在页面上做完，不回「工具做不到」（10-13 用户截图：只翻前两段、按词分颜色）。
- * 无头、只装扩展、真实模型；本机文章页，正文前两段与当时的真实文章相同。按用户原话发四句，只判页面上看得到的结果：
- *   T2 译文只出现在第 1、2 段下面；T4 第 1、2 段里有至少两种颜色的词，后面的段落没有。
+ * 无头、只装扩展、真实模型；本机文章页，正文前两段与当时的真实文章相同。按用户原话发四句，再要求恢复原文，只判页面上看得到的结果：
+ *   T2 译文只出现在第 1、2 段下面；T4 第 1、2 段里有至少两种颜色的词，后面的段落没有；T5 恢复原文后页面上没有中文。
  *   npx tsx scripts/acceptance/real-path/beyond-tool.mts --headless [--model=openai-codex/gpt-6.1-sol]
  */
 import { createServer } from "node:http";
@@ -12,6 +12,7 @@ import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
+// 默认用用户出问题时用的模型（10-13 截图），不是 DEFAULT_TEST_MODEL。
 const model = process.argv.find(arg => arg.startsWith("--model="))?.slice(8) ?? "openai-codex/gpt-6.1-sol";
 
 const out = join(REPO, "out/acceptance/beyond-tool", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -32,26 +33,26 @@ const page = `<!doctype html><html lang="en"><meta charset="utf-8"><title>The St
 <h1>The State of AI Report 2026</h1><p class="subtitle">Our ninth annual report on what happened in AI and what it means.</p>
 <article>${paragraphs.map((p, i) => `<p data-p="${i + 1}">${p}</p>`).join("")}</article></body></html>`;
 
-const turns = ["只翻译这篇文章的前两段。", "将翻译呈现在页面上。", "那在第一段和第二段出现的最高频率的词汇是哪个？", "将它们分别以不同的颜色在页面上呈现。"];
+const turns = ["只翻译这篇文章的前两段。", "将翻译呈现在页面上。", "那在第一段和第二段出现的最高频率的词汇是哪个？", "将它们分别以不同的颜色在页面上呈现。", "把页面上的译文去掉，恢复原文。"];
 
 /** 把文章分成「原文第 i 段 + 它后面插入的内容」，量每块里新增的中文字数和彩色单词。 */
 const PAGE_STATE = `(() => {
+  // 按文档顺序走：一个节点归到它前面（或包着它的）最近的原文段落，助手把段落包进新容器也照样分得对。
   const buckets = [];
   let cur = null;
-  for (const el of document.querySelector('article').children) {
-    if (el.dataset.p) { cur = {p: Number(el.dataset.p), cjk: 0, colors: []}; buckets.push(cur); }
+  const article = document.querySelector('article');
+  const walker = document.createTreeWalker(article, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n.nodeType === 1 && n.dataset.p) { cur = {p: Number(n.dataset.p), cjk: 0, colors: []}; buckets.push(cur); continue; }
     if (!cur) continue;
     // 原文全是英文，所以块里的中文都是助手加的。
-    cur.cjk += (el.textContent.match(/[\\u4e00-\\u9fff]/g) || []).length;
-    const base = getComputedStyle(el).color;
-    for (const w of el.querySelectorAll('*')) {
-      const t = w.textContent.trim();
-      if (!/^[A-Za-z’']{1,20}$/.test(t)) continue;
-      const s = getComputedStyle(w);
-      const bg = s.backgroundColor;
-      const key = bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' ? 'bg:' + bg : s.color !== base ? 'fg:' + s.color : null;
-      if (key) cur.colors.push(t.toLowerCase() + '|' + key);
-    }
+    if (n.nodeType === 3) { cur.cjk += (n.data.match(/[\\u4e00-\\u9fff]/g) || []).length; continue; }
+    const t = n.textContent.trim();
+    if (!/^[A-Za-z’' ]{1,40}$/.test(t)) continue;
+    const s = getComputedStyle(n), base = getComputedStyle(n.parentElement).color;
+    const bg = s.backgroundColor;
+    const key = bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' ? 'bg:' + bg : s.color !== base ? 'fg:' + s.color : null;
+    if (key) cur.colors.push(t.toLowerCase() + '|' + key);
   }
   return buckets;
 })()`;
@@ -83,7 +84,7 @@ try {
     await until(async () => Number(await rp.evaluate(panel, `document.querySelectorAll('#messages .msg.user').length`)) > before || undefined, 15_000, `第 ${i + 1} 句发出`);
     let stable = 0;
     await until(async () => {
-      const idle = await rp.evaluate(panel, `!document.querySelector('#status-pill').classList.contains('running') && !document.querySelector('.msg.assistant.streaming')`);
+      const idle = await rp.evaluate(panel, `!document.querySelector('#status-pill').classList.contains('running') && !document.querySelector('.msg.assistant.streaming, .msg.assistant[data-revealing]')`);
       stable = idle && Date.now() - started > 3000 ? stable + 1 : 0;
 
       return stable >= 5 || undefined;
@@ -94,13 +95,15 @@ try {
     await rp.screenshot(panel, join(out, `turn${i + 1}-panel.png`));
     await rp.screenshot(work, join(out, `turn${i + 1}-page.png`));
 
-    if (i === 1) checks.push({ id: "translation-on-page-first-two", pass: state[0]!.cjk >= 20 && state[1]!.cjk >= 60 && state.slice(2).every(b => b.cjk === 0), detail: { answer, state } });
+    if (i === 1) checks.push({ id: "translation-on-page-first-two", pass: state.length === 5 && state[0]!.cjk >= 20 && state[1]!.cjk >= 60 && state.slice(2).every(b => b.cjk === 0), detail: { answer, state } });
 
     if (i === 3) {
       const colorsIn = (b: { colors: string[] }) => new Set(b.colors.map(c => c.split("|")[1]));
       const firstTwo = new Set([...colorsIn(state[0]!), ...colorsIn(state[1]!)]);
-      checks.push({ id: "colored-words-first-two", pass: firstTwo.size >= 2 && state.slice(2).every(b => b.colors.length === 0), detail: { answer, state } });
+      checks.push({ id: "colored-words-first-two", pass: state.length === 5 && firstTwo.size >= 2 && state.slice(2).every(b => b.colors.length === 0), detail: { answer, state } });
     }
+
+    if (i === 4) checks.push({ id: "restore-removes-own-translation", pass: state.length === 5 && state.every(b => b.cjk === 0), detail: { answer, state } });
   }
 
   const diag = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "diagnostics"));
@@ -115,4 +118,4 @@ finally {
 for (const c of checks) console.log(`${c.pass ? "PASS" : "FAIL"} ${c.id}`);
 console.log(out);
 
-if (error || checks.length !== 2 || checks.some(c => !c.pass)) process.exitCode = 1;
+if (error || checks.length !== 3 || checks.some(c => !c.pass)) process.exitCode = 1;
