@@ -4,13 +4,14 @@
  * 脚本模型写一份带比价卡片、小标题列表和“细节”段的回答。用真实鼠标拖把手、点把手、按上下键，
  * 读每层用户看得到的字：每层都从全文里截出、一句层等于第一句、层越短字越少；复制和“复制为 Markdown”拿到的是当前层。
  * 再问一句一句话的问题：不出把手。剪贴板只记下产品交给 navigator.clipboard 的字，不读系统剪贴板。
+ * --record：判定做完后再录一段正常速度的拖动（out/…/drag.mp4），只给人看，不参与判定。
  * --live：主模型换成真实模型（默认 gpt-6-luna），问一道比价题，截图看第一句是不是结论；只证明这一个模型在这一道题上的表现。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
@@ -153,6 +154,14 @@ try {
     evidence.keys = { up: up.level, down: down.level };
     assert.ok(up.level === "2" && down.level === "3", `上下键换层: ${JSON.stringify(evidence.keys)}`);
     assert.equal(await rp.evaluate(panel, `${ANSWER_JS}[0].querySelector(".shorten-grip").getAttribute("aria-valuetext")`), "全文", "把手 aria 跟着层走");
+
+    if (process.argv.includes("--record")) {
+      // 现在是全文：往上拖到要点、再到一句，再往下拖回全文；每步停一会儿，让人看清。
+      const stop = await recordScreen(rp.cdp, panel, join(artifacts, "drag.mp4"));
+      await sleep(1500);
+      for (const dy of [-40, -40, 80]) { await drag(dy); await sleep(2800); }
+      evidence.recording = await stop();
+    }
 
     await ask(SHORT, 2);
     const short = await seen(1);
