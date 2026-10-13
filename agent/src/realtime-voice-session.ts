@@ -7,6 +7,7 @@ import { isExplicitTaskAbort } from './voice-confirm.js';
 import type { TaskActionRequest } from '../../shared/task-actions.js';
 import { deliveryTextWithNote, type RealtimeVoiceModel, type VoiceCommand, type VoiceEvent, type VoiceInputContext, type VoiceRouteContext, type VoiceRouteResult, type VoiceTarget, type TaskProgressSnapshot, type UserDelivery, type UserDeliveryStream } from '../../shared/voice.js';
 import { base64Bytes } from '../../shared/bytes.js';
+import { withoutFailureReasons } from '../../shared/task-results.js';
 
 export type RealtimeVoiceDependencies = {
   model?: RealtimeVoiceModel;
@@ -135,7 +136,9 @@ export class RealtimeVoiceSession {
           return this.deps.readPage(origin.input);
         },
         task_status: async () => {
-          return { snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.() ?? [] };
+          const snapshot = this.deps.getSnapshot();
+
+          return { snapshot: snapshot?.results ? { ...snapshot, results: withoutFailureReasons(snapshot.results) } : snapshot, targets: this.deps.getTargets?.() ?? [] };
         },
       }
     });
