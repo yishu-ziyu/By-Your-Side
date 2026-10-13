@@ -2342,9 +2342,15 @@ interface RunHost {
   aside: string | null;
   /** 教学这一步点了但页面没变化（橙色），跟在最近几步后面；不等了就清掉。 */
   guideHint: string | null;
-  /** 填写之后从网页读回的几栏（「草稿现在是：「…」」），放在回答上方，不收进过程。 */
+  /** 填写之后从网页读回的几栏（「草稿现在是：「…」」）：进行中跟在过程行下面，回答出现后收进过程。 */
   evidence: HTMLElement | null;
   evidenceLines: Array<{ key: string; field: string; value: string }>;
+  /** 这一轮的回答（finding）：回答出现且这一轮已收尾后，开场话、读回、重复回答的旁白收进过程（foldAnsweredRun）。 */
+  answer: { text: string; el: HTMLElement; hostNote: boolean } | null;
+  /** 目标核对到哪了：checking 核对中；continued 判继续、由下一块过程接着做；unavailable 没有结论。 */
+  check: "checking" | "done" | "not_done" | "continued" | "unavailable" | null;
+  /** 收尾时定下的回执材料，收起回答后的过程行据此重画（做了几步 · 耗时 · 核对状态）。 */
+  receipt: { head: string; total: string | null; failed: number; ended: "completed" | "failed" | "stopped" } | null;
 }
 
 const ACTION_ICONS = {
@@ -3310,6 +3316,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
     guideHint: null,
     evidence: null,
     evidenceLines: [],
+    answer: null,
+    check: null,
+    receipt: null,
   };
 
   return currentRun;
@@ -3438,7 +3447,7 @@ function paintReceipt(title: HTMLElement, head: string, names: string[], tail: s
   };
 
   fit();
-  const observer = new ResizeObserver(() => { if (title.isConnected) fit(); else observer.disconnect(); });
+  const observer = new ResizeObserver(() => { if (title.isConnected && verb.parentElement === title) fit(); else observer.disconnect(); });
   observer.observe(title.closest("details.run-steps") ?? title);
 }
 
@@ -3700,14 +3709,18 @@ function finishRun(): void {
     setActionIcon(run.actIcon, only ? (only.dataset.kind as IconKind) : "many");
     clearTimeout(run.titleTimer);
 
-    if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, "恢复记录", true);
-    else if (only?.dataset.past) setRunTitle(run, only.dataset.past, true);
+    const failed = done.filter(chip => chip.classList.contains("error")).length;
+    // 换了做法的那步不算进「做了几步」，单独写在末尾。
+    const head = hasResumeReceipt && done.length === 0 && ended === "completed" ? "恢复记录"
+      : only?.dataset.past ? only.dataset.past
+      : finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended);
+    run.receipt = { head, total: spokenDuration(run.start, endedAt), failed, ended };
+
+    if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, head, true);
+    else if (only?.dataset.past) setRunTitle(run, head, true);
     else {
       // 回执：「做了 6 步：打开词条 → … → 圈出 11 部 · 1 步换了做法」（#263 C）。出错结束只写步数和「有 1 步没做成」。
-      const failed = done.filter(chip => chip.classList.contains("error")).length;
       const names = ended === "failed" ? [] : done.filter(chip => !chip.classList.contains("error")).map(chip => chip.dataset.short ?? "").filter(Boolean);
-      // 换了做法的那步不算进「做了几步」，单独写在末尾。
-      const head = finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended);
       paintReceipt(title, head, names, ended === "completed" && failed ? ` · ${failed} 步换了做法` : "");
     }
   }
@@ -3733,7 +3746,103 @@ function finishRun(): void {
     if (node instanceof HTMLElement && node.matches(".msg.assistant")) syncAnswerTime(node);
   }
 
+  if (run.answer) foldAnsweredRun(run);
   scrollToEnd();
+}
+
+/** 交付属于哪一块过程：正在跑的那块，或刚收尾的那块；runId 对不上就不属于任何一块。 */
+function runForDelivery(runId: string | null): RunHost | null {
+  const run = currentRun ?? lastRun;
+  const own = run?.root.dataset.runId;
+
+  return run && !(own && runId && own !== runId) ? run : null;
+}
+
+/** 回答（finding）已显示：记到它那一轮上；这一轮已收尾就马上收起，还在跑就等 finishRun。 */
+function noteRunAnswer(delivery: UserDelivery, el: HTMLElement): void {
+  if (delivery.kind !== "finding") return;
+  const run = runForDelivery(delivery.runId);
+
+  if (!run) return;
+  run.answer = { text: delivery.text, el, hostNote: !!delivery.hostNote };
+
+  if (run !== currentRun && run.root.isConnected && run.root.classList.contains("done")) foldAnsweredRun(run);
+}
+
+/** 比较旁白和回答时不看空白和 Markdown 记号。 */
+function comparableText(text: string): string {
+  return text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[\s*_`#>~|-]/g, "");
+}
+
+/**
+ * 回答出现后，这一轮只留一个结论（#334）：开场话收进过程顶部（安静的一行计划）、读回收到步骤后面、
+ * 与回答逐字相同的「执行过程」旁白删掉；过程行改写成「做了 N 步 · 耗时 · 核对状态」。进行中不调用。
+ */
+function foldAnsweredRun(run: RunHost): void {
+  const answer = run.answer;
+
+  if (!answer || !run.receipt) return;
+  const openings: HTMLElement[] = [];
+
+  for (let node = run.root.previousElementSibling; node && !node.matches(".msg.user, details.run-steps, .claim-fix"); node = node.previousElementSibling) {
+    if (node instanceof HTMLElement && node.matches(".opening-line")) openings.unshift(node);
+  }
+
+  for (const line of openings.reverse()) {
+    line.classList.remove("msg", "assistant");
+    line.classList.add("run-plan");
+    run.body.prepend(line);
+  }
+
+  if (run.evidence && run.evidence.parentElement !== run.body) run.body.insertBefore(run.evidence, run.body.querySelector(":scope > .run-total"));
+  const said = comparableText(answer.text);
+  const shown = comparableText(answer.el.textContent ?? "");
+
+  for (const narration of run.body.querySelectorAll<HTMLElement>(":scope > details.thinking.narration")) {
+    const text = comparableText(narration.querySelector("pre")?.textContent ?? "");
+
+    if (text && (text === said || text === shown)) narration.remove();
+  }
+
+  paintAnsweredTitle(run);
+}
+
+/** 过程行上的核对状态：核对中…、已核对页面（绿）、有 N 步没做成（橙）。没核对也没有宿主补充时不写。 */
+function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | null } | null {
+  if (!run.receipt || run.receipt.ended !== "completed") return null;
+
+  if (run.check === "checking") return { text: "核对中…", tone: null };
+
+  if (run.check === "done") return { text: "已核对页面", tone: "ok" };
+  const notDone = run.receipt.failed ? `有 ${run.receipt.failed} 步没做成` : "还没做成";
+
+  if (run.check === "not_done") return { text: notDone, tone: "warn" };
+
+  // 判继续：下一块过程接着做，这一行不下结论。没核对或核对没结论时，宿主补过一句就照它说没做成。
+  if (run.check !== "continued" && run.answer?.hostNote) return { text: notDone, tone: "warn" };
+
+  return null;
+}
+
+function paintAnsweredTitle(run: RunHost): void {
+  const title = run.titleEl;
+
+  if (!run.receipt || !title) return;
+  clearTimeout(run.titleTimer);
+  const verb = document.createElement("span");
+  verb.className = "act-verb";
+  verb.textContent = run.receipt.head;
+  const tail = document.createElement("span");
+  tail.className = "run-receipt-tail";
+  tail.textContent = run.receipt.total ? ` · ${run.receipt.total}` : "";
+  const status = runCheckStatus(run);
+  const check = document.createElement("span");
+  check.className = "run-check";
+  check.textContent = status ? ` · ${status.text}` : "";
+
+  if (status?.tone) check.dataset.tone = status.tone;
+  title.classList.add("run-receipt");
+  title.replaceChildren(verb, tail, check);
 }
 
 /**
@@ -4480,12 +4589,21 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       }
 
       break;
-    case "goal_check":
+    case "goal_check": {
       goalContinuing = ev.status === "continue" ? ev.remaining ?? "" : null;
+      // 核对结论写在这一轮的过程行上（核对中… → 已核对页面 / 有 N 步没做成）。checking 在 agent_end 之前到，结论在收尾之后到。
+      const checked = currentRun ?? lastRun;
+
+      if (checked) {
+        checked.check = ev.status === "checking" ? "checking" : ev.status === "done" ? "done" : ev.status === "continue" ? "continued" : ev.status === "unavailable" ? "unavailable" : "not_done";
+
+        if (checked.answer && checked !== currentRun && checked.root.classList.contains("done")) paintAnsweredTitle(checked);
+      }
 
       // 核对判继续：回答已经显示，这里只补一句核对发现了什么、正在改。纯文本显示。
       if (ev.status === "continue") addMsg("msg claim-fix", `目标核对发现：${findingForUser(ev.finding, ev.remaining)}。助手正在补做…`);
       break;
+    }
     case "turn_end":
       closeBlocks();
       break;
@@ -4675,6 +4793,8 @@ function handleUserDelivery(delivery: UserDelivery): void {
     placeStartAcknowledgement(existing!, delivery.kind);
     existing!.dataset.deliveryStatus = delivery.status;
     voiceUI.deliver?.(delivery);
+
+    if (!staleForStrip) noteRunAnswer(delivery, answer);
     scrollToEnd();
     scheduleDeliveryVisible(existing!, receivedAt);
 
@@ -4693,6 +4813,8 @@ function handleUserDelivery(delivery: UserDelivery): void {
   bubble.dataset.deliveryStatus = delivery.status;
   deliveredBubbles.set(delivery.id, bubble);
   placeStartAcknowledgement(bubble, delivery.kind);
+
+  if (!staleForStrip) noteRunAnswer(delivery, bubble);
   scrollToEnd();
   scheduleDeliveryVisible(bubble, receivedAt);
 }

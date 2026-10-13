@@ -77,6 +77,21 @@ export interface UserDelivery {
   unfinished?: string[];
   /** 本轮真实读到或打开的页面（回答出处）。和完成情况无关：没列目标计划时也有；旧记录缺省。 */
   sources?: UserDeliverySourceRef[];
+  /**
+   * 模型说做完、宿主账本认为没做完时宿主补的一句（partialResultNote）。不进正文：侧栏只在过程行说一次完成情况；
+   * 念出来、给旁路模型看和记进过往任务时仍接在正文后面（deliveryTextWithNote），与 10-13 之前的正文一致。
+   */
+  hostNote?: string;
+}
+
+export const USER_DELIVERY_HOST_NOTE_MAX = 200;
+
+/** 正文加宿主补的一句，超长时截掉正文尾部并标明：与 10-13 之前写进正文的样子逐字相同。 */
+export function deliveryTextWithNote(delivery: Pick<UserDelivery, "text" | "hostNote">): string {
+  if (!delivery.hostNote) return delivery.text;
+  const text = `${delivery.text}\n\n${delivery.hostNote}`;
+
+  return text.length <= USER_DELIVERY_TEXT_MAX ? text : `${text.slice(0, USER_DELIVERY_TEXT_MAX - 12)}…（后文已截断）`;
 }
 
 /** Cumulative text of an explicitly user-facing answer; not ordinary model text_delta. */
@@ -475,7 +490,8 @@ export function isUserDelivery(v: unknown): v is UserDelivery {
     && (d.facts === undefined || isUserDeliveryFacts(d.facts))
     && (d.unfinished === undefined || Array.isArray(d.unfinished) && d.unfinished.length >= 1 && d.unfinished.length <= USER_DELIVERY_FACT_ITEM_MAX
       && d.unfinished.every(isUnfinishedItem))
-    && (d.sources === undefined || isDeliverySourceList(d.sources));
+    && (d.sources === undefined || isDeliverySourceList(d.sources))
+    && (d.hostNote === undefined || shortText(d.hostNote, USER_DELIVERY_HOST_NOTE_MAX));
 }
 
 export function isSpeakableDelivery(d: UserDelivery | null | undefined, runId?: string | null): d is UserDelivery {

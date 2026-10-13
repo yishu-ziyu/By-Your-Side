@@ -9,7 +9,7 @@ import type { TranslationBlock, TranslationSegment } from "../../shared/page-tra
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createTaskResultsTool} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
-import {isTaskProgressSnapshot} from "../../shared/voice.js";
+import {deliveryTextWithNote, isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
 import {randomUUID} from "node:crypto";
@@ -2308,7 +2308,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const snapshot = this.conversationSnapshot();
     const delivery = snapshot?.conversationContext?.latestDelivery;
 
-    return delivery && delivery.runId === snapshot?.runId ? delivery.text : "";
+    return delivery && delivery.runId === snapshot?.runId ? deliveryTextWithNote(delivery) : "";
   }
 
   /** 目标核对只看主会话里用过工具（交付、记忆、目标记账除外）、最后在问用户或说还没查的任务：纯聊天、用户停止、接管、出错都不核对。 */
@@ -2410,7 +2410,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       endedOn = page ? String(page.url ?? "") : "";
       pageNow = page ? `${endedOn}\n${pageText}` : null;
       const delivery = snapshot?.conversationContext?.latestDelivery;
-      const partial = !!delivery && delivery.runId === runId && delivery.text === lastReply && (delivery.facts?.outcome === "partial" || !!delivery.unfinished?.length);
+      const partial = !!delivery && delivery.runId === runId && deliveryTextWithNote(delivery) === lastReply && (delivery.facts?.outcome === "partial" || !!delivery.unfinished?.length);
 
       if (gaveUpWithoutChange({ reply: lastReply, partial, pageAtNudge: this.nudgePage?.runId === runId ? this.nudgePage.page : null, pageNow })) {
         verdict = { status: "open", remaining: null, cause: "gave_up_page_unchanged" };

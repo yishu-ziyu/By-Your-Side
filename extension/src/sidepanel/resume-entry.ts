@@ -36,6 +36,9 @@ const WAITING_TEXT: Record<string, string> = {
   runtime_error: "出错了，助手只给你已确认的结果",
 };
 
+/** 只是在复述某个结果未知、受阻的执行项的等待原因：目标核对判做完后不再为它出卡。 */
+const CHECK_COVERS_WAITING = new Set(["tool_failed", "unknown_with_baseline", "unknown_without_baseline"]);
+
 const INTERRUPTION_DETAIL: Record<string, string> = {
   host_restart: "扩展后台重启了",
   connection_lost: "扩展后台断开了",
@@ -195,7 +198,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   }
 
   const done = view.results.filter((r) => r.status === "satisfied").map((r) => ({ id: r.id, description: plainStep(r.description) }));
-  // 核对判做完：没核对过的计划目标不再算剩余（结果未知、受阻的执行项照旧保留）。
+  // 核对判做完：没核对过的计划目标不再算剩余。结果未知、受阻的执行项仍列在摘要里，但结束后的卡片不再为它们出现（见下方 visible）。
   const checkedDone = checkedRemaining(view)?.length === 0;
 
   const remaining = view.outstanding.filter((r) => !(checkedDone && unverifiedGoal(view, r)))
@@ -247,11 +250,16 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   if (blocked) gaps.push(`${blocked} 步没做成，助手要换个做法`);
 
   // 运行中由顶部任务条负责；这张卡只在需要用户处理时出现（页面归你、中断、出错、停止或结束后仍有剩余）。
+  // 结束后目标核对判做完（#334，主会话 10-13 定）：结果未知、受阻的执行项不再出卡，那一步的状态只留在展开的过程里
+  // （它的 chip 已写「没做成」）；发送类动作另有发送前确认把关。只是复述这些执行项的等待原因同样不出卡，其他等待照旧出卡。
+  const coveredByCheck = checkedDone && view.state === "idle";
+  const waitingShows = !!view.waiting && !(coveredByCheck && CHECK_COVERS_WAITING.has(view.waiting.reason));
+
   const visible = checkpointUnavailable
     || ["paused", "interrupted", "error"].includes(view.state)
     || (view.state === "aborted" && (remaining.length > 0 || !!view.waiting))
     // 模型在回答里自己交代的没做完（declaredUnfinished）不另出卡：回答已经说了，「继续」也不提供（#103）。
-    || (view.state === "idle" && (remaining.length > 0 || !!view.waiting));
+    || (view.state === "idle" && ((remaining.length > 0 && !coveredByCheck) || waitingShows));
 
   return {
     visible,
