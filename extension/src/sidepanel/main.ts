@@ -3277,7 +3277,10 @@ function ensureRun(): NonNullable<typeof currentRun> {
   reveal.className = "run-reveal";
   reveal.append(body);
   root.append(summary, reveal);
-  messagesEl.appendChild(root);
+  // 恢复记录时任务卡不在记录里，接续入口一直留在消息流末尾：过程块和这一轮其他内容一样排在它前面，
+  // 否则插在过程块前面的开场话会落到入口后面，收尾时收不进过程。实时时入口很快被任务卡收走，保持原样。
+  if (replayingHistory) appendToMessages(root);
+  else messagesEl.appendChild(root);
   const trail = document.createElement("div");
   trail.className = "run-trail";
   trail.hidden = true;

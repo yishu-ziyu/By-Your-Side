@@ -7,7 +7,7 @@
  *      过程行核对期间写「核对中…」，之后写「已核对页面」；过程里不再重复回答原文。
  *   B) 同样的路径，核对判没做到（blocked）：出现「继续原任务」，过程行写「没做成」。
  *   C) 核对还没出结论，用户又问了一句：那次核对作废，上一轮的过程行不再一直写「核对中…」。
- *   D) 重新打开侧栏：较早的一轮也收起（读回在过程里，过程行写核对结论）。
+ *   D) 重新打开侧栏：较早的一轮也收起（开场话和读回在过程里，过程行写核对结论）；最后一条用户消息之后不再有散落的开场话。
  *   E) 最后一步没做成、随后交了回答、核对判做完：过程行写「已核对页面」，不写成出错结束的「有 1 步没做成」（真模型维基百科任务里出现过）。
  * 判据只看侧栏里用户看得到的内容。
  * 失败方式：去掉「核对判做完后不出卡」，A 的「继续原任务」仍在（反例结果写在 PR 描述里）。
@@ -228,9 +228,11 @@ try {
   const restored = await until(async () => { const t = await rp.evaluate(panel, TURN_JS(CASES.a.ask, CASES.a.final)).catch(() => null) as Turn | null; return t?.answer ? t : undefined; }, 30_000, "d: history restored", 200);
   await sleep(1_000);
   const aRestored = await rp.evaluate(panel, TURN_JS(CASES.a.ask, CASES.a.final)) as Turn;
-  evidence.d = { ...aRestored, panelText: undefined, firstSeen: restored.summary };
-  // 开场话恢复时排到最底下，main 上同样如此，另行修复；这里只看读回和过程行。
+  const strayOpenings = await rp.evaluate(panel, `(() => { const top = [...document.querySelectorAll("#messages > *")]; const last = top.findLastIndex(n => n.matches(".msg.user")); return top.slice(last + 1).filter(n => n.matches(".opening-line")).map(n => n.textContent.trim()); })()`) as string[];
+  evidence.d = { ...aRestored, panelText: undefined, firstSeen: restored.summary, strayOpenings };
   assert.ok(aRestored.evidenceInProcess && !aRestored.evidenceOutside && /已核对页面/.test(aRestored.summary ?? ""), `d: the first turn is folded after reopening: ${JSON.stringify(evidence.d)}`);
+  assert.ok(aRestored.openingInProcess && !aRestored.openingOutsideVisible, `d: the first turn's opening line is inside its process block after reopening: ${JSON.stringify(evidence.d)}`);
+  assert.deepEqual(strayOpenings, [], `d: no opening line sits after the last user message: ${JSON.stringify(evidence.d)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
