@@ -2,6 +2,7 @@ import { realtimeBrowserError, validateRealtimeBrowserTool, type RealtimeBrowser
 import type { VoiceInputContext } from '../../shared/voice.js';
 import {TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
+import {answerSpeech} from '../../shared/answer-cards.js';
 import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
 import type {UserInputOptions} from "./session.js";
@@ -679,7 +680,7 @@ return {kind:'none',resumeReadOnly:'chat'};}
 
     const published=this.getTaskProgress(id);
 
-    return {kind:'none',resumeReadOnly:'chat',snapshot:published??undefined,spokenText:delivery.text,turn:{branch:'reply',phase:'COMMITTED',protocol:'free_reply'}};
+    return {kind:'none',resumeReadOnly:'chat',snapshot:published??undefined,spokenText:answerSpeech(delivery.text),turn:{branch:'reply',phase:'COMMITTED',protocol:'free_reply'}};
   }
   private beginDeliveryStream(conversationId:string,kind:UserDeliveryKind,before:TaskProgressSnapshot,stillCurrent:()=>boolean,voiceTurn?:number){
     const id=randomUUID(),runId=before.runId??null,control=this.controlVersions.get(conversationId)??0;
@@ -843,7 +844,7 @@ return host?[host]:[];}))].slice(0,16);
       revisions:(snap.recoveryInput?.requirements??[]).filter(text=>text!==snap.goal).slice(-16).map(text=>clip(text,600)),
       hosts,
       outcome:snap.state==='aborted'?'stopped':snap.state==='error'?'error':snap.goalCheck?(snap.goalCheck.status==='done'?'complete':'partial'):view.resumable||unfinished.length?'partial':'complete',
-      summary:clip(((delivery?deliveryTextWithNote(delivery):'')||lastReply).replace(/\s+/g,' ').trim(),600),
+      summary:clip(answerSpeech((delivery?deliveryTextWithNote(delivery):'')||lastReply).replace(/\s+/g,' ').trim(),600),
       unfinished,startedAt:snap.startedAt,endedAt:Date.now(),
     };
 

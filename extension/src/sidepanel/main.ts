@@ -17,6 +17,8 @@ import { createOrb, type OrbHandle } from "./orb.js";
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
 import { renderMarkdownHtml } from "./markdown.js";
+import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
+import { answerSpeech } from "../../../shared/answer-cards.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
@@ -220,7 +222,7 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 });
 
 function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(renderMarkdownHtml(text));
+  return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml));
 }
 
 const app = document.getElementById("app")!;
@@ -5227,7 +5229,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
     const previous = resultByConversation.get(cid);
     const facts = delivery.facts;
     resultByConversation.set(cid, {
-      summary: delivery.text.trim().slice(0, 160),
+      summary: answerSpeech(delivery.text).trim().slice(0, 160),
       // 未完成项只来自事实链；旧记录缺字段时保持原值，不从叙述猜。
       remaining: facts ? facts.remaining.map((item) => item.description) : previous?.remaining ?? [],
       unknown: facts ? facts.remaining.some((item) => item.status === "unknown") : previous?.unknown ?? false,
@@ -6393,6 +6395,9 @@ function stopCurrentTask(): void {
 
   if (currentRun) { currentRun.orbActivity.stop(); syncRunOrb(currentRun); }
 }
+
+// 回答卡片上的「替我说一句」按钮：只发按钮上的话，不带草稿和附件。
+bindAnswerCards(messagesEl, (text) => sendInput(text));
 
 sendBtn.onclick = () => {
   if (sendBtn.classList.contains("stopping")) {
