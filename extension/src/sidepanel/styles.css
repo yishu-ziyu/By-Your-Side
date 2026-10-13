@@ -2668,6 +2668,8 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 .run-steps .thinking::before { background: var(--content-border); animation: none; }
 .run-steps .thinking summary { font-size: 11px; }
 .msg.assistant[data-delivery-kind="start_ack"] { font-family: var(--font); font-size: 12px; color: var(--text-secondary); }
+/* 开场话是助手说要怎么做，不是回答：用小一号的说明字，回答才用正文大小。 */
+.msg.assistant.markdown.opening-line { font-family: var(--font); font-size: var(--fs-ui); line-height: 1.6; color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) { .msg { animation: none; } }
 
 /* 原生 details 保留键盘语义；内容包裹层允许自然高度折叠。 */
@@ -2894,6 +2896,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .steer-chip:hover { background:color-mix(in srgb, var(--apple-orange) 8%, var(--content-bg)); }
 .steer-chip:active { transform:scale(.96); }
 .steer-chip:focus-visible { outline:2px solid var(--apple-orange); outline-offset:1px; }
+.steer-received { align-self:flex-end; margin:-6px 4px 0; font-size:11px; color:var(--text-tertiary); }
 .steer-tag { align-self:flex-start; display:inline-flex; align-items:center; gap:4px; margin:0 0 -10px; padding:2px 8px; border-radius:6px; background:color-mix(in srgb, var(--apple-orange) 12%, transparent); color:var(--apple-orange); font-size:11px; font-weight:600; }
 @keyframes steer-morph-in { from { opacity:0; filter:blur(3px); transform:translateY(4px); } to { opacity:1; filter:none; transform:none; } }
 .msg.steer-morph { animation:steer-morph-in var(--d-layout) var(--e-out); }
@@ -3097,6 +3100,9 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 132px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
+/* 收尾后的分叉不留「查了 N 路」这类行：做过的事在展开的过程里，默认视图只留过程行和回答。 */
+.run-graph-group[data-state="folded"] { display: none; }
+.run-live-graph:not(:has(> .run-graph-group:not([data-state="folded"]))) { display: none; }
 .run-graph-group { position: relative; min-width: 0; }
 .run-graph-group[data-kind="you"] { color: var(--apple-blue); }
 .run-graph-rows { display: flex; flex-direction: column; }
@@ -3200,7 +3206,7 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
 
 /* #263 AC：进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }
-details.run-steps > summary > .run-meta { flex-basis: 100%; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
+details.run-steps > summary > .run-meta { flex-basis: 100%; overflow-wrap: anywhere; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 details.run-steps > summary > .run-meta::after { content: " ›"; color: var(--text-quaternary); }
 details.run-steps > summary:hover > .run-meta { color: var(--text-secondary); }
 details.run-steps.done > summary > .run-meta { display: none; }
@@ -3516,7 +3522,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .fill-evidence { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--content-border); border-radius: var(--radius-sm); background: var(--content-bg); font-size: 13px; }
 .fill-evidence-line { overflow-wrap: anywhere; }
 .fill-evidence-line b { font-weight: 600; }
-.claim-fix { margin: 4px 0 8px; font-size: 13px; color: var(--warn); overflow-wrap: anywhere; }
+.run-superseded { margin: 2px 0; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-tertiary); overflow-wrap: anywhere; }
 
 /* 交给你（docs/evals/20261010-hand-to-user.md R1）：与错误卡同一种卡片，左边线用强调色。 */
 .handoff-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); }
@@ -3545,3 +3551,78 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 @media (prefers-reduced-motion: reduce) {
   #handoff-banner:not([hidden]) { animation: none; opacity: 1; transform: none; }
 }
+/* ── 10-13 设计审视：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
+   依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
+   「Semantics are secondary」；NN/g「How to communicate errors」；Apple HIG Toolbars / Text fields。 */
+
+/* 间距分组：一轮之内 8，轮与轮之间 28。原来所有块一律 24，看不出哪些是一组。 */
+#messages { gap: var(--s-2); }
+#messages > .msg.user:not(:first-child) { margin-top: 20px; }
+.ctx-chips { margin-top: -4px; }
+
+/* 你说的话：消息不能点，去掉立体的高光和描边，只留浅底。 */
+.msg.user { box-shadow: none; border-color: transparent; }
+
+/* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
+.run-title { font-size: var(--fs-ui); line-height: 20px; }
+details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-ui); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+/* 系统说明（调试横幅）：不再挂在过程的竖线下面像引用的回答，改成一条浅底小提示。 */
+.run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
+.run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--content-subtle); color: var(--text-secondary); }
+
+/* 输入框：空着时一行高，打字后随内容长高；白纸底 + 细边 + 很浅的影子，是整屏唯一浮起来的东西。 */
+#input { min-height: 22px; line-height: 22px; font-size: 14px; }
+#composer { gap: 6px; padding: 10px 8px 8px 14px; background: var(--content-bg); border-color: var(--glass-border); box-shadow: 0 1px 2px rgb(20 20 19 / .04), 0 4px 16px rgb(20 20 19 / .05); }
+#composer:focus-within { box-shadow: 0 1px 2px rgb(20 20 19 / .05), 0 6px 20px rgb(20 20 19 / .07); }
+
+/* 「接管」和旁边的图标按钮同一种样子（无边框），停止仍是唯一的实心圆。 */
+#takeover-btn { box-shadow: none; color: var(--text-secondary); padding: 0 10px; }
+
+/* 顶栏：三样都用图标。「记忆」从文字换成书签图标（悬停仍显示说明）。 */
+#memory-open { width: 28px; padding: 0; font-size: 0; color: var(--text-secondary); }
+#memory-open::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; }
+
+/* 空白页：光球和问候留在正中（用户 10-13 定），建议贴到输入框上方，左对齐成一列。 */
+#app.starter-ready.conversation-empty #starter { justify-content: flex-start; padding-bottom: 4px; }
+#starter-orb { margin-top: auto; }
+#starter-actions { margin-top: auto; padding-top: 24px; flex-direction: column; flex-wrap: nowrap; align-self: stretch; align-items: stretch; gap: 2px; }
+#starter-actions button { text-align: left; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); font-size: 13.5px; padding: 9px 10px; }
+#starter-actions button:first-child { background: var(--content-bg); box-shadow: 0 0 0 1px var(--content-border); }
+
+/* 用到的记忆：不再接在回答句子后面，单独一行小字放在回答下面。 */
+.memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }
+
+/* 出错：服务出错不是用户的错，用温和的浅底，不用红色粗边和阴影；红色只留在标题前的小点。 */
+.error-card { border: 0; border-radius: var(--r); background: var(--content-subtle); padding: 12px 14px; gap: 6px; box-shadow: none; }
+.error-card strong { display: flex; align-items: center; gap: 7px; font-weight: 550; }
+.error-card strong::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--err); flex: none; }
+.error-card > p { padding-left: 14px; }
+.error-card-actions { padding-left: 14px; }
+.error-card .btn-primary, .error-card .btn-quiet { padding: 7px 12px; font-weight: 500; }
+
+/* 文件卡：一行排开，左边类型图标（图片用缩略图），右边灰色图标按钮（打开、下载、展开）。
+   墨蓝留给助手在页面上的动作；次要操作用图标，不做成一排带底色的按钮（Refactoring UI「Semantics are secondary」）。 */
+.artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border-color: var(--content-border); }
+.artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: 8px; background: var(--content-subtle) center / 16px no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
+.artifact-open, .artifact-download, .artifact-preview-toggle { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 0; display: inline-grid; place-items: center; }
+.artifact-open::before, .artifact-download::before, .artifact-preview-toggle::before { content: ""; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
+.artifact-open { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E"); }
+.artifact-download { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 15V3M7 10l5 5 5-5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3C/svg%3E"); }
+.artifact-preview-toggle { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7'/%3E%3C/svg%3E"); }
+.artifact-card[data-expanded="true"] .artifact-preview-toggle { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7'/%3E%3C/svg%3E"); }
+.artifact-open + .artifact-download { margin-left: -6px; }
+.artifact-open:hover, .artifact-download:hover, .artifact-preview-toggle:hover { background: var(--content-subtle); color: var(--text-primary); }
+.artifact-inline-toggle { border: 0; background: var(--content-subtle); color: var(--text-primary); }
+.artifact-card[data-kind="image"] { grid-template-columns: 36px minmax(0, 1fr) auto auto auto; gap: 8px 4px; align-items: center; }
+.artifact-card[data-kind="image"] .artifact-info { grid-column: 2; grid-row: 1; padding-left: 6px; }
+.artifact-card[data-kind="image"] .artifact-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artifact-card[data-kind="image"] .artifact-open { grid-column: 3; grid-row: 1; justify-self: auto; }
+.artifact-card[data-kind="image"] .artifact-download { grid-column: 4; grid-row: 1; margin-left: 0; }
+.artifact-card[data-kind="image"] .artifact-preview-toggle { grid-column: 5; grid-row: 1; }
+.artifact-card[data-kind="image"] .artifact-preview { grid-row: 1; width: 36px; height: 36px; border-radius: 8px; }
+.artifact-card[data-kind="image"][data-expanded="true"] .artifact-info { grid-column: 1 / 3; padding-left: 4px; }
+.artifact-card[data-kind="image"][data-expanded="true"] .artifact-preview { grid-column: 1 / -1; grid-row: 2; width: 100%; height: auto; border-radius: 8px; }
+
+/* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
+#messages { overflow-x: hidden; }

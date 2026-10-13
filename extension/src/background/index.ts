@@ -66,7 +66,7 @@ import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
-import { detachSoon, setDebugBannerNotice } from "./debugger.js";
+import { detachSoon } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
@@ -948,7 +948,6 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
 }
 
 // 提示条只在助手操作页面时出现：说明跟着这一轮走，结束后不再压在回答上方（#103）。
-setDebugBannerNotice(() => broadcastVisibleServer({ type: "agent_event", event: { kind: "notice", aside: true, message: "Chrome 顶部的“正在调试此浏览器”，表示助手在操作页面。任务结束后，可以关掉这条提示，不影响你的数据。" } }));
 
 /** T03：每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
 const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();
