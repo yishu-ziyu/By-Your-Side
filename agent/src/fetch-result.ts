@@ -34,9 +34,9 @@ export function formatFetchReply(reply: FetchReply): string {
 }
 
 /**
- * fetch 回执的失败判定：没拿到内容就算这一步失败，并给侧栏一句 ≤16 字的人话原因。
- * status 0 是请求没拿到 HTTP 响应（网络错误或被拦）；非 2xx 按状态说；2xx 但正文空也算没拿到。
- * 返回 null 表示成功。
+ * fetch 回执的失败判定：没拿到 HTTP 响应或状态不是 2xx，这一步算失败，并给侧栏一句 ≤16 字的人话原因。
+ * status 0 是请求没拿到 HTTP 响应（网络错误或被拦）；非 2xx 按状态说。
+ * 2xx 但正文空（如 204）是对方正常答了「没有内容」，不算失败。返回 null 表示成功。
  */
 export function fetchFailureReason(reply: FetchReply): string | null {
   if (reply.status === 0) return "连不上这个地址";
@@ -48,8 +48,6 @@ export function fetchFailureReason(reply: FetchReply): string | null {
 
     return `没拿到内容（${reply.status}）`;
   }
-
-  if (reply.bytes === 0 || reply.text.trim() === "") return "接口没返回内容";
 
   return null;
 }
