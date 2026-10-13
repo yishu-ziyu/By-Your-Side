@@ -2,8 +2,9 @@ import { createElement as icon, Ellipsis } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
+import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
 
-/** 不属于回答正文的界面文字：复制时去掉。 */
+/** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
 const CHROME = ".gc-actions,.answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
 export function resultCommandShortcut(): string {
@@ -19,9 +20,7 @@ export interface ResultAction {
 }
 
 function answerBody(answer: HTMLElement): HTMLElement {
-  const body = answer.cloneNode(true) as HTMLElement;
-  body.querySelectorAll(CHROME).forEach((node) => node.remove());
-  return body;
+  return visibleBody(answer, CHROME);
 }
 
 async function writeClipboard(text: string): Promise<void> {
@@ -34,6 +33,7 @@ export async function copyAnswerText(answer: HTMLElement): Promise<void> {
 }
 
 export async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
+  if (isShortened(answer)) return writeClipboard(visibleMarkdown(answerBody(answer)));
   await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown).trim() : answerBody(answer).innerText.trim());
 }
 
