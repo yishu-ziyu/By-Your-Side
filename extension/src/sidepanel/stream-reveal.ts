@@ -175,6 +175,8 @@ const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: re
  */
 export function revealText(el: HTMLElement, text: string, opts: Options & { live: boolean; final: boolean; after?: () => void }): void {
   let reveal = reveals.get(el);
+  // 原文留在元素上：「复制为 Markdown」要原样的标题、列表、链接和代码块，渲染后的 DOM 里已经没有了。
+  el.dataset.markdown = text;
 
   if (!opts.live || reducedMotion()) {
     if (reveal) {
