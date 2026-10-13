@@ -19,8 +19,11 @@ export function setFillUndoSender(fn: () => void): void {
   send = fn;
 }
 
+/** 有按钮可言的状态。ready 但 count 为 0 只是说明（例如编辑器里的文字没还原），不出按钮。 */
 export function fillUndoOf(answer: HTMLElement): FillUndoView | undefined {
-  return views.get(answer);
+  const view = views.get(answer);
+
+  return view?.state === "ready" && view.count === 0 ? undefined : view;
 }
 
 export function isFillUndoPending(answer: HTMLElement): boolean {
@@ -49,7 +52,7 @@ export function fillUndoLabel(view: FillUndoView): string {
 /** 文末一排下面那一行；ready 时没有。第一个元素加粗。 */
 function resultLine(view: FillUndoView): [string, string] | null {
   switch (view.state) {
-    case "ready": return null;
+    case "ready": return view.count === 0 && view.notes.length ? ["", notes(view.notes)] : null;
     case "submitted": return ["表单已经交给网站", "，扩展撤不回。要改请在网站上修改或取消。"];
     case "page_changed": return view.fields.length
       ? ["页面已经换了", `，${quote(view.fields)}找不到了，扩展撤不回。`]
@@ -73,6 +76,7 @@ function paint(answer: HTMLElement, busy = false): void {
   answer.classList.toggle("fill-undone", view?.state === "restored");
   // 已还原 / 已提交 / 页面变了是这条回答的状态，文末一排一直显示，不等悬停。
   answer.classList.toggle("fill-undo-settled", !!view && view.state !== "ready");
+  // 只有说明时，结果行跟着回答一直显示，不然用户不知道哪里没还原。
   let line = answer.querySelector<HTMLElement>(":scope > .fill-undo-result");
   const text = busy ? ["助手还在做事", "，做完后再点还原。"] as [string, string] : view ? resultLine(view) : null;
 
@@ -88,7 +92,7 @@ function paint(answer: HTMLElement, busy = false): void {
   }
   const strong = document.createElement("b");
   strong.textContent = text[0];
-  line.replaceChildren(strong, text[1]);
+  line.replaceChildren(...(text[0] ? [strong] : []), text[1]);
   refresh(answer);
 }
 
@@ -126,7 +130,7 @@ export function adoptFillUndo(answer: HTMLElement): void {
 
 /** 点了「还原填写」：按钮先灰掉写“正在还原…”，等后台回话。 */
 export async function requestFillUndo(answer: HTMLElement): Promise<void> {
-  if (views.get(answer)?.state !== "ready" || pending.has(answer)) return;
+  if (fillUndoOf(answer)?.state !== "ready" || pending.has(answer)) return;
   pending.add(answer);
   refresh(answer);
 

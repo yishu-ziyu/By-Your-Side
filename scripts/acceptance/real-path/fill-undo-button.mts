@@ -7,6 +7,8 @@
  *   2) 助手填完，用户自己点网页的提交：按钮灰掉写「已提交，收不回」，下面写为什么。
  *   3) 助手填完，页面刷新：按钮灰掉写「页面变了，收不回」。
  *   4) 助手填完、用户没点还原就开始下一轮：那条回答的按钮换回「复制」。已提交、页面变了的回答保留原状态。
+ *   5) 助手只改了编辑器里的文字（没有能还原的格子）：不出还原按钮，回答下写“编辑器里的文字没还原。”。
+ * “已提交”只认网页真的提交表单：2) 里是用户真实点击提交按钮、网页发出 submit 事件。
  *   另：空输入框按回车不会还原（只能点按钮）；还原后重开侧栏，只有这一轮的回答是“已还原”，更早的回答不变淡。
  * 后台怎样记、怎样写回由 fill-undo.mts 验收；这里只看侧栏用户看得到的样子。
  */
@@ -29,6 +31,7 @@ const site = createServer((_req, res) => {
 <label>姓名 <input id="name"></label><br>
 <label>手机号 <input id="phone"></label><br>
 <label>人数 <select id="size"><option>1 人</option><option selected>2 人</option><option>3 人</option><option>4 人</option></select></label><br>
+<div id="note" contenteditable="true" aria-label="备注">原备注</div>
 <button id="submit" type="submit">提交预约</button>
 <p id="sent" hidden>已提交</p>
 </form></main></body></html>`);
@@ -38,8 +41,8 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 const tool = (name: string, args: Record<string, string>) => ({ tool: { name, args } });
-const ASK = { chat: "按钮案例零：你好。", form: "按钮案例一：帮我把预约填好，先别提交。", submit: "按钮案例二：只填姓名。", reload: "按钮案例三：只填手机号。", left: "按钮案例四：只填人数。", next: "按钮案例五：好的。" };
-const DONE = { chat: "你好，要我帮你做什么？", form: "填好了：4 个人，联系人王小明。还没有点提交，你核对一下。", submit: "姓名填好了。", reload: "手机号填好了。", left: "人数填好了。", next: "好的，有事再叫我。" };
+const ASK = { note: "按钮案例六：只改备注。", chat: "按钮案例零：你好。", form: "按钮案例一：帮我把预约填好，先别提交。", submit: "按钮案例二：只填姓名。", reload: "按钮案例三：只填手机号。", left: "按钮案例四：只填人数。", next: "按钮案例五：好的。" };
+const DONE = { note: "备注改好了。", chat: "你好，要我帮你做什么？", form: "填好了：4 个人，联系人王小明。还没有点提交，你核对一下。", submit: "姓名填好了。", reload: "手机号填好了。", left: "人数填好了。", next: "好的，有事再叫我。" };
 
 const model = await startScriptedModel([
   { match: ASK.form, steps: [tool("fill", { target: "#name", value: "13812345678" }), tool("fill", { target: "#phone", value: "王小明" }), tool("select_option", { target: "#size", values: "4 人" }), { text: DONE.form }] },
@@ -48,6 +51,7 @@ const model = await startScriptedModel([
   { match: ASK.chat, steps: [{ text: DONE.chat }] },
   { match: ASK.left, steps: [tool("select_option", { target: "#size", values: "3 人" }), { text: DONE.left }] },
   { match: ASK.next, steps: [{ text: DONE.next }] },
+  { match: ASK.note, steps: [tool("fill", { target: "#note", value: "新备注" }), { text: DONE.note }] },
 ]);
 
 const rp = await launchRealPath();
@@ -161,6 +165,13 @@ try {
   evidence.nextRound = { left, kept };
   assert.ok(!left.disabled && !left.result, `4: 没点过的还原按钮换回复制 ${JSON.stringify(left)}`);
   assert.deepEqual(kept, { submitted: "已提交，收不回", changed: "页面变了，收不回" }, "4: 已提交、页面变了的回答保留原状态");
+
+  // 5) 只有说明、没有能还原的格子。
+  await run("note");
+  const note = await until(async () => { const s = await seen(DONE.note); return s.result ? s : undefined; }, 15_000, "note line", 100);
+  evidence.noteOnly = note;
+  assert.ok(note.button === "复制" && note.result === "编辑器里的文字没还原。", `5: 只有说明时不出还原按钮，只写说明 ${JSON.stringify(note)}`);
+  await rp.screenshot(panel, join(artifacts, "5-note-only.png"));
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
