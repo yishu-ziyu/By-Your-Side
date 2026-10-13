@@ -138,7 +138,7 @@ try {
     const copied = await rp.evaluate(panel, `window.__copied`) as string[];
     evidence.copied = copied;
     assert.equal(copied[0], FIRST, "复制拿到的是一句层");
-    assert.equal(copied[1], FIRST, "复制为 Markdown 拿到的也是一句层");
+    assert.equal(copied[1], `**${FIRST}**`, "复制为 Markdown 拿到的也是一句层，加粗照留");
 
     // 点一下：最短再点回全文；键盘上键短一层、下键长一层。
     await drag(0);
