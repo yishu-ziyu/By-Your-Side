@@ -1,4 +1,5 @@
-// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--learn]
+// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn]
+// --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
 // --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md).   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
 // Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
 import { join } from "node:path";
@@ -9,39 +10,81 @@ const [root, outDir, arm] = process.argv.slice(2);
 const repeat = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 2;
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const learn = process.argv.includes("--learn");
-const MODEL = "openai-codex/gpt-6.1-sol";
+const MODEL = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? "openai-codex/gpt-6-luna";
+const think = process.argv.find((a) => a.startsWith("--think="))?.slice(8);
+const splitArg = process.argv.find((a) => a.startsWith("--split="))?.slice(8);
 const START = "https://example.com/";
 const dec = (u: string) => { try { return decodeURIComponent(u); } catch { return u; } };
 
 type Tab = { url: string; title: string };
 type Ctx = { answer: string; tabs: Tab[]; probe: unknown; truth: Record<string, string> };
-type Task = { id: string; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
+type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
 
 const ghTop = async () => { const h = await (await fetch("https://github.com/trending", { headers: { "user-agent": "Mozilla/5.0" } })).text(); return h.match(/<h2 class="h3 lh-condensed">[\s\S]*?href="\/([^"]+)"/)?.[1] ?? ""; };
 const hnTop = async () => { const h = await (await fetch("https://news.ycombinator.com/")).text(); return (h.match(/<span class="titleline"><a [^>]*>([^<]+)<\/a>/)?.[1] ?? "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); };
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+const unescape = (s: string) => s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&#x2F;/g, "/");
+/** The n-th front-page item of HN (1-based): id, title, and where its title links (an absolute URL, or the item page for Ask HN). */
+const hnItem = async (n: number) => {
+  const h = await (await fetch("https://news.ycombinator.com/")).text();
+  const m = [...h.matchAll(/<tr class="athing[^"]*" id="(\d+)">[\s\S]*?<span class="titleline"><a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)][n - 1];
+  if (!m) return { id: "", link: "", title: "" };
+  const link = unescape(m[2]!);
+  return { id: m[1]!, link: /^https?:/.test(link) ? link : `https://news.ycombinator.com/${link}`, title: unescape(m[3]!) };
+};
+/** URL without scheme, www, trailing slash and hash: the same page whichever way it was reached. */
+const bare = (u: string) => dec(u).replace(/^https?:\/\/(www\.)?/, "").replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
+const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+const todos = (c: Ctx) => JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[];
+const TODO_PROBE = `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`;
 
 const TASKS: Task[] = [
-  { id: "S1", group: "搜索", name: "必应搜天气", prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 天气。",
+  { id: "S1", split: "train", group: "搜索", name: "必应搜天气", prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 天气。",
     check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("天气")) ? null : "没有到必应“天气”的结果页",
     second: { prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 新闻。", check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("新闻")) ? null : "没有到必应“新闻”的结果页" } },
-  { id: "S2", group: "搜索", name: "维基百科搜长城", prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“长城”，打开“长城”这个条目。",
+  { id: "S2", split: "train", group: "搜索", name: "维基百科搜长城", prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“长城”，打开“长城”这个条目。",
     check: (c) => c.tabs.some((t) => /wikipedia\.org\/(wiki|zh-[a-z]+)\/长城$/.test(dec(t.url).split("#")[0])) ? null : "没有打开“长城”条目",
     second: { prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“故宫”，打开“故宫”这个条目。", check: (c) => c.tabs.some((t) => /wikipedia\.org\/(wiki|zh-[a-z]+)\/(故宫|故宮|北京故宫)/.test(dec(t.url).split("#")[0])) ? null : "没有打开“故宫”条目" } },
-  { id: "R1", group: "读取", name: "HN 第一条", prompt: "打开 https://news.ycombinator.com ，告诉我现在排第一的帖子标题（保留英文原文）。",
+  { id: "R1", split: "train", group: "读取", name: "HN 第一条", prompt: "打开 https://news.ycombinator.com ，告诉我现在排第一的帖子标题（保留英文原文）。",
     truth: async () => ({ before: await hnTop() }),
     check: (c) => [c.truth.before, c.truth.after].some((t) => t && norm(c.answer).includes(norm(t))) ? null : `回答里没有第一条标题（应为 ${c.truth.before}）` },
-  { id: "R2", group: "读取", name: "GitHub 热门第一", prompt: "打开 https://github.com/trending ，告诉我今天排第一的仓库是哪个（写成 作者/仓库名）。",
+  { id: "R2", split: "test", group: "读取", name: "GitHub 热门第一", prompt: "打开 https://github.com/trending ，告诉我今天排第一的仓库是哪个（写成 作者/仓库名）。",
     truth: async () => ({ before: await ghTop() }),
     check: (c) => [c.truth.before, c.truth.after].some((t) => t && norm(c.answer).replace(/\s*\/\s*/g, "/").includes(norm(t))) ? null : `回答里没有 ${c.truth.before}` },
-  { id: "F1", group: "填写", name: "测试表单提交", prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 张三，Textarea 填 你好世界，Dropdown (select) 选 Two，然后点 Submit 提交。",
+  { id: "F1", split: "train", group: "填写", name: "测试表单提交", prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 张三，Textarea 填 你好世界，Dropdown (select) 选 Two，然后点 Submit 提交。",
     check: (c) => { const t = c.tabs.find((x) => x.url.includes("submitted-form")); if (!t) return "没有提交"; const q = new URL(t.url).searchParams; const bad = [["my-text", "张三"], ["my-textarea", "你好世界"], ["my-select", "2"]].filter(([k, v]) => q.get(k) !== v).map(([k]) => k); return bad.length ? `提交的值不对：${bad.join("、")}` : null; },
     second: { prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 李四，Textarea 填 早上好，Dropdown (select) 选 Three，然后点 Submit 提交。", check: (c) => { const t = [...c.tabs].reverse().find((x) => x.url.includes("submitted-form")); if (!t) return "没有提交"; const q = new URL(t.url).searchParams; const bad = [["my-text", "李四"], ["my-textarea", "早上好"], ["my-select", "3"]].filter(([k, v]) => q.get(k) !== v).map(([k]) => k); return bad.length ? `提交的值不对：${bad.join("、")}` : null; } } },
-  { id: "F2", group: "填写", name: "TodoMVC 待办", prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买牛奶、交电费，然后把“买牛奶”标记为已完成。",
+  { id: "F2", split: "train", group: "填写", name: "TodoMVC 待办", prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买牛奶、交电费，然后把“买牛奶”标记为已完成。",
     probeUrl: /todomvc\.com\/examples\/react/, probe: `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`,
     check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; const s = JSON.stringify(items); return items.length === 2 && items.some((i) => i.t === "买牛奶" && i.done) && items.some((i) => i.t === "交电费" && !i.done) ? null : `待办是 ${s}`; },
     second: { prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买面包、修自行车，然后把“修自行车”标记为已完成。", check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; return items.some((i) => i.t === "修自行车" && i.done) && items.some((i) => i.t === "买面包" && !i.done) ? null : `待办是 ${JSON.stringify(items)}`; } } },
-].filter((t) => !only || only.includes(t.id));
+  // ── 10-14 additions (docs/evals/20261014-hillclimb.md): user task types rewritten onto public sites; X* are cross-site. ──
+  { id: "X2", split: "train", group: "跨站", name: "HN 第一条的原文", prompt: "打开 https://news.ycombinator.com ，打开排第一的帖子链接到的原文页面。",
+    truth: async () => ({ before: (await hnItem(1)).link }),
+    check: (c) => [c.truth.before, c.truth.after].some((l) => l && c.tabs.some((t) => bare(t.url) === bare(l))) ? null : `没有打开原文（应为 ${c.truth.before}）` },
+  { id: "X3", split: "train", group: "跨站", name: "HN 标题记进待办", prompt: "打开 https://news.ycombinator.com ，记下排第一的帖子标题；再打开 https://todomvc.com/examples/react/dist/ ，把这个标题原样添加为一条待办。",
+    truth: async () => ({ before: (await hnItem(1)).title }), probeUrl: /todomvc\.com\/examples\/react/, probe: TODO_PROBE,
+    check: (c) => [c.truth.before, c.truth.after].some((t) => t && todos(c).some((i) => norm(i.t) === norm(t))) ? null : `待办是 ${JSON.stringify(todos(c))}（应为 ${c.truth.before}）` },
+  { id: "E4", split: "train", group: "读取", name: "HN 第三条的评论页", prompt: "打开 https://news.ycombinator.com ，打开排第三的帖子的评论页。",
+    truth: async () => ({ before: (await hnItem(3)).id }),
+    check: (c) => [c.truth.before, c.truth.after].some((id) => id && c.tabs.some((t) => t.url.includes(`news.ycombinator.com/item?id=${id}`))) ? null : `没有打开第三条的评论页（应为 item?id=${c.truth.before}）` },
+  { id: "S7", split: "test", group: "搜索", name: "npm 搜 lodash", prompt: "打开 https://www.npmjs.com ，用页面上的搜索框搜索 lodash，打开 lodash 这个包的页面。",
+    check: (c) => c.tabs.some((t) => /^npmjs\.com\/package\/lodash$/.test(bare(t.url))) ? null : "没有打开 lodash 的包页面" },
+  { id: "R5", split: "test", group: "读取", name: "RFC 9110 标题和作者", prompt: "打开 https://www.rfc-editor.org/rfc/rfc9110.html ，告诉我这份文档的标题和第一作者。",
+    check: (c) => /http semantics/i.test(c.answer) && /fielding/i.test(c.answer) ? null : "回答里没有标题 HTTP Semantics 或第一作者 Fielding" },
+  { id: "R6", split: "test", group: "读取", name: "IANA 示例域名", prompt: "打开 https://www.iana.org/help/example-domains ，告诉我这页列出了哪几个示例域名。",
+    check: (c) => ["example.com", "example.net", "example.org"].every((d) => c.answer.toLowerCase().includes(d)) ? null : "回答里没有列全 example.com / .net / .org" },
+  { id: "Q8", split: "test", group: "读取", name: "Python 最新版本", prompt: "打开 https://www.python.org/downloads/ ，告诉我现在最新的 Python 正式版本号。",
+    truth: async () => ({ before: (await (await fetch("https://www.python.org/downloads/")).text()).match(/Download Python (\d+\.\d+\.\d+)/)?.[1] ?? "" }),
+    check: (c) => [c.truth.before, c.truth.after].some((v) => v && new RegExp(`(^|[^\\d.])${v.replace(/\./g, "\\.")}(?![\\d.]*\\d)`).test(c.answer)) ? null : `回答里没有最新版本号 ${c.truth.before}` },
+  { id: "F10", split: "test", group: "填写", name: "httpbin 订单表单", prompt: "打开 https://httpbin.org/forms/post ，Customer name 填 王五，Pizza Size 选 Medium，Toppings 勾 Bacon，然后点 Submit order 提交。",
+    probeUrl: /httpbin\.org\/post/, probe: "document.body.innerText",
+    check: (c) => { let form: Record<string, unknown> = {}; try { form = JSON.parse(String(c.probe ?? "{}")).form ?? {}; } catch { return "没有提交（读不到 httpbin 回显）"; } const toppings = ([] as unknown[]).concat(form.topping ?? []); return form.custname === "王五" && form.size === "medium" && toppings.includes("bacon") ? null : `提交的值不对：${JSON.stringify(form)}`; } },
+  { id: "X1", split: "test", group: "跨站", name: "GitHub 作者的个人网站", prompt: "打开 https://github.com/sindresorhus/got ，找到这个仓库作者的个人网站并打开。",
+    check: (c) => c.tabs.some((t) => hostOf(t.url) === "sindresorhus.com") ? null : "没有打开作者的个人网站 sindresorhus.com" },
+  { id: "X9", split: "test", group: "跨站", name: "PyPI 包的源码仓库", prompt: "打开 https://pypi.org/project/requests/ ，打开这个包的源码仓库页面。",
+    check: (c) => c.tabs.some((t) => /^github\.com\/psf\/requests$/.test(bare(t.url))) ? null : "没有打开 github.com/psf/requests" },
+].filter((t) => (!only || only.includes(t.id)) && (!splitArg || t.split === splitArg));
 
 // ---------- progress page shared by both arms (each arm writes its own json, page merges) ----------
 const statusFile = join(outDir, `status-${arm}.json`);
@@ -58,7 +101,7 @@ async function writeStatus(id: string, state: string, detail?: string) {
   const running = Object.values(all).some((m) => Object.values(m as Record<string, { state: string }>).some((s) => s.state === "run")) || ids.some((id) => !all.ext[id] || !all.ego[id]);
   await writeFile(page, `<!doctype html><meta charset="utf-8">${running ? '<meta http-equiv="refresh" content="4">' : ""}<title>真实网站对比</title>
 <style>body{font:14px system-ui;margin:20px;background:#fff;color:#222}table{border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:6px 10px;vertical-align:top;text-align:left}small{color:#666}.run{color:#b26b00}.pass{color:#1a7f37}.fail,.err{color:#c62828}.wait{color:#aaa}</style>
-<h2>真实网站对比：我们的扩展 vs Codex + ego（都用 gpt-6.1-sol，思考强度高）</h2><p>${running ? "进行中" : "已结束"} · 每格写结果、用时、浏览器操作轮数</p>
+<h2>真实网站对比：我们的扩展 vs Codex + ego（扩展用 ${MODEL}${think ? `，${think}` : ""}）</h2><p>${running ? "进行中" : "已结束"} · 每格写结果、用时、浏览器操作轮数</p>
 <table><tr><th>任务</th><th>我们的扩展</th><th>Codex + ego</th></tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${cell(all.ext[id])}${cell(all.ego[id])}</tr>`).join("")}</table>`);
 }
 
@@ -75,12 +118,14 @@ async function runExt(task: Task, id: string, dir: string) {
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(cfg.items)}).then(() => true)`);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "panel ready");
+    if (think) {
     const chip = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
     await until(async () => (await chip()) || undefined, 60_000, "think chip");
     await rp.click(panel, "#think-chip"); await sleep(350);
-    await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === "深入").click(), true`);
+    await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === ${JSON.stringify(think)}).click(), true`);
     await sleep(300);
-    if (!(await chip()).includes("深入")) throw new Error(`没选上深入：${await chip()}`);
+    if (!(await chip()).includes(think)) throw new Error(`没选上${think}：${await chip()}`);
+    }
     await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
 
     const traceLines = async () => String(await rp.evaluate(panel, `new Promise((ok) => { const r = indexedDB.open("sideagent-diagnostics"); r.onsuccess = () => { const q = r.result.transaction("trace-lines").objectStore("trace-lines").getAll(); q.onsuccess = () => ok(q.result.map(x => x.line).join("")); }; r.onerror = () => ok(""); })`));
@@ -210,7 +255,7 @@ for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {
     const r = arm === "ext" ? await runExt(task, id, dir) : await runEgo(task, id, dir);
     if (task.truth) truth.after = await truthOf();
     const reason = task.check({ answer: r.answer, tabs: r.tabs, probe: r.probe, truth });
-    const row = { id, arm, task: task.name, outcome: reason ? "fail" : "pass", reason, seconds: +(r.ms / 1000).toFixed(1), ...r, truth };
+    const row = { id, arm, split: task.split, task: task.name, outcome: reason ? "fail" : "pass", reason, seconds: +(r.ms / 1000).toFixed(1), ...r, truth };
     results.push(row);
     await writeStatus(id, reason ? "fail" : "pass", `${row.seconds} 秒 · ${r.browserCalls} 次浏览器操作${reason ? " · " + reason : ""}`);
     const sec = (r as any).second;
