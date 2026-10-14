@@ -16,13 +16,88 @@ import {
   type EffectStats,
   type EffectTargetState,
 } from "../../../shared/effect.js";
+import { overlayHostSelector } from "../shared/overlay.js";
 
 (function () {
   const ns = (window.__sideagent ??= {});
 
   if (ns.effect) return;
 
-  const sessions = new Map<string, { base: EffectBaseline; el: Element | null; at: number }>();
+  /** base 为 null：只记变化、不判效果的会话（填写、选择之后用，见 watch）。 */
+  const sessions = new Map<string, { base: EffectBaseline | null; el: Element | null; at: number; watch: Watch }>();
+
+  /** 动作期间页面上变过的地方：加进来的元素、改了显示属性的元素、改了字的元素。 */
+  interface Watch { observer: MutationObserver; added: Set<Element>; touched: Set<Element> }
+
+  /** 最多交回几处变化；更多就说“整块重画了”。 */
+  const MAX_ROOTS = 12;
+  /** 一处变化里元素超过这么多：只改了属性、字的就不算（给 body 换个 class 不等于整页都是新的）；整块新加进来的算重画。 */
+  const BIG_ROOT = 1500;
+  /** 会让元素出现、消失的属性。 */
+  const SHOWING_ATTRS = ["hidden", "style", "class", "open", "aria-hidden", "aria-expanded", "aria-modal"];
+
+  function watchChanges(): Watch {
+    const added = new Set<Element>();
+    const touched = new Set<Element>();
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        if (record.type === "childList") {
+          for (const node of record.addedNodes) {
+            if (node.nodeType === 1) added.add(node as Element);
+            else if (node.parentElement) touched.add(node.parentElement);
+          }
+        } else {
+          const el = record.target.nodeType === 1 ? record.target as Element : record.target.parentElement;
+
+          if (el) touched.add(el);
+        }
+      }
+    });
+
+    observer.observe(document, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: SHOWING_ATTRS });
+
+    return { observer, added, touched };
+  }
+
+  /** querySelector 能找回这个元素的定位串：#id，或沿祖先的 tag:nth-of-type(n) 路径（同 snapshot.ts）。 */
+  function cssPath(el: Element): string {
+    const parts: string[] = [];
+
+    for (let cur: Element | null = el; cur; cur = cur.parentElement) {
+      if ((cur as HTMLElement).id) { parts.unshift(`#${CSS.escape((cur as HTMLElement).id)}`); break; }
+      const tag = cur.tagName.toLowerCase();
+
+      if (tag === "html" || tag === "body" || !cur.parentElement) { parts.unshift(tag); break; }
+      let idx = 1;
+
+      for (const sib of Array.from(cur.parentElement.children)) {
+        if (sib === cur) break;
+        if (sib.tagName === cur.tagName) idx += 1;
+      }
+      parts.unshift(`${tag}:nth-of-type(${idx})`);
+    }
+
+    return parts.join(" > ");
+  }
+
+  /** 变过的地方，只留最外层、还在页面上、看得见、不是助手自己浮层的几处。 */
+  function changedRoots(watch: Watch): string[] | "many" {
+    for (const record of watch.observer.takeRecords()) {
+      for (const node of record.addedNodes) if (node.nodeType === 1) watch.added.add(node as Element);
+    }
+    const overlay = overlayHostSelector();
+    const shown = (el: Element) => el.isConnected && !el.closest(overlay) && (typeof el.checkVisibility !== "function" || el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+    const all = [...new Set([...watch.added, ...watch.touched])].filter(shown);
+    const top = all.filter(el => !all.some(other => other !== el && other.contains(el)));
+    const kept: Element[] = [];
+
+    for (const el of top) {
+      if (el.getElementsByTagName("*").length <= BIG_ROOT) kept.push(el);
+      else if (watch.added.has(el)) return "many";
+    }
+
+    return kept.length > MAX_ROOTS ? "many" : kept.map(cssPath);
+  }
   const SESSION_KEEP = 16;
   const SESSION_TTL_MS = 30_000;
 
@@ -156,22 +231,22 @@ import {
   function prune(): void {
     const cutoff = Date.now() - SESSION_TTL_MS;
 
-    for (const [token, session] of sessions) if (session.at < cutoff) sessions.delete(token);
+    for (const [token, session] of sessions) if (session.at < cutoff) { session.watch.observer.disconnect(); sessions.delete(token); }
 
     while (sessions.size > SESSION_KEEP) {
       const oldest = sessions.keys().next().value;
 
       if (oldest === undefined) break;
+      sessions.get(oldest)?.watch.observer.disconnect();
       sessions.delete(oldest);
     }
   }
 
   ns.effect = {
-    async begin(input: { token: string; point?: [number, number]; selector?: string; quick?: true }): Promise<{ ok: true }> {
+    async begin(input: { token: string; point?: [number, number]; selector?: string }): Promise<{ ok: true }> {
       const el = resolve(input);
       const first = cheap();
-
-      if (!input.quick) await new Promise((resolve) => setTimeout(resolve, EFFECT_VOLATILE_WINDOW_MS));
+      await new Promise((resolve) => setTimeout(resolve, EFFECT_VOLATILE_WINDOW_MS));
       const second = cheap();
 
       const base: EffectBaseline = {
@@ -181,7 +256,15 @@ import {
       };
 
       prune();
-      sessions.set(input.token, { base, el, at: Date.now() });
+      sessions.set(input.token, { base, el, at: Date.now(), watch: watchChanges() });
+
+      return { ok: true };
+    },
+
+    /** 只记动作期间哪里变了，不取基线：大页面读一次全页文字就要几十毫秒，填写之后用不着。 */
+    watch(token: string): { ok: true } {
+      prune();
+      sessions.set(token, { base: null, el: null, at: Date.now(), watch: watchChanges() });
 
       return { ok: true };
     },
@@ -189,14 +272,21 @@ import {
     diff(token: string): EffectReport | null {
       const session = sessions.get(token);
 
-      if (!session) return null;
+      if (!session?.base) return null;
       session.at = Date.now();
 
       // 目标引用保留原对象：被替换/移除本身就是强证据，重新查找会把它抹掉。
       return diffEffect(session.base, stats(session.el, cheap()));
     },
 
+    roots(token: string): string[] | "many" | null {
+      const session = sessions.get(token);
+
+      return session ? changedRoots(session.watch) : null;
+    },
+
     end(token: string): { ok: true } {
+      sessions.get(token)?.watch.observer.disconnect();
       sessions.delete(token);
 
       return { ok: true };

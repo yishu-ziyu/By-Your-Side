@@ -264,16 +264,45 @@ async function readAxPage(tabId: number, decision = false, budget?: number) {
   return { nodes, secret, zeroSize, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize) };
 }
 
-/**
- * 动作之后：和模型上次读到的这一页比，新出现了哪些行（规则见 page-changes.ts）。新行里的 ref 登记成可用。
- * 没有基准（还没读过这一页、上次是 DOM 快照）返回 null。
- */
-export async function readPageChanges(tabId: number): Promise<ReturnType<typeof pageChangesSince>> {
-  if (!hasPageBaseline(tabId)) return null;
-  const { entries } = await readAxPage(tabId);
-  const changes = pageChangesSince(tabId, entries);
+/** 一次最多读几处变化：每处是几次 CDP 往返。 */
+const MAX_CHANGED_ROOTS = 12;
 
-  if (changes && "refs" in changes) addAxRefs(tabId, changes.refs);
+/**
+ * 动作之后：只读变过的那几处（定位串来自页面里的变化记录），和模型上次读到的这一页比，交回新出现的行（规则见 page-changes.ts）。
+ * 不读整页：大页面整页读一次要 1 秒多。按定位串找元素在隔离环境里做，网页改不了 querySelector。新行里的 ref 登记成可用。
+ * 没有基准（还没读过这一页、上次是 DOM 快照）返回 null。零尺寸过滤要读全页布局，这里不做。
+ */
+export async function readPageChanges(tabId: number, roots: readonly string[], opts: { scrub: (body: string) => string; current: () => boolean }): Promise<{ text: string; refs: number[] } | null> {
+  if (!hasPageBaseline(tabId)) return null;
+
+  if (!roots.length) return { text: "", refs: [] };
+  const objectGroup = `bys-page-changes-${crypto.randomUUID()}`;
+  const contextId = await isolatedReadContext(tabId);
+  const nodes = new Map<string, AxNodeLite>();
+
+  try {
+    for (const selector of roots.slice(0, MAX_CHANGED_ROOTS)) {
+      const found = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)})`, contextId, objectGroup }).catch(() => undefined);
+
+      if (!found?.result?.objectId) continue;
+      const { node } = await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: found.result.objectId });
+      const sub = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: node.backendNodeId }).catch(() => ({ nodes: [] }));
+
+      for (const n of sub.nodes ?? []) nodes.set(n.nodeId, n);
+    }
+  } finally {
+    void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
+
+  const list = [...nodes.values()];
+  const secret = await readSecretFields(tabId, list);
+  const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
+
+  // 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
+  if (!opts.current()) return null;
+  const changes = pageChangesSince(tabId, entries, opts.scrub);
+
+  if (changes) addAxRefs(tabId, changes.refs);
 
   return changes;
 }
