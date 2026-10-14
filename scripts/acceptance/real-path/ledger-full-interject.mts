@@ -46,7 +46,8 @@ const steps: Step[] = [
 /** 主模型收到的工具结果里出现过的「账本已满」拒绝。 */
 const refusals: string[] = [];
 
-const model = await startScriptedModel([{ match: TASK, steps }], undefined, payload => {
+// 目标核对的请求正文里也有任务原话：先按核对才有的字段认出来，回「做完了」，免得它走到任务那条规则上。
+const model = await startScriptedModel([{ match: '"lastReply"', steps: [{ text: JSON.stringify({ status: "done" }) }] }, { match: TASK, steps }], undefined, payload => {
   for (const message of payload.messages ?? []) {
     const text = typeof message.content === "string" ? message.content : (message.content ?? []).map(part => part.text ?? "").join("");
 
