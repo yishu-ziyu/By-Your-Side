@@ -1826,9 +1826,7 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #composer-bar-inner,
-  #composer:focus-within #composer-bar-inner,
-  #composer.has-text #composer-bar-inner {
+  #composer-bar-inner {
     transform: none;
     transition: opacity var(--d-micro) var(--e-exit), max-height var(--d-micro) var(--e-exit);
   }
@@ -3665,7 +3663,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 
 /* 输入框左下角「6 Luna · 快」（thinking-chip.ts）：静时是一行灰字，悬停和打开时有浅底。 */
 #composer { position: relative; }
-#think-chip { all: unset; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 170px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease; }
+#think-chip { all: unset; visibility: inherit; pointer-events: inherit; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 170px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease; }
 #think-chip[hidden] { display: none; }
 #think-chip .think-model { overflow: hidden; text-overflow: ellipsis; }
 #think-chip:hover, #think-chip[aria-expanded="true"] { background: var(--content-subtle); color: var(--text-primary); }

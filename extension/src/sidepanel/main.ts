@@ -475,6 +475,25 @@ const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
 
 const attachMenu = document.getElementById("attach-menu") as HTMLElement;
 
+const composerBarInner = document.getElementById("composer-bar-inner") as HTMLElement;
+
+/** 收起时从无障碍树拿掉：思考开关用了 all:unset，否则会打穿父级 visibility。 */
+function syncComposerToolsInert(): void {
+  composerBarInner.inert = getComputedStyle(composerBarInner).visibility === "hidden";
+}
+
+composerEl.addEventListener("focusin", syncComposerToolsInert);
+composerEl.addEventListener("focusout", () => {
+  requestAnimationFrame(syncComposerToolsInert);
+});
+new MutationObserver(syncComposerToolsInert).observe(composerEl, { attributes: true, subtree: true, childList: true, attributeFilter: ["class", "hidden"] });
+new MutationObserver(syncComposerToolsInert).observe(attachMenu, { attributes: true, attributeFilter: ["hidden"] });
+document.getElementById("composer-bar")!.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element) || event.target.closest("button")) return;
+  inputEl.focus();
+});
+syncComposerToolsInert();
+
 const fileInput = document.getElementById("file-input") as HTMLInputElement;
 
 let attachments!: AttachmentsManager;
@@ -6187,6 +6206,7 @@ function autoResize(): void {
   // 程序改输入框（恢复草稿、起点建议、附件增减）都经过这里：发送键的样子跟着变。
   syncSteerSend();
   composerEl.classList.toggle("has-text", Boolean(inputEl.value.trim()));
+  syncComposerToolsInert();
 }
 
 attachments = new AttachmentsManager({
