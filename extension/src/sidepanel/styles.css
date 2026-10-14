@@ -3470,9 +3470,9 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .action-menu-item { font-size: 13px; }
 .action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
 .action-menu-item-key { margin-left: 6px; color: var(--text-tertiary); font-size: 11px; }
-/* 回答里的 ①②：点一下页面滚回那一圈再指一下（与页面上助手画的蓝圈同色）。 */
-.circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: #2d4a86; color: #fff; font: 600 11px/18px var(--font); vertical-align: 1px; cursor: pointer; }
-.circle-ref:hover { background: #22396b; }
+/* 回答里的 ①②：点一下页面滚回那一圈再指一下。靠编号对应页面上的圈；侧栏里用墨色，不另换色相。 */
+.circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: var(--text-primary); color: var(--content-bg); font: 600 11px/18px var(--font); vertical-align: 1px; cursor: pointer; }
+.circle-ref:hover { background: var(--text-secondary); }
 .circle-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .circle-ref-gone { margin-left: 4px; color: var(--text-tertiary); font-size: 12px; }
 /* 圈出来问的附件：左上角是页面上那一圈的编号（与页面上的橙色编号同款）。 */
@@ -3762,9 +3762,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #messages > .msg.user:not(:first-child) { margin-top: 20px; }
 .ctx-chips { margin-top: -4px; }
 
-/* 你说的话：消息不能点，去掉立体的高光和描边，只留浅底。 */
-.msg.user { box-shadow: none; border-color: transparent; }
-
 /* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
 .run-title { font-size: var(--fs-ui); line-height: 20px; }
 details.run-steps:not(.done) .run-time {
@@ -3797,12 +3794,11 @@ details.run-steps.run-quieting .run-time { animation: none; }
 
 /* 系统说明（调试横幅）：不再挂在过程的竖线下面像引用的回答，改成一条浅底小提示。 */
 .run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
-.run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--content-subtle); color: var(--text-secondary); }
+.run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); color: var(--text-secondary); }
 
-/* 输入框：空着时一行高，打字后随内容长高；白纸底 + 细边 + 很浅的影子，是整屏唯一浮起来的东西。 */
+/* 输入框：空着时一行高，打字后随内容长高；材质用上面的凹槽，不浮起来。 */
 #input { min-height: 22px; line-height: 22px; font-size: 14px; }
-#composer { gap: 6px; padding: 10px 8px 8px 14px; background: var(--content-bg); border-color: var(--glass-border); box-shadow: 0 1px 2px rgb(20 20 19 / .04), 0 4px 16px rgb(20 20 19 / .05); }
-#composer:focus-within { box-shadow: 0 1px 2px rgb(20 20 19 / .05), 0 6px 20px rgb(20 20 19 / .07); }
+#composer { gap: 6px; padding: 10px 8px 8px 14px; }
 
 /* 「接管」和旁边的图标按钮同一种样子（无边框），停止仍是唯一的实心圆。 */
 #takeover-btn { box-shadow: none; color: var(--text-secondary); padding: 0 10px; }
@@ -3822,7 +3818,7 @@ details.run-steps.run-quieting .run-time { animation: none; }
 .memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }
 
 /* 出错：服务出错不是用户的错，用温和的浅底，不用红色粗边和阴影；红色只留在标题前的小点。 */
-.error-card { border: 0; border-radius: var(--r); background: var(--content-subtle); padding: 12px 14px; gap: 6px; box-shadow: none; }
+.error-card { border: 0; border-radius: var(--r); background: var(--well); padding: 12px 14px; gap: 6px; box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
 .error-card strong { display: flex; align-items: center; gap: 7px; font-weight: 550; }
 .error-card strong::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--err); flex: none; }
 .error-card > p { padding-left: 14px; }
@@ -3831,8 +3827,8 @@ details.run-steps.run-quieting .run-time { animation: none; }
 
 /* 文件卡：一行排开，左边类型图标（图片用缩略图），右边灰色图标按钮（打开、下载、展开）。
    墨蓝留给助手在页面上的动作；次要操作用图标，不做成一排带底色的按钮（Refactoring UI「Semantics are secondary」）。 */
-.artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border-color: var(--content-border); }
-.artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: 8px; background: var(--content-subtle) center / 16px no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
+.artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border: 0; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
+.artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: var(--r); background: var(--content-bg) center / 16px no-repeat; box-shadow: inset 0 0 0 1px var(--well-outline); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
 .artifact-open, .artifact-download, .artifact-preview-toggle { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 0; display: inline-grid; place-items: center; }
 .artifact-open::before, .artifact-download::before, .artifact-preview-toggle::before { content: ""; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
 .artifact-open { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E"); }
