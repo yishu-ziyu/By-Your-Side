@@ -360,6 +360,8 @@ export type AgentUiEvent =
    * remembered 已记下 / already 早已记着 / once 这次就行 / closed 已作废（同一句纠正又问了一次、替换目标被改过等）。没有 outcome 的是仍在等回答的询问。
    */
   | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true }
+  /** 站点笔记：做成的任务结束后记下的这个网站的做法（只关于网站、不关于用户），侧栏在这一轮下面写一行「记住了…」。title 是那次打开这个网站时的页面标题。 */
+  | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
@@ -1086,6 +1088,14 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.habit !== undefined && event.habit !== true) return null;
     }
 
+
+    if (msg.type === "agent_event" && msg.event?.kind === "site_notes") {
+      const event = msg.event;
+
+      if (typeof event.host !== "string" || !event.host || event.host.length > 253 || (event.title !== undefined && (typeof event.title !== "string" || event.title.length > 80))) return null;
+
+      if (!Array.isArray(event.notes) || !event.notes.length || event.notes.length > 3 || !event.notes.every(note => typeof note === "string" && note.length > 0 && note.length <= 200)) return null;
+    }
 
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {
       const event = msg.event;
