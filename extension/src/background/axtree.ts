@@ -176,12 +176,12 @@ const FIELD_ROLES = new Set(["textbox", "searchbox", "combobox"]);
  * 按预算渲染：先保下全部 ref 行的空间，再按文档顺序填文本行。
  * 文档顺序不变（模型靠缩进理解结构），只是文本行先被丢弃。
  */
-function renderBudgeted(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[] } {
+function renderBudgeted(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[]; kept: AxLine[] } {
   const interactiveCost = entries.reduce((sum, entry) => sum + (entry.interactive ? entry.text.length + 1 : 0), 0);
 
   // 极端情况：页面可交互节点本身就超预算（巨型表格/列表）。此时连 ref 也只能按文档顺序截。
   if (interactiveCost > budget) {
-    const kept: string[] = [];
+    const kept: AxLine[] = [];
     const keptRefs: number[] = [];
     let used = 0;
     let cut = false;
@@ -192,22 +192,22 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
       if (used + cost > budget) { cut = true; continue; }
 
       used += cost;
-      kept.push(entry.text);
+      kept.push(entry);
 
       if (entry.ref !== undefined) keptRefs.push(entry.ref);
     }
 
-    return { text: kept.join("\n"), truncated: cut, keptRefs };
+    return { text: kept.map(entry => entry.text).join("\n"), truncated: cut, keptRefs, kept };
   }
 
   let left = budget - interactiveCost;
-  const kept: string[] = [];
+  const kept: AxLine[] = [];
   const keptRefs: number[] = [];
   let dropped = false;
 
   for (const entry of entries) {
     if (entry.interactive) {
-      kept.push(entry.text);
+      kept.push(entry);
 
       if (entry.ref !== undefined) keptRefs.push(entry.ref);
       continue;
@@ -216,22 +216,22 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
     if (entry.text.length + 1 > left) { dropped = true; continue; }
 
     left -= entry.text.length + 1;
-    kept.push(entry.text);
+    kept.push(entry);
   }
 
-  return { text: kept.join("\n"), truncated: dropped, keptRefs };
+  return { text: kept.map(entry => entry.text).join("\n"), truncated: dropped, keptRefs, kept };
 }
 
 /** 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。 */
-export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map()): AxTextResult & { entries: AxLine[] } {
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map()): AxTextResult & { entries: AxLine[]; shown: AxLine[] } {
   const entries = axTreeLines(nodes, inputs, secret, zeroSize);
-  const { text, truncated, keptRefs } = renderBudgeted(entries, budget);
+  const { text, truncated, keptRefs, kept } = renderBudgeted(entries, budget);
 
   const finalText = truncated
     ? `${text}\n... [truncated，优先保住了全部可交互 ref；文本行超出 ${budget} 字符预算。有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)，或用 read_element / js 精确提取]`
     : text;
 
-  return { text: finalText, backendIds: keptRefs, truncated, entries };
+  return { text: finalText, backendIds: keptRefs, truncated, entries, shown: kept };
 }
 
 /** 按预算把几行拼成文字（变化摘要用；规则同快照：先保 ref 行）。 */
