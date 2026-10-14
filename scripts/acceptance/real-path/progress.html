@@ -41,7 +41,9 @@ const D={
 "snapshot-privacy":["读页面不外泄卡号","卡号、安全码、PIN 只告诉模型「已填」，不给值"],
 "handoff":["要你亲手做的一步交给你","卡号这类字段助手停下交给你，你交还后它接着做完"],
 "target-gone":["要点的东西不见了","页面变了时如实说明，不乱点"],
-"welcome-context":["欢迎页按当前网页给起点","点一下只填进输入框，不直接发"]};
+"welcome-context":["欢迎页按当前网页给起点","点一下只填进输入框，不直接发"],
+"wait-inline-timer":["等待时秒数跟在动词后面","没有扫光，满 15 秒只换一句「还没有回音」，长步骤不写百分比"],
+"process-block":["过程是两行，做完一行回执","想的时候秒数只数这一段"]};
 const q=new URLSearchParams(location.search);const log=q.get("log")||"/out/acceptance/test-run.log";
 document.getElementById("title").textContent=q.get("title")||"合并前测试";
 async function tick(){
