@@ -21,14 +21,18 @@ export class RunOrbActivity {
     } else if (event.kind === "tool_end") {
       this.tools.delete(event.toolCallId);
 
+      // 最近结束的一步说了算：成功的一步清掉前面的失败（browser_run 里一次 fetch 没拿到内容、程序本身跑完，这轮不算没做成）。
       // 用户没让发送不是失败（docs/evals/20261009-send-confirm.md R2）。
-      if (event.isError && !event.repeatRefused && !event.heldReason) this.failed = true;
+      this.failed = event.isError && !event.repeatRefused && !event.heldReason;
     } else if (event.kind === "error") {
       this.errored = true;
     } else if (event.kind === "agent_end") {
       for (const [id, tool] of this.tools) if (tool.sessionId === sessionId) this.tools.delete(id);
     }
   }
+
+  /** 收尾时只是最后一步没做成（模型和连接没出错）：这一轮已经交了回答时，结论按做完算，那一步在过程里标没做成。 */
+  onlyStepFailed(): boolean { return this.failed && !this.errored && !this.stopped; }
 
   stop(): void { this.stopped = true; }
   finish(): void { this.finished = true; this.tools.clear(); }

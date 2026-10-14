@@ -182,7 +182,8 @@ try {
   const pauseStart = await count();
   await until(async () => (await count()) > pauseStart, 30000, '第二次任务点了第一下');
   await rp.click(panel, '#takeover-btn');
-  await until(async () => String(await rp.evaluate(panel, 'document.querySelector("#task-bar-root").innerText')).includes('已暂停'), 10000, '已暂停');
+  // 接管后页面归谁只在输入框上方那一行说（docs/evals/20261013-uiux-top3.md R3）。
+  await until(async () => String(await rp.evaluate(panel, 'document.querySelector("#handoff-banner")?.innerText ?? ""')).includes('你在操作'), 10000, '你在操作');
   await closePanel();
   await until(async () => (await pill())?.state === 'paused', 3000, '暂停药丸').catch(() => null);
   const paused = await pill();

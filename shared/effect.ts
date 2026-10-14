@@ -74,7 +74,12 @@ export interface EffectReport {
   volatile: boolean;
   /** 本次新出现的页面提示（校验错误、toast 等）。 */
   alerts: string[];
+  /** 动作让页面换了地址或文档。 */
+  documentChanged?: true;
 }
+
+/** 动作之后页面上新出现的东西（和模型上次读到的这一页比）。ms 是为此多花的时间。 */
+export type PageAppeared = { text: string; ms: number } | { redrawn: true; ms: number };
 
 export const EMPTY_EFFECT_REPORT: EffectReport = { changed: false, evidence: [], weak: [], volatile: false, alerts: [] };
 

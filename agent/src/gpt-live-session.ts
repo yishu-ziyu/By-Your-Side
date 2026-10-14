@@ -217,7 +217,7 @@ export class GptLiveSession {
     if (stream.phase === 'cancelled') this.cancelled.add(stream.id);
   }
   /** 只把 GPT-Live 委派出去的那个任务的交付送回；文字规则与套餐语音相同。 */
-  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts'>): void {
+  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>): void {
     if (this.closed || delivery.kind === 'ack' || this.notices.has(delivery.id) || this.cancelled.has(delivery.id)) return;
     const record = this.settle(delivery.runId);
 

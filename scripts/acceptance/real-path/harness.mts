@@ -7,7 +7,7 @@
  *
  * 不碰日常 Chrome、extension/dist，也不写 ~/.sideagent。
  */
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, readdir, stat, writeFile, unlink } from "node:fs/promises";
@@ -379,7 +379,7 @@ export async function exportDiagnosticsViaSettings(
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  * SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。
  */
-export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[] } = {}) {
+export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[]; headed?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
   const tempDir = trackTempDir(root);
@@ -418,8 +418,9 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
 
   for (const name of ["STEPFUN_API_KEY", "SIDEAGENT_STEP_PLAN_KEY", "TYPESAFE_API_KEY", "SIDEAGENT_DATA_DIR"]) delete env[name];
 
-  const spawnChrome = () => spawn(resolveChrome(), [
-    "--headless=new",
+  const chromeArgsFor = () => [
+    // headed：只给无头 Chrome 复现不了的情况用（例如从没显示过的后台标签页不渲染，输入会丢）。
+    ...(headed ? [] : ["--headless=new"]),
     // macOS：不读钥匙串里的「Chrome Safe Storage」，否则每启动一次就弹一次钥匙串授权框。
     "--use-mock-keychain",
     // Ubuntu runners deny Chrome's unprivileged namespace sandbox (same as isolated-extension).
@@ -437,7 +438,22 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
     ...(microphoneWav ? ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${microphoneWav}%noloop`, "--disable-features=AudioServiceSandbox"] : []),
     ...chromeArgs,
     "about:blank",
-  ], { stdio: ["ignore", "ignore", "pipe"], env });
+  ];
+  // 有窗口时在 macOS 上用 open -g 在后台启动：直接启动的 GUI 应用会被推到最前面，抢走用户正在打字的焦点（10-13 用户反馈）。
+  // open -W 一直等到 Chrome 退出，所以这个进程的退出就是 Chrome 的退出；kill 要按配置目录找到真正的 Chrome 进程。
+  const spawnChrome = () => {
+    if (!headed || process.platform !== "darwin") return spawn(resolveChrome(), chromeArgsFor(), { stdio: ["ignore", "ignore", "pipe"], env });
+    const app = resolveChrome().replace(/(\.app)\/Contents\/MacOS\/.*$/, "$1");
+    // BYS_TEST_BROWSER_FRONT=1：用户要盯着看时，启动那一下放到最前面（只这一下，之后不再抢）。
+    const child = spawn("open", [...(process.env.BYS_TEST_BROWSER_FRONT === "1" ? [] : ["-g"]), "-n", "-W", "--stderr", join(root, "chrome-stderr.log"), "-a", app, "--args", ...chromeArgsFor()], { stdio: ["ignore", "ignore", "pipe"], env });
+    const endOpen = child.kill.bind(child);
+    child.kill = (signal?: NodeJS.Signals | number) => {
+      const pids = spawnSync("pgrep", ["-f", "--", `--user-data-dir=${dirs.profile}`], { encoding: "utf8" }).stdout.split("\n").filter(Boolean).map(Number);
+      for (const pid of pids) { try { process.kill(pid, signal ?? "SIGTERM"); } catch { /* 已退出 */ } }
+      return pids.length ? true : endOpen(signal);
+    };
+    return child;
+  };
 
   let chrome = spawnChrome();
   tempDir.setChild(chrome);
@@ -463,9 +479,19 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
     throw new Error(detail);
   });
 
-  const version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
-  let cdp = createCdp(version.webSocketDebuggerUrl);
-  await cdp.ready();
+  // Chrome is up but close() does not exist yet: a failure here (e.g. the version fetch timing out under load) must kill it,
+  // or the orphaned Chrome keeps the caller's process alive (10-14: one eval round hung 18 minutes after "done").
+  let version: { Browser: unknown; webSocketDebuggerUrl: string };
+  let cdp: ReturnType<typeof createCdp>;
+  try {
+    version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
+    cdp = createCdp(version.webSocketDebuggerUrl);
+    await cdp.ready();
+  } catch (error) {
+    chrome.kill("SIGKILL");
+    tempDir.release();
+    throw error;
+  }
 
   const controls = browserControls(cdp, id);
 

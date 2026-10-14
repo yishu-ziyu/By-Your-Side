@@ -104,7 +104,8 @@ const PANEL = `(() => {
     lastTurn: all.slice(lastUser + 1).map(n => n.textContent.trim()).join("\\n"),
     usedLine: [...all.slice(lastUser + 1)].map(n => n.matches(".memory-used-toggle") ? n : n.querySelector(".memory-used-toggle")).find(Boolean)?.textContent.trim() ?? null,
     answers: [...m.querySelectorAll(".msg.assistant[data-delivery-id]")].map(n => n.textContent.trim()),
-    fixes: [...m.querySelectorAll(".claim-fix")].map(n => n.textContent.trim()),
+    // 判继续后续做那一轮过程行第二行的「核对发现：… / 还差：…」（收尾后隐藏，文字还在）。
+    fixes: [...m.querySelectorAll("details.run-steps > summary > .run-meta")].map(n => n.textContent.trim()).filter(t => /^(核对发现|还差)/.test(t)),
     cards: [...document.querySelectorAll(".artifact-card")].map(n => n.dataset.filename),
   };
 })()`;
@@ -182,7 +183,8 @@ try {
   await rp.screenshot(panel, join(out, "c-give-up.png"));
   assert.equal(end.fixes.length - fixesBefore, 1, "c: 只催了一次（侧栏一条「核对发现」）");
   assert.equal(goalChecks - checksBefore, 1, "c: 催后网页没变又说做不成，不再问核对模型");
-  assert.equal(giveUps.length, 2, `c: 侧栏两段「做不成」，不是更多（实际 ${giveUps.length} 段）`);
+  // 一轮只留一个回答（#345）：第一段「做不成」被核对判继续后收进过程，侧栏只剩续做后的那一段。
+  assert.equal(giveUps.length, 1, `c: 侧栏只留一段「做不成」，不是更多（实际 ${giveUps.length} 段）`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   if (panel) await rp.screenshot(panel, join(out, "fatal.png")).catch(() => undefined);

@@ -106,6 +106,13 @@ try {
     await until(async () => receipt.test(String(await rp.evaluate(panel, '[...document.querySelectorAll(".error-receipt")].at(-1)?.textContent ?? ""'))) || undefined, 10_000, `${name} receipt`);
     assert.equal(await userBubbles(CASES[name].ask), 1, `${name}: the user did not have to resend`);
     assert.equal(await visible(".error-card"), false, `${name}: the error card is gone after recovery`);
+    // 回执留在出错的位置，续写的答案跟在它下面（#286）：不是答案之后再冒出来的第二条元素。
+    const receiptBeforeAnswer = await rp.evaluate(panel, `(() => {
+      const line = [...document.querySelectorAll(".error-receipt")].at(-1);
+      const answer = [...document.querySelectorAll("#messages .msg.assistant")].at(-1);
+      return line && answer ? (line.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 : null;
+    })()`);
+    assert.equal(receiptBeforeAnswer, true, `${name}: the receipt line stays where the error happened, before the resumed answer`);
   };
 
   // 甲：key 无效 → 卡上「去换 key」→ 底部面板测试通过才能保存 → 保存后自动接着做。

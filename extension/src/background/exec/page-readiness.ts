@@ -1,4 +1,6 @@
 import type {NavigationDownload,PageReadinessValue} from "../../../../shared/protocol.js";
+import {overlayHostSelector} from "../../shared/overlay.js";
+import {withTimeout} from "../timeout.js";
 
 export interface PageReadiness {
   readiness:PageReadinessValue;
@@ -32,6 +34,9 @@ function unscriptableByDesign(url:string|undefined):boolean {
     return parsed.hostname==='chromewebstore.google.com'||(parsed.hostname==='chrome.google.com'&&parsed.pathname.startsWith('/webstore'));
   }catch{return false;}
 }
+
+/** 给模型看的一句话：Chrome 显示了它自己的错误页，页面没打开。navigate 和新开标签页共用。 */
+export const ERROR_PAGE_NOTE="Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
 
 /** Chrome 拒绝往它自己的错误页注入时给的原因（连不上网站、DNS 失败等）。 */
 const ERROR_PAGE=/showing error page/i;
@@ -155,9 +160,20 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
 
   const poll=async():Promise<PageReadiness>=>{
     while(!stopped){
-      const first=await readCurrentDocument(tabId);
+      const probe=await probeDocument(tabId);
+      const first=probe.doc;
 
       if(stopped)break;
+
+      // 读不到是因为 Chrome 显示了错误页：只在标签页已停在要打开的地址、没有待提交的跳转时认。
+      // 新开标签页时「开始加载」通知常早于监听装好，上面的 loaded 收不到，不在这里认就只能等到超时。
+      if(!first&&probe.error&&ERROR_PAGE.test(probe.error)){
+        const tab=await chrome.tabs.get(tabId).catch(()=>null);
+
+        if(stopped)break;
+
+        if(tab&&tab.status==='complete'&&!tab.pendingUrl&&(!requested||sameUrl(tab.url,requested)))return {readiness:'error_page',waitMs:Date.now()-started};
+      }
 
       if(first&&first.documentId!==previousDocumentId&&first.url!=='about:blank'&&first.readyState!=='loading'){
         const second=await readCurrentDocument(tabId);
@@ -190,4 +206,54 @@ if(timer)clearTimeout(timer);
 if(onDownload)chrome.downloads.onCreated.removeListener(onDownload);
 
 if(onTab)chrome.tabs.onUpdated.removeListener(onTab);}
+}
+
+/** 这么久没有 DOM 变化就算页面画完了。 */
+const DOM_QUIET_MS=400;
+
+/** 等页面画完最多多等这么久；一直在动的页面（轮播、时钟）到时照常返回。 */
+const DOM_QUIET_BOUND_MS=3000;
+
+/** 这几种就绪结果说明眼前是新打开的网页，值得等它画完；下载、错误页、标签页被关掉都不等。 */
+export function settlesContent(readiness:PageReadinessValue|undefined):boolean {
+  return readiness==='interactive'||readiness==='complete'||readiness==='timeout';
+}
+
+/**
+ * 客户端渲染的页面在文档可交互后还在往里画内容（TodoMVC 读到时只有页脚）：等 DOM 安静一会儿再返回，
+ * 打开后附带的快照才读得到内容。安静从 load 之后才开始算：页面脚本还在下载时 DOM 不动，并不是画完了。
+ * 只看增删节点和文字，不看属性，免得动画让它一直等满。
+ * 注入不了（受限页面）或文档在等的时候换掉了，就不等。返回实际多等的毫秒数。
+ */
+export async function waitForQuietDom(tabId:number):Promise<number> {
+  const started=Date.now();
+
+  try{
+    await withTimeout(chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:quietInPage,args:[DOM_QUIET_MS,DOM_QUIET_BOUND_MS,overlayHostSelector()]}),DOM_QUIET_BOUND_MS+500,'DOM 安静等待超时');
+  }catch{/* 不等也照常返回 */}
+
+  return Date.now()-started;
+}
+
+/** 在页面里执行，保持自包含。助手自己挂上的浮层不算页面在变。 */
+function quietInPage(quietMs:number,boundMs:number,ownSelector:string):Promise<void> {
+  return new Promise(resolve=>{
+    const own=(node:Node)=>node instanceof Element&&!!node.closest(ownSelector);
+    let quiet:ReturnType<typeof setTimeout>|undefined;
+    const bound=setTimeout(done,boundMs);
+    const restart=()=>{clearTimeout(quiet);quiet=setTimeout(done,quietMs);};
+
+    const observer=new MutationObserver(records=>{
+      if(document.readyState!=='complete')return;
+
+      if(records.every(r=>own(r.target)||(r.addedNodes.length+r.removedNodes.length>0&&[...r.addedNodes,...r.removedNodes].every(own))))return;
+      restart();
+    });
+
+    function done(){observer.disconnect();removeEventListener('load',restart);clearTimeout(quiet);clearTimeout(bound);resolve();}
+    observer.observe(document,{subtree:true,childList:true,characterData:true});
+
+    if(document.readyState==='complete')restart();
+    else addEventListener('load',restart);
+  });
 }

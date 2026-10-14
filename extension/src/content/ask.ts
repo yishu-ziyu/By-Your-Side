@@ -7,6 +7,7 @@ import { installNudge } from "./nudge.js";
 import { installSonarPinpoint } from "./sonar-pinpoint.js";
 import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
+import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, PanelRight, RotateCcw } from 'lucide';
 import DOMPurify from 'dompurify';
@@ -63,8 +64,92 @@ export function selectionSnapshot(): SelectionSnapshot | null {
   return { source: { text, surrounding, truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
 
+/** 展开后的卡片宽度。右侧空白够不够，按这个宽度加两侧间距算，和样式里的 384px 一致。 */
+const CARD_WIDTH = 384;
+
+const PLACE_MARGIN = 12;
+
+/** 正文和卡片之间留出的缝，细线画在这道缝里，避开卡片的阴影。 */
+const BESIDE_GAP = 28;
+
+function contentBlockOf(range: Range | null): Element | null {
+  if (!range?.startContainer.isConnected) return null;
+  const node = range.commonAncestorContainer;
+  const parent = node instanceof Element ? node : node.parentElement;
+
+  return parent?.closest('p,li,pre,blockquote,h1,h2,h3,h4,h5,h6,dd,dt,figcaption,td') ?? null;
+}
+
+function paints(style: CSSStyleDeclaration): boolean {
+  const bg = style.backgroundColor;
+
+  if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return true;
+
+  if (style.backgroundImage && style.backgroundImage !== 'none') return true;
+
+  return Boolean(style.boxShadow && style.boxShadow !== 'none');
+}
+
+/** 采样点上有没有正文块以外的可见内容。包住正文的整页容器不算，侧栏、广告、目录算。 */
+function gutterOccupied(host: HTMLElement, block: Element, x: number, y: number): boolean {
+  for (const el of document.elementsFromPoint(x, y)) {
+    if (el === host || host.contains(el) || el === document.documentElement || el === document.body) continue;
+    const style = getComputedStyle(el);
+
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+
+    if (el.contains(block)) continue;
+    const tag = el.tagName;
+
+    if (tag === 'IMG' || tag === 'PICTURE' || tag === 'VIDEO' || tag === 'CANVAS' || tag === 'IFRAME' || tag === 'SVG' || tag === 'OBJECT') return true;
+
+    if (paints(style) || (el.textContent ?? '').trim()) return true;
+  }
+
+  return false;
+}
+
+function gutterBlank(host: HTMLElement, block: Element, region: { left: number; right: number; top: number; bottom: number }): boolean {
+  const width = region.right - region.left;
+  const height = region.bottom - region.top;
+
+  if (width < 8 || height < 8) return false;
+  const columns = [0.12, 0.5, 0.88].map(part => region.left + width * part);
+  const rows = Math.min(6, Math.max(3, Math.round(height / 140)));
+
+  for (let row = 0; row < rows; row++) {
+    const y = region.top + height * ((row + 0.5) / rows);
+
+    for (const x of columns) if (gutterOccupied(host, block, x, y)) return false;
+  }
+
+  return true;
+}
+
+/** 本页已装的那份网页脚本留下的存活检查（同一扩展的网页脚本共用这个 window）。 */
+const BOOTED = '__sideagentContentAlive';
+
+/**
+ * 同一页面只装一份：网页在安装时正在加载，Chrome 按 manifest 装一份，background/reinject.ts 又补装一份，两份都连着扩展，
+ * 胶囊、边缘光条、按键就都成了两份。旧的那份还连着就不再装；断开了（扩展重载、更新后）照常装，补装不受影响。
+ */
+function installedAlready(): boolean {
+  const slot = window as unknown as Record<string, (() => boolean) | undefined>;
+  let alive = false;
+
+  try {
+    alive = !!slot[BOOTED]?.();
+  } catch {
+    alive = false;
+  }
+
+  if (!alive) slot[BOOTED] = extensionAlive;
+
+  return alive;
+}
+
 function boot(): void {
-  if (window !== window.top || document.contentType !== 'text/html') {
+  if (window !== window.top || document.contentType !== 'text/html' || installedAlready()) {
     return;
   }
 
@@ -85,13 +170,14 @@ function boot(): void {
   host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483645';
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${ASK_STYLES}</style>
+    <div class="link" hidden></div>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
       <div class="bar"><button class="ask" data-act="ask"><span class="identity"></span>问助手</button><button class="explain" data-act="explain">解释</button><button data-act="read">朗读</button><button data-act="transfer">在侧栏继续</button></div>
       <div class="header" hidden><span class="identity"></span><span class="site"></span><button class="icon" data-act="close" aria-label="收起阅读" title="收起阅读"></button></div>
       <details class="quote" hidden><summary></summary><p></p><div class="limit" hidden>已截取前 8000 字</div></details>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
       <div class="error" role="status" hidden></div>
-      <form class="composer" hidden><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问问这段文字…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
+      <form class="composer" hidden><div class="depth" role="radiogroup" aria-label="回答快慢"><button type="button" role="radio" data-depth="fast" aria-checked="true" title="用快速模型">快速</button><button type="button" role="radio" data-depth="deep" aria-checked="false" title="用主模型">深度</button></div><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问问这段文字…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
       <div class="footer" hidden><button data-act="copy">复制</button><button data-act="retry" hidden>重试</button><button data-act="handoff">在侧栏继续</button></div>
     </section>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
@@ -107,6 +193,7 @@ function boot(): void {
   }
 
   const surface = el('.surface');
+  const link = el('.link');
   const messages = el('.messages');
   const input = el<HTMLTextAreaElement>('textarea');
   const submit = el<HTMLButtonElement>('.send');
@@ -138,8 +225,10 @@ function boot(): void {
 
   const drafts = new Map<string, string>();
   let pinned = false;
-  /** 卡片放在选区哪一边：打开时定一次，之后回答变长也不换边，免得卡片跳位。 */
+  /** 卡片放在选区哪一边：打开时定一次，之后回答变长也不换边，免得卡片跳位。右侧空白够放时不用这一边。 */
   let side: 'above' | 'below' | null = null;
+  /** 下一问用快速模型还是主模型。旧记录没有这个字段，按快速。 */
+  let depth: 'fast' | 'deep' = 'fast';
   const highlightName = `by-your-side-reading`;
 
   const highlights = (CSS as typeof CSS & {
@@ -176,8 +265,16 @@ function boot(): void {
     }
   };
 
+  const syncDepth = () => {
+    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-depth]')) {
+      button.setAttribute('aria-checked', String(button.dataset.depth === depth));
+    }
+  };
+
   function position(): void {
     if (!visible || !snapshot) {
+      link.hidden = true;
+
       return;
     }
 
@@ -187,12 +284,43 @@ function boot(): void {
       pinned = true;
     }
 
-    const margin = 12;
+    const margin = PLACE_MARGIN;
+    const block = pinned ? null : contentBlockOf(snapshot.range);
+    const blockRect = block?.getBoundingClientRect();
+    const roomy = !!blockRect && innerWidth - blockRect.right >= CARD_WIDTH + BESIDE_GAP + margin;
+    const besideRegion = roomy && block && blockRect ? {
+      left: blockRect.right + 1,
+      right: innerWidth - 1,
+      top: Math.max(0, Math.min(blockRect.top, r.top)),
+      bottom: Math.min(innerHeight, Math.max(blockRect.bottom, r.top + Math.min(540, innerHeight - margin * 2))),
+    } : null;
+    // 正文右侧到窗口右边缘真是空白、并且放得下卡片和两侧间距时，贴在正文旁边；否则仍上下浮着。
+    const beside = !pinned && !!besideRegion && !!block && gutterBlank(host, block, besideRegion);
     const room = { above: r.top - margin - 8, below: innerHeight - r.bottom - margin - 8 };
     // 默认放在选区下方：顺着阅读方向，不盖住上面的标题和正文；下方放不下一张展开卡片时才放上方。
     side ??= room.below >= 220 || room.below >= room.above ? 'below' : 'above';
-    surface.style.maxHeight = expanded ? `${Math.min(innerHeight - margin * 2, pinned ? 540 : Math.max(220, room[side]))}px` : '';
+    const cap = beside ? innerHeight - margin * 2 : pinned ? 540 : Math.max(220, room[side]);
+    surface.style.maxHeight = expanded ? `${Math.min(innerHeight - margin * 2, cap)}px` : '';
     const box = surface.getBoundingClientRect();
+
+    if (beside && blockRect) {
+      const left = blockRect.right + BESIDE_GAP;
+      const top = Math.max(margin, Math.min(r.top, innerHeight - box.height - margin));
+      surface.style.left = `${left}px`;
+      surface.style.top = `${top}px`;
+      surface.style.transformOrigin = 'left center';
+      surface.dataset.place = 'beside';
+      const y1 = Math.min(Math.max(r.top + r.height / 2, 0), innerHeight);
+      link.style.left = `${blockRect.right}px`;
+      link.style.top = `${y1 - 0.5}px`;
+      link.style.width = `${Math.max(0, left - blockRect.right)}px`;
+      link.hidden = false;
+
+      return;
+    }
+
+    link.hidden = true;
+    surface.dataset.place = 'float';
     const left = Math.max(margin, Math.min(r.left + r.width / 2 - box.width / 2, innerWidth - box.width - margin));
     const bottomLimit = innerHeight - box.height - margin;
     const top = pinned ? margin : side === 'below' ? Math.max(margin, Math.min(r.bottom + 8, bottomLimit)) : Math.max(margin, Math.min(r.top - box.height - 8, bottomLimit));
@@ -220,6 +348,7 @@ function boot(): void {
     rememberDraft();
     visible = false;
     surface.hidden = true;
+    link.hidden = true;
     restore.hidden = !record;
     highlights?.delete(highlightName);
 
@@ -324,9 +453,13 @@ function boot(): void {
       if (item.text !== turn.answer) {
         item.node.innerHTML = DOMPurify.sanitize(renderMarkdownHtml(turn.answer), { FORBID_TAGS: ['img', 'video', 'audio', 'iframe', 'style', 'form', 'input', 'button'] });
 
-        for (const link of item.node.querySelectorAll('a')) {
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
+        const lead = item.node.firstElementChild;
+
+        if (lead instanceof HTMLParagraphElement) lead.classList.add('lead');
+
+        for (const anchor of item.node.querySelectorAll('a')) {
+          anchor.target = '_blank';
+          anchor.rel = 'noopener noreferrer';
         }
 
         item.text = turn.answer;
@@ -373,6 +506,8 @@ function boot(): void {
 
     rememberDraft();
     record = result.record;
+    depth = record?.depth === 'deep' ? 'deep' : 'fast';
+    syncDepth();
     input.value = drafts.get(record!.threadId) ?? '';
     expanded = true;
     pinned = false;
@@ -396,7 +531,7 @@ function boot(): void {
     render();
 
     try {
-      const result = await rpc('reading_send', { question, retry, correction });
+      const result = await rpc('reading_send', { question, retry, correction, depth });
 
       if (record?.threadId !== threadId) {
         return;
@@ -456,6 +591,8 @@ function boot(): void {
         }
 
         record = restored.record;
+        depth = record?.depth === 'deep' ? 'deep' : 'fast';
+        syncDepth();
         snapshot ??= { source: record!.source, range: null, rect: new DOMRect(innerWidth - 400, 80, 0, 0) };
         expanded = true;
         render();
@@ -507,6 +644,14 @@ function boot(): void {
   });
   // Preserve native selection when activating the toolbar, without blocking input focus.
   el('.bar').addEventListener('pointerdown', event => event.preventDefault());
+  el('.depth').addEventListener('click', event => {
+    const button = (event.target as Element).closest<HTMLButtonElement>('[data-depth]');
+
+    if (!button) return;
+    event.preventDefault();
+    depth = button.dataset.depth === 'deep' ? 'deep' : 'fast';
+    syncDepth();
+  });
   el<HTMLFormElement>('.composer').addEventListener('submit', event => {
     event.preventDefault();
 
@@ -680,6 +825,8 @@ function boot(): void {
         void enter(true).catch(err => report(err.message));
       }
       else if (record) {
+        depth = record.depth === 'deep' ? 'deep' : 'fast';
+        syncDepth();
         expanded = true;
         render();
         show(true);

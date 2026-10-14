@@ -179,16 +179,19 @@ export class ArtifactCards {
     open.type = "button";
     open.className = "artifact-open";
     open.textContent = "打开";
+    open.title = "打开";
     open.title = `在新标签页打开 ${filename}`;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "artifact-download";
     button.textContent = "下载";
+    button.title = "下载";
     button.title = `下载 ${filename}`;
     const previewToggle = document.createElement("button");
     previewToggle.type = "button";
     previewToggle.className = "artifact-preview-toggle";
     previewToggle.textContent = "展开";
+    previewToggle.title = "展开";
     previewToggle.setAttribute("aria-expanded", "false");
     previewToggle.hidden = true;
     const inlineToggle = document.createElement("button");
@@ -214,6 +217,7 @@ export class ArtifactCards {
       root.dataset.expanded = String(expanded);
       previewToggle.setAttribute("aria-expanded", String(expanded));
       previewToggle.textContent = expanded ? "收起" : "展开";
+      previewToggle.title = previewToggle.textContent;
     });
     root.append(info, open, button, inlineToggle, previewToggle, inlineRoot);
     this.cards.set(filename, card);

@@ -1,3 +1,4 @@
+import { answerSpeech } from "../../../shared/answer-cards.js";
 import { microphonePermissionState } from "./voice-permission.js";
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { VoiceClient, type VoicePhase } from './voice-client.js';
@@ -18,8 +19,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   button.title = '语音对话：问进度或调整当前任务';
   button.setAttribute('aria-label', '开始语音对话');
   button.setAttribute('aria-expanded', 'false');
-  // 输入框里只放一个话筒图标（Gemini、ChatGPT 的做法）；光球只在进入语音后的大界面里。
-  button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>';
+  // 语音对话用声波图标；话筒留给说话输入（dictation.ts），和 ChatGPT 输入框的分法一样。光球只在进入语音后的大界面里。
+  button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>';
   composer.querySelector('#composer-spacer')!.after(button);
   const status = region.querySelector<HTMLElement>('.voice-state')!;
   const end = region.querySelector<HTMLButtonElement>('.voice-end')!;
@@ -528,7 +529,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
         currentDeliveryKind = delivery.kind;
       }
 
-      setAnswer(delivery.text);
+      setAnswer(answerSpeech(delivery.text));
       setSources(delivery.sources ?? delivery.facts?.sources ?? []);
     }
   };

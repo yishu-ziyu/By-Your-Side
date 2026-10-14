@@ -1,11 +1,11 @@
 /**
- * 同一会话接着问，每条新消息的请求都是上一条的前缀延伸，同一页没变不再带第二份正文（#271，docs/evals/20261011-history-prefix.md）。
+ * 同一会话接着问，每条新消息的请求都是上一条的前缀延伸，同一页没变不再带第二份正文（#271）。
  *   npx tsx scripts/acceptance/real-path/history-prefix.mts --headless
  * 本机文章页 A 上连问两句，再换到页 B 问一句；脚本模型直接回答，记下每次主任务请求（带工具表）的 messages。
- *   a) 第 2、3 条消息的第一次请求，以上一条消息最后一次请求的全部消息开头（去掉末尾那条每次都换的应用状态快照），逐字相同。
+ *   a) 第 2、3 条消息的第一次请求，以上一条消息最后一次请求的全部消息开头，逐字相同；末尾的应用状态快照也要留在原位（10-13：每次删掉再追加，后端缓存退回到系统提示词）。
  *   b) 第 2 条消息（同一页没变）的请求里，页 A 的正文只出现一次，并有一行「unchanged since your earlier observation」。
  *   c) 第 3 条消息（换了页）的请求里有页 B 的正文。
- * 失败方式：把本次运行的上下文改回只在本次运行里插入，a 失败；去掉同页去重，b 失败。反例结果见验收文件。
+ * 失败方式：把本次运行的上下文改回只在本次运行里插入，或把状态快照改回每次删掉再追加到末尾，a 失败；去掉同页去重，b 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -60,11 +60,9 @@ const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
 
-const isSnapshot = (raw: string) => textOf(JSON.parse(raw) as Message).startsWith("应用状态快照");
-
-/** 上一条消息最后一次请求（去掉末尾的状态快照）是不是下一条消息第一次请求的开头；不是时给出第一处不同的位置。 */
+/** 上一条消息最后一次请求的全部消息是不是下一条消息第一次请求的开头；不是时给出第一处不同的位置。 */
 function extends_(before: string[], after: string[]) {
-  const prefix = isSnapshot(before.at(-1) ?? "") ? before.slice(0, -1) : before;
+  const prefix = before;
   const differs = prefix.findIndex((m, i) => after[i] !== m);
 
   return { prefixMessages: prefix.length, nextMessages: after.length, firstDifferentIndex: differs, ok: prefix.length > 0 && differs === -1 };

@@ -62,9 +62,10 @@ try{
  assert.ok(before.cards.some(c=>c.image?.length>256*1024),'真实大图覆盖历史预算边界');
  evidence.historyBefore=await rp.evaluate(panel,`chrome.storage.local.get(null).then(v=>Object.fromEntries(Object.entries(v).filter(([k])=>k.startsWith("history:")).map(([k,v])=>[k,{bytes:JSON.stringify(v).length,items:v.entries?.map(e=>({seq:e.seq,kind:e.item.kind,event:e.item.msg?.event?.kind,bytes:JSON.stringify(e).length,text:e.item.text?.slice(0,100)}))}])))`);
 
- await rp.restart();await open();await until(async()=>((await state()).text?.includes(code))||undefined,10000,"原会话历史恢复");const after=await state();evidence.after=after;await rp.screenshot(panel,join(out,'after.png'));
+ // 整个浏览器重启：两路并行时比单跑慢，等待放宽到 30 秒；这里测的是恢复了没有，不是多快。
+ await rp.restart();await open();await until(async()=>((await state()).text?.includes(code))||undefined,30000,"原会话历史恢复");const after=await state();evidence.after=after;await rp.screenshot(panel,join(out,'after.png'));
  assert.ok(after.text.includes(code),'大图不挤掉旧文字');assert.ok(after.cards.some(c=>c.name==='resume.csv'&&c.deleted!=='true'),'文件卡片恢复');
- await until(async()=>((await state()).cards.some(c=>c.image?.length>256*1024))||undefined,10000,"原图片恢复");
+ await until(async()=>((await state()).cards.some(c=>c.image?.length>256*1024))||undefined,30000,"原图片恢复");
  const compact=await rp.evaluate(panel,`(()=>{const card=document.querySelector('.artifact-card[data-kind="image"]'),img=card.querySelector('img'),input=document.querySelector('#input');return {imageHeight:img.getBoundingClientRect().height,cardHeight:card.getBoundingClientRect().height,bottom:card.getBoundingClientRect().bottom,inputTop:input.getBoundingClientRect().top};})()`);
  assert.ok(compact.imageHeight<=48,'默认缩略图不占满消息区');assert.ok(compact.bottom<compact.inputTop,'图片名称和操作在输入框上方');evidence.compactCard=compact;
  const noModelBefore=requests.length;await rp.click(panel,'.artifact-card[data-kind="image"] .artifact-preview-toggle');

@@ -6,6 +6,7 @@
  * 圈留在页面上（随页面滚动）；去掉某张附件，页面上那一圈也去掉。Esc、换标签页、页面跳转退出圈画，已圈的保留。永不自动发送。
  */
 import { isPageInteractionMessage, type PageInteractionMessage } from "../../../shared/protocol.js";
+import { MOTION_CSS_VARS } from "../shared/motion-tokens.js";
 
 type CaptureReply = { ok: boolean; dataUrl?: string; title?: string; error?: string };
 
@@ -19,7 +20,7 @@ type PageCircles = { enter: (start: number, set: number) => void; exit: () => vo
  * 注入页面执行（会被序列化，不能引用本模块的任何东西）。第一次调用建好画圈层，之后再调用只重新进入圈画。
  * start 是下一圈的编号；为 1 时清掉页面上之前的圈，开始新的一组（set 是侧栏给这组的编号，回指时核对）。
  */
-function circleInPage(globalKey: string, start: number, set: number): void {
+function circleInPage(globalKey: string, start: number, set: number, motionVars: string): void {
   // SAFETY: 页面全局对象按字符串键取值；这个键只存放本模块写入的控制对象。
   const g = globalThis as typeof globalThis & Record<string, PageCircles | undefined>;
 
@@ -33,19 +34,19 @@ function circleInPage(globalKey: string, start: number, set: number): void {
   host.style.cssText = "all:initial;position:absolute;left:0;top:0;width:0;height:0;overflow:visible;z-index:2147483647;";
   const root = host.attachShadow({ mode: "closed" });
   root.innerHTML = `<style>
-:host{all:initial}
+:host{all:initial;${motionVars}}
 svg{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 path{fill:none;stroke:#d2602a;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
-path.point{stroke:#2d4a86;stroke-width:2.5;opacity:1;transition:opacity .2s ease-out}
+path.point{stroke:#2d4a86;stroke-width:2.5;opacity:1;transition:opacity var(--d-state) var(--e-exit)}
 .num{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:#d2602a;color:#fff;text-align:center;pointer-events:none;
-  font:600 12.5px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;box-shadow:0 0 0 2px #fff,0 2px 6px rgba(20,20,19,.2);animation:pop .22s cubic-bezier(.3,1.5,.5,1) both}
+  font:600 12.5px/22px -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;box-shadow:0 0 0 2px #fff,0 2px 6px rgba(20,20,19,.2);animation:pop var(--d-state) var(--e-spring) both}
 .mode{display:none}
 .on .mode{display:block}
 .dim{position:fixed;inset:0;background:rgba(20,20,19,.05);pointer-events:none}
 .catch{position:fixed;inset:0;cursor:crosshair;touch-action:none;user-select:none;-webkit-user-select:none}
 .hud{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);gap:10px;align-items:center;padding:6px 14px;border-radius:999px;background:#fff;
   border:1px solid rgba(20,20,19,.08);box-shadow:0 2px 10px rgba(20,20,19,.08);color:#5f5e58;white-space:nowrap;pointer-events:none;
-  font:400 12px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;animation:rise .2s ease both}
+  font:400 12px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;animation:rise var(--d-state) var(--e-enter) both}
 .on .hud{display:flex}
 .hud b{color:#141413;font-weight:600}
 kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1px solid rgba(20,20,19,.12);border-radius:5px;padding:0 5px}
@@ -344,7 +345,7 @@ export async function startCircling(start: number, onCircle: (dataUrl: string, n
   document.addEventListener("keydown", onPanelKey, true);
 
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, func: circleInPage, args: [GLOBAL_KEY, start, circleSet] });
+    await chrome.scripting.executeScript({ target: { tabId }, func: circleInPage, args: [GLOBAL_KEY, start, circleSet, MOTION_CSS_VARS] });
   } catch (err) {
     stop(false);
     throw new Error(`这个页面不能圈（${err instanceof Error ? err.message : String(err)}）`);
