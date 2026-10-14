@@ -6,6 +6,7 @@
  * - 未闭合的 Markdown 先补齐，不让 `**`、`` ` ``、半截链接露出来。
  * - 有卡片的回答不分块：卡片前后的正文要用卡片里的数（{=名字}、「见下方卡片」），所以每段都按整个前缀渲染，
  *   走 patchAnswer 放进页面：已显示的卡片组件节点不动，卡片里的字不按段淡入，组件写完整块淡入。
+ * - 卡片标记不走节拍，到多少放多少：组件自己管空位和淡入；按节拍切在组件中间，写得快的组件也会闪出占位条。
  */
 
 import { Lexer } from "marked";
@@ -84,6 +85,20 @@ function remend(md: string): string {
   const fenced = remendFence(md);
 
   return fenceOpen(md) ? fenced : remendLink(remendCode(remendBold(fenced)));
+}
+
+/** 从 at 起是卡片（at 在没写完的卡片里，或后面只隔空白就是卡片开头）时，返回卡片结尾或已到文字的结尾；否则返回 at。 */
+function cardEnd(text: string, at: number): number {
+  for (const m of text.matchAll(/<card[\s>]/g)) {
+    const close = text.indexOf("</card>", m.index);
+    const end = close < 0 ? text.length : close + "</card>".length;
+
+    if (end <= at) continue;
+
+    return m.index < at || !text.slice(at, m.index).trim() ? end : at;
+  }
+
+  return at;
 }
 
 const hasCard = (md: string) => splitAnswer(md).some((part) => "card" in part);
@@ -268,7 +283,7 @@ class Reveal {
     this.target = text;
     this.final = final;
     if (after) this.after = after;
-    this.schedule(final);
+    this.schedule(final || cardEnd(text, this.shown) > this.shown);
   }
 
   /** 立即显示全部（历史、减弱动态、被新回合打断时）。 */
@@ -328,11 +343,12 @@ class Reveal {
     this.timer = null;
     const now = performance.now();
     const buffer = this.target.slice(this.shown);
-    const starved = buffer.length > 0 && buffer.length < STARVE_MIN && !this.final && now - this.lastRelease < STARVE_WAIT;
+    const card = cardEnd(this.target, this.shown) > this.shown;
+    const starved = buffer.length > 0 && buffer.length < STARVE_MIN && !this.final && !card && now - this.lastRelease < STARVE_WAIT;
 
     if (buffer.length && !starved) {
-      const { chunk } = take(buffer, this.final, this.rng);
-      this.shown += chunk.length;
+      const { chunk } = card ? { chunk: "" } : take(buffer, this.final, this.rng);
+      this.shown = cardEnd(this.target, this.shown + chunk.length);
       this.release(now);
       this.lastRelease = now;
       this.opts.onProgress?.();
