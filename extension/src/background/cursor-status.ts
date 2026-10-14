@@ -77,7 +77,7 @@ function renderStatus(tabId: number, key: string): Promise<void> {
   return next;
 }
 
-type PillView = { entry: LivingStatus; title: string; icon?: string };
+type PillView = { entry: LivingStatus; title: string };
 
 const pillOwners = new Map<number, Map<string, PillView>>();
 
@@ -99,7 +99,7 @@ function renderPill(tabId: number): Promise<void> {
         const { entry, title } = view;
         await callDom(tabId, (id: string, value: CrossPageView) => {
           window.__sideagent?.cursor?.for(id)?.showCrossPage?.(value);
-        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].flatMap(v => isCurrentEntry(v.entry) && v.entry.tabId != null ? [{ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId!, ...(v.icon ? { icon: v.icon } : {}) }] : []) }]);
+        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].flatMap(v => isCurrentEntry(v.entry) && v.entry.tabId != null ? [{ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId!}] : []) }]);
       } else {
         await callDom(tabId, () => { window.__sideagent?.cursor?.hideCrossPage?.(); }, []);
       }
@@ -166,13 +166,9 @@ async function syncPill(entry: LivingStatus): Promise<void> {
   }
 
   let title = "另一个页面";
-  let icon: string | undefined;
 
   try {
-    const tab = await chrome.tabs.get(entry.tabId);
-    title = tab.title?.trim() || title;
-    // 只收网页自己的图标地址；chrome:// 和 data: 在别的网页里画不出来。
-    if (tab.favIconUrl && /^https?:/.test(tab.favIconUrl)) icon = tab.favIconUrl;
+    title = (await chrome.tabs.get(entry.tabId)).title?.trim() || title;
   } catch {
     /* 页面已被关掉，胶囊仍指向那个标签 */
   }
@@ -188,7 +184,7 @@ async function syncPill(entry: LivingStatus): Promise<void> {
   entry.pillTabId = active;
   const owners = pillOwners.get(active) ?? new Map<string, PillView>();
   owners.delete(entry.key);
-  owners.set(entry.key, icon ? { entry, title, icon } : { entry, title });
+  owners.set(entry.key, { entry, title });
   pillOwners.set(active, owners);
   await renderPill(active);
 }

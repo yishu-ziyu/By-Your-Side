@@ -4727,7 +4727,7 @@ function showHandoffCard(ask: string): void {
   done.onclick = () => port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
   const hint = document.createElement("span");
   hint.className = "handoff-note";
-  hint.textContent = "或点页面上的「交还」";
+  hint.textContent = "或点页面右边的「继续」";
   actions.append(done, hint);
   card.append(title, body, note, actions);
   appendToMessages(card);

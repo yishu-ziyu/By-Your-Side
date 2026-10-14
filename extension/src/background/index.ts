@@ -1620,7 +1620,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
   const shown = showUserControlGuarded();
 
-  // 「现在归你」画好后圈出要用户填的栏和按钮（docs/evals/20261012-handoff-circle.md）。不等、不报错：圈不上不挡交还。
+  // 「现在归你」画好后圈出要用户填的栏和按钮。不等、不报错：圈不上不挡交还。
   // 按这页所属的成员找 @ref；「现在归你」收起时页面自己清圈。
   if (ask && targetTabId != null && targets?.length) {
     const owner = members.find(m => m.role === "lead") ?? members[0];

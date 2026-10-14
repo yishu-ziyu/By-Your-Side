@@ -227,7 +227,9 @@ try {
   const edgeBox = await rp.evaluate(work, '(()=>{const r=document.querySelector("#edge").getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}})()') as Rect;
   await mouseClick(work, edgeBox);
   check("胶囊下方的网页按钮照常能点", Number(await rp.evaluate(work, "window.edgeHits||0")) === 1, Number(await rp.evaluate(work, "window.edgeHits||0")));
-  // 点胶囊本身：没做成算看过，收起。
+  // 没做成不自动收起：过 3 秒还在；点胶囊本身才算看过，收起。
+  await sleep(3000);
+  check("没做成过 3 秒仍显示", (await tab())?.tone === "err", asJson(await tab()));
   await mouseClick(work, (await tab())!.rect!);
   await waitTab(t => !t.shown, 3000, "点一下没做成后收起").then(() => check("没做成不自动收起，点一下才收起", true, null), () => check("没做成不自动收起，点一下才收起", false, null));
 

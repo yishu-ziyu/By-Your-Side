@@ -68,6 +68,11 @@ try {
 
   const walk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => walk(c, hit)).find(Boolean);
 
+  const leaving = (n: DomNode) => !!n.attributes?.includes('data-leaving');
+
+  /** 同 walk，但不进正在淡出的旧字。 */
+  const liveWalk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => leaving(n) ? undefined : hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => liveWalk(c, hit)).find(Boolean);
+
   /** 页面右边缘胶囊在 closed shadow 里：用 CDP 穿透读文字、按钮框。 */
   const pageBar = async () => {
     // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
@@ -76,9 +81,10 @@ try {
     const host = walk(root, n => n.nodeName === 'DIV' && !!n.attributes?.includes('edge-tab'));
     const bar = host && walk(host, n => n.nodeName === 'DIV' && !!n.attributes?.includes('clip'));
 
-    if (!bar || !walk(bar, n => n.nodeName === 'BUTTON' && !!n.attributes?.includes('act'))) return null;
-    const text = (n: DomNode): string => (n.nodeValue ?? '') + (n.children ?? []).map(text).join(' ');
-    const button = walk(bar, n => n.nodeName === 'BUTTON' && !!n.attributes?.includes('act'))!;
+    if (!bar || !liveWalk(bar, n => n.nodeName === 'BUTTON' && !!n.attributes?.includes('act'))) return null;
+    // 换状态时旧字淡出约 0.1 秒，还在 DOM 里：只读留下来的字。
+    const text = (n: DomNode): string => leaving(n) ? '' : (n.nodeValue ?? '') + (n.children ?? []).map(text).join(' ');
+    const button = liveWalk(bar, n => n.nodeName === 'BUTTON' && !!n.attributes?.includes('act'))!;
     // SAFETY: DOM.getBoxModel 的 model.content 是 8 个数的四边形（x1,y1,…,x4,y4）。
     const q = (await rp.cdp.send('DOM.getBoxModel', { backendNodeId: button.backendNodeId }, work)).model.content as number[];
 
@@ -107,7 +113,8 @@ try {
   check('点「接管」1 秒内显示你在操作', pausedMs <= 1000, pausedMs);
   check('页面归你只在输入框上方说一次', JSON.stringify(await ownerLines()) === '["#handoff-banner"]', await ownerLines());
   check('暂停后侧栏同位置变成「交还」', (await sideButton()) === '交还', await sideButton());
-  const bar = await pageBar();
+  // 接管时先写约 0.1 秒「正在停住全队 · 请稍候」，再换成「现在归你」。
+  const bar = await until(async () => { const v = await pageBar(); return v?.button === '继续' ? v : undefined; }, 3000, '胶囊写现在归你').catch(async () => await pageBar());
   check('页面右边缘胶囊显示「现在归你」和「继续」', !!bar && bar.text.includes('现在归你') && bar.button === '继续', bar);
   await rp.screenshot(work, join(out, 'paused-page.png')); await rp.screenshot(panel, join(out, 'paused-panel.png'));
   const pausedCount = await count();
