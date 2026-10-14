@@ -10,6 +10,7 @@
  *   分两组的文件，每行一个「Share」：第一组两行，第二组只有一行，组标题比这一行的字长（按日期分组的列表）。
  *   点「整理」给每行各加一个「Delete」（几处分开变化，同名控件不在同一棵读到的树里）。
  *   两列看板，每列只有一张卡片，卡片里有「Move」（点了展开）；「加卡片」往第二列加一张字更长的卡片。
+ *   两条帖子，每条里只有“我的回复”带「Edit」（点了展开）；第一条帖子里还有一条别人的、字更长的评论。
  *   三张像 Memos 的卡片：每张开头是「now」「More」两个按钮，再是正文；「More」弹出挂在 body 上的菜单，「Pin」把这张移到最上面并多出「Unpin」。
  * 脚本模型开头读一次页；之后要用的编号如果结果里没有，它就再读一次页（所以“只读了一次页”这条能失败）。
  *   a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、不带读页时已有的元素、不带跳动的时钟，不超过 2000 字。
@@ -22,10 +23,11 @@
  *   i 点第二张卡片的「More」：展开的按钮行写明在“读书笔记”那一项；对话框里的新栏不带这句（不在重复的项里）。
  *   k 点「整理」：每个新的「Delete」写明在哪一行（只读到按钮所在的小容器，要问浏览器祖先），第二组那一行不认成整组，不卡住。
  *   l 先「加卡片」，再点第二列原来那张的「Move」：写明的是原来那张，不是新加的那张（认的时候每列只有一张，记下的是整列）。
+ *   m 点第一条帖子里我的「Edit」：写明在我的回复，不是旁边别人那条更长的评论。
  *   j 点「Pin」：新出现的「Unpin」写明在“读书笔记”那一项（它在页面上只有一个，靠记下的那张卡片认出来）。
  *   f 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回内容的每一步、每一次填写和选择也都不超过 300 毫秒（备注框的请求 1.5 秒才回来，不能等它）。
  * 失败方式：关掉变化摘要（pageChangesAfter、watchChangesAfter 直接返回 undefined），a、b、d 失败；改回动作后读整页，f 失败；
- * 去掉“动作前就在跳字的不算”，e 失败；不认所在那一项（repeatedItems 直接返回空表），i、j、k 失败；同名控件分在两处时找共同祖先不停（审查复现过），k 超时失败；读项文字前不往下收窄，l 失败。
+ * 去掉“动作前就在跳字的不算”，e 失败；不认所在那一项（repeatedItems 直接返回空表），i、j、k 失败；同名控件分在两处时找共同祖先不停（审查复现过），k 超时失败；读项文字前不往下收窄，l 失败；字从记下的最高那层读，m 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -67,6 +69,10 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔
 <div class="col"><h4>周二</h4><div class="card"><p>周二：取快递</p><button type="button" class="mv" aria-expanded="false">Move</button></div></div>
 </div>
 <p><button id="addcard" type="button">加卡片</button></p>
+<div id="feed">
+<div class="post"><div class="cm"><p>我的回复：好的</p><button type="button" class="ed" aria-expanded="false">Edit</button></div><div class="cm"><p>别人的评论：这是一段比我的回复长得多的评论内容</p></div></div>
+<div class="post"><div class="cm"><p>我的回复：收到</p><button type="button" class="ed" aria-expanded="false">Edit</button></div></div>
+</div>
 <div id="cards">
 <div class="card"><div class="head"><button type="button">now</button><button type="button" class="more" aria-label="More">⋯</button></div><p>会议纪要：周三发布，周一冻结代码。</p></div>
 <div class="card"><div class="head"><button type="button">now</button><button type="button" class="more" aria-label="More">⋯</button></div><p>读书笔记：第三章讲地方政府融资。</p></div>
@@ -87,6 +93,7 @@ document.getElementById("kind").addEventListener("change", e => {
   e.target.closest("p").after(p);
 });
 document.getElementById("board").addEventListener("click", e => { const b = e.target.closest(".mv"); if (b) b.setAttribute("aria-expanded", b.getAttribute("aria-expanded") === "true" ? "false" : "true"); });
+document.getElementById("feed").addEventListener("click", e => { const b = e.target.closest(".ed"); if (b) b.setAttribute("aria-expanded", "true"); });
 document.getElementById("addcard").onclick = () => document.querySelectorAll("#board .col")[1].insertAdjacentHTML("beforeend", '<div class="card"><p>周二：新加的一张字更长的卡片，用来把整列里最长的文字换掉</p><button type="button" class="mv" aria-expanded="false">Move</button></div>');
 document.getElementById("tidy").onclick = () => { for (const acts of document.querySelectorAll(".acts")) acts.insertAdjacentHTML("beforeend", '<button type="button">Delete</button>'); };
 // 像 Memos：菜单挂在 body 上，和卡片没有包含关系；置顶把整张卡片挪到最上面。
@@ -142,7 +149,7 @@ const FINAL = "笔记已保存。";
 const t = {
   memo: { target: "", value: "随手记" }, editor: { target: "loc=css:#editor", value: EDITOR_TEXT }, dead: { target: "" },
   kind: { target: "", values: "项目" }, help: { target: "" }, qty: { target: "", value: "3" }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" },
-  more: { target: "" }, pin: { target: "" }, tidy: { target: "" }, addcard: { target: "" }, move: { target: "" },
+  more: { target: "" }, pin: { target: "" }, tidy: { target: "" }, addcard: { target: "" }, move: { target: "" }, edit: { target: "" },
 };
 const flow: Array<{ tool: { name: string; args: object } } | { text: string }> = [
   { tool: { name: "snapshot", args: {} } },
@@ -161,6 +168,7 @@ const flow: Array<{ tool: { name: string; args: object } } | { text: string }> =
   { tool: { name: "click", args: t.tidy } },
   { tool: { name: "click", args: t.addcard } },
   { tool: { name: "click", args: t.move } },
+  { tool: { name: "click", args: t.edit } },
   { text: FINAL },
 ];
 
@@ -201,6 +209,7 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
       t.help.target = `@${ref(/\[ref=(\d+)\] button "显示帮助"/) ?? ""}`;
       t.qty.target = `@${ref(/\[ref=(\d+)\] spinbutton "数量"/) ?? ""}`;
       // 第二张卡片（读书笔记）的「More」：快照里它排在读书笔记正文前面。
+      t.edit.target = `@${ref(/\[ref=(\d+)\] button "Edit"/) ?? ""}`;
       t.addcard.target = `@${ref(/\[ref=(\d+)\] button "加卡片"/) ?? ""}`;
       // 第二列原来那张卡片的「Move」。
       t.move.target = `@${[...text.matchAll(/\[ref=(\d+)\] button "Move"/g)][1]?.[1] ?? ""}`;
@@ -279,6 +288,9 @@ try {
 
   const moveShown = appearedPart(receiptOf("click", t.move));
   check("l 先加卡片，再点第二列原来那张的「Move」：写明的是原来那张", /button "Move" expanded[^\n]* — in item "周二：取快递"/.test(moveShown), { move: t.move.target, moveShown, added: appearedPart(receiptOf("click", t.addcard)) });
+
+  const editShown = appearedPart(receiptOf("click", t.edit));
+  check("m 点第一条帖子里我的「Edit」：写明在我的回复，不是别人那条更长的评论", /button "Edit" expanded[^\n]* — in item "我的回复：好的"/.test(editShown), { edit: t.edit.target, editShown });
 
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;
