@@ -575,7 +575,7 @@
    "type": "function",
    "function": {
     "name": "click",
-    "description": "Click an element in the working tab. Provide target (\"@N\" ref, \"loc=css:...\" locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click.",
+    "description": "Click an element in the working tab. Provide target (\"@N\" ref, \"loc=css:...\" locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click. When new elements or text appear on the same page, the result lists them with usable refs.",
     "parameters": {
      "type": "object",
      "properties": {
@@ -690,7 +690,7 @@
    "type": "function",
    "function": {
     "name": "fill",
-    "description": "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click.",
+    "description": "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
     "parameters": {
      "type": "object",
      "required": [

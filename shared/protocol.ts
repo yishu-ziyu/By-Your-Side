@@ -616,7 +616,7 @@ export interface ToolContract {
     };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。
      *  dialog = 点击后页面弹出了原生对话框（点击已送达，页面等对话框处理）；此时不等效果采样。 */
-    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string }; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true };
+    data: { clicked: true; effect?: import('./effect.js').EffectReport; /** 页面上新出现的行（和上次读页比）；换页、开新标签页时没有。 */ appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string }; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true };
   };
   /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2。 */
   double_click: {
@@ -630,7 +630,7 @@ export interface ToolContract {
       force?: boolean;
       label?: string;
     };
-    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
+    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
   };
   /**
    * CAP-02A：在触发动作前 arm 事件。返回宿主签发的 token（模型不可伪造）。
@@ -710,7 +710,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback; /** 快照里这个 ref 的输入框被页面重渲染换掉，已按原输入框的名字找回唯一的新输入框并在它上面填写。 */ refound?: true } };
+  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; appeared?: import('./effect.js').PageAppeared; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback; /** 快照里这个 ref 的输入框被页面重渲染换掉，已按原输入框的名字找回唯一的新输入框并在它上面填写。 */ refound?: true } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {
@@ -720,7 +720,7 @@ export interface ToolContract {
       expectedDocumentId?: string;
       expectedBackendNodeId?: number;
     };
-    data: { selected: string[]; labels: string[]; /** 同 fill.refound。 */ refound?: true };
+    data: { selected: string[]; labels: string[]; /** 同 fill.refound。 */ refound?: true; appeared?: import('./effect.js').PageAppeared };
   };
   /** 把本会话的文件放进页面上的一个 <input type=file>：文件在页面里构造，不经本机磁盘；回执是从文件框读回的文件。 */
   upload_file: {
@@ -728,7 +728,7 @@ export interface ToolContract {
     data: { files: Array<{ name: string; size: number; type: string }> };
   };
   type_text: { params: { tabId?: number; text: string; }; data: { typed: true; /** The focused field, read from the page after typing. */ readback?: FieldReadback } };
-  press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
+  press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
