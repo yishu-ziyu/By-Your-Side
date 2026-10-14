@@ -23,7 +23,7 @@ import { confirmSendIfNeeded, type SendGuard } from "../send-confirm.js";
 import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { beginEffect, collectEffect, pageChangesAfter, QUICK_EFFECT_WAIT } from "./effect.js";
+import { beginEffect, beginWatch, collectEffect, pageChangesAfter, watchChangesAfter } from "./effect.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite } from "../fill-undo.js";
@@ -2135,17 +2135,16 @@ export async function fill(
   return await withAppeared(params.tabId, sessionId, () => fillField(params, sessionId, beforeDispatch));
 }
 
-/** 填写、选择外面包一层：动作前开始记页面，动作后短等一下，页面多了东西就带回新出现的行。 */
+/** 填写、选择外面包一层：动作前开始记页面上哪里变了，动作后带回新出现的行。 */
 async function withAppeared<T extends object>(tabIdParam: number | undefined, sessionId: string, act: () => Promise<T>): Promise<T & { appeared?: PageAppeared }> {
-  const tabId = (await resolveWorkingTab(tabIdParam, sessionId).catch(() => null))?.id;
   const started = Date.now();
-  const token = tabId == null ? null : await beginEffect(tabId, { quick: true });
+  const tabId = (await resolveWorkingTab(tabIdParam, sessionId).catch(() => null))?.id;
+  const token = tabId == null ? null : await beginWatch(tabId);
   const beginMs = Date.now() - started;
   const data = await act();
 
   if (tabId == null || !token) return data;
-  const after = Date.now();
-  const appeared = await pageChangesAfter(tabId, sessionId, await collectEffect(tabId, token, QUICK_EFFECT_WAIT), after, beginMs);
+  const appeared = await watchChangesAfter(tabId, sessionId, token, beginMs);
 
   return appeared ? { ...data, appeared } : data;
 }

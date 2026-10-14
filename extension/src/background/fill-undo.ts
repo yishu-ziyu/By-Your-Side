@@ -471,18 +471,32 @@ chrome.runtime.onMessage.addListener((raw: { type?: string; tokens?: unknown } |
 
 /** 旧值至少这么长才去掉：一个字的旧值（人数 2）到处都有，去掉只会弄坏摘要。 */
 const MIN_SCRUB_CHARS = 2;
+/** 页面上的字会被截短：一行里出现旧值开头这么多字，就整行不给。 */
+const SCRUB_PREFIX_CHARS = 12;
 
 /**
- * 交给模型的页面文字里去掉这一轮记下的旧值（动作后“新出现了什么”的摘要用）：旧值只能留在这里。
- * 敏感栏的旧值本来就只是摘要，不用管。
+ * 交给模型的一行页面内容里去掉这一轮还开着的记录的旧值（动作后“新出现了什么”的摘要用）：旧值只能留在这里。
+ * 按读页的写法比较（空白合成一个、引号写成 \"）；旧值很长、行里只露出开头时整行换掉。
+ * 敏感栏的旧值本来就只是摘要；记录关掉（提交、还原、换页）后值已丢掉，那时页面上的字和读页看到的一样。
  */
-export function withoutUndoValues(sessionKey: string, text: string): string {
+export function undoScrubber(sessionKey: string): (body: string) => string {
   const ledger = ledgers.get(parseExecutionKey(sessionKey).conversationId);
+  const values = ledger ? [...ledger.tabs.values()].flatMap(tab => [...tab.entries.values()])
+    .flatMap(entry => {
+      const v = (entry.sensitive ? "" : entry.before.value ?? "").replace(/\s+/g, " ").trim();
 
-  if (!ledger) return text;
-  const values = [...ledger.tabs.values()].flatMap(tab => [...tab.entries.values()])
-    .flatMap(entry => !entry.sensitive && entry.before.value && entry.before.value.trim().length >= MIN_SCRUB_CHARS ? [entry.before.value.trim()] : [])
-    .sort((a, b) => b.length - a.length);
+      return v.length >= MIN_SCRUB_CHARS ? [v, JSON.stringify(v).slice(1, -1)] : [];
+    })
+    .sort((a, b) => b.length - a.length) : [];
 
-  return values.reduce((out, value) => out.split(value).join("<earlier value hidden>"), text);
+  return body => {
+    let out = body;
+
+    for (const v of values) {
+      if (v.length > SCRUB_PREFIX_CHARS && !out.includes(v) && out.includes(v.slice(0, SCRUB_PREFIX_CHARS))) return "text: <hidden: shows an earlier field value>";
+      out = out.split(v).join("<earlier value hidden>");
+    }
+
+    return out;
+  };
 }

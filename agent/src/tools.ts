@@ -59,7 +59,7 @@ function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: 
 function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | undefined): string {
   if (!appeared) return "";
 
-  if ("redrawn" in appeared) return "\nMost of this page re-rendered since you last read it; snapshot to read it.";
+  if ("redrawn" in appeared) return "\nA large part of this page changed after this action; snapshot to read it.";
 
   if (!appeared.text) return "";
 
@@ -739,7 +739,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}${appeared}`, data);
         }
 
-        return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}${appeared}`, data);
+        if (appeared) return textResult(`${clicked} Event dispatch confirmed.${newTabText}${appeared}`, data);
+
+        return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
       },
     }),
 

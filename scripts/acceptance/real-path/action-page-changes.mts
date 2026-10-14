@@ -2,14 +2,15 @@
  * 点击、填写之后，工具结果直接带回“页面上新出现了什么”，模型不用再读一次页（docs/evals/20261014-action-page-changes.md）。
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/action-page-changes.mts --headless
- * 练习页是一长页笔记（60 段正文），点「新建笔记」弹出对话框：标题框（原来写着草稿名）、口令框（原来有值）、「保存」。
+ * 练习页是一长页笔记（3000 段正文，约 1.5 万个无障碍节点），点「新建笔记」弹出对话框：
+ *   标题框（原来写着草稿名）、口令框和提货码框（autocomplete=one-time-code，名字不像敏感栏；都原来有值）、「保存」。
  * 往标题框填字后，对话框里出现一行提示“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
  * 脚本模型只在开头读一次页，之后的编号全部取自点击、填写的结果原文。判据只读回到模型的工具结果和服务器收到的保存。
  *   a 点击结果带回对话框里的标题框和「保存」的编号（读页时没有这两个编号），不带整页正文，不超过 2000 字。
  *   b 脚本模型照这两个编号填写、保存：服务器收到标题，对话框关掉；整轮只读了一次页。
- *   c 口令框的值不出现在任何结果里；填写结果带回新出现的提示，但不带被替换掉的旧标题。
- *   d 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒。
- * 失败方式：关掉变化摘要（pageChangesAfter 直接返回 undefined），a、b 失败。
+ *   c 口令、提货码的值不出现在任何结果里；填写结果带回新出现的提示，但不带被替换掉的旧标题。
+ *   d 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回了内容的那几步每一步也不超过 300 毫秒。
+ * 失败方式：关掉变化摘要（pageChangesAfter 直接返回 undefined），a、b 失败；改回动作后读整页，d 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -25,8 +26,11 @@ await mkdir(out, { recursive: true });
 
 const OLD_TITLE = "草稿-OLD7731";
 const SECRET = "pw-SECRET9948";
+const CODE = "PICKUP-CODE5521";
 const NEW_TITLE = "周会纪要";
-const LONG = Array.from({ length: 60 }, (_, i) => `<p>第 ${i + 1} 段：这是一段很长的笔记正文，用来确认结果里不带整页内容。</p>`).join("");
+// 大页面（约 1.5 万个无障碍节点）：整页读一次要半秒以上，只读变过的几处才进得了时间预算。
+// 再大（6000 段）时，机器忙的时候开头那次读页会超过 8 秒、退回简化快照，用例就测不到要测的东西了。
+const LONG = Array.from({ length: 3000 }, (_, i) => `<p>第 ${i + 1} 段：这是一段很长的笔记正文，<a href="#p${i}">链接 ${i + 1}</a>。</p>`).join("");
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔记</title><body style="font:16px sans-serif;margin:40px">
 <h1>我的笔记</h1>
 <p><label>备注 <input id="memo" aria-label="备注"></label> <button id="new" type="button">新建笔记</button></p>
@@ -39,6 +43,7 @@ document.getElementById("new").onclick = () => {
   box.style.cssText = "position:fixed;top:80px;left:80px;padding:24px;background:#fff;border:1px solid #888";
   box.innerHTML = '<p><label>标题 <input id="title" aria-label="标题" value="${OLD_TITLE}"></label></p>'
     + '<p><label>口令 <input id="pw" type="password" aria-label="口令" value="${SECRET}"></label></p>'
+    + '<p><label>提货 <input id="code" autocomplete="one-time-code" aria-label="提货" value="${CODE}"></label></p>'
     + '<p id="hint" role="status"></p><button id="save" type="button">保存</button>';
   document.body.append(box);
   const title = box.querySelector("#title");
@@ -142,12 +147,13 @@ try {
   check("b 照结果里的编号填写、保存：服务器收到标题，对话框关掉；整轮只读了一次页", saves.includes(NEW_TITLE) && dialogGone === true && snapshots === 1, { saves, dialogGone, snapshots, calls: receipts.map(r => r.name) });
 
   const titleReceipt = receipts.find(r => r.name === "fill" && r.args.includes(steps.title.target))?.text ?? "";
-  const leaked = receipts.filter(r => r.text.includes("SECRET9948")).map(r => r.name);
-  check("c 口令不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题", leaked.length === 0 && /已替换/.test(appearedPart(titleReceipt)) && !titleReceipt.includes("OLD7731"), { leaked, titleReceipt });
+  const leaked = receipts.filter(r => r.text.includes("SECRET9948") || r.text.includes("CODE5521")).map(r => r.name);
+  check("c 口令、提货码不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题", leaked.length === 0 && /已替换/.test(appearedPart(titleReceipt)) && !titleReceipt.includes("OLD7731"), { leaked, titleReceipt });
 
   const sorted = timings.map(t => t.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;
-  check("d 工具为此多花的时间中位数不超过 300 毫秒", sorted.length >= 4 && median <= 300, { median, timings });
+  const brought = timings.filter(t => t.chars > 0).map(t => t.ms);
+  check("d 工具为此多花的时间中位数不超过 300 毫秒，带回内容的每一步也不超过 300 毫秒", sorted.length >= 4 && median <= 300 && brought.length >= 2 && Math.max(...brought) <= 300, { median, brought, timings });
   await rp.screenshot(panel, join(out, "panel.png"));
   await rp.screenshot(work, join(out, "page.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {
