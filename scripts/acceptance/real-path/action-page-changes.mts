@@ -7,7 +7,8 @@
  *   没写 role 的编辑器「正文」；没有反应的「刷新」按钮；「分类」下拉框（选“项目”后多出一个「项目名」框）；
  *   「新建笔记」：弹出对话框（标题框原来写着草稿名、口令框、提货码框 autocomplete=one-time-code、「保存」），同时像常见弹窗库那样给 body 加 modal-open、锁滚动。
  *   往标题框填字后，对话框里出现“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
- *   两行文件，每行一个「Share」；点「整理」给两行各加一个「Delete」（两处分开变化，同名控件不在同一棵读到的树里）。
+ *   分两组的文件，每行一个「Share」：第一组两行，第二组只有一行，组标题比这一行的字长（按日期分组的列表）。
+ *   点「整理」给每行各加一个「Delete」（几处分开变化，同名控件不在同一棵读到的树里）。
  *   三张像 Memos 的卡片：每张开头是「now」「More」两个按钮，再是正文；「More」弹出挂在 body 上的菜单，「Pin」把这张移到最上面并多出「Unpin」。
  * 脚本模型开头读一次页；之后要用的编号如果结果里没有，它就再读一次页（所以“只读了一次页”这条能失败）。
  *   a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、不带读页时已有的元素、不带跳动的时钟，不超过 2000 字。
@@ -18,7 +19,7 @@
  *   g 点「显示帮助」：页面只给 body 换一个 class，让预先画好的帮助显出来；结果说“这一页一大块变了”，不是什么都没有。
  *   h 填数量框（填完它自己换校验 class）：结果不把这个数量框当成新出现的。
  *   i 点第二张卡片的「More」：展开的按钮行写明在“读书笔记”那一项；对话框里的新栏不带这句（不在重复的项里）。
- *   k 点「整理」：两个新的「Delete」各写明在哪一行（只读到按钮所在的小容器，要问浏览器祖先），不卡住。
+ *   k 点「整理」：每个新的「Delete」写明在哪一行（只读到按钮所在的小容器，要问浏览器祖先），第二组那一行不认成整组，不卡住。
  *   j 点「Pin」：新出现的「Unpin」写明在“读书笔记”那一项（它在页面上只有一个，靠记下的那张卡片认出来）。
  *   f 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回内容的每一步、每一次填写和选择也都不超过 300 毫秒（备注框的请求 1.5 秒才回来，不能等它）。
  * 失败方式：关掉变化摘要（pageChangesAfter、watchChangesAfter 直接返回 undefined），a、b、d 失败；改回动作后读整页，f 失败；
@@ -54,8 +55,9 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔
 <style>.help { display: none } body.show-help .help { display: block }</style>
 <div class="help"><p>帮助：先写标题再保存。</p><button type="button">知道了</button></div>
 <div id="files">
-<div class="row"><p>文件甲：季度报告.pdf</p><div class="acts"><button type="button">Share</button></div></div>
-<div class="row"><p>文件乙：会议纪要.docx</p><div class="acts"><button type="button">Share</button></div></div>
+<section><div class="row"><p>文件甲：季度报告.pdf</p><div class="acts"><button type="button">Share</button></div></div>
+<div class="row"><p>文件乙：会议纪要.docx</p><div class="acts"><button type="button">Share</button></div></div></section>
+<section><h3>上周上传的文件（这一组目前只有一个）</h3><div class="row"><p>文件丙.txt</p><div class="acts"><button type="button">Share</button></div></div></section>
 </div>
 <p><button id="tidy" type="button">整理</button></p>
 <div id="cards">
@@ -259,7 +261,7 @@ try {
   check("j 点「Pin」：新出现的「Unpin」写明在读书笔记那一项", /button "Unpin" — in item "读书笔记/.test(appearedPart(pinReceipt)) && String(top).startsWith("读书笔记"), { pin: t.pin.target, top, pinReceipt });
 
   const tidyShown = appearedPart(receiptOf("click", t.tidy));
-  check("k 点「整理」：两个新的「Delete」各写明在哪一行，不卡住", /button "Delete" — in item "文件甲/.test(tidyShown) && /button "Delete" — in item "文件乙/.test(tidyShown), { tidy: t.tidy.target, tidyShown });
+  check("k 点「整理」：每个新的「Delete」写明在哪一行，第二组那一行不认成整组，不卡住", ["文件甲", "文件乙", "文件丙.txt\""].every(x => tidyShown.includes(`button "Delete" — in item "${x}`)), { tidy: t.tidy.target, tidyShown });
 
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;

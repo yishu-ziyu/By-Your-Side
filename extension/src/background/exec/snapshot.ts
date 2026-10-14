@@ -334,6 +334,19 @@ async function readItems(tabId: number, refs: readonly number[], nodes: readonly
   const known = knownItems(tabId);
   const isItem = (id: number) => found.items.has(id) || known.items.has(id);
   const out = new Map<number, string>();
+  // 同一项只读一次（菜单里的几项都在同一张卡片里）。
+  const reads = new Map<number, Promise<string | undefined>>();
+  const readItem = (item: number) => {
+    let read = reads.get(item);
+
+    if (!read) {
+      read = sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: item })
+        .then(sub => sub.nodes ? itemTextOf(sub.nodes, item) : undefined, () => undefined);
+      reads.set(item, read);
+    }
+
+    return read;
+  };
 
   await Promise.all(refs.slice(0, MAX_ITEM_LOOKUPS).map(async ref => {
     let item = found.byRef.get(ref) ?? known.byRef.get(ref) ?? enclosingItem(nodes, ref, isItem);
@@ -345,13 +358,7 @@ async function readItems(tabId: number, refs: readonly number[], nodes: readonly
     }
 
     if (item === undefined) return;
-    let text = itemTextOf(nodes, item);
-
-    if (text === undefined) {
-      const sub = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: item }).catch(() => undefined);
-
-      text = sub?.nodes ? itemTextOf(sub.nodes, item) : undefined;
-    }
+    const text = itemTextOf(nodes, item) ?? await readItem(item);
 
     if (text) out.set(ref, text);
   }));
