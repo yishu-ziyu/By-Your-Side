@@ -1,17 +1,21 @@
 /**
- * 点击、填写之后，工具结果直接带回“页面上新出现了什么”，模型不用再读一次页（docs/evals/20261014-action-page-changes.md）。
+ * 点击、填写、回车、选择之后，工具结果直接带回“页面上新出现了什么”，模型不用再读一次页（docs/evals/20261014-action-page-changes.md）。
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/action-page-changes.mts --headless
- * 练习页是一长页笔记（3000 段正文，约 1.5 万个无障碍节点），点「新建笔记」弹出对话框：
- *   标题框（原来写着草稿名）、口令框和提货码框（autocomplete=one-time-code，名字不像敏感栏；都原来有值）、「保存」。
- * 弹窗打开时页面像常见弹窗库那样给 body 加 modal-open、锁滚动（大元素只改了属性，不能盖住里面新出现的对话框）。
- * 页面上还有一个编辑器（contenteditable）。往标题框填字后，对话框里出现一行提示“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
- * 脚本模型只在开头读一次页，之后的编号全部取自点击、填写的结果原文。判据只读回到模型的工具结果和服务器收到的保存。
- *   a 点击结果带回对话框里的标题框和「保存」的编号（读页时没有这两个编号），不带整页正文，不超过 2000 字。
- *   b 脚本模型照这两个编号填写、保存：服务器收到标题，对话框关掉；整轮只读了一次页。
- *   c 口令、提货码的值不出现在任何结果里；填写结果带回新出现的提示，但不带被替换掉的旧标题；往编辑器里填的字不当成新出现的内容。
- *   d 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回了内容的那几步每一步也不超过 300 毫秒。
- * 失败方式：关掉变化摘要（pageChangesAfter 直接返回 undefined），a、b 失败；改回动作后读整页，d 失败。
+ * 练习页是一长页笔记（3000 段正文，约 1.5 万个无障碍节点），上面还有：
+ *   每 250 毫秒跳一次的时钟；「备注」框（每打一个字就自动保存，网站 1.5 秒后才回话；回车后出现“备注已保存”）；
+ *   没写 role 的编辑器「正文」；没有反应的「刷新」按钮；「分类」下拉框（选“项目”后多出一个「项目名」框）；
+ *   「新建笔记」：弹出对话框（标题框原来写着草稿名、口令框、提货码框 autocomplete=one-time-code、「保存」），同时像常见弹窗库那样给 body 加 modal-open、锁滚动。
+ *   往标题框填字后，对话框里出现“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
+ * 脚本模型开头读一次页；之后要用的编号如果结果里没有，它就再读一次页（所以“只读了一次页”这条能失败）。
+ *   a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、不带读页时已有的元素、不带跳动的时钟，不超过 2000 字。
+ *   b 照结果里的编号填写、保存：服务器收到标题，对话框关掉；整轮只读了一次页。
+ *   c 口令、提货码的值不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题；往编辑器里填的字不当成新出现的内容。
+ *   d 回车结果带回“备注已保存”；选择结果带回「项目名」框。
+ *   e 点没有反应的按钮：结果照旧警告“没有可归因的变化，别盲目重复”，不把跳动的时钟当成新内容。
+ *   f 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回内容的每一步、每一次填写和选择也都不超过 300 毫秒（备注框的请求 1.5 秒才回来，不能等它）。
+ * 失败方式：关掉变化摘要（pageChangesAfter、watchChangesAfter 直接返回 undefined），a、b、d 失败；改回动作后读整页，f 失败；
+ * 去掉“动作前就在跳字的不算”，e 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -29,15 +33,30 @@ const OLD_TITLE = "草稿-OLD7731";
 const SECRET = "pw-SECRET9948";
 const CODE = "PICKUP-CODE5521";
 const NEW_TITLE = "周会纪要";
+const EDITOR_TEXT = "编辑器正文ECHO4417";
 // 大页面（约 1.5 万个无障碍节点）：整页读一次要半秒以上，只读变过的几处才进得了时间预算。
 // 再大（6000 段）时，机器忙的时候开头那次读页会超过 8 秒、退回简化快照，用例就测不到要测的东西了。
 const LONG = Array.from({ length: 3000 }, (_, i) => `<p>第 ${i + 1} 段：这是一段很长的笔记正文，<a href="#p${i}">链接 ${i + 1}</a>。</p>`).join("");
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔记</title><body style="font:16px sans-serif;margin:40px">
 <h1>我的笔记</h1>
-<p><label>备注 <input id="memo" aria-label="备注"></label> <button id="new" type="button">新建笔记</button></p>
-<div id="editor" contenteditable="true" role="textbox" aria-label="正文" style="border:1px solid #ccc;min-height:2em"></div>
+<p>时钟 <span id="clock">00:00:00</span></p>
+<p><label>备注 <input id="memo" aria-label="备注"></label> <button id="new" type="button">新建笔记</button> <button id="dead" type="button">刷新</button></p>
+<p><label>分类 <select id="kind" aria-label="分类"><option>笔记</option><option>项目</option></select></label></p>
+<div id="editor" contenteditable="true" aria-label="正文" style="border:1px solid #ccc;min-height:2em"></div>
 ${LONG}
 <script>
+let tick = 0;
+setInterval(() => { tick++; document.getElementById("clock").textContent = "00:00:" + String(tick % 60).padStart(2, "0") + "时钟"; }, 250);
+const memo = document.getElementById("memo");
+// 每打一个字就自动保存：网站很慢才回话。
+memo.addEventListener("input", () => fetch("/autosave?v=" + encodeURIComponent(memo.value)));
+memo.addEventListener("keydown", e => { if (e.key === "Enter") { const p = document.createElement("p"); p.setAttribute("role", "status"); p.textContent = "备注已保存"; memo.parentElement.after(p); } });
+document.getElementById("kind").addEventListener("change", e => {
+  if (e.target.value !== "项目" || document.getElementById("project")) return;
+  const p = document.createElement("p");
+  p.innerHTML = '<label>项目名 <input id="project" aria-label="项目名"></label>';
+  e.target.closest("p").after(p);
+});
 document.getElementById("new").onclick = () => {
   const box = document.createElement("div");
   box.setAttribute("role", "dialog");
@@ -61,29 +80,36 @@ const saves: string[] = [];
 const site = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
   if (url.pathname === "/save") { saves.push(url.searchParams.get("title") ?? ""); res.writeHead(204).end(); return; }
+  if (url.pathname === "/autosave") { setTimeout(() => res.writeHead(204).end(), 1500); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
-const ASK = "新建验收：新建一条笔记，标题写周会纪要，保存。";
+const ASK = "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。";
 const FINAL = "笔记已保存。";
 // 编号在前一步的结果里才知道：onPayload 从结果原文里填进这些参数，模型服务在回复前才序列化它们。
-const EDITOR_TEXT = "编辑器正文ECHO4417";
-const steps = { memo: { target: "", value: "随手记" }, editor: { target: "", value: EDITOR_TEXT }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" } };
+const t = {
+  memo: { target: "", value: "随手记" }, editor: { target: "loc=css:#editor", value: EDITOR_TEXT }, dead: { target: "" },
+  kind: { target: "", values: "项目" }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" },
+};
+const flow: Array<{ tool: { name: string; args: object } } | { text: string }> = [
+  { tool: { name: "snapshot", args: {} } },
+  { tool: { name: "fill", args: t.memo } },
+  { tool: { name: "press_key", args: { key: "Enter" } } },
+  { tool: { name: "fill", args: t.editor } },
+  { tool: { name: "click", args: t.dead } },
+  { tool: { name: "select_option", args: t.kind } },
+  { tool: { name: "click", args: t.open } },
+  { tool: { name: "fill", args: t.title } },
+  { tool: { name: "click", args: t.save } },
+  { text: FINAL },
+];
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
-  { match: ASK, steps: [
-    { tool: { name: "snapshot", args: {} } },
-    { tool: { name: "fill", args: steps.memo } },
-    { tool: { name: "fill", args: steps.editor } },
-    { tool: { name: "click", args: steps.open } },
-    { tool: { name: "fill", args: steps.title } },
-    { tool: { name: "click", args: steps.save } },
-    { text: FINAL },
-  ] },
+  { match: ASK, steps: flow },
 ], undefined, payload => onPayload(payload));
 
 const rp = await launchRealPath();
@@ -93,7 +119,8 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 type Receipt = { name: string; args: string; text: string };
 const receipts: Receipt[] = [];
 const seenCalls = new Set<string>();
-const timings: Array<{ ms: number; chars: number }> = [];
+const timings: Array<{ ms: number; chars: number; kind: string }> = [];
+let peeked = false;
 
 /** 回到模型的每个工具结果原文（每次请求带着全部历史，按调用编号去重）。 */
 function onPayload(payload: { messages?: Array<{ role: string; content?: unknown; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }>; tools?: unknown[] }) {
@@ -108,24 +135,28 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
     const call = calls.get(id);
     const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
     receipts.push({ name: call?.name ?? "?", args: call?.arguments ?? "", text });
-    if (call?.name === "snapshot") {
-      steps.memo.target = `@${/\[ref=(\d+)\] textbox "备注"/.exec(text)?.[1] ?? ""}`;
-      steps.open.target = `@${/\[ref=(\d+)\] button "新建笔记"/.exec(text)?.[1] ?? ""}`;
-      steps.editor.target = `@${/\[ref=(\d+)\] textbox "正文"/.exec(text)?.[1] ?? ""}`;
+    const ref = (re: RegExp) => re.exec(text)?.[1];
+    if (call?.name === "snapshot" && !t.memo.target) {
+      t.memo.target = `@${ref(/\[ref=(\d+)\] textbox "备注"/) ?? ""}`;
+      t.open.target = `@${ref(/\[ref=(\d+)\] button "新建笔记"/) ?? ""}`;
+      t.dead.target = `@${ref(/\[ref=(\d+)\] button "刷新"/) ?? ""}`;
+      t.kind.target = `@${ref(/\[ref=(\d+)\] combobox "分类"/) ?? ""}`;
     }
-    // 标题框和「保存」只从点击结果里拿：读页时它们还不存在。
-    if (call?.name === "click" && call.arguments.includes(steps.open.target)) {
-      steps.title.target = `@${/\[ref=(\d+)\] textbox "标题"/.exec(text)?.[1] ?? ""}`;
-      steps.save.target = `@${/\[ref=(\d+)\] button "保存"/.exec(text)?.[1] ?? ""}`;
+    // 标题框和「保存」：从点开对话框的结果里拿；拿不到就像真模型一样再读一次页，从那次读页里拿。
+    if ((call?.name === "click" && call.arguments.includes(t.open.target)) || (call?.name === "snapshot" && peeked)) {
+      const title = ref(/\[ref=(\d+)\] textbox "标题"/), save = ref(/\[ref=(\d+)\] button "保存"/);
+      if (title && save) { t.title.target = `@${title}`; t.save.target = `@${save}`; }
+      else if (!peeked) { peeked = true; flow.splice(flow.findIndex(s => "tool" in s && s.tool.args === t.title), 0, { tool: { name: "snapshot", args: {} } }); }
     }
   }
 }
 
 /** 结果里“新出现了什么”那一段（包在网页内容标记里）。 */
-const appearedPart = (text: string) => /New on the page since you last read it[^\n]*\n(<page-content untrusted>[\s\S]*?<\/page-content>)/.exec(text)?.[1] ?? "";
+const appearedPart = (text: string) => /(?:New on the page|Also new on the page) since you last read it[^\n]*\n(<page-content untrusted>[\s\S]*?<\/page-content>)/.exec(text)?.[1] ?? "";
+const receiptOf = (name: string, args: { target: string }) => receipts.find(r => r.name === name && r.args.includes(`"${args.target}"`))?.text ?? "";
 
 try {
-  const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
+  const work = await rp.attach((await rp.targets()).find(x => x.url === "about:blank")!.targetId);
   await rp.cdp.send("Page.navigate", { url: `${origin}/` }, work);
   const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "service worker")).targetId);
   await until(async () => await rp.evaluate(sw, "typeof chrome === 'object' && !!chrome.tabs").catch(() => false), 15_000, "扩展后台就绪");
@@ -141,28 +172,35 @@ try {
   await rp.cdp.send("Page.bringToFront", {}, work);
 
   await rp.click(panel, "#input"); await rp.typeText(panel, ASK); await rp.pressEnter(panel);
-  await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(FINAL)}))`)) as boolean, 90_000, `回答「${FINAL}」`);
+  await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(FINAL)}))`)) as boolean, 120_000, `回答「${FINAL}」`);
   await until(async () => saves.length > 0 || null, 3_000, "保存到达").catch(() => {});
 
   const snapshotText = receipts.find(r => r.name === "snapshot")?.text ?? "";
-  const openReceipt = receipts.find(r => r.name === "click" && r.args.includes(steps.open.target))?.text ?? "";
-  const shown = appearedPart(openReceipt);
-  const refsNew = [steps.title.target, steps.save.target].every(t => /^@\d+$/.test(t) && !snapshotText.includes(`[ref=${t.slice(1)}]`));
-  check("a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、不带读页时已有的「新建笔记」，不超过 2000 字", refsNew && shown.length > 0 && !/第 \d+ 段/.test(shown) && !shown.includes(`[ref=${steps.open.target.slice(1)}]`) && shown.length <= 2000 + 80, { title: steps.title.target, save: steps.save.target, chars: shown.length, shown });
+  const shown = appearedPart(receiptOf("click", t.open));
+  const refsNew = [t.title.target, t.save.target].every(x => /^@\d+$/.test(x) && !snapshotText.includes(`[ref=${x.slice(1)}]`));
+  check("a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、读页时已有的元素和时钟，不超过 2000 字", refsNew && /textbox "标题"/.test(shown) && !/第 \d+ 段|时钟/.test(shown) && !shown.includes(`[ref=${t.open.target.slice(1)}]`) && shown.length <= 2000 + 80, { title: t.title.target, save: t.save.target, chars: shown.length, shown });
 
   const dialogGone = await rp.evaluate(work, '!document.querySelector("[role=dialog]")');
   const snapshots = receipts.filter(r => r.name === "snapshot").length;
   check("b 照结果里的编号填写、保存：服务器收到标题，对话框关掉；整轮只读了一次页", saves.includes(NEW_TITLE) && dialogGone === true && snapshots === 1, { saves, dialogGone, snapshots, calls: receipts.map(r => r.name) });
 
-  const titleReceipt = receipts.find(r => r.name === "fill" && r.args.includes(steps.title.target))?.text ?? "";
+  const titleReceipt = receiptOf("fill", t.title);
+  const editorReceipt = receiptOf("fill", t.editor);
   const leaked = receipts.filter(r => r.text.includes("SECRET9948") || r.text.includes("CODE5521")).map(r => r.name);
-  const editorReceipt = receipts.find(r => r.name === "fill" && r.args.includes(steps.editor.target))?.text ?? "";
-  check("c 口令、提货码不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题；编辑器里打的字不算新出现的", leaked.length === 0 && /已替换/.test(appearedPart(titleReceipt)) && !titleReceipt.includes("OLD7731") && /^@\d+$/.test(steps.editor.target) && !appearedPart(editorReceipt).includes("ECHO4417"), { leaked, titleReceipt, editorReceipt });
+  check("c 口令、提货码不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题；编辑器里填的字不算新出现的", leaked.length === 0 && /已替换/.test(appearedPart(titleReceipt)) && !titleReceipt.includes("OLD7731") && /Filled/.test(editorReceipt) && !appearedPart(editorReceipt).includes("ECHO4417"), { leaked, titleReceipt, editorReceipt });
 
-  const sorted = timings.map(t => t.ms).sort((a, b) => a - b);
+  const enterReceipt = receipts.find(r => r.name === "press_key")?.text ?? "";
+  const selectReceipt = receiptOf("select_option", t.kind);
+  check("d 回车结果带回“备注已保存”；选择结果带回「项目名」框", /备注已保存/.test(appearedPart(enterReceipt)) && /textbox "项目名"/.test(appearedPart(selectReceipt)), { enterReceipt, selectReceipt });
+
+  const deadReceipt = receiptOf("click", t.dead);
+  check("e 点没有反应的按钮：照旧警告没有可归因的变化、别盲目重复，不把跳动的时钟当成新内容", /Nothing on the page changed|nothing was attributable/.test(deadReceipt) && /Do not blindly/.test(deadReceipt) && !/时钟/.test(deadReceipt), { deadReceipt });
+
+  const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;
-  const brought = timings.filter(t => t.chars > 0).map(t => t.ms);
-  check("d 工具为此多花的时间中位数不超过 300 毫秒，带回内容的每一步也不超过 300 毫秒", sorted.length >= 4 && median <= 300 && brought.length >= 2 && Math.max(...brought) <= 300, { median, brought, timings });
+  const brought = timings.filter(x => x.chars > 0).map(x => x.ms);
+  const watched = timings.filter(x => x.kind === "watch").map(x => x.ms);
+  check("f 多花的时间中位数不超过 300 毫秒，带回内容的每一步、每次填写和选择都不超过 300 毫秒", sorted.length >= 6 && median <= 300 && brought.length >= 3 && Math.max(...brought, ...watched) <= 300 && watched.length >= 3, { median, brought, watched, timings });
   await rp.screenshot(panel, join(out, "panel.png"));
   await rp.screenshot(work, join(out, "page.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {

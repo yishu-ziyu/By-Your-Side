@@ -42,7 +42,9 @@ interface SideAgentEffect {
   /** 与基线比对；会话不存在（换文档/过期）返回 null */
   diff(token: string): import("../../shared/effect.js").EffectReport | null;
   /** 动作期间变过的几处（定位串）；太多返回 "many"，会话不存在返回 null */
-  roots(token: string): string[] | "many" | null;
+  roots(token: string): Array<{ sel: string; field?: true }> | "many" | null;
+  /** 会话里最后一次变化离现在多久（毫秒）；还没变过返回 null */
+  quietMs(token: string): number | null;
   end(token: string): { ok: true };
 }
 

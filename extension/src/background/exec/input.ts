@@ -23,7 +23,7 @@ import { confirmSendIfNeeded, type SendGuard } from "../send-confirm.js";
 import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { beginEffect, beginWatch, collectEffect, pageChangesAfter, watchChangesAfter } from "./effect.js";
+import { beginEffect, beginWatch, collectEffect, endWatch, pageChangesAfter, watchChangesAfter } from "./effect.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite } from "../fill-undo.js";
@@ -2141,7 +2141,14 @@ async function withAppeared<T extends object>(tabIdParam: number | undefined, se
   const tabId = (await resolveWorkingTab(tabIdParam, sessionId).catch(() => null))?.id;
   const token = tabId == null ? null : await beginWatch(tabId);
   const beginMs = Date.now() - started;
-  const data = await act();
+  let data: T;
+
+  try {
+    data = await act();
+  } catch (error) {
+    if (tabId != null && token) endWatch(tabId, token);
+    throw error;
+  }
 
   if (tabId == null || !token) return data;
   const appeared = await watchChangesAfter(tabId, sessionId, token, beginMs);
