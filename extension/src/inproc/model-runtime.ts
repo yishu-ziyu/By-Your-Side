@@ -215,8 +215,8 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   return runtime;
 }
 
-/** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
-export const PROBE_TIMEOUT_MS = 60_000;
+/** 试连最多等 15 秒（用户 10-14 定）：设置页「测试连接」、保存前试连和侧栏换 key 共用。OpenCode Go 排队时可能超过它，超时会如实说并给重试。 */
+export const PROBE_TIMEOUT_MS = 15_000;
 
 /**
  * 向模型发一句「回 OK」，确认这组凭据能用：设置页「测试连接」和侧栏换 key 面板共用。

@@ -29,6 +29,11 @@ const busy = createServer((_req, res) => {
 await new Promise<void>((done) => busy.listen(0, "127.0.0.1", done));
 const busyUrl = `http://127.0.0.1:${siteAddress(busy).port}/v1`;
 
+// 一直不回：保存前的试连等满 15 秒超时。
+const silent = createServer(() => {});
+await new Promise<void>((done) => silent.listen(0, "127.0.0.1", done));
+const silentUrl = `http://127.0.0.1:${siteAddress(silent).port}/v1`;
+
 const deny = createServer((_req, res) => {
   res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "Invalid API key", type: "unauthorized" } }));
 });
@@ -195,6 +200,27 @@ try {
   const stored = await second.evaluate(rsettings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
   await second.screenshot(rsettings, join(out, "05-saved-while-busy.png"));
   check("密钥试连：限流时照样保存，并写刚才没连上", busySaved.includes("刚才没连上") && stored === busyUrl, { busySaved, stored });
+
+  // 先试连再保存：15 秒没回复不保存，框下写明超时，并有「重试」。
+  // 这家已存过密钥：先点「更换」露出密钥框，填的才是新密钥。
+  await second.evaluate(rsettings, `document.querySelector("#key-change").click(); true`);
+  await fillCustom(second, rsettings, silentUrl, "sk-silent-0000");
+  await second.evaluate(rsettings, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
+  const silentStarted = Date.now();
+  await second.click(rsettings, "#model-save");
+  const timedOut = await until(async () => {
+    const state = await second.evaluate(rsettings, `({
+      hidden: document.querySelector("#key-reason").hidden,
+      reason: document.querySelector("#key-reason-text")?.textContent ?? "",
+      retry: !document.querySelector("#key-retry").hidden,
+      saveDisabled: document.querySelector("#model-save").disabled,
+    })`);
+    return !state.hidden && state.reason ? state : undefined;
+  }, 30_000, "超时原因");
+  const waited = Date.now() - silentStarted;
+  const storedAfterTimeout = await second.evaluate(rsettings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
+  await second.screenshot(rsettings, join(out, "06-timeout-not-saved.png"));
+  check("密钥试连：15 秒超时不保存，写明超时并给重试", timedOut.reason.includes("15 秒内没有收到服务商的回复") && timedOut.reason.includes("密钥没有保存") && timedOut.retry && !timedOut.saveDisabled && storedAfterTimeout === busyUrl && waited >= 14_000 && waited < 25_000, { ...timedOut, storedAfterTimeout, waited });
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   if (reduced && reducedPanel) {
@@ -207,6 +233,8 @@ try {
   if (reduced) { await reduced.close().catch(() => {}); await reduced.remove().catch(() => {}); }
   busy.closeAllConnections();
   busy.close();
+  silent.closeAllConnections();
+  silent.close();
   deny.closeAllConnections();
   deny.close();
   site.closeAllConnections();
