@@ -342,7 +342,7 @@ export interface RepeatedItems {
 }
 
 /** 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算。节点太多（不是一项）返回 null。 */
-function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite): string | null {
+function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?: AxNodeLite): string | null {
   let best = "";
   const todo = [item];
 
@@ -351,7 +351,7 @@ function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite): stri
     const node = todo.pop()!;
     const role = node.role?.value ?? "";
 
-    if (node !== item && (CONTROL_ROLES.has(role) || node.properties?.some(p => p.name === "editable"))) continue;
+    if (node === skip || (node !== item && (CONTROL_ROLES.has(role) || node.properties?.some(p => p.name === "editable")))) continue;
 
     if (role === "StaticText" && !node.ignored) {
       const words = String(node.name?.value ?? "").replace(/\s+/g, " ").trim();
@@ -465,23 +465,25 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 }
 
 /**
- * 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；控件已经不在这一项里、这一项太大或没有字，返回空串。
- * 记下的“项”可能是整组（认的时候每组只有一张卡片）：现在这一层里有同名的另一个控件，就往控件那边下一层，直到只包住它一个。
+ * 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；控件已经不在这一项里、太大或没有字，返回空串。
+ * 记下的项是“只包住这一个控件的最高一层”，只用来认控件在列表里；字从控件往上一层层找，取第一层有自己文字的
+ * （控件自己的字不算）：最高那层里可能还有别人的条目（帖子里只有我的评论带 Edit，旁边别人的评论更长），
+ * 也可能后来多了同样的控件（每列一张卡片，后来又加了一张），碰到包住另一个同名控件的层就停。
  */
 export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: number): string | undefined {
   const byId = new Map<string, AxNodeLite>();
-  let at: AxNodeLite | undefined;
+  let top: AxNodeLite | undefined;
   let control: AxNodeLite | undefined;
 
   for (const n of nodes) {
     byId.set(n.nodeId, n);
 
-    if (n.backendDOMNodeId === item) at = n;
+    if (n.backendDOMNodeId === item) top = n;
 
     if (n.backendDOMNodeId === ref) control = n;
   }
 
-  if (!at) return undefined;
+  if (!top) return undefined;
 
   if (!control) return "";
   const key = `${control.role?.value ?? ""}\u0000${String(control.name?.value ?? "").trim()}`;
@@ -498,20 +500,28 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
 
     return false;
   };
-  // 从控件往上的那条路：下一层就是路上紧挨着 at 的那个。
+
+  // 控件往上到记下的那一项为止；到不了（控件已经挪出这一项）就不给。
   const path: AxNodeLite[] = [];
 
-  for (let n: AxNodeLite | undefined = control; n && n !== at; n = n.parentId ? byId.get(n.parentId) : undefined) path.push(n);
+  for (let at = control.parentId ? byId.get(control.parentId) : undefined; at && path.length < 64; at = at.parentId ? byId.get(at.parentId) : undefined) {
+    path.push(at);
 
-  if (!path.length || path[path.length - 1]!.parentId !== at.nodeId) return "";
-
-  while (twinInside(at)) {
-    at = path.pop();
-
-    if (!at || at === control) return "";
+    if (at === top) break;
   }
 
-  return scanItem(byId, at) ?? "";
+  if (path.at(-1) !== top) return "";
+
+  for (const at of path) {
+    if (twinInside(at)) return "";
+    const text = scanItem(byId, at, control);
+
+    if (text === null) return "";
+
+    if (text) return text;
+  }
+
+  return "";
 }
 
 /** 控件往上碰到的第一个认得的项（只在给的这些节点里找）。 */
