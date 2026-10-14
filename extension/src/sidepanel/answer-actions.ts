@@ -3,8 +3,9 @@ import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol
 import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
 import { fillUndoLabel, fillUndoOf, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
+import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
 
-/** 不属于回答正文的界面文字：复制时去掉。 */
+/** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
 const CHROME = ".gc-actions,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
 export function resultCommandShortcut(): string {
@@ -20,9 +21,7 @@ export interface ResultAction {
 }
 
 function answerBody(answer: HTMLElement): HTMLElement {
-  const body = answer.cloneNode(true) as HTMLElement;
-  body.querySelectorAll(CHROME).forEach((node) => node.remove());
-  return body;
+  return visibleBody(answer, CHROME);
 }
 
 async function writeClipboard(text: string): Promise<void> {
@@ -35,6 +34,7 @@ export async function copyAnswerText(answer: HTMLElement): Promise<void> {
 }
 
 export async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
+  if (isShortened(answer)) return writeClipboard(visibleMarkdown(answerBody(answer)));
   await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown).trim() : answerBody(answer).innerText.trim());
 }
 
@@ -54,7 +54,7 @@ export function tableTsv(answer: HTMLElement): string | null {
 }
 
 export async function copyAnswerTable(answer: HTMLElement): Promise<void> {
-  const tsv = tableTsv(answer);
+  const tsv = tableTsv(answerBody(answer));
   if (!tsv) throw new Error("没有表格");
   await writeClipboard(tsv);
 }
@@ -65,7 +65,7 @@ export function listResultActions(answer: HTMLElement): ResultAction[] {
 
   // 这一轮填过表、还没提交：最可能要做的是把填错的改回去，所以它当主动作。
   if (undo?.state === "ready") actions.push({ id: "undo-fill", label: fillUndoLabel(undo), primary: true, run: requestFillUndo });
-  const table = tableTsv(answer);
+  const table = tableTsv(answerBody(answer));
   const pageBtn = answer.querySelector<HTMLButtonElement>(".answer-show-tab");
   if (table) actions.push({ id: "copy-table", label: "复制为表格", shortcut: actions.length ? undefined : "↵", primary: !actions.length, run: copyAnswerTable });
   if (pageBtn) {
@@ -175,6 +175,8 @@ export function attachAnswerActions(answer: HTMLElement): void {
   };
 
   actions.append(primary, more, sources, time, feedback);
+  // 收短后主动作跟着当前层：一句层里看不到的表格不再是“复制为表格”。
+  answer.addEventListener("answer-shorten", () => refreshPrimaryAction(answer));
   answer.append(actions, panel);
   document.querySelectorAll(".answer-latest").forEach(node => node.classList.remove("answer-latest"));
   answer.classList.add("answer-latest");
