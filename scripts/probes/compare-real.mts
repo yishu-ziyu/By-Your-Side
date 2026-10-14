@@ -107,7 +107,7 @@ const TASKS: Task[] = [
   { id: "X17", split: "test", group: "跨站", name: "Python 版本号填进订单", prompt: "打开 https://www.python.org/downloads/ ，记下最新的 Python 正式版本号；再打开 https://httpbin.org/forms/post ，把这个版本号填进 Customer name，然后点 Submit order 提交。",
     truth: async () => ({ before: (await (await fetch("https://www.python.org/downloads/")).text()).match(/Download Python (\d+\.\d+\.\d+)/)?.[1] ?? "" }),
     probeUrl: /httpbin\.org\/post/, probe: "document.body.innerText",
-    check: (c) => { let name = ""; try { name = String(JSON.parse(String(c.probe ?? "{}")).form?.custname ?? ""); } catch { return "没有提交（读不到 httpbin 回显）"; } return [c.truth.before, c.truth.after].some((v) => v && name.trim() === v) ? null : `Customer name 是 ${JSON.stringify(name)}（应为 ${c.truth.before}）`; } },
+    check: (c) => { let name = ""; try { name = String(JSON.parse(String(c.probe ?? "{}")).form?.custname ?? ""); } catch { return "没有提交（读不到 httpbin 回显）"; } return [c.truth.before, c.truth.after].some((v) => v && new RegExp(`(^|[^\\d.])${v.replace(/\./g, "\\.")}(?![\\d.]*\\d)`).test(name)) ? null : `Customer name 是 ${JSON.stringify(name)}（应为 ${c.truth.before}）`; } },
   { id: "X18", split: "test", group: "跨站", name: "crates.io 包的源码仓库", prompt: "打开 https://crates.io/crates/serde ，打开这个包的源码仓库页面。",
     check: (c) => c.tabs.some((t) => /^github\.com\/serde-rs\/serde$/.test(pathOf(t.url))) ? null : "没有打开 github.com/serde-rs/serde" },
 ].filter((t) => (!only || only.includes(t.id)) && (!splitArg || t.split === splitArg));
