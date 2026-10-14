@@ -1,6 +1,6 @@
-// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn]
+// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn] [--record]
 // --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
-// --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md).   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
+// --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md). --record (ext only): records the side panel and the starting tab of each ask as mp4.   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
 // Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -12,6 +12,7 @@ const root = resolve(rootArg); // an absolute path: "scripts/..." joined onto ".
 const repeat = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 2;
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const learn = process.argv.includes("--learn");
+const record = process.argv.includes("--record");
 const MODEL = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? "openai-codex/gpt-6-luna";
 const think = process.argv.find((a) => a.startsWith("--think="))?.slice(8);
 const splitArg = process.argv.find((a) => a.startsWith("--split="))?.slice(8);
@@ -103,7 +104,9 @@ const TASKS: Task[] = [
     check: (c) => [c.truth.before, c.truth.after].some((id) => id && c.tabs.some((t) => t.url.includes(`news.ycombinator.com/item?id=${id}`))) ? null : `没有打开第三条的评论页（应为 item?id=${c.truth.before}）` },
   { id: "M1", split: "train", group: "登录网站", name: "Memos 记笔记加标签", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），新建一条笔记，内容是：周五前把季度报告初稿发给王经理。然后给这条笔记加上标签 工作。`,
     setup: () => memosReset([]), after: memosList,
-    check: (c) => { const ms = memosOf(c); const m = ms.find((x) => x.content.includes("周五前把季度报告初稿发给王经理")); if (ms.length !== 1 || !m) return `笔记是 ${JSON.stringify(ms.map((x) => x.content))}`; return m.tags.includes("工作") ? null : `标签是 ${JSON.stringify(m.tags)}（应含 工作）`; } },
+    check: (c) => { const ms = memosOf(c); const m = ms.find((x) => x.content.includes("周五前把季度报告初稿发给王经理")); if (ms.length !== 1 || !m) return `笔记是 ${JSON.stringify(ms.map((x) => x.content))}`; return m.tags.includes("工作") ? null : `标签是 ${JSON.stringify(m.tags)}（应含 工作）`; },
+    second: { prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），新建一条笔记，内容是：周六上午去菜市场买排骨。然后给这条笔记加上标签 生活。`,
+      check: (c) => { const ms = memosOf(c); const m = ms.find((x) => x.content.includes("周六上午去菜市场买排骨")); if (ms.length !== 2 || !m) return `笔记是 ${JSON.stringify(ms.map((x) => x.content))}`; return m.tags.includes("生活") ? null : `标签是 ${JSON.stringify(m.tags)}（应含 生活）`; } } },
   { id: "M2", split: "train", group: "登录网站", name: "Memos 找到笔记补一句", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），找到写着“置身事内”的那条笔记，在它末尾补一句：重点看地方债那一节。`,
     setup: () => memosReset(MEMO_SEEDS), after: memosList,
     check: (c) => { const m = memosOf(c).find((x) => x.name === c.truth["读书笔记"]); if (!m) return "那条笔记不见了"; const at = m.content.indexOf("重点看地方债那一节"); if (!m.content.includes(MEMO_SEEDS[1]) || at < m.content.indexOf(MEMO_SEEDS[1]) + MEMO_SEEDS[1].length) return `内容是 ${JSON.stringify(m.content)}`; return othersIntact(c, "读书笔记"); } },
@@ -176,7 +179,7 @@ async function writeStatus(id: string, state: string, detail?: string) {
 
 // ---------- ext arm ----------
 async function runExt(task: Task, id: string, dir: string) {
-  const { launchRealPath, until, sleep } = await import(join(root, "scripts/acceptance/real-path/harness.mts"));
+  const { launchRealPath, until, sleep, recordScreen } = await import(join(root, "scripts/acceptance/real-path/harness.mts"));
   const { storageItemsFor } = await import(join(root, "eval/harness/credentials.mjs"));
   const cfg = storageItemsFor(MODEL);
   const rp = await launchRealPath({ headed: true });
@@ -203,6 +206,7 @@ async function runExt(task: Task, id: string, dir: string) {
     // One task in the current conversation; trace lines are cumulative, so each ask takes only the lines after the previous one.
     const ask = async (prompt: string, probeCode: string | undefined, tag: string) => {
       const t0 = Date.now();
+      const stops = record ? [await recordScreen(rp.cdp, panel, join(dir, `panel${tag}.mp4`)), await recordScreen(rp.cdp, user, join(dir, `page${tag}.mp4`))] : [];
       await rp.click(panel, "#input"); await rp.typeText(panel, prompt); await rp.pressEnter(panel);
       const busy = `(() => { const q = (s) => document.querySelector(s); return (q("#status-pill")?.classList.contains("running") ?? false) || (q("#send-btn")?.classList.contains("stopping") ?? false) || !!q(".msg.assistant.streaming, .msg.assistant[data-revealing], .thinking.streaming"); })()`;
       await until(async () => await rp.evaluate(panel, busy), 20_000, "started").catch(() => {});
@@ -212,6 +216,8 @@ async function runExt(task: Task, id: string, dir: string) {
       const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText.trim()).join("\\n---\\n")`));
       const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ url: t.url || t.pendingUrl || '', title: t.title || '' })))")) as Tab[];
       let probe: unknown = null;
+      // Read back right after this ask: with --learn the second ask adds to the same site.
+      if (!probeCode && task.after) probe = await task.after();
       // The newest matching tab: an earlier run's tab may still be open with a stale page.
       if (probeCode) { const tg = (await rp.targets()).filter((t: { url: string; type: string }) => t.type === "page" && task.probeUrl!.test(t.url)).at(-1); if (tg) probe = await rp.evaluate(await rp.attach(tg.targetId), probeCode); }
       const all = (await traceLines()).split("\n").filter(Boolean);
@@ -221,6 +227,7 @@ async function runExt(task: Task, id: string, dir: string) {
       const rounds = lines.filter((l) => l.type === "model_request").length;
       const tools = lines.filter((l) => l.type === "tool_execution_start").map((l) => l.data?.toolName);
       await rp.screenshot(panel, join(dir, `panel${tag}.png`)).catch(() => {});
+      for (const stop of stops) await stop();
       const usage = lines.filter((l) => l.type === "turn_end").map((l) => l.data?.usage ?? {});
       const cacheShare = +(usage.reduce((n, u) => n + (u.cacheRead ?? 0), 0) / Math.max(1, usage.reduce((n, u) => n + (u.input ?? 0) + (u.cacheRead ?? 0), 0))).toFixed(2);
       const siteNotes = lines.filter((l) => l.type === "site_notes" && l.data?.phase === "used").map((l) => l.data.host);
@@ -231,7 +238,9 @@ async function runExt(task: Task, id: string, dir: string) {
     // Same browser, new conversation, sibling task: site notes learned from the first run should make it shorter.
     // Notes are written after the goal check, a few seconds after the reply; wait for them (at most 45 s) as a person would pause between tasks.
     const learnBy = Date.now() + 45_000;
-    while (Date.now() < learnBy && !(await traceLines()).includes('"phase":"learned"')) await sleep(1000);
+    while (Date.now() < learnBy && !/"phase":"(learned|skipped)"/.test(await traceLines())) await sleep(1000);
+    await rp.screenshot(panel, join(dir, "panel-learned.png")).catch(() => {});
+    await writeFile(join(dir, "trace-learn.jsonl"), (await traceLines()).split("\n").filter((l) => l.includes('"site_notes"')).join("\n") + "\n");
     await rp.click(panel, "#conversation-new"); await sleep(800);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#messages .msg.assistant")'), 30_000, "new conversation");
     await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
@@ -327,7 +336,7 @@ for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {
     const truth: Record<string, string> = task.truth ? { before: await truthOf() } : task.setup ? await task.setup() : {};
     const r = arm === "ext" ? await runExt(task, id, dir) : await runEgo(task, id, dir);
     if (task.truth) truth.after = await truthOf();
-    if (task.after) r.probe = await task.after();
+    if (task.after && r.probe == null) r.probe = await task.after();
     const reason = task.check({ answer: r.answer, tabs: r.tabs, probe: r.probe, truth });
     const row = { id, arm, split: task.split, task: task.name, outcome: reason ? "fail" : "pass", reason, seconds: +(r.ms / 1000).toFixed(1), ...r, truth };
     results.push(row);

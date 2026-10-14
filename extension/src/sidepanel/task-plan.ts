@@ -38,7 +38,8 @@ function uniqueHosts(urls: string[]): string[] {
   return out;
 }
 
-function siteName(url: string, title?: string): string {
+/** 网站在界面上的名字：一般写主机名；本机地址写页面标题。 */
+export function siteName(url: string, title?: string): string {
   const host = hostOf(url);
   if (!host || /^(localhost|127\.|0\.0\.0\.0)/.test(host)) return clip((title ?? "").replace(/\s+/g, " "), 12) || host || "当前页";
   return host;
