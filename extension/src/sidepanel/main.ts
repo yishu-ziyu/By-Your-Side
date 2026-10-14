@@ -3704,29 +3704,38 @@ function stopLiveSeconds(run: RunHost): void {
   run.timer = 0;
 }
 
+/** 首字前挂这么久还没回音，只换标题，不改秒数和墨点。 */
+const WAIT_STALE_MS = 15_000;
+const WAIT_STALE_TITLE = "还没有回音";
+
 function startLiveSeconds(run: RunHost): void {
   if (run.timer) return;
   const timer = window.setInterval(() => {
-    if (currentRun?.timer === timer) run.timeEl.textContent = liveSeconds(run);
+    if (currentRun?.timer !== timer) return;
+    run.timeEl.textContent = liveSeconds(run);
+    maybeStaleWait(run);
   }, 1000);
   run.timer = timer;
 }
 
-/** 第一行的秒数：在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
+/** 第一行的秒数：贴在动词后面。在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
 function liveSeconds(run: RunHost): string {
   const now = Date.now();
 
   if (Number.isFinite(run.thinkFrom)) {
     if (now - run.thinkFrom < 1_000) return "";
-    const spoken = spokenDuration(run.thinkFrom, now);
-
-    if (!spoken) return "";
-    // 首字前还没动手：写「已等 N 秒」（#311）。动手之后的思考仍是「N 秒」。
-    return run.body.querySelector(".chip") ? spoken : `已等 ${spoken}`;
+    return spokenDuration(run.thinkFrom, now) ?? "";
   }
   const running = [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
 
   return running && Number.isFinite(running.start) && now - running.start >= SHOW_SECS_MS ? spokenDuration(running.start, now) ?? "" : "";
+}
+
+function maybeStaleWait(run: RunHost): void {
+  if (!Number.isFinite(run.thinkFrom) || run.body.querySelector(".chip")) return;
+  if (Date.now() - run.thinkFrom < WAIT_STALE_MS) return;
+  if (run.titleEl.textContent === WAIT_STALE_TITLE) return;
+  setRunTitle(run, WAIT_STALE_TITLE, true, "think");
 }
 
 /** 结束正在算的这段思考：≥3 秒的在记录里单列一行「想了 N 秒」。 */
