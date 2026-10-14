@@ -542,6 +542,88 @@ async function beginCursorAction(
   return actionId;
 }
 
+export type GazeRead =
+  | { kind: "page" }
+  | { kind: "element"; target: string }
+  | { kind: "elements"; selector: string }
+  | { kind: "rest" }
+  | { kind: "off" };
+
+/**
+ * 注视区：把它正在读的位置画到页面上。只画真实发生的读——整页读只扫一遍视口，
+ * 读具体元素才落到那个元素上；旧 ref 找不到节点时不画，不凭选择器猜另一个元素。
+ * 画不上不影响读本身，也不算执行证据。
+ */
+export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Promise<void> {
+  try {
+    if (read.kind === "rest" || read.kind === "off") {
+      await callDom(tabId, (c: string, mode: "rest" | "off") => {
+        window.__sideagent?.cursor?.for(c)?.gaze?.({ mode });
+      }, [cid, read.kind]);
+
+      return;
+    }
+
+    await ensureCursor(tabId);
+
+    if (read.kind === "page") {
+      await callDom(tabId, (c: string) => { window.__sideagent?.cursor?.for(c)?.gaze?.({ mode: "sweep" }); }, [cid]);
+
+      return;
+    }
+
+    if (read.kind === "element") {
+      const backendNodeId = axBackendNodeFor(tabId, parseRef(read.target));
+
+      if (backendNodeId !== undefined) {
+        const contextId = await cursorContext(tabId);
+        await callOnBackendNode(tabId, backendNodeId, `function(cid) {
+          const cursor = window.__sideagent?.cursor?.for(cid);
+          if (this === document.body || this === document.documentElement) { cursor?.gaze?.({ mode: "sweep" }); return; }
+          const r = this.getBoundingClientRect();
+          cursor?.gaze?.({ mode: "at", rects: [{ x:r.x, y:r.y, width:r.width, height:r.height }] });
+        }`, [cid], contextId);
+
+        return;
+      }
+
+      if (read.target.trim().startsWith("@")) return;
+      await ensureDomOps(tabId);
+      await callDom(tabId, (c: string, t: string) => {
+        const cursor = window.__sideagent?.cursor?.for(c);
+        const el = window.__sideagent?.dom?.resolve(t);
+
+        if (!el) return;
+
+        if (el === document.body || el === document.documentElement) {
+          cursor?.gaze?.({ mode: "sweep" });
+
+          return;
+        }
+        const r = el.getBoundingClientRect();
+        cursor?.gaze?.({ mode: "at", rects: [{ x: r.x, y: r.y, width: r.width, height: r.height }] });
+      }, [cid, read.target]);
+
+      return;
+    }
+
+    await callDom(tabId, (c: string, raw: string) => {
+      const selector = raw.startsWith("loc=css:") ? raw.slice("loc=css:".length) : raw;
+      let nodes: Element[] = [];
+
+      try {
+        nodes = Array.from(document.querySelectorAll(selector)).slice(0, 40);
+      } catch {
+        return;
+      }
+      const rects = nodes.map((n) => n.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height }));
+      window.__sideagent?.cursor?.for(c)?.gaze?.({ mode: "at", rects });
+    }, [cid, read.selector]);
+  } catch {
+    /* 页面禁止注入或节点已变：不画，读照常 */
+  }
+}
+
 async function endCursorAction(
   tabId: number, cid: string, actionId: string, outcome: "done" | "failed" | "unknown", point?: [number, number],
 ): Promise<void> {
