@@ -344,29 +344,25 @@ export interface RepeatedItems {
   items: Set<number>;
 }
 
-/**
- * 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算，skip（控件自己）也不算。
- * 链接里的字单算：卡片头一行常是作者、时间的链接，每张卡片都一样，认不出是哪张。节点太多（不是一项）返回 null。
- */
-function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?: AxNodeLite): { plain: string; link: string } | null {
-  const best = { plain: "", link: "" };
-  const todo: Array<[AxNodeLite, boolean]> = [[item, false]];
+/** 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算，skip（控件自己）也不算。节点太多（不是一项）返回 null。 */
+function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?: AxNodeLite): string | null {
+  let best = "";
+  const todo = [item];
 
   for (let seen = 0; todo.length; seen++) {
     if (seen >= MAX_ITEM_NODES) return null;
-    const [node, inLink] = todo.pop()!;
+    const node = todo.pop()!;
     const role = node.role?.value ?? "";
 
     if (node === skip || (node !== item && (CONTROL_ROLES.has(role) || node.properties?.some(p => p.name === "editable")))) continue;
 
     if (role === "StaticText" && !node.ignored) {
       const words = String(node.name?.value ?? "").replace(/\s+/g, " ").trim();
-      const slot = inLink ? "link" : "plain";
 
-      if (words.length > best[slot].length) best[slot] = words;
+      if (words.length > best.length) best = words;
     }
 
-    for (const id of node.childIds ?? []) { const child = byId.get(id); if (child) todo.push([child, inLink || role === "link"]); }
+    for (const id of node.childIds ?? []) { const child = byId.get(id); if (child) todo.push(child); }
   }
 
   return best;
@@ -458,7 +454,7 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 
         if (!item || item.backendDOMNodeId === undefined) return;
 
-        if (!verdict.has(item.nodeId)) { const text = scanItem(byId, item); verdict.set(item.nodeId, !!text && !!(text.plain || text.link)); }
+        if (!verdict.has(item.nodeId)) verdict.set(item.nodeId, !!scanItem(byId, item));
 
         if (!verdict.get(item.nodeId)) continue;
         members.push({ n, item, steps });
@@ -472,9 +468,8 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
     // 有别的条目（旁边别人的评论），宁可不说在哪一项（from = -1），也不说成别人那条。
     const textAt = (m: { n: AxNodeLite }, k: number) => {
       const at = up(m.n, k);
-      const text = at ? scanItem(byId, at, m.n) : null;
 
-      return text ? text.plain || text.link : "";
+      return (at ? scanItem(byId, at, m.n) : null) ?? "";
     };
     const othersHaveText = (m: { n: AxNodeLite }, k: number) => {
       const at = up(m.n, k), via = up(m.n, k - 1);
@@ -483,24 +478,26 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
         const child = byId.get(id);
 
         if (!child || child === via) return false;
-        const text = scanItem(byId, child);
-
-        return !!text && !!(text.plain || text.link);
+        return !!scanItem(byId, child);
       });
     };
     const from = new Map<AxNodeLite, number>();
     const textByLevel = members.map(m => Array.from({ length: m.steps }, (_, i) => textAt(m, i + 1)));
 
     members.forEach((m, j) => {
+      let lowest = 0;
+
       for (let k = 1; k <= m.steps; k++) {
         const text = textByLevel[j]![k - 1]!;
 
         if (!text) continue;
+        lowest ||= k;
         const shared = members.some((other, o) => o !== j && textByLevel[o]![k - 1] === text);
 
         if (!shared) { from.set(m.n, k); return; }
 
-        if (k === m.steps) { from.set(m.n, k); return; }
+        // 一直到记下的那一项字都一样（两张都叫“Bug”）：用最下面那层，那层只是这一条自己。
+        if (k === m.steps) { from.set(m.n, lowest); return; }
 
         if (othersHaveText(m, k + 1)) { from.set(m.n, -1); return; }
       }
@@ -518,7 +515,7 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 /**
  * 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；控件已经不在这一项里、太大或没有字，返回空串。
  * from：认的时候定好的“从控件往上第几层读”（同组里那一层的字各不相同）；-1 表示分不清、不说；0 表示没定过（页面上只有一个的新控件），
- * 这时取往上第一层的正文，只有链接字时先记着、找不到正文再用。往上碰到包住同名另一个控件的层就停（后来又加了同样的卡片），用下面那层的字。
+ * 这时取往上第一层有字的。往上碰到包住同名另一个控件的层就停（后来又加了同样的卡片），用下面那层的字。
  */
 export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: number, from = 0): string | undefined {
   const byId = new Map<string, AxNodeLite>();
@@ -568,15 +565,8 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
 
     if (text === null) return below;
 
-    if (from > 0) {
-      const words = text.plain || text.link;
-
-      if (words && i + 1 >= from) return words;
-      below = words || below;
-    } else {
-      if (text.plain) return text.plain;
-      below ||= text.link;
-    }
+    if (text && i + 1 >= Math.max(from, 1)) return text;
+    below = text || below;
   }
 
   return below;

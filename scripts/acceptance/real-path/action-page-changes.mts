@@ -7,7 +7,7 @@
  *   没写 role 的编辑器「正文」；没有反应的「刷新」按钮；「分类」下拉框（选“项目”后多出一个「项目名」框）；
  *   「新建笔记」：弹出对话框（标题框原来写着草稿名、口令框、提货码框 autocomplete=one-time-code、「保存」），同时像常见弹窗库那样给 body 加 modal-open、锁滚动。
  *   往标题框填字后，对话框里出现“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
- *   分两组的文件，每行一个「Share」：第一组两行，第二组只有一行，组标题比这一行的字长（按日期分组的列表）。
+ *   分两组的文件，每行是文件名链接、大小（都是“2 MB”）和「Share」：第一组两行，第二组只有一行，组标题比这一行的字长（按日期分组的列表）。
  *   点「整理」给每行各加一个「Delete」（几处分开变化，同名控件不在同一棵读到的树里）。
  *   两列看板，每列只有一张卡片，卡片里有「Move」（点了展开）；「加卡片」往第二列加一张字更长的卡片。
  *   三条帖子，每条里只有我的回复带「Edit」（点了展开），回复很短：前两条都是“谢谢”，第三条是“收到”；第一、三条帖子里还有一条别人的、字更长的评论。
@@ -22,7 +22,7 @@
  *   g 点「显示帮助」：页面只给 body 换一个 class，让预先画好的帮助显出来；结果说“这一页一大块变了”，不是什么都没有。
  *   h 填数量框（填完它自己换校验 class）：结果不把这个数量框当成新出现的。
  *   i 点第二张卡片的「More」：展开的按钮行写明在“读书笔记”那一项；对话框里的新栏不带这句（不在重复的项里）。
- *   k 点「整理」：每个新的「Delete」写明在哪一行（只读到按钮所在的小容器，要问浏览器祖先），第二组那一行不认成整组，不卡住。
+ *   k 点「整理」：每个新的「Delete」写明在哪一行，用的是文件名不是大小（只读到按钮所在的小容器，要问浏览器祖先），第二组那一行不认成整组，不卡住。
  *   l 先「加卡片」，再点第二列原来那张的「Move」：写明的是原来那张，不是新加的那张（认的时候每列只有一张，记下的是整列）。
  *   m 点第一条帖子里我的「Edit」（两条“谢谢”分不清）：不说在哪一项，绝不说成旁边别人的评论；点第三条的「Edit」：写明在“收到”这条。
  *   n 点第二条推文的「Options」：两条的头一行都是同一个作者，分不清，就不说在哪一项，不说“Alice”。
@@ -61,9 +61,9 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔
 <style>.help { display: none } body.show-help .help { display: block }</style>
 <div class="help"><p>帮助：先写标题再保存。</p><button type="button">知道了</button></div>
 <div id="files">
-<section><div class="row"><p>文件甲：季度报告.pdf</p><div class="acts"><button type="button">Share</button></div></div>
-<div class="row"><p>文件乙：会议纪要.docx</p><div class="acts"><button type="button">Share</button></div></div></section>
-<section><h3>上周上传的文件（这一组目前只有一个）</h3><div class="row"><p>文件丙.txt</p><div class="acts"><button type="button">Share</button></div></div></section>
+<section><div class="row"><a href="#a">文件甲：季度报告.pdf</a> <span>2 MB</span><div class="acts"><button type="button">Share</button></div></div>
+<div class="row"><a href="#b">文件乙：会议纪要.docx</a> <span>2 MB</span><div class="acts"><button type="button">Share</button></div></div></section>
+<section><h3>上周上传的文件（这一组目前只有一个）</h3><div class="row"><a href="#c">文件丙.txt</a> <span>2 MB</span><div class="acts"><button type="button">Share</button></div></div></section>
 </div>
 <p><button id="tidy" type="button">整理</button></p>
 <div id="board">
