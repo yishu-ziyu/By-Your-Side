@@ -190,7 +190,7 @@ export function mountAnswerCommand(opts: {
       const latest = opts.latestAnswer();
       if (latest && !isOpen()) {
         e.preventDefault();
-        void runPrimaryAction(latest);
+        void runPrimaryAction(latest, { keyboard: true });
         return true;
       }
     }

@@ -26,6 +26,7 @@ import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, collectEffect } from "./effect.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
+import { beforeWrite } from "../fill-undo.js";
 import type { EffectReport } from "../../../../shared/effect.js";
 import type { ToolExecutionFact } from "../../../../shared/protocol.js";
 import {
@@ -1698,6 +1699,7 @@ export async function click(
     let cdpMouseMoved = false;
     let cdpMousePressed = false;
     let effect: EffectReport | undefined;
+    let undo: Awaited<ReturnType<typeof beforeWrite>> | undefined;
 
     try {
       // 重新定位后落点可能变了：派发前再读一次真正落点上的按钮，是付款就不点，是「发送」就照样先问。
@@ -1719,6 +1721,8 @@ export async function click(
       heldOf(sessionId).pointer = [x, y];
       // 基线与命中核对并行：60ms 的页面活跃度采样不额外压在一次点击的串行等待上。
       const effectPending = beginEffect(tabId, { point: [x, y] });
+      // 还原填写：点的是勾选框、单选框就记下点之前的样子。和效果采样一起跑，不拉长命中核对到按下之间的时间。
+      const undoPending = beforeWrite(sessionId, tabId, { point: [x, y] });
 
       // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
       // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
@@ -1730,7 +1734,8 @@ export async function click(
         }
       }
 
-      const effectToken = await effectPending;
+      const [effectToken, undoMark] = await Promise.all([effectPending, undoPending]);
+      undo = undoMark;
       // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（#23 等满 30 秒）。
       // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
       const dialogWatch = watchDialog(tabId);
@@ -1863,6 +1868,7 @@ export async function click(
       throw e;
     }
 
+    await undo?.done();
     await endCursorAction(tabId, cid, actionId, "done", [x, y]);
     await recordCursorTrail(tabId, sessionId, x, y, true);
     const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, opens, sessionId) : undefined;
@@ -2188,7 +2194,9 @@ export async function fill(
     if (backendNodeId !== undefined) {
       try {
         await beforeDispatch?.();
+        const undo = await beforeWrite(sessionId, tabId, { backendNodeId }, true);
         const { range, select } = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
+        await undo.done();
 
         if (targetRect) {
           await recordCursorTrail(
@@ -2220,6 +2228,7 @@ export async function fill(
     }
 
     await ensureDomOps(tabId, beforeDispatch);
+    const undo = await beforeWrite(sessionId, tabId, { target: params.target }, true);
 
     await beforeDispatch?.();
     const filled = await callDom(
@@ -2249,6 +2258,7 @@ export async function fill(
     );
 
     if (filled && "refused" in filled) throw new FillRefused(filled.refused);
+    await undo.done();
 
     if (targetRect) {
       await recordCursorTrail(
@@ -2317,6 +2327,7 @@ export async function selectOption(
   if (backendNodeId !== undefined) {
     try {
       await beforeDispatch?.();
+      const undo = await beforeWrite(sessionId, tabId, { backendNodeId });
       const result = await callOnBackendNode<{ selected: string[]; labels: string[] }>(
         tabId,
         backendNodeId,
@@ -2358,6 +2369,8 @@ export async function selectOption(
         params.expectedDocumentId, beforeDispatch,
       );
 
+      await undo.done();
+
       return refound ? { ...result, refound } : result;
     } catch (e) {
       if (params.expectedBackendNodeId !== undefined || !isDebuggerUnavailable(e)) {
@@ -2367,9 +2380,10 @@ export async function selectOption(
   }
 
   await ensureDomOps(tabId, beforeDispatch);
+  const undo = await beforeWrite(sessionId, tabId, { target: params.target });
 
   await beforeDispatch?.();
-  return await callDom(
+  const selected = await callDom(
     tabId,
     (t: string, values: unknown) => {
       const dom = window.__sideagent?.dom;
@@ -2381,6 +2395,9 @@ export async function selectOption(
     [params.target, params.values],
     params.expectedDocumentId, beforeDispatch,
   );
+  await undo.done();
+
+  return selected;
 }
 
 type UploadOutcome = ToolContract["upload_file"]["data"] | { refused: string };
@@ -2475,7 +2492,9 @@ export async function typeText(
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
   await beforeDispatch?.();
+  const undo = await beforeWrite(sessionId, tab.id, { focused: true }, true);
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
+  await undo.done();
   // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
   return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }

@@ -3364,6 +3364,32 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .answer-actions button { width: 28px; height: 28px; border-radius: 7px; }
 .answer-actions .answer-sources-btn { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[hidden] { display: none; }
+
+/* 拖短回答（answer-shorten.ts）：把手和层名在文末一排，长回答时贴着侧栏底部。收起展开用 layout 档；减少动效只淡入淡出。 */
+.msg.assistant [data-shorten], .msg.assistant .shorten-rest {
+  interpolate-size: allow-keywords;
+  transition: height var(--d-layout) var(--e-move), margin-block var(--d-layout) var(--e-move), padding-block var(--d-layout) var(--e-move),
+              opacity var(--d-state) var(--e-enter), display var(--d-layout) allow-discrete;
+}
+.msg.assistant .shorten-off { display: none; height: 0; margin-block: 0; padding-block: 0; opacity: 0; overflow: hidden; }
+/* 只在用户换过层之后才从 0 展开：回答刚写完、历史回放时新插入的元素不闪。 */
+@starting-style {
+  .msg.assistant[data-shorten-moved] [data-shorten]:not(.shorten-off) { height: 0; opacity: 0; }
+  .msg.assistant[data-shorten-moved] .shorten-rest:not(.shorten-off) { opacity: 0; }
+}
+.answer-actions.has-grip { position: sticky; bottom: calc(-1 * var(--s-5)); z-index: 1; padding-bottom: var(--s-5); margin-bottom: calc(-1 * var(--s-5)); background: var(--wallpaper); }
+/* 贴底时正文不透到按钮和字下面：这一排本身不透明，只在上沿留一窄条渐隐；
+   #messages 底部有 --s-5 的内边距，贴底的位置放低这么多、底色也往下补这么多，内边距里不再透出正文。 */
+.answer-actions.has-grip::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--s-3); background: linear-gradient(to bottom, transparent, var(--wallpaper)); pointer-events: none; }
+.shorten-grip { display: flex; align-items: center; margin: 0 auto; padding: 6px 18px; border-radius: var(--r); cursor: ns-resize; touch-action: none; user-select: none; }
+.shorten-grip i { display: block; width: 30px; height: 4px; border-radius: var(--r-pill); background: var(--text-quaternary); transition: background var(--d-micro) var(--e-enter), width var(--d-micro) var(--e-enter); }
+.shorten-grip:hover i, .shorten-grip.dragging i { width: 36px; background: var(--text-secondary); }
+.shorten-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shorten-level { min-width: 96px; text-align: right; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .msg.assistant [data-shorten], .msg.assistant .shorten-rest { transition-property: opacity, display; }
+  .shorten-grip i { transition: none; }
+}
 .answer-actions .answer-show-tab { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[aria-expanded=true] { background: var(--content-subtle); }
 .answer-actions .answer-source-glyph { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; background: rgb(0 0 0 / .06); color: var(--text-secondary); font-size: 9px; font-weight: 600; line-height: 1; }
@@ -3678,6 +3704,14 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 /* A8 主动作 + 动作列表 */
 .answer-actions button.answer-primary { width: auto; min-width: 28px; height: 28px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; }
 .answer-actions button.answer-primary:hover { color: var(--text-primary); }
+.answer-actions button.answer-primary svg { width: 14px; height: 14px; }
+.answer-actions button.answer-primary:disabled { opacity: 1; color: var(--text-quaternary); }
+/* 还原填写（fill-undo.ts）：结果写在文末一排下面；还原后上面那段回答变淡，表示它说的已经不作数。 */
+.msg.assistant.fill-undo-settled > .answer-actions { opacity: 1; }
+.fill-undo-result { margin-top: 2px; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); }
+.fill-undo-result b { font-weight: 600; color: var(--text-secondary); }
+.msg.assistant > :is(p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre, blockquote, .gen-card) { transition: opacity var(--d-state) var(--e-enter); }
+.msg.assistant.fill-undone > :is(p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre, blockquote, .gen-card) { opacity: .45; }
 .answer-enter-hint { font-size: 11px; color: var(--text-quaternary); }
 .answer-command-btn { width: 28px; height: 28px; }
 .answer-command-menu { position: fixed; left: 16px; right: 16px; bottom: 88px; z-index: 30; max-height: 320px; display: flex; flex-direction: column; padding: 8px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass-surface-elevated); box-shadow: var(--popover-shadow); }
