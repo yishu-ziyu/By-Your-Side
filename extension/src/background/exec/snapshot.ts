@@ -348,7 +348,9 @@ async function readItems(tabId: number, refs: readonly number[], nodes: readonly
   };
 
   await Promise.all(refs.slice(0, MAX_ITEM_LOOKUPS).map(async ref => {
-    let item = found.byRef.get(ref) ?? known.byRef.get(ref) ?? enclosingItem(nodes, ref, isItem);
+    const remembered = found.byRef.get(ref) ?? known.byRef.get(ref);
+    let item = remembered?.item ?? enclosingItem(nodes, ref, isItem);
+    const from = remembered?.from ?? 0;
 
     if (item === undefined) {
       const partial = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId: ref, fetchRelatives: true }).catch(() => undefined);
@@ -357,8 +359,8 @@ async function readItems(tabId: number, refs: readonly number[], nodes: readonly
     }
 
     if (item === undefined) return;
-    const sub = itemTextOf(nodes, item, ref) === undefined ? await readItem(item) : nodes;
-    const text = sub ? itemTextOf(sub, item, ref) : undefined;
+    const sub = itemTextOf(nodes, item, ref, from) === undefined ? await readItem(item) : nodes;
+    const text = sub ? itemTextOf(sub, item, ref, from) : undefined;
 
     if (text) out.set(ref, text);
   }));
