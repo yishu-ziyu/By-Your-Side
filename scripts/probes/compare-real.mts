@@ -208,7 +208,7 @@ function wastedRounds(lines: any[]) {
   const opens = (c: any) => c?.name === "navigate" || (c?.name === "tabs" && c.arguments?.action === "open");
   const looksOnly = (c: any) => c?.name === "snapshot" || (c?.name === "browser_run" && /snapshot|pageInfo/.test(c.arguments?.code ?? "") && !/fill|click|press|type|select|check|hover|scroll|tabs/.test(c.arguments?.code ?? ""));
   // An action on the page (click, fill, key press, or a program that does one): if the tool result already shows what changed, a look right after it is a wasted round.
-  const acts = (c: any) => ["click", "fill", "press_key", "type", "select", "check"].includes(c?.name) || (c?.name === "browser_run" && /fill|click|press|type|select|check/.test(c.arguments?.code ?? ""));
+  const acts = (c: any) => ["click", "double_click", "fill", "type_text", "press_key", "select_option"].includes(c?.name) || (c?.name === "browser_run" && /\b(click|double_click|fill|type_text|press_key|select_option)\(/.test(c.arguments?.code ?? ""));
   return {
     tabsList: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "list").length,
     tabsShow: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "show").length,
