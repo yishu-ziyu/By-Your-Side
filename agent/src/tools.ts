@@ -727,13 +727,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           return textResult(`Clicked ${what}. The page opened a native ${dialog.type} dialog; its text: ${wrapPageContent(dialog.message.slice(0, 500))}\nThe page is blocked until it is handled; use accept_dialog (promptText for a prompt) or dismiss_dialog as the user asked, then observe the page.`, data);
         }
 
-        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
+        const appeared = appearedNote("appeared" in data ? data.appeared : undefined);
+        // 带回了新出现的内容，就不再说“页面没变化、先去看看”：两句互相打架。
+        const effectText = appeared && !("effect" in data && data.effect?.changed) ? "" : formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
         // 用户在网页上点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
         const clicked = data.sendConfirmed ? `The user confirmed sending on the page, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
-        const appeared = appearedNote("appeared" in data ? data.appeared : undefined);
 
         if (effectText) {
           return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}${appeared}`, data);
@@ -773,11 +774,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if ("dialog" in data && data.dialog) return textResult(`${data.doubleClicked ? "Native double-click input dispatched" : "Double-click interrupted before its full input sequence"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The dialog type and message are given here; use accept_dialog or dismiss_dialog as the user asked (browser.pageInfo() in browser_run also reports a pending dialog).`, data);
 
-        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
+        const appeared = appearedNote("appeared" in data ? data.appeared : undefined);
+        const effectText = appeared && !("effect" in data && data.effect?.changed) ? "" : formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
 
-        if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}${appearedNote("appeared" in data ? data.appeared : undefined)}`, data);
+        if (appeared && !effectText) return textResult(`Double-clicked ${what}.${newTabText}${appeared}`, data);
+
+        if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}${appeared}`, data);
 
         return textResult(`Double-clicked ${what}. This confirms native input dispatch only; observe the page to verify the intended change before reporting success.${newTabText}`, data);
       },
