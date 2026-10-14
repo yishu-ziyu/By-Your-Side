@@ -467,35 +467,47 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
       }
     });
 
-    // 从哪一层读字：同组里这一层的字独一份才认得出是哪一项。头一行每张都是同一个作者，就往上一层再比；
-    // 我的评论“谢谢”和“收到”各不相同，就停在这一层，不会走到旁边别人的评论。
+    // 从哪一层读字：同组里这一层的字独一份，才认得出是哪一项。
+    // 字都一样（头一行都是同一个作者、我的两条回复都是“谢谢”）时，只有上一层里没有别的带字的条目，才往上再比；
+    // 有别的条目（旁边别人的评论），宁可不说在哪一项（from = -1），也不说成别人那条。
+    const textAt = (m: { n: AxNodeLite }, k: number) => {
+      const at = up(m.n, k);
+      const text = at ? scanItem(byId, at, m.n) : null;
+
+      return text ? text.plain || text.link : "";
+    };
+    const othersHaveText = (m: { n: AxNodeLite }, k: number) => {
+      const at = up(m.n, k), via = up(m.n, k - 1);
+
+      return !!at && (at.childIds ?? []).some(id => {
+        const child = byId.get(id);
+
+        if (!child || child === via) return false;
+        const text = scanItem(byId, child);
+
+        return !!text && !!(text.plain || text.link);
+      });
+    };
     const from = new Map<AxNodeLite, number>();
-    const first = new Map<AxNodeLite, number>();
+    const textByLevel = members.map(m => Array.from({ length: m.steps }, (_, i) => textAt(m, i + 1)));
 
-    for (let k = 1, top = Math.max(0, ...members.map(m => m.steps)); k <= top && from.size < members.length; k++) {
-      const texts = members.map(m => {
-        const at = k <= m.steps ? up(m.n, k) : undefined;
-        const text = at ? scanItem(byId, at, m.n) : null;
+    members.forEach((m, j) => {
+      for (let k = 1; k <= m.steps; k++) {
+        const text = textByLevel[j]![k - 1]!;
 
-        return text ? text.plain || text.link : "";
-      });
-      const count = new Map<string, number>();
+        if (!text) continue;
+        const shared = members.some((other, o) => o !== j && textByLevel[o]![k - 1] === text);
 
-      for (const t of texts) if (t) count.set(t, (count.get(t) ?? 0) + 1);
+        if (!shared) { from.set(m.n, k); return; }
 
-      members.forEach((m, j) => {
-        const t = texts[j];
+        if (k === m.steps) { from.set(m.n, k); return; }
 
-        if (!t) return;
-
-        if (!first.has(m.n)) first.set(m.n, k);
-
-        if (!from.has(m.n) && count.get(t) === 1) from.set(m.n, k);
-      });
-    }
+        if (othersHaveText(m, k + 1)) { from.set(m.n, -1); return; }
+      }
+    });
 
     for (const m of members) {
-      found.byRef.set(m.n.backendDOMNodeId!, { item: m.item.backendDOMNodeId!, from: from.get(m.n) ?? first.get(m.n) ?? 1 });
+      found.byRef.set(m.n.backendDOMNodeId!, { item: m.item.backendDOMNodeId!, from: from.get(m.n) ?? 1 });
       found.items.add(m.item.backendDOMNodeId!);
     }
   }
@@ -505,7 +517,7 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 
 /**
  * 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；控件已经不在这一项里、太大或没有字，返回空串。
- * from：认的时候定好的“从控件往上第几层读”（同组里那一层的字各不相同）；0 表示没定过（页面上只有一个的新控件），
+ * from：认的时候定好的“从控件往上第几层读”（同组里那一层的字各不相同）；-1 表示分不清、不说；0 表示没定过（页面上只有一个的新控件），
  * 这时取往上第一层的正文，只有链接字时先记着、找不到正文再用。往上碰到包住同名另一个控件的层就停（后来又加了同样的卡片），用下面那层的字。
  */
 export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: number, from = 0): string | undefined {
@@ -547,7 +559,7 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
     if (at === top) break;
   }
 
-  if (path.at(-1) !== top) return "";
+  if (path.at(-1) !== top || from < 0) return "";
   let below = "";
 
   for (const [i, at] of path.entries()) {
