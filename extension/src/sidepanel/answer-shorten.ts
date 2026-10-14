@@ -7,7 +7,7 @@ const LEVELS = ["", "一句", "要点", "全文"] as const;
 type Level = 1 | 2 | 3;
 
 /** 不属于回答正文的界面元素：不分层，复制时也去掉（与 answer-actions.ts 的 CHROME 一致）。 */
-const CHROME = ".gc-actions,.answer-actions,.answer-panel,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
+const CHROME = ".gc-actions,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 const LIST = /^(UL|OL|TABLE)$/;
 const HEADING = /^H[1-6]$/;
 /** 卡片里成组的项：推荐项带 .pick / .best。 */
