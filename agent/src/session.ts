@@ -61,7 +61,7 @@ import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
 import { programFirstGuidance } from "./program-first.js";
-import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
+import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[] }
@@ -1393,20 +1393,30 @@ return;}
 
     const hosts = operatedHosts(messages, this.activeGoalPage?.url ?? null);
 
-    if ((digest.rounds <= 2 && digest.errors === 0) || !hosts.length) return;
+    if ((digest.rounds <= 2 && digest.errors === 0) || !hosts.length) { this.runTrace.record("site_notes", { phase: "skipped", why: hosts.length ? "short" : "no_host", rounds: digest.rounds }); return; }
     const sessionId = `${session.sessionId}-site-notes`;
 
     const reply = await sideJudgment(side, model, {
-      purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "none",
-      content: JSON.stringify({ visitedHosts: hosts, steps: digest.steps }),
+      purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "any",
+      content: JSON.stringify({ visitedHosts: hosts, rounds: digest.rounds, steps: digest.steps }),
       sessionId, headers: opencodeSessionHeaders(model, sessionId), parse: text => parseJsonReply(text, isJsonObject),
     });
 
-    for (const [host, notes] of filterSiteNotes(reply, { hosts, typed: digest.typed, request: task.request })) {
-      const count = await store.add(host, notes, task.runId);
+    const dropped: Array<{ tip: string; why: string }> = [];
+    let learned = 0;
 
-      if (count) this.runTrace.record("site_notes", { phase: "learned", host, count });
+    for (const [host, notes] of filterSiteNotes(reply, { hosts, typed: digest.typed, request: task.request }, dropped)) {
+      const added = await store.add(host, notes, task.runId);
+
+      if (!added.length) continue;
+      this.runTrace.record("site_notes", { phase: "learned", host, count: added.length, notes: added });
+      learned += added.length;
+      const title = siteTitle(messages, host);
+      this.callbacks.emit({ kind: "site_notes", host, ...(title ? { title } : {}), notes: added });
     }
+
+    // 诊断记录本来就含整段对话，被挡掉的原文写进去不多泄露什么；用来查笔记为什么没留下。
+    if (!learned) this.runTrace.record("site_notes", { phase: "skipped", why: dropped.length ? "filtered" : "model_empty", dropped });
   }
 
   /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */
