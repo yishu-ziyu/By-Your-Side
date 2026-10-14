@@ -63,7 +63,7 @@ import { mountModelPicker } from "./model-picker.js";
 import { chipLabel } from "./models.js";
 import { mountThinkingChip } from "./thinking-chip.js";
 import { mountReadingSettings } from "./reading-settings.js";
-import { D_TAP } from "../shared/motion-tokens.js";
+import { D_STATE, D_TAP } from "../shared/motion-tokens.js";
 import { AttachmentsManager } from "./attachments.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMessage } from "../../../shared/protocol.js";
@@ -3623,11 +3623,6 @@ function ensureRun(): NonNullable<typeof currentRun> {
   graph.el.after(trail);
   const start = runStartAt || eventTime();
 
-  // 第一行的秒数只数「现在这件事」：在想就从这段开始数，在跑一步就数这一步（≥3 秒才写），不数整轮（#263）。
-  const timer = window.setInterval(() => {
-    if (currentRun?.timer === timer) timeEl.textContent = liveSeconds(currentRun);
-  }, 1000);
-
   currentRun = {
     root,
     body,
@@ -3638,7 +3633,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     start,
     titleEl: title,
     orb,
-    timer,
+    timer: 0,
     lastToolShort: null,
     chipGroup: null,
     orbActivity: new RunOrbActivity(),
@@ -3663,6 +3658,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     beatEl: beat,
     lastToolName: null,
   };
+  startLiveSeconds(currentRun);
 
   return currentRun;
 }
@@ -3702,11 +3698,32 @@ const SHOW_SECS_MS = 3_000;
 /** 两步之间短于这个就不算想过（工具连着调）。 */
 const THINK_MIN_MS = 100;
 
+function stopLiveSeconds(run: RunHost): void {
+  if (!run.timer) return;
+  clearInterval(run.timer);
+  run.timer = 0;
+}
+
+function startLiveSeconds(run: RunHost): void {
+  if (run.timer) return;
+  const timer = window.setInterval(() => {
+    if (currentRun?.timer === timer) run.timeEl.textContent = liveSeconds(run);
+  }, 1000);
+  run.timer = timer;
+}
+
 /** 第一行的秒数：在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
 function liveSeconds(run: RunHost): string {
   const now = Date.now();
 
-  if (Number.isFinite(run.thinkFrom)) return now - run.thinkFrom >= 1_000 ? spokenDuration(run.thinkFrom, now) ?? "" : "";
+  if (Number.isFinite(run.thinkFrom)) {
+    if (now - run.thinkFrom < 1_000) return "";
+    const spoken = spokenDuration(run.thinkFrom, now);
+
+    if (!spoken) return "";
+    // 首字前还没动手：写「已等 N 秒」（#311）。动手之后的思考仍是「N 秒」。
+    return run.body.querySelector(".chip") ? spoken : `已等 ${spoken}`;
+  }
   const running = [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
 
   return running && Number.isFinite(running.start) && now - running.start >= SHOW_SECS_MS ? spokenDuration(running.start, now) ?? "" : "";
@@ -3956,7 +3973,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
 
   if (flags.userHasPage && currentRun) {
     // 页面归用户：停掉"在跑"的读数与光球，状态行只留结果
-    clearInterval(currentRun.timer);
+    stopLiveSeconds(currentRun);
   }
 
   if (currentRun) {
@@ -4021,7 +4038,7 @@ function finishRun(): void {
   taskPlan.endRun();
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
-  clearInterval(run.timer);
+  stopLiveSeconds(run);
   const endedAt = eventTime();
   // 停下、出错、答完：正在算的那段思考在这一刻结束（#263 E6）。
   closeThink(run, endedAt);
@@ -4038,10 +4055,16 @@ function finishRun(): void {
 
   // 核对判继续后续做的这一轮：即使没有步骤也留着，「核对发现：…」只写在这一行上，拿掉用户就看不到为什么又动起来。
   if (!run.checkNote && (!hasSteps || !keepProcess)) {
-    run.root.remove();
-    run.graph.el.remove();
+    const drop = () => {
+      run.root.remove();
+      run.graph.el.remove();
 
-    if (lastRun === run) lastRun = null;
+      if (lastRun === run) lastRun = null;
+    };
+
+    // 首字刚到还在淡出：等 --d-state 再拿掉，避免收起被掐断（#311）。
+    if (run.root.classList.contains("run-quieting") && !reducedMotion()) window.setTimeout(drop, D_STATE);
+    else drop();
 
     return;
   }
@@ -4364,8 +4387,42 @@ function closeLeadDraft(): void {
 }
 
 /** 正文开始出字、这一轮还没做过动作：「正在思考」让位给正文；之后有动作再出来。 */
+let quietTimer = 0;
+
 function quietRunForProse(): void {
-  if (currentRun && !currentRun.body.querySelector(".chip")) currentRun.root.hidden = true;
+  const run = currentRun;
+
+  if (!run || run.body.querySelector(".chip")) return;
+  // 首字到达立刻停表，不留 0 秒，也不再累加（#311）。
+  stopLiveSeconds(run);
+  run.thinkFrom = Number.NaN;
+  run.timeEl.textContent = "";
+  clearTimeout(quietTimer);
+  quietTimer = 0;
+  const root = run.root;
+
+  if (applyingHistory || reducedMotion()) {
+    root.classList.remove("run-quieting");
+    root.hidden = true;
+
+    return;
+  }
+
+  root.classList.add("run-quieting");
+  quietTimer = window.setTimeout(() => {
+    quietTimer = 0;
+
+    if (!root.isConnected) return;
+
+    if (run.body.querySelector(".chip")) {
+      root.classList.remove("run-quieting");
+
+      return;
+    }
+
+    root.hidden = true;
+    root.classList.remove("run-quieting");
+  }, D_STATE);
 }
 
 /** 模型直接写的正文：没调过工具时放在回答位置逐段显示；新一轮的正文出现时，上一轮那段只是过程。 */
@@ -4688,7 +4745,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
     return;
   }
 
+  run.root.classList.remove("run-quieting");
   run.root.hidden = false;
+  startLiveSeconds(run);
   addChainStep(action.short);
   run.lastToolShort = action.short;
 
