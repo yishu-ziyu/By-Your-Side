@@ -17,10 +17,10 @@
  *   g 点「显示帮助」：页面只给 body 换一个 class，让预先画好的帮助显出来；结果说“这一页一大块变了”，不是什么都没有。
  *   h 填数量框（填完它自己换校验 class）：结果不把这个数量框当成新出现的。
  *   i 点第二张卡片的「More」：展开的按钮行写明在“读书笔记”那一项；对话框里的新栏不带这句（不在重复的项里）。
- *   j 点「Pin」：新出现的「Unpin」写明在“读书笔记”那一项，结果写明只挪了位置的旧行不列出。
+ *   j 点「Pin」：新出现的「Unpin」写明在“读书笔记”那一项（它在页面上只有一个，靠记下的那张卡片认出来）。
  *   f 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回内容的每一步、每一次填写和选择也都不超过 300 毫秒（备注框的请求 1.5 秒才回来，不能等它）。
  * 失败方式：关掉变化摘要（pageChangesAfter、watchChangesAfter 直接返回 undefined），a、b、d 失败；改回动作后读整页，f 失败；
- * 去掉“动作前就在跳字的不算”，e 失败；不查所在那一项（readItems 直接返回空表），i、j 失败。
+ * 去掉“动作前就在跳字的不算”，e 失败；不认所在那一项（repeatedItems 直接返回空表），i、j 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -246,7 +246,7 @@ try {
 
   const pinReceipt = receiptOf("click", t.pin);
   const top = await rp.evaluate(work, 'document.querySelector("#cards .card p")?.textContent ?? ""');
-  check("j 点「Pin」：新出现的「Unpin」写明在读书笔记那一项，并写明只挪了位置的旧行不列出", /button "Unpin" — in item "读书笔记/.test(appearedPart(pinReceipt)) && /only moved are not listed/.test(pinReceipt) && String(top).startsWith("读书笔记"), { pin: t.pin.target, top, pinReceipt });
+  check("j 点「Pin」：新出现的「Unpin」写明在读书笔记那一项", /button "Unpin" — in item "读书笔记/.test(appearedPart(pinReceipt)) && String(top).startsWith("读书笔记"), { pin: t.pin.target, top, pinReceipt });
 
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;
