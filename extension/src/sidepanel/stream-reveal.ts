@@ -1,21 +1,30 @@
 /**
- * 回答的平滑显示：模型输出一阵一阵到，这里先缓冲，再按稳定节奏放出来；新出现的字逐字淡入。
+ * 回答的平滑显示：模型输出一阵一阵到，这里先缓冲，再按固定节拍一段段放出来。
  *
- * - 节奏：每秒至少 MIN_CPS 个字；积压多时加速，让积压在 CATCH_UP_MS 内放完，不会越落越远。
- * - 淡入：每次渲染后，最近 FADE_MS 内新出现的字包进 span，用负的 animation-delay 接着上一帧的进度，
- *   整段 innerHTML 重渲染也不会让已经在淡入的字重新开始。已显示完的字不再包 span。
- * - Markdown 每次按已放出的前缀整体渲染：未闭合的块照 marked 的结果显示，放完后与一次性渲染一致。
+ * - 节拍：每 150～200ms 放一段，一段 14～24 字；积压多时把段放大，约 1.5 秒内追平。
+ * - 淡入：每段 400ms 只改透明度，淡完拆掉 span。不含记号的续写直接追加，否则只重渲染最后一块。
+ * - 未闭合的 Markdown 先补齐，不让 `**`、`` ` ``、半截链接露出来。
  */
 
-const MIN_CPS = 45;
+import { Lexer } from "marked";
+import { D_READ } from "../shared/motion-tokens.js";
 
-const CATCH_UP_MS = 1200;
+const BEAT_MIN = 150;
+const BEAT_MAX = 200;
+const CHUNK_MIN = 14;
+const CHUNK_MAX = 24;
+const CATCH_UP_MS = 1500;
+const STARVE_MIN = 6;
+const STARVE_WAIT = 350;
+export const FADE_MS = D_READ;
 
-const FRAME_MS = 32;
+const PUNCT = /[，。；：、！？,.;:!?）」”]/;
+const MD_SYNTAX = /[*_`#\[\]<>|~\\!-]/;
+const AVG_BEAT = (BEAT_MIN + BEAT_MAX) / 2;
 
-export const FADE_MS = 300;
+type Fade = { from: number; to: number; at: number };
 
-type Batch = { from: number; to: number; at: number };
+type Block = { md: string; nodes: ChildNode[]; len: number; fades: Fade[] };
 
 type Options = {
   render: (text: string) => string;
@@ -23,51 +32,264 @@ type Options = {
   onProgress?: () => void;
 };
 
+function points(text: string): string[] {
+  return [...text];
+}
+
+/** 未闭合的围栏、粗体、行内代码、链接先补上，渲染时不露记号。思路同 streamdown remend。 */
+function remendFence(md: string): string {
+  let open = false;
+
+  for (const line of md.split("\n")) {
+    if (/^ {0,3}```/.test(line)) open = !open;
+  }
+
+  return open ? `${md}\n\`\`\`` : md;
+}
+
+function fenceOpen(md: string): boolean {
+  let open = false;
+
+  for (const line of md.split("\n")) {
+    if (/^ {0,3}```/.test(line)) open = !open;
+  }
+
+  return open;
+}
+
+function remendBold(md: string): string {
+  const visible = md.replace(/`[^`\n]*`/g, "");
+
+  return (visible.match(/\*\*/g) ?? []).length % 2 ? `${md}**` : md;
+}
+
+function remendCode(md: string): string {
+  const visible = md.replace(/```[\s\S]*?(```|$)/g, "");
+
+  return (visible.match(/`/g) ?? []).length % 2 ? `${md}\`` : md;
+}
+
+function remendLink(md: string): string {
+  if (/\[[^\]]*\]\([^)\n]*$/.test(md)) return `${md})`;
+  if (/\[[^\]]*$/.test(md)) return `${md}]`;
+
+  return md;
+}
+
+function remend(md: string): string {
+  const fenced = remendFence(md);
+
+  return fenceOpen(md) ? fenced : remendLink(remendCode(remendBold(fenced)));
+}
+
+function splitBlocks(md: string): string[] {
+  if (!md) return [];
+  const parts: string[] = [];
+
+  for (const token of Lexer.lex(md, { gfm: true, breaks: true })) {
+    if (token.type === "space") {
+      if (parts.length) parts[parts.length - 1] += token.raw;
+      else parts.push(token.raw);
+    } else {
+      parts.push(token.raw);
+    }
+  }
+
+  return parts.length ? parts : [md];
+}
+
+function take(buffer: string, done: boolean, rng: () => number): { chunk: string; rest: string } {
+  let prefix = "";
+
+  if (buffer.startsWith("\n\n")) {
+    prefix = "\n\n";
+    buffer = buffer.slice(2);
+  }
+
+  const chars = points(buffer);
+
+  if (done || chars.length === 0) return { chunk: prefix + buffer, rest: "" };
+
+  let n = CHUNK_MIN + Math.floor(rng() * (CHUNK_MAX - CHUNK_MIN + 1));
+  n = Math.max(n, Math.ceil(chars.length / (CATCH_UP_MS / AVG_BEAT)));
+
+  if (n >= chars.length) n = chars.length;
+  else {
+    const br = buffer.indexOf("\n\n");
+
+    if (br > 0 && points(buffer.slice(0, br)).length <= n + 6) n = points(buffer.slice(0, br)).length;
+    else {
+      const lo = Math.max(n - 6, 1);
+      const hi = Math.min(n + 4, chars.length);
+
+      for (let k = hi; k >= lo; k -= 1) {
+        const prev = chars[k - 1]!;
+        const next = chars[k] ?? "";
+
+        if (PUNCT.test(prev) || (prev === " " && /[A-Za-z]/.test(next))) {
+          n = k;
+          break;
+        }
+      }
+    }
+  }
+
+  if (chars[n - 1] === "*" && chars[n] === "*") n += 1;
+
+  return { chunk: prefix + chars.slice(0, n).join(""), rest: chars.slice(n).join("") };
+}
+
+function lastText(nodes: ChildNode[]): Text | null {
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const root = nodes[i]!;
+
+    if (root.nodeType === Node.TEXT_NODE) return root as Text;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let last: Text | null = null;
+
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) last = node as Text;
+    if (last) return last;
+  }
+
+  return null;
+}
+
+function collectTexts(nodes: ChildNode[]): Text[] {
+  const texts: Text[] = [];
+
+  for (const root of nodes) {
+    if (root.nodeType === Node.TEXT_NODE) {
+      texts.push(root as Text);
+      continue;
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) texts.push(node as Text);
+  }
+
+  return texts;
+}
+
+function fadeSpan(delay: number): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = "chunk-fade";
+  if (delay) span.style.animationDelay = `${-delay}ms`;
+  span.addEventListener("animationend", function unwrap(event) {
+    if (event.target !== span) return;
+    span.removeEventListener("animationend", unwrap);
+    const parent = span.parentNode;
+
+    if (!parent) return;
+    span.replaceWith(...span.childNodes);
+    parent.normalize();
+  });
+
+  return span;
+}
+
+function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
+  if (!fades.length) return;
+  const texts = collectTexts(nodes);
+  let offset = 0;
+
+  for (const node of texts) {
+    const start = offset;
+    const end = offset + node.data.length;
+    offset = end;
+    const cuts: Fade[] = [];
+
+    for (const fade of fades) {
+      const cut = { from: Math.max(fade.from, start), to: Math.min(fade.to, end), at: fade.at };
+
+      if (cut.to > cut.from) cuts.unshift(cut);
+    }
+
+    for (const cut of cuts) {
+      const tail = node.splitText(cut.from - start);
+      tail.splitText(cut.to - cut.from);
+      const span = fadeSpan(Math.round(now - cut.at));
+      tail.replaceWith(span);
+      span.append(tail);
+    }
+  }
+}
+
+function topNodes(html: string): ChildNode[] {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+
+  return [...template.content.childNodes].filter((node) => !(node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()));
+}
+
+function anchorBefore(el: HTMLElement): ChildNode | null {
+  return el.querySelector(":scope > .answer-actions, :scope > .answer-panel");
+}
+
 class Reveal {
   private target = "";
   private shown = 0;
   private final = false;
   private after: (() => void) | null = null;
   private timer: number | null = null;
-  private lastTick = 0;
-  private renderedLength = 0;
-  private batches: Batch[] = [];
+  private lastRelease = -1e9;
+  private blocks: Block[] = [];
+  private entered = false;
+  private rng = Math.random;
 
   constructor(private el: HTMLElement, private opts: Options) {}
 
   update(text: string, final: boolean, after?: () => void): void {
-    // 新文本不是旧文本的延续（改写、换稿）：从共同前缀接着放，不重放已经看过的部分。
     if (!text.startsWith(this.target.slice(0, this.shown))) {
       let common = 0;
 
       while (common < this.shown && text[common] === this.target[common]) common += 1;
-      this.shown = common;
+      this.rewind(common);
     }
 
     this.target = text;
     this.final = final;
-
     if (after) this.after = after;
-    this.schedule();
+    this.schedule(final);
   }
 
   /** 立即显示全部（历史、减弱动态、被新回合打断时）。 */
   flush(): void {
     this.shown = this.target.length;
-    this.batches = [];
+    this.blocks = [];
     this.stop();
     this.el.innerHTML = this.opts.render(this.target);
-    markTail(this.el);
-    this.renderedLength = this.el.textContent?.length ?? 0;
     this.finishIfDone();
   }
 
-  private schedule(): void {
+  private rewind(common: number): void {
+    this.shown = common;
+    this.blocks = [];
+    this.lastRelease = -1e9;
+
+    for (const node of [...this.el.childNodes]) {
+      if (node instanceof HTMLElement && (node.classList.contains("answer-actions") || node.classList.contains("answer-panel"))) continue;
+      node.remove();
+    }
+
+    if (common) this.paintPrefix(this.target.slice(0, common));
+  }
+
+  private paintPrefix(md: string): void {
+    const now = performance.now();
+
+    for (const [i, part] of splitBlocks(md).entries()) this.paintBlock(i, part, false, now);
+  }
+
+  private schedule(immediate = false): void {
+    if (immediate && this.timer !== null) {
+      window.clearTimeout(this.timer);
+      this.timer = null;
+    }
+
     if (this.timer !== null) return;
-    // 还在放字时标出来：验收脚本据此等回答放完再读，不读到半截。
     this.el.dataset.revealing = "true";
-    this.lastTick = performance.now();
-    this.timer = window.setTimeout(() => this.tick(), 0);
+    this.timer = window.setTimeout(() => this.beat(), immediate ? 0 : 0);
   }
 
   private stop(): void {
@@ -76,32 +298,35 @@ class Reveal {
     delete this.el.dataset.revealing;
   }
 
-  private tick(): void {
+  private beat(): void {
     this.timer = null;
     const now = performance.now();
-    const elapsed = Math.max(FRAME_MS, now - this.lastTick);
-    this.lastTick = now;
-    const backlog = this.target.length - this.shown;
+    const buffer = this.target.slice(this.shown);
+    const starved = buffer.length > 0 && buffer.length < STARVE_MIN && !this.final && now - this.lastRelease < STARVE_WAIT;
 
-    if (backlog > 0) {
-      const cps = Math.max(MIN_CPS, (backlog * 1000) / CATCH_UP_MS);
-      this.shown = Math.min(this.target.length, this.shown + Math.max(1, Math.round((cps * elapsed) / 1000)));
-      this.paint(now);
+    if (buffer.length && !starved) {
+      const { chunk } = take(buffer, this.final, this.rng);
+      this.shown += chunk.length;
+      this.release(now);
+      this.lastRelease = now;
       this.opts.onProgress?.();
-    } else if (this.batches.length) {
-      // 已经放完：继续刷新几帧，让最后一批淡入走完后去掉 span。
-      this.paint(now);
     }
 
-    if (this.shown < this.target.length || this.batches.length) {
-      this.lastTick = now;
-      this.timer = window.setTimeout(() => this.tick(), FRAME_MS);
+    if (this.shown >= this.target.length) this.finishIfDone();
+
+    if (this.shown < this.target.length || !this.final) {
+      this.timer = window.setTimeout(() => this.beat(), BEAT_MIN + this.rng() * (BEAT_MAX - BEAT_MIN));
+
+      return;
+    }
+
+    if (this.el.querySelector(".chunk-fade")) {
+      this.timer = window.setTimeout(() => this.beat(), FADE_MS);
 
       return;
     }
 
     delete this.el.dataset.revealing;
-    this.finishIfDone();
   }
 
   private finishIfDone(): void {
@@ -111,73 +336,72 @@ class Reveal {
     after();
   }
 
-  private paint(now: number): void {
-    this.el.innerHTML = this.opts.render(this.target.slice(0, this.shown));
-    markTail(this.el);
-    const length = this.el.textContent?.length ?? 0;
-
-    // Markdown 语法闭合时渲染出的字可能变少：丢掉越界的批次，不回退已显示的内容。
-    if (length < this.renderedLength) this.batches = this.batches.filter((b) => b.from < length).map((b) => ({ ...b, to: Math.min(b.to, length) }));
-    else if (length > this.renderedLength) this.batches.push({ from: this.renderedLength, to: length, at: now });
-    this.renderedLength = length;
-    this.batches = this.batches.filter((b) => now - b.at < FADE_MS);
-
-    if (this.batches.length) wrapFading(this.el, this.batches, now);
-  }
-}
-
-/** 标出最后一个字所在的块：流式光标挂在它末尾，跟在字后面，不在段落下面另起一行。 */
-function markTail(root: HTMLElement): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let last: Node | null = null;
-
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (node.textContent?.trim()) last = node;
-  }
-
-  const block = last?.parentElement?.closest("p, li, h1, h2, h3, h4, h5, h6, td, th, pre");
-
-  if (block instanceof HTMLElement && root.contains(block)) block.dataset.tail = "";
-}
-
-/** 把最近放出的字包进淡入 span；按渲染后文本的字符位置定位，跨越多个文本节点也成立。 */
-function wrapFading(root: HTMLElement, batches: Batch[], now: number): void {
-  const start = batches[0]!.from;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
-
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    // SAFETY: 遍历器只接受 SHOW_TEXT，返回的节点都是 Text。
-    nodes.push(node as Text);
-  }
-
-  let offset = 0;
-
-  for (const node of nodes) {
-    const nodeStart = offset;
-    const nodeEnd = offset + node.data.length;
-    offset = nodeEnd;
-
-    if (nodeEnd <= start) continue;
-
-    // 从后往前切，前面的位置不受影响。
-    const cuts: Batch[] = [];
-
-    for (const b of batches) {
-      const cut = { from: Math.max(b.from, nodeStart), to: Math.min(b.to, nodeEnd), at: b.at };
-
-      if (cut.to > cut.from) cuts.unshift(cut);
+  private release(now: number): void {
+    if (!this.entered) {
+      this.el.classList.add("stream-enter");
+      this.entered = true;
     }
 
-    for (const cut of cuts) {
-      const tail = node.splitText(cut.from - nodeStart);
-      tail.splitText(cut.to - cut.from);
-      const span = document.createElement("span");
-      span.className = "reveal-fade";
-      span.style.animationDelay = `${-Math.round(now - cut.at)}ms`;
-      tail.replaceWith(span);
-      span.append(tail);
+    const source = this.target.slice(0, this.shown);
+    const parts = splitBlocks(source);
+
+    for (const [i, md] of parts.entries()) {
+      const live = i === parts.length - 1;
+      const old = this.blocks[i];
+
+      if (old && old.md === md) continue;
+      const added = old && md.startsWith(old.md) ? md.slice(old.md.length) : null;
+      const codeTail = old?.md.startsWith("```") && added !== null && !/[*_`#\[\]<>|~\\!]/.test(added);
+
+      if (old && added && old.nodes.length && (!MD_SYNTAX.test(added) || codeTail)) this.appendFast(old, added, now);
+      else this.paintBlock(i, md, live, now);
     }
+
+    while (this.blocks.length > parts.length) {
+      const extra = this.blocks.pop()!;
+
+      for (const node of extra.nodes) node.remove();
+    }
+  }
+
+  private appendFast(block: Block, added: string, now: number): void {
+    const last = lastText(block.nodes);
+    const span = fadeSpan(0);
+    span.textContent = added;
+    const parent = last?.parentElement;
+    const anchor = parent?.classList.contains("chunk-fade") ? parent : last;
+
+    if (anchor) anchor.after(span);
+    else {
+      const host = block.nodes[block.nodes.length - 1];
+      if (host instanceof Element) host.append(span);
+      else this.el.insertBefore(span, anchorBefore(this.el));
+    }
+    block.fades.push({ from: block.len, to: block.len + added.length, at: now });
+    block.len += added.length;
+    block.md += added;
+  }
+
+  private paintBlock(i: number, md: string, live: boolean, now: number): void {
+    const nodes = topNodes(this.opts.render(live ? remend(md) : md));
+    const len = nodes.reduce((sum, node) => sum + (node.textContent?.length ?? 0), 0);
+    const old = this.blocks[i];
+    let fades = old ? old.fades.filter((fade) => now - fade.at < FADE_MS && fade.from < len).map((fade) => ({ ...fade, to: Math.min(fade.to, len) })) : [];
+    const prevLen = old ? Math.min(old.len, len) : 0;
+
+    if (len > prevLen) fades.push({ from: prevLen, to: len, at: now });
+    const frag = document.createDocumentFragment();
+
+    for (const node of nodes) frag.append(node);
+    if (old?.nodes[0]?.parentNode === this.el) {
+      this.el.insertBefore(frag, old.nodes[0]);
+      for (const node of old.nodes) node.remove();
+    } else {
+      this.el.insertBefore(frag, anchorBefore(this.el));
+    }
+
+    this.blocks[i] = { md, nodes, len, fades };
+    wrapRanges(nodes, fades, now);
   }
 }
 
@@ -203,7 +427,6 @@ export function revealText(el: HTMLElement, text: string, opts: Options & { live
     }
 
     el.innerHTML = opts.render(text);
-    markTail(el);
     opts.after?.();
 
     return;
