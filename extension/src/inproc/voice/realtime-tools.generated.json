@@ -706,6 +706,10 @@
        "type": "string",
        "description": "Value to set"
       },
+      "submit": {
+       "type": "boolean",
+       "description": "Press Enter after filling (search boxes and single-line text fields only; refused on message boxes, multi-line fields and editors, where Enter may send)"
+      },
       "tabId": {
        "type": "number"
       },

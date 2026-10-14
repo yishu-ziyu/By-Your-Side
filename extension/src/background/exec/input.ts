@@ -24,6 +24,7 @@ import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, beginWatch, collectEffect, endWatch, pageChangesAfter, watchChangesAfter } from "./effect.js";
+import { regrade, submitProbeInPage, typeIntoField, typingWritten, type PageRun } from "./fill-typing.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite } from "../fill-undo.js";
@@ -2206,15 +2207,80 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
 }
 
 /**
+ * 先用真实键盘输入写（exec/fill-typing.ts），键盘写不进的框（日期、下拉框）和两次都没写进去的，用旧写法 legacy 再写。
+ * typing 是 "failed" 时旧写法也没写进去：回执要如实说，并建议改用键盘逐字输入。
+ */
+async function writeField<T extends { range?: InputRangeReadout | null; select?: true }>(tabId: number, run: PageRun, legacy: () => Promise<T>, value: string, guard?: DispatchGuard): Promise<T & { typing?: "keyboard" | "fallback" | "failed" }> {
+  const started = Date.now();
+  // 调试器不可用、页面中途换了：按没写处理，交给旧写法（旧写法是整栏替换，重写一次不会叠字）。
+  const typed = await typeIntoField(tabId, run, value, guard).catch(() => ({ grade: null, fallback: { beforeLen: -1, beforeHash: 0 } }));
+  const log = (typing: string) => console.info("[fill-typing]", JSON.stringify({ ms: Date.now() - started, typing }));
+
+  if (typed === "skip") return await legacy();
+
+  if (!typed.fallback) { log("keyboard"); return { typing: "keyboard" } as T & { typing: "keyboard" }; }
+  const out = await legacy();
+  const typing = typingWritten(await regrade(run, value, typed.fallback)) ? "fallback" as const : "failed" as const;
+  log(typing);
+
+  return { ...out, typing };
+}
+
+/**
  * 先给模型带回“填完以后页面上新出现了什么”（下拉建议、跟着出来的栏、校验提示），再交回填写结果。
  * 填写本身的值变化不算：没有目标元素的采样只看页面多没多东西。
  */
 export async function fill(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"] },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
-  return await withAppeared(params.tabId, sessionId, () => fillField(params, sessionId, beforeDispatch));
+  const data = await withAppeared(params.tabId, sessionId, () => fillField(params, sessionId, beforeDispatch));
+
+  if (!params.submit) return data;
+
+  // 没写进去就不回车：不然会用空值或旧值把表单提交出去。
+  if (data.typing === "failed" || data.readback?.match === "not_held" || data.readback?.match === "different") {
+    return { ...data, submit: { refused: "这一栏没写进去，没有回车。" } };
+  }
+
+  return { ...data, submit: await submitAfterFill(params, sessionId, beforeDispatch) };
+}
+
+/**
+ * 「填完回车」：只在搜索框和普通单行框上按一次真回车（规则见 fill-typing.ts 的 submitRefusalInPage），省一轮来回。
+ * 回车可能就是“发送”的框不按，填好的字留着：回车发送不经过发送确认是已知缺口（docs/web-actions.md），不能扩大。
+ */
+async function submitAfterFill(params: { target: string; tabId?: number }, sessionId: string, beforeDispatch?: DispatchGuard): Promise<NonNullable<ToolContract["fill"]["data"]["submit"]>> {
+  try {
+    const tab = await resolveWorkingTab(params.tabId, sessionId);
+    const tabId = tab.id!;
+    const backendNodeId = axBackendNodeFor(tabId, parseRef(params.target));
+    const probe = backendNodeId !== undefined
+      ? await callOnBackendNode<ReturnType<typeof submitProbeInPage>>(tabId, backendNodeId, `function() { return (${submitProbeInPage.toString()}).call(this, null); }`)
+      : await ensureDomOps(tabId).then(() => callDom(tabId, submitProbeInPage as (t: string) => ReturnType<typeof submitProbeInPage>, [params.target]));
+
+    if (!probe) return { refused: "读不到这个框，没有回车。" };
+
+    if ("refused" in probe) return probe;
+    // 和点击同一套规则：附近有「发送」「支付」这类按钮，回车可能就是发送或付款。
+    const risky = probe.labels.find(label => isSendLabel(label) || isPayLabel(label));
+
+    if (risky) return { refused: `这个框旁边有「${risky.slice(0, 12)}」，回车可能直接发出去或付款：已填好，没有回车。要做这一步请点那个按钮，会先问用户。` };
+    let pressed: Awaited<ReturnType<typeof pressKey>>;
+
+    try {
+      pressed = await pressKey({ key: "Enter", tabId }, sessionId, beforeDispatch);
+    } catch (error) {
+      // 回车可能已经送到页面（提交可能已经发生）：说不确定，别让模型以为没按、再按一次。
+      return { uncertain: `回车可能已经送到页面，结果不确定（${oneLine(error)}）。先看页面，不要再按一次。` };
+    }
+
+    return pressed.pressed ? { pressed: true, ...(pressed.effect ? { effect: pressed.effect } : {}), ...(pressed.appeared ? { appeared: pressed.appeared } : {}), ...(pressed.dialog ? { dialog: pressed.dialog } : {}) } : { pressed: false, dialog: pressed.dialog };
+  } catch (error) {
+    // 按回车之前出错：值已经填好了，只说没按，不让整次填写报失败。
+    return { refused: `没能按回车（${oneLine(error)}）：已填好，没有回车。` };
+  }
 }
 
 /** 填写、选择外面包一层：动作前开始记页面上哪里变了，动作后带回新出现的行。 */
@@ -2320,7 +2386,8 @@ async function fillField(
       try {
         await beforeDispatch?.();
         const undo = await beforeWrite(sessionId, tabId, { backendNodeId }, true);
-        const { range, select } = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
+        const run: PageRun = (fn, args) => callOnBackendNode(tabId, backendNodeId, `function(...a) { return (${fn.toString()}).call(this, null, ...a); }`, args, undefined, params.expectedDocumentId, beforeDispatch);
+        const { range, select, typing } = await writeField(tabId, run, () => fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch), params.value, beforeDispatch);
         await undo.done();
 
         if (targetRect) {
@@ -2337,7 +2404,7 @@ async function fillField(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        const filled = filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
+        const filled = { ...filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select), ...(typing === "failed" ? { typing } : {}) };
         await rememberActionTarget(tabId, params.target, params.target);
 
         return refound ? { ...filled, refound } : filled;
@@ -2356,7 +2423,9 @@ async function fillField(
     const undo = await beforeWrite(sessionId, tabId, { target: params.target }, true);
 
     await beforeDispatch?.();
-    const filled = await callDom(
+    const run: PageRun = (fn, args) => callDom(tabId, fn as (...a: unknown[]) => unknown, [params.target, ...args], params.expectedDocumentId, beforeDispatch) as never;
+    let typing: Awaited<ReturnType<typeof writeField>>["typing"];
+    const filled = await writeField(tabId, run, () => callDom(
       tabId,
       (t: string, v: string) => {
         const dom = window.__sideagent?.dom;
@@ -2380,9 +2449,11 @@ async function fillField(
       },
       [params.target, params.value],
       params.expectedDocumentId, beforeDispatch,
-    );
+    ).then(out => {
+      if (out && "refused" in out) throw new FillRefused(out.refused);
 
-    if (filled && "refused" in filled) throw new FillRefused(filled.refused);
+      return out ?? {};
+    }), params.value, beforeDispatch).then(out => { typing = out.typing; return out; });
     await undo.done();
 
     if (targetRect) {
@@ -2401,7 +2472,7 @@ async function fillField(
 
     await rememberActionTarget(tabId, params.target, params.target);
 
-    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true);
+    return { ...filledResult(filled.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), "select" in filled && filled.select === true), ...(typing === "failed" ? { typing } : {}) };
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
