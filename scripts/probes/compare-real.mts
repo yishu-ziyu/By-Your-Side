@@ -207,10 +207,13 @@ function wastedRounds(lines: any[]) {
   const results = lines.filter((l) => l.type === "message_end" && l.data?.message?.role === "toolResult").map((l) => l.data.message.content.map((c: any) => c.text ?? "").join(""));
   const opens = (c: any) => c?.name === "navigate" || (c?.name === "tabs" && c.arguments?.action === "open");
   const looksOnly = (c: any) => c?.name === "snapshot" || (c?.name === "browser_run" && /snapshot|pageInfo/.test(c.arguments?.code ?? "") && !/fill|click|press|type|select|check|hover|scroll|tabs/.test(c.arguments?.code ?? ""));
+  // An action on the page (click, fill, key press, or a program that does one): if the tool result already shows what changed, a look right after it is a wasted round.
+  const acts = (c: any) => ["click", "fill", "press_key", "type", "select", "check"].includes(c?.name) || (c?.name === "browser_run" && /fill|click|press|type|select|check/.test(c.arguments?.code ?? ""));
   return {
     tabsList: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "list").length,
     tabsShow: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "show").length,
     lookAfterOpen: calls.filter((c: any, i: number) => i > 0 && looksOnly(c) && opens(calls.slice(0, i).reverse().find((x: any) => !(x.name === "tabs" && x.arguments?.action !== "open")))).length,
+    lookAfterAction: calls.filter((c: any, i: number) => i > 0 && looksOnly(c) && acts(calls[i - 1])).length,
     zeroSize: results.filter((t: string) => t.includes("零尺寸")).length,
     staleRef: results.filter((t: string) => /节点已离开文档|页面文档已变化|读取期间页面地址已变化/.test(t)).length,
   };
@@ -302,6 +305,6 @@ if (arm === "ext") {
   const sum = (k: string) => ok.reduce((n, r) => n + (r.wasted?.[k] ?? 0), 0);
   const secs = ok.map((r) => r.seconds).sort((a, b) => a - b);
   console.log(JSON.stringify({ pass: ok.filter((r) => r.outcome === "pass").length, of: results.length, rounds: ok.reduce((n, r) => n + r.rounds, 0), medianSeconds: secs[Math.floor(secs.length / 2)],
-    wasted: Object.fromEntries(["tabsList", "tabsShow", "lookAfterOpen", "zeroSize", "staleRef"].map((k) => [k, sum(k)])), buttonOk: ok.filter((r) => r.button?.ok).length, cacheShare: +(ok.reduce((n, r) => n + (r.cacheShare ?? 0), 0) / Math.max(1, ok.length)).toFixed(2) }));
+    wasted: Object.fromEntries(["tabsList", "tabsShow", "lookAfterOpen", "lookAfterAction", "zeroSize", "staleRef"].map((k) => [k, sum(k)])), buttonOk: ok.filter((r) => r.button?.ok).length, cacheShare: +(ok.reduce((n, r) => n + (r.cacheShare ?? 0), 0) / Math.max(1, ok.length)).toFixed(2) }));
 }
 console.log(`done ${arm}`);
