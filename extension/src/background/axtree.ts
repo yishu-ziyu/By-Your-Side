@@ -432,20 +432,32 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
     // 按文档顺序排好，和它共同祖先最深的同名控件一定是前一个或后一个。
     group.sort((a, b) => order.get(a.nodeId)! - order.get(b.nodeId)!);
 
-    group.forEach((n, i) => {
+    // 每个控件最多能往上走几层（再往上就包住了同名的另一个）。
+    const reach = group.map((n, i) => {
       const shared = Math.max(i > 0 ? meet(n, group[i - 1]!) : -1, i + 1 < group.length ? meet(n, group[i + 1]!) : -1);
-      const d = depth.get(n.nodeId)!;
 
-      if (shared < 0 || shared + 1 >= d) return;
-      const item = up(n, d - shared - 1);
+      return shared < 0 ? 0 : depth.get(n.nodeId)! - shared - 1;
+    });
+    const usable = reach.filter(steps => steps > 0);
 
-      if (!item || item.backendDOMNodeId === undefined) return;
+    if (!usable.length) continue;
+    // 分组列表里（某一组当时只有一张卡片）最高那层是整组，不是卡片：从各控件共同能走到的层数开始，取第一个有字的那层。
+    const from = Math.min(...usable);
 
-      if (!verdict.has(item.nodeId)) verdict.set(item.nodeId, !!scanItem(byId, item));
+    group.forEach((n, i) => {
+      for (let steps = from; steps <= reach[i]!; steps++) {
+        const item = up(n, steps);
 
-      if (!verdict.get(item.nodeId)) return;
-      found.byRef.set(n.backendDOMNodeId!, item.backendDOMNodeId);
-      found.items.add(item.backendDOMNodeId);
+        if (!item || item.backendDOMNodeId === undefined) return;
+
+        if (!verdict.has(item.nodeId)) verdict.set(item.nodeId, !!scanItem(byId, item));
+
+        if (!verdict.get(item.nodeId)) continue;
+        found.byRef.set(n.backendDOMNodeId!, item.backendDOMNodeId);
+        found.items.add(item.backendDOMNodeId);
+
+        return;
+      }
     });
   }
 
