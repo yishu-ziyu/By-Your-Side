@@ -479,9 +479,19 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     throw new Error(detail);
   });
 
-  const version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
-  let cdp = createCdp(version.webSocketDebuggerUrl);
-  await cdp.ready();
+  // Chrome is up but close() does not exist yet: a failure here (e.g. the version fetch timing out under load) must kill it,
+  // or the orphaned Chrome keeps the caller's process alive (10-14: one eval round hung 18 minutes after "done").
+  let version: { Browser: unknown; webSocketDebuggerUrl: string };
+  let cdp: ReturnType<typeof createCdp>;
+  try {
+    version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
+    cdp = createCdp(version.webSocketDebuggerUrl);
+    await cdp.ready();
+  } catch (error) {
+    chrome.kill("SIGKILL");
+    tempDir.release();
+    throw error;
+  }
 
   const controls = browserControls(cdp, id);
 
