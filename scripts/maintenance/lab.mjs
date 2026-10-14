@@ -7,7 +7,7 @@
  *   npm run lab -- eval guardrail|duplex [--dist 路径] [--force] [--load-limit=20] [其余参数原样转给评测]
  *   npm run lab -- logs [参数原样转给 logs.mjs]
  *   npm run lab -- sites start|stop|status
- *   npm run lab -- clean
+ *   npm run lab -- clean          （Ego 只关名字以 bys 开头的任务空间）
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -336,7 +336,7 @@ function ego(code) {
   return JSON.parse(line);
 }
 
-/** clean：关掉不归用户的 Ego 任务空间、关掉残留的测试浏览器、删没在用的临时配置目录；工作树只列出能删的。 */
+/** clean：关掉名字以 bys 开头的 Ego 任务空间、关掉残留的测试浏览器、删没在用的临时配置目录；工作树只列出能删的。 */
 async function clean() {
   const commands = (spawnSync("ps", ["-axo", "command="], { encoding: "utf8" }).stdout ?? "").split("\n");
 
@@ -349,8 +349,12 @@ async function clean() {
   } else {
     try {
       const spaces = ego("const s = await listTaskSpaces(); console.log(JSON.stringify(s.map(x => ({ id: x.spaceId ?? x.id, name: x.name ?? '', ownership: x.ownership ?? '' }))));");
-      const mine = spaces.filter(space => space.ownership !== "user");
-      console.log(`  共 ${spaces.length} 个，归用户的 ${spaces.length - mine.length} 个不碰。`);
+      // 只关我们的脚本建的空间：名字以 bys 开头（compare-real 建的是「bys-real …」）。其余一律不碰，不按 ownership 判断：
+      // 用户的空间在某一刻可能不是 "user"（例如没人认领），按 ownership 判断会把它当成我们的关掉（10-14 定）。
+      const mine = spaces.filter(space => /^bys/i.test(String(space.name ?? "")));
+      console.log(`  共 ${spaces.length} 个；名字以 bys 开头的 ${mine.length} 个要关，其余 ${spaces.length - mine.length} 个不碰。`);
+
+      for (const space of spaces) console.log(`    ${mine.includes(space) ? "关" : "留"}  #${space.id}「${space.name}」 ownership=${space.ownership || "?"}`);
 
       for (const space of mine) {
         // finish() 只把空间交回去，ego 会给空窗口补一个空白页：在协议层关掉每个标签页，空间才真的关掉。
