@@ -63,7 +63,7 @@ try {
 
   await sleep(800);
   // 脚本模型一次给出整段，回答不走逐字显示；淡入的样式规则直接在真侧栏里读：挂一个同名 span 取计算值。
-  results.revealFade = String(await rp.evaluate(panel, `(() => { const s = document.createElement("span"); s.className = "reveal-fade"; document.querySelector("#messages").append(s); const c = getComputedStyle(s); const v = c.animationDuration + " " + c.animationName + " " + c.animationTimingFunction; s.remove(); return v; })()`));
+  results.revealFade = String(await rp.evaluate(panel, `(() => { const s = document.createElement("span"); s.className = "chunk-fade"; document.querySelector("#messages").append(s); const c = getComputedStyle(s); const v = c.animationDuration + " " + c.animationName + " " + c.animationTimingFunction; s.remove(); return v; })()`));
   results.bottom = String(await rp.evaluate(panel, FADES));
   await rp.screenshot(panel, join(out, "bottom.png"));
   await rp.evaluate(panel, `(() => { const m = document.querySelector("#messages"); m.scrollTop = (m.scrollHeight - m.clientHeight) / 2; return true; })()`);
@@ -75,7 +75,7 @@ try {
   results.top = String(await rp.evaluate(panel, FADES));
   await rp.screenshot(panel, join(out, "top.png"));
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, panel);
-  results.reducedRevealFade = String(await rp.evaluate(panel, `(() => { const s = document.createElement("span"); s.className = "reveal-fade"; document.querySelector("#messages").append(s); const v = getComputedStyle(s).animationName; s.remove(); return v; })()`));
+  results.reducedRevealFade = String(await rp.evaluate(panel, `(() => { const s = document.createElement("span"); s.className = "chunk-fade"; document.querySelector("#messages").append(s); const v = getComputedStyle(s).animationName; s.remove(); return v; })()`));
   results.reducedFilter = String(await rp.evaluate(panel, `getComputedStyle(document.querySelector('.scroll-fade[data-edge="bottom"]')).backdropFilter`));
 } finally {
   console.log(JSON.stringify(results, null, 2));
