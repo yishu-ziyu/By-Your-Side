@@ -126,7 +126,13 @@ document.getElementById("settings")!.innerHTML = `
         <span id="key-label" class="d-label">密钥</span>
         <input id="api-key" class="d-input" type="password" autocomplete="off" spellcheck="false" />
       </label>
-      <p id="key-note" class="d-note" hidden></p>
+      <p id="key-reason" class="key-reason" role="status" aria-live="polite" hidden>
+        <span class="key-reason-icon" aria-hidden="true">i</span>
+        <span class="key-reason-copy">
+          <span id="key-reason-text"></span>
+          <span class="key-reason-wait">没有保存，侧栏里那句话还在等你。</span>
+        </span>
+      </p>
       <div class="d-field">
         <span class="d-label"><span>模型</span><span id="model-meta" class="d-label-meta"></span></span>
         <div class="combo">
@@ -260,8 +266,8 @@ const keyRow = $("key-row");
 const keyLabel = $("key-label");
 
 const keyInput = $<HTMLInputElement>("api-key");
-
-const keyNote = $("key-note");
+const keyReason = $("key-reason");
+const keyReasonText = $("key-reason-text");
 
 const keyTail = $("key-tail");
 
@@ -272,12 +278,6 @@ const modelInput = $<HTMLInputElement>("model-id");
 const modelOptions = $("model-options");
 
 const modelStatus = $("model-status");
-
-const testButton = $<HTMLButtonElement>("model-test");
-
-const fastButton = $<HTMLButtonElement>("model-fast");
-
-const saveButton = $<HTMLButtonElement>("model-save");
 
 const search = $<HTMLInputElement>("provider-search");
 
@@ -539,8 +539,6 @@ function renderCredentialState(): void {
   keySaved.hidden = !selected.apiKey || !saved || changingKey;
   keyTail.textContent = saved ? ` · 末四位 ${saved.slice(-4)}` : "";
   keyRow.hidden = !selected.apiKey || loggedIn || !!saved && !changingKey;
-
-  if (keyRow.hidden) setKeyNote("");
   keyLabel.textContent = selected.id === CUSTOM_PROVIDER_ID ? "密钥（本机服务可以不填）" : selected.oauthLabel ? "或者填密钥" : "密钥";
   keyInput.placeholder = saved ? "粘贴新密钥。留空就继续用旧的。" : "粘贴密钥";
 }
@@ -560,7 +558,7 @@ function select(choice: ProviderChoice): void {
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
   setStatus(modelStatus, "");
-  setKeyNote("");
+  hideKeyReason();
   renderRegions();
   renderCredentialState();
   renderProviders();
@@ -694,109 +692,99 @@ function explainFailure(raw: string): string {
           : "服务商返回了错误";
 }
 
-async function testConnection(): Promise<void> {
+function hideKeyReason(): void {
+  keyReason.hidden = true;
+  keyInput.classList.remove("warn");
+}
+
+function showKeyReason(reason: string, raw?: string): void {
+  // 密钥框不在（订阅登录、已保存的密钥）：原因写在状态行，不挂在看不见的框下面。
+  if (!keyInput.offsetParent) return setStatus(modelStatus, `没有保存：${reason}`, "err", raw);
+  keyReason.hidden = false;
+  // 先显示区域再写字，读屏才会念出来。
+  requestAnimationFrame(() => { keyReasonText.textContent = reason; });
+  keyInput.classList.add("warn");
+  setStatus(modelStatus, "", "", raw);
+  keyInput.focus();
+}
+
+type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number };
+/** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
+type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean; config?: InprocModelConfig; key?: string };
+
+function rejectsConfig(raw: string): boolean {
+  if (/concurrent request limit|too many concurrent/i.test(raw)) return false;
+
+  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|api.?key.*(not valid|invalid)|API_KEY_INVALID|forbidden/i.test(raw) || /\b404\b|model.*(not.*found|does not exist)|不存在/i.test(raw);
+}
+
+async function runProbe(): Promise<ProbeOk | ProbeFail> {
   const value = draft();
 
-  if (!value.ok) return setStatus(modelStatus, value.error, "err");
+  if (!value.ok) return { ok: false, local: value.error };
   const started = performance.now();
+  hideKeyReason();
   setStatus(modelStatus, "正在测试…", "busy");
-  // 慢的服务商要等十几秒：显示已等待时间，让人知道还在进行。
   const ticker = setInterval(() => setStatus(modelStatus, `正在测试…已等 ${Math.round((performance.now() - started) / 1000)} 秒`, "busy"), 1000);
-  // 测试不保存新填的 key；但若用的是已保存的订阅令牌，测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
-  setFormBusy(true);
 
   try {
     await probe.credentials.load(value.key ? { ...credentials, [value.config.provider]: { type: "api_key", key: value.key } } : credentials);
     await probeModel(probe, value.config, timeout);
-    setStatus(modelStatus, `连接正常（${((performance.now() - started) / 1000).toFixed(1)} 秒）。`, "ok");
+
+    return { ok: true, config: value.config, key: value.key, elapsed: performance.now() - started };
   } catch (error) {
     const raw = error instanceof Error ? error.message : String(error);
-    const reason = timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复。服务商可能正忙。再试一次，或换一个模型。` : explainFailure(raw);
-    setStatus(modelStatus, `连接失败：${reason}`, "err", timeout.aborted ? undefined : raw);
+
+    return {
+      ok: false,
+      reason: timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复。服务商可能正忙。再试一次，或换一个模型。` : explainFailure(raw),
+      raw: timeout.aborted ? undefined : raw,
+      definite: !timeout.aborted && rejectsConfig(raw),
+      // 试的是哪份配置就存哪份：试连期间改了表单，不存没试过的值。
+      config: value.config,
+      key: value.key,
+    };
   } finally {
     clearInterval(ticker);
-    setFormBusy(false);
   }
 }
 
-/** 密钥框下面的灰字说明：密钥不对或暂时连不上时给原因，连不上时带「重试」。改密钥、换服务商、存好了都清掉。 */
-function setKeyNote(text: string, retry?: () => Promise<void>): void {
-  keyNote.hidden = !text;
-  keyNote.replaceChildren(text);
+async function testConnection(): Promise<void> {
+  const result = await runProbe();
 
-  if (text && retry) {
-    const again = document.createElement("button");
-    again.type = "button";
-    again.className = "btn btn-quiet";
-    again.textContent = "重试";
-    again.addEventListener("click", () => void retry());
-    keyNote.append(again);
+  if (!result.ok) {
+    if (result.local) return setStatus(modelStatus, result.local, "err");
+    // 只有服务商明确不接受时才挂在密钥框下；超时、限流、网络问题不是密钥的错。
+    if (result.definite) return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+    return setStatus(modelStatus, `连接失败：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
   }
-}
 
-/** 401/403 算密钥不对；Kimi 并发上限的 403 不算（和 explainFailure 同一判断）。 */
-const isBadKey = (raw: string): boolean =>
-  /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) && !/concurrent request limit|too many concurrent/i.test(raw);
-
-/** 试连时禁掉三个动作按钮，免得再点出第二个并发的测试或保存。 */
-const setFormBusy = (busy: boolean): void => {
-  for (const button of [saveButton, fastButton, testButton]) button.disabled = busy;
-};
-
-/** 新填的密钥先连一次：连上了才存（返回 true）。连不上时不存，原因写在密钥框下面。 */
-async function probeNewKey(value: { config: InprocModelConfig; key: string }, retry: () => Promise<void>): Promise<boolean> {
-  const started = performance.now();
-  setKeyNote("");
-
-  setFormBusy(true);
-  setStatus(modelStatus, "正在连接…", "busy");
-  // 慢的服务商要等十几秒：显示已等待时间，让人知道还在进行。
-  const ticker = setInterval(() => setStatus(modelStatus, `正在连接…已等 ${Math.round((performance.now() - started) / 1000)} 秒`, "busy"), 1000);
-  // 和「测试连接」一样用另一份运行时试，不动在用的密钥；订阅令牌若在测试中被刷新仍要落盘。
-  const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
-  const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
-
-  try {
-    await probe.credentials.load({ ...credentials, [value.config.provider]: { type: "api_key", key: value.key } });
-    await probeModel(probe, value.config, timeout);
-
-    return true;
-  } catch (error) {
-    // 等结果时改选了另一家：原因不写在这家的密钥框下面。
-    if (selected?.id !== value.config.provider) return false;
-    const raw = error instanceof Error ? error.message : String(error);
-    setStatus(modelStatus, "");
-
-    if (!timeout.aborted && isBadKey(raw)) setKeyNote("密钥不对，服务商没有接受它。检查后重新粘贴。");
-    else setKeyNote("这次没连上服务商（网络或服务繁忙），密钥可能没问题。稍后再试。", retry);
-
-    return false;
-  } finally {
-    clearInterval(ticker);
-    setFormBusy(false);
-  }
+  hideKeyReason();
+  setStatus(modelStatus, `连接正常（${(result.elapsed / 1000).toFixed(1)} 秒）。`, "ok");
 }
 
 async function save(): Promise<void> {
-  const value = draft();
+  const result = await runProbe();
 
-  if (!value.ok) return setStatus(modelStatus, value.error, "err");
+  // 先试连再保存：只有服务商明确不接受（密钥被拒、模型不存在）才不保存；超时、限流、网络问题照样保存，并说刚才没连上（用户 10-13 定）。
+  if (!result.ok && (result.local || result.definite)) {
+    if (result.local) return setStatus(modelStatus, result.local, "err");
+    return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+  }
 
-  // 新填的密钥先连一次：连上了才存。
-  if (value.key && !await probeNewKey(value, save)) return;
-
-  // 等待期间改选了另一家：不替旧的写。
-  if (selected?.id !== value.config.provider) return;
+  const value = result.ok ? result : { config: result.config!, key: result.key ?? "" };
 
   if (value.key) await runtime.credentials.modify(value.config.provider, async () => ({ type: "api_key", key: value.key }));
   await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: value.config });
   keyInput.value = "";
   changingKey = false;
-  setKeyNote("");
+  hideKeyReason();
   setStatus(mainStatus, "");
-  setStatus(modelStatus, value.key ? `已连上 ${labelOf(value.config.provider)} · ${value.config.modelId}。之后的任务用它。` : `已保存。之后的任务用 ${labelOf(value.config.provider)} · ${value.config.modelId}。`, "ok");
+
+  if (result.ok) setStatus(modelStatus, `已保存。之后的任务用 ${labelOf(value.config.provider)} · ${value.config.modelId}。`, "ok");
+  else setStatus(modelStatus, `已保存，但刚才没连上：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
 }
 
 /** 保存这家的凭据并把所填模型设为快速模型；主模型不变。 */
@@ -805,16 +793,11 @@ async function saveAsFast(): Promise<void> {
 
   if (!value.ok) return setStatus(modelStatus, value.error, "err");
 
-  if (value.key && !await probeNewKey(value, saveAsFast)) return;
-
-  if (selected?.id !== value.config.provider) return;
-
   if (value.key) await runtime.credentials.modify(value.config.provider, async () => ({ type: "api_key", key: value.key }));
   await chrome.storage.local.set({ [INPROC_FAST_CONFIG_KEY]: value.config });
   keyInput.value = "";
   changingKey = false;
-  setKeyNote("");
-  setStatus(modelStatus, value.key ? `已连上 ${labelOf(value.config.provider)} · ${value.config.modelId}。已设为快速模型，主模型不变。` : `已设为快速模型：${labelOf(value.config.provider)} · ${value.config.modelId}。主模型不变。`, "ok");
+  setStatus(modelStatus, `已设为快速模型：${labelOf(value.config.provider)} · ${value.config.modelId}。主模型不变。`, "ok");
 }
 
 async function deleteKey(): Promise<void> {
@@ -1492,13 +1475,13 @@ $("key-change").addEventListener("click", () => {
 
 $("key-delete").addEventListener("click", () => void deleteKey());
 
-testButton.addEventListener("click", () => void testConnection());
+keyInput.addEventListener("input", () => hideKeyReason());
 
-saveButton.addEventListener("click", () => void save());
+$("model-test").addEventListener("click", () => void testConnection());
 
-fastButton.addEventListener("click", () => void saveAsFast());
+$("model-save").addEventListener("click", () => void save());
 
-keyInput.addEventListener("input", () => setKeyNote(""));
+$("model-fast").addEventListener("click", () => void saveAsFast());
 
 $("voice-save").addEventListener("click", () => void saveVoiceKey());
 

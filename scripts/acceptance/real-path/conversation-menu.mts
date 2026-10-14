@@ -32,7 +32,7 @@ try{
 
  await rp.click(panel,'#conversation-switcher');await sleep(200);const list=await rows();evidence.rows=list;
 
- for(const title of titles){const row=list.find(r=>r.title===title);assert.ok(row);assert.ok(row.time.startsWith('更新于 '));assert.ok(row.titleHeight<=2*row.lineHeight+1,'最多两行');assert.ok(row.scrollWidth<=row.width+1,'无横向溢出');}
+ for(const title of titles){const row=list.find(r=>r.title===title);assert.ok(row);assert.ok(/^(刚才|\d+ (分钟|小时)前|今天|昨天|更早)$/.test(row.time),'相对时间');assert.ok(row.titleHeight<=2*row.lineHeight+1,'最多两行');assert.ok(row.scrollWidth<=row.width+1,'无横向溢出');}
 
  await rp.screenshot(panel,join(out,'menu.png'));
  const a=list.find(r=>r.title===titles[0]),b=list.find(r=>r.title===titles[1]);assert.ok(a&&b);

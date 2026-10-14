@@ -11,7 +11,7 @@ import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
 import { formatEffectReport } from "../../shared/effect.js";
-import { formatFetchReply, type FetchReply } from "./fetch-result.js";
+import { formatFetchReply, fetchFailureReason, type FetchReply } from "./fetch-result.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type Attachment, type TabInfo, type ToolContract, type ToolName, type UploadFilePayload } from "../../shared/protocol.js";
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
@@ -55,6 +55,32 @@ function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: 
   return ` The ${what} now contains: ${value}${readback.match === "reformatted" ? " (the page changed spacing or letter case)" : ""}.`;
 }
 
+/** 动作之后页面上新出现的行（扩展和模型上次读到的这一页比，见 extension/src/background/page-changes.ts）。是网页内容，按不可信页面数据包起来。 */
+/** unattributed：效果判断说这一步没引起变化。这时新出现的内容照给，但写明不一定是这一步带来的，“别盲目重复”的警告照旧。 */
+function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | undefined, unattributed = false): string {
+  if (!appeared) return "";
+
+  if ("redrawn" in appeared) return unattributed ? "" : "\nA large part of this page changed after this action; snapshot to read it.";
+
+  if (!appeared.text) return "";
+  const head = unattributed ? "Also new on the page since you last read it, not necessarily from this action" : "New on the page since you last read it";
+
+  return `\n${head} (refs are usable directly; no snapshot needed for these; lines you already saw that only moved are not listed):\n${wrapPageContent(redactCredentialText(appeared.text))}`;
+}
+
+/** fill 带 submit 时的回车结果：按了就同 press_key 的回执，没按就说为什么（理由是扩展写的，不是网页内容）。 */
+function submitNote(submit: ToolContract["fill"]["data"]["submit"]): string {
+  if (!submit) return "";
+
+  if ("refused" in submit) return `\nDid not press Enter: ${submit.refused}`;
+
+  if ("uncertain" in submit) return `\nEnter may have reached the page; the result is unknown: ${submit.uncertain}`;
+
+  if (submit.dialog) return `\n${submit.pressed ? "Pressed Enter" : "Enter not dispatched"}; the page opened a native ${submit.dialog.type}: ${submit.dialog.message}. Use accept_dialog or dismiss_dialog as the user asked.`;
+
+  return `\nPressed Enter.${formatEffectReport(submit.pressed && submit.effect?.changed ? submit.effect : undefined, "key press")}${appearedNote(submit.pressed ? submit.appeared : undefined)}`;
+}
+
 /**
  * 页面下载的回执：只有 chrome.downloads 报 complete 才写「已保存」。
  * 中断直接报错，让这一步如实显示失败；还在下载就说还没下完。
@@ -80,6 +106,33 @@ function downloadReceipt(download: Omit<NonNullable<ToolContract["wait_event"]["
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}… [truncated]` : text;
+}
+
+/**
+ * tabs 说明里只对文字任务成立的两句：任务首条消息带着标签页清单、回复带「切过去看」按钮。
+ * 语音的工具清单（realtime-browser-tool-defs.ts）按这两个常量把它们去掉。
+ */
+export const TABS_LIST_AT_START = "; the open tabs at task start are already in the task's first message, so call list only if tabs may have changed since";
+export const TABS_RESULT_IN_BACKGROUND = ' A result left in a background tab is expected: the reply automatically gives the user a "切过去看" button for the working tab, so never call show just to deliver a result.';
+/** 专用工具做不到时改用 js 的说明；语音没有 js 工具，导出语音工具表时整句换掉。 */
+export const TRANSLATION_JS_FALLBACK = " It always covers the whole page: when the user wants only some paragraphs translated on the page, translate those yourself and insert each translation right after its source paragraph with js: a display:block span with data-bys-translation=\"manual\", text set only through textContent, original kept (translate and restore remove these spans).";
+export const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page: for colored highlights, highlights limited to some paragraphs, or other changes to how the page looks, edit the page with js instead: split the text node and wrap the word in a styled span; never rewrite innerHTML.";
+export const JS_FALLBACK = new RegExp([TRANSLATION_JS_FALLBACK, MARK_JS_FALLBACK].map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+
+/** browser_run 结束时附上的新页快照的标题行（tool-failure-policy 按它和 "\n[After this program" 截掉尾巴再比较错误）。 */
+export const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no separate snapshot needed):";
+
+/** 程序里不会换页的步骤：等待、核对和宿主组合的只读帮手。其余按 effect-policy 判断，未声明只读的都当作可能换页。 */
+const PROGRAM_QUIET_STEPS: ReadonlySet<string> = new Set(["sleep", "wait_for", "check", "assert", "pageInfo", "waitForLoad", "waitForNetworkIdle", "saveFile"]);
+
+/**
+ * 工具结果里顺手附上的新页快照的标题行。就绪超时时导航可能还没换页：写明读到的是哪个地址、在确认就绪之前读的、可能不全。
+ */
+function freshSnapshotLabel(page: ToolContract["snapshot"]["data"], readiness?: string): string {
+  if (readiness !== "timeout") return "Fresh snapshot of the new page (no separate snapshot needed):";
+  const what = page.url ? `tab ${page.tabId} as it is now (${page.url})` : `tab ${page.tabId} as it is now (its address was not confirmed)`;
+
+  return `Fresh snapshot of ${what}, taken before readiness was confirmed — navigation may not have finished and it may be partial; check this address before acting:`;
 }
 
 function formatTabs(tabs: TabInfo[]): string {
@@ -146,8 +199,10 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 这个网址所在网站的站点笔记（这一轮还没带过时）；附在打开、跳转结果后面。 */ siteNotesFor?: (url: string) => Promise<string | null> }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
+  /** 站点笔记只给主会话（docs/evals/20261013-site-notes.md）；放在页面原文标记之外，取不到就不附。 */
+  const siteNotesAfter = async (url: string): Promise<string> => (sid ? null : await execution?.siteNotesFor?.(url).catch(() => null)) ?? "";
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
@@ -313,7 +368,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "page_translation",
       label: "翻译网页",
-      description: 'Translate the current webpage IN PLACE, progressively, using the current model. action:"translate" translates all currently loaded readable text (also resumes partial translation), default target 简体中文 and default bilingual; pass mode:"translated" when the user only wants translation. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:"songti" for 宋体 or "original" to restore the site font. In display, submit ONLY the fields this request changes; omitted fields keep the current page state (a font-only request must not carry mode or fontSize), and never add display attributes the user did not ask to change. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. Never use handwritten JS to change translation fonts. action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation. Use this tool, never handwritten JS or a sidebar-only translation. Do not delegate page translation to workers.',
+      description: 'Translate the current webpage IN PLACE, progressively, using the current model. action:"translate" translates all currently loaded readable text (also resumes partial translation), default target 简体中文 and default bilingual; pass mode:"translated" when the user only wants translation. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:"songti" for 宋体 or "original" to restore the site font. In display, submit ONLY the fields this request changes; omitted fields keep the current page state (a font-only request must not carry mode or fontSize), and never add display attributes the user did not ask to change. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. For 宋体, the original font or the size of translations made by this tool, use display, not handwritten JS. action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation. To translate the page, use this tool, never handwritten JS or a sidebar-only translation.' + TRANSLATION_JS_FALLBACK + ' Do not delegate page translation to workers.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('translate'), Type.Literal('display'), Type.Literal('restore')]),
         tabId: Type.Optional(Type.Number()), language: Type.Optional(Type.String()),
@@ -388,18 +443,61 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         rpc.noteToolFact?.(id, "unknown");
 
         let result: Awaited<ReturnType<typeof runBrowserProgram>>;
+        // 开始前记下各标签页的地址，结束时才知道程序有没有让工作页换了页。只读补读，不挂本次调用身份；读失败就不比较。
+        const startUrls = sid ? null : await (readAfterNavigate("list_tabs", {}) as Promise<ToolContract["list_tabs"]["data"]>)
+          .then(d => new Map(d.tabs.map(tab => [tab.id, tab.url])), () => null);
+        // 程序换了页（包括中途因文档变化失败）时顺手读一次新页：10-13 真实网站有 2 次程序跳转后专门花一轮 snapshot。
+        // 没有现成的「等文档就绪」宿主接口（waitForLoad 在程序内部），读失败就隔 500ms 再试，最多 3 次，都失败只退回原回执。
+        const pageAfter = async (tabId: number): Promise<ToolContract["snapshot"]["data"] | null> => {
+          for (let attempt = 0; attempt < 3 && !signal?.aborted; attempt++) {
+            if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 500));
+
+            try {
+              return (await readAfterNavigate("snapshot", { tabId })) as ToolContract["snapshot"]["data"];
+            } catch { /* 页面还在换文档，稍后再读 */ }
+          }
+
+          return null;
+        };
+        // 已结束的步骤：程序自己在最后一次可能换页的步骤之后已经读过这一页，就不再附一份（一份快照可达数万字）。
+        const endedSteps: ProgramStep[] = [];
+
+        const programAlreadyRead = (finalUrl: string): boolean => {
+          for (let i = endedSteps.length - 1; i >= 0; i--) {
+            const step = endedSteps[i]!;
+            const data = (step.result ?? {}) as { url?: unknown; readiness?: unknown };
+
+            if (!step.error && step.name === "snapshot" && data.url === finalUrl) return true;
+
+            // 程序里的 navigate 就绪后已经顺手读了新页（browser-program.ts）。
+            if (!step.error && step.name === "navigate" && (data.readiness === "interactive" || data.readiness === "complete") && data.url === finalUrl) return true;
+
+            if (!PROGRAM_QUIET_STEPS.has(step.name) && requiresControlGate(step.name, step.params)) return false;
+          }
+
+          return false;
+        };
         // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」（#257）。
-        // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。
-        const endedOn = async (): Promise<string> => {
+        // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。page 放进 details，会话把它记成一次页面读数。
+        const endedOn = async (): Promise<{ text: string; page?: ToolContract["snapshot"]["data"] }> => {
           try {
             const { tabs } = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
             const working = tabs.find(tab => tab.working);
 
-            const url = URL.canParse(working?.url ?? "") ? new URL(working!.url) : null;
+            if (!working) return { text: "" };
+            const url = URL.canParse(working.url) ? new URL(working.url) : null;
+            const changed = !!startUrls && startUrls.get(working.id) !== working.url;
+            const moved = changed && !programAlreadyRead(working.url);
+            const page = moved ? await pageAfter(working.id) : null;
+            const notes = changed ? await siteNotesAfter(working.url) : "";
 
             // 和点击回执一样只给标题前 120 字和 origin+pathname（标题来自网页，网址的查询串可能带私人信息）。
-            return working ? `\n[After this program the working tab ${working.id} shows "${(working.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}" — ${url ? `${url.origin}${url.pathname}` : "(no address)"}; that is the page now.]` : "";
-          } catch { return ""; }
+            const text = `\n[After this program the working tab ${working.id} shows "${(working.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}" — ${url ? `${url.origin}${url.pathname}` : "(no address)"}; that is the page now.]`;
+
+            return page
+              ? { text: `${text}\n\n${PROGRAM_PAGE_LABEL}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${notes}`, page }
+              : { text: text + notes };
+          } catch { return { text: "" }; }
         };
 
         try {
@@ -416,15 +514,22 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             return receipt;
           } : undefined,
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
-          onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
+          onStep: programStep => {
+            if (programStep.phase === "end") endedSteps.push(programStep);
+
+            return execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } });
+          },
           });
         } catch (error) {
-          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${await endedOn()}`, { cause: error });
+          // 抛错的结果没有 details（Pi 只留错误文字），这里附的新页只进模型看到的文字，不进页面读数。
+          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${(await endedOn()).text}`, { cause: error });
           // assert 停下不是工具失败：前面的步骤已经做了，结果带结构交给模型。
           // details.steps 保持是步数（侧栏按 Number(details.steps) 计数），步骤列表另放 programSteps。
           rpc.noteToolFact?.(id, "executed");
 
-          return textResult(`${error.message}${await endedOn()}`, { assert: error.assert, steps: error.assert.failedAt, programSteps: error.steps });
+          const ended = await endedOn();
+
+          return textResult(`${error.message}${ended.text}`, { assert: error.assert, steps: error.assert.failedAt, programSteps: error.steps, ...(ended.page ? { page: ended.page } : {}) });
         }
 
         rpc.noteToolFact?.(id, "executed");
@@ -436,7 +541,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           ? `${json.slice(0, MAX_JS_RESULT_CHARS)}… [truncated: showed ${MAX_JS_RESULT_CHARS} of ${json.length} chars; the rest is missing — return less (slice each page) or save it with browser.saveFile]`
           : json;
 
-        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) + await endedOn() }, ...result.images], details: { value: result.value, steps: result.steps } };
+        const ended = await endedOn();
+
+        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) + ended.text }, ...result.images], details: { value: result.value, steps: result.steps, ...(ended.page ? { page: ended.page } : {}) } };
       },
     }),
 
@@ -446,7 +553,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         sid
           ? 'One tool for browser tabs. action:"list" lists the tabs assigned to you; other members\' and user tabs are not available to workers.'
-          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; when the user asks to go to or see a site, list the open tabs first and use action:"show" on a tab that already has it; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user asks to see or go to a page ("切到…", "给我看…", "打开那一页给我"); action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
+          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them' + TABS_LIST_AT_START + '; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user explicitly asks to switch to a page right now ("切到…", "切过去", "给我看那一页"); action:"close" closes tabId or the working tab.' + TABS_RESULT_IN_BACKGROUND + ' Open returns when the document is interactive, not when all resources finish, and its result already contains a fresh snapshot of the new page; a readiness timeout is not confirmed success — check the URL in that result before acting.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("show"), Type.Literal("close")], {
           description: "list | active | open | switch | show | close",
@@ -490,10 +597,22 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           if (front) {
             notes.push(front.id === data.tabId
               ? "The user is looking at this new tab."
-              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}».`);
+              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}». The user keeps their page; the reply will offer a 切过去看 button, so do not call show for it.`);
           }
 
-          return textResult(notes.length > 0 ? `${text}\n${notes.join("\n")}` : text, data);
+          const head = notes.length > 0 ? `${text}\n${notes.join("\n")}` : text;
+
+          if (data.readiness === "download" || data.readiness === "error_page") return textResult(head, data);
+          const siteNotes = await siteNotesAfter(data.url);
+
+          // 和 navigate 一样顺手读一次新页：10-13 真实网站 12 次里 9 次 open 后专门花一轮 snapshot。读失败只退回原结果。
+          try {
+            const page = (await readAfterNavigate("snapshot", { tabId: data.tabId })) as ToolContract["snapshot"]["data"];
+
+            return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${siteNotes}`, { ...data, page });
+          } catch {
+            return textResult(head + siteNotes, data);
+          }
         }
 
         if (params.action === "switch" || params.action === "show") {
@@ -515,7 +634,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "navigate",
       label: "Navigate",
-      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL and take a snapshot before acting. document: download means the address started a download instead of opening a page; the tab stays on its current page and the result says what Chrome reports about the file. document: error_page means Chrome showed its own error page (for example the site could not be reached).",
+      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL in the result, and treat the attached snapshot as possibly partial. document: download means the address started a download instead of opening a page; the tab stays on its current page and the result says what Chrome reports about the file. document: error_page means Chrome showed its own error page (for example the site could not be reached).",
       parameters: Type.Object({
         url: Type.String({ description: "Absolute URL" }),
         timeout: Type.Optional(Type.Number({ description: "Load timeout in seconds" })),
@@ -524,18 +643,20 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
         const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`;
 
-        if (data.readiness === "timeout") return textResult(head, data);
-
         // 地址变成了下载（页面没换）或 Chrome 显示错误页：不补读快照，只说 Chrome 报告的结果。
         if (data.readiness === "download" || data.readiness === "error_page") return textResult(data.note ? `${head}\n${data.note}` : head, data);
 
-        // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
+        // 协作成员（sid）就绪超时照旧只给结果行。
+        if (sid && data.readiness === "timeout") return textResult(head, data);
+        const notes = await siteNotesAfter(data.url);
+
+        // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot；就绪超时也读，但标明可能不全。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
         try {
           const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
 
-          return textResult(`${head}\n\nFresh snapshot of the new page (no separate snapshot needed):\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}`, { ...data, page });
+          return textResult(`${head}\n\n${freshSnapshotLabel(page, data.readiness)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${notes}`, { ...data, page });
         } catch {
-          return textResult(head, data);
+          return textResult(head + notes, data);
         }
       },
     }),
@@ -546,7 +667,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
-        "Take a snapshot after actions that change the page; navigate already returns a fresh snapshot of the new page.",
+        "Take a snapshot after actions that change the page; navigate and tabs action:\"open\" already return a fresh snapshot of the new page.",
         "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
         "Viewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
       ],
@@ -587,7 +708,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "click",
       label: "Click",
       description:
-        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click.',
+        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click. When new elements or text appear on the same page, the result lists them with usable refs.',
       parameters: Type.Object({
         target: Type.Optional(
           Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
@@ -621,17 +742,21 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           return textResult(`Clicked ${what}. The page opened a native ${dialog.type} dialog; its text: ${wrapPageContent(dialog.message.slice(0, 500))}\nThe page is blocked until it is handled; use accept_dialog (promptText for a prompt) or dismiss_dialog as the user asked, then observe the page.`, data);
         }
 
-        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
+        // 警告看效果判断，不看摘要：有时钟、倒计时的页面上摘要几乎总不是空的。
+        const effect = "effect" in data ? data.effect : undefined;
+        const effectText = formatEffectReport(effect);
+        const appeared = appearedNote("appeared" in data ? data.appeared : undefined, !!effect && !effect.changed);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
         // 用户在网页上点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
         const clicked = data.sendConfirmed ? `The user confirmed sending on the page, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
+
         if (effectText) {
-          return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}`, data);
+          return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}${appeared}`, data);
         }
 
-        return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
+        return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}${appeared}`, data);
       },
     }),
 
@@ -663,13 +788,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if ("dialog" in data && data.dialog) return textResult(`${data.doubleClicked ? "Native double-click input dispatched" : "Double-click interrupted before its full input sequence"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The dialog type and message are given here; use accept_dialog or dismiss_dialog as the user asked (browser.pageInfo() in browser_run also reports a pending dialog).`, data);
 
-        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
+        const effect = "effect" in data ? data.effect : undefined;
+        const effectText = formatEffectReport(effect);
+        const appeared = appearedNote("appeared" in data ? data.appeared : undefined, !!effect && !effect.changed);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
 
-        if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}`, data);
+        if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}${appeared}`, data);
 
-        return textResult(`Double-clicked ${what}. This confirms native input dispatch only; observe the page to verify the intended change before reporting success.${newTabText}`, data);
+        return textResult(`Double-clicked ${what}. This confirms native input dispatch only; observe the page to verify the intended change before reporting success.${newTabText}${appeared}`, data);
       },
     }),
 
@@ -716,7 +843,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("select_option", params)) as ToolContract["select_option"]["data"];
 
         return textResult(
-          `Selected [${data.selected.map((v, i) => `${v} (${data.labels[i] ?? ""})`).join(", ") || "(cleared)"}].`,
+          `Selected [${data.selected.map((v, i) => `${v} (${data.labels[i] ?? ""})`).join(", ") || "(cleared)"}].${appearedNote(data.appeared)}`,
           data,
         );
       },
@@ -820,16 +947,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fill",
       label: "Fill",
       description:
-        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click.",
+        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         value: Type.String({ description: "Value to set" }),
+        submit: Type.Optional(Type.Boolean({ description: "Press Enter after filling (search boxes and single-line text fields only; refused on message boxes, multi-line fields and editors, where Enter may send)" })),
       }),
       execute: async (_id, params) => {
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
+        // 键盘输入和旧写法都没写进去：如实说，建议点进框里逐字输入。
+        const failed = data.typing === "failed" ? " Keyboard input and the direct write both failed to put the value in; do not retry the same way — tell the user the field did not take it." : "";
 
         // The browser rejects the value for the field's min/max/step: say so, never plain success.
-        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field"), data);
+        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field") + failed + appearedNote(data.appeared) + submitNote(data.submit), data);
       },
     }),
 
@@ -862,7 +992,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 回车没引起变化时不说「没变化、别再按」：多行输入框里回车只是换行，页面读数看不出来。
         const effect = "effect" in data && data.effect?.changed ? data.effect : undefined;
 
-        return textResult(`Pressed ${params.key}.${formatEffectReport(effect, "key press")}`, data);
+        return textResult(`Pressed ${params.key}.${formatEffectReport(effect, "key press")}${appearedNote("appeared" in data ? data.appeared : undefined)}`, data);
       },
     }),
 
@@ -895,8 +1025,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
+        const text = formatFetchReply(data as FetchReply);
+        // 对方答了非 2xx 这一步算失败（判定见 fetchFailureReason）：isError + 给侧栏的人话原因；给模型的文字不变（#304）。
+        const reason = fetchFailureReason(data as FetchReply);
 
-        return textResult(formatFetchReply(data as FetchReply), data);
+        return reason
+          ? { content: [{ type: "text" as const, text }], details: { ...data, reason }, isError: true as const }
+          : textResult(text, data);
       },
     }),
 
@@ -969,7 +1104,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "mark",
       label: "Mark elements",
       description:
-        "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + optional label on target (\"look here\", highlights). One thing gets one mark; overlapping marks look like a scribble. When the user names a field that shows a value beside it (存储空间 → 3.2 GB), they want to see the value: pass the name ref as target and the value ref as through so one frame holds both. The same applies to any run of adjacent refs on one line. Never draw a second mark on the adjacent part. Use refs already in the snapshot; do not search for a wrapping container. For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object. To circle words or phrases wherever they appear in the page text (e.g. \"圈出高频词\", \"把所有 X 圈出来\"), pass text instead of target: one call circles every visible occurrence of each term (exact, case-sensitive match) and labels each term once. The result gives the real count per term; report those counts, never count yourself.",
+        "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + optional label on target (\"look here\", highlights). One thing gets one mark; overlapping marks look like a scribble. When the user names a field that shows a value beside it (存储空间 → 3.2 GB), they want to see the value: pass the name ref as target and the value ref as through so one frame holds both. The same applies to any run of adjacent refs on one line. Never draw a second mark on the adjacent part. Use refs already in the snapshot; do not search for a wrapping container. For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object. To circle words or phrases wherever they appear in the page text (e.g. \"圈出高频词\", \"把所有 X 圈出来\"), pass text instead of target: one call circles every visible occurrence of each term (exact, case-sensitive match) and labels each term once. The result gives the real count per term; report those counts, never count yourself." + MARK_JS_FALLBACK + "",
       parameters: Type.Object({
         target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector; required unless text or clear is set' })),
         text: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 10, description: "Terms to circle everywhere they appear in the page text, instead of target; each term gets its own label with its count" })),

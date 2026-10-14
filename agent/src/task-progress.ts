@@ -2,7 +2,7 @@ import { goalsSatisfied } from '../../shared/task-goals.js';
 import { TaskGoalBook } from './task-goals.js';
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
-import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
+import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX, deliveryTextWithNote } from "../../shared/voice.js";
 import { deriveResultDescription, extractResultTarget, isSupersededUnknown, resultLocksWhenUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
@@ -10,7 +10,7 @@ import { sanitizeTrace } from "../../shared/trace-sanitize.js";
 import { randomUUID } from "node:crypto";
 import {isWriteTool} from '../../shared/control.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';
-import {isResultMetaTool} from '../../shared/task-results.js';
+import {isResultMetaTool, MAX_TASK_RESULTS} from '../../shared/task-results.js';
 import {decideTaskNextStep} from '../../shared/task-next-step.js';
 import {toolAction} from '../../shared/user-facing.js';
 import {TaskReadback} from './task-readback.js';
@@ -118,6 +118,8 @@ export class TaskProgress {
   }
   private startUrl: string | null = null;
   private goalPage: { title: string; url: string } | null = null;
+  private interjections = 0;
+  private foldedResults: { count: number; recent: string[] } = { count: 0, recent: [] };
   /** 最近一次目标核对；新任务开始、助手重新开跑时清掉，等这一轮结束的核对。 */
   private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
   /** 核对刚判「接着做」、宿主马上发起续做：下一次 agent_start 是它，保留核对的「还差」；用户的话或别的开始不保留。 */
@@ -162,6 +164,8 @@ export class TaskProgress {
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
     const clean=String(sanitizeTrace(text)).trim();
     const requirements=clean&&prior.requirements.at(-1)!==clean?[...prior.requirements,clean]:[...prior.requirements];
+    const state=this.snapshot().state;
+    const interjected=requirements.length>prior.requirements.length&&(state==='running'||state==='paused');
     const attachmentKeys=[...new Set([...prior.attachmentKeys,...(attachments??[]).map(attachmentRecoveryKey)])];
 
     if(requirements.length>64||requirements.some(t=>t.length>12000)||requirements.reduce((n,t)=>n+t.length,0)>RECOVERY_INPUT_MAX||attachmentKeys.length>16)throw new Error('原任务补充内容已达到保留上限，这条修改未接收；请先交付已有结果或另开任务。');
@@ -175,10 +179,22 @@ export class TaskProgress {
     this.recoveryInput=recorded;
     this.goals.require(requirements);
 
+    if(interjected){
+      this.interjections+=1;
+      // 账本满了、用户在任务进行中又说了话：已完成的结果收起来，账本腾出位置给接下来的动作。
+      // 以前只有空闲时的新请求才清账，任务里做满 64 项之后再插话，所有动作都被拒（10-14 画图）。
+      // 没满时不收：侧栏任务卡和「已做完」的说法都照旧。
+      const folded=this.results.list().length>=MAX_TASK_RESULTS?this.results.fold():[];
+
+      if(folded.length)this.foldedResults={count:this.foldedResults.count+folded.length,recent:[...this.foldedResults.recent,...folded].slice(-8)};
+    }
+
     // Only the caller that just registered this input can revoke it before acceptance.
     // Preserve a fresh page observation, and never roll back a later requirement or another run.
     return ()=>{
       if(this.runId!==runId||this.recoveryInput!==recorded)return;
+
+      if(interjected)this.interjections-=1;
       this.recoveryInput={...recorded,requirements:prior.requirements,attachmentKeys:prior.attachmentKeys,materials:prior.materials};
       this.goals.restore(priorGoals, false);
     };
@@ -197,6 +213,10 @@ export class TaskProgress {
     this.runId = snapshot.runId ?? null;
     this.goalCheck = snapshot.goalCheck ? { ...snapshot.goalCheck } : null;
     this.goalPage = snapshot.goalPage ? { ...snapshot.goalPage } : null;
+    this.interjections = snapshot.interjections ?? 0;
+    const folded = snapshot.foldedResults;
+    this.foldedResults = folded && Number.isSafeInteger(folded.count) && Array.isArray(folded.recent)
+      ? { count: folded.count, recent: folded.recent.filter((text): text is string => typeof text === "string").slice(-8) } : { count: 0, recent: [] };
     this.aborted = snapshot.state === "aborted";
     this.interrupted = !!this.runId && !!this.goal && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;
@@ -271,6 +291,8 @@ return;}
     this.interruptionReason=undefined;
     this.lifecycleFrozen=false;
     this.recoveryInput={requirements:[],attachmentKeys:[]};
+    this.interjections=0;
+    this.foldedResults={count:0,recent:[]};
     this.goals.clear();
     this.unresolvedEffect=false;
     this.executionAuditComplete=true;
@@ -360,7 +382,8 @@ return;}
       if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;
     } else if (e.kind === "user_delivery") {
       if (lead && this.ledger.record(e.delivery)) {
-        this.pushTurn("assistant", e.delivery.text);
+        // 旁路模型看到的对话原文仍带宿主补的一句，与 10-13 之前一致。
+        this.pushTurn("assistant", deliveryTextWithNote(e.delivery));
 
         if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
       }
@@ -401,7 +424,7 @@ return;}
       const target = extractResultTarget(e.params, e.name);
 
       // T06：导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
-      if ((e.name === "navigate" || e.name === "open_tab") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
+      if ((e.name === "navigate" || e.name === "open_tab" || e.name === "tabs" && e.params?.action === "open") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
       let tabAction: string | undefined;
 
       if (e.name === 'tabs') {
@@ -495,7 +518,7 @@ if(page)this.recoveryInput.page=page;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
         // 出错时记成结果未知还是失败由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 记成结果未知。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: fact,
-          effectful:started.durableEffect });
+          effectful:started.durableEffect, reason:e.reason });
 
         if((started.durableEffect||e.name==='fetch')&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 
@@ -552,6 +575,10 @@ if(page)this.recoveryInput.page=page;
     if (this.goalCheck) snapshot.goalCheck = { ...this.goalCheck };
 
     if (this.goalPage) snapshot.goalPage = { ...this.goalPage };
+
+    if (this.interjections) snapshot.interjections = this.interjections;
+
+    if (this.foldedResults.count) snapshot.foldedResults = { count: this.foldedResults.count, recent: [...this.foldedResults.recent] };
 
     if (snapshot.goalPlan) {
       snapshot.resultState = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results!)) ? 'unknown' : goalsSatisfied(snapshot.goalPlan) ? 'satisfied' : 'pending';

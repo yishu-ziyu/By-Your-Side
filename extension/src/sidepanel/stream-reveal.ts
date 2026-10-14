@@ -5,7 +5,9 @@
  * - 淡入：每次渲染后，最近 FADE_MS 内新出现的字包进 span，用负的 animation-delay 接着上一帧的进度，
  *   整段 innerHTML 重渲染也不会让已经在淡入的字重新开始。已显示完的字不再包 span。
  * - Markdown 每次按已放出的前缀整体渲染：未闭合的块照 marked 的结果显示，放完后与一次性渲染一致。
+ *   放进页面走 patchAnswer：正文整段换新，回答里的卡片只补变化的组件；卡片里的字不逐字淡入，组件写完整块淡入。
  */
+import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
 
 const MIN_CPS = 45;
 
@@ -56,7 +58,8 @@ class Reveal {
     this.shown = this.target.length;
     this.batches = [];
     this.stop();
-    this.el.innerHTML = this.opts.render(this.target);
+    patchAnswer(this.el, this.opts.render(this.target));
+    markTail(this.el);
     this.renderedLength = this.el.textContent?.length ?? 0;
     this.finishIfDone();
   }
@@ -104,14 +107,18 @@ class Reveal {
   }
 
   private finishIfDone(): void {
-    if (!this.final || this.shown < this.target.length || !this.after) return;
+    if (!this.final || this.shown < this.target.length) return;
+    dropPlaceholders(this.el);
+
+    if (!this.after) return;
     const after = this.after;
     this.after = null;
     after();
   }
 
   private paint(now: number): void {
-    this.el.innerHTML = this.opts.render(this.target.slice(0, this.shown));
+    patchAnswer(this.el, this.opts.render(this.target.slice(0, this.shown)));
+    markTail(this.el);
     const length = this.el.textContent?.length ?? 0;
 
     // Markdown 语法闭合时渲染出的字可能变少：丢掉越界的批次，不回退已显示的内容。
@@ -122,6 +129,20 @@ class Reveal {
 
     if (this.batches.length) wrapFading(this.el, this.batches, now);
   }
+}
+
+/** 标出最后一个字所在的块：流式光标挂在它末尾，跟在字后面，不在段落下面另起一行。 */
+function markTail(root: HTMLElement): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let last: Node | null = null;
+
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.textContent?.trim()) last = node;
+  }
+
+  const block = last?.parentElement?.closest("p, li, h1, h2, h3, h4, h5, h6, td, th, pre");
+
+  if (block instanceof HTMLElement && root.contains(block)) block.dataset.tail = "";
 }
 
 /** 把最近放出的字包进淡入 span；按渲染后文本的字符位置定位，跨越多个文本节点也成立。 */
@@ -142,7 +163,7 @@ function wrapFading(root: HTMLElement, batches: Batch[], now: number): void {
     const nodeEnd = offset + node.data.length;
     offset = nodeEnd;
 
-    if (nodeEnd <= start) continue;
+    if (nodeEnd <= start || node.parentElement?.closest(".gen-card")) continue;
 
     // 从后往前切，前面的位置不受影响。
     const cuts: Batch[] = [];
@@ -175,6 +196,8 @@ const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: re
  */
 export function revealText(el: HTMLElement, text: string, opts: Options & { live: boolean; final: boolean; after?: () => void }): void {
   let reveal = reveals.get(el);
+  // 原文留在元素上：「复制为 Markdown」要原样的标题、列表、链接和代码块，渲染后的 DOM 里已经没有了。
+  el.dataset.markdown = text;
 
   if (!opts.live || reducedMotion()) {
     if (reveal) {
@@ -184,7 +207,10 @@ export function revealText(el: HTMLElement, text: string, opts: Options & { live
       return;
     }
 
-    el.innerHTML = opts.render(text);
+    patchAnswer(el, opts.render(text));
+
+    if (opts.final || !opts.live) dropPlaceholders(el);
+    markTail(el);
     opts.after?.();
 
     return;

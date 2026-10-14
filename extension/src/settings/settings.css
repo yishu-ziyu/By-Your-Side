@@ -55,6 +55,12 @@ label.row { cursor: pointer; }
 .d-input, .sel { font: inherit; height: 34px; padding: 0 10px; color: var(--text-primary); background: var(--glass-surface-elevated); border: 1px solid var(--line); border-radius: var(--r-ctl); outline: none; transition: border-color var(--m-quick), box-shadow var(--m-quick); }
 textarea.d-input { height: auto; width: 100%; padding: 8px 10px; line-height: 1.5; resize: vertical; }
 .d-input:focus, .sel:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.d-input.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.key-reason { display: flex; gap: 6px; margin: 2px 0 8px; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); }
+.key-reason[hidden] { display: none; }
+.key-reason-icon { flex: none; width: 15px; height: 15px; margin-top: 1px; border: 1px solid var(--warn); border-radius: 50%; color: var(--warn); font: 600 10px/13px var(--font); text-align: center; }
+.key-reason-copy { display: flex; flex-direction: column; gap: 2px; }
+.key-reason-wait { color: var(--text-tertiary); }
 .d-input::placeholder, .search input::placeholder { color: var(--text-quaternary); }
 .sel { appearance: none; width: 220px; padding-right: 28px; cursor: pointer; text-overflow: ellipsis; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2377756d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
 
@@ -141,9 +147,6 @@ details[open] #provider-more-names { padding-bottom: 0; }
 .key-ic { display: inline-flex; color: var(--text-tertiary); }
 .d-mono { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-tertiary); }
 .d-hint { font-size: var(--fs-meta); color: var(--text-tertiary); }
-.d-note { margin: -8px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--text-tertiary); }
-.d-note[hidden] { display: none; }
-.d-note .btn { height: 26px; padding: 0 8px; font-size: var(--fs-meta); }
 .d-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .seg { display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px; border-radius: var(--r-ctl); background: var(--content-subtle); }

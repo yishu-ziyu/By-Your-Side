@@ -25,7 +25,12 @@ export type PanelHistoryItem =
   | { kind: "server"; msg: PanelHistoryServerMessage };
 
 /** 这一轮随消息带给助手的页面与选段；侧栏画成用户消息下面的 chip。 */
-export interface UserTurnContext { title: string; url: string; selection?: string }
+export interface UserTurnContext {
+  title: string;
+  url: string;
+  selection?: string;
+  pages?: Array<{ title: string; url: string; tabId: number; status?: "pending" | "read" | "unread"; reason?: string }>;
+}
 
 /** background 分配的单调序号是增量同步游标。 */
 export interface PanelHistoryEntry {
@@ -46,7 +51,28 @@ export type PanelToBg =
   /** 请重连。 */
   | { kind: "retry" }
   /** 端口存活探测：service worker 被 Chrome 停掉后，面板手里的端口不一定会收到断开事件。 */
-  | { kind: "ping" };
+  | { kind: "ping" }
+  /** 悬停/聚焦过程步骤：在网页上圈出当时点过的元素；target 空则收起。 */
+  | { kind: "inspect_step"; target?: string; tabId?: number; url?: string; caption?: string }
+  /** 还原填写：把助手这一轮填过、还没提交的格子写回它动手前的值。任务在跑时不做，回 fill_undo 带 refused。 */
+  | { kind: "fill_undo"; conversationId?: string };
+
+/** 还原填写的说明：编辑器里的文字、原来有内容的密码这类栏，这一版不还原。 */
+export type FillUndoNote = "rich_text" | "sensitive";
+
+/**
+ * 这一轮还原填写的样子（background/fill-undo.ts）。只有数量、栏名和状态，不带任何格子的值。
+ * ready：可以还原 count 处；submitted：确定提交过，收不回；page_changed：页面换了文档、或扩展重启后记录没了；
+ * restored：点过还原，restored 是写回的栏，skipped 是没动的栏和原因。
+ */
+export type FillUndoView =
+  | { state: "ready"; count: number; fields: string[]; notes: FillUndoNote[] }
+  | { state: "submitted"; fields: string[]; notes: FillUndoNote[] }
+  | { state: "page_changed"; fields: string[]; notes: FillUndoNote[] }
+  | { state: "restored"; restored: string[]; skipped: Array<{ field: string; reason: "user_changed" | "gone" | "failed" }>; notes: FillUndoNote[] };
+
+/** 网页里助手填过的格子所在的表单被提交了（content-domops 发给后台）。 */
+export const FILL_UNDO_SUBMIT = "sideagent:fill-undo-submit";
 
 export type BgToPanel = BgToPanelPayload & { conversationId?: string };
 
@@ -73,5 +99,13 @@ type BgToPanelPayload =
   | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
   /** 用户那一条历史补上了这一轮带的页面（见 UserTurnContext）。 */
   | { kind: "turn_context"; seq: number; context: UserTurnContext }
+  /** @ 拉进来的标签页：扩展后台真读到正文才标已读。 */
+  | { kind: "mention_status"; seq: number; tabId: number; status: "read" | "unread"; reason?: string }
   /** 一次同步回放结束：面板据此核对旧端口上的消息是否丢了。 */
-  | { kind: "synced" };
+  | { kind: "synced" }
+  /** 步骤对照：找到了就圈，找不到回 ok=false，侧栏写「页面已变」。 */
+  | { kind: "inspect_step_result"; ok: boolean }
+  /** 接管/交还编排：离开 → 你在操作 → 重读 → 助手回来。由真实事件推进。 */
+  | { kind: "handoff_phase"; phase: "leaving" | "user" | "rereading" | "agent" }
+  /** 还原填写的现状：每次变化都发，面板重开时也补发；null 表示这一轮没有可还原的。refused=busy：任务在跑，没还原。 */
+  | { kind: "fill_undo"; undo: FillUndoView | null; refused?: "busy" };

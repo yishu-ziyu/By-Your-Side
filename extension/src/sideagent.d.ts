@@ -37,8 +37,14 @@ interface SideAgentDomOps {
 interface SideAgentEffect {
   /** 取基线（含 60ms 页面活跃度采样）；token 由调用方生成 */
   begin(input: { token: string; point?: [number, number]; selector?: string }): Promise<{ ok: true }>;
+  /** 只记动作期间哪里变了（不取基线、不能 diff） */
+  watch(token: string): { ok: true };
   /** 与基线比对；会话不存在（换文档/过期）返回 null */
   diff(token: string): import("../../shared/effect.js").EffectReport | null;
+  /** 动作期间变过的几处（定位串）；太多返回 "many"，会话不存在返回 null */
+  roots(token: string): Array<{ sel: string; field?: true }> | "many" | null;
+  /** 会话里最后一次变化离现在多久（毫秒）；还没变过返回 null */
+  quietMs(token: string): number | null;
   end(token: string): { ok: true };
 }
 
@@ -67,12 +73,16 @@ interface SideAgentCursor {
   showCrossPage?(view?: CrossPageView): void;
   hideCrossPage?(): void;
   /** 页面边缘光：这个成员正在操作本页时亮，结束时灭。 */
-  setGlow?(on: boolean): void;
+  setGlow?(on: boolean): void | Promise<void>;
   /** 执行反馈胶囊（V2）：宿主事实短语；成功一次轻微回弹，不抢焦点、不配音、不循环。 */
   showFeedback?(view?: import("./shared/feedback-pill.js").FeedbackPillView): void;
   hideFeedback?(): void;
+  /** 登记助手即将派发鼠标事件的落点（光标不飞过去时），页面光效不把它当成用户。 */
+  expect?(x: number, y: number): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
+  /** 注视区：它读页面时看着哪。sweep 整页读；at 读到的具体元素；rest 读完变淡待命；off 收起。 */
+  gaze?(view: { mode: "sweep" } | { mode: "at"; rects: SideAgentRect[] } | { mode: "rest" } | { mode: "off" }): void;
   /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */
   arrive(x: number, y: number): void;
   /** 在视口坐标 (x,y) 播放点击波纹，随后飞回角落 */
@@ -83,6 +93,13 @@ interface SideAgentCursor {
   replay?(points: Array<{ x: number; y: number; click: boolean }>): void;
   stopReplay?(): void;
   hide(): void;
+  /** 接管：朝侧栏方向退场，等动画结束后再 hide。 */
+  leaveTowardPanel?(): Promise<void>;
+  /** 交还：重读完成后从侧栏边回到待命位置。 */
+  returnFromPanel?(): Promise<void>;
+  /** 步骤对照：持久描边，不自动消失。 */
+  inspect?(rect: SideAgentRect, caption?: string): void;
+  clearInspect?(): Promise<void>;
   /** 页顶「现在归你 / 交还」条。接管确认后显示，交还或中止后收掉。 */
   showUserControl?(view?: {
     status?: string;
@@ -139,6 +156,7 @@ interface SideAgentNamespace {
   marksState?: () => import("../../shared/host-marks.js").HostDrawnMark[];
   /** 交给用户时画的圈的只读读数，供验收核对；页面脚本读不到。 */
   handoffState?: () => Array<{ kind: "field" | "button"; name: string; label: string; labelRect: SideAgentRect | null; faded: boolean; shown: boolean }>;
+  inspectState?: () => { shown: boolean; caption: string; x: number; y: number; width: number; height: number } | null;
   /** overlay 自检：拿住态光标与名牌双键（生产路径不用） */
   holdState?: (instanceId?: string) => {
     holding: boolean;

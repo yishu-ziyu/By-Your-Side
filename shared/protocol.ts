@@ -30,6 +30,19 @@ export const LEAD_SESSION_ID = "main";
 
 export const DEFAULT_CONVERSATION_ID = "default";
 
+/** 后台把每个执行成员的工作标签页存在 chrome.storage.session 这个键下（执行身份 → 标签页 id）；侧栏只读，用来给回答挂「切过去看」。 */
+export const WORKING_TABS_STORAGE_KEY = "workingTabs";
+
+/** 默认会话保留既有 main/worker key；其他会话使用可逆复合 key。 */
+export function executionKey(conversationId: string, sessionId: string = LEAD_SESSION_ID): string {
+  const cid = conversationId || DEFAULT_CONVERSATION_ID;
+  const sid = sessionId || LEAD_SESSION_ID;
+
+  if (cid === DEFAULT_CONVERSATION_ID) return encodeURIComponent(sid);
+
+  return `${encodeURIComponent(cid)}::${encodeURIComponent(sid)}`;
+}
+
 export function normalizeConversationId(id?: string | null): string { return id ?? DEFAULT_CONVERSATION_ID; }
 
 /**
@@ -49,6 +62,10 @@ export interface ConversationSummary {
   state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
   /** A durable task checkpoint exists after the local host stopped mid-run. */
   checkpoint?: "interrupted" | "unavailable";
+  /** 这一轮怎么结束的一句（「填好 4 栏，没提交」）；会话列表用，不写「空闲」。 */
+  ending?: string;
+  /** 这一轮做过的网站主机名，给会话列表站点图标。 */
+  site?: string;
 }
 
 export function isLeadSession(sessionId?: string | null): boolean {
@@ -346,7 +363,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback; /** 点/填/看过的页面元素：侧栏步骤对照用，模型看不见。 */ pageTarget?: { target: string; label: string; tabId: number; url: string } }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
@@ -372,7 +389,7 @@ export type AgentUiEvent =
    * checking：这一轮交付前先说一声「要核对」（在交付与 agent_end 之前到达）；unavailable：核对没拿到结论。这两个不是结论，任务记录不存。
    * correction：continue 时核对者说的具体出入，是诊断文字，只按纯文本显示。
    */
-  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; /** 和 checking 一起：核对已读完页面，剩下只等模型，不再用调试器。 */ pageRead?: boolean; remaining?: string; correction?: string; /** 判继续时给用户看的一句诊断，不带指令。 */ finding?: string }
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; /** 和 checking 一起：核对已读完页面，剩下只等模型，不再用调试器。 */ pageRead?: boolean; remaining?: string; correction?: string; /** 判继续时给用户看的一句诊断，不带指令。 */ finding?: string; /** 和 checking 一起：用户说了不止一件事，回答扣到核对之后再出。 */ gate?: boolean; /** 判继续时：这一轮的回答扣下了、没出过。 */ held?: boolean; /** 和 held 一起：接着做的是第 at 件（共 of 件）。 */ step?: { at: number; of: number } }
   | { kind: "user_delivery"; delivery: UserDelivery }
   /**
    * 交给用户的文件：模型写的文本文件（artifacts 工具），或模型交给用户的截图（screenshot forUser，encoding 为 base64 的 PNG）。
@@ -599,7 +616,7 @@ export interface ToolContract {
     };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。
      *  dialog = 点击后页面弹出了原生对话框（点击已送达，页面等对话框处理）；此时不等效果采样。 */
-    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string }; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true };
+    data: { clicked: true; effect?: import('./effect.js').EffectReport; /** 页面上新出现的行（和上次读页比）；换页、开新标签页时没有。 */ appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string }; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true };
   };
   /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2。 */
   double_click: {
@@ -613,7 +630,7 @@ export interface ToolContract {
       force?: boolean;
       label?: string;
     };
-    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
+    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
   };
   /**
    * CAP-02A：在触发动作前 arm 事件。返回宿主签发的 token（模型不可伪造）。
@@ -693,7 +710,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback } };
+  fill: { params: { tabId?: number; target: string; value: string; /** 填完按一次回车；只给搜索框和普通单行框。 */ submit?: boolean; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; appeared?: import('./effect.js').PageAppeared; /** 真实键盘输入和旧写法都没写进去。 */ typing?: "failed"; /** submit 时：按了回车（结果同 press_key），或为什么没按。 */ submit?: { refused: string } | { uncertain: string } | { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } }; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback; /** 快照里这个 ref 的输入框被页面重渲染换掉，已按原输入框的名字找回唯一的新输入框并在它上面填写。 */ refound?: true } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {
@@ -703,7 +720,7 @@ export interface ToolContract {
       expectedDocumentId?: string;
       expectedBackendNodeId?: number;
     };
-    data: { selected: string[]; labels: string[] };
+    data: { selected: string[]; labels: string[]; /** 同 fill.refound。 */ refound?: true; appeared?: import('./effect.js').PageAppeared };
   };
   /** 把本会话的文件放进页面上的一个 <input type=file>：文件在页面里构造，不经本机磁盘；回执是从文件框读回的文件。 */
   upload_file: {
@@ -711,7 +728,7 @@ export interface ToolContract {
     data: { files: Array<{ name: string; size: number; type: string }> };
   };
   type_text: { params: { tabId?: number; text: string; }; data: { typed: true; /** The focused field, read from the page after typing. */ readback?: FieldReadback } };
-  press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
+  press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
@@ -826,6 +843,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
       return isTaskActionRequest(r) && r.conversationId === msg.conversationId
         && (r.context === undefined || isPageContext(r.context))
+        && (r.pages === undefined || Array.isArray(r.pages) && r.pages.length <= 8 && r.pages.every(isPageContext))
         && (r.attachments === undefined || Array.isArray(r.attachments) && r.attachments.every(isAttachment)) ? msg : null;
     }
 

@@ -4,7 +4,7 @@
 
 ## 两道检查
 
-- `npm run check`：文档结构、界面用词、模块边界、类型、构建。几分钟内跑完，只拦写坏的代码。界面用词只拦[术语表](../glossary.md)「不用」一栏里不会误伤的词，词表在[脚本](../../scripts/maintenance/check-copy.mjs)里。
+- `npm run check`：文档结构、界面用词、动效 token、模块边界、类型、构建。几分钟内跑完，只拦写坏的代码。界面用词只拦[术语表](../glossary.md)「不用」一栏里不会误伤的词，词表在[脚本](../../scripts/maintenance/check-copy.mjs)里。侧栏动效只许写在 token 文件里的时长和曲线，检查在[脚本](../../scripts/maintenance/check-motion-tokens.mjs)。
 - `npm test`：核心真实路径用例。用例只装扩展、用脚本模型，所以不要凭据。`npm test` 是唯一检查产品行为的地方。
 
 每次合并前跑 `npm run check` 和这次改到的用例。`npm test` 一批改动只跑一遍，放在更新日常扩展之前，因为每次合并都跑全部时，花的时间多于抓到的问题（10-10 用户决定）。纯文档修改只跑 `npm run check:docs`。
@@ -41,6 +41,7 @@
 
 - `npm run reload:ext` 需要 Chrome 的远程调试入口，只在明确的加载范围内执行。
 - 配置和构建产物存在，不证明正在运行的扩展已经采用了它们。
+- `npm run logs`（[脚本](../../scripts/maintenance/logs.mjs)）直接读日常 Chrome 里 By Your Side 的诊断记录，不用在设置页导出，给代理查问题用。输出保留原文（凭据除外），所以不要提交或外传。第一次运行要从 GitHub 装 Python 解码库，比较慢。
 
 ## 项目看板
 
