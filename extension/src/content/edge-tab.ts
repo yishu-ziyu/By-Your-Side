@@ -1,0 +1,705 @@
+import { OVERLAY_ATTR, OVERLAY_KIND_EDGE_TAB } from "../shared/overlay.js";
+
+/**
+ * 页面右边缘的状态胶囊：侧栏开着时从侧栏边长出来，关着时贴在窗口右边。
+ * 只管画：显示什么由 cursor.ts 汇总后交给 render；同一时刻只有一个主胶囊，别页的助手挂在下方小圆泡里。
+ * 形状和内容用弹簧积分驱动（不是按时间算的闭式曲线），新状态随时打断，从当前形状接着变。
+ */
+
+export type EdgeTabTone = "work" | "wait" | "ok" | "unk" | "err" | "hand" | "away";
+
+export type EdgeTabEnd = "stop" | "arrow" | { label: string; enabled: boolean };
+
+export interface EdgeTabView {
+  tone: EdgeTabTone;
+  /** 左段，默认灰（动词）；lead 时加粗（「现在归你」在前）。 */
+  a: string;
+  /** 右段，默认正文色（对象）；lead 时变灰。 */
+  b: string;
+  lead?: boolean;
+  /** 「已」和对象之间不留空。 */
+  tight?: boolean;
+  end?: EdgeTabEnd;
+  hint?: string;
+}
+
+export interface EdgeTabOther {
+  id: string;
+  name: string;
+  title: string;
+  local: boolean;
+  detail?: string;
+  icon?: string;
+}
+
+export interface EdgeTabHandlers {
+  capsule(): void;
+  stop(): Promise<boolean>;
+  action(): void;
+  other(other: EdgeTabOther): void;
+}
+
+/** 胶囊上边离视口顶部的距离。 */
+const TOP = 64;
+const H = 40;
+const MID = TOP + H / 2;
+const CLOSED = { w: 10, h: 30 };
+const PADL = 14;
+const GAP = 8;
+const WGAP = 4;
+const ICON = 18;
+const STOP = 26;
+const BUBBLE_H = 30;
+const BUBBLE_GAP = 10;
+/** SVG 画布比胶囊大：上下留给凹弧和阴影，宽度留给最长的一句。 */
+const CANVAS_W = 520;
+const CANVAS_H = 560;
+
+/** 伸出、换内容、收回各一组弹簧（response 秒，damping）。 */
+const OPEN = [0.42, 0.82] as const;
+const MORPH = [0.36, 0.86] as const;
+const CLOSE = [0.32, 0.94] as const;
+/** 收回前先让内容淡出。 */
+const CONTENT_OUT_MS = 120;
+const CONTENT_IN_MS = 240;
+const CONTENT_IN_DELAY_MS = 60;
+const FADE_MS = 200;
+
+const FONT = `-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC","Helvetica Neue",sans-serif`;
+
+const STYLE = `
+:host{all:initial}
+.root{--panel:oklch(0.980 0.0055 88);--ink:oklch(22% 0.012 285);--ink2:oklch(54% 0.02 285);--btn:oklch(22% 0.02 285 / .07);--btnh:oklch(22% 0.02 285 / .13);
+  --accent:oklch(58% 0.2 285);--ok:oklch(66% 0.17 150);--warn:oklch(72% 0.15 70);--err:oklch(60% 0.2 25);--objw:600;
+  position:fixed;top:0;right:0;width:${CANVAS_W}px;height:${CANVAS_H}px;pointer-events:none;font:13px/1 ${FONT};letter-spacing:-.01em;color:var(--ink);
+  -webkit-font-smoothing:antialiased}
+@media (prefers-color-scheme:dark){.root{--panel:#211f1b;--ink:rgb(250,242,230);--ink2:oklch(70% 0.014 285);--btn:rgba(255,255,255,.09);--btnh:rgba(255,255,255,.17);--accent:oklch(74% 0.14 285);--objw:500}}
+.root[hidden]{display:none}
+.canvas{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.clip{position:absolute;overflow:hidden;pointer-events:auto;cursor:pointer;outline:none;border-radius:20px 0 0 20px}
+.clip:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+.el{position:absolute;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;will-change:transform,opacity,filter}
+.t{overflow:hidden;text-overflow:ellipsis;line-height:1.25}
+.a .t{max-width:150px}.b .t{max-width:210px}
+.dim{color:var(--ink2);font-weight:500}.strong{color:var(--ink);font-weight:var(--objw)}
+.ic{width:${ICON}px;height:${ICON}px;display:grid;place-items:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 2.5px color-mix(in oklch,var(--accent) 22%,transparent)}50%{box-shadow:0 0 0 4.5px color-mix(in oklch,var(--accent) 22%,transparent)}}
+.spin{animation:spin 1s linear infinite;transform-origin:9px 9px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rg{stroke-dasharray:47.1;stroke-dashoffset:47.1;animation:draw .35s cubic-bezier(.45,0,.55,1) .2s forwards}
+.ck{stroke-dasharray:10;stroke-dashoffset:10;animation:draw .22s cubic-bezier(.45,0,.55,1) .45s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+button{all:unset;box-sizing:border-box;cursor:pointer;pointer-events:auto;font:inherit}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stop{width:${STOP}px;height:${STOP}px;border-radius:50%;background:var(--btn);display:grid;place-items:center;transition:background-color .12s ease,transform .08s ease}
+.stop i{width:8px;height:8px;border-radius:2px;background:var(--ink)}
+.stop:hover{background:var(--btnh)}
+.stop:active{transform:scale(.94)}
+.stop:disabled{opacity:.5;cursor:default}
+.act{height:${STOP}px;border-radius:13px;padding:0 11px;display:grid;place-items:center;font-size:12.5px;font-weight:600;background:var(--warn);color:#fff;transition:filter .12s ease,transform .08s ease}
+.act:hover{filter:brightness(.94)}
+.act:active{transform:scale(.94)}
+.act:disabled{opacity:.55;cursor:default}
+.arrow{color:var(--ink2);font-size:13px;width:14px;text-align:center}
+.av{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff8a65,#e1251b);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;flex:none;overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover;background:#fff}
+.bub{position:absolute;display:flex;align-items:center;gap:5px;padding-left:8px;pointer-events:auto;cursor:pointer;height:${BUBBLE_H}px;border-radius:15px 0 0 15px}
+.bub .n{font-size:12px;font-weight:600;color:var(--ink);flex:none}
+.bub:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.list{position:absolute;right:0;width:280px;max-height:260px;overflow-y:auto;box-sizing:border-box;padding:5px;background:var(--panel);border-radius:14px 0 0 14px;pointer-events:auto;
+  box-shadow:0 1px 1.6px oklch(32% 0.06 285 / .07),-1px 4px 8px oklch(32% 0.06 285 / .07),-2px 12px 24px oklch(32% 0.06 285 / .09),inset 0 0 0 .75px rgba(0,0,0,.06);transform-origin:top right}
+@media (prefers-color-scheme:dark){.list{box-shadow:0 1px 1.6px rgba(0,0,0,.3),-1px 4px 8px rgba(0,0,0,.22),-2px 12px 24px rgba(0,0,0,.2),inset 0 0 0 .75px rgba(255,255,255,.1)}}
+.list[hidden]{display:none}
+.row{display:flex;align-items:center;gap:8px;width:100%;padding:8px;border-radius:9px;transition:background-color .12s ease}
+.row:hover{background:var(--btn)}
+.row .nm{font-weight:var(--objw);flex:none}
+.row .ti{color:var(--ink2);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;line-height:1.25}
+.row .go{margin-left:auto;color:var(--ink2);flex:none}
+.detail{font-size:12px;line-height:1.5;color:var(--ink2);padding:2px 8px 8px 34px;overflow-wrap:anywhere}
+.detail[hidden]{display:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media (prefers-reduced-motion:reduce){.dot,.spin{animation:none}.dot{box-shadow:0 0 0 4px color-mix(in oklch,var(--accent) 20%,transparent)}.rg,.ck{animation-duration:.01s;animation-delay:0s}}
+`;
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+
+/** 欠阻尼弹簧，按帧积分：目标中途改了，从当前位置和速度接着走。 */
+class Spring {
+  x: number;
+  v = 0;
+  to: number;
+  private k = 0;
+  private c = 0;
+
+  constructor(x: number) { this.x = this.to = x; }
+
+  aim(to: number, [response, damping]: readonly [number, number]): void {
+    const w = (2 * Math.PI) / response;
+    this.to = to;
+    this.k = w * w;
+    this.c = 2 * damping * w;
+  }
+
+  snap(to: number): void { this.x = this.to = to; this.v = 0; }
+
+  step(dt: number): void {
+    const n = 4;
+    const h = dt / n;
+
+    for (let i = 0; i < n; i++) {
+      this.v += (-this.k * (this.x - this.to) - this.c * this.v) * h;
+      this.x += this.v * h;
+    }
+
+    if (Math.abs(this.x - this.to) < 0.02 && Math.abs(this.v) < 0.02) this.snap(this.to);
+  }
+
+  get still(): boolean { return this.x === this.to && this.v === 0; }
+}
+
+type Slot = "icon" | "a" | "b" | "end";
+
+interface Item { slot: Slot; key: string; el: HTMLElement; x: Spring; width: number; leaving?: boolean }
+
+function shapePath(X: number, w: number, h: number, mid: number, c: number): string {
+  const C = c * clamp01(w / 48);
+  const R = Math.min(h / 2, w);
+  const top = mid - h / 2;
+  const b = top + h;
+  const L = X - w;
+
+  return `M${X + 1},${top - C} L${X},${top - C} Q${X},${top} ${X - C},${top} L${L + R},${top} Q${L},${top} ${L},${top + R} L${L},${b - R} Q${L},${b} ${L + R},${b} L${X - C},${b} Q${X},${b} ${X},${b + C} L${X + 1},${b + C} Z`;
+}
+
+function hairPath(X: number, w: number, h: number, mid: number): string {
+  const R = Math.min(h / 2, w);
+  const top = mid - h / 2;
+  const b = top + h;
+  const L = X - w;
+
+  return `M${X},${top} L${L + R},${top} Q${L},${top} ${L},${top + R} L${L},${b - R} Q${L},${b} ${L + R},${b} L${X},${b}`;
+}
+
+function iconFor(tone: EdgeTabTone): string {
+  switch (tone) {
+    case "wait": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--btn)" stroke-width="2"/><path class="spin" d="M9 2 A7 7 0 0 1 16 9" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/></svg>`;
+    case "ok": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.5" fill="none" stroke="var(--btn)" stroke-width="2"/><circle class="rg" cx="9" cy="9" r="7.5" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" transform="rotate(-90 9 9)"/><path class="ck" d="M5.6 9.2 L8 11.4 L12.4 6.8" fill="none" stroke="var(--ok)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    case "unk": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.5" fill="none" stroke="var(--warn)" stroke-width="2"/><text x="9" y="13" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warn)" font-family="-apple-system,sans-serif">?</text></svg>`;
+    case "err": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="var(--err)"/><path d="M9 4.8 V10" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="13" r="1.2" fill="#fff"/></svg>`;
+    case "hand": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="var(--warn)"/><path d="M9 4.5 V9.5 M6.5 7.5 L9 10 L11.5 7.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 9 9)"/></svg>`;
+    default: return `<div class="ic"><div class="dot"></div></div>`;
+  }
+}
+
+/** 头像：有站点图标用图标，加载不了退回标题首字。 */
+function avatar(other: EdgeTabOther): HTMLElement {
+  const av = document.createElement("span");
+  av.className = "av";
+  av.setAttribute("aria-hidden", "true");
+  const letter = Array.from(other.title.trim() || other.name)[0] ?? "·";
+  av.textContent = letter;
+
+  if (other.icon && /^https?:/.test(other.icon)) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => av.replaceChildren(img);
+    img.src = other.icon;
+  }
+
+  return av;
+}
+
+export interface EdgeTabState {
+  shown: boolean;
+  tone: EdgeTabTone | null;
+  a: string;
+  b: string;
+  end: string | null;
+  endEnabled: boolean;
+  /** 弹簧停稳后的目标尺寸；rect 是这一帧实际画出来的位置。 */
+  width: number;
+  rect: { x: number; y: number; width: number; height: number } | null;
+  panel: string;
+  bubble: { count: number; letter: string; rect: { x: number; y: number; width: number; height: number } } | null;
+  list: { open: boolean; rows: Array<{ name: string; title: string; local: boolean; rect: { x: number; y: number; width: number; height: number } }> };
+  /** 停止键或「继续」此刻的位置，验收用真鼠标点它。 */
+  button: { x: number; y: number; width: number; height: number } | null;
+}
+
+export function createEdgeTab(handlers: EdgeTabHandlers) {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const dark = window.matchMedia("(prefers-color-scheme: dark)");
+  const host = document.createElement("div");
+  host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_EDGE_TAB);
+  host.style.cssText = "all:initial;position:fixed;top:0;right:0;width:0;height:0;z-index:2147483646;pointer-events:none";
+  const shadow = host.attachShadow({ mode: "closed" });
+  shadow.innerHTML = `<style>${STYLE}</style><div class="root" hidden>
+<svg class="canvas" width="${CANVAS_W}" height="${CANVAS_H}"><defs>
+<filter id="sh" x="-60%" y="-100%" width="220%" height="300%"><feDropShadow class="s" dx="0" dy="1" stdDeviation=".8" flood-opacity="0"/><feDropShadow class="s" dx="-1" dy="4" stdDeviation="4" flood-opacity="0"/><feDropShadow class="s" dx="-2" dy="12" stdDeviation="12" flood-opacity="0"/></filter>
+<linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop class="h" offset="0"/><stop class="h" offset=".5"/><stop class="h" offset="1"/></linearGradient>
+</defs><path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/>
+<path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/></svg>
+<div class="clip" role="button" tabindex="0"></div><div class="bub" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"></div><div class="list" hidden></div><span class="sr" role="status" aria-live="polite"></span></div>`;
+  const root = shadow.querySelector<HTMLDivElement>(".root")!;
+  const [mainShape, bubShape] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.shape"));
+  const [mainHair, bubHair] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.hl"));
+  const shadows = Array.from(shadow.querySelectorAll<SVGElement>(".s"));
+  const hairStops = Array.from(shadow.querySelectorAll<SVGElement>(".h"));
+  const clip = shadow.querySelector<HTMLDivElement>(".clip")!;
+  const bub = shadow.querySelector<HTMLDivElement>("div.bub")!;
+  const list = shadow.querySelector<HTMLDivElement>(".list")!;
+  const live = shadow.querySelector<HTMLSpanElement>(".sr")!;
+  const X = CANVAS_W;
+
+  const W = new Spring(CLOSED.w);
+  const Hs = new Spring(CLOSED.h);
+  const BW = new Spring(0);
+  let items: Item[] = [];
+  let view: EdgeTabView | null = null;
+  let others: EdgeTabOther[] = [];
+  let open = false;
+  let closeAt = 0;
+  /** 整体可见度：减少动态效果时靠它淡入淡出，否则随形状宽度算出来。 */
+  let fade = 0;
+  let raf: number | undefined;
+  let last = 0;
+  let listOpen = false;
+  let stopPending = false;
+  let bubbleKey = "";
+
+  const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
+
+  clip.addEventListener("click", ev => { ev.stopPropagation(); if (!clickedButton(ev)) handlers.capsule(); });
+  clip.addEventListener("keydown", ev => {
+    if (ev.target !== clip || (ev.key !== "Enter" && ev.key !== " ")) return;
+    ev.preventDefault();
+    handlers.capsule();
+  });
+  const toggleList = () => setList(!listOpen);
+  bub.addEventListener("click", ev => { ev.stopPropagation(); toggleList(); });
+  bub.addEventListener("keydown", ev => {
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggleList(); }
+  });
+  root.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && listOpen) { setList(false); bub.focus(); ev.stopPropagation(); }
+  });
+
+  function setList(on: boolean): void {
+    listOpen = on && others.length > 0;
+    bub.setAttribute("aria-expanded", String(listOpen));
+    list.inert = !listOpen;
+
+    if (listOpen === !list.hidden) return;
+
+    if (listOpen) {
+      renderList();
+      list.hidden = false;
+
+      if (!reduced.matches) list.animate([{ opacity: 0, transform: "translateY(-4px) scale(.97)" }, { opacity: 1, transform: "none" }], { duration: CONTENT_IN_MS, easing: "cubic-bezier(.33,1,.68,1)" });
+      else list.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS });
+    } else {
+      list.hidden = true;
+    }
+  }
+
+  function renderList(): void {
+    list.replaceChildren(...others.flatMap(o => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "row";
+      row.dataset.member = o.id;
+      const nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = o.name;
+      const ti = document.createElement("span");
+      ti.className = "ti";
+      ti.textContent = o.local ? o.title : `在 ${o.title}`;
+      const go = document.createElement("span");
+      go.className = "go";
+      go.setAttribute("aria-hidden", "true");
+      go.textContent = o.local ? "⌄" : "↗";
+      row.append(avatar(o), nm, ti, go);
+      row.title = o.local ? o.detail || o.title : `${o.name} · ${o.title}`;
+      row.setAttribute("aria-label", o.local ? `${o.name} · ${o.title}，查看详情` : `${o.name} 在 ${o.title}，切换到那一页`);
+
+      if (!o.local) {
+        row.onclick = ev => { ev.stopPropagation(); handlers.other(o); };
+
+        return [row];
+      }
+
+      const detail = document.createElement("div");
+      detail.className = "detail";
+      detail.textContent = o.detail || o.title;
+      detail.hidden = true;
+      row.setAttribute("aria-expanded", "false");
+      row.onclick = ev => {
+        ev.stopPropagation();
+        detail.hidden = !detail.hidden;
+        row.setAttribute("aria-expanded", String(!detail.hidden));
+      };
+
+      return [row, detail];
+    }));
+  }
+
+  function attach(): void {
+    if (!host.isConnected) (document.documentElement ?? document.body).append(host);
+  }
+
+  function makeItem(slot: Slot, key: string, v: EdgeTabView): Item {
+    const el = document.createElement("div");
+    el.className = `el ${slot}`;
+
+    if (slot === "icon") el.innerHTML = iconFor(v.tone);
+    else if (slot === "a" || slot === "b") {
+      const t = document.createElement("span");
+      const strong = slot === "a" ? v.lead : !v.lead;
+      t.className = `t ${strong ? "strong" : "dim"}`;
+      t.textContent = slot === "a" ? v.a : v.b;
+      el.append(t);
+    } else if (v.end === "stop") {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "stop";
+      b.setAttribute("aria-label", "中止");
+      b.title = "中止";
+      b.append(document.createElement("i"));
+      b.disabled = stopPending;
+      b.onclick = ev => {
+        ev.stopPropagation();
+
+        if (stopPending) return;
+        stopPending = true;
+        b.disabled = true;
+        void handlers.stop().then(ok => { if (!ok) { stopPending = false; b.disabled = false; } });
+      };
+      el.append(b);
+    } else if (v.end === "arrow") {
+      const s = document.createElement("span");
+      s.className = "arrow";
+      s.setAttribute("aria-hidden", "true");
+      s.textContent = "↗";
+      el.append(s);
+    } else if (v.end) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "act";
+      b.textContent = v.end.label;
+      b.disabled = !v.end.enabled;
+      b.onclick = ev => { ev.stopPropagation(); handlers.action(); };
+      el.append(b);
+    }
+
+    clip.append(el);
+
+    return { slot, key, el, x: new Spring(0), width: el.offsetWidth };
+  }
+
+  function slotKey(slot: Slot, v: EdgeTabView): string | null {
+    if (slot === "icon") return v.tone === "away" ? "work" : v.tone;
+    if (slot === "a") return v.a ? `${v.lead ? 1 : 0}${v.a}` : null;
+    if (slot === "b") return v.b ? `${v.lead ? 1 : 0}${v.b}` : null;
+    if (!v.end) return null;
+
+    return typeof v.end === "string" ? v.end : `act:${v.end.label}:${v.end.enabled}`;
+  }
+
+  function fadeIn(el: HTMLElement): void {
+    if (reduced.matches) {
+      el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: CONTENT_IN_MS, delay: CONTENT_IN_DELAY_MS, fill: "backwards" });
+
+      return;
+    }
+
+    el.animate(
+      [{ opacity: 0, filter: "blur(3px)", transform: "translateY(4px)" }, { opacity: 1, filter: "blur(0px)", transform: "translateY(0)" }],
+      { duration: CONTENT_IN_MS, delay: CONTENT_IN_DELAY_MS, easing: "cubic-bezier(.33,1,.68,1)", fill: "backwards" },
+    );
+  }
+
+  function fadeOut(item: Item): void {
+    item.leaving = true;
+    const from = Number(getComputedStyle(item.el).opacity) || 0;
+
+    for (const a of item.el.getAnimations()) a.cancel();
+    const frames = reduced.matches
+      ? [{ opacity: from }, { opacity: 0 }]
+      : [{ opacity: from, filter: "blur(0px)", transform: "translateY(0)" }, { opacity: 0, filter: "blur(3px)", transform: "translateY(-4px)" }];
+    const anim = item.el.animate(frames, { duration: CONTENT_OUT_MS, fill: "forwards" });
+    anim.onfinish = () => { item.el.remove(); items = items.filter(i => i !== item); };
+  }
+
+  /** 从右往左排：结尾按钮、右段、左段、图标。 */
+  function layout(v: EdgeTabView, next: Item[]): number {
+    const bySlot = new Map(next.map(i => [i.slot, i]));
+    const end = bySlot.get("end");
+    let x = end ? (v.end === "arrow" ? 12 : 7) : 14;
+    const put = (slot: Slot, after: number) => {
+      const it = bySlot.get(slot);
+
+      if (!it) return;
+      it.x.to = x;
+      x += it.width + after;
+    };
+    put("end", GAP);
+    put("b", bySlot.has("a") ? (v.tight ? 0.5 : WGAP) : GAP);
+    put("a", GAP);
+    put("icon", PADL - 4);
+
+    return Math.round(x);
+  }
+
+  function render(next: EdgeTabView | null, nextOthers: EdgeTabOther[] = []): void {
+    const was = view;
+    view = next;
+    others = next ? nextOthers : [];
+
+    if (!next) {
+      if (!open) return;
+      open = false;
+      host.dataset.shown = "false";
+
+      for (const it of items) if (!it.leaving) fadeOut(it);
+      closeAt = reduced.matches ? 0 : performance.now() + CONTENT_OUT_MS;
+      setList(false);
+      paintBubble();
+      kick();
+
+      return;
+    }
+
+    attach();
+    root.hidden = false;
+    const opening = !open;
+    open = true;
+    host.dataset.shown = "true";
+    closeAt = 0;
+
+    if (next.end !== "stop") stopPending = false;
+
+    const kept: Item[] = [];
+
+    for (const slot of ["icon", "a", "b", "end"] as const) {
+      const key = slotKey(slot, next);
+      const old = items.find(i => i.slot === slot && !i.leaving);
+
+      if (old && key !== null && old.key === key) {
+        kept.push(old);
+        continue;
+      }
+
+      if (old) fadeOut(old);
+
+      if (key === null) continue;
+      const it = makeItem(slot, key, next);
+      fadeIn(it.el);
+      kept.push(it);
+    }
+
+    const width = layout(next, kept);
+
+    for (const it of kept) {
+      const fresh = !items.includes(it);
+
+      // 新出现的字直接落在它的位置上淡入；没变的字跟着形状平移过去。
+      if (fresh || reduced.matches) it.x.snap(it.x.to);
+      else it.x.aim(it.x.to, MORPH);
+    }
+
+    items = [...items.filter(i => i.leaving), ...kept];
+
+    if (reduced.matches) {
+      W.snap(width);
+      Hs.snap(H);
+    } else {
+      const spring = opening ? OPEN : MORPH;
+      W.aim(width, spring);
+      Hs.aim(H, spring);
+    }
+
+    const text = next.lead ? `${next.a} ${next.b}` : `${next.a}${next.tight ? "" : " "}${next.b}`;
+    clip.setAttribute("aria-label", next.hint ? `${text.trim()}，${next.hint}` : text.trim());
+    clip.title = next.hint ?? "";
+
+    if (!was || was.a !== next.a || was.b !== next.b) live.textContent = text.trim();
+
+    paintBubble();
+    kick();
+  }
+
+  function paintBubble(): void {
+    const count = open ? others.length : 0;
+    const first = others[0];
+    const key = first ? `${first.id}|${first.title}|${first.icon ?? ""}|${count}` : "";
+
+    if (!count) {
+      BW.aim(0, CLOSE);
+      bub.inert = true;
+      setList(false);
+
+      return;
+    }
+
+    bub.inert = false;
+
+    if (key !== bubbleKey) {
+      bubbleKey = key;
+      const n = document.createElement("span");
+      n.className = "n";
+      n.textContent = `+${count}`;
+      bub.replaceChildren(avatar(first!), n);
+      bub.setAttribute("aria-label", `另外 ${count} 位助手，展开列表`);
+    }
+
+    if (listOpen) renderList();
+    const width = Math.round(8 + 18 + 5 + (bub.querySelector<HTMLElement>(".n")?.offsetWidth ?? 14) + 10);
+
+    if (reduced.matches) BW.snap(width);
+    else BW.aim(width, BW.x < 1 ? OPEN : MORPH);
+  }
+
+  function kick(): void {
+    if (raf !== undefined) return;
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+  }
+
+  function frame(now: number): void {
+    raf = undefined;
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+    last = now;
+
+    if (!open && closeAt && now >= closeAt) {
+      closeAt = 0;
+      W.aim(CLOSED.w, CLOSE);
+      Hs.aim(CLOSED.h, CLOSE);
+    }
+
+    W.step(dt); Hs.step(dt); BW.step(dt);
+
+    for (const it of items) it.x.step(dt);
+
+    // 减少动态效果：形状不伸缩，只整体淡入淡出。
+    if (reduced.matches) {
+      const step = dt / (FADE_MS / 1000);
+      fade = open ? Math.min(1, fade + step) : Math.max(0, fade - step);
+    } else {
+      fade = clamp01((W.x - CLOSED.w) / 14);
+    }
+
+    paint();
+    const settled = W.still && Hs.still && BW.still && items.every(i => i.x.still) && !closeAt && fade === (open ? 1 : 0);
+
+    if (!open && settled) {
+      W.snap(CLOSED.w);
+      Hs.snap(CLOSED.h);
+      root.hidden = true;
+      clip.replaceChildren();
+      items = [];
+      bub.replaceChildren();
+      bubbleKey = "";
+
+      return;
+    }
+
+    if (!settled || items.some(i => i.leaving)) raf = requestAnimationFrame(frame);
+  }
+
+  function paint(): void {
+    const w = W.x;
+    const h = Hs.x;
+    const isDark = dark.matches;
+    const k = clamp01((w - 20) / 120);
+    mainShape!.setAttribute("d", shapePath(X, w, h, MID, 9));
+    mainHair!.setAttribute("d", hairPath(X, w, h, MID));
+    root.style.opacity = reduced.matches ? String(fade) : "";
+    mainShape!.style.opacity = mainHair!.style.opacity = String(reduced.matches ? 1 : fade);
+
+    const shc = isDark ? "#000" : "oklch(32% 0.06 285)";
+    const so = isDark ? [0.3, 0.22, 0.2] : [0.07, 0.07, 0.09];
+    shadows.forEach((s, i) => { s.setAttribute("flood-color", shc); s.setAttribute("flood-opacity", String(so[i]! * k)); });
+    const hairColor = isDark ? "#fff" : "#000";
+    const ho = isDark ? [0.18, 0.05, 0.08] : [0.09, 0.03, 0.05];
+    hairStops.forEach((s, i) => { s.setAttribute("stop-color", hairColor); s.setAttribute("stop-opacity", String(ho[i]! * k)); });
+
+    Object.assign(clip.style, { left: `${X - w}px`, top: `${MID - h / 2}px`, width: `${Math.max(0, w - 1)}px`, height: `${h}px` });
+
+    for (const it of items) it.el.style.right = `${it.x.x}px`;
+
+    const bw = BW.x;
+    const btop = MID + H / 2 + BUBBLE_GAP;
+    const bmid = btop + BUBBLE_H / 2;
+    bubShape!.setAttribute("d", bw > 0.5 ? shapePath(X, bw, BUBBLE_H, bmid, 7) : "");
+    bubHair!.setAttribute("d", bw > 0.5 ? hairPath(X, bw, BUBBLE_H, bmid) : "");
+    bubShape!.style.opacity = bubHair!.style.opacity = String(clamp01(bw / 20));
+    Object.assign(bub.style, { left: `${X - bw}px`, top: `${btop}px`, width: `${Math.max(0, bw - 1)}px`, overflow: "hidden", visibility: bw > 0.5 ? "visible" : "hidden" });
+    list.style.top = `${btop + BUBBLE_H + 8}px`;
+  }
+
+  // 窗口宽度变了，画布仍贴右边；只需要重画一帧。系统深浅色切换时阴影和细边跟着换。
+  dark.addEventListener("change", () => { if (open) paint(); });
+
+  function rectOf(el: Element): { x: number; y: number; width: number; height: number } {
+    const r = el.getBoundingClientRect();
+
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }
+
+  return {
+    render,
+    /** 页面卸载或换世界：动画停掉、节点拿走。 */
+    destroy(): void {
+      if (raf !== undefined) cancelAnimationFrame(raf);
+      raf = undefined;
+      host.remove();
+    },
+    attach,
+    state(): EdgeTabState {
+      const end = view?.end;
+      const shownRect = open && !root.hidden ? rectOf(clip) : null;
+
+      return {
+        shown: open,
+        tone: open ? view?.tone ?? null : null,
+        a: open ? view?.a ?? "" : "",
+        b: open ? view?.b ?? "" : "",
+        end: !open || !end ? null : typeof end === "string" ? end : end.label,
+        endEnabled: Boolean(open && end && (typeof end === "string" || end.enabled)),
+        width: W.to,
+        rect: shownRect,
+        panel: getComputedStyle(root).getPropertyValue("--panel").trim(),
+        bubble: open && others.length ? { count: others.length, letter: bub.querySelector(".av")?.textContent ?? "", rect: rectOf(bub) } : null,
+        list: { open: listOpen, rows: listOpen ? Array.from(list.querySelectorAll<HTMLElement>("button.row"), (row, i) => ({ name: others[i]?.name ?? "", title: others[i]?.title ?? "", local: Boolean(others[i]?.local), rect: rectOf(row) })) : [] },
+        button: open ? (b => b ? rectOf(b) : null)(clip.querySelector("button")) : null,
+      };
+    },
+    /** 验收脚本用：按部位点一下（和真人点同一个处理函数）。 */
+    click(part: "capsule" | "stop" | "action" | "bubble" | number): boolean {
+      if (!open) return false;
+
+      if (part === "capsule") { clip.click(); return true; }
+
+      if (part === "bubble") { if (!others.length) return false; bub.click(); return true; }
+
+      if (typeof part === "number") {
+        const row = list.querySelectorAll<HTMLButtonElement>("button.row")[part];
+        row?.click();
+
+        return Boolean(row);
+      }
+      const btn = clip.querySelector<HTMLButtonElement>(part === "stop" ? "button.stop" : "button.act");
+
+      if (!btn || btn.disabled) return false;
+      btn.click();
+
+      return true;
+    },
+  };
+}
+
+export type EdgeTab = ReturnType<typeof createEdgeTab>;
