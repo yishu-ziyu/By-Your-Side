@@ -643,6 +643,7 @@ try {
   // 选「深入」的做法与 thinking-chip.mts 的 pick("深入") 相同。
   if (deep) {
     const chipText = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
+    await rp.click(panel, "#input");
     await until(async () => (await chipText()) || undefined, 60_000, "输入框旁出现模型与思考强度");
     await rp.click(panel, "#think-chip");
     await sleep(350);

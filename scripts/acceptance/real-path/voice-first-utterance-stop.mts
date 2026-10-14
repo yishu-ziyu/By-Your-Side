@@ -33,6 +33,7 @@ try {
       }return listener.call(this,event);},...rest);};return true;})()`);
   await rp.evaluate(panel,`(()=>{const get=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async(...args)=>{const stream=await get(...args);window.__micAt=Date.now();return stream;};return true;})()`);
   const requestsBefore=model.requests.length;
+  await rp.click(panel,"#input");
   await rp.click(panel,'.voice-start');
   await until(async()=>await rp!.evaluate(off,'window.__readyGates[0]?.receivedAt'),15000,'real ready received but held');
   const micAt=await rp.evaluate(panel,'window.__micAt') as number;
