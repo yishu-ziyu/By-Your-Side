@@ -1066,6 +1066,7 @@ function resetConversationRender(): void {
   leadAnswerTurnClosed = false;
   leadToolUsed = false;
   goalNote = null;
+  goalStep = null;
   historyPrimed = false;
   currentDraftReady = false;
   currentCitationSource = null;
@@ -2646,6 +2647,8 @@ let leadToolUsed = false;
 /** 目标核对判「没做完」、宿主马上接着做时记下还差的事；下一轮开始时写进过程行。 */
 /** 核对判继续：下一轮过程行第二行要写的那句（checkNoteForUser）。 */
 let goalNote: string | null = null;
+/** 核对判继续、回答没出（交付前对清单）：接着做的是第几件、一共几件。 */
+let goalStep: { at: number; of: number } | null = null;
 
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
@@ -5044,15 +5047,20 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 回答之后宿主自己接着做：标题说明为什么又动起来，第二行写核对发现了什么，直到这一轮结束（#105）。
       if (goalNote !== null) {
         const run = ensureRun();
-        setRunTitle(run, "还没做完，接着做", true, "think");
+        setRunTitle(run, goalStep ? `还在做第 ${goalStep.at} 件（共 ${goalStep.of} 件）` : "还没做完，接着做", true, "think");
         run.checkNote = goalNote;
         renderRunMeta(run);
         goalNote = null;
+        goalStep = null;
       }
 
       break;
     case "goal_check": {
       goalNote = ev.status === "continue" ? checkNoteForUser(ev.finding, ev.remaining) : null;
+      goalStep = ev.status === "continue" ? ev.step ?? null : null;
+
+      // 用户说了不止一件事：回答扣到核对之后，这几秒过程行写在对清单，不让屏幕停着。
+      if (ev.status === "checking" && ev.gate && currentRun) setRunTitle(currentRun, "正在对一遍还有没有没做的", true, "think");
       // 核对结论写在这一轮的过程行上（核对中… → 已核对页面 / 有 N 步没做成）。checking 在 agent_end 之前到，结论在收尾之后到。
       const checked = currentRun ?? lastRun;
 
@@ -5064,7 +5072,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       // 核对判继续：这份回答不算数了，收进它那一轮的过程（只读的一轮不留过程，直接拿掉）；核对发现写在续做那一轮的过程行上。
       // 续做的过程排在这一刻的对话末尾之后：留一个看不见的定位点，代替原来那行「核对发现」。
-      if (ev.status === "continue") {
+      // 回答没出过（交付前对清单扣下了）：没有要收起的回答，这一轮接着在同一块过程里做。
+      if (ev.status === "continue" && !ev.held) {
         supersedeAnswer(checked?.answer ? checked : null);
         const anchor = document.createElement("div");
         anchor.className = "redo-anchor";
@@ -6368,7 +6377,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   const queued = queuedSends.some((e) => e.kind === "client" && e.msg.type === "task_action" && e.msg.request.requestId === request.requestId);
   unconfirmedSend = { text, ask: quick ? null : pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
 
-  // 本地反馈：快照这次真正送出的材料；回执 accepted 之前只显示「发送中」
+  // 本地反馈：快照这次真正送出的材料；回执过了安静期（SENDING_QUIET_MS）还没 accepted，才显示「发送中」
   taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
 
   // 没有选区引用时，后台会附当前页面上下文：把这一页也补进材料，界面与实际上行一致。

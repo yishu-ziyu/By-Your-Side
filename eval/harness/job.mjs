@@ -396,12 +396,15 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     const pendingInterjections = (task.interject ?? []).map((x) => ({ ...x }));
     rec.interjections = [];
 
+    // The interjection counts from the moment the user sends it (Enter, or the stop click), not from when typing began:
+    // the readout measures the product, and typing time is the harness's, kept apart as typed_ms.
     const interject = async (x) => {
-      const at = Date.now();
+      const began = Date.now();
+      let at;
 
-      if (x.stop) await rp.click(ps, "#send-btn"); // 运行中发送键就是停止键
-      else { await rp.click(ps, "#input"); await rp.typeText(ps, x.text); await rp.pressEnter(ps); }
-      rec.interjections.push({ kind: x.kind ?? (x.stop ? "stop" : "text"), text: x.text ?? null, at: t(at), at_ms: at });
+      if (x.stop) { at = Date.now(); await rp.click(ps, "#send-btn"); } // 运行中发送键就是停止键
+      else { await rp.click(ps, "#input"); await rp.typeText(ps, x.text); at = Date.now(); await rp.pressEnter(ps); }
+      rec.interjections.push({ kind: x.kind ?? (x.stop ? "stop" : "text"), text: x.text ?? null, at: t(at), at_ms: at, typed_ms: at - began });
     };
 
     // --- watch panel DOM + extension diagnostics ---

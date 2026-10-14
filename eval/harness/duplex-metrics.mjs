@@ -27,6 +27,13 @@ export function measure(task, result) {
     const after = log.filter((e) => e.t >= at);
     // 反映：每项要的值都出现过的那一刻；有一项始终没出现就是 null
     const hits = (expect.reflect ?? []).map((m) => after.find((e) => matches(e, m))?.t ?? null);
+    // 撤掉 / 改方向（expect.undo）：插话前或已发出时写上页面的旧东西，要等它被撤掉才算改过来——
+    // 加进清单的要移除，写进栏里的要改成别的值。没有要撤的，这一项不计。
+    if (expect.undo) {
+      const undoes = (w) => (e) => e.t > w.t && (w.type === "cart_add" ? e.type === "cart_remove" && e.name === w.name : (e.type === "input" || e.type === "change") && e.name === w.name && e.value !== w.value);
+      const onPage = (expect.stale ?? []).flatMap((m) => log.filter((e) => e.t < at + IN_FLIGHT_MS && matches(e, m)));
+      for (const w of onPage) hits.push(after.find(undoes(w))?.t ?? null);
+    }
     const reflect_s = hits.length && hits.every((h) => h != null) ? (Math.max(...hits) - at) / 1000 : null;
     const stale = (expect.stale ?? []).flatMap((m) => after.filter((e) => matches(e, m)));
     const isStop = !!spec.stop || spec.kind === "stop_text";
