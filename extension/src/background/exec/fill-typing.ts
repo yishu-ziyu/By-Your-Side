@@ -20,7 +20,9 @@ const READS = 5;
 const READ_GAP_MS = 50;
 
 /** 键盘能写的框：聚焦、全选，返回原内容的长度；其余（日期、颜色、下拉框、不可写）返回 null，走旧写法。自包含。 */
-function prepareInPage(this: unknown, target: string | null): { beforeLen: number } | null {
+/** 原内容的指纹（32 位），只用来判断“没变”，值本身不出页面。自包含：页面函数里各写一份。 */
+function prepareInPage(this: unknown, target: string | null): { beforeLen: number; beforeHash: number } | null {
+  const hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; };
   // 按名字找的目标（text=、loc=role:）由旧写法的 dom.fill 核对身份（页面重画后名字可能挪到别的元素上），键盘这一路不接。
   if (!(this instanceof Element) && target && /^(text=|loc=role:)/.test(target)) return null;
   const el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
@@ -49,7 +51,7 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
 
     try { field.select(); } catch { field.ownerDocument.execCommand("selectAll"); }
 
-    return { beforeLen: field.value.length };
+    return { beforeLen: field.value.length, beforeHash: hash(field.value) };
   }
 
   if (!(el as HTMLElement).isContentEditable) return null;
@@ -65,11 +67,14 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
   selection?.removeAllRanges();
   selection?.addRange(range);
 
-  return { beforeLen: host.innerText.replace(/\n$/, "").length };
+  const before = host.innerText.replace(/\n$/, "");
+
+  return { beforeLen: before.length, beforeHash: hash(before) };
 }
 
 /** 写完读一次，只交回分级、不交回值（密码这类栏的值不出页面）。自包含。 */
-function gradeInPage(this: unknown, target: string | null, requested: string, beforeLen: number): TypingGrade | null {
+function gradeInPage(this: unknown, target: string | null, requested: string, beforeLen: number, beforeHash: number): TypingGrade | null {
+  const hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; };
   let el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
 
   if (!el) return null;
@@ -86,7 +91,8 @@ function gradeInPage(this: unknown, target: string | null, requested: string, be
 
   if (requested && now.endsWith(requested) && now.length > requested.length) return "appended";
 
-  if (now.length === beforeLen && (requested ? !now.includes(requested) : beforeLen > 0)) return "unchanged";
+  // 和动手前一模一样（按指纹比）：原值里恰好含着要填的字（原值 foobar、要填 foo）也认得出没变。
+  if (beforeLen >= 0 && now.length === beforeLen && hash(now) === beforeHash) return "unchanged";
 
   return "transformed";
 }
@@ -103,12 +109,12 @@ function clickPointInPage(this: unknown, target: string | null): [number, number
   return hit && (hit === el || el.contains(hit)) ? [Math.round(x), Math.round(y)] : null;
 }
 
-async function grade(run: PageRun, value: string, beforeLen: number): Promise<TypingGrade | null> {
+async function grade(run: PageRun, value: string, beforeLen: number, beforeHash: number): Promise<TypingGrade | null> {
   let last: TypingGrade | null | undefined;
 
   for (let i = 0; i < READS; i++) {
     await new Promise(resolve => setTimeout(resolve, READ_GAP_MS));
-    const now = await run(gradeInPage, [value, beforeLen]).catch(() => null) ?? null;
+    const now = await run(gradeInPage, [value, beforeLen, beforeHash]).catch(() => null) ?? null;
 
     if (now !== null && now === last) return now;
     last = now;
@@ -119,7 +125,7 @@ async function grade(run: PageRun, value: string, beforeLen: number): Promise<Ty
 
 const written = (g: TypingGrade | null) => g === "exact" || g === "equivalent" || g === "transformed";
 
-async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<{ grade: TypingGrade | null; beforeLen: number } | "skip"> {
+async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<{ grade: TypingGrade | null; beforeLen: number; beforeHash: number } | "skip"> {
   const prepared = await run(prepareInPage, []);
 
   if (!prepared) return "skip";
@@ -133,7 +139,7 @@ async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guar
   }
   guard?.noteEffect?.();
 
-  return { grade: await grade(run, value, prepared.beforeLen), beforeLen: prepared.beforeLen };
+  return { grade: await grade(run, value, prepared.beforeLen, prepared.beforeHash), beforeLen: prepared.beforeLen, beforeHash: prepared.beforeHash };
 }
 
 /**
@@ -142,7 +148,7 @@ async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guar
  * - { grade }：写进去了；
  * - { grade, fallback }：两次键盘输入都没写进去，调用方用旧写法再写一次，再用 regrade 判结果。
  */
-export async function typeIntoField(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<"skip" | { grade: TypingGrade | null; fallback?: { beforeLen: number } }> {
+export async function typeIntoField(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<"skip" | { grade: TypingGrade | null; fallback?: { beforeLen: number; beforeHash: number } }> {
   const first = await typeOnce(tabId, run, value, guard);
 
   if (first === "skip") return "skip";
@@ -160,12 +166,12 @@ export async function typeIntoField(tabId: number, run: PageRun, value: string, 
     if (second !== "skip" && written(second.grade)) return { grade: second.grade };
   }
 
-  return { grade: first.grade, fallback: { beforeLen: first.beforeLen } };
+  return { grade: first.grade, fallback: { beforeLen: first.beforeLen, beforeHash: first.beforeHash } };
 }
 
 /** 旧写法写完以后再判一次；beforeLen 是动手前原内容的长度，网站把值改回去时才判得出“没变”。 */
-export async function regrade(run: PageRun, value: string, beforeLen: number): Promise<TypingGrade | null> {
-  return await grade(run, value, beforeLen);
+export async function regrade(run: PageRun, value: string, before: { beforeLen: number; beforeHash: number }): Promise<TypingGrade | null> {
+  return await grade(run, value, before.beforeLen, before.beforeHash);
 }
 
 export { written as typingWritten };
@@ -191,7 +197,10 @@ export function submitProbeInPage(this: unknown, target: string | null): { refus
   while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
 
   if (active !== el) return { refused: "焦点已经不在这个框上，回车会落到别处：已填好，没有回车。" };
-  const name = [el.getAttribute("aria-label"), el.getAttribute("placeholder"), el.getAttribute("name"), el.id, el.getAttribute("title")].join(" ");
+  // 框的名字按读屏的算法取：自己的属性、aria-labelledby 指向的字、关联的 <label>（“回复”常写在 label 上）。
+  const by = (el.getAttribute("aria-labelledby") ?? "").split(/\s+/).filter(Boolean).map(id => el.ownerDocument.getElementById(id)?.textContent ?? "");
+  const fieldLabels = "labels" in el ? [...((el as HTMLInputElement).labels ?? [])].map(label => label.textContent ?? "") : [];
+  const name = [el.getAttribute("aria-label"), ...by, ...fieldLabels, el.getAttribute("placeholder"), el.getAttribute("name"), el.id, el.getAttribute("title")].join(" ");
 
   if (/消息|留言|回复|评论|聊天|弹幕|message|reply|comment|chat/i.test(name)) return { refused: "这个框像是发消息的，回车可能直接发出去：已填好，没有回车。要发送请点「发送」，会先问用户。" };
   let region: Element | null = el.closest("form");
@@ -203,15 +212,20 @@ export function submitProbeInPage(this: unknown, target: string | null): { refus
   }
 
   if (!region || region === el.ownerDocument.body || region === el.ownerDocument.documentElement) return { labels: [] };
-  const labels = new Set<string>();
+  // 整个区域都看，不按节点数截断（大结账页里「支付」常在几百个节点之后）；只交回可能是发送、付款的名字，由后台按同一套规则判。
+  const maybe = /发送|send|支付|付款|购买|下单|结账|pay|buy|order|checkout|purchase|[¥￥$€£]/i;
+  const found = new Set<string>();
 
-  for (const node of [...region.querySelectorAll("*")].slice(0, 400)) {
+  for (const node of region.querySelectorAll("*")) {
     if (node === el) continue;
     const own = node.tagName === "INPUT" ? (node as HTMLInputElement).value : (node.textContent ?? "");
-    const text = (node.getAttribute("aria-label") || node.getAttribute("title") || own).trim().replace(/\s+/g, " ");
 
-    if (text && text.length <= 24) labels.add(text);
+    for (const raw of [node.getAttribute("aria-label"), node.getAttribute("title"), own]) {
+      const text = (raw ?? "").trim().replace(/\s+/g, " ");
+
+      if (text && text.length <= 40 && maybe.test(text)) found.add(text);
+    }
   }
 
-  return { labels: [...labels].slice(0, 80) };
+  return { labels: [...found] };
 }

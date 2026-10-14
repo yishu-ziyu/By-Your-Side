@@ -74,6 +74,8 @@ function submitNote(submit: ToolContract["fill"]["data"]["submit"]): string {
 
   if ("refused" in submit) return `\nDid not press Enter: ${submit.refused}`;
 
+  if ("uncertain" in submit) return `\nEnter may have reached the page; the result is unknown: ${submit.uncertain}`;
+
   if (submit.dialog) return `\n${submit.pressed ? "Pressed Enter" : "Enter not dispatched"}; the page opened a native ${submit.dialog.type}: ${submit.dialog.message}. Use accept_dialog or dismiss_dialog as the user asked.`;
 
   return `\nPressed Enter.${formatEffectReport(submit.pressed && submit.effect?.changed ? submit.effect : undefined, "key press")}${appearedNote(submit.pressed ? submit.appeared : undefined)}`;
