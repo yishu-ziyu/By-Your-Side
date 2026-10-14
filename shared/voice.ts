@@ -157,6 +157,8 @@ export interface TaskProgressSnapshot {
   goalPage?: { title: string; url: string };
   /** 这一任务在跑（或暂停）时用户插话加进来的要求条数；空闲后「接着原任务」不算。交付前对清单据此判断用户说了不止一件事。 */
   interjections?: number;
+  /** 用户插话时收起的已完成结果（宿主不再逐项记账，腾出账本给接下来的动作）：总数和最近几项的说明。 */
+  foldedResults?: { count: number; recent: string[] };
 }
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}

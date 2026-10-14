@@ -42,6 +42,17 @@ export class TaskResultBook {
   clear(): void { this.items = []; }
 
   /**
+   * 收起已完成的结果：做完的项，连同被它们取代的「结果未知」项（单留下会被当成没做成）。
+   * 还没做、没做成、结果未知的项都留着。返回收起的项的说明。
+   */
+  fold(): string[] {
+    const settled = this.items.filter(item => item.status === "satisfied" || isSupersededUnknown(item, this.items));
+    this.items = this.items.filter(item => !settled.includes(item));
+
+    return settled.filter(item => item.status === "satisfied").map(item => item.description);
+  }
+
+  /**
    * 用户接管后交还：接管期间页面归用户，接管前没确认的写入（未知，或执行到一半被打断）不再有意义。
    * 从账上撤掉，交还时的页面就是新的起点；返回撤掉的项供诊断记录。
    */

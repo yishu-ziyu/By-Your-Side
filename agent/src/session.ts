@@ -1765,7 +1765,8 @@ return;}
 
     const checkpoint = {
       goalPlan:current?.goalPlan,
-      confirmed: descriptions("satisfied", 8),
+      // 用户插话时收起的已完成结果也算已确认：重启后不能把它们再做一遍。
+      confirmed: [...(snapshot.foldedResults?.recent ?? []).map(text => text.slice(0, 160)), ...descriptions("satisfied", 8)].slice(-8),
       unknown: results.filter(item => item.status === "unknown").slice(0, 8).map(item => ({
         id: item.id,
         description: item.description.slice(0, 160),
