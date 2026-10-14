@@ -56,7 +56,7 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
@@ -521,6 +521,54 @@ function emitHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): vo
 /** 读页面的工具：光标显示「正在读这个页面」。 */
 const READ_TOOLS = new Set(["snapshot", "page_text", "read_element", "read_elements", "screenshot", "observe_page", "network"]);
 
+/** 整页一次性拿走的读：页面这边不知道它在看哪块，注视区只扫一遍视口。 */
+const WHOLE_PAGE_READS = new Set(["snapshot", "page_text", "screenshot", "observe_page"]);
+
+/** 每个成员的注视区画在哪个标签页，读完变淡、一轮结束收起时要找回去。 */
+const gazeTabs = new Map<string, number>();
+/** 同一成员的注视指令排队：读得很快时，"读完变淡"不能跑到"开始读"前面。 */
+const gazeQueue = new Map<string, Promise<void>>();
+
+function queueGaze(k: string, step: () => Promise<void>): void {
+  const next = (gazeQueue.get(k) ?? Promise.resolve()).then(step).catch(() => {});
+  gazeQueue.set(k, next);
+}
+
+function gazeForRead(sid: string, name: string, params: Record<string, unknown> | undefined): void {
+  const k = key(sid);
+  const cid = parseExecutionKey(k).sessionId;
+  let read: Parameters<typeof cursorGaze>[2] | null = null;
+
+  if (name === "read_element" && typeof params?.target === "string") read = { kind: "element", target: params.target };
+  else if (name === "read_elements" && typeof params?.selector === "string") read = { kind: "elements", selector: params.selector };
+  else if (WHOLE_PAGE_READS.has(name)) read = { kind: "page" };
+
+  if (!read) return;
+  const view = read;
+  queueGaze(k, async () => {
+    const tabId = await statusTabId(sid, params?.tabId);
+
+    if (tabId == null) return;
+    const previous = gazeTabs.get(k);
+
+    if (previous != null && previous !== tabId) await cursorGaze(previous, cid, { kind: "off" });
+    gazeTabs.set(k, tabId);
+    await cursorGaze(tabId, cid, view);
+  });
+}
+
+function settleGaze(sid: string, kind: "rest" | "off"): void {
+  const k = key(sid);
+  queueGaze(k, async () => {
+    const tabId = gazeTabs.get(k);
+
+    if (tabId == null) return;
+
+    if (kind === "off") gazeTabs.delete(k);
+    await cursorGaze(tabId, parseExecutionKey(k).sessionId, { kind });
+  });
+}
+
 async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
   await showCursorStatus({
     key: key(sid),
@@ -551,6 +599,7 @@ async function applyCursorStatusEvent(
       if (READ_TOOLS.has(name) || isWriteTool(name)) void statusTabId(sid, event.params?.tabId).then(tabId => glowPage(key(sid), tabId));
 
       if (READ_TOOLS.has(name)) {
+        gazeForRead(sid, name, event.params as Record<string, unknown> | undefined);
         await setCursorStatus(sid, "reading", event.params?.tabId);
 
         return;
@@ -564,15 +613,18 @@ async function applyCursorStatusEvent(
     }
 
     case "tool_end":
+      settleGaze(sid, "rest");
       await setCursorStatus(sid, "waiting");
 
       return;
     case "agent_end":
+      settleGaze(sid, "off");
       void dimPage(key(sid));
       await setCursorStatus(sid, "done");
 
       return;
     case "error":
+      settleGaze(sid, "off");
       void dimPage(key(sid));
       await setCursorStatus(sid, "failed");
 
