@@ -429,8 +429,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         font: 600 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
         color: var(--c, #2d4a86);
       }
-      /* 注视区（10-14）：读页面时一块很淡的成员色区域跟着它读的位置走；
-         整页读从上往下扫一遍，读具体元素就落到那个元素上，要动手时收拢到目标再交给箭头。 */
+      /* 注视区：只画真实发生的读。整页读扫一遍视口，读具体元素落到元素上，动手前收拢到目标再交给箭头。 */
       .gaze {
         position: absolute; box-sizing: border-box; pointer-events: none; border-radius: 10px;
         background: color-mix(in srgb, var(--c, #2d4a86) 8%, transparent);
