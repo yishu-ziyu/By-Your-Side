@@ -65,7 +65,7 @@ function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | 
   if (!appeared.text) return "";
   const head = unattributed ? "Also new on the page since you last read it, not necessarily from this action" : "New on the page since you last read it";
 
-  return `\n${head} (refs are usable directly; no snapshot needed for these):\n${wrapPageContent(redactCredentialText(appeared.text))}`;
+  return `\n${head} (refs are usable directly; no snapshot needed for these; lines you already saw that only moved are not listed):\n${wrapPageContent(redactCredentialText(appeared.text))}`;
 }
 
 /**
