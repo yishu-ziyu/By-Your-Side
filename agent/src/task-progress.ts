@@ -118,6 +118,7 @@ export class TaskProgress {
   }
   private startUrl: string | null = null;
   private goalPage: { title: string; url: string } | null = null;
+  private interjections = 0;
   /** 最近一次目标核对；新任务开始、助手重新开跑时清掉，等这一轮结束的核对。 */
   private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
   /** 核对刚判「接着做」、宿主马上发起续做：下一次 agent_start 是它，保留核对的「还差」；用户的话或别的开始不保留。 */
@@ -162,6 +163,8 @@ export class TaskProgress {
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
     const clean=String(sanitizeTrace(text)).trim();
     const requirements=clean&&prior.requirements.at(-1)!==clean?[...prior.requirements,clean]:[...prior.requirements];
+    const state=this.snapshot().state;
+    const interjected=requirements.length>prior.requirements.length&&(state==='running'||state==='paused');
     const attachmentKeys=[...new Set([...prior.attachmentKeys,...(attachments??[]).map(attachmentRecoveryKey)])];
 
     if(requirements.length>64||requirements.some(t=>t.length>12000)||requirements.reduce((n,t)=>n+t.length,0)>RECOVERY_INPUT_MAX||attachmentKeys.length>16)throw new Error('原任务补充内容已达到保留上限，这条修改未接收；请先交付已有结果或另开任务。');
@@ -175,10 +178,14 @@ export class TaskProgress {
     this.recoveryInput=recorded;
     this.goals.require(requirements);
 
+    if(interjected)this.interjections+=1;
+
     // Only the caller that just registered this input can revoke it before acceptance.
     // Preserve a fresh page observation, and never roll back a later requirement or another run.
     return ()=>{
       if(this.runId!==runId||this.recoveryInput!==recorded)return;
+
+      if(interjected)this.interjections-=1;
       this.recoveryInput={...recorded,requirements:prior.requirements,attachmentKeys:prior.attachmentKeys,materials:prior.materials};
       this.goals.restore(priorGoals, false);
     };
@@ -197,6 +204,7 @@ export class TaskProgress {
     this.runId = snapshot.runId ?? null;
     this.goalCheck = snapshot.goalCheck ? { ...snapshot.goalCheck } : null;
     this.goalPage = snapshot.goalPage ? { ...snapshot.goalPage } : null;
+    this.interjections = snapshot.interjections ?? 0;
     this.aborted = snapshot.state === "aborted";
     this.interrupted = !!this.runId && !!this.goal && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;
@@ -271,6 +279,7 @@ return;}
     this.interruptionReason=undefined;
     this.lifecycleFrozen=false;
     this.recoveryInput={requirements:[],attachmentKeys:[]};
+    this.interjections=0;
     this.goals.clear();
     this.unresolvedEffect=false;
     this.executionAuditComplete=true;
@@ -553,6 +562,8 @@ if(page)this.recoveryInput.page=page;
     if (this.goalCheck) snapshot.goalCheck = { ...this.goalCheck };
 
     if (this.goalPage) snapshot.goalPage = { ...this.goalPage };
+
+    if (this.interjections) snapshot.interjections = this.interjections;
 
     if (snapshot.goalPlan) {
       snapshot.resultState = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results!)) ? 'unknown' : goalsSatisfied(snapshot.goalPlan) ? 'satisfied' : 'pending';
