@@ -1,6 +1,6 @@
 /**
- * 光标状态层（background 侧）：把一轮任务的「在等 / 在读 / 完成 / 失败」挂到对应标签页的光标名牌上，
- * 并在它于别的标签页干活、用户看的是当前页时，给当前页右上角挂一个可点胶囊。
+ * 光标状态层（background 侧）：把一轮任务的「在等 / 在读 / 完成 / 失败」画到对应标签页右边缘的胶囊上，
+ * 并在它于别的标签页干活、用户看的是当前页时，让当前页右边缘的胶囊指向那一页。
  *
  * 分工：文案与呈现属于页面侧（content-cursor.js），这里只决定状态、目标标签页和生命周期。
  * 状态不是执行证据：画不上不改变任务判定，执行结果仍以 tool_result 为准。
@@ -77,7 +77,7 @@ function renderStatus(tabId: number, key: string): Promise<void> {
   return next;
 }
 
-type PillView = { entry: LivingStatus; title: string };
+type PillView = { entry: LivingStatus; title: string; icon?: string };
 
 const pillOwners = new Map<number, Map<string, PillView>>();
 
@@ -99,7 +99,7 @@ function renderPill(tabId: number): Promise<void> {
         const { entry, title } = view;
         await callDom(tabId, (id: string, value: CrossPageView) => {
           window.__sideagent?.cursor?.for(id)?.showCrossPage?.(value);
-        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].flatMap(v => isCurrentEntry(v.entry) && v.entry.tabId != null ? [{ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId! }] : []) }]);
+        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].flatMap(v => isCurrentEntry(v.entry) && v.entry.tabId != null ? [{ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId!, ...(v.icon ? { icon: v.icon } : {}) }] : []) }]);
       } else {
         await callDom(tabId, () => { window.__sideagent?.cursor?.hideCrossPage?.(); }, []);
       }
@@ -166,9 +166,13 @@ async function syncPill(entry: LivingStatus): Promise<void> {
   }
 
   let title = "另一个页面";
+  let icon: string | undefined;
 
   try {
-    title = (await chrome.tabs.get(entry.tabId)).title?.trim() || title;
+    const tab = await chrome.tabs.get(entry.tabId);
+    title = tab.title?.trim() || title;
+    // 只收网页自己的图标地址；chrome:// 和 data: 在别的网页里画不出来。
+    if (tab.favIconUrl && /^https?:/.test(tab.favIconUrl)) icon = tab.favIconUrl;
   } catch {
     /* 页面已被关掉，胶囊仍指向那个标签 */
   }
@@ -184,7 +188,7 @@ async function syncPill(entry: LivingStatus): Promise<void> {
   entry.pillTabId = active;
   const owners = pillOwners.get(active) ?? new Map<string, PillView>();
   owners.delete(entry.key);
-  owners.set(entry.key, { entry, title });
+  owners.set(entry.key, icon ? { entry, title, icon } : { entry, title });
   pillOwners.set(active, owners);
   await renderPill(active);
 }
@@ -203,7 +207,7 @@ async function forgetTab(tabId: number): Promise<void> {
   }
 }
 
-/** 任务状态落到光标名牌；同时同步右上角跨页胶囊。key 是执行键（会话 + 成员）。 */
+/** 任务状态落到页面右边缘的胶囊；同时同步别页的跨页指向。key 是执行键（会话 + 成员）。 */
 export async function showCursorStatus(opts: {
   key: string;
   state: CursorStatusState;

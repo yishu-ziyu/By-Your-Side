@@ -26,8 +26,7 @@ import { isMarkActionId, resolveImplicitMarkActions } from "../shared/mark-actio
 import { markLabelPlacement } from "../shared/mark-label.js";
 import type { MarkAction } from "../../../shared/protocol.js";
 import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
-import { mountGrok, mountKenney } from "../shared/grok-bot.js";
-import { displayNameFor, personFor } from "../../../shared/cast.js";
+import { displayNameFor } from "../../../shared/cast.js";
 import { cursorLabelPosition, type CursorLabelPlacement } from "../shared/cursor-label.js";
 import {
   CURSOR_ARROW_PATH,
@@ -50,7 +49,6 @@ import {
   HIGHLIGHT_PAD,
   MARK_PAD,
   OVERLAY_ATTR,
-  OVERLAY_KIND_CONTROL,
   OVERLAY_KIND_CURSOR,
   OVERLAY_KIND_MARKS,
   highlightBounds,
@@ -58,7 +56,9 @@ import {
   viewportRectToDocumentBox,
 } from "../shared/overlay.js";
 import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
-import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type FeedbackPillView } from "../shared/feedback-pill.js";
+import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
+import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, isEdgePill, type EdgePill } from "../shared/edge-pill.js";
+import { createEdgeTab, type EdgeTab, type EdgeTabOther, type EdgeTabView } from "./edge-tab.js";
 import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
 (function () {
@@ -98,7 +98,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     replayTimer?: ReturnType<typeof setTimeout>;
     replayGen?: number;
     highlightEl?: HTMLDivElement;
-    action?: { id: string; kind: "click" | "fill" | "hover"; phase: "active" | "done" | "failed" | "unknown"; anchor?: Element; rect?: SideAgentRect; name: string; arrived?: boolean };
+    action?: { id: string; kind: "click" | "fill" | "hover"; phase: "active" | "done" | "failed" | "unknown"; anchor?: Element; rect?: SideAgentRect; name: string; arrived?: boolean; /** 开始或出结果的时刻，胶囊按它判断哪个更新。 */ at: number };
     labelSize?: { width: number; height: number };
     name: string;
     /** 状态层：一轮任务里"在等 / 在读 / 完成 / 失败"。动作名牌优先于它显示。 */
@@ -157,8 +157,6 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   let host: HTMLDivElement | null = null;
   let marksHost: HTMLDivElement | null = null;
-  let controlHost: HTMLDivElement | null = null;
-  let controlBar: HTMLDivElement | null = null;
   let shadow: ShadowRoot | null = null;
   let highlightLayer: HTMLDivElement | null = null;
   let inspectEl: HTMLDivElement | null = null;
@@ -311,14 +309,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         from { transform: scale(.5); opacity: .95; }
         to { transform: scale(4.2); opacity: 0; }
       }
-      /* 跨页入口：角色身份与页面位置，不遮挡阅读的大通知。 */
-      .xpage {
-        position: absolute; right: 20px; top: 20px; display: none;
-        max-width: min(280px, calc(100vw - 40px)); pointer-events: auto;
-        color: #141413; font: 400 12px/1.5 -apple-system, "PingFang SC", sans-serif;
-      }
-      .xpage.on { display: block; }
-      /* 状态统一在右上角；光标旁只挂「正在做的这一下」（#43），做完随光标回角落收起。 */
+      /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」（#43），做完随光标回角落收起。 */
       .cursor:not(.holding):not(.acting) .label { display: none !important; }
       /* 主助手停靠时可见；多个协作光标闲置时仍收起，以免挡住正文。 */
       .cursor.rest:not(.holding):not([data-primary="true"]) { visibility: hidden; }
@@ -327,52 +318,6 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       .hold-action.confirm { background:#141413; color:#fff; }
       .hold-action.cancel { background:#f0eee6; color:#514b42; }
       .hold-action:focus-visible { outline:2px solid #2d4a86; outline-offset:2px; }
-      .xdetail { color:inherit; font-size:11px; padding:8px; overflow-wrap:anywhere; }
-      .xdetail[hidden] { display:none; }
-      .xpage button {
-        font: inherit; color: inherit; cursor: pointer; display: flex; align-items: center;
-        gap: 7px; min-width: 0; width: 100%; box-sizing: border-box;
-        background: #ffffff; border: 1px solid #e3e1d9; border-radius: 20px;
-        padding: 6px 10px; box-shadow: 0 2px 8px #2928210d;
-      }
-      .xpage button:hover { background: #f0eee6; }
-      .xpage button:focus-visible { outline: 2px solid #2d4a86; outline-offset: 3px; }
-      .xface { display: inline-flex; width: 22px; height: 22px; flex-shrink: 0; align-items:center; justify-content:center; }
-      .xface svg { width: 22px; height: 22px; }
-      .xface .kn { position:relative; display:block; background:var(--body) center / contain no-repeat; }
-      .xface .kn i { position:absolute; left:18%; right:18%; top:24%; bottom:30%; background:var(--face) center / contain no-repeat; }
-      .xmain { white-space: nowrap; flex-shrink: 0; font-weight: 500; }
-      /* 右上角只管停：小光球、名字、一个「停下」。 */
-      .xbar {
-        display: inline-flex; align-items: center; gap: 8px; float: right;
-        background: #ffffff; border: 1px solid rgba(20,20,19,.08); border-radius: 999px;
-        padding: 5px 5px 5px 11px; box-shadow: 0 2px 8px rgba(20,20,19,.06);
-      }
-      .xbar .xmain { font-weight: 400; color: #5f5e58; }
-      .xpage .xbar .xstop {
-        width: auto; padding: 3px 12px; border-radius: 999px; box-shadow: none;
-        background: #ffffff; border: 1px solid rgba(20,20,19,.14); color: #141413; font: inherit;
-      }
-      .xpage .xbar .xstop:hover:not(:disabled) { background: #f0eee6; }
-      .xpage .xbar .xstop:disabled { color: #77756d; cursor: default; }
-      .xsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #5f5e58; }
-      .xarrow { margin-left: auto; }
-      .xlist { margin-top: 6px; padding: 5px; border: 1px solid #e3e1d9; border-radius: 12px; background: #ffffff; max-height: 240px; overflow-y:auto; }
-      .xlist {
-        transform-origin: top right;
-        opacity: 1; transform: scale(1);
-        transition: opacity 250ms cubic-bezier(.22,1,.36,1), transform 250ms cubic-bezier(.22,1,.36,1), display 250ms allow-discrete;
-      }
-      .xlist[hidden] { display:none; opacity:0; transform:scale(.97); transition-duration:150ms; }
-      @starting-style { .xlist:not([hidden]):not([data-restored]) { opacity:0; transform:scale(.97); } }
-      @media(prefers-reduced-motion:reduce) { .xlist { transition:none; } }
-      .xlist button { border:0; border-radius:7px; box-shadow:none; }
-      @media(prefers-color-scheme:dark) {
-        .xpage { color:#ece8df; }
-        .xpage button, .xlist { background:#282720; border-color:#49463d; }
-        .xpage button:hover { background:#343229; }
-        .xsub { color:#c0bbaf; }
-      }
       .highlight {
         position: absolute;
         box-sizing: border-box;
@@ -1814,163 +1759,16 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     if (inst.replayGen === gen) schedulePark(inst);
   }
 
-  function ensureControlDom(): HTMLDivElement {
-    if (controlBar) return controlBar;
-    controlHost = document.createElement("div");
-    controlHost.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CONTROL);
-    controlHost.style.cssText =
-      "position:fixed;inset:0;z-index:2147483645;pointer-events:none;";
-    const controlShadow = controlHost.attachShadow({ mode: "closed" });
-    const style = document.createElement("style");
-    style.textContent = `
-      /* 页面归你时：和「停下」同一个位置、同一种胶囊；光球变灰表示助手停着。 */
-      .bar {
-        position: absolute; right: 20px; top: 20px;
-        display: inline-flex; align-items: center; gap: 8px;
-        width: max-content; max-width: calc(100vw - 40px);
-        pointer-events: none;
-        background: #fff; color: #141413;
-        border: 1px solid rgba(20,20,19,.08); border-radius: 999px; padding: 5px 5px 5px 11px;
-        box-shadow: 0 2px 8px rgba(20,20,19,.06);
-        font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-        opacity: 0; transform: translateY(-6px);
-        transition: opacity 160ms ease, transform 160ms ease;
-      }
-      /* 隐藏后仍在原处：不能接住点击，否则用户和 Agent 都点不到底下的网页。 */
-      .bar.on { opacity: 1; transform: none; pointer-events: auto; }
-      .bar::before {
-        content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%;
-        background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%); filter: grayscale(1); opacity: .55;
-      }
-      .bar b { font-weight: 400; color: #5f5e58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-      .bar .sub { color: #7c828b; font: 500 11px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; white-space: nowrap; }
-      .bar .stack { display: flex; margin-left: 1px; }
-      .bar .avatar {
-        width: 16px; height: 16px; margin-left: -4px;
-        border: 2px solid #fff; border-radius: 50%;
-        display: grid; place-items: center; color: #fff;
-        font: 700 8px/1 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-        background: #56667d;
-      }
-      .bar .avatar:first-child { margin-left: 0; }
-      .bar button {
-        font: 400 12px/1.5 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-        border: 1px solid rgba(20,20,19,.14); border-radius: 999px; padding: 3px 12px;
-        background: #fff; color: #141413; cursor: pointer;
-      }
-      .bar button:hover:not(:disabled) { background: #f0eee6; }
-      .bar button:disabled { opacity: .55; cursor: default; }
-    `;
-    controlBar = document.createElement("div");
-    controlBar.className = "bar";
-    const status = document.createElement("b");
-    status.textContent = "现在归你";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = "交还";
-    btn.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-
-      if (btn.disabled) return;
-
-      try {
-        chrome.runtime.sendMessage({ type: "handback_click" }, () => {
-          void chrome.runtime.lastError;
-        });
-      } catch {
-        /* 无扩展运行时（自检页）忽略 */
-      }
-    });
-    controlBar.append(status, btn);
-    controlShadow.append(style, controlBar);
-    (document.documentElement ?? document.body).appendChild(controlHost);
-
-    return controlBar;
-  }
-
-  function applyControlView(view?: {
-    status?: string;
-    sub?: string;
-    ask?: string;
-    action?: string;
-    actionEnabled?: boolean;
-    members?: Array<{ id: string; initial: string; color: string }>;
-  }): void {
-    const bar = ensureControlDom();
-    const status = bar.querySelector("b");
-    const btn = bar.querySelector("button");
-    let sub = bar.querySelector<HTMLElement>(".sub");
-    let stack = bar.querySelector<HTMLElement>(".stack");
-
-    // 助手交给用户时，用户要做的事直接写在「现在归你」后面（单个助手也显示）。
-    if (status) status.textContent = view?.ask ? `${view.status || "现在归你"} · ${view.ask}` : view?.status || "现在归你";
-    const subText = view?.sub?.trim() ?? "";
-
-    const members = view?.members ?? [];
-    // 只有一位助手时「1 个已暂停」和头像都是重复信息；多位时才列出。
-    const team = members.length > 1;
-
-    if (subText && team) {
-      if (!sub) {
-        sub = document.createElement("span");
-        sub.className = "sub";
-        status?.after(sub);
-      }
-
-      sub.textContent = subText;
-    } else {
-      sub?.remove();
-    }
-
-    if (team) {
-      if (!stack) {
-        stack = document.createElement("div");
-        stack.className = "stack";
-        (bar.querySelector(".sub") ?? status)?.after(stack);
-      }
-
-      stack.replaceChildren();
-
-      for (const m of members) {
-        const av = document.createElement("i");
-        av.className = "avatar";
-        av.textContent = m.initial || "?";
-
-        if (m.color) av.style.background = m.color;
-        stack.appendChild(av);
-      }
-    } else {
-      stack?.remove();
-    }
-
-    if (btn) {
-      const action = view?.action ?? "交还";
-      btn.textContent = action;
-      btn.hidden = !action;
-      btn.disabled = view?.actionEnabled === false;
-    }
-  }
-
-  function showUserControl(view?: {
-    status?: string;
-    sub?: string;
-    ask?: string;
-    action?: string;
-    actionEnabled?: boolean;
-    members?: Array<{ id: string; initial: string; color: string }>;
-  }): void {
-    applyControlView(view);
-    const bar = ensureControlDom();
-    bar.classList.add("on");
+  function showUserControl(view?: ControlView): void {
+    pageControl = view ?? {};
+    renderAmbient();
   }
 
   function hideUserControl(): void {
-    // 页面条收起 = 页面不再归用户：交给用户时画的圈一起清掉（docs/evals/20261012-handoff-circle.md R3）。
+    // 页面不再归用户：交给用户时画的圈一起清掉（docs/evals/20261012-handoff-circle.md R3）。
     clearHandoff();
-
-    if (!controlBar) return;
-    controlBar.classList.remove("on");
+    pageControl = null;
+    renderAmbient();
   }
 
   // ── 交给用户时的圈（docs/evals/20261012-handoff-circle.md）──────────────
@@ -2014,8 +1812,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   }
 
   function addHandoffMark(inst: Instance, rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void {
-    // 页面条没显示，说明页面已经不归用户（交还或停止抢在了前面）：不画。
-    if (!controlBar?.classList.contains("on")) return;
+    // 「现在归你」没显示，说明页面已经不归用户（交还或停止抢在了前面）：不画。
+    if (!pageControl) return;
     const node = observedNode instanceof Element ? observedNode : resolveAnchor(rect, target);
 
     if (!node || handoffMarks.some((m) => m.node === node)) return;
@@ -2135,7 +1933,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   /** 圈都画好后再摆名牌，名牌才能躲开所有圈。 */
   function placeHandoffLabels(): void {
-    if (!controlBar?.classList.contains("on")) { clearHandoff(); return; }
+    if (!pageControl) { clearHandoff(); return; }
     const first = handoffMarks.find((m) => m.kind === "field") ?? handoffMarks[0];
 
     first?.node.scrollIntoView({ block: "nearest" });
@@ -2383,9 +2181,6 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     edge.classList.remove("on");
   }
 
-  // ── 跨页胶囊：它在别的标签页干活时，当前页右上角的可点入口 ──────────────
-
-  let crossPill: HTMLDivElement | null = null;
   let edge: HTMLDivElement | null = null;
   /** 正在操作这一页的成员；只要仍有一位在工作，就保留选定的 C 彩边。 */
   const glowing = new Set<string>();
@@ -2471,75 +2266,168 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     watchUser(true);
   }
 
-  let crossPillSession = "";
-  let remoteMembers: CrossPageMember[] = [];
+  // ── 右边缘胶囊：本页动作、结果、交给你、别页助手、侧栏关着时的整轮任务，汇成一个 ──────────────
+  // 优先级：交给你 > 本页正在做 > 刚出的结果 > 本页在等或在读 > 别页助手 > 侧栏关着时的任务。
 
-  function jumpToMember(member: CrossPageMember): void {
-    try {
-      chrome.runtime.sendMessage({ type: "cross_page_click", sessionId: member.sessionId, tabId: member.tabId },
-        (res: { ok?: boolean } | undefined) => {
-          if (chrome.runtime.lastError || res?.ok !== true) hideCrossPill();
-        });
-    } catch { /* 自检页没有扩展运行时。 */ }
+  type ControlView = { status?: string; sub?: string; ask?: string; action?: string; actionEnabled?: boolean; members?: Array<{ id: string; initial: string; color: string }> };
+
+  const VERB = { click: "点", fill: "填", hover: "看" } as const;
+  const ACTION_NAME = /^(加入|添加|提交|保存|发送|确认|确定|登录|注册|搜索|购买|下单|结算|支付|删除|移除|取消|关注|收藏|预订|领取|上传|下载|分享|复制|发布|申请|报名|订阅|预约)/;
+
+  let remoteMembers: CrossPageMember[] = [];
+  let edgeTab: EdgeTab | null = null;
+  /** 页面归用户时后台给的交接视图；为空表示页面不归用户。 */
+  let pageControl: ControlView | null = null;
+  /** 侧栏关着时后台给的整轮任务状态。 */
+  let taskPill: EdgePill = null;
+  /** 按住说话的胶囊正在这一页：它就是这一页的状态面，右边缘胶囊让位（交给你除外）。 */
+  let voiceHere = false;
+  let feedback: (FeedbackPillView & { at: number }) | null = null;
+  let feedbackTimer: number | undefined;
+  /** 最近一次本页动作，结果回执里用它说清是哪一步。 */
+  let lastAction: { kind: "click" | "fill" | "hover"; name: string } | null = null;
+  let lastDoneAt = 0;
+  /** 主胶囊此刻指向的别页助手：点胶囊就切过去。 */
+  let mainRemote: CrossPageMember | null = null;
+
+  /** 本页动作刚做成时，紧跟着的成功回执说的是同一件事，不再换一遍字。 */
+  const SAME_RESULT_MS = 3000;
+
+  function send(message: Record<string, unknown>): Promise<boolean> {
+    return new Promise(resolve => {
+      try {
+        chrome.runtime.sendMessage(message, (res: { ok?: boolean } | undefined) => resolve(!chrome.runtime.lastError && res?.ok === true));
+      } catch { resolve(false); }
+    });
   }
 
-  function memberButton(member: CrossPageMember & { local?: boolean; detail?: string }): HTMLButtonElement {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.member = member.sessionId;
-    const face = document.createElement("span");
-    face.className = "xface";
-    face.setAttribute("aria-hidden", "true");
-    const person = personFor(member.sessionId);
+  function jumpToMember(member: CrossPageMember): void {
+    void send({ type: "cross_page_click", sessionId: member.sessionId, tabId: member.tabId }).then(ok => { if (!ok) hideCrossPill(); });
+  }
 
-    if (person?.kenney) {
-      mountKenney(face, chrome.runtime.getURL(`cast/${person.kenney.body}`), chrome.runtime.getURL(`cast/${person.kenney.face}`), 22);
-    } else if (person) {
-      mountGrok(face, person, 22, { animate: false });
-    } else {
-      const fallback = svgEl("svg", { viewBox: "0 0 128 128", "aria-hidden": "true" });
-      const group = svgEl("g", { fill: "none", stroke: "currentColor", "stroke-width": 26, "stroke-linecap": "round" });
-      group.append(svgEl("path", { d: "M53 22L32 79" }), svgEl("path", { d: "M94 41L73 98" }));
-      fallback.appendChild(group);
-      face.replaceChildren(fallback);
+  function openPanel(): void {
+    // 必须在这次点击里发出：后台同步调用打开侧栏，浏览器才认是用户动作。
+    try { void chrome.runtime.sendMessage({ type: EDGE_PILL_OPEN }).catch(() => { /* 侧栏已开 */ }); } catch { /* 自检页没有扩展运行时。 */ }
+  }
+
+  function tab(): EdgeTab {
+    return edgeTab ??= createEdgeTab({
+      capsule: () => {
+        if (mainRemote) { jumpToMember(mainRemote); return; }
+        dismissResults();
+        openPanel();
+      },
+      stop: () => send({ type: "page_stop_click" }),
+      action: () => { void send({ type: "handback_click" }); },
+      other: other => {
+        const member = remoteMembers.find(m => m.sessionId === other.id);
+
+        if (member) jumpToMember(member);
+      },
+    });
+  }
+
+  /** 用户点了胶囊：结果不确定、没做成这类不自动收起的结果，算看过了。 */
+  function dismissResults(): void {
+    for (const inst of instances.values()) {
+      if (inst.action && inst.action.phase !== "active") clearAction(inst);
+
+      if (inst.status?.state === "failed") clearStatusInst(inst);
     }
 
-    const name = document.createElement("span");
-    name.className = "xmain";
-    name.textContent = displayNameFor(member.sessionId);
-    const title = document.createElement("span");
-    title.className = "xsub";
-    title.textContent = member.local ? member.title : `在 ${member.title}`;
-    const arrow = document.createElement("span");
-    arrow.className = "xarrow";
-    arrow.textContent = member.local ? "⌄" : "↗";
-    arrow.setAttribute("aria-hidden", "true");
-    const state = member.state === "reading" ? "正在读取" : "等待响应";
-    button.title = `${name.textContent} · ${state} · ${member.title}`;
-    button.setAttribute("aria-label", member.local ? `${name.textContent} · ${member.title}，查看详情` : `${button.title}，切换到工作页面`);
-    button.append(face, name, title, arrow);
+    if (feedback && feedback.kind !== "pending") clearFeedback();
+    renderAmbient();
+  }
 
-    if (member.local) {
-      button.title = member.detail || member.title;
-      button.setAttribute("aria-expanded", "false");
-      button.onclick = () => {
-        let detail = button.nextElementSibling as HTMLElement | null;
+  function actionView(a: NonNullable<Instance["action"]>): EdgeTabView {
+    const verb = VERB[a.kind];
 
-        if (!detail?.classList.contains("xdetail")) {
-          detail = document.createElement("div"); detail.className = "xdetail xlist";
-          detail.textContent = member.detail || member.title; detail.hidden = true; button.after(detail);
-        }
+    if (a.phase === "active") return { tone: "work", a: `在${verb}`, b: a.name || (a.kind === "fill" ? "这一栏" : "这里"), end: "stop" };
 
-        detail.hidden = !detail.hidden; detail.inert = detail.hidden; button.setAttribute("aria-expanded", String(!detail.hidden));
-      };
-    } else button.onclick = () => jumpToMember(member);
+    // 按钮名本身是动作（加入购物车、提交）时「已」直接接上；是名词（购物车、下一页）时说「已点」。
+    if (a.phase === "done") return a.name ? (a.kind === "click" && ACTION_NAME.test(a.name) ? { tone: "ok", a: "已", b: a.name, tight: true } : { tone: "ok", a: `已${verb}`, b: a.name }) : { tone: "ok", a: "", b: `${verb}好了` };
 
-    return button;
+    if (a.phase === "unknown") return { tone: "unk", a: `${verb}了${a.name || "这里"}`, b: "结果还不确定" };
+
+    return { tone: "err", a: a.name || "这一步", b: a.kind === "fill" ? "没填进去" : a.kind === "click" ? "没点成" : "没做成" };
+  }
+
+  function feedbackView(f: FeedbackPillView): EdgeTabView {
+    const hint = f.detail;
+
+    if (f.kind === "pending") return { tone: "wait", a: "在等", b: "页面响应", end: "stop" };
+
+    if (f.kind === "success") return { tone: "ok", a: "", b: f.text };
+
+    if (f.kind === "unknown") return { tone: "unk", a: lastAction ? `${VERB[lastAction.kind]}了${lastAction.name || "这里"}` : "", b: "结果还不确定", hint };
+
+    return { tone: "err", a: lastAction?.name || "这一步", b: f.text, hint };
+  }
+
+  function statusView(status: CursorStatus): EdgeTabView {
+    if (status.state === "failed") return { tone: "err", a: "这一步", b: "没做成", hint: status.detail || undefined };
+
+    if (status.state === "reading") return { tone: "work", a: "在读", b: "这个页面", end: "stop" };
+
+    return { tone: "work", a: "在想", b: "下一步", end: "stop" };
+  }
+
+  function controlView(c: ControlView): EdgeTabView {
+    const team = (c.members?.length ?? 0) > 1;
+    const view: EdgeTabView = { tone: "hand", a: c.status || "现在归你", b: c.ask || (team ? c.sub ?? "" : ""), lead: true };
+
+    if (c.action) view.end = { label: c.action, enabled: c.actionEnabled !== false };
+
+    return view;
+  }
+
+  function pillView(p: NonNullable<EdgePill>): EdgeTabView {
+    if (p.state === "paused") return { tone: "hand", a: "现在归你", b: p.goal, lead: true, hint: "打开侧栏" };
+
+    if (p.state === "error") return { tone: "err", a: p.goal || "这次任务", b: "没做成", hint: "打开侧栏" };
+
+    return { tone: "work", a: "在做", b: p.goal || "任务", hint: "打开侧栏" };
+  }
+
+  function renderAmbient(): void {
+    mainRemote = null;
+    const local = [...instances.entries()].filter(([, inst]) => !inst.hold);
+    const newest = (list: typeof local) => list.sort(([, x], [, y]) => (y.action?.at ?? 0) - (x.action?.at ?? 0))[0];
+    const active = newest(local.filter(([, inst]) => inst.action?.phase === "active"));
+    const finished = newest(local.filter(([, inst]) => inst.action && inst.action.phase !== "active"));
+    const status = local.find(([, inst]) => inst.status && inst.status.state !== "done");
+    let view: EdgeTabView | null = null;
+    let owner: string | null = null;
+    const remote = [...remoteMembers];
+
+    if (pageControl) view = controlView(pageControl);
+    else if (voiceHere) view = null;
+    else if (active) [owner, view] = [active[0], actionView(active[1].action!)];
+    else if (finished && (!feedback || finished[1].action!.at >= feedback.at)) [owner, view] = [finished[0], actionView(finished[1].action!)];
+    else if (feedback) [owner, view] = [DEFAULT_ID, feedbackView(feedback)];
+    else if (status) [owner, view] = [status[0], statusView(status[1].status!)];
+    else if (glowing.size) [owner, view] = [DEFAULT_ID, statusView({ state: "waiting", text: "", detail: "", sub: "" })];
+    else if (remote.length) {
+      mainRemote = remote.shift()!;
+      view = { tone: "away", a: "在", b: mainRemote.title, end: "arrow", hint: "切换到那一页" };
+    } else if (taskPill) view = pillView(taskPill);
+
+    const others: EdgeTabOther[] = remote.map(m => ({ id: m.sessionId, name: displayNameFor(m.sessionId), title: m.title, local: false, icon: m.icon }));
+
+    for (const [id, inst] of local) {
+      // 主助手自己的状态只进主胶囊（交给你时也是它让位），小圆泡只放这一页上别的助手。
+      if (id === owner || id === DEFAULT_ID || remoteMembers.some(m => m.sessionId === id)) continue;
+      const v = inst.action ? actionView(inst.action) : inst.status && inst.status.state !== "done" ? statusView(inst.status) : null;
+
+      if (v) others.push({ id, name: inst.name, title: `${v.a}${v.tight ? "" : " "}${v.b}`.trim(), local: true, detail: inst.status?.detail || undefined });
+    }
+
+    if (!view && !edgeTab) return;
+    tab().render(view, others);
   }
 
   function showCrossPill(view: CrossPageView): void {
-    remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "另一个页面", tabId: view.tabId, state: view.state }];
-    crossPillSession = view.sessionId ?? remoteMembers[0]!.sessionId;
+    remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "另一个页面", tabId: view.tabId, state: view.state, icon: view.icon }];
 
     for (const member of remoteMembers) {
       const inst = instances.get(member.sessionId);
@@ -2550,204 +2438,60 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     renderAmbient();
   }
 
-  function renderAmbient(): void {
-    const members: Array<CrossPageMember & { local?: boolean; detail?: string }> = [...remoteMembers];
-
-    for (const [id, inst] of instances) {
-      if (inst.hold || remoteMembers.some(m => m.sessionId === id)) continue;
-
-      if (inst.action) {
-        const a = inst.action;
-        const verb = {click:"点", fill:"填", hover:"看"}[a.kind];
-        const text = a.phase === "active" ? `正在${verb}` : a.phase === "unknown" ? "结果未知" : a.phase === "failed" ? "没做成" : `${verb}完了`;
-        members.push({sessionId:id, title:text, local:true, detail:a.name ? `${text} · ${a.name}` : text});
-      } else if (inst.status) members.push({sessionId:id, title:inst.status.text, local:true, detail:inst.status.detail || inst.status.sub || inst.status.text});
-    }
-
-    if (!members.length) { crossPill?.classList.remove("on");
-
- return; }
-
-    ensureDom();
-
-    if (!crossPill?.isConnected) {
-      crossPill = document.createElement("div");
-      crossPill.className = "xpage";
-      crossPill.addEventListener("click", ev => ev.stopPropagation());
-      shadow!.appendChild(crossPill);
-    }
-
-    const previousText = new Map(Array.from(crossPill.querySelectorAll<HTMLButtonElement>("button[data-member]")).map(button => [button.dataset.member, button.querySelector(".xsub")?.textContent]));
-    const wasOpen = crossPill.querySelector("button")?.getAttribute("aria-expanded") === "true";
-    const hadFocus = crossPill.contains(shadow?.activeElement ?? null);
-    crossPill.replaceChildren();
-
-    // 只有本页这一位助手：右上角只管「停下」，正在做什么由光标旁那句话说，不在这里重复。
-    if (members.length === 1 && members[0]!.local) {
-      crossPill.onkeydown = null;
-      crossPill.append(stopBar());
-      crossPill.classList.add("on");
-
-      return;
-    }
-
-    const trigger = memberButton(members[0]!);
-
-    if (members.length > 1) {
-      trigger.querySelector(".xmain")!.textContent = `${members.length} 位助手`;
-      trigger.querySelector(".xsub")!.textContent = "查看工作状态";
-      trigger.title = "查看助手与工作页面";
-      trigger.setAttribute("aria-label", `${members.length} 位助手，展开工作状态`);
-      trigger.setAttribute("aria-expanded", "false");
-      const list = document.createElement("div");
-      list.className = "xlist";
-      list.hidden = !wasOpen;
-
-      if (wasOpen) list.dataset.restored = "true";
-      list.inert = list.hidden;
-      trigger.setAttribute("aria-expanded", String(wasOpen));
-      list.append(...members.map(memberButton));
-      trigger.onclick = () => { delete list.dataset.restored; list.hidden = !list.hidden; list.inert = list.hidden; trigger.setAttribute("aria-expanded", String(!list.hidden)); };
-
-      crossPill.onkeydown = ev => { if (ev.key === "Escape") { list.hidden = true; list.inert = true; trigger.setAttribute("aria-expanded", "false"); trigger.focus(); ev.stopPropagation(); } };
-
-      crossPill.append(trigger, list);
-    } else {
-      crossPill.onkeydown = null;
-      crossPill.append(trigger);
-    }
-
-    crossPill.classList.add("on");
-
-    if (!reducedMotion.matches) {
-      for (const button of crossPill.querySelectorAll<HTMLButtonElement>("button[data-member]")) {
-        const text = button.querySelector<HTMLElement>(".xsub");
-
-        if (text && previousText.has(button.dataset.member) && previousText.get(button.dataset.member) !== text.textContent) {
-          text.animate([{opacity:.4, transform:"translateY(2px)"}, {opacity:1, transform:"translateY(0)"}], {duration:150, easing:"ease-out"});
-        }
-      }
-    }
-
-    if (hadFocus) trigger.focus();
-  }
-
-  function stopBar(): HTMLDivElement {
-    const bar = document.createElement("div");
-    bar.className = "xbar";
-    const orb = document.createElement("span");
-    orb.className = "orb-dot";
-    orb.setAttribute("aria-hidden", "true");
-    const name = document.createElement("span");
-    name.className = "xmain";
-    name.textContent = "By Your Side";
-    const stop = document.createElement("button");
-    stop.type = "button";
-    stop.className = "xstop";
-    stop.textContent = "中止";
-    stop.onclick = (ev) => {
-      ev.stopPropagation();
-      stop.disabled = true;
-      stop.textContent = "正在中止";
-
-      try {
-        chrome.runtime.sendMessage({ type: "page_stop_click" }, (res: { ok?: boolean } | undefined) => {
-          if (chrome.runtime.lastError || res?.ok !== true) { stop.disabled = false; stop.textContent = "中止"; }
-        });
-      } catch { /* 自检页没有扩展运行时。 */ }
-    };
-
-    bar.append(orb, name, stop);
-
-    return bar;
-  }
-
   function hideCrossPill(): void {
     remoteMembers = [];
     renderAmbient();
   }
 
-  // ── 执行反馈胶囊：宿主事实短语（切好了 / 已填入 / 结果未知…）────────────
-  // 成功一次轻微回弹后收起；待处理保留可找到的文字入口；同一结果重绘不回弹。
-
-  let feedbackPill: HTMLDivElement | null = null;
-  let feedbackPillState: FeedbackPillState | null = null;
-  let feedbackTimer: number | undefined;
-
-  /** 跨页胶囊与反馈胶囊共用右上角；同时出现时反馈在上，跨页入口下移。 */
-  function positionCrossPill(): void {
-    if (crossPill) crossPill.style.top = feedbackPillState ? "64px" : "";
-  }
-
-  function renderFeedbackPill(): void {
-    if (!feedbackPillState) {
-      feedbackPill?.classList.remove("on");
-      positionCrossPill();
-
-      return;
-    }
-
-    ensureDom();
-
-    if (!feedbackPill?.isConnected) {
-      feedbackPill = document.createElement("div");
-      feedbackPill.className = "xpage xfeedback";
-      feedbackPill.addEventListener("click", ev => { ev.stopPropagation(); hideFeedbackPill(); });
-      shadow!.appendChild(feedbackPill);
-    }
-
-    const button = document.createElement("button");
-    button.type = "button";
-    const main = document.createElement("span");
-    main.className = "xmain";
-    main.textContent = feedbackPillState.text;
-    button.append(main);
-
-    if (feedbackPillState.kind !== "success") {
-      const sub = document.createElement("span");
-      sub.className = "xsub";
-      sub.textContent = "详情在侧栏";
-      button.append(sub);
-    }
-
-    button.title = feedbackPillState.detail || feedbackPillState.text;
-    button.setAttribute("aria-label", feedbackPillState.text);
-    feedbackPill.replaceChildren(button);
-    feedbackPill.classList.add("on");
-    positionCrossPill();
+  function clearFeedback(): void {
+    if (feedbackTimer !== undefined) clearTimeout(feedbackTimer);
+    feedbackTimer = undefined;
+    feedback = null;
   }
 
   function showFeedbackPill(view?: FeedbackPillView): void {
     if (!view?.text) return;
-    const next: FeedbackPillView = { id: view.id || `f-${Date.now()}`, text: view.text, kind: view.kind ?? "success" };
+    const id = view.id || `f-${Date.now()}`;
+    const repeat = feedback?.id === id;
 
-    if (view.detail) next.detail = view.detail;
-    const { state, bounce } = beginFeedbackPill(feedbackPillState, next, Date.now());
-    // 减少动态偏好：不回弹，但仍展示；成功仍算一次独立反馈（bounces 记 0）。
-    const played = bounce && !reducedMotion.matches;
-    feedbackPillState = played || !bounce ? state : { ...state, bounces: 0 };
-    renderFeedbackPill();
+    if (view.kind === "success" && !repeat && Date.now() - lastDoneAt < SAME_RESULT_MS) return;
+    const at = repeat ? feedback!.at : Date.now();
+    clearFeedback();
+    feedback = { id, text: view.text, kind: view.kind ?? "success", at };
 
-    if (played) {
-      feedbackPill?.querySelector("button")?.animate(
-        [{ transform: "scale(.94)" }, { transform: "scale(1.035)", offset: .55 }, { transform: "scale(1)" }],
-        { duration: 340, easing: "cubic-bezier(.22,1,.36,1)" },
-      );
-    }
+    if (view.detail) feedback.detail = view.detail;
 
-    if (feedbackTimer !== undefined) clearTimeout(feedbackTimer);
-    feedbackTimer = window.setTimeout(() => hideFeedbackPill(), feedbackLifetimeMs(feedbackPillState.kind));
+    // 结果不确定、没做成不自动收起：等下一步或用户点一下。
+    if (feedback.kind === "success" || feedback.kind === "pending") feedbackTimer = window.setTimeout(hideFeedbackPill, feedbackLifetimeMs(feedback.kind));
+    renderAmbient();
   }
 
   function hideFeedbackPill(): void {
-    if (feedbackTimer !== undefined) {
-      clearTimeout(feedbackTimer);
-      feedbackTimer = undefined;
-    }
-
-    feedbackPillState = null;
-    renderFeedbackPill();
+    clearFeedback();
+    renderAmbient();
   }
+
+  function askTaskPill(): void {
+    try {
+      void chrome.runtime.sendMessage({ type: EDGE_PILL_GET }).then((reply: unknown) => {
+        const pill = (reply as { pill?: unknown } | undefined)?.pill ?? null;
+        taskPill = isEdgePill(pill) ? pill : null;
+        voiceHere = (reply as { voice?: unknown } | undefined)?.voice === true;
+        renderAmbient();
+      }, () => { /* 后台未就绪 */ });
+    } catch { /* 自检页没有扩展运行时。 */ }
+  }
+
+  try {
+    chrome.runtime.onMessage.addListener((message: unknown, sender) => {
+      if (sender.id !== chrome.runtime.id || (message as { type?: unknown } | null)?.type !== EDGE_PILL_SHOW) return;
+      const pill = (message as { pill?: unknown }).pill ?? null;
+      taskPill = isEdgePill(pill) ? pill : null;
+      voiceHere = (message as { voice?: unknown }).voice === true;
+      renderAmbient();
+    });
+    askTaskPill();
+  } catch { /* 自检页没有扩展运行时。 */ }
 
   function teardown(event: PageTransitionEvent): void {
     if (guide) endGuide(guide);
@@ -2772,10 +2516,14 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     instances.clear();
     liveMarks.length = 0;
 
-    if (feedbackTimer !== undefined) clearTimeout(feedbackTimer);
-    feedbackTimer = undefined;
-    feedbackPillState = null;
-    feedbackPill = null;
+    clearFeedback();
+    pageControl = null;
+    taskPill = null;
+    voiceHere = false;
+    lastAction = null;
+    mainRemote = null;
+    edgeTab?.destroy();
+    edgeTab = null;
     // Pagehide may freeze this Document in BFCache. Do not revive finished
     // task lighting when pageshow later reuses the same content-script world.
     glowing.clear();
@@ -2783,13 +2531,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     edge = null;
     host?.remove();
     marksHost?.remove();
-    controlHost?.remove();
-    crossPill = null;
-    crossPillSession = "";
     host = null;
     marksHost = null;
-    controlHost = null;
-    controlBar = null;
     shadow = null;
     highlightLayer = null;
     rippleLayer = null;
@@ -2808,12 +2551,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       ns.holdState = undefined;
       ns.holdActionLabels = undefined;
       ns.clickHoldAction = undefined;
-      ns.controlBanner = undefined;
-      ns.clickHandback = undefined;
       ns.cursorStatus = undefined;
-      ns.crossPageState = undefined;
-      ns.feedbackState = undefined;
-      ns.clickCrossPage = undefined;
+      ns.edgeTab = undefined;
+      ns.clickEdgeTab = undefined;
       ns.setMarkConfig = undefined;
       ns.getMarkConfig = undefined;
       ns.markDetails = undefined;
@@ -2826,6 +2566,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     // A saved Document may be shown more than once. Rebuild the primary
     // idle cursor once, without starting an action or re-enabling page glow.
     if (!host?.isConnected || !instances.has(DEFAULT_ID)) ns.cursor.park?.();
+    askTaskPill();
   });
 
   function api(id: string): SideAgentCursor {
@@ -2839,7 +2580,11 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         if (inst.action) clearAction(inst);
 
         if (!inst.visible) showAtRest(inst);
-        inst.action = { id: actionId, kind, phase: "active", anchor, rect, name: actionName(anchor, label) };
+        inst.action = { id: actionId, kind, phase: "active", anchor, rect, name: actionName(anchor, label), at: Date.now() };
+        lastAction = { kind, name: inst.action.name };
+
+        // 下一步开始了：上一步「结果不确定 / 没做成」不再挂着。
+        if (feedback && feedback.kind !== "success") clearFeedback();
         setResting(inst, false);
         inst.el.classList.add("acting");
 
@@ -2864,6 +2609,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         if (!inst?.action || inst.action.id !== actionId || inst.action.phase !== "active") return;
         cancelFly(inst);
         inst.action.phase = outcome;
+        inst.action.at = Date.now();
+
+        if (outcome === "done") lastDoneAt = inst.action.at;
 
         if (outcome === "done" && inst.action.kind === "click" && point) {
           setPos(inst, { x: point[0], y: point[1] });
@@ -3025,11 +2773,13 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         if (on) {
           glowing.add(id);
           renderGlow();
+          renderAmbient();
 
           return;
         }
 
         glowing.delete(id);
+        renderAmbient();
         if (glowing.size === 0) return fadeEdge();
         renderGlow();
       },
@@ -3042,13 +2792,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         hideFeedbackPill();
       },
 
-      showUserControl(view?: {
-        status?: string;
-        sub?: string;
-        action?: string;
-        actionEnabled?: boolean;
-        members?: Array<{ id: string; initial: string; color: string }>;
-      }): void {
+      showUserControl(view?: ControlView): void {
         showUserControl(view);
       },
 
@@ -3153,60 +2897,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     };
   };
 
-  ns.crossPageState = () => {
-    if (!crossPill?.classList.contains("on")) return null;
-    const rect = crossPill.getBoundingClientRect();
-
-    return {
-      main: crossPill.querySelector<HTMLSpanElement>(".xmain")?.textContent ?? "",
-      sub: crossPill.querySelector<HTMLSpanElement>(".xsub")?.textContent ?? "",
-      sessionId: crossPillSession,
-      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-    };
-  };
-
-  ns.clickCrossPage = () => {
-    if (!crossPill?.classList.contains("on")) return false;
-    crossPill.querySelector("button")?.click();
-
-    return true;
-  };
-
-  ns.feedbackState = () => feedbackPillState ? {
-    id: feedbackPillState.id,
-    text: feedbackPillState.text,
-    kind: feedbackPillState.kind,
-    bounces: feedbackPillState.bounces,
-    visible: Boolean(feedbackPill?.classList.contains("on")),
-  } : null;
-  ns.controlBanner = () => {
-    if (!controlBar || !controlBar.classList.contains("on")) return null;
-    const statusEl = controlBar.querySelector("b");
-    const actionEl = controlBar.querySelector("button");
-    const barRect = controlBar.getBoundingClientRect();
-    const statusRect = statusEl?.getBoundingClientRect();
-    const actionRect = actionEl?.getBoundingClientRect();
-
-    return {
-      status: statusEl?.textContent ?? "",
-      action: actionEl?.textContent ?? "",
-      barWidth: barRect.width,
-      statusRight: statusRect?.right ?? 0,
-      actionLeft: actionRect?.left ?? 0,
-      actionRight: actionRect?.right ?? 0,
-      viewportWidth: window.innerWidth,
-    };
-  };
-
-  ns.clickHandback = () => {
-    const btn = controlBar?.querySelector("button");
-
-    if (!btn || !controlBar?.classList.contains("on")) return false;
-    btn.click();
-
-    return true;
-  };
+  ns.edgeTab = () => edgeTab?.state() ?? null;
+  ns.clickEdgeTab = (part) => edgeTab?.click(part) ?? false;
 
   ns.holdActionLabels = () =>
     [...instances.values()]

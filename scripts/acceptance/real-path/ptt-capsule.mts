@@ -319,8 +319,8 @@ try {
   assert.ok(model.requests.some(r => r.rule === rule.match && r.step === 1), "ack: the model was already asked for the step after the tool when the ack finished");
   assert.deepEqual(evidence.speechRequests.map(request => request.text), [ACK], "ack: spoken first, from the local rule");
   // SAFETY: 表达式返回字符串或 null。
-  one.pillDuringCapsule = await rp.evaluate(work, `document.querySelector('[data-sideagent-overlay="edge-pill"]')?.dataset.state ?? null`) as string | null;
-  assert.equal(one.pillDuringCapsule, null, "R4: the edge pill stays hidden on the capsule's page");
+  one.pillDuringCapsule = await rp.evaluate(work, `document.querySelector('[data-sideagent-overlay="edge-tab"]')?.dataset.shown ?? null`) as string | null;
+  assert.notEqual(one.pillDuringCapsule, "true", "R4: the right-edge capsule yields on the voice capsule's page");
   await waitPhase(work, one, "done", 30_000);
   one.ms.done = Date.now() - released;
   assert.deepEqual(one.phases.filter(p => p !== "transcribing"), ["listening", "doing", "done"], `R1–R3: phase order ${JSON.stringify(one.phases)}`);

@@ -733,14 +733,14 @@ function persistControl(): void {
   });
 }
 
-/** 助手调用 hand_to_user 时要用户做的事；页面条写在「现在归你」后面。下一次接管时重置。 */
+/** 助手调用 hand_to_user 时要用户做的事；边缘胶囊写在「现在归你」后面。下一次接管时重置。 */
 let handoffAsk: string | null = null;
 
 function teamBannerView() {
   const view = team.view();
   const ask = handoffAsk ? { ask: handoffAsk } : {};
 
-  if (!view) return { status: "现在归你", action: "交还", actionEnabled: true, ...ask };
+  if (!view) return { status: "现在归你", action: "继续", actionEnabled: true, ...ask };
   const owner = teamOwnerBanner(view);
 
   return {
@@ -1051,7 +1051,7 @@ function failPendingControl(requestId: string, reason: string): void {
     cancelTakeover(pending);
     team.clear();
     emitLocalStatus(pending.fallbackStatus);
-    // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
+    // 接管没成：收掉这次先画上的「现在归你」，页面里的圈随它一起清掉。
     void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
   } else {
     // 交还没成：页面仍归你，侧栏回到「你在操作」，不停在「助手先重读页面」。
@@ -1074,7 +1074,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       cancelTakeover(pending);
       team.clear();
       emitLocalStatus(msg.state === "running" ? "running" : "idle");
-      // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
+      // 接管没成：收掉这次先画上的「现在归你」，页面里的圈随它一起清掉。
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
     } else {
       emitLocalStatus("user");
@@ -1109,7 +1109,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       cancelTakeover(pending);
       team.clear();
       emitLocalStatus(pending.fallbackStatus);
-      // 接管没成：收掉这次先画上的页面条，页面里的圈随页面条一起清掉。
+      // 接管没成：收掉这次先画上的「现在归你」，页面里的圈随它一起清掉。
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
       emitNotice("接管没有完成。页面控制没有改变。", "error");
 
@@ -1620,8 +1620,8 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
   const shown = showUserControlGuarded();
 
-  // 页面条画好后圈出要用户填的栏和按钮（docs/evals/20261012-handoff-circle.md）。不等、不报错：圈不上不挡交还。
-  // 按这页所属的成员找 @ref；页面条收起时页面自己清圈。
+  // 「现在归你」画好后圈出要用户填的栏和按钮（docs/evals/20261012-handoff-circle.md）。不等、不报错：圈不上不挡交还。
+  // 按这页所属的成员找 @ref；「现在归你」收起时页面自己清圈。
   if (ask && targetTabId != null && targets?.length) {
     const owner = members.find(m => m.role === "lead") ?? members[0];
     const tabId = targetTabId;
@@ -2377,7 +2377,7 @@ spoken: async (text: string, context?: PageContext, card?: NudgeCard) => {
 /** 胶囊上的「停」（#125 第 2 步）：和侧栏「停止」同一条路。 */
 stop: () => requestPanelControl("abort"),
 notice: emitNotice,
-// 页面右上角「停下」：只认本会话正在操作的那一页；和侧栏「接管」走同一条路。
+// 页面右边缘胶囊上的停止键：只认本会话正在操作的那一页；和侧栏「接管」走同一条路。
 worksOn: async (tabId: number) => !gate.isUser() && await getWorkingTabId() === tabId,
 pauseFromPage: (tabId: number) => { void handleTakeover(tabId); requestPanelControl("pause", tabId); },
 voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
