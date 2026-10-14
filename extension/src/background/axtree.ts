@@ -331,20 +331,43 @@ function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRange
 /** 控件：它们身上的字是控件名，不算“这一项”的内容。链接、单元格、行的字算（列表项的标题常是链接）。 */
 const CONTROL_ROLES = new Set(["button", "textbox", "searchbox", "combobox", "listbox", "option", "checkbox", "radio", "switch", "slider", "spinbutton", "tab", "menuitem", "menuitemcheckbox", "menuitemradio"]);
 
-/** 同名控件超过这么多个就不找（巨型表格），找一项的字最多看这么多个节点。 */
+/** 同名控件超过这么多个就不找（巨型表格）。一项最多这么多个节点：再大就是页面的一大块（页眉页脚各有一个「首页」时的主体），不算一项。 */
 const MAX_TWINS = 300;
-const MAX_ITEM_SCAN = 500;
+const MAX_ITEM_NODES = 500;
 
-/** 列表里重复的控件各在哪一项。byRef：控件 ref → 那一项的字；itemNodes：那一项的节点 → 字（之后新出现在这一项里的控件也认得）。 */
+/** 列表里重复的控件各在哪一项：控件 ref → 那一项的节点（backendDOMNodeId）；items 是认出来的全部项。只记是哪个节点，字到用的时候再按当时的页面读。 */
 export interface RepeatedItems {
-  byRef: Map<number, string>;
-  itemNodes: Map<number, string>;
+  byRef: Map<number, number>;
+  items: Set<number>;
+}
+
+/** 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算。节点太多（不是一项）返回 null。 */
+function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite): string | null {
+  let best = "";
+  const todo = [item];
+
+  for (let seen = 0; todo.length; seen++) {
+    if (seen >= MAX_ITEM_NODES) return null;
+    const node = todo.pop()!;
+    const role = node.role?.value ?? "";
+
+    if (node !== item && (CONTROL_ROLES.has(role) || node.properties?.some(p => p.name === "editable"))) continue;
+
+    if (role === "StaticText" && !node.ignored) {
+      const words = String(node.name?.value ?? "").replace(/\s+/g, " ").trim();
+
+      if (words.length > best.length) best = words;
+    }
+
+    for (const id of node.childIds ?? []) { const child = byId.get(id); if (child) todo.push(child); }
+  }
+
+  return best;
 }
 
 /**
  * 页面上同角色、同名字的控件（每条笔记都有的「More」）：快照是平的，模型看不出哪个属于哪一项。
- * 每个这样的控件，往上找“只包住它自己、不包住同名另一个”的最高一层，那层就是它所在的一项；
- * 这一项的字取里面最长的一段文字（控件上的字、可编辑区里的字、无障碍树里藏起来的字都不算）。
+ * 每个这样的控件，往上找“只包住它自己、不包住同名另一个”的最高一层，那层有字、又不太大，就是它所在的一项。
  * 只用已经读到的无障碍树，不再进页面。
  */
 export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
@@ -383,53 +406,26 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
     if (group) group.push(n); else groups.set(key, [n]);
   }
 
-  const up = (n: AxNodeLite, steps: number): AxNodeLite => {
-    let at = n;
+  const parentOf = (n: AxNodeLite) => n.parentId ? byId.get(n.parentId) : undefined;
+  const up = (n: AxNodeLite, steps: number): AxNodeLite | undefined => {
+    let at: AxNodeLite | undefined = n;
 
-    for (let i = 0; i < steps; i++) at = byId.get(at.parentId!) ?? at;
+    for (let i = 0; i < steps && at; i++) at = parentOf(at);
 
     return at;
   };
-  // 两个节点最低的共同祖先有多深。
+  // 两个节点最低的共同祖先有多深；不在同一棵读到的树里（分开读的几处）返回 -1。
   const meet = (a: AxNodeLite, b: AxNodeLite): number => {
-    let x = a, y = b;
-    const dx = depth.get(x.nodeId)!, dy = depth.get(y.nodeId)!;
+    const da = depth.get(a.nodeId)!, db = depth.get(b.nodeId)!;
+    let x = da > db ? up(a, da - db) : a;
+    let y = db > da ? up(b, db - da) : b;
 
-    if (dx > dy) x = up(x, dx - dy); else y = up(y, dy - dx);
+    while (x && y && x !== y) { x = parentOf(x); y = parentOf(y); }
 
-    while (x !== y && x.parentId && y.parentId) { x = byId.get(x.parentId) ?? x; y = byId.get(y.parentId) ?? y; }
-
-    return x === y ? depth.get(x.nodeId)! : -1;
+    return x && x === y ? depth.get(x.nodeId)! : -1;
   };
-  const texts = new Map<string, string>();
-  const itemText = (item: AxNodeLite): string => {
-    const cached = texts.get(item.nodeId);
-
-    if (cached !== undefined) return cached;
-    let best = "";
-    const todo = [item];
-
-    for (let seen = 0; todo.length && seen < MAX_ITEM_SCAN; seen++) {
-      const node = todo.pop()!;
-      const role = node.role?.value ?? "";
-
-      if (CONTROL_ROLES.has(role) || node.properties?.some(p => p.name === "editable")) continue;
-
-      if (role === "StaticText" && !node.ignored) {
-        const words = String(node.name?.value ?? "").replace(/\s+/g, " ").trim();
-
-        if (words.length > best.length) best = words;
-      }
-
-      for (const id of node.childIds ?? []) { const child = byId.get(id); if (child) todo.push(child); }
-    }
-
-    texts.set(item.nodeId, best);
-
-    return best;
-  };
-
-  const found: RepeatedItems = { byRef: new Map(), itemNodes: new Map() };
+  const verdict = new Map<string, boolean>();
+  const found: RepeatedItems = { byRef: new Map(), items: new Set() };
 
   for (const group of groups.values()) {
     if (group.length < 2 || group.length > MAX_TWINS) continue;
@@ -442,34 +438,40 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 
       if (shared < 0 || shared + 1 >= d) return;
       const item = up(n, d - shared - 1);
-      const text = itemText(item);
 
-      if (!text) return;
-      found.byRef.set(n.backendDOMNodeId!, text);
+      if (!item || item.backendDOMNodeId === undefined) return;
 
-      if (item.backendDOMNodeId !== undefined) found.itemNodes.set(item.backendDOMNodeId, text);
+      if (!verdict.has(item.nodeId)) verdict.set(item.nodeId, !!scanItem(byId, item));
+
+      if (!verdict.get(item.nodeId)) return;
+      found.byRef.set(n.backendDOMNodeId!, item.backendDOMNodeId);
+      found.items.add(item.backendDOMNodeId);
     });
   }
 
   return found;
 }
 
-/** 新出现的控件在不在已知的某一项里：从它往上找，碰到记下的那一项就给那一项的字。只在读到的这几处里找。 */
-export function itemFinder(nodes: readonly AxNodeLite[], itemNodes: ReadonlyMap<number, string>): (backendId: number) => string | undefined {
+/** 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；这一项太大或没有字返回空串。 */
+export function itemTextOf(nodes: readonly AxNodeLite[], item: number): string | undefined {
   const byId = new Map<string, AxNodeLite>();
-  const byBackend = new Map<number, AxNodeLite>();
+  let at: AxNodeLite | undefined;
 
-  for (const n of nodes) { byId.set(n.nodeId, n); if (n.backendDOMNodeId !== undefined) byBackend.set(n.backendDOMNodeId, n); }
+  for (const n of nodes) { byId.set(n.nodeId, n); if (n.backendDOMNodeId === item) at = n; }
 
-  return backendId => {
-    let at = byBackend.get(backendId);
+  return at ? scanItem(byId, at) ?? "" : undefined;
+}
 
-    for (let hops = 0; at && hops < 64; hops++, at = at.parentId ? byId.get(at.parentId) : undefined) {
-      const text = at.backendDOMNodeId === undefined ? undefined : itemNodes.get(at.backendDOMNodeId);
+/** 控件往上碰到的第一个认得的项（只在给的这些节点里找）。 */
+export function enclosingItem(nodes: readonly AxNodeLite[], ref: number, isItem: (id: number) => boolean): number | undefined {
+  const byId = new Map<string, AxNodeLite>();
+  let at: AxNodeLite | undefined;
 
-      if (text) return text;
-    }
+  for (const n of nodes) { byId.set(n.nodeId, n); if (n.backendDOMNodeId === ref) at = n; }
 
-    return undefined;
-  };
+  for (let hops = 0; at && hops < 64; hops++, at = at.parentId ? byId.get(at.parentId) : undefined) {
+    if (at.backendDOMNodeId !== undefined && at.backendDOMNodeId !== ref && isItem(at.backendDOMNodeId)) return at.backendDOMNodeId;
+  }
+
+  return undefined;
 }

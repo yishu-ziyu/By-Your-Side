@@ -5,7 +5,7 @@
  * 只给新增，不给消失的行：消失的多半是旧值、旧提示，旧值不能再交给模型（还原填写的规则）。
  * 列表里每项都有的同名控件（每条笔记的「More」），行尾写明它在哪一项：快照是平的，模型分不清（10-14 Memos 置顶点错了笔记还说成功）。
  */
-import { itemFinder, renderLines, repeatedItems, type AxLine, type AxNodeLite, type RepeatedItems } from "./axtree.js";
+import { renderLines, type AxLine, type RepeatedItems } from "./axtree.js";
 
 /** 摘要上限（字）：只带变化，绝不带整页。 */
 export const PAGE_CHANGES_MAX_CHARS = 2000;
@@ -33,42 +33,54 @@ export function forgetPage(tabId: number): void {
   pageItems.delete(tabId);
 }
 
+/** 这一页认出来的项（整页快照时认的，加上之后读到的几处里新认的）。 */
+export function knownItems(tabId: number): RepeatedItems {
+  return pageItems.get(tabId) ?? { byRef: new Map(), items: new Set() };
+}
+
 export function hasPageBaseline(tabId: number): boolean {
   return baselines.has(tabId);
 }
 
-/**
- * 变过的几处里，哪些行是新的：ref 没读到过（新加的、原来藏着的），或同一个 ref 的字变了。
- * 输入框里的文字（框里的值）和只变了值的输入框不算。读到的行并进基准，下一次不再说一遍。
- * nodes 是这几处的无障碍节点，用来认新出现的控件在哪一项。scrub 去掉旧值（还原填写记下的，见 fill-undo.ts），“在哪一项”也先去旧值再截短。
- */
-export function pageChangesSince(tabId: number, lines: readonly AxLine[], nodes: readonly AxNodeLite[], scrub: (body: string) => string): { text: string; refs: number[] } | null {
+/** 变过的几处里，哪些行是新的：ref 没读到过（新加的、原来藏着的），或同一个 ref 的字变了。输入框里的文字和只变了值的输入框不算。不改基准。 */
+export function freshLines(tabId: number, lines: readonly AxLine[]): AxLine[] | null {
   const base = baselines.get(tabId);
 
   if (!base) return null;
-  const fresh = lines.filter(line => {
+
+  return lines.filter(line => {
     // 框里的字不算；框里的选项（老式组合框把建议列表放在框里面）算。
     if ((line.inField && line.body.startsWith("text:")) || line.ref === undefined) return false;
     const before = base.get(line.ref);
 
     return before === undefined || (before !== line.body && !FIELD_LINE.test(line.body));
   });
+}
+
+/**
+ * 交回新出现的行，读到的行并进基准，下一次不再说一遍；这几处新认出的项并进这一页记下的。
+ * items：ref → 它所在那一项现在的字（exec/snapshot.ts 读）。scrub 去掉旧值（还原填写记下的，见 fill-undo.ts），“在哪一项”也先去旧值再截短。
+ */
+export function pageChangesSince(tabId: number, lines: readonly AxLine[], scrub: (body: string) => string, items: ReadonlyMap<number, string>, found: RepeatedItems): { text: string; refs: number[] } | null {
+  const fresh = freshLines(tabId, lines);
+  const base = baselines.get(tabId);
+
+  if (!fresh || !base) return null;
 
   for (const line of lines) if (line.ref !== undefined) base.set(line.ref, line.body);
+  const known = knownItems(tabId);
+
+  for (const [ref, item] of found.byRef) known.byRef.set(ref, item);
+
+  for (const item of found.items) known.items.add(item);
+  pageItems.set(tabId, known);
 
   if (!fresh.length) return { text: "", refs: [] };
-  // 读到的这几处里也可能新出现了一整列（新的一组卡片）：并进这一页记下的。
-  const known = pageItems.get(tabId) ?? { byRef: new Map(), itemNodes: new Map() };
-  const local = repeatedItems(nodes);
-
-  for (const [ref, text] of local.byRef) known.byRef.set(ref, text);
-
-  for (const [node, text] of local.itemNodes) known.itemNodes.set(node, text);
-  pageItems.set(tabId, known);
-  const inItem = itemFinder(nodes, known.itemNodes);
+  // 那一项的字已经作为新行出现了（新出现的一整列）：不再在每个控件后面重复一遍。
+  const shownText = new Set(fresh.flatMap(line => line.body.startsWith("text: ") ? [line.body.slice(6)] : []));
   const itemNote = (ref: number | undefined) => {
-    const item = ref === undefined ? undefined : known.byRef.get(ref) ?? inItem(ref);
-    const clean = item ? scrub(item) : "";
+    const item = ref === undefined ? undefined : items.get(ref);
+    const clean = item && !shownText.has(item) ? scrub(item) : "";
 
     return clean ? ` — in item ${JSON.stringify(clean.length > ITEM_MAX_CHARS ? `${clean.slice(0, ITEM_MAX_CHARS - 1)}…` : clean)}` : "";
   };
