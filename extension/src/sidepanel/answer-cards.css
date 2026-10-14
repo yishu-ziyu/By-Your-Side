@@ -1,5 +1,6 @@
 /* 回答里的卡片（answer-cards.ts）。用侧栏现有的纸面、墨色、字号档，不另起一套。
-   组件不单独做入场动画：流式时整段回答每帧重画，动画会反复重来；新字的淡入由 stream-reveal 负责。 */
+   流式时已画出的组件节点不动，所以组件可以有自己的入场：写完的组件原位淡入（.gc-in）；
+   开了头没写完的组件是空位（.gc-ph），等一小会儿还没写完才浮出很淡的占位条，写得快的不闪一下。 */
 .gen-card {
   margin: var(--s-1) 0 var(--gap-block);
   border: 1px solid var(--content-border);
@@ -78,7 +79,21 @@
 .gc-btn.primary:hover { background: color-mix(in srgb, var(--text-primary) 88%, white); }
 .gc-foot { padding: var(--s-2) 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-micro); color: var(--text-tertiary); }
 
+/* 空位与淡入：空位先透明，过了 --d-micro 还没写完才浮出；占位条一行高，条本身比字矮 */
+.gc-ph { animation: gcPlaceholderIn var(--d-state) var(--e-enter) var(--d-micro) both; }
+.gc-stat.gc-ph { background: transparent; }
+.gc-option.gc-ph { border-style: dashed; }
+.gc-bar { display: flex; align-items: center; width: 100%; height: 1lh; }
+.gc-bar::before { content: ""; width: 60%; height: .62em; border-radius: 4px; background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+.gc-stat.gc-ph .k .gc-bar::before { width: 45%; }
+.gc-callout.gc-ph .gc-bar::before { width: 80%; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.gc-in { animation: gcContentIn var(--d-layout) var(--e-enter) both; }
+@keyframes gcPlaceholderIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gcContentIn { from { opacity: 0; } to { opacity: 1; } }
+
 @media (prefers-reduced-motion: reduce) {
   .gc-btn { transition: none; }
+  .gc-ph { animation-duration: 0s; }
+  .gc-in { animation: none; }
   .gc-btn:active { transform: none; }
 }
