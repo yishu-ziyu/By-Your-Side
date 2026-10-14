@@ -6,7 +6,7 @@ import { fillUndoLabel, fillUndoOf, isFillUndoPending, onFillUndoChange, request
 import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
-const CHROME = ".gc-actions,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
+const CHROME = ".gc-actions,.gc-faces,.gc-evidence,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
 export function resultCommandShortcut(): string {
   return /Mac/i.test(navigator.platform) ? "⇧⌘K" : "Ctrl+Shift+K";

@@ -240,6 +240,36 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   return card.title || card.blocks.length ? card : undefined;
 }
 
+/** 依据面的一行：卡片上的一个数字格。tab 是指向这一项的「切到…看」按钮的标签页。 */
+export type EvidenceRow = { label: string; value: string; formula?: string; source?: string; tab?: string };
+
+/**
+ * 卡片的依据面：每个数字格一行，只用卡片已有的数据（算式、source、tab 按钮），不补写。
+ * tab 按钮写的是「切到拼多多看」这种话，按名字落到标签含这个名字的那一格；对不上或对上不止一格就不挂，不猜。
+ * 没写完、没有数字格、既没算式也没出处的卡片没有依据面。选项和表格里的算式不列：它们只留下了结果。
+ */
+export function cardEvidence(card: Card): EvidenceRow[] {
+  const stats = card.blocks.flatMap((b) => (b.kind === "stats" ? b.items : []));
+
+  if (!card.closed || !stats.some((s) => s.formula) && !card.source) return [];
+  const tabs = card.buttons.flatMap((b) => {
+    const name = b.label.replace(/^(?:切到|切换到|去|打开|回到)/, "").replace(/(?:页面|那页|这页|页)?(?:看看|看)?$/, "").trim();
+
+    return b.tab && name.length >= 2 ? [{ name, tab: b.tab }] : [];
+  });
+
+  // 每格取它标签里出现的名字，被更长的名字包含的不算（「京东自营」不落到「京东」）；剩下不止一个（差价这类算出来的格），
+  // 或同一个名字落到不止一格，都不挂：宁可不给「指给我看」，也不指错。
+  const named = stats.map((s) => {
+    const hits = tabs.filter((t) => s.label.includes(t.name));
+    const own = hits.filter((t) => !hits.some((o) => o !== t && o.name.includes(t.name)));
+
+    return own.length === 1 ? own[0] : undefined;
+  });
+
+  return stats.map((s, i) => ({ label: s.label, value: s.value, formula: s.formula, source: card.source, tab: named[i] && named.filter((t) => t?.name === named[i]!.name).length === 1 ? named[i]!.tab : undefined }));
+}
+
 /** 代码块和行内代码的范围：里面的 <card、{=…}、金额都按原文处理。 */
 function codeRanges(text: string): Array<[number, number]> {
   return [...text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*`/g)]
