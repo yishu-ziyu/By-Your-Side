@@ -900,7 +900,8 @@ return host?[host]:[];}))].slice(0,16);
     if(snap.nextStep?.delivery==='partial'){
       // A fallback must not bypass the same decision that rejected a premature
       // finding tool. No extra completion request or unsafe spoken prefix here.
-      const count=(snap.results??[]).filter(item=>item.status==='satisfied').length;
+      // 账本满时插话收起的已完成结果也算做过的步骤。
+      const count=(snap.results??[]).filter(item=>item.status==='satisfied').length+(snap.foldedResults?.count??0);
 
       // 一步都没做成（常见于模型报错）：出错原因已在侧栏，单独一句「没做完」只是账本的话。
       if(!count)return;
