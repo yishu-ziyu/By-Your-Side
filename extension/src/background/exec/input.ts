@@ -2213,14 +2213,14 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
 async function writeField<T extends { range?: InputRangeReadout | null; select?: true }>(tabId: number, run: PageRun, legacy: () => Promise<T>, value: string, guard?: DispatchGuard): Promise<T & { typing?: "keyboard" | "fallback" | "failed" }> {
   const started = Date.now();
   // 调试器不可用、页面中途换了：按没写处理，交给旧写法（旧写法是整栏替换，重写一次不会叠字）。
-  const typed = await typeIntoField(tabId, run, value, guard).catch(() => ({ grade: null, fallback: { beforeLen: -1 } }));
+  const typed = await typeIntoField(tabId, run, value, guard).catch(() => ({ grade: null, fallback: { beforeLen: -1, beforeHash: 0 } }));
   const log = (typing: string) => console.info("[fill-typing]", JSON.stringify({ ms: Date.now() - started, typing }));
 
   if (typed === "skip") return await legacy();
 
   if (!typed.fallback) { log("keyboard"); return { typing: "keyboard" } as T & { typing: "keyboard" }; }
   const out = await legacy();
-  const typing = typingWritten(await regrade(run, value, typed.fallback.beforeLen)) ? "fallback" as const : "failed" as const;
+  const typing = typingWritten(await regrade(run, value, typed.fallback)) ? "fallback" as const : "failed" as const;
   log(typing);
 
   return { ...out, typing };
@@ -2238,6 +2238,11 @@ export async function fill(
   const data = await withAppeared(params.tabId, sessionId, () => fillField(params, sessionId, beforeDispatch));
 
   if (!params.submit) return data;
+
+  // 没写进去就不回车：不然会用空值或旧值把表单提交出去。
+  if (data.typing === "failed" || data.readback?.match === "not_held" || data.readback?.match === "different") {
+    return { ...data, submit: { refused: "这一栏没写进去，没有回车。" } };
+  }
 
   return { ...data, submit: await submitAfterFill(params, sessionId, beforeDispatch) };
 }
@@ -2262,11 +2267,18 @@ async function submitAfterFill(params: { target: string; tabId?: number }, sessi
     const risky = probe.labels.find(label => isSendLabel(label) || isPayLabel(label));
 
     if (risky) return { refused: `这个框旁边有「${risky.slice(0, 12)}」，回车可能直接发出去或付款：已填好，没有回车。要做这一步请点那个按钮，会先问用户。` };
-    const pressed = await pressKey({ key: "Enter", tabId }, sessionId, beforeDispatch);
+    let pressed: Awaited<ReturnType<typeof pressKey>>;
+
+    try {
+      pressed = await pressKey({ key: "Enter", tabId }, sessionId, beforeDispatch);
+    } catch (error) {
+      // 回车可能已经送到页面（提交可能已经发生）：说不确定，别让模型以为没按、再按一次。
+      return { uncertain: `回车可能已经送到页面，结果不确定（${oneLine(error)}）。先看页面，不要再按一次。` };
+    }
 
     return pressed.pressed ? { pressed: true, ...(pressed.effect ? { effect: pressed.effect } : {}), ...(pressed.appeared ? { appeared: pressed.appeared } : {}), ...(pressed.dialog ? { dialog: pressed.dialog } : {}) } : { pressed: false, dialog: pressed.dialog };
   } catch (error) {
-    // 值已经填好了：回车这一步出错只说没按，不让整次填写报失败。
+    // 按回车之前出错：值已经填好了，只说没按，不让整次填写报失败。
     return { refused: `没能按回车（${oneLine(error)}）：已填好，没有回车。` };
   }
 }
