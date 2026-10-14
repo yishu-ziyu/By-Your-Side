@@ -15,7 +15,15 @@ type ToolCall = { name: string; args: JsonRecord };
  * 正文可设 chunkDelayMs（每段之间停顿，模拟慢模型逐段输出）和 thenTool（同一条回复里写完正文再调工具）；
  * reasoning 是正文前的思考摘要，按 OpenAI 兼容的 reasoning_content 分段送出。
  */
-export type TextStep = { text: string; delayMs?: number; chunkDelayMs?: number; thenTool?: ToolCall; reasoning?: string };
+export type TextStep = {
+  text: string;
+  delayMs?: number;
+  chunkDelayMs?: number;
+  /** 按到达时间表一段段写；有它时不再按 12 字切。delayMs 是相对上一段的间隔，第一段前不等。 */
+  pieces?: Array<{ text: string; delayMs?: number }>;
+  thenTool?: ToolCall;
+  reasoning?: string;
+};
 
 /** tools：同一条回复里并行调用几个工具；每个工具结果都让后面的步数加一，所以它后面要按工具个数留占位步。 */
 export type Step = TextStep | { tool: ToolCall; delayMs?: number } | { tools: ToolCall[]; delayMs?: number } | { status: number; body: string };
@@ -67,9 +75,11 @@ async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall } |
   if ("text" in step) {
     for (const piece of step.reasoning?.match(/[\s\S]{1,12}/g) ?? []) res.write(chunk({ reasoning_content: piece }));
 
-    for (const piece of step.text.match(/[\s\S]{1,12}/g) ?? []) {
-      if (step.chunkDelayMs && record?.firstTextAt !== undefined) await new Promise((done) => setTimeout(done, step.chunkDelayMs));
-      res.write(chunk({ content: piece }));
+    const pieces = step.pieces ?? (step.text.match(/[\s\S]{1,12}/g) ?? []).map((text) => ({ text, delayMs: step.chunkDelayMs }));
+
+    for (const piece of pieces) {
+      if (piece.delayMs && record?.firstTextAt !== undefined) await new Promise((done) => setTimeout(done, piece.delayMs));
+      res.write(chunk({ content: piece.text }));
 
       if (record) { record.firstTextAt ??= Date.now(); record.lastTextAt = Date.now(); }
     }
