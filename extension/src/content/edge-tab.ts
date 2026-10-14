@@ -50,6 +50,10 @@ const ICON = 18;
 const STOP = 26;
 const BUBBLE_H = 30;
 const BUBBLE_GAP = 10;
+/** 小圆泡点开后长成的面板：宽度、圆角（和小圆泡同一个半径，长大时形状连续）、列表最高多少。 */
+const PANEL_W = 280;
+const BUBBLE_R = BUBBLE_H / 2;
+const ROWS_MAX_H = 260;
 /** SVG 画布比胶囊大：上下留给凹弧和阴影，宽度留给最长的一句。 */
 const CANVAS_W = 520;
 const CANVAS_H = 560;
@@ -58,6 +62,8 @@ const CANVAS_H = 560;
 const OPEN = [0.42, 0.82] as const;
 const MORPH = [0.36, 0.86] as const;
 const CLOSE = [0.32, 0.94] as const;
+/** 进行中的字上扫过一道光的周期。 */
+const SHIMMER_S = 1.6;
 /** 收回前先让内容淡出。 */
 const CONTENT_OUT_MS = 120;
 const CONTENT_IN_MS = 240;
@@ -69,10 +75,10 @@ const FONT = `-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",
 const STYLE = `
 :host{all:initial}
 .root{--panel:oklch(0.980 0.0055 88);--ink:oklch(22% 0.012 285);--ink2:oklch(54% 0.02 285);--btn:oklch(22% 0.02 285 / .07);--btnh:oklch(22% 0.02 285 / .13);
-  --accent:oklch(58% 0.2 285);--ok:oklch(66% 0.17 150);--warn:oklch(72% 0.15 70);--err:oklch(60% 0.2 25);--objw:600;
+  --accent:oklch(58% 0.2 285);--ok:oklch(66% 0.17 150);--warn:oklch(72% 0.15 70);--err:oklch(60% 0.2 25);--objw:600;--hi:#fff;
   position:fixed;top:0;right:0;width:${CANVAS_W}px;height:${CANVAS_H}px;pointer-events:none;font:13px/1 ${FONT};letter-spacing:-.01em;color:var(--ink);
   -webkit-font-smoothing:antialiased}
-@media (prefers-color-scheme:dark){.root{--panel:#211f1b;--ink:rgb(250,242,230);--ink2:oklch(70% 0.014 285);--btn:rgba(255,255,255,.09);--btnh:rgba(255,255,255,.17);--accent:oklch(74% 0.14 285);--objw:500}}
+@media (prefers-color-scheme:dark){.root{--panel:#211f1b;--ink:rgb(250,242,230);--ink2:oklch(70% 0.014 285);--btn:rgba(255,255,255,.09);--btnh:rgba(255,255,255,.17);--accent:oklch(74% 0.14 285);--objw:500;--hi:rgb(255,247,234)}}
 .root[hidden]{display:none}
 .canvas{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .clip{position:absolute;overflow:hidden;pointer-events:auto;cursor:pointer;outline:none;border-radius:20px 0 0 20px}
@@ -82,10 +88,10 @@ const STYLE = `
 .a .t{max-width:150px}.b .t{max-width:210px}
 .dim{color:var(--ink2);font-weight:500}.strong{color:var(--ink);font-weight:var(--objw)}
 .ic{width:${ICON}px;height:${ICON}px;display:grid;place-items:center}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.4s ease-in-out infinite}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 2.5px color-mix(in oklch,var(--accent) 22%,transparent)}50%{box-shadow:0 0 0 4.5px color-mix(in oklch,var(--accent) 22%,transparent)}}
-.spin{animation:spin 1s linear infinite;transform-origin:9px 9px}
-@keyframes spin{to{transform:rotate(360deg)}}
+/* 进行中不放图标：动词上一道光从右往左扫过。背景比字宽三倍，挪背景位置就是挪那道光。 */
+.shim{background:linear-gradient(90deg,var(--ink2) 0%,var(--ink2) 35%,var(--hi) 50%,var(--ink2) 65%,var(--ink2) 100%);background-size:300% 100%;
+  -webkit-background-clip:text;background-clip:text;color:transparent;animation:shim ${SHIMMER_S}s linear infinite}
+@keyframes shim{from{background-position:0% 0}to{background-position:100% 0}}
 .rg{stroke-dasharray:47.1;stroke-dashoffset:47.1;animation:draw .35s cubic-bezier(.45,0,.55,1) .2s forwards}
 .ck{stroke-dasharray:10;stroke-dashoffset:10;animation:draw .22s cubic-bezier(.45,0,.55,1) .45s forwards}
 @keyframes draw{to{stroke-dashoffset:0}}
@@ -102,13 +108,11 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .act:disabled{opacity:.55;cursor:default}
 .arrow{color:var(--ink2);font-size:13px;width:14px;text-align:center}
 .av{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff8a65,#e1251b);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;flex:none;overflow:hidden}
-.bub{position:absolute;display:flex;align-items:center;gap:5px;padding-left:8px;pointer-events:auto;cursor:pointer;height:${BUBBLE_H}px;border-radius:15px 0 0 15px}
-.bub .n{font-size:12px;font-weight:600;color:var(--ink);flex:none}
-.bub:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.list{position:absolute;right:0;width:280px;max-height:260px;overflow-y:auto;box-sizing:border-box;padding:5px;background:var(--panel);border-radius:14px 0 0 14px;pointer-events:auto;
-  box-shadow:0 1px 1.6px oklch(32% 0.06 285 / .07),-1px 4px 8px oklch(32% 0.06 285 / .07),-2px 12px 24px oklch(32% 0.06 285 / .09),inset 0 0 0 .75px rgba(0,0,0,.06);transform-origin:top right}
-@media (prefers-color-scheme:dark){.list{box-shadow:0 1px 1.6px rgba(0,0,0,.3),-1px 4px 8px rgba(0,0,0,.22),-2px 12px 24px rgba(0,0,0,.2),inset 0 0 0 .75px rgba(255,255,255,.1)}}
-.list[hidden]{display:none}
+.bub{position:absolute;overflow:hidden;pointer-events:auto;border-radius:${BUBBLE_R}px 0 0 ${BUBBLE_R}px}
+.bhead{display:flex;align-items:center;gap:5px;padding-left:8px;height:${BUBBLE_H}px;cursor:pointer;outline:none}
+.bhead .n{font-size:12px;font-weight:600;color:var(--ink);flex:none}
+.bhead:focus-visible{box-shadow:inset 0 0 0 2px var(--accent);border-radius:${BUBBLE_R}px 0 0 ${BUBBLE_R}px}
+.rows{width:${PANEL_W - 1}px;max-height:${ROWS_MAX_H}px;overflow-y:auto;box-sizing:border-box;padding:0 5px 5px}
 .row{display:flex;align-items:center;gap:8px;width:100%;padding:8px;border-radius:9px;transition:background-color .12s ease}
 .row:hover{background:var(--btn)}
 .row .nm{font-weight:var(--objw);flex:none}
@@ -117,7 +121,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .detail{font-size:12px;line-height:1.5;color:var(--ink2);padding:2px 8px 8px 34px;overflow-wrap:anywhere}
 .detail[hidden]{display:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
-@media (prefers-reduced-motion:reduce){.dot,.spin{animation:none}.dot{box-shadow:0 0 0 4px color-mix(in oklch,var(--accent) 20%,transparent)}.rg,.ck{animation-duration:.01s;animation-delay:0s}}
+@media (prefers-reduced-motion:reduce){.shim{animation:none;background:none;color:var(--ink2)}.rg,.ck{animation-duration:.01s;animation-delay:0s}}
 `;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -162,9 +166,9 @@ type Slot = "icon" | "a" | "b" | "end";
 
 interface Item { slot: Slot; key: string; el: HTMLElement; x: Spring; width: number; leaving?: boolean }
 
-function shapePath(X: number, w: number, h: number, mid: number, c: number): string {
+function shapePath(X: number, w: number, h: number, mid: number, c: number, rMax = Infinity): string {
   const C = c * clamp01(w / 48);
-  const R = Math.min(h / 2, w);
+  const R = Math.min(h / 2, w, rMax);
   const top = mid - h / 2;
   const b = top + h;
   const L = X - w;
@@ -172,8 +176,8 @@ function shapePath(X: number, w: number, h: number, mid: number, c: number): str
   return `M${X + 1},${top - C} L${X},${top - C} Q${X},${top} ${X - C},${top} L${L + R},${top} Q${L},${top} ${L},${top + R} L${L},${b - R} Q${L},${b} ${L + R},${b} L${X - C},${b} Q${X},${b} ${X},${b + C} L${X + 1},${b + C} Z`;
 }
 
-function hairPath(X: number, w: number, h: number, mid: number): string {
-  const R = Math.min(h / 2, w);
+function hairPath(X: number, w: number, h: number, mid: number, rMax = Infinity): string {
+  const R = Math.min(h / 2, w, rMax);
   const top = mid - h / 2;
   const b = top + h;
   const L = X - w;
@@ -181,14 +185,15 @@ function hairPath(X: number, w: number, h: number, mid: number): string {
   return `M${X},${top} L${L + R},${top} Q${L},${top} ${L},${top + R} L${L},${b - R} Q${L},${b} ${L + R},${b} L${X},${b}`;
 }
 
+/** 进行中（在干活、在等、在别页）没有图标，只有扫光的字；有了结果才出图标。 */
+const IN_PROGRESS = new Set<EdgeTabTone>(["work", "wait", "away"]);
+
 function iconFor(tone: EdgeTabTone): string {
   switch (tone) {
-    case "wait": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--btn)" stroke-width="2"/><path class="spin" d="M9 2 A7 7 0 0 1 16 9" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/></svg>`;
     case "ok": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.5" fill="none" stroke="var(--btn)" stroke-width="2"/><circle class="rg" cx="9" cy="9" r="7.5" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" transform="rotate(-90 9 9)"/><path class="ck" d="M5.6 9.2 L8 11.4 L12.4 6.8" fill="none" stroke="var(--ok)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     case "unk": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.5" fill="none" stroke="var(--warn)" stroke-width="2"/><text x="9" y="13" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warn)" font-family="-apple-system,sans-serif">?</text></svg>`;
     case "err": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="var(--err)"/><path d="M9 4.8 V10" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="13" r="1.2" fill="#fff"/></svg>`;
-    case "hand": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="var(--warn)"/><path d="M9 4.5 V9.5 M6.5 7.5 L9 10 L11.5 7.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 9 9)"/></svg>`;
-    default: return `<div class="ic"><div class="dot"></div></div>`;
+    default: return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="var(--warn)"/><path d="M9 4.5 V9.5 M6.5 7.5 L9 10 L11.5 7.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 9 9)"/></svg>`;
   }
 }
 
@@ -215,10 +220,14 @@ export interface EdgeTabState {
   width: number;
   rect: { x: number; y: number; width: number; height: number } | null;
   panel: string;
-  bubble: { count: number; letter: string; rect: { x: number; y: number; width: number; height: number } } | null;
+  /** rect 是小圆泡顶上可点的那一行；panel 是整块（点开后长成的面板）。 */
+  bubble: { count: number; letter: string; rect: { x: number; y: number; width: number; height: number }; panel: { x: number; y: number; width: number; height: number } } | null;
   list: { open: boolean; rows: Array<{ name: string; title: string; local: boolean; rect: { x: number; y: number; width: number; height: number } }> };
   /** 停止键或「继续」此刻的位置，验收用真鼠标点它。 */
   button: { x: number; y: number; width: number; height: number } | null;
+  /** 胶囊上有没有图标；动词上的扫光此刻在不在动。 */
+  icon: boolean;
+  shimmer: boolean;
 }
 
 export function createEdgeTab(handlers: EdgeTabHandlers) {
@@ -234,7 +243,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop class="h" offset="0"/><stop class="h" offset=".5"/><stop class="h" offset="1"/></linearGradient>
 </defs><path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/>
 <path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/></svg>
-<div class="clip" role="button" tabindex="0"></div><div class="bub" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"></div><div class="list" hidden></div><span class="sr" role="status" aria-live="polite"></span></div>`;
+<div class="clip" role="button" tabindex="0"></div><div class="bub"><div class="bhead" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"></div><div class="rows"></div></div><span class="sr" role="status" aria-live="polite"></span></div>`;
   const root = shadow.querySelector<HTMLDivElement>(".root")!;
   const [mainShape, bubShape] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.shape"));
   const [mainHair, bubHair] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.hl"));
@@ -242,13 +251,15 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   const hairStops = Array.from(shadow.querySelectorAll<SVGElement>(".h"));
   const clip = shadow.querySelector<HTMLDivElement>(".clip")!;
   const bub = shadow.querySelector<HTMLDivElement>("div.bub")!;
-  const list = shadow.querySelector<HTMLDivElement>(".list")!;
+  const bhead = shadow.querySelector<HTMLDivElement>(".bhead")!;
+  const list = shadow.querySelector<HTMLDivElement>(".rows")!;
   const live = shadow.querySelector<HTMLSpanElement>(".sr")!;
   const X = CANVAS_W;
 
   const W = new Spring(CLOSED.w);
   const Hs = new Spring(CLOSED.h);
   const BW = new Spring(0);
+  const BH = new Spring(BUBBLE_H);
   let items: Item[] = [];
   let view: EdgeTabView | null = null;
   let others: EdgeTabOther[] = [];
@@ -272,30 +283,29 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     handlers.capsule();
   });
   const toggleList = () => setList(!listOpen);
-  bub.addEventListener("click", ev => { ev.stopPropagation(); toggleList(); });
-  bub.addEventListener("keydown", ev => {
+  bub.addEventListener("click", ev => ev.stopPropagation());
+  bhead.addEventListener("click", ev => { ev.stopPropagation(); toggleList(); });
+  bhead.addEventListener("keydown", ev => {
     if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggleList(); }
   });
   root.addEventListener("keydown", ev => {
-    if (ev.key === "Escape" && listOpen) { setList(false); bub.focus(); ev.stopPropagation(); }
+    if (ev.key === "Escape" && listOpen) { setList(false); bhead.focus(); ev.stopPropagation(); }
   });
 
+  /** 列表不是另起一张卡：小圆泡原地向下、向左长成贴边面板，收起时按同一套弹簧缩回小圆泡。 */
   function setList(on: boolean): void {
-    listOpen = on && others.length > 0;
-    bub.setAttribute("aria-expanded", String(listOpen));
-    list.inert = !listOpen;
+    const next = on && others.length > 0;
+    bhead.setAttribute("aria-expanded", String(next));
+    list.inert = !next;
 
-    if (listOpen === !list.hidden) return;
+    if (next === listOpen) return;
+    listOpen = next;
 
-    if (listOpen) {
-      renderList();
-      list.hidden = false;
+    if (listOpen) renderList();
 
-      if (!reduced.matches) list.animate([{ opacity: 0, transform: "translateY(-4px) scale(.97)" }, { opacity: 1, transform: "none" }], { duration: CONTENT_IN_MS, easing: "cubic-bezier(.33,1,.68,1)" });
-      else list.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS });
-    } else {
-      list.hidden = true;
-    }
+    if (reduced.matches) list.animate([{ opacity: listOpen ? 0 : 1 }, { opacity: listOpen ? 1 : 0 }], { duration: FADE_MS, fill: "forwards" });
+    paintBubble();
+    kick();
   }
 
   function renderList(): void {
@@ -363,7 +373,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     else if (slot === "a" || slot === "b") {
       const t = document.createElement("span");
       const strong = slot === "a" ? v.lead : !v.lead;
-      t.className = `t ${strong ? "strong" : "dim"}`;
+      t.className = `t ${strong ? "strong" : "dim"}${slot === "a" && IN_PROGRESS.has(v.tone) ? " shim" : ""}`;
       t.textContent = slot === "a" ? v.a : v.b;
       el.append(t);
     } else if (v.end === "stop") {
@@ -405,8 +415,8 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   }
 
   function slotKey(slot: Slot, v: EdgeTabView): string | null {
-    if (slot === "icon") return v.tone === "away" ? "work" : v.tone;
-    if (slot === "a") return v.a ? `${v.lead ? 1 : 0}${v.a}` : null;
+    if (slot === "icon") return IN_PROGRESS.has(v.tone) ? null : v.tone;
+    if (slot === "a") return v.a ? `${v.lead ? 1 : 0}${IN_PROGRESS.has(v.tone) ? 1 : 0}${v.a}` : null;
     if (slot === "b") return v.b ? `${v.lead ? 1 : 0}${v.b}` : null;
     if (!v.end) return null;
 
@@ -441,22 +451,20 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     anim.onfinish = () => { item.el.remove(); items = items.filter(i => i !== item); };
   }
 
-  /** 从右往左排：结尾按钮、右段、左段、图标。 */
+  /** 从右往左排：结尾按钮、右段、左段、图标；最左边留白，图标那侧少留一点。 */
   function layout(v: EdgeTabView, next: Item[]): number {
     const bySlot = new Map(next.map(i => [i.slot, i]));
-    const end = bySlot.get("end");
-    let x = end ? (v.end === "arrow" ? 12 : 7) : 14;
-    const put = (slot: Slot, after: number) => {
-      const it = bySlot.get(slot);
+    const order = (["end", "b", "a", "icon"] as const).flatMap(slot => bySlot.get(slot) ?? []);
+    let x = bySlot.has("end") ? (v.end === "arrow" ? 12 : 7) : 14;
 
-      if (!it) return;
+    order.forEach((it, i) => {
       it.x.to = x;
-      x += it.width + after;
-    };
-    put("end", GAP);
-    put("b", bySlot.has("a") ? (v.tight ? 0.5 : WGAP) : GAP);
-    put("a", GAP);
-    put("icon", PADL - 4);
+      x += it.width;
+      const nextSlot = order[i + 1]?.slot;
+
+      if (!nextSlot) x += it.slot === "icon" ? PADL - 4 : PADL;
+      else x += it.slot === "b" && nextSlot === "a" ? (v.tight ? 0.5 : WGAP) : GAP;
+    });
 
     return Math.round(x);
   }
@@ -552,6 +560,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
     if (!count) {
       BW.aim(0, CLOSE);
+      BH.aim(BUBBLE_H, CLOSE);
       bub.inert = true;
       setList(false);
 
@@ -565,18 +574,18 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       const n = document.createElement("span");
       n.className = "n";
       n.textContent = `+${count}`;
-      bub.replaceChildren(avatar(first!), n);
-      bub.setAttribute("aria-label", `另外 ${count} 位助手，展开列表`);
+      bhead.replaceChildren(avatar(first!), n);
+      bhead.setAttribute("aria-label", `另外 ${count} 位助手，展开列表`);
     }
 
     // 列表开着时只在内容变了才重画，保住键盘焦点和展开的详情。
     const rows = others.map(o => `${o.id}|${o.title}|${o.detail ?? ""}`).join("\n");
 
     if (listOpen && rows !== listRows) renderList();
-    const width = Math.round(8 + 18 + 5 + (bub.querySelector<HTMLElement>(".n")?.offsetWidth ?? 14) + 10);
+    const width = listOpen ? PANEL_W : Math.round(8 + 18 + 5 + (bhead.querySelector<HTMLElement>(".n")?.offsetWidth ?? 14) + 10);
+    const height = listOpen ? BUBBLE_H + Math.min(ROWS_MAX_H, list.scrollHeight) : BUBBLE_H;
 
-    if (reduced.matches) BW.snap(width);
-    else BW.aim(width, BW.x < 1 ? OPEN : MORPH);
+    if (reduced.matches) { BW.snap(width); BH.snap(height); } else { BW.aim(width, BW.x < 1 ? OPEN : MORPH); BH.aim(height, MORPH); }
   }
 
   function kick(): void {
@@ -596,7 +605,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       Hs.aim(CLOSED.h, CLOSE);
     }
 
-    W.step(dt); Hs.step(dt); BW.step(dt);
+    W.step(dt); Hs.step(dt); BW.step(dt); BH.step(dt);
 
     for (const it of items) it.x.step(dt);
 
@@ -609,7 +618,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     }
 
     paint();
-    const settled = W.still && Hs.still && BW.still && items.every(i => i.x.still) && !closeAt && fade === (open ? 1 : 0);
+    const settled = W.still && Hs.still && BW.still && BH.still && items.every(i => i.x.still) && !closeAt && fade === (open ? 1 : 0);
 
     if (!open && settled) {
       W.snap(CLOSED.w);
@@ -617,7 +626,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       root.hidden = true;
       clip.replaceChildren();
       items = [];
-      bub.replaceChildren();
+      bhead.replaceChildren();
+      list.replaceChildren();
+      listRows = "";
       bubbleKey = "";
 
       return;
@@ -648,13 +659,13 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     for (const it of items) it.el.style.right = `${it.x.x}px`;
 
     const bw = BW.x;
+    const bh = BH.x;
     const btop = MID + H / 2 + BUBBLE_GAP;
-    const bmid = btop + BUBBLE_H / 2;
-    bubShape!.setAttribute("d", bw > 0.5 ? shapePath(X, bw, BUBBLE_H, bmid, 7) : "");
-    bubHair!.setAttribute("d", bw > 0.5 ? hairPath(X, bw, BUBBLE_H, bmid) : "");
+    const bmid = btop + bh / 2;
+    bubShape!.setAttribute("d", bw > 0.5 ? shapePath(X, bw, bh, bmid, 7, BUBBLE_R) : "");
+    bubHair!.setAttribute("d", bw > 0.5 ? hairPath(X, bw, bh, bmid, BUBBLE_R) : "");
     bubShape!.style.opacity = bubHair!.style.opacity = String(clamp01(bw / 20));
-    Object.assign(bub.style, { left: `${X - bw}px`, top: `${btop}px`, width: `${Math.max(0, bw - 1)}px`, overflow: "hidden", visibility: bw > 0.5 ? "visible" : "hidden" });
-    list.style.top = `${btop + BUBBLE_H + 8}px`;
+    Object.assign(bub.style, { left: `${X - bw}px`, top: `${btop}px`, width: `${Math.max(0, bw - 1)}px`, height: `${bh}px`, visibility: bw > 0.5 ? "visible" : "hidden" });
   }
 
   // 窗口宽度变了，画布仍贴右边；只需要重画一帧。系统深浅色切换时阴影和细边跟着换。
@@ -689,9 +700,11 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
         width: W.to,
         rect: shownRect,
         panel: getComputedStyle(root).getPropertyValue("--panel").trim(),
-        bubble: open && others.length ? { count: others.length, letter: bub.querySelector(".av")?.textContent ?? "", rect: rectOf(bub) } : null,
+        bubble: open && others.length ? { count: others.length, letter: bhead.querySelector(".av")?.textContent ?? "", rect: rectOf(bhead), panel: rectOf(bub) } : null,
         list: { open: listOpen, rows: listOpen ? Array.from(list.querySelectorAll<HTMLElement>("button.row"), (row, i) => ({ name: others[i]?.name ?? "", title: others[i]?.title ?? "", local: Boolean(others[i]?.local), rect: rectOf(row) })) : [] },
         button: open ? (b => b ? rectOf(b) : null)(clip.querySelector("button")) : null,
+        icon: open && items.some(i => i.slot === "icon" && !i.leaving),
+        shimmer: open && (t => Boolean(t) && getComputedStyle(t!).animationName === "shim" && t!.getAnimations().some(a => a.playState === "running"))(clip.querySelector<HTMLElement>(".el:not([data-leaving]) .shim")),
       };
     },
     /** 验收脚本用：按部位点一下（和真人点同一个处理函数）。 */
@@ -700,7 +713,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
       if (part === "capsule") { clip.click(); return true; }
 
-      if (part === "bubble") { if (!others.length) return false; bub.click(); return true; }
+      if (part === "bubble") { if (!others.length) return false; bhead.click(); return true; }
 
       if (typeof part === "number") {
         const row = list.querySelectorAll<HTMLButtonElement>("button.row")[part];

@@ -31,7 +31,8 @@ type Rect = { x: number; y: number; width: number; height: number };
 
 type Tab = {
   shown: boolean; tone: string | null; a: string; b: string; end: string | null; endEnabled: boolean; width: number; rect: Rect | null; panel: string;
-  bubble: { count: number; letter: string; rect: Rect } | null; list: { open: boolean; rows: Array<{ name: string; title: string; local: boolean; rect: Rect }> }; button: Rect | null;
+  bubble: { count: number; letter: string; rect: Rect; panel: Rect } | null; list: { open: boolean; rows: Array<{ name: string; title: string; local: boolean; rect: Rect }> }; button: Rect | null;
+  icon: boolean; shimmer: boolean;
 };
 
 const SHOP = `<!doctype html><meta charset="utf-8"><title>京东 · 降噪耳机</title><style>
@@ -137,6 +138,29 @@ try {
     await mouse(session, "mouseMoved", at);
 
     for (const type of ["mousePressed", "mouseReleased"]) await mouse(session, type, at);
+  };
+
+  /** 逐帧截图录一段（浏览器自带的录屏帧在改过视口后会被放大裁切，截图的位置才是准的）。 */
+  const recordClip = async (session: string, clip: Rect & { scale: number } | null, ms: number, file: string) => {
+    const dir = await mkdtemp(join(tmpdir(), "edge-tab-clip-"));
+    const shotsAt: Array<{ at: number; file: string }> = [];
+    const end = Date.now() + ms;
+
+    while (Date.now() < end) {
+      // SAFETY: Page.captureScreenshot 回包的 data 是 base64 JPEG。
+      const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 90, ...(clip ? { clip } : {}) }, session) as { data: string };
+      const name = join(dir, `${String(shotsAt.length).padStart(5, "0")}.jpg`);
+      await writeFile(name, Buffer.from(data, "base64"));
+      shotsAt.push({ at: Date.now(), file: name });
+    }
+
+    const list = shotsAt.flatMap((f, i) => [`file '${f.file}'`, `duration ${(((shotsAt[i + 1]?.at ?? f.at + 40) - f.at) / 1000).toFixed(3)}`]);
+    list.push(`file '${shotsAt.at(-1)!.file}'`);
+    await writeFile(join(dir, "list.txt"), list.join("\n"));
+    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(dir, "list.txt"), "-fps_mode", "cfr", "-r", "30", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-preset", "slow", "-crf", "22", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", file]);
+    await rm(dir, { recursive: true, force: true });
+
+    return shotsAt.length;
   };
 
   const waitTab = (want: (t: Tab) => boolean, ms: number, label: string, session = work) => until(async () => { const t = await tab(session); return t && want(t) ? t : null; }, ms, label, 40);
@@ -264,19 +288,24 @@ try {
       await drive(work, js);
       await sleep(name === "7-done" ? 900 : 1100);
       const t = (await tab())!;
-      readings[`${scheme}:${name}`] = asJson({ tone: t.tone, a: t.a, b: t.b, end: t.end, bubble: t.bubble?.count ?? null, panel: t.panel });
+      readings[`${scheme}:${name}`] = asJson({ tone: t.tone, a: t.a, b: t.b, end: t.end, bubble: t.bubble?.count ?? null, panel: t.panel, icon: t.icon, shimmer: t.shimmer });
       await crop(`${scheme}-${name}`);
 
       if (scheme === "light" && name === "5-handoff") await rp.screenshot(work, join(out, "latest.png"));
+
+      // 流光特写：在干活这一态录约 3 秒，只录胶囊附近、放大三倍。
+      if (scheme === "light" && name === "1-work" && record) await recordClip(work, { x: vw - 230, y: 52, width: 230, height: 64, scale: 3 }, 3200, join(out, "shimmer.mp4"));
     }
 
     check(`${scheme === "light" ? "浅色" : "深色"}：胶囊底色等于侧栏底色`, (readings[`${scheme}:1-work`] as { panel: string }).panel === panelColors[scheme === "light" ? 0 : 1], asJson({ capsule: (readings[`${scheme}:1-work`] as { panel: string }).panel, sidepanel: panelColors }));
   }
 
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, work);
-  const r = readings as Record<string, { tone: string; a: string; b: string; end: string | null; bubble: number | null }>;
-  check("在干活：在点 加入购物车 + 停止键", r["light:1-work"]!.tone === "work" && r["light:1-work"]!.end === "stop", r["light:1-work"]!);
-  check("等页面响应：转圈 + 在等 页面响应 + 停止键", r["light:2-wait"]!.tone === "wait" && r["light:2-wait"]!.a === "在等" && r["light:2-wait"]!.end === "stop", r["light:2-wait"]!);
+  const r = readings as Record<string, { tone: string; a: string; b: string; end: string | null; bubble: number | null; icon: boolean; shimmer: boolean }>;
+  check("在干活：在点 加入购物车 + 停止键，没有图标，动词上有流光", r["light:1-work"]!.tone === "work" && r["light:1-work"]!.end === "stop" && !r["light:1-work"]!.icon && r["light:1-work"]!.shimmer, r["light:1-work"]!);
+  check("等页面响应：在等 页面响应 + 停止键，没有转圈图标，动词上有流光", r["light:2-wait"]!.tone === "wait" && r["light:2-wait"]!.a === "在等" && r["light:2-wait"]!.end === "stop" && !r["light:2-wait"]!.icon && r["light:2-wait"]!.shimmer, r["light:2-wait"]!);
+  check("有结果才出图标、不扫光：做成、不确定、没做成、现在归你", ["7-done", "3-unknown", "4-failed", "5-handoff"].every(n => r[`light:${n}`]!.icon && !r[`light:${n}`]!.shimmer && r[`dark:${n}`]!.icon), asJson(Object.fromEntries(["7-done", "3-unknown", "4-failed", "5-handoff"].map(n => [n, { icon: r[`light:${n}`]!.icon, shimmer: r[`light:${n}`]!.shimmer }]))));
+  check("深色下流光照样在动", r["dark:1-work"]!.shimmer && r["dark:2-wait"]!.shimmer, asJson({ work: r["dark:1-work"]!.shimmer, wait: r["dark:2-wait"]!.shimmer }));
   check("结果不确定：点了提交 结果还不确定，不写「详情在侧栏」", r["light:3-unknown"]!.tone === "unk" && r["light:3-unknown"]!.a === "点了提交" && r["light:3-unknown"]!.b === "结果还不确定", r["light:3-unknown"]!);
   check("没做成：收货地址 没填进去", r["light:4-failed"]!.tone === "err" && r["light:4-failed"]!.a === "收货地址" && r["light:4-failed"]!.b === "没填进去", r["light:4-failed"]!);
   check("现在归你压过「没做成」，带「继续」", r["light:5-handoff"]!.tone === "hand" && r["light:5-handoff"]!.a === "现在归你" && r["light:5-handoff"]!.end === "继续", r["light:5-handoff"]!);
@@ -310,6 +339,10 @@ try {
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, work);
   const calm = await sampleOpen("ns.cursor.showFeedback({ id: 'm3', text: '没有执行', kind: 'failure' })");
   check("减少动态效果：不伸缩，第一帧就是整句宽度（只淡入）", calm.widths.filter(w => w > 0).every(w => Math.abs(w - calm.final) <= 1), asJson(calm));
+  await drive(work, "(ns.cursor.hideFeedback(), ns.cursor.beginAction('m4', 'click', undefined, document.querySelector('#add1')))");
+  const still = await waitTab(t => t.tone === "work", 2000, "在干活").catch(() => null);
+  check("减少动态效果：在干活时不扫光，只有静态字", !!still && !still.shimmer && !still.icon, asJson(still));
+  await drive(work, "ns.cursor.endAction('m4', 'done')");
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, work);
   await drive(work, "(ns.cursor.hideFeedback(), ns.cursor.clearStatus(), ns.cursor.hide())");
 
@@ -322,7 +355,8 @@ try {
   // 让页面上同时挂着一条「没做成」：接管后它必须让位，不叠两层。
   await drive(work, "ns.cursor.showFeedback({ id: 'under', text: '没有执行', kind: 'failure' })");
   await rp.click(panel, "#takeover-btn");
-  const handed = await waitTab(t => t.tone === "hand", 10000, "现在归你").catch(() => null);
+  // 接管时先过约 0.1 秒「正在停住全队」，再到「现在归你」。
+  const handed = await waitTab(t => t.tone === "hand" && t.a === "现在归你", 10000, "现在归你").catch(() => null);
   check("接管后胶囊是「现在归你」带「继续」，压过没做成", handed?.a === "现在归你" && handed.end === "继续" && handed.endEnabled, asJson(handed));
   const hosts = Number(await rp.evaluate(work, 'document.querySelectorAll("[data-sideagent-overlay=edge-tab]").length'));
   check("页面上只有一个胶囊", hosts === 1, hosts);
@@ -372,11 +406,28 @@ try {
   check("本页也有动作时，别页助手收进下方小圆泡 +1", withBubble?.bubble?.count === 1, asJson(withBubble));
 
   if (withBubble?.bubble) {
+    await sleep(800);
+    const closedPanel = (await tab(other))!.bubble!.panel;
     await mouseClick(other, withBubble.bubble.rect);
+    // 展开过程每 25ms 量一次整块：顶边不动、右边贴着视口，宽高是一点点长出来的。
+    const growth: Rect[] = [];
+
+    for (let i = 0; i < 14; i++) { const t = await tab(other); if (t?.bubble) growth.push(t.bubble.panel); await sleep(25); }
     const opened = await waitTab(t => t.list.open && t.list.rows.length === 1, 3000, "列表展开", other).catch(() => null);
     check("点小圆泡向下展开列表", opened?.list.rows[0]?.title.includes("京东") === true, asJson(opened?.list ?? null));
+    const ow = Number(await rp.evaluate(other, "innerWidth"));
+    const final = opened?.bubble?.panel;
+    check("列表是小圆泡原地长成的贴边面板：顶边不动、贴着右边、宽高逐步长大",
+      !!final && final.height > closedPanel.height + 20 && final.width > closedPanel.width + 100 &&
+      growth.every(g => Math.abs(g.y - closedPanel.y) <= 1 && Math.abs(g.x + g.width + 1 - ow) <= 2) &&
+      growth.some(g => g.width > closedPanel.width + 5 && g.width < final.width - 5),
+      asJson({ closedPanel, final: final ?? null, growth: growth.map(g => [Math.round(g.width), Math.round(g.height)]) }));
     await sleep(400);
     await shotOther("9-list");
+    // 收起用同一套弹簧缩回小圆泡。
+    await mouseClick(other, opened!.bubble!.rect);
+    const shrunk = await waitTab(t => !t.list.open && !!t.bubble && Math.abs(t.bubble.panel.height - closedPanel.height) <= 1 && Math.abs(t.bubble.panel.width - closedPanel.width) <= 1, 3000, "面板缩回小圆泡", other).catch(() => null);
+    check("再点一下，面板缩回小圆泡", !!shrunk, asJson(shrunk?.bubble ?? null));
     await drive(other, "ns.cursor.hideFeedback()");
   }
 
@@ -384,7 +435,7 @@ try {
 
   if (back?.rect) await mouseClick(other, { ...back.rect, width: back.rect.width - 20 });
   const switched = await until(async () => String(await rp.evaluate(panel, "chrome.tabs.query({active:true,lastFocusedWindow:true}).then(t=>t[0]?.url??'')")).endsWith("/?bg") || null, 6000, "切到工作页").catch(() => null);
-  check("点「在 〈那页〉 ↗」切到助手在干活的页面", !!switched, asJson(switched));
+  check("点「在 〈那页〉 ↗」切到助手在干活的页面", !!switched, asJson(switched ?? { back, now: await tab(other), active: await rp.evaluate(panel, "chrome.tabs.query({active:true,lastFocusedWindow:true}).then(t=>t.map(x=>x.url))") }));
 
   // ── 侧栏关着：胶囊贴在窗口右边，点它打开侧栏 ──
   const bgTarget = (await rp.targets()).find(t => t.url.endsWith("/?bg"))?.targetId;
