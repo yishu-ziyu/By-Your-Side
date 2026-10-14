@@ -281,20 +281,24 @@ export async function readPageChanges(tabId: number, roots: readonly string[], o
   const nodes = new Map<string, AxNodeLite>();
 
   try {
-    for (const selector of roots.slice(0, MAX_CHANGED_ROOTS)) {
+    // 几处一起读；某一处找不到、读不了只少这一处。
+    await Promise.all(roots.slice(0, MAX_CHANGED_ROOTS).map(async selector => {
       const found = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)})`, contextId, objectGroup }).catch(() => undefined);
 
-      if (!found?.result?.objectId) continue;
-      const { node } = await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: found.result.objectId });
-      const sub = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: node.backendNodeId }).catch(() => ({ nodes: [] }));
+      if (!found?.result?.objectId) return;
+      const described = await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: found.result.objectId }).catch(() => undefined);
+
+      if (!described) return;
+      const sub = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: described.node.backendNodeId }).catch(() => ({ nodes: [] }));
 
       for (const n of sub.nodes ?? []) nodes.set(n.nodeId, n);
-    }
+    }));
   } finally {
     void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
   }
 
-  const list = [...nodes.values()];
+  // 变的是 html 这类大容器时，助手自己的光标、停止条也在里面：和整页快照一样去掉。
+  const list = withoutSubtrees([...nodes.values()], await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, list);
   const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
 

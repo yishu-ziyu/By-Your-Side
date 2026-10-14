@@ -4,11 +4,12 @@
  *   npx tsx scripts/acceptance/real-path/action-page-changes.mts --headless
  * 练习页是一长页笔记（3000 段正文，约 1.5 万个无障碍节点），点「新建笔记」弹出对话框：
  *   标题框（原来写着草稿名）、口令框和提货码框（autocomplete=one-time-code，名字不像敏感栏；都原来有值）、「保存」。
- * 往标题框填字后，对话框里出现一行提示“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
+ * 弹窗打开时页面像常见弹窗库那样给 body 加 modal-open、锁滚动（大元素只改了属性，不能盖住里面新出现的对话框）。
+ * 页面上还有一个编辑器（contenteditable）。往标题框填字后，对话框里出现一行提示“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
  * 脚本模型只在开头读一次页，之后的编号全部取自点击、填写的结果原文。判据只读回到模型的工具结果和服务器收到的保存。
  *   a 点击结果带回对话框里的标题框和「保存」的编号（读页时没有这两个编号），不带整页正文，不超过 2000 字。
  *   b 脚本模型照这两个编号填写、保存：服务器收到标题，对话框关掉；整轮只读了一次页。
- *   c 口令、提货码的值不出现在任何结果里；填写结果带回新出现的提示，但不带被替换掉的旧标题。
+ *   c 口令、提货码的值不出现在任何结果里；填写结果带回新出现的提示，但不带被替换掉的旧标题；往编辑器里填的字不当成新出现的内容。
  *   d 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回了内容的那几步每一步也不超过 300 毫秒。
  * 失败方式：关掉变化摘要（pageChangesAfter 直接返回 undefined），a、b 失败；改回动作后读整页，d 失败。
  */
@@ -34,6 +35,7 @@ const LONG = Array.from({ length: 3000 }, (_, i) => `<p>第 ${i + 1} 段：这�
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔记</title><body style="font:16px sans-serif;margin:40px">
 <h1>我的笔记</h1>
 <p><label>备注 <input id="memo" aria-label="备注"></label> <button id="new" type="button">新建笔记</button></p>
+<div id="editor" contenteditable="true" role="textbox" aria-label="正文" style="border:1px solid #ccc;min-height:2em"></div>
 ${LONG}
 <script>
 document.getElementById("new").onclick = () => {
@@ -46,6 +48,9 @@ document.getElementById("new").onclick = () => {
     + '<p><label>提货 <input id="code" autocomplete="one-time-code" aria-label="提货" value="${CODE}"></label></p>'
     + '<p id="hint" role="status"></p><button id="save" type="button">保存</button>';
   document.body.append(box);
+  // 和常见弹窗库一样，打开时锁住页面滚动：给 body 加类、改样式。
+  document.body.classList.add("modal-open");
+  document.body.style.overflow = "hidden";
   const title = box.querySelector("#title");
   title.addEventListener("input", () => { box.querySelector("#hint").textContent = "原标题「${OLD_TITLE}」已替换"; });
   box.querySelector("#save").onclick = () => { fetch("/save?title=" + encodeURIComponent(title.value)); box.remove(); };
@@ -65,13 +70,15 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 const ASK = "新建验收：新建一条笔记，标题写周会纪要，保存。";
 const FINAL = "笔记已保存。";
 // 编号在前一步的结果里才知道：onPayload 从结果原文里填进这些参数，模型服务在回复前才序列化它们。
-const steps = { memo: { target: "", value: "随手记" }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" } };
+const EDITOR_TEXT = "编辑器正文ECHO4417";
+const steps = { memo: { target: "", value: "随手记" }, editor: { target: "", value: EDITOR_TEXT }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" } };
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: ASK, steps: [
     { tool: { name: "snapshot", args: {} } },
     { tool: { name: "fill", args: steps.memo } },
+    { tool: { name: "fill", args: steps.editor } },
     { tool: { name: "click", args: steps.open } },
     { tool: { name: "fill", args: steps.title } },
     { tool: { name: "click", args: steps.save } },
@@ -104,6 +111,7 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
     if (call?.name === "snapshot") {
       steps.memo.target = `@${/\[ref=(\d+)\] textbox "备注"/.exec(text)?.[1] ?? ""}`;
       steps.open.target = `@${/\[ref=(\d+)\] button "新建笔记"/.exec(text)?.[1] ?? ""}`;
+      steps.editor.target = `@${/\[ref=(\d+)\] textbox "正文"/.exec(text)?.[1] ?? ""}`;
     }
     // 标题框和「保存」只从点击结果里拿：读页时它们还不存在。
     if (call?.name === "click" && call.arguments.includes(steps.open.target)) {
@@ -140,7 +148,7 @@ try {
   const openReceipt = receipts.find(r => r.name === "click" && r.args.includes(steps.open.target))?.text ?? "";
   const shown = appearedPart(openReceipt);
   const refsNew = [steps.title.target, steps.save.target].every(t => /^@\d+$/.test(t) && !snapshotText.includes(`[ref=${t.slice(1)}]`));
-  check("a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文，不超过 2000 字", refsNew && shown.length > 0 && !/第 \d+ 段/.test(shown) && shown.length <= 2000 + 80, { title: steps.title.target, save: steps.save.target, chars: shown.length, shown });
+  check("a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、不带读页时已有的「新建笔记」，不超过 2000 字", refsNew && shown.length > 0 && !/第 \d+ 段/.test(shown) && !shown.includes(`[ref=${steps.open.target.slice(1)}]`) && shown.length <= 2000 + 80, { title: steps.title.target, save: steps.save.target, chars: shown.length, shown });
 
   const dialogGone = await rp.evaluate(work, '!document.querySelector("[role=dialog]")');
   const snapshots = receipts.filter(r => r.name === "snapshot").length;
@@ -148,7 +156,8 @@ try {
 
   const titleReceipt = receipts.find(r => r.name === "fill" && r.args.includes(steps.title.target))?.text ?? "";
   const leaked = receipts.filter(r => r.text.includes("SECRET9948") || r.text.includes("CODE5521")).map(r => r.name);
-  check("c 口令、提货码不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题", leaked.length === 0 && /已替换/.test(appearedPart(titleReceipt)) && !titleReceipt.includes("OLD7731"), { leaked, titleReceipt });
+  const editorReceipt = receipts.find(r => r.name === "fill" && r.args.includes(steps.editor.target))?.text ?? "";
+  check("c 口令、提货码不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题；编辑器里打的字不算新出现的", leaked.length === 0 && /已替换/.test(appearedPart(titleReceipt)) && !titleReceipt.includes("OLD7731") && /^@\d+$/.test(steps.editor.target) && !appearedPart(editorReceipt).includes("ECHO4417"), { leaked, titleReceipt, editorReceipt });
 
   const sorted = timings.map(t => t.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;

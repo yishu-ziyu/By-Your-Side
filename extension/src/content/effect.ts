@@ -27,7 +27,7 @@ import { overlayHostSelector } from "../shared/overlay.js";
   const sessions = new Map<string, { base: EffectBaseline | null; el: Element | null; at: number; watch: Watch }>();
 
   /** 动作期间页面上变过的地方：加进来的元素、改了显示属性的元素、改了字的元素。 */
-  interface Watch { observer: MutationObserver; added: Set<Element>; touched: Set<Element> }
+  interface Watch { observer: MutationObserver; added: Set<Element>; touched: Set<Element>; take: (records: MutationRecord[]) => void }
 
   /** 最多交回几处变化；更多就说“整块重画了”。 */
   const MAX_ROOTS = 12;
@@ -39,7 +39,7 @@ import { overlayHostSelector } from "../shared/overlay.js";
   function watchChanges(): Watch {
     const added = new Set<Element>();
     const touched = new Set<Element>();
-    const observer = new MutationObserver(records => {
+    const take = (records: MutationRecord[]) => {
       for (const record of records) {
         if (record.type === "childList") {
           for (const node of record.addedNodes) {
@@ -52,11 +52,14 @@ import { overlayHostSelector } from "../shared/overlay.js";
           if (el) touched.add(el);
         }
       }
-    });
+    };
+    const observer = new MutationObserver(take);
 
     observer.observe(document, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: SHOWING_ATTRS });
+    // 动作出错、没人来收时也别一直挂着：过期就停，不再攥着页面上删掉的节点。
+    setTimeout(() => observer.disconnect(), SESSION_TTL_MS);
 
-    return { observer, added, touched };
+    return { observer, added, touched, take };
   }
 
   /** querySelector 能找回这个元素的定位串：#id，或沿祖先的 tag:nth-of-type(n) 路径（同 snapshot.ts）。 */
@@ -80,24 +83,54 @@ import { overlayHostSelector } from "../shared/overlay.js";
     return parts.join(" > ");
   }
 
-  /** 变过的地方，只留最外层、还在页面上、看得见、不是助手自己浮层的几处。 */
-  function changedRoots(watch: Watch): string[] | "many" {
-    for (const record of watch.observer.takeRecords()) {
-      for (const node of record.addedNodes) if (node.nodeType === 1) watch.added.add(node as Element);
-    }
-    const overlay = overlayHostSelector();
-    const shown = (el: Element) => el.isConnected && !el.closest(overlay) && (typeof el.checkVisibility !== "function" || el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
-    const all = [...new Set([...watch.added, ...watch.touched])].filter(shown);
-    const top = all.filter(el => !all.some(other => other !== el && other.contains(el)));
-    const kept: Element[] = [];
+  /** 输入框、编辑器里面变了，算这个框本身变了：框里的字是值，不是新出现的内容（敏感栏也靠框本身来认）。 */
+  function fieldOf(el: Element): Element {
+    let field = el.closest("input,textarea,select") ?? el;
 
-    for (const el of top) {
-      if (el.getElementsByTagName("*").length <= BIG_ROOT) kept.push(el);
-      else if (watch.added.has(el)) return "many";
-    }
+    for (let cur: Element | null = field; cur; cur = cur.parentElement) if ((cur as HTMLElement).isContentEditable) field = cur;
 
-    return kept.length > MAX_ROOTS ? "many" : kept.map(cssPath);
+    return field;
   }
+
+  /**
+   * 变过的地方，只留最外层、还在页面上、看得见、不是助手自己浮层的几处。
+   * 先丢掉只改了属性、字的大元素（弹窗打开时网站常给 body 加 modal-open），再去重；不然它会把里面真正新出现的东西都盖住。
+   * 同一个父元素下加进来好几个（建议列表的一项项）合成父元素一处。
+   */
+  function changedRoots(watch: Watch): string[] | "many" {
+    watch.take(watch.observer.takeRecords());
+    const overlay = overlayHostSelector();
+    const shown = (el: Element) => el.isConnected && !el.closest(overlay) && (typeof el.checkVisibility !== "function" || el.checkVisibility({ checkVisibilityCSS: true }));
+    const big = (el: Element) => el.getElementsByTagName("*").length > BIG_ROOT;
+    const candidates = new Set<Element>();
+
+    for (const el of new Set([...watch.added, ...watch.touched])) {
+      if (!shown(el)) continue;
+
+      if (big(el)) {
+        if (watch.added.has(el)) return "many";
+        continue;
+      }
+      candidates.add(fieldOf(el));
+    }
+
+    const outermost = (set: Set<Element>) => [...set].filter(el => {
+      for (let up = el.parentElement; up; up = up.parentElement) if (set.has(up)) return false;
+
+      return true;
+    });
+    let top = outermost(candidates);
+
+    if (top.length > MAX_ROOTS) {
+      const siblings = new Map<Element, number>();
+
+      for (const el of top) if (el.parentElement) siblings.set(el.parentElement, (siblings.get(el.parentElement) ?? 0) + 1);
+      top = outermost(new Set(top.map(el => el.parentElement && (siblings.get(el.parentElement) ?? 0) > 1 && !big(el.parentElement) ? el.parentElement : el)));
+    }
+
+    return top.length > MAX_ROOTS ? "many" : top.map(cssPath);
+  }
+
   const SESSION_KEEP = 16;
   const SESSION_TTL_MS = 30_000;
 

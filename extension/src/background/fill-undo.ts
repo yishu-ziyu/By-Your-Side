@@ -469,7 +469,7 @@ chrome.runtime.onMessage.addListener((raw: { type?: string; tokens?: unknown } |
   }
 });
 
-/** 旧值至少这么长才去掉：一个字的旧值（人数 2）到处都有，去掉只会弄坏摘要。 */
+/** 旧值至少这么长才去掉：一个字的旧值（人数 2）到处都有，去掉只会弄坏摘要。两个字的照去（日期里的 10 也会被换掉，宁可多去）。 */
 const MIN_SCRUB_CHARS = 2;
 /** 页面上的字会被截短：一行里出现旧值开头这么多字，就整行不给。 */
 const SCRUB_PREFIX_CHARS = 12;
