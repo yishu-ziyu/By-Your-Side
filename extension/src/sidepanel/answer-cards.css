@@ -1,5 +1,6 @@
 /* 回答里的卡片（answer-cards.ts）。用侧栏现有的纸面、墨色、字号档，不另起一套。
-   组件不单独做入场动画：新字的淡入由 stream-reveal 按段负责，写完的卡片跟着最后一块一起出现。 */
+   流式时已画出的组件节点不动，所以组件可以有自己的入场：写完的组件原位淡入（.gc-in）；
+   开了头没写完的组件是空位（.gc-ph），等一小会儿还没写完才浮出很淡的占位条，写得快的不闪一下。 */
 .gen-card {
   margin: var(--s-1) 0 var(--gap-block);
   border: 1px solid var(--content-border);
@@ -78,7 +79,47 @@
 .gc-btn.primary:hover { background: color-mix(in srgb, var(--text-primary) 88%, white); }
 .gc-foot { padding: var(--s-2) 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-micro); color: var(--text-tertiary); }
 
+/* 结论 / 依据：右上角两个小图标按钮，按下的那个是墨色底；依据面原位换掉结论，至少和结论一样高（answer-cards.ts showFace） */
+.gen-card { position: relative; }
+.gc-head.has-faces { padding-right: 70px; min-height: 26px; }
+.gc-faces { position: absolute; top: 9px; right: 10px; display: flex; gap: 2px; padding: 2px; border-radius: var(--s-2); background: var(--well); }
+.gc-face {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 22px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-tertiary); cursor: pointer;
+  transition: background var(--m-quick) var(--e-swift), color var(--m-quick) var(--e-swift);
+}
+.gc-face:hover { color: var(--text-primary); }
+.gc-face[aria-pressed="true"] { background: var(--content-bg); color: var(--text-primary); box-shadow: 0 0 0 1px var(--well-outline); }
+.gc-face:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gen-card[data-face="evidence"] > .gc-body, .gen-card[data-face="evidence"] > .gc-foot { display: none; }
+.gc-evidence { padding: 10px 14px var(--s-3); box-sizing: border-box; animation: gcContentIn var(--d-state) var(--e-enter) both; }
+.gen-card[data-face="answer"] > .gc-body { animation: gcContentIn var(--d-state) var(--e-enter) both; }
+.msg.assistant.markdown .gc-evidence table { display: table; width: 100%; margin: 0; border-collapse: collapse; font-size: var(--fs-micro); line-height: 1.45; font-variant-numeric: tabular-nums; }
+.msg.assistant.markdown .gc-evidence :is(th, td) { border: 0; }
+.msg.assistant.markdown .gc-evidence th { padding: 0 6px var(--s-1) 0; text-align: left; font-weight: 500; color: var(--text-tertiary); border-bottom: 1px solid var(--content-border); }
+.msg.assistant.markdown .gc-evidence td { padding: 5px 6px 5px 0; vertical-align: top; color: var(--text-secondary); border-bottom: 1px solid var(--content-border); }
+.msg.assistant.markdown .gc-evidence tr:last-child td { border-bottom: 0; }
+.msg.assistant.markdown .gc-evidence td.r { white-space: nowrap; font-weight: 600; color: var(--text-primary); }
+.msg.assistant.markdown .gc-evidence td.f { color: var(--text-primary); }
+.msg.assistant.markdown .gc-evidence td.s { padding-right: 0; border-bottom: 0; color: var(--text-tertiary); }
+.gc-btn.gc-point { display: flex; min-height: 0; margin-top: 2px; padding: 1px 6px; border-radius: 6px; font-size: var(--fs-micro); color: var(--accent); }
+
+/* 空位与淡入：空位先透明，过了 --d-micro 还没写完才浮出；占位条一行高，条本身比字矮 */
+.gc-ph { animation: gcPlaceholderIn var(--d-state) var(--e-enter) var(--d-micro) both; }
+.gc-stat.gc-ph { background: transparent; }
+.gc-option.gc-ph { border-style: dashed; }
+.gc-bar { display: flex; align-items: center; width: 100%; height: 1lh; }
+.gc-bar::before { content: ""; width: 60%; height: .62em; border-radius: 4px; background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+.gc-stat.gc-ph .k .gc-bar::before { width: 45%; }
+.gc-callout.gc-ph .gc-bar::before { width: 80%; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.gc-in { animation: gcContentIn var(--d-layout) var(--e-enter) both; }
+@keyframes gcPlaceholderIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gcContentIn { from { opacity: 0; } to { opacity: 1; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .gc-btn { transition: none; }
+  .gc-btn, .gc-face { transition: none; }
+  .gc-evidence, .gen-card[data-face] > .gc-body { animation: none; }
+  .gc-ph { animation-duration: 0s; }
+  .gc-in { animation: none; }
   .gc-btn:active { transform: none; }
 }

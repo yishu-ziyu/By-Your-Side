@@ -23,10 +23,12 @@ import { confirmSendIfNeeded, type SendGuard } from "../send-confirm.js";
 import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { beginEffect, collectEffect } from "./effect.js";
+import { beginEffect, beginWatch, collectEffect, endWatch, pageChangesAfter, watchChangesAfter } from "./effect.js";
+import { regrade, submitProbeInPage, typeIntoField, typingWritten, type PageRun } from "./fill-typing.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
-import type { EffectReport } from "../../../../shared/effect.js";
+import { beforeWrite } from "../fill-undo.js";
+import type { EffectReport, PageAppeared } from "../../../../shared/effect.js";
 import type { ToolExecutionFact } from "../../../../shared/protocol.js";
 import {
   pointInElementRect,
@@ -541,6 +543,88 @@ async function beginCursorAction(
   return actionId;
 }
 
+export type GazeRead =
+  | { kind: "page" }
+  | { kind: "element"; target: string }
+  | { kind: "elements"; selector: string }
+  | { kind: "rest" }
+  | { kind: "off" };
+
+/**
+ * 注视区：把它正在读的位置画到页面上。只画真实发生的读——整页读只扫一遍视口，
+ * 读具体元素才落到那个元素上；旧 ref 找不到节点时不画，不凭选择器猜另一个元素。
+ * 画不上不影响读本身，也不算执行证据。
+ */
+export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Promise<void> {
+  try {
+    if (read.kind === "rest" || read.kind === "off") {
+      await callDom(tabId, (c: string, mode: "rest" | "off") => {
+        window.__sideagent?.cursor?.for(c)?.gaze?.({ mode });
+      }, [cid, read.kind]);
+
+      return;
+    }
+
+    await ensureCursor(tabId);
+
+    if (read.kind === "page") {
+      await callDom(tabId, (c: string) => { window.__sideagent?.cursor?.for(c)?.gaze?.({ mode: "sweep" }); }, [cid]);
+
+      return;
+    }
+
+    if (read.kind === "element") {
+      const backendNodeId = axBackendNodeFor(tabId, parseRef(read.target));
+
+      if (backendNodeId !== undefined) {
+        const contextId = await cursorContext(tabId);
+        await callOnBackendNode(tabId, backendNodeId, `function(cid) {
+          const cursor = window.__sideagent?.cursor?.for(cid);
+          if (this === document.body || this === document.documentElement) { cursor?.gaze?.({ mode: "sweep" }); return; }
+          const r = this.getBoundingClientRect();
+          cursor?.gaze?.({ mode: "at", rects: [{ x:r.x, y:r.y, width:r.width, height:r.height }] });
+        }`, [cid], contextId);
+
+        return;
+      }
+
+      if (read.target.trim().startsWith("@")) return;
+      await ensureDomOps(tabId);
+      await callDom(tabId, (c: string, t: string) => {
+        const cursor = window.__sideagent?.cursor?.for(c);
+        const el = window.__sideagent?.dom?.resolve(t);
+
+        if (!el) return;
+
+        if (el === document.body || el === document.documentElement) {
+          cursor?.gaze?.({ mode: "sweep" });
+
+          return;
+        }
+        const r = el.getBoundingClientRect();
+        cursor?.gaze?.({ mode: "at", rects: [{ x: r.x, y: r.y, width: r.width, height: r.height }] });
+      }, [cid, read.target]);
+
+      return;
+    }
+
+    await callDom(tabId, (c: string, raw: string) => {
+      const selector = raw.startsWith("loc=css:") ? raw.slice("loc=css:".length) : raw;
+      let nodes: Element[] = [];
+
+      try {
+        nodes = Array.from(document.querySelectorAll(selector)).slice(0, 40);
+      } catch {
+        return;
+      }
+      const rects = nodes.map((n) => n.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height }));
+      window.__sideagent?.cursor?.for(c)?.gaze?.({ mode: "at", rects });
+    }, [cid, read.selector]);
+  } catch {
+    /* 页面禁止注入或节点已变：不画，读照常 */
+  }
+}
+
 async function endCursorAction(
   tabId: number, cid: string, actionId: string, outcome: "done" | "failed" | "unknown", point?: [number, number],
 ): Promise<void> {
@@ -680,7 +764,7 @@ type KeyEventParams = {
   text?: string;
 };
 
-type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog; sendConfirmed?: true };
+type ClickResult = { clicked: true; effect?: EffectReport; appeared?: PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog; sendConfirmed?: true };
 
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   try {
@@ -1698,6 +1782,7 @@ export async function click(
     let cdpMouseMoved = false;
     let cdpMousePressed = false;
     let effect: EffectReport | undefined;
+    let undo: Awaited<ReturnType<typeof beforeWrite>> | undefined;
 
     try {
       // 重新定位后落点可能变了：派发前再读一次真正落点上的按钮，是付款就不点，是「发送」就照样先问。
@@ -1719,6 +1804,8 @@ export async function click(
       heldOf(sessionId).pointer = [x, y];
       // 基线与命中核对并行：60ms 的页面活跃度采样不额外压在一次点击的串行等待上。
       const effectPending = beginEffect(tabId, { point: [x, y] });
+      // 还原填写：点的是勾选框、单选框就记下点之前的样子。和效果采样一起跑，不拉长命中核对到按下之间的时间。
+      const undoPending = beforeWrite(sessionId, tabId, { point: [x, y] });
 
       // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
       // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
@@ -1730,7 +1817,8 @@ export async function click(
         }
       }
 
-      const effectToken = await effectPending;
+      const [effectToken, undoMark] = await Promise.all([effectPending, undoPending]);
+      undo = undoMark;
       // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（#23 等满 30 秒）。
       // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
       const dialogWatch = watchDialog(tabId);
@@ -1853,6 +1941,9 @@ export async function click(
         const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
         if (fallbackEffect) clicked.effect = fallbackEffect;
+        const fallbackAppeared = await pageChangesAfter(tabId, sessionId, fallbackEffect);
+
+        if (fallbackAppeared) clicked.appeared = fallbackAppeared;
 
         if (sendConfirmed) clicked.sendConfirmed = true;
         await rememberActionTarget(tabId, target, name);
@@ -1863,6 +1954,7 @@ export async function click(
       throw e;
     }
 
+    await undo?.done();
     await endCursorAction(tabId, cid, actionId, "done", [x, y]);
     await recordCursorTrail(tabId, sessionId, x, y, true);
     const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, opens, sessionId) : undefined;
@@ -1870,6 +1962,10 @@ export async function click(
     const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
     if (effect) clicked.effect = effect;
+    // 开出新标签页时沿用新标签页的回执，不再读原来那一页。
+    const appeared = newTab ? undefined : await pageChangesAfter(tabId, sessionId, effect);
+
+    if (appeared) clicked.appeared = appeared;
 
     if (newTab) clicked.newTab = newTab;
 
@@ -1887,7 +1983,7 @@ export async function click(
 }
 
 type DoubleClickResult =
-  | { doubleClicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog }
+  | { doubleClicked: true; effect?: EffectReport; appeared?: PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog }
   | { doubleClicked: false; dialog: OpenedDialog };
 
 /**
@@ -2078,6 +2174,9 @@ export async function doubleClick(
     const doubleClicked: Extract<DoubleClickResult, { doubleClicked: true }> = { doubleClicked: true };
 
     if (effect) doubleClicked.effect = effect;
+    const appeared = newTab ? undefined : await pageChangesAfter(tabId, sessionId, effect);
+
+    if (appeared) doubleClicked.appeared = appeared;
 
     if (newTab) doubleClicked.newTab = newTab;
 
@@ -2107,9 +2206,107 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
   } catch { /* 记号只是提示：页面变了或脚本不在就不画。 */ }
 }
 
+/**
+ * 先用真实键盘输入写（exec/fill-typing.ts），键盘写不进的框（日期、下拉框）和两次都没写进去的，用旧写法 legacy 再写。
+ * typing 是 "failed" 时旧写法也没写进去：回执要如实说，并建议改用键盘逐字输入。
+ */
+async function writeField<T extends { range?: InputRangeReadout | null; select?: true }>(tabId: number, run: PageRun, legacy: () => Promise<T>, value: string, guard?: DispatchGuard): Promise<T & { typing?: "keyboard" | "fallback" | "failed" }> {
+  const started = Date.now();
+  // 调试器不可用、页面中途换了：按没写处理，交给旧写法（旧写法是整栏替换，重写一次不会叠字）。
+  const typed = await typeIntoField(tabId, run, value, guard).catch(() => ({ grade: null, fallback: { beforeLen: -1, beforeHash: 0 } }));
+  const log = (typing: string) => console.info("[fill-typing]", JSON.stringify({ ms: Date.now() - started, typing }));
+
+  if (typed === "skip") return await legacy();
+
+  if (!typed.fallback) { log("keyboard"); return { typing: "keyboard" } as T & { typing: "keyboard" }; }
+  const out = await legacy();
+  const typing = typingWritten(await regrade(run, value, typed.fallback)) ? "fallback" as const : "failed" as const;
+  log(typing);
+
+  return { ...out, typing };
+}
+
+/**
+ * 先给模型带回“填完以后页面上新出现了什么”（下拉建议、跟着出来的栏、校验提示），再交回填写结果。
+ * 填写本身的值变化不算：没有目标元素的采样只看页面多没多东西。
+ */
 export async function fill(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"] },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+): Promise<ToolContract["fill"]["data"]> {
+  const data = await withAppeared(params.tabId, sessionId, () => fillField(params, sessionId, beforeDispatch));
+
+  if (!params.submit) return data;
+
+  // 没写进去就不回车：不然会用空值或旧值把表单提交出去。
+  if (data.typing === "failed" || data.readback?.match === "not_held" || data.readback?.match === "different") {
+    return { ...data, submit: { refused: "这一栏没写进去，没有回车。" } };
+  }
+
+  return { ...data, submit: await submitAfterFill(params, sessionId, beforeDispatch) };
+}
+
+/**
+ * 「填完回车」：只在搜索框和普通单行框上按一次真回车（规则见 fill-typing.ts 的 submitRefusalInPage），省一轮来回。
+ * 回车可能就是“发送”的框不按，填好的字留着：回车发送不经过发送确认是已知缺口（docs/web-actions.md），不能扩大。
+ */
+async function submitAfterFill(params: { target: string; tabId?: number }, sessionId: string, beforeDispatch?: DispatchGuard): Promise<NonNullable<ToolContract["fill"]["data"]["submit"]>> {
+  try {
+    const tab = await resolveWorkingTab(params.tabId, sessionId);
+    const tabId = tab.id!;
+    const backendNodeId = axBackendNodeFor(tabId, parseRef(params.target));
+    const probe = backendNodeId !== undefined
+      ? await callOnBackendNode<ReturnType<typeof submitProbeInPage>>(tabId, backendNodeId, `function() { return (${submitProbeInPage.toString()}).call(this, null); }`)
+      : await ensureDomOps(tabId).then(() => callDom(tabId, submitProbeInPage as (t: string) => ReturnType<typeof submitProbeInPage>, [params.target]));
+
+    if (!probe) return { refused: "读不到这个框，没有回车。" };
+
+    if ("refused" in probe) return probe;
+    // 和点击同一套规则：附近有「发送」「支付」这类按钮，回车可能就是发送或付款。
+    const risky = probe.labels.find(label => isSendLabel(label) || isPayLabel(label));
+
+    if (risky) return { refused: `这个框旁边有「${risky.slice(0, 12)}」，回车可能直接发出去或付款：已填好，没有回车。要做这一步请点那个按钮，会先问用户。` };
+    let pressed: Awaited<ReturnType<typeof pressKey>>;
+
+    try {
+      pressed = await pressKey({ key: "Enter", tabId }, sessionId, beforeDispatch);
+    } catch (error) {
+      // 回车可能已经送到页面（提交可能已经发生）：说不确定，别让模型以为没按、再按一次。
+      return { uncertain: `回车可能已经送到页面，结果不确定（${oneLine(error)}）。先看页面，不要再按一次。` };
+    }
+
+    return pressed.pressed ? { pressed: true, ...(pressed.effect ? { effect: pressed.effect } : {}), ...(pressed.appeared ? { appeared: pressed.appeared } : {}), ...(pressed.dialog ? { dialog: pressed.dialog } : {}) } : { pressed: false, dialog: pressed.dialog };
+  } catch (error) {
+    // 按回车之前出错：值已经填好了，只说没按，不让整次填写报失败。
+    return { refused: `没能按回车（${oneLine(error)}）：已填好，没有回车。` };
+  }
+}
+
+/** 填写、选择外面包一层：动作前开始记页面上哪里变了，动作后带回新出现的行。 */
+async function withAppeared<T extends object>(tabIdParam: number | undefined, sessionId: string, act: () => Promise<T>): Promise<T & { appeared?: PageAppeared }> {
+  const started = Date.now();
+  const tabId = (await resolveWorkingTab(tabIdParam, sessionId).catch(() => null))?.id;
+  const token = tabId == null ? null : await beginWatch(tabId);
+  const beginMs = Date.now() - started;
+  let data: T;
+
+  try {
+    data = await act();
+  } catch (error) {
+    if (tabId != null && token) endWatch(tabId, token);
+    throw error;
+  }
+
+  if (tabId == null || !token) return data;
+  const appeared = await watchChangesAfter(tabId, sessionId, token, beginMs);
+
+  return appeared ? { ...data, appeared } : data;
+}
+
+async function fillField(
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"] },
+  sessionId: string,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -2188,7 +2385,10 @@ export async function fill(
     if (backendNodeId !== undefined) {
       try {
         await beforeDispatch?.();
-        const { range, select } = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
+        const undo = await beforeWrite(sessionId, tabId, { backendNodeId }, true);
+        const run: PageRun = (fn, args) => callOnBackendNode(tabId, backendNodeId, `function(...a) { return (${fn.toString()}).call(this, null, ...a); }`, args, undefined, params.expectedDocumentId, beforeDispatch);
+        const { range, select, typing } = await writeField(tabId, run, () => fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch), params.value, beforeDispatch);
+        await undo.done();
 
         if (targetRect) {
           await recordCursorTrail(
@@ -2204,7 +2404,7 @@ export async function fill(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        const filled = filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select);
+        const filled = { ...filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select), ...(typing === "failed" ? { typing } : {}) };
         await rememberActionTarget(tabId, params.target, params.target);
 
         return refound ? { ...filled, refound } : filled;
@@ -2220,9 +2420,12 @@ export async function fill(
     }
 
     await ensureDomOps(tabId, beforeDispatch);
+    const undo = await beforeWrite(sessionId, tabId, { target: params.target }, true);
 
     await beforeDispatch?.();
-    const filled = await callDom(
+    const run: PageRun = (fn, args) => callDom(tabId, fn as (...a: unknown[]) => unknown, [params.target, ...args], params.expectedDocumentId, beforeDispatch) as never;
+    let typing: Awaited<ReturnType<typeof writeField>>["typing"];
+    const filled = await writeField(tabId, run, () => callDom(
       tabId,
       (t: string, v: string) => {
         const dom = window.__sideagent?.dom;
@@ -2246,9 +2449,12 @@ export async function fill(
       },
       [params.target, params.value],
       params.expectedDocumentId, beforeDispatch,
-    );
+    ).then(out => {
+      if (out && "refused" in out) throw new FillRefused(out.refused);
 
-    if (filled && "refused" in filled) throw new FillRefused(filled.refused);
+      return out ?? {};
+    }), params.value, beforeDispatch).then(out => { typing = out.typing; return out; });
+    await undo.done();
 
     if (targetRect) {
       await recordCursorTrail(
@@ -2266,7 +2472,7 @@ export async function fill(
 
     await rememberActionTarget(tabId, params.target, params.target);
 
-    return filledResult(filled?.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), filled !== undefined && "select" in filled && filled.select === true);
+    return { ...filledResult(filled.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), "select" in filled && filled.select === true), ...(typing === "failed" ? { typing } : {}) };
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
@@ -2280,6 +2486,14 @@ export type SelectOptionValue =
 
 /** CAP-02C：原生 select 的 value/label/index、多选、清空；返回最终选中集合与可见 label。 */
 export async function selectOption(
+  params: Parameters<typeof selectOptions>[0],
+  sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+): Promise<{ selected: string[]; labels: string[]; refound?: true; appeared?: PageAppeared }> {
+  return await withAppeared(params.tabId, sessionId, () => selectOptions(params, sessionId, beforeDispatch));
+}
+
+async function selectOptions(
   params: {
     target: string;
     values: SelectOptionValue | SelectOptionValue[];
@@ -2287,7 +2501,7 @@ export async function selectOption(
     expectedDocumentId?: string;
     expectedBackendNodeId?: number;
   },
-  sessionId: string = LEAD_SESSION_ID,
+  sessionId: string,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ selected: string[]; labels: string[]; refound?: true }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -2317,6 +2531,7 @@ export async function selectOption(
   if (backendNodeId !== undefined) {
     try {
       await beforeDispatch?.();
+      const undo = await beforeWrite(sessionId, tabId, { backendNodeId });
       const result = await callOnBackendNode<{ selected: string[]; labels: string[] }>(
         tabId,
         backendNodeId,
@@ -2358,6 +2573,8 @@ export async function selectOption(
         params.expectedDocumentId, beforeDispatch,
       );
 
+      await undo.done();
+
       return refound ? { ...result, refound } : result;
     } catch (e) {
       if (params.expectedBackendNodeId !== undefined || !isDebuggerUnavailable(e)) {
@@ -2367,9 +2584,10 @@ export async function selectOption(
   }
 
   await ensureDomOps(tabId, beforeDispatch);
+  const undo = await beforeWrite(sessionId, tabId, { target: params.target });
 
   await beforeDispatch?.();
-  return await callDom(
+  const selected = await callDom(
     tabId,
     (t: string, values: unknown) => {
       const dom = window.__sideagent?.dom;
@@ -2381,6 +2599,9 @@ export async function selectOption(
     [params.target, params.values],
     params.expectedDocumentId, beforeDispatch,
   );
+  await undo.done();
+
+  return selected;
 }
 
 type UploadOutcome = ToolContract["upload_file"]["data"] | { refused: string };
@@ -2475,7 +2696,9 @@ export async function typeText(
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
   await beforeDispatch?.();
+  const undo = await beforeWrite(sessionId, tab.id, { focused: true }, true);
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
+  await undo.done();
   // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
   return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }
@@ -2484,7 +2707,7 @@ export async function pressKey(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: DispatchGuard,
-): Promise<{ pressed: true; dialog?: OpenedDialog; effect?: EffectReport } | { pressed: false; dialog: OpenedDialog }> {
+): Promise<{ pressed: true; dialog?: OpenedDialog; effect?: EffectReport; appeared?: PageAppeared } | { pressed: false; dialog: OpenedDialog }> {
   const info = resolveKey(params.key);
 
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
@@ -2565,7 +2788,10 @@ export async function pressKey(
       return nativeInputs ? { pressed: true, dialog: settled.dialog } : { pressed: false, dialog: settled.dialog };
     }
 
-    return settled.effect ? { pressed: true, effect: settled.effect } : { pressed: true };
+    if (!settled.effect) return { pressed: true };
+    const appeared = await pageChangesAfter(keyboardTabId, sessionId, settled.effect);
+
+    return appeared ? { pressed: true, effect: settled.effect, appeared } : { pressed: true, effect: settled.effect };
   } finally {
     dialogWatch.stop();
   }

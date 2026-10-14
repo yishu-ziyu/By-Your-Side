@@ -1,47 +1,155 @@
-// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--learn]
+// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn]
+// --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
 // --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md).   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
 // Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 
-const [root, outDir, arm] = process.argv.slice(2);
+const [rootArg, outDir, arm] = process.argv.slice(2);
+const root = resolve(rootArg); // an absolute path: "scripts/..." joined onto "." would be read as a package name
 const repeat = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 2;
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const learn = process.argv.includes("--learn");
-const MODEL = "openai-codex/gpt-6.1-sol";
+const MODEL = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? "openai-codex/gpt-6-luna";
+const think = process.argv.find((a) => a.startsWith("--think="))?.slice(8);
+const splitArg = process.argv.find((a) => a.startsWith("--split="))?.slice(8);
 const START = "https://example.com/";
 const dec = (u: string) => { try { return decodeURIComponent(u); } catch { return u; } };
 
 type Tab = { url: string; title: string };
 type Ctx = { answer: string; tabs: Tab[]; probe: unknown; truth: Record<string, string> };
-type Task = { id: string; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
+type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; login?: "memos"; setup?: () => Promise<Record<string, string>>; after?: () => Promise<unknown>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
 
 const ghTop = async () => { const h = await (await fetch("https://github.com/trending", { headers: { "user-agent": "Mozilla/5.0" } })).text(); return h.match(/<h2 class="h3 lh-condensed">[\s\S]*?href="\/([^"]+)"/)?.[1] ?? ""; };
 const hnTop = async () => { const h = await (await fetch("https://news.ycombinator.com/")).text(); return (h.match(/<span class="titleline"><a [^>]*>([^<]+)<\/a>/)?.[1] ?? "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); };
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+const unescape = (s: string) => s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&#x2F;/g, "/");
+/** The n-th front-page item of HN (1-based): id, title, and where its title links (an absolute URL, or the item page for Ask HN). */
+const hnItem = async (n: number) => {
+  const h = await (await fetch("https://news.ycombinator.com/")).text();
+  const m = [...h.matchAll(/<tr class="athing[^"]*" id="(\d+)">[\s\S]*?<span class="titleline"><a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)][n - 1];
+  if (!m) return { id: "", link: "", title: "" };
+  const link = unescape(m[2]!);
+  return { id: m[1]!, link: /^https?:/.test(link) ? link : `https://news.ycombinator.com/${link}`, title: unescape(m[3]!) };
+};
+/** URL without scheme, www, trailing slash and hash: the same page whichever way it was reached. */
+const bare = (u: string) => dec(u).replace(/^https?:\/\/(www\.)?/, "").replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
+/** The page path only: bare() without the query, for checks that name one page. */
+const pathOf = (u: string) => bare(u.replace(/[?#].*$/, ""));
+const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+const todos = (c: Ctx) => JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[];
+const TODO_PROBE = `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`;
+
+// ── Local Memos (a signed-in note site, `npm run lab -- sites start`): the account file lives outside the repo and never reaches the page, the model or the logs. ──
+const MEMOS = "http://127.0.0.1:5230";
+type Memo = { name: string; content: string; tags: string[]; pinned: boolean };
+async function memosSignIn() {
+  const c = JSON.parse(await readFile(join(homedir(), ".local/share/bys-test-sites/memos/credentials.json"), "utf8"));
+  const r = await fetch(`${MEMOS}/api/v1/auth/signin`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passwordCredentials: { username: c.username, password: c.password } }) });
+  if (!r.ok) throw new Error(`Memos 登录失败 ${r.status}（npm run lab -- sites start）`);
+  const [cookie] = (r.headers.get("grpc-metadata-set-cookie") ?? "").split(";");
+  return { token: String((await r.json()).accessToken), cookie: { name: cookie.split("=")[0], value: cookie.slice(cookie.indexOf("=") + 1) } };
+}
+async function memosApi(method: string, path: string, body?: unknown) {
+  const { token } = await memosSignIn();
+  const r = await fetch(`${MEMOS}/api/v1/${path}`, { method, headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!r.ok) throw new Error(`Memos ${method} ${path} ${r.status}`);
+  return r.json().catch(() => ({}));
+}
+const memosList = async (): Promise<Memo[]> => ((await memosApi("GET", "memos?pageSize=100")).memos ?? []).map((m: Memo) => ({ name: m.name, content: m.content, tags: m.tags ?? [], pinned: !!m.pinned }));
+/** Empty the test account (normal and archived notes), then write the seed notes; returns each seed's id by its first words, for the checks. */
+async function memosReset(seeds: string[]) {
+  for (const state of ["NORMAL", "ARCHIVED"]) for (const m of (await memosApi("GET", `memos?pageSize=100&state=${state}`)).memos ?? []) await memosApi("DELETE", m.name);
+  const ids: Record<string, string> = {};
+  for (const content of seeds) ids[content.slice(0, 4)] = (await memosApi("POST", "memos", { content, visibility: "PRIVATE" })).name;
+  return ids;
+}
+const memosOf = (c: Ctx) => (c.probe ?? []) as Memo[];
+const MEMO_SEEDS = ["买菜：牛奶、鸡蛋、西红柿", "读书笔记：《置身事内》第三章讲地方政府融资。", "会议纪要：下周三发布 2.0，周一前冻结代码。"];
+/** The seeds other than `except` are still there, unchanged and unpinned, and no note was added or removed. */
+const othersIntact = (c: Ctx, except: string) => { const ms = memosOf(c); if (ms.length !== MEMO_SEEDS.length) return `笔记数是 ${ms.length}（应为 ${MEMO_SEEDS.length}）`; const bad = MEMO_SEEDS.filter((s) => s.slice(0, 4) !== except).filter((s) => { const m = ms.find((x) => x.name === c.truth[s.slice(0, 4)]); return !m || m.content !== s || m.pinned; }); return bad.length ? `别的笔记被改了：${bad.map((s) => s.slice(0, 4)).join("、")}` : null; };
 
 const TASKS: Task[] = [
-  { id: "S1", group: "搜索", name: "必应搜天气", prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 天气。",
+  { id: "S1", split: "train", group: "搜索", name: "必应搜天气", prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 天气。",
     check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("天气")) ? null : "没有到必应“天气”的结果页",
     second: { prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 新闻。", check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("新闻")) ? null : "没有到必应“新闻”的结果页" } },
-  { id: "S2", group: "搜索", name: "维基百科搜长城", prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“长城”，打开“长城”这个条目。",
+  { id: "S2", split: "train", group: "搜索", name: "维基百科搜长城", prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“长城”，打开“长城”这个条目。",
     check: (c) => c.tabs.some((t) => /wikipedia\.org\/(wiki|zh-[a-z]+)\/长城$/.test(dec(t.url).split("#")[0])) ? null : "没有打开“长城”条目",
     second: { prompt: "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“故宫”，打开“故宫”这个条目。", check: (c) => c.tabs.some((t) => /wikipedia\.org\/(wiki|zh-[a-z]+)\/(故宫|故宮|北京故宫)/.test(dec(t.url).split("#")[0])) ? null : "没有打开“故宫”条目" } },
-  { id: "R1", group: "读取", name: "HN 第一条", prompt: "打开 https://news.ycombinator.com ，告诉我现在排第一的帖子标题（保留英文原文）。",
+  { id: "R1", split: "train", group: "读取", name: "HN 第一条", prompt: "打开 https://news.ycombinator.com ，告诉我现在排第一的帖子标题（保留英文原文）。",
     truth: async () => ({ before: await hnTop() }),
     check: (c) => [c.truth.before, c.truth.after].some((t) => t && norm(c.answer).includes(norm(t))) ? null : `回答里没有第一条标题（应为 ${c.truth.before}）` },
-  { id: "R2", group: "读取", name: "GitHub 热门第一", prompt: "打开 https://github.com/trending ，告诉我今天排第一的仓库是哪个（写成 作者/仓库名）。",
+  { id: "R2", split: "test", group: "读取", name: "GitHub 热门第一", prompt: "打开 https://github.com/trending ，告诉我今天排第一的仓库是哪个（写成 作者/仓库名）。",
     truth: async () => ({ before: await ghTop() }),
     check: (c) => [c.truth.before, c.truth.after].some((t) => t && norm(c.answer).replace(/\s*\/\s*/g, "/").includes(norm(t))) ? null : `回答里没有 ${c.truth.before}` },
-  { id: "F1", group: "填写", name: "测试表单提交", prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 张三，Textarea 填 你好世界，Dropdown (select) 选 Two，然后点 Submit 提交。",
+  { id: "F1", split: "train", group: "填写", name: "测试表单提交", prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 张三，Textarea 填 你好世界，Dropdown (select) 选 Two，然后点 Submit 提交。",
     check: (c) => { const t = c.tabs.find((x) => x.url.includes("submitted-form")); if (!t) return "没有提交"; const q = new URL(t.url).searchParams; const bad = [["my-text", "张三"], ["my-textarea", "你好世界"], ["my-select", "2"]].filter(([k, v]) => q.get(k) !== v).map(([k]) => k); return bad.length ? `提交的值不对：${bad.join("、")}` : null; },
     second: { prompt: "打开 https://www.selenium.dev/selenium/web/web-form.html ，Text input 填 李四，Textarea 填 早上好，Dropdown (select) 选 Three，然后点 Submit 提交。", check: (c) => { const t = [...c.tabs].reverse().find((x) => x.url.includes("submitted-form")); if (!t) return "没有提交"; const q = new URL(t.url).searchParams; const bad = [["my-text", "李四"], ["my-textarea", "早上好"], ["my-select", "3"]].filter(([k, v]) => q.get(k) !== v).map(([k]) => k); return bad.length ? `提交的值不对：${bad.join("、")}` : null; } } },
-  { id: "F2", group: "填写", name: "TodoMVC 待办", prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买牛奶、交电费，然后把“买牛奶”标记为已完成。",
+  { id: "F2", split: "train", group: "填写", name: "TodoMVC 待办", prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买牛奶、交电费，然后把“买牛奶”标记为已完成。",
     probeUrl: /todomvc\.com\/examples\/react/, probe: `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`,
     check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; const s = JSON.stringify(items); return items.length === 2 && items.some((i) => i.t === "买牛奶" && i.done) && items.some((i) => i.t === "交电费" && !i.done) ? null : `待办是 ${s}`; },
     second: { prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买面包、修自行车，然后把“修自行车”标记为已完成。", check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; return items.some((i) => i.t === "修自行车" && i.done) && items.some((i) => i.t === "买面包" && !i.done) ? null : `待办是 ${JSON.stringify(items)}`; } } },
-].filter((t) => !only || only.includes(t.id));
+  // ── 10-14 additions (docs/evals/20261014-hillclimb.md): user task types rewritten onto public sites; X* are cross-site. ──
+  { id: "X2", split: "train", group: "跨站", name: "HN 第一条的原文", prompt: "打开 https://news.ycombinator.com ，打开排第一的帖子链接到的原文页面。",
+    truth: async () => ({ before: (await hnItem(1)).link }),
+    check: (c) => [c.truth.before, c.truth.after].some((l) => l && c.tabs.some((t) => bare(t.url) === bare(l))) ? null : `没有打开原文（应为 ${c.truth.before}）` },
+  { id: "X3", split: "train", group: "跨站", name: "HN 标题记进待办", prompt: "打开 https://news.ycombinator.com ，记下排第一的帖子标题；再打开 https://todomvc.com/examples/react/dist/ ，把这个标题原样添加为一条待办。",
+    truth: async () => ({ before: (await hnItem(1)).title }), probeUrl: /todomvc\.com\/examples\/react/, probe: TODO_PROBE,
+    check: (c) => [c.truth.before, c.truth.after].some((t) => t && todos(c).some((i) => norm(i.t) === norm(t))) ? null : `待办是 ${JSON.stringify(todos(c))}（应为 ${c.truth.before}）` },
+  { id: "E4", split: "train", group: "读取", name: "HN 第三条的评论页", prompt: "打开 https://news.ycombinator.com ，打开排第三的帖子的评论页。",
+    truth: async () => ({ before: (await hnItem(3)).id }),
+    check: (c) => [c.truth.before, c.truth.after].some((id) => id && c.tabs.some((t) => t.url.includes(`news.ycombinator.com/item?id=${id}`))) ? null : `没有打开第三条的评论页（应为 item?id=${c.truth.before}）` },
+  { id: "M1", split: "train", group: "登录网站", name: "Memos 记笔记加标签", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），新建一条笔记，内容是：周五前把季度报告初稿发给王经理。然后给这条笔记加上标签 工作。`,
+    setup: () => memosReset([]), after: memosList,
+    check: (c) => { const ms = memosOf(c); const m = ms.find((x) => x.content.includes("周五前把季度报告初稿发给王经理")); if (ms.length !== 1 || !m) return `笔记是 ${JSON.stringify(ms.map((x) => x.content))}`; return m.tags.includes("工作") ? null : `标签是 ${JSON.stringify(m.tags)}（应含 工作）`; } },
+  { id: "M2", split: "train", group: "登录网站", name: "Memos 找到笔记补一句", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），找到写着“置身事内”的那条笔记，在它末尾补一句：重点看地方债那一节。`,
+    setup: () => memosReset(MEMO_SEEDS), after: memosList,
+    check: (c) => { const m = memosOf(c).find((x) => x.name === c.truth["读书笔记"]); if (!m) return "那条笔记不见了"; const at = m.content.indexOf("重点看地方债那一节"); if (!m.content.includes(MEMO_SEEDS[1]) || at < m.content.indexOf(MEMO_SEEDS[1]) + MEMO_SEEDS[1].length) return `内容是 ${JSON.stringify(m.content)}`; return othersIntact(c, "读书笔记"); } },
+  { id: "M3", split: "train", group: "登录网站", name: "Memos 置顶一条笔记", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），把关于买菜的那条笔记置顶。`,
+    setup: () => memosReset(MEMO_SEEDS), after: memosList,
+    check: (c) => { const m = memosOf(c).find((x) => x.name === c.truth["买菜：牛"]); if (!m) return "那条笔记不见了"; if (!m.pinned || m.content !== MEMO_SEEDS[0]) return `买菜那条：置顶=${m.pinned}，内容 ${JSON.stringify(m.content)}`; return othersIntact(c, "买菜：牛"); } },
+  { id: "S7", split: "test", group: "搜索", name: "npm 搜 lodash", prompt: "打开 https://www.npmjs.com ，用页面上的搜索框搜索 lodash，打开 lodash 这个包的页面。",
+    check: (c) => c.tabs.some((t) => /^npmjs\.com\/package\/lodash$/.test(bare(t.url))) ? null : "没有打开 lodash 的包页面" },
+  { id: "R5", split: "test", group: "读取", name: "RFC 9110 标题和作者", prompt: "打开 https://www.rfc-editor.org/rfc/rfc9110.html ，告诉我这份文档的标题和第一作者。",
+    check: (c) => /http semantics/i.test(c.answer) && /fielding/i.test(c.answer) ? null : "回答里没有标题 HTTP Semantics 或第一作者 Fielding" },
+  { id: "R6", split: "test", group: "读取", name: "IANA 示例域名", prompt: "打开 https://www.iana.org/help/example-domains ，告诉我这页列出了哪几个示例域名。",
+    // The page's own list, read live: it dropped example.net in 2026, so a fixed list judged a right answer wrong.
+    truth: async () => ({ before: [...new Set((await (await fetch("https://www.iana.org/help/example-domains")).text()).replace(/<[^>]*>/g, " ").match(/\bexample\.(?:com|net|org)\b/gi) ?? [])].map((d) => d.toLowerCase()).sort().join(",") }),
+    check: (c) => [c.truth.before, c.truth.after].some((l) => l && l.split(",").every((d) => c.answer.toLowerCase().includes(d))) ? null : `回答里没有列全 ${c.truth.before}` },
+  { id: "Q8", split: "test", group: "读取", name: "Python 最新版本", prompt: "打开 https://www.python.org/downloads/ ，告诉我现在最新的 Python 正式版本号。",
+    truth: async () => ({ before: (await (await fetch("https://www.python.org/downloads/")).text()).match(/Download Python (\d+\.\d+\.\d+)/)?.[1] ?? "" }),
+    check: (c) => [c.truth.before, c.truth.after].some((v) => v && new RegExp(`(^|[^\\d.])${v.replace(/\./g, "\\.")}(?![\\d.]*\\d)`).test(c.answer)) ? null : `回答里没有最新版本号 ${c.truth.before}` },
+  { id: "F10", split: "test", group: "填写", name: "httpbin 订单表单", prompt: "打开 https://httpbin.org/forms/post ，Customer name 填 王五，Pizza Size 选 Medium，Toppings 勾 Bacon，然后点 Submit order 提交。",
+    probeUrl: /httpbin\.org\/post/, probe: "document.body.innerText",
+    check: (c) => { let form: Record<string, unknown> = {}; try { form = JSON.parse(String(c.probe ?? "{}")).form ?? {}; } catch { return "没有提交（读不到 httpbin 回显）"; } const toppings = ([] as unknown[]).concat(form.topping ?? []); return form.custname === "王五" && form.size === "medium" && toppings.includes("bacon") ? null : `提交的值不对：${JSON.stringify(form)}`; } },
+  { id: "X1", split: "test", group: "跨站", name: "GitHub 作者的个人网站", prompt: "打开 https://github.com/sindresorhus/got ，找到这个仓库作者的个人网站并打开。",
+    check: (c) => c.tabs.some((t) => hostOf(t.url) === "sindresorhus.com") ? null : "没有打开作者的个人网站 sindresorhus.com" },
+  { id: "X9", split: "test", group: "跨站", name: "PyPI 包的源码仓库", prompt: "打开 https://pypi.org/project/requests/ ，打开这个包的源码仓库页面。",
+    check: (c) => c.tabs.some((t) => /^github\.com\/psf\/requests$/.test(bare(t.url))) ? null : "没有打开 github.com/psf/requests" },
+  { id: "S11", split: "test", group: "搜索", name: "MDN 搜 fetch", prompt: "打开 https://developer.mozilla.org ，用页面上的搜索框搜索 fetch，打开 Fetch API 这个页面。",
+    check: (c) => c.tabs.some((t) => /^developer\.mozilla\.org\/[a-z-]+\/docs\/web\/api\/fetch_api$/.test(pathOf(t.url))) ? null : "没有打开 Fetch API 页面" },
+  { id: "S12", split: "test", group: "搜索", name: "crates.io 搜 serde", prompt: "打开 https://crates.io ，用页面上的搜索框搜索 serde，打开 serde 这个包的页面。",
+    check: (c) => c.tabs.some((t) => /^crates\.io\/crates\/serde$/.test(pathOf(t.url))) ? null : "没有打开 serde 的包页面" },
+  { id: "R13", split: "test", group: "读取", name: "Node.js LTS 版本", prompt: "打开 https://nodejs.org/en ，告诉我现在的 Node.js LTS 版本号。",
+    truth: async () => ({ before: ((await (await fetch("https://nodejs.org/dist/index.json")).json()) as { version: string; lts: unknown }[]).find((r) => r.lts)?.version.slice(1) ?? "" }),
+    check: (c) => [c.truth.before, c.truth.after].some((v) => v && new RegExp(`(^|[^\\d.])${v.replace(/\./g, "\\.")}(?![\\d.]*\\d)`).test(c.answer)) ? null : `回答里没有 LTS 版本号 ${c.truth.before}` },
+  { id: "R14", split: "test", group: "读取", name: "w3schools 表格选行", prompt: "打开 https://www.w3schools.com/html/html_tables.asp ，第一个表格里 Centro comercial Moctezuma 这一行的联系人（Contact）是谁？",
+    check: (c) => { const a = norm(c.answer); const other = ["maria anders", "roland mendel", "helen bennett", "yoshi tannamuri", "giovanni rovelli"].filter((n) => a.includes(n)); return a.includes("francisco chang") && !other.length ? null : `回答不是只给出 Francisco Chang${other.length ? `（还有 ${other.join("、")}）` : ""}`; } },
+  { id: "F15", split: "test", group: "填写", name: "下拉框选 Option 2", prompt: "打开 https://the-internet.herokuapp.com/dropdown ，在下拉框里选 Option 2。",
+    probeUrl: /the-internet\.herokuapp\.com\/dropdown/, probe: `document.querySelector("#dropdown")?.value ?? ""`,
+    check: (c) => c.probe === "2" ? null : `下拉框的值是 ${JSON.stringify(c.probe)}` },
+  { id: "F16", split: "test", group: "填写", name: "demoqa 文本框提交", prompt: "打开 https://demoqa.com/text-box ，Full Name 填 赵六，Email 填 zhao6@example.com，然后点 Submit。",
+    probeUrl: /demoqa\.com\/text-box/, probe: `document.querySelector("#output")?.innerText ?? ""`,
+    check: (c) => { const o = String(c.probe ?? ""); return o.includes("赵六") && o.includes("zhao6@example.com") ? null : `回显是 ${JSON.stringify(o.slice(0, 120))}`; } },
+  { id: "X17", split: "test", group: "跨站", name: "Python 版本号填进订单", prompt: "打开 https://www.python.org/downloads/ ，记下最新的 Python 正式版本号；再打开 https://httpbin.org/forms/post ，把这个版本号填进 Customer name，然后点 Submit order 提交。",
+    truth: async () => ({ before: (await (await fetch("https://www.python.org/downloads/")).text()).match(/Download Python (\d+\.\d+\.\d+)/)?.[1] ?? "" }),
+    probeUrl: /httpbin\.org\/post/, probe: "document.body.innerText",
+    check: (c) => { let name = ""; try { name = String(JSON.parse(String(c.probe ?? "{}")).form?.custname ?? ""); } catch { return "没有提交（读不到 httpbin 回显）"; } return [c.truth.before, c.truth.after].some((v) => v && new RegExp(`(^|[^\\d.])${v.replace(/\./g, "\\.")}(?![\\d.]*\\d)`).test(name)) ? null : `Customer name 是 ${JSON.stringify(name)}（应为 ${c.truth.before}）`; } },
+  { id: "X18", split: "test", group: "跨站", name: "crates.io 包的源码仓库", prompt: "打开 https://crates.io/crates/serde ，打开这个包的源码仓库页面。",
+    check: (c) => c.tabs.some((t) => /^github\.com\/serde-rs\/serde$/.test(pathOf(t.url))) ? null : "没有打开 github.com/serde-rs/serde" },
+].filter((t) => (!only || only.includes(t.id)) && (!splitArg || t.split === splitArg));
 
 // ---------- progress page shared by both arms (each arm writes its own json, page merges) ----------
 const statusFile = join(outDir, `status-${arm}.json`);
@@ -53,13 +161,17 @@ async function writeStatus(id: string, state: string, detail?: string) {
   const read = async (a: string) => JSON.parse(await readFile(join(outDir, `status-${a}.json`), "utf8").catch(() => "{}"));
   const all = { ext: await read("ext"), ego: await read("ego") };
   const ids = TASKS.flatMap((t) => Array.from({ length: repeat }, (_, i) => `${t.id}-${i + 1}`));
-  const nameOf = (id: string) => { const t = TASKS.find((x) => id.startsWith(x.id + "-"))!; return `${t.group} · ${t.name} · 第 ${id.split("-")[1]} 次`; };
-  const cell = (s?: { state: string; detail?: string }) => !s ? `<td class="wait">等待</td>` : `<td class="${s.state}">${{ run: "运行中", pass: "做对", fail: "没做对", err: "出错" }[s.state] ?? s.state}${s.detail ? `<br><small>${s.detail.replace(/</g, "&lt;")}</small>` : ""}</td>`;
-  const running = Object.values(all).some((m) => Object.values(m as Record<string, { state: string }>).some((s) => s.state === "run")) || ids.some((id) => !all.ext[id] || !all.ego[id]);
+  const nameOf = (id: string) => { const t = TASKS.find((x) => id.startsWith(x.id + "-"))!; return `${t.split === "test" ? "测试" : "训练"} · ${t.group} · ${t.name} · 第 ${id.split("-")[1]} 次`; };
+  // Test-set rows show only pass/fail and time: the analyst never sees a test task's process or result content (R5).
+  const isTest = (id: string) => TASKS.find((x) => id.startsWith(x.id + "-"))!.split === "test";
+  const cell = (id: string, s?: { state: string; detail?: string }) => !s ? `<td class="wait">等待</td>` : `<td class="${s.state}">${{ run: "运行中", pass: "做对", fail: "没做对", err: "出错" }[s.state] ?? s.state}${s.detail ? `<br><small>${(isTest(id) ? s.detail.split(" · ")[0] : s.detail).replace(/</g, "&lt;")}</small>` : ""}</td>`;
+  // Only the arms that have run (or this one) get a column; an ext-only run must still reach 已结束.
+  const arms = (["ext", "ego"] as const).filter((a) => a === arm || Object.keys(all[a]).length);
+  const running = arms.some((a) => ids.some((id) => !all[a][id] || all[a][id].state === "run"));
   await writeFile(page, `<!doctype html><meta charset="utf-8">${running ? '<meta http-equiv="refresh" content="4">' : ""}<title>真实网站对比</title>
 <style>body{font:14px system-ui;margin:20px;background:#fff;color:#222}table{border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:6px 10px;vertical-align:top;text-align:left}small{color:#666}.run{color:#b26b00}.pass{color:#1a7f37}.fail,.err{color:#c62828}.wait{color:#aaa}</style>
-<h2>真实网站对比：我们的扩展 vs Codex + ego（都用 gpt-6.1-sol，思考强度高）</h2><p>${running ? "进行中" : "已结束"} · 每格写结果、用时、浏览器操作轮数</p>
-<table><tr><th>任务</th><th>我们的扩展</th><th>Codex + ego</th></tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${cell(all.ext[id])}${cell(all.ego[id])}</tr>`).join("")}</table>`);
+<h2>${arms.length > 1 ? "真实网站对比：我们的扩展 vs Codex + ego" : "真实网站评测：我们的扩展"}（扩展用 ${MODEL}${think ? `，${think}` : ""}）</h2><p>${running ? "进行中" : "已结束"} · 每格写结果、用时、浏览器操作轮数</p>
+<table><tr><th>任务</th>${arms.map((a) => `<th>${a === "ext" ? "我们的扩展" : "Codex + ego"}</th>`).join("")}</tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${arms.map((a) => cell(id, all[a][id])).join("")}</tr>`).join("")}</table>`);
 }
 
 // ---------- ext arm ----------
@@ -70,17 +182,20 @@ async function runExt(task: Task, id: string, dir: string) {
   const rp = await launchRealPath({ headed: true });
   try {
     const user = await rp.attach((await rp.targets()).find((t: { url: string }) => t.url === "about:blank")!.targetId);
+    if (task.login === "memos") { const { cookie } = await memosSignIn(); await rp.cdp.send("Storage.setCookies", { cookies: [{ ...cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] }); }
     await rp.cdp.send("Page.navigate", { url: START }, user);
     const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "sw")).targetId);
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(cfg.items)}).then(() => true)`);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "panel ready");
+    if (think) {
     const chip = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
     await until(async () => (await chip()) || undefined, 60_000, "think chip");
     await rp.click(panel, "#think-chip"); await sleep(350);
-    await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === "深入").click(), true`);
+    await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === ${JSON.stringify(think)}).click(), true`);
     await sleep(300);
-    if (!(await chip()).includes("深入")) throw new Error(`没选上深入：${await chip()}`);
+    if (!(await chip()).includes(think)) throw new Error(`没选上${think}：${await chip()}`);
+    }
     await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
 
     const traceLines = async () => String(await rp.evaluate(panel, `new Promise((ok) => { const r = indexedDB.open("sideagent-diagnostics"); r.onsuccess = () => { const q = r.result.transaction("trace-lines").objectStore("trace-lines").getAll(); q.onsuccess = () => ok(q.result.map(x => x.line).join("")); }; r.onerror = () => ok(""); })`));
@@ -132,10 +247,13 @@ function wastedRounds(lines: any[]) {
   const results = lines.filter((l) => l.type === "message_end" && l.data?.message?.role === "toolResult").map((l) => l.data.message.content.map((c: any) => c.text ?? "").join(""));
   const opens = (c: any) => c?.name === "navigate" || (c?.name === "tabs" && c.arguments?.action === "open");
   const looksOnly = (c: any) => c?.name === "snapshot" || (c?.name === "browser_run" && /snapshot|pageInfo/.test(c.arguments?.code ?? "") && !/fill|click|press|type|select|check|hover|scroll|tabs/.test(c.arguments?.code ?? ""));
+  // An action on the page (click, fill, key press, or a program that does one): if the tool result already shows what changed, a look right after it is a wasted round.
+  const acts = (c: any) => ["click", "double_click", "fill", "type_text", "press_key", "select_option"].includes(c?.name) || (c?.name === "browser_run" && /\b(click|double_click|fill|type_text|press_key|select_option)\(/.test(c.arguments?.code ?? ""));
   return {
     tabsList: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "list").length,
     tabsShow: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "show").length,
     lookAfterOpen: calls.filter((c: any, i: number) => i > 0 && looksOnly(c) && opens(calls.slice(0, i).reverse().find((x: any) => !(x.name === "tabs" && x.arguments?.action !== "open")))).length,
+    lookAfterAction: calls.filter((c: any, i: number) => i > 0 && looksOnly(c) && acts(calls[i - 1])).length,
     zeroSize: results.filter((t: string) => t.includes("零尺寸")).length,
     staleRef: results.filter((t: string) => /节点已离开文档|页面文档已变化|读取期间页面地址已变化/.test(t)).length,
   };
@@ -206,11 +324,12 @@ for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {
   console.log(`▶ ${arm} ${id} ${task.name}`);
   try {
     const truthOf = async () => { for (let i = 0; i < 3; i++) { try { return (await task.truth!()).before; } catch { await new Promise((r) => setTimeout(r, 2000)); } } return ""; };
-    const truth: Record<string, string> = task.truth ? { before: await truthOf() } : {};
+    const truth: Record<string, string> = task.truth ? { before: await truthOf() } : task.setup ? await task.setup() : {};
     const r = arm === "ext" ? await runExt(task, id, dir) : await runEgo(task, id, dir);
     if (task.truth) truth.after = await truthOf();
+    if (task.after) r.probe = await task.after();
     const reason = task.check({ answer: r.answer, tabs: r.tabs, probe: r.probe, truth });
-    const row = { id, arm, task: task.name, outcome: reason ? "fail" : "pass", reason, seconds: +(r.ms / 1000).toFixed(1), ...r, truth };
+    const row = { id, arm, split: task.split, task: task.name, outcome: reason ? "fail" : "pass", reason, seconds: +(r.ms / 1000).toFixed(1), ...r, truth };
     results.push(row);
     await writeStatus(id, reason ? "fail" : "pass", `${row.seconds} 秒 · ${r.browserCalls} 次浏览器操作${reason ? " · " + reason : ""}`);
     const sec = (r as any).second;
@@ -227,6 +346,6 @@ if (arm === "ext") {
   const sum = (k: string) => ok.reduce((n, r) => n + (r.wasted?.[k] ?? 0), 0);
   const secs = ok.map((r) => r.seconds).sort((a, b) => a - b);
   console.log(JSON.stringify({ pass: ok.filter((r) => r.outcome === "pass").length, of: results.length, rounds: ok.reduce((n, r) => n + r.rounds, 0), medianSeconds: secs[Math.floor(secs.length / 2)],
-    wasted: Object.fromEntries(["tabsList", "tabsShow", "lookAfterOpen", "zeroSize", "staleRef"].map((k) => [k, sum(k)])), buttonOk: ok.filter((r) => r.button?.ok).length, cacheShare: +(ok.reduce((n, r) => n + (r.cacheShare ?? 0), 0) / Math.max(1, ok.length)).toFixed(2) }));
+    wasted: Object.fromEntries(["tabsList", "tabsShow", "lookAfterOpen", "lookAfterAction", "zeroSize", "staleRef"].map((k) => [k, sum(k)])), buttonOk: ok.filter((r) => r.button?.ok).length, cacheShare: +(ok.reduce((n, r) => n + (r.cacheShare ?? 0), 0) / Math.max(1, ok.length)).toFixed(2) }));
 }
 console.log(`done ${arm}`);

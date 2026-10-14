@@ -11,10 +11,11 @@ import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveReadableTab } from "../state.js";
 import { oneLine } from "../util.js";
-import { axTreeToText, RANGE_INPUT_ROLES, type AxNodeLite } from "../axtree.js";
+import { axTreeToText, enclosingItem, itemTextOf, RANGE_INPUT_ROLES, repeatedItems, type AxNodeLite, type RepeatedItems } from "../axtree.js";
 import type { InputRangeReadout } from "../../../../shared/page-readout.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
+import { forgetPage, freshLines, hasPageBaseline, knownItems, pageChangesSince, rememberPage } from "../page-changes.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { waitForInteractive } from "./page-readiness.js";
@@ -220,6 +221,7 @@ export async function snapshotTab(
   if (scope === "viewport") {
     const dom = await domSnapshot(tabId, scope);
     clearAxSnapshot(tabId);
+    forgetPage(tabId);
 
     return {
       text: `[说明：scope=viewport 当前为简化 DOM 视口快照降级（仅覆盖当前视口，非全量 AX 树；视口内 iframe 仅占位未展开，不覆盖其内容）；以下 ref 为本次 DOM 快照编号，仅 domops 路径有效，旧 AX ref 已失效、请勿混用。如需全页 AX 树请用 scope=full_page]\n${dom.text}`,
@@ -235,6 +237,7 @@ export async function snapshotTab(
     if(decision)throw new Error(`DECISION_UNSUPPORTED: 无法取得可靠控件树：${oneLine(e)}`);
     const dom = await domSnapshot(tabId, scope);
     clearAxSnapshot(tabId);
+    forgetPage(tabId);
 
     return {
       text: `[回退：CDP 无障碍树快照不可用（${oneLine(e)}），以下为简化 DOM 快照；旧 AX ref 已失效，请用本次 ref]\n${dom.text}`,
@@ -243,7 +246,8 @@ export async function snapshotTab(
   }
 }
 
-async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
+/** 读整棵无障碍树并转成行：快照和“动作后新出现了什么”共用同一套去浮层、敏感栏、零尺寸规则。 */
+async function readAxPage(tabId: number, decision = false, budget?: number) {
   // 布局盒子与无障碍树同时去取，不多等一轮。
   const zeroSizeRead = readZeroSizeNodes(tabId);
   const result = decision?{nodes:await readDecisionTree(tabId)}:await withTimeout(
@@ -256,8 +260,119 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   const nodes = withoutSubtrees(result.nodes!, await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, nodes);
   const zeroSize = await zeroSizeRead;
-  const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes), secret, zeroSize);
+
+  return { nodes, secret, zeroSize, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize) };
+}
+
+/** 一次最多读几处变化：每处是几次 CDP 往返。 */
+const MAX_CHANGED_ROOTS = 12;
+
+/**
+ * 动作之后：只读变过的那几处（定位串来自页面里的变化记录），和模型上次读到的这一页比，交回新出现的行（规则见 page-changes.ts）。
+ * 不读整页：大页面整页读一次要 1 秒多。按定位串找元素在隔离环境里做，网页改不了 querySelector。新行里的 ref 登记成可用。
+ * 没有基准（还没读过这一页、上次是 DOM 快照）返回 null。零尺寸过滤要读全页布局，这里不做。
+ */
+export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel: string; field?: true }>, opts: { scrub: (body: string) => string; current: () => boolean }): Promise<{ text: string; refs: number[] } | null> {
+  if (!hasPageBaseline(tabId)) return null;
+
+  if (!roots.length) return { text: "", refs: [] };
+  const objectGroup = `bys-page-changes-${crypto.randomUUID()}`;
+  const contextId = await isolatedReadContext(tabId);
+  const nodes = new Map<string, AxNodeLite>();
+  // 输入框、编辑器那几处里的节点：里面的字是值，不算新出现的。
+  const inFields = new Set<number>();
+
+  try {
+    // 几处一起读；某一处找不到、读不了只少这一处。
+    await Promise.all(roots.slice(0, MAX_CHANGED_ROOTS).map(async root => {
+      const found = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(root.sel)})`, contextId, objectGroup }).catch(() => undefined);
+
+      if (!found?.result?.objectId) return;
+      const described = await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: found.result.objectId }).catch(() => undefined);
+
+      if (!described) return;
+      const sub = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: described.node.backendNodeId }).catch(() => ({ nodes: [] }));
+
+      for (const n of sub.nodes ?? []) {
+        nodes.set(n.nodeId, n);
+
+        if (root.field && n.backendDOMNodeId !== undefined) inFields.add(n.backendDOMNodeId);
+      }
+    }));
+  } finally {
+    void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
+
+  // 变的是 html 这类大容器时，助手自己的光标、停止条也在里面：和整页快照一样去掉。
+  const list = withoutSubtrees([...nodes.values()], await ownOverlayHosts(tabId));
+  const secret = await readSecretFields(tabId, list);
+  const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
+  const lines = entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line);
+  const found = repeatedItems(list);
+  const fresh = (freshLines(tabId, lines) ?? []).flatMap(line => line.ref === undefined ? [] : [line.ref]);
+  const items = await withTimeout(readItems(tabId, fresh, list, found), ITEM_TIMEOUT_MS, "读所在那一项超时").catch(() => new Map<number, string>());
+
+  // 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
+  if (!opts.current()) return null;
+  const changes = pageChangesSince(tabId, lines, opts.scrub, items, found);
+
+  if (changes) addAxRefs(tabId, changes.refs);
+
+  return changes;
+}
+
+/** 新出现的行里最多给几个控件找“在哪一项”，最多花多久：每个最多两次 CDP 往返，一起做；超时只是这次不带。 */
+const MAX_ITEM_LOOKUPS = 8;
+const ITEM_TIMEOUT_MS = 300;
+
+/**
+ * 新出现的控件 → 它所在那一项现在的字（项怎么认见 axtree.ts repeatedItems）。
+ * 先在读到的几处里认；只读了控件自己时，问浏览器它的祖先里有没有记下的项。
+ * 字按现在的页面读，不用记下的：笔记可能原地改过，列表也可能复用了同一个节点。
+ */
+async function readItems(tabId: number, refs: readonly number[], nodes: readonly AxNodeLite[], found: RepeatedItems): Promise<Map<number, string>> {
+  const known = knownItems(tabId);
+  const isItem = (id: number) => found.items.has(id) || known.items.has(id);
+  const out = new Map<number, string>();
+  // 同一项只读一次（菜单里的几项都在同一张卡片里）。
+  const reads = new Map<number, Promise<AxNodeLite[] | undefined>>();
+  const readItem = (item: number) => {
+    let read = reads.get(item);
+
+    if (!read) {
+      read = sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: item }).then(sub => sub.nodes, () => undefined);
+      reads.set(item, read);
+    }
+
+    return read;
+  };
+
+  await Promise.all(refs.slice(0, MAX_ITEM_LOOKUPS).map(async ref => {
+    const remembered = found.byRef.get(ref) ?? known.byRef.get(ref);
+    let item = remembered?.item ?? enclosingItem(nodes, ref, isItem);
+    const from = remembered?.from ?? 0;
+
+    if (item === undefined) {
+      const partial = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId: ref, fetchRelatives: true }).catch(() => undefined);
+
+      item = partial?.nodes ? enclosingItem(partial.nodes, ref, isItem) : undefined;
+    }
+
+    if (item === undefined) return;
+    const sub = itemTextOf(nodes, item, ref, from) === undefined ? await readItem(item) : nodes;
+    const text = sub ? itemTextOf(sub, item, ref, from) : undefined;
+
+    if (text) out.set(ref, text);
+  }));
+
+  return out;
+}
+
+async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
+  const { nodes, secret, zeroSize, text, backendIds, truncated, shown } = await readAxPage(tabId, decision);
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
+  // 只把真的交给模型的行记成“读过”：长页被截掉的那些，之后出现在眼前时还要当新的报。
+  rememberPage(tabId, shown, repeatedItems(nodes));
 
   if(!decision){
     recordAxSnapshot(tabId, backendIds);

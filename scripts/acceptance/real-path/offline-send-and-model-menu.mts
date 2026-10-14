@@ -4,10 +4,11 @@
  *   npx tsx scripts/acceptance/real-path/offline-send-and-model-menu.mts --headless
  *
  * 模型服务换成本机一个假的 OpenAI 兼容地址，像用户一样在设置页选「自定义」、填地址和一个没人认识的模型名保存；
- * 另给 OpenAI 填一把假 key（不发请求），让菜单里同时有已知服务商的模型。假服务只替代模型回答，被测的界面与连接都是真的。
+ * 另给 OpenAI 放一把假 key，让菜单里同时有已知服务商的模型。这把 key 直接写进扩展存储、不走设置页：
+ * 「保存并使用」会先拿它去试连 OpenAI，被明确拒绝就不保存（用户 10-13 定）。假服务只替代模型回答，被测的界面与连接都是真的。
  *
  * #4 断线发送：网页上划一句 → 页内「解释」→「在侧栏继续」把引用带进侧栏 → 侧栏写好一句话 → 扩展内 agent 反复崩溃期间按回车。
- *    判据：正文和引用都还在、侧栏出现「没有发出去」提示、没有冒出已发送的用户消息、假服务没收到这句；
+ *    判据：正文和引用都还在、侧栏出现「没有发出」提示、没有冒出已发送的用户消息、假服务没收到这句；
  *    恢复连接后再按一次回车，这句只送达一次（没送到而侧栏给出「继续」时点一次，分开记录 deliveredWithoutHelp）。
  * 普通会话：问一句 → 扩展内 agent 崩溃重启 → 接着问。判据：第二问送达一次、第一轮问答还在、没有错误字样。
  * #2 模型菜单：点模型芯片打开菜单，再点「显示全部」。判据：未知模型和 OpenAI 模型旁都没有任何能力标签，芯片上也没有。
@@ -126,27 +127,29 @@ const elementClickFallbacks: string[] = [];
 const clickShadowButton = async (session: string, text: string, timeoutMs = 15_000) => {
   const textOf = (node: DomNode): string => (node.nodeValue ?? "") + (node.children ?? []).map(textOf).join("");
 
-  const find = (node: DomNode): DomNode | undefined => {
-    if (node.nodeName === "BUTTON" && textOf(node).trim() === text) return node;
+  // 同名按钮可能不止一个（阅读框的工具条和回答下面都有「在侧栏继续」，工具条那个点了「解释」就藏起来）：全找出来，点看得见的那个。
+  const findAll = (node: DomNode, found: DomNode[] = []): DomNode[] => {
+    if (node.nodeName === "BUTTON" && textOf(node).trim() === text) found.push(node);
 
-    for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
-      const found = find(child);
+    for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) findAll(child, found);
 
-      if (found) return found;
-    }
-
-    return undefined;
+    return found;
   };
 
   await until(async () => {
     // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
-    const button = find((await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as { root: DomNode }).root);
+    const buttons = findAll((await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session) as { root: DomNode }).root);
+    let object: { objectId?: string } | undefined;
+    let box: { x: number; y: number } | null = null;
 
-    if (!button) return undefined;
-    const { object } = await rp.cdp.send("DOM.resolveNode", { backendNodeId: button.backendNodeId }, session);
-    const box = (await rp.cdp.send("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function(){if(this.closest('[hidden]'))return null;const r=this.getBoundingClientRect();return r.width&&!this.disabled?{x:r.x+r.width/2,y:r.y+r.height/2}:null}", returnByValue: true }, session)).result.value;
+    for (const button of buttons) {
+      ({ object } = await rp.cdp.send("DOM.resolveNode", { backendNodeId: button.backendNodeId }, session));
+      box = (await rp.cdp.send("Runtime.callFunctionOn", { objectId: object!.objectId, functionDeclaration: "function(){if(this.closest('[hidden]'))return null;const r=this.getBoundingClientRect();return r.width&&!this.disabled?{x:r.x+r.width/2,y:r.y+r.height/2}:null}", returnByValue: true }, session)).result.value;
 
-    if (!box) return undefined;
+      if (box) break;
+    }
+
+    if (!box || !object) return undefined;
 
     // 无头 Chrome 的工作页是隐藏页，鼠标事件要等下一帧才回执，偶尔整整 30 秒没有回应（9 轮里 2 次，都在「解释」这一下）。
     // 超时就改为直接点这个按钮元素，并记进结果，不把这类基础设施卡顿算成产品失败。
@@ -173,14 +176,20 @@ try {
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   await until(async () => (await rp.evaluate(panel, `!!document.querySelector("#header-more")`)) || undefined, 15_000, "侧栏渲染");
 
-  // ── 设置页：像用户一样填 ────────────────────────────────────
-  // 侧栏刚渲染时第一下偶尔没打开菜单（inproc-config 里同样的已知现象）：像用户一样再点，最多 3 次。
-  for (let clicks = 1; !(await rp.evaluate(panel, `document.querySelector("#header-menu")?.matches(":popover-open")`)); clicks++) {
-    if (clicks > 3) throw new Error("点了 3 次「更多」，菜单都没有打开");
-    await rp.click(panel, "#header-more");
-    await until(async () => (await rp.evaluate(panel, `document.querySelector("#header-menu")?.matches(":popover-open")`)) || undefined, 2_000, "更多菜单展开").catch(() => undefined);
-  }
+  // 设置入口和模型按钮都在顶栏「更多」菜单里。侧栏刚渲染时第一下偶尔没打开菜单（inproc-config 里同样的已知现象）：像用户一样再点，最多 3 次。
+  const openHeaderMenu = async () => {
+    for (let clicks = 1; !(await rp.evaluate(panel, `document.querySelector("#header-menu")?.matches(":popover-open")`)); clicks++) {
+      if (clicks > 3) throw new Error("点了 3 次「更多」，菜单都没有打开");
+      await rp.click(panel, "#header-more");
+      await until(async () => (await rp.evaluate(panel, `document.querySelector("#header-menu")?.matches(":popover-open")`)) || undefined, 2_000, "更多菜单展开").catch(() => undefined);
+    }
+  };
 
+  // ── 设置页：像用户一样填 ────────────────────────────────────
+  await openHeaderMenu();
+
+  // OpenAI 的假 key 只为让它的模型进菜单，不是被测对象：直接放进存储，和保存后存下的格式一样。
+  await rp.evaluate(panel, `chrome.storage.local.set({ "inproc_cred:openai": { type: "api_key", key: "sk-fake-not-a-real-key" } }).then(() => true)`);
   await rp.click(panel, "#model-settings-open");
   const settingsTarget = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页打开");
   const settings = await rp.attach(settingsTarget.targetId);
@@ -208,14 +217,15 @@ try {
     return until(async () => {
       const text = String(await rp.evaluate(settings, `document.querySelector("#model-status").textContent`));
 
+      // 保存前先试连：「正在测试…」时接着等。
+      if (text.startsWith("正在测试")) return undefined;
+
       if (text && !text.startsWith("已保存")) throw new Error(`保存 ${provider} 失败：${text}`);
 
       return text.startsWith("已保存") ? text : undefined;
-    }, 10_000, `保存 ${provider}`);
+    }, 30_000, `保存 ${provider}`);
   };
 
-  // OpenAI 只填一把假 key 让它的模型进菜单；不点测试，也不会拿它发任务。
-  result.openaiSave = await saveProvider("openai", [["#api-key", "sk-fake-not-a-real-key"], ["#model-id", "gpt-4o-mini"]]);
   result.customSave = await saveProvider("custom", [["#base-url", `${origin}/v1`], ["#api-key", "local-fake"], ["#model-id", UNKNOWN_MODEL]]);
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId }).catch(() => {});
 
@@ -229,8 +239,14 @@ try {
 
   // ── 路径 #2：打开模型菜单 ───────────────────────────────────
   {
+    await openHeaderMenu();
     await rp.click(panel, "#model-btn");
-    await until(async () => (await rp.evaluate(panel, `document.querySelectorAll("#model-popover .model-item").length`)) > 0 || undefined, 5_000, "模型菜单展开");
+    await until(async () => (await rp.evaluate(panel, `document.querySelectorAll("#model-popover .model-item").length`)) > 0 || undefined, 5_000, "模型菜单展开").catch(async error => {
+      // 菜单没展开时记下当时的样子：按钮在不在、菜单开没开、列表里写了什么。
+      const state = await rp.evaluate(panel, `(() => { const b = document.querySelector("#model-btn"); const p = document.querySelector("#model-popover");
+        return { button: { hidden: b?.hidden, rects: b?.getClientRects().length, text: b?.innerText }, popover: { hidden: p?.hidden, text: p?.innerText.slice(0, 300) } }; })()`).catch(() => null);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}；当时：${JSON.stringify(state)}`);
+    });
     await sleep(700);
     const featuredShot = await shot(panel, "2-model-menu-featured.png");
     // 默认只列常用；点「显示全部」列出所有已配置凭据的模型（含 OpenAI），两种视图都要没有猜出来的标签。
@@ -342,7 +358,7 @@ try {
         steps.keptWhileDown = {
           draftKept: afterFailed.input === draft,
           quoteKept: afterFailed.quoteVisible && afterFailed.quote === quoted.quote,
-          notSentNotice: newNotices.some((text) => text.includes("没有发出去")),
+          notSentNotice: newNotices.some((text) => text.includes("没有发出")),
           noFakeUserMessage: afterFailed.userMessages.length === userMessagesBefore,
           modelDidNotReceive: draftRequests() === requestsBefore,
         };
@@ -375,7 +391,7 @@ try {
         const restored = await rp.evaluate(panel, PANEL) as PanelState;
         // 正文还在输入框（那一下回车没反应，或没送到后台被放回来）：用户会再按一次。
         steps.neededSecondEnter = true;
-        steps.restoredWithNotice = restored.notices.some((text) => text.includes("没有发出去"));
+        steps.restoredWithNotice = restored.notices.some((text) => text.includes("没有发出"));
         steps.restoredQuote = restored.quoteVisible && restored.quote === quoted.quote;
         steps.restoredScreenshot = await shot(panel, `4-${kind}-3b-restored.png`);
         await rp.click(panel, "#input");

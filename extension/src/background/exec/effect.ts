@@ -3,10 +3,17 @@
  * 效果证据失败（页面禁止注入、导航换文档、SW 重启）绝不能拖垮动作本身：
  * 所有入口都吞掉异常并返回 undefined，让调用方按「没有证据」处理。
  */
-import { EMPTY_EFFECT_REPORT, downloadEvidence, pendingRequests, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport } from "../../../../shared/effect.js";
+import { EMPTY_EFFECT_REPORT, downloadEvidence, pendingRequests, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport, type PageAppeared } from "../../../../shared/effect.js";
+import { undoScrubber } from "../fill-undo.js";
 import { networkRingFor } from "../network-log.js";
+import { withTimeout } from "../timeout.js";
+import { hasPageBaseline } from "../page-changes.js";
+import { readPageChanges } from "./snapshot.js";
 
 const CONTENT_FILE = "content-effect.js";
+
+/** 报告 → 动作期间页面上变过的几处（定位串，只在后台用，不进回执）。 */
+const changedRoots = new WeakMap<EffectReport, { roots: Array<{ sel: string; field?: true }> | "many"; since: number }>();
 
 /** 每个效果会话的开始时刻：点击窗口的起点，用来认出这次点击后页面发出的请求。 */
 const effectStarts = new Map<string, number>();
@@ -84,15 +91,19 @@ export async function collectEffect(tabId: number, token: string | null): Promis
     const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
     const report = await withDocumentChange(tabId, token, settled, startUrl, pageUrl);
 
+    // 读变过的几处也算“为此多花的时间”：从这里开始计时。
+    const rootsAt = Date.now();
+    const roots = await callPage(tabId, (t: string) => window.__sideagent?.effect?.roots?.(t) ?? null, [token]).catch(() => null);
     const sent = since === undefined ? [] : [
       ...requestEvidence(networkRingFor(tabId)?.entries ?? [], since, Date.now(), pageUrl),
       ...downloadEvidence(await clickDownloads(tabId, since).catch(() => []), pageUrl),
     ];
 
-    if (!sent.length) return report;
-    const base = report ?? EMPTY_EFFECT_REPORT;
+    const final = !sent.length ? report : { ...(report ?? EMPTY_EFFECT_REPORT), changed: true, evidence: [...(report ?? EMPTY_EFFECT_REPORT).evidence, ...sent] };
 
-    return { ...base, changed: true, evidence: [...base.evidence, ...sent] };
+    if (final && roots) changedRoots.set(final, { roots, since: rootsAt });
+
+    return final;
   } finally {
     effectStarts.delete(token);
 
@@ -122,7 +133,100 @@ async function withDocumentChange(tabId: number, token: string, report: EffectRe
   const url = URL.canParse(tab?.url ?? pageUrl) ? new URL(tab?.url ?? pageUrl) : null;
   const where = [tab?.title ? `"${tab.title.slice(0, 120)}"` : "", url ? `${url.origin}${url.pathname}` : ""].filter(Boolean).join(" — ");
 
-  return { ...base, changed: true, evidence: [...base.evidence, where ? `the page loaded a new document: ${where}` : "the page loaded a new document"] };
+  return { ...base, changed: true, documentChanged: true, evidence: [...base.evidence, where ? `the page loaded a new document: ${where}` : "the page loaded a new document"] };
+}
+
+/** 读“新出现了什么”最多等这么久；超时只是这次不带摘要。 */
+const PAGE_CHANGES_TIMEOUT_MS = 1500;
+
+/**
+ * 动作之后页面上有地方变了、又没换页时，读变过的那几处，只交回新出现的行（规则见 page-changes.ts）。
+ * 换了页的沿用换页后的回执，不叠加；页面没变的不读，不多花时间。
+ * 还原填写记下的旧值从摘要里去掉：旧值只能留在后台内存（fill-undo.ts）。
+ */
+export async function pageChangesAfter(tabId: number, sessionKey: string, report: EffectReport | undefined): Promise<PageAppeared | undefined> {
+  if (!report || report.documentChanged) return undefined;
+
+  const changed = changedRoots.get(report);
+
+  return await finishAppeared(tabId, sessionKey, changed?.roots ?? null, changed?.since ?? Date.now(), 0, "effect");
+}
+
+type Roots = Array<{ sel: string; field?: true }> | "many";
+
+/** 填写、选择之后：页面还在改 DOM 时最多等这么久，等它安静这么久。不等网络：会自动保存的编辑器每填一次都会发请求。 */
+const WATCH_MAX_MS = 200;
+const WATCH_QUIET_MS = 60;
+const WATCH_POLL_MS = 40;
+
+/** 填写、选择之前：只开始记页面上哪里变了。还没读过这一页（没有基准，摘要必然是空的）就不记，也就不等。失败返回 null。 */
+export async function beginWatch(tabId: number): Promise<string | null> {
+  if (!hasPageBaseline(tabId)) return null;
+  const token = crypto.randomUUID();
+
+  try {
+    await ensureEffectScript(tabId);
+    const ack = await callPage(tabId, (t: string) => window.__sideagent?.effect?.watch?.(t), [token]);
+
+    return ack?.ok ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 填写、选择自己出错时收掉页面里的变化记录。 */
+export function endWatch(tabId: number, token: string): void {
+  void callPage(tabId, (t: string) => window.__sideagent?.effect?.end(t), [token]).catch(() => {});
+}
+
+/**
+ * 填写、选择之后：页面同步画出来的（校验提示、跟着出来的栏）这时已经在了；页面还在改 DOM 就等它安静下来，最多 200 毫秒。
+ * 不像点击那样轮询效果证据（要反复读全页文字），也不等网络。extraMs 是动作前花的时间。
+ */
+export async function watchChangesAfter(tabId: number, sessionKey: string, token: string, extraMs: number): Promise<PageAppeared | undefined> {
+  const started = Date.now();
+  let changed: Roots | null;
+
+  try {
+    for (;;) {
+      const quiet = await callPage(tabId, (t: string) => window.__sideagent?.effect?.quietMs?.(t) ?? null, [token]).catch(() => null);
+
+      if (quiet === null || quiet >= WATCH_QUIET_MS || Date.now() - started >= WATCH_MAX_MS) break;
+      await new Promise(resolve => setTimeout(resolve, WATCH_POLL_MS));
+    }
+    changed = await callPage(tabId, (t: string) => window.__sideagent?.effect?.roots?.(t) ?? null, [token]).catch(() => null);
+  } finally {
+    endWatch(tabId, token);
+  }
+
+  return await finishAppeared(tabId, sessionKey, changed, started, extraMs, "watch");
+}
+
+async function finishAppeared(tabId: number, sessionKey: string, roots: Roots | null, started: number, extraMs: number, kind: "effect" | "watch"): Promise<PageAppeared> {
+  const appeared = await readAppeared(tabId, sessionKey, roots);
+  const ms = Date.now() - started + extraMs;
+  // 只记花了多久、带回多少字，不记内容：验收按它算工具多花的时间。
+  console.info("[page-changes]", JSON.stringify({ ms, chars: "text" in appeared ? appeared.text.length : -1, kind }));
+
+  return { ...appeared, ms };
+}
+
+async function readAppeared(tabId: number, sessionKey: string, roots: Roots | null): Promise<{ text: string } | { redrawn: true }> {
+  if (!roots) return { text: "" };
+
+  if (roots === "many") return { redrawn: true };
+
+  let live = true;
+
+  try {
+    const changes = await withTimeout(readPageChanges(tabId, roots, { scrub: undoScrubber(sessionKey), current: () => live }), PAGE_CHANGES_TIMEOUT_MS, "读新出现的内容超时");
+
+    return { text: changes?.text ?? "" };
+  } catch {
+    return { text: "" };
+  } finally {
+    live = false;
+  }
 }
 
 /** 点击后最多等多久：下载要先等跳转的响应头才出现，出现后再等 Chrome 报完成。 */
