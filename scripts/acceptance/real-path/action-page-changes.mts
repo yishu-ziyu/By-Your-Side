@@ -7,6 +7,7 @@
  *   没写 role 的编辑器「正文」；没有反应的「刷新」按钮；「分类」下拉框（选“项目”后多出一个「项目名」框）；
  *   「新建笔记」：弹出对话框（标题框原来写着草稿名、口令框、提货码框 autocomplete=one-time-code、「保存」），同时像常见弹窗库那样给 body 加 modal-open、锁滚动。
  *   往标题框填字后，对话框里出现“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
+ *   两行文件，每行一个「Share」；点「整理」给两行各加一个「Delete」（两处分开变化，同名控件不在同一棵读到的树里）。
  *   三张像 Memos 的卡片：每张开头是「now」「More」两个按钮，再是正文；「More」弹出挂在 body 上的菜单，「Pin」把这张移到最上面并多出「Unpin」。
  * 脚本模型开头读一次页；之后要用的编号如果结果里没有，它就再读一次页（所以“只读了一次页”这条能失败）。
  *   a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、不带读页时已有的元素、不带跳动的时钟，不超过 2000 字。
@@ -17,10 +18,11 @@
  *   g 点「显示帮助」：页面只给 body 换一个 class，让预先画好的帮助显出来；结果说“这一页一大块变了”，不是什么都没有。
  *   h 填数量框（填完它自己换校验 class）：结果不把这个数量框当成新出现的。
  *   i 点第二张卡片的「More」：展开的按钮行写明在“读书笔记”那一项；对话框里的新栏不带这句（不在重复的项里）。
+ *   k 点「整理」：两个新的「Delete」各写明在哪一行（只读到按钮所在的小容器，要问浏览器祖先），不卡住。
  *   j 点「Pin」：新出现的「Unpin」写明在“读书笔记”那一项（它在页面上只有一个，靠记下的那张卡片认出来）。
  *   f 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回内容的每一步、每一次填写和选择也都不超过 300 毫秒（备注框的请求 1.5 秒才回来，不能等它）。
  * 失败方式：关掉变化摘要（pageChangesAfter、watchChangesAfter 直接返回 undefined），a、b、d 失败；改回动作后读整页，f 失败；
- * 去掉“动作前就在跳字的不算”，e 失败；不认所在那一项（repeatedItems 直接返回空表），i、j 失败。
+ * 去掉“动作前就在跳字的不算”，e 失败；不认所在那一项（repeatedItems 直接返回空表），i、j、k 失败；同名控件分在两处时找共同祖先不停（审查复现过），k 超时失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -51,6 +53,11 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔
 <p><button id="help" type="button" onclick="document.body.classList.toggle('show-help')">显示帮助</button> <label>数量 <input id="qty" type="number" aria-label="数量" oninput="this.className = this.value > 0 ? 'ok' : 'bad'"></label></p>
 <style>.help { display: none } body.show-help .help { display: block }</style>
 <div class="help"><p>帮助：先写标题再保存。</p><button type="button">知道了</button></div>
+<div id="files">
+<div class="row"><p>文件甲：季度报告.pdf</p><div class="acts"><button type="button">Share</button></div></div>
+<div class="row"><p>文件乙：会议纪要.docx</p><div class="acts"><button type="button">Share</button></div></div>
+</div>
+<p><button id="tidy" type="button">整理</button></p>
 <div id="cards">
 <div class="card"><div class="head"><button type="button">now</button><button type="button" class="more" aria-label="More">⋯</button></div><p>会议纪要：周三发布，周一冻结代码。</p></div>
 <div class="card"><div class="head"><button type="button">now</button><button type="button" class="more" aria-label="More">⋯</button></div><p>读书笔记：第三章讲地方政府融资。</p></div>
@@ -70,6 +77,7 @@ document.getElementById("kind").addEventListener("change", e => {
   p.innerHTML = '<label>项目名 <input id="project" aria-label="项目名"></label>';
   e.target.closest("p").after(p);
 });
+document.getElementById("tidy").onclick = () => { for (const acts of document.querySelectorAll(".acts")) acts.insertAdjacentHTML("beforeend", '<button type="button">Delete</button>'); };
 // 像 Memos：菜单挂在 body 上，和卡片没有包含关系；置顶把整张卡片挪到最上面。
 for (const more of document.querySelectorAll(".more")) more.onclick = () => {
   more.setAttribute("aria-expanded", "true");
@@ -123,7 +131,7 @@ const FINAL = "笔记已保存。";
 const t = {
   memo: { target: "", value: "随手记" }, editor: { target: "loc=css:#editor", value: EDITOR_TEXT }, dead: { target: "" },
   kind: { target: "", values: "项目" }, help: { target: "" }, qty: { target: "", value: "3" }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" },
-  more: { target: "" }, pin: { target: "" },
+  more: { target: "" }, pin: { target: "" }, tidy: { target: "" },
 };
 const flow: Array<{ tool: { name: string; args: object } } | { text: string }> = [
   { tool: { name: "snapshot", args: {} } },
@@ -139,6 +147,7 @@ const flow: Array<{ tool: { name: string; args: object } } | { text: string }> =
   { tool: { name: "click", args: t.save } },
   { tool: { name: "click", args: t.more } },
   { tool: { name: "click", args: t.pin } },
+  { tool: { name: "click", args: t.tidy } },
   { text: FINAL },
 ];
 
@@ -179,6 +188,7 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
       t.help.target = `@${ref(/\[ref=(\d+)\] button "显示帮助"/) ?? ""}`;
       t.qty.target = `@${ref(/\[ref=(\d+)\] spinbutton "数量"/) ?? ""}`;
       // 第二张卡片（读书笔记）的「More」：快照里它排在读书笔记正文前面。
+      t.tidy.target = `@${ref(/\[ref=(\d+)\] button "整理"/) ?? ""}`;
       t.more.target = `@${[...text.matchAll(/\[ref=(\d+)\] button "More"/g)][1]?.[1] ?? ""}`;
     }
     if (call?.name === "click" && call.arguments.includes(`"${t.more.target}"`)) t.pin.target = `@${ref(/\[ref=(\d+)\] menuitem "Pin"/) ?? ""}`;
@@ -247,6 +257,9 @@ try {
   const pinReceipt = receiptOf("click", t.pin);
   const top = await rp.evaluate(work, 'document.querySelector("#cards .card p")?.textContent ?? ""');
   check("j 点「Pin」：新出现的「Unpin」写明在读书笔记那一项", /button "Unpin" — in item "读书笔记/.test(appearedPart(pinReceipt)) && String(top).startsWith("读书笔记"), { pin: t.pin.target, top, pinReceipt });
+
+  const tidyShown = appearedPart(receiptOf("click", t.tidy));
+  check("k 点「整理」：两个新的「Delete」各写明在哪一行，不卡住", /button "Delete" — in item "文件甲/.test(tidyShown) && /button "Delete" — in item "文件乙/.test(tidyShown), { tidy: t.tidy.target, tidyShown });
 
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;

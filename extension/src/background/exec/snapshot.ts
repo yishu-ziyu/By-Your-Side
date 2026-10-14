@@ -11,11 +11,11 @@ import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveReadableTab } from "../state.js";
 import { oneLine } from "../util.js";
-import { axTreeToText, RANGE_INPUT_ROLES, repeatedItems, type AxNodeLite } from "../axtree.js";
+import { axTreeToText, enclosingItem, itemTextOf, RANGE_INPUT_ROLES, repeatedItems, type AxNodeLite, type RepeatedItems } from "../axtree.js";
 import type { InputRangeReadout } from "../../../../shared/page-readout.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
-import { forgetPage, hasPageBaseline, pageChangesSince, rememberPage } from "../page-changes.js";
+import { forgetPage, freshLines, hasPageBaseline, knownItems, pageChangesSince, rememberPage } from "../page-changes.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { waitForInteractive } from "./page-readiness.js";
@@ -307,14 +307,56 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
   const list = withoutSubtrees([...nodes.values()], await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, list);
   const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
+  const lines = entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line);
+  const found = repeatedItems(list);
+  const fresh = (freshLines(tabId, lines) ?? []).flatMap(line => line.ref === undefined ? [] : [line.ref]);
+  const items = await withTimeout(readItems(tabId, fresh, list, found), ITEM_TIMEOUT_MS, "读所在那一项超时").catch(() => new Map<number, string>());
 
   // 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
   if (!opts.current()) return null;
-  const changes = pageChangesSince(tabId, entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line), list, opts.scrub);
+  const changes = pageChangesSince(tabId, lines, opts.scrub, items, found);
 
   if (changes) addAxRefs(tabId, changes.refs);
 
   return changes;
+}
+
+/** 新出现的行里最多给几个控件找“在哪一项”，最多花多久：每个最多两次 CDP 往返，一起做；超时只是这次不带。 */
+const MAX_ITEM_LOOKUPS = 8;
+const ITEM_TIMEOUT_MS = 300;
+
+/**
+ * 新出现的控件 → 它所在那一项现在的字（项怎么认见 axtree.ts repeatedItems）。
+ * 先在读到的几处里认；只读了控件自己时，问浏览器它的祖先里有没有记下的项。
+ * 字按现在的页面读，不用记下的：笔记可能原地改过，列表也可能复用了同一个节点。
+ */
+async function readItems(tabId: number, refs: readonly number[], nodes: readonly AxNodeLite[], found: RepeatedItems): Promise<Map<number, string>> {
+  const known = knownItems(tabId);
+  const isItem = (id: number) => found.items.has(id) || known.items.has(id);
+  const out = new Map<number, string>();
+
+  await Promise.all(refs.slice(0, MAX_ITEM_LOOKUPS).map(async ref => {
+    let item = found.byRef.get(ref) ?? known.byRef.get(ref) ?? enclosingItem(nodes, ref, isItem);
+
+    if (item === undefined) {
+      const partial = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId: ref, fetchRelatives: true }).catch(() => undefined);
+
+      item = partial?.nodes ? enclosingItem(partial.nodes, ref, isItem) : undefined;
+    }
+
+    if (item === undefined) return;
+    let text = itemTextOf(nodes, item);
+
+    if (text === undefined) {
+      const sub = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: item }).catch(() => undefined);
+
+      text = sub?.nodes ? itemTextOf(sub.nodes, item) : undefined;
+    }
+
+    if (text) out.set(ref, text);
+  }));
+
+  return out;
 }
 
 async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
