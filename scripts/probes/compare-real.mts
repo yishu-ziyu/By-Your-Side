@@ -5,6 +5,7 @@
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 
 const [rootArg, outDir, arm] = process.argv.slice(2);
 const root = resolve(rootArg); // an absolute path: "scripts/..." joined onto "." would be read as a package name
@@ -19,7 +20,7 @@ const dec = (u: string) => { try { return decodeURIComponent(u); } catch { retur
 
 type Tab = { url: string; title: string };
 type Ctx = { answer: string; tabs: Tab[]; probe: unknown; truth: Record<string, string> };
-type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
+type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; login?: "memos"; setup?: () => Promise<Record<string, string>>; after?: () => Promise<unknown>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
 
 const ghTop = async () => { const h = await (await fetch("https://github.com/trending", { headers: { "user-agent": "Mozilla/5.0" } })).text(); return h.match(/<h2 class="h3 lh-condensed">[\s\S]*?href="\/([^"]+)"/)?.[1] ?? ""; };
 const hnTop = async () => { const h = await (await fetch("https://news.ycombinator.com/")).text(); return (h.match(/<span class="titleline"><a [^>]*>([^<]+)<\/a>/)?.[1] ?? "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); };
@@ -40,6 +41,35 @@ const pathOf = (u: string) => bare(u.replace(/[?#].*$/, ""));
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 const todos = (c: Ctx) => JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[];
 const TODO_PROBE = `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`;
+
+// ── Local Memos (a signed-in note site, `npm run lab -- sites start`): the account file lives outside the repo and never reaches the page, the model or the logs. ──
+const MEMOS = "http://127.0.0.1:5230";
+type Memo = { name: string; content: string; tags: string[]; pinned: boolean };
+async function memosSignIn() {
+  const c = JSON.parse(await readFile(join(homedir(), ".local/share/bys-test-sites/memos/credentials.json"), "utf8"));
+  const r = await fetch(`${MEMOS}/api/v1/auth/signin`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passwordCredentials: { username: c.username, password: c.password } }) });
+  if (!r.ok) throw new Error(`Memos 登录失败 ${r.status}（npm run lab -- sites start）`);
+  const [cookie] = (r.headers.get("grpc-metadata-set-cookie") ?? "").split(";");
+  return { token: String((await r.json()).accessToken), cookie: { name: cookie.split("=")[0], value: cookie.slice(cookie.indexOf("=") + 1) } };
+}
+async function memosApi(method: string, path: string, body?: unknown) {
+  const { token } = await memosSignIn();
+  const r = await fetch(`${MEMOS}/api/v1/${path}`, { method, headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!r.ok) throw new Error(`Memos ${method} ${path} ${r.status}`);
+  return r.json().catch(() => ({}));
+}
+const memosList = async (): Promise<Memo[]> => ((await memosApi("GET", "memos?pageSize=100")).memos ?? []).map((m: Memo) => ({ name: m.name, content: m.content, tags: m.tags ?? [], pinned: !!m.pinned }));
+/** Empty the test account (normal and archived notes), then write the seed notes; returns each seed's id by its first words, for the checks. */
+async function memosReset(seeds: string[]) {
+  for (const state of ["NORMAL", "ARCHIVED"]) for (const m of (await memosApi("GET", `memos?pageSize=100&state=${state}`)).memos ?? []) await memosApi("DELETE", m.name);
+  const ids: Record<string, string> = {};
+  for (const content of seeds) ids[content.slice(0, 4)] = (await memosApi("POST", "memos", { content, visibility: "PRIVATE" })).name;
+  return ids;
+}
+const memosOf = (c: Ctx) => (c.probe ?? []) as Memo[];
+const MEMO_SEEDS = ["买菜：牛奶、鸡蛋、西红柿", "读书笔记：《置身事内》第三章讲地方政府融资。", "会议纪要：下周三发布 2.0，周一前冻结代码。"];
+/** The seeds other than `except` are still there, unchanged and unpinned, and no note was added or removed. */
+const othersIntact = (c: Ctx, except: string) => { const ms = memosOf(c); if (ms.length !== MEMO_SEEDS.length) return `笔记数是 ${ms.length}（应为 ${MEMO_SEEDS.length}）`; const bad = MEMO_SEEDS.filter((s) => s.slice(0, 4) !== except).filter((s) => { const m = ms.find((x) => x.name === c.truth[s.slice(0, 4)]); return !m || m.content !== s || m.pinned; }); return bad.length ? `别的笔记被改了：${bad.map((s) => s.slice(0, 4)).join("、")}` : null; };
 
 const TASKS: Task[] = [
   { id: "S1", split: "train", group: "搜索", name: "必应搜天气", prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 天气。",
@@ -71,6 +101,15 @@ const TASKS: Task[] = [
   { id: "E4", split: "train", group: "读取", name: "HN 第三条的评论页", prompt: "打开 https://news.ycombinator.com ，打开排第三的帖子的评论页。",
     truth: async () => ({ before: (await hnItem(3)).id }),
     check: (c) => [c.truth.before, c.truth.after].some((id) => id && c.tabs.some((t) => t.url.includes(`news.ycombinator.com/item?id=${id}`))) ? null : `没有打开第三条的评论页（应为 item?id=${c.truth.before}）` },
+  { id: "M1", split: "train", group: "登录网站", name: "Memos 记笔记加标签", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），新建一条笔记，内容是：周五前把季度报告初稿发给王经理。然后给这条笔记加上标签 工作。`,
+    setup: () => memosReset([]), after: memosList,
+    check: (c) => { const ms = memosOf(c); const m = ms.find((x) => x.content.includes("周五前把季度报告初稿发给王经理")); if (ms.length !== 1 || !m) return `笔记是 ${JSON.stringify(ms.map((x) => x.content))}`; return m.tags.includes("工作") ? null : `标签是 ${JSON.stringify(m.tags)}（应含 工作）`; } },
+  { id: "M2", split: "train", group: "登录网站", name: "Memos 找到笔记补一句", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），找到写着“置身事内”的那条笔记，在它末尾补一句：重点看地方债那一节。`,
+    setup: () => memosReset(MEMO_SEEDS), after: memosList,
+    check: (c) => { const m = memosOf(c).find((x) => x.name === c.truth["读书笔记"]); if (!m) return "那条笔记不见了"; const at = m.content.indexOf("重点看地方债那一节"); if (!m.content.includes(MEMO_SEEDS[1]) || at < m.content.indexOf(MEMO_SEEDS[1]) + MEMO_SEEDS[1].length) return `内容是 ${JSON.stringify(m.content)}`; return othersIntact(c, "读书笔记"); } },
+  { id: "M3", split: "train", group: "登录网站", name: "Memos 置顶一条笔记", login: "memos", prompt: `打开 ${MEMOS} （我的 Memos 笔记，已登录），把关于买菜的那条笔记置顶。`,
+    setup: () => memosReset(MEMO_SEEDS), after: memosList,
+    check: (c) => { const m = memosOf(c).find((x) => x.name === c.truth["买菜：牛"]); if (!m) return "那条笔记不见了"; if (!m.pinned || m.content !== MEMO_SEEDS[0]) return `买菜那条：置顶=${m.pinned}，内容 ${JSON.stringify(m.content)}`; return othersIntact(c, "买菜：牛"); } },
   { id: "S7", split: "test", group: "搜索", name: "npm 搜 lodash", prompt: "打开 https://www.npmjs.com ，用页面上的搜索框搜索 lodash，打开 lodash 这个包的页面。",
     check: (c) => c.tabs.some((t) => /^npmjs\.com\/package\/lodash$/.test(bare(t.url))) ? null : "没有打开 lodash 的包页面" },
   { id: "R5", split: "test", group: "读取", name: "RFC 9110 标题和作者", prompt: "打开 https://www.rfc-editor.org/rfc/rfc9110.html ，告诉我这份文档的标题和第一作者。",
@@ -143,6 +182,7 @@ async function runExt(task: Task, id: string, dir: string) {
   const rp = await launchRealPath({ headed: true });
   try {
     const user = await rp.attach((await rp.targets()).find((t: { url: string }) => t.url === "about:blank")!.targetId);
+    if (task.login === "memos") { const { cookie } = await memosSignIn(); await rp.cdp.send("Storage.setCookies", { cookies: [{ ...cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] }); }
     await rp.cdp.send("Page.navigate", { url: START }, user);
     const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "sw")).targetId);
     const panel = await rp.attach(await rp.openSidePanel());
@@ -284,9 +324,10 @@ for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {
   console.log(`▶ ${arm} ${id} ${task.name}`);
   try {
     const truthOf = async () => { for (let i = 0; i < 3; i++) { try { return (await task.truth!()).before; } catch { await new Promise((r) => setTimeout(r, 2000)); } } return ""; };
-    const truth: Record<string, string> = task.truth ? { before: await truthOf() } : {};
+    const truth: Record<string, string> = task.truth ? { before: await truthOf() } : task.setup ? await task.setup() : {};
     const r = arm === "ext" ? await runExt(task, id, dir) : await runEgo(task, id, dir);
     if (task.truth) truth.after = await truthOf();
+    if (task.after) r.probe = await task.after();
     const reason = task.check({ answer: r.answer, tabs: r.tabs, probe: r.probe, truth });
     const row = { id, arm, split: task.split, task: task.name, outcome: reason ? "fail" : "pass", reason, seconds: +(r.ms / 1000).toFixed(1), ...r, truth };
     results.push(row);
