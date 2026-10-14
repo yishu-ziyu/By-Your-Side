@@ -38,18 +38,21 @@ const blurComposer = (panel: string) => rp.evaluate(panel, `(() => {
 
 const view = (panel: string) => rp.evaluate(panel, `(() => {
   const inner = document.querySelector("#composer-bar-inner");
-  const attach = document.querySelector("#attach-btn");
   const send = document.querySelector("#send-btn");
   const ics = inner ? getComputedStyle(inner) : null;
   const scs = send ? getComputedStyle(send) : null;
   const sendBox = send?.getBoundingClientRect();
-  const attachBox = attach?.getBoundingClientRect();
-  const hit = attachBox && attachBox.width > 0
-    ? document.elementFromPoint(attachBox.x + attachBox.width / 2, attachBox.y + attachBox.height / 2)
-    : null;
+  const hit = (sel) => {
+    const el = document.querySelector(sel);
+    const box = el?.getBoundingClientRect();
+    const at = box && box.width > 0 ? document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) : null;
+    return !!(el && at && el.contains(at));
+  };
   return {
     toolsOpen: !!(ics && +ics.opacity > 0.5 && parseFloat(ics.maxHeight) > 8),
-    attachClickable: !!(attach && hit && attach.contains(hit)),
+    attachClickable: hit("#attach-btn"),
+    thinkClickable: hit("#think-chip"),
+    inert: !!inner?.inert,
     sendShown: !!(send && scs && scs.display !== "none" && (sendBox?.width ?? 0) > 8),
     starter: !!document.querySelector("#starter-connect"),
     starterTitle: document.querySelector("#starter-title")?.textContent ?? "",
@@ -59,6 +62,8 @@ const view = (panel: string) => rp.evaluate(panel, `(() => {
 })()`) as Promise<{
   toolsOpen: boolean;
   attachClickable: boolean;
+  thinkClickable: boolean;
+  inert: boolean;
   sendShown: boolean;
   starter: boolean;
   starterTitle: string;
@@ -75,10 +80,24 @@ try {
   await until(async () => (await view(panel)).starter || undefined, 20_000, "空侧栏出现连模型");
   await sleep(400);
 
+  await rp.evaluate(panel, `document.querySelector("#think-chip").hidden = false; true`);
   const idle = await view(panel);
   await rp.screenshot(panel, join(out, "01-idle.png"));
-  check("空着：加号收起，发送键在", !idle.toolsOpen && !idle.attachClickable && idle.sendShown && idle.starter, idle);
+  check("空着：加号收起，发送键在", !idle.toolsOpen && !idle.attachClickable && !idle.thinkClickable && idle.inert && idle.sendShown && idle.starter, idle);
   check("空着：还看得到先连接模型", idle.starterTitle.includes("先连接") || idle.starter, idle.starterTitle);
+
+  await rp.evaluate(panel, `(() => {
+    const bar = document.querySelector("#composer-bar");
+    const r = bar.getBoundingClientRect();
+    const at = document.elementFromPoint(r.left + 20, r.top + r.height / 2);
+    at?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + 20, clientY: r.top + r.height / 2 }));
+    return true;
+  })()`);
+  await sleep(350);
+  const fromBar = await view(panel);
+  check("点发送键左边空白：工具展开", fromBar.toolsOpen && fromBar.attachClickable && fromBar.sendShown && !fromBar.inert, fromBar);
+  await blurComposer(panel);
+  await sleep(350);
 
   await rp.click(panel, "#input");
   await sleep(450);
@@ -109,7 +128,31 @@ try {
   await rp.evaluate(panel, `document.querySelector("#input").value=""; document.querySelector("#input").dispatchEvent(new Event("input",{bubbles:true})); document.querySelector("#input").blur(); true`);
   await sleep(450);
   const cleared = await view(panel);
-  check("清空后：工具收回", !cleared.toolsOpen && cleared.sendShown, cleared);
+  check("清空后：工具收回", !cleared.toolsOpen && !cleared.attachClickable && cleared.sendShown, cleared);
+
+  await rp.evaluate(panel, `(() => {
+    const strip = document.querySelector("#attachments-strip");
+    strip.hidden = false;
+    const tile = document.createElement("div");
+    tile.className = "tile-56";
+    tile.id = "expand-probe-tile";
+    strip.append(tile);
+    return true;
+  })()`);
+  await blurComposer(panel);
+  await sleep(350);
+  const withTile = await view(panel);
+  await rp.screenshot(panel, join(out, "04b-tile.png"));
+  check("有附件失焦：工具还开着", withTile.toolsOpen && withTile.attachClickable && withTile.sendShown && !withTile.inert, withTile);
+  await rp.evaluate(panel, `(() => {
+    document.querySelector("#expand-probe-tile")?.remove();
+    document.querySelector("#attachments-strip").hidden = true;
+    return true;
+  })()`);
+  await blurComposer(panel);
+  await sleep(350);
+  const tileGone = await view(panel);
+  check("去掉附件：工具收回", !tileGone.toolsOpen && !tileGone.attachClickable && tileGone.sendShown, tileGone);
 
   await rp.click(panel, "#input");
   await rp.typeText(panel, "这页讲了什么？");
@@ -124,6 +167,10 @@ try {
   await sleep(400);
   const afterError = await view(panel);
   check("出错后点进去：工具还能展开", erred.errorCard && afterError.toolsOpen && afterError.sendShown, afterError);
+  await blurComposer(panel);
+  await sleep(350);
+  const errorBlur = await view(panel);
+  check("出错后失焦：工具收回", !errorBlur.toolsOpen && !errorBlur.attachClickable && errorBlur.sendShown && errorBlur.inert, errorBlur);
 
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", {
     width: 320,
@@ -139,7 +186,7 @@ try {
   await sleep(400);
   const narrowFocus = await view(panel);
   await rp.screenshot(panel, join(out, "06-narrow.png"));
-  check("窄到 320：空着仍只留发送，点进去加号出来", !narrowIdle.toolsOpen && narrowIdle.sendShown && narrowFocus.toolsOpen && narrowFocus.sendShown && narrowFocus.width <= 340, { narrowIdle, narrowFocus });
+  check("窄到 320：空着仍只留发送，点进去加号出来", !narrowIdle.toolsOpen && !narrowIdle.attachClickable && narrowIdle.sendShown && narrowFocus.toolsOpen && narrowFocus.sendShown && narrowFocus.width <= 340, { narrowIdle, narrowFocus });
 } finally {
   await rp.close();
   site.close();
