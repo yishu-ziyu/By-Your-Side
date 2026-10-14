@@ -131,6 +131,7 @@ document.getElementById("settings")!.innerHTML = `
         <span class="key-reason-copy">
           <span id="key-reason-text"></span>
           <span class="key-reason-wait">没有保存，侧栏里那句话还在等你。</span>
+          <button id="key-retry" type="button" class="btn btn-quiet key-reason-retry" hidden>重试</button>
         </span>
       </p>
       <div class="d-field">
@@ -268,6 +269,10 @@ const keyLabel = $("key-label");
 const keyInput = $<HTMLInputElement>("api-key");
 const keyReason = $("key-reason");
 const keyReasonText = $("key-reason-text");
+const keyRetry = $<HTMLButtonElement>("key-retry");
+const testButton = $<HTMLButtonElement>("model-test");
+const fastButton = $<HTMLButtonElement>("model-fast");
+const saveButton = $<HTMLButtonElement>("model-save");
 
 const keyTail = $("key-tail");
 
@@ -692,15 +697,31 @@ function explainFailure(raw: string): string {
           : "服务商返回了错误";
 }
 
+/** 试连超时的说法：「测试连接」和保存前的试连共用同一个开头和同一个时长。 */
+const probeTimeoutLead = (): string => `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到服务商的回复`;
+const TEST_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}。服务商可能正忙。再试一次，或换一个模型。`;
+const SAVE_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}，密钥没有保存。可能是网络或服务繁忙，稍后重试。`;
+
+/** 试连时禁掉三个动作按钮，免得再点出第二个并发的测试或保存。 */
+function setFormBusy(busy: boolean): void {
+  for (const button of [saveButton, fastButton, testButton, keyRetry]) button.disabled = busy;
+}
+
+let retryAction: (() => Promise<void>) | undefined;
+
 function hideKeyReason(): void {
   keyReason.hidden = true;
+  keyRetry.hidden = true;
+  retryAction = undefined;
   keyInput.classList.remove("warn");
 }
 
-function showKeyReason(reason: string, raw?: string): void {
+function showKeyReason(reason: string, raw?: string, retry?: () => Promise<void>): void {
   // 密钥框不在（订阅登录、已保存的密钥）：原因写在状态行，不挂在看不见的框下面。
   if (!keyInput.offsetParent) return setStatus(modelStatus, `没有保存：${reason}`, "err", raw);
   keyReason.hidden = false;
+  retryAction = retry;
+  keyRetry.hidden = !retry;
   // 先显示区域再写字，读屏才会念出来。
   requestAnimationFrame(() => { keyReasonText.textContent = reason; });
   keyInput.classList.add("warn");
@@ -710,7 +731,7 @@ function showKeyReason(reason: string, raw?: string): void {
 
 type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number };
 /** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
-type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean; config?: InprocModelConfig; key?: string };
+type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean; timedOut?: boolean; config?: InprocModelConfig; key?: string };
 
 function rejectsConfig(raw: string): boolean {
   if (/concurrent request limit|too many concurrent/i.test(raw)) return false;
@@ -728,6 +749,7 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
   const ticker = setInterval(() => setStatus(modelStatus, `正在测试…已等 ${Math.round((performance.now() - started) / 1000)} 秒`, "busy"), 1000);
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+  setFormBusy(true);
 
   try {
     await probe.credentials.load(value.key ? { ...credentials, [value.config.provider]: { type: "api_key", key: value.key } } : credentials);
@@ -739,7 +761,8 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
 
     return {
       ok: false,
-      reason: timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复。服务商可能正忙。再试一次，或换一个模型。` : explainFailure(raw),
+      reason: timeout.aborted ? TEST_TIMEOUT_REASON() : explainFailure(raw),
+      timedOut: timeout.aborted,
       raw: timeout.aborted ? undefined : raw,
       definite: !timeout.aborted && rejectsConfig(raw),
       // 试的是哪份配置就存哪份：试连期间改了表单，不存没试过的值。
@@ -748,6 +771,7 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
     };
   } finally {
     clearInterval(ticker);
+    setFormBusy(false);
   }
 }
 
@@ -772,6 +796,12 @@ async function save(): Promise<void> {
   if (!result.ok && (result.local || result.definite)) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
     return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+  }
+
+  // 新填的密钥试连超时：不保存，说清是超时，并给「重试」（用户 10-14 定）。
+  if (!result.ok && result.timedOut && result.key) {
+    if (selected?.id !== result.config?.provider) return;
+    return showKeyReason(SAVE_TIMEOUT_REASON(), undefined, save);
   }
 
   const value = result.ok ? result : { config: result.config!, key: result.key ?? "" };
@@ -1477,11 +1507,13 @@ $("key-delete").addEventListener("click", () => void deleteKey());
 
 keyInput.addEventListener("input", () => hideKeyReason());
 
-$("model-test").addEventListener("click", () => void testConnection());
+testButton.addEventListener("click", () => void testConnection());
 
-$("model-save").addEventListener("click", () => void save());
+keyRetry.addEventListener("click", () => void retryAction?.());
 
-$("model-fast").addEventListener("click", () => void saveAsFast());
+saveButton.addEventListener("click", () => void save());
+
+fastButton.addEventListener("click", () => void saveAsFast());
 
 $("voice-save").addEventListener("click", () => void saveVoiceKey());
 
