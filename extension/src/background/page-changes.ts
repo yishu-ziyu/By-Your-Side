@@ -78,16 +78,23 @@ export function pageChangesSince(tabId: number, lines: readonly AxLine[], scrub:
   if (!fresh.length) return { text: "", refs: [] };
   // 那一项的字已经作为新行出现了（新出现的一整列）：不再在每个控件后面重复一遍。
   const shownText = new Set(fresh.flatMap(line => line.body.startsWith("text: ") ? [line.body.slice(6)] : []));
-  const itemNote = (ref: number | undefined) => {
-    const item = ref === undefined ? undefined : items.get(ref);
-    const clean = item && !shownText.has(item) ? scrub(item) : "";
+  // 外层那一行已经写了同一项（菜单写了，菜单里的每一项就不再写）。
+  const open: Array<{ depth: number; item: string }> = [];
+  const itemNote = (line: AxLine) => {
+    const item = line.ref === undefined ? undefined : items.get(line.ref);
+
+    while (open.length && open[open.length - 1]!.depth >= line.depth) open.pop();
+
+    if (!item || shownText.has(item) || open.some(o => o.item === item)) return "";
+    open.push({ depth: line.depth, item });
+    const clean = scrub(item);
 
     return clean ? ` — in item ${JSON.stringify(clean.length > ITEM_MAX_CHARS ? `${clean.slice(0, ITEM_MAX_CHARS - 1)}…` : clean)}` : "";
   };
   // 缩进按新出现的这几行里最浅的一层对齐。
   const top = Math.min(...fresh.map(line => line.depth));
   // 去旧值只动这一行的内容，不碰缩进和 ref 前缀（旧值是数字时会把 ref 弄坏）。
-  const shifted = fresh.map(line => ({ ...line, text: line.text.slice(top * 2, line.text.length - line.body.length) + scrub(line.body) + itemNote(line.ref) }));
+  const shifted = fresh.map(line => ({ ...line, text: line.text.slice(top * 2, line.text.length - line.body.length) + scrub(line.body) + itemNote(line) }));
   const { text, truncated, keptRefs } = renderLines(shifted, PAGE_CHANGES_MAX_CHARS);
 
   return { text: truncated ? `${text}\n… [more new lines not shown; snapshot to read them]` : text, refs: keptRefs };
