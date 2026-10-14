@@ -36,7 +36,7 @@ interface SideAgentDomOps {
 
 interface SideAgentEffect {
   /** 取基线（含 60ms 页面活跃度采样）；token 由调用方生成 */
-  begin(input: { token: string; point?: [number, number]; selector?: string }): Promise<{ ok: true }>;
+  begin(input: { token: string; point?: [number, number]; selector?: string; quick?: true }): Promise<{ ok: true }>;
   /** 与基线比对；会话不存在（换文档/过期）返回 null */
   diff(token: string): import("../../shared/effect.js").EffectReport | null;
   end(token: string): { ok: true };

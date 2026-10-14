@@ -157,12 +157,20 @@ export interface AxTextResult {
   truncated: boolean;
 }
 
-interface AxLine {
+export interface AxLine {
   text: string;
   /** 可交互/可引用（ref）行：超预算时不会被丢。 */
   interactive: boolean;
   ref?: number;
+  /** 去掉缩进和 ref 前缀的这一行：比较前后两次读页时，按它认出同一个东西。 */
+  body: string;
+  depth: number;
+  /** 在输入框里面（输入框自己的文字）：比较变化时不算新出现的内容。 */
+  inField: boolean;
 }
+
+/** 输入框类角色：它们下面的静态文字就是框里的值。 */
+const FIELD_ROLES = new Set(["textbox", "searchbox", "combobox"]);
 
 /**
  * 按预算渲染：先保下全部 ref 行的空间，再按文档顺序填文本行。
@@ -215,7 +223,24 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
 }
 
 /** 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。 */
-export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map()): AxTextResult {
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map()): AxTextResult & { entries: AxLine[] } {
+  const entries = axTreeLines(nodes, inputs, secret, zeroSize);
+  const { text, truncated, keptRefs } = renderBudgeted(entries, budget);
+
+  const finalText = truncated
+    ? `${text}\n... [truncated，优先保住了全部可交互 ref；文本行超出 ${budget} 字符预算。有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)，或用 read_element / js 精确提取]`
+    : text;
+
+  return { text: finalText, backendIds: keptRefs, truncated, entries };
+}
+
+/** 按预算把几行拼成文字（变化摘要用；规则同快照：先保 ref 行）。 */
+export function renderLines(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[] } {
+  return renderBudgeted(entries, budget);
+}
+
+/** 整棵树按文档顺序转成行，不截断。 */
+function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, zeroSize: ReadonlyMap<number, boolean>): AxLine[] {
   const byId = new Map<string, AxNodeLite>();
 
   for (const n of nodes) byId.set(n.nodeId, n);
@@ -233,7 +258,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
   };
 
   // parentFlat：父节点是零尺寸节点。
-  const walk = (node: AxNodeLite, depth: number, parentFlat = false): void => {
+  const walk = (node: AxNodeLite, depth: number, parentFlat = false, inField = false): void => {
     const role = node.role?.value ?? "";
 
     if (DROP_SUBTREE_ROLES.has(role)) return;
@@ -245,7 +270,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
       for (const id of node.childIds ?? []) {
         const child = byId.get(id);
 
-        if (child) walk(child, depth, flatSelf);
+        if (child) walk(child, depth, flatSelf, inField);
       }
 
       return;
@@ -271,7 +296,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
 
       if (!repeatedText) {
         const prefix = hasRef ? `[ref=${backendId}] ` : "";
-        const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}`, interactive: hasRef };
+        const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}`, interactive: hasRef, body: described, depth, inField };
 
         if (hasRef) line.ref = backendId;
         entries.push(line);
@@ -292,7 +317,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
     for (const id of children) {
       const child = byId.get(id);
 
-      if (child) walk(child, childDepth, flatSelf);
+      if (child) walk(child, childDepth, flatSelf, inField || FIELD_ROLES.has(role));
     }
 
     for (const word of words) unsay(word);
@@ -300,11 +325,5 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
 
   for (const root of roots) walk(root, 0);
 
-  const { text, truncated, keptRefs } = renderBudgeted(entries, budget);
-
-  const finalText = truncated
-    ? `${text}\n... [truncated，优先保住了全部可交互 ref；文本行超出 ${budget} 字符预算。有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)，或用 read_element / js 精确提取]`
-    : text;
-
-  return { text: finalText, backendIds: keptRefs, truncated };
+  return entries;
 }

@@ -55,6 +55,17 @@ function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: 
   return ` The ${what} now contains: ${value}${readback.match === "reformatted" ? " (the page changed spacing or letter case)" : ""}.`;
 }
 
+/** 动作之后页面上新出现的行（扩展和模型上次读到的这一页比，见 extension/src/background/page-changes.ts）。是网页内容，按不可信页面数据包起来。 */
+function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | undefined): string {
+  if (!appeared) return "";
+
+  if ("redrawn" in appeared) return "\nMost of this page re-rendered since you last read it; snapshot to read it.";
+
+  if (!appeared.text) return "";
+
+  return `\nNew on the page since you last read it (refs are usable directly; no snapshot needed for these):\n${wrapPageContent(redactCredentialText(appeared.text))}`;
+}
+
 /**
  * 页面下载的回执：只有 chrome.downloads 报 complete 才写「已保存」。
  * 中断直接报错，让这一步如实显示失败；还在下载就说还没下完。
@@ -682,7 +693,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "click",
       label: "Click",
       description:
-        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click.',
+        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click. When new elements or text appear on the same page, the result lists them with usable refs.',
       parameters: Type.Object({
         target: Type.Optional(
           Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
@@ -722,11 +733,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 用户在网页上点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
         const clicked = data.sendConfirmed ? `The user confirmed sending on the page, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
+        const appeared = appearedNote("appeared" in data ? data.appeared : undefined);
+
         if (effectText) {
-          return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}`, data);
+          return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}${appeared}`, data);
         }
 
-        return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
+        return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}${appeared}`, data);
       },
     }),
 
@@ -762,7 +775,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
 
-        if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}`, data);
+        if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}${appearedNote("appeared" in data ? data.appeared : undefined)}`, data);
 
         return textResult(`Double-clicked ${what}. This confirms native input dispatch only; observe the page to verify the intended change before reporting success.${newTabText}`, data);
       },
@@ -811,7 +824,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("select_option", params)) as ToolContract["select_option"]["data"];
 
         return textResult(
-          `Selected [${data.selected.map((v, i) => `${v} (${data.labels[i] ?? ""})`).join(", ") || "(cleared)"}].`,
+          `Selected [${data.selected.map((v, i) => `${v} (${data.labels[i] ?? ""})`).join(", ") || "(cleared)"}].${appearedNote(data.appeared)}`,
           data,
         );
       },
@@ -915,7 +928,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fill",
       label: "Fill",
       description:
-        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click.",
+        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         value: Type.String({ description: "Value to set" }),
@@ -924,7 +937,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
 
         // The browser rejects the value for the field's min/max/step: say so, never plain success.
-        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field"), data);
+        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field") + appearedNote(data.appeared), data);
       },
     }),
 
@@ -957,7 +970,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 回车没引起变化时不说「没变化、别再按」：多行输入框里回车只是换行，页面读数看不出来。
         const effect = "effect" in data && data.effect?.changed ? data.effect : undefined;
 
-        return textResult(`Pressed ${params.key}.${formatEffectReport(effect, "key press")}`, data);
+        return textResult(`Pressed ${params.key}.${formatEffectReport(effect, "key press")}${appearedNote("appeared" in data ? data.appeared : undefined)}`, data);
       },
     }),
 

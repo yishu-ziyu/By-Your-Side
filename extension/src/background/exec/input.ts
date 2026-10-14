@@ -23,11 +23,11 @@ import { confirmSendIfNeeded, type SendGuard } from "../send-confirm.js";
 import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { beginEffect, collectEffect } from "./effect.js";
+import { beginEffect, collectEffect, pageChangesAfter, QUICK_EFFECT_WAIT } from "./effect.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite } from "../fill-undo.js";
-import type { EffectReport } from "../../../../shared/effect.js";
+import type { EffectReport, PageAppeared } from "../../../../shared/effect.js";
 import type { ToolExecutionFact } from "../../../../shared/protocol.js";
 import {
   pointInElementRect,
@@ -681,7 +681,7 @@ type KeyEventParams = {
   text?: string;
 };
 
-type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog; sendConfirmed?: true };
+type ClickResult = { clicked: true; effect?: EffectReport; appeared?: PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog; sendConfirmed?: true };
 
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   try {
@@ -1858,6 +1858,9 @@ export async function click(
         const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
         if (fallbackEffect) clicked.effect = fallbackEffect;
+        const fallbackAppeared = await pageChangesAfter(tabId, sessionId, fallbackEffect);
+
+        if (fallbackAppeared) clicked.appeared = fallbackAppeared;
 
         if (sendConfirmed) clicked.sendConfirmed = true;
         await rememberActionTarget(tabId, target, name);
@@ -1876,6 +1879,10 @@ export async function click(
     const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
     if (effect) clicked.effect = effect;
+    // 开出新标签页时沿用新标签页的回执，不再读原来那一页。
+    const appeared = newTab ? undefined : await pageChangesAfter(tabId, sessionId, effect);
+
+    if (appeared) clicked.appeared = appeared;
 
     if (newTab) clicked.newTab = newTab;
 
@@ -1893,7 +1900,7 @@ export async function click(
 }
 
 type DoubleClickResult =
-  | { doubleClicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog }
+  | { doubleClicked: true; effect?: EffectReport; appeared?: PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog }
   | { doubleClicked: false; dialog: OpenedDialog };
 
 /**
@@ -2084,6 +2091,9 @@ export async function doubleClick(
     const doubleClicked: Extract<DoubleClickResult, { doubleClicked: true }> = { doubleClicked: true };
 
     if (effect) doubleClicked.effect = effect;
+    const appeared = newTab ? undefined : await pageChangesAfter(tabId, sessionId, effect);
+
+    if (appeared) doubleClicked.appeared = appeared;
 
     if (newTab) doubleClicked.newTab = newTab;
 
@@ -2113,9 +2123,36 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
   } catch { /* 记号只是提示：页面变了或脚本不在就不画。 */ }
 }
 
+/**
+ * 先给模型带回“填完以后页面上新出现了什么”（下拉建议、跟着出来的栏、校验提示），再交回填写结果。
+ * 填写本身的值变化不算：没有目标元素的采样只看页面多没多东西。
+ */
 export async function fill(
   params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"] },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+): Promise<ToolContract["fill"]["data"]> {
+  return await withAppeared(params.tabId, sessionId, () => fillField(params, sessionId, beforeDispatch));
+}
+
+/** 填写、选择外面包一层：动作前开始记页面，动作后短等一下，页面多了东西就带回新出现的行。 */
+async function withAppeared<T extends object>(tabIdParam: number | undefined, sessionId: string, act: () => Promise<T>): Promise<T & { appeared?: PageAppeared }> {
+  const tabId = (await resolveWorkingTab(tabIdParam, sessionId).catch(() => null))?.id;
+  const started = Date.now();
+  const token = tabId == null ? null : await beginEffect(tabId, { quick: true });
+  const beginMs = Date.now() - started;
+  const data = await act();
+
+  if (tabId == null || !token) return data;
+  const after = Date.now();
+  const appeared = await pageChangesAfter(tabId, sessionId, await collectEffect(tabId, token, QUICK_EFFECT_WAIT), after, beginMs);
+
+  return appeared ? { ...data, appeared } : data;
+}
+
+async function fillField(
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"] },
+  sessionId: string,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -2290,6 +2327,14 @@ export type SelectOptionValue =
 
 /** CAP-02C：原生 select 的 value/label/index、多选、清空；返回最终选中集合与可见 label。 */
 export async function selectOption(
+  params: Parameters<typeof selectOptions>[0],
+  sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+): Promise<{ selected: string[]; labels: string[]; refound?: true; appeared?: PageAppeared }> {
+  return await withAppeared(params.tabId, sessionId, () => selectOptions(params, sessionId, beforeDispatch));
+}
+
+async function selectOptions(
   params: {
     target: string;
     values: SelectOptionValue | SelectOptionValue[];
@@ -2297,7 +2342,7 @@ export async function selectOption(
     expectedDocumentId?: string;
     expectedBackendNodeId?: number;
   },
-  sessionId: string = LEAD_SESSION_ID,
+  sessionId: string,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ selected: string[]; labels: string[]; refound?: true }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -2503,7 +2548,7 @@ export async function pressKey(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: DispatchGuard,
-): Promise<{ pressed: true; dialog?: OpenedDialog; effect?: EffectReport } | { pressed: false; dialog: OpenedDialog }> {
+): Promise<{ pressed: true; dialog?: OpenedDialog; effect?: EffectReport; appeared?: PageAppeared } | { pressed: false; dialog: OpenedDialog }> {
   const info = resolveKey(params.key);
 
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
@@ -2584,7 +2629,10 @@ export async function pressKey(
       return nativeInputs ? { pressed: true, dialog: settled.dialog } : { pressed: false, dialog: settled.dialog };
     }
 
-    return settled.effect ? { pressed: true, effect: settled.effect } : { pressed: true };
+    if (!settled.effect) return { pressed: true };
+    const appeared = await pageChangesAfter(keyboardTabId, sessionId, settled.effect);
+
+    return appeared ? { pressed: true, effect: settled.effect, appeared } : { pressed: true, effect: settled.effect };
   } finally {
     dialogWatch.stop();
   }

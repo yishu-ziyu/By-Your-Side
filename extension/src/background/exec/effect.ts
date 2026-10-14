@@ -3,8 +3,11 @@
  * 效果证据失败（页面禁止注入、导航换文档、SW 重启）绝不能拖垮动作本身：
  * 所有入口都吞掉异常并返回 undefined，让调用方按「没有证据」处理。
  */
-import { EMPTY_EFFECT_REPORT, downloadEvidence, pendingRequests, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport } from "../../../../shared/effect.js";
+import { EMPTY_EFFECT_REPORT, downloadEvidence, pendingRequests, requestEvidence, settleEffectReport, type EffectDownload, type EffectReport, type PageAppeared } from "../../../../shared/effect.js";
+import { withoutUndoValues } from "../fill-undo.js";
 import { networkRingFor } from "../network-log.js";
+import { withTimeout } from "../timeout.js";
+import { readPageChanges } from "./snapshot.js";
 
 const CONTENT_FILE = "content-effect.js";
 
@@ -15,6 +18,8 @@ interface EffectInput {
   token: string;
   point?: [number, number];
   selector?: string;
+  /** 不采样页面自己动不动（省 60ms）：填写、选择之后只问多没多东西，不判强弱证据。 */
+  quick?: true;
 }
 
 async function callPage<Args extends unknown[], Result>(
@@ -37,7 +42,7 @@ export async function ensureEffectScript(tabId: number): Promise<void> {
 /** 动作前取基线；返回 token，失败返回 null（调用方跳过效果证据）。 */
 export async function beginEffect(
   tabId: number,
-  input: { point?: [number, number]; selector?: string } = {},
+  input: { point?: [number, number]; selector?: string; quick?: true } = {},
 ): Promise<string | null> {
   const token = crypto.randomUUID();
   const startedAt = Date.now();
@@ -66,7 +71,7 @@ export async function beginEffect(
 }
 
 /** 动作后收集：有强证据、且动作后发出的同网站请求都已完成就返回，否则等到超时；拿不到任何读数返回 undefined。 */
-export async function collectEffect(tabId: number, token: string | null): Promise<EffectReport | undefined> {
+export async function collectEffect(tabId: number, token: string | null, wait: { timeoutMs?: number; maxMs?: number } = {}): Promise<EffectReport | undefined> {
   if (!token) return undefined;
 
   try {
@@ -79,7 +84,7 @@ export async function collectEffect(tabId: number, token: string | null): Promis
       } catch {
         return null;
       }
-    }, { pending: () => since === undefined ? 0 : pendingRequests(networkRingFor(tabId)?.entries ?? [], since, startUrl) });
+    }, { ...wait, pending: () => since === undefined ? 0 : pendingRequests(networkRingFor(tabId)?.entries ?? [], since, startUrl) });
 
     const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
     const report = await withDocumentChange(tabId, token, settled, startUrl, pageUrl);
@@ -122,8 +127,45 @@ async function withDocumentChange(tabId: number, token: string, report: EffectRe
   const url = URL.canParse(tab?.url ?? pageUrl) ? new URL(tab?.url ?? pageUrl) : null;
   const where = [tab?.title ? `"${tab.title.slice(0, 120)}"` : "", url ? `${url.origin}${url.pathname}` : ""].filter(Boolean).join(" — ");
 
-  return { ...base, changed: true, evidence: [...base.evidence, where ? `the page loaded a new document: ${where}` : "the page loaded a new document"] };
+  return { ...base, changed: true, documentChanged: true, evidence: [...base.evidence, where ? `the page loaded a new document: ${where}` : "the page loaded a new document"] };
 }
+
+/** 读“新出现了什么”最多等这么久；超时只是这次不带摘要。 */
+const PAGE_CHANGES_TIMEOUT_MS = 1500;
+
+/**
+ * 动作之后页面上多了东西、又没换页时，读一次这一页，只交回新出现的行（规则见 page-changes.ts）。
+ * 换了页的沿用换页后的回执，不叠加；页面没多东西的不读，不多花时间。
+ * 还原填写记下的旧值从摘要里去掉：旧值只能留在后台内存（fill-undo.ts）。
+ */
+export async function pageChangesAfter(tabId: number, sessionKey: string, report: EffectReport | undefined, started = Date.now(), extraMs = 0): Promise<PageAppeared | undefined> {
+  if (!report || report.documentChanged) return undefined;
+  const appeared = await readAppeared(tabId, sessionKey, report);
+  const ms = Date.now() - started + extraMs;
+  // 只记花了多久、带回多少字，不记内容：验收按它算工具多花的时间。
+  console.info("[page-changes]", JSON.stringify({ ms, chars: "text" in appeared ? appeared.text.length : -1 }));
+
+  return { ...appeared, ms };
+}
+
+async function readAppeared(tabId: number, sessionKey: string, report: EffectReport): Promise<{ text: string } | { redrawn: true }> {
+  if (!report.grew) return { text: "" };
+
+  try {
+    const changes = await withTimeout(readPageChanges(tabId), PAGE_CHANGES_TIMEOUT_MS, "读新出现的内容超时");
+
+    if (!changes) return { text: "" };
+
+    if ("redrawn" in changes) return changes;
+
+    return { text: changes.text && withoutUndoValues(sessionKey, changes.text) };
+  } catch {
+    return { text: "" };
+  }
+}
+
+/** 填写、选择之后等页面反应：最多等这么久没有变化就不等了；网站请求还没回来时最多等到 maxMs。 */
+export const QUICK_EFFECT_WAIT = { timeoutMs: 150, maxMs: 1500 };
 
 /** 点击后最多等多久：下载要先等跳转的响应头才出现，出现后再等 Chrome 报完成。 */
 const DOWNLOAD_WAIT_MS = 3000;
