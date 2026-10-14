@@ -6377,7 +6377,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   const queued = queuedSends.some((e) => e.kind === "client" && e.msg.type === "task_action" && e.msg.request.requestId === request.requestId);
   unconfirmedSend = { text, ask: quick ? null : pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
 
-  // 本地反馈：快照这次真正送出的材料；回执 accepted 之前只显示「发送中」
+  // 本地反馈：快照这次真正送出的材料；回执过了安静期（SENDING_QUIET_MS）还没 accepted，才显示「发送中」
   taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
 
   // 没有选区引用时，后台会附当前页面上下文：把这一页也补进材料，界面与实际上行一致。
