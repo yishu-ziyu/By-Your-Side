@@ -150,10 +150,15 @@ console.log(`输出：${out}（任务记录 ${traces.length} 行，语音记录 
 
 if (!runPrefix) {
   const seen = new Set();
+  // 用户在上一件事没做完时接着说的话，会接回原任务（restart_resume）：开始记录里写的是原任务的话，不是这次说的话，所以单独标出来。
+  const continued = new Set(traces.filter((e) => e.type === "restart_resume").map((e) => e.runId));
+  const steers = new Map();
+  for (const e of traces) if (e.type === "steer") steers.set(e.runId, (steers.get(e.runId) ?? 0) + 1);
   for (const e of traces) {
     if (e.type !== "run_start" || seen.has(e.runId)) continue;
     seen.add(e.runId);
-    console.log(`${local(e.time)}  ${modelName(e.data?.model)}  ${oneLine(e.data?.text, 60)}  ${e.runId}`);
+    const tags = [continued.has(e.runId) ? "接着原任务" : "", steers.get(e.runId) ? `中途插话 ${steers.get(e.runId)} 次` : ""].filter(Boolean).join("，");
+    console.log(`${local(e.time)}  ${modelName(e.data?.model)}  ${tags ? `[${tags}] ` : ""}${oneLine(e.data?.text, 60)}  ${e.runId}`);
   }
   if (!seen.size) console.log("这段时间没有运行。");
   process.exit(0);
@@ -177,6 +182,9 @@ for (const runId of new Set(run.map((e) => e.runId))) {
   for (const e of events) {
     const d = e.data ?? {};
     if (e.type === "run_start") console.log(`${at(e.time)}  开始  ${modelName(d.model)}  ${oneLine(d.text, 400)}`);
+    else if (e.type === "restart_resume") console.log(`${at(e.time)}  接着原任务 ${String(d.originalRunId ?? "").slice(0, 8)}（上面是原任务的话，这次说的话不在记录里）`);
+    else if (e.type === "steer") console.log(`${at(e.time)}  插话  ${oneLine(d.text, 200)}`);
+    else if (e.type === "abort") console.log(`${at(e.time)}  中止`);
     else if (e.type === "tool_execution_start") starts.set(d.toolCallId, e);
     else if (e.type === "tool_execution_end") {
       const start = starts.get(d.toolCallId);
