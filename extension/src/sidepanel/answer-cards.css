@@ -1,5 +1,5 @@
 /* 回答里的卡片（answer-cards.ts）。用侧栏现有的纸面、墨色、字号档，不另起一套。
-   组件不单独做入场动画：流式时整段回答每帧重画，动画会反复重来；新字的淡入由 stream-reveal 负责。 */
+   组件不单独做入场动画：新字的淡入由 stream-reveal 按段负责，写完的卡片跟着最后一块一起出现。 */
 .gen-card {
   margin: var(--s-1) 0 var(--gap-block);
   border: 1px solid var(--content-border);
