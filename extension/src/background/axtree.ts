@@ -464,14 +464,54 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
   return found;
 }
 
-/** 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；这一项太大或没有字返回空串。 */
-export function itemTextOf(nodes: readonly AxNodeLite[], item: number): string | undefined {
+/**
+ * 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；控件已经不在这一项里、这一项太大或没有字，返回空串。
+ * 记下的“项”可能是整组（认的时候每组只有一张卡片）：现在这一层里有同名的另一个控件，就往控件那边下一层，直到只包住它一个。
+ */
+export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: number): string | undefined {
   const byId = new Map<string, AxNodeLite>();
   let at: AxNodeLite | undefined;
+  let control: AxNodeLite | undefined;
 
-  for (const n of nodes) { byId.set(n.nodeId, n); if (n.backendDOMNodeId === item) at = n; }
+  for (const n of nodes) {
+    byId.set(n.nodeId, n);
 
-  return at ? scanItem(byId, at) ?? "" : undefined;
+    if (n.backendDOMNodeId === item) at = n;
+
+    if (n.backendDOMNodeId === ref) control = n;
+  }
+
+  if (!at) return undefined;
+
+  if (!control) return "";
+  const key = `${control.role?.value ?? ""}\u0000${String(control.name?.value ?? "").trim()}`;
+  const twinInside = (root: AxNodeLite) => {
+    const todo = [root];
+
+    for (let seen = 0; todo.length && seen < MAX_ITEM_NODES * 4; seen++) {
+      const node = todo.pop()!;
+
+      if (node !== control && !node.ignored && `${node.role?.value ?? ""}\u0000${String(node.name?.value ?? "").trim()}` === key) return true;
+
+      for (const id of node.childIds ?? []) { const child = byId.get(id); if (child) todo.push(child); }
+    }
+
+    return false;
+  };
+  // 从控件往上的那条路：下一层就是路上紧挨着 at 的那个。
+  const path: AxNodeLite[] = [];
+
+  for (let n: AxNodeLite | undefined = control; n && n !== at; n = n.parentId ? byId.get(n.parentId) : undefined) path.push(n);
+
+  if (!path.length || path[path.length - 1]!.parentId !== at.nodeId) return "";
+
+  while (twinInside(at)) {
+    at = path.pop();
+
+    if (!at || at === control) return "";
+  }
+
+  return scanItem(byId, at) ?? "";
 }
 
 /** 控件往上碰到的第一个认得的项（只在给的这些节点里找）。 */
