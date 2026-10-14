@@ -3762,7 +3762,33 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 
 /* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
 .run-title { font-size: var(--fs-ui); line-height: 20px; }
-details.run-steps:not(.done) .run-time { margin-left: 2px; font-size: var(--fs-ui); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+details.run-steps:not(.done) .run-time {
+  margin-left: 2px;
+  font-size: var(--fs-ui);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  max-width: 12em;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity var(--d-state) var(--e-exit), max-width var(--d-state) var(--e-exit), margin var(--d-state) var(--e-exit);
+}
+details.run-steps:not(.done) .run-time:not(:empty)::before { content: "· "; }
+details.run-steps:not(.done) .run-time:empty {
+  opacity: 0;
+  max-width: 0;
+  margin-left: 0;
+  animation: none;
+}
+details.run-steps.run-quieting {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--d-state) var(--e-exit);
+}
+details.run-steps.run-quieting .run-time { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  details.run-steps:not(.done) .run-time,
+  details.run-steps.run-quieting { transition: none; }
+}
 
 /* 系统说明（调试横幅）：不再挂在过程的竖线下面像引用的回答，改成一条浅底小提示。 */
 .run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
