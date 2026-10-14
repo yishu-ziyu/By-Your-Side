@@ -40,7 +40,7 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>填
 <div><input id="chat" type="text" aria-label="说点什么"> <button id="chat-send" type="button">发送</button></div>
 <div class="bar"><div class="field"><input id="quiet" type="text" aria-label="写点什么"><button type="button">😀</button></div><div class="go" role="button" tabindex="0">发送</div></div>
 <p><textarea id="note" aria-label="备忘"></textarea></p>
-<p><label for="reply">回复</label> <input id="reply" type="text"></p>
+<p><label for="r1">回复</label> <input id="r1" type="text"></p>
 <script>
 const hit = (k, v) => fetch("/hit?k=" + k + "&v=" + encodeURIComponent(v));
 // a 只认可信输入：脚本派发的 input、keydown 一概不算。
@@ -74,7 +74,7 @@ document.getElementById("send").onclick = () => hit("phone", state);
 const chat = document.getElementById("chat");
 chat.addEventListener("keydown", e => { if (e.key === "Enter" && e.isTrusted) { hit("chat", chat.value); chat.value = ""; } });
 document.getElementById("chat-send").onclick = () => { hit("chat", chat.value); chat.value = ""; };
-for (const id of ["quiet", "note", "reply"]) {
+for (const id of ["quiet", "note", "r1"]) {
   const box = document.getElementById(id);
   box.addEventListener("keydown", e => { if (e.key === "Enter" && e.isTrusted) { hit(id, box.value); box.value = ""; } });
 }
@@ -184,9 +184,11 @@ try {
   check("b 按 beforeinput 更新的编辑器：保存时网站收到的正文就是要填的", got("editor").at(-1) === BODY, { editor: got("editor") });
   check("c 受控输入框：提交时网站收到的手机号就是要填的", got("phone").at(-1) === PHONE, { phone: got("phone") });
   const boxes = ["chat", "quiet", "note", "reply"] as const;
+  // 「回复」框的 id 是 r1：名字只能从 <label for> 上读到，id 里没有线索。
+  const ids = { chat: "chat", quiet: "quiet", note: "note", reply: "r1" };
   const refusals = Object.fromEntries(boxes.map(k => [k, receiptOf(t[k].target)]));
-  const left = await rp.evaluate(work, `JSON.stringify(${JSON.stringify(boxes)}.map(id => document.getElementById(id).value))`);
-  check("d 回车即发送的四个框：「填完回车」都被拒绝，网站一条没收到，框里留着字", boxes.every(k => got(k).length === 0 && /Did not press Enter/.test(refusals[k]!)) && left === JSON.stringify([CHAT, QUIET, NOTE, REPLY]), { sent: Object.fromEntries(boxes.map(k => [k, got(k)])), refusals, left });
+  const left = await rp.evaluate(work, `JSON.stringify(${JSON.stringify(boxes.map(k => ids[k]))}.map(id => document.getElementById(id).value))`);
+  check("d 回车即发送的四个框：「填完回车」都被拒绝，网站一条没收到，框里留着字", boxes.every(k => got(ids[k]).length === 0 && /Did not press Enter/.test(refusals[k]!)) && left === JSON.stringify([CHAT, QUIET, NOTE, REPLY]), { sent: Object.fromEntries(boxes.map(k => [k, got(ids[k])])), refusals, left });
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   check("每次填写用键盘写入并读回的耗时（记录，不设门槛）", sorted.length >= 4, { median: sorted[Math.floor((sorted.length - 1) / 2)] ?? null, timings });
   await rp.screenshot(work, join(out, "page.png"));
