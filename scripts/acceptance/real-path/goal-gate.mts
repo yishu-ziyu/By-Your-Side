@@ -6,7 +6,7 @@
  * A 编号列表：一句话要三件事，做完两件就想交。
  * B 插话：做第一件时用户插话加了一件，做完第一件就想交。
  * 失败方式：侧栏出现过「只做了一部分」的那份回答；或过程行没写做到第几件；或续做时模型没拿到没做的那一项。
- * --record：把侧栏录成 mp4 放进证据目录（改前改后对比用）。
+ * --record：把侧栏录成 mp4 放进证据目录（改前改后对比用）。录的时候每次核对等 3 秒再回，接近真模型核对的用时，看得清这几秒侧栏是什么样。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -79,6 +79,8 @@ const proxy = createServer(async (req, res) => {
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     const key = checkKeys[checks] ?? checkKeys.at(-1)!;
     checks += 1;
+
+    if (record) await sleep(3_000);
     // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as { model?: string; stream?: boolean };
     forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: `GATE-CHECK-${key}` }] });
