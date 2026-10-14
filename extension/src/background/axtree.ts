@@ -335,9 +335,12 @@ const CONTROL_ROLES = new Set(["button", "textbox", "searchbox", "combobox", "li
 const MAX_TWINS = 300;
 const MAX_ITEM_NODES = 500;
 
-/** 列表里重复的控件各在哪一项：控件 ref → 那一项的节点（backendDOMNodeId）；items 是认出来的全部项。只记是哪个节点，字到用的时候再按当时的页面读。 */
+/**
+ * 列表里重复的控件各在哪一项：控件 ref → 那一项的节点（backendDOMNodeId）和从控件往上第几层开始读字；items 是认出来的全部项。
+ * 只记是哪个节点、哪一层，字到用的时候再按当时的页面读。
+ */
 export interface RepeatedItems {
-  byRef: Map<number, number>;
+  byRef: Map<number, { item: number; from: number }>;
   items: Set<number>;
 }
 
@@ -368,9 +371,6 @@ function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?
 
   return best;
 }
-
-/** 正文至少这么长才算认得出这一项；更短的（“·”、“2h”）先记着，往上找不到正文再用。 */
-const MIN_PLAIN_ITEM_TEXT = 4;
 
 /**
  * 页面上同角色、同名字的控件（每条笔记都有的「More」）：快照是平的，模型看不出哪个属于哪一项。
@@ -449,10 +449,11 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 
     if (!usable.length) continue;
     // 分组列表里（某一组当时只有一张卡片）最高那层是整组，不是卡片：从各控件共同能走到的层数开始，取第一个有字的那层。
-    const from = Math.min(...usable);
+    const start = Math.min(...usable);
+    const members: Array<{ n: AxNodeLite; item: AxNodeLite; steps: number }> = [];
 
     group.forEach((n, i) => {
-      for (let steps = from; steps <= reach[i]!; steps++) {
+      for (let steps = start; steps <= reach[i]!; steps++) {
         const item = up(n, steps);
 
         if (!item || item.backendDOMNodeId === undefined) return;
@@ -460,12 +461,43 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
         if (!verdict.has(item.nodeId)) { const text = scanItem(byId, item); verdict.set(item.nodeId, !!text && !!(text.plain || text.link)); }
 
         if (!verdict.get(item.nodeId)) continue;
-        found.byRef.set(n.backendDOMNodeId!, item.backendDOMNodeId);
-        found.items.add(item.backendDOMNodeId);
+        members.push({ n, item, steps });
 
         return;
       }
     });
+
+    // 从哪一层读字：同组里这一层的字独一份才认得出是哪一项。头一行每张都是同一个作者，就往上一层再比；
+    // 我的评论“谢谢”和“收到”各不相同，就停在这一层，不会走到旁边别人的评论。
+    const from = new Map<AxNodeLite, number>();
+    const first = new Map<AxNodeLite, number>();
+
+    for (let k = 1, top = Math.max(0, ...members.map(m => m.steps)); k <= top && from.size < members.length; k++) {
+      const texts = members.map(m => {
+        const at = k <= m.steps ? up(m.n, k) : undefined;
+        const text = at ? scanItem(byId, at, m.n) : null;
+
+        return text ? text.plain || text.link : "";
+      });
+      const count = new Map<string, number>();
+
+      for (const t of texts) if (t) count.set(t, (count.get(t) ?? 0) + 1);
+
+      members.forEach((m, j) => {
+        const t = texts[j];
+
+        if (!t) return;
+
+        if (!first.has(m.n)) first.set(m.n, k);
+
+        if (!from.has(m.n) && count.get(t) === 1) from.set(m.n, k);
+      });
+    }
+
+    for (const m of members) {
+      found.byRef.set(m.n.backendDOMNodeId!, { item: m.item.backendDOMNodeId!, from: from.get(m.n) ?? first.get(m.n) ?? 1 });
+      found.items.add(m.item.backendDOMNodeId!);
+    }
   }
 
   return found;
@@ -473,11 +505,10 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 
 /**
  * 这些节点里，某一项现在的字。节点里没有这一项返回 undefined；控件已经不在这一项里、太大或没有字，返回空串。
- * 记下的项是“只包住这一个控件的最高一层”，只用来认控件在列表里；字从控件往上一层层找，取第一层有自己文字的
- * （控件自己的字不算）：最高那层里可能还有别人的条目（帖子里只有我的评论带 Edit，旁边别人的评论更长），
- * 也可能后来多了同样的控件（每列一张卡片，后来又加了一张），碰到包住另一个同名控件的层就停。
+ * from：认的时候定好的“从控件往上第几层读”（同组里那一层的字各不相同）；0 表示没定过（页面上只有一个的新控件），
+ * 这时取往上第一层的正文，只有链接字时先记着、找不到正文再用。往上碰到包住同名另一个控件的层就停（后来又加了同样的卡片），用下面那层的字。
  */
-export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: number): string | undefined {
+export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: number, from = 0): string | undefined {
   const byId = new Map<string, AxNodeLite>();
   let top: AxNodeLite | undefined;
   let control: AxNodeLite | undefined;
@@ -507,7 +538,6 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
 
     return false;
   };
-
   // 控件往上到记下的那一项为止；到不了（控件已经挪出这一项）就不给。
   const path: AxNodeLite[] = [];
 
@@ -518,21 +548,26 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
   }
 
   if (path.at(-1) !== top) return "";
+  let below = "";
 
-  // 头一行只有作者、时间链接时，接着往上找正文；找不到正文，再用最近一层的那点字。
-  let fallback = "";
-
-  for (const at of path) {
-    if (twinInside(at)) return fallback;
+  for (const [i, at] of path.entries()) {
+    if (twinInside(at)) return below;
     const text = scanItem(byId, at, control);
 
-    if (text === null) return fallback;
+    if (text === null) return below;
 
-    if (text.plain.length >= MIN_PLAIN_ITEM_TEXT) return text.plain;
-    fallback ||= text.plain.length >= text.link.length ? text.plain : text.link;
+    if (from > 0) {
+      const words = text.plain || text.link;
+
+      if (words && i + 1 >= from) return words;
+      below = words || below;
+    } else {
+      if (text.plain) return text.plain;
+      below ||= text.link;
+    }
   }
 
-  return fallback;
+  return below;
 }
 
 /** 控件往上碰到的第一个认得的项（只在给的这些节点里找）。 */
