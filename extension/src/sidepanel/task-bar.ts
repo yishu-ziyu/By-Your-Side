@@ -157,6 +157,8 @@ export interface SentRequestMaterials {
   requestId: string;
   action: "start" | "steer";
   status: "sending" | "accepted" | "rejected" | "failed" | "unknown";
+  /** 发出的时刻：回执通常不到一秒就回来，这段时间不亮「正在发送」，免得材料区闪一下就没。 */
+  sentAt: number;
   runId: string | null;
   page: PageContext | null;
   selection: string | null;
@@ -268,10 +270,16 @@ function taskRows(set: TaskMaterialSet, resolvedPageLabel: string | null): Mater
   return rows;
 }
 
+/** 发出后这么久还没回执，才在材料区写「正在发送」。用户的话已经立刻出现在对话里，回执快的时候不需要第二处反馈。 */
+export const SENDING_QUIET_MS = 800;
+
 /** 组装展示模型：纯函数，同一输入必得同一输出。 */
 export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   const { view, draft, sending, taskMaterials, control, now } = input;
-  const unresolved = sending.filter((s) => s.status === "sending" || s.status === "unknown");
+  const newest = sending.at(-1);
+  // 刚发出的这一条还在安静期：连更早那条“没确认收到”也先不讲，免得先亮旧的那条、0.8 秒后又换成这一条。
+  const quiet = newest?.status === "sending" && now - newest.sentAt < SENDING_QUIET_MS;
+  const unresolved = quiet ? [] : sending.filter((s) => s.status === "unknown" || (s.status === "sending" && now - s.sentAt >= SENDING_QUIET_MS));
   const pageTabId = input.pageTabId ?? view?.page?.tabId ?? null;
 
   const page = pageTabId != null
@@ -294,7 +302,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
 
   if (liveTaskMaterials || pendingEntry || confirmedRows.length || pendingRows.length) {
     const rows = [...confirmedRows, ...pendingRows];
-    // 普通发送的页面材料要等页面快照回来才认识；这段时间也必须先有「发送中」，
+    // 普通发送的页面材料要等页面快照回来才认识；回执过了安静期还没到时，这段时间也必须先有「发送中」，
     // 不能因为还没行就整块不显示（本地反馈不能靠异步查页面来决定有没有）。
     const head = confirmedRows.length ? `已发给助手的材料 · ${confirmedRows.length} 项` : rows.length ? `要一起发送的材料 · ${rows.length} 项` : "正在发送";
     materials = {
@@ -414,6 +422,8 @@ export class TaskBar {
   private readonly pageCache = new Map<number, { label: string | null; host: string | null; at: number }>();
   private model: TaskBarModel | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
+  /** 还在「不亮发送中」那段时间的请求：到点重画一次，回执还没来就亮出来。 */
+  private quietTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly el: HTMLElement;
   private readonly statusEl: HTMLElement;
   private readonly waitingEl: HTMLElement;
@@ -480,6 +490,9 @@ export class TaskBar {
 
     if (this.tickTimer !== null) clearInterval(this.tickTimer);
     this.tickTimer = null;
+
+    if (this.quietTimer !== null) clearTimeout(this.quietTimer);
+    this.quietTimer = null;
   }
 
   setHandoffShown(shown: boolean): void {
@@ -557,6 +570,7 @@ export class TaskBar {
       requestId: payload.requestId,
       action: payload.action,
       status: "sending",
+      sentAt: this.now(),
       runId: null,
       page: payload.context ?? null,
       selection: payload.context?.selection?.text ?? null,
@@ -740,6 +754,7 @@ export class TaskBar {
   private render(): void {
     if (this.disposed) return;
     const tabId = this.view?.page?.tabId ?? null;
+    this.scheduleQuietEnd();
 
     const model = buildTaskBarModel({
       view: this.view,
@@ -908,6 +923,15 @@ export class TaskBar {
       note.textContent = materials.note;
       this.materialsEl.appendChild(note);
     }
+  }
+
+  private scheduleQuietEnd(): void {
+    if (this.quietTimer !== null) clearTimeout(this.quietTimer);
+    this.quietTimer = null;
+    const now = this.now();
+    const waits = [...this.sent.values()].filter((s) => s.status === "sending" && now - s.sentAt < SENDING_QUIET_MS).map((s) => SENDING_QUIET_MS - (now - s.sentAt));
+
+    if (waits.length) this.quietTimer = setTimeout(() => { this.quietTimer = null; this.render(); }, Math.min(...waits) + 20);
   }
 
   private scheduleTick(): void {

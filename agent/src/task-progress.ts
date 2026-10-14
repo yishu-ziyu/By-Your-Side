@@ -10,7 +10,7 @@ import { sanitizeTrace } from "../../shared/trace-sanitize.js";
 import { randomUUID } from "node:crypto";
 import {isWriteTool} from '../../shared/control.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';
-import {isResultMetaTool} from '../../shared/task-results.js';
+import {isResultMetaTool, MAX_TASK_RESULTS} from '../../shared/task-results.js';
 import {decideTaskNextStep} from '../../shared/task-next-step.js';
 import {toolAction} from '../../shared/user-facing.js';
 import {TaskReadback} from './task-readback.js';
@@ -118,6 +118,8 @@ export class TaskProgress {
   }
   private startUrl: string | null = null;
   private goalPage: { title: string; url: string } | null = null;
+  private interjections = 0;
+  private foldedResults: { count: number; recent: string[] } = { count: 0, recent: [] };
   /** 最近一次目标核对；新任务开始、助手重新开跑时清掉，等这一轮结束的核对。 */
   private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
   /** 核对刚判「接着做」、宿主马上发起续做：下一次 agent_start 是它，保留核对的「还差」；用户的话或别的开始不保留。 */
@@ -162,6 +164,8 @@ export class TaskProgress {
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
     const clean=String(sanitizeTrace(text)).trim();
     const requirements=clean&&prior.requirements.at(-1)!==clean?[...prior.requirements,clean]:[...prior.requirements];
+    const state=this.snapshot().state;
+    const interjected=requirements.length>prior.requirements.length&&(state==='running'||state==='paused');
     const attachmentKeys=[...new Set([...prior.attachmentKeys,...(attachments??[]).map(attachmentRecoveryKey)])];
 
     if(requirements.length>64||requirements.some(t=>t.length>12000)||requirements.reduce((n,t)=>n+t.length,0)>RECOVERY_INPUT_MAX||attachmentKeys.length>16)throw new Error('原任务补充内容已达到保留上限，这条修改未接收；请先交付已有结果或另开任务。');
@@ -175,10 +179,22 @@ export class TaskProgress {
     this.recoveryInput=recorded;
     this.goals.require(requirements);
 
+    if(interjected){
+      this.interjections+=1;
+      // 账本满了、用户在任务进行中又说了话：已完成的结果收起来，账本腾出位置给接下来的动作。
+      // 以前只有空闲时的新请求才清账，任务里做满 64 项之后再插话，所有动作都被拒（10-14 画图）。
+      // 没满时不收：侧栏任务卡和「已做完」的说法都照旧。
+      const folded=this.results.list().length>=MAX_TASK_RESULTS?this.results.fold():[];
+
+      if(folded.length)this.foldedResults={count:this.foldedResults.count+folded.length,recent:[...this.foldedResults.recent,...folded].slice(-8)};
+    }
+
     // Only the caller that just registered this input can revoke it before acceptance.
     // Preserve a fresh page observation, and never roll back a later requirement or another run.
     return ()=>{
       if(this.runId!==runId||this.recoveryInput!==recorded)return;
+
+      if(interjected)this.interjections-=1;
       this.recoveryInput={...recorded,requirements:prior.requirements,attachmentKeys:prior.attachmentKeys,materials:prior.materials};
       this.goals.restore(priorGoals, false);
     };
@@ -197,6 +213,10 @@ export class TaskProgress {
     this.runId = snapshot.runId ?? null;
     this.goalCheck = snapshot.goalCheck ? { ...snapshot.goalCheck } : null;
     this.goalPage = snapshot.goalPage ? { ...snapshot.goalPage } : null;
+    this.interjections = snapshot.interjections ?? 0;
+    const folded = snapshot.foldedResults;
+    this.foldedResults = folded && Number.isSafeInteger(folded.count) && Array.isArray(folded.recent)
+      ? { count: folded.count, recent: folded.recent.filter((text): text is string => typeof text === "string").slice(-8) } : { count: 0, recent: [] };
     this.aborted = snapshot.state === "aborted";
     this.interrupted = !!this.runId && !!this.goal && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;
@@ -271,6 +291,8 @@ return;}
     this.interruptionReason=undefined;
     this.lifecycleFrozen=false;
     this.recoveryInput={requirements:[],attachmentKeys:[]};
+    this.interjections=0;
+    this.foldedResults={count:0,recent:[]};
     this.goals.clear();
     this.unresolvedEffect=false;
     this.executionAuditComplete=true;
@@ -553,6 +575,10 @@ if(page)this.recoveryInput.page=page;
     if (this.goalCheck) snapshot.goalCheck = { ...this.goalCheck };
 
     if (this.goalPage) snapshot.goalPage = { ...this.goalPage };
+
+    if (this.interjections) snapshot.interjections = this.interjections;
+
+    if (this.foldedResults.count) snapshot.foldedResults = { count: this.foldedResults.count, recent: [...this.foldedResults.recent] };
 
     if (snapshot.goalPlan) {
       snapshot.resultState = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results!)) ? 'unknown' : goalsSatisfied(snapshot.goalPlan) ? 'satisfied' : 'pending';

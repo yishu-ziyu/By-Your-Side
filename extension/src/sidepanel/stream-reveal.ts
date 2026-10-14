@@ -4,10 +4,14 @@
  * - 节拍：每 150～200ms 放一段，一段 14～24 字；积压多时把段放大，约 1.5 秒内追平。
  * - 淡入：每段 400ms 只改透明度，淡完拆掉 span。不含记号的续写直接追加，否则只重渲染最后一块。
  * - 未闭合的 Markdown 先补齐，不让 `**`、`` ` ``、半截链接露出来。
+ * - 有卡片的回答不分块：卡片前后的正文要用卡片里的数（{=名字}、「见下方卡片」），所以每段都按整个前缀渲染，
+ *   走 patchAnswer 放进页面：已显示的卡片组件节点不动，卡片里的字不按段淡入，组件写完整块淡入。
  */
 
 import { Lexer } from "marked";
+import { splitAnswer } from "../../../shared/answer-cards.js";
 import { D_READ } from "../shared/motion-tokens.js";
+import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
 
 const BEAT_MIN = 150;
 const BEAT_MAX = 200;
@@ -80,6 +84,16 @@ function remend(md: string): string {
   const fenced = remendFence(md);
 
   return fenceOpen(md) ? fenced : remendLink(remendCode(remendBold(fenced)));
+}
+
+const hasCard = (md: string) => splitAnswer(md).some((part) => "card" in part);
+
+/** 只补最后一张卡片之后的正文；停在没写完的卡片里时不补，补上的记号会混进卡片属性。 */
+function remendAfterCards(md: string): string {
+  if ("card" in (splitAnswer(md).at(-1) ?? { card: undefined })) return md;
+  const cut = md.lastIndexOf("</card>") + "</card>".length;
+
+  return md.slice(0, cut) + remend(md.slice(cut));
 }
 
 function splitBlocks(md: string): string[] {
@@ -197,6 +211,7 @@ function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
     const start = offset;
     const end = offset + node.data.length;
     offset = end;
+    if (node.parentElement?.closest(".gen-card")) continue;
     const cuts: Fade[] = [];
 
     for (const fade of fades) {
@@ -234,6 +249,9 @@ class Reveal {
   private timer: number | null = null;
   private lastRelease = -1e9;
   private blocks: Block[] = [];
+  /** 有卡片时整段渲染的淡入记录（按渲染后文本的位置）；null 表示还在按块放。 */
+  private whole: Fade[] | null = null;
+  private wholeLen = 0;
   private entered = false;
   private rng = Math.random;
 
@@ -257,14 +275,16 @@ class Reveal {
   flush(): void {
     this.shown = this.target.length;
     this.blocks = [];
+    this.whole = null;
     this.stop();
-    this.el.innerHTML = this.opts.render(this.target);
+    patchAnswer(this.el, this.opts.render(this.target));
     this.finishIfDone();
   }
 
   private rewind(common: number): void {
     this.shown = common;
     this.blocks = [];
+    this.whole = null;
     this.lastRelease = -1e9;
 
     for (const node of [...this.el.childNodes]) {
@@ -277,6 +297,12 @@ class Reveal {
 
   private paintPrefix(md: string): void {
     const now = performance.now();
+
+    if (hasCard(md)) {
+      this.paintWhole(md, now);
+
+      return;
+    }
 
     for (const [i, part] of splitBlocks(md).entries()) this.paintBlock(i, part, false, now);
   }
@@ -330,7 +356,10 @@ class Reveal {
   }
 
   private finishIfDone(): void {
-    if (!this.final || this.shown < this.target.length || !this.after) return;
+    if (!this.final || this.shown < this.target.length) return;
+    dropPlaceholders(this.el);
+
+    if (!this.after) return;
     const after = this.after;
     this.after = null;
     after();
@@ -343,6 +372,13 @@ class Reveal {
     }
 
     const source = this.target.slice(0, this.shown);
+
+    if (this.whole || hasCard(source)) {
+      this.paintWhole(source, now);
+
+      return;
+    }
+
     const parts = splitBlocks(source);
 
     for (const [i, md] of parts.entries()) {
@@ -362,6 +398,31 @@ class Reveal {
 
       for (const node of extra.nodes) node.remove();
     }
+  }
+
+  private paintWhole(source: string, now: number): void {
+    // 从按块切到整段：正在淡入的段换算成整段里的位置接着淡，不突然变实。
+    if (!this.whole) {
+      let offset = 0;
+      this.whole = [];
+
+      for (const block of this.blocks) {
+        for (const fade of block.fades) this.whole.push({ from: fade.from + offset, to: fade.to + offset, at: fade.at });
+        offset += block.len;
+      }
+
+      this.wholeLen = offset;
+      this.blocks = [];
+    }
+
+    patchAnswer(this.el, this.opts.render(remendAfterCards(source)));
+    const len = this.el.textContent?.length ?? 0;
+    const fades = this.whole.filter((fade) => now - fade.at < FADE_MS && fade.from < len).map((fade) => ({ ...fade, to: Math.min(fade.to, len) }));
+
+    if (len > this.wholeLen) fades.push({ from: this.wholeLen, to: len, at: now });
+    this.whole = fades;
+    this.wholeLen = len;
+    wrapRanges([...this.el.childNodes], fades, now);
   }
 
   private appendFast(block: Block, added: string, now: number): void {
@@ -426,7 +487,9 @@ export function revealText(el: HTMLElement, text: string, opts: Options & { live
       return;
     }
 
-    el.innerHTML = opts.render(text);
+    patchAnswer(el, opts.render(text));
+
+    if (opts.final || !opts.live) dropPlaceholders(el);
     opts.after?.();
 
     return;

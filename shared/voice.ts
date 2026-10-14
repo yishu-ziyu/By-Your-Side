@@ -155,6 +155,10 @@ export interface TaskProgressSnapshot {
   goalCheck?: { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; at: number };
   /** 用户说出目标时所在的页面：「订阅这个页面的邮件」的「这个页面」。接着做和目标核对都要知道是哪一页。 */
   goalPage?: { title: string; url: string };
+  /** 这一任务在跑（或暂停）时用户插话加进来的要求条数；空闲后「接着原任务」不算。交付前对清单据此判断用户说了不止一件事。 */
+  interjections?: number;
+  /** 用户插话时收起的已完成结果（宿主不再逐项记账，腾出账本给接下来的动作）：总数和最近几项的说明。 */
+  foldedResults?: { count: number; recent: string[] };
 }
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}

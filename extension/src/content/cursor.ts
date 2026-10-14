@@ -21,7 +21,7 @@
  * 生命周期：MV3 扩展 reload 会销毁 isolated world 但留下 DOM host。启动时若本 world
  * 还没有 cursor API，按 data-sideagent-overlay 清掉旧 host 再创建。
  */
-import { D_LAYOUT, D_MICRO, E_EXIT, E_MOVE, MOTION_CSS_VARS } from "../shared/motion-tokens.js";
+import { D_LAYOUT, D_MICRO, D_STATE, E_EXIT, E_MOVE, MOTION_CSS_VARS } from "../shared/motion-tokens.js";
 import { isMarkActionId, resolveImplicitMarkActions } from "../shared/mark-actions.js";
 import { markLabelPlacement } from "../shared/mark-label.js";
 import type { MarkAction } from "../../../shared/protocol.js";
@@ -105,6 +105,13 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     status?: CursorStatus;
     /** 拿住态：就地确认期间光标按住目标不放，名牌变双键；scroll/resize 按 anchor 重定位 */
     hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string; mark?: HTMLDivElement; /** 教学：停在目标右下角，不压住目标中间。 */ corner?: boolean };
+    /** 注视区：它读页面时看着哪。和箭头分开，箭头只在要动手时出现。 */
+    gazeEl?: HTMLDivElement;
+    gazeTimers?: ReturnType<typeof setTimeout>[];
+    gazeAnim?: Animation;
+    /** 注视区正收拢到要点的目标上，箭头等它收完再起飞。 */
+    gazeConvergeUntil?: number;
+    flyDelay?: ReturnType<typeof setTimeout>;
   }
 
   type CursorStatusState = "waiting" | "reading" | "done" | "failed";
@@ -422,6 +429,22 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         font: 600 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
         color: var(--c, #2d4a86);
       }
+      /* 注视区：只画真实发生的读。整页读扫一遍视口，读具体元素落到元素上，动手前收拢到目标再交给箭头。 */
+      .gaze {
+        position: absolute; box-sizing: border-box; pointer-events: none; border-radius: 10px;
+        background: color-mix(in srgb, var(--c, #2d4a86) 8%, transparent);
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #2d4a86) 24%, transparent);
+        opacity: 0;
+        transition: left var(--d-layout) var(--e-move), top var(--d-layout) var(--e-move),
+          width var(--d-layout) var(--e-move), height var(--d-layout) var(--e-move),
+          opacity var(--d-state) var(--e-enter);
+      }
+      .gaze.jump { transition: opacity var(--d-state) var(--e-enter); }
+      .gaze.on { opacity: 1; }
+      .gaze.on.rest { opacity: .5; }
+      .gaze.converge { background: color-mix(in srgb, var(--c, #2d4a86) 12%, transparent); }
+      :host(.user-active) .gaze.on { opacity: .15; transition-duration: var(--d-state); }
+      @media (prefers-reduced-motion: reduce) { .gaze { transition: opacity var(--d-micro) linear; } }
     `;
     shadow.appendChild(style);
 
@@ -953,6 +976,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   }
 
   function cancelFly(inst: Instance): void {
+    clearTimeout(inst.flyDelay);
+    inst.flyDelay = undefined;
+
     if (inst.raf !== undefined) {
       cancelAnimationFrame(inst.raf);
       inst.raf = undefined;
@@ -2132,6 +2158,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   function hide(inst: Instance): void {
     stopReplayInst(inst);
     cancelFly(inst);
+    gazeOff(inst);
     clearTimeout(inst.parkTimer);
     releaseHoldInst(inst);
     clearStatusInst(inst);
@@ -2188,6 +2215,146 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       el.remove();
       if (inspectEl === el) inspectEl = null;
     });
+  }
+
+  // ── 注视区 ──────────────────────────────────────────────
+  // 只画真实发生的读：整页读（快照、截图、全文）只能老实地扫一遍视口，
+  // 不假装知道它在看哪一块；读具体元素时才落到那个元素上。
+  const GAZE_INSET = 16;
+  const GAZE_SWEEP_MS = 1400;
+  const GAZE_DWELL_MS = 300;
+  const GAZE_MAX_STOPS = 12;
+  const GAZE_REST_MS = 10_000;
+  const GAZE_PAD = 6;
+
+  type GazeBox = { left: number; top: number; width: number; height: number };
+
+  function ensureGaze(inst: Instance): HTMLDivElement {
+    ensureDom();
+
+    if (inst.gazeEl?.isConnected) return inst.gazeEl;
+    const el = document.createElement("div");
+    el.className = "gaze";
+    el.style.setProperty("--c", inst.color);
+    highlightLayer!.appendChild(el);
+    inst.gazeEl = el;
+
+    return el;
+  }
+
+  function placeGaze(el: HTMLDivElement, b: GazeBox, jump = false): void {
+    if (jump) el.classList.add("jump");
+    el.style.left = `${b.left}px`;
+    el.style.top = `${b.top}px`;
+    el.style.width = `${b.width}px`;
+    el.style.height = `${b.height}px`;
+
+    if (jump) {
+      el.getBoundingClientRect();
+      el.classList.remove("jump");
+    }
+  }
+
+  function stopGazeMotion(inst: Instance): void {
+    for (const t of inst.gazeTimers ?? []) clearTimeout(t);
+    inst.gazeTimers = [];
+
+    if (inst.gazeAnim) {
+      try { inst.gazeAnim.commitStyles(); } catch { /* 已脱离文档 */ }
+      inst.gazeAnim.cancel();
+      inst.gazeAnim = undefined;
+    }
+  }
+
+  function gazeSweep(inst: Instance): void {
+    stopGazeMotion(inst);
+    inst.gazeConvergeUntil = undefined;
+    const el = ensureGaze(inst);
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const height = Math.round(Math.min(160, Math.max(72, vh * 0.18)));
+    const startTop = GAZE_INSET;
+    const endTop = Math.max(GAZE_INSET, vh - height - GAZE_INSET);
+    const fresh = !el.classList.contains("on");
+    el.classList.remove("rest", "converge");
+    placeGaze(el, { left: GAZE_INSET, top: startTop, width: Math.max(0, vw - GAZE_INSET * 2), height }, fresh);
+    el.classList.add("on");
+
+    if (reducedMotion.matches || endTop <= startTop) return;
+    const anim = el.animate([{ top: `${startTop}px` }, { top: `${endTop}px` }], {
+      duration: GAZE_SWEEP_MS, easing: "cubic-bezier(.45,.05,.55,.95)", fill: "forwards",
+    });
+    inst.gazeAnim = anim;
+    anim.finished.then(() => {
+      if (inst.gazeAnim !== anim) return;
+      anim.commitStyles();
+      anim.cancel();
+      inst.gazeAnim = undefined;
+    }).catch(() => { /* 被下一次注视打断 */ });
+  }
+
+  function gazeAt(inst: Instance, rects: SideAgentRect[]): void {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // 只停在看得见的元素上；屏幕外的读不画，不把注视区停到空白处。
+    const stops = rects
+      .filter((r) => r.width > 0 && r.height > 0 && r.x < vw && r.y < vh && r.x + r.width > 0 && r.y + r.height > 0)
+      .slice(0, GAZE_MAX_STOPS)
+      .map((r) => highlightBounds(r, GAZE_PAD))
+      .filter((b): b is GazeBox => b !== null);
+
+    if (stops.length === 0) return;
+    stopGazeMotion(inst);
+    inst.gazeConvergeUntil = undefined;
+    const el = ensureGaze(inst);
+    const fresh = !el.classList.contains("on");
+    el.classList.remove("rest", "converge");
+    placeGaze(el, stops[0]!, fresh);
+    el.classList.add("on");
+
+    stops.slice(1).forEach((b, i) => {
+      inst.gazeTimers!.push(setTimeout(() => placeGaze(el, b), GAZE_DWELL_MS * (i + 1)));
+    });
+  }
+
+  function gazeRest(inst: Instance): void {
+    const el = inst.gazeEl;
+
+    if (!el?.classList.contains("on")) return;
+    // 整页扫描让它走完；读具体元素的逐个停留也走完，读完只是变淡。
+    el.classList.add("rest");
+    inst.gazeTimers = [...(inst.gazeTimers ?? []), setTimeout(() => gazeOff(inst), GAZE_REST_MS)];
+  }
+
+  function gazeOff(inst: Instance): void {
+    stopGazeMotion(inst);
+    inst.gazeConvergeUntil = undefined;
+    const el = inst.gazeEl;
+
+    if (!el) return;
+    inst.gazeEl = undefined;
+    el.classList.remove("on");
+    setTimeout(() => el.remove(), D_STATE + 40);
+  }
+
+  /** 要动手了：注视区从它最后看的位置收拢到目标上，再交给箭头和目标框。只在它刚读过页面时发生。 */
+  function gazeConverge(inst: Instance, rect: SideAgentRect): void {
+    const el = inst.gazeEl;
+    const b = highlightBounds(rect, HIGHLIGHT_PAD);
+
+    if (!el?.classList.contains("on") || !b) return;
+    stopGazeMotion(inst);
+    el.classList.remove("rest");
+    el.classList.add("converge");
+    placeGaze(el, b);
+
+    if (reducedMotion.matches) {
+      gazeOff(inst);
+
+      return;
+    }
+    inst.gazeConvergeUntil = performance.now() + D_LAYOUT;
+    inst.gazeTimers!.push(setTimeout(() => gazeOff(inst), D_LAYOUT + D_STATE));
   }
 
   async function leaveTowardPanel(inst: Instance): Promise<void> {
@@ -2676,6 +2843,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         setResting(inst, false);
         inst.el.classList.add("acting");
 
+        if (rect) gazeConverge(inst, rect);
+
         if (rect && anchor) {
           inst.highlightEl?.remove();
           inst.highlightEl = document.createElement("div");
@@ -2739,7 +2908,30 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         inst.el.classList.remove("hidden");
         inst.visible = true;
 
+        // 注视区还在收拢：箭头等它收完再起飞，先"看准"再"伸手"。多等的时间算进返回值，调用方照常等。
+        const wait = Math.max(0, (inst.gazeConvergeUntil ?? 0) - performance.now());
+
+        if (wait > 0) {
+          cancelFly(inst);
+          inst.aim = { x, y };
+          const ms = flightMs(inst.pos, { x, y });
+          inst.flyDelay = setTimeout(() => { inst.flyDelay = undefined; flyTo(inst, { x, y }); }, wait);
+
+          return Math.round(wait + ms);
+        }
+
         return flyTo(inst, { x, y });
+      },
+
+      gaze(view): void {
+        const inst = view.mode === "off" || view.mode === "rest" ? instances.get(id) : getInstance(id);
+
+        if (!inst) return;
+
+        if (view.mode === "sweep") gazeSweep(inst);
+        else if (view.mode === "at") gazeAt(inst, view.rects);
+        else if (view.mode === "rest") gazeRest(inst);
+        else gazeOff(inst);
       },
 
       click(x: number, y: number): void {

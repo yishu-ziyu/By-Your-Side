@@ -900,7 +900,8 @@ return host?[host]:[];}))].slice(0,16);
     if(snap.nextStep?.delivery==='partial'){
       // A fallback must not bypass the same decision that rejected a premature
       // finding tool. No extra completion request or unsafe spoken prefix here.
-      const count=(snap.results??[]).filter(item=>item.status==='satisfied').length;
+      // 账本满时插话收起的已完成结果也算做过的步骤。
+      const count=(snap.results??[]).filter(item=>item.status==='satisfied').length+(snap.foldedResults?.count??0);
 
       // 一步都没做成（常见于模型报错）：出错原因已在侧栏，单独一句「没做完」只是账本的话。
       if(!count)return;
@@ -1013,6 +1014,8 @@ return;}
 
   async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
+
+    if (request.action !== 'status') this.entries.get(request.conversationId)?.runtime.session.settleAnswerGate();
 
     // 用户对这个会话发了新任务、插话或停止：这一轮归用户，不再当作可让出的续做。
     if (['start', 'steer', 'abort'].includes(request.action)) this.goalContinuing.delete(request.conversationId);
@@ -1615,6 +1618,9 @@ return;}
     if(message.type==='task_control_result'){this.controls.receive({...message,conversationId:id});
 
 return;}
+
+    // 交付前对清单还扣着回答时用户又有动作：先放出回答、给那一轮收尾，再照没扣时的路处理。
+    if(message.type==='user_message'||message.type==='steer'||message.type==='abort'||message.type==='takeover')entry.runtime.session.settleAnswerGate();
 
     if((message.type==='takeover'||message.type==='handback'||message.type==='abort')&&!message.taskRequestId){
       this.controlVersions.set(id,(this.controlVersions.get(id)??0)+1);

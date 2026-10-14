@@ -37,8 +37,14 @@ interface SideAgentDomOps {
 interface SideAgentEffect {
   /** 取基线（含 60ms 页面活跃度采样）；token 由调用方生成 */
   begin(input: { token: string; point?: [number, number]; selector?: string }): Promise<{ ok: true }>;
+  /** 只记动作期间哪里变了（不取基线、不能 diff） */
+  watch(token: string): { ok: true };
   /** 与基线比对；会话不存在（换文档/过期）返回 null */
   diff(token: string): import("../../shared/effect.js").EffectReport | null;
+  /** 动作期间变过的几处（定位串）；太多返回 "many"，会话不存在返回 null */
+  roots(token: string): Array<{ sel: string; field?: true }> | "many" | null;
+  /** 会话里最后一次变化离现在多久（毫秒）；还没变过返回 null */
+  quietMs(token: string): number | null;
   end(token: string): { ok: true };
 }
 
@@ -75,6 +81,8 @@ interface SideAgentCursor {
   expect?(x: number, y: number): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
+  /** 注视区：它读页面时看着哪。sweep 整页读；at 读到的具体元素；rest 读完变淡待命；off 收起。 */
+  gaze?(view: { mode: "sweep" } | { mode: "at"; rects: SideAgentRect[] } | { mode: "rest" } | { mode: "off" }): void;
   /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */
   arrive(x: number, y: number): void;
   /** 在视口坐标 (x,y) 播放点击波纹，随后飞回角落 */
