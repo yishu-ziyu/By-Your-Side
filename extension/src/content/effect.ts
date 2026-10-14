@@ -136,6 +136,8 @@ import { overlayHostSelector } from "../shared/overlay.js";
     const big = (el: Element) => el.getElementsByTagName("*").length > BIG_ROOT;
     const candidates = new Set<Element>();
     const fields = new Set<Element>();
+    // 只改了属性的大容器（body、#app 换 class 让预先画好的弹窗显出来）：里面哪里新显出来看不出，别的地方又没变时，就说一大块变了。
+    let bigToggled = false;
 
     for (const el of new Set([...watch.added, ...watch.structural, ...watch.text])) {
       if (!shown(el)) continue;
@@ -145,6 +147,7 @@ import { overlayHostSelector } from "../shared/overlay.js";
 
       if (big(el)) {
         if (watch.added.has(el)) return "many";
+        if (watch.structural.has(el)) bigToggled = true;
         continue;
       }
       const lifted = fieldOf(el);
@@ -159,6 +162,8 @@ import { overlayHostSelector } from "../shared/overlay.js";
       return true;
     });
     let top = outermost(candidates);
+
+    if (!top.length && bigToggled) return "many";
 
     if (top.length > MAX_ROOTS) {
       const siblings = new Map<Element, number>();

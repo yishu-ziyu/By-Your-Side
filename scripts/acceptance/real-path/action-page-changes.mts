@@ -13,6 +13,8 @@
  *   c 口令、提货码的值不出现在任何结果里；填写结果带回新提示，不带被替换的旧标题；往编辑器里填的字不当成新出现的内容。
  *   d 回车结果带回“备注已保存”；选择结果带回「项目名」框。
  *   e 点没有反应的按钮：结果照旧警告“没有可归因的变化，别盲目重复”，不把跳动的时钟当成新内容。
+ *   g 点「显示帮助」：页面只给 body 换一个 class，让预先画好的帮助显出来；结果说“这一页一大块变了”，不是什么都没有。
+ *   h 填数量框（填完它自己换校验 class）：结果不把这个数量框当成新出现的。
  *   f 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回内容的每一步、每一次填写和选择也都不超过 300 毫秒（备注框的请求 1.5 秒才回来，不能等它）。
  * 失败方式：关掉变化摘要（pageChangesAfter、watchChangesAfter 直接返回 undefined），a、b、d 失败；改回动作后读整页，f 失败；
  * 去掉“动作前就在跳字的不算”，e 失败。
@@ -43,6 +45,9 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔
 <p><label>备注 <input id="memo" aria-label="备注"></label> <button id="new" type="button">新建笔记</button> <button id="dead" type="button">刷新</button></p>
 <p><label>分类 <select id="kind" aria-label="分类"><option>笔记</option><option>项目</option></select></label></p>
 <div id="editor" contenteditable="true" aria-label="正文" style="border:1px solid #ccc;min-height:2em"></div>
+<p><button id="help" type="button" onclick="document.body.classList.toggle('show-help')">显示帮助</button> <label>数量 <input id="qty" type="number" aria-label="数量" oninput="this.className = this.value > 0 ? 'ok' : 'bad'"></label></p>
+<style>.help { display: none } body.show-help .help { display: block }</style>
+<div class="help"><p>帮助：先写标题再保存。</p><button type="button">知道了</button></div>
 ${LONG}
 <script>
 let tick = 0;
@@ -92,7 +97,7 @@ const FINAL = "笔记已保存。";
 // 编号在前一步的结果里才知道：onPayload 从结果原文里填进这些参数，模型服务在回复前才序列化它们。
 const t = {
   memo: { target: "", value: "随手记" }, editor: { target: "loc=css:#editor", value: EDITOR_TEXT }, dead: { target: "" },
-  kind: { target: "", values: "项目" }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" },
+  kind: { target: "", values: "项目" }, help: { target: "" }, qty: { target: "", value: "3" }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" },
 };
 const flow: Array<{ tool: { name: string; args: object } } | { text: string }> = [
   { tool: { name: "snapshot", args: {} } },
@@ -101,6 +106,8 @@ const flow: Array<{ tool: { name: string; args: object } } | { text: string }> =
   { tool: { name: "fill", args: t.editor } },
   { tool: { name: "click", args: t.dead } },
   { tool: { name: "select_option", args: t.kind } },
+  { tool: { name: "click", args: t.help } },
+  { tool: { name: "fill", args: t.qty } },
   { tool: { name: "click", args: t.open } },
   { tool: { name: "fill", args: t.title } },
   { tool: { name: "click", args: t.save } },
@@ -141,6 +148,8 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
       t.open.target = `@${ref(/\[ref=(\d+)\] button "新建笔记"/) ?? ""}`;
       t.dead.target = `@${ref(/\[ref=(\d+)\] button "刷新"/) ?? ""}`;
       t.kind.target = `@${ref(/\[ref=(\d+)\] combobox "分类"/) ?? ""}`;
+      t.help.target = `@${ref(/\[ref=(\d+)\] button "显示帮助"/) ?? ""}`;
+      t.qty.target = `@${ref(/\[ref=(\d+)\] spinbutton "数量"/) ?? ""}`;
     }
     // 标题框和「保存」：从点开对话框的结果里拿；拿不到就像真模型一样再读一次页，从那次读页里拿。
     if ((call?.name === "click" && call.arguments.includes(t.open.target)) || (call?.name === "snapshot" && peeked)) {
@@ -195,6 +204,11 @@ try {
 
   const deadReceipt = receiptOf("click", t.dead);
   check("e 点没有反应的按钮：照旧警告没有可归因的变化、别盲目重复，不把跳动的时钟当成新内容", /Nothing on the page changed|nothing was attributable/.test(deadReceipt) && /Do not blindly/.test(deadReceipt) && !/时钟/.test(deadReceipt), { deadReceipt });
+
+  const helpReceipt = receiptOf("click", t.help);
+  check("g 只给 body 换 class 显出帮助：结果说这一页一大块变了", /A large part of this page changed/.test(helpReceipt), { helpReceipt });
+  const qtyReceipt = receiptOf("fill", t.qty);
+  check("h 数量框自己换了校验 class：结果不把它当成新出现的", /^@\d+$/.test(t.qty.target) && /Filled/.test(qtyReceipt) && !/spinbutton/.test(appearedPart(qtyReceipt)), { qtyReceipt });
 
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;

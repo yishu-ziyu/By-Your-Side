@@ -318,9 +318,10 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
 }
 
 async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
-  const { nodes, secret, zeroSize, text, backendIds, truncated, entries } = await readAxPage(tabId, decision);
+  const { nodes, secret, zeroSize, text, backendIds, truncated, shown } = await readAxPage(tabId, decision);
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
-  rememberPage(tabId, entries);
+  // 只把真的交给模型的行记成“读过”：长页被截掉的那些，之后出现在眼前时还要当新的报。
+  rememberPage(tabId, shown);
 
   if(!decision){
     recordAxSnapshot(tabId, backendIds);
