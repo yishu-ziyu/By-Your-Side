@@ -2,7 +2,7 @@
  * 回答里的卡片：解析与取数，侧栏、语音、复制共用（docs/evals/20261014-answer-cards.md）。
  * 侧栏怎么画在 extension/src/sidepanel/answer-cards.ts；模型怎么写在 agent/src/prompt.ts 的「Answer cards」一节。
  *
- * - 只认代码块以外的 <card>…</card>；写到一半的组件不算。
+ * - 只认代码块以外的 <card>…</card>；写到一半的组件不算，只记下它开了头（pending），侧栏据此放空位。
  * - 数由这里算：value 写成算式时算出结果；正文的 {=名字} 换成卡片算出的数。实验里模型心算的合计 9 次全错，卡片算式全对。
  * - 卡片里有算式时，卡片写完后，正文里不在卡片里的金额换成「见下方卡片」，不让心算错的数留在结论句里。
  */
@@ -19,7 +19,10 @@ export type Block =
 
 export type CardButton = { label: string; tab?: string; primary: boolean };
 
-export type Card = { title: string; sub?: string; blocks: Block[]; buttons: CardButton[]; source?: string; closed: boolean; numbers: Set<string>; values: Map<string, string>; formulas: boolean };
+/** 卡片末尾已经开了头、还没写完的组件：tag 是标签名，written 是已写出的属性原文（侧栏据此放尺寸接近的空位）。 */
+export type PendingComponent = { tag: "stat" | "step" | "option" | "table" | "tr" | "check" | "callout"; written: string };
+
+export type Card = { title: string; sub?: string; blocks: Block[]; buttons: CardButton[]; source?: string; closed: boolean; numbers: Set<string>; values: Map<string, string>; formulas: boolean; pending?: PendingComponent };
 
 export type AnswerPart = { prose: string } | { card: Card | undefined };
 
@@ -224,6 +227,15 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       if (text) card.source = text;
     }
   }
+
+  // 没写完的卡片：末尾开了头的组件记下来。只认真的开头（「<stat 」），不猜后面还有几个；
+  // 只看最后一个开头标签，前面哪个属性少了引号也不会一路配到末尾。
+  const lastOpen = closed ? undefined : [...source.matchAll(/<(?:stat|step|option|table|tr|check|callout)\s/g)].at(-1)?.index;
+  const tail = lastOpen === undefined ? "" : source.slice(lastOpen);
+  const open = /^<(stat|step|option|table|tr|check|callout)\s((?:[^<>"]|"[^"]*")*(?:"[^"]*)?)$/.exec(tail) ?? /^<(callout)\b([^<>]*)>[^<]*(?:<\/?[a-z]*)?$/.exec(tail);
+
+  // SAFETY: 两个正则的第一组只会是 PendingComponent 列出的标签名。
+  if (open) card.pending = { tag: open[1] as PendingComponent["tag"], written: open[2] ?? "" };
 
   return card.title || card.blocks.length ? card : undefined;
 }
