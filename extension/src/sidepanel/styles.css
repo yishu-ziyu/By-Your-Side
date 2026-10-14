@@ -1783,6 +1783,57 @@ details.run-steps.done .chip.error { background: transparent; }
   min-width: 0;
 }
 
+/* 空着只留字和发送。点进去、有字、有附件或菜单开着，工具行才展开。 */
+#composer-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  min-width: 0;
+  flex: 1;
+  min-height: 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition:
+    max-height var(--d-emph) var(--e-spring),
+    opacity var(--d-micro) var(--e-exit),
+    transform var(--d-layout) var(--e-exit);
+}
+
+#composer:focus-within #composer-bar-inner,
+#composer.has-text #composer-bar-inner,
+#composer.drag-over #composer-bar-inner,
+#composer:has(#think-menu.open) #composer-bar-inner,
+#composer:has(.tile-56) #composer-bar-inner,
+#composer:has(#ask-cite:not([hidden])) #composer-bar-inner,
+#composer:has(#mention-strip:not([hidden])) #composer-bar-inner,
+#composer:has(#handoff-banner:not([hidden])) #composer-bar-inner,
+#composer:has(.voice-progress:not([hidden])) #composer-bar-inner,
+#app:has(#attach-menu:not([hidden])) #composer-bar-inner {
+  max-height: 40px;
+  opacity: 1;
+  overflow: visible;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition:
+    max-height var(--d-emph) var(--e-spring),
+    opacity var(--d-state) var(--e-enter),
+    transform var(--d-layout) var(--e-spring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #composer-bar-inner,
+  #composer:focus-within #composer-bar-inner,
+  #composer.has-text #composer-bar-inner {
+    transform: none;
+    transition: opacity var(--d-micro) var(--e-exit), max-height var(--d-micro) var(--e-exit);
+  }
+}
+
 #composer-spacer {
   flex: 1 1 0;
   min-width: 0;

@@ -50,6 +50,7 @@ try {
   rp.cdp.onEvent("Network.webSocketCreated", (m: { sessionId?: string; params?: { url?: string } }) => { if (m.sessionId === inproc && m.params?.url) sockets.push(m.params.url); });
   await rp.cdp.send("Network.enable", {}, inproc);
   await sleep(1500);
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
   await until(async () => sockets.length > 0 || undefined, 15_000, "默认RT3连接地址");
   assert.ok(sockets.every(url => url === `wss://api.stepfun.com/v1/realtime?model=${RT3}`));
