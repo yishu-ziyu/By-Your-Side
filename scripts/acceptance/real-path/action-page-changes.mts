@@ -7,6 +7,7 @@
  *   没写 role 的编辑器「正文」；没有反应的「刷新」按钮；「分类」下拉框（选“项目”后多出一个「项目名」框）；
  *   「新建笔记」：弹出对话框（标题框原来写着草稿名、口令框、提货码框 autocomplete=one-time-code、「保存」），同时像常见弹窗库那样给 body 加 modal-open、锁滚动。
  *   往标题框填字后，对话框里出现“原标题「草稿名」已替换”；点「保存」向服务器报标题并关掉对话框。
+ *   三张像 Memos 的卡片：每张开头是「now」「More」两个按钮，再是正文；「More」弹出挂在 body 上的菜单，「Pin」把这张移到最上面并多出「Unpin」。
  * 脚本模型开头读一次页；之后要用的编号如果结果里没有，它就再读一次页（所以“只读了一次页”这条能失败）。
  *   a 点击结果带回标题框和「保存」的编号（读页时没有），不带整页正文、不带读页时已有的元素、不带跳动的时钟，不超过 2000 字。
  *   b 照结果里的编号填写、保存：服务器收到标题，对话框关掉；整轮只读了一次页。
@@ -15,9 +16,11 @@
  *   e 点没有反应的按钮：结果照旧警告“没有可归因的变化，别盲目重复”，不把跳动的时钟当成新内容。
  *   g 点「显示帮助」：页面只给 body 换一个 class，让预先画好的帮助显出来；结果说“这一页一大块变了”，不是什么都没有。
  *   h 填数量框（填完它自己换校验 class）：结果不把这个数量框当成新出现的。
+ *   i 点第二张卡片的「More」：展开的按钮行写明在“读书笔记”那一项；对话框里的新栏不带这句（不在重复的项里）。
+ *   j 点「Pin」：新出现的「Unpin」写明在“读书笔记”那一项，结果写明只挪了位置的旧行不列出。
  *   f 工具为此多花的时间（扩展后台记的毫秒数）中位数不超过 300 毫秒，带回内容的每一步、每一次填写和选择也都不超过 300 毫秒（备注框的请求 1.5 秒才回来，不能等它）。
  * 失败方式：关掉变化摘要（pageChangesAfter、watchChangesAfter 直接返回 undefined），a、b、d 失败；改回动作后读整页，f 失败；
- * 去掉“动作前就在跳字的不算”，e 失败。
+ * 去掉“动作前就在跳字的不算”，e 失败；不查所在那一项（readItems 直接返回空表），i、j 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -48,6 +51,11 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>笔
 <p><button id="help" type="button" onclick="document.body.classList.toggle('show-help')">显示帮助</button> <label>数量 <input id="qty" type="number" aria-label="数量" oninput="this.className = this.value > 0 ? 'ok' : 'bad'"></label></p>
 <style>.help { display: none } body.show-help .help { display: block }</style>
 <div class="help"><p>帮助：先写标题再保存。</p><button type="button">知道了</button></div>
+<div id="cards">
+<div class="card"><div class="head"><button type="button">now</button><button type="button" class="more" aria-label="More">⋯</button></div><p>会议纪要：周三发布，周一冻结代码。</p></div>
+<div class="card"><div class="head"><button type="button">now</button><button type="button" class="more" aria-label="More">⋯</button></div><p>读书笔记：第三章讲地方政府融资。</p></div>
+<div class="card"><div class="head"><button type="button">now</button><button type="button" class="more" aria-label="More">⋯</button></div><p>买菜：牛奶、鸡蛋、西红柿。</p></div>
+</div>
 ${LONG}
 <script>
 let tick = 0;
@@ -62,6 +70,23 @@ document.getElementById("kind").addEventListener("change", e => {
   p.innerHTML = '<label>项目名 <input id="project" aria-label="项目名"></label>';
   e.target.closest("p").after(p);
 });
+// 像 Memos：菜单挂在 body 上，和卡片没有包含关系；置顶把整张卡片挪到最上面。
+for (const more of document.querySelectorAll(".more")) more.onclick = () => {
+  more.setAttribute("aria-expanded", "true");
+  const menu = document.createElement("div");
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", "More");
+  menu.style.cssText = "position:fixed;top:40px;right:40px;background:#fff;border:1px solid #888;padding:8px";
+  menu.innerHTML = '<div role="menuitem" tabindex="0">Pin</div>';
+  menu.firstElementChild.onclick = () => {
+    menu.remove();
+    more.setAttribute("aria-expanded", "false");
+    const card = more.closest(".card");
+    card.querySelector(".head").insertAdjacentHTML("beforeend", '<button type="button" class="unpin">Unpin</button>');
+    card.parentElement.prepend(card);
+  };
+  document.body.append(menu);
+};
 document.getElementById("new").onclick = () => {
   const box = document.createElement("div");
   box.setAttribute("role", "dialog");
@@ -98,6 +123,7 @@ const FINAL = "笔记已保存。";
 const t = {
   memo: { target: "", value: "随手记" }, editor: { target: "loc=css:#editor", value: EDITOR_TEXT }, dead: { target: "" },
   kind: { target: "", values: "项目" }, help: { target: "" }, qty: { target: "", value: "3" }, open: { target: "" }, title: { target: "", value: NEW_TITLE }, save: { target: "" },
+  more: { target: "" }, pin: { target: "" },
 };
 const flow: Array<{ tool: { name: string; args: object } } | { text: string }> = [
   { tool: { name: "snapshot", args: {} } },
@@ -111,6 +137,8 @@ const flow: Array<{ tool: { name: string; args: object } } | { text: string }> =
   { tool: { name: "click", args: t.open } },
   { tool: { name: "fill", args: t.title } },
   { tool: { name: "click", args: t.save } },
+  { tool: { name: "click", args: t.more } },
+  { tool: { name: "click", args: t.pin } },
   { text: FINAL },
 ];
 
@@ -150,7 +178,10 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
       t.kind.target = `@${ref(/\[ref=(\d+)\] combobox "分类"/) ?? ""}`;
       t.help.target = `@${ref(/\[ref=(\d+)\] button "显示帮助"/) ?? ""}`;
       t.qty.target = `@${ref(/\[ref=(\d+)\] spinbutton "数量"/) ?? ""}`;
+      // 第二张卡片（读书笔记）的「More」：快照里它排在读书笔记正文前面。
+      t.more.target = `@${[...text.matchAll(/\[ref=(\d+)\] button "More"/g)][1]?.[1] ?? ""}`;
     }
+    if (call?.name === "click" && call.arguments.includes(`"${t.more.target}"`)) t.pin.target = `@${ref(/\[ref=(\d+)\] menuitem "Pin"/) ?? ""}`;
     // 标题框和「保存」：从点开对话框的结果里拿；拿不到就像真模型一样再读一次页，从那次读页里拿。
     if ((call?.name === "click" && call.arguments.includes(t.open.target)) || (call?.name === "snapshot" && peeked)) {
       const title = ref(/\[ref=(\d+)\] textbox "标题"/), save = ref(/\[ref=(\d+)\] button "保存"/);
@@ -209,6 +240,13 @@ try {
   check("g 只给 body 换 class 显出帮助：结果说这一页一大块变了", /A large part of this page changed/.test(helpReceipt), { helpReceipt });
   const qtyReceipt = receiptOf("fill", t.qty);
   check("h 数量框自己换了校验 class：结果不把它当成新出现的", /^@\d+$/.test(t.qty.target) && /Filled/.test(qtyReceipt) && !/spinbutton/.test(appearedPart(qtyReceipt)), { qtyReceipt });
+
+  const moreShown = appearedPart(receiptOf("click", t.more));
+  check("i 点第二张卡片的「More」：展开的按钮行写明在读书笔记那一项；对话框里的新栏不带这句", /button "More" expanded — in item "读书笔记/.test(moreShown) && !/in item/.test(shown), { more: t.more.target, moreShown, dialog: shown });
+
+  const pinReceipt = receiptOf("click", t.pin);
+  const top = await rp.evaluate(work, 'document.querySelector("#cards .card p")?.textContent ?? ""');
+  check("j 点「Pin」：新出现的「Unpin」写明在读书笔记那一项，并写明只挪了位置的旧行不列出", /button "Unpin" — in item "读书笔记/.test(appearedPart(pinReceipt)) && /only moved are not listed/.test(pinReceipt) && String(top).startsWith("读书笔记"), { pin: t.pin.target, top, pinReceipt });
 
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : NaN;

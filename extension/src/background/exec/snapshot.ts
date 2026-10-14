@@ -11,11 +11,11 @@ import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveReadableTab } from "../state.js";
 import { oneLine } from "../util.js";
-import { axTreeToText, RANGE_INPUT_ROLES, type AxNodeLite } from "../axtree.js";
+import { axTreeToText, RANGE_INPUT_ROLES, type AxLine, type AxNodeLite } from "../axtree.js";
 import type { InputRangeReadout } from "../../../../shared/page-readout.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
-import { forgetPage, hasPageBaseline, pageChangesSince, rememberPage } from "../page-changes.js";
+import { forgetPage, freshLines, hasPageBaseline, pageChangesSince, rememberPage } from "../page-changes.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { waitForInteractive } from "./page-readiness.js";
@@ -282,6 +282,9 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
   // 输入框、编辑器那几处里的节点：里面的字是值，不算新出现的。
   const inFields = new Set<number>();
 
+  let lines: AxLine[] = [];
+  let items = new Map<number, string>();
+
   try {
     // 几处一起读；某一处找不到、读不了只少这一处。
     await Promise.all(roots.slice(0, MAX_CHANGED_ROOTS).map(async root => {
@@ -299,22 +302,101 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
         if (root.field && n.backendDOMNodeId !== undefined) inFields.add(n.backendDOMNodeId);
       }
     }));
+
+    // 变的是 html 这类大容器时，助手自己的光标、停止条也在里面：和整页快照一样去掉。
+    const list = withoutSubtrees([...nodes.values()], await ownOverlayHosts(tabId));
+    const secret = await readSecretFields(tabId, list);
+    const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
+
+    lines = entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line);
+    const fresh = (freshLines(tabId, lines) ?? []).flatMap(line => line.ref === undefined ? [] : [line.ref]);
+
+    items = await readItems(tabId, fresh.slice(0, MAX_ITEM_LOOKUPS), contextId, objectGroup);
   } finally {
     void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
   }
 
-  // 变的是 html 这类大容器时，助手自己的光标、停止条也在里面：和整页快照一样去掉。
-  const list = withoutSubtrees([...nodes.values()], await ownOverlayHosts(tabId));
-  const secret = await readSecretFields(tabId, list);
-  const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
-
   // 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
   if (!opts.current()) return null;
-  const changes = pageChangesSince(tabId, entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line), opts.scrub);
+  const changes = pageChangesSince(tabId, lines, opts.scrub, items);
 
   if (changes) addAxRefs(tabId, changes.refs);
 
   return changes;
+}
+
+/** 新出现的行里最多给几行查“所在那一项”：每行一次 resolveNode，全部一起做。 */
+const MAX_ITEM_LOOKUPS = 12;
+
+/** ref → 它所在那一项的字。只有列表里重复的项（同样的按钮不止一个，或同类的项排成一列）才有；查不到的就没有。 */
+async function readItems(tabId: number, refs: readonly number[], executionContextId: number, objectGroup: string): Promise<Map<number, string>> {
+  const items = new Map<number, string>();
+
+  if (!refs.length) return items;
+  const resolved = (await Promise.all(refs.map(id => sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: id, objectGroup, executionContextId })
+    .then(node => node.object?.objectId ? { id, objectId: node.object.objectId } : null, () => null))))
+    .filter((r): r is { id: number; objectId: string } => r !== null);
+
+  if (!resolved.length) return items;
+  const response = await sendCommand<{ result?: { value?: string[] } }>(tabId, "Runtime.callFunctionOn", {
+    objectId: resolved[0]!.objectId,
+    functionDeclaration: `function(...elements){return elements.map(el => (${itemOfInPage.toString()})(el));}`,
+    arguments: resolved.map(r => ({ objectId: r.objectId })),
+    returnByValue: true,
+  }).catch(() => undefined);
+
+  response?.result?.value?.forEach((item, i) => { if (item) items.set(resolved[i]!.id, item); });
+
+  return items;
+}
+
+/**
+ * 在页面里执行，保持自包含。元素所在那一项（卡片、列表项、表格行）的开头几个字。
+ * 往上找第一层有自己文字的祖先（按钮、链接、输入框里的字不算），这一层就是“一项”；它若已经包住了同样的另一个按钮，说明到了整个列表，不给。
+ * 只在需要时给：页面上有同样的按钮，或这一项和兄弟项同类（同标签、同 class）排成一列。
+ */
+function itemOfInPage(node: Node): string {
+  const el = node instanceof Element ? node : node.parentElement;
+
+  if (!el) return "";
+  const doc = el.ownerDocument;
+  const CONTROLS = "a,button,input,select,textarea,[role=button],[role=link],[role=menuitem],[role=tab],[role=checkbox],[role=textbox],[contenteditable]:not([contenteditable=false])";
+  // 小元素才比文字（按钮、链接）；大元素只比标签、class、aria-label，免得每次都取整块的 textContent。
+  const sig = (x: Element) => `${x.tagName}|${x.getAttribute("class") ?? ""}|${x.getAttribute("aria-label") ?? ""}|${x.childElementCount <= 3 ? (x.textContent ?? "").replace(/\s+/g, " ").trim() : "#"}`;
+  const mine = sig(el);
+  const twinIn = (root: Element | Document) => {
+    const same = root.getElementsByTagName(el.tagName);
+
+    for (let i = 0; i < same.length && i < 5000; i++) if (same[i] !== el && sig(same[i]!) === mine) return true;
+
+    return false;
+  };
+  const twinOnPage = twinIn(doc);
+
+  for (let a = el.parentElement, up = 0; a && a !== doc.body && a !== doc.documentElement && up < 8; a = a.parentElement, up++) {
+    let text = "";
+    const walker = doc.createTreeWalker(a, NodeFilter.SHOW_TEXT);
+
+    for (let t = walker.nextNode(), seen = 0; t && text.length < 60 && seen < 2000; t = walker.nextNode(), seen++) {
+      const parent = t.parentElement;
+      const control = parent?.closest(CONTROLS);
+
+      if (!parent || el.contains(parent) || (control && a.contains(control)) || !parent.checkVisibility()) continue;
+      const words = (t.nodeValue ?? "").replace(/\s+/g, " ").trim();
+
+      if (words) text += (text ? " " : "") + words;
+    }
+
+    if (!text) continue;
+
+    if (twinIn(a)) return "";
+    const cls = a.getAttribute("class");
+    const series = !!a.parentElement && [...a.parentElement.children].filter(x => x.tagName === a.tagName && (/^(LI|TR|ARTICLE)$/.test(a.tagName) || (!!cls && x.getAttribute("class") === cls))).length >= 2;
+
+    return twinOnPage || series ? (text.length > 60 ? `${text.slice(0, 57)}...` : text) : "";
+  }
+
+  return "";
 }
 
 async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
