@@ -138,7 +138,7 @@ const SECTION_TITLES = { sources: "读过的网页" } as const;
 export function attachAnswerActions(answer: HTMLElement): void {
   if (answer.querySelector(".answer-actions") || !answer.textContent?.trim()) return;
   const actions = document.createElement("div");
-  actions.className = "answer-actions";
+  actions.className = answer.classList.contains("stream-enter") ? "answer-actions enter" : "answer-actions";
   const primary = document.createElement("button");
   primary.type = "button";
   primary.className = "answer-primary";

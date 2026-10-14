@@ -25,12 +25,14 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOStri
 
 await mkdir(artifacts, { recursive: true });
 
-// 第一段一次到齐：京东那格后面字多，放字追得快，它在 150ms 内写完；第一段约 3.5 秒放完。
+// 卡片标记一到就放：京东那格由模型分两截写，后半截隔 60ms 到，它在 150ms 内写完。
 // 表格最后一行和「最低到手」写到一半时，侧栏各要等约 1.5 秒才等到后半截。
 const ROWS = Array.from({ length: 18 }, (_, i) => `<tr cells="店铺${i + 1}|${1500 + i * 10}|${(i % 3) + 1}天" />`).join("\n");
 
 const PIECES: NonNullable<TextStep["pieces"]> = [
-  { text: `三家到手价放在下面的卡片里。\n<card title="耳机三家到手价" sub="算上运费和券">\n<stat label="京东" value="1699" unit="¥" note="次日达" />\n<callout tone="info">${"天猫店铺券满1500减50，要先领券再下单。".repeat(3)}</callout>\n<table cols="店铺|到手价|到货">\n${ROWS}\n<tr cells="拼多多|` },
+  { text: "三家到手价放在下面的卡片里。\n" },
+  { text: `<card title="耳机三家到手价" sub="算上运费和券">\n<stat label="京东" value="16`, delayMs: 800 },
+  { text: `99" unit="¥" note="次日达" />\n<callout tone="info">${"天猫店铺券满1500减50，要先领券再下单。".repeat(3)}</callout>\n<table cols="店铺|到手价|到货">\n${ROWS}\n<tr cells="拼多多|`, delayMs: 60 },
   { text: `1529|3天" />\n</table>\n<stat label="最低到手" value="=`, delayMs: 5000 },
   { text: `1529+0" unit="¥" tag="最低" />\n`, delayMs: 2300 },
   { text: `<button action="say" primary>就买拼多多的</button>\n`, delayMs: 700 },
