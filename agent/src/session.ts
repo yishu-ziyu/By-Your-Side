@@ -1396,11 +1396,18 @@ return;}
     if ((digest.rounds <= 2 && digest.errors === 0) || !hosts.length) { this.runTrace.record("site_notes", { phase: "skipped", why: hosts.length ? "short" : "no_host", rounds: digest.rounds }); return; }
     const sessionId = `${session.sessionId}-site-notes`;
 
-    const reply = await sideJudgment(side, model, {
-      purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "any",
-      content: JSON.stringify({ visitedHosts: hosts, rounds: digest.rounds, steps: digest.steps }),
-      sessionId, headers: opencodeSessionHeaders(model, sessionId), parse: text => parseJsonReply(text, isJsonObject),
-    });
+    let reply: unknown;
+
+    try {
+      reply = await sideJudgment(side, model, {
+        purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "any",
+        content: JSON.stringify({ visitedHosts: hosts, rounds: digest.rounds, steps: digest.steps }),
+        sessionId, headers: opencodeSessionHeaders(model, sessionId), parse: text => parseJsonReply(text, isJsonObject),
+      });
+    } catch (error) {
+      this.runTrace.record("site_notes", { phase: "skipped", why: "side_call_failed" });
+      throw error;
+    }
 
     const dropped: Array<{ tip: string; why: string }> = [];
     let learned = 0;
@@ -1415,8 +1422,8 @@ return;}
       this.callbacks.emit({ kind: "site_notes", host, ...(title ? { title } : {}), notes: added });
     }
 
-    // 诊断记录本来就含整段对话，被挡掉的原文写进去不多泄露什么；用来查笔记为什么没留下。
-    if (!learned) this.runTrace.record("site_notes", { phase: "skipped", why: dropped.length ? "filtered" : "model_empty", dropped });
+    // 被挡掉的笔记可能带着用户的值，诊断记录只写挡掉的原因，不写原文。
+    if (!learned) this.runTrace.record("site_notes", { phase: "skipped", why: dropped.length ? "filtered" : "model_empty", dropped: dropped.map(item => item.why) });
   }
 
   /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */

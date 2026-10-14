@@ -8,7 +8,7 @@
  *   对话三（新对话，从 127.0.0.1 开始）：同样填错一次再做成，核对判「等用户」。
  *   对话四（新对话，从 127.0.0.1 开始）：填错一次、填一次，模型还在想时用户按停止。
  * 判据：
- *   R3 写笔记的调用里没有用户原话、填的值、页面 JS 写进的值、账本里的值（填的值只留形状：字母数字换成占位，符号留下）。
+ *   R3 写笔记的调用里没有用户原话、填的值、页面 JS 写进的值、账本里的值（填的值只留形状：每个词换成占位，只留词首的 # @ 这类标记）。
  *   R3 对话二打开 127.0.0.1 的结果里有笔记、干净的和用占位写值的两条；带填写值、占位旁带真实值、指向别的网站、中文的都没有。
  *   看得见 对话一写下笔记后，侧栏这一轮下面有「记下了…用法」一行，点「查看」展开的正是留下的两条。
  *   R2 对话二打开 localhost 的结果（真的打开了页面）和开始时的上下文里都没有笔记。
@@ -89,7 +89,7 @@ const model = await startScriptedModel([
   { match: ASKS[0]!, steps: [
     { tool: { name: "record_task_results", args: { results: [{ id: "search", description: `搜索 ${LEDGER_VALUE}`, tool: "fill", target: null }] } } },
     { tool: { name: "browser_run", args: { code: `await browser.js({code:"document.getElementById('q').value = '${JS_VALUE}'"}); return "set";` } } },
-    { tool: { name: "fill", args: { target: MARKERS[0]!, value: TYPED } } },
+    { tool: { name: "fill", args: { target: MARKERS[0]!, value: `@${TYPED} ${TYPED}` } } },
     { tool: { name: "fill", args: { target: "#q", value: TYPED } } },
     { tool: { name: "click", args: { target: "#go" } } },
     { text: FINALS[0]! },
@@ -183,7 +183,7 @@ try {
   const learn = noteCalls.find(c => c.conv === 0)?.raw ?? "";
   const leaked = { request: learn.includes(ASKS[0]!), typed: learn.includes(TYPED), jsValue: learn.includes(JS_VALUE), ledger: learn.includes(LEDGER_VALUE), ledgerTool: learn.includes("record_task_results") };
   check("R3 写笔记的调用里没有用户原话、填的值、页面 JS 写进的值、账本", learn.includes("«value»") && !Object.values(leaked).some(Boolean), { hasPlaceholder: learn.includes("«value»"), ...leaked });
-  check("R3 填写值只留形状：符号留下、字母数字换成占位", learn.includes("«value»-«value»-«value»"), { shape: learn.match(/.{0,30}«value»-«value»-«value».{0,10}/)?.[0] ?? null });
+  check("R3 填写值只留形状：词首的标记符号留下，其余整词换成占位", learn.includes("@«value» «value»") && !learn.includes("«value»-«value»"), { shape: learn.match(/.{0,20}@«value».{0,20}/)?.[0] ?? null });
 
   // 侧栏：这一轮下面一行「记下了…用法」，点「查看」展开原文。
   await until(async () => await rp.evaluate(panel, `!!document.querySelector(".site-notes-receipt")`) || undefined, 15_000, "记下了一行");
