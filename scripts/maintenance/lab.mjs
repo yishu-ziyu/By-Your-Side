@@ -209,7 +209,7 @@ function inUse(dir, commands) {
 function frozenDist() {
   const git = args => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
   const head = git(["rev-parse", "--short", "HEAD"]).trim();
-  const dirty = git(["diff", "HEAD", "--", "extension", "shared"]);
+  const dirty = git(["diff", "HEAD", "--", "extension", "shared", "agent"]);
   const key = dirty ? `${head}-${createHash("sha256").update(dirty).digest("hex").slice(0, 8)}` : head;
   const dist = join(repo, "out/lab", `dist-${key}`, "extension");
 
