@@ -242,7 +242,7 @@ try {
   check("h 数量框自己换了校验 class：结果不把它当成新出现的", /^@\d+$/.test(t.qty.target) && /Filled/.test(qtyReceipt) && !/spinbutton/.test(appearedPart(qtyReceipt)), { qtyReceipt });
 
   const moreShown = appearedPart(receiptOf("click", t.more));
-  check("i 点第二张卡片的「More」：展开的按钮行写明在读书笔记那一项；对话框里的新栏不带这句", /button "More" expanded — in item "读书笔记/.test(moreShown) && !/in item/.test(shown), { more: t.more.target, moreShown, dialog: shown });
+  check("i 点第二张卡片的「More」：展开的按钮行写明在读书笔记那一项；对话框里的新栏不带这句", /button "More" expanded[^\n]* — in item "读书笔记/.test(moreShown) && !/in item/.test(shown), { more: t.more.target, moreShown, dialog: shown });
 
   const pinReceipt = receiptOf("click", t.pin);
   const top = await rp.evaluate(work, 'document.querySelector("#cards .card p")?.textContent ?? ""');
