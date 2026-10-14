@@ -10,7 +10,7 @@ import { sanitizeTrace } from "../../shared/trace-sanitize.js";
 import { randomUUID } from "node:crypto";
 import {isWriteTool} from '../../shared/control.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';
-import {isResultMetaTool} from '../../shared/task-results.js';
+import {isResultMetaTool, MAX_TASK_RESULTS} from '../../shared/task-results.js';
 import {decideTaskNextStep} from '../../shared/task-next-step.js';
 import {toolAction} from '../../shared/user-facing.js';
 import {TaskReadback} from './task-readback.js';
@@ -181,9 +181,10 @@ export class TaskProgress {
 
     if(interjected){
       this.interjections+=1;
-      // 用户在任务进行中又说了话：已完成的结果收起来，账本腾出位置给接下来的动作。
+      // 账本满了、用户在任务进行中又说了话：已完成的结果收起来，账本腾出位置给接下来的动作。
       // 以前只有空闲时的新请求才清账，任务里做满 64 项之后再插话，所有动作都被拒（10-14 画图）。
-      const folded=this.results.fold();
+      // 没满时不收：侧栏任务卡和「已做完」的说法都照旧。
+      const folded=this.results.list().length>=MAX_TASK_RESULTS?this.results.fold():[];
 
       if(folded.length)this.foldedResults={count:this.foldedResults.count+folded.length,recent:[...this.foldedResults.recent,...folded].slice(-8)};
     }
@@ -213,7 +214,9 @@ export class TaskProgress {
     this.goalCheck = snapshot.goalCheck ? { ...snapshot.goalCheck } : null;
     this.goalPage = snapshot.goalPage ? { ...snapshot.goalPage } : null;
     this.interjections = snapshot.interjections ?? 0;
-    this.foldedResults = snapshot.foldedResults ? { count: snapshot.foldedResults.count, recent: [...snapshot.foldedResults.recent] } : { count: 0, recent: [] };
+    const folded = snapshot.foldedResults;
+    this.foldedResults = folded && Number.isSafeInteger(folded.count) && Array.isArray(folded.recent)
+      ? { count: folded.count, recent: folded.recent.filter((text): text is string => typeof text === "string").slice(-8) } : { count: 0, recent: [] };
     this.aborted = snapshot.state === "aborted";
     this.interrupted = !!this.runId && !!this.goal && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;

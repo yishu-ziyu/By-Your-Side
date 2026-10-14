@@ -39,7 +39,10 @@ export class TaskResultBook {
     return `${AUTO_RESULT_ID_PREFIX}${this.autoSeq.toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   }
 
-  clear(): void { this.items = []; }
+  /** 收起过的项的编号：模型按原编号重新登记时，不能把做完的又变回没做。 */
+  private foldedIds = new Set<string>();
+
+  clear(): void { this.items = []; this.foldedIds.clear(); }
 
   /**
    * 收起已完成的结果：做完的项，连同被它们取代的「结果未知」项（单留下会被当成没做成）。
@@ -48,6 +51,8 @@ export class TaskResultBook {
   fold(): string[] {
     const settled = this.items.filter(item => item.status === "satisfied" || isSupersededUnknown(item, this.items));
     this.items = this.items.filter(item => !settled.includes(item));
+
+    for (const item of settled) this.foldedIds.add(item.id);
 
     return settled.filter(item => item.status === "satisfied").map(item => item.description);
   }
@@ -75,11 +80,12 @@ export class TaskResultBook {
     const normalized = intents.map(normalizeTaskResultRegistration);
 
     if (normalized.some(item => !item)) throw new Error("结果登记格式无效");
-    const additions = new Set(normalized.flatMap(item => !this.items.some(existing => existing.id === item!.id) ? [item!.id] : []));
+    const additions = new Set(normalized.flatMap(item => !this.foldedIds.has(item!.id) && !this.items.some(existing => existing.id === item!.id) ? [item!.id] : []));
 
     if (this.items.length + additions.size > 64) throw new Error("结果登记最多64项，不能丢弃未完成项");
 
     for (const intent of normalized as TaskResultRegistration[]) {
+      if (this.foldedIds.has(intent.id)) continue;
       const existing = this.items.find(item => item.id === intent.id);
 
       if (!existing) {
