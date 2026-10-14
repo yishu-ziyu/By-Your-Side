@@ -20,6 +20,8 @@ import { renderMarkdownHtml } from "./markdown.js";
 import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
+import { adoptFillUndo, noteFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
+import { attachShorten } from "./answer-shorten.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
@@ -165,6 +167,8 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   adoptUsedLine(answer);
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
+  if (!replayingHistory && answer === fillUndoAnswer()) adoptFillUndo(answer);
+  attachShorten(answer);
 
   // 补放历史时不给：那一页早已不是这次回答的结果页。
   if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
@@ -1034,6 +1038,7 @@ function renderConversations(): void {
 }
 
 function resetConversationRender(): void {
+  resetFillUndo();
   if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
 
   closeBlocks();
@@ -5728,7 +5733,29 @@ function handleServerMessage(raw: string): void {
   }
 }
 
+/** 还原状态属于这一轮的回答：最新一条用户消息后面还没有写完的回答时，先不挂，等回答写完再补（adoptFillUndo）。 */
+function fillUndoAnswer(): HTMLElement | null {
+  const answer = messagesEl.querySelector<HTMLElement>(".msg.assistant.answer-latest");
+  const user = Array.from(messagesEl.querySelectorAll<HTMLElement>(".msg.user")).pop();
+
+  if (!answer || (user && answer.compareDocumentPosition(user) & Node.DOCUMENT_POSITION_FOLLOWING)) return null;
+
+  return answer;
+}
+
+setFillUndoHost({
+  send: () => port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg),
+  follow: () => scrollToEnd(),
+});
+
 function handleBgMessage(envelope: BgToPanel): void {
+  if (envelope.kind === "fill_undo") {
+    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
+    noteFillUndo(envelope.undo, envelope.refused, fillUndoAnswer());
+
+    return;
+  }
+
   if (envelope.kind === "pong") {
     lastPong = performance.now();
     pingSentAt = null;
@@ -5789,6 +5816,10 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "synced") {
     // 同步回放总以 synced 收尾（background syncPanel）：此时历史已补齐，可以判断旧端口上的消息是否丢了。
     restoreLostSend();
+    // 后台先补发还原状态、再回放历史：历史放完后才知道哪条是这一轮的回答。
+    const undoAnswer = fillUndoAnswer();
+
+    if (undoAnswer) adoptFillUndo(undoAnswer);
 
     return;
   }
