@@ -676,7 +676,7 @@ const executionEpochs=new Map<string,number>();
 let epochRunId:string|null|undefined;
 const abortedRuns=new Set<string>();
 let abortDrain:Promise<void>=Promise.resolve();
-let remoteControl:{request:Extract<ServerMessage,{type:'task_control'}>;timer:ReturnType<typeof setTimeout>;abortAck?:(ok:boolean)=>void}|null=null;
+let remoteControl:{request:Extract<ServerMessage,{type:'task_control'}>;timer:ReturnType<typeof setTimeout>;abortAck?:(ok:boolean)=>void;settled:Promise<void>;settle:()=>void}|null=null;
 const activityBySession = new Map<string, TeamMemberActivity>();
 const gate = new ControlGate();
 let team = new TeamControl();
@@ -1207,7 +1207,7 @@ function reconcileControlRun(): void {
 
     if (pendingControl) clearPendingControl(pendingControl.requestId);
 
-    if (remoteControl) { clearTimeout(remoteControl.timer); remoteControl = null; }
+    if (remoteControl) { clearTimeout(remoteControl.timer); remoteControl.settle(); remoteControl = null; }
 
     if (!gate.isUser()) void hideControlBannersForOwner(conversationId);
     persistControl();
@@ -1874,11 +1874,14 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
 function finishRemoteControl(ok:boolean,reason?:string,uncertain=false,partial=false):void{
   const current=remoteControl;
 
-if(!current)return;remoteControl=null;clearTimeout(current.timer);current.abortAck?.(false);
+if(!current)return;remoteControl=null;clearTimeout(current.timer);current.abortAck?.(false);current.settle();
   uplink.sendClientMessage({type:'task_control_result',requestId:current.request.requestId,action:current.request.action,runId:current.request.runId,ok,reason:reason?.slice(0,1000),uncertain,partial});
 }
 
 async function runRemoteControl(request:Extract<ServerMessage,{type:'task_control'}>):Promise<void>{
+  // 中止不跟正在收尾的接管、交还抢：交给用户的那一步要等光标退场、助手确认，用户恰好在这段时间按停止，等它落定再停，不拒绝。
+  while(request.action==='abort'&&remoteControl)await remoteControl.settled;
+
   if(remoteControl){uplink.sendClientMessage({type:'task_control_result',requestId:request.requestId,action:request.action,runId:request.runId,ok:false,reason:'另一项页面控制还在进行，请稍后重试。'});
 
 return;}
@@ -1887,7 +1890,9 @@ return;}
 
 return;}
 
-  const current={request,timer:setTimeout(()=>finishRemoteControl(false,'页面控制结果尚无法确认。',true),45000),abortAck:undefined as ((ok:boolean)=>void)|undefined};remoteControl=current;
+  let settle=()=>{};
+  const settled=new Promise<void>(resolve=>{settle=resolve;});
+  const current={request,timer:setTimeout(()=>finishRemoteControl(false,'页面控制结果尚无法确认。',true),45000),abortAck:undefined as ((ok:boolean)=>void)|undefined,settled,settle};remoteControl=current;
 
   try{
     if(request.action==='abort'){

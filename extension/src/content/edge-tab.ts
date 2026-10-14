@@ -75,10 +75,10 @@ const FONT = `-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",
 const STYLE = `
 :host{all:initial}
 .root{--panel:oklch(0.980 0.0055 88);--ink:oklch(22% 0.012 285);--ink2:oklch(54% 0.02 285);--btn:oklch(22% 0.02 285 / .07);--btnh:oklch(22% 0.02 285 / .13);
-  --accent:oklch(58% 0.2 285);--ok:oklch(66% 0.17 150);--warn:oklch(72% 0.15 70);--err:oklch(60% 0.2 25);--objw:600;--hi:#fff;
+  --accent:oklch(58% 0.2 285);--ok:oklch(66% 0.17 150);--warn:oklch(72% 0.15 70);--err:oklch(60% 0.2 25);--objw:600;--hi:color-mix(in oklch,var(--ink2) 55%,var(--panel));
   position:fixed;top:0;right:0;width:${CANVAS_W}px;height:${CANVAS_H}px;pointer-events:none;font:13px/1 ${FONT};letter-spacing:-.01em;color:var(--ink);
   -webkit-font-smoothing:antialiased}
-@media (prefers-color-scheme:dark){.root{--panel:#211f1b;--ink:rgb(250,242,230);--ink2:oklch(70% 0.014 285);--btn:rgba(255,255,255,.09);--btnh:rgba(255,255,255,.17);--accent:oklch(74% 0.14 285);--objw:500;--hi:rgb(255,247,234)}}
+@media (prefers-color-scheme:dark){.root{--panel:#211f1b;--ink:rgb(250,242,230);--ink2:oklch(70% 0.014 285);--btn:rgba(255,255,255,.09);--btnh:rgba(255,255,255,.17);--accent:oklch(74% 0.14 285);--objw:500;--hi:color-mix(in oklch,var(--ink2) 55%,rgb(255,247,234))}}
 .root[hidden]{display:none}
 .canvas{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .clip{position:absolute;overflow:hidden;pointer-events:auto;cursor:pointer;outline:none;border-radius:20px 0 0 20px}
@@ -88,8 +88,9 @@ const STYLE = `
 .a .t{max-width:150px}.b .t{max-width:210px}
 .dim{color:var(--ink2);font-weight:500}.strong{color:var(--ink);font-weight:var(--objw)}
 .ic{width:${ICON}px;height:${ICON}px;display:grid;place-items:center}
-/* 进行中不放图标：动词上一道光从右往左扫过。背景比字宽三倍，挪背景位置就是挪那道光。 */
-.shim{background:linear-gradient(90deg,var(--ink2) 0%,var(--ink2) 35%,var(--hi) 50%,var(--ink2) 65%,var(--ink2) 100%);background-size:300% 100%;
+/* 进行中不放图标：动词上一道光从右往左扫过。背景比字宽三倍，挪背景位置就是挪那道光。
+   高光只到动词灰和底色的中间：亮到接近底色时，光扫过的那个字会看不见。 */
+.shim{background:linear-gradient(90deg,var(--ink2) 0%,var(--ink2) 41%,var(--hi) 50%,var(--ink2) 59%,var(--ink2) 100%);background-size:300% 100%;
   -webkit-background-clip:text;background-clip:text;color:transparent;animation:shim ${SHIMMER_S}s linear infinite}
 @keyframes shim{from{background-position:0% 0}to{background-position:100% 0}}
 .rg{stroke-dasharray:47.1;stroke-dashoffset:47.1;animation:draw .35s cubic-bezier(.45,0,.55,1) .2s forwards}
