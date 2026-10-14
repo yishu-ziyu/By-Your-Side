@@ -876,34 +876,26 @@ html, body {
   padding: 2px 0;
 }
 
-/* 流式输出中的闪烁光标：跟在最后一个字后面（stream-reveal.ts 的 data-tail），还没有字时挂在气泡上 */
-.msg.assistant.streaming:not(:has([data-tail]))::after,
-.msg.assistant.streaming [data-tail]::after {
-  content: "▍";
-  color: var(--accent);
-  animation: blink 1s steps(2, start) infinite;
+/* 正在流式的回答：第一次出字时上浮入场。 */
+.msg.assistant.stream-enter {
+  animation: answerRise var(--m-rise) var(--e-rise) both;
 }
 
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-/* 回答逐字浮现：透明度与轻微模糊一起收；时长与 stream-reveal.ts 的 FADE_MS 一致 */
-/* 流式淡入：一段 var(--d-layout) 从透明、2px 模糊到清楚，不位移。 */
-.reveal-fade {
-  animation: revealFade var(--d-layout) var(--e-swift) both;
-}
-
-@keyframes revealFade {
+@keyframes answerRise {
   from {
     opacity: 0;
-    filter: blur(2px);
+    transform: translateY(10px);
   }
-  to {
-    opacity: 1;
-    filter: none;
+}
+
+/* 回答按段淡入：只改透明度，时长见 --m-read。 */
+.chunk-fade {
+  animation: chunkFade var(--m-read) linear both;
+}
+
+@keyframes chunkFade {
+  from {
+    opacity: 0;
   }
 }
 
@@ -2273,8 +2265,6 @@ details.run-steps.done .chip.error { background: transparent; }
     animation: none;
   }
 
-  .msg.assistant.streaming:not(:has([data-tail]))::after,
-  .msg.assistant.streaming [data-tail]::after,
   .dot.retry,
   .chip-dot.running {
     animation: none;
@@ -2288,9 +2278,11 @@ details.run-steps.done .chip.error { background: transparent; }
     animation: none;
   }
 
-  .reveal-fade,
+  .chunk-fade,
+  .msg.assistant.stream-enter,
+  .answer-actions.enter,
   .tile-landing {
-    animation-name: fadeOnlyIn;
+    animation: none;
   }
 
   .run-chevron {
@@ -2532,6 +2524,16 @@ details.run-steps.done .chip.error { background: transparent; }
   margin-top: var(--s-2);
   font: var(--fs-meta)/var(--lh-meta) var(--font);
   color: var(--text-tertiary);
+}
+
+.answer-actions.enter {
+  animation: actionsIn var(--m-quick) linear var(--d-tap) both;
+}
+
+@keyframes actionsIn {
+  from {
+    opacity: 0;
+  }
 }
 .answer-actions button {
   display: inline-flex;
@@ -3153,9 +3155,12 @@ details.run-steps:not(.done) .run-title {
   mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
   -webkit-mask-size: 260% 100%;
   mask-size: 260% 100%;
-  animation: runShine 2.4s var(--e-enter) infinite;
+  animation: runShine 3s var(--e-enter) infinite;
 }
-@keyframes runShine { from { -webkit-mask-position: 110% 0; mask-position: 110% 0; } to { -webkit-mask-position: -10% 0; mask-position: -10% 0; } }
+@keyframes runShine {
+  0%, 15% { -webkit-mask-position: 110% 0; mask-position: 110% 0; }
+  85%, 100% { -webkit-mask-position: -10% 0; mask-position: -10% 0; }
+}
 /* #263 思考心跳：16px 墨点在 4 点与十字之间收合，1.2s 一拍，不用转圈。秒数同拍闪一下。 */
 .run-beat {
   display: none;
