@@ -3008,8 +3008,8 @@ export async function showGuide(tabId: number, target: string, say: string, port
 }
 
 /**
- * 交给用户时圈出要用户填的栏和要点的按钮（docs/evals/20261012-handoff-circle.md）。按 mark 的方式逐个找目标；
- * 找不到的跳过，不报错（R4）。圈都画好后再摆名牌，名牌才能躲开别的圈。「现在归你」收起时页面自己清掉这些圈。
+ * 交给用户时圈出要用户填的栏和要点的按钮。按 mark 的方式逐个找目标；
+ * 找不到的跳过，不报错。圈都画好后再摆名牌，名牌才能躲开别的圈。「现在归你」收起时页面自己清掉这些圈。
  */
 export async function showHandoffMarks(tabId: number, targets: string[], sessionId: string): Promise<void> {
   try {

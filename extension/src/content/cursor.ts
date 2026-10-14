@@ -309,7 +309,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         from { transform: scale(.5); opacity: .95; }
         to { transform: scale(4.2); opacity: 0; }
       }
-      /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」（#43），做完随光标回角落收起。 */
+      /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」，做完随光标回角落收起。 */
       .cursor:not(.holding):not(.acting) .label { display: none !important; }
       /* 主助手停靠时可见；多个协作光标闲置时仍收起，以免挡住正文。 */
       .cursor.rest:not(.holding):not([data-primary="true"]) { visibility: hidden; }
@@ -1765,7 +1765,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   }
 
   function hideUserControl(): void {
-    // 页面不再归用户：交给用户时画的圈一起清掉（docs/evals/20261012-handoff-circle.md R3）。
+    // 页面不再归用户：交给用户时画的圈一起清掉。
     clearHandoff();
     pageControl = null;
     renderAmbient();
@@ -2285,7 +2285,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   let feedback: (FeedbackPillView & { at: number }) | null = null;
   let feedbackTimer: number | undefined;
   /** 最近一次本页动作，结果回执里用它说清是哪一步。 */
-  let lastAction: { kind: "click" | "fill" | "hover"; name: string } | null = null;
+  let lastAction: { kind: "click" | "fill" | "hover"; name: string; at: number } | null = null;
   let lastDoneAt = 0;
   /** 主胶囊此刻指向的别页助手：点胶囊就切过去。 */
   let mainRemote: CrossPageMember | null = null;
@@ -2352,16 +2352,18 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     return { tone: "err", a: a.name || "这一步", b: a.kind === "fill" ? "没填进去" : a.kind === "click" ? "没点成" : "没做成" };
   }
 
-  function feedbackView(f: FeedbackPillView): EdgeTabView {
+  function feedbackView(f: FeedbackPillView & { at: number }): EdgeTabView {
     const hint = f.detail;
+    // 回执只在紧跟着一步本页动作时才借它的名字；切标签这类不经过本页动作的回执不借。
+    const last = lastAction && f.at - lastAction.at < SAME_RESULT_MS ? lastAction : null;
 
     if (f.kind === "pending") return { tone: "wait", a: "在等", b: "页面响应", end: "stop" };
 
     if (f.kind === "success") return { tone: "ok", a: "", b: f.text };
 
-    if (f.kind === "unknown") return { tone: "unk", a: lastAction ? `${VERB[lastAction.kind]}了${lastAction.name || "这里"}` : "", b: "结果还不确定", hint };
+    if (f.kind === "unknown") return { tone: "unk", a: last ? `${VERB[last.kind]}了${last.name || "这里"}` : "", b: "结果还不确定", hint };
 
-    return { tone: "err", a: lastAction?.name || "这一步", b: f.text, hint };
+    return { tone: "err", a: last?.name || "这一步", b: f.text, hint };
   }
 
   function statusView(status: CursorStatus): EdgeTabView {
@@ -2412,7 +2414,10 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       view = { tone: "away", a: "在", b: mainRemote.title, end: "arrow", hint: "切换到那一页" };
     } else if (taskPill) view = pillView(taskPill);
 
-    const others: EdgeTabOther[] = remote.map(m => ({ id: m.sessionId, name: displayNameFor(m.sessionId), title: m.title, local: false, icon: m.icon }));
+    // 结果不确定、没做成会一直留着；这期间助手还在读页面或想下一步，停止键也要在。
+    if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (glowing.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading"))) view = { ...view, end: "stop" };
+
+    const others: EdgeTabOther[] = remote.map(m => ({ id: m.sessionId, name: displayNameFor(m.sessionId), title: m.title, local: false }));
 
     for (const [id, inst] of local) {
       // 主助手自己的状态只进主胶囊（交给你时也是它让位），小圆泡只放这一页上别的助手。
@@ -2427,7 +2432,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   }
 
   function showCrossPill(view: CrossPageView): void {
-    remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "另一个页面", tabId: view.tabId, state: view.state, icon: view.icon }];
+    remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "另一个页面", tabId: view.tabId, state: view.state }];
 
     for (const member of remoteMembers) {
       const inst = instances.get(member.sessionId);
@@ -2581,7 +2586,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
         if (!inst.visible) showAtRest(inst);
         inst.action = { id: actionId, kind, phase: "active", anchor, rect, name: actionName(anchor, label), at: Date.now() };
-        lastAction = { kind, name: inst.action.name };
+        lastAction = { kind, name: inst.action.name, at: inst.action.at };
 
         // 下一步开始了：上一步「结果不确定 / 没做成」不再挂着。
         if (feedback && feedback.kind !== "success") clearFeedback();
@@ -2612,6 +2617,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         inst.action.at = Date.now();
 
         if (outcome === "done") lastDoneAt = inst.action.at;
+
+        if (lastAction) lastAction.at = inst.action.at;
 
         if (outcome === "done" && inst.action.kind === "click" && point) {
           setPos(inst, { x: point[0], y: point[1] });

@@ -29,7 +29,6 @@ export interface EdgeTabOther {
   title: string;
   local: boolean;
   detail?: string;
-  icon?: string;
 }
 
 export interface EdgeTabHandlers {
@@ -103,7 +102,6 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .act:disabled{opacity:.55;cursor:default}
 .arrow{color:var(--ink2);font-size:13px;width:14px;text-align:center}
 .av{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff8a65,#e1251b);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;flex:none;overflow:hidden}
-.av img{width:100%;height:100%;object-fit:cover;background:#fff}
 .bub{position:absolute;display:flex;align-items:center;gap:5px;padding-left:8px;pointer-events:auto;cursor:pointer;height:${BUBBLE_H}px;border-radius:15px 0 0 15px}
 .bub .n{font-size:12px;font-weight:600;color:var(--ink);flex:none}
 .bub:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
@@ -194,21 +192,14 @@ function iconFor(tone: EdgeTabTone): string {
   }
 }
 
-/** 头像：有站点图标用图标，加载不了退回标题首字。 */
+/**
+ * 头像用那一页标题的首字，不用站点图标：图标地址放进这一页，这一页的网站就能看到用户还开着哪一页。
+ */
 function avatar(other: EdgeTabOther): HTMLElement {
   const av = document.createElement("span");
   av.className = "av";
   av.setAttribute("aria-hidden", "true");
-  const letter = Array.from(other.title.trim() || other.name)[0] ?? "·";
-  av.textContent = letter;
-
-  if (other.icon && /^https?:/.test(other.icon)) {
-    const img = document.createElement("img");
-    img.alt = "";
-    img.referrerPolicy = "no-referrer";
-    img.onload = () => av.replaceChildren(img);
-    img.src = other.icon;
-  }
+  av.textContent = Array.from(other.title.trim() || other.name)[0] ?? "·";
 
   return av;
 }
@@ -270,6 +261,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   let listOpen = false;
   let stopPending = false;
   let bubbleKey = "";
+  let listRows = "";
 
   const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
 
@@ -307,6 +299,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   }
 
   function renderList(): void {
+    listRows = others.map(o => `${o.id}|${o.title}|${o.detail ?? ""}`).join("\n");
     list.replaceChildren(...others.flatMap(o => {
       const row = document.createElement("button");
       row.type = "button";
@@ -347,8 +340,19 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     }));
   }
 
-  function attach(): void {
-    if (!host.isConnected) (document.documentElement ?? document.body).append(host);
+  let attached = false;
+
+  /**
+   * 只挂一次。扩展重载后新脚本会清掉旧胶囊；旧脚本的计时器还可能再画一次，被清掉后不再挂回，免得留下一个点不动的死胶囊。
+   */
+  function attach(): boolean {
+    if (host.isConnected) return true;
+
+    if (attached) return false;
+    attached = true;
+    (document.documentElement ?? document.body).append(host);
+
+    return true;
   }
 
   function makeItem(slot: Slot, key: string, v: EdgeTabView): Item {
@@ -424,6 +428,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   function fadeOut(item: Item): void {
     item.leaving = true;
+    item.el.dataset.leaving = "true";
+    item.el.setAttribute("aria-hidden", "true");
+    item.el.inert = true;
     const from = Number(getComputedStyle(item.el).opacity) || 0;
 
     for (const a of item.el.getAnimations()) a.cancel();
@@ -473,7 +480,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       return;
     }
 
-    attach();
+    if (!attach()) return;
     root.hidden = false;
     const opening = !open;
     open = true;
@@ -496,9 +503,15 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       if (old) fadeOut(old);
 
       if (key === null) continue;
-      const it = makeItem(slot, key, next);
-      fadeIn(it.el);
-      kept.push(it);
+      kept.push(makeItem(slot, key, next));
+    }
+
+    // 读屏和复制按看到的顺序读：新字插到它后面那个字之前，不排在末尾。
+    let after: Element | null = null;
+
+    for (const it of [...kept].reverse()) {
+      if (!items.includes(it)) { clip.insertBefore(it.el, after); fadeIn(it.el); }
+      after = it.el;
     }
 
     const width = layout(next, kept);
@@ -535,7 +548,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   function paintBubble(): void {
     const count = open ? others.length : 0;
     const first = others[0];
-    const key = first ? `${first.id}|${first.title}|${first.icon ?? ""}|${count}` : "";
+    const key = first ? `${first.id}|${first.title}|${count}` : "";
 
     if (!count) {
       BW.aim(0, CLOSE);
@@ -556,7 +569,10 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       bub.setAttribute("aria-label", `另外 ${count} 位助手，展开列表`);
     }
 
-    if (listOpen) renderList();
+    // 列表开着时只在内容变了才重画，保住键盘焦点和展开的详情。
+    const rows = others.map(o => `${o.id}|${o.title}|${o.detail ?? ""}`).join("\n");
+
+    if (listOpen && rows !== listRows) renderList();
     const width = Math.round(8 + 18 + 5 + (bub.querySelector<HTMLElement>(".n")?.offsetWidth ?? 14) + 10);
 
     if (reduced.matches) BW.snap(width);

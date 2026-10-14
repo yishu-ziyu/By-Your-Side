@@ -4,7 +4,7 @@ import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, type EdgePill } from '..
 /**
  * 侧栏关着、任务还在跑（或暂停等你、出错）时，把整轮任务状态交给当前标签页右边缘的胶囊。
  * 只读任务视图，不是第二套任务状态；出错在侧栏打开过之后算看过，不再显示。
- * 按住说话的胶囊在哪一页显示，右边缘胶囊就在那一页让位：页面上只留一个状态面（docs/evals/20261007-ptt-capsule.md R4）。
+ * 按住说话的胶囊在哪一页显示，右边缘胶囊就在那一页让位：页面上只留一个状态面。
  */
 export function installEdgePill(capsuleTab: () => number | null = () => null) {
   const views = new Map<string, TaskView>();

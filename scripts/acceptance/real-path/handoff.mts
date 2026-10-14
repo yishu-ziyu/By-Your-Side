@@ -133,6 +133,11 @@ try {
 
   const walk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => walk(c, hit)).find(Boolean);
 
+  const leaving = (n: DomNode) => !!n.attributes?.includes('data-leaving');
+
+  /** 同 walk，但不进正在淡出的旧字。 */
+  const liveWalk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => leaving(n) ? undefined : hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => liveWalk(c, hit)).find(Boolean);
+
   /** 页面右边缘胶囊在 closed shadow 里：用 CDP 穿透读文字。 */
   const pageBar = async () => {
     // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
@@ -141,8 +146,9 @@ try {
     const host = walk(root, n => n.nodeName === 'DIV' && !!n.attributes?.includes('edge-tab'));
     const bar = host && walk(host, n => n.nodeName === 'DIV' && !!n.attributes?.includes('clip'));
 
-    if (!bar || !walk(bar, n => n.nodeName === 'BUTTON' && !!n.attributes?.includes('act'))) return null;
-    const text = (n: DomNode): string => (n.nodeValue ?? '') + (n.children ?? []).map(text).join(' ');
+    if (!bar || !liveWalk(bar, n => n.nodeName === 'BUTTON' && !!n.attributes?.includes('act'))) return null;
+    // 换状态时旧字淡出约 0.1 秒，还在 DOM 里：只读留下来的字。
+    const text = (n: DomNode): string => leaving(n) ? '' : (n.nodeValue ?? '') + (n.children ?? []).map(text).join(' ');
 
     return text(bar).replace(/\s+/g, ' ').trim();
   };
@@ -158,7 +164,7 @@ try {
   await until(async () => !!(await card()), 30000, '侧栏出现「需要你来这一步」');
   await until(async () => !!(await pageBar()), 10000, '胶囊出现「现在归你」');
   const shown = await card();
-  check('侧栏卡写明这一步、承诺和「做好了，交还」', !!shown && String(shown.text).includes('需要你来这一步') && String(shown.text).includes(ASK) && String(shown.text).includes('交给你期间，我不读也不动这个页面。') && shown.button === '做好了，交还' && String(shown.text).includes('或点页面上的「交还」'), shown);
+  check('侧栏卡写明这一步、承诺和「做好了，交还」', !!shown && String(shown.text).includes('需要你来这一步') && String(shown.text).includes(ASK) && String(shown.text).includes('交给你期间，我不读也不动这个页面。') && shown.button === '做好了，交还' && String(shown.text).includes('或点页面右边的「继续」'), shown);
   // 光标先退场再交给用户（docs/evals/20261013-uiux-top3.md R3），胶囊会先写约 0.1 秒「正在停住」；最多等 2 秒。
   const bar = await until(async () => { const v = await pageBar(); return v?.startsWith('现在归你') && v.endsWith('继续') ? v : undefined; }, 3000, '胶囊写现在归你').catch(async () => await pageBar());
   check('页面右边缘胶囊显示「现在归你 在左边填好…」和「继续」', !!bar && bar.includes(`现在归你 ${ASK}`) && bar.endsWith('继续'), bar);

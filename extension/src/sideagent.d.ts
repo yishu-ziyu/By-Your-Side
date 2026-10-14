@@ -56,12 +56,10 @@ interface MarkOptions {
 
 interface CrossPageMember {
   sessionId: string; title: string; tabId?: number; state?: "waiting" | "reading" | "done" | "failed";
-  /** 那一页的站点图标（http/https），胶囊下方小圆泡里当头像；没有就用标题首字。 */
-  icon?: string;
 }
 
 interface CrossPageView {
-  sessionId?: string; title?: string; tabId?: number; state?: CrossPageMember["state"]; icon?: string; members?: CrossPageMember[];
+  sessionId?: string; title?: string; tabId?: number; state?: CrossPageMember["state"]; members?: CrossPageMember[];
 }
 
 interface SideAgentCursor {
