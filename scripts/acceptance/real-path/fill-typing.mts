@@ -1,0 +1,149 @@
+/**
+ * 填写要像真人敲键盘：只认真实键盘输入的网站也收得到，填完回车能提交（docs/evals/20261014-fill-typing.md）。
+ * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
+ *   npx tsx scripts/acceptance/real-path/fill-typing.mts --headless
+ * 练习页三个框，判据只看网站自己收到的内容（服务器记下的 /hit）：
+ *   a 搜索框：只在可信的 input 事件里记下用户打的字，只在可信的回车 keydown 里按记下的字提交（仿搜索站）。
+ *   b 编辑器：contenteditable，内容只按 beforeinput 更新自己的模型、再按模型重画（仿 ProseMirror、Lexical）；「保存正文」交模型里的字。
+ *   c 受控输入框：仿 react-dom 的值跟踪，只认 input 事件里值和跟踪值不同的那次改动；「提交手机号」交状态里的值。
+ */
+import { mkdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { join } from "node:path";
+import { REPO, launchRealPath, requireHeadless, siteAddress, until, type Json } from "./harness.mts";
+import { startScriptedModel } from "./scripted-model.mts";
+
+requireHeadless();
+
+const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-fill-typing`);
+
+await mkdir(out, { recursive: true });
+
+const QUERY = "明天杭州天气";
+const BODY = "周会纪要：先讲进度";
+const PHONE = "13800001111";
+const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>填写练习</title><body style="font:16px sans-serif;margin:40px">
+<h1>填写练习</h1>
+<p><label>搜索 <input id="q" aria-label="搜索"></label></p>
+<div id="ed" contenteditable="true" role="textbox" aria-label="正文" style="border:1px solid #ccc;min-height:2em"></div>
+<p><button id="save" type="button">保存正文</button></p>
+<p><label>手机号 <input id="phone" aria-label="手机号"></label> <button id="send" type="button">提交手机号</button></p>
+<script>
+const hit = (k, v) => fetch("/hit?k=" + k + "&v=" + encodeURIComponent(v));
+// a 只认可信输入：脚本派发的 input、keydown 一概不算。
+const q = document.getElementById("q");
+let typed = "";
+q.addEventListener("input", e => { if (e.isTrusted) typed = q.value; });
+q.addEventListener("keydown", e => { if (e.key === "Enter" && e.isTrusted) hit("search", typed); });
+// b 内容只按 beforeinput 改模型，再按模型重画；框里的 DOM 不是真相。
+const ed = document.getElementById("ed");
+let model = "";
+const render = () => { if (ed.textContent !== model) ed.textContent = model; };
+ed.addEventListener("beforeinput", e => {
+  e.preventDefault();
+  const all = String(getSelection()).length >= model.length;
+  const data = e.data ?? e.dataTransfer?.getData("text/plain") ?? "";
+  if (e.inputType.startsWith("insert")) model = (all ? "" : model) + data;
+  else if (e.inputType.startsWith("delete")) model = all ? "" : model.slice(0, -1);
+  render();
+});
+setInterval(render, 50);
+document.getElementById("save").onclick = () => hit("editor", model);
+// c 仿 react-dom 的值跟踪：实例上的 value setter 只更新跟踪值；input 事件里值和跟踪值不同才算改动；每 50 毫秒按状态重画。
+const phone = document.getElementById("phone");
+const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+let state = "", tracked = "";
+Object.defineProperty(phone, "value", { configurable: true, get() { return native.get.call(this); }, set(v) { tracked = String(v); native.set.call(this, v); } });
+phone.addEventListener("input", () => { const now = native.get.call(phone); if (now !== tracked) { tracked = now; state = now; } });
+setInterval(() => { if (native.get.call(phone) !== state) { native.set.call(phone, state); tracked = state; } }, 50);
+document.getElementById("send").onclick = () => hit("phone", state);
+</script></body></html>`;
+
+const hits: Array<{ k: string; v: string }> = [];
+const site = createServer((req, res) => {
+  const url = new URL(req.url ?? "/", "http://x");
+  if (url.pathname === "/hit") { hits.push({ k: url.searchParams.get("k") ?? "", v: url.searchParams.get("v") ?? "" }); res.writeHead(204).end(); return; }
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
+});
+
+await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
+const origin = `http://127.0.0.1:${siteAddress(site).port}`;
+
+const ASK = "填写练习：搜索明天杭州天气并回车，正文写周会纪要并保存，手机号填好并提交。";
+const FINAL = "三项都做完了。";
+// 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
+const t = { q: { target: "", value: QUERY }, ed: { target: "", value: BODY }, save: { target: "" }, phone: { target: "", value: PHONE }, send: { target: "" } };
+
+const model = await startScriptedModel([
+  { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
+  { match: ASK, steps: [
+    { tool: { name: "snapshot", args: {} } },
+    { tool: { name: "fill", args: t.q } },
+    { tool: { name: "press_key", args: { key: "Enter" } } },
+    { tool: { name: "fill", args: t.ed } },
+    { tool: { name: "click", args: t.save } },
+    { tool: { name: "fill", args: t.phone } },
+    { tool: { name: "click", args: t.send } },
+    { text: FINAL },
+  ] },
+], undefined, payload => onPayload(payload));
+
+const rp = await launchRealPath();
+const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
+const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
+
+type Receipt = { name: string; args: string; text: string };
+const receipts: Receipt[] = [];
+const seenCalls = new Set<string>();
+
+function onPayload(payload: { messages?: Array<{ role: string; content?: unknown; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }>; tools?: unknown[] }) {
+  if (!payload.tools?.length) return;
+  const calls = new Map<string, { name: string; arguments: string }>();
+  for (const m of payload.messages ?? []) for (const call of m.tool_calls ?? []) calls.set(call.id, call.function);
+  for (const m of payload.messages ?? []) {
+    // SAFETY: OpenAI 兼容的 tool 消息带 tool_call_id。
+    const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
+    if (m.role !== "tool" || seenCalls.has(id)) continue;
+    seenCalls.add(id);
+    const call = calls.get(id);
+    const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+    receipts.push({ name: call?.name ?? "?", args: call?.arguments ?? "", text: text.slice(0, 3000) });
+    if (call?.name !== "snapshot") continue;
+    const ref = (re: RegExp) => `@${re.exec(text)?.[1] ?? ""}`;
+    t.q.target = ref(/\[ref=(\d+)\] textbox "搜索"/);
+    t.ed.target = ref(/\[ref=(\d+)\] textbox "正文"/);
+    t.save.target = ref(/\[ref=(\d+)\] button "保存正文"/);
+    t.phone.target = ref(/\[ref=(\d+)\] textbox "手机号"/);
+    t.send.target = ref(/\[ref=(\d+)\] button "提交手机号"/);
+  }
+}
+
+const got = (k: string) => hits.filter(h => h.k === k).map(h => h.v);
+
+try {
+  const work = await rp.attach((await rp.targets()).find(x => x.url === "about:blank")!.targetId);
+  await rp.cdp.send("Page.navigate", { url: `${origin}/` }, work);
+  const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "service worker")).targetId);
+  await until(async () => await rp.evaluate(sw, "typeof chrome === 'object' && !!chrome.tabs").catch(() => false), 15_000, "扩展后台就绪");
+  const panel = await rp.attach(await rp.openSidePanel());
+  const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
+  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "侧栏就绪");
+  await rp.cdp.send("Page.bringToFront", {}, work);
+
+  await rp.click(panel, "#input"); await rp.typeText(panel, ASK); await rp.pressEnter(panel);
+  await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(FINAL)}))`)) as boolean, 90_000, `回答「${FINAL}」`);
+  await until(async () => got("phone").length > 0 || null, 3_000, "提交到达").catch(() => {});
+
+  check("读页给出了五个目标的编号", Object.values(t).every(x => /^@\d+$/.test(x.target)), t);
+  check("a 只认真实键盘的搜索框：回车后网站收到的搜索词就是要填的", got("search").at(-1) === QUERY, { search: got("search") });
+  check("b 按 beforeinput 更新的编辑器：保存时网站收到的正文就是要填的", got("editor").at(-1) === BODY, { editor: got("editor") });
+  check("c 受控输入框：提交时网站收到的手机号就是要填的", got("phone").at(-1) === PHONE, { phone: got("phone") });
+  await rp.screenshot(work, join(out, "page.png"));
+} catch (error) { check("流程完成", false, String(error)); } finally {
+  await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice page", checks, hits, receipts, modelRequests: model.requests }, null, 2));
+  await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();
+}
+
+console.log(JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", out }, null, 2));
+if (checks.some(c => !c.pass)) process.exitCode = 1;
