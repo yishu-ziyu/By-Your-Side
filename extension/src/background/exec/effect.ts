@@ -7,12 +7,13 @@ import { EMPTY_EFFECT_REPORT, downloadEvidence, pendingRequests, requestEvidence
 import { undoScrubber } from "../fill-undo.js";
 import { networkRingFor } from "../network-log.js";
 import { withTimeout } from "../timeout.js";
+import { hasPageBaseline } from "../page-changes.js";
 import { readPageChanges } from "./snapshot.js";
 
 const CONTENT_FILE = "content-effect.js";
 
 /** 报告 → 动作期间页面上变过的几处（定位串，只在后台用，不进回执）。 */
-const changedRoots = new WeakMap<EffectReport, string[] | "many">();
+const changedRoots = new WeakMap<EffectReport, { roots: Array<{ sel: string; field?: true }> | "many"; since: number }>();
 
 /** 每个效果会话的开始时刻：点击窗口的起点，用来认出这次点击后页面发出的请求。 */
 const effectStarts = new Map<string, number>();
@@ -90,6 +91,8 @@ export async function collectEffect(tabId: number, token: string | null): Promis
     const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
     const report = await withDocumentChange(tabId, token, settled, startUrl, pageUrl);
 
+    // 读变过的几处也算“为此多花的时间”：从这里开始计时。
+    const rootsAt = Date.now();
     const roots = await callPage(tabId, (t: string) => window.__sideagent?.effect?.roots?.(t) ?? null, [token]).catch(() => null);
     const sent = since === undefined ? [] : [
       ...requestEvidence(networkRingFor(tabId)?.entries ?? [], since, Date.now(), pageUrl),
@@ -98,7 +101,7 @@ export async function collectEffect(tabId: number, token: string | null): Promis
 
     const final = !sent.length ? report : { ...(report ?? EMPTY_EFFECT_REPORT), changed: true, evidence: [...(report ?? EMPTY_EFFECT_REPORT).evidence, ...sent] };
 
-    if (final && roots) changedRoots.set(final, roots);
+    if (final && roots) changedRoots.set(final, { roots, since: rootsAt });
 
     return final;
   } finally {
@@ -144,72 +147,71 @@ const PAGE_CHANGES_TIMEOUT_MS = 1500;
 export async function pageChangesAfter(tabId: number, sessionKey: string, report: EffectReport | undefined): Promise<PageAppeared | undefined> {
   if (!report || report.documentChanged) return undefined;
 
-  return await finishAppeared(tabId, sessionKey, changedRoots.get(report) ?? null, Date.now(), 0);
+  const changed = changedRoots.get(report);
+
+  return await finishAppeared(tabId, sessionKey, changed?.roots ?? null, changed?.since ?? Date.now(), 0, "effect");
 }
 
-/** 填写、选择之后，页面还在等网站回话（自动补全、联动下拉）时最多等这么久。 */
-const WATCH_MAX_MS = 1500;
+type Roots = Array<{ sel: string; field?: true }> | "many";
 
-/** 填写、选择之前：只开始记页面上哪里变了。失败返回 null（这次不带摘要）。 */
+/** 填写、选择之后：页面还在改 DOM 时最多等这么久，等它安静这么久。不等网络：会自动保存的编辑器每填一次都会发请求。 */
+const WATCH_MAX_MS = 200;
+const WATCH_QUIET_MS = 60;
+const WATCH_POLL_MS = 40;
+
+/** 填写、选择之前：只开始记页面上哪里变了。还没读过这一页（没有基准，摘要必然是空的）就不记，也就不等。失败返回 null。 */
 export async function beginWatch(tabId: number): Promise<string | null> {
+  if (!hasPageBaseline(tabId)) return null;
   const token = crypto.randomUUID();
-  const startedAt = Date.now();
 
   try {
     await ensureEffectScript(tabId);
     const ack = await callPage(tabId, (t: string) => window.__sideagent?.effect?.watch?.(t), [token]);
 
-    if (!ack?.ok) return null;
-
-    if (effectStarts.size > 50) effectStarts.delete(effectStarts.keys().next().value!);
-    effectStarts.set(token, startedAt);
-
-    return token;
+    return ack?.ok ? token : null;
   } catch {
     return null;
   }
 }
 
+/** 填写、选择自己出错时收掉页面里的变化记录。 */
+export function endWatch(tabId: number, token: string): void {
+  void callPage(tabId, (t: string) => window.__sideagent?.effect?.end(t), [token]).catch(() => {});
+}
+
 /**
- * 填写、选择之后：页面同步画出来的（校验提示、跟着出来的栏）这时已经在了，直接读；
- * 页面发了请求还没回来，就等回来再读。不像点击那样轮询效果证据：那要反复读全页文字。extraMs 是动作前花的时间。
+ * 填写、选择之后：页面同步画出来的（校验提示、跟着出来的栏）这时已经在了；页面还在改 DOM 就等它安静下来，最多 200 毫秒。
+ * 不像点击那样轮询效果证据（要反复读全页文字），也不等网络。extraMs 是动作前花的时间。
  */
 export async function watchChangesAfter(tabId: number, sessionKey: string, token: string, extraMs: number): Promise<PageAppeared | undefined> {
   const started = Date.now();
-  const since = effectStarts.get(token);
-  let changed: string[] | "many" | null;
+  let changed: Roots | null;
 
   try {
-    const startUrl = await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
-    const busy = () => since !== undefined && pendingRequests(networkRingFor(tabId)?.entries ?? [], since, startUrl) > 0;
-    let waited = false;
+    for (;;) {
+      const quiet = await callPage(tabId, (t: string) => window.__sideagent?.effect?.quietMs?.(t) ?? null, [token]).catch(() => null);
 
-    while (busy() && Date.now() - started < WATCH_MAX_MS) { waited = true; await new Promise(resolve => setTimeout(resolve, 100)); }
-
-    // 请求刚回来，页面多半还没画出结果：隔一拍再看。
-    if (waited) await new Promise(resolve => setTimeout(resolve, 100));
+      if (quiet === null || quiet >= WATCH_QUIET_MS || Date.now() - started >= WATCH_MAX_MS) break;
+      await new Promise(resolve => setTimeout(resolve, WATCH_POLL_MS));
+    }
     changed = await callPage(tabId, (t: string) => window.__sideagent?.effect?.roots?.(t) ?? null, [token]).catch(() => null);
-    const nowUrl = await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
-
-    if (withoutHash(nowUrl) !== withoutHash(startUrl)) return undefined;
   } finally {
-    effectStarts.delete(token);
-    void callPage(tabId, (t: string) => window.__sideagent?.effect?.end(t), [token]).catch(() => {});
+    endWatch(tabId, token);
   }
 
-  return await finishAppeared(tabId, sessionKey, changed, started, extraMs);
+  return await finishAppeared(tabId, sessionKey, changed, started, extraMs, "watch");
 }
 
-async function finishAppeared(tabId: number, sessionKey: string, roots: string[] | "many" | null, started: number, extraMs: number): Promise<PageAppeared> {
+async function finishAppeared(tabId: number, sessionKey: string, roots: Roots | null, started: number, extraMs: number, kind: "effect" | "watch"): Promise<PageAppeared> {
   const appeared = await readAppeared(tabId, sessionKey, roots);
   const ms = Date.now() - started + extraMs;
   // 只记花了多久、带回多少字，不记内容：验收按它算工具多花的时间。
-  console.info("[page-changes]", JSON.stringify({ ms, chars: "text" in appeared ? appeared.text.length : -1 }));
+  console.info("[page-changes]", JSON.stringify({ ms, chars: "text" in appeared ? appeared.text.length : -1, kind }));
 
   return { ...appeared, ms };
 }
 
-async function readAppeared(tabId: number, sessionKey: string, roots: string[] | "many" | null): Promise<{ text: string } | { redrawn: true }> {
+async function readAppeared(tabId: number, sessionKey: string, roots: Roots | null): Promise<{ text: string } | { redrawn: true }> {
   if (!roots) return { text: "" };
 
   if (roots === "many") return { redrawn: true };

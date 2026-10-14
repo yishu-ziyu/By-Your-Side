@@ -272,18 +272,20 @@ const MAX_CHANGED_ROOTS = 12;
  * 不读整页：大页面整页读一次要 1 秒多。按定位串找元素在隔离环境里做，网页改不了 querySelector。新行里的 ref 登记成可用。
  * 没有基准（还没读过这一页、上次是 DOM 快照）返回 null。零尺寸过滤要读全页布局，这里不做。
  */
-export async function readPageChanges(tabId: number, roots: readonly string[], opts: { scrub: (body: string) => string; current: () => boolean }): Promise<{ text: string; refs: number[] } | null> {
+export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel: string; field?: true }>, opts: { scrub: (body: string) => string; current: () => boolean }): Promise<{ text: string; refs: number[] } | null> {
   if (!hasPageBaseline(tabId)) return null;
 
   if (!roots.length) return { text: "", refs: [] };
   const objectGroup = `bys-page-changes-${crypto.randomUUID()}`;
   const contextId = await isolatedReadContext(tabId);
   const nodes = new Map<string, AxNodeLite>();
+  // 输入框、编辑器那几处里的节点：里面的字是值，不算新出现的。
+  const inFields = new Set<number>();
 
   try {
     // 几处一起读；某一处找不到、读不了只少这一处。
-    await Promise.all(roots.slice(0, MAX_CHANGED_ROOTS).map(async selector => {
-      const found = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)})`, contextId, objectGroup }).catch(() => undefined);
+    await Promise.all(roots.slice(0, MAX_CHANGED_ROOTS).map(async root => {
+      const found = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(root.sel)})`, contextId, objectGroup }).catch(() => undefined);
 
       if (!found?.result?.objectId) return;
       const described = await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: found.result.objectId }).catch(() => undefined);
@@ -291,7 +293,11 @@ export async function readPageChanges(tabId: number, roots: readonly string[], o
       if (!described) return;
       const sub = await sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.queryAXTree", { backendNodeId: described.node.backendNodeId }).catch(() => ({ nodes: [] }));
 
-      for (const n of sub.nodes ?? []) nodes.set(n.nodeId, n);
+      for (const n of sub.nodes ?? []) {
+        nodes.set(n.nodeId, n);
+
+        if (root.field && n.backendDOMNodeId !== undefined) inFields.add(n.backendDOMNodeId);
+      }
     }));
   } finally {
     void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
@@ -304,7 +310,7 @@ export async function readPageChanges(tabId: number, roots: readonly string[], o
 
   // 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
   if (!opts.current()) return null;
-  const changes = pageChangesSince(tabId, entries, opts.scrub);
+  const changes = pageChangesSince(tabId, entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line), opts.scrub);
 
   if (changes) addAxRefs(tabId, changes.refs);
 
