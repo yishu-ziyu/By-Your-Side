@@ -627,7 +627,8 @@ export class BrowserObservationRegistry {
         throw new Error('DECISION_INVALID: 按键目标不在焦点上。');
       }
 
-      if (operation === 'fill' && (control.readOnly || !['textbox', 'searchbox', 'combobox', 'spinbutton'].includes(control.role) || typeof params.value !== 'string')) {
+      // 「填完回车」不走这条路：这里核对的是填写目标，回车要的焦点核对在 press_key 那一条。
+      if (operation === 'fill' && (control.readOnly || !['textbox', 'searchbox', 'combobox', 'spinbutton'].includes(control.role) || typeof params.value !== 'string' || params.submit !== undefined)) {
         throw new Error('DECISION_INVALID: 填写目标或参数无效。');
       }
     }
