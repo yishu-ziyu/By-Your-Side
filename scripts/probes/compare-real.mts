@@ -35,6 +35,8 @@ const hnItem = async (n: number) => {
 };
 /** URL without scheme, www, trailing slash and hash: the same page whichever way it was reached. */
 const bare = (u: string) => dec(u).replace(/^https?:\/\/(www\.)?/, "").replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
+/** The page path only: bare() without the query, for checks that name one page. */
+const pathOf = (u: string) => bare(u.replace(/[?#].*$/, ""));
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 const todos = (c: Ctx) => JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[];
 const TODO_PROBE = `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`;
@@ -74,7 +76,9 @@ const TASKS: Task[] = [
   { id: "R5", split: "test", group: "读取", name: "RFC 9110 标题和作者", prompt: "打开 https://www.rfc-editor.org/rfc/rfc9110.html ，告诉我这份文档的标题和第一作者。",
     check: (c) => /http semantics/i.test(c.answer) && /fielding/i.test(c.answer) ? null : "回答里没有标题 HTTP Semantics 或第一作者 Fielding" },
   { id: "R6", split: "test", group: "读取", name: "IANA 示例域名", prompt: "打开 https://www.iana.org/help/example-domains ，告诉我这页列出了哪几个示例域名。",
-    check: (c) => ["example.com", "example.net", "example.org"].every((d) => c.answer.toLowerCase().includes(d)) ? null : "回答里没有列全 example.com / .net / .org" },
+    // The page's own list, read live: it dropped example.net in 2026, so a fixed list judged a right answer wrong.
+    truth: async () => ({ before: [...new Set((await (await fetch("https://www.iana.org/help/example-domains")).text()).replace(/<[^>]*>/g, " ").match(/\bexample\.(?:com|net|org)\b/gi) ?? [])].map((d) => d.toLowerCase()).sort().join(",") }),
+    check: (c) => [c.truth.before, c.truth.after].some((l) => l && l.split(",").every((d) => c.answer.toLowerCase().includes(d))) ? null : `回答里没有列全 ${c.truth.before}` },
   { id: "Q8", split: "test", group: "读取", name: "Python 最新版本", prompt: "打开 https://www.python.org/downloads/ ，告诉我现在最新的 Python 正式版本号。",
     truth: async () => ({ before: (await (await fetch("https://www.python.org/downloads/")).text()).match(/Download Python (\d+\.\d+\.\d+)/)?.[1] ?? "" }),
     check: (c) => [c.truth.before, c.truth.after].some((v) => v && new RegExp(`(^|[^\\d.])${v.replace(/\./g, "\\.")}(?![\\d.]*\\d)`).test(c.answer)) ? null : `回答里没有最新版本号 ${c.truth.before}` },
@@ -85,6 +89,27 @@ const TASKS: Task[] = [
     check: (c) => c.tabs.some((t) => hostOf(t.url) === "sindresorhus.com") ? null : "没有打开作者的个人网站 sindresorhus.com" },
   { id: "X9", split: "test", group: "跨站", name: "PyPI 包的源码仓库", prompt: "打开 https://pypi.org/project/requests/ ，打开这个包的源码仓库页面。",
     check: (c) => c.tabs.some((t) => /^github\.com\/psf\/requests$/.test(bare(t.url))) ? null : "没有打开 github.com/psf/requests" },
+  { id: "S11", split: "test", group: "搜索", name: "MDN 搜 fetch", prompt: "打开 https://developer.mozilla.org ，用页面上的搜索框搜索 fetch，打开 Fetch API 这个页面。",
+    check: (c) => c.tabs.some((t) => /^developer\.mozilla\.org\/[a-z-]+\/docs\/web\/api\/fetch_api$/.test(pathOf(t.url))) ? null : "没有打开 Fetch API 页面" },
+  { id: "S12", split: "test", group: "搜索", name: "crates.io 搜 serde", prompt: "打开 https://crates.io ，用页面上的搜索框搜索 serde，打开 serde 这个包的页面。",
+    check: (c) => c.tabs.some((t) => /^crates\.io\/crates\/serde$/.test(pathOf(t.url))) ? null : "没有打开 serde 的包页面" },
+  { id: "R13", split: "test", group: "读取", name: "Node.js LTS 版本", prompt: "打开 https://nodejs.org/en ，告诉我现在的 Node.js LTS 版本号。",
+    truth: async () => ({ before: ((await (await fetch("https://nodejs.org/dist/index.json")).json()) as { version: string; lts: unknown }[]).find((r) => r.lts)?.version.slice(1) ?? "" }),
+    check: (c) => [c.truth.before, c.truth.after].some((v) => v && new RegExp(`(^|[^\\d.])${v.replace(/\./g, "\\.")}(?![\\d.]*\\d)`).test(c.answer)) ? null : `回答里没有 LTS 版本号 ${c.truth.before}` },
+  { id: "R14", split: "test", group: "读取", name: "w3schools 表格选行", prompt: "打开 https://www.w3schools.com/html/html_tables.asp ，第一个表格里 Centro comercial Moctezuma 这一行的联系人（Contact）是谁？",
+    check: (c) => { const a = norm(c.answer); const other = ["maria anders", "roland mendel", "helen bennett", "yoshi tannamuri", "giovanni rovelli"].filter((n) => a.includes(n)); return a.includes("francisco chang") && !other.length ? null : `回答不是只给出 Francisco Chang${other.length ? `（还有 ${other.join("、")}）` : ""}`; } },
+  { id: "F15", split: "test", group: "填写", name: "下拉框选 Option 2", prompt: "打开 https://the-internet.herokuapp.com/dropdown ，在下拉框里选 Option 2。",
+    probeUrl: /the-internet\.herokuapp\.com\/dropdown/, probe: `document.querySelector("#dropdown")?.value ?? ""`,
+    check: (c) => c.probe === "2" ? null : `下拉框的值是 ${JSON.stringify(c.probe)}` },
+  { id: "F16", split: "test", group: "填写", name: "demoqa 文本框提交", prompt: "打开 https://demoqa.com/text-box ，Full Name 填 赵六，Email 填 zhao6@example.com，然后点 Submit。",
+    probeUrl: /demoqa\.com\/text-box/, probe: `document.querySelector("#output")?.innerText ?? ""`,
+    check: (c) => { const o = String(c.probe ?? ""); return o.includes("赵六") && o.includes("zhao6@example.com") ? null : `回显是 ${JSON.stringify(o.slice(0, 120))}`; } },
+  { id: "X17", split: "test", group: "跨站", name: "Python 版本号填进订单", prompt: "打开 https://www.python.org/downloads/ ，记下最新的 Python 正式版本号；再打开 https://httpbin.org/forms/post ，把这个版本号填进 Customer name，然后点 Submit order 提交。",
+    truth: async () => ({ before: (await (await fetch("https://www.python.org/downloads/")).text()).match(/Download Python (\d+\.\d+\.\d+)/)?.[1] ?? "" }),
+    probeUrl: /httpbin\.org\/post/, probe: "document.body.innerText",
+    check: (c) => { let name = ""; try { name = String(JSON.parse(String(c.probe ?? "{}")).form?.custname ?? ""); } catch { return "没有提交（读不到 httpbin 回显）"; } return [c.truth.before, c.truth.after].some((v) => v && name.trim() === v) ? null : `Customer name 是 ${JSON.stringify(name)}（应为 ${c.truth.before}）`; } },
+  { id: "X18", split: "test", group: "跨站", name: "crates.io 包的源码仓库", prompt: "打开 https://crates.io/crates/serde ，打开这个包的源码仓库页面。",
+    check: (c) => c.tabs.some((t) => /^github\.com\/serde-rs\/serde$/.test(pathOf(t.url))) ? null : "没有打开 github.com/serde-rs/serde" },
 ].filter((t) => (!only || only.includes(t.id)) && (!splitArg || t.split === splitArg));
 
 // ---------- progress page shared by both arms (each arm writes its own json, page merges) ----------
@@ -97,13 +122,17 @@ async function writeStatus(id: string, state: string, detail?: string) {
   const read = async (a: string) => JSON.parse(await readFile(join(outDir, `status-${a}.json`), "utf8").catch(() => "{}"));
   const all = { ext: await read("ext"), ego: await read("ego") };
   const ids = TASKS.flatMap((t) => Array.from({ length: repeat }, (_, i) => `${t.id}-${i + 1}`));
-  const nameOf = (id: string) => { const t = TASKS.find((x) => id.startsWith(x.id + "-"))!; return `${t.group} · ${t.name} · 第 ${id.split("-")[1]} 次`; };
-  const cell = (s?: { state: string; detail?: string }) => !s ? `<td class="wait">等待</td>` : `<td class="${s.state}">${{ run: "运行中", pass: "做对", fail: "没做对", err: "出错" }[s.state] ?? s.state}${s.detail ? `<br><small>${s.detail.replace(/</g, "&lt;")}</small>` : ""}</td>`;
-  const running = Object.values(all).some((m) => Object.values(m as Record<string, { state: string }>).some((s) => s.state === "run")) || ids.some((id) => !all.ext[id] || !all.ego[id]);
+  const nameOf = (id: string) => { const t = TASKS.find((x) => id.startsWith(x.id + "-"))!; return `${t.split === "test" ? "测试" : "训练"} · ${t.group} · ${t.name} · 第 ${id.split("-")[1]} 次`; };
+  // Test-set rows show only pass/fail and time: the analyst never sees a test task's process or result content (R5).
+  const isTest = (id: string) => TASKS.find((x) => id.startsWith(x.id + "-"))!.split === "test";
+  const cell = (id: string, s?: { state: string; detail?: string }) => !s ? `<td class="wait">等待</td>` : `<td class="${s.state}">${{ run: "运行中", pass: "做对", fail: "没做对", err: "出错" }[s.state] ?? s.state}${s.detail ? `<br><small>${(isTest(id) ? s.detail.split(" · ")[0] : s.detail).replace(/</g, "&lt;")}</small>` : ""}</td>`;
+  // Only the arms that have run (or this one) get a column; an ext-only run must still reach 已结束.
+  const arms = (["ext", "ego"] as const).filter((a) => a === arm || Object.keys(all[a]).length);
+  const running = arms.some((a) => ids.some((id) => !all[a][id] || all[a][id].state === "run"));
   await writeFile(page, `<!doctype html><meta charset="utf-8">${running ? '<meta http-equiv="refresh" content="4">' : ""}<title>真实网站对比</title>
 <style>body{font:14px system-ui;margin:20px;background:#fff;color:#222}table{border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:6px 10px;vertical-align:top;text-align:left}small{color:#666}.run{color:#b26b00}.pass{color:#1a7f37}.fail,.err{color:#c62828}.wait{color:#aaa}</style>
-<h2>真实网站对比：我们的扩展 vs Codex + ego（扩展用 ${MODEL}${think ? `，${think}` : ""}）</h2><p>${running ? "进行中" : "已结束"} · 每格写结果、用时、浏览器操作轮数</p>
-<table><tr><th>任务</th><th>我们的扩展</th><th>Codex + ego</th></tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${cell(all.ext[id])}${cell(all.ego[id])}</tr>`).join("")}</table>`);
+<h2>${arms.length > 1 ? "真实网站对比：我们的扩展 vs Codex + ego" : "真实网站评测：我们的扩展"}（扩展用 ${MODEL}${think ? `，${think}` : ""}）</h2><p>${running ? "进行中" : "已结束"} · 每格写结果、用时、浏览器操作轮数</p>
+<table><tr><th>任务</th>${arms.map((a) => `<th>${a === "ext" ? "我们的扩展" : "Codex + ego"}</th>`).join("")}</tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${arms.map((a) => cell(id, all[a][id])).join("")}</tr>`).join("")}</table>`);
 }
 
 // ---------- ext arm ----------
