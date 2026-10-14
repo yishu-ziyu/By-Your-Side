@@ -15,6 +15,7 @@ import { axTreeToText, RANGE_INPUT_ROLES, type AxNodeLite } from "../axtree.js";
 import type { InputRangeReadout } from "../../../../shared/page-readout.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
+import { forgetPage, hasPageBaseline, pageChangesSince, rememberPage } from "../page-changes.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { waitForInteractive } from "./page-readiness.js";
@@ -220,6 +221,7 @@ export async function snapshotTab(
   if (scope === "viewport") {
     const dom = await domSnapshot(tabId, scope);
     clearAxSnapshot(tabId);
+    forgetPage(tabId);
 
     return {
       text: `[说明：scope=viewport 当前为简化 DOM 视口快照降级（仅覆盖当前视口，非全量 AX 树；视口内 iframe 仅占位未展开，不覆盖其内容）；以下 ref 为本次 DOM 快照编号，仅 domops 路径有效，旧 AX ref 已失效、请勿混用。如需全页 AX 树请用 scope=full_page]\n${dom.text}`,
@@ -235,6 +237,7 @@ export async function snapshotTab(
     if(decision)throw new Error(`DECISION_UNSUPPORTED: 无法取得可靠控件树：${oneLine(e)}`);
     const dom = await domSnapshot(tabId, scope);
     clearAxSnapshot(tabId);
+    forgetPage(tabId);
 
     return {
       text: `[回退：CDP 无障碍树快照不可用（${oneLine(e)}），以下为简化 DOM 快照；旧 AX ref 已失效，请用本次 ref]\n${dom.text}`,
@@ -243,7 +246,8 @@ export async function snapshotTab(
   }
 }
 
-async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
+/** 读整棵无障碍树并转成行：快照和“动作后新出现了什么”共用同一套去浮层、敏感栏、零尺寸规则。 */
+async function readAxPage(tabId: number, decision = false, budget?: number) {
   // 布局盒子与无障碍树同时去取，不多等一轮。
   const zeroSizeRead = readZeroSizeNodes(tabId);
   const result = decision?{nodes:await readDecisionTree(tabId)}:await withTimeout(
@@ -256,8 +260,28 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   const nodes = withoutSubtrees(result.nodes!, await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, nodes);
   const zeroSize = await zeroSizeRead;
-  const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes), secret, zeroSize);
+
+  return { nodes, secret, zeroSize, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize) };
+}
+
+/**
+ * 动作之后：和模型上次读到的这一页比，新出现了哪些行（规则见 page-changes.ts）。新行里的 ref 登记成可用。
+ * 没有基准（还没读过这一页、上次是 DOM 快照）返回 null。
+ */
+export async function readPageChanges(tabId: number): Promise<ReturnType<typeof pageChangesSince>> {
+  if (!hasPageBaseline(tabId)) return null;
+  const { entries } = await readAxPage(tabId);
+  const changes = pageChangesSince(tabId, entries);
+
+  if (changes && "refs" in changes) addAxRefs(tabId, changes.refs);
+
+  return changes;
+}
+
+async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
+  const { nodes, secret, zeroSize, text, backendIds, truncated, entries } = await readAxPage(tabId, decision);
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
+  rememberPage(tabId, entries);
 
   if(!decision){
     recordAxSnapshot(tabId, backendIds);

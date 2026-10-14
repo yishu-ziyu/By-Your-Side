@@ -468,3 +468,21 @@ chrome.runtime.onMessage.addListener((raw: { type?: string; tokens?: unknown } |
     if (closeEntries(ledger, sender.tab.id, "submitted", tokens, sender.documentId)) emit(conversationId);
   }
 });
+
+/** 旧值至少这么长才去掉：一个字的旧值（人数 2）到处都有，去掉只会弄坏摘要。 */
+const MIN_SCRUB_CHARS = 2;
+
+/**
+ * 交给模型的页面文字里去掉这一轮记下的旧值（动作后“新出现了什么”的摘要用）：旧值只能留在这里。
+ * 敏感栏的旧值本来就只是摘要，不用管。
+ */
+export function withoutUndoValues(sessionKey: string, text: string): string {
+  const ledger = ledgers.get(parseExecutionKey(sessionKey).conversationId);
+
+  if (!ledger) return text;
+  const values = [...ledger.tabs.values()].flatMap(tab => [...tab.entries.values()])
+    .flatMap(entry => !entry.sensitive && entry.before.value && entry.before.value.trim().length >= MIN_SCRUB_CHARS ? [entry.before.value.trim()] : [])
+    .sort((a, b) => b.length - a.length);
+
+  return values.reduce((out, value) => out.split(value).join("<earlier value hidden>"), text);
+}

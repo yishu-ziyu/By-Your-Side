@@ -167,10 +167,11 @@ import {
   }
 
   ns.effect = {
-    async begin(input: { token: string; point?: [number, number]; selector?: string }): Promise<{ ok: true }> {
+    async begin(input: { token: string; point?: [number, number]; selector?: string; quick?: true }): Promise<{ ok: true }> {
       const el = resolve(input);
       const first = cheap();
-      await new Promise((resolve) => setTimeout(resolve, EFFECT_VOLATILE_WINDOW_MS));
+
+      if (!input.quick) await new Promise((resolve) => setTimeout(resolve, EFFECT_VOLATILE_WINDOW_MS));
       const second = cheap();
 
       const base: EffectBaseline = {

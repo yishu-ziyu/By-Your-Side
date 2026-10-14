@@ -74,7 +74,14 @@ export interface EffectReport {
   volatile: boolean;
   /** 本次新出现的页面提示（校验错误、toast 等）。 */
   alerts: string[];
+  /** 页面上多了东西（节点、看得见的字、提示）：值得再读一次，看新出现了什么。只看多没多，不看是谁引起的。 */
+  grew?: boolean;
+  /** 动作让页面换了地址或文档。 */
+  documentChanged?: true;
 }
+
+/** 动作之后页面上新出现的东西（和模型上次读到的这一页比）。ms 是为此多花的时间。 */
+export type PageAppeared = { text: string; ms: number } | { redrawn: true; ms: number };
 
 export const EMPTY_EFFECT_REPORT: EffectReport = { changed: false, evidence: [], weak: [], volatile: false, alerts: [] };
 
@@ -143,7 +150,9 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
 
   if (focusMoved) weak.push(`focus → ${now.active ?? "(none)"}`);
 
-  return { changed: evidence.length > 0, evidence, weak, volatile: !!base.volatile, alerts: fresh };
+  const grew = dEls > 0 || dBodyKids > 0 || dScopeKids > 0 || fresh.length > 0 || now.bodyTextLen - base.bodyTextLen >= EFFECT_SCOPE_TEXT_DELTA;
+
+  return { changed: evidence.length > 0, evidence, weak, volatile: !!base.volatile, alerts: fresh, grew };
 }
 
 /** 点击窗口内页面发出的请求（来自被动网络记录）。 */
