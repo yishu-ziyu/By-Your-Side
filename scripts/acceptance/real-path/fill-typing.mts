@@ -6,7 +6,8 @@
  *   a 搜索框：只在可信的 input 事件里记下用户打的字，只在可信的回车 keydown 里按记下的字提交（仿搜索站）。
  *   b 编辑器：contenteditable，内容只按 beforeinput 更新自己的模型、再按模型重画（仿 ProseMirror、Lexical）；「保存正文」交模型里的字。
  *   c 受控输入框：仿 react-dom 的值跟踪，只认 input 事件里值和跟踪值不同的那次改动；「提交手机号」交状态里的值。
- *   d 单行聊天框：旁边有「发送」，可信回车就发出去（仿插话评测的 /duplex-chat）。在它上面要求「填完回车」必须被拒绝：网站收不到消息，框里留着字。
+ *   d 回车即发送的框上要求「填完回车」都必须被拒绝：网站收不到，框里留着字。三个框：
+ *     单行聊天框（仿插话评测的 /duplex-chat，名字是 chat）；名字看不出是聊天、「发送」是外面一层的 div 的单行框；多行框 textarea。
  * 搜索框用「填完回车」（fill 带 submit）。读页之后练习页被放到后台（另一个标签页在前面），后面几步都在后台标签页里做。
  * 失败方式：强制只用旧写法（typeIntoField 直接返回 "skip"），a、b 失败；去掉 submit 的拒绝规则，d 失败。
  */
@@ -26,6 +27,8 @@ const QUERY = "明天杭州天气";
 const BODY = "周会纪要：先讲进度";
 const PHONE = "13800001111";
 const CHAT = "这句不能被发出去";
+const QUIET = "这句也不能发出去";
+const NOTE = "多行框里也不能回车";
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>填写练习</title><body style="font:16px sans-serif;margin:40px">
 <h1>填写练习</h1>
 <p><label>搜索 <input id="q" aria-label="搜索"></label></p>
@@ -33,6 +36,8 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>填
 <p><button id="save" type="button">保存正文</button></p>
 <p><label>手机号 <input id="phone" aria-label="手机号"></label> <button id="send" type="button">提交手机号</button></p>
 <div><input id="chat" type="text" aria-label="说点什么"> <button id="chat-send" type="button">发送</button></div>
+<div class="bar"><div class="field"><input id="quiet" type="text" aria-label="写点什么"><button type="button">😀</button></div><div class="go" role="button" tabindex="0">发送</div></div>
+<p><textarea id="note" aria-label="备忘"></textarea></p>
 <script>
 const hit = (k, v) => fetch("/hit?k=" + k + "&v=" + encodeURIComponent(v));
 // a 只认可信输入：脚本派发的 input、keydown 一概不算。
@@ -66,6 +71,10 @@ document.getElementById("send").onclick = () => hit("phone", state);
 const chat = document.getElementById("chat");
 chat.addEventListener("keydown", e => { if (e.key === "Enter" && e.isTrusted) { hit("chat", chat.value); chat.value = ""; } });
 document.getElementById("chat-send").onclick = () => { hit("chat", chat.value); chat.value = ""; };
+for (const id of ["quiet", "note"]) {
+  const box = document.getElementById(id);
+  box.addEventListener("keydown", e => { if (e.key === "Enter" && e.isTrusted) { hit(id, box.value); box.value = ""; } });
+}
 </script></body></html>`;
 
 const hits: Array<{ k: string; v: string }> = [];
@@ -81,7 +90,7 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 const ASK = "填写练习：搜索明天杭州天气并回车，正文写周会纪要并保存，手机号填好并提交。";
 const FINAL = "三项都做完了。";
 // 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
-const t = { q: { target: "", value: QUERY, submit: true }, chat: { target: "", value: CHAT, submit: true }, ed: { target: "", value: BODY }, save: { target: "" }, phone: { target: "", value: PHONE }, send: { target: "" } };
+const t = { q: { target: "", value: QUERY, submit: true }, chat: { target: "", value: CHAT, submit: true }, quiet: { target: "", value: QUIET, submit: true }, note: { target: "", value: NOTE, submit: true }, ed: { target: "", value: BODY }, save: { target: "" }, phone: { target: "", value: PHONE }, send: { target: "" } };
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
@@ -93,6 +102,8 @@ const model = await startScriptedModel([
     { tool: { name: "fill", args: t.phone } },
     { tool: { name: "click", args: t.send } },
     { tool: { name: "fill", args: t.chat } },
+    { tool: { name: "fill", args: t.quiet } },
+    { tool: { name: "fill", args: t.note } },
     { text: FINAL },
   ] },
 ], undefined, payload => onPayload(payload));
@@ -125,6 +136,8 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
     t.phone.target = ref(/\[ref=(\d+)\] textbox "手机号"/);
     t.send.target = ref(/\[ref=(\d+)\] button "提交手机号"/);
     t.chat.target = ref(/\[ref=(\d+)\] textbox "说点什么"/);
+    t.quiet.target = ref(/\[ref=(\d+)\] textbox "写点什么"/);
+    t.note.target = ref(/\[ref=(\d+)\] textbox "备忘"/);
     // 读完页就把练习页放到后台：后面几步都在用户没在看的标签页里做。
     if (front) void rp.cdp.send("Target.activateTarget", { targetId: front }).then(() => { backgrounded = true; });
   }
@@ -160,13 +173,14 @@ try {
 
   check("读页给出了五个目标的编号", Object.values(t).every(x => /^@\d+$/.test(x.target)), t);
   check("练习页在后台标签页里", backgrounded && hidden === "hidden", { backgrounded, hidden });
-  const qReceipt = receipts.find(r => r.name === "fill" && r.args.includes(t.q.target))?.text ?? "";
+  const receiptOf = (target: string) => receipts.find(r => r.name === "fill" && r.args.includes(`"${target}"`))?.text ?? "";
+  const qReceipt = receiptOf(t.q.target);
   check("a 只认真实键盘的搜索框：「填完回车」后网站收到的搜索词就是要填的", got("search").at(-1) === QUERY && /Pressed Enter/.test(qReceipt), { search: got("search"), qReceipt });
   check("b 按 beforeinput 更新的编辑器：保存时网站收到的正文就是要填的", got("editor").at(-1) === BODY, { editor: got("editor") });
   check("c 受控输入框：提交时网站收到的手机号就是要填的", got("phone").at(-1) === PHONE, { phone: got("phone") });
-  const chatReceipt = receipts.find(r => r.name === "fill" && r.args.includes(t.chat.target))?.text ?? "";
-  const chatLeft = await rp.evaluate(work, 'document.getElementById("chat").value');
-  check("d 回车即发送的聊天框：「填完回车」被拒绝，网站没收到，框里留着字", got("chat").length === 0 && /Did not press Enter/.test(chatReceipt) && chatLeft === CHAT, { chat: got("chat"), chatReceipt, chatLeft });
+  const refusals = Object.fromEntries(["chat", "quiet", "note"].map(k => [k, receiptOf(t[k as "chat"].target)]));
+  const left = await rp.evaluate(work, 'JSON.stringify(["chat","quiet","note"].map(id => document.getElementById(id).value))');
+  check("d 回车即发送的三个框：「填完回车」都被拒绝，网站一条没收到，框里留着字", ["chat", "quiet", "note"].every(k => got(k).length === 0 && /Did not press Enter/.test(refusals[k]!)) && left === JSON.stringify([CHAT, QUIET, NOTE]), { sent: { chat: got("chat"), quiet: got("quiet"), note: got("note") }, refusals, left });
   const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
   check("每次填写用键盘写入并读回的耗时（记录，不设门槛）", sorted.length >= 4, { median: sorted[Math.floor((sorted.length - 1) / 2)] ?? null, timings });
   await rp.screenshot(work, join(out, "page.png"));

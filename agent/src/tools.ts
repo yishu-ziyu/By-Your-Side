@@ -954,7 +954,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
         // 键盘输入和旧写法都没写进去：如实说，建议点进框里逐字输入。
-        const failed = data.typing === "failed" ? " Keyboard input and the direct write both failed to put the value in; click the field and use type_text instead." : "";
+        const failed = data.typing === "failed" ? " Keyboard input and the direct write both failed to put the value in; do not retry the same way — tell the user the field did not take it." : "";
 
         // The browser rejects the value for the field's min/max/step: say so, never plain success.
         return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field") + failed + appearedNote(data.appeared) + submitNote(data.submit), data);

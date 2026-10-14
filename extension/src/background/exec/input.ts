@@ -24,7 +24,7 @@ import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, beginWatch, collectEffect, endWatch, pageChangesAfter, watchChangesAfter } from "./effect.js";
-import { regrade, submitRefusalInPage, typeIntoField, typingWritten, type PageRun } from "./fill-typing.js";
+import { regrade, submitProbeInPage, typeIntoField, typingWritten, type PageRun } from "./fill-typing.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite } from "../fill-undo.js";
@@ -2213,14 +2213,14 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
 async function writeField<T extends { range?: InputRangeReadout | null; select?: true }>(tabId: number, run: PageRun, legacy: () => Promise<T>, value: string, guard?: DispatchGuard): Promise<T & { typing?: "keyboard" | "fallback" | "failed" }> {
   const started = Date.now();
   // 调试器不可用、页面中途换了：按没写处理，交给旧写法（旧写法是整栏替换，重写一次不会叠字）。
-  const typed = await typeIntoField(tabId, run, value, guard).catch(() => ({ grade: null, fallback: true as const }));
+  const typed = await typeIntoField(tabId, run, value, guard).catch(() => ({ grade: null, fallback: { beforeLen: -1 } }));
   const log = (typing: string) => console.info("[fill-typing]", JSON.stringify({ ms: Date.now() - started, typing }));
 
   if (typed === "skip") return await legacy();
 
   if (!typed.fallback) { log("keyboard"); return { typing: "keyboard" } as T & { typing: "keyboard" }; }
   const out = await legacy();
-  const typing = typingWritten(await regrade(run, value)) ? "fallback" as const : "failed" as const;
+  const typing = typingWritten(await regrade(run, value, typed.fallback.beforeLen)) ? "fallback" as const : "failed" as const;
   log(typing);
 
   return { ...out, typing };
@@ -2247,17 +2247,28 @@ export async function fill(
  * 回车可能就是“发送”的框不按，填好的字留着：回车发送不经过发送确认是已知缺口（docs/web-actions.md），不能扩大。
  */
 async function submitAfterFill(params: { target: string; tabId?: number }, sessionId: string, beforeDispatch?: DispatchGuard): Promise<NonNullable<ToolContract["fill"]["data"]["submit"]>> {
-  const tab = await resolveWorkingTab(params.tabId, sessionId);
-  const tabId = tab.id!;
-  const backendNodeId = axBackendNodeFor(tabId, parseRef(params.target));
-  const refused = backendNodeId !== undefined
-    ? await callOnBackendNode<string | null>(tabId, backendNodeId, `function() { return (${submitRefusalInPage.toString()}).call(this, null); }`)
-    : await ensureDomOps(tabId).then(() => callDom(tabId, submitRefusalInPage as (t: string) => string | null, [params.target]));
+  try {
+    const tab = await resolveWorkingTab(params.tabId, sessionId);
+    const tabId = tab.id!;
+    const backendNodeId = axBackendNodeFor(tabId, parseRef(params.target));
+    const probe = backendNodeId !== undefined
+      ? await callOnBackendNode<ReturnType<typeof submitProbeInPage>>(tabId, backendNodeId, `function() { return (${submitProbeInPage.toString()}).call(this, null); }`)
+      : await ensureDomOps(tabId).then(() => callDom(tabId, submitProbeInPage as (t: string) => ReturnType<typeof submitProbeInPage>, [params.target]));
 
-  if (refused !== null) return { refused: refused ?? "读不到这个框，没有回车。" };
-  const pressed = await pressKey({ key: "Enter", tabId }, sessionId, beforeDispatch);
+    if (!probe) return { refused: "读不到这个框，没有回车。" };
 
-  return pressed.pressed ? { pressed: true, ...(pressed.effect ? { effect: pressed.effect } : {}), ...(pressed.appeared ? { appeared: pressed.appeared } : {}), ...(pressed.dialog ? { dialog: pressed.dialog } : {}) } : { pressed: false, dialog: pressed.dialog };
+    if ("refused" in probe) return probe;
+    // 和点击同一套规则：附近有「发送」「支付」这类按钮，回车可能就是发送或付款。
+    const risky = probe.labels.find(label => isSendLabel(label) || isPayLabel(label));
+
+    if (risky) return { refused: `这个框旁边有「${risky.slice(0, 12)}」，回车可能直接发出去或付款：已填好，没有回车。要做这一步请点那个按钮，会先问用户。` };
+    const pressed = await pressKey({ key: "Enter", tabId }, sessionId, beforeDispatch);
+
+    return pressed.pressed ? { pressed: true, ...(pressed.effect ? { effect: pressed.effect } : {}), ...(pressed.appeared ? { appeared: pressed.appeared } : {}), ...(pressed.dialog ? { dialog: pressed.dialog } : {}) } : { pressed: false, dialog: pressed.dialog };
+  } catch (error) {
+    // 值已经填好了：回车这一步出错只说没按，不让整次填写报失败。
+    return { refused: `没能按回车（${oneLine(error)}）：已填好，没有回车。` };
+  }
 }
 
 /** 填写、选择外面包一层：动作前开始记页面上哪里变了，动作后带回新出现的行。 */

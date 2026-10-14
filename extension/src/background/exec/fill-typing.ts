@@ -21,10 +21,20 @@ const READ_GAP_MS = 50;
 
 /** 键盘能写的框：聚焦、全选，返回原内容的长度；其余（日期、颜色、下拉框、不可写）返回 null，走旧写法。自包含。 */
 function prepareInPage(this: unknown, target: string | null): { beforeLen: number } | null {
+  // 按名字找的目标（text=、loc=role:）由旧写法的 dom.fill 核对身份（页面重画后名字可能挪到别的元素上），键盘这一路不接。
+  if (!(this instanceof Element) && target && /^(text=|loc=role:)/.test(target)) return null;
   const el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
 
   if (!el) return null;
   const tag = el.tagName.toLowerCase();
+  // 聚焦后焦点必须真的在它身上（被禁用的 fieldset、inert、藏起来的框聚焦不了）：不然键盘输入会落进上一个有焦点的框。
+  const holdsFocus = (node: Element) => {
+    let active = node.ownerDocument.activeElement;
+
+    while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+
+    return active === node || (node.getRootNode() as Document | ShadowRoot).activeElement === node;
+  };
 
   if (tag === "input" || tag === "textarea") {
     // SAFETY: tag 已核对是 input 或 textarea。
@@ -32,8 +42,10 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
     // 数字框照旧直接设值：旧写法会读回 min、max、step 并报越界。
     const typed = ["", "text", "search", "email", "url", "tel", "password"];
 
-    if ((tag === "input" && !typed.includes(field.type)) || field.readOnly || field.disabled) return null;
+    if ((tag === "input" && !typed.includes(field.type)) || field.readOnly || field.matches(":disabled")) return null;
     field.focus();
+
+    if (!holdsFocus(field)) return null;
 
     try { field.select(); } catch { field.ownerDocument.execCommand("selectAll"); }
 
@@ -45,6 +57,8 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
 
   while (host.parentElement?.isContentEditable) host = host.parentElement;
   host.focus();
+
+  if (!holdsFocus(host)) return null;
   const range = host.ownerDocument.createRange();
   range.selectNodeContents(host);
   const selection = host.ownerDocument.getSelection();
@@ -105,7 +119,7 @@ async function grade(run: PageRun, value: string, beforeLen: number): Promise<Ty
 
 const written = (g: TypingGrade | null) => g === "exact" || g === "equivalent" || g === "transformed";
 
-async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<TypingGrade | null | "skip"> {
+async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<{ grade: TypingGrade | null; beforeLen: number } | "skip"> {
   const prepared = await run(prepareInPage, []);
 
   if (!prepared) return "skip";
@@ -119,7 +133,7 @@ async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guar
   }
   guard?.noteEffect?.();
 
-  return await grade(run, value, prepared.beforeLen);
+  return { grade: await grade(run, value, prepared.beforeLen), beforeLen: prepared.beforeLen };
 }
 
 /**
@@ -128,12 +142,12 @@ async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guar
  * - { grade }：写进去了；
  * - { grade, fallback }：两次键盘输入都没写进去，调用方用旧写法再写一次，再用 regrade 判结果。
  */
-export async function typeIntoField(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<"skip" | { grade: TypingGrade | null; fallback?: true }> {
+export async function typeIntoField(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<"skip" | { grade: TypingGrade | null; fallback?: { beforeLen: number } }> {
   const first = await typeOnce(tabId, run, value, guard);
 
   if (first === "skip") return "skip";
 
-  if (written(first)) return { grade: first };
+  if (written(first.grade)) return { grade: first.grade };
   // 没写进去（接在后面了、没变）：先点一下这个框，再写一次。
   const point = await run(clickPointInPage, []).catch(() => null);
 
@@ -143,42 +157,61 @@ export async function typeIntoField(tabId: number, run: PageRun, value: string, 
     }
     const second = await typeOnce(tabId, run, value, guard);
 
-    if (second !== "skip" && written(second)) return { grade: second };
+    if (second !== "skip" && written(second.grade)) return { grade: second.grade };
   }
 
-  return { grade: first, fallback: true };
+  return { grade: first.grade, fallback: { beforeLen: first.beforeLen } };
 }
 
-/** 旧写法写完以后再判一次。 */
-export async function regrade(run: PageRun, value: string): Promise<TypingGrade | null> {
-  return await grade(run, value, -1);
+/** 旧写法写完以后再判一次；beforeLen 是动手前原内容的长度，网站把值改回去时才判得出“没变”。 */
+export async function regrade(run: PageRun, value: string, beforeLen: number): Promise<TypingGrade | null> {
+  return await grade(run, value, beforeLen);
 }
 
 export { written as typingWritten };
 
-/** 「填完回车」只给搜索框和普通单行框；回车可能就是“发送”的框不给（docs/web-actions.md 的已知缺口不能扩大）。自包含。 */
-export function submitRefusalInPage(this: unknown, target: string | null): string | null {
+/**
+ * 「填完回车」之前在页面里看这个框：只给搜索框和普通单行文字框；焦点必须还在它身上（回车落在别的框上就不按）。
+ * 交回它附近的按钮名字（同一个表单里的全部，不在表单里就往上三层、不到 body），由后台按发送、付款的同一套规则判：
+ * 名字写在 button、a、div、span 上都算。回车发送不经过发送确认是已知缺口（docs/web-actions.md），不能扩大。自包含。
+ */
+export function submitProbeInPage(this: unknown, target: string | null): { refused: string } | { labels: string[] } {
   const el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
 
-  if (!el) return "找不到这个框，没有回车。";
+  if (!el) return { refused: "找不到这个框，没有回车。" };
   const role = (el.getAttribute("role") ?? "").toLowerCase();
   // SAFETY: 只在 tag 是 input 时读 type。
   const type = el.tagName === "INPUT" ? (el as HTMLInputElement).type : "";
 
   if (!(type === "search" || type === "text" || role === "searchbox" || role === "combobox") || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable) {
-    return "只有搜索框和单行文字框能「填完回车」；多行框和编辑器里回车常常就是发送，已填好，没有回车。要回车请单独按键。";
+    return { refused: "只有搜索框和单行文字框能「填完回车」；多行框和编辑器里回车常常就是发送，已填好，没有回车。要回车请单独按键。" };
   }
+  let active = el.ownerDocument.activeElement;
+
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+
+  if (active !== el) return { refused: "焦点已经不在这个框上，回车会落到别处：已填好，没有回车。" };
   const name = [el.getAttribute("aria-label"), el.getAttribute("placeholder"), el.getAttribute("name"), el.id, el.getAttribute("title")].join(" ");
 
-  if (/消息|留言|回复|评论|聊天|message|reply|comment|chat/i.test(name)) return "这个框像是发消息的，回车可能直接发出去：已填好，没有回车。要发送请点「发送」，会先问用户。";
-  // 和这个框同在一个表单、或同在离它最近的那个带按钮的小容器里（往上最多三层，不到 body）：整页的按钮不算“旁边”。
-  let box: Element | null = el.closest("form");
+  if (/消息|留言|回复|评论|聊天|弹幕|message|reply|comment|chat/i.test(name)) return { refused: "这个框像是发消息的，回车可能直接发出去：已填好，没有回车。要发送请点「发送」，会先问用户。" };
+  let region: Element | null = el.closest("form");
 
-  for (let up = el.parentElement, n = 0; !box && up && up !== el.ownerDocument.body && n < 3; up = up.parentElement, n++) if (up.querySelector("button,[role=button],input[type=submit]")) box = up;
-  const buttons = box ? [...box.querySelectorAll("button,[role=button],input[type=submit],input[type=button]")] : [];
-  const label = (b: Element) => (b.getAttribute("aria-label") || (b as HTMLInputElement).value || b.textContent || b.getAttribute("title") || "").trim().replace(/\s+/g, " ");
+  if (!region) {
+    region = el.parentElement;
 
-  if (buttons.some(b => label(b).startsWith("发送") || /^send(\s|$)/i.test(label(b)))) return "这个框旁边有「发送」，回车可能直接发出去：已填好，没有回车。要发送请点「发送」，会先问用户。";
+    for (let n = 1; n < 3 && region?.parentElement && region.parentElement !== el.ownerDocument.body; n++) region = region.parentElement;
+  }
 
-  return null;
+  if (!region || region === el.ownerDocument.body || region === el.ownerDocument.documentElement) return { labels: [] };
+  const labels = new Set<string>();
+
+  for (const node of [...region.querySelectorAll("*")].slice(0, 400)) {
+    if (node === el) continue;
+    const own = node.tagName === "INPUT" ? (node as HTMLInputElement).value : (node.textContent ?? "");
+    const text = (node.getAttribute("aria-label") || node.getAttribute("title") || own).trim().replace(/\s+/g, " ");
+
+    if (text && text.length <= 24) labels.add(text);
+  }
+
+  return { labels: [...labels].slice(0, 80) };
 }
