@@ -6,6 +6,9 @@
  *   a 搜索框：只在可信的 input 事件里记下用户打的字，只在可信的回车 keydown 里按记下的字提交（仿搜索站）。
  *   b 编辑器：contenteditable，内容只按 beforeinput 更新自己的模型、再按模型重画（仿 ProseMirror、Lexical）；「保存正文」交模型里的字。
  *   c 受控输入框：仿 react-dom 的值跟踪，只认 input 事件里值和跟踪值不同的那次改动；「提交手机号」交状态里的值。
+ *   d 单行聊天框：旁边有「发送」，可信回车就发出去（仿插话评测的 /duplex-chat）。在它上面要求「填完回车」必须被拒绝：网站收不到消息，框里留着字。
+ * 搜索框用「填完回车」（fill 带 submit）。读页之后练习页被放到后台（另一个标签页在前面），后面几步都在后台标签页里做。
+ * 失败方式：强制只用旧写法（typeIntoField 直接返回 "skip"），a、b 失败；去掉 submit 的拒绝规则，d 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -22,12 +25,14 @@ await mkdir(out, { recursive: true });
 const QUERY = "明天杭州天气";
 const BODY = "周会纪要：先讲进度";
 const PHONE = "13800001111";
+const CHAT = "这句不能被发出去";
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>填写练习</title><body style="font:16px sans-serif;margin:40px">
 <h1>填写练习</h1>
 <p><label>搜索 <input id="q" aria-label="搜索"></label></p>
 <div id="ed" contenteditable="true" role="textbox" aria-label="正文" style="border:1px solid #ccc;min-height:2em"></div>
 <p><button id="save" type="button">保存正文</button></p>
 <p><label>手机号 <input id="phone" aria-label="手机号"></label> <button id="send" type="button">提交手机号</button></p>
+<div><input id="chat" type="text" aria-label="说点什么"> <button id="chat-send" type="button">发送</button></div>
 <script>
 const hit = (k, v) => fetch("/hit?k=" + k + "&v=" + encodeURIComponent(v));
 // a 只认可信输入：脚本派发的 input、keydown 一概不算。
@@ -57,6 +62,10 @@ Object.defineProperty(phone, "value", { configurable: true, get() { return nativ
 phone.addEventListener("input", () => { const now = native.get.call(phone); if (now !== tracked) { tracked = now; state = now; } });
 setInterval(() => { if (native.get.call(phone) !== state) { native.set.call(phone, state); tracked = state; } }, 50);
 document.getElementById("send").onclick = () => hit("phone", state);
+// d 回车即发送：可信回车就把框里的字发出去。
+const chat = document.getElementById("chat");
+chat.addEventListener("keydown", e => { if (e.key === "Enter" && e.isTrusted) { hit("chat", chat.value); chat.value = ""; } });
+document.getElementById("chat-send").onclick = () => { hit("chat", chat.value); chat.value = ""; };
 </script></body></html>`;
 
 const hits: Array<{ k: string; v: string }> = [];
@@ -72,18 +81,18 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 const ASK = "填写练习：搜索明天杭州天气并回车，正文写周会纪要并保存，手机号填好并提交。";
 const FINAL = "三项都做完了。";
 // 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
-const t = { q: { target: "", value: QUERY }, ed: { target: "", value: BODY }, save: { target: "" }, phone: { target: "", value: PHONE }, send: { target: "" } };
+const t = { q: { target: "", value: QUERY, submit: true }, chat: { target: "", value: CHAT, submit: true }, ed: { target: "", value: BODY }, save: { target: "" }, phone: { target: "", value: PHONE }, send: { target: "" } };
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: ASK, steps: [
     { tool: { name: "snapshot", args: {} } },
     { tool: { name: "fill", args: t.q } },
-    { tool: { name: "press_key", args: { key: "Enter" } } },
     { tool: { name: "fill", args: t.ed } },
     { tool: { name: "click", args: t.save } },
     { tool: { name: "fill", args: t.phone } },
     { tool: { name: "click", args: t.send } },
+    { tool: { name: "fill", args: t.chat } },
     { text: FINAL },
   ] },
 ], undefined, payload => onPayload(payload));
@@ -115,16 +124,28 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
     t.save.target = ref(/\[ref=(\d+)\] button "保存正文"/);
     t.phone.target = ref(/\[ref=(\d+)\] textbox "手机号"/);
     t.send.target = ref(/\[ref=(\d+)\] button "提交手机号"/);
+    t.chat.target = ref(/\[ref=(\d+)\] textbox "说点什么"/);
+    // 读完页就把练习页放到后台：后面几步都在用户没在看的标签页里做。
+    if (front) void rp.cdp.send("Target.activateTarget", { targetId: front }).then(() => { backgrounded = true; });
   }
 }
 
 const got = (k: string) => hits.filter(h => h.k === k).map(h => h.v);
+let front = "";
+let backgrounded = false;
+const timings: Array<{ ms: number; typing: string }> = [];
 
 try {
   const work = await rp.attach((await rp.targets()).find(x => x.url === "about:blank")!.targetId);
   await rp.cdp.send("Page.navigate", { url: `${origin}/` }, work);
   const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "service worker")).targetId);
   await until(async () => await rp.evaluate(sw, "typeof chrome === 'object' && !!chrome.tabs").catch(() => false), 15_000, "扩展后台就绪");
+  rp.cdp.onEvent("Runtime.consoleAPICalled", (message: { sessionId?: string; params: { args?: Array<{ value?: Json }> } }) => {
+    const args = message.params.args ?? [];
+    if (message.sessionId === sw && args[0]?.value === "[fill-typing]") timings.push(JSON.parse(String(args[1]?.value)));
+  });
+  await rp.cdp.send("Runtime.enable", {}, sw);
+  front = (await rp.cdp.send("Target.createTarget", { url: "about:blank", background: true }) as { targetId: string }).targetId;
   const panel = await rp.attach(await rp.openSidePanel());
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
@@ -133,12 +154,21 @@ try {
 
   await rp.click(panel, "#input"); await rp.typeText(panel, ASK); await rp.pressEnter(panel);
   await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(FINAL)}))`)) as boolean, 90_000, `回答「${FINAL}」`);
-  await until(async () => got("phone").length > 0 || null, 3_000, "提交到达").catch(() => {});
+  await until(async () => got("phone").length > 0 || null, 5_000, "提交到达").catch(() => {});
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  const hidden = await rp.evaluate(work, "document.visibilityState");
 
   check("读页给出了五个目标的编号", Object.values(t).every(x => /^@\d+$/.test(x.target)), t);
-  check("a 只认真实键盘的搜索框：回车后网站收到的搜索词就是要填的", got("search").at(-1) === QUERY, { search: got("search") });
+  check("练习页在后台标签页里", backgrounded && hidden === "hidden", { backgrounded, hidden });
+  const qReceipt = receipts.find(r => r.name === "fill" && r.args.includes(t.q.target))?.text ?? "";
+  check("a 只认真实键盘的搜索框：「填完回车」后网站收到的搜索词就是要填的", got("search").at(-1) === QUERY && /Pressed Enter/.test(qReceipt), { search: got("search"), qReceipt });
   check("b 按 beforeinput 更新的编辑器：保存时网站收到的正文就是要填的", got("editor").at(-1) === BODY, { editor: got("editor") });
   check("c 受控输入框：提交时网站收到的手机号就是要填的", got("phone").at(-1) === PHONE, { phone: got("phone") });
+  const chatReceipt = receipts.find(r => r.name === "fill" && r.args.includes(t.chat.target))?.text ?? "";
+  const chatLeft = await rp.evaluate(work, 'document.getElementById("chat").value');
+  check("d 回车即发送的聊天框：「填完回车」被拒绝，网站没收到，框里留着字", got("chat").length === 0 && /Did not press Enter/.test(chatReceipt) && chatLeft === CHAT, { chat: got("chat"), chatReceipt, chatLeft });
+  const sorted = timings.map(x => x.ms).sort((a, b) => a - b);
+  check("每次填写用键盘写入并读回的耗时（记录，不设门槛）", sorted.length >= 4, { median: sorted[Math.floor((sorted.length - 1) / 2)] ?? null, timings });
   await rp.screenshot(work, join(out, "page.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", dependency: "isolated real extension/offscreen Agent/sidebar; scripted local model; local practice page", checks, hits, receipts, modelRequests: model.requests }, null, 2));

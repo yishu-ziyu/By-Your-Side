@@ -68,6 +68,17 @@ function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | 
   return `\n${head} (refs are usable directly; no snapshot needed for these; lines you already saw that only moved are not listed):\n${wrapPageContent(redactCredentialText(appeared.text))}`;
 }
 
+/** fill 带 submit 时的回车结果：按了就同 press_key 的回执，没按就说为什么（理由是扩展写的，不是网页内容）。 */
+function submitNote(submit: ToolContract["fill"]["data"]["submit"]): string {
+  if (!submit) return "";
+
+  if ("refused" in submit) return `\nDid not press Enter: ${submit.refused}`;
+
+  if (submit.dialog) return `\n${submit.pressed ? "Pressed Enter" : "Enter not dispatched"}; the page opened a native ${submit.dialog.type}: ${submit.dialog.message}. Use accept_dialog or dismiss_dialog as the user asked.`;
+
+  return `\nPressed Enter.${formatEffectReport(submit.pressed && submit.effect?.changed ? submit.effect : undefined, "key press")}${appearedNote(submit.pressed ? submit.appeared : undefined)}`;
+}
+
 /**
  * 页面下载的回执：只有 chrome.downloads 报 complete 才写「已保存」。
  * 中断直接报错，让这一步如实显示失败；还在下载就说还没下完。
@@ -938,12 +949,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         value: Type.String({ description: "Value to set" }),
+        submit: Type.Optional(Type.Boolean({ description: "Press Enter after filling (search boxes and single-line text fields only; refused on message boxes, multi-line fields and editors, where Enter may send)" })),
       }),
       execute: async (_id, params) => {
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
+        // 键盘输入和旧写法都没写进去：如实说，建议点进框里逐字输入。
+        const failed = data.typing === "failed" ? " Keyboard input and the direct write both failed to put the value in; click the field and use type_text instead." : "";
 
         // The browser rejects the value for the field's min/max/step: say so, never plain success.
-        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field") + appearedNote(data.appeared), data);
+        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field") + failed + appearedNote(data.appeared) + submitNote(data.submit), data);
       },
     }),
 
