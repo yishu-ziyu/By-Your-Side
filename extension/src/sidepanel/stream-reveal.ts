@@ -10,7 +10,7 @@
  */
 
 import { Lexer } from "marked";
-import { splitAnswer } from "../../../shared/answer-cards.js";
+import { codeRanges, splitAnswer } from "../../../shared/answer-cards.js";
 import { D_READ } from "../shared/motion-tokens.js";
 import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
 
@@ -87,26 +87,42 @@ function remend(md: string): string {
   return fenceOpen(md) ? fenced : remendLink(remendCode(remendBold(fenced)));
 }
 
+/** 原文里真正的卡片开头（代码里讲卡片写法的 <card 不算，同 splitAnswer）。 */
+function cardStarts(text: string): number[] {
+  const code = codeRanges(text);
+
+  return [...text.matchAll(/<card[\s>]/g)].map((m) => m.index).filter((i) => !code.some(([a, b]) => i >= a && i < b));
+}
+
 /** 从 at 起是卡片（at 在没写完的卡片里，或后面只隔空白就是卡片开头）时，返回卡片结尾或已到文字的结尾；否则返回 at。 */
 function cardEnd(text: string, at: number): number {
-  for (const m of text.matchAll(/<card[\s>]/g)) {
-    const close = text.indexOf("</card>", m.index);
+  for (const start of cardStarts(text)) {
+    const close = text.indexOf("</card>", start);
     const end = close < 0 ? text.length : close + "</card>".length;
 
     if (end <= at) continue;
 
-    return m.index < at || !text.slice(at, m.index).trim() ? end : at;
+    return start < at || !text.slice(at, start).trim() ? end : at;
   }
 
   return at;
 }
 
-const hasCard = (md: string) => splitAnswer(md).some((part) => "card" in part);
+/** 有卡片或引用卡片里的数（{=名字}）时整段渲染：这类正文要看完整前缀才知道显示什么。 */
+const needsWhole = (md: string) => md.includes("{=") || splitAnswer(md).some((part) => "card" in part);
 
 /** 只补最后一张卡片之后的正文；停在没写完的卡片里时不补，补上的记号会混进卡片属性。 */
 function remendAfterCards(md: string): string {
   if ("card" in (splitAnswer(md).at(-1) ?? { card: undefined })) return md;
-  const cut = md.lastIndexOf("</card>") + "</card>".length;
+  let cut = 0;
+
+  for (const start of cardStarts(md)) {
+    if (start < cut) continue;
+    const close = md.indexOf("</card>", start);
+
+    if (close < 0) return md;
+    cut = close + "</card>".length;
+  }
 
   return md.slice(0, cut) + remend(md.slice(cut));
 }
@@ -297,6 +313,15 @@ class Reveal {
   }
 
   private rewind(common: number): void {
+    // 整段渲染时交给 patchAnswer 对比：已显示的卡片（勾选、翻到的那面）留着，前缀里的字不重新淡入。
+    if (this.whole && needsWhole(this.target.slice(0, common))) {
+      this.shown = common;
+      this.lastRelease = -1e9;
+      this.paintWhole(this.target.slice(0, common), performance.now());
+
+      return;
+    }
+
     this.shown = common;
     this.blocks = [];
     this.whole = null;
@@ -313,7 +338,7 @@ class Reveal {
   private paintPrefix(md: string): void {
     const now = performance.now();
 
-    if (hasCard(md)) {
+    if (needsWhole(md)) {
       this.paintWhole(md, now);
 
       return;
@@ -389,7 +414,7 @@ class Reveal {
 
     const source = this.target.slice(0, this.shown);
 
-    if (this.whole || hasCard(source)) {
+    if (this.whole || needsWhole(source)) {
       this.paintWhole(source, now);
 
       return;
@@ -419,15 +444,23 @@ class Reveal {
   private paintWhole(source: string, now: number): void {
     // 从按块切到整段：正在淡入的段换算成整段里的位置接着淡，不突然变实。
     if (!this.whole) {
-      let offset = 0;
+      // 块之间的换行文本节点不算进 block.len，位置按页面里实际的字数算。
+      const before = (node: ChildNode) => {
+        let len = 0;
+
+        for (let n = node.previousSibling; n; n = n.previousSibling) len += n.textContent?.length ?? 0;
+
+        return len;
+      };
       this.whole = [];
 
       for (const block of this.blocks) {
+        const offset = block.nodes[0]?.parentNode === this.el ? before(block.nodes[0]) : 0;
+
         for (const fade of block.fades) this.whole.push({ from: fade.from + offset, to: fade.to + offset, at: fade.at });
-        offset += block.len;
       }
 
-      this.wholeLen = offset;
+      this.wholeLen = this.el.textContent?.length ?? 0;
       this.blocks = [];
     }
 
