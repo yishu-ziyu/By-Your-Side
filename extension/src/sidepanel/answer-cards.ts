@@ -3,8 +3,10 @@
  * 流式时按已放出的前缀算出整段 HTML，再由 patchAnswer 按组件对比：已画出的组件节点不动，只补新出现的、刚写完的。
  * 开了头没写完的组件先占一个尺寸接近的空位；写得慢时空位里浮出很淡的占位条，写完后内容在原位淡入。
  * 按钮只做两件事：把按钮上的话当作用户的下一句发出，或切到某个标签页。不直接动页面。
+ * 写完的卡片若有算式或出处，右上角可翻到依据面：每个数的结果、算式、出处，同一张卡原位换面（学 Our World in Data 的图 / 表 / 出处）。
  */
-import { type Block, type Card, type PendingComponent, resolveProse, splitAnswer } from "../../../shared/answer-cards.js";
+import { createElement as icon, LayoutGrid, Table2 } from "lucide";
+import { type Block, type Card, type PendingComponent, cardEvidence, resolveProse, splitAnswer } from "../../../shared/answer-cards.js";
 import { toast } from "./sonar-citations.js";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -82,9 +84,29 @@ function cardHtml(card: Card): string {
   const body = blocks.join("");
   // 按钮等卡片写完再出现，免得用户点到写了一半的那张。
   const buttons = card.closed ? card.buttons.map((b) => `<button type="button" class="gc-btn${b.primary ? " primary" : ""}" ${b.tab ? `data-card-tab="${esc(b.tab)}"` : `data-card-say="${esc(b.label)}"`}>${esc(b.label)}</button>`).join("") : "";
+  // 依据面和开关也等卡片写完（cardEvidence 对没写完的卡片给空）；带位置键和摘要，流式重画不碰它们，翻开的状态和高度不丢。
+  const rows = cardEvidence(card);
+  // 出处多半是整张卡共用一句：合成一格，不逐行重复；「指给我看」挂在那一项的名字下面。
+  const shared = rows.every((r) => r.source === rows[0]?.source);
+  const sourceCell = (r: (typeof rows)[number], i: number) => (shared && i > 0 ? "" : `<td class="s"${shared ? ` rowspan="${rows.length}"` : ""}>${r.source ? esc(r.source) : "—"}</td>`);
+  const evidence = rows.length ? keyed("ev", `<div class="gc-evidence" hidden><table><thead><tr><th>项</th><th>结果</th><th>怎么算</th><th>出处</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${esc(r.label)}${r.tab ? `<button type="button" class="gc-btn gc-point" data-card-tab="${esc(r.tab)}">指给我看</button>` : ""}</td><td class="r">${esc(r.value)}</td><td class="f">${r.formula ? esc(r.formula) : "—"}</td>${sourceCell(r, i)}</tr>`).join("")}</tbody></table></div>`) : "";
+  const faces = rows.length ? keyed("faces", `<div class="gc-faces" role="group" aria-label="结论 / 依据">${FACE_BUTTONS}</div>`) : "";
+  const head = card.title ? `<div class="gc-head${faces ? " has-faces" : ""}"><div class="gc-title">${esc(card.title)}</div>${card.sub ? `<div class="gc-sub">${esc(card.sub)}</div>` : ""}</div>` : faces ? '<div class="gc-head has-faces" data-gc-key="head"></div>' : "";
 
-  return `<div class="gen-card">${card.title ? `<div class="gc-head"><div class="gc-title">${esc(card.title)}</div>${card.sub ? `<div class="gc-sub">${esc(card.sub)}</div>` : ""}</div>` : ""}${body ? `<div class="gc-body">${body}</div>` : ""}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}</div>`;
+  return `<div class="gen-card">${head}${body ? `<div class="gc-body" data-gc-key="body">${body}</div>` : ""}${evidence}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}${faces}</div>`;
 }
+
+const svg = (node: Parameters<typeof icon>[0]) => {
+  const el = icon(node);
+  el.setAttribute("width", "14");
+  el.setAttribute("height", "14");
+  el.setAttribute("aria-hidden", "true");
+
+  return el.outerHTML;
+};
+
+/** 两个小图标按钮：结论（卡片原样）/ 依据（每个数的结果、算式、出处）。 */
+const FACE_BUTTONS = `<button type="button" class="gc-face" data-face="answer" aria-pressed="true" title="结论" aria-label="结论">${svg(LayoutGrid)}</button><button type="button" class="gc-face" data-face="evidence" aria-pressed="false" title="依据" aria-label="依据">${svg(Table2)}</button>`;
 
 /** 回答原文 → HTML。没有卡片时与原来的 Markdown 渲染一样；返回值仍需调用方消毒。 */
 export function renderAnswerHtml(text: string, renderProse: (markdown: string) => string): string {
@@ -109,15 +131,34 @@ function enter(node: Node): void {
   if (node instanceof Element && !node.classList.contains("gc-ph")) node.classList.add("gc-in");
 }
 
-/** 把 from 的属性抄到 to 上；gc-in 是本地加的淡入，留着让动画走完。 */
+/** 把 from 的属性抄到 to 上；gc-in 是本地加的淡入，留着让动画走完；data-face 是用户翻到的那一面，卡片后面的正文还在写时也不翻回去。 */
 function syncAttributes(to: Element, from: Element): void {
   const fading = to.classList.contains("gc-in");
+  const face = to.getAttribute("data-face");
 
   for (const { name } of [...to.attributes]) if (!from.hasAttribute(name)) to.removeAttribute(name);
 
   for (const { name, value } of [...from.attributes]) if (to.getAttribute(name) !== value) to.setAttribute(name, value);
 
   if (fading) to.classList.add("gc-in");
+
+  if (face && to.classList.contains("gen-card")) to.setAttribute("data-face", face);
+}
+
+/** 翻到结论或依据。依据面至少和结论面一样高，翻过去卡片不缩；翻回结论时按钮、数字都是原来的节点。 */
+function showFace(card: HTMLElement, face: string): void {
+  const body = card.querySelector<HTMLElement>(":scope > .gc-body");
+  const evidence = card.querySelector<HTMLElement>(":scope > .gc-evidence");
+  const foot = card.querySelector<HTMLElement>(":scope > .gc-foot");
+
+  if (!evidence) return;
+
+  // 依据面里已有出处，底部那行出处在依据面不显示，它的高度也算进来。
+  if (face === "evidence" && card.dataset.face !== "evidence" && body) evidence.style.minHeight = `${body.offsetHeight + (foot?.offsetHeight ?? 0)}px`;
+  card.dataset.face = face;
+  evidence.hidden = face !== "evidence";
+
+  for (const b of card.querySelectorAll<HTMLElement>(":scope > .gc-faces .gc-face")) b.setAttribute("aria-pressed", String(b.dataset.face === face));
 }
 
 /** 卡片内按位置对比：同一个就留着（写完的组件整个不碰），不同就原位换掉，多的删、少的补。 */
@@ -131,9 +172,16 @@ function syncChildren(to: Element, from: Element): void {
 
  return; }
 
-    if (!same(old, node)) { enter(node); old.replaceWith(node);
+    if (!same(old, node)) {
+      enter(node);
+      const oldKey = old instanceof Element ? old.getAttribute("data-gc-key") : null;
 
- return; }
+      // 新东西插在前面（没有标题的卡片收尾时多出一行放开关）：原来那个后面还要，就让它往后挪，不被换掉。
+      if (oldKey && next.slice(i + 1).some((n) => n instanceof Element && n.getAttribute("data-gc-key") === oldKey)) to.insertBefore(node, old);
+      else old.replaceWith(node);
+
+      return;
+    }
 
     if (old instanceof Element && node instanceof Element) {
       if (node.hasAttribute("data-gc-sig")) return;
@@ -173,6 +221,12 @@ export function patchAnswer(root: HTMLElement, html: string): void {
     if (old && node instanceof Element) {
       syncAttributes(old, node);
       syncChildren(old, node);
+
+      // 翻到的那一面跟着最新的卡片走：依据面被换掉（内容变了）就按原来翻到的那面重放，卡片没有依据面了就回到结论。
+      if (old instanceof HTMLElement && old.dataset.face) {
+        if (old.querySelector(":scope > .gc-evidence")) showFace(old, old.dataset.face);
+        else delete old.dataset.face;
+      }
       want.push(old);
     } else {
       if (shown && node instanceof Element && node.classList.contains("gen-card")) enter(node);
@@ -199,6 +253,13 @@ export function patchAnswer(root: HTMLElement, html: string): void {
 export function bindAnswerCards(root: HTMLElement, say: (text: string) => void): void {
   root.addEventListener("click", async (event) => {
     // SAFETY: click 事件的 target 是 Element。
+    const face = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-face");
+    const card = face?.closest<HTMLElement>(".gen-card");
+
+    if (face && card) { showFace(card, face.dataset.face ?? "answer");
+
+ return; }
+    // SAFETY: 同上。
     const button = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-btn");
 
     if (!button) return;
