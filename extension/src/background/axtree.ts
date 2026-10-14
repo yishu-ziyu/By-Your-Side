@@ -341,29 +341,36 @@ export interface RepeatedItems {
   items: Set<number>;
 }
 
-/** 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算。节点太多（不是一项）返回 null。 */
-function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?: AxNodeLite): string | null {
-  let best = "";
-  const todo = [item];
+/**
+ * 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算，skip（控件自己）也不算。
+ * 链接里的字单算：卡片头一行常是作者、时间的链接，每张卡片都一样，认不出是哪张。节点太多（不是一项）返回 null。
+ */
+function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?: AxNodeLite): { plain: string; link: string } | null {
+  const best = { plain: "", link: "" };
+  const todo: Array<[AxNodeLite, boolean]> = [[item, false]];
 
   for (let seen = 0; todo.length; seen++) {
     if (seen >= MAX_ITEM_NODES) return null;
-    const node = todo.pop()!;
+    const [node, inLink] = todo.pop()!;
     const role = node.role?.value ?? "";
 
     if (node === skip || (node !== item && (CONTROL_ROLES.has(role) || node.properties?.some(p => p.name === "editable")))) continue;
 
     if (role === "StaticText" && !node.ignored) {
       const words = String(node.name?.value ?? "").replace(/\s+/g, " ").trim();
+      const slot = inLink ? "link" : "plain";
 
-      if (words.length > best.length) best = words;
+      if (words.length > best[slot].length) best[slot] = words;
     }
 
-    for (const id of node.childIds ?? []) { const child = byId.get(id); if (child) todo.push(child); }
+    for (const id of node.childIds ?? []) { const child = byId.get(id); if (child) todo.push([child, inLink || role === "link"]); }
   }
 
   return best;
 }
+
+/** 正文至少这么长才算认得出这一项；更短的（“·”、“2h”）先记着，往上找不到正文再用。 */
+const MIN_PLAIN_ITEM_TEXT = 4;
 
 /**
  * 页面上同角色、同名字的控件（每条笔记都有的「More」）：快照是平的，模型看不出哪个属于哪一项。
@@ -450,7 +457,7 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 
         if (!item || item.backendDOMNodeId === undefined) return;
 
-        if (!verdict.has(item.nodeId)) verdict.set(item.nodeId, !!scanItem(byId, item));
+        if (!verdict.has(item.nodeId)) { const text = scanItem(byId, item); verdict.set(item.nodeId, !!text && !!(text.plain || text.link)); }
 
         if (!verdict.get(item.nodeId)) continue;
         found.byRef.set(n.backendDOMNodeId!, item.backendDOMNodeId);
@@ -512,16 +519,20 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
 
   if (path.at(-1) !== top) return "";
 
+  // 头一行只有作者、时间链接时，接着往上找正文；找不到正文，再用最近一层的那点字。
+  let fallback = "";
+
   for (const at of path) {
-    if (twinInside(at)) return "";
+    if (twinInside(at)) return fallback;
     const text = scanItem(byId, at, control);
 
-    if (text === null) return "";
+    if (text === null) return fallback;
 
-    if (text) return text;
+    if (text.plain.length >= MIN_PLAIN_ITEM_TEXT) return text.plain;
+    fallback ||= text.plain.length >= text.link.length ? text.plain : text.link;
   }
 
-  return "";
+  return fallback;
 }
 
 /** 控件往上碰到的第一个认得的项（只在给的这些节点里找）。 */
