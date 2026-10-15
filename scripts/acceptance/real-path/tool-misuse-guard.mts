@@ -30,7 +30,7 @@ const ASK = "案例：用错工具参数和原地重复。";
 
 const ANSWER = "用错参数和原地重复核对完毕。";
 
-const NOTE = "这是连续第 3 次同样的调用，结果没有变化；请换一种做法。";
+const NOTE = "这是连续第 3 次同样的调用，结果没有变化。如果在等页面变化，先等待再读（例如 browser.sleep 或 wait_for）；否则请换一种做法。";
 
 type Message = { role: string; content?: string | Array<{ text?: string }> | null };
 

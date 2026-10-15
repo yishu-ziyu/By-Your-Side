@@ -375,7 +375,7 @@ export class PiAgentLoop implements AgentLoop {
     const same = call === this.repeat.call && result === this.repeat.result;
     this.repeat = { call, result, count: same ? this.repeat.count + 1 : 1 };
 
-    return this.repeat.count >= REPEAT_NOTE_AT ? `[框架说明] 这是连续第 ${this.repeat.count} 次同样的调用，结果没有变化；请换一种做法。` : null;
+    return this.repeat.count >= REPEAT_NOTE_AT ? `[框架说明] 这是连续第 ${this.repeat.count} 次同样的调用，结果没有变化。如果在等页面变化，先等待再读（例如 browser.sleep 或 wait_for）；否则请换一种做法。` : null;
   }
 
   private async afterRun(): Promise<boolean> {
