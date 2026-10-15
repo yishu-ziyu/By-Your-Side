@@ -80,7 +80,7 @@ import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
 import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
-import { PANEL_PORT_NAME, parseDeliveryReceipt, type BgToPanel, type DeliveryReceipt, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
+import { PANEL_PORT_NAME, parseDeliveryReceipt, type BgToPanel, type DeliveryReceipt, type FillUndoView, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
 import { installProactiveCard } from "./proactive-card.js";
@@ -93,7 +93,7 @@ import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
-import { mountTaskPlan, siteName } from "./task-plan.js";
+import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
@@ -3862,6 +3862,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const skeleton = answerSkeleton();
   trail.after(skeleton);
   const start = runStartAt || eventTime();
+  taskPlan.adopt(root, body);
 
   currentRun = {
     root,
@@ -4388,8 +4389,17 @@ function finishRun(): void {
     line.textContent = thought >= 1_000 ? `共 ${total}，其中想了 ${spokenDuration(0, thought)}` : `共 ${total}`;
     run.body.appendChild(line);
   }
+  const planTop = run.root.classList.contains("plan-card") && !pinned ? run.root.getBoundingClientRect().top : null;
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
+
+  if (run.root.classList.contains("plan-card") && run.receipt?.ended === "completed") {
+    planCardRun = run;
+    paintPlanCard();
+  }
+
+  // 计划卡收成一行时整张卡变矮：用户翻在上面看时，把卡顶留在原处，不让内容跳走；被挤出视口的部分由顶部的渐隐边盖住。
+  if (planTop !== null) messagesEl.scrollTop += run.root.getBoundingClientRect().top - planTop;
   // 分叉层跟着过程块走：紧跟在它后面，读回再跟在分叉层后面；这一轮没画分叉就不留空节点。
   run.graph.finish();
 
@@ -4404,6 +4414,30 @@ function finishRun(): void {
 
   if (run.answer) foldAnsweredRun(run);
   scrollToEnd();
+}
+
+/** 最近一张收成回执的计划卡，和这一轮还原填写的状态（后台晚到时重画）。 */
+let planCardRun: RunHost | null = null;
+let planUndo: FillUndoView | null = null;
+
+function paintPlanCard(): void {
+  const run = planCardRun;
+
+  if (!run?.root.isConnected || !run.receipt) return;
+  const undo = planUndo;
+  paintPlanReceipt(run.root, {
+    filled: undo?.state === "ready" ? undo.count : undo?.state === "restored" ? undo.restored.length + undo.skipped.length : undo ? undo.fields.length || null : null,
+    steps: run.receipt.steps,
+    total: run.receipt.total,
+    undo: !undo ? "none" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
+    // 和回答下的「还原填写」是同一个动作：点那个按钮，结果行、变淡都照原样。
+    onUndo: () => {
+      const button = fillUndoAnswer()?.querySelector<HTMLButtonElement>('.answer-primary[data-action="undo-fill"]');
+
+      if (button) button.click();
+      else port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg);
+    },
+  });
 }
 
 /** 交付属于哪一块过程：正在跑的那块，或刚收尾的那块；runId 对不上就不属于任何一块。 */
@@ -4700,7 +4734,8 @@ let quietTimer = 0;
 function quietRunForProse(): void {
   const run = currentRun;
 
-  if (!run || run.body.querySelector(".chip")) return;
+  // 计划卡留到这一轮结束：计划是这一轮的承诺，不因先出字就收掉。
+  if (!run || run.body.querySelector(".chip") || run.root.classList.contains("plan-card")) return;
   // 首字到达立刻停表，不留 0 秒，也不再累加（#311）。
   stopLiveSeconds(run);
   run.thinkFrom = Number.NaN;
@@ -6156,6 +6191,8 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "fill_undo") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     noteFillUndo(envelope.undo, envelope.refused, fillUndoAnswer());
+    planUndo = envelope.undo;
+    paintPlanCard();
 
     return;
   }
