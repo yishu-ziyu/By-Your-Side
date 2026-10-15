@@ -13,7 +13,8 @@ const MAX_ELEMENT_CHARS = 1_000_000;
 
 export type ReadElementResult = ToolContract["read_element"]["data"];
 
-type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'>;
+/** secret 只在扩展内部用（fill 的 from 据它拒读），不出现在 read_element 的回执里。 */
+type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { secret?: true };
 
 type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 
@@ -307,6 +308,8 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     if(hasValue)data.value=maskValue(String(el.value ?? ''));
 
+    if(secretField)data.secret=true;
+
     if(properties.length)data.properties=values;
 
     // 说明会放在页面内容包装之外，只用固定文字和已校验的属性名，不带任何网页文字（包括标签名）。
@@ -484,17 +487,46 @@ export async function readElement(
   checkCurrent:()=>void=()=>{},
 ): Promise<ReadElementResult> {
   try {
-    return await readElementInner(params, executionKey, checkCurrent);
+    const result = await readElementInner(params, executionKey, checkCurrent);
+    delete result.secret;
+
+    return result;
   } catch (error) {
     throw typedReadElementError(error);
   }
+}
+
+/**
+ * fill 的 from：读出要原样写进另一栏的文字，不经过模型。口径同 read_element：输入框、下拉框取 displayValue，
+ * 富文本编辑器取 editableText（保留段落和换行），其余取 visibleText（只要渲染出来的文字节点，文字里的换行照留）；去掉首尾空白。
+ * 密码、验证码、卡号这类栏按 read_element 的同一条规则拒读：它们的值从不读出。
+ */
+export async function readFillSource(source: {tabId?: number; target: string}, executionKey: string = LEAD_SESSION_ID): Promise<string> {
+  let data: ElementData & {tabId: number};
+
+  try {
+    data = await readElementInner({tabId: source.tabId, target: source.target, properties: ['visibleText', 'displayValue']}, executionKey);
+  } catch (error) {
+    throw typedReadElementError(error);
+  }
+
+  if (data.secret) throw new Error('PERMISSION_DENIED: from 指向密码、验证码或卡号这类敏感栏，不读取它的内容；填写未执行。');
+  const raw = ['input', 'textarea', 'select'].includes(data.tagName) ? data.properties?.displayValue
+    : data.editableText ?? data.properties?.visibleText;
+
+  if (typeof raw !== 'string') throw new Error('NOT_READY: from 指向的元素读不出文字；填写未执行。');
+  const text = raw.trim();
+
+  if (!text) throw new Error('NOT_READY: from 指向的元素没有可见文字；填写未执行。请确认 from 指的是那段文字所在的元素。');
+
+  return text;
 }
 
 async function readElementInner(
   params: ToolContract["read_element"]["params"],
   executionKey: string = LEAD_SESSION_ID,
   checkCurrent:()=>void=()=>{},
-): Promise<ReadElementResult> {
+): Promise<ReadElementResult & { secret?: true }> {
   const readback=params.readback;
 
   const check=()=>{

@@ -73,6 +73,22 @@ function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: 
   return ` The ${what} now contains: ${value}${readback.match === "reformatted" ? " (the page changed spacing or letter case)" : ""}.`;
 }
 
+/** fill 的 from：说清搬了多少字、读回是否一致；首尾几个字是网页内容，按不可信页面数据包起来。 */
+function sourceNote(source: NonNullable<ToolContract["fill"]["data"]["source"]>, from: { tabId?: number; target: string } | undefined, readback: ToolContract["fill"]["data"]["readback"]): string {
+  const where = from ? ` from ${from.target}${from.tabId !== undefined ? ` in tab ${from.tabId}` : ""}` : "";
+  const ends = source.tail ? `starts «${source.head}» … ends «${source.tail}»` : `«${source.head}»`;
+  let check = "";
+
+  if (readback?.sensitive) check = " The field is sensitive; it was not read back.";
+  else if (readback?.match === "same") check = " Read back: the field now holds exactly this text.";
+  else if (readback?.match === "reformatted") check = " Read back: the field holds this text, but the page changed its spacing or letter case.";
+  else if (readback?.match === "not_held") check = " Problem: the field is empty after the write; the page did not keep the text.";
+  else if (readback?.match === "different") check = " Problem: the field now holds different text from the copied text.";
+  else if (readback) check = " Could not read the field back from the page.";
+
+  return ` Copied ${source.chars} characters${where} by the browser, not retyped; the text ${wrapPageContent(redactCredentialText(ends))}.${check}`;
+}
+
 /** 动作之后页面上新出现的行（扩展和模型上次读到的这一页比，见 extension/src/background/page-changes.ts）。是网页内容，按不可信页面数据包起来。 */
 /** unattributed：效果判断说这一步没引起变化。这时新出现的内容照给，但写明不一定是这一步带来的，“别盲目重复”的警告照旧。 */
 function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | undefined, unattributed = false): string {
@@ -451,7 +467,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout, download or error_page), js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content, deliver}) saves text the program already holds as a file in this conversation (same file list as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten, shown}. Set deliver: true only when the user asked for this file (an export, download or table to keep): only then it shows as a side-panel card; without it the file is a working file the user does not see (e.g. one you will upload). For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' Every snake_case method also answers to its camelCase name (pressKey = press_key, readElement = read_element). browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. browser.check({text, selector?, state:"appears"|"disappears", timeoutMs:3000}) polls for a text or target without a model round trip and returns {ok, waitedMs, polls} (ok:false on timeout, never an error) — use it right after an action to confirm the outcome instead of a new snapshot. browser.assert({ok, name, reason}) stops the whole program when ok is false: no later action runs, and the result says which step stopped and why. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
+      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so page code goes inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout, download or error_page), js({code})->{value}, hover/click({target or point}), fill({target,value} or {target,from}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content, deliver}) saves text the program already holds as a file in this conversation (same file list as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten, shown}. Set deliver: true only when the user asked for this file (an export, download or table to keep): only then it shows as a side-panel card; without it the file is a working file the user does not see (e.g. one you will upload). For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' Every snake_case method also answers to its camelCase name (pressKey = press_key, readElement = read_element). browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. browser.check({text, selector?, state:"appears"|"disappears", timeoutMs:3000}) polls for a text or target without a model round trip and returns {ok, waitedMs, polls} (ok:false on timeout, never an error) — use it right after an action to confirm the outcome instead of a new snapshot. browser.assert({ok, name, reason}) stops the whole program when ok is false: no later action runs, and the result says which step stopped and why. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -971,19 +987,25 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fill",
       label: "Fill",
       description:
-        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
+        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. To put text that is already on a page into a field verbatim, pass from pointing at the element that holds it instead of retyping it in value. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
-        value: Type.String({ description: "Value to set" }),
+        value: Type.Optional(Type.String({ description: "Value to set. Give exactly one of value and from." })),
+        from: Type.Optional(Type.Object({
+          target: Type.String({ description: 'The element that holds the text: "@N" ref or unique CSS selector' }),
+          tabId: Type.Optional(Type.Integer({ description: "Tab of that element; omit when it is on the tab being filled" })),
+        }, { description: "Copy an element's text into the field without retyping it: its visible text as read_element visibleText (newlines kept; a field's displayed value; a rich editor's editableText), trimmed at both ends. Refused on password, code and card-number fields." })),
         submit: Type.Optional(Type.Boolean({ description: "Press Enter after filling (search boxes and single-line text fields only; refused on message boxes, multi-line fields and editors, where Enter may send)" })),
       }),
       execute: async (_id, params) => {
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
         // 键盘输入和旧写法都没写进去：如实说，建议点进框里逐字输入。
         const failed = data.typing === "failed" ? " Keyboard input and the direct write both failed to put the value in; do not retry the same way — tell the user the field did not take it." : "";
+        const copied = data.source ? sourceNote(data.source, params.from, data.readback) : readbackNote(data.readback, "field");
 
         // The browser rejects the value for the field's min/max/step: say so, never plain success.
-        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + readbackNote(data.readback, "field") + failed + appearedNote(data.appeared) + submitNote(data.submit), data);
+        // 诊断记录只留搬运的字数，首尾几个字只给模型看。
+        return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + copied + failed + appearedNote(data.appeared) + submitNote(data.submit), data.source ? { ...data, source: { chars: data.source.chars } } : data);
       },
     }),
 

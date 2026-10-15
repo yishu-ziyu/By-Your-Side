@@ -57,6 +57,9 @@ export interface FieldReadback { name: string; match: FieldReadbackMatch; reques
 
 export const FIELD_READBACK_MAX = 1000;
 
+/** fill 的 from：文字所在的元素；tabId 缺省为要填的那一页。 */
+export interface FillSource { tabId?: number; target: string }
+
 export interface ConversationSummary {
   id: string; title: string; createdAt: number; updatedAt: number;
   state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
@@ -729,7 +732,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; /** 填完按一次回车；只给搜索框和普通单行框。 */ submit?: boolean; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; appeared?: import('./effect.js').PageAppeared; /** 真实键盘输入和旧写法都没写进去。 */ typing?: "failed"; /** submit 时：按了回车（结果同 press_key），或为什么没按。 */ submit?: { refused: string } | { uncertain: string } | { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } }; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. */ readback?: FieldReadback; /** 快照里这个 ref 的输入框被页面重渲染换掉，已按原输入框的名字找回唯一的新输入框并在它上面填写。 */ refound?: true } };
+  fill: { params: { tabId?: number; target: string; /** Exactly one of value and from. */ value?: string; /** 从页面上一个元素取文字原样写入，文字不经过模型。 */ from?: FillSource; /** 填完按一次回车；只给搜索框和普通单行框。 */ submit?: boolean; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; appeared?: import('./effect.js').PageAppeared; /** 真实键盘输入和旧写法都没写进去。 */ typing?: "failed"; /** submit 时：按了回车（结果同 press_key），或为什么没按。 */ submit?: { refused: string } | { uncertain: string } | { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } }; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. With from, requested/observed are left out: the copied text stays out of model context and traces. */ readback?: FieldReadback; /** With from: how much was copied, and its ends for the model to confirm the right element. */ source?: { chars: number; head: string; tail: string }; /** 快照里这个 ref 的输入框被页面重渲染换掉，已按原输入框的名字找回唯一的新输入框并在它上面填写。 */ refound?: true } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {
