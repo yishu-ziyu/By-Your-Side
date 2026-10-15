@@ -1,8 +1,10 @@
 /**
- * 模型的输出切在链接中间（网址里、方括号前后、裸网址中间）时，回答显示完后每个链接的文字和地址都完整，链接外没有多出来的字。
+ * 模型的输出切在链接中间（网址里、方括号前后、裸网址中间）时，回答显示完后每个链接的文字和地址都完整，链接外没有多出来的字；
+ * 切在代码块语言名中间（「```j」「s」）时，写代码的过程中语言名一直是完整的，代码里没有混进语言名的后半截。
  *   npx tsx scripts/acceptance/real-path/stream-link-split.mts --headless
  * 脚本模型按给定的段写一段回答，每段之间停 700ms，让侧栏先把前半截放出来。只装扩展。
- * 失败方式：后半截网址被接进链接文字里，链接地址停在「https:」；「[来源]」后面接上的「(网址)」露成原文；裸网址只有前半截能点。
+ * 失败方式：后半截网址被接进链接文字里，链接地址停在「https:」；「[来源]」后面接上的「(网址)」露成原文；裸网址只有前半截能点；
+ * 代码块那一条写着「j」，代码以「s」开头，直到代码块写完才变对。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -33,7 +35,10 @@ const CASES: Array<[string, string]> = [
 
 const PIECES: NonNullable<TextStep["pieces"]> = [
   ...CASES.flatMap(([head, tail], i) => [{ text: `${i ? "\n\n" : ""}${head}`, delayMs: 700 }, { text: tail, delayMs: 700 }]),
-  { text: "\n\n以上。", delayMs: 700 },
+  { text: "\n\n```j", delayMs: 700 },
+  { text: "s\nconst a = 1;", delayMs: 700 },
+  { text: "\nconst b = 2;", delayMs: 700 },
+  { text: "\n```\n\n以上。", delayMs: 700 },
 ];
 
 const EXPECTED = {
@@ -43,6 +48,12 @@ const EXPECTED = {
     { text: "https://example.com/x", href: "https://example.com/x" },
   ],
 };
+
+/** 代码块每次变化时那一条的语言名和代码，只记已经有代码的时候。 */
+const WATCH_CODE = `(() => { const seen = window.__code = new Set(); new MutationObserver(() => {
+  const block = [...document.querySelectorAll(".msg.assistant")].at(-1)?.querySelector(".code-block"); const code = block?.querySelector("pre code")?.textContent ?? "";
+  if (code.trim()) seen.add(JSON.stringify({ label: block.querySelector(".code-block-lang")?.getAttribute("data-label") ?? null, code }));
+}).observe(document.body, { childList: true, subtree: true, characterData: true }); return true; })()`;
 
 const model = await startScriptedModel([{ match: ASK, steps: [{ text: PIECES.map((p) => p.text).join(""), pieces: PIECES }] }]);
 
@@ -67,14 +78,19 @@ try {
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`)) || undefined, 60_000, "侧栏就绪");
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
 
+  await rp.evaluate(panel, WATCH_CODE);
   await rp.click(panel, "#input");
   await rp.typeText(panel, ASK);
   await rp.pressEnter(panel);
   await until(async () => (await rp.evaluate(panel, `(() => { const m = [...document.querySelectorAll(".msg.assistant")].at(-1); return !!m?.querySelector(".answer-primary") && !m.matches("[data-revealing]") && !m.querySelector("[data-revealing]"); })()`)) || undefined, 60_000, "回答显示完");
-  evidence = await rp.evaluate(panel, STATE);
+  const state = await rp.evaluate(panel, STATE);
+  const code = (await rp.evaluate(panel, `[...window.__code].map((s) => JSON.parse(s))`)) as Array<{ label: string | null; code: string }>; // SAFETY: WATCH_CODE 只记这个形状。
+  evidence = { ...(state as object), code };
   await rp.screenshot(panel, join(artifacts, "answer.png"));
 
-  assert.deepEqual(evidence, EXPECTED, `切在链接中间的回答显示完后，链接完整、没有多出来的字：${JSON.stringify(evidence)}`);
+  assert.deepEqual(state, EXPECTED, `切在链接中间的回答显示完后，链接完整、没有多出来的字：${JSON.stringify(state)}`);
+  const wrong = code.filter((c) => c.label !== "JavaScript" || !"const a = 1;\nconst b = 2;\n".startsWith(c.code.replace(/\n$/, "")));
+  assert.ok(code.length > 1 && !wrong.length, `代码块边写边显示时语言名完整、代码没有混进别的字：${JSON.stringify(code)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {

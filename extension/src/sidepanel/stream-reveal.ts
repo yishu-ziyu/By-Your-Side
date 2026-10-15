@@ -2,7 +2,7 @@
  * 回答的平滑显示：模型输出一阵一阵到，这里先缓冲，再按固定节拍一段段放出来。
  *
  * - 节拍：每 150～200ms 放一段，一段 14～24 字；积压多时把段放大，约 1.5 秒内追平。
- * - 淡入：每段 400ms 只改透明度，淡完拆掉 span。只接在最后一段文字后面、不改已渲染结构的续写直接追加，否则只重渲染最后一块。
+ * - 淡入：每段 400ms 只改透明度，淡完拆掉 span。渲染结果只是在最后一个字后面多出续写时直接追加，否则只重渲染最后一块。
  * - 未闭合的 Markdown 先补齐，不让 `**`、`` ` ``、半截链接露出来。
  * - 有卡片的回答不分块：卡片前后的正文要用卡片里的数（{=名字}、「见下方卡片」），所以每段都按整个前缀渲染，
  *   走 patchAnswer 放进页面：已显示的卡片组件节点不动，卡片里的字不按段淡入，组件写完整块淡入。
@@ -26,12 +26,12 @@ export const FADE_MS = D_READ;
 const FADE_SLACK_MS = 100;
 
 const PUNCT = /[，。；：、！？,.;:!?）」”]/;
-const MD_SYNTAX = /[*_`#\[\]<>|~\\!-]/;
 const AVG_BEAT = (BEAT_MIN + BEAT_MAX) / 2;
 
 type Fade = { from: number; to: number; at: number };
 
-type Block = { md: string; nodes: ChildNode[]; len: number; fades: Fade[] };
+/** html 是这一块上次的渲染结果，用来判断续写能不能直接追加；parsed 是它解析出来、没放进页面的那份，没有时再解析。 */
+type Block = { md: string; html: string; parsed: ChildNode[] | null; nodes: ChildNode[]; len: number; fades: Fade[] };
 
 type Options = {
   render: (text: string) => string;
@@ -77,6 +77,10 @@ function remendCode(md: string): string {
 }
 
 function remendLink(md: string): string {
+  // 没写完的图片先不显示：补上 `)` 会给半截地址出一个能点开的图片占位，点开的是错的那张。
+  const image = /!\[[^\]\n]*(?:\]\([^)\n]*)?$/.exec(md);
+
+  if (image) return md.slice(0, image.index);
   if (/\[[^\]]*\]\([^)\n]*$/.test(md)) return `${md})`;
   if (/\[[^\]]*$/.test(md)) return `${md}]`;
 
@@ -186,19 +190,22 @@ function take(buffer: string, done: boolean, rng: () => number): { chunk: string
   return { chunk: prefix + chars.slice(0, n).join(""), rest: chars.slice(n).join("") };
 }
 
+/** 最后一个有字的文本节点。marked 在 </li>、</tbody>、</blockquote> 前留的换行不算，续写要接在条目里面。 */
 function lastText(nodes: ChildNode[]): Text | null {
-  for (let i = nodes.length - 1; i >= 0; i -= 1) {
-    const root = nodes[i]!;
+  const texts = collectTexts(nodes);
 
-    if (root.nodeType === Node.TEXT_NODE) return root as Text;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let last: Text | null = null;
-
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) last = node as Text;
-    if (last) return last;
-  }
+  for (let i = texts.length - 1; i >= 0; i -= 1) if (texts[i]!.data.trim()) return texts[i]!;
 
   return null;
+}
+
+/** 续写接在最后一个字后面：代码块的字后面还跟着渲染出来的换行，接在换行前。 */
+function insertAt(last: Text): Text {
+  const end = last.data.trimEnd().length;
+
+  if (end < last.data.length) last.splitText(end);
+
+  return last;
 }
 
 function collectTexts(nodes: ChildNode[]): Text[] {
@@ -358,7 +365,10 @@ class Reveal {
       return;
     }
 
-    for (const [i, part] of splitBlocks(md).entries()) this.paintBlock(i, part, false, now);
+    for (const [i, part] of splitBlocks(md).entries()) {
+      const html = this.opts.render(part);
+      this.paintBlock(i, part, html, topNodes(html, this.el), now);
+    }
   }
 
   private schedule(immediate = false): void {
@@ -441,11 +451,12 @@ class Reveal {
       const old = this.blocks[i];
 
       if (old && old.md === md) continue;
+      const html = this.opts.render(live ? remend(md) : md);
+      const nodes = topNodes(html, this.el);
       const added = old && md.startsWith(old.md) ? md.slice(old.md.length) : null;
-      const codeTail = old?.md.startsWith("```") && added !== null && !/[*_`#\[\]<>|~\\!]/.test(added);
+      const at = old && added && old.nodes.length ? this.appendOffset(old, nodes, added) : null;
 
-      if (old && added && old.nodes.length && (codeTail || (!MD_SYNTAX.test(added) && this.onlyExtendsText(old.md, md, added, live)))) this.appendFast(old, added, now);
-      else this.paintBlock(i, md, live, now);
+      if (!(old && added && at !== null && this.appendFast(old, md, html, nodes, added, at, now))) this.paintBlock(i, md, html, nodes, now);
     }
 
     while (this.blocks.length > parts.length) {
@@ -489,41 +500,50 @@ class Reveal {
   }
 
   /**
-   * 不含记号的续写也可能改掉已渲染的结构：补上的 `)` 让「[来源](https:」先成了链接，后半截网址其实在地址里；
-   * 「[来源]」接上「(网址)」才成链接；裸网址接着写还是同一个链接；段尾的空行不是正文。
-   * 所以只在新渲染结果正好等于旧结果最后一段文字后面接上 added 时才直接追加。
+   * 续写不含记号也可能改掉已渲染的结构：补上的 `)` 让「[来源](https:」先成了链接，后半截网址其实在地址里；
+   * 「[来源]」接上「(网址)」才成链接；裸网址接着写要改地址；「```j」接上「s」语言名才完整；段尾的空行不是正文。
+   * 所以只在新渲染结果正好等于旧结果最后一个字后面接上 added 时才直接追加，返回接上的位置（按块里的字数）；否则返回 null。
    */
-  private onlyExtendsText(oldMd: string, md: string, added: string, live: boolean): boolean {
-    const fix = live ? remend : (text: string) => text;
-    const before = topNodes(this.opts.render(fix(oldMd)));
+  private appendOffset(old: Block, nodes: ChildNode[], added: string): number | null {
+    // 改的是旧块的那份解析：判完不管成不成，旧块的渲染结果都会换成新的。
+    const before = old.parsed ?? topNodes(old.html, this.el);
     const last = lastText(before);
 
-    if (!last) return false;
-    last.data += added;
+    if (!last) return null;
+    insertAt(last).appendData(added);
 
-    return serialize(before) === serialize(topNodes(this.opts.render(fix(md))));
+    if (serialize(before) !== serialize(nodes)) return null;
+    let at = 0;
+
+    for (const text of collectTexts(before)) {
+      if (text === last) return at + last.data.length - added.length;
+      at += text.data.length;
+    }
+
+    return null;
   }
 
-  private appendFast(block: Block, added: string, now: number): void {
-    const last = lastText(block.nodes);
+  private appendFast(block: Block, md: string, html: string, parsed: ChildNode[], added: string, at: number, now: number): boolean {
+    const text = lastText(block.nodes);
+
+    if (!text) return false;
+    const last = insertAt(text);
     const span = fadeSpan(0);
     span.textContent = added;
-    const parent = last?.parentElement;
-    const anchor = parent?.classList.contains("chunk-fade") ? parent : last;
+    const parent = last.parentElement;
+    const anchor = parent?.classList.contains("chunk-fade") && parent.lastChild === last ? parent : last;
 
-    if (anchor) anchor.after(span);
-    else {
-      const host = block.nodes[block.nodes.length - 1];
-      if (host instanceof Element) host.append(span);
-      else this.el.insertBefore(span, anchorBefore(this.el));
-    }
-    block.fades.push({ from: block.len, to: block.len + added.length, at: now });
+    anchor.after(span);
+    block.fades.push({ from: at, to: at + added.length, at: now });
     block.len += added.length;
-    block.md += added;
+    block.md = md;
+    block.html = html;
+    block.parsed = parsed;
+
+    return true;
   }
 
-  private paintBlock(i: number, md: string, live: boolean, now: number): void {
-    const nodes = topNodes(this.opts.render(live ? remend(md) : md), this.el);
+  private paintBlock(i: number, md: string, html: string, nodes: ChildNode[], now: number): void {
     const len = nodes.reduce((sum, node) => sum + (node.textContent?.length ?? 0), 0);
     const old = this.blocks[i];
     let fades = old ? old.fades.filter((fade) => now - fade.at < FADE_MS && fade.from < len).map((fade) => ({ ...fade, to: Math.min(fade.to, len) })) : [];
@@ -540,7 +560,7 @@ class Reveal {
       this.el.insertBefore(frag, anchorBefore(this.el));
     }
 
-    this.blocks[i] = { md, nodes, len, fades };
+    this.blocks[i] = { md, html, parsed: null, nodes, len, fades };
     wrapRanges(nodes, fades, now);
   }
 }
