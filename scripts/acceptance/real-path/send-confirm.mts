@@ -17,7 +17,7 @@
  *   n) 同一条回复里并行点两次「发送」：只出一个确认框，第二次马上回「已有一个在等确认」；用户确认后恰好 1 条，第一次的结果是已发送。
  *   o) 没有表单、附近没有输入栏的「发送」：确认框只写网站和按钮名，没有内容行。
  * 确认框内容（R2）：a 写网站、「发送」和同一表单里草稿的文字；表单外另有一栏备忘，不能出现在确认框上。
- * 侧栏（R2）：a 等确认时过程行标题是「等你在网页上确认发送」，用户决定后消失；b 那一步写「（你确认过）」；
+ * 侧栏（R2）：a 等确认时过程行标题是「等你确认发送」，用户决定后消失；b 那一步写「（你确认过）」；
  *   c 那一步写「你没让发，草稿还在」，不标红、不写「没做成」，过程行标题也不写「没成功」；g 那一步写「没发：你中止了任务」；n 第二次写「没发：前一个确认还在等你」。截图 a-panel-waiting / b-panel / c-panel / g-panel。
  * 2 分钟没理的情况没跑：产品没有缩短等待的开关，也不为测试加。
  * 失败方式：去掉 click 里的确认等待，a 的服务器在用户决定前就收到 POST；不读落点上的按钮，h 的 POST 在用户决定前就到；
@@ -175,7 +175,7 @@ try {
 
   const toolsSince = (from: number) => toolTexts.slice(from);
 
-  const WAITING = "等你在网页上确认发送";
+  const WAITING = "等你确认发送";
 
   /** 侧栏最后一个过程行：标题和每一步的文字、是否标成失败。 */
   const lastRun = async () => (await rp.evaluate(panel, `(() => { const run = [...document.querySelectorAll(".run-steps")].at(-1); return run ? { title: run.querySelector(".run-title")?.textContent ?? "", steps: [...run.querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.querySelector(".chip-label")?.textContent ?? "", error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) } : null; })()`)) as { title: string; steps: Array<{ text: string; error: boolean }> } | null;
@@ -198,14 +198,14 @@ try {
   await rp.screenshot(work, join(out, "a-confirm.png"));
   const waitingA = await lastRun();
   await rp.screenshot(panel, join(out, "a-panel-waiting.png"));
-  check("a 等确认时：侧栏过程行标题是「等你在网页上确认发送」", !!waitingA?.title.includes(WAITING), { run: waitingA });
+  check("a 等确认时：侧栏过程行标题是「等你确认发送」", !!waitingA?.title.includes(WAITING), { run: waitingA });
   await userClick(boxA.yes!);
   const goneA = await until(async () => { const run = await lastRun(); return run && !run.title.includes(WAITING) ? run : null; }, 5_000, "用户决定后等确认的标题消失", 100).catch(() => null);
   check("a 用户决定后：等确认的标题 5 秒内消失", !!goneA, { run: goneA });
   await until(async () => sent() >= 1, 10_000, "确认后服务器收到发送");
   await answered("A 完成。");
   const toolA = toolsSince(from);
-  check("b 用户点「发送」：服务器恰好 1 条，结果写明用户确认后才点", sent() === 1 && toolA.some(t => t.includes("The user confirmed sending on the page")), { sent: sent(), tool: toolA });
+  check("b 用户点「发送」：服务器恰好 1 条，结果写明用户确认后才点", sent() === 1 && toolA.some(t => t.includes("The user confirmed sending")), { sent: sent(), tool: toolA });
   check("b 确认框已收起", !(await confirmBox()), null);
   const runB = await lastRun();
   const sendStepB = runB?.steps.find(step => step.text.includes("发送"));
@@ -225,9 +225,9 @@ try {
   const secondClickMs = Date.now() - declinedAt;
   void watching;
   const toolC = toolsSince(from);
-  check("c 用户点「不发」：服务器 0 条，结果写明用户没让发", sent() === sentBeforeC && toolC.some(t => t.includes("用户在网页上选了「不发」")), { sentDelta: sent() - sentBeforeC, tool: toolC });
-  check("c 同一轮再点同一个「发送」：仍 0 条，没有第二个确认框，直接说用户已选不发", !reappeared && sent() === sentBeforeC && toolC.some(t => t.includes("这一轮已经在网页上选了「不发」")), { reappeared, secondClickMs });
-  const repeats = toolC.filter(t => t.includes("这一轮已经在网页上选了「不发」")).length;
+  check("c 用户点「不发」：服务器 0 条，结果写明用户没让发", sent() === sentBeforeC && toolC.some(t => t.includes("用户选了「不发」")), { sentDelta: sent() - sentBeforeC, tool: toolC });
+  check("c 同一轮再点同一个「发送」：仍 0 条，没有第二个确认框，直接说用户已选不发", !reappeared && sent() === sentBeforeC && toolC.some(t => t.includes("这一轮已经选了「不发」")), { reappeared, secondClickMs });
+  const repeats = toolC.filter(t => t.includes("这一轮已经选了「不发」")).length;
   check("c 同一轮再点三次：都直接回用户已选不发，没有被当成连续出错停下", repeats === 3 && !/连续三次/.test(await panelText()), { repeats });
   // 等侧栏空闲再读过程行。
   await until(async () => !(await rp.evaluate(panel, 'document.querySelector("#send-btn").classList.contains("stopping")')), 10_000, "c 侧栏回到空闲", 50);
@@ -252,7 +252,7 @@ try {
   const toolD = toolsSince(from);
   const textD = await panelText();
   measured.dWaitedMs = waitedMs;
-  check("d 用户 40 秒后点「发送」：服务器 1 条，侧栏没有「结果未知」", stillShown && sent() - sentBeforeD === 1 && !textD.includes("结果未知") && toolD.some(t => t.includes("The user confirmed sending on the page")), { waitedMs, stillShown, sentDelta: sent() - sentBeforeD, unknownInPanel: textD.includes("结果未知"), tool: toolD });
+  check("d 用户 40 秒后点「发送」：服务器 1 条，侧栏没有「结果未知」", stillShown && sent() - sentBeforeD === 1 && !textD.includes("结果未知") && toolD.some(t => t.includes("The user confirmed sending")), { waitedMs, stillShown, sentDelta: sent() - sentBeforeD, unknownInPanel: textD.includes("结果未知"), tool: toolD });
   await rp.screenshot(panel, join(out, "d-panel.png"));
 
   // ── e：助手去点确认框上的「发送」──
@@ -269,7 +269,7 @@ try {
   await userClick((await confirmBox())?.no ?? boxE.no!);
   await answered("E 完成。");
   const toolE = toolsSince(from);
-  check("e 助手去点确认框上的「发送」：被拒绝，服务器 0 条", onYes && stillE && sentDuringE === 0 && sent() === sentBeforeE && toolE.some(t => t.includes("助手自己在页面上画")) && toolE.some(t => t.includes("用户在网页上选了「不发」")), { programPoint, yes: boxE.yes, stillE, sentDuringE, tool: toolE });
+  check("e 助手去点确认框上的「发送」：被拒绝，服务器 0 条", onYes && stillE && sentDuringE === 0 && sent() === sentBeforeE && toolE.some(t => t.includes("助手自己在页面上画")) && toolE.some(t => t.includes("用户选了「不发」")), { programPoint, yes: boxE.yes, stillE, sentDuringE, tool: toolE });
 
   // ── f：「保存」照旧直接点 ──
   const savedBefore = saved();
@@ -355,11 +355,12 @@ try {
   await ask(ASK.k2);
   const boxK2 = await until(async () => { if (sent() > sentBeforeK) return { early: true } as const; const box = await confirmBox(); return box?.yes ? box : null; }, 30_000, "插话以后确认框重新出现", 100).catch(() => null);
   const sentBeforeK2Decision = sent() - sentBeforeK;
-  if (boxK2 && "yes" in boxK2) { await rp.screenshot(work, join(out, "k-confirm-again.png")); await userClick(boxK2.yes!); await until(async () => sent() > sentBeforeK, 10_000, "插话后确认，服务器收到发送"); }
+  // 「发送」刚出现的那一会儿不算点击（SEND_ARM_MS）：像用户一样先看一眼再点。
+  if (boxK2 && "yes" in boxK2) { await rp.screenshot(work, join(out, "k-confirm-again.png")); await sleep(1000); await userClick(boxK2.yes!); await until(async () => sent() > sentBeforeK, 10_000, "插话后确认，服务器收到发送"); }
   await answered("K2 完成。").catch(() => {});
   await sleep(1000);
   const toolK = toolsSince(from);
-  check("k 「不发」后插话让发：确认框重新出现，确认后恰好 1 条", !!boxK2 && "yes" in boxK2 && sentBeforeK2Decision === 0 && sent() - sentBeforeK === 1 && toolK.some(t => t.includes("The user confirmed sending on the page")), { confirmAgain: !!boxK2 && "yes" in boxK2, sentBeforeK2Decision, sentDelta: sent() - sentBeforeK, tool: toolK });
+  check("k 「不发」后插话让发：确认框重新出现，确认后恰好 1 条", !!boxK2 && "yes" in boxK2 && sentBeforeK2Decision === 0 && sent() - sentBeforeK === 1 && toolK.some(t => t.includes("The user confirmed sending")), { confirmAgain: !!boxK2 && "yes" in boxK2, sentBeforeK2Decision, sentDelta: sent() - sentBeforeK, tool: toolK });
 
   // ── m：确认框在时，网页自己改网址（不换文档）──
   from = toolTexts.length;
@@ -372,7 +373,7 @@ try {
   await answered("M 完成。").catch(() => {});
   await sleep(1000);
   const toolM = toolsSince(from);
-  check("m 网页自己 pushState、改 #：确认框还在，确认后恰好 1 条", stillM?.id === boxM.id && sent() - sentBeforeM === 1 && toolM.some(t => t.includes("The user confirmed sending on the page")), { url: urlM as Json, stillShown: !!stillM, sentDelta: sent() - sentBeforeM, tool: toolM });
+  check("m 网页自己 pushState、改 #：确认框还在，确认后恰好 1 条", stillM?.id === boxM.id && sent() - sentBeforeM === 1 && toolM.some(t => t.includes("The user confirmed sending")), { url: urlM as Json, stillShown: !!stillM, sentDelta: sent() - sentBeforeM, tool: toolM });
 
   // ── n：同一条回复里并行点两次「发送」──
   from = toolTexts.length;
@@ -386,7 +387,7 @@ try {
   await sleep(1000);
   const toolN = toolsSince(from);
   const busyN = toolN.filter(t => t.includes("已经有一个「发送」在等用户确认")).length;
-  const sentN = toolN.filter(t => t.includes("The user confirmed sending on the page")).length;
+  const sentN = toolN.filter(t => t.includes("The user confirmed sending")).length;
   check("n 并行点两次「发送」：一个确认框，第二次马上被拒，确认后恰好 1 条，第一次回已发送", stillN?.id === boxN.id && busyN === 1 && sentN === 1 && toolN.length === 2 && sent() - sentBeforeN === 1, { sameBox: stillN?.id === boxN.id, busyN, sentN, sentDelta: sent() - sentBeforeN, tool: toolN });
   const runN = await lastRun();
   check("n 侧栏：第二次写「没发：前一个确认还在等你」，不标失败", runN?.steps.filter(step => step.text.includes("没发：前一个确认还在等你")).length === 1 && runN.steps.every(step => !step.error), { run: runN });

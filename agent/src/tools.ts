@@ -38,6 +38,24 @@ function textResult(text: string, details: unknown) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
+/**
+ * tabs 多带的参数指向另一个动作时，说明该用哪个；动作所需参数已给、只是多带了别的，就忽略多余的照常执行。
+ * close 带 url 不带 tabId 也拒绝：照常执行会关掉当前工作页，而模型想关的是那个网址的标签页。空串的 url 当作没给。
+ */
+function tabsMisuse(params: { action: string; url?: string; tabId?: number }): string | null {
+  const hasUrl = typeof params.url === "string" && params.url !== "";
+  const hasTab = typeof params.tabId === "number";
+  const action = `tabs action:"${params.action}"`;
+
+  if ((params.action === "list" || params.action === "active") && hasUrl) return `${action} 不接受 url；要打开这个网址用 action:"open"（新标签页）或 navigate（当前工作页）。`;
+
+  if (params.action === "open" && hasTab && !hasUrl) return `${action} 不接受 tabId，open 只开新标签页；要让标签页 ${params.tabId} 成为工作页用 action:"switch"。`;
+
+  if (params.action === "close" && hasUrl && !hasTab) return `${action} 不按 url 关闭，不给 tabId 会关掉当前工作页；要关这个网址所在的标签页，先用 action:"list" 找到它的 tabId。`;
+
+  return null;
+}
+
 /** 写入后网页里这一栏的实际内容（扩展读回并与要写的比较，不是送去的参数）；敏感栏不带值。 */
 function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: string): string {
   if (!readback) return "";
@@ -568,6 +586,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         }, { description: 'Host-issued guard for a switch selected from a current browser observation.' })),
       }),
       execute: async (_id, params) => {
+        // 指向另一个动作的参数照常执行会悄悄丢掉模型的意图（例如 list 带 url 只回列表），模型看不出用错就原地重复同一个调用。
+        const misuse = tabsMisuse(params);
+
+        if (misuse) throw new Error(misuse);
+
         if (params.action === "list") {
           const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
 
@@ -586,7 +609,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           const data = (await call("open_tab", params.url ? { url: params.url } : {})) as ToolContract["open_tab"]["data"];
 
           const opened = data.tabClosed ? `Opened ${data.url} in a new tab, which Chrome then closed` : `Created tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}`;
-          const text = `${opened}; document: ${data.readiness ?? "not checked"}${(data.readiness === "download" || data.readiness === "error_page") && data.note ? `\n${data.note}` : ""}`;
+          const text = `${opened}; document: ${data.readiness ?? "not checked"}${data.retry ? `\n${data.retry}` : ""}${(data.readiness === "download" || data.readiness === "error_page") && data.note ? `\n${data.note}` : ""}`;
 
           if (sid || data.tabClosed) return textResult(text, data);
 
@@ -642,7 +665,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
-        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`;
+        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}${data.retry ? `\n${data.retry}` : ""}`;
 
         // 地址变成了下载（页面没换）或 Chrome 显示错误页：不补读快照，只说 Chrome 报告的结果。
         if (data.readiness === "download" || data.readiness === "error_page") return textResult(data.note ? `${head}\n${data.note}` : head, data);
@@ -749,8 +772,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const appeared = appearedNote("appeared" in data ? data.appeared : undefined, !!effect && !effect.changed);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
-        // 用户在网页上点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
-        const clicked = data.sendConfirmed ? `The user confirmed sending on the page, then the extension clicked ${what}.` : `Clicked ${what}.`;
+        // 用户点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
+        const clicked = data.sendConfirmed ? `The user confirmed sending, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
 
         if (effectText) {
