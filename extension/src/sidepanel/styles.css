@@ -3635,3 +3635,46 @@ details.run-steps.run-quieting .run-time { animation: none; }
   #dictation-row { animation-name: fadeOnlyIn; }
   #dictation-text .dictation-caret { animation: none; }
 }
+
+/* ── 章节：新任务上方的分隔线，满 3 章时对话区上方一排跳转按钮 ───────────── */
+.chapter-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-meta);
+  color: var(--text-tertiary);
+  /* 跳到这一章时停在顶部渐隐带下面，不被它糊住。 */
+  scroll-margin-top: var(--s-5);
+}
+.chapter-divider[hidden] { display: none; }
+.chapter-divider::before,
+.chapter-divider::after { content: ""; flex: 1; height: 1px; background: var(--content-border); }
+.chapter-divider > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chapter-row {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--s-1);
+  padding: var(--s-1) var(--pad-x);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chapter-row[hidden] { display: none; }
+.chapter-jump {
+  flex-shrink: 0;
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  padding: 2px 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  background: var(--content-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--m-quick) var(--e-swift);
+}
+.chapter-jump:hover { color: var(--text-primary); }
