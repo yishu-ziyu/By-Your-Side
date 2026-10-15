@@ -379,8 +379,6 @@ class Reveal {
       this.opts.onProgress?.();
     }
 
-    if (this.shown >= this.target.length) this.finishIfDone();
-
     if (this.shown < this.target.length || !this.final) {
       this.timer = window.setTimeout(() => this.beat(), BEAT_MIN + this.rng() * (BEAT_MAX - BEAT_MIN));
 
@@ -394,6 +392,8 @@ class Reveal {
     }
 
     delete this.el.dataset.revealing;
+    // 收尾会拆分正文节点；必须等淡入拆掉 span，避免复制节点时丢失 animationend 监听。
+    this.finishIfDone();
   }
 
   private finishIfDone(): void {
