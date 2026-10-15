@@ -1,12 +1,13 @@
 /**
  * 过程块 AC：进行中两行，做完一行回执，展开是记录（#263，docs/evals/20261011-process-block-ac.md）。
  *   npx tsx scripts/acceptance/real-path/process-block.mts --headless
- * 脚本模型：想 4 秒 → 打开页 B → js（带用途「读出标题」）→ 点一个不存在的按钮（没做成）→ 想 8 秒 → 点「作品」→ 回答。
+ * 脚本模型：想 4 秒 → 打开页 B → js（带用途「读出标题」）→ 点一个不存在的按钮（没做成）→ 想 8 秒 → 点「作品」→ 等 4 秒、写思考、2 秒后出字、回答放 3 秒。
  *   a) 想 8 秒那段：第一行只写「正在思考」，秒数从这段开始数（和真实时间差 ≤1.2 秒）；第二行「已做 2 步 · 1 步换了做法」。
  *   b) 侧栏任何时候都没有「执行脚本」「0.0s」「+ 前面」「件事」。
  *   c) 回执「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式，换了做法的那步在展开的过程里）；380px 和 300px 宽都是一行。
- *   d) 展开的记录：「想了 N 秒」只列两段长的（4 秒、8 秒左右），末行「共 N 秒，其中想了 M 秒」，N 与发送到结束差 ≤1 秒。
+ *   d) 展开的记录：「想了 N 秒」只列三段长的（4 秒、8 秒左右，和最后一轮），末行「共 N 秒，其中想了 M 秒」，N 与发送到结束差 ≤1 秒。
  *   e) 重开侧栏（回放历史）后，过程块的文字和回放前一样；回放没有时钟时不写任何秒数。
+ *   f) 最后一轮的思考块标题从上一步结束数到回答出第一个字（约 6 秒），不从第一个思考字数到这一轮结束（约 5 秒）（#261）。
  * 失败方式：标题仍拼「· 已做 N 步」、秒数数整轮、回执只写步数或写了耗时，对应的项失败。反例结果见验收文件。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -45,7 +46,7 @@ const model = await startScriptedModel([
     { tool: { name: "js", args: { code: "(() => document.title)()", purpose: "读出标题", readonly: true } } },
     { tool: { name: "click", args: { target: "#gone", label: "不存在的按钮" } } },
     { tool: { name: "click", args: { target: "#ok", label: "作品" } }, delayMs: LONG_THINK_MS },
-    { text: ANSWER },
+    { text: ANSWER, delayMs: 4_000, reasoning: "核对一下点开的结果。", pieces: [{ text: "已经", delayMs: 2_000 }, { text: "点开", delayMs: 1_000 }, { text: "作品", delayMs: 1_000 }, { text: "。", delayMs: 1_000 }] },
   ] },
 ]);
 
@@ -131,7 +132,11 @@ try {
   const thinks = opened.record.filter(t => /^想了 \d+ 秒$/.test(t)).map(t => Number(/\d+/.exec(t)![0]));
   const total = /^共 (\d+) 秒，其中想了 (\d+) 秒$/.exec(opened.record.at(-1) ?? "");
   const wall = (endedAt - sentAt) / 1000;
-  check("d 记录只单列长思考（约 4 秒、8 秒），末行合计和真实时长差 ≤1 秒", thinks.length === 2 && Math.abs(thinks[0]! - 4) <= 1 && Math.abs(thinks[1]! - 8) <= 1 && !!total && Math.abs(Number(total[1]) - wall) <= 1.5 && opened.record.some(t => t.includes("读出标题")), { record: opened.record, wall });
+  check("d 记录只单列长思考（约 4 秒、8 秒，和最后一轮），末行合计和真实时长差 ≤1 秒", thinks.length === 3 && Math.abs(thinks[0]! - 4) <= 1 && Math.abs(thinks[1]! - 8) <= 1 && !!total && Math.abs(Number(total[1]) - wall) <= 1.5 && opened.record.some(t => t.includes("读出标题")), { record: opened.record, wall });
+
+  const finalLabel = await rp.evaluate(panel, '[...document.querySelectorAll("#messages details.run-steps")].at(-1).querySelectorAll("details.thinking:not(.narration) > summary > span")[0]?.textContent.trim() ?? ""') as string;
+  const finalSecs = Number(/^想了 (\d+) 秒$/.exec(finalLabel)?.[1] ?? NaN);
+  check("f 最后一轮的思考标题从上一步结束数到出第一个字（约 6 秒）", Math.abs(finalSecs - 6) <= 1, { finalLabel });
 
   const before = opened.text;
   await rp.cdp.send("Page.reload", {}, panel);
