@@ -1,5 +1,5 @@
 import {randomUUID} from "node:crypto";
-import type {ModelPort} from "./agent-loop.js";
+import {userWaiting, type ModelPort} from "./agent-loop.js";
 import type {VoiceConversationContext} from "../../shared/voice.js";
 import {VoiceIntentError} from "./voice-errors.js";
 import {SideCallError, sideJudgment, type AttemptOutcome, type RejectedEfforts, type SideCallHost} from "./side-judgment.js";
@@ -26,7 +26,8 @@ export interface VoiceModelCall {
 
 /** 语音判断走后台判断的同一入口。 */
 export function voiceSideHost(call: VoiceModelCall): SideCallHost {
-  return {models: call.runtime, rejected: call.rejected, record: call.record};
+  // 用户说完话在等语音的回应：按主任务请求的优先级排队，不排在记忆、核对这些后台判断后面。
+  return {models: {completeSimple: (model, context, options) => call.runtime.completeSimple(model, context, userWaiting(options ?? {}))}, rejected: call.rejected, record: call.record};
 }
 
 /** 判断失败的原因 → 语音分类错误码：超时单列，其余都是分类失败。 */
