@@ -4,7 +4,7 @@
  *   npx tsx scripts/acceptance/real-path/composer-expand.mts --headless
  *
  * 失败方式：空着就露出加号；点发送后空框加号还在；点进去加号不出现；打完字失焦后工具收回；窄到 320 发送键不见；
- * 按住工具行空白时工具先收起再展开；收起没有过渡；少动效设置下展开仍然弹。
+ * 按住工具行空白时工具先收起再展开；右键空白也展开；收起没有过渡；少动效设置下展开仍然弹。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -41,17 +41,17 @@ const blurComposer = (panel: string) => rp.evaluate(panel, `(() => {
 const toolsInAx = async (panel: string) => {
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: 0 }, panel);
   const shown: string[] = [];
-  for (const selector of ["#attach-btn", "#think-chip"]) {
+  for (const selector of ["#attach-btn", "#think-chip", ".voice-start"]) {
     const { nodeId } = await rp.cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector }, panel);
-    if (!nodeId) continue;
+    if (!nodeId) throw new Error(`工具行里找不到 ${selector}，无障碍检查不能当作通过`);
     const { nodes } = await rp.cdp.send("Accessibility.getPartialAXTree", { nodeId, fetchRelatives: false }, panel);
     if (nodes[0] && !nodes[0].ignored) shown.push(selector);
   }
   return shown;
 };
 
-const mouse = (panel: string, type: "mouseMoved" | "mousePressed" | "mouseReleased", at: { x: number; y: number }) =>
-  rp.cdp.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, ...(type === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }, panel);
+const mouse = (panel: string, type: "mouseMoved" | "mousePressed" | "mouseReleased", at: { x: number; y: number }, button: "left" | "right" = "left") =>
+  rp.cdp.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, ...(type === "mouseMoved" ? {} : { button, clickCount: 1 }) }, panel);
 
 const barSpot = (panel: string, selector: string, dx: string) => rp.evaluate(panel, `(() => {
   const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
@@ -122,6 +122,11 @@ try {
 
   const emptyBar = await barSpot(panel, "#composer-bar", "20");
   await mouse(panel, "mouseMoved", emptyBar);
+  await mouse(panel, "mousePressed", emptyBar, "right");
+  await mouse(panel, "mouseReleased", emptyBar, "right");
+  await sleep(350);
+  const rightClicked = await view(panel);
+  check("空框右键工具行空白：工具不展开", !rightClicked.toolsOpen && !rightClicked.attachClickable && !rightClicked.inAx.length && rightClicked.sendShown, rightClicked);
   await mouse(panel, "mousePressed", emptyBar);
   await mouse(panel, "mouseReleased", emptyBar);
   await sleep(350);
