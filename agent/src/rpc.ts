@@ -241,13 +241,6 @@ export class ToolRpc {
     this.pageTargets.set(key, { tabId, seq: targetSeq });
   }
 
-  /** 缺省页已被关掉：清空，不再补进之后的调用；不换成别的页，换页由模型用 tabs switch 决定。 */
-  private forgetClosedTarget(sessionId: string | undefined, closedTabId: number | null): void {
-    const key = this.targetKey(sessionId);
-
-    if (closedTabId != null && this.pageTargets.get(key)?.tabId === closedTabId) this.pageTargets.set(key, { tabId: null, seq: ++this.pageTargetSeq });
-  }
-
   /**
    * 登记一次 SDK 工具调用（含 browser_run 子步骤），默认动作前未执行。
    * 已存在的记录不降级，避免同一身份被后续只读调用覆盖。
@@ -504,8 +497,6 @@ export class ToolRpc {
       const heldReason = (data as { heldReason?: unknown } | undefined)?.heldReason;
 
       if (!ok && fact === "not_executed" && isHeldReason(heldReason)) disp.heldReason = heldReason;
-
-      if (!ok) this.forgetClosedTarget(disp.sessionId, numberField(data, "closedTabId"));
 
       if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
 
