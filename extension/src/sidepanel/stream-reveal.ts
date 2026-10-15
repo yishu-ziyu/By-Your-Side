@@ -22,6 +22,7 @@ const CATCH_UP_MS = 1500;
 const STARVE_MIN = 6;
 const STARVE_WAIT = 350;
 export const FADE_MS = D_READ;
+const FADE_SLACK_MS = 100;
 
 const PUNCT = /[，。；：、！？,.;:!?）」”]/;
 const MD_SYNTAX = /[*_`#\[\]<>|~\\!-]/;
@@ -220,15 +221,22 @@ function fadeSpan(delay: number): HTMLSpanElement {
   const span = document.createElement("span");
   span.className = "chunk-fade";
   if (delay) span.style.animationDelay = `${-delay}ms`;
-  span.addEventListener("animationend", function unwrap(event) {
-    if (event.target !== span) return;
-    span.removeEventListener("animationend", unwrap);
+  const unwrap = () => {
+    window.clearTimeout(timer);
+    span.removeEventListener("animationend", onEnd);
     const parent = span.parentNode;
 
     if (!parent) return;
     span.replaceWith(...span.childNodes);
     parent.normalize();
-  });
+  };
+  const onEnd = (event: AnimationEvent) => {
+    if (event.target === span) unwrap();
+  };
+  // 不显示的元素里（<span hidden>、收起的 <details>）动画不跑，等不到 animationend；淡入时长过了就自己拆，
+  // 否则收尾一直等 .chunk-fade 消失，回答永远停在「正在显示」。
+  const timer = window.setTimeout(unwrap, Math.max(FADE_MS - delay, 0) + FADE_SLACK_MS);
+  span.addEventListener("animationend", onEnd);
 
   return span;
 }
