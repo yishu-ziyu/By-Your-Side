@@ -49,8 +49,21 @@ export function plainStep(description: string): string {
   return plain || "处理这一步";
 }
 
-/** 错误卡按种类给按钮：auth 换 key，busy 稍后重试或换模型，missing 换模型，network 重试。 */
-export type ModelErrorKind = "auth" | "busy" | "missing" | "network" | "other";
+/**
+ * 服务商「忙」：限流（429）或同账号同时请求数超限。等一下再试就能好，不能当失败交给用户。
+ * Kimi 编程套餐在主模型与快速模型同时请求时回 403「concurrent request limit」，不是 key 的问题。
+ */
+export function isProviderBusyError(message: string | undefined): boolean {
+  return !!message && /concurrent request limit|too many concurrent|rate.?limit|\b429\b|overloaded|请求过于频繁|并发/i.test(message);
+}
+
+/** 额度或余额用尽：常带 429，但等多久都不会好。 */
+export function isQuotaError(message: string | undefined): boolean {
+  return !!message && /insufficient_quota|quota exceeded|exceeded your current quota|usage.?limit|out of budget|billing|available balance|余额不足|额度(不足|用尽|已用完)/i.test(message);
+}
+
+/** 错误卡按种类给按钮：auth 换 key，busy 倒计时自动重试或换模型，quota 稍后重试或换模型，missing 换模型，network 重试。 */
+export type ModelErrorKind = "auth" | "busy" | "quota" | "missing" | "network" | "other";
 
 export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; detail: string }
 
@@ -76,11 +89,20 @@ export function describeModelError(raw: string): ModelErrorCopy | null {
 }
 
 function classifyModelError(text: string, model: string | undefined): Pick<ModelErrorCopy, "kind" | "title" | "copy"> {
+  const quota = { kind: "quota", title: "额度用完了", copy: "充值或等额度恢复后再试，或换个模型立刻继续。" } as const;
+  // 额度用尽常带 429，但等多久都不会好：带这些字样的一律不进自动重试。
+  const quotaWords = /quota|insufficient|余额|额度/i.test(text);
+
+  if (isQuotaError(text)) return quota;
+
+  // 在 401/403 之前认：Kimi 同时请求数超限回的是 403 permission_error，等一下就好，不是 key 的问题。
+  if (isProviderBusyError(text) && !quotaWords) return { kind: "busy", title: "模型太忙了", copy: "请求太频繁，或同时请求太多。可以稍后再试，或换个模型立刻继续。" };
+
   if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid.{0,20}(api.?key|token)/i.test(text)) {
     return { kind: "auth", title: "模型拒绝了请求", copy: `key 无效，或这个 key 没有${model ? ` ${model} ` : "这个模型"}的权限。重试结果会一样，先换 key。` };
   }
 
-  if (/\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(text)) return { kind: "busy", title: "额度用完，或请求太频繁", copy: "可以稍后再试，或换个模型立刻继续。" };
+  if (quotaWords) return quota;
 
   if (/\b404\b|not.?found|does not exist|不存在/i.test(text)) return { kind: "missing", title: "找不到这个模型", copy: "可能已下线，或当前账号没有权限。换一个模型就能继续。" };
 
