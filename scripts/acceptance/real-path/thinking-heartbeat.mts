@@ -126,6 +126,8 @@ try {
   await sleep(400);
   const done = (await read())!;
   await rp.screenshot(panel, join(out, "receipt.png"));
+  const checked = await until(async () => await rp.evaluate(panel, `(() => { const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1); const t = d?.querySelector(".run-title")?.textContent ?? ""; if (!t.includes("已核对页面")) return null; const m = d.querySelector(".run-done-mark"); const p = m?.querySelector("path"); return { title: t, mark: !!m, fresh: !!m?.classList.contains("fresh"), draw: p ? getComputedStyle(p).animationName : "", color: m ? getComputedStyle(m).color : "" }; })()`), 30_000, "核对完成", 100).catch(() => null);
+  check("e 核对确认做完：回执前一个绿对勾，当场一笔画出", !!checked?.mark && checked.fresh && /doneMarkDraw/.test(checked.draw) && /rgba?\(\s*67\s*,\s*133\s*,\s*88/.test(checked.color), checked);
   check("d 回执是一行「做了 3 步 · 耗时 · 核对状态」；转圈收掉", /^做了 3 步 · \d[^·]*秒 · (核对中…|已核对页面)$/.test(done.title) && done.beatDisplay === "none", { title: done.title, beatDisplay: done.beatDisplay, done: done.done });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every((c) => c.pass) ? "PASS" : "FAIL", checks, modelRequests: model.requests }, null, 2));

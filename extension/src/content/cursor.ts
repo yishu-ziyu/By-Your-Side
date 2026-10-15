@@ -293,11 +293,11 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       .ripple {
         position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
         border-radius: 50%; border: 2px solid;
-        animation: rip 360ms cubic-bezier(.16,1,.3,1) forwards;
+        animation: rip 560ms cubic-bezier(.16,1,.3,1) forwards;
       }
       .ripple.r2 {
         width: 6px; height: 6px; margin: -3px 0 0 -3px;
-        border-width: 1.5px; animation-delay: 90ms;
+        border-width: 1.5px; animation-delay: 120ms;
       }
       @keyframes rip {
         from { transform: scale(.5); opacity: .95; }
