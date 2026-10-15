@@ -66,11 +66,15 @@ export function isRelevantExperience(topic: string, query: string): boolean {
 }
 
 /**
- * Request filler for the answer line only. An n-gram is dropped when every character of it sits inside a
- * filler phrase at that spot, so 「帮我查一下」 and 「看一下这个」 never make two requests look related, while
- * 逐一查看 keeps 查看, 统一下单 keeps 下单 and 一个人 keeps 个人.
+ * Request filler and browsing words for the answer line only. An n-gram is dropped when every character of it
+ * sits inside one of these phrases at that spot, so 「帮我查一下」, 「请打开」 and 「点击一下」 never make two
+ * requests look related, while 统一下单 keeps 下单 and 一个人 keeps 个人. Browsing words are here because almost
+ * every browser request has one: a past task that shares only 打开 says nothing about this request.
  */
-const FILLER = ["帮我", "请你", "麻烦", "一下", "查一", "看一", "一查", "一看", "看看", "这个", "那个", "这款", "这页", "这里", "那里", "怎么", "怎样", "什么", "可以", "一个"];
+const FILLER = ["帮我", "请你", "请", "麻烦", "一下", "查一", "看一", "一查", "一看", "看看", "这个", "那个", "这款", "这页", "这里", "那里", "怎么", "怎样", "什么", "可以", "一个",
+  "打开", "点击", "点开", "进入", "查看", "浏览", "关闭", "切换", "返回", "回到", "网站", "网页", "页面", "标签页"];
+
+const ENGLISH_BROWSING = ["open", "click", "view", "close", "page", "website", "tab"];
 
 /**
  * Whether the answer line names a memory for this request: the loose rule with filler n-grams removed.
@@ -102,6 +106,8 @@ function namingTerms(text: string): Set<string> {
   }
 
   for (const term of fillerOnly) if (!kept.has(term)) terms.delete(term);
+
+  for (const word of ENGLISH_BROWSING) terms.delete(word);
 
   return terms;
 }

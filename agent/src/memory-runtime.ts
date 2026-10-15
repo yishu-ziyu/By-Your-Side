@@ -922,8 +922,9 @@ export class MemoryRuntime {
     selection.entries = selection.entries.flatMap(item => (current.has(item.entry.id) ? [{ ...item, entry: current.get(item.entry.id)! }] : []));
     this.usedThisTurn = selection.entries.map(item => item.entry);
     const refersBack = REFERS_TO_EARLIER_TASK.test(turn.text);
-    const named = (rule: MemoryContextRule, text: string) => (rule !== "always" && rule !== "in-validity") || (rule === "in-validity" && refersBack) || isNamedForRequest(text, turn.text);
-    const shown = selection.entries.filter(({ entry, rule }) => named(rule, entry.text)).map(item => item.entry);
+    const named = (rule: MemoryContextRule, text: string) => ((rule === "asked" || rule === "in-validity") && refersBack) || isNamedForRequest(text, turn.text);
+    // A memory the user saved for this site is always named here; a past task on this site was recorded automatically, so it must match the request.
+    const shown = selection.entries.filter(({ entry, rule }) => rule === "site" || named(rule, entry.text)).map(item => item.entry);
     const shownTasks = selection.tasks.filter(({ task, rule }) => named(rule, [task.goal, ...task.revisions, task.done ?? ""].join("\n"))).map(item => item.task);
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);
 
