@@ -36,7 +36,7 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
 import type { AgentToolResult, DefaultResourceLoader, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallError, sideJudgment, type RejectedEfforts, type SideCallHost } from "./side-judgment.js";
 import { MainEffort, restingEffort, thinkingChoice } from "./main-effort.js";
-import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
+import { userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
 import { PiAgentLoop } from "./pi-agent-loop.js";
@@ -561,7 +561,7 @@ if(required.includes(key))candidates.set(key,attachment);
     try {
       // 会话循环只有扩展内这一种（pi-agent-core）；本机 AgentSession 路径已删除。
       if (!options?.loop) throw new Error("模型运行时不可用");
-      const models: ModelPort = options.loop.models;
+      const models: ModelPort = options.loop.models.observeQueue?.(wait => resultHost?.runTrace.record("model_queue", wait)) ?? options.loop.models;
       const systemPrompt = options.systemPrompt ?? leadSystemPrompt();
       const appendPrompt = options.appendPrompt ?? ((base: string[]) => base);
       let memoryHost: AgentLoop | null = null;
@@ -1704,7 +1704,7 @@ return;}
       const backup=!first.text&&!options.signal.aborted?this.switchableBackup(this.session.model,first.result,'delivery'):undefined;
       const backupEffort=backup&&lowestEffort(backup,this.sideRejected);
       reply=backup?(await run(backup,{...options,headers:opencodeSessionHeaders(backup,this.session.sessionId),reasoning:backupEffort==='off'?undefined:backupEffort})).result:first.result;
-    }else reply=await this.modelRuntime.completeSimple(this.session.model,inputContext,options);
+    }else reply=await this.modelRuntime.completeSimple(this.session.model,inputContext,userWaiting(options));
     deliveryMetrics.composeMs.push(Date.now() - started);
 
     if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error("正式回答没有完成。");
