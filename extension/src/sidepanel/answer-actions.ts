@@ -1,4 +1,4 @@
-import { createElement as icon, Ellipsis, Undo2 } from "lucide";
+import { Check, createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
@@ -101,6 +101,7 @@ export function refreshPrimaryAction(answer: HTMLElement): void {
   primary.dataset.action = action?.id ?? "undo-fill";
   primary.disabled = !!stuck;
   primary.replaceChildren();
+  primary.classList.remove("copied");
   if (undo) primary.append(icon(Undo2));
   const label = document.createElement("span");
   label.textContent = action?.label ?? (isFillUndoPending(answer) ? "正在还原…" : fillUndoLabel(undo!));
@@ -108,7 +109,60 @@ export function refreshPrimaryAction(answer: HTMLElement): void {
   hint.className = "answer-enter-hint";
   hint.textContent = "↵";
   hint.hidden = true;
-  primary.append(label, hint);
+
+  if (!action?.id.startsWith("copy")) {
+    primary.append(label, hint);
+
+    return;
+  }
+
+  // 复制按钮两面叠在同一格：宽度按较宽的一面算，切换时旁边的东西不动。
+  const idle = document.createElement("span");
+  idle.className = "answer-face";
+  idle.append(label, hint);
+  const done = document.createElement("span");
+  done.className = "answer-face answer-face-done";
+  done.setAttribute("aria-hidden", "true");
+  const check = icon(Check);
+  check.querySelector("path")?.setAttribute("pathLength", "1");
+  done.append(check, Object.assign(document.createElement("span"), { textContent: "已复制" }));
+  primary.append(idle, done);
+}
+
+const COPIED_MS = 1500;
+
+/** 动作没做成：在一排末尾看得见地写出来（复制成功时这一格只给读屏，这里要撤掉）。 */
+export function showFailed(answer: HTMLElement): void {
+  const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
+
+  if (!feedback) return;
+  feedback.classList.remove("answer-feedback-sr");
+  feedback.textContent = "没做成";
+}
+
+/** 复制成功：复制按钮原地变成画出来的对勾，1.5 秒后变回；主按钮不是复制时（比如还原）在一排末尾写一句，同样到时清掉。读屏都念“已复制”。 */
+export function showCopied(answer: HTMLElement): void {
+  const primary = answer.querySelector<HTMLButtonElement>(".answer-primary");
+  const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
+  const inPlace = !!primary?.querySelector(".answer-face-done");
+
+  if (inPlace) {
+    primary!.classList.remove("copied");
+    void primary!.offsetWidth;
+    primary!.classList.add("copied");
+  }
+
+  if (feedback) {
+    feedback.textContent = "已复制";
+    feedback.classList.toggle("answer-feedback-sr", inPlace);
+  }
+
+  clearTimeout(Number(answer.dataset.copiedTimer));
+  answer.dataset.copiedTimer = String(setTimeout(() => {
+    primary?.classList.remove("copied");
+
+    if (feedback?.textContent === "已复制") feedback.textContent = "";
+  }, COPIED_MS));
 }
 
 /** keyboard：空输入框按回车。还原会改网页里的格子，只能点按钮，回车不触发；按钮灰着时回车什么也不做。 */
@@ -117,12 +171,11 @@ export async function runPrimaryAction(answer: HTMLElement, { keyboard = false }
 
   if (undo && (undo.state !== "ready" || isFillUndoPending(answer) || keyboard)) return;
   const action = listResultActions(answer).find((a) => a.primary);
-  const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
   try {
     await action?.run(answer);
-    if (feedback && action?.id.startsWith("copy")) feedback.textContent = "已复制";
+    if (action?.id.startsWith("copy")) showCopied(answer);
   } catch {
-    if (feedback) feedback.textContent = "没做成";
+    showFailed(answer);
   }
 }
 
