@@ -124,3 +124,9 @@
   .gc-in { animation: none; }
   .gc-btn:active { transform: none; }
 }
+
+/* 选了「先不发」后的回答只有一个按钮：不画卡片底和边。 */
+.gen-card.send-declined-card { background: none; border: 0; padding: 0; box-shadow: none; margin-top: 4px; }
+.gen-card.send-declined-card .gc-actions { margin: 0; padding: 0; border: 0; }
+/* 回答按段落分块放出，每块都换成这个按钮：只留第一个。 */
+.send-declined-card ~ .send-declined-card { display: none; }

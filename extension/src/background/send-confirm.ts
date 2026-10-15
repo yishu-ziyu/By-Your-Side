@@ -48,7 +48,12 @@ export function readRecipientInPage(x: number | null, y: number | null): string 
     const name = [el.name, el.id, el.getAttribute("aria-label"), el.labels?.[0]?.textContent, el.placeholder].join(" ");
     if (/(^|\s)(to|recipients?|收件人|发给)\b/i.test(name) || /收件人|发给/.test(name)) { const v = clip(el.value ?? el.textContent); if (v) return v; }
   }
-  return clip(document.querySelector("h1,h2")?.textContent) ?? clip(document.title);
+  // 标题常写成「和 @小王 的对话」「与张三的聊天」：只取人名，所在的聊天（网页标题）放在后面的全角括号里，读作「发给 @小王（团队聊天）」。
+  const who = (t: string | null) => t?.replace(/^(?:和|与|跟|同)\s*(.+?)\s*的(?:对话|聊天|私信|会话)$/, "$1").replace(/^(?:chat|conversation)\s+with\s+/i, "") ?? null;
+  const name = who(clip(document.querySelector("h1,h2")?.textContent));
+  const where = clip(document.title)?.replace(/^(?:和|与|跟|同)\s*(.+?)\s*的(?:对话|聊天|私信|会话)$/, "") || null;
+  if (!name) return clip(document.title);
+  return where && where !== name && !where.includes(name) ? `${name}（${where}）` : name;
 }
 
 export interface SendDetails { content?: string; recipient?: string; rect?: { left: number; top: number; width: number; height: number }; route?: SendConfirmView["route"] }
@@ -162,33 +167,14 @@ function showSendConfirm(attr: string, kind: string, portName: string, label: st
   const ring = document.createElement("div");
   ring.setAttribute(attr, kind);
   if (rect) ring.style.cssText = `all:initial;position:fixed;z-index:2147483646;pointer-events:none;left:${rect.left - 4}px;top:${rect.top - 4}px;width:${rect.width + 8}px;height:${rect.height + 8}px;border:3px solid #ff9f0a;border-radius:10px;box-shadow:0 0 0 4px rgba(255,159,10,.25)`;
+  // 确认只在侧栏问一次；网页上只圈出按钮，旁边一行字指向侧栏（不放按钮）。
+  void label; void content; void armMs; void sentence;
   const host = document.createElement("div");
   host.setAttribute(attr, kind);
-  host.style.cssText = "all:initial;display:block;position:fixed;z-index:2147483647;left:50%;bottom:24px;transform:translateX(-50%)";
-  const root = host.attachShadow({ mode: "closed" });
-  root.innerHTML = `<style>
-.cap{display:flex;flex-direction:column;gap:6px;max-width:min(420px,calc(100vw - 32px));padding:10px 8px 8px 16px;border-radius:20px;background:rgba(20,20,19,.92);color:#fff;font:14px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28)}
-.row{display:flex;align-items:center;gap:10px}
-.ask{flex:1}
-.site{padding-right:8px;font-size:12px;color:rgba(255,255,255,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.what{padding-right:8px;font-size:13px;color:rgba(255,255,255,.88);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
-button{all:unset;box-sizing:border-box;min-width:76px;text-align:center;padding:6px 14px;border-radius:99px;border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;font-weight:500;cursor:pointer}
-button:hover{background:rgba(255,255,255,.12)}
-button.yes{opacity:.6;transition:opacity .2s}
-button.yes.armed{opacity:1}
-button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
-</style><div class="cap" role="alertdialog" aria-label="发送确认" aria-describedby="site what"><div class="site" id="site"></div><div class="row"><span class="ask"></span><button class="no" type="button">先不发</button><button class="yes" type="button" tabindex="-1">发送</button></div></div>`;
-  root.querySelector(".ask")!.textContent = sentence;
-  root.querySelector(".site")!.textContent = `${location.host} · 「${label.trim()}」`;
-
-  // 读不到要发的内容就不写这一行，不编。
-  if (content) {
-    const what = document.createElement("div");
-    what.className = "what";
-    what.id = "what";
-    what.textContent = `「${content}」`;
-    root.querySelector(".site")!.after(what);
-  }
+  host.setAttribute("role", "status");
+  host.textContent = "等你在侧栏确认";
+  const base = "all:initial;display:block;position:fixed;z-index:2147483647;pointer-events:none;padding:4px 10px;border-radius:99px;background:#ff9f0a;color:#1a1a1a;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.25)";
+  host.style.cssText = base + ";visibility:hidden";
   const port = chrome.runtime.connect({ name: portName });
   const close = () => { host.remove(); ring.remove(); window.removeEventListener("keydown", onKey, true); };
   // Esc 等于「先不发」。
@@ -196,20 +182,15 @@ button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
   window.addEventListener("keydown", onKey, true);
   port.onDisconnect.addListener(close);
 
-  // 「发送」只认真实的鼠标点击：不进 Tab 顺序，键盘触发（detail 为 0）不算，防止按键把它按下去；刚出现的那一会儿也不算。
-  let armedAt = Infinity;
-  const answer = (choice: "send" | "decline") => (event: MouseEvent) => {
-    if (!event.isTrusted || (choice === "send" && (event.detail === 0 || performance.now() < armedAt))) return;
-    close();
-    port.postMessage({ choice });
-  };
-
-  root.querySelector<HTMLButtonElement>(".no")!.addEventListener("click", answer("decline"));
-  root.querySelector<HTMLButtonElement>(".yes")!.addEventListener("click", answer("send"));
   (document.body ?? document.documentElement).appendChild(host);
   if (rect) (document.body ?? document.documentElement).appendChild(ring);
-  armedAt = performance.now() + armMs;
-  setTimeout(() => root.querySelector(".yes")?.classList.add("armed"), armMs);
+  // 字贴在圈的下方（放不下就上方），始终夹在视口里。
+  const w = host.offsetWidth, h = host.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+  let left = rect ? rect.left : (vw - w) / 2, top = rect ? rect.top + rect.height + 10 : vh - h - 24;
+  if (rect && top + h > vh - 8) top = rect.top - h - 10;
+  left = Math.max(8, Math.min(left, vw - w - 8));
+  top = Math.max(8, Math.min(top, vh - h - 8));
+  host.style.cssText = `${base};left:${left}px;top:${top}px`;
 }
 
 /**
