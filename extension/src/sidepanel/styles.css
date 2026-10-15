@@ -1493,50 +1493,6 @@ details.run-steps.done .chip.error { background: transparent; }
   gap: inherit;
   min-width: 0;
   flex: 1;
-  min-height: 0;
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(6px);
-  transition:
-    max-height var(--d-emph) var(--e-spring),
-    opacity var(--d-micro) var(--e-exit),
-    transform var(--d-layout) var(--e-exit),
-    visibility var(--d-micro) linear;
-}
-
-/* 点发送键后焦点还在键上，#composer 仍是 focus-within；发送键不算在用输入框。 */
-#composer:focus-within:not(:has(#send-btn:focus-within, #steer-send-btn:focus-within, #takeover-btn:focus-within)) #composer-bar-inner,
-#composer.has-text #composer-bar-inner,
-#composer.drag-over #composer-bar-inner,
-#composer:has(#think-menu.open) #composer-bar-inner,
-#composer:has(.tile-56) #composer-bar-inner,
-#composer:has(#ask-cite:not([hidden])) #composer-bar-inner,
-#composer:has(#mention-strip:not([hidden])) #composer-bar-inner,
-#composer:has(#handoff-banner:not([hidden])) #composer-bar-inner,
-#composer:has(.voice-progress:not([hidden])) #composer-bar-inner,
-#app:has(#attach-menu:not([hidden])) #composer-bar-inner {
-  max-height: 40px;
-  opacity: 1;
-  overflow: visible;
-  visibility: visible;
-  pointer-events: auto;
-  transform: none;
-  transition:
-    max-height var(--d-emph) var(--e-spring),
-    opacity var(--d-state) var(--e-enter),
-    transform var(--d-layout) var(--e-spring),
-    visibility 0s;
-}
-
-/* 展开规则带 id 和 :has，权重比这里高，只能用 !important 盖过。 */
-@media (prefers-reduced-motion: reduce) {
-  #composer-bar-inner {
-    transform: none !important;
-    transition: opacity var(--d-micro) var(--e-exit), max-height var(--d-micro) var(--e-exit), visibility var(--d-micro) linear !important;
-  }
 }
 
 #composer-spacer {

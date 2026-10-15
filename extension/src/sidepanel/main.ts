@@ -457,7 +457,7 @@ const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
 
 const attachMenu = document.getElementById("attach-menu") as HTMLElement;
 
-// 按下就把焦点给输入框：默认的按下会先让输入框失焦，空框的工具行收起，松开再展开，会闪一下。
+// 点工具行的空白处就是要打字：按下时把焦点给输入框，不让它先失焦。
 document.getElementById("composer-bar")!.addEventListener("mousedown", (event) => {
   if (event.button !== 0 || !(event.target instanceof Element) || event.target.closest("button")) return;
   event.preventDefault();
