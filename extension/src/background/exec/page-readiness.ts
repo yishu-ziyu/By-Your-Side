@@ -303,7 +303,8 @@ function watchBodyInPage(boundMs:number,ownSelector:string):void {
 
 /**
  * 在页面里执行，保持自包含：DOMContentLoaded 结束后 body 安静了多久，以及 body 是不是还没画出内容的空壳。
- * 空壳：没有可见文字，也没有链接、按钮、输入框。不设字数门槛：中文页面几个字就是内容。
+ * 空壳：没有可见文字，也没有链接、按钮、输入框、图像或嵌入内容。不设字数门槛：中文页面几个字就是内容。
+ * 没有 body 的文档（SVG 等）不会再长出 body，不算空壳。
  */
 function readQuietInPage():{quietMs:number;empty:boolean}|null {
   const state=globalThis.__sideagentQuietDom;
@@ -313,7 +314,7 @@ function readQuietInPage():{quietMs:number;empty:boolean}|null {
   // 没有导航计时的文档（极少见）就从观察器装好时算。
   const contentLoaded=navigation instanceof PerformanceNavigationTiming?navigation.domContentLoadedEventEnd:state.last;
   const body=document.body;
-  const empty=!body||(!body.innerText.trim()&&!body.querySelector('a[href],button,input,select,textarea'));
+  const empty=!!body&&!body.innerText.trim()&&!body.querySelector('a[href],button,input,select,textarea,img,svg,canvas,video,embed,object,iframe,frame');
 
   return {quietMs:contentLoaded>0?performance.now()-Math.max(state.last,contentLoaded):0,empty};
 }
