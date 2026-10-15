@@ -17,6 +17,9 @@ import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type 
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
+// 关掉侧栏后，挂在侧栏上的 CDP 会话随之失效：那之后的侧栏调用报错不算判据。
+process.on("unhandledRejection", e => console.log("UNHANDLED", String(e)));
+process.on("uncaughtException", e => console.log("UNCAUGHT", String(e)));
 const out = process.env.OUT_DIR ?? join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-program-send-confirm`);
 await mkdir(out, { recursive: true });
 
@@ -55,6 +58,7 @@ const ALL_CASES: Case[] = [
   { id: "fetch-send", step: js("(async () => { try { await window.chatApi.send('周五开会'); return 'sent'; } catch (e) { return String(e); } })()"), answer: "send" },
   { id: "script-click-send", step: js("document.querySelector('#send').click(); 'ok'"), answer: "send" },
   { id: "key-enter-send", step: { tool: { name: "press_key", args: { key: "Enter" } } }, answer: "send" },
+  { id: "js-tool", step: { tool: { name: "js", args: { code: "document.querySelector('#send').click(); 'ok'" } } }, answer: "decline" },
   { id: "native-submit", step: js("document.querySelector('#n').submit(); 'ok'"), answer: "decline" },
 ];
 const CASES = process.env.ONLY ? ALL_CASES.filter(c => process.env.ONLY!.split(",").includes(c.id)) : ALL_CASES;
@@ -115,9 +119,21 @@ try {
     if (dlg) { await rp.screenshot(work, join(out, `${c.id}-page.png`)); await rp.screenshot(panel, join(out, `${c.id}-panel.png`)); }
     if (dlg && c.answer === "decline" && dlg.no) await mouse(dlg.no);
     if (dlg && c.answer === "send" && dlg.yes) await mouse(dlg.yes);
+    if (dlg && (c.answer as string) === "close") {
+      const panelTarget = (await rp.targets()).find(t => t.url.includes("sidepanel.html"));
+      if (panelTarget) await rp.cdp.send("Target.closeTarget", { targetId: panelTarget.targetId });
+      await sleep(4000);
+      const chips = await rp.evaluate(panel, `(() => { const run = [...document.querySelectorAll(".run-steps")].at(-1); return run ? [...run.querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.querySelector(".chip-label")?.textContent ?? "", error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) : []; })()`).catch(() => []);
+    const cardAfter = await panelCard();
+    const row = { chips: chips as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: true, postsBeforeDecision, postsAfter: sendPosts() - before, dialogAfterClose: !!(await box()), panelClosed: !!panelTarget, secs: (Date.now() - t0) / 1000 };
+      rows.push(row as never); console.log("ROW", JSON.stringify(row));
+      continue;
+    }
     if (dlg && c.answer === "esc") { await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work); await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work); }
     await answered(`${c.id} 完成。`).catch(() => null); await sleep(1000);
-    const row = { id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, panelCard: card, tool: toolTexts.slice(tFrom).map(t => t.slice(0, 300)), secs: (Date.now() - t0) / 1000 };
+    const chips = await rp.evaluate(panel, `(() => { const run = [...document.querySelectorAll(".run-steps")].at(-1); return run ? [...run.querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.querySelector(".chip-label")?.textContent ?? "", error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) : []; })()`).catch(() => []);
+    const cardAfter = await panelCard();
+    const row = { chips: chips as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, panelCard: card, tool: toolTexts.slice(tFrom).map(t => t.slice(0, 300)), secs: (Date.now() - t0) / 1000 };
     rows.push(row as never); console.log("ROW", JSON.stringify(row));
   }
 } finally {
@@ -125,7 +141,7 @@ try {
   site.close(); await model.close();
 }
 const expectPosts: Record<string, number> = { "fetch-send": 1, "script-click-send": 1, "key-enter-send": 1 };
-const pass = rows.every(r => r.id === "save" ? !r.confirmShown && saved() === 1 : r.confirmShown && r.postsBeforeDecision === 0 && r.postsAfter === (expectPosts[r.id as string] ?? 0));
+const pass = rows.every(r => r.id === "panel-close" ? r.postsAfter === 0 && !r.dialogAfterClose : (r.answer !== "send" && Array.isArray(r.chips) && (r.chips as Array<{ error: boolean }>).some(ch => ch.error)) ? false : r.id === "save" ? !r.confirmShown && saved() === 1 : r.confirmShown && r.postsBeforeDecision === 0 && r.postsAfter === (expectPosts[r.id as string] ?? 0));
 for (const r of rows) console.log(r.id, r.confirmShown ? "确认框" : "无确认框", "决定前", r.postsBeforeDecision, "最终", r.postsAfter);
 console.log(pass ? "ALL PASS" : "SOME FAIL", out);
 process.exit(pass ? 0 : 1);

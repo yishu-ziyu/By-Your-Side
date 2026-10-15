@@ -365,8 +365,8 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   stopped: "没发：你中止了任务",
   left: "没发：你离开了这个页面",
   timeout: "没发：2 分钟没确认",
-  declined: "你没让发，草稿还在",
-  repeat: "你没让发，草稿还在",
+  declined: "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+  repeat: "你选择不发送：这次没再问，草稿留在页面上",
   busy: "没发：前一个确认还在等你",
   // 教学一步没完成（docs/evals/20261011-guided-teaching.md）：照实说，不画成失败。
   guide_stopped: "你中止了，这一步没做完",

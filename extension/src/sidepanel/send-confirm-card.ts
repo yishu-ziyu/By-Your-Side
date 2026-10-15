@@ -152,7 +152,7 @@ function paint(card: Card): void {
   card.armedAt ??= performance.now() + SEND_ARM_MS;
   const acts = document.createElement("div");
   acts.className = "send-confirm-acts";
-  acts.append(button("send", "发送", card), button("decline", "先不发", card));
+  acts.append(button("decline", "先不发", card), button("send", "发送", card));
   el.append(acts);
 }
 
