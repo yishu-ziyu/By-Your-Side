@@ -1,6 +1,6 @@
 import {isolatedReadContext} from '../isolated-read-context.js';
 import {withObservedDocumentIdentity, recordObservedDocument, assertSameDocument} from "../observation-document.js";
-import {elementMatches, validateElementRead, type ElementProperty, type ElementValue} from "../../../../shared/element-state.js";
+import {elementMatches, unsupportedPropertiesNote, validateElementRead, type ElementProperty, type ElementValue} from "../../../../shared/element-state.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { axBackendNodeFor, isAxRef, snapshotRefKind } from "../axstate.js";
 import { parseTarget as sharedParseTarget, resolveArgs, resolveTargetSelector } from "../../shared/target.js";
@@ -130,7 +130,8 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     })() : undefined;
 
     const maskValue = (raw: string): string => (secretField ? (raw ? `<${raw.length} chars>` : '') : raw);
-    const values: Partial<Record<ElementProperty, ElementValue>> = {};
+    const values: Partial<Record<ElementProperty, ElementValue | null>> = {};
+    const unavailable: ElementProperty[] = [];
     const renderedText = (): string => {
       const excludedTags = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
       const renderedPath = new Map<Element, boolean>();
@@ -216,8 +217,11 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
         else if (aria === 'mixed') value = aria;
       } else if (['paused', 'ended', 'currentTime', 'duration'].includes(property) && ['audio', 'video'].includes(tagName)) value = el[property as 'paused' | 'ended' | 'currentTime' | 'duration'];
 
-      if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) throw new Error(`当前${tagName}目标不支持或尚无有效的 ${property} 属性；请观察实际目标状态。`);
-      values[property] = value;
+      // 读不到的属性记为 null 并写明，不作废同一次读到的其他属性。
+      if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) {
+        values[property] = null;
+        unavailable.push(property);
+      } else values[property] = value;
     }
 
     // Extract only naming sources here. The shared anchorFor() owns naming priority and
@@ -304,6 +308,8 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     if(hasValue)data.value=maskValue(String(el.value ?? ''));
 
     if(properties.length)data.properties=values;
+
+    if(unavailable.length)data.note=`当前${tagName}目标不支持或尚无有效的 ${unavailable.join('、')} 属性，已返回 null；请观察实际目标状态。`;
 
     if(anchorSource)data.anchorSource=anchorSource;
 
@@ -500,7 +506,13 @@ async function readElementInner(
   };
 
   check();
-  const properties = validateElementRead(params);
+  const {properties, unsupported} = validateElementRead(params);
+
+  const withNote = (result: ReadElementResult): ReadElementResult => {
+    if (!unsupported.length) return result;
+
+    return {...result, note: [unsupportedPropertiesNote(unsupported), result.note].filter(Boolean).join(' ')};
+  };
   const tabId = params.tabId ?? await getWorkingTabId(executionKey);
   check();
 
@@ -589,7 +601,7 @@ async function readElementInner(
 
     if(observed.documentId)result.documentId=observed.documentId;
 
-    return result;
+    return withNote(result);
   }
 
   const expected = params.expect;
@@ -605,6 +617,9 @@ async function readElementInner(
 
       if (actual === undefined) throw new Error(`页面未返回 ${expected.property} 属性，未验证成功。`);
 
+      // 等一个读不到的属性只会白等到超时，所以 expect 仍当场失败。
+      if (actual === null) throw new Error(`当前${data.tagName}目标不支持或尚无有效的 ${expected.property} 属性；请观察实际目标状态。`);
+
       if (elementMatches(actual, expected)) return {tabId,target:target.normalized,...data,check:{matched:true as const,property:expected.property,elapsedMs:Date.now()-started}};
       const remaining = (params.timeoutMs ?? 0) - (Date.now() - started);
 
@@ -619,5 +634,5 @@ async function readElementInner(
 
   if(documentId)result.documentId=documentId;
 
-  return result;
+  return withNote(result);
 }

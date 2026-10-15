@@ -167,7 +167,7 @@
         ]
        },
        "maxItems": 14,
-       "description": "Read these state properties; omit for complete text/value. Unsupported properties fail explicitly."
+       "description": "Read these state properties; omit for complete text/value. A property this element has no valid value for comes back null with a note."
       },
       "expect": {
        "anyOf": [
