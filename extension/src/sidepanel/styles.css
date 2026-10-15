@@ -658,6 +658,31 @@ html, body {
   padding: 1px 5px;
 }
 
+/* 回答里网上的图片：先是占位，用户点了才加载（answer-html.ts）。 */
+.markdown .answer-image-gate {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 2px 0;
+  padding: 3px 10px;
+  font: var(--fs-meta) / 1.4 var(--font);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+  text-align: start;
+  cursor: pointer;
+}
+
+.markdown .answer-image-gate:hover {
+  color: var(--text);
+}
+
+.markdown img {
+  max-width: 100%;
+}
+
 .markdown pre {
   margin: 8px 0;
   padding: 10px 12px;
