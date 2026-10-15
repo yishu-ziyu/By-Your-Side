@@ -76,8 +76,19 @@ function gateImage(img: HTMLImageElement): void {
   const alt = img.getAttribute("alt");
 
   if (alt) placeholder.setAttribute(GATE_ALT, alt);
-  placeholder.textContent = `图片 · ${url.host} · 点开看`;
+  placeholder.title = url.href;
+  placeholder.textContent = ["图片", url.host, ...(carriesData(url) ? ["带参数"] : []), "点开看"].join(" · ");
   img.replaceWith(placeholder);
+}
+
+/** 地址里能夹带字的地方：查询串，或比 /logo.png 这种文件名长得多的路径。占位上标出来，用户点之前知道请求会带东西出去。 */
+function carriesData(url: URL): boolean {
+  return url.search.length > 1 || url.pathname.length > 24;
+}
+
+/** 复制回答时占位不算正文：换成图片的说明，没有就写「[图片]」。 */
+export function imagePlaceholdersAsText(root: ParentNode): void {
+  for (const placeholder of root.querySelectorAll(`[${GATE}]`)) placeholder.replaceWith(placeholder.getAttribute(GATE_ALT) || "[图片]");
 }
 
 function loadedImage(placeholder: Element): HTMLImageElement {
