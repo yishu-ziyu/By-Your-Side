@@ -57,30 +57,36 @@ async function readNetErrorName(tabId:number):Promise<string|undefined> {
   }catch{return undefined;}
 }
 
-/** 标签页还停在这次打开得到的那个错误页：同一地址、没在加载、没有待提交的跳转，页面仍是 Chrome 错误页且错误名没变。 */
-async function stillOnErrorPage(tabId:number,url:string,error:string):Promise<boolean> {
+/**
+ * 等完那一秒后标签页的样子。changed：换到了别的地址或标签页没了。reloading：还在这个地址，但不再是原错误页了，
+ * 多半是 Chrome 自己在重新加载（前台标签页的错误页约一秒后会自动重新加载），也可能是用户刷新。error_page：还停在原错误页。
+ */
+async function tabAfterWait(tabId:number,url:string,error:string):Promise<'changed'|'reloading'|'error_page'> {
   const tab=await chrome.tabs.get(tabId).catch(()=>null);
   let requested='';
 
-  try{requested=new URL(url).href;}catch{return false;}
+  try{requested=new URL(url).href;}catch{return 'changed';}
 
-  if(!tab||tab.status!=='complete'||tab.pendingUrl||!sameUrl(tab.url,requested))return false;
+  if(!tab||!sameUrl(tab.pendingUrl??tab.url,requested))return 'changed';
 
-  return await readNetErrorName(tabId)===error;
+  if(tab.status==='complete'&&!tab.pendingUrl&&await readNetErrorName(tabId)===error)return 'error_page';
+
+  return 'reloading';
 }
 
 /**
  * 按网址打开（navigate、新开标签页）撞上一次性网络错误时，隔一秒再开同一地址一次，免得模型把偶发断连当成网站打不开告诉用户。
  * 只给按网址打开用：那是不带表单数据的 GET，重放没有副作用；点击、表单提交引起的跳转不走这里。
- * 等的这一秒里用户可能接管或自己换了页：cancelled 为真（接管、任务停止、控制轮次变了）或标签页已不在原错误页，就不重试，照原样返回错误页。
+ * 等的这一秒里用户可能接管或自己换了页：cancelled 为真（接管、任务停止、控制轮次变了）或标签页已换到别的地址，就不重试，照原样返回错误页。
+ * 这个地址已经在重新加载时不再发第二次请求，只等这次加载的结果。
  */
 export async function retryTransientErrorPage(tabId:number,url:string,ready:PageReadiness,timeoutMs:number,cancelled?:()=>boolean):Promise<{ready:PageReadiness;retry?:string}> {
   if(ready.readiness!=='error_page')return {ready};
   const error=await readNetErrorName(tabId);
 
   if(!error||!TRANSIENT_NET_ERRORS.has(error))return {ready};
-  const notRetried=(why:string)=>({ready,retry:`The first attempt hit ${error} (a one-off network error); it was not retried because ${why}.`});
-  const userTookOver=notRetried('the user took over the page or the task stopped');
+  const first=`The first attempt hit ${error} (a one-off network error)`;
+  const userTookOver={ready,retry:`${first}; it was not retried because the user took over the page or the task stopped.`};
 
   for(const started=Date.now();Date.now()-started<RETRY_DELAY_MS;){
     if(cancelled?.())return userTookOver;
@@ -88,14 +94,26 @@ export async function retryTransientErrorPage(tabId:number,url:string,ready:Page
   }
 
   if(cancelled?.())return userTookOver;
+  const state=await tabAfterWait(tabId,url,error);
 
-  if(!await stillOnErrorPage(tabId,url,error))return notRetried('the page changed while waiting');
+  if(state==='changed')return {ready,retry:`${first}; it was not retried because the page changed while waiting.`};
+  const budget=Math.max(RETRY_DELAY_MS,timeoutMs-ready.waitMs-RETRY_DELAY_MS);
+
+  if(state==='reloading'){
+    const reloaded=await waitForInteractive(tabId,budget,{requestedUrl:url});
+
+    reloaded.waitMs+=ready.waitMs+RETRY_DELAY_MS;
+
+    return {ready:reloaded,retry:reloaded.readiness==='interactive'||reloaded.readiness==='complete'?`${first}; the page then reloaded by itself and opened.`
+      :reloaded.readiness==='error_page'?`${first}; the page then reloaded by itself and still failed.`
+      :`${first}; the page then reloaded by itself; result: document ${reloaded.readiness}.`};
+  }
 
   if(cancelled?.())return userTookOver;
-  const again=await waitForInteractive(tabId,Math.max(RETRY_DELAY_MS,timeoutMs-ready.waitMs-RETRY_DELAY_MS),{requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId,{url})});
+  const again=await waitForInteractive(tabId,budget,{requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId,{url})});
 
   again.waitMs+=ready.waitMs+RETRY_DELAY_MS;
-  const head=`The first attempt hit ${error} (a one-off network error), so it was retried once automatically`;
+  const head=`${first}, so it was retried once automatically`;
 
   return {ready:again,retry:again.readiness==='interactive'||again.readiness==='complete'?`${head}; the retry succeeded.`
     :again.readiness==='error_page'?`${head}; the retry also failed.`
