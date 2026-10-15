@@ -145,9 +145,45 @@ const handlers: Record<ToolName, Handler> = {
   guide_step: async () => { throw notExecuted(new Error("guide_step 只能在任务里调用")); },
 };
 
+/** 最近操作过的那个侧栏看着的会话。不在某个侧栏里发起的动作（按住说话、右键菜单、阅读、提示卡、前台）跟它走。 */
 let selectedConversationId = "default";
 
 const connectedPanels = new Set<chrome.runtime.Port>();
+
+/** 每个侧栏各看各的会话：在一个侧栏里切换，不动另一个侧栏。 */
+const panelSelection = new Map<chrome.runtime.Port, string>();
+
+let focusedPanel: chrome.runtime.Port | undefined;
+
+/** 还没定会话的侧栏（刚打开）先跟最近操作的那个侧栏。 */
+function panelConversation(port: chrome.runtime.Port): string { return panelSelection.get(port) ?? selectedConversationId; }
+
+function followFocused(id: string): void {
+  selectedConversationId = id;
+  setVisibleConversationId(id);
+  void chrome.storage.local.set({ selectedConversationId: id });
+  controller(id);
+}
+
+function selectInPanel(port: chrome.runtime.Port, id: string): void {
+  voiceRelay.selectionChanged(port, id);
+  panelSelection.set(port, id);
+
+  if (port === focusedPanel) followFocused(id);
+}
+
+function focusPanel(port: chrome.runtime.Port): void {
+  focusedPanel = port;
+  const id = panelSelection.get(port);
+
+  if (id !== undefined && id !== selectedConversationId) followFocused(id);
+}
+
+/** 不是哪个侧栏自己切的（阅读转到侧栏、助手新建的会话）：换掉最近操作的那个侧栏。 */
+function selectFocused(id: string): void {
+  if (focusedPanel) selectInPanel(focusedPanel, id);
+  else followFocused(id);
+}
 
 installPageInteractions();
 
@@ -184,7 +220,7 @@ const nudge = installNudge({
 
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
 
-function broadcastConversations() { for (const port of connectedPanels) { try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId,resumeReading:reading.resumeOnOpen(selectedConversationId)}); } catch { /* 面板端口已断开 */ } } }
+function broadcastConversations() { for (const port of connectedPanels) { const selected = panelConversation(port); try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId:selected,resumeReading:reading.resumeOnOpen(selected)}); } catch { /* 面板端口已断开 */ } } }
 
 const controllers = new Map<string, ReturnType<typeof createConversationController>>();
 
@@ -226,7 +262,7 @@ const transport = new Uplink({
 
    if (msg.type === "conversation_updated" || msg.type === "conversation_created") { conversationSummaries = [...conversationSummaries.filter(c => c.id !== msg.conversation.id), msg.conversation]; void setConversationTitle(msg.conversation.id, msg.conversation.title); }
 
-   if (msg.type === "conversation_created") { voiceRelay.selectionChanged(msg.conversation.id); selectedConversationId = msg.conversation.id; setVisibleConversationId(selectedConversationId); void chrome.storage.local.set({ selectedConversationId }); controller(msg.conversation.id); }
+   if (msg.type === "conversation_created") selectFocused(msg.conversation.id);
 
    if (msg.type === "conversation_list") for (const c of msg.conversations) controller(c.id);
 
@@ -251,10 +287,10 @@ const transport = new Uplink({
 const reading = installReading({
   send: message => transport.sendClientMessage(message), selected: () => selectedConversationId,
   import: async (id, record) => { const c = controller(id); await c.ready; await c.importReading(record); },
-  select: id => { selectedConversationId = id; setVisibleConversationId(id); void chrome.storage.local.set({selectedConversationId:id}); controller(id); broadcastConversations(); },
+  select: id => { selectFocused(id); broadcastConversations(); },
 });
 
-const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), () => selectedConversationId,async(id,input)=>{
+const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), panelConversation,async(id,input)=>{
   const enriched=await controller(id).voiceInput(input);
 
 return enriched;
@@ -280,13 +316,23 @@ chrome.runtime.onConnect.addListener(port => {
 
  for (const c of controllers.values()) c.attachPanel(port);
 
- port.onDisconnect.addListener(() => { connectedPanels.delete(port);
+ port.onDisconnect.addListener(() => { connectedPanels.delete(port); panelSelection.delete(port);
+
+   if (focusedPanel === port) { focusedPanel = undefined; const next = [...connectedPanels].at(-1); if (next) focusPanel(next); }
 
    if (!connectedPanels.size) { marginalia.stopAll(); edgePill.panel(false); } });
  port.onMessage.addListener((msg: PanelToBg) => {
   if (!msg || typeof msg !== "object") return;
 
-  if (msg.kind === "select_conversation") { voiceRelay.selectionChanged(msg.conversationId); selectedConversationId = msg.conversationId; setVisibleConversationId(selectedConversationId); controller(selectedConversationId); void chrome.storage.local.set({selectedConversationId}); broadcastConversations(); }
+  if (msg.kind === "select_conversation" && validConversationId(msg.conversationId)) selectInPanel(port, msg.conversationId);
+
+  // 侧栏重开、重连时带上它自己看着的会话：后台重启过也不会把它换成别的侧栏的会话。
+  if (msg.kind === "sync" && validConversationId(msg.conversationId)) selectInPanel(port, msg.conversationId);
+
+  // ping 和 sync 是定时或自动发的，不算用户在这个侧栏里操作。
+  if ((msg.kind !== "ping" && msg.kind !== "sync") || !focusedPanel) focusPanel(port);
+
+  if (msg.kind === "select_conversation") broadcastConversations();
 
   if (msg.kind === "sync") { broadcastConversations(); transport.sendClientMessage({type:"conversation_list"}); }
 
@@ -2082,11 +2128,11 @@ function attachPanel(port: chrome.runtime.Port) {
   if (panels.has(port)) return;
   panels.add(port);
 
-  if (conversationId === selectedConversationId) void Promise.all([controlReady, historyReady]).then(() => syncPanel(port));
+  if (conversationId === panelConversation(port)) void Promise.all([controlReady, historyReady]).then(() => syncPanel(port));
 
   port.onMessage.addListener((raw: unknown) => {
     if ((raw as PanelToBg)?.kind === "client" && (raw as Extract<PanelToBg, {kind:"client"}>).msg?.type === "voice") return;
-    const selectedAtReceipt = selectedConversationId;
+    const selectedAtReceipt = panelConversation(port);
     void Promise.all([controlReady, historyReady]).then(() => handlePanelMessage(raw, selectedAtReceipt));
   });
 
