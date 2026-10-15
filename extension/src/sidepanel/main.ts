@@ -1107,6 +1107,7 @@ function selectConversation(id: string, notify = true): void {
     if (conversationReady) saveDraft();
     selectedConversationId = id;
     conversationReady = true;
+    takeAutoRetryLock(id);
 
     try { sessionStorage.setItem(PANEL_CONVERSATION_KEY, id); } catch { /* 记不住只影响刷新后回到哪个会话 */ }
     sendBtn.disabled = false;
@@ -1149,9 +1150,12 @@ function resolveBootSession(inheritedId: string, listKnown: boolean): void {
   // 没连模型时宿主不建会话，空清单就是真的空：直接用后台选中的会话，不等两段兜底时限（#233）。
   const noModel = modelConnected === false;
 
+  // 刷新前记着的会话已经不在清单里了：不能停在它上面（发什么都会被宿主拒），只能新建。
+  const goneRemembered = !inherited && listKnown && inheritedId === rememberedConversation();
+
   if (!inherited && !listKnown && !noModel) return;
 
-  if (inherited || noModel) {
+  if (inherited || (noModel && !goneRemembered)) {
     finishBootSession();
     selectConversation(inheritedId, false);
 
@@ -2410,18 +2414,34 @@ function noteModelInfo(model: string | undefined, models: ModelOption[] | undefi
 }
 
 /**
- * 后台把同一次出错发给每个窗口的侧栏，只能有一个替用户自动重试：先拿到这把锁的侧栏负责，它关掉后由下一个接手。
+ * 后台把同一次出错发给看着这个会话的每个侧栏，只能有一个替用户自动重试：每个会话一把锁，先拿到的侧栏负责，它关掉或切走后由下一个接手。
+ * 锁按会话分：侧栏只收自己看着的会话的出错，全局一把锁会让拿着锁、却看着别的会话的侧栏把这次重试漏掉。
  * 不按窗口编号排：chrome.runtime.getContexts 给侧栏的 windowId 是 -1。
  */
 const AUTO_RETRY_LOCK = "sideagent-auto-retry-owner";
-let autoRetryOwner = false;
-void navigator.locks?.request(AUTO_RETRY_LOCK, () => { autoRetryOwner = true; return new Promise<never>(() => {}); });
+
+let autoRetryLock: { conversationId: string; held: boolean; release: () => void } | null = null;
+
+function takeAutoRetryLock(conversationId: string): void {
+  if (autoRetryLock?.conversationId === conversationId) return;
+  autoRetryLock?.release();
+
+  if (!navigator.locks) return;
+  let release = () => {};
+  const done = new Promise<void>(resolve => { release = resolve; });
+  const lock = { conversationId, held: false, release: () => release() };
+  autoRetryLock = lock;
+  // 还没拿到就切走了：拿到时 done 已经结束，锁当场放掉。
+  void navigator.locks.request(`${AUTO_RETRY_LOCK}:${conversationId}`, () => { lock.held = true; return done; });
+}
 
 async function ownsAutoRetry(): Promise<boolean> {
-  if (autoRetryOwner || !navigator.locks) return true;
+  if (!navigator.locks) return true;
+
+  if (autoRetryLock?.held && autoRetryLock.conversationId === selectedConversationId) return true;
   const { held = [] } = await navigator.locks.query();
 
-  return !held.some(lock => lock.name === AUTO_RETRY_LOCK);
+  return !held.some(lock => lock.name === `${AUTO_RETRY_LOCK}:${selectedConversationId}`);
 }
 
 const errorCards = mountErrorCards({
@@ -6143,6 +6163,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
 
   if (envelope.kind === "inspect_step_result") {
+    if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
     for (const el of messagesEl.querySelectorAll(".chip.inspecting")) el.classList.remove("inspecting");
 
     if (inspectChip) {
@@ -6154,6 +6175,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
 
   if (envelope.kind === "handoff_phase") {
+    if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
     applyHandoffPhase(envelope.phase);
 
     return;
@@ -6410,6 +6432,10 @@ function connect(): void {
     if (remembered) sync.conversationId = remembered;
   }
   p.postMessage(sync satisfies PanelToBg);
+  // 按住说话、右键提问、阅读转到侧栏交给用户动手的那个窗口里的侧栏；后台从侧栏的上下文里拿不到窗口号。
+  void chrome.windows.getCurrent().then(win => {
+    if (win.id != null && port === p) p.postMessage({ kind: "panel_window", windowId: win.id } satisfies PanelToBg);
+  }).catch(() => { /* 拿不到窗口号：这些动作跟最近操作的侧栏 */ });
 }
 
 function rememberedConversation(): string | undefined {

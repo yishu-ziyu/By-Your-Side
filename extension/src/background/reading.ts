@@ -8,7 +8,8 @@ type Dependencies = {
   send: (message: ClientMessage) => boolean;
   selected: () => string;
   import: (conversationId: string, record: ReadingRecord) => Promise<void>;
-  select: (conversationId: string) => void;
+  /** tabId：读的是哪一页，交给那一页所在窗口里的侧栏。 */
+  select: (conversationId: string, tabId: number) => void;
 };
 
 /** One document owns each record. No per-conversation listeners or shared output tab. */
@@ -145,7 +146,7 @@ export function installReading(deps: Dependencies) {
 
         if (readingBusy(record)) throw new Error('先停止回答，或等回答写完，再在侧栏继续。');
 
-        if (record.transferredConversationId) { opening = false; deps.select(record.transferredConversationId);
+        if (record.transferredConversationId) { opening = false; deps.select(record.transferredConversationId, record.source.tabId);
 
  return {ok: true, record}; }
 
@@ -199,6 +200,7 @@ export function installReading(deps: Dependencies) {
         const record = [...records.values()].find(r => r.handoffRequestId === message.requestId);
 
         if (!record || record.transferredConversationId === message.conversation.id) return;
+        deps.select(message.conversation.id, record.source.tabId);
         await deps.import(message.conversation.id, record);
         record.transferredConversationId = message.conversation.id;
         record.handoffError = undefined;
