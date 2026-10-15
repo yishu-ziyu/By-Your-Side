@@ -2772,19 +2772,41 @@ const USER_SCROLL_QUIET_MS = 150;
 
 let userScrollAt = -Infinity;
 
+// 内容高度的近期记录：浏览器按上一帧画出的内容滚到底，scroll 事件到达前常又插进一段新字，
+// 所以判断“滚回底部”要看用户刚才看到的底部，不只看现在的。
+const SEEN_BOTTOM_MS = 100;
+
+let heightLog: Array<{ at: number; height: number }> = [];
+
+// 只留一条早于时间窗的记录（窗口开始时的高度）和窗口内的变化。
+function pruneHeights(now: number): void {
+  while (heightLog.length > 1 && now - heightLog[1]!.at >= SEEN_BOTTOM_MS) heightLog.shift();
+}
+
+function noteHeight(): void {
+  const now = performance.now();
+  pruneHeights(now);
+  if (heightLog.at(-1)?.height !== messagesEl.scrollHeight) heightLog.push({ at: now, height: messagesEl.scrollHeight });
+}
+
+function seenBottom(): number {
+  pruneHeights(performance.now());
+  return Math.min(messagesEl.scrollHeight, ...heightLog.map((e) => e.height));
+}
+
 let lastScrollTop = 0;
 
 // 跟随代码自己滚到的位置：它触发的 scroll 事件不算人滚。
 let followScrollTop = -1;
 
-let scrollbarHeld = false;
+let followRetry = 0;
 
 function nearBottom(): boolean {
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
 }
 
 function userScrolling(): boolean {
-  return scrollbarHeld || performance.now() - userScrollAt < USER_SCROLL_QUIET_MS;
+  return performance.now() - userScrollAt < USER_SCROLL_QUIET_MS;
 }
 
 function followLive(el: HTMLElement | null, stick: boolean): void {
@@ -2819,63 +2841,71 @@ function markUserScroll(): void {
   userScrollAt = performance.now();
 }
 
-// 往上滚一点也算离开底部：只看位置的话，离底部不到阈值的一小格滚动会被下一段字拉回去。
-messagesEl.addEventListener("wheel", (e) => {
-  markUserScroll();
-  if (e.deltaY < 0 && messagesEl.scrollTop > 0) pinned = false;
-}, { passive: true });
+// 位置没变就不会有 scroll 事件，不留记号，免得以后人滚到同一位置被当成跟随。
+function followToEnd(): void {
+  const before = messagesEl.scrollTop;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (messagesEl.scrollTop !== before) followScrollTop = messagesEl.scrollTop;
+}
+
+// 这些输入只让跟随让开一会儿；离不离开底部由随后对话区真的滚了没有、往哪滚决定，
+// 所以在过程窗这类内层滚动区里滚、对话区没动时，跟随不变。
+messagesEl.addEventListener("wheel", markUserScroll, { passive: true });
 
 messagesEl.addEventListener("touchstart", markUserScroll, { passive: true });
 
 messagesEl.addEventListener("touchmove", markUserScroll, { passive: true });
 
-// 只认按在滚动条上（目标是滚动区本身）；点消息里的按钮不算滚动。
+// 目标是滚动区本身：按在滚动条或空白处，点消息里的按钮不算。
 messagesEl.addEventListener("pointerdown", (e) => {
-  if (e.target === messagesEl) scrollbarHeld = true;
+  if (e.target === messagesEl) markUserScroll();
 });
 
-for (const type of ["pointerup", "pointercancel"]) window.addEventListener(type, () => {
-  if (scrollbarHeld) markUserScroll();
-  scrollbarHeld = false;
-});
-
-messagesEl.addEventListener("keydown", (e) => {
+// 对话区不接焦点，滚动键多半落在 body 上；输入框里的方向键是移光标，不算。
+document.addEventListener("keydown", (e) => {
+  const target = e.target instanceof HTMLElement ? e.target : null;
+  if (target?.closest("input, textarea, [contenteditable]")) return;
   if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) markUserScroll();
 });
 
-// 人往上滚就离开底部，往下滚回底部附近才重新跟上；内容变短被浏览器夹回底部不算往上滚。
+// 往上滚就离开底部，往下滚回底部附近才重新跟上；不管是谁滚的，只跳过跟随自己那一下。
+// 内容变短被浏览器夹回底部不算往上滚。
 messagesEl.addEventListener("scroll", () => {
   const top = messagesEl.scrollTop;
 
   const atEnd = messagesEl.scrollHeight - top - messagesEl.clientHeight <= 1;
 
-  if (userScrolling()) pinned = nearBottom() && (top >= lastScrollTop || atEnd);
-  else if (top !== followScrollTop) pinned = nearBottom();
+  if (top === followScrollTop) followScrollTop = -1;
+  else pinned = seenBottom() - top - messagesEl.clientHeight < 40 && (top >= lastScrollTop || atEnd);
   lastScrollTop = top;
   toBottomBtn.hidden = pinned;
   syncScrollFade();
 });
 
-// 内容变长、侧栏变高时滚动位置不变也要重算两侧。
-new ResizeObserver(syncScrollFade).observe(messagesEl);
+// 侧栏变窄时内容变高、滚动位置不变，跟随中就要贴回底部；两侧渐隐也要重算。
+new ResizeObserver(() => {
+  if (pinned && !userScrolling()) followToEnd();
+  syncScrollFade();
+}).observe(messagesEl);
 
-new MutationObserver(syncScrollFade).observe(messagesEl, { childList: true, subtree: true, characterData: true });
+new MutationObserver(() => {
+  noteHeight();
+  syncScrollFade();
+}).observe(messagesEl, { childList: true, subtree: true, characterData: true });
 
 function scrollToEnd(force = false): void {
   followLive(currentRun?.body ?? null, force || runBodyPinned);
   followLive(currentThinking, force || thinkPinned);
 
-  if (force || (pinned && !userScrolling())) {
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    followScrollTop = messagesEl.scrollTop;
-  }
+  if (force || (pinned && !userScrolling())) followToEnd();
+  // 回答最后一段字恰好落在让开的那一会儿里，之后没人再叫跟随：让开结束后补一次。
+  else if (pinned && !followRetry) followRetry = window.setTimeout(() => { followRetry = 0; scrollToEnd(); }, USER_SCROLL_QUIET_MS);
   toBottomBtn.hidden = pinned || nearBottom();
 }
 
 toBottomBtn.onclick = () => {
   pinned = true;
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  followScrollTop = messagesEl.scrollTop;
+  followToEnd();
   toBottomBtn.hidden = true;
 };
 
@@ -2919,6 +2949,8 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   appendToMessages(div);
 
 
+  // 用户发了新消息就回到底部重新跟随，之前往上翻过也一样。
+  pinned = true;
   scrollToEnd();
 
   return div;
