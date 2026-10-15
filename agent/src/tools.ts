@@ -1141,7 +1141,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           ? "JavaScript returned undefined. No observable value was returned; this does not confirm a page change. For extraction, use one IIFE with an explicit return of JSON-serializable findings. For hover-only controls, use hover, then observe the page."
           : wrapPageContent(redactCredentialText(truncate(typeof data.value === "string" ? data.value : JSON.stringify(data.value, null, 2), MAX_JS_RESULT_CHARS)));
 
-        return textResult(rendered, data);
+        return textResult(data.sendNote ? `${data.sendNote}\n${rendered}` : rendered, data);
       },
     }),
 

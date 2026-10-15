@@ -336,7 +336,7 @@ const SEND_CONTENT_MAX = 120;
 async function readSendDetails(tabId: number, x: number, y: number): Promise<SendDetails> {
   const content = await readSendContent(tabId, x, y);
   try {
-    const expression = `(() => { const el = document.elementFromPoint(${x}, ${y}); const b = el?.closest("button,[role=button],input,a") ?? el; const r = b?.getBoundingClientRect(); return { recipient: (${readRecipientInPage.toString()})(${x}, ${y}), rect: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null }; })()`;
+    const expression = `(() => { const el = document.elementFromPoint(${x}, ${y}); const b = el?.closest("button,[role=button],input,a") ?? el; let r = b?.getBoundingClientRect(); if (b && r && (r.bottom < 0 || r.top > innerHeight)) { b.scrollIntoView({ block: "center" }); r = b.getBoundingClientRect(); } return { recipient: (${readRecipientInPage.toString()})(${x}, ${y}), rect: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null }; })()`;
     const v = (await sendCommand<{ result?: { value?: { recipient: string | null; rect: SendDetails["rect"] | null } } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true })).result?.value;
     return { content, ...(v?.recipient ? { recipient: v.recipient } : {}), ...(v?.rect ? { rect: v.rect } : {}), route: "click" };
   } catch { return { content, route: "click" }; }
@@ -2796,7 +2796,8 @@ function enterWouldSendInPage(): { label: string; content: string; rect: { left:
   const multi = el.tagName === "TEXTAREA" || el.isContentEditable;
   const content = ((el as HTMLTextAreaElement).value ?? el.innerText ?? "").replace(/\s+/g, " ").trim();
   const send = (multi && !!content) || (!!sendBtn && !!el.closest("form"));
-  const r = (sendBtn ?? el).getBoundingClientRect();
+  let r = (sendBtn ?? el).getBoundingClientRect();
+  if (r.bottom < 0 || r.top > innerHeight) { (sendBtn ?? el).scrollIntoView({ block: "center" }); r = (sendBtn ?? el).getBoundingClientRect(); }
   return { label: sendBtn ? (sendBtn.getAttribute("aria-label") || sendBtn.innerText || (sendBtn as HTMLInputElement).value || "发送").trim() : "回车发送", content: content.length > 120 ? content.slice(0, 120) + "…" : content, rect: { left: r.left, top: r.top, width: r.width, height: r.height }, send };
 }
 

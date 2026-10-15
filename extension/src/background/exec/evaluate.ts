@@ -47,7 +47,7 @@ function armSendBlock(marker: string): void {
   const actionable = (el: Element | null | undefined) => el?.closest?.("button,[role=button],input[type=submit],input[type=button],a") ?? null;
   const sendIn = (scope: Element | null | undefined) => scope ? [...scope.querySelectorAll("button,[role=button],input[type=submit]")].find(b => isSend(btnName(b))) ?? null : null;
   const fromScript = () => (new Error().stack ?? "").includes(marker);
-  const rectOf = (el: Element | null | undefined): Rect | null => { const r = el?.getBoundingClientRect(); return r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null; };
+  const rectOf = (el: Element | null | undefined): Rect | null => { let r = el?.getBoundingClientRect(); if (el && r && (r.bottom < 0 || r.top > innerHeight)) { el.scrollIntoView({ block: "center" }); r = el.getBoundingClientRect(); } return r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null; };
   const draftNear = (el: Element | null | undefined) => {
     const scope = el?.closest("form,[role=dialog],[role=form]") ?? el?.parentElement?.parentElement ?? null;
     const f = (el && (el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable) ? el : scope?.querySelector("textarea,[contenteditable=true],input[type=text]:not([name*=to i])")) as HTMLTextAreaElement | HTMLElement | null;
@@ -168,6 +168,8 @@ export async function evaluateJs(
       });
     } catch (error) {
       await sendCommand(tabId, "Runtime.evaluate", { expression: DROP }).catch(() => {});
+      // 用户没让发（先不发、停、离开、超时）不是脚本出错：脚本照常算跑完，结果里写明没发，侧栏不标红。
+      if ((error as { heldReason?: unknown }).heldReason) return { value: res!.result?.value, sendNote: `脚本里的发送动作（${first.label}）没有发出：${(error as Error).message}${extra}` };
       throw Object.assign(error as Error, { message: `脚本里的发送动作（${first.label}）先拦下，问了用户：${(error as Error).message}脚本其余部分可能已经运行。${extra}` });
     }
     const redo = await sendCommand<{ result?: { value?: unknown } }>(tabId, "Runtime.evaluate", { expression: REDO, returnByValue: true });

@@ -59,13 +59,13 @@ type Outcome = NonNullable<SendConfirmView["outcome"]>;
 const NO_OTHER_WAY = "不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。";
 
 const TEXT: Record<Exclude<Outcome, "send">, string> = {
-  decline: `用户选了「不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
+  decline: `用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
   stopped: `用户停下了任务或接管了页面：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}`,
   left: `用户离开或关掉了这个网页：没有点「发送」。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
   timeout: `用户 2 分钟内没有确认：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}在回复里告诉用户还没发送，等用户自己决定。`,
 };
 
-const REPEAT_TEXT = `用户这一轮已经选了「不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送；用户再说要发时才会重新问。`;
+const REPEAT_TEXT = `用户这一轮已经选了「先不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送；用户再说要发时才会重新问。`;
 
 const BUSY_TEXT = `这个网页上已经有一个「发送」在等用户确认：这次没有点，也没有再出确认框。等那个确认有了结果再说。${NO_OTHER_WAY}`;
 
@@ -172,9 +172,9 @@ function showSendConfirm(attr: string, kind: string, portName: string, label: st
 .ask{flex:1}
 .site{padding-right:8px;font-size:12px;color:rgba(255,255,255,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .what{padding-right:8px;font-size:13px;color:rgba(255,255,255,.88);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
-button{all:unset;box-sizing:border-box;padding:6px 14px;border-radius:99px;background:rgba(255,255,255,.14);color:#fff;font-weight:600;cursor:pointer}
-button:hover{background:rgba(255,255,255,.22)}
-button.yes{background:#fff;color:#141413;opacity:.6;transition:opacity .2s}
+button{all:unset;box-sizing:border-box;min-width:76px;text-align:center;padding:6px 14px;border-radius:99px;border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;font-weight:500;cursor:pointer}
+button:hover{background:rgba(255,255,255,.12)}
+button.yes{opacity:.6;transition:opacity .2s}
 button.yes.armed{opacity:1}
 button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
 </style><div class="cap" role="alertdialog" aria-label="发送确认" aria-describedby="site what"><div class="site" id="site"></div><div class="row"><span class="ask"></span><button class="no" type="button">先不发</button><button class="yes" type="button" tabindex="-1">发送</button></div></div>`;
