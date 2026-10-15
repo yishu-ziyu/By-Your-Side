@@ -3149,3 +3149,45 @@ export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: nu
 
   return { cleared: true };
 }
+
+/**
+ * 回答里提到的控件这会儿还在不在页上：节点还连着、有大小、没被藏起来、没摆到页面之外。
+ * 不滚动页面，只在加虚线前看一眼。
+ */
+export async function locatedStillThere(tabId: number, backendNodeId: number): Promise<boolean> {
+  try {
+    return await callOnBackendNode<boolean>(tabId, backendNodeId, `function() {
+      const el = this.nodeType === 3 ? this.parentElement : this;
+      if (!el || !el.isConnected || typeof el.getBoundingClientRect !== "function") return false;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      const style = getComputedStyle(el);
+      if (style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+      const doc = document.documentElement;
+      return r.right + scrollX > 0 && r.bottom + scrollY > 0 && r.left + scrollX < doc.scrollWidth && r.top + scrollY < doc.scrollHeight;
+    }`) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 用户点了回答里的虚线：工作光标飞到那个控件、画一圈墨蓝。返回 false 表示控件已不在。 */
+export async function pointAtLocated(tabId: number, backendNodeId: number): Promise<boolean> {
+  if (!await locatedStillThere(tabId, backendNodeId)) return false;
+  let rect: DomRect;
+
+  try { rect = await rectOfBackendNode(tabId, backendNodeId); } catch { return false; }
+
+  const cid = cursorId(LEAD_SESSION_ID);
+  await cursorMove(tabId, rect.x + rect.width / 2, rect.y + rect.height / 2, cid);
+
+  try {
+    await callDom(tabId, (x: number, y: number, w: number, h: number, id: string) => {
+      window.__sideagent?.cursor?.for(id)?.inspect?.({ x, y, width: w, height: h }, "");
+    }, [rect.x, rect.y, rect.width, rect.height, cid]);
+  } catch {
+    return false;
+  }
+
+  return true;
+}

@@ -3630,3 +3630,15 @@ details.run-steps.run-quieting .run-time { animation: none; }
   #dictation-row { animation-name: fadeOnlyIn; }
   #dictation-text .dictation-caret { animation: none; }
 }
+
+/* 回答里能在页面上指出来的控件：虚线下划线；圈出后变墨蓝。 */
+.page-ref { all: unset; cursor: pointer; color: inherit; border-bottom: 1px dashed var(--text-tertiary); transition: color var(--d-layout) var(--e-enter), border-color var(--d-layout) var(--e-enter); }
+.page-ref:hover { border-bottom-color: var(--text-secondary); }
+.page-ref.pointing, .page-ref.pointed { color: var(--apple-blue); border-bottom-color: var(--apple-blue); }
+.page-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.page-ref-hint { margin: 4px 0 0; color: var(--text-tertiary); font-size: var(--fs-meta); line-height: var(--lh-meta); animation: page-ref-hint-in var(--d-layout) var(--e-enter); }
+@keyframes page-ref-hint-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .page-ref { transition: none; }
+  .page-ref-hint { animation: none; }
+}
