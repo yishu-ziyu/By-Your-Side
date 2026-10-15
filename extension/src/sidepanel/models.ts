@@ -1,7 +1,7 @@
 /**
  * 模型选择器的纯逻辑（与 DOM 解耦）：
  * - groupModelsByProvider：把 agent 下发的扁平模型列表按 provider 分组（保留首现顺序）
- * - displayName / chipLabel / filterModels / providerMark：输入区芯片与搜索菜单
+ * - displayName / chipLabel / filterModels：输入区模型菜单
  */
 import type { ModelOption } from "../../../shared/protocol.js";
 
@@ -81,7 +81,7 @@ export function chipLabel(model: string | undefined, models: readonly ModelOptio
  * 过滤 + 可选「只看常用」。
  * featuredOnly=true 时只留 agent 打了 featured 标的模型（默认精选集 + 当前会话模型）；
  * agent 下发的是全量，标记缺失（旧 agent）时视为非精选，此时若结果为空会让 UI 落到「暂无可用模型」，
- * 所以调用方应在结果为空且确实没传 featured 时退回全量——由 picker 的 fallback 处理。
+ * 所以调用方应在结果为空且确实没传 featured 时退回全量——由模型菜单的第一层处理。
  */
 export function filterModels(
   models: readonly ModelOption[],
@@ -100,37 +100,4 @@ export function filterModels(
 
     return hay.includes(q);
   });
-}
-
-/** 分组字母标：取展示名首字，色相由 provider id 稳定哈希。 */
-export function providerMark(provider: string): { letter: string; hue: number } {
-  const label = providerLabel(provider);
-  const letter = [...label][0]?.toUpperCase() ?? "?";
-  let h = 0;
-
-  for (let i = 0; i < provider.length; i++) h = (h * 31 + provider.charCodeAt(i)) >>> 0;
-
-  return { letter, hue: h % 360 };
-}
-
-export type ReasoningTier = "unknown" | "native" | "effort" | "direct";
-
-export interface ModelReasoningMeta {
-  tier: ReasoningTier;
-  /** 展示标签；null 表示没有可信能力证据，UI 不得渲染任何能力标签。 */
-  tag: string | null;
-}
-
-/**
- * 能力标签的唯一合法证据来源是已验证的 runtime/SDK/适配器元数据。
- * 当前协议（ModelOption 只有 id/provider/modelId/name）与 ClientMessage
- * 均不携带能力信息，provider/modelId 字符串推不出任何能力，
- * 因此对一切输入保守降级为无标签（issue #2 / 验收 B1–B3）。
- * 接入真实能力元数据前，不要在这里恢复任何按名称/供应商的推断。
- */
-export function modelReasoningMeta(provider: string, modelId: string): ModelReasoningMeta {
-  void provider;
-  void modelId;
-
-  return { tier: "unknown", tag: null };
 }

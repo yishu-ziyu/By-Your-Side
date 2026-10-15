@@ -81,12 +81,6 @@
   --err-soft: var(--apple-red-soft);
 
   /* 思考标签与选择器 (亮色高对比度清晰紫/灰/蓝，杜绝泛白泥浆) */
-  --tag-native-bg: var(--content-subtle);
-  --tag-native-color: var(--text-secondary);
-  --tag-direct-bg: var(--content-subtle);
-  --tag-direct-color: var(--text-secondary);
-  --tag-slider-bg: var(--content-subtle);
-  --tag-slider-color: var(--text-secondary);
   --chip-active-bg: var(--content-bg);
   --btn-border-hover: rgba(0, 0, 0, 0.14);
   --popover-shadow: 0 10px 28px rgba(20, 20, 19, .1);
@@ -140,12 +134,6 @@
     --apple-red: #eb9284;
 
     /* 思考标签与选择器 (暗色高对比，杜绝死硬纯黑) */
-    --tag-native-bg: var(--content-subtle);
-    --tag-native-color: var(--text-secondary);
-    --tag-direct-bg: var(--content-subtle);
-    --tag-direct-color: var(--text-secondary);
-    --tag-slider-bg: var(--content-subtle);
-    --tag-slider-color: var(--text-secondary);
     --chip-active-bg: var(--content-bg);
     --btn-border-hover: rgba(255, 255, 255, 0.2);
     --popover-shadow: 0 10px 28px rgba(0,0,0,.24);
@@ -3367,7 +3355,8 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #think-menu .mm-list .mm-row { padding: 6px 10px; }
 #think-menu .mm-none { padding: 18px 10px; text-align: center; font-size: 12.5px; color: var(--text-tertiary); }
 @media (prefers-reduced-motion: reduce) {
-  #think-menu, #think-menu .mm-views, #think-menu .mm-thumb, #think-chip svg { transition: opacity var(--d-micro) linear; transform: none !important; }
+  #think-menu { transition: opacity var(--d-micro) linear; transform: none; }
+  #think-menu .mm-views, #think-menu .mm-thumb, #think-chip svg { transition: none; }
   #think-menu.mm-in-all .mm-main { display: none; }
   #think-chip .think-swap { animation: none; }
 }

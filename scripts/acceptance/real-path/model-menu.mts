@@ -162,6 +162,8 @@ try {
   assert.ok(firstLevel.rows.length >= 2, `第一层至少有两个模型可选：${JSON.stringify(firstLevel.rows)}`);
   assert.ok(evidence.menuOpenAfterDeep === true && evidence.menuOpenAfterFast === true, "切思考时菜单不关");
 
+  // ChatGPT 账号的目录有几十个模型，第一层放不下，必须有「更多模型」。
+  if (modelArg.startsWith("openai-codex/")) assert.ok(firstLevel.more, "目录大时第一层最后一行是「更多模型」");
   if (firstLevel.more) assert.deepEqual({ ...(evidence.moreModels as JsonRecord), rows: undefined }, { level: "all", focus: "search", rows: undefined, allMatch: true, escBack: true, escClose: true }, `更多模型在同一个菜单里打开、能搜，Esc 先返回再关上：${JSON.stringify(evidence.moreModels)}`);
   assert.ok(evidence.switched && evidence.switchedBack, "选别的模型后开关换名字，换回来也一样");
   assert.match(String(evidence.chipDeep), /· 深入/, "选了深入，按钮写深入");

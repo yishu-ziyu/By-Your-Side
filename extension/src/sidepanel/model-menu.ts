@@ -317,7 +317,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
       return;
     }
 
-    if (key === "Enter" && highlighted() >= 0) {
+    // 焦点在“深入”、返回这些按钮上时，回车按它们自己的；输入法确认候选词的回车也不算选模型。
+    if (key === "Enter" && !event.isComposing && (document.activeElement === menu || document.activeElement === search) && highlighted() >= 0) {
       event.preventDefault();
       rows()[highlighted()]!.click();
 
