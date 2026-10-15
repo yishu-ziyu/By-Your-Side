@@ -452,6 +452,8 @@ try {
 
   await writeFile(join(artifacts, "summary.json"), JSON.stringify(summary, null, 2));
   console.log(`\n${summary.passed}/${summary.total} 通过 → ${join(artifacts, "summary.json")}`);
+
+  if (summary.passed < summary.total) process.exitCode = 1;
   await rp.close().catch(() => undefined);
   await rp.remove().catch(() => undefined);
   shopServer.close();
