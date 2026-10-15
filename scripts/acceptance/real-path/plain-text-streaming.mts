@@ -73,11 +73,11 @@ const RULES: Rule[] = [
 
 const MARKS = ["【甲】", "【乙】", "【丙】", "【丁】", "【戊】", "【己】", "【庚】"];
 
-/** 侧栏现状：回答位置（不在过程行里的助手气泡）与执行过程里各有哪些记号、各几次。 */
+/** 侧栏现状：回答位置（不在过程行里的助手气泡，开场话也算）与执行过程里各有哪些记号、各几次。 */
 const PANEL = `(() => {
   const q = (s) => document.querySelector(s);
-  const answers = [...document.querySelectorAll("#messages .msg.assistant:not(.opening-line)")].filter((el) => !el.closest(".run-steps")).map((el) => el.innerText.trim()).filter(Boolean);
-  const openings = [...document.querySelectorAll("#messages .msg.assistant.opening-line")].map((el) => el.innerText.trim());
+  const answers = [...document.querySelectorAll("#messages .msg.assistant")].filter((el) => !el.closest(".run-steps")).map((el) => el.innerText.trim()).filter(Boolean);
+  const openings = [...document.querySelectorAll("#messages .msg.assistant.opening-line")].filter((el) => !el.closest(".run-steps")).map((el) => el.innerText.trim());
   // 过程里的正文：停下或插话留下的半截在 pre 里；回答出来后，开场话收成过程顶部的计划行（.run-plan）。
   const process = [...document.querySelectorAll("#messages .run-steps pre, #messages .run-steps .run-plan")].map((el) => el.textContent ?? "");
   return {
@@ -102,7 +102,7 @@ const WATCH = `(() => {
   const marks = ${JSON.stringify(MARKS)};
   const scan = () => {
     const now = Date.now();
-    const bubbles = [...document.querySelectorAll("#messages .msg.assistant:not(.opening-line)")].filter((el) => !el.closest(".run-steps")).map((el) => el.textContent);
+    const bubbles = [...document.querySelectorAll("#messages .msg.assistant")].filter((el) => !el.closest(".run-steps")).map((el) => el.textContent);
     const answer = bubbles.join("\\n");
     const process = [...document.querySelectorAll("#messages .run-steps pre")].map((el) => el.textContent).join("\\n");
     for (const m of marks) {
@@ -237,7 +237,20 @@ try {
   // 工具调用之后、最终回答开始写之前（脚本模型这一步先等 2.5 s）读一次。
   await until(async () => model.requests.some((r) => r.rule === "过渡演示" && r.step === 1 && r.tools) || undefined, 30_000, "工具结果送回模型");
   const mid2 = await read();
-  check(2, "调工具后、最终回答开始前，这句是开场话（看得见、只一份），不在回答位置、不在折起的过程里", count(mid2.openings, "【乙】") === 1 && count(mid2.answers, "【乙】") === 0 && count(mid2.process, "【乙】") === 0, { openings: count(mid2.openings, "【乙】"), answers: count(mid2.answers, "【乙】"), process: count(mid2.process, "【乙】") });
+  // SAFETY: 页面脚本返回两个布尔值。
+  const place2 = await rp.evaluate(panel, `(() => {
+    const line = [...document.querySelectorAll("#messages .msg.assistant.opening-line")].find((el) => el.textContent.includes("【乙】"));
+    const run = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
+    const style = line && getComputedStyle(line);
+    const box = line?.getBoundingClientRect();
+    return {
+      visible: !!line && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0 && box.width > 0 && box.height > 0,
+      aboveRun: !!line && !!run && !!(line.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  })()`) as { visible: boolean; aboveRun: boolean };
+  // 只有这里产品有意把这句放成开场话：回答位置里减去开场话，剩下的不该再有它。
+  const besides2 = count(mid2.answers, "【乙】") - count(mid2.openings, "【乙】");
+  check(2, "调工具后、最终回答开始前，这句是开场话（看得见、只一份），在过程行上面，不在回答位置、不在折起的过程里", count(mid2.openings, "【乙】") === 1 && besides2 === 0 && count(mid2.process, "【乙】") === 0 && place2.visible && place2.aboveRun, { openings: count(mid2.openings, "【乙】"), answers: besides2, process: count(mid2.process, "【乙】"), ...place2 });
   const s2 = await settle("2-text-then-tool");
   check(2, "回答出来后，开场话收进过程顶部只一份，不留在回答位置", count(s2.answers, "【乙】") === 0 && count(s2.openings, "【乙】") === 0 && count(s2.process, "【乙】") === 1, { answers: s2.answers, openings: s2.openings, process: count(s2.process, "【乙】") });
   check(2, "最终回答只出现一次", count(s2.answers, "【丙】") === 1, { answers: s2.answers });
@@ -288,7 +301,9 @@ try {
   const after = (await read()).answers;
   finals["3e-history"] = { before, after };
   await rp.screenshot(panel, join(artifacts, "3e-history.png")).catch(() => {});
-  check(3, "侧栏重开（历史回放）后回答条数与内容不变", JSON.stringify(before) === JSON.stringify(after), { before: before.length, after: after.length });
+  // 最新回答按钮上的「↵」提示跟着输入框焦点显隐（answer-command.ts），不是回答内容。
+  const content = (list: string[]) => JSON.stringify(list.map((text) => text.replace(/\s*↵$/, "")));
+  check(3, "侧栏重开（历史回放）后回答条数与内容不变", content(before) === content(after), { before: before.length, after: after.length });
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   console.error(error);
