@@ -8,8 +8,8 @@ import { ReplaceTargetChanged, type MemoryQuery, type MemoryStore } from "./memo
 import { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
-import { ASKED_ABOUT_PAST, MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
-import { isRelevantMemory } from "./memory-relevance.js";
+import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
+import { isNamedForRequest, isRelevantMemory } from "./memory-relevance.js";
 import { dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
 import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
@@ -251,6 +251,13 @@ function pendingQueueFor(store: MemoryStore, doc?: DocumentPersistence): Pending
 class ProviderFailure extends Error {}
 
 /** 任务结束时判断结果关联哪一天，最多等这么久；判断不了就不带日期。 */
+/**
+ * The answer line names every in-effect item when the request points back at an earlier task. Narrower than
+ * ASKED_ABOUT_PAST in memory-context.ts, which also hits time order (「付款之前」, "before I buy") and words
+ * like 叫做过 or 以前端; that one still decides what the model receives.
+ */
+const REFERS_TO_EARLIER_TASK = /上次|上回|那次|那天(?!气)|(?:之前|以前|昨天|前几天)[^，。？！,.?!\s]{0,2}?(?:订|做|买|约|定|查|说|填|办|问)|last time|previously|did you/i;
+
 const TASK_DATE_TIMEOUT_MS = 12_000;
 
 /** 提到了日子的说法：只有这样的任务才花一次判断问「关联哪一天」。 */
@@ -896,7 +903,7 @@ export class MemoryRuntime {
   /**
    * 决定点 B：按纯代码规则挑这一轮带的记忆（见 memory-context.ts），写一条决定记录，给带上的记忆记一次「用过」。
    * 「用了」事件只点名和这次任务对得上的：每轮都带的「关于你」、到处适用的做事方法，以及不论网站和会话都带的有效期内的事，
-   * 要和这句话有共同的词才列出（过往任务比原话和「做成了什么」，不比摘要）；这句话在问过往时，有效期内的事照常列出；其余带上的照常列出。模型收到的记忆不受影响。没有可点名的就不发，侧栏不出这一行。
+   * 要和这句话有共同的实词才列出（过往任务比原话和「做成了什么」，不比摘要）；这句话明确提到以前那件事时，有效期内的事照常列出；其余带上的照常列出。模型收到的记忆不受影响。没有可点名的就不发，侧栏不出这一行。
    */
   private async selectContext(turn: ActiveUserTurn): Promise<MemoryContextSelection | null> {
     const hostname = memoryHostOfUrl(turn.query.url);
@@ -914,8 +921,8 @@ export class MemoryRuntime {
     if (selection.tasks.length) await this.options.history?.markUsed(selection.tasks.map(({ task }) => task.id), Date.now()).catch(() => undefined);
     selection.entries = selection.entries.flatMap(item => (current.has(item.entry.id) ? [{ ...item, entry: current.get(item.entry.id)! }] : []));
     this.usedThisTurn = selection.entries.map(item => item.entry);
-    const askedAboutPast = ASKED_ABOUT_PAST.test(turn.text);
-    const named = (rule: MemoryContextRule, text: string) => (rule !== "always" && rule !== "in-validity") || (rule === "in-validity" && askedAboutPast) || isRelevantMemory(text, turn.text);
+    const refersBack = REFERS_TO_EARLIER_TASK.test(turn.text);
+    const named = (rule: MemoryContextRule, text: string) => (rule !== "always" && rule !== "in-validity") || (rule === "in-validity" && refersBack) || isNamedForRequest(text, turn.text);
     const shown = selection.entries.filter(({ entry, rule }) => named(rule, entry.text)).map(item => item.entry);
     const shownTasks = selection.tasks.filter(({ task, rule }) => named(rule, [task.goal, ...task.revisions, task.done ?? ""].join("\n"))).map(item => item.task);
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);

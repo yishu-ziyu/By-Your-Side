@@ -21,12 +21,6 @@ const BOILERPLATE_TERMS = new Set([
   "整理", "帮我", "请用", "请你", "给我", "以后", "今后", "下次", "记住", "使用", "所有", "会话", "用于", "可以", "需要", "时候",
 ]);
 
-/**
- * Request filler. A Han run is split at these before n-grams are taken: as overlapping n-grams they
- * would make any two requests that both say 「帮我查一下」 or 「看一下这个」 look related.
- */
-const FILLER = /帮我|请你|麻烦|一下|一看|一查|看看|这个|那个|这款|这页|这里|那里|怎么|怎样|什么|可以|一个/gu;
-
 /** Request verbs, not task objects. Shared action words alone never match an experience. */
 const ACTION_TERMS = new Set([
   // Chinese request verbs, at the same 2-4 character granularity as the term tokenizer.
@@ -71,13 +65,54 @@ export function isRelevantExperience(topic: string, query: string): boolean {
   return ![...asked].some((term) => ACTION_TERMS.has(term));
 }
 
+/**
+ * Request filler for the answer line only. An n-gram is dropped when every character of it sits inside a
+ * filler phrase at that spot, so 「帮我查一下」 and 「看一下这个」 never make two requests look related, while
+ * 逐一查看 keeps 查看, 统一下单 keeps 下单 and 一个人 keeps 个人.
+ */
+const FILLER = ["帮我", "请你", "麻烦", "一下", "查一", "看一", "一查", "一看", "看看", "这个", "那个", "这款", "这页", "这里", "那里", "怎么", "怎样", "什么", "可以", "一个"];
+
+/**
+ * Whether the answer line names a memory for this request: the loose rule with filler n-grams removed.
+ * What the model receives never depends on this; it keeps isRelevantMemory.
+ */
+export function isNamedForRequest(memory: string, query: string): boolean {
+  const asked = namingTerms(query);
+
+  for (const term of namingTerms(memory)) if (asked.has(term)) return true;
+
+  return false;
+}
+
+function namingTerms(text: string): Set<string> {
+  const terms = memoryTerms(text);
+  const fillerOnly = new Set<string>();
+  const kept = new Set<string>();
+
+  for (const run of text.normalize("NFKC").toLowerCase().match(/[\p{Script=Han}]+/gu) ?? []) {
+    const covered = new Array<boolean>(run.length).fill(false);
+
+    for (const phrase of FILLER) {
+      for (let at = run.indexOf(phrase); at >= 0; at = run.indexOf(phrase, at + 1)) covered.fill(true, at, at + phrase.length);
+    }
+
+    for (let size = 2; size <= Math.min(4, run.length); size += 1) {
+      for (let i = 0; i + size <= run.length; i += 1) (covered.slice(i, i + size).every(Boolean) ? fillerOnly : kept).add(run.slice(i, i + size));
+    }
+  }
+
+  for (const term of fillerOnly) if (!kept.has(term)) terms.delete(term);
+
+  return terms;
+}
+
 function memoryTerms(text: string): Set<string> {
   const normalized = text.normalize("NFKC").toLowerCase();
   const out = new Set<string>();
 
   // Split scripts before tokenizing: a project number must not swallow adjacent
   // Chinese words into one unmatchable token. Common request verbs are not topics.
-  for (const word of (normalized.match(/[\p{Script=Han}]+/gu) ?? []).flatMap((run) => run.split(FILLER))) {
+  for (const word of normalized.match(/[\p{Script=Han}]+/gu) ?? []) {
     for (let size = 2; size <= Math.min(4, word.length); size += 1) {
       for (let i = 0; i + size <= word.length; i += 1) {
         const term = word.slice(i, i + size);

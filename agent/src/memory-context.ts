@@ -43,7 +43,7 @@ export interface MemoryContextSelection {
   skipped: { replacedOrInvalid: number; expired: number; otherSite: number; notHere: number; overCap: number; notRelevant: number };
 }
 
-export const ASKED_ABOUT_PAST = /之前|上次|以前|前几天|昨天|做过|订阅过|买过|填过|earlier|last time|before|previously|did you/i;
+const ASKED_ABOUT_PAST = /之前|上次|以前|前几天|昨天|做过|订阅过|买过|填过|earlier|last time|before|previously|did you/i;
 
 /** 过往任务给模型看的一行有多长：与 formatTaskHistory 的内容一致，只用来计字数上限。 */
 export function taskContextChars(task: TaskHistoryEntry): number {
