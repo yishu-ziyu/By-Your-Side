@@ -59,9 +59,8 @@ import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTestResult } from "./error-card.js";
 import { describeModelError, plainToolError } from "../../../shared/user-facing.js";
 import { INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
-import { mountModelPicker } from "./model-picker.js";
+import { mountModelMenu } from "./model-menu.js";
 import { chipLabel } from "./models.js";
-import { mountThinkingChip } from "./thinking-chip.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { D_STATE, D_TAP } from "../shared/motion-tokens.js";
 import { AttachmentsManager } from "./attachments.js";
@@ -242,12 +241,6 @@ app.innerHTML = `
     <button id="memory-open" type="button" title="看、改、删助手记住的事" aria-haspopup="dialog" aria-expanded="false">记忆</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
-        <button id="model-btn" type="button" title="切换模型" aria-label="换主模型" hidden aria-haspopup="listbox" aria-expanded="false">
-          <span id="model-mark" class="model-mark" hidden></span>
-          <span>主模型</span>
-          <span id="model-name"></span>
-          <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
-        </button>
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
       <button id="reading-settings-btn" type="button"><span>字体字号</span></button>
     </div>
@@ -360,7 +353,6 @@ app.innerHTML = `
       </div>
     </div>
   </div>
-  <div id="model-popover" hidden></div>
 `;
 
 /** 宿主没有记忆存储时，不给只会报「存储不可用」的入口。旧宿主不报时按有处理。 */
@@ -458,16 +450,6 @@ document.addEventListener("answer-command", (event) => {
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 
 
-const modelBtn = document.getElementById("model-btn") as HTMLButtonElement;
-
-const modelMark = document.getElementById("model-mark") as HTMLElement;
-
-const modelName = document.getElementById("model-name")!;
-
-const modelReasoningTag = document.getElementById("model-reasoning-tag") as HTMLElement;
-
-const modelPopover = document.getElementById("model-popover")!;
-
 // 附件瓷贴与动作菜单 DOM
 const attachmentsStrip = document.getElementById("attachments-strip") as HTMLElement;
 
@@ -475,7 +457,7 @@ const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
 
 const attachMenu = document.getElementById("attach-menu") as HTMLElement;
 
-// 按下就把焦点给输入框：默认的按下会先让输入框失焦，空框的工具行收起，松开再展开，会闪一下。
+// 点工具行的空白处就是要打字：按下时把焦点给输入框，不让它先失焦。
 document.getElementById("composer-bar")!.addEventListener("mousedown", (event) => {
   if (event.button !== 0 || !(event.target instanceof Element) || event.target.closest("button")) return;
   event.preventDefault();
@@ -1123,7 +1105,6 @@ function selectConversation(id: string, notify = true): void {
     attachments.restore([], id);
     tabMentions.clear();
     restoringDraft = false;
-    modelPicker.reset();
 
     if (typed !== null) { inputEl.value = typed; syncSteerSend(); autoResize(); saveDraft(); currentDraftReady = true; updateStarterVisibility(); }
     else void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));
@@ -2379,31 +2360,12 @@ if (typeof chrome !== "undefined" && chrome.tabs) {
 
 void refreshActiveTabPill();
 
-// ── 模型选择器 ─────────────────────────────────────────────────────
-// 模型入口收在顶部更多菜单，选择面板在菜单触发器下方展开。
-// 数据源是 agent 下发的 hello_ok.models / model_info；选择后发 set_model，
-// 等 agent 回 model_info 再更新显示（收到回执才改变状态）。
-const modelPicker = mountModelPicker({
-  host: {
-    button: modelBtn,
-    mark: modelMark,
-    name: modelName,
-    reasoningTag: modelReasoningTag,
-    popover: modelPopover,
-    anchor: headerMore,
-    app,
-  },
-  sendSetModel: (model) => {
-    send({ type: "set_model", model });
-  },
-});
-
-// 输入框左下角「6 Luna · 快」：当前模型与思考强度；「换模型…」在这颗按钮上方打开模型选择器。
-const thinkingChip = mountThinkingChip({
+// 输入框左下角「模型 · 快」：一个菜单里选模型和思考强度。选模型发 set_model，等宿主回 model_info 才改显示。
+const modelMenu = mountModelMenu({
   composer: document.getElementById("composer")!,
   after: document.getElementById("attach-btn")!,
-  send: (deep) => { send({ type: "set_thinking", deep }); },
-  openModels: () => { modelPicker.openFrom(document.getElementById("think-chip")!); },
+  sendThinking: (deep) => { send({ type: "set_thinking", deep }); },
+  setModel: (model) => { send({ type: "set_model", model }); },
 });
 
 // ── 错误卡（#74）：模型出错时按种类给修复动作，修好后从出错处接着做 ──
@@ -2418,7 +2380,6 @@ const keyTests = new Map<string, (result: KeyTestResult) => void>();
 
 function noteModelInfo(model: string | undefined, models: ModelOption[] | undefined): void {
   if (models?.length) knownModels = models;
-  thinkingChip.update(model ?? currentModelId, knownModels);
 
   if (!model) return;
   currentModelId = model;
@@ -5817,7 +5778,7 @@ function handleServerMessage(raw: string): void {
     // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 只放行目录，
     // 模型本身仍按会话归属丢弃，不把别会话的当前模型安到本会话头上。
     // live 复现：225 条 models=163 的 model_info 被整条过滤，芯片停在空目录。
-    if (msg.type === "model_info" && Array.isArray(msg.models) && msg.models.length > 0) modelPicker.update(undefined, msg.models);
+    if (msg.type === "model_info" && Array.isArray(msg.models) && msg.models.length > 0) modelMenu.update(undefined, msg.models);
 
     return;
   }
@@ -5826,13 +5787,13 @@ function handleServerMessage(raw: string): void {
     case "hello_ok":
       setStatus("on", "已连接");
       applyHostFeatures(msg.features);
-      modelPicker.apply(msg.model, msg.models);
+      modelMenu.update(msg.model, msg.models ?? []);
       noteModelInfo(msg.model, msg.models);
       noteModelPresence(msg.model, msg.models);
-      thinkingChip.connected();
+      modelMenu.connected();
       break;
     case "model_info":
-      modelPicker.update(msg.model, msg.models);
+      modelMenu.update(msg.model, msg.models);
       noteModelInfo(msg.model, msg.models);
 
       if (msg.model || msg.models?.length) noteModelPresence(msg.model, msg.models);
@@ -6073,7 +6034,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
     conversationRequest = null;
     renderConversations();
-    modelPicker.reset();
+    modelMenu.reset();
     setStatus("off", "未连接");
 
     // 同一失败原因只提示一次，重试循环不刷屏
@@ -6266,7 +6227,6 @@ function scheduleReconnect(): void {
 function autoResize(): void {
   inputEl.style.height = "auto";
   inputEl.style.height = `${Math.min(inputEl.scrollHeight, 140)}px`;
-  modelPicker.reposition();
   // 程序改输入框（恢复草稿、起点建议、附件增减）都经过这里：发送键的样子跟着变。
   syncSteerSend();
   composerEl.classList.toggle("has-text", Boolean(inputEl.value.trim()));
