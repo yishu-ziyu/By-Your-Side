@@ -91,7 +91,7 @@ export const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
  */
 export const MODEL_STALL_AFTER_START_MS = 10_000;
 
-/** 能力表没有登记 hedgeMs 的模型：发出后这么久还没有第一个事件，就再发一份相同的请求。 */
+/** 能力表没有登记 hedgeMs 的模型：发出后这么久还没有第一个事件（且未受理），就再发一份相同的请求。 */
 export const MODEL_HEDGE_MS = 8_000;
 
 /**
@@ -627,9 +627,10 @@ export type ModelHedgeRecord =
 /**
  * 第一个事件（start 只表示连上，不算）迟迟不来：取消这次请求，交出一条可重试的超时错误，写明是哪个模型。
  * 服务端一旦发出原始事件（已受理），剩余等待缩短到 MODEL_STALL_AFTER_START_MS：受理后迟迟不出内容就是挂住了。
- * 到 hedgeMs 还没有第一个事件，就再发一份相同的请求，原请求不取消（对冲请求，Dean & Barroso《The Tail at Scale》）：
+ * 到 hedgeMs 原请求既没有第一个事件、也没被受理，就再发一份相同的请求，原请求不取消（对冲请求，Dean & Barroso《The Tail at Scale》）：
  * 先出第一个事件的那份胜出，另一份立即取消、晚到的事件丢弃。整次调用在原请求的期限（上面两条）报超时错误；
- * 只有对冲那份已被受理（服务还活着）时，才放宽到它受理后再等 MODEL_STALL_AFTER_START_MS，取两者中较晚的。
+ * 只有对冲那份已被受理（服务还活着）时，才放宽到它受理后再等 MODEL_STALL_AFTER_START_MS，取两者中较晚的；
+ * 它随后出错被丢掉，就退回原请求的期限。原请求已受理时不对冲：受理后的短等待已经管住挂起，再发一份只会给长前缀、慢思考多付一份。
  * 供应商整段挂住时两份都不会被受理，用户等的时间和没有对冲时一样。
  * 某份在出第一个事件前就出错（并发上限、429 等），而另一份还在等：只丢掉出错的这份，不让整次调用失败。
  * 用户取消照常走原来的 aborted 结局。
@@ -811,6 +812,12 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
       if (winner === attempt || (!winner && !othersLive(attempt))) fail(errorText(error));
       else if (attempt.hedge && attempt.live) hedgeError = errorText(error);
     } finally {
+      // 已受理的对冲那份没胜出就结束了：它不再证明服务活着，放弃时间退回原请求的期限。
+      if (attempt.hedge && !winner && hedgeDeadline !== null && !closed) {
+        hedgeDeadline = null;
+        arm();
+      }
+
       if (winner === attempt) finish();
       else if (attempt.live) {
         attempt.live = false;
@@ -828,12 +835,12 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   launch(false);
   onCut?.(cutText, true);
 
-  hedgeTimer = setTimeout(() => {
-    if (winner || closed || outer?.aborted || !attempts[0]!.live) return;
+  hedgeTimer = hedgeMs > 0 ? setTimeout(() => {
+    if (winner || closed || outer?.aborted || !attempts[0]!.live || attempts[0]!.started) return;
 
     try { onHedge?.({ type: "model_hedge", model: name, hedgeMs }); } catch { /* Diagnostics only. */ }
     launch(true);
-  }, hedgeMs);
+  }, hedgeMs) : undefined;
 
   return out;
 }

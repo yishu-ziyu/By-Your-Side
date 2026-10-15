@@ -27,7 +27,7 @@ interface MeasuredCapability {
   firstEventMs?: number;
   /**
    * 发出后这么久还没有第一个事件，就再发一份相同的请求，先出事件的那份胜出（对冲请求）。
-   * 取该模型首字耗时 p90 左右：更早会给大多数正常请求白发一份，更晚就省不下等待。不写则用主循环默认值。
+   * 取该模型首字耗时 p90 左右：更早会给大多数正常请求白发一份，更晚就省不下等待。不写则用主循环默认值；0 表示不对冲。
    */
   hedgeMs?: number;
 }
@@ -63,7 +63,8 @@ const MEASURED = new Map<string, MeasuredCapability>([
   // 10-11 用户定：取代 step-3.5-flash（旧的发图回 400，档位不起作用）。文档只写 low / high；developer 角色里「只回 JSON」被忽略，所以用 system 角色。
   // 看图未测，按保守默认只收文字。
   ["stepfun/step-3.5-flash-2603", { reasoning: true, input: ["text"], thinkingLevelMap: { off: null, minimal: null, medium: null }, systemRole: true }],
-  ["kimi-coding/kimi-for-coding", { hedgeMs: 7_000 }],
+  // Kimi 编程套餐同一时间只允许 1 个请求（同时发 2 个必有 1 个被拒 concurrent request limit），对冲那份必然被拒，所以不对冲。
+  ...(["kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k"] as const).map((id): [string, MeasuredCapability] => [`kimi-coding/${id}`, { hedgeMs: 0 }]),
 ]);
 
 const key = (model: Pick<Model<Api>, "provider" | "id">) => `${model.provider}/${model.id}`;
