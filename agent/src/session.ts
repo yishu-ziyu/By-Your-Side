@@ -669,6 +669,7 @@ if(required.includes(key))candidates.set(key,attachment);
         onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
         onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() }),
         onModelResponse: status => resultHost?.modelRequestTrace.response(status),
+        onModelHedge: ({ type, ...data }) => resultHost?.runTrace.record(type, data),
         effort: model => resultHost?.mainEffort.level(model) ?? "off",
       });
 
