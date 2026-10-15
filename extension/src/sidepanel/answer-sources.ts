@@ -8,6 +8,7 @@
  * - 图标只加在正文链接指向已读页面的地方；模型正文里没读过的链接不标成出处。
  * - 段落定位复用 PINPOINT_DOM_TARGET：找不到唯一位置就不假装高亮，回到页顶并提示「已打开来源页」。
  */
+import { targetWindowId } from "./target-window.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
 import { sourceLabel } from "./delivery-facts-view.js";
@@ -25,26 +26,26 @@ function pageKey(url: string): string | null {
   } catch { return null; }
 }
 
-/** 已开着这一页就切过去（优先侧栏所在窗口），否则在当前标签旁新开，不覆盖用户正在看的页面。 */
+/** 已开着这一页就切过去（优先这个页面要操作的窗口），否则在当前标签旁新开，不覆盖用户正在看的页面。 */
 async function bringSourceTab(url: string): Promise<{ tab: chrome.tabs.Tab; reused: boolean } | null> {
   const key = pageKey(url);
-  const current = await chrome.windows.getCurrent().catch(() => null);
+  const targetWindow = await targetWindowId();
   const tabs = await chrome.tabs.query({});
   const open = tabs.filter(tab => tab.id && tab.url && pageKey(tab.url) === key);
-  const reuse = open.find(tab => tab.windowId === current?.id) ?? open[0];
+  const reuse = open.find(tab => tab.windowId === targetWindow) ?? open[0];
 
   if (reuse?.id) {
     const tab = await chrome.tabs.update(reuse.id, { active: true });
 
-    if (reuse.windowId !== current?.id) await chrome.windows.update(reuse.windowId, { focused: true }).catch(() => undefined);
+    if (reuse.windowId !== targetWindow) await chrome.windows.update(reuse.windowId, { focused: true }).catch(() => undefined);
 
     return tab ? { tab, reused: true } : null;
   }
 
-  const [active] = await chrome.tabs.query({ active: true, windowId: current?.id ?? chrome.windows.WINDOW_ID_CURRENT });
+  const [active] = await chrome.tabs.query({ active: true, windowId: targetWindow ?? chrome.windows.WINDOW_ID_CURRENT });
   const created: chrome.tabs.CreateProperties = { url, active: true };
 
-  if (current?.id) created.windowId = current.id;
+  if (targetWindow) created.windowId = targetWindow;
 
   if (active) created.index = active.index + 1;
   const tab = await chrome.tabs.create(created);

@@ -1,3 +1,4 @@
+import { activeTargetTabs } from "../target-window.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
 import {replaceEditableText} from "../../shared/editable-text.js";
@@ -776,7 +777,7 @@ async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   }
 
   try {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const [active] = await activeTargetTabs();
 
     return active?.id ?? null;
   } catch {
@@ -1029,7 +1030,7 @@ export async function showTeamControlBanners(tabIds: Iterable<number>, view?: Co
   const ids = new Set([...tabIds].filter(isTabId));
 
   try {
-    const [active] = await chrome.tabs.query({active: true, lastFocusedWindow: true});
+    const [active] = await activeTargetTabs();
 
     if (active?.id != null) ids.add(active.id);
   } catch { /* 无活动页 */ }

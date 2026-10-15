@@ -32,7 +32,7 @@ import { dropPendingMessage, holdPendingMessage, noteNeedsModelManual, playConne
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal } from "lucide";
+import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal, AppWindow } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
 import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, FileText, TextQuote, Keyboard, SquareTerminal, Workflow, Eye, ListChecks, Highlighter, ArrowLeftRight, X as XIcon, Languages, Download, Users, Bookmark, Wrench } from "lucide";
 import {
@@ -96,6 +96,7 @@ import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 import { mountChapters } from "./chapters.js";
+import { activeTargetTab, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
 
@@ -249,6 +250,7 @@ app.innerHTML = `
     <button id="memory-open" type="button" title="看、改、删助手记住的事" aria-haspopup="dialog" aria-expanded="false">记忆</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
+      <button id="popout-open" type="button"><span>在新窗口打开</span></button>
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
       <button id="reading-settings-btn" type="button"><span>字体字号</span></button>
     </div>
@@ -499,6 +501,11 @@ let selectedConversationId = "default";
 
 /** 这个侧栏页面自己看着的会话：刷新后回到它，不跟别的侧栏页面走。关掉侧栏再开是新页面，跟最近操作的那个侧栏。 */
 const PANEL_CONVERSATION_KEY = "sideagent-panel-conversation";
+
+// 单独窗口第一次打开时显示地址里的会话；之后刷新回到它自己最后看的那个。地址里的会话已经删了，开机时按「记着的会话不在了」新建一个。
+if (popoutConversation) {
+  try { if (!sessionStorage.getItem(PANEL_CONVERSATION_KEY)) sessionStorage.setItem(PANEL_CONVERSATION_KEY, popoutConversation); } catch { /* 记不住就跟最近操作的侧栏 */ }
+}
 
 let conversationReady = false;
 
@@ -2278,6 +2285,63 @@ modelSettingsOpen.prepend(icon(SlidersHorizontal));
 
 modelSettingsOpen.addEventListener("click", () => void chrome.runtime.openOptionsPage());
 
+const popoutOpen = document.getElementById("popout-open")!;
+
+popoutOpen.prepend(icon(AppWindow));
+
+// 单独窗口里不再开单独窗口；语音和说话输入这一版不放进单独窗口（styles.css 按 data-popout 藏起）。
+if (isPopout) {
+  popoutOpen.remove();
+  document.documentElement.dataset.popout = "";
+}
+
+popoutOpen.addEventListener("click", () => void openPopout());
+
+const POPOUT_SIZE = { width: 420, height: 720 };
+
+/** 这块屏能放窗口的范围。Chrome 有 screen.availLeft / availTop（多屏时这块屏的位置），DOM 类型里没有。 */
+function screenArea(): { left: number; top: number; right: number; bottom: number } {
+  const left = "availLeft" in screen && typeof screen.availLeft === "number" ? screen.availLeft : 0;
+  const top = "availTop" in screen && typeof screen.availTop === "number" ? screen.availTop : 0;
+
+  return { left, top, right: left + screen.availWidth, bottom: top + screen.availHeight };
+}
+
+/**
+ * 当前会话单独开一个窗口，放在这个浏览器窗口右边；右边放不下，就压在它右侧边上。
+ * 整个窗口要落在屏幕里：Chrome 拒绝一半以上在屏幕外的窗口。
+ */
+async function openPopout(): Promise<void> {
+  const source = await chrome.windows.getCurrent().catch(() => null);
+
+  if (source?.id == null) return;
+  const url = chrome.runtime.getURL(`sidepanel.html?conversation=${encodeURIComponent(selectedConversationId)}&window=${source.id}`);
+  const area = screenArea();
+  const width = Math.min(POPOUT_SIZE.width, area.right - area.left);
+  const height = Math.min(POPOUT_SIZE.height, area.bottom - area.top);
+  const create: chrome.windows.CreateData = { type: "popup", url, width, height };
+
+  if (source.left != null && source.top != null && source.width != null) {
+    const right = source.left + source.width;
+    const room = right + width <= area.right;
+    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+    create.left = clamp(room ? right : right - width - 16, area.left, area.right - width);
+    create.top = clamp(room ? source.top : source.top + 48, area.top, area.bottom - height);
+  }
+
+  await chrome.windows.create(create).catch(() => { addMsg("msg notice", "没能打开新窗口，请重试。"); });
+}
+
+// 打开这个单独窗口的浏览器窗口关了：页面标牌和「按窗口找侧栏」都换到最近获得焦点的普通窗口。
+if (isPopout) {
+  chrome.windows.onRemoved.addListener(() => {
+    void refreshActiveTabPill();
+    void targetWindowId().then(windowId => {
+      if (windowId != null) port?.postMessage({ kind: "panel_window", windowId } satisfies PanelToBg);
+    }).catch(() => { /* 端口刚断：重连时会再报 */ });
+  });
+}
+
 function clipTitle(text: string, max = 16): string {
   const t = text.trim();
 
@@ -2295,7 +2359,7 @@ async function refreshActiveTabPill(): Promise<void> {
   }
 
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await activeTargetTab();
 
     if (!tab) return;
 
@@ -5641,7 +5705,7 @@ const resumeEntry = new ResumeEntry({
   sendResume: (request) => send({ type: "task_action", request }),
   getContext: async () => {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const tab = await activeTargetTab();
 
       if (!tab?.id) return null;
 
@@ -6433,8 +6497,9 @@ function connect(): void {
   }
   p.postMessage(sync satisfies PanelToBg);
   // 按住说话、右键提问、阅读转到侧栏交给用户动手的那个窗口里的侧栏；后台从侧栏的上下文里拿不到窗口号。
-  void chrome.windows.getCurrent().then(win => {
-    if (win.id != null && port === p) p.postMessage({ kind: "panel_window", windowId: win.id } satisfies PanelToBg);
+  // 单独窗口报的是它要操作的那个浏览器窗口，不是它自己。
+  void targetWindowId().then(windowId => {
+    if (windowId != null && port === p) p.postMessage({ kind: "panel_window", windowId } satisfies PanelToBg);
   }).catch(() => { /* 拿不到窗口号：这些动作跟最近操作的侧栏 */ });
 }
 
@@ -6565,9 +6630,9 @@ function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string }
 function activeTabId(): Promise<number | null> {
   if (typeof chrome === "undefined" || !chrome.tabs?.query) return Promise.resolve(null);
 
-  // 与 background attachPageContext 同口径：先最后聚焦窗口，再兜底任一活动标签页。
-  return chrome.tabs.query({ active: true, lastFocusedWindow: true })
-    .then(([tab]) => tab ?? chrome.tabs.query({ active: true }).then(([fallback]) => fallback).catch(() => undefined))
+  // 先看这个页面要操作的窗口，再兜底任一活动标签页。
+  return activeTargetTab()
+    .then((tab) => tab ?? chrome.tabs.query({ active: true }).then(([fallback]) => fallback).catch(() => undefined))
     .then((tab) => tab?.id ?? null)
     .catch(() => null);
 }
