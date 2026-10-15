@@ -6128,7 +6128,11 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
         if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }
-      else handleServerMessage(JSON.stringify(entry.item.msg));
+      else {
+        chapters.noteServer(entry.item.msg);
+        handleServerMessage(JSON.stringify(entry.item.msg));
+      }
+
       lastHistorySeq = entry.seq;
     }
   } finally {
