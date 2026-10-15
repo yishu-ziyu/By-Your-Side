@@ -3,7 +3,8 @@
  * 只装扩展、隔离构建、本机脚本模型、本机两页：左边「回答页」是一段含中文引号、空行和列表的回答，旁边有一个密码栏；
  * 右边「聊天页」（用户正看着）有输入框和「提交」按钮，提交时把收到的文字发回本机服务。
  *   npx tsx scripts/acceptance/real-path/fill-from-source.mts --headless
- * 脚本模型依次：value 和 from 一起给（应报错）、from 指向密码栏（应拒绝）、from 指向回答（应填好）、点「提交」。
+ * 脚本模型依次：value 和 from 一起给（应报错）、from 指向密码栏（应拒绝）、from 用 CSS 指向回答（应填好）、
+ * 读回答页快照后 from 用快照里那行文字的 @ref（文字节点，真实模型就这样选）再填一次（应填好）、点「提交」。
  * 判据：服务端只收到 1 次提交，文字与原文逐字相同；前两次填写都报错（未执行）；
  * 密码栏的值没出现在给模型的任何内容里；搬运那次的回执只有字数和首尾几个字，没有全文。
  * 按钮叫「提交」不叫「发送」：点「发送」会先停下等用户在网页上确认，那不是这里要测的。
@@ -64,6 +65,9 @@ const FINAL = "已原样提交。";
 // 回答页的标签页 id 要等页面开好才知道：先占位，发问前填进去。
 const from = { tabId: -1, target: "#answer" };
 const pwFrom = { tabId: -1, target: "#pw" };
+// 快照里回答那一行的 @ref：模型读到快照后才知道，脚本在收到快照回执时填进去。
+const refFrom = { tabId: -1, target: "@0" };
+const snapshotArgs = { tabId: -1 };
 
 /** 给模型的每条工具回执原文，按出现顺序。 */
 const toolTexts: string[] = [];
@@ -77,6 +81,8 @@ const model = await startScriptedModel([
     { tool: { name: "fill", args: { target: "#box", value: "我自己打的字", from } } },
     { tool: { name: "fill", args: { target: "#box", from: pwFrom } } },
     { tool: { name: "fill", args: { target: "#box", from } } },
+    { tool: { name: "snapshot", args: snapshotArgs } },
+    { tool: { name: "fill", args: { target: "#box", from: refFrom } } },
     { tool: { name: "click", args: { target: "#submit", label: "提交" } } },
     { text: FINAL },
   ] },
@@ -87,6 +93,9 @@ const model = await startScriptedModel([
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((p: { text?: string }) => p.text ?? "").join("") : "";
 
     if (m.role === "tool" && !toolTexts.includes(text)) toolTexts.push(text);
+    const ref = text.match(/\[ref=(\d+)\] text: 好的/)?.[1];
+
+    if (m.role === "tool" && ref) refFrom.target = `@${ref}`;
   }
 });
 
@@ -106,6 +115,8 @@ try {
   const answerTabId = await until(async () => (await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => ts.find(t => t.title === "回答")?.id ?? null)`)) as number | null ?? undefined, 15_000, "回答页的标签页 id");
   from.tabId = answerTabId;
   pwFrom.tabId = answerTabId;
+  refFrom.tabId = answerTabId;
+  snapshotArgs.tabId = answerTabId;
 
   const panel = await rp.attach(await rp.openSidePanel());
   panelForDump = panel;
@@ -124,7 +135,7 @@ try {
   await rp.screenshot(panel, join(artifacts, "panel.png"));
   await rp.screenshot(chat, join(artifacts, "chat.png"));
 
-  const fills = toolTexts.filter(t => !t.startsWith("Clicked") && !/^Click/.test(t)).slice(0, 3);
+  const fills = toolTexts.filter(t => !/^Click/.test(t) && !t.includes("RootWebArea")).slice(0, 4);
   evidence.received = received;
   evidence.fillReceipts = fills;
   evidence.box = await rp.evaluate(chat, 'document.getElementById("box").value');
@@ -141,6 +152,8 @@ try {
   assert.match(copied, /<page-content untrusted/, `the copied ends are wrapped as page content: ${JSON.stringify(copied)}`);
   assert.ok(!copied.includes("一、先想清楚目标"), `the copy receipt does not carry the full text: ${JSON.stringify(copied)}`);
   assert.match(copied, /holds exactly this text/, `the field read back the same text: ${JSON.stringify(copied)}`);
+  assert.notEqual(refFrom.target, "@0", "the snapshot listed the answer as a text line with a ref");
+  assert.match(fills[3] ?? "", new RegExp(`Copied ${ANSWER.length} characters from ${refFrom.target} .*holds exactly this text`, "s"), `from a snapshot text ref copies the same text: ${JSON.stringify(fills[3])}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
