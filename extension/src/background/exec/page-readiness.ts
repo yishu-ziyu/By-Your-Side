@@ -1,5 +1,6 @@
 import type {NavigationDownload,PageReadinessValue} from "../../../../shared/protocol.js";
 import {overlayHostSelector} from "../../shared/overlay.js";
+import {sendCommand} from "../debugger.js";
 import {withTimeout} from "../timeout.js";
 
 export interface PageReadiness {
@@ -37,6 +38,46 @@ function unscriptableByDesign(url:string|undefined):boolean {
 
 /** 给模型看的一句话：Chrome 显示了它自己的错误页，页面没打开。navigate 和新开标签页共用。 */
 export const ERROR_PAGE_NOTE="Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
+
+/**
+ * 只重试这些 Chrome 网络错误：连接在建立或传输途中断了、本机网络刚变过，同一地址隔一秒再开常常就好。
+ * 域名不存在、证书错误这类是地址或网站本身的问题，服务器回了 4xx/5xx 的页面也是网站自己的答复，再开一次结果一样，所以不在其中。
+ */
+const TRANSIENT_NET_ERRORS=new Set(['ERR_CONNECTION_CLOSED','ERR_CONNECTION_RESET','ERR_CONNECTION_REFUSED','ERR_CONNECTION_FAILED','ERR_CONNECTION_TIMED_OUT','ERR_TIMED_OUT','ERR_EMPTY_RESPONSE','ERR_NETWORK_CHANGED','ERR_INTERNET_DISCONNECTED']);
+
+const RETRY_DELAY_MS=1000;
+
+/** 错误页上 Chrome 写的网络错误名。扩展脚本注入不了错误页，调试器可以读；不是错误页或读不到时返回 undefined。 */
+async function readNetErrorName(tabId:number):Promise<string|undefined> {
+  try{
+    const reply=await sendCommand<{result?:{value?:unknown}}>(tabId,'Runtime.evaluate',{expression:"location.protocol==='chrome-error:'?(document.querySelector('.error-code')?.textContent??''):''",returnByValue:true},undefined,1500);
+    const name=typeof reply?.result?.value==='string'?reply.result.value.trim().replace(/^net::/,''):'';
+
+    return /^ERR_[A-Z0-9_]+$/.test(name)?name:undefined;
+  }catch{return undefined;}
+}
+
+/**
+ * 按网址打开（navigate、新开标签页）撞上一次性网络错误时，隔一秒再开同一地址一次，免得模型把偶发断连当成网站打不开告诉用户。
+ * 只给按网址打开用：那是不带表单数据的 GET，重放没有副作用；点击、表单提交引起的跳转不走这里。
+ * 任务已停止或换了轮次就不再派发，照原样返回错误页。
+ */
+export async function retryTransientErrorPage(tabId:number,url:string,ready:PageReadiness,timeoutMs:number,beforeDispatch?:{checkNow?:()=>void}):Promise<{ready:PageReadiness;retry?:string}> {
+  if(ready.readiness!=='error_page')return {ready};
+  const error=await readNetErrorName(tabId);
+
+  if(!error||!TRANSIENT_NET_ERRORS.has(error))return {ready};
+  await new Promise(resolve=>setTimeout(resolve,RETRY_DELAY_MS));
+
+  try{beforeDispatch?.checkNow?.();}catch{return {ready};}
+  const again=await waitForInteractive(tabId,Math.max(RETRY_DELAY_MS,timeoutMs-ready.waitMs-RETRY_DELAY_MS),{requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId,{url})});
+
+  again.waitMs+=ready.waitMs+RETRY_DELAY_MS;
+
+  return {ready:again,retry:again.readiness==='error_page'
+    ?`The first attempt hit ${error} (a one-off network error), so it was retried once automatically; the retry also failed.`
+    :`The first attempt hit ${error} (a one-off network error); it was retried once automatically and the retry succeeded.`};
+}
 
 /** Chrome 拒绝往它自己的错误页注入时给的原因（连不上网站、DNS 失败等）。 */
 const ERROR_PAGE=/showing error page/i;
