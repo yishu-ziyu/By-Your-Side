@@ -1,5 +1,5 @@
 import { Check, createElement as icon } from "lucide";
-import { sanitizeAnswerHtml } from "../shared/answer-html.js";
+import { openGatedImage, sanitizeAnswerHtml } from "../shared/answer-html.js";
 import { renderMarkdownHtml as renderShared } from "../shared/markdown.js";
 
 /**
@@ -111,6 +111,9 @@ function flash(button: HTMLElement, state: "copied" | "failed"): void {
   clearTimeout(Number(button.dataset.copiedTimer));
   button.dataset.copiedTimer = String(setTimeout(() => button.classList.remove(state), COPIED_MS));
 }
+
+// 侧栏和查看生成文件的页面都会显示回答里的图片占位。
+if (typeof document !== "undefined") document.addEventListener("click", openGatedImage);
 
 // 流式输出时正文每一帧整段换新，所以用委托，不给每个按钮单独绑。
 if (IN_SIDE_PANEL) {

@@ -7,6 +7,7 @@
  */
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
 import { type Block, type Card, type PendingComponent, cardEvidence, resolveProse, splitAnswer } from "../../../shared/answer-cards.js";
+import { keepOpenedImages } from "../shared/answer-html.js";
 import { toast } from "./sonar-citations.js";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -207,6 +208,7 @@ export function dropPlaceholders(root: HTMLElement): void {
 export function patchAnswer(root: HTMLElement, html: string): void {
   const next = document.createElement("template");
   next.innerHTML = html;
+  keepOpenedImages(next.content, root);
   const shown = root.childNodes.length > 0;
   const kept = [...root.children].filter((el) => el.classList.contains("gen-card"));
   const want: Node[] = [];

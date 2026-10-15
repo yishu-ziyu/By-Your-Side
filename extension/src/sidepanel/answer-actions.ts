@@ -1,5 +1,6 @@
 import { Check, createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
+import { imagePlaceholdersAsText } from "../shared/answer-html.js";
 import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
 import { fillUndoLabel, fillUndoOf, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
@@ -21,7 +22,10 @@ export interface ResultAction {
 }
 
 function answerBody(answer: HTMLElement): HTMLElement {
-  return visibleBody(answer, CHROME);
+  const body = visibleBody(answer, CHROME);
+  imagePlaceholdersAsText(body);
+
+  return body;
 }
 
 async function writeClipboard(text: string): Promise<void> {
