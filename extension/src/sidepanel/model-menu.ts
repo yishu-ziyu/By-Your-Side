@@ -246,7 +246,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     open(false);
 
     if (id === current) return;
-    recent = [id, ...recent.filter((other) => other !== id)].slice(0, FIRST_LEVEL_MAX - 1);
+    // 刚换掉的那个也算最近用过：换过去试一下，第一层就能换回来。
+    recent = [id, current, ...recent].filter((other, i, all): other is string => Boolean(other) && all.indexOf(other) === i).slice(0, FIRST_LEVEL_MAX - 1);
 
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)); } catch { /* 记不住最近用过的，只影响第一层排序 */ }
     options.setModel(id);
