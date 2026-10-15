@@ -18,6 +18,7 @@ import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageConte
 import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
 import { installReinject } from "./reinject.js";
+import { installCursorSpots } from "./cursor-spot.js";
 import { createPttVoice } from "./ptt-voice.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
@@ -153,6 +154,8 @@ installPageInteractions();
 installLinkPreview();
 
 installReinject();
+
+installCursorSpots();
 
 const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error")));
 

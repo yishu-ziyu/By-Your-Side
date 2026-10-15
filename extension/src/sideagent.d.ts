@@ -85,7 +85,7 @@ interface SideAgentCursor {
   gaze?(view: { mode: "sweep" } | { mode: "at"; rects: SideAgentRect[] } | { mode: "rest" } | { mode: "off" }): void;
   /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */
   arrive(x: number, y: number): void;
-  /** 在视口坐标 (x,y) 播放点击波纹，随后飞回角落 */
+  /** 在视口坐标 (x,y) 播放点击波纹，随后停在原处 */
   click(x: number, y: number): void;
   /** 飞回待命角落（不点、不填的时候） */
   park?(): void;
@@ -127,7 +127,7 @@ interface SideAgentCursor {
   handoffMark?(rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void;
   /** 圈都画好后摆名牌：第一个还空着的栏写「你来填 · …」，按钮写「填完点这里」或「点这里」。 */
   handoffLabels?(): void;
-  /** 松开：摘掉按住姿态、名牌恢复成员名，随后照常 park */
+  /** 松开：摘掉按住姿态、名牌恢复成员名，光标停在原处 */
   releaseHold?(): void;
   /** 清除全部 mark 标注 */
   clearMarks?(): void;

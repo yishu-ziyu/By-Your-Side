@@ -106,8 +106,9 @@ try {
       "对照组：被关闭的旧彩边之前确实处于亮起状态");
     await rp.evaluate(page, 'dispatchEvent(new PageTransitionEvent("pagehide", {persisted:true}));true');
     await rp.evaluate(page, 'dispatchEvent(new PageTransitionEvent("pageshow", {persisted:true}));true');
-    const restored = await state();
-    assert(restored && restored.resting && !restored.hidden, "BFCache 恢复后重新出现一个可见的主光标");
+    // 光标先问后台上一页停在哪，再出现。
+    const restored = await until(async () => (await state()) || undefined, 3_000, "BFCache 恢复后的主光标");
+    assert(restored.resting && !restored.hidden, "BFCache 恢复后重新出现一个可见的主光标");
     assert.equal(await rp.evaluate(page, 'document.querySelectorAll("[data-sideagent-overlay=cursor]").length'), 1,
       "重复恢复不得创建重叠光标");
     assert(!(await edgeClasses()).some(c => c.split(/\s+/).includes("on")),
