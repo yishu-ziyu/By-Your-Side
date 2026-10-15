@@ -2767,8 +2767,24 @@ let thinkPinned = true;
 
 let followingLive = false;
 
+// 用户刚动过滚轮、手指、滚动键或滚动条，这段时间内不自动跟随，免得和正在进行的滚动抢位置。
+const USER_SCROLL_QUIET_MS = 150;
+
+let userScrollAt = -Infinity;
+
+let lastScrollTop = 0;
+
+// 跟随代码自己滚到的位置：它触发的 scroll 事件不算人滚。
+let followScrollTop = -1;
+
+let scrollbarHeld = false;
+
 function nearBottom(): boolean {
-  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
+}
+
+function userScrolling(): boolean {
+  return scrollbarHeld || performance.now() - userScrollAt < USER_SCROLL_QUIET_MS;
 }
 
 function followLive(el: HTMLElement | null, stick: boolean): void {
@@ -2784,6 +2800,8 @@ function followLive(el: HTMLElement | null, stick: boolean): void {
 }
 
 function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): void {
+  // 平滑滚动的头几帧还离底部很近，只看位置会被下一次跟随拉回去；往上滚的意图在滚轮事件里就定了。
+  el.addEventListener("wheel", (e) => { if (e.deltaY < 0 && el.scrollTop > 0) setPinned(false); }, { passive: true });
   el.addEventListener("scroll", () => {
     if (followingLive) return;
     setPinned(isLiveViewportPinned(el.scrollTop, el.scrollHeight, el.clientHeight));
@@ -2797,8 +2815,43 @@ function syncScrollFade(): void {
   frame.dataset.fadeBottom = String(messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight > 1);
 }
 
+function markUserScroll(): void {
+  userScrollAt = performance.now();
+}
+
+// 往上滚一点也算离开底部：只看位置的话，离底部不到阈值的一小格滚动会被下一段字拉回去。
+messagesEl.addEventListener("wheel", (e) => {
+  markUserScroll();
+  if (e.deltaY < 0 && messagesEl.scrollTop > 0) pinned = false;
+}, { passive: true });
+
+messagesEl.addEventListener("touchstart", markUserScroll, { passive: true });
+
+messagesEl.addEventListener("touchmove", markUserScroll, { passive: true });
+
+// 只认按在滚动条上（目标是滚动区本身）；点消息里的按钮不算滚动。
+messagesEl.addEventListener("pointerdown", (e) => {
+  if (e.target === messagesEl) scrollbarHeld = true;
+});
+
+for (const type of ["pointerup", "pointercancel"]) window.addEventListener(type, () => {
+  if (scrollbarHeld) markUserScroll();
+  scrollbarHeld = false;
+});
+
+messagesEl.addEventListener("keydown", (e) => {
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) markUserScroll();
+});
+
+// 人往上滚就离开底部，往下滚回底部附近才重新跟上；内容变短被浏览器夹回底部不算往上滚。
 messagesEl.addEventListener("scroll", () => {
-  pinned = nearBottom();
+  const top = messagesEl.scrollTop;
+
+  const atEnd = messagesEl.scrollHeight - top - messagesEl.clientHeight <= 1;
+
+  if (userScrolling()) pinned = nearBottom() && (top >= lastScrollTop || atEnd);
+  else if (top !== followScrollTop) pinned = nearBottom();
+  lastScrollTop = top;
   toBottomBtn.hidden = pinned;
   syncScrollFade();
 });
@@ -2812,13 +2865,17 @@ function scrollToEnd(force = false): void {
   followLive(currentRun?.body ?? null, force || runBodyPinned);
   followLive(currentThinking, force || thinkPinned);
 
-  if (force || pinned) messagesEl.scrollTop = messagesEl.scrollHeight;
-  toBottomBtn.hidden = nearBottom();
+  if (force || (pinned && !userScrolling())) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    followScrollTop = messagesEl.scrollTop;
+  }
+  toBottomBtn.hidden = pinned || nearBottom();
 }
 
 toBottomBtn.onclick = () => {
   pinned = true;
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  followScrollTop = messagesEl.scrollTop;
   toBottomBtn.hidden = true;
 };
 
