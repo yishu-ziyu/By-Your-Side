@@ -11,7 +11,7 @@ import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveReadableTab } from "../state.js";
 import { oneLine } from "../util.js";
-import { axTreeToText, enclosingItem, itemTextOf, RANGE_INPUT_ROLES, repeatedItems, type AxNodeLite, type RepeatedItems } from "../axtree.js";
+import { axTreeToText, enclosingItem, itemTextOf, itemTexts, RANGE_INPUT_ROLES, repeatedItems, type AxNodeLite, type RepeatedItems } from "../axtree.js";
 import type { InputRangeReadout } from "../../../../shared/page-readout.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
@@ -246,7 +246,7 @@ export async function snapshotTab(
   }
 }
 
-/** 读整棵无障碍树并转成行：快照和“动作后新出现了什么”共用同一套去浮层、敏感栏、零尺寸规则。 */
+/** 读整棵无障碍树并转成行：快照和“动作后新出现了什么”共用同一套去浮层、敏感栏、零尺寸规则。同名控件行尾写明在哪一项。 */
 async function readAxPage(tabId: number, decision = false, budget?: number) {
   // 布局盒子与无障碍树同时去取，不多等一轮。
   const zeroSizeRead = readZeroSizeNodes(tabId);
@@ -260,8 +260,9 @@ async function readAxPage(tabId: number, decision = false, budget?: number) {
   const nodes = withoutSubtrees(result.nodes!, await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, nodes);
   const zeroSize = await zeroSizeRead;
+  const found = repeatedItems(nodes);
 
-  return { nodes, secret, zeroSize, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize) };
+  return { nodes, secret, zeroSize, found, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize, itemTexts(nodes, found)) };
 }
 
 /** 一次最多读几处变化：每处是几次 CDP 往返。 */
@@ -306,6 +307,7 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
   // 变的是 html 这类大容器时，助手自己的光标、停止条也在里面：和整页快照一样去掉。
   const list = withoutSubtrees([...nodes.values()], await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, list);
+  // 不传“在哪一项”：pageChangesSince 认定每行 text 以 body 结尾，行尾的项由它自己加。
   const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
   const lines = entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line);
   const found = repeatedItems(list);
@@ -369,10 +371,10 @@ async function readItems(tabId: number, refs: readonly number[], nodes: readonly
 }
 
 async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
-  const { nodes, secret, zeroSize, text, backendIds, truncated, shown } = await readAxPage(tabId, decision);
+  const { nodes, secret, zeroSize, found, text, backendIds, truncated, shown } = await readAxPage(tabId, decision);
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
   // 只把真的交给模型的行记成“读过”：长页被截掉的那些，之后出现在眼前时还要当新的报。
-  rememberPage(tabId, shown, repeatedItems(nodes));
+  rememberPage(tabId, shown, found);
 
   if(!decision){
     recordAxSnapshot(tabId, backendIds);

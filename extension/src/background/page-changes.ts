@@ -3,15 +3,12 @@
  * 基准是模型看过的那一页（快照、上一次变化摘要），不是动作前另读一次：大页面读一次整页要 1 秒多（维基百科长条目 3.4 万个节点）。
  * 所以摘要说的是“自上次读页以来新出现的”，不断言都是这次动作引起的。
  * 只给新增，不给消失的行：消失的多半是旧值、旧提示，旧值不能再交给模型（还原填写的规则）。
- * 列表里每项都有的同名控件（每条笔记的「More」），行尾写明它在哪一项：快照是平的，模型分不清（10-14 Memos 置顶点错了笔记还说成功）。
+ * 列表里每项都有的同名控件（每条笔记的「More」），行尾写明它在哪一项，写法同整页快照（axtree.ts itemNote）：只看按钮名，模型分不清是哪一条的。
  */
-import { renderLines, type AxLine, type RepeatedItems } from "./axtree.js";
+import { itemNote, renderLines, type AxLine, type RepeatedItems } from "./axtree.js";
 
 /** 摘要上限（字）：只带变化，绝不带整页。 */
 export const PAGE_CHANGES_MAX_CHARS = 2000;
-
-/** “在哪一项”最多写几个字。 */
-const ITEM_MAX_CHARS = 40;
 
 /** 能填、能选的控件的行：同一个控件只是值或勾选状态变了，不算新出现（它自己的变化由效果证据报）。 */
 const FIELD_LINE = /^(textbox|searchbox|combobox|spinbutton|slider|Date|DateTime|InputTime|InputMonth|InputWeek|checkbox|radio|switch|listbox|option)\b/;
@@ -80,7 +77,7 @@ export function pageChangesSince(tabId: number, lines: readonly AxLine[], scrub:
   const shownText = new Set(fresh.flatMap(line => line.body.startsWith("text: ") ? [line.body.slice(6)] : []));
   // 外层那一行已经写了同一项（菜单写了，菜单里的每一项就不再写）。
   const open: Array<{ depth: number; item: string }> = [];
-  const itemNote = (line: AxLine) => {
+  const noteOf = (line: AxLine) => {
     const item = line.ref === undefined ? undefined : items.get(line.ref);
 
     while (open.length && open[open.length - 1]!.depth >= line.depth) open.pop();
@@ -89,12 +86,12 @@ export function pageChangesSince(tabId: number, lines: readonly AxLine[], scrub:
     open.push({ depth: line.depth, item });
     const clean = scrub(item);
 
-    return clean ? ` — in item ${JSON.stringify(clean.length > ITEM_MAX_CHARS ? `${clean.slice(0, ITEM_MAX_CHARS - 1)}…` : clean)}` : "";
+    return clean ? itemNote(clean) : "";
   };
   // 缩进按新出现的这几行里最浅的一层对齐。
   const top = Math.min(...fresh.map(line => line.depth));
   // 去旧值只动这一行的内容，不碰缩进和 ref 前缀（旧值是数字时会把 ref 弄坏）。
-  const shifted = fresh.map(line => ({ ...line, text: line.text.slice(top * 2, line.text.length - line.body.length) + scrub(line.body) + itemNote(line) }));
+  const shifted = fresh.map(line => ({ ...line, text: line.text.slice(top * 2, line.text.length - line.body.length) + scrub(line.body) + noteOf(line) }));
   const { text, truncated, keptRefs } = renderLines(shifted, PAGE_CHANGES_MAX_CHARS);
 
   return { text: truncated ? `${text}\n… [more new lines not shown; snapshot to read them]` : text, refs: keptRefs };
