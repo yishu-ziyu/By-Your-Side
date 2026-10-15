@@ -88,10 +88,11 @@ const PANEL = `(() => {
     errors: [...document.querySelectorAll("#messages .msg.error")].map((el) => el.innerText.trim()),
     emptyAnswers: [...document.querySelectorAll("#messages .msg.assistant")].filter((el) => !el.closest(".run-steps") && !el.innerText.trim() && !el.dataset.revealing).length,
     seen: window.__seen ?? {},
+    chunkFades: document.querySelectorAll(".chunk-fade").length,
   };
 })()`;
 
-type Panel = { connected: boolean; ready: boolean; running: boolean; stopping: boolean; revealing: boolean; answers: string[]; process: string[]; errors: string[]; emptyAnswers: number; seen: Record<string, { answer?: number; process?: number; maxBubbles?: number }> };
+type Panel = { connected: boolean; ready: boolean; running: boolean; stopping: boolean; revealing: boolean; answers: string[]; process: string[]; errors: string[]; emptyAnswers: number; seen: Record<string, { answer?: number; process?: number; maxBubbles?: number }>; chunkFades: number };
 
 /** 每个记号第一次出现在回答位置、执行过程里的本机时间。 */
 const WATCH = `(() => {
@@ -227,6 +228,7 @@ try {
   check(1, "模型还在写时回答位置已经有字（不是写完才一次放出）", seen1.answer !== undefined && r1?.lastTextAt !== undefined && seen1.answer < r1.lastTextAt - 1000, { panelFirst: seen1.answer ?? null, modelLast: r1?.lastTextAt ?? null });
   check(1, "整个过程中回答位置从未同时出现两个这段回答的气泡（交付时沿用流式气泡）", seen1.maxBubbles === 1, { maxBubbles: seen1.maxBubbles ?? null });
   check(1, "整轮结束后回答只有一份，内容完整", count(s1.answers, "【甲】") === 4 && s1.answers.filter((a) => a.includes("【甲】")).length === 1 && count(s1.process, "【甲】") === 0, { answers: s1.answers.filter((a) => a.includes("【甲】")).length, marks: count(s1.answers, "【甲】") });
+  check(1, "流结束后回答区不残留淡入 span", s1.chunkFades === 0, { chunkFades: s1.chunkFades });
 
   // 2. 正文之后又调工具：过渡话移进执行过程，最终回答只出现一次。
   await send("看看这页标题，过渡演示");

@@ -271,7 +271,7 @@ export function cardEvidence(card: Card): EvidenceRow[] {
 }
 
 /** 代码块和行内代码的范围：里面的 <card、{=…}、金额都按原文处理。 */
-function codeRanges(text: string): Array<[number, number]> {
+export function codeRanges(text: string): Array<[number, number]> {
   return [...text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*`/g)]
     // 一对反引号里有 <card、后面又有真的 </card>：是正文里落单的反引号碰上了卡片属性里的反引号，不当代码。
     .filter((m) => m[0].startsWith("```") || !/<card[\s>]/.test(m[0]) || m[0].includes("</card>") || text.indexOf("</card>", m.index + m[0].length) < 0)
