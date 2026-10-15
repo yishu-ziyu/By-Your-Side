@@ -441,13 +441,14 @@ export async function assertTargetTabOpen(requestedTabId: number | undefined, ke
   }
 
   const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
-  const what = gone === closedWorking ? `工作标签页 ${gone}` : `标签页 ${gone}`;
+  // 只有被关掉的工作标签页能确定是「已关闭」；别的页号可能从来没有过（例如 0）。
+  const what = gone === closedWorking ? `工作标签页 ${gone} 已关闭` : `标签页 ${gone} 不存在或已关闭`;
 
   const message = active?.id != null
-    ? `${what} 已关闭，这次没有执行。用户正在看的是标签页 ${active.id}。要继续，先用 tabs action:"switch" 切到要操作的标签页（或 tabs action:"list" 查看全部）。`
-    : `${what} 已关闭，这次没有执行。要继续，先用 tabs action:"list" 查看全部标签页，再用 tabs action:"switch" 切到要操作的那一页。`;
+    ? `${what}，这次没有执行。用户正在看的是标签页 ${active.id}。要继续，先用 tabs action:"switch" 切到要操作的标签页（或 tabs action:"list" 查看全部）。`
+    : `${what}，这次没有执行。要继续，先用 tabs action:"list" 查看全部标签页，再用 tabs action:"switch" 切到要操作的那一页。`;
 
-  throw Object.assign(new Error(message), { executionFact: "not_executed" as const, closedTabId: gone });
+  throw Object.assign(new Error(message), { executionFact: "not_executed" as const });
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {

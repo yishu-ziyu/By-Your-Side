@@ -1558,9 +1558,6 @@ async function executeToolCall(
 
     // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话（docs/evals/20261009-send-confirm.md）。
     if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason };
-
-    // 目标页已关闭：Agent 据此不再把这一页当缺省 tabId 补进之后的调用。
-    if (e && typeof e === "object" && "closedTabId" in e) result.data = { closedTabId: e.closedTabId };
   }
 
   // 已完成写操作的身份跨 SW 重启保留，重复投递不会二次落地。
