@@ -16,8 +16,8 @@ import { Lexer, Marked, type Tokens, type TokenizerThis } from "marked";
  * 不一律删除非 ASCII 字符。裸写的纯 IRI 主机（https://例え.テスト）与 marked
  * 现状一致、不自动链接，需要时可用显式 `<https://例え.テスト/路径>`。
  *
- * 返回的仍是 marked 的原始 HTML（透传的 raw HTML 不做处理）：调用方必须继续用
- * DOMPurify 等 sanitizer 消毒（main.ts 在原位置消毒）。
+ * 返回的仍是 marked 的原始 HTML（透传的 raw HTML 不做处理）：调用方必须再交给
+ * shared/answer-html.ts 的 sanitizeAnswerHtml 消毒（sidepanel/markdown.ts、content/ask.ts 都这样做）。
  */
 
 // marked 自己暴露的 inline 规则（与下面 Marked 实例的 gfm + breaks 配置一致），
@@ -103,7 +103,7 @@ const marked = new Marked({ breaks: true, gfm: true });
 
 marked.use({ extensions: [{ name: "bareUrl", level: "inline", tokenizer: bareUrlTokenizer }] });
 
-/** 渲染 assistant 的 Markdown 为 HTML；调用方仍需用 DOMPurify 等 sanitizer 消毒。 */
+/** 渲染 assistant 的 Markdown 为 HTML；调用方仍需用 sanitizeAnswerHtml 消毒。 */
 export function renderMarkdownHtml(text: string): string {
   return marked.parse(text, { async: false });
 }
