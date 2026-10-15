@@ -2278,12 +2278,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const { input, cacheRead, cacheWrite } = message.usage;
     const used = input + cacheRead + cacheWrite;
     const model = this.session?.model;
+    const selected = this.modelName();
     // 换到备用模型回答时，按回答的那个模型的窗口算。
     const window = model && model.provider === message.provider && model.id === message.model
       ? model.contextWindow
       : this.modelRuntime?.getModel(message.provider, message.model)?.contextWindow ?? model?.contextWindow;
 
-    return used > 0 && window ? { kind: "context_usage", used, window } : null;
+    return used > 0 && window && selected ? { kind: "context_usage", used, window, model: selected } : null;
   }
 
   private subscribeEvents(): void {
