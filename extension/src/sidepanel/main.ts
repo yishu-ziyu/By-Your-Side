@@ -4,7 +4,7 @@ import { attachSourceCitations, captureCitationContext, type CitationContext } f
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
-import { paintBeatMark } from "./run-heartbeat.js";
+import { answerSkeleton, paintBeatMark } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { mountDictation } from "./dictation.js";
@@ -2527,6 +2527,8 @@ interface RunHost {
   /** 并行/死路/接管的分叉层：紧跟在过程块后面（不放进 details，收起时也看得见）；单步回合是空的。 */
   graph: LiveGraph;
   beatEl: HTMLElement;
+  /** 回答位置的骨架：回答或卡片一接上就由样式收起淡出。 */
+  skeleton: HTMLElement;
   lastToolName: string | null;
 }
 
@@ -3626,6 +3628,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
   trail.className = "run-trail";
   trail.hidden = true;
   graph.el.after(trail);
+  const skeleton = answerSkeleton();
+  trail.after(skeleton);
   const start = runStartAt || eventTime();
 
   currentRun = {
@@ -3661,6 +3665,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     receipt: null,
     graph,
     beatEl: beat,
+    skeleton,
     lastToolName: null,
   };
   startLiveSeconds(currentRun, start);
@@ -4079,6 +4084,10 @@ function finishRun(): void {
   closeThink(run, endedAt);
   // 收尾后过程只留回执，进行中的说明行不再单列。
   run.trail.remove();
+  // 骨架先按样式淡出，淡完再拿掉；没接上回答就结束（出错、停下、只有卡片）时也不留。
+  const skeleton = run.skeleton;
+  skeleton.dataset.state = "gone";
+  window.setTimeout(() => skeleton.remove(), reducedMotion() ? 0 : D_STATE);
   // 空 run（纯文本回复，无思考/工具步骤）不留壳；只读回合（问答、读页）正常结束也不留过程行，
   // 用户看回答和页面本身即可。动过页面、失败或被停止时才保留「查看执行过程」。
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
