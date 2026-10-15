@@ -179,9 +179,8 @@ function askPageRefs<T extends string[] | boolean>(message: PanelToBg & { id: st
 
 /** 回答里「」括起的控件：读页时拿到过位置、现在还在页上的，加虚线，点了在页面上圈出。 */
 async function markPageRefs(answer: HTMLElement): Promise<void> {
+  // 没有「」/粗体/引号也要问：后台会把助手圈过的控件报回来。
   const names = quotedNames(answer);
-
-  if (!names.length) return;
   const found = await askPageRefs<string[]>({ kind: "page_refs_check", id: crypto.randomUUID(), names });
 
   if (!answer.isConnected) return;

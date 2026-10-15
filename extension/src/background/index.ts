@@ -72,7 +72,7 @@ import { detachSoon } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
-import { locatedRef } from "./located-names.js";
+import { circledNames, locatedRef } from "./located-names.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
 import { reportSendClick, type SendGuard } from "./send-confirm.js";
@@ -2347,6 +2347,13 @@ function attachPanel(port: chrome.runtime.Port) {
               const ref = locatedRef(tabId, name);
 
               if (ref !== undefined && await locatedStillThere(tabId, ref)) found.push(name);
+            }
+
+            // 助手圈过的控件也报回：回答里常把它写成平铺文字，侧栏按原字找。
+            for (const name of circledNames(tabId).slice(0, 10)) {
+              const ref = locatedRef(tabId, name);
+
+              if (!found.includes(name) && ref !== undefined && await locatedStillThere(tabId, ref)) found.push(name);
             }
           }
           broadcast({ kind: "page_refs_found", id: msg.id, names: found } satisfies BgToPanel);
