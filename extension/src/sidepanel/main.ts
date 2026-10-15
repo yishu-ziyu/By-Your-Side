@@ -347,8 +347,10 @@ app.innerHTML = `
       <div id="mention-strip" class="mention-strip" hidden></div>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
-        <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截图" aria-haspopup="true">+</button>
-        <span id="composer-spacer"></span>
+        <div id="composer-bar-inner">
+          <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截图" aria-haspopup="true">+</button>
+          <span id="composer-spacer"></span>
+        </div>
         <button id="takeover-btn" type="button" title="接管：助手暂停，由你操作页面。操作完，点「交还」。" hidden>接管</button>
         <button id="steer-send-btn" type="button" title="发出插话（Enter）" aria-label="发出插话" hidden></button>
         <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
@@ -472,6 +474,13 @@ const attachmentsStrip = document.getElementById("attachments-strip") as HTMLEle
 const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
 
 const attachMenu = document.getElementById("attach-menu") as HTMLElement;
+
+// 按下就把焦点给输入框：默认的按下会先让输入框失焦，空框的工具行收起，松开再展开，会闪一下。
+document.getElementById("composer-bar")!.addEventListener("mousedown", (event) => {
+  if (event.button !== 0 || !(event.target instanceof Element) || event.target.closest("button")) return;
+  event.preventDefault();
+  inputEl.focus();
+});
 
 const fileInput = document.getElementById("file-input") as HTMLInputElement;
 
@@ -1107,7 +1116,7 @@ function selectConversation(id: string, notify = true): void {
     resetConversationRender();
     restoringDraft = true;
     inputEl.value = "";
-    syncSteerSend();
+    autoResize();
     pendingAsk = null;
 
     if (askCiteEl) askCiteEl.hidden = true;
@@ -6219,6 +6228,7 @@ function autoResize(): void {
   modelPicker.reposition();
   // 程序改输入框（恢复草稿、起点建议、附件增减）都经过这里：发送键的样子跟着变。
   syncSteerSend();
+  composerEl.classList.toggle("has-text", Boolean(inputEl.value.trim()));
 }
 
 attachments = new AttachmentsManager({

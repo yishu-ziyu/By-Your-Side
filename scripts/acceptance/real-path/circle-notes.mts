@@ -82,6 +82,7 @@ try {
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`)) || undefined, 60_000, "sidebar ready");
 
   // 圈 1：B 款整张卡；圈 2：下面的空白处。
+  await rp.click(panel, "#input");
   await rp.click(panel, "#attach-btn");
   await rp.click(panel, "#menu-action-region");
   await sleep(800);
