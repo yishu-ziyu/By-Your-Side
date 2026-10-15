@@ -1,7 +1,7 @@
 /**
- * 页面右上角「停下」探针（docs/evals/20261006-cursor-narration-redesign.md R3）：
- * 只装扩展的无头 Chrome、真侧栏、脚本模型反复点按钮。助手在点时点页面右上角「停下」，
- * 看侧栏是否进入「已暂停 · 页面归你」、助手是否不再点、页面上是否换成「现在归你 · 交还」。
+ * 页面右边缘胶囊的停止键探针（docs/evals/20261006-cursor-narration-redesign.md R3）：
+ * 只装扩展的无头 Chrome、真侧栏、脚本模型反复点按钮。助手在点时点胶囊上的停止键，
+ * 看侧栏是否进入「已暂停 · 页面归你」、助手是否不再点、胶囊是否换成「现在归你」带「继续」。
  *
  *   npx tsx scripts/probes/cursor-narration/page-stop.mts --headless
  */
@@ -71,8 +71,8 @@ try {
   await rp.pressEnter(panel);
   await until(async () => (await count()) > 0, 30_000, "助手点了第一下");
 
-  const stop = await until(async () => await find((n) => n.nodeName === "BUTTON" && !!n.attributes?.includes("xstop")), 10_000, "右上角「停下」");
-  const bar = await find((n) => n.nodeName === "DIV" && !!n.attributes?.includes("xbar"));
+  const stop = await until(async () => await find((n) => n.nodeName === "BUTTON" && !!n.attributes?.includes("stop")), 10_000, "右边缘胶囊的停止键");
+  const bar = await find((n) => n.nodeName === "DIV" && !!n.attributes?.includes("clip"));
   result.pillText = bar ? text(bar).replace(/\s+/g, " ").trim() : "";
   await rp.screenshot(work, join(out, "acting.png"));
   const at = await centre(stop);
@@ -84,7 +84,7 @@ try {
   const pausedAt = await count();
   await sleep(4000);
   result.clicksAfterPause = (await count()) - pausedAt;
-  const userBar = await until(async () => await find((n) => n.nodeName === "DIV" && !!n.attributes?.includes("bar on")), 10_000, "页面归你条");
+  const userBar = await until(async () => await find((n) => n.nodeName === "BUTTON" && !!n.attributes?.includes("act")), 10_000, "胶囊上的「继续」");
   result.userBarText = text(userBar).replace(/\s+/g, " ").trim();
   result.userBarAt = JSON.stringify(await centre(userBar));
   await rp.screenshot(work, join(out, "paused.png"));
