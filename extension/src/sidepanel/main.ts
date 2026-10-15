@@ -168,6 +168,8 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   syncAnswerTime(answer);
   if (!replayingHistory && answer === fillUndoAnswer()) adoptFillUndo(answer);
   attachShorten(answer);
+  // 文末一排是回答写完后才加的：原本跟着底部的，再贴一次底，否则这一排卡在侧栏底边，拖把手时前一小段把手不动。
+  scrollToEnd();
 
   // 补放历史时不给：那一页早已不是这次回答的结果页。
   if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
