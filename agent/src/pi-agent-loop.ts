@@ -40,6 +40,8 @@ export interface PiAgentLoopOptions {
   onHookError?: (event: string, message: string) => void;
   /** 每次模型调用前观察实际请求（诊断记录用）；只读，抛错被吞掉。 */
   onModelRequest?: (request: ModelRequestObservation) => void;
+  /** 模型调用的响应头到了（服务商适配层报告时才有）；只读，抛错被吞掉。 */
+  onModelResponse?: (status: number) => void;
   /** 每次模型调用前取这次的思考档（见 main-effort.ts）；"off" 表示不发思考参数。不给时沿用 Agent 的设置。 */
   effort?: (model: Model<Api>) => ModelThinkingLevel;
 }
@@ -160,7 +162,7 @@ export class PiAgentLoop implements AgentLoop {
 
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: options.messages ?? [] },
-      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort, options.firstEventTimeoutMs, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }),
+      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.onModelResponse, options.effort, options.firstEventTimeoutMs, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }),
       // 自定义消息转成 user 消息后送给模型。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
@@ -587,7 +589,7 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void): StreamFn {
+function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, observeResponse: ((status: number) => void) | undefined, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);
@@ -601,8 +603,13 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
       await options?.onProviderStreamEvent?.(event, eventModel);
     };
 
+    const onResponse: StreamOptions["onResponse"] = async (response, responseModel) => {
+      try { observeResponse?.(response.status); } catch { /* Diagnostics only. */ }
+      await options?.onResponse?.(response, responseModel);
+    };
+
     // SAFETY: 同上，参数原样转交。
-    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, (signal, accepted) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted) } as never), onCut);
+    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, (signal, accepted) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted), onResponse } as never), onCut);
   }) as StreamFn;
 }
 

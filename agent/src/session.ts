@@ -667,7 +667,8 @@ if(required.includes(key))candidates.set(key,attachment);
         appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
         extensionFactories: extensionFactories.map(entry => entry.factory),
         onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
-        onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined }),
+        onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() }),
+        onModelResponse: status => resultHost?.modelRequestTrace.response(status),
         effort: model => resultHost?.mainEffort.level(model) ?? "off",
       });
 
@@ -784,6 +785,9 @@ if(required.includes(key))candidates.set(key,attachment);
       this.permittedToolNames.filter(name => !automaticResults || name !== 'record_task_results'),
     );
   }
+
+  /** 提前建连接的结果：发生在任务开始之前，不挂在上一个运行上。 */
+  recordWarmUp(data: Record<string, unknown>): void { this.runTrace.recordOutsideRun("warm_up", data); }
 
   /** 当前模型服务的协议、域名和端口，提前建连接用。 */
   modelOrigin(): string | undefined {
