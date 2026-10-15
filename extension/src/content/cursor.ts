@@ -2554,6 +2554,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       ns.cursorStatus = undefined;
       ns.edgeTab = undefined;
       ns.clickEdgeTab = undefined;
+      ns.uncoverPageTarget = undefined;
+      ns.restorePageTarget = undefined;
       ns.setMarkConfig = undefined;
       ns.getMarkConfig = undefined;
       ns.markDetails = undefined;
@@ -2954,6 +2956,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   ns.edgeTab = () => edgeTab?.state() ?? null;
   ns.clickEdgeTab = (part) => edgeTab?.click(part) ?? false;
+  ns.uncoverPageTarget = (target, x, y, token) => edgeTab?.uncoverTarget(target, x, y, token) ?? false;
+  ns.restorePageTarget = (token) => edgeTab?.restoreTarget(token);
 
   ns.holdActionLabels = () =>
     [...instances.values()]
