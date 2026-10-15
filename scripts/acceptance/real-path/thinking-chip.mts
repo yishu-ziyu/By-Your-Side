@@ -91,6 +91,7 @@ try {
   await rp.cdp.send("Target.closeTarget", { targetId: (await rp.targets()).find((t) => t.url.includes("sidepanel"))!.targetId }).catch(() => undefined);
   await sleep(1000);
   await openPanel();
+  await rp.click(panel, "#input");
   await until(async () => (await chipText()) || undefined, 60_000, "重开后输入框旁出现开关");
   evidence.chipReopened = await chipText();
 

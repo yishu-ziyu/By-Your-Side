@@ -3,9 +3,10 @@
  *
  *   npx tsx scripts/acceptance/real-path/composer-expand.mts --headless
  *
- * 失败方式：空着就露出加号；点发送后空框加号还在；点进去加号不出现；打完字失焦后工具收回；窄到 320 发送键不见。
+ * 失败方式：空着就露出加号；点发送后空框加号还在；点进去加号不出现；打完字失焦后工具收回；窄到 320 发送键不见；
+ * 按住工具行空白时工具先收起再展开；收起没有过渡；少动效设置下展开仍然弹。
  */
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
@@ -36,7 +37,36 @@ const blurComposer = (panel: string) => rp.evaluate(panel, `(() => {
   return true;
 })()`);
 
-const view = (panel: string) => rp.evaluate(panel, `(() => {
+// 收起的工具不该被读屏读到：查 Chrome 自己的无障碍树，不看 DOM 属性。
+const toolsInAx = async (panel: string) => {
+  const { root } = await rp.cdp.send("DOM.getDocument", { depth: 0 }, panel);
+  const shown: string[] = [];
+  for (const selector of ["#attach-btn", "#think-chip"]) {
+    const { nodeId } = await rp.cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector }, panel);
+    if (!nodeId) continue;
+    const { nodes } = await rp.cdp.send("Accessibility.getPartialAXTree", { nodeId, fetchRelatives: false }, panel);
+    if (nodes[0] && !nodes[0].ignored) shown.push(selector);
+  }
+  return shown;
+};
+
+const mouse = (panel: string, type: "mouseMoved" | "mousePressed" | "mouseReleased", at: { x: number; y: number }) =>
+  rp.cdp.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, ...(type === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }, panel);
+
+const barSpot = (panel: string, selector: string, dx: string) => rp.evaluate(panel, `(() => {
+  const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+  return { x: r.left + ${dx}, y: r.top + r.height / 2 };
+})()`) as Promise<{ x: number; y: number }>;
+
+const sampleAfter = (panel: string, action: string, ms: number) => rp.evaluate(panel, `new Promise((done) => {
+  ${action};
+  setTimeout(() => {
+    const cs = getComputedStyle(document.querySelector("#composer-bar-inner"));
+    done({ visibility: cs.visibility, opacity: +cs.opacity, transform: cs.transform, properties: cs.transitionProperty, durations: cs.transitionDuration.split(",").map(parseFloat) });
+  }, ${ms});
+})`) as Promise<{ visibility: string; opacity: number; transform: string; properties: string; durations: number[] }>;
+
+const view = async (panel: string) => ({ ...await rp.evaluate(panel, `(() => {
   const inner = document.querySelector("#composer-bar-inner");
   const send = document.querySelector("#send-btn");
   const ics = inner ? getComputedStyle(inner) : null;
@@ -52,7 +82,6 @@ const view = (panel: string) => rp.evaluate(panel, `(() => {
     toolsOpen: !!(ics && +ics.opacity > 0.5 && parseFloat(ics.maxHeight) > 8),
     attachClickable: hit("#attach-btn"),
     thinkClickable: hit("#think-chip"),
-    inert: !!inner?.inert,
     sendShown: !!(send && scs && scs.display !== "none" && (sendBox?.width ?? 0) > 8),
     starter: (() => {
       const el = document.querySelector("#starter-connect");
@@ -65,17 +94,16 @@ const view = (panel: string) => rp.evaluate(panel, `(() => {
     errorCard: [...document.querySelectorAll(".needs-model-card,.receipt-decision,.msg.error")].some((el) => (el.textContent ?? "").trim().length > 0),
     width: document.documentElement.clientWidth,
   };
-})()`) as Promise<{
+})()`) as {
   toolsOpen: boolean;
   attachClickable: boolean;
   thinkClickable: boolean;
-  inert: boolean;
   sendShown: boolean;
   starter: boolean;
   starterTitle: string;
   errorCard: boolean;
   width: number;
-}>;
+}, inAx: await toolsInAx(panel) });
 
 try {
   const tab = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "网页");
@@ -89,19 +117,28 @@ try {
   await rp.evaluate(panel, `document.querySelector("#think-chip").hidden = false; true`);
   const idle = await view(panel);
   await rp.screenshot(panel, join(out, "01-idle.png"));
-  check("空着：加号收起，发送键在", !idle.toolsOpen && !idle.attachClickable && !idle.thinkClickable && idle.inert && idle.sendShown && idle.starter, idle);
+  check("空着：加号收起，发送键在", !idle.toolsOpen && !idle.attachClickable && !idle.thinkClickable && !idle.inAx.length && idle.sendShown && idle.starter, idle);
   check("空着：还看得到先连接模型", idle.starter && idle.starterTitle.includes("先连接"), idle.starterTitle);
 
-  await rp.evaluate(panel, `(() => {
-    const bar = document.querySelector("#composer-bar");
-    const r = bar.getBoundingClientRect();
-    const at = document.elementFromPoint(r.left + 20, r.top + r.height / 2);
-    at?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + 20, clientY: r.top + r.height / 2 }));
-    return true;
-  })()`);
+  const emptyBar = await barSpot(panel, "#composer-bar", "20");
+  await mouse(panel, "mouseMoved", emptyBar);
+  await mouse(panel, "mousePressed", emptyBar);
+  await mouse(panel, "mouseReleased", emptyBar);
   await sleep(350);
   const fromBar = await view(panel);
-  check("点发送键左边空白：工具展开", fromBar.toolsOpen && fromBar.attachClickable && fromBar.sendShown && !fromBar.inert, fromBar);
+  check("点发送键左边空白：工具展开", fromBar.toolsOpen && fromBar.attachClickable && fromBar.sendShown && fromBar.inAx.includes("#attach-btn"), fromBar);
+
+  const spacer = await barSpot(panel, "#composer-spacer", "r.width / 2");
+  await mouse(panel, "mouseMoved", spacer);
+  await mouse(panel, "mousePressed", spacer);
+  await sleep(200);
+  const pressing = await view(panel);
+  const pressFocus = await rp.evaluate(panel, `document.activeElement?.id ?? ""`);
+  await rp.screenshot(panel, join(out, "01b-press.png"));
+  await mouse(panel, "mouseReleased", spacer);
+  await sleep(200);
+  const released = await view(panel);
+  check("空框按住工具行空白：工具不先收起", pressing.toolsOpen && pressFocus === "input" && released.toolsOpen, { pressing, pressFocus, released });
   await blurComposer(panel);
   await sleep(350);
 
@@ -117,6 +154,8 @@ try {
   await sleep(250);
   check("点进去后加号能打开附件菜单", menuOpen === true, { menuOpen });
 
+  const leaving = await sampleAfter(panel, `document.activeElement?.blur()`, 60);
+  check("空着失焦：收起有淡出，不是一下消失", leaving.visibility === "visible" && leaving.opacity > 0.05 && leaving.opacity < 1, leaving);
   await blurComposer(panel);
   await sleep(450);
   const blurred = await view(panel);
@@ -136,25 +175,20 @@ try {
   const cleared = await view(panel);
   check("清空后：工具收回", !cleared.toolsOpen && !cleared.attachClickable && cleared.sendShown, cleared);
 
-  await rp.evaluate(panel, `(() => {
-    const strip = document.querySelector("#attachments-strip");
-    strip.hidden = false;
-    const tile = document.createElement("div");
-    tile.className = "tile-56";
-    tile.id = "expand-probe-tile";
-    strip.append(tile);
-    return true;
-  })()`);
+  // 和在系统文件框里选好图一样：文件交给附件菜单背后的那个文件框。
+  const image = join(out, "attach.png");
+  await writeFile(image, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
+  const { root } = await rp.cdp.send("DOM.getDocument", { depth: 0 }, panel);
+  const { nodeId: fileInput } = await rp.cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "#file-input" }, panel);
+  await rp.cdp.send("DOM.setFileInputFiles", { nodeId: fileInput, files: [image] }, panel);
+  await until(async () => (await rp.evaluate(panel, `!!document.querySelector("#attachments-strip .tile-56")`)) || undefined, 10_000, "附件出现");
   await blurComposer(panel);
-  await sleep(350);
+  await sleep(500);
   const withTile = await view(panel);
   await rp.screenshot(panel, join(out, "04b-tile.png"));
-  check("有附件失焦：工具还开着", withTile.toolsOpen && withTile.attachClickable && withTile.sendShown && !withTile.inert, withTile);
-  await rp.evaluate(panel, `(() => {
-    document.querySelector("#expand-probe-tile")?.remove();
-    document.querySelector("#attachments-strip").hidden = true;
-    return true;
-  })()`);
+  check("有附件失焦：工具还开着", withTile.toolsOpen && withTile.attachClickable && withTile.sendShown && withTile.inAx.includes("#attach-btn"), withTile);
+  await rp.click(panel, "#attachments-strip .tile-dismiss-btn");
+  await until(async () => (await rp.evaluate(panel, `!document.querySelector("#attachments-strip .tile-56")`)) || undefined, 5_000, "附件去掉");
   await blurComposer(panel);
   await sleep(350);
   const tileGone = await view(panel);
@@ -167,7 +201,7 @@ try {
   const afterSend = await view(panel);
   const sendFocus = await rp.evaluate(panel, `document.activeElement?.id ?? ""`);
   await rp.screenshot(panel, join(out, "04c-send.png"));
-  check("点发送后空框：工具收回", !afterSend.toolsOpen && !afterSend.attachClickable && afterSend.sendShown && afterSend.inert, { ...afterSend, sendFocus });
+  check("点发送后空框：工具收回", !afterSend.toolsOpen && !afterSend.attachClickable && afterSend.sendShown && !afterSend.inAx.length, { ...afterSend, sendFocus });
   const erred = await until(async () => {
     const now = await view(panel);
     return now.errorCard ? now : undefined;
@@ -181,7 +215,7 @@ try {
   await blurComposer(panel);
   await sleep(350);
   const errorBlur = await view(panel);
-  check("出错后失焦：工具收回", !errorBlur.toolsOpen && !errorBlur.attachClickable && errorBlur.sendShown && errorBlur.inert, errorBlur);
+  check("出错后失焦：工具收回", !errorBlur.toolsOpen && !errorBlur.attachClickable && errorBlur.sendShown && !errorBlur.inAx.length, errorBlur);
 
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", {
     width: 320,
@@ -198,6 +232,14 @@ try {
   const narrowFocus = await view(panel);
   await rp.screenshot(panel, join(out, "06-narrow.png"));
   check("窄到 320：空着仍只留发送，点进去加号出来", !narrowIdle.toolsOpen && !narrowIdle.attachClickable && narrowIdle.sendShown && narrowFocus.toolsOpen && narrowFocus.sendShown && narrowFocus.width <= 340, { narrowIdle, narrowFocus });
+
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, panel);
+  await blurComposer(panel);
+  await sleep(400);
+  const opening = await sampleAfter(panel, `document.querySelector("#input").focus()`, 50);
+  await sleep(300);
+  const reducedOpen = await view(panel);
+  check("少动效：展开不位移、不弹，时长不超过 0.14 秒", opening.transform === "none" && !opening.properties.includes("transform") && Math.max(...opening.durations) <= 0.14 && reducedOpen.toolsOpen, { opening, toolsOpen: reducedOpen.toolsOpen });
 } finally {
   await rp.close();
   site.close();
