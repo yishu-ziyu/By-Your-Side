@@ -38,22 +38,20 @@ function textResult(text: string, details: unknown) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
-/** tabs 的 action 带了它用不到的 url 或 tabId 时，说明该用哪个 action；用法正确时为 null。空串的 url 当作没给。 */
+/**
+ * tabs 多带的参数指向另一个动作时，说明该用哪个；动作所需参数已给、只是多带了别的，就忽略多余的照常执行。
+ * close 带 url 不带 tabId 也拒绝：照常执行会关掉当前工作页，而模型想关的是那个网址的标签页。空串的 url 当作没给。
+ */
 function tabsMisuse(params: { action: string; url?: string; tabId?: number }): string | null {
   const hasUrl = typeof params.url === "string" && params.url !== "";
   const hasTab = typeof params.tabId === "number";
   const action = `tabs action:"${params.action}"`;
-  const openUrl = '要打开这个网址用 action:"open"（新标签页）或 navigate（当前工作页）。';
 
-  if ((params.action === "list" || params.action === "active") && hasUrl) return `${action} 不接受 url；${openUrl}`;
+  if ((params.action === "list" || params.action === "active") && hasUrl) return `${action} 不接受 url；要打开这个网址用 action:"open"（新标签页）或 navigate（当前工作页）。`;
 
-  if ((params.action === "list" || params.action === "active") && hasTab) return `${action} 不接受 tabId；要让这个标签页成为工作页用 action:"switch"，只读它的内容用 snapshot 带 tabId。`;
+  if (params.action === "open" && hasTab && !hasUrl) return `${action} 不接受 tabId，open 只开新标签页；要让标签页 ${params.tabId} 成为工作页用 action:"switch"。`;
 
-  if (params.action === "open" && hasTab) return `${action} 不接受 tabId，open 总是开一个新标签页；要在已有的标签页里打开网址，先用 action:"switch" 让它成为工作页，再用 navigate。`;
-
-  if ((params.action === "switch" || params.action === "show") && hasUrl) return `${action} 不接受 url，它只换到已有的标签页 tabId；${openUrl}`;
-
-  if (params.action === "close" && hasUrl) return `${action} 不接受 url，它按 tabId 关闭（不给 tabId 就关当前工作页）；先用 action:"list" 找到这个网址所在标签页的 tabId。`;
+  if (params.action === "close" && hasUrl && !hasTab) return `${action} 不按 url 关闭，不给 tabId 会关掉当前工作页；要关这个网址所在的标签页，先用 action:"list" 找到它的 tabId。`;
 
   return null;
 }
@@ -588,7 +586,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         }, { description: 'Host-issued guard for a switch selected from a current browser observation.' })),
       }),
       execute: async (_id, params) => {
-        // 所选 action 用不到的参数照常执行会悄悄丢掉模型的意图（例如 list 带 url 只回列表），模型看不出用错就原地重复同一个调用。
+        // 指向另一个动作的参数照常执行会悄悄丢掉模型的意图（例如 list 带 url 只回列表），模型看不出用错就原地重复同一个调用。
         const misuse = tabsMisuse(params);
 
         if (misuse) throw new Error(misuse);
