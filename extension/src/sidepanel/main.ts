@@ -227,8 +227,11 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 
+/** 正文在 renderMarkdownHtml 里已按回答的规则消毒；整段（含我们画的卡片、代码块的条）再过一遍，挡住能改到回答外面的东西。 */
+const PANEL_HTML = { FORBID_TAGS: ["style", "link", "meta", "base", "form", "iframe", "object", "embed", "foreignObject", "dialog"], FORBID_ATTR: ["style"] };
+
 function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml));
+  return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml), PANEL_HTML);
 }
 
 const app = document.getElementById("app")!;
@@ -2307,7 +2310,11 @@ async function refreshActiveTabPill(): Promise<void> {
 
     if (tabIconSq) {
       if (tab.favIconUrl && tab.favIconUrl.startsWith("http")) {
-        tabIconSq.innerHTML = `<img src="${DOMPurify.sanitize(tab.favIconUrl)}" style="width:12px;height:12px;border-radius:2px;object-fit:cover;" alt="" />`;
+        const img = document.createElement("img");
+        img.src = tab.favIconUrl;
+        img.alt = "";
+        img.style.cssText = "width:12px;height:12px;border-radius:2px;object-fit:cover;";
+        tabIconSq.replaceChildren(img);
       } else {
         const letter = (host || title || "W").replace(/^www\./, "").charAt(0).toUpperCase();
         tabIconSq.textContent = letter;

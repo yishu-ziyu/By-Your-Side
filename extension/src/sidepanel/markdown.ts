@@ -1,5 +1,5 @@
-import DOMPurify from "dompurify";
 import { Check, createElement as icon } from "lucide";
+import { sanitizeAnswerHtml } from "../shared/answer-html.js";
 import { renderMarkdownHtml as renderShared } from "../shared/markdown.js";
 
 /**
@@ -79,12 +79,12 @@ function codeBlockHead(code: Element): HTMLElement {
 }
 
 export function renderMarkdownHtml(text: string): string {
-  const html = renderShared(text);
+  // 先消毒再加条：加条时看到的就是最后显示的结构，条上的按钮也不会被正文的规则删掉。
+  const html = sanitizeAnswerHtml(renderShared(text));
 
   if (!IN_SIDE_PANEL || !html.includes("<pre")) return html;
   const template = document.createElement("template");
-  // 先消毒再加条：加条时看到的就是最后显示的结构。
-  template.innerHTML = DOMPurify.sanitize(html);
+  template.innerHTML = html;
 
   // 模型写的 code-block* class 去掉，仿造不出这一条的样子。
   for (const el of template.content.querySelectorAll("[class*='code-block']")) {
