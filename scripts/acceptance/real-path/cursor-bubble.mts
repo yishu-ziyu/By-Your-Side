@@ -102,7 +102,8 @@ try {
     await page.waitForTimeout(100);
     const yielded = () => page.evaluate(() => {
       const host = document.querySelector('[data-sideagent-overlay="cursor"]');
-      const edge = ((window as any).__cursorRoots?.at(-1) as ShadowRoot)?.querySelector(".edge") as HTMLElement;
+      // 右边缘胶囊有自己的浮层，彩边在光标那一层里。
+      const edge = ((window as any).__cursorRoots as ShadowRoot[]).findLast(r => r.querySelector(".edge"))?.querySelector(".edge") as HTMLElement;
       return { userActive: !!host?.classList.contains("user-active"), edge: Number(getComputedStyle(edge).opacity) };
     });
     return { page, yielded };
@@ -177,13 +178,14 @@ try {
   const afterHold = await observed(normal, "#center");
   expectUserResult("finished sentence fades away after hold", afterHold, !afterHold.visible);
   await normal.waitForTimeout(700);
-  const resting = await normal.evaluate(() => {
+  const settled = await normal.evaluate(() => {
     const p = (window as any).__sideagent.cursorState();
-    return { position: [p.x, p.y], viewport: [innerWidth, innerHeight], idle: p.resting };
+    const r = document.querySelector("#center")!.getBoundingClientRect();
+    return { position: [p.x, p.y], target: [r.x + r.width / 2, r.y + r.height / 2], idle: p.resting };
   });
-  expectUserResult("A bubble settles at new bottom-right primary cursor home", resting,
-    resting.idle && Math.abs(resting.position[0]-(resting.viewport[0]-41))<2 &&
-    Math.abs(resting.position[1]-(resting.viewport[1]-102))<2);
+  expectUserResult("after the bubble fades, the cursor stays on the target it just clicked", settled,
+    !settled.idle && Math.abs(settled.position[0]-settled.target[0])<2 &&
+    Math.abs(settled.position[1]-settled.target[1])<2);
 
   const edge = await setup(415);
   await phase(edge, "#edge", "edge");
@@ -227,7 +229,7 @@ try {
     const cursor = (window as any).__sideagent.cursorState();
     const hosts = document.querySelectorAll('[data-sideagent-overlay="cursor"]').length;
     const roots = ((window as any).__cursorRoots ?? []) as ShadowRoot[];
-    const current = roots.at(-1);
+    const current = roots.findLast(r => r.querySelector(".cursor"));
     const label = current?.querySelector<HTMLElement>(".cursor .label");
 
     return { cursor, hosts, oldFade: label?.getAnimations().length ?? -1,

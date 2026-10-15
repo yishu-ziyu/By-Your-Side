@@ -64,3 +64,8 @@ export function dimPage(key: string): Promise<void> {
 export function forgetGlowTab(tabId: number): void {
   for (const [key, litTab] of lit) if (litTab === tabId) lit.delete(key);
 }
+
+/** 这一轮正在操作这个标签页的成员（光标实例名）。 */
+export function litInstances(tabId: number): Set<string> {
+  return new Set([...lit].filter(([, litTab]) => litTab === tabId).map(([key]) => parseExecutionKey(key).sessionId));
+}
