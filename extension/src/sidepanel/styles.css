@@ -2253,6 +2253,23 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .site-notes-list { margin:-10px 0 14px; padding:8px 10px 8px 24px; border-radius:8px; background:var(--content-subtle); color:var(--text-secondary); font-size:11px; line-height:1.5; }
 .site-notes-list li + li { margin-top:4px; }
+/* 发送确认卡（docs/evals/20261015-panel-send-confirm.md）：网站、按钮、内容三行，「发送」是唯一的实心按钮。答过只剩一行结果。 */
+.send-confirm { margin:0 0 16px; padding:12px 14px; border:1px solid var(--glass-border); border-radius:14px; background:var(--content-bg); font-size:13px; line-height:1.6; color:var(--text-primary); }
+.send-confirm:is([data-state=done],[data-state=ended]) { padding:0; border:0; background:transparent; }
+.send-confirm-line { margin:0; color:var(--text-secondary); font-size:12.5px; }
+.send-confirm-title { margin:0; font-size:14px; font-weight:600; }
+.send-confirm-kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; margin:8px 0 0; }
+.send-confirm-kv dt { color:var(--text-tertiary); }
+.send-confirm-kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.send-confirm-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.send-confirm-acts button { border:1px solid transparent; border-radius:var(--r-pill); font:inherit; font-size:13px; line-height:1.5; padding:4px 14px; cursor:pointer; }
+.send-confirm-yes { background:var(--text-primary); color:var(--content-bg); font-weight:600; opacity:.6; transition:opacity var(--d-state) var(--e-enter); }
+.send-confirm-yes[data-armed] { opacity:1; }
+.send-confirm-no { background:transparent; color:var(--text-secondary); }
+.send-confirm-no:hover:not(:disabled) { background:var(--content-subtle); }
+.send-confirm-yes:hover:not(:disabled) { filter:brightness(1.15); }
+.send-confirm-acts button:disabled { opacity:.55; cursor:default; }
+.send-confirm-acts button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* 纠正后开口问「要我记住吗」：像助手接着说的一句话，两个浅色小胶囊不抢正文。 */
 .memory-ask { margin:-4px 0 16px; font-family:var(--reading-font); font-size:13px; line-height:1.7; color:var(--text-primary); }
 .memory-ask-line { margin:0; overflow-wrap:anywhere; }
