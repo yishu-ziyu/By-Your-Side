@@ -183,6 +183,8 @@ try {
   check("诊断记录：三页各一行判断，写明出的卡", verdicts.length === 3 && verdicts.every(v => v.verdict === "offer" && v.actionLabel === "申请" && String(v.url).startsWith(origin)), verdicts);
 } finally {
   console.log(failures.length ? `FAILED ${failures.length}` : "ALL PASS");
+
+  if (failures.length) process.exitCode = 1;
   await rp.close().catch(() => undefined);
   await model.close();
   site.closeAllConnections();

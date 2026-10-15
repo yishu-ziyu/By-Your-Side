@@ -477,10 +477,11 @@ async function voiceGroup(kind: "nokey" | "mic" | "conn" | "ready") {
     for (const t of await rp.targets()) if (t.url.endsWith("/voice-permission.html")) await rp.cdp.send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
     const text = await s.shotPanel(`07-voice-${kind}`, { settled });
     // SAFETY: 页面脚本返回状态文字和每个可见按钮的文字与外框。
-    const voice = await rp.evaluate(s.panel, `(() => { const r = document.querySelector(".voice-progress"); const vis = (el) => el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden" && el.textContent.trim(); const b = [...r.querySelectorAll("button")].filter(vis).map((el) => { const x = el.getBoundingClientRect(); return { text: el.textContent.trim(), l: x.left, r: x.right, t: x.top, b: x.bottom }; }); return { state: r.querySelector(".voice-state").textContent, buttons: b }; })()`) as { state: string; buttons: Array<{ text: string; l: number; r: number; t: number; b: number }> };
+    const voice = await rp.evaluate(s.panel, `(() => { const r = document.querySelector(".voice-progress"); const vis = (el) => el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden" && el.textContent.trim(); const b = [...r.querySelectorAll("button")].filter(vis).map((el) => { const x = el.getBoundingClientRect(); return { text: el.textContent.trim(), l: x.left, r: x.right, t: x.top, b: x.bottom }; }); const d = r.querySelector(".voice-state-detail"); return { state: r.querySelector(".voice-state").textContent, detail: d && d.getClientRects().length ? d.textContent : "", buttons: b }; })()`) as { state: string; detail: string; buttons: Array<{ text: string; l: number; r: number; t: number; b: number }> };
     const overlap = voice.buttons.some((a, i) => voice.buttons.some((b, j) => j > i && Math.min(a.r, b.r) - Math.max(a.l, b.l) > 1 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 1));
 
-    if (kind === "nokey") check("7 没填语音 key 时指向「更多 → 模型与语音」", /更多/.test(voice.state) && /模型与语音/.test(voice.state) && !/本机/.test(voice.state), voice.state);
+    // 球下的状态字只写「连接失败」，原因写在下面一行（.voice-state-detail，出错时才显示）。
+    if (kind === "nokey") check("7 没填语音 key 时指向「更多 → 模型与语音」", /更多/.test(voice.detail) && /模型与语音/.test(voice.detail) && !/本机/.test(voice.state + voice.detail), { state: voice.state, detail: voice.detail });
 
     if (kind === "mic") check("7 麦克风未授权时按钮不叠在一起", !overlap, voice.buttons);
 
@@ -530,3 +531,5 @@ const summaryFile = join(artifacts, `summary-${selected.join("+")}.json`);
 await writeFile(summaryFile, JSON.stringify({ phase, at: new Date().toISOString(), groups: selected, checks, errors, captures }, null, 2));
 
 console.log(summaryFile);
+
+if (checks.some((c) => !c.pass) || Object.keys(errors).length) process.exitCode = 1;
