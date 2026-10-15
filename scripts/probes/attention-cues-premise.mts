@@ -7,7 +7,7 @@ const rows: Record<string, unknown> = {};
 try {
   const panel = await rp.attach(await rp.openSidePanel());
   await sleep(1500);
-  const look = () => rp.evaluate(panel, `chrome.windows.getCurrent().then(w => ({ visibility: document.visibilityState, hasFocus: document.hasFocus(), windowFocused: w.focused, everClicked: navigator.userActivation.hasBeenActive }))`);
+  const look = () => rp.evaluate(panel, `Promise.all([chrome.windows.getCurrent(), chrome.windows.getLastFocused(), chrome.runtime.getContexts({ contextTypes: ["SIDE_PANEL"] })]).then(([w, last, panels]) => ({ visibility: document.visibilityState, hasFocus: document.hasFocus(), windowFocused: w.focused, lastFocused: [last.id, last.focused], panelWindows: panels.map(p => [p.windowId, p.tabId]), thisWindow: w.id, everClicked: navigator.userActivation.hasBeenActive }))`);
   // 不带用户手势执行：建一个新 AudioContext，放一段正弦，读分析器的输出和时钟是否在走。
   const sound = () => rp.evaluate(panel, `(async () => {
     const c = new AudioContext(); const before = c.state;
