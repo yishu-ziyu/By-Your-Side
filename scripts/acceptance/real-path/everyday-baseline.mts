@@ -448,7 +448,7 @@ async function checkTraceExport(modelPlan: ModelPlan) {
   return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared, translation: translationFacts(text), goalChecks: goalChecksOf(text), efforts: effortsOf(text) };
 }
 
-/** 每条提示词实际发出的思考强度：run_start 文字含提示词的那些轮里，model_request 行的 effort（读法同 thinking-chip.mts）。 */
+/** 每条提示词实际发出的思考强度：run_start 文字含提示词的那些轮里，model_request 行的 effort（读法同 model-menu.mts）。 */
 function effortsOf(text: string) {
   const rows = text.split("\n").filter(Boolean).flatMap((raw) => {
     try {
@@ -640,14 +640,14 @@ try {
 
   await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上 agent", 500);
 
-  // 选「深入」的做法与 thinking-chip.mts 的 pick("深入") 相同。
+  // 选「深入」的做法与 model-menu.mts 的 pick("深入") 相同。
   if (deep) {
     const chipText = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
     await rp.click(panel, "#input");
     await until(async () => (await chipText()) || undefined, 60_000, "输入框旁出现模型与思考强度");
     await rp.click(panel, "#think-chip");
     await sleep(350);
-    await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === "深入").click(), true`);
+    await rp.evaluate(panel, `document.querySelector('#think-menu [data-deep="1"]').click(), true`);
     await sleep(300);
     deepChip = await chipText();
     await rp.screenshot(panel, join(artifacts, "deep-chip.png")).catch(() => {});
