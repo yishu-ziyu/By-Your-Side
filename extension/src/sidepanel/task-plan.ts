@@ -28,8 +28,10 @@ export interface PlanReceiptView {
   filled: number | null;
   steps: number;
   total: string | null;
+  /** completed：收成一行；failed / stopped：卡保持展开，每一步都看得见，没做成和停在哪一步有记号。 */
+  ended: "completed" | "failed" | "stopped";
   /** ready：可撤销；done：已撤销；closed：收不回（已提交、页面变了）；none：这一轮没有能撤销的。 */
-  undo: "ready" | "done" | "closed" | "none";
+  undo: "ready" | "pending" | "done" | "closed" | "none";
   onUndo: () => void;
 }
 
@@ -123,6 +125,7 @@ export function mountTaskPlan(opts: { root: HTMLElement }): TaskPlan {
 
 /**
  * 做完：同一张卡收成一行「已填 3 项 · 用时 42 秒 · 撤销 · 细节 ›」。细节就是这张卡原来的过程行，点 summary 展开。
+ * 没做完或中止：同样的一行写「没做完 · …」「已中止 · …」，卡保持展开，每一步和没做成的那一步都看得见。
  * 再次调用只换字（还原填写的状态晚到、撤销以后），不重建。
  */
 export function paintPlanReceipt(root: HTMLDetailsElement, view: PlanReceiptView): void {
@@ -138,16 +141,19 @@ export function paintPlanReceipt(root: HTMLDetailsElement, view: PlanReceiptView
     summary.prepend(line);
   }
 
-  const head = view.filled ? `已填 ${view.filled} 项` : `做了 ${view.steps} 步`;
+  root.classList.toggle("plan-failed", view.ended === "failed");
+  root.classList.toggle("plan-stopped", view.ended === "stopped");
+  const done = view.filled ? `已填 ${view.filled} 项` : `做了 ${view.steps} 步`;
+  const head = view.ended === "failed" ? `没做完 · ${done}` : view.ended === "stopped" ? `已中止 · ${done}` : done;
   const parts: Array<string | HTMLElement> = [view.total ? `${head} · 用时 ${view.total}` : head];
 
   if (view.undo !== "none") {
     const undo = document.createElement("button");
     undo.type = "button";
     undo.className = "plan-undo";
-    undo.textContent = view.undo === "ready" ? "撤销" : view.undo === "done" ? "已撤销" : "收不回";
+    undo.textContent = { ready: "撤销", pending: "正在撤销…", done: "已撤销", closed: "收不回" }[view.undo];
     undo.disabled = view.undo !== "ready";
-    // 撤销在 summary 里：点它不能顺带展开细节。
+    // 撤销在 summary 里：点它不能顺带展开或收起细节。
     undo.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -157,9 +163,11 @@ export function paintPlanReceipt(root: HTMLDetailsElement, view: PlanReceiptView
     parts.push(" · ", undo);
   }
 
+  // 没做完、停下时卡保持展开，用户一眼看到停在哪一步；第一次画时定一次，之后由用户自己开合。
+  if (!line.dataset.ended) root.open = view.ended !== "completed";
+  line.dataset.ended = view.ended;
   const details = document.createElement("span");
   details.className = "plan-details";
-  details.textContent = "细节 ›";
   parts.push(" · ", details);
   line.replaceChildren(...parts);
 }

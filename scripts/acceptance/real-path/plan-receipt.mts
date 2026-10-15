@@ -1,10 +1,13 @@
 /**
  * 计划卡原地变成回执：只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/plan-receipt.mts --headless [--record]
- *   1) 填表任务一开始，对话里有一张计划卡，卡头是「会去 … · 不会做 …」；每做完一步，同一张卡里那一步打勾，不另起一块。
- *   2) 做完后这张卡收成一行「已填 3 项 · 用时 N 秒 · 撤销 · 细节 ›」，就在回答上面；过程行不再单独叠在侧栏里。
- *   3) 点「细节 ›」：同一张卡里展开每一步；点「撤销」：网页里三栏回到原样（走原有的还原填写）。
- * --record：录下整段的侧栏和网页，左右并排成 plan-receipt.mp4，只给人看，不参与判定。
+ *   npx tsx scripts/acceptance/real-path/plan-receipt.mts --headless [--case=success|undo|failed|stopped] [--record]
+ *   不带 --case 时四种依次各跑一遍（各开一个浏览器）。
+ *   success：进行中卡头是「会去 … · 不会做 …」，每做完一步同一张卡里那一步打勾；做完收成一行
+ *     「已填 3 项 · 用时 N 秒 · 撤销」（后面是「细节 ›」），在回答上面；回答下没有「还原填写」；点细节展开每一步。
+ *   undo：同上，点卡上的「撤销」：网页三栏回到空，卡上写「已撤销」，卡下写「还原了 3 处…」，回答变淡。
+ *   failed：第 2 步没找到电话栏：卡不收起，行首写「没做完」，没做成那一步标 ✕。
+ *   stopped：填到一半用户点停止：卡不收起，行首写「已中止」。
+ * --record：录侧栏和网页，左右并排成 <case>.mp4，并截一张结束时的侧栏 <case>-end.png，只给人看，不参与判定。
  * SIDEAGENT_ACCEPTANCE_DIST 指向旧版扩展时用来录改动前的样子，判定照常会失败。
  */
 import assert from "node:assert/strict";
@@ -13,10 +16,14 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { REPO, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
-import { startScriptedModel } from "./scripted-model.mts";
+import { startScriptedModel, type Step } from "./scripted-model.mts";
 
 requireHeadless();
 
+type Case = "success" | "undo" | "failed" | "stopped";
+const only = process.argv.find(a => a.startsWith("--case="))?.slice(7) as Case | undefined;
+const cases: Case[] = only ? [only] : ["success", "undo", "failed", "stopped"];
+const record = process.argv.includes("--record");
 const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-plan-receipt`);
 
 await mkdir(artifacts, { recursive: true });
@@ -30,109 +37,136 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 const ASK = "帮我把报名表填了，用我的常用信息";
-const DONE = "填好了，还没点提交。邮箱用的是你的工作邮箱。";
-const fill = (target: string, value: string) => ({ tool: { name: "fill", args: { target, value } }, delayMs: 700 });
-const model = await startScriptedModel([
-  { match: ASK, steps: [{ tool: { name: "snapshot", args: {} }, delayMs: 600 }, fill("#name", "王小明"), fill("#phone", "13812345678"), fill("#email", "xiaoming@work.example"), { text: DONE, delayMs: 600 }] },
-]);
+const DONE: Record<Case, string> = { success: "填好了，还没点提交。邮箱用的是你的工作邮箱。", undo: "填好了，还没点提交。邮箱用的是你的工作邮箱。", failed: "电话那一栏没找到，只填了姓名。", stopped: "" };
+// 脚本模型用 CSS 选择器填，步骤名写成「填「#name」」：填写的步骤名取自 target，产品里 fill 没有单独的栏名参数。
+const fill = (target: string, value: string, _field: string, delayMs = 700): Step => ({ tool: { name: "fill", args: { target, value } }, delayMs });
+const STEPS: Record<Case, Step[]> = {
+  success: [{ tool: { name: "snapshot", args: {} }, delayMs: 600 }, fill("#name", "王小明", "姓名"), fill("#phone", "13812345678", "电话"), fill("#email", "xiaoming@work.example", "邮箱"), { text: DONE.success, delayMs: 600 }],
+  undo: [],
+  failed: [{ tool: { name: "snapshot", args: {} }, delayMs: 600 }, fill("#name", "王小明", "姓名"), fill("#tel-missing", "13812345678", "电话"), { text: DONE.failed, delayMs: 600 }],
+  stopped: [{ tool: { name: "snapshot", args: {} }, delayMs: 600 }, fill("#name", "王小明", "姓名"), fill("#phone", "13812345678", "电话", 6000), fill("#email", "xiaoming@work.example", "邮箱"), { text: "填好了。" }],
+};
+STEPS.undo = STEPS.success;
 
-const rp = await launchRealPath();
-const evidence: Record<string, unknown> = {};
-let error: string | null = null;
+type Seen = { line: string; open: boolean; goal: string; before: boolean; looseRuns: number; answerUndo: boolean; error: number; resultAfterCard: string; faded: number };
+const results: Record<string, unknown> = {};
+let failed = false;
 
-try {
-  const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
-  const work = await rp.attach(blank.targetId);
-  await rp.cdp.send("Page.enable", {}, work);
-  await rp.cdp.send("Page.navigate", { url: origin }, work);
-  await until(async () => await rp.evaluate(work, 'document.readyState==="complete"') || undefined, 10_000, "page loaded");
-  const panel = await rp.attach(await rp.openSidePanel());
-  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
+for (const name of cases) {
+  const model = await startScriptedModel([{ match: ASK, steps: STEPS[name] }]);
+  const rp = await launchRealPath();
+  const evidence: Record<string, unknown> = {};
+  let error: string | null = null;
 
-  const record = process.argv.includes("--record");
-  const stops = record ? [await recordScreen(rp.cdp, panel, join(artifacts, "panel.mp4")), await recordScreen(rp.cdp, work, join(artifacts, "page.mp4"))] : [];
-  await rp.click(panel, "#input");
-  await rp.typeText(panel, ASK);
-  await rp.pressEnter(panel);
+  try {
+    const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
+    const work = await rp.attach(blank.targetId);
+    await rp.cdp.send("Page.enable", {}, work);
+    await rp.cdp.send("Page.navigate", { url: origin }, work);
+    await until(async () => await rp.evaluate(work, 'document.readyState==="complete"') || undefined, 10_000, "page loaded");
+    const panel = await rp.attach(await rp.openSidePanel());
+    await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
+    await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
+    const settled = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running") && !!document.querySelector(".plan-card .plan-receipt-line")') || undefined, 60_000, "settled", 100);
+    const seen = async () => await rp.evaluate(panel, `(() => {
+      const card = document.querySelector(".plan-card");
+      const answer = [...document.querySelectorAll("#messages .msg.assistant")].at(-1);
+      const next = card?.nextElementSibling;
+      return {
+        line: card?.querySelector(".plan-receipt-line")?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
+        open: !!card?.open,
+        goal: card?.querySelector(".task-plan-goal")?.textContent ?? "",
+        before: !!(card && answer && (card.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        looseRuns: [...document.querySelectorAll("#messages details.run-steps:not(.plan-card)")].filter(s => s.getClientRects().length > 0).length,
+        answerUndo: !!document.querySelector('#messages .answer-primary[data-action="undo-fill"]') || [...document.querySelectorAll("#messages .answer-primary")].some(b => b.textContent.includes("还原")),
+        error: card?.querySelectorAll(".chip.error").length ?? 0,
+        resultAfterCard: next?.matches(".fill-undo-result") ? next.textContent : "",
+        faded: answer?.querySelector("p") ? Number(getComputedStyle(answer.querySelector("p")).opacity) : 1,
+      };
+    })()`) as Seen;
 
-  // 1) 进行中：同一张卡里的步骤打勾。
-  const midway = await until(async () => {
-    const seen = await rp.evaluate(panel, `(() => { const card = document.querySelector(".plan-card"); return card ? { done: card.querySelectorAll(".chip:not(.prep) .chip-dot.done").length, steps: [...card.querySelectorAll(".chip")].filter(s => s.getClientRects().length > 0).length, goal: card.querySelector(".task-plan-goal")?.textContent ?? "" } : null; })()`) as { done: number; steps: number; goal: string } | null;
+    const stops = record ? [await recordScreen(rp.cdp, panel, join(artifacts, `${name}-panel.mp4`)), await recordScreen(rp.cdp, work, join(artifacts, `${name}-page.mp4`))] : [];
+    await rp.click(panel, "#input");
+    await rp.typeText(panel, ASK);
+    await rp.pressEnter(panel);
 
-    return seen && seen.done >= 1 ? seen : undefined;
-  }, 30_000, "a step ticked in the plan card", 100).catch(() => null);
-  evidence.midway = midway;
-  await rp.screenshot(panel, join(artifacts, "1-midway.png"));
+    const midway = await until(async () => {
+      const s = await rp.evaluate(panel, `(() => { const c = document.querySelector(".plan-card"); return c ? { ticked: c.querySelectorAll(".chip:not(.prep) .chip-dot.done").length, goal: c.querySelector(".task-plan-goal")?.textContent ?? "" } : null; })()`) as { ticked: number; goal: string } | null;
+      return s && s.ticked >= 1 ? s : undefined;
+    }, 30_000, "a step ticked in the plan card", 100);
+    evidence.midway = midway;
+    assert.ok(midway.goal.startsWith("会去 "), `进行中卡头是计划 ${JSON.stringify(midway)}`);
 
-  await until(async () => await rp.evaluate(panel, `document.querySelector("#messages")?.textContent.includes(${JSON.stringify(DONE)})`) || undefined, 60_000, "answer", 100);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "settled", 100);
-  await sleep(1500);
-  await rp.screenshot(panel, join(artifacts, "2-done.png"));
-  const done = await rp.evaluate(panel, `(() => {
-    const card = document.querySelector(".plan-card");
-    const answer = [...document.querySelectorAll("#messages .msg.assistant")].find(m => m.textContent.includes(${JSON.stringify(DONE)}));
-    const line = card?.querySelector(".plan-receipt-line");
-    return {
-      line: line?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
-      before: !!(card && answer && (card.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING)),
-      collapsed: card instanceof HTMLDetailsElement && !card.open,
-      looseRuns: [...document.querySelectorAll("#messages details.run-steps:not(.plan-card)")].filter(s => s.getClientRects().length > 0).length,
-    };
-  })()`) as { line: string; before: boolean; collapsed: boolean; looseRuns: number };
-  evidence.done = done;
-
-  let opened = 0;
-  if (done.line) {
-    if (record) await sleep(1200);
-    await rp.click(panel, ".plan-card .plan-details");
-    await sleep(800);
-    opened = await rp.evaluate(panel, `document.querySelector(".plan-card")?.open ? [...document.querySelectorAll(".plan-card .chip:not(.prep)")].filter(s => s.getClientRects().length > 0).length : 0`) as number;
-    await rp.screenshot(panel, join(artifacts, "3-details.png"));
-    if (record) await sleep(1500);
-    await rp.click(panel, ".plan-card .plan-details");
-    await sleep(600);
-  } else if (record) {
-    await sleep(3000);
-  }
-  evidence.detailsOpened = opened;
-
-  let restored: Record<string, string> = {};
-  if (done.line) {
-    await rp.click(panel, ".plan-card .plan-undo");
-    await until(async () => (await rp.evaluate(work, `document.getElementById("email").value === ""`)) || undefined, 10_000, "undo", 100).catch(() => undefined);
-    await sleep(1200);
-    restored = JSON.parse(String(await rp.evaluate(work, `JSON.stringify({ name: document.getElementById("name").value, phone: document.getElementById("phone").value, email: document.getElementById("email").value })`)));
-    await rp.screenshot(panel, join(artifacts, "4-undone.png"));
-  }
-  evidence.restored = restored;
-
-  if (record) {
-    const [panelVideo, pageVideo] = await Promise.all(stops.map(stop => stop()));
-
-    if (panelVideo && pageVideo) {
-      execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", pageVideo, "-i", panelVideo, "-filter_complex",
-        "[0:v][1:v]scale2ref=oh*mdar:ih[page][panel];[page][panel]hstack=inputs=2,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p", join(artifacts, "plan-receipt.mp4")]);
-      evidence.recording = join(artifacts, "plan-receipt.mp4");
+    if (name === "stopped") {
+      await sleep(1200);
+      await rp.click(panel, "#send-btn");
     }
-  }
+    await settled();
+    await sleep(1200);
+    const end = await seen();
+    evidence.end = end;
 
-  assert.ok(midway && midway.steps >= 1 && midway.goal.startsWith("会去 "), `1: 进行中同一张卡里有计划、步骤打勾 ${JSON.stringify(midway)}`);
-  assert.match(done.line, /^已填 3 项 · 用时 \d+ 秒 · 撤销 · 细节 ›$/, `2: 收成一行 ${JSON.stringify(done)}`);
-  assert.ok(done.before && done.collapsed && done.looseRuns === 0, `2: 卡在回答上面、步骤收起、没有另一块过程 ${JSON.stringify(done)}`);
-  assert.ok(opened >= 3, `3: 细节里展开每一步 ${opened}`);
-  assert.deepEqual(restored, { name: "", phone: "", email: "" }, "3: 撤销后网页三栏回到原样");
-} catch (caught) {
-  error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
-} finally {
-  await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, error }, null, 2));
-  await rp.close();
-  await rp.remove();
-  await model.close();
-  site.closeAllConnections();
-  site.close();
+    if (name === "success" || name === "undo") {
+      assert.match(end.line, /^已填 3 项 · 用时 \d+ 秒 · 撤销 ·$/, `收成一行 ${JSON.stringify(end)}`);
+      assert.ok(!end.open && end.before && end.looseRuns === 0, `收起、在回答上面、没有另一块过程 ${JSON.stringify(end)}`);
+      assert.ok(!end.answerUndo, `回答下没有还原填写 ${JSON.stringify(end)}`);
+    }
+
+    if (name === "success") {
+      if (record) await sleep(1200);
+      await rp.click(panel, ".plan-card .plan-details");
+      await sleep(900);
+      const opened = await rp.evaluate(panel, `document.querySelector(".plan-card")?.open ? [...document.querySelectorAll(".plan-card .chip:not(.prep) .chip-label")].map(e => e.textContent.trim()) : []`) as string[];
+      evidence.opened = opened;
+      assert.ok(opened.length >= 3, `细节里展开每一步 ${JSON.stringify(opened)}`);
+      if (record) await sleep(1200);
+      await rp.click(panel, ".plan-card .plan-details");
+      await sleep(900);
+    }
+
+    if (name === "undo") {
+      if (record) await sleep(1200);
+      await rp.click(panel, ".plan-card .plan-undo");
+      await until(async () => (await rp.evaluate(work, `document.getElementById("email").value === ""`)) || undefined, 10_000, "undo", 100);
+      await sleep(1200);
+      const after = await seen();
+      const page = JSON.parse(String(await rp.evaluate(work, `JSON.stringify([document.getElementById("name").value, document.getElementById("phone").value, document.getElementById("email").value])`)));
+      evidence.afterUndo = { after, page };
+      assert.deepEqual(page, ["", "", ""], "网页三栏回到空");
+      assert.ok(after.line.includes("已撤销") && after.resultAfterCard.startsWith("还原了 3 处") && after.faded < 0.6, `卡上写已撤销，卡下写结果，回答变淡 ${JSON.stringify(after)}`);
+    }
+
+    if (name === "failed") assert.ok(end.line.startsWith("没做完 · ") && end.open && end.error >= 1, `没做完时卡展开、标出没做成那一步 ${JSON.stringify(end)}`);
+
+    if (name === "stopped") assert.ok(end.line.startsWith("已中止 · ") && end.open, `停下时卡展开 ${JSON.stringify(end)}`);
+
+    if (record) await sleep(1500);
+    await rp.screenshot(panel, join(artifacts, `${name}-end.png`));
+
+    if (record) {
+      const [panelVideo, pageVideo] = await Promise.all(stops.map(stop => stop()));
+
+      if (panelVideo && pageVideo) {
+        execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", pageVideo, "-i", panelVideo, "-filter_complex",
+          "[0:v][1:v]scale2ref=oh*mdar:ih[page][panel];[page][panel]hstack=inputs=2,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p", join(artifacts, `${name}.mp4`)]);
+        evidence.recording = join(artifacts, `${name}.mp4`);
+      }
+    }
+  } catch (caught) {
+    error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
+    failed = true;
+  } finally {
+    await rp.close();
+    await rp.remove();
+    await model.close();
+  }
+  results[name] = { status: error ? "FAIL" : "PASS", evidence, error };
+  console.log(`${error ? "FAIL" : "PASS"} ${name}${error ? ` ${error.split("\n")[0]}` : ""}`);
 }
 
-console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", artifacts, error: error?.split("\n")[0] ?? null }));
+await writeFile(join(artifacts, "result.json"), JSON.stringify(results, null, 2));
+site.closeAllConnections();
+site.close();
+console.log(JSON.stringify({ status: failed ? "FAIL" : "PASS", artifacts }));
 
-if (error) process.exitCode = 1;
+if (failed) process.exitCode = 1;

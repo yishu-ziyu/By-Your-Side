@@ -10,6 +10,8 @@ const views = new WeakMap<HTMLElement, FillUndoView>();
 /** 点了还原、后台还没回话。 */
 const pending = new WeakSet<HTMLElement>();
 let owner: HTMLElement | null = null;
+/** 这条回答的还原交给了它上面的计划卡：回答下不再出「还原填写」，结果行放在卡下面，回答照样变淡。 */
+const cards = new WeakMap<HTMLElement, HTMLElement>();
 let latest: FillUndoView | null = null;
 let refresh: (answer: HTMLElement) => void = () => {};
 let send: () => void = () => {};
@@ -26,6 +28,19 @@ export function fillUndoOf(answer: HTMLElement): FillUndoView | undefined {
   const view = views.get(answer);
 
   return view?.state === "ready" && view.count === 0 ? undefined : view;
+}
+
+/** 回答下面的主动作要不要出还原：交给计划卡的不出。 */
+export function answerFillUndoOf(answer: HTMLElement): FillUndoView | undefined {
+  return cards.has(answer) ? undefined : fillUndoOf(answer);
+}
+
+/** 计划卡接管这条回答的还原：卡上的「撤销」就是还原，结果行挪到卡下面。 */
+export function handFillUndoToCard(answer: HTMLElement, card: HTMLElement): void {
+  if (cards.get(answer) === card) return;
+  cards.set(answer, card);
+  answer.querySelector(":scope > .fill-undo-result")?.remove();
+  paint(answer);
 }
 
 export function isFillUndoPending(answer: HTMLElement): boolean {
@@ -79,7 +94,8 @@ function paint(answer: HTMLElement, busy = false): void {
   // 已还原 / 已提交 / 页面变了是这条回答的状态，文末一排一直显示，不等悬停。
   answer.classList.toggle("fill-undo-settled", !!view && view.state !== "ready");
   // 只有说明时，结果行跟着回答一直显示，不然用户不知道哪里没还原。
-  let line = answer.querySelector<HTMLElement>(":scope > .fill-undo-result");
+  const card = cards.get(answer);
+  let line = card ? (card.nextElementSibling?.matches(".fill-undo-result") ? card.nextElementSibling as HTMLElement : null) : answer.querySelector<HTMLElement>(":scope > .fill-undo-result");
   const text = busy ? ["助手还在做事", "，做完后再点还原。"] as [string, string] : view ? resultLine(view) : null;
 
   if (!text) { line?.remove(); refresh(answer);
@@ -90,7 +106,10 @@ function paint(answer: HTMLElement, busy = false): void {
     line = document.createElement("div");
     line.className = "fill-undo-result";
     line.setAttribute("role", "status");
-    (answer.querySelector(":scope > .answer-actions") ?? answer.lastElementChild)?.after(line);
+    if (card) {
+      line.classList.add("plan-undo-result");
+      card.after(line);
+    } else (answer.querySelector(":scope > .answer-actions") ?? answer.lastElementChild)?.after(line);
   }
   const strong = document.createElement("b");
   strong.textContent = text[0];

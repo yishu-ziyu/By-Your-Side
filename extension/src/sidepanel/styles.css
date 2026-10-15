@@ -3677,6 +3677,12 @@ details.run-steps.plan-card.plan-done .plan-receipt-line {
   animation: plan-receipt-in var(--d-layout) var(--e-enter);
 }
 .plan-details { color: var(--text-secondary); }
+.plan-details::before { content: "细节 ›"; }
+details.run-steps.plan-card[open] .plan-details::before { content: "收起"; }
+/* 没做完、停下：卡展开，没做成那一步标 ✕ 并用红字，停下时正在做的那一步标 ■。 */
+details.run-steps.plan-card.plan-failed .run-body .chip.error .chip-label { color: var(--apple-red); }
+details.run-steps.plan-card.plan-stopped .run-body .chip-dot.running::before { content: "■"; color: var(--text-secondary); }
+.plan-undo-result { margin: 4px 2px 0; }
 details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(--text-primary); }
 .plan-undo { all: unset; cursor: pointer; color: var(--accent); }
 .plan-undo:disabled { cursor: default; color: var(--text-tertiary); }
