@@ -215,7 +215,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   return runtime;
 }
 
-/** 试连最多等 15 秒（用户 10-14 定）：设置页「测试连接」、保存前试连和侧栏换 key 共用。OpenCode Go 排队时可能超过它，超时会如实说并给重试。 */
+/** 试连最多等 15 秒：设置页「测试连接」、保存前试连和侧栏换 key 共用。OpenCode Go 排队时可能超过它，超时会如实说并给重试。 */
 export const PROBE_TIMEOUT_MS = 15_000;
 
 /**
