@@ -9,15 +9,6 @@ const byTab = new Map<number, Set<number>>();
 
 const latestKind = new Map<number, "ax" | "dom">();
 
-/** 关掉的标签页最后登记的 ref，留给接回工作标签页时用。只留最近几页。 */
-const closedByTab = new Map<number, Set<number>>();
-
-/**
- * 接回后的新工作页上，来自已关闭工作页的 ref。backendDOMNodeId 在不同页面之间会重号，
- * 旧页的编号可能正好是新页上的另一个节点；每个这样的 ref 先拦一次，让模型在新页上重新确认。
- */
-const staleByTab = new Map<number, { from: number; refs: Set<number> }>();
-
 /** 页面重渲染后重新找到的节点：ref → 新的 backendDOMNodeId。下一次快照重新编号时作废。 */
 const movedByTab = new Map<number, Map<number, number>>();
 
@@ -61,13 +52,6 @@ export function isAxNode(tabId: number, backendNodeId: number): boolean {
  */
 export function axBackendNodeFor(tabId: number, ref: number | null): number | undefined {
   if (ref === null) return undefined;
-  const stale = staleByTab.get(tabId);
-
-  if (stale?.refs.delete(ref)) {
-    const error = new Error(`ref @${ref} 来自已关闭的标签页 ${stale.from}；工作标签页已接回到标签页 ${tabId}，这次操作未执行。请在这一页重新 snapshot，确认目标后再操作。`);
-
-    throw Object.assign(error, { executionFact: "not_executed" as const });
-  }
 
   if (isAxRef(tabId, ref)) return movedByTab.get(tabId)?.get(ref) ?? ref;
 
@@ -91,39 +75,16 @@ export function clearAxSnapshot(tabId: number): void {
   latestKind.set(tabId, "dom");
 }
 
-/** 工作标签页从关掉的 from 接回到 to：from 上登记过的 ref 在 to 上各拦一次。 */
-export function carryClosedTabRefs(from: number, to: number): void {
-  const refs = closedByTab.get(from);
-
-  closedByTab.delete(from);
-
-  if (refs?.size) staleByTab.set(to, { from, refs: new Set(refs) });
-}
-
-/** 这个 ref 已经因为接回被拦过一次，不再重复拦。 */
-export function forgetStaleRef(tabId: number, ref: number): void {
-  staleByTab.get(tabId)?.refs.delete(ref);
-}
-
 export function snapshotRefKind(tabId: number): "ax" | "dom" | undefined {
   return latestKind.get(tabId);
 }
 
 // 导航后 backendDOMNodeId 全部失效，整表作废
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === "loading") { byTab.delete(tabId); movedByTab.delete(tabId); latestKind.delete(tabId); staleByTab.delete(tabId); }
+  if (info.status === "loading") { byTab.delete(tabId); movedByTab.delete(tabId); latestKind.delete(tabId); }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  const refs = byTab.get(tabId);
-
-  if (refs) {
-    closedByTab.set(tabId, refs);
-
-    for (const old of closedByTab.keys()) if (closedByTab.size > 8) closedByTab.delete(old);
-  }
-
-  staleByTab.delete(tabId);
   byTab.delete(tabId);
   movedByTab.delete(tabId);
   latestKind.delete(tabId);

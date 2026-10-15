@@ -1215,10 +1215,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     const scoped = makeDefinitions(makeCall(scope), scope).find(candidate => candidate.name === tool.name) ?? tool;
 
     try {
-      const result = await (scoped as ToolDefinition).execute(...args);
-      const rebound = rpc.takeReboundNote?.(sid);
-
-      return rebound ? { ...result, content: [{ type: "text" as const, text: rebound }, ...result.content] } : result;
+      return await (scoped as ToolDefinition).execute(...args);
     } catch (error) {
       const fact = error && typeof error === "object" && "executionFact" in error
         ? (error as { executionFact?: import("../../shared/protocol.js").ToolExecutionFact }).executionFact
