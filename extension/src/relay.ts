@@ -3,11 +3,40 @@
  * 与 shared/protocol.ts（扩展 ⇆ 伴随进程）不同，本文件只是 panel 与 background 之间的
  * 转发约定，走 chrome.runtime Port。
  */
-import type { Attachment, ClientMessage, ServerMessage, ViewportSectionUpdate } from "../../shared/protocol.js";
+import { parseClientMessage, type Attachment, type ClientMessage, type ServerMessage, type ViewportSectionUpdate } from "../../shared/protocol.js";
 import type { PendingAsk } from "./shared/ask-selection.js";
 import type { NudgeCard } from "./shared/nudge.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
+
+export type DeliveryReason = "gone" | "resent";
+
+export type DeliveryReceipt = { seq: number; ok: boolean; text?: string; original?: ClientMessage; reason?: DeliveryReason };
+
+/** 侧栏发来的「重试」：seq 是整数、text 是字符串才认。 */
+export function parseRedeliver(msg: unknown): { seq: number; text: string } | null {
+  if (!msg || typeof msg !== "object" || !("seq" in msg) || !("text" in msg)) return null;
+  const { seq, text } = msg;
+
+  return typeof seq === "number" && Number.isInteger(seq) && typeof text === "string" ? { seq, text } : null;
+}
+
+/** 后台发来的送达回执：seq 是整数、ok 是布尔、reason 只能是 gone 或 resent；原文要能过协议检查，不能就丢掉。 */
+export function parseDeliveryReceipt(msg: unknown): DeliveryReceipt | null {
+  if (!msg || typeof msg !== "object" || !("seq" in msg) || !("ok" in msg)) return null;
+  const { seq, ok } = msg;
+  const text = "text" in msg ? msg.text : undefined;
+  const reason = "reason" in msg ? msg.reason : undefined;
+  const original = "original" in msg && msg.original ? parseClientMessage(JSON.stringify(msg.original)) : null;
+
+  if (typeof seq !== "number" || !Number.isInteger(seq) || typeof ok !== "boolean") return null;
+
+  if (text !== undefined && typeof text !== "string") return null;
+
+  if (reason !== undefined && reason !== "gone" && reason !== "resent") return null;
+
+  return { seq, ok, ...(text === undefined ? {} : { text }), ...(original ? { original } : {}), ...(reason ? { reason } : {}) };
+}
 
 /** 侧栏发送确认卡的端口（background/send-confirm.ts）：后台推还在等的确认 id，侧栏回 { id, choice }。 */
 export const SEND_CONFIRM_PANEL_PORT = "send-confirm-panel";
@@ -54,6 +83,11 @@ export type PanelToBg =
   | { kind: "control"; action: "takeover" | "handback"; conversationId?: string; tabId?: number }
   /** 面板（重）打开，请求同步状态；afterSeq 存在时只补发更新的可见历史。 */
   | { kind: "sync"; afterSeq?: number; conversationId?: string }
+  /**
+   * 重发一条标着未送达的用户消息：后台用它记下的原文重发，更新原来那一条历史，不另记一条。
+   * text 是气泡上的原话：后台重启后 seq 可能被别的条目占用，原话对不上就当那条已经没了。
+   */
+  | { kind: "redeliver"; seq: number; text: string; conversationId?: string }
   /** 请重连。 */
   | { kind: "retry" }
   /** 用户点进了这个侧栏：按住说话、右键菜单这些从此跟这个侧栏看着的会话。 */
@@ -100,11 +134,13 @@ type BgToPanelPayload =
   | { kind: "ask_selection"; ask: PendingAsk }
   /**
    * 送达回执（issue #4）：只覆盖 background→agent 上行传输层。
-   * ok=false 表示上行传输不可用，确定未发给伴随进程；original 为未经页面
-   * 附加上文的原始消息，供面板原样重试。没有回执 = background 层已接受并
-   * 已交给传输层，不表示伴随进程已处理或任务已完成。
+   * ok=false 表示上行传输不可用，确定未发给伴随进程；original 为原始消息、text 为气泡上的原话，供面板重试。
+   * ok=true 只在 redeliver 重发成功、或那条早已送达时出现，面板据此去掉未送达标记。
+   * reason 只回给点「重试」的侧栏：gone = 后台已没有那条历史，由侧栏把原文当新消息再发；
+   * resent = 另一个侧栏刚为同一条另发过，这个侧栏只拿掉旧气泡，不再发。
+   * 首次发送没有回执 = background 层已接受并已交给传输层，不表示伴随进程已处理或任务已完成。
    */
-  | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
+  | { kind: "delivery"; seq: number; ok: boolean; text?: string; original?: ClientMessage; reason?: DeliveryReason }
   /** 用户那一条历史补上了这一轮带的页面（见 UserTurnContext）。 */
   | { kind: "turn_context"; seq: number; context: UserTurnContext }
   /** @ 拉进来的标签页：扩展后台真读到正文才标已读。 */

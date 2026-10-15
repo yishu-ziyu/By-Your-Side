@@ -44,7 +44,7 @@ import {
   WRITE_TOOL_SET,
 } from "../../../shared/control.js";
 import { dimPage, glowPage } from "./page-glow.js";
-import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
+import { PANEL_PORT_NAME, parseRedeliver, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryEntry, PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
@@ -229,6 +229,8 @@ let connectionSnapshot: [ConnState, TransportKind | undefined, string?] = ["conn
 let helloSnapshot: Extract<ServerMessage, {type:"hello_ok"}> | null = null;
 
 const HISTORY_PREFIX = "history:";
+
+const GONE_RETRY_WINDOW_MS = 10_000;
 
 const MAX_STORED_HISTORY_KEYS = 8;
 
@@ -693,6 +695,8 @@ async function getWorkingTabMap() {
 
 const panels = new Set<chrome.runtime.Port>();
 const panelHistory = new PanelHistory();
+/** 「历史没了」的重试：同一条在这段时间里只让一个侧栏另发，别的侧栏回 resent。 */
+const goneRetries = new Map<string, number>();
 const historyKey = `${HISTORY_PREFIX}${conversationId}`;
 
 const historyReady = chrome.storage.local.get(historyKey).then(async got => {
@@ -711,7 +715,7 @@ function flushHistory() {
  historyFlushTimer = undefined;
 
  if (!hasPersistableHistory()) return;
- const stored: StoredPanelHistory = { updatedAt: Date.now(), entries: panelHistory.persistWindow(HISTORY_PERSIST_BUDGET_BYTES) };
+ const stored: StoredPanelHistory = { updatedAt: Date.now(), entries: panelHistory.persistWindow(HISTORY_PERSIST_BUDGET_BYTES), seqFloor: panelHistory.seqFloor() };
  void chrome.storage.local.set({[historyKey]:stored}).catch(error => { console.error("[sideagent] 面板历史落盘失败", error); });
  scheduleHistoryPrune();
 }
@@ -2216,7 +2220,7 @@ function attachPanel(port: chrome.runtime.Port) {
             if (!uplink.sendClientMessage(original)) {
               panelHistory.markUndelivered(entry.seq, original);
               flushHistory();
-              broadcast({ kind: "delivery", seq: entry.seq, ok: false, original } satisfies BgToPanel);
+              broadcast({ kind: "delivery", seq: entry.seq, ok: false, text: client.text, original } satisfies BgToPanel);
             }
           });
           break;
@@ -2235,6 +2239,41 @@ function attachPanel(port: chrome.runtime.Port) {
         break;
       case "sync": {
         void historyReady.then(() => syncPanel(port, msg.afterSeq));
+        break;
+      }
+
+      // 重发记下的原文（已带当时的页面上下文），只更新原来那条历史：面板和重开后的回放都只有一个气泡。
+      // 总要回执，侧栏才不会停在「已重试」；没有这条时只回给点「重试」的这个侧栏。
+      case "redeliver": {
+        const request = parseRedeliver(msg);
+
+        if (!request) break;
+        const target = panelHistory.retryTarget(request.seq, request.text);
+
+        if (target === "delivered") {
+          port.postMessage({ kind: "delivery", seq: request.seq, ok: true, conversationId } satisfies BgToPanel);
+          break;
+        }
+
+        if (target === "gone") {
+          const now = Date.now();
+
+          for (const [seen, at] of goneRetries) if (now - at > GONE_RETRY_WINDOW_MS) goneRetries.delete(seen);
+          const retryKey = `${request.seq}\n${request.text}`;
+          const resent = goneRetries.has(retryKey);
+
+          if (!resent) goneRetries.set(retryKey, now);
+          port.postMessage({ kind: "delivery", seq: request.seq, ok: false, reason: resent ? "resent" : "gone", conversationId } satisfies BgToPanel);
+          break;
+        }
+        void stopTrailReplay(key());
+        const ok = uplink.sendClientMessage(target.original);
+
+        if (ok) {
+          panelHistory.markDelivered(request.seq);
+          flushHistory();
+        }
+        broadcast({ kind: "delivery", seq: request.seq, ok, text: request.text, original: target.original } satisfies BgToPanel);
         break;
       }
 

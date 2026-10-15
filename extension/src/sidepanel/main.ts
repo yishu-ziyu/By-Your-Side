@@ -80,7 +80,7 @@ import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
 import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
-import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
+import { PANEL_PORT_NAME, parseDeliveryReceipt, type BgToPanel, type DeliveryReceipt, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
 import { installProactiveCard } from "./proactive-card.js";
@@ -95,6 +95,7 @@ import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
+import { mountChapters } from "./chapters.js";
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
 
@@ -398,6 +399,9 @@ const statusDot = document.getElementById("status-dot") as HTMLElement;
 const statusText = document.getElementById("status-text")!;
 
 const messagesEl = document.getElementById("messages")!;
+
+// 跳到某一章就是往上翻：不再跟随到底部。
+const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!, () => { pinned = false; });
 
 const composerEl = document.getElementById("composer") as HTMLElement;
 
@@ -1055,6 +1059,7 @@ function resetConversationRender(): void {
   lastUserHasPage = false;
   lastHistorySeq = 0;
   userBubbles.clear();
+  clearPendingRedelivers();
   deliveredBubbles.clear();
   receiptMessages.clear();
   pendingUsedLine = null;
@@ -5567,8 +5572,12 @@ function scheduleDeliveryVisible(bubble: HTMLElement, receivedAt: number): void 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
 
 function send(msg: ClientMessage): boolean {
+  return post({ kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } });
+}
+
+/** 要上行到助手的消息：没连上返回 false；端口可能已失效时先排队，等 pong 再发。 */
+function post(envelope: PanelToBg): boolean {
   if (!port || !transportConnected) return false;
-  const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } };
 
   if (queuedSends.length || performance.now() - lastPong > PORT_FRESH_MS) {
     queuedSends.push(envelope);
@@ -6152,7 +6161,9 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "delivery") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
-    handleDeliveryReceipt(envelope.seq, envelope.ok, envelope.original);
+    const receipt = parseDeliveryReceipt(envelope);
+
+    if (receipt) handleDeliveryReceipt(receipt);
 
     return;
   }
@@ -6207,14 +6218,80 @@ function eventTime(): number { return historyEventTime(applyingHistory, historyO
 /** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（issue #4 竞态边界）。 */
 const userBubbles = new Map<number, HTMLElement>();
 
-/** background→agent 上行确定失败的回执：标记未送达并提供原文重试；迟到/重复/未知 seq 忽略。 */
-function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage): void {
-  if (ok) return;
+/** 点了「重试」还在等回执的气泡：留着原文，后台说那条历史没了时另发一条；等不到回执就把「重试」还给用户。 */
+const pendingRedelivers = new Map<number, { original: ClientMessage; timer: ReturnType<typeof setTimeout> }>();
 
-  if (!Number.isInteger(seq)) return;
+const REDELIVER_TIMEOUT_MS = 10_000;
+
+function clearPendingRedelivers(): void {
+  for (const pending of pendingRedelivers.values()) clearTimeout(pending.timer);
+  pendingRedelivers.clear();
+}
+
+function enableRetry(bubble: HTMLElement): void {
+  const retry = bubble.querySelector<HTMLButtonElement>("button[data-retry]");
+
+  if (!retry) return;
+  retry.disabled = false;
+  retry.textContent = "重试";
+}
+
+/** 拿掉一个旧的用户气泡和它下面的页面卡。 */
+function removeUserBubble(seq: number, bubble: HTMLElement): void {
+  const chips = bubble.nextElementSibling;
+
+  if (chips instanceof HTMLElement && chips.matches(".ctx-chips")) chips.remove();
+  bubble.remove();
+  userBubbles.delete(seq);
+}
+
+/**
+ * background→agent 上行的回执：ok=false 标记未送达并提供「重试」；重试再失败时让「重试」能再点；
+ * ok=true（重试送达）去掉标记。只有点了「重试」的侧栏处理 reason：gone（后台已没有那条历史）把原文另发一条、
+ * 拿掉旧气泡；resent（别的侧栏刚另发过）只拿掉旧气泡。重复或未知 seq 忽略。
+ */
+function handleDeliveryReceipt({ seq, ok, text, original, reason }: DeliveryReceipt): void {
   const bubble = userBubbles.get(seq);
+  const pending = pendingRedelivers.get(seq);
 
-  if (!bubble || bubble.dataset.failed === "true") return;
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingRedelivers.delete(seq);
+  }
+
+  if (!bubble) return;
+
+  if (ok) {
+    bubble.classList.remove("undelivered");
+    bubble.querySelectorAll(".delivery-tag, button[data-retry]").forEach((el) => el.remove());
+    delete bubble.dataset.failed;
+
+    return;
+  }
+
+  if (reason) {
+    if (!pending) return;
+
+    // 另发的那条会在历史里画出新气泡，所以先确认发出去了再拿掉旧的。
+    if (reason === "gone" && !send(pending.original)) {
+      enableRetry(bubble);
+      noticeSendFailed();
+
+      return;
+    }
+
+    removeUserBubble(seq, bubble);
+
+    return;
+  }
+
+  if (bubble.dataset.failed === "true") {
+    enableRetry(bubble);
+
+    return;
+  }
+
+  if (!original || text === undefined) return;
   bubble.dataset.failed = "true";
   bubble.classList.add("undelivered");
   const tag = document.createElement("span");
@@ -6226,15 +6303,22 @@ function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage
   retry.textContent = "重试";
   retry.title = "重新发送这条消息";
   retry.onclick = () => {
-    if (!send(original)) {
+    if (!post({ kind: "redeliver", seq, text, conversationId: selectedConversationId })) {
       noticeSendFailed();
 
       return;
     }
 
-    bubble.dataset.retried = "true";
     retry.disabled = true;
     retry.textContent = "已重试";
+    clearTimeout(pendingRedelivers.get(seq)?.timer);
+    pendingRedelivers.set(seq, {
+      original,
+      timer: setTimeout(() => {
+        pendingRedelivers.delete(seq);
+        enableRetry(bubble);
+      }, REDELIVER_TIMEOUT_MS),
+    });
   };
 
   bubble.append(tag, retry);
@@ -6266,15 +6350,20 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         const bubble = reuse ?? addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
+        chapters.noteUserTurn(bubble, entry.item, !running && !lastUserHasPage);
 
         if (entry.item.card) proactiveCard.turn(entry.item.card, bubble, entry.occurredAt);
         else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
 
         if (steering && !reuse) markSteerReceived(bubble);
 
-        if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
+        if (entry.item.undelivered) handleDeliveryReceipt({ seq: entry.seq, ok: false, text: entry.item.text, original: entry.item.undelivered.original });
       }
-      else handleServerMessage(JSON.stringify(entry.item.msg));
+      else {
+        chapters.noteServer(entry.item.msg);
+        handleServerMessage(JSON.stringify(entry.item.msg));
+      }
+
       lastHistorySeq = entry.seq;
     }
   } finally {
