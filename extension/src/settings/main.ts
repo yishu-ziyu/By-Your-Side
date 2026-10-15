@@ -22,6 +22,7 @@ import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
+import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, GPT_LIVE_MODEL, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
@@ -216,6 +217,13 @@ document.getElementById("settings")!.innerHTML = `
       ${toggleRow("open-threads", "新会话里显示没做完的事", "最多显示 3 张卡：中断的任务、归你的页面、没答完的追问。卡片来自这个浏览器里的记录。点 ×，这张卡 7 天内不再显示。")}
     </div>
     <p id="open-threads-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="sx" aria-labelledby="cues-title">
+    <div class="sx-head"><h2 id="cues-title">声音</h2></div>
+    <div class="surface rows">
+      ${toggleRow("attention-cues", "提示音", "你没在看开着侧栏的窗口时，任务做完响一声；要你确认或动手时响另一声。")}
+    </div>
+    <p id="cues-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="trace-title">
     <div class="sx-head"><h2 id="trace-title">诊断记录</h2></div>
@@ -1298,6 +1306,7 @@ async function reload(): Promise<void> {
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
+  attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
   renderMainModel();
   renderRegions();
   renderCredentialState();
@@ -1495,6 +1504,8 @@ const nudgeToggle = $<HTMLInputElement>("nudge");
 
 const openThreads = $<HTMLInputElement>("open-threads");
 
+const attentionCues = $<HTMLInputElement>("attention-cues");
+
 bindToggle(selectionBar, SELECTION_BAR_KEY, selectionStatus, (on) => (on ? "已开启。" : "已关闭。"));
 
 // 划词快捷键按用户实际设的写（可在 chrome://extensions/shortcuts 改）；getAll 给的已是本系统的写法，如 Ctrl+J、⌘J。
@@ -1509,6 +1520,8 @@ bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接
 bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
 
 bindToggle(openThreads, OPEN_THREADS_KEY, $("open-threads-status"), (on) => (on ? "已开启，下次打开新对话时出现。" : "已关闭。"));
+
+bindToggle(attentionCues, ATTENTION_CUES_KEY, $("cues-status"), (on) => (on ? "已开启。" : "已关闭。"));
 
 oauthLogin.addEventListener("click", () => void startLogin());
 
@@ -1548,7 +1561,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, voiceStatus, (on) => (on ? "做完会�
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 form.remove();
