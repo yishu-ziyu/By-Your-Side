@@ -111,6 +111,7 @@ try {
   // 侧栏启动时的新建会话要等配置后才建好；在它切换会话之前点语音，会和会话切换撞在一起。
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.getAttribute("aria-busy") !== "true"`)) || undefined, 20_000, "启动时的新会话建好", 300);
 
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
   let settled = 0;
   await until(async () => {

@@ -95,6 +95,7 @@ try {
         setInterval(() => { an.getFloatTimeDomainData(b); gl.meter.push([Date.now(), +Math.sqrt(b.reduce((s, v) => s + v * v, 0) / b.length).toFixed(4)]); }, 20); });
       return dc; };
     return true; })()`);
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
 
   if (noLogin) {
