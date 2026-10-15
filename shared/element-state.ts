@@ -23,7 +23,8 @@ export function validateElementRead(options: ElementReadOptions): { properties: 
   if (!Array.isArray(requested)) throw new Error('properties须是属性名数组；请使用 read_element 的属性列表。');
   const isProperty = (p: unknown): p is ElementProperty => (ELEMENT_PROPERTIES as readonly unknown[]).includes(p);
   const properties = requested.filter(isProperty);
-  const unsupported = [...new Set(requested.filter(p => !isProperty(p)).map(p => String(p).slice(0, 40)))].slice(0, 10);
+  // 不支持的名字会原样写进页面内容包装之外的说明；程序里的名字可能取自网页，所以只回显像属性名的写法。
+  const unsupported = [...new Set(requested.filter(p => !isProperty(p)).map(p => typeof p === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(p) ? p : '(非属性名)'))].slice(0, 10);
   const timeout = options.timeoutMs ?? 0;
 
   if (!Number.isFinite(timeout) || timeout < 0 || timeout > 5000 || (timeout > 0 && !options.expect)) throw new Error('timeoutMs须为0–5000，等待时必须提供expect条件。');
