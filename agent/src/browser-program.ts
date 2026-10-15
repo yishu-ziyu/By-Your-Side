@@ -81,6 +81,14 @@ export function availableProgramHelpers(offer: { saveFile: boolean }) {
   return BROWSER_PROGRAM_HELPERS.filter(h => h.name !== "saveFile" || offer.saveFile);
 }
 
+/**
+ * RPC_ALIASES 的反方向：camelCase 组合 helper 的 snake_case 写法（wait_for_load → waitForLoad）。
+ * 只做这一种确定的对应，不猜近似名；本身就是工具名的（arm_event）不算。不写进工具描述，结果里附规范写法。
+ */
+const HELPER_SNAKE_ALIASES: Record<string, string> = Object.fromEntries(BROWSER_PROGRAM_HELPERS
+  .map(h => [h.name.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`), h.name] as const)
+  .filter(([snake, name]) => snake !== name && !(TOOL_NAMES as readonly string[]).includes(snake)));
+
 /** 程序里可用的 camelCase 别名。 */
 export function availableRpcAliases(): string[] {
   return Object.keys(RPC_ALIASES);
@@ -116,7 +124,7 @@ function explainProgramError(text: string, code: string, methods: readonly strin
     const unknown = [...code.matchAll(/\bbrowser\.(\w+)\s*\(/g)].map(m => m[1]!).find(name => !methods.includes(name));
 
     if (unknown) {
-      const canonical = methods.filter(name => !(name in RPC_ALIASES));
+      const canonical = methods.filter(name => !(name in RPC_ALIASES) && !(name in HELPER_SNAKE_ALIASES));
 
       return `browser.${unknown} is not a browser method. Available: ${[...new Set(canonical)].join(", ")}.`;
     }
@@ -124,6 +132,8 @@ function explainProgramError(text: string, code: string, methods: readonly strin
 
   return text;
 }
+
+const isFields = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -137,9 +147,14 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   value: unknown;
   steps: number;
   images: Array<{ type: "image"; data: string; mimeType: string }>;
+  /** 宿主按意图改写过的写法，各附一句规范写法；模型下次照写就不再靠宽容。 */
+  notes: string[];
 }> {
   if (options.code.length > 64_000) throw new Error("Browser program exceeds 64000 characters");
   const METHODS = programMethods({ saveFile: !!options.saveFile });
+  const SNAKE = Object.fromEntries(Object.entries(HELPER_SNAKE_ALIASES).filter(([, name]) => METHODS.includes(name)));
+  const FACADE = [...METHODS, ...Object.keys(SNAKE)];
+  const notes = new Set<string>();
   const engine = await getQuickJS();
   const vm = engine.newContext();
   vm.runtime.setMemoryLimit(16 * 1024 * 1024);
@@ -657,22 +672,37 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     guard();
 
     if (pending.size >= 32) throw stop("Too many pending browser calls; await each operation");
-    const name = vm.getString(nameHandle);
+    const written = vm.getString(nameHandle);
+    const name = SNAKE[written] ?? written;
 
     if (!METHODS.includes(name)) throw new Error(`Unknown browser method: ${name}`);
-    let params: Record<string, unknown>;
+
+    if (written !== name) notes.add(`browser.${written} ran as browser.${name}; write browser.${name}.`);
+    let raw: unknown;
 
     try {
-      params = JSON.parse(vm.getString(paramsHandle)) as Record<string, unknown>;
+      raw = JSON.parse(vm.getString(paramsHandle));
     } catch (error) {
       // 宿主回调里的 JSON.parse 只接受门面传来的 JSON 对象；坏输入变成明确的步骤错误，
       // 不让异常形态穿透 QuickJS 回调边界。
       throw new Error(`Browser call parameters must be JSON: ${message(error)}`);
     }
 
-    if (!params || typeof params !== "object" || Array.isArray(params)) {
-      throw new Error(`browser.${name} takes one object of named fields, e.g. browser.${name}({...}); got ${Array.isArray(params) ? "array" : typeof params}`);
+    // 只收意图唯一的两种单值写法：sleep(数字) 就是毫秒，navigate/open_tab(字符串) 就是网址。其余方法的单值猜不出是哪个字段，照旧报错。
+    const target = RPC_ALIASES[name] ?? name;
+
+    if (name === "sleep" && typeof raw === "number") {
+      raw = { ms: raw };
+      notes.add("browser.sleep(N) ran as browser.sleep({ms: N}); browser methods take one object of named fields.");
+    } else if ((target === "navigate" || target === "open_tab") && typeof raw === "string") {
+      raw = { url: raw };
+      notes.add(`browser.${name}("…") ran as browser.${name}({url: "…"}); browser methods take one object of named fields.`);
     }
+
+    if (!isFields(raw)) {
+      throw new Error(`browser.${name} takes one object of named fields, e.g. browser.${name}({...}); got ${Array.isArray(raw) ? "array" : typeof raw}`);
+    }
+    const params = raw;
 
     const deferred = vm.newPromise();
     pending.add(deferred);
@@ -705,6 +735,11 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
         guard();
         let value = result;
+
+        // read_element 去掉不支持的属性名、或某个属性读成 null 时写明原因；程序常只 return 属性值，说明不经宿主就到不了模型。
+        const note = canonical === "read_element" && result && typeof result === "object" && "note" in result ? result.note : undefined;
+
+        if (typeof note === "string") notes.add(note);
 
         // 与模型直调的 navigate 一致：新页面就绪后顺手读一次，text 即新页面快照，程序里不必再调 snapshot。地址变成下载或 Chrome 显示错误页时不读。
         if (canonical === "navigate" && result && typeof result === "object" && !["timeout", "download", "error_page"].includes(String((result as { readiness?: unknown }).readiness))) {
@@ -769,7 +804,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   try {
     const bootstrap = vm.evalCode(`{
       const call=globalThis.__browserCall; delete globalThis.__browserCall;
-      globalThis.browser=Object.freeze(Object.fromEntries(${JSON.stringify(METHODS)}.map(name=>[name, async (params)=>JSON.parse(await call(name,JSON.stringify(params??{})))])));
+      globalThis.browser=Object.freeze(Object.fromEntries(${JSON.stringify(FACADE)}.map(name=>[name, async (params)=>JSON.parse(await call(name,JSON.stringify(params??{})))])));
     }`);
 
     vm.unwrapResult(bootstrap).dispose();
@@ -781,7 +816,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     if (evaluated.error) {
       const error = vm.dump(evaluated.error);
       evaluated.error.dispose();
-      throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, METHODS) : String(error));
+      throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, FACADE) : String(error));
     }
 
     program = evaluated.value;
@@ -794,7 +829,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (jobs.error) {
         const error = vm.dump(jobs.error);
         jobs.error.dispose();
-        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, METHODS) : String(error));
+        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, FACADE) : String(error));
       }
 
       const state = vm.getPromiseState(program);
@@ -806,14 +841,14 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
           if (value.length > 128_000) throw new Error("Program output too large; return a concise result");
 
-          return { value: JSON.parse(value), steps, images };
+          return { value: JSON.parse(value), steps, images, notes: [...notes] };
         } finally { state.value.dispose(); }
       }
 
       if (state.type === "rejected") {
         const error = vm.dump(state.error);
         state.error.dispose();
-        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, METHODS) : String(error));
+        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, FACADE) : String(error));
       }
 
       await pause(10);
