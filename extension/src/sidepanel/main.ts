@@ -400,7 +400,8 @@ const statusText = document.getElementById("status-text")!;
 
 const messagesEl = document.getElementById("messages")!;
 
-const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!);
+// 跳到某一章就是往上翻：不再跟随到底部。
+const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!, () => { pinned = false; });
 
 const composerEl = document.getElementById("composer") as HTMLElement;
 

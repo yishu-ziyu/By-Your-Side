@@ -3881,3 +3881,7 @@ details.run-steps.run-quieting .run-time { animation: none; }
   transition: color var(--m-quick) var(--e-swift);
 }
 .chapter-jump:hover { color: var(--text-primary); }
+.chapter-jump:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chapter-row[data-fade-end="true"] { mask-image: linear-gradient(to right, #000 calc(100% - var(--s-5)), transparent); }
+.chapter-row[data-fade-start="true"] { mask-image: linear-gradient(to right, transparent, #000 var(--s-5)); }
+.chapter-row[data-fade-start="true"][data-fade-end="true"] { mask-image: linear-gradient(to right, transparent, #000 var(--s-5), #000 calc(100% - var(--s-5)), transparent); }
