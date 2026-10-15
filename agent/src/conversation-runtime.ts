@@ -247,15 +247,16 @@ export async function createConversationRuntime(
         void handleSetModel(msg.model);
         break;
       case "retry_after_error":
-        if (!session.retryAfterModelError()) sendCurrent({ type: "agent_event", event: { kind: "notice", message: "没有要接着做的出错任务：任务已经在跑，或已经结束。" } });
+        // 倒计时自己发的重试落空（任务已在跑或已结束）时不提示：用户没有点任何东西。
+        if (!session.retryAfterModelError() && !msg.auto) sendCurrent({ type: "agent_event", event: { kind: "notice", message: "没有要接着做的出错任务：任务已经在跑，或已经结束。" } });
         break;
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error, msg.executionFact);
         break;
       case "tool_waiting_user":
         rpc.waitingForUser(msg.id, msg.waiting);
-        // 侧栏据此写「第 N 步 · 等你操作」（docs/evals/20261011-guided-teaching.md R1）或「等你在网页上确认发送」（docs/evals/20261009-send-confirm.md R2）。
-        sendCurrent({ type: "agent_event", event: msg.guide ? { kind: "guide_wait", waiting: msg.waiting, guide: msg.guide } : { kind: "send_confirm_wait", waiting: msg.waiting } });
+        // 侧栏据此写「第 N 步 · 等你操作」（docs/evals/20261011-guided-teaching.md R1），或出发送确认卡（docs/evals/20261015-panel-send-confirm.md）。
+        sendCurrent({ type: "agent_event", event: msg.guide ? { kind: "guide_wait", waiting: msg.waiting, guide: msg.guide } : { kind: "send_confirm_wait", waiting: msg.waiting, ...(msg.send ? { confirm: msg.send } : {}) } });
         break;
       default:
         break;

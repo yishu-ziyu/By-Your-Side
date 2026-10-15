@@ -71,9 +71,9 @@ import { detachSoon } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
-import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
+import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
-import type { SendGuard } from "./send-confirm.js";
+import { reportSendClick, type SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
 import { PendingControlTimeout } from "./control-pending.js";
@@ -1409,6 +1409,9 @@ const uplink = {
  retry: () => transport.retry(),
 };
 
+/** 不作用在某个页面上的工具：目标页关掉后它们照常可用，模型靠它们换页。 */
+const TABLESS_TOOLS: ReadonlySet<string> = new Set(["open_tab", "list_tabs", "get_active_tab", "worker_tabs", "fetch", "observe_page"]);
+
 async function executeToolCall(
   id: string,
   name: ToolName,
@@ -1478,7 +1481,7 @@ async function executeToolCall(
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
       fetch:p=>fetchUrl(p,{beforeDispatch}),
       // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子（docs/evals/20261009-send-confirm.md）。
-      click:(p,s)=>click(p,s,undefined,sendGuard),
+      click:(p,s)=>reportSendClick(sendGuard, click(p,s,undefined,sendGuard)),
       // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
     };
@@ -1502,13 +1505,15 @@ async function executeToolCall(
 
         return gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid));
       },
-      waiting: (on, guide) => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on, ...(guide ? { guide } : {}) }); },
+      waiting: (on, guide, send) => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on, ...(guide ? { guide } : {}), ...(send ? { send } : {}) }); },
     };
 
     const execute = async () => {
       checkIdentity();
 
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
+
+      if (!TABLESS_TOOLS.has(name)) await assertTargetTabOpen(typeof params.tabId === "number" ? params.tabId : undefined, key(sid));
       await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
       checkIdentity();
 

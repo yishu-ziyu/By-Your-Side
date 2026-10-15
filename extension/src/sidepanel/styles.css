@@ -314,6 +314,8 @@ html, body {
   height: 100vh;
   min-width: 0;
   overflow-x: hidden;
+  /* 窄侧栏按侧栏自身宽度分档（@container panel）。 */
+  container: panel / inline-size;
 }
 
 .lucide {
@@ -448,6 +450,7 @@ html, body {
 /* 对话区外框：只为放上下两条渐隐带。#messages 照旧是滚动容器。 */
 #messages-frame {
   position: relative;
+  anchor-name: --messages-frame;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -655,6 +658,31 @@ html, body {
   padding: 1px 5px;
 }
 
+/* 回答里网上的图片：先是占位，用户点了才加载（answer-html.ts）。 */
+.markdown .answer-image-gate {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 2px 0;
+  padding: 3px 10px;
+  font: var(--fs-meta) / 1.4 var(--font);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+  text-align: start;
+  cursor: pointer;
+}
+
+.markdown .answer-image-gate:hover {
+  color: var(--text);
+}
+
+.markdown img {
+  max-width: 100%;
+}
+
 .markdown pre {
   margin: 8px 0;
   padding: 10px 12px;
@@ -670,6 +698,80 @@ html, body {
   padding: 0;
   font-size: 11.5px;
   line-height: 1.55;
+}
+
+/* 代码块：上面一条语言名 + 换行 + 复制；默认换行，窄侧栏不出横向滚动条。条上的字由 markdown.ts 放在 data-* 里，这里显示。 */
+.markdown .code-block {
+  margin: 8px 0;
+  background: var(--content-subtle);
+  border: 1px solid var(--content-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px 3px 12px;
+  border-bottom: 1px solid var(--content-border);
+  font: var(--fs-meta) / 1.4 var(--font);
+  color: var(--text-tertiary);
+  user-select: none;
+}
+
+.code-block-lang {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-block-lang::before { content: attr(data-label); }
+
+.code-block-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.code-block-head button {
+  font: inherit;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.code-block-head button:hover { background: var(--content-subtle-hover); }
+.code-block-wrap::before { content: "不换行"; }
+.code-block-nowrap .code-block-wrap::before { content: "换行"; }
+.code-block-head .code-block-copy { display: inline-grid; justify-items: end; }
+.code-block-face { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 4px; transition: opacity var(--d-micro) var(--e-exit); }
+.code-block-face::before { content: "复制"; }
+.code-block-face-done, .code-block-face-failed { opacity: 0; color: var(--text-primary); }
+.code-block-face-done::before { content: "已复制"; }
+.code-block-face-failed::before { content: "没做成"; }
+.code-block-copy:is(.copied, .failed) > .code-block-face { opacity: 0; }
+.code-block-copy.copied > .code-block-face-done, .code-block-copy.failed > .code-block-face-failed { opacity: 1; transition: opacity var(--d-state) var(--e-enter); }
+
+.markdown .code-block pre {
+  margin: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown .code-block pre code { font-size: var(--fs-code); }
+
+.markdown .code-block-nowrap pre {
+  white-space: pre;
+  overflow-wrap: normal;
 }
 
 .markdown blockquote {
@@ -1139,11 +1241,13 @@ details.run-steps.done .chip.error { background: transparent; }
   overflow-y: auto;
 }
 
-/* 回到底部悬浮圆钮：内容超出一屏且用户上翻时出现 */
+/* 回到底部悬浮圆钮：内容超出一屏且用户上翻时出现。
+   输入框会随多行输入、附件、任务条长高；圆钮贴着对话区底边放，才不会压在输入框上。 */
 #to-bottom {
   position: absolute;
+  position-anchor: --messages-frame;
   right: 16px;
-  bottom: 78px;
+  bottom: calc(anchor(bottom) + 12px);
   z-index: 2;
   display: inline-flex;
   align-items: center;
@@ -2149,6 +2253,23 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .site-notes-list { margin:-10px 0 14px; padding:8px 10px 8px 24px; border-radius:8px; background:var(--content-subtle); color:var(--text-secondary); font-size:11px; line-height:1.5; }
 .site-notes-list li + li { margin-top:4px; }
+/* 发送确认卡（docs/evals/20261015-panel-send-confirm.md）：网站、按钮、内容三行，「发送」是唯一的实心按钮。答过只剩一行结果。 */
+.send-confirm { margin:0 0 16px; padding:12px 14px; border:1px solid var(--glass-border); border-radius:14px; background:var(--content-bg); font-size:13px; line-height:1.6; color:var(--text-primary); }
+.send-confirm:is([data-state=done],[data-state=ended]) { padding:0; border:0; background:transparent; }
+.send-confirm-line { margin:0; color:var(--text-secondary); font-size:12.5px; }
+.send-confirm-title { margin:0; font-size:14px; font-weight:600; }
+.send-confirm-kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; margin:8px 0 0; }
+.send-confirm-kv dt { color:var(--text-tertiary); }
+.send-confirm-kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.send-confirm-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.send-confirm-acts button { border:1px solid transparent; border-radius:var(--r-pill); font:inherit; font-size:13px; line-height:1.5; padding:4px 14px; cursor:pointer; }
+.send-confirm-yes { background:var(--text-primary); color:var(--content-bg); font-weight:600; opacity:.6; transition:opacity var(--d-state) var(--e-enter); }
+.send-confirm-yes[data-armed] { opacity:1; }
+.send-confirm-no { background:transparent; color:var(--text-secondary); }
+.send-confirm-no:hover:not(:disabled) { background:var(--content-subtle); }
+.send-confirm-yes:hover:not(:disabled) { filter:brightness(1.15); }
+.send-confirm-acts button:disabled { opacity:.55; cursor:default; }
+.send-confirm-acts button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* 纠正后开口问「要我记住吗」：像助手接着说的一句话，两个浅色小胶囊不抢正文。 */
 .memory-ask { margin:-4px 0 16px; font-family:var(--reading-font); font-size:13px; line-height:1.7; color:var(--text-primary); }
 .memory-ask-line { margin:0; overflow-wrap:anywhere; }
@@ -2672,7 +2793,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 #composer-menu hr { border:0; border-top:1px solid var(--content-border); margin:4px 2px; }
 #marginalia-mode { font:inherit; max-width:220px; border:1px solid var(--content-border); border-radius:6px; background:var(--content-bg); color:var(--text-secondary); padding:3px 6px; }
 
-#app:has(#marginalia-rail:not([hidden])) #messages-frame, #app:has(#marginalia-rail:not([hidden])) #starter { display:none; }
+#app:has(#marginalia-rail:not([hidden])) #messages-frame, #app:has(#marginalia-rail:not([hidden])) #starter, #app:has(#marginalia-rail:not([hidden])) #to-bottom { display:none; }
 
 /* S10 直连按钮：顶栏下一行，只在当前页有可做的动作时出现；耗时读数几秒后收起。 */
 #ghost-bar { display:flex; align-items:center; gap:8px; padding:4px 10px 6px; background:var(--chrome-frame); flex-shrink:0; }
@@ -2893,6 +3014,60 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat calc(var(--d-emph) * 2) var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
+/* 助手在想、在做一步时，标签一道扫光：用遮罩调透明度，动词墨色、对象浅灰各自保留；秒数是另一个元素，不扫。
+   等你（接管、确认发送、教学等你点）时不扫。 */
+details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title {
+  -webkit-mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
+  mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
+  -webkit-mask-size: 250% 100%;
+  mask-size: 250% 100%;
+  animation: runShimmer var(--m-shimmer) var(--e-shimmer) infinite;
+}
+@keyframes runShimmer {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+  to { -webkit-mask-position: -50% 0; mask-position: -50% 0; }
+}
+/* 回答位置的骨架：后面一接上回答、卡片或出错，就收成 0 高、淡出，条叠在回答底下，回答不往下跳。 */
+.answer-skeleton {
+  --sk-base: var(--content-subtle);
+  --sk-hi: var(--content-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: opacity var(--d-state) var(--e-exit);
+  pointer-events: none;
+}
+.answer-skeleton i {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(105deg, var(--sk-base) 0 40%, var(--sk-hi) 50%, var(--sk-base) 60% 100%) 100% 0 / 300% 100%;
+  animation: var(--sk-anim, skeletonSweep var(--m-sweep) var(--e-sweep) infinite);
+}
+/* 等你的时候回答位置不放骨架；不等了、还没出字就再放回来。 */
+details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer-skeleton { display: none; }
+.answer-skeleton i:nth-child(1) { width: 92%; margin-top: 7px; }
+.answer-skeleton i:nth-child(2) { width: 78%; }
+.answer-skeleton i:nth-child(3) { width: 60%; }
+/* 任务卡和接续入口常挂在末尾却没内容（不显示），不算接上了东西。 */
+.answer-skeleton:has(~ :not(.ai-task-card, #resume-entry-root)),
+.answer-skeleton:has(~ .ai-task-card #resume-entry-root:not([hidden]) > *, ~ #resume-entry-root:not([hidden]) > *),
+.answer-skeleton[data-state="gone"] {
+  --sk-anim: none;
+  height: 0;
+  /* 抵掉 #messages 的行距：回答落在骨架第一条的位置。 */
+  margin-bottom: calc(-1 * var(--s-2));
+  opacity: 0;
+}
+@keyframes skeletonSweep { to { background-position: 0 0; } }
+@media (prefers-color-scheme: dark) {
+  .answer-skeleton { --sk-hi: color-mix(in oklch, var(--content-subtle), var(--text-primary) 12%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
+  .answer-skeleton { transition: none; }
+  .answer-skeleton i { animation: none; background: var(--sk-base); }
+}
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 176px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
 /* 收尾后的分叉不留「查了 N 路」这类行：做过的事在展开的过程里，默认视图只留过程行和回答。 */
@@ -3268,6 +3443,12 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .error-card.is-recovering { padding: 12px 14px; border: 0; background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
 .error-card.is-recovering::before, .error-card.is-recovering::after { content: none; }
 .error-card-status { margin: 0; color: var(--text-secondary); }
+/* 自动重试倒计时：细条从满到空，时长由脚本按这次的等待写进 --wait。 */
+.error-card .error-card-countdown { font-variant-numeric: tabular-nums; }
+.error-card-announce { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.error-card-wait { height: 3px; margin-top: 4px; border-radius: 2px; background: var(--t4); overflow: hidden; }
+.error-card-wait > span { display: block; height: 100%; background: var(--warn); transform-origin: left; animation: error-card-drain var(--wait) linear forwards; }
+@keyframes error-card-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 /* 错误卡已经给了修复动作：旧的「运行出错 · 继续原任务」入口说的是同一件事，不再重复。 */
 #messages:has(.error-card:not(.is-retired)) #resume-entry-root { display: none; }
 .error-card.is-retired { opacity: .6; }
@@ -3306,7 +3487,28 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #think-chip[aria-expanded="true"] svg { transform: rotate(180deg); }
 #think-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #think-chip .think-swap { display: inline-block; animation: think-swap var(--d-state) var(--e-swift); }
+/* 对话用量：占到一半在模型名旁画环；悬停或键盘聚焦开关时出卡片。 */
+#think-chip .think-ring { flex: none; width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(var(--accent) calc(var(--ctx-fill) * 1turn), color-mix(in srgb, currentColor 18%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); }
+#ctx-pop { position: absolute; bottom: calc(100% + 6px); width: min(250px, calc(100% - 16px)); padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); font-size: 12px; line-height: 1.5; color: var(--text-secondary); visibility: hidden; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), visibility 0s linear var(--d-state); z-index: 19; }
+#ctx-pop.show { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+#ctx-pop .ctx-model { color: var(--text-tertiary); }
+#ctx-pop .ctx-line { color: var(--text-primary); font-weight: 600; }
+#ctx-pop .ctx-figures { white-space: nowrap; }
+#ctx-pop .ctx-bar { height: 4px; margin: 6px 0; border-radius: 2px; background: var(--content-subtle); overflow: hidden; }
+#ctx-pop .ctx-bar b { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
 @keyframes think-swap { from { opacity: 0; transform: translateY(3px); filter: blur(2px); } }
+/* 窄侧栏：模型按钮只留图标（全名在悬停提示里），不再被挤没；底栏按钮挨紧一点，一个都不收。画着用量环时环代替图标，两个圆挨着分不清。 */
+@container panel (max-width: 340px) {
+  #think-chip { flex-shrink: 0; padding: 0 5px; gap: 2px; }
+  #think-chip .think-model, #think-chip .think-sep, #think-chip .think-level { display: none; }
+  #think-chip:not(.ringed)::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; }
+}
+@container panel (max-width: 280px) {
+  #composer-bar { gap: 2px; }
+  #composer-bar :is(#attach-btn, #dictate-btn, .voice-start, #steer-send-btn) { width: 28px; height: 28px; }
+  #composer-bar #takeover-btn { padding: 0 4px; }
+  #think-chip { padding: 0 4px; }
+}
 
 /* 模型菜单：从开关长出来；两层并排放，「更多模型」整体左滑，高度跟着当前一层变。 */
 #think-menu { position: absolute; left: 10px; bottom: calc(100% + 6px); width: min(280px, calc(100% - 20px)); border-radius: 14px; border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; outline: none; opacity: 0; transform: translateY(4px) scale(.96); transform-origin: 24px calc(100% + 18px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), height var(--d-state) var(--e-swift); z-index: 20; }
@@ -3351,6 +3553,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #think-menu .mm-views, #think-menu .mm-thumb, #think-chip svg { transition: none; }
   #think-menu.mm-in-all .mm-main { display: none; }
   #think-chip .think-swap { animation: none; }
+  #ctx-pop { transform: none; }
 }
 
 /* 主动卡（YIS-106）：一句话，第一个词是按钮，下面一行出处；悬停出 × */

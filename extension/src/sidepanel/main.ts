@@ -4,9 +4,11 @@ import { attachSourceCitations, captureCitationContext, type CitationContext } f
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
-import { paintBeatMark } from "./run-heartbeat.js";
+import { answerSkeleton, paintBeatMark } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
+import { observeForCue } from "./cue.js";
+import { sendConfirmCard } from "./send-confirm-card.js";
 import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -227,8 +229,11 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 
+/** 正文在 renderMarkdownHtml 里已按回答的规则消毒；整段（含我们画的卡片、代码块的条）再过一遍，挡住能改到回答外面的东西。 */
+const PANEL_HTML = { FORBID_TAGS: ["style", "link", "meta", "base", "form", "iframe", "object", "embed", "foreignObject", "dialog"], FORBID_ATTR: ["style"] };
+
 function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml));
+  return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml), PANEL_HTML);
 }
 
 const app = document.getElementById("app")!;
@@ -1074,6 +1079,7 @@ function resetConversationRender(): void {
 
   if (resumeRoot) messagesEl.appendChild(resumeRoot);
   resumeEntry.clear();
+  modelMenu.usage(null);
   renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
 }
@@ -2309,7 +2315,11 @@ async function refreshActiveTabPill(): Promise<void> {
 
     if (tabIconSq) {
       if (tab.favIconUrl && tab.favIconUrl.startsWith("http")) {
-        tabIconSq.innerHTML = `<img src="${DOMPurify.sanitize(tab.favIconUrl)}" style="width:12px;height:12px;border-radius:2px;object-fit:cover;" alt="" />`;
+        const img = document.createElement("img");
+        img.src = tab.favIconUrl;
+        img.alt = "";
+        img.style.cssText = "width:12px;height:12px;border-radius:2px;object-fit:cover;";
+        tabIconSq.replaceChildren(img);
       } else {
         const letter = (host || title || "W").replace(/^www\./, "").charAt(0).toUpperCase();
         tabIconSq.textContent = letter;
@@ -2392,6 +2402,21 @@ function noteModelInfo(model: string | undefined, models: ModelOption[] | undefi
   if (pendingModelSwitch?.id === model) { clearTimeout(pendingModelSwitch.timer); pendingModelSwitch.done(); pendingModelSwitch = null; }
 }
 
+/**
+ * 后台把同一次出错发给每个窗口的侧栏，只能有一个替用户自动重试：先拿到这把锁的侧栏负责，它关掉后由下一个接手。
+ * 不按窗口编号排：chrome.runtime.getContexts 给侧栏的 windowId 是 -1。
+ */
+const AUTO_RETRY_LOCK = "sideagent-auto-retry-owner";
+let autoRetryOwner = false;
+void navigator.locks?.request(AUTO_RETRY_LOCK, () => { autoRetryOwner = true; return new Promise<never>(() => {}); });
+
+async function ownsAutoRetry(): Promise<boolean> {
+  if (autoRetryOwner || !navigator.locks) return true;
+  const { held = [] } = await navigator.locks.query();
+
+  return !held.some(lock => lock.name === AUTO_RETRY_LOCK);
+}
+
 const errorCards = mountErrorCards({
   mount: (el) => appendToMessages(el),
   app,
@@ -2402,7 +2427,8 @@ const errorCards = mountErrorCards({
     pendingModelSwitch = { id, done: resolve, timer: setTimeout(() => { pendingModelSwitch = null; reject(new Error("切换超时")); }, 10_000) };
     send({ type: "set_model", model: id });
   }),
-  retry: (key) => { send(key ? { type: "retry_after_error", key } : { type: "retry_after_error" }); },
+  retry: (key, auto) => { send({ type: "retry_after_error", ...(key ? { key } : {}), ...(auto ? { auto: true as const } : {}) }); },
+  ownsAutoRetry,
   testKey: (key) => new Promise((resolve) => {
     const requestId = crypto.randomUUID();
     keyTests.set(requestId, resolve);
@@ -2530,6 +2556,8 @@ interface RunHost {
   /** 并行/死路/接管的分叉层：紧跟在过程块后面（不放进 details，收起时也看得见）；单步回合是空的。 */
   graph: LiveGraph;
   beatEl: HTMLElement;
+  /** 回答位置的骨架：回答或卡片一接上就由样式收起淡出。 */
+  skeleton: HTMLElement;
   lastToolName: string | null;
 }
 
@@ -2770,8 +2798,46 @@ let thinkPinned = true;
 
 let followingLive = false;
 
+// 用户刚动过滚轮、手指、滚动键或滚动条，这段时间内不自动跟随，免得和正在进行的滚动抢位置。
+const USER_SCROLL_QUIET_MS = 150;
+
+let userScrollAt = -Infinity;
+
+// 内容高度的近期记录：浏览器按上一帧画出的内容滚到底，scroll 事件到达前常又插进一段新字，
+// 所以判断“滚回底部”要看用户刚才看到的底部，不只看现在的。
+const SEEN_BOTTOM_MS = 100;
+
+let heightLog: Array<{ at: number; height: number }> = [];
+
+// 只留一条早于时间窗的记录（窗口开始时的高度）和窗口内的变化。
+function pruneHeights(now: number): void {
+  while (heightLog.length > 1 && now - heightLog[1]!.at >= SEEN_BOTTOM_MS) heightLog.shift();
+}
+
+function noteHeight(): void {
+  const now = performance.now();
+  pruneHeights(now);
+  if (heightLog.at(-1)?.height !== messagesEl.scrollHeight) heightLog.push({ at: now, height: messagesEl.scrollHeight });
+}
+
+function seenBottom(): number {
+  pruneHeights(performance.now());
+  return Math.min(messagesEl.scrollHeight, ...heightLog.map((e) => e.height));
+}
+
+let lastScrollTop = 0;
+
+// 跟随代码自己滚到的位置：它触发的 scroll 事件不算人滚。
+let followScrollTop = -1;
+
+let followRetry = 0;
+
 function nearBottom(): boolean {
-  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
+}
+
+function userScrolling(): boolean {
+  return performance.now() - userScrollAt < USER_SCROLL_QUIET_MS;
 }
 
 function followLive(el: HTMLElement | null, stick: boolean): void {
@@ -2787,6 +2853,8 @@ function followLive(el: HTMLElement | null, stick: boolean): void {
 }
 
 function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): void {
+  // 平滑滚动的头几帧还离底部很近，只看位置会被下一次跟随拉回去；往上滚的意图在滚轮事件里就定了。
+  el.addEventListener("wheel", (e) => { if (e.deltaY < 0 && el.scrollTop > 0) setPinned(false); }, { passive: true });
   el.addEventListener("scroll", () => {
     if (followingLive) return;
     setPinned(isLiveViewportPinned(el.scrollTop, el.scrollHeight, el.clientHeight));
@@ -2800,28 +2868,75 @@ function syncScrollFade(): void {
   frame.dataset.fadeBottom = String(messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight > 1);
 }
 
+function markUserScroll(): void {
+  userScrollAt = performance.now();
+}
+
+// 位置没变就不会有 scroll 事件，不留记号，免得以后人滚到同一位置被当成跟随。
+function followToEnd(): void {
+  const before = messagesEl.scrollTop;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (messagesEl.scrollTop !== before) followScrollTop = messagesEl.scrollTop;
+}
+
+// 这些输入只让跟随让开一会儿；离不离开底部由随后对话区真的滚了没有、往哪滚决定，
+// 所以在过程窗这类内层滚动区里滚、对话区没动时，跟随不变。
+messagesEl.addEventListener("wheel", markUserScroll, { passive: true });
+
+messagesEl.addEventListener("touchstart", markUserScroll, { passive: true });
+
+messagesEl.addEventListener("touchmove", markUserScroll, { passive: true });
+
+// 目标是滚动区本身：按在滚动条或空白处，点消息里的按钮不算。
+messagesEl.addEventListener("pointerdown", (e) => {
+  if (e.target === messagesEl) markUserScroll();
+});
+
+// 对话区不接焦点，滚动键多半落在 body 上；输入框里的方向键是移光标，不算。
+document.addEventListener("keydown", (e) => {
+  const target = e.target instanceof HTMLElement ? e.target : null;
+  if (target?.closest("input, textarea, [contenteditable]")) return;
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) markUserScroll();
+});
+
+// 往上滚就离开底部，往下滚回底部附近才重新跟上；不管是谁滚的，只跳过跟随自己那一下。
+// 内容变短被浏览器夹回底部不算往上滚。
 messagesEl.addEventListener("scroll", () => {
-  pinned = nearBottom();
+  const top = messagesEl.scrollTop;
+
+  const atEnd = messagesEl.scrollHeight - top - messagesEl.clientHeight <= 1;
+
+  if (top === followScrollTop) followScrollTop = -1;
+  else pinned = seenBottom() - top - messagesEl.clientHeight < 40 && (top >= lastScrollTop || atEnd);
+  lastScrollTop = top;
   toBottomBtn.hidden = pinned;
   syncScrollFade();
 });
 
-// 内容变长、侧栏变高时滚动位置不变也要重算两侧。
-new ResizeObserver(syncScrollFade).observe(messagesEl);
+// 侧栏变窄时内容变高、滚动位置不变，跟随中就要贴回底部；两侧渐隐也要重算。
+new ResizeObserver(() => {
+  if (pinned && !userScrolling()) followToEnd();
+  syncScrollFade();
+}).observe(messagesEl);
 
-new MutationObserver(syncScrollFade).observe(messagesEl, { childList: true, subtree: true, characterData: true });
+new MutationObserver(() => {
+  noteHeight();
+  syncScrollFade();
+}).observe(messagesEl, { childList: true, subtree: true, characterData: true });
 
 function scrollToEnd(force = false): void {
   followLive(currentRun?.body ?? null, force || runBodyPinned);
   followLive(currentThinking, force || thinkPinned);
 
-  if (force || pinned) messagesEl.scrollTop = messagesEl.scrollHeight;
-  toBottomBtn.hidden = nearBottom();
+  if (force || (pinned && !userScrolling())) followToEnd();
+  // 回答最后一段字恰好落在让开的那一会儿里，之后没人再叫跟随：让开结束后补一次。
+  else if (pinned && !followRetry) followRetry = window.setTimeout(() => { followRetry = 0; scrollToEnd(); }, USER_SCROLL_QUIET_MS);
+  toBottomBtn.hidden = pinned || nearBottom();
 }
 
 toBottomBtn.onclick = () => {
   pinned = true;
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  followToEnd();
   toBottomBtn.hidden = true;
 };
 
@@ -2865,6 +2980,8 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   appendToMessages(div);
 
 
+  // 用户发了新消息就回到底部重新跟随，之前往上翻过也一样。
+  pinned = true;
   scrollToEnd();
 
   return div;
@@ -3629,6 +3746,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
   trail.className = "run-trail";
   trail.hidden = true;
   graph.el.after(trail);
+  const skeleton = answerSkeleton();
+  trail.after(skeleton);
   const start = runStartAt || eventTime();
 
   currentRun = {
@@ -3664,6 +3783,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     receipt: null,
     graph,
     beatEl: beat,
+    skeleton,
     lastToolName: null,
   };
   startLiveSeconds(currentRun, start);
@@ -4082,6 +4202,10 @@ function finishRun(): void {
   closeThink(run, endedAt);
   // 收尾后过程只留回执，进行中的说明行不再单列。
   run.trail.remove();
+  // 骨架先按样式淡出，淡完再拿掉；没接上回答就结束（出错、停下、只有卡片）时也不留。
+  const skeleton = run.skeleton;
+  skeleton.dataset.state = "gone";
+  window.setTimeout(() => skeleton.remove(), reducedMotion() ? 0 : D_STATE);
   // 空 run（纯文本回复，无思考/工具步骤）不留壳；只读回合（问答、读页）正常结束也不留过程行，
   // 用户看回答和页面本身即可。动过页面、失败或被停止时才保留「查看执行过程」。
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
@@ -4473,11 +4597,13 @@ function quietRunForProse(): void {
 /** 模型直接写的正文：没调过工具时放在回答位置逐段显示；新一轮的正文出现时，上一轮那段只是过程。 */
 function appendLeadAnswer(delta: string): void {
   // 过程行照常在跑：停止、出错时这段正文按原样收进去，过程行也随之保留。
-  ensureRun();
+  const run = ensureRun();
 
   if (leadAnswer && leadAnswerTurnClosed) foldLeadAnswer();
 
   if (!leadAnswer) {
+    // 这一轮出过字，骨架就不再回来：这段正文之后被收进过程时，回答位置空着也不再放骨架。
+    run.skeleton.dataset.state = "gone";
     quietRunForProse();
     leadAnswer = addMsg("msg assistant markdown streaming", "");
     leadAnswerText = "";
@@ -4594,7 +4720,10 @@ function appendTrace(pre: HTMLElement, delta: string): void {
 function appendDelta(kind: "assistant" | "thinking", delta: string): void {
   if (kind === "assistant") {
     // 流式 Markdown：累积原文，每个 delta 重渲染（marked 为同步解析，量小无压力）
-    if (!currentAssistant) currentAssistant = addMsg("msg assistant markdown streaming", "");
+    if (!currentAssistant) {
+      if (currentRun) currentRun.skeleton.dataset.state = "gone";
+      currentAssistant = addMsg("msg assistant markdown streaming", "");
+    }
     currentAssistantText += delta;
     revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
   } else {
@@ -5040,6 +5169,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
   // 并行助手已删除：非主会话的事件不再出现，出现也不渲染。
   if (sessionId && !isLeadSession(sessionId)) return;
 
+  if (!replayingHistory) observeForCue(ev);
   noteFieldTarget(ev);
 
   const progressRun = currentRun ?? lastRun;
@@ -5085,13 +5215,24 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       onToolStart(ev);
       break;
     case "send_confirm_wait": {
-      // 等用户在网页上确认发送：标题写明在等你；不等了，回到「做了几件事」（docs/evals/20261009-send-confirm.md R2）。
+      // 等用户确认发送：网页上和侧栏卡上都能答，标题写明在等你；不等了，回到「做了几件事」（docs/evals/20261009-send-confirm.md R2、20261015-panel-send-confirm.md）。
       const run = currentRun;
+      const card = sendConfirmCard(ev.confirm);
+
+      if (card) {
+        appendToMessages(card);
+        scrollToEnd();
+      }
+
+      // 确认之后点没点下去的补报：等待早就结束了，只更新卡。
+      if (ev.confirm?.clicked) break;
 
       // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
       // 等你确认的时间不算「想了」（#263）。
       if (run) {
-        setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
+        setRunTitle(run, ev.waiting ? "等你确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
+        // 等你的时候过程行不扫光、回答位置不放骨架；这一步的工具还在途，所以 data-phase 仍是 executing。
+        run.root.toggleAttribute("data-wait-user", ev.waiting);
 
         if (ev.waiting) closeThink(run, eventTime());
         else openThink(run, eventTime());
@@ -5112,6 +5253,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if (!run) break;
       const waiting = ev.waiting && ev.guide;
       setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : "正在思考", true, waiting ? undefined : "think");
+      run.root.toggleAttribute("data-wait-user", !!waiting);
 
       // 等你自己点的时间不算「想了」（#263）。
       if (waiting) closeThink(run, eventTime());
@@ -5191,6 +5333,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     }
     case "turn_end":
       closeBlocks();
+      break;
+    case "context_usage":
+      modelMenu.usage({ used: ev.used, window: ev.window, model: ev.model });
       break;
     case "agent_end":
       closeBlocks();
@@ -5306,7 +5451,7 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
     case "error": {
       const copy = describeModelError(ev.message);
 
-      if (copy) errorCards.show(copy);
+      if (copy) errorCards.show(copy, !replayingHistory);
       else addMsg("msg error", ev.message);
       break;
     }

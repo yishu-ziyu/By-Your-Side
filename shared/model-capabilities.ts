@@ -10,10 +10,11 @@
 import { getSupportedThinkingLevels, type Api, type Model, type ModelThinkingLevel, type ThinkingLevelMap } from "@earendil-works/pi-ai";
 
 interface MeasuredCapability {
-  reasoning: boolean;
+  /** reasoning 与 input 一起登记；两项都不写的条目只登记时间，能力照目录。 */
+  reasoning?: boolean;
   /** null = 该档不可用；off: null = 不能关闭思考。 */
   thinkingLevelMap?: ThinkingLevelMap;
-  input: ("text" | "image")[];
+  input?: ("text" | "image")[];
   /** 系统提示词必须用 system 角色：开了 reasoning 后适配层默认改发 developer 角色，有的服务商会忽略它。 */
   systemRole?: true;
   /** 目录里没有的模型：从同服务商的这个模型复制连接参数（地址、协议、兼容项）。 */
@@ -24,6 +25,11 @@ interface MeasuredCapability {
   start?: ModelThinkingLevel;
   /** 连上后最多等多久出第一个事件，超过算挂起；不写则用主循环默认值。 */
   firstEventMs?: number;
+  /**
+   * 发出后这么久还没有第一个事件，就再发一份相同的请求，先出事件的那份胜出（对冲请求）。
+   * 取该模型首字耗时 p90 左右：更早会给大多数正常请求白发一份，更晚就省不下等待。不写则用主循环默认值；0 表示不对冲。
+   */
+  hedgeMs?: number;
 }
 
 /** 实测记录见 docs/evals/20261001-model-effort-and-side-judgments.md。 */
@@ -38,12 +44,13 @@ const MEASURED = new Map<string, MeasuredCapability>([
     `openai-codex/${id}`,
     {
       reasoning: true, input: ["text", "image"], start: "low", firstEventMs: 30_000,
+      ...(id === "gpt-6-luna" ? { hedgeMs: 6_000 } : id === "gpt-6.1-sol" ? { hedgeMs: 8_000 } : {}),
       thinkingLevelMap: id === "gpt-6.1-sol" ? { off: null, minimal: null, xhigh: "xhigh", max: "max" } : { xhigh: "xhigh", max: "max", minimal: "low" },
     },
   ]),
   // 不发档位时适配层发「关闭思考」，服务端 400「requires adaptive thinking」；low 起可用，最高 max；能看图。
   ["minimax-cn/MiniMax-M3.1-Flash-Preview", {
-    template: "MiniMax-M3", reasoning: true, input: ["text", "image"],
+    template: "MiniMax-M3", reasoning: true, input: ["text", "image"], hedgeMs: 12_000,
     thinkingLevelMap: { off: null, minimal: null, xhigh: "xhigh", max: "max" },
   }],
   // reasoning_effort=minimal 回 400「Invalid request parameters」；none/low/medium 可用。看图未测。
@@ -52,10 +59,12 @@ const MEASURED = new Map<string, MeasuredCapability>([
   ["stepfun/step-3.7-flash", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null }, systemRole: true }],
   // 能看图（同一张图实测答对）。10-11 实测：reasoning_effort 接受 low / medium / high，low 出字最快（2.7 秒，中档 6.0 秒），
   // 所以起始档用低档（用户 10-11 定）；developer 角色里「只回 JSON」5 次全被忽略，system 角色 5 次全守。
-  ["stepfun/step-5-preview", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null, minimal: null }, systemRole: true, start: "low" }],
+  ["stepfun/step-5-preview", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null, minimal: null }, systemRole: true, start: "low", hedgeMs: 11_000 }],
   // 10-11 用户定：取代 step-3.5-flash（旧的发图回 400，档位不起作用）。文档只写 low / high；developer 角色里「只回 JSON」被忽略，所以用 system 角色。
   // 看图未测，按保守默认只收文字。
   ["stepfun/step-3.5-flash-2603", { reasoning: true, input: ["text"], thinkingLevelMap: { off: null, minimal: null, medium: null }, systemRole: true }],
+  // Kimi 编程套餐同一时间只允许 1 个请求（同时发 2 个必有 1 个被拒 concurrent request limit），对冲那份必然被拒，所以不对冲。
+  ...(["kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k"] as const).map((id): [string, MeasuredCapability] => [`kimi-coding/${id}`, { hedgeMs: 0 }]),
 ]);
 
 const key = (model: Pick<Model<Api>, "provider" | "id">) => `${model.provider}/${model.id}`;
@@ -71,7 +80,7 @@ export function measuredModelIds(provider: string): string[] {
 export function withMeasuredCapability<TApi extends Api>(model: Model<TApi>): Model<TApi> {
   const measured = MEASURED.get(key(model));
 
-  if (!measured) return model;
+  if (measured?.reasoning === undefined || !measured.input) return model;
   const resolved: Model<TApi> = { ...model, reasoning: measured.reasoning, thinkingLevelMap: measured.thinkingLevelMap, input: measured.input };
 
   if (measured.systemRole && model.api === "openai-completions") {
@@ -109,6 +118,11 @@ export function firstEventTimeout(model: Pick<Model<Api>, "provider" | "id">): n
   return MEASURED.get(key(model))?.firstEventMs;
 }
 
+/** 实测登记的对冲时间点；没有登记为 undefined。 */
+export function hedgeAfter(model: Pick<Model<Api>, "provider" | "id">): number | undefined {
+  return MEASURED.get(key(model))?.hedgeMs;
+}
+
 export interface ThinkingProfile {
   /** 可请求的档位，从低到高；"off" 表示不发思考参数（目录标为不支持思考的模型只有这一档，由服务商默认）。 */
   levels: ModelThinkingLevel[];
@@ -125,4 +139,14 @@ export function thinkingProfile(model: Model<Api>): ThinkingProfile {
   const levels = supported.length ? supported : ["off" as const];
 
   return { levels, canDisable: levels.includes("off"), image: (resolved.input ?? []).includes("image"), start: MEASURED.get(key(model))?.start };
+}
+
+/** 同一账号同时在途请求的上限，按服务商（不按模型）登记；没登记的不限。扩展内所有模型请求按它排队。 */
+const PROVIDER_CONCURRENCY = new Map<string, number>([
+  // 实测同时 2 个请求必有 1 个被拒（403「concurrent request limit」）。
+  ["kimi-coding", 1],
+]);
+
+export function providerConcurrency(provider: string): number | undefined {
+  return PROVIDER_CONCURRENCY.get(provider);
 }
