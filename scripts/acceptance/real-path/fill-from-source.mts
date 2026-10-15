@@ -4,11 +4,12 @@
  * 右边「聊天页」（用户正看着）有输入框和「提交」按钮，提交时把收到的文字发回本机服务。
  *   npx tsx scripts/acceptance/real-path/fill-from-source.mts --headless
  * 脚本模型依次：value 和 from 一起给（应报错）、from 指向密码栏（应拒绝）、from 用 CSS 指向回答（应填好）、
- * 读回答页快照后 from 用快照里那行文字的 @ref（文字节点，真实模型就这样选）再填一次（应填好）、点「提交」。
- * 判据：服务端只收到 1 次提交，文字与原文逐字相同；前两次填写都报错（未执行）；
+ * 读回答页快照后 from 用快照里那行文字的 @ref（文字节点，真实模型就这样选）再填一次（应填好）、点「提交」；
+ * 再用 from 指向一段由几个 <p> 和一个 <ul><li> 组成的回答（ChatGPT、Gemini 的回答就是这样排的），再点「提交」。
+ * 判据：服务端收到 2 次提交：第 1 次与原文逐字相同；第 2 次与那段回答的 innerText 逐字相同，段落和列表之间的换行都在；前两次填写都报错（未执行）；
  * 密码栏的值没出现在给模型的任何内容里；搬运那次的回执只有字数和首尾几个字，没有全文。
  * 按钮叫「提交」不叫「发送」：点「发送」会先停下等用户在网页上确认，那不是这里要测的。
- * 失败方式：去掉扩展 fill 里读 from 的那一段，提交的文字不是原文。
+ * 失败方式：去掉扩展 fill 里读 from 的那一段，提交的文字不是原文；来源改回取 visibleText，第 2 次提交的段落挤成一行。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -34,6 +35,9 @@ const ANSWER = `好的，下面是“三步走”的建议：
 
 const SECRET = "hunter2-very-secret-pw";
 
+// 标签之间不留空白：段落之间的换行只能来自排版，不能来自 HTML 源码里的换行。
+const RICH = `<div id="rich"><p>第一段：“先想清楚目标”。</p><p>第二段：每天 25 分钟。</p><ul><li>周一：打基础</li><li>周二：做练习</li></ul><p style="display:none">隐藏的字</p></div>`;
+
 const page = (title: string, body: string) => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title></head><body style="font:16px sans-serif;margin:40px">${body}</body></html>`;
 
 const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -51,7 +55,7 @@ const site = createServer((req, res) => {
   }
 
   const body = req.url === "/answer"
-    ? page("回答", `<h1>对话</h1><div id="answer" style="white-space:pre-wrap">${escape(ANSWER)}</div><label>登录密码 <input id="pw" type="password" value="${SECRET}"></label>`)
+    ? page("回答", `<h1>对话</h1><div id="answer" style="white-space:pre-wrap">${escape(ANSWER)}</div>${RICH}<label>登录密码 <input id="pw" type="password" value="${SECRET}"></label>`)
     : page("聊天", `<h1>聊天</h1><textarea id="box" rows="10" cols="60" aria-label="消息"></textarea><button id="submit" type="button" onclick="fetch('/received', { method: 'POST', body: document.getElementById('box').value })">提交</button>`);
 
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(body);
@@ -68,6 +72,7 @@ const pwFrom = { tabId: -1, target: "#pw" };
 // 快照里回答那一行的 @ref：模型读到快照后才知道，脚本在收到快照回执时填进去。
 const refFrom = { tabId: -1, target: "@0" };
 const snapshotArgs = { tabId: -1 };
+const richFrom = { tabId: -1, target: "#rich" };
 
 /** 给模型的每条工具回执原文，按出现顺序。 */
 const toolTexts: string[] = [];
@@ -83,6 +88,8 @@ const model = await startScriptedModel([
     { tool: { name: "fill", args: { target: "#box", from } } },
     { tool: { name: "snapshot", args: snapshotArgs } },
     { tool: { name: "fill", args: { target: "#box", from: refFrom } } },
+    { tool: { name: "click", args: { target: "#submit", label: "提交" } } },
+    { tool: { name: "fill", args: { target: "#box", from: richFrom } } },
     { tool: { name: "click", args: { target: "#submit", label: "提交" } } },
     { text: FINAL },
   ] },
@@ -117,6 +124,7 @@ try {
   pwFrom.tabId = answerTabId;
   refFrom.tabId = answerTabId;
   snapshotArgs.tabId = answerTabId;
+  richFrom.tabId = answerTabId;
 
   const panel = await rp.attach(await rp.openSidePanel());
   panelForDump = panel;
@@ -130,17 +138,19 @@ try {
   await rp.typeText(panel, ASK);
   await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, `document.querySelector("#messages").textContent.includes(${JSON.stringify(FINAL)})`) || undefined, 90_000, `回答「${FINAL}」`, 100);
-  await until(async () => received.length > 0 || undefined, 5_000, "服务端收到提交").catch(() => {});
+  await until(async () => received.length > 1 || undefined, 5_000, "服务端收到两次提交").catch(() => {});
+  const richText = String(await rp.evaluate(answerTab, 'document.getElementById("rich").innerText')).trim();
   await sleep(800);
   await rp.screenshot(panel, join(artifacts, "panel.png"));
   await rp.screenshot(chat, join(artifacts, "chat.png"));
 
-  const fills = toolTexts.filter(t => !/^Click/.test(t) && !t.includes("RootWebArea")).slice(0, 4);
+  const fills = toolTexts.filter(t => !/^Click/.test(t) && !t.includes("RootWebArea"));
   evidence.received = received;
   evidence.fillReceipts = fills;
   evidence.box = await rp.evaluate(chat, 'document.getElementById("box").value');
 
-  assert.equal(received.length, 1, `server received exactly one submit: ${JSON.stringify(received)}`);
+  evidence.richInnerText = richText;
+  assert.equal(received.length, 2, `server received exactly two submits: ${JSON.stringify(received)}`);
   assert.equal(received[0], ANSWER, `the submitted text equals the answer character for character: ${JSON.stringify(received[0])}`);
 
   assert.match(fills[0] ?? "", /value 和 from 只能给一个/, `giving both value and from is an error: ${JSON.stringify(fills[0])}`);
@@ -153,6 +163,8 @@ try {
   assert.ok(!copied.includes("一、先想清楚目标"), `the copy receipt does not carry the full text: ${JSON.stringify(copied)}`);
   assert.match(copied, /holds exactly this text/, `the field read back the same text: ${JSON.stringify(copied)}`);
   assert.notEqual(refFrom.target, "@0", "the snapshot listed the answer as a text line with a ref");
+  assert.equal(received[1], richText, `the paragraph-and-list answer arrives equal to its innerText: ${JSON.stringify(received[1])}`);
+  assert.match(received[1] ?? "", /“先想清楚目标”。\n+第二段[\s\S]*\n周一：打基础\n周二：做练习$/, `paragraph and list-item breaks are kept, the hidden paragraph is left out: ${JSON.stringify(received[1])}`);
   assert.match(fills[3] ?? "", new RegExp(`Copied ${ANSWER.length} characters from ${refFrom.target} .*holds exactly this text`, "s"), `from a snapshot text ref copies the same text: ${JSON.stringify(fills[3])}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);

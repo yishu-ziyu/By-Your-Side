@@ -987,14 +987,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fill",
       label: "Fill",
       description:
-        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. To put text that is already on a page into a field verbatim, pass from pointing at the element that holds it instead of retyping it in value. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
+        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). When task_goals/capture_page_material returned a fieldValues value for this field, pass that complete value in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. To put text that is already on a page into a field verbatim, pass from pointing at the element that holds it instead of retyping it in value, e.g. fill({target:'@12', from:{tabId:A, target:'@40'}}) copies the answer @40 on tab A into the input @12. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         value: Type.Optional(Type.String({ description: "Value to set. Give exactly one of value and from." })),
         from: Type.Optional(Type.Object({
           target: Type.String({ description: 'The element that holds the text: "@N" ref or unique CSS selector' }),
           tabId: Type.Optional(Type.Integer({ description: "Tab of that element; omit when it is on the tab being filled" })),
-        }, { description: "Copy an element's text into the field without retyping it: its visible text as read_element visibleText (newlines kept; a field's displayed value; a rich editor's editableText), trimmed at both ends. Refused on password, code and card-number fields." })),
+        }, { description: "Copy an element's text into the field without retyping it: its text as rendered (innerText: line breaks between paragraphs and list items, hidden parts left out; a field's displayed value; a rich editor's editableText), trimmed at both ends. Refused on password, code and card-number fields." })),
         submit: Type.Optional(Type.Boolean({ description: "Press Enter after filling (search boxes and single-line text fields only; refused on message boxes, multi-line fields and editors, where Enter may send)" })),
       }),
       execute: async (_id, params) => {
