@@ -3357,7 +3357,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #key-sheet-status[data-tone="err"] { color: var(--err); }
 @media (prefers-reduced-motion: reduce) { .error-card { animation-name: fadeOnlyIn; } #key-sheet { transition: none; } }
 
-/* 输入框左下角「6 Luna · 快」（thinking-chip.ts）：静时是一行灰字，悬停和打开时有浅底。 */
+/* 输入框左下角「模型 · 快」（model-menu.ts）：静时是一行灰字，悬停和打开时有浅底。 */
 #composer { position: relative; }
 #think-chip { all: unset; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 190px; height: 26px; padding: 0 8px; border-radius: 7px; font-size: 12px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease, transform var(--m-quick) var(--e-swift); }
 #think-chip[hidden] { display: none; }

@@ -1,7 +1,7 @@
 /**
- * 输入框左下角「模型 · 快/深入」（docs/evals/20261007-thinking-chip.md）：看得到、点得开、选了真的换档、关掉侧栏再开还记得。真实模型，只装扩展，无头，全程录侧栏。
- *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/thinking-chip.mts --headless [--model=provider/id]
- * 失败方式：开关不出现或没写模型名；点「换模型…」后模型列表没在开关上方打开；选「深入」后助手仍用低档；选「快」后仍用高档；重开侧栏后忘了选过什么。
+ * 输入框左下角「模型 · 快/深入」一个菜单（docs/evals/20261015-model-menu.md）：看得到、点得开、选了真的换档、换模型两步到位、关掉侧栏再开还记得。真实模型，只装扩展，无头，全程录侧栏。
+ *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/model-menu.mts --headless [--model=provider/id]
+ * 失败方式：开关不出现或没写模型名；菜单里没有模型列表和思考开关；切思考时菜单关了；「更多模型」没在同一个菜单里打开、搜不到；Esc 不是先返回再关上；选别的模型后开关没换名字；选「深入」后助手仍用低档；选「快」后仍用高档；重开侧栏后忘了选过什么。
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -16,7 +16,7 @@ const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("
 
 const plan = await loadModelPlan(modelArg);
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-thinking-chip`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-model-menu`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -53,7 +53,10 @@ const pick = async (label: "快" | "深入") => {
   await rp.click(panel, "#think-chip");
   await sleep(350);
   await rp.screenshot(panel, join(artifacts, `menu-${label}.png`));
-  await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === ${JSON.stringify(label)}).click(), true`);
+  await rp.click(panel, `#think-menu [data-deep="${label === "深入" ? 1 : 0}"]`);
+  await sleep(300);
+  evidence[`menuOpenAfter${label === "深入" ? "Deep" : "Fast"}`] = await rp.evaluate(panel, `document.querySelector("#think-menu").classList.contains("open")`);
+  await rp.click(panel, "#think-chip");
   await sleep(300);
 };
 
@@ -78,14 +81,51 @@ try {
   evidence.chipStart = await chipText();
   await rp.screenshot(panel, join(artifacts, "chip.png"));
 
+  const menuState = `(() => { const m = document.querySelector("#think-menu"); const r = m.getBoundingClientRect(); const c = document.querySelector("#think-chip").getBoundingClientRect(); const level = m.classList.contains("mm-in-all") ? ".mm-all" : ".mm-main";
+    return { open: m.classList.contains("open"), level: level === ".mm-all" ? "all" : "main", aboveChip: r.bottom <= c.top && c.top - r.bottom < 80, rows: [...m.querySelectorAll(level + " .mm-row[data-model]")].map(el => ({ id: el.dataset.model, name: el.querySelector(".mm-name").textContent, checked: el.getAttribute("aria-checked") === "true" })),
+      effort: !!m.querySelector(".mm-main .mm-seg"), more: !!m.querySelector(".mm-main .mm-more"), barShown: getComputedStyle(document.querySelector("#composer-bar-inner")).visibility === "visible",
+      focus: m.contains(document.activeElement) ? (document.activeElement.matches(".mm-search input") ? "search" : "menu") : document.activeElement?.id ?? "" }; })()`;
+  type MenuState = { open: boolean; level: string; aboveChip: boolean; rows: { id: string; name: string; checked: boolean }[]; effort: boolean; more: boolean; barShown: boolean; focus: string };
+  const read = async () => await rp.evaluate(panel, menuState) as MenuState; // SAFETY: menuState 返回上面这个形状。
+  const escape = async () => {
+    for (const type of ["keyDown", "keyUp"] as const) await rp.cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, panel);
+    await sleep(350);
+  };
+
   await rp.click(panel, "#think-chip");
-  await sleep(350);
-  await rp.click(panel, "#think-menu .think-more");
-  await sleep(600);
-  await rp.screenshot(panel, join(artifacts, "models.png"));
-  evidence.models = await rp.evaluate(panel, `(() => { const p = document.querySelector("#model-popover"); const r = p.getBoundingClientRect(); const c = document.querySelector("#think-chip").getBoundingClientRect(); return { open: !p.hidden, aboveChip: r.bottom <= c.top && c.top - r.bottom < 40, chipShown: getComputedStyle(document.querySelector("#composer-bar-inner")).visibility === "visible", searchFocused: document.activeElement?.classList.contains("model-search-input") === true }; })()`);
-  await rp.evaluate(panel, `(document.querySelector("#model-popover [role=option][aria-selected=true]") ?? document.querySelector("#model-popover [role=option]")).click(), true`);
-  await sleep(400);
+  await sleep(450);
+  const first = await read();
+  evidence.firstLevel = first;
+  await rp.screenshot(panel, join(artifacts, "menu.png"));
+
+  if (first.more) {
+    await rp.click(panel, "#think-menu .mm-more");
+    await sleep(450);
+    await rp.typeText(panel, "sol");
+    await sleep(400);
+    const all = await read();
+    await rp.screenshot(panel, join(artifacts, "more.png"));
+    await escape();
+    const back = await read();
+    await escape();
+    const closed = await read();
+    evidence.moreModels = { level: all.level, focus: all.focus, rows: all.rows.map((row) => row.name), allMatch: all.rows.length > 0 && all.rows.every((row) => /sol/i.test(`${row.id} ${row.name}`)), escBack: back.open && back.level === "main", escClose: !closed.open && closed.focus === "think-chip" };
+  }
+
+  // 换一个模型再换回来：两步到位，开关跟着宿主的确认换名字。
+  const original = first.rows.find((row) => row.checked);
+  const other = first.rows.find((row) => !row.checked);
+
+  if (original && other) {
+    await rp.click(panel, "#think-chip");
+    await sleep(350);
+    await rp.click(panel, `#think-menu .mm-main .mm-row[data-model="${other.id}"]`);
+    evidence.switched = await until(async () => { const text = await chipText(); return text.startsWith(other.name) ? text : undefined; }, 15_000, "开关换成新模型名");
+    await rp.click(panel, "#think-chip");
+    await sleep(350);
+    await rp.click(panel, `#think-menu .mm-main .mm-row[data-model="${original.id}"]`);
+    evidence.switchedBack = await until(async () => { const text = await chipText(); return text.startsWith(original.name) ? text : undefined; }, 15_000, "开关换回原模型名");
+  }
 
   await pick("深入");
   evidence.chipDeep = await chipText();
@@ -116,7 +156,14 @@ try {
   evidence.effortFast = effortsOf("负责人是谁");
 
   assert.match(String(evidence.chipStart), /· 快/, "一开始是「快」");
-  assert.deepEqual(evidence.models, { open: true, aboveChip: true, chipShown: true, searchFocused: true }, "点「换模型…」后，模型列表在开关上方打开、可以直接搜索，输入框不收起");
+  const firstLevel = evidence.firstLevel as MenuState;
+  assert.ok(firstLevel.open && firstLevel.aboveChip && firstLevel.barShown && firstLevel.focus === "menu", `菜单在开关上方打开，输入框不收起，焦点进菜单：${JSON.stringify(firstLevel)}`);
+  assert.ok(firstLevel.rows.filter((row) => row.checked).length === 1 && firstLevel.effort, `第一层有模型（当前的打勾）和思考开关：${JSON.stringify(firstLevel.rows)}`);
+  assert.ok(firstLevel.rows.length >= 2, `第一层至少有两个模型可选：${JSON.stringify(firstLevel.rows)}`);
+  assert.ok(evidence.menuOpenAfterDeep === true && evidence.menuOpenAfterFast === true, "切思考时菜单不关");
+
+  if (firstLevel.more) assert.deepEqual({ ...(evidence.moreModels as JsonRecord), rows: undefined }, { level: "all", focus: "search", rows: undefined, allMatch: true, escBack: true, escClose: true }, `更多模型在同一个菜单里打开、能搜，Esc 先返回再关上：${JSON.stringify(evidence.moreModels)}`);
+  assert.ok(evidence.switched && evidence.switchedBack, "选别的模型后开关换名字，换回来也一样");
   assert.match(String(evidence.chipDeep), /· 深入/, "选了深入，按钮写深入");
   assert.ok((evidence.effortDeep as string[]).length > 0 && (evidence.effortDeep as string[]).every((e) => e === "high"), `选深入后用高档：${JSON.stringify(evidence.effortDeep)}`);
   assert.ok((evidence.effortFast as string[]).length > 0 && (evidence.effortFast as string[]).every((e) => e === "low"), `选快后用低档：${JSON.stringify(evidence.effortFast)}`);
