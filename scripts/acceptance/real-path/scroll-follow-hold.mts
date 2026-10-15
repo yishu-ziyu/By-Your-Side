@@ -113,11 +113,14 @@ try {
     assert.ok(moved >= 30, `${label}：真的往上滚了（${moved}px）`);
     assert.ok(after.every((s) => s.top === after[0]!.top && s.gap >= moved - 1), `${label}：停在原处，不被拉回底部：${held.map((s) => `${s.t}ms top=${s.top} gap=${s.gap}`).join(" | ")}`);
     assert.ok(after.every((s) => s.button), `${label}：“回到底部”圆钮出来`);
+    const newDot = `(() => { const b = document.querySelector("#to-bottom"); const d = b.querySelector(".to-bottom-dot"); return { hasNew: b.classList.contains("has-new"), dot: d ? new DOMMatrix(getComputedStyle(d).transform).a : 0 }; })()`;
+    evidence[`newDot-${label}`] = await until(async () => { const r = await rp.evaluate(panel, newDot); return r.hasNew && r.dot > 0.9 ? r : undefined; }, 3_000, `${label}：下面写出新内容，圆钮带上小点`, 50);
 
     evidence[`buttonHit-${label}`] = await rp.evaluate(panel, `(() => { const b = document.querySelector("#to-bottom"), r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
       return { rect: [r.x, r.y, r.width, r.height].map(Math.round), hit: hit ? hit.tagName + "#" + hit.id + "." + hit.className : null, ok: !!hit && b.contains(hit) }; })()`);
     await wheel(100_000);
     await followUntilDone(`${label} 滚回底部`, 1);
+    assert.equal((await rp.evaluate(panel, newDot)).hasNew, false, `${label}：回到底部后小点消失`);
     await rp.screenshot(panel, join(artifacts, `followed-${label}.png`));
   }
 
