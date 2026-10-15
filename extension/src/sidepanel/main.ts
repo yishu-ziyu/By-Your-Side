@@ -493,6 +493,9 @@ let pendingAsk: PendingAsk | null = null;
 
 let selectedConversationId = "default";
 
+/** 这个侧栏页面自己看着的会话：刷新后回到它，不跟别的侧栏页面走。关掉侧栏再开是新页面，跟最近操作的那个侧栏。 */
+const PANEL_CONVERSATION_KEY = "sideagent-panel-conversation";
+
 let conversationReady = false;
 
 let transportConnected = false;
@@ -1099,6 +1102,8 @@ function selectConversation(id: string, notify = true): void {
     if (conversationReady) saveDraft();
     selectedConversationId = id;
     conversationReady = true;
+
+    try { sessionStorage.setItem(PANEL_CONVERSATION_KEY, id); } catch { /* 记不住只影响刷新后回到哪个会话 */ }
     sendBtn.disabled = false;
 
     if (preserveInitialDraft) saveDraft();
@@ -6310,8 +6315,25 @@ function connect(): void {
   const sync: Extract<PanelToBg, { kind: "sync" }> = { kind: "sync", afterSeq: lastHistorySeq };
 
   if (conversationReady) sync.conversationId = selectedConversationId;
+  else {
+    const remembered = rememberedConversation();
+
+    if (remembered) sync.conversationId = remembered;
+  }
   p.postMessage(sync satisfies PanelToBg);
 }
+
+function rememberedConversation(): string | undefined {
+  try { return sessionStorage.getItem(PANEL_CONVERSATION_KEY) ?? undefined; } catch { return undefined; }
+}
+
+// 用户点进哪个侧栏，按住说话、右键菜单就跟哪个侧栏的会话。
+function reportFocus(): void {
+  try { port?.postMessage({ kind: "focus" } satisfies PanelToBg); } catch { /* 端口刚断，重连时会再报自己的会话 */ }
+}
+
+window.addEventListener("focus", reportFocus);
+document.addEventListener("pointerdown", reportFocus, true);
 
 function watchPort(): void {
   portWatch ??= setInterval(pingPort, PORT_PING_MS);
