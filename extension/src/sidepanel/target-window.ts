@@ -28,10 +28,17 @@ export async function targetWindowId(): Promise<number | undefined> {
   return (await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null))?.id;
 }
 
-/** 代替 chrome.tabs.query({ active: true, currentWindow: true })。 */
-export async function activeTargetTab(): Promise<chrome.tabs.Tab | undefined> {
-  const windowId = await targetWindowId();
-  const [tab] = await chrome.tabs.query(windowId == null ? { active: true, currentWindow: true } : { active: true, windowId });
+const panelPage = chrome.runtime.getURL("sidepanel.html");
 
-  return tab;
+/**
+ * 用户正在看的那个标签页。lastFocused：侧栏里按最近获得焦点的窗口找，和后台给模型带页面时的找法一致。
+ * 会话小窗口里只看来源窗口；一个普通窗口都没开时没有可看的页，不拿小窗口自己顶替。
+ */
+export async function activeTargetTab(opts: { lastFocused?: boolean } = {}): Promise<chrome.tabs.Tab | undefined> {
+  const windowId = isPopout ? await targetWindowId() : opts.lastFocused ? undefined : await targetWindowId();
+
+  if (isPopout && windowId == null) return undefined;
+  const [tab] = await chrome.tabs.query(windowId == null ? { active: true, lastFocusedWindow: true } : { active: true, windowId });
+
+  return tab?.url?.split(/[?#]/)[0] === panelPage ? undefined : tab;
 }

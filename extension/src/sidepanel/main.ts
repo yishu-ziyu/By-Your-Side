@@ -5705,7 +5705,7 @@ const resumeEntry = new ResumeEntry({
   sendResume: (request) => send({ type: "task_action", request }),
   getContext: async () => {
     try {
-      const tab = await activeTargetTab();
+      const tab = await activeTargetTab({ lastFocused: true });
 
       if (!tab?.id) return null;
 
@@ -6631,7 +6631,7 @@ function activeTabId(): Promise<number | null> {
   if (typeof chrome === "undefined" || !chrome.tabs?.query) return Promise.resolve(null);
 
   // 先看这个页面要操作的窗口，再兜底任一活动标签页。
-  return activeTargetTab()
+  return activeTargetTab({ lastFocused: true })
     .then((tab) => tab ?? chrome.tabs.query({ active: true }).then(([fallback]) => fallback).catch(() => undefined))
     .then((tab) => tab?.id ?? null)
     .catch(() => null);

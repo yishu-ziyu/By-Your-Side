@@ -6,6 +6,7 @@
  *   丁 另开一个普通窗口 W2，关掉源窗口；用户点进 P 再问：这次的页面和点击落在 W2 的网页上。
  *   戊 刷新 P：仍是这个会话的问答。
  *   己 网页里的内容脚本从路径是 /sidepanel.html?… 的网页连侧栏端口：后台不理它（收不到会话清单），确认卡端口被断开。
+ *   庚 普通窗口全关掉，只剩 P；在 P 里让助手打开一个网址：P 还是会话页，没被换成网页。
  * 失败方式：P 打开后是新会话；用户在 P 里时，助手读、点的是 P 自己（扩展页）而不是源窗口的网页；
  *   源窗口关掉后助手还指着已经关掉的窗口；刷新 P 换了会话；伪造路径的网页能连上侧栏端口。
  * 产物：out/acceptance/real-path/<时间>-conversation-popout/*.png、result.json。
@@ -23,9 +24,9 @@ const artifacts = process.env.OUT ?? join(REPO, "out/acceptance/real-path", `${n
 
 await mkdir(artifacts, { recursive: true });
 
-const ASK = { first: "甲先聊一句", click: "丙点一下按钮", after: "丁再点一下按钮" };
+const ASK = { first: "甲先聊一句", click: "丙点一下按钮", after: "丁再点一下按钮", alone: "庚打开练习页" };
 
-const ANSWER = { first: "甲答完了。", click: "丙点好了。", after: "丁点好了。" };
+const ANSWER = { first: "甲答完了。", click: "丙点好了。", after: "丁点好了。", alone: "庚说完了。" };
 
 const PAGE = { source: "源窗口的练习页", other: "另一个窗口的练习页" };
 
@@ -37,6 +38,7 @@ const model = await startScriptedModel([
   { match: ASK.after, steps: [{ tool: { name: "tabs", args: switchArgs } }, { tool: { name: "click", args: { target: "loc=css:#bump" } } }, { text: ANSWER.after }] },
   { match: ASK.click, steps: [{ tool: { name: "click", args: { target: "loc=css:#bump" } } }, { text: ANSWER.click }] },
   { match: ASK.first, steps: [{ text: ANSWER.first }] },
+  { match: ASK.alone, steps: [{ tool: { name: "navigate", args: { url: "http://127.0.0.1:9/alone" } } }, { text: ANSWER.alone }] },
 ], undefined, payload => {
   for (const message of payload.messages ?? []) {
     const text = typeof message.content === "string" ? message.content : (message.content ?? []).map(part => part.text ?? "").join("");
@@ -181,6 +183,17 @@ try {
   assert.ok(probe.result?.value?.url.includes("/sidepanel.html?"), "己：伪造网页的路径是 /sidepanel.html?…");
   assert.deepEqual(probe.result?.value?.seen, [], "己：伪造网页连侧栏端口收不到任何消息");
   assert.equal(probe.result?.value?.confirmCut, true, "己：伪造网页的确认卡端口被断开");
+
+  evidence.stage = "庚";
+  await rp.cdp.send("Target.closeTarget", { targetId: forgedTarget }).catch(() => undefined);
+  await sw(`chrome.windows.getAll({ windowTypes: ["normal"] }).then(ws => Promise.all(ws.map(w => chrome.windows.remove(w.id)))).then(() => true)`);
+  await until(async () => await sw(`chrome.windows.getAll({ windowTypes: ["normal"] }).then(ws => ws.length === 0)`) || undefined, 10_000, "庚：普通窗口全关掉");
+  await send(p, ASK.alone);
+  await shows(p, ANSWER.alone, "庚：P 看到回答", 60_000);
+  const alone = await rp.evaluate(p, `({ path: location.pathname, pill: document.querySelector("#tab-title-text")?.textContent ?? "" })`) as { path: string; pill: string };
+  evidence.alone = alone;
+  assert.equal(alone.path, "/sidepanel.html", "庚：P 还是会话页，没被换成网页");
+  assert.ok(!alone.pill.includes("sidepanel"), "庚：页面标牌不指着 P 自己");
 
   evidence.stage = "done";
 } catch (caught) {
