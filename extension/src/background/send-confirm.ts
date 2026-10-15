@@ -1,13 +1,15 @@
 /**
  * 点「发送」前停下，在网页上问用户（docs/evals/20261009-send-confirm.md R1）。
- * 发出去的消息收不回来，所以只有用户在网页上点「发送」才放行；「不发」、停、接管、离开网页、2 分钟没理都不点。
+ * 发出去的消息收不回来，所以只有用户点「发送」才放行；「不发」、停、接管、离开网页、2 分钟没理都不点。
  * 确认框画在网页的 closed shadow 里，带 overlay 标记：助手的点击落在上面会被 assertNotOwnOverlay 拒绝。
+ * 侧栏同时出一张确认卡（docs/evals/20261015-panel-send-confirm.md），两边回答的是同一个等待。
  */
 import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
 import { isSendLabel } from "../shared/mark-actions.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
 import { bringForwardForUser } from "./foreground.js";
-import type { GuideWait, HeldReason } from "../../../shared/protocol.js";
+import { SEND_CONFIRM_PANEL_PORT } from "../relay.js";
+import type { GuideWait, HeldReason, SendConfirmView } from "../../../shared/protocol.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
 export const SEND_CONFIRM_MS = 120_000;
@@ -26,11 +28,11 @@ export interface SendGuard {
   task: string | undefined;
   /** 停、接管、控制轮次变了：等确认要马上结束。 */
   cancelled(): boolean;
-  /** 告诉宿主这次调用正在等用户（放宽期限）或已经不等了（恢复普通期限）。guide：教学这一步在等用户点（guide_step 也用这个钩子）。 */
-  waiting(on: boolean, guide?: GuideWait): void;
+  /** 告诉宿主这次调用正在等用户（放宽期限）或已经不等了（恢复普通期限）。guide：教学这一步在等用户点（guide_step 也用这个钩子）；send：侧栏确认卡的内容和结局。 */
+  waiting(on: boolean, guide?: GuideWait, send?: SendConfirmView): void;
 }
 
-type Outcome = "send" | "decline" | "stopped" | "left" | "timeout";
+type Outcome = NonNullable<SendConfirmView["outcome"]>;
 
 /** 每种「用户没让发」都带这句：别让助手改按回车或点别的按钮把它发出去。 */
 const NO_OTHER_WAY = "不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。";
@@ -69,6 +71,37 @@ chrome.runtime.onConnect.addListener(port => {
   waitingPorts.delete(port.name);
   waiting.take(port);
 });
+
+/** 正在等的确认（按这次等待的 id）：侧栏的回答交给同一个等待。 */
+const panelAnswers = new Map<string, (choice: "send" | "decline") => void>();
+
+const panelPorts = new Set<chrome.runtime.Port>();
+
+/** 侧栏据此决定确认卡上有没有按钮：重开侧栏、回放历史时，只有还在等的那张能点。 */
+function publishPending(): void {
+  const pending = [...panelAnswers.keys()];
+
+  for (const port of panelPorts) port.postMessage({ pending });
+}
+
+chrome.runtime.onConnect.addListener(port => {
+  if (port.name !== SEND_CONFIRM_PANEL_PORT) return;
+
+  // 只认扩展自己的侧栏页：网页和内容脚本的 sender.url 是网页地址。
+  if (port.sender?.id !== chrome.runtime.id || port.sender.url !== chrome.runtime.getURL("sidepanel.html")) { port.disconnect(); return; }
+  panelPorts.add(port);
+  port.onDisconnect.addListener(() => panelPorts.delete(port));
+  // 侧栏只回 id 和选择；按钮是否真由用户点击，由侧栏判（isTrusted），这里只认还在等的 id。
+  port.onMessage.addListener((message: { id?: unknown; choice?: unknown }) => {
+    if (typeof message?.id !== "string" || (message.choice !== "send" && message.choice !== "decline")) return;
+    panelAnswers.get(message.id)?.(message.choice);
+  });
+  port.postMessage({ pending: [...panelAnswers.keys()] });
+});
+
+function hostOf(url: string | undefined): string {
+  try { return url ? new URL(url).host : ""; } catch { return ""; }
+}
 
 /** 在页面 ISOLATED world 里画确认框；序列化进页面，必须自包含。 */
 /** 确认框上写的网站、按钮名、内容都由程序从网页读出（R2），不用助手的话；页面文字只用 textContent 放进去。 */
@@ -152,10 +185,13 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
 
   if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。");
   const shown = port;
-  guard.waiting(true);
+  const view: SendConfirmView = { id: crypto.randomUUID(), host: hostOf(shown.sender?.url), label: label.trim(), ...(content ? { content } : {}) };
   const cleanups: Array<() => void> = [];
 
   const outcome = await new Promise<Outcome>(done => {
+    panelAnswers.set(view.id, done);
+    publishPending();
+    guard.waiting(true, undefined, view);
     shown.onMessage.addListener((message: { choice?: unknown }) => {
       if (message?.choice === "send" || message?.choice === "decline") done(message.choice);
     });
@@ -174,10 +210,13 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
   });
 
   for (const cleanup of cleanups) cleanup();
+  panelAnswers.delete(view.id);
+  publishPending();
   shown.disconnect();
-  guard.waiting(false);
+  const final: Outcome = outcome === "send" && guard.cancelled() ? "stopped" : outcome;
+  guard.waiting(false, undefined, { ...view, outcome: final });
 
-  if (outcome === "send" && guard.cancelled()) throw notSent(TEXT.stopped, "stopped");
+  if (outcome === "send" && final === "stopped") throw notSent(TEXT.stopped, "stopped");
 
   if (outcome === "send") return true;
 

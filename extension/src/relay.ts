@@ -9,6 +9,9 @@ import type { NudgeCard } from "./shared/nudge.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
 
+/** 侧栏发送确认卡的端口（background/send-confirm.ts）：后台推还在等的确认 id，侧栏回 { id, choice }。 */
+export const SEND_CONFIRM_PANEL_PORT = "send-confirm-panel";
+
 /** 伴随进程连接状态（background 维护，面板只展示）。 */
 export type ConnState = "connecting" | "connected" | "disconnected";
 
