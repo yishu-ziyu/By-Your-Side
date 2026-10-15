@@ -1867,7 +1867,8 @@ return;}
   private reserveCorrection(text:string,attachments?:Attachment[]):CorrectionRecord{
     const record={id:randomUUID(),input:null,text,...(attachments?.length?{attachments}:{})};
     this.pendingCorrections.push(record);
-    this.controlEpoch += 1;
+    // 开工中还没有旧计划的工具在写；这时升 epoch，开工检查会把补充当成停止。
+    if (this.starting === null) this.controlEpoch += 1;
     // Ordered before the acceptance receipt: invalidate writes already queued at the extension.
     this.callbacks.setStatus("running");
 
