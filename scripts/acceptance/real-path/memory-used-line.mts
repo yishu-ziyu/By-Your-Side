@@ -21,7 +21,8 @@
  *    不出这一行。假通过：少发了记忆所以没点名 → 两种情况都核对请求原文里两条都在。
  *    没有回答（模型出错）的一轮：这一行不单独悬在消息流里 → 核对这一轮确实出过错、没有回答，且最后一条用户消息之后没有这一行。
  * #287 有效期内的过往任务（别的网站订的会议室）照常发给模型，但只在这句话和它对得上时点名：新会话问笔记本不出这一行，
- *    问那天的会议室才点名它。假通过：没把它发给模型所以没点名 → 两轮都核对请求原文里有它。
+ *    问那天的会议室、问「上次订的」才点名它。假通过：没把它发给模型所以没点名 → 每轮都核对请求原文里有它；
+ *    没出回答所以没有这一行 → 先核对这一轮有回答。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -69,6 +70,9 @@ const ASK_NOTEBOOK = `${ASK}，这款笔记本电脑续航怎么样`;
 
 /** 和订会议室那件事共有「会议室」。 */
 const ASK_MEETING = `${ASK}，那天会议室能坐几个人`;
+
+/** 和订会议室那件事没有共同的词，但在问过往（「上次」）。 */
+const ASK_LAST_TIME = `${ASK}，我上次订的那个是几点`;
 
 const artifacts = join(REPO, "out/acceptance/memory-used-line");
 
@@ -264,6 +268,9 @@ const lastLine = async (): Promise<LineView> => (await rp.evaluate(panel, `(() =
   };
 })()`)) as LineView;
 
+/** 最后一条用户消息之后有没有脚本模型的回答。 */
+const hasAnswer = async () => await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll("#messages > *")]; const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true); return all.slice(lastUser + 1).some((n) => n.matches(".msg.assistant") && n.textContent.includes("普通商品页")); })()`) === true;
+
 /** 真点这一行里某条的某个按钮（先展开）。 */
 async function clickLine(id: string, label: string) {
   if ((await lastLine())?.listHidden) {
@@ -404,7 +411,7 @@ try {
   await newConversation();
   const other = has(await turn(ASK_OTHER));
   const otherLine = await lastLine();
-  const answered = await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll("#messages > *")]; const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true); return all.slice(lastUser + 1).some((n) => n.matches(".msg.assistant") && n.textContent.includes("普通商品页")); })()`);
+  const answered = await hasAnswer();
   check("R1", "问无关的话：有回答，回答下方没有这一行", otherLine === null && answered === true, { line: otherLine, answered });
   check("R1", "问无关的话：两条记忆照常发给模型", other.email && other.lang, other);
   await shot("R1-unrelated");
@@ -422,13 +429,19 @@ try {
   const notebook = await turn(ASK_NOTEBOOK);
   const notebookLine = await lastLine();
   check("#287", "新会话问笔记本：订会议室那件事照常发给模型", notebook.includes(DATED_DONE), { sent: notebook.includes(DATED_DONE) });
-  check("#287", "新会话问笔记本：回答下没有「按上次做过的…」", notebookLine === null, { line: notebookLine });
+  const notebookAnswered = await hasAnswer();
+  check("#287", "新会话问笔记本：有回答，回答下没有「按上次做过的…」", notebookAnswered && notebookLine === null, { answered: notebookAnswered, line: notebookLine });
   await shot("287-unrelated");
   await newConversation();
   const meeting = await turn(ASK_MEETING);
   const meetingLine = await lastLine();
   check("#287", "问那天的会议室：请求里有它，回答下点名「按上次做过的「已成功预订…」」", meeting.includes(DATED_DONE) && /^按上次做过的「已成功预订/.test(meetingLine?.text ?? "") && meetingLine?.count === 1, { line: meetingLine?.text ?? null, count: meetingLine?.count ?? null });
   await shot("287-related");
+  await newConversation();
+  const lastTime = await turn(ASK_LAST_TIME);
+  const lastTimeLine = await lastLine();
+  check("#287", "问「我上次订的那个是几点」：请求里有它，回答下点名「按上次做过的「已成功预订…」」", lastTime.includes(DATED_DONE) && /^按上次做过的「已成功预订/.test(lastTimeLine?.text ?? "") && lastTimeLine?.count === 1, { line: lastTimeLine?.text ?? null, count: lastTimeLine?.count ?? null });
+  await shot("287-asked-past");
 } catch (error) {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(fatal);

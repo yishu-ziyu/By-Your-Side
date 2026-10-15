@@ -8,7 +8,7 @@ import { ReplaceTargetChanged, type MemoryQuery, type MemoryStore } from "./memo
 import { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
-import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
+import { ASKED_ABOUT_PAST, MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
 import { isRelevantMemory } from "./memory-relevance.js";
 import { dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
 import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
@@ -896,7 +896,7 @@ export class MemoryRuntime {
   /**
    * 决定点 B：按纯代码规则挑这一轮带的记忆（见 memory-context.ts），写一条决定记录，给带上的记忆记一次「用过」。
    * 「用了」事件只点名和这次任务对得上的：每轮都带的「关于你」、到处适用的做事方法，以及不论网站和会话都带的有效期内的事，
-   * 要和这句话有共同的词才列出（过往任务只比原话，不比摘要）；其余带上的照常列出。模型收到的记忆不受影响。没有可点名的就不发，侧栏不出这一行。
+   * 要和这句话有共同的词才列出（过往任务比原话和「做成了什么」，不比摘要）；这句话在问过往时，有效期内的事照常列出；其余带上的照常列出。模型收到的记忆不受影响。没有可点名的就不发，侧栏不出这一行。
    */
   private async selectContext(turn: ActiveUserTurn): Promise<MemoryContextSelection | null> {
     const hostname = memoryHostOfUrl(turn.query.url);
@@ -914,9 +914,10 @@ export class MemoryRuntime {
     if (selection.tasks.length) await this.options.history?.markUsed(selection.tasks.map(({ task }) => task.id), Date.now()).catch(() => undefined);
     selection.entries = selection.entries.flatMap(item => (current.has(item.entry.id) ? [{ ...item, entry: current.get(item.entry.id)! }] : []));
     this.usedThisTurn = selection.entries.map(item => item.entry);
-    const named = (rule: MemoryContextRule, text: string) => (rule !== "always" && rule !== "in-validity") || isRelevantMemory(text, turn.text);
+    const askedAboutPast = ASKED_ABOUT_PAST.test(turn.text);
+    const named = (rule: MemoryContextRule, text: string) => (rule !== "always" && rule !== "in-validity") || (rule === "in-validity" && askedAboutPast) || isRelevantMemory(text, turn.text);
     const shown = selection.entries.filter(({ entry, rule }) => named(rule, entry.text)).map(item => item.entry);
-    const shownTasks = selection.tasks.filter(({ task, rule }) => named(rule, [task.goal, ...task.revisions].join("\n"))).map(item => item.task);
+    const shownTasks = selection.tasks.filter(({ task, rule }) => named(rule, [task.goal, ...task.revisions, task.done ?? ""].join("\n"))).map(item => item.task);
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);
 
     this.onRecord?.("memory_context", {

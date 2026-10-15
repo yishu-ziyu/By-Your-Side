@@ -21,6 +21,12 @@ const BOILERPLATE_TERMS = new Set([
   "整理", "帮我", "请用", "请你", "给我", "以后", "今后", "下次", "记住", "使用", "所有", "会话", "用于", "可以", "需要", "时候",
 ]);
 
+/**
+ * Request filler. A Han run is split at these before n-grams are taken: as overlapping n-grams they
+ * would make any two requests that both say 「帮我查一下」 or 「看一下这个」 look related.
+ */
+const FILLER = /帮我|请你|麻烦|一下|一看|一查|看看|这个|那个|这款|这页|这里|那里|怎么|怎样|什么|可以|一个/gu;
+
 /** Request verbs, not task objects. Shared action words alone never match an experience. */
 const ACTION_TERMS = new Set([
   // Chinese request verbs, at the same 2-4 character granularity as the term tokenizer.
@@ -71,7 +77,7 @@ function memoryTerms(text: string): Set<string> {
 
   // Split scripts before tokenizing: a project number must not swallow adjacent
   // Chinese words into one unmatchable token. Common request verbs are not topics.
-  for (const word of normalized.match(/[\p{Script=Han}]+/gu) ?? []) {
+  for (const word of (normalized.match(/[\p{Script=Han}]+/gu) ?? []).flatMap((run) => run.split(FILLER))) {
     for (let size = 2; size <= Math.min(4, word.length); size += 1) {
       for (let i = 0; i + size <= word.length; i += 1) {
         const term = word.slice(i, i + size);
