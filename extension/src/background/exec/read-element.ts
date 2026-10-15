@@ -6,15 +6,15 @@ import { axBackendNodeFor, isAxRef, snapshotRefKind } from "../axstate.js";
 import { parseTarget as sharedParseTarget, resolveArgs, resolveTargetSelector } from "../../shared/target.js";
 import { sendCommand } from "../debugger.js";
 import { assertNoPendingDialog } from "../page-events.js";
-import { getWorkingTabId, resolveReadableTab } from "../state.js";
+import { getWorkingTabId, resolveReadableTab, resolveTabForRead } from "../state.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 
 const MAX_ELEMENT_CHARS = 1_000_000;
 
 export type ReadElementResult = ToolContract["read_element"]["data"];
 
-/** secret、layoutText 只在扩展内部用（fill 的 from 据前者拒读、取后者的文字），不出现在 read_element 的回执里。 */
-type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { secret?: true; layoutText?: string };
+/** secret、layoutText、unrendered 只在扩展内部用（fill 的 from 据它们拒读或取字），不出现在 read_element 的回执里。 */
+type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { secret?: true; layoutText?: string; unrendered?: true };
 
 type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 
@@ -311,7 +311,14 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     if(secretField)data.secret=true;
 
     // 按渲染布局取字（innerText）：块元素之间有换行，隐藏的不取。会触发排版，所以只在 fill 的 from 要它时才算。
-    if(layout)data.layoutText=element.nodeType===3?textContent:String(el.innerText??textContent);
+    // 元素自己没渲染时 innerText 退回 textContent，会带上隐藏的字和脚本、样式，所以这时不取字。
+    if(layout){
+      const box=element.nodeType===3?element.parentElement:el;
+      const rendered=!!box&&box.getClientRects().length>0&&(typeof box.checkVisibility!=='function'||box.checkVisibility({visibilityProperty:true}));
+
+      if(rendered)data.layoutText=element.nodeType===3?textContent:String(el.innerText??textContent);
+      else data.unrendered=true;
+    }
 
     if(properties.length)data.properties=values;
 
@@ -496,6 +503,7 @@ export async function readElement(
     const result = await readElementInner(params, executionKey, checkCurrent);
     delete result.secret;
     delete result.layoutText;
+    delete result.unrendered;
 
     return result;
   } catch (error) {
@@ -506,6 +514,7 @@ export async function readElement(
 /**
  * fill 的 from：读出要原样写进另一栏的文字，不经过模型。输入框、下拉框取 displayValue，富文本编辑器取 editableText（同 read_element），
  * 其余按渲染布局取 innerText：网页回答多是一段段 <p>、<li>，textContent 和 visibleText 会把段落挤成一行。快照里的 text 行是文字节点，取它自己的文字。去掉首尾空白。
+ * 来源元素本身没显示时拒读。读来源不改工作标签页（resolveTabForRead），写入仍落在原来要填的那一页。
  * 密码、验证码、卡号这类栏按 read_element 的同一条规则拒读：它们的值从不读出。
  */
 export async function readFillSource(source: {tabId?: number; target: string}, executionKey: string = LEAD_SESSION_ID): Promise<string> {
@@ -518,6 +527,8 @@ export async function readFillSource(source: {tabId?: number; target: string}, e
   }
 
   if (data.secret) throw new Error('PERMISSION_DENIED: from 指向密码、验证码或卡号这类敏感栏，不读取它的内容；填写未执行。');
+
+  if (data.unrendered) throw new Error('NOT_READY: 来源元素不可见（没有显示在页面上，或在收起的区域里），不读取它的文字；填写未执行。');
   const raw = ['input', 'textarea', 'select'].includes(data.tagName) ? data.properties?.displayValue
     : data.editableText ?? data.layoutText;
 
@@ -533,8 +544,9 @@ async function readElementInner(
   params: ToolContract["read_element"]["params"],
   executionKey: string = LEAD_SESSION_ID,
   checkCurrent:()=>void=()=>{},
-  layout = false,
-): Promise<ReadElementResult & { secret?: true; layoutText?: string }> {
+  /** fill 的 from：多读布局文字和可见性，且读来源不改工作标签页。 */
+  fillSource = false,
+): Promise<ReadElementResult & { secret?: true; layoutText?: string; unrendered?: true }> {
   const readback=params.readback;
 
   const check=()=>{
@@ -558,7 +570,7 @@ async function readElementInner(
   check();
 
   if (tabId == null) throw new Error("当前执行成员没有工作标签页；请提供需要读取的 tabId");
-  const tab = await resolveReadableTab(tabId, executionKey);
+  const tab = await (fillSource ? resolveTabForRead : resolveReadableTab)(tabId, executionKey);
   check();
 
   if (tab.id == null) throw new Error(`标签页 ${tabId} 已关闭`);
@@ -588,7 +600,7 @@ async function readElementInner(
     if (target.kind === 'xpath' || target.kind === 'text' || target.kind === 'role' || target.kind === 'href') {
       const kind = target.kind;
       const selector = target.selector ?? "";
-      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind, selector }, properties, check, layout), check);
+      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind, selector }, properties, check, fillSource), check);
 
       const read: ElementRead = {data:observed.value};
 
@@ -599,7 +611,7 @@ async function readElementInner(
 
     if (target.kind === 'css') {
       // CSS 也走统一 resolver（open shadow + 同源 frame），避免 readInPage 的浅 querySelectorAll。
-      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check, layout), check);
+      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check, fillSource), check);
 
       const read: ElementRead = {data:observed.value};
 
@@ -612,7 +624,7 @@ async function readElementInner(
       const ref = target.ref!;
 
       if (isAxRef(tabId, ref)) {
-        const observed=await withObservedDocumentIdentity(tabId,executionKey,()=>readAxRef(tabId,ref,properties,readback,check,layout),check);
+        const observed=await withObservedDocumentIdentity(tabId,executionKey,()=>readAxRef(tabId,ref,properties,readback,check,fillSource),check);
         check();
 
         const read: ElementRead = {data:observed.value};
@@ -627,7 +639,7 @@ async function readElementInner(
       if (snapshotRefKind(tabId) !== 'dom') throw new Error(`ref @${ref} 已过期或不属于当前 snapshot；请重新 snapshot 或使用唯一 CSS`);
     }
 
-    return readDom(tabId, target, executionKey, properties,readback,check,layout);
+    return readDom(tabId, target, executionKey, properties,readback,check,fillSource);
   };
 
   if (!params.expect) {

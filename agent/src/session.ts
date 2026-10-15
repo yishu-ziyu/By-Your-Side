@@ -1018,6 +1018,9 @@ if(required.includes(key))candidates.set(key,attachment);
         return {...ids(),status:'failed',reason:'read_identity_or_value_missing'};
       }
 
+      // fill 的 from：要写的文字在扩展里，宿主和模型都没有原文；只报读回的字数，不把页面上的整段文字交给语音模型。
+      if(args.from!==undefined)return {...ids(),status:'observed',content:[{type:'text',text:`The field now holds ${data.value.length} characters; the copied text itself is not shown.`}]};
+
       return {...ids(),status:'observed',content:result.content,matchesExpected:data.value===args.value};
     } catch(error) {
       const message=error instanceof Error?error.message:'';
