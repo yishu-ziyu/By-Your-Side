@@ -37,11 +37,17 @@ const MAX_LINE_TEXT = 200;
 
 const MAX_NAME = 60;
 
-/** 链接和标题的名字是模型要原样转述给用户的（文章标题、条目名）：给到一行的上限，不按 MAX_NAME 截。 */
+/**
+ * 链接和标题的名字是模型要原样转述给用户的（文章标题、条目名）：给到一行的上限，不按 MAX_NAME 截。
+ * 名字是由下面几行文字拼成的（整张卡片包在一个链接里）时仍按 MAX_NAME 截：那些文字各自成行，已经说全了。
+ */
 const FULL_NAME_ROLES = new Set(["link", "heading"]);
 
 /** “在哪一项”最多写几个字。 */
 const ITEM_MAX_CHARS = 40;
+
+/** 整页快照里“在哪一项”合计最多占这么多字（预算的八分之一）：再多就挤掉页面本身的行了，后面的项不再写。 */
+const MAX_NOTE_CHARS = 3_000;
 
 /** 行尾的“在哪一项”：快照和动作后的变化摘要用同一个写法。 */
 export function itemNote(text: string): string {
@@ -101,7 +107,7 @@ function staticTextOf(node: AxNodeLite): string | null {
 }
 
 /** 节点自身是否值得占一行（不含 ref 前缀）。 */
-function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>): string | null {
+function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, nameMax = MAX_NAME): string | null {
   const role = node.role?.value ?? "";
 
   if (DROP_SUBTREE_ROLES.has(role)) return null;
@@ -123,7 +129,7 @@ function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: Read
 
   const parts: string[] = [role];
 
-  if (name) parts.push(`"${clip(name, FULL_NAME_ROLES.has(role) ? MAX_LINE_TEXT : MAX_NAME)}"${fullPart}`);
+  if (name) parts.push(`"${clip(name, nameMax)}"${fullPart}`);
   const value = node.value?.value;
   const hasValue = value !== undefined && value !== null && value !== "";
   const range = node.backendDOMNodeId === undefined ? undefined : inputs.get(node.backendDOMNodeId);
@@ -187,7 +193,7 @@ const FIELD_ROLES = new Set(["textbox", "searchbox", "combobox"]);
  * 按预算渲染：先保下全部 ref 行的空间，再按文档顺序填文本行。
  * 文档顺序不变（模型靠缩进理解结构），只是文本行先被丢弃。
  */
-function renderBudgeted(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[]; kept: AxLine[] } {
+function renderBudgeted(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[]; kept: AxLine[]; droppedRefs: number; droppedText: number } {
   const interactiveCost = entries.reduce((sum, entry) => sum + (entry.interactive ? entry.text.length + 1 : 0), 0);
 
   // 极端情况：页面可交互节点本身就超预算（巨型表格/列表）。此时连 ref 也只能按文档顺序截。
@@ -195,12 +201,12 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
     const kept: AxLine[] = [];
     const keptRefs: number[] = [];
     let used = 0;
-    let cut = false;
+    let droppedRefs = 0, droppedText = 0;
 
     for (const entry of entries) {
       const cost = entry.text.length + 1;
 
-      if (used + cost > budget) { cut = true; continue; }
+      if (used + cost > budget) { if (entry.interactive) droppedRefs++; else droppedText++; continue; }
 
       used += cost;
       kept.push(entry);
@@ -208,13 +214,13 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
       if (entry.ref !== undefined) keptRefs.push(entry.ref);
     }
 
-    return { text: kept.map(entry => entry.text).join("\n"), truncated: cut, keptRefs, kept };
+    return { text: kept.map(entry => entry.text).join("\n"), truncated: droppedRefs + droppedText > 0, keptRefs, kept, droppedRefs, droppedText };
   }
 
   let left = budget - interactiveCost;
   const kept: AxLine[] = [];
   const keptRefs: number[] = [];
-  let dropped = false;
+  let droppedText = 0;
 
   for (const entry of entries) {
     if (entry.interactive) {
@@ -224,26 +230,28 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
       continue;
     }
 
-    if (entry.text.length + 1 > left) { dropped = true; continue; }
+    if (entry.text.length + 1 > left) { droppedText++; continue; }
 
     left -= entry.text.length + 1;
     kept.push(entry);
   }
 
-  return { text: kept.map(entry => entry.text).join("\n"), truncated: dropped, keptRefs, kept };
+  return { text: kept.map(entry => entry.text).join("\n"), truncated: droppedText > 0, keptRefs, kept, droppedRefs: 0, droppedText };
 }
 
 /**
  * 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。
- * items：ref → 它所在那一项的字（itemTexts），写在那一行行尾；只进 text，不进 body，比较前后两次读页不受影响。
+ * items：ref → 它所在那一项（itemTexts），写在那一项第一个控件的行尾；只进 text，不进 body，比较前后两次读页不受影响。
  */
-export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map(), items: ReadonlyMap<number, string> = new Map()): AxTextResult & { entries: AxLine[]; shown: AxLine[] } {
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map(), items: ReadonlyMap<number, ItemNote> = new Map()): AxTextResult & { entries: AxLine[]; shown: AxLine[] } {
   const entries = axTreeLines(nodes, inputs, secret, zeroSize, items);
-  const { text, truncated, keptRefs, kept } = renderBudgeted(entries, budget);
+  const { text, truncated, keptRefs, kept, droppedRefs, droppedText } = renderBudgeted(entries, budget);
+  const recover = "有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)，或用 read_element / js 精确提取";
 
-  const finalText = truncated
-    ? `${text}\n... [truncated，优先保住了全部可交互 ref；文本行超出 ${budget} 字符预算。有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)，或用 read_element / js 精确提取]`
-    : text;
+  const finalText = !truncated ? text
+    : droppedRefs > 0
+      ? `${text}\n... [truncated：这一页超出 ${budget} 字符预算，按文档顺序截掉了后面的 ${droppedRefs + droppedText} 行（其中 ${droppedRefs} 行带 ref），页面后半部分没有给出。${recover}]`
+      : `${text}\n... [truncated，带 ref 的行都在；${droppedText} 行不带 ref 的文本超出 ${budget} 字符预算没有给出。${recover}]`;
 
   return { text: finalText, backendIds: keptRefs, truncated, entries, shown: kept };
 }
@@ -254,10 +262,40 @@ export function renderLines(entries: readonly AxLine[], budget: number): { text:
 }
 
 /** 整棵树按文档顺序转成行，不截断。 */
-function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, zeroSize: ReadonlyMap<number, boolean>, items: ReadonlyMap<number, string>): AxLine[] {
+function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, zeroSize: ReadonlyMap<number, boolean>, items: ReadonlyMap<number, ItemNote>): AxLine[] {
   const byId = new Map<string, AxNodeLite>();
 
   for (const n of nodes) byId.set(n.nodeId, n);
+  // 一项只在它第一个控件的行尾写一次：一项的节点在文档里连成一段，后面同一项的控件紧跟在下面。
+  const noted = new Set<number>();
+  let noteChars = 0;
+  const noteFor = (ref: number): string => {
+    const found = items.get(ref);
+
+    if (!found || noted.has(found.item)) return "";
+    noted.add(found.item);
+    const note = itemNote(found.text);
+
+    if (noteChars + note.length > MAX_NOTE_CHARS) return "";
+    noteChars += note.length;
+
+    return note;
+  };
+  // 名字是否由下面几行文字说全了（这些文字和名字不同，会各自成行）。
+  const textBelowSaysIt = (node: AxNodeLite, name: string): boolean => {
+    const todo = (node.childIds ?? []).flatMap(id => byId.get(id) ?? []);
+
+    for (let seen = 0; todo.length; seen++) {
+      if (seen >= 200) return true;
+      const n = todo.pop()!;
+
+      if (!n.ignored && (n.role?.value ?? "") === "StaticText" && String(n.name?.value ?? "") && String(n.name?.value ?? "") !== name) return true;
+
+      for (const id of n.childIds ?? []) { const child = byId.get(id); if (child) todo.push(child); }
+    }
+
+    return false;
+  };
   const roots = nodes.filter((n) => !n.parentId || !byId.has(n.parentId));
 
   const entries: AxLine[] = [];
@@ -296,7 +334,8 @@ function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRange
     // 零尺寸控件自己的文字（提交按钮的「Go」）也不给 ref：点它落到的是那个零尺寸控件。
     // 原生下拉框和文件框（zero 为 true）照常给 ref 并出行，只标 zero-size：对它们的动作不用坐标。
     const flat = zero === false || (parentFlat && role === "StaticText");
-    const shown = zero === false && (!name || role === "StaticText") ? null : describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs, secret);
+    const nameMax = FULL_NAME_ROLES.has(role) && name.length > MAX_NAME && !textBelowSaysIt(node, name) ? MAX_LINE_TEXT : MAX_NAME;
+    const shown = zero === false && (!name || role === "StaticText") ? null : describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs, secret, nameMax);
     const described = shown !== null && flatSelf ? `${shown} zero-size` : shown;
     const textPayload = staticTextOf(node);
     let childDepth = depth;
@@ -310,8 +349,7 @@ function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRange
 
       if (!repeatedText) {
         const prefix = hasRef ? `[ref=${backendId}] ` : "";
-        const item = hasRef ? items.get(backendId) : undefined;
-        const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}${item ? itemNote(item) : ""}`, interactive: hasRef, body: described, depth, inField };
+        const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}${hasRef ? noteFor(backendId) : ""}`, interactive: hasRef, body: described, depth, inField };
 
         if (hasRef) line.ref = backendId;
         entries.push(line);
@@ -359,8 +397,11 @@ export interface RepeatedItems {
   items: Set<number>;
 }
 
-/** 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算，skip（控件自己）也不算。节点太多（不是一项）返回 null。 */
-function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?: AxNodeLite): string | null {
+/**
+ * 一项里最长的一段文字；控件上的字、可编辑区里的字、无障碍树里藏起来的字不算，skip（控件自己）也不算。节点太多（不是一项）返回 null。
+ * 零尺寸的字（font-size:0 这类）也不算，和快照正文同一条规则：看不见的字不能拿来说是哪一项，取最长的一段时它还会盖过真正的字。
+ */
+function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip: AxNodeLite | undefined, zeroSize: ReadonlyMap<number, boolean>): string | null {
   let best = "";
   const todo = [item];
 
@@ -371,7 +412,7 @@ function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?
 
     if (node === skip || (node !== item && (CONTROL_ROLES.has(role) || node.properties?.some(p => p.name === "editable")))) continue;
 
-    if (role === "StaticText" && !node.ignored) {
+    if (role === "StaticText" && !node.ignored && !(node.backendDOMNodeId !== undefined && zeroSize.get(node.backendDOMNodeId) === false)) {
       const words = String(node.name?.value ?? "").replace(/\s+/g, " ").trim();
 
       if (words.length > best.length) best = words;
@@ -388,7 +429,7 @@ function scanItem(byId: ReadonlyMap<string, AxNodeLite>, item: AxNodeLite, skip?
  * 每个这样的控件，往上找“只包住它自己、不包住同名另一个”的最高一层，那层有字、又不太大，就是它所在的一项。
  * 只用已经读到的无障碍树，不再进页面。
  */
-export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
+export function repeatedItems(nodes: readonly AxNodeLite[], zeroSize: ReadonlyMap<number, boolean> = new Map()): RepeatedItems {
   const byId = new Map<string, AxNodeLite>();
 
   for (const n of nodes) byId.set(n.nodeId, n);
@@ -469,7 +510,7 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
 
         if (!item || item.backendDOMNodeId === undefined) return;
 
-        if (!verdict.has(item.nodeId)) verdict.set(item.nodeId, !!scanItem(byId, item));
+        if (!verdict.has(item.nodeId)) verdict.set(item.nodeId, !!scanItem(byId, item, undefined, zeroSize));
 
         if (!verdict.get(item.nodeId)) continue;
         members.push({ n, item, steps });
@@ -484,7 +525,7 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
     const textAt = (m: { n: AxNodeLite }, k: number) => {
       const at = up(m.n, k);
 
-      return (at ? scanItem(byId, at, m.n) : null) ?? "";
+      return (at ? scanItem(byId, at, m.n, zeroSize) : null) ?? "";
     };
     const othersHaveText = (m: { n: AxNodeLite }, k: number) => {
       const at = up(m.n, k), via = up(m.n, k - 1);
@@ -493,7 +534,7 @@ export function repeatedItems(nodes: readonly AxNodeLite[]): RepeatedItems {
         const child = byId.get(id);
 
         if (!child || child === via) return false;
-        return !!scanItem(byId, child);
+        return !!scanItem(byId, child, undefined, zeroSize);
       });
     };
     const from = new Map<AxNodeLite, number>();
@@ -547,15 +588,21 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
 
   if (!top) return undefined;
 
-  return control ? itemTextIn(byId, top, control, from) : "";
+  return control ? itemTextIn(byId, top, control, from, new Map()) : "";
+}
+
+/** 整页快照里一个控件所在的那一项：哪个节点（同一项只写一次）、写什么字。 */
+export interface ItemNote {
+  item: number;
+  text: string;
 }
 
 /**
- * 整页快照：认出来的每个重复控件 → 它所在那一项的字；分不清的不给。字从同一份节点读，规则同 itemTextOf。
+ * 整页快照：认出来的每个重复控件 → 它所在的那一项；分不清的不给。字从同一份节点读，规则同 itemTextOf。
  * 只给按钮、菜单项、输入框这类控件（CONTROL_ROLES）写，不给链接和表格单元格写：链接所在的“项”常常只是并排的一小串链接，
- * 字是旁边另一个链接的（HN 的 hide 写成“在 229 comments 那一项”，标签链接写成在另一个标签那一项），写了反而误导，还占预算。
+ * 字是旁边另一个链接的，写了反而误导，还占预算。
  */
-export function itemTexts(nodes: readonly AxNodeLite[], found: RepeatedItems): Map<number, string> {
+export function itemTexts(nodes: readonly AxNodeLite[], found: RepeatedItems, zeroSize: ReadonlyMap<number, boolean> = new Map()): Map<number, ItemNote> {
   const byId = new Map<string, AxNodeLite>();
   const byBackend = new Map<number, AxNodeLite>();
 
@@ -565,21 +612,21 @@ export function itemTexts(nodes: readonly AxNodeLite[], found: RepeatedItems): M
     if (n.backendDOMNodeId !== undefined) byBackend.set(n.backendDOMNodeId, n);
   }
 
-  const out = new Map<number, string>();
+  const out = new Map<number, ItemNote>();
 
   for (const [ref, { item, from }] of found.byRef) {
     const top = byBackend.get(item), control = byBackend.get(ref);
 
     if (!top || !control || !CONTROL_ROLES.has(control.role?.value ?? "")) continue;
-    const text = itemTextIn(byId, top, control, from);
+    const text = itemTextIn(byId, top, control, from, zeroSize);
 
-    if (text) out.set(ref, text);
+    if (text) out.set(ref, { item, text });
   }
 
   return out;
 }
 
-function itemTextIn(byId: ReadonlyMap<string, AxNodeLite>, top: AxNodeLite, control: AxNodeLite, from: number): string {
+function itemTextIn(byId: ReadonlyMap<string, AxNodeLite>, top: AxNodeLite, control: AxNodeLite, from: number, zeroSize: ReadonlyMap<number, boolean>): string {
   const key = `${control.role?.value ?? ""}\u0000${String(control.name?.value ?? "").trim()}`;
   const twinInside = (root: AxNodeLite) => {
     const todo = [root];
@@ -608,7 +655,7 @@ function itemTextIn(byId: ReadonlyMap<string, AxNodeLite>, top: AxNodeLite, cont
 
   for (const [i, at] of path.entries()) {
     if (twinInside(at)) return below;
-    const text = scanItem(byId, at, control);
+    const text = scanItem(byId, at, control, zeroSize);
 
     if (text === null) return below;
 

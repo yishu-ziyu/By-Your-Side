@@ -260,9 +260,9 @@ async function readAxPage(tabId: number, decision = false, budget?: number) {
   const nodes = withoutSubtrees(result.nodes!, await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, nodes);
   const zeroSize = await zeroSizeRead;
-  const found = repeatedItems(nodes);
+  const found = repeatedItems(nodes, zeroSize);
 
-  return { nodes, secret, zeroSize, found, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize, itemTexts(nodes, found)) };
+  return { nodes, secret, zeroSize, found, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize, itemTexts(nodes, found, zeroSize)) };
 }
 
 /** 一次最多读几处变化：每处是几次 CDP 往返。 */
