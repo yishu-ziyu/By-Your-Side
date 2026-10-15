@@ -95,6 +95,7 @@ import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
+import { mountChapters } from "./chapters.js";
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
 
@@ -398,6 +399,9 @@ const statusDot = document.getElementById("status-dot") as HTMLElement;
 const statusText = document.getElementById("status-text")!;
 
 const messagesEl = document.getElementById("messages")!;
+
+// 跳到某一章就是往上翻：不再跟随到底部。
+const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!, () => { pinned = false; });
 
 const composerEl = document.getElementById("composer") as HTMLElement;
 
@@ -6341,6 +6345,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         const bubble = reuse ?? addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
+        chapters.noteUserTurn(bubble, entry.item, !running && !lastUserHasPage);
 
         if (entry.item.card) proactiveCard.turn(entry.item.card, bubble, entry.occurredAt);
         else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
@@ -6349,7 +6354,11 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
         if (entry.item.undelivered) handleDeliveryReceipt({ seq: entry.seq, ok: false, text: entry.item.text, original: entry.item.undelivered.original });
       }
-      else handleServerMessage(JSON.stringify(entry.item.msg));
+      else {
+        chapters.noteServer(entry.item.msg);
+        handleServerMessage(JSON.stringify(entry.item.msg));
+      }
+
       lastHistorySeq = entry.seq;
     }
   } finally {
