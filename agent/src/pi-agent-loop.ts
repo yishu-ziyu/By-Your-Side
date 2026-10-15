@@ -54,6 +54,12 @@ type CustomAppMessage = Extract<AgentMessage, { role: "custom" }>;
 /** 同名、同参数、同结果的工具调用连续到第几次时提醒模型换做法。 */
 const REPEAT_NOTE_AT = 3;
 
+/**
+ * 只有这些只读工具的结果文字代表页面状态，结果不变才说明页面没变。scroll、click、fill、press_key、hover 等写操作
+ * 每次回的是固定格式的回执、screenshot 的内容在图里，文字不随页面变化，计数会把正常操作误报成原地打转。
+ */
+const REPEAT_TRACKED_TOOLS: ReadonlySet<string> = new Set(["tabs", "snapshot", "read_element", "read_elements", "browser_run"]);
+
 /** 读页结果或页面快照短于这个字数就不删：省下的不够，还丢了信息。 */
 const ELIDE_MIN_CHARS = 1000;
 
@@ -194,7 +200,8 @@ export class PiAgentLoop implements AgentLoop {
         const hookResult = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: toolCall.name, toolCallId: toolCall.id, input: hookArgs(args), content: result.content, details: result.details, isError }) : undefined;
         const content = hookResult?.content ? [...hookResult.content] : undefined;
 
-        if (repeated) return { content: [{ type: "text", text: repeated }, ...(content ?? result.content)], details: hookResult?.details, isError: hookResult?.isError };
+        // 提醒放最后单独一段：侧栏的结果摘要和失败原因只读第一段，放前面会被当成工具的结果或失败原因显示。
+        if (repeated) return { content: [...(content ?? result.content), { type: "text", text: repeated }], details: hookResult?.details, isError: hookResult?.isError };
 
         return hookResult ? { content, details: hookResult.details, isError: hookResult.isError } : undefined;
       },
@@ -367,11 +374,18 @@ export class PiAgentLoop implements AgentLoop {
 
   /**
    * 模型连续发同一个调用、拿到同一个结果时，它自己往往看不出在原地打转，会一直重复到任务超时。
-   * 到第 REPEAT_NOTE_AT 次起在结果开头写明；只加框架固定文字，不带页面内容，也不拦下执行。
+   * 到第 REPEAT_NOTE_AT 次起在结果末尾写明；只加框架固定文字，不带页面内容，也不拦下执行。不计数的工具打断连续。
    */
   private noteRepeat(name: string, args: unknown, content: readonly (TextContent | ImageContent)[]): string | null {
     const call = `${name} ${stableJson(args)}`;
     const result = content.map(part => (part.type === "text" ? part.text : "")).join("\n").replace(/\s+/g, " ").trim();
+
+    if (!REPEAT_TRACKED_TOOLS.has(name) || !result) {
+      this.repeat = { call: "", result: "", count: 0 };
+
+      return null;
+    }
+
     const same = call === this.repeat.call && result === this.repeat.result;
     this.repeat = { call, result, count: same ? this.repeat.count + 1 : 1 };
 

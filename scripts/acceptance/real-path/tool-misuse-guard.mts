@@ -1,10 +1,12 @@
 /**
  * 模型用错 tabs 的参数、或原地重复同一个调用时，工具结果当场指出来，不让它空转。
  *   npx tsx scripts/acceptance/real-path/tool-misuse-guard.mts --headless
- * 本机页 A。脚本模型：先发 tabs {action:"list", url}，再连发 3 次同样的 snapshot（页面不变）。
+ * 本机页 A。脚本模型：tabs {action:"list", url} → 3 次同样的 snapshot（页面不变）→ 3 次同样的 scroll → tabs {action:"switch", tabId, url}。
  *   a) tabs list 带 url 不执行，结果写明该用 action:"open" 或 navigate。
- *   b) 第 3 次 snapshot 的结果开头有「连续第 3 次同样的调用」的框架说明，前两次没有；第 3 次仍照常读出页面。
- * 失败方式（旧代码）：tabs list 带 url 照常回标签页列表；第 3 次 snapshot 与前两次一模一样，没有说明。
+ *   b) 第 3 次 snapshot 的结果以真实页面开头、末尾单独一段「连续第 3 次同样的调用」的框架说明，前两次没有。
+ *   c) 滚动是写操作，回执文字不随页面变化：3 次同样的滚动都不出说明。
+ *   d) switch 已给 tabId、多带 url：忽略 url 照常切换。
+ * 失败方式（旧代码）：a 照常回标签页列表；b 第 3 次 snapshot 与前两次一模一样，没有说明。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -41,11 +43,18 @@ let toolResults: string[] = [];
 
 const snapshot = { tool: { name: "snapshot", args: {} } };
 
+const scroll = { tool: { name: "scroll", args: { dy: 300 } } };
+
+/** 工作页的 tabId 开跑前才知道；脚本模型每次请求都现读这一步的参数。 */
+const switchStep = { tool: { name: "tabs", args: { action: "switch", tabId: 0, url: "" } as Record<string, Json> } };
+
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: ASK, steps: [
     { tool: { name: "tabs", args: { action: "list", url: `http://127.0.0.1:${port}/b` } } },
     snapshot, snapshot, snapshot,
+    scroll, scroll, scroll,
+    switchStep,
     { text: ANSWER },
   ] },
 ], undefined, payload => {
@@ -65,16 +74,22 @@ try {
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "侧栏就绪");
+  const workTab = await rp.evaluate(panel, `chrome.tabs.query({url: ${JSON.stringify(`http://127.0.0.1:${port}/a`)}}).then(tabs => tabs[0]?.id ?? 0)`) as number;
+  switchStep.tool.args = { action: "switch", tabId: workTab, url: `http://127.0.0.1:${port}/b` };
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.click(panel, "#input");
   await rp.typeText(panel, ASK);
   await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, `document.querySelector("#messages")?.textContent.includes(${JSON.stringify(ANSWER)})`) || undefined, 90_000, "回答");
 
-  const [tabs = "", first = "", second = "", third = ""] = toolResults;
+  const [tabs = "", first = "", second = "", third = "", ...rest] = toolResults;
+  const scrolls = rest.slice(0, 3);
+  const switched = rest[3] ?? "";
   check("a tabs list 带 url 不执行，指出用 open 或 navigate", tabs.includes('tabs action:"list" 不接受 url') && tabs.includes('action:"open"') && tabs.includes("navigate") && !tabs.includes("Page A"), { tabs: tabs.slice(0, 400) });
-  check("b 第 3 次同样的 snapshot 开头有重复说明，前两次没有，页面照常读出", third.trimStart().startsWith(`[框架说明] ${NOTE}`) && third.includes("Start")
-    && first.includes("Start") && !first.includes("框架说明") && !second.includes("框架说明"), { first: first.slice(0, 200), second: second.slice(0, 200), third: third.slice(0, 300) });
+  check("b 第 3 次同样的 snapshot 以页面开头、末尾有重复说明，前两次没有", third.startsWith("<page-content") && third.trimEnd().endsWith(`[框架说明] ${NOTE}`) && third.includes("Start")
+    && first.includes("Start") && !first.includes("框架说明") && !second.includes("框架说明"), { first: first.slice(0, 200), second: second.slice(0, 200), third: third.slice(-300) });
+  check("c 3 次同样的滚动都不出说明", scrolls.length === 3 && scrolls.every(text => text !== "" && !text.includes("框架说明")), { scrolls });
+  check("d switch 带 tabId 和 url 照常切换", workTab > 0 && switched.includes(`Working tab is now ${workTab}.`) && !switched.includes("不接受"), { workTab, switched: switched.slice(0, 300) });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", checks, toolResults }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
