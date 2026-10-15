@@ -21,7 +21,7 @@
  *    不出这一行。假通过：少发了记忆所以没点名 → 两种情况都核对请求原文里两条都在。
  *    没有回答（模型出错）的一轮：这一行不单独悬在消息流里 → 核对这一轮确实出过错、没有回答，且最后一条用户消息之后没有这一行。
  * #287 有效期内的过往任务（别的网站订的会议室）照常发给模型，但只在这句话和它对得上时点名：新会话问笔记本不出这一行，
- *    问那天的会议室、问「上次订的」才点名它。假通过：没把它发给模型所以没点名 → 每轮都核对请求原文里有它；
+ *    问那天的会议室、问「上次订的」才点名它；「付款之前…」不算提到以前那件事，不点名。假通过：没把它发给模型所以没点名 → 每轮都核对请求原文里有它；
  *    没出回答所以没有这一行 → 先核对这一轮有回答。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -70,6 +70,9 @@ const ASK_NOTEBOOK = `${ASK}，这款笔记本电脑续航怎么样`;
 
 /** 和订会议室那件事共有「会议室」。 */
 const ASK_MEETING = `${ASK}，那天会议室能坐几个人`;
+
+/** 和订会议室那件事没有共同的词，「之前」只是时间先后，不是在提以前那件事。 */
+const ASK_BEFORE_PAYING = `${ASK}，付款之前帮我核对一下地址`;
 
 /** 和订会议室那件事没有共同的词，但在问过往（「上次」）。 */
 const ASK_LAST_TIME = `${ASK}，我上次订的那个是几点`;
@@ -442,6 +445,12 @@ try {
   const lastTimeLine = await lastLine();
   check("#287", "问「我上次订的那个是几点」：请求里有它，回答下点名「按上次做过的「已成功预订…」」", lastTime.includes(DATED_DONE) && /^按上次做过的「已成功预订/.test(lastTimeLine?.text ?? "") && lastTimeLine?.count === 1, { line: lastTimeLine?.text ?? null, count: lastTimeLine?.count ?? null });
   await shot("287-asked-past");
+  await newConversation();
+  const beforePaying = await turn(ASK_BEFORE_PAYING);
+  const beforePayingLine = await lastLine();
+  const beforePayingAnswered = await hasAnswer();
+  check("#287", "问「付款之前帮我核对一下地址」：有回答，请求里有它，回答下不点名它", beforePayingAnswered && beforePaying.includes(DATED_DONE) && beforePayingLine === null, { answered: beforePayingAnswered, line: beforePayingLine?.text ?? null });
+  await shot("287-before-paying");
 } catch (error) {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(fatal);
