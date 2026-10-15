@@ -155,26 +155,15 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
    * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
    */
   private warmUp(id: string): void {
-    const session = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session;
-    const origin = session?.modelOrigin();
+    const origin = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session.modelOrigin();
 
-    if (!session || !origin) return;
+    if (!origin) return;
     const now = Date.now();
-    const host = new URL(origin).host;
-    const sinceLastMs = now - (this.warmedAt.get(origin) ?? 0);
 
-    if (sinceLastMs < WARM_UP_INTERVAL_MS) {
-      session.recordWarmUp({ host, startedAt: new Date(now).toISOString(), outcome: "skipped", sinceLastMs });
-
-      return;
-    }
+    if (now - (this.warmedAt.get(origin) ?? 0) < WARM_UP_INTERVAL_MS) return;
     this.warmedAt.set(origin, now);
     const settle = warmUpStarted(origin, now);
-    void fetch(origin, { method: "HEAD", credentials: "omit", cache: "no-store" }).then(response => response.status, () => null).then(status => {
-      const settledAt = Date.now();
-      settle(status !== null, settledAt);
-      session.recordWarmUp({ host, startedAt: new Date(now).toISOString(), durationMs: settledAt - now, outcome: status === null ? "error" : "ok", status });
-    });
+    void fetch(origin, { method: "HEAD", credentials: "omit", cache: "no-store" }).then(() => true, () => false).then(ok => settle(ok, Date.now()));
   }
   getTaskProgress(id: string): TaskProgressSnapshot | null { const snapshot=this.progress.get(id)?.snapshot();
 
