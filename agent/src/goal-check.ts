@@ -49,7 +49,8 @@ export const GOAL_CHECK_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_
 /** 一个任务里宿主最多替用户催几次「接着做」，防止模型和核对来回打转。 */
 export const GOAL_CONTINUE_MAX = 5;
 
-const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer), page (the page it ended on), observations (recent page reads and tool results in this conversation, newest first; page_at_start is the page read when a request began; earlier: true marks reads from an earlier request in this conversation, and that page may have changed since), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
+const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer), page (the page it ended on, read when this check started; current: true marks it as the present state of that page; truncated: true means its text was cut at the end), observations (recent page reads and tool results in this conversation, newest first; page_at_start is the page read when a request began; earlier: true marks reads from an earlier request in this conversation, and that page may have changed since; stale: true marks a whole-page read taken before a later page action such as a click, fill, program, navigation or translation, so it shows the page as it was before that action), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
+Judge the current state of the page (checked boxes, counts, field values, which items exist) from page when it is present. Where page and a stale read differ, page is right: never report a stale read's old state as the current state. Content that page does not include (it is cut when truncated is true, or it is on another part of the page) is not evidence of absence: look for it in the newest reads and tool results in observations; a stale read remains valid evidence for such content unless a later action changed it.
 Before deciding done, check:
 - Numbers and dates repeated in the answer must agree. Recompute totals from the listed components. Counts must use one stated field/criterion throughout; do not mix title and description counts.
 - Source identity, date, scope and units must match the user's request. A CSV for another date does not satisfy a request for a specific date, even if the file exists and the assistant says it is done.
@@ -130,6 +131,28 @@ function claimsDeadControl(reply: string): boolean {
 /** 宿主报告点击后页面没有可归因的变化：click 工具的文字回执（shared/effect.ts formatEffectReport），或程序步骤里点击结果的 changed:false。 */
 const NO_EFFECT = /nothing (on the page changed in a way )?(was )?attributable to this click|"effect":\{[^{}]*"changed":false/gi;
 
+/**
+ * 会改页面的动作：点击、填写、按键、跳转、程序、翻译，以及用户照着引导或接管后自己动手。
+ * 不在里面的（读页、截图、取网址、下载、存文件、标签页、标注、等事件）不改页面内容。
+ */
+const PAGE_ACTIONS: ReadonlySet<string> = new Set(["click", "double_click", "fill", "type_text", "press_key", "select_option", "upload_file", "navigate", "browser_run", "js", "page_translation", "accept_dialog", "dismiss_dialog", "guide_step", "hand_to_user"]);
+
+/** 整页读数：读页工具、程序替助手读的页面，或回执里带整页快照（无障碍树以 RootWebArea 开头，如程序、跳转）。翻译的回执不是。 */
+function wholePageRead(item: { tool: string; text: string }): boolean {
+  return item.tool === "snapshot" || item.tool === "page_at_start" || item.tool === "page_at_steer" || item.text.includes("RootWebArea");
+}
+
+/**
+ * 有当前页面时，之后又动过页面的整页读数标「过时」：否则快速模型会把旧读数里的勾选、件数当成现状，叫助手回去重做已经做完的事。
+ * 只看工具名，不看回执里有没有变化：没把握页面没变时，以刚读的当前页面为准。
+ */
+function staleReads<T extends { tool: string; text: string }>(observations: readonly T[]): Set<T> {
+  return new Set(observations.filter((item, index) => wholePageRead(item) && observations.slice(index + 1).some(later => PAGE_ACTIONS.has(later.tool))));
+}
+
+/** 交给核对的当前页面最多这么多字：一份读数在会话里也最多留 8,000 字；登录后的网站常把正文排在侧栏、日历之后 3,000 字以外。 */
+const PAGE_CHARS = 8_000;
+
 /** 核对模型的回答：status 必须是四种之一，remaining、cause 可缺省。 */
 function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "blocked"; remaining?: string; cause?: unknown; correction?: string; finding?: string; items?: unknown } {
   if (!value || typeof value !== "object") return false;
@@ -174,7 +197,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
     lastReply: input.lastReply.slice(0, 12_000),
     userTookOver: input.userTookOver || undefined,
     replyTruncated: input.lastReply.length > 12_000,
-    page: input.page ? { title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), text: input.page.text.slice(0, 3000) } : null,
+    page: input.page ? { current: true, title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), text: input.page.text.slice(0, PAGE_CHARS), truncated: input.page.text.length > PAGE_CHARS || undefined } : null,
     files: (input.files ?? []).slice(-16).reverse().map(file => {
       const text = file.content?.slice(0, fileBudget);
       fileBudget -= text?.length ?? 0;
@@ -184,6 +207,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
     }),
     // 程序替助手读的页面先各留 4,000 字，余下的按新到旧分给工具结果：否则一轮里后面几次大读数会把开头读的页面挤成空文本。
     observations: (() => {
+      const stale = input.page ? staleReads(input.observations ?? []) : new Set();
       const items = (input.observations ?? []).slice(-8).reverse();
       const pageShare = new Map(items.filter(item => item.tool.startsWith("page_")).map(item => [item, Math.min(item.text.length, 4_000)]));
       observationBudget -= [...pageShare.values()].reduce((sum, n) => sum + n, 0);
@@ -194,7 +218,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
         if (!pageShare.has(item)) observationBudget -= share;
         const text = item.text.slice(0, share);
 
-        return { tool: item.tool, earlier: item.earlier, text, truncated: text.length < item.text.length || undefined };
+        return { tool: item.tool, earlier: item.earlier, stale: stale.has(item) || undefined, text, truncated: text.length < item.text.length || undefined };
       });
     })(),
   });
