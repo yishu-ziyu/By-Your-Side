@@ -2192,6 +2192,22 @@ function attachPanel(port: chrome.runtime.Port) {
         break;
       }
 
+      // 重发记下的原文（已带当时的页面上下文），只更新原来那条历史：面板和重开后的回放都只有一个气泡。
+      case "redeliver": {
+        const original = panelHistory.undelivered(msg.seq);
+
+        if (!original) break;
+        void stopTrailReplay(key());
+        const ok = uplink.sendClientMessage(original);
+
+        if (ok) {
+          panelHistory.markDelivered(msg.seq);
+          flushHistory();
+        }
+        broadcast({ kind: "delivery", seq: msg.seq, ok, original } satisfies BgToPanel);
+        break;
+      }
+
       case "retry":
         uplink.retry();
         break;

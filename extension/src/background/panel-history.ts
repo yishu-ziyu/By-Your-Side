@@ -145,6 +145,19 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
     if (entry?.item.kind === "user") entry.item.undelivered = { original };
   }
 
+  /** 这一条用户消息若标着未送达，交出原文；送达后由 markDelivered 清掉标记。 */
+  undelivered(seq: number): import("../../../shared/protocol.js").ClientMessage | undefined {
+    const entry = this.entries.find(item => item.seq === seq);
+
+    return entry?.item.kind === "user" ? entry.item.undelivered?.original : undefined;
+  }
+
+  markDelivered(seq: number): void {
+    const entry = this.entries.find(item => item.seq === seq);
+
+    if (entry?.item.kind === "user") delete entry.item.undelivered;
+  }
+
   since(afterSeq = 0): PanelHistoryEntry[] {
     return this.entries.filter((entry) => entry.seq > afterSeq);
   }

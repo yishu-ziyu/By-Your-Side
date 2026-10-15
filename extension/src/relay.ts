@@ -48,6 +48,8 @@ export type PanelToBg =
   | { kind: "control"; action: "takeover" | "handback"; conversationId?: string; tabId?: number }
   /** 面板（重）打开，请求同步状态；afterSeq 存在时只补发更新的可见历史。 */
   | { kind: "sync"; afterSeq?: number; conversationId?: string }
+  /** 重发一条标着未送达的用户消息：后台用它记下的原文重发，更新原来那一条历史，不另记一条。 */
+  | { kind: "redeliver"; seq: number; conversationId?: string }
   /** 请重连。 */
   | { kind: "retry" }
   /** 端口存活探测：service worker 被 Chrome 停掉后，面板手里的端口不一定会收到断开事件。 */
@@ -93,8 +95,8 @@ type BgToPanelPayload =
   /**
    * 送达回执（issue #4）：只覆盖 background→agent 上行传输层。
    * ok=false 表示上行传输不可用，确定未发给伴随进程；original 为未经页面
-   * 附加上文的原始消息，供面板原样重试。没有回执 = background 层已接受并
-   * 已交给传输层，不表示伴随进程已处理或任务已完成。
+   * 附加上文的原始消息，供面板原样重试。ok=true 只在 redeliver 重发成功后出现，面板据此去掉未送达标记。
+   * 首次发送没有回执 = background 层已接受并已交给传输层，不表示伴随进程已处理或任务已完成。
    */
   | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
   /** 用户那一条历史补上了这一轮带的页面（见 UserTurnContext）。 */
