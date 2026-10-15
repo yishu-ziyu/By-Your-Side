@@ -2555,14 +2555,19 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     /** 交付时标签页所在的网页；续做前据此判断用户有没有换走。 */
     let endedOn = "";
     let pageNow: string | null = null;
+    /** 核对自己读页的结果，只进诊断记录：读到没有、哪个标签页、地址和字数，不带网页内容。 */
+    let pageRead: { ok: boolean; tabId: number | null; url?: string; chars?: number; error?: string } | null = null;
 
     try {
       const model = this.modelRuntime!.fastModel?.() ?? this.session!.model;
 
+      let readError: string | undefined;
       // SAFETY: snapshot 工具回 { text, url, title? }；读不到就不带页面，只按回答判断。
       const page = tabId !== null && this.rpc
-        ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown; url?: unknown; title?: unknown }>).catch(() => null)
+        ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown; url?: unknown; title?: unknown }>).catch((error: unknown) => { readError = (error instanceof Error ? error.message : String(error)).slice(0, 160); return null; })
         : null;
+
+      pageRead = page ? { ok: true, tabId, url: String(page.url ?? ""), chars: String(page.text ?? "").length } : { ok: false, tabId, ...(readError ? { error: readError } : {}) };
 
       // 只有读页要用调试器：读完就告诉扩展，横幅不用陪着等模型的几秒（#259）。
       if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "checking", pageRead: true, ...(gate && this.answerHold === hold && !hold.settled ? { gate: true } : {}) });
@@ -2598,7 +2603,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       unavailable = error instanceof SideCallError ? error.reason : undefined;
     }
 
-    if (!verdict) this.runTrace.record("goal_check", { status: "unavailable", ...(unavailable ? { reason: unavailable } : {}) });
+    if (!verdict) this.runTrace.record("goal_check", { status: "unavailable", ...(unavailable ? { reason: unavailable } : {}), ...(pageRead ? { pageRead } : {}) });
 
     // 核对拿不到结论（快速模型超时、出错）时的保底：助手最后在问用户，就按「等用户」处理，下一句仍接到这个任务上。
     if (!verdict && asksUser(this.runReplyText(event.messages))) verdict = { status: "needs_user", remaining: "回复助手的问题" };
@@ -2651,7 +2656,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         if (items.length >= 2 && at >= 0) continuing.step = { at: at + 1, of: items.length };
       }
       emit(continuing);
-      this.runTrace.record("goal_check", { ...verdict, attempt: this.goalContinues });
+      this.runTrace.record("goal_check", { ...verdict, attempt: this.goalContinues, ...(pageRead ? { pageRead } : {}) });
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
       const where = snapshot?.goalPage ? ` The goal was said on page "${snapshot.goalPage.title}" (${snapshot.goalPage.url}); act only on items that belong to it, not on similar ones from other sites or earlier tasks.` : "";
@@ -2683,7 +2688,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (this.answerHold === hold && !hold.settled) this.runTrace.record("goal_gate", { released: "verdict" });
       letGo();
       emit(settled);
-      this.runTrace.record("goal_check", movedTo ? { ...verdict, pageMovedTo: movedTo } : verdict);
+      this.runTrace.record("goal_check", { ...verdict, ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(pageRead ? { pageRead } : {}) });
     }
   }
 
