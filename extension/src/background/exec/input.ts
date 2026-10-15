@@ -1634,6 +1634,36 @@ async function assertNotOwnOverlay(tabId: number, x: number, y: number): Promise
   if (hit === true) throw notExecuted(new Error("这里是助手自己在页面上画的确认按钮或状态条，只能由用户来点，操作未执行。请在回复里请用户确认，不要点它。"));
 }
 
+/** 只给明确的网页目标让位；坐标点按和交接控件仍走原有保护。租用按 token 释放，避免并行动作提前恢复。 */
+async function withUncoveredTarget<T>(params: ClickParams, sessionId: string, beforeDispatch: DispatchGuard | undefined, action: () => Promise<T>): Promise<T> {
+  if (!params.target) return action();
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
+  if (tab.id === undefined) return action();
+  const tabId = tab.id;
+  await assertObservedDocument(tabId, sessionId, [params.target]);
+  const { point: [x, y] } = await resolvePointerTarget(tabId, params, beforeDispatch);
+  const token = crypto.randomUUID();
+  try {
+    await ensureCursor(tabId);
+    const backendNodeId = axBackendNodeFor(tabId, parseRef(params.target));
+    if (backendNodeId !== undefined) {
+      const contextId = await cursorContext(tabId);
+      await callOnBackendNode(tabId, backendNodeId, `function(x, y, token) { return window.__sideagent?.uncoverPageTarget?.(this, x, y, token) ?? false; }`, [x, y, token], contextId);
+    } else {
+      await ensureDomOps(tabId);
+      await callDom(tabId, (target: string, px: number, py: number, id: string) => {
+        const el = window.__sideagent?.dom?.resolve(target);
+        return el ? window.__sideagent?.uncoverPageTarget?.(el, px, py, id) ?? false : false;
+      }, [params.target, x, y, token]);
+    }
+  } catch { /* 让位失败不放宽命中检查，实际点击仍会被原有保护拦下。 */ }
+  try {
+    return await action();
+  } finally {
+    await callDom(tabId, (id: string) => { window.__sideagent?.restorePageTarget?.(id); }, [token]).catch(() => {});
+  }
+}
+
 async function callPointGuard(
   tabId: number,
   x: number,
@@ -1710,6 +1740,10 @@ export async function click(
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
   sendGuard?: SendGuard,
 ): Promise<ClickResult> {
+  return withUncoveredTarget(params, sessionId, beforeDispatch, () => clickTarget(params, sessionId, beforeDispatch, sendGuard));
+}
+
+async function clickTarget(params: ClickParams, sessionId: string, beforeDispatch?: DispatchGuard, sendGuard?: SendGuard): Promise<ClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -1995,6 +2029,10 @@ export async function doubleClick(
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: DispatchGuard,
 ): Promise<DoubleClickResult> {
+  return withUncoveredTarget(params, sessionId, beforeDispatch, () => doubleClickTarget(params, sessionId, beforeDispatch));
+}
+
+async function doubleClickTarget(params: ClickParams, sessionId: string, beforeDispatch?: DispatchGuard): Promise<DoubleClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
