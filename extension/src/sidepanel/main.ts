@@ -5958,6 +5958,9 @@ function handleBgMessage(envelope: BgToPanel): void {
       return;
     }
 
+    // 后台先记下每一条再广播，随后的回放已含这条；先放实时条会抬高 lastHistorySeq，回放就整段被跳过。
+    if (!historyPrimed && envelope.replay !== true) return;
+
     applyHistory(envelope.entries, envelope.replay === true);
 
     return;
