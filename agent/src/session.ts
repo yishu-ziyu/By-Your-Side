@@ -667,7 +667,8 @@ if(required.includes(key))candidates.set(key,attachment);
         appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
         extensionFactories: extensionFactories.map(entry => entry.factory),
         onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
-        onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined }),
+        onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() }),
+        onModelResponse: status => resultHost?.modelRequestTrace.response(status),
         effort: model => resultHost?.mainEffort.level(model) ?? "off",
       });
 
