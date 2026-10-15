@@ -1,5 +1,6 @@
 import { Check, createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
+import { imagePlaceholdersAsText } from "../shared/answer-html.js";
 import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
 import { fillUndoLabel, fillUndoOf, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
@@ -21,7 +22,27 @@ export interface ResultAction {
 }
 
 function answerBody(answer: HTMLElement): HTMLElement {
-  return visibleBody(answer, CHROME);
+  const body = visibleBody(answer, CHROME);
+  imagePlaceholdersAsText(body);
+
+  return body;
+}
+
+/**
+ * 回答的纯文本，按屏幕上的样子断行：段落之间空一行，列表每项一行，表格每行一行，单元格之间是制表符。
+ * innerText 只在元素画出来时按版式断行；摘出来的副本没画出来，innerText 退回 textContent，各段会连成一行。
+ * 所以先挂到页面上读，挂在 body 下而不是对话区：对话区可能没在显示，也不惊动盯着对话区的观察者。读完同步拿掉，不会画到屏幕上。
+ */
+export function answerPlainText(body: HTMLElement): string {
+  Object.assign(body.style, { position: "fixed", top: "0", left: "-100000px", pointerEvents: "none" });
+  body.setAttribute("aria-hidden", "true");
+  document.body.append(body);
+
+  try {
+    return body.innerText.trim();
+  } finally {
+    body.remove();
+  }
 }
 
 async function writeClipboard(text: string): Promise<void> {
@@ -29,13 +50,12 @@ async function writeClipboard(text: string): Promise<void> {
 }
 
 export async function copyAnswerText(answer: HTMLElement): Promise<void> {
-  const body = answerBody(answer);
-  await writeClipboard(body.innerText.trim() || body.textContent?.trim() || "");
+  await writeClipboard(answerPlainText(answerBody(answer)));
 }
 
 export async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
   if (isShortened(answer)) return writeClipboard(visibleMarkdown(answerBody(answer)));
-  await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown).trim() : answerBody(answer).innerText.trim());
+  await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown).trim() : answerPlainText(answerBody(answer)));
 }
 
 /** 去掉「切过去看」后主按钮要跟着换，否则按钮还写「在页面上查看」，点下去却是复制。 */

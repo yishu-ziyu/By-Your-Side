@@ -12,6 +12,7 @@
 import { Lexer } from "marked";
 import { codeRanges, splitAnswer } from "../../../shared/answer-cards.js";
 import { D_READ } from "../shared/motion-tokens.js";
+import { keepOpenedImages } from "../shared/answer-html.js";
 import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
 
 const BEAT_MIN = 150;
@@ -269,9 +270,10 @@ function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
   }
 }
 
-function topNodes(html: string): ChildNode[] {
+function topNodes(html: string, answer: HTMLElement): ChildNode[] {
   const template = document.createElement("template");
   template.innerHTML = html;
+  keepOpenedImages(template.content, answer);
 
   return [...template.content.childNodes].filter((node) => !(node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()));
 }
@@ -501,7 +503,7 @@ class Reveal {
   }
 
   private paintBlock(i: number, md: string, live: boolean, now: number): void {
-    const nodes = topNodes(this.opts.render(live ? remend(md) : md));
+    const nodes = topNodes(this.opts.render(live ? remend(md) : md), this.el);
     const len = nodes.reduce((sum, node) => sum + (node.textContent?.length ?? 0), 0);
     const old = this.blocks[i];
     let fades = old ? old.fades.filter((fade) => now - fade.at < FADE_MS && fade.from < len).map((fade) => ({ ...fade, to: Math.min(fade.to, len) })) : [];

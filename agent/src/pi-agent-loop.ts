@@ -16,7 +16,7 @@ import { firstEventTimeout, hedgeAfter } from "../../shared/model-capabilities.j
 import { isTransientModelError } from "../../shared/provider-busy.js";
 import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type ModelThinkingLevel, type StreamOptions, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { AgentLoop, ModelPort } from "./agent-loop.js";
+import type { AgentLoop, ModelPort, ModelQueueOptions } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
@@ -615,7 +615,7 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
     };
 
     // SAFETY: 同上，参数原样转交；对冲那份与原请求的 context 和参数完全相同。
-    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, hedgeAfter(model) ?? MODEL_HEDGE_MS, (signal, accepted, hedge) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted), onResponse: withResponse(!hedge) } as never), onCut, onHedge);
+    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, hedgeAfter(model) ?? MODEL_HEDGE_MS, (signal, accepted, hedge, onQueued) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted), onResponse: withResponse(!hedge), ...(onQueued ? { onQueued } : {}) } as never), onCut, onHedge);
   }) as StreamFn;
 }
 
@@ -634,13 +634,14 @@ export type ModelHedgeRecord =
  * 供应商整段挂住时两份都不会被受理，用户等的时间和没有对冲时一样。
  * 某份在出第一个事件前就出错（并发上限、429 等），而另一份还在等：只丢掉出错的这份，不让整次调用失败。
  * 用户取消照常走原来的 aborted 结局。
+ * 服务商有并发上限时原请求可能先在扩展里排队（见 ModelQueueOptions.onQueued）：两项计时都从它真正发出时算起，排队再久也不算挂起。
  */
-function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, hedgeMs: number, start: (signal: AbortSignal, onProviderStreamEvent: () => void, hedge: boolean) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void, onHedge?: (record: ModelHedgeRecord) => void): AssistantMessageEventStream {
+function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, hedgeMs: number, start: (signal: AbortSignal, onProviderStreamEvent: () => void, hedge: boolean, onQueued?: ModelQueueOptions["onQueued"]) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void, onHedge?: (record: ModelHedgeRecord) => void): AssistantMessageEventStream {
   /** live：还在等它出第一个事件；超时、出错、输给另一份或流结束后为 false。held：胜出前收到的 start 事件，胜出时补发。 */
   type Attempt = { controller: AbortController; started: boolean; live: boolean; hedge: boolean; held: AssistantMessageEvent[] };
 
   const name = `${model.provider}/${model.id}`;
-  const sentAt = Date.now();
+  let sentAt = Date.now();
   const attempts: Attempt[] = [];
   const out = createAssistantMessageEventStream();
   let winner: Attempt | null = null;
@@ -715,7 +716,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     for (const other of attempts) if (other !== attempt) drop(other);
   };
 
-  const launch = (hedge: boolean) => {
+  const launch = (hedge: boolean, onQueued?: ModelQueueOptions["onQueued"]) => {
     const attempt: Attempt = { controller: new AbortController(), started: false, live: true, hedge, held: [] };
 
     if (outer?.aborted) attempt.controller.abort();
@@ -733,7 +734,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
 
     let source: AssistantMessageEventStream;
 
-    try { source = start(attempt.controller.signal, accepted, hedge); } catch (error) {
+    try { source = start(attempt.controller.signal, accepted, hedge, onQueued); } catch (error) {
       attempt.live = false;
 
       // 原请求同步抛出的错误（如缺 key）照旧交给 Agent 处理；对冲那份只丢掉。
@@ -831,16 +832,26 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     }
   };
 
-  arm();
-  launch(false);
+  const begin = () => {
+    if (closed || finished) return;
+    sentAt = Date.now();
+    deadline = { at: sentAt + timeoutMs, message: deadline.message };
+    arm();
+
+    hedgeTimer = hedgeMs > 0 ? setTimeout(() => {
+      if (winner || closed || outer?.aborted || !attempts[0]!.live || attempts[0]!.started) return;
+
+      try { onHedge?.({ type: "model_hedge", model: name, hedgeMs }); } catch { /* Diagnostics only. */ }
+      launch(true);
+    }, hedgeMs) : undefined;
+  };
+
+  const queue: { sent?: Promise<void> } = {};
+  launch(false, sent => { queue.sent = sent; });
   onCut?.(cutText, true);
 
-  hedgeTimer = hedgeMs > 0 ? setTimeout(() => {
-    if (winner || closed || outer?.aborted || !attempts[0]!.live || attempts[0]!.started) return;
-
-    try { onHedge?.({ type: "model_hedge", model: name, hedgeMs }); } catch { /* Diagnostics only. */ }
-    launch(true);
-  }, hedgeMs) : undefined;
+  if (queue.sent) void queue.sent.then(begin);
+  else begin();
 
   return out;
 }

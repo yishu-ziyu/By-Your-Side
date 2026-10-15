@@ -74,6 +74,15 @@ export class PanelHistory {
       }
     }
 
+    // 用量每次模型请求都报一条，侧栏只用最后一条：旧的不留，免得把真实消息挤出落盘窗口。
+    if (contextUsage(item)) {
+      for (let i = this.entries.length - 1; i >= 0; i--) {
+        const old = this.entries[i]!.item;
+
+        if (contextUsage(old) && old.kind === "server" && item.kind === "server" && old.msg.conversationId === item.msg.conversationId) this.entries.splice(i, 1);
+      }
+    }
+
     const plan=taskPlan(item);
 
     if(plan){
@@ -226,6 +235,10 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
 function sameStatus(a: PanelHistoryItem, b: PanelHistoryItem): boolean {
   return a.kind === "server" && b.kind === "server" && a.msg.type === "status" && b.msg.type === "status"
     && a.msg.state === b.msg.state && a.msg.conversationId === b.msg.conversationId && a.msg.sessionId === b.msg.sessionId;
+}
+
+function contextUsage(item: PanelHistoryItem): boolean {
+  return item.kind === "server" && item.msg.type === "agent_event" && item.msg.event.kind === "context_usage";
 }
 
 function taskReceipt(item:PanelHistoryItem) {

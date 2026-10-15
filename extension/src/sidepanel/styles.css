@@ -658,6 +658,31 @@ html, body {
   padding: 1px 5px;
 }
 
+/* 回答里网上的图片：先是占位，用户点了才加载（answer-html.ts）。 */
+.markdown .answer-image-gate {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 2px 0;
+  padding: 3px 10px;
+  font: var(--fs-meta) / 1.4 var(--font);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+  text-align: start;
+  cursor: pointer;
+}
+
+.markdown .answer-image-gate:hover {
+  color: var(--text);
+}
+
+.markdown img {
+  max-width: 100%;
+}
+
 .markdown pre {
   margin: 8px 0;
   padding: 10px 12px;
@@ -2228,6 +2253,23 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .site-notes-list { margin:-10px 0 14px; padding:8px 10px 8px 24px; border-radius:8px; background:var(--content-subtle); color:var(--text-secondary); font-size:11px; line-height:1.5; }
 .site-notes-list li + li { margin-top:4px; }
+/* 发送确认卡（docs/evals/20261015-panel-send-confirm.md）：网站、按钮、内容三行，「发送」是唯一的实心按钮。答过只剩一行结果。 */
+.send-confirm { margin:0 0 16px; padding:12px 14px; border:1px solid var(--glass-border); border-radius:14px; background:var(--content-bg); font-size:13px; line-height:1.6; color:var(--text-primary); }
+.send-confirm:is([data-state=done],[data-state=ended]) { padding:0; border:0; background:transparent; }
+.send-confirm-line { margin:0; color:var(--text-secondary); font-size:12.5px; }
+.send-confirm-title { margin:0; font-size:14px; font-weight:600; }
+.send-confirm-kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; margin:8px 0 0; }
+.send-confirm-kv dt { color:var(--text-tertiary); }
+.send-confirm-kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.send-confirm-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.send-confirm-acts button { border:1px solid transparent; border-radius:var(--r-pill); font:inherit; font-size:13px; line-height:1.5; padding:4px 14px; cursor:pointer; }
+.send-confirm-yes { background:var(--text-primary); color:var(--content-bg); font-weight:600; opacity:.6; transition:opacity var(--d-state) var(--e-enter); }
+.send-confirm-yes[data-armed] { opacity:1; }
+.send-confirm-no { background:transparent; color:var(--text-secondary); }
+.send-confirm-no:hover:not(:disabled) { background:var(--content-subtle); }
+.send-confirm-yes:hover:not(:disabled) { filter:brightness(1.15); }
+.send-confirm-acts button:disabled { opacity:.55; cursor:default; }
+.send-confirm-acts button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* 纠正后开口问「要我记住吗」：像助手接着说的一句话，两个浅色小胶囊不抢正文。 */
 .memory-ask { margin:-4px 0 16px; font-family:var(--reading-font); font-size:13px; line-height:1.7; color:var(--text-primary); }
 .memory-ask-line { margin:0; overflow-wrap:anywhere; }
@@ -3445,12 +3487,21 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #think-chip[aria-expanded="true"] svg { transform: rotate(180deg); }
 #think-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #think-chip .think-swap { display: inline-block; animation: think-swap var(--d-state) var(--e-swift); }
+/* 对话用量：占到一半在模型名旁画环；悬停或键盘聚焦开关时出卡片。 */
+#think-chip .think-ring { flex: none; width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(var(--accent) calc(var(--ctx-fill) * 1turn), color-mix(in srgb, currentColor 18%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); }
+#ctx-pop { position: absolute; bottom: calc(100% + 6px); width: min(250px, calc(100% - 16px)); padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); font-size: 12px; line-height: 1.5; color: var(--text-secondary); visibility: hidden; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), visibility 0s linear var(--d-state); z-index: 19; }
+#ctx-pop.show { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+#ctx-pop .ctx-model { color: var(--text-tertiary); }
+#ctx-pop .ctx-line { color: var(--text-primary); font-weight: 600; }
+#ctx-pop .ctx-figures { white-space: nowrap; }
+#ctx-pop .ctx-bar { height: 4px; margin: 6px 0; border-radius: 2px; background: var(--content-subtle); overflow: hidden; }
+#ctx-pop .ctx-bar b { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
 @keyframes think-swap { from { opacity: 0; transform: translateY(3px); filter: blur(2px); } }
-/* 窄侧栏：模型按钮只留图标（全名在悬停提示里），不再被挤没；底栏按钮挨紧一点，一个都不收。 */
+/* 窄侧栏：模型按钮只留图标（全名在悬停提示里），不再被挤没；底栏按钮挨紧一点，一个都不收。画着用量环时环代替图标，两个圆挨着分不清。 */
 @container panel (max-width: 340px) {
   #think-chip { flex-shrink: 0; padding: 0 5px; gap: 2px; }
   #think-chip .think-model, #think-chip .think-sep, #think-chip .think-level { display: none; }
-  #think-chip::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; }
+  #think-chip:not(.ringed)::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; }
 }
 @container panel (max-width: 280px) {
   #composer-bar { gap: 2px; }
@@ -3502,6 +3553,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #think-menu .mm-views, #think-menu .mm-thumb, #think-chip svg { transition: none; }
   #think-menu.mm-in-all .mm-main { display: none; }
   #think-chip .think-swap { animation: none; }
+  #ctx-pop { transform: none; }
 }
 
 /* 主动卡（YIS-106）：一句话，第一个词是按钮，下面一行出处；悬停出 × */

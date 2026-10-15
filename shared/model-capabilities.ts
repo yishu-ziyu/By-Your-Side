@@ -140,3 +140,13 @@ export function thinkingProfile(model: Model<Api>): ThinkingProfile {
 
   return { levels, canDisable: levels.includes("off"), image: (resolved.input ?? []).includes("image"), start: MEASURED.get(key(model))?.start };
 }
+
+/** 同一账号同时在途请求的上限，按服务商（不按模型）登记；没登记的不限。扩展内所有模型请求按它排队。 */
+const PROVIDER_CONCURRENCY = new Map<string, number>([
+  // 实测同时 2 个请求必有 1 个被拒（403「concurrent request limit」）。
+  ["kimi-coding", 1],
+]);
+
+export function providerConcurrency(provider: string): number | undefined {
+  return PROVIDER_CONCURRENCY.get(provider);
+}

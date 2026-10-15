@@ -18,10 +18,13 @@ type ToolCall = { name: string; args: JsonRecord };
  * reasoning 是正文前的思考摘要，按 OpenAI 兼容的 reasoning_content 分段送出。
  */
 /** pieces：按给定的段和每段之前的停顿写出（替代 12 字一段的均匀切分），用来在标签写到一半时停一下。 */
-export type TextStep = { text: string; delayMs?: number; chunkDelayMs?: number; thenTool?: ToolCall; reasoning?: string; pieces?: Array<{ text: string; delayMs?: number }> };
+export type TextStep = { text: string; delayMs?: number; chunkDelayMs?: number; thenTool?: ToolCall; reasoning?: string; pieces?: Array<{ text: string; delayMs?: number }>; usage?: StepUsage };
+
+/** 这次回复报的用量：prompt 是整段提示词的 token，cached 是其中命中缓存的（OpenAI 兼容的 prompt_tokens_details.cached_tokens）。不写报 10。 */
+export type StepUsage = { prompt: number; cached?: number };
 
 /** tools：同一条回复里并行调用几个工具；每个工具结果都让后面的步数加一，所以它后面要按工具个数留占位步。 */
-export type Step = TextStep | { tool: ToolCall; delayMs?: number } | { tools: ToolCall[]; delayMs?: number } | { status: number; body: string };
+export type Step = TextStep | { tool: ToolCall; delayMs?: number; usage?: StepUsage } | { tools: ToolCall[]; delayMs?: number; usage?: StepUsage } | { status: number; body: string };
 
 export type Rule = { match: string; steps: Step[] };
 
@@ -75,7 +78,7 @@ const chunk = (delta: JsonRecord, finish: string | null = null) => `data: ${JSON
 const toolCalls = (step: { tool: ToolCall } | { tools: ToolCall[] }, callId: string) => ("tools" in step ? step.tools : [step.tool])
   .map((tool, index) => ({ index, id: index ? `${callId}_${index}` : callId, type: "function", function: { name: tool.name, arguments: JSON.stringify(tool.args) } }));
 
-async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall } | { tools: ToolCall[] }, callId: string, record?: ModelRequest): Promise<void> {
+async function stream(res: ServerResponse, step: (TextStep | { tool: ToolCall } | { tools: ToolCall[] }) & { usage?: StepUsage }, callId: string, record?: ModelRequest): Promise<void> {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
   res.write(chunk({ role: "assistant", content: "" }));
 
@@ -100,7 +103,9 @@ async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall } |
     res.write(chunk({}, "tool_calls"));
   }
 
-  res.write(`data: ${JSON.stringify({ id: "chatcmpl-scripted", object: "chat.completion.chunk", created: 0, model: "demo-model", choices: [], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } })}\n\n`);
+  const prompt = step.usage?.prompt ?? 10;
+  const usage = { prompt_tokens: prompt, completion_tokens: 10, total_tokens: prompt + 10, ...(step.usage?.cached ? { prompt_tokens_details: { cached_tokens: step.usage.cached } } : {}) };
+  res.write(`data: ${JSON.stringify({ id: "chatcmpl-scripted", object: "chat.completion.chunk", created: 0, model: "demo-model", choices: [], usage })}\n\n`);
   res.end("data: [DONE]\n\n");
 }
 
