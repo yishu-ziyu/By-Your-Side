@@ -460,6 +460,7 @@ try {
     };
 
     // 第一句是普通问候：可控任务期间的转写闸门必须放行，助手照常回答，任务不动。
+    await rp.click(panel, "#input");
     await rp.click(panel, ".voice-start");
 
     const greeted = await until(async () => {
@@ -765,6 +766,7 @@ try {
   };
 
   if (firstUtterance) await rp.evaluate(off, "window.__firstReadyTargetAt=Date.now()+12000;true");
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
   let settled = 0;
   let lastPanelStatus = "";

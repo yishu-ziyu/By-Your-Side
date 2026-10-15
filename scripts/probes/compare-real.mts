@@ -195,6 +195,7 @@ async function runExt(task: Task, id: string, dir: string) {
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "panel ready");
     if (think) {
     const chip = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
+    await rp.click(panel, "#input");
     await until(async () => (await chip()) || undefined, 60_000, "think chip");
     await rp.click(panel, "#think-chip"); await sleep(350);
     await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === ${JSON.stringify(think)}).click(), true`);
