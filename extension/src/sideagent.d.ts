@@ -189,6 +189,8 @@ interface SideAgentNamespace {
   edgeTab?: () => import("./content/edge-tab.js").EdgeTabState | null;
   /** 验收：按部位点胶囊，和真人点走同一个处理函数。 */
   clickEdgeTab?: (part: "capsule" | "stop" | "action" | "bubble" | number) => boolean;
+  uncoverPageTarget?: (target: Element, x: number, y: number, token: string) => boolean;
+  restorePageTarget?: (token: string) => void;
   /** 手绘批注配置与动效偏好 */
   setMarkConfig?: (opts: MarkOptions) => void;
   getMarkConfig?: () => MarkOptions;
