@@ -7,6 +7,7 @@ import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
 import { answerSkeleton, paintBeatMark } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
+import { observeForCue } from "./cue.js";
 import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -5051,6 +5052,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
   // 并行助手已删除：非主会话的事件不再出现，出现也不渲染。
   if (sessionId && !isLeadSession(sessionId)) return;
 
+  if (!replayingHistory) observeForCue(ev);
   noteFieldTarget(ev);
 
   const progressRun = currentRun ?? lastRun;
