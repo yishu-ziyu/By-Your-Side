@@ -1,12 +1,13 @@
 /**
  * 计划卡原地变成回执：只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/plan-receipt.mts --headless [--case=success|undo|failed|stopped] [--record]
- *   不带 --case 时四种依次各跑一遍（各开一个浏览器）。
+ *   npx tsx scripts/acceptance/real-path/plan-receipt.mts --headless [--case=success|undo|failed|stopped|recovered] [--record]
+ *   不带 --case 时五种依次各跑一遍（各开一个浏览器）。
  *   success：进行中卡头是「会去 … · 不会做 …」，每做完一步同一张卡里那一步打勾；做完收成一行
  *     「已填 3 项 · 用时 N 秒 · 撤销」（后面是「细节 ›」），在回答上面；回答下没有「还原填写」；点细节展开每一步。
  *   undo：同上，点卡上的「撤销」：网页三栏回到空，卡上写「已撤销」，卡下写「还原了 3 处…」，回答变淡。
  *   failed：第 2 步没找到电话栏：卡不收起，行首写「没做完」，没做成那一步标 ✕；「继续原任务」在卡里，下面不另起一张卡。
  *   stopped：填到一半用户点停止：卡不收起，行首写「已中止」，下面不另起一张卡。
+ *   recovered：电话栏先填错选择器、再换对的做成：整轮做完，卡收成一行「已填 3 项…」；点细节仍能看到没做成那一步标 ✕。
  * --record：录侧栏和网页，左右并排成 <case>.mp4，并截一张结束时的侧栏 <case>-end.png，只给人看，不参与判定。
  * SIDEAGENT_ACCEPTANCE_DIST 指向旧版扩展时用来录改动前的样子，判定照常会失败。
  */
@@ -20,9 +21,9 @@ import { startScriptedModel, type Step } from "./scripted-model.mts";
 
 requireHeadless();
 
-type Case = "success" | "undo" | "failed" | "stopped";
+type Case = "success" | "undo" | "failed" | "stopped" | "recovered";
 const only = process.argv.find(a => a.startsWith("--case="))?.slice(7) as Case | undefined;
-const cases: Case[] = only ? [only] : ["success", "undo", "failed", "stopped"];
+const cases: Case[] = only ? [only] : ["success", "undo", "failed", "stopped", "recovered"];
 const record = process.argv.includes("--record");
 const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-plan-receipt`);
 
@@ -37,7 +38,7 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 const ASK = "帮我把报名表填了，用我的常用信息";
-const DONE: Record<Case, string> = { success: "填好了，还没点提交。邮箱用的是你的工作邮箱。", undo: "填好了，还没点提交。邮箱用的是你的工作邮箱。", failed: "电话那一栏没找到，只填了姓名。", stopped: "" };
+const DONE: Record<Case, string> = { success: "填好了，还没点提交。邮箱用的是你的工作邮箱。", undo: "填好了，还没点提交。邮箱用的是你的工作邮箱。", failed: "电话那一栏没找到，只填了姓名。", stopped: "", recovered: "填好了，还没点提交。邮箱用的是你的工作邮箱。" };
 // 脚本模型用 CSS 选择器填，步骤名写成「填「#name」」：填写的步骤名取自 target，产品里 fill 没有单独的栏名参数。
 const fill = (target: string, value: string, _field: string, delayMs = 700): Step => ({ tool: { name: "fill", args: { target, value } }, delayMs });
 const STEPS: Record<Case, Step[]> = {
@@ -45,6 +46,7 @@ const STEPS: Record<Case, Step[]> = {
   undo: [],
   failed: [{ tool: { name: "snapshot", args: {} }, delayMs: 600 }, fill("#name", "王小明", "姓名"), fill("#tel-missing", "13812345678", "电话"), { text: DONE.failed, delayMs: 600 }],
   stopped: [{ tool: { name: "snapshot", args: {} }, delayMs: 600 }, fill("#name", "王小明", "姓名"), fill("#phone", "13812345678", "电话", 6000), fill("#email", "xiaoming@work.example", "邮箱"), { text: "填好了。" }],
+  recovered: [{ tool: { name: "snapshot", args: {} }, delayMs: 600 }, fill("#name", "王小明", "姓名"), fill("#tel-missing", "13812345678", "电话"), fill("#phone", "13812345678", "电话"), fill("#email", "xiaoming@work.example", "邮箱"), { text: DONE.recovered, delayMs: 600 }],
 };
 STEPS.undo = STEPS.success;
 
@@ -108,19 +110,26 @@ for (const name of cases) {
     const end = await seen();
     evidence.end = end;
 
-    if (name === "success" || name === "undo") {
+    if (name === "success" || name === "undo" || name === "recovered") {
       assert.match(end.line, /^已填 3 项 · 用时 \d+ 秒 · 撤销 ·$/, `收成一行 ${JSON.stringify(end)}`);
       assert.ok(!end.open && end.before && end.looseRuns === 0, `收起、在回答上面、没有另一块过程 ${JSON.stringify(end)}`);
       assert.ok(!end.answerUndo, `回答下没有还原填写 ${JSON.stringify(end)}`);
     }
 
-    if (name === "success") {
+    if (name === "success" || name === "recovered") {
       if (record) await sleep(1200);
       await rp.click(panel, ".plan-card .plan-details");
       await sleep(900);
-      const opened = await rp.evaluate(panel, `document.querySelector(".plan-card")?.open ? [...document.querySelectorAll(".plan-card .chip:not(.prep) .chip-label")].map(e => e.textContent.trim()) : []`) as string[];
+      const opened = await rp.evaluate(panel, `(() => {
+        const card = document.querySelector(".plan-card");
+        return {
+          labels: card?.open ? [...document.querySelectorAll(".plan-card .chip:not(.prep) .chip-label")].map(e => e.textContent.trim()) : [],
+          error: card?.querySelectorAll(".chip.error").length ?? 0,
+        };
+      })()`) as { labels: string[]; error: number };
       evidence.opened = opened;
-      assert.ok(opened.length >= 3, `细节里展开每一步 ${JSON.stringify(opened)}`);
+      assert.ok(opened.labels.length >= 3, `细节里展开每一步 ${JSON.stringify(opened)}`);
+      if (name === "recovered") assert.ok(opened.error >= 1 && !end.line.startsWith("没做完"), `一步没做成但整轮做完，卡仍收成一行 ${JSON.stringify({ end, opened })}`);
       if (record) await sleep(1200);
       await rp.click(panel, ".plan-card .plan-details");
       await sleep(900);
