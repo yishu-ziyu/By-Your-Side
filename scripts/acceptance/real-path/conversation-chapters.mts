@@ -1,11 +1,11 @@
 /**
  * 长会话分章节（docs/evals/20261015-conversation-chapters.md）：只装扩展的隔离无头 Chrome、真侧栏、本机脚本模型、本机练习页。
  *   npx tsx scripts/acceptance/real-path/conversation-chapters.mts --headless
- * 路径：空闲时发第一件事 → 做完发第二件（模型慢慢答）→ 第二件还在做时插一句补充 → 做完发第三件 →
- *   点顶部的「1」→ 重新打开侧栏。
- * 判据只看侧栏里用户看得到的东西：分隔线的编号和名字、插话上方没有分隔线、满 3 章才有顶部一排、
+ * 路径：空闲时发第一件事 → 做完追问一句（只靠回答、不动工具）→ 发第二件（模型慢慢答）→ 第二件还在做时插一句补充 →
+ *   做完发第三件 → 点顶部的「1」→ 重新打开侧栏。三件事每件都先在练习页上点一下按钮再回答。
+ * 判据只看侧栏里用户看得到的东西：分隔线的编号和名字、追问和插话上方没有分隔线、满 3 章才有顶部一排、
  *   顶部一排不压住消息、点「1」后第一章的分隔线在对话区里看得见、重新打开后章节一样。
- * 失败方式：章节不画（noteUserTurn 直接返回），第一件做完时就判失败：找不到第一章的分隔线。
+ * 失败方式：每句空闲时的话都开章（不等工具步骤），追问上方就多出一条分隔线。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -21,7 +21,7 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOStri
 await mkdir(artifacts, { recursive: true });
 
 const site = createServer((_req, res) => {
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>练习页</title></head><body><main><h1>练习页</h1><p>耳机、摘要和天气。</p></main></body></html>`);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>练习页</title></head><body><main><h1>练习页</h1><p>耳机、摘要和天气。</p><button id="ok" onclick="this.textContent='已看过'">看一下</button></main></body></html>`);
 });
 
 await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
@@ -37,14 +37,20 @@ const TASKS = [
   { ask: "第三件：查明天上海天气", name: "第三件：查明天上海天气", answer: `${long("天气")}\n\n【三完成】` },
 ];
 
+const FOLLOW_UP = { ask: "追问：刚才第二家多少钱？", answer: "第二家 399 元。【追问完成】" };
+
 const STEER = { ask: "补充一句：摘要语气轻松一点", answer: "好的，摘要语气放轻松。【插话完成】" };
 
+/** 每件事先在练习页上用一步工具，再回答。 */
+const tool = { tool: { name: "click", args: { target: "#ok" } } };
+
 const model = await startScriptedModel([
-  { match: TASKS[0]!.ask, steps: [{ text: TASKS[0]!.answer }] },
+  { match: TASKS[0]!.ask, steps: [tool, { text: TASKS[0]!.answer }] },
+  { match: FOLLOW_UP.ask, steps: [{ text: FOLLOW_UP.answer }] },
   // 第二件慢慢答，留出插话的时间。
-  { match: TASKS[1]!.ask, steps: [{ text: TASKS[1]!.answer, delayMs: 6_000 }] },
+  { match: TASKS[1]!.ask, steps: [tool, { text: TASKS[1]!.answer, delayMs: 6_000 }] },
   { match: STEER.ask, steps: [{ text: STEER.answer }] },
-  { match: TASKS[2]!.ask, steps: [{ text: TASKS[2]!.answer }] },
+  { match: TASKS[2]!.ask, steps: [tool, { text: TASKS[2]!.answer }] },
 ]);
 
 /** 用户看得到的章节：分隔线文字（看不见的记 null）、哪条用户消息上方有分隔线、顶部一排的按钮、它和对话区的位置。 */
@@ -101,6 +107,13 @@ try {
   const one = await read();
   evidence.afterOne = one;
 
+  // 追问：只靠回答，不动工具。
+  await say(FOLLOW_UP.ask);
+  await answered("【追问完成】");
+  await settled();
+  const followUp = await read();
+  evidence.afterFollowUp = followUp;
+
   // 第二件，做到一半插一句。
   await say(TASKS[1]!.ask);
   await until(async () => await rp.evaluate(panel, `!(${idle})`) || undefined, 15_000, "second task running", 100);
@@ -127,6 +140,9 @@ try {
 
   assert.deepEqual(one.dividers, [null], `one chapter: its divider is not drawn: ${JSON.stringify(one)}`);
   assert.equal(one.row, null, `one chapter: no top row: ${JSON.stringify(one)}`);
+  assert.deepEqual(followUp.dividers, [null], `a follow-up answered without tools joins chapter 1: ${JSON.stringify(followUp)}`);
+  const followTurn = three.usersWithDivider.find(u => u.text.includes(FOLLOW_UP.ask));
+  assert.ok(followTurn && !followTurn.divider, `the follow-up has no divider: ${JSON.stringify(three.usersWithDivider)}`);
   assert.deepEqual(two.dividers, [divider(0), divider(1)], `two chapters: both dividers show number and name: ${JSON.stringify(two)}`);
   const steerTurn = two.usersWithDivider.find(u => u.text.includes(STEER.ask));
   assert.ok(steerTurn && !steerTurn.divider, `the steer sent during a running task has no divider: ${JSON.stringify(two.usersWithDivider)}`);
