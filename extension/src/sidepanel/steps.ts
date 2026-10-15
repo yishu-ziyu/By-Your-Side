@@ -230,11 +230,14 @@ const CURSOR_VERBS = new Map([
   ["hover", { verb: "看", unnamed: "查看" }],
 ]);
 
+/** 真实模型常只给读页编号（@2、e12），这不是给人看的名字：当作没有名字。 */
+const REF_ONLY = /^@?[a-z]?\d+$/i;
+
 export function actionCardLabel(name: string, params: Parameters<typeof describeTool>[1], plate?: string): string {
   const words = CURSOR_VERBS.get(name);
 
   if (!words) return describeTool(name, params).full;
-  const label = (plate || str(params.label) || "").trim();
+  const label = [plate, str(params.label)].map(v => (v ?? "").trim()).find(v => v && !REF_ONLY.test(v)) ?? "";
 
   return label ? `${words.verb}「${clip(label)}」` : words.unnamed;
 }
