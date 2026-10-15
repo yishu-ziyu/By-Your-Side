@@ -12,6 +12,7 @@ export async function navigate(
   },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+  cancelled?: () => boolean,
 ): Promise<{ url: string; title: string; note?: string; retry?: string } & PageReadiness> {
   // 没有完整网址时 Chrome 不会打开新文档，下面会白等到超时（#256）：立刻报错，并点明程序里常见的取错值。
   const url = typeof params.url === "string" ? params.url.trim() : "";
@@ -32,7 +33,7 @@ export async function navigate(
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   const tabId = tab.id;
-  const {ready,retry}=await retryTransientErrorPage(tabId,url,await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })}),timeoutMs,beforeDispatch);
+  const {ready,retry}=await retryTransientErrorPage(tabId,url,await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })}),timeoutMs,cancelled);
 
   // 等页面把内容画完，宿主附带的快照才不是半张空页；多等的时间算进 waitMs。
   if (settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tabId);

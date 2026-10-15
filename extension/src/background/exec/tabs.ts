@@ -48,6 +48,7 @@ export async function openTab(
   params: { url?: string },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+  cancelled?: () => boolean,
 ): Promise<{ tabId: number; url: string; title: string; note?: string; retry?: string; tabClosed?: true } & Partial<PageReadiness>> {
   const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
@@ -61,7 +62,7 @@ export async function openTab(
   // 尽量在页面自己的请求发出前开始记录；attach 失败不影响打开。
   try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
 
-  const opened=params.url?await retryTransientErrorPage(tab.id,params.url,await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}),10_000,beforeDispatch):undefined;
+  const opened=params.url?await retryTransientErrorPage(tab.id,params.url,await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}),10_000,cancelled):undefined;
   const ready=opened?.ready;
   const retry=opened?.retry?{retry:opened.retry}:{};
 
