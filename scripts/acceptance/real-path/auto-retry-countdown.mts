@@ -7,9 +7,13 @@
  *   甲 Kimi 403：不点任何按钮，卡上出现「第 1 次」倒计时，到点自己重试；再失败写「第 2 次」且等得更久；之后答案出现，用户只发过一次。
  *   乙 429：点「立即重试」，2 秒内门口收到重试，答案出现。
  *   丙 倒计时中发新消息：新消息答完后等过原来的到点时间，门口没有旧任务的重试，旧卡写「不再自动重试」。
- *   丁 一直 429：连点 3 次「立即重试」都失败后，卡上只剩手动按钮，没有倒计时。
+ *   丁 一直 429：连点 3 次「立即重试」都失败后，卡上只剩手动按钮，没有倒计时；点「稍后重试」，倒计时后接着做，答案出现。
  *   戊 429 额度用完：卡上没有倒计时，12 秒内门口没有新的请求。
- * 失败方式：倒计时要点了才出现、403 被当成 key 无效、额度用完也自动重试、第 4 次还在倒计时、新消息之后旧任务自己重跑。
+ *   己 倒计时中重开侧栏（重载侧栏页）：回放出来的卡只有手动按钮、没有倒计时，15 秒内门口没有新的请求。
+ *   庚 第二个窗口里再开一个侧栏页：同一次出错只有一个侧栏倒计时，另一个只给手动按钮；答案出来后两边都没有「没有要接着做的出错任务」。
+ * 读屏：倒计时那行不设 aria-live，每秒变的数字 aria-hidden，只有一句不变的话给读屏。
+ * 失败方式：倒计时要点了才出现、403 被当成 key 无效、额度用完也自动重试、第 4 次还在倒计时、新消息之后旧任务自己重跑、
+ *   重开侧栏后旧卡又倒计时并重试。
  * 产物：out/acceptance/real-path/<时间>-auto-retry-countdown/*.png、countdown.mp4、result.json。
  */
 import assert from "node:assert/strict";
@@ -25,13 +29,16 @@ const artifacts = process.env.OUT ?? join(REPO, "out/acceptance/real-path", `${n
 
 await mkdir(artifacts, { recursive: true });
 
+// 庚排第一：第二个侧栏开在标签页里，任务请求带上这个标签页的标题（会话名「自动重试验收甲」），脚本模型按规则顺序挑第一条匹配的。
 const CASES = {
+  twin: { ask: "自动重试验收庚", answer: "庚：只重试了一次。" },
   kimi: { ask: "自动重试验收甲", answer: "甲：等忙过去后答完了。" },
   now: { ask: "自动重试验收乙", answer: "乙：立即重试后答完了。" },
   old: { ask: "自动重试验收丙旧", answer: "丙旧：不该出现。" },
   fresh: { ask: "自动重试验收丙新", answer: "丙新：新消息答完了。" },
-  exhaust: { ask: "自动重试验收丁", answer: "丁：不该出现。" },
+  exhaust: { ask: "自动重试验收丁", answer: "丁：稍后重试后答完了。" },
   quota: { ask: "自动重试验收戊", answer: "戊：不该出现。" },
+  replay: { ask: "自动重试验收己", answer: "己：不该出现。" },
 };
 
 const model = await startScriptedModel(Object.values(CASES).map(c => ({ match: c.ask, steps: [{ text: c.answer }] })));
@@ -88,7 +95,7 @@ try {
   const text = async () => String(await rp.evaluate(panel, 'document.querySelector("#messages")?.textContent ?? ""'));
   const visible = (selector: string) => rp.evaluate(panel, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return !!el && el.getClientRects().length > 0; })()`) as Promise<boolean>;
   const waitFor = (selector: string, label: string, ms = 60_000) => until(async () => await visible(selector) || undefined, ms, label);
-  const countdown = async () => String(await rp.evaluate(panel, 'document.querySelector(".error-card:not(.is-retired) .error-card-countdown")?.textContent ?? ""'));
+  const countdown = async () => String(await rp.evaluate(panel, 'document.querySelector(".error-card:not(.is-retired) .error-card-countdown [aria-hidden]")?.textContent ?? ""'));
   const userBubbles = (ask: string) => rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].filter(el => el.textContent.includes(${JSON.stringify(ask)})).length`);
   const lastReceipt = async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".error-receipt")].at(-1)?.textContent ?? ""'));
   const idle = () => until(async () => await rp.evaluate(panel, '!document.querySelector("#send-btn").classList.contains("stopping") && !document.querySelector(".error-card.is-recovering")') || undefined, 60_000, "sidebar idle");
@@ -111,6 +118,8 @@ try {
   evidence.kimiFirst = first;
   assert.match(first, /^\d+ 秒后自动重试（第 1 次，共 3 次）$/, "甲：倒计时写明秒数和第几次");
   assert.equal(await visible(".error-card .error-card-wait"), true, "甲：有细进度条");
+  evidence.kimiA11y = await rp.evaluate(panel, `(() => { const line = document.querySelector(".error-card .error-card-countdown"); return { live: line?.getAttribute("aria-live") ?? null, alertLive: line?.closest("[aria-live]") ? true : false, spoken: line?.querySelector(".error-card-announce")?.textContent ?? null }; })()`);
+  assert.deepEqual(evidence.kimiA11y, { live: null, alertLive: false, spoken: "稍后自动重试，第 1 次，共 3 次。" }, "甲：读屏只念一句不变的话");
   assert.equal(await visible('.error-card [data-act="retry-now"]'), true, "甲：有「立即重试」");
   assert.equal(await visible('.error-card [data-act="pick-model"]'), true, "甲：有「换一个模型」");
   assert.equal(await visible('.error-card [data-act="fix-key"]'), false, "甲：Kimi 403 不被当成 key 无效");
@@ -162,7 +171,7 @@ try {
   evidence.supersedeLateRequests = requestsSince(afterFresh);
   assert.equal(evidence.supersedeLateRequests, 0, "丙：过了原来的到点时间，旧任务没有自己重试");
   assert.ok(!(await text()).includes(CASES.old.answer), "丙：旧任务的答案没有出现");
-  assert.match(String(await rp.evaluate(panel, 'document.querySelector(".error-card.is-retired .error-card-countdown")?.textContent ?? ""')), /不再自动重试/, "丙：旧卡写明不再自动重试");
+  assert.match(String(await rp.evaluate(panel, '[...document.querySelectorAll(".error-card.is-retired .error-card-countdown")].at(-1)?.textContent ?? ""')), /不再自动重试/, "丙：旧卡写明不再自动重试");
   assert.equal(await visible(".error-card.is-retired .error-card-wait"), false, "丙：旧卡没有进度条");
 
   // 丁：一直 429 → 连点 3 次「立即重试」都失败，卡回到手动按钮。
@@ -182,6 +191,15 @@ try {
   assert.equal(await countdown(), "", "丁：3 次后没有倒计时");
   assert.equal(await visible('.error-card:not(.is-retired) [data-act="pick-model"]'), true, "丁：仍能换模型");
   await rp.screenshot(panel, join(artifacts, "exhausted.png"));
+  failNext = null;
+  const laterAt = Date.now();
+  await rp.click(panel, '.error-card:not(.is-retired) [data-act="later"]');
+  await until(async () => /秒后自动重试/.test(String(await rp.evaluate(panel, `document.querySelector('.error-card:not(.is-retired) [data-act="later"]')?.textContent ?? ""`))) || undefined, 3_000, "丁：「稍后重试」开始倒计时");
+  await until(async () => (await text()).includes(CASES.exhaust.answer) || undefined, 40_000, "丁：稍后重试后答案出现");
+  evidence.laterWaitMs = gate.find(g => g.at > laterAt)!.at - laterAt;
+  assert.ok((evidence.laterWaitMs as number) >= 6_000, `丁：「稍后重试」等了约 8 秒（${evidence.laterWaitMs} ms）`);
+  await until(async () => /出过错.*重试.*从出错处继续/.test(await lastReceipt()) || undefined, 10_000, "丁：回执");
+  await idle();
 
   // 戊：429 额度用完 → 没有倒计时，不自己重试。
   evidence.stage = "quota";
@@ -198,6 +216,45 @@ try {
   await sleep(12_000);
   evidence.quotaLateRequests = requestsSince(quotaAt);
   assert.equal(evidence.quotaLateRequests, 0, "戊：12 秒内没有自己重试");
+
+  // 己：倒计时中重开侧栏 → 回放出来的卡不倒计时，不替用户重试。
+  evidence.stage = "replay";
+  failNext = { reply: RATE_429, count: Infinity };
+  await send(CASES.replay.ask);
+  await until(async () => /第 1 次/.test(await countdown()) || undefined, 60_000, "己：重开前在倒计时");
+  await rp.cdp.send("Page.reload", {}, panel);
+  const reloadAt = Date.now();
+  await until(async () => await rp.evaluate(panel, `(() => { const card = [...document.querySelectorAll(".error-card:not(.is-retired)")].at(-1); return !!card && !!card.querySelector('[data-act="later"]') && (document.querySelector("#messages")?.textContent ?? "").includes(${JSON.stringify(CASES.replay.ask)}); })()`) || undefined, 30_000, "己：重开后回放出手动卡");
+  await sleep(600);
+  assert.equal(await countdown(), "", "己：回放的卡没有倒计时");
+  assert.equal(await visible(".error-card .error-card-wait"), false, "己：回放的卡没有进度条");
+  assert.ok(!(await text()).includes("不再自动重试"), "己：回放的卡不写「不再自动重试」");
+  await rp.screenshot(panel, join(artifacts, "replay-card.png"));
+  await sleep(Math.max(0, reloadAt + 15_000 - Date.now()));
+  evidence.replayLateRequests = requestsSince(reloadAt);
+  assert.equal(evidence.replayLateRequests, 0, "己：重开后 15 秒内没有自己重试");
+
+  // 庚：第二个窗口再开一个侧栏页，两个侧栏都收到同一次出错。
+  evidence.stage = "twin";
+  failNext = null;
+  const extensionId = String(await rp.evaluate(panel, "chrome.runtime.id"));
+  const twinTarget = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${extensionId}/sidepanel.html`, newWindow: true })).targetId;
+  const twin = await rp.attach(twinTarget);
+  await until(async () => await rp.evaluate(twin, `(document.querySelector("#messages")?.textContent ?? "").includes(${JSON.stringify(CASES.replay.ask)})`) || undefined, 30_000, "庚：第二个侧栏显示同一会话");
+  const twinCountdown = async () => String(await rp.evaluate(twin, 'document.querySelector(".error-card:not(.is-retired) .error-card-countdown [aria-hidden]")?.textContent ?? ""'));
+  failNext = { reply: RATE_429, count: 3 };
+  await send(CASES.twin.ask);
+  await until(async () => /第 1 次/.test(await countdown()) || undefined, 60_000, "庚：第一个侧栏倒计时");
+  await until(async () => await rp.evaluate(twin, `(() => { const card = [...document.querySelectorAll(".error-card:not(.is-retired)")].at(-1); return !!card?.querySelector('[data-act="later"]') && (document.querySelector("#messages")?.textContent ?? "").includes(${JSON.stringify(CASES.twin.ask)}); })()`) || undefined, 10_000, "庚：第二个侧栏只给手动按钮");
+  assert.equal(await twinCountdown(), "", "庚：第二个侧栏没有倒计时");
+  await rp.screenshot(twin, join(artifacts, "twin-manual.png"));
+  await until(async () => (await text()).includes(CASES.twin.answer) || undefined, 40_000, "庚：答案出现");
+  await until(async () => String(await rp.evaluate(twin, 'document.querySelector("#messages")?.textContent ?? ""')).includes(CASES.twin.answer) || undefined, 10_000, "庚：第二个侧栏也看到答案");
+  await sleep(12_000);
+  evidence.twinGate = gate.slice(-4).map(g => g.result);
+  const notices = `${await text()}${String(await rp.evaluate(twin, 'document.querySelector("#messages")?.textContent ?? ""'))}`;
+  assert.ok(!notices.includes("没有要接着做的出错任务"), "庚：两边都没有「没有要接着做的出错任务」");
+  await rp.cdp.send("Target.closeTarget", { targetId: twinTarget }).catch(() => {});
 
   evidence.stage = "done";
 } catch (caught) {

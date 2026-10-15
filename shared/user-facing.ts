@@ -95,12 +95,17 @@ function classifyModelError(text: string, model: string | undefined): Pick<Model
 
   if (isQuotaError(text)) return quota;
 
-  // 在 401/403 之前认：Kimi 同时请求数超限回的是 403 permission_error，等一下就好，不是 key 的问题。
-  if (isProviderBusyError(text) && !quotaWords) return { kind: "busy", title: "模型太忙了", copy: "请求太频繁，或同时请求太多。可以稍后再试，或换个模型立刻继续。" };
+  const busy = { kind: "busy", title: "模型太忙了", copy: "请求太频繁，或同时请求太多。可以稍后再试，或换个模型立刻继续。" } as const;
+
+  // 只有同时请求数超限的原话在 401/403 之前认：Kimi 回的是 403 permission_error，等一下就好，不是 key 的问题。
+  // 其余「忙」的字样（429、并发）放在 key 检查之后，免得 401 正文里碰巧带这些字时不让用户换 key。
+  if (/concurrent request limit|too many concurrent/i.test(text) && !quotaWords) return busy;
 
   if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid.{0,20}(api.?key|token)/i.test(text)) {
     return { kind: "auth", title: "模型拒绝了请求", copy: `key 无效，或这个 key 没有${model ? ` ${model} ` : "这个模型"}的权限。重试结果会一样，先换 key。` };
   }
+
+  if (isProviderBusyError(text) && !quotaWords) return busy;
 
   if (quotaWords) return quota;
 

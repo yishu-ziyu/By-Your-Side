@@ -280,8 +280,8 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "set_thinking"; deep: boolean }
   /** 用户点进输入框或开始打字：先把到当前模型服务的连接建好，发出去的第一句不再等建连接。 */
   | { type: "warm_up" }
-  /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做（#74）。key：刚换的 key，先用上再接着做。 */
-  | { type: "retry_after_error"; key?: string }
+  /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做（#74）。key：刚换的 key，先用上再接着做。auto：错误卡倒计时到点自己发的。 */
+  | { type: "retry_after_error"; key?: string; auto?: true }
   /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
   | { type: "model_key_test"; requestId: string; key: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact }
@@ -895,6 +895,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "set_thinking" && typeof msg.deep !== "boolean") return null;
 
     if (msg.type === "retry_after_error" && msg.key !== undefined && (typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
+
+    if (msg.type === "retry_after_error" && msg.auto !== undefined && msg.auto !== true) return null;
 
     if (msg.type === "model_key_test" && (!validRequestId(msg.requestId) || typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
 

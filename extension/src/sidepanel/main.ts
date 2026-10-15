@@ -2389,6 +2389,21 @@ function noteModelInfo(model: string | undefined, models: ModelOption[] | undefi
   if (pendingModelSwitch?.id === model) { clearTimeout(pendingModelSwitch.timer); pendingModelSwitch.done(); pendingModelSwitch = null; }
 }
 
+/**
+ * 后台把同一次出错发给每个窗口的侧栏，只能有一个替用户自动重试：先拿到这把锁的侧栏负责，它关掉后由下一个接手。
+ * 不按窗口编号排：chrome.runtime.getContexts 给侧栏的 windowId 是 -1。
+ */
+const AUTO_RETRY_LOCK = "sideagent-auto-retry-owner";
+let autoRetryOwner = false;
+void navigator.locks?.request(AUTO_RETRY_LOCK, () => { autoRetryOwner = true; return new Promise<never>(() => {}); });
+
+async function ownsAutoRetry(): Promise<boolean> {
+  if (autoRetryOwner || !navigator.locks) return true;
+  const { held = [] } = await navigator.locks.query();
+
+  return !held.some(lock => lock.name === AUTO_RETRY_LOCK);
+}
+
 const errorCards = mountErrorCards({
   mount: (el) => appendToMessages(el),
   app,
@@ -2399,7 +2414,8 @@ const errorCards = mountErrorCards({
     pendingModelSwitch = { id, done: resolve, timer: setTimeout(() => { pendingModelSwitch = null; reject(new Error("切换超时")); }, 10_000) };
     send({ type: "set_model", model: id });
   }),
-  retry: (key) => { send(key ? { type: "retry_after_error", key } : { type: "retry_after_error" }); },
+  retry: (key, auto) => { send({ type: "retry_after_error", ...(key ? { key } : {}), ...(auto ? { auto: true as const } : {}) }); },
+  ownsAutoRetry,
   testKey: (key) => new Promise((resolve) => {
     const requestId = crypto.randomUUID();
     keyTests.set(requestId, resolve);
@@ -5303,7 +5319,7 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
     case "error": {
       const copy = describeModelError(ev.message);
 
-      if (copy) errorCards.show(copy);
+      if (copy) errorCards.show(copy, !replayingHistory);
       else addMsg("msg error", ev.message);
       break;
     }

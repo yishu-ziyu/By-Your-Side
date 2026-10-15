@@ -3,6 +3,7 @@
  * - auth：「去换 key」打开底部面板，测试连接通过才能「保存并继续」；「仍然重试」原样再试。
  * - busy：卡上直接倒计时，到点自动接着做，最多 3 次、间隔逐次拉长；随时可以「立即重试」或换模型。3 次都没成，回到手动的
  *   「换一个模型」「稍后重试」。quota 等多久都不会好，只有手动的这两个。missing 只有换模型。
+ *   只有刚发生的出错才倒计时：重开侧栏回放出来的旧卡只给手动按钮；几个窗口都开着侧栏时只由一个侧栏替用户重试。
  * - network：「重试」；网络恢复时自动重试一次。
  * 接着做之后卡片收成一行状态；答案送达时卡片在原地收成一行回执「出过错 · …，已从出错处继续」，
  * 行留在出错的位置，续写的答案跟在它下面。再出错不换新卡：同一张卡原地换内容、淡一下，不抖也不重新进场（#286）。
@@ -34,8 +35,10 @@ export interface ErrorCardHost {
   currentModel(): string | undefined;
   /** 发 set_model；返回的 Promise 在宿主确认换好（model_info）后完成。 */
   switchModel(id: string): Promise<void>;
-  /** 发 retry_after_error；key 是刚换的 key。 */
-  retry(key?: string): void;
+  /** 发 retry_after_error；key 是刚换的 key，auto 表示倒计时到点自己发的。 */
+  retry(key?: string, auto?: boolean): void;
+  /** 几个窗口的侧栏同时收到同一次出错时，只有返回 true 的那一个倒计时并替用户重试。 */
+  ownsAutoRetry(): Promise<boolean>;
   testKey(key: string): Promise<KeyTestResult>;
   saveKey(provider: string, key: string): Promise<void>;
   scrollToEnd(): void;
@@ -48,6 +51,9 @@ export function mountErrorCards(host: ErrorCardHost) {
   let stopOnline: (() => void) | null = null;
   /** 这张卡已经用掉的自动重试次数；「立即重试」算作提前用掉当前这一次。 */
   let autoUsed = 0;
+  /** 这张卡可以自动重试：出错是刚发生的（不是回放），并且由这个侧栏负责。 */
+  let auto = false;
+  let shown: ModelErrorCopy | null = null;
   let stopCountdown: (() => void) | null = null;
 
   const button = (label: string, act: string, primary = false) => {
@@ -66,7 +72,7 @@ export function mountErrorCards(host: ErrorCardHost) {
   /** 卡之后已经有用户的新消息：它不再是最新一轮，不能替用户重试。 */
   const superseded = (el: HTMLElement) => [...document.querySelectorAll(".msg.user")].some(u => (el.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
 
-  function recover(source: string, key?: string): void {
+  function recover(source: string, key?: string, autoSent = false): void {
     if (!card) return;
     clearTimers();
     recovering = source;
@@ -75,7 +81,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     line.textContent = `${source}，正在从出错处继续…`;
     card.classList.add("is-recovering");
     card.replaceChildren(line);
-    host.retry(key);
+    host.retry(key, autoSent);
   }
 
   function modelMenu(row: HTMLElement, trigger: HTMLButtonElement): HTMLElement {
@@ -144,21 +150,54 @@ export function mountErrorCards(host: ErrorCardHost) {
     const seconds = Math.round(AUTO_WAITS[autoUsed]! * (0.8 + Math.random() * 0.4));
     const due = Date.now() + seconds * 1000;
     bar.style.setProperty("--wait", `${seconds}s`);
+    // 卡是 role="alert"：每秒变的数字不进读屏，只念一次不变的那句。
+    const visibleText = document.createElement("span");
+    visibleText.setAttribute("aria-hidden", "true");
+    const spoken = document.createElement("span");
+    spoken.className = "error-card-announce";
+    spoken.textContent = `稍后自动重试，第 ${attempt} 次，共 ${AUTO_WAITS.length} 次。`;
+    line.replaceChildren(visibleText, spoken);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let owner: boolean | null = null;
     stopCountdown = () => clearTimeout(timer);
+    const live = () => card === el && el.isConnected && el.contains(line);
 
     const tick = () => {
-      if (card !== el || !el.isConnected || !el.contains(line)) return;
+      if (!live()) return;
 
       if (superseded(el)) { api.retire(); return; }
       const left = Math.ceil((due - Date.now()) / 1000);
 
-      if (left <= 0) { autoUsed = attempt; recover("已自动重试"); return; }
-      line.textContent = `${left} 秒后自动重试（第 ${attempt} 次，共 ${AUTO_WAITS.length} 次）`;
+      // 还不知道是不是由这个侧栏负责时先不发，等结果回来再判一次。
+      if (left <= 0) {
+        if (owner) { autoUsed = attempt; recover("已自动重试", undefined, true); }
+
+        return;
+      }
+
+      visibleText.textContent = `${left} 秒后自动重试（第 ${attempt} 次，共 ${AUTO_WAITS.length} 次）`;
       timer = setTimeout(tick, due - Date.now() - (left - 1) * 1000);
     };
 
     tick();
+    void host.ownsAutoRetry().catch(() => true).then((mine) => {
+      owner = mine;
+
+      if (!live()) return;
+
+      if (!mine) { manual(el); return; }
+
+      if (Date.now() >= due) tick();
+    });
+  }
+
+  /** 这张卡不由这个侧栏自动重试：原地换成手动按钮。 */
+  function manual(el: HTMLElement): void {
+    stopCountdown?.();
+    stopCountdown = null;
+    auto = false;
+
+    if (shown) el.replaceChildren(...render(shown).childNodes);
   }
 
   function render(copy: ModelErrorCopy): HTMLElement {
@@ -179,9 +218,8 @@ export function mountErrorCards(host: ErrorCardHost) {
       const again = button("仍然重试", "retry-anyway");
       again.addEventListener("click", () => recover("已重试"));
       row.append(fix, again);
-    } else if (copy.kind === "busy" && autoUsed < AUTO_WAITS.length) {
+    } else if (copy.kind === "busy" && auto && autoUsed < AUTO_WAITS.length) {
       text.className = "error-card-countdown";
-      text.setAttribute("aria-live", "polite");
       const wait = document.createElement("div");
       wait.className = "error-card-wait";
       wait.append(document.createElement("span"));
@@ -312,9 +350,12 @@ export function mountErrorCards(host: ErrorCardHost) {
 
   const api = {
     /** 模型出错：没有卡就在消息流末尾出一张（rise 进场）。上一张还在就原地换内容、淡一下：位置不动，不抖也不重新进场（#286）。 */
-    show(copy: ModelErrorCopy): void {
+    /** live：刚发生的出错；重开侧栏、切回会话时回放出来的是旧出错，只给手动按钮，不替用户重试。 */
+    show(copy: ModelErrorCopy, live: boolean): void {
       clearTimers();
       recovering = null;
+      shown = copy;
+      auto = live;
 
       if (card?.isConnected) {
         const fresh = render(copy);
@@ -366,7 +407,7 @@ export function mountErrorCards(host: ErrorCardHost) {
       card.querySelector(".error-card-wait")?.remove();
       const countdown = card.querySelector(".error-card-countdown");
 
-      if (countdown) countdown.textContent = "有了新消息，不再自动重试。";
+      if (countdown) countdown.replaceChildren("有了新消息，不再自动重试。");
       card.querySelectorAll("button").forEach(b => { b.disabled = true; });
       card.classList.add("is-retired");
       card = null;
