@@ -26,6 +26,9 @@ let cachedResources: TabResourceMap | undefined;
 
 const claimBlocked = new Set<string>();
 
+/** 被关掉的工作标签页：key → tabId。切到或打开新页之前，不带 tabId 的调用都不能悄悄落到别的页上。 */
+const closedWorkingTabs = new Map<string, number>();
+
 /** 页面级交接围栏：tabId → 接手方 key。围栏期间只有接手方能对该页采取动作。 */
 const tabTransfers = new Map<number, string>();
 
@@ -409,13 +412,55 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
   return active;
 }
 
+/**
+ * 调用的目标页（显式 tabId，或已被关掉的工作标签页）不在了：不执行，告诉模型用户正在看哪一页、怎样继续。
+ * 不替模型换页：程序跑到一半换了目标，后面的写操作会落到模型没看过的页上。
+ * 用户页的标题来自网页，不放进这句框架文字里。
+ */
+export async function assertTargetTabOpen(requestedTabId: number | undefined, key: string): Promise<void> {
+  const normalized = keyOf(key);
+
+  // onRemoved 的清理排在状态队列里；先等它落定，才知道关掉的是不是工作标签页。
+  await mutateState(async () => {});
+  const closedWorking = closedWorkingTabs.get(normalized);
+  let gone: number;
+
+  if (requestedTabId !== undefined) {
+    if (await chrome.tabs.get(requestedTabId).then(() => true, () => false)) return;
+    gone = requestedTabId;
+  } else {
+    if (closedWorking === undefined) return;
+
+    if (await getWorkingTabId(normalized) != null) {
+      closedWorkingTabs.delete(normalized);
+
+      return;
+    }
+
+    gone = closedWorking;
+  }
+
+  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+  // 只有被关掉的工作标签页能确定是「已关闭」；别的页号可能从来没有过（例如 0）。
+  const what = gone === closedWorking ? `工作标签页 ${gone} 已关闭` : `标签页 ${gone} 不存在或已关闭`;
+
+  const message = active?.id != null
+    ? `${what}，这次没有执行。用户正在看的是标签页 ${active.id}。要继续，先用 tabs action:"switch" 切到要操作的标签页（或 tabs action:"list" 查看全部）。`
+    : `${what}，这次没有执行。要继续，先用 tabs action:"list" 查看全部标签页，再用 tabs action:"switch" 切到要操作的那一页。`;
+
+  throw Object.assign(new Error(message), { executionFact: "not_executed" as const });
+}
+
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabTransfers.delete(tabId);
   void mutateState(async () => {
     const [map, resources] = await Promise.all([loadMap(), loadResources()]);
     let next = map;
 
-    for (const key of sessionsForTab(map, tabId)) next = applyTabBinding(next, key, null);
+    for (const key of sessionsForTab(map, tabId)) {
+      closedWorkingTabs.set(key, tabId);
+      next = applyTabBinding(next, key, null);
+    }
     const nextResources = { ...resources };
     delete nextResources[String(tabId)];
     await persist(next, nextResources);

@@ -71,7 +71,7 @@ import { detachSoon } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
-import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
+import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
 import type { SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
@@ -1409,6 +1409,9 @@ const uplink = {
  retry: () => transport.retry(),
 };
 
+/** 不作用在某个页面上的工具：目标页关掉后它们照常可用，模型靠它们换页。 */
+const TABLESS_TOOLS: ReadonlySet<string> = new Set(["open_tab", "list_tabs", "get_active_tab", "worker_tabs", "fetch", "observe_page"]);
+
 async function executeToolCall(
   id: string,
   name: ToolName,
@@ -1509,6 +1512,8 @@ async function executeToolCall(
       checkIdentity();
 
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
+
+      if (!TABLESS_TOOLS.has(name)) await assertTargetTabOpen(typeof params.tabId === "number" ? params.tabId : undefined, key(sid));
       await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
       checkIdentity();
 
