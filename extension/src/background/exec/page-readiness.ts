@@ -58,16 +58,17 @@ async function readNetErrorName(tabId:number):Promise<string|undefined> {
 }
 
 /**
- * 等完那一秒后标签页的样子。changed：换到了别的地址或标签页没了。reloading：还在这个地址，但不再是原错误页了，
+ * 等完那一秒后标签页的样子，和第一次发现错误页时标签页所在的地址比：请求的网址可能先跳转（如 http 301 到 https）再出错。
+ * changed：换到了别的地址或标签页没了。reloading：还在这个地址，但不再是原错误页了，
  * 多半是 Chrome 自己在重新加载（前台标签页的错误页约一秒后会自动重新加载），也可能是用户刷新。error_page：还停在原错误页。
  */
-async function tabAfterWait(tabId:number,url:string,error:string):Promise<'changed'|'reloading'|'error_page'> {
+async function tabAfterWait(tabId:number,errorUrl:string|undefined,error:string):Promise<'changed'|'reloading'|'error_page'> {
   const tab=await chrome.tabs.get(tabId).catch(()=>null);
-  let requested='';
+  let where='';
 
-  try{requested=new URL(url).href;}catch{return 'changed';}
+  try{where=new URL(errorUrl??'').href;}catch{return 'changed';}
 
-  if(!tab||!sameUrl(tab.pendingUrl??tab.url,requested))return 'changed';
+  if(!tab||!sameUrl(tab.pendingUrl??tab.url,where))return 'changed';
 
   if(tab.status==='complete'&&!tab.pendingUrl&&await readNetErrorName(tabId)===error)return 'error_page';
 
@@ -85,6 +86,7 @@ export async function retryTransientErrorPage(tabId:number,url:string,ready:Page
   const error=await readNetErrorName(tabId);
 
   if(!error||!TRANSIENT_NET_ERRORS.has(error))return {ready};
+  const errorUrl=(await chrome.tabs.get(tabId).catch(()=>null))?.url;
   const first=`The first attempt hit ${error} (a one-off network error)`;
   const userTookOver={ready,retry:`${first}; it was not retried because the user took over the page or the task stopped.`};
 
@@ -94,7 +96,7 @@ export async function retryTransientErrorPage(tabId:number,url:string,ready:Page
   }
 
   if(cancelled?.())return userTookOver;
-  const state=await tabAfterWait(tabId,url,error);
+  const state=await tabAfterWait(tabId,errorUrl,error);
 
   if(state==='changed')return {ready,retry:`${first}; it was not retried because the page changed while waiting.`};
   const budget=Math.max(RETRY_DELAY_MS,timeoutMs-ready.waitMs-RETRY_DELAY_MS);
