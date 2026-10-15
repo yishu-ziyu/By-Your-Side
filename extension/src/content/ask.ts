@@ -1,5 +1,4 @@
 import { installDragFeed } from "./drag-feed.js";
-import { installEdgePill } from "./edge-pill.js";
 import { installGhostHud } from "./ghost-hud.js";
 import { installLinkPreview } from "./link-preview.js";
 import { installMarginaliaTracker } from "./marginalia-tracker.js";
@@ -159,7 +158,6 @@ function boot(): void {
   installDragFeed();
   installMarginaliaTracker();
   installGhostHud();
-  installEdgePill();
   installLinkPreview();
   installNudge();
   const previous = document.querySelector(`[${HOST}]`);

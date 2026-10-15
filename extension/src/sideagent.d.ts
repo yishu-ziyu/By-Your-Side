@@ -66,15 +66,15 @@ interface SideAgentCursor {
   /** 绑定这次真实操作与同一个 DOM 元素；id 隔离晚到的结束消息。 */
   beginAction(id: string, kind: "click" | "fill" | "hover", rect?: SideAgentRect, anchor?: Element, label?: string): void;
   endAction(id: string, outcome: "done" | "failed" | "unknown", point?: [number, number]): void;
-  /** 状态层：在等 / 在读 / 完成 / 失败挂在光标名牌上。文案在页面侧，调用方只给状态。 */
+  /** 状态层：在等 / 在读 / 完成 / 失败，画在右边缘胶囊上。文案在页面侧，调用方只给状态。 */
   setStatus?(view?: { state: "waiting" | "reading" | "done" | "failed"; text?: string; detail?: string; autoHideMs?: number }): void;
   clearStatus?(): void;
-  /** 跨页：它在别的标签页干活时，当前页右上角显示可点胶囊（点了切过去） */
+  /** 跨页：它在别的标签页干活时，当前页右边缘胶囊指向那一页（点了切过去） */
   showCrossPage?(view?: CrossPageView): void;
   hideCrossPage?(): void;
   /** 页面边缘光：这个成员正在操作本页时亮，结束时灭。 */
   setGlow?(on: boolean): void | Promise<void>;
-  /** 执行反馈胶囊（V2）：宿主事实短语；成功一次轻微回弹，不抢焦点、不配音、不循环。 */
+  /** 执行反馈：宿主事实短语，画在右边缘胶囊上；不抢焦点、不配音、不循环。 */
   showFeedback?(view?: import("./shared/feedback-pill.js").FeedbackPillView): void;
   hideFeedback?(): void;
   /** 登记助手即将派发鼠标事件的落点（光标不飞过去时），页面光效不把它当成用户。 */
@@ -100,10 +100,11 @@ interface SideAgentCursor {
   /** 步骤对照：持久描边，不自动消失。 */
   inspect?(rect: SideAgentRect, caption?: string): void;
   clearInspect?(): Promise<void>;
-  /** 页顶「现在归你 / 交还」条。接管确认后显示，交还或中止后收掉。 */
+  /** 「现在归你」：占右边缘胶囊，带继续键。接管确认后显示，交还或中止后收掉。 */
   showUserControl?(view?: {
     status?: string;
     sub?: string;
+    ask?: string;
     action?: string;
     actionEnabled?: boolean;
     members?: Array<{ id: string; initial: string; color: string }>;
@@ -122,7 +123,7 @@ interface SideAgentCursor {
   ): void;
   /** 教学一步：圈出目标、名牌写 say、光标停在目标右下角，连上后台的 portName 报告用户的点击。返回目标的可见名字。 */
   guide?(rect: SideAgentRect, say: string, target: string, portName: string, options?: MarkOptions, observedNode?: Node): { name: string };
-  /** 交给用户时圈出一个要用户填的栏或点的按钮（橙色）；页面条没显示时不画。填好、点过就淡出，页面条收起时清掉。 */
+  /** 交给用户时圈出一个要用户填的栏或点的按钮（橙色）；页面不归用户时不画。填好、点过就淡出，「现在归你」收起时清掉。 */
   handoffMark?(rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void;
   /** 圈都画好后摆名牌：第一个还空着的栏写「你来填 · …」，按钮写「填完点这里」或「点这里」。 */
   handoffLabels?(): void;
@@ -184,26 +185,10 @@ interface SideAgentNamespace {
     hidden: boolean;
     resting: boolean;
   } | null;
-  /** overlay 自检：右上角跨页胶囊 */
-  crossPageState?: () => {
-    main: string;
-    sub: string;
-    sessionId: string;
-    rect: SideAgentRect;
-    viewport: { width: number; height: number };
-  } | null;
-  clickCrossPage?: () => boolean;
-  /** overlay 自检：右上角执行反馈胶囊（V2） */
-  feedbackState?: () => {
-    id: string;
-    text: string;
-    kind: string;
-    bounces: number;
-    visible: boolean;
-  } | null;
-  /** overlay 自检：页顶接管条 */
-  controlBanner?: () => { status: string; action: string } | null;
-  clickHandback?: () => boolean;
+  /** 验收读数：右边缘胶囊此刻显示什么（只读）。 */
+  edgeTab?: () => import("./content/edge-tab.js").EdgeTabState | null;
+  /** 验收：按部位点胶囊，和真人点走同一个处理函数。 */
+  clickEdgeTab?: (part: "capsule" | "stop" | "action" | "bubble" | number) => boolean;
   /** 手绘批注配置与动效偏好 */
   setMarkConfig?: (opts: MarkOptions) => void;
   getMarkConfig?: () => MarkOptions;
