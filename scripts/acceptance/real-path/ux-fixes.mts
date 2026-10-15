@@ -341,6 +341,7 @@ async function mainGroup() {
     await s.newConversation();
 
     // 6b：附上截屏。
+    await rp.click(s.panel, "#input");
     await rp.click(s.panel, "#attach-btn");
     await sleep(400);
     await rp.click(s.panel, "#menu-action-screenshot");
@@ -461,6 +462,7 @@ async function voiceGroup(kind: "nokey" | "mic" | "conn" | "ready") {
     await sleep(1000);
     // 记下语音状态行出现过的每一句：连接失败后客户端会自动重连，最终画面不一定停在出错那一句。
     await rp.evaluate(s.panel, `(() => { window.__voiceStates = []; const el = document.querySelector(".voice-state"); new MutationObserver(() => { const t = el.textContent; if (t && window.__voiceStates.at(-1) !== t) window.__voiceStates.push(t); }).observe(el, { childList: true, characterData: true, subtree: true }); return true; })()`);
+    await rp.click(s.panel, "#input");
     await rp.click(s.panel, ".voice-start");
 
     const settled = await until(async () => {

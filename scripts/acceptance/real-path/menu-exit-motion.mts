@@ -31,6 +31,12 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#attach-btn") && document.readyState==="complete"'), 30000, "panel");
   await sleep(800);
+  const focusComposer = async () => {
+    await rp.click(panel, "#input");
+    await sleep(200);
+  };
+
+  await focusComposer();
   await rp.evaluate(panel, 'document.querySelector("#page-pill").hidden = false');
 
   const isOpen = (selector: string) => rp.evaluate(panel, `!document.querySelector(${JSON.stringify(selector)}).hidden`) as Promise<boolean>;
@@ -71,6 +77,8 @@ try {
     check(`${m.name}：关闭途中采到半透明的一帧，最后收起`, closing(closed) && gone(closed), summary(closed));
   }
 
+  // 检查器浮层把焦点带出输入框，工具行会收起；再点加号前先点回去。
+  await focusComposer();
   // 关闭途中又点开：菜单回到完全可见，而且接得住点击。
   await rp.click(panel, "#attach-btn");
   await sleep(400);
@@ -87,6 +95,7 @@ try {
 
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, panel);
   await sleep(200);
+  await focusComposer();
 
   for (const m of menus) {
     const opening = await clickAndWatch(m.menu, m.open);
@@ -111,6 +120,7 @@ try {
     const stop = await recordScreen(rp.cdp, panel, join(out, "close.mp4"));
 
     for (const m of menus) {
+      if (m.open === "#attach-btn") await focusComposer();
       await rp.click(panel, m.open); await sleep(3500);
       await rp.click(panel, m.close); await sleep(2500);
     }

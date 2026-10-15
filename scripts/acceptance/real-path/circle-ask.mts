@@ -109,6 +109,7 @@ try {
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`)) || undefined, 60_000, "sidebar ready");
 
   // 1. + 菜单 →「圈出来问」：页面进入圈画。
+  await rp.click(panel, "#input");
   await rp.click(panel, "#attach-btn");
   evidence.menuLabel = await rp.evaluate(panel, `document.querySelector("#menu-action-region .action-menu-item-label")?.innerText`);
   await rp.click(panel, "#menu-action-region");
@@ -171,6 +172,7 @@ try {
 
   // 7. 又圈了新的一组（从 1 号重新圈）：点旧编号写「原处已变化」，页面上不画。
   await sleep(2500);
+  await rp.click(panel, "#input");
   await rp.click(panel, "#attach-btn");
   await rp.click(panel, "#menu-action-region");
   await until(async () => (await pageCircles()).circling || undefined, 10_000, "又进入圈画");
