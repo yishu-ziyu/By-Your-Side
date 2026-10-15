@@ -106,7 +106,7 @@ try {
   check("b 混入 innerText 仍读出 checked，并写明不支持的属性和可用的属性", value?.agree?.checked === true && !("innerText" in (value?.agree ?? {}))
     && /不支持的属性：innerText；可用的属性：.*checked/.test(value?.agreeNote ?? "") && program.includes("不支持的属性：innerText"), { agree: value?.agree ?? null, agreeNote: value?.agreeNote ?? null });
   check("c pressed 读成 null 并说明，enabled 照常；直调 read_element 也不报错", value?.play?.pressed === null && value?.play?.enabled === true
-    && /"pressed":null/.test(direct) && direct.includes("pressed 属性，已返回 null"), { play: value?.play ?? null, direct: direct.slice(0, 400) });
+    && /"pressed":null/.test(direct) && direct.includes("该元素不支持或尚无有效的 pressed 属性，已返回 null") && !program.includes("button") && !direct.split("</page-content>")[1]?.includes("button"), { play: value?.play ?? null, direct: direct.slice(0, 400) });
   check("d expect 等读不到的 pressed 仍当场失败", expectRead.includes("不支持或尚无有效的 pressed 属性") && !expectRead.includes('"matched":true'), { expectRead: expectRead.slice(0, 400) });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", checks, toolResults, visits }, null, 2));

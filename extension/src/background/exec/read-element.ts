@@ -309,7 +309,8 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     if(properties.length)data.properties=values;
 
-    if(unavailable.length)data.note=`当前${tagName}目标不支持或尚无有效的 ${unavailable.join('、')} 属性，已返回 null；请观察实际目标状态。`;
+    // 说明会放在页面内容包装之外，只用固定文字和已校验的属性名，不带任何网页文字（包括标签名）。
+    if(unavailable.length)data.note=`该元素不支持或尚无有效的 ${unavailable.join('、')} 属性，已返回 null；请观察实际目标状态。`;
 
     if(anchorSource)data.anchorSource=anchorSource;
 
@@ -618,7 +619,7 @@ async function readElementInner(
       if (actual === undefined) throw new Error(`页面未返回 ${expected.property} 属性，未验证成功。`);
 
       // 等一个读不到的属性只会白等到超时，所以 expect 仍当场失败。
-      if (actual === null) throw new Error(`当前${data.tagName}目标不支持或尚无有效的 ${expected.property} 属性；请观察实际目标状态。`);
+      if (actual === null) throw new Error(`该元素不支持或尚无有效的 ${expected.property} 属性；请观察实际目标状态。`);
 
       if (elementMatches(actual, expected)) return {tabId,target:target.normalized,...data,check:{matched:true as const,property:expected.property,elapsedMs:Date.now()-started}};
       const remaining = (params.timeoutMs ?? 0) - (Date.now() - started);
