@@ -14,7 +14,6 @@ Flags: --models a,b (default: zai-coding-cn/glm-5.3-flash) --tasks ids (default:
 Judge results whose verdict is missing, stale or judge_error, then rebuild report + charts: eval/harness/finalize.sh eval/runs/<run-id>
   (judge v3: screenshots + final page text + tool reads/log + answer; verdict pass|fail|undeterminable;
    each verdict stores judge_version + result_sha, so a judge bump or a rerun result is re-judged)
-Old-vs-new judge chart: python3 eval/harness/chart_rejudge.py [out.png]  (reads eval/splits/baseline_judge_v3.json)
 Re-group failure reasons (codex):   python3 eval/harness/cluster.py eval/runs/<run-id>  (then finalize.sh again)
 Failure review page for the product owner: node eval/harness/review.mjs eval/runs/<run-id> [--all] [--sample-pass=N] [--serve[=port]]
   -> runs/<run>/review.html (self-contained; screenshots are relative links, so open it inside the run dir).
@@ -77,7 +76,7 @@ Robustness: a Chrome or CDP failure fails only that job; setup errors are retrie
 a load gate waits while the 1-min loadavg > --max-load (default 2x cores); after 2 quota errors the run
 stops and moves those results to _quota_errors/.
 
-Verified 2026-10-02 on macOS only (docs/evals/20261002-eval-extension-only.md); cloud Linux not run.
+Verified on macOS only; cloud Linux not run.
 model-check.mts is from the OpenCode Go era (OpenAI chat-completions + auth.json) and does not cover
 anthropic-messages providers such as minimax-cn; the settings page 测试连接 is the extension's own check.
 
