@@ -11,7 +11,7 @@
  *    判据：正文和引用都还在、侧栏出现「没有发出」提示、没有冒出已发送的用户消息、假服务没收到这句；
  *    恢复连接后再按一次回车，这句只送达一次（没送到而侧栏给出「继续」时点一次，分开记录 deliveredWithoutHelp）。
  * 普通会话：问一句 → 扩展内 agent 崩溃重启 → 接着问。判据：第二问送达一次、第一轮问答还在、没有错误字样。
- * #2 模型菜单：点模型芯片打开菜单，再点「显示全部」。判据：未知模型和 OpenAI 模型旁都没有任何能力标签，芯片上也没有。
+ * #2 模型菜单：点输入框的模型芯片打开菜单，有「更多模型」就点进去。判据：未知模型和 OpenAI 模型旁都没有任何能力标签，芯片上也没有。
  */
 import { createServer, type IncomingMessage } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -97,7 +97,7 @@ const PANEL = `(() => {
     quote: q("#ask-cite-text")?.textContent ?? "",
     notices: [...document.querySelectorAll("#messages .msg.notice")].map((el) => el.innerText.trim()),
     userMessages: [...document.querySelectorAll("#messages .msg.user")].map((el) => el.innerText.trim()),
-    modelName: q("#model-name")?.textContent?.trim() ?? "",
+    modelName: q("#think-chip .think-model")?.textContent?.trim() ?? "",
     transcript: q("#messages")?.innerText ?? "",
   };
 })()`;
@@ -176,7 +176,7 @@ try {
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   await until(async () => (await rp.evaluate(panel, `!!document.querySelector("#header-more")`)) || undefined, 15_000, "侧栏渲染");
 
-  // 设置入口和模型按钮都在顶栏「更多」菜单里。侧栏刚渲染时第一下偶尔没打开菜单（inproc-config 里同样的已知现象）：像用户一样再点，最多 3 次。
+  // 设置入口在顶栏「更多」菜单里。侧栏刚渲染时第一下偶尔没打开菜单（inproc-config 里同样的已知现象）：像用户一样再点，最多 3 次。
   const openHeaderMenu = async () => {
     for (let clicks = 1; !(await rp.evaluate(panel, `document.querySelector("#header-menu")?.matches(":popover-open")`)); clicks++) {
       if (clicks > 3) throw new Error("点了 3 次「更多」，菜单都没有打开");
@@ -239,31 +239,38 @@ try {
 
   // ── 路径 #2：打开模型菜单 ───────────────────────────────────
   {
-    await openHeaderMenu();
-    await rp.click(panel, "#model-btn");
-    await until(async () => (await rp.evaluate(panel, `document.querySelectorAll("#model-popover .model-item").length`)) > 0 || undefined, 5_000, "模型菜单展开").catch(async error => {
-      // 菜单没展开时记下当时的样子：按钮在不在、菜单开没开、列表里写了什么。
-      const state = await rp.evaluate(panel, `(() => { const b = document.querySelector("#model-btn"); const p = document.querySelector("#model-popover");
-        return { button: { hidden: b?.hidden, rects: b?.getClientRects().length, text: b?.innerText }, popover: { hidden: p?.hidden, text: p?.innerText.slice(0, 300) } }; })()`).catch(() => null);
+    // 芯片在输入框的工具行里，输入框有焦点时工具行才展开。
+    await rp.click(panel, "#input");
+    await rp.click(panel, "#think-chip");
+    await until(async () => (await rp.evaluate(panel, `document.querySelector("#think-menu.open") && document.querySelectorAll("#think-menu .mm-main .mm-row[data-model]").length`)) > 0 || undefined, 5_000, "模型菜单展开").catch(async error => {
+      // 菜单没展开时记下当时的样子：芯片在不在、菜单开没开、列表里写了什么。
+      const state = await rp.evaluate(panel, `(() => { const b = document.querySelector("#think-chip"); const m = document.querySelector("#think-menu");
+        return { chip: { hidden: b?.hidden, rects: b?.getClientRects().length, text: b?.innerText }, menu: { open: m?.classList.contains("open"), text: m?.innerText.slice(0, 300) } }; })()`).catch(() => null);
       throw new Error(`${error instanceof Error ? error.message : String(error)}；当时：${JSON.stringify(state)}`);
     });
     await sleep(700);
     const featuredShot = await shot(panel, "2-model-menu-featured.png");
-    // 默认只列常用；点「显示全部」列出所有已配置凭据的模型（含 OpenAI），两种视图都要没有猜出来的标签。
-    await rp.click(panel, "#model-popover .model-scope-toggle");
-    await until(async () => (await rp.evaluate(panel, `document.querySelectorAll('#model-popover .model-item[data-model^="openai/"]').length`)) > 0 || undefined, 5_000, "显示全部后出现 OpenAI 模型").catch(() => undefined);
+    // 第一层只列常用；目录大时点「更多模型」进第二层列出所有已配置凭据的模型（含 OpenAI），目录小时第一层已列全。两层都要没有猜出来的标签。
+    const hasMore = await rp.evaluate(panel, `!!document.querySelector("#think-menu .mm-main .mm-more")`) === true;
+
+    if (hasMore) {
+      await rp.click(panel, "#think-menu .mm-main .mm-more");
+      await until(async () => (await rp.evaluate(panel, `document.querySelector("#think-menu").classList.contains("mm-in-all")`)) || undefined, 5_000, "进入更多模型");
+    }
+
+    await until(async () => (await rp.evaluate(panel, `document.querySelectorAll('#think-menu ${hasMore ? ".mm-all" : ".mm-main"} .mm-row[data-model^="openai/"]').length`)) > 0 || undefined, 5_000, "列表里出现 OpenAI 模型").catch(() => undefined);
     await sleep(500);
 
     const menu = await rp.evaluate(panel, `(() => {
-      const pop = document.querySelector("#model-popover");
-      const tag = document.querySelector("#model-reasoning-tag");
+      const level = document.querySelector(${JSON.stringify(hasMore ? "#think-menu .mm-all" : "#think-menu .mm-main")});
+      const chip = document.querySelector("#think-chip");
       return {
-        items: [...pop.querySelectorAll(".model-item")].map((el) => ({ id: el.dataset.model, text: el.innerText.trim(), tags: el.querySelectorAll(".reasoning-tag").length })),
-        groups: [...pop.querySelectorAll(".model-group")].map((el) => el.innerText.trim()),
-        popoverTags: pop.querySelectorAll(".reasoning-tag").length,
-        popoverText: pop.innerText,
-        chipTagVisible: !!tag && !tag.hidden && tag.getClientRects().length > 0,
-        chipText: document.querySelector("#model-btn").innerText.trim(),
+        items: [...level.querySelectorAll(".mm-row[data-model]")].map((el) => ({ id: el.dataset.model, text: el.innerText.trim(), tags: (el.innerText.match(/极速|档位|可调|深度思考|推理/g) ?? []).length })),
+        groups: [...level.querySelectorAll(".mm-group")].map((el) => el.innerText.trim()),
+        popoverTags: level.querySelectorAll(".reasoning-tag, .think-level").length,
+        popoverText: level.innerText,
+        chipTagVisible: !!chip.querySelector(".think-level") || /极速|档位|可调|深度思考|推理/.test(chip.innerText),
+        chipText: chip.innerText.trim(),
       };
     })()`);
 
@@ -274,9 +281,12 @@ try {
     const openai = m.items.filter((item) => item.id?.startsWith("openai/"));
     const guessedWords = m.popoverText.match(/极速|档位|可调|深度思考|推理/g) ?? [];
     const pass = !!unknown && unknown.tags === 0 && openai.length > 0 && m.popoverTags === 0 && !m.chipTagVisible && guessedWords.length === 0;
-    paths.modelMenuUnknownModel = { issue: "#2", pass, featuredShot, screenshot, unknownItem: unknown ?? null, openaiItems: openai.length, openaiItemsWithTags: openai.filter((item) => item.tags > 0).length, groups: m.groups, popoverTags: m.popoverTags, chipTagVisible: m.chipTagVisible, chipText: m.chipText, guessedWords };
-    await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, panel);
-    await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, panel);
+    paths.modelMenuUnknownModel = { issue: "#2", pass, featuredShot, screenshot, secondLevel: hasMore, unknownItem: unknown ?? null, openaiItems: openai.length, openaiItemsWithTags: openai.filter((item) => item.tags > 0).length, groups: m.groups, popoverTags: m.popoverTags, chipTagVisible: m.chipTagVisible, chipText: m.chipText, guessedWords };
+    // 第二层里 Escape 先回第一层，再按一次才收起菜单。
+    for (let i = hasMore ? 2 : 1; i > 0; i--) {
+      await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, panel);
+      await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, panel);
+    }
   }
 
   // ── 路径 #4：带引用的草稿在断线时发送 ─────────────────────────
