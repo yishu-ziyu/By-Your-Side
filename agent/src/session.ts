@@ -785,6 +785,15 @@ if(required.includes(key))candidates.set(key,attachment);
     );
   }
 
+  /** 当前模型服务的协议、域名和端口，提前建连接用。 */
+  modelOrigin(): string | undefined {
+    const baseUrl = this.session?.model?.baseUrl;
+
+    if (!baseUrl) return undefined;
+
+    try { return new URL(baseUrl).origin; } catch { return undefined; }
+  }
+
   modelName(): string | undefined {
     const model = this.session?.model;
 

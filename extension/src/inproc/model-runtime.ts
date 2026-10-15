@@ -44,6 +44,8 @@ const NEEDS_EXTRA_CONFIG = new Set(["amazon-bedrock", "google-vertex", "azure-op
 const RETIRED_JEV_PROVIDER = "typesafe";
 
 /** 设置页置顶的套餐，按用户实际在用的排序；默认模型是已在扩展内跑通「圈出保存按钮」的那个。 */
+const omitCookies: typeof fetch = (input, init) => fetch(input, { ...init, credentials: "omit" });
+
 export const FEATURED_PROVIDERS: ReadonlyArray<{ id: string; label: string; defaultModel: string }> = [
   // 阶跃星辰排第一：同一个 key 还能用于实时语音；step-3.7-flash 实测约 1 秒返回且工具调用正确。
   { id: STEPFUN_PROVIDER_ID, label: "阶跃星辰", defaultModel: "step-3.7-flash" },
@@ -255,7 +257,9 @@ function createCoreModelPort(
 
   const withHeaders = (model: Model<Api>, options: Parameters<ModelPort["streamSimple"]>[2]) => {
     const headers = runtime.headersFor(model);
-    const merged = headers ? { ...options, headers: { ...options?.headers, ...headers } } : options;
+    // 模型请求只靠我们自己的凭据。扩展有网站权限，fetch 默认会带上用户在这个网站的 cookie（比如 chatgpt.com 网页版的登录），
+    // 一律不带。提前建连接（conversation-manager 的 warmUp）也用 omit：Chrome 按凭据模式分连接池，两边不一致就复用不上。
+    const merged = { ...options, fetch: omitCookies, ...(headers ? { headers: { ...options?.headers, ...headers } } : {}) };
 
     // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型默认先试 WebSocket，必失败再退回 SSE，每次都留一条假的连接失败。直接用 SSE。
     return model.api === "openai-codex-responses" ? { ...merged, transport: "sse" as const } : merged;
