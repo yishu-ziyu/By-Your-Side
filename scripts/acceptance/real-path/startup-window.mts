@@ -5,7 +5,8 @@
  *   0) 基线：只发一条，量「按回车 → 模型收到第一条主请求」的时间，证明窗口够宽。
  *   A) 开工窗口里补一句：发「把这页的标题列出来」，约 300 ms 后（模型还没收到请求）再发「改成只列前三个」。
  *      通过 = 只开了一轮（侧栏一个最终回答、只有一条没有前文回答的开头请求），且这一轮的请求里有「改成只列前三个」。
- *   B) 开工窗口里按停止：发任务，约 300 ms 后按停止。通过 = 停止后 10 秒内模型收到 0 条主请求，侧栏写这一轮已中止。
+ *   B) 开工窗口里按停止：发任务，约 300 ms 后按停止。通过 = 停止后 10 秒内模型收到 0 条主请求，侧栏写这一轮已中止并回到空闲。
+ *   C) 开工窗口里按停止，1 秒内发新任务。通过 = 新任务开跑、模型请求里有新任务原话，侧栏从没出现「已转为插话」。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -30,7 +31,7 @@ const site = createServer((_, res) => { res.writeHead(200, { "content-type": "te
 
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
-const ASK = { base: "基线：把这页的标题列出来", a: "把这页的标题列出来", fix: "改成只列前三个", b: "停止用例：把这页的价格列出来" };
+const ASK = { base: "基线：把这页的标题列出来", a: "把这页的标题列出来", fix: "改成只列前三个", b: "停止用例：把这页的价格列出来", c1: "停后新任务一：把这页的按钮数一下", c2: "停后新任务二：把这页的链接列出来" };
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
 
@@ -41,7 +42,7 @@ type Msg = { role: string; content?: string | ContentPart[] | null };
 const textOf = (m: Msg) => typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
 
 /** 主任务请求（带工具表）：收到的本机时间、最后一条用户消息的开头和长度、全部消息里有没有两句原话。 */
-type Main = { at: number; lastUser: string; lastUserChars: number; assistants: number; hasAsk: boolean; hasFix: boolean; hasPage: boolean };
+type Main = { at: number; lastUser: string; lastUserChars: number; assistants: number; hasAsk: boolean; hasFix: boolean; hasPage: boolean; hasC2: boolean };
 
 const mains: Main[] = [];
 
@@ -50,13 +51,15 @@ const model = await startScriptedModel([
   { match: ASK.fix, steps: [{ text: "前三个标题：标题 1、标题 2、标题 3。" }] },
   { match: ASK.a, steps: [{ text: "标题如下：标题 1、标题 2……" }] },
   { match: ASK.b, steps: [{ text: "价格如下。" }] },
+  { match: ASK.c1, steps: [{ text: "按钮数好了。" }] },
+  { match: ASK.c2, steps: [{ text: "链接已列出。" }] },
 ], undefined, payload => {
   if (!payload.tools?.length) return;
   // SAFETY: OpenAI 兼容请求体，messages 为消息数组。
   const messages = (payload.messages ?? []) as Msg[];
   const user = messages.filter(m => m.role === "user").at(-1);
   const all = messages.map(textOf).join("\n");
-  mains.push({ at: Date.now(), lastUser: user ? textOf(user).slice(0, 60) : "", lastUserChars: user ? textOf(user).length : 0, assistants: messages.filter(m => m.role === "assistant").length, hasAsk: all.includes(ASK.a), hasFix: all.includes(ASK.fix), hasPage: all.includes("第 1 号商品") });
+  mains.push({ at: Date.now(), lastUser: user ? textOf(user).slice(0, 60) : "", lastUserChars: user ? textOf(user).length : 0, assistants: messages.filter(m => m.role === "assistant").length, hasAsk: all.includes(ASK.a), hasFix: all.includes(ASK.fix), hasPage: all.includes("第 1 号商品"), hasC2: all.includes(ASK.c2) });
 });
 
 const rp = await launchRealPath();
@@ -131,10 +134,35 @@ try {
   const mainsB = mains.slice(from);
   const viewB = await view();
   const stoppedShown = /已中止|你中止了|已停止/.test(viewB.text);
-  facts.B = { stopAfterAskMs: stopAt - bAt, stopButtonShown: stopVisible, requestsBeforeStop: beforeStop, requestsWithin10sAfterStop: mainsB.filter(m => m.at >= stopAt).map(m => ({ afterStopMs: m.at - stopAt, lastUser: m.lastUser })), panel: viewB, stoppedShown, stillRunning: await stopping() };
+  const stillRunning = await stopping();
+  facts.B = { stopAfterAskMs: stopAt - bAt, stopButtonShown: stopVisible, requestsBeforeStop: beforeStop, requestsWithin10sAfterStop: mainsB.filter(m => m.at >= stopAt).map(m => ({ afterStopMs: m.at - stopAt, lastUser: m.lastUser })), panel: viewB, stoppedShown, stillRunning };
   check("B 按停止时模型还没收到请求（停在开工窗口里）", beforeStop === 0 && stopVisible, { requestsBeforeStop: beforeStop, stopButtonShown: stopVisible, stopAfterAskMs: stopAt - bAt });
-  check("B 停止后 10 秒内模型收到 0 条主请求，侧栏写已中止", mainsB.filter(m => m.at >= stopAt).length === 0 && stoppedShown, { afterStop: mainsB.filter(m => m.at >= stopAt).map(m => m.at - stopAt), stoppedShown, panelTail: viewB.text.slice(-160) });
+  check("B 停止后 10 秒内模型收到 0 条主请求，侧栏写已中止并回到空闲", mainsB.filter(m => m.at >= stopAt).length === 0 && stoppedShown && !stillRunning, { afterStop: mainsB.filter(m => m.at >= stopAt).map(m => m.at - stopAt), stoppedShown, stillRunning, panelTail: viewB.text.slice(-160) });
   await rp.screenshot(panel, join(out, "b-panel.png"));
+
+  // ── C：开工窗口里按停止，马上发新任务 ──
+  await fresh();
+  from = mains.length;
+  const cAt = await ask(ASK.c1);
+  await sleep(300);
+  const cBeforeStop = mains.length - from;
+  const cStopAt = Date.now();
+  await rp.click(panel, "#send-btn");
+  await sleep(500);
+  const c2At = await ask(ASK.c2);
+  let steerNotice = false;
+  const answeredC = await until(async () => {
+    steerNotice ||= await rp.evaluate(panel, 'document.body.textContent.includes("已转为插话")') as boolean;
+
+    return await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes("链接已列出"))') as boolean;
+  }, 30_000, "C 新任务的回答", 100).then(() => true, () => false);
+  await idle().catch(() => {});
+  const mainsC = mains.slice(from);
+  const viewC = await view();
+  steerNotice ||= viewC.text.includes("已转为插话");
+  facts.C = { stopAfterAskMs: cStopAt - cAt, newTaskAfterStopMs: c2At - cStopAt, requestsBeforeStop: cBeforeStop, mainRequests: mainsC.map(m => ({ afterNewTaskMs: m.at - c2At, lastUser: m.lastUser, hasC2: m.hasC2 })), answeredC, steerNotice, panel: viewC };
+  check("C 开工中停下后 1 秒内发新任务：新任务开跑、请求里有新任务原话、没有「已转为插话」", cBeforeStop === 0 && c2At - cStopAt < 1000 && mainsC.some(m => m.hasC2) && answeredC && !steerNotice, { requestsBeforeStop: cBeforeStop, newTaskAfterStopMs: c2At - cStopAt, newTaskReachedModel: mainsC.some(m => m.hasC2), answeredC, steerNotice, panelTail: viewC.text.slice(-200) });
+  await rp.screenshot(panel, join(out, "c-panel.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, facts, mains, modelRequests: model.requests, notCovered: ["真实模型", "真实网站", "站点笔记和记忆有内容时的开工时长"] }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));

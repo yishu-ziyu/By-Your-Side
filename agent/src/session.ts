@@ -1130,8 +1130,8 @@ return;}
       this.mentionedPagesText(pages, context),
     ]);
 
-    // 开工中被停下：开工期间排进 Pi 的插话不能留到下一轮。
-    if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld()){if(!session.isStreaming)session.clearQueue();
+    // 开工中被停下：开工期间排进 Pi 的插话不能留到下一轮；停下后已开工的新任务的队列不能动。
+    if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld()){if(!session.isStreaming&&this.starting===null)session.clearQueue();
 
 return;}
 
@@ -1861,7 +1861,7 @@ return;}
   }
 
   /**
-   * 插话登记：在把补充交给 Pi 之前就挡住同轮旧计划的写入，并推进控制轮次让扩展拒收在途调用。
+   * 插话登记：在把补充交给 Pi 之前就挡住同轮旧计划的写入；已开跑时推进控制轮次让扩展拒收在途调用，开工中不推进。
    * 预观察最长几秒，登记必须排在 await 之前，否则那几秒里旧写入照跑。
    */
   private reserveCorrection(text:string,attachments?:Attachment[]):CorrectionRecord{
@@ -2035,6 +2035,8 @@ return {kind:'model'};
     this.deferredSteers=[];
     this.runTrace.record("abort");
     this.controlEpoch += 1;
+    // 开工中停下：立即回到空闲，停止后马上发的新任务才不会被当成插话；开工期间排进 Pi 的插话一并丢掉。
+    if (this.starting !== null) { this.starting = null; if (!this.session?.isStreaming) this.session?.clearQueue(); }
     this.cancelPendingHandback();
     this.hold.abort();
     this.memoryRuntime?.invalidateUserTurn();
@@ -2060,6 +2062,7 @@ return {kind:'model'};
     // 否则同一个要求会先进队列、再进 prompt，被模型读两遍。
     if (this.pendingCorrections.length > 0) this.clearPiSteeringQueue();
     this.controlEpoch += 1;
+    this.starting = null;
     this.cancelPendingHandback();
     this.memoryRuntime?.invalidateUserTurn();
     const state = this.hold.holdForUser();
