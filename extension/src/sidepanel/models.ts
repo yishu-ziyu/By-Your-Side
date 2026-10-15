@@ -36,7 +36,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "cli-proxy": "本机代理",
   "minimax-cn": "MiniMax",
   minimax: "MiniMax",
-  "openai-codex": "Codex",
+  "openai-codex": "ChatGPT 账号",
   openai: "OpenAI",
   anthropic: "Anthropic",
   "kimi-coding": "Kimi",

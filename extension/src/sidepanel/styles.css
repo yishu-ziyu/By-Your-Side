@@ -456,302 +456,6 @@ html, body {
   #header-more:active, #memory-open:active, #header-menu button:active, #conversation-new:active:not(:disabled) { transform: none; }
 }
 
-/* ── 模型选择器（输入区芯片 + 弹簧生长菜单） ─────────────────────── */
-#model-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  min-width: 0;
-  flex-shrink: 1;
-  height: 28px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: none;
-  transition: border-color var(--m-move) var(--e-swift), background var(--m-move) var(--e-swift),
-              color var(--m-move) var(--e-swift), box-shadow var(--m-move) var(--e-swift),
-              transform var(--m-move) var(--e-spring);
-  user-select: none;
-  position: relative;
-}
-
-#model-btn:hover {
-  background: var(--content-subtle);
-  color: var(--text-primary);
-}
-
-#model-btn[aria-expanded="true"] {
-  color: var(--text-primary);
-  background: var(--chip-active-bg);
-}
-
-#model-btn:active {
-  transform: scale(0.95);
-  transition: transform var(--m-quick) var(--e-swift);
-}
-
-#model-btn:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-#model-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-#model-btn .lucide {
-  width: 12px;
-  height: 12px;
-  color: var(--text-3);
-  margin-left: 1px;
-  flex-shrink: 0;
-  transition: transform var(--d-layout) var(--spring-fluid), color var(--d-state) ease;
-}
-
-#model-btn[aria-expanded="true"] .lucide {
-  transform: rotate(180deg);
-  color: var(--apple-blue);
-}
-
-/* 思考强度标签 (忠于真实接入模型支持) */
-.reasoning-tag {
-  font-size: 10px;
-  padding: 1.5px 6px;
-  border-radius: 4px;
-  font-weight: 500;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.reasoning-tag.tag-native {
-  background: var(--tag-native-bg);
-  color: var(--tag-native-color);
-}
-
-.reasoning-tag.tag-direct {
-  background: var(--tag-direct-bg);
-  color: var(--tag-direct-color);
-}
-
-.reasoning-tag.tag-effort,
-.reasoning-tag.tag-slider {
-  background: var(--tag-slider-bg);
-  color: var(--tag-slider-color);
-}
-
-#model-btn .reasoning-tag {
-  font-size: 9.5px;
-  padding: 1px 5px;
-}
-
-.model-mark {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0;
-  color: #fff;
-  line-height: 1;
-}
-
-#model-popover {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  z-index: 20;
-  max-height: min(52vh, 360px);
-  display: flex;
-  flex-direction: column;
-  padding: 8px 6px 6px;
-  border: 1px solid var(--glass-border);
-  border-radius: 18px;
-  background: var(--glass-surface-elevated);
-  backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-specular), var(--popover-shadow, var(--glass-shadow));
-  /* 缩放原点由 alignModelPopoverOrigin() 对齐到触发按钮中点；这个值只是兜底 */
-  transform-origin: 46px bottom;
-  opacity: 1;
-  transform: scale(1);
-  transition: opacity var(--d-state) var(--e-swift), transform var(--d-state) var(--e-swift),
-              display var(--d-state) allow-discrete;
-}
-
-/* hidden 立即更新逻辑状态；display 在退场完成后才切换，无延迟回调竞态。 */
-#model-popover[hidden] {
-  opacity: 0;
-  transform: scale(.95);
-  pointer-events: none;
-  transition-duration: var(--d-micro);
-}
-
-@starting-style {
-  #model-popover:not([hidden]) {
-    opacity: 0;
-    transform: scale(.95);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #model-popover,
-  #model-popover[hidden] {
-    transform: none;
-  }
-  @starting-style { #model-popover:not([hidden]) { transform: none; } }
-}
-
-.model-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 4px 6px;
-  padding: 6px 9px;
-  border: 1px solid var(--content-border);
-  border-radius: 9px;
-  background: var(--content-subtle);
-  flex-shrink: 0;
-}
-
-.model-search-icon {
-  display: inline-flex;
-  color: var(--text-3);
-}
-
-.model-search-icon .lucide {
-  width: 13px;
-  height: 13px;
-}
-
-.model-scope-toggle {
-  margin-left: auto;
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border: 1px solid var(--content-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 11px;
-  line-height: 1.4;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.model-scope-toggle:hover {
-  color: var(--text-1);
-  border-color: var(--text-3);
-}
-
-.model-scope-toggle[aria-pressed="true"] {
-  background: var(--content-subtle);
-  color: var(--text-1);
-}
-
-.model-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-}
-
-.model-search-input::placeholder {
-  color: var(--text-3);
-}
-
-.model-list {
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.model-group {
-  padding: 8px 10px 3px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
-  text-transform: uppercase;
-}
-
-.model-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--d-micro) ease;
-}
-
-.model-item:hover,
-.model-item.current-nav {
-  background: var(--surface-2);
-}
-
-.model-item.current {
-  background: var(--apple-blue-soft);
-}
-
-.model-item.current .model-label {
-  font-weight: 600;
-}
-
-.model-item .reasoning-tag {
-  margin-left: auto;
-}
-
-.model-check {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--apple-blue);
-  margin-left: 4px;
-}
-
-.model-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.model-empty {
-  padding: 18px 10px;
-  text-align: center;
-  color: var(--text-3);
-  font-size: 12px;
-}
-
 /* ── 消息流 ──────────────────────────────────────────────────────── */
 /* 对话区外框：只为放上下两条渐隐带。#messages 照旧是滚动容器。 */
 #messages-frame {
@@ -1705,7 +1409,7 @@ details.run-steps.done .chip.error { background: transparent; }
   z-index: 15;
 }
 
-/* 退场和 #model-popover 同一写法：hidden 立即生效，display 等收回播完才切。 */
+/* hidden 立即生效，display 等收回播完才切。 */
 .page-morph-sheet[hidden] {
   opacity: 0;
   transform: scale(0.95) translateY(4px);
@@ -1808,7 +1512,6 @@ details.run-steps.done .chip.error { background: transparent; }
 #composer.has-text #composer-bar-inner,
 #composer.drag-over #composer-bar-inner,
 #composer:has(#think-menu.open) #composer-bar-inner,
-body:has(#model-popover[data-from="think-chip"]:not([hidden])) #composer-bar-inner,
 #composer:has(.tile-56) #composer-bar-inner,
 #composer:has(#ask-cite:not([hidden])) #composer-bar-inner,
 #composer:has(#mention-strip:not([hidden])) #composer-bar-inner,
@@ -2394,7 +2097,7 @@ body:has(#model-popover[data-from="think-chip"]:not([hidden])) #composer-bar-inn
 /* 顶栏 B：任务名用正文色，旁边两枚图标更淡，一眼分清「在哪」和「能做什么」。 */
 #conversation-switcher .conversation-title { color:var(--text-primary); font-weight:500; }
 /* lucide 的 createElement 不带 .lucide 类名，按元素选中图标，否则是默认的 24px 粗箭头。 */
-#conversation-switcher svg, #model-btn svg { flex-shrink:0; width:12px; height:12px; stroke-width:1.75; color:var(--text-tertiary); }
+#conversation-switcher svg { flex-shrink:0; width:12px; height:12px; stroke-width:1.75; color:var(--text-tertiary); }
 
 /* 跨会话记忆 A：会话内回执 + 管理抽屉。 */
 #memory-shade { position:absolute; inset:0; z-index:34; border:0; padding:0; background:rgba(23,34,52,.18); cursor:default; }
@@ -2847,7 +2550,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 }
 
 /* 输入区：任务决策独立呈现，设置与诊断降低层级。 */
-#model-btn #model-mark { display:none; }
 #input { scrollbar-width:thin; }
 #composer-more { background:none; border:0; color:var(--text-secondary); font:inherit; cursor:pointer; padding:4px; border-radius:5px; }
 #composer-more:hover { background:var(--content-subtle); color:var(--text-primary); }
@@ -3657,25 +3359,62 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 
 /* 输入框左下角「6 Luna · 快」（thinking-chip.ts）：静时是一行灰字，悬停和打开时有浅底。 */
 #composer { position: relative; }
-#think-chip { all: unset; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 170px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease; }
+#think-chip { all: unset; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 190px; height: 26px; padding: 0 8px; border-radius: 7px; font-size: 12px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease, transform var(--m-quick) var(--e-swift); }
 #think-chip[hidden] { display: none; }
 #think-chip .think-model { overflow: hidden; text-overflow: ellipsis; }
+#think-chip .think-sep { color: var(--text-tertiary); }
 #think-chip:hover, #think-chip[aria-expanded="true"] { background: var(--content-subtle); color: var(--text-primary); }
-#think-chip.deep { color: var(--apple-blue); }
-#think-chip svg { flex: none; opacity: .6; transition: transform var(--m-move) var(--e-swift); }
+#think-chip:active { transform: scale(.97); }
+#think-chip.deep .think-level { color: var(--apple-blue); }
+#think-chip svg { flex: none; opacity: .55; transition: transform var(--d-state) var(--e-swift); }
 #think-chip[aria-expanded="true"] svg { transform: rotate(180deg); }
 #think-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#think-menu { position: absolute; left: 10px; bottom: calc(100% + 6px); width: 232px; padding: 6px; border-radius: 14px; border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); opacity: 0; transform: translateY(4px) scale(.97); transform-origin: bottom left; pointer-events: none; transition: opacity var(--m-move) var(--e-swift), transform var(--m-move) var(--e-swift); z-index: 20; }
+#think-chip .think-swap { display: inline-block; animation: think-swap var(--d-state) var(--e-swift); }
+@keyframes think-swap { from { opacity: 0; transform: translateY(3px); filter: blur(2px); } }
+
+/* 模型菜单：从开关长出来；两层并排放，「更多模型」整体左滑，高度跟着当前一层变。 */
+#think-menu { position: absolute; left: 10px; bottom: calc(100% + 6px); width: min(280px, calc(100% - 20px)); border-radius: 14px; border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; outline: none; opacity: 0; transform: translateY(4px) scale(.96); transform-origin: 24px calc(100% + 18px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), height var(--d-state) var(--e-swift); z-index: 20; }
 #think-menu.open { opacity: 1; transform: none; pointer-events: auto; }
-#think-menu .think-head { padding: 6px 10px 4px; font-size: 11px; color: var(--text-tertiary); }
-#think-menu button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 1fr auto; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
-#think-menu button:hover, #think-menu button:focus-visible { background: var(--content-subtle); }
-#think-menu button span { font-size: 13px; color: var(--text-primary); }
-#think-menu button small { grid-column: 1; font-size: 11.5px; color: var(--text-tertiary); }
-#think-menu button i { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-style: normal; color: var(--apple-blue); visibility: hidden; }
-#think-menu button[aria-checked="true"] i { visibility: visible; }
-#think-menu hr { border: 0; border-top: 1px solid var(--glass-border); margin: 4px 6px; }
-#think-menu .think-more { font-size: 12.5px; color: var(--text-secondary); }
+#think-menu.mm-instant { transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift); }
+#think-menu .mm-views { display: flex; align-items: flex-start; width: 200%; transition: transform var(--d-state) var(--e-swift); }
+#think-menu.mm-in-all .mm-views { transform: translateX(-50%); }
+#think-menu .mm-view { flex: none; width: 50%; padding: 6px; transition: opacity var(--d-state) var(--e-swift); }
+#think-menu.mm-in-all .mm-main, #think-menu:not(.mm-in-all) .mm-all { opacity: 0; }
+#think-menu hr { border: 0; border-top: 1px solid var(--glass-border); margin: 5px 8px; }
+#think-menu .mm-row { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 1fr 18px; align-items: center; column-gap: 8px; padding: 7px 10px; border-radius: 9px; cursor: pointer; scroll-margin: 6px; }
+#think-menu .mm-row.mm-nav { background: var(--content-subtle); }
+#think-menu .mm-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#think-menu .mm-name { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#think-menu .mm-desc { grid-column: 1; font-size: 11.5px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#think-menu .mm-check { grid-row: 1 / span 2; grid-column: 2; display: grid; color: var(--apple-blue); opacity: 0; transform: scale(.6); transition: opacity var(--m-quick) ease, transform var(--d-state) var(--e-swift); }
+#think-menu .mm-row[aria-checked="true"] .mm-check { opacity: 1; transform: none; }
+#think-menu .mm-more .mm-name { color: var(--text-secondary); }
+#think-menu .mm-chev { grid-column: 2; display: grid; justify-items: end; color: var(--text-tertiary); }
+#think-menu .mm-effort { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 6px 5px 10px; }
+#think-menu .mm-effort-label { font-size: 13px; color: var(--text-primary); }
+#think-menu .mm-effort-label small { display: block; font-size: 11.5px; color: var(--text-tertiary); }
+#think-menu .mm-seg { position: relative; flex: none; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 2px; border-radius: 8px; background: var(--content-subtle); }
+#think-menu .mm-seg button { all: unset; position: relative; z-index: 1; min-width: 40px; padding: 4px 10px; border-radius: 6px; text-align: center; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; transition: color var(--m-quick) ease; }
+#think-menu .mm-seg button[aria-checked="true"] { color: var(--text-primary); }
+#think-menu .mm-seg button:focus-visible { outline: 2px solid var(--accent); }
+#think-menu .mm-thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 6px; background: var(--content-bg); box-shadow: 0 0 0 .5px rgb(0 0 0 / .06), 0 1px 3px rgb(0 0 0 / .1); transition: transform var(--d-state) var(--e-swift); }
+#think-menu .mm-seg.deep .mm-thumb { transform: translateX(100%); }
+#think-menu .mm-head { display: flex; align-items: center; gap: 6px; padding: 0 0 6px; }
+#think-menu .mm-back { all: unset; flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--text-secondary); cursor: pointer; }
+#think-menu .mm-back:hover { background: var(--content-subtle); }
+#think-menu .mm-back:focus-visible { outline: 2px solid var(--accent); }
+#think-menu .mm-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border-radius: 8px; background: var(--content-subtle); color: var(--text-tertiary); }
+#think-menu .mm-search input { all: unset; flex: 1; min-width: 0; font-size: 13px; color: var(--text-primary); }
+#think-menu .mm-search input::placeholder { color: var(--text-tertiary); }
+#think-menu .mm-list { max-height: min(46vh, 300px); overflow-y: auto; }
+#think-menu .mm-group { padding: 8px 10px 3px; font-size: 11.5px; color: var(--text-tertiary); }
+#think-menu .mm-list .mm-row { padding: 6px 10px; }
+#think-menu .mm-none { padding: 18px 10px; text-align: center; font-size: 12.5px; color: var(--text-tertiary); }
+@media (prefers-reduced-motion: reduce) {
+  #think-menu, #think-menu .mm-views, #think-menu .mm-thumb, #think-chip svg { transition: opacity var(--d-micro) linear; transform: none !important; }
+  #think-menu.mm-in-all .mm-main { display: none; }
+  #think-chip .think-swap { animation: none; }
+}
 
 /* 主动卡（YIS-106）：一句话，第一个词是按钮，下面一行出处；悬停出 × */
 .pc { position: relative; overflow: hidden; align-self: stretch; }
