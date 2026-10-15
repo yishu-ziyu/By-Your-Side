@@ -2972,6 +2972,60 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat calc(var(--d-emph) * 2) var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
+/* 助手在想、在做一步时，标签一道扫光：用遮罩调透明度，动词墨色、对象浅灰各自保留；秒数是另一个元素，不扫。
+   等你（接管、确认发送、教学等你点）时不扫。 */
+details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title {
+  -webkit-mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
+  mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
+  -webkit-mask-size: 250% 100%;
+  mask-size: 250% 100%;
+  animation: runShimmer var(--m-shimmer) var(--e-shimmer) infinite;
+}
+@keyframes runShimmer {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+  to { -webkit-mask-position: -50% 0; mask-position: -50% 0; }
+}
+/* 回答位置的骨架：后面一接上回答、卡片或出错，就收成 0 高、淡出，条叠在回答底下，回答不往下跳。 */
+.answer-skeleton {
+  --sk-base: var(--content-subtle);
+  --sk-hi: var(--content-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: opacity var(--d-state) var(--e-exit);
+  pointer-events: none;
+}
+.answer-skeleton i {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(105deg, var(--sk-base) 0 40%, var(--sk-hi) 50%, var(--sk-base) 60% 100%) 100% 0 / 300% 100%;
+  animation: var(--sk-anim, skeletonSweep var(--m-sweep) var(--e-sweep) infinite);
+}
+/* 等你的时候回答位置不放骨架；不等了、还没出字就再放回来。 */
+details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer-skeleton { display: none; }
+.answer-skeleton i:nth-child(1) { width: 92%; margin-top: 7px; }
+.answer-skeleton i:nth-child(2) { width: 78%; }
+.answer-skeleton i:nth-child(3) { width: 60%; }
+/* 任务卡和接续入口常挂在末尾却没内容（不显示），不算接上了东西。 */
+.answer-skeleton:has(~ :not(.ai-task-card, #resume-entry-root)),
+.answer-skeleton:has(~ .ai-task-card #resume-entry-root:not([hidden]) > *, ~ #resume-entry-root:not([hidden]) > *),
+.answer-skeleton[data-state="gone"] {
+  --sk-anim: none;
+  height: 0;
+  /* 抵掉 #messages 的行距：回答落在骨架第一条的位置。 */
+  margin-bottom: calc(-1 * var(--s-2));
+  opacity: 0;
+}
+@keyframes skeletonSweep { to { background-position: 0 0; } }
+@media (prefers-color-scheme: dark) {
+  .answer-skeleton { --sk-hi: color-mix(in oklch, var(--content-subtle), var(--text-primary) 12%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
+  .answer-skeleton { transition: none; }
+  .answer-skeleton i { animation: none; background: var(--sk-base); }
+}
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 176px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
 /* 收尾后的分叉不留「查了 N 路」这类行：做过的事在展开的过程里，默认视图只留过程行和回答。 */
