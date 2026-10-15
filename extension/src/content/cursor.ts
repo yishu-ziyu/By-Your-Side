@@ -375,6 +375,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         box-shadow: 0 2px 8px rgba(0,0,0,.35); opacity: 0; transition: opacity var(--d-state) var(--e-enter);
       }
       .point-cap.on { opacity: 1; }
+      .point-cap.small { padding: 1px 6px; font-size: 11px; line-height: 14px; }
       .inspect .cap {
         position: absolute; left: 0; top: -18px; white-space: nowrap;
         font: 600 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
@@ -434,6 +435,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         letter-spacing: .02em; white-space: nowrap;
       }
       .mark-label.below { top: calc(100% + 6px); }
+      .mark-label.small { padding: 0 5px; font-size: 10.5px; line-height: 1.5; }
       .mark.sketch {
         border: 0;
         border-radius: 0;
@@ -1703,15 +1705,29 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     const originY = (parseFloat(el.style.top) || 0) - window.scrollY;
     const toView = (b: { x: number; y: number; w: number; h: number }) => ({ x: originX + b.x, y: originY + b.y, w: b.w, h: b.h });
 
-    const at = sketchLabelPosition(frame, { w: size.width, h: size.height }, {
+    let at = sketchLabelPosition(frame, { w: size.width, h: size.height }, {
       inView: (b) => {
         const v = toView(b);
 
         return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight;
       },
       // 名牌有自己的底色，可以压在页面上；只是不能落到页面外的空白处（比如居中版面两侧的灰边）。
-      clear: (b) => onPageContent(toView(b)),
+      clear: (b) => onPageContent(toView(b)) && !coversControl(toView(b)),
     });
+    const freeOfControls = (b: { x: number; y: number; w: number; h: number }) => !coversControl(toView(b));
+    let at2 = at;
+
+    // 名牌绝不压在别的控件上：先放宽「在页面内容上」，再缩小字，还不行就不挂名牌，只留圈。
+    if (!freeOfControls({ x: at2.left, y: at2.top, w: size.width, h: size.height })) {
+      at2 = sketchLabelPosition(frame, { w: size.width, h: size.height }, { inView: (b) => { const v = toView(b); return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight; }, clear: freeOfControls });
+    }
+    if (!freeOfControls({ x: at2.left, y: at2.top, w: size.width, h: size.height })) {
+      labelEl.classList.add("small");
+      const small = labelEl.getBoundingClientRect();
+      at2 = sketchLabelPosition(frame, { w: small.width, h: small.height }, { inView: () => true, clear: freeOfControls });
+      if (!freeOfControls({ x: at2.left, y: at2.top, w: small.width, h: small.height })) labelEl.style.display = "none";
+    }
+    at = at2;
 
     // 兜底：无论如何夹在视口里。
     labelEl.style.left = `${Math.max(4 - originX, Math.min(at.left, window.innerWidth - 4 - size.width - originX))}px`;
@@ -1865,7 +1881,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       for (let j = 0; j <= 2; j++) {
         const hit = document.elementsFromPoint(r.x + 1 + ((r.w - 2) * i) / 4, r.y + 1 + ((r.h - 2) * j) / 2).find((e) => !e.closest(`[${OVERLAY_ATTR}]`));
 
-        if (hit?.closest("input,textarea,select,button,a,iframe")) return true;
+        if (hit?.closest("input,textarea,select,button,a,iframe,[role=button],[role=link],[role=menuitem],[role=tab],[role=checkbox],[contenteditable=true]")) return true;
       }
     }
 
@@ -2037,16 +2053,29 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       tag.className = "point-cap";
       tag.textContent = caption;
       highlightLayer.append(tag);
-      const w = tag.offsetWidth, h = tag.offsetHeight, vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight, gap = 10;
+      // 不压到旁边别的控件（比如紧挨着的「Send」）：四边轮流试；都压就缩成「在这里」小字再试；还不行只留圈。
+      const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight, gap = 8;
       const r = { left: bounds.left, top: bounds.top, right: bounds.left + bounds.width, bottom: bounds.top + bounds.height };
-      let x: number, y = r.top + bounds.height / 2 - h / 2;
-      if (r.right + gap + w <= vw - 6) x = r.right + gap;
-      else if (r.left - gap - w >= 6) x = r.left - gap - w;
-      else { x = r.left; y = r.bottom + gap + h <= vh - 6 ? r.bottom + gap : r.top - gap - h; }
-      x = Math.max(6, Math.min(x, vw - w - 6));
-      y = Math.max(6, Math.min(y, vh - h - 6));
-      tag.style.left = `${x}px`;
-      tag.style.top = `${y}px`;
+      const markLabels = liveMarks.flatMap((m) => { const l = m.el.querySelector<HTMLElement>(".mark-label"); return l && l.style.display !== "none" ? [l.getBoundingClientRect()] : []; });
+      const overLabel = (x: number, y: number, w: number, h: number) => markLabels.some((l) => Math.min(l.right, x + w) > Math.max(l.left, x) && Math.min(l.bottom, y + h) > Math.max(l.top, y));
+      const fits = (x: number, y: number, w: number, h: number) => x >= 4 && y >= 4 && x + w <= vw - 4 && y + h <= vh - 4 && !coversControl({ x, y, w, h }) && !overLabel(x, y, w, h);
+      const place = (): boolean => {
+        const w = tag.offsetWidth, h = tag.offsetHeight, midY = r.top + bounds.height / 2 - h / 2;
+        const spots: Array<[number, number]> = [[r.right + gap, midY], [r.left - gap - w, midY], [r.left, r.bottom + gap], [r.right - w, r.bottom + gap], [r.left, r.top - gap - h], [r.right - w, r.top - gap - h]];
+        const spot = spots.find(([x, y]) => fits(x, y, w, h));
+
+        if (!spot) return false;
+        tag.style.left = `${spot[0]}px`;
+        tag.style.top = `${spot[1]}px`;
+
+        return true;
+      };
+
+      if (!place()) {
+        tag.textContent = "在这里";
+        tag.classList.add("small");
+        if (!place()) tag.style.display = "none";
+      }
       tag.getBoundingClientRect();
       tag.classList.add("on");
       pointCapEl = tag;
