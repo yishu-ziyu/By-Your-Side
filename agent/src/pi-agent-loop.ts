@@ -151,7 +151,7 @@ export class PiAgentLoop implements AgentLoop {
   private cutText: (() => boolean) | null = null;
 
   constructor(private readonly options: PiAgentLoopOptions) {
-    // 0.5、1 秒两次重试：服务挂起时最坏（对冲时间点 + 15 s）× 3 + 1.5 s 就告诉用户，而不是让人干等几分钟。
+    // 0.5、1 秒两次重试：服务挂起时最坏 15 s × 3 + 1.5 s 就告诉用户，而不是让人干等几分钟。
     this.sessionManager = options.persistence ?? new MemoryEntries();
     this.retry = options.retry ?? { maxRetries: 2, baseDelayMs: 500 };
     this.definitions = new Map(options.tools.map(tool => [tool.name, tool]));
@@ -628,13 +628,15 @@ export type ModelHedgeRecord =
  * 第一个事件（start 只表示连上，不算）迟迟不来：取消这次请求，交出一条可重试的超时错误，写明是哪个模型。
  * 服务端一旦发出原始事件（已受理），剩余等待缩短到 MODEL_STALL_AFTER_START_MS：受理后迟迟不出内容就是挂住了。
  * 到 hedgeMs 还没有第一个事件，就再发一份相同的请求，原请求不取消（对冲请求，Dean & Barroso《The Tail at Scale》）：
- * 先出第一个事件的那份胜出，另一份立即取消、晚到的事件丢弃。每份各按上面的上限计时，两份都超时才报超时错误。
+ * 先出第一个事件的那份胜出，另一份立即取消、晚到的事件丢弃。整次调用在原请求的期限（上面两条）报超时错误；
+ * 只有对冲那份已被受理（服务还活着）时，才放宽到它受理后再等 MODEL_STALL_AFTER_START_MS，取两者中较晚的。
+ * 供应商整段挂住时两份都不会被受理，用户等的时间和没有对冲时一样。
  * 某份在出第一个事件前就出错（并发上限、429 等），而另一份还在等：只丢掉出错的这份，不让整次调用失败。
  * 用户取消照常走原来的 aborted 结局。
  */
 function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, hedgeMs: number, start: (signal: AbortSignal, onProviderStreamEvent: () => void, hedge: boolean) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void, onHedge?: (record: ModelHedgeRecord) => void): AssistantMessageEventStream {
   /** live：还在等它出第一个事件；超时、出错、输给另一份或流结束后为 false。held：胜出前收到的 start 事件，胜出时补发。 */
-  type Attempt = { controller: AbortController; timer?: ReturnType<typeof setTimeout>; started: boolean; live: boolean; hedge: boolean; held: AssistantMessageEvent[] };
+  type Attempt = { controller: AbortController; started: boolean; live: boolean; hedge: boolean; held: AssistantMessageEvent[] };
 
   const name = `${model.provider}/${model.id}`;
   const sentAt = Date.now();
@@ -644,6 +646,12 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   let wonAt: number | null = null;
   let hedgeError: string | undefined;
   let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+  const acceptedMessage = `first response timeout: ${name} accepted the request but sent nothing within ${Math.round(MODEL_STALL_AFTER_START_MS / 1000)} s`;
+  /** 原请求的期限；原请求被受理后缩短。 */
+  let deadline = { at: sentAt + timeoutMs, message: `first response timeout: ${name} sent nothing within ${Math.round(timeoutMs / 1000)} s` };
+  /** 对冲那份被受理后的期限；没被受理为 null。 */
+  let hedgeDeadline: number | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   /** 已交出结局（超时错误或截断），之后两份的事件都丢弃。 */
   let closed = false;
   let finished = false;
@@ -660,8 +668,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     if (finished) return;
     finished = true;
     clearTimeout(hedgeTimer);
-
-    for (const attempt of attempts) clearTimeout(attempt.timer);
+    clearTimeout(timer);
     outer?.removeEventListener("abort", cancel);
     onCut?.(cutText, false);
     out.end();
@@ -687,27 +694,24 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
 
   const othersLive = (attempt: Attempt) => attempts.some(other => other !== attempt && other.live);
 
-  /** 丢掉一份：取消它、不再计时；还有别的份在等就继续等，否则按 message 报错。 */
-  const drop = (attempt: Attempt, message: string | null) => {
+  const drop = (attempt: Attempt) => {
     attempt.live = false;
-    clearTimeout(attempt.timer);
     attempt.controller.abort();
-
-    if (!winner && !othersLive(attempt) && message !== null) fail(message);
   };
 
-  const arm = (attempt: Attempt, ms: number, message: string) => {
-    clearTimeout(attempt.timer);
-    attempt.timer = setTimeout(() => drop(attempt, message), ms);
+  const arm = () => {
+    const { at, message } = hedgeDeadline !== null && hedgeDeadline > deadline.at ? { at: hedgeDeadline, message: acceptedMessage } : deadline;
+    clearTimeout(timer);
+    timer = setTimeout(() => fail(message), Math.max(0, at - Date.now()));
   };
 
   const win = (attempt: Attempt) => {
     winner = attempt;
     wonAt = Date.now();
     clearTimeout(hedgeTimer);
-    clearTimeout(attempt.timer);
+    clearTimeout(timer);
 
-    for (const other of attempts) if (other !== attempt) drop(other, null);
+    for (const other of attempts) if (other !== attempt) drop(other);
   };
 
   const launch = (hedge: boolean) => {
@@ -715,23 +719,25 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
 
     if (outer?.aborted) attempt.controller.abort();
     attempts.push(attempt);
-    // 计时器先建立；服务端第一个原始事件到来时，若内容还没来，就改成受理后的短等待。
-    arm(attempt, timeoutMs, `first response timeout: ${name} sent nothing within ${Math.round(timeoutMs / 1000)} s`);
 
+    // 服务端第一个原始事件到来时，若内容还没来：原请求改成受理后的短等待，对冲那份把期限放宽到受理后的短等待。
     const accepted = () => {
-      if (attempt.started || winner) return;
+      if (attempt.started || winner || closed) return;
       attempt.started = true;
-      arm(attempt, Math.min(timeoutMs, MODEL_STALL_AFTER_START_MS), `first response timeout: ${name} accepted the request but sent nothing within ${Math.round(MODEL_STALL_AFTER_START_MS / 1000)} s`);
+
+      if (hedge) hedgeDeadline = Date.now() + MODEL_STALL_AFTER_START_MS;
+      else deadline = { at: Date.now() + Math.min(timeoutMs, MODEL_STALL_AFTER_START_MS), message: acceptedMessage };
+      arm();
     };
 
     let source: AssistantMessageEventStream;
 
     try { source = start(attempt.controller.signal, accepted, hedge); } catch (error) {
       attempt.live = false;
-      clearTimeout(attempt.timer);
 
       // 原请求同步抛出的错误（如缺 key）照旧交给 Agent 处理；对冲那份只丢掉。
       if (!hedge) {
+        clearTimeout(timer);
         outer?.removeEventListener("abort", cancel);
         throw error;
       }
@@ -778,7 +784,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
 
           if (event.type === "error" && othersLive(attempt)) {
             if (attempt.hedge) hedgeError = event.error.errorMessage;
-            drop(attempt, null);
+            drop(attempt);
             break;
           }
 
@@ -805,8 +811,6 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
       if (winner === attempt || (!winner && !othersLive(attempt))) fail(errorText(error));
       else if (attempt.hedge && attempt.live) hedgeError = errorText(error);
     } finally {
-      clearTimeout(attempt.timer);
-
       if (winner === attempt) finish();
       else if (attempt.live) {
         attempt.live = false;
@@ -820,6 +824,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     }
   };
 
+  arm();
   launch(false);
   onCut?.(cutText, true);
 

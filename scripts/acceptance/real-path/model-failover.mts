@@ -315,8 +315,11 @@ async function runCase(c: Case) {
       if (evidence.raceHit) assert.equal(taskToBackup.length, 0, "换模型途中点了「停」，备用模型没有收到任务请求");
     } else if (c.name === "hang" || c.name === "503") {
       // 挂起时到对冲时间点会再发一份相同的请求；那份不是超时后的重试，所以两份都在首个事件上限（15 秒）之前发出。
-      if (c.name === "hang") assert.ok(primaryAsked.length === 2 && primaryAsked[1]! - primaryAsked[0]! < 15_000, "主模型只有原请求和一份对冲，不在原模型上重试");
-      else assert.equal(primaryAsked.length, 1, "主模型只被问一次，不在原模型上重试");
+      // 挂起的服务只回响应头、不发流事件，两份都不算受理，仍在 15 秒上限放弃、换备用。
+      if (c.name === "hang") {
+        assert.ok(primaryAsked.length === 2 && primaryAsked[1]! - primaryAsked[0]! < 15_000, "主模型只有原请求和一份对冲，不在原模型上重试");
+        assert.ok(taskToBackup.length >= 1 && taskToBackup[0]!.at - primaryAsked[0]! < 17_000, `彻底挂住时在 15 秒上限换到备用模型（${taskToBackup[0] ? taskToBackup[0].at - primaryAsked[0]! : null} ms）`);
+      } else assert.equal(primaryAsked.length, 1, "主模型只被问一次，不在原模型上重试");
       assert.ok(taskToBackup.length >= 1, "备用模型（阶跃星辰）收到了任务请求");
       assert.ok(visibleMs <= (c.name === "503" ? 10_000 : BOUND_MS), `回答在时限内出现（${visibleMs} ms）`);
       assert.match(text, /主模型暂时不可用，换成 阶跃星辰 · step-3\.7-flash 接着做/, "侧栏写明换成了哪个模型");
