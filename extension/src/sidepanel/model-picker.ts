@@ -29,7 +29,7 @@ export interface ModelPickerHost {
   reasoningTag: HTMLElement | null;
   /** 搜索面板容器。 */
   popover: HTMLElement;
-  /** 顶部更多按钮，用作面板定位和键盘焦点返回位置。 */
+  /** 顶部更多按钮，用作面板定位和键盘焦点返回位置；从别处打开时换成那颗按钮。 */
   anchor: HTMLElement;
   /** 应用容器，用作面板定位参照。 */
   app: HTMLElement;
@@ -50,6 +50,8 @@ export interface ModelPicker {
   reset(): void;
   /** 布局变化后重算面板位置；面板未展开时不动作。 */
   reposition(): void;
+  /** 从另一颗按钮打开面板，面板贴着它展开。 */
+  openFrom(trigger: HTMLElement): void;
 }
 
 export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
@@ -59,9 +61,10 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     name: modelName,
     reasoningTag: modelReasoningTag,
     popover: modelPopover,
-    anchor,
     app,
   } = options.host;
+
+  let anchor = options.host.anchor;
 
   const sendSetModel = options.sendSetModel;
 
@@ -79,6 +82,8 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
     if (returnFocus) anchor.focus();
     modelBtn.setAttribute("aria-expanded", "false");
+    delete modelPopover.dataset.from;
+    anchor = options.host.anchor;
   }
 
   function paintMark(el: HTMLElement, provider: string | undefined): void {
@@ -105,8 +110,10 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
   function positionModelPopover(): void {
     const appBox = app.getBoundingClientRect();
     const box = anchor.getBoundingClientRect();
-    modelPopover.style.top = `${box.bottom - appBox.top + 8}px`;
-    modelPopover.style.bottom = "auto";
+    // 触发按钮在侧栏下半（输入框里）时往上长，否则往下长。
+    const upward = box.top > appBox.top + appBox.height / 2;
+    modelPopover.style.top = upward ? "auto" : `${box.bottom - appBox.top + 8}px`;
+    modelPopover.style.bottom = upward ? `${appBox.bottom - box.top + 8}px` : "auto";
   }
 
   /**
@@ -122,7 +129,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     const x = Math.round(btn.left - popLeft + btn.width / 2);
 
     if (x > 0 && x < modelPopover.offsetWidth) {
-      modelPopover.style.transformOrigin = `${x}px top`;
+      modelPopover.style.transformOrigin = `${x}px ${modelPopover.style.top === "auto" ? "bottom" : "top"}`;
     }
   }
 
@@ -336,26 +343,25 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
   }
 
   modelBtn.appendChild(icon(ChevronDown));
+  function openModelPopover(): void {
+    modelQuery = "";
+    const input = modelSearchInput();
+
+    if (input) input.value = "";
+    renderModelList();
+    positionModelPopover();
+    modelPopover.inert = false;
+    modelPopover.hidden = false;
+    alignModelPopoverOrigin();
+    modelBtn.setAttribute("aria-expanded", "true");
+    queueMicrotask(() => {
+      if (!modelPopover.hidden) modelSearchInput()?.focus();
+    });
+  }
+
   modelBtn.onclick = () => {
-    const opening = modelPopover.hidden;
-
-    if (opening) {
-      modelQuery = "";
-      const input = modelSearchInput();
-
-      if (input) input.value = "";
-      renderModelList();
-      positionModelPopover();
-      modelPopover.inert = false;
-      modelPopover.hidden = false;
-      alignModelPopoverOrigin();
-      modelBtn.setAttribute("aria-expanded", "true");
-      queueMicrotask(() => {
-        if (!modelPopover.hidden) modelSearchInput()?.focus();
-      });
-    } else {
-      closeModelPopover();
-    }
+    if (modelPopover.hidden) openModelPopover();
+    else closeModelPopover();
   };
 
   document.addEventListener("click", (e) => {
@@ -388,6 +394,11 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     },
     reposition: () => {
       if (!modelPopover.hidden) positionModelPopover();
+    },
+    openFrom: (trigger) => {
+      anchor = trigger;
+      modelPopover.dataset.from = trigger.id;
+      openModelPopover();
     },
   };
 }
