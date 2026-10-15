@@ -2357,7 +2357,7 @@ function attachPanel(port: chrome.runtime.Port) {
         void (async () => {
           const tabId = await pageRefTab();
           const ref = tabId == null ? undefined : locatedRef(tabId, msg.name);
-          const ok = tabId != null && ref !== undefined && await pointAtLocated(tabId, ref);
+          const ok = tabId != null && ref !== undefined && await pointAtLocated(tabId, ref, `「${msg.name.trim().slice(0, 20)}」在这里`);
           broadcast({ kind: "page_ref_pointed", id: msg.id, ok } satisfies BgToPanel);
         })();
         break;

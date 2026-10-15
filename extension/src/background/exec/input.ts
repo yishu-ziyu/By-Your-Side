@@ -3204,7 +3204,7 @@ export async function locatedStillThere(tabId: number, backendNodeId: number): P
 }
 
 /** 用户点了回答里的虚线：工作光标飞到那个控件、画一圈墨蓝。返回 false 表示控件已不在。 */
-export async function pointAtLocated(tabId: number, backendNodeId: number): Promise<boolean> {
+export async function pointAtLocated(tabId: number, backendNodeId: number, caption = ""): Promise<boolean> {
   if (!await locatedStillThere(tabId, backendNodeId)) return false;
   let rect: DomRect;
 
@@ -3214,9 +3214,9 @@ export async function pointAtLocated(tabId: number, backendNodeId: number): Prom
   await cursorMove(tabId, rect.x + rect.width / 2, rect.y + rect.height / 2, cid);
 
   try {
-    await callDom(tabId, (x: number, y: number, w: number, h: number, id: string) => {
-      window.__sideagent?.cursor?.for(id)?.inspect?.({ x, y, width: w, height: h }, "");
-    }, [rect.x, rect.y, rect.width, rect.height, cid]);
+    await callDom(tabId, (x: number, y: number, w: number, h: number, id: string, cap: string) => {
+      window.__sideagent?.cursor?.for(id)?.inspect?.({ x, y, width: w, height: h }, cap, true);
+    }, [rect.x, rect.y, rect.width, rect.height, cid, caption]);
   } catch {
     return false;
   }
