@@ -260,26 +260,18 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         transition: opacity 160ms ease;
         pointer-events: none;
       }
-      /* 光标旁的话：白底轻卡，左上角收尖，像从光标说出来；左边一颗小光球是我们的记号。 */
+      /* 左上角接近光标，让短句看起来属于当前动作。 */
       .cursor.acting .label, .cursor.stating .label {
-        display: inline-flex; align-items: center; gap: 7px;
-        background: #ffffff; color: #141413;
+        display: inline-flex; align-items: center; gap: 0;
+        background: #f9fafb; color: #3b4650;
         border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px;
-        padding: 6px 12px 6px 9px;
-        width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
-        font: 400 13px/1.45 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        padding: 3px 9px;
+        width: max-content; max-width: min(200px, calc(100vw - 16px)); box-sizing: border-box;
+        font: 400 12px/1.4 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
         letter-spacing: 0; white-space: normal; overflow-wrap: anywhere;
         text-shadow: none; opacity: 1;
-        box-shadow: 0 4px 14px rgba(20,20,19,.10);
+        box-shadow: 0 2px 5px rgba(20,20,19,.04);
       }
-      .orb-dot {
-        flex: none; width: 10px; height: 10px; border-radius: 50%;
-        background: radial-gradient(circle at 35% 35%, #f0abfc, #818cf8 72%);
-        box-shadow: 0 0 6px rgba(129,140,248,.45);
-        animation: orb-breathe 2.4s ease-in-out infinite;
-      }
-      @keyframes orb-breathe { 50% { transform: scale(.82); opacity: .75; } }
-      @media (prefers-reduced-motion: reduce) { .orb-dot { animation: none; } }
       .action-text { display: block; }
       .agent-name { display: none; }
       .cursor.rest.stating .label { opacity: 1; }
@@ -416,23 +408,16 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     style.textContent = `
       .mark {
         position: absolute; box-sizing: border-box; pointer-events: none;
-        border: 2.5px solid var(--c); border-radius: 8px;
-        background: color-mix(in srgb, var(--c) 7%, transparent);
-        box-shadow: 0 0 0 1px rgba(255,255,255,.5), 0 0 16px color-mix(in srgb, var(--c) 40%, transparent);
+        border: 1.3px solid var(--c); border-radius: 5px;
+        background: transparent;
       }
-      .mark-arrow {
-        position: absolute; left: -30px; top: 50%; transform: translateY(-50%);
-        display: block; overflow: visible;
-        filter: drop-shadow(0 1px 2px rgba(15,23,42,.35));
-      }
-      .mark-arrow path, .mark-arrow line { stroke: var(--c); }
       .mark-label {
         position: absolute; left: -3px; top: -26px;
-        padding: 1px 8px; border-radius: 999px;
-        background: var(--c); color: #fff;
-        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        padding: 1px 2px;
+        background: transparent; color: var(--c);
+        font: 500 12px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
         letter-spacing: .02em; white-space: nowrap;
-        box-shadow: 0 2px 6px rgba(15,23,42,.25);
+        text-shadow: 0 1px 2px #fff, 0 -1px 2px #fff;
       }
       .mark-label.below { top: calc(100% + 6px); }
       .mark.sketch {
@@ -448,7 +433,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       .sketch-svg path {
         fill: none;
         stroke: var(--c);
-        stroke-width: 2.2;
+        stroke-width: 1.3;
         stroke-linecap: round;
         stroke-linejoin: round;
       }
@@ -481,14 +466,6 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       .mark.sketch.boil .boil-path[data-i="1"] { --path-i: 1; }
       .mark.sketch.boil .boil-path[data-i="2"] { --path-i: 2; }
 
-      .mark-label.sketch-label {
-        position: absolute;
-        padding: 3px 10px; border-radius: 999px;
-        background: var(--c); color: #fff;
-        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-        box-shadow: 0 0 0 1.5px #fff, 0 3px 10px rgba(15,23,42,.28);
-        white-space: nowrap;
-      }
       /* 交给用户时的圈：填好、点过就淡出。 */
       .mark.handoff { transition: opacity .35s ease; }
       .mark.handoff.faded { opacity: 0; }
@@ -719,9 +696,6 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   /** 名牌正文渲染：动作与状态共用同一块牌子。 */
   function paintLabel(inst: Instance, main: string, sub: string): void {
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
-    const orb = document.createElement("span");
-    orb.className = "orb-dot";
-    orb.setAttribute("aria-hidden", "true");
     const line = document.createElement("span");
     line.className = "action-text";
     line.textContent = main;
@@ -730,7 +704,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     name.textContent = sub;
     inst.labelAnimation?.cancel();
     inst.labelAnimation = undefined;
-    label.replaceChildren(orb, line, name);
+    label.replaceChildren(line, name);
     inst.labelSize = undefined;
     inst.labelPlacement = undefined;
     positionActionLabel(inst);
@@ -1647,10 +1621,6 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         el.appendChild(markLabel);
       }
     } else {
-      const svg = svgEl("svg", { class: "mark-arrow", width: 24, height: 24, viewBox: "0 0 24 24", fill: "none" });
-      svg.appendChild(svgEl("path", { d: "M2 12h17m-6-6 6 6-6 6", "stroke-width": 2.5, "stroke-linecap": "round", "stroke-linejoin": "round" }));
-      el.replaceChildren(svg);
-
       if (label) {
         const markLabel = document.createElement("div");
         markLabel.className = "mark-label";

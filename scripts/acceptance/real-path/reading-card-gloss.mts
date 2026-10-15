@@ -1,6 +1,6 @@
 /**
  * 划词阅读卡：正文右侧是空白时贴在旁边并连线；右侧有侧栏或窗口变窄时退回浮卡；
- * 回答第一段有强调；提问框默认「快速」，切到「深度」后请求带深度标记并用主模型。
+ * 默认短摘要，可展开完整段落；提问框默认「快速」，切到「深度」后请求带深度标记并用主模型。
  *
  * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明卡片位置、样式和请求去向，不证明真实回答写得好不好。
  *   npx tsx scripts/acceptance/real-path/reading-card-gloss.mts --headless
@@ -9,7 +9,7 @@
  *   右侧空白  卡片在正文右侧，不和选区所在段落重叠，有连线；滚动后仍贴着这段。
  *   有侧栏    卡片是浮卡，不盖住侧栏。
  *   窄窗口    退回浮卡，没有连线。
- *   第一段    回答第一个段落有强调样式，后面的段落没有。
+ *   摘要      标题与分隔线不代替正文；长段落可展开完整内容，按钮保留焦点。
  *   快速/深度  默认请求是快速模型并带 fast；切到深度后的请求是主模型并带 deep。
  */
 import { createServer } from "node:http";
@@ -22,15 +22,15 @@ import { startScriptedModel } from "./scripted-model.mts";
 requireHeadless();
 
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-reading-card-gloss`);
-const shots = "/opt/cursor/artifacts/after";
+const shots = join(out, "screenshots");
 
 await mkdir(out, { recursive: true });
 await mkdir(shots, { recursive: true });
 
 const MARKER = "The lighthouse keeper logged every storm in violet ink so that later sailors could trust the record.";
 const FOLLOW_UP = "紫色墨水能保存多久";
-const EXPLAIN_ANSWER = "紫色染料能保存几十年。\n\n黑墨在盐雾里几年就褪了。";
-const FOLLOW_ANSWER = "几十年后仍清楚可读。";
+const EXPLAIN_ANSWER = "## 要点\n\n---\n\n紫色染料能保存几十年。\n\n黑墨在盐雾里几年就褪了。";
+const FOLLOW_ANSWER = "几十年后仍清楚可读。" + "保存时要避开日晒和盐雾。".repeat(18) + "完整结尾。";
 
 const article = (extra: string) => `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>灯塔日志</title>
 <style>
@@ -102,7 +102,6 @@ type Scene = {
   line: Box | null;
   place: string;
   innerWidth: number;
-  lead: { count: number; lead: boolean; secondLead: boolean; fontWeight: string; backgroundImage: string };
   depths: Array<{ depth: string; checked: string }>;
 };
 
@@ -167,14 +166,10 @@ try {
     const box = (r) => r && r.width ? {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height} : null;
     const surface = this.querySelector(".surface");
     const line = this.querySelector(".link:not([hidden])");
-    const paras = [...this.querySelectorAll(".turn .answer")].at(-1)?.querySelectorAll(":scope > p") ?? [];
-    const lead = paras[0];
-    const style = lead ? getComputedStyle(lead) : null;
     return {
       card: box(surface?.getBoundingClientRect()),
       line: box(line?.getBoundingClientRect()),
       place: surface?.dataset.place ?? "",
-      lead: { count: paras.length, lead: !!lead?.classList.contains("lead"), secondLead: !!paras[1]?.classList.contains("lead"), fontWeight: style?.fontWeight ?? "", backgroundImage: style?.backgroundImage ?? "" },
       depths: [...this.querySelectorAll("[data-depth]")].map((b) => ({ depth: b.getAttribute("data-depth"), checked: b.getAttribute("aria-checked") })),
     };
   }`;
@@ -217,8 +212,18 @@ try {
   const wideBeside = wide.card.left >= wide.block.right - 1 && !overlaps(wide.card, wide.block);
   const wideLine = !!wide.line && wide.line.width >= 8 && wide.line.left >= wide.block.right - 4 && wide.line.right <= wide.card.left + 4 && wide.line.top >= wide.block.top - 8 && wide.line.top <= wide.block.bottom + 8;
   check("宽屏空白：卡片在正文右侧，不和这段重叠，有连线", wideBeside && wideLine, { card: wide.card, block: wide.block, line: wide.line, place: wide.place });
-  const leadOn = wide.lead.lead && !wide.lead.secondLead && Number(wide.lead.fontWeight) >= 550 && wide.lead.backgroundImage.includes("linear-gradient") && wide.lead.count >= 2;
-  check("回答第一段有强调，后一段没有", leadOn, wide.lead);
+  const compact = await inCard<{width:number; summary:string; hidden:boolean; composer:boolean}>(`function(){return {width:this.querySelector('.surface').getBoundingClientRect().width,summary:this.querySelector('.answer-summary')?.textContent??'',hidden:!!this.querySelector('.answer')?.hidden,composer:!!this.querySelector('.composer')?.hidden}}`);
+  check("默认窄卡只显示摘要，完整回答可展开", compact.width <= 320 && compact.summary.includes("几十年") && compact.hidden && compact.composer, compact);
+  const details = await pointOf('[data-act="details"]');
+  if (details) {
+    await click(details);
+    const full = await inCard<boolean>(`function(){const a=this.querySelector('.answer');return !!a&&!a.hidden&&a.innerText.includes('盐雾')}`);
+    check("展开后能看到完整第二段", full, full);
+    await shot("1-expanded");
+    await click((await pointOf('[data-act="details"]'))!);
+  } else check("展开按钮可见", false, "没有展开按钮");
+  const followup = await pointOf('[data-act="followup"]');
+  if (followup) await click(followup);
   const fastChecked = wide.depths.find((item) => item.depth === "fast")?.checked === "true" && wide.depths.find((item) => item.depth === "deep")?.checked === "false";
   const beforeDeep = seen.length;
   const fastRequest = seen.find((item) => item.depth === "fast");
@@ -235,6 +240,12 @@ try {
   await until(async () => (await inCard<string>(`function(){return this.querySelector("textarea")?.value??""}`)).includes(FOLLOW_UP) || undefined, 3_000, "追问已输入").catch(() => undefined);
   await rp.pressEnter(work);
   await until(async () => (await inCard<string>(`function(){return [...this.querySelectorAll(".answer")].map(a=>a.textContent??"").join("\\n")}`)).includes("清楚可读") ? true : undefined, 20_000, "深度回答");
+  await until(async () => (await inCard<string>(`function(){return this.querySelectorAll('.answer')[1]?.textContent??''}`)).includes('完整结尾') || undefined, 20_000, "长段落写完");
+  const longSummary = await inCard<{summary:string;hidden:boolean}>(`function(){const t=this.querySelectorAll('.turn')[1];return {summary:t.querySelector('.answer-summary')?.textContent??'',hidden:!!t.querySelector('.answer')?.hidden}}`);
+  check("单个长段落也收起，默认只露出第一句", longSummary.hidden && longSummary.summary === "几十年后仍清楚可读。", longSummary);
+  await click((await pointOf('[data-act="details"][data-turn="1"]'))!);
+  const longFull = await inCard<boolean>(`function(){const t=this.querySelectorAll('.turn')[1];return !t.querySelector('.answer').hidden&&t.querySelector('.answer').innerText.includes('完整结尾')&&this.activeElement===t.querySelector('.details')}`);
+  check("长段落完整展开，焦点留在展开键", longFull, longFull);
   const deepRequest = seen.find((item) => item.depth === "deep");
   check("深度请求带 deep，后端用主模型", !!deepRequest && deepRequest.model === "main-reader", { requests: seen.map(({ model: id, depth }) => ({ model: id, depth })) });
 
