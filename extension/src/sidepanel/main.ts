@@ -3796,10 +3796,14 @@ function closeThink(run: RunHost, at: number): void {
 
   if (!Number.isFinite(from) || !Number.isFinite(at) || at - from < THINK_MIN_MS) return;
   run.thinkSegments.push({ start: from, end: at });
+  const details = run.body.querySelector<HTMLElement>(`details.thinking[data-think-from="${from}"]`);
+
+  // 回答出字时就结束了这段；closeBlocks 到这一轮结束才跑，要沿用这里的起止，不能算上回答放字的时间。
+  if (details) details.dataset.thinkTo = String(at);
 
   if (at - from < SHOW_SECS_MS) return;
   // 模型写了思考过程的：就在那块的标题上写，点开还能看原文。
-  const block = run.body.querySelector<HTMLElement>(`details.thinking[data-think-from="${from}"] > summary > span`);
+  const block = details?.querySelector<HTMLElement>(":scope > summary > span");
 
   if (block) { block.textContent = `想了 ${spokenDuration(from, at)}`;
 
@@ -4420,7 +4424,14 @@ function closeBlocks(): void {
     currentThinkingDetails.open = false;
     const label = currentThinkingDetails.querySelector("summary span");
 
-    if (label) {
+    const thinkFrom = Number(currentThinkingDetails.dataset.thinkFrom);
+    const thinkTo = Number(currentThinkingDetails.dataset.thinkTo);
+
+    if (label && Number.isFinite(thinkTo)) {
+      if (thinkTo - thinkFrom < SHOW_SECS_MS) label.textContent = `思考过程${recordedDuration(thinkFrom, thinkTo) ? ` ${recordedDuration(thinkFrom, thinkTo)}` : ""}`;
+      label.classList.add("settle-once");
+      window.setTimeout(() => label.classList.remove("settle-once"), 400);
+    } else if (label) {
       label.textContent = currentThinkingStart
         ? `思考过程${recordedDuration(currentThinkingStart, eventTime()) ? ` ${recordedDuration(currentThinkingStart, eventTime())}` : ""}`
         : "思考过程";
