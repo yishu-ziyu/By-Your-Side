@@ -1476,8 +1476,9 @@ async function executeToolCall(
       mark:(p,s)=>mark(p,s,beforeDispatch),
       clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeDispatch),
       switch_tab:(p,s)=>switchTab(p,s,beforeDispatch),
-      navigate:(p,s)=>navigate(p,s,beforeDispatch),
-      open_tab:(p,s)=>openTab(p,s,beforeDispatch),
+      // 撞上一次性网络错误后的自动重试会再派发一次跳转：用和等用户确认发送同一个守卫，接管或停下就不再派发。
+      navigate:(p,s)=>navigate(p,s,beforeDispatch,sendGuard.cancelled),
+      open_tab:(p,s)=>openTab(p,s,beforeDispatch,sendGuard.cancelled),
       close_tab:(p,s)=>closeTab(p,s,beforeDispatch),
       download_url:(p,s)=>downloadUrl(p,s,beforeDispatch),
       accept_dialog:(p,s)=>acceptDialog(p,s,beforeDispatch),
