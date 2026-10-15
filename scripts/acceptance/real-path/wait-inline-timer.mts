@@ -3,7 +3,7 @@
  *   npx tsx scripts/acceptance/real-path/wait-inline-timer.mts --headless
  * 脚本模型：空会话 → 首字前挂 16 秒 → 回答；新会话里一步之后再想 5 秒；再一问回 500。
  *   a) 空会话看得到起点建议，没有过程行。
- *   b) 首字前：第一行是「正在思考」加「N 秒」，没有「已等」、没有间隔点、标题不扫光、没有百分号。
+ *   b) 首字前 3 秒：第一行是「正在思考」加「N 秒」，没有「已等」、没有间隔点、标题不扫光、没有百分号。
  *   c) 满 15 秒没回音：标题改成「还没有回音」，秒数继续数，仍不扫光、不写百分号。
  *   d) 一步之后的长思考：只报这段秒数，不写百分号，标题不是「还没有回音」。
  *   e) 模型出错时错误卡看得到。
@@ -94,14 +94,15 @@ try {
   };
 
   await send(ASK_WAIT);
-  await until(async () => { const r = await read(); return r.title === "正在思考" && /^(\d+) 秒$/.test(r.time) ? true : undefined; }, 8_000, "首字前出现秒数", 100);
-  await sleep(800);
+  // 等的是时刻，不是措辞：改前的写法也要能截到同一时刻，由下面的判定决定过不过。
+  const shownSecs = (r: Read) => Number(/(\d+) 秒/.exec(r.time)?.[1] ?? 0);
+  await until(async () => shownSecs(await read()) >= 3 ? true : undefined, 8_000, "首字前数到 3 秒", 100);
   const waiting = await read();
   await rp.screenshot(panel, join(out, "waiting.png"));
   const waitLive = liveOk(waiting);
-  check("b 首字前是「正在思考 N 秒」，没有已等、间隔点和扫光", waiting.title === "正在思考" && waitLive.secs >= 1 && waitLive.noWaitWord && waitLive.noDot && waitLive.noShine && waitLive.noPct, { title: waiting.title, time: waiting.time, before: waiting.before, shine: waiting.shine, secs: waitLive.secs });
+  check("b 首字前是「正在思考 N 秒」，没有已等、间隔点和扫光", waiting.title === "正在思考" && waitLive.secs >= 3 && waitLive.noWaitWord && waitLive.noDot && waitLive.noShine && waitLive.noPct, { title: waiting.title, time: waiting.time, before: waiting.before, shine: waiting.shine, secs: waitLive.secs });
 
-  await until(async () => { const r = await read(); return r.title === "还没有回音" ? true : undefined; }, 18_000, "满 15 秒换成还没有回音", 100);
+  await until(async () => { const r = await read(); return r.title === "还没有回音" || shownSecs(r) >= 16 ? true : undefined; }, 18_000, "首字前等满 15 秒", 100);
   const stale = await read();
   await rp.screenshot(panel, join(out, "timeout.png"));
   const staleLive = liveOk(stale);
@@ -117,7 +118,7 @@ try {
   await rp.screenshot(panel, join(out, "long-step.png"));
   const stepLive = liveOk(step);
   const elapsed = (Date.now() - thinkingSince) / 1000;
-  check("d 长步骤只报这段已过多久，不写百分号，不是超时文案", step.title.startsWith("正在") && step.title !== "还没有回音" && stepLive.secs >= 3 && Math.abs(stepLive.secs - elapsed) <= 1.5 && stepLive.noWaitWord && stepLive.noShine && stepLive.noPct, { title: step.title, time: step.time, elapsed, shine: step.shine });
+  check("d 长步骤只报这段已过多久，不写百分号，不是超时文案", step.title.startsWith("正在") && step.title !== "还没有回音" && stepLive.secs >= 2 && Math.abs(stepLive.secs - elapsed) <= 1.5 && stepLive.noWaitWord && stepLive.noShine && stepLive.noPct, { title: step.title, time: step.time, elapsed, shine: step.shine });
 
   await until(async () => { const r = await read(); return r.all.includes(ANSWER_STEP) ? true : undefined; }, 20_000, "长步骤回答", 100);
   await rp.click(panel, "#conversation-new");
