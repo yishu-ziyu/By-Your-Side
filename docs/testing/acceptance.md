@@ -15,7 +15,7 @@
 ## 怎样选入口
 
 - **合并前**：`npm run check` 和这次改到的用例。
-- **更新日常扩展前**：`npm test`，一批改动跑一遍。`npm test` 只跑核心用例：只装扩展、用脚本模型，不要凭据。
+- **用户发现问题或要求时**：`npm test`。`npm test` 只跑核心用例：只装扩展、用脚本模型，不要凭据。
   用户在等结果时，用 [进度页](../../scripts/acceptance/real-path/progress.html) 让用户看到每项测什么、测到哪。新加核心用例时，在进度页里补一句它测什么。
 - **全部真实路径用例**：`npm run accept:real-path`。加 `--only=` 是过滤轮：没选的用例记为未跑，过滤轮永远不算整轮通过。
 - **浏览器主链**：`npm run accept:browser`。
