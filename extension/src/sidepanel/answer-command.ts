@@ -2,7 +2,7 @@
  * A8：对一条结果做什么。主动作留在回答末尾；其余收进动作列表。
  * Chrome 的 Ctrl/⌘K 会抢去地址栏搜索，所以用 Ctrl/⌘+Shift+K，和 / 技能菜单分开。
  */
-import { listResultActions, runPrimaryAction, resultCommandShortcut, type ResultAction } from "./answer-actions.js";
+import { listResultActions, runPrimaryAction, resultCommandShortcut, showCopied, showFailed, type ResultAction } from "./answer-actions.js";
 import { reducedMotion } from "./branch-graph.js";
 
 export interface AnswerCommand {
@@ -89,12 +89,11 @@ export function mountAnswerCommand(opts: {
     const answer = target;
     close();
     if (!answer) return;
-    const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
-    try {
+      try {
       await action.run(answer);
-      if (feedback && action.id.startsWith("copy")) feedback.textContent = "已复制";
+      if (action.id.startsWith("copy")) showCopied(answer);
     } catch {
-      if (feedback) feedback.textContent = "没做成";
+      showFailed(answer);
     }
   }
 
