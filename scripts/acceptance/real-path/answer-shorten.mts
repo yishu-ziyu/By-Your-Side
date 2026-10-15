@@ -24,6 +24,8 @@ await mkdir(artifacts, { recursive: true });
 
 const TASK = "这三家哪家到手最便宜？算上运费，再看看值不值得等双十一。";
 const SHORT = "这个网站是哪家公司运营的？";
+const PARAGRAPH = "用一段话说清楚比价结论和来源。";
+const PARAGRAPH_ANSWER = "这三家里，拼多多百亿补贴的到手价格最低，适合优先考虑价格的人。京东自营的到货速度更快，天猫官方店的售后渠道更直接，选择时还应考虑配送和售后。来源：[当前报价页](https://example.com/)。";
 const FIRST = "拼多多百亿补贴到手最便宜，¥1529（含运费）。";
 
 // 加粗跨过第一句的句末：拆开后，后半句不能跑进加粗或链接里。
@@ -50,6 +52,7 @@ await new Promise<void>(resolve => shop.listen(0, "127.0.0.1", resolve));
 const rules: Rule[] = [
   { match: TASK, steps: [{ text: ANSWER, chunkDelayMs: 20 }] },
   { match: SHORT, steps: [{ text: "比价小站由 Lumen Labs 运营。" }] },
+  { match: PARAGRAPH, steps: [{ tool: { name: "send_user_message", args: { kind: "finding", content: PARAGRAPH_ANSWER } } }, { text: "" }] },
 ];
 const model = live ? null : await startScriptedModel(rules);
 const rp = await launchRealPath();
@@ -95,6 +98,23 @@ try {
   };
   const key = async (k: string, vk: number) => { for (const type of ["keyDown", "keyUp"]) await rp.cdp.send("Input.dispatchKeyEvent", { type, key: k, code: k, windowsVirtualKeyCode: vk }, panel); await sleep(450); };
   const lines = (s: string) => s.split(/\n+/).map(l => l.trim()).filter(Boolean);
+
+  if (!live) {
+    // 单段长回答也会拆第一句，但没有可收起的块；收尾不能留下仍在淡入的状态。
+    await ask(PARAGRAPH, 1);
+    await sleep(1200);
+    const paragraph = await seen(0);
+    const finished = await rp.evaluate(panel, `(() => { const a = ${ANSWER_JS}[0]; return {
+      revealing: a.hasAttribute("data-revealing"), fades: a.querySelectorAll(".chunk-fade").length,
+      running: !!document.querySelector("#status-pill.running, #send-btn.stopping, .thinking.streaming")
+    }; })()`);
+    evidence.paragraph = { ...paragraph, finished };
+    await rp.screenshot(panel, join(artifacts, "paragraph-finished.png"));
+    assert.deepEqual(finished, { revealing: false, fades: 0, running: false }, "回答可复制后淡入已结束，评测不用继续等");
+    assert.ok(!paragraph.grip && paragraph.text.includes("拼多多百亿补贴") && paragraph.text.includes("当前报价页"), "单段长回答内容完整，不出无用的收短把手");
+    await rp.click(panel, "#conversation-new");
+    await until(async () => await rp.evaluate(panel, `!document.querySelector("#messages .msg.assistant") && document.querySelector("#send-btn")?.disabled === false`) || undefined, 10_000, "新对话就绪");
+  }
 
   if (live) {
     await ask("这三家哪家到手最便宜？算上运费", 1);
