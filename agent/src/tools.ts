@@ -748,8 +748,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const appeared = appearedNote("appeared" in data ? data.appeared : undefined, !!effect && !effect.changed);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
-        // 用户在网页上点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
-        const clicked = data.sendConfirmed ? `The user confirmed sending on the page, then the extension clicked ${what}.` : `Clicked ${what}.`;
+        // 用户点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
+        const clicked = data.sendConfirmed ? `The user confirmed sending, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
 
         if (effectText) {

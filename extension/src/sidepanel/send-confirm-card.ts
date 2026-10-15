@@ -3,14 +3,22 @@
  * 卡上的网站、按钮名、内容都由扩展从网页读出，这里只用 textContent 放进去。
  * 按钮只在后台说这次确认还在等时出现：重开侧栏回放历史时，答过或过期的确认只剩一行结果。
  */
-import { SEND_CONFIRM_PANEL_PORT } from "../relay.js";
+import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
 import { HELD_TEXT } from "./steps.js";
 import type { SendConfirmOutcome, SendConfirmView } from "../../../shared/protocol.js";
 
 const OUTCOMES: readonly SendConfirmOutcome[] = ["send", "decline", "stopped", "left", "timeout"];
 
-const OUTCOME_TEXT: Record<SendConfirmOutcome, string> = {
-  send: "你确认过，已发送",
+const CLICKS: readonly unknown[] = ["yes", "no", "unknown"];
+
+/** 「已发送」只在按钮真的点下去以后写；确认了、点击结果还没到时只写确认了。 */
+const SENT_TEXT: Record<NonNullable<SendConfirmView["clicked"]>, string> = {
+  yes: "你确认过，已发送",
+  no: "你确认了，但没点到发送键，草稿还在",
+  unknown: "你确认了发送，没能确认发出去没有，请看一眼网页",
+};
+
+const OUTCOME_TEXT: Record<Exclude<SendConfirmOutcome, "send">, string> = {
   decline: HELD_TEXT.declined,
   stopped: HELD_TEXT.stopped,
   left: HELD_TEXT.left,
@@ -23,17 +31,19 @@ function isSendConfirmView(v: unknown): v is SendConfirmView {
   const o = v as Record<string, unknown>;
 
   return typeof o.id === "string" && o.id.length > 0 && o.id.length <= 64 && typeof o.host === "string" && typeof o.label === "string"
-    && (o.content === undefined || typeof o.content === "string") && (o.outcome === undefined || (OUTCOMES as readonly unknown[]).includes(o.outcome));
+    && (o.content === undefined || typeof o.content === "string") && (o.outcome === undefined || (OUTCOMES as readonly unknown[]).includes(o.outcome))
+    && (o.clicked === undefined || CLICKS.includes(o.clicked));
 }
 
-interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean }
+/** armedAt：按钮第一次露出来以后多久起「发送」才算数（performance.now 的时刻）；重画不重新计时。 */
+interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean; armedAt?: number }
 
 const cards = new Map<string, Card>();
 
 /** 后台说还在等的确认 id；端口没连上时为空，卡上不出按钮。 */
 let pending = new Set<string>();
 
-/** 后台已经不等、结局还没到的确认：不再为它连端口（后台重启时等待丢了，结局永远不会来）。 */
+/** 后台已经不等、过了一会儿结局还没到的确认：只剩一行，也不再为它连端口（后台重启时等待丢了，结局永远不会来）。 */
 const ended = new Set<string>();
 
 let port: chrome.runtime.Port | null = null;
@@ -57,7 +67,7 @@ function ensurePort(): void {
     for (const id of pending) seen.add(id);
 
     // 后台先记下等待、再发事件：连上时报的状态里没有的卡，后台已经不等了；之后只认报过又消失的。
-    for (const card of cards.values()) if (!card.view.outcome && !pending.has(card.view.id) && (!synced || seen.has(card.view.id))) ended.add(card.view.id);
+    for (const card of cards.values()) if (!card.view.outcome && !pending.has(card.view.id) && (!synced || seen.has(card.view.id))) endLater(card);
     synced = true;
     refreshAll();
   });
@@ -69,6 +79,17 @@ function ensurePort(): void {
     refreshAll();
     setTimeout(ensurePort, 1000);
   });
+}
+
+const ENDED_GRACE_MS = 1500;
+
+/** 后台不等了，结局事件绕经宿主、通常紧跟着到：过一会儿还没到，才收成「已经结束」，免得先闪一下这行再变成真结局。 */
+function endLater(card: Card): void {
+  setTimeout(() => {
+    if (card.view.outcome || pending.has(card.view.id) || ended.has(card.view.id)) return;
+    ended.add(card.view.id);
+    paint(card);
+  }, ENDED_GRACE_MS);
 }
 
 function refreshAll(): void {
@@ -92,17 +113,28 @@ function paint(card: Card): void {
     el.dataset.state = "done";
     const line = document.createElement("p");
     line.className = "send-confirm-line";
-    line.textContent = OUTCOME_TEXT[view.outcome];
+    line.textContent = view.outcome === "send" ? view.clicked ? SENT_TEXT[view.clicked] : "你确认了发送" : OUTCOME_TEXT[view.outcome];
+    el.append(line);
+
+    return;
+  }
+
+  // 后台已经不等、又没有结局（例如扩展后台重启，等待丢了）：只剩一行，不留按钮。
+  if (ended.has(view.id)) {
+    el.dataset.state = "ended";
+    const line = document.createElement("p");
+    line.className = "send-confirm-line";
+    line.textContent = "这次确认已经结束";
     el.append(line);
 
     return;
   }
 
   const live = pending.has(view.id);
-  el.dataset.state = live ? "open" : ended.has(view.id) ? "ended" : "checking";
+  el.dataset.state = live ? "open" : "checking";
   const title = document.createElement("p");
   title.className = "send-confirm-title";
-  title.textContent = live || !ended.has(view.id) ? "要发送吗？" : "这次确认已经结束";
+  title.textContent = "要发送吗？";
   const list = document.createElement("dl");
   list.className = "send-confirm-kv";
   row(list, "网站", view.host);
@@ -113,6 +145,7 @@ function paint(card: Card): void {
   el.append(title, list);
 
   if (!live) return;
+  card.armedAt ??= performance.now() + SEND_ARM_MS;
   const acts = document.createElement("div");
   acts.className = "send-confirm-acts";
   acts.append(button("send", "发送", card), button("decline", "先不发", card));
@@ -126,10 +159,17 @@ function button(choice: "send" | "decline", text: string, card: Card): HTMLButto
   b.textContent = text;
   b.disabled = card.answering;
 
-  // 和网页上的确认框一样：「发送」不进 Tab 顺序，只认真实的鼠标点击（键盘触发时 detail 为 0）；脚本合成的点击不算。
-  if (choice === "send") b.tabIndex = -1;
+  // 和网页上的确认框一样：「发送」不进 Tab 顺序，只认真实的鼠标点击（键盘触发时 detail 为 0）；脚本合成的点击、刚露出来那一会儿的点击都不算。
+  if (choice === "send") {
+    b.tabIndex = -1;
+    const wait = (card.armedAt ?? 0) - performance.now();
+
+    if (wait > 0) setTimeout(() => b.toggleAttribute("data-armed", true), wait);
+    else b.toggleAttribute("data-armed", true);
+  }
+
   b.addEventListener("click", event => {
-    if (!event.isTrusted || (choice === "send" && event.detail === 0) || card.answering || !port) return;
+    if (!event.isTrusted || (choice === "send" && (event.detail === 0 || performance.now() < (card.armedAt ?? Infinity))) || card.answering || !port) return;
     card.answering = true;
     port.postMessage({ id: card.view.id, choice });
     paint(card);
@@ -160,6 +200,10 @@ export function sendConfirmCard(raw: unknown): HTMLElement | null {
   const card: Card = { view: raw, el, answering: false };
   cards.set(raw.id, card);
   paint(card);
+
+  // 端口早已连上、后台的状态里没有这个 id：多半是回放出来的旧确认。给后台一点时间报上来，还没有就收成一行。
+  if (synced && !pending.has(raw.id)) endLater(card);
+
   // 回放历史是同步的一批：等这一批放完再看要不要连后台，答过的确认不必连。
   queueMicrotask(ensurePort);
 
