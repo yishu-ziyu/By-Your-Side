@@ -70,6 +70,7 @@ try {
   const state = () => rp.evaluate(panel, `({ dictating: document.querySelector("#composer").classList.contains("dictating"), live: document.querySelector("#dictation-text")?.innerText ?? "", input: document.querySelector("#input").value, row: !!document.querySelector("#dictation-row:not([hidden])") })`) as Promise<{ dictating: boolean; live: string; input: string; row: boolean }>;
 
   // (a) 点话筒：输入框换成实时文字，工具栏换成声波；字先猜后定。
+  await rp.click(panel, "#input");
   await rp.click(panel, "#dictate-btn");
   await sleep(800);
   const early = await state();

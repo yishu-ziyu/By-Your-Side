@@ -103,6 +103,7 @@ try {
     };return true;
   })()`);
   stopVideo = await recordScreen(rp.cdp,panel,join(out,'panel.mp4')).catch(()=>null);
+  await rp.click(panel,"#input");
   await rp.click(panel,'.voice-start');
   await until(async()=>wire.some(e=>e.type==='conversation.item.input_audio_transcription.completed'),45000,'real Step Plan final ASR');
   if (model && !missingSource && name !== 'missing-transcript') await until(async()=>model.requests.some(r=>r.rule==='"clauses"'),15000,'real host classification request');
