@@ -2612,6 +2612,7 @@ function setRunTitle(run: RunHost, text: string, now = false, kind?: IconKind): 
 
     if (kind) setActionIcon(run.actIcon, kind);
     run.titleAt = Date.now();
+    run.titleTimer = 0;
   };
 
   if (wait <= 0) paint();
@@ -3699,7 +3700,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     beatEl: beat,
     lastToolName: null,
   };
-  startLiveSeconds(currentRun);
+  startLiveSeconds(currentRun, start);
 
   return currentRun;
 }
@@ -3745,29 +3746,47 @@ function stopLiveSeconds(run: RunHost): void {
   run.timer = 0;
 }
 
-function startLiveSeconds(run: RunHost): void {
+/** 首字前挂这么久还没回音，只换标题，不改秒数和墨点。 */
+const WAIT_STALE_MS = 15_000;
+const WAIT_STALE_TITLE = "还没有回音";
+const THINKING_TITLE = "正在思考";
+
+/** 每秒刷新一次秒数，刷新时刻对齐 from 之后的整秒（多留一点余量，免得早到几毫秒少数一秒）：显示的秒数最多比真实慢 1 秒。 */
+function startLiveSeconds(run: RunHost, from = Date.now()): void {
   if (run.timer) return;
-  const timer = window.setInterval(() => {
-    if (currentRun?.timer === timer) run.timeEl.textContent = liveSeconds(run);
-  }, 1000);
-  run.timer = timer;
+  const tick = () => {
+    if (currentRun !== run) return;
+    run.timeEl.textContent = liveSeconds(run);
+    maybeStaleWait(run);
+  };
+  const delay = 1000 - (((Date.now() - from) % 1000) + 1000) % 1000 + 30;
+  const align = window.setTimeout(() => {
+    if (run.timer !== align) return;
+    run.timer = window.setInterval(tick, 1000);
+    tick();
+  }, delay);
+  run.timer = align;
 }
 
-/** 第一行的秒数：在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
+/** 第一行的秒数：贴在动词后面。在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
 function liveSeconds(run: RunHost): string {
   const now = Date.now();
 
   if (Number.isFinite(run.thinkFrom)) {
     if (now - run.thinkFrom < 1_000) return "";
-    const spoken = spokenDuration(run.thinkFrom, now);
-
-    if (!spoken) return "";
-    // 首字前还没动手：写「已等 N 秒」（#311）。动手之后的思考仍是「N 秒」。
-    return run.body.querySelector(".chip") ? spoken : `已等 ${spoken}`;
+    return spokenDuration(run.thinkFrom, now) ?? "";
   }
   const running = [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
 
   return running && Number.isFinite(running.start) && now - running.start >= SHOW_SECS_MS ? spokenDuration(running.start, now) ?? "" : "";
+}
+
+/** 「还没有回音」只顶替「正在思考」：重试、压缩、接着做这些标题说的是更具体的事，不能盖掉。思考摘要也算回音。 */
+function maybeStaleWait(run: RunHost): void {
+  if (!Number.isFinite(run.thinkFrom) || run.body.querySelector(".chip, details.thinking")) return;
+  if (Date.now() - run.thinkFrom < WAIT_STALE_MS) return;
+  if (run.titleTimer || run.titleEl.textContent !== THINKING_TITLE) return;
+  setRunTitle(run, WAIT_STALE_TITLE, true, "think");
 }
 
 /** 结束正在算的这段思考：≥3 秒的在记录里单列一行「想了 N 秒」。 */
@@ -3793,7 +3812,15 @@ function closeThink(run: RunHost, at: number): void {
 
 /** 开始算一段思考（上一步结束、用户交还页面）。已经在算就不重开。 */
 function openThink(run: RunHost, at: number): void {
-  if (!Number.isFinite(run.thinkFrom)) run.thinkFrom = at;
+  if (Number.isFinite(run.thinkFrom)) return;
+  run.thinkFrom = at;
+
+  // 秒数从这段重新数：刷新时刻对齐到这段的整秒，上一段的读数当场清掉。
+  if (run.timer) {
+    stopLiveSeconds(run);
+    startLiveSeconds(run, at);
+    run.timeEl.textContent = liveSeconds(run);
+  }
 }
 
 /** 做完的步骤（不算准备动作和说明行）。 */
