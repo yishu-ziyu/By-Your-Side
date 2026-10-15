@@ -28,6 +28,7 @@ try {
         setTimeout(()=>{gate.deliveredAt=Date.now();listener.call(this,event);},4000);return;
       }return listener.call(this,event);},...rest);};return true;})()`);
   await rp.evaluate(panel,`(()=>{const get=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async(...args)=>{const stream=await get(...args);window.__micAt=Date.now();return stream;};return true;})()`);
+  await rp.click(panel,'#input');
   await rp.click(panel,'.voice-start');
   const gate=await until(async()=>(await rp.evaluate(off,'window.__readyGates')).find((g:{deliveredAt:number|null})=>g.deliveredAt),15000,'real ready delayed') as {receivedAt:number;deliveredAt:number};
   const micAt=await rp.evaluate(panel,'window.__micAt') as number;

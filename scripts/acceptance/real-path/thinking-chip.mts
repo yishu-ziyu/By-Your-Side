@@ -49,6 +49,7 @@ const ask = async (text: string) => {
 };
 
 const pick = async (label: "快" | "深入") => {
+  await rp.click(panel, "#input");
   await rp.click(panel, "#think-chip");
   await sleep(350);
   await rp.screenshot(panel, join(artifacts, `menu-${label}.png`));
@@ -72,6 +73,7 @@ try {
   if (plan.credential.type === "api_key") await configureViaSettings(rp, panel, plan);
   else await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
 
+  await rp.click(panel, "#input");
   await until(async () => (await chipText()) || undefined, 60_000, "输入框旁出现模型与思考强度");
   evidence.chipStart = await chipText();
   await rp.screenshot(panel, join(artifacts, "chip.png"));
@@ -89,6 +91,7 @@ try {
   await rp.cdp.send("Target.closeTarget", { targetId: (await rp.targets()).find((t) => t.url.includes("sidepanel"))!.targetId }).catch(() => undefined);
   await sleep(1000);
   await openPanel();
+  await rp.click(panel, "#input");
   await until(async () => (await chipText()) || undefined, 60_000, "重开后输入框旁出现开关");
   evidence.chipReopened = await chipText();
 
