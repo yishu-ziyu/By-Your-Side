@@ -3,7 +3,7 @@
  *
  *   npx tsx scripts/acceptance/real-path/composer-expand.mts --headless
  *
- * 失败方式：空着就露出加号；点进去加号不出现；打完字失焦后工具收回；窄到 320 发送键不见。
+ * 失败方式：空着就露出加号；点发送后空框加号还在；点进去加号不出现；打完字失焦后工具收回；窄到 320 发送键不见。
  */
 import { mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -54,7 +54,13 @@ const view = (panel: string) => rp.evaluate(panel, `(() => {
     thinkClickable: hit("#think-chip"),
     inert: !!inner?.inert,
     sendShown: !!(send && scs && scs.display !== "none" && (sendBox?.width ?? 0) > 8),
-    starter: !!document.querySelector("#starter-connect"),
+    starter: (() => {
+      const el = document.querySelector("#starter-connect");
+      if (!el) return false;
+      const cs = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      return cs.display !== "none" && cs.visibility !== "hidden" && box.width > 8 && box.height > 8;
+    })(),
     starterTitle: document.querySelector("#starter-title")?.textContent ?? "",
     errorCard: [...document.querySelectorAll(".needs-model-card,.receipt-decision,.msg.error")].some((el) => (el.textContent ?? "").trim().length > 0),
     width: document.documentElement.clientWidth,
@@ -84,7 +90,7 @@ try {
   const idle = await view(panel);
   await rp.screenshot(panel, join(out, "01-idle.png"));
   check("空着：加号收起，发送键在", !idle.toolsOpen && !idle.attachClickable && !idle.thinkClickable && idle.inert && idle.sendShown && idle.starter, idle);
-  check("空着：还看得到先连接模型", idle.starterTitle.includes("先连接") || idle.starter, idle.starterTitle);
+  check("空着：还看得到先连接模型", idle.starter && idle.starterTitle.includes("先连接"), idle.starterTitle);
 
   await rp.evaluate(panel, `(() => {
     const bar = document.querySelector("#composer-bar");
@@ -156,7 +162,12 @@ try {
 
   await rp.click(panel, "#input");
   await rp.typeText(panel, "这页讲了什么？");
-  await rp.pressEnter(panel);
+  await rp.click(panel, "#send-btn");
+  await sleep(400);
+  const afterSend = await view(panel);
+  const sendFocus = await rp.evaluate(panel, `document.activeElement?.id ?? ""`);
+  await rp.screenshot(panel, join(out, "04c-send.png"));
+  check("点发送后空框：工具收回", !afterSend.toolsOpen && !afterSend.attachClickable && afterSend.sendShown && afterSend.inert, { ...afterSend, sendFocus });
   const erred = await until(async () => {
     const now = await view(panel);
     return now.errorCard ? now : undefined;

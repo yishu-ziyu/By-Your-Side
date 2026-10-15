@@ -1783,7 +1783,6 @@ details.run-steps.done .chip.error { background: transparent; }
   min-width: 0;
 }
 
-/* 空着只留字和发送。点进去、有字、有附件或菜单开着，工具行才展开。 */
 #composer-bar-inner {
   display: flex;
   align-items: center;
@@ -1803,7 +1802,8 @@ details.run-steps.done .chip.error { background: transparent; }
     transform var(--d-layout) var(--e-exit);
 }
 
-#composer:focus-within #composer-bar-inner,
+/* 点发送键后焦点还在键上，#composer 仍是 focus-within；发送键不算在用输入框。 */
+#composer:focus-within:not(:has(#send-btn:focus-within, #steer-send-btn:focus-within, #takeover-btn:focus-within)) #composer-bar-inner,
 #composer.has-text #composer-bar-inner,
 #composer.drag-over #composer-bar-inner,
 #composer:has(#think-menu.open) #composer-bar-inner,
