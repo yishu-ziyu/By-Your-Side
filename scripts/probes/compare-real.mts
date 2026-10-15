@@ -264,9 +264,9 @@ async function runExt(task: Task, id: string, dir: string) {
     const opened = task.tabs?.() ?? [START];
     await rp.cdp.send("Page.navigate", { url: opened.at(-1) }, user);
     const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "sw")).targetId);
-    for (const [index, url] of opened.slice(0, -1).entries()) await rp.evaluate(sw, `chrome.tabs.create(${JSON.stringify({ url, index, active: false })}).then(() => true)`);
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(cfg.items)}).then(() => true)`);
+    for (const [index, url] of opened.slice(0, -1).entries()) await rp.evaluate(panel, `chrome.tabs.create(${JSON.stringify({ url, index, active: false })}).then(() => true)`);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "panel ready");
     if (think) {
     const chip = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
