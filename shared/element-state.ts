@@ -13,10 +13,18 @@ export interface ElementReadOptions {
   timeoutMs?: number;
 }
 
-export function validateElementRead(options: ElementReadOptions): ElementProperty[] {
-  const properties = options.properties ?? [];
+/**
+ * 要读的属性，和去掉的不支持名字。一个写错的名字不作废整次读取：照读其余属性，结果里写明可用的名字。
+ * expect / timeoutMs 仍严格：等一个读不到的条件只会白等。
+ */
+export function validateElementRead(options: ElementReadOptions): { properties: ElementProperty[]; unsupported: string[] } {
+  const requested: unknown = options.properties ?? [];
 
-  if (!Array.isArray(properties) || properties.length > ELEMENT_PROPERTIES.length || properties.some(p => !ELEMENT_PROPERTIES.includes(p))) throw new Error('不支持的元素属性；请使用 read_element 的属性列表。');
+  if (!Array.isArray(requested)) throw new Error('properties须是属性名数组；请使用 read_element 的属性列表。');
+  const isProperty = (p: unknown): p is ElementProperty => (ELEMENT_PROPERTIES as readonly unknown[]).includes(p);
+  const properties = requested.filter(isProperty);
+  // 不支持的名字会原样写进页面内容包装之外的说明；程序里的名字可能取自网页，所以只回显像属性名的写法。
+  const unsupported = [...new Set(requested.filter(p => !isProperty(p)).map(p => typeof p === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(p) ? p : '(非属性名)'))].slice(0, 10);
   const timeout = options.timeoutMs ?? 0;
 
   if (!Number.isFinite(timeout) || timeout < 0 || timeout > 5000 || (timeout > 0 && !options.expect)) throw new Error('timeoutMs须为0–5000，等待时必须提供expect条件。');
@@ -39,7 +47,11 @@ export function validateElementRead(options: ElementReadOptions): ElementPropert
     }
   }
 
-  return [...new Set([...properties, ...(expected ? [expected.property] : [])])];
+  return { properties: [...new Set([...properties, ...(expected ? [expected.property] : [])])], unsupported };
+}
+
+export function unsupportedPropertiesNote(unsupported: readonly string[]): string {
+  return `不支持的属性：${unsupported.join('、')}；可用的属性：${ELEMENT_PROPERTIES.join('、')}。`;
 }
 
 export function elementMatches(actual: ElementValue, expected: ElementExpectation): boolean {

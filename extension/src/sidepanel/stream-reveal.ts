@@ -12,6 +12,7 @@
 import { Lexer } from "marked";
 import { codeRanges, splitAnswer } from "../../../shared/answer-cards.js";
 import { D_READ } from "../shared/motion-tokens.js";
+import { keepOpenedImages } from "../shared/answer-html.js";
 import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
 
 const BEAT_MIN = 150;
@@ -22,6 +23,7 @@ const CATCH_UP_MS = 1500;
 const STARVE_MIN = 6;
 const STARVE_WAIT = 350;
 export const FADE_MS = D_READ;
+const FADE_SLACK_MS = 100;
 
 const PUNCT = /[，。；：、！？,.;:!?）」”]/;
 const MD_SYNTAX = /[*_`#\[\]<>|~\\!-]/;
@@ -220,15 +222,22 @@ function fadeSpan(delay: number): HTMLSpanElement {
   const span = document.createElement("span");
   span.className = "chunk-fade";
   if (delay) span.style.animationDelay = `${-delay}ms`;
-  span.addEventListener("animationend", function unwrap(event) {
-    if (event.target !== span) return;
-    span.removeEventListener("animationend", unwrap);
+  const unwrap = () => {
+    window.clearTimeout(timer);
+    span.removeEventListener("animationend", onEnd);
     const parent = span.parentNode;
 
     if (!parent) return;
     span.replaceWith(...span.childNodes);
     parent.normalize();
-  });
+  };
+  const onEnd = (event: AnimationEvent) => {
+    if (event.target === span) unwrap();
+  };
+  // 不显示的元素里（<span hidden>、收起的 <details>）动画不跑，等不到 animationend；淡入时长过了就自己拆，
+  // 否则收尾一直等 .chunk-fade 消失，回答永远停在「正在显示」。
+  const timer = window.setTimeout(unwrap, Math.max(FADE_MS - delay, 0) + FADE_SLACK_MS);
+  span.addEventListener("animationend", onEnd);
 
   return span;
 }
@@ -261,9 +270,10 @@ function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
   }
 }
 
-function topNodes(html: string): ChildNode[] {
+function topNodes(html: string, answer: HTMLElement): ChildNode[] {
   const template = document.createElement("template");
   template.innerHTML = html;
+  keepOpenedImages(template.content, answer);
 
   return [...template.content.childNodes].filter((node) => !(node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()));
 }
@@ -493,7 +503,7 @@ class Reveal {
   }
 
   private paintBlock(i: number, md: string, live: boolean, now: number): void {
-    const nodes = topNodes(this.opts.render(live ? remend(md) : md));
+    const nodes = topNodes(this.opts.render(live ? remend(md) : md), this.el);
     const len = nodes.reduce((sum, node) => sum + (node.textContent?.length ?? 0), 0);
     const old = this.blocks[i];
     let fades = old ? old.fades.filter((fade) => now - fade.at < FADE_MS && fade.from < len).map((fade) => ({ ...fade, to: Math.min(fade.to, len) })) : [];

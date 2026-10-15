@@ -395,7 +395,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
         target: Type.String({ description: 'Current "@N" snapshot ref, "loc=css:...", or unique native CSS selector' }),
-        properties: Type.Optional(Type.Array(Type.Union(ELEMENT_PROPERTIES.map(p => Type.Literal(p))), { maxItems: ELEMENT_PROPERTIES.length, description: 'Read these state properties; omit for complete text/value. Unsupported properties fail explicitly.' })),
+        properties: Type.Optional(Type.Array(Type.Union(ELEMENT_PROPERTIES.map(p => Type.Literal(p))), { maxItems: ELEMENT_PROPERTIES.length, description: 'Read these state properties; omit for complete text/value. A property this element has no valid value for comes back null with a note.' })),
         expect: Type.Optional(Type.Union([
           Type.Object({ property: Type.Union(['visible','enabled','checked','selected','paused','ended'].map(p => Type.Literal(p))), equals: Type.Boolean({description:'Boolean true/false, never a quoted string.'}) }),
           Type.Object({ property: Type.Union([Type.Literal('expanded'),Type.Literal('pressed')]), equals: Type.Union([Type.Boolean(),Type.Literal('mixed')]) }),
@@ -408,7 +408,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
         // A state query does not need the element's entire descendant text in the model context.
-        const stateOnly = params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check, editableText: data.editableText } : { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check };
+        const stateOnly = params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, note: data.note, check: data.check, editableText: data.editableText } : { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, note: data.note, check: data.check };
         // A value check on a range input keeps the allowed range and the browser's verdict beside it.
         const projected = params.properties?.length || params.expect ? (data.inputRange ? { ...stateOnly, inputRange: data.inputRange } : stateOnly) : data;
 
@@ -542,8 +542,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           : json;
 
         const ended = await endedOn();
+        const corrected = result.notes.length ? `\n[${result.notes.join(" ")}]` : "";
 
-        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) + ended.text }, ...result.images], details: { value: result.value, steps: result.steps, ...(ended.page ? { page: ended.page } : {}) } };
+        return { content: [{ type: "text" as const, text: wrapPageContent(redactCredentialText(shown)) + corrected + ended.text }, ...result.images], details: { value: result.value, steps: result.steps, ...(ended.page ? { page: ended.page } : {}) } };
       },
     }),
 
@@ -748,8 +749,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const appeared = appearedNote("appeared" in data ? data.appeared : undefined, !!effect && !effect.changed);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
-        // 用户在网页上点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
-        const clicked = data.sendConfirmed ? `The user confirmed sending on the page, then the extension clicked ${what}.` : `Clicked ${what}.`;
+        // 用户点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
+        const clicked = data.sendConfirmed ? `The user confirmed sending, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
 
         if (effectText) {

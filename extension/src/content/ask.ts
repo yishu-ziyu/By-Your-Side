@@ -9,7 +9,7 @@ import { installPushToTalkKeys } from "./ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, Check, PanelRight, RotateCcw } from 'lucide';
-import DOMPurify from 'dompurify';
+import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
@@ -468,7 +468,7 @@ function boot(): void {
       item.fold.setAttribute('aria-expanded', String(unfolded.has(index)));
 
       if (item.text !== turn.answer) {
-        item.node.innerHTML = DOMPurify.sanitize(renderMarkdownHtml(turn.answer), { FORBID_TAGS: ['img', 'video', 'audio', 'iframe', 'style', 'form', 'input', 'button'] });
+        item.node.innerHTML = sanitizeAnswerHtml(renderMarkdownHtml(turn.answer), { images: false });
 
         const lead = item.node.firstElementChild;
 
