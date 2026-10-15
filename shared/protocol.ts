@@ -286,7 +286,16 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "model_key_test"; requestId: string; key: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact }
   /** 点「发送」前在网页上等用户确认（docs/evals/20261009-send-confirm.md）：waiting 时宿主放宽这次调用的期限，结束时恢复普通期限。 */
-  | { type: "tool_waiting_user"; id: string; waiting: boolean; /** 教学这一步在等用户点；没有它就是在等用户确认「发送」。 */ guide?: GuideWait });
+  | { type: "tool_waiting_user"; id: string; waiting: boolean; /** 教学这一步在等用户点；没有它就是在等用户确认「发送」。 */ guide?: GuideWait; /** 等确认「发送」时网页上问的是什么；不等了时带结局。 */ send?: SendConfirmView });
+
+/** 确认「发送」的结局：只有 send 点了按钮。 */
+export type SendConfirmOutcome = "send" | "decline" | "stopped" | "left" | "timeout";
+
+/**
+ * 侧栏确认卡要显示的内容（docs/evals/20261015-panel-send-confirm.md）：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
+ * id 是后台这次等待的身份，侧栏回答时带回；outcome 只在不等了时有。
+ */
+export interface SendConfirmView { id: string; host: string; label: string; content?: string; outcome?: SendConfirmOutcome }
 
 export interface ConversationEnvelope { conversationId?: string }
 
@@ -372,7 +381,7 @@ export type AgentUiEvent =
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
   /** 扩展在网页上等用户确认「发送」（true），或不等了（false）。同一页同时只等一个。 */
-  | { kind: "send_confirm_wait"; waiting: boolean }
+  | { kind: "send_confirm_wait"; waiting: boolean; confirm?: SendConfirmView }
   /** 教学：第 step 步在网页上等用户自己点（waiting true），或不等了（false）。state 为 no_change：用户点了，页面没变化。 */
   | { kind: "guide_wait"; waiting: boolean; guide?: GuideWait }
   | { kind: "tool_late_result"; toolCallId: string; name: string; ok: boolean; executionFact: ToolExecutionFact }

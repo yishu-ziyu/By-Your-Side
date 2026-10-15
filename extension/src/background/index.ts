@@ -1502,7 +1502,7 @@ async function executeToolCall(
 
         return gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid));
       },
-      waiting: (on, guide) => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on, ...(guide ? { guide } : {}) }); },
+      waiting: (on, guide, send) => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on, ...(guide ? { guide } : {}), ...(send ? { send } : {}) }); },
     };
 
     const execute = async () => {

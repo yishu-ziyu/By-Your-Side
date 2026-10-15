@@ -38,7 +38,7 @@ const site = createServer((_, res) => res.writeHead(200, { "content-type": "text
 
 await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
-const WAITING = "等你在网页上确认发送";
+const WAITING = "等你确认发送";
 
 const model = await startScriptedModel([
   slowTurn("耳机甲"),
