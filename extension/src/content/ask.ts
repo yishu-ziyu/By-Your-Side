@@ -8,7 +8,7 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, PanelRight, RotateCcw } from 'lucide';
+import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, Check, PanelRight, RotateCcw } from 'lucide';
 import DOMPurify from 'dompurify';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -63,8 +63,8 @@ export function selectionSnapshot(): SelectionSnapshot | null {
   return { source: { text, surrounding, truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
 
-/** 展开后的卡片宽度。右侧空白够不够，按这个宽度加两侧间距算，和样式里的 384px 一致。 */
-const CARD_WIDTH = 384;
+/** 与样式宽度一致，用于判断正文旁是否放得下卡片。 */
+const CARD_WIDTH = 320;
 
 const PLACE_MARGIN = 12;
 
@@ -176,7 +176,7 @@ function boot(): void {
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
       <div class="error" role="status" hidden></div>
       <form class="composer" hidden><div class="depth" role="radiogroup" aria-label="回答快慢"><button type="button" role="radio" data-depth="fast" aria-checked="true" title="用快速模型">快速</button><button type="button" role="radio" data-depth="deep" aria-checked="false" title="用主模型">深度</button></div><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问问这段文字…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
-      <div class="footer" hidden><button data-act="copy">复制</button><button data-act="retry" hidden>重试</button><button data-act="handoff">在侧栏继续</button></div>
+      <div class="footer" hidden><button data-act="followup" aria-expanded="false">追问</button><button data-act="copy" aria-label="复制完整回答" title="复制完整回答">复制</button><button data-act="retry" hidden>重试</button><button data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续">在侧栏继续</button></div>
     </section>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
@@ -203,6 +203,7 @@ function boot(): void {
   let expanded = false;
   let visible = false;
   let sending = false;
+  let followupOpen = false;
   let selectionVersion = 0;
   let lastFocus: HTMLElement | null = null;
   let pageUrl = location.href;
@@ -213,6 +214,9 @@ function boot(): void {
     turn: HTMLElement;
     question: HTMLElement;
     node: HTMLElement;
+    summary: HTMLElement;
+    details: HTMLButtonElement;
+    detailed: boolean;
     status: HTMLElement;
     fold: HTMLButtonElement;
     text: string;
@@ -379,12 +383,18 @@ function boot(): void {
     surface.classList.toggle('expanded', expanded);
     el('.bar').hidden = expanded;
 
-    for (const selector of ['.header', '.quote', '.composer']) {
+    for (const selector of ['.header', '.quote']) {
       el(selector).hidden = !expanded;
     }
 
     messages.hidden = !expanded || !record?.turns.length;
     el('.footer').hidden = !expanded;
+    const composing = expanded && (followupOpen || readingBusy(record) || !record?.turns.length || Boolean(input.value));
+    const hidingFocusedComposer = !composing && el('.composer').contains(root.activeElement);
+    el('.composer').hidden = !composing;
+    el('[data-act="followup"]').hidden = composing;
+    el('[data-act="followup"]').setAttribute('aria-expanded', String(composing));
+    if (hidingFocusedComposer && expanded) el('[data-act="followup"]').focus({ preventScroll: true });
 
     if (!expanded || !source) {
       position();
@@ -412,9 +422,18 @@ function boot(): void {
         wrapper.className = 'turn';
         const question = document.createElement('div');
         question.className = 'question';
+        question.hidden = turn.question === EXPLAIN_PROMPT;
         question.textContent = turn.question === EXPLAIN_PROMPT ? '解释这段文字' : turn.question;
         const node = document.createElement('div');
         node.className = 'answer';
+        node.id = `reading-answer-${index}`;
+        const summary = document.createElement('div');
+        summary.className = 'answer-summary';
+        const details = document.createElement('button');
+        details.className = 'details';
+        details.dataset.act = 'details';
+        details.dataset.turn = String(index);
+        details.setAttribute('aria-controls', node.id);
         const status = document.createElement('div');
         status.className = 'status';
         status.setAttribute('role', 'status');
@@ -427,9 +446,9 @@ function boot(): void {
         const foot = document.createElement('div');
         foot.className = 'foot';
         foot.append(status, fold);
-        wrapper.append(question, node, foot);
+        wrapper.append(question, summary, node, details, foot);
         messages.append(wrapper);
-        answers.push({ turn: wrapper, question, node, status, fold, text: '' });
+        answers.push({ turn: wrapper, question, node, summary, details, detailed: false, status, fold, text: '' });
       }
 
       const item = answers[index]!;
@@ -463,6 +482,20 @@ function boot(): void {
         item.text = turn.answer;
       }
 
+      const first = [...item.node.children].find(child => !/^H[1-6]$/.test(child.tagName) && child.textContent?.trim()) ?? item.node.firstElementChild;
+      const summaryText = (first?.textContent ?? item.node.textContent ?? '').trim();
+      const sentenceEnd = summaryText.search(/[。！？]|[.!?](?=\s|$)/u);
+      const summaryLimit = sentenceEnd >= 0 && sentenceEnd < 100 ? sentenceEnd + 1 : 100;
+      const hasMoreText = summaryText.length > summaryLimit;
+      const hasDetails = !foldable && (item.node.childElementCount > 1 || hasMoreText || Boolean(first && first.tagName !== 'P'));
+      const folded = foldable && !unfolded.has(index);
+      // 摘要只用纯文字；原回答保留完整结构，收起时也不留下不可见的可聚焦链接。
+      item.summary.textContent = summaryText.slice(0, summaryLimit) + (hasMoreText && summaryLimit === 100 ? '…' : '');
+      item.summary.hidden = !hasDetails || item.detailed || folded;
+      item.node.hidden = hasDetails && !item.detailed && !folded;
+      item.details.hidden = !hasDetails || folded;
+      item.details.textContent = item.detailed ? '收起详情' : '展开详情';
+      item.details.setAttribute('aria-expanded', String(item.detailed));
       item.status.textContent = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在回答…' : turn.state === 'stopped' ? '已停止回答，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
     }
 
@@ -483,14 +516,17 @@ function boot(): void {
     submit.disabled = sending || (!busy && !input.value.trim());
     input.placeholder = record?.turns.length ? '继续问这段文字…' : '问问这段文字…';
     el<HTMLButtonElement>('[data-act="handoff"]').disabled = busy || sending;
-    el('[data-act="handoff"]').lastChild!.textContent = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
+    const handoffLabel = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
+    el('[data-act="handoff"]').lastChild!.textContent = handoffLabel;
+    el('[data-act="handoff"]').setAttribute('aria-label', handoffLabel);
+    el('[data-act="handoff"]').title = handoffLabel;
     el('[data-act="copy"]').hidden = !record?.turns.length;
     el<HTMLButtonElement>('[data-act="copy"]').disabled = !last?.answer;
     el('[data-act="retry"]').hidden = !last || !['error', 'stopped'].includes(last.state);
     position();
   }
 
-  async function enter(keyboard = false): Promise<void> {
+  async function enter(keyboard = false, compose = true): Promise<void> {
     if (!snapshot) {
       return;
     }
@@ -508,6 +544,7 @@ function boot(): void {
     syncDepth();
     input.value = drafts.get(record!.threadId) ?? '';
     expanded = true;
+    followupOpen = compose;
     pinned = false;
     side = null;
     lastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -566,7 +603,7 @@ function boot(): void {
         await enter();
       }
       else if (action === 'explain') {
-        await enter();
+        await enter(false, false);
         await send(EXPLAIN_PROMPT);
       }
       else if (action === 'read') {
@@ -597,6 +634,17 @@ function boot(): void {
         show();
         highlight();
       }
+      else if (action === 'followup') {
+        followupOpen = true;
+        render();
+        input.focus({ preventScroll: true });
+      }
+      else if (action === 'details') {
+        const item = answers[Number(target!.dataset.turn)];
+
+        if (item) item.detailed = !item.detailed;
+        render();
+      }
       else if (action === 'fold') {
         const index = Number(target!.dataset.turn);
 
@@ -608,7 +656,9 @@ function boot(): void {
       }
       else if (action === 'copy') {
         await navigator.clipboard.writeText(record?.turns.at(-1)?.answer ?? '');
-        el('[data-act="copy"]').lastChild!.textContent = '已复制';
+        el('[data-act="copy"]').replaceChildren(icon(Check), document.createTextNode('已复制'));
+        el('[data-act="copy"]').setAttribute('aria-label', '已复制完整回答');
+        el('[data-act="copy"]').title = '已复制完整回答';
       }
       else if (action === 'retry') {
         await send(record!.turns.at(-1)!.question, true);
@@ -826,6 +876,7 @@ function boot(): void {
         depth = record.depth === 'deep' ? 'deep' : 'fast';
         syncDepth();
         expanded = true;
+        followupOpen = true;
         render();
         show(true);
         input.focus();
