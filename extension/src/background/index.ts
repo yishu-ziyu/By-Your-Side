@@ -2196,7 +2196,13 @@ function attachPanel(port: chrome.runtime.Port) {
       case "redeliver": {
         const original = panelHistory.undelivered(msg.seq);
 
-        if (!original) break;
+        // 总要回执，侧栏才不会停在「已重试」。那条已送达就回 ok；历史里没有了就回 gone，
+        // 只回给点「重试」的这个侧栏：由它把原文另发一条，别的侧栏不跟着再发。
+        if (!original) {
+          const delivered = panelHistory.has(msg.seq);
+          port.postMessage({ kind: "delivery", seq: msg.seq, ok: delivered, ...(delivered ? {} : { reason: "gone" as const }), conversationId } satisfies BgToPanel);
+          break;
+        }
         void stopTrailReplay(key());
         const ok = uplink.sendClientMessage(original);
 

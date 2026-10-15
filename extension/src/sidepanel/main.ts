@@ -1051,6 +1051,7 @@ function resetConversationRender(): void {
   lastUserHasPage = false;
   lastHistorySeq = 0;
   userBubbles.clear();
+  clearPendingRedelivers();
   deliveredBubbles.clear();
   receiptMessages.clear();
   pendingUsedLine = null;
@@ -6137,7 +6138,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "delivery") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
-    handleDeliveryReceipt(envelope.seq, envelope.ok);
+    handleDeliveryReceipt(envelope.seq, envelope.ok, envelope.original, envelope.reason);
 
     return;
   }
@@ -6192,13 +6193,38 @@ function eventTime(): number { return historyEventTime(applyingHistory, historyO
 /** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（issue #4 竞态边界）。 */
 const userBubbles = new Map<number, HTMLElement>();
 
+/** 点了「重试」还在等回执的气泡：留着原文，后台说那条历史没了时另发一条；等不到回执就把「重试」还给用户。 */
+const pendingRedelivers = new Map<number, { original: ClientMessage; timer: ReturnType<typeof setTimeout> }>();
+
+const REDELIVER_TIMEOUT_MS = 10_000;
+
+function clearPendingRedelivers(): void {
+  for (const pending of pendingRedelivers.values()) clearTimeout(pending.timer);
+  pendingRedelivers.clear();
+}
+
+function enableRetry(bubble: HTMLElement): void {
+  const retry = bubble.querySelector<HTMLButtonElement>("button[data-retry]");
+
+  if (!retry) return;
+  retry.disabled = false;
+  retry.textContent = "重试";
+}
+
 /**
  * background→agent 上行的回执：ok=false 标记未送达并提供「重试」；重试再失败时让「重试」能再点；
- * ok=true（重试送达）去掉标记。重复或未知 seq 忽略。
+ * ok=true（重试送达）去掉标记；gone（后台已没有那条历史）由点了「重试」的侧栏把原文另发一条，并拿掉旧气泡。
+ * 重复或未知 seq 忽略。
  */
-function handleDeliveryReceipt(seq: number, ok: boolean): void {
+function handleDeliveryReceipt(seq: number, ok: boolean, original?: ClientMessage, reason?: "gone"): void {
   if (!Number.isInteger(seq)) return;
   const bubble = userBubbles.get(seq);
+  const pending = pendingRedelivers.get(seq);
+
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingRedelivers.delete(seq);
+  }
 
   if (!bubble) return;
 
@@ -6210,16 +6236,33 @@ function handleDeliveryReceipt(seq: number, ok: boolean): void {
     return;
   }
 
-  if (bubble.dataset.failed === "true") {
-    const retry = bubble.querySelector<HTMLButtonElement>("button[data-retry]");
+  if (reason === "gone") {
+    if (!pending) return;
 
-    if (retry) {
-      retry.disabled = false;
-      retry.textContent = "重试";
+    if (!send(pending.original)) {
+      enableRetry(bubble);
+      noticeSendFailed();
+
+      return;
     }
+
+    // 另发的那条会在历史里画出新气泡；旧气泡连同它下面的页面卡一起拿掉，免得同一句出现两次。
+    const chips = bubble.nextElementSibling;
+
+    if (chips instanceof HTMLElement && chips.matches(".ctx-chips")) chips.remove();
+    bubble.remove();
+    userBubbles.delete(seq);
 
     return;
   }
+
+  if (bubble.dataset.failed === "true") {
+    enableRetry(bubble);
+
+    return;
+  }
+
+  if (!original) return;
   bubble.dataset.failed = "true";
   bubble.classList.add("undelivered");
   const tag = document.createElement("span");
@@ -6239,6 +6282,14 @@ function handleDeliveryReceipt(seq: number, ok: boolean): void {
 
     retry.disabled = true;
     retry.textContent = "已重试";
+    clearTimeout(pendingRedelivers.get(seq)?.timer);
+    pendingRedelivers.set(seq, {
+      original,
+      timer: setTimeout(() => {
+        pendingRedelivers.delete(seq);
+        enableRetry(bubble);
+      }, REDELIVER_TIMEOUT_MS),
+    });
   };
 
   bubble.append(tag, retry);
@@ -6276,7 +6327,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
         if (steering && !reuse) markSteerReceived(bubble);
 
-        if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false);
+        if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }
       else handleServerMessage(JSON.stringify(entry.item.msg));
       lastHistorySeq = entry.seq;

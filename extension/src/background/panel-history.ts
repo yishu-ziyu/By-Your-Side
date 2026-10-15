@@ -152,6 +152,10 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
     return entry?.item.kind === "user" ? entry.item.undelivered?.original : undefined;
   }
 
+  has(seq: number): boolean {
+    return this.entries.some(item => item.seq === seq);
+  }
+
   markDelivered(seq: number): void {
     const entry = this.entries.find(item => item.seq === seq);
 

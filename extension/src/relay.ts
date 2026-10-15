@@ -95,10 +95,11 @@ type BgToPanelPayload =
   /**
    * 送达回执（issue #4）：只覆盖 background→agent 上行传输层。
    * ok=false 表示上行传输不可用，确定未发给伴随进程；original 为未经页面
-   * 附加上文的原始消息，供面板原样重试。ok=true 只在 redeliver 重发成功后出现，面板据此去掉未送达标记。
+   * 附加上文的原始消息，供面板原样重试。ok=true 只在 redeliver 重发成功、或那条早已送达时出现，面板据此去掉未送达标记。
+   * reason="gone"：redeliver 指的那条历史后台已经没有了（只回给发起的侧栏），由侧栏把原文当新消息再发。
    * 首次发送没有回执 = background 层已接受并已交给传输层，不表示伴随进程已处理或任务已完成。
    */
-  | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
+  | { kind: "delivery"; seq: number; ok: boolean; original?: ClientMessage; reason?: "gone" }
   /** 用户那一条历史补上了这一轮带的页面（见 UserTurnContext）。 */
   | { kind: "turn_context"; seq: number; context: UserTurnContext }
   /** @ 拉进来的标签页：扩展后台真读到正文才标已读。 */
