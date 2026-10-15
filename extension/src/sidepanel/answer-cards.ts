@@ -5,7 +5,7 @@
  * 按钮只做两件事：把按钮上的话当作用户的下一句发出，或切到某个标签页。不直接动页面。
  * 写完的卡片若有算式或出处，右上角可翻到依据面：每个数的结果、算式、出处，同一张卡原位换面（学 Our World in Data 的图 / 表 / 出处）。
  */
-import { targetWindowId } from "./target-window.js";
+import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
 import { type Block, type Card, type PendingComponent, cardEvidence, resolveProse, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
@@ -282,6 +282,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
     await chrome.tabs.update(tab.id, { active: true }).catch(() => undefined);
     const targetWindow = await targetWindowId();
 
-    if (tab.windowId !== targetWindow) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
+    // 在会话小窗口里点：标签页所在的浏览器窗口可能压在后面，要提到前面才看得见。
+    if (tab.windowId !== targetWindow || isPopout) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
   });
 }

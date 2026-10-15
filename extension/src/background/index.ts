@@ -1,4 +1,4 @@
-import { activeTargetTabs, isPanelUrl } from "./target-window.js";
+import { activeTargetTabs, isPanelUrl, popoutSource } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
 import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
@@ -189,16 +189,22 @@ function focusPanel(port: chrome.runtime.Port): void {
 }
 
 /** 这个窗口里的侧栏；窗口里没有侧栏（或不知道窗口）就是最近操作的那个侧栏。 */
-function panelForWindow(windowId: number | undefined): chrome.runtime.Port | undefined {
-  if (windowId == null) return focusedPanel;
+/**
+ * sidePanelOnly：这个动作会打开浏览器的侧栏（右键提问、选段转侧栏、阅读转侧栏），只交给真正的侧栏，不交给会话小窗口。
+ */
+function panelForWindow(windowId: number | undefined, sidePanelOnly = false): chrome.runtime.Port | undefined {
+  const usable = (port: chrome.runtime.Port | undefined) => !!port && !(sidePanelOnly && popoutSource(port.sender?.url) !== undefined);
+  const fallback = usable(focusedPanel) ? focusedPanel : [...connectedPanels].reverse().find(usable);
 
-  if (focusedPanel && panelWindow.get(focusedPanel) === windowId) return focusedPanel;
+  if (windowId == null) return fallback;
 
-  return [...connectedPanels].reverse().find(port => panelWindow.get(port) === windowId) ?? focusedPanel;
+  if (usable(focusedPanel) && panelWindow.get(focusedPanel!) === windowId) return focusedPanel;
+
+  return [...connectedPanels].reverse().find(port => usable(port) && panelWindow.get(port) === windowId) ?? fallback;
 }
 
-function conversationForWindow(windowId: number | undefined): string {
-  const port = panelForWindow(windowId);
+function conversationForWindow(windowId: number | undefined, sidePanelOnly = false): string {
+  const port = panelForWindow(windowId, sidePanelOnly);
 
   return port ? panelConversation(port) : selectedConversationId;
 }
@@ -206,7 +212,7 @@ function conversationForWindow(windowId: number | undefined): string {
 /** 不是哪个侧栏自己切的（阅读转到侧栏）：换掉用户动手的那个窗口里的侧栏，并把它算作最近操作的。 */
 async function selectForTab(id: string, tabId: number): Promise<void> {
   const windowId = await chrome.tabs.get(tabId).then(tab => tab.windowId, () => undefined);
-  const port = panelForWindow(windowId);
+  const port = panelForWindow(windowId, true);
 
   if (port) { selectInPanel(port, id); focusPanel(port); }
   else followFocused(id);
@@ -2114,7 +2120,7 @@ if (conversationId === "default" && chrome.runtime?.onInstalled) chrome.runtime.
 if (conversationId === "default") ensureAskMenu();
 
 chrome.contextMenus?.onClicked.addListener((info, tab) => {
-  if (conversationForWindow(tab?.windowId) !== conversationId) return;
+  if (conversationForWindow(tab?.windowId, true) !== conversationId) return;
 
   if (info.menuItemId !== ASK_MENU_ID || !tab?.id) return;
   const tabId = tab.id;
@@ -2424,7 +2430,7 @@ chrome.tabs.onActivated.addListener((info) => {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
 
-  if (conversationForWindow(sender.tab?.windowId) !== conversationId) return;
+  if (conversationForWindow(sender.tab?.windowId, true) !== conversationId) return;
   const msg = raw as { type?: unknown; action?: unknown; text?: unknown };
 
   if (msg.type === "ASK_SELECTION_TO_PANEL") {

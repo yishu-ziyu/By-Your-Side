@@ -8,9 +8,11 @@ export function isPanelUrl(url: string | undefined): boolean {
   return url?.split(/[?#]/)[0] === chrome.runtime.getURL("sidepanel.html");
 }
 
-function popoutSource(url: string | undefined): number | undefined {
+/** 会话小窗口的来源窗口号；侧栏和别的页面是 undefined。 */
+export function popoutSource(url: string | undefined): number | undefined {
   if (!isPanelUrl(url)) return undefined;
-  const id = Number(new URL(url!).searchParams.get("window"));
+  const raw = new URL(url!).searchParams.get("window");
+  const id = raw === null ? NaN : Number(raw);
 
   return Number.isInteger(id) ? id : undefined;
 }
@@ -32,9 +34,12 @@ export async function targetWindowId(): Promise<number | undefined> {
   return (await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => undefined))?.id;
 }
 
-/** 代替 chrome.tabs.query({ active: true, lastFocusedWindow: true })。 */
+/**
+ * 用户正在看的那个标签页。扩展自己的侧栏页永远不算：会话小窗口里只有它，一个普通窗口都没开时也不能把它当网页去读、去跳转。
+ */
 export async function activeTargetTabs(): Promise<chrome.tabs.Tab[]> {
   const windowId = await targetWindowId();
+  const tabs = await chrome.tabs.query(windowId == null ? { active: true, lastFocusedWindow: true } : { active: true, windowId });
 
-  return chrome.tabs.query(windowId == null ? { active: true, lastFocusedWindow: true } : { active: true, windowId });
+  return tabs.filter(tab => !isPanelUrl(tab.url));
 }

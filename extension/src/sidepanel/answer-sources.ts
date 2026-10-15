@@ -8,7 +8,7 @@
  * - 图标只加在正文链接指向已读页面的地方；模型正文里没读过的链接不标成出处。
  * - 段落定位复用 PINPOINT_DOM_TARGET：找不到唯一位置就不假装高亮，回到页顶并提示「已打开来源页」。
  */
-import { targetWindowId } from "./target-window.js";
+import { isPopout, targetWindowId } from "./target-window.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
 import { sourceLabel } from "./delivery-facts-view.js";
@@ -37,7 +37,8 @@ async function bringSourceTab(url: string): Promise<{ tab: chrome.tabs.Tab; reus
   if (reuse?.id) {
     const tab = await chrome.tabs.update(reuse.id, { active: true });
 
-    if (reuse.windowId !== targetWindow) await chrome.windows.update(reuse.windowId, { focused: true }).catch(() => undefined);
+    // 在会话小窗口里点：标签页所在的浏览器窗口可能压在后面，要提到前面才看得见。
+    if (reuse.windowId !== targetWindow || isPopout) await chrome.windows.update(reuse.windowId, { focused: true }).catch(() => undefined);
 
     return tab ? { tab, reused: true } : null;
   }
