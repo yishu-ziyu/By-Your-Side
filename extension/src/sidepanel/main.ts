@@ -20,7 +20,7 @@ import { renderMarkdownHtml } from "./markdown.js";
 import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
-import { adoptFillUndo, noteFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
+import { adoptFillUndo, handFillUndoToCard, isFillUndoPending, noteFillUndo, requestFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
 import { attachShorten } from "./answer-shorten.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
@@ -167,6 +167,7 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
   if (!replayingHistory && answer === fillUndoAnswer()) adoptFillUndo(answer);
+  if (!replayingHistory && planCardRun) paintPlanCard();
   attachShorten(answer);
 
   // 补放历史时不给：那一页早已不是这次回答的结果页。
@@ -4151,7 +4152,7 @@ function finishRun(): void {
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
 
-  if (run.root.classList.contains("plan-card") && run.receipt?.ended === "completed") {
+  if (run.root.classList.contains("plan-card") && run.receipt) {
     planCardRun = run;
     paintPlanCard();
   }
@@ -4178,21 +4179,35 @@ function finishRun(): void {
 let planCardRun: RunHost | null = null;
 let planUndo: FillUndoView | null = null;
 
+/** 计划卡这一轮的回答：卡后面、下一条用户消息之前的那条回答。 */
+function planCardAnswer(run: RunHost): HTMLElement | null {
+  for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
+    if (node instanceof HTMLElement && node.matches(".msg.assistant") && node.querySelector(".answer-actions")) return node;
+  }
+
+  return null;
+}
+
 function paintPlanCard(): void {
   const run = planCardRun;
 
   if (!run?.root.isConnected || !run.receipt) return;
   const undo = planUndo;
+  const answer = planCardAnswer(run);
+
+  // 撤销只留卡上这一个：回答下不再出「还原填写」，撤销后的结果行放在卡下面，回答照样变淡。
+  if (answer && undo) handFillUndoToCard(answer, run.root);
+  const ended = run.receipt.failed > 0 && run.receipt.ended === "completed" ? "failed" : run.receipt.ended;
   paintPlanReceipt(run.root, {
     filled: undo?.state === "ready" ? undo.count : undo?.state === "restored" ? undo.restored.length + undo.skipped.length : undo ? undo.fields.length || null : null,
-    steps: run.receipt.steps,
+    steps: run.receipt.steps - run.receipt.failed,
     total: run.receipt.total,
-    undo: !undo ? "none" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
-    // 和回答下的「还原填写」是同一个动作：点那个按钮，结果行、变淡都照原样。
+    ended,
+    undo: !undo ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
     onUndo: () => {
-      const button = fillUndoAnswer()?.querySelector<HTMLButtonElement>('.answer-primary[data-action="undo-fill"]');
+      const owner = planCardAnswer(run);
 
-      if (button) button.click();
+      if (owner) void requestFillUndo(owner).finally(paintPlanCard);
       else port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg);
     },
   });

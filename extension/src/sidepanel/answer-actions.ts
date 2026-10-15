@@ -2,7 +2,7 @@ import { createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
-import { fillUndoLabel, fillUndoOf, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
+import { answerFillUndoOf as fillUndoOf, fillUndoLabel, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
 import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
