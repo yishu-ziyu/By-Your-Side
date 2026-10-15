@@ -83,7 +83,7 @@ try {
   await rp.click(panel, "#think-menu .think-more");
   await sleep(600);
   await rp.screenshot(panel, join(artifacts, "models.png"));
-  evidence.models = await rp.evaluate(panel, `(() => { const p = document.querySelector("#model-popover"); const r = p.getBoundingClientRect(); const c = document.querySelector("#think-chip").getBoundingClientRect(); return { open: !p.hidden, aboveChip: r.bottom <= c.top && c.top - r.bottom < 40, chipShown: c.height > 0, searchFocused: document.activeElement?.classList.contains("model-search-input") === true }; })()`);
+  evidence.models = await rp.evaluate(panel, `(() => { const p = document.querySelector("#model-popover"); const r = p.getBoundingClientRect(); const c = document.querySelector("#think-chip").getBoundingClientRect(); return { open: !p.hidden, aboveChip: r.bottom <= c.top && c.top - r.bottom < 40, chipShown: getComputedStyle(document.querySelector("#composer-bar-inner")).visibility === "visible", searchFocused: document.activeElement?.classList.contains("model-search-input") === true }; })()`);
   await rp.evaluate(panel, `(document.querySelector("#model-popover [role=option][aria-selected=true]") ?? document.querySelector("#model-popover [role=option]")).click(), true`);
   await sleep(400);
 
