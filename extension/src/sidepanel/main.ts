@@ -5322,7 +5322,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       closeBlocks();
       break;
     case "context_usage":
-      modelMenu.usage({ used: ev.used, window: ev.window });
+      modelMenu.usage({ used: ev.used, window: ev.window, model: ev.model });
       break;
     case "agent_end":
       closeBlocks();

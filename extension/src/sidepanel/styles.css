@@ -3455,11 +3455,11 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #ctx-pop .ctx-bar { height: 4px; margin: 6px 0; border-radius: 2px; background: var(--content-subtle); overflow: hidden; }
 #ctx-pop .ctx-bar b { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
 @keyframes think-swap { from { opacity: 0; transform: translateY(3px); filter: blur(2px); } }
-/* 窄侧栏：模型按钮只留图标（全名在悬停提示里），不再被挤没；底栏按钮挨紧一点，一个都不收。 */
+/* 窄侧栏：模型按钮只留图标（全名在悬停提示里），不再被挤没；底栏按钮挨紧一点，一个都不收。画着用量环时环代替图标，两个圆挨着分不清。 */
 @container panel (max-width: 340px) {
   #think-chip { flex-shrink: 0; padding: 0 5px; gap: 2px; }
   #think-chip .think-model, #think-chip .think-sep, #think-chip .think-level { display: none; }
-  #think-chip::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; }
+  #think-chip:not(.ringed)::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 18a6 6 0 0 0 0-12v12z'/%3E%3C/svg%3E") center / contain no-repeat; }
 }
 @container panel (max-width: 280px) {
   #composer-bar { gap: 2px; }

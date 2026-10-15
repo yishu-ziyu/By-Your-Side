@@ -37,8 +37,8 @@ const CHECK = svg('<path d="M20 6 9 17l-5-5"/>', 16, 2.2);
 /** 占到一半才在模型名旁画环：之前用户不用操心。 */
 const RING_FROM = 0.5;
 
-/** 这段对话最近一次请求送进模型的量和模型的窗口，单位 token。 */
-export interface ContextUsage { used: number; window: number }
+/** 这段对话最近一次请求送进模型的量和模型的窗口，单位 token；model 是当时选着的模型。 */
+export interface ContextUsage { used: number; window: number; model: string }
 
 /** token 按「约 N 万字」说：用户不认识 token；token 和字不是一比一，所以写「约」，准的是百分比。 */
 const wan = (tokens: number) => { const v = tokens / 10_000; return String(v >= 100 ? Math.round(v) : Math.round(v * 10) / 10); };
@@ -52,8 +52,8 @@ function usageText(usage: ContextUsage): { head: string; figures: string; line: 
   return { head, figures, line: head + figures, fraction };
 }
 
-/** 宿主平时不删历史，只在模型报装不下时收起早先的大段内容（agent/src/pi-agent-loop.ts），所以不说「快满时」。 */
-const FULL_NOTE = "装不下时会把早先读过的网页收成一行，再接着做。";
+/** 宿主平时不删历史，只在模型报装不下时收起一次早先的大段内容（agent/src/pi-agent-loop.ts）；没有可收的或收完还超，就是出错。 */
+const FULL_NOTE = "装不下时，会把早先读过的网页收成一行再试一次；没有可收的或还装不下，就会报错。";
 
 export interface ModelMenu {
   /** hello_ok / model_info：缺省的字段保留现值。 */
@@ -62,7 +62,7 @@ export interface ModelMenu {
   reset(): void;
   /** 连上宿主后把选过的强度告诉它（新开的宿主不记得）。 */
   connected(): void;
-  /** 这段对话占了多少上下文；null 是还不知道（新对话、刚切换）。 */
+  /** 这段对话占了多少上下文；null 是还不知道（新对话、刚切换）。读数只在选着它的那个模型时显示。 */
   usage(value: ContextUsage | null): void;
 }
 
@@ -114,6 +114,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   let usage: ContextUsage | null = null;
 
   const currentOption = () => models.find((m) => m.id === current);
+  // 换了模型，旧读数既不是新模型的窗口、也不知道新模型怎么算，下一次回答前不显示。
+  const shownUsage = () => usage && usage.model === current ? usage : null;
   const deep = () => chosen ?? false;
 
   let recent = readRecent();
@@ -155,8 +157,10 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     if (!current) return;
     const name = option ? displayName(option) : current.slice(current.lastIndexOf("/") + 1);
     const level = option?.thinking ? (deep() ? "深入" : "快") : "";
-    const used = usage ? usageText(usage) : null;
+    const shown = shownUsage();
+    const used = shown ? usageText(shown) : null;
     const ring = used && used.fraction >= RING_FROM;
+    chip.classList.toggle("ringed", Boolean(ring));
     chip.innerHTML = `<span class="think-model"></span>${level ? `<span class="think-sep">·</span><span class="think-level"></span>` : ""}${ring ? `<span class="think-ring" aria-hidden="true"></span>` : ""}${CHEVRON}`;
     chip.querySelector(".think-model")!.textContent = name;
 
@@ -181,7 +185,7 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   };
 
   const showPop = (on: boolean) => {
-    const visible = on && Boolean(usage) && !chip.hidden && !isOpen();
+    const visible = on && Boolean(shownUsage()) && !chip.hidden && !isOpen();
 
     if (visible) {
       // 跟着开关摆，窄侧栏里不出右边界。
@@ -336,6 +340,13 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   chip.addEventListener("pointerleave", () => showPop(false));
   chip.addEventListener("focus", () => { if (chip.matches(":focus-visible")) showPop(true); });
   chip.addEventListener("blur", () => showPop(false));
+  // 悬停出来的卡片也能用 Esc 收起（WCAG 1.4.13）；只在卡片开着时吃掉这次 Esc。
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !pop.classList.contains("show")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showPop(false);
+  }, true);
 
   menu.addEventListener("click", (event) => {
     const target = event.target as Element;

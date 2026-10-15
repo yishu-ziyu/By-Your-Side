@@ -386,9 +386,10 @@ export type AgentUiEvent =
   | { kind: "turn_end" }
   /**
    * 这段对话最近一次模型请求送进去多少（used：提示词 token，含缓存命中和缓存写入）、这个模型的上下文窗口多大（window）。
+   * model 是发请求时选着的模型（provider/id）：用户换了模型，这条读数就不再显示。
    * 进对话历史：重开侧栏、切回这段对话时按最后一条画模型按钮上的占用。
    */
-  | { kind: "context_usage"; used: number; window: number }
+  | { kind: "context_usage"; used: number; window: number; model: string }
   | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
   | { kind: "run_stopped" }
@@ -1009,9 +1010,9 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
 
     if (msg.type === "agent_event" && msg.event?.kind === "context_usage") {
-      const { used, window } = msg.event;
+      const { used, window, model } = msg.event;
 
-      if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(window) || window <= 0) return null;
+      if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(window) || window <= 0 || typeof model !== "string" || !model || model.length > 200) return null;
     }
 
     if (msg.type === "agent_event" && msg.event?.kind === "user_delivery") {
