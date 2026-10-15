@@ -12,9 +12,9 @@
  */
 // Pi 1.0 删掉了 convertToLlm（custom 消息转 user）；沿用 0.84.4 的实现。
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
-import { firstEventTimeout } from "../../shared/model-capabilities.js";
+import { firstEventTimeout, hedgeAfter } from "../../shared/model-capabilities.js";
 import { isTransientModelError } from "../../shared/provider-busy.js";
-import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type ModelThinkingLevel, type StreamOptions, type TextContent } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type ModelThinkingLevel, type StreamOptions, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -42,6 +42,8 @@ export interface PiAgentLoopOptions {
   onModelRequest?: (request: ModelRequestObservation) => void;
   /** 模型调用的响应头到了（服务商适配层报告时才有）；只读，抛错被吞掉。 */
   onModelResponse?: (status: number) => void;
+  /** 发出对冲请求、以及有对冲的调用结束时各报一次（诊断记录用）；只读，抛错被吞掉。 */
+  onModelHedge?: (record: ModelHedgeRecord) => void;
   /** 每次模型调用前取这次的思考档（见 main-effort.ts）；"off" 表示不发思考参数。不给时沿用 Agent 的设置。 */
   effort?: (model: Model<Api>) => ModelThinkingLevel;
 }
@@ -88,6 +90,9 @@ export const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
  * 10-07 实测 gpt-6-luna 39 次正常请求「已创建」到开始输出最长 1.8 秒，挂住的 2 次之后再无下文。
  */
 export const MODEL_STALL_AFTER_START_MS = 10_000;
+
+/** 能力表没有登记 hedgeMs 的模型：发出后这么久还没有第一个事件，就再发一份相同的请求。 */
+export const MODEL_HEDGE_MS = 8_000;
 
 /**
  * 工具调用参数里连续这么多空白，就算模型写跑了：取消这次请求，按可重试错误重来。
@@ -146,7 +151,7 @@ export class PiAgentLoop implements AgentLoop {
   private cutText: (() => boolean) | null = null;
 
   constructor(private readonly options: PiAgentLoopOptions) {
-    // 0.5、1 秒两次重试：服务挂起时最坏 15 s × 3 + 1.5 s 就告诉用户，而不是让人干等几分钟。
+    // 0.5、1 秒两次重试：服务挂起时最坏（对冲时间点 + 15 s）× 3 + 1.5 s 就告诉用户，而不是让人干等几分钟。
     this.sessionManager = options.persistence ?? new MemoryEntries();
     this.retry = options.retry ?? { maxRetries: 2, baseDelayMs: 500 };
     this.definitions = new Map(options.tools.map(tool => [tool.name, tool]));
@@ -162,7 +167,7 @@ export class PiAgentLoop implements AgentLoop {
 
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: options.messages ?? [] },
-      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.onModelResponse, options.effort, options.firstEventTimeoutMs, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }),
+      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.onModelResponse, options.effort, options.firstEventTimeoutMs, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }, options.onModelHedge),
       // 自定义消息转成 user 消息后送给模型。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
@@ -589,7 +594,7 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, observeResponse: ((status: number) => void) | undefined, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void): StreamFn {
+function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, observeResponse: ((status: number) => void) | undefined, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void, onHedge: ((record: ModelHedgeRecord) => void) | undefined): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);
@@ -603,81 +608,150 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
       await options?.onProviderStreamEvent?.(event, eventModel);
     };
 
-    const onResponse: StreamOptions["onResponse"] = async (response, responseModel) => {
-      try { observeResponse?.(response.status); } catch { /* Diagnostics only. */ }
+    // 响应头的诊断只记原请求，sinceRequestMs 才对得上那条 model_request；对冲那份的结局记在 model_hedge_winner 里。
+    const withResponse = (observed: boolean): StreamOptions["onResponse"] => async (response, responseModel) => {
+      if (observed) try { observeResponse?.(response.status); } catch { /* Diagnostics only. */ }
       await options?.onResponse?.(response, responseModel);
     };
 
-    // SAFETY: 同上，参数原样转交。
-    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, (signal, accepted) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted), onResponse } as never), onCut);
+    // SAFETY: 同上，参数原样转交；对冲那份与原请求的 context 和参数完全相同。
+    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, hedgeAfter(model) ?? MODEL_HEDGE_MS, (signal, accepted, hedge) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted), onResponse: withResponse(!hedge) } as never), onCut, onHedge);
   }) as StreamFn;
 }
+
+/** 对冲请求的诊断记录：发出对冲时一条，这次调用结束时一条（哪份胜出、胜出时离发出原请求多久）。 */
+export type ModelHedgeRecord =
+  | { type: "model_hedge"; model: string; hedgeMs: number }
+  | { type: "model_hedge_winner"; model: string; winner: "first" | "hedge" | "none"; firstEventMs: number | null; hedgeError?: string };
 
 /**
  * 第一个事件（start 只表示连上，不算）迟迟不来：取消这次请求，交出一条可重试的超时错误，写明是哪个模型。
  * 服务端一旦发出原始事件（已受理），剩余等待缩短到 MODEL_STALL_AFTER_START_MS：受理后迟迟不出内容就是挂住了。
+ * 到 hedgeMs 还没有第一个事件，就再发一份相同的请求，原请求不取消（对冲请求，Dean & Barroso《The Tail at Scale》）：
+ * 先出第一个事件的那份胜出，另一份立即取消、晚到的事件丢弃。每份各按上面的上限计时，两份都超时才报超时错误。
+ * 某份在出第一个事件前就出错（并发上限、429 等），而另一份还在等：只丢掉出错的这份，不让整次调用失败。
  * 用户取消照常走原来的 aborted 结局。
  */
-function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal, onProviderStreamEvent: () => void) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void): AssistantMessageEventStream {
-  const controller = new AbortController();
-  const cancel = () => controller.abort();
+function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, hedgeMs: number, start: (signal: AbortSignal, onProviderStreamEvent: () => void, hedge: boolean) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void, onHedge?: (record: ModelHedgeRecord) => void): AssistantMessageEventStream {
+  /** live：还在等它出第一个事件；超时、出错、输给另一份或流结束后为 false。held：胜出前收到的 start 事件，胜出时补发。 */
+  type Attempt = { controller: AbortController; timer?: ReturnType<typeof setTimeout>; started: boolean; live: boolean; hedge: boolean; held: AssistantMessageEvent[] };
 
-  if (outer?.aborted) controller.abort();
-  else outer?.addEventListener("abort", cancel, { once: true });
-
-  // 同步抛出的错误（如缺 key）照旧交给 Agent 处理。
-  let source: AssistantMessageEventStream;
-
-  // 计时器在下面建立；服务端第一个原始事件到来时，若内容还没来，就改成受理后的短等待。
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let started = false;
-  let content = false;
-
-  const arm = (ms: number, message: string) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      fail(message);
-      controller.abort();
-    }, ms);
-  };
-
-  const onProviderStreamEvent = () => {
-    if (started || content) return;
-    started = true;
-    arm(Math.min(timeoutMs, MODEL_STALL_AFTER_START_MS), `first response timeout: ${model.provider}/${model.id} accepted the request but sent nothing within ${Math.round(MODEL_STALL_AFTER_START_MS / 1000)} s`);
-  };
-
-  try { source = start(controller.signal, onProviderStreamEvent); } catch (error) {
-    outer?.removeEventListener("abort", cancel);
-    throw error;
-  }
-
+  const name = `${model.provider}/${model.id}`;
+  const sentAt = Date.now();
+  const attempts: Attempt[] = [];
   const out = createAssistantMessageEventStream();
+  let winner: Attempt | null = null;
+  let wonAt: number | null = null;
+  let hedgeError: string | undefined;
+  let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 已交出结局（超时错误或截断），之后两份的事件都丢弃。 */
+  let closed = false;
+  let finished = false;
+  let partial: AssistantMessage | null = null;
+  const blanks = new Map<number, number>();
+
+  const cancel = () => { for (const attempt of attempts) attempt.controller.abort(); };
+
+  if (!outer?.aborted) outer?.addEventListener("abort", cancel, { once: true });
+
+  const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(hedgeTimer);
+
+    for (const attempt of attempts) clearTimeout(attempt.timer);
+    outer?.removeEventListener("abort", cancel);
+    onCut?.(cutText, false);
+    out.end();
+
+    if (attempts.length > 1) {
+      try {
+        onHedge?.({ type: "model_hedge_winner", model: name, winner: winner ? (winner.hedge ? "hedge" : "first") : "none", firstEventMs: wonAt === null ? null : wonAt - sentAt, ...(hedgeError === undefined ? {} : { hedgeError }) });
+      } catch { /* Diagnostics only. */ }
+    }
+  };
 
   const fail = (errorMessage: string) => {
+    if (closed) return;
+    closed = true;
     out.push({ type: "error", reason: "error", error: {
       role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
       stopReason: "error", errorMessage, timestamp: Date.now(),
     } });
-    out.end();
+    cancel();
+    finish();
   };
 
-  if (!started) arm(timeoutMs, `first response timeout: ${model.provider}/${model.id} sent nothing within ${Math.round(timeoutMs / 1000)} s`);
+  const othersLive = (attempt: Attempt) => attempts.some(other => other !== attempt && other.live);
+
+  /** 丢掉一份：取消它、不再计时；还有别的份在等就继续等，否则按 message 报错。 */
+  const drop = (attempt: Attempt, message: string | null) => {
+    attempt.live = false;
+    clearTimeout(attempt.timer);
+    attempt.controller.abort();
+
+    if (!winner && !othersLive(attempt) && message !== null) fail(message);
+  };
+
+  const arm = (attempt: Attempt, ms: number, message: string) => {
+    clearTimeout(attempt.timer);
+    attempt.timer = setTimeout(() => drop(attempt, message), ms);
+  };
+
+  const win = (attempt: Attempt) => {
+    winner = attempt;
+    wonAt = Date.now();
+    clearTimeout(hedgeTimer);
+    clearTimeout(attempt.timer);
+
+    for (const other of attempts) if (other !== attempt) drop(other, null);
+  };
+
+  const launch = (hedge: boolean) => {
+    const attempt: Attempt = { controller: new AbortController(), started: false, live: true, hedge, held: [] };
+
+    if (outer?.aborted) attempt.controller.abort();
+    attempts.push(attempt);
+    // 计时器先建立；服务端第一个原始事件到来时，若内容还没来，就改成受理后的短等待。
+    arm(attempt, timeoutMs, `first response timeout: ${name} sent nothing within ${Math.round(timeoutMs / 1000)} s`);
+
+    const accepted = () => {
+      if (attempt.started || winner) return;
+      attempt.started = true;
+      arm(attempt, Math.min(timeoutMs, MODEL_STALL_AFTER_START_MS), `first response timeout: ${name} accepted the request but sent nothing within ${Math.round(MODEL_STALL_AFTER_START_MS / 1000)} s`);
+    };
+
+    let source: AssistantMessageEventStream;
+
+    try { source = start(attempt.controller.signal, accepted, hedge); } catch (error) {
+      attempt.live = false;
+      clearTimeout(attempt.timer);
+
+      // 原请求同步抛出的错误（如缺 key）照旧交给 Agent 处理；对冲那份只丢掉。
+      if (!hedge) {
+        outer?.removeEventListener("abort", cancel);
+        throw error;
+      }
+
+      hedgeError = errorText(error);
+
+      return;
+    }
+
+    void consume(attempt, source);
+  };
 
   // 用户改方向：正在写的正文按「写完了」收下（stopReason stop），旧请求取消、晚到的字丢弃；
   // 循环随即读排队的插话，同一轮里重写。还没写出正文和工具调用时（多半在思考），丢掉整条，收下空回复：
   // 否则要等它按旧方向写完、旧步骤被挡下才轮到插话，多等 3–5 秒（#285）。没写完的思考不留，供应商不认残缺的思考。
   // 已开始写工具调用时不截断。
-  let partial: AssistantMessage | null = null;
-  let cut = false;
-  const blanks = new Map<number, number>();
-
   const cutText = (): boolean => {
-    if (cut || partial?.content.some(part => part.type === "toolCall")) return false;
+    if (closed || partial?.content.some(part => part.type === "toolCall")) return false;
     const written = !!partial?.content.some(part => part.type === "text" && part.text.trim());
-    cut = true;
-    clearTimeout(timer);
+    closed = true;
     // 深拷贝：取消请求后供应商还会就地改它的流式对象，收下的这条消息不能跟着变。
     const message: AssistantMessage = written ? { ...structuredClone(partial!), stopReason: "stop" } : {
       role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
@@ -685,22 +759,32 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
       stopReason: "stop", timestamp: Date.now(),
     };
     out.push({ type: "done", reason: "stop", message });
-    out.end();
-    controller.abort();
+    cancel();
+    finish();
 
     return true;
   };
 
-  onCut?.(cutText, true);
-
-  void (async () => {
+  const consume = async (attempt: Attempt, source: AssistantMessageEventStream) => {
     try {
       for await (const event of source) {
-        if (cut) break;
+        if (closed || (winner !== attempt && !attempt.live)) break;
 
-        if (event.type !== "start") {
-          content = true;
-          clearTimeout(timer);
+        if (winner !== attempt) {
+          if (event.type === "start") {
+            attempt.held.push(event);
+            continue;
+          }
+
+          if (event.type === "error" && othersLive(attempt)) {
+            if (attempt.hedge) hedgeError = event.error.errorMessage;
+            drop(attempt, null);
+            break;
+          }
+
+          win(attempt);
+
+          for (const held of attempt.held.splice(0)) out.push(held);
         }
 
         if ("partial" in event) partial = event.partial;
@@ -710,9 +794,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
           blanks.set(event.contentIndex, run);
 
           if (run >= RUNAWAY_TOOL_ARGS_BLANKS) {
-            cut = true;
-            fail(`runaway tool call: ${model.provider}/${model.id} kept writing blank tool arguments`);
-            controller.abort();
+            fail(`runaway tool call: ${name} kept writing blank tool arguments`);
             break;
           }
         }
@@ -720,14 +802,33 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
         out.push(event);
       }
     } catch (error) {
-      if (!cut) fail(error instanceof Error ? error.message : String(error));
+      if (winner === attempt || (!winner && !othersLive(attempt))) fail(errorText(error));
+      else if (attempt.hedge && attempt.live) hedgeError = errorText(error);
     } finally {
-      clearTimeout(timer);
-      outer?.removeEventListener("abort", cancel);
-      onCut?.(cutText, false);
-      out.end();
+      clearTimeout(attempt.timer);
+
+      if (winner === attempt) finish();
+      else if (attempt.live) {
+        attempt.live = false;
+
+        // 流没出内容就结束、又没有别的份在等：照原来那样收尾。
+        if (!winner && !othersLive(attempt)) {
+          for (const held of attempt.held.splice(0)) out.push(held);
+          finish();
+        }
+      }
     }
-  })();
+  };
+
+  launch(false);
+  onCut?.(cutText, true);
+
+  hedgeTimer = setTimeout(() => {
+    if (winner || closed || outer?.aborted || !attempts[0]!.live) return;
+
+    try { onHedge?.({ type: "model_hedge", model: name, hedgeMs }); } catch { /* Diagnostics only. */ }
+    launch(true);
+  }, hedgeMs);
 
   return out;
 }
