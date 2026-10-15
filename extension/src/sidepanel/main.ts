@@ -92,7 +92,7 @@ import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
-import { mountTaskPlan } from "./task-plan.js";
+import { mountTaskPlan, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
@@ -3382,6 +3382,38 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
   return receipt;
 }
 
+/** 站点笔记写下了：这一轮下面一行小字，点「查看」展开笔记原文。 */
+function renderSiteNotesReceipt(event: Extract<AgentUiEvent, { kind: "site_notes" }>): void {
+  const receipt = document.createElement("div");
+  receipt.className = "memory-receipt site-notes-receipt";
+  const text = document.createElement("span");
+  text.className = "memory-receipt-text";
+  text.textContent = `记下了 ${siteName(`http://${event.host}/`, event.title)} 的${event.notes.length > 1 ? ` ${event.notes.length} 条` : ""}用法`;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.textContent = "查看";
+  toggle.setAttribute("aria-expanded", "false");
+  const list = document.createElement("ul");
+  list.className = "site-notes-list";
+  list.hidden = true;
+
+  for (const note of event.notes) {
+    const item = document.createElement("li");
+    item.textContent = note;
+    list.appendChild(item);
+  }
+
+  toggle.onclick = () => {
+    list.hidden = !list.hidden;
+    toggle.textContent = list.hidden ? "查看" : "收起";
+    toggle.setAttribute("aria-expanded", String(!list.hidden));
+  };
+  receipt.append(text, toggle);
+  appendToMessages(receipt);
+  appendToMessages(list);
+  scrollToEnd();
+}
+
 // ── 纠正后开口问「要我记住吗」──
 /**
  * 询问事件：第一条带出卡片；同一 askId 带 outcome 的后续事件（现场或对话历史回放）把它推到结局。
@@ -4695,7 +4727,7 @@ function showHandoffCard(ask: string): void {
   done.onclick = () => port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
   const hint = document.createElement("span");
   hint.className = "handoff-note";
-  hint.textContent = "或点页面上的「交还」";
+  hint.textContent = "或点页面右边的「继续」";
   actions.append(done, hint);
   card.append(title, body, note, actions);
   appendToMessages(card);
@@ -5009,6 +5041,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "memory_ask":
       renderMemoryAsk(ev);
+      break;
+    case "site_notes":
+      renderSiteNotesReceipt(ev);
       break;
     case "text_delta":
       // 回答开始出字：这段思考结束（#263）。

@@ -876,34 +876,26 @@ html, body {
   padding: 2px 0;
 }
 
-/* 流式输出中的闪烁光标：跟在最后一个字后面（stream-reveal.ts 的 data-tail），还没有字时挂在气泡上 */
-.msg.assistant.streaming:not(:has([data-tail]))::after,
-.msg.assistant.streaming [data-tail]::after {
-  content: "▍";
-  color: var(--accent);
-  animation: blink 1s steps(2, start) infinite;
+/* 正在流式的回答：第一次出字时上浮入场。 */
+.msg.assistant.stream-enter {
+  animation: answerRise var(--m-rise) var(--e-rise) both;
 }
 
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-/* 回答逐字浮现：透明度与轻微模糊一起收；时长与 stream-reveal.ts 的 FADE_MS 一致 */
-/* 流式淡入：一段 var(--d-layout) 从透明、2px 模糊到清楚，不位移。 */
-.reveal-fade {
-  animation: revealFade var(--d-layout) var(--e-swift) both;
-}
-
-@keyframes revealFade {
+@keyframes answerRise {
   from {
     opacity: 0;
-    filter: blur(2px);
+    transform: translateY(10px);
   }
-  to {
-    opacity: 1;
-    filter: none;
+}
+
+/* 回答按段淡入：只改透明度，时长见 --m-read。 */
+.chunk-fade {
+  animation: chunkFade var(--m-read) linear both;
+}
+
+@keyframes chunkFade {
+  from {
+    opacity: 0;
   }
 }
 
@@ -2273,8 +2265,6 @@ details.run-steps.done .chip.error { background: transparent; }
     animation: none;
   }
 
-  .msg.assistant.streaming:not(:has([data-tail]))::after,
-  .msg.assistant.streaming [data-tail]::after,
   .dot.retry,
   .chip-dot.running {
     animation: none;
@@ -2288,9 +2278,11 @@ details.run-steps.done .chip.error { background: transparent; }
     animation: none;
   }
 
-  .reveal-fade,
+  .chunk-fade,
+  .msg.assistant.stream-enter,
+  .answer-actions.enter,
   .tile-landing {
-    animation-name: fadeOnlyIn;
+    animation: none;
   }
 
   .run-chevron {
@@ -2453,6 +2445,8 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt button { border:0; border-radius:5px; background:transparent; color:var(--accent); padding:2px 1px; font:inherit; font-size:11px; cursor:pointer; }
 .memory-receipt button:hover { text-decoration:underline; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.site-notes-list { margin:-10px 0 14px; padding:8px 10px 8px 24px; border-radius:8px; background:var(--content-subtle); color:var(--text-secondary); font-size:11px; line-height:1.5; }
+.site-notes-list li + li { margin-top:4px; }
 /* 纠正后开口问「要我记住吗」：像助手接着说的一句话，两个浅色小胶囊不抢正文。 */
 .memory-ask { margin:-4px 0 16px; font-family:var(--reading-font); font-size:13px; line-height:1.7; color:var(--text-primary); }
 .memory-ask-line { margin:0; overflow-wrap:anywhere; }
@@ -2532,6 +2526,16 @@ details.run-steps.done .chip.error { background: transparent; }
   margin-top: var(--s-2);
   font: var(--fs-meta)/var(--lh-meta) var(--font);
   color: var(--text-tertiary);
+}
+
+.answer-actions.enter {
+  animation: actionsIn var(--m-quick) linear var(--d-tap) both;
+}
+
+@keyframes actionsIn {
+  from {
+    opacity: 0;
+  }
 }
 .answer-actions button {
   display: inline-flex;
@@ -3153,9 +3157,12 @@ details.run-steps:not(.done) .run-title {
   mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
   -webkit-mask-size: 260% 100%;
   mask-size: 260% 100%;
-  animation: runShine 2.4s var(--e-enter) infinite;
+  animation: runShine 3s var(--e-enter) infinite;
 }
-@keyframes runShine { from { -webkit-mask-position: 110% 0; mask-position: 110% 0; } to { -webkit-mask-position: -10% 0; mask-position: -10% 0; } }
+@keyframes runShine {
+  0%, 15% { -webkit-mask-position: 110% 0; mask-position: 110% 0; }
+  85%, 100% { -webkit-mask-position: -10% 0; mask-position: -10% 0; }
+}
 /* #263 思考心跳：16px 墨点在 4 点与十字之间收合，1.2s 一拍，不用转圈。秒数同拍闪一下。 */
 .run-beat {
   display: none;
@@ -3465,9 +3472,9 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .action-menu-item { font-size: 13px; }
 .action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
 .action-menu-item-key { margin-left: 6px; color: var(--text-tertiary); font-size: 11px; }
-/* 回答里的 ①②：点一下页面滚回那一圈再指一下（与页面上助手画的蓝圈同色）。 */
-.circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: #2d4a86; color: #fff; font: 600 11px/18px var(--font); vertical-align: 1px; cursor: pointer; }
-.circle-ref:hover { background: #22396b; }
+/* 回答里的 ①②：点一下页面滚回那一圈再指一下。靠编号对应页面上的圈；侧栏里用墨色，不另换色相。 */
+.circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: var(--text-primary); color: var(--content-bg); font: 600 11px/18px var(--font); vertical-align: 1px; cursor: pointer; }
+.circle-ref:hover { background: var(--text-secondary); }
 .circle-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .circle-ref-gone { margin-left: 4px; color: var(--text-tertiary); font-size: 12px; }
 /* 圈出来问的附件：左上角是页面上那一圈的编号（与页面上的橙色编号同款）。 */
@@ -3531,15 +3538,44 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   .msg.assistant .memory-used-line, .msg.assistant .memory-used-line[data-open=true] { transition: none; }
 }
 
-/* 错误卡（#74）：按错误种类给能修掉原因的动作；原文收进「技术详情」。 */
-.error-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--err); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--d-state) var(--e-spring); }
-.error-card strong { font-size: var(--fs-ui); font-weight: 600; }
-.error-card > p { margin: 0; color: var(--text-secondary); }
+/* 错误卡：按错误种类给能修掉原因的动作；原文收进「技术详情」。
+   出错多半不是用户的问题，所以用浅黄提醒色而不是红色；材质照 Untitled Toaster：浅色调外沿、白色内缘、左侧一个色块图标。 */
+.error-card {
+  --t1: #fff8ee; --t3: #fff2da; --t4: #ffebc9; --t5: #fff7eb; --t6: #ffe9c8;
+  --rim: #fff;
+  --chip: #fff;
+  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%232f2f2f' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M8 4.3V8.8M8 11.6V11.7'/%3E%3C/svg%3E");
+  align-self: stretch; display: flex; flex-direction: column; gap: 4px; padding: 13px 12px 13px 50px;
+  border: 1px solid transparent; border-radius: var(--r);
+  background:
+    linear-gradient(90deg, var(--rim) 0%, var(--t1) 40%, var(--rim) 100%) padding-box,
+    linear-gradient(180deg, var(--t4) 0%, var(--t4) 60%, var(--t3) 100%) border-box;
+  box-shadow: inset 0 0 0 1.5px var(--rim);
+  font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--d-state) var(--e-spring);
+}
+@media (prefers-color-scheme: dark) {
+  .error-card {
+    --t1: color-mix(in srgb, var(--warn) 5%, var(--content-bg));
+    --t3: color-mix(in srgb, var(--warn) 12%, var(--content-bg));
+    --t4: color-mix(in srgb, var(--warn) 16%, var(--content-bg));
+    --t5: color-mix(in srgb, var(--warn) 22%, var(--content-bg));
+    --t6: color-mix(in srgb, var(--warn) 34%, var(--content-bg));
+    --rim: var(--content-bg);
+    --chip: color-mix(in srgb, #fff 14%, var(--content-bg));
+    --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23eee9df' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M8 4.3V8.8M8 11.6V11.7'/%3E%3C/svg%3E");
+  }
+}
+.error-card::before { content: ""; position: absolute; left: 12px; top: 12px; width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(110deg, var(--t5), var(--t6)); }
+.error-card::after { content: ""; position: absolute; left: 19px; top: 19px; width: 14px; height: 14px; border-radius: 4.5px; background: var(--chip) var(--glyph) center / 14px no-repeat; }
+.error-card strong { display: block; font-size: var(--fs-ui); font-weight: 600; line-height: 1.35; padding-top: 4px; }
+.error-card > p { margin: 0; color: var(--text-secondary); text-wrap: pretty; }
 .error-card .error-card-note { font-size: var(--fs-meta); color: var(--text-tertiary); }
-.error-card-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.error-card-actions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
 .error-card .btn-primary, .error-card .btn-quiet, #key-sheet .btn-primary, #key-sheet .btn-quiet { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border-radius: var(--r-pill); cursor: pointer; }
-.error-card .btn-primary, #key-sheet .btn-primary { border: 0; background: var(--text-primary); color: var(--content-bg); }
-.error-card .btn-quiet, #key-sheet .btn-quiet { border: 1px solid var(--content-border); background: transparent; color: var(--text-primary); }
+#key-sheet .btn-primary { border: 0; background: var(--text-primary); color: var(--content-bg); }
+#key-sheet .btn-quiet { border: 1px solid var(--content-border); background: transparent; color: var(--text-primary); }
+.error-card .btn-primary { padding: 6px 12px; border: 0; background: var(--chip); color: var(--text-primary); box-shadow: 0 0 0 1px var(--t6), 0 1px 2px rgb(0 0 0 / .04); }
+.error-card .btn-quiet { padding: 6px 10px; font-weight: 500; border: 0; background: transparent; color: var(--text-secondary); }
 .error-card button:disabled, #key-sheet button:disabled { opacity: .45; cursor: default; }
 .error-card-menu { display: flex; flex-direction: column; border: 1px solid var(--content-border); border-radius: var(--r); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; }
 .error-card-menu button { border: 0; background: none; text-align: left; font: var(--fs-ui)/1.5 var(--font); color: var(--text-primary); padding: 8px 12px; cursor: pointer; }
@@ -3548,7 +3584,10 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .error-card-tech { font-size: var(--fs-micro); color: var(--text-tertiary); }
 .error-card-tech summary { cursor: pointer; width: fit-content; }
 .error-card-tech pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--content-subtle); white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); font-size: var(--fs-micro); }
-.error-card.is-recovering { border-left-color: var(--content-border); }
+.error-card .error-card-tech pre { background: var(--t1); box-shadow: inset 0 0 0 1px var(--t4); }
+/* 已经在接着做了，不再是提醒，回到普通的凹槽底。 */
+.error-card.is-recovering { padding: 12px 14px; border: 0; background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
+.error-card.is-recovering::before, .error-card.is-recovering::after { content: none; }
 .error-card-status { margin: 0; color: var(--text-secondary); }
 /* 错误卡已经给了修复动作：旧的「运行出错 · 继续原任务」入口说的是同一件事，不再重复。 */
 #messages:has(.error-card:not(.is-retired)) #resume-entry-root { display: none; }
@@ -3757,9 +3796,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #messages > .msg.user:not(:first-child) { margin-top: 20px; }
 .ctx-chips { margin-top: -4px; }
 
-/* 你说的话：消息不能点，去掉立体的高光和描边，只留浅底。 */
-.msg.user { box-shadow: none; border-color: transparent; }
-
 /* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
 .run-title { font-size: var(--fs-ui); line-height: 20px; }
 details.run-steps:not(.done) .run-time {
@@ -3792,12 +3828,11 @@ details.run-steps.run-quieting .run-time { animation: none; }
 
 /* 系统说明（调试横幅）：不再挂在过程的竖线下面像引用的回答，改成一条浅底小提示。 */
 .run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
-.run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--content-subtle); color: var(--text-secondary); }
+.run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); color: var(--text-secondary); }
 
-/* 输入框：空着时一行高，打字后随内容长高；白纸底 + 细边 + 很浅的影子，是整屏唯一浮起来的东西。 */
+/* 输入框：空着时一行高，打字后随内容长高；材质用上面的凹槽，不浮起来。 */
 #input { min-height: 22px; line-height: 22px; font-size: 14px; }
-#composer { gap: 6px; padding: 10px 8px 8px 14px; background: var(--content-bg); border-color: var(--glass-border); box-shadow: 0 1px 2px rgb(20 20 19 / .04), 0 4px 16px rgb(20 20 19 / .05); }
-#composer:focus-within { box-shadow: 0 1px 2px rgb(20 20 19 / .05), 0 6px 20px rgb(20 20 19 / .07); }
+#composer { gap: 6px; padding: 10px 8px 8px 14px; }
 
 /* 「接管」和旁边的图标按钮同一种样子（无边框），停止仍是唯一的实心圆。 */
 #takeover-btn { box-shadow: none; color: var(--text-secondary); padding: 0 10px; }
@@ -3816,18 +3851,10 @@ details.run-steps.run-quieting .run-time { animation: none; }
 /* 用到的记忆：不再接在回答句子后面，单独一行小字放在回答下面。 */
 .memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }
 
-/* 出错：服务出错不是用户的错，用温和的浅底，不用红色粗边和阴影；红色只留在标题前的小点。 */
-.error-card { border: 0; border-radius: var(--r); background: var(--content-subtle); padding: 12px 14px; gap: 6px; box-shadow: none; }
-.error-card strong { display: flex; align-items: center; gap: 7px; font-weight: 550; }
-.error-card strong::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--err); flex: none; }
-.error-card > p { padding-left: 14px; }
-.error-card-actions { padding-left: 14px; }
-.error-card .btn-primary, .error-card .btn-quiet { padding: 7px 12px; font-weight: 500; }
-
 /* 文件卡：一行排开，左边类型图标（图片用缩略图），右边灰色图标按钮（打开、下载、展开）。
    墨蓝留给助手在页面上的动作；次要操作用图标，不做成一排带底色的按钮（Refactoring UI「Semantics are secondary」）。 */
-.artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border-color: var(--content-border); }
-.artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: 8px; background: var(--content-subtle) center / 16px no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
+.artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border: 0; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
+.artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: var(--r); background: var(--content-bg) center / 16px no-repeat; box-shadow: inset 0 0 0 1px var(--well-outline); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
 .artifact-open, .artifact-download, .artifact-preview-toggle { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 0; display: inline-grid; place-items: center; }
 .artifact-open::before, .artifact-download::before, .artifact-preview-toggle::before { content: ""; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
 .artifact-open { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E"); }
