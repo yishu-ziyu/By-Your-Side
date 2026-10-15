@@ -427,15 +427,20 @@ export async function screenshot(
         : 1;
 
   const density = dpr > 0 ? dpr * clipScale : undefined;
-  const fractional = region && [region.x, region.y, region.width, region.height].some(value => !Number.isInteger(value));
+  // Page.captureScreenshot reads clip in 100%-zoom pixels, not the page's CSS pixels: at any other page
+  // zoom the CSS region is converted first, and rounding to whole pixels happens in those units.
+  const zoom = region ? await chrome.tabs.getZoom(tab.id).catch(() => 1) : 1;
+  const zoomedRegion = region && { x: region.x * zoom, y: region.y * zoom, width: region.width * zoom, height: region.height * zoom };
+  const zoomedDensity = density && density / zoom;
+  const fractional = zoomedRegion && [zoomedRegion.x, zoomedRegion.y, zoomedRegion.width, zoomedRegion.height].some(value => !Number.isInteger(value));
 
-  const captureRegion = region && fractional ? {
-    x: Math.floor(region.x), y: Math.floor(region.y),
-    width: Math.ceil(region.x + region.width) - Math.floor(region.x),
-    height: Math.ceil(region.y + region.height) - Math.floor(region.y),
-  } : region;
+  const captureRegion = zoomedRegion && fractional ? {
+    x: Math.floor(zoomedRegion.x), y: Math.floor(zoomedRegion.y),
+    width: Math.ceil(zoomedRegion.x + zoomedRegion.width) - Math.floor(zoomedRegion.x),
+    height: Math.ceil(zoomedRegion.y + zoomedRegion.height) - Math.floor(zoomedRegion.y),
+  } : zoomedRegion;
 
-  if (captureRegion && density && (captureRegion.width * captureRegion.height * density ** 2 > 100_000_000 || Math.max(captureRegion.width, captureRegion.height) * density > 32768)) {
+  if (captureRegion && zoomedDensity && (captureRegion.width * captureRegion.height * zoomedDensity ** 2 > 100_000_000 || Math.max(captureRegion.width, captureRegion.height) * zoomedDensity > 32768)) {
     throw new Error("截图区域超过图像预算；请使用较小 clip，不返回截断或占位图。");
   }
 
@@ -470,7 +475,7 @@ export async function screenshot(
       dataUrl = `data:image/png;base64,${captured.data}`;
       source = "cdp";
 
-      if (fractional && captureRegion && region && density) dataUrl = await cropFractionalRegion(dataUrl, captureRegion, region, density);
+      if (fractional && captureRegion && zoomedRegion && zoomedDensity) dataUrl = await cropFractionalRegion(dataUrl, captureRegion, zoomedRegion, zoomedDensity);
     } catch (e) {
       if (clip || fullPage) throw new Error(`局部/全页截图失败（${oneLine(e)}）`);
       dataUrl = await visibleFallback(tab, e);
