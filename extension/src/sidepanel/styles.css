@@ -1808,6 +1808,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #composer.has-text #composer-bar-inner,
 #composer.drag-over #composer-bar-inner,
 #composer:has(#think-menu.open) #composer-bar-inner,
+body:has(#model-popover[data-from="think-chip"]:not([hidden])) #composer-bar-inner,
 #composer:has(.tile-56) #composer-bar-inner,
 #composer:has(#ask-cite:not([hidden])) #composer-bar-inner,
 #composer:has(#mention-strip:not([hidden])) #composer-bar-inner,

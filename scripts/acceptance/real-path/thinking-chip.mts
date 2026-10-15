@@ -1,7 +1,7 @@
 /**
  * 输入框左下角「模型 · 快/深入」（docs/evals/20261007-thinking-chip.md）：看得到、点得开、选了真的换档、关掉侧栏再开还记得。真实模型，只装扩展，无头，全程录侧栏。
  *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/thinking-chip.mts --headless [--model=provider/id]
- * 失败方式：开关不出现或没写模型名；选「深入」后助手仍用低档；选「快」后仍用高档；重开侧栏后忘了选过什么。
+ * 失败方式：开关不出现或没写模型名；点「换模型…」后模型列表没在开关上方打开；选「深入」后助手仍用低档；选「快」后仍用高档；重开侧栏后忘了选过什么。
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -78,6 +78,15 @@ try {
   evidence.chipStart = await chipText();
   await rp.screenshot(panel, join(artifacts, "chip.png"));
 
+  await rp.click(panel, "#think-chip");
+  await sleep(350);
+  await rp.click(panel, "#think-menu .think-more");
+  await sleep(600);
+  await rp.screenshot(panel, join(artifacts, "models.png"));
+  evidence.models = await rp.evaluate(panel, `(() => { const p = document.querySelector("#model-popover"); const r = p.getBoundingClientRect(); const c = document.querySelector("#think-chip").getBoundingClientRect(); return { open: !p.hidden, aboveChip: r.bottom <= c.top && c.top - r.bottom < 40, chipShown: c.height > 0, searchFocused: document.activeElement?.classList.contains("model-search-input") === true }; })()`);
+  await rp.evaluate(panel, `(document.querySelector("#model-popover [role=option][aria-selected=true]") ?? document.querySelector("#model-popover [role=option]")).click(), true`);
+  await sleep(400);
+
   await pick("深入");
   evidence.chipDeep = await chipText();
   await ask("这页写了什么？一句话回答。");
@@ -107,6 +116,7 @@ try {
   evidence.effortFast = effortsOf("负责人是谁");
 
   assert.match(String(evidence.chipStart), /· 快/, "一开始是「快」");
+  assert.deepEqual(evidence.models, { open: true, aboveChip: true, chipShown: true, searchFocused: true }, "点「换模型…」后，模型列表在开关上方打开、可以直接搜索，输入框不收起");
   assert.match(String(evidence.chipDeep), /· 深入/, "选了深入，按钮写深入");
   assert.ok((evidence.effortDeep as string[]).length > 0 && (evidence.effortDeep as string[]).every((e) => e === "high"), `选深入后用高档：${JSON.stringify(evidence.effortDeep)}`);
   assert.ok((evidence.effortFast as string[]).length > 0 && (evidence.effortFast as string[]).every((e) => e === "low"), `选快后用低档：${JSON.stringify(evidence.effortFast)}`);

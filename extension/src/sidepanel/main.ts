@@ -2398,12 +2398,12 @@ const modelPicker = mountModelPicker({
   },
 });
 
-// 输入框左下角「6 Luna · 快」：当前模型与思考强度；「换模型…」打开上面的模型选择器。
+// 输入框左下角「6 Luna · 快」：当前模型与思考强度；「换模型…」在这颗按钮上方打开模型选择器。
 const thinkingChip = mountThinkingChip({
   composer: document.getElementById("composer")!,
   after: document.getElementById("attach-btn")!,
   send: (deep) => { send({ type: "set_thinking", deep }); },
-  openModels: () => { modelBtn.click(); },
+  openModels: () => { modelPicker.openFrom(document.getElementById("think-chip")!); },
 });
 
 // ── 错误卡（#74）：模型出错时按种类给修复动作，修好后从出错处接着做 ──

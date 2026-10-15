@@ -77,7 +77,8 @@ export function mountThinkingChip(options: { composer: HTMLElement; after: HTMLE
     more.type = "button";
     more.className = "think-more";
     more.textContent = "换模型…";
-    more.onclick = () => { open(false); options.openModels(); };
+    // 这次点击还会冒泡到 document，模型面板会把它当成点在面板外而立刻关掉。
+    more.onclick = (event) => { event.stopPropagation(); open(false); options.openModels(); };
     menu.replaceChildren(head, item(false, "快", thinking.fast, "填表、订东西、点按"), item(true, "深入", thinking.deep, "多步骤、要权衡的事"), document.createElement("hr"), more);
   };
 
