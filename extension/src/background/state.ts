@@ -279,6 +279,19 @@ async function applyConversationGroup(tabId: number, conversationId: string): Pr
   } catch { /* grouping is display-only; stable ownership remains in resources */ }
 }
 
+/**
+ * 只读一页、不改任何人的工作标签页：fill 的 from 读来源用。worker 按 resolveWorkingTab 的同一套归属检查，
+ * 但不把来源页设成它的工作页，否则紧接着的写入会落到来源页上。
+ */
+export async function resolveTabForRead(tabId: number | undefined, key: string): Promise<chrome.tabs.Tab> {
+  if (isLeadSession(parseExecutionKey(key).sessionId) || tabId == null) return resolveReadableTab(tabId, key);
+  const normalized = keyOf(key);
+  assertTabNotTransferring(tabId, normalized);
+  assertResourceAccess(await effectiveResource(tabId), normalized);
+
+  return chrome.tabs.get(tabId);
+}
+
 export function assertResourceAccess(resource: TabResource | undefined, key: string): void {
   if (resource) assertTabNotTransferring(resource.tabId, key);
 
