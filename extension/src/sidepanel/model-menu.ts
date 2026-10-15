@@ -125,6 +125,9 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     const level = option?.thinking ? (deep() ? "深入" : "快") : "";
     chip.innerHTML = `<span class="think-model"></span>${level ? `<span class="think-sep">·</span><span class="think-level"></span>` : ""}${CHEVRON}`;
     chip.querySelector(".think-model")!.textContent = name;
+    // 窄侧栏只露图标，全名靠悬停提示和读屏名字说出来。
+    chip.title = `模型：${name}${level ? ` · ${level}` : ""}`;
+    chip.setAttribute("aria-label", chip.title);
 
     if (level) chip.querySelector(".think-level")!.textContent = level;
     chip.classList.toggle("deep", Boolean(level) && deep());
