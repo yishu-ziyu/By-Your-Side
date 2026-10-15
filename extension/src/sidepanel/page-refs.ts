@@ -1,6 +1,7 @@
 /**
  * 回答里提到的按钮能在页面上指出来（对标 ChatGPT Atlas / Comet 在页面上高亮目标；虚线行内链接取自 Adil Mania）。
- * 只给「」括起或整段粗体、且读页时拿到过位置、现在还在页上的控件加虚线；找不到就不画线，不猜。
+ * 只给「」括起、整段粗体、"…" 引号括起，或助手这一页圈过（mark）的控件加虚线；都要读页时拿到过位置、现在还在页上。找不到就不画线，不猜。
+ * 圈过的控件名在回答里常是平铺文字（「点绿色的 Code 按钮」）：后台把圈过的名字一并报回，这里按原字（区分大小写、英文要整词）找第一处。
  * 第一次点：光标飞过去圈出来，回答下写一行灰字；再点一次：替用户发出「点「…」」，和自己打字发出一样，能看见、能停。
  */
 
@@ -10,6 +11,15 @@ export function quotedNames(answer: HTMLElement): string[] {
 
   for (const node of textNodes(answer)) {
     for (const match of node.data.matchAll(/「([^「」\n]{1,20})」/g)) {
+      const name = match[1]!.trim();
+
+      if (name && !names.includes(name)) names.push(name);
+    }
+  }
+
+  // 英文引号也常用来写按钮名（"Search the site"）。
+  for (const node of textNodes(answer)) {
+    for (const match of node.data.matchAll(/["“]([^"“”\n]{1,30})["”]/g)) {
       const name = match[1]!.trim();
 
       if (name && !names.includes(name)) names.push(name);
@@ -79,6 +89,36 @@ export function linkifyPageRefs(answer: HTMLElement, found: string[], deps: Page
     }
 
     node.replaceWith(fragment);
+  }
+
+  // 还没画上的名字（引号里的、助手圈过的）：按原字找第一处平铺文字。
+  for (const name of found) {
+    if ([...answer.querySelectorAll<HTMLElement>(".page-ref")].some(el => el.dataset.name === name)) continue;
+    linkFirstPlain(answer, name, deps);
+  }
+}
+
+const WORD = /[A-Za-z0-9]/;
+
+/** 名字在平铺文字里第一次出现的地方换成虚线按钮。英文名两边不能紧挨字母数字（「Code」不匹配 「Codespaces」）。 */
+function linkFirstPlain(answer: HTMLElement, name: string, deps: PageRefDeps): void {
+  if ([...name].length < 2) return;
+
+  for (const node of textNodes(answer)) {
+    let at = node.data.indexOf(name);
+
+    while (at >= 0) {
+      const before = node.data[at - 1] ?? "", after = node.data[at + name.length] ?? "";
+
+      if (!(WORD.test(name[0]!) && WORD.test(before)) && !(WORD.test(name.at(-1)!) && WORD.test(after))) {
+        const rest = node.splitText(at);
+        rest.splitText(name.length);
+        rest.replaceWith(refButton(answer, name, deps));
+
+        return;
+      }
+      at = node.data.indexOf(name, at + 1);
+    }
   }
 }
 
