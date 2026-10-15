@@ -176,6 +176,8 @@ export class BrowserAgentSession {
   private displayAbort:AbortController|null=null;
   private authorizedDisplayCall:string|null=null;
   private displayWork:Promise<void>|null=null;
+  /** 新任务开工（读页、站点笔记、记忆）到模型开跑之间算在跑：这时的插话进 Pi 的插话队列，开跑时并进第一个请求。 */
+  private starting:object|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[];pages?:PageContext[]}>=[];
   private deliveryRunId: () => string | null = () => null;
   private explicitDelivery = false;
@@ -839,7 +841,11 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   isStreaming(): boolean {
-    return !!this.displayWork || (this.session?.isStreaming ?? false);
+    return !!this.displayWork || (this.session?.isStreaming ?? false) || this.starting !== null;
+  }
+
+  private runningOrStarting(session: AgentLoop): boolean {
+    return session.isStreaming || this.starting !== null;
   }
 
   /**
@@ -1051,7 +1057,7 @@ return;}
     const images = extractImages(attachments);
     this.rememberAttachments(attachments);
 
-    if (session.isStreaming) this.runTrace.record("steer", { text, context, attachments });
+    if (this.runningOrStarting(session)) this.runTrace.record("steer", { text, context, attachments });
     else {
       this.mainEffort.reset(session.model);
       this.activeGoal=text;
@@ -1066,7 +1072,7 @@ return;}
       });
     }
 
-    if (session.isStreaming) {
+    if (this.runningOrStarting(session)) {
       this.memoryRuntime?.invalidateUserTurn("steer");
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
       void this.steerCurrentTask(text, context, attachments, { pages: inputOptions?.pages }).catch((err: unknown) => this.emitError(err));
@@ -1106,6 +1112,15 @@ return;}
     pages?: PageContext[],
   ): Promise<void> {
     const preparationEpoch=this.controlEpoch,preparationRun=this.deliveryRunId();
+    const starting={};
+    this.starting=starting;
+
+    try { await this.startWithFreshPageObservation(session, finalText, context, images, pages, preparationEpoch, preparationRun); } finally {
+      if (this.starting === starting) this.starting = null;
+    }
+  }
+
+  private async startWithFreshPageObservation(session: AgentLoop, finalText: string, context: PageContext | undefined, images: SessionImageContent[], pages: PageContext[] | undefined, preparationEpoch: number, preparationRun: string | null): Promise<void> {
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
@@ -1115,7 +1130,10 @@ return;}
       this.mentionedPagesText(pages, context),
     ]);
 
-    if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
+    // 开工中被停下：开工期间排进 Pi 的插话不能留到下一轮；停下后已开工的新任务的队列不能动。
+    if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld()){if(!session.isStreaming&&this.starting===null)session.clearQueue();
+
+return;}
 
     if (observation) this.noteGoalObservation("page_at_start", observation);
 
@@ -1843,13 +1861,14 @@ return;}
   }
 
   /**
-   * 插话登记：在把补充交给 Pi 之前就挡住同轮旧计划的写入，并推进控制轮次让扩展拒收在途调用。
+   * 插话登记：在把补充交给 Pi 之前就挡住同轮旧计划的写入；已开跑时推进控制轮次让扩展拒收在途调用，开工中不推进。
    * 预观察最长几秒，登记必须排在 await 之前，否则那几秒里旧写入照跑。
    */
   private reserveCorrection(text:string,attachments?:Attachment[]):CorrectionRecord{
     const record={id:randomUUID(),input:null,text,...(attachments?.length?{attachments}:{})};
     this.pendingCorrections.push(record);
-    this.controlEpoch += 1;
+    // 开工中还没有旧计划的工具在写；这时升 epoch，开工检查会把补充当成停止。
+    if (this.starting === null) this.controlEpoch += 1;
     // Ordered before the acceptance receipt: invalidate writes already queued at the extension.
     this.callbacks.setStatus("running");
 
@@ -1955,7 +1974,7 @@ return {kind:'model'};
 
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先用侧栏交还。");
 
-    if (!session?.isStreaming) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
+    if (!session || !this.runningOrStarting(session)) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
     // 插话是新的用户要求：这一轮要重新判断有没有真正交付，不能沿用上一轮的结论。
     this.deliveredResultThisRun = false;
@@ -1974,7 +1993,7 @@ return {kind:'model'};
     const epoch = this.controlEpoch;
 
     // 认原来那条登记和原来的 run 身份，不能只看"现在是否在跑"。
-    const taskCurrent = () => !this.hold.isHeld() && session.isStreaming && this.controlEpoch===epoch
+    const taskCurrent = () => !this.hold.isHeld() && this.runningOrStarting(session) && this.controlEpoch===epoch
       && this.deliveryRunId()===runId;
 
     const current = () => this.pendingCorrections.includes(record) && taskCurrent();
@@ -2016,6 +2035,8 @@ return {kind:'model'};
     this.deferredSteers=[];
     this.runTrace.record("abort");
     this.controlEpoch += 1;
+    // 开工中停下：立即回到空闲，停止后马上发的新任务才不会被当成插话；开工期间排进 Pi 的插话一并丢掉。
+    if (this.starting !== null) { this.starting = null; if (!this.session?.isStreaming) this.session?.clearQueue(); }
     this.cancelPendingHandback();
     this.hold.abort();
     this.memoryRuntime?.invalidateUserTurn();
@@ -2041,6 +2062,7 @@ return {kind:'model'};
     // 否则同一个要求会先进队列、再进 prompt，被模型读两遍。
     if (this.pendingCorrections.length > 0) this.clearPiSteeringQueue();
     this.controlEpoch += 1;
+    this.starting = null;
     this.cancelPendingHandback();
     this.memoryRuntime?.invalidateUserTurn();
     const state = this.hold.holdForUser();
@@ -2373,6 +2395,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           emit({ kind: "turn_end" });
           break;
         case "agent_start":
+          this.starting = null;
           // 新的一轮：接着做的这一轮开起来了，扣着的上一轮收尾不再需要；上一轮还扣着的回答先放出、收尾（不会丢），再开始这一轮。
           this.continueFinish = null;
 
