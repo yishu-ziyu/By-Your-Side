@@ -130,7 +130,7 @@ document.getElementById("settings")!.innerHTML = `
         <span class="key-reason-icon" aria-hidden="true">i</span>
         <span class="key-reason-copy">
           <span id="key-reason-text"></span>
-          <span class="key-reason-wait">没有保存，侧栏里那句话还在等你。</span>
+          <button id="key-retry" type="button" class="btn btn-quiet key-reason-retry" hidden>重试</button>
         </span>
       </p>
       <div class="d-field">
@@ -268,6 +268,10 @@ const keyLabel = $("key-label");
 const keyInput = $<HTMLInputElement>("api-key");
 const keyReason = $("key-reason");
 const keyReasonText = $("key-reason-text");
+const keyRetry = $<HTMLButtonElement>("key-retry");
+const testButton = $<HTMLButtonElement>("model-test");
+const fastButton = $<HTMLButtonElement>("model-fast");
+const saveButton = $<HTMLButtonElement>("model-save");
 
 const keyTail = $("key-tail");
 
@@ -473,6 +477,7 @@ function renderProviders(): void {
 }
 
 function closeForm(): void {
+  cancelProbe();
   openKey = null;
   selected = null;
   form.hidden = true;
@@ -557,6 +562,7 @@ function select(choice: ProviderChoice): void {
   closeModelList();
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
+  cancelProbe();
   setStatus(modelStatus, "");
   hideKeyReason();
   renderRegions();
@@ -692,15 +698,33 @@ function explainFailure(raw: string): string {
           : "服务商返回了错误";
 }
 
+/** 试连超时的说法：「测试连接」和保存前的试连共用同一个开头和同一个时长。 */
+const probeTimeoutLead = (): string => `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到服务商的回复`;
+const TEST_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}。服务商可能正忙。再试一次，或换一个模型。`;
+const SAVE_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}，密钥没有保存。可能是网络或服务繁忙，稍后重试。`;
+
+/** 试连时禁掉测试、快速模型、保存和重试按钮，免得再点出第二个并发的测试或保存。 */
+function setFormBusy(busy: boolean): void {
+  for (const button of [saveButton, fastButton, testButton, keyRetry]) button.disabled = busy;
+}
+
+let retryAction: (() => Promise<void>) | undefined;
+/** 中止正在进行的试连：换服务商时它属于上一家，不能再写进新表单，也不能让新表单的按钮一直灰着。 */
+let cancelProbe = (): void => {};
+
 function hideKeyReason(): void {
   keyReason.hidden = true;
+  keyRetry.hidden = true;
+  retryAction = undefined;
   keyInput.classList.remove("warn");
 }
 
-function showKeyReason(reason: string, raw?: string): void {
+function showKeyReason(reason: string, raw?: string, retry?: () => Promise<void>): void {
   // 密钥框不在（订阅登录、已保存的密钥）：原因写在状态行，不挂在看不见的框下面。
   if (!keyInput.offsetParent) return setStatus(modelStatus, `没有保存：${reason}`, "err", raw);
   keyReason.hidden = false;
+  retryAction = retry;
+  keyRetry.hidden = !retry;
   // 先显示区域再写字，读屏才会念出来。
   requestAnimationFrame(() => { keyReasonText.textContent = reason; });
   keyInput.classList.add("warn");
@@ -710,7 +734,7 @@ function showKeyReason(reason: string, raw?: string): void {
 
 type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number };
 /** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
-type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean; config?: InprocModelConfig; key?: string };
+type ProbeFail = { ok: false; cancelled?: boolean; local?: string; reason?: string; raw?: string; definite?: boolean; timedOut?: boolean; config?: InprocModelConfig; key?: string };
 
 function rejectsConfig(raw: string): boolean {
   if (/concurrent request limit|too many concurrent/i.test(raw)) return false;
@@ -728,18 +752,31 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
   const ticker = setInterval(() => setStatus(modelStatus, `正在测试…已等 ${Math.round((performance.now() - started) / 1000)} 秒`, "busy"), 1000);
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+  const cancel = new AbortController();
+  // 只放开一次：被中止的试连稍后走到 finally 时，按钮和计时可能已经属于下一次试连。
+  let live = true;
+  const release = () => {
+    if (!live) return;
+    live = false;
+    clearInterval(ticker);
+    setFormBusy(false);
+  };
+  cancelProbe = () => { cancel.abort(); release(); };
+  setFormBusy(true);
 
   try {
     await probe.credentials.load(value.key ? { ...credentials, [value.config.provider]: { type: "api_key", key: value.key } } : credentials);
-    await probeModel(probe, value.config, timeout);
+    await probeModel(probe, value.config, AbortSignal.any([timeout, cancel.signal]));
 
     return { ok: true, config: value.config, key: value.key, elapsed: performance.now() - started };
   } catch (error) {
+    if (cancel.signal.aborted) return { ok: false, cancelled: true };
     const raw = error instanceof Error ? error.message : String(error);
 
     return {
       ok: false,
-      reason: timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到完整回复。服务商可能正忙。再试一次，或换一个模型。` : explainFailure(raw),
+      reason: timeout.aborted ? TEST_TIMEOUT_REASON() : explainFailure(raw),
+      timedOut: timeout.aborted,
       raw: timeout.aborted ? undefined : raw,
       definite: !timeout.aborted && rejectsConfig(raw),
       // 试的是哪份配置就存哪份：试连期间改了表单，不存没试过的值。
@@ -747,12 +784,14 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
       key: value.key,
     };
   } finally {
-    clearInterval(ticker);
+    release();
   }
 }
 
 async function testConnection(): Promise<void> {
   const result = await runProbe();
+
+  if (!result.ok && result.cancelled) return;
 
   if (!result.ok) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
@@ -768,10 +807,17 @@ async function testConnection(): Promise<void> {
 async function save(): Promise<void> {
   const result = await runProbe();
 
-  // 先试连再保存：只有服务商明确不接受（密钥被拒、模型不存在）才不保存；超时、限流、网络问题照样保存，并说刚才没连上（用户 10-13 定）。
+  if (!result.ok && result.cancelled) return;
+
+  // 先试连再保存：服务商明确不接受（密钥被拒、模型不存在）不保存；新填的密钥超时也不保存（见下）；限流、网络问题、没换密钥时的超时照样保存，并说刚才没连上。
   if (!result.ok && (result.local || result.definite)) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
     return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+  }
+
+  // 新填的密钥试连超时：不保存，说清是超时，并给「重试」。
+  if (!result.ok && result.timedOut && result.key) {
+    return showKeyReason(SAVE_TIMEOUT_REASON(), undefined, save);
   }
 
   const value = result.ok ? result : { config: result.config!, key: result.key ?? "" };
@@ -1129,6 +1175,9 @@ async function runSpeedTest(): Promise<void> {
   }
 }
 
+/** OpenCode Go 服务端排队时，一句短回复也可能要近 30 秒；测速要等得比试连久，才不会把排队当成没开口。 */
+const SPEED_TIMEOUT_MS = 60_000;
+
 async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: string }>, box: HTMLElement): Promise<void> {
   // 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
@@ -1162,7 +1211,7 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
 
   async function measureOne(r: (typeof rows)[number]): Promise<void> {
     const t0 = performance.now();
-    const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    const signal = AbortSignal.timeout(SPEED_TIMEOUT_MS);
     let text = "";
     let cutShort = false;
 
@@ -1200,7 +1249,7 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
       r.row.dataset.state = "fail";
 
       if (signal.aborted) {
-        r.result.textContent = r.first != null ? `${r.first.toFixed(1)} 秒开口 · ${PROBE_TIMEOUT_MS / 1000} 秒内没答完` : `${PROBE_TIMEOUT_MS / 1000} 秒内没开口`;
+        r.result.textContent = r.first != null ? `${r.first.toFixed(1)} 秒开口 · ${SPEED_TIMEOUT_MS / 1000} 秒内没答完` : `${SPEED_TIMEOUT_MS / 1000} 秒内没开口`;
         return;
       }
       r.result.textContent = `不能用：${explainFailure(error instanceof Error ? error.message : String(error))}`;
@@ -1477,11 +1526,13 @@ $("key-delete").addEventListener("click", () => void deleteKey());
 
 keyInput.addEventListener("input", () => hideKeyReason());
 
-$("model-test").addEventListener("click", () => void testConnection());
+testButton.addEventListener("click", () => void testConnection());
 
-$("model-save").addEventListener("click", () => void save());
+keyRetry.addEventListener("click", () => void retryAction?.());
 
-$("model-fast").addEventListener("click", () => void saveAsFast());
+saveButton.addEventListener("click", () => void save());
+
+fastButton.addEventListener("click", () => void saveAsFast());
 
 $("voice-save").addEventListener("click", () => void saveVoiceKey());
 
