@@ -58,7 +58,7 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
@@ -1583,6 +1583,9 @@ async function executeToolCall(
       click:(p,s)=>reportSendClick(sendGuard, click(p,s,undefined,sendGuard)),
       // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
+      // 回车、脚本也可能把东西发出去：和点「发送」走同一个确认（#290）。
+      press_key:(p,s)=>reportSendClick(sendGuard, pressKeyGuarded(p,s,sendGuard)),
+      js:(p,s)=>reportSendClick(sendGuard, evaluateJs(p,s,undefined,sendGuard)),
     };
 
     const handler = name === "observe_page"

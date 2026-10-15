@@ -1,12 +1,14 @@
 /**
- * #290：脚本里直接 element.click() 点「发送」，不能绕过发送前确认。只装扩展、隔离构建、本机脚本模型、本机练习页。
+ * #290：发不发看后果，不看路径。每条会把消息发出去的路径都要停在同一个确认上。只装扩展、隔离构建、本机脚本模型、本机练习页。
  *   npx tsx scripts/acceptance/real-path/program-send-confirm.mts --headless
- *   a) browser_run 程序里 browser.js 执行 document.querySelector('#send').click()：服务器收到 0 条，结果写明被拦下、改用 click。
- *   b) 单独的 js 工具执行同样的脚本：0 条。
- *   c) 脚本里 dispatchEvent 点击 / requestSubmit(#send)：0 条。
- *   d) 脚本点「保存」照常生效（不误拦）：/save 收到 1 条。
- *   e) 助手随后改用 click 点「发送」：网页出现确认框，用户点「发送」后恰好 1 条。
- * 失败方式：去掉 evaluate.ts 里的拦截，a/b/c 在没有确认的情况下就收到 POST。
+ * 每个用例：助手走一条路径去发；判据是用户决定前服务器收到 0 条、网页上出现同一个确认框（写明多少字、发给谁、哪个网站，按钮是「发送」「先不发」，按钮被圈出），
+ * 用户点「先不发」/按 Esc 后仍是 0 条；用户点「发送」后恰好 1 条。
+ *   click：click 工具点「发送」            script-click：browser_run 里 browser.js 执行 el.click()
+ *   script-enter：脚本 dispatchEvent 回车    key-enter：press_key 工具按回车
+ *   script-submit：脚本 requestSubmit()      native-submit：脚本 form.submit()
+ *   fetch：脚本 fetch POST 发送接口          xhr：脚本 XHR POST 发送接口
+ *   save：脚本点「保存」不出确认框，照常保存（不误拦）
+ * 失败方式：去掉 evaluate.ts 的拦截，脚本路径在用户决定前就收到 POST；去掉 pressKeyGuarded，key-enter 同样。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -18,48 +20,66 @@ requireHeadless();
 const out = process.env.OUT_DIR ?? join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-program-send-confirm`);
 await mkdir(out, { recursive: true });
 
-const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>留言练习页</title><body style="font:16px sans-serif;margin:40px">
-<form id="f"><textarea id="draft" rows="3" cols="40" aria-label="留言">周五下午三点开会。</textarea><p><button id="save">保存</button> <button id="send">发送</button></p></form>
+const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>团队聊天</title><body style="font:16px sans-serif;margin:40px">
+<h2>和 @小王 的对话</h2>
+<form id="f"><textarea id="draft" rows="3" cols="40" aria-label="消息">周五下午三点开会，记得带上季度报表。</textarea><p><button id="save">保存</button> <button id="send">发送</button></p></form>
+<form id="n" method="post" action="/send-native"><input type="hidden" name="m" value="x"><button id="send-native" type="submit">发送</button></form>
 <output id="status"></output>
-<script>document.querySelector('form').addEventListener('submit', async e => { e.preventDefault(); const what = e.submitter.id;
-  await fetch('/' + what, { method: 'POST', body: document.querySelector('#draft').value }); document.querySelector('#status').textContent = what === 'send' ? '已发送' : '已保存'; });</script></body></html>`;
+<script>
+const f = document.querySelector('#f');
+f.addEventListener('submit', async e => { e.preventDefault(); const what = e.submitter?.id ?? 'send'; await fetch('/' + what, { method: 'POST', body: document.querySelector('#draft').value }); document.querySelector('#status').textContent = what; });
+document.querySelector('#draft').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(document.querySelector('#send')); } });
+window.chatApi = { send: text => fetch('/api/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: '小王', text }) }) };
+</script></body></html>`;
 
 const posts: Array<{ path: string; at: number }> = [];
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) { /* drain */ } posts.push({ path: req.url ?? "", at: Date.now() }); res.end("ok"); return; }
+  if (req.method === "POST") { for await (const _ of req) { /* drain */ } posts.push({ path: req.url ?? "", at: Date.now() }); res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
-const sent = () => posts.filter(p => p.path === "/send").length;
+const sendPosts = () => posts.filter(p => p.path !== "/save").length;
 const saved = () => posts.filter(p => p.path === "/save").length;
 
-const run = (label: string, js: string) => ({ tool: { name: "browser_run", args: { label, code: `return await browser.js({ code: ${JSON.stringify(js)} });` } } });
-const ASK = { a: "案例A：用脚本发出去。", b: "案例B：用js发出去。", c: "案例C：用事件发出去。", d: "案例D：用脚本保存。", e: "案例E：发出去。" };
+const js = (code: string) => ({ tool: { name: "browser_run", args: { label: "脚本", code: `return await browser.js({ code: ${JSON.stringify(code)} });` } } });
+type Case = { id: string; step: unknown; answer: "decline" | "esc" | "send" | "none" };
+const ALL_CASES: Case[] = [
+  { id: "click", step: { tool: { name: "click", args: { target: "#send", label: "发送" } } }, answer: "decline" },
+  { id: "script-click", step: js("document.querySelector('#send').click(); 'ok'"), answer: "decline" },
+  { id: "script-enter", step: js("const t=document.querySelector('#draft'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,bubbles:true,cancelable:true})); 'ok'"), answer: "esc" },
+  { id: "key-enter", step: { tool: { name: "press_key", args: { key: "Enter" } } }, answer: "decline" },
+  { id: "script-submit", step: js("document.querySelector('#f').requestSubmit(); 'ok'"), answer: "decline" },
+  { id: "fetch", step: js("(async () => { try { await window.chatApi.send('周五开会'); return 'sent'; } catch (e) { return String(e); } })()"), answer: "decline" },
+  { id: "xhr", step: js("(() => { const x = new XMLHttpRequest(); x.open('POST', '/api/send'); x.send('hi'); return 'ok'; })()"), answer: "decline" },
+  { id: "save", step: js("document.querySelector('#save').click(); 'ok'"), answer: "none" },
+  { id: "fetch-send", step: js("(async () => { try { await window.chatApi.send('周五开会'); return 'sent'; } catch (e) { return String(e); } })()"), answer: "send" },
+  { id: "script-click-send", step: js("document.querySelector('#send').click(); 'ok'"), answer: "send" },
+  { id: "key-enter-send", step: { tool: { name: "press_key", args: { key: "Enter" } } }, answer: "send" },
+  { id: "native-submit", step: js("document.querySelector('#n').submit(); 'ok'"), answer: "decline" },
+];
+const CASES = process.env.ONLY ? ALL_CASES.filter(c => process.env.ONLY!.split(",").includes(c.id)) : ALL_CASES;
+const ask = (id: string) => `用例 ${id}：把消息发出去。`;
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
+const focusDraft = { tool: { name: "click", args: { target: "#draft", label: "消息" } } };
 const toolTexts: string[] = []; const toolIds = new Set<string>();
-
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: DONE }] },
-  { match: ASK.a, steps: [run("脚本点发送", "document.querySelector('#send').click(); 'clicked'"), { text: "A 完成。" }] },
-  { match: ASK.b, steps: [{ tool: { name: "js", args: { code: "document.querySelector('#send').click(); 'clicked'" } } }, { text: "B 完成。" }] },
-  { match: ASK.c, steps: [run("事件点发送", "document.querySelector('#send').dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); document.querySelector('#f').requestSubmit(document.querySelector('#send')); 'ok'"), { text: "C 完成。" }] },
-  { match: ASK.d, steps: [run("脚本点保存", "document.querySelector('#save').click(); 'saved'"), { text: "D 完成。" }] },
-  { match: ASK.e, steps: [run("脚本点发送", "document.querySelector('#send').click(); 'clicked'"), { tool: { name: "click", args: { target: "#send", label: "发送" } } }, { text: "E 完成。" }] },
+  ...CASES.map(c => ({ match: ask(c.id), steps: [...(c.id.startsWith("key-enter") ? [focusDraft] : []), c.step, { text: `${c.id} 完成。` }] as never })),
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
-    const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
     const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
-    if (m.role === "tool" && !toolIds.has(id)) { toolIds.add(id); toolTexts.push(text); }
+    if (m.role !== "tool" || toolIds.has(id)) continue;
+    toolIds.add(id); toolTexts.push(typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "");
   }
 });
 
 const rp = await launchRealPath();
-const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
-const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
+const rows: Array<Record<string, Json>> = [];
 
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
-  await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, work);
+  const url = `http://127.0.0.1:${siteAddress(site).port}/`;
+  await rp.cdp.send("Page.navigate", { url }, work);
   const panel = await rp.attach(await rp.openSidePanel());
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
@@ -67,43 +87,45 @@ try {
   await rp.cdp.send("Page.bringToFront", {}, work);
 
   type DomNode = { nodeName: string; nodeValue?: string; backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
-  const walk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => walk(c, hit)).find(Boolean);
+  const walk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode[] => [...(hit(n) ? [n] : []), ...[...(n.children ?? []), ...(n.shadowRoots ?? [])].flatMap(c => walk(c, hit))];
   const textOf = (n: DomNode): string => n.nodeName === "STYLE" ? "" : (n.nodeValue ?? "") + [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(textOf).join("");
-  const confirmYes = async () => {
-    const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
-    const host = walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000send-confirm"));
-    const yes = host && walk(host, n => n.nodeName === "BUTTON" && textOf(n).trim() === "发送");
-    if (!yes) return null;
-    try { const q = (await rp.cdp.send("DOM.getBoxModel", { backendNodeId: yes.backendNodeId }, work)).model.border as number[]; return { x: (q[0]! + q[2]!) / 2, y: (q[1]! + q[5]!) / 2 }; } catch { return null; }
+  const box = async () => {
+    try {
+      const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
+      const hosts = walk(root, n => (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000send-confirm"));
+      const dlg = hosts.find(h => (h.shadowRoots ?? []).length); if (!dlg) return null;
+      const btn = (t: string) => walk(dlg, n => n.nodeName === "BUTTON" && textOf(n).trim() === t)[0];
+      const center = async (n?: DomNode) => { if (!n) return null; const q = (await rp.cdp.send("DOM.getBoxModel", { backendNodeId: n.backendNodeId }, work)).model.border as number[]; return { x: (q[0]! + q[2]!) / 2, y: (q[1]! + q[5]!) / 2 }; };
+      return { text: textOf(dlg).replace(/\s+/g, " ").trim(), ring: hosts.length > 1, buttons: walk(dlg, n => n.nodeName === "BUTTON").map(b => textOf(b).trim()), yes: await center(btn("发送")), no: await center(btn("先不发") ?? btn("不发")) };
+    } catch { return null; }
   };
-  const answered = (text: string) => until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(text)}))`)) as boolean, 60_000, `回答「${text}」`);
-  const ask = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); };
-  const blockedText = (from: number) => toolTexts.slice(from).some(t => t.includes("被拦下") && t.includes("click"));
+  const mouse = async (at: { x: number; y: number }) => { await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y }, work); await sleep(1300); for (const type of ["mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 }, work); };
+  const answered = (text: string) => until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(text)}))`)) as boolean, 90_000, `回答「${text}」`);
+  const panelCard = async () => String(await rp.evaluate(panel, `[...document.querySelectorAll(".send-confirm")].at(-1)?.innerText ?? ""`));
 
-  for (const k of ["a", "b", "c"] as const) {
-    const from = toolTexts.length; const before = sent();
-    await ask(ASK[k]); await answered(`${k.toUpperCase()} 完成。`); await sleep(800);
-    check(`${k} 脚本点「发送」：服务器 0 条，结果写明被拦下`, sent() === before && blockedText(from), { sentDelta: sent() - before, tool: toolTexts.slice(from) });
-    if (k === "a") await rp.screenshot(panel, join(out, "a-panel.png"));
+  for (const c of CASES) {
+    if (c.id === "native-submit" || c.id.startsWith("key-enter")) { await rp.cdp.send("Page.navigate", { url }, work); await sleep(1500); }
+    const before = sendPosts(); const t0 = Date.now(); const tFrom = toolTexts.length;
+    await rp.click(panel, "#input"); await rp.typeText(panel, ask(c.id)); await rp.pressEnter(panel);
+    const seen = await until(async () => sendPosts() > before ? "posted" : (await box()) ?? (c.answer === "none" && saved() > 0 ? "saved" : null), 20_000, `${c.id} 确认框或请求`, 100).catch(() => "nothing");
+    await sleep(600);
+    const dlg = typeof seen === "object" ? seen : null;
+    const postsBeforeDecision = sendPosts() - before;
+    const card = dlg ? await panelCard() : "";
+    if (dlg) { await rp.screenshot(work, join(out, `${c.id}-page.png`)); await rp.screenshot(panel, join(out, `${c.id}-panel.png`)); }
+    if (dlg && c.answer === "decline" && dlg.no) await mouse(dlg.no);
+    if (dlg && c.answer === "send" && dlg.yes) await mouse(dlg.yes);
+    if (dlg && c.answer === "esc") { await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work); await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work); }
+    await answered(`${c.id} 完成。`).catch(() => null); await sleep(1000);
+    const row = { id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, panelCard: card, tool: toolTexts.slice(tFrom).map(t => t.slice(0, 300)), secs: (Date.now() - t0) / 1000 };
+    rows.push(row as never); console.log("ROW", JSON.stringify(row));
   }
-  await ask(ASK.d); await answered("D 完成。"); await sleep(800);
-  check("d 脚本点「保存」照常生效", saved() === 1, { saved: saved() });
-
-  const before = sent(); const from = toolTexts.length;
-  await ask(ASK.e);
-  const yes = await until(async () => sent() > before ? "posted" : await confirmYes(), 30_000, "确认框或发送请求", 100);
-  check("e 改用 click 后：出现确认框，用户决定前 0 条", yes !== "posted" && sent() === before, { yes: yes as Json, sentDelta: sent() - before });
-  await rp.screenshot(work, join(out, "e-confirm.png"));
-  if (yes && yes !== "posted") {
-    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: yes.x, y: yes.y }, work);
-    await sleep(1200);
-    for (const type of ["mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, x: yes.x, y: yes.y, button: "left", clickCount: 1 }, work);
-  }
-  await answered("E 完成。");
-  check("e 用户确认后恰好 1 条", sent() - before === 1, { sentDelta: sent() - before, tool: toolTexts.slice(from) });
 } finally {
-  await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts }, null, 1));
-  await rp.close?.(); site.close(); model.close?.();
+  await writeFile(join(out, "result.json"), JSON.stringify({ rows, posts }, null, 1));
+  site.close(); await model.close();
 }
-console.log(checks.every(c => c.pass) ? "ALL PASS" : "SOME FAIL", out);
-process.exit(checks.every(c => c.pass) ? 0 : 1);
+const expectPosts: Record<string, number> = { "fetch-send": 1, "script-click-send": 1, "key-enter-send": 1 };
+const pass = rows.every(r => r.id === "save" ? !r.confirmShown && saved() === 1 : r.confirmShown && r.postsBeforeDecision === 0 && r.postsAfter === (expectPosts[r.id as string] ?? 0));
+for (const r of rows) console.log(r.id, r.confirmShown ? "确认框" : "无确认框", "决定前", r.postsBeforeDecision, "最终", r.postsAfter);
+console.log(pass ? "ALL PASS" : "SOME FAIL", out);
+process.exit(pass ? 0 : 1);
