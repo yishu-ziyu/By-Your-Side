@@ -2453,7 +2453,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     void (async () => {
       try {
         const tabs = await activeTargetTabs();
-        const tab = tabs[0] ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+        const tab = tabs[0] ?? (await chrome.tabs.query({ active: true, currentWindow: true })).find(t => !isPanelUrl(t.url));
 
         if (!tab?.id || tab.windowId == null) {
           sendResponse({ ok: false, error: "未找到当前激活的标签页" });
