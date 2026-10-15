@@ -5,6 +5,7 @@
  * 回答里的 ①②… 点一下，页面滚回那一圈，再用蓝色手绘圈指一下（YIS-90）；那一圈不在了就不圈。
  * 圈留在页面上（随页面滚动）；去掉某张附件，页面上那一圈也去掉。Esc、换标签页、页面跳转退出圈画，已圈的保留。永不自动发送。
  */
+import { activeTargetTab } from "./target-window.js";
 import { isPageInteractionMessage, type PageInteractionMessage } from "../../../shared/protocol.js";
 import { MOTION_CSS_VARS } from "../shared/motion-tokens.js";
 
@@ -298,7 +299,7 @@ export function removeCircle(n: number): void {
  */
 export async function startCircling(start: number, onCircle: (dataUrl: string, n: number, text: string | undefined) => Promise<void>): Promise<void> {
   active?.stop();
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = await activeTargetTab();
 
   if (tab?.id == null) throw new Error("未找到当前激活的标签页");
   const tabId = tab.id;

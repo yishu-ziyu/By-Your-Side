@@ -10,6 +10,7 @@ import { readCurrentDocument } from "./exec/page-readiness.js";
 import { bringForwardForUser } from "./foreground.js";
 import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
 import type { GuideWait, HeldReason, SendConfirmView } from "../../../shared/protocol.js";
+import { isPanelUrl } from "./target-window.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
 export const SEND_CONFIRM_MS = 120_000;
@@ -115,7 +116,7 @@ chrome.runtime.onConnect.addListener(port => {
   if (port.name !== SEND_CONFIRM_PANEL_PORT) return;
 
   // 只认扩展自己的侧栏页：网页和内容脚本的 sender.url 是网页地址。
-  if (port.sender?.id !== chrome.runtime.id || port.sender.url !== chrome.runtime.getURL("sidepanel.html")) { port.disconnect(); return; }
+  if (port.sender?.id !== chrome.runtime.id || !isPanelUrl(port.sender.url)) { port.disconnect(); return; }
   panelPorts.add(port);
   port.onDisconnect.addListener(() => panelPorts.delete(port));
   // 侧栏只回 id 和选择；按钮是否真由用户点击，由侧栏判（isTrusted），这里只认还在等的 id。

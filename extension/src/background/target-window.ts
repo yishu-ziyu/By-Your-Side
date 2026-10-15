@@ -1,0 +1,40 @@
+/**
+ * 「用户正在看的页面」在哪个窗口。会话单独开在一个小窗口里时，用户在小窗口里打字，最后获得焦点的是小窗口本身，
+ * 里面只有扩展页；它要读、要操作的是打开它的那个浏览器窗口。那个窗口关了，就用最近获得焦点的普通窗口。
+ */
+
+/** 只认扩展自己的侧栏页（带不带参数都算）：内容脚本发来的 sender.url 是网页地址，路径一样也不算。 */
+export function isPanelUrl(url: string | undefined): boolean {
+  return url?.split(/[?#]/)[0] === chrome.runtime.getURL("sidepanel.html");
+}
+
+function popoutSource(url: string | undefined): number | undefined {
+  if (!isPanelUrl(url)) return undefined;
+  const id = Number(new URL(url!).searchParams.get("window"));
+
+  return Number.isInteger(id) ? id : undefined;
+}
+
+export async function targetWindowId(): Promise<number | undefined> {
+  const last = await chrome.windows.getLastFocused().catch(() => undefined);
+
+  if (last?.id == null) return undefined;
+
+  if (last.type !== "popup") return last.id;
+  const [page] = await chrome.tabs.query({ windowId: last.id }).catch(() => []);
+  const source = popoutSource(page?.url);
+
+  // 别的弹出窗口（不是我们的会话小窗口）照旧。
+  if (source === undefined) return last.id;
+
+  if (await chrome.windows.get(source).then(w => w.type === "normal", () => false)) return source;
+
+  return (await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => undefined))?.id;
+}
+
+/** 代替 chrome.tabs.query({ active: true, lastFocusedWindow: true })。 */
+export async function activeTargetTabs(): Promise<chrome.tabs.Tab[]> {
+  const windowId = await targetWindowId();
+
+  return chrome.tabs.query(windowId == null ? { active: true, lastFocusedWindow: true } : { active: true, windowId });
+}

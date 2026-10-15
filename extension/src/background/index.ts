@@ -1,3 +1,4 @@
+import { activeTargetTabs, isPanelUrl } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
 import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
@@ -346,7 +347,7 @@ function controller(id: string) {
 }
 
 chrome.runtime.onConnect.addListener(port => {
- if (port.name !== PANEL_PORT_NAME || port.sender?.id !== chrome.runtime.id || port.sender?.url !== chrome.runtime.getURL("sidepanel.html")) return;
+ if (port.name !== PANEL_PORT_NAME || port.sender?.id !== chrome.runtime.id || !isPanelUrl(port.sender?.url)) return;
  voiceRelay.attach(port);
  connectedPanels.add(port);
  edgePill.panel(true);
@@ -593,7 +594,7 @@ async function statusTabId(sid: string, explicit?: unknown): Promise<number | nu
   if (claimed != null) return claimed;
 
   try {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const [active] = await activeTargetTabs();
 
     return active?.id ?? null;
   } catch {
@@ -2139,7 +2140,7 @@ chrome.contextMenus?.onClicked.addListener((info, tab) => {
 if (chrome.commands?.onCommand) {
   chrome.commands.onCommand.addListener((command) => {
     if (conversationId !== "default" || command !== "ask-selection") return;
-    void chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+    void activeTargetTabs().then((tabs) => {
       const tab = tabs[0];
 
       if (!tab?.id) return;
@@ -2338,7 +2339,7 @@ function attachPanel(port: chrome.runtime.Port) {
             return;
           }
 
-          const tabId = msg.tabId ?? await getWorkingTabId() ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id;
+          const tabId = msg.tabId ?? await getWorkingTabId() ?? (await activeTargetTabs())[0]?.id;
 
           if (tabId == null) {
             broadcast({ kind: "inspect_step_result", ok: false } satisfies BgToPanel);
@@ -2445,7 +2446,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (msg.type === "sidepanel_capture_tab") {
     void (async () => {
       try {
-        const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const tabs = await activeTargetTabs();
         const tab = tabs[0] ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
 
         if (!tab?.id || tab.windowId == null) {

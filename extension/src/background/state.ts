@@ -1,4 +1,5 @@
 /** 工作标签页和会话页资源；storage.session 让扩展 SW 重启后可恢复。 */
+import { activeTargetTabs } from "./target-window.js";
 import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, isLeadSession, WORKING_TABS_STORAGE_KEY } from "../../../shared/protocol.js";
 import { CLAIM_BLOCKED_ERROR, FOREIGN_TAB_ERROR } from "../../../shared/control.js";
 import {
@@ -158,7 +159,7 @@ export async function resolveReadableTab(tabId: number | undefined, key: string)
   const id = tabId ?? await getWorkingTabId(key);
 
   if (id != null) return chrome.tabs.get(id);
-  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const [active] = await activeTargetTabs();
 
   if (!active?.id) throw new Error("没有可读取的页面");
 
@@ -397,7 +398,7 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
 
   if (!mayClaimReplacementTab({ blocked, boundMissing: true })) throw new Error(CLAIM_BLOCKED_ERROR);
 
-  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const [active] = await activeTargetTabs();
 
   if (active?.id == null) throw new Error("没有可用的活动标签页，请使用 open_tab 新建页面");
   const activeResource = await effectiveResource(active.id);
@@ -440,7 +441,7 @@ export async function assertTargetTabOpen(requestedTabId: number | undefined, ke
     gone = closedWorking;
   }
 
-  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+  const [active] = await activeTargetTabs().catch(() => []);
   // 只有被关掉的工作标签页能确定是「已关闭」；别的页号可能从来没有过（例如 0）。
   const what = gone === closedWorking ? `工作标签页 ${gone} 已关闭` : `标签页 ${gone} 不存在或已关闭`;
 
