@@ -51,6 +51,11 @@ export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "
   backupModel?: () => Model<Api> | undefined;
   /** 服务商在界面上的名字（如「阶跃星辰」），用于切换提示；不知道时返回 undefined。 */
   providerName?: (provider: string) => string | undefined;
+  /**
+   * 同一个服务商并发闸门、换一个观察者：经返回的接口发出的请求排队较久时回调 onWait，诊断记录由此归到发请求的会话。
+   * purpose：流式请求（主任务、正式回答、阅读回答）记 main，一次性短调用（记忆、核对、翻译等后台判断）记 side。
+   */
+  observeQueue?: (onWait: (wait: { provider: string; purpose: "main" | "side"; waitedMs: number }) => void) => ModelPort;
 };
 
 /** 换到备用模型多久之后，用户的下一条消息回主模型（用户 10-08 定的 5 分钟）。 */

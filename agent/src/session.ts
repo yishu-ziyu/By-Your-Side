@@ -561,7 +561,7 @@ if(required.includes(key))candidates.set(key,attachment);
     try {
       // 会话循环只有扩展内这一种（pi-agent-core）；本机 AgentSession 路径已删除。
       if (!options?.loop) throw new Error("模型运行时不可用");
-      const models: ModelPort = options.loop.models;
+      const models: ModelPort = options.loop.models.observeQueue?.(wait => resultHost?.runTrace.record("model_queue", wait)) ?? options.loop.models;
       const systemPrompt = options.systemPrompt ?? leadSystemPrompt();
       const appendPrompt = options.appendPrompt ?? ((base: string[]) => base);
       let memoryHost: AgentLoop | null = null;
