@@ -5,8 +5,8 @@
  *   success：进行中卡头是「会去 … · 不会做 …」，每做完一步同一张卡里那一步打勾；做完收成一行
  *     「已填 3 项 · 用时 N 秒 · 撤销」（后面是「细节 ›」），在回答上面；回答下没有「还原填写」；点细节展开每一步。
  *   undo：同上，点卡上的「撤销」：网页三栏回到空，卡上写「已撤销」，卡下写「还原了 3 处…」，回答变淡。
- *   failed：第 2 步没找到电话栏：卡不收起，行首写「没做完」，没做成那一步标 ✕。
- *   stopped：填到一半用户点停止：卡不收起，行首写「已中止」。
+ *   failed：第 2 步没找到电话栏：卡不收起，行首写「没做完」，没做成那一步标 ✕；「继续原任务」在卡里，下面不另起一张卡。
+ *   stopped：填到一半用户点停止：卡不收起，行首写「已中止」，下面不另起一张卡。
  * --record：录侧栏和网页，左右并排成 <case>.mp4，并截一张结束时的侧栏 <case>-end.png，只给人看，不参与判定。
  * SIDEAGENT_ACCEPTANCE_DIST 指向旧版扩展时用来录改动前的样子，判定照常会失败。
  */
@@ -48,7 +48,7 @@ const STEPS: Record<Case, Step[]> = {
 };
 STEPS.undo = STEPS.success;
 
-type Seen = { line: string; open: boolean; goal: string; before: boolean; looseRuns: number; answerUndo: boolean; error: number; resultAfterCard: string; faded: number };
+type Seen = { line: string; open: boolean; goal: string; before: boolean; looseRuns: number; answerUndo: boolean; error: number; resultAfterCard: string; faded: number; resumeInCard: boolean; taskCards: number };
 const results: Record<string, unknown> = {};
 let failed = false;
 
@@ -81,6 +81,8 @@ for (const name of cases) {
         answerUndo: !!document.querySelector('#messages .answer-primary[data-action="undo-fill"]') || [...document.querySelectorAll("#messages .answer-primary")].some(b => b.textContent.includes("还原")),
         error: card?.querySelectorAll(".chip.error").length ?? 0,
         resultAfterCard: next?.matches(".fill-undo-result") ? next.textContent : "",
+        resumeInCard: !!card?.querySelector(".plan-resume .resume-action"),
+        taskCards: [...document.querySelectorAll("#messages .ai-task-card")].filter(c => c.getClientRects().length > 0).length,
         faded: answer?.querySelector("p") ? Number(getComputedStyle(answer.querySelector("p")).opacity) : 1,
       };
     })()`) as Seen;
@@ -138,7 +140,9 @@ for (const name of cases) {
 
     if (name === "failed") assert.ok(end.line.startsWith("没做完 · ") && end.open && end.error >= 1, `没做完时卡展开、标出没做成那一步 ${JSON.stringify(end)}`);
 
-    if (name === "stopped") assert.ok(end.line.startsWith("已中止 · ") && end.open, `停下时卡展开 ${JSON.stringify(end)}`);
+    if (name === "failed") assert.ok(end.resumeInCard && end.taskCards === 0, `「继续原任务」在卡里，下面没有另一张卡 ${JSON.stringify(end)}`);
+
+    if (name === "stopped") assert.ok(end.line.startsWith("已中止 · ") && end.open && end.taskCards === 0, `中止时卡展开、下面没有另一张卡 ${JSON.stringify(end)}`);
 
     if (record) await sleep(1500);
     await rp.screenshot(panel, join(artifacts, `${name}-end.png`));
