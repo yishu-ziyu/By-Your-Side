@@ -2,7 +2,9 @@
  * 本机脚本模型：OpenAI 兼容的 /chat/completions，按任务原话里的关键词回写好的正文或工具调用。
  *
  * 用在「界面怎么呈现」的验收：工具调用、宿主核验、账本和页面标注都是产品自己的逻辑在跑，只有模型回复是脚本。
- * 规则按最后一条匹配关键词的用户消息挑选；同一任务里已收到几条工具结果，就走到第几步。
+ * 规则先按用户自己的消息挑：从后往前第一条匹配关键词的那条；同一任务里它之后已收到几条工具结果，就走到第几步。
+ * 产品插进对话的上下文段（开头是 agent/src/pi-agent-loop.ts 和 agent/src/product-context.ts 写的两种「不是用户消息」）
+ * 只在用户的消息一条都不匹配时才参与挑选。
  * 不匹配的请求（产品内部的判断、翻译等）回一句「好的。」。每次请求记下相对启动的毫秒数，供耗时判据使用。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -36,12 +38,24 @@ export type ModelRequest = { atMs: number; rule: string | null; step: number; st
 
 const textOf = (content: ChatMessage["content"]): string => Array.isArray(content) ? content.map((part) => part.text ?? "").join("") : content ?? "";
 
+/**
+ * 产品插进对话的数据段，开头自己写明「不是用户消息」。本次运行的上下文里有往期任务和对话的原话：
+ * 它和用户这一轮的话都匹配时，用户的话优先；只有用户的话一条都不匹配，才看数据段。
+ */
+const PRODUCT_DATA = ["本次运行的上下文，不是用户消息", "应用状态快照，不是新用户消息"];
+
 function pick(rules: Rule[], messages: ChatMessage[]): { rule: Rule; step: number } | null {
+  return pickFrom(rules, messages, (text) => !PRODUCT_DATA.some((head) => text.startsWith(head))) ?? pickFrom(rules, messages, () => true);
+}
+
+function pickFrom(rules: Rule[], messages: ChatMessage[], eligible: (text: string) => boolean): { rule: Rule; step: number } | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]!;
 
     if (message.role !== "user") continue;
     const text = textOf(message.content);
+
+    if (!eligible(text)) continue;
     const rule = rules.find((r) => text.includes(r.match));
 
     if (!rule) continue;
