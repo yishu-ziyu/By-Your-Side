@@ -20,6 +20,9 @@
  * 修订（2026-10-09）只点名对得上这次任务的：问邮箱时只点名邮箱那条、不点名「回复用中文」；问一句与两条都无关的话，
  *    不出这一行。假通过：少发了记忆所以没点名 → 两种情况都核对请求原文里两条都在。
  *    没有回答（模型出错）的一轮：这一行不单独悬在消息流里 → 核对这一轮确实出过错、没有回答，且最后一条用户消息之后没有这一行。
+ * #287 有效期内的过往任务（别的网站订的会议室）照常发给模型，但只在这句话和它对得上时点名：新会话问笔记本不出这一行，
+ *    问那天的会议室、问「上次订的」才点名它；「付款之前…」不算提到以前那件事，不点名。假通过：没把它发给模型所以没点名 → 每轮都核对请求原文里有它；
+ *    没出回答所以没有这一行 → 先核对这一轮有回答。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -56,6 +59,23 @@ const TASK_SUMMARY = "已在 A 店订阅了到货提醒，确认邮件已点过�
 
 /** 过往任务做成了什么：侧栏点名和带给助手的都是这句，不是当时的回答（#305）。 */
 const TASK_DONE = "在 A 店订阅了到货提醒";
+
+/** #287：别的网站上、有效期还没过的一件过往任务（订的会议室在两天后）。 */
+const DATED_GOAL = "帮我订 10 月 13 日 15:00 的青松会议室";
+
+const DATED_DONE = "已成功预订 10 月 13 日 15:00 青松会议室";
+
+/** 和订会议室那件事没有共同的词。 */
+const ASK_NOTEBOOK = `${ASK}，这款笔记本电脑续航怎么样`;
+
+/** 和订会议室那件事共有「会议室」。 */
+const ASK_MEETING = `${ASK}，那天会议室能坐几个人`;
+
+/** 和订会议室那件事没有共同的词，「之前」只是时间先后，不是在提以前那件事。 */
+const ASK_BEFORE_PAYING = `${ASK}，付款之前帮我核对一下地址`;
+
+/** 和订会议室那件事没有共同的词，但在问过往（「上次」）。 */
+const ASK_LAST_TIME = `${ASK}，我上次订的那个是几点`;
 
 const artifacts = join(REPO, "out/acceptance/memory-used-line");
 
@@ -182,11 +202,15 @@ const NOW = Date.now();
 
 const memory = (id: string, text: string): JsonRecord => ({ id, factId: id, version: 1, text, scope: { kind: "all" }, sourceConversationId: "seed", createdAt: NOW - 60_000, updatedAt: NOW - 60_000, kind: "profile", status: "active", sourceQuote: text, useCount: 0, formatVersion: 3 });
 
-async function seed(withMemory: boolean) {
+async function seed(withMemory: boolean, extraTasks: JsonRecord[] = []) {
   await putDoc("memories", JSON.stringify({ format: 3, rev: 1, entries: withMemory ? [memory("seed-email", EMAIL), memory("seed-lang", LANG)] : [] }) + "\n");
   const task = { id: "seed-task", conversationId: "seed", goal: TASK_GOAL, revisions: [], hosts: [SITE_A], outcome: "complete", summary: TASK_SUMMARY, done: TASK_DONE, unfinished: [], startedAt: NOW - 3_600_000, endedAt: NOW - 3_000_000 };
-  await putDoc("tasks", JSON.stringify({ format: 1, tasks: withMemory ? [task] : [] }) + "\n");
+  await putDoc("tasks", JSON.stringify({ format: 1, tasks: [...(withMemory ? [task] : []), ...extraTasks] }) + "\n");
 }
+
+const DATED_END = NOW + 2 * 86_400_000;
+
+const datedTask: JsonRecord = { id: "seed-dated", conversationId: "seed-other", goal: DATED_GOAL, revisions: [], hosts: ["meet.test"], outcome: "complete", summary: "已预订。", done: DATED_DONE, unfinished: [], startedAt: NOW - 7_200_000, endedAt: NOW - 7_000_000, date: new Date(DATED_END).toISOString().slice(0, 10), validity: { start: NOW - 7_000_000, end: DATED_END } };
 
 // ── 侧栏操作 ──
 
@@ -246,6 +270,9 @@ const lastLine = async (): Promise<LineView> => (await rp.evaluate(panel, `(() =
     items: [...line.querySelectorAll(".memory-used-item")].map((li) => ({ id: li.dataset.usedId, kind: li.dataset.usedKind, text: li.querySelector(".memory-used-text").textContent, state: li.dataset.state, note: li.querySelector(".memory-used-note")?.textContent ?? "", buttons: [...li.querySelectorAll("button")].map((b) => b.textContent) })),
   };
 })()`)) as LineView;
+
+/** 最后一条用户消息之后有没有脚本模型的回答。 */
+const hasAnswer = async () => await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll("#messages > *")]; const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true); return all.slice(lastUser + 1).some((n) => n.matches(".msg.assistant") && n.textContent.includes("普通商品页")); })()`) === true;
 
 /** 真点这一行里某条的某个按钮（先展开）。 */
 async function clickLine(id: string, label: string) {
@@ -387,7 +414,7 @@ try {
   await newConversation();
   const other = has(await turn(ASK_OTHER));
   const otherLine = await lastLine();
-  const answered = await rp.evaluate(panel, `(() => { const all = [...document.querySelectorAll("#messages > *")]; const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true); return all.slice(lastUser + 1).some((n) => n.matches(".msg.assistant") && n.textContent.includes("普通商品页")); })()`);
+  const answered = await hasAnswer();
   check("R1", "问无关的话：有回答，回答下方没有这一行", otherLine === null && answered === true, { line: otherLine, answered });
   check("R1", "问无关的话：两条记忆照常发给模型", other.email && other.lang, other);
   await shot("R1-unrelated");
@@ -398,6 +425,32 @@ try {
     return { answer: after.some((n) => n.matches(".msg.assistant:not(.opening-line)")), line: after.some((n) => n.matches(".memory-used-line") || !!n.querySelector(".memory-used-line")), text: after.map((n) => n.className + ": " + n.textContent.slice(0, 80)) }; })()`) as { answer: boolean; line: boolean; text: string[] };
   check("R1", "没有回答的一轮（模型出错）：请求带了邮箱，消息流里没有悬空的这一行", failed.email && !tail.answer && !tail.line, { failed, tail });
   await shot("R1-no-answer");
+
+  // #287：只有一件有效期内、别的网站的过往任务；新会话问笔记本。
+  await seed(false, [datedTask]);
+  await newConversation();
+  const notebook = await turn(ASK_NOTEBOOK);
+  const notebookLine = await lastLine();
+  check("#287", "新会话问笔记本：订会议室那件事照常发给模型", notebook.includes(DATED_DONE), { sent: notebook.includes(DATED_DONE) });
+  const notebookAnswered = await hasAnswer();
+  check("#287", "新会话问笔记本：有回答，回答下没有「按上次做过的…」", notebookAnswered && notebookLine === null, { answered: notebookAnswered, line: notebookLine });
+  await shot("287-unrelated");
+  await newConversation();
+  const meeting = await turn(ASK_MEETING);
+  const meetingLine = await lastLine();
+  check("#287", "问那天的会议室：请求里有它，回答下点名「按上次做过的「已成功预订…」」", meeting.includes(DATED_DONE) && /^按上次做过的「已成功预订/.test(meetingLine?.text ?? "") && meetingLine?.count === 1, { line: meetingLine?.text ?? null, count: meetingLine?.count ?? null });
+  await shot("287-related");
+  await newConversation();
+  const lastTime = await turn(ASK_LAST_TIME);
+  const lastTimeLine = await lastLine();
+  check("#287", "问「我上次订的那个是几点」：请求里有它，回答下点名「按上次做过的「已成功预订…」」", lastTime.includes(DATED_DONE) && /^按上次做过的「已成功预订/.test(lastTimeLine?.text ?? "") && lastTimeLine?.count === 1, { line: lastTimeLine?.text ?? null, count: lastTimeLine?.count ?? null });
+  await shot("287-asked-past");
+  await newConversation();
+  const beforePaying = await turn(ASK_BEFORE_PAYING);
+  const beforePayingLine = await lastLine();
+  const beforePayingAnswered = await hasAnswer();
+  check("#287", "问「付款之前帮我核对一下地址」：有回答，请求里有它，回答下不点名它", beforePayingAnswered && beforePaying.includes(DATED_DONE) && beforePayingLine === null, { answered: beforePayingAnswered, line: beforePayingLine?.text ?? null });
+  await shot("287-before-paying");
 } catch (error) {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(fatal);

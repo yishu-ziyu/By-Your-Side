@@ -29,6 +29,22 @@ const busy = createServer((_req, res) => {
 await new Promise<void>((done) => busy.listen(0, "127.0.0.1", done));
 const busyUrl = `http://127.0.0.1:${siteAddress(busy).port}/v1`;
 
+// 一直不回：保存前的试连等满 15 秒超时。silentAnswers 打开后转给脚本模型，当作服务商恢复了。
+let silentAnswers = false;
+const silent = createServer(async (req, res) => {
+  if (!silentAnswers) return;
+  const body: Buffer[] = [];
+  for await (const chunk of req) body.push(chunk as Buffer);
+  const upstream = await fetch(model.baseUrl.replace(/\/v1$/, "") + req.url, {
+    method: req.method,
+    headers: { "content-type": req.headers["content-type"] ?? "application/json" },
+    body: req.method === "GET" ? undefined : Buffer.concat(body),
+  });
+  res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await upstream.arrayBuffer()));
+});
+await new Promise<void>((done) => silent.listen(0, "127.0.0.1", done));
+const silentUrl = `http://127.0.0.1:${siteAddress(silent).port}/v1`;
+
 const deny = createServer((_req, res) => {
   res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "Invalid API key", type: "unauthorized" } }));
 });
@@ -137,7 +153,6 @@ try {
     const state = await first.evaluate(settings, `({
       hidden: document.querySelector("#key-reason").hidden,
       reason: document.querySelector("#key-reason-text")?.textContent ?? "",
-      wait: document.querySelector(".key-reason-wait")?.textContent ?? "",
       warn: document.querySelector("#api-key").classList.contains("warn"),
       status: document.querySelector("#model-status").textContent ?? "",
       tone: document.querySelector("#model-status").dataset.tone ?? "",
@@ -146,7 +161,7 @@ try {
     return !state.hidden && state.reason ? state : undefined;
   }, 45_000, "密钥原因");
   await first.screenshot(settings, join(out, "02-invalid-key.png"));
-  check("密钥无效：框下一行原因，不写红色「连接失败」", fail.reason.includes("服务商不接受这个密钥") && fail.wait.includes("侧栏里那句话还在等你") && fail.warn && !fail.status.includes("连接失败") && fail.tone !== "err", fail);
+  check("密钥无效：框下一行原因，不写红色「连接失败」", fail.reason.includes("服务商不接受这个密钥") && fail.warn && !fail.status.includes("连接失败") && fail.tone !== "err", fail);
   const storedAfterDeny = await first.evaluate(settings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
   check("密钥无效：没有保存，侧栏仍在等", (await readView(first, panel)).unconnected && asked() === 0 && storedAfterDeny !== denyUrl, { storedAfterDeny });
 
@@ -162,8 +177,8 @@ try {
   check("R2 连好后未连接卡不再出现", !after.unconnected && after.pill.includes("已连上"), after);
   check("R3 原话只发出一次，只有一个用户气泡", asked() === 1 && after.users.length === 1 && after.users[0]!.startsWith(QUESTION) && !!answered, { asked: asked(), users: after.users });
   // 测得的时长只会因为计时和调度变长：下限 -20，上限 +50。
-  check("R4 变形 240ms（-20/+50）", after.morph != null && after.morph >= 220 && after.morph <= 290, after.morph);
-  check("R4 FLIP 320ms（-20/+50）", after.flip != null && after.flip >= 300 && after.flip <= 370, after.flip);
+  check("R4 变形 --d-state 200ms（-20/+50）", after.morph != null && after.morph >= 180 && after.morph <= 250, after.morph);
+  check("R4 FLIP --d-layout 280ms（-20/+50）", after.flip != null && after.flip >= 260 && after.flip <= 330, after.flip);
   await first.close();
   await first.remove();
   rp = undefined;
@@ -195,6 +210,105 @@ try {
   const stored = await second.evaluate(rsettings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
   await second.screenshot(rsettings, join(out, "05-saved-while-busy.png"));
   check("密钥试连：限流时照样保存，并写刚才没连上", busySaved.includes("刚才没连上") && stored === busyUrl, { busySaved, stored });
+
+  // 先试连再保存：15 秒没回复不保存，框下写明超时，并有「重试」。
+  // 这家已存过密钥：先点「更换」露出密钥框，填的才是新密钥。
+  // 等到试连结束（不只等到超时原因出现）：试连更久的版本也能截到结束时的样子，失败时看得出差在哪。
+  const probeEndSrc = `({
+    busy: document.querySelector("#model-status").dataset.tone === "busy",
+    status: document.querySelector("#model-status").textContent ?? "",
+    hidden: document.querySelector("#key-reason").hidden,
+    reason: document.querySelector("#key-reason-text")?.textContent ?? "",
+    retry: !(document.querySelector("#key-retry")?.hidden ?? true),
+    saveDisabled: document.querySelector("#model-save").disabled,
+  })`;
+  type ProbeEnd = { busy: boolean; status: string; hidden: boolean; reason: string; retry: boolean; saveDisabled: boolean };
+  const probeEnd = (label: string) => until(async () => {
+    const state = await second.evaluate(rsettings, probeEndSrc) as ProbeEnd;
+    return !state.busy && (state.status || state.reason) ? state : undefined;
+  }, 75_000, label);
+  const storedBaseUrl = () => second.evaluate(rsettings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
+  const storedKey = () => second.evaluate(rsettings, `chrome.storage.local.get("inproc_cred:custom").then((r) => r["inproc_cred:custom"]?.key ?? null)`);
+  /** 等到条件成立；到点还没成立就返回 undefined，让后面的检查照常记下失败，并继续截后面的图。 */
+  const settle = <T,>(read: () => Promise<T | undefined>, ms: number) => until(read, ms, "").catch(() => undefined);
+
+  const keyBefore = await storedKey();
+  await second.evaluate(rsettings, `document.querySelector("#key-change").click(); true`);
+  await fillCustom(second, rsettings, silentUrl, "sk-silent-0000");
+  await second.evaluate(rsettings, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
+  const silentStarted = Date.now();
+  await second.click(rsettings, "#model-save");
+  await sleep(3_000);
+  const waiting = await second.evaluate(rsettings, `({
+    status: document.querySelector("#model-status").textContent ?? "",
+    test: document.querySelector("#model-test").disabled,
+    fast: document.querySelector("#model-fast").disabled,
+    save: document.querySelector("#model-save").disabled,
+  })`) as { status: string; test: boolean; fast: boolean; save: boolean };
+  await second.screenshot(rsettings, join(out, "06-waiting-buttons-disabled.png"));
+  check("密钥试连：等待时「测试连接」「用作快速模型」「保存并使用」都点不了", waiting.status.startsWith("正在测试") && waiting.test && waiting.fast && waiting.save, waiting);
+
+  const timedOut = await probeEnd("保存前试连结束");
+  const waited = Date.now() - silentStarted;
+  const storedAfterTimeout = await storedBaseUrl();
+  const keyAfterTimeout = await storedKey();
+  await second.screenshot(rsettings, join(out, "07-timeout-not-saved.png"));
+  check("密钥试连：15 秒超时不保存，写明超时并给重试", !timedOut.hidden && timedOut.reason.includes("15 秒内没有收到服务商的回复") && timedOut.reason.includes("密钥没有保存") && timedOut.retry && !timedOut.saveDisabled && storedAfterTimeout === busyUrl && waited >= 14_000 && waited < 25_000, { ...timedOut, storedAfterTimeout, waited });
+  check("密钥试连：超时后旧密钥仍在用，新密钥没有存", !!keyBefore && keyAfterTimeout === keyBefore && keyAfterTimeout !== "sk-silent-0000", { keyBefore, keyAfterTimeout });
+
+  // 重试，服务商仍然不回：等待时「重试」点不了，结束后照样不保存。
+  const retryStarted = Date.now();
+  const retried = await second.evaluate(rsettings, `(() => { const b = document.querySelector("#key-retry"); if (!b || b.hidden) return false; b.click(); return true; })()`);
+  await sleep(3_000);
+  const retryWaiting = await second.evaluate(rsettings, `({
+    status: document.querySelector("#model-status").textContent ?? "",
+    retryDisabled: document.querySelector("#key-retry")?.disabled ?? null,
+    saveDisabled: document.querySelector("#model-save").disabled,
+  })`) as { status: string; retryDisabled: boolean | null; saveDisabled: boolean };
+  await second.screenshot(rsettings, join(out, "08-retry-waiting.png"));
+  const retryEnd = await probeEnd("重试结束");
+  const retryWaited = Date.now() - retryStarted;
+  const keyAfterRetry = await storedKey();
+  check("重试：服务商仍不回，等待时重试点不了，结束后仍不保存", retried && retryWaiting.status.startsWith("正在测试") && retryWaiting.retryDisabled === true && retryWaiting.saveDisabled && !retryEnd.hidden && retryEnd.reason.includes("密钥没有保存") && retryEnd.retry && !!keyBefore && keyAfterRetry === keyBefore && retryWaited >= 14_000 && retryWaited < 25_000, { retried, retryWaiting, retryEnd, keyAfterRetry, retryWaited });
+
+  // 服务商恢复后再点重试：新密钥保存成功。
+  silentAnswers = true;
+  const retriedAgain = await second.evaluate(rsettings, `(() => { const b = document.querySelector("#key-retry"); if (!b || b.hidden) return false; b.click(); return true; })()`);
+  const savedStatus = await settle(async () => {
+    const status = String(await second.evaluate(rsettings, `document.querySelector("#model-status").textContent`));
+    return status.startsWith("已保存。") ? status : undefined;
+  }, 30_000);
+  const configAfterRecover = await storedBaseUrl();
+  const keyAfterRecover = await storedKey();
+  await second.screenshot(rsettings, join(out, "09-retry-saved.png"));
+  check("重试：服务商恢复后，新密钥保存成功", retriedAgain && !!savedStatus && configAfterRecover === silentUrl && keyAfterRecover === "sk-silent-0000", { retriedAgain, savedStatus, configAfterRecover, keyAfterRecover });
+  silentAnswers = false;
+
+  // 测试连接：同样等 15 秒，超时说法和保存时同一个开头。
+  await second.evaluate(rsettings, `document.querySelector("#model-test").scrollIntoView({ block: "center" }); true`);
+  const testStarted = Date.now();
+  await second.click(rsettings, "#model-test");
+  await sleep(1_000);
+  const tested = await probeEnd("测试连接结束");
+  const testWaited = Date.now() - testStarted;
+  await second.screenshot(rsettings, join(out, "10-test-timeout.png"));
+  check("测试连接：15 秒没回复，写明 15 秒内没收到回复", tested.status.includes("15 秒内没有收到服务商的回复") && testWaited >= 14_000 && testWaited < 25_000, { status: tested.status, testWaited });
+
+  // 试连中换到另一家：另一家的表单里不出现「正在测试…已等 N 秒」，试连结束后也不写。
+  await second.evaluate(rsettings, `document.querySelector("#key-change").click(); true`);
+  await fillCustom(second, rsettings, silentUrl, "sk-switch-0000");
+  await second.evaluate(rsettings, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
+  await second.click(rsettings, "#model-save");
+  await sleep(2_000);
+  await second.evaluate(rsettings, `document.querySelector('.provider-option[data-provider="stepfun"]').click(); true`);
+  const statusSrc = `({ status: document.querySelector("#model-status").textContent ?? "", otherForm: document.querySelector("#base-url").offsetParent === null, enabled: ["#model-test", "#model-fast", "#model-save"].every((id) => !document.querySelector(id).disabled) })`;
+  await sleep(1_000);
+  const switched = await second.evaluate(rsettings, statusSrc) as { status: string; otherForm: boolean; enabled: boolean };
+  await second.screenshot(rsettings, join(out, "11-switched-provider.png"));
+  await sleep(16_000);
+  const switchedAfter = await second.evaluate(rsettings, statusSrc) as { status: string; otherForm: boolean; enabled: boolean };
+  const keyAfterSwitch = await storedKey();
+  check("换服务商：试连中切到另一家，1 秒内三个按钮可点，状态行不再数秒，超时后也不写", switched.otherForm && switched.enabled && !switched.status.includes("正在测试") && !switchedAfter.status.includes("正在测试") && switchedAfter.status === "" && keyAfterSwitch === "sk-silent-0000", { switched, switchedAfter, keyAfterSwitch });
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   if (reduced && reducedPanel) {
@@ -207,6 +321,8 @@ try {
   if (reduced) { await reduced.close().catch(() => {}); await reduced.remove().catch(() => {}); }
   busy.closeAllConnections();
   busy.close();
+  silent.closeAllConnections();
+  silent.close();
   deny.closeAllConnections();
   deny.close();
   site.closeAllConnections();

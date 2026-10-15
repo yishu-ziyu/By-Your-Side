@@ -15,7 +15,8 @@
  *
  * 视觉参考：tldraw 协作光标（彩色填充 + 白描边 + 深色外晕 + 名牌 pill）、ChatGPT Agent（点击波纹）。
  * 轨迹：浅弧（ghost-cursor 一侧弧去掉随机）+ Fitts 时长 + 欠阻尼弹簧进度（轻过冲再稳住）。
- * 闲着停角落，要点再飞过去；不 3 秒隐掉。
+ * 像人手放在鼠标上：一轮里做完一步就停在原处，下一步从那里出发；同一标签页换了网页，
+ * 新页面的光标接着上一页的位置出现。一轮结束、或去了别的标签页，才回角落待命；不 3 秒隐掉。
  * 箭头形状取自 lucide MousePointer2（ISC）。
  *
  * 生命周期：MV3 扩展 reload 会销毁 isolated world 但留下 DOM host。启动时若本 world
@@ -58,6 +59,7 @@ import {
 import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
 import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, isEdgePill, type EdgePill } from "../shared/edge-pill.js";
+import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
 import { createEdgeTab, type EdgeTab, type EdgeTabOther, type EdgeTabView } from "./edge-tab.js";
 import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
@@ -309,7 +311,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         from { transform: scale(.5); opacity: .95; }
         to { transform: scale(4.2); opacity: 0; }
       }
-      /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」，做完随光标回角落收起。 */
+      /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」，做完淡出。 */
       .cursor:not(.holding):not(.acting) .label { display: none !important; }
       /* 主助手停靠时可见；多个协作光标闲置时仍收起，以免挡住正文。 */
       .cursor.rest:not(.holding):not([data-primary="true"]) { visibility: hidden; }
@@ -534,13 +536,14 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         inst.highlightEl = undefined;
       }
 
-      // 教学的光标正在飞往目标：交给 relayoutHolds 决定要不要改航线，不在这里打断。
-      if (!inst.hold?.corner) cancelFly(inst);
+      if (!inst.visible || inst.hold) continue;
 
-      if (inst.visible && !inst.hold) {
-        const home = homeFor(inst.restIndex, inst.el.dataset.primary === "true");
-        setPos(inst, home);
-        setResting(inst, true);
+      // 待命的光标跟着新的角落走；停在原处的光标留在原处，只收进视口。
+      if (inst.resting) {
+        cancelFly(inst);
+        setPos(inst, homeFor(inst.restIndex, inst.el.dataset.primary === "true"));
+      } else if (inst.raf === undefined && inst.flyDelay === undefined) {
+        setPos(inst, insideViewport(inst.pos));
       }
     }
 
@@ -791,7 +794,6 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       if (action.anchor) {
         if (!action.anchor.isConnected) {
           clearAction(inst);
-          schedulePark(inst);
           continue;
         }
 
@@ -846,6 +848,10 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     inst.resting = on;
     inst.el.classList.toggle("rest", on);
     inst.el.classList.toggle("flip", on && restOnRight(inst.restIndex));
+  }
+
+  function insideViewport(p: { x: number; y: number }): { x: number; y: number } {
+    return { x: Math.min(Math.max(p.x, 8), Math.max(8, window.innerWidth - 8)), y: Math.min(Math.max(p.y, 8), Math.max(8, window.innerHeight - 8)) };
   }
 
   // ── 状态层：在等 / 在读 / 完成 / 失败 ────────────────────────────────
@@ -985,18 +991,34 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     inst.parkTimer = setTimeout(() => parkNow(inst), delay);
   }
 
-  /** 纸面气泡收完之后，统一回本分支的右下角常驻位置。 */
-  function finishPark(inst: Instance): void {
+  /** 做完一步：名牌淡出，光标停在原处，下一步从这里出发，不先回角落。 */
+  function scheduleSettle(inst: Instance, delay = PARK_AFTER_MS): void {
+    clearTimeout(inst.parkTimer);
+    inst.parkTimer = setTimeout(() => afterLabelFades(inst, () => clearDoneAction(inst)), delay);
+  }
+
+  function clearDoneAction(inst: Instance): void {
     if (inst.action?.phase === "done") clearAction(inst);
+  }
+
+  /** 回本分支的右下角常驻位置：一轮结束、或在教学里给用户让开时才回去。 */
+  function finishPark(inst: Instance): void {
+    clearDoneAction(inst);
     const home = homeFor(inst.restIndex, inst.el.dataset.primary === "true");
     setResting(inst, true);
     flyTo(inst, home);
   }
 
-  /** 保持动作结果约两秒，然后淡出 200ms；新动作取消旧回调。 */
   function parkNow(inst: Instance): void {
+    // 回角落盖过还没到点的「做完一步」：它晚到会取消这段淡出，回角落就没了。
+    clearTimeout(inst.parkTimer);
+    afterLabelFades(inst, () => finishPark(inst));
+  }
+
+  /** 动作结果的名牌淡出 200ms 后再 then；新动作取消旧回调。 */
+  function afterLabelFades(inst: Instance, then: () => void): void {
     if (inst.action?.phase === "active" || inst.hold) return;
-    if (!inst.action || reducedMotion.matches) { finishPark(inst); return; }
+    if (!inst.action || reducedMotion.matches) { then(); return; }
 
     const actionId = inst.action.id;
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
@@ -1008,7 +1030,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     inst.labelAnimation = animation;
     animation.onfinish = () => {
       if (inst.labelAnimation !== animation || inst.action?.id !== actionId) return;
-      finishPark(inst);
+      then();
     };
   }
 
@@ -1533,7 +1555,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
     if (g.inst.hold?.corner) {
       releaseHoldInst(g.inst);
-      schedulePark(g.inst);
+      scheduleSettle(g.inst);
     }
   }
 
@@ -2499,6 +2521,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   } catch { /* 自检页没有扩展运行时。 */ }
 
   function teardown(event: PageTransitionEvent): void {
+    saveSpots();
+    lifetime++;
+
     if (guide) endGuide(guide);
     clearHandoff();
 
@@ -2570,9 +2595,57 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     if (!event.persisted || !ns.cursor) return;
     // A saved Document may be shown more than once. Rebuild the primary
     // idle cursor once, without starting an action or re-enabling page glow.
-    if (!host?.isConnected || !instances.has(DEFAULT_ID)) ns.cursor.park?.();
+    if (!host?.isConnected || !instances.has(DEFAULT_ID)) appear();
     askTaskPill();
   });
+
+  /** 每次离开网页加一：离开前发出的取位置请求，回来得晚也不能在已离开的网页上画光标。 */
+  let lifetime = 0;
+
+  /** 离开这个网页时，把还停在页面上的光标位置交给后台；同一标签页的下一个网页从这里出现。 */
+  function saveSpots(): void {
+    const spots: CursorSpot[] = [...instances].filter(([, inst]) => inst.visible && !inst.resting)
+      .map(([id, inst]) => ({ id, x: Math.round(inst.pos.x), y: Math.round(inst.pos.y) }));
+
+    if (spots.length === 0) return;
+
+    try {
+      void chrome.runtime.sendMessage({ type: CURSOR_SPOT_SAVE, spots }).catch(() => { /* 后台未就绪 */ });
+    } catch { /* 自检页没有扩展运行时。 */ }
+  }
+
+  async function takeSpots(): Promise<CursorSpot[]> {
+    try {
+      const reply: unknown = await chrome.runtime.sendMessage({ type: CURSOR_SPOT_TAKE });
+      const spots = (reply as { spots?: unknown } | undefined)?.spots;
+
+      return isCursorSpots(spots) ? spots : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** 网页打开时光标出现在哪：上一页交来的位置，没有就在角落待命。 */
+  function appear(): void {
+    const life = lifetime;
+
+    void takeSpots().then((spots) => {
+      if (life !== lifetime) return;
+
+      for (const spot of spots) {
+        const inst = getInstance(spot.id);
+
+        // 新动作已经先一步让它出现了，就从它现在的位置继续。
+        if (inst.visible) continue;
+        setPos(inst, insideViewport(spot));
+        setResting(inst, false);
+        inst.el.classList.remove("hidden");
+        inst.visible = true;
+      }
+
+      if (!instances.get(DEFAULT_ID)?.visible) ns.cursor?.park?.();
+    });
+  }
 
   function api(id: string): SideAgentCursor {
     return {
@@ -2639,7 +2712,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
         renderActionLabel(inst);
         renderAmbient();
-        schedulePark(inst, 2000);
+        scheduleSettle(inst, 2000);
       },
       arrive(x, y): void {
         const inst = instances.get(id);
@@ -2697,7 +2770,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         inst.pressTimer = setTimeout(() => inst.el.classList.remove("pressing"), 160);
         spawnRipple(x, y, "ripple", inst.color);
         spawnRipple(x, y, "ripple r2", inst.color);
-        schedulePark(inst);
+        scheduleSettle(inst);
       },
 
       releaseHold(): void {
@@ -2706,7 +2779,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         if (!inst) return;
         releaseHoldInst(inst);
 
-        if (inst.visible) schedulePark(inst);
+        if (inst.visible) scheduleSettle(inst);
       },
 
       park(): void {
@@ -2785,6 +2858,11 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
           return;
         }
 
+        // 这位成员不在这一页干活了（去了别的标签页，或这一轮结束）：停在原处的光标回角落待命。
+        // 失败时照旧停在出错的位置。
+        const inst = instances.get(id);
+
+        if (glowing.has(id) && inst?.visible && !inst.resting && !inst.hold && inst.status?.state !== "failed") schedulePark(inst);
         glowing.delete(id);
         renderAmbient();
         if (glowing.size === 0) return fadeEdge();
@@ -2859,9 +2937,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
   }
 
   ns.cursor = api(DEFAULT_ID);
-  // 每个普通网页自动显示主光标的静态停靠态；不启动动画帧。
+  // 每个普通网页自动显示主光标，不启动动画帧。
   // 工作开始时复用这个实例，扩展重复注入不会再创建第二个光标。
-  ns.cursor.park?.();
+  appear();
   ns.cursorState = (id = DEFAULT_ID) => {
     const inst = instances.get(id);
 
