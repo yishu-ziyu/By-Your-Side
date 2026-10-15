@@ -176,6 +176,8 @@ export class BrowserAgentSession {
   private displayAbort:AbortController|null=null;
   private authorizedDisplayCall:string|null=null;
   private displayWork:Promise<void>|null=null;
+  /** 新任务开工（读页、站点笔记、记忆）到模型开跑之间算在跑：这时的插话进 Pi 的插话队列，开跑时并进第一个请求。 */
+  private starting:object|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[];pages?:PageContext[]}>=[];
   private deliveryRunId: () => string | null = () => null;
   private explicitDelivery = false;
@@ -839,7 +841,11 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   isStreaming(): boolean {
-    return !!this.displayWork || (this.session?.isStreaming ?? false);
+    return !!this.displayWork || (this.session?.isStreaming ?? false) || this.starting !== null;
+  }
+
+  private runningOrStarting(session: AgentLoop): boolean {
+    return session.isStreaming || this.starting !== null;
   }
 
   /**
@@ -1051,7 +1057,7 @@ return;}
     const images = extractImages(attachments);
     this.rememberAttachments(attachments);
 
-    if (session.isStreaming) this.runTrace.record("steer", { text, context, attachments });
+    if (this.runningOrStarting(session)) this.runTrace.record("steer", { text, context, attachments });
     else {
       this.mainEffort.reset(session.model);
       this.activeGoal=text;
@@ -1066,7 +1072,7 @@ return;}
       });
     }
 
-    if (session.isStreaming) {
+    if (this.runningOrStarting(session)) {
       this.memoryRuntime?.invalidateUserTurn("steer");
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
       void this.steerCurrentTask(text, context, attachments, { pages: inputOptions?.pages }).catch((err: unknown) => this.emitError(err));
@@ -1106,6 +1112,15 @@ return;}
     pages?: PageContext[],
   ): Promise<void> {
     const preparationEpoch=this.controlEpoch,preparationRun=this.deliveryRunId();
+    const starting={};
+    this.starting=starting;
+
+    try { await this.startWithFreshPageObservation(session, finalText, context, images, pages, preparationEpoch, preparationRun); } finally {
+      if (this.starting === starting) this.starting = null;
+    }
+  }
+
+  private async startWithFreshPageObservation(session: AgentLoop, finalText: string, context: PageContext | undefined, images: SessionImageContent[], pages: PageContext[] | undefined, preparationEpoch: number, preparationRun: string | null): Promise<void> {
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
@@ -1115,7 +1130,10 @@ return;}
       this.mentionedPagesText(pages, context),
     ]);
 
-    if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld())return;
+    // 开工中被停下：开工期间排进 Pi 的插话不能留到下一轮。
+    if(preparationEpoch!==this.controlEpoch||preparationRun!==this.deliveryRunId()||this.hold.isHeld()){if(!session.isStreaming)session.clearQueue();
+
+return;}
 
     if (observation) this.noteGoalObservation("page_at_start", observation);
 
@@ -1955,7 +1973,7 @@ return {kind:'model'};
 
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先用侧栏交还。");
 
-    if (!session?.isStreaming) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
+    if (!session || !this.runningOrStarting(session)) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
     // 插话是新的用户要求：这一轮要重新判断有没有真正交付，不能沿用上一轮的结论。
     this.deliveredResultThisRun = false;
@@ -1974,7 +1992,7 @@ return {kind:'model'};
     const epoch = this.controlEpoch;
 
     // 认原来那条登记和原来的 run 身份，不能只看"现在是否在跑"。
-    const taskCurrent = () => !this.hold.isHeld() && session.isStreaming && this.controlEpoch===epoch
+    const taskCurrent = () => !this.hold.isHeld() && this.runningOrStarting(session) && this.controlEpoch===epoch
       && this.deliveryRunId()===runId;
 
     const current = () => this.pendingCorrections.includes(record) && taskCurrent();
@@ -2373,6 +2391,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           emit({ kind: "turn_end" });
           break;
         case "agent_start":
+          this.starting = null;
           // 新的一轮：接着做的这一轮开起来了，扣着的上一轮收尾不再需要；上一轮还扣着的回答先放出、收尾（不会丢），再开始这一轮。
           this.continueFinish = null;
 
