@@ -3197,24 +3197,13 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .source-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 50; padding: 6px 12px; border-radius: 999px; background: var(--text-primary); color: var(--content-subtle); font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); pointer-events: none; }
 
 /* ── #58 C 过程灰字：一轮只留一行 ─────────────────────────
-   进行中「正在 动词 对象」，一道光扫过整行；结束收成「做了 N 件事 · 9 秒 ›」。
+   进行中「正在 动词 对象」，秒数贴在动词后面；结束收成「做了 N 件事 · 9 秒 ›」。
    动词墨色、对象浅灰，无图标；展开是左边一条细线下的灰字步骤。 */
 details.run-steps .run-icon { display: none; }
 details.run-steps summary { gap: 6px; font-size: var(--fs-ui); }
 .run-title { flex: 0 1 auto; font-size: var(--fs-read); line-height: 22px; font-weight: 400; }
 .run-title .act-verb { color: var(--text-primary); font-weight: 500; }
 .run-title .act-object { color: var(--text-tertiary); }
-details.run-steps:not(.done) .run-title {
-  -webkit-mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
-  mask-image: linear-gradient(100deg, #000 0 42%, #0005 50%, #000 58% 100%);
-  -webkit-mask-size: 260% 100%;
-  mask-size: 260% 100%;
-  animation: runShine 3s var(--e-enter) infinite;
-}
-@keyframes runShine {
-  0%, 15% { -webkit-mask-position: 110% 0; mask-position: 110% 0; }
-  85%, 100% { -webkit-mask-position: -10% 0; mask-position: -10% 0; }
-}
 /* #263 思考心跳：16px 墨点在 4 点与十字之间收合，1.2s 一拍，不用转圈。秒数同拍闪一下。 */
 .run-beat {
   display: none;
@@ -3361,7 +3350,6 @@ details.run-steps .run-body .chip { min-height: 0; height: auto; padding: 0; bor
 .run-body .act-failed { color: var(--text-secondary); }
 details.run-steps .run-body details.thinking.narration > pre, details.run-steps.done .run-body > details.thinking.narration > pre { font-family: var(--font); font-size: var(--fs-ui); line-height: 20px; color: var(--text-tertiary); }
 @media (prefers-reduced-motion: reduce) {
-  details.run-steps:not(.done) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
   details.run-steps:not(.done) .run-beat,
   details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
   details.run-steps:not(.done)[data-phase="waiting"] .run-beat,
@@ -3851,16 +3839,15 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 /* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
 .run-title { font-size: var(--fs-ui); line-height: 20px; }
 details.run-steps:not(.done) .run-time {
-  margin-left: 2px;
+  margin-left: 6px;
   font-size: var(--fs-ui);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   max-width: 12em;
   overflow: hidden;
   white-space: nowrap;
   transition: opacity var(--d-state) var(--e-exit), max-width var(--d-state) var(--e-exit), margin var(--d-state) var(--e-exit);
 }
-details.run-steps:not(.done) .run-time:not(:empty)::before { content: "· "; }
 details.run-steps:not(.done) .run-time:empty {
   opacity: 0;
   max-width: 0;

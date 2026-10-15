@@ -1,10 +1,10 @@
 /**
- * 思考心跳：进行中两行不变，思考时行首 16px 墨点在 4 点与十字之间收合，扫光仍是 2.4s（#263）。
+ * 思考心跳：进行中两行不变，思考时行首 16px 墨点在 4 点与十字之间收合（#263）。等待行不再扫光，见 wait-inline-timer。
  *   npx tsx scripts/acceptance/real-path/thinking-heartbeat.mts --headless
  * 脚本模型：想 4 秒 → 打开页 B → 点不存在的按钮 → 想 8 秒 → 点「作品」→ 回答。
  *   a) 想的时候第一行一直写「正在思考」，不轮换别的动词；秒数从这段开始数，第二行仍是「已做 2 步 · 1 步换了做法」。
  *   b) `.run-beat` 是 14–16px 主墨色四点；450ms 后点的位置或缩放变了；收合 1.2s。
- *   c) 标题扫光仍是 2.4±0.05s。
+ *   c) 进行中标题不再扫光。
  *   d) 回执是一行「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式）；收尾后墨点不再显示。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -115,7 +115,7 @@ try {
   const moved = first != null && (first.beatTransform !== second?.beatTransform || first.beatLeft !== second?.beatLeft || first.beatTop !== second?.beatTop);
   const ink = /rgba?\(\s*20\s*,\s*20\s*,\s*19/.test(first?.beatInk ?? "");
   check("b 16px 主墨色四点在收合，450ms 后样子变了", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatDots === 4 && first.beatWidth >= 14 && first.beatWidth <= 16 && first.beatHeight >= 14 && first.beatHeight <= 16 && ink && /markMorph/.test(first.beatName) && /markFold/.test(first.beatFold) && Math.abs(first.beatDuration - 1.2) <= 0.05 && moved, { beatDisplay: first?.beatDisplay, beatDots: first?.beatDots, beatWidth: first?.beatWidth, beatHeight: first?.beatHeight, beatInk: first?.beatInk, beatName: first?.beatName, beatFold: first?.beatFold, beatDuration: first?.beatDuration, t0: first?.beatTransform, t1: second?.beatTransform, left0: first?.beatLeft, left1: second?.beatLeft });
-  check("c 标题扫光仍是 2.4 秒", first != null && Math.abs(first.shineDuration - 2.4) <= 0.05 && first.shineName.includes("runShine"), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
+  check("c 进行中标题不再扫光", first != null && (first.shineName === "none" || first.shineName === "" || !first.shineName.includes("runShine")), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
 
   await until(async () => { const r = await read(); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);
   await sleep(400);
