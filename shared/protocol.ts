@@ -384,6 +384,11 @@ export type AgentUiEvent =
   | { kind: "execution_feedback"; feedback: import('./execution-feedback.js').ExecutionFeedback }
   | { kind: "turn_start" }
   | { kind: "turn_end" }
+  /**
+   * 这段对话最近一次模型请求送进去多少（used：提示词 token，含缓存命中和缓存写入）、这个模型的上下文窗口多大（window）。
+   * 进对话历史：重开侧栏、切回这段对话时按最后一条画模型按钮上的占用。
+   */
+  | { kind: "context_usage"; used: number; window: number }
   | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
   | { kind: "run_stopped" }
@@ -1001,6 +1006,12 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       const p=msg.event.plan;
 
       if(!p||!validRequestId(p.id)||p.conversationId!==msg.conversationId||!Number.isFinite(p.updatedAt)||!Array.isArray(p.steps)||p.steps.length<1||p.steps.length>3||!p.steps.every(s=>s&&typeof s.action==='string'&&typeof s.text==='string'&&s.text.length<=12000&&validConversationId(s.targetId)&&(s.targetTitle===undefined||typeof s.targetTitle==='string'&&s.targetTitle.length<=120)&&['pending','complete','unexecuted'].includes(s.status)&&(s.receipt===undefined||isTaskReceipt(s.receipt)&&s.receipt.conversationId===s.targetId)))return null;
+    }
+
+    if (msg.type === "agent_event" && msg.event?.kind === "context_usage") {
+      const { used, window } = msg.event;
+
+      if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(window) || window <= 0) return null;
     }
 
     if (msg.type === "agent_event" && msg.event?.kind === "user_delivery") {
