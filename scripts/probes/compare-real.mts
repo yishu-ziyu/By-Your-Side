@@ -23,7 +23,7 @@ const dec = (u: string) => { try { return decodeURIComponent(u); } catch { retur
 
 type Tab = { url: string; title: string };
 type Ctx = { answer: string; tabs: Tab[]; probe: unknown; truth: Record<string, string> };
-type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; login?: "memos"; setup?: () => Promise<Record<string, string>>; after?: () => Promise<unknown>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
+type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; login?: "memos"; /** Tabs open before the ask, left to right; the user is looking at the last one (default: one tab on START). */ tabs?: () => string[]; setup?: () => Promise<Record<string, string>>; after?: () => Promise<unknown>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
 
 const ghTop = async () => { const h = await (await fetch("https://github.com/trending", { headers: { "user-agent": "Mozilla/5.0" } })).text(); return h.match(/<h2 class="h3 lh-condensed">[\s\S]*?href="\/([^"]+)"/)?.[1] ?? ""; };
 const hnTop = async () => { const h = await (await fetch("https://news.ycombinator.com/")).text(); return (h.match(/<span class="titleline"><a [^>]*>([^<]+)<\/a>/)?.[1] ?? "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); };
@@ -74,6 +74,76 @@ const MEMO_SEEDS = ["买菜：牛奶、鸡蛋、西红柿", "读书笔记：《�
 /** The seeds other than `except` are still there, unchanged and unpinned, and no note was added or removed. */
 const othersIntact = (c: Ctx, except: string) => { const ms = memosOf(c); if (ms.length !== MEMO_SEEDS.length) return `笔记数是 ${ms.length}（应为 ${MEMO_SEEDS.length}）`; const bad = MEMO_SEEDS.filter((s) => s.slice(0, 4) !== except).filter((s) => { const m = ms.find((x) => x.name === c.truth[s.slice(0, 4)]); return !m || m.content !== s || m.pinned; }); return bad.length ? `别的笔记被改了：${bad.map((s) => s.slice(0, 4)).join("、")}` : null; };
 
+// ── Two local pages for relaying text between tabs: an AI answer on the left, a chat box on the right whose 提交 reports what it received. ──
+// The button is not named 发送: clicking 发送 stops for the user's confirmation on the page (docs/evals/20261009-send-confirm.md), which is not what this task measures.
+// The answer is pre-wrap plain text, so textContent and innerText both read it exactly as written: curly quotes, blank lines, list markers.
+const RELAY_ANSWER = `好的，下面是一份“一周学习计划”的建议，你可以按自己的情况调整。
+
+一、先想清楚目标
+很多人做计划时只写“每天学习三小时”，结果坚持不到一周。原因往往不是不够努力，而是目标太模糊。建议你先回答三个问题：
+1. 这一周结束时，我希望“能做到”什么？例如“能独立写出一个带表单的小网页”，而不是“学完前端”。
+2. 我每天真正能拿出多少时间？要算上通勤、做饭和休息，宁可少估一点。
+3. 哪些事情是“必须完成”的，哪些是“有空再做”的？
+
+二、把一周拆成小块
+- 周一、周二：打基础。只看一份教程，不要同时开五个标签页来回切换。每学完一节，就用自己的话写两三句总结。
+- 周三：做一个最小的练习。哪怕只有十几行代码，也要从头到尾跑通一次。
+- 周四：回头补漏洞。把前三天卡住的地方列出来，一条一条查，查不到的就记下来问人。
+- 周五：做一个稍大一点的练习，把前面学的东西串起来。
+- 周末：留出半天复盘，另外半天彻底休息。
+
+三、每天的节奏
+我比较推荐“25 分钟专注 + 5 分钟休息”的方式，连续四轮之后休息得长一些。专注的时候把手机放远，把聊天软件的提醒关掉。休息的时候站起来走走，喝点水，不要刷短视频，否则很难再回到状态。
+如果某一天状态特别差，不要硬撑，也不要因此觉得“这周全完了”。把当天的任务挪一部分到周末，计划本来就是用来调整的。
+睡眠也要算进计划里。连续几天熬夜换来的学习时间，通常会在后面几天以“看不进去”的方式还回来。与其晚上多学一小时，不如早点睡，第二天早上用最清醒的那段时间做最难的部分。
+
+四、怎么判断自己真的学会了
+一个简单的办法是“讲给别人听”：找一位朋友，或者干脆对着空房间，把今天学到的东西从头讲一遍。讲不清楚的地方，就是还没真正理解的地方。
+另一个办法是“合上教程重做”：第二天不看任何资料，把前一天的练习重新做一遍。能做出来，说明这部分已经是你自己的了；做不出来也没关系，标记一下，周四统一补。
+
+五、常见的坑
+- 收藏了很多资料，但一份都没看完。建议每个主题只留一份主资料，其他的先放进“以后再看”。
+- 只看不练。看懂和会做是两回事，尤其是写代码、做题、写文章这类事情。
+- 一开始就追求完美。第一版做得粗糙很正常，先做完，再做好。
+- 和别人比进度。每个人的基础和时间都不一样，和上周的自己比就够了。
+
+六、一个可以直接照抄的模板
+周一：教程第 1–3 节，写总结
+周二：教程第 4–6 节，写总结
+周三：小练习一个，跑通
+周四：整理问题清单，逐条解决
+周五：综合练习一个
+周六：复盘半天，写下“这周学会了什么、下周想学什么”
+周日：休息
+
+七、如果每天只有一小时
+时间很少的时候，更要“少而准”。可以这样分配：
+- 前 10 分钟：回顾昨天的总结，把没弄懂的那一条先看一遍。
+- 中间 40 分钟：只做一件事，要么学一节新内容，要么完成一个小练习，不要两样都想要。
+- 最后 10 分钟：写下今天的“三句话总结”，再写一句“明天先做什么”。
+这样做的好处是，第二天坐下来时不用花时间想“从哪里开始”，直接接着做就行。很多人说“我没时间学习”，其实缺的往往不是时间，而是每次开始前的那几分钟犹豫。
+另外，周末如果能多出两三个小时，就用来做“综合练习”，而不是继续看新内容。把一周学到的东西用一次，比多看三节教程更有用。
+
+最后提醒一句：计划写得再好，也不如“今天先做 25 分钟”。如果你愿意，可以告诉我你想学的具体方向和每天能用的时间，我再帮你把这份计划改得更具体一些。`;
+const relay = { url: "", received: [] as string[] };
+async function relayStart() {
+  if (relay.url) return;
+  const { createServer } = await import("node:http");
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const shell = (title: string, body: string) => `<!doctype html><meta charset="utf-8"><title>${title}</title><style>body{font:15px/1.7 system-ui;max-width:760px;margin:24px auto;padding:0 16px}.answer,.sent{white-space:pre-wrap;background:#f6f6f6;border-radius:10px;padding:12px 16px}textarea{width:100%;height:140px;font:inherit}</style>${body}`;
+  const server = createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/received") { let b = ""; req.setEncoding("utf8"); req.on("data", (d) => (b += d)); req.on("end", () => { relay.received.push(b); res.end("ok"); }); return; }
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    if (req.url === "/answer") return res.end(shell("AI 回答", `<h1>对话</h1><p><b>你：</b>帮我做一份一周学习计划。</p><p><b>AI：</b></p><div class="answer">${esc(RELAY_ANSWER)}</div>`));
+    if (req.url === "/chat") return res.end(shell("聊天", `<h1>聊天</h1><div id="log"></div><label for="box">输入消息</label><textarea id="box"></textarea><button id="submit" type="button">提交</button>
+<script>document.querySelector("#submit").onclick = async () => { const box = document.querySelector("#box"); const text = box.value; if (!text.trim()) return; const d = document.createElement("div"); d.className = "sent"; d.textContent = text; document.querySelector("#log").append("已收到：", d); box.value = ""; await fetch("/received", { method: "POST", body: text }); };</script>`));
+    res.statusCode = 404; res.end();
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  server.unref(); // the run ends when the tasks do, not when this page server would
+  relay.url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+}
+
 const TASKS: Task[] = [
   { id: "S1", split: "train", group: "搜索", name: "必应搜天气", prompt: "新开一个标签页打开 https://cn.bing.com ，搜索 天气。",
     check: (c) => c.tabs.some((t) => /bing\.com\/search/.test(t.url) && dec(t.url).includes("天气")) ? null : "没有到必应“天气”的结果页",
@@ -101,6 +171,9 @@ const TASKS: Task[] = [
   { id: "X3", split: "train", group: "跨站", name: "HN 标题记进待办", prompt: "打开 https://news.ycombinator.com ，记下排第一的帖子标题；再打开 https://todomvc.com/examples/react/dist/ ，把这个标题原样添加为一条待办。",
     truth: async () => ({ before: (await hnItem(1)).title }), probeUrl: /todomvc\.com\/examples\/react/, probe: TODO_PROBE,
     check: (c) => [c.truth.before, c.truth.after].some((t) => t && todos(c).some((i) => norm(i.t) === norm(t))) ? null : `待办是 ${JSON.stringify(todos(c))}（应为 ${c.truth.before}）` },
+  { id: "X19", split: "train", group: "跨站", name: "回答原样转到另一页", tabs: () => [`${relay.url}/answer`, `${relay.url}/chat`], prompt: "把左边那个标签页里 AI 的那段回答原样发到这一页：填进输入框，然后点「提交」。",
+    setup: async () => { await relayStart(); relay.received = []; return {}; }, after: async () => [...relay.received],
+    check: (c) => { const got = (c.probe ?? []) as string[]; if (got.length !== 1) return `提交了 ${got.length} 次`; const a = got[0]!.trim(), b = RELAY_ANSWER.trim(); if (a === b) return null; let k = 0; while (a[k] === b[k]) k++; return `和原文不同：${a.length} 字（原文 ${b.length} 字），第 ${k + 1} 个字起不同：${JSON.stringify(a.slice(k, k + 12))} ≠ ${JSON.stringify(b.slice(k, k + 12))}`; } },
   { id: "E4", split: "train", group: "读取", name: "HN 第三条的评论页", prompt: "打开 https://news.ycombinator.com ，打开排第三的帖子的评论页。",
     truth: async () => ({ before: (await hnItem(3)).id }),
     check: (c) => [c.truth.before, c.truth.after].some((id) => id && c.tabs.some((t) => t.url.includes(`news.ycombinator.com/item?id=${id}`))) ? null : `没有打开第三条的评论页（应为 item?id=${c.truth.before}）` },
@@ -188,8 +261,10 @@ async function runExt(task: Task, id: string, dir: string) {
   try {
     const user = await rp.attach((await rp.targets()).find((t: { url: string }) => t.url === "about:blank")!.targetId);
     if (task.login === "memos") { const { cookie } = await memosSignIn(); await rp.cdp.send("Storage.setCookies", { cookies: [{ ...cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] }); }
-    await rp.cdp.send("Page.navigate", { url: START }, user);
+    const opened = task.tabs?.() ?? [START];
+    await rp.cdp.send("Page.navigate", { url: opened.at(-1) }, user);
     const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "sw")).targetId);
+    for (const [index, url] of opened.slice(0, -1).entries()) await rp.evaluate(sw, `chrome.tabs.create(${JSON.stringify({ url, index, active: false })}).then(() => true)`);
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(cfg.items)}).then(() => true)`);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "panel ready");
