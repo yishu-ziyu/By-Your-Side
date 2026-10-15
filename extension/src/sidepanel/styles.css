@@ -3298,7 +3298,6 @@ details.run-steps .run-body .chip { min-height: 0; height: auto; padding: 0; bor
 .run-body .act-failed { color: var(--text-secondary); }
 details.run-steps .run-body details.thinking.narration > pre, details.run-steps.done .run-body > details.thinking.narration > pre { font-family: var(--font); font-size: var(--fs-ui); line-height: 20px; color: var(--text-tertiary); }
 @media (prefers-reduced-motion: reduce) {
-  details.run-steps:not(.done) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
   details.run-steps:not(.done) .run-beat,
   details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
   details.run-steps:not(.done)[data-phase="waiting"] .run-beat,
