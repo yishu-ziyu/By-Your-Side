@@ -90,6 +90,10 @@ export type PanelToBg =
   | { kind: "redeliver"; seq: number; text: string; conversationId?: string }
   /** 请重连。 */
   | { kind: "retry" }
+  /** 用户点进了这个侧栏：没有侧栏的窗口里按住说话、右键提问，跟这个侧栏看着的会话。 */
+  | { kind: "focus" }
+  /** 侧栏连上后报自己在哪个窗口：那个窗口里的按住说话、右键提问、阅读转到侧栏交给它。 */
+  | { kind: "panel_window"; windowId: number }
   /** 端口存活探测：service worker 被 Chrome 停掉后，面板手里的端口不一定会收到断开事件。 */
   | { kind: "ping" }
   /** 悬停/聚焦过程步骤：在网页上圈出当时点过的元素；target 空则收起。 */

@@ -13,7 +13,7 @@ export class VoiceRelay {
     diagnostic: boolean;
     serverVad?: boolean;
   } | null = null;
-  constructor(private readonly send: (message: ClientMessage) => boolean, private readonly selected: () => string, private readonly enrich?: (conversationId: string, input: VoiceInputContext) => Promise<VoiceInputContext>) {
+  constructor(private readonly send: (message: ClientMessage) => boolean, private readonly selected: (port: chrome.runtime.Port) => string, private readonly enrich?: (conversationId: string, input: VoiceInputContext) => Promise<VoiceInputContext>) {
   }
   attach(port: chrome.runtime.Port): void {
     port.onDisconnect.addListener(() => {
@@ -45,7 +45,7 @@ export class VoiceRelay {
       }
 
       if (message.command.kind === "start") {
-        if (message.conversationId !== this.selected()) {
+        if (message.conversationId !== this.selected(port)) {
           return;
         }
 
@@ -137,7 +137,7 @@ export class VoiceRelay {
 
     const lease = this.lease;
 
-    return this.observation.capture(token, () => !!lease && this.lease === lease && lease.conversationId === conversationId && this.selected() === conversationId, mode);
+    return this.observation.capture(token, () => !!lease && this.lease === lease && lease.conversationId === conversationId && this.selected(lease.port) === conversationId, mode);
   }
   server(message: Extract<ServerMessage, {
     type: "voice";
@@ -177,8 +177,9 @@ export class VoiceRelay {
     catch { /* panel closed */
     }
   }
-  selectionChanged(id: string): void {
-    if (this.lease && this.lease.conversationId !== id) {
+  /** Only the panel that holds the voice lease can end it by switching conversation. */
+  selectionChanged(port: chrome.runtime.Port, id: string): void {
+    if (this.lease?.port === port && this.lease.conversationId !== id) {
       this.stop();
     }
   }
