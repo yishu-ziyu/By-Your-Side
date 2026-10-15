@@ -37,6 +37,7 @@ try {
   result.marginaliaVisible = await rp.evaluate(panel, "[...document.querySelectorAll(\"select, .marginalia-control\")].some((e) => e.getClientRects().length > 0)");
   result.topbar = String(await rp.evaluate(panel, "JSON.stringify({ title: document.querySelector(\"#conversation-switcher\").innerText, svgInTitle: !!document.querySelector(\"#conversation-switcher svg\"), icons: [...document.querySelectorAll(\"#conversation-new svg, #header-more svg\")].map((s) => s.getAttribute(\"class\")) })"));
   await rp.screenshot(panel, join(out, "idle.png"));
+  await rp.click(panel, "#input");
   await rp.click(panel, "#attach-btn");
   await sleep(300);
   await rp.screenshot(panel, join(out, "menu.png"));

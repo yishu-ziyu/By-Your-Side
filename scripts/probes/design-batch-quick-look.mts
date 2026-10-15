@@ -60,7 +60,7 @@ try {
   await rp.evaluate(panel, '(()=>{const i=document.querySelector("#input");i.value="";i.dispatchEvent(new Event("input",{bubbles:true}))})()');
 
   // #50 从屏幕选取：菜单项 → 页面出选区层 → 拖框 → 附件条出现
-  await rp.click(panel, '#attach-btn'); await rp.click(panel, '#menu-action-region');
+  await rp.click(panel, '#input'); await rp.click(panel, '#attach-btn'); await rp.click(panel, '#menu-action-region');
   const overlay = await until(async () => await rp.evaluate(work, '!!document.querySelector("[data-sideagent-overlay=circle]")'), 8000, 'overlay').catch(() => false);
   await report('50-region-overlay', !!overlay, 'selection overlay in page', work);
 
