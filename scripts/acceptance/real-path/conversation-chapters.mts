@@ -222,6 +222,11 @@ try {
   assert.equal(evidence.afterJump, true, "chapter 1 stays in view after the jump (not pulled back to the bottom)");
   await rp.screenshot(panel, join(artifacts, "jumped-to-chapter-1.png"));
 
+  // 当场开的章节线带展开动画；重开侧栏从记录重画的不带。
+  const freshDividers = `[...document.querySelectorAll("#messages > .chapter-divider")].map((d) => d.classList.contains("fresh"))`;
+  evidence.liveFresh = await rp.evaluate(panel, freshDividers);
+  assert.ok(evidence.liveFresh.length > 0 && evidence.liveFresh.every(Boolean), `live dividers unfold: ${JSON.stringify(evidence.liveFresh)}`);
+
   // 重新打开侧栏：同样的章节。
   await rp.evaluate(panel, "location.reload()").catch(() => {});
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#messages")?.innerText.includes("【四完成】")`).catch(() => false)) || undefined, 30_000, "history restored", 200);
@@ -229,6 +234,8 @@ try {
   const restored = await read();
   evidence.restored = restored;
   await rp.screenshot(panel, join(artifacts, "after-reopen.png"));
+  evidence.replayFresh = await rp.evaluate(panel, freshDividers);
+  assert.ok(evidence.replayFresh.every((f: boolean) => !f), `replayed dividers do not animate: ${JSON.stringify(evidence.replayFresh)}`);
   assert.deepEqual({ dividers: restored.dividers, row: restored.row, users: restored.usersWithDivider }, { dividers: four.dividers, row: four.row, users: four.usersWithDivider }, `reopened: same chapters: ${JSON.stringify(restored)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);

@@ -6,14 +6,15 @@ import { axBackendNodeFor, isAxRef, snapshotRefKind } from "../axstate.js";
 import { parseTarget as sharedParseTarget, resolveArgs, resolveTargetSelector } from "../../shared/target.js";
 import { sendCommand } from "../debugger.js";
 import { assertNoPendingDialog } from "../page-events.js";
-import { getWorkingTabId, resolveReadableTab } from "../state.js";
+import { getWorkingTabId, resolveReadableTab, resolveTabForRead } from "../state.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 
 const MAX_ELEMENT_CHARS = 1_000_000;
 
 export type ReadElementResult = ToolContract["read_element"]["data"];
 
-type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'>;
+/** secret、layoutText、unrendered 只在扩展内部用（fill 的 from 据它们拒读或取字），不出现在 read_element 的回执里。 */
+type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { secret?: true; layoutText?: string; unrendered?: true };
 
 type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 
@@ -46,7 +47,7 @@ export function typedReadElementError(error: unknown): Error {
 }
 
 /** Serialized unchanged into either CDP or executeScript; no closure or page-supplied code. */
-function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied: Element | null, readback: {deadline:number} | null, sensitiveName: string): ReadReply {
+function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied: Element | null, readback: {deadline:number} | null, sensitiveName: string, layout = false): ReadReply {
   try {
     if(readback&&Date.now()>=readback.deadline)throw new Error('READBACK_TIMEOUT');
 
@@ -307,6 +308,18 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     if(hasValue)data.value=maskValue(String(el.value ?? ''));
 
+    if(secretField)data.secret=true;
+
+    // 按渲染布局取字（innerText）：块元素之间有换行，隐藏的不取。会触发排版，所以只在 fill 的 from 要它时才算。
+    // 元素自己没渲染时 innerText 退回 textContent，会带上隐藏的字和脚本、样式，所以这时不取字。
+    if(layout){
+      const box=element.nodeType===3?element.parentElement:el;
+      const rendered=!!box&&box.getClientRects().length>0&&(typeof box.checkVisibility!=='function'||box.checkVisibility({visibilityProperty:true}));
+
+      if(rendered)data.layoutText=element.nodeType===3?textContent:String(el.innerText??textContent);
+      else data.unrendered=true;
+    }
+
     if(properties.length)data.properties=values;
 
     // 说明会放在页面内容包装之外，只用固定文字和已校验的属性名，不带任何网页文字（包括标签名）。
@@ -342,6 +355,7 @@ async function readResolvedNode(
   target: { kind: "xpath" | "text" | "role" | "href" | "css"; selector: string },
   properties: ElementProperty[],
   check: () => void,
+  layout = false,
 ): Promise<ElementData> {
   check();
   const contextId = await isolatedReadContext(tabId);
@@ -367,7 +381,7 @@ async function readResolvedNode(
       exceptionDetails?: { exception?: { description?: string }; text?: string };
     }>(tabId, "Runtime.callFunctionOn", {
       objectId,
-      functionDeclaration: `function() { return (${readInPage.toString()})("css", null, null, ${JSON.stringify(properties)}, this, null, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}); }`,
+      functionDeclaration: `function() { return (${readInPage.toString()})("css", null, null, ${JSON.stringify(properties)}, this, null, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}, ${layout}); }`,
       returnByValue: true,
     });
 
@@ -393,6 +407,8 @@ function assertComplete(data: ElementData): ElementData {
 
   if (data.editableText !== undefined && (typeof data.editableText !== 'string' || data.editableText.length > MAX_ELEMENT_CHARS)) throw new Error('富文本字段未返回完整且有界的文本');
 
+  if (data.layoutText !== undefined && (typeof data.layoutText !== 'string' || data.layoutText.length > MAX_ELEMENT_CHARS)) throw new Error('元素未返回完整且有界的布局文字');
+
   if (data.value !== undefined && typeof data.value !== "string") throw new Error("页面字段没有返回完整字符串 value");
 
   if (data.value !== undefined && data.value.length > MAX_ELEMENT_CHARS) throw new Error(`字段值超过安全上限 ${MAX_ELEMENT_CHARS} 字符，未返回部分内容`);
@@ -400,7 +416,7 @@ function assertComplete(data: ElementData): ElementData {
   return data;
 }
 
-async function readAxRef(tabId: number, ref: number, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<ElementData> {
+async function readAxRef(tabId: number, ref: number, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}, layout = false): Promise<ElementData> {
   check();
   // 填写时被找回的 ref 指向页面换上的新节点，读它而不是已离开文档的旧节点。
   const backendNodeId=axBackendNodeFor(tabId,ref)??ref;
@@ -421,7 +437,7 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
       exceptionDetails?: { exception?: { description?: string }; text?: string };
     }>(tabId, "Runtime.callFunctionOn", {
       objectId,
-      functionDeclaration: `function() { return (${readInPage.toString()})("ref", ${ref}, null, ${JSON.stringify(properties)}, this, ${JSON.stringify(readback??null)}, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}); }`,
+      functionDeclaration: `function() { return (${readInPage.toString()})("ref", ${ref}, null, ${JSON.stringify(properties)}, this, ${JSON.stringify(readback??null)}, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}, ${layout}); }`,
       returnByValue: true,
     });
 
@@ -438,10 +454,10 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
   } finally { await sendCommand(tabId, 'Runtime.releaseObject', {objectId}).catch(() => {}); }
 }
 
-async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<ElementRead> {
+async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}, layout = false): Promise<ElementRead> {
   check();
 
-  const args: Parameters<typeof readInPage> = [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null, SENSITIVE_FIELD_NAME.source];
+  const args: Parameters<typeof readInPage> = [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null, SENSITIVE_FIELD_NAME.source, layout];
 
   const injection: chrome.scripting.ScriptInjection<Parameters<typeof readInPage>, ReadReply> = {
     target: readback ? { tabId, documentIds: [readback.documentId] } : { tabId },
@@ -484,17 +500,53 @@ export async function readElement(
   checkCurrent:()=>void=()=>{},
 ): Promise<ReadElementResult> {
   try {
-    return await readElementInner(params, executionKey, checkCurrent);
+    const result = await readElementInner(params, executionKey, checkCurrent);
+    delete result.secret;
+    delete result.layoutText;
+    delete result.unrendered;
+
+    return result;
   } catch (error) {
     throw typedReadElementError(error);
   }
+}
+
+/**
+ * fill 的 from：读出要原样写进另一栏的文字，不经过模型。输入框、下拉框取 displayValue，富文本编辑器取 editableText（同 read_element），
+ * 其余按渲染布局取 innerText：网页回答多是一段段 <p>、<li>，textContent 和 visibleText 会把段落挤成一行。快照里的 text 行是文字节点，取它自己的文字。去掉首尾空白。
+ * 来源元素本身没显示时拒读。读来源不改工作标签页（resolveTabForRead），写入仍落在原来要填的那一页。
+ * 密码、验证码、卡号这类栏按 read_element 的同一条规则拒读：它们的值从不读出。
+ */
+export async function readFillSource(source: {tabId?: number; target: string}, executionKey: string = LEAD_SESSION_ID): Promise<string> {
+  let data: ElementData & {tabId: number};
+
+  try {
+    data = await readElementInner({tabId: source.tabId, target: source.target, properties: ['displayValue']}, executionKey, undefined, true);
+  } catch (error) {
+    throw typedReadElementError(error);
+  }
+
+  if (data.secret) throw new Error('PERMISSION_DENIED: from 指向密码、验证码或卡号这类敏感栏，不读取它的内容；填写未执行。');
+
+  if (data.unrendered) throw new Error('NOT_READY: 来源元素不可见（没有显示在页面上，或在收起的区域里），不读取它的文字；填写未执行。');
+  const raw = ['input', 'textarea', 'select'].includes(data.tagName) ? data.properties?.displayValue
+    : data.editableText ?? data.layoutText;
+
+  if (typeof raw !== 'string') throw new Error('NOT_READY: from 指向的元素读不出文字；填写未执行。');
+  const text = raw.trim();
+
+  if (!text) throw new Error('NOT_READY: from 指向的元素没有可见文字；填写未执行。请确认 from 指的是那段文字所在的元素。');
+
+  return text;
 }
 
 async function readElementInner(
   params: ToolContract["read_element"]["params"],
   executionKey: string = LEAD_SESSION_ID,
   checkCurrent:()=>void=()=>{},
-): Promise<ReadElementResult> {
+  /** fill 的 from：多读布局文字和可见性，且读来源不改工作标签页。 */
+  fillSource = false,
+): Promise<ReadElementResult & { secret?: true; layoutText?: string; unrendered?: true }> {
   const readback=params.readback;
 
   const check=()=>{
@@ -518,7 +570,7 @@ async function readElementInner(
   check();
 
   if (tabId == null) throw new Error("当前执行成员没有工作标签页；请提供需要读取的 tabId");
-  const tab = await resolveReadableTab(tabId, executionKey);
+  const tab = await (fillSource ? resolveTabForRead : resolveReadableTab)(tabId, executionKey);
   check();
 
   if (tab.id == null) throw new Error(`标签页 ${tabId} 已关闭`);
@@ -548,7 +600,7 @@ async function readElementInner(
     if (target.kind === 'xpath' || target.kind === 'text' || target.kind === 'role' || target.kind === 'href') {
       const kind = target.kind;
       const selector = target.selector ?? "";
-      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind, selector }, properties, check), check);
+      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind, selector }, properties, check, fillSource), check);
 
       const read: ElementRead = {data:observed.value};
 
@@ -559,7 +611,7 @@ async function readElementInner(
 
     if (target.kind === 'css') {
       // CSS 也走统一 resolver（open shadow + 同源 frame），避免 readInPage 的浅 querySelectorAll。
-      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check), check);
+      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check, fillSource), check);
 
       const read: ElementRead = {data:observed.value};
 
@@ -572,7 +624,7 @@ async function readElementInner(
       const ref = target.ref!;
 
       if (isAxRef(tabId, ref)) {
-        const observed=await withObservedDocumentIdentity(tabId,executionKey,()=>readAxRef(tabId,ref,properties,readback,check),check);
+        const observed=await withObservedDocumentIdentity(tabId,executionKey,()=>readAxRef(tabId,ref,properties,readback,check,fillSource),check);
         check();
 
         const read: ElementRead = {data:observed.value};
@@ -587,7 +639,7 @@ async function readElementInner(
       if (snapshotRefKind(tabId) !== 'dom') throw new Error(`ref @${ref} 已过期或不属于当前 snapshot；请重新 snapshot 或使用唯一 CSS`);
     }
 
-    return readDom(tabId, target, executionKey, properties,readback,check);
+    return readDom(tabId, target, executionKey, properties,readback,check,fillSource);
   };
 
   if (!params.expect) {

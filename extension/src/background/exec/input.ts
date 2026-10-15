@@ -5,7 +5,8 @@ import {replaceEditableText} from "../../shared/editable-text.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
-import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
+import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type FillSource, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
+import { readFillSource } from "./read-element.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { sendCommand } from "../debugger.js";
@@ -372,13 +373,13 @@ function classifyReadback(field: PageField | null, requested: string, mode: "rep
 }
 
 /** 读回失败不影响写入结果：读不到记 unreadable。 */
-async function readBackField(tabId: number, where: { backendNodeId: number } | { target: string | null }, requested: string, mode: "replace" | "insert"): Promise<FieldReadback> {
+async function readBackField(tabId: number, where: { backendNodeId: number } | { target: string | null }, requested: string, mode: "replace" | "insert", max = FIELD_READBACK_MAX): Promise<FieldReadback> {
   let field: PageField | null = null;
 
   try {
     field = "backendNodeId" in where
-      ? await callOnBackendNode<PageField | null>(tabId, where.backendNodeId, `function(max, sensitiveName) { return (${readFieldInPage.toString()}).call(this, null, max, sensitiveName); }`, [FIELD_READBACK_MAX, SENSITIVE_FIELD_NAME.source])
-      : await callDom(tabId, readFieldInPage, [where.target, FIELD_READBACK_MAX, SENSITIVE_FIELD_NAME.source]);
+      ? await callOnBackendNode<PageField | null>(tabId, where.backendNodeId, `function(max, sensitiveName) { return (${readFieldInPage.toString()}).call(this, null, max, sensitiveName); }`, [max, SENSITIVE_FIELD_NAME.source])
+      : await callDom(tabId, readFieldInPage, [where.target, max, SENSITIVE_FIELD_NAME.source]);
   } catch { /* 读不回不算写入失败 */ }
 
   return classifyReadback(field ?? null, requested, mode);
@@ -2270,11 +2271,27 @@ async function writeField<T extends { range?: InputRangeReadout | null; select?:
  * 填写本身的值变化不算：没有目标元素的采样只看页面多没多东西。
  */
 export async function fill(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
+  params: { target: string; value?: string; from?: FillSource; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
-  const data = await withAppeared(params.tabId, sessionId, () => fillField(params, sessionId, beforeDispatch));
+  const hasValue = typeof params.value === "string";
+
+  if (hasValue === (params.from !== undefined)) {
+    throw notExecuted(new Error(hasValue ? "fill 的 value 和 from 只能给一个：要写自己的文字给 value，要原样搬页面上已有的文字给 from；填写未执行。" : "fill 需要 value（要写的文字）或 from（文字所在的元素）其中一个；填写未执行。"));
+  }
+
+  if (params.from !== undefined && (typeof params.from !== "object" || params.from === null || typeof params.from.target !== "string" || !params.from.target.trim()
+    || (params.from.tabId !== undefined && !Number.isSafeInteger(params.from.tabId)))) {
+    throw notExecuted(new Error("fill 的 from 要写成 {target, tabId?}：target 是文字所在元素的 @ref 或 CSS；填写未执行。"));
+  }
+
+  // 先读来源再动页面：读不到、是敏感栏时目标栏一点没动。
+  const copied = params.from ? await readFillSource({ tabId: params.from.tabId ?? params.tabId, target: params.from.target }, sessionId).catch((error: unknown) => { throw notExecuted(error); }) : undefined;
+  const value = copied ?? params.value!;
+  const written = await withAppeared(params.tabId, sessionId, () => fillField({ ...params, value, ...(copied !== undefined ? { readbackMax: copied.length + 1 } : {}) }, sessionId, beforeDispatch));
+  // 搬运的文字不回给模型、不进诊断记录：读回只留核对结论，另附长度和首尾几个字让模型确认取对了元素。
+  const data = copied === undefined ? written : { ...written, source: sourceSummary(copied), ...(written.readback ? { readback: withoutText(written.readback) } : {}) };
 
   if (!params.submit) return data;
 
@@ -2284,6 +2301,20 @@ export async function fill(
   }
 
   return { ...data, submit: await submitAfterFill(params, sessionId, beforeDispatch) };
+}
+
+const SOURCE_EDGE_CHARS = 20;
+
+function sourceSummary(text: string): NonNullable<ToolContract["fill"]["data"]["source"]> {
+  const chars = [...text];
+
+  return { chars: chars.length, head: chars.slice(0, SOURCE_EDGE_CHARS).join(""), tail: chars.length > SOURCE_EDGE_CHARS * 2 ? chars.slice(-SOURCE_EDGE_CHARS).join("") : chars.slice(SOURCE_EDGE_CHARS).join("") };
+}
+
+function withoutText(readback: FieldReadback): FieldReadback {
+  const { requested: _requested, observed: _observed, ...rest } = readback;
+
+  return rest;
 }
 
 /**
@@ -2344,7 +2375,7 @@ async function withAppeared<T extends object>(tabIdParam: number | undefined, se
 }
 
 async function fillField(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"] },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; /** 读回比较的长度上限；搬运整段文字时要整段核对。 */ readbackMax?: number },
   sessionId: string,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
@@ -2443,7 +2474,7 @@ async function fillField(
 
         if (params.memory) await markMemoryField(tabId, params.memory, backendNodeId, params.target);
 
-        const filled = { ...filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace"), select), ...(typing === "failed" ? { typing } : {}) };
+        const filled = { ...filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace", params.readbackMax), select), ...(typing === "failed" ? { typing } : {}) };
         await rememberActionTarget(tabId, params.target, params.target);
 
         return refound ? { ...filled, refound } : filled;
@@ -2511,7 +2542,7 @@ async function fillField(
 
     await rememberActionTarget(tabId, params.target, params.target);
 
-    return { ...filledResult(filled.range, await readBackField(tabId, { target: params.target }, params.value, "replace"), "select" in filled && filled.select === true), ...(typing === "failed" ? { typing } : {}) };
+    return { ...filledResult(filled.range, await readBackField(tabId, { target: params.target }, params.value, "replace", params.readbackMax), "select" in filled && filled.select === true), ...(typing === "failed" ? { typing } : {}) };
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
