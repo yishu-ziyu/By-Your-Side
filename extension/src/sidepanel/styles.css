@@ -497,6 +497,8 @@ html, body {
   flex-direction: column;
   gap: var(--gap-turn);
   scrollbar-width: thin;
+  /* 滚动条出现、消失时正文宽度不变：拖短回答时段落不会因此换行，高度量得准。 */
+  scrollbar-gutter: stable;
 }
 
 #messages > * {
@@ -3059,18 +3061,9 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .answer-actions .answer-sources-btn { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[hidden] { display: none; }
 
-/* 拖短回答（answer-shorten.ts）：把手和层名在文末一排，长回答时贴着侧栏底部。收起展开用 layout 档；减少动效只淡入淡出。 */
-.msg.assistant [data-shorten], .msg.assistant .shorten-rest {
-  interpolate-size: allow-keywords;
-  transition: height var(--d-layout) var(--e-move), margin-block var(--d-layout) var(--e-move), padding-block var(--d-layout) var(--e-move),
-              opacity var(--d-state) var(--e-enter), display var(--d-layout) allow-discrete;
-}
-.msg.assistant .shorten-off { display: none; height: 0; margin-block: 0; padding-block: 0; opacity: 0; overflow: hidden; }
-/* 只在用户换过层之后才从 0 展开：回答刚写完、历史回放时新插入的元素不闪。 */
-@starting-style {
-  .msg.assistant[data-shorten-moved] [data-shorten]:not(.shorten-off) { height: 0; opacity: 0; }
-  .msg.assistant[data-shorten-moved] .shorten-rest:not(.shorten-off) { opacity: 0; }
-}
+/* 拖短回答（answer-shorten.ts）：把手和层名在文末一排，长回答时贴着侧栏底部。收起展开的过程由脚本跟着手指画，这里只管最终收起的块。 */
+.msg.assistant .shorten-off { display: none; }
+.msg.assistant[data-shortening] > [data-shorten] { transition: none; }
 .answer-actions.has-grip { position: sticky; bottom: calc(-1 * var(--s-5)); z-index: 1; padding-bottom: var(--s-5); margin-bottom: calc(-1 * var(--s-5)); background: var(--wallpaper); }
 /* 贴底时正文不透到按钮和字下面：这一排本身不透明，只在上沿留一窄条渐隐；
    #messages 底部有 --s-5 的内边距，贴底的位置放低这么多、底色也往下补这么多，内边距里不再透出正文。 */
@@ -3081,7 +3074,6 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .shorten-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .shorten-level { min-width: 96px; text-align: right; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
-  .msg.assistant [data-shorten], .msg.assistant .shorten-rest { transition-property: opacity, display; }
   .shorten-grip i { transition: none; }
 }
 .answer-actions .answer-show-tab { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: 12.5px; color: var(--text-secondary); }
