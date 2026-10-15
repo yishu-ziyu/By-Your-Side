@@ -168,6 +168,11 @@ export class TraceRecorder {
     });
   }
 
+  /** 不属于任何一次运行的事件：runId 记 null，不沾上一个运行的编号。 */
+  recordOutsideRun(type: string, data: Record<string, unknown> = {}): void {
+    this.write(type, data, { runId: null, goalRevision: null, turn: 0 });
+  }
+
   private write(type: string, data: Record<string, unknown>, correlation: Correlation): void {
     if (this.closed) return;
 

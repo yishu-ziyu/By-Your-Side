@@ -3,12 +3,13 @@
  * 真实模型，只装扩展，无头；在后台文档（inproc.html）上开网络记录，只记请求头的名字，不记值。
  *   SIDEAGENT_ACCEPTANCE_DIST=<dist> NODE_OPTIONS=--conditions=import npx tsx scripts/acceptance/real-path/warm-connection.mts --headless [--model=provider/id]
  * 失败方式：点进输入框后、按回车前没有发往模型服务的 HEAD；HEAD 带了 authorization、cookie 或 chatgpt-account-id；模型请求带上了用户在该网站的 cookie；
- * 第一个模型请求没复用连接，或浏览器计时里还有建连接、握手阶段；面板里没出现回答；30 秒内再点进输入框又发了一次 HEAD。
+ * 第一个模型请求没复用连接，或浏览器计时里还有建连接、握手阶段；面板里没出现回答；30 秒内再点进输入框又发了一次 HEAD；
+ * 扩展自己的诊断记录（设置页导出）里没有结果为 ok 的 warm_up 行，或这次任务第一个 model_request 没记距提前建连接多少毫秒。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, sleep, until, type JsonRecord, type TargetInfo } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, sleep, until, type JsonRecord, type TargetInfo } from "./harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
@@ -111,6 +112,13 @@ try {
   const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].filter((x) => !x.closest(".run-steps")).at(-1)?.innerText ?? ""`));
   await rp.screenshot(panel, join(artifacts, "panel.png"));
 
+  const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
+  // SAFETY: 诊断记录每行是 { runId, type, data } 的 JSON。
+  const lines = traces.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { time: string; runId: string | null; type: string; data?: JsonRecord });
+  const runId = lines.find((l) => l.type === "run_start" && String(l.data?.text ?? "").includes("这页标题是什么"))?.runId;
+  const firstModelRequest = lines.find((l) => l.runId === runId && l.type === "model_request");
+  const warmUpLines = lines.filter((l) => l.type === "warm_up");
+
   const all = [...requests.values()].filter((r) => r.url).sort((a, b) => a.wallStartMs - b.wallStartMs);
   const post = all.find((r) => r.method === "POST" && MODEL_POST.test(r.url));
   const origin = post ? new URL(post.url).origin : null;
@@ -124,6 +132,9 @@ try {
     firstModelPost: view(post) ?? null,
     postUsesHeadConnection: head?.connectionId !== undefined && head.connectionId === post?.connectionId,
     headsWithin30s: head ? heads.filter((r) => r.wallStartMs - head.wallStartMs < WINDOW_MS).length : 0,
+    traceWarmUps: warmUpLines.map((l) => ({ time: l.time, runId: l.runId, ...l.data })),
+    traceFirstModelRequestWarmUp: firstModelRequest?.data?.warmUp ?? null,
+    traceResponseHeaders: lines.filter((l) => l.runId === runId && l.type === "response_headers").map((l) => l.data ?? null),
     modelOriginRequestsBeforeFocus: origin ? all.filter((r) => r.wallStartMs < focusMs && new URL(r.url).origin === origin).map((r) => `${r.method} ${r.url.replace(/\?.*$/, "")}`) : [],
   });
 
@@ -136,6 +147,10 @@ try {
   assert.ok(post.timing && post.timing.connectStart === -1 && post.timing.sslStart === -1, `第一个模型请求没有建连接和握手阶段：${JSON.stringify(evidence.firstModelPost)}`);
   assert.ok(answer.trim().length > 0, "面板里出现回答");
   assert.equal(evidence.headsWithin30s, 1, "30 秒内再点进输入框不再发 HEAD");
+  assert.ok(warmUpLines.some((l) => l.data?.outcome === "ok"), `诊断记录里有结果为 ok 的 warm_up 行：${JSON.stringify(evidence.traceWarmUps)}`);
+  // SAFETY: model_request 的 warmUp 是 warm-connection.ts 的摘要对象；缺失时下面的判断落空。
+  const sinceWarmUpMs = (firstModelRequest?.data?.warmUp as { sinceWarmUpMs?: unknown } | undefined)?.sinceWarmUpMs;
+  assert.ok(typeof sinceWarmUpMs === "number" && sinceWarmUpMs > 0, `这次任务第一个 model_request 记了距提前建连接多少毫秒：${JSON.stringify(evidence.traceFirstModelRequestWarmUp)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 
