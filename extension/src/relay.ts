@@ -38,6 +38,12 @@ export function parseDeliveryReceipt(msg: unknown): DeliveryReceipt | null {
   return { seq, ok, ...(text === undefined ? {} : { text }), ...(original ? { original } : {}), ...(reason ? { reason } : {}) };
 }
 
+/** 侧栏发送确认卡的端口（background/send-confirm.ts）：后台推还在等的确认 id，侧栏回 { id, choice }。 */
+export const SEND_CONFIRM_PANEL_PORT = "send-confirm-panel";
+
+/** 「发送」出现后这么久内的点击不算：本来就在路上的一下点击，不该落在刚冒出来的按钮上（浏览器的权限弹窗也这样做）。网页确认框和侧栏卡用同一个值。 */
+export const SEND_ARM_MS = 800;
+
 /** 伴随进程连接状态（background 维护，面板只展示）。 */
 export type ConnState = "connecting" | "connected" | "disconnected";
 

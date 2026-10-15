@@ -182,6 +182,8 @@ try {
   const atConfirm = await sample("确认框出现");
   samples.push(atConfirm);
   await rp.screenshot(work, join(out, "b-confirm.png"));
+  // 「发送」刚出现的那一会儿不算点击（SEND_ARM_MS）。
+  await sleep(1000);
   const afterSwitch = samples.find(s => s.part === "b" && s.after === "tabs 结果");
   check("b 助手切回表单页（tabs switch）后，活动标签仍是「我的页面」", afterSwitch?.activeId === userId, afterSwitch as unknown as Json);
   check("b 确认框出现时，表单页已是活动标签", atConfirm.activeId === formId && count("/send") === 0, { ...atConfirm, formId, sent: count("/send") });

@@ -17,7 +17,9 @@ import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex"
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
 import type { ModelPort } from "../../../agent/src/agent-loop.js";
 import { isTransientModelError, retryWhenBusy } from "../../../shared/provider-busy.js";
-import { measuredModelIds, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
+import { isProviderBusyError } from "../../../shared/user-facing.js";
+import { measuredModelIds, providerConcurrency, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
+import { gatedCall, gatedStream, ProviderGate, type ModelQueueWait, type QueuePurpose } from "./provider-gate.js";
 import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
@@ -236,7 +238,29 @@ export async function probeModel(probe: ModelRuntime, config: InprocModelConfig,
   if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage ?? "服务商返回错误");
 }
 
-/** 让扩展模型目录满足任务核心的模型接口，保留当前设置页的模型解析与 OpenCode 请求头。 */
+/** 后台短调用遇到「忙」、本扩展里这家服务商又没有别的请求可等时的重试间隔：与 retryWhenBusy 相同。 */
+const BUSY_RETRY_DELAYS_MS = [1_500, 3_000];
+
+/** ModelQueueOptions 不是 pi-ai 的字段：按形状读出，不做类型断言。 */
+function queueOptions(options: object | undefined): { purpose: QueuePurpose; onQueued?: (sent: Promise<void>) => void } {
+  const onQueued = options && "onQueued" in options && typeof options.onQueued === "function" ? options.onQueued : undefined;
+
+  return {
+    purpose: options && "userWaiting" in options && options.userWaiting === true ? "main" : "side",
+    ...(onQueued ? { onQueued: (sent: Promise<void>) => { onQueued(sent); } } : {}),
+  };
+}
+
+const pause = (ms: number, signal: AbortSignal | undefined) => new Promise<void>(done => {
+  const timer = setTimeout(done, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(timer); done(); }, { once: true });
+});
+
+/**
+ * 让扩展模型目录满足任务核心的模型接口，保留当前设置页的模型解析与 OpenCode 请求头。
+ * 任务核心（主任务、对冲请求、后台判断、翻译、阅读）的模型请求都从这个接口发出，所以服务商并发闸门放在这里；
+ * 设置页的试连和测速在另一个页面里用自己的运行时，不经过它。
+ */
 function createCoreModelPort(
   runtime: ModelRuntime,
   selectedConfig: () => InprocModelConfig | null,
@@ -265,7 +289,33 @@ function createCoreModelPort(
     return model.api === "openai-codex-responses" ? { ...merged, transport: "sse" as const } : merged;
   };
 
-  return {
+  const gate = new ProviderGate(providerConcurrency);
+
+  const complete = (model: Model<Api>, context: Parameters<ModelPort["completeSimple"]>[1], options: Parameters<ModelPort["completeSimple"]>[2], onWait: (wait: ModelQueueWait) => void) =>
+    gatedCall(gate, model, queueOptions(options).purpose, options?.signal, () => runtime.models.completeSimple(model, context, withHeaders(model, options)), onWait);
+
+  /**
+   * 一次性调用遇到「忙」，登记了并发上限的服务商：本扩展里这家还有在途或排着的请求，就等它们结束再试；
+   * 没有（真被限流，或别的程序在用同一个账号）就照旧按固定间隔重试。没登记的服务商照旧按固定间隔重试。
+   */
+  const completeWhenFree = async (model: Model<Api>, context: Parameters<ModelPort["completeSimple"]>[1], options: Parameters<ModelPort["completeSimple"]>[2], onWait: (wait: ModelQueueWait) => void) => {
+    if (!gate.limited(model.provider)) return retryWhenBusy(() => complete(model, context, options, onWait), options?.signal);
+    let reply = await complete(model, context, options, onWait);
+
+    for (const delayMs of BUSY_RETRY_DELAYS_MS) {
+      if (reply.stopReason !== "error" || !isProviderBusyError(reply.errorMessage) || options?.signal?.aborted) break;
+
+      if (gate.busy(model.provider)) await gate.idle(model.provider, options?.signal);
+      else await pause(delayMs, options?.signal);
+
+      if (options?.signal?.aborted) break;
+      reply = await complete(model, context, options, onWait);
+    }
+
+    return reply;
+  };
+
+  const port = (onWait: (wait: ModelQueueWait) => void): ModelPort => ({
     getModel: (provider, id) => selectedModel(provider, id) ?? runtime.models.getModel(provider, id),
     // 设置里没选或选的模型解析不了时回到主模型，不让即时动作因为快速模型配置出错而失败。
     fastModel: () => resolveOptional(fastConfig()),
@@ -286,12 +336,12 @@ function createCoreModelPort(
 
       return [...available, selected];
     },
-    streamSimple: (model, context, options) => runtime.models.streamSimple(model, context, withHeaders(model, options)),
+    streamSimple: (model, context, options) => gatedStream(gate, model, "main", options?.signal, () => runtime.models.streamSimple(model, context, withHeaders(model, options)), onWait, queueOptions(options).onQueued),
     // 记忆判断、目标核对这些短调用常和主模型同时发出：服务商回「忙」就等一下再试，不让判断悄悄失败。
     // 还是暂时出错（与主任务同一判断：401、额度用尽不算）时，有和它不同的备用模型就在备用上再问一次（R3）。
     // 主任务只走 streamSimple，不经过这里，所以不会和主任务的换模型叠在一起。
     async completeSimple(model, context, options) {
-      const reply = await retryWhenBusy(() => runtime.models.completeSimple(model, context, withHeaders(model, options)), options?.signal);
+      const reply = await completeWhenFree(model, context, options, onWait);
       const backup = resolveOptional(backupConfig());
 
       if (reply.stopReason !== "error" || options?.signal?.aborted || !backup || `${backup.provider}/${backup.id}` === `${model.provider}/${model.id}` || !isTransientModelError(reply)) return reply;
@@ -300,7 +350,10 @@ function createCoreModelPort(
       const [lowest] = thinkingProfile(backup).levels;
       console.debug("[sideagent]", `side call switched to backup: ${model.provider}/${model.id} -> ${backup.provider}/${backup.id}`);
 
-      return runtime.models.completeSimple(backup, context, withHeaders(backup, { ...options, reasoning: lowest === "off" ? undefined : lowest }));
+      return complete(backup, context, { ...options, reasoning: lowest === "off" ? undefined : lowest }, onWait);
     },
-  };
+    observeQueue: port,
+  });
+
+  return port(() => {});
 }

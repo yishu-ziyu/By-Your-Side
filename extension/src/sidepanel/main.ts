@@ -8,6 +8,7 @@ import { answerSkeleton, paintBeatMark } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { observeForCue } from "./cue.js";
+import { sendConfirmCard } from "./send-confirm-card.js";
 import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -1076,6 +1077,7 @@ function resetConversationRender(): void {
 
   if (resumeRoot) messagesEl.appendChild(resumeRoot);
   resumeEntry.clear();
+  modelMenu.usage(null);
   renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
 }
@@ -5211,13 +5213,22 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       onToolStart(ev);
       break;
     case "send_confirm_wait": {
-      // 等用户在网页上确认发送：标题写明在等你；不等了，回到「做了几件事」（docs/evals/20261009-send-confirm.md R2）。
+      // 等用户确认发送：网页上和侧栏卡上都能答，标题写明在等你；不等了，回到「做了几件事」（docs/evals/20261009-send-confirm.md R2、20261015-panel-send-confirm.md）。
       const run = currentRun;
+      const card = sendConfirmCard(ev.confirm);
+
+      if (card) {
+        appendToMessages(card);
+        scrollToEnd();
+      }
+
+      // 确认之后点没点下去的补报：等待早就结束了，只更新卡。
+      if (ev.confirm?.clicked) break;
 
       // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
       // 等你确认的时间不算「想了」（#263）。
       if (run) {
-        setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
+        setRunTitle(run, ev.waiting ? "等你确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
         // 等你的时候过程行不扫光、回答位置不放骨架；这一步的工具还在途，所以 data-phase 仍是 executing。
         run.root.toggleAttribute("data-wait-user", ev.waiting);
 
@@ -5320,6 +5331,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     }
     case "turn_end":
       closeBlocks();
+      break;
+    case "context_usage":
+      modelMenu.usage({ used: ev.used, window: ev.window, model: ev.model });
       break;
     case "agent_end":
       closeBlocks();
