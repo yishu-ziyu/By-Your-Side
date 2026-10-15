@@ -278,6 +278,8 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "set_model"; model: string }
   /** 输入框旁的思考强度：深入用高档，快用低档（各模型按自己的档位换算），对所有会话生效。 */
   | { type: "set_thinking"; deep: boolean }
+  /** 用户点进输入框或开始打字：先把到当前模型服务的连接建好，发出去的第一句不再等建连接。 */
+  | { type: "warm_up" }
   /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做（#74）。key：刚换的 key，先用上再接着做。 */
   | { type: "retry_after_error"; key?: string }
   /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */

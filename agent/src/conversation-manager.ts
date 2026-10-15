@@ -69,6 +69,9 @@ export function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnaps
   return !(['running', 'paused', 'interrupted'].includes(snapshot.state) || snapshot.active.length);
 }
 
+/** 同一个模型服务多久内只建一次连接：浏览器会把空闲连接留一阵，用户一句话也打不了这么久。 */
+const WARM_UP_INTERVAL_MS = 30_000;
+
 export class ConversationManager {
   private readonly taskQueue:TaskQueue;
   private readonly pendingStarts=new Set<string>();
@@ -142,6 +145,24 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     return this.create(DEFAULT_CONVERSATION_ID, "新会话");
   }
   get(id: string): ConversationEntry | undefined { return this.entries.get(id); }
+
+  private warmedAt = new Map<string, number>();
+
+  /**
+   * 经代理新建一条到模型服务的加密连接要几秒，只有第一次请求要付。用户开始打字时先发一个 HEAD，
+   * 浏览器把连接留在池里，真正的请求就复用它；回什么都不看。
+   * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
+   */
+  private warmUp(id: string): void {
+    const origin = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session.modelOrigin();
+
+    if (!origin) return;
+    const now = Date.now();
+
+    if (now - (this.warmedAt.get(origin) ?? 0) < WARM_UP_INTERVAL_MS) return;
+    this.warmedAt.set(origin, now);
+    void fetch(origin, { method: "HEAD", credentials: "omit", cache: "no-store" }).catch(() => undefined);
+  }
   getTaskProgress(id: string): TaskProgressSnapshot | null { const snapshot=this.progress.get(id)?.snapshot();
 
 return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:null; }
@@ -1604,6 +1625,13 @@ return receipt;
     if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);
 
 return;}
+
+    // 点进输入框是被动事件：放在会话查找和断点检查前面，找不到会话或断点不可用时也不往界面报错。
+    if (message.type === "warm_up") {
+      this.warmUp(id);
+
+      return;
+    }
 
     const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
 
