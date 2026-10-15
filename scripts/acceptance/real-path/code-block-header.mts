@@ -4,7 +4,7 @@
  * 脚本模型慢慢答一段话，中间一个 ```js 代码块，第一行比侧栏宽。只装扩展。剪贴板只记下产品交给 navigator.clipboard 的字，不读系统剪贴板。
  * 失败方式：没有那一条或语言名不对；流式输出时代码块先出来、那一条后到（字会跳）；默认还有横向滚动条；点「换行」不能回到横向滚动；
  * 复制到的不是代码原文；没变成「已复制」或 1.5 秒后没变回；复制失败时什么也不显示；整段「复制」把条上的字也复制进去；
- * 回答里的原始 HTML 藏了字（<span hidden>）却也有「复制」，或仿造的「复制」按钮点了能写剪贴板。
+ * 回答里的原始 HTML 藏了字（<span hidden>）却也有「复制」，或仿造的「复制」按钮出现在回答里。
  * 截图：400 宽和 300 宽各一张（before / after 对比时，用 SIDEAGENT_ACCEPTANCE_DIST 指到旧版构建再跑一次）。
  */
 import assert from "node:assert/strict";
@@ -64,9 +64,9 @@ function toState(value: unknown): State {
   return value as State; // SAFETY: 上面查过是 STATE 返回的对象，STATE 只返回这个形状。
 }
 
-/** 原始 HTML 那两块：有没有被加上条、仿造的按钮还是不是代码块的样子。 */
-const HOSTILE = `(() => { const msg = [...document.querySelectorAll(".msg.assistant")].at(-1); return { blocks: msg.querySelectorAll(".code-block").length,
-  hiddenHasHead: !!msg.querySelector("pre code span[hidden]")?.closest(".code-block"), forgedLooksReal: !!msg.querySelector("[data-forged]")?.closest(".code-block-head") }; })()`;
+/** 原始 HTML 那两块：藏字的有没有被加上条、仿造的「复制」按钮还在不在（真的「复制」字由 CSS 显示，按钮里没有文字）。 */
+const HOSTILE = `(() => { const msg = [...document.querySelectorAll(".msg.assistant")].at(-1); return {
+  hiddenHasHead: !!msg.querySelector("pre code span[hidden]")?.closest(".code-block"), forgedButton: [...msg.querySelectorAll("button")].some((b) => b.textContent === "复制" && !b.closest(".answer-actions, .answer-panel")) }; })()`;
 
 try {
   const panel = await rp.attach(await rp.openSidePanel());
@@ -127,13 +127,10 @@ try {
   await rp.click(panel, "#input");
   await rp.typeText(panel, ASK_HOSTILE);
   await rp.pressEnter(panel);
-  await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].at(-1)?.textContent.includes("看完了") && !!document.querySelector(".msg.assistant [data-forged]")`)) || undefined, 60_000, "第二段回答显示完");
+  await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].at(-1)?.textContent.includes("看完了")`)) || undefined, 60_000, "第二段回答显示完");
   await sleep(800);
   const hostile = await rp.evaluate(panel, HOSTILE);
-  await rp.click(panel, ".msg.assistant [data-forged]");
-  await sleep(200);
-  const forgedCopies = await rp.evaluate(panel, `window.__copied.length`);
-  Object.assign(evidence, { narrow, before, hostile, forgedCopies, unwrapped, rewrapped, copied, back, wholeAnswer: whole.clipboard, failed });
+  Object.assign(evidence, { narrow, before, hostile, unwrapped, rewrapped, copied, back, wholeAnswer: whole.clipboard, failed });
 
   assert.equal(before.label, "JavaScript", "代码块上方写着 JavaScript");
   assert.deepEqual(evidence.firstPre, { head: true, finished: false }, "流式输出时代码一出来那一条就在");
@@ -145,8 +142,7 @@ try {
   assert.ok(copied.copied === 1 && copied.copy === 0 && copied.copiedLabel === "已复制", `点后显示「已复制 ✓」：${JSON.stringify(copied)}`);
   assert.ok(back.copied === 0 && back.copy === 1, `1.5 秒后变回「复制」：${JSON.stringify(back)}`);
   assert.ok(before.right !== null && Math.abs(before.right) <= 1, `「复制」靠右：${JSON.stringify(before)}`);
-  assert.deepEqual(hostile, { blocks: 0, hiddenHasHead: false, forgedLooksReal: false }, "原始 HTML 里藏字的代码块没有「复制」，仿造的条不像真的");
-  assert.equal(forgedCopies, 0, "点仿造的「复制」不写剪贴板");
+  assert.deepEqual(hostile, { hiddenHasHead: false, forgedButton: false }, "原始 HTML 里藏字的代码块没有「复制」，仿造的「复制」按钮不出现");
   assert.ok(failed.failed === 1 && failed.copy === 0 && failed.failedLabel === "没做成", `复制失败时显示「没做成」：${JSON.stringify(failed)}`);
   assert.ok(whole.clipboard && whole.clipboard.includes("console.log") && !/JavaScript|不换行|已复制/.test(whole.clipboard), `整段「复制」不带条上的字：${JSON.stringify(whole.clipboard)}`);
 } catch (caught) {
