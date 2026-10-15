@@ -2,7 +2,7 @@ import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
 import { resolveWorkingTab } from "../state.js";
 
-import {ERROR_PAGE_NOTE,downloadNote,readCurrentDocument,settlesContent,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
+import {ERROR_PAGE_NOTE,downloadNote,readCurrentDocument,retryTransientErrorPage,settlesContent,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
 
 export async function navigate(
   params: {
@@ -12,7 +12,8 @@ export async function navigate(
   },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ url: string; title: string; note?: string } & PageReadiness> {
+  cancelled?: () => boolean,
+): Promise<{ url: string; title: string; note?: string; retry?: string } & PageReadiness> {
   // 没有完整网址时 Chrome 不会打开新文档，下面会白等到超时（#256）：立刻报错，并点明程序里常见的取错值。
   const url = typeof params.url === "string" ? params.url.trim() : "";
 
@@ -32,7 +33,7 @@ export async function navigate(
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   const tabId = tab.id;
-  const ready=await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })});
+  const {ready,retry}=await retryTransientErrorPage(tabId,url,await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })}),timeoutMs,cancelled);
 
   // 等页面把内容画完，宿主附带的快照才不是半张空页；多等的时间算进 waitMs。
   if (settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tabId);
@@ -40,7 +41,7 @@ export async function navigate(
   const after = await chrome.tabs.get(tab.id);
   const data = { url: after.url ?? url, title: after.title ?? "" };
 
-  const result: { url: string; title: string; note?: string } & PageReadiness = {...data,...ready};
+  const result: { url: string; title: string; note?: string; retry?: string } & PageReadiness = {...data,...ready,...(retry?{retry}:{})};
 
   // 超时不算失败：页面可能已部分可用
   if (ready.readiness==='timeout') result.note = "document readiness timeout; page may still be loading";

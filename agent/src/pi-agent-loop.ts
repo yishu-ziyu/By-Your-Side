@@ -51,6 +51,15 @@ export interface PiAgentLoopOptions {
 /** 宿主插入的消息：pi-coding-agent 已给 Agent 的消息联合加上 custom 角色（core/messages.d.ts）；convertToLlm 把它转成 user 消息。 */
 type CustomAppMessage = Extract<AgentMessage, { role: "custom" }>;
 
+/** 同名、同参数、同结果的工具调用连续到第几次时提醒模型换做法。 */
+const REPEAT_NOTE_AT = 3;
+
+/**
+ * 只有这些只读工具的结果文字代表页面状态，结果不变才说明页面没变。scroll、click、fill、press_key、hover 等写操作
+ * 每次回的是固定格式的回执、screenshot 的内容在图里，文字不随页面变化，计数会把正常操作误报成原地打转。
+ */
+const REPEAT_TRACKED_TOOLS: ReadonlySet<string> = new Set(["tabs", "snapshot", "read_element", "read_elements", "browser_run"]);
+
 /** 读页结果或页面快照短于这个字数就不删：省下的不够，还丢了信息。 */
 const ELIDE_MIN_CHARS = 1000;
 
@@ -149,6 +158,8 @@ export class PiAgentLoop implements AgentLoop {
   private injected: ModelRequestObservation["injected"] = [];
   /** 当前这次模型调用的截断入口（见 AgentLoop.interruptText）；调用结束后清空。 */
   private cutText: (() => boolean) | null = null;
+  /** 本次任务里最近一串完全相同的工具调用（同名、同参数、同结果）有几次；新任务清零。 */
+  private repeat = { call: "", result: "", count: 0 };
 
   constructor(private readonly options: PiAgentLoopOptions) {
     // 0.5、1 秒两次重试：服务挂起时最坏 15 s × 3 + 1.5 s 就告诉用户，而不是让人干等几分钟。
@@ -185,11 +196,14 @@ export class PiAgentLoop implements AgentLoop {
         return this.hooks.has("tool_call") ? this.hooks.toolCall(toolCall.name, toolCall.id, hookArgs(args)) : undefined;
       },
       afterToolCall: async ({ toolCall, args, result, isError }) => {
-        if (!this.hooks.has("tool_result")) return undefined;
+        const repeated = this.noteRepeat(toolCall.name, args, result.content);
+        const hookResult = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: toolCall.name, toolCallId: toolCall.id, input: hookArgs(args), content: result.content, details: result.details, isError }) : undefined;
+        const content = hookResult?.content ? [...hookResult.content] : undefined;
 
-        const hookResult = await this.hooks.toolResult({ toolName: toolCall.name, toolCallId: toolCall.id, input: hookArgs(args), content: result.content, details: result.details, isError });
+        // 提醒放最后单独一段：侧栏的结果摘要和失败原因只读第一段，放前面会被当成工具的结果或失败原因显示。
+        if (repeated) return { content: [...(content ?? result.content), { type: "text", text: repeated }], details: hookResult?.details, isError: hookResult?.isError };
 
-        return hookResult ? { content: hookResult.content ? [...hookResult.content] : undefined, details: hookResult.details, isError: hookResult.isError } : undefined;
+        return hookResult ? { content, details: hookResult.details, isError: hookResult.isError } : undefined;
       },
       steeringMode: "all",
       sessionId: options.sessionId ?? crypto.randomUUID(),
@@ -270,6 +284,7 @@ export class PiAgentLoop implements AgentLoop {
     const runContext: CustomAppMessage[] = context.length ? [{ role: "custom", customType: "run-context", content: [RUN_CONTEXT_HEADER, ...context].join("\n\n"), display: false, timestamp: user.timestamp }] : [];
     this.runStart = this.agent.state.messages.length;
     this.elided = false;
+    this.repeat = { call: "", result: "", count: 0 };
     await this.run([...runContext, user, ...next]);
   }
 
@@ -355,6 +370,26 @@ export class PiAgentLoop implements AgentLoop {
         for (const resolve of this.idleWaiters.splice(0)) resolve();
       }
     }
+  }
+
+  /**
+   * 模型连续发同一个调用、拿到同一个结果时，它自己往往看不出在原地打转，会一直重复到任务超时。
+   * 到第 REPEAT_NOTE_AT 次起在结果末尾写明；只加框架固定文字，不带页面内容，也不拦下执行。不计数的工具打断连续。
+   */
+  private noteRepeat(name: string, args: unknown, content: readonly (TextContent | ImageContent)[]): string | null {
+    const call = `${name} ${stableJson(args)}`;
+    const result = content.map(part => (part.type === "text" ? part.text : "")).join("\n").replace(/\s+/g, " ").trim();
+
+    if (!REPEAT_TRACKED_TOOLS.has(name) || !result) {
+      this.repeat = { call: "", result: "", count: 0 };
+
+      return null;
+    }
+
+    const same = call === this.repeat.call && result === this.repeat.result;
+    this.repeat = { call, result, count: same ? this.repeat.count + 1 : 1 };
+
+    return this.repeat.count >= REPEAT_NOTE_AT ? `[框架说明] 这是连续第 ${this.repeat.count} 次同样的调用，结果没有变化。如果在等页面变化，先等待再读（例如 browser.sleep 或 wait_for）；否则请换一种做法。` : null;
   }
 
   private async afterRun(): Promise<boolean> {
@@ -586,6 +621,15 @@ export class PiAgentLoop implements AgentLoop {
     // 同名事件交给扩展钩子（如 agent_settled）；钩子之间串行保持先后；循环的完成、空闲与中止不等钩子（慢钩子只拖后面的钩子投递）。
     if (OBSERVED_EVENTS.has(event.type)) this.hookChain = this.hookChain.then(() => this.hooks.notify(event));
   }
+}
+
+/** 键按字母序排好的 JSON：模型换了参数顺序也算同一个调用。 */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+
+  if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
+
+  return JSON.stringify(value) ?? "null";
 }
 
 /** 工具参数已按工具的 TypeBox 参数表校验过，是普通 JSON 对象。 */
