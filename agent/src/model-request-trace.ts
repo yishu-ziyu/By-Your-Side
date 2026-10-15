@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Message, Tool } from "@earendil-works/pi-ai";
 import type { TraceRecorder } from "../../shared/run-trace-core.js";
+import { warmUpSummary } from "./warm-connection.js";
 
 /**
  * 每次模型调用的请求指纹（docs/evals/20261001-offtopic-reply-diagnostics.md 标准 1–4）：
@@ -22,6 +23,8 @@ export interface ModelRequestObservation {
   injected: ReadonlyArray<{ customType: string; text: string }>;
   /** 这次调用用的思考档。 */
   effort?: string;
+  /** 模型服务的 origin，用来对上提前建连接的记录；只写进诊断的是摘要，不写地址。 */
+  origin?: string;
 }
 
 /** 全文分段字数：远低于脱敏的单串上限（64k 字）与单行上限（256 KB，最坏每字 6 字节转义也不到 100 KB）。 */
@@ -55,11 +58,13 @@ type ImageRef = { sha256: string; mimeType: string; bytes: number };
 export class ModelRequestTrace {
   private readonly written = new Set<string>();
   private readonly imageCache = new Map<string, { sha256: string; bytes: number }>();
+  private requestAt = 0;
 
   constructor(private readonly record: (...args: Parameters<TraceRecorder["record"]>) => void) {}
 
   observe(request: ModelRequestObservation): void {
     try {
+      this.requestAt = Date.now();
       const systemPromptSha256 = sha256Text(request.systemPrompt);
       const manifest = JSON.stringify(request.tools.map(manifestEntry));
       const toolsSha256 = sha256Text(manifest);
@@ -72,7 +77,15 @@ export class ModelRequestTrace {
         toolsSha256, toolCount: request.tools.length, effort: request.effort,
         injected: request.injected.map(item => ({ customType: item.customType, text: item.text })),
         images: this.images(request.messages),
+        warmUp: warmUpSummary(request.origin, this.requestAt),
       });
+    } catch { /* Diagnostics must never interrupt the model call. */ }
+  }
+
+  /** 响应头到了（fetch 返回），和第一个流事件（first_response）分开记：前者含建连接，后者还含服务端排队和思考。 */
+  response(status: number): void {
+    try {
+      this.record("response_headers", { status, sinceRequestMs: this.requestAt ? Date.now() - this.requestAt : null });
     } catch { /* Diagnostics must never interrupt the model call. */ }
   }
 

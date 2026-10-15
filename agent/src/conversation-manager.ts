@@ -37,6 +37,7 @@ import {memoryHostOfUrl} from '../../shared/memory.js';
 import {asksUser} from './goal-check.js';
 import {endingFromResults,resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
+import { warmUpStarted } from './warm-connection.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -150,7 +151,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
 
   /**
    * 经代理新建一条到模型服务的加密连接要几秒，只有第一次请求要付。用户开始打字时先发一个 HEAD，
-   * 浏览器把连接留在池里，真正的请求就复用它；回什么都不看。
+   * 浏览器把连接留在池里，真正的请求就复用它；回什么都不影响请求，只记进诊断。
    * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
    */
   private warmUp(id: string): void {
@@ -161,7 +162,8 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
 
     if (now - (this.warmedAt.get(origin) ?? 0) < WARM_UP_INTERVAL_MS) return;
     this.warmedAt.set(origin, now);
-    void fetch(origin, { method: "HEAD", credentials: "omit", cache: "no-store" }).catch(() => undefined);
+    const settle = warmUpStarted(origin, now);
+    void fetch(origin, { method: "HEAD", credentials: "omit", cache: "no-store" }).then(() => true, () => false).then(ok => settle(ok, Date.now()));
   }
   getTaskProgress(id: string): TaskProgressSnapshot | null { const snapshot=this.progress.get(id)?.snapshot();
 
