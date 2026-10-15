@@ -37,9 +37,14 @@ const check = (name: string, ok: boolean, evidence: string) => {
 
 /** 输入框一行工具：看得见的按钮（id 或类名 + 文字）与颜色。 */
 const BAR = `(() => {
-  const shown = (e) => e && !e.hidden && e.getClientRects().length > 0;
+  const shown = (e) => {
+    if (!e || e.hidden) return false;
+    const r = e.getBoundingClientRect();
+    const cs = getComputedStyle(e);
+    return r.width > 4 && r.height > 4 && cs.visibility !== "hidden" && +cs.opacity > 0.5;
+  };
   const bar = document.querySelector("#composer-bar");
-  const items = [...bar.children].filter(shown).map((e) => (e.id || e.className.split(" ")[0]) + (e.textContent.trim() ? ":" + e.textContent.trim() : ""));
+  const items = [...bar.querySelectorAll(":scope > :not(#composer-bar-inner), #composer-bar-inner > *")].filter(shown).map((e) => (e.id || e.className.split(" ")[0]) + (e.textContent.trim() ? ":" + e.textContent.trim() : ""));
   const rgb = (c) => (c.match(/\\d+(\\.\\d+)?/g) || []).slice(0, 3).map(Number);
   const send = document.querySelector("#send-btn");
   const composer = document.querySelector("#composer");
@@ -64,10 +69,11 @@ try {
 
   // 一、空闲
   const idle = await rp.evaluate(panel, BAR);
-  check("空闲：一行只有 ＋、话筒、发送；没有 ···、没有语音光球胶囊、没有绿点", JSON.stringify(idle.items) === JSON.stringify(["attach-btn:+", "composer-spacer", "voice-start", "send-btn"]) && !idle.voiceCanvas && !idle.dot, JSON.stringify(idle));
+  check("空闲：只留发送；没有加号、没有话筒、没有 ···、没有语音光球胶囊、没有绿点", JSON.stringify(idle.items) === JSON.stringify(["send-btn"]) && !idle.voiceCanvas && !idle.dot, JSON.stringify(idle));
   await rp.screenshot(panel, join(out, "composer-idle.png"));
 
   // 二、点开 ＋
+  await rp.click(panel, "#input");
   await rp.click(panel, "#attach-btn");
   await sleep(300);
   const menu = await rp.evaluate(panel, "[...document.querySelectorAll(\"#attach-menu > *\")].filter((e) => e.getClientRects().length).map((e) => e.textContent.trim()).filter(Boolean)");
@@ -77,6 +83,7 @@ try {
   await sleep(200);
   const mode = await rp.evaluate(panel, "({ mode: document.querySelector(\"#marginalia-mode\").value, menuHidden: document.querySelector(\"#attach-menu\").hidden, plusPressed: document.querySelector(\"#attach-btn\").classList.contains(\"active\") })");
   check("＋ 菜单：点「原文摘录」后边注切到原文、菜单收起、＋ 不再停在按下状态", mode.mode === "source" && mode.menuHidden && !mode.plusPressed, JSON.stringify(mode));
+  await rp.click(panel, "#input");
   await rp.click(panel, "#attach-btn");
   await rp.click(panel, "#attach-menu [data-marginalia=\"off\"]");
 
