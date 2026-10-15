@@ -3626,6 +3626,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   trail.hidden = true;
   graph.el.after(trail);
   const start = runStartAt || eventTime();
+  retirePlanCard();
   taskPlan.adopt(root, body);
 
   currentRun = {
@@ -4179,6 +4180,21 @@ function finishRun(): void {
 let planCardRun: RunHost | null = null;
 let planUndo: FillUndoView | null = null;
 
+/**
+ * 新一轮开始：上一张计划卡定格。还能撤销的收掉「撤销」（新一轮开始后后台不再留这一轮的还原，和回答下的按钮一样）；
+ * 已撤销、收不回留着。之后这一轮的还原状态只画到新卡上。
+ */
+function retirePlanCard(): void {
+  if (!planCardRun) return;
+
+  if (planUndo?.state === "ready") {
+    planUndo = null;
+    paintPlanCard();
+  }
+  planCardRun = null;
+  planUndo = null;
+}
+
 /** 计划卡这一轮的回答：卡后面、下一条用户消息之前的那条回答。 */
 function planCardAnswer(run: RunHost): HTMLElement | null {
   for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
@@ -4211,6 +4227,7 @@ function paintPlanCard(): void {
       else port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg);
     },
   });
+  adoptPlanResume();
 }
 
 /** 交付属于哪一块过程：正在跑的那块，或刚收尾的那块；runId 对不上就不属于任何一块。 */
@@ -5616,7 +5633,39 @@ function renderStreamTaskCard(view: TaskView): void {
   }
   // Move the existing root, not a copied resume button. Conversation reset preserves this node.
 
-  card.querySelector(".ai-task-footer")!.append(resumeRoot);
+  (planResumeHost(view.runId) ?? card.querySelector(".ai-task-footer")!).append(resumeRoot);
+}
+
+/**
+ * 这一轮是计划卡、又没做完或中止：「继续原任务」放进计划卡里，下面不再另起一张卡说同一件事。
+ * 挪的是同一个 resume-entry-root，按钮、回执和超时照旧由 ResumeEntry 处理。
+ */
+function planResumeHost(runId: string | null | undefined): HTMLElement | null {
+  const root = planCardRun?.root;
+
+  if (!root?.isConnected || !root.matches(".plan-failed, .plan-stopped")) return null;
+
+  if (runId && root.dataset.runId && root.dataset.runId !== runId) return null;
+  let host = root.querySelector<HTMLElement>(":scope > .plan-resume");
+
+  if (!host) {
+    host = document.createElement("div");
+    host.className = "plan-resume";
+    root.append(host);
+  }
+
+  return host;
+}
+
+/** 计划卡晚于任务视图定下「没做完」时，把已经放进下面那张卡的继续入口挪上来。 */
+function adoptPlanResume(): void {
+  const resumeRoot = document.getElementById("resume-entry-root");
+  const taskCard = resumeRoot?.closest<HTMLElement>(".ai-task-card");
+
+  if (!resumeRoot || !taskCard) return;
+  const host = planResumeHost(taskCard.dataset.runId);
+
+  if (host) host.append(resumeRoot);
 }
 
 /** 面板重开/重连/切会话时补取权威视图；拿不到时保持本地已渲染事实，不编造。 */
@@ -5913,8 +5962,11 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "fill_undo") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     noteFillUndo(envelope.undo, envelope.refused, fillUndoAnswer());
-    planUndo = envelope.undo;
-    paintPlanCard();
+    // 新一轮开始时后台推 null：已撤销、收不回是上一张卡的结论，留着；只有还能撤销的才收掉。
+    if (envelope.undo || planUndo?.state === "ready") {
+      planUndo = envelope.undo;
+      paintPlanCard();
+    }
 
     return;
   }

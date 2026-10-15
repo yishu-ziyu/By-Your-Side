@@ -3499,6 +3499,11 @@ details.run-steps.plan-card[open] .plan-details::before { content: "收起"; }
 details.run-steps.plan-card.plan-failed .run-body .chip.error .chip-label { color: var(--apple-red); }
 details.run-steps.plan-card.plan-stopped .run-body .chip-dot.running::before { content: "■"; color: var(--text-secondary); }
 .plan-undo-result { margin: 4px 2px 0; }
+/* 计划卡里的「继续原任务」：卡头已经写了没做完、中止，这里只留按钮和回执说明。 */
+.plan-resume resume-entry { margin: 6px 0 4px; }
+.plan-resume resume-entry .resume-line { display: none; }
+.plan-resume resume-entry .resume-action { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-primary); font-size: var(--fs-ui); padding: 5px 12px; }
+.plan-resume resume-entry .resume-action:hover:not([disabled]) { background: var(--content-subtle); }
 details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(--text-primary); }
 .plan-undo { all: unset; cursor: pointer; color: var(--accent); }
 .plan-undo:disabled { cursor: default; color: var(--text-tertiary); }
