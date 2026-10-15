@@ -28,7 +28,8 @@ export function chapterName(text: string): string {
 }
 
 /** onJump：点了章节按钮、跳走之前调用，让对话区不再跟随到底部。 */
-export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump: () => void) {
+/** replaying：正在从记录重画对话，这时画出的分隔线不放展开动画。 */
+export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump: () => void, replaying: () => boolean) {
   const row = document.createElement("nav");
   row.className = "chapter-row";
   row.setAttribute("aria-label", "章节");
@@ -93,6 +94,8 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
     divider.setAttribute("role", "separator");
     divider.dataset.chapter = String(number);
     divider.dataset.name = name;
+
+    if (!replaying()) divider.classList.add("fresh");
     const label = document.createElement("span");
     label.textContent = `${number} · ${name}`;
     divider.append(label);

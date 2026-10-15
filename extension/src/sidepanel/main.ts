@@ -401,7 +401,7 @@ const statusText = document.getElementById("status-text")!;
 const messagesEl = document.getElementById("messages")!;
 
 // 跳到某一章就是往上翻：不再跟随到底部。
-const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!, () => { pinned = false; });
+const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!, () => { pinned = false; }, () => replayingHistory);
 
 const composerEl = document.getElementById("composer") as HTMLElement;
 
@@ -2532,6 +2532,8 @@ let runStartAt = 0;
 
 /** 当前 run 的"执行步骤"聚合块。 */
 interface RunHost {
+  /** 回执前的绿对勾已经出现过：只在第一次当场画。 */
+  doneMarkShown?: boolean;
   orbMark: HTMLSpanElement;
   orbActivity: RunOrbActivity;
   root: HTMLDetailsElement;
@@ -2814,6 +2816,11 @@ toBottomBtn.title = "回到底部";
 toBottomBtn.hidden = true;
 
 toBottomBtn.appendChild(icon(ArrowDown));
+const toBottomDot = document.createElement("span");
+toBottomDot.className = "to-bottom-dot";
+toBottomBtn.appendChild(toBottomDot);
+/** 离开底部那一刻的内容高度；之后长高了，说明下面有新内容。 */
+let heightWhenLeft = 0;
 
 app.appendChild(toBottomBtn);
 
@@ -2934,9 +2941,19 @@ messagesEl.addEventListener("scroll", () => {
   const atEnd = messagesEl.scrollHeight - top - messagesEl.clientHeight <= 1;
 
   if (top === followScrollTop) followScrollTop = -1;
-  else pinned = seenBottom() - top - messagesEl.clientHeight < 40 && (top >= lastScrollTop || atEnd);
+  else {
+    const next = seenBottom() - top - messagesEl.clientHeight < 40 && (top >= lastScrollTop || atEnd);
+
+    // 只有人滚（滚轮、触摸、按键、按住滚动条）才离开底部：侧栏变窄时浏览器的滚动锚定也会挪位置，那不算。
+    if (next || userScrolling()) pinned = next;
+  }
   lastScrollTop = top;
   toBottomBtn.hidden = pinned;
+
+  if (pinned) {
+    heightWhenLeft = 0;
+    toBottomBtn.classList.remove("has-new");
+  } else if (!heightWhenLeft) heightWhenLeft = messagesEl.scrollHeight;
   syncScrollFade();
 });
 
@@ -2949,6 +2966,9 @@ new ResizeObserver(() => {
 new MutationObserver(() => {
   noteHeight();
   syncScrollFade();
+
+  // 往上翻着读时下面写出了新内容：按钮带个小点、轻跳一下，只在这一次离开底部期间跳一次。
+  if (!pinned && !replayingHistory && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) toBottomBtn.classList.add("has-new");
 }).observe(messagesEl, { childList: true, subtree: true, characterData: true });
 
 function scrollToEnd(force = false): void {
@@ -2965,6 +2985,8 @@ toBottomBtn.onclick = () => {
   pinned = true;
   followToEnd();
   toBottomBtn.hidden = true;
+  heightWhenLeft = 0;
+  toBottomBtn.classList.remove("has-new");
 };
 
 function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
@@ -4461,6 +4483,25 @@ function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | nul
   return null;
 }
 
+/** 核对确认做完时回执前的绿对勾。当场核对完的那一次一笔画出来；之后重画和从记录重放都直接是画好的样子。 */
+function doneMark(run: RunHost): HTMLElement {
+  const mark = document.createElement("span");
+  mark.className = "run-done-mark";
+  mark.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M3.5 8.5l3 3 6-7");
+  path.setAttribute("pathLength", "1");
+  svg.append(path);
+  mark.append(svg);
+
+  if (!run.doneMarkShown && !replayingHistory) mark.classList.add("fresh");
+  run.doneMarkShown = true;
+
+  return mark;
+}
+
 function paintAnsweredTitle(run: RunHost): void {
   const title = run.titleEl;
 
@@ -4479,7 +4520,14 @@ function paintAnsweredTitle(run: RunHost): void {
 
   if (status?.tone) check.dataset.tone = status.tone;
   title.classList.add("run-receipt");
-  title.replaceChildren(verb, tail, check);
+  // 回执这一行会重画好几次：已有的对勾留在原处，不拆下来重插，画到一半的那一笔才不会断。
+  const kept = status?.tone === "ok" ? title.querySelector<HTMLElement>(":scope > .run-done-mark") : null;
+  const mark = status?.tone === "ok" ? kept ?? doneMark(run) : null;
+
+  for (const node of [...title.childNodes]) if (node !== mark) node.remove();
+
+  if (mark && !mark.isConnected) title.prepend(mark);
+  title.append(verb, tail, check);
 }
 
 /**
