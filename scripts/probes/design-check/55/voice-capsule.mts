@@ -152,6 +152,7 @@ try {
 
   // 0. 真实路径：点「语音」
   await rp.evaluate(panel, `document.querySelector('.voice-progress').hidden`);
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
   await until(async () => (await rp.evaluate(panel, `window.__out.some(x => x.command?.kind === 'start')`)) || undefined, 10_000, "start 命令");
   await sleep(3000); // 等假麦克风真正开起来（播放器在此之后才创建）
@@ -262,6 +263,7 @@ return rp.evaluate(panel, `document.querySelector('.voice-progress').dataset.sta
     ended.hidden === true && ended.dataState === "idle" && ended.capsuleText === "" && endedAfterSources.text === "" ? "pass" : "fail",
     `hidden=${ended.hidden} state=${ended.dataState} capsuleText="${ended.capsuleText}" sources="${endedAfterSources.text}"`, "真实点击「结束」按钮（VoiceClient.stop）");
   // 重新打开：胶囊应是中性默认样式，不残留上轮的青绿
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
   await sleep(800);
   const reopened = await snap("09-reopened-connecting");
