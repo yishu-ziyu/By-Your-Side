@@ -1,6 +1,7 @@
 /** 工作标签页和会话页资源；storage.session 让扩展 SW 重启后可恢复。 */
 import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, isLeadSession, WORKING_TABS_STORAGE_KEY } from "../../../shared/protocol.js";
 import { CLAIM_BLOCKED_ERROR, FOREIGN_TAB_ERROR } from "../../../shared/control.js";
+import { carryClosedTabRefs } from "./axstate.js";
 import {
   applyTabBinding,
   bindExclusiveResource,
@@ -25,6 +26,9 @@ let cached: TabBindingMap | undefined;
 let cachedResources: TabResourceMap | undefined;
 
 const claimBlocked = new Set<string>();
+
+/** 主会话的工作标签页被关掉：key → 关掉的 tabId。下一次页面调用据此接回用户正在看的页，并告诉模型一次。 */
+const closedWorkingTabs = new Map<string, number>();
 
 /** 页面级交接围栏：tabId → 接手方 key。围栏期间只有接手方能对该页采取动作。 */
 const tabTransfers = new Map<number, string>();
@@ -409,13 +413,57 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
   return active;
 }
 
+export type WorkingTabRebound = { from: number; to: number; note: string };
+
+/**
+ * 工作标签页被关掉后的第一次页面调用：改到最近获得焦点的窗口里的当前标签页。
+ * Agent 一侧会把关掉的页号当缺省 tabId 补进来，所以请求的 tabId 等于关掉的页也算这一种。
+ * 只管主会话；worker 只能用分配给它的页，不能自己换到用户的页上。
+ */
+export async function rebindClosedWorkingTab(requestedTabId: number | undefined, key: string): Promise<WorkingTabRebound | null> {
+  const normalized = keyOf(key);
+
+  // onRemoved 的清理排在状态队列里；先等它落定，才知道关掉的是不是工作标签页。
+  await mutateState(async () => {});
+  const closed = closedWorkingTabs.get(normalized);
+
+  if (closed === undefined || !isLeadSession(parseExecutionKey(normalized).sessionId)) return null;
+
+  if (requestedTabId !== undefined && requestedTabId !== closed) return null;
+
+  if (await getWorkingTabId(normalized) != null) {
+    closedWorkingTabs.delete(normalized);
+
+    return null;
+  }
+
+  if (claimBlocked.has(normalized)) return null;
+  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+
+  if (active?.id == null) return null;
+  closedWorkingTabs.delete(normalized);
+
+  try { await setWorkingTab(active.id, normalized); } catch (error) {
+    throw Object.assign(new Error(`工作标签页 ${closed} 已关闭；用户正在看的标签页 ${active.id} 不能接手：${error instanceof Error ? error.message : String(error)}。操作未执行，请用 tabs open 或 tabs switch 选一个页面。`), { executionFact: "not_executed" as const });
+  }
+
+  carryClosedTabRefs(closed, active.id);
+  // 标题来自网页：压成一行、截短，不让它在框架写的这句话里换行冒充别的说明。
+  const title = (active.title ?? "").replace(/[\s«»]+/g, " ").trim().slice(0, 80);
+
+  return { from: closed, to: active.id, note: `工作标签页 ${closed} 已关闭；已改为用户正在看的标签页 ${active.id}${title ? ` «${title}»` : ""}。` };
+}
+
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabTransfers.delete(tabId);
   void mutateState(async () => {
     const [map, resources] = await Promise.all([loadMap(), loadResources()]);
     let next = map;
 
-    for (const key of sessionsForTab(map, tabId)) next = applyTabBinding(next, key, null);
+    for (const key of sessionsForTab(map, tabId)) {
+      closedWorkingTabs.set(key, tabId);
+      next = applyTabBinding(next, key, null);
+    }
     const nextResources = { ...resources };
     delete nextResources[String(tabId)];
     await persist(next, nextResources);
