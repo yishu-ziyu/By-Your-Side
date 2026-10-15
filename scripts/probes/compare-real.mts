@@ -1,5 +1,6 @@
 // npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn] [--record]
 // --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
+// --reply=可以 (ext only): when the assistant stops to ask (a partial delivery, or a reply ending in a question), send this reply in the same conversation once; rounds and calls add up.
 // --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md). --record (ext only): records the side panel and the starting tab of each ask as mp4.   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
 // Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
 import { join, resolve } from "node:path";
@@ -13,6 +14,7 @@ const repeat = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const learn = process.argv.includes("--learn");
 const record = process.argv.includes("--record");
+const reply = process.argv.find((a) => a.startsWith("--reply="))?.slice(8);
 const MODEL = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? "openai-codex/gpt-6-luna";
 const think = process.argv.find((a) => a.startsWith("--think="))?.slice(8);
 const splitArg = process.argv.find((a) => a.startsWith("--split="))?.slice(8);
@@ -231,9 +233,15 @@ async function runExt(task: Task, id: string, dir: string) {
       const usage = lines.filter((l) => l.type === "turn_end").map((l) => l.data?.usage ?? {});
       const cacheShare = +(usage.reduce((n, u) => n + (u.cacheRead ?? 0), 0) / Math.max(1, usage.reduce((n, u) => n + (u.input ?? 0) + (u.cacheRead ?? 0), 0))).toFixed(2);
       const siteNotes = lines.filter((l) => l.type === "site_notes" && l.data?.phase === "used").map((l) => l.data.host);
-      return { ms, answer, tabs, probe, rounds, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel), cacheShare, cacheReadByRound: usage.map((u) => u.cacheRead ?? 0), siteNotes };
+      // A partial delivery the goal check then pushed on to finish is not a question left for the user.
+      const asked = lines.filter((l) => l.type === "goal_check").at(-1)?.data?.status !== "done" && (lines.some((l) => l.type === "tool_execution_end" && l.data?.toolName === "send_user_message" && !l.data.isError && /"outcome":"partial"/.test(JSON.stringify(l.data.result ?? {}))) || /[?？]\s*$/.test(answer));
+      return { ms, answer, tabs, probe, rounds, asked, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel), cacheShare, cacheReadByRound: usage.map((u) => u.cacheRead ?? 0), siteNotes };
     };
-    const first = await ask(task.prompt, task.probe, "");
+    let first: Awaited<ReturnType<typeof ask>> & { replied?: true } = await ask(task.prompt, task.probe, "");
+    if (reply && first.asked) {
+      const more = await ask(reply, task.probe, "-reply");
+      first = { ...more, ms: first.ms + more.ms, rounds: first.rounds + more.rounds, browserCalls: first.browserCalls + more.browserCalls, tools: [...first.tools, ...more.tools], replied: true };
+    }
     if (!learn) return first;
     // Same browser, new conversation, sibling task: site notes learned from the first run should make it shorter.
     // Notes are written after the goal check, a few seconds after the reply; wait for them (at most 45 s) as a person would pause between tasks.
@@ -342,7 +350,7 @@ for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {
     results.push(row);
     await writeStatus(id, reason ? "fail" : "pass", `${row.seconds} 秒 · ${r.browserCalls} 次浏览器操作${reason ? " · " + reason : ""}`);
     const sec = (r as any).second;
-    console.log(`${reason ? "✖" : "✔"} ${arm} ${id} ${row.seconds}s rounds=${(r as any).rounds} calls=${r.browserCalls}${reason ? " — " + reason : ""}${sec ? ` | second ${sec.reason ? "✖ " + sec.reason : "✔"} ${(sec.ms / 1000).toFixed(1)}s rounds=${sec.rounds} notes=${sec.siteNotes.join(",") || "none"}` : ""}`);
+    console.log(`${reason ? "✖" : "✔"} ${arm} ${id} ${row.seconds}s rounds=${(r as any).rounds} calls=${r.browserCalls}${(r as any).replied ? " replied" : ""}${reason ? " — " + reason : ""}${sec ? ` | second ${sec.reason ? "✖ " + sec.reason : "✔"} ${(sec.ms / 1000).toFixed(1)}s rounds=${sec.rounds} notes=${sec.siteNotes.join(",") || "none"}` : ""}`);
   } catch (e) {
     results.push({ id, arm, task: task.name, outcome: "error", error: String(e) });
     await writeStatus(id, "err", String(e).slice(0, 120));
