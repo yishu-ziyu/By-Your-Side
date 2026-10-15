@@ -3,7 +3,7 @@ import { ensureAttached } from "../debugger.js";
 import { bringForwardForUser } from "../foreground.js";
 import { getTabResource, getWorkingTabId, resolveWorkingTab, setWorkingTab } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
-import { ERROR_PAGE_NOTE, downloadNote, settlesContent, waitForInteractive, waitForQuietDom, type PageReadiness } from "./page-readiness.js";
+import { ERROR_PAGE_NOTE, downloadNote, retryTransientErrorPage, settlesContent, waitForInteractive, waitForQuietDom, type PageReadiness } from "./page-readiness.js";
 
 export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ tabs: TabInfo[] }> {
   const workingId = await getWorkingTabId(sessionId);
@@ -48,7 +48,7 @@ export async function openTab(
   params: { url?: string },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ tabId: number; url: string; title: string; note?: string; tabClosed?: true } & Partial<PageReadiness>> {
+): Promise<{ tabId: number; url: string; title: string; note?: string; retry?: string; tabClosed?: true } & Partial<PageReadiness>> {
   const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
@@ -61,7 +61,9 @@ export async function openTab(
   // 尽量在页面自己的请求发出前开始记录；attach 失败不影响打开。
   try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
 
-  const ready=params.url?await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}):undefined;
+  const opened=params.url?await retryTransientErrorPage(tab.id,params.url,await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}),10_000,beforeDispatch):undefined;
+  const ready=opened?.ready;
+  const retry=opened?.retry?{retry:opened.retry}:{};
 
   // 同 navigate：等页面画完再返回，多等的时间算进 waitMs。
   if (ready && settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tab.id);
@@ -76,10 +78,10 @@ export async function openTab(
 
     if (working === tab.id || working == null) await setWorkingTab(previous, sessionId);
 
-    return { tabId: tab.id, url: params.url ?? "", title: "", ...ready, note: downloadNote(ready.download, "closed"), tabClosed: true };
+    return { tabId: tab.id, url: params.url ?? "", title: "", ...ready, ...retry, note: downloadNote(ready.download, "closed"), tabClosed: true };
   }
 
-  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready, ...(ready?.download ? { note: downloadNote(ready.download) } : ready?.readiness === "error_page" ? { note: ERROR_PAGE_NOTE } : {}) };
+  return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready, ...retry, ...(ready?.download ? { note: downloadNote(ready.download) } : ready?.readiness === "error_page" ? { note: ERROR_PAGE_NOTE } : {}) };
 }
 
 export async function switchTab(
