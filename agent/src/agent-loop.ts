@@ -53,10 +53,25 @@ export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "
   providerName?: (provider: string) => string | undefined;
   /**
    * 同一个服务商并发闸门、换一个观察者：经返回的接口发出的请求排队较久时回调 onWait，诊断记录由此归到发请求的会话。
-   * purpose：流式请求（主任务、正式回答、阅读回答）记 main，一次性短调用（记忆、核对、翻译等后台判断）记 side。
+   * purpose：流式请求（主任务、正式回答、阅读回答）和标了 userWaiting 的一次性调用记 main，其余一次性调用（记忆、核对、翻译、站点笔记）记 side。
    */
   observeQueue?: (onWait: (wait: { provider: string; purpose: "main" | "side"; waitedMs: number }) => void) => ModelPort;
 };
+
+/**
+ * ModelPort 调用可多带的选项（不是 pi-ai 的字段，适配层不认、原样忽略）。服务商有并发上限时请求先在扩展里排队，这两项告诉排队的一方：
+ * userWaiting：用户正在等这次一次性调用的结果（语音意图、非流式正式回答），按主任务请求的优先级排队；
+ * onQueued：这次请求要排队时同步调用，sent 在请求真正发出时兑现。首字计时和对冲计时从发出时算，排队的时间不算。
+ */
+export interface ModelQueueOptions {
+  userWaiting?: true;
+  onQueued?: (sent: Promise<void>) => void;
+}
+
+/** 给一次性调用的选项标上「用户在等」。 */
+export function userWaiting<T extends object>(options: T): T & ModelQueueOptions {
+  return { ...options, userWaiting: true };
+}
 
 /** 换到备用模型多久之后，用户的下一条消息回主模型（用户 10-08 定的 5 分钟）。 */
 export const MODEL_SWITCH_BACK_AFTER_MS = 5 * 60_000;

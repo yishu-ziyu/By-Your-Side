@@ -86,6 +86,13 @@ export class ProviderGate {
     });
   }
 
+  /** 本扩展里这家服务商有在途或排着的请求。 */
+  busy(provider: string): boolean {
+    const lane = this.lanes.get(provider);
+
+    return !!lane && (lane.active > 0 || lane.queue.length > 0);
+  }
+
   /** 等到本扩展里这家服务商没有在途请求，也没有排着的。 */
   idle(provider: string, signal: AbortSignal | undefined): Promise<void> {
     const lane = this.lanes.get(provider);
@@ -164,24 +171,45 @@ export function unsentReply(model: Model<Api>, stopReason: "aborted" | "error", 
 }
 
 /**
+ * 取消后最多等适配层这么久收尾：名额在被取消的请求真正结束后才放，免得下一个请求在服务端还没收掉上一个时就到；
+ * 适配层卡住不结束也一定放，名额不会漏掉。
+ */
+export const ABORT_RELEASE_MS = 2_000;
+
+/** 请求结束时释放名额；被取消后超过 ABORT_RELEASE_MS 仍没结束就强制释放。返回「已结束」的回调。 */
+function holdUntilDone(release: Release, signal: AbortSignal | undefined): () => void {
+  let forced: ReturnType<typeof setTimeout> | undefined;
+  const onAbort = () => { forced = setTimeout(release, ABORT_RELEASE_MS); };
+
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener("abort", onAbort, { once: true });
+
+  return () => {
+    signal?.removeEventListener("abort", onAbort);
+    clearTimeout(forced);
+    release();
+  };
+}
+
+/**
  * 流式调用过闸门：有空名额就当场发出（同步抛出的错误照旧交给调用方），否则先返回一条空流，拿到名额再发。
- * 名额在源流读完时释放，不管结局是完成、出错、取消还是中途断开；取消信号也会释放，防止适配层卡住时名额漏掉。
+ * 要排队时同步调用 onQueued，交出一个在真正发出时兑现的 Promise：调用方的首字计时从那时算起。
+ * 名额在源流读完时释放，不管结局是完成、出错、取消还是中途断开。
  */
 export function gatedStream(
   gate: ProviderGate, model: Model<Api>, purpose: QueuePurpose, signal: AbortSignal | undefined,
-  start: () => AssistantMessageEventStream, onWait: (wait: ModelQueueWait) => void,
+  start: () => AssistantMessageEventStream, onWait: (wait: ModelQueueWait) => void, onQueued?: (sent: Promise<void>) => void,
 ): AssistantMessageEventStream {
   if (!gate.limited(model.provider)) return start();
   const out = createAssistantMessageEventStream();
-  const now = gate.tryAcquire(model.provider);
+  const now = purpose === "main" ? gate.tryAcquire(model.provider) : undefined;
 
   const run = (release: Release) => {
-    signal?.addEventListener("abort", release, { once: true });
+    const done = holdUntilDone(release, signal);
     let source: AssistantMessageEventStream;
 
     try { source = start(); } catch (error) {
-      signal?.removeEventListener("abort", release);
-      release();
+      done();
       throw error;
     }
 
@@ -189,8 +217,7 @@ export function gatedStream(
       try {
         for await (const event of source) out.push(event);
       } finally {
-        signal?.removeEventListener("abort", release);
-        release();
+        done();
         out.end();
       }
     })();
@@ -203,6 +230,8 @@ export function gatedStream(
   }
 
   const queuedAt = Date.now();
+  let sent!: () => void;
+  onQueued?.(new Promise<void>(resolve => { sent = resolve; }));
 
   void gate.acquire(model.provider, purpose, signal).then(release => {
     noteWait(onWait, model.provider, purpose, queuedAt);
@@ -213,6 +242,8 @@ export function gatedStream(
 
       return;
     }
+
+    sent();
 
     try { run(release); } catch (error) {
       out.push({ type: "error", reason: "error", error: unsentReply(model, "error", error instanceof Error ? error.message : String(error)) });
@@ -234,8 +265,9 @@ export async function gatedCall(
   noteWait(onWait, model.provider, purpose, queuedAt);
 
   if (!release) return unsentReply(model, "aborted", "Request was aborted");
+  const done = holdUntilDone(release, signal);
 
-  try { return await call(); } finally { release(); }
+  try { return await call(); } finally { done(); }
 }
 
 function noteWait(onWait: (wait: ModelQueueWait) => void, provider: string, purpose: QueuePurpose, queuedAt: number): void {
