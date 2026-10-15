@@ -5108,6 +5108,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         scrollToEnd();
       }
 
+      // 确认之后点没点下去的补报：等待早就结束了，只更新卡。
+      if (ev.confirm?.clicked) break;
+
       // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
       // 等你确认的时间不算「想了」（#263）。
       if (run) {
