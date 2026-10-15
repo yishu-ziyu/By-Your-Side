@@ -5548,8 +5548,12 @@ function scheduleDeliveryVisible(bubble: HTMLElement, receivedAt: number): void 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
 
 function send(msg: ClientMessage): boolean {
+  return post({ kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } });
+}
+
+/** 要上行到助手的消息：没连上返回 false；端口可能已失效时先排队，等 pong 再发。 */
+function post(envelope: PanelToBg): boolean {
   if (!port || !transportConnected) return false;
-  const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } };
 
   if (queuedSends.length || performance.now() - lastPong > PORT_FRESH_MS) {
     queuedSends.push(envelope);
@@ -6133,7 +6137,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "delivery") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
-    handleDeliveryReceipt(envelope.seq, envelope.ok, envelope.original);
+    handleDeliveryReceipt(envelope.seq, envelope.ok);
 
     return;
   }
@@ -6188,14 +6192,34 @@ function eventTime(): number { return historyEventTime(applyingHistory, historyO
 /** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（issue #4 竞态边界）。 */
 const userBubbles = new Map<number, HTMLElement>();
 
-/** background→agent 上行确定失败的回执：标记未送达并提供原文重试；迟到/重复/未知 seq 忽略。 */
-function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage): void {
-  if (ok) return;
-
+/**
+ * background→agent 上行的回执：ok=false 标记未送达并提供「重试」；重试再失败时让「重试」能再点；
+ * ok=true（重试送达）去掉标记。重复或未知 seq 忽略。
+ */
+function handleDeliveryReceipt(seq: number, ok: boolean): void {
   if (!Number.isInteger(seq)) return;
   const bubble = userBubbles.get(seq);
 
-  if (!bubble || bubble.dataset.failed === "true") return;
+  if (!bubble) return;
+
+  if (ok) {
+    bubble.classList.remove("undelivered");
+    bubble.querySelectorAll(".delivery-tag, button[data-retry]").forEach((el) => el.remove());
+    delete bubble.dataset.failed;
+
+    return;
+  }
+
+  if (bubble.dataset.failed === "true") {
+    const retry = bubble.querySelector<HTMLButtonElement>("button[data-retry]");
+
+    if (retry) {
+      retry.disabled = false;
+      retry.textContent = "重试";
+    }
+
+    return;
+  }
   bubble.dataset.failed = "true";
   bubble.classList.add("undelivered");
   const tag = document.createElement("span");
@@ -6207,13 +6231,12 @@ function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage
   retry.textContent = "重试";
   retry.title = "重新发送这条消息";
   retry.onclick = () => {
-    if (!send(original)) {
+    if (!post({ kind: "redeliver", seq, conversationId: selectedConversationId })) {
       noticeSendFailed();
 
       return;
     }
 
-    bubble.dataset.retried = "true";
     retry.disabled = true;
     retry.textContent = "已重试";
   };
@@ -6253,7 +6276,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
         if (steering && !reuse) markSteerReceived(bubble);
 
-        if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
+        if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false);
       }
       else handleServerMessage(JSON.stringify(entry.item.msg));
       lastHistorySeq = entry.seq;
