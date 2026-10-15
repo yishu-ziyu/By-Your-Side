@@ -4395,7 +4395,9 @@ function finishRun(): void {
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
 
-  if (run.root.classList.contains("plan-card") && run.receipt) {
+  // 回执看后果：这一轮还原账本记到了页面改动（填过的栏、或撤不回的编辑器正文），不管原话怎么说都收成回执；计划行的关键词只管开头那行「会去 …」。
+  if (run.receipt && (run.root.classList.contains("plan-card") || planUndo)) {
+    run.root.classList.add("plan-card");
     planCardRun = run;
     paintPlanCard();
   }
@@ -4427,7 +4429,7 @@ let planUndo: FillUndoView | null = null;
  * 已撤销、收不回留着。之后这一轮的还原状态只画到新卡上。
  */
 function retirePlanCard(): void {
-  if (!planCardRun) return;
+  if (!planCardRun) { planUndo = null; return; }
 
   if (planUndo?.state === "ready") {
     planUndo = null;
@@ -4461,7 +4463,9 @@ function paintPlanCard(): void {
     steps: run.receipt.steps - run.receipt.failed,
     total: run.receipt.total,
     ended: run.receipt.ended,
-    undo: !undo ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
+    undo: !undo || (undo.state === "ready" && undo.count === 0) ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
+    undoable: undo?.state === "ready" ? undo.fields : [],
+    untracked: undo?.untracked ?? [],
     onUndo: () => {
       const owner = planCardAnswer(run);
 
