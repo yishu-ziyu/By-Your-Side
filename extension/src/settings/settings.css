@@ -149,9 +149,6 @@ details[open] #provider-more-names { padding-bottom: 0; }
 .key-ic { display: inline-flex; color: var(--text-tertiary); }
 .d-mono { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-tertiary); }
 .d-hint { font-size: var(--fs-meta); color: var(--text-tertiary); }
-.d-note { margin: -8px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--text-tertiary); }
-.d-note[hidden] { display: none; }
-.d-note .btn { height: 26px; padding: 0 8px; font-size: var(--fs-meta); }
 .d-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .seg { display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px; border-radius: var(--r-ctl); background: var(--content-subtle); }
