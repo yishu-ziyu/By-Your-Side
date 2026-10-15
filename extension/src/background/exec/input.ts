@@ -704,7 +704,7 @@ export async function stopTrailReplay(sessionId?: string): Promise<void> {
   }
 }
 
-/** 松开拿住态：摘按住姿态、名牌恢复成员名、照常 park。注入失败静默跳过。 */
+/** 松开拿住态：摘按住姿态、名牌恢复成员名，光标停在原处。注入失败静默跳过。 */
 async function releaseHold(sessionId: string): Promise<void> {
   const tabId = await resolveOverlayTabId(sessionId);
 
