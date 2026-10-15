@@ -721,13 +721,14 @@ html, body {
 .code-block-head button:hover { background: var(--content-subtle-hover); }
 .code-block-wrap::before { content: "不换行"; }
 .code-block-nowrap .code-block-wrap::before { content: "换行"; }
-.code-block-head .code-block-copy { display: inline-grid; }
+.code-block-head .code-block-copy { display: inline-grid; justify-items: end; }
 .code-block-face { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 4px; transition: opacity var(--d-micro) var(--e-exit); }
 .code-block-face::before { content: "复制"; }
-.code-block-face-done { opacity: 0; color: var(--text-primary); }
+.code-block-face-done, .code-block-face-failed { opacity: 0; color: var(--text-primary); }
 .code-block-face-done::before { content: "已复制"; }
-.code-block-copy.copied > .code-block-face:not(.code-block-face-done) { opacity: 0; }
-.code-block-copy.copied > .code-block-face-done { opacity: 1; transition: opacity var(--d-state) var(--e-enter); }
+.code-block-face-failed::before { content: "没做成"; }
+.code-block-copy:is(.copied, .failed) > .code-block-face { opacity: 0; }
+.code-block-copy.copied > .code-block-face-done, .code-block-copy.failed > .code-block-face-failed { opacity: 1; transition: opacity var(--d-state) var(--e-enter); }
 
 .markdown .code-block pre {
   margin: 0;
