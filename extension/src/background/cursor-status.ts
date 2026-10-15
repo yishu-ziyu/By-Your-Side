@@ -5,6 +5,7 @@
  * 分工：文案与呈现属于页面侧（content-cursor.js），这里只决定状态、目标标签页和生命周期。
  * 状态不是执行证据：画不上不改变任务判定，执行结果仍以 tool_result 为准。
  */
+import { activeTargetTabs } from "./target-window.js";
 import { callDom, ensureCursor } from "./exec/input.js";
 import { parseExecutionKey } from "./tab-bindings.js";
 import { feedbackIsStale, type FeedbackPillView } from "../shared/feedback-pill.js";
@@ -114,7 +115,7 @@ function renderPill(tabId: number): Promise<void> {
 
 async function activeTabId(): Promise<number | null> {
   try {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const [active] = await activeTargetTabs();
 
     return active?.id ?? null;
   } catch {

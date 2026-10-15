@@ -1,3 +1,4 @@
+import { isPanelUrl } from './target-window.js';
 import { NUDGE_EXCERPT_LIMIT, NUDGE_RECENT_LIMIT, NUDGE_SELECTION_LIMIT, NUDGE_TEXT_LIMIT, type Nudge, type NudgeContext, type NudgeRecentPage, type NudgeResult } from '../../../shared/nudge.js';
 import type { ClientMessage, PageContext } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
@@ -144,7 +145,7 @@ export function installNudge(deps: Deps) {
 
     if (type !== NUDGE_PAGE && type !== NUDGE_ACT && type !== NUDGE_DISMISS) return;
 
-    if (sender.id === chrome.runtime.id && !sender.tab && sender.url?.startsWith(chrome.runtime.getURL('')) && type !== NUDGE_PAGE) {
+    if (sender.id === chrome.runtime.id && (isPanelUrl(sender.url) || (!sender.tab && sender.url?.startsWith(chrome.runtime.getURL('')))) && type !== NUDGE_PAGE) {
       void onPanel(type, message?.id).then(respond, () => respond({ ok: false }));
 
       return true;

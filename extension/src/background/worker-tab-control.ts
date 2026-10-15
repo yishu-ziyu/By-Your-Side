@@ -1,3 +1,4 @@
+import { activeTargetTabs } from "./target-window.js";
 import { isLeadSession } from "../../../shared/protocol.js";
 import { beginTabTransfer, getTabResource, getWorkingTabId, reclaimWorkerTabs, claimGlobalTab } from "./state.js";
 import { executionKey, parseExecutionKey } from "./tab-bindings.js";
@@ -51,7 +52,7 @@ export class WorkerTabControl {
 
     if (params.action !== "inspect" && params.action !== "claim") throw new Error("无效的页面管理操作");
     // orActive：还没有工作页的新对话动手时用的是当前激活页（resolveWorkingTab 同样的取法），查归属也查这一页。
-    const tabId = params.tabId ?? await getWorkingTabId(leadKey) ?? (params.orActive ? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id ?? null : null);
+    const tabId = params.tabId ?? await getWorkingTabId(leadKey) ?? (params.orActive ? (await activeTargetTabs())[0]?.id ?? null : null);
 
     if (tabId == null) throw new Error("没有可接管的标签页");
     await chrome.tabs.get(tabId);

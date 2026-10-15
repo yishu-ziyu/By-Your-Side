@@ -436,6 +436,9 @@ html, body {
 
 #header-menu [hidden] { display: none; }
 
+/* 单独窗口这一版没有语音对话和说话输入。 */
+:root[data-popout] :is(#composer .voice-start, #dictate-btn, #voice-diagnostics-open, #attach-menu hr:has(+ #voice-diagnostics-open)) { display: none; }
+
 @media (hover: hover) and (pointer: fine) {
   #header-more:hover, #memory-open:hover, #header-menu button:hover { background: var(--content-subtle-hover); }
   #header-more:hover, #memory-open:hover, #conversation-new:hover:not(:disabled) { color: var(--text-primary); }

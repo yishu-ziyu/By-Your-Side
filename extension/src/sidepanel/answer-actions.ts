@@ -1,3 +1,4 @@
+import { isPopout, targetWindowId } from "./target-window.js";
 import { Check, createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { imagePlaceholdersAsText } from "../shared/answer-html.js";
@@ -342,9 +343,9 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
 
   if (typeof tabId !== "number") return;
   const tab = await chrome.tabs.get(tabId).catch(() => null);
-  const current = await chrome.windows.getCurrent().catch(() => null);
+  const targetWindow = await targetWindowId();
 
-  if (!tab?.url || !/^https?:/.test(tab.url) || (tab.active && tab.windowId === current?.id)) return;
+  if (!tab?.url || !/^https?:/.test(tab.url) || (tab.active && tab.windowId === targetWindow)) return;
   const origin = (url: string) => { try { return new URL(url).origin; } catch { return null; } };
 
   if (!sources.some(source => origin(source.url) === origin(tab.url!))) return;
@@ -374,10 +375,11 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
 
  return; }
 
-    const win = await chrome.windows.getCurrent().catch(() => null);
+    const targetWindow = await targetWindowId();
     await chrome.tabs.update(tabId, { active: true }).catch(() => undefined);
 
-    if (now.windowId !== win?.id) await chrome.windows.update(now.windowId, { focused: true }).catch(() => undefined);
+    // 在会话小窗口里点：标签页所在的浏览器窗口可能压在后面，要提到前面才看得见。
+    if (now.windowId !== targetWindow || isPopout) await chrome.windows.update(now.windowId, { focused: true }).catch(() => undefined);
   };
 
   time.before(button);
