@@ -498,7 +498,7 @@ export async function readElement(
 
 /**
  * fill 的 from：读出要原样写进另一栏的文字，不经过模型。口径同 read_element：输入框、下拉框取 displayValue，
- * 富文本编辑器取 editableText（保留段落和换行），其余取 visibleText（只要渲染出来的文字节点，文字里的换行照留）；去掉首尾空白。
+ * 富文本编辑器取 editableText（保留段落和换行），快照里的文字节点取它自己的文字，其余取 visibleText（只要渲染出来的文字节点，文字里的换行照留）；去掉首尾空白。
  * 密码、验证码、卡号这类栏按 read_element 的同一条规则拒读：它们的值从不读出。
  */
 export async function readFillSource(source: {tabId?: number; target: string}, executionKey: string = LEAD_SESSION_ID): Promise<string> {
@@ -511,7 +511,9 @@ export async function readFillSource(source: {tabId?: number; target: string}, e
   }
 
   if (data.secret) throw new Error('PERMISSION_DENIED: from 指向密码、验证码或卡号这类敏感栏，不读取它的内容；填写未执行。');
+  // 快照里的 text 行指向文字节点本身：visibleText 只收它下面的文字节点，读出来是空的，所以取它自己的文字。
   const raw = ['input', 'textarea', 'select'].includes(data.tagName) ? data.properties?.displayValue
+    : data.tagName === '#text' ? data.textContent
     : data.editableText ?? data.properties?.visibleText;
 
   if (typeof raw !== 'string') throw new Error('NOT_READY: from 指向的元素读不出文字；填写未执行。');
