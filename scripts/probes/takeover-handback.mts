@@ -48,10 +48,10 @@ try {
   }
 
   const doc = await rp.cdp.send('DOM.getDocument', { depth: -1, pierce: true }, work);
-  console.log('page bar', JSON.stringify(doc).match(/"nodeValue":"(现在归你|交还|正在[^"]*|请稍候)"/g));
+  console.log('page bar', JSON.stringify(doc).match(/"nodeValue":"(现在归你|继续|正在[^"]*|请稍候)"/g));
   await rp.evaluate(work, 'document.querySelector("#note").textContent="用户改过这里"');
   const nBefore = payloads.length;
-  const find = (n: any): any => n.nodeName === 'BUTTON' && n.children?.[0]?.nodeValue === '交还' ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(find).find(Boolean);
+  const find = (n: any): any => n.nodeName === 'BUTTON' && n.children?.[0]?.nodeValue === '继续' ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(find).find(Boolean);
   const btn = find((await rp.cdp.send('DOM.getDocument', { depth: -1, pierce: true }, work)).root);
   const q = (await rp.cdp.send('DOM.getBoxModel', { backendNodeId: btn.backendNodeId }, work)).model.content;
   const at = { x: (q[0] + q[2]) / 2, y: (q[1] + q[5]) / 2 };

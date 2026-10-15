@@ -187,7 +187,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
   };
 
   return {
-    /** 现在显示胶囊的标签页：药丸在这一页让位。 */
+    /** 现在显示胶囊的标签页：边缘胶囊在这一页让位。 */
     tabId: () => tracked?.tabId ?? recordingTab,
     /** 按下：记住是哪一页在录，音量往这一页送。 */
     recording(tabId: number) {

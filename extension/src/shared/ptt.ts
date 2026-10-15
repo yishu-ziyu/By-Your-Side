@@ -43,7 +43,7 @@ export const PTT_LEVEL = "ptt_level";
 
 export interface PttLevelMessage { type: typeof PTT_LEVEL; level: number }
 
-/** 网页 → 后台：胶囊上的「停」（含 Esc）、「重发」、念的时候按 Esc（hush），以及胶囊已收起。「在侧栏看」复用药丸的 EDGE_PILL_OPEN。 */
+/** 网页 → 后台：胶囊上的「停」（含 Esc）、「重发」、念的时候按 Esc（hush），以及胶囊已收起。「在侧栏看」复用边缘胶囊的 EDGE_PILL_OPEN。 */
 export interface PttCapsuleAction { type: "ptt_capsule_action"; action: "stop" | "resend" | "closed" | "hush"; text?: string }
 
 /** 后台 → 离屏文档：念一句（带订阅 Key）或停下。 */

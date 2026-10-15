@@ -2,9 +2,9 @@ import type { TaskView } from '../../../shared/task-view.js';
 import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, type EdgePill } from '../shared/edge-pill.js';
 
 /**
- * 侧栏关着、任务还在跑（或暂停等你、出错）时，让当前标签页右边缘显示药丸。
+ * 侧栏关着、任务还在跑（或暂停等你、出错）时，把整轮任务状态交给当前标签页右边缘的胶囊。
  * 只读任务视图，不是第二套任务状态；出错在侧栏打开过之后算看过，不再显示。
- * 按住说话的胶囊在哪一页显示，药丸就在那一页让位：页面上只留一个状态面（docs/evals/20261007-ptt-capsule.md R4）。
+ * 按住说话的胶囊在哪一页显示，右边缘胶囊就在那一页让位：页面上只留一个状态面。
  */
 export function installEdgePill(capsuleTab: () => number | null = () => null) {
   const views = new Map<string, TaskView>();
@@ -29,7 +29,7 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
 
   const pillFor = (tabId: number) => capsuleTab() === tabId ? null : current();
 
-  const send = (tabId: number) => { void chrome.tabs.sendMessage(tabId, { type: EDGE_PILL_SHOW, pill: pillFor(tabId) }).catch(() => { /* 无内容脚本的页面 */ }); };
+  const send = (tabId: number) => { void chrome.tabs.sendMessage(tabId, { type: EDGE_PILL_SHOW, pill: pillFor(tabId), voice: capsuleTab() === tabId }).catch(() => { /* 无内容脚本的页面 */ }); };
 
   const publish = () => { void chrome.tabs.query({ active: true }).then(tabs => { for (const tab of tabs) if (tab.id) send(tab.id); }); };
 
@@ -39,7 +39,7 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
 
     if (sender.id !== chrome.runtime.id || !sender.tab?.id || sender.frameId !== 0) return;
 
-    if (type === EDGE_PILL_GET) respond({ pill: pillFor(sender.tab.id) });
+    if (type === EDGE_PILL_GET) respond({ pill: pillFor(sender.tab.id), voice: capsuleTab() === sender.tab.id });
 
     // 必须在这次点击的消息里同步打开：等异步之后浏览器就不认是用户动作了。
     if (type === EDGE_PILL_OPEN) void chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => { /* 侧栏已开 */ });
@@ -50,9 +50,9 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
       if (panelOpen && view.state === 'error') seenErrors.add(errorKey(view));
       views.set(view.conversationId, view); publish();
     },
-    /** 胶囊出现或收起：重新决定药丸显示不显示。 */
+    /** 胶囊出现或收起：重新决定边缘胶囊在哪一页让位。 */
     refresh: publish,
-    /** 和本机 Agent 断开：旧视图不再可信，药丸收起，等重连后的新视图。 */
+    /** 和本机 Agent 断开：旧视图不再可信，任务状态清空，等重连后的新视图。 */
     disconnected() { views.clear(); publish(); },
     panel(open: boolean) {
       if (open) for (const view of views.values()) if (view.state === 'error') seenErrors.add(errorKey(view));
