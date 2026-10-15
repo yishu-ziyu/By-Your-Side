@@ -274,6 +274,35 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   let stopPending = false;
   let bubbleKey = "";
   let listRows = "";
+  const avoidedTargets = new Map<string, Element>();
+
+  function avoidTargets(): void {
+    root.style.transform = "";
+    if (!open || view?.tone === "hand" || !avoidedTargets.size) return;
+    const targets = [...avoidedTargets.values()].filter(el => el.isConnected).map(el => el.getBoundingClientRect());
+    const surfaces = [clip, ...(others.length ? [bub] : [])].map(el => el.getBoundingClientRect());
+    const overlaps = (a: DOMRect, b: DOMRect, dy: number) => a.left < b.right && a.right > b.left && a.top + dy < b.bottom && a.bottom + dy > b.top;
+    const candidates = [0, ...targets.flatMap(target => surfaces.flatMap(surface => [target.bottom - surface.top + 8, target.top - surface.bottom - 8]))];
+    const dy = candidates.sort((a, b) => Math.abs(a) - Math.abs(b)).find(offset => surfaces.every(surface => surface.top + offset >= 0 && surface.bottom + offset <= innerHeight
+      && targets.every(target => !overlaps(surface, target, offset))));
+    if (dy !== undefined && dy !== 0) root.style.transform = `translateY(${dy}px)`;
+  }
+
+  function uncoverTarget(target: Element, x: number, y: number, token: string): boolean {
+    if (!open || view?.tone === "hand" || !target.isConnected || target.ownerDocument !== document || target.contains(host)) return false;
+    // 目标必须属于网页；跨 closed shadow root 向上检查，不能通过“让位”点到自己的控件。
+    for (let node: Element | null = target; node;) {
+      if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
+      const parent = node.getRootNode();
+      node = parent instanceof ShadowRoot ? parent.host : null;
+    }
+    const rect = target.getBoundingClientRect();
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return false;
+    if (!avoidedTargets.size && document.elementFromPoint(x, y) !== host) return false;
+    avoidedTargets.set(token, target);
+    avoidTargets();
+    return true;
+  }
 
   const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
 
@@ -474,6 +503,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     const was = view;
     view = next;
     others = next ? nextOthers : [];
+    avoidTargets();
 
     if (!next) {
       if (!open) return;
@@ -667,6 +697,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     bubHair!.setAttribute("d", bw > 0.5 ? hairPath(X, bw, bh, bmid, BUBBLE_R) : "");
     bubShape!.style.opacity = bubHair!.style.opacity = String(clamp01(bw / 20));
     Object.assign(bub.style, { left: `${X - bw}px`, top: `${btop}px`, width: `${Math.max(0, bw - 1)}px`, height: `${bh}px`, visibility: bw > 0.5 ? "visible" : "hidden" });
+    avoidTargets();
   }
 
   // 窗口宽度变了，画布仍贴右边；只需要重画一帧。系统深浅色切换时阴影和细边跟着换。
@@ -680,6 +711,11 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   return {
     render,
+    uncoverTarget,
+    restoreTarget(token: string): void {
+      avoidedTargets.delete(token);
+      avoidTargets();
+    },
     /** 页面卸载或换世界：动画停掉、节点拿走。 */
     destroy(): void {
       if (raf !== undefined) cancelAnimationFrame(raf);
