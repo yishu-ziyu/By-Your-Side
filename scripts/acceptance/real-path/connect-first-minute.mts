@@ -203,24 +203,52 @@ try {
 
   // 先试连再保存：15 秒没回复不保存，框下写明超时，并有「重试」。
   // 这家已存过密钥：先点「更换」露出密钥框，填的才是新密钥。
+  // 等到试连结束（不只等到超时原因出现）：试连更久的版本也能截到结束时的样子，失败时看得出差在哪。
+  const probeEndSrc = `({
+    busy: document.querySelector("#model-status").dataset.tone === "busy",
+    status: document.querySelector("#model-status").textContent ?? "",
+    hidden: document.querySelector("#key-reason").hidden,
+    reason: document.querySelector("#key-reason-text")?.textContent ?? "",
+    retry: !(document.querySelector("#key-retry")?.hidden ?? true),
+    saveDisabled: document.querySelector("#model-save").disabled,
+  })`;
+  type ProbeEnd = { busy: boolean; status: string; hidden: boolean; reason: string; retry: boolean; saveDisabled: boolean };
+  const probeEnd = (label: string) => until(async () => {
+    const state = await second.evaluate(rsettings, probeEndSrc) as ProbeEnd;
+    return !state.busy && (state.status || state.reason) ? state : undefined;
+  }, 75_000, label);
+  const storedBaseUrl = () => second.evaluate(rsettings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
+
   await second.evaluate(rsettings, `document.querySelector("#key-change").click(); true`);
   await fillCustom(second, rsettings, silentUrl, "sk-silent-0000");
   await second.evaluate(rsettings, `document.querySelector("#model-save").scrollIntoView({ block: "center" }); true`);
   const silentStarted = Date.now();
   await second.click(rsettings, "#model-save");
-  const timedOut = await until(async () => {
-    const state = await second.evaluate(rsettings, `({
-      hidden: document.querySelector("#key-reason").hidden,
-      reason: document.querySelector("#key-reason-text")?.textContent ?? "",
-      retry: !document.querySelector("#key-retry").hidden,
-      saveDisabled: document.querySelector("#model-save").disabled,
-    })`);
-    return !state.hidden && state.reason ? state : undefined;
-  }, 30_000, "超时原因");
+  await sleep(3_000);
+  const waiting = await second.evaluate(rsettings, `({
+    status: document.querySelector("#model-status").textContent ?? "",
+    test: document.querySelector("#model-test").disabled,
+    fast: document.querySelector("#model-fast").disabled,
+    save: document.querySelector("#model-save").disabled,
+  })`) as { status: string; test: boolean; fast: boolean; save: boolean };
+  await second.screenshot(rsettings, join(out, "06-waiting-buttons-disabled.png"));
+  check("密钥试连：等待时「测试连接」「用作快速模型」「保存并使用」都点不了", waiting.status.startsWith("正在测试") && waiting.test && waiting.fast && waiting.save, waiting);
+
+  const timedOut = await probeEnd("保存前试连结束");
   const waited = Date.now() - silentStarted;
-  const storedAfterTimeout = await second.evaluate(rsettings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
-  await second.screenshot(rsettings, join(out, "06-timeout-not-saved.png"));
-  check("密钥试连：15 秒超时不保存，写明超时并给重试", timedOut.reason.includes("15 秒内没有收到服务商的回复") && timedOut.reason.includes("密钥没有保存") && timedOut.retry && !timedOut.saveDisabled && storedAfterTimeout === busyUrl && waited >= 14_000 && waited < 25_000, { ...timedOut, storedAfterTimeout, waited });
+  const storedAfterTimeout = await storedBaseUrl();
+  await second.screenshot(rsettings, join(out, "07-timeout-not-saved.png"));
+  check("密钥试连：15 秒超时不保存，写明超时并给重试", !timedOut.hidden && timedOut.reason.includes("15 秒内没有收到服务商的回复") && timedOut.reason.includes("密钥没有保存") && timedOut.retry && !timedOut.saveDisabled && storedAfterTimeout === busyUrl && waited >= 14_000 && waited < 25_000, { ...timedOut, storedAfterTimeout, waited });
+
+  // 测试连接：同样等 15 秒，超时说法和保存时同一个开头。
+  await second.evaluate(rsettings, `document.querySelector("#model-test").scrollIntoView({ block: "center" }); true`);
+  const testStarted = Date.now();
+  await second.click(rsettings, "#model-test");
+  await sleep(1_000);
+  const tested = await probeEnd("测试连接结束");
+  const testWaited = Date.now() - testStarted;
+  await second.screenshot(rsettings, join(out, "08-test-timeout.png"));
+  check("测试连接：15 秒没回复，写明 15 秒内没收到回复", tested.status.includes("15 秒内没有收到服务商的回复") && testWaited >= 14_000 && testWaited < 25_000, { status: tested.status, testWaited });
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   if (reduced && reducedPanel) {
