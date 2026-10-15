@@ -3477,6 +3477,19 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .msg.assistant > :is(p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre, blockquote, .gen-card) { transition: opacity var(--d-state) var(--e-enter); }
 .msg.assistant.fill-undone > :is(p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre, blockquote, .gen-card) { opacity: .45; }
 .answer-enter-hint { font-size: 11px; color: var(--text-quaternary); }
+/* 复制成功：「复制」往上淡出，一笔画出对勾和「已复制」，1.5 秒后变回（answer-actions.ts showCopied）。 */
+.answer-actions button.answer-primary:has(.answer-face) { display: inline-grid; }
+.answer-face { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 5px; justify-self: start; transition: opacity var(--d-micro) var(--e-exit), transform var(--d-micro) var(--e-exit); }
+.answer-face-done { opacity: 0; transform: translateY(4px); color: var(--text-primary); }
+.answer-face-done svg path { stroke-dasharray: 1; stroke-dashoffset: 1; }
+.answer-primary.copied > .answer-face:not(.answer-face-done) { opacity: 0; transform: translateY(-4px); }
+.answer-primary.copied > .answer-face-done { opacity: 1; transform: none; transition: opacity var(--d-state) var(--e-enter), transform var(--d-state) var(--e-enter); }
+.answer-primary.copied > .answer-face-done svg path { stroke-dashoffset: 0; transition: stroke-dashoffset var(--d-layout) var(--e-move) var(--d-tap); }
+.answer-feedback-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .answer-face, .answer-primary.copied > .answer-face-done { transform: none; }
+  .answer-face-done svg path, .answer-primary.copied > .answer-face-done svg path { stroke-dashoffset: 0; transition: none; }
+}
 .answer-command-btn { width: 28px; height: 28px; }
 .answer-command-menu { position: fixed; left: 16px; right: 16px; bottom: 88px; z-index: 30; max-height: 320px; display: flex; flex-direction: column; padding: 8px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass-surface-elevated); box-shadow: var(--popover-shadow); }
 .answer-command-menu[hidden] { display: none; }
