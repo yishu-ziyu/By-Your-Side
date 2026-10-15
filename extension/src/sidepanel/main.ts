@@ -1105,7 +1105,6 @@ function selectConversation(id: string, notify = true): void {
     attachments.restore([], id);
     tabMentions.clear();
     restoringDraft = false;
-    modelMenu.reset();
 
     if (typed !== null) { inputEl.value = typed; syncSteerSend(); autoResize(); saveDraft(); currentDraftReady = true; updateStarterVisibility(); }
     else void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));

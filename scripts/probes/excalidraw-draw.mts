@@ -144,7 +144,7 @@ try {
 
   if (daily) {
     // 用户已选的模型：读侧栏模型按钮上的名字，不改设置。
-    result.panelModel = String(await rp.evaluate(panel, `document.querySelector("#model-name")?.textContent?.trim() ?? ""`).catch(() => ""));
+    result.panelModel = String(await rp.evaluate(panel, `document.querySelector("#think-chip .think-model")?.textContent?.trim() ?? ""`).catch(() => ""));
     result.configure = "daily：沿用用户已配置的模型，未改设置";
     inproc = await watchInproc(rp, rp.extensionId).catch(() => null);
   } else if (!("workTargetId" in rp)) {

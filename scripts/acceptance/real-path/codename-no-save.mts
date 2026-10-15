@@ -106,7 +106,7 @@ const PANEL_STATE = `(() => {
     connected: q("#status-dot")?.classList.contains("on") ?? false,
     statusText: q("#status-text")?.textContent?.trim() ?? null,
     pill: q("#tab-title-text")?.textContent?.trim() ?? null,
-    model: q("#model-name")?.textContent?.trim() ?? null,
+    model: q("#think-chip .think-model")?.textContent?.trim() ?? null,
     setupVisible: q("#setup") ? !q("#setup").hidden : false,
     setupError: q("#setup-err")?.textContent?.trim() ?? "",
     inputValue: q("#input")?.value ?? null,
