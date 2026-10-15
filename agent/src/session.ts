@@ -2273,6 +2273,20 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     this.settlePendingHandback(epoch, false);
   }
 
+  /** 这一轮请求送进模型多少、窗口多大。出错或中止的回复没有用量，不报：侧栏留着上一次的读数。 */
+  private contextUsage(message: AssistantMessage): Extract<AgentUiEvent, { kind: "context_usage" }> | null {
+    const { input, cacheRead, cacheWrite } = message.usage;
+    const used = input + cacheRead + cacheWrite;
+    const model = this.session?.model;
+    const selected = this.modelName();
+    // 换到备用模型回答时，按回答的那个模型的窗口算。
+    const window = model && model.provider === message.provider && model.id === message.model
+      ? model.contextWindow
+      : this.modelRuntime?.getModel(message.provider, message.model)?.contextWindow ?? model?.contextWindow;
+
+    return used > 0 && window && selected ? { kind: "context_usage", used, window, model: selected } : null;
+  }
+
   private subscribeEvents(): void {
     const session = this.session;
 
@@ -2402,9 +2416,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         case "turn_start":
           emit({ kind: "turn_start" });
           break;
-        case "turn_end":
+        case "turn_end": {
           emit({ kind: "turn_end" });
+          const usage = event.message.role === "assistant" ? this.contextUsage(event.message) : null;
+
+          if (usage) emit(usage);
           break;
+        }
         case "agent_start":
           this.starting = null;
           // 新的一轮：接着做的这一轮开起来了，扣着的上一轮收尾不再需要；上一轮还扣着的回答先放出、收尾（不会丢），再开始这一轮。

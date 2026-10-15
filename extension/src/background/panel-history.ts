@@ -5,8 +5,15 @@ export const DEFAULT_PANEL_HISTORY_LIMIT = 5_000;
 /** 单个会话落盘的历史字节上限。写满 chrome.storage.local 配额会让扩展所有写入失败。 */
 export const HISTORY_PERSIST_BUDGET_BYTES = 256 * 1024;
 
-/** 落盘形状：新格式带 updatedAt，旧格式是裸数组（按最旧处理）。 */
-export type StoredPanelHistory = { updatedAt: number; entries: PanelHistoryEntry[] };
+/**
+ * 落盘形状：新格式带 updatedAt，旧格式是裸数组（按最旧处理）。
+ * seqFloor：后台重启后 seq 从这里往上发。开着的侧栏按 seq 跳过看过的条目；没来得及落盘的尾巴丢掉后 seq 若倒退，
+ * 新条目（包括「重试」另发的那条）会被侧栏当成看过的跳过。
+ */
+export type StoredPanelHistory = { updatedAt: number; entries: PanelHistoryEntry[]; seqFloor?: number };
+
+/** 落盘时预留的 seq 余量：两次落盘之间发出的条目远少于这个数。 */
+const SEQ_RESERVE = 1_000;
 
 export function historyUpdatedAt(value: unknown): number {
   if (Array.isArray(value)) return 0;
@@ -64,6 +71,15 @@ export class PanelHistory {
         const old=this.entries[i]!.item;
 
         if(old.kind==='server'&&old.msg.type==='agent_event'&&old.msg.event.kind==='user_delivery_stream'&&old.msg.event.stream.id===id&&item.kind==='server'&&old.msg.conversationId===item.msg.conversationId)this.entries.splice(i,1);
+      }
+    }
+
+    // 用量每次模型请求都报一条，侧栏只用最后一条：旧的不留，免得把真实消息挤出落盘窗口。
+    if (contextUsage(item)) {
+      for (let i = this.entries.length - 1; i >= 0; i--) {
+        const old = this.entries[i]!.item;
+
+        if (contextUsage(old) && old.kind === "server" && item.kind === "server" && old.msg.conversationId === item.msg.conversationId) this.entries.splice(i, 1);
       }
     }
 
@@ -145,6 +161,24 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
     if (entry?.item.kind === "user") entry.item.undelivered = { original };
   }
 
+  /**
+   * 「重试」指的那一条：还没送达就交出原文；已经送达回 delivered；
+   * 没有这条，或 seq 上的不是这句原话（后台重启后 seq 被别的条目占用）回 gone。
+   */
+  retryTarget(seq: number, text: string): { original: import("../../../shared/protocol.js").ClientMessage } | "delivered" | "gone" {
+    const entry = this.entries.find(item => item.seq === seq);
+
+    if (entry?.item.kind !== "user" || entry.item.text !== text) return "gone";
+
+    return entry.item.undelivered ? { original: entry.item.undelivered.original } : "delivered";
+  }
+
+  markDelivered(seq: number): void {
+    const entry = this.entries.find(item => item.seq === seq);
+
+    if (entry?.item.kind === "user") delete entry.item.undelivered;
+  }
+
   since(afterSeq = 0): PanelHistoryEntry[] {
     return this.entries.filter((entry) => entry.seq > afterSeq);
   }
@@ -183,6 +217,14 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
     }
 
     if (this.entries.length > this.limit) this.entries.splice(0, this.entries.length - this.limit);
+    const floor = value && typeof value === "object" && "seqFloor" in value ? value.seqFloor : undefined;
+
+    if (typeof floor === "number" && Number.isSafeInteger(floor) && floor > this.nextSeq) this.nextSeq = floor;
+  }
+
+  /** 写进落盘历史的 seqFloor：比已发出的 seq 多留一段，下一次落盘前发出的条目重启后也不会被重发。 */
+  seqFloor(): number {
+    return this.nextSeq + SEQ_RESERVE;
   }
 
   clear(): void {
@@ -193,6 +235,10 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
 function sameStatus(a: PanelHistoryItem, b: PanelHistoryItem): boolean {
   return a.kind === "server" && b.kind === "server" && a.msg.type === "status" && b.msg.type === "status"
     && a.msg.state === b.msg.state && a.msg.conversationId === b.msg.conversationId && a.msg.sessionId === b.msg.sessionId;
+}
+
+function contextUsage(item: PanelHistoryItem): boolean {
+  return item.kind === "server" && item.msg.type === "agent_event" && item.msg.event.kind === "context_usage";
 }
 
 function taskReceipt(item:PanelHistoryItem) {

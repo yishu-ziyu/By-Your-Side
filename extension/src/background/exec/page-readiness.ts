@@ -1,5 +1,6 @@
 import type {NavigationDownload,PageReadinessValue} from "../../../../shared/protocol.js";
 import {overlayHostSelector} from "../../shared/overlay.js";
+import {sendCommand} from "../debugger.js";
 import {withTimeout} from "../timeout.js";
 
 export interface PageReadiness {
@@ -37,6 +38,89 @@ function unscriptableByDesign(url:string|undefined):boolean {
 
 /** 给模型看的一句话：Chrome 显示了它自己的错误页，页面没打开。navigate 和新开标签页共用。 */
 export const ERROR_PAGE_NOTE="Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
+
+/**
+ * 只重试这些 Chrome 网络错误：连接在建立或传输途中断了、本机网络刚变过，同一地址隔一秒再开常常就好。
+ * 域名不存在、证书错误这类是地址或网站本身的问题，服务器回了 4xx/5xx 的页面也是网站自己的答复，再开一次结果一样，所以不在其中。
+ */
+const TRANSIENT_NET_ERRORS=new Set(['ERR_CONNECTION_CLOSED','ERR_CONNECTION_RESET','ERR_CONNECTION_REFUSED','ERR_CONNECTION_FAILED','ERR_CONNECTION_TIMED_OUT','ERR_TIMED_OUT','ERR_EMPTY_RESPONSE','ERR_NETWORK_CHANGED','ERR_INTERNET_DISCONNECTED']);
+
+const RETRY_DELAY_MS=1000;
+
+/** 错误页上 Chrome 写的网络错误名。扩展脚本注入不了错误页，调试器可以读；不是错误页或读不到时返回 undefined。 */
+async function readNetErrorName(tabId:number):Promise<string|undefined> {
+  try{
+    const reply=await sendCommand<{result?:{value?:unknown}}>(tabId,'Runtime.evaluate',{expression:"location.protocol==='chrome-error:'?(document.querySelector('.error-code')?.textContent??''):''",returnByValue:true},undefined,1500);
+    const name=typeof reply?.result?.value==='string'?reply.result.value.trim().replace(/^net::/,''):'';
+
+    return /^ERR_[A-Z0-9_]+$/.test(name)?name:undefined;
+  }catch{return undefined;}
+}
+
+/**
+ * 等完那一秒后标签页的样子，和第一次发现错误页时标签页所在的地址比：请求的网址可能先跳转（如 http 301 到 https）再出错。
+ * changed：换到了别的地址或标签页没了。reloading：还在这个地址，但不再是原错误页了，
+ * 多半是 Chrome 自己在重新加载（前台标签页的错误页约一秒后会自动重新加载），也可能是用户刷新。error_page：还停在原错误页。
+ */
+async function tabAfterWait(tabId:number,errorUrl:string|undefined,error:string):Promise<'changed'|'reloading'|'error_page'> {
+  const tab=await chrome.tabs.get(tabId).catch(()=>null);
+  let where='';
+
+  try{where=new URL(errorUrl??'').href;}catch{return 'changed';}
+
+  if(!tab||!sameUrl(tab.pendingUrl??tab.url,where))return 'changed';
+
+  if(tab.status==='complete'&&!tab.pendingUrl&&await readNetErrorName(tabId)===error)return 'error_page';
+
+  return 'reloading';
+}
+
+/**
+ * 按网址打开（navigate、新开标签页）撞上一次性网络错误时，隔一秒再开同一地址一次，免得模型把偶发断连当成网站打不开告诉用户。
+ * 只给按网址打开用：那是不带表单数据的 GET，重放没有副作用；点击、表单提交引起的跳转不走这里。
+ * 等的这一秒里用户可能接管或自己换了页：cancelled 为真（接管、任务停止、控制轮次变了）或标签页已换到别的地址，就不重试，照原样返回错误页。
+ * 这个地址已经在重新加载时不再发第二次请求，只等这次加载的结果。
+ */
+export async function retryTransientErrorPage(tabId:number,url:string,ready:PageReadiness,timeoutMs:number,cancelled?:()=>boolean):Promise<{ready:PageReadiness;retry?:string}> {
+  if(ready.readiness!=='error_page')return {ready};
+  const error=await readNetErrorName(tabId);
+
+  if(!error||!TRANSIENT_NET_ERRORS.has(error))return {ready};
+  const errorUrl=(await chrome.tabs.get(tabId).catch(()=>null))?.url;
+  const first=`The first attempt hit ${error} (a one-off network error)`;
+  const userTookOver={ready,retry:`${first}; it was not retried because the user took over the page or the task stopped.`};
+
+  for(const started=Date.now();Date.now()-started<RETRY_DELAY_MS;){
+    if(cancelled?.())return userTookOver;
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+
+  if(cancelled?.())return userTookOver;
+  const state=await tabAfterWait(tabId,errorUrl,error);
+
+  if(state==='changed')return {ready,retry:`${first}; it was not retried because the page changed while waiting.`};
+  const budget=Math.max(RETRY_DELAY_MS,timeoutMs-ready.waitMs-RETRY_DELAY_MS);
+
+  if(state==='reloading'){
+    const reloaded=await waitForInteractive(tabId,budget,{requestedUrl:url});
+
+    reloaded.waitMs+=ready.waitMs+RETRY_DELAY_MS;
+
+    return {ready:reloaded,retry:reloaded.readiness==='interactive'||reloaded.readiness==='complete'?`${first}; the page then reloaded by itself and opened.`
+      :reloaded.readiness==='error_page'?`${first}; the page then reloaded by itself and still failed.`
+      :`${first}; the page then reloaded by itself; result: document ${reloaded.readiness}.`};
+  }
+
+  if(cancelled?.())return userTookOver;
+  const again=await waitForInteractive(tabId,budget,{requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId,{url})});
+
+  again.waitMs+=ready.waitMs+RETRY_DELAY_MS;
+  const head=`${first}, so it was retried once automatically`;
+
+  return {ready:again,retry:again.readiness==='interactive'||again.readiness==='complete'?`${head}; the retry succeeded.`
+    :again.readiness==='error_page'?`${head}; the retry also failed.`
+    :`${head}; the retry's result: document ${again.readiness}.`};
+}
 
 /** Chrome 拒绝往它自己的错误页注入时给的原因（连不上网站、DNS 失败等）。 */
 const ERROR_PAGE=/showing error page/i;

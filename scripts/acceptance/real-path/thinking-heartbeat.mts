@@ -1,9 +1,9 @@
 /**
- * 思考心跳：进行中两行不变，思考时行首 16px 墨点在 4 点与十字之间收合（#263）。等待行不再扫光，见 wait-inline-timer。
+ * 思考标记：进行中两行不变，思考时行首是 16px 线圈小动画（照 Agent Elements 的 spiral loader）。
  *   npx tsx scripts/acceptance/real-path/thinking-heartbeat.mts --headless
  * 脚本模型：想 4 秒 → 打开页 B → 点不存在的按钮 → 想 8 秒 → 点「作品」→ 回答。
  *   a) 想的时候第一行一直写「正在思考」，不轮换别的动词；秒数从这段开始数，第二行仍是「已做 2 步 · 1 步换了做法」。
- *   b) `.run-beat` 是 14–16px 主墨色四点；450ms 后点的位置或缩放变了；收合 1.2s。
+ *   b) `.run-beat` 是 16px 的线圈：一条主墨色细线在转（runCoil 动画在跑，450ms 后露出的那段变了）；字是正文次要色、常规字重。
  *   c) 进行中标题不再扫光。
  *   d) 回执是一行「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式）；收尾后墨点不再显示。
  */
@@ -46,7 +46,9 @@ const READ = `(() => {
   if (!d) return null;
   const beat = d.querySelector(".run-beat");
   const title = d.querySelector(".run-title");
-  const dot = beat?.querySelector("i");
+  const dot = beat?.querySelector("path");
+  const verb = title?.querySelector(".act-verb");
+  const vs = verb ? getComputedStyle(verb) : null;
   const cs = beat ? getComputedStyle(beat) : null;
   const ds = dot ? getComputedStyle(dot) : null;
   const ts = title ? getComputedStyle(title) : null;
@@ -63,17 +65,19 @@ const READ = `(() => {
     meta: d.querySelector(".run-meta")?.hidden ? "" : d.querySelector(".run-meta")?.textContent ?? "",
     phase: d.dataset.phase ?? "",
     beatDisplay: cs?.display ?? "missing",
-    beatDots: beat?.querySelectorAll("i").length ?? 0,
+    beatDots: beat?.querySelectorAll("svg path").length ?? 0,
     beatWidth: cs ? parseFloat(cs.width) : 0,
     beatHeight: cs ? parseFloat(cs.height) : 0,
-    beatInk: ds?.backgroundColor ?? "",
+    beatInk: ds?.stroke ?? "",
     beatDuration: seconds(ds?.animationDuration),
     beatDurationRaw: ds?.animationDuration ?? "",
     beatName: ds?.animationName ?? "",
     beatFold: cs?.animationName ?? "",
     beatTransform: ds?.transform ?? "",
-    beatLeft: ds?.left ?? "",
-    beatTop: ds?.top ?? "",
+    beatLeft: ds?.strokeDashoffset ?? "",
+    beatTop: ds?.strokeDasharray ?? "",
+    verbColor: vs?.color ?? "",
+    verbWeight: vs?.fontWeight ?? "",
     shineDuration: seconds(ts?.animationDuration),
     shineDurationRaw: ts?.animationDuration ?? "",
     shineName: ts?.animationName ?? "",
@@ -83,7 +87,7 @@ const READ = `(() => {
 
 type Read = {
   done: boolean; title: string; time: string; meta: string; phase: string;
-  beatDisplay: string; beatDots: number; beatWidth: number; beatHeight: number; beatInk: string; beatDuration: number; beatDurationRaw: string; beatName: string; beatFold: string; beatTransform: string; beatLeft: string; beatTop: string;
+  beatDisplay: string; beatDots: number; beatWidth: number; beatHeight: number; beatInk: string; beatDuration: number; beatDurationRaw: string; beatName: string; beatFold: string; beatTransform: string; beatLeft: string; beatTop: string; verbColor: string; verbWeight: string;
   shineDuration: number; shineDurationRaw: string; shineName: string; all: string;
 };
 
@@ -114,7 +118,8 @@ try {
   check("a 想的时候第一行一直是「正在思考」，第二行是步数，秒数从这段开始数", !!first && think(first.title) && think(second?.title ?? "") && second?.meta === "已做 2 步 · 1 步换了做法" && Math.abs(liveSecs - elapsed) <= 1.2, { title: second?.title ?? null, time: second?.time ?? null, elapsed, meta: second?.meta ?? null, phase: second?.phase ?? null });
   const moved = first != null && (first.beatTransform !== second?.beatTransform || first.beatLeft !== second?.beatLeft || first.beatTop !== second?.beatTop);
   const ink = /rgba?\(\s*20\s*,\s*20\s*,\s*19/.test(first?.beatInk ?? "");
-  check("b 16px 主墨色四点在收合，450ms 后样子变了", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatDots === 4 && first.beatWidth >= 14 && first.beatWidth <= 16 && first.beatHeight >= 14 && first.beatHeight <= 16 && ink && /markMorph/.test(first.beatName) && /markFold/.test(first.beatFold) && Math.abs(first.beatDuration - 1.2) <= 0.05 && moved, { beatDisplay: first?.beatDisplay, beatDots: first?.beatDots, beatWidth: first?.beatWidth, beatHeight: first?.beatHeight, beatInk: first?.beatInk, beatName: first?.beatName, beatFold: first?.beatFold, beatDuration: first?.beatDuration, t0: first?.beatTransform, t1: second?.beatTransform, left0: first?.beatLeft, left1: second?.beatLeft });
+  const secondary = /rgba?\(\s*95\s*,\s*94\s*,\s*88/.test(first?.verbColor ?? "");
+  check("b 16px 线圈在转，450ms 后露出的那段变了；字是次要色、常规字重", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatDots === 1 && first.beatWidth === 16 && first.beatHeight === 16 && ink && /runCoil/.test(first.beatName) && Math.abs(first.beatDuration - 4) <= 0.05 && moved && secondary && first.verbWeight === "400", { beatDisplay: first?.beatDisplay, beatDots: first?.beatDots, beatWidth: first?.beatWidth, beatInk: first?.beatInk, beatName: first?.beatName, beatDuration: first?.beatDuration, t0: first?.beatTransform, t1: second?.beatTransform, off0: first?.beatLeft, off1: second?.beatLeft, verbColor: first?.verbColor, verbWeight: first?.verbWeight });
   check("c 进行中标题不再扫光", first != null && (first.shineName === "none" || first.shineName === "" || !first.shineName.includes("runShine")), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
 
   await until(async () => { const r = await read(); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);

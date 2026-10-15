@@ -44,7 +44,7 @@ import {
   WRITE_TOOL_SET,
 } from "../../../shared/control.js";
 import { dimPage, glowPage } from "./page-glow.js";
-import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
+import { PANEL_PORT_NAME, parseRedeliver, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryEntry, PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
@@ -73,7 +73,7 @@ import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
-import type { SendGuard } from "./send-confirm.js";
+import { reportSendClick, type SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
 import { PendingControlTimeout } from "./control-pending.js";
@@ -193,6 +193,8 @@ let connectionSnapshot: [ConnState, TransportKind | undefined, string?] = ["conn
 let helloSnapshot: Extract<ServerMessage, {type:"hello_ok"}> | null = null;
 
 const HISTORY_PREFIX = "history:";
+
+const GONE_RETRY_WINDOW_MS = 10_000;
 
 const MAX_STORED_HISTORY_KEYS = 8;
 
@@ -647,6 +649,8 @@ async function getWorkingTabMap() {
 
 const panels = new Set<chrome.runtime.Port>();
 const panelHistory = new PanelHistory();
+/** 「历史没了」的重试：同一条在这段时间里只让一个侧栏另发，别的侧栏回 resent。 */
+const goneRetries = new Map<string, number>();
 const historyKey = `${HISTORY_PREFIX}${conversationId}`;
 
 const historyReady = chrome.storage.local.get(historyKey).then(async got => {
@@ -665,7 +669,7 @@ function flushHistory() {
  historyFlushTimer = undefined;
 
  if (!hasPersistableHistory()) return;
- const stored: StoredPanelHistory = { updatedAt: Date.now(), entries: panelHistory.persistWindow(HISTORY_PERSIST_BUDGET_BYTES) };
+ const stored: StoredPanelHistory = { updatedAt: Date.now(), entries: panelHistory.persistWindow(HISTORY_PERSIST_BUDGET_BYTES), seqFloor: panelHistory.seqFloor() };
  void chrome.storage.local.set({[historyKey]:stored}).catch(error => { console.error("[sideagent] 面板历史落盘失败", error); });
  scheduleHistoryPrune();
 }
@@ -1472,8 +1476,9 @@ async function executeToolCall(
       mark:(p,s)=>mark(p,s,beforeDispatch),
       clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeDispatch),
       switch_tab:(p,s)=>switchTab(p,s,beforeDispatch),
-      navigate:(p,s)=>navigate(p,s,beforeDispatch),
-      open_tab:(p,s)=>openTab(p,s,beforeDispatch),
+      // 撞上一次性网络错误后的自动重试会再派发一次跳转：用和等用户确认发送同一个守卫，接管或停下就不再派发。
+      navigate:(p,s)=>navigate(p,s,beforeDispatch,sendGuard.cancelled),
+      open_tab:(p,s)=>openTab(p,s,beforeDispatch,sendGuard.cancelled),
       close_tab:(p,s)=>closeTab(p,s,beforeDispatch),
       download_url:(p,s)=>downloadUrl(p,s,beforeDispatch),
       accept_dialog:(p,s)=>acceptDialog(p,s,beforeDispatch),
@@ -1481,7 +1486,7 @@ async function executeToolCall(
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
       fetch:p=>fetchUrl(p,{beforeDispatch}),
       // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子（docs/evals/20261009-send-confirm.md）。
-      click:(p,s)=>click(p,s,undefined,sendGuard),
+      click:(p,s)=>reportSendClick(sendGuard, click(p,s,undefined,sendGuard)),
       // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
     };
@@ -1505,7 +1510,7 @@ async function executeToolCall(
 
         return gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid));
       },
-      waiting: (on, guide) => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on, ...(guide ? { guide } : {}) }); },
+      waiting: (on, guide, send) => { uplink.sendClientMessage({ type: "tool_waiting_user", id, waiting: on, ...(guide ? { guide } : {}), ...(send ? { send } : {}) }); },
     };
 
     const execute = async () => {
@@ -2170,7 +2175,7 @@ function attachPanel(port: chrome.runtime.Port) {
             if (!uplink.sendClientMessage(original)) {
               panelHistory.markUndelivered(entry.seq, original);
               flushHistory();
-              broadcast({ kind: "delivery", seq: entry.seq, ok: false, original } satisfies BgToPanel);
+              broadcast({ kind: "delivery", seq: entry.seq, ok: false, text: client.text, original } satisfies BgToPanel);
             }
           });
           break;
@@ -2189,6 +2194,41 @@ function attachPanel(port: chrome.runtime.Port) {
         break;
       case "sync": {
         void historyReady.then(() => syncPanel(port, msg.afterSeq));
+        break;
+      }
+
+      // 重发记下的原文（已带当时的页面上下文），只更新原来那条历史：面板和重开后的回放都只有一个气泡。
+      // 总要回执，侧栏才不会停在「已重试」；没有这条时只回给点「重试」的这个侧栏。
+      case "redeliver": {
+        const request = parseRedeliver(msg);
+
+        if (!request) break;
+        const target = panelHistory.retryTarget(request.seq, request.text);
+
+        if (target === "delivered") {
+          port.postMessage({ kind: "delivery", seq: request.seq, ok: true, conversationId } satisfies BgToPanel);
+          break;
+        }
+
+        if (target === "gone") {
+          const now = Date.now();
+
+          for (const [seen, at] of goneRetries) if (now - at > GONE_RETRY_WINDOW_MS) goneRetries.delete(seen);
+          const retryKey = `${request.seq}\n${request.text}`;
+          const resent = goneRetries.has(retryKey);
+
+          if (!resent) goneRetries.set(retryKey, now);
+          port.postMessage({ kind: "delivery", seq: request.seq, ok: false, reason: resent ? "resent" : "gone", conversationId } satisfies BgToPanel);
+          break;
+        }
+        void stopTrailReplay(key());
+        const ok = uplink.sendClientMessage(target.original);
+
+        if (ok) {
+          panelHistory.markDelivered(request.seq);
+          flushHistory();
+        }
+        broadcast({ kind: "delivery", seq: request.seq, ok, text: request.text, original: target.original } satisfies BgToPanel);
         break;
       }
 
