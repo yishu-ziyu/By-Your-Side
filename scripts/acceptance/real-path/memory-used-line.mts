@@ -23,6 +23,9 @@
  * #287 有效期内的过往任务（别的网站订的会议室）照常发给模型，但只在这句话和它对得上时点名：新会话问笔记本不出这一行，
  *    问那天的会议室、问「上次订的」才点名它；「付款之前…」不算提到以前那件事，不点名。假通过：没把它发给模型所以没点名 → 每轮都核对请求原文里有它；
  *    没出回答所以没有这一行 → 先核对这一轮有回答。
+ * 同网站的过往任务和这句话只共用「打开」这类浏览词时，回答下不点名它（照常发给模型：改带给模型的记忆要用真模型评测）：在 A 店说「打开视频网站」，不点名「打开 A 店的会员页」；
+ *    说「提交之前核对一下」（有「之前」但不指以前那件事）也不点名。
+ *    假通过：这件过往任务根本没进候选 → 同一会话再说「打开会员页」，请求里有它、回答下点名它。另一头「注册」这类做事的词照旧算（R2 的邮箱那一轮）。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -76,6 +79,19 @@ const ASK_BEFORE_PAYING = `${ASK}，付款之前帮我核对一下地址`;
 
 /** 和订会议室那件事没有共同的词，但在问过往（「上次」）。 */
 const ASK_LAST_TIME = `${ASK}，我上次订的那个是几点`;
+
+/** 和 BROWSE_GOAL 只共用「打开」。 */
+const ASK_OPEN_OTHER = `${ASK}，打开视频网站`;
+
+/** 和 BROWSE_GOAL 共用「会员页」。 */
+const ASK_OPEN_SAME = `${ASK}，打开会员页`;
+
+/** 有「之前」，但不是指以前那件事：最近几件过往任务照常带，不点名。 */
+const ASK_BEFORE_SUBMIT = `${ASK}，提交之前核对一下`;
+
+const BROWSE_GOAL = "打开 A 店的会员页";
+
+const BROWSE_DONE = "打开了 A 店的会员页";
 
 const artifacts = join(REPO, "out/acceptance/memory-used-line");
 
@@ -451,6 +467,27 @@ try {
   const beforePayingAnswered = await hasAnswer();
   check("#287", "问「付款之前帮我核对一下地址」：有回答，请求里有它，回答下不点名它", beforePayingAnswered && beforePaying.includes(DATED_DONE) && beforePayingLine === null, { answered: beforePayingAnswered, line: beforePayingLine?.text ?? null });
   await shot("287-before-paying");
+
+  // 同网站的过往任务只共用浏览词：照常带、不点名；共用「会员页」时照常带、点名。
+  await seed(false, [{ id: "seed-browse", conversationId: "seed-browse", goal: BROWSE_GOAL, revisions: [], hosts: [SITE_A], outcome: "complete", summary: "已打开会员页。", done: BROWSE_DONE, unfinished: [], startedAt: NOW - 3_600_000, endedAt: NOW - 3_000_000 }]);
+  await navigate(SITE_A);
+  await newConversation();
+  const openOther = await turn(ASK_OPEN_OTHER);
+  const openOtherLine = await lastLine();
+  const openOtherAnswered = await hasAnswer();
+  check("site", "在 A 店说「打开视频网站」：有回答，请求里照常有「打开 A 店的会员页」，回答下不点名", openOtherAnswered && openOther.includes(BROWSE_GOAL) && openOtherLine === null, { answered: openOtherAnswered, sent: openOther.includes(BROWSE_GOAL), line: openOtherLine?.text ?? null });
+  await shot("site-browsing-word");
+  await newConversation();
+  const openSame = await turn(ASK_OPEN_SAME);
+  const openSameLine = await lastLine();
+  check("site", "在 A 店说「打开会员页」：请求里有它，回答下点名「按上次做过的「打开了 A 店的会员页」」", openSame.includes(BROWSE_GOAL) && /^按上次做过的「打开了 A 店的会员/.test(openSameLine?.text ?? ""), { sent: openSame.includes(BROWSE_GOAL), line: openSameLine?.text ?? null });
+  await shot("site-shared-object");
+  await newConversation();
+  const beforeSubmit = await turn(ASK_BEFORE_SUBMIT);
+  const beforeSubmitLine = await lastLine();
+  const beforeSubmitAnswered = await hasAnswer();
+  check("site", "说「提交之前核对一下」：有回答，请求里照常有过往任务，回答下不点名", beforeSubmitAnswered && beforeSubmit.includes(BROWSE_GOAL) && beforeSubmitLine === null, { answered: beforeSubmitAnswered, sent: beforeSubmit.includes(BROWSE_GOAL), line: beforeSubmitLine?.text ?? null });
+  await shot("site-before-submit");
 } catch (error) {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(fatal);
