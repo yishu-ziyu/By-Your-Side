@@ -3445,6 +3445,15 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #think-chip[aria-expanded="true"] svg { transform: rotate(180deg); }
 #think-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #think-chip .think-swap { display: inline-block; animation: think-swap var(--d-state) var(--e-swift); }
+/* 对话用量：占到一半在模型名旁画环；悬停或键盘聚焦开关时出卡片。 */
+#think-chip .think-ring { flex: none; width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(var(--accent) calc(var(--ctx-fill) * 1turn), color-mix(in srgb, currentColor 18%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); }
+#ctx-pop { position: absolute; bottom: calc(100% + 6px); width: min(250px, calc(100% - 16px)); padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); font-size: 12px; line-height: 1.5; color: var(--text-secondary); visibility: hidden; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), visibility 0s linear var(--d-state); z-index: 19; }
+#ctx-pop.show { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+#ctx-pop .ctx-model { color: var(--text-tertiary); }
+#ctx-pop .ctx-line { color: var(--text-primary); font-weight: 600; }
+#ctx-pop .ctx-figures { white-space: nowrap; }
+#ctx-pop .ctx-bar { height: 4px; margin: 6px 0; border-radius: 2px; background: var(--content-subtle); overflow: hidden; }
+#ctx-pop .ctx-bar b { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
 @keyframes think-swap { from { opacity: 0; transform: translateY(3px); filter: blur(2px); } }
 /* 窄侧栏：模型按钮只留图标（全名在悬停提示里），不再被挤没；底栏按钮挨紧一点，一个都不收。 */
 @container panel (max-width: 340px) {
@@ -3502,6 +3511,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #think-menu .mm-views, #think-menu .mm-thumb, #think-chip svg { transition: none; }
   #think-menu.mm-in-all .mm-main { display: none; }
   #think-chip .think-swap { animation: none; }
+  #ctx-pop { transform: none; }
 }
 
 /* 主动卡（YIS-106）：一句话，第一个词是按钮，下面一行出处；悬停出 × */

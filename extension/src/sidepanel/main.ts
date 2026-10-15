@@ -1075,6 +1075,7 @@ function resetConversationRender(): void {
 
   if (resumeRoot) messagesEl.appendChild(resumeRoot);
   resumeEntry.clear();
+  modelMenu.usage(null);
   renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
 }
@@ -5319,6 +5320,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     }
     case "turn_end":
       closeBlocks();
+      break;
+    case "context_usage":
+      modelMenu.usage({ used: ev.used, window: ev.window });
       break;
     case "agent_end":
       closeBlocks();
