@@ -21,6 +21,7 @@ import { createOrb, type OrbHandle } from "./orb.js";
 import { renderMarkdownHtml } from "./markdown.js";
 import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
+import { linkifyPageRefs, quotedNames } from "./page-refs.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
 import { adoptFillUndo, noteFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
 import { attachShorten } from "./answer-shorten.js";
@@ -163,6 +164,33 @@ function linkifyCircleRefs(answer: HTMLElement): void {
   }
 }
 
+/** 等后台回话的请求：页面引用的查询和指认。 */
+const pageRefWaits = new Map<string, (value: string[] | boolean) => void>();
+
+function askPageRefs<T extends string[] | boolean>(message: PanelToBg & { id: string }): Promise<T> {
+  return new Promise<T>((done) => {
+    const timer = setTimeout(() => { pageRefWaits.delete(message.id); done((message.kind === "page_refs_check" ? [] : false) as T); }, 8_000);
+    pageRefWaits.set(message.id, (value) => { clearTimeout(timer); done(value as T); });
+
+    if (!port) { pageRefWaits.get(message.id)?.(message.kind === "page_refs_check" ? [] : false); pageRefWaits.delete(message.id); return; }
+    port.postMessage(message);
+  });
+}
+
+/** 回答里「」括起的控件：读页时拿到过位置、现在还在页上的，加虚线，点了在页面上圈出。 */
+async function markPageRefs(answer: HTMLElement): Promise<void> {
+  const names = quotedNames(answer);
+
+  if (!names.length) return;
+  const found = await askPageRefs<string[]>({ kind: "page_refs_check", id: crypto.randomUUID(), names });
+
+  if (!answer.isConnected) return;
+  linkifyPageRefs(answer, found, {
+    point: (name) => askPageRefs<boolean>({ kind: "page_ref_point", id: crypto.randomUUID(), name }),
+    say: (text) => { sendInput(text); },
+  });
+}
+
 /** delivered：这是一次正式交付（本轮的最终回答），不是过渡文字；带上它这一轮读过或打开的页面。 */
 function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): void {
   attachCopyActions(answer);
@@ -175,6 +203,7 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   // 文末一排是回答写完后才加的：原本跟着底部的，再贴一次底，否则这一排卡在侧栏底边，拖把手时前一小段把手不动。
   scrollToEnd();
 
+  if (delivered && !replayingHistory) void markPageRefs(answer);
   // 补放历史时不给：那一页早已不是这次回答的结果页。
   if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
   const source = answerSources.get(answer);
@@ -6270,6 +6299,13 @@ function handleBgMessage(envelope: BgToPanel): void {
       }
       if (envelope.reason) chip.title = `${chip.title}\n${envelope.reason}`;
     }
+
+    return;
+  }
+
+  if (envelope.kind === "page_refs_found" || envelope.kind === "page_ref_pointed") {
+    pageRefWaits.get(envelope.id)?.(envelope.kind === "page_refs_found" ? envelope.names : envelope.ok);
+    pageRefWaits.delete(envelope.id);
 
     return;
   }
