@@ -9,9 +9,7 @@ export const OVERLAY_KIND_CURSOR = "cursor";
 
 export const OVERLAY_KIND_MARKS = "marks";
 
-export const OVERLAY_KIND_CONTROL = "control";
-
-export const OVERLAY_KIND_EDGE_PILL = "edge-pill";
+export const OVERLAY_KIND_EDGE_TAB = "edge-tab";
 
 export const OVERLAY_KIND_PTT_CAPSULE = "ptt-capsule";
 

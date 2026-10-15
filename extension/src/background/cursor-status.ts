@@ -1,6 +1,6 @@
 /**
- * 光标状态层（background 侧）：把一轮任务的「在等 / 在读 / 完成 / 失败」挂到对应标签页的光标名牌上，
- * 并在它于别的标签页干活、用户看的是当前页时，给当前页右上角挂一个可点胶囊。
+ * 光标状态层（background 侧）：把一轮任务的「在等 / 在读 / 完成 / 失败」画到对应标签页右边缘的胶囊上，
+ * 并在它于别的标签页干活、用户看的是当前页时，让当前页右边缘的胶囊指向那一页。
  *
  * 分工：文案与呈现属于页面侧（content-cursor.js），这里只决定状态、目标标签页和生命周期。
  * 状态不是执行证据：画不上不改变任务判定，执行结果仍以 tool_result 为准。
@@ -99,7 +99,7 @@ function renderPill(tabId: number): Promise<void> {
         const { entry, title } = view;
         await callDom(tabId, (id: string, value: CrossPageView) => {
           window.__sideagent?.cursor?.for(id)?.showCrossPage?.(value);
-        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].flatMap(v => isCurrentEntry(v.entry) && v.entry.tabId != null ? [{ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId! }] : []) }]);
+        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].flatMap(v => isCurrentEntry(v.entry) && v.entry.tabId != null ? [{ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId!}] : []) }]);
       } else {
         await callDom(tabId, () => { window.__sideagent?.cursor?.hideCrossPage?.(); }, []);
       }
@@ -203,7 +203,7 @@ async function forgetTab(tabId: number): Promise<void> {
   }
 }
 
-/** 任务状态落到光标名牌；同时同步右上角跨页胶囊。key 是执行键（会话 + 成员）。 */
+/** 任务状态落到页面右边缘的胶囊；同时同步别页的跨页指向。key 是执行键（会话 + 成员）。 */
 export async function showCursorStatus(opts: {
   key: string;
   state: CursorStatusState;

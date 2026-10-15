@@ -17,6 +17,7 @@ import {randomUUID} from "node:crypto";
 import {FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import {NoProgressPolicy, noProgressMessage} from "./no-progress-policy.js";
+import {ExploreLadderPolicy} from "./explore-ladder.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import { TaskActionRejected } from "./task-dispatcher.js";
 import {isAttachment} from '../../shared/protocol.js';
@@ -61,7 +62,7 @@ import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
 import { programFirstGuidance } from "./program-first.js";
-import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
+import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[] }
@@ -185,6 +186,7 @@ export class BrowserAgentSession {
   private failurePolicy: RepeatedToolFailurePolicy | null = null;
   private pendingToolFailure: UserDelivery | null = null;
   private noProgressPolicy: NoProgressPolicy | null = null;
+  private exploreLadder: ExploreLadderPolicy | null = null;
   private savedFiles = new Map<string, { runId: string | null; chars: number; lines: number; savedAt: number }>();
   /**
    * 交给目标核对的读数：这个会话里最近读过的页面和工具结果，带上读的时间。
@@ -588,10 +590,13 @@ if(required.includes(key))candidates.set(key,attachment);
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
 
       const noProgressPolicy = new NoProgressPolicy(stop => onNoProgress(stop));
+      const exploreLadder = new ExploreLadderPolicy();
 
       const extensionFactories = [
         { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
         { name: "sideagent-no-progress-boundary", hidden: true, factory: noProgressPolicy.extension() },
+        // 排在两条边界之后：它们比的是工具原本的结果，追加的下一步提示不能让重复的错误看起来像新内容。
+        { name: "sideagent-explore-ladder", hidden: true, factory: exploreLadder.extension() },
         ...(memoryRuntime ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }] : []),
         ...(productContext ? [{ name: "sideagent-product-context", hidden: true, factory: productContext.extension() }] : []),
       ];
@@ -692,6 +697,7 @@ if(required.includes(key))candidates.set(key,attachment);
       wrapper.failurePolicy = failurePolicy;
 
       wrapper.noProgressPolicy = noProgressPolicy;
+      wrapper.exploreLadder = exploreLadder;
       // 原地转圈（docs/evals/20261001-data-to-file.md 标准 7）：停下本轮，说清卡在哪一步、已有什么、还差什么。
       onNoProgress = stop => {
         // 本轮已有一段停下说明，不再重复。
@@ -1038,7 +1044,7 @@ return;}
     }
 
     const finalText = withCircleNotes(withPageContext(text, context), attachments);
-    this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
     // 新的一次用户提问是新一轮：上一轮交付过结果，不代表这一轮不会真正失败。
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
@@ -1255,7 +1261,7 @@ return;}
     }
 
     if (session.isStreaming) {
-      this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
+      this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
       this.memoryRuntime?.invalidateUserTurn("steer");
       this.runTrace.record("steer", { text, context, attachments });
       void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
@@ -1393,20 +1399,37 @@ return;}
 
     const hosts = operatedHosts(messages, this.activeGoalPage?.url ?? null);
 
-    if ((digest.rounds <= 2 && digest.errors === 0) || !hosts.length) return;
+    if ((digest.rounds <= 2 && digest.errors === 0) || !hosts.length) { this.runTrace.record("site_notes", { phase: "skipped", why: hosts.length ? "short" : "no_host", rounds: digest.rounds }); return; }
     const sessionId = `${session.sessionId}-site-notes`;
 
-    const reply = await sideJudgment(side, model, {
-      purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "none",
-      content: JSON.stringify({ visitedHosts: hosts, steps: digest.steps }),
-      sessionId, headers: opencodeSessionHeaders(model, sessionId), parse: text => parseJsonReply(text, isJsonObject),
-    });
+    let reply: unknown;
 
-    for (const [host, notes] of filterSiteNotes(reply, { hosts, typed: digest.typed, request: task.request })) {
-      const count = await store.add(host, notes, task.runId);
-
-      if (count) this.runTrace.record("site_notes", { phase: "learned", host, count });
+    try {
+      reply = await sideJudgment(side, model, {
+        purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "any",
+        content: JSON.stringify({ visitedHosts: hosts, rounds: digest.rounds, steps: digest.steps }),
+        sessionId, headers: opencodeSessionHeaders(model, sessionId), parse: text => parseJsonReply(text, isJsonObject),
+      });
+    } catch (error) {
+      this.runTrace.record("site_notes", { phase: "skipped", why: "side_call_failed" });
+      throw error;
     }
+
+    const dropped: Array<{ tip: string; why: string }> = [];
+    let learned = 0;
+
+    for (const [host, notes] of filterSiteNotes(reply, { hosts, typed: digest.typed, request: task.request }, dropped)) {
+      const added = await store.add(host, notes, task.runId);
+
+      if (!added.length) continue;
+      this.runTrace.record("site_notes", { phase: "learned", host, count: added.length, notes: added });
+      learned += added.length;
+      const title = siteTitle(messages, host);
+      this.callbacks.emit({ kind: "site_notes", host, ...(title ? { title } : {}), notes: added });
+    }
+
+    // 被挡掉的笔记可能带着用户的值，诊断记录只写挡掉的原因，不写原文。
+    if (!learned) this.runTrace.record("site_notes", { phase: "skipped", why: dropped.length ? "filtered" : "model_empty", dropped: dropped.map(item => item.why) });
   }
 
   /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */
@@ -1703,7 +1726,7 @@ return;}
       throw new TaskActionRejected("未读补充尚未清理，原任务保持中断。请重试或重新连接。");
     }
 
-    this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
     this.activeGoal = snapshot.goal;
@@ -1933,7 +1956,7 @@ return {kind:'model'};
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先用侧栏交还。");
 
     if (!session?.isStreaming) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
-    this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
     // 插话是新的用户要求：这一轮要重新判断有没有真正交付，不能沿用上一轮的结论。
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
