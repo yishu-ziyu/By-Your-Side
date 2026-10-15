@@ -77,12 +77,14 @@ export function mountThinkingChip(options: { composer: HTMLElement; after: HTMLE
     more.type = "button";
     more.className = "think-more";
     more.textContent = "换模型…";
-    more.onclick = () => { open(false); options.openModels(); };
+    // 这次点击还会冒泡到 document，模型面板会把它当成点在面板外而立刻关掉。
+    more.onclick = (event) => { event.stopPropagation(); open(false); options.openModels(); };
     menu.replaceChildren(head, item(false, "快", thinking.fast, "填表、订东西、点按"), item(true, "深入", thinking.deep, "多步骤、要权衡的事"), document.createElement("hr"), more);
   };
 
-  chip.onclick = (event) => { event.stopPropagation(); open(!menu.classList.contains("open")); };
-  document.addEventListener("click", (event) => { if (!menu.contains(event.target as Node)) open(false); });
+  // 不拦冒泡：点开关时，从这里打开的模型面板要按"点在面板外"关掉。
+  chip.onclick = () => { open(!menu.classList.contains("open")); };
+  document.addEventListener("click", (event) => { if (!menu.contains(event.target as Node) && !chip.contains(event.target as Node)) open(false); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && menu.classList.contains("open")) { open(false); chip.focus(); } });
 
   return {
