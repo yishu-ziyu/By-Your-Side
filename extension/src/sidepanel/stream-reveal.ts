@@ -2,7 +2,7 @@
  * 回答的平滑显示：模型输出一阵一阵到，这里先缓冲，再按固定节拍一段段放出来。
  *
  * - 节拍：每 150～200ms 放一段，一段 14～24 字；积压多时把段放大，约 1.5 秒内追平。
- * - 淡入：每段 400ms 只改透明度，淡完拆掉 span。不含记号的续写直接追加，否则只重渲染最后一块。
+ * - 淡入：每段 400ms 只改透明度，淡完拆掉 span。只接在最后一段文字后面、不改已渲染结构的续写直接追加，否则只重渲染最后一块。
  * - 未闭合的 Markdown 先补齐，不让 `**`、`` ` ``、半截链接露出来。
  * - 有卡片的回答不分块：卡片前后的正文要用卡片里的数（{=名字}、「见下方卡片」），所以每段都按整个前缀渲染，
  *   走 patchAnswer 放进页面：已显示的卡片组件节点不动，卡片里的字不按段淡入，组件写完整块淡入。
@@ -278,6 +278,10 @@ function topNodes(html: string, answer: HTMLElement): ChildNode[] {
   return [...template.content.childNodes].filter((node) => !(node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()));
 }
 
+function serialize(nodes: ChildNode[]): string {
+  return nodes.map((node) => (node instanceof Element ? node.outerHTML : node.textContent ?? "")).join("");
+}
+
 function anchorBefore(el: HTMLElement): ChildNode | null {
   return el.querySelector(":scope > .answer-actions, :scope > .answer-panel");
 }
@@ -440,7 +444,7 @@ class Reveal {
       const added = old && md.startsWith(old.md) ? md.slice(old.md.length) : null;
       const codeTail = old?.md.startsWith("```") && added !== null && !/[*_`#\[\]<>|~\\!]/.test(added);
 
-      if (old && added && old.nodes.length && (!MD_SYNTAX.test(added) || codeTail)) this.appendFast(old, added, now);
+      if (old && added && old.nodes.length && (codeTail || (!MD_SYNTAX.test(added) && this.onlyExtendsText(old.md, md, added, live)))) this.appendFast(old, added, now);
       else this.paintBlock(i, md, live, now);
     }
 
@@ -482,6 +486,22 @@ class Reveal {
     this.whole = fades;
     this.wholeLen = len;
     wrapRanges([...this.el.childNodes], fades, now);
+  }
+
+  /**
+   * 不含记号的续写也可能改掉已渲染的结构：补上的 `)` 让「[来源](https:」先成了链接，后半截网址其实在地址里；
+   * 「[来源]」接上「(网址)」才成链接；裸网址接着写还是同一个链接；段尾的空行不是正文。
+   * 所以只在新渲染结果正好等于旧结果最后一段文字后面接上 added 时才直接追加。
+   */
+  private onlyExtendsText(oldMd: string, md: string, added: string, live: boolean): boolean {
+    const fix = live ? remend : (text: string) => text;
+    const before = topNodes(this.opts.render(fix(oldMd)));
+    const last = lastText(before);
+
+    if (!last) return false;
+    last.data += added;
+
+    return serialize(before) === serialize(topNodes(this.opts.render(fix(md))));
   }
 
   private appendFast(block: Block, added: string, now: number): void {
