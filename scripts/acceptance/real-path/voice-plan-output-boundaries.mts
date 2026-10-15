@@ -94,6 +94,7 @@ try {
     };return true;
   })()`);
   stopVideo=await recordScreen(rp.cdp,panel,join(out,'panel.mp4')).catch(()=>null);
+  await rp.click(panel,"#input");
   await rp.click(panel,'.voice-start');
   await until(async()=>wire.some(e=>e.type==='conversation.item.input_audio_transcription.completed'),45000,'real final ASR');
   const heard=wire.find(e=>e.type==='conversation.item.input_audio_transcription.completed')?.transcript??'';
