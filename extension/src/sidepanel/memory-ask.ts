@@ -50,7 +50,12 @@ export type AskRequest =
 /** stepAsk 的一步：新的卡片，以及这一步要发出的请求（若有）。 */
 export interface AskStep { card: MemoryAskCard; request?: AskRequest }
 
-export function createAskCard(ask: MemoryAskEvent): MemoryAskCard {
+/**
+ * learned：后台已从纠正里学到并直接记下。现场画成「记下了」并给撤销；从记录重放时不知道它后来改没改过，只说一句、不给按钮。
+ */
+export function createAskCard(ask: MemoryAskEvent, live = true): MemoryAskCard {
+  if (ask.learned) return live ? { ask, phase: "remembered", pending: null, error: "", entry: ask.learned } : { ask, phase: "noted", pending: null, error: "" };
+
   return { ask, phase: "open", pending: null, error: "" };
 }
 

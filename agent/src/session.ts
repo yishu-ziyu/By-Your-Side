@@ -1997,6 +1997,8 @@ return {kind:'model'};
 
     // 只有真在纠正（「不对」「错了」…）才升思考档；补一个问题、补一条资料不是任务变难了。
     if (isUserCorrection(text)) this.mainEffort.raise(session.model, "user_correction");
+    // 插话都从这里过：先留下，这一轮结束后看能不能学成这个网站的做法（下一行开新的一轮会把上一句盖掉）。
+    this.memoryRuntime?.noteSteer(text, context);
     this.memoryRuntime?.invalidateUserTurn("steer");
     // 插话也是用户直接说的话：开新的一轮，「记住这是我常用邮箱」这类要求才有权改记忆。
     this.memoryRuntime?.beginUserTurn(text, context, this.conversationSnapshot()?.conversationContext?.recentTurns);

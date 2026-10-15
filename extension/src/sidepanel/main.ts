@@ -3626,7 +3626,7 @@ function renderSiteNotesReceipt(event: Extract<AgentUiEvent, { kind: "site_notes
  * 没有本地状态的回放卡片直接停在结局；没有结局的照常可点。
  */
 function renderMemoryAsk(event: MemoryAskEvent): void {
-  if (!memoryAskCards.has(event.askId)) memoryAskCards.set(event.askId, createAskCard(event));
+  if (!memoryAskCards.has(event.askId)) memoryAskCards.set(event.askId, createAskCard(event, !replayingHistory));
 
   if (event.outcome) stepMemoryAsk(event.askId, { kind: "outcome", outcome: event.outcome });
 
@@ -3751,7 +3751,7 @@ function buildMemoryAsk(askId: string): HTMLElement {
   } else if (card.phase === "once") {
     line.textContent = "好，这次就不记了。";
   } else if (card.phase === "noted") {
-    line.textContent = "好，记住了。可在「记忆」面板查看或撤销";
+    line.textContent = card.ask.learned ? `记下了：${card.ask.rule.trim().replace(/[。.!！]+$/u, "")}。可在「记忆」面板查看或删掉` : "好，记住了。可在「记忆」面板查看或撤销";
   } else if (card.phase === "undone") {
     line.textContent = "已撤销。";
   } else if (card.phase === "already") {
@@ -3772,7 +3772,7 @@ function buildMemoryAsk(askId: string): HTMLElement {
     if (!scope.disabled) scope.title = entry.scope.kind === "site" ? `只在 ${entry.scope.hostname} 照做，点一下改成所有网站` : "在所有网站照做，点一下改成只在这个网站";
     const undo = memoryAskButton("memory-ask-undo", card.pending === "undo" ? "正在撤销…" : "撤销", { kind: "undo" }, card);
     undo.dataset.memoryAskUndo = entry.id;
-    line.append("好，记住了。", scope, undo);
+    line.append(card.ask.learned ? `记下了：${card.ask.rule.trim().replace(/[。.!！]+$/u, "")}。` : "好，记住了。", scope, undo);
   }
 
   if (card.error) {

@@ -373,7 +373,7 @@ export type AgentUiEvent =
    * outcome：询问有了结局时后台再发一条同 askId 的事件（进对话历史），侧栏按最后一条画——
    * remembered 已记下 / already 早已记着 / once 这次就行 / closed 已作废（同一句纠正又问了一次、替换目标被改过等）。没有 outcome 的是仍在等回答的询问。
    */
-  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true }
+  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; /** 纠正里学到、已直接记下的那条（网站操作类不先问，10-16 用户定）：侧栏显示「记下了」并给撤销。 */ learned?: MemoryEntry; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true }
   /** 站点笔记：做成的任务结束后记下的这个网站的用法（只关于网站、不关于用户），侧栏在这一轮下面写一行「记下了…用法」。title 是那次打开这个网站时的页面标题。 */
   | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "text_delta"; delta: string }
@@ -1114,6 +1114,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.outcome !== undefined && !["remembered", "already", "once", "closed"].includes(event.outcome)) return null;
 
       if (event.habit !== undefined && event.habit !== true) return null;
+
+      if (event.learned !== undefined && !isMemoryEntry(event.learned)) return null;
     }
 
 

@@ -11,7 +11,7 @@ import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type Memor
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
 import { isNamedForRequest, isRelevantMemory } from "./memory-relevance.js";
 import { dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
-import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
+import { CORRECTION_ASK_PROMPT, CORRECTION_LESSON_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionLessonInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionLesson, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
 interface ActiveUserTurn {
   epoch: number;
@@ -343,6 +343,8 @@ export class MemoryRuntime {
   private lastWebHost: string | null = null;
   /** 这一轮带给助手的资料：填表的值和其中一条对上，网页上那一格标「来自记忆」（YIS-87）。 */
   private usedThisTurn: MemoryEntry[] = [];
+  /** 这一轮任务中途的插话：一轮结束后逐条看能不能学成这个网站的一条做法。 */
+  private steers: Array<{ text: string; pageUrl?: string; recentTurns: MemoryConversation }> = [];
 
   constructor(
     private readonly store: MemoryStore,
@@ -496,7 +498,13 @@ export class MemoryRuntime {
       const open = new Set([...this.asks.values()].flatMap(ask => (ask.messageKey === messageKey ? [] : ask.keys)));
       const decision = decideCorrectionAsk({ verdict, userMessage: turn.text, hostname, methods: latest, dismissed: this.dismissed, open });
 
+      // 现有判断只找以后都照做的工作方式；它认定是关于网站的纠正、却不是通用方式时（多半是「你要的是哪一个」），交给学指代的判断再看一次。
+      if (!decision.ask && decision.reason === "not-reusable" && verdict.correction && verdict.about === "site") return void this.learnFromCorrection(turn.text, turn.recentTurns, hostname, "message");
+
       if (!decision.ask) return this.recordAsk(turn, { status: "skipped", reason: decision.reason });
+
+      // 关于网站怎么操作的纠正直接记下、给撤销；关于你个人或助手说话方式的仍先问（10-16 用户定）。
+      if (decision.scope.kind === "site" && !decision.replaces) return void this.saveLearned(decision.rule, decision.scope, turn.text, "message");
       const askId = globalThis.crypto.randomUUID();
       const event: MemoryAskEvent = { kind: "memory_ask", askId, rule: decision.rule, scope: decision.scope };
       const ask: OpenAsk = { rule: decision.rule, scope: decision.scope, quote: turn.text, keys: [correctionRuleKey(decision.rule, decision.scope), messageKey], messageKey, event };
@@ -603,6 +611,37 @@ export class MemoryRuntime {
     return visited.at(-1) ?? this.lastWebHost;
   }
 
+  /** 一句纠正学成这个网站的一条做法：学到就直接记下，没学到只写诊断。不在网页上、没有网站时不学。 */
+  private async learnFromCorrection(text: string, recentTurns: MemoryConversation, hostname: string | null, source: "steer" | "message"): Promise<void> {
+    if (!hostname) return void this.onRecord?.("memory_ask_decision", { source, status: "skipped", reason: "no-site" });
+
+    try {
+      const raw = await this.providerTagged()(CORRECTION_LESSON_PROMPT, correctionLessonInput(text, recentTurns, hostname), AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS));
+      const lesson = parseCorrectionLesson(raw, text);
+
+      if (!lesson) return void this.onRecord?.("memory_ask_decision", { source, status: "skipped", reason: "no-lesson" });
+      await this.saveLearned(lesson.rule, { kind: "site", hostname }, text, source);
+    } catch (error) {
+      const reason = error instanceof ProviderFailure ? "provider error" : error instanceof CorrectionParseError ? "parse error" : "store error";
+      this.onRecord?.("memory_ask_decision", { source, status: "failed", reason });
+    }
+  }
+
+  /** 存下学到的做法并告诉侧栏（带上存下的那条，侧栏给撤销）。同一条早已记着时不重复提示。 */
+  private async saveLearned(rule: string, scope: MemoryScope, quote: string, source: "steer" | "message"): Promise<void> {
+    const { entries, alreadySaved } = await this.store.saveMethod({ text: rule, scope, sourceConversationId: this.conversationId, sourceQuote: quote });
+    const entry = entries[0];
+
+    this.onRecord?.("memory_ask_decision", { source, status: alreadySaved ? "skipped" : "learned", reason: alreadySaved ? "already-saved" : "learned", scope: scope.kind, entryIds: entries.map(e => e.id) });
+
+    if (alreadySaved || !entry) return;
+    this.remembered.add(correctionMessageKey(quote));
+    const event: MemoryAskEvent = { kind: "memory_ask", askId: globalThis.crypto.randomUUID(), rule, scope, learned: entry };
+
+    if (scope.kind === "site") event.hostname = scope.hostname;
+    this.emit(event);
+  }
+
   /** 一轮结束：等这一轮的自动判断落定后在后台补判；这一轮的结束不等补判。 */
   afterTurn(): void {
     this.running = false;
@@ -612,6 +651,12 @@ export class MemoryRuntime {
     if (turn?.correction && !turn.asking && this.current(turn)) {
       turn.asking = true;
       void this.askAfterCorrection(turn);
+    }
+
+    // 最后一句插话若已走上面的纠正询问，就不再学一遍，免得同一句记成两条。
+    for (const steer of this.steers.splice(0)) {
+      if (turn?.asking && steer.text === turn.text) continue;
+      void this.learnFromCorrection(steer.text, steer.recentTurns, memoryHostOfUrl(steer.pageUrl) ?? this.lastWebHost, "steer");
     }
 
     void Promise.allSettled(this.autos).then(() => this.drainPending());
@@ -843,6 +888,18 @@ export class MemoryRuntime {
    * - cancel（停止、接管、交还）：这一轮判断失败排队的话也一并作废，到点不补判、不落盘。
    * - steer（任务进行中插话）：只作废进行中的判断；已排队的话照常补判，过时的由 supersededSince 挡住。
    */
+  /**
+   * 任务中途的插话：连同发起这一轮的那句话一起留下，这一轮结束后再判断（afterTurn）。
+   * 只收用户直接打的字；像密码的不留。
+   */
+  noteSteer(text: string, context?: PageContext): void {
+    if (!this.options.auto || !this.complete || !text.trim() || looksSecret(text)) return;
+    const turn = this.active;
+    const recentTurns: MemoryConversation = turn ? [...turn.recentTurns, { role: "user" as const, text: turn.text.slice(0, 2000) }].slice(-12) : [];
+    const pageUrl = context?.url ?? turn?.pageUrl;
+    this.steers.push({ text: text.slice(0, 2000), recentTurns, ...(pageUrl ? { pageUrl } : {}) });
+  }
+
   invalidateUserTurn(reason: "cancel" | "steer" = "cancel"): void {
     const key = this.active?.key;
 
@@ -1249,7 +1306,7 @@ function appendMemoryContext(systemPrompt: string, entries: MemoryEntry[]): stri
   const rows = entries.map((entry) => {
     const scope = entry.scope.kind === "all" ? "all personal conversations" : `hostname=${entry.scope.hostname}`;
 
-    const note = entry.experience ? "; unverified workflow suggestion from user correction" : entry.kind === "method" ? "; way of working the user confirmed after correcting you, written as your promise (\"我\" = you)" : "";
+    const note = entry.experience ? "; unverified workflow suggestion from user correction" : entry.kind === "method" ? "; way of working from the user's own correction of you, written as your promise (\"我\" = you)" : "";
 
     return `- [memory ${entry.id} v${entry.version}; ${scope}${note}] ${entry.text}`;
   });
