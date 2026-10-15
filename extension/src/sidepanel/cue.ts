@@ -159,10 +159,12 @@ presence.onmessage = (event: MessageEvent<unknown>) => {
 
 /**
  * 开着侧栏的窗口。chrome.runtime.getContexts 只报得出侧栏有几个，报不出在哪个窗口（windowId 一律是 -1），
- * 所以用它定要等几个回答，窗口由各个侧栏自己报。
+ * 所以用它定要等几个回答，窗口由各个侧栏自己报。单独窗口里的会话是标签页里的侧栏页，也算一个。
  */
 async function panelWindows(mine: number): Promise<number[]> {
-  const count = (await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL] }).catch(() => [])).length;
+  const page = chrome.runtime.getURL("sidepanel.html");
+  const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL, chrome.runtime.ContextType.TAB] }).catch(() => []);
+  const count = contexts.filter(c => c.contextType === chrome.runtime.ContextType.SIDE_PANEL || c.documentUrl?.split(/[?#]/)[0] === page).length;
   const windows = new Set([mine]);
 
   if (count <= 1) return [...windows];

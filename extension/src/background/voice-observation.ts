@@ -1,3 +1,5 @@
+import { activeTargetTabs } from "./target-window.js";
+
 /** Read-only grants are issued by a live voice lease, never by page content or task tools. */
 export class VoiceObservation {
   private grants = new Map<string, {
@@ -11,7 +13,7 @@ export class VoiceObservation {
     token: string;
     tabId: number;
   } | undefined> {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const [tab] = await activeTargetTabs();
 
     if (tab?.id === undefined || !/^https?:/.test(tab.url ?? '')) {
       return;
@@ -34,7 +36,7 @@ export class VoiceObservation {
         throw new Error('页面观察授权已失效。');
       }
 
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const [tab] = await activeTargetTabs();
 
       if (tab?.id !== grant.tabId) {
         throw new Error('当前页面已切换，请重新询问。');

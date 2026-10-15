@@ -3,6 +3,7 @@
  * 弹层列站点图标、标题、域名；当前页排第一。选中后飞进输入区，变成页面胶囊。
  * 待读（描边）→ 已读（实心 + ✓，扩展后台真读到正文才变）→ 读不到（划线 + 原因）。
  */
+import { targetWindowId } from "./target-window.js";
 import { siteGlyph } from "./answer-actions.js";
 import { reducedMotion } from "./branch-graph.js";
 
@@ -120,10 +121,10 @@ export function mountTabMentions(opts: {
   function isOpen(): boolean { return !menu.hidden; }
 
   async function listTabs(): Promise<chrome.tabs.Tab[]> {
-    const current = await chrome.windows.getCurrent().catch(() => null);
+    const targetWindow = await targetWindowId();
     const tabs = await chrome.tabs.query({});
     const usable = tabs.filter((t) => t.id != null && t.url && !isBrowserPage(t.url));
-    const currentId = (await chrome.tabs.query({ active: true, windowId: current?.id })).find((t) => t.id)?.id;
+    const currentId = (await chrome.tabs.query({ active: true, windowId: targetWindow })).find((t) => t.id)?.id;
     usable.sort((a, b) => {
       if (a.id === currentId) return -1;
       if (b.id === currentId) return 1;
