@@ -3,6 +3,7 @@
  *   npx tsx scripts/acceptance/real-path/answer-shorten.mts --headless [--live] [--model=服务商/模型]
  * 脚本模型写一份带比价卡片、小标题列表和“细节”段的回答。用真实鼠标拖把手、点把手、按上下键，
  * 读每层用户看得到的字：每层都从全文里截出、一句层等于第一句、层越短字越少；复制和“复制为 Markdown”拿到的是当前层。
+ * 拖的过程每 10px 量一次：把手一直在手指下面，回答高度一点点变，不整层跳，对话区不被弹回去；回弹没停时再抓住也不乱。
  * 再问一句一句话的问题：不出把手。剪贴板只记下产品交给 navigator.clipboard 的字，不读系统剪贴板。
  * --record：判定做完后再录一段正常速度的拖动（out/…/drag.mp4），只给人看，不参与判定。
  * --live：主模型换成真实模型（默认 gpt-6-luna），问一道比价题，截图看第一句是不是结论；只证明这一个模型在这一道题上的表现。
@@ -96,6 +97,34 @@ try {
     await mouse("mouseReleased", at.x, at.y + dy);
     await sleep(500);
   };
+  type Step = { finger: number; grip: number; height: number; top: number };
+  /** 像用户一样慢慢拖，直到层名变成 name，停一下再松手；记下每一步把手、回答高度和滚动位置。settle=false 时松手后不等回弹。 */
+  const dragTo = async (name: string, dir: -1 | 1, settle = true): Promise<Step[]> => {
+    const at = await gripAt();
+    const steps: Step[] = [];
+    await mouse("mousePressed", at.x, at.y);
+    let dy = 0;
+    for (let extra = -1; Math.abs(dy) < 1500 && extra < 2; ) {
+      dy += 10 * dir;
+      await mouse("mouseMoved", at.x, at.y + dy);
+      await sleep(16);
+      const s = await rp.evaluate(panel, `(() => { const a = ${ANSWER_JS}[0], g = a.querySelector(".shorten-grip").getBoundingClientRect();
+        return { grip: g.y + g.height / 2, height: a.getBoundingClientRect().height, top: document.querySelector("#messages").scrollTop, label: a.querySelector(".shorten-level").textContent }; })()`) as Omit<Step, "finger"> & { label: string };
+      steps.push({ finger: at.y + dy, grip: Math.round(s.grip), height: Math.round(s.height), top: s.top });
+      if (extra >= 0 || s.label.startsWith(name)) extra++;
+    }
+    await sleep(150);
+    await mouse("mouseReleased", at.x, at.y + dy);
+    if (settle) await sleep(900);
+    return steps;
+  };
+  /** 跟手：把手离手指不超过一步（10px）多一点；每拖 10px 回答高度变化不超过 20px（块与块交界处有几像素的跳，整层切换是几百像素）；滚动位置不变。 */
+  const followed = (steps: Step[]) => ({
+    gripGap: Math.max(...steps.map(s => Math.abs(s.grip - s.finger))),
+    jump: Math.max(...steps.slice(1).map((s, i) => Math.abs(s.height - steps[i]!.height))),
+    scrolled: Math.max(...steps.map(s => Math.abs(s.top - steps[0]!.top))),
+    steps: steps.map(s => `${s.finger}/${s.grip}/${s.height}/${s.top}`).join(" "),
+  });
   const key = async (k: string, vk: number) => { for (const type of ["keyDown", "keyUp"]) await rp.cdp.send("Input.dispatchKeyEvent", { type, key: k, code: k, windowsVirtualKeyCode: vk }, panel); await sleep(450); };
   const lines = (s: string) => s.split(/\n+/).map(l => l.trim()).filter(Boolean);
 
@@ -133,13 +162,17 @@ try {
     evidence.split = split;
     assert.deepEqual(split, { restParent: "P", bold: [FIRST, "天猫用券后 ¥1649"] }, `拆第一句不改加粗范围: ${JSON.stringify(split)}`);
 
-    await drag(-40);
+    const toPoints = followed(await dragTo("要点", -1));
     const points = await seen();
     await rp.screenshot(panel, join(artifacts, "level-2-points.png"));
-    await drag(-40);
+    // 拖回全文，回弹还没停就再抓住拖到一句：上一次的半截状态不能留下来。
+    await dragTo("全文", 1, false);
+    await sleep(60);
+    const toOne = followed(await dragTo("一句", -1));
     const one = await seen();
     await rp.screenshot(panel, join(artifacts, "level-1-sentence.png"));
-    Object.assign(evidence, { full, points, one });
+    Object.assign(evidence, { full, points, one, follow: { toPoints, toOne } });
+    for (const f of [toPoints, toOne]) assert.ok(f.gripGap <= 12 && f.jump <= 20 && f.scrolled <= 1, `拖的时候回答跟着手指走，不整层跳: ${JSON.stringify({ ...f, steps: undefined })}`);
 
     assert.equal(points.level, "2", "往上拖一格到要点");
     assert.equal(one.level, "1", "再拖一格到一句");
@@ -197,7 +230,7 @@ try {
       // 现在是全文：往上拖到要点、再到一句，再往下拖回全文；每步停一会儿，让人看清。
       const stop = await recordScreen(rp.cdp, panel, join(artifacts, "drag.mp4"));
       await sleep(1500);
-      for (const dy of [-40, -40, 80]) { await drag(dy); await sleep(2800); }
+      for (const [name, dir] of [["要点", -1], ["一句", -1], ["全文", 1]] as const) { await dragTo(name, dir); await sleep(2000); }
       evidence.recording = await stop();
     }
 
