@@ -3871,3 +3871,32 @@ details.run-steps.run-quieting .run-time { animation: none; }
 .chapter-row[data-fade-end="true"] { mask-image: linear-gradient(to right, #000 calc(100% - var(--s-5)), transparent); }
 .chapter-row[data-fade-start="true"] { mask-image: linear-gradient(to right, transparent, #000 var(--s-5)); }
 .chapter-row[data-fade-start="true"][data-fade-end="true"] { mask-image: linear-gradient(to right, transparent, #000 var(--s-5), #000 calc(100% - var(--s-5)), transparent); }
+
+/* 核对确认做完：回执前一个绿对勾。当场核对完的那一次一笔画出、轻弹一下；之后都是画好的样子。 */
+.run-done-mark { display: inline-flex; flex: none; align-self: center; width: 14px; height: 14px; margin-right: 6px; color: var(--ok); }
+.run-done-mark svg { width: 14px; height: 14px; overflow: visible; }
+.run-done-mark path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.run-done-mark.fresh path { stroke-dashoffset: 1; animation: doneMarkDraw var(--d-emph) var(--e-enter) var(--d-micro) forwards; }
+.run-done-mark.fresh svg { animation: doneMarkPop var(--m-read) var(--e-spring); }
+@keyframes doneMarkDraw { to { stroke-dashoffset: 0; } }
+@keyframes doneMarkPop { 0% { transform: scale(0.6); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* 新的一章：当场开的那条分隔线从中间向两边展开，章名随后浮上来；从记录重画的不动。 */
+.chapter-divider.fresh::before { transform-origin: 100% 50%; animation: chapterLine var(--m-read) var(--e-move) both; }
+.chapter-divider.fresh::after { transform-origin: 0 50%; animation: chapterLine var(--m-read) var(--e-move) both; }
+.chapter-divider.fresh > span { animation: chapterName var(--d-layout) var(--e-enter) var(--d-state) both; }
+@keyframes chapterLine { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes chapterName { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* 往上翻着读时下面写出了新内容：「到最新」带一个墨蓝小点，轻跳两下。 */
+#to-bottom { overflow: visible; }
+#to-bottom .to-bottom-dot { position: absolute; top: -1px; right: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--content-bg); transform: scale(0); transition: transform var(--d-layout) var(--e-spring); pointer-events: none; }
+#to-bottom.has-new .to-bottom-dot { transform: scale(1); }
+#to-bottom.has-new svg { animation: toBottomNudge var(--d-emph) var(--e-spring) 2; }
+@keyframes toBottomNudge { 30% { transform: translateY(3px); } 60% { transform: translateY(-1px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .run-done-mark.fresh path, .run-done-mark.fresh svg, .chapter-divider.fresh::before, .chapter-divider.fresh::after, .chapter-divider.fresh > span, #to-bottom.has-new svg { animation: none; }
+  .run-done-mark.fresh path { stroke-dashoffset: 0; }
+  #to-bottom .to-bottom-dot { transition: none; }
+}
