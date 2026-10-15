@@ -6543,6 +6543,9 @@ sendBtn.onclick = () => {
 };
 
 inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBarDraft(); syncSteerSend(); });
+// 点进来或开始打字就让后台先连上模型服务；后台自己限次数，这里不节流。
+inputEl.addEventListener("focus", () => { send({ type: "warm_up" }); });
+inputEl.addEventListener("input", () => { if (inputEl.value.length === 1) send({ type: "warm_up" }); });
 
 window.addEventListener("pagehide", saveDraft);
 
