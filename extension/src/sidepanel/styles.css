@@ -2974,40 +2974,31 @@ details.run-steps summary { gap: 6px; font-size: var(--fs-ui); }
 .run-title { flex: 0 1 auto; font-size: var(--fs-read); line-height: 22px; font-weight: 400; }
 .run-title .act-verb { color: var(--text-primary); font-weight: 500; }
 .run-title .act-object { color: var(--text-tertiary); }
-/* #263 思考心跳：16px 墨点在 4 点与十字之间收合，1.2s 一拍，不用转圈。秒数同拍闪一下。 */
+/* 在想的标记：线圈小动画（run-heartbeat.ts 生成关键帧），主墨色压淡；不显示时动画自然停。 */
 .run-beat {
   display: none;
-  position: relative;
   width: 16px;
   height: 16px;
   flex: none;
-  transform-origin: 50% 50%;
+  color: var(--text-primary);
+  opacity: 0.55;
 }
 details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
-details.run-steps:not(.done)[data-phase="waiting"] .run-beat {
-  display: inline-block;
-  animation: markFold 1.2s var(--e-glide) infinite;
+details.run-steps:not(.done)[data-phase="waiting"] .run-beat { display: inline-flex; }
+.run-beat svg { display: block; overflow: hidden; }
+.run-beat path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: translate(12px, 8px);
+  stroke-dasharray: 21 200;
+  stroke-dashoffset: -23;
+  animation: runCoil var(--m-coil) linear infinite;
 }
-.run-beat i {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--text-primary);
-  animation: markMorph 1.2s var(--e-swift) infinite;
-}
-.run-beat i:nth-child(1) { --x: 6px; --y: 0px; --x2: 6px; --y2: 4px; }
-.run-beat i:nth-child(2) { --x: 12px; --y: 6px; --x2: 8px; --y2: 6px; }
-.run-beat i:nth-child(3) { --x: 6px; --y: 12px; --x2: 6px; --y2: 8px; }
-.run-beat i:nth-child(4) { --x: 0px; --y: 6px; --x2: 4px; --y2: 6px; }
-@keyframes markFold {
-  0%, 100% { transform: scale(1) rotate(0deg); }
-  50% { transform: scale(0.86) rotate(45deg); }
-}
-@keyframes markMorph {
-  0%, 100% { left: var(--x); top: var(--y); transform: scale(1); }
-  50% { left: var(--x2); top: var(--y2); transform: scale(0.92); }
-}
+/* 进行中的字用正文次要色、常规字重，跟线圈一样轻；做完收成回执另有样式。 */
+details.run-steps:not(.done) .run-title .act-verb { color: var(--text-secondary); font-weight: 400; }
 @keyframes runBeat { to { transform: rotate(1turn); } }
 details.run-steps:not(.done)[data-phase="thinking"] .run-time,
 details.run-steps:not(.done)[data-phase="waiting"] .run-time {
@@ -3174,14 +3165,9 @@ details.run-steps .run-body .chip { min-height: 0; height: auto; padding: 0; bor
 .run-body .act-failed { color: var(--text-secondary); }
 details.run-steps .run-body details.thinking.narration > pre, details.run-steps.done .run-body > details.thinking.narration > pre { font-family: var(--font); font-size: var(--fs-ui); line-height: 20px; color: var(--text-tertiary); }
 @media (prefers-reduced-motion: reduce) {
-  details.run-steps:not(.done) .run-beat,
-  details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
-  details.run-steps:not(.done)[data-phase="waiting"] .run-beat,
-  details.run-steps:not(.done) .run-beat i,
+  .run-beat path,
   details.run-steps:not(.done)[data-phase="thinking"] .run-time,
   details.run-steps:not(.done)[data-phase="waiting"] .run-time { animation: none; }
-  details.run-steps:not(.done)[data-phase="thinking"] .run-beat i,
-  details.run-steps:not(.done)[data-phase="waiting"] .run-beat i { opacity: 1; left: var(--x); top: var(--y); transform: none; }
 }
 
 /* #263 AC：进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
