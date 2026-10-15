@@ -32,6 +32,9 @@ export interface PlanReceiptView {
   ended: "completed" | "failed" | "stopped";
   /** ready：可撤销；done：已撤销；closed：收不回（已提交、页面变了）；none：这一轮没有能撤销的。 */
   undo: "ready" | "pending" | "done" | "closed" | "none";
+  /** 撤销能还原的栏，和这一轮写过但撤不回的栏（编辑器正文等）：照直写在回执上，免得「撤销」像是全都收回。 */
+  undoable: string[];
+  untracked: string[];
   onUndo: () => void;
 }
 
@@ -163,6 +166,19 @@ export function paintPlanReceipt(root: HTMLDetailsElement, view: PlanReceiptView
       if (!undo.disabled) view.onUndo();
     });
     parts.push(" · ", undo);
+  }
+
+  const quote = (fields: string[]) => fields.map((f) => `「${f}」`).join("");
+  const scope = [
+    view.undo === "ready" && view.undoable.length ? `可撤销${quote(view.undoable)}` : "",
+    view.untracked.length ? `${quote(view.untracked)}撤销不了` : "",
+  ].filter(Boolean).join("，");
+
+  if (scope) {
+    const note = document.createElement("span");
+    note.className = "plan-undo-scope";
+    note.textContent = scope;
+    parts.push(" · ", note);
   }
 
   // 没做完、停下时卡保持展开，用户一眼看到停在哪一步；第一次画时定一次，之后由用户自己开合。

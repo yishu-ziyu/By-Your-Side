@@ -36,7 +36,7 @@ interface Closed { token: string; name: string; reason: "submitted" | "page_chan
 
 interface TabLedger { documentId: string; entries: Map<string, Entry> }
 
-interface Ledger { tabs: Map<number, TabLedger>; closed: Closed[]; notes: Set<FillUndoNote>; result?: FillUndoView; restoring?: boolean }
+interface Ledger { tabs: Map<number, TabLedger>; closed: Closed[]; notes: Set<FillUndoNote>; untracked: Set<string>; result?: FillUndoView; restoring?: boolean }
 
 const ledgers = new Map<string, Ledger>();
 const watchers = new Map<string, (view: FillUndoView | null) => void>();
@@ -262,18 +262,20 @@ const viewOf = (conversationId: string): FillUndoView | null => {
 
   if (!ledger) return null;
 
-  if (ledger.result) return ledger.result;
+  const untracked = [...ledger.untracked];
+
+  if (ledger.result) return { ...ledger.result, untracked };
   const notes = [...ledger.notes];
   const open = [...ledger.tabs.values()].flatMap((tab) => [...tab.entries.values()]);
 
-  if (open.length) return { state: "ready", count: open.length, fields: open.map(nameOf), notes };
+  if (open.length) return { state: "ready", count: open.length, fields: open.map(nameOf), notes, untracked };
 
-  if (ledger.closed.some((closed) => closed.reason === "submitted")) return { state: "submitted", fields: ledger.closed.map(nameOf), notes };
+  if (ledger.closed.some((closed) => closed.reason === "submitted")) return { state: "submitted", fields: ledger.closed.map(nameOf), notes, untracked };
 
-  if (ledger.closed.length) return { state: "page_changed", fields: ledger.closed.map(nameOf), notes };
+  if (ledger.closed.length) return { state: "page_changed", fields: ledger.closed.map(nameOf), notes, untracked };
 
   // 只改了编辑器文字、或只碰了原来有内容的密码栏：没有能还原的，但要让面板说一句。
-  return notes.length ? { state: "ready", count: 0, fields: [], notes } : null;
+  return notes.length ? { state: "ready", count: 0, fields: [], notes, untracked } : null;
 };
 
 const emit = (conversationId: string) => watchers.get(conversationId)?.(viewOf(conversationId));
@@ -323,14 +325,14 @@ export async function beforeWrite(sessionKey: string, tabId: number, where: Undo
     async done() {
       let ledger = ledgers.get(conversationId);
 
-      if (!ledger) { ledger = { tabs: new Map(), closed: [], notes: new Set() }; ledgers.set(conversationId, ledger); }
+      if (!ledger) { ledger = { tabs: new Map(), closed: [], notes: new Set(), untracked: new Set() }; ledgers.set(conversationId, ledger); }
 
       // 还原过以后助手又动了手：从这里重新记。
-      if (ledger.result) { ledger.result = undefined; ledger.closed = []; ledger.notes.clear(); }
+      if (ledger.result) { ledger.result = undefined; ledger.closed = []; ledger.notes.clear(); ledger.untracked.clear(); }
 
-      if (write && probe.kind === "rich") ledger.notes.add("rich_text");
+      if (write && probe.kind === "rich") { ledger.notes.add("rich_text"); ledger.untracked.add(nameOf(probe)); }
 
-      if (write && probe.sensitive && !probe.token) ledger.notes.add("sensitive");
+      if (write && probe.sensitive && !probe.token) { ledger.notes.add("sensitive"); ledger.untracked.add(nameOf(probe)); }
       let tab = ledger.tabs.get(tabId);
 
       if (tab && tab.documentId !== doc.documentId) { closeEntries(ledger, tabId, "page_changed"); tab = undefined; }
