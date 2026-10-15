@@ -37,6 +37,17 @@ const MAX_LINE_TEXT = 200;
 
 const MAX_NAME = 60;
 
+/** 链接和标题的名字是模型要原样转述给用户的（文章标题、条目名）：给到一行的上限，不按 MAX_NAME 截。 */
+const FULL_NAME_ROLES = new Set(["link", "heading"]);
+
+/** “在哪一项”最多写几个字。 */
+const ITEM_MAX_CHARS = 40;
+
+/** 行尾的“在哪一项”：快照和动作后的变化摘要用同一个写法。 */
+export function itemNote(text: string): string {
+  return ` — in item ${JSON.stringify(text.length > ITEM_MAX_CHARS ? `${text.slice(0, ITEM_MAX_CHARS - 1)}…` : text)}`;
+}
+
 /** 可交互/可引用角色：这些节点输出行带 ref（= backendDOMNodeId）。 */
 const REF_ROLES = new Set([
   "link",
@@ -112,7 +123,7 @@ function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: Read
 
   const parts: string[] = [role];
 
-  if (name) parts.push(`"${clip(name, MAX_NAME)}"${fullPart}`);
+  if (name) parts.push(`"${clip(name, FULL_NAME_ROLES.has(role) ? MAX_LINE_TEXT : MAX_NAME)}"${fullPart}`);
   const value = node.value?.value;
   const hasValue = value !== undefined && value !== null && value !== "";
   const range = node.backendDOMNodeId === undefined ? undefined : inputs.get(node.backendDOMNodeId);
@@ -222,9 +233,12 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
   return { text: kept.map(entry => entry.text).join("\n"), truncated: dropped, keptRefs, kept };
 }
 
-/** 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。 */
-export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map()): AxTextResult & { entries: AxLine[]; shown: AxLine[] } {
-  const entries = axTreeLines(nodes, inputs, secret, zeroSize);
+/**
+ * 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。
+ * items：ref → 它所在那一项的字（itemTexts），写在那一行行尾；只进 text，不进 body，比较前后两次读页不受影响。
+ */
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map(), secret: ReadonlySet<number> = new Set(), zeroSize: ReadonlyMap<number, boolean> = new Map(), items: ReadonlyMap<number, string> = new Map()): AxTextResult & { entries: AxLine[]; shown: AxLine[] } {
+  const entries = axTreeLines(nodes, inputs, secret, zeroSize, items);
   const { text, truncated, keptRefs, kept } = renderBudgeted(entries, budget);
 
   const finalText = truncated
@@ -240,7 +254,7 @@ export function renderLines(entries: readonly AxLine[], budget: number): { text:
 }
 
 /** 整棵树按文档顺序转成行，不截断。 */
-function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, zeroSize: ReadonlyMap<number, boolean>): AxLine[] {
+function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, zeroSize: ReadonlyMap<number, boolean>, items: ReadonlyMap<number, string>): AxLine[] {
   const byId = new Map<string, AxNodeLite>();
 
   for (const n of nodes) byId.set(n.nodeId, n);
@@ -296,7 +310,8 @@ function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRange
 
       if (!repeatedText) {
         const prefix = hasRef ? `[ref=${backendId}] ` : "";
-        const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}`, interactive: hasRef, body: described, depth, inField };
+        const item = hasRef ? items.get(backendId) : undefined;
+        const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}${item ? itemNote(item) : ""}`, interactive: hasRef, body: described, depth, inField };
 
         if (hasRef) line.ref = backendId;
         entries.push(line);
@@ -532,7 +547,39 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
 
   if (!top) return undefined;
 
-  if (!control) return "";
+  return control ? itemTextIn(byId, top, control, from) : "";
+}
+
+/**
+ * 整页快照：认出来的每个重复控件 → 它所在那一项的字；分不清的不给。字从同一份节点读，规则同 itemTextOf。
+ * 只给按钮、菜单项、输入框这类控件（CONTROL_ROLES）写，不给链接和表格单元格写：链接所在的“项”常常只是并排的一小串链接，
+ * 字是旁边另一个链接的（HN 的 hide 写成“在 229 comments 那一项”，标签链接写成在另一个标签那一项），写了反而误导，还占预算。
+ */
+export function itemTexts(nodes: readonly AxNodeLite[], found: RepeatedItems): Map<number, string> {
+  const byId = new Map<string, AxNodeLite>();
+  const byBackend = new Map<number, AxNodeLite>();
+
+  for (const n of nodes) {
+    byId.set(n.nodeId, n);
+
+    if (n.backendDOMNodeId !== undefined) byBackend.set(n.backendDOMNodeId, n);
+  }
+
+  const out = new Map<number, string>();
+
+  for (const [ref, { item, from }] of found.byRef) {
+    const top = byBackend.get(item), control = byBackend.get(ref);
+
+    if (!top || !control || !CONTROL_ROLES.has(control.role?.value ?? "")) continue;
+    const text = itemTextIn(byId, top, control, from);
+
+    if (text) out.set(ref, text);
+  }
+
+  return out;
+}
+
+function itemTextIn(byId: ReadonlyMap<string, AxNodeLite>, top: AxNodeLite, control: AxNodeLite, from: number): string {
   const key = `${control.role?.value ?? ""}\u0000${String(control.name?.value ?? "").trim()}`;
   const twinInside = (root: AxNodeLite) => {
     const todo = [root];
