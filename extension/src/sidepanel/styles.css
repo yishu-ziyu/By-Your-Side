@@ -1799,7 +1799,8 @@ details.run-steps.done .chip.error { background: transparent; }
   transition:
     max-height var(--d-emph) var(--e-spring),
     opacity var(--d-micro) var(--e-exit),
-    transform var(--d-layout) var(--e-exit);
+    transform var(--d-layout) var(--e-exit),
+    visibility var(--d-micro) linear;
 }
 
 /* 点发送键后焦点还在键上，#composer 仍是 focus-within；发送键不算在用输入框。 */
@@ -1822,13 +1823,15 @@ details.run-steps.done .chip.error { background: transparent; }
   transition:
     max-height var(--d-emph) var(--e-spring),
     opacity var(--d-state) var(--e-enter),
-    transform var(--d-layout) var(--e-spring);
+    transform var(--d-layout) var(--e-spring),
+    visibility 0s;
 }
 
+/* 展开规则带 id 和 :has，权重比这里高，只能用 !important 盖过。 */
 @media (prefers-reduced-motion: reduce) {
   #composer-bar-inner {
-    transform: none;
-    transition: opacity var(--d-micro) var(--e-exit), max-height var(--d-micro) var(--e-exit);
+    transform: none !important;
+    transition: opacity var(--d-micro) var(--e-exit), max-height var(--d-micro) var(--e-exit), visibility var(--d-micro) linear !important;
   }
 }
 
@@ -3665,7 +3668,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 
 /* 输入框左下角「6 Luna · 快」（thinking-chip.ts）：静时是一行灰字，悬停和打开时有浅底。 */
 #composer { position: relative; }
-#think-chip { all: unset; visibility: inherit; pointer-events: inherit; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 170px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease; }
+#think-chip { all: unset; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 170px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease; }
 #think-chip[hidden] { display: none; }
 #think-chip .think-model { overflow: hidden; text-overflow: ellipsis; }
 #think-chip:hover, #think-chip[aria-expanded="true"] { background: var(--content-subtle); color: var(--text-primary); }

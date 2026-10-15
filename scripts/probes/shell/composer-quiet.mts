@@ -83,6 +83,7 @@ try {
   await sleep(200);
   const mode = await rp.evaluate(panel, "({ mode: document.querySelector(\"#marginalia-mode\").value, menuHidden: document.querySelector(\"#attach-menu\").hidden, plusPressed: document.querySelector(\"#attach-btn\").classList.contains(\"active\") })");
   check("＋ 菜单：点「原文摘录」后边注切到原文、菜单收起、＋ 不再停在按下状态", mode.mode === "source" && mode.menuHidden && !mode.plusPressed, JSON.stringify(mode));
+  await rp.click(panel, "#input");
   await rp.click(panel, "#attach-btn");
   await rp.click(panel, "#attach-menu [data-marginalia=\"off\"]");
 

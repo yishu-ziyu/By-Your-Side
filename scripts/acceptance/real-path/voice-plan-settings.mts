@@ -62,6 +62,7 @@ try {
   await rp.cdp.send("Page.reload", {}, settings);
   await until(async () => await chosen() === PLAN || undefined, 15_000, "重开设置保留套餐选择");
   const beforePlan = sockets.length;
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
   await until(async () => sockets.length > beforePlan || undefined, 15_000, "下一次开启套餐语音");
   assert.ok(sockets.slice(beforePlan).every(url => url === `wss://api.stepfun.com/step_plan/v1/realtime?model=${PLAN}`), "套餐不回退按量接口");
@@ -73,6 +74,7 @@ try {
   await until(async () => await chosen() === null || undefined, 5000, "设置提示无效选择，不显示默认已选");
   const beforeInvalid = sockets.length;
   await sleep(500);
+  await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
   const invalid = await until(async () => await rp.evaluate(panel, "(() => { const e=document.querySelector('.voice-state-detail');return e?.textContent.includes('语音模型设置无效') && e.checkVisibility() && e.getBoundingClientRect().height>0; })()") || undefined, 10_000, "无效模型原因真实可见，隐藏DOM文字不算通过");
   await sleep(500);
