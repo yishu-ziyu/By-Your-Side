@@ -3463,7 +3463,45 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip .ctx-ok { color: var(--ok); font-size: 11px; }
 
 /* A3 计划行 */
-.task-plan-goal { margin: 0 0 6px; padding: 4px 2px; font-size: var(--fs-meta); color: var(--text-secondary); }
+.task-plan-goal { margin: 0 0 4px; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--text-secondary); }
+
+/* 计划卡：要写页面的一轮，过程行是一张卡，卡头是计划；做完同一张卡收成一行回执，细节点开还是这张卡。 */
+details.run-steps.plan-card {
+  padding: 6px 12px;
+  border-radius: var(--r);
+  background: var(--content-bg);
+  box-shadow: 0 0 0 1px var(--content-border);
+}
+details.run-steps.plan-card:not(.done)[open] .run-body { max-height: none; overflow: visible; border-left: 0; padding-left: 0; }
+details.run-steps.plan-card.plan-done summary > :not(.plan-receipt-line) { display: none; }
+.plan-receipt-line { display: none; }
+/* 卡里的步骤：› 正在做，✓ 做完，✕ 没做成；不用动作图标，和收起后的回执是同一套记号。 */
+details.run-steps.plan-card .run-body .chip-icon { display: none; }
+details.run-steps.plan-card .run-body .chip-dot {
+  display: inline-block; width: 12px; height: auto; border-radius: 0; background: none;
+  font-size: 11px; line-height: 1; text-align: center; color: var(--text-tertiary);
+  transition: color var(--d-layout) var(--e-enter);
+}
+details.run-steps.plan-card .run-body .chip-dot.running::before { content: "›"; color: var(--text-primary); }
+details.run-steps.plan-card .run-body .chip-dot.done::before { content: "✓"; }
+details.run-steps.plan-card .run-body .chip-dot.error::before { content: "✕"; color: var(--apple-red); }
+details.run-steps.plan-card .run-body .chip { gap: 8px; }
+details.run-steps.plan-card.plan-done .plan-receipt-line {
+  display: inline;
+  font-size: var(--fs-ui);
+  color: var(--text-primary);
+  animation: plan-receipt-in var(--d-layout) var(--e-enter);
+}
+.plan-details { color: var(--text-secondary); }
+details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(--text-primary); }
+.plan-undo { all: unset; cursor: pointer; color: var(--accent); }
+.plan-undo:disabled { cursor: default; color: var(--text-tertiary); }
+.plan-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+@keyframes plan-receipt-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  details.run-steps.plan-card.plan-done .plan-receipt-line { animation: none; }
+  details.run-steps.plan-card .run-body .chip-dot { transition: none; }
+}
 
 /* A8 主动作 + 动作列表 */
 .answer-actions button.answer-primary { width: auto; min-width: 28px; height: 28px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; }
