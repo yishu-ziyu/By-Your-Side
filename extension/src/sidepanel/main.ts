@@ -4455,12 +4455,12 @@ function paintPlanCard(): void {
 
   // 撤销只留卡上这一个：回答下不再出「还原填写」，撤销后的结果行放在卡下面，回答照样变淡。
   if (answer && undo) handFillUndoToCard(answer, run.root);
-  const ended = run.receipt.failed > 0 && run.receipt.ended === "completed" ? "failed" : run.receipt.ended;
+  // 整轮结论说了算：中途某步没做成、后来换做法做完，卡仍按 completed 收成一行；没做成的那步只在展开的过程里标 ✕。
   paintPlanReceipt(run.root, {
     filled: undo?.state === "ready" ? undo.count : undo?.state === "restored" ? undo.restored.length + undo.skipped.length : undo ? undo.fields.length || null : null,
     steps: run.receipt.steps - run.receipt.failed,
     total: run.receipt.total,
-    ended,
+    ended: run.receipt.ended,
     undo: !undo ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
     onUndo: () => {
       const owner = planCardAnswer(run);
@@ -4559,7 +4559,8 @@ function foldAnsweredRun(run: RunHost): void {
   if (!answer || !run.receipt) return;
 
   // 最后一步没做成、随后交了回答：这一轮做完了，过程行照常写核对结论，没做成的那几步在展开的过程里。
-  if (run.receipt.ended === "failed" && run.orbActivity.onlyStepFailed()) {
+  // 计划卡不改：整轮停在没做成，卡头仍写「没做完」，和换了做法后做完的 completed 分开。
+  if (run.receipt.ended === "failed" && run.orbActivity.onlyStepFailed() && !run.root.classList.contains("plan-card")) {
     run.receipt.ended = "completed";
     run.receipt.head = finishedRunTitle(run.receipt.steps - run.receipt.failed, "completed");
   }
