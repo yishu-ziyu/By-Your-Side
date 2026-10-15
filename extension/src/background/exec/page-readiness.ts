@@ -220,40 +220,106 @@ export function settlesContent(readiness:PageReadinessValue|undefined):boolean {
 }
 
 /**
- * 客户端渲染的页面在文档可交互后还在往里画内容（TodoMVC 读到时只有页脚）：等 DOM 安静一会儿再返回，
- * 打开后附带的快照才读得到内容。安静从 load 之后才开始算：页面脚本还在下载时 DOM 不动，并不是画完了。
- * 只看增删节点和文字，不看属性，免得动画让它一直等满。
+ * 客户端渲染的页面在文档可交互后还在往里画内容（TodoMVC 读到时只有页脚）：等 body 里安静一会儿再返回，
+ * 打开后附带的快照才读得到内容。安静从 DOMContentLoaded 结束时开始算（延迟脚本和模块脚本已经跑完），不等 load：
+ * 图片、字体、广告和统计请求不管多久都不算，有的网站 load 要好几秒，内容早就画好了。
+ * 只看 body 里增删节点和文字，不看属性和 head，免得动画、样式注入让它一直等满。
+ * body 还是空壳（没有可见文字，也没有链接、按钮、输入框）时，内容还没画出来，继续等第一次画，直到上限。
  * 注入不了（受限页面）或文档在等的时候换掉了，就不等。返回实际多等的毫秒数。
+ * 注入的脚本返回一个还没完成的 Promise 时，Chrome 会把页面的 load 事件压到它完成之后，
+ * 所以页面里只装一个立刻返回的观察器，再从外面短读它记下的状态；无论怎么结束都拆掉它。
  */
 export async function waitForQuietDom(tabId:number):Promise<number> {
   const started=Date.now();
+  const left=()=>DOM_QUIET_BOUND_MS-(Date.now()-started);
+  // 页面卡在弹窗或长脚本里时注入不会返回，每次短读也要有上限。
+  const bounded=<T>(work:Promise<T>)=>withTimeout(work,Math.max(left(),0)+500,'DOM 安静等待超时');
+  let target:{tabId:number;documentIds:string[]}|undefined;
 
   try{
-    await withTimeout(chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:quietInPage,args:[DOM_QUIET_MS,DOM_QUIET_BOUND_MS,overlayHostSelector()]}),DOM_QUIET_BOUND_MS+500,'DOM 安静等待超时');
+    let documentId:string|undefined;
+
+    for(;;){
+      const doc=await bounded(readCurrentDocument(tabId));
+
+      if(!doc||(documentId!==undefined&&doc.documentId!==documentId))return Date.now()-started;
+      documentId=doc.documentId;
+
+      if(doc.readyState!=='loading')break;
+
+      if(left()<=0)return Date.now()-started;
+      await new Promise(resolve=>setTimeout(resolve,Math.min(100,left())));
+    }
+
+    target={tabId,documentIds:[documentId]};
+    await bounded(chrome.scripting.executeScript({target,injectImmediately:true,world:'ISOLATED',func:watchBodyInPage,args:[left(),overlayHostSelector()]}));
+
+    while(left()>0){
+      const [frame]=await bounded(chrome.scripting.executeScript({target,injectImmediately:true,world:'ISOLATED',func:readQuietInPage}));
+      const state=frame?.result;
+
+      if(!state||(state.quietMs>=DOM_QUIET_MS&&!state.empty))break;
+      await new Promise(resolve=>setTimeout(resolve,Math.min(100,Math.max(left(),0))));
+    }
   }catch{/* 不等也照常返回 */}
+  finally{
+    // 不等它返回：页面卡住时不多耽误；拆不掉也有页面里自己的上限兜着。
+    if(target)void chrome.scripting.executeScript({target,injectImmediately:true,world:'ISOLATED',func:stopWatchInPage}).catch(()=>{});
+  }
 
   return Date.now()-started;
 }
 
-/** 在页面里执行，保持自包含。助手自己挂上的浮层不算页面在变。 */
-function quietInPage(quietMs:number,boundMs:number,ownSelector:string):Promise<void> {
-  return new Promise(resolve=>{
-    const own=(node:Node)=>node instanceof Element&&!!node.closest(ownSelector);
-    let quiet:ReturnType<typeof setTimeout>|undefined;
-    const bound=setTimeout(done,boundMs);
-    const restart=()=>{clearTimeout(quiet);quiet=setTimeout(done,quietMs);};
+/** 页面里观察器记下的状态。隔离环境里只有本扩展的脚本，几次注入之间靠这个全局变量传递。 */
+interface QuietDomState {last:number;stop:()=>void}
 
-    const observer=new MutationObserver(records=>{
-      if(document.readyState!=='complete')return;
+declare global {
+  var __sideagentQuietDom:QuietDomState|undefined;
+}
 
-      if(records.every(r=>own(r.target)||(r.addedNodes.length+r.removedNodes.length>0&&[...r.addedNodes,...r.removedNodes].every(own))))return;
-      restart();
-    });
+/** 在页面里执行，保持自包含，必须立刻返回。记下 body 里最后一次增删节点或改文字的时间；助手自己挂上的节点不算。到上限自己拆掉。 */
+function watchBodyInPage(boundMs:number,ownSelector:string):void {
+  globalThis.__sideagentQuietDom?.stop();
+  const own=(node:Node)=>node instanceof Element&&!!node.closest(ownSelector);
+  const inBody=(node:Node)=>!!document.body?.contains(node);
+  const state:QuietDomState={last:performance.now(),stop:()=>{}};
 
-    function done(){observer.disconnect();removeEventListener('load',restart);clearTimeout(quiet);clearTimeout(bound);resolve();}
-    observer.observe(document,{subtree:true,childList:true,characterData:true});
-
-    if(document.readyState==='complete')restart();
-    else addEventListener('load',restart);
+  const mutations=new MutationObserver(records=>{
+    if(records.some(r=>inBody(r.target)&&!own(r.target)&&!(r.type==='childList'&&[...r.addedNodes,...r.removedNodes].every(own))))state.last=performance.now();
   });
+
+  // 观察整个文档而不只是当时的 body：页面可能整个换掉 body。
+  mutations.observe(document,{subtree:true,childList:true,characterData:true});
+  const bound=setTimeout(()=>state.stop(),boundMs+1000);
+
+  state.stop=()=>{
+    mutations.disconnect();
+    clearTimeout(bound);
+
+    if(globalThis.__sideagentQuietDom===state)delete globalThis.__sideagentQuietDom;
+  };
+  globalThis.__sideagentQuietDom=state;
+}
+
+/**
+ * 在页面里执行，保持自包含：DOMContentLoaded 结束后 body 安静了多久，以及 body 是不是还没画出内容的空壳。
+ * 空壳：没有可见文字，也没有链接、按钮、输入框、图像或嵌入内容。不设字数门槛：中文页面几个字就是内容。
+ * 没有 body 的文档（SVG 等）不会再长出 body，不算空壳。
+ */
+function readQuietInPage():{quietMs:number;empty:boolean}|null {
+  const state=globalThis.__sideagentQuietDom;
+
+  if(!state)return null;
+  const navigation=performance.getEntriesByType('navigation')[0];
+  // 没有导航计时的文档（极少见）就从观察器装好时算。
+  const contentLoaded=navigation instanceof PerformanceNavigationTiming?navigation.domContentLoadedEventEnd:state.last;
+  const body=document.body;
+  const empty=!!body&&!body.innerText.trim()&&!body.querySelector('a[href],button,input,select,textarea,img,svg,canvas,video,embed,object,iframe,frame');
+
+  return {quietMs:contentLoaded>0?performance.now()-Math.max(state.last,contentLoaded):0,empty};
+}
+
+/** 在页面里执行，保持自包含：拆掉观察器、删掉状态。 */
+function stopWatchInPage():void {
+  globalThis.__sideagentQuietDom?.stop();
 }
