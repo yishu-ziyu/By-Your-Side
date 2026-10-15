@@ -71,8 +71,7 @@ import { detachSoon } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
-import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, rebindClosedWorkingTab, type WorkingTabRebound } from "./state.js";
-import { forgetStaleRef } from "./axstate.js";
+import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
 import type { SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
@@ -1410,7 +1409,7 @@ const uplink = {
  retry: () => transport.retry(),
 };
 
-/** 不作用在某个页面上的工具：工作标签页关掉后不替它们接回。 */
+/** 不作用在某个页面上的工具：目标页关掉后它们照常可用，模型靠它们换页。 */
 const TABLESS_TOOLS: ReadonlySet<string> = new Set(["open_tab", "list_tabs", "get_active_tab", "worker_tabs", "fetch", "observe_page"]);
 
 async function executeToolCall(
@@ -1430,7 +1429,6 @@ async function executeToolCall(
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
-  let rebound: WorkingTabRebound | null = null;
 
   const checkIdentity=()=>{
     // Removing our own translation placeholders changes no page content and is needed exactly when a run has stopped.
@@ -1515,20 +1513,7 @@ async function executeToolCall(
 
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
 
-      if (!TABLESS_TOOLS.has(name)) rebound = await rebindClosedWorkingTab(typeof params.tabId === "number" ? params.tabId : undefined, key(sid));
-
-      if (rebound) {
-        params = { ...params, tabId: rebound.to };
-
-        // 这次写操作瞄的是关掉的那一页；换到用户的页上照做会点错地方，所以先停下让模型看过新页。
-        if (WRITE_TOOL_SET.has(name)) {
-          const ref = typeof params.target === "string" ? /^@(\d+)$/.exec(params.target)?.[1] : undefined;
-
-          if (ref) forgetStaleRef(rebound.to, Number(ref));
-          throw Object.assign(new Error(`${rebound.note}这次 ${name} 没有执行：它的目标在已关闭的页面上。请先在这一页 snapshot，重新确认目标。`), { executionFact: "not_executed" as const });
-        }
-      }
-
+      if (!TABLESS_TOOLS.has(name)) await assertTargetTabOpen(typeof params.tabId === "number" ? params.tabId : undefined, key(sid));
       await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
       checkIdentity();
 
@@ -1566,14 +1551,16 @@ async function executeToolCall(
 
     const data = name === "worker_tabs" ? await execute() : await workerTabControl.run(key(sid), execute);
 
-    result = { type: "tool_result", id, ok: true, data: rebound && data && typeof data === "object" && !Array.isArray(data) ? { ...data, workingTabRebound: rebound } : data, executionFact: "executed" };
+    result = { type: "tool_result", id, ok: true, data, executionFact: "executed" };
   } catch (e) {
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
 
     // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话（docs/evals/20261009-send-confirm.md）。
-    if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason, ...(rebound ? { workingTabRebound: rebound } : {}) };
-    else if (rebound) result.data = { workingTabRebound: rebound };
+    if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason };
+
+    // 目标页已关闭：Agent 据此不再把这一页当缺省 tabId 补进之后的调用。
+    if (e && typeof e === "object" && "closedTabId" in e) result.data = { closedTabId: e.closedTabId };
   }
 
   // 已完成写操作的身份跨 SW 重启保留，重复投递不会二次落地。

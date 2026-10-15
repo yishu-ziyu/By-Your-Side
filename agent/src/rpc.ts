@@ -131,8 +131,6 @@ export class ToolRpc {
    */
   private pageTargets = new Map<string, { tabId: number | null; seq: number }>();
   private pageTargetSeq = 0;
-  /** 扩展把关掉的工作标签页接回到用户的页之后，要放在下一个工具结果开头的那句话（按会话）。 */
-  private reboundNotes = new Map<string, string>();
 
   beforeCall?: () => Promise<void>;
 
@@ -243,34 +241,11 @@ export class ToolRpc {
     this.pageTargets.set(key, { tabId, seq: targetSeq });
   }
 
-  /**
-   * 扩展把关掉的工作标签页接回到用户的页：缺省页跟着换，否则之后每次调用都补上关掉的页号。
-   * 成功的结果把那句话留给工具结果开头；失败的错误原文里已经有这句话。返回去掉这个字段的结果。
-   */
-  private applyRebound(sessionId: string | undefined, data: unknown, ok: boolean): unknown {
-    if (!data || typeof data !== "object" || !("workingTabRebound" in data)) return data;
-    const { workingTabRebound: rebound, ...rest } = data;
-    const from = numberField(rebound, "from"), to = numberField(rebound, "to");
-    const note = rebound && typeof rebound === "object" && "note" in rebound ? rebound.note : undefined;
-
-    if (from == null || to == null || typeof note !== "string") return rest;
+  /** 缺省页已被关掉：清空，不再补进之后的调用；不换成别的页，换页由模型用 tabs switch 决定。 */
+  private forgetClosedTarget(sessionId: string | undefined, closedTabId: number | null): void {
     const key = this.targetKey(sessionId);
 
-    if (this.pageTargets.get(key)?.tabId === from) this.pageTargets.set(key, { tabId: to, seq: ++this.pageTargetSeq });
-
-    if (ok) this.reboundNotes.set(key, note);
-
-    return rest;
-  }
-
-  /** 取走这个会话待说的接回说明；只说一次。 */
-  takeReboundNote(sessionId?: string): string | undefined {
-    const key = this.targetKey(sessionId);
-    const note = this.reboundNotes.get(key);
-
-    this.reboundNotes.delete(key);
-
-    return note;
+    if (closedTabId != null && this.pageTargets.get(key)?.tabId === closedTabId) this.pageTargets.set(key, { tabId: null, seq: ++this.pageTargetSeq });
   }
 
   /**
@@ -495,7 +470,6 @@ export class ToolRpc {
       const disp = this.dispatched.get(id);
 
       if (disp && (disp.state === "timed_out" || disp.state === "disconnected" || disp.state === "sent" || disp.state === "preparing")) {
-        data = this.applyRebound(disp.sessionId, data, false);
         disp.state = ok ? "resolved" : "rejected";
         disp.fact = executionFact ?? (ok ? "executed" : "unknown");
 
@@ -523,8 +497,6 @@ export class ToolRpc {
     const fact: ToolExecutionFact = executionFact ?? (ok ? "executed" : "unknown");
     const disp = this.dispatched.get(id);
 
-    data = this.applyRebound(disp?.sessionId ?? entry.sessionId, data, ok);
-
     if (disp) {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
@@ -532,6 +504,8 @@ export class ToolRpc {
       const heldReason = (data as { heldReason?: unknown } | undefined)?.heldReason;
 
       if (!ok && fact === "not_executed" && isHeldReason(heldReason)) disp.heldReason = heldReason;
+
+      if (!ok) this.forgetClosedTarget(disp.sessionId, numberField(data, "closedTabId"));
 
       if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
 
