@@ -77,3 +77,10 @@
 （原分支 `assets-branch-proto-20261012`，原文件夹名 `branch-proto-20261012/`）
 
 #263 过程块的分支图原型：标签页扇形、并行抓取分叉与汇合、你接管的蓝色通道。录像 `compare.mp4`（对照）、`cur.mp4`（当时的界面）、`git.mp4`、`tabs.mp4`、`you.mp4`；静图 `contact.png`、`*-fork-merge.png`、`you-takeover.png`；`branch-stats.json` 是原型用的数据。这个原型已由 #355 做进产品。
+
+## 20261015-design-picks/ 设计选题 2、3 的改动前后录屏
+
+真实构建的侧栏（隔离无头 Chrome 装未打包扩展，本机练习页，脚本模型），左边网页、右边侧栏。只给 PR 看，不合并。
+
+- `idea2-before.mp4` / `idea2-after.mp4`：回答里提到的按钮能在页面上指出来（用例 `answer-page-refs`）。
+- `idea3-before.mp4` / `idea3-after.mp4`：计划卡原地收成一行回执（用例 `plan-receipt`）。改动前那段在 12 秒处截断，后面是静止画面。
