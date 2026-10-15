@@ -22,7 +22,7 @@ import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
-import { ATTENTION_CUES_KEY } from "../sidepanel/cue.js";
+import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, GPT_LIVE_MODEL, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
@@ -221,7 +221,7 @@ document.getElementById("settings")!.innerHTML = `
   <section class="sx" aria-labelledby="cues-title">
     <div class="sx-head"><h2 id="cues-title">声音</h2></div>
     <div class="surface rows">
-      ${toggleRow("attention-cues", "提示音", "你没在看侧栏所在的窗口时，任务做完响一声；要你确认或动手时响另一声。")}
+      ${toggleRow("attention-cues", "提示音", "你没在看开着侧栏的窗口时，任务做完响一声；要你确认或动手时响另一声。")}
     </div>
     <p id="cues-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
@@ -1306,7 +1306,7 @@ async function reload(): Promise<void> {
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
-  attentionCues.checked = stored[ATTENTION_CUES_KEY] !== false;
+  attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
   renderMainModel();
   renderRegions();
   renderCredentialState();
