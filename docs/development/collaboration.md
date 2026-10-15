@@ -54,7 +54,7 @@
 - 「要你来」：需要用户亲手试、拍板或授权的事。
 
 Codex 用本机 CLI（已接 Linear），在单独的 git worktree 和分支里完成。交回后由 Claude 验收，再合入 main。
-Codex 不与 Claude 同时改同一文件。浏览器验收由 Claude 错开安排。
+Codex 不与 Claude 同时改同一文件。浏览器验收由 Claude 统一排队。
 
 只存图的远端分支：`design-refs`（#53 引用）、`ux-walkthrough-1007`（#102–#106 引用）。
 
