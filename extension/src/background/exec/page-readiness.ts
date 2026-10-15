@@ -224,12 +224,30 @@ export function settlesContent(readiness:PageReadinessValue|undefined):boolean {
  * 打开后附带的快照才读得到内容。安静从 load 之后才开始算：页面脚本还在下载时 DOM 不动，并不是画完了。
  * 只看增删节点和文字，不看属性，免得动画让它一直等满。
  * 注入不了（受限页面）或文档在等的时候换掉了，就不等。返回实际多等的毫秒数。
+ * 注入的脚本还没返回时，Chrome 会把页面的 load 事件压到它返回之后，所以先从外面短读到 load 之后再注入。
  */
 export async function waitForQuietDom(tabId:number):Promise<number> {
   const started=Date.now();
+  const left=()=>DOM_QUIET_BOUND_MS-(Date.now()-started);
 
   try{
-    await withTimeout(chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:quietInPage,args:[DOM_QUIET_MS,DOM_QUIET_BOUND_MS,overlayHostSelector()]}),DOM_QUIET_BOUND_MS+500,'DOM 安静等待超时');
+    let documentId:string|undefined;
+
+    for(;;){
+      const doc=await readCurrentDocument(tabId);
+
+      if(!doc||(documentId!==undefined&&doc.documentId!==documentId))return Date.now()-started;
+      documentId=doc.documentId;
+
+      if(doc.readyState==='complete')break;
+
+      if(left()<=0)return Date.now()-started;
+      await new Promise(resolve=>setTimeout(resolve,Math.min(100,left())));
+    }
+
+    const bound=left();
+
+    if(bound>0)await withTimeout(chrome.scripting.executeScript({target:{tabId,documentIds:[documentId]},injectImmediately:true,world:'ISOLATED',func:quietInPage,args:[DOM_QUIET_MS,bound,overlayHostSelector()]}),bound+500,'DOM 安静等待超时');
   }catch{/* 不等也照常返回 */}
 
   return Date.now()-started;
