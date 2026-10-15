@@ -145,7 +145,7 @@ const handlers: Record<ToolName, Handler> = {
   guide_step: async () => { throw notExecuted(new Error("guide_step 只能在任务里调用")); },
 };
 
-/** 最近操作过的那个侧栏看着的会话。不在某个侧栏里发起的动作（按住说话、右键菜单、阅读、提示卡、前台）跟它走。 */
+/** 最近操作过的那个侧栏看着的会话。提示卡、页边批注、前台跟它走；按住说话、右键提问、阅读转到侧栏先找动手的那个窗口里的侧栏（conversationForWindow）。 */
 let selectedConversationId = "default";
 
 const connectedPanels = new Set<chrome.runtime.Port>();
@@ -154,6 +154,11 @@ const connectedPanels = new Set<chrome.runtime.Port>();
 const panelSelection = new Map<chrome.runtime.Port, string>();
 
 let focusedPanel: chrome.runtime.Port | undefined;
+
+const panelWindow = new Map<chrome.runtime.Port, number>();
+
+/** 侧栏发起的新建：建好后只把发起的那个侧栏切过去，不动别的侧栏。 */
+const panelCreations = new Map<string, chrome.runtime.Port>();
 
 /** 还没定会话的侧栏（刚打开）先跟最近操作的那个侧栏。 */
 function panelConversation(port: chrome.runtime.Port): string { return panelSelection.get(port) ?? selectedConversationId; }
@@ -169,6 +174,9 @@ function selectInPanel(port: chrome.runtime.Port, id: string): void {
   voiceRelay.selectionChanged(port, id);
   panelSelection.set(port, id);
 
+  // 刷新的侧栏可能还记着已经删掉的会话：不为它建空控制器，侧栏自己会新建一个。
+  if (controllers.has(id) || conversationSummaries.some(c => c.id === id)) controller(id);
+
   if (port === focusedPanel) followFocused(id);
 }
 
@@ -179,10 +187,29 @@ function focusPanel(port: chrome.runtime.Port): void {
   if (id !== undefined && id !== selectedConversationId) followFocused(id);
 }
 
-/** 不是哪个侧栏自己切的（阅读转到侧栏、助手新建的会话）：换掉最近操作的那个侧栏。 */
-function selectFocused(id: string): void {
-  if (focusedPanel) selectInPanel(focusedPanel, id);
+/** 这个窗口里的侧栏；窗口里没有侧栏（或不知道窗口）就是最近操作的那个侧栏。 */
+function panelForWindow(windowId: number | undefined): chrome.runtime.Port | undefined {
+  if (windowId == null) return focusedPanel;
+
+  if (focusedPanel && panelWindow.get(focusedPanel) === windowId) return focusedPanel;
+
+  return [...connectedPanels].reverse().find(port => panelWindow.get(port) === windowId) ?? focusedPanel;
+}
+
+function conversationForWindow(windowId: number | undefined): string {
+  const port = panelForWindow(windowId);
+
+  return port ? panelConversation(port) : selectedConversationId;
+}
+
+/** 不是哪个侧栏自己切的（阅读转到侧栏）：换掉用户动手的那个窗口里的侧栏，并把它算作最近操作的。 */
+async function selectForTab(id: string, tabId: number): Promise<void> {
+  const windowId = await chrome.tabs.get(tabId).then(tab => tab.windowId, () => undefined);
+  const port = panelForWindow(windowId);
+
+  if (port) { selectInPanel(port, id); focusPanel(port); }
   else followFocused(id);
+  broadcastConversations();
 }
 
 installPageInteractions();
@@ -250,7 +277,16 @@ const transport = new Uplink({
 
    pttCapsule.server(msg);
 
-   if (msg.type === "conversation_created") reading.created(msg);
+   // 新会话只切发起的那个侧栏；阅读转来的，由阅读选给动手的那个窗口。随后的会话清单得带上新的选择，否则发起的侧栏会被切回旧会话。
+   if (msg.type === "conversation_created") {
+     const requester = msg.requestId ? panelCreations.get(msg.requestId) : undefined;
+
+     if (msg.requestId) panelCreations.delete(msg.requestId);
+
+     if (requester && connectedPanels.has(requester)) selectInPanel(requester, msg.conversation.id);
+     controller(msg.conversation.id);
+     reading.created(msg);
+   }
 
    if (msg.type === "voice") { voiceRelay.server(msg);
 
@@ -264,7 +300,6 @@ const transport = new Uplink({
 
    if (msg.type === "conversation_updated" || msg.type === "conversation_created") { conversationSummaries = [...conversationSummaries.filter(c => c.id !== msg.conversation.id), msg.conversation]; void setConversationTitle(msg.conversation.id, msg.conversation.title); }
 
-   if (msg.type === "conversation_created") selectFocused(msg.conversation.id);
 
    if (msg.type === "conversation_list") for (const c of msg.conversations) controller(c.id);
 
@@ -289,7 +324,7 @@ const transport = new Uplink({
 const reading = installReading({
   send: message => transport.sendClientMessage(message), selected: () => selectedConversationId,
   import: async (id, record) => { const c = controller(id); await c.ready; await c.importReading(record); },
-  select: id => { selectFocused(id); broadcastConversations(); },
+  select: (id, tabId) => void selectForTab(id, tabId),
 });
 
 const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), panelConversation,async(id,input)=>{
@@ -318,7 +353,9 @@ chrome.runtime.onConnect.addListener(port => {
 
  for (const c of controllers.values()) c.attachPanel(port);
 
- port.onDisconnect.addListener(() => { connectedPanels.delete(port); panelSelection.delete(port);
+ port.onDisconnect.addListener(() => { connectedPanels.delete(port); panelSelection.delete(port); panelWindow.delete(port);
+
+   for (const [requestId, requester] of panelCreations) if (requester === port) panelCreations.delete(requestId);
 
    if (focusedPanel === port) { focusedPanel = undefined; const next = [...connectedPanels].at(-1); if (next) focusPanel(next); }
 
@@ -331,8 +368,12 @@ chrome.runtime.onConnect.addListener(port => {
   // 侧栏重开、重连时带上它自己看着的会话：后台重启过也不会把它换成别的侧栏的会话。
   if (msg.kind === "sync" && validConversationId(msg.conversationId)) selectInPanel(port, msg.conversationId);
 
-  // ping 和 sync 是定时或自动发的，不算用户在这个侧栏里操作。
-  if ((msg.kind !== "ping" && msg.kind !== "sync") || !focusedPanel) focusPanel(port);
+  if (msg.kind === "panel_window" && Number.isInteger(msg.windowId)) panelWindow.set(port, msg.windowId);
+
+  if (msg.kind === "client" && msg.msg?.type === "conversation_create" && typeof msg.msg.requestId === "string") panelCreations.set(msg.msg.requestId, port);
+
+  // ping、sync、panel_window 是侧栏自动发的，不算用户在这个侧栏里操作。
+  if ((msg.kind !== "ping" && msg.kind !== "sync" && msg.kind !== "panel_window") || !focusedPanel) focusPanel(port);
 
   if (msg.kind === "select_conversation") broadcastConversations();
 
@@ -381,7 +422,7 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
   if (raw.phase === "start") pttCapsule.recording(tabId);
   // SAFETY: 离屏文档对 PttCommand 只回 PttReply；没有接收方时 sendMessage 会抛错。
   const reply = await (chrome.runtime.sendMessage(command) as Promise<PttReply | undefined>).catch(() => undefined);
-  const conversationId = selectedConversationId;
+  const conversationId = conversationForWindow(tab.windowId);
   const conversation = controller(conversationId);
 
   if (raw.phase === "cancel") pttCapsule.closed(tabId);
@@ -431,9 +472,9 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttCapsuleAction> | Partial<P
 
  if (raw.action === "hush") pttCapsule.hush();
 
- if (raw.action === "stop") controller(pttCapsule.conversationId() ?? selectedConversationId).stop();
+ if (raw.action === "stop") controller(pttCapsule.conversationId() ?? conversationForWindow(tab.windowId)).stop();
 
- if (raw.action === "resend" && raw.text) void handOffSpoken(tab, selectedConversationId, raw.text);
+ if (raw.action === "resend" && raw.text) void handOffSpoken(tab, conversationForWindow(tab.windowId), raw.text);
 });
 
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
@@ -2071,7 +2112,7 @@ if (conversationId === "default" && chrome.runtime?.onInstalled) chrome.runtime.
 if (conversationId === "default") ensureAskMenu();
 
 chrome.contextMenus?.onClicked.addListener((info, tab) => {
-  if (selectedConversationId !== conversationId) return;
+  if (conversationForWindow(tab?.windowId) !== conversationId) return;
 
   if (info.menuItemId !== ASK_MENU_ID || !tab?.id) return;
   const tabId = tab.id;
@@ -2381,7 +2422,7 @@ chrome.tabs.onActivated.addListener((info) => {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
 
-  if (selectedConversationId !== conversationId) return;
+  if (conversationForWindow(sender.tab?.windowId) !== conversationId) return;
   const msg = raw as { type?: unknown; action?: unknown; text?: unknown };
 
   if (msg.type === "ASK_SELECTION_TO_PANEL") {
