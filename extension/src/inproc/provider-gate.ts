@@ -230,22 +230,29 @@ export function gatedStream(
   }
 
   const queuedAt = Date.now();
-  let sent!: () => void;
-  onQueued?.(new Promise<void>(resolve => { sent = resolve; }));
+  let markSent = () => {};
+  // 不论调用方给没给 onQueued 都要建：放行时要兑现它。
+  const sent = new Promise<void>(resolve => { markSent = resolve; });
+
+  // 调用方的回调只用来定计时起点，它出错不能挡住排队。
+  try { onQueued?.(sent); } catch { /* The caller's timing hook only. */ }
 
   void gate.acquire(model.provider, purpose, signal).then(release => {
-    noteWait(onWait, model.provider, purpose, queuedAt);
-
     if (!release) {
+      noteWait(onWait, model.provider, purpose, queuedAt);
       out.push({ type: "error", reason: "aborted", error: unsentReply(model, "aborted", "Request was aborted") });
       out.end();
 
       return;
     }
 
-    sent();
-
-    try { run(release); } catch (error) {
+    // 拿到名额之后任何一步出错都要放回名额（重复放回不生效），否则这家服务商之后的请求永远排队。
+    try {
+      markSent();
+      noteWait(onWait, model.provider, purpose, queuedAt);
+      run(release);
+    } catch (error) {
+      release();
       out.push({ type: "error", reason: "error", error: unsentReply(model, "error", error instanceof Error ? error.message : String(error)) });
       out.end();
     }
@@ -262,12 +269,20 @@ export async function gatedCall(
   if (!gate.limited(model.provider)) return call();
   const queuedAt = Date.now();
   const release = await gate.acquire(model.provider, purpose, signal);
-  noteWait(onWait, model.provider, purpose, queuedAt);
 
-  if (!release) return unsentReply(model, "aborted", "Request was aborted");
+  if (!release) {
+    noteWait(onWait, model.provider, purpose, queuedAt);
+
+    return unsentReply(model, "aborted", "Request was aborted");
+  }
+
   const done = holdUntilDone(release, signal);
 
-  try { return await call(); } finally { done(); }
+  try {
+    noteWait(onWait, model.provider, purpose, queuedAt);
+
+    return await call();
+  } finally { done(); }
 }
 
 function noteWait(onWait: (wait: ModelQueueWait) => void, provider: string, purpose: QueuePurpose, queuedAt: number): void {
