@@ -234,7 +234,8 @@ export async function waitForQuietDom(tabId:number):Promise<number> {
     let documentId:string|undefined;
 
     for(;;){
-      const doc=await readCurrentDocument(tabId);
+      // 页面卡在弹窗或长脚本里时注入不会返回，每次短读也要有上限。
+      const doc=await withTimeout(readCurrentDocument(tabId),Math.max(left(),0)+500,'DOM 安静等待超时');
 
       if(!doc||(documentId!==undefined&&doc.documentId!==documentId))return Date.now()-started;
       documentId=doc.documentId;
