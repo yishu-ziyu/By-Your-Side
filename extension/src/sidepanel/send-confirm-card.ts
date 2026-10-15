@@ -32,7 +32,8 @@ function isSendConfirmView(v: unknown): v is SendConfirmView {
 
   return typeof o.id === "string" && o.id.length > 0 && o.id.length <= 64 && typeof o.host === "string" && typeof o.label === "string"
     && (o.content === undefined || typeof o.content === "string") && (o.outcome === undefined || (OUTCOMES as readonly unknown[]).includes(o.outcome))
-    && (o.clicked === undefined || CLICKS.includes(o.clicked));
+    && (o.clicked === undefined || CLICKS.includes(o.clicked))
+    && (o.recipient === undefined || typeof o.recipient === "string") && (o.route === undefined || ["click", "script", "enter", "request"].includes(o.route as string));
 }
 
 /** armedAt：按钮第一次露出来以后多久起「发送」才算数（performance.now 的时刻）；重画不重新计时。 */
@@ -134,7 +135,8 @@ function paint(card: Card): void {
   el.dataset.state = live ? "open" : "checking";
   const title = document.createElement("p");
   title.className = "send-confirm-title";
-  title.textContent = "要发送吗？";
+  const to = view.recipient ? `发给 ${view.recipient}，` : "";
+  title.textContent = view.content ? `把这段 ${[...view.content.replace(/…$/, "")].length} 字的内容${to}在 ${view.host} 上` : `点「${view.label}」${to}在 ${view.host} 上`;
   const list = document.createElement("dl");
   list.className = "send-confirm-kv";
   row(list, "网站", view.host);
@@ -142,6 +144,8 @@ function paint(card: Card): void {
 
   // 读不到要发的内容就不写这一行，不编。
   if (view.content) row(list, "内容", `「${view.content}」`);
+  if (view.recipient) row(list, "发给", view.recipient);
+  if (view.route && view.route !== "click") row(list, "方式", { script: "页面脚本", enter: "回车键", request: "网页请求" }[view.route]);
   el.append(title, list);
 
   if (!live) return;

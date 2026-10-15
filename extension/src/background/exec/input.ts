@@ -21,7 +21,7 @@ import { refindDetachedRef } from "../ref-refind.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
 import { isPayLabel, isSendLabel, resolveImplicitMarkActions } from "../../shared/mark-actions.js";
-import { confirmSendIfNeeded, type SendGuard } from "../send-confirm.js";
+import { confirmSend, confirmSendIfNeeded, readRecipientInPage, type SendDetails, type SendGuard } from "../send-confirm.js";
 import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
@@ -331,6 +331,16 @@ function findSendFieldInPage(px: number, py: number): Element | null {
 }
 
 const SEND_CONTENT_MAX = 120;
+
+/** 确认框要写的：内容、发给谁、按钮在网页上的位置（同时圈出来）。 */
+async function readSendDetails(tabId: number, x: number, y: number): Promise<SendDetails> {
+  const content = await readSendContent(tabId, x, y);
+  try {
+    const expression = `(() => { const el = document.elementFromPoint(${x}, ${y}); const b = el?.closest("button,[role=button],input,a") ?? el; const r = b?.getBoundingClientRect(); return { recipient: (${readRecipientInPage.toString()})(${x}, ${y}), rect: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null }; })()`;
+    const v = (await sendCommand<{ result?: { value?: { recipient: string | null; rect: SendDetails["rect"] | null } } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true })).result?.value;
+    return { content, ...(v?.recipient ? { recipient: v.recipient } : {}), ...(v?.rect ? { rect: v.rect } : {}), route: "click" };
+  } catch { return { content, route: "click" }; }
+}
 
 /** 确认框上要发出去的内容：从网页读，敏感栏（readFieldInPage 判定）、空栏、认不准的都不给。读不到不影响确认。 */
 async function readSendContent(tabId: number, x: number, y: number): Promise<string | undefined> {
@@ -1780,7 +1790,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
   await beforeDispatch?.();
   // 「发送」按钮：先在网页上等用户确认（页面先切到前台，用户才看得见）。用户点「发送」后，下面照常重新定位、核对命中再点。
-  let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendContent(tabId, point[0], point[1]));
+  let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendDetails(tabId, point[0], point[1]));
 
   let [x, y] = point!;
 
@@ -1831,7 +1841,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
         const finalName = finalButtons.find(isSendLabel) ?? "";
 
         if (finalName && clickCount > 1) throw notExecuted(new Error(SEND_MULTI_CLICK));
-        sendConfirmed = await confirmSendIfNeeded(tabId, finalName, sendGuard, () => readSendContent(tabId, x, y));
+        sendConfirmed = await confirmSendIfNeeded(tabId, finalName, sendGuard, () => readSendDetails(tabId, x, y));
       }
 
       await beforeDispatch?.();
@@ -2773,6 +2783,48 @@ export async function typeText(
   return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }
 
+/** 回车会不会把东西发出去：焦点在有字的多行输入框、可编辑区，或焦点所在表单里有「发送」按钮。序列化进页面，必须自包含。 */
+function enterWouldSendInPage(): { label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null; send: boolean } | null {
+  let el = document.activeElement as HTMLElement | null;
+  while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
+  if (!el) return null;
+  // 用户在确认框上点「发送」会把焦点带走：确认后按这个记号把焦点放回去再按回车。
+  Object.defineProperty(window, "__sideagentEnterTarget", { value: el, configurable: true, enumerable: false });
+  const isSend = (t: string) => { const s = t.trim().replace(/\s+/g, " "); return s.startsWith("发送") || /^send(\s|$)/i.test(s); };
+  const scope = el.closest("form,[role=dialog],[role=form]") ?? el.parentElement?.parentElement?.parentElement ?? null;
+  const sendBtn = scope ? [...scope.querySelectorAll<HTMLElement>("button,[role=button],input[type=submit]")].find(b => isSend(b.getAttribute("aria-label") || b.innerText || (b as HTMLInputElement).value || "")) : undefined;
+  const multi = el.tagName === "TEXTAREA" || el.isContentEditable;
+  const content = ((el as HTMLTextAreaElement).value ?? el.innerText ?? "").replace(/\s+/g, " ").trim();
+  const send = (multi && !!content) || (!!sendBtn && !!el.closest("form"));
+  const r = (sendBtn ?? el).getBoundingClientRect();
+  return { label: sendBtn ? (sendBtn.getAttribute("aria-label") || sendBtn.innerText || (sendBtn as HTMLInputElement).value || "发送").trim() : "回车发送", content: content.length > 120 ? content.slice(0, 120) + "…" : content, rect: { left: r.left, top: r.top, width: r.width, height: r.height }, send };
+}
+
+/** 任务里的 press_key：回车（含 Ctrl/Cmd+回车，不含 Shift+回车换行）可能把消息发出去，先走和点「发送」同一个确认（#290）。 */
+export async function pressKeyGuarded(params: { key: string; tabId?: number }, sessionId: string, sendGuard: SendGuard) {
+  const info = resolveKey(params.key);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
+  let confirmed = false;
+
+  if (info && tab.id != null && info.key === "Enter" && ((info.modifiers | modifierMaskFor(sessionId, tab.id)) & 8) === 0) {
+    const tabId = tab.id;
+    const read = await sendCommand<{ result?: { value?: ReturnType<typeof enterWouldSendInPage> } }>(tabId, "Runtime.evaluate", { expression: `(${enterWouldSendInPage.toString()})()`, returnByValue: true }).catch(() => undefined);
+    const hit = read?.result?.value;
+
+    if (hit?.send) {
+      confirmed = await confirmSend(tabId, hit.label, sendGuard, async () => {
+        const v = await sendCommand<{ result?: { value?: string | null } }>(tabId, "Runtime.evaluate", { expression: `(${readRecipientInPage.toString()})(null, null)`, returnByValue: true }).catch(() => undefined);
+        const recipient = v?.result?.value ?? undefined;
+        return { ...(hit.content ? { content: hit.content } : {}), ...(recipient ? { recipient } : {}), ...(hit.rect ? { rect: hit.rect } : {}), route: "enter" as const };
+      });
+      await sendCommand(tabId, "Runtime.evaluate", { expression: `(() => { const el = window.__sideagentEnterTarget; delete window.__sideagentEnterTarget; el?.focus(); return true; })()` }).catch(() => undefined);
+    }
+  }
+  const result = await pressKey(params, sessionId);
+
+  return Object.assign(result, confirmed ? { sendConfirmed: true as const } : {}) as typeof result & { sendConfirmed?: true };
+}
+
 export async function pressKey(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
@@ -2787,6 +2839,7 @@ export async function pressKey(
   await beforeDispatch?.();
 
   const heldMods = modifierMaskFor(sessionId, tab.id);
+
 
   const base = {
     key: info.key,
