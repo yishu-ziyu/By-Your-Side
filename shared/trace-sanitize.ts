@@ -112,7 +112,8 @@ function scrubTrace(value: unknown, full: boolean, limits: boolean): unknown {
     let count = 0;
 
     for (const key in object) {
-      if (!Object.hasOwn(object, key)) continue;
+      // pi-ai 流式拼工具参数用的原文草稿，与 arguments 重复；它是一整段字符串，按字段遮挡认不出里面填的值。
+      if (!Object.hasOwn(object, key) || key === "partialArgs") continue;
 
       if (count++ >= max.entries || budget.nodes <= 0 || budget.chars <= 0) {
         result.traceTruncation = { truncated: true, reason: "shared budget or object entry limit" };
