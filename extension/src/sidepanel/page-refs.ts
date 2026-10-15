@@ -1,6 +1,6 @@
 /**
  * 回答里提到的按钮能在页面上指出来（对标 ChatGPT Atlas / Comet 在页面上高亮目标；虚线行内链接取自 Adil Mania）。
- * 只给「」括起、且读页时拿到过位置、现在还在页上的控件加虚线；找不到就不画线，不猜。
+ * 只给「」括起或整段粗体、且读页时拿到过位置、现在还在页上的控件加虚线；找不到就不画线，不猜。
  * 第一次点：光标飞过去圈出来，回答下写一行灰字；再点一次：替用户发出「点「…」」，和自己打字发出一样，能看见、能停。
  */
 
@@ -16,7 +16,23 @@ export function quotedNames(answer: HTMLElement): string[] {
     }
   }
 
+  // 真实模型多半把按钮名写成粗体（**Code**），很少用「」：整段粗体就是一个短名字时也算。
+  for (const strong of boldNames(answer)) {
+    const name = strong.textContent!.trim();
+
+    if (!names.includes(name)) names.push(name);
+  }
+
   return names;
+}
+
+/** 整段文字就是一个 1–20 字名字的粗体，不在代码块、按钮、链接里。 */
+function boldNames(answer: HTMLElement): HTMLElement[] {
+  return [...answer.querySelectorAll<HTMLElement>("strong,b")].filter(el => {
+    const text = el.textContent?.trim() ?? "";
+
+    return text.length >= 1 && text.length <= 20 && !/[\n「」]/.test(text) && !el.children.length && !el.parentElement?.closest("pre,code,button,a,.page-ref,.answer-actions");
+  });
 }
 
 function textNodes(answer: HTMLElement): Text[] {
@@ -39,6 +55,12 @@ export interface PageRefDeps {
 export function linkifyPageRefs(answer: HTMLElement, found: string[], deps: PageRefDeps): void {
   if (!found.length || answer.querySelector(".page-ref")) return;
   const wanted = new Set(found);
+
+  for (const strong of boldNames(answer)) {
+    const name = strong.textContent!.trim();
+
+    if (wanted.has(name)) strong.replaceChildren(refButton(answer, name, deps));
+  }
 
   for (const node of textNodes(answer)) {
     const parts = node.data.split(/(「[^「」\n]{1,20}」)/);
