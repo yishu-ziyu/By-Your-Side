@@ -2893,8 +2893,9 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat calc(var(--d-emph) * 2) var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
-/* 运行中的标签一道扫光：用遮罩调透明度，动词墨色、对象浅灰各自保留；秒数是另一个元素，不扫。 */
-details.run-steps:not(.done) .run-title {
+/* 助手在想、在做一步时，标签一道扫光：用遮罩调透明度，动词墨色、对象浅灰各自保留；秒数是另一个元素，不扫。
+   等你（接管、确认发送、教学等你点）时不扫。 */
+details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title {
   -webkit-mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
   mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
   -webkit-mask-size: 250% 100%;
@@ -2920,8 +2921,10 @@ details.run-steps:not(.done) .run-title {
   height: 12px;
   border-radius: 6px;
   background: linear-gradient(105deg, var(--sk-base) 0 40%, var(--sk-hi) 50%, var(--sk-base) 60% 100%) 100% 0 / 300% 100%;
-  animation: skeletonSweep var(--m-sweep) var(--e-sweep) infinite;
+  animation: var(--sk-anim, skeletonSweep var(--m-sweep) var(--e-sweep) infinite);
 }
+/* 等你的时候回答位置不放骨架；不等了、还没出字就再放回来。 */
+details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer-skeleton { display: none; }
 .answer-skeleton i:nth-child(1) { width: 92%; margin-top: 7px; }
 .answer-skeleton i:nth-child(2) { width: 78%; }
 .answer-skeleton i:nth-child(3) { width: 60%; }
@@ -2929,6 +2932,7 @@ details.run-steps:not(.done) .run-title {
 .answer-skeleton:has(~ :not(.ai-task-card, #resume-entry-root)),
 .answer-skeleton:has(~ .ai-task-card #resume-entry-root:not([hidden]) > *, ~ #resume-entry-root:not([hidden]) > *),
 .answer-skeleton[data-state="gone"] {
+  --sk-anim: none;
   height: 0;
   /* 抵掉 #messages 的行距：回答落在骨架第一条的位置。 */
   margin-bottom: calc(-1 * var(--s-2));
@@ -2939,7 +2943,7 @@ details.run-steps:not(.done) .run-title {
   .answer-skeleton { --sk-hi: color-mix(in oklch, var(--content-subtle), var(--text-primary) 12%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  details.run-steps:not(.done) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
+  details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
   .answer-skeleton { transition: none; }
   .answer-skeleton i { animation: none; background: var(--sk-base); }
 }
