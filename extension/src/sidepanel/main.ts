@@ -4479,11 +4479,13 @@ function quietRunForProse(): void {
 /** 模型直接写的正文：没调过工具时放在回答位置逐段显示；新一轮的正文出现时，上一轮那段只是过程。 */
 function appendLeadAnswer(delta: string): void {
   // 过程行照常在跑：停止、出错时这段正文按原样收进去，过程行也随之保留。
-  ensureRun();
+  const run = ensureRun();
 
   if (leadAnswer && leadAnswerTurnClosed) foldLeadAnswer();
 
   if (!leadAnswer) {
+    // 这一轮出过字，骨架就不再回来：这段正文之后被收进过程时，回答位置空着也不再放骨架。
+    run.skeleton.dataset.state = "gone";
     quietRunForProse();
     leadAnswer = addMsg("msg assistant markdown streaming", "");
     leadAnswerText = "";
@@ -4600,7 +4602,10 @@ function appendTrace(pre: HTMLElement, delta: string): void {
 function appendDelta(kind: "assistant" | "thinking", delta: string): void {
   if (kind === "assistant") {
     // 流式 Markdown：累积原文，每个 delta 重渲染（marked 为同步解析，量小无压力）
-    if (!currentAssistant) currentAssistant = addMsg("msg assistant markdown streaming", "");
+    if (!currentAssistant) {
+      if (currentRun) currentRun.skeleton.dataset.state = "gone";
+      currentAssistant = addMsg("msg assistant markdown streaming", "");
+    }
     currentAssistantText += delta;
     revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
   } else {
@@ -5098,6 +5103,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 等你确认的时间不算「想了」（#263）。
       if (run) {
         setRunTitle(run, ev.waiting ? "等你在网页上确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
+        // 等你的时候过程行不扫光、回答位置不放骨架；这一步的工具还在途，所以 data-phase 仍是 executing。
+        run.root.toggleAttribute("data-wait-user", ev.waiting);
 
         if (ev.waiting) closeThink(run, eventTime());
         else openThink(run, eventTime());
@@ -5118,6 +5125,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if (!run) break;
       const waiting = ev.waiting && ev.guide;
       setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : "正在思考", true, waiting ? undefined : "think");
+      run.root.toggleAttribute("data-wait-user", !!waiting);
 
       // 等你自己点的时间不算「想了」（#263）。
       if (waiting) closeThink(run, eventTime());

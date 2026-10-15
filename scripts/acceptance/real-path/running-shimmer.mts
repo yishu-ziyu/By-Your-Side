@@ -1,15 +1,17 @@
 /**
  * 助手在干活时看得出在动（docs/evals/20261015-running-shimmer.md）：过程行的标签有一道扫光，秒数不扫；
  * 第一个字出来之前，回答位置有三行骨架；字一出来骨架淡掉、回答落在骨架原来的位置；收尾后、出错时都不留骨架；
- * 少动效设置下两样都不动。
+ * 等你（确认发送）时标签不扫光、不放骨架；骨架收起后不再扫；少动效设置下两样都不动。
  *   npx tsx scripts/acceptance/real-path/running-shimmer.mts --headless
  * 脚本模型先慢慢想、再调一步工具、再慢慢想，最后逐段写回答，一轮跑好几秒。只装扩展，判用户看得到的样子。
- * 失败方式：标签不动或秒数也在扫；想的时候回答位置空着；出字后骨架还在或回答往下跳；收尾、出错后还留着骨架；少动效下还在动。
+ * 失败方式：标签不动或秒数也在扫；想的时候回答位置空着；出字后骨架还在或回答往下跳；收尾、出错后还留着骨架；
+ * 等你确认发送时还在扫光或挂着骨架；骨架收起后条还在扫；少动效下还在动。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, recordScreen, requireHeadless, sleep, until } from "./harness.mts";
+import { REPO, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
@@ -28,8 +30,19 @@ const slowTurn = (match: string) => ({
   ],
 });
 
+/** 点「发送」会停下等用户在网页上确认（send-confirm.mts 的同一种页面）。 */
+const PAGE = `<!doctype html><meta charset="utf-8"><title>留言练习页</title><form id="f"><textarea id="draft" aria-label="留言">周五下午三点开会。</textarea><button id="send">发送</button></form>
+<script>document.querySelector("#f").addEventListener("submit", (e) => e.preventDefault());</script>`;
+
+const site = createServer((_, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE));
+
+await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
+
+const WAITING = "等你在网页上确认发送";
+
 const model = await startScriptedModel([
   slowTurn("耳机甲"),
+  { match: "确认戊", steps: [{ tool: { name: "click", args: { target: "#send", label: "发送" } }, delayMs: 1500 }, { text: "发出去了。" }] },
   { match: "出错乙", steps: [{ status: 400, body: JSON.stringify({ error: { message: "scripted bad request" } }) }] },
   slowTurn("耳机丙"),
   slowTurn("耳机丁"),
@@ -86,6 +99,8 @@ type Sample = {
 };
 
 try {
+  const work = await rp.attach((await rp.targets()).find((t) => t.url === "about:blank")!.targetId);
+  await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, work);
   const panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`)) || undefined, 60_000, "侧栏就绪");
@@ -133,6 +148,17 @@ try {
     { when: (s) => s.answerChars > 0, file: "after-first-text.png" },
   ]);
   await rp.screenshot(panel, join(artifacts, "after-done.png"));
+  // 等你确认发送：标题换成等你，看 1.5 秒，然后在侧栏点「停」。
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, "确认戊：把草稿发出去");
+  await rp.evaluate(panel, SAMPLER);
+  await rp.pressEnter(panel);
+  await until(async () => (await rp.evaluate(panel, `window.__samples.at(-1)?.label === ${JSON.stringify(WAITING)}`)) || undefined, 30_000, "过程行写等你确认发送", 100);
+  await sleep(1500);
+  await rp.screenshot(panel, join(artifacts, "waiting-user.png"));
+  await rp.click(panel, "#send-btn");
+  await until(async () => (await rp.evaluate(panel, `(() => { const s = window.__samples.at(-1); return !s.live && !s.skInDom; })()`)) || undefined, 15_000, "停下后收尾", 100);
+  const waitTurn = await rp.evaluate(panel, `(clearInterval(window.__sampler), window.__samples)`) as Sample[]; // SAFETY: SAMPLER 推进去的就是 Sample。
   // 二、模型直接报错：出错卡出来时骨架已经没了，收尾后也没有。
   const errored = await turn("出错乙：再说一遍");
   // 三、出错之后的下一轮（深色模式，顺便截图）：任务卡挂在末尾时骨架照样出来。
@@ -170,6 +196,16 @@ try {
   const darkBefore = dark.filter((s) => s.live && s.answerChars === 0);
   Object.assign(evidence, { dark: { live: darkBefore.length, skeleton: darkBefore.filter((s) => s.skVisible).length } });
   assert.ok(darkBefore.length > 0 && darkBefore.filter((s) => s.skVisible).length >= darkBefore.length * 0.9, `R2 出错之后的下一轮照样有骨架：${JSON.stringify(evidence.dark)}`);
+  const waiting = waitTurn.filter((s) => s.live && s.label === WAITING);
+  const thinkingBeforeWait = waitTurn.filter((s) => s.live && s.label === "正在思考");
+  const collapsed = normal.filter((s) => s.skInDom && !s.skVisible);
+  Object.assign(evidence, {
+    waitUser: { waiting: waiting.length, animated: waiting.filter((s) => s.labelAnim.length).length, skeleton: waiting.filter((s) => s.skVisible).length, thinkingShimmer: thinkingBeforeWait.filter((s) => s.labelAnim.includes("runShimmer")).length, thinking: thinkingBeforeWait.length },
+    collapsed: { samples: collapsed.length, sweeping: collapsed.filter((s) => s.skAnim.includes("skeletonSweep")).length },
+  });
+  assert.ok(waiting.length >= 10 && thinkingBeforeWait.some((s) => s.labelAnim.includes("runShimmer")), `等你确认前在扫光、等了一会儿：${JSON.stringify(evidence.waitUser)}`);
+  assert.ok(waiting.every((s) => s.labelAnim.length === 0 && !s.skVisible), `R1 等你确认发送时标签不扫光、没有骨架：${JSON.stringify(waiting.find((s) => s.labelAnim.length || s.skVisible))}`);
+  assert.ok(collapsed.length >= 2 && collapsed.every((s) => !s.skAnim.includes("skeletonSweep")), `R2 骨架收起后条不再扫：${JSON.stringify(evidence.collapsed)}`);
   const reducedLive = reduced.filter((s) => s.live && s.answerChars === 0);
   assert.ok(reducedLive.some((s) => s.skVisible), "R4 少动效下骨架照样占着回答位置");
   assert.ok(reducedLive.every((s) => s.labelAnim.length === 0 && s.skAnim.length === 0), `R4 少动效下标签和骨架都不动：${JSON.stringify(reducedLive.find((s) => s.labelAnim.length || s.skAnim.length))}`);
@@ -181,6 +217,7 @@ try {
   await rp.close();
   await rp.remove();
   await model.close();
+  site.close();
 }
 
 console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", artifacts, error: error?.split("\n")[0] ?? null }));
