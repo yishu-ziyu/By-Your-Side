@@ -153,7 +153,6 @@ try {
     const state = await first.evaluate(settings, `({
       hidden: document.querySelector("#key-reason").hidden,
       reason: document.querySelector("#key-reason-text")?.textContent ?? "",
-      wait: document.querySelector(".key-reason-wait")?.textContent ?? "",
       warn: document.querySelector("#api-key").classList.contains("warn"),
       status: document.querySelector("#model-status").textContent ?? "",
       tone: document.querySelector("#model-status").dataset.tone ?? "",
@@ -162,7 +161,7 @@ try {
     return !state.hidden && state.reason ? state : undefined;
   }, 45_000, "密钥原因");
   await first.screenshot(settings, join(out, "02-invalid-key.png"));
-  check("密钥无效：框下一行原因，不写红色「连接失败」", fail.reason.includes("服务商不接受这个密钥") && fail.wait.includes("侧栏里那句话还在等你") && fail.warn && !fail.status.includes("连接失败") && fail.tone !== "err", fail);
+  check("密钥无效：框下一行原因，不写红色「连接失败」", fail.reason.includes("服务商不接受这个密钥") && fail.warn && !fail.status.includes("连接失败") && fail.tone !== "err", fail);
   const storedAfterDeny = await first.evaluate(settings, `chrome.storage.local.get("inproc_model_config").then((r) => r.inproc_model_config?.baseUrl ?? null)`);
   check("密钥无效：没有保存，侧栏仍在等", (await readView(first, panel)).unconnected && asked() === 0 && storedAfterDeny !== denyUrl, { storedAfterDeny });
 
@@ -302,14 +301,14 @@ try {
   await second.click(rsettings, "#model-save");
   await sleep(2_000);
   await second.evaluate(rsettings, `document.querySelector('.provider-option[data-provider="stepfun"]').click(); true`);
-  const statusSrc = `({ status: document.querySelector("#model-status").textContent ?? "", otherForm: document.querySelector("#base-url").offsetParent === null })`;
-  await sleep(3_000);
-  const switched = await second.evaluate(rsettings, statusSrc) as { status: string; otherForm: boolean };
+  const statusSrc = `({ status: document.querySelector("#model-status").textContent ?? "", otherForm: document.querySelector("#base-url").offsetParent === null, enabled: ["#model-test", "#model-fast", "#model-save"].every((id) => !document.querySelector(id).disabled) })`;
+  await sleep(1_000);
+  const switched = await second.evaluate(rsettings, statusSrc) as { status: string; otherForm: boolean; enabled: boolean };
   await second.screenshot(rsettings, join(out, "11-switched-provider.png"));
-  await sleep(14_000);
-  const switchedAfter = await second.evaluate(rsettings, statusSrc) as { status: string; otherForm: boolean };
+  await sleep(16_000);
+  const switchedAfter = await second.evaluate(rsettings, statusSrc) as { status: string; otherForm: boolean; enabled: boolean };
   const keyAfterSwitch = await storedKey();
-  check("换服务商：试连中切到另一家，状态行不再数秒，超时后也不写", switched.otherForm && !switched.status.includes("正在测试") && !switchedAfter.status.includes("正在测试") && switchedAfter.status === "" && keyAfterSwitch === "sk-silent-0000", { switched, switchedAfter, keyAfterSwitch });
+  check("换服务商：试连中切到另一家，1 秒内三个按钮可点，状态行不再数秒，超时后也不写", switched.otherForm && switched.enabled && !switched.status.includes("正在测试") && !switchedAfter.status.includes("正在测试") && switchedAfter.status === "" && keyAfterSwitch === "sk-silent-0000", { switched, switchedAfter, keyAfterSwitch });
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   if (reduced && reducedPanel) {

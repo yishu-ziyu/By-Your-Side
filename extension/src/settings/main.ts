@@ -130,7 +130,6 @@ document.getElementById("settings")!.innerHTML = `
         <span class="key-reason-icon" aria-hidden="true">i</span>
         <span class="key-reason-copy">
           <span id="key-reason-text"></span>
-          <span class="key-reason-wait">没有保存，侧栏里那句话还在等你。</span>
           <button id="key-retry" type="button" class="btn btn-quiet key-reason-retry" hidden>重试</button>
         </span>
       </p>
@@ -478,7 +477,7 @@ function renderProviders(): void {
 }
 
 function closeForm(): void {
-  stopProbeTicker();
+  cancelProbe();
   openKey = null;
   selected = null;
   form.hidden = true;
@@ -563,7 +562,7 @@ function select(choice: ProviderChoice): void {
   closeModelList();
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
-  stopProbeTicker();
+  cancelProbe();
   setStatus(modelStatus, "");
   hideKeyReason();
   renderRegions();
@@ -710,8 +709,8 @@ function setFormBusy(busy: boolean): void {
 }
 
 let retryAction: (() => Promise<void>) | undefined;
-/** 停掉「已等 N 秒」的计时：换服务商时表单换成另一家，计时不能写进去。 */
-let stopProbeTicker = (): void => {};
+/** 中止正在进行的试连：换服务商时它属于上一家，不能再写进新表单，也不能让新表单的按钮一直灰着。 */
+let cancelProbe = (): void => {};
 
 function hideKeyReason(): void {
   keyReason.hidden = true;
@@ -735,7 +734,7 @@ function showKeyReason(reason: string, raw?: string, retry?: () => Promise<void>
 
 type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number };
 /** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
-type ProbeFail = { ok: false; local?: string; reason?: string; raw?: string; definite?: boolean; timedOut?: boolean; config?: InprocModelConfig; key?: string };
+type ProbeFail = { ok: false; cancelled?: boolean; local?: string; reason?: string; raw?: string; definite?: boolean; timedOut?: boolean; config?: InprocModelConfig; key?: string };
 
 function rejectsConfig(raw: string): boolean {
   if (/concurrent request limit|too many concurrent/i.test(raw)) return false;
@@ -751,17 +750,27 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
   hideKeyReason();
   setStatus(modelStatus, "正在测试…", "busy");
   const ticker = setInterval(() => setStatus(modelStatus, `正在测试…已等 ${Math.round((performance.now() - started) / 1000)} 秒`, "busy"), 1000);
-  stopProbeTicker = () => clearInterval(ticker);
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+  const cancel = new AbortController();
+  // 只放开一次：被中止的试连稍后走到 finally 时，按钮和计时可能已经属于下一次试连。
+  let live = true;
+  const release = () => {
+    if (!live) return;
+    live = false;
+    clearInterval(ticker);
+    setFormBusy(false);
+  };
+  cancelProbe = () => { cancel.abort(); release(); };
   setFormBusy(true);
 
   try {
     await probe.credentials.load(value.key ? { ...credentials, [value.config.provider]: { type: "api_key", key: value.key } } : credentials);
-    await probeModel(probe, value.config, timeout);
+    await probeModel(probe, value.config, AbortSignal.any([timeout, cancel.signal]));
 
     return { ok: true, config: value.config, key: value.key, elapsed: performance.now() - started };
   } catch (error) {
+    if (cancel.signal.aborted) return { ok: false, cancelled: true };
     const raw = error instanceof Error ? error.message : String(error);
 
     return {
@@ -775,13 +784,14 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
       key: value.key,
     };
   } finally {
-    stopProbeTicker();
-    setFormBusy(false);
+    release();
   }
 }
 
 async function testConnection(): Promise<void> {
   const result = await runProbe();
+
+  if (!result.ok && result.cancelled) return;
 
   if (!result.ok) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
@@ -797,15 +807,16 @@ async function testConnection(): Promise<void> {
 async function save(): Promise<void> {
   const result = await runProbe();
 
+  if (!result.ok && result.cancelled) return;
+
   // 先试连再保存：服务商明确不接受（密钥被拒、模型不存在）不保存；新填的密钥超时也不保存（见下）；限流、网络问题、没换密钥时的超时照样保存，并说刚才没连上。
   if (!result.ok && (result.local || result.definite)) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
     return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
   }
 
-  // 新填的密钥试连超时：不保存，说清是超时，并给「重试」。试连期间换了服务商：换的时候已清掉状态，这里不再写。
+  // 新填的密钥试连超时：不保存，说清是超时，并给「重试」。
   if (!result.ok && result.timedOut && result.key) {
-    if (selected?.id !== result.config?.provider) return;
     return showKeyReason(SAVE_TIMEOUT_REASON(), undefined, save);
   }
 

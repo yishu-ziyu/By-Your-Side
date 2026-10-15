@@ -60,7 +60,6 @@ textarea.d-input { height: auto; width: 100%; padding: 8px 10px; line-height: 1.
 .key-reason[hidden] { display: none; }
 .key-reason-icon { flex: none; width: 15px; height: 15px; margin-top: 1px; border: 1px solid var(--warn); border-radius: 50%; color: var(--warn); font: 600 10px/13px var(--font); text-align: center; }
 .key-reason-copy { display: flex; flex-direction: column; gap: 2px; }
-.key-reason-wait { color: var(--text-tertiary); }
 .key-reason-retry { align-self: flex-start; height: 26px; padding: 0 8px; font-size: 11.5px; }
 .key-reason-retry[hidden] { display: none; }
 .d-input::placeholder, .search input::placeholder { color: var(--text-quaternary); }
