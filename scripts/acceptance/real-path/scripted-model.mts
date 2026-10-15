@@ -36,12 +36,24 @@ export type ModelRequest = { atMs: number; rule: string | null; step: number; st
 
 const textOf = (content: ChatMessage["content"]): string => Array.isArray(content) ? content.map((part) => part.text ?? "").join("") : content ?? "";
 
+/**
+ * 产品插进对话的数据段，开头自己写明「不是用户消息」。本次运行的上下文里有往期任务和对话的原话：
+ * 它和用户这一轮的话都匹配时，用户的话优先；只有用户的话一条都不匹配，才看数据段。
+ */
+const PRODUCT_DATA = ["本次运行的上下文，不是用户消息", "应用状态快照，不是新用户消息"];
+
 function pick(rules: Rule[], messages: ChatMessage[]): { rule: Rule; step: number } | null {
+  return pickFrom(rules, messages, (text) => !PRODUCT_DATA.some((head) => text.startsWith(head))) ?? pickFrom(rules, messages, () => true);
+}
+
+function pickFrom(rules: Rule[], messages: ChatMessage[], eligible: (text: string) => boolean): { rule: Rule; step: number } | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]!;
 
     if (message.role !== "user") continue;
     const text = textOf(message.content);
+
+    if (!eligible(text)) continue;
     const rule = rules.find((r) => text.includes(r.match));
 
     if (!rule) continue;
