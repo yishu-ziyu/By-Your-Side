@@ -70,7 +70,8 @@ try {
     return {
       viewport: innerWidth,
       documentWidth: document.documentElement.scrollWidth,
-      overflow: [...document.querySelectorAll('#app *')].filter((el) => shown(el) && el.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map((el) => el.id || el.className || el.tagName),
+      // 模型菜单里两层并排的滑轨被菜单自己裁掉，只看菜单本身有没有出界。
+      overflow: [...document.querySelectorAll('#app *')].filter((el) => shown(el) && !el.closest('#think-menu .mm-views') && el.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map((el) => el.id || el.className || el.tagName),
       composer: rect(q('#composer')),
       starterShown: shown(q('#starter')),
       input: q('#input')?.value ?? '',
@@ -137,48 +138,52 @@ try {
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId });
   await sleep(600);
 
-  // 入口与浮层都走真实点击：原生 header popover 不能盖住模型搜索。
-  await rp.click(panel, "#header-more");
-  // SAFETY: 页面脚本返回的对象字段与下面的类型一一对应。
-  const modelEntry = await rp.evaluate(panel, `(() => { const b = document.querySelector('#model-btn'); return { inHeaderMenu: !!document.querySelector('#header-menu #model-btn'), inComposer: !!document.querySelector('#composer #model-btn'), visible: !!b && !b.hidden && b.getClientRects().length > 0, label: b?.innerText ?? '' }; })()`) as { inHeaderMenu: boolean; inComposer: boolean; visible: boolean; label: string };
-  check("当前模型入口在更多菜单内", modelEntry.inHeaderMenu && !modelEntry.inComposer && modelEntry.visible, modelEntry);
+  // 入口与菜单都走真实点击：模型只在输入框的芯片里切，菜单开在输入框上方、不能被别的层盖住。
+  type ModelEntry = { inHeaderMenu: boolean; inComposer: boolean; visible: boolean; label: string };
+  // SAFETY: 页面脚本返回的对象字段与 ModelEntry 一一对应。
+  const readEntry = async () => await rp!.evaluate(panel, `(() => { const b = document.querySelector('#think-chip'); return { inHeaderMenu: !!document.querySelector('#header-menu #think-chip'), inComposer: !!document.querySelector('#composer #think-chip'), visible: !!b && !b.hidden && b.getClientRects().length > 0 && getComputedStyle(b).visibility === 'visible', label: b?.innerText ?? '' }; })()`) as ModelEntry;
+  // 芯片在输入框的工具行里：用户先点输入框，工具行才展开；芯片还要等宿主报出当前模型才显示。
+  await rp.click(panel, "#input");
+  await until(async () => (await readEntry()).visible || undefined, 10_000, "模型芯片出现").catch(() => undefined);
+  const modelEntry = await readEntry();
+  check("当前模型入口在输入框芯片上、不在更多菜单内", modelEntry.inComposer && !modelEntry.inHeaderMenu && modelEntry.visible, modelEntry);
 
   if (modelEntry.visible) {
-    await rp.click(panel, "#model-btn");
+    await rp.click(panel, "#think-chip");
     await sleep(350);
 
     // SAFETY: 页面脚本返回 null 或下面这个字段固定的对象。
-    const modelSearch = await rp.evaluate(panel, `(() => {
-      const p = document.querySelector('#model-popover'); const input = p?.querySelector('.model-search-input');
-      if (!p || !input) return null;
-      const r = input.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-      return { open: !p.hidden, searchVisible: input.getClientRects().length > 0, searchHit: hit === input || input.contains(hit), menuOpen: document.querySelector('#header-menu')?.matches(':popover-open') ?? false };
-    })()`) as { open: boolean; searchVisible: boolean; searchHit: boolean; menuOpen: boolean } | null;
+    const modelMenu = await rp.evaluate(panel, `(() => {
+      const m = document.querySelector('#think-menu'); const row = m?.querySelector('.mm-main .mm-row[data-model]');
+      if (!m || !row) return null;
+      const r = row.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return { open: m.classList.contains('open'), rowVisible: row.getClientRects().length > 0, rowHit: hit === row || row.contains(hit), expanded: document.querySelector('#think-chip').getAttribute('aria-expanded') };
+    })()`) as { open: boolean; rowVisible: boolean; rowHit: boolean; expanded: string | null } | null;
 
-    check("点当前模型后搜索列表可见且能点到", !!modelSearch?.open && !!modelSearch.searchVisible && !!modelSearch.searchHit, modelSearch);
+    check("点模型芯片后菜单可见且第一行能点到", !!modelMenu?.open && !!modelMenu.rowVisible && !!modelMenu.rowHit, modelMenu);
     await shot("0-model-open", 400);
-    await until(async () => (await rp!.evaluate(panel, `document.activeElement?.classList.contains('model-search-input')`)) || undefined, 5_000, "模型搜索获得焦点");
     const escape = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 };
     await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...escape }, panel);
     await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...escape }, panel);
-    await until(async () => (await rp!.evaluate(panel, `document.querySelector('#model-popover').hidden`)) || undefined, 5_000, "Escape 收起模型列表");
+    await until(async () => (await rp!.evaluate(panel, `!document.querySelector('#think-menu').classList.contains('open')`)) || undefined, 5_000, "Escape 收起模型菜单");
     const escapeFocus = String(await rp.evaluate(panel, `document.activeElement?.id ?? ''`));
-    check("Escape 收起模型列表后焦点回更多", escapeFocus === "header-more", { activeElement: escapeFocus });
+    check("Escape 收起模型菜单后焦点回芯片", escapeFocus === "think-chip", { activeElement: escapeFocus });
 
-    await rp.click(panel, "#header-more");
-    await rp.click(panel, "#model-btn");
-    const currentModel = String(await rp.evaluate(panel, `document.querySelector('#model-popover .model-item.current')?.getAttribute('data-model') ?? ''`));
+    await rp.click(panel, "#think-chip");
+    await until(async () => (await rp!.evaluate(panel, `document.querySelector('#think-menu').classList.contains('open')`)) || undefined, 5_000, "再次打开模型菜单");
+    const currentModel = String(await rp.evaluate(panel, `document.querySelector('#think-menu .mm-main .mm-row[aria-checked="true"]')?.getAttribute('data-model') ?? ''`));
+    check("菜单里标出当前模型", !!currentModel, { model: currentModel });
 
     if (currentModel) {
-      await rp.click(panel, "#model-popover .model-item.current");
+      await rp.click(panel, '#think-menu .mm-main .mm-row[aria-checked="true"]');
       // SAFETY: 页面表达式固定返回 closed 与 focus 两个字段。
-      const selection = await rp.evaluate(panel, `({ closed: document.querySelector('#model-popover').hidden, focus: document.activeElement?.id ?? '' })`) as { closed: boolean; focus: string };
-      check("点当前模型收起列表后焦点回更多", selection.closed && selection.focus === "header-more", { model: currentModel, ...selection });
+      const selection = await rp.evaluate(panel, `({ closed: !document.querySelector('#think-menu').classList.contains('open'), focus: document.activeElement?.id ?? '' })`) as { closed: boolean; focus: string };
+      check("点当前模型收起菜单后焦点回芯片", selection.closed && selection.focus === "think-chip", { model: currentModel, ...selection });
     }
 
     await rp.click(panel, "#input");
   } else {
-    check("点当前模型后搜索列表可见且能点到", false, { reason: "模型入口不可见" });
+    check("点模型芯片后菜单可见且第一行能点到", false, { reason: "模型芯片不可见" });
   }
 
   // Real content script, closed shadow DOM and background relay; no model request on transfer.
