@@ -7,7 +7,7 @@
  *   npx tsx scripts/acceptance/real-path/screenshot-to-user.mts --headless
  *
  * 先列失败方式，判据逐条对应：
- *   imageShown     用户要截图的那一轮结束后，侧栏回答区没有一张解码出来的图片（旧代码在这里失败：只有一句「这是当前页面的截图」）。
+ *   imageShown     用户要截图的那一轮结束后，侧栏回答区没有一张解码出来的图片卡片（旧代码在这里失败：只有一句「这是当前页面的截图」）。消息旁的网页小图标不算。
  *   isThePage      图片不是这页：尺寸不等于工作页视口的 CSS 尺寸，或图中取样点不是练习页的绿色（拿到的是空白、别的页或占位图）。
  *   inAnswerArea   图片在用户消息之前、折叠的执行过程里，或排在回答之前（用户读完回答看不到）。
  *   noLeak         侧栏文字里出现图片的 base64 正文或工具名 screenshot。
@@ -75,7 +75,7 @@ const PANEL_STATE = `(async () => {
   const users = [...document.querySelectorAll("#messages .msg.user")];
   const lastUser = users.at(-1) ?? null;
   const images = [];
-  for (const img of messages ? messages.querySelectorAll("img") : []) {
+  for (const img of messages ? messages.querySelectorAll(".artifact-card img") : []) {
     await img.decode().catch(() => {});
     if (!img.naturalWidth || img.getClientRects().length === 0) continue;
     let sample = null;
