@@ -2691,7 +2691,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (gaveUpWithoutChange({ reply: lastReply, partial, pageAtNudge: this.nudgePage?.runId === runId ? this.nudgePage.page : null, pageNow })) {
         verdict = { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
-      } else if (pageAwaitsEmailStep(pageText)) {
+      } else if (this.toolUseRun === runId && pageAwaitsEmailStep(pageText)) {
+        // 只在这一任务自己动过手时认：查来源的任务不用工具也核对，用户只是停在一张「确认邮件已发送」的页面上，不该被带去邮箱。
         // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去（09-27 Kimi 这样问了就停住）。
         // 点名是哪个网站的确认邮件：收件箱里常有别的网站的同类邮件（09-27 Kimi 点了另一个列表的确认链接）。
         const site = snapshot?.goalPage ? (snapshot.goalPage.title.split(/\s[—–|-]\s/)[0]!.trim() || new URL(snapshot.goalPage.url).hostname) : "";

@@ -67,10 +67,14 @@ async function openPdf(tabId: number, url: string): Promise<PDFDocumentProxy> {
   if (generation.get(tabId) !== version) throw new Error("读取期间页面已刷新或关闭，请重新读取当前页面");
 
   if (size > PDF_MAX_BYTES) throw new Error(`这份 PDF 有 ${Math.round(size / 1024 / 1024)} MB，超过 ${PDF_MAX_BYTES / 1024 / 1024} MB，没有解析`);
+  // 对方不告诉大小：自己下载、边下边数，超过上限就停；这时没有按需取段，整份交给 pdf.js。
+  const data = size > 0 ? undefined : await downloadCapped(url);
+
+  if (generation.get(tabId) !== version) throw new Error("读取期间页面已刷新或关闭，请重新读取当前页面");
   // 大报告动辄几十兆：只按需取用到的那几段，不整份下载。
   // 传 URL 对象、关掉 useWorkerFetch：字符串地址和资源的默认取法都会去读 window / document，服务工作线程里没有。
   const task = getDocument({
-    url: new URL(url), disableAutoFetch: true, disableStream: true, withCredentials: true, useWorkerFetch: false,
+    ...(data ? { data } : { url: new URL(url) }), disableAutoFetch: true, disableStream: true, withCredentials: true, useWorkerFetch: false,
     cMapUrl: chrome.runtime.getURL("pdfjs/cmaps/"), cMapPacked: true, BinaryDataFactory: ExtensionBinaryDataFactory,
   });
   const doc = task.promise;
@@ -78,6 +82,34 @@ async function openPdf(tabId: number, url: string): Promise<PDFDocumentProxy> {
   doc.catch(() => { if (cache.get(tabId)?.doc === doc) cache.delete(tabId); });
 
   return doc;
+}
+
+async function downloadCapped(url: string): Promise<Uint8Array> {
+  const response = await fetch(url, { credentials: "include", signal: AbortSignal.timeout(60_000) });
+
+  if (!response.ok || !response.body) throw new Error(`下载 PDF 失败（${response.status}）`);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+
+    if (done) break;
+    total += value.byteLength;
+
+    if (total > PDF_MAX_BYTES) {
+      await reader.cancel();
+      throw new Error(`这份 PDF 超过 ${PDF_MAX_BYTES / 1024 / 1024} MB，没有解析`);
+    }
+    chunks.push(value);
+  }
+  const data = new Uint8Array(total);
+  let at = 0;
+
+  for (const chunk of chunks) { data.set(chunk, at); at += chunk.byteLength; }
+
+  return data;
 }
 
 /** 这个标签页显示的是 PDF 吗：看文档类型，不看地址后缀（很多 PDF 地址不以 .pdf 结尾）。 */
