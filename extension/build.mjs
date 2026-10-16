@@ -125,6 +125,9 @@ await copyFile(path.join(root, "../node_modules/@jitl/quickjs-wasmfile-release-s
 // 图标：manifest 里以 icons/ 前缀引用，保持目录结构拷入 dist
 await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true });
 
+// PDF 正文解析用的字符映射表（中文、日文 PDF 要它才读得出字）。
+await cp(path.join(root, "../node_modules/pdfjs-dist/cmaps"), path.join(dist, "pdfjs/cmaps"), { recursive: true });
+
 await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: true });
 
 // 设置页的音色试听样本（scripts/voice/voice-samples.mts 用真实接口录制）。

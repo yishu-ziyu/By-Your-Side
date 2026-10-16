@@ -1,6 +1,7 @@
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { resolveReadableTab } from "../state.js";
+import { pdfText, tabShowsPdf } from "./pdf-text.js";
 
 /**
  * 发送前读页（#255、#260）：在隔离环境里取页面正文，不挂调试器。
@@ -11,6 +12,14 @@ export async function pageText(params: { tabId?: number; max?: number }, session
 
   if (tab.id == null) throw new Error("工作标签页无效");
   assertNoPendingDialog(tab.id);
+
+  if (await tabShowsPdf(tab.id)) {
+    const text = await pdfText(tab.id, tab.url ?? "");
+    const max = params.max ?? 12_000;
+
+    return { text: text.slice(0, max), totalChars: text.length, tabId: tab.id, url: tab.url, title: tab.title };
+  }
+
   // 不等页面空闲：页面还在加载时默认注入会卡到加载完（见 snapshot.ts 的同一处说明）。
   const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, injectImmediately: true, world: "ISOLATED", func: readMainText, args: [params.max ?? 12_000] });
   const value = result?.result;
