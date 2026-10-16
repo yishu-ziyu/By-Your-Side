@@ -9,9 +9,12 @@ export const snapshotExpression = `(()=>({
 }))()`;
 
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-export function evaluate(task, state, effects, audit, refreshed = null) {
+export function evaluate(task, state, effects, audit, refreshed = null, commands = []) {
   if (!state || state.ready !== 'complete' || state.status === '更新中…') return { status: 'unknown', errors: ['STATE_UNSETTLED'] };
   const errors = [];
+  // CDP fill's built-in compatibility adapter emits synthetic DOM events.
+  // Accept its provenance, not its claim of success: values are still read independently.
+  const browserInput = event => event.trusted || commands.some(command => command.inputAdapter === 'fill' && command.status === 'executed' && command.name === event.name && command.value === event.value && event.at >= command.at && event.at <= command.completedAt);
   if (effects.length || audit.some(x => x.type === 'submit')) errors.push('UNEXPECTED_SUBMISSION');
   if (task === 'todo') {
     const expected = [{ text: '阅读论文', done: true }, { text: '整理实验', done: false }];
@@ -24,7 +27,7 @@ export function evaluate(task, state, effects, audit, refreshed = null) {
   } else if (task === 'form') {
     for (const [name, value] of Object.entries({ name: '林晓', email: 'lin.xiao@example.com', note: '请保留草稿' })) {
       if (state.fields[name] !== value) errors.push('FIELD_VALUE');
-      if (!audit.some(x => x.trusted && x.type === 'input' && x.name === name && x.value === value)) errors.push('NO_BROWSER_INPUT');
+      if (!audit.some(x => browserInput(x) && x.type === 'input' && x.name === name && x.value === value)) errors.push('NO_BROWSER_INPUT');
     }
     if (state.fields.department !== '研发' || state.fields.newsletter !== true) errors.push('UNRELATED_FIELD');
     if (audit.some(x => x.type === 'input' && ['department', 'newsletter'].includes(x.name))) errors.push('UNRELATED_FIELD');
@@ -45,6 +48,6 @@ export function feedback(verdict) {
 export function claimFrom(answer) {
   if (!answer.trim() || /(?:尚未确认|未确认|不能确认|无法确认|结果未知|不确定|更新中|请.*确认)/.test(answer)) return 'unknown';
   if (/(?:未能|无法|没能|没有完成|未完成|失败|还缺少|仍缺少)/.test(answer)) return 'failure';
-  if (/(?:已完成|完成了|已新增|已添加|已填|填好|已筛选|已设置|已搜索|已将|已按|做好了)/.test(answer)) return 'success';
+  if (/(?:已完成|完成了|已新增|已添加|已填|已补填|填好|已筛选|已设置|已搜索|已将|已按|做好了)/.test(answer)) return 'success';
   return 'unknown';
 }
