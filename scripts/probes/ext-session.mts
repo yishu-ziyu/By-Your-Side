@@ -1,8 +1,8 @@
 // The real-extension driver shared by compare-real.mts and om2w.mts: one isolated Chrome with the built extension, the side panel open and signed in to the model.
 import { join } from "node:path";
 
-/** The panel shows a run in progress: the status pill, the stop button, or an assistant reply still streaming. */
-export const BUSY = `(() => { const q = (s) => document.querySelector(s); return (q("#status-pill")?.classList.contains("running") ?? false) || (q("#send-btn")?.classList.contains("stopping") ?? false) || !!q(".msg.assistant.streaming, .msg.assistant[data-revealing], .thinking.streaming"); })()`;
+/** The panel shows a run in progress: the status pill, the stop button, an assistant reply still streaming, or the goal check still deciding whether to continue. */
+export const BUSY = `(() => { const q = (s) => document.querySelector(s); return (q("#status-pill")?.classList.contains("running") ?? false) || (q("#send-btn")?.classList.contains("stopping") ?? false) || !!q(".msg.assistant.streaming, .msg.assistant[data-revealing], .thinking.streaming") || [...document.querySelectorAll(".run-check")].some((e) => e.textContent?.includes("核对中…")); })()`;
 
 /** `root` is the repo whose harness and credentials helper are used; `tabs` are opened left to right and the user looks at the last one. */
 export async function startExt(root: string, { model, tabs, cookies = [] }: { model: string; tabs: string[]; cookies?: object[] }) {
