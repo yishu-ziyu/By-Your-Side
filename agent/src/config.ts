@@ -1,7 +1,5 @@
 /**
- * 伴随进程配置文件：<数据目录>/config.json（数据目录默认 ~/.sideagent）
- * native messaging 模式下 Chrome 拉起的命令行是固定的，model/proxy 只能从配置文件来。
- * 优先级：CLI 参数 > 配置文件 > 内置默认。
+ * 本机验收脚本读取的配置：<数据目录>/config.json（数据目录默认 ~/.sideagent）。
  */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -48,9 +46,4 @@ export function loadConfig(path = configPath()): AgentConfig {
   } catch {
     return {};
   }
-}
-
-/** CLI 参数优先于配置文件。 */
-export function resolveConfig(cli: AgentConfig, file: AgentConfig): AgentConfig {
-  return { model: cli.model ?? file.model, proxy: cli.proxy ?? file.proxy };
 }
