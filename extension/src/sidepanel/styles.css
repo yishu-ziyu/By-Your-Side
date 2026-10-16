@@ -3893,6 +3893,12 @@ details.run-steps.run-quieting .run-time { animation: none; }
   scrollbar-width: none;
 }
 .chapter-row[hidden] { display: none; }
+@media (pointer: fine) {
+  .chapter-row[data-overflow="true"], .chapter-row[data-overflow="true"] .chapter-jump { cursor: grab; }
+  .chapter-row.dragging, .chapter-row.dragging .chapter-jump { cursor: grabbing; }
+}
+.chapter-row .chapter-jump { user-select: none; }
+
 .chapter-jump {
   flex-shrink: 0;
   max-width: 12em;

@@ -212,6 +212,44 @@ try {
   assert.deepEqual(four.dividers, [divider(0), divider(1), divider(2), divider(3)], `the retried fourth task that clicks opens chapter 4: ${JSON.stringify(four)}`);
   assert.deepEqual(four.row, [button(0), button(1), button(2), button(3)], `four chapters: top row: ${JSON.stringify(four)}`);
 
+  const checkDrag = async (label: string) => {
+    const position = () => rp.evaluate(panel, `(() => {
+      const r = document.querySelector('.chapter-row');
+      const b = r.getBoundingClientRect();
+      return { x: b.x + b.width - 30, y: b.y + b.height / 2, left: r.scrollLeft,
+        overflow: r.scrollWidth - r.clientWidth, top: document.querySelector('#messages').scrollTop };
+    })()`) as Promise<{ x: number; y: number; left: number; overflow: number; top: number }>;
+    const before = await position();
+    assert.ok(before.overflow > 80, 'precondition: chapters overflow the real sidebar');
+    assert.equal(await rp.evaluate(panel, `(() => {
+      const m = document.querySelector('#messages').getBoundingClientRect();
+      const d = document.querySelector('#messages > .chapter-divider').getBoundingClientRect();
+      return d.top >= m.top && d.bottom <= m.bottom;
+    })()`), false, 'precondition: accidentally opening chapter 1 must visibly move the conversation');
+    await rp.screenshot(panel, join(artifacts, `${label}-before-drag.png`));
+    await rp.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: before.x, y: before.y, button: 'left', buttons: 1, clickCount: 1 }, panel);
+    for (let i = 1; i <= 10; i++) {
+      await rp.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: before.x - i * 12, y: before.y, button: 'left', buttons: 1 }, panel);
+    }
+    await rp.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: before.x - 120, y: before.y, button: 'left', buttons: 0, clickCount: 1 }, panel);
+    await sleep(400);
+    const after = await position();
+    assert.ok(after.left > before.left + 60, `${label}: dragging reveals later chapters`);
+    assert.ok(Math.abs(after.top - before.top) < 2, `${label}: releasing drag must not jump the conversation`);
+    await rp.screenshot(panel, join(artifacts, `${label}-after-drag.png`));
+    evidence[label] = { before, after };
+    await rp.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: before.x - 160, y: before.y, button: 'left', buttons: 1, clickCount: 1 }, panel);
+    for (let i = 1; i <= 10; i++) {
+      await rp.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: before.x - 160 + i * 15, y: before.y, button: 'left', buttons: 1 }, panel);
+    }
+    await rp.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: before.x - 10, y: before.y, button: 'left', buttons: 0, clickCount: 1 }, panel);
+    await sleep(400);
+    const returned = await position();
+    assert.ok(returned.left < 2, `${label}: reverse drag returns to the first chapter`);
+    assert.ok(Math.abs(returned.top - before.top) < 2, `${label}: reverse drag must not jump`);
+  };
+  await checkDrag('live');
+
   // 点「1」：第一章的分隔线在对话区里看得见。
   const firstInView = `(() => { const m = document.querySelector("#messages").getBoundingClientRect(); const d = document.querySelector("#messages > .chapter-divider").getBoundingClientRect(); return d.top >= m.top - 0.5 && d.bottom <= m.bottom + 0.5; })()`;
   assert.equal(await rp.evaluate(panel, firstInView), false, "precondition — chapter 1 is out of view at the bottom of the conversation");
@@ -234,6 +272,7 @@ try {
   const restored = await read();
   evidence.restored = restored;
   await rp.screenshot(panel, join(artifacts, "after-reopen.png"));
+  await checkDrag("reopened");
   evidence.replayFresh = await rp.evaluate(panel, freshDividers);
   assert.ok(evidence.replayFresh.every((f: boolean) => !f), `replayed dividers do not animate: ${JSON.stringify(evidence.replayFresh)}`);
   assert.deepEqual({ dividers: restored.dividers, row: restored.row, users: restored.usersWithDivider }, { dividers: four.dividers, row: four.row, users: four.usersWithDivider }, `reopened: same chapters: ${JSON.stringify(restored)}`);
