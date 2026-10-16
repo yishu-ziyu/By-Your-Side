@@ -139,7 +139,7 @@ export function lowestEffort(model: Model<Api>, rejected?: RejectedEfforts): Mod
 }
 
 /** 档位从低到高；模型只列出其中几档，按这个顺序找不低于要求的那一档。 */
-const EFFORT_ORDER: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const EFFORT_ORDER: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 function startingEffort(model: Model<Api>, floor: ModelThinkingLevel, rejected?: RejectedEfforts): ModelThinkingLevel | undefined {
   const { levels } = thinkingProfile(model);
