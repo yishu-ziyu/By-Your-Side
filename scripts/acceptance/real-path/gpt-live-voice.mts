@@ -4,6 +4,12 @@
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=no-login     # 没用 ChatGPT 登录：说明原因、不连接
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=api-key      # 存的是 API key 而不是登录：同上
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=barge-result # 播报任务结果时插话
+ *   加 --model=provider/model：选择执行任务的模型；语音仍独立使用 ChatGPT 登录。
+ *   --case=long-result：真实维基长回答、完整开头与侧栏提示、真实结果音频。
+ *   --case=current-page：真实 wikipedia.org 标题与英语、日语、西班牙语入口。
+ *   --case=handoff：先约定“那个技术”指逆向工程，再用真实语音请求维基查询。
+ *   --case=server-error：人工注入服务错误，只证明故障处理，不是真服务失败。
+ *   外语名称/音译和中文覆盖率只记录人工复核证据；数字仍自动核对。
  *   加 --extra-fact：回传时多加一个假事实，播报核对必须失败（反证）
  * 麦克风是设备静音与脚本放音混合的一路流：脚本何时放音就是「用户何时开口」，插话能放在播报中途。
  * 判据只看用户能观察到的：侧栏收到的远端声音、数据通道上的转写与委派、网络请求、导出的任务记录。
@@ -17,30 +23,38 @@ import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, si
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
+const caseName = process.argv.find((a) => a.startsWith("--case="))?.slice(7) ?? "main";
+assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context"].includes(caseName), `未知用例：${caseName}`);
+const model = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
+assert.match(model, /^[^/]+\/.+$/, "--model 需要 provider/model");
+const longResult = caseName === "long-result", currentPage = caseName === "current-page", serverError = caseName === "server-error", handoff = caseName === "handoff";
+const pageContext = caseName === 'page-context';
 const apiKey = process.argv.includes("--case=api-key"), noLogin = apiKey || process.argv.includes("--case=no-login"), bargeResult = process.argv.includes("--case=barge-result");
 const extraFact = process.argv.includes("--extra-fact") ? "另外，全双工技术最早由爱迪生在1873年提出。" : "";
 const VOICE_MODEL = "gpt-live-1-codex";
-const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-gpt-live-voice${apiKey ? "-api-key" : noLogin ? "-no-login" : bargeResult ? "-barge-result" : extraFact ? "-extra-fact" : ""}`);
+const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-gpt-live-voice${caseName !== "main" ? `-${caseName}` : extraFact ? "-extra-fact" : ""}`);
 await mkdir(out, { recursive: true });
 
 /** 用 macOS say 合成一句话，返回 base64 WAV。 */
 const speech = (text: string, file: string) => { const path = join(out, file); execFileSync("say", ["-v", "Tingting", "-o", path, "--data-format=LEI16@48000", text]); return readFile(path).then((b) => b.toString("base64")); };
 const CHAT = "你好，给我讲一个长一点的小故事吧。", ASK = "帮我去维基百科查一下全双工这个词。", BARGE = "等一下，先停一下。";
-const voices = { chat: await speech(CHAT, "chat.wav"), ask: await speech(ASK, "ask.wav"), barge: await speech(BARGE, "barge.wav") };
+const taskAsk = longResult ? "帮我去维基百科查一下全双工。请先用一句简短的完整句子给出结论，不要标题。然后详细解释定义、工作方式、与半双工和单工的区别、实际应用、优缺点和来源，至少一千二百字。不要生成文件或附件，直接在侧栏的回答正文里完整写出全部内容，不要只给摘要。" : currentPage ? "请查看我当前打开的页面，告诉我页面标题，以及英语、日语、西班牙语这三个语言入口分别叫什么。" : handoff ? "现在通过维基百科查一下刚才那个技术，用两句话介绍。" : ASK;
+const topicAsk = "先不要查网页，我们先约定，接下来我说的那个技术是逆向工程，先记住这个话题。";
+const voices = { chat: await speech(CHAT, "chat.wav"), ask: await speech(taskAsk, "ask.wav"), barge: await speech(BARGE, "barge.wav"), topic: handoff ? await speech(topicAsk, "topic.wav") : "", pageName: pageContext ? await speech('我现在打开的网页叫什么？', 'page-name.wav') : '' };
 
-/** 播报里的数字和外文词都要能在任务回答里找到；中文句子只算覆盖率，交人复核。 */
+/** 数字自动核对；外语可能被转写为音译，不能用拼写差异判错。 */
 function spokenCheck(spoken: string, source: string) {
   const plain = (t: string) => t.replace(/[\s\p{P}]/gu, "").toLowerCase();
   const src = plain(source);
-  const missing = [...(spoken.match(/\d+(\.\d+)?/g) ?? []), ...(spoken.match(/[A-Za-z][A-Za-z-]{2,}/g) ?? [])].filter((t) => !src.includes(t.toLowerCase()));
+  const missing = (spoken.match(/\d+(\.\d+)?/g) ?? []).filter((t) => !src.includes(t.toLowerCase()));
   const sentences = spoken.split(/[。！？!?]/).map((s) => s.trim()).filter((s) => plain(s).length >= 6).map((s) => {
     const p = plain(s), grams = [...Array(Math.max(0, p.length - 1)).keys()].map((i) => p.slice(i, i + 2));
     return { sentence: s, coverage: +(grams.filter((g) => src.includes(g)).length / Math.max(1, grams.length)).toFixed(2) };
   });
-  return { missing, lowCoverage: sentences.filter((s) => s.coverage < 0.3) };
+  return { missing, foreignNamesManualReview: { required: true, note: "外语名称和音译需人工核对；这里没有通用音译判定。" }, lowCoverage: sentences.filter((s) => s.coverage < 0.3) };
 }
 
-/** 插话后多久停声：从开口到远端声音连续 0.8 秒低于阈值的起点（说话中的短停顿不算停）；之后还有没有新的播报转写。 */
+/** 远端轨道在本地静音前的音量；此结果不是用户实际听到停声的延迟。 */
 function stopAfter(g: { in: Ev[]; meter: Array<[number, number]> }, at: number) {
   const LOUD = 0.01, RUN = 40;
   const i = g.meter.findIndex(([t], k) => t >= at && g.meter.slice(k, k + RUN).length === RUN && g.meter.slice(k, k + RUN).every(([, r]) => r <= LOUD));
@@ -50,26 +64,49 @@ function stopAfter(g: { in: Ev[]; meter: Array<[number, number]> }, at: number) 
   return { stopMs: quietAt && quietAt - at, transcriptMs: heard && heard - at, keptTalking: kept };
 }
 
+const plan = await loadModelPlan(model);
+const voicePlan = model === DEFAULT_TEST_MODEL ? plan : await loadModelPlan(DEFAULT_TEST_MODEL);
+
 const site = createServer((_q, r) => r.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>语音练习页</title><h1>语音练习页</h1><p>这一页只用来放侧栏。</p>"));
 await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
-const plan = await loadModelPlan(DEFAULT_TEST_MODEL);
 // 底下垫一路真实假麦克风设备（只有静音）：只用 AudioContext 造的流时，GPT-Live 收到结果后一直不播报（10-09 三次）；用设备流时正常。
 execFileSync("say", ["-v", "Tingting", "-o", join(out, "silence.wav"), "--data-format=LEI16@48000", "[[slnc 600000]]"]);
 const rp = await launchRealPath({ microphoneWav: join(out, "silence.wav") });
 const evidence: Record<string, unknown> = {};
 let error: string | null = null, panel = "";
-type Ev = { at: number; type: string; channel?: string; item?: { id?: string; text?: string }; turn?: { role: string; transcript: string }; content?: Array<{ text: string }> };
-const read = async () => (await rp.evaluate(panel, "window.__gl")) as { in: Ev[]; out: Ev[]; meter: Array<[number, number]>; said: Array<{ at: number; ms: number }> };
+type Ev = { at: number; type: string; channel?: string; item?: { id?: string; text?: string }; turn?: { role: string; transcript: string }; content?: Array<{ text: string }>; error?: { type?: string; code?: string; message?: string } };
+const readRaw = async () => (await rp.evaluate(panel, "window.__gl")) as { in: Ev[]; out: Ev[]; meter: Array<[number, number]>; said: Array<{ at: number; ms: number }> };
+const read = async () => {
+  const g = await readRaw();
+  const upstream = g.in.find((e) => e.type === "error");
+  if (upstream) throw new Error(`GPT-Live 上游错误：${JSON.stringify(upstream)}`);
+  return g;
+};
 const say = async (b64: string) => (await rp.evaluate(panel, `window.__say(${JSON.stringify(b64)})`)) as { at: number; ms: number };
+const answerText = async () => String(await rp.evaluate(panel, `(() => {
+  const answer = [...document.querySelectorAll("#messages .msg.assistant")].pop();
+  if (!answer) return "";
+  const copy = answer.cloneNode(true);
+  copy.querySelectorAll(".answer-actions, .answer-panel").forEach(node => node.remove());
+  return copy.textContent.trim();
+})()`));
 const calls: Array<{ url: string; status?: number }> = [], sockets: string[] = [];
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "空白页");
   const work = await rp.attach(blank.targetId);
-  await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, work);
+  await rp.cdp.send("Page.navigate", { url: currentPage || handoff || pageContext ? "https://www.wikipedia.org/" : `http://127.0.0.1:${siteAddress(site).port}/` }, work);
+  if (currentPage || handoff || pageContext) {
+    const source = await until(async () => await rp.evaluate(work, `(() => {
+      const languages = ["en", "ja", "es"].map((lang) => { const a = document.querySelector('a#js-link-box-' + lang); return a && { lang, text: a.innerText, url: a.href }; });
+      return languages.every(Boolean) && { title: document.title, url: location.href, languages };
+    })()`) || undefined, 30_000, "维基首页与三个语言入口");
+    evidence.pageSource = source;
+    await rp.screenshot(work, join(out, "wikipedia.png"));
+  }
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
-  const items = { ...modelStorageItems(plan), inproc_voice_model: VOICE_MODEL };
+  const items = { ...modelStorageItems(plan), "inproc_cred:openai-codex": voicePlan.credential, inproc_voice_model: VOICE_MODEL };
   if (apiKey) (items as Record<string, unknown>)["inproc_cred:openai-codex"] = { type: "api_key", key: "sk-not-a-chatgpt-login" };
   else if (noLogin) delete (items as Record<string, unknown>)["inproc_cred:openai-codex"];
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)})`);
@@ -110,67 +147,158 @@ try {
     await until(async () => (await read()).in.some((e) => e.type === "session.started") || undefined, 30_000, "GPT-Live 连上");
     assert.ok(calls.length === 1 && calls[0]!.status === 201, `向 chatgpt.com 建通话一次并成功：${JSON.stringify(calls)}`);
     assert.ok(!sockets.some((u) => /stepfun/.test(u)), "没有连 StepFun");
-    // R2 闲聊
-    await sleep(1500);
-    const chatAt = (await say(voices.chat)).at;
-    // 助手这一轮的 turn.done 要等下一轮开始才到，所以看回答转写。
-    await until(async () => (await read()).in.find((e) => e.type === "output_transcript.added" && e.at > chatAt), 30_000, "闲聊回答");
-    // 闲聊回答出声 1.2 秒后插话：对照 GPT-Live 自己的回答能不能被打断。
-    const chatVoice = await until(async () => (await read()).meter.find(([at, rms]) => at > chatAt + 1000 && rms > 0.01), 30_000, "闲聊回答出声");
-    await sleep(Math.max(0, chatVoice[0] + 1200 - Date.now()));
-    const chatBargeAt = (await say(voices.barge)).at;
-    await sleep(6000);
-    evidence.chatBargeIn = stopAfter(await read(), chatBargeAt);
-    const chatStop = (evidence.chatBargeIn as { stopMs: number | null }).stopMs;
-    assert.ok(chatStop !== null && chatStop <= 500, `闲聊回答时插话，0.5 秒内停声（实际 ${chatStop ?? "没停"} 毫秒）`);
-    const afterChat = (await read()).in.filter((e) => e.at > chatAt);
-    evidence.chat = { reply: afterChat.filter((e) => e.type === "output_transcript.added").map((e) => e.item?.text ?? "").join(""), delegations: afterChat.filter((e) => e.type === "delegation.created").length };
-    assert.equal(evidence.chat && (evidence.chat as { delegations: number }).delegations, 0, "闲聊不委派");
-    // R3 查维基：一次委派、重复送达也只开一个任务、回传的是任务回答
-    const askAt = (await say(voices.ask)).at;
-    const delegation = await until(async () => (await read()).in.find((e) => e.type === "delegation.created" && e.at > askAt), 30_000, "委派");
-    if (!process.env.NO_DUP) await rp.evaluate(panel, `window.__dc.dispatchEvent(new MessageEvent("message", { data: ${JSON.stringify(JSON.stringify({ ...delegation, at: undefined }))} }))`);
-    const appended = await until(async () => (await read()).out.find((e) => e.type === "delegation.context.append" && e.channel === "speakable"), 180_000, "任务结果送回 GPT-Live");
-    const sent = appended.content?.map((c) => c.text).join("") ?? "";
-    const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].pop()?.innerText ?? ""`));
-    const LOUD = 0.01;
-    const playing = await until(async () => (await read()).meter.find(([at, rms]) => at > appended.at && rms > LOUD), 30_000, "结果开始出声");
-    const plainText = (t: string) => t.replace(/[\s\p{P}]/gu, "");
-    assert.ok(plainText(answer).includes(plainText(sent).slice(0, 40)), "送回 GPT-Live 的是侧栏里这次任务的回答");
-    if (bargeResult) {
-      // R4 播报结果时插话：结果出声 1.2 秒后开口。
-      await sleep(Math.max(0, playing[0] + 1200 - Date.now()));
-      const bargeAt = (await say(voices.barge)).at;
-      await sleep(6000);
-      const g = await read();
-      const bargeIn = { ...stopAfter(g, bargeAt), cleared: g.in.some((e) => e.type === "output_audio_buffer.cleared" && e.at >= bargeAt) };
-      Object.assign(evidence, { sent, answer: answer.slice(0, 800), bargeIn });
-      assert.ok(bargeIn.stopMs !== null && bargeIn.stopMs <= 500, `播报结果时插话，0.5 秒内停声（实际 ${bargeIn.stopMs ?? "没停"} 毫秒）`);
+    if (serverError) {
+      const injected = { type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Context append text must not exceed 500 tokens." } };
+      evidence.faultInjection = { synthetic: true, event: injected, note: "人工数据通道事件，不是真服务失败。" };
+      await rp.evaluate(panel, `window.__dc.dispatchEvent(new MessageEvent("message", { data: ${JSON.stringify(JSON.stringify(injected))} }))`);
+      const view = await until(async () => {
+        const v = await rp.evaluate(panel, `({ status: document.querySelector(".voice-state")?.innerText, detail: document.querySelector(".voice-state-detail")?.innerText, connection: window.__dc.readyState })`) as { status: string; detail: string; connection: string };
+        return /失败|出错|异常|中断|无法|不可用/.test(v.status) && v.connection === "closed" ? v : undefined;
+      }, 5000, "侧栏明确失败并关闭通话");
+      evidence.failureView = view;
+      assert.doesNotMatch(view.status, /在听/, "失败后不能仍显示在听");
+      assert.match(view.detail, /语音服务.*失败|未能播报/, "侧栏说明语音处理失败，而非让用户重新描述需求");
+      assert.match(view.detail, /后台任务不受影响/, "不把语音失败说成任务已经停止");
+      await rp.screenshot(panel, join(out, "injected-error.png"));
+    } else if (pageContext) {
+      const replies: Array<{ title: string; spoken: string }> = [];
+      for (const [title, url, match] of [
+        ['Wikipedia', 'https://www.wikipedia.org/', /维基百科|Wikipedia/i],
+        ['Example Domain', 'https://example.com/', /Example\s*Domain|示例域名|示例域/i],
+      ] as const) {
+        await rp.cdp.send('Page.navigate', { url }, work);
+        await until(async () => String(await rp.evaluate(work, 'document.title')).includes(title) || undefined, 30_000, `${title}加载`);
+        await until(async () => (await read()).out.some(e => e.type === 'session.context.append' && e.content?.some(c => c.text.includes(title))) || undefined, 10_000, '当前页面背景已同步');
+        const at = (await say(voices.pageName)).at;
+        const spoken = await until(async () => {
+          const text = (await read()).in.filter(e => e.type === 'output_transcript.added' && e.at > at).map(e => e.item?.text ?? '').join('');
+          return match.test(text) ? text : undefined;
+        }, 30_000, '真实语音说出当前页面名');
+        replies.push({ title, spoken });
+        await rp.screenshot(panel, join(out, `${title.split(' ')[0]}-context.png`));
+        await sleep(2500);
+      }
+      evidence.pageContextReplies = replies;
     } else {
-      // R3 让结果完整播完（连续 1.5 秒静音），再核对整段播报。
-      const done = await until(async () => { const g = await read(); const i = g.meter.findIndex(([t], k) => t > playing[0] && g.meter.slice(k, k + 75).length === 75 && g.meter.slice(k, k + 75).every(([, r]) => r <= LOUD)); return i < 0 ? undefined : g.meter[i]![0]; }, 60_000, "结果播完");
-      const g = await read();
-      const spoken = g.in.filter((e) => e.type === "output_transcript.added" && e.at > appended.at && e.at <= done + 500).map((e) => e.item?.text ?? "").join("");
-      const check = spokenCheck(spoken, answer);
-      Object.assign(evidence, { userWords: (delegation as unknown as { item?: unknown }).item, sent, answer: answer.slice(0, 800), spoken, check });
-      assert.ok(spoken.length > 10, "结果确实播报了");
-      assert.deepEqual(check.missing, [], `播报里有回答中没有的数字或外文：${check.missing.join("、")}`);
+      if (handoff) {
+        const topicAt = (await say(voices.topic)).at;
+        evidence.handoffTopic = { text: topicAsk, at: topicAt };
+        await until(async () => (await read()).in.find((e) => e.type === "output_transcript.added" && e.at > topicAt), 30_000, "话题约定的真实回复");
+        const topicAudio = await until(async () => (await read()).meter.find(([at, rms]) => at > topicAt && rms > 0.01), 30_000, "话题约定回复出声");
+        await until(async () => {
+          const g = await read();
+          return g.meter.some(([at], k) => at > topicAudio[0] && g.meter.slice(k, k + 75).length === 75 && g.meter.slice(k, k + 75).every(([, rms]) => rms <= 0.01)) || undefined;
+        }, 30_000, "话题约定回复播完");
+        const g = await read();
+        const view = await rp.evaluate(panel, `({ text: document.body.innerText, taskCount: document.querySelectorAll("#messages details.run-steps").length })`) as { text: string; taskCount: number };
+        const pages = (await rp.targets()).filter((t) => t.type === "page" && /^https?:/.test(t.url)).map((t) => t.url);
+        Object.assign(evidence, { handoffFirstReply: g.in.filter((e) => e.at >= topicAt && e.type === "output_transcript.added"), handoffBeforeRequest: { view, pages, at: Date.now() } });
+        await rp.screenshot(panel, join(out, "handoff-topic.png"));
+        assert.equal(view.taskCount, 0, "只约定话题时，侧栏不能开始网页任务");
+        assert.ok(pages.length > 0 && pages.every((url) => /^https:\/\/(www\.)?wikipedia\.org\/?$/.test(url)), "只约定话题时，浏览器保留维基首页、不打开查询页面");
+      }
+      if (!longResult && !currentPage && !handoff) {
+        // R2 闲聊
+        await sleep(1500);
+        const chatAt = (await say(voices.chat)).at;
+        // 助手这一轮的 turn.done 要等下一轮开始才到，所以看回答转写。
+        await until(async () => (await read()).in.find((e) => e.type === "output_transcript.added" && e.at > chatAt), 30_000, "闲聊回答");
+        // 闲聊回答出声 1.2 秒后插话：对照 GPT-Live 自己的回答能不能被打断。
+        const chatVoice = await until(async () => (await read()).meter.find(([at, rms]) => at > chatAt + 1000 && rms > 0.01), 30_000, "闲聊回答出声");
+        await sleep(Math.max(0, chatVoice[0] + 1200 - Date.now()));
+        const chatBargeAt = (await say(voices.barge)).at;
+        await sleep(6000);
+        evidence.chatBargeIn = stopAfter(await read(), chatBargeAt);
+        const chatStop = (evidence.chatBargeIn as { stopMs: number | null }).stopMs;
+        assert.ok(chatStop !== null && chatStop <= 500, `闲聊插话后，远端轨道0.5秒内静音（不代表本地听感）（实际 ${chatStop ?? "没停"} 毫秒）`);
+        const afterChat = (await read()).in.filter((e) => e.at > chatAt);
+        evidence.chat = { reply: afterChat.filter((e) => e.type === "output_transcript.added").map((e) => e.item?.text ?? "").join(""), delegations: afterChat.filter((e) => e.type === "delegation.created").length };
+        assert.equal(evidence.chat && (evidence.chat as { delegations: number }).delegations, 0, "闲聊不委派");
+      }
+      // R3 查维基：一次委派、重复送达也只开一个任务、回传的是任务回答
+      const askAt = (await say(voices.ask)).at;
+      const delegation = await until(async () => (await read()).in.find((e) => e.type === "delegation.created" && e.at > askAt), 30_000, "委派");
+      if (!handoff && !process.env.NO_DUP) await rp.evaluate(panel, `window.__dc.dispatchEvent(new MessageEvent("message", { data: ${JSON.stringify(JSON.stringify({ ...delegation, at: undefined }))} }))`);
+      const appended = await until(async () => (await read()).out.find((e) => e.type === "delegation.context.append" && e.channel === "speakable" && e.at >= askAt), 180_000, "任务结果送回 GPT-Live");
+      if (handoff) evidence.handoffRequest = { text: taskAsk, at: askAt, delegation };
+      const sent = appended.content?.map((c) => c.text).join("") ?? "";
+      const answer = await answerText();
+      Object.assign(evidence, { sent, answer });
+      if (longResult) evidence.resultAcknowledged = await until(async () => (await read()).in.find((e) => e.type === "delegation.context.appended" && e.at >= appended.at), 30_000, "真实服务确认收到结果");
+      const LOUD = 0.01;
+      const playing = await until(async () => (await read()).meter.find(([at, rms]) => at > appended.at && rms > LOUD), 30_000, "结果开始出声");
+      evidence.resultAudio = { at: playing[0], rms: playing[1], observation: "侧栏收到的远端轨道音频，非真人试听" };
+      const plainText = (t: string) => t.replace(/[\s\p{P}]/gu, "");
+      if (longResult) {
+        const opening = sent.match(/先说开头[：:]\s*([\s\S]*?)\s*完整内容在侧栏[。.]?$/)?.[1]?.trim() ?? "";
+        Object.assign(evidence, { sent, answer, sentUtf8Bytes: Buffer.byteLength(sent), opening });
+        assert.ok(answer.replace(/\s/g, "").length >= 800, "侧栏保留足够长的详细回答，不能只返回短摘要");
+        assert.ok(opening.length >= 6 && /[。！？.!?]$/.test(opening), "语音回传保留完整句子，不切半句");
+        assert.ok(plainText(answer).startsWith(plainText(opening)), "回传开头逐字来自侧栏回答的开头");
+        assert.ok(sent.length < answer.length, "语音回传有边界，侧栏仍保留全文");
+        evidence.serviceAcceptance = "字节数仅留证；真实服务未报错且结果音频出现才证明服务接收。";
+      } else {
+        const resultText = sent.replace(/^先说开头[：:]\s*/, '').replace(/\s*完整内容在侧栏[。.]?$/, '');
+        assert.ok(plainText(answer).includes(plainText(resultText).slice(0, 40)), "送回 GPT-Live 的是侧栏里这次任务的回答，长答允许明确标出的摘读");
+      }
+      if (handoff) {
+        assert.match(answer, /逆向工程|reverse[ -]+engineering/i, "第二轮侧栏回答正确解析刚才约定的技术");
+        evidence.handoffResultPages = (await rp.targets()).filter((t) => t.type === "page" && /^https?:/.test(t.url)).map((t) => ({ url: t.url, title: t.title }));
+      }
+      if (currentPage) {
+        assert.match(answer, /Wikipedia|维基百科/i, "回答包含真实页面标题");
+        for (const language of [/English|英语|英文/i, /日本語|日语|日文/, /Español|Spanish|西班牙语|西语/i]) assert.match(answer, language, "回答包含所问语言入口");
+        evidence.currentPage = { answer, taskAsk, source: evidence.pageSource };
+      }
+      if (bargeResult) {
+        // R4 播报结果时插话：结果出声 1.2 秒后开口。
+        await sleep(Math.max(0, playing[0] + 1200 - Date.now()));
+        const bargeAt = (await say(voices.barge)).at;
+        await sleep(6000);
+        const g = await read();
+        const bargeIn = { ...stopAfter(g, bargeAt), cleared: g.in.some((e) => e.type === "output_audio_buffer.cleared" && e.at >= bargeAt) };
+        Object.assign(evidence, { sent, answer, bargeIn });
+        assert.ok(bargeIn.stopMs !== null && bargeIn.stopMs <= 500, `结果播报插话后，远端轨道0.5秒内静音（不代表本地听感）（实际 ${bargeIn.stopMs ?? "没停"} 毫秒）`);
+      } else {
+        // R3 让结果完整播完（连续 1.5 秒静音），再核对整段播报。
+        const done = await until(async () => { const g = await read(); const i = g.meter.findIndex(([t], k) => t > playing[0] && g.meter.slice(k, k + 75).length === 75 && g.meter.slice(k, k + 75).every(([, r]) => r <= LOUD)); return i < 0 ? undefined : g.meter[i]![0]; }, 60_000, "结果播完");
+        const g = await read();
+        const spoken = g.in.filter((e) => e.type === "output_transcript.added" && e.at > appended.at && e.at <= done + 500).map((e) => e.item?.text ?? "").join("");
+        const check = spokenCheck(spoken, answer);
+        Object.assign(evidence, { userWords: (delegation as unknown as { item?: unknown }).item, sent, answer, spoken, check });
+        assert.ok(spoken.length > 10, "结果确实播报了");
+        if (longResult) {
+          assert.match(spoken, /全双工|full[ -]?duplex/i, "真实播报必须介绍查到的技术，不能只确认收到请求");
+          assert.match(spoken, /同时/, "真实播报包含全双工同时通信的核心结论");
+          assert.match(spoken, /(?:完整|详细|全文)[\s\S]*(?:侧栏|侧边栏)|(?:侧栏|侧边栏)[\s\S]*(?:完整|详细|全文)/, "真实播报告知完整内容在侧栏");
+        }
+        if (handoff) assert.match(spoken, /逆向工程|reverse[ -]+engineering/i, "真实播报介绍约定的技术，而非仅确认请求");
+        assert.deepEqual(check.missing, [], `播报里有回答中没有的数字：${check.missing.join("、")}`);
+      }
+      const answerAfterPlayback = await answerText();
+      evidence.answerAfterPlayback = answerAfterPlayback;
+      assert.equal(answerAfterPlayback, answer, "播报后侧栏仍保留完整任务回答");
+      await rp.click(panel, ".voice-start").catch(() => {});
+      await sleep(2000);
+      const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
+      const lines = String((exported as { traces?: string }).traces ?? "").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l) as { time: string; type: string; data?: { text?: string } }; } catch { return null; } });
+      const runs = lines.filter((l) => l?.type === "run_start");
+      evidence.tasks = runs.map((l) => l!.data?.text ?? "");
+      assert.equal(runs.length, 1, `只开 1 个任务（实际 ${runs.length}）`);
+      if (handoff) {
+        evidence.handoffTaskStarts = runs;
+        assert.ok(runs.every((run) => Date.parse(run!.time) >= askAt), "网页任务只在第二轮明确查询请求之后启动");
+      }
     }
-    await rp.click(panel, ".voice-start").catch(() => {});
-    await sleep(2000);
-    const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
-    const lines = String((exported as { traces?: string }).traces ?? "").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l) as { type: string; data?: { text?: string } }; } catch { return null; } });
-    const runs = lines.filter((l) => l?.type === "run_start");
-    evidence.tasks = runs.map((l) => l!.data?.text ?? "");
-    assert.equal(runs.length, 1, `只开 1 个任务（实际 ${runs.length}）`);
   }
   await rp.screenshot(panel, join(out, "panel.png"));
 } catch (e) {
   error = e instanceof Error ? e.stack ?? e.message : String(e);
   if (panel) { evidence.view = await rp.evaluate(panel, '({ status: document.querySelector(".voice-state")?.innerText, text: document.body.innerText.slice(0, 2000) })').catch(() => null); await rp.screenshot(panel, join(out, "failure.png")).catch(() => {}); }
 } finally {
-  const g = panel ? await read().catch(() => null) : null;
-  await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", case: noLogin ? "no-login" : extraFact ? "extra-fact" : "main", evidence, calls, sockets, events: g && { in: g.in, out: g.out.map((e) => ({ ...e })), said: g.said }, error }, null, 2));
+  const g = panel ? await readRaw().catch(() => null) : null;
+  if (handoff && g) evidence.handoffTurnRelations = { note: "原始转写、turn.done与delegation（含user_bidi_turn_id）仅供诊断，不以内部对象关系判产品通过。", events: g.in.filter((e) => ["input_transcript.added", "output_transcript.added", "turn.done", "delegation.created"].includes(e.type)) };
+  await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", case: caseName, model, voiceModel: VOICE_MODEL, extraFact: !!extraFact, evidence, calls, sockets, events: g && { in: g.in, out: g.out.map((e) => ({ ...e })), said: g.said }, error }, null, 2));
   if (g) await writeFile(join(out, "meter.json"), JSON.stringify(g.meter));
   await rp.close(); await rp.remove(); site.close();
 }
