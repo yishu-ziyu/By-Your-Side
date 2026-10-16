@@ -64,13 +64,13 @@ type Outcome = NonNullable<SendConfirmView["outcome"]>;
 const NO_OTHER_WAY = "不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。";
 
 const TEXT: Record<Exclude<Outcome, "send">, string> = {
-  decline: `用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
+  decline: `用户拒绝发送（选了「先不发」）：没有点「发送」，草稿还留在页面上。这一轮之后的发送都会被拦下，不会再问。不要再试，${NO_OTHER_WAY}现在就收尾：告诉用户没有发送，或者问用户要不要发。`,
   stopped: `用户停下了任务或接管了页面：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}`,
   left: `用户离开或关掉了这个网页：没有点「发送」。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
   timeout: `用户 2 分钟内没有确认：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}在回复里告诉用户还没发送，等用户自己决定。`,
 };
 
-const REPEAT_TEXT = `用户这一轮已经选了「先不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送；用户再说要发时才会重新问。`;
+const REPEAT_TEXT = `用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。`;
 
 const BUSY_TEXT = `这个网页上已经有一个「发送」在等用户确认：这次没有点，也没有再出确认框。等那个确认有了结果再说。${NO_OTHER_WAY}`;
 
@@ -206,7 +206,8 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
 /** 脚本、回车、网络请求这些路径：调用方已经认定是在发东西，不再看按钮名，直接问同一个确认。 */
 export async function confirmSend(tabId: number, label: string, guard: SendGuard, readContent: () => Promise<string | SendDetails | undefined>): Promise<boolean> {
 
-  const key = guard.task === undefined ? null : `${guard.task}\u0000${tabId}\u0000${label.trim()}`;
+  // 用户选了「先不发」就整轮不发：不分按钮名、标签页和路径（点击、提交、requestSubmit、回车、脚本都走这里）。用户再说一句（新的一轮）才重新问。
+  const key = guard.task === undefined ? null : guard.task;
 
   if (key && declined.has(key)) throw notSent(REPEAT_TEXT, "repeat");
 
