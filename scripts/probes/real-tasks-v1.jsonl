@@ -1,0 +1,8 @@
+{"task_id": "A1", "website": "https://ueaj.substack.com/p/how-i-got-into-ai-research", "task_description": "这篇文章的作者是谁？找到他的个人网站或其他社交账号，读一下他的帖子，用三句话说清他是做什么的，每句附来源链接。", "reference_length": 5, "pass_when": "作者名正确；至少 2 个能打开的外部来源；三句话与来源一致"}
+{"task_id": "A2", "website": "https://x.com/lifesinger/status/2110651803901784258", "task_description": "总结这条帖子，然后把它提到的原文和视频都打开。", "reference_length": 4, "pass_when": "打开帖子所依据的原始文章（不是帖子里引用的诗或文章）和视频；总结与帖子一致"}
+{"task_id": "A3", "website": "https://claude.com/resources/articles/the-ai-native-sdlc-playbook", "task_description": "这篇文章最主要引用的外部研究或报告是什么？找到原文并打开，告诉我原文的作者和发表时间。", "reference_length": 5, "pass_when": "打开的原文与文章中的引用一致；作者和发表时间正确"}
+{"task_id": "B1", "website": "https://nathanbenaich.substack.com/p/state-of-ai-2026", "task_description": "只翻译这篇文章的前两段，把中文显示在页面上对应原文的下面。", "reference_length": 3, "pass_when": "页面上前两段下面各出现中文译文；其余段落未翻译"}
+{"task_id": "B2", "website": "https://nathanbenaich.substack.com/p/state-of-ai-2026", "task_description": "找出这篇文章第一段和第二段里出现次数最多的实词，用不同颜色在页面上标出它们出现的每一处。", "reference_length": 3, "pass_when": "高频词与次数正确；每一处都标出、没有多标；不同词颜色不同"}
+{"task_id": "B3", "website": "https://claude.com/resources/articles/the-ai-native-sdlc-playbook", "task_description": "用你的光标指向文章里 SDLC 第一次出现的地方。", "reference_length": 2, "pass_when": "光标停在 SDLC 第一次出现的位置"}
+{"task_id": "C1", "website": "https://zh.wikipedia.org/wiki/Wikipedia:%E9%A6%96%E9%A1%B5", "task_description": "历史上的 10 月 14 日发生了哪三件大事？做成一条时间线，每件附来源。", "reference_length": 4, "pass_when": "三件事都能在中文维基「10月14日」页面找到，年份正确，各有来源"}
+{"task_id": "C3", "website": "https://nathanbenaich.substack.com/p/state-of-ai-2026", "task_description": "把这篇文章里的主要预测整理成一张表：预测内容、涉及对象、时间。", "reference_length": 4, "pass_when": "表里每一行都能在原文找到，没有编造；主要预测没有漏掉明显的"}
