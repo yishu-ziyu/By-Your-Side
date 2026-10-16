@@ -1,6 +1,5 @@
 name: Documentation
 on:
-  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
@@ -11,11 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts --workspaces=false
       - run: npm run check:docs
