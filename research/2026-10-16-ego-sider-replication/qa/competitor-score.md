@@ -1,5 +1,14 @@
 # BYS 复现竞品示例 · 独立 QA 打分
 
+## 最终结论（13:40 更正，以这一节为准，下面的表是 12:30 的旧版）
+
+计数：通过 12 · 做错了 3 · 缺功能 5 · 整理联系方式 3 次过 0 次（共 21）
+- 做错了：ego-chess、ego-passenger（2/3，run1 合计漏了税）、sider-price
+- 缺功能：ego-job-apply、ego-devqa、ego-social、sider-code（Shorts）、sider-files（本地文件）
+- sider-contacts：3 次过 0 次。run3 只有 Proto Bot 自测通过，没有 CSV 文件，而且多了传真和招聘两列干扰项。
+- 通过但回答有错：sider-hiring（已关闭的 Head of Sales 属于 Gamma，不是 Beta）、sider-seo（三个站都有 llm evals 排名，不是一个）
+
+
 构建：main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02（每个 result.json 都有记录）· 模型 MiniMax-M3.1-Flash-Preview · 每个示例用最新一次运行（11:49 CST 之后）· 判定依据是最终页面状态/state.json + 回答文字，不看 BYS 自己的回执。
 
 计数：做错了 2 · 缺功能 6 · 通过 12 · 未判 1（共 21）

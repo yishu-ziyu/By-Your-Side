@@ -179,5 +179,26 @@
    "secs": 50.2,
    "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
   }
- ]
+ ],
+ "final": {
+  "updated": "2026-10-16 13:40 +08",
+  "pass": 12,
+  "wrong": [
+   "ego-chess",
+   "ego-passenger",
+   "sider-price"
+  ],
+  "missing": [
+   "ego-job-apply",
+   "ego-devqa",
+   "ego-social",
+   "sider-code",
+   "sider-files"
+  ],
+  "sider-contacts": "0/3",
+  "pass_with_wrong_facts": [
+   "sider-hiring",
+   "sider-seo"
+  ]
+ }
 }
