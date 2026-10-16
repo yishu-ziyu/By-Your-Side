@@ -3,6 +3,7 @@ import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
 import { confirmSend, readRecipientInPage, type SendGuard } from "../send-confirm.js";
+import { isHostPageProbe } from "../../../../shared/effect-policy.js";
 
 interface CdpEvalResult {
   result?: { type?: string; value?: unknown; description?: string };
@@ -36,8 +37,11 @@ async function assertCompiles(tabId: number, code: string): Promise<void> {
  * 点名字以「发送 / Send」开头的按钮（element.click、dispatchEvent）、提交带这种按钮的表单（requestSubmit、form.submit）、
  * 合成的回车（输入框里有字，或表单里有发送按钮）、脚本发起的、路径像发送接口的非 GET 网络请求（fetch、XHR、sendBeacon）。
  * 拦下的动作先不做；用户点「发送」后原样重做第一个，其余丢弃。序列化进页面，必须自包含。
+ * 同一段时间里，脚本写网站存下的数据（localStorage / sessionStorage、IndexedDB、cookie）直接在页面里抛错、不重做（#494）：
+ * 否则脚本能改存储再重画页面，让没成功的一步看起来做完了。改 DOM 和样式不拦，用户会要求改页面样子。
+ * 只看调用栈里有没有这段脚本，所以页面自己的定时器、用户在页面上的操作照常写；直接给属性赋值（localStorage.x = ...）拦不到。
  */
-function armSendBlock(marker: string): void {
+function armSendBlock(marker: string, guardStorage: boolean): void {
   type Rect = { left: number; top: number; width: number; height: number };
   type Blocked = { route: "script" | "enter" | "request"; label: string; content: string; rect: Rect | null };
   const w = window as unknown as Record<string, any>;
@@ -95,6 +99,23 @@ function armSendBlock(marker: string): void {
     return origSend.call(this, body);
   };
   navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null) { if (sendy(String(url)) && fromScript()) { record({ route: "request", label: `POST ${where(String(url))}`.slice(0, 60), content: typeof data === "string" ? data.slice(0, 120) : "", rect: null }, () => origBeacon.call(navigator, url, data)); return false; } return origBeacon.call(navigator, url, data); };
+  const storageWrites: string[] = [];
+  const origSetItem = Storage.prototype.setItem;
+  const origRemoveItem = Storage.prototype.removeItem;
+  const origClear = Storage.prototype.clear;
+  const origIdbOpen = IDBFactory.prototype.open;
+  const origIdbDelete = IDBFactory.prototype.deleteDatabase;
+  const origCookie = Object.getOwnPropertyDescriptor(Document.prototype, "cookie");
+  const refuse = (what: string) => { storageWrites.push(what); throw new Error(`By Your Side blocked ${what}: a script may not write the site's saved data`); };
+  const area = (s: Storage) => { try { return s === sessionStorage ? "sessionStorage" : "localStorage"; } catch { return "localStorage"; } };
+  if (guardStorage) {
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) { if (fromScript()) refuse(`${area(this)}.setItem`); return origSetItem.call(this, key, value); };
+    Storage.prototype.removeItem = function (this: Storage, key: string) { if (fromScript()) refuse(`${area(this)}.removeItem`); return origRemoveItem.call(this, key); };
+    Storage.prototype.clear = function (this: Storage) { if (fromScript()) refuse(`${area(this)}.clear`); return origClear.call(this); };
+    IDBFactory.prototype.open = function (this: IDBFactory, name: string, version?: number) { if (fromScript()) refuse("indexedDB.open"); return version === undefined ? origIdbOpen.call(this, name) : origIdbOpen.call(this, name, version); };
+    IDBFactory.prototype.deleteDatabase = function (this: IDBFactory, name: string) { if (fromScript()) refuse("indexedDB.deleteDatabase"); return origIdbDelete.call(this, name); };
+    if (origCookie?.set) Object.defineProperty(Document.prototype, "cookie", { ...origCookie, set(this: Document, v: string) { if (fromScript()) refuse("document.cookie"); origCookie.set!.call(this, v); } });
+  }
   window.addEventListener("click", onClick, true);
   window.addEventListener("submit", onSubmit, true);
   for (const t of ["keydown", "keypress", "keyup"]) window.addEventListener(t, onKey as EventListener, true);
@@ -103,16 +124,21 @@ function armSendBlock(marker: string): void {
     window.removeEventListener("submit", onSubmit, true);
     for (const t of ["keydown", "keypress", "keyup"]) window.removeEventListener(t, onKey as EventListener, true);
     HTMLFormElement.prototype.submit = origSubmit; window.fetch = origFetch; XMLHttpRequest.prototype.open = origOpen; XMLHttpRequest.prototype.send = origSend; navigator.sendBeacon = origBeacon;
+    if (guardStorage) {
+      Storage.prototype.setItem = origSetItem; Storage.prototype.removeItem = origRemoveItem; Storage.prototype.clear = origClear;
+      IDBFactory.prototype.open = origIdbOpen; IDBFactory.prototype.deleteDatabase = origIdbDelete;
+      if (origCookie) Object.defineProperty(Document.prototype, "cookie", origCookie);
+    }
     delete w.__sideagentSendBlock;
     Object.defineProperty(w, "__sideagentSendHeld", { value: held.slice(0, 1), configurable: true, enumerable: false });
-    return blocked;
+    return { blocked, storageWrites: [...new Set(storageWrites)] };
   };
   Object.defineProperty(w, "__sideagentSendBlock", { value: { disarm }, configurable: true, enumerable: false });
 }
 
 type BlockedSend = { route: "script" | "enter" | "request"; label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null };
 
-const DISARM = `(() => window.__sideagentSendBlock ? window.__sideagentSendBlock.disarm() : [])()`;
+const DISARM = `(() => window.__sideagentSendBlock ? window.__sideagentSendBlock.disarm() : null)()`;
 const REDO = `(() => { const h = window.__sideagentSendHeld; delete window.__sideagentSendHeld; if (!h?.[0]) return false; h[0](); return true; })()`;
 const DROP = `(() => { delete window.__sideagentSendHeld; return true; })()`;
 
@@ -132,9 +158,12 @@ export async function evaluateJs(
 
   const tabId = tab.id;
   const marker = `sideagent-script-${crypto.randomUUID()}`;
-  await sendCommand(tabId, "Runtime.evaluate", { expression: `(${armSendBlock.toString()})(${JSON.stringify(marker)})`, returnByValue: true });
+  // 宿主写死的只读探测不装存储拦截：它们不写数据，也不该因拦截改变行为。
+  const guardStorage = !isHostPageProbe("js", params);
+  await sendCommand(tabId, "Runtime.evaluate", { expression: `(${armSendBlock.toString()})(${JSON.stringify(marker)}, ${guardStorage})`, returnByValue: true });
   let res: CdpEvalResult;
   let blocked: BlockedSend[] = [];
+  let storageWrites: string[] = [];
 
   try {
     res = await sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", {
@@ -144,7 +173,9 @@ export async function evaluateJs(
     },beforeExecute);
   } finally {
     const read = await sendCommand<{ result?: { value?: unknown } }>(tabId, "Runtime.evaluate", { expression: DISARM, returnByValue: true }).catch(() => undefined);
-    blocked = Array.isArray(read?.result?.value) ? read.result.value as BlockedSend[] : [];
+    const v = read?.result?.value as { blocked?: unknown; storageWrites?: unknown } | null | undefined;
+    blocked = Array.isArray(v?.blocked) ? v.blocked as BlockedSend[] : [];
+    storageWrites = Array.isArray(v?.storageWrites) ? v.storageWrites.filter((x): x is string => typeof x === "string") : [];
   }
 
   let sendNote: string | undefined;
@@ -176,6 +207,10 @@ export async function evaluateJs(
 
     if (redo.result?.value !== true) throw new Error(`用户确认了发送，但没能重做脚本里的发送动作（${first.label}），不知道发出去没有，请看网页。`);
     sendNote = `脚本里的发送动作（${first.label}）先拦下，用户确认后才发出。${extra}`;
+  }
+
+  if (storageWrites.length) {
+    throw new Error(`${sendNote ? `${sendNote}\n` : ""}The script tried to write the site's saved data (${storageWrites.join(", ")}). This is not allowed, so that write did not happen; other parts of the script may have run. Do the step with a normal action (fill, press_key, click). If the normal action has no effect after one retry, stop and tell the user which step had no effect.`);
   }
 
   if (res.exceptionDetails) {
