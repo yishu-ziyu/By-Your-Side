@@ -21,3 +21,5 @@
 | 文件、下载、翻译、读页 | [文件与截图](artifacts.md) · [下载](downloads.md) · [整页翻译](page-translation.md) · [读出页面](page-readouts.md) |
 | 语音 | [语音链路](voice-architecture.md) · [任务调度](voice-dispatch.md) · [多要求](voice-multi-request-design.md) · [语音交互与人设](voice-interaction.md) |
 | 用户看到的交互 | [人机协作约定](human-ai-contract.md) · [阅读外观](reading-appearance.md) · [输入框用时展开](evals/20261014-prompt-area-expand-on-use.md) |
+
+最新界面验收：[实际思考档位滑块](evals/20261016-thinking-slider.md)。

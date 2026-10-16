@@ -136,7 +136,12 @@ export interface ThinkingProfile {
 export function thinkingProfile(model: Model<Api>): ThinkingProfile {
   const resolved = withMeasuredCapability(model);
   const supported = getSupportedThinkingLevels(resolved);
-  const levels = supported.length ? supported : ["off" as const];
+  // 两个名字映射到同一个服务端档位时，只显示真实档名，也不做一次无效升档。
+  const distinct = supported.filter(level => {
+    const mapped = resolved.thinkingLevelMap?.[level];
+    return !(typeof mapped === 'string' && mapped !== level && supported.some(other => other === mapped));
+  });
+  const levels = distinct.length ? distinct : ["off" as const];
 
   return { levels, canDisable: levels.includes("off"), image: (resolved.input ?? []).includes("image"), start: MEASURED.get(key(model))?.start };
 }

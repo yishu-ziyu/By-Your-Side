@@ -279,8 +279,8 @@ export type ClientMessage = ConversationEnvelope & (
       generation?: number;
     }
   | { type: "set_model"; model: string }
-  /** 输入框旁的思考强度：深入用高档，快用低档（各模型按自己的档位换算），对所有会话生效。 */
-  | { type: "set_thinking"; deep: boolean }
+  /** 指定模型的手动起始档；restore 只恢复存储偏好，不重置当前自动升档。 */
+  | { type: "set_thinking"; model: string; level: ThinkingLevel | null; restore?: true }
   /** 用户点进输入框或开始打字：先把到当前模型服务的连接建好，发出去的第一句不再等建连接。 */
   | { type: "warm_up" }
   /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做（#74）。key：刚换的 key，先用上再接着做。auto：错误卡倒计时到点自己发的。 */
@@ -304,6 +304,13 @@ export interface ConversationEnvelope { conversationId?: string }
 
 // ── 服务端 → 客户端 ────────────────────────────────────────────────
 
+export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ThinkingLevel = typeof THINKING_LEVELS[number];
+export function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  return typeof value === 'string' && THINKING_LEVELS.some(level => level === value);
+}
+export interface ThinkingInfo { model: string; base: ThinkingLevel; actual: ThinkingLevel }
+
 /** 可供选择的模型（已配置凭据的 provider 下），面板按 provider 分组展示。 */
 export interface ModelOption {
   /** "provider/modelId" 形式，set_model 的取值 */
@@ -317,8 +324,8 @@ export interface ModelOption {
    * UI 默认只显示 featured，用户可展开查看全部；缺失视为 false。
    */
   featured?: boolean;
-  /** 输入框旁「快 / 深入」在这个模型上各用哪一档；不能调思考的模型没有。 */
-  thinking?: { fast: string; deep: string };
+  /** 可请求的实际档位与产品默认档；只有一档时不给调节入口。 */
+  thinking?: { levels: ThinkingLevel[]; default: ThinkingLevel };
 }
 
 /** 宿主能提供的可选功能：没有存储的功能，侧栏不给入口。 */
@@ -360,6 +367,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
+  | ({ kind: "thinking_level" } & ThinkingInfo)
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
   | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number;
       /** action=used：这一轮一起带给助手的过往任务。 */ tasks?: TaskHistoryEntry[];
@@ -910,7 +918,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
 
-    if (msg.type === "set_thinking" && typeof msg.deep !== "boolean") return null;
+    if (msg.type === "set_thinking" && (typeof msg.model !== "string" || !msg.model.includes("/") || msg.model.length > 240 || !(msg.level === null || isThinkingLevel(msg.level)) || msg.restore !== undefined && msg.restore !== true)) return null;
 
     if (msg.type === "retry_after_error" && msg.key !== undefined && (typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
 

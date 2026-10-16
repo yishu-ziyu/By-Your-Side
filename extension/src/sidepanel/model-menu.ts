@@ -1,14 +1,19 @@
-import type { ModelOption } from "../../../shared/protocol.js";
+import { isThinkingLevel, type ThinkingLevel, type ThinkingInfo, type ModelOption } from "../../../shared/protocol.js";
 import { displayName, filterModels, groupModelsByProvider, providerLabel } from "./models.js";
 
-/**
- * 输入框左下角「模型 · 快」：一个菜单里选模型、切「快 / 深入」，更多模型在同一个菜单里滑进第二层。
- * 做法跟 Claude 和 ChatGPT 发送键旁的模型菜单一致（docs/evals/20261015-model-menu.md）。
- * 选模型只发 set_model，等宿主回 model_info 才改开关上的名字；「快 / 深入」存在本机、对所有会话生效。
- */
+/** 入口显示宿主实际档位；手动偏好与自动升档分开，重连不能把偏好误当成新选择。 */
 const LEVEL: Record<string, string> = { off: "关", minimal: "最低", low: "低", medium: "中", high: "高", xhigh: "更高", max: "最高" };
 
-const KEY = "sideagent.thinkingDeep";
+const KEY = "sideagent.thinkingLevels";
+const LEGACY_KEY = "sideagent.thinkingDeep";
+
+function readEffortChoices(raw: string | null): Record<string, ThinkingLevel> {
+  try {
+    const saved: unknown = JSON.parse(raw ?? '{}');
+    return saved && typeof saved === 'object' && !Array.isArray(saved)
+      ? Object.fromEntries(Object.entries(saved).filter(([id,level]) => id.includes('/') && isThinkingLevel(level))) : {};
+  } catch { return {}; }
+}
 
 const RECENT_KEY = "sideagent.recentModels";
 
@@ -58,6 +63,7 @@ const FULL_NOTE = "装不下时，会把早先读过的网页收成一行再试�
 export interface ModelMenu {
   /** hello_ok / model_info：缺省的字段保留现值。 */
   update(model: string | undefined, models: ModelOption[] | undefined): void;
+  thinking(value: ThinkingInfo): void;
   /** 会话切换或断线：回到不知道当前模型的状态。 */
   reset(): void;
   /** 连上宿主后把选过的强度告诉它（新开的宿主不记得）。 */
@@ -66,7 +72,7 @@ export interface ModelMenu {
   usage(value: ContextUsage | null): void;
 }
 
-export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElement; sendThinking: (deep: boolean) => void; setModel: (id: string) => void }): ModelMenu {
+export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElement; sendThinking: (model: string, level: ThinkingLevel | null, restore?: true) => void; setModel: (id: string) => void }): ModelMenu {
   const chip = document.createElement("button");
   chip.id = "think-chip";
   chip.type = "button";
@@ -101,12 +107,15 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   const list = menu.querySelector<HTMLElement>(".mm-list")!;
   const search = menu.querySelector<HTMLInputElement>(".mm-search input")!;
 
-  let chosen: boolean | undefined;
-
+  let chosen: Record<string, ThinkingLevel> = {};
+  let actual: ThinkingInfo | null = null;
+  let legacy: boolean | undefined;
   try {
-    const saved = localStorage.getItem(KEY);
-    chosen = saved === null ? undefined : saved === "1";
-  } catch { /* 读不到就按没选过 */ }
+    chosen = readEffortChoices(localStorage.getItem(KEY));
+    const previous = localStorage.getItem(LEGACY_KEY);
+    if (previous !== null) legacy = previous === '1';
+  } catch { /* 存储不可用时使用宿主默认档。 */ }
+  const saveChoices = () => { try { localStorage.setItem(KEY,JSON.stringify(chosen)); } catch { /* 本轮选择仍会发给宿主。 */ } };
 
   let current: string | undefined;
   let models: ModelOption[] = [];
@@ -116,7 +125,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   const currentOption = () => models.find((m) => m.id === current);
   // 换了模型，旧读数既不是新模型的窗口、也不知道新模型怎么算，下一次回答前不显示。
   const shownUsage = () => usage && usage.model === current ? usage : null;
-  const deep = () => chosen ?? false;
+  const baseLevel = () => current ? chosen[current] ?? currentOption()?.thinking?.default : undefined;
+  const shownLevel = () => actual && actual.model === current ? actual.actual : baseLevel();
 
   let recent = readRecent();
 
@@ -156,7 +166,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
 
     if (!current) return;
     const name = option ? displayName(option) : current.slice(current.lastIndexOf("/") + 1);
-    const level = option?.thinking ? (deep() ? "深入" : "快") : "";
+    const value = shownLevel();
+    const level = option?.thinking && value ? LEVEL[value] : "";
     const shown = shownUsage();
     const used = shown ? usageText(shown) : null;
     const ring = used && used.fraction >= RING_FROM;
@@ -179,7 +190,7 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     if (!used) showPop(false);
 
     if (level) chip.querySelector(".think-level")!.textContent = level;
-    chip.classList.toggle("deep", Boolean(level) && deep());
+    chip.classList.toggle("deep", Boolean(level) && !["off","minimal","low"].includes(value ?? ""));
 
     if (changed) chip.querySelector(changed === "name" ? ".think-model" : ".think-level")?.classList.add("think-swap");
   };
@@ -196,36 +207,47 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     pop.classList.toggle("show", visible);
   };
 
-  const effortNote = (thinking: { fast: string; deep: string }) => deep() ? `${LEVEL[thinking.deep] ?? thinking.deep}档，想得更全` : `${LEVEL[thinking.fast] ?? thinking.fast}档，日常操作`;
-
   const paintMain = () => {
     const option = currentOption();
-    const first = firstLevel();
-    // 都是同一个账号时不逐行写账号，只在混着几个账号时写清每个走哪个。
-    const mixed = new Set(first.map((m) => m.provider)).size > 1;
-    const rows = models.length ? first.map((m) => { const r = row(m); if (!mixed) r.querySelector(".mm-desc")!.remove(); return r; }) : current ? [row({ id: current, name: "", modelId: current.slice(current.lastIndexOf("/") + 1), provider: current.split("/")[0] ?? "" }, "还没读到模型列表，现在不能切换")] : [];
-    const parts: HTMLElement[] = [...rows];
-
-    if (option?.thinking) {
-      const effort = document.createElement("div");
-      effort.className = "mm-effort";
-      effort.innerHTML = `<span class="mm-effort-label">思考<small></small></span>
-        <span class="mm-seg" role="radiogroup" aria-label="思考强度"><span class="mm-thumb"></span><button type="button" role="radio" data-deep="0">快</button><button type="button" role="radio" data-deep="1">深入</button></span>`;
-      effort.querySelector("small")!.textContent = effortNote(option.thinking);
-      effort.querySelector(".mm-seg")!.classList.toggle("deep", deep());
-      effort.querySelectorAll<HTMLButtonElement>("[data-deep]").forEach((b) => b.setAttribute("aria-checked", String((b.dataset.deep === "1") === deep())));
-      parts.push(document.createElement("hr"), effort);
+    const thinking = option?.thinking;
+    if (!option || !thinking || thinking.levels.length < 2) {
+      const entries: HTMLElement[] = firstLevel().map(m => row(m));
+      if (models.length > entries.length) {
+        const more = document.createElement('button');
+        more.type = 'button'; more.className = 'mm-row mm-more'; more.textContent = '更多模型';
+        entries.push(more);
+      }
+      main.replaceChildren(...entries);
+      return;
     }
-
-    if (models.length > firstLevel().length) {
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "mm-row mm-more";
-      more.innerHTML = `<span class="mm-name">更多模型</span><span class="mm-chev">${svg('<path d="m9 18 6-6-6-6"/>', 14)}</span>`;
-      parts.push(document.createElement("hr"), more);
-    }
-
-    main.replaceChildren(...parts);
+    const level = shownLevel() ?? thinking.default;
+    const index = Math.max(0, thinking.levels.indexOf(level));
+    const base = actual && actual.model === current ? actual.base : baseLevel();
+    main.innerHTML = `<div class="mm-power-head"><span class="mm-power-icon" aria-hidden="true">${svg('<path d="m13.5 2.5-9 11.5h7l-1 7.5L20 10h-7l.5-7.5Z"/>',20)}</span><div class="mm-power-center"><span class="mm-power-level"></span><button type="button" class="mm-model-link mm-more"><span></span>${svg('<path d="m9 6 6 6-6 6"/>',12)}</button></div><button type="button" class="mm-power-reset" aria-label="恢复此模型默认档" title="恢复此模型默认档">${svg('<path d="M4 9a8 8 0 1 1 0 6M4 4v5h5"/>',20)}</button></div>
+      <div class="mm-power-slider"><div class="mm-power-track"><div class="mm-power-fill"></div><div class="mm-power-ticks"></div></div><span class="mm-power-knob"></span><input type="range" min="0" step="1" aria-label="思考强度"></div><div class="mm-power-note"></div>`;
+    main.querySelector('.mm-model-link span')!.textContent = displayName(option);
+    const slider = main.querySelector<HTMLElement>('.mm-power-slider')!;
+    const input = slider.querySelector('input')!;
+    input.max = String(thinking.levels.length - 1);
+    const draw = (i: number) => {
+      const value = thinking.levels[i]!;
+      input.value = String(i);
+      input.setAttribute('aria-valuetext',`${LEVEL[value]} ${value}`);
+      main.querySelector('.mm-power-level')!.textContent = LEVEL[value] ?? value;
+      slider.style.setProperty('--effort-position',`calc(14px + (100% - 28px) * ${i/(thinking.levels.length-1)})`);
+      slider.querySelector('.mm-power-ticks')!.replaceChildren(...thinking.levels.map((_,n)=>{const tick=document.createElement('i');tick.classList.toggle('selected',n<=i);return tick;}));
+    };
+    draw(index);
+    main.querySelector('.mm-power-note')!.textContent = base && level !== base ? `从${LEVEL[base]}自动升至${LEVEL[level]} · 新任务回到${LEVEL[base]}` : '下次调用生效 · 按模型记住起始档';
+    input.addEventListener('input', () => draw(Number(input.value)));
+    input.addEventListener('change', () => setLevel(thinking.levels[Number(input.value)]!));
+    input.addEventListener('pointerdown', () => slider.classList.add('dragging'));
+    input.addEventListener('pointerup', () => slider.classList.remove('dragging'));
+    input.addEventListener('pointercancel', () => {slider.classList.remove('dragging');draw(index);});
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {event.preventDefault();event.stopPropagation();draw(index);slider.classList.remove('dragging');}
+      else if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key)) event.stopPropagation();
+    });
   };
 
   const paintAll = () => {
@@ -319,20 +341,12 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     options.setModel(id);
   };
 
-  const setDeep = (next: boolean) => {
-    if (next === deep() && chosen !== undefined) return;
-    chosen = next;
-
-    try { localStorage.setItem(KEY, next ? "1" : "0"); } catch { /* 存不下也照样生效到关闭侧栏 */ }
-    options.sendThinking(next);
-    const seg = main.querySelector(".mm-seg");
-    seg?.classList.toggle("deep", next);
-    seg?.querySelectorAll<HTMLButtonElement>("[data-deep]").forEach((b) => b.setAttribute("aria-checked", String((b.dataset.deep === "1") === next)));
-    const thinking = currentOption()?.thinking;
-    const note = main.querySelector(".mm-effort small");
-
-    if (thinking && note) note.textContent = effortNote(thinking);
-    paintChip("level");
+  const setLevel = (level: ThinkingLevel | null) => {
+    if (!current || level !== null && !currentOption()?.thinking?.levels.includes(level)) return;
+    if (level === null) delete chosen[current];
+    else chosen[current] = level;
+    saveChoices();
+    options.sendThinking(current,level);
   };
 
   chip.onclick = (event) => { open(!isOpen(), event.detail === 0); };
@@ -350,9 +364,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
 
   menu.addEventListener("click", (event) => {
     const target = event.target as Element;
-    const seg = target.closest<HTMLElement>("[data-deep]");
-
-    if (seg) return setDeep(seg.dataset.deep === "1");
+    if (target.closest(".mm-power-reset")) return setLevel(null);
+    if (target.closest(".mm-model-link")) return show("all");
 
     if (target.closest(".mm-back")) return show("main");
     const hit = target.closest<HTMLButtonElement>(".mm-row");
@@ -420,6 +433,7 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   });
 
   const repaint = () => {
+    const focusSlider = document.activeElement?.matches('.mm-power-slider input') ?? false;
     paintChip();
 
     if (!current && !models.length) return open(false);
@@ -429,13 +443,37 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     if (view === "all") paintAll();
     else paintMain();
     fit();
+    if (focusSlider) main.querySelector<HTMLInputElement>('.mm-power-slider input')?.focus({preventScroll:true});
   };
+
+  window.addEventListener('storage', event => {
+    if (event.key !== KEY) return;
+    chosen = readEffortChoices(event.newValue);
+    repaint();
+  });
 
   return {
     update(model, next) {
       const renamed = model !== undefined && model !== current && current !== undefined;
       current = model ?? current;
-      models = next ?? models;
+      models = (next ?? models).map(option => {
+        const thinking = option.thinking;
+        if (!thinking || !Array.isArray(thinking.levels) || !thinking.levels.every(isThinkingLevel) || !isThinkingLevel(thinking.default) || !thinking.levels.includes(thinking.default)) {
+          const {thinking: _invalid, ...rest} = option;
+          return rest;
+        }
+        return option;
+      });
+      if (legacy !== undefined && models.length) {
+        for (const option of models) if (option.thinking && !chosen[option.id]) {
+          const levels = option.thinking.levels;
+          const ceiling = legacy ? 'high' : 'low';
+          const order = Object.keys(LEVEL);
+          chosen[option.id] = levels.filter(level => order.indexOf(level) <= order.indexOf(ceiling)).at(-1) ?? levels[0]!;
+        }
+        legacy = undefined; saveChoices();
+        try { localStorage.removeItem(LEGACY_KEY); } catch { /* 不影响已迁移的选择。 */ }
+      }
       repaint();
 
       if (renamed) paintChip("name");
@@ -443,10 +481,16 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     reset() {
       current = undefined;
       models = [];
+      actual = null;
       repaint();
     },
     connected() {
-      if (chosen !== undefined) options.sendThinking(chosen);
+      for (const [model,level] of Object.entries(chosen)) options.sendThinking(model,level,true);
+    },
+    thinking(value) {
+      if (typeof value.model !== 'string' || !isThinkingLevel(value.base) || !isThinkingLevel(value.actual)) return;
+      actual = value;
+      repaint();
     },
     usage(value) {
       usage = value;

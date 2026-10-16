@@ -5,7 +5,7 @@
  * - 升档：宿主已记录的四种信号各让之后的调用升一档，不超过模型最高档；不为判断难度额外调用模型。
  * - 新任务回到起始档。每次实际变化写一行 effort_change{from, to, signal}。
  * 只存「比起始档高几档」，换模型（含故障切换）时按新模型的档位表重新换算。
- * 用户在输入框旁选了「快 / 深入」时，起始档改用低档 / 高档（同样按模型的档位表取不高于它的最高一档）。
+ * 用户手动选择的档位按模型保存为起始档；后续自动升档不改写这份偏好。
  */
 import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { thinkingProfile } from "../../shared/model-capabilities.js";
@@ -22,19 +22,15 @@ function startIndex(levels: readonly ModelThinkingLevel[], start: ModelThinkingL
   return atOrBelow.length ? levels.indexOf(atOrBelow.at(-1)!) : 0;
 }
 
-/** 「快 / 深入」在这个模型上各用哪一档；两者相同（不能调）时没有。 */
-export function thinkingChoice(model: Model<Api>): { fast: ModelThinkingLevel; deep: ModelThinkingLevel } | undefined {
-  const { levels } = thinkingProfile(model);
-  const fast = levels[startIndex(levels, "low")]!;
-  const deep = levels[startIndex(levels, "high")]!;
-
-  return fast === deep ? undefined : { fast, deep };
+export function thinkingChoice(model: Model<Api>): { levels: ModelThinkingLevel[]; default: ModelThinkingLevel } | undefined {
+  const { levels, start } = thinkingProfile(model);
+  return levels.length > 1 ? { levels, default: levels[startIndex(levels, start)]! } : undefined;
 }
 
 export class MainEffort {
   private raised = 0;
 
-  private preferred: "low" | "high" | undefined;
+  private readonly preferred = new Map<string, ModelThinkingLevel>();
 
   constructor(private readonly record: (type: "effort_change", data: { from: ModelThinkingLevel; to: ModelThinkingLevel; signal: EffortSignal }) => void) {}
 
@@ -42,12 +38,20 @@ export class MainEffort {
   level(model: Model<Api>): ModelThinkingLevel {
     const { levels, start } = thinkingProfile(model);
 
-    return levels[Math.min(startIndex(levels, this.preferred ?? start) + this.raised, levels.length - 1)]!;
+    return levels[Math.min(startIndex(levels, this.preferred.get(`${model.provider}/${model.id}`) ?? start) + this.raised, levels.length - 1)]!;
   }
 
-  /** 用户选的「快 / 深入」，之后的调用都按它起步。 */
-  prefer(deep: boolean): void {
-    this.preferred = deep ? "high" : "low";
+  base(model: Model<Api>): ModelThinkingLevel {
+    const { levels, start } = thinkingProfile(model);
+    return levels[startIndex(levels, this.preferred.get(`${model.provider}/${model.id}`) ?? start)]!;
+  }
+
+  /** 手动选择成为此模型的起始档；只重置正在使用该模型的自动加档。 */
+  prefer(modelId: string, level: ModelThinkingLevel | null, current?: Model<Api>, restore = false): void {
+    const unchanged = this.preferred.get(modelId) === (level ?? undefined);
+    if (level === null) this.preferred.delete(modelId);
+    else this.preferred.set(modelId, level);
+    if (current && `${current.provider}/${current.id}` === modelId && !(restore && unchanged)) this.raised = 0;
   }
 
   /** 出现升档信号：之后的调用升一档；已在最高档时不变、不记。 */
@@ -76,7 +80,7 @@ export class MainEffort {
   }
 }
 
-/** 主任务在新任务上、没有输入框旁「快 / 深入」时的档。阅读卡的深度档用它，不读这一路已经升过的档。 */
+/** 主任务在新任务上、未手动选择起始档时的档。阅读卡的深度档用它，不读这一路已经升过的档。 */
 export function restingEffort(model: Model<Api>): ModelThinkingLevel {
   return new MainEffort(() => {}).level(model);
 }

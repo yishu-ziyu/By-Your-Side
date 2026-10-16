@@ -108,7 +108,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     session,
     conversations,
     adoptClient(conn) {
-      if (current && current !== conn) { voice?.close(); current.close(); }
+      if (current && current !== conn) { voice?.close("client_replaced"); current.close(); }
 
       current = conn;
       conversations.reconnect();
@@ -116,7 +116,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     onClientGone(conn) {
       if (conn !== current) return false;
       current = null;
-      voice?.close();
+      voice?.close("client_disconnected");
       conversations.disconnect();
 
       return true;
