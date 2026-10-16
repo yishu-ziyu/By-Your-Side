@@ -281,7 +281,7 @@ try {
   check("d 回车结果带回“备注已保存”；选择结果带回「项目名」框", /备注已保存/.test(appearedPart(enterReceipt)) && /textbox "项目名"/.test(appearedPart(selectReceipt)), { enterReceipt, selectReceipt });
 
   const deadReceipt = receiptOf("click", t.dead);
-  check("e 点没有反应的按钮：照旧警告没有可归因的变化、只再试一次正常动作，不把跳动的时钟当成新内容", /Nothing on the page changed|nothing was attributable/.test(deadReceipt) && /retry the normal action once/.test(deadReceipt) && !/时钟/.test(deadReceipt), { deadReceipt });
+  check("e 点没有反应的按钮：照旧警告没有可归因的变化、确认没生效才再试一次、不重复看不到结果的提交，不把跳动的时钟当成新内容", /Nothing on the page changed|nothing was attributable/.test(deadReceipt) && /Retry the normal action once only if it clearly did not/.test(deadReceipt) && /never repeat a submit/.test(deadReceipt) && !/时钟/.test(deadReceipt), { deadReceipt });
 
   const helpReceipt = receiptOf("click", t.help);
   check("g 只给 body 换 class 显出帮助：结果说这一页一大块变了", /A large part of this page changed/.test(helpReceipt), { helpReceipt });

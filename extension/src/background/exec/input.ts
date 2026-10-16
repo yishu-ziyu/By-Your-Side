@@ -2814,12 +2814,11 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
   return Object.assign(result, confirmed ? { sendConfirmed: true as const } : {}) as typeof result & { sendConfirmed?: true };
 }
 
-/** 焦点是不是单行 <input>：多行框和可编辑区里回车只是换行，页面读数看不出来，只有单行框能说「回车没反应」。序列化进页面，必须自包含。 */
+/** 焦点是不是顶层文档里的单行文本框：多行框和可编辑区里回车只是换行，页面读数看不出来，只有单行文本框能说「回车没反应」。序列化进页面，必须自包含。 */
 function focusIsSingleLineInput(): boolean {
-  let el = document.activeElement as HTMLElement | null;
-  // 不进框架：页面变化只在顶层文档里量，框架里的单行框回车成功了也量不到，报「没反应」会让模型重复成功的动作。
-  while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
-  return el?.tagName === "INPUT";
+  // 不进框架和 Shadow DOM：页面变化只在顶层文档的普通 DOM 里量，那里的回车成功了也量不到，报「没反应」会让模型重复成功的动作。
+  const el = document.activeElement;
+  return el instanceof HTMLInputElement && ["text", "search", "email", "url", "tel", "password", "number"].includes(el.type);
 }
 
 export async function pressKey(

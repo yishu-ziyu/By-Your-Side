@@ -301,7 +301,7 @@ export function formatEffectReport(report: EffectReport | undefined, action = "c
 
   const weak = report.weak.length ? ` (${report.weak.join("; ")})` : "";
 
-  return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Observe the page, then retry the normal action once; if it still has no effect, stop and tell the user which step had no effect.`;
+  return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Observe the page and check whether it took effect where its result would show (a list, a message, another page). Retry the normal action once only if it clearly did not; never repeat a submit, send or create whose result you cannot see. If it still has no effect, stop and tell the user which step had no effect.`;
 }
 
 /**
