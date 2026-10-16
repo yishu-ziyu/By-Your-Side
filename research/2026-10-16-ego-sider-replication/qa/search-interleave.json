@@ -1,0 +1,186 @@
+{
+ "builds": {
+  "main": "clean/pmain ba3d11a8 (background sha 1a0a485ed629 = builds/mainv2)",
+  "290": "clean/p290w ead3c470"
+ },
+ "port": 8987,
+ "display": ":87",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "search_request": "POST /search/go (body q=部署); path has no send/message/comment/post/submit; button 「搜索」",
+ "original_table": {
+  "main": "12.2s/4st",
+  "290": "20.9s/8st"
+ },
+ "summary": {
+  "main": {
+   "ok": 3,
+   "n": 3,
+   "timeouts": 0,
+   "med_secs": 21.4,
+   "med_steps": 4,
+   "secs": [
+    21.4,
+    30.6,
+    15.9
+   ],
+   "steps": [
+    4,
+    3,
+    4
+   ]
+  },
+  "290": {
+   "ok": 3,
+   "n": 3,
+   "timeouts": 0,
+   "med_secs": 17.9,
+   "med_steps": 7,
+   "secs": [
+    13.8,
+    48.1,
+    17.9
+   ],
+   "steps": [
+    5,
+    13,
+    7
+   ]
+  }
+ },
+ "runs": [
+  {
+   "tag": "sil-main-search-r1",
+   "branch": "main",
+   "ok": true,
+   "secs": 21.4,
+   "steps": 4,
+   "timedOut": false,
+   "posts": [
+    "/search/go"
+   ],
+   "sawConfirm": false,
+   "blockWords": [],
+   "stepList": [
+    "搜索“部署”",
+    "填 「@2」",
+    "点 「搜索」",
+    "确认搜索结果"
+   ],
+   "stepErrors": []
+  },
+  {
+   "tag": "sil-290-search-r1",
+   "branch": "290",
+   "ok": true,
+   "secs": 13.8,
+   "steps": 5,
+   "timedOut": false,
+   "posts": [
+    "/search/go"
+   ],
+   "sawConfirm": false,
+   "blockWords": [],
+   "stepList": [
+    "站内搜索“部署”",
+    "填写",
+    "点 「搜索」",
+    "确认搜索结果",
+    "处理这一步"
+   ],
+   "stepErrors": []
+  },
+  {
+   "tag": "sil-main-search-r2",
+   "branch": "main",
+   "ok": true,
+   "secs": 30.6,
+   "steps": 3,
+   "timedOut": false,
+   "posts": [
+    "/search/go"
+   ],
+   "sawConfirm": false,
+   "blockWords": [],
+   "stepList": [
+    "填 「@3」",
+    "点 「搜索」",
+    "查看网页请求"
+   ],
+   "stepErrors": []
+  },
+  {
+   "tag": "sil-290-search-r2",
+   "branch": "290",
+   "ok": true,
+   "secs": 48.1,
+   "steps": 13,
+   "timedOut": false,
+   "posts": [
+    "/search/go"
+   ],
+   "sawConfirm": false,
+   "blockWords": [],
+   "stepList": [
+    "搜索“部署”",
+    "点 「搜索词」",
+    "填写",
+    "点 「搜索」",
+    "在页面里运行代码",
+    "查看搜索结果",
+    "在页面里运行代码",
+    "看搜索后页面是否出现结果",
+    "查看网页请求",
+    "看页面脚本如何提交搜索",
+    "抓取 · fetch 拒绝本地/私网地址…",
+    "打开标签页",
+    "关闭标签页"
+   ],
+   "stepErrors": [
+    "抓取 · fetch 拒绝本地/私网地址…"
+   ]
+  },
+  {
+   "tag": "sil-main-search-r3",
+   "branch": "main",
+   "ok": true,
+   "secs": 15.9,
+   "steps": 4,
+   "timedOut": false,
+   "posts": [
+    "/search/go"
+   ],
+   "sawConfirm": false,
+   "blockWords": [],
+   "stepList": [
+    "搜索“部署”",
+    "填 「@2」",
+    "点 「搜索」",
+    "查看搜索结果区"
+   ],
+   "stepErrors": []
+  },
+  {
+   "tag": "sil-290-search-r3",
+   "branch": "290",
+   "ok": true,
+   "secs": 17.9,
+   "steps": 7,
+   "timedOut": false,
+   "posts": [
+    "/search/go"
+   ],
+   "sawConfirm": false,
+   "blockWords": [],
+   "stepList": [
+    "搜索“部署”",
+    "填写",
+    "点 「搜索」",
+    "处理这一步",
+    "处理这一步",
+    "读取搜索页正文",
+    "处理这一步"
+   ],
+   "stepErrors": []
+  }
+ ]
+}

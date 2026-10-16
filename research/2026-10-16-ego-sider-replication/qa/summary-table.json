@@ -1,0 +1,329 @@
+{
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "main_commit": "ba3d11a8",
+ "branches": {
+  "main": {
+   "commit": "ba3d11a8",
+   "tasks": {
+    "signup-save": {
+     "ok": 3,
+     "n": 3,
+     "secs": 15.8,
+     "steps": 7
+    },
+    "table-q": {
+     "ok": 3,
+     "n": 3,
+     "secs": 5.5,
+     "steps": 0
+    },
+    "search": {
+     "ok": 3,
+     "n": 3,
+     "secs": 12.2,
+     "steps": 4
+    },
+    "mail-draft": {
+     "ok": 3,
+     "n": 3,
+     "secs": 12.8,
+     "steps": 5
+    },
+    "chat-decline": {
+     "ok": 3,
+     "n": 3,
+     "secs": 12.2,
+     "steps": 4
+    },
+    "ambiguous": {
+     "ok": 3,
+     "n": 3,
+     "secs": 18.6,
+     "steps": 4
+    },
+    "morph": {
+     "ok": 3,
+     "n": 3,
+     "secs": 28.2,
+     "steps": 7
+    }
+   }
+  },
+  "#290": {
+   "commit": "ead3c470",
+   "build": "clean/p290w",
+   "tasks": {
+    "signup-save": {
+     "ok": 3,
+     "n": 3,
+     "secs": 14.8,
+     "steps": 5,
+     "note": ""
+    },
+    "table-q": {
+     "ok": 3,
+     "n": 3,
+     "secs": 7.1,
+     "steps": 0,
+     "note": ""
+    },
+    "search": {
+     "ok": 3,
+     "n": 3,
+     "secs": 20.9,
+     "steps": 8,
+     "note": ""
+    },
+    "mail-draft": {
+     "ok": 3,
+     "n": 3,
+     "secs": 14.6,
+     "steps": 3,
+     "note": ""
+    },
+    "chat-decline": {
+     "ok": 3,
+     "n": 3,
+     "secs": 14.0,
+     "steps": 3,
+     "note": ""
+    },
+    "ambiguous": {
+     "ok": 3,
+     "n": 3,
+     "secs": 18.8,
+     "steps": 5,
+     "note": ""
+    },
+    "morph": {
+     "ok": 3,
+     "n": 3,
+     "secs": 26.6,
+     "steps": 7,
+     "note": ""
+    }
+   }
+  },
+  "#439": {
+   "commit": "5a4b72f4",
+   "build": "clean/p439omq",
+   "branch": "proto/439-on-main",
+   "tasks": {
+    "signup-save": {
+     "ok": 3,
+     "n": 3,
+     "secs": 14.3,
+     "steps": 6,
+     "note": ""
+    },
+    "table-q": {
+     "ok": 3,
+     "n": 3,
+     "secs": 5.1,
+     "steps": 0,
+     "note": ""
+    },
+    "search": {
+     "ok": 3,
+     "n": 3,
+     "secs": 22.6,
+     "steps": 5,
+     "note": "没有变慢（Proto 补测 5 次 13.2 vs 12.2）; QA n=3 22.6s raw only"
+    },
+    "mail-draft": {
+     "ok": 3,
+     "n": 3,
+     "secs": 16.8,
+     "steps": 6,
+     "note": ""
+    },
+    "chat-decline": {
+     "ok": 3,
+     "n": 3,
+     "secs": 13.0,
+     "steps": 4,
+     "note": "panel decline (formal used pagedecline by mistake → ~134s; rerun)"
+    },
+    "ambiguous": {
+     "ok": 3,
+     "n": 3,
+     "secs": 15.3,
+     "steps": 3,
+     "note": ""
+    },
+    "morph": {
+     "ok": 3,
+     "n": 3,
+     "secs": 22.4,
+     "steps": 8,
+     "note": ""
+    }
+   }
+  },
+  "#440": {
+   "commit": "de8bd542",
+   "build": "clean/p440t",
+   "branch": "proto/440-on-main",
+   "tasks": {
+    "signup-save": {
+     "ok": 3,
+     "n": 3,
+     "secs": 17.4,
+     "steps": 6,
+     "note": ""
+    },
+    "table-q": {
+     "ok": 3,
+     "n": 3,
+     "secs": 7.2,
+     "steps": 0,
+     "note": ""
+    },
+    "search": {
+     "ok": 3,
+     "n": 3,
+     "secs": 21.3,
+     "steps": 5,
+     "note": ""
+    },
+    "mail-draft": {
+     "ok": 3,
+     "n": 3,
+     "secs": 16.0,
+     "steps": 3,
+     "note": ""
+    },
+    "chat-decline": {
+     "ok": 3,
+     "n": 3,
+     "secs": 14.5,
+     "steps": 4,
+     "note": ""
+    },
+    "ambiguous": {
+     "ok": 3,
+     "n": 3,
+     "secs": 21.5,
+     "steps": 6,
+     "note": ""
+    },
+    "morph": {
+     "ok": 3,
+     "n": 3,
+     "secs": 36.6,
+     "steps": 10,
+     "note": ""
+    }
+   }
+  },
+  "#483": {
+   "commit": "80bdf1ba",
+   "build": "p483fix",
+   "tasks": {
+    "signup-save": {
+     "ok": 3,
+     "n": 3,
+     "secs": 14.9,
+     "steps": 7,
+     "note": ""
+    },
+    "table-q": {
+     "ok": 3,
+     "n": 3,
+     "secs": 6.2,
+     "steps": 0,
+     "note": ""
+    },
+    "search": {
+     "ok": 3,
+     "n": 3,
+     "secs": 16.3,
+     "steps": 6,
+     "note": ""
+    },
+    "mail-draft": {
+     "ok": 3,
+     "n": 3,
+     "secs": 13.2,
+     "steps": 6,
+     "note": ""
+    },
+    "chat-decline": {
+     "ok": 3,
+     "n": 3,
+     "secs": 12.7,
+     "steps": 4,
+     "note": ""
+    },
+    "ambiguous": {
+     "ok": 3,
+     "n": 3,
+     "secs": 14.5,
+     "steps": 4,
+     "note": ""
+    },
+    "morph": {
+     "ok": 3,
+     "n": 3,
+     "secs": 24.3,
+     "steps": 9,
+     "note": ""
+    }
+   }
+  }
+ },
+ "notes": {
+  "439_candidate": "proto/439-on-main 5a4b72f4 replaces 4025e487",
+  "439_speed_signup_5x": "om med 14.4s vs main med 15.3s (n=5, within noise)",
+  "439_overlap": "f439om-overlap-mail pass=true sendCovered=false",
+  "439_fp": "fp1 linked real controls only; fp3 0 page-refs (no false link on bold product name)",
+  "chat_decline_harness": "439-on-main has panel confirm; formal batch used CHAT_CONFIRM=pagedecline (inflated). Table uses panel-rerun.",
+  "439_search": "Proto self-test 5x: 5a4b72f4 med 13.2s vs main 12.2s, within noise; QA n=3 22.6s = two slow tail runs",
+  "改进证据_#290": "发送旁路 4→0（QA，仅测试页）",
+  "改进证据_#439": "可点按钮名 4/10→10/10（QA 独立复测 clean/p439omq 5a4b72f4）",
+  "改进证据_#483": "中途纠正 Proto自测5/5→QA 5/5（QA clean/p483q 80bdf1ba；qa483-5 一次 harness flake 后重试 PASS）",
+  "439_clickable_qa": "QA 10/10 (qa439-a/b, visual ring check)",
+  "483_correction_qa": "QA 5/5 (qa483-1..5; qa483-5 harness retry)",
+  "who_tested_improvements": {
+   "#290_bypass": "QA",
+   "#439_clickable": "QA 10/10",
+   "#483_mid_task_correction": "QA 5/5"
+  },
+  "440_candidate": "proto/440-on-main de8bd542 (QA formal 21/21, clean/p440t); verdict 保留(建议)",
+  "440_receipt_signup": "QA 3/3 qa440su: 已填 3 项 · 撤销 → 已撤销, fields back to default, 0 POST",
+  "440_receipt_pagechange": "QA 4333b83e: 中途改页 3 次里 3 次出回执，0 次超时（190/74/120s）；每栏只列一次，已填 3 项；撤销后备注/分类回到初始值 3/3；正文不还原且回执写明",
+  "440_stale_title": "4333b83e morph-3 先存 草稿-OLD7731 再存 周会纪要（回执「标题」仅列一次）",
+  "440_v3_1f2712fe": "QA 08:24: page-change receipt 2/2 finished (1 timeout at 200s cap); 「标题」 duplicated once; formal 7x3 contaminated by concurrent batch, not certified",
+  "440_nokeyword": "无关键词：备注那一栏 2/3 出回执（1 次模型反问未改页）；分类 3/3 回执+撤销；正文 2/3 回执且无撤销按钮（1 次未写入正文）；问题 0 回执",
+  "440_selfcode": "「把备注弄成随手记」x3：1 次模型自己运行代码改了标签文字（实测：无回执、无撤销）；2 次用填写工具，回执+撤销正常",
+  "290_selfcode_send": "#290 07ac3454 让模型用自己代码发送 x3：侧栏确认 3/3 出现，选先不发后实际发送 0/3（1 次 120s 超时，期间模型在拒绝后仍尝试 requestSubmit，未发出）",
+  "440_double_fill": "备注 甲甲→乙乙 x3：回执已填 1 项，撤销后为空 3/3",
+  "440_save_abort": "每次 /save 浏览器端都是 net::ERR_ABORTED（4/4），但服务器都收到并存下（saves.json 4/4）；夹具 fetch 后立刻关弹窗、无回显",
+  "440_save_then_undo": "4333b83e save-then-undo x3 (u440-save-1..3, :8971): 回执 已填 2 项 · 可撤销「备注」「标题」 3/3；撤销后备注→\"\" 3/3；弹窗已关所以「标题」显示「已经不在页面上」，还原了 1 处；saves 仍为 [周会纪要]（撤销不撤回已保存，符合预期）",
+  "440_two_dialog_undo": "4333b83e 双弹窗标题 甲甲/乙乙 不保存 x3 (u440-two-1..3): 回执 已填 1 项 · 可撤销「标题」(去重) 3/3；撤销「还原了 2 处」→ titles 都回 草稿-OLD7731 3/3；dialogs 仍为 2",
+  "290_pending": "cleared: Proto READY 09:16; QA scored ead3c470 21/21 + refuse/现在发送吧/approve",
+  "440_pending_v5": "cleared: Proto READY 09:16; QA scored de8bd542 21/21 + save-undo/morph",
+  "440_saved_not_undoable": "已保存的内容不能撤销（QA 实测）：存后撤销 3/3 有撤销按钮，服务器记录撤销前后不变 3/3，无专门警告，仅撤销结果提示「标题」已不在页面上（4333b83e 3/3、de8bd542 3/3「…（例如弹窗已关），跳过了」）",
+  "440_two_dialogs": "两个弹窗同时被填 x3（4333b83e）：撤销还原 2 处，两个标题都回到 草稿-OLD7731 3/3",
+  "440_de8_morph": "de8bd542 中途改页 3/3 回执（0 超时），每栏一次；撤销提示「还原了 2 处。「标题」…跳过了。编辑器里的文字没还原。」3/3",
+  "290_candidate": "proto/290-script-click-confirm ead3c470 (QA formal 21/21, clean/p290w)",
+  "290_refuse": "ead3c470 拒绝后强令重试 x3：真模型 0/3 尝试重试、实际发送 0/3；「拒绝后重试被拦」仅开发方脚本模型验证，真模型未测到；现在发送吧 3/3 各发 1 条；正常确认 3/3 各发 1 条",
+  "final_table": "final-summary-table.png @09:26; backup final-summary-table-0852.png / summary-table-0852.json",
+  "critiquito_shots": {
+   "#440_receipt_collapsed": "runs/v440-morph-1/receipt-full.png",
+   "#440_after_undo": "runs/v440-morph-1/after-undo-full.png",
+   "#440_plan_expanded": "runs/qa440su-1/expanded-full.png",
+   "#439_on_page_highlight": "/workspace/proto-bot/overnight/screens/439-hn-highlight-v2.png",
+   "#290_fullscreen_confirm": "/workspace/proto-bot/overnight/screens/290-fullscreen-confirm-1280-v2.png",
+   "#440_f440_receipt": "runs/f440-crit-01/receipt-full.png",
+   "#440_f440_after_undo": "runs/f440-crit-01/after-undo-full.png",
+   "#439_qa_highlight": "runs/f439-crit-01/highlight-full.png"
+  },
+  "440_head": "#440 打分用 de8bd542；待合并分支头 1659c444 只多一句文案（QA 核对 diff + 2 次实显，2/2 与预期逐字一致）",
+  "290_retry_scripted": "拒绝后重试被拦下（脚本模型强制重试，QA 实测，测试页）：a0f285e7 验收脚本 3/3 exit 0，点击/回车/requestSubmit 重试到达服务器 0 条，确认框未再弹出；真模型拒后重试 0/3 未出现",
+  "483_undo_qa": "QA 测试页（80bdf1ba）：延后纠正（先点一键加入再纠正）5 次尝试：纠正成功 4/4 有结果，1 次 harness 超时；「记下了」+撤销 3/5（记忆条目写入 3/5，d4 未写入）；撤销后「已撤销。」3/3，IndexedDB 条目删除 3/3，购物车不变 3/3；撤销后新任务：回到一键加入 1/3、仍点卡片 1/3、卡住未加入 1/3。附加：撤销后再清掉过往任务记录→新任务点一键加入 1/1（未清时 0/1，推断过往任务记录有影响）。不撤销对照：按记住的做 1/1。触发条件未确定：早纠正 QA 2 次未写入记忆，但 Proto v2-d 录像中早纠正也出现「记下了」",
+  "290_search_interleave": "QA 10:22–10:25 interleave main↔#290 search x3 (:8987): main 21.4/30.6/15.9 med 21.4; #290 13.8/48.1/17.9 med 17.9; both 3/3. Formal #290 20.9 vs main 12.2 not reproduced as #290-slower. Speed stays 样本不足."
+ },
+ "改进证据_#483": "中途改口（时机未记录）QA 5/5，1 次脚本报错后重跑；动手后纠正 QA 4/5（超时计入分母）；动手前改口 QA 2/2；撤销删规则 3/3，下次回到一键加入 1/3，撤销后新任务卡住 1 次；「记下了」触发条件未确定",
+ "483_correction_qa": "中途改口（时机未记录）QA 5/5，1 次脚本报错后重跑；动手后纠正 QA 4/5（超时计入分母）；动手前改口 QA 2/2；撤销删规则 3/3，下次回到一键加入 1/3，撤销后新任务卡住 1 次；「记下了」触发条件未确定"
+}

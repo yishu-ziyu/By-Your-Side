@@ -1,0 +1,183 @@
+{
+ "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "scored_at": "2026-10-16 12:3x CST",
+ "counts": {
+  "做错了": 2,
+  "缺功能": 6,
+  "通过": 12,
+  "未判": 1
+ },
+ "expected_total": 21,
+ "not_run": [],
+ "rows": [
+  {
+   "example": "ego-passenger",
+   "task": "乘客/票价核算（已由 QA 先前打分，3 次运行）",
+   "verdict": "做错了",
+   "evidence": "QA 已评 2/3 通过；run1 合计错：¥4,920，应为 ¥5,560",
+   "secs": null,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-chess",
+   "task": "在本地棋盘执白和机器人下到终局",
+   "verdict": "做错了",
+   "evidence": "超时(420s,79 步)。服务器记录只走了 7 步白棋：e4 Nf3 Bb5 a4 Bd3 h4 c4，未将死、无结局记录；中间大量时间在页面里注入自写走法引擎并反复报语法错误。点击走子能力是有的（7 步都成功），是策略错（Bc4+Qh5/Qxf7# 就能赢）",
+   "secs": 420.2,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-devqa",
+   "task": "找本地开发页的布局问题，改仓库 App.css 并刷新验证",
+   "verdict": "缺功能",
+   "evidence": "需改本地仓库文件（BYS 无此能力）。另：只读了一步页面/CSS 就停，没给最终回答，也没指出 margin-left:-60px 的问题（无部分分）",
+   "secs": 58.8,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-e2e",
+   "task": "按 5 步测待办应用，逐步报通过/失败并附证据",
+   "verdict": "通过",
+   "evidence": "答案：1-4 通过、第 5 步失败，证据为删「写周报」后剩下的是「写周报」，并定位到 splice(0,1)。终态页只剩「买牛奶」已勾选。（中途加过复现数据甲/乙，已清理）",
+   "secs": 80.8,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-generic",
+   "task": "选续航≥10h 中最轻的笔记本，填采购单不提交",
+   "verdict": "通过",
+   "evidence": "g_item=FeatherX 13, g_price=9299, g_qty=2, g_reason=出差用, g_appr 为空；未提交（acts 为空）",
+   "secs": 24.8,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-job-apply",
+   "task": "找上海全职前端岗，用本地简历 PDF 填完申请表停在提交前",
+   "verdict": "缺功能",
+   "evidence": "超时(240s)。选对了 Nimbus 招聘页，但上传报「找不到文件 resume.pdf」，所有字段为空：缺读取本地 PDF/上传文件能力",
+   "secs": 240.3,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-linkedin-jobs",
+   "task": "两页职位里筛旧金山 AI 工程师，去高级岗和 30 天以上旧帖，列 10 家+申请链接",
+   "verdict": "通过",
+   "evidence": "列出的 10 家与标准完全一致，链接为 /li/apply/<company>；7 个干扰项都排除了（对 Juniper AI II 有一句附注）",
+   "secs": 16.2,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-mortgage",
+   "task": "筛杭州 300 万内公寓，打开第一套，首付 90 万重算月供",
+   "verdict": "通过",
+   "evidence": "页面 /home/h2：文三路 88 号 3-1201，m_down=900000，月供 ¥8,756；答案的地址/总价/月供均正确",
+   "secs": 31.5,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-social",
+   "task": "用本地笔记回复并引用转发一条推，每小时监控提及，发前先问",
+   "verdict": "缺功能",
+   "evidence": "读不到 ~/notes/evals.md（fetch 只支持 http），也没有定时能力，答案如实说明；没有发帖（acts 为空），输入框为空",
+   "secs": 34.7,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "ego-x-leaderboard",
+   "task": "账号近 7 天主帖按浏览量排榜并算平均值",
+   "verdict": "通过",
+   "evidence": "5 条主帖排序正确，平均浏览量 18,740、平均点赞 400；置顶/转帖/回复/旧帖都没进榜",
+   "secs": 10.8,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-code",
+   "task": "去掉页面上的 Shorts，并记住每次打开该网站自动去掉",
+   "verdict": "缺功能",
+   "evidence": "当前页 Shorts 区块已删除，'Shorts vs long videos' 保留；但没有按网站持久改写页面（答案自己也说刷新后会回来，只是存了一条助手记忆）",
+   "secs": 23.8,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-contacts",
+   "task": "收集三家公司联系页的业务邮箱/电话/地址，导出表格文件",
+   "verdict": "缺功能",
+   "evidence": "需要导出文件（BYS 无此能力）。另：三个页面都打开了，但没给最终回答（「助手没给出最后的回答就停了」），数据也没输出",
+   "secs": 9.3,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-events",
+   "task": "整理三个活动网站的日期、地点、普通票价成表",
+   "verdict": "通过",
+   "evidence": "三行数据全部正确（¥1,280 / ¥699 / ¥599，日期场馆正确），VIP/早鸟/学生价和往届日期都没混进来",
+   "secs": 11.5,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-files",
+   "task": "把调研页做成 PPT 和 PDF，并每天监控价格",
+   "verdict": "未判",
+   "evidence": "最新一次运行(12:28)只有 video.mp4，没有 result.json/state.json——评分时仍在跑或中断",
+   "secs": null,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-forms",
+   "task": "后台开关/联系人填写并核对订单合计，不保存",
+   "verdict": "通过",
+   "evidence": "t_mail=false, t_slack=true, t_sms=true, c_name=王敏, c_email=wangmin@example.com, c_backup 为空，未保存；答案指出 ¥1,320 错、应为 ¥1,230",
+   "secs": 38.7,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-hiring",
+   "task": "统计三家招聘页按部门的开放岗位数并写人才策略简报",
+   "verdict": "通过",
+   "evidence": "Alpha 6(工程5/销售1)、Beta 6(工程2/销售4)、Gamma 2(设计1/工程1)，排除了已关闭的 Head of Sales；简报写了 Alpha 偏工程、Beta 偏销售。小错：一处把关闭岗位说成 Beta 的（其实是 Gamma）",
+   "secs": 22.4,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-price",
+   "task": "前 5 个非广告商品的价格/评分/评价数做成 CSV 文件",
+   "verdict": "缺功能",
+   "evidence": "需要导出 CSV 文件（BYS 无此能力）。另：0 步，答案只有一句「我直接生成 CSV」，没有任何数据",
+   "secs": 5.6,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-reddit",
+   "task": "三个版块各取点赞前三（不含置顶）做选题表",
+   "verdict": "通过",
+   "evidence": "9 条帖子和点赞数与标准完全一致，置顶帖已排除",
+   "secs": 16.6,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-reviews",
+   "task": "两页里 1-2 星差评按问题聚类计数",
+   "verdict": "通过",
+   "evidence": "共 8 条：电池 3、物流损坏 2、App/蓝牙 2、外观 1，与标准一致；读了第 2 页",
+   "secs": 16.7,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-seo",
+   "task": "对比两个竞品的关键词/Top 页面/外链，找内容缺口",
+   "verdict": "通过",
+   "evidence": "外链 1,840/920/310 正确；缺口恰为 ai agent pricing 和 browser automation tutorial。小错：说 llm evals 只被一个竞品覆盖（实际三家都有排名），没把它算成缺口，不影响判定",
+   "secs": 15.7,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  },
+  {
+   "example": "sider-yt-sheets",
+   "task": "前 5 个正常视频的标题/频道/播放量/发布时间写进表格",
+   "verdict": "通过",
+   "evidence": "表格 A1:D6 = 表头 + 5 条正确视频（字段齐全），广告和 Shorts 没写进去",
+   "secs": 50.2,
+   "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+  }
+ ]
+}
