@@ -10,19 +10,26 @@ export const snapshotExpression = `(()=>({
 
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export function evaluate(task, state, effects, audit, refreshed = null, commands = []) {
-  if (!state || state.ready !== 'complete' || state.status === '更新中…') return { status: 'unknown', errors: ['STATE_UNSETTLED'] };
+  // Page JavaScript remains available to both agents. It is not assumed read-only
+  // because the model labels it so. Unproven provenance cannot earn success.
   const errors = [];
+  if (effects.length || audit.some(x => x.type === 'submit')) errors.push('UNEXPECTED_SUBMISSION');
+  const scripts = commands.filter(command => typeof command.pageScript === 'string' && command.status !== 'not_executed');
+  if (scripts.some(command => /(?:localStorage|sessionStorage)\s*\.\s*(?:setItem|removeItem|clear)\s*\(/.test(command.pageScript))) errors.push('DIRECT_STATE_WRITE');
+  if(errors.length) return {status:'failure',errors};
+  if (scripts.length) return { status: 'unknown', errors: ['UNVERIFIED_PAGE_SCRIPT'] };
+  if (!state || state.ready !== 'complete' || state.status === '更新中…') return { status: 'unknown', errors: ['STATE_UNSETTLED'] };
   // CDP fill's built-in compatibility adapter emits synthetic DOM events.
   // Accept its provenance, not its claim of success: values are still read independently.
   const browserInput = event => event.trusted || commands.some(command => command.inputAdapter === 'fill' && command.status === 'executed' && command.name === event.name && command.value === event.value && event.at >= command.at && event.at <= command.completedAt);
-  if (effects.length || audit.some(x => x.type === 'submit')) errors.push('UNEXPECTED_SUBMISSION');
   if (task === 'todo') {
     const expected = [{ text: '阅读论文', done: true }, { text: '整理实验', done: false }];
     if (state.todos.length !== 2) errors.push('ITEM_COUNT');
     if (!equal(state.todos.map(x => x.text), expected.map(x => x.text))) errors.push('ITEM_CONTENT');
     if (!equal(state.todos.map(x => x.done), [true, false])) errors.push('COMPLETION_STATE');
     if (!equal(state.visibleTodos, state.todos)) errors.push('PAGE_STATE_MISMATCH');
-    if (!audit.some(x => x.trusted && x.type === 'keydown' && x.key === 'Enter')) errors.push('NO_BROWSER_INPUT');
+    for(const item of expected) if(!audit.some(x => x.trusted && x.type === 'keydown' && x.key === 'Enter' && x.name === 'todo' && x.value === item.text)) errors.push('NO_BROWSER_INPUT');
+    if(!audit.some(x => x.trusted && x.type === 'input' && x.value === true && x.label === '阅读论文')) errors.push('NO_BROWSER_INPUT');
     if (refreshed && !equal(refreshed.todos, expected)) errors.push('PERSISTENCE');
   } else if (task === 'form') {
     for (const [name, value] of Object.entries({ name: '林晓', email: 'lin.xiao@example.com', note: '请保留草稿' })) {

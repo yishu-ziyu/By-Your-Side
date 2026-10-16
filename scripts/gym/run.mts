@@ -77,7 +77,7 @@ async function run(task: string, seed: number, group: string) {
     await rp.screenshot(work,join(dir,'before.png'));
     if(!process.argv.includes('--no-video')) stopVideo = await recordScreen(rp.cdp,work,join(dir,'execution.mp4'));
     started = Date.now(); row.startedAt = new Date(started).toISOString();
-    budget = await installBudget(rp,started+seconds*1000,commands,fault);
+    budget = await installBudget(rp,started+seconds*1000,commands,fixture.origin,fault);
     const say = async (text: string) => { await rp!.click(panel,'#input'); await rp!.typeText(panel,text); await rp!.pressEnter(panel); };
     const request=requestFor(task,fault);
     row.prompt=request.text;row.automaticCorrection=request.automaticCorrection;
@@ -98,7 +98,7 @@ async function run(task: string, seed: number, group: string) {
       if (!quietSince || Date.now()-quietSince < 22_000) continue;
       const verdict = evaluate(task,current,fixture.effects,audit,null,(await budget.read()).log);
       row.checkpoints ??= []; row.checkpoints.push({at:Date.now(),verdict,state:current});
-      if (group==='A' || verdict.status==='success' || row.corrections.length>=2 || verdict.errors.includes('UNEXPECTED_SUBMISSION')) break;
+      if (group==='A' || verdict.status==='success' || row.corrections.length>=2 || verdict.errors.some((error:string)=>['UNEXPECTED_SUBMISSION','DIRECT_STATE_WRITE','UNVERIFIED_PAGE_SCRIPT'].includes(error))) break;
       const waiting = !request.automaticCorrection || trace.findLast(e=>e.type==='goal_check')?.data?.status === 'needs_user' || await rp.evaluate(panel, `!!document.querySelector('.send-confirm,#takeover-btn[data-mode="handback"]')`);
       if (waiting) { row.stopped='needs_user'; break; }
       const text = feedback(verdict);
