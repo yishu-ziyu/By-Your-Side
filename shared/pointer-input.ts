@@ -9,11 +9,6 @@ export type ElementPosition = { x: number; y: number };
 
 export type DomRectLike = { x: number; y: number; width: number; height: number };
 
-/** CDP Input.dispatchMouseEvent 的 button 字段。 */
-export function cdpMouseButton(button: MouseButton): MouseButton {
-  return button;
-}
-
 /** 按下某键时 CDP `buttons` 位掩码：left=1, right=2, middle=4。 */
 export function pressedButtonsMask(button: MouseButton): number {
   if (button === "left") return 1;
