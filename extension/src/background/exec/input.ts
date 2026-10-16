@@ -2817,8 +2817,8 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
 /** 焦点是不是单行 <input>：多行框和可编辑区里回车只是换行，页面读数看不出来，只有单行框能说「回车没反应」。序列化进页面，必须自包含。 */
 function focusIsSingleLineInput(): boolean {
   let el = document.activeElement as HTMLElement | null;
-  // 焦点在同源框架里时，顶层只看得到框架元素本身：跟进框架和 shadow root 找到真正的焦点。跨源框架读不到 contentDocument，按不知道处理。
-  for (let next: Element | null | undefined; el && (next = el.shadowRoot?.activeElement ?? (el as HTMLIFrameElement).contentDocument?.activeElement);) el = next as HTMLElement;
+  // 不进框架：页面变化只在顶层文档里量，框架里的单行框回车成功了也量不到，报「没反应」会让模型重复成功的动作。
+  while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
   return el?.tagName === "INPUT";
 }
 
