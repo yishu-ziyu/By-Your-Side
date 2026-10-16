@@ -18,7 +18,7 @@ export class VoiceRelay {
   attach(port: chrome.runtime.Port): void {
     port.onDisconnect.addListener(() => {
       if (this.lease?.port === port) {
-        this.stop();
+        this.stop("panel_disconnected");
       }
     });
     port.onMessage.addListener((raw: any) => {
@@ -53,7 +53,7 @@ export class VoiceRelay {
           return;
         }
 
-        this.stop();
+        this.stop("new_voice");
         this.observation.clear();
         this.lease = { port, voiceId: message.voiceId, conversationId: message.conversationId, turn: 0, diagnostic: message.command.diagnostic === true };
       }
@@ -180,7 +180,7 @@ export class VoiceRelay {
   /** Only the panel that holds the voice lease can end it by switching conversation. */
   selectionChanged(port: chrome.runtime.Port, id: string): void {
     if (this.lease?.port === port && this.lease.conversationId !== id) {
-      this.stop();
+      this.stop("selection_changed");
     }
   }
   disconnected(): void {
@@ -193,12 +193,13 @@ export class VoiceRelay {
     this.lease = null;
     this.observation.clear();
   }
-  stop(): void {
+  stop(reason = "stop"): void {
     if (!this.lease) {
       return;
     }
 
     const { voiceId, conversationId } = this.lease;
+    console.info("[voice] relay_stop", JSON.stringify({ voiceId, reason }));
     this.send({ type: "voice", voiceId, conversationId, command: { kind: "stop" } });
     this.post({ type: "voice", voiceId, conversationId, event: { kind: "state", state: "closed" } });
     this.lease = null;

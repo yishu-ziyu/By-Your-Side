@@ -1,188 +1,79 @@
 /**
- * 输入框左下角「模型 · 快/深入」一个菜单（docs/evals/20261015-model-menu.md）：看得到、点得开、选了真的换档、换模型两步到位、关掉侧栏再开还记得。真实模型，只装扩展，无头，全程录侧栏。
- *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/model-menu.mts --headless [--model=provider/id]
- * 失败方式：开关不出现或没写模型名；菜单里没有模型列表和思考开关；切思考时菜单关了；「更多模型」没在同一个菜单里打开、搜不到；Esc 不是先返回再关上；选别的模型后开关没换名字；选「深入」后助手仍用低档；选「快」后仍用高档；重开侧栏后忘了选过什么。
+ * 真实扩展 + ChatGPT 登录模型：离散档位滑块、实际自动升档、按模型保存、重开与双窗口。
+ * npx tsx scripts/acceptance/real-path/model-menu.mts --headless
+ * 不用伪造模型事件判通过：实际请求中的 effort 与界面显示相互核对。
  */
-import assert from "node:assert/strict";
-import { createServer } from "node:http";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { REPO, exportDiagnosticsViaSettings, launchRealPath, recordScreen, requireHeadless, siteAddress, sleep, until, type JsonRecord } from "./harness.mts";
-import { DEFAULT_TEST_MODEL, configureViaSettings, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
-
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {REPO,launchRealPath,requireHeadless,until,sleep,siteAddress,exportDiagnosticsViaSettings} from './harness.mts';
+import {loadModelPlan,modelStorageItems,DEFAULT_TEST_MODEL} from './inproc-config.mts';
 requireHeadless();
-
-const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? DEFAULT_TEST_MODEL;
-
-const plan = await loadModelPlan(modelArg);
-
-const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-model-menu`);
-
-await mkdir(artifacts, { recursive: true });
-
-const site = createServer((_req, res) => {
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><meta charset="utf-8"><title>团队周报</title><h1>团队周报</h1><p>本周完成 12 项，延期 2 项。负责人：李雷。</p>`);
-});
-
-await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
-
-const rp = await launchRealPath();
-
-const evidence: JsonRecord = { model: modelArg };
-
-let error: string | null = null;
-
-let panel = "";
-
-let stopVideo: (() => Promise<string | null>) | null = null;
-
-const idle = `document.querySelector("#send-btn")?.disabled === false && !document.querySelector("#status-pill")?.classList.contains("running") && !document.querySelector(".msg.assistant.streaming,.msg.assistant[data-revealing]")`;
-
-const chipText = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
-
-const ask = async (text: string) => {
-  await rp.click(panel, "#input");
-  await rp.typeText(panel, text);
-  await rp.pressEnter(panel);
-  await sleep(1500);
-  await until(async () => (await rp.evaluate(panel, idle)) || undefined, 180_000, text, 500);
-};
-
-const pick = async (label: "快" | "深入") => {
-  await rp.click(panel, "#input");
-  await rp.click(panel, "#think-chip");
-  await sleep(350);
-  await rp.screenshot(panel, join(artifacts, `menu-${label}.png`));
-  await rp.click(panel, `#think-menu [data-deep="${label === "深入" ? 1 : 0}"]`);
-  await sleep(300);
-  evidence[`menuOpenAfter${label === "深入" ? "Deep" : "Fast"}`] = await rp.evaluate(panel, `document.querySelector("#think-menu").classList.contains("open")`);
-  await rp.click(panel, "#think-chip");
-  await sleep(300);
-};
-
-const openPanel = async () => {
-  panel = await rp.attach(await rp.openSidePanel());
-  await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
-  await until(async () => (await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`)) || undefined, 60_000, "侧栏就绪");
-};
-
-try {
-  const base = `http://127.0.0.1:${siteAddress(site).port}/`;
-  // SAFETY: CDP Target.createTarget 的返回值带字符串 targetId。
-  await rp.cdp.send("Target.createTarget", { url: base });
-  await openPanel();
-  stopVideo = await recordScreen(rp.cdp, panel, join(artifacts, "panel.mp4")).catch(() => null);
-
-  if (plan.credential.type === "api_key") await configureViaSettings(rp, panel, plan);
-  else await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
-
-  await rp.click(panel, "#input");
-  await until(async () => (await chipText()) || undefined, 60_000, "输入框旁出现模型与思考强度");
-  evidence.chipStart = await chipText();
-  await rp.screenshot(panel, join(artifacts, "chip.png"));
-
-  const menuState = `(() => { const m = document.querySelector("#think-menu"); const r = m.getBoundingClientRect(); const c = document.querySelector("#think-chip").getBoundingClientRect(); const level = m.classList.contains("mm-in-all") ? ".mm-all" : ".mm-main";
-    return { open: m.classList.contains("open"), level: level === ".mm-all" ? "all" : "main", aboveChip: r.bottom <= c.top && c.top - r.bottom < 80, rows: [...m.querySelectorAll(level + " .mm-row[data-model]")].map(el => ({ id: el.dataset.model, name: el.querySelector(".mm-name").textContent, checked: el.getAttribute("aria-checked") === "true" })),
-      effort: !!m.querySelector(".mm-main .mm-seg"), more: !!m.querySelector(".mm-main .mm-more"), barShown: getComputedStyle(document.querySelector("#composer-bar-inner")).visibility === "visible",
-      focus: m.contains(document.activeElement) ? (document.activeElement.matches(".mm-search input") ? "search" : "menu") : document.activeElement?.id ?? "" }; })()`;
-  type MenuState = { open: boolean; level: string; aboveChip: boolean; rows: { id: string; name: string; checked: boolean }[]; effort: boolean; more: boolean; barShown: boolean; focus: string };
-  const read = async () => await rp.evaluate(panel, menuState) as MenuState; // SAFETY: menuState 返回上面这个形状。
-  const escape = async () => {
-    for (const type of ["keyDown", "keyUp"] as const) await rp.cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, panel);
-    await sleep(350);
-  };
-
-  await rp.click(panel, "#think-chip");
-  await sleep(450);
-  const first = await read();
-  evidence.firstLevel = first;
-  await rp.screenshot(panel, join(artifacts, "menu.png"));
-
-  if (first.more) {
-    await rp.click(panel, "#think-menu .mm-more");
-    await sleep(450);
-    await rp.typeText(panel, "sol");
-    await sleep(400);
-    const all = await read();
-    await rp.screenshot(panel, join(artifacts, "more.png"));
-    await escape();
-    const back = await read();
-    await escape();
-    const closed = await read();
-    evidence.moreModels = { level: all.level, focus: all.focus, rows: all.rows.map((row) => row.name), allMatch: all.rows.length > 0 && all.rows.every((row) => /sol/i.test(`${row.id} ${row.name}`)), escBack: back.open && back.level === "main", escClose: !closed.open && closed.focus === "think-chip" };
+const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().replace(/[:.]/g,'-')}-model-menu`);
+await mkdir(out,{recursive:true});
+const plan=await loadModelPlan(DEFAULT_TEST_MODEL);
+const site=createServer((_q,r)=>r.writeHead(200,{'content-type':'text/html;charset=utf-8'}).end('<!doctype html><title>团队周报</title><h1>团队周报</h1><p>完成12项，延期2项。负责人：李雷。</p>'));
+await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));
+const rp=await launchRealPath();let panel='',panelTarget='',error:string|null=null;const evidence:Record<string,unknown>={};
+const chip=()=>rp.evaluate(panel,'document.querySelector("#think-chip")?.innerText') as Promise<string>;
+const menuOpen=()=>rp.evaluate(panel,'document.querySelector("#think-menu")?.classList.contains("open")') as Promise<boolean>;
+const key=async(k:string)=>{for(const type of ['keyDown','keyUp'])await rp.cdp.send('Input.dispatchKeyEvent',{type,key:k,code:k},panel);};
+const openMenu=async()=>{if(!await menuOpen())await rp.click(panel,'#think-chip');await until(async()=>await rp.evaluate(panel,'!!document.querySelector(".mm-power-slider input")')||undefined,5000,'滑块出现');await sleep(350);};
+const pick=async(_index:number,label:string)=>{
+  await openMenu();await rp.click(panel,'.mm-power-slider input');await key('Home');
+  for(let i=0;i<8;i++){
+    const value=String(await rp.evaluate(panel,'document.querySelector(".mm-power-slider input")?.getAttribute("aria-valuetext")'));
+    if(value.startsWith(label+' '))break;
+    await key('ArrowRight');
+    await until(async()=>String(await rp.evaluate(panel,'document.querySelector(".mm-power-slider input")?.getAttribute("aria-valuetext")'))!==value||undefined,5000,'逐档切换');
   }
-
-  // 换一个模型再换回来：两步到位，开关跟着宿主的确认换名字。
-  const original = first.rows.find((row) => row.checked);
-  const other = first.rows.find((row) => !row.checked);
-
-  if (original && other) {
-    await rp.click(panel, "#think-chip");
-    await sleep(350);
-    await rp.click(panel, `#think-menu .mm-main .mm-row[data-model="${other.id}"]`);
-    evidence.switched = await until(async () => { const text = await chipText(); return text.startsWith(other.name) ? text : undefined; }, 15_000, "开关换成新模型名");
-    await rp.click(panel, "#think-chip");
-    await sleep(350);
-    await rp.click(panel, `#think-menu .mm-main .mm-row[data-model="${original.id}"]`);
-    evidence.switchedBack = await until(async () => { const text = await chipText(); return text.startsWith(original.name) ? text : undefined; }, 15_000, "开关换回原模型名");
-  }
-
-  await pick("深入");
-  evidence.chipDeep = await chipText();
-  await ask("这页写了什么？一句话回答。");
-
-  await pick("快");
-  evidence.chipFast = await chipText();
-  await ask("负责人是谁？一句话回答。");
-
-  // 关掉侧栏再开：还记得选过「快」以外的选择。先选回「深入」再重开。
-  await pick("深入");
-  await rp.cdp.send("Target.closeTarget", { targetId: (await rp.targets()).find((t) => t.url.includes("sidepanel"))!.targetId }).catch(() => undefined);
-  await sleep(1000);
-  await openPanel();
-  await rp.click(panel, "#input");
-  await until(async () => (await chipText()) || undefined, 60_000, "重开后输入框旁出现开关");
-  evidence.chipReopened = await chipText();
-
-  const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
-  // SAFETY: 诊断记录每行是 { runId, type, data } 的 JSON。
-  const lines = traces.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { runId?: string; type: string; data?: { text?: string; effort?: string } });
-  const effortsOf = (text: string) => {
-    const runId = lines.find((l) => l.type === "run_start" && l.data?.text?.includes(text))?.runId;
-
-    return lines.filter((l) => l.runId === runId && l.type === "model_request").map((l) => l.data?.effort ?? "?");
-  };
-  evidence.effortDeep = effortsOf("这页写了什么");
-  evidence.effortFast = effortsOf("负责人是谁");
-
-  assert.match(String(evidence.chipStart), /· 快/, "一开始是「快」");
-  const firstLevel = evidence.firstLevel as MenuState;
-  assert.ok(firstLevel.open && firstLevel.aboveChip && firstLevel.barShown && firstLevel.focus === "menu", `菜单在开关上方打开，输入框不收起，焦点进菜单：${JSON.stringify(firstLevel)}`);
-  assert.ok(firstLevel.rows.filter((row) => row.checked).length === 1 && firstLevel.effort, `第一层有模型（当前的打勾）和思考开关：${JSON.stringify(firstLevel.rows)}`);
-  assert.ok(firstLevel.rows.length >= 2, `第一层至少有两个模型可选：${JSON.stringify(firstLevel.rows)}`);
-  assert.ok(evidence.menuOpenAfterDeep === true && evidence.menuOpenAfterFast === true, "切思考时菜单不关");
-
-  // ChatGPT 账号的目录有几十个模型，第一层放不下，必须有「更多模型」。
-  if (modelArg.startsWith("openai-codex/")) assert.ok(firstLevel.more, "目录大时第一层最后一行是「更多模型」");
-  if (firstLevel.more) assert.deepEqual({ ...(evidence.moreModels as JsonRecord), rows: undefined }, { level: "all", focus: "search", rows: undefined, allMatch: true, escBack: true, escClose: true }, `更多模型在同一个菜单里打开、能搜，Esc 先返回再关上：${JSON.stringify(evidence.moreModels)}`);
-  assert.ok(evidence.switched && evidence.switchedBack, "选别的模型后开关换名字，换回来也一样");
-  assert.match(String(evidence.chipDeep), /· 深入/, "选了深入，按钮写深入");
-  assert.ok((evidence.effortDeep as string[]).length > 0 && (evidence.effortDeep as string[]).every((e) => e === "high"), `选深入后用高档：${JSON.stringify(evidence.effortDeep)}`);
-  assert.ok((evidence.effortFast as string[]).length > 0 && (evidence.effortFast as string[]).every((e) => e === "low"), `选快后用低档：${JSON.stringify(evidence.effortFast)}`);
-  assert.match(String(evidence.chipReopened), /· 深入/, "重开侧栏还记得选了深入");
-} catch (caught) {
-  error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
-
-  if (panel) await rp.screenshot(panel, join(artifacts, "failure-panel.png")).catch(() => undefined);
-} finally {
-  evidence.video = await stopVideo?.().catch(() => null) ?? null;
-  await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, error }, null, 2));
-  await rp.close();
-  await rp.remove();
-  site.closeAllConnections();
-  site.close();
-}
-
-console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", artifacts, evidence, error: error?.split("\n")[0] ?? null }));
-
-if (error) process.exitCode = 1;
+  await until(async()=>new RegExp('·\\s*'+label+'$').test(String(await chip()).trim())||undefined,5000,'宿主确认档位');
+  assert.ok(await menuOpen(),'选档后菜单仍打开');await rp.screenshot(panel,join(out,`level-${label}.png`));await key('Escape');
+};
+const ask=async(text:string)=>{await rp.click(panel,'#input');await rp.typeText(panel,text);await rp.pressEnter(panel);};
+const idle=()=>rp.evaluate(panel,'!document.querySelector("#status-pill")?.classList.contains("running") && !document.querySelector(".msg.assistant.streaming,.msg.assistant[data-revealing]")') as Promise<boolean>;
+const openPanel=async()=>{panelTarget=await rp.openSidePanel();panel=await rp.attach(panelTarget);await rp.cdp.send('Emulation.setFocusEmulationEnabled',{enabled:true},panel);await until(async()=>await rp.evaluate(panel,'document.querySelector("#send-btn")?.disabled===false')||undefined,60000,'侧栏就绪');};
+try{
+  const work=await rp.attach((await rp.targets()).find(t=>t.url==='about:blank')!.targetId);
+  await rp.cdp.send('Page.navigate',{url:`http://127.0.0.1:${siteAddress(site).port}`},work);
+  await openPanel();await rp.evaluate(panel,`chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))})`);
+  await until(async()=>String(await chip()).includes('Luna')||undefined,60000,'模型已加载');
+  await openMenu();evidence.slider=await rp.evaluate(panel,'({max:document.querySelector(".mm-power-slider input").max,actual:document.querySelector(".mm-power-level").textContent,note:document.querySelector(".mm-power-note").textContent})');
+  assert.ok(Number((evidence.slider as {max:string}).max)>=3,'支持的中间档位都可选');
+  await key('Escape');console.log('验证中档真实请求');await pick(1,'中');await ask('这页的负责人是谁？只回答姓名。');
+  await until(async()=>String(await rp.evaluate(panel,'document.querySelector("#messages")?.innerText')).includes('李雷')&&await idle()||undefined,90000,'中档真实回答');
+  evidence.medium=await chip();
+  console.log('验证自动升档');await pick(0,'低');await ask('请读当前周报，先分析每个数字，再用800字解释项目管理风险。');
+  await until(async()=>await rp.evaluate(panel,'document.querySelector("#status-pill")?.classList.contains("running")')||undefined,10000,'原任务正在执行');
+  await ask('不对，不要长文，直接说延期数量。');
+  await until(async()=>/·\s*中/.test(await chip())||undefined,20000,'实际自动升到中档');
+  await openMenu();evidence.raised=await rp.evaluate(panel,'({chip:document.querySelector("#think-chip").innerText,note:document.querySelector(".mm-power-note").textContent})');
+  assert.match((evidence.raised as {note:string}).note,/从低自动升至中/,'说明起始档与实际档');
+  await rp.screenshot(panel,join(out,'auto-raised.png'));await key('Escape');
+  await until(async()=>await idle()||undefined,90000,'纠正后的回答结束');
+  console.log('验证双窗口与重开');const otherWindow=Number(await rp.evaluate(panel,`chrome.windows.create({url:'http://127.0.0.1:${siteAddress(site).port}',focused:false}).then(w=>w.id)`));
+  await rp.evaluate(panel,`chrome.sidePanel.open({windowId:${otherWindow}})`,{userGesture:true});
+  await until(async()=>(await rp.targets()).filter(t=>t.type==='page'&&t.url.endsWith('/sidepanel.html')).length>=2||undefined,10000,'两个窗口侧栏');
+  await sleep(1000);assert.match(await chip(),/·\s*中/,'另一面板恢复设置不能重置自动升档');
+  await rp.evaluate(panel,`chrome.windows.remove(${otherWindow})`);
+  await rp.cdp.send('Target.closeTarget',{targetId:panelTarget});await openPanel();
+  await until(async()=>/·\s*中/.test(await chip())||undefined,10000,'重开仍显示实际档位');evidence.reopened=await chip();
+  await openMenu();await rp.click(panel,'.mm-model-link');await sleep(350);
+  await until(async()=>await rp.evaluate(panel,'document.querySelector("#think-menu")?.classList.contains("mm-in-all")')||undefined,5000,'模型列表');
+  await rp.typeText(panel,'sol');await sleep(200);
+  const candidate=await rp.evaluate(panel,`[...document.querySelectorAll('.mm-all .mm-row[data-model]')].map(e=>e.dataset.model).find(id=>id.startsWith('openai-codex/')&&id!==${JSON.stringify(DEFAULT_TEST_MODEL)})`) as string|undefined;
+  assert.ok(candidate,'同账号可切换的模型');evidence.candidate=candidate;console.log('切换模型',candidate);await rp.click(panel,`.mm-all .mm-row[data-model="${candidate}"]`);
+  await until(async()=>!String(await chip()).includes('Luna')||undefined,15000,'换模型');
+  await pick(2,'高');await openMenu();await rp.click(panel,'.mm-model-link');await sleep(350);await rp.typeText(panel,'luna');await sleep(200);await rp.click(panel,`.mm-all .mm-row[data-model="${DEFAULT_TEST_MODEL}"]`);
+  await until(async()=>/Luna/.test(await chip())&&/·\s*低/.test(await chip())||undefined,15000,'原模型保留手动低档，切换后重置自动档');evidence.perModel=await chip();
+  await openMenu();await rp.cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:'dark'},{name:'prefers-reduced-motion',value:'reduce'}]},panel);await rp.screenshot(panel,join(out,'dark-reduced.png'));
+  await rp.cdp.send('Emulation.setEmulatedMedia',{features:[]},panel);await rp.screenshot(panel,join(out,'slider.png'));
+  const exported=await exportDiagnosticsViaSettings(rp,rp.extensionId,join(out,'downloads'));
+  const traces=exported.traces.split('\n').filter(Boolean).map(line=>JSON.parse(line));
+  evidence.effortChanges=traces.filter(t=>t.type==='effort_change');
+  evidence.modelEfforts=traces.filter(t=>t.type==='model_request').map(t=>({time:t.time,runId:t.runId,effort:t.data.effort}));
+  assert.ok((evidence.modelEfforts as {effort:string}[]).some(t=>t.effort==='medium'),'真实请求使用中档');
+  assert.ok((evidence.effortChanges as {data:{signal:string;from:string;to:string}}[]).some(t=>t.data.signal==='user_correction'&&t.data.from==='low'&&t.data.to==='medium'),'真实纠正触发升档，不是只改显示');
+}catch(e){error=String(e instanceof Error?e.stack:e);if(panel){evidence.failureView=await rp.evaluate(panel,'({text:document.body.innerText,menu:document.querySelector("#think-menu")?.outerHTML})').catch(()=>null);await rp.screenshot(panel,join(out,'failure.png')).catch(()=>{});await exportDiagnosticsViaSettings(rp,rp.extensionId,join(out,'failure-downloads')).catch(()=>{});}}finally{await writeFile(join(out,'result.json'),JSON.stringify({status:error?'FAIL':'PASS',evidence,error},null,2));await rp.close();await rp.remove();site.closeAllConnections();site.close();}
+console.log(JSON.stringify({status:error?'FAIL':'PASS',out,evidence,error},null,2));if(error)process.exitCode=1;

@@ -26,7 +26,11 @@ export function progressSpeech(snapshot: TaskProgressSnapshot): string {
     case 'aborted':return '任务已终止。';
     case 'error':return '任务遇到了问题，请查看侧栏的错误记录。';
     case 'idle': {
-      const remaining = view.outstanding;
+      // 目标核对与执行历史是两件事；已恢复的失败步骤不能覆盖目标结论。
+      const unknown = view.outstanding.filter(item => item.status === 'unknown');
+      const verifiedDone = snapshot.goalCheck?.status === 'done';
+      if (snapshot.unresolvedEffect || snapshot.untrackedWritePending) return '这一轮有操作的实际结果仍无法确认，请先核对页面；我不会自动重做。';
+      const remaining = verifiedDone ? unknown : view.outstanding;
 
       if (remaining.length) {
         const names = remaining.slice(0, 3).map(item => item.description.slice(0, 120)).join('、');
@@ -42,6 +46,9 @@ export function progressSpeech(snapshot: TaskProgressSnapshot): string {
         return `还有未完成的要求：${names}。${remaining.some(item => item.status === 'blocked') ? '执行遇到阻碍。' : snapshot.goalPlan?'目标尚未完成核验。':'目前还没有对应的完成结果。'}`;
       }
 
+      const result = snapshot.conversationContext?.latestResult;
+      if (verifiedDone && snapshot.runId && result?.runId === snapshot.runId && result.text.trim()) return result.text.trim();
+
       const delivery = snapshot.conversationContext?.latestDelivery;
 
       if (snapshot.runId && delivery && (delivery.kind === 'finding' || delivery.kind === 'reply') && delivery.runId === snapshot.runId && delivery.text.trim()) {
@@ -49,13 +56,11 @@ export function progressSpeech(snapshot: TaskProgressSnapshot): string {
         return answerSpeech(snapshot.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery)).trim();
       }
 
-      const result = snapshot.conversationContext?.latestResult;
-
       if (snapshot.runId && result && result.runId === snapshot.runId && result.source === 'assistant_output' && typeof result.text === 'string' && result.text.trim()) {
         return result.text.trim();
       }
 
-      return '这一轮执行已经结束，结果还没有确认。';
+      return verifiedDone ? '这一轮已核对完成。' : '这一轮执行已经结束，结果还没有确认。';
     }
   }
 }

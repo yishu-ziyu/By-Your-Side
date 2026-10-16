@@ -189,6 +189,7 @@ export class GptLiveSession {
     // 任务已接下：回执只作静默背景，等这个任务交付给用户的结果再播报。
     if ((result.kind === 'action' || result.kind === 'steer') && result.ok && result.status === 'accepted' && receipt?.runId) {
       record.runId = receipt.runId;
+      this.deps.diagnostic?.("gpt_live_task_bound", {delegationId:id,runId:record.runId});
       this.answer(record, 'commentary', result.message);
 
       return;
@@ -260,10 +261,11 @@ export class GptLiveSession {
   }
   /** 只把 GPT-Live 委派出去的那个任务的交付送回；文字规则与套餐语音相同。 */
   completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>): void {
-    if (this.closed || delivery.kind === 'ack' || this.notices.has(delivery.id) || this.cancelled.has(delivery.id)) return;
+    const blocked = this.closed ? 'closed' : delivery.kind === 'ack' ? 'ack' : this.notices.has(delivery.id) ? 'already_sent' : this.cancelled.has(delivery.id) ? 'cancelled' : null;
+    if (blocked) { this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:blocked}); return; }
     const record = this.settle(delivery.runId);
 
-    if (!record) return;
+    if (!record) {this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:'no_waiting_delegation'});return;}
     this.notices.add(delivery.id);
 
     const owner = this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' });
