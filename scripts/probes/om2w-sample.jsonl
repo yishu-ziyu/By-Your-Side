@@ -1,0 +1,2 @@
+{"task_id": "sample-wiki-great-wall", "website": "https://en.wikipedia.org/", "task_description": "Use the search box on Wikipedia to search for \"Great Wall\", open the Great Wall of China article from the results, and tell me the total length of the wall given in its infobox.", "reference_length": 4}
+{"task_id": "sample-github-ts-release", "website": "https://github.com/", "task_description": "Find the microsoft/TypeScript repository on GitHub, open its Releases page, and tell me the title of the latest release.", "reference_length": 4}
