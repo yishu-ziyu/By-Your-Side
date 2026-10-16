@@ -41,5 +41,3 @@
 ## 开发与验证
 
 先读 [AGENTS.md](AGENTS.md)，再按[开发检查](docs/development/checks.md)选择验证范围。
-
-[CI validation sentinel](docs/ci-validation-missing-sentinel.md)
