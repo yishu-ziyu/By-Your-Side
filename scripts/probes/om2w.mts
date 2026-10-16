@@ -46,19 +46,19 @@ const chars = (v: unknown) => `«${typeof v === "string" ? v.length : JSON.strin
 /** Scheme, host and path only: a query string can carry what the agent typed. */
 const urlTarget = (u: string) => { try { const x = new URL(u); return x.origin + x.pathname + (x.search || x.hash ? ` ?${chars(x.search + x.hash)}` : ""); } catch { return chars(u); } };
 /**
- * One factual line: tool, what it acted on, and whether it succeeded. Typed values become their length and tool results are not copied,
+ * One factual line: tool, what it acted on, and whether it succeeded. Typed values and the model's free-text labels become their length and tool results are not copied,
  * so names, emails or page readbacks never reach result.json.
  */
 function historyLine(tool: string, a: any, end: Line) {
   a ??= {};
-  const target = [a.action, a.label, a.target, typeof a.url === "string" ? urlTarget(a.url) : undefined, a.key, a.tabId !== undefined ? `tab ${a.tabId}` : undefined,
+  const target = [a.action, a.label !== undefined ? `label: ${chars(a.label)}` : undefined, a.target, typeof a.url === "string" ? urlTarget(a.url) : undefined, a.key, a.tabId !== undefined ? `tab ${a.tabId}` : undefined,
     ...(["value", "values", "text"] as const).map((k) => (a[k] !== undefined ? `${k}: ${chars(a[k])}` : undefined))]
     .filter((x) => x !== undefined && x !== "").map(String).join(" ");
   const outcome = end.data?.isError === true ? "error" : end.data?.isError === false ? "ok" : "unknown";
   return `${tool}${target ? ` ${target.replace(/\s+/g, " ").slice(0, 200)}` : ""} → ${outcome}`;
 }
 
-type Shot = { file: string | null; capturedAt: number; tabId: number | null; url: string; error?: string };
+type Shot = { file: string | null; capturedAt: number; doneAt: number; tabId: number | null; url: string; error?: string };
 
 async function runTask(task: Om2wTask, dir: string) {
   await mkdir(join(dir, "trajectory"), { recursive: true });
@@ -68,12 +68,14 @@ async function runTask(task: Om2wTask, dir: string) {
   const sessions = new Map<string, string>();
   const shootWorkingTab = async (file: string): Promise<Shot> => {
     const w = (await rp.evaluate(sw, WORKING_TAB).catch((e: Error) => ({ tabId: null, targetId: null, url: "", error: String(e) }))) as { tabId: number | null; targetId: string | null; url: string; error?: string };
-    const shot: Shot = { file: null, capturedAt: Date.now(), tabId: w.tabId, url: w.url, error: w.error };
+    const shot: Shot = { file: null, capturedAt: Date.now(), doneAt: Date.now(), tabId: w.tabId, url: w.url, error: w.error };
     if (!w.targetId) { shot.error ??= "工作标签页没有对应的调试目标"; return shot; }
     try {
       if (!sessions.has(w.targetId)) sessions.set(w.targetId, await rp.attach(w.targetId));
       shot.capturedAt = Date.now();
-      const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "png" }, sessions.get(w.targetId), 10_000);
+      // Bounded by the deadline, so a slow capture cannot hold off the stop at the time cap.
+      const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "png" }, sessions.get(w.targetId), Math.max(1, Math.min(10_000, deadline - Date.now())));
+      shot.doneAt = Date.now();
       await writeFile(join(dir, file), Buffer.from(data, "base64"));
       shot.file = file;
     } catch (e) { shot.error = String(e).slice(0, 200); }
@@ -129,8 +131,8 @@ async function runTask(task: Om2wTask, dir: string) {
     const inFlight = tools.filter((l) => l.type === "tool_execution_start" && !ends.some((e) => callOf(e) === callOf(l))).map((l) => names.get(callOf(l)) ?? "");
     const steps = inRun.map((l, i) => {
       const shot = shots.get(callOf(l));
-      // Late: another tool started or finished between this end and the screenshot, so the image may show a later page.
-      const late = !!shot && tools.some((o) => callOf(o) !== callOf(l) && at(o) > at(l) && at(o) < shot.capturedAt);
+      // Late: another tool started or finished between this end and the moment the capture returned, so the image may show a later page.
+      const late = !!shot && tools.some((o) => callOf(o) !== callOf(l) && at(o) >= at(l) && at(o) <= shot.doneAt);
       return { step: i + 1, tool: names.get(callOf(l)) ?? "", toolCallId: callOf(l), status: !shot?.file ? "missing" : late ? "screenshot_late" : "on_time", screenshot: shot?.file?.replace(/^trajectory\//, "") ?? null, tabId: shot?.tabId ?? null, url: shot?.url ?? "", error: shot?.error };
     });
     const action_history = inRun.map((l) => historyLine(names.get(callOf(l)) ?? "", argsOf.get(callOf(l)), l));
