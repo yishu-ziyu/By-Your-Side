@@ -3648,7 +3648,56 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip .ctx-ok { color: var(--ok); font-size: 11px; }
 
 /* A3 计划行 */
-.task-plan-goal { margin: 0 0 6px; padding: 4px 2px; font-size: var(--fs-meta); color: var(--text-secondary); }
+.task-plan-goal { margin: 0 0 4px; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--text-secondary); }
+
+/* 计划卡：要写页面的一轮，过程行是一张卡，卡头是计划；做完同一张卡收成一行回执，细节点开还是这张卡。 */
+details.run-steps.plan-card {
+  padding: 6px 12px;
+  border-radius: var(--r);
+  background: var(--content-bg);
+  box-shadow: 0 0 0 1px var(--content-border);
+}
+details.run-steps.plan-card:not(.done)[open] .run-body { max-height: none; overflow: visible; border-left: 0; padding-left: 0; }
+details.run-steps.plan-card.plan-done summary > :not(.plan-receipt-line) { display: none; }
+.plan-receipt-line { display: none; }
+/* 卡里的步骤：› 正在做，✓ 做完，✕ 没做成；不用动作图标，和收起后的回执是同一套记号。 */
+details.run-steps.plan-card .run-body .chip-icon { display: none; }
+details.run-steps.plan-card .run-body .chip-dot {
+  display: inline-block; width: 12px; height: auto; border-radius: 0; background: none;
+  font-size: 11px; line-height: 1; text-align: center; color: var(--text-tertiary);
+  transition: color var(--d-layout) var(--e-enter);
+}
+details.run-steps.plan-card .run-body .chip-dot.running::before { content: "›"; color: var(--text-primary); }
+details.run-steps.plan-card .run-body .chip-dot.done::before { content: "✓"; }
+details.run-steps.plan-card .run-body .chip-dot.error::before { content: "✕"; color: var(--apple-red); }
+details.run-steps.plan-card .run-body .chip { gap: 8px; }
+details.run-steps.plan-card.plan-done .plan-receipt-line {
+  display: inline;
+  font-size: var(--fs-ui);
+  color: var(--text-primary);
+  animation: plan-receipt-in var(--d-layout) var(--e-enter);
+}
+.plan-details { color: var(--text-secondary); }
+.plan-details::before { content: "细节 ›"; }
+details.run-steps.plan-card[open] .plan-details::before { content: "收起"; }
+/* 没做完、停下：卡展开，没做成那一步标 ✕ 并用红字，停下时正在做的那一步标 ■。 */
+details.run-steps.plan-card.plan-failed .run-body .chip.error .chip-label { color: var(--apple-red); }
+details.run-steps.plan-card.plan-stopped .run-body .chip-dot.running::before { content: "■"; color: var(--text-secondary); }
+.plan-undo-result { margin: 4px 2px 0; }
+/* 计划卡里的「继续原任务」：卡头已经写了没做完、中止，这里只留按钮和回执说明。 */
+.plan-resume resume-entry { margin: 6px 0 4px; }
+.plan-resume resume-entry .resume-line { display: none; }
+.plan-resume resume-entry .resume-action { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-primary); font-size: var(--fs-ui); padding: 5px 12px; }
+.plan-resume resume-entry .resume-action:hover:not([disabled]) { background: var(--content-subtle); }
+details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(--text-primary); }
+.plan-undo { all: unset; cursor: pointer; color: var(--accent); }
+.plan-undo:disabled { cursor: default; color: var(--text-tertiary); }
+.plan-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+@keyframes plan-receipt-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  details.run-steps.plan-card.plan-done .plan-receipt-line { animation: none; }
+  details.run-steps.plan-card .run-body .chip-dot { transition: none; }
+}
 
 /* A8 主动作 + 动作列表 */
 .answer-actions button.answer-primary { width: auto; min-width: 28px; height: 28px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; }
@@ -3916,3 +3965,9 @@ details.run-steps.run-quieting .run-time { animation: none; }
   .page-ref { transition: none; }
   .page-ref-hint { animation: none; }
 }
+
+.plan-fill-scope { margin: 8px 0 0; padding: 0 10px; color: var(--text-secondary); font-size: var(--fs-ui); }
+.plan-fill-scope p { margin: 6px 0; }
+.plan-fill-scope ul { margin: 4px 0; padding-left: 18px; }
+
+details.plan-card:not([open]) > .plan-fill-scope { display: none; }

@@ -10,6 +10,8 @@ const views = new WeakMap<HTMLElement, FillUndoView>();
 /** 点了还原、后台还没回话。 */
 const pending = new WeakSet<HTMLElement>();
 let owner: HTMLElement | null = null;
+/** 这条回答的还原交给了它上面的计划卡：回答下不再出「还原填写」，结果行放在卡下面，回答照样变淡。 */
+const cards = new WeakMap<HTMLElement, HTMLElement>();
 let latest: FillUndoView | null = null;
 let refresh: (answer: HTMLElement) => void = () => {};
 let send: () => void = () => {};
@@ -21,11 +23,22 @@ export function setFillUndoHost(host: { send: () => void; follow: () => void }):
   follow = host.follow;
 }
 
-/** 有按钮可言的状态。ready 但 count 为 0 只是说明（例如编辑器里的文字没还原），不出按钮。 */
 export function fillUndoOf(answer: HTMLElement): FillUndoView | undefined {
-  const view = views.get(answer);
+  return views.get(answer);
+}
 
-  return view?.state === "ready" && view.count === 0 ? undefined : view;
+/** 回答下面的主动作要不要出还原：交给计划卡的不出。 */
+export function answerFillUndoOf(answer: HTMLElement): FillUndoView | undefined {
+  const view = fillUndoOf(answer);
+  return cards.has(answer) || (view?.state === "ready" && view.count === 0) ? undefined : view;
+}
+
+/** 计划卡接管这条回答的还原：卡上的「撤销」就是还原，结果行挪到卡下面。 */
+export function handFillUndoToCard(answer: HTMLElement, card: HTMLElement): void {
+  if (cards.get(answer) === card) return;
+  cards.set(answer, card);
+  answer.querySelector(":scope > .fill-undo-result")?.remove();
+  paint(answer);
 }
 
 export function isFillUndoPending(answer: HTMLElement): boolean {
@@ -44,10 +57,10 @@ const notes = (list: FillUndoNote[]) => list.map((n) => NOTE_TEXT[n]).join("");
 /** 灰掉的主按钮上写什么。 */
 export function fillUndoLabel(view: FillUndoView): string {
   switch (view.state) {
-    case "ready": return `还原填写（${view.count} 处）`;
-    case "submitted": return "已提交，收不回";
-    case "page_changed": return "页面变了，收不回";
-    case "restored": return "已还原";
+    case "ready": return `恢复这 ${view.count} 处填写`;
+    case "submitted": return "网站已收到，无法恢复";
+    case "page_changed": return "恢复记录已失效";
+    case "restored": return `已恢复 ${view.restored.length} 处`;
   }
 }
 
@@ -63,9 +76,10 @@ function resultLine(view: FillUndoView): [string, string] | null {
       const by = (reason: string) => view.skipped.filter((s) => s.reason === reason).map((s) => s.field);
       const parts = [
         by("user_changed").length ? `${quote(by("user_changed"))}你后来改过，没动。` : "",
-        by("gone").length ? `${quote(by("gone"))}已经不在页面上。` : "",
+        by("gone").length ? `${quote(by("gone"))}已经不在页面上（比如弹窗关了），${by("gone").length > 1 ? "这几处" : "这一处"}没法还原。如果它已经保存，请到网站里手动改回。` : "",
         by("failed").length ? `${quote(by("failed"))}网页没让改回去。` : "",
         notes(view.notes),
+        view.unavailable?.length ? `${quote(view.unavailable)}已提交或页面已变化，无法恢复。` : "",
       ].join("");
 
       return [`还原了 ${view.restored.length} 处`, parts ? `。${parts}` : "，回到助手动手之前。"];
@@ -79,7 +93,8 @@ function paint(answer: HTMLElement, busy = false): void {
   // 已还原 / 已提交 / 页面变了是这条回答的状态，文末一排一直显示，不等悬停。
   answer.classList.toggle("fill-undo-settled", !!view && view.state !== "ready");
   // 只有说明时，结果行跟着回答一直显示，不然用户不知道哪里没还原。
-  let line = answer.querySelector<HTMLElement>(":scope > .fill-undo-result");
+  const card = cards.get(answer);
+  let line = card ? (card.nextElementSibling?.matches(".fill-undo-result") ? card.nextElementSibling as HTMLElement : null) : answer.querySelector<HTMLElement>(":scope > .fill-undo-result");
   const text = busy ? ["助手还在做事", "，做完后再点还原。"] as [string, string] : view ? resultLine(view) : null;
 
   if (!text) { line?.remove(); refresh(answer);
@@ -90,7 +105,10 @@ function paint(answer: HTMLElement, busy = false): void {
     line = document.createElement("div");
     line.className = "fill-undo-result";
     line.setAttribute("role", "status");
-    (answer.querySelector(":scope > .answer-actions") ?? answer.lastElementChild)?.after(line);
+    if (card) {
+      line.classList.add("plan-undo-result");
+      card.after(line);
+    } else (answer.querySelector(":scope > .answer-actions") ?? answer.lastElementChild)?.after(line);
   }
   const strong = document.createElement("b");
   strong.textContent = text[0];
@@ -134,7 +152,8 @@ export function adoptFillUndo(answer: HTMLElement): void {
 
 /** 点了「还原填写」：按钮先灰掉写“正在还原…”，等后台回话。 */
 export async function requestFillUndo(answer: HTMLElement): Promise<void> {
-  if (fillUndoOf(answer)?.state !== "ready" || pending.has(answer)) return;
+  const view = fillUndoOf(answer);
+  if (view?.state !== "ready" || view.count === 0 || pending.has(answer)) return;
   pending.add(answer);
   refresh(answer);
 
