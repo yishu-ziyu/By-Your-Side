@@ -26,7 +26,10 @@
     "kimi:keep": "NODE_USE_ENV_PROXY=1 node scripts/maintenance/kimi-login.mjs --install",
     "lines": "node scripts/maintenance/lines.mjs",
     "logs": "node scripts/maintenance/logs.mjs",
-    "lab": "node scripts/maintenance/lab.mjs"
+    "lab": "node scripts/maintenance/lab.mjs",
+    "gym": "tsx scripts/gym/run.mts",
+    "gym:report": "node scripts/gym/report.mjs",
+    "gym:replay": "node scripts/gym/replay.mjs"
   },
   "devDependencies": {
     "marked": "18.0.11",
