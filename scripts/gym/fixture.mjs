@@ -10,13 +10,14 @@ const data = [
   { id: 'e', name: '网络基础', category: '书籍', available: true },
 ];
 
-export function promptFor(task, fault = 'none') {
-  if(fault==='waiting') return '先填写姓名为「林晓」、邮箱为「lin.xiao@example.com」。备注先不要填，等我确认后再填。不要提交表单，也不要改其他字段。';
-  return {
+export function requestFor(task, fault = 'none') {
+  if(fault==='waiting') return {text:'先填写姓名为「林晓」、邮箱为「lin.xiao@example.com」。备注先不要填，等我确认后再填。不要提交表单，也不要改其他字段。',automaticCorrection:false};
+  const text = {
     todo: '新增两项待办：「阅读论文」和「整理实验」，然后将第一项标记为完成。不要新增其他项目。',
     form: '填写姓名为「林晓」、邮箱为「lin.xiao@example.com」、备注为「请保留草稿」，但不要提交表单，也不要改变其他字段。',
     search: '搜索「浏览器」，再筛选类别为「书籍」且「仅看有货」的结果。',
   }[task];
+  return {text,automaticCorrection:true};
 }
 
 function page(task, seed, fault) {
