@@ -261,7 +261,12 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 /** 正文在 renderMarkdownHtml 里已按回答的规则消毒；整段（含我们画的卡片、代码块的条）再过一遍，挡住能改到回答外面的东西。 */
 const PANEL_HTML = { FORBID_TAGS: ["style", "link", "meta", "base", "form", "iframe", "object", "embed", "foreignObject", "dialog"], FORBID_ATTR: ["style"] };
 
+/** 用户在发送确认里选了「先不发」：回答只留一个「现在发送吧」，不再复述草稿、清单和「没有发送」（上面的灰字已经说了）。 */
+const DECLINED_ANSWER = '<div class="gen-card send-declined-card"><div class="gc-actions"><button type="button" class="gc-btn primary" data-card-say="现在发送吧">现在发送吧</button></div></div>';
+
 function renderMarkdown(text: string): string {
+  if ((currentRun ?? lastRun)?.sendDeclined) return DECLINED_ANSWER;
+
   return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml), PANEL_HTML);
 }
 
@@ -2624,6 +2629,8 @@ let runStartAt = 0;
 
 /** 当前 run 的"执行步骤"聚合块。 */
 interface RunHost {
+  /** 这一轮用户在发送确认里选了「先不发」，之后没再确认发送。 */
+  sendDeclined?: boolean;
   /** 回执前的绿对勾已经出现过：只在第一次当场画。 */
   doneMarkShown?: boolean;
   orbMark: HTMLSpanElement;
@@ -5174,6 +5181,9 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   // 10-09/10-10 存下的侧栏历史只有旧标记 sendDeclined、没有原因：按「不发」画，不画成失败；那段历史不再要紧时删掉这一行。
   if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
+
+  if (run && ev.heldReason === "declined") run.sendDeclined = true;
+  if (run && ev.sendConfirmed) run.sendDeclined = false;
 
   if (run) {
     run.orbActivity.observe({ kind: "tool_end", name: "", ...ev });

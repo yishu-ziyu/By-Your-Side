@@ -33,23 +33,47 @@ export interface SendGuard {
   waiting(on: boolean, guide?: GuideWait, send?: SendConfirmView): void;
 }
 
+/** 页面上和侧栏里写同一句：发什么、发给谁、在哪个网站。 */
+export function sendSentence(host: string, label: string, content?: string, recipient?: string): string {
+  const to = recipient ? `发给 ${recipient}，` : "";
+  return content ? `把这段 ${[...content.replace(/…$/, "")].length} 字的内容${to}在 ${host} 上` : `点「${label.trim()}」${to}在 ${host} 上`;
+}
+
+/** 网页上读「发给谁」：同一表单/容器里的收件人栏，否则页面的主标题。序列化进页面，必须自包含。 */
+export function readRecipientInPage(x: number | null, y: number | null): string | null {
+  const at = x === null || y === null ? document.activeElement : document.elementFromPoint(x, y);
+  const scope = at?.closest("form,[role=dialog],[role=form],main") ?? document;
+  const clip = (t: string | null | undefined) => { const v = (t ?? "").replace(/\s+/g, " ").trim(); return v ? (v.length > 40 ? v.slice(0, 40) + "…" : v) : null; };
+  for (const el of scope.querySelectorAll<HTMLInputElement>("input,[contenteditable=true]")) {
+    const name = [el.name, el.id, el.getAttribute("aria-label"), el.labels?.[0]?.textContent, el.placeholder].join(" ");
+    if (/(^|\s)(to|recipients?|收件人|发给)\b/i.test(name) || /收件人|发给/.test(name)) { const v = clip(el.value ?? el.textContent); if (v) return v; }
+  }
+  // 标题常写成「和 @小王 的对话」「与张三的聊天」：只取人名，所在的聊天（网页标题）放在后面的全角括号里，读作「发给 @小王（团队聊天）」。
+  const who = (t: string | null) => t?.replace(/^(?:和|与|跟|同)\s*(.+?)\s*的(?:对话|聊天|私信|会话)$/, "$1").replace(/^(?:chat|conversation)\s+with\s+/i, "") ?? null;
+  const name = who(clip(document.querySelector("h1,h2")?.textContent));
+  const where = clip(document.title)?.replace(/^(?:和|与|跟|同)\s*(.+?)\s*的(?:对话|聊天|私信|会话)$/, "") || null;
+  if (!name) return clip(document.title);
+  return where && where !== name && !where.includes(name) ? `${name}（${where}）` : name;
+}
+
+export interface SendDetails { content?: string; recipient?: string; rect?: { left: number; top: number; width: number; height: number }; route?: SendConfirmView["route"] }
+
 type Outcome = NonNullable<SendConfirmView["outcome"]>;
 
 /** 每种「用户没让发」都带这句：别让助手改按回车或点别的按钮把它发出去。 */
 const NO_OTHER_WAY = "不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。";
 
 const TEXT: Record<Exclude<Outcome, "send">, string> = {
-  decline: `用户选了「不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
+  decline: `用户拒绝发送（选了「先不发」）：没有点「发送」，草稿还留在页面上。这一轮之后的发送都会被拦下，不会再问。不要再试，${NO_OTHER_WAY}现在就收尾：告诉用户没有发送，或者问用户要不要发。`,
   stopped: `用户停下了任务或接管了页面：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}`,
   left: `用户离开或关掉了这个网页：没有点「发送」。${NO_OTHER_WAY}在回复里告诉用户没有发送。`,
   timeout: `用户 2 分钟内没有确认：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}在回复里告诉用户还没发送，等用户自己决定。`,
 };
 
-const REPEAT_TEXT = `用户这一轮已经选了「不发」：这次没有再问，也没有点「发送」，草稿还留在页面上。不要再点这个按钮。${NO_OTHER_WAY}在回复里告诉用户没有发送；用户再说要发时才会重新问。`;
+const REPEAT_TEXT = `用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。`;
 
 const BUSY_TEXT = `这个网页上已经有一个「发送」在等用户确认：这次没有点，也没有再出确认框。等那个确认有了结果再说。${NO_OTHER_WAY}`;
 
-const PROGRAM_TEXT = "网页脚本程序里不能点「发送」：发送前要等用户确认，程序等不了，所以这次没有点。请改用单独的 click 工具点这个按钮。";
 
 /** 没执行的结果：带 heldReason 时，宿主不把「用户没让发」（不发、停、离开、超时）当成工具出错去连续计数，也不进「换个办法试」；侧栏按它写给用户看的那句话。 */
 function notSent(message: string, heldReason?: HeldReason): Error {
@@ -118,7 +142,11 @@ chrome.runtime.onConnect.addListener(port => {
   // 只认扩展自己的侧栏页：网页和内容脚本的 sender.url 是网页地址。
   if (port.sender?.id !== chrome.runtime.id || !isPanelUrl(port.sender.url)) { port.disconnect(); return; }
   panelPorts.add(port);
-  port.onDisconnect.addListener(() => panelPorts.delete(port));
+  port.onDisconnect.addListener(() => {
+    panelPorts.delete(port);
+    // 侧栏都关了：等于「先不发」。
+    if (panelPorts.size === 0) for (const answer of [...panelAnswers.values()]) answer("decline");
+  });
   // 侧栏只回 id 和选择；按钮是否真由用户点击，由侧栏判（isTrusted），这里只认还在等的 id。
   port.onMessage.addListener((message: { id?: unknown; choice?: unknown }) => {
     if (typeof message?.id !== "string" || (message.choice !== "send" && message.choice !== "decline")) return;
@@ -133,62 +161,53 @@ function hostOf(url: string | undefined): string {
 
 /** 在页面 ISOLATED world 里画确认框；序列化进页面，必须自包含。 */
 /** 确认框上写的网站、按钮名、内容都由程序从网页读出（R2），不用助手的话；页面文字只用 textContent 放进去。 */
-function showSendConfirm(attr: string, kind: string, portName: string, label: string, content: string | null, armMs: number): void {
+function showSendConfirm(attr: string, kind: string, portName: string, label: string, content: string | null, armMs: number, sentence: string, rect: { left: number; top: number; width: number; height: number } | null): void {
   document.querySelectorAll(`[${attr}="${kind}"]`).forEach(node => node.remove());
+  // 同时在网页上圈出要点的那个按钮。
+  const ring = document.createElement("div");
+  ring.setAttribute(attr, kind);
+  if (rect) ring.style.cssText = `all:initial;position:fixed;z-index:2147483646;pointer-events:none;left:${rect.left - 4}px;top:${rect.top - 4}px;width:${rect.width + 8}px;height:${rect.height + 8}px;border:3px solid #ff9f0a;border-radius:10px;box-shadow:0 0 0 4px rgba(255,159,10,.25)`;
+  // 确认只在侧栏问一次；网页上只圈出按钮，旁边一行字指向侧栏（不放按钮）。
+  void label; void content; void armMs; void sentence;
   const host = document.createElement("div");
   host.setAttribute(attr, kind);
-  host.style.cssText = "all:initial;display:block;position:fixed;z-index:2147483647;left:50%;bottom:24px;transform:translateX(-50%)";
-  const root = host.attachShadow({ mode: "closed" });
-  root.innerHTML = `<style>
-.cap{display:flex;flex-direction:column;gap:6px;max-width:min(420px,calc(100vw - 32px));padding:10px 8px 8px 16px;border-radius:20px;background:rgba(20,20,19,.92);color:#fff;font:14px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28)}
-.row{display:flex;align-items:center;gap:10px}
-.ask{flex:1}
-.site{padding-right:8px;font-size:12px;color:rgba(255,255,255,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.what{padding-right:8px;font-size:13px;color:rgba(255,255,255,.88);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
-button{all:unset;box-sizing:border-box;padding:6px 14px;border-radius:99px;background:rgba(255,255,255,.14);color:#fff;font-weight:600;cursor:pointer}
-button:hover{background:rgba(255,255,255,.22)}
-button.yes{background:#fff;color:#141413;opacity:.6;transition:opacity .2s}
-button.yes.armed{opacity:1}
-button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
-</style><div class="cap" role="alertdialog" aria-label="要发送吗？" aria-describedby="site what"><div class="site" id="site"></div><div class="row"><span class="ask">要发送吗？</span><button class="no" type="button">不发</button><button class="yes" type="button" tabindex="-1">发送</button></div></div>`;
-  root.querySelector(".site")!.textContent = `${location.host} · 「${label.trim()}」`;
-
-  // 读不到要发的内容就不写这一行，不编。
-  if (content) {
-    const what = document.createElement("div");
-    what.className = "what";
-    what.id = "what";
-    what.textContent = `「${content}」`;
-    root.querySelector(".site")!.after(what);
-  }
+  host.setAttribute("role", "status");
+  host.textContent = "等你在侧栏确认";
+  const base = "all:initial;display:block;position:fixed;z-index:2147483647;pointer-events:none;padding:4px 10px;border-radius:99px;background:#ff9f0a;color:#1a1a1a;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.25)";
+  host.style.cssText = base + ";visibility:hidden";
   const port = chrome.runtime.connect({ name: portName });
-  const close = () => host.remove();
+  const close = () => { host.remove(); ring.remove(); window.removeEventListener("keydown", onKey, true); };
+  // Esc 等于「先不发」。
+  const onKey = (event: KeyboardEvent) => { if (event.isTrusted && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); port.postMessage({ choice: "decline" }); } };
+  window.addEventListener("keydown", onKey, true);
   port.onDisconnect.addListener(close);
 
-  // 「发送」只认真实的鼠标点击：不进 Tab 顺序，键盘触发（detail 为 0）不算，防止按键把它按下去；刚出现的那一会儿也不算。
-  let armedAt = Infinity;
-  const answer = (choice: "send" | "decline") => (event: MouseEvent) => {
-    if (!event.isTrusted || (choice === "send" && (event.detail === 0 || performance.now() < armedAt))) return;
-    close();
-    port.postMessage({ choice });
-  };
-
-  root.querySelector<HTMLButtonElement>(".no")!.addEventListener("click", answer("decline"));
-  root.querySelector<HTMLButtonElement>(".yes")!.addEventListener("click", answer("send"));
   (document.body ?? document.documentElement).appendChild(host);
-  armedAt = performance.now() + armMs;
-  setTimeout(() => root.querySelector(".yes")?.classList.add("armed"), armMs);
+  if (rect) (document.body ?? document.documentElement).appendChild(ring);
+  // 字贴在圈的下方（放不下就上方），始终夹在视口里。
+  const w = host.offsetWidth, h = host.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+  let left = rect ? rect.left : (vw - w) / 2, top = rect ? rect.top + rect.height + 10 : vh - h - 24;
+  if (rect && top + h > vh - 8) top = rect.top - h - 10;
+  left = Math.max(8, Math.min(left, vw - w - 8));
+  top = Math.max(8, Math.min(top, vh - h - 8));
+  host.style.cssText = `${base};left:${left}px;top:${top}px`;
 }
 
 /**
  * 按钮名以「发送 / Send」开头时，先在网页上问用户；用户点「发送」才返回 true，其余结局都抛「没执行」。
  * 名字不是发送的按钮直接返回 false，不多等一步。
  */
-export async function confirmSendIfNeeded(tabId: number, label: string, guard: SendGuard | undefined, readContent: () => Promise<string | undefined>): Promise<boolean> {
+export async function confirmSendIfNeeded(tabId: number, label: string, guard: SendGuard | undefined, readContent: () => Promise<string | SendDetails | undefined>): Promise<boolean> {
   if (!guard || !isSendLabel(label)) return false;
 
-  if (guard.inProgram) throw notSent(PROGRAM_TEXT);
-  const key = guard.task === undefined ? null : `${guard.task}\u0000${tabId}\u0000${label.trim()}`;
+  return confirmSend(tabId, label, guard, readContent);
+}
+
+/** 脚本、回车、网络请求这些路径：调用方已经认定是在发东西，不再看按钮名，直接问同一个确认。 */
+export async function confirmSend(tabId: number, label: string, guard: SendGuard, readContent: () => Promise<string | SendDetails | undefined>): Promise<boolean> {
+
+  // 用户选了「先不发」就整轮不发：不分按钮名、标签页和路径（点击、提交、requestSubmit、回车、脚本都走这里）。用户再说一句（新的一轮）才重新问。
+  const key = guard.task === undefined ? null : guard.task;
 
   if (key && declined.has(key)) throw notSent(REPEAT_TEXT, "repeat");
 
@@ -199,17 +218,22 @@ export async function confirmSendIfNeeded(tabId: number, label: string, guard: S
     // 助手平时在后台标签里做事；要用户在网页上回答时，先把这页切到其窗口内前台（不抢别的窗口）。
     await bringForwardForUser(tabId, "send_confirm");
 
-    return await askUser(tabId, guard, key, label, await readContent());
+    const read = await readContent().catch(() => undefined);
+
+    return await askUser(tabId, guard, key, label, typeof read === "string" ? { content: read } : read ?? {});
   } finally { pendingTabs.delete(tabId); }
 }
 
-async function askUser(tabId: number, guard: SendGuard, key: string | null, label: string, content: string | undefined): Promise<boolean> {
+async function askUser(tabId: number, guard: SendGuard, key: string | null, label: string, details: SendDetails): Promise<boolean> {
+  const { content, recipient, rect, route } = details;
+  let host = "";
+  try { host = hostOf((await chrome.tabs.get(tabId)).url); } catch { /* 读不到网址 */ }
   const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
   const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take }));
   let port: chrome.runtime.Port | null = null;
 
   try {
-    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showSendConfirm, args: [OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM, portName, label, content ?? null, SEND_ARM_MS] });
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showSendConfirm, args: [OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM, portName, label, content ?? null, SEND_ARM_MS, sendSentence(host, label, content, recipient), rect ?? null] });
     port = await Promise.race([connected, new Promise<null>(done => setTimeout(() => done(null), SHOW_MS))]);
   } catch { /* 页面不让注入：下面按没显示出来处理 */ }
 
@@ -217,7 +241,7 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
 
   if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。");
   const shown = port;
-  const view: SendConfirmView = { id: crypto.randomUUID(), host: hostOf(shown.sender?.url), label: label.trim(), ...(content ? { content } : {}) };
+  const view: SendConfirmView = { id: crypto.randomUUID(), host: hostOf(shown.sender?.url), label: label.trim(), ...(content ? { content } : {}), ...(recipient ? { recipient } : {}), ...(route ? { route } : {}) };
   const cleanups: Array<() => void> = [];
 
   const outcome = await new Promise<Outcome>(done => {
