@@ -15,7 +15,7 @@
 | 范围 | 文档 |
 |---|---|
 | 总体与协议 | [架构](architecture.md) · [协议](protocol.md) |
-| 网页操作 | [网页操作](web-actions.md) · [目标核对](goal-check.md) · [结果未知](unknown-results.md) · [组合执行](browser-program.md) · [不再逐次确认](browser-confirmation.md) |
+| 网页操作 | [独立状态实验](evals/20261016-bys-gym.md) · [网页操作](web-actions.md) · [目标核对](goal-check.md) · [结果未知](unknown-results.md) · [组合执行](browser-program.md) · [不再逐次确认](browser-confirmation.md) |
 | 记忆 | [记忆模型](memory-model.md) · [记忆与任务跨轮](memory-and-tasks.md) |
 | 模型 | [思考档位](model-effort.md) |
 | 文件、下载、翻译、读页 | [文件与截图](artifacts.md) · [下载](downloads.md) · [整页翻译](page-translation.md) · [读出页面](page-readouts.md) |
