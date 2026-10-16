@@ -59,7 +59,6 @@ const browserSwaps = {
       !onlyFromAgent || args.importer.startsWith(agentSrc) ? { path: target } : undefined);
 
     swap(/^\.\/realtime-browser-tool-defs\.js$/, path.join(root, "src/inproc/voice/tool-defs.ts"), true);
-    swap(/^\.\/config\.js$/, path.join(shims, "config.ts"), true);
     swap(/^ws$/, path.join(shims, "ws.ts"), false);
     // 任务核心（agent/src）里只在本机才用的模块：诊断记录写文件。
     swap(/^\.\/run-trace\.js$/, path.join(shims, "run-trace.ts"), true);
