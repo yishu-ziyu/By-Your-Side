@@ -94,7 +94,7 @@ async function run(task: string, seed: number, group: string) {
       previousTraceCount=meaningful;
       if (!busy && trace.some(e=>e.type==='agent_end')) quietSince ||= Date.now();
       if (!quietSince || Date.now()-quietSince < 22_000) continue;
-      const verdict = evaluate(task,current,fixture.effects,audit);
+      const verdict = evaluate(task,current,fixture.effects,audit,null,(await budget.read()).log);
       row.checkpoints ??= []; row.checkpoints.push({at:Date.now(),verdict,state:current});
       if (group==='A' || verdict.status==='success' || row.corrections.length>=2 || verdict.errors.includes('UNEXPECTED_SUBMISSION')) break;
       const waiting = trace.findLast(e=>e.type==='goal_check')?.data?.status === 'needs_user' || await rp.evaluate(panel, `!!document.querySelector('.send-confirm,#takeover-btn[data-mode="handback"]')`);
@@ -120,7 +120,7 @@ async function run(task: string, seed: number, group: string) {
       await sleep(1200);
       row.refreshed=(await (await installAudit(rp,work))()).state;
     }
-    row.verdict=evaluate(task,current,fixture.effects,audit,row.refreshed);
+    row.verdict=evaluate(task,current,fixture.effects,audit,row.refreshed,(await budget.read()).log);
     row.status=row.stopped==='time_budget' ? 'unknown' : row.verdict.status;
 
   } catch(error) { process.exitCode=1; row.error=error instanceof Error?error.stack:String(error); row.finalState=current; }
