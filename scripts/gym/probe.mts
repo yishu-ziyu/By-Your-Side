@@ -29,13 +29,22 @@ for(const task of ['form','search']){
   const forged=await observe(),verdict=evaluate(task,forged.state,site.effects,forged.audit);
   assert.equal(verdict.status,'failure');assert.ok(verdict.errors.includes('NO_BROWSER_INPUT'));
   const noOracle=await fetch(site.origin+'/evaluator');assert.equal(noOracle.status,404);
-  const budget=await installBudget(rp,Date.now()+60000,1);
+  const budget=await installBudget(rp,Date.now()+60000,1,site.origin);
+  const privateDenied=await rp.evaluate(budget.sw,`chrome.tabs.create({url:${JSON.stringify('file://'+join(REPO,'scripts/gym/evaluator.mjs'))}}).then(()=>false,e=>e.message.includes('outside fixture origin'))`);
+  assert.equal(privateDenied,true,'private evaluator source cannot be opened by Agent navigation');
   const tabId=await rp.evaluate(budget.sw,`chrome.tabs.query({url:${JSON.stringify(site.origin+'/*')}}).then(t=>t[0].id)`);
   await rp.evaluate(budget.sw,`chrome.debugger.sendCommand({tabId:${tabId}},'Page.enable',{}).catch(()=>null)`);
   const blocked=await rp.evaluate(budget.sw,`chrome.debugger.sendCommand({tabId:${tabId}},'Input.insertText',{text:'MUST_NOT_APPEAR'}).then(()=>false,()=>true)`);
   assert.equal(blocked,true);assert.deepEqual((await observe()).state,forged.state);
+  let submittedVerdict=null;
+  if(task==='form'){
+    await rp.evaluate(work,`document.querySelector('form').requestSubmit();true`);
+    await until(async()=>site.effects.length>0||undefined,5000,'actual submit side effect');
+    const submitted=await observe();submittedVerdict=evaluate(task,submitted.state,site.effects,submitted.audit,null,[{pageScript:'document.title',status:'executed'}]);
+    assert.equal(submittedVerdict.status,'failure');assert.ok(submittedVerdict.errors.includes('UNEXPECTED_SUBMISSION'));
+  }
   await rp.screenshot(work,join(out,`${task}-forged-rejected.png`));
-  evidence.push({task,mainWorldSpoofRejected:true,syntheticInputRejected:verdict,privateEndpoint:404,budget:await budget.read()});
+  evidence.push({task,privateDenied,submittedVerdict,mainWorldSpoofRejected:true,syntheticInputRejected:verdict,privateEndpoint:404,budget:await budget.read()});
  }finally{await rp.close();await rp.remove();await site.close()}
 }
 await writeFile(join(out,'result.json'),JSON.stringify({status:'PASS',evidence},null,2));console.log(out);

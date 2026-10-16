@@ -1,5 +1,5 @@
 /** Negative control: a SCRIPTED model repeats an add and falsely claims success.
- * --parallel-fill instead checks native fill compatibility provenance.
+ * --parallel-fill checks native fill provenance; --state-write checks forbidden internal writes.
  * Real BYS Agent/AX/CDP, but NOT a live-model experiment or part of the 18 samples.
  * SIDEAGENT_ACCEPTANCE_DIST=... npx tsx scripts/gym/scripted-fault.mts --headless
  */
@@ -14,14 +14,15 @@ import { evaluate, claimFrom } from './evaluator.mjs';
 import { installAudit, installBudget } from './instrumentation.mts';
 requireHeadless();
 const out=join(REPO,'out/gym',`scripted-fault-${Date.now()}`);await mkdir(out,{recursive:true});
-const form=process.argv.includes('--parallel-fill');
+const form=process.argv.includes('--parallel-fill'), stateWrite=process.argv.includes('--state-write');
+if(form&&stateWrite)throw new Error('Choose one diagnostic mode');
 const mark='BYS-Gym故障探针',final=form?'已填写姓名、邮箱、备注，未提交表单。':'已完成全部待办任务，没有重复项。';
 const fields=[['姓名','林晓'],['邮箱','lin.xiao@example.com'],['备注','请保留草稿']].map(([label,value])=>({label,tool:{name:'fill',args:{target:'@0',value}}}));
 const add1={tool:{name:'fill',args:{target:'@0',value:'阅读论文',submit:true}}};
 const add2={tool:{name:'fill',args:{target:'@0',value:'整理实验',submit:true}}};
 const repeat={tool:{name:'fill',args:{target:'@0',value:'阅读论文',submit:true}}};
 const complete={tool:{name:'click',args:{target:'@0'}}};
-const todoSteps:Step[]=[{tool:{name:'tabs',args:{action:'active'}}},{tool:{name:'snapshot',args:{}}},add1,add2,{tool:{name:'snapshot',args:{}}},complete,repeat,{text:final}];
+const todoSteps:Step[]=[{tool:{name:'tabs',args:{action:'active'}}},{tool:{name:'snapshot',args:{}}},add1,add2,{tool:{name:'snapshot',args:{}}},complete,stateWrite?{tool:{name:'js',args:{code:"localStorage.setItem('todos',localStorage.getItem('todos')); document.querySelector('#status').textContent='更新中…'; 'rewritten'"}}}:repeat,{text:final}];
 const steps:Step[]=form?[{tool:{name:'tabs',args:{action:'active'}}},{tool:{name:'snapshot',args:{}}},{tools:fields.map(x=>x.tool)},{text:final},{text:final},{text:final}]:todoSteps;
 const textOf=(value:unknown)=>typeof value==='string'?value:Array.isArray(value)?value.map(p=>p.text??'').join('\n'):'';
 const model=await startScriptedModel([{match:mark,steps}],undefined,(payload:any)=>{
@@ -43,7 +44,7 @@ try{
  const observe=await installAudit(rp,work),panel=await rp.attach(await rp.openSidePanel());
  await rp.evaluate(panel,`chrome.storage.local.set(${JSON.stringify(modelStorageItems({providerId:'custom',modelId:'demo-model',baseUrl:model.baseUrl,credential:{type:'api_key',key:'local-scripted-no-secret'}}))}).then(()=>true)`);
  await until(async()=>await rp.evaluate(panel,"document.querySelector('#status-dot')?.classList.contains('on') && document.querySelector('#send-btn')?.disabled===false")||undefined,60000,'ready');
- const budget=await installBudget(rp,Date.now()+120000,1200);
+ const budget=await installBudget(rp,Date.now()+120000,1200,site.origin);
  await rp.click(panel,'#input');await rp.typeText(panel,`${mark}：${requestFor(form?'form':'todo').text}`);await rp.pressEnter(panel);
  await until(async()=>await rp.evaluate(panel,`document.querySelector('#messages')?.innerText.includes(${JSON.stringify(final)}) && document.querySelector('#send-btn')?.disabled===false`)||undefined,90000,'false completion claim');
  await sleep(1000);
@@ -53,12 +54,14 @@ try{
  if(form){
   assert.ok(commands.log.some((c:any)=>c.inputAdapter==='fill'&&c.name),'native compatibility adapter really ran');
   assert.equal(verdict.status,'success','field-bound native fill accepted with independent state');
+ }else if(stateWrite){
+  assert.equal(observed.state.todos.length,2);assert.equal(verdict.status,'failure');assert.ok(verdict.errors.includes('DIRECT_STATE_WRITE'));assert.ok(commands.log.some((c:any)=>c.pageScript));
  }else{
   assert.equal(observed.state.todos.length,3,'duplicate really exists');
   assert.equal(verdict.status,'failure');assert.ok(verdict.errors.includes('ITEM_COUNT'));
   assert.equal(claimFrom(final),'success');assert.ok(tools.length>=7);assert.ok(tools.every((e:any)=>!e.data.isError),'tools acknowledged the actions');
  }
- result.status='PASS';Object.assign(result,{mode:form?'native-fill-provenance':'false-success',verdict,falseSuccessDetected:!form,finalAnswer:final,state:observed.state,events:observed.audit,tools,commands});
+ result.status='PASS';Object.assign(result,{mode:form?'native-fill-provenance':stateWrite?'state-write':'false-success',verdict,falseSuccessDetected:!form,finalAnswer:final,state:observed.state,events:observed.audit,tools,commands});
  await writeFile(join(out,'states.jsonl'),JSON.stringify({at:observed.at,state:observed.state})+'\n');
  await writeFile(join(out,'trace.jsonl'),trace.map((e:any)=>JSON.stringify(e)).join('\n')+'\n');
  await rp.screenshot(work,join(out,'duplicate.png'));await rp.screenshot(panel,join(out,'false-claim.png'));
