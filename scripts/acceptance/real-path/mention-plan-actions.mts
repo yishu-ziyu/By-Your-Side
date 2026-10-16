@@ -63,8 +63,8 @@ try {
   };
   const answers = async () => Number(await rp.evaluate(panel, `document.querySelectorAll("#messages .msg.assistant").length`));
 
-  // (a) 写页任务：不停下来等确认，模型马上收到请求；任务条上放一行「会去 … · 不会做 …」；这一轮结束后收掉。
-  const goalLine = async () => await rp.evaluate(panel, `document.querySelector(".task-plan-goal")?.textContent ?? ""`) as string;
+  // (a) 写页任务：不停下来等确认，模型马上收到请求；放一行「会去 … · 不会做 …」（过程卡建好后挪进卡头）；这一轮结束后收掉。
+  const goalLine = async () => await rp.evaluate(panel, `[...document.querySelectorAll(".task-plan-goal")].filter(e => e.getClientRects().length > 0 && e.closest("details")?.open !== false).at(-1)?.textContent ?? ""`) as string;
   const before = model.requests.length;
   await rp.click(panel, "#input");
   await rp.typeText(panel, FILL);
@@ -72,7 +72,7 @@ try {
   const plan = await until(async () => (await goalLine()) || undefined, 5_000, "出现计划行").catch(() => "");
   const started = await until(async () => model.requests.length > before || undefined, 5_000, "模型收到请求").catch(() => false);
   await rp.screenshot(panel, join(out, "plan.png"));
-  check("写页任务不等确认就发出，任务条上有会去/不会做，不会做是提交、付款", started === true && /会去 活动报名表/.test(plan) && /不会做 提交、付款/.test(plan), { plan, started });
+  check("写页任务不等确认就发出，有一行会去/不会做，不会做是提交、付款", started === true && /会去 活动报名表/.test(plan) && /不会做 提交、付款/.test(plan), { plan, started });
   await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(FILLED)})`)) || undefined, 60_000, "填写回答");
   const goalLeft = await until(async () => !(await goalLine()) || undefined, 3_000, "计划行收掉").catch(() => false);
   check("这一轮做完后计划行收掉", goalLeft === true, await goalLine());
@@ -93,7 +93,7 @@ try {
   await rp.typeText(panel, TABLE);
   await rp.pressEnter(panel);
   await sleep(600);
-  check("只读、同一个站的任务不出计划行", !(await rp.evaluate(panel, `!!document.querySelector(".task-plan-goal")`)), null);
+  check("只读、同一个站的任务不出计划行", !(await goalLine()), null);
   await until(async () => (await answers()) > n && (await rp.evaluate(panel, `document.body.innerText.includes("姓名、城市")`)) || undefined, 60_000, "表格回答");
   await sleep(600);
   const primary = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .answer-primary")].at(-1)?.textContent.trim() ?? ""`);

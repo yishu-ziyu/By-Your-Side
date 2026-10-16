@@ -113,11 +113,17 @@ export type FillUndoNote = "rich_text" | "sensitive";
  * ready：可以还原 count 处；submitted：确定提交过，收不回；page_changed：页面换了文档、或扩展重启后记录没了；
  * restored：点过还原，restored 是写回的栏，skipped 是没动的栏和原因。
  */
-export type FillUndoView =
+export type FillUndoView = (
   | { state: "ready"; count: number; fields: string[]; notes: FillUndoNote[] }
   | { state: "submitted"; fields: string[]; notes: FillUndoNote[] }
   | { state: "page_changed"; fields: string[]; notes: FillUndoNote[] }
-  | { state: "restored"; restored: string[]; skipped: Array<{ field: string; reason: "user_changed" | "gone" | "failed" }>; notes: FillUndoNote[] };
+  | { state: "restored"; restored: string[]; skipped: Array<{ field: string; reason: "user_changed" | "gone" | "failed" }>; notes: FillUndoNote[] }
+) & {
+  /** 这一轮写过、但账本不记所以撤销不了的栏（编辑器正文、原来有内容的密码栏）：只有栏名，回执上照直说。 */
+  untracked?: string[];
+  /** 本轮已失效的字段记录，仅留名称，不带旧值。 */
+  unavailable?: string[];
+};
 
 /** 网页里助手填过的格子所在的表单被提交了（content-domops 发给后台）。 */
 export const FILL_UNDO_SUBMIT = "sideagent:fill-undo-submit";
