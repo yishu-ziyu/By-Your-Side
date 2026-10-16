@@ -37,7 +37,29 @@ const out=join(REPO,'out/acceptance/real-path',new Date().toISOString().replace(
 
 await mkdir(out,{recursive:true});
 
-const rp=await launchRealPath();
+// Persist each stage before waiting so CI timeouts still leave a useful artifact.
+const recoveryStages: Array<{name: string; startedAt: string; elapsedMs?: number; status: 'running' | 'passed' | 'failed'}> = [];
+async function recoveryStage<T>(name: string, run: () => Promise<T>): Promise<T> {
+ const stage: typeof recoveryStages[number] = {name, startedAt: new Date().toISOString(), status: 'running'};
+ const started = performance.now();
+ recoveryStages.push(stage);
+ const save = () => writeFile(join(out, 'recovery-stages.json'), JSON.stringify(recoveryStages, null, 2));
+ await save();
+ try {
+  const result = await run();
+  stage.status = 'passed';
+  return result;
+ } catch (error) {
+  stage.status = 'failed';
+  throw error;
+ } finally {
+  stage.elapsedMs = Math.round(performance.now() - started);
+  await save();
+  console.log(`${name}: ${stage.status} (${stage.elapsedMs} ms)`);
+ }
+}
+
+const rp=await recoveryStage('browser-launch', () => launchRealPath());
 
 let panel='',failure:string|null=null;
 
@@ -54,7 +76,7 @@ async function send(text:string,marker:string){await rp.click(panel,'#input');aw
 return !s.busy&&s.text?.includes(marker)?s:undefined;},60000,marker);await sleep(500);}
 
 try{
- await open();await configureViaSettings(rp,panel,{providerId:'custom',modelId:'demo-model',credential:{type:'api_key',key:'test-key'}},{asCustom:true,baseUrl:model.baseUrl});
+ await recoveryStage('initial-panel-ready', open);await configureViaSettings(rp,panel,{providerId:'custom',modelId:'demo-model',credential:{type:'api_key',key:'test-key'}},{asCustom:true,baseUrl:model.baseUrl});
  logs=await watchInproc(rp,rp.extensionId);
  const work=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:work.targetId});await sleep(500);
  await send(`保存恢复材料。当前任务代号是${code}。CSV内容必须原样保存。`,'材料已保存');
@@ -62,10 +84,12 @@ try{
  assert.ok(before.cards.some(c=>c.image?.length>256*1024),'真实大图覆盖历史预算边界');
  evidence.historyBefore=await rp.evaluate(panel,`chrome.storage.local.get(null).then(v=>Object.fromEntries(Object.entries(v).filter(([k])=>k.startsWith("history:")).map(([k,v])=>[k,{bytes:JSON.stringify(v).length,items:v.entries?.map(e=>({seq:e.seq,kind:e.item.kind,event:e.item.msg?.event?.kind,bytes:JSON.stringify(e).length,text:e.item.text?.slice(0,100)}))}])))`);
 
- // 整个浏览器重启：两路并行时比单跑慢，等待放宽到 30 秒；这里测的是恢复了没有，不是多快。
- await rp.restart();await open();await until(async()=>((await state()).text?.includes(code))||undefined,30000,"原会话历史恢复");const after=await state();evidence.after=after;await rp.screenshot(panel,join(out,'after.png'));
+ // Recovery is checked by content; timings diagnose slow stages without changing the deadline.
+ await recoveryStage('browser-restart', () => rp.restart());
+ await recoveryStage('restored-panel-ready', open);
+ await recoveryStage('history-restored', () => until(async()=>((await state()).text?.includes(code))||undefined,30000,"原会话历史恢复"));const after=await state();evidence.after=after;await rp.screenshot(panel,join(out,'after.png'));
  assert.ok(after.text.includes(code),'大图不挤掉旧文字');assert.ok(after.cards.some(c=>c.name==='resume.csv'&&c.deleted!=='true'),'文件卡片恢复');
- await until(async()=>((await state()).cards.some(c=>c.image?.length>256*1024))||undefined,30000,"原图片恢复");
+ await recoveryStage('image-restored', () => until(async()=>((await state()).cards.some(c=>c.image?.length>256*1024))||undefined,30000,"原图片恢复"));
  const compact=await rp.evaluate(panel,`(()=>{const card=document.querySelector('.artifact-card[data-kind="image"]'),img=card.querySelector('img'),input=document.querySelector('#input');return {imageHeight:img.getBoundingClientRect().height,cardHeight:card.getBoundingClientRect().height,bottom:card.getBoundingClientRect().bottom,inputTop:input.getBoundingClientRect().top};})()`);
  assert.ok(compact.imageHeight<=48,'默认缩略图不占满消息区');assert.ok(compact.bottom<compact.inputTop,'图片名称和操作在输入框上方');evidence.compactCard=compact;
  const noModelBefore=requests.length;await rp.click(panel,'.artifact-card[data-kind="image"] .artifact-preview-toggle');
