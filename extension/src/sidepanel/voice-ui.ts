@@ -373,7 +373,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     button.setAttribute('aria-label', next === 'idle' ? '开始语音对话' : '结束语音对话');
     // #55 状态由光球自己的动法表达，球下只留一个灰字：在听 / 在想（有具体说明就写说明，如「在读这个页面」）/ 在说（字幕在说话，只给读屏）。
     const plainDetail = detail && detail !== '正在处理这句话' ? detail : '';
-    const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '连接失败' };
+    const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '语音不可用' };
     status.textContent = stateText[next] ?? (next === 'idle' ? '' : detail ?? '');
     stateDetail.textContent = next === 'error' ? plainDetail : '';
 
