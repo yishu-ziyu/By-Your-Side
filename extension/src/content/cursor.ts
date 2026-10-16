@@ -363,6 +363,19 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         transition-duration: var(--d-micro);
         transition-timing-function: var(--e-exit);
       }
+      /* 回答里点名的按钮：白色内圈 + 深色描边 + 外发光，橙色页眉、深色页面上都看得见。 */
+      .inspect.point {
+        border: 3px solid #fff; border-radius: 8px;
+        box-shadow: 0 0 0 2px #111, inset 0 0 0 1.5px #111, 0 0 0 6px rgba(255,255,255,.55), 0 0 16px 6px rgba(0,0,0,.35);
+      }
+      .point-cap {
+        position: absolute; pointer-events: none; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+        padding: 3px 9px; border-radius: 99px; background: #111; color: #fff; border: 1.5px solid #fff;
+        font: 600 12px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+        box-shadow: 0 2px 8px rgba(0,0,0,.35); opacity: 0; transition: opacity var(--d-state) var(--e-enter);
+      }
+      .point-cap.on { opacity: 1; }
+      .point-cap.small { padding: 1px 6px; font-size: 11px; line-height: 14px; }
       .inspect .cap {
         position: absolute; left: 0; top: -18px; white-space: nowrap;
         font: 600 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
@@ -406,20 +419,23 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     const marksShadow = marksHost.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
+      /* 圈要在任何底色上都看得见（HN 的橙色页眉、深色页面）：白色内圈 + 深色描边 + 外发光。 */
       .mark {
         position: absolute; box-sizing: border-box; pointer-events: none;
-        border: 1.3px solid var(--c); border-radius: 5px;
+        border: 3px solid #fff; border-radius: 6px;
+        box-shadow: 0 0 0 1.5px #111, inset 0 0 0 1.5px #111, 0 0 10px 3px rgba(255,255,255,.7), 0 0 14px 4px rgba(0,0,0,.3);
         background: transparent;
       }
       .mark-label {
-        position: absolute; left: -3px; top: -26px;
-        padding: 1px 2px;
-        background: transparent; color: var(--c);
-        font: 500 12px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        position: absolute; left: -3px; top: -28px;
+        padding: 1px 8px; border-radius: 99px;
+        background: #111; color: #fff; border: 1.5px solid #fff;
+        box-shadow: 0 2px 8px rgba(0,0,0,.35);
+        font: 600 12px/1.6 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
         letter-spacing: .02em; white-space: nowrap;
-        text-shadow: 0 1px 2px #fff, 0 -1px 2px #fff;
       }
       .mark-label.below { top: calc(100% + 6px); }
+      .mark-label.small { padding: 0 5px; font-size: 10.5px; line-height: 1.5; }
       .mark.sketch {
         border: 0;
         border-radius: 0;
@@ -430,10 +446,13 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         position: absolute; left: 0; top: 0; width: 100%; height: 100%;
         overflow: visible; pointer-events: none;
       }
+      .sketch-svg {
+        filter: drop-shadow(0 0 .7px #111) drop-shadow(0 0 .7px #111) drop-shadow(0 0 5px rgba(255,255,255,.85)) drop-shadow(0 0 8px rgba(0,0,0,.3));
+      }
       .sketch-svg path {
         fill: none;
-        stroke: var(--c);
-        stroke-width: 1.3;
+        stroke: #fff;
+        stroke-width: 3.2;
         stroke-linecap: round;
         stroke-linejoin: round;
       }
@@ -1665,6 +1684,20 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     return frame;
   }
 
+  /** 名牌中心底下是页面内容区（不是 html/body 的空白边）。 */
+  function onPageContent(v: { x: number; y: number; w: number; h: number }): boolean {
+    // 第一层画了底色/底图的元素；只有 html/body（或什么都没有）就是版面外的空白边。居中版面外面套的 <center> 之类没有底色，不算内容。
+    const painted = document.elementsFromPoint(v.x + v.w / 2, v.y + v.h / 2).find((e) => {
+      if (e === marksHost || marksHost?.contains(e) || e === host) return false;
+      const cs = getComputedStyle(e);
+
+      return e === document.documentElement || e === document.body || /^(IMG|VIDEO|CANVAS|SVG|INPUT|BUTTON|TEXTAREA|SELECT)$/i.test(e.tagName)
+        || cs.backgroundImage !== "none" || !/rgba\(.*,\s*0\)$|transparent/.test(cs.backgroundColor);
+    });
+
+    return !!painted && painted !== document.documentElement && painted !== document.body;
+  }
+
   /** 名牌挂上之后才量得到真实大小；按标注当前的文档位置换算到视口，检查底下有没有页面文字。 */
   function placeSketchLabel(el: HTMLElement, labelEl: HTMLElement, frame: { x: number; y: number; w: number; h: number }): void {
     const size = labelEl.getBoundingClientRect();
@@ -1672,17 +1705,33 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     const originY = (parseFloat(el.style.top) || 0) - window.scrollY;
     const toView = (b: { x: number; y: number; w: number; h: number }) => ({ x: originX + b.x, y: originY + b.y, w: b.w, h: b.h });
 
-    const at = sketchLabelPosition(frame, { w: size.width, h: size.height }, {
+    let at = sketchLabelPosition(frame, { w: size.width, h: size.height }, {
       inView: (b) => {
         const v = toView(b);
 
         return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight;
       },
-      clear: (b) => !coversPageContent(toView(b)),
+      // 名牌有自己的底色，可以压在页面上；只是不能落到页面外的空白处（比如居中版面两侧的灰边）。
+      clear: (b) => onPageContent(toView(b)) && !coversControl(toView(b)),
     });
+    const freeOfControls = (b: { x: number; y: number; w: number; h: number }) => !coversControl(toView(b));
+    let at2 = at;
 
-    labelEl.style.left = `${at.left}px`;
-    labelEl.style.top = `${at.top}px`;
+    // 名牌绝不压在别的控件上：先放宽「在页面内容上」，再缩小字，还不行就不挂名牌，只留圈。
+    if (!freeOfControls({ x: at2.left, y: at2.top, w: size.width, h: size.height })) {
+      at2 = sketchLabelPosition(frame, { w: size.width, h: size.height }, { inView: (b) => { const v = toView(b); return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight; }, clear: freeOfControls });
+    }
+    if (!freeOfControls({ x: at2.left, y: at2.top, w: size.width, h: size.height })) {
+      labelEl.classList.add("small");
+      const small = labelEl.getBoundingClientRect();
+      at2 = sketchLabelPosition(frame, { w: small.width, h: small.height }, { inView: () => true, clear: freeOfControls });
+      if (!freeOfControls({ x: at2.left, y: at2.top, w: small.width, h: small.height })) labelEl.style.display = "none";
+    }
+    at = at2;
+
+    // 兜底：无论如何夹在视口里。
+    labelEl.style.left = `${Math.max(4 - originX, Math.min(at.left, window.innerWidth - 4 - size.width - originX))}px`;
+    labelEl.style.top = `${Math.max(4 - originY, Math.min(at.top, window.innerHeight - 4 - size.height - originY))}px`;
   }
 
   /** 只撤指定的一条标注（拿住态的确认锚框），不碰模型画的其他标注。 */
@@ -1832,7 +1881,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       for (let j = 0; j <= 2; j++) {
         const hit = document.elementsFromPoint(r.x + 1 + ((r.w - 2) * i) / 4, r.y + 1 + ((r.h - 2) * j) / 2).find((e) => !e.closest(`[${OVERLAY_ATTR}]`));
 
-        if (hit?.closest("input,textarea,select,button,a,iframe")) return true;
+        if (hit?.closest("input,textarea,select,button,a,iframe,[role=button],[role=link],[role=menuitem],[role=tab],[role=checkbox],[contenteditable=true]")) return true;
       }
     }
 
@@ -1860,12 +1909,14 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     const hits = (rects: DOMRect[], v: Box) => rects.some((r) => Math.min(r.right, v.x + v.w) > Math.max(r.left, v.x) && Math.min(r.bottom, v.y + v.h) > Math.max(r.top, v.y));
     const rings = others.map((o) => o.el.getBoundingClientRect());
     const labels = others.flatMap((o) => o.el.querySelector(".mark-label")?.getBoundingClientRect() ?? []);
-    const best = (b: Box) => adjacent(b) && !hits(labels, toView(b)) && !coversPageContent(toView(b)) && !hits(rings, toView(b));
+    // 名牌是实心底，可以压在页面字上；但必须落在页面内容区，不落到版面外的空白边。
+    const best = (b: Box) => adjacent(b) && !hits(labels, toView(b)) && onPageContent(toView(b)) && !coversControl(toView(b)) && !hits(rings, toView(b));
     let at = sketchLabelPosition(frame, label, { inView, clear: best });
 
-    if (!best({ x: at.left, y: at.top, ...label })) at = sketchLabelPosition(frame, label, { inView, clear: (b) => adjacent(b) && !hits(labels, toView(b)) && !coversControl(toView(b)) });
-    labelEl.style.left = `${at.left}px`;
-    labelEl.style.top = `${at.top}px`;
+    if (!best({ x: at.left, y: at.top, ...label })) at = sketchLabelPosition(frame, label, { inView, clear: (b) => adjacent(b) && !hits(labels, toView(b)) && onPageContent(toView(b)) });
+    // 兜底：无论如何夹在视口里。
+    labelEl.style.left = `${Math.max(4 - originX, Math.min(at.left, window.innerWidth - 4 - size.width - originX))}px`;
+    labelEl.style.top = `${Math.max(4 - originY, Math.min(at.top, window.innerHeight - 4 - size.height - originY))}px`;
   }
 
   /** 改名牌：撤掉旧的，按同一框线摆新的。 */
@@ -1972,8 +2023,12 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     return anim.finished.then(() => { anim.commitStyles(); anim.cancel(); }).catch(() => { anim.cancel(); });
   }
 
-  function showInspect(rect: SideAgentRect, caption: string, color: string): void {
+  let pointCapEl: HTMLSpanElement | null = null;
+
+  function showInspect(rect: SideAgentRect, caption: string, color: string, point = false): void {
     ensureDom();
+    pointCapEl?.remove();
+    pointCapEl = null;
     const bounds = highlightBounds(rect, HIGHLIGHT_PAD);
 
     if (!bounds || !highlightLayer) return;
@@ -1987,15 +2042,52 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     inspectEl.style.height = `${bounds.height}px`;
     const cap = document.createElement("span");
     cap.className = "cap";
-    cap.textContent = caption;
+    if (!point) cap.textContent = caption;
     inspectEl.append(cap);
+    if (point) inspectEl.classList.add("point");
     highlightLayer.append(inspectEl);
+
+    // 名牌贴着圈：右边放得下放右边，否则左边，再不行放下方/上方；始终夹在视口里，不落到页面外的空白处。
+    if (point && caption) {
+      const tag = document.createElement("span");
+      tag.className = "point-cap";
+      tag.textContent = caption;
+      highlightLayer.append(tag);
+      // 不压到旁边别的控件（比如紧挨着的「Send」）：四边轮流试；都压就缩成「在这里」小字再试；还不行只留圈。
+      const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight, gap = 8;
+      const r = { left: bounds.left, top: bounds.top, right: bounds.left + bounds.width, bottom: bounds.top + bounds.height };
+      const markLabels = liveMarks.flatMap((m) => { const l = m.el.querySelector<HTMLElement>(".mark-label"); return l && l.style.display !== "none" ? [l.getBoundingClientRect()] : []; });
+      const overLabel = (x: number, y: number, w: number, h: number) => markLabels.some((l) => Math.min(l.right, x + w) > Math.max(l.left, x) && Math.min(l.bottom, y + h) > Math.max(l.top, y));
+      const fits = (x: number, y: number, w: number, h: number) => x >= 4 && y >= 4 && x + w <= vw - 4 && y + h <= vh - 4 && !coversControl({ x, y, w, h }) && !overLabel(x, y, w, h);
+      const place = (): boolean => {
+        const w = tag.offsetWidth, h = tag.offsetHeight, midY = r.top + bounds.height / 2 - h / 2;
+        const spots: Array<[number, number]> = [[r.right + gap, midY], [r.left - gap - w, midY], [r.left, r.bottom + gap], [r.right - w, r.bottom + gap], [r.left, r.top - gap - h], [r.right - w, r.top - gap - h]];
+        const spot = spots.find(([x, y]) => fits(x, y, w, h));
+
+        if (!spot) return false;
+        tag.style.left = `${spot[0]}px`;
+        tag.style.top = `${spot[1]}px`;
+
+        return true;
+      };
+
+      if (!place()) {
+        tag.textContent = "在这里";
+        tag.classList.add("small");
+        if (!place()) tag.style.display = "none";
+      }
+      tag.getBoundingClientRect();
+      tag.classList.add("on");
+      pointCapEl = tag;
+    }
     inspectEl.getBoundingClientRect();
     inspectEl.classList.add("on");
   }
 
   function clearInspectOverlay(): Promise<void> {
     const el = inspectEl;
+    pointCapEl?.remove();
+    pointCapEl = null;
 
     if (!el) return Promise.resolve();
     el.classList.add("out");
@@ -2792,8 +2884,8 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         return returnFromPanel(getInstance(id));
       },
 
-      inspect(rect: SideAgentRect, caption?: string): void {
-        showInspect(rect, caption ?? "", getInstance(id).color);
+      inspect(rect: SideAgentRect, caption?: string, point?: boolean): void {
+        showInspect(rect, caption ?? "", getInstance(id).color, point === true);
       },
 
       clearInspect(): Promise<void> {
