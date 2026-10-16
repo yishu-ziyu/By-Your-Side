@@ -62,7 +62,7 @@ async function openPdf(tabId: number, url: string): Promise<PDFDocumentProxy> {
   const version = generation.get(tabId);
   // 先问大小；对方不答大小或不支持 HEAD 时照常读（标签页里的阅读器已经下过这份文件），只挡住明确超大的。
   const head = await fetch(url, { method: "HEAD", credentials: "include", signal: AbortSignal.timeout(5_000) }).catch(() => null);
-  const size = Number(head?.headers.get("content-length") ?? 0);
+  const size = head?.ok ? Number(head.headers.get("content-length") ?? 0) : 0;
 
   if (generation.get(tabId) !== version) throw new Error("读取期间页面已刷新或关闭，请重新读取当前页面");
 
