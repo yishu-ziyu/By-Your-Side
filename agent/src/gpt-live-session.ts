@@ -1,6 +1,8 @@
 import { progressSpeech } from './voice-receipt.js';
 import { spokenDeliveryText, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
 import type { VoiceCommand, VoiceInputContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
+import { GPT_LIVE_CONTEXT_BYTES, utf8Bytes } from '../../shared/gpt-live.js';
+import { VoiceIntentError } from './voice-errors.js';
 
 /** 照 openclaw 的委派说法改写给中文用户：语音层自己不动手，宿主送回的结果照原意念，不添事实、不报进度。 */
 const INSTRUCTIONS = `你是浏览器助手的实时语音层，自己没有任何工具。
@@ -25,7 +27,34 @@ function chatgptAccountId(access: string): string | null {
 
 /** 送去念的文字要和侧栏渲染出的回答一致：链接只留文字，去掉裸网址和强调记号。 */
 function speechText(text: string): string {
-  return text.replace(/!?\[([^\]]*)\]\([^)\s]*\)/g, '$1').replace(/https?:\/\/[^\s)\]）。，；]+/g, '').replace(/\*\*|__|`/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+  return text.replace(/!?\[([^\]]*)\]\([^)\s]*\)/g, '$1').replace(/https?:\/\/[^\s)\]）。，；]+/g, '').replace(/<\/?[a-z][^>]*>/gi, '').replace(/\*\*|__|`/g, '').replace(/^[ \t]*#{1,6}\s+/gm, '').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+// 字节预算是 byte-level tokenizer 的保守上界，不用字符数冒充 token 数。
+// 留出协议余量；完整正文仍由任务系统交付，语音只标明并摘读完整句子。
+function liveContextText(raw: string, channel: 'speakable' | 'commentary', hostNote?: string): string {
+  const text = speechText(raw);
+
+  if (utf8Bytes(text) <= GPT_LIVE_CONTEXT_BYTES) return text;
+  const note = hostNote ? speechText(hostNote) : '';
+  const suffix = channel === 'speakable' ? ' 完整内容在侧栏。' : ' 完整结果保留在客户端。';
+  const prefix = `${note ? `${note} ` : ''}${channel === 'speakable' ? '先说开头：' : ''}`;
+  let excerpt = '';
+
+  for (const ending of text.matchAll(/[。！？!?]+[”」』"]*|\.(?=\s|$)/g)) {
+    const next = text.slice(0, ending.index + ending[0].length).trim();
+
+    if (/^(?:\d+|[a-z])\.$/i.test(next.split('\n').at(-1)?.trim() ?? '')) continue;
+
+    if (utf8Bytes(`${prefix}${next}${suffix}`) > GPT_LIVE_CONTEXT_BYTES) break;
+    excerpt = next;
+  }
+
+  if (excerpt) return `${prefix}${excerpt}${suffix}`;
+
+  if (note) return utf8Bytes(note + suffix) <= GPT_LIVE_CONTEXT_BYTES ? note + suffix : '结果还有需要核对的部分，完整内容在侧栏。';
+
+  return channel === 'speakable' ? '回答较长，完整内容在侧栏。' : '结果较长，完整内容保留在客户端。';
 }
 
 type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: VoiceTarget[]; input?: VoiceInputContext; error?: string; ready: boolean };
@@ -44,6 +73,7 @@ export class GptLiveSession {
   private readonly delegations = new Map<string, Delegation>();
   private readonly notices = new Set<string>();
   private readonly cancelled = new Set<string>();
+  private readonly dialogue = new Map<string, { role: 'user' | 'assistant'; text: string }>();
   /** 已送去播报的交付：委派编号 → 交付编号；侧栏报告 GPT-Live 念完后标记已播放。 */
   private readonly speaking = new Map<string, string>();
   constructor(private readonly deps: RealtimeVoiceDependencies) {
@@ -77,7 +107,13 @@ export class GptLiveSession {
 
         return;
       case 'delegation':
-        void this.delegate(command.delegationId, command.text);
+        void this.delegate(command.delegationId, command.text, command.userTurnId);
+
+        return;
+      case 'gpt_live_transcript':
+        this.dialogue.set(command.turnId, { role: command.role, text: command.text });
+
+        while (this.dialogue.size > 12) this.dialogue.delete(this.dialogue.keys().next().value!);
 
         return;
       // 侧栏按委派编号报告：送回的结果之后那段回答已念完，且中途没被静音。
@@ -116,7 +152,7 @@ export class GptLiveSession {
     }
   }
   /** 每次委派开一轮：先经中转补齐页面资料（与套餐语音同一握手），再交给宿主分流。 */
-  private async delegate(id: string, text: string): Promise<void> {
+  private async delegate(id: string, text: string, userTurnId?: string): Promise<void> {
     if (this.delegations.has(id) || !this.deps.route) return;
     const record: Delegation = { id, done: false };
     this.delegations.set(id, record);
@@ -124,6 +160,8 @@ export class GptLiveSession {
     this.inputs.set(origin.turn, origin);
     this.deps.emit({ kind: 'input_turn', turn: origin.turn });
     const requestId = `gptlive-${this.deps.voiceId ?? 'voice'}-${id}`;
+    // 委派可能先于当前句的 turn.done；只按上游身份排除当前句，保留同句明确重试。
+    const recentTurns = userTurnId ? [...this.dialogue].filter(([turnId]) => turnId !== userTurnId).map(([, turn]) => turn) : [];
     let result: VoiceRouteResult;
 
     try {
@@ -131,10 +169,14 @@ export class GptLiveSession {
       const snapshot = origin.snapshot;
       result = await this.deps.route(text, snapshot?.startedAt ?? null, () => !this.closed, {
         nativeChat: true, requestId, runId: snapshot?.runId ?? null, controlVersion: snapshot?.controlVersion,
-        voiceId: this.deps.voiceId ?? 'gpt-live', turn: origin.turn, input: origin.input, targets: origin.targets,
+        voiceId: this.deps.voiceId ?? 'gpt-live', turn: origin.turn, input: origin.input, targets: origin.targets, recentTurns,
       });
     } catch (error) {
-      this.answer(record, 'speakable', `这句没有执行：${error instanceof Error ? error.message : String(error)}`);
+      const message = error instanceof VoiceIntentError
+        ? error.code === 'classifier_timeout' ? '处理请求的服务超时，这句话还没有执行，原任务没有改变。'
+          : '处理语音请求的服务暂时失败，这句话还没有执行，原任务没有改变。'
+        : `这句没有执行：${error instanceof Error ? error.message : String(error)}`;
+      this.answer(record, 'speakable', message);
 
       return;
     } finally {
@@ -163,8 +205,8 @@ export class GptLiveSession {
     if (record.runId === undefined) record.done = true;
   }
   /** 返回是否真的送出。 */
-  private answer(record: Delegation, channel: 'speakable' | 'commentary', raw: string): boolean {
-    const text = channel === 'speakable' ? speechText(raw) : raw;
+  private answer(record: Delegation, channel: 'speakable' | 'commentary', raw: string, hostNote?: string): boolean {
+    const text = liveContextText(raw, channel, hostNote);
 
     if (this.closed || record.done || !text.trim()) return false;
 
@@ -224,13 +266,16 @@ export class GptLiveSession {
     if (!record) return;
     this.notices.add(delivery.id);
 
-    if (!this.answer(record, 'speakable', spokenDeliveryText(delivery, this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' }), this.deps.getSnapshot()?.conversationId))) return;
+    const owner = this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' });
+
+    if (!this.answer(record, 'speakable', spokenDeliveryText(delivery, owner, this.deps.getSnapshot()?.conversationId), owner?.goalCheck?.status === 'done' ? undefined : delivery.hostNote)) return;
     this.speaking.set(record.id, delivery.id);
     this.deps.onPlayback?.(delivery.id, 'speaking');
   }
   close(emit = true): void {
     if (this.closed) return;
     this.closed = true;
+    this.dialogue.clear();
 
     if (emit) this.deps.emit({ kind: 'state', state: 'closed' });
   }
