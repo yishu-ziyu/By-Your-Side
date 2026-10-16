@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { send, startExt, traceLines as readTrace, waitIdle } from "./ext-session.mts";
 
 const [rootArg, outDir, arm] = process.argv.slice(2);
 const root = resolve(rootArg); // an absolute path: "scripts/..." joined onto "." would be read as a package name
@@ -254,20 +255,9 @@ async function writeStatus(id: string, state: string, detail?: string) {
 
 // ---------- ext arm ----------
 async function runExt(task: Task, id: string, dir: string) {
-  const { launchRealPath, until, sleep, recordScreen } = await import(join(root, "scripts/acceptance/real-path/harness.mts"));
-  const { storageItemsFor } = await import(join(root, "eval/harness/credentials.mjs"));
-  const cfg = storageItemsFor(MODEL);
-  const rp = await launchRealPath({ headed: true });
+  const cookies = task.login === "memos" ? [{ ...(await memosSignIn()).cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] : [];
+  const { rp, user, sw, panel, harness: { until, sleep, recordScreen } } = await startExt(root, { model: MODEL, tabs: task.tabs?.() ?? [START], cookies });
   try {
-    const user = await rp.attach((await rp.targets()).find((t: { url: string }) => t.url === "about:blank")!.targetId);
-    if (task.login === "memos") { const { cookie } = await memosSignIn(); await rp.cdp.send("Storage.setCookies", { cookies: [{ ...cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] }); }
-    const opened = task.tabs?.() ?? [START];
-    await rp.cdp.send("Page.navigate", { url: opened.at(-1) }, user);
-    const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "sw")).targetId);
-    const panel = await rp.attach(await rp.openSidePanel());
-    await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(cfg.items)}).then(() => true)`);
-    for (const [index, url] of opened.slice(0, -1).entries()) await rp.evaluate(panel, `chrome.tabs.create(${JSON.stringify({ url, index, active: false })}).then(() => true)`);
-    await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "panel ready");
     if (think) {
     const chip = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
     await rp.click(panel, "#input");
@@ -279,18 +269,14 @@ async function runExt(task: Task, id: string, dir: string) {
     }
     await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
 
-    const traceLines = async () => String(await rp.evaluate(panel, `new Promise((ok) => { const r = indexedDB.open("sideagent-diagnostics"); r.onsuccess = () => { const q = r.result.transaction("trace-lines").objectStore("trace-lines").getAll(); q.onsuccess = () => ok(q.result.map(x => x.line).join("")); }; r.onerror = () => ok(""); })`));
+    const traceLines = () => readTrace(rp, panel);
     let seenLines = 0;
     // One task in the current conversation; trace lines are cumulative, so each ask takes only the lines after the previous one.
     const ask = async (prompt: string, probeCode: string | undefined, tag: string) => {
       const t0 = Date.now();
       const stops = record ? [await recordScreen(rp.cdp, panel, join(dir, `panel${tag}.mp4`)), await recordScreen(rp.cdp, user, join(dir, `page${tag}.mp4`))] : [];
-      await rp.click(panel, "#input"); await rp.typeText(panel, prompt); await rp.pressEnter(panel);
-      const busy = `(() => { const q = (s) => document.querySelector(s); return (q("#status-pill")?.classList.contains("running") ?? false) || (q("#send-btn")?.classList.contains("stopping") ?? false) || !!q(".msg.assistant.streaming, .msg.assistant[data-revealing], .thinking.streaming"); })()`;
-      await until(async () => await rp.evaluate(panel, busy), 20_000, "started").catch(() => {});
-      let quietSince = 0;
-      while (Date.now() - t0 < 240_000) { const b = await rp.evaluate(panel, busy); quietSince = b ? 0 : (quietSince || Date.now()); if (quietSince && Date.now() - quietSince > 4000) break; await sleep(250); }
-      const ms = (quietSince || Date.now()) - t0;
+      await send(rp, panel, prompt);
+      const { ms } = await waitIdle(rp, panel, t0, 240_000);
       const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText.trim()).join("\\n---\\n")`));
       const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ url: t.url || t.pendingUrl || '', title: t.title || '' })))")) as Tab[];
       let probe: unknown = null;
