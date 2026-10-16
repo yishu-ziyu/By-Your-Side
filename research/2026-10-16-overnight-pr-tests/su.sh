@@ -1,0 +1,1 @@
+for i in 1 2 3 4 5; do node run-task.mjs "$(jq -nc --arg ext $EXT --arg d $D --arg t "$P-$i" '{ext:$ext,display:$d,tag:$t,url:"http://127.0.0.1:8931/signup",prompt:"帮我把报名表填上：姓名张三，手机13800000000，人数2，备注带一把伞。然后点保存。",maxSec:180}')" 2>&1 | tail -1 | cut -c1-120; done

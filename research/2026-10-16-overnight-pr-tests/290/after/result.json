@@ -1,0 +1,390 @@
+{
+ "rows": [
+  {
+   "chips": [
+    {
+     "text": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "click",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n先不发\n发送",
+   "tool": [
+    "用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。"
+   ],
+   "secs": 4.879
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "script-click",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n方式\n页面脚本\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendNote\":\"脚本里的发送动作（发送）没有发出：用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the page now.]"
+   ],
+   "secs": 4.296
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "script-enter",
+   "answer": "esc",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n方式\n回车键\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendNote\":\"脚本里的发送动作（发送）没有发出：用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the page now.]"
+   ],
+   "secs": 2.726
+  },
+  {
+   "chips": [
+    {
+     "text": "点 「消息」",
+     "error": false
+    },
+    {
+     "text": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "key-enter",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n方式\n回车键\n先不发\n发送",
+   "tool": [
+    "Clicked 消息. Event dispatch confirmed. Nothing on the page changed in a way attributable to this click. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly click the same target again — ",
+    "用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。"
+   ],
+   "secs": 5.981
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "script-submit",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n方式\n页面脚本\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendNote\":\"脚本里的发送动作（发送）没有发出：用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the page now.]"
+   ],
+   "secs": 3.892
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "fetch",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「POST /api/send」「{\"to\":\"小王\",\"text\":\"周五开会\"}」把这段 25 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": false,
+   "panelCard": "把这段 25 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「POST /api/send」\n内容\n「{\"to\":\"小王\",\"text\":\"周五开会\"}」\n发给\n和 @小王 的对话\n方式\n网页请求\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"TypeError: 这个请求要等用户确认后才会发出（By Your Side 发送确认）\",\"sendNote\":\"脚本里的发送动作（POST /api/send）没有发出：用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天"
+   ],
+   "secs": 4.427
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "xhr",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「POST /api/send」「hi」把这段 2 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": false,
+   "panelCard": "把这段 2 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「POST /api/send」\n内容\n「hi」\n发给\n和 @小王 的对话\n方式\n网页请求\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendNote\":\"脚本里的发送动作（POST /api/send）没有发出：用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the pa"
+   ],
+   "secs": 4.389
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "save",
+   "answer": "none",
+   "confirmShown": false,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the page now.]"
+   ],
+   "secs": 2.342
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你确认过，已发送",
+   "id": "fetch-send",
+   "answer": "send",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 1,
+   "dialogText": "127.0.0.1:38929 · 「POST /api/send」「{\"to\":\"小王\",\"text\":\"周五开会\"}」把这段 25 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": false,
+   "panelCard": "把这段 25 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「POST /api/send」\n内容\n「{\"to\":\"小王\",\"text\":\"周五开会\"}」\n发给\n和 @小王 的对话\n方式\n网页请求\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"TypeError: 这个请求要等用户确认后才会发出（By Your Side 发送确认）\",\"sendConfirmed\":true,\"sendNote\":\"脚本里的发送动作（POST /api/send）先拦下，用户确认后才发出。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the page now.]"
+   ],
+   "secs": 4.698
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你确认过，已发送",
+   "id": "script-click-send",
+   "answer": "send",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 1,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n方式\n页面脚本\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendConfirmed\":true,\"sendNote\":\"脚本里的发送动作（发送）先拦下，用户确认后才发出。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the page now.]"
+   ],
+   "secs": 4.899
+  },
+  {
+   "chips": [
+    {
+     "text": "点 「消息」",
+     "error": false
+    },
+    {
+     "text": "按键 「Enter」（你确认过）",
+     "error": false
+    }
+   ],
+   "cardAfter": "你确认过，已发送",
+   "id": "key-enter-send",
+   "answer": "send",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 1,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n方式\n回车键\n先不发\n发送",
+   "tool": [
+    "Clicked 消息. Event dispatch confirmed. Nothing on the page changed in a way attributable to this click. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly click the same target again — ",
+    "Pressed Enter. Page reacted: target region text +5 char(s); page sent POST 127.0.0.1:38929/send; body text +5 char(s).\nNew on the page since you last read it (refs are usable directly; no snapshot needed for these; lines you already saw that only moved are not listed):\n<page-content untrusted>\n[ref="
+   ],
+   "secs": 7.204
+  },
+  {
+   "chips": [
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "js-tool",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「发送」「周五下午三点开会，记得带上季度报表。」把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发给\n和 @小王 的对话\n方式\n页面脚本\n先不发\n发送",
+   "tool": [
+    "脚本里的发送动作（发送）没有发出：用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。\n<page-content untrusted>\nok\n</page-content>"
+   ],
+   "secs": 4.69
+  },
+  {
+   "chips": [
+    {
+     "text": "脚本",
+     "error": false
+    },
+    {
+     "text": "在页面里运行代码",
+     "error": false
+    }
+   ],
+   "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "id": "native-submit",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:38929 · 「发送」点「发送」发给 和 @小王 的对话，在 127.0.0.1:38929 上先不发发送",
+   "buttons": [
+    "先不发",
+    "发送"
+   ],
+   "ring": true,
+   "panelCard": "点「发送」发给 和 @小王 的对话，在 127.0.0.1:38929 上\n\n网站\n127.0.0.1:38929\n按钮\n「发送」\n发给\n和 @小王 的对话\n方式\n页面脚本\n先不发\n发送",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendNote\":\"脚本里的发送动作（发送）没有发出：用户选了「先不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 783196712 shows \"团队聊天\" — http://127.0.0.1:38929/; that is the page now.]"
+   ],
+   "secs": 4.909
+  }
+ ],
+ "posts": [
+  {
+   "path": "/save",
+   "at": 1792092977026
+  },
+  {
+   "path": "/api/send",
+   "at": 1792092981524
+  },
+  {
+   "path": "/send",
+   "at": 1792092986554
+  },
+  {
+   "path": "/send",
+   "at": 1792092995054
+  }
+ ]
+}

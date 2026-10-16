@@ -1,0 +1,222 @@
+[
+ {
+  "b": "main",
+  "t": "T1",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 6.103,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T1",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 6.669,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T2",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 15.549,
+  "steps": 5,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T2",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 12.531,
+  "steps": 5,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T3",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 6.131,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T3",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 6.763,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T4",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "填写回复并发送 · 网页脚本程序里不能点「发送」",
+  "secs": 15.003,
+  "steps": 4,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T4",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "填入回复并发送 · 网页脚本程序里不能点「发送」",
+  "secs": 24.421,
+  "steps": 4,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T5",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 10.844,
+  "steps": 3,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "main",
+  "t": "T5",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 18.302,
+  "steps": 5,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T1",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 6.143,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T1",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 5.8,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T2",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 11.562,
+  "steps": 5,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T2",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 11.433,
+  "steps": 5,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T3",
+  "run": 1,
+  "ok": false,
+  "why": "标题命中0/3",
+  "firstBad": "",
+  "secs": 5.646,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T3",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 5.631,
+  "steps": 0,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T4",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "回复小王并发送 · 用户选了「先不发」",
+  "secs": 11.755,
+  "steps": 3,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T4",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "回复小王并发送 · 用户选了「先不发」",
+  "secs": 16.535,
+  "steps": 3,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T5",
+  "run": 1,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 14.055,
+  "steps": 6,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ },
+ {
+  "b": "p290",
+  "t": "T5",
+  "run": 2,
+  "ok": true,
+  "why": "",
+  "firstBad": "",
+  "secs": 18.943,
+  "steps": 5,
+  "model": "MiniMax-M3.1-Flash-Preview"
+ }
+]

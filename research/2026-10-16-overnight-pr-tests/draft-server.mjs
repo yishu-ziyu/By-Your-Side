@@ -1,0 +1,2 @@
+import { createServer } from "node:http";
+createServer((q, r) => r.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><title>Compose</title><body style="font:15px sans-serif;margin:40px"><h2>New message</h2><textarea aria-label="Message" rows="4" cols="50"></textarea><div style="display:flex;gap:6px;margin-top:8px"><button>Discard</button><button>Save draft</button><button>Send</button></div></body>`)).listen(8942, "127.0.0.1");

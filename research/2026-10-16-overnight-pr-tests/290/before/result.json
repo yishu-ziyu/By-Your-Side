@@ -1,0 +1,235 @@
+{
+ "rows": [
+  {
+   "id": "click",
+   "answer": "decline",
+   "confirmShown": true,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": "127.0.0.1:44401 · 「发送」「周五下午三点开会，记得带上季度报表。」要发送吗？不发发送",
+   "buttons": [
+    "不发",
+    "发送"
+   ],
+   "ring": false,
+   "panelCard": "要发送吗？\n\n网站\n127.0.0.1:44401\n按钮\n「发送」\n内容\n「周五下午三点开会，记得带上季度报表。」\n发送\n先不发",
+   "tool": [
+    "用户选了「不发」：没有点「发送」，草稿还留在页面上。不要再点这个按钮。不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。在回复里告诉用户没有发送。"
+   ],
+   "secs": 4.71
+  },
+  {
+   "id": "script-click",
+   "answer": "decline",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 2.09
+  },
+  {
+   "id": "script-enter",
+   "answer": "esc",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 1.852
+  },
+  {
+   "id": "key-enter",
+   "answer": "decline",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "Clicked 消息. Event dispatch confirmed. Nothing on the page changed in a way attributable to this click. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly click the same target again — ",
+    "Pressed Enter. Page reacted: target region text +5 char(s); page sent POST 127.0.0.1:44401/send; body text +5 char(s).\nNew on the page since you last read it (refs are usable directly; no snapshot needed for these; lines you already saw that only moved are not listed):\n<page-content untrusted>\n[ref="
+   ],
+   "secs": 3.439
+  },
+  {
+   "id": "script-submit",
+   "answer": "decline",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 2.101
+  },
+  {
+   "id": "fetch",
+   "answer": "decline",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"sent\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 1.963
+  },
+  {
+   "id": "xhr",
+   "answer": "decline",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 1.97
+  },
+  {
+   "id": "save",
+   "answer": "none",
+   "confirmShown": false,
+   "postsBeforeDecision": 0,
+   "postsAfter": 0,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 2.097
+  },
+  {
+   "id": "fetch-send",
+   "answer": "send",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"sent\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 2.135
+  },
+  {
+   "id": "script-click-send",
+   "answer": "send",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 2.128
+  },
+  {
+   "id": "key-enter-send",
+   "answer": "send",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "Clicked 消息. Event dispatch confirmed. Nothing on the page changed in a way attributable to this click. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly click the same target again — ",
+    "Pressed Enter. Page reacted: target region text +5 char(s); page sent POST 127.0.0.1:44401/send; body text +5 char(s).\nNew on the page since you last read it (refs are usable directly; no snapshot needed for these; lines you already saw that only moved are not listed):\n<page-content untrusted>\n[ref="
+   ],
+   "secs": 3.885
+  },
+  {
+   "id": "native-submit",
+   "answer": "decline",
+   "confirmShown": false,
+   "postsBeforeDecision": 1,
+   "postsAfter": 1,
+   "dialogText": null,
+   "buttons": null,
+   "ring": null,
+   "panelCard": "",
+   "tool": [
+    "<page-content untrusted>\n{\"value\":{\"value\":\"ok\"},\"steps\":1}\n</page-content>\n[After this program the working tab 1191922274 shows \"团队聊天\" — http://127.0.0.1:44401/; that is the page now.]"
+   ],
+   "secs": 2.284
+  }
+ ],
+ "posts": [
+  {
+   "path": "/send",
+   "at": 1792091546683
+  },
+  {
+   "path": "/send",
+   "at": 1792091548552
+  },
+  {
+   "path": "/send",
+   "at": 1792091553497
+  },
+  {
+   "path": "/send",
+   "at": 1792091555532
+  },
+  {
+   "path": "/api/send",
+   "at": 1792091557541
+  },
+  {
+   "path": "/api/send",
+   "at": 1792091559543
+  },
+  {
+   "path": "/save",
+   "at": 1792091561559
+  },
+  {
+   "path": "/api/send",
+   "at": 1792091563679
+  },
+  {
+   "path": "/send",
+   "at": 1792091565848
+  },
+  {
+   "path": "/send",
+   "at": 1792091571211
+  },
+  {
+   "path": "/send-native",
+   "at": 1792091575061
+  }
+ ]
+}

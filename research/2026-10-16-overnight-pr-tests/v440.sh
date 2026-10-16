@@ -1,0 +1,2 @@
+VALS='JSON.stringify([...document.querySelectorAll("input:not([type=hidden]),textarea,select")].map(e=>e.value))'
+for i in 1 2 3; do node run-task.mjs "$(jq -nc --arg ext $PWD/builds/p440main --arg t "om440-su$i" --arg v "$VALS" '{ext:$ext,display:":42",tag:$t,url:"http://127.0.0.1:8931/signup",prompt:"帮我把报名表填上：姓名王五，手机13700000000，备注带水。不要提交。",maxSec:180,check:$v,after:[{shot:"receipt",wait:800,text:".plan-card"},{click:".plan-card .plan-undo",shot:"undo",wait:3000,text:".plan-card"},{shot:"final",wait:300,check:$v}]}')" 2>&1 | tail -1 | cut -c1-140; done

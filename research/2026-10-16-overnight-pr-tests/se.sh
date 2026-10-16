@@ -1,0 +1,1 @@
+for i in 1 2 3 4 5; do node run-task.mjs "$(jq -nc --arg ext $EXT --arg d $D --arg t "$P-$i" '{ext:$ext,display:$d,tag:$t,url:"http://127.0.0.1:8931/search",prompt:"在站内搜索“部署”。",maxSec:180}')" 2>&1 | tail -1 | cut -c1-120; done

@@ -1,0 +1,20 @@
+import http from "node:http";
+const posts = [];
+const css = `body{font:15px/1.5 -apple-system,"PingFang SC",sans-serif;max-width:760px;margin:30px auto;padding:0 20px;color:#222}input,textarea,select{font:inherit;padding:6px;border:1px solid #bbb;border-radius:6px;width:100%;box-sizing:border-box}button{font:inherit;padding:7px 16px;border-radius:6px;border:1px solid #888;background:#f4f4f4;cursor:pointer}label{display:block;margin:10px 0 4px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px}`;
+const script = `<script>document.querySelectorAll('form').forEach(f=>f.addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter?.id||'submit';await fetch(location.pathname+'/'+b,{method:'POST',body:new URLSearchParams(new FormData(f))});document.querySelector('#status').textContent='已提交：'+b;}));</script>`;
+const pages = {
+  "/chat": `<title>团队聊天</title><h2>团队聊天 · #项目组</h2><div id="log"><p><b>小王：</b>明天的评审几点开始？</p></div><form><textarea name="msg" id="msg" rows="3" aria-label="消息"></textarea><p><button id="emoji" type="button">表情</button> <button id="send">发送</button></p></form><p id="status"></p>`,
+  "/mail": `<title>写邮件</title><h2>New message</h2><form><label>To<input name="to" id="to"></label><label>Subject<input name="subject" id="subject"></label><label>Body<textarea name="body" id="body" rows="6"></textarea></label><p><button id="draft">Save draft</button> <button id="send">Send</button></p></form><p id="status"></p>`,
+  "/signup": `<title>活动报名</title><h2>周末徒步活动报名</h2><form><label>姓名<input name="name" id="name"></label><label>手机<input name="phone" id="phone"></label><label>人数<select name="n" id="n"><option>1</option><option>2</option><option>3</option></select></label><label>备注<textarea name="note" id="note"></textarea></label><p><button id="save">保存</button> <button id="submit">提交报名</button></p></form><p id="status"></p>`,
+  "/table": `<title>季度销量</title><h2>季度销量（万元）</h2><table id="t"><tr><th>产品</th><th>Q1</th><th>Q2</th><th>Q3</th></tr><tr><td>A 型</td><td>120</td><td>135</td><td>150</td></tr><tr><td>B 型</td><td>90</td><td>80</td><td>110</td></tr><tr><td>C 型</td><td>60</td><td>95</td><td>70</td></tr></table><p id="status"></p>`,
+  "/shop": `<title>选择套餐</title><h2>选择套餐</h2><div style="display:flex;gap:16px"><div style="border:1px solid #ccc;padding:12px"><h3>基础版</h3><p>¥19/月</p><button onclick="document.querySelector('#status').textContent='已加入：基础版'">加入购物车</button></div><div style="border:1px solid #ccc;padding:12px"><h3>标准版</h3><p>¥49/月</p><button onclick="document.querySelector('#status').textContent='已加入：标准版'">加入购物车</button></div><div style="border:1px solid #ccc;padding:12px"><h3>专业版</h3><p>¥99/月</p><button onclick="document.querySelector('#status').textContent='已加入：专业版'">加入购物车</button></div></div><p>推荐：<a href="#" onclick="document.querySelector('#status').textContent='已加入：推荐套餐（标准版）';return false">一键加入推荐套餐</a></p><p id="status"></p>`,
+  "/chatlong": `<title>团队聊天</title><h2>和 @小王 的对话</h2>${Array.from({length:30},(_, i)=>`<p><b>${i%2?"我":"小王"}：</b>第 ${i+1} 条历史消息，关于下周的评审安排。</p>`).join("")}<form><textarea name="msg" id="msg" rows="3" aria-label="消息"></textarea><p><button id="emoji" type="button">表情</button> <button id="send">发送</button></p></form><p id="status"></p>`,
+  "/search": `<title>站内搜索</title><h2>站内文档搜索</h2><form><input name="q" id="q" aria-label="搜索词"> <button id="go">搜索</button></form><p id="status"></p>`,
+};
+http.createServer(async (q, r) => {
+  if (q.method === "POST") { let b = ""; for await (const c of q) b += c; posts.push({ path: q.url, body: b, at: Date.now() }); return r.end("ok"); }
+  if (q.url === "/__posts") { r.writeHead(200, { "content-type": "application/json" }); return r.end(JSON.stringify(posts)); }
+  if (q.url === "/__reset") { posts.length = 0; return r.end("ok"); }
+  const body = pages[q.url.split("?")[0]]; if (!body) { r.writeHead(404); return r.end("nf"); }
+  r.writeHead(200, { "content-type": "text/html;charset=utf-8" }).end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>${css}</style><body>${body}${script}</body></html>`);
+}).listen(8931, "127.0.0.1", () => console.log("practice 8931"));
