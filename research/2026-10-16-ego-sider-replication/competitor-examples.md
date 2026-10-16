@@ -1,0 +1,34 @@
+# Competitor example tasks vs BYS (collected 2026-10-16 ~11:30 Asia/Shanghai)
+
+The "BYS likely can" column is **inference**. It comes from docs/STATUS.md in wt-440-on-main (clicking, filling, pressing Enter, opening tabs and navigating, reading the page, @ other tabs, comparison/checklist cards, undoing filled fields before submit, asking before send, the user clicks pay, downloads are noticed but their contents can't be read). No tasks were run.
+"Fixture" means the task can be rebuilt as a local HTML page with mock data: no real accounts, nothing public submitted.
+EGO = ego (lite) by citrolabs (https://lite.ego.app, repo citrolabs/ego-lite). The repo's acceptance scripts compare against it. It is a macOS Chromium browser driven by external agents through the `ego-browser` skill.
+Sider = sider.ai. Its Browser Agent is the sidebar in the extension (v5.20.0). Sider Hand/Claw are its agent product pages. Sider Code customizes pages.
+
+| product | example task | source URL | category | BYS likely can (inference) | local-fixture reproducible |
+|---|---|---|---|---|---|
+| EGO | Pull the last 7 days of main posts from a handle (skip pinned, reposts, replies) and return a leaderboard by views/engagement with account averages | https://lite.ego.app/use-cases | social scrape/aggregate | partial (multi-page reading and a table card are fine; long scroll/pagination untested) | yes |
+| EGO | Search job boards by role/location/work type, open the careers page, **fill the full application from your resume PDF**, and stop one click before submit | https://lite.ego.app/use-cases | **form-filling** + search | partial (can fill and stop before submit; it can't read a local resume PDF or upload files) | yes (mock job board + form, resume text pasted in) |
+| EGO | Filter home listings by city/budget/type, open the top match, recalculate the mortgage at your down payment, and return address, price and monthly cost | https://lite.ego.app/use-cases | filter + **form input (calculator)** | yes (filters, typing into the calculator, reading the result) | yes |
+| EGO | Search flights for a route/date, filter to nonstop on preferred carriers, pick the cheapest, **pre-fill passenger info**, and stop at the payment page | https://lite.ego.app/use-cases | **form-filling** + compare | partial→yes (fills forms, the user pays; complex date pickers/widgets are a risk) | yes |
+| EGO | Play a Lichess game until it ends, reading the board each turn | https://lite.ego.app/use-cases | long interactive loop | no/partial (canvas/drag board, very long loop) | yes (local board page) |
+| EGO | Search LinkedIn for AI SWE roles in SF, filter out senior/stale postings, and list 10 companies with open application links | https://lite.ego.app/use-cases | search + filter + extract | partial (needs login; filtering and the list are fine) | yes |
+| EGO | Reply to tweets, quote-tweet with citations from your own notes, draft and queue posts, pull engagement data, monitor mentions (X, LinkedIn, Threads, Reddit, IG, FB) | https://lite.ego.app/ (home) | social actions | partial (it drafts and fills, and asks before sending; it has no access to local notes and no scheduled monitoring) | yes (mock compose box) |
+| EGO | Do web tasks such as "research, filling in forms, collecting data from websites, testing web apps" | https://lite.ego.app/document/en/docs/product-introduce | generic (incl. **forms**) | partial (no web-app testing and no code access) | yes |
+| EGO | Review your own web app's UI: open the local dev server, find a layout problem, change the repo code, reload, and check the fix | https://lite.ego.app/document/en/docs/product-introduce | dev/QA + local files | no (an extension can't edit the repo) | yes |
+| EGO | E2E test: follow numbered steps, click through the UI, **fill forms**, inspect the result, and report pass/fail/blocked with evidence | https://lite.ego.app/solutions/browser-testing-e2e-testing | QA + **form-filling** | partial (steps and forms work; no structured test report or screenshot evidence) | yes |
+| Sider | Browser Agent in the sidebar: "managing tools, **filling forms**, checking data, or testing content" in the current browser | https://sider.ai/whats-new/browser-extension/sider-v5_20_0 | generic (incl. **forms**) | yes/partial | yes |
+| Sider | Amazon Price Tracker: extract prices, ratings and review counts from top listings into a spreadsheet | https://sider.ai/agents/hand , https://sider.ai/agents/claw | extract to table | partial (gives a table/card, not a spreadsheet file) | yes |
+| Sider | Competitive SEO Intelligence: analyze competitor domains in Ahrefs (keywords, top pages, backlinks, content gaps) | same | logged-in SaaS research | partial (needs an Ahrefs login; multi-tab compare) | yes (mock dashboard) |
+| Sider | Hiring Signal Brief: scan competitor career pages and turn open roles into a talent-strategy brief | same | multi-site research + report | yes/partial | yes |
+| Sider | Review Pain Mining: cluster complaints from low-star reviews (snippet partly cut off on the page) | same | extract + analyze | partial (pagination) | yes |
+| Sider | Reddit Topic Scan: collect hot posts across subreddits into a content-idea sheet | same | multi-page extract | partial | yes |
+| Sider | YouTube Topic Research: capture top video metadata and organize it in Sheets | https://sider.ai/agents/hand | extract + write to Sheets | partial (extraction yes; writing to Google Sheets untested) | yes (mock sheet grid) |
+| Sider | Event Intel Sheet: dates, locations and ticket prices from major event sites | same | multi-site extract | partial | yes |
+| Sider | Company Contact Collector: emails, phones and addresses from contact pages into a spreadsheet | https://sider.ai/agents/hand | multi-site extract | partial (no file output) | yes |
+| Sider | Turn research into PPT, PDF or DOC files; batch operations; monitor prices | https://sider.ai/apps/windows | file generation / monitoring | no (no file generation, no scheduling) | yes |
+| Sider | Sider Code: change a page from natural language (Reddit comment summary, X thread read mode, Google Docs dark mode, HN debate view, Wattpad reading mode, remove YouTube Shorts) and remember it per site | https://sider.ai/agents/code | page customization | partial (can summarize and remember site notes; no persistent DOM/CSS rewrite) | yes |
+
+## Notes
+- Not found or not fetched: Sider's intro video (text only), and EGO pages beyond the home page, use-cases, the intro doc and the E2E page. The Sider Hand/Claw snippets are partly cut off in search results, so some rows are paraphrased from fragments.
+- Form-filling examples: the EGO job application, the EGO flight passenger info, the EGO mortgage calculator input, the EGO generic and E2E "fill forms", and Sider Browser Agent "filling forms".
