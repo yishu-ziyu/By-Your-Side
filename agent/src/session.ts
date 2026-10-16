@@ -496,7 +496,28 @@ if(required.includes(key))candidates.set(key,attachment);
   /** 每次模型调用的请求指纹与首次出现的系统提示词、工具说明全文，写进本会话的诊断记录。 */
   readonly modelRequestTrace = new ModelRequestTrace((type, data) => this.runTrace.record(type, data));
   /** 主任务的思考档：新任务回到起始档，升档信号各升一档（main-effort.ts）。 */
-  readonly mainEffort = new MainEffort((type, data) => this.runTrace.record(type, data));
+  readonly mainEffort = new MainEffort((type, data) => {
+    this.runTrace.record(type, data);
+    this.emitThinkingLevel();
+  });
+
+  thinkingInfo(): import('../../shared/protocol.js').ThinkingInfo | null {
+    const model = this.session?.model;
+    return model ? {model:this.modelName()!,base:this.mainEffort.base(model),actual:this.mainEffort.level(model)} : null;
+  }
+
+  emitThinkingLevel(): void {
+    const info = this.thinkingInfo();
+    if (info) this.callbacks.emit({kind:'thinking_level',...info});
+  }
+
+  setThinking(modelId: string, level: import('../../shared/protocol.js').ThinkingLevel | null, restore = false): void {
+    const slash = modelId.indexOf('/');
+    const model = this.modelRuntime?.getModel(modelId.slice(0,slash), modelId.slice(slash+1));
+    if (!model || level !== null && !thinkingChoice(model)?.levels.includes(level)) throw new Error('这个模型不支持所选思考档位。');
+    this.mainEffort.prefer(modelId,level,this.session?.model,restore);
+    if (this.modelName() === modelId) this.emitThinkingLevel();
+  }
   private controlEpoch = 0;
   /**
    * 已交给 Pi、但还没被模型读到的插话。按记录跟踪而不是按文本集合：
@@ -855,6 +876,8 @@ if(required.includes(key))candidates.set(key,attachment);
     }
 
     await this.session.setModel(model);
+    this.mainEffort.reset(model);
+    this.emitThinkingLevel();
   }
 
   isStreaming(): boolean {
@@ -1674,6 +1697,30 @@ return;}
     return backup;
   }
 
+  /** 追问只读原任务的实际调用与结果，不重新执行，也不把代码当成指令。 */
+  voiceTaskEvidence(snapshot: TaskProgressSnapshot) {
+    const messages = (this.session?.agent.state.messages ?? []).filter(message =>
+      'timestamp' in message && snapshot.startedAt !== null && message.timestamp >= snapshot.startedAt);
+    const calls = messages.flatMap(message => message.role === 'assistant'
+      ? message.content.filter(part => part.type === 'toolCall') : []).slice(-6);
+    const operations = calls.map(call => {
+      const result = messages.find(message => message.role === 'toolResult' && message.toolCallId === call.id);
+      return {
+        tool: call.name,
+        arguments: redactCredentialText(JSON.stringify(call.arguments)).slice(0, 1600),
+        outcome: result?.role === 'toolResult' ? result.isError ? 'failed' : 'returned' : 'pending',
+        error: result?.role === 'toolResult' && result.isError
+          ? redactCredentialText(result.content.filter(part => part.type === 'text').map(part => part.text).join('')).slice(0, 500) : null,
+      };
+    });
+    return {
+      goal: snapshot.goal, state: snapshot.state, goalCheck: snapshot.goalCheck ?? null,
+      unresolvedEffect: !!(snapshot.unresolvedEffect || snapshot.untrackedWritePending),
+      result: snapshot.conversationContext?.latestResult?.text?.slice(0, 3000) ?? null,
+      operations,
+    };
+  }
+
   async composeUserDelivery(input: {
     question?: string | null;
     facts: string;
@@ -1777,8 +1824,7 @@ return;}
     // 用户随口补的一句（例如只回一个邮箱）也是用户的直接输入：照常走记忆（自动记下、带上个人资料）。重启恢复不算新输入。
     if (snapshot.interruptionReason === "manual_continuation" && latestInput) {
       this.memoryRuntime?.beginUserTurn(latestInput, context, snapshot.conversationContext?.recentTurns);
-      // 用户补一句接着做同一任务：算用户纠正，档位不回到起始档。
-      this.mainEffort.raise(session.model, "user_correction");
+      if (isUserCorrection(latestInput)) this.mainEffort.raise(session.model, "user_correction");
     } else this.memoryRuntime?.invalidateUserTurn();
 
     const observationId = `restart-snapshot-${randomUUID()}`;

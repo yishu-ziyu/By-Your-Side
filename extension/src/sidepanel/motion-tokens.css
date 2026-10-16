@@ -1,6 +1,8 @@
 /* 动效 token（A10）：5 个时长 + 4 条曲线。只有本文件可以写裸的 ms / cubic-bezier。 */
 :root {
   --d-tap: 90ms;
+  --m-effort: 300ms;
+  --m-effort-drag: 150ms;
   --d-micro: 140ms;
   --d-state: 200ms;
   --d-layout: 280ms;

@@ -16,7 +16,8 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
@@ -24,11 +25,12 @@ import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-c
 
 requireHeadless();
 const caseName = process.argv.find((a) => a.startsWith("--case="))?.slice(7) ?? "main";
-assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context"].includes(caseName), `未知用例：${caseName}`);
+assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup"].includes(caseName), `未知用例：${caseName}`);
 const model = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
 assert.match(model, /^[^/]+\/.+$/, "--model 需要 provider/model");
 const longResult = caseName === "long-result", currentPage = caseName === "current-page", serverError = caseName === "server-error", handoff = caseName === "handoff";
 const pageContext = caseName === 'page-context';
+const followup = caseName === 'followup';
 const apiKey = process.argv.includes("--case=api-key"), noLogin = apiKey || process.argv.includes("--case=no-login"), bargeResult = process.argv.includes("--case=barge-result");
 const extraFact = process.argv.includes("--extra-fact") ? "另外，全双工技术最早由爱迪生在1873年提出。" : "";
 const VOICE_MODEL = "gpt-live-1-codex";
@@ -36,7 +38,15 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 await mkdir(out, { recursive: true });
 
 /** 用 macOS say 合成一句话，返回 base64 WAV。 */
-const speech = (text: string, file: string) => { const path = join(out, file); execFileSync("say", ["-v", "Tingting", "-o", path, "--data-format=LEI16@48000", text]); return readFile(path).then((b) => b.toString("base64")); };
+const speech = async (text: string, file: string) => {
+  const cache = join(REPO,'out/voice-audio-cache'); await mkdir(cache,{recursive:true});
+  const key = createHash('sha256').update('Tingting/LEI16@48000/'+text).digest('hex');
+  const cached = join(cache,key+'.wav'), path = join(out,file);
+  let bytes = await readFile(cached).catch(()=>null);
+  if (!bytes) { execFileSync('say',['-v','Tingting','-o',path,'--data-format=LEI16@48000',text]); bytes=await readFile(path); await writeFile(cached,bytes); }
+  else await writeFile(path,bytes);
+  return bytes.toString('base64');
+};
 const CHAT = "你好，给我讲一个长一点的小故事吧。", ASK = "帮我去维基百科查一下全双工这个词。", BARGE = "等一下，先停一下。";
 const taskAsk = longResult ? "帮我去维基百科查一下全双工。请先用一句简短的完整句子给出结论，不要标题。然后详细解释定义、工作方式、与半双工和单工的区别、实际应用、优缺点和来源，至少一千二百字。不要生成文件或附件，直接在侧栏的回答正文里完整写出全部内容，不要只给摘要。" : currentPage ? "请查看我当前打开的页面，告诉我页面标题，以及英语、日语、西班牙语这三个语言入口分别叫什么。" : handoff ? "现在通过维基百科查一下刚才那个技术，用两句话介绍。" : ASK;
 const topicAsk = "先不要查网页，我们先约定，接下来我说的那个技术是逆向工程，先记住这个话题。";
@@ -70,11 +80,15 @@ const voicePlan = model === DEFAULT_TEST_MODEL ? plan : await loadModelPlan(DEFA
 const site = createServer((_q, r) => r.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>语音练习页</title><h1>语音练习页</h1><p>这一页只用来放侧栏。</p>"));
 await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
 // 底下垫一路真实假麦克风设备（只有静音）：只用 AudioContext 造的流时，GPT-Live 收到结果后一直不播报（10-09 三次）；用设备流时正常。
-execFileSync("say", ["-v", "Tingting", "-o", join(out, "silence.wav"), "--data-format=LEI16@48000", "[[slnc 600000]]"]);
+const silence = Buffer.alloc(44 + 48000 * 2 * 600);
+silence.write('RIFF',0);silence.writeUInt32LE(silence.length-8,4);silence.write('WAVEfmt ',8);
+silence.writeUInt32LE(16,16);silence.writeUInt16LE(1,20);silence.writeUInt16LE(1,22);
+silence.writeUInt32LE(48000,24);silence.writeUInt32LE(96000,28);silence.writeUInt16LE(2,32);silence.writeUInt16LE(16,34);
+silence.write('data',36);silence.writeUInt32LE(silence.length-44,40);await writeFile(join(out,'silence.wav'),silence);
 const rp = await launchRealPath({ microphoneWav: join(out, "silence.wav") });
 const evidence: Record<string, unknown> = {};
 let error: string | null = null, panel = "";
-type Ev = { at: number; type: string; channel?: string; item?: { id?: string; text?: string }; turn?: { role: string; transcript: string }; content?: Array<{ text: string }>; error?: { type?: string; code?: string; message?: string } };
+type Ev = { at: number; delegation_item_id?: string; type: string; channel?: string; item?: { id?: string; text?: string; user_bidi_turn_id?:string }; turn?: { id?:string; role: string; transcript: string }; content?: Array<{ text: string }>; error?: { type?: string; code?: string; message?: string } };
 const readRaw = async () => (await rp.evaluate(panel, "window.__gl")) as { in: Ev[]; out: Ev[]; meter: Array<[number, number]>; said: Array<{ at: number; ms: number }> };
 const read = async () => {
   const g = await readRaw();
@@ -91,12 +105,13 @@ const answerText = async () => String(await rp.evaluate(panel, `(() => {
   return copy.textContent.trim();
 })()`));
 const calls: Array<{ url: string; status?: number }> = [], sockets: string[] = [];
+const hostDiagnostics: unknown[] = [];
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "空白页");
   const work = await rp.attach(blank.targetId);
-  await rp.cdp.send("Page.navigate", { url: currentPage || handoff || pageContext ? "https://www.wikipedia.org/" : `http://127.0.0.1:${siteAddress(site).port}/` }, work);
-  if (currentPage || handoff || pageContext) {
+  await rp.cdp.send("Page.navigate", { url: currentPage || handoff || pageContext || followup ? "https://www.wikipedia.org/" : `http://127.0.0.1:${siteAddress(site).port}/` }, work);
+  if (currentPage || handoff || pageContext || followup) {
     const source = await until(async () => await rp.evaluate(work, `(() => {
       const languages = ["en", "ja", "es"].map((lang) => { const a = document.querySelector('a#js-link-box-' + lang); return a && { lang, text: a.innerText, url: a.href }; });
       return languages.every(Boolean) && { title: document.title, url: location.href, languages };
@@ -110,9 +125,12 @@ try {
   if (apiKey) (items as Record<string, unknown>)["inproc_cred:openai-codex"] = { type: "api_key", key: "sk-not-a-chatgpt-login" };
   else if (noLogin) delete (items as Record<string, unknown>)["inproc_cred:openai-codex"];
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)})`);
+  if (followup) { await rp.evaluate(panel, `localStorage.setItem('sideagent.thinkingDeep', '1')`); await rp.cdp.send('Page.reload', {}, panel); }
   // 网络记录：侧栏向 chatgpt.com 建通话；任何页面（含离屏页）开出的语音 WebSocket 都记下，查是否退回别的语音。
   const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "离屏页");
-  for (const s of [panel, await rp.attach(offscreen.targetId)]) await rp.cdp.send("Network.enable", {}, s);
+  const worker=(await rp.targets()).find(t=>t.type==='service_worker'&&t.url.endsWith('/background.js'));
+  for (const s of [panel, await rp.attach(offscreen.targetId), ...(worker?[await rp.attach(worker.targetId)]:[])]) { await rp.cdp.send("Network.enable", {}, s); await rp.cdp.send('Runtime.enable',{},s); }
+  rp.cdp.onEvent('Runtime.consoleAPICalled',(m:any)=>{const text=(m.params.args??[]).map((a:any)=>typeof a.value==='string'?a.value:'').join(' ');if(text.includes('[voice]')){const record={at:Date.now(),text};hostDiagnostics.push(record);void appendFile(join(out,'host-diagnostics.jsonl'),JSON.stringify(record)+'\n');}});
   rp.cdp.onEvent("Network.requestWillBeSent", (m: any) => { if (/chatgpt\.com\/backend-api\/codex\/realtime/.test(m.params.request.url)) calls.push({ url: m.params.request.url }); });
   rp.cdp.onEvent("Network.responseReceived", (m: any) => { const c = calls.find((x) => x.url === m.params.response.url && x.status === undefined); if (c) c.status = m.params.response.status; });
   rp.cdp.onEvent("Network.webSocketCreated", (m: any) => sockets.push(m.params.url));
@@ -147,7 +165,73 @@ try {
     await until(async () => (await read()).in.some((e) => e.type === "session.started") || undefined, 30_000, "GPT-Live 连上");
     assert.ok(calls.length === 1 && calls[0]!.status === 201, `向 chatgpt.com 建通话一次并成功：${JSON.stringify(calls)}`);
     assert.ok(!sockets.some((u) => /stepfun/.test(u)), "没有连 StepFun");
-    if (serverError) {
+    if (followup) {
+      const replies: Array<{question:string;spoken:string;waitMs:number;at:number}> = [];
+      evidence.dialogue = replies;
+      const questions = ['你好', '这是什么网站呀', '我想了解一下逆向工程', '你就在这个网站里面查吧', '嗯。具体是什么脚本呢？在执行什么', '我想知道是什么脚本，它在执行什么的'];
+      for (const [index, question] of questions.entries()) {
+        console.log(`真实对话 ${index + 1}/${questions.length}：${question}`);
+        const wav = await speech(question, `followup-${index}.wav`);
+        const input = await say(wav);
+        const userTurn = await until(async () => (await read()).in.find(e=>e.type==='turn.done'&&e.turn?.role==='user'&&e.at>input.at),60_000,'本轮原话已被服务完整接收');
+        let replyAfter = userTurn.at;
+        const delegated = (await read()).in.find(e => e.type === 'delegation.created' && e.item?.user_bidi_turn_id === userTurn.turn?.id);
+        if (delegated) {
+          // 网页任务进行中让后台卡住 17 秒（机器满载时实测后台 13 秒不回消息；心跳 5 秒一次、10 秒没回才换端口，17 秒一定触发）：
+          // 侧栏会换端口，语音通话和任务结果都不能因此丢掉。
+          if (index === 3 && !process.env.NO_STALL) {
+            const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "service worker")).targetId);
+            const stallAt = Date.now();
+            await rp.evaluate(sw, `(() => { const end = Date.now() + 17000; while (Date.now() < end); return true; })()`, { timeoutMs: 30_000 });
+            evidence.backgroundStall = { at: stallAt, ms: Date.now() - stallAt };
+          }
+          const delivery = await until(async () => (await read()).out.find(e => e.type === 'delegation.context.append' && e.delegation_item_id === delegated.item?.id && (e.channel === 'speakable' || e.channel === 'commentary' && e.content?.some(part => part.text?.includes('这句是闲聊')))), 120_000, '本轮正式回答，不能把开场应答当结果');
+          const acknowledged=await until(async()=>(await read()).in.find(e=>e.type==='delegation.context.appended'&&e.delegation_item_id===delegated.item?.id&&e.at>=delivery.at),30_000,'服务确认收到本轮正式回答');
+          replyAfter = acknowledged.at;
+          if (index === 3) evidence.taskDelivery = delivery;
+        }
+        // 回答可能在结果送到前就开口、一口气说到结果之后：取送到之后才说完的第一轮，开场应答在那之前已说完。
+        const completed = await until(async()=>(await read()).in.find(e=>e.type==='turn.done'&&e.turn?.role==='assistant'&&e.at>=replyAfter-100),150_000,'本轮回答完整结束');
+        const assistant = (await read()).in.find(e=>e.type==='turn.created'&&e.turn?.id===completed.turn?.id)??completed;
+        const spoken=completed.turn?.transcript??'';
+        const firstAudio=(await read()).meter.find(([at,rms])=>at>replyAfter-500&&rms>0.01)??[assistant.at,0];
+        await sleep(2500);
+        replies.push({question,spoken,waitMs:firstAudio[0]-(input.at+input.ms),at:input.at});
+        await rp.screenshot(panel, join(out, `followup-${index}.png`));
+        console.log(JSON.stringify(replies.at(-1)));
+        if(index===1)assert.match(spoken,/维基|Wikipedia/i,'认出当前网站');
+        if(index===3){
+          assert.match(await answerText(),/逆向工程|reverse engineering/i,'前文主题交给真实网页任务');
+          // 选中的这一轮必须真把结果说出来：说出的话里至少三成两字词来自送回的结果，不能只是提前开口的闲聊。
+          const pairs=(t:string)=>{const c=t.replace(/[\s\p{P}]/gu,'');return new Set([...c].slice(1).map((ch,i)=>c[i]+ch));};
+          const said=pairs(spoken),result=pairs((evidence.taskDelivery as {content?:Array<{text?:string}>}|undefined)?.content?.map(p=>p.text??'').join('')??'');
+          const overlap=said.size?[...said].filter(p=>result.has(p)).length/said.size:0;
+          evidence.taskSpokenOverlap=overlap;
+          assert.ok(overlap>=0.3,`这一轮播报说出了任务结果（重合 ${overlap.toFixed(2)}）`);
+        }
+      }
+      await rp.click(panel,'.voice-start');
+      const exported=await exportDiagnosticsViaSettings(rp,rp.extensionId,join(out,'downloads'));
+      const traces=String((exported as {traces?:string}).traces??'').split('\n').filter(Boolean).map(l=>JSON.parse(l));
+      await writeFile(join(out,'trace.json'),JSON.stringify(traces,null,2));
+      const taskStart=traces.find(t=>t.type==='run_start'&&Date.parse(t.time)>=replies[3]!.at);
+      const run=traces.filter(t=>t.runId===taskStart?.runId);
+      const end=run.find(t=>t.type==='agent_end');
+      const firstTool=run.find(t=>t.type==='tool_execution_start');
+      evidence.timing={taskMs:taskStart&&end?Date.parse(end.time)-Date.parse(taskStart.time):null,firstActionMs:taskStart&&firstTool?Date.parse(firstTool.time)-Date.parse(taskStart.time):null};
+      evidence.realPages=(await rp.targets()).filter(t=>t.type==='page'&&/^https?:/.test(t.url)).map(t=>({url:t.url,title:t.title}));
+      for(const reply of replies.slice(4)){
+        assert.match(reply.spoken,/读取|读了|提取|获取|抓取|搜索|检索|查询|抓.{0,5}(内容|正文)|没有.{0,6}脚本/,'脚本追问解释具体做了什么，不只重复任务结论');
+        assert.doesNotMatch(reply.spoken,/还有.{0,15}未完成|执行遇到阻碍|脚本.{0,8}没完成/,'成功后的追问不再被旧错误占据');
+      }
+      assert.ok(!traces.some(t=>t.type==='tool_execution_start'&&Date.parse(t.time)>=replies[4]!.at),'解释追问不能重新操作网页');
+      const stall = evidence.backgroundStall as { at: number } | undefined;
+      assert.ok(stall, '网页任务进行中确实让后台卡住过');
+      const after = hostDiagnostics.filter((d): d is { at: number; text: string } => (d as { at: number }).at >= stall.at).map(d => d.text);
+      assert.ok(after.some(t => t.includes('panel_port_replaced')) && after.some(t => t.includes('voice_host_reattached')), '后台卡住时侧栏换了端口，并用原来的语音会话接上');
+      assert.equal(calls.length, 1, '后台卡住后，语音沿用原来的通话，没有挂断重拨');
+      console.log('真实对话复验完成');
+    } else if (serverError) {
       const injected = { type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Context append text must not exceed 500 tokens." } };
       evidence.faultInjection = { synthetic: true, event: injected, note: "人工数据通道事件，不是真服务失败。" };
       await rp.evaluate(panel, `window.__dc.dispatchEvent(new MessageEvent("message", { data: ${JSON.stringify(JSON.stringify(injected))} }))`);
@@ -301,11 +385,12 @@ try {
   await rp.screenshot(panel, join(out, "panel.png"));
 } catch (e) {
   error = e instanceof Error ? e.stack ?? e.message : String(e);
+  if (panel && followup) {await exportDiagnosticsViaSettings(rp,rp.extensionId,join(out,'failure-downloads')).catch(()=>{});}
   if (panel) { evidence.view = await rp.evaluate(panel, '({ status: document.querySelector(".voice-state")?.innerText, text: document.body.innerText.slice(0, 2000) })').catch(() => null); await rp.screenshot(panel, join(out, "failure.png")).catch(() => {}); }
 } finally {
   const g = panel ? await readRaw().catch(() => null) : null;
   if (handoff && g) evidence.handoffTurnRelations = { note: "原始转写、turn.done与delegation（含user_bidi_turn_id）仅供诊断，不以内部对象关系判产品通过。", events: g.in.filter((e) => ["input_transcript.added", "output_transcript.added", "turn.done", "delegation.created"].includes(e.type)) };
-  await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", case: caseName, model, voiceModel: VOICE_MODEL, extraFact: !!extraFact, evidence, calls, sockets, events: g && { in: g.in, out: g.out.map((e) => ({ ...e })), said: g.said }, error }, null, 2));
+  await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", case: caseName, model, voiceModel: VOICE_MODEL, extraFact: !!extraFact, evidence, hostDiagnostics, calls, sockets, events: g && { in: g.in, out: g.out.map((e) => ({ ...e })), said: g.said }, error }, null, 2));
   if (g) await writeFile(join(out, "meter.json"), JSON.stringify(g.meter));
   await rp.close(); await rp.remove(); site.close();
 }

@@ -804,7 +804,11 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   try {
     const bootstrap = vm.evalCode(`{
       const call=globalThis.__browserCall; delete globalThis.__browserCall;
-      globalThis.browser=Object.freeze(Object.fromEntries(${JSON.stringify(FACADE)}.map(name=>[name, async (params)=>JSON.parse(await call(name,JSON.stringify(params??{})))])));
+      globalThis.browser=Object.freeze(Object.fromEntries(${JSON.stringify(FACADE)}.map(name=>[name, async (params)=>{
+        // 页面函数在这里序列化，避免模型把脚本嵌套成字符串时再次转义。
+        if(name==='js' && params && typeof params.code==='function')params={...params,code:'('+params.code.toString()+')()'};
+        return JSON.parse(await call(name,JSON.stringify(params??{})));
+      }])));
     }`);
 
     vm.unwrapResult(bootstrap).dispose();
