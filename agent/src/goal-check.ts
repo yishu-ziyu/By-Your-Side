@@ -42,12 +42,18 @@ export function severalAsks(requirements: readonly string[], interjections: numb
  * 这类任务本来就要一两分钟，核对多想几秒换来真的去别处查；其他任务仍用最低档，不变慢。
  */
 export function tracesSources(goal: readonly string[]): boolean {
-  return goal.some(text => /来源|出处|原文|原始(文章|报告|论文|出处)|引用|作者|谁写的|发表|个人网站|社交账号|\bsources?\b|\bcit(e|ed|ation)s?\b|\boriginal\b|\bauthors?\b|who wrote|published/i.test(text));
+  // 要有「去找」的意思：「翻译以下原文」「写个原创故事」不算，免得普通请求也多等一档。
+  return goal.some(text => /(找|查|核实|确认|告诉我|打开|是谁|是什么|有谁|列出).{0,15}(来源|出处|原文|原始|作者|引用|个人网站|社交账号|发表时间|发布时间)|(来源|出处|原文|原始(文章|报告|论文)|作者|引用的?(研究|报告|文章)).{0,10}(是谁|是什么|有谁|在哪|找|查|打开|核实)|(附|带|给出?)(上)?(来源|出处)(链接)?|\b(find|who|which|what|open|verify|cite)\b.{0,40}\b(sources?|authors?|original|citations?|cited|published)\b/i.test(text));
 }
 
 /** 查来源的核对多想一档，时限也放宽：门口最多仍只等 GOAL_GATE_WAIT_MS，用户不会多等。 */
 const SOURCE_CHECK_EFFORT = "medium";
 const SOURCE_CHECK_TIMEOUT_MS = 30_000;
+
+/** 宿主给整次核对的时限：要比核对自己的时限长，否则多想的那一档会被外层先掐掉。 */
+export function goalCheckBudgetMs(goal: readonly string[]): number {
+  return (tracesSources(goal) ? SOURCE_CHECK_TIMEOUT_MS : GOAL_CHECK_TIMEOUT_MS) + 2_000;
+}
 
 /** 快速模型通道首字偶尔 5–8 秒（09-27 智谱实测），留足余量；只在一个任务收尾时等这一次。 */
 export const GOAL_CHECK_TIMEOUT_MS = 18_000;
@@ -70,6 +76,7 @@ Before deciding done, check:
 - These source rules apply only within the scope the user allowed: when the user limited where to look ("only this article", "just this page"), an answer that says the scope lacks it is done.
 - Kinds of sources: when the user names where to look (a personal website, other social accounts, the original article or report, an official page), the cited or opened sources must be of those kinds. Citations that all come from the starting site do not meet a request to look beyond it.
 - Readings: when a word in the goal that decides what to open or report can reasonably mean two different things on this page (e.g. "the original" as the material the post is based on, or as works it quotes), and lastReply acted on one reading without saying which, it is continue: the correction asks the reply to state its reading and to prefer the one the page supports most directly.
+- First-hand page: the page the user is on can itself be the original — an article, report or long post written first-hand, or the long post a short post links to. When the goal asks for "the original", "the source" or what it cites, and goalPage is that original or names no specific outside work, an answer that says so (and names what it does mention) is correct: do not demand an outside work. Substituting works it merely quotes, or reports that only match its topic, is continue, with a correction saying the page itself is the original.
 - Cannot verify: when lastReply says a requested fact (an author, a date, an affiliation) could not be found or verified, look at which sources observations show. If they are all one site, or a document the assistant could not read, it is continue: the correction names other independent sources to try (the subject's other accounts or sites linked from what was read, the publisher's page, a web search, the document's own text). After two independent sources also lack it, a clear "not found" answer can be done.
 - Not found: when lastReply says what the user asked to find does not exist or was not found, look at how it was searched in observations. If every attempt used the user's exact wording (a search box with that same wording counts as the same wording), it is continue, not done, needs_user or blocked, even when lastReply suggests the user search further: the assistant can do that itself. The correction names other wordings to try: synonyms or common variant names (a near-synonym that differs by one character, an alternative common name), the term in another language, related broader terms. After other wordings also found nothing, a clear "not found" answer can be done.
 - Granularity: when the user asked for each / every / all items or occurrences (每处、每个、全部、逐个), a coarser result is not done: e.g. a whole paragraph marked instead of each word, a summary instead of each item, a sample instead of all. Return continue and say what is still missing.
