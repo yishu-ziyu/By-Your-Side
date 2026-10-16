@@ -36,7 +36,7 @@ interface Closed { token: string; name: string; reason: "submitted" | "page_chan
 
 interface TabLedger { documentId: string; entries: Map<string, Entry> }
 
-interface Ledger { tabs: Map<number, TabLedger>; closed: Closed[]; notes: Set<FillUndoNote>; result?: FillUndoView; restoring?: boolean }
+interface Ledger { tabs: Map<number, TabLedger>; closed: Closed[]; notes: Set<FillUndoNote>; untracked: Set<string>; result?: FillUndoView; restoring?: boolean }
 
 const ledgers = new Map<string, Ledger>();
 const watchers = new Map<string, (view: FillUndoView | null) => void>();
@@ -205,7 +205,7 @@ function undoInPage(this: unknown, op: "probe" | "read" | "restore", arg: {
   // 单选组用组的名字（fieldset 的 legend、radiogroup 的 aria-label），不用点中那一项的字。
   const group = kind === "radio" ? field.closest("fieldset")?.querySelector("legend")?.textContent || field.closest("[role=radiogroup]")?.getAttribute("aria-label") : null;
   const label = "labels" in field && field.labels?.[0];
-  const name = (group
+  const fieldName = (group
     || field.getAttribute("aria-label")
     || (by ? by.split(/\s+/).map((id) => field.ownerDocument.getElementById(id)?.textContent ?? "").join(" ") : "")
     || (label && (label.textContent ?? "").replace(label.contains(field) ? field.textContent ?? "" : "", "")) || field.getAttribute("placeholder") || field.getAttribute("title") || field.getAttribute("name") || "")
@@ -213,7 +213,27 @@ function undoInPage(this: unknown, op: "probe" | "read" | "restore", arg: {
   const normalize = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-.]+/g, " ").toLowerCase();
   const sensitive = kind === "text" && ((field.tagName === "INPUT" && (field.type === "password" || field.hasAttribute("data-bys-was-password")))
     || /one-time-code|cc-(number|csc|exp)/i.test(String(field.getAttribute("autocomplete") ?? ""))
-    || new RegExp(arg.sensitiveName ?? "$^", "i").test([field.getAttribute("name"), field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].map((part) => normalize(String(part ?? ""))).join(" ")));
+    || new RegExp(arg.sensitiveName ?? "$^", "i").test([field.getAttribute("name"), field.id, fieldName, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].map((part) => normalize(String(part ?? ""))).join(" ")));
+
+  const labelText = (node: Element | null): string => {
+    if (!node || ("isContentEditable" in node && node.isContentEditable === true) || node.matches("input, textarea, select, [contenteditable]:not([contenteditable=false]), fieldset, section, form, [role=group], [role=region]")
+      || node.querySelector("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return "";
+
+    return (node.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+  };
+  let regionName = "";
+
+  for (let region = field.parentElement; region && !regionName; region = region.parentElement) {
+    if (region.tagName === "FIELDSET") regionName = labelText(region.querySelector(":scope > legend"));
+    else if (region.matches("[role=group], [role=region]")) {
+      regionName = (region.getAttribute("aria-label") ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+
+      if (!regionName) regionName = (region.getAttribute("aria-labelledby") ?? "").split(/\s+/)
+        .map((id) => labelText(field.ownerDocument.getElementById(id))).filter(Boolean).join(" ").slice(0, 40);
+    } else if (region.tagName === "SECTION") regionName = labelText(region.querySelector(":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6, :scope > [role=heading]"));
+  }
+
+  const name = regionName && fieldName && regionName !== fieldName ? `${regionName} › ${fieldName}` : fieldName;
 
   if (field.tagName === "INPUT" && field.type === "password") field.setAttribute("data-bys-was-password", "");
 
@@ -262,18 +282,22 @@ const viewOf = (conversationId: string): FillUndoView | null => {
 
   if (!ledger) return null;
 
-  if (ledger.result) return ledger.result;
+  const untracked = [...ledger.untracked];
+
+  if (ledger.result) return { ...ledger.result, untracked };
   const notes = [...ledger.notes];
   const open = [...ledger.tabs.values()].flatMap((tab) => [...tab.entries.values()]);
 
-  if (open.length) return { state: "ready", count: open.length, fields: open.map(nameOf), notes };
+  const fields = open.map(nameOf);
 
-  if (ledger.closed.some((closed) => closed.reason === "submitted")) return { state: "submitted", fields: ledger.closed.map(nameOf), notes };
+  if (open.length) return { state: "ready", count: open.length, fields, notes, untracked, unavailable: ledger.closed.map(nameOf) };
 
-  if (ledger.closed.length) return { state: "page_changed", fields: ledger.closed.map(nameOf), notes };
+  if (ledger.closed.some((closed) => closed.reason === "submitted")) return { state: "submitted", fields: ledger.closed.map(nameOf), notes, untracked };
+
+  if (ledger.closed.length) return { state: "page_changed", fields: ledger.closed.map(nameOf), notes, untracked };
 
   // 只改了编辑器文字、或只碰了原来有内容的密码栏：没有能还原的，但要让面板说一句。
-  return notes.length ? { state: "ready", count: 0, fields: [], notes } : null;
+  return notes.length ? { state: "ready", count: 0, fields: [], notes, untracked } : null;
 };
 
 const emit = (conversationId: string) => watchers.get(conversationId)?.(viewOf(conversationId));
@@ -323,14 +347,14 @@ export async function beforeWrite(sessionKey: string, tabId: number, where: Undo
     async done() {
       let ledger = ledgers.get(conversationId);
 
-      if (!ledger) { ledger = { tabs: new Map(), closed: [], notes: new Set() }; ledgers.set(conversationId, ledger); }
+      if (!ledger) { ledger = { tabs: new Map(), closed: [], notes: new Set(), untracked: new Set() }; ledgers.set(conversationId, ledger); }
 
       // 还原过以后助手又动了手：从这里重新记。
-      if (ledger.result) { ledger.result = undefined; ledger.closed = []; ledger.notes.clear(); }
+      if (ledger.result) { ledger.result = undefined; ledger.closed = []; ledger.notes.clear(); ledger.untracked.clear(); }
 
-      if (write && probe.kind === "rich") ledger.notes.add("rich_text");
+      if (write && probe.kind === "rich") { ledger.notes.add("rich_text"); ledger.untracked.add(nameOf(probe)); }
 
-      if (write && probe.sensitive && !probe.token) ledger.notes.add("sensitive");
+      if (write && probe.sensitive && !probe.token) { ledger.notes.add("sensitive"); ledger.untracked.add(nameOf(probe)); }
       let tab = ledger.tabs.get(tabId);
 
       if (tab && tab.documentId !== doc.documentId) { closeEntries(ledger, tabId, "page_changed"); tab = undefined; }
@@ -412,7 +436,7 @@ export async function restoreFills(conversationId: string): Promise<void> {
       else skipped.push({ field: nameOf(entry), reason: "failed" });
     }
 
-    ledger.result = { state: "restored", restored: kept, skipped, notes: [...ledger.notes] };
+    ledger.result = { state: "restored", restored: kept, skipped, notes: [...ledger.notes], unavailable: ledger.closed.map(nameOf) };
     ledger.tabs.clear();
     ledger.closed = [];
   } finally {

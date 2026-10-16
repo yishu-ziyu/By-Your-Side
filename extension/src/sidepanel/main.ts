@@ -23,7 +23,7 @@ import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { linkifyPageRefs, quotedNames } from "./page-refs.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
-import { adoptFillUndo, noteFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
+import { adoptFillUndo, fillUndoOf, fillUndoLabel, handFillUndoToCard, isFillUndoPending, noteFillUndo, requestFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
 import { attachShorten } from "./answer-shorten.js";
 import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
@@ -81,7 +81,7 @@ import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
 import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
-import { PANEL_PORT_NAME, parseDeliveryReceipt, type BgToPanel, type DeliveryReceipt, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
+import { PANEL_PORT_NAME, parseDeliveryReceipt, type BgToPanel, type DeliveryReceipt, type FillUndoView, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
 import { installProactiveCard } from "./proactive-card.js";
@@ -94,7 +94,7 @@ import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
-import { mountTaskPlan, siteName } from "./task-plan.js";
+import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
@@ -198,6 +198,7 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
   if (!replayingHistory && answer === fillUndoAnswer()) adoptFillUndo(answer);
+  if (!replayingHistory && planCardRun) paintPlanCard();
   attachShorten(answer);
   // 文末一排是回答写完后才加的：原本跟着底部的，再贴一次底，否则这一排卡在侧栏底边，拖把手时前一小段把手不动。
   scrollToEnd();
@@ -1084,6 +1085,8 @@ function renderConversations(): void {
 
 function resetConversationRender(): void {
   resetFillUndo();
+  planCardRun = null;
+  planUndo = null;
   if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
 
   closeBlocks();
@@ -3897,6 +3900,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const skeleton = answerSkeleton();
   trail.after(skeleton);
   const start = runStartAt || eventTime();
+  retirePlanCard();
+  taskPlan.adopt(root, body);
 
   currentRun = {
     root,
@@ -4423,8 +4428,19 @@ function finishRun(): void {
     line.textContent = thought >= 1_000 ? `共 ${total}，其中想了 ${spokenDuration(0, thought)}` : `共 ${total}`;
     run.body.appendChild(line);
   }
+  const planTop = run.root.classList.contains("plan-card") && !pinned ? run.root.getBoundingClientRect().top : null;
   run.root.open = false;
   placeProcessBeforeAnswer(run.root);
+
+  // 回执看后果：这一轮还原账本记到了页面改动（填过的栏、或撤不回的编辑器正文），不管原话怎么说都收成回执；计划行的关键词只管开头那行「会去 …」。
+  if (run.receipt && (run.root.classList.contains("plan-card") || planUndo)) {
+    run.root.classList.add("plan-card");
+    planCardRun = run;
+    paintPlanCard();
+  }
+
+  // 计划卡收成一行时整张卡变矮：用户翻在上面看时，把卡顶留在原处，不让内容跳走；被挤出视口的部分由顶部的渐隐边盖住。
+  if (planTop !== null) messagesEl.scrollTop += run.root.getBoundingClientRect().top - planTop;
   // 分叉层跟着过程块走：紧跟在它后面，读回再跟在分叉层后面；这一轮没画分叉就不留空节点。
   run.graph.finish();
 
@@ -4439,6 +4455,66 @@ function finishRun(): void {
 
   if (run.answer) foldAnsweredRun(run);
   scrollToEnd();
+}
+
+/** 最近一张收成回执的计划卡，和这一轮还原填写的状态（后台晚到时重画）。 */
+let planCardRun: RunHost | null = null;
+let planUndo: FillUndoView | null = null;
+
+/**
+ * 新一轮开始：上一张计划卡定格。还能撤销的收掉「撤销」（新一轮开始后后台不再留这一轮的还原，和回答下的按钮一样）；
+ * 已撤销、收不回留着。之后这一轮的还原状态只画到新卡上。
+ */
+function retirePlanCard(): void {
+  if (!planCardRun) { planUndo = null; return; }
+
+  if (planUndo?.state === "ready") {
+    const button = planCardRun.root.querySelector<HTMLButtonElement>(".plan-undo");
+    if (button) { button.disabled = true; button.textContent = "恢复记录已失效"; }
+    const scope = planCardRun.root.querySelector(".plan-fill-scope p");
+    if (scope) scope.textContent = "新任务已开始，上一轮的填写记录不再用于恢复。";
+  }
+  planCardRun = null;
+  planUndo = null;
+}
+
+/** 计划卡这一轮的回答：卡后面、下一条用户消息之前的那条回答。 */
+function planCardAnswer(run: RunHost): HTMLElement | null {
+  for (let node = run.root.nextElementSibling; node && !node.matches(".msg.user"); node = node.nextElementSibling) {
+    if (node instanceof HTMLElement && node.matches(".msg.assistant") && node.querySelector(".answer-actions")) return node;
+  }
+
+  return null;
+}
+
+function paintPlanCard(): void {
+  const run = planCardRun;
+
+  if (!run?.root.isConnected || !run.receipt) return;
+  const undo = planUndo;
+  const answer = planCardAnswer(run);
+
+  // 撤销只留卡上这一个：回答下不再出「还原填写」，撤销后的结果行放在卡下面，回答照样变淡。
+  if (answer && undo) handFillUndoToCard(answer, run.root);
+  // 整轮结论说了算：中途某步没做成、后来换做法做完，卡仍按 completed 收成一行；没做成的那步只在展开的过程里标 ✕。
+  paintPlanReceipt(run.root, {
+    filled: undo?.state === "ready" ? undo.count + (undo.unavailable?.length ?? 0) : undo?.state === "restored" ? undo.restored.length + undo.skipped.length + (undo.unavailable?.length ?? 0) : undo ? undo.fields.length || null : null,
+    steps: run.receipt.steps - run.receipt.failed,
+    total: run.receipt.total,
+    ended: run.receipt.ended,
+    undo: !undo || (undo.state === "ready" && undo.count === 0) ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
+    undoLabel: undo ? fillUndoLabel(undo) : "",
+    undoable: undo?.state === "restored" ? [...undo.restored, ...undo.skipped.map(s => s.field)] : undo?.fields ?? [],
+    unavailable: undo?.unavailable ?? [],
+    untracked: undo?.untracked ?? [],
+    onUndo: () => {
+      const owner = planCardAnswer(run);
+
+      if (owner) void requestFillUndo(owner).finally(paintPlanCard);
+      else port?.postMessage({ kind: "fill_undo", conversationId: selectedConversationId } satisfies PanelToBg);
+    },
+  });
+  adoptPlanResume();
 }
 
 /** 交付属于哪一块过程：正在跑的那块，或刚收尾的那块；runId 对不上就不属于任何一块。 */
@@ -4528,7 +4604,8 @@ function foldAnsweredRun(run: RunHost): void {
   if (!answer || !run.receipt) return;
 
   // 最后一步没做成、随后交了回答：这一轮做完了，过程行照常写核对结论，没做成的那几步在展开的过程里。
-  if (run.receipt.ended === "failed" && run.orbActivity.onlyStepFailed()) {
+  // 计划卡不改：整轮停在没做成，卡头仍写「没做完」，和换了做法后做完的 completed 分开。
+  if (run.receipt.ended === "failed" && run.orbActivity.onlyStepFailed() && !run.root.classList.contains("plan-card")) {
     run.receipt.ended = "completed";
     run.receipt.head = finishedRunTitle(run.receipt.steps - run.receipt.failed, "completed");
   }
@@ -4735,7 +4812,8 @@ let quietTimer = 0;
 function quietRunForProse(): void {
   const run = currentRun;
 
-  if (!run || run.body.querySelector(".chip")) return;
+  // 计划卡留到这一轮结束：计划是这一轮的承诺，不因先出字就收掉。
+  if (!run || run.body.querySelector(".chip") || run.root.classList.contains("plan-card")) return;
   // 首字到达立刻停表，不留 0 秒，也不再累加（#311）。
   stopLiveSeconds(run);
   run.thinkFrom = Number.NaN;
@@ -5897,7 +5975,39 @@ function renderStreamTaskCard(view: TaskView): void {
   }
   // Move the existing root, not a copied resume button. Conversation reset preserves this node.
 
-  card.querySelector(".ai-task-footer")!.append(resumeRoot);
+  (planResumeHost(view.runId) ?? card.querySelector(".ai-task-footer")!).append(resumeRoot);
+}
+
+/**
+ * 这一轮是计划卡、又没做完或中止：「继续原任务」放进计划卡里，下面不再另起一张卡说同一件事。
+ * 挪的是同一个 resume-entry-root，按钮、回执和超时照旧由 ResumeEntry 处理。
+ */
+function planResumeHost(runId: string | null | undefined): HTMLElement | null {
+  const root = planCardRun?.root;
+
+  if (!root?.isConnected || !root.matches(".plan-failed, .plan-stopped")) return null;
+
+  if (runId && root.dataset.runId && root.dataset.runId !== runId) return null;
+  let host = root.querySelector<HTMLElement>(":scope > .plan-resume");
+
+  if (!host) {
+    host = document.createElement("div");
+    host.className = "plan-resume";
+    root.append(host);
+  }
+
+  return host;
+}
+
+/** 计划卡晚于任务视图定下「没做完」时，把已经放进下面那张卡的继续入口挪上来。 */
+function adoptPlanResume(): void {
+  const resumeRoot = document.getElementById("resume-entry-root");
+  const taskCard = resumeRoot?.closest<HTMLElement>(".ai-task-card");
+
+  if (!resumeRoot || !taskCard) return;
+  const host = planResumeHost(taskCard.dataset.runId);
+
+  if (host) host.append(resumeRoot);
 }
 
 /** 面板重开/重连/切会话时补取权威视图；拿不到时保持本地已渲染事实，不编造。 */
@@ -6194,6 +6304,11 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "fill_undo") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     noteFillUndo(envelope.undo, envelope.refused, fillUndoAnswer());
+    // 新一轮开始时后台推 null：已撤销、收不回是上一张卡的结论，留着；只有还能撤销的才收掉。
+    if (envelope.undo) {
+      planUndo = envelope.undo;
+      paintPlanCard();
+    } else if (planUndo?.state === "ready") retirePlanCard();
 
     return;
   }
@@ -6264,7 +6379,16 @@ function handleBgMessage(envelope: BgToPanel): void {
     // 后台先补发还原状态、再回放历史：历史放完后才知道哪条是这一轮的回答。
     const undoAnswer = fillUndoAnswer();
 
-    if (undoAnswer) adoptFillUndo(undoAnswer);
+    if (undoAnswer) {
+      adoptFillUndo(undoAnswer);
+      const undo = fillUndoOf(undoAnswer);
+      if (undo && lastRun?.receipt && planCardAnswer(lastRun) === undoAnswer) {
+        planCardRun = lastRun;
+        planUndo = undo;
+        lastRun.root.classList.add("plan-card");
+        paintPlanCard();
+      }
+    }
 
     return;
   }
@@ -6517,7 +6641,16 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
       if (entry.item.kind === "user") {
         const steering = running && !entry.item.undelivered;
 
-        if (!running) runStartAt = eventTime();
+        if (!running) {
+          runStartAt = eventTime();
+          if (restoring) {
+            const context = entry.item.context;
+            const pages = context?.pages ?? [];
+            if (taskPlan.shouldAsk(entry.item.text, pages, context?.url ?? "")) {
+              taskPlan.announce(entry.item.text, pages, context?.url ?? "", context?.title);
+            }
+          }
+        }
         else if (steering) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);
         const resent = resending && resending.conversationId === selectedConversationId && resending.text === entry.item.text ? resending : null;
