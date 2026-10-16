@@ -7,7 +7,8 @@ import { readInputRange } from "../../shared/range-input.js";
 import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type FillSource, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
-import { readFillSource } from "./read-element.js";
+import { textSha256 } from "../../../../shared/copied-field.js";
+import { copyTargetIdentity, readFillSource } from "./read-element.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { sendCommand } from "../debugger.js";
@@ -2287,9 +2288,10 @@ export async function fill(
   // 先读来源再动页面：读不到、是敏感栏时目标栏一点没动。
   const copied = params.from ? await readFillSource({ tabId: params.from.tabId ?? params.tabId, target: params.from.target }, sessionId).catch((error: unknown) => { throw notExecuted(error); }) : undefined;
   const value = copied ?? params.value!;
-  const written = await withAppeared(params.tabId, sessionId, () => fillField({ ...params, value, ...(copied !== undefined ? { readbackMax: copied.length + 1 } : {}) }, sessionId, beforeDispatch));
+  const { copiedTarget, ...written } = await withAppeared(params.tabId, sessionId, () => fillField({ ...params, value, ...(copied !== undefined ? { readbackMax: copied.length + 1 } : {}) }, sessionId, beforeDispatch));
+  const copyProof = copied !== undefined && copiedTarget ? { ...copiedTarget, sha256: await textSha256(copied), chars: [...copied].length } : undefined;
   // 搬运的文字不回给模型、不进诊断记录：读回只留核对结论，另附长度和首尾几个字让模型确认取对了元素。
-  const data = copied === undefined ? written : { ...written, source: sourceSummary(copied), ...(written.readback ? { readback: withoutText(written.readback) } : {}) };
+  const data = copied === undefined ? written : { ...written, source: sourceSummary(copied), ...(copyProof ? { copyProof } : {}), ...(written.readback ? { readback: withoutText(written.readback) } : {}) };
 
   if (!params.submit) return data;
 
@@ -2376,7 +2378,7 @@ async function fillField(
   params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; /** 读回比较的长度上限；搬运整段文字时要整段核对。 */ readbackMax?: number },
   sessionId: string,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<ToolContract["fill"]["data"]> {
+): Promise<ToolContract["fill"]["data"] & { copiedTarget?: Awaited<ReturnType<typeof copyTargetIdentity>> }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -2400,6 +2402,12 @@ async function fillField(
   if(params.expectedBackendNodeId!==undefined && backendNodeId!==params.expectedBackendNodeId) {
     throw notExecuted(new Error('原 AX 对象身份无法核对，填写未执行。'));
   }
+
+  const copiedTarget = async () => {
+    if (params.readbackMax === undefined) return undefined;
+    const identity = await copyTargetIdentity({ tabId, target: params.target }, sessionId).catch(() => null);
+    return identity && (backendNodeId === undefined || identity.backendNodeId === backendNodeId) ? identity : null;
+  };
 
   // 操作前在 scrollIntoView 之后取目标包围盒，动作边框持续到操作返回。
   let targetRect: DomRect | undefined;
@@ -2475,7 +2483,7 @@ async function fillField(
         const filled = { ...filledResult(range, await readBackField(tabId, { backendNodeId }, params.value, "replace", params.readbackMax), select), ...(typing === "failed" ? { typing } : {}) };
         await rememberActionTarget(tabId, params.target, params.target);
 
-        return refound ? { ...filled, refound } : filled;
+        return { ...filled, ...(refound ? { refound } : {}), copiedTarget: await copiedTarget() };
       } catch (e) {
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
@@ -2540,7 +2548,7 @@ async function fillField(
 
     await rememberActionTarget(tabId, params.target, params.target);
 
-    return { ...filledResult(filled.range, await readBackField(tabId, { target: params.target }, params.value, "replace", params.readbackMax), "select" in filled && filled.select === true), ...(typing === "failed" ? { typing } : {}) };
+    return { ...filledResult(filled.range, await readBackField(tabId, { target: params.target }, params.value, "replace", params.readbackMax), "select" in filled && filled.select === true), ...(typing === "failed" ? { typing } : {}), copiedTarget: await copiedTarget() };
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
