@@ -38,10 +38,8 @@ import {
   disposeSessionArms,
   disposeTabArms,
   downloadSettled,
-  findDownload,
   getArm,
   markArmTimedOut,
-  markDownloadDeleted,
   matchDownloadBegin,
   matchFileChooser,
   matchPopup,
@@ -586,48 +584,6 @@ export function consumeTabEvents(tabId: number, clear = true) {
       payload: e.payload,
     })),
   };
-}
-
-export function getDownloadRecord(downloadId: string): DownloadRecord {
-  return findDownload(ledger, downloadId);
-}
-
-export function getChooserArmById(chooserId: string): ArmedPageEvent {
-  for (const arm of ledger.arms.values()) {
-    if (arm.chooserId === chooserId) {
-      if (arm.kind !== "filechooser") continue;
-
-      if (arm.status !== "matched" && arm.status !== "consumed") {
-        throw new Error("INVALID_ARGUMENT: file chooser is not ready");
-      }
-
-      return arm;
-    }
-  }
-
-  throw new Error("INVALID_ARGUMENT: unknown or expired chooserId");
-}
-
-export async function cancelDownloadRecord(downloadId: string, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<DownloadRecord> {
-  const download = findDownload(ledger, downloadId);
-
-  if (downloadSettled(download)) return download;
-
-  if (download.chromeId === undefined) {
-    throw new Error("DOWNLOAD_NOT_TRACKED: Chrome downloads has not reported this download yet; nothing was cancelled.");
-  }
-
-  await beforeDispatch?.();
-  beforeDispatch?.checkNow?.();
-  await chrome.downloads.cancel(download.chromeId);
-  await refreshChromeDownload(download.chromeId);
-
-  return findDownload(ledger, downloadId);
-}
-
-export function deleteDownloadRecord(downloadId: string): void {
-  findDownload(ledger, downloadId);
-  markDownloadDeleted(ledger, downloadId);
 }
 
 export function stopSessionPageEvents(sessionKey: string): number {

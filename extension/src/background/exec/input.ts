@@ -750,19 +750,6 @@ type ClickParams = {
   label?: string;
 };
 
-type DragEndpoint = {
-  target?: string;
-  point?: [number, number];
-  position?: ElementPosition;
-};
-
-export type DragParams = {
-  tabId?: number;
-  from: DragEndpoint;
-  to: DragEndpoint;
-  label?: string;
-};
-
 /** 跟随打开的新标签页：url 只在读到时才带上。 */
 type OpenedTab = { tabId: number; url?: string };
 
