@@ -41,7 +41,8 @@ async function assertCompiles(tabId: number, code: string): Promise<void> {
  * 不重做（#494）：否则脚本能改存储再重画页面，让没成功的一步看起来做完了。看的是写入的直接调用方：脚本点按钮后网站自己的处理函数保存照常放行。
  * 改 DOM 和样式不拦，用户会要求改页面样子。拦不到：直接给属性赋值（localStorage.x = ...）、脚本运行中新建的框架、从别的框架借来的原生函数。
  * 返回的控制对象只交给宿主（CDP 远程对象），不挂到 window 上：页面拿不到，伪造不了结果，也拆不掉别的调用的拦截。
- * 同一页上可能同时有几次调用：每次只包一层、结束时只撤自己那一层；被别人压在下面的那层变成直通，由上层撤掉时一并跳过。
+ * 模型的调用按标签页排队，但宿主的只读探测不排队，可能和它同时装上：每次只包一层、结束时只撤自己那一层；
+ * 被别人压在下面的那层变成直通，由上层撤掉时一并跳过。
  */
 function armSendBlock(marker: string, guardStorage: boolean) {
   type Rect = { left: number; top: number; width: number; height: number };
@@ -158,8 +159,33 @@ type BlockedSend = { route: "script" | "enter" | "request"; label: string; conte
 
 const STORAGE_KINDS: ReadonlySet<string> = new Set(["localStorage", "sessionStorage", "indexedDB", "cookie"]);
 
-/** 和代理侧 js 调用的 RPC 期限（DEFAULT_TOOL_TIMEOUT_MS）一致：那边不再等了，这里也撤下拦截，不让它一直留在页面上。 */
-const SCRIPT_DEADLINE_MS = 30_000;
+/**
+ * 同一标签页上模型的 js 调用一个接一个跑，从装拦截到确认后重做都算在内：否则后一次的拦截会截走前一次用户批准后重做的发送。
+ * 宿主写死的只读探测不排队。排队等的比代理侧 js 的 RPC 期限（DEFAULT_TOOL_TIMEOUT_MS）短：等不到就不跑，
+ * 免得代理已经按超时处理了，这段脚本才在页面上跑起来。
+ */
+const JS_QUEUE_WAIT_MS = 25_000;
+const jsTurns = new Map<number, Promise<void>>();
+
+async function inTabTurn<T>(tabId: number, run: () => Promise<T>): Promise<T> {
+  const before = jsTurns.get(tabId) ?? Promise.resolve();
+  let release!: () => void;
+  const tail = before.then(() => new Promise<void>(resolve => { release = resolve; }));
+  const releaseLater = () => { void before.then(() => release()); };
+  jsTurns.set(tabId, tail);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    const ready = await Promise.race([before.then(() => true), new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), JS_QUEUE_WAIT_MS); })]);
+
+    if (!ready) throw Object.assign(new Error(`这个标签页上前一段脚本 ${JS_QUEUE_WAIT_MS / 1000} 秒还没结束，这段脚本没有运行，页面没有变化。`), { executionFact: "not_executed" as const });
+    return await run();
+  } finally {
+    clearTimeout(timer);
+    releaseLater();
+    void tail.then(() => { if (jsTurns.get(tabId) === tail) jsTurns.delete(tabId); });
+  }
+}
 
 /** js 工具只走 CDP Runtime.evaluate，避免 MAIN world eval 被页面 CSP 拦截。 */
 export async function evaluateJs(
@@ -172,10 +198,18 @@ export async function evaluateJs(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertCompiles(tab.id, params.code);
-
-  await beforeExecute?.();
-
   const tabId = tab.id;
+  const go = async () => { await beforeExecute?.(); return runArmed(tabId, params, beforeExecute, sendGuard); };
+
+  return isHostPageProbe("js", params) ? go() : inTabTurn(tabId, go);
+}
+
+async function runArmed(
+  tabId: number,
+  params: { code: string; tabId?: number },
+  beforeExecute: ((() => Promise<void>) & {checkNow?: () => void}) | undefined,
+  sendGuard: SendGuard | undefined,
+): Promise<{ value: unknown; sendConfirmed?: true; sendNote?: string }> {
   const marker = `sideagent-script-${crypto.randomUUID()}`;
   // 宿主写死的只读探测不装存储拦截：它们不写数据，也不该因拦截改变行为。
   const guardStorage = !isHostPageProbe("js", params);
@@ -189,18 +223,15 @@ export async function evaluateJs(
     let res: CdpEvalResult;
     let blocked: BlockedSend[] = [];
     let storage = { kinds: [] as string[], count: 0 };
-    let deadline: ReturnType<typeof setTimeout> | undefined;
 
+    // 拦截一直留到脚本真正结束：提前撤下，迟到的发送就不经确认发出去了。存储拦截只看直接调用方，留着不碍网站自己保存。
     try {
-      const running = sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", {
+      res = await sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", {
         expression: `${params.code}\n//# sourceURL=${marker}`,
         awaitPromise: true,
         returnByValue: true,
       },beforeExecute);
-      running.catch(() => {});
-      res = await Promise.race([running, new Promise<never>((_, reject) => { deadline = setTimeout(() => reject(new Error(`脚本 ${SCRIPT_DEADLINE_MS / 1000} 秒没有结束，已撤下脚本拦截；它可能还在页面里运行，结果未知，请先看网页。`)), SCRIPT_DEADLINE_MS); })]);
     } finally {
-      clearTimeout(deadline);
       const read = await callControl("disarm").catch(() => undefined);
       const v = read?.result?.value as { blocked?: unknown; storage?: { kinds?: unknown; count?: unknown } } | null | undefined;
       blocked = Array.isArray(v?.blocked) ? v.blocked as BlockedSend[] : [];
