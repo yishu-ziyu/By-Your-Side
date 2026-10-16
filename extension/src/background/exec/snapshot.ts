@@ -15,6 +15,7 @@ import { axTreeToText, enclosingItem, itemTextOf, itemTexts, RANGE_INPUT_ROLES, 
 import type { InputRangeReadout } from "../../../../shared/page-readout.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
+import { recordLocatedNames } from "../located-names.js";
 import { forgetPage, freshLines, hasPageBaseline, knownItems, pageChangesSince, rememberPage } from "../page-changes.js";
 import { withTimeout } from "../timeout.js";
 import { assertNoPendingDialog } from "../page-events.js";
@@ -375,6 +376,7 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
   // 只把真的交给模型的行记成“读过”：长页被截掉的那些，之后出现在眼前时还要当新的报。
   rememberPage(tabId, shown, found);
+  recordLocatedNames(tabId, text);
 
   if(!decision){
     recordAxSnapshot(tabId, backendIds);
