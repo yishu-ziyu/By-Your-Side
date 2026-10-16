@@ -29,11 +29,19 @@ interface ActiveUserTurn {
   correction?: boolean;
   /** 候选个人记忆与确认卡片共享同一次纠正判断。 */
   correctionVerdict?: Promise<CorrectionVerdict>;
+  correctionMethodRev?: number;
   correctionHostname?: string | null;
+  learning?: CorrectionBatch;
   /** 已开始算这句的询问（一轮结束可能不止通知一次）。 */
   asking?: boolean;
   /** 用户发这句时所在页面的地址：询问的网站取它，不从原话里解析网址。 */
   pageUrl?: string;
+}
+
+interface CorrectionBatch {
+  abort: AbortController;
+  revision: Promise<number>;
+  turns: ActiveUserTurn[];
 }
 
 /** 后台记下的一条询问：只在内存里，扩展重启后作废。规则文字只取这里的，面板不能改写。 */
@@ -323,6 +331,10 @@ export class MemoryRuntime {
   /** 决定记录：写进诊断记录（设置页可导出）。只写编号、种类、规则与结论，不写用户原话。 */
   onRecord?: (type: "memory_decision" | "memory_context" | "memory_ask_decision", data: MemoryRecord) => void;
   private epoch = 0;
+  private correctionBatch: CorrectionBatch | null = null;
+  private continuingCorrections = false;
+  private correctionWork: Promise<void> = Promise.resolve();
+  private correctionJudgments: Promise<unknown> = Promise.resolve();
   private active: ActiveUserTurn | null = null;
   /** 还在后台进行的自动判断；一轮结束时等它们落定（失败的已进补判队列）再补判。 */
   private readonly autos = new Set<Promise<unknown>>();
@@ -372,6 +384,8 @@ export class MemoryRuntime {
   }
 
   beginUserTurn(text: string, context?: PageContext, recentTurns: MemoryConversation = []): void {
+    if (!this.continuingCorrections) this.cancelCorrectionLearning();
+    this.continuingCorrections = false;
     this.endTurn();
     this.usedThisTurn = [];
     const key = `${this.conversationId}:${globalThis.crypto.randomUUID()}`;
@@ -381,6 +395,8 @@ export class MemoryRuntime {
 
     if (context?.url) turn.pageUrl = context.url;
     this.active = turn;
+    if (this.correctionBatch) turn.learning = this.correctionBatch;
+    turn.correctionHostname = memoryHostOfUrl(context?.url) ?? this.recentWebHost();
 
     // 纠正粗筛在自动记忆之前：像纠正的话，自动记忆只收用户自己的资料（做法留给询问）。
     if (this.options.auto && this.complete) this.screenCorrection(turn);
@@ -401,7 +417,13 @@ export class MemoryRuntime {
   private screenCorrection(turn: ActiveUserTurn): void {
     if (looksSecret(turn.text)) this.recordAsk(turn, { status: "skipped", reason: "secret" });
     else if (!isUserCorrection(turn.text)) this.recordAsk(turn, { status: "skipped", reason: "not-correction" });
-    else turn.correction = true;
+    else {
+      turn.correction = true;
+      this.correctionBatch ??= { abort: new AbortController(), revision: this.store.methodRevision(), turns: [] };
+      turn.learning = this.correctionBatch;
+      void turn.learning.revision.catch(() => undefined);
+      if (!turn.learning.turns.some(previous => correctionMessageKey(previous.text) === correctionMessageKey(turn.text))) turn.learning.turns.push(turn);
+    }
   }
 
   private recordAsk(turn: ActiveUserTurn, data: MemoryRecord): void {
@@ -416,24 +438,24 @@ export class MemoryRuntime {
   }
 
   private turnCorrectionVerdict(turn: ActiveUserTurn): Promise<CorrectionVerdict> {
-    const hostname = memoryHostOfUrl(turn.pageUrl) ?? this.recentWebHost();
-
-    if (turn.correctionVerdict && turn.correctionHostname === hostname) return turn.correctionVerdict;
-    turn.correctionHostname = hostname;
-    const signal = AbortSignal.any([turn.abort.signal, AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS)]);
-
-    const judgment = this.correctionVerdict(turn.text, turn.recentTurns, hostname, signal).catch(error => {
-      if (turn.correctionVerdict === judgment) delete turn.correctionVerdict;
-
-      throw error;
+    if (turn.correctionVerdict) return turn.correctionVerdict;
+    const original = turn.learning?.turns.find(previous => correctionMessageKey(previous.text) === correctionMessageKey(turn.text));
+    if (original && original !== turn) return this.turnCorrectionVerdict(original);
+    const hostname = turn.correctionHostname ?? null;
+    const signal = AbortSignal.any([turn.learning?.abort.signal ?? turn.abort.signal, AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS)]);
+    const judgment = this.correctionJudgments.catch(() => undefined).then(async () => {
+      signal.throwIfAborted();
+      turn.correctionMethodRev = await this.store.methodRevision();
+      // 明确网站做法应能由当前原话独立支持，不让旧对话补全含糊指代或带入个人资料。
+      return this.correctionVerdict(turn.text, [], hostname, signal);
     });
-
+    this.correctionJudgments = judgment;
     turn.correctionVerdict = judgment;
 
     return judgment;
   }
 
-  /** 可复用的纠正先走确认，不允许个人资料判断抢先写入并压掉卡片。 */
+  /** 做事方法单独处理，不允许个人资料判断抢先写入。 */
   private async separateCorrection(decision: MemoryDecision, text: string, signal: AbortSignal, turn?: ActiveUserTurn, hostname: string | null = null): Promise<MemoryDecision> {
     if ((decision.action !== "save" && decision.action !== "update") || !isUserCorrection(text) || (turn && !turn.correction)) return decision;
     const verdict = turn ? await this.turnCorrectionVerdict(turn) : await this.correctionVerdict(text, [], hostname, signal);
@@ -457,10 +479,10 @@ export class MemoryRuntime {
 
   /**
    * 这一轮结束后算要不要问「要我记住吗」：模型答窄问题，decideCorrectionAsk 按规则决定。
-   * 用户接着发了话、停止或接管（这一轮作废）时丢掉，不发过时的询问；失败只留记录，不补判。
+   * 同任务插话按顺序保留；停止、接管或新任务作废整批。失败只留记录，不补判。
    */
   private async askAfterCorrection(turn: ActiveUserTurn): Promise<void> {
-    const signal = AbortSignal.any([turn.abort.signal, AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS)]);
+    const signal = AbortSignal.any([turn.learning?.abort.signal ?? turn.abort.signal, AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS)]);
 
     try {
       // 同一内容已直接记下就不再问；独立个人资料不替代做法确认。
@@ -468,7 +490,7 @@ export class MemoryRuntime {
       const tool = turn.change ? await turn.change.catch(() => null) : null;
       const saved = (auto?.changed.length && auto.decision.action !== "forget") || (tool && ["saved", "updated"].includes(tool.details.action));
 
-      if (!this.current(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
+      if (!this.learningCurrent(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
 
       // 同一句里的独立个人资料已记下，不代表网站做法也已经获确认。
       if (saved && !(turn.correctionVerdict && (await turn.correctionVerdict).reusable)) return this.recordAsk(turn, { status: "skipped", reason: "already-saved" });
@@ -480,10 +502,16 @@ export class MemoryRuntime {
 
       if (this.remembered.has(messageKey)) return this.recordAsk(turn, { status: "skipped", reason: "already-remembered" });
       // 网站取用户所在的网页；不在网页上（扩展页、浏览器页）时取助手最近操作过的网站，都没有就是没有网站。
-      const hostname = memoryHostOfUrl(turn.pageUrl) ?? this.recentWebHost();
+      const hostname = turn.correctionHostname ?? null;
+      const batch = turn.learning;
+      if (!batch) return;
+      const expectedMethodRev = await batch.revision;
+      if (await this.store.methodRevision() !== expectedMethodRev) throw new ReplaceTargetChanged("做法在学习期间已经改过");
+      // 同批前一句已保存时，提前算出的替换关系不再适用；外部改动则由上面的版本检查拒绝。
+      if (turn.correctionVerdict && turn.correctionMethodRev !== expectedMethodRev) delete turn.correctionVerdict;
       const verdict = await this.turnCorrectionVerdict(turn);
 
-      if (!this.current(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
+      if (!this.learningCurrent(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
 
       // 问模型期间用户可能已回答了这句的旧询问：再核对一次，并按最新的做法判断是否重复。
       if (this.dismissed.has(messageKey)) return this.recordAsk(turn, { status: "skipped", reason: "dismissed" });
@@ -491,15 +519,32 @@ export class MemoryRuntime {
       if (this.remembered.has(messageKey)) return this.recordAsk(turn, { status: "skipped", reason: "already-remembered" });
       const latest = (await this.store.list()).filter(entry => entry.status === "active" && entry.kind === "method" && (entry.scope.kind === "all" || entry.scope.hostname === hostname));
 
-      if (!this.current(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
+      if (!this.learningCurrent(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
       const superseded = [...this.asks].flatMap(([id, ask]) => (ask.messageKey === messageKey ? [id] : []));
       const open = new Set([...this.asks.values()].flatMap(ask => (ask.messageKey === messageKey ? [] : ask.keys)));
       const decision = decideCorrectionAsk({ verdict, userMessage: turn.text, hostname, methods: latest, dismissed: this.dismissed, open });
 
       if (!decision.ask) return this.recordAsk(turn, { status: "skipped", reason: decision.reason });
+      if (decision.scope.kind === "site") {
+        const saved = await this.store.saveMethod({
+          text: decision.rule, scope: decision.scope, sourceConversationId: this.conversationId,
+          // 自动学习只保留会话来源，不把同句话里的个人资料再复制到长期存储。
+          expectedMethodRev,
+          guard: () => this.learningCurrent(turn) && !signal.aborted,
+          ...(decision.replaces ? { replaces: { id: decision.replaces.id, version: decision.replaces.version } } : {}),
+        });
+        batch.revision = Promise.resolve(saved.methodRev);
+        this.remembered.add(messageKey);
+        if (!saved.alreadySaved) {
+          const entry = saved.entries[0]!;
+          this.emit({ kind: "memory_ask", askId: globalThis.crypto.randomUUID(), rule: decision.rule, scope: decision.scope, hostname: decision.scope.hostname, learned: entry });
+          this.emit({ kind: "memory", action: "saved", entries: saved.entries, ...await this.rev() });
+        }
+        return this.recordAsk(turn, { status: "learned", reason: saved.alreadySaved ? "duplicate" : "saved", entryIds: saved.entries.map(entry => entry.id) });
+      }
       const askId = globalThis.crypto.randomUUID();
       const event: MemoryAskEvent = { kind: "memory_ask", askId, rule: decision.rule, scope: decision.scope };
-      const ask: OpenAsk = { rule: decision.rule, scope: decision.scope, quote: turn.text, keys: [correctionRuleKey(decision.rule, decision.scope), messageKey], messageKey, event };
+      const ask: OpenAsk = { rule: decision.rule, scope: decision.scope, quote: verdict.evidence, keys: [correctionRuleKey(decision.rule, decision.scope), messageKey], messageKey, event };
 
       if (hostname) event.hostname = hostname;
 
@@ -514,7 +559,8 @@ export class MemoryRuntime {
       this.emit(event);
       this.recordAsk(turn, { status: "asked", reason: "asked", askId, scope: decision.scope.kind, replacesId: decision.replaces?.id ?? null });
     } catch (error) {
-      if (turn.abort.signal.aborted) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
+      if (error instanceof ReplaceTargetChanged) turn.learning?.abort.abort();
+      if (turn.learning?.abort.signal.aborted) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
       const reason = signal.aborted ? "timeout" : error instanceof ProviderFailure ? "provider error" : error instanceof CorrectionParseError ? "parse error" : "store error";
       this.recordAsk(turn, { status: "failed", reason });
     }
@@ -606,12 +652,18 @@ export class MemoryRuntime {
   /** 一轮结束：等这一轮的自动判断落定后在后台补判；这一轮的结束不等补判。 */
   afterTurn(): void {
     this.running = false;
-    const turn = this.active;
     this.lastWebHost = this.recentWebHost();
 
-    if (turn?.correction && !turn.asking && this.current(turn)) {
-      turn.asking = true;
-      void this.askAfterCorrection(turn);
+    const batch = this.correctionBatch;
+    if (batch && !batch.abort.signal.aborted) {
+      const turns = batch.turns.filter(item => !item.asking);
+      for (const item of turns) item.asking = true;
+      this.correctionWork = this.correctionWork.then(async () => {
+        for (const item of turns) {
+          if (!this.learningCurrent(item)) break;
+          await this.askAfterCorrection(item);
+        }
+      });
     }
 
     void Promise.allSettled(this.autos).then(() => this.drainPending());
@@ -844,6 +896,8 @@ export class MemoryRuntime {
    * - steer（任务进行中插话）：只作废进行中的判断；已排队的话照常补判，过时的由 supersededSince 挡住。
    */
   invalidateUserTurn(reason: "cancel" | "steer" = "cancel"): void {
+    this.continuingCorrections = reason === "steer";
+    if (reason === "cancel") this.cancelCorrectionLearning();
     const key = this.active?.key;
 
     if (key && reason === "cancel") {
@@ -852,6 +906,15 @@ export class MemoryRuntime {
     }
 
     this.endTurn();
+  }
+
+  private cancelCorrectionLearning(): void {
+    this.correctionBatch?.abort.abort();
+    this.correctionBatch = null;
+  }
+
+  private learningCurrent(turn: ActiveUserTurn): boolean {
+    return !!turn.learning && this.correctionBatch === turn.learning && !turn.learning.abort.signal.aborted;
   }
 
   private endTurn(): void {
@@ -1196,7 +1259,7 @@ export class MemoryRuntime {
     if (!(decision.action === "forget" || (writes && placement.store))) this.recordDecision("change", turn.key, decision, placement, []);
 
     if (decision.action === "none" && (interpreted.action === "save" || interpreted.action === "update")) {
-      return result("none", [], "这是需确认的做事方法，不自动写成个人资料。当前任务结束后，扩展会显示「要我记住吗」卡片；用户点「记住」后才保存。不要反复调用修改记忆，也不要说不能跨会话记住。");
+      return result("none", [], "这是做事方法，不写成个人资料。当前任务结束后，扩展会自动保存明确的网站做法；助手说话方式仍需用户确认。不要反复调用修改记忆，也不要提前声称已经保存。");
     }
 
     if (decision.action === "none") return result("none", [], "当前请求无需修改长期记忆；尚未保存任何内容。");
@@ -1249,7 +1312,7 @@ function appendMemoryContext(systemPrompt: string, entries: MemoryEntry[]): stri
   const rows = entries.map((entry) => {
     const scope = entry.scope.kind === "all" ? "all personal conversations" : `hostname=${entry.scope.hostname}`;
 
-    const note = entry.experience ? "; unverified workflow suggestion from user correction" : entry.kind === "method" ? "; way of working the user confirmed after correcting you, written as your promise (\"我\" = you)" : "";
+    const note = entry.experience ? "; unverified workflow suggestion from user correction" : entry.kind === "method" ? "; way of working the user directly specified, written as your promise (\"我\" = you)" : "";
 
     return `- [memory ${entry.id} v${entry.version}; ${scope}${note}] ${entry.text}`;
   });

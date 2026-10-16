@@ -139,7 +139,7 @@ const proxy = createServer(async (req, res) => {
     if (system.includes(DECISION_MARKER)) body = JSON.stringify({ ...payload, messages: [{ role: "user", content: "DECISION::none" }] });
   }
 
-  const reply = await fetch(new URL(upstream.baseUrl).origin + (req.url ?? "/"), { method: req.method, headers: { "content-type": "application/json" }, body: req.method === "GET" ? undefined : body });
+  const reply = await fetch(new URL(upstream.baseUrl).origin + (req.url ?? "/"), { method: req.method, headers: { "content-type": "application/json" }, body: req.method === "GET" || req.method === "HEAD" ? undefined : body });
   res.writeHead(reply.status, { "content-type": reply.headers.get("content-type") ?? "application/json" });
 
   for await (const chunk of reply.body ?? []) res.write(chunk);

@@ -13,7 +13,7 @@ export interface MemoryAskCard {
    * open＝等用户选；remembered＝刚在这里记住（可改范围、可撤销）；noted＝只从结局事件得知已记下（不给按钮，之后可能改过）；
    * already＝早已记着同样的做法；once＝这次就行；undone＝已撤销；closed＝后台已作废这条询问。
    */
-  phase: "open" | "remembered" | "noted" | "already" | "once" | "undone" | "closed";
+  phase: "open" | "remembered" | "noted" | "already" | "once" | "undone" | "closed" | "inactive";
   /** 已发出、还在等结果的那个动作。 */
   pending: "remember" | "once" | "scope" | "undo" | null;
   /** 存下的那条做法，始终是最新版本（改范围后随之更新）。 */
@@ -37,6 +37,8 @@ export type AskInput =
   | { kind: "result"; ok: false; error: string; askClosed?: true }
   /** 后台发来的同一询问的结局（现场或对话历史回放）。 */
   | { kind: "outcome"; outcome: AskOutcome }
+  /** 历史事件不能证明规则仍在；只用最新完整记忆列表恢复操作入口。 */
+  | { kind: "sync"; entry?: MemoryEntry }
   /** 结果被判作过期或不属于这次请求：不会再有结果了。 */
   | { kind: "ignored" };
 
@@ -50,7 +52,9 @@ export type AskRequest =
 /** stepAsk 的一步：新的卡片，以及这一步要发出的请求（若有）。 */
 export interface AskStep { card: MemoryAskCard; request?: AskRequest }
 
-export function createAskCard(ask: MemoryAskEvent): MemoryAskCard {
+export function createAskCard(ask: MemoryAskEvent, live = true): MemoryAskCard {
+  if (ask.learned) return { ask, phase: live ? "remembered" : "noted", pending: null, error: "", ...(live ? { entry: ask.learned } : {}) };
+
   return { ask, phase: "open", pending: null, error: "" };
 }
 
@@ -146,6 +150,13 @@ function settle(card: MemoryAskCard, input: Extract<AskInput, { kind: "result" |
 
 /** 唯一入口：用户动作可能带出一条要发的请求；结果只更新卡片。不能做的动作原样返回、不带请求。 */
 export function stepAsk(card: MemoryAskCard, input: AskInput): AskStep {
+  if (input.kind === "sync") {
+    if (!card.ask.learned || card.pending) return { card };
+    const entry = input.entry;
+
+    return { card: { ...card, entry, phase: !entry ? "undone" : entry.status === "active" ? "remembered" : "inactive", error: "" } };
+  }
+
   if (input.kind === "outcome") return { card: end(card, input.outcome) };
 
   if (input.kind === "result" || input.kind === "ignored") return { card: settle(card, input) };

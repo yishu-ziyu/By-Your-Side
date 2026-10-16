@@ -36,6 +36,7 @@ interface StoreFile {
   rev: number;
   entries: MemoryEntry[];
   forgottenExperiences?: string[];
+  methodRev?: number;
 }
 
 interface StoreState extends StoreFile {
@@ -62,6 +63,8 @@ export class MemoryStore {
   async list(): Promise<MemoryEntry[]> {
     return cloneEntries(await this.read());
   }
+
+  async methodRevision(): Promise<number> { return (await this.readState()).methodRev ?? 0; }
 
   /** 整份记忆当前的版本号；从没写过为 0。 */
   async currentRev(): Promise<number> {
@@ -186,16 +189,20 @@ export class MemoryStore {
    * 要替换的那条已被删掉就只存新的；已被改过或不再生效则抛 ReplaceTargetChanged（不悄悄并存两条相反的做法）。
    * 同范围已有同样文字的生效做法时不写入（版本号 rev 不变），返回那一条并标 alreadySaved。
    */
-  async saveMethod(input: { text: string; scope: MemoryScope; sourceConversationId: string; sourceQuote: string; replaces?: { id: string; version: number } }): Promise<{ entries: MemoryEntry[]; alreadySaved: boolean }> {
+  async saveMethod(input: { text: string; scope: MemoryScope; sourceConversationId: string; sourceQuote?: string; replaces?: { id: string; version: number }; guard?: () => boolean; expectedMethodRev?: number }): Promise<{ entries: MemoryEntry[]; alreadySaved: boolean; methodRev: number }> {
     assertCreateInput(input);
 
-    if (typeof input.sourceQuote !== "string" || !input.sourceQuote.trim()) throw new Error("Memory quote is invalid");
+    if (input.sourceQuote !== undefined && (typeof input.sourceQuote !== "string" || !input.sourceQuote.trim())) throw new Error("Memory quote is invalid");
 
     if (input.replaces && (!validMemoryId(input.replaces.id) || !validMemoryVersion(input.replaces.version))) throw new Error("Memory ID is invalid");
 
     let alreadySaved = false;
+    let methodRev = 0;
 
-    const entries = await this.withWriteLock((entries, forgotten) => {
+    const entries = await this.withWriteLock((entries, forgotten, revision) => {
+      if (input.guard && !input.guard()) throw new Error("Memory save is no longer authorized");
+      if (input.expectedMethodRev !== undefined && input.expectedMethodRev !== revision) throw new ReplaceTargetChanged("做法在学习期间已经改过");
+      methodRev = revision;
       const text = input.text.trim();
       const identical = entries.find(e => e.status === "active" && e.kind === "method" && e.text === text && sameMemoryScope(e.scope, input.scope));
 
@@ -213,7 +220,8 @@ export class MemoryStore {
 
       const next: MemoryEntry = {
         id, factId: target?.factId ?? id, version: 1, text, scope: cloneScope(input.scope), sourceConversationId: input.sourceConversationId,
-        createdAt: now, updatedAt: Math.max(now, (target?.updatedAt ?? 0) + 1), kind: "method", sourceQuote: input.sourceQuote.trim().slice(0, MEMORY_QUOTE_MAX),
+        createdAt: now, updatedAt: Math.max(now, (target?.updatedAt ?? 0) + 1), kind: "method",
+        ...(input.sourceQuote ? { sourceQuote: input.sourceQuote.trim().slice(0, MEMORY_QUOTE_MAX) } : {}),
         useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION,
       };
 
@@ -229,11 +237,12 @@ export class MemoryStore {
       }
 
       entries.push(next);
+      methodRev += 1;
 
       return changed;
-    }, undefined, () => alreadySaved);
+    }, input.guard, () => alreadySaved);
 
-    return { entries, alreadySaved };
+    return { entries, alreadySaved, methodRev };
   }
 
   /** Retrying a background job never overwrites a user edit or resurrects a forgotten experience. */
@@ -470,14 +479,14 @@ export class MemoryStore {
     }
 
     // SAFETY: 只读 format / rev / entries / forgottenExperiences，下面逐条核对后才使用。
-    const file = parsed as { format?: unknown; rev?: unknown; entries?: unknown; forgottenExperiences?: unknown };
+    const file = parsed as { format?: unknown; rev?: unknown; entries?: unknown; forgottenExperiences?: unknown; methodRev?: unknown };
 
     if (!file || !Number.isSafeInteger(file.format) || !Array.isArray(file.entries)) throw new Error("Memory store is corrupt");
     // SAFETY: 上一行已核对 format 是整数。
     const format = file.format as number;
     const rev = file.rev ?? 0;
 
-    if (!isRev(rev)) throw new Error("Memory store is corrupt");
+    if (!isRev(rev) || (file.methodRev !== undefined && !isRev(file.methodRev))) throw new Error("Memory store is corrupt");
 
     // 更新的版本写的：尽量读出字段齐全的条目给面板看（只在内存里当作当前格式，从不写回），写入时拒绝（不覆盖）。
     if (format > MEMORY_FORMAT_VERSION) {
@@ -503,24 +512,25 @@ export class MemoryStore {
     const entries = format < MEMORY_FORMAT_VERSION ? upgradeLegacyEntries(upgraded) : upgraded;
 
     // SAFETY: 上面已核对 forgottenExperiences 缺省或是合法编号组成的数组。
-    return { format: MEMORY_FORMAT_VERSION, rev, entries: cloneEntries(entries), forgottenExperiences: (file.forgottenExperiences as string[] | undefined) ?? [] };
+    return { format: MEMORY_FORMAT_VERSION, rev, methodRev: typeof file.methodRev === "number" ? file.methodRev : 0, entries: cloneEntries(entries), forgottenExperiences: (file.forgottenExperiences as string[] | undefined) ?? [] };
   }
 
   /** unchanged 在改完后返回 true 时不写入（整份版本号不变）。 */
-  private async withWriteLock<T>(mutate: (entries: MemoryEntry[], forgotten: string[]) => Promise<T> | T, commitGuard?: () => boolean, unchanged?: () => boolean): Promise<T> {
+  private async withWriteLock<T>(mutate: (entries: MemoryEntry[], forgotten: string[], methodRev: number) => Promise<T> | T, commitGuard?: () => boolean, unchanged?: () => boolean): Promise<T> {
     return this.doc.exclusive(async () => {
       const state = await this.readState();
 
       if (state.newerFormat !== undefined) throw new Error(`Memory store was written by a newer version (format ${state.newerFormat}); it is read-only here`);
       const entries = state.entries;
       const forgotten = state.forgottenExperiences ?? [];
-      const result = await mutate(entries, forgotten);
+      const beforeMethods = methodIdentity(entries);
+      const result = await mutate(entries, forgotten, state.methodRev ?? 0);
 
       if (unchanged?.()) return cloneValue(result);
       checkInvariants(entries);
 
       if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
-      await this.doc.write(JSON.stringify({ format: MEMORY_FORMAT_VERSION, rev: state.rev + 1, entries, forgottenExperiences: forgotten } satisfies StoreFile) + "\n", commitGuard);
+      await this.doc.write(JSON.stringify({ format: MEMORY_FORMAT_VERSION, rev: state.rev + 1, methodRev: (state.methodRev ?? 0) + Number(beforeMethods !== methodIdentity(entries)), entries, forgottenExperiences: forgotten } satisfies StoreFile) + "\n", commitGuard);
 
       return cloneValue(result);
     });
@@ -741,3 +751,6 @@ function cloneValue<T>(value: T): T {
   return value;
 }
 
+function methodIdentity(entries: MemoryEntry[]): string {
+  return JSON.stringify(entries.filter(entry => entry.kind === "method").map(entry => [entry.id, entry.version, entry.status, entry.text, entry.scope, entry.factId, entry.replacedBy, entry.notOnHosts]));
+}
