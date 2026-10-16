@@ -22,6 +22,7 @@ import { assertNoPendingDialog } from "../page-events.js";
 import { waitForInteractive } from "./page-readiness.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 import { overlayHostSelector } from "../../shared/overlay.js";
+import { pdfText, tabShowsPdf } from "./pdf-text.js";
 
 const URL_MOVED_DURING_READ = '读取期间页面地址已变化，请重新读取当前页面。';
 
@@ -228,6 +229,14 @@ export async function snapshotTab(
       text: `[说明：scope=viewport 当前为简化 DOM 视口快照降级（仅覆盖当前视口，非全量 AX 树；视口内 iframe 仅占位未展开，不覆盖其内容）；以下 ref 为本次 DOM 快照编号，仅 domops 路径有效，旧 AX ref 已失效、请勿混用。如需全页 AX 树请用 scope=full_page]\n${dom.text}`,
       tabId,
     };
+  }
+
+  if (!decision && await tabShowsPdf(tabId)) {
+    const text = await pdfText((await chrome.tabs.get(tabId)).url ?? "");
+    clearAxSnapshot(tabId);
+    forgetPage(tabId);
+
+    return { text, tabId };
   }
 
   try {

@@ -209,3 +209,8 @@ interface SideAgentNamespace {
 interface Window {
   __sideagent?: SideAgentNamespace;
 }
+
+/** pdf.js 的工作线程模块不带类型；本扩展只把它整个交给 pdf.js 在本线程里跑。 */
+declare module "pdfjs-dist/build/pdf.worker.mjs" {
+  export const WorkerMessageHandler: unknown;
+}
