@@ -586,7 +586,7 @@ type CaseResult = {
 
 const results: CaseResult[] = [];
 
-const rp = daily ? await attachDailyChrome() : await launchRealPath({ withoutNativeHost: true });
+const rp = daily ? await attachDailyChrome() : await launchRealPath();
 
 let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 

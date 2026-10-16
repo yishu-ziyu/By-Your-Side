@@ -193,7 +193,7 @@ result.verdicts = verdicts;
 
 result.observations = observations;
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 environment.browser = rp.browser;
 

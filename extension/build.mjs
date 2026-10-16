@@ -79,8 +79,8 @@ await esbuild.build({
   // 订阅登录模块里有 Node 环境才走的动态 import（回调服务），浏览器里不会执行。
   external: ["node:*"],
   plugins: [browserSwaps],
-  // 任务核心里个别开关在调用时读 process.env；扩展里没有 process，只带进构建时设了的实验开关，其余当作未设置。
-  define: { "process.env": JSON.stringify(process.env.SIDEAGENT_PROGRAM_FIRST === "1" ? { SIDEAGENT_PROGRAM_FIRST: "1" } : {}) },
+  // 浏览器没有 Node 环境变量；本机默认配置读取视为未设置。
+  define: { "process.env": "{}" },
   alias: { "@earendil-works/pi-ai": path.join(pi, "pi-ai/dist"), "@earendil-works/pi-agent-core": path.join(pi, "pi-agent-core/dist") },
   logLevel: "warning",
 });

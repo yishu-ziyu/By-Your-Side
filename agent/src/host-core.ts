@@ -28,14 +28,10 @@ export interface HostCoreOptions {
   /** 语音密钥与会话工厂；不给时用本机默认（读 ~/.sideagent 的密钥、ws 连接）。 */
   voiceKey?: ConstructorParameters<typeof VoiceService>[2];
   voiceSession?: ConstructorParameters<typeof VoiceService>[3];
-  /** 扩展内的语音任务始终交给正式任务调度；不给时不装配（原本机开关已随 Jev 退役）。 */
-  enableVoiceTaskDispatch?: boolean;
   /** 每条发往客户端的消息都会经过这里（本机用来录制语音诊断）。 */
   observe?: (msg: ServerMessage) => void;
   /** 客户端发来的语音命令先经这里；返回 true 表示已处理（本机录音的 capture 命令）。 */
   onVoiceCommand?: (msg: Extract<ClientMessage, { type: "voice" }>, conversationId: string) => boolean;
-  /** hello_ok 的附加字段（本机的剪贴板端口）。 */
-  helloExtras?: () => { clipboardPort?: number };
   log: (message: string) => void;
 }
 
@@ -94,11 +90,11 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
 
       return readVoicePage(runtime.rpc, input);
     },
-    options.enableVoiceTaskDispatch ? async (request, stillCurrent) => {
+    async (request, stillCurrent) => {
       const receipt = await conversations.dispatchTaskAction(request, stillCurrent);
 
       return { ok: ["queued", "accepted", "applied"].includes(receipt.status), status: receipt.status, message: receipt.message, receipt };
-    } : undefined,
+    },
     (id, call, input, signal) => conversations.executeRealtimeBrowserTool(id, call, input, signal),
   );
 
@@ -138,7 +134,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     },
     sendHelloOk(conn) {
       void session.availableModels().then((models) => {
-        conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION, features: { memory: !!options.memoryStore }, ...options.helloExtras?.() });
+        conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION, features: { memory: !!options.memoryStore } });
         conn.send({ type: "conversation_list", conversations: conversations.list() });
         conversations.replayState((msg) => conn.send(msg));
       });

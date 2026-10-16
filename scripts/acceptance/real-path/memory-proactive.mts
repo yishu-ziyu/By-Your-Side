@@ -194,7 +194,6 @@ const mainPlan = await loadModelPlan(modelArg);
 const fastPlan = await loadModelPlan(fastArg);
 
 const rp = await launchRealPath({
-  withoutNativeHost: true,
   chromeArgs: [`--host-resolver-rules=MAP news.marianne.test 127.0.0.1:${siteAddress(shopServer).port}, MAP news.lumen.test 127.0.0.1:${siteAddress(shopServer).port}, MAP mail.google.com 127.0.0.1:${siteAddress(mailServer).port}`, "--ignore-certificate-errors", "--no-proxy-server"],
 });
 

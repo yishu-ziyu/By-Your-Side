@@ -120,7 +120,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
           connect: () => new BrowserSocket(model) as never,
         });
       },
-      enableVoiceTaskDispatch: true,
       observe: msg => { if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record); },
       onVoiceCommand: (msg, conversationId) => {
         // 只属于扩展的记录事实（capture）不送往上游语音会话。

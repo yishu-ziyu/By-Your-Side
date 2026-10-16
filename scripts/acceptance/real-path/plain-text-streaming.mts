@@ -127,7 +127,7 @@ const check = (criterion: number, item: string, pass: boolean, detail: Json) => 
 
 const model = await startScriptedModel(RULES);
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 let error: string | null = null;
 

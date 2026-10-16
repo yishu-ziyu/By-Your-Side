@@ -312,7 +312,7 @@ async function saveVoiceKey(rp: RealPath, settings: string, fake?: string) {
 
 async function mainGroup() {
   const model = await startScriptedModel(RULES);
-  const rp = await launchRealPath({ withoutNativeHost: true });
+  const rp = await launchRealPath();
 
   try {
     const s = await session(rp, "/article");
@@ -445,7 +445,6 @@ async function voiceGroup(kind: "nokey" | "mic" | "conn" | "ready") {
   const model = await startScriptedModel(RULES);
 
   const rp = await launchRealPath({
-    withoutNativeHost: true,
     microphoneWav: kind === "mic" ? undefined : wav,
   });
 
