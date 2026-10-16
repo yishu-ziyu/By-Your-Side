@@ -268,11 +268,14 @@ const viewOf = (conversationId: string): FillUndoView | null => {
   const notes = [...ledger.notes];
   const open = [...ledger.tabs.values()].flatMap((tab) => [...tab.entries.values()]);
 
-  if (open.length) return { state: "ready", count: open.length, fields: open.map(nameOf), notes, untracked };
+  // 同名的栏只算一次：页面每点一次「新建」就多一个同名的「标题」框，两个记录在回执上仍是一栏。
+  const fields = [...new Set(open.map(nameOf))];
 
-  if (ledger.closed.some((closed) => closed.reason === "submitted")) return { state: "submitted", fields: ledger.closed.map(nameOf), notes, untracked };
+  if (open.length) return { state: "ready", count: fields.length, fields, notes, untracked };
 
-  if (ledger.closed.length) return { state: "page_changed", fields: ledger.closed.map(nameOf), notes, untracked };
+  if (ledger.closed.some((closed) => closed.reason === "submitted")) return { state: "submitted", fields: [...new Set(ledger.closed.map(nameOf))], notes, untracked };
+
+  if (ledger.closed.length) return { state: "page_changed", fields: [...new Set(ledger.closed.map(nameOf))], notes, untracked };
 
   // 只改了编辑器文字、或只碰了原来有内容的密码栏：没有能还原的，但要让面板说一句。
   return notes.length ? { state: "ready", count: 0, fields: [], notes, untracked } : null;
