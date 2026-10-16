@@ -1,0 +1,246 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 2 分 35 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记的正文：今天随手记下的一件事。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line, .plan-undo-result",
+   "textResult": "已填 3 项 · 用时 2 分 35 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "text": ".plan-undo-result, .fill-undo-result, .plan-card .plan-receipt-line",
+   "result": "[\"\",\"随手记的正文：今天随手记下的一件事。\",\"笔记\"]",
+   "textResult": "已填 3 项 · 用时 2 分 35 秒 · 已撤销 · 「正文」撤销不了 ·  | 还原了 2 处。「标题」已经不在页面上（例如弹窗已关），跳过了。编辑器里的文字没还原。"
+  }
+ ],
+ "tag": "v5c-pc1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 157.556,
+ "timedOut": false,
+ "stepCount": 50,
+ "steps": [
+  {
+   "text": "点新建笔记并查看表单",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "检查新建笔记弹窗",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "关闭误开的弹窗",
+   "error": false
+  },
+  {
+   "text": "按键 「Escape」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认弹窗是否已关闭",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看面板是否遮挡输入框",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填 「input[aria-labe…」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认回车后的页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写正文、点刷新、分类选项目 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "填 「[contenteditabl…」",
+   "error": false
+  },
+  {
+   "text": "点击 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "点刷新并把分类选为项目",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "再次点新建笔记",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "定位当前打开的新建面板",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填标题周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填 「div[data-bys-ac…」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "刷新后确认笔记是否保存",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看页面保存接口",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "最终确认页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  }
+ ],
+ "answer": "六步都走完了，现在页面上的实际状态如下。\n\n新建验收执行结果\n备注\n随手记\n已回车，页面显示「备注已保存」\n正文\n随手记的正文：今天随手记下的一件事。\n刷新后仍在\n分类\n项目\n选完后页面多出「项目名」输入框\n第二条笔记\n周会纪要\n标题已填并点了保存，弹层已关闭\n刷新按钮：已点两次，页面无可见变化，内容都还在\n口令/提货字段：页面自带内容，我没动过\n「周会纪要」这条只看到保存请求发出、弹层关闭，页面任何位置都没出现这条笔记；服务端是否真的存下来我没法在这台机上验证（127.0.0.1 不让我带登录态去查）。\nhttp://127.0.0.1:8941/ 当前页面状态与网络记录\n\n两点要跟你说清楚：一是我一开始手快先点了一次「新建笔记」，弹出来的面板挡住了输入框，我把它临时藏起来才做完中间几步，做完后已经恢复，页面现在没有残留弹层；二是正文你没给具体内容，我写的是「随手记的正文：今天随手记下的一件事。」，要换文字随时说。\n\n在页面上查看\n来源\n切过去看\n全文 · 约 53 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

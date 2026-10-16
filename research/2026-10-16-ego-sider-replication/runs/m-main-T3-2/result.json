@@ -1,0 +1,16 @@
+{
+ "midInfo": null,
+ "tag": "m-main-T3-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://news.ycombinator.com/",
+ "prompt": "这个页面排名前3的帖子标题是什么？",
+ "secs": 6.763,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "前三名依次是：\n\nMuse Spark Open（meta.ai）— 328 分，218 评论\nNeural networks are clean（goodfire.com）— 275 分，85 评论\nKrea 3 – An image model built for editing at scale（krea.ai）— 166 分，64 评论\n\n这是页面当前的排名顺序，不是按分数排的——第 4 名的 Wayland 桌面（381 分）分数更高，只是排在后面。\n\n复制\n已复制\n全文 · 约 22 秒读完",
+ "check": "Muse Spark Open || Neural networks are clean || Krea 3 – An image model built for editing at scale",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://news.ycombinator.com/"
+}

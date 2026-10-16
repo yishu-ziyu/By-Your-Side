@@ -1,0 +1,18 @@
+{
+ "tag": "v483-3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "dbg": [],
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "remembered",
+   "line": "记下了：以后在这个网站填表单，我会把邮箱填完整，不留空。这个网站撤销",
+   "undo": true
+  }
+ ],
+ "memoryDecisions": [
+  "{\"time\":\"2026-10-15T19:55:44.612Z\",\"sessionId\":\"56686657-595c-4974-b1fb-a682a407d717\",\"runId\":\"0ab67535-9c5c-49b9-832d-5ccd02289a49\",\"goalRevision\":\"54067109e8b91f423150291339dd7facbc8be65e9625f2a539c583464376d401\",\"turn\":0,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"key\":\"default:1758094d-05a9-4ccc-8937-668500930560\",\"status\":\"skipped\",\"reason\":\"not-correction\"}}",
+  "{\"time\":\"2026-10-15T19:56:07.317Z\",\"sessionId\":\"56686657-595c-4974-b1fb-a682a407d717\",\"runId\":\"0ab67535-9c5c-49b9-832d-5ccd02289a49\",\"goalRevision\":\"54067109e8b91f423150291339dd7facbc8be65e9625f2a539c583464376d401\",\"turn\":3,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"status\":\"learned\",\"reason\":\"learned\",\"scope\":\"site\",\"entryIds\":[\"a1eb656f-d0e8-4955-be7a-0d88768b91f5\"]}}"
+ ]
+}

@@ -1,0 +1,149 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 800,
+   "text": ".plan-card",
+   "textResult": ""
+  }
+ ],
+ "tag": "om440-pc2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 133.155,
+ "timedOut": false,
+ "stepCount": 31,
+ "steps": [
+  {
+   "text": "备注输入随手记并回车",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "列出页面上的输入框和按钮",
+   "error": false
+  },
+  {
+   "text": "写正文并刷新、切分类",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点新建笔记看表单",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填标题并保存",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:#title」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "检查保存后的页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "检查保存请求与本地是否有周会纪要",
+   "error": false
+  },
+  {
+   "text": "查看保存按钮的处理逻辑",
+   "error": false
+  },
+  {
+   "text": "看保存按钮的完整处理逻辑",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "重试保存周会纪要",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  }
+ ],
+ "answer": "六步都做完了，只有最后保存那一步服务端没给回话。\n\n新建验收 · 执行结果\n备注写「随手记」并回车\n框内值=随手记，旁边出现「备注已保存」\n正文写好\n正文框内容：随手记：今天天气不错，顺便把待办清单理了一遍。\n点刷新\n点的是页面上那个「刷新」按钮，正文内容仍在\n分类选「项目」\n下拉当前值=项目，页面自动多出「项目名」输入框\n新建笔记，标题写「周会纪要」\n弹窗标题已替换成周会纪要\n点保存\n弹窗关闭，但请求被服务端中断 net::ERR_ABORTED，两次都一样\n页面本身不回显已保存的笔记，也没有成功提示，所以「周会纪要」是否真的落库我无法确认——保存请求发出后连接就被服务端取消了。\n\n补充两点：弹窗里的「口令」和「提货」是页面自带的预填值，我一个都没碰；保存按钮的逻辑就是发一次 /save?title=周会纪要 然后关掉弹窗，不等结果——所以这个中断是后端行为，不是操作漏了。\n\n还原填写（4 处）\n来源\n切过去看\n全文 · 约 41 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

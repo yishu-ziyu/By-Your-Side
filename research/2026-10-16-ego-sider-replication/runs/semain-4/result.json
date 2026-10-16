@@ -1,0 +1,33 @@
+{
+ "midInfo": null,
+ "tag": "semain-4",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/search",
+ "prompt": "在站内搜索“部署”。",
+ "secs": 14.725,
+ "timedOut": false,
+ "stepCount": 4,
+ "steps": [
+  {
+   "text": "搜索“部署”",
+   "error": false
+  },
+  {
+   "text": "填 「@2」",
+   "error": false
+  },
+  {
+   "text": "点 「搜索」",
+   "error": false
+  },
+  {
+   "text": "处理这一步",
+   "error": false
+  }
+ ],
+ "answer": "已搜索：搜索框里输入「部署」并点了搜索，页面给出「已提交：go」的回执。不过这一页本身没有渲染结果列表，只有表单和这条提交确认——如果预期能看到匹配条目，可能结果在别的视图里。\n\n已提交，收不回\n来源\n切过去看\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/search"
+}

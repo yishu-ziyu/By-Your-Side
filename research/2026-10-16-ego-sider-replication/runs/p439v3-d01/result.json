@@ -1,0 +1,34 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "Code"
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v3-d01",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://github.com/yishu-ziyu/By-Your-Side",
+ "prompt": "我想把这个仓库的代码下载下来，该点页面上哪个按钮？",
+ "secs": 8.103,
+ "timedOut": false,
+ "stepCount": 1,
+ "steps": [
+  {
+   "text": "圈出 「点这里下载」",
+   "error": false
+  }
+ ],
+ "answer": "点文件列表上方那个绿色的「Code」按钮（已在页面上圈出来），弹出的菜单里选「Download ZIP」就会打包下载整个仓库的 main 分支代码。\n\n注意它下载的是 ZIP 快照，没有 .git 历史——想保留提交记录的话得用 git clone。\n\n复制\n全文 · 约 13 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://github.com/yishu-ziyu/By-Your-Side"
+}

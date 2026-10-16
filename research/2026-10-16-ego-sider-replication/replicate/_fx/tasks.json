@@ -1,0 +1,162 @@
+[
+ {
+  "slug": "ego-x-leaderboard",
+  "product": "EGO",
+  "claim": "Pull the last 7 days of main posts from a handle (skip pinned, reposts, replies) and return a leaderboard by views/engagement with account averages",
+  "url": "http://127.0.0.1:8995/x/lumen_ai",
+  "prompt": "看下这个账号最近 7 天（今天 2026-10-16）的主帖，置顶、转帖、回复都不算，按浏览量排个榜，带上点赞，再算一下这些帖子的平均浏览量和平均点赞。",
+  "criteria": "Leaderboard contains exactly the 5 main posts from 10-10..10-16, ordered by views: Agent evals (48,200) > Benchmarks (21,700) > Context caching (12,400) > Open weights (8,100) > Hello Friday (3,300); averages 18,740 views and 400 likes. Pinned/repost/reply/older (10-08 'Old viral thread' 95,000, 10-06) must not be ranked. Distractors: pinned 910k, repost 50k, reply 30k, 8-day-old 95k post."
+ },
+ {
+  "slug": "ego-job-apply",
+  "product": "EGO",
+  "claim": "Search job boards by role/location/work type, open the careers page, fill the full application from your resume PDF, and stop one click before submit",
+  "url": "http://127.0.0.1:8995/job/board",
+  "prompt": "帮我在这个招聘网站找上海的全职前端工程师岗位，打开它的招聘页，用我电脑上的简历 ~/Documents/resume.pdf 把申请表全部填好（包括上传简历），停在提交前，不要提交。",
+  "criteria": "Correct job: Nimbus (Frontend, Shanghai, Full-time); distractors Beijing FT, Shanghai Contract, Backend, Intern. Application fields come from a resume PDF the agent must read and upload; Submit not clicked. Expected 卡在缺能力 (read local PDF + file upload) unless BYS can do it."
+ },
+ {
+  "slug": "ego-mortgage",
+  "product": "EGO",
+  "claim": "Filter home listings by city/budget/type, open the top match, recalculate the mortgage at your down payment, and return address, price and monthly cost",
+  "url": "http://127.0.0.1:8995/home/listings",
+  "prompt": "帮我筛杭州、总价 300 万以内、公寓的房源，打开排第一的那套，用首付 90 万重新算一下房贷，告诉我地址、总价和月供。",
+  "criteria": "Top match after filters: 'Xihu District, Wensan Rd 88, 3-1201', ¥2,850,000 (distractor: Wensan Rd 12 ¥3,400,000 listed first but over budget; villa; Shanghai). Down payment input = 900000, recalculated; answer reports address, ¥2,850,000 and monthly ¥8,756."
+ },
+ {
+  "slug": "ego-chess",
+  "product": "EGO",
+  "claim": "Play a Lichess game until it ends, reading the board each turn",
+  "url": "http://127.0.0.1:8995/chess/game",
+  "prompt": "在这个本地棋盘上和机器人下一盘棋，我执白，一直下到对局结束，每步先看清棋盘。",
+  "criteria": "Game reaches an end state on the page (checkmate or king captured). Bot plays scripted e5, Nc6, Nf6, a6, h6... so Scholar's mate (Bc4, Qh5/Qf3, Qxf7#) ends it. Distractor: illegal/meaningless moves are accepted but don't end the game. Pass = state result recorded."
+ },
+ {
+  "slug": "ego-linkedin-jobs",
+  "product": "EGO",
+  "claim": "Search LinkedIn for AI SWE roles in SF, filter out senior/stale postings, and list 10 companies with open application links",
+  "url": "http://127.0.0.1:8995/li/jobs",
+  "prompt": "这是职位搜索结果（有两页）。帮我找旧金山的 AI 软件工程师岗位，去掉 Senior/Staff/Principal 这类高级岗和发布超过 30 天的旧帖，列出 10 家公司和它们的申请链接。",
+  "criteria": "Exactly these 10: Anthropix, Cobalt Labs, Ember AI, Helix, Ionic Minds, Juniper AI, Lattice Bio, Northstar, Parallax, Quarry, with /li/apply/<company> links. Must NOT list: Brightloop(Senior), Fathom(Staff), Orchid(Principal), Dunewise(45d), Mosaic Robotics(60d), Gridline(NY), Kestrel(Frontend). Needs page 2."
+ },
+ {
+  "slug": "ego-social",
+  "product": "EGO",
+  "claim": "Reply to tweets, quote-tweet with citations from your own notes, draft and queue posts, pull engagement data, monitor mentions",
+  "url": "http://127.0.0.1:8995/x2/home",
+  "prompt": "用我电脑里笔记 ~/notes/evals.md 的数据，回复 @dev_rel_sam 那条问评测的推，再引用转发一次带上出处；之后每小时帮我监控一次新的提及。发之前先问我。",
+  "criteria": "Expected 卡在缺能力: local notes file access and scheduled monitoring. Acceptable behaviour: drafts into the correct tweet's box (not the spam tweet), does not post without confirmation (acts must not contain post-*). Records where it stops."
+ },
+ {
+  "slug": "ego-generic",
+  "product": "EGO",
+  "claim": "Do web tasks such as research, filling in forms, collecting data from websites",
+  "url": "http://127.0.0.1:8995/gen/laptops",
+  "prompt": "看看这页的笔记本，选续航至少 10 小时里最轻的那款，然后打开采购申请表，填上型号、单价、数量 2、理由 出差用，审批人留空，不要提交。",
+  "criteria": "Correct: FeatherX 13 (1.05kg, 10.5h, ¥9,299). Distractor: AeroBook 13 is lightest (0.98kg) but 8h. Form: g_item FeatherX 13, g_price 9299 (or ¥9,299), g_qty 2, g_reason 出差用, g_appr empty; submit not clicked."
+ },
+ {
+  "slug": "ego-devqa",
+  "product": "EGO",
+  "claim": "Review your own web app's UI: open the local dev server, find a layout problem, change the repo code, reload, and check the fix",
+  "url": "http://127.0.0.1:8995/dev/app",
+  "prompt": "这是我本地开发服务器上的页面。帮我找出布局问题，直接改仓库代码 /home/me/myapp/src/App.css 修好，刷新页面确认修复。",
+  "criteria": "Expected 卡在缺能力: editing local repo files. Partial credit noted if it identifies the bug (Export report button overlaps the chart via margin-left:-60px). Distractor: none on-page except the hint path."
+ },
+ {
+  "slug": "ego-e2e",
+  "product": "EGO",
+  "claim": "E2E test: follow numbered steps, click through the UI, fill forms, inspect the result, and report pass/fail/blocked with evidence",
+  "url": "http://127.0.0.1:8995/e2e/todo",
+  "prompt": "按步骤测一下这个待办应用，每步报告 通过/失败/阻塞 并给证据：1) 新增「买牛奶」 2) 新增「写周报」 3) 勾选「买牛奶」为完成 4) 点 Completed 筛选，应只显示「买牛奶」 5) 点 All，再删除「写周报」，应只剩「买牛奶」。",
+  "criteria": "Bug planted: Delete always removes the first item. Pass: steps 1-4 reported pass, step 5 reported FAIL with evidence (买牛奶 was removed / 写周报 remained). Distractor: the bug looks like success (one item removed)."
+ },
+ {
+  "slug": "sider-forms",
+  "product": "Sider",
+  "claim": "Browser Agent: managing tools, filling forms, checking data, or testing content in the current browser",
+  "url": "http://127.0.0.1:8995/sf/admin",
+  "prompt": "在这个后台帮我：关掉「Auto-send emails」，打开「Slack notifications」，SMS 不动；主要联系人填 王敏、wangmin@example.com，备用邮箱留空；再核对一下本周订单表的合计对不对。先不要点保存。",
+  "criteria": "t_mail=false, t_slack=true, t_sms=true, c_name 王敏, c_email wangmin@example.com, c_backup empty, Save not clicked; answer says the shown total ¥1,320 is wrong, correct is ¥1,230 (distractor: plausible-looking total)."
+ },
+ {
+  "slug": "sider-price",
+  "product": "Sider",
+  "claim": "Amazon Price Tracker: extract prices, ratings and review counts from top listings into a spreadsheet",
+  "url": "http://127.0.0.1:8995/amz/search",
+  "prompt": "把这个搜索结果里前 5 个非广告商品的价格、评分、评价数整理成电子表格，给我一个 CSV 文件。",
+  "criteria": "Data: SoundCore Air 3 ¥299 4.5 12,840; Sony WF-C700 ¥599 4.4 8,321; Jabra Elite 4 ¥499 4.3 5,310; Huawei FreeBuds 5i ¥449 4.6 20,112; Xiaomi Buds 4 ¥279 4.2 9,876. Distractors: 2 sponsored. Spreadsheet/CSV file required by claim; correct data without a file = 卡在缺能力 (file export)."
+ },
+ {
+  "slug": "sider-seo",
+  "product": "Sider",
+  "claim": "Competitive SEO Intelligence: analyze competitor domains in Ahrefs (keywords, top pages, backlinks, content gaps)",
+  "url": "http://127.0.0.1:8995/ahrefs/site?d=mysite.com",
+  "prompt": "用这个 Ahrefs 看板对比竞品 rivala.com 和 rivalb.com：各自的关键词、Top 页面、外链数，然后找出两个竞品都有排名、但我们 mysite.com 没有的内容缺口关键词。",
+  "criteria": "Backlinks rivala 1,840, rivalb 920 (mysite 310). Gap keywords = exactly 'ai agent pricing' and 'browser automation tutorial'. Distractors: 'llm evals' (all three rank), 'web scraping api' (rivala + mine), 'rpa vs ai agents' (rivalb only) must not be called gaps."
+ },
+ {
+  "slug": "sider-hiring",
+  "product": "Sider",
+  "claim": "Hiring Signal Brief: scan competitor career pages and turn open roles into a talent-strategy brief",
+  "url": "http://127.0.0.1:8995/careers/alpha",
+  "prompt": "扫一下 Alpha、Beta、Gamma 三家的招聘页，统计每家按部门的开放岗位数，写一份人才策略简报。",
+  "criteria": "Counts: Alpha 6 (Engineering 5 incl. ML-heavy, Sales 1); Beta 6 (Engineering 2, Sales 4); Gamma 2 (Design 1, Engineering 1) — the CLOSED Head of Sales must be excluded (distractor). Brief should note Alpha=ML/eng push, Beta=sales push."
+ },
+ {
+  "slug": "sider-reviews",
+  "product": "Sider",
+  "claim": "Review Pain Mining: cluster complaints from low-star reviews",
+  "url": "http://127.0.0.1:8995/rev/p1",
+  "prompt": "把这个商品所有 1-2 星差评（有两页）归类，按问题聚类并给出每类条数。",
+  "criteria": "Low-star (1-2★) = 8 reviews across 2 pages: battery 3, shipping damage 2, app/Bluetooth connection 2, appearance/color 1. Distractor: 4-5★ reviews mentioning battery must not be counted. Needs page 2."
+ },
+ {
+  "slug": "sider-reddit",
+  "product": "Sider",
+  "claim": "Reddit Topic Scan: collect hot posts across subreddits into a content-idea sheet",
+  "url": "http://127.0.0.1:8995/r/MachineLearning",
+  "prompt": "扫一下 r/MachineLearning、r/LocalLLaMA、r/programming，每个版块取点赞最高的 3 个帖子（置顶帖不算），整理成一张选题表。",
+  "criteria": "ML: Show: tiny diffusion repo 3,120; New paper: test-time training 2,410; Why are evals so noisy 1,830. LocalLLaMA: Running 70B 4,420; Which local model for coding 3,770; Quantization shootout 2,950. programming: Postgres is enough 3,300; case against microservices 2,600; rewrote backend in Go 1,500. Distractor: pinned mod posts with highest counts."
+ },
+ {
+  "slug": "sider-yt-sheets",
+  "product": "Sider",
+  "claim": "YouTube Topic Research: capture top video metadata and organize it in Sheets",
+  "url": "http://127.0.0.1:8995/yt/results",
+  "prompt": "把这个搜索结果里前 5 个正常视频（广告和 Shorts 不算）的标题、频道、播放量、发布时间写进我的表格 http://127.0.0.1:8995/yt/sheet ，第一行写表头。",
+  "criteria": "Sheet rows 2-6 = Browser agents explained…; I built an AI that books flights; Agentic workflows: full course; Why AI agents fail…; Computer-use models compared (with channel/views/date). Distractors: Ad and #shorts. Scored from sheet cell state."
+ },
+ {
+  "slug": "sider-events",
+  "product": "Sider",
+  "claim": "Event Intel Sheet: dates, locations and ticket prices from major event sites",
+  "url": "http://127.0.0.1:8995/ev/a",
+  "prompt": "从这三个活动网站（AI Summit、WebConf、DevDays）整理日期、地点和普通票价，做成一张表。",
+  "criteria": "AI Summit 2026-11-12~13 Shanghai World Expo Center ¥1,280; WebConf 2026-12-03 China National Convention Center ¥699; DevDays 2026-11-28~29 Shenzhen Convention & Exhibition Center ¥599. Distractors: VIP/early-bird(sold out)/student prices, past-edition date."
+ },
+ {
+  "slug": "sider-contacts",
+  "product": "Sider",
+  "claim": "Company Contact Collector: emails, phones and addresses from contact pages into a spreadsheet",
+  "url": "http://127.0.0.1:8995/co/acme/contact",
+  "prompt": "收集 Acme、Borealis、Cirrus 三家公司联系页上的业务邮箱、电话和地址，导出成电子表格文件给我。",
+  "criteria": "Acme sales@acmerobotics.example +86 21 5555 0101 88 Zhangjiang Rd…; Borealis hello@borealis.example +86 10 6666 0202 1 Zhongguancun St…; Cirrus contact@cirrus.example +86 755 7777 0303 200 Keyuan Rd…. Distractors: careers/press emails and fax numbers. Spreadsheet file required; correct data without file = 卡在缺能力 (file export)."
+ },
+ {
+  "slug": "sider-files",
+  "product": "Sider",
+  "claim": "Turn research into PPT, PDF or DOC files; batch operations; monitor prices",
+  "url": "http://127.0.0.1:8995/files/research",
+  "prompt": "把这页调研整理成一份 PPT 文件和一份 PDF 给我，再每天帮我监控表里三个产品的价格。",
+  "criteria": "Expected 卡在缺能力: file generation (PPT/PDF) and scheduled monitoring. Distractor: superseded $9B figure must not be used if it summarises."
+ },
+ {
+  "slug": "sider-code",
+  "product": "Sider",
+  "claim": "Sider Code: change a page from natural language (e.g. remove YouTube Shorts) and remember it per site",
+  "url": "http://127.0.0.1:8995/ytube/home",
+  "prompt": "把这个页面上的 Shorts 全部去掉，并且记住：以后每次打开这个网站都自动去掉 Shorts。",
+  "criteria": "Now: the Shorts shelf (#shorts, 3 .short cards) not visible on the final page; the long video titled 'Shorts vs long videos' must stay (distractor). Persistence per site is required by claim; if not provided = 卡在缺能力 (persistent per-site page rewrite)."
+ }
+]

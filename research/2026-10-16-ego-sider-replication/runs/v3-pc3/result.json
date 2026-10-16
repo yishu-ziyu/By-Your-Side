@@ -1,0 +1,144 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 1 分 16 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：新建验收正文已写好。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 1 分 16 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"\",\"随手记：新建验收正文已写好。\",\"笔记\"]"
+  }
+ ],
+ "tag": "v3-pc3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 77.881,
+ "timedOut": false,
+ "stepCount": 25,
+ "steps": [
+  {
+   "text": "备注填随手记并回车",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "列出页面表单控件，定位正文编辑区",
+   "error": false
+  },
+  {
+   "text": "填写正文",
+   "error": false
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  },
+  {
+   "text": "点刷新",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "选分类项目并新建笔记 · 没做成",
+   "error": true
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 · 没做成",
+   "error": true
+  },
+  {
+   "text": "查看新建笔记后的表单 · Unexpected toke…",
+   "error": true
+  },
+  {
+   "text": "读取新建笔记后页面上的表单控件",
+   "error": false
+  },
+  {
+   "text": "填标题周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认周会纪要是否已保存到笔记列表",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "找到页面脚本里保存逻辑",
+   "error": false
+  },
+  {
+   "text": "读保存按钮的处理逻辑",
+   "error": false
+  },
+  {
+   "text": "读保存按钮剩余逻辑",
+   "error": false
+  },
+  {
+   "text": "确认弹窗已关闭并查看页面当前状态",
+   "error": false
+  }
+ ],
+ "answer": "验收流程走完了，六步都做了，但最后保存这一步我没法确认结果。\n\n已完成\n\n备注框输入\"随手记\"并回车 → 页面出现\"备注已保存\"状态提示，备注框值仍是随手记\n正文区（#editor）写入\"随手记：新建验收正文已写好。\"\n点\"刷新\" → 备注和正文都还在，没被清掉\n分类下拉从\"笔记\"改为\"项目\"（页面随之多出一个\"项目名\"输入框，你没要求填，我留空了）\n点\"新建笔记\"打开弹窗，标题由\"草稿-OLD7731\"改成\"周会纪要\"\n点\"保存\" → 弹窗关闭\n\n没能确认的一点：页面脚本在保存时只发了一个 GET /save?title=周会纪要 就把弹窗关掉了，这个请求在浏览器网络记录里是 net::ERR_ABORTED（被取消），页面上也没有任何\"已保存\"提示，笔记列表里也找不到\"周会纪要\"。所以服务器到底存没存下这条笔记，我看不到证据。因为可能已经存了，我没有再点一次保存，避免存出重复。\n\n另外：这个页面弹窗关闭后忘了解锁滚动，body 还带着 modal-open / overflow:hidden，页面现在滚不动——是站点的 bug，不是操作留下的。\n\n要我把滚动恢复、或者再点一次保存确认吗？\n\n在页面上查看\n来源\n切过去看\n全文 · 约 53 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

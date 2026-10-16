@@ -1,0 +1,132 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 1 分 28 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：新建笔记验收正文，记录流程与结果。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 1 分 28 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"\",\"随手记：新建笔记验收正文，记录流程与结果。\",\"笔记\"]"
+  }
+ ],
+ "tag": "v3-pc2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 89.879,
+ "timedOut": false,
+ "stepCount": 22,
+ "steps": [
+  {
+   "text": "列出页面上的表单控件",
+   "error": false
+  },
+  {
+   "text": "看编辑器结构、分类选项和保存按钮",
+   "error": false
+  },
+  {
+   "text": "查看页面脚本里新建笔记的逻辑",
+   "error": false
+  },
+  {
+   "text": "写备注并回车、填正文",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "核验页面",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "刷新、选分类、新建笔记写标题",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "点击保存并确认弹窗关闭",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "核验页面",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "核对页面最终状态",
+   "error": false
+  }
+ ],
+ "answer": "按顺序都走了一遍，页面状态如下。\n\n新建验收 · 执行结果\n备注\n随手记\n回车后出现「备注已保存」\n正文\n随手记：新建笔记验收正文，记录流程与结果。\n写进正文编辑区\n分类\n项目\n下方自动出现「项目名」输入框\n新笔记标题\n周会纪要\n覆盖原「草稿-OLD7731」后保存\n保存按钮已点、弹窗已关，但页面发出的 /save?title=周会纪要 请求被 Chrome 记为 net::ERR_ABORTED（已取消），服务端是否真的收到我无法确认。\n\n另外两点：弹窗关掉后页面的 body 仍留着 modal-open / overflow:hidden，整页现在是滚动锁死的状态（页面脚本自己没解锁）；刷新按钮点了但它没有绑定任何行为，页面无变化。保存要不要我重发一次，你说了算——我没敢自作主张重放那次写入。\n\n在页面上查看\n来源\n切过去看\n全文 · 约 36 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

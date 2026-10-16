@@ -1,0 +1,22 @@
+{
+ "tag": "c290-decline2",
+ "mode": "decline",
+ "evidenceVisible": false,
+ "card": "把这段 18 字的内容发给 和 @小王 的对话，在 127.0.0.1:8931 上\n\n网站\n127.0.0.1:8931\n按钮\n「发送」\n内容\n「下周二上午十点评审，请提前准备演示。」\n发给\n和 @小王 的对话\n先不发\n发送",
+ "cardAfter": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+ "chips": [
+  {
+   "t": "",
+   "error": true
+  },
+  {
+   "t": "",
+   "error": false
+  },
+  {
+   "t": "",
+   "error": false
+  }
+ ],
+ "posts": []
+}

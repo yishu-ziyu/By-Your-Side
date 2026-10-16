@@ -1,0 +1,146 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 1 分 18 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：这是第一条笔记的正文，今天随手记了些想法。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line, .plan-undo-result",
+   "textResult": "已填 3 项 · 用时 1 分 18 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "text": ".plan-undo-result, .fill-undo-result, .plan-card .plan-receipt-line",
+   "result": "[\"\",\"随手记：这是第一条笔记的正文，今天随手记了些想法。\",\"笔记\"]",
+   "textResult": "已填 3 项 · 用时 1 分 18 秒 · 已撤销 · 「正文」撤销不了 ·  | 还原了 2 处。「标题」已经不在页面上（比如弹窗关了），这一处没法还原。如果它已经保存，请到网站里手动改回。编辑器里的文字没还原。"
+  }
+ ],
+ "tag": "v6-pc1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 80.183,
+ "timedOut": false,
+ "stepCount": 25,
+ "steps": [
+  {
+   "text": "点新建笔记并看表单",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "看备注框与弹窗的脚本行为",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查刷新/分类/正文字段行为",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "备注写随手记回车并填正文",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:#memo」",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "核验页面",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:#editor」",
+   "error": false
+  },
+  {
+   "text": "点刷新",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选分类项目并新建第二条笔记保存",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "核验页面",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "核验页面",
+   "error": false
+  },
+  {
+   "text": "填 「div[role=\"dialo…」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "核对保存结果",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  }
+ ],
+ "answer": "整条验收流程跑完了，结果如下：\n\n备注：填了「随手记」并回车 → 页面出现「备注已保存」提示（该提示现在还在）\n正文：写了「随手记：这是第一条笔记的正文，今天随手记了些想法。」\n刷新：点了，但这个按钮是空的（id 就是 dead，页面上没绑任何处理），页面没有重载，备注和正文内容都还在\n分类：已切到「项目」，下面自动多出一行「项目名」输入框（还空着，你要的话我可以填）\n第二条笔记：新建弹窗 → 标题改成「周会纪要」→ 保存，弹窗已关闭（这个 app 的保存只是提交后收起弹窗，列表里不会显示新条目，页面上搜不到「周会纪要」字样）\n\n另外说明一下：一开始我先点了「新建笔记」想看表单，那个弹窗是误开的，我直接把它移除了、没有点保存，所以没有产生一条标题为「草稿-OLD7731」的记录。\n\n在页面上查看\n来源\n切过去看\n全文 · 约 36 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

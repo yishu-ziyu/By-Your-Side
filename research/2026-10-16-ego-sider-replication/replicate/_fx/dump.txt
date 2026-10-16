@@ -1,0 +1,459 @@
+
+##### ego-x-leaderboard secs=11 timedOut=False steps=0 err=0 url=http://127.0.0.1:8995/x/lumen_ai
+fields {}
+acts [] snap {}
+visits ['GET /x/lumen_ai']
+ANSWER: 近 7 天（10-10 ~ 10-16）里符合条件的主帖有 5 条，转帖（10-14）和回复（10-12）已剔除，置顶那条是 9 月的也不在范围内。
+
+@lumen_ai 近 7 天主帖榜 · 按浏览量
+帖子	日期	浏览量	点赞
+Agent evals that actually work	10-13	48,200	1,020
+Benchmarks are lying to you	10-10	21,700	480
+Context caching deep dive	10-15	12,400	310
+Open weights roundup	10-11	8,100	150
+Hello Friday thread	10-16	3,300	40
+平均浏览量（5 条）
+18,740 👁
+10-10 至 10-16 的主帖 · (48200 + 21700 + 12400 + 8100 + 3300) ÷ 5
+平均点赞（5 条）
+400 ❤
+(1020 + 480 + 310 + 150 + 40) ÷ 5
+如果把 10-14 的转帖（50,000）和 10-12 的回复（30,000）也算进来，榜首都变了——这俩的浏览量比榜首主帖还高。
+把转帖和回复也算进来重算一次
+
+来源：当前这个本地测试页（页面上就这些帖子，没有更多分页内容）。
+
+复制为表格
+已复制
+全文 · 约 62 秒读完
+
+##### ego-job-apply secs=240 timedOut=True steps=9 err=1 url=http://127.0.0.1:8995/job/nimbus/careers
+fields {"f_role": "Frontend", "f_loc": "Shanghai", "f_type": "Full-time"}
+acts [] snap {"f_role": "Frontend", "f_loc": "Shanghai", "f_type": "Full-time", "a_name": "", "a_email": "", "a_phone": "", "a_company": "", "a_years": "", "a_li": "", "a_resume": "", "a_cover": ""}
+visits ['GET /job/board', 'GET /job/nimbus/careers']
+ANSWER: 我先按上海 + 前端 + 全职筛出岗位，然后打开 Nimbus 的招聘页开始填表——只填不提交。
+
+##### ego-mortgage secs=32 timedOut=False steps=10 err=1 url=http://127.0.0.1:8995/home/h2
+fields {"hf_city": "Hangzhou", "hf_type": "Apartment", "hf_budget": "3000000", "m_down": "900000"}
+acts [] snap {"hf_city": "Hangzhou", "hf_budget": "3000000", "hf_type": "Apartment", "m_price": "2850000", "m_down": "900000", "m_rate": "3.5", "m_years": "30"}
+visits ['GET /home/listings', 'GET /home/h2']
+ANSWER: 筛选后符合条件的有两套（文三路 88 号 ¥2,850,000 和大关路 3 号 见下方卡片），排第一的是前者，按首付 90 万重算后月供 ¥8,756。
+
+西湖区文三路 88 号 3-1201 · 杭州 · 公寓
+总价
+¥2,850,000
+页面标价
+首付（你填的）
+¥900,000
+原默认 57 万
+贷款额
+¥1,950,000
+利率 3.5% · 30 年等额本息 · 2850000 − 900000
+月供
+月供
+¥8,756
+页面重算结果
+HomeFinder 房源详情页 /home/h2（本地测试页，数据为演示用）
+
+页面默认利率 3.5%、年限 30 年我没有动；换利率或年限我可以再算一版。
+
+还原填写（1 处）
+来源
+切过去看
+全文 · 约 41 秒读完
+
+##### ego-chess secs=420 timedOut=True steps=79 err=12 url=http://127.0.0.1:8995/chess/game
+fields {}
+acts [] snap {}
+visits ['GET /chess/game']
+ANSWER: 我执白开局，先把 e4 走出来看看机器怎么应。
+
+##### ego-linkedin-jobs secs=16 timedOut=False steps=1 err=0 url=http://127.0.0.1:8995/li/jobs?page=2
+fields {}
+acts [] snap {}
+visits ['GET /li/jobs', 'GET /li/jobs?page=2']
+ANSWER: 筛完了：两页 17 个岗位里，去掉 1 个纽约的（Gridline）、3 个高级岗（Brightloop Senior、Fathom Staff、Orchid Principal）、1 个非 AI 的（Kestrel Frontend）、3 个超过 30 天的（Dunewise 45 天、Mosaic Robotics 60 天，以及……实际只有这两个超期），正好剩 10 家旧金山岗位。
+
+旧金山 AI 软件工程师 · 10 家（已排除高级岗与 30 天以上旧帖）
+公司	岗位	发布	申请链接
+Anthropix	AI Software Engineer	3 天	[申请](http://127.0.0.1:8995/li/apply/anthropix)
+Cobalt Labs	Machine Learning Engineer, Agents	5 天	[申请](http://127.0.0.1:8995/li/apply/cobalt-labs)
+Ember AI	Software Engineer, LLM Platform	1 天	[申请](http://127.0.0.1:8995/li/apply/ember-ai)
+Helix	AI Software Engineer	7 天	[申请](http://127.0.0.1:8995/li/apply/helix)
+Ionic Minds	Software Engineer, AI Applications	10 天	[申请](http://127.0.0.1:8995/li/apply/ionic-minds)
+Juniper AI	AI Software Engineer II	12 天	[申请](http://127.0.0.1:8995/li/apply/juniper-ai)
+Lattice Bio	ML Software Engineer	14 天	[申请](http://127.0.0.1:8995/li/apply/lattice-bio)
+Northstar	Software Engineer, AI Infra	6 天	[申请](http://127.0.0.1:8995/li/apply/northstar)
+Parallax	AI Software Engineer	20 天	[申请](http://127.0.0.1:8995/li/apply/parallax)
+Quarry	Applied AI Engineer	9 天	[申请](http://127.0.0.1:8995/li/apply/quarry)
+Juniper AI 的「II」是职级后缀，我按字面保留（你没点名 II）；如果你把它也算高级岗，就只剩 9 家。
+把这 10 个申请链接存成 CSV
+
+被刷掉的：Brightloop（Senior）、Fathom（Staff）、Orchid（Principal）、Gridline（New York, NY）、Kestrel（Frontend Engineer，非 AI）、Dunewise（45 天）、Mosaic Robotics（60 天）。
+
+http://127.0.0.1:8995/li/jobs 与 ?page=2 —— 这是本地 mock 页面（页
+
+##### ego-social secs=35 timedOut=False steps=4 err=4 url=http://127.0.0.1:8995/x2/home
+fields {}
+acts [] snap {"reply": "", "quote": "", "reply2": ""}
+visits ['GET /x2/home']
+ANSWER: 卡在数据源上：我只有浏览器工具，只能访问 http(s) 页面，读不到你电脑里的 ~/notes/evals.md。所以现在还没有任何东西发出去，回复和引用转发都还没写。
+
+把这份笔记的内容贴给我，或者在侧边栏作为附件给我，我就能起草——按你说的，发之前一定先给你看草稿等你点头，我不会自己去点 Reply 或 Quote。
+
+另外一件要提前说清：我没有定时任务的能力，没法自己每小时跑一次监控。你可以叫我时我随时查（这个首页现在就挂着 Mentions: 3 new 没看），或者如果你要的是真正自动化，那得靠浏览器外部的定时器来触发我。
+
+在页面上查看
+来源
+切过去看
+全文 · 约 28 秒读完
+
+##### ego-generic secs=25 timedOut=False steps=9 err=1 url=http://127.0.0.1:8995/gen/form
+fields {"g_item": "FeatherX 13", "g_price": "9299", "g_qty": "2", "g_reason": "出差用"}
+acts [] snap {"g_item": "FeatherX 13", "g_price": "9299", "g_qty": "2", "g_reason": "出差用", "g_appr": ""}
+visits ['GET /gen/laptops', 'GET /gen/form']
+ANSWER: 表已填好，未点提交，审批人留空。续航 ≥10 小时的四款里 FeatherX 13 最轻。
+
+采购申请表（已填，未提交）
+Item 型号
+最轻
+FeatherX 13
+续航 10.5 h · 1.05 kg
+Unit price 单价
+¥9,299
+页面标价
+Quantity 数量
+2
+Reason 理由
+出差用
+Approver 审批人
+（留空）
+按你说的没填
+Submit 按钮我没碰，页面显示的也只是本地测试页，不会真提交。
+http://127.0.0.1:8995/gen/laptops 与 /gen/form，五个字段已逐个读回确认
+还原填写（4 处）
+来源
+切过去看
+全文 · 约 42 秒读完
+
+##### ego-devqa secs=59 timedOut=False steps=1 err=0 url=http://127.0.0.1:8995/dev/app
+fields {}
+acts [] snap {}
+visits ['GET /dev/app', 'GET /dev/app.css']
+ANSWER: 助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。
+
+在页面上查看
+来源
+切过去看
+
+##### ego-e2e secs=81 timedOut=False steps=34 err=1 url=http://127.0.0.1:8995/e2e/todo
+fields {"t_new": "买牛奶"}
+acts [] snap {"t_new": "", "cb0": true, "cb1": false, "cb2": false}
+visits ['GET /e2e/todo']
+ANSWER: 5 步里 4 步通过，第 5 步失败——Delete 按钮永远删掉的是第一条，不是点的那条。
+
+Todo app 测试结果
+4 通过 / 1 失败 · 页面已恢复到终态：只剩「买牛奶」且已完成
+1) 新增「买牛奶」
+1 条
+通过 · 列表出现该条目
+2) 新增「写周报」
+2 条
+通过 · 两条并存，顺序正确
+3) 勾选「买牛奶」
+1 checked=true
+通过 · 写周报仍 false
+4) Completed 筛选
+1 条
+通过 · 只剩买牛奶
+5) All 后删「写周报」
+失败
+1 条
+失败 · 剩的是写周报，买牛奶被删
+
+第 5 步的证据
+
+我点的就是「写周报」那一行的 Delete（快照明确标为 Delete — in item "写周报"），点完列表却变成了：
+
+点之前：买牛奶(checked) · 写周报(unchecked)
+点之后：只剩 写周报(unchecked) ← 删反了
+
+第二次复现同样结果：我加「甲」「乙」凑成三条，点**第三条「乙」**的 Delete（data-i=2），消失的却是第一条「写周报」，结果剩 甲、乙。
+
+根因（页面脚本，第 3 步 filter 源码）
+
+if(e.target.matches('.del'))L.splice(0,1);   // 写死 0，忽略按钮上的 data-i
+
+
+每个 Delete 按钮都渲染了正确的 data-i，但点击处理根本没读它，硬编码 splice(0,1)。改成 L.splice(+e.target.dataset.i,1) 即可。
+
+只有单条待办时删除看起来正常（index 0 恰好就是那条），所以这个 bug 在简单场景下完全测不出来——一旦列表有两条以上就会删错。
+
+我加的复现数据「甲」「乙」已清掉，并把「买牛奶」重新加回并勾成完成，页面现在就是你预期的终态。第 5 步我没法让它通过，只能如实报失败。
+
+还原填写（1 处）
+来源
+切过去看
+全文 · 约 77 秒读完
+
+##### sider-forms secs=39 timedOut=False steps=13 err=2 url=http://127.0.0.1:8995/sf/admin
+fields {"c_name": "王敏", "c_email": "wangmin@example.com", "t_mail": false, "t_slack": true}
+acts [] snap {"t_mail": false, "t_slack": true, "t_sms": true, "c_name": "王敏", "c_email": "wangmin@example.com", "c_backup": ""}
+visits ['GET /sf/admin']
+ANSWER: 设置已改好，保存按钮我没碰；订单表合计对不上，页面写的 ¥1,320 比三笔实际多 ¥90。
+
+本周订单合计核对
+三笔实际相加
+¥1,230
+#1001 + #1002 + #1003 · 420 + 350 + 460
+页面显示的 Total
+¥1320
+表格里写死的值
+差额
+有出入
+¥90
+合计多算了 · 1320 − (420 + 350 + 460)
+合计没跟着明细走，建议按三笔明细重算为 {=real} 再保存。
+
+其他四项现在的状态：Auto-send emails 已关、Slack notifications 已开、SMS alerts 保持开启（没动）、Name = 王敏、Email = wangmin@example.com、Backup email 仍为空。全部停留在表单里，等你确认后再保存。
+
+还原填写（4 处）
+全文 · 约 42 秒读完
+
+##### sider-price secs=6 timedOut=False steps=0 err=0 url=http://127.0.0.1:8995/amz/search
+fields {}
+acts [] snap {}
+visits ['GET /amz/search']
+ANSWER: 五个非广告商品的数据页面里都有，我直接生成 CSV。
+
+复制
+已复制
+
+##### sider-seo secs=16 timedOut=False steps=3 err=0 url=http://127.0.0.1:8995/ahrefs/site?d=rivalb.com
+fields {}
+acts [] snap {}
+visits ['GET /ahrefs/site?d=mysite.com', 'GET /ahrefs/site?d=rivala.com', 'GET /ahrefs/site?d=rivalb.com']
+ANSWER: 内容缺口有 2 个关键词：ai agent pricing 和 browser automation tutorial——两个竞品都在打，我们完全没有排名；我们现有的两个词（llm evals、web scraping api）反而只被其中一个竞品覆盖。
+
+三站对比与内容缺口
+两个竞品都有、我们没有
+缺口
+2 个词
+内容缺口
+外链差距（rivala − 我们）
+1,530 条
+rivalb 为 920，我们是 310 · 1840 − 310
+站点	Top 10 关键词	Top 页面	外链
+rivala.com	ai agent pricing / browser automation tutorial / web scraping api / llm evals	/pricing · /blog/browser-automation	1,840
+rivalb.com	ai agent pricing / browser automation tutorial / rpa vs ai agents / llm evals	/blog/agent-pricing · /docs/quickstart	920
+mysite.com（我们）	llm evals / web scraping api	/blog/evals	310
+ai agent pricing
+推荐
+高优先级
+两个竞品都排进前 10
+商业意图最直接，且 rivala 用 /pricing 页、rivalb 用 /blog/agent-pricing 页同时在打，说明有排名难度但也有明确的对手页面可对标
+browser automation tutorial
+次优先
+两个竞品都排进前 10
+rivala 的 /blog/browser-automation 已是主要流量页，教程型内容我们目前完全没有对应的一篇
+我们唯一的两个词 llm evals 和 web scraping api 都不是两家同时覆盖的，只被单家竞品拿下——这既是防守点，也说明覆盖面比深度更薄。
+先深挖 ai agent pricing 这个词
+把缺口整理成一份内容计划
+[rivala.com](http://127.0.0.1:8995/ahrefs/site?d=rivala.com)、[rivalb.com](http://127.0.0.1:8995/ahrefs/site?d=rivalb.com)、[mysite.com](http://127.0.0.1:8995/ahrefs/site?d=mysite.com) 的 Site Explorer 页面（本地 mock 看板）
+
+注：这只是本地测试看板上的数据，rivala/rivalb 各关键词的具体排名位次和外链增长趋势看板里没有显示。
+
+复制为表格
+已复制
+来源
+切过去看
+全文 · 约 142 秒读完
+
+##### sider-hiring secs=22 timedOut=False steps=3 err=2 url=http://127.0.0.1:8995/careers/alpha
+fields {}
+acts [] snap {}
+visits ['GET /careers/alpha', 'GET /careers/beta', 'GET /careers/gamma']
+ANSWER: 三家的开放岗位都数完了：Alpha 6 个、Beta 6 个、Gamma 实际只有 2 个在招（它页面上的 Head of Sales 标着 CLOSED，不算开放）。
+
+按部门的开放岗位数（2026-10-16 抓取）
+公司	开放总数	Engineering	Sales	Design
+Alpha	5+1	5	1	—
+Beta	2+4	2	4	—
+Gamma	1+1+0	1	0（已关闭）	1
+Gamma 页面列出的 "Head of Sales · Sales" 标注为 CLOSED — no longer accepting，所以 Sales 计 0，开放的只有 Product Designer 和 ML Engineer 两个。
+http://127.0.0.1:8995/careers/alpha · /beta · /gamma（页面自述为本地测试页，数据仅供演练）
+
+人才策略简报
+
+1. 画像
+
+Alpha — 工程密集型：6 个岗位里 5 个在 Engineering（ML、推理 ML、研究科学家、前后端），销售只有 1 个 AE。产品与设计完全没有编制，典型的「先把技术纵深做厚」阶段。
+Beta — 销售驱动型：6 个里 4 个在 Sales（AE、EMEA AE、SDR、售前 SE），工程只有 2 个（后端、数据）。带 EMEA 和 SDR，说明已进入区域扩张 + 规模化拓客。
+Gamma — 极简小团队：仅 2 个开放岗位，Design 1 + Engineering 1，Sales 的负责人职位反而关闭。典型的早期探索期，优先找能自带方法论的关键人，而非扩编。
+
+2. 共性缺口
+三家都没有 Senior/Staff/管理层的显性岗位发布，只有 Beta 的 "Head of Sales" 出现过且已关闭——如果这是真实页面，招聘漏斗在资深层级和销售负责人上有明显断点。
+
+3. 建议动作
+
+工程侧：三家都在抢 ML/数据，建议把 ML 岗的面试流程标准化（同一套 case），减少重复筛选成本。
+销售侧：Beta 的销售投入已明显领先 Alpha/Gamma，若按地域协同，Alpha 可以考虑补 SDR 或 AE 作为漏斗入口。
+优先级：Gamma 优先补 Design+工程的第二条线（当前单点风险高），Alpha 补销售漏斗入口，Beta 补资深工程与销售负责人。
+
+想让我把这份简报导成 Markdown 或 CSV 表格方便你转给 HR 吗？
+
+复制为表格
+已复制
+来源
+切过去看
+全文 · 约 100 秒读完
+
+##### sider-reviews secs=17 timedOut=False steps=2 err=0 url=http://127.0.0.1:8995/rev/p2
+fields {}
+acts [] snap {}
+visits ['GET /rev/p1', 'GET /rev/p2']
+ANSWER: 两页共 8 条 1–2 星差验，问题集中在电池续航上。
+
+1–2 星差评 8 条，按问题聚类
+电池续航差
+最多
+3 条
+2 小时没电 / 放充电盒 overnight 掉电 / 只用 1.5h
+物流运输损坏
+2 条
+盒子压扁、耳机划伤 / 包装破损、充电盒裂开
+App / 蓝牙连接失败
+2 条
+Android 连不上 / iPhone 反复断连
+外观与图片不符
+1 条
+颜色比图片丑
+续航 + 连接类占 5 条，是同一个核心品控问题，不是偶发。
+
+第 1 页 http://127.0.0.1:8995/rev/p1 与第 2 页 
+http://127.0.0.1:8995/rev/p2 的星级为 1–2 的全部评论（3 星及以上未计入）。页面自带说明：这是本地测试页，内容为测试数据。
+
+在页面上查看
+来源
+切过去看
+全文 · 约 32 秒读完
+
+##### sider-reddit secs=17 timedOut=False steps=2 err=0 url=http://127.0.0.1:8995/r/MachineLearning
+fields {}
+acts [] snap {}
+visits ['GET /r/MachineLearning', 'GET /r/LocalLLaMA', 'GET /r/programming']
+ANSWER: 三个版块各取点赞前三（置顶帖已剔除），最高的是 r/LocalLLaMA 的 70B 双卡指南。
+
+选题表 · 各版块点赞 Top 3（已排除置顶）
+数据来自本地测试页 127.0.0.1:8995 的三个 Hot 列表
+全场最高
+Top
+4420 ⬆
+Running 70B on two 3090s guide
+入选帖子总数
+9
+3 个版块 × 3 条
+版块	帖子	点赞
+r/LocalLLaMA	Running 70B on two 3090s guide	4,420
+r/LocalLLaMA	Which local model for coding?	3,770
+r/LocalLLaMA	Quantization shootout Q4 vs Q5	2,950
+r/MachineLearning	Show: tiny diffusion repo	3,120
+r/MachineLearning	New paper: test-time training beats scaling	2,410
+r/MachineLearning	Why are evals so noisy?	1,830
+r/programming	Postgres is enough	3,300
+r/programming	The case against microservices	2,600
+r/programming	Why we rewrote our backend in Go	1,500
+三个页面顶部都写着「Local test page only — nothing real happens」，这是本地假数据，不是线上 Reddit。
+挑出 3 个最值得写的选题角度
+切回 r/MachineLearning
+http://127.0.0.1:8995/r/MachineLearning、/r/LocalLLaMA、/r/programming 的 Hot 列表
+
+列表本身不是按点赞排的（比如「Meme: my GPU at 3am」在页面里排第 4），上面是按点赞数重新排的。
+
+复制为表格
+已复制
+来源
+切过去看
+全文 · 约 93 秒读完
+
+##### sider-yt-sheets secs=50 timedOut=False steps=6 err=0 url=http://127.0.0.1:8995/yt/results
+fields {"A1": "标题", "B1": "频道", "C1": "播放量", "D1": "发布时间", "A2": "Browser agents explained in 12 minutes", "B2": "AI Explained", "C2": "1.2M views", "D2": "3 weeks ago", "A3": "I built an AI that books flights", "B3": "Fireship", "C3": "890K views", "D3": "1 month ago", "A4": "Agentic workflows: full course", "B4": "freeCodeCamp", "C4": "2.3M views", "D4": "5 months ago", "A5": "Why AI agents fail (and how to fix)", "B5": "Two Minute Papers", "C5": "640K views", "D5": "2 weeks ago", "A6": "Computer-use
+acts [] snap {"A1": "标题", "B1": "频道", "C1": "播放量", "D1": "发布时间", "A2": "Browser agents explained in 12 minutes", "B2": "AI Explained", "C2": "1.2M views", "D2": "3 weeks ago", "A3": "I built an AI that books flights", "B3": "Fireship", "C3": "890K views", "D3": "1 month ago", "A4": "Agentic workflows: full course", "B4": "freeCodeCamp", "C4": "2.3M views", "D4": "5 months ago", "A5": "Why AI agents fail (and h
+visits ['GET /yt/results', 'GET /yt/sheet']
+ANSWER: 写好了，表格 A1:D6 已经填完（表头 + 5 条视频），广告和那条 Shorts 都跳过了。
+
+Topic research sheet · 前 5 条正常视频
+标题	频道	播放量	发布时间
+标题	频道	播放量	发布时间
+Browser agents explained in 12 minutes	AI Explained	1.2M views	3 weeks ago
+I built an AI that books flights	Fireship	890K views	1 month ago
+Agentic workflows: full course	freeCodeCamp	2.3M views	5 months ago
+Why AI agents fail (and how to fix)	Two Minute Papers	640K views	2 weeks ago
+Computer-use models compared	Matt Wolfe	410K views	6 days ago
+被跳过的两条：置顶广告「Learn AI in 1 day (Sponsored)」和 Shorts「#shorts agent fail lol」。页面本身标注是本地测试页，没有保存按钮，改动就在输入框里。
+切到表格页看
+还原填写（24 处）
+来源
+切过去看
+全文 · 约 52 秒读完
+
+##### sider-events secs=11 timedOut=False steps=3 err=0 url=http://127.0.0.1:8995/ev/c
+fields {}
+acts [] snap {}
+visits ['GET /ev/a', 'GET /ev/b', 'GET /ev/c']
+ANSWER: 三个活动的普通票价都拿到了，最低的是 DevDays 深圳 ¥599。
+
+三个活动的日期 / 地点 / 普通票价
+普通票 = General admission / Standard / Regular
+活动	日期	地点	普通票价
+AI Summit 上海	2026-11-12 至 11-13（2 天）	上海世博展览馆	¥1,280
+WebConf 北京	2026-12-03（1 天）	北京国家会议中心	¥699
+DevDays 深圳	2026-11-28 至 11-29（2 天）	深圳会展中心	¥599
+三个页面顶部都写着「本地测试页」，票价和日期是测试数据，不能当真实购票信息。
+其他票种（VIP / 学生 / 早鸟）也列一下
+
+来源：AI Summit、
+WebConf、
+DevDays。各页另有 VIP ¥4,800 / ¥1,999 workshop / 学生 ¥199（需学生证）、VIP ¥2,400，AI Summit 的早鸟 ¥880 已售罄。
+
+复制为表格
+已复制
+来源
+切过去看
+全文 · 约 39 秒读完
+
+##### sider-contacts secs=9 timedOut=False steps=3 err=0 url=http://127.0.0.1:8995/co/cirrus/contact
+fields {}
+acts [] snap {}
+visits ['GET /co/acme/contact', 'GET /co/borealis/contact', 'GET /co/cirrus/contact']
+ANSWER: 助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。
+
+在页面上查看
+来源
+切过去看
+
+##### sider-files secs=151 timedOut=False steps=10 err=3 url=http://127.0.0.1:8995/files/research
+fields {}
+acts [] snap {}
+visits ['GET /files/research', 'GET /files/research']
+ANSWER: 助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。
+
+在页面上查看
+来源
+切过去看
+
+##### sider-code secs=24 timedOut=False steps=3 err=0 url=http://127.0.0.1:8995/ytube/home
+fields {}
+acts [] snap {}
+visits ['GET /ytube/home']
+ANSWER: Shorts 区块已经从这页移除了，也记下来了。
+
+删除的是 section#shorts 整块：标题「Shorts」+ 3 条短片（#shorts cat fails / #shorts 10s recipe / #shorts gym tip）。读回确认页面上剩余 .card.short 为 0，只剩 section#videos。
+保留的：「Shorts vs long videos — an analysis (18:20)」在 Recommended 里，是普通视频（class 为 card，不是 card short），没动。
+记忆已保存：以后每次打开这个网站，我都会先自动去掉 Shorts。
+
+一点提醒：这是本地测试页，刷新一下 Shorts 会回来（我下次打开时会再帮你去掉的）。
+
+复制
+已复制
+全文 · 约 35 秒读完

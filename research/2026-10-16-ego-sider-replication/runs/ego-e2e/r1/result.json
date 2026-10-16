@@ -1,0 +1,154 @@
+{
+  "midInfo": null,
+  "tag": "ego-e2e/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/e2e/todo",
+  "prompt": "按步骤测一下这个待办应用，每步报告 通过/失败/阻塞 并给证据：1) 新增「买牛奶」 2) 新增「写周报」 3) 勾选「买牛奶」为完成 4) 点 Completed 筛选，应只显示「买牛奶」 5) 点 All，再删除「写周报」，应只剩「买牛奶」。",
+  "secs": 80.755,
+  "timedOut": false,
+  "stepCount": 34,
+  "steps": [
+    {
+      "text": "新增两条待办",
+      "error": false
+    },
+    {
+      "text": "点击",
+      "error": false
+    },
+    {
+      "text": "填 「@1」",
+      "error": false
+    },
+    {
+      "text": "点 「Add」",
+      "error": false
+    },
+    {
+      "text": "点击",
+      "error": false
+    },
+    {
+      "text": "填 「@1」",
+      "error": false
+    },
+    {
+      "text": "点 「Add」",
+      "error": false
+    },
+    {
+      "text": "勾选买牛奶并用 Completed 筛选 · 目标已失效",
+      "error": true
+    },
+    {
+      "text": "点击",
+      "error": false
+    },
+    {
+      "text": "点 Completed 筛选并读回列表",
+      "error": false
+    },
+    {
+      "text": "点 「Completed」",
+      "error": false
+    },
+    {
+      "text": "点 All 并读回列表",
+      "error": false
+    },
+    {
+      "text": "点 「All」",
+      "error": false
+    },
+    {
+      "text": "删除 「写周报」并读回列表",
+      "error": false
+    },
+    {
+      "text": "点 「Delete」",
+      "error": false
+    },
+    {
+      "text": "查看待办列表 DOM 结构",
+      "error": false
+    },
+    {
+      "text": "加两条做复现准备",
+      "error": false
+    },
+    {
+      "text": "填 「@1」",
+      "error": false
+    },
+    {
+      "text": "点 「Add」",
+      "error": false
+    },
+    {
+      "text": "填 「@1」",
+      "error": false
+    },
+    {
+      "text": "点 「Add」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "复现：点第三条的 Delete",
+      "error": false
+    },
+    {
+      "text": "点 「Delete」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "清理复现数据并恢复终态",
+      "error": false
+    },
+    {
+      "text": "点 「Delete」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "点 「Delete」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "填 「#t_new」",
+      "error": false
+    },
+    {
+      "text": "点 「Add」",
+      "error": false
+    },
+    {
+      "text": "点击",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    }
+  ],
+  "answer": "5 步里 4 步通过，第 5 步失败——Delete 按钮永远删掉的是第一条，不是点的那条。\n\nTodo app 测试结果\n4 通过 / 1 失败 · 页面已恢复到终态：只剩「买牛奶」且已完成\n1) 新增「买牛奶」\n1 条\n通过 · 列表出现该条目\n2) 新增「写周报」\n2 条\n通过 · 两条并存，顺序正确\n3) 勾选「买牛奶」\n1 checked=true\n通过 · 写周报仍 false\n4) Completed 筛选\n1 条\n通过 · 只剩买牛奶\n5) All 后删「写周报」\n失败\n1 条\n失败 · 剩的是写周报，买牛奶被删\n\n第 5 步的证据\n\n我点的就是「写周报」那一行的 Delete（快照明确标为 Delete — in item \"写周报\"），点完列表却变成了：\n\n点之前：买牛奶(checked) · 写周报(unchecked)\n点之后：只剩 写周报(unchecked) ← 删反了\n\n第二次复现同样结果：我加「甲」「乙」凑成三条，点**第三条「乙」**的 Delete（data-i=2），消失的却是第一条「写周报」，结果剩 甲、乙。\n\n根因（页面脚本，第 3 步 filter 源码）\n\nif(e.target.matches('.del'))L.splice(0,1);   // 写死 0，忽略按钮上的 data-i\n\n\n每个 Delete 按钮都渲染了正确的 data-i，但点击处理根本没读它，硬编码 splice(0,1)。改成 L.splice(+e.target.dataset.i,1) 即可。\n\n只有单条待办时删除看起来正常（index 0 恰好就是那条），所以这个 bug 在简单场景下完全测不出来——一旦列表有两条以上就会删错。\n\n我加的复现数据「甲」「乙」已清掉，并把「买牛奶」重新加回并勾成完成，页面现在就是你预期的终态。第 5 步我没法让它通过，只能如实报失败。\n\n还原填写（1 处）\n来源\n切过去看\n全文 · 约 77 秒读完",
+  "check": "{\"url\":\"http://127.0.0.1:8995/e2e/todo\",\"inputs\":{\"t_new\":\"\",\"cb0\":true},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nTodos\\nAdd Filter: AllCompleted\\n 买牛奶 Delete\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/e2e/todo",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

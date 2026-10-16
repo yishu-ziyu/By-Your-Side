@@ -1,0 +1,15 @@
+{
+ "tag": "n290-07",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/table",
+ "prompt": "这个表里 Q3 合计是多少？哪个产品 Q2 到 Q3 增长最多？",
+ "secs": 6.093,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "Q3 合计 330 万元，增长最多的是 B 型（+30 万元）。\n\n季度销量：Q3 合计与 Q2→Q3 增长\nQ3 合计\n330 万元\n三个产品相加 · 150 + 110 + 70\n增长最多：B 型\n最大\n30 万元\nQ2 80 → Q3 110 · 110 − 80\nA 型增长\n15 万元\nQ2 135 → Q3 150 · 150 − 135\nC 型增长\n-25 万元\n唯一负增长 · 70 − 95\n页面 http://127.0.0.1:8931/table 表格「季度销量（万元）」\n复制\n已复制\n全文 · 约 33 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/table"
+}

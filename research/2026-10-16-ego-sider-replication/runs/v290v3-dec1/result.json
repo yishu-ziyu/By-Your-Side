@@ -1,0 +1,41 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": "#messages",
+   "shot": "end",
+   "wait": 300,
+   "textResult": "回复小王：评审明天下午两点开始。写好后发送。\n存成技能\n团队聊天\n做了 2 步\n · 14 秒\n · 核对中…\n\n我把消息写进输入框并发送。\n\n填写并发送回复 · 用户拒绝发送（选了「先不发」）\n填写\n你选择不发送：草稿留在页面上，不会发出，要发时再跟我说\n消息现在是：「评审明天下午两点开始。」\n共 14 秒，其中想了 8 秒\n\n你选择不发送：草稿留在页面上，不会发出，要发时再跟我说\n\n现在发送吧\n还原填写（1 处）\n来源\n切过去看\n\n没做成：点击页面上的一项\n\n继续原任务"
+  }
+ ],
+ "tag": "v290v3-dec1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/chat",
+ "prompt": "回复小王：评审明天下午两点开始。写好后发送。",
+ "secs": 15.883,
+ "timedOut": false,
+ "stepCount": 3,
+ "steps": [
+  {
+   "text": "填写并发送回复 · 用户拒绝发送（选了「先不发」）",
+   "error": true
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+   "error": false
+  }
+ ],
+ "answer": "现在发送吧\n还原填写（1 处）\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": true,
+ "confirmEvents": [
+  {
+   "at": 6.647
+  }
+ ],
+ "siteUrl": "http://127.0.0.1:8931/chat"
+}

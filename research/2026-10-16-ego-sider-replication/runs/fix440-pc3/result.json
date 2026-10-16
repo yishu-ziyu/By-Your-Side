@@ -1,0 +1,208 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：今天验收新建流程，备注、正文、刷新、分类各走一遍。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：今天验收新建流程，备注、正文、刷新、分类各走一遍。\",\"项目\"]"
+  }
+ ],
+ "tag": "fix440-pc3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 200.014,
+ "timedOut": true,
+ "stepCount": 41,
+ "steps": [
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "列出页面上所有输入控件和按钮，定位 「正文」编辑区",
+   "error": false
+  },
+  {
+   "text": "写正文并读回",
+   "error": false
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  },
+  {
+   "text": "点刷新并对比内容",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选分类项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看新建后的表单控件 · 没做成",
+   "error": true
+  },
+  {
+   "text": "列出新建后页面上方的表单控件和位置，找出标题栏与保存按钮",
+   "error": false
+  },
+  {
+   "text": "确认标题/保存表单属于哪个区域",
+   "error": false
+  },
+  {
+   "text": "填标题并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认新笔记 「周会纪要」是否已保存到列表",
+   "error": false
+  },
+  {
+   "text": "检查新笔记是否落到列表或本地存储里",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "查看页面脚本里用到的接口地址",
+   "error": false
+  },
+  {
+   "text": "打开页面 笔记",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "重跑整条验收流程",
+   "error": false
+  },
+  {
+   "text": "填 「#memo」",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "测试本地服务是否正常响应（探测一个不存在的路径）",
+   "error": false
+  }
+ ],
+ "answer": "我先在「备注」里写\"随手记\"并回车，然后看页面变成什么样。",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

@@ -1,0 +1,34 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "Save draft | Discard | Send"
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v4-draft2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8942/",
+ "prompt": "我想先存成草稿，不发出去，该点哪个按钮？",
+ "secs": 8.143,
+ "timedOut": false,
+ "stepCount": 1,
+ "steps": [
+  {
+   "text": "圈出 「存草稿就点这个」",
+   "error": false
+  }
+ ],
+ "answer": "点「Save draft」就存草稿、不会发出去，我已经把它圈出来了（旁边的「Discard」是丢弃，「Send」才会真的发送）。\n\n复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8942/"
+}

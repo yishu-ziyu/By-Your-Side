@@ -1,0 +1,11 @@
+{
+ "flightId": "f3", "flightNumber": "NH 920", "departure": "13:40", "totalFare": "¥5,560",
+ "totalFareNote": "(2460 + 320 tax) x 2 adults = 5560",
+ "passengers": {
+  "p1_title":"MR","p1_first":"Wei","p1_last":"Zhang","p1_dob":"1988-03-14","p1_nat":"China","p1_pp":"E12345678","p1_exp":"2031-06-30","p1_ff":"",
+  "p2_title":"MS","p2_first":"Lin","p2_last":"Chen","p2_dob":"1990-11-02","p2_nat":"China","p2_pp":"E87654321","p2_exp":"2030-09-15","p2_ff":"",
+  "c_email":"zhang.wei@example.com","c_phone":"+86 13800001111"
+ },
+ "mustStayEmpty": ["p1_ff","p2_ff"],
+ "finalPage": "/payment", "paid": false
+}

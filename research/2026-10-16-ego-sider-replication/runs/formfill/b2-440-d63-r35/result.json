@@ -1,0 +1,41 @@
+{
+ "midInfo": null,
+ "tag": "formfill/b2-440-d63-r35",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8966/b",
+ "prompt": "本地测试页项目登记表，帮我填一下：标题写 用户访谈小结（这是文章的），项目的标题写 年度增长报告，项目名 星河计划，副标题 第三季度复盘，文章备注 初稿待审。别的不要动，也不要保存。",
+ "secs": 15.881,
+ "timedOut": false,
+ "stepCount": 6,
+ "steps": [
+  {
+   "text": "填表并读回确认",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  }
+ ],
+ "answer": "五项都填好了，逐个读回确认：项目信息区是项目名「星河计划」、标题「年度增长报告」、副标题「第三季度复盘」；首篇文章区是标题「用户访谈小结」、备注「初稿待审」。「其他」里的备注标题和项目名缩写仍为空，保存按钮没点。\n\n复制\n已复制",
+ "check": "{\"proj\":\"星河计划\",\"title1\":\"年度增长报告\",\"subtitle\":\"第三季度复盘\",\"title2\":\"用户访谈小结\",\"memo\":\"初稿待审\",\"memotitle\":\"\",\"abbr\":\"\"}",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8966/b"
+}

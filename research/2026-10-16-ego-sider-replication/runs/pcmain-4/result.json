@@ -1,0 +1,141 @@
+{
+ "midInfo": null,
+ "tag": "pcmain-4",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 81.693,
+ "timedOut": false,
+ "stepCount": 31,
+ "steps": [
+  {
+   "text": "读出页面表单控件，确认备注/正文/新建笔记的位置",
+   "error": false
+  },
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "填 「#memo」",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "在正文编辑器里写入正文",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "按键 「Control…」",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "点刷新并检查状态",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "分类选项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "标题写周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认保存结果",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "看保存按钮的逻辑，确认笔记是否真的写入",
+   "error": false
+  },
+  {
+   "text": "读取保存按钮的处理逻辑",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "找只读接口核对保存结果并恢复滚动",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "最终核对页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  }
+ ],
+ "answer": "七步都在这个「笔记」页跑完了，只有最后那步的服务端落库没法确认。\n\n新建验收执行结果\n备注写「随手记」并回车\n页面出现「备注已保存」，并发出 /autosave?v=随手记\n正文写好\n正文编辑器里现有：随手记的正文：新建笔记验收，今天记录一次流程检查。\n点刷新\n点了右上「刷新」按钮，页面无可见变化\n分类选「项目」\n下拉当前显示 项目，页面多出「项目名」输入框\n再新建一条笔记\n弹窗打开，原标题是「草稿-OLD7731」\n标题写「周会纪要」\n已替换原草稿标题\n保存\n弹窗关闭，发出 /save?title=周会纪要\n保存那一步：这个页面没有任何笔记列表或查询接口可读回，而且那条 /save 请求在浏览器里被记成「已取消」，所以我只能确认请求带着正确的标题发出去了，没法确认服务端真的存下来了——我没有重复再发一次，怕存出两条。\nhttp://127.0.0.1:8941/ 当前页面状态与该标签页的网络记录\n\n另外提一句：新建弹窗自己会给 body 加 modal-open 并锁死滚动，关闭时没解锁，我把滚动恢复了，页面现在能正常上下滚。\n\n还原填写（3 处）\n全文 · 约 49 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

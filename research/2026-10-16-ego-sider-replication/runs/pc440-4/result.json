@@ -1,0 +1,165 @@
+{
+ "midInfo": null,
+ "tag": "pc440-4",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 86.813,
+ "timedOut": false,
+ "stepCount": 37,
+ "steps": [
+  {
+   "text": "备注输入随手记并回车 · 没做成",
+   "error": true
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "确认备注是否写入",
+   "error": false
+  },
+  {
+   "text": "查看正文编辑器结构",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写正文后点刷新 · 没做成",
+   "error": true
+  },
+  {
+   "text": "填 「loc=css:#editor」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "刷新后读回页面状态 · missing /（脚本未运行",
+   "error": true
+  },
+  {
+   "text": "在页面里运行代码 · missing /（脚本未运行",
+   "error": true
+  },
+  {
+   "text": "刷新后读回页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选分类项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "找标题输入框和保存按钮",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写标题周会纪要并保存 · 没做成",
+   "error": true
+  },
+  {
+   "text": "填 「loc=css:#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 · 没做成",
+   "error": true
+  },
+  {
+   "text": "保存后核对页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认保存结果和分类状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "检查保存后的笔记列表",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "找出保存相关接口与本地存储",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读保存按钮的脚本逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查找服务端已保存笔记的接口 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  }
+ ],
+ "answer": "六步都已在页面上按顺序做完并读回：备注「随手记」+回车出现\"备注已保存\"、正文写了「好」、点了刷新（备注和正文没被清掉）、分类切到「项目」、新建笔记弹窗打开、标题改成「周会纪要」后点了保存。\n\n唯一没法确认的是保存这一条：保存按钮的脚本是发请求后立刻关闭弹窗，页面上的笔记列表是写死的静态内容，两者都证明不了服务端真的落库；网络记录里那条 /save?title=周会纪要 被标记为 canceled，没有拿到成功回执。弹窗里预填的口令和提货码我原样没动。\n\n还原填写（3 处）\n来源\n切过去看\n全文 · 约 25 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

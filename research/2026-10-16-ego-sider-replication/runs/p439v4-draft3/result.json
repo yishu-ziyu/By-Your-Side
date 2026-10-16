@@ -1,0 +1,29 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "Save draft | Send | Discard"
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v4-draft3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8942/",
+ "prompt": "我想先存成草稿，不发出去，该点哪个按钮？",
+ "secs": 5.097,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "点「Save draft」存草稿，「Send」才会发出去，「Discard」是直接丢掉不保存。\n\n写信页三个按钮\nSave draft\n推荐\n存草稿，不发送\n你想先存着不发，就是这个\nSend\n立即发送出去\n会真的把邮件发出去，不能撤回\nDiscard\n丢弃，不保存\n写的内容会没了\n\n要不要我把这个按钮圈出来给你看？\n\n复制\n全文 · 约 16 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8942/"
+}

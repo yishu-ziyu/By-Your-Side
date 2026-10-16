@@ -1,0 +1,52 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"\",\"\",\"笔记\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"\",\"\",\"笔记\"]"
+  }
+ ],
+ "tag": "v3-nk1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "把备注弄成随手记",
+ "secs": 16.322,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "查看 「备注」所在结构",
+   "error": false
+  },
+  {
+   "text": "把 「备注」改成「随手记」",
+   "error": false
+  }
+ ],
+ "answer": "改好了，页面上那行现在是「随手记」，输入框的无障碍名称也跟着换成了「随手记」。\n\n一点提醒：这是改在当前页面上的，页面没提供保存入口，点「刷新」或重开这个页面可能会还原成「备注」。\n\n复制\n已复制\n全文 · 约 10 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

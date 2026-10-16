@@ -1,0 +1,24 @@
+{
+ "tag": "p439-05",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://developer.mozilla.org/en-US/",
+ "prompt": "这个页面上怎么搜索文档？",
+ "secs": 10.234,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "圈出 「顶部搜索框（Ctrl+K）」",
+   "error": false
+  },
+  {
+   "text": "圈出 「首页大搜索框」",
+   "error": false
+  }
+ ],
+ "answer": "这个页面上有两个搜索入口，我都圈出来了：\n\n1. 顶部导航栏的搜索按钮（已标注）——页面任何位置都能用，快捷键 Ctrl+K（Mac 是 Cmd+K）或按 / 都能直接唤出搜索框，输入关键词后出实时建议列表。\n\n2. 首页中间的大搜索框（已标注）——「Resources for Developers, by Developers」标题下面那个大输入框，适合站在首页时直接查。\n\n输入时会实时弹出候选文档（按相关度排序），回车跳到对应文档页；如果只是想浏览分类，顶部还有 HTML / CSS / JavaScript / Web APIs / All 这些按钮可以逐级筛选。\n\n复制\n全文 · 约 29 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://developer.mozilla.org/en-US/"
+}

@@ -1,0 +1,41 @@
+{
+ "midInfo": null,
+ "tag": "su439-3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名张三，手机13800000000，人数2，备注带一把伞。然后点保存。",
+ "secs": 16.664,
+ "timedOut": false,
+ "stepCount": 6,
+ "steps": [
+  {
+   "text": "填写报名表四个字段",
+   "error": false
+  },
+  {
+   "text": "填 「@3」",
+   "error": false
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  }
+ ],
+ "answer": "表填完并保存成功，页面提示「已提交：save」。\n\n报名表已保存\n姓名\n张三\n手机\n13800000000\n人数\n2\n备注\n带一把伞\n只点了「保存」，旁边的「提交报名」我没有碰——要真报名的话你说一声。\n已提交，收不回\n全文 · 约 10 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

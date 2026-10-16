@@ -1,0 +1,44 @@
+{
+ "tag": "n290-03",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/chat",
+ "prompt": "在聊天框里回复“收到，我会准时参加”，并发出去。",
+ "secs": 26.111,
+ "timedOut": false,
+ "stepCount": 6,
+ "steps": [
+  {
+   "text": "发送聊天消息",
+   "error": false
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "点 「发送」",
+   "error": false
+  },
+  {
+   "text": "确认消息是否已发出",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "等待后再次确认消息列表",
+   "error": false
+  }
+ ],
+ "answer": "消息已经发出去：输入框填了“收到，我会准时参加”，点了发送，页面提示“已提交：send”，并且有一条 POST /chat/send 返回 200。\n\n不过聊天记录里暂时还看不到这条消息，输入框里的文字也没被清空——这个页面似乎不会把新消息渲染进列表，如果你那边看不到，刷新页面确认一下。\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 15 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": null,
+ "sawConfirm": true,
+ "confirmEvents": [
+  {
+   "at": 4.65
+  }
+ ],
+ "siteUrl": "http://127.0.0.1:8931/chat"
+}

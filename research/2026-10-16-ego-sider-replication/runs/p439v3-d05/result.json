@@ -1,0 +1,54 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "Search | Search the site"
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v3-d05",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://developer.mozilla.org/en-US/",
+ "prompt": "这个页面上怎么搜索文档？",
+ "secs": 17.953,
+ "timedOut": false,
+ "stepCount": 6,
+ "steps": [
+  {
+   "text": "圈出 「顶部搜索」 · 标注执行环境已失效",
+   "error": true
+  },
+  {
+   "text": "圈出 「页面中间的大搜索框」 · 标注执行环境已失效",
+   "error": true
+  },
+  {
+   "text": "看搜索框和快捷键",
+   "error": false
+  },
+  {
+   "text": "圈出 「点这里搜文档」",
+   "error": false
+  },
+  {
+   "text": "圈出 「顶部搜索」 · 选择器匹配 3 个元素",
+   "error": true
+  },
+  {
+   "text": "确认搜索按钮上的快捷键提示",
+   "error": false
+  }
+ ],
+ "answer": "点页面中间的「Search」大搜索框（已给你圈出来），或者右上角的「Search the site」按钮，就能打开站内搜索，输入关键词回车就行；按 / 或 Ctrl+K（Mac 是 Cmd+K）通常也能直接把光标送进搜索框。\n\n在页面上查看\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://developer.mozilla.org/en-US/"
+}

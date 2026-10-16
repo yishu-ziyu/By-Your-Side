@@ -1,0 +1,192 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 4 项 · 用时 1 分 29 秒 · 撤销 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记的正文：记录今天的一个小想法。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 4 项 · 用时 1 分 29 秒 · 撤销 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"\",\"随手记的正文：记录今天的一个小想法。\",\"笔记\"]"
+  }
+ ],
+ "tag": "fix440-pc1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 91.089,
+ "timedOut": false,
+ "stepCount": 37,
+ "steps": [
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "看正文编辑区结构",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写正文并点刷新",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选分类项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写标题周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「标题」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "核实保存结果",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "检查保存是否真生效",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "重新点保存并观察请求",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "打开标签页",
+   "error": false
+  },
+  {
+   "text": "关闭标签页",
+   "error": false
+  }
+ ],
+ "answer": "验收走完了，前五步都对上了，最后的保存没成功。\n\n新建验收结果\n备注写「随手记」并回车\n页面出现「备注已保存」\n正文写好\n正文区已写入：随手记的正文：记录今天的一个小想法。\n点刷新\n按钮点了但页面毫无反应（它的 id 就叫 dead，没绑任何逻辑）\n分类选项目\n分类已是「项目」，页面多出一个空的「项目名」输入框，未填\n新建笔记，标题写周会纪要\n旧草稿标题已被替换成「周会纪要」\n保存\n点了两次，弹窗都关了，但没保存成功\n保存请求 GET /save?title=周会纪要 两次都被中断（ERR_ABORTED），直接打开这个地址也一直加载不出来，页面上和 localStorage 里都找不到这条笔记——服务端没回话，我无法确认它存进去了。\n\n补一句：「正文写好」你没给具体内容，我写的是「随手记的正文：记录今天的一个小想法。」；弹窗里的「口令」「提货」是页面自带的一串值，我没碰。保存这块是服务端的问题，不是页面操作的问题，服务端恢复响应后我可以再点一次。\n\n复制\n已复制\n来源\n全文 · 约 45 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

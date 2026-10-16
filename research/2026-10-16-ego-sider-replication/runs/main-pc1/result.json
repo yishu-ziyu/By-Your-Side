@@ -1,0 +1,248 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：这是一条新建笔记的正文。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：这是一条新建笔记的正文。\",\"项目\"]"
+  }
+ ],
+ "tag": "main-pc1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8943/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 196.908,
+ "timedOut": false,
+ "stepCount": 51,
+ "steps": [
+  {
+   "text": "备注填随手记并回车",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填 「@29」",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点新建笔记看编辑器",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读新建笔记对话框和正文编辑器",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×3",
+   "error": false
+  },
+  {
+   "text": "关掉探查弹窗、写正文、点刷新 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "按键 「Escape」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:[conten…」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "查刷新按钮被谁挡住",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "尝试关闭新建笔记弹窗",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「标题」",
+   "error": false
+  },
+  {
+   "text": "按键 「Escape」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读页面脚本里的弹窗逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "读刷新与正文编辑器的脚本",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "查刷新按钮和正文编辑器逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "重载后重做备注与正文",
+   "error": false
+  },
+  {
+   "text": "打开页面 笔记",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:#memo」",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:[conten…」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点刷新并选择分类项目",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "新建周会纪要笔记并保存",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "查服务端是否存了周会纪要 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "读服务端状态接口",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  }
+ ],
+ "answer": "七步都走完了，页面现在的状态是：备注「随手记」+ 回车后出现\"备注已保存\"、正文已填、刷新点过、分类停在「项目」、并新建保存了一条标题为「周会纪要」的笔记（弹窗已关闭）。\n\n两点要跟你说清楚：\n\n中途我先点了一次\"新建笔记\"去看表单，那个弹窗没有关闭按钮，只能靠\"保存\"关掉——那会存下一条标题为「草稿-OLD7731」的废笔记。我选择重新加载页面清掉它，再按你给的顺序完整重走一遍，所以最后只产生了一条保存记录。\n保存那一步的请求 /save?title=周会纪要 在网络记录里显示被中断（页面自己的备注自动保存请求也一样中断），站点也没有提供查询接口，因此服务端是否真的入库我没法独立确认；页面上能确认的是保存按钮点了、弹窗关闭了。\n\n另外正文你没给具体内容，我写的是\"随手记：这是一条新建笔记的正文。\"，想换成别的文字说一声就行。\n\n还原填写（3 处）\n来源\n切过去看\n全文 · 约 40 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8943/"
+}

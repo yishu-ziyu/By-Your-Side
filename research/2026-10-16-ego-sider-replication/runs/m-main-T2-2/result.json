@@ -1,0 +1,37 @@
+{
+ "midInfo": null,
+ "tag": "m-main-T2-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名张三，手机13800000000，人数2，备注带伞。不要提交。",
+ "secs": 12.531,
+ "timedOut": false,
+ "stepCount": 5,
+ "steps": [
+  {
+   "text": "填写报名表四个字段并回读",
+   "error": false
+  },
+  {
+   "text": "填 「@3」",
+   "error": false
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  }
+ ],
+ "answer": "四项都填好了，回读确认无误：「保存」和「提交报名」都没点，表单就停在你眼前。\n\n姓名：张三\n手机：13800000000\n人数：2\n备注：带伞\n还原填写（4 处）",
+ "check": "[\"张三\",\"13800000000\",\"2\",\"带伞\"]",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

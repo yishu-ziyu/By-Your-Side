@@ -1,0 +1,45 @@
+{
+ "midInfo": null,
+ "tag": "semain-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/search",
+ "prompt": "在站内搜索“部署”。",
+ "secs": 11.709,
+ "timedOut": false,
+ "stepCount": 7,
+ "steps": [
+  {
+   "text": "搜索\"部署\"并查看结果",
+   "error": false
+  },
+  {
+   "text": "填 「@3」",
+   "error": false
+  },
+  {
+   "text": "点 「搜索」",
+   "error": false
+  },
+  {
+   "text": "处理这一步",
+   "error": false
+  },
+  {
+   "text": "处理这一步",
+   "error": false
+  },
+  {
+   "text": "确认搜索结果是否出现",
+   "error": false
+  },
+  {
+   "text": "处理这一步",
+   "error": false
+  }
+ ],
+ "answer": "已在站内搜索页把关键词填成\"部署\"并提交，页面回执显示\"已提交：go\"。\n\n需要说明的是：这个页面本身只是个提交壳——脚本把表单 POST 到 /search/go 后只显示一行状态，页面上并不渲染任何结果列表，所以这里看不到匹配文档。\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 12 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/search"
+}

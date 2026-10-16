@@ -1,0 +1,17 @@
+{
+  "midInfo": null,
+  "tag": "sider-price/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/amz/search",
+  "prompt": "把这个搜索结果里前 5 个非广告商品的价格、评分、评价数整理成电子表格，给我一个 CSV 文件。",
+  "secs": 5.635,
+  "timedOut": false,
+  "stepCount": 0,
+  "steps": [],
+  "answer": "五个非广告商品的数据页面里都有，我直接生成 CSV。\n\n复制\n已复制",
+  "check": "{\"url\":\"http://127.0.0.1:8995/amz/search\",\"inputs\":{},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nResults for \\\"wireless earbuds\\\"\\nSponsored\\nBudgetBuds X\\n¥59 · ★ 3.6 · 210 ratings\\nSoundCore Air 3\\n¥299 · ★ 4.5 · 12,840 ratings\\nSony WF-C700\\n¥599 · ★ 4.4 · 8,321 ratings\\nSponsored\\nMegaBass Pro\\n¥399 · ★ 4 · 77 ratings\\nJabra Elite 4\\n¥499 · ★ 4.3 · 5,310 ratings\\nHuawei FreeBuds 5i\\n¥449 · ★ 4.6 · 20,112 ratings\\nXiaomi Buds 4\\n¥279 · ★ 4.2 · 9,876 ratings\\nApple AirPods 4\\n¥999 · ★ 4.7 · 40,221 ratings\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/amz/search",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

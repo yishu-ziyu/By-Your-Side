@@ -1,0 +1,185 @@
+{
+ "midInfo": null,
+ "tag": "pc440-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 86.046,
+ "timedOut": false,
+ "stepCount": 42,
+ "steps": [
+  {
+   "text": "查看页面表单结构",
+   "error": false
+  },
+  {
+   "text": "列出页面表单控件",
+   "error": false
+  },
+  {
+   "text": "查看页面上的表单控件",
+   "error": false
+  },
+  {
+   "text": "写备注并回车 · 没做成",
+   "error": true
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "读回备注与正文状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填写笔记正文",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点刷新并读回",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选分类并新建笔记",
+   "error": false
+  },
+  {
+   "text": "填 「#kind」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看新建表单字段",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填标题并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查找新建笔记是否落库",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看保存逻辑",
+   "error": false
+  },
+  {
+   "text": "读保存按钮的处理逻辑",
+   "error": false
+  },
+  {
+   "text": "读新建/保存的脚本逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "检查保存后页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求 ×2",
+   "error": false
+  },
+  {
+   "text": "探查服务端只读接口 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "在页面内读服务端状态",
+   "error": false
+  },
+  {
+   "text": "读服务端是否有已保存笔记列表",
+   "error": false
+  }
+ ],
+ "answer": "验收流程跑完了 5 步，其中最后一步的保存结果我无法确认。\n\n已做（页面可核对）：\n\n备注写「随手记」并回车 → 出现「备注已保存」\n正文写入「验收正文：今天完成新建笔记流程测试，包含备注、正文、刷新与分类切换。」\n点刷新 → 备注和正文都还在，时钟归零重跑\n分类选「项目」→ 下拉显示项目，旁边多出「项目名」输入框（你没说填什么，我留空了）\n点「新建笔记」→ 标题从预填的「草稿-OLD7731」改成「周会纪要」，点保存，弹窗关闭\n\n没确认的：保存按页面脚本发出的是 GET /save?title=周会纪要，这个请求在网络记录里是 net::ERR_ABORTED（站点注释自己写了\"网站很慢才回话\"），备注的自动保存请求同样被中止。页面上没有笔记列表可核对，服务端对任何路径都返回同一个静态页，所以「周会纪要」是否真的入库我查不到证据。\n\n顺手发现两个页面问题：\n\n弹窗打开时给 body 加了 modal-open 并锁死滚动，保存后没有恢复 —— 现在这个页面滚不动了。\n保存逻辑只提交 title，弹窗里的「口令」「提货」两个字段（都带预填值）从来没有被发出去。\n还原填写（3 处）\n来源\n切过去看\n全文 · 约 50 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

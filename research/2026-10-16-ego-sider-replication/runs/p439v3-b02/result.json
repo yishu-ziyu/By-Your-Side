@@ -1,0 +1,90 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": ""
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v3-b02",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://en.wikipedia.org/wiki/Chrome_extension",
+ "prompt": "这个页面怎么切换成中文？该点哪里？",
+ "secs": 52.224,
+ "timedOut": false,
+ "stepCount": 15,
+ "steps": [
+  {
+   "text": "打开语言列表看看中文选项 · 没做成",
+   "error": true
+  },
+  {
+   "text": "点 「119 languages」",
+   "error": false
+  },
+  {
+   "text": "确认语言列表是否展开",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "定位页面上的语言按钮",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点开语言菜单并找中文条目 · 目标不可见",
+   "error": true
+  },
+  {
+   "text": "点击 · 目标不可见",
+   "error": true
+  },
+  {
+   "text": "找可见的语言按钮",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "展开语言下拉并读出条目 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "点击 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "确认按钮位置和中文条目",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "圈出 「点这里切语言」",
+   "error": false
+  }
+ ],
+ "answer": "点标题右边那个「119 languages」按钮，展开后第一项就是「中文」，点它直接跳到中文版。\n\n切成中文版本页\n1\n点「119 languages」\n在页面右上角、标题 Google Chrome 右侧，我已经在页面上圈出来了\n2\n点列表里的「中文」\n展开后的第一项就是「中文」，点完就进 zh.wikipedia.org\n3\n懒得找就直接改网址\n把地址栏的 en.wikipedia.org 改成 zh.wikipedia.org，路径不变\n这只切这一个页面的语言版本；想让整个维基百科默认中文，要在页面底部「语言」一栏选中文，或直接访问 zh.wikipedia.org。\n一步一步指给我看\n在页面上查看\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://en.wikipedia.org/wiki/Google_Chrome#Extensions"
+}

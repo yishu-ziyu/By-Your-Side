@@ -1,0 +1,30 @@
+{
+  "midInfo": null,
+  "tag": "sider-hiring/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/careers/alpha",
+  "prompt": "扫一下 Alpha、Beta、Gamma 三家的招聘页，统计每家按部门的开放岗位数，写一份人才策略简报。",
+  "secs": 22.358,
+  "timedOut": false,
+  "stepCount": 3,
+  "steps": [
+    {
+      "text": "读取 Beta 与 Gamma 招聘页 · fetch 拒绝本地/私网地址…",
+      "error": true
+    },
+    {
+      "text": "抓取 · fetch 拒绝本地/私网地址…",
+      "error": true
+    },
+    {
+      "text": "打开标签页 ×2",
+      "error": false
+    }
+  ],
+  "answer": "三家的开放岗位都数完了：Alpha 6 个、Beta 6 个、Gamma 实际只有 2 个在招（它页面上的 Head of Sales 标着 CLOSED，不算开放）。\n\n按部门的开放岗位数（2026-10-16 抓取）\n公司\t开放总数\tEngineering\tSales\tDesign\nAlpha\t5+1\t5\t1\t—\nBeta\t2+4\t2\t4\t—\nGamma\t1+1+0\t1\t0（已关闭）\t1\nGamma 页面列出的 \"Head of Sales · Sales\" 标注为 CLOSED — no longer accepting，所以 Sales 计 0，开放的只有 Product Designer 和 ML Engineer 两个。\nhttp://127.0.0.1:8995/careers/alpha · /beta · /gamma（页面自述为本地测试页，数据仅供演练）\n\n人才策略简报\n\n1. 画像\n\nAlpha — 工程密集型：6 个岗位里 5 个在 Engineering（ML、推理 ML、研究科学家、前后端），销售只有 1 个 AE。产品与设计完全没有编制，典型的「先把技术纵深做厚」阶段。\nBeta — 销售驱动型：6 个里 4 个在 Sales（AE、EMEA AE、SDR、售前 SE），工程只有 2 个（后端、数据）。带 EMEA 和 SDR，说明已进入区域扩张 + 规模化拓客。\nGamma — 极简小团队：仅 2 个开放岗位，Design 1 + Engineering 1，Sales 的负责人职位反而关闭。典型的早期探索期，优先找能自带方法论的关键人，而非扩编。\n\n2. 共性缺口\n三家都没有 Senior/Staff/管理层的显性岗位发布，只有 Beta 的 \"Head of Sales\" 出现过且已关闭——如果这是真实页面，招聘漏斗在资深层级和销售负责人上有明显断点。\n\n3. 建议动作\n\n工程侧：三家都在抢 ML/数据，建议把 ML 岗的面试流程标准化（同一套 case），减少重复筛选成本。\n销售侧：Beta 的销售投入已明显领先 Alpha/Gamma，若按地域协同，Alpha 可以考虑补 SDR 或 AE 作为漏斗入口。\n优先级：Gamma 优先补 Design+工程的第二条线（当前单点风险高），Alpha 补销售漏斗入口，Beta 补资深工程与销售负责人。\n\n想让我把这份简报导成 Markdown 或 CSV 表格方便你转给 HR 吗？\n\n复制为表格\n已复制\n来源\n切过去看\n全文 · 约 100 秒读完",
+  "check": "{\"url\":\"http://127.0.0.1:8995/careers/alpha\",\"inputs\":{},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nAlpha Inc. — Open roles\\nML Engineer · Engineering\\nML Engineer, Inference · Engineering\\nResearch Scientist · Engineering\\nBackend Engineer · Engineering\\nFrontend Engineer · Engineering\\nAccount Executive · Sales\\n\\nAlpha · Beta · Gamma\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/careers/alpha",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

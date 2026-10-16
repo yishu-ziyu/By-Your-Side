@@ -1,0 +1,149 @@
+{
+ "midInfo": null,
+ "tag": "pc440-1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 117.706,
+ "timedOut": false,
+ "stepCount": 33,
+ "steps": [
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "列出页面上的表单控件，找正文输入框",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:[conten…」",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "检查刷新后字段与笔记列表",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选分类项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "核验页面状态 · 程序在第 3 步「分类选择」停下",
+   "error": true
+  },
+  {
+   "text": "核对分类当前选中值",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点新建笔记并查看表单 · 没做成",
+   "error": true
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "查看新建后的表单",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填标题周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "填 「input[aria-labe…」",
+   "error": false
+  },
+  {
+   "text": "核验页面状态",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认周会纪要是否入库",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "看保存后的页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "找页面用的接口",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读保存按钮的处理逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "刷新后确认周会纪要",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "最终字段核对",
+   "error": false
+  }
+ ],
+ "answer": "验收流程七步我都走了一遍，前六步页面上能确认，第七步「保存」的落库结果我没法确认。\n\n新建验收 · 执行结果\n备注写「随手记」并回车\n页面提示「备注已保存」\n正文写好\n已写入「随手记：正文已写好。」\n点刷新\n已点击，刷新后备注和正文都还在\n分类选「项目」\n下拉当前显示 项目\n再新建一条笔记\n已点「新建笔记」，弹出标题/口令/提货/保存的表单\n标题写「周会纪要」\n已替换原标题草稿-OLD7731\n点保存\n已点，但请求被取消，落库未确认\n保存按钮只是发一个 GET /save?title=周会纪要 就关掉弹窗，Chrome 把这个请求记成 canceled（net::ERR_ABORTED），刷新后页面任何位置也没有「周会纪要」——这条笔记是否真的存下来了，我没法确认；弹窗里的「口令」「提货」两个字段是原样预填的，我没有改动。\n还原填写（3 处）",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

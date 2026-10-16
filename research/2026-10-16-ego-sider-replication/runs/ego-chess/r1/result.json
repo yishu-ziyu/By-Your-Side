@@ -1,0 +1,334 @@
+{
+  "midInfo": null,
+  "tag": "ego-chess/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/chess/game",
+  "prompt": "在这个本地棋盘上和机器人下一盘棋，我执白，一直下到对局结束，每步先看清棋盘。",
+  "secs": 420.201,
+  "timedOut": true,
+  "stepCount": 79,
+  "steps": [
+    {
+      "text": "走第一步 e2-e4 并读取棋盘 · 量不到位置",
+      "error": true
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "点 「e2 P」",
+      "error": false
+    },
+    {
+      "text": "点击 · 量不到位置",
+      "error": true
+    },
+    {
+      "text": "重新读取棋盘状态",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "看格子结构",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "e2-e4 并看机器人应招",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "点 「e4 empty」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "走 Nf3",
+      "error": false
+    },
+    {
+      "text": "点 「g1 N」",
+      "error": false
+    },
+    {
+      "text": "点 「f3 empty」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "走 Bb5",
+      "error": false
+    },
+    {
+      "text": "点 「f1 B」",
+      "error": false
+    },
+    {
+      "text": "点 「b5 empty」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "装上走法生成器并试算 · missing ) after…",
+      "error": true
+    },
+    {
+      "text": "在页面里运行代码 · missing ) after…",
+      "error": true
+    },
+    {
+      "text": "装上走法生成器并试算 · Unexpected toke…",
+      "error": true
+    },
+    {
+      "text": "在页面里运行代码 · Unexpected toke…",
+      "error": true
+    },
+    {
+      "text": "分两段装载走法生成器 · 没做成",
+      "error": true
+    },
+    {
+      "text": "在页面里运行代码 · 没做成",
+      "error": true
+    },
+    {
+      "text": "分两段装载走法生成器 · Unexpected toke…",
+      "error": true
+    },
+    {
+      "text": "在页面里运行代码 · Unexpected toke…",
+      "error": true
+    },
+    {
+      "text": "分段装载引擎并逐段验证 · Unexpected toke…",
+      "error": true
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码 · Unexpected toke…",
+      "error": true
+    },
+    {
+      "text": "重发 B/C/D 段并试算",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "诊断格子标签",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "连走 6 回合白棋",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "检查引擎输出",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "检查读盘函数",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "修好读盘并验证",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "修正评估并连走 6 回合",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "确认 js 返回值形状",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "连走 8 回合白棋",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "点 「a2 P」",
+      "error": false
+    },
+    {
+      "text": "点 「a4 empty」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "点 「b5 B」",
+      "error": false
+    },
+    {
+      "text": "点 「d3 empty」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "点 「h2 P」",
+      "error": false
+    },
+    {
+      "text": "点 「h4 empty」",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "点 「c2 P」",
+      "error": false
+    },
+    {
+      "text": "点击",
+      "error": false
+    }
+  ],
+  "answer": "我执白开局，先把 e4 走出来看看机器怎么应。",
+  "check": "{\"url\":\"http://127.0.0.1:8995/chess/game\",\"inputs\":{},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nLocal chess vs bot — you are White\\n♜\\t\\t♝\\t♛\\t♚\\t♝\\t\\t♜\\t8\\n\\t♟\\t♟\\t♟\\t\\t♟\\t♟\\t\\t7\\n\\t\\t♞\\t\\t\\t♞\\t\\t\\t6\\n♟\\t\\t\\t\\t♟\\t\\t\\t♟\\t5\\n♙\\t\\t♙\\t\\t♙\\t\\t\\t♙\\t4\\n\\t\\t\\t♗\\t\\t♘\\t\\t\\t3\\n\\t♙\\t\\t♙\\t\\t♙\\t♙\\t\\t2\\n♖\\t♘\\t♗\\t♕\\t♔\\t\\t\\t♖\\t1\\na\\tb\\tc\\td\\te\\tf\\tg\\th\\n\\nYour move.\\n\\nClick a piece, then a target square.\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/chess/game",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

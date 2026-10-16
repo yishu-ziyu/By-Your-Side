@@ -1,0 +1,30 @@
+{
+  "midInfo": null,
+  "tag": "sider-seo/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/ahrefs/site?d=mysite.com",
+  "prompt": "用这个 Ahrefs 看板对比竞品 rivala.com 和 rivalb.com：各自的关键词、Top 页面、外链数，然后找出两个竞品都有排名、但我们 mysite.com 没有的内容缺口关键词。",
+  "secs": 15.737,
+  "timedOut": false,
+  "stepCount": 3,
+  "steps": [
+    {
+      "text": "读取 rivala.com 与 rivalb.com 数据",
+      "error": false
+    },
+    {
+      "text": "打开页面 Ahrefs (mock) · rivala.com",
+      "error": false
+    },
+    {
+      "text": "打开页面 Ahrefs (mock) · rivalb.com",
+      "error": false
+    }
+  ],
+  "answer": "内容缺口有 2 个关键词：ai agent pricing 和 browser automation tutorial——两个竞品都在打，我们完全没有排名；我们现有的两个词（llm evals、web scraping api）反而只被其中一个竞品覆盖。\n\n三站对比与内容缺口\n两个竞品都有、我们没有\n缺口\n2 个词\n内容缺口\n外链差距（rivala − 我们）\n1,530 条\nrivalb 为 920，我们是 310 · 1840 − 310\n站点\tTop 10 关键词\tTop 页面\t外链\nrivala.com\tai agent pricing / browser automation tutorial / web scraping api / llm evals\t/pricing · /blog/browser-automation\t1,840\nrivalb.com\tai agent pricing / browser automation tutorial / rpa vs ai agents / llm evals\t/blog/agent-pricing · /docs/quickstart\t920\nmysite.com（我们）\tllm evals / web scraping api\t/blog/evals\t310\nai agent pricing\n推荐\n高优先级\n两个竞品都排进前 10\n商业意图最直接，且 rivala 用 /pricing 页、rivalb 用 /blog/agent-pricing 页同时在打，说明有排名难度但也有明确的对手页面可对标\nbrowser automation tutorial\n次优先\n两个竞品都排进前 10\nrivala 的 /blog/browser-automation 已是主要流量页，教程型内容我们目前完全没有对应的一篇\n我们唯一的两个词 llm evals 和 web scraping api 都不是两家同时覆盖的，只被单家竞品拿下——这既是防守点，也说明覆盖面比深度更薄。\n先深挖 ai agent pricing 这个词\n把缺口整理成一份内容计划\n[rivala.com](http://127.0.0.1:8995/ahrefs/site?d=rivala.com)、[rivalb.com](http://127.0.0.1:8995/ahrefs/site?d=rivalb.com)、[mysite.com](http://127.0.0.1:8995/ahrefs/site?d=mysite.com) 的 Site Explorer 页面（本地 mock 看板）\n\n注：这只是本地测试看板上的数据，rivala/rivalb 各关键词的具体排名位次和外链增长趋势看板里没有显示。\n\n复制为表格\n已复制\n来源\n切过去看\n全文 · 约 142 秒读完",
+  "check": "{\"url\":\"http://127.0.0.1:8995/ahrefs/site?d=rivalb.com\",\"inputs\":{},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nrivala.com | rivalb.com | mysite.com\\n\\nSite Explorer: rivalb.com\\nOrganic keywords (top 10 rankings)\\nai agent pricing\\nbrowser automation tutorial\\nrpa vs ai agents\\nllm evals\\nTop pages\\nrivalb.com/blog/agent-pricing\\nrivalb.com/docs/quickstart\\nBacklinks\\n\\n920 referring backlinks\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/ahrefs/site?d=rivalb.com",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

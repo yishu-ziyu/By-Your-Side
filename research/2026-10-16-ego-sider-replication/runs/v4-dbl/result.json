@@ -1,0 +1,60 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 1 项 · 用时 45 秒 · 撤销 · 可撤销「备注」 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"乙乙\",\"\",\"笔记\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 1 项 · 用时 45 秒 · 撤销 · 可撤销「备注」 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"\",\"\",\"笔记\"]"
+  }
+ ],
+ "tag": "v4-dbl",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "备注栏先填 甲甲，填完再把同一栏改成 乙乙。只动备注栏。",
+ "secs": 46.924,
+ "timedOut": false,
+ "stepCount": 4,
+ "steps": [
+  {
+   "text": "备注栏先填甲甲再改成乙乙",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  }
+ ],
+ "answer": "备注栏已按顺序改完：先写入「甲甲」（读回确认），再覆盖成「乙乙」（当前值 乙乙），页面其它字段没动，分类仍是「笔记」、数量仍为空。\n\n复制\n已复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

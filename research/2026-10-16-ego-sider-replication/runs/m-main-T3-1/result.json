@@ -1,0 +1,16 @@
+{
+ "midInfo": null,
+ "tag": "m-main-T3-1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://news.ycombinator.com/",
+ "prompt": "这个页面排名前3的帖子标题是什么？",
+ "secs": 6.131,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "这个页面前三名依次是：\n\nMuse Spark Open（meta.ai）— 325 分，216 条评论\nNeural networks are clean（goodfire.com）— 273 分，84 条评论\nKrea 3 – An image model built for editing at scale（krea.ai）— 166 分，64 条评论\n\n注：这是首页当前显示的排名顺序，HN 的分数还在变，过一阵排名可能不一样。\n\n复制\n已复制\n全文 · 约 21 秒读完",
+ "check": "Muse Spark Open || Neural networks are clean || Krea 3 – An image model built for editing at scale",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://news.ycombinator.com/"
+}

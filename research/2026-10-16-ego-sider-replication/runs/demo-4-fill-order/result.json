@@ -1,0 +1,57 @@
+{
+ "midInfo": null,
+ "tag": "demo-4-fill-order",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://httpbin.org/forms/post",
+ "prompt": "帮我填这个订餐表：名字 Alice，电话 555-1234，邮箱 alice@example.com，选大号披萨，加培根和蘑菇，送达时间 19:30，备注放门口。不要提交。",
+ "secs": 27.781,
+ "timedOut": false,
+ "stepCount": 10,
+ "steps": [
+  {
+   "text": "填写披萨订餐表",
+   "error": false
+  },
+  {
+   "text": "填 「@5」",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  },
+  {
+   "text": "填 「@7」",
+   "error": false
+  },
+  {
+   "text": "点击 ×3",
+   "error": false
+  },
+  {
+   "text": "填 「@16」",
+   "error": false
+  },
+  {
+   "text": "填 「@15」",
+   "error": false
+  },
+  {
+   "text": "处理这一步",
+   "error": false
+  },
+  {
+   "text": "核对尺寸和配料勾选状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×3",
+   "error": false
+  }
+ ],
+ "answer": "表填好了，Submit order 没碰。\n\n订餐表已填好（未提交）\nCustomer name: Alice\nTelephone: 555-1234\nE-mail address: alice@example.com\nPizza Size: Large（已选中）\nSmall / Medium 未选\nToppings: Bacon + Mushroom\nExtra Cheese、Onion 未选\nPreferred delivery time: 19:30\n允许范围 11:00–21:00 内\nDelivery instructions: 放门口\n提交按钮我没点，你自己确认无误后再按 Submit order。\n还原填写（8 处）\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://httpbin.org/forms/post"
+}

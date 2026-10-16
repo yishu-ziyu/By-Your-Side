@@ -1,0 +1,28 @@
+{
+ "tag": "n290-08",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/search",
+ "prompt": "在站内搜索“部署”。",
+ "secs": 11.728,
+ "timedOut": false,
+ "stepCount": 3,
+ "steps": [
+  {
+   "text": "搜索 「部署」",
+   "error": false
+  },
+  {
+   "text": "填 「@2」",
+   "error": false
+  },
+  {
+   "text": "点 「搜索」",
+   "error": false
+  }
+ ],
+ "answer": "搜索已提交，页面上回显「已提交：go」，搜索框里是「部署」。页面本身没有列出结果列表，只有这句提交提示。\n\n已提交，收不回\n来源\n切过去看\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/search"
+}

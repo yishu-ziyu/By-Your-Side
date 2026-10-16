@@ -1,0 +1,45 @@
+{
+ "midInfo": null,
+ "tag": "formfill/b2-main-d61-r28",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8966/b",
+ "prompt": "本地测试页项目登记表，帮我填一下：标题写 用户访谈小结（这是文章的），项目的标题写 年度增长报告，项目名 星河计划，副标题 第三季度复盘，文章备注 初稿待审。别的不要动，也不要保存。",
+ "secs": 12.67,
+ "timedOut": false,
+ "stepCount": 7,
+ "steps": [
+  {
+   "text": "填写项目登记表四个字段并读回",
+   "error": false
+  },
+  {
+   "text": "填 「@2」",
+   "error": false
+  },
+  {
+   "text": "填 「@3」",
+   "error": false
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "填 「@5」",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  }
+ ],
+ "answer": "填好了，「备注标题」和「项目名缩写」保持空白，保存按钮没点。\n\n项目登记 · 当前填写\n项目名\n星河计划\n项目的标题\n年度增长报告\n副标题\n第三季度复盘\n首篇文章 · 标题\n用户访谈小结\n这一栏是文章标题\n首篇文章 · 备注\n初稿待审\n页面里有两个都叫「标题」的必填框：上面的属项目（年度增长报告），「首篇文章」分组里的属文章（用户访谈小结）——按你说的这样分开了。\n还原填写（5 处）\n全文 · 约 18 秒读完",
+ "check": "{\"proj\":\"星河计划\",\"title1\":\"年度增长报告\",\"subtitle\":\"第三季度复盘\",\"title2\":\"用户访谈小结\",\"memo\":\"初稿待审\",\"memotitle\":\"\",\"abbr\":\"\"}",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8966/b"
+}

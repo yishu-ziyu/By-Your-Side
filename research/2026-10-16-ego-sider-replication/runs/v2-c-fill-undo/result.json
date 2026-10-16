@@ -1,0 +1,41 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 2000
+  },
+  {
+   "click": ".plan-card .plan-details",
+   "shot": "details",
+   "wait": 2500
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500
+  }
+ ],
+ "tag": "v2-c-fill-undo",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名王五，手机13700000000，备注带水。不要提交。",
+ "secs": 10.323,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "填写报名表三个字段",
+   "error": false
+  },
+  {
+   "text": "填写 ×3",
+   "error": false
+  }
+ ],
+ "answer": "三项都填好了，读回确认过：姓名「王五」、手机「13700000000」、备注「带水」，人数保持默认的 1。保存和提交两个按钮我都没点。\n\n复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

@@ -1,0 +1,173 @@
+{
+ "midInfo": null,
+ "tag": "pcmain-5",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 81.309,
+ "timedOut": false,
+ "stepCount": 39,
+ "steps": [
+  {
+   "text": "列出笔记页的表单控件",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "看清新建笔记表单结构",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写正文、刷新、分类选项目 · 无效的选择器",
+   "error": true
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点击 · 无效的选择器",
+   "error": true
+  },
+  {
+   "text": "定位刷新按钮",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点刷新按钮",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "分类选项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "找到保存按钮",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "标题写周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认新笔记是否落到列表",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "看保存按钮的行为与请求",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读保存按钮的脚本逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读新建/保存的处理逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  }
+ ],
+ "answer": "六步都在页面上落到了，最后的保存点下去了，但请求在网络里显示被中止，没法确认服务器真的存下来了。\n\n新建验收 · 七步走查\n页面 http://127.0.0.1:8941/ 未刷新，填的内容都还在\n备注写「随手记」并回车\n字段值=随手记，输入框下方出现 role=status 的「备注已保存」\n正文写好\n正文框内容：随手记：新建验收正文，今天确认了备注、正文、刷新和分类四个控件都能正常用\n点刷新\n按钮 id=dead，点了页面无任何变化，备注/正文原样保留\n分类选项目\n下拉选中「项目」，下方自动多出「项目名」输入框\n再新建一条笔记\n弹出 dialog「新建笔记」，含标题/口令/提货三个字段\n标题写周会纪要\n标题框读回值=周会纪要，原来的占位标题已被替换\n点保存\n弹窗已关闭，并发出 GET /save?title=周会纪要\n保存这一步的结果我没法确认：那条 /save 请求在网络记录里是 net::ERR_ABORTED（118ms 后被取消），页面上也没有任何笔记列表会显示已保存的条目，所以我不能说这条笔记真的存下来了。\n\n顺带一提：这个页面保存时还会把弹窗里的口令、提货码一起带走（弹窗是预填的，我没动它们）。要不要我换个方式确认服务器到底收没收到？\n\n还原填写（3 处）\n全文 · 约 56 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

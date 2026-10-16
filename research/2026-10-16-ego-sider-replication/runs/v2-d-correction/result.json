@@ -1,0 +1,33 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "end",
+   "wait": 9000,
+   "text": "[data-memory-ask]",
+   "textResult": "记下了：以后在这个网站加入套餐时，我会点击套餐卡片里的「加入购物车」，不使用一键加入。这个网站撤销"
+  },
+  {
+   "shot": "end2",
+   "wait": 2500
+  }
+ ],
+ "tag": "v2-d-correction",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://shop.test/",
+ "prompt": "帮我把推荐的套餐加入购物车。",
+ "secs": 16.891,
+ "timedOut": false,
+ "stepCount": 1,
+ "steps": [
+  {
+   "text": "点 「加入购物车」",
+   "error": false
+  }
+ ],
+ "answer": "标准版（¥49/月）已加入购物车，页面上出现了「已加入：标准版」。一键加入那个链接我没点。\n\n在页面上查看\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://shop.test/"
+}

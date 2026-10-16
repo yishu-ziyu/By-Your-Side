@@ -1,0 +1,34 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": ""
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v2-b02",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://en.wikipedia.org/wiki/Chrome_extension",
+ "prompt": "这个页面怎么切换成中文？该点哪里？",
+ "secs": 14.432,
+ "timedOut": false,
+ "stepCount": 1,
+ "steps": [
+  {
+   "text": "圈出 「点这里切换语言」",
+   "error": false
+  }
+ ],
+ "answer": "点标题「Google Chrome」下面那个 119 languages 按钮，我已经圈出来了 — 点开后会在列表里找到 中文（简体），点它就切到中文维基。\n\n补充两点：左侧栏的 Tools 菜单里也有语言入口；如果你想永久把维基百科默认设成中文，可以点右上角 Log in 登录后在 Personal tools 里改语言偏好。\n\n复制\n全文 · 约 16 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://en.wikipedia.org/wiki/Google_Chrome#Extensions"
+}

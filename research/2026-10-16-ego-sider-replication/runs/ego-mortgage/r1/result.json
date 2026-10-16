@@ -1,0 +1,58 @@
+{
+  "midInfo": null,
+  "tag": "ego-mortgage/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/home/listings",
+  "prompt": "帮我筛杭州、总价 300 万以内、公寓的房源，打开排第一的那套，用首付 90 万重新算一下房贷，告诉我地址、总价和月供。",
+  "secs": 31.548,
+  "timedOut": false,
+  "stepCount": 10,
+  "steps": [
+    {
+      "text": "筛选杭州/300万/公寓",
+      "error": false
+    },
+    {
+      "text": "填 「@1」",
+      "error": false
+    },
+    {
+      "text": "填 「@3」",
+      "error": false
+    },
+    {
+      "text": "填 「@2」",
+      "error": false
+    },
+    {
+      "text": "点 「Apply filters」",
+      "error": false
+    },
+    {
+      "text": "打开第一套房源详情",
+      "error": false
+    },
+    {
+      "text": "点 「View」",
+      "error": false
+    },
+    {
+      "text": "按首付90万重算月供 · 目标已失效",
+      "error": true
+    },
+    {
+      "text": "填 「@504」",
+      "error": false
+    },
+    {
+      "text": "点 「Recalculate」",
+      "error": false
+    }
+  ],
+  "answer": "筛选后符合条件的有两套（文三路 88 号 ¥2,850,000 和大关路 3 号 见下方卡片），排第一的是前者，按首付 90 万重算后月供 ¥8,756。\n\n西湖区文三路 88 号 3-1201 · 杭州 · 公寓\n总价\n¥2,850,000\n页面标价\n首付（你填的）\n¥900,000\n原默认 57 万\n贷款额\n¥1,950,000\n利率 3.5% · 30 年等额本息 · 2850000 − 900000\n月供\n月供\n¥8,756\n页面重算结果\nHomeFinder 房源详情页 /home/h2（本地测试页，数据为演示用）\n\n页面默认利率 3.5%、年限 30 年我没有动；换利率或年限我可以再算一版。\n\n还原填写（1 处）\n来源\n切过去看\n全文 · 约 41 秒读完",
+  "check": "{\"url\":\"http://127.0.0.1:8995/home/h2\",\"inputs\":{\"m_price\":\"2850000\",\"m_down\":\"900000\",\"m_rate\":\"3.5\",\"m_years\":\"30\"},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nXihu District, Wensan Rd 88, 3-1201\\n\\nHangzhou · Apartment · Price ¥2,850,000\\n\\nMortgage calculator\\nHome price Down payment Rate % Years Recalculate\\n\\nMonthly payment: ¥8,756\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/home/h2",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

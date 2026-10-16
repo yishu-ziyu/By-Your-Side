@@ -1,0 +1,42 @@
+{
+  "midInfo": null,
+  "tag": "sider-yt-sheets/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/yt/results",
+  "prompt": "把这个搜索结果里前 5 个正常视频（广告和 Shorts 不算）的标题、频道、播放量、发布时间写进我的表格 http://127.0.0.1:8995/yt/sheet ，第一行写表头。",
+  "secs": 50.222,
+  "timedOut": false,
+  "stepCount": 6,
+  "steps": [
+    {
+      "text": "打开标签页",
+      "error": false
+    },
+    {
+      "text": "填写表格并回读",
+      "error": false
+    },
+    {
+      "text": "填 「loc=role:textbo…」 ×24",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "看表格页的按钮是什么",
+      "error": false
+    },
+    {
+      "text": "确认表格页有没有保存按钮",
+      "error": false
+    }
+  ],
+  "answer": "写好了，表格 A1:D6 已经填完（表头 + 5 条视频），广告和那条 Shorts 都跳过了。\n\nTopic research sheet · 前 5 条正常视频\n标题\t频道\t播放量\t发布时间\n标题\t频道\t播放量\t发布时间\nBrowser agents explained in 12 minutes\tAI Explained\t1.2M views\t3 weeks ago\nI built an AI that books flights\tFireship\t890K views\t1 month ago\nAgentic workflows: full course\tfreeCodeCamp\t2.3M views\t5 months ago\nWhy AI agents fail (and how to fix)\tTwo Minute Papers\t640K views\t2 weeks ago\nComputer-use models compared\tMatt Wolfe\t410K views\t6 days ago\n被跳过的两条：置顶广告「Learn AI in 1 day (Sponsored)」和 Shorts「#shorts agent fail lol」。页面本身标注是本地测试页，没有保存按钮，改动就在输入框里。\n切到表格页看\n还原填写（24 处）\n来源\n切过去看\n全文 · 约 52 秒读完",
+  "check": "{\"url\":\"http://127.0.0.1:8995/yt/results\",\"inputs\":{},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nSearch: ai browser agents\\nAd\\nAd: Learn AI in 1 day (Sponsored)\\nPromoCo · — · —\\nBrowser agents explained in 12 minutes\\nAI Explained · 1.2M views · 3 weeks ago\\nShorts\\n#shorts agent fail lol\\nclipz · 4.1M views · 2 days ago\\nI built an AI that books flights\\nFireship · 890K views · 1 month ago\\nAgentic workflows: full course\\nfreeCodeCamp · 2.3M views · 5 months ago\\nWhy AI agents fail (and how to fix)\\nTwo Minute Papers · 640K views · 2 weeks ago\\nComputer-use models compared\\nMatt Wolfe · 410K views · 6 days ago\\nAgents vs RPA\\nIBM Technology · 300K views · 1 year ago\\n\\nOpen my sheet\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/yt/results",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

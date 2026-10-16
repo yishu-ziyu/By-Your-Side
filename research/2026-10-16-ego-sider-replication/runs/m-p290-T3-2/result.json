@@ -1,0 +1,16 @@
+{
+ "midInfo": null,
+ "tag": "m-p290-T3-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://news.ycombinator.com/",
+ "prompt": "这个页面排名前3的帖子标题是什么？",
+ "secs": 5.631,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "Hacker News 首页排在前三的帖子是：\n\nMuse Spark Open（meta.ai）— 328 分，218 条评论，1 小时前\nNeural networks are clean（goodfire.com）— 275 分，85 条评论，3 小时前\nKrea 3 – An image model built for editing at scale（krea.ai）— 166 分，64 条评论，3 小时前\n\n值得注意的是，第 4 位的 Wayland desktop for Linux with skeuomorphic design 实际有 381 分，比第 1 名还高——首页是按提交顺序排的，不是按分数排的。\n\n复制\n已复制\n全文 · 约 30 秒读完",
+ "check": "Muse Spark Open || Neural networks are clean || Krea 3 – An image model built for editing at scale",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://news.ycombinator.com/"
+}

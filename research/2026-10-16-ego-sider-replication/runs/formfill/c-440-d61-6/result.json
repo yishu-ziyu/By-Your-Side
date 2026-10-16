@@ -1,0 +1,53 @@
+{
+ "midInfo": null,
+ "tag": "formfill/c-440-d61-6",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8966/c",
+ "prompt": "打开的是本地测试页。请点「预约服务」打开弹窗，然后填写：联系人 周子航，到店日期 2026-11-05，服务类型选 保养，备注 上午十点后到。只填写，不要点确认预约。",
+ "secs": 21.306,
+ "timedOut": false,
+ "stepCount": 9,
+ "steps": [
+  {
+   "text": "打开预约弹窗 · 被「预约到店」挡住",
+   "error": true
+  },
+  {
+   "text": "点击 · 被「预约到店」挡住",
+   "error": true
+  },
+  {
+   "text": "检查弹窗是否已打开及表单控件",
+   "error": false
+  },
+  {
+   "text": "填写预约表单四个字段 · 没做成",
+   "error": true
+  },
+  {
+   "text": "填 「#cname」",
+   "error": false
+  },
+  {
+   "text": "填 「#date」",
+   "error": false
+  },
+  {
+   "text": "填 「#svc」",
+   "error": false
+  },
+  {
+   "text": "填 「#cnote」",
+   "error": false
+  },
+  {
+   "text": "核对表单各字段已填内容",
+   "error": false
+  }
+ ],
+ "answer": "四项都填好并核对了，「确认预约」我没碰。\n\n弹窗「预约到店」本来就是打开的，所以那次点击「预约服务」被弹层挡住了 —— 没有重复点击，也不需要。\n当前值：联系人 周子航 · 到店日期 2026-11-05 · 服务类型 保养 · 备注 上午十点后到。\n\n等你确认无误后自己点「确认预约」即可。\n\n在页面上查看\n来源\n切过去看\n全文 · 约 14 秒读完",
+ "check": "{\"cname\":\"周子航\",\"date\":\"2026-11-05\",\"svc\":\"保养\",\"cnote\":\"上午十点后到\"}",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8966/c"
+}

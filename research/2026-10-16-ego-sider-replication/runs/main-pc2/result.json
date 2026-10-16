@@ -1,0 +1,164 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记的正文：今天下午三点开项目周会，整理需求清单。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记的正文：今天下午三点开项目周会，整理需求清单。\",\"项目\"]"
+  }
+ ],
+ "tag": "main-pc2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8943/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 87.113,
+ "timedOut": false,
+ "stepCount": 30,
+ "steps": [
+  {
+   "text": "列出页面上的输入框和按钮",
+   "error": false
+  },
+  {
+   "text": "备注写随手记并回车，查看编辑器结构",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查找正文与标题字段位置",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写正文并点刷新",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选择分类项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "标题写周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "核验保存结果",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "在 DOM 中查找已保存的标题",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读取页面脚本看保存逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求 ×2",
+   "error": false
+  },
+  {
+   "text": "探测本地服务读接口是否正常 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  }
+ ],
+ "answer": "验收流程跑完了，七步都点过，但**「保存」这一步我没法确认真的存成功了**。\n\n新建验收 · 逐步结果\n备注写「随手记」并回车\n页面出现「备注已保存」状态行\n正文写好\n正文内容是我拟的：随手记的正文：今天下午三点开项目周会，整理需求清单。（你没指定文案，要改说一声）\n点刷新\n点了，但页面脚本没给这个按钮挂事件，页面无任何变化\n分类选「项目」\n下拉当前显示 项目，页面多出一个「项目名」输入框（未填）\n新建一条笔记\n表单弹出来了：标题、密码、提货码三个输入框\n标题写「周会纪要」\n替换掉预填的 草稿-OLD7731，页面提示「原标题「草稿-OLD7731」已替换」\n保存\n已点击：表单关闭，页面发出 /save?title=周会纪要，但该请求在网络里记为失败(ERR_ABORTED)，页面上也搜不到「周会纪要」三个字\n保存框里的密码和提货码我没有碰，保持原样；这两项本地服务的 /save 接口看起来不可用，需要你那边确认后端。\n还原填写（3 处）",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8943/"
+}

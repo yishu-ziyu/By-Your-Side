@@ -1,0 +1,22 @@
+{
+  "midInfo": null,
+  "tag": "ego-linkedin-jobs/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/li/jobs",
+  "prompt": "这是职位搜索结果（有两页）。帮我找旧金山的 AI 软件工程师岗位，去掉 Senior/Staff/Principal 这类高级岗和发布超过 30 天的旧帖，列出 10 家公司和它们的申请链接。",
+  "secs": 16.172,
+  "timedOut": false,
+  "stepCount": 1,
+  "steps": [
+    {
+      "text": "打开页面 LinkedIn Jobs (mock)",
+      "error": false
+    }
+  ],
+  "answer": "筛完了：两页 17 个岗位里，去掉 1 个纽约的（Gridline）、3 个高级岗（Brightloop Senior、Fathom Staff、Orchid Principal）、1 个非 AI 的（Kestrel Frontend）、3 个超过 30 天的（Dunewise 45 天、Mosaic Robotics 60 天，以及……实际只有这两个超期），正好剩 10 家旧金山岗位。\n\n旧金山 AI 软件工程师 · 10 家（已排除高级岗与 30 天以上旧帖）\n公司\t岗位\t发布\t申请链接\nAnthropix\tAI Software Engineer\t3 天\t[申请](http://127.0.0.1:8995/li/apply/anthropix)\nCobalt Labs\tMachine Learning Engineer, Agents\t5 天\t[申请](http://127.0.0.1:8995/li/apply/cobalt-labs)\nEmber AI\tSoftware Engineer, LLM Platform\t1 天\t[申请](http://127.0.0.1:8995/li/apply/ember-ai)\nHelix\tAI Software Engineer\t7 天\t[申请](http://127.0.0.1:8995/li/apply/helix)\nIonic Minds\tSoftware Engineer, AI Applications\t10 天\t[申请](http://127.0.0.1:8995/li/apply/ionic-minds)\nJuniper AI\tAI Software Engineer II\t12 天\t[申请](http://127.0.0.1:8995/li/apply/juniper-ai)\nLattice Bio\tML Software Engineer\t14 天\t[申请](http://127.0.0.1:8995/li/apply/lattice-bio)\nNorthstar\tSoftware Engineer, AI Infra\t6 天\t[申请](http://127.0.0.1:8995/li/apply/northstar)\nParallax\tAI Software Engineer\t20 天\t[申请](http://127.0.0.1:8995/li/apply/parallax)\nQuarry\tApplied AI Engineer\t9 天\t[申请](http://127.0.0.1:8995/li/apply/quarry)\nJuniper AI 的「II」是职级后缀，我按字面保留（你没点名 II）；如果你把它也算高级岗，就只剩 9 家。\n把这 10 个申请链接存成 CSV\n\n被刷掉的：Brightloop（Senior）、Fathom（Staff）、Orchid（Principal）、Gridline（New York, NY）、Kestrel（Frontend Engineer，非 AI）、Dunewise（45 天）、Mosaic Robotics（60 天）。\n\nhttp://127.0.0.1:8995/li/jobs 与 ?page=2 —— 这是本地 mock 页面（页面自己标注「nothing real happens」），链接点开不会真的投递。\n\n复制为表格\n已复制\n来源\n切过去看\n全文 · 约 142 秒读完",
+  "check": "{\"url\":\"http://127.0.0.1:8995/li/jobs?page=2\",\"inputs\":{},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nAI Software Engineer jobs · San Francisco Bay Area\\n\\nPage 2 of 2\\n\\nAI Software Engineer II\\nJuniper AI · San Francisco, CA\\nPosted 12 days ago · Apply\\nFrontend Engineer\\nKestrel · San Francisco, CA\\nPosted 3 days ago · Apply\\nML Software Engineer\\nLattice Bio · San Francisco, CA\\nPosted 14 days ago · Apply\\nAI Software Engineer\\nMosaic Robotics · San Francisco, CA\\nPosted 60 days ago · Apply\\nSoftware Engineer, AI Infra\\nNorthstar · San Francisco, CA\\nPosted 6 days ago · Apply\\nPrincipal AI Engineer\\nOrchid · San Francisco, CA\\nPosted 8 days ago · Apply\\nAI Software Engineer\\nParallax · San Francisco, CA\\nPosted 20 days ago · Apply\\nApplied AI Engineer\\nQuarry · San Francisco, CA\\nPosted 9 days ago · Apply\\n← Previous page\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/li/jobs?page=2",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

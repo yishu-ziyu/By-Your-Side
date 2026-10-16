@@ -1,0 +1,33 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "end",
+   "wait": 9000,
+   "text": "[data-memory-ask]",
+   "textResult": ""
+  },
+  {
+   "shot": "end2",
+   "wait": 2500
+  }
+ ],
+ "tag": "v2-d-correction",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8963/",
+ "prompt": "帮我把推荐的套餐加入购物车。",
+ "secs": 16.147,
+ "timedOut": false,
+ "stepCount": 1,
+ "steps": [
+  {
+   "text": "点 「加入购物车」",
+   "error": false
+  }
+ ],
+ "answer": "按你说的走，没点那个一键加入，直接点了标准版卡片里的「加入购物车」，页面回执显示「已加入：标准版」（¥49/月）。\n\n在页面上查看\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8963/"
+}

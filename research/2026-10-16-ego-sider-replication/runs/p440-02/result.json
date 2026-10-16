@@ -1,0 +1,70 @@
+{
+ "midInfo": {
+  "at": 3.423,
+  "html": "正在思考\n已做 1 步\n会去 fnbjglhppbkgmjeehablkfilmmefjolo · 不会做 付款\nfill order form"
+ },
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 500,
+   "text": ".plan-card",
+   "textResult": "已填 4 项 · 用时 11 秒 · 撤销 · \n\nI'll fill the four fields on the httpbin order form — leaving Submit order untouched.\n\n会去 fnbjglhppbkgmjeehablkfilmmefjolo · 不会做 付款\nfill order form\n填写订餐表四项\n填 「@5」\n填 「@6」\n填 「@7」\n填 「@15」\nTelephone:现在是：「555-1234」\nE-mail address:现在是：「alice@example.com」\nDelivery instructions:现在是：「放门口」\n共 11 秒，其中想了 6 秒"
+  },
+  {
+   "click": ".plan-card .plan-details",
+   "shot": "details",
+   "wait": 1200
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "after-undo",
+   "wait": 2500,
+   "text": ".plan-card",
+   "textResult": "已填 4 项 · 用时 11 秒 · 撤销 · "
+  },
+  {
+   "shot": "final",
+   "wait": 300,
+   "check": "JSON.stringify([...document.querySelectorAll(\"input:not([type=hidden]):not([type=radio]):not([type=checkbox]),textarea,select\")].map(e=>e.value).filter(Boolean))",
+   "result": "[]"
+  }
+ ],
+ "tag": "p440-02",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://httpbin.org/forms/post",
+ "prompt": "帮我把这个订餐表填好：名字 Alice，电话 555-1234，邮箱 alice@example.com，送达说明写放门口。不要提交。",
+ "secs": 12.628,
+ "timedOut": false,
+ "stepCount": 6,
+ "steps": [
+  {
+   "text": "fill order form",
+   "error": false
+  },
+  {
+   "text": "填写订餐表四项",
+   "error": false
+  },
+  {
+   "text": "填 「@5」",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  },
+  {
+   "text": "填 「@7」",
+   "error": false
+  },
+  {
+   "text": "填 「@15」",
+   "error": false
+  }
+ ],
+ "answer": "四项都填好了，Submit order 没点。\n\nCustomer name → Alice\nTelephone → 555-1234\nE-mail address → alice@example.com\nDelivery instructions → 放门口\n\n披萨尺寸、配料和送达时间你没提，留空没动。\n\n复制\n全文 · 约 15 秒读完",
+ "check": "[\"Alice\",\"555-1234\",\"alice@example.com\",\"放门口\"]",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://httpbin.org/forms/post"
+}

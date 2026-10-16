@@ -1,0 +1,44 @@
+{
+ "tag": "n290-02",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/mail",
+ "prompt": "给 a@example.com 写封邮件，主题“周报”，正文写本周完成了登录页改版。然后发送。",
+ "secs": 19.246,
+ "timedOut": false,
+ "stepCount": 6,
+ "steps": [
+  {
+   "text": "填写收件人、主题和正文",
+   "error": false
+  },
+  {
+   "text": "填 「@2」",
+   "error": false
+  },
+  {
+   "text": "填 「@3」",
+   "error": false
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "读回三个字段确认内容",
+   "error": false
+  },
+  {
+   "text": "你没让发，草稿还在",
+   "error": false
+  }
+ ],
+ "answer": "邮件没有发出去 —— 你选择了「不发」，我就不再点了。\n\n草稿已就绪\n收件人\na@example.com\n主题\n周报\n正文\n本周完成了登录页改版。\n1\n想发的时候自己点一下\n页面右侧的 Send 按钮，内容都还填着\n发送这一步没做成，邮件还只是页面上的草稿。\n\nhttp://127.0.0.1:8931/mail 当前页面\n\n还原填写（3 处）\n全文 · 约 16 秒读完",
+ "check": null,
+ "sawConfirm": true,
+ "confirmEvents": [
+  {
+   "at": 12.55
+  }
+ ],
+ "siteUrl": "http://127.0.0.1:8931/mail"
+}

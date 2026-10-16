@@ -1,0 +1,38 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "Search the site"
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439om-b05",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://developer.mozilla.org/en-US/",
+ "prompt": "这个页面上怎么搜索文档？",
+ "secs": 10.274,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "圈出 「点这里搜文档」",
+   "error": false
+  },
+  {
+   "text": "圈出 「或用首页大搜索框」",
+   "error": false
+  }
+ ],
+ "answer": "两个入口都给你圈出来了：点右上角的「Search the site」，或者页面中间那个大搜索框，输入关键词按 Enter，结果会列出 MDN 全部文档条目（HTML / CSS / JavaScript / API 都能搜）。\n\n复制\n已复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://developer.mozilla.org/en-US/"
+}

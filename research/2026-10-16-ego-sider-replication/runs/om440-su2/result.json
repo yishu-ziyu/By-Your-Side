@@ -1,0 +1,46 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 800,
+   "text": ".plan-card",
+   "textResult": "已填 3 项 · 用时 8 秒 · 撤销 · \n\n我把姓名、手机、备注填进去，不会点保存或提交。\n\n会去 当前页 · 不会做 提交、付款\n填写报名表姓名、手机、备注\n填写 ×3\n姓名现在是：「王五」\n手机现在是：「13700000000」\n备注现在是：「带水」\n共 8 秒，其中想了 4 秒"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3000,
+   "text": ".plan-card",
+   "textResult": "已填 3 项 · 用时 8 秒 · 撤销 · \n\n我把姓名、手机、备注填进去，不会点保存或提交。\n\n会去 当前页 · 不会做 提交、付款\n填写报名表姓名、手机、备注\n填写 ×3\n姓名现在是：「王五」\n手机现在是：「13700000000」\n备注现在是：「带水」\n共 8 秒，其中想了 4 秒"
+  },
+  {
+   "shot": "final",
+   "wait": 300,
+   "check": "JSON.stringify([...document.querySelectorAll(\"input:not([type=hidden]),textarea,select\")].map(e=>e.value))",
+   "result": "[\"\",\"\",\"1\",\"\"]"
+  }
+ ],
+ "tag": "om440-su2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名王五，手机13700000000，备注带水。不要提交。",
+ "secs": 9.965,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "填写报名表姓名、手机、备注",
+   "error": false
+  },
+  {
+   "text": "填写 ×3",
+   "error": false
+  }
+ ],
+ "answer": "三个字段都填好了，读回确认是王五 / 13700000000 / 带水；人数保持原来的 1，保存和提交都没点。\n\n复制\n已复制",
+ "check": "[\"王五\",\"13700000000\",\"1\",\"带水\"]",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

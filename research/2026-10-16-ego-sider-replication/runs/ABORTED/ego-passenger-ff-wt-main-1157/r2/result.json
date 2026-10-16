@@ -1,0 +1,93 @@
+{
+ "midInfo": null,
+ "tag": "ego-passenger/r2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8991/search",
+ "prompt": "帮我订一下11月20日上海浦东(PVG)飞东京成田(NRT)的机票，2个大人。只要直飞，航空公司只考虑国航(Air China)或全日空(ANA)，在符合条件的里面选最便宜的。乘客信息：乘客1 MR，名 Wei，姓 Zhang，出生日期1988-03-14，国籍China，护照号E12345678，护照有效期2031-06-30；乘客2 MS，名 Lin，姓 Chen，出生日期1990-11-02，国籍China，护照号E87654321，有效期2030-09-15。常旅客号没有，留空。联系邮箱 zhang.wei@example.com，电话 +86 13800001111。停在付款页，不要付款，告诉我航班号、起飞时间和总价。",
+ "secs": 35.647,
+ "timedOut": false,
+ "stepCount": 19,
+ "steps": [
+  {
+   "text": "点 「Select」",
+   "error": false
+  },
+  {
+   "text": "填写两位乘客与联系方式",
+   "error": false
+  },
+  {
+   "text": "填 「@353」",
+   "error": false
+  },
+  {
+   "text": "填 「@354」",
+   "error": false
+  },
+  {
+   "text": "填 「@355」",
+   "error": false
+  },
+  {
+   "text": "填 「@356」",
+   "error": false
+  },
+  {
+   "text": "填 「@357」",
+   "error": false
+  },
+  {
+   "text": "填 「@358」",
+   "error": false
+  },
+  {
+   "text": "填 「@359」",
+   "error": false
+  },
+  {
+   "text": "填 「@361」",
+   "error": false
+  },
+  {
+   "text": "填 「@362」",
+   "error": false
+  },
+  {
+   "text": "填 「@363」",
+   "error": false
+  },
+  {
+   "text": "填 「@364」",
+   "error": false
+  },
+  {
+   "text": "填 「@365」",
+   "error": false
+  },
+  {
+   "text": "填 「@366」",
+   "error": false
+  },
+  {
+   "text": "填 「@367」",
+   "error": false
+  },
+  {
+   "text": "填 「@369」",
+   "error": false
+  },
+  {
+   "text": "填 「@370」",
+   "error": false
+  },
+  {
+   "text": "点 「Continue to pay…」",
+   "error": false
+  }
+ ],
+ "answer": "已经停在付款页了，没有填卡也没有付款。\n\nPVG → NRT · 2026-11-20 · 2 人（已到付款页）\n航班\nNH 920\n全日空 ANA · 直飞\n起飞\n13:40\nPVG → NRT 17:25 抵达\n总价（含税，2 人）\n¥5,560\n页面显示 · 每成人票面 ¥2,460\n页面明确写着这是本地测试页，什么都不会真正出票或扣款。\n我要自己看看付款页\n\n在你限定的条件里（直飞 + 国航/全日空）符合的只有两班：ANA NH 920 ¥2,460 和国航 CA 929 ¥2,580，所以选了更便宜的 NH 920。乘客信息已按你给的护照资料填好，常旅客号留空，邮箱 zhang.wei@example.com、电话 +86 13800001111 也填了，页面上显示为 MR Wei Zhang、MS Lin Chen。SkyLocal 本地测试页 · 搜索结果与付款页\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 36 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": "{\"path\":\"/payment?flight=f3\",\"flight\":\"NH 920\",\"dep\":\"2026-11-20 13:40\",\"total\":\"¥5,560\"}",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8991/payment?flight=f3"
+}

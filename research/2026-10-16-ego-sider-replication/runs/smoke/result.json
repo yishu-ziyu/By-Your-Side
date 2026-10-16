@@ -1,0 +1,15 @@
+{
+ "tag": "smoke",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://news.ycombinator.com/",
+ "prompt": "这个页面排名前3的帖子标题是什么？",
+ "secs": 5.77,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "前3名帖子分别是：\n\nHacker News 首页前 3 名\n1. Muse Spark Open\n推荐\n227\nmeta.ai · 227 分 · 143 评论\n榜首，1 小时前的最新提交\nnews.ycombinator.com 首页当前排序\n复制\n已复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://news.ycombinator.com/"
+}

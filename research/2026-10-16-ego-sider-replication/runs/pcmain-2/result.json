@@ -1,0 +1,153 @@
+{
+ "midInfo": null,
+ "tag": "pcmain-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 125.676,
+ "timedOut": false,
+ "stepCount": 34,
+ "steps": [
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "列出页面表单控件，找出备注和正文输入框",
+   "error": false
+  },
+  {
+   "text": "关闭误开的对话框 · 没做成",
+   "error": true
+  },
+  {
+   "text": "核验页面",
+   "error": false
+  },
+  {
+   "text": "关闭误开的对话框",
+   "error": false
+  },
+  {
+   "text": "按键 「Escape」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看对话框结构，找关闭方式",
+   "error": false
+  },
+  {
+   "text": "重载页面并在备注写随手记回车",
+   "error": false
+  },
+  {
+   "text": "打开页面 笔记",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "写正文并点刷新",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选分类项目并新建保存周会纪要",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "核验页面状态",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认保存结果与新增笔记是否落在页面上",
+   "error": false
+  },
+  {
+   "text": "查看页面脚本里保存按钮的行为",
+   "error": false
+  },
+  {
+   "text": "读取新建与保存按钮的处理逻辑",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "测试站点接口是否真的响应",
+   "error": false
+  },
+  {
+   "text": "确认最终页面状态与滚动是否被锁",
+   "error": false
+  }
+ ],
+ "answer": "验收流程六步全部走完了，但保存这一步我没法确认真的落库——它的请求被浏览器记为已取消。\n\n新建验收结果\n备注写「随手记」并回车\n页面出现「备注已保存」\n正文写好\n正文区现在显示：随手记的正文内容。（你没指定文案，我填了这句）\n点刷新\n点了，内容保留、时钟归零\n分类选「项目」\n选中后页面自动多出一个空的「项目名」输入框\n再新建一条笔记，标题写「周会纪要」\n替换掉了弹窗预填的「草稿-OLD7731」\n点保存\n弹窗关闭，但没有任何成功回执\n保存只是发了一条 GET /save?title=周会纪要 就把弹窗删掉，浏览器把这条请求记为 net::ERR_ABORTED（已取消），页面上也没多出笔记条目——所以「存下来了」我无法确认。另外保存后 body 还挂着 modal-open / overflow:hidden，页面现在滚不动。\n把滚动恢复\n\n补充两点：一开始我误点了「新建笔记」，那个弹窗没有关闭键、Esc 也关不掉还锁了页面滚动，我刷新页面重置后按你的顺序重做了一遍；另外备注的自动保存请求同样显示已取消，站点对任意路径都返回同一份 HTML，没有列表接口可以回读核对。\n\n还原填写（3 处）\n来源\n切过去看\n全文 · 约 51 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

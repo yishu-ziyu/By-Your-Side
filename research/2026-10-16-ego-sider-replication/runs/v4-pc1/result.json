@@ -1,0 +1,176 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 1 分 41 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"好\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "已填 3 项 · 用时 1 分 41 秒 · 撤销 · 可撤销「备注」「分类」「标题」，「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"\",\"好\",\"笔记\"]"
+  }
+ ],
+ "tag": "v4-pc1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 102.95,
+ "timedOut": false,
+ "stepCount": 33,
+ "steps": [
+  {
+   "text": "列出页面上的输入框和按钮",
+   "error": false
+  },
+  {
+   "text": "备注输入随手记并回车",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "查看回车后页面出现什么",
+   "error": false
+  },
+  {
+   "text": "正文写入好",
+   "error": false
+  },
+  {
+   "text": "看正文编辑器结构",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "确认正文已写入",
+   "error": false
+  },
+  {
+   "text": "刷新并选择分类项目",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "看刷新后页面状态",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "新建笔记并查看表单",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "看新建笔记后出现的标题和保存控件",
+   "error": false
+  },
+  {
+   "text": "写标题并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "确认保存后对话框和笔记",
+   "error": false
+  },
+  {
+   "text": "核对新笔记是否已保存",
+   "error": false
+  },
+  {
+   "text": "确认新笔记是否出现在页面或存储里",
+   "error": false
+  },
+  {
+   "text": "查找笔记列表位置 · 没做成",
+   "error": true
+  },
+  {
+   "text": "找笔记列表容器",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "找保存接口定义",
+   "error": false
+  },
+  {
+   "text": "找保存相关接口",
+   "error": false
+  },
+  {
+   "text": "检查服务器上的保存结果 · 没做成",
+   "error": true
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "打开标签页",
+   "error": false
+  },
+  {
+   "text": "关闭标签页",
+   "error": false
+  }
+ ],
+ "answer": "七步都在页面上跑完了，备注和分类都回读确认过：\n\n备注输入「随手记」→ 回车（输入框现值 随手记，并触发 /autosave）\n正文写入「好」（编辑器回读为 好）\n点了「刷新」（备注、正文都还在）\n分类切到「项目」（下拉当前值 项目，页面同时冒出一个「项目名」输入框）\n点「新建笔记」→ 弹出对话框（标题 / 口令 / 提货 / 保存）\n标题填「周会纪要」（回读确认）\n点「保存」→ 对话框关闭，页面发出了 /save?title=周会纪要\n\n要说明一点：最后这个保存请求在网络记录里显示为 net::ERR_ABORTED（被取消），而且这个页面保存后本来就不会把新笔记回显到列表里，服务器也没有可读的列表接口，所以我无法确认它真的落库了。我没有再点一次保存，怕存出两条重复的——如果你确定没存上，说一声我再新建一次保存。\n\n复制\n已复制\n来源\n全文 · 约 37 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

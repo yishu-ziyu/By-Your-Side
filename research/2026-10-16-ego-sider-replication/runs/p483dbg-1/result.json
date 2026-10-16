@@ -1,0 +1,15 @@
+{
+ "tag": "p483dbg-1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/shop",
+ "dbg": [],
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "open",
+   "line": "以后在这个网站加套餐，我会点击套餐卡片里的“加入购物车”，不使用“一键加入推荐”链接，要我记住吗？",
+   "undo": false
+  }
+ ],
+ "memoryDecisions": []
+}

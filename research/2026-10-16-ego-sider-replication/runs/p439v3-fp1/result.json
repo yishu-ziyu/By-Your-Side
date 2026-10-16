@@ -1,0 +1,30 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": ""
+  },
+  {
+   "text": ".msg.assistant strong",
+   "shot": "bold",
+   "wait": 300,
+   "textResult": "技术新闻 | 社区讨论"
+  }
+ ],
+ "tag": "p439v3-fp1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://news.ycombinator.com/",
+ "prompt": "用一两句话介绍这个网站是做什么的。请用粗体强调两个关键词，例如**技术新闻**、**社区讨论**，不需要指出页面按钮。",
+ "secs": 5.575,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "这是 Y Combinator 办的 Hacker News：一个聚合创业公司和科技圈动态的技术新闻网站，首页按得票排出当下最热的 30 条链接。每条下面挂着一大群工程师的社区讨论，很多人气稿子的评论区比原文还长。\n\n复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://news.ycombinator.com/"
+}

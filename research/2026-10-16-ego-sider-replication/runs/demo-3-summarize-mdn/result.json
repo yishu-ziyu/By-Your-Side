@@ -1,0 +1,16 @@
+{
+ "midInfo": null,
+ "tag": "demo-3-summarize-mdn",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API",
+ "prompt": "用中文总结这页的要点：Fetch API 是什么、核心接口有哪些、和 XMLHttpRequest 比有什么不同。",
+ "secs": 12.281,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "这页是 MDN 的 Fetch API 总览页，要点如下。\n\n是什么\n\n页面的定义很直接：Fetch API 提供了一个用于获取资源（包括跨网络请求）的接口，是 XMLHttpRequest 更强大、更灵活的替代品。\n\n关键机制：\n\n基于 Request 和 Response 对象，同时涉及 CORS 和 HTTP Origin 头部语义。\n发起请求用 fetch()。它是 Window 和 Worker 上都存在的全局方法，几乎任何上下文都能用。\n签名是 fetch(资源路径) 加可选的 init 配置对象作为第二个参数（选项见 Request）。\n返回一个 Promise，在服务器一返回响应头时就 resolve，即使响应是 HTTP 错误状态码也不会因此失败——这是它和 XHR 行为差别最明显的地方之一。\n拿到 Response 后，可用一系列方法决定 body 内容类型及如何处理。\n可以用 Request() / Response() 构造函数直接造对象，但页面说不常见；它们更多是其他 API 动作的产物，比如 Service Worker 里的 FetchEvent.respondWith()。\n延伸能力 Deferred Fetch：fetchLater() 可发起延迟请求，在指定时间后、页面关闭或离开时才真正发出，细节见 Using Deferred Fetch。\n核心接口（页面 Interfaces 一节列出的全部）\n接口\t作用\nWindow.fetch() / WorkerGlobalScope.fetch()\t发起资源请求的主方法\nWindow.fetchLater()\t发起延迟获取请求\nDeferredRequestInit\t配置延迟请求的选项集合\nFetchLaterResult\t延迟请求的结果\nHeaders\t表示请求/响应头，可查询并据此分支处理\nRequest\t表示一个资源请求\nResponse\t表示请求的响应\n\n另外相关的是两个 Permissions-Policy 头：deferred-fetch 控制 fetchLater() 的顶层配额，deferred-fetch-minimal 控制跨源子框架共享配额。规范对应 Fetch # fetch-method 与 Fetch # deferred-fetch。\n\n和 XMLHttpRequest 的差别\n\n这页对二者的对比只有开头一句定性说明（Fetch 是 XHR「更强大更灵活的替代品」），没有专门章节。从这页能直接读出的机制差异是：Fetch 走 Promise 异步链路、且不因 HTTP 错误状态码而拒绝；XHR 是基于事件回调，并且历史上还有同源限制、无法流式读取 body 等约束。更细的对比 MDN 放在 Using Fetch 里，不在这一页上。\n\n复制为表格\n已复制\n全文 · 约 119 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API"
+}

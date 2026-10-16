@@ -1,0 +1,30 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "Learn | Tools"
+  },
+  {
+   "text": ".msg.assistant strong",
+   "shot": "bold",
+   "wait": 300,
+   "textResult": ""
+  }
+ ],
+ "tag": "p439v3-fp3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://developer.mozilla.org/en-US/",
+ "prompt": "MDN 是什么网站？简单说说，可以用引号举例它覆盖的技术，比如 \"HTML\"、\"CSS\"。",
+ "secs": 6.123,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "MDN Web Docs（developer.mozilla.org）是 Mozilla 维护的免费开发者文档站，首页标语就是 \"Resources for Developers, by Developers\"，从 2005 年起记录 Web 技术。\n\n它主要覆盖：\"HTML\"、\"CSS\"、\"JavaScript\"、\"Web APIs\"（比如首页推荐的 Navigation API、Trusted Types API），另外还有 \"Learn\" 教程、\"Tools\" 工具和兼容性数据。整站内容开源在 GitHub（mdn/content），首页能看到当天还有社区提交的 PR，所以文档一直是活的。\n\n顺带一提：你现在这页是英文版，右上角可以切语言，中文文档在同一路径加 zh-CN。\n\n复制\n全文 · 约 35 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://developer.mozilla.org/en-US/"
+}

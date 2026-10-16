@@ -1,0 +1,54 @@
+{
+ "midInfo": {
+  "at": 3.357,
+  "html": "正在思考\n会去 fnbjglhppbkgmjeehablkfilmmefjolo · 不会做 提交、付款"
+ },
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 500,
+   "text": ".plan-card",
+   "textResult": "已填 3 项 · 用时 9 秒 · 撤销 · \n\n我来填这三个字段，不会点 Submit。\n\n会去 fnbjglhppbkgmjeehablkfilmmefjolo · 不会做 提交、付款\n填写三个表单字段并回读\n填写 ×3\nText input现在是：「hello」\nTextarea现在是：「这是一段测试」\n共 9 秒，其中想了 4 秒"
+  },
+  {
+   "click": ".plan-card .plan-details",
+   "shot": "details",
+   "wait": 1200
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "after-undo",
+   "wait": 2500,
+   "text": ".plan-card",
+   "textResult": "已填 3 项 · 用时 9 秒 · 撤销 · "
+  },
+  {
+   "shot": "final",
+   "wait": 300,
+   "check": "JSON.stringify([...document.querySelectorAll(\"input:not([type=hidden]):not([type=radio]):not([type=checkbox]),textarea,select\")].map(e=>e.value).filter(Boolean))",
+   "result": "[\"Readonly input\",\"Open this select menu\",\"#563d7c\",\"5\"]"
+  }
+ ],
+ "tag": "p440fix-03",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://www.selenium.dev/selenium/web/web-form.html",
+ "prompt": "把这个表单的文本框填 hello，密码框填 test123，文本区写 这是一段测试。不要提交。",
+ "secs": 10.486,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "填写三个表单字段并回读",
+   "error": false
+  },
+  {
+   "text": "填写 ×3",
+   "error": false
+  }
+ ],
+ "answer": "三个字段都填好了，Submit 没点。\n\nText input：hello\nPassword：test123（密码框读回只显示 7 个字符的掩码，长度对得上）\nTextarea：这是一段测试\n复制",
+ "check": "[\"hello\",\"test123\",\"这是一段测试\",\"Readonly input\",\"Open this select menu\",\"#563d7c\",\"5\"]",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://www.selenium.dev/selenium/web/web-form.html"
+}

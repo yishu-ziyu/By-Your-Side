@@ -1,0 +1,41 @@
+{
+ "midInfo": null,
+ "tag": "subase-3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名张三，手机13800000000，人数2，备注带一把伞。然后点保存。",
+ "secs": 21.395,
+ "timedOut": false,
+ "stepCount": 6,
+ "steps": [
+  {
+   "text": "填写报名表并点保存 · 没做成",
+   "error": true
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "填 「@5」",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  },
+  {
+   "text": "填 「@7」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  }
+ ],
+ "answer": "填好了，保存也点了——页面出现提示「已提交：save」，四个字段读回都是你给的值。\n\n页面上还有一个「提交报名」按钮，我没点；如果报名还要走那一步，你说一声我再点。\n\n姓名 张三 · 手机 13800000000 · 人数 2 · 备注 带一把伞\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 12 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

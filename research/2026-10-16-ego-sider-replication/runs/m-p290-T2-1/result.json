@@ -1,0 +1,37 @@
+{
+ "midInfo": null,
+ "tag": "m-p290-T2-1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名张三，手机13800000000，人数2，备注带伞。不要提交。",
+ "secs": 11.562,
+ "timedOut": false,
+ "stepCount": 5,
+ "steps": [
+  {
+   "text": "填写报名表四项信息",
+   "error": false
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "填 「@5」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「@7」",
+   "error": false
+  }
+ ],
+ "answer": "四项都填好了并逐项读回确认：姓名张三、手机 13800000000、人数 2、备注带伞。\"保存\"和\"提交报名\"两个按钮都没点，内容只在表单里待你确认。\n\n还原填写（4 处）",
+ "check": "[\"张三\",\"13800000000\",\"2\",\"带伞\"]",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

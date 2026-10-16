@@ -1,0 +1,18 @@
+{
+ "tag": "v483-4",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/search",
+ "dbg": [],
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "remembered",
+   "line": "记下了：以后在这个网站搜索时，我会按回车提交，不点击旁边的推荐词。这个网站撤销",
+   "undo": true
+  }
+ ],
+ "memoryDecisions": [
+  "{\"time\":\"2026-10-15T19:56:41.530Z\",\"sessionId\":\"269d0d84-c0d2-4c0b-89dd-c5c635990cca\",\"runId\":\"5fc7284a-d0e6-419d-a151-5d766152a7f0\",\"goalRevision\":\"6c10078ffe35f1264a901b5d7bd13de5c85686128ca0ec9fecc33abba65fa8de\",\"turn\":0,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"key\":\"default:0123b111-8f06-41ad-b13f-45adb9068206\",\"status\":\"skipped\",\"reason\":\"not-correction\"}}",
+  "{\"time\":\"2026-10-15T19:57:13.817Z\",\"sessionId\":\"269d0d84-c0d2-4c0b-89dd-c5c635990cca\",\"runId\":\"5fc7284a-d0e6-419d-a151-5d766152a7f0\",\"goalRevision\":\"6c10078ffe35f1264a901b5d7bd13de5c85686128ca0ec9fecc33abba65fa8de\",\"turn\":6,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"status\":\"learned\",\"reason\":\"learned\",\"scope\":\"site\",\"entryIds\":[\"8f2e1b0e-e131-4069-87ee-63dfc69e3ce7\"]}}"
+ ]
+}

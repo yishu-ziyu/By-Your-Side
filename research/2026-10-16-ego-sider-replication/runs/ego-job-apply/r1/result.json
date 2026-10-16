@@ -1,0 +1,54 @@
+{
+  "midInfo": null,
+  "tag": "ego-job-apply/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/job/board",
+  "prompt": "帮我在这个招聘网站找上海的全职前端工程师岗位，打开它的招聘页，用我电脑上的简历 ~/Documents/resume.pdf 把申请表全部填好（包括上传简历），停在提交前，不要提交。",
+  "secs": 240.303,
+  "timedOut": true,
+  "stepCount": 9,
+  "steps": [
+    {
+      "text": "筛选上海前端全职岗位",
+      "error": false
+    },
+    {
+      "text": "选择选项",
+      "error": false
+    },
+    {
+      "text": "选择选项",
+      "error": false
+    },
+    {
+      "text": "选择选项",
+      "error": false
+    },
+    {
+      "text": "点 「Open careers pa…」",
+      "error": false
+    },
+    {
+      "text": "打开标签页 file",
+      "error": false
+    },
+    {
+      "text": "关闭标签页",
+      "error": false
+    },
+    {
+      "text": "查看记忆",
+      "error": false
+    },
+    {
+      "text": "上传文件 · 找不到文件 \"resume.p…",
+      "error": true
+    }
+  ],
+  "answer": "我先按上海 + 前端 + 全职筛出岗位，然后打开 Nimbus 的招聘页开始填表——只填不提交。",
+  "check": "{\"url\":\"http://127.0.0.1:8995/job/nimbus/careers\",\"inputs\":{\"a_name\":\"\",\"a_email\":\"\",\"a_phone\":\"\",\"a_company\":\"\",\"a_years\":\"\",\"a_li\":\"\",\"a_resume\":\"\",\"a_cover\":\"\"},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nNimbus — Frontend Engineer (Shanghai, Full-time)\\nFull name Email Phone Current company Years of experience LinkedIn URL \\nResume (PDF) \\nCover letter (optional) \\nSubmit application\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/job/nimbus/careers",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

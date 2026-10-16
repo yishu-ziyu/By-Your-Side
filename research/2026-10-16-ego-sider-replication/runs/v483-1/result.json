@@ -1,0 +1,18 @@
+{
+ "tag": "v483-1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/shop",
+ "dbg": [],
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "remembered",
+   "line": "记下了：以后在这个网站加套餐，我会点套餐卡片里的“加入购物车”，不用一键加入推荐的链接。这个网站撤销",
+   "undo": true
+  }
+ ],
+ "memoryDecisions": [
+  "{\"time\":\"2026-10-15T19:54:24.927Z\",\"sessionId\":\"1f5f5aec-1e35-47c7-b9ab-e344a2c3ba15\",\"runId\":\"95a7a9fd-553b-4deb-935c-5d90455105dc\",\"goalRevision\":\"5515545c60f051b2261cbbb860b43078facd2bf79ab05deb1adcb9d780aeaf9c\",\"turn\":0,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"key\":\"default:da742c17-0e65-4630-b0c1-581da703a086\",\"status\":\"skipped\",\"reason\":\"not-correction\"}}",
+  "{\"time\":\"2026-10-15T19:54:36.134Z\",\"sessionId\":\"1f5f5aec-1e35-47c7-b9ab-e344a2c3ba15\",\"runId\":\"95a7a9fd-553b-4deb-935c-5d90455105dc\",\"goalRevision\":\"5515545c60f051b2261cbbb860b43078facd2bf79ab05deb1adcb9d780aeaf9c\",\"turn\":3,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"status\":\"learned\",\"reason\":\"learned\",\"scope\":\"site\",\"entryIds\":[\"5fda2215-5a28-4ba1-b068-1debc035bf38\"]}}"
+ ]
+}

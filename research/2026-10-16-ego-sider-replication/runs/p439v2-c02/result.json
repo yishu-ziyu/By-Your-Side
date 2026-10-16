@@ -1,0 +1,50 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": ""
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v2-c02",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://en.wikipedia.org/wiki/Chrome_extension",
+ "prompt": "这个页面怎么切换成中文？该点哪里？",
+ "secs": 36.464,
+ "timedOut": false,
+ "stepCount": 5,
+ "steps": [
+  {
+   "text": "打开标签页 zh.wikipedia.org",
+   "error": false
+  },
+  {
+   "text": "标出语言切换按钮",
+   "error": false
+  },
+  {
+   "text": "点 「關閉」",
+   "error": false
+  },
+  {
+   "text": "核验页面",
+   "error": false
+  },
+  {
+   "text": "圈出 「语言切换点这里」",
+   "error": false
+  }
+ ],
+ "answer": "你现在这个页面上点不到——它是维基的 429 报错页（Too many requests），正文和左边的语言列表根本没加载出来。正常词条页上的切换入口在标题旁边，我已经对着一个正常页面标出来了。\n\n把维基百科切成中文\n1\n点标题右边的「添加语言」\n在正常词条页上，大标题「Chrome扩展」右下方那个按钮，点开是三百多种语言的下拉列表\n2\n在列表里选中文\n选「中文（简体）」或「中文（繁體）」，页面立刻换成对应语言的维基\n3\n或者直接改网址\n地址栏里把 en.wikipedia.org 改成 zh.wikipedia.org，整站变中文，最快\n维基百科是「一个语言一站」，切中文不是翻译当前这篇，而是跳到中文站；中文站可能没有这个条目，或者内容完全不同。\n看标注的按钮在这\n换成英文站教我看一次\n\n顺带一提：你在找的 Chrome extension 这条词条，中文站没有对应条目（\nzh.wikipedia.org 的「Chrome扩展」 显示「尚未创建」），所以切中文之后这篇大概率是读不到的。\n\n在页面上查看\n来源\n切过去看\n全文 · 约 45 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://en.wikipedia.org/wiki/Chrome_extension"
+}

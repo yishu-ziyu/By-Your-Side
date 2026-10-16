@@ -1,0 +1,19 @@
+{
+ "tag": "v483-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/shop",
+ "dbg": [],
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "remembered",
+   "line": "记下了：以后在这个网站提到加入购物车时，我理解为点击套餐卡片内的“加入购物车”，不要使用一键加入推荐。这个网站撤销",
+   "undo": true
+  }
+ ],
+ "memoryDecisions": [
+  "{\"time\":\"2026-10-15T19:55:06.426Z\",\"sessionId\":\"5563459f-d370-4b41-bf8f-6be875105785\",\"runId\":\"30336170-b111-4d7e-bcda-3e2e32303ff0\",\"goalRevision\":\"3897eae355ccbf1079eca1f7f96d9a2ddfbb0e03967a3d15f38d4a1cb7891937\",\"turn\":0,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"key\":\"default:3e2f0d0f-6653-46af-a289-544286abcb24\",\"status\":\"skipped\",\"reason\":\"not-correction\"}}",
+  "{\"time\":\"2026-10-15T19:55:09.369Z\",\"sessionId\":\"5563459f-d370-4b41-bf8f-6be875105785\",\"runId\":\"30336170-b111-4d7e-bcda-3e2e32303ff0\",\"goalRevision\":\"3897eae355ccbf1079eca1f7f96d9a2ddfbb0e03967a3d15f38d4a1cb7891937\",\"turn\":1,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"key\":\"default:e647203d-4666-4dca-a350-32f21a94ea9e\",\"status\":\"skipped\",\"reason\":\"not-correction\"}}",
+  "{\"time\":\"2026-10-15T19:55:17.042Z\",\"sessionId\":\"5563459f-d370-4b41-bf8f-6be875105785\",\"runId\":\"30336170-b111-4d7e-bcda-3e2e32303ff0\",\"goalRevision\":\"3897eae355ccbf1079eca1f7f96d9a2ddfbb0e03967a3d15f38d4a1cb7891937\",\"turn\":3,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"steer\",\"status\":\"learned\",\"reason\":\"learned\",\"scope\":\"site\",\"entryIds\":[\"1d4ca520-3ff5-4f36-a2b6-ba8cc0849005\"]}}"
+ ]
+}

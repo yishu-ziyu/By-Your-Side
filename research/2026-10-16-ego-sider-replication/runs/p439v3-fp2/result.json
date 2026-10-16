@@ -1,0 +1,30 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "语音交互"
+  },
+  {
+   "text": ".msg.assistant strong",
+   "shot": "bold",
+   "wait": 300,
+   "textResult": "Chrome 扩展 | 阅读 + 操作网页 | 复用你当前浏览器的登录状态 | 读页 | 执行任务 | 页面理解、划词追问、翻译、网页操作、会话与记忆 | 语音交互 | 开发预览版 | macOS + Chrome"
+  }
+ ],
+ "tag": "p439v3-fp2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://github.com/yishu-ziyu/By-Your-Side",
+ "prompt": "这个仓库是做什么的？用两三句话说，重点词加粗。",
+ "secs": 6.113,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "这是个 Chrome 扩展，叫 By Your Side：陪你在浏览器里阅读 + 操作网页的助手。助手复用你当前浏览器的登录状态，在侧栏里对话、读页、执行任务——功能上覆盖页面理解、划词追问、翻译、网页操作、会话与记忆，另有语音交互。目前是开发预览版，源码安装只面向 macOS + Chrome，三系统成品分发还没完成。\n\n（来源：仓库 README）\n\n复制\n全文 · 约 18 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://github.com/yishu-ziyu/By-Your-Side"
+}

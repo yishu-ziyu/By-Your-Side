@@ -1,0 +1,52 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "做了 2 步 · 用时 17 秒 · 「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"\",\"明天交周报\",\"笔记\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": "做了 2 步 · 用时 17 秒 · 「正文」撤销不了 · "
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"\",\"明天交周报\",\"笔记\"]"
+  }
+ ],
+ "tag": "v3-nk3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "正文那块帮我记一句：明天交周报",
+ "secs": 19.368,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "找出页面上可编辑的输入区域",
+   "error": false
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  }
+ ],
+ "answer": "写好了，正文那块现在是「明天交周报」，读回来确认无误。\n\n原来那块是空的，所以是直接写进去，没有覆盖任何旧内容。\n\n复制\n已复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

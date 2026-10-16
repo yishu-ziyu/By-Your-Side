@@ -1,0 +1,35 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": ""
+  },
+  {
+   "text": ".msg.assistant strong",
+   "shot": "bold",
+   "wait": 300,
+   "textResult": "技术新闻 | 社区讨论"
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v2-bold",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://news.ycombinator.com/",
+ "prompt": "用一两句话介绍这个网站是做什么的。请用粗体强调两个关键词，例如**技术新闻**、**社区讨论**，不需要指出页面按钮。",
+ "secs": 7.618,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "这是 Hacker News（news.ycombinator.com），Y Combinator 旗下的技术新闻聚合与社区讨论网站：用户提交链接或 Ask HN 提问，读者投票排序，首页满屏都是 AI、编程语言、开源项目这类工程师向的话题，讨论区往往比文章本身还长。\n\n复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://news.ycombinator.com/"
+}

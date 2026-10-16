@@ -1,0 +1,212 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 1000,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "before-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：新建流程验收，今天的小事记在这里。\",\"项目\"]"
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "undo",
+   "wait": 3500,
+   "text": ".plan-card .plan-receipt-line",
+   "textResult": ""
+  },
+  {
+   "check": "JSON.stringify([memo.value, document.getElementById(\"editor\").textContent, kind.value])",
+   "shot": "after-undo",
+   "wait": 200,
+   "result": "[\"随手记\",\"随手记：新建流程验收，今天的小事记在这里。\",\"项目\"]"
+  }
+ ],
+ "tag": "main-pc3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8943/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 109.906,
+ "timedOut": false,
+ "stepCount": 42,
+ "steps": [
+  {
+   "text": "读出页面表单控件",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "新建笔记并查看表单",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "关闭弹窗并查看备注区",
+   "error": false
+  },
+  {
+   "text": "按键 「Escape」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认弹窗状态并定位正文编辑区",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "备注写随手记并回车 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "点击 · 被别的东西挡住",
+   "error": true
+  },
+  {
+   "text": "查看备注输入框位置与遮挡",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "填备注并回车",
+   "error": false
+  },
+  {
+   "text": "填 「#memo」",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "读备注框的回车处理逻辑",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认回车生效并读后续脚本",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "清掉误开的弹窗并读脚本前段",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "写正文、点刷新、分类选项目",
+   "error": false
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "新建笔记写标题并保存",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "核对最终状态并解除滚动锁",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  }
+ ],
+ "answer": "五步都走完了，但最后一步有个要说清楚的地方：保存按钮点了、弹窗也关了，可浏览器把这次保存请求记成「已取消」。\n\n验收执行结果\n前四步页面可验证，保存未确认落库\n备注\n推荐\n1\n随手记 · 回车后出现「备注已保存」\n输入框仍是随手记\n正文\n1\n随手记：新建流程验收，今天的小事记在这里。\n你没说正文内容，我填了一句，可改\n刷新\n1\n点了，页面无任何变化\n这个按钮没绑任何行为\n分类\n1\n已选项目，多出「项目名」输入框\n我没填项目名\n第二条笔记\n1\n标题 草稿-OLD7731 → 周会纪要，点保存\n请求被取消，未确认\n保存那一步：请求确实带着「周会纪要」发出去了，但结果是 net::ERR_ABORTED，页面也没有笔记列表能佐证，所以我不说它存成功了。\n再点一次保存确认\n\n两件我顺手处理的事：一是我最开始误点了一次「新建笔记」，那个弹窗没有关闭按钮、还锁住了页面滚动，我把它删了没有保存；二是保存后页面自己残留了滚动锁（body overflow:hidden），我给解开了。\n\n还原填写（3 处）\n全文 · 约 44 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8943/"
+}

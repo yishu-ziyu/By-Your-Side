@@ -1,0 +1,37 @@
+{
+ "midInfo": null,
+ "tag": "m-main-T5-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/search",
+ "prompt": "在站内搜索“部署”。",
+ "secs": 18.302,
+ "timedOut": false,
+ "stepCount": 5,
+ "steps": [
+  {
+   "text": "搜索“部署”",
+   "error": false
+  },
+  {
+   "text": "填 「@2」",
+   "error": false
+  },
+  {
+   "text": "点 「搜索」",
+   "error": false
+  },
+  {
+   "text": "处理这一步",
+   "error": false
+  },
+  {
+   "text": "查看搜索结果是否已出现",
+   "error": false
+  }
+ ],
+ "answer": "已在搜索框填入“部署”并点了「搜索」，页面回执显示「已提交：go」。不过页面本身没有渲染出结果列表，也没有新开结果页，目前只能确认查询已提交。\n\n已提交，收不回\n来源\n切过去看\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": "已提交：go | 部署",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/search"
+}

@@ -1,0 +1,12 @@
+{
+ "search": {"from": "PVG", "to": "NRT", "date": "2026-11-20", "adults": 2, "preferredCarriers": ["Air China", "ANA"]},
+ "flights": [
+  {"id":"f1","flight":"MU 5071 + MU 2701","carrier":"China Eastern","depart":"07:10","arrive":"14:55","stops":1,"via":"Qingdao","fare":1890},
+  {"id":"f2","flight":"9C 6217","carrier":"Spring Airlines","depart":"06:25","arrive":"10:05","stops":0,"fare":2140},
+  {"id":"f3","flight":"NH 920","carrier":"ANA","depart":"13:40","arrive":"17:25","stops":0,"fare":2460},
+  {"id":"f4","flight":"CA 929","carrier":"Air China","depart":"09:05","arrive":"12:50","stops":0,"fare":2580},
+  {"id":"f5","flight":"CA 157 + CA 421","carrier":"Air China","depart":"08:00","arrive":"16:30","stops":1,"via":"Beijing","fare":2010},
+  {"id":"f6","flight":"JL 876","carrier":"Japan Airlines","depart":"10:15","arrive":"14:00","stops":0,"fare":2990}
+ ],
+ "taxPerAdult": 320
+}

@@ -1,0 +1,21 @@
+{
+ "tag": "p483dbg-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/shop",
+ "dbg": [
+  "T service_worker chrome-extension://nkeimhogjdpnpccoofpliimaahmaaome/thunk.js",
+  "T service_worker chrome-extension://olaembcfdnkeapggchemoobkfahldlig/background.js",
+  "T background_page chrome-extension://olaembcfdnkeapggchemoobkfahldlig/inproc.html",
+  "T page http://127.0.0.1:8931/shop",
+  "T page chrome-extension://olaembcfdnkeapggchemoobkfahldlig/sidepanel.html"
+ ],
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "open",
+   "line": "以后在这个网站加套餐，我会点套餐卡片里的“加入购物车”，不用“一键加入推荐”的链接，要我记住吗？",
+   "undo": false
+  }
+ ],
+ "memoryDecisions": []
+}

@@ -1,0 +1,34 @@
+{
+ "result": {
+  "firstConfirmShown": true,
+  "firstPageOverlay": true,
+  "postsBeforeDecline": 0,
+  "panelConfirmCardsAfterDecline": 1,
+  "dialogsAfterDecline": 0,
+  "panelConfirmCardsAtEnd": 1,
+  "postsAfterDecline": 0,
+  "toolResults": [
+   "用户拒绝发送（选了「先不发」）：没有点「发送」，草稿还留在页面上。这一轮之后的发送都会被拦下，不会再问。不要再试，不要换别的办法发出去：不要按回车，不要点别的按钮，也不要用脚本。现在就收尾：告诉用户没有发送，或者问用户要不要发。",
+   "用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。",
+   "Clicked 消息. Event dispatch confirmed. Nothing on the page changed in a way attributable to this click. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly click the same target again — observe the page first.",
+   "用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。",
+   "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendNote\":\"脚本里的发送动作（发送）没有发出：用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 692280350 shows \"团队聊天\" — http://127.0.0.1:33159/; that is the page now.]"
+  ],
+  "retries": [
+   {
+    "id": "retry-click",
+    "toolText": "用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。"
+   },
+   {
+    "id": "retry-enter",
+    "toolText": "用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。"
+   },
+   {
+    "id": "retry-script-requestSubmit",
+    "toolText": "<page-content untrusted>\n{\"value\":{\"value\":\"ok\",\"sendNote\":\"脚本里的发送动作（发送）没有发出：用户这一轮已经拒绝发送（选了「先不发」）：这一轮所有发送都已拦下，不会再问，这次也没有发出去。不要再试任何办法发送（点按钮、回车、提交表单、requestSubmit、脚本都一样会被拦）。现在就收尾：告诉用户没有发送，或者问用户要不要发。\"},\"steps\":1}\n</page-content>\n[After this program the working tab 692280350 shows \"团队聊天\" — http://127.0.0.1:33159/; that is the page now.]"
+   }
+  ],
+  "toolTextsSinceDecline": 5
+ },
+ "posts": []
+}

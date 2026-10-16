@@ -1,0 +1,54 @@
+{
+ "midInfo": {
+  "at": 3.612,
+  "html": "正在填写\n会去 fnbjglhppbkgmjeehablkfilmmefjolo · 不会做 提交、付款\n填写报名表三项\n填写"
+ },
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 500,
+   "text": ".plan-card",
+   "textResult": "已填 3 项 · 用时 9 秒 · 撤销 · \n\nI'll fill the three fields and leave the buttons untouched.\n\n会去 fnbjglhppbkgmjeehablkfilmmefjolo · 不会做 提交、付款\n填写报名表三项\n填写 ×3\n姓名现在是：「王五」\n手机现在是：「13700000000」\n备注现在是：「带水」\n共 9 秒，其中想了 4 秒"
+  },
+  {
+   "click": ".plan-card .plan-details",
+   "shot": "details",
+   "wait": 1200
+  },
+  {
+   "click": ".plan-card .plan-undo",
+   "shot": "after-undo",
+   "wait": 2500,
+   "text": ".plan-card",
+   "textResult": "已填 3 项 · 用时 9 秒 · 撤销 · "
+  },
+  {
+   "shot": "final",
+   "wait": 300,
+   "check": "JSON.stringify([...document.querySelectorAll(\"input:not([type=hidden]):not([type=radio]):not([type=checkbox]),textarea,select\")].map(e=>e.value).filter(Boolean))",
+   "result": "[\"1\"]"
+  }
+ ],
+ "tag": "p440v2-01",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名王五，手机13700000000，备注带水。不要提交。",
+ "secs": 10.838,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "填写报名表三项",
+   "error": false
+  },
+  {
+   "text": "填写 ×3",
+   "error": false
+  }
+ ],
+ "answer": "三项都填好了：姓名王五、手机13700000000、备注带水。人数保持原来的 1，「保存」和「提交报名」都没点。\n\n复制",
+ "check": "[\"王五\",\"13700000000\",\"1\",\"带水\"]",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

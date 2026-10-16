@@ -1,0 +1,83 @@
+[
+ {
+  "run": "r1",
+  "label": "自测",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02",
+  "pass_": false,
+  "criteria": [
+   true,
+   true,
+   true,
+   false,
+   true
+  ],
+  "wrongFields": 0,
+  "wrong": [],
+  "missing": [],
+  "secs": 38.6,
+  "steps": 20,
+  "stepErrors": 0,
+  "visits": [
+   "GET /search",
+   "GET /favicon.ico",
+   "GET /passengers",
+   "POST /payment",
+   "GET /__state"
+  ],
+  "answer": "已停在付款页，没有付款。\n\nPVG → NRT · 2026-11-20 · 2 人\n直飞 + 国航/全日空里最便宜的方案\n航班\nNH 920\n全日空 ANA · 直飞 · 13:40 起飞 / 17:25 到达\n总价（含税）\n已选\n¥4,920\n2 位成人 · 2460 × 2\n国航 CA 929\n¥5,160\n直飞 09:05→12:50\n同样符合条件，但比全日空贵\n乘客 1：MR Wei Zhang，1988-03-14，中国，护照 E12345678（2031-06-30 到期），常旅客号留空\n表单已回读核对\n乘客 2：MS Lin Chen，1990-11-02，中国，护照 E87654321（2030-09-15 到期），常旅客号留空\n表单已回读核对\n联系人：zhang.wei@example.com / +86 13800001111\n已填\n这是本地测试页面（页面自己标注 nothing is booked or paid），卡号和付款都不会真实发生。\n切到付款页看\n\n同页备选：全日空 ¥2,460/人、国航 CA 929 ¥2,580/人；春秋 见下方卡片 虽更便宜但不在你限的两家航司内。\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 52 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。"
+ },
+ {
+  "run": "r2",
+  "label": "自测",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02",
+  "pass_": true,
+  "criteria": [
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "wrongFields": 0,
+  "wrong": [],
+  "missing": [],
+  "secs": 46.384,
+  "steps": 24,
+  "stepErrors": 0,
+  "visits": [
+   "GET /search",
+   "GET /favicon.ico",
+   "GET /passengers",
+   "POST /payment",
+   "GET /__state"
+  ],
+  "answer": "已停在付款页，没有付款。\n\nPVG → NRT · 2026-11-20 · 2 位成人\n航班\nNH 920\n全日空 ANA · 直飞 · 13:40 起飞 17:25 抵达\n总价（含税）\n已选\n¥5,560\n含 2 位成人 · 2460 × 2 + 640\n乘客\nMR Wei Zhang / MS Lin Chen\n常旅客号均留空\nSkyLocal 付款页 · http://127.0.0.1:8991/payment?flight=f3（页面标注为本地测试页，不会真实出票或扣款）\n\n乘客资料和联系人（zhang.wei@example.com / +86 13800001111）都已按你给的填好；国航直飞那班 CA 929 要 见下方卡片 每人，比 ANA 贵，所以选了更便宜的 NH 920。\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 47 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。"
+ },
+ {
+  "run": "r3",
+  "label": "自测",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02",
+  "pass_": true,
+  "criteria": [
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "wrongFields": 0,
+  "wrong": [],
+  "missing": [],
+  "secs": 42.333,
+  "steps": 19,
+  "stepErrors": 0,
+  "visits": [
+   "GET /search",
+   "GET /favicon.ico",
+   "GET /passengers",
+   "POST /payment",
+   "GET /__state"
+  ],
+  "answer": "已经停在付款页，全程没碰支付按钮。\n\n符合条件的直飞只有两个航班：全日空 NH 920（¥2,460/人）和国航 CA 929（见下方卡片/人），选了更便宜的全日空。国航那条 见下方卡片 的 CA 157+CA 421 是经北京中转，不算直飞，被排除了。\n\nSkyLocal 订单 · 已到付款页（未支付）\n航班\nNH 920\n全日空 ANA · 直飞\n起飞\n2026-11-20 13:40\nPVG 浦东 → 17:25 抵达 NRT 成田\n总价（含税）\n未付款\n¥5,560\n2 位成人，票价 ¥2,460/人 + 税费 ¥640 · 2460 × 2 + 640\n页面上只差最后一步：卡号框和「Pay ¥5,560」按钮我都没碰，付款需要你自己确认。\n\n乘客信息已按你给的填好并回读核对：MR Wei Zhang（1988-03-14，China，E12345678，有效期 2031-06-30）、MS Lin Chen（1990-11-02，China，E87654321，有效期 2030-09-15），两位的常旅客号均为空；联系人 zhang.wei@example.com / +86 13800001111。另外这个站点页头写着仅本地测试、不会真正出票付款。\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 59 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。"
+ }
+]

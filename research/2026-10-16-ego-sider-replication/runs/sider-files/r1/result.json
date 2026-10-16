@@ -1,0 +1,58 @@
+{
+  "midInfo": null,
+  "tag": "sider-files/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/files/research",
+  "prompt": "把这页调研整理成一份 PPT 文件和一份 PDF 给我，再每天帮我监控表里三个产品的价格。",
+  "secs": 151.41,
+  "timedOut": false,
+  "stepCount": 10,
+  "steps": [
+    {
+      "text": "查看记忆 · 这一步超时了",
+      "error": true
+    },
+    {
+      "text": "打开标签页",
+      "error": false
+    },
+    {
+      "text": "生成并下载 PPTX 和 PDF · 没做成",
+      "error": true
+    },
+    {
+      "text": "构建 PPTX/PDF 并下载 PDF",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "下载 PPTX",
+      "error": false
+    },
+    {
+      "text": "查看记忆 · 这一步超时了",
+      "error": true
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    },
+    {
+      "text": "在页面里运行代码",
+      "error": false
+    }
+  ],
+  "answer": "助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。\n\n在页面上查看\n来源\n切过去看",
+  "check": "{\"url\":\"http://127.0.0.1:8995/files/research\",\"inputs\":{},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nAI browser agent market — research notes\\nKey findings\\nMarket size 2026 est. $4.2B (draft estimate: $9B — superseded)\\nTop players: EGO, Sider, BYS\\nMain buyer: SMB operations teams\\nPrices to watch\\nSider Pro\\t$16.7/mo\\nEGO Plus\\t$20/mo\\nBYS\\tfree\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/files/research",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}

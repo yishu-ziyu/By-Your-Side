@@ -1,0 +1,45 @@
+{
+ "midInfo": null,
+ "tag": "formfill/a-main-d63-3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8966/a",
+ "prompt": "打开的是本地测试页注册表单。请帮我填写：姓名 林晓雨，邮箱 linxy@example.com，手机号 13900001234，公司 青石科技，职位选 产品经理，勾选「我同意服务条款」，不要勾选订阅资讯。只填写，不要点注册。",
+ "secs": 13.834,
+ "timedOut": false,
+ "stepCount": 7,
+ "steps": [
+  {
+   "text": "填写注册表单",
+   "error": false
+  },
+  {
+   "text": "填 「@3」",
+   "error": false
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "填 「@5」",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点击",
+   "error": false
+  }
+ ],
+ "answer": "表单填好了，注册按钮没动。\n\n注册表单填写结果\n姓名\n林晓雨\n邮箱\nlinxy@example.com\n手机号\n13900001234\n公司\n青石科技\n职位\n产品经理\n下拉已选中\n我同意服务条款\n已勾选\n订阅产品资讯\n保持未勾选\n「注册」按钮保持未点击，等你自己确认后再提交。\n还原填写（6 处）\n全文 · 约 13 秒读完",
+ "check": "{\"name\":\"林晓雨\",\"email\":\"linxy@example.com\",\"phone\":\"13900001234\",\"company\":\"青石科技\",\"role\":\"产品经理\",\"agree\":true,\"news\":false}",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8966/a"
+}

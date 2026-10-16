@@ -1,0 +1,113 @@
+{
+ "midInfo": null,
+ "tag": "ego-passenger/r2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8991/search",
+ "prompt": "帮我订一下11月20日上海浦东(PVG)飞东京成田(NRT)的机票，2个大人。只要直飞，航空公司只考虑国航(Air China)或全日空(ANA)，在符合条件的里面选最便宜的。乘客表请这样填：乘客1：Title 选 MR，First name Wei，Last name Zhang，Date of birth 1988-03-14，Nationality 选 China，Passport number E12345678，Passport expiry 2031-06-30，Frequent flyer no. 留空。乘客2：Title 选 MS，First name Lin，Last name Chen，Date of birth 1990-11-02，Nationality 选 China，Passport number E87654321，Passport expiry 2030-09-15，Frequent flyer no. 留空。联系人：Email zhang.wei@example.com，Phone +86 13800001111。两位乘客的常旅客号都留空。停在付款页，不要付款，告诉我航班号、起飞时间和总价。",
+ "secs": 46.384,
+ "timedOut": false,
+ "stepCount": 24,
+ "steps": [
+  {
+   "text": "筛选直飞+ANA并选中NH 920",
+   "error": false
+  },
+  {
+   "text": "点击 ×2",
+   "error": false
+  },
+  {
+   "text": "点 「Select」",
+   "error": false
+  },
+  {
+   "text": "处理这一步 ×2",
+   "error": false
+  },
+  {
+   "text": "填写两位乘客与联系人信息",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「@437」",
+   "error": false
+  },
+  {
+   "text": "填 「@438」",
+   "error": false
+  },
+  {
+   "text": "填 「@439」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「@441」",
+   "error": false
+  },
+  {
+   "text": "填 「@442」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「@445」",
+   "error": false
+  },
+  {
+   "text": "填 「@446」",
+   "error": false
+  },
+  {
+   "text": "填 「@447」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「@449」",
+   "error": false
+  },
+  {
+   "text": "填 「@450」",
+   "error": false
+  },
+  {
+   "text": "填 「@452」",
+   "error": false
+  },
+  {
+   "text": "填 「@453」",
+   "error": false
+  },
+  {
+   "text": "进入付款页",
+   "error": false
+  },
+  {
+   "text": "点 「Continue to pay…」",
+   "error": false
+  },
+  {
+   "text": "处理这一步 ×2",
+   "error": false
+  }
+ ],
+ "answer": "已停在付款页，没有付款。\n\nPVG → NRT · 2026-11-20 · 2 位成人\n航班\nNH 920\n全日空 ANA · 直飞 · 13:40 起飞 17:25 抵达\n总价（含税）\n已选\n¥5,560\n含 2 位成人 · 2460 × 2 + 640\n乘客\nMR Wei Zhang / MS Lin Chen\n常旅客号均留空\nSkyLocal 付款页 · http://127.0.0.1:8991/payment?flight=f3（页面标注为本地测试页，不会真实出票或扣款）\n\n乘客资料和联系人（zhang.wei@example.com / +86 13800001111）都已按你给的填好；国航直飞那班 CA 929 要 见下方卡片 每人，比 ANA 贵，所以选了更便宜的 NH 920。\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 47 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": "{\"path\":\"/payment?flight=f3\",\"flight\":\"NH 920\",\"dep\":\"2026-11-20 13:40\",\"total\":\"¥5,560\"}",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8991/payment?flight=f3"
+}

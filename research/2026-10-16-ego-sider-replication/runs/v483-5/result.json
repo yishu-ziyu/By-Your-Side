@@ -1,0 +1,18 @@
+{
+ "tag": "v483-5",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/table",
+ "dbg": [],
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "remembered",
+   "line": "记下了：以后在这个网站查看表格时，我会看价格列，不再看库存列。这个网站撤销",
+   "undo": true
+  }
+ ],
+ "memoryDecisions": [
+  "{\"time\":\"2026-10-15T19:57:42.890Z\",\"sessionId\":\"9ce4280f-fe64-4df3-bec1-9c90639b07f0\",\"runId\":\"55597009-ed07-4913-95aa-4bdc20339e8d\",\"goalRevision\":\"608763f8e0d9d5dec7eaf1b1fb2c5a0b129e6de57e83e37bc85830ddeb7b3ec6\",\"turn\":0,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"key\":\"default:28ea2558-2613-4241-8a28-1f3da2487ecc\",\"status\":\"skipped\",\"reason\":\"not-correction\"}}",
+  "{\"time\":\"2026-10-15T19:57:57.309Z\",\"sessionId\":\"9ce4280f-fe64-4df3-bec1-9c90639b07f0\",\"runId\":\"55597009-ed07-4913-95aa-4bdc20339e8d\",\"goalRevision\":\"608763f8e0d9d5dec7eaf1b1fb2c5a0b129e6de57e83e37bc85830ddeb7b3ec6\",\"turn\":3,\"type\":\"memory_ask_decision\",\"data\":{\"source\":\"message\",\"status\":\"learned\",\"reason\":\"learned\",\"scope\":\"site\",\"entryIds\":[\"a5a3c882-68ef-41ff-9408-f2d821915555\"]}}"
+ ]
+}

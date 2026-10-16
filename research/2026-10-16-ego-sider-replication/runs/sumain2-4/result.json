@@ -1,0 +1,49 @@
+{
+ "midInfo": null,
+ "tag": "sumain2-4",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/signup",
+ "prompt": "帮我把报名表填上：姓名张三，手机13800000000，人数2，备注带一把伞。然后点保存。",
+ "secs": 27.946,
+ "timedOut": false,
+ "stepCount": 8,
+ "steps": [
+  {
+   "text": "填写报名表并点保存 · 没找到目标",
+   "error": true
+  },
+  {
+   "text": "填 「loc=role:textbo…」 ×2",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "填 「loc=role:textbo…」",
+   "error": false
+  },
+  {
+   "text": "选择人数2并点保存",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点击保存并核对结果",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  }
+ ],
+ "answer": "都填好并保存了，页面回显「已提交：save」。\n\n周末徒步活动报名\n姓名\n张三\n手机\n13800000000\n人数\n2\n下拉选中\n备注\n带一把伞\n已随表单一起保存\n\n旁边那个「提交报名」按钮我没点。要真报名出去的话说一声，我再点它。\n\n已提交，收不回\n来源\n切过去看\n全文 · 约 11 秒读完\n表单已经交给网站，扩展撤不回。要改请在网站上修改或取消。",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8931/signup"
+}

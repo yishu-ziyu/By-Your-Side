@@ -1,0 +1,15 @@
+{
+ "tag": "smoke2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://example.com/",
+ "prompt": "标题是什么",
+ "secs": 4.757,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "页面标题是「Example Domain」。\n\n复制\n已复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://example.com/"
+}

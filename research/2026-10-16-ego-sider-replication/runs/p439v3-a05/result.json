@@ -1,0 +1,74 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": "Search the site | Search | English (US)"
+  },
+  {
+   "click": ".msg.assistant .page-ref",
+   "shot": "after-ref-click",
+   "wait": 2500
+  }
+ ],
+ "tag": "p439v3-a05",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://developer.mozilla.org/en-US/",
+ "prompt": "这个页面上怎么搜索文档？",
+ "secs": 26.234,
+ "timedOut": false,
+ "stepCount": 11,
+ "steps": [
+  {
+   "text": "打开 MDN 搜索框确认用法 · 没做成",
+   "error": true
+  },
+  {
+   "text": "点 「Search the site」",
+   "error": false
+  },
+  {
+   "text": "看搜索框打开后的样子",
+   "error": false
+  },
+  {
+   "text": "读搜索框的快捷键提示",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "按键 「Escape」",
+   "error": false
+  },
+  {
+   "text": "圈出 「全站搜索入口」 · 选择器匹配 2 个元素",
+   "error": true
+  },
+  {
+   "text": "圈出 「首页大搜索框」 · 没找到目标",
+   "error": true
+  },
+  {
+   "text": "重新读取搜索入口",
+   "error": false
+  },
+  {
+   "text": "圈出 「全站搜索」",
+   "error": false
+  },
+  {
+   "text": "圈出 「首页大搜索框」",
+   "error": false
+  }
+ ],
+ "answer": "MDN 的搜索就在页头右上角那个放大镜按钮和首页中间的大搜索框，两个我已经圈出来了。\n\n在 MDN 上搜文档\n1\n点开搜索框\n页头右上角的「Search the site」，或首页中间的「Search」大框\n2\n输入关键词\n边打字边出下拉建议（HTML、CSS、JS 属性/方法都能搜到）\n3\n回车打开\n选中建议项按 Enter 直接跳转；Esc 关掉搜索框\n想找中文文档，右上角先切到「English (US)」旁边的语言选择换成中文，搜索结果也会跟着变。\ndeveloper.mozilla.org/en-US/ 当前页面\n\n按下去会弹出一个带自动补全的搜索框，我试过了确实是这个行为；不过页面上没写键盘快捷键，所以我不乱猜一个给你。\n\n在页面上查看\n来源\n切过去看\n全文 · 约 33 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://developer.mozilla.org/en-US/"
+}

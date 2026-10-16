@@ -1,0 +1,30 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "text": ".msg.assistant .page-ref",
+   "shot": "refs",
+   "wait": 300,
+   "textResult": ""
+  },
+  {
+   "text": ".msg.assistant strong",
+   "shot": "bold",
+   "wait": 300,
+   "textResult": ""
+  }
+ ],
+ "tag": "p439v3-fp4",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://en.wikipedia.org/wiki/Chrome_extension",
+ "prompt": "这篇文章主要讲什么？两句话。",
+ "secs": 9.832,
+ "timedOut": false,
+ "stepCount": 0,
+ "steps": [],
+ "answer": "这篇词条讲的是 Google Chrome 这个浏览器的来龙去脉：从 2008 年发布、基于开源项目 Chromium 但自有专有许可，到渲染引擎从 WebKit 换成 Blink，再到功能（网页标准、扩展商店、Manifest V3、密码管理、无痕模式）、隐私与安全争议，以及各平台的发布节奏和版本号规则。后半部分还记录了它的市场统治力（全球约 71% 份额、36 亿用户）和批评声音。\n\n复制",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://en.wikipedia.org/wiki/Google_Chrome#Extensions"
+}

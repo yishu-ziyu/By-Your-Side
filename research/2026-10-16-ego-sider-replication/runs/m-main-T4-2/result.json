@@ -1,0 +1,37 @@
+{
+ "midInfo": null,
+ "tag": "m-main-T4-2",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/chat",
+ "prompt": "回复小王：评审明天下午两点开始，然后发送。",
+ "secs": 24.421,
+ "timedOut": false,
+ "stepCount": 4,
+ "steps": [
+  {
+   "text": "填入回复并发送 · 网页脚本程序里不能点「发送」",
+   "error": true
+  },
+  {
+   "text": "填 「@4」",
+   "error": false
+  },
+  {
+   "text": "点击 · 网页脚本程序里不能点「发送」",
+   "error": true
+  },
+  {
+   "text": "你没让发，草稿还在",
+   "error": false
+  }
+ ],
+ "answer": "回复内容已经填在输入框里，但发送这步你选择了「不发」，所以消息没有发出去，草稿还留在页面上。要发的话你自己点一下「发送」就行。\n\n还原填写（1 处）",
+ "check": 1,
+ "sawConfirm": true,
+ "confirmEvents": [
+  {
+   "at": 11.028
+  }
+ ],
+ "siteUrl": "http://127.0.0.1:8931/chat"
+}

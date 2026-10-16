@@ -1,0 +1,13 @@
+{
+ "tag": "p483rp-fix-shop",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8931/shop",
+ "runningAtSteer": true,
+ "cards": [
+  {
+   "state": "open",
+   "line": "以后在这个网站加套餐，我都点击套餐卡片里的“加入购物车”按钮，不使用“一键加入推荐”的链接，要我记住吗？",
+   "undo": false
+  }
+ ]
+}

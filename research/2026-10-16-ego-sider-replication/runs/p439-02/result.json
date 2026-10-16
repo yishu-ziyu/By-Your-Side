@@ -1,0 +1,20 @@
+{
+ "tag": "p439-02",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://en.wikipedia.org/wiki/Chrome_extension",
+ "prompt": "这个页面怎么切换成中文？该点哪里？",
+ "secs": 18.209,
+ "timedOut": false,
+ "stepCount": 1,
+ "steps": [
+  {
+   "text": "打开页面 Chrome extension - 维基百科，自由的百科…",
+   "error": false
+  }
+ ],
+ "answer": "你原来那一页是维基的 429 错误页（请求过多），错误页上根本没有语言入口；我把你带到了中文站，界面已经是中文了。\n\n怎么把维基条目切成中文\n1\n最直接：改网址域名\n把 en.wikipedia.org 改成 zh.wikipedia.org，同一个条目直接进中文站\n2\n在英语页上点：左侧栏最下方的「语言 / N languages」\n展开后点「中文（简体）」，或直接点语言数量数字\n3\n顺手定一下简繁\n弹窗里选「中国大陆简体」，之后中文站默认简体，不再混杂\n不过 Chrome extension 这个条目在中文维基还不存在，所以现在看到的是「尚未有该条目」的提示，不是条目正文。\n在页面上查看\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://zh.wikipedia.org/wiki/Chrome_extension"
+}

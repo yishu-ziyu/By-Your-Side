@@ -1,0 +1,213 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 800,
+   "text": ".plan-card",
+   "textResult": ""
+  }
+ ],
+ "tag": "om440-pc3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 104.988,
+ "timedOut": false,
+ "stepCount": 47,
+ "steps": [
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看当前页面状态",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×3",
+   "error": false
+  },
+  {
+   "text": "查看正文编辑器周边结构",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "写正文并刷新、选分类项目 · 无效的选择器",
+   "error": true
+  },
+  {
+   "text": "点 「正文」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "点击 · 无效的选择器",
+   "error": true
+  },
+  {
+   "text": "刷新并把分类改成项目",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点新建笔记看表单",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "填标题并找保存按钮",
+   "error": false
+  },
+  {
+   "text": "填 「loc=css:input[a…」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "保存并核验",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "排查保存是否生效",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×3",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "看保存逻辑源码",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  },
+  {
+   "text": "读页面全部脚本以弄清保存逻辑",
+   "error": false
+  },
+  {
+   "text": "检查滚动锁与服务端记录 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "抓取 · fetch 拒绝本地/私网地址…",
+   "error": true
+  },
+  {
+   "text": "重开弹窗改标题并保存",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "填 「input#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "核验最终状态并恢复页面",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码 ×2",
+   "error": false
+  }
+ ],
+ "answer": "验收流程跑完了，六步都落在页面上：\n\n备注：输入「随手记」并回车 → 页面出现「备注已保存」状态提示。\n正文：写了「随手记：这是随手记的正文，记录一下今天要办的事。」\n刷新：点过「刷新」，备注和正文内容都还在。\n分类：下拉选中「项目」。\n新建笔记 + 保存：弹窗标题改成「周会纪要」，弹窗里提示「原标题『草稿-OLD7731』已替换」，点保存后发出的请求是 /save?title=周会纪要。\n\n三件需要你知道的事：\n\n我第一次点保存时带的是弹窗自带的旧标题 草稿-OLD7731（弹窗默认填了这个值，我起初把标题填到了「项目名」输入框），所以那一次请求确实带着旧标题发出去了。之后才改对重存了一次。\n保存请求在网络记录里显示为 已取消（ERR_ABORTED），备注自动保存那次也一样；页面本身不给保存结果提示，所以我只能确认请求 URL 带的是「周会纪要」，没法从页面上确认服务器真的落库。\n这个「新建笔记」弹窗打开时会锁住页面滚动、关闭时又不恢复——我把滚动锁解除了；另外我误填的「项目名」框已清空。弹窗里的口令和提货码两个带凭据的字段我一个字都没碰。\n还原填写（4 处）\n全文 · 约 51 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

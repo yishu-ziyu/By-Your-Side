@@ -1,0 +1,25 @@
+{
+ "midInfo": null,
+ "tag": "formfill/b-440-d61-r33",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8966/b",
+ "prompt": "打开的是本地测试页项目登记表。请填写：项目名 星河计划；项目信息里的标题 年度增长报告；副标题 第三季度复盘；首篇文章的标题 用户访谈小结；首篇文章的备注 初稿待审。其他区域的字段留空。只填写，不要点保存。",
+ "secs": 13.454,
+ "timedOut": false,
+ "stepCount": 2,
+ "steps": [
+  {
+   "text": "填写项目登记表五个字段并回读",
+   "error": false
+  },
+  {
+   "text": "填写 ×5",
+   "error": false
+  }
+ ],
+ "answer": "五个字段都填好了，其他区域保持空白，保存按钮没点。\n\n项目名：星河计划\n标题（项目信息）：年度增长报告\n副标题：第三季度复盘\n首篇文章标题：用户访谈小结\n首篇文章备注：初稿待审\n复制\n已复制",
+ "check": "{\"proj\":\"星河计划\",\"title1\":\"年度增长报告\",\"subtitle\":\"第三季度复盘\",\"title2\":\"用户访谈小结\",\"memo\":\"初稿待审\",\"memotitle\":\"\",\"abbr\":\"\"}",
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8966/b"
+}

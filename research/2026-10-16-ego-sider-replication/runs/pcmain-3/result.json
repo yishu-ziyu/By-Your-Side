@@ -1,0 +1,105 @@
+{
+ "midInfo": null,
+ "tag": "pcmain-3",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 65.508,
+ "timedOut": false,
+ "stepCount": 22,
+ "steps": [
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "点 「备注」",
+   "error": false
+  },
+  {
+   "text": "输入文本",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "列出页面所有输入框，找正文编辑区",
+   "error": false
+  },
+  {
+   "text": "写正文并点刷新",
+   "error": false
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "分类选项目并新建笔记",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "查看新建笔记表单的字段与保存按钮",
+   "error": false
+  },
+  {
+   "text": "标题写周会纪要并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "确认保存结果",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "核对保存后的页面与本地状态",
+   "error": false
+  }
+ ],
+ "answer": "验收流程走完了，前四步都有页面回执，最后的「保存」点了但没有成功提示。\n\n新建笔记验收 · 执行结果\n备注写「随手记」并回车 → 页面显示「备注已保存」\n回车前输入框为空，回车后仍在框内\n正文写入「随手记：验收新建流程，记录一下今天的测试结论。」\n正文是你没指定的内容，我按随手记语境补的一句\n点刷新 → 备注和正文都还在\n刷新没清掉这两项\n分类选「项目」 → 下拉当前值确认为 项目\n新建一条笔记，标题写「周会纪要」，点保存\n表单已关闭，但页面无成功提示\n保存那一步触发的 /save?title=周会纪要 请求在网络里显示为 canceled，没有成功回执，页面里也搜不到「周会纪要」字样——所以这条笔记到底存没存进去，我没法确认。\n\n页面上的口令、提货两个字段我没动。\n\n还原填写（3 处）\n来源\n切过去看\n全文 · 约 35 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

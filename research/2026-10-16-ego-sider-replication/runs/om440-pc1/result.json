@@ -1,0 +1,145 @@
+{
+ "midInfo": null,
+ "after": [
+  {
+   "shot": "receipt",
+   "wait": 800,
+   "text": ".plan-card",
+   "textResult": ""
+  }
+ ],
+ "tag": "om440-pc1",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "http://127.0.0.1:8941/",
+ "prompt": "新建验收：备注写随手记并回车，正文写好，点刷新，分类选项目，再新建一条笔记，标题写周会纪要，保存。",
+ "secs": 77.065,
+ "timedOut": false,
+ "stepCount": 30,
+ "steps": [
+  {
+   "text": "备注写随手记并回车",
+   "error": false
+  },
+  {
+   "text": "填写",
+   "error": false
+  },
+  {
+   "text": "按键 「Enter」",
+   "error": false
+  },
+  {
+   "text": "查找正文编辑区",
+   "error": false
+  },
+  {
+   "text": "找正文编辑器与保存按钮",
+   "error": false
+  },
+  {
+   "text": "写正文",
+   "error": false
+  },
+  {
+   "text": "填 「#editor」",
+   "error": false
+  },
+  {
+   "text": "点刷新并检查 · 无效的 target",
+   "error": true
+  },
+  {
+   "text": "点 「刷新」 · 无效的 target",
+   "error": true
+  },
+  {
+   "text": "定位刷新按钮 ×2",
+   "error": false
+  },
+  {
+   "text": "点刷新并检查",
+   "error": false
+  },
+  {
+   "text": "点 「刷新」",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "分类选项目",
+   "error": false
+  },
+  {
+   "text": "选择选项",
+   "error": false
+  },
+  {
+   "text": "在页面里运行代码",
+   "error": false
+  },
+  {
+   "text": "新建笔记并查看表单",
+   "error": false
+  },
+  {
+   "text": "点 「新建笔记」",
+   "error": false
+  },
+  {
+   "text": "查看新建笔记表单",
+   "error": false
+  },
+  {
+   "text": "写标题并保存",
+   "error": false
+  },
+  {
+   "text": "填 「#title」",
+   "error": false
+  },
+  {
+   "text": "点 「保存」",
+   "error": false
+  },
+  {
+   "text": "确认保存结果",
+   "error": false
+  },
+  {
+   "text": "核对保存结果 ×2",
+   "error": false
+  },
+  {
+   "text": "找笔记落点与请求",
+   "error": false
+  },
+  {
+   "text": "查找笔记列表",
+   "error": false
+  },
+  {
+   "text": "查看网页请求",
+   "error": false
+  },
+  {
+   "text": "确认保存落点",
+   "error": false
+  },
+  {
+   "text": "确认保存是否落库",
+   "error": false
+  },
+  {
+   "text": "看保存逻辑 ×2",
+   "error": false
+  }
+ ],
+ "answer": "验收六步都已在页面上完成并回读确认：备注「随手记」+回车出现「备注已保存」、正文已填、刷新已点（无可见反应）、分类已是「项目」、第二条笔记弹窗标题已改成「周会纪要」并已点保存（对话框关闭）。唯一没能确认的是保存的服务端结果——页面不显示已保存列表，/save 请求在网络记录里显示被取消。\n\n还原填写（3 处）\n来源\n切过去看",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "http://127.0.0.1:8941/"
+}

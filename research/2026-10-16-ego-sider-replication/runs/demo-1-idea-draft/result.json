@@ -1,0 +1,29 @@
+{
+ "midInfo": null,
+ "tag": "demo-1-idea-draft",
+ "model": "MiniMax-M3.1-Flash-Preview",
+ "url": "https://www.selenium.dev/selenium/web/web-form.html",
+ "prompt": "我有个想法：公司每周五下午搞一次 30 分钟的读书会。帮我写成一段格式完整的提案草稿（目的、时间、形式、第一期书目），填进这个表单的 Textarea，Text input 填标题。不要提交。",
+ "secs": 14.1,
+ "timedOut": false,
+ "stepCount": 3,
+ "steps": [
+  {
+   "text": "填写读书会提案草稿",
+   "error": false
+  },
+  {
+   "text": "填 「@6」",
+   "error": false
+  },
+  {
+   "text": "填 「@8」",
+   "error": false
+  }
+ ],
+ "answer": "标题和草稿都已写入，Submit 没动。\n\nText input：公司周五下午读书会 · 提案（第一期）\nTextarea：648 字，按 目的 / 时间 / 形式 / 第一期书目 / 待确认事项 五段排好\n\n草稿里我自己定了几处，你可能想改：时间定在 16:00–16:30、首期跑 4 期后复盘、书目选了《原则》和《金字塔原理》（外加《非暴力沟通》作延伸选读）。要调时段、换书目或加人手预算，直接说，我改完再写进去。\n\n还原填写（2 处）\n全文 · 约 21 秒读完",
+ "check": null,
+ "sawConfirm": false,
+ "confirmEvents": [],
+ "siteUrl": "https://www.selenium.dev/selenium/web/web-form.html"
+}

@@ -1,0 +1,54 @@
+{
+  "midInfo": null,
+  "tag": "ego-generic/r1",
+  "model": "MiniMax-M3.1-Flash-Preview",
+  "url": "http://127.0.0.1:8995/gen/laptops",
+  "prompt": "看看这页的笔记本，选续航至少 10 小时里最轻的那款，然后打开采购申请表，填上型号、单价、数量 2、理由 出差用，审批人留空，不要提交。",
+  "secs": 24.779,
+  "timedOut": false,
+  "stepCount": 9,
+  "steps": [
+    {
+      "text": "打开采购申请表",
+      "error": false
+    },
+    {
+      "text": "点 「Purchase reques…」",
+      "error": false
+    },
+    {
+      "text": "处理这一步",
+      "error": false
+    },
+    {
+      "text": "填写采购申请表（不提交） · 选择器匹配 5 个元素",
+      "error": true
+    },
+    {
+      "text": "填 「@275」",
+      "error": false
+    },
+    {
+      "text": "填 「@276」",
+      "error": false
+    },
+    {
+      "text": "填 「@277」",
+      "error": false
+    },
+    {
+      "text": "填 「@278」",
+      "error": false
+    },
+    {
+      "text": "读回五个字段确认",
+      "error": false
+    }
+  ],
+  "answer": "表已填好，未点提交，审批人留空。续航 ≥10 小时的四款里 FeatherX 13 最轻。\n\n采购申请表（已填，未提交）\nItem 型号\n最轻\nFeatherX 13\n续航 10.5 h · 1.05 kg\nUnit price 单价\n¥9,299\n页面标价\nQuantity 数量\n2\nReason 理由\n出差用\nApprover 审批人\n（留空）\n按你说的没填\nSubmit 按钮我没碰，页面显示的也只是本地测试页，不会真提交。\nhttp://127.0.0.1:8995/gen/laptops 与 /gen/form，五个字段已逐个读回确认\n还原填写（4 处）\n来源\n切过去看\n全文 · 约 42 秒读完",
+  "check": "{\"url\":\"http://127.0.0.1:8995/gen/form\",\"inputs\":{\"g_item\":\"FeatherX 13\",\"g_price\":\"9299\",\"g_qty\":\"2\",\"g_reason\":\"出差用\",\"g_appr\":\"\"},\"hidden\":[],\"text\":\"Local test page only (本地测试页) — nothing real happens.\\n\\nPurchase request\\nItem Unit price Quantity Reason Approver (leave blank) Submit\"}",
+  "sawConfirm": false,
+  "confirmEvents": [],
+  "siteUrl": "http://127.0.0.1:8995/gen/form",
+  "build": "main@ba3d11a8cc635cf84e850130fa2002fadeaf4a02"
+}
