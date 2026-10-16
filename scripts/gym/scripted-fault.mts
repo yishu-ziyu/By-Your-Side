@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { REPO, launchRealPath, requireHeadless, until, sleep } from '../acceptance/real-path/harness.mts';
 import { startScriptedModel, type Step } from '../acceptance/real-path/scripted-model.mts';
 import { modelStorageItems } from '../acceptance/real-path/inproc-config.mts';
-import { startFixture, promptFor } from './fixture.mjs';
+import { startFixture, requestFor } from './fixture.mjs';
 import { evaluate, claimFrom } from './evaluator.mjs';
 import { installAudit, installBudget } from './instrumentation.mts';
 requireHeadless();
@@ -44,7 +44,7 @@ try{
  await rp.evaluate(panel,`chrome.storage.local.set(${JSON.stringify(modelStorageItems({providerId:'custom',modelId:'demo-model',baseUrl:model.baseUrl,credential:{type:'api_key',key:'local-scripted-no-secret'}}))}).then(()=>true)`);
  await until(async()=>await rp.evaluate(panel,"document.querySelector('#status-dot')?.classList.contains('on') && document.querySelector('#send-btn')?.disabled===false")||undefined,60000,'ready');
  const budget=await installBudget(rp,Date.now()+120000,1200);
- await rp.click(panel,'#input');await rp.typeText(panel,`${mark}：${promptFor(form?'form':'todo')}`);await rp.pressEnter(panel);
+ await rp.click(panel,'#input');await rp.typeText(panel,`${mark}：${requestFor(form?'form':'todo').text}`);await rp.pressEnter(panel);
  await until(async()=>await rp.evaluate(panel,`document.querySelector('#messages')?.innerText.includes(${JSON.stringify(final)}) && document.querySelector('#send-btn')?.disabled===false`)||undefined,90000,'false completion claim');
  await sleep(1000);
  const observed=await observe(),commands=await budget.read(),verdict=evaluate(form?'form':'todo',observed.state,site.effects,observed.audit,null,commands.log);

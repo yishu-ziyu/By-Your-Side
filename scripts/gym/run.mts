@@ -11,7 +11,7 @@ import { loadavg } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { REPO, launchRealPath, requireHeadless, until, sleep, recordScreen } from '../acceptance/real-path/harness.mts';
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from '../acceptance/real-path/inproc-config.mts';
-import { startFixture, promptFor, tasks, seeds } from './fixture.mjs';
+import { startFixture, requestFor, tasks, seeds } from './fixture.mjs';
 import { evaluate, feedback, claimFrom } from './evaluator.mjs';
 
 import { installAudit, installBudget, networkUsage } from './instrumentation.mts';
@@ -79,7 +79,8 @@ async function run(task: string, seed: number, group: string) {
     started = Date.now(); row.startedAt = new Date(started).toISOString();
     budget = await installBudget(rp,started+seconds*1000,commands,fault);
     const say = async (text: string) => { await rp!.click(panel,'#input'); await rp!.typeText(panel,text); await rp!.pressEnter(panel); };
-    row.prompt=promptFor(task,fault);
+    const request=requestFor(task,fault);
+    row.prompt=request.text;row.automaticCorrection=request.automaticCorrection;
     await say(row.prompt);
     let quietSince = 0, previousTraceCount = 0;
     while (Date.now() < started+seconds*1000) {
@@ -98,7 +99,7 @@ async function run(task: string, seed: number, group: string) {
       const verdict = evaluate(task,current,fixture.effects,audit,null,(await budget.read()).log);
       row.checkpoints ??= []; row.checkpoints.push({at:Date.now(),verdict,state:current});
       if (group==='A' || verdict.status==='success' || row.corrections.length>=2 || verdict.errors.includes('UNEXPECTED_SUBMISSION')) break;
-      const waiting = /等你(确认|回复|提供)|请(确认|回复|选择)|需要你(确认|提供)/.test((replies(trace).at(-1)?.text??'').slice(-160)) || trace.findLast(e=>e.type==='goal_check')?.data?.status === 'needs_user' || await rp.evaluate(panel, `!!document.querySelector('.send-confirm,#takeover-btn[data-mode="handback"]')`);
+      const waiting = !request.automaticCorrection || trace.findLast(e=>e.type==='goal_check')?.data?.status === 'needs_user' || await rp.evaluate(panel, `!!document.querySelector('.send-confirm,#takeover-btn[data-mode="handback"]')`);
       if (waiting) { row.stopped='needs_user'; break; }
       const text = feedback(verdict);
       row.corrections.push({at:Date.now(),text}); await say(text); quietSince=0;
