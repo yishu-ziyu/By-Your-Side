@@ -54,12 +54,17 @@ async function recoveryStage<T>(name: string, run: () => Promise<T>): Promise<T>
   throw error;
  } finally {
   stage.elapsedMs = Math.round(performance.now() - started);
-  await save();
+  try {
+   await save();
+  } catch (error) {
+   if (stage.status === 'passed') throw error;
+   console.error('Failed to save recovery diagnostics:', error);
+  }
   console.log(`${name}: ${stage.status} (${stage.elapsedMs} ms)`);
  }
 }
 
-const rp=await recoveryStage('browser-launch', () => launchRealPath());
+const rp=await recoveryStage('extension-prepare-and-browser-launch', () => launchRealPath());
 
 let panel='',failure:string|null=null;
 
