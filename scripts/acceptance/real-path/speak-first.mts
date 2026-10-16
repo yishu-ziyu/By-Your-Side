@@ -81,7 +81,7 @@ function traceFacts(rows: Row[]) {
 }
 
 const results: Array<Record<string, unknown> & { run: string; rules: Record<string, string | null> }> = [];
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
   const work = await rp.attach(blank.targetId);

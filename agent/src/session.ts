@@ -61,7 +61,6 @@ import { asksUser, checkGoal, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKE
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
-import { programFirstGuidance } from "./program-first.js";
 import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
@@ -608,7 +607,7 @@ if(required.includes(key))candidates.set(key,attachment);
             sessionId: memoryHost.sessionId, headers: opencodeSessionHeaders(model, memoryHost.sessionId),
             parse: text => JSON.stringify(parseJsonReply(text, isJsonObject)),
           }).catch((error: Error) => { throw new Error(`记忆判断失败（${error.message}），尚未修改记忆`, { cause: error }); });
-        }, { auto: true, history: options.taskHistory })
+        }, { history: options.taskHistory })
         : null;
 
       let resultHost: BrowserAgentSession | null = null;
@@ -1183,8 +1182,7 @@ return;}
     // 标签页清单放在页面观察之前：页面观察超窗口时会被整段删掉，清单很短，留着。
     const withTabs = openTabs ? `${finalText}\n\n${openTabs}` : finalText;
     const withMentions = withTabs + mentioned;
-    const promptText = (observation ? `${withMentions}\n\n${observation}` : withMentions)
-      +(context && typeof context.tabId === "number" ? programFirstGuidance() : "");
+    const promptText = observation ? `${withMentions}\n\n${observation}` : withMentions;
 
     try {
       await session.prompt(promptText, images.length > 0 ? { images } : undefined);

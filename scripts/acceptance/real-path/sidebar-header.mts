@@ -77,7 +77,7 @@ const shots: Array<{ state: string; file: string; layout: Layout }> = [];
 
 const model = await startScriptedModel(RULES);
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");

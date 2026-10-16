@@ -52,7 +52,7 @@ const model = await startScriptedModel(rules);
 let rp: Awaited<ReturnType<typeof launchRealPath>> | null = null;
 
 try {
-  rp = await launchRealPath({ withoutNativeHost: true });
+  rp = await launchRealPath();
   const blank = await until(async () => (await rp!.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始页");
   const work = await rp.attach(blank.targetId);
   await rp.cdp.send("Page.navigate", { url: `${origin}/writers` }, work);

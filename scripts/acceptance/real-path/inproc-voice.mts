@@ -165,15 +165,9 @@ const result: JsonRecord = { case: `inproc-voice-${caseName}`, startedAt: starte
 // --native：原先同一段录音走本机伴随进程做对照；本机模式已退役，传了就报错。
 if (process.argv.includes("--native")) throw new Error("--native 已随本机模式退役，只能验收扩展内路径");
 
-const native = false;
-
 const voiceArg = process.argv.find((arg) => arg.startsWith("--voice="))?.slice("--voice=".length);
 
 if (voiceArg && !STEP_VOICES.some((v) => v.id === voiceArg)) throw new Error(`未知音色 ${voiceArg}，可选：${STEP_VOICES.map((v) => v.id).join("、")}`);
-
-if (voiceArg && native) throw new Error("--voice 目前只在扩展内 agent 路径上取证");
-
-if (caseName === "stop-task" && native) throw new Error("--case=stop-task 只验收扩展内入口");
 
 result.voice = voiceArg ?? null;
 
@@ -184,8 +178,6 @@ const CUSTOM_PERSONA = "说话干脆利落，像一位老练的船长，偶尔�
 
 if (personaArg && ![...VOICE_PERSONAS.map((p) => p.id), "custom"].includes(personaArg)) throw new Error(`未知人设 ${personaArg}`);
 
-if (personaArg && native) throw new Error("--persona 只在扩展内 agent 路径上取证");
-
 result.persona = personaArg ?? null;
 
 interface PickState { stored: string | null; checked: string | null; all: string[]; lists: number }
@@ -194,9 +186,9 @@ interface VoiceFrames { requested: string | null; confirmed: string | null }
 
 const voiceFrames: VoiceFrames = { requested: null, confirmed: null };
 
-result.path = native ? "native-host" : "extension-only";
+result.path = "extension-only";
 
-const rp = await launchRealPath({ microphoneWav: wav, withoutNativeHost: !native });
+const rp = await launchRealPath({ microphoneWav: wav });
 
 let last: PanelState | null = null;
 
@@ -813,7 +805,7 @@ try {
 
   if (voiceArg) verdicts.providerUsedPickedVoice = verdict(voiceFrames.requested === voiceArg && voiceFrames.confirmed === voiceArg, { picked: voiceArg, ...voiceFrames });
 
-  if (!native) {
+  {
     // 语音鉴权头规则只该作用于本扩展发起的连接：普通网页自己连 StepFun，服务端不应认出它已鉴权。
     // SAFETY: 这段页面脚本只返回下面四种字符串之一。
     const borrowed = await rp.evaluate(page, `new Promise((done) => {
@@ -826,7 +818,7 @@ try {
     verdicts.pageCannotBorrowKey = verdict(borrowed !== "session.created", { pageOrigin: new URL(pageUrl).origin, outcome: borrowed });
   }
 
-  if (!native) {
+  {
     // 语音日常记录：像用户一样从设置页导出，读下载下来的文件。日常模式与本机一致只记 asr / forward / text
     // （逐帧的 ready / append / commit 只在诊断模式产生，见 realtime-voice-session.ts）；识别文字要写进记录，
     // 每行可解析，且不含语音密钥。
@@ -879,7 +871,7 @@ try {
   await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
   const closed = await rp.close();
 
-  if (!native) verdicts.noLocalHost = verdict((closed?.hostPids ?? []).length === 0, { hostPids: closed?.hostPids ?? [] });
+  verdicts.noLocalHost = verdict((closed?.hostPids ?? []).length === 0, { hostPids: closed?.hostPids ?? [] });
   site.close();
 }
 

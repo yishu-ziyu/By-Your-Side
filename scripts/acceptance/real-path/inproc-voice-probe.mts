@@ -131,7 +131,7 @@ interface ProbeResult { case: "inproc-voice-probe"; startedAt: string; question:
 
 const result: ProbeResult = { case: "inproc-voice-probe", startedAt: startedAt.toISOString(), question: QUESTION };
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 try {
   const helper = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId;

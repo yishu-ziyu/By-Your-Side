@@ -70,7 +70,7 @@ type PanelState = {
   answers: string[]; resumeText: string; resumeButton: string[]; processTitles: string[]; steps: string[]; visibleGroups: number;
 };
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 

@@ -81,7 +81,7 @@ const verdicts: Record<string, Verdict> = {};
 
 result.verdicts = verdicts;
 
-const rp = await launchRealPath({ microphoneWav: wav, withoutNativeHost: true });
+const rp = await launchRealPath({ microphoneWav: wav });
 
 const states: string[] = [];
 

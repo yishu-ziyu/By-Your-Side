@@ -375,11 +375,10 @@ export async function exportDiagnosticsViaSettings(
 
 /**
  * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
- * withoutNativeHost：旧参数，保留只为兼容调用方；本机模式退役后一律只装扩展，传不传都一样。
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  * SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。
  */
-export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[]; headed?: boolean } = {}) {
+export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
   const tempDir = trackTempDir(root);

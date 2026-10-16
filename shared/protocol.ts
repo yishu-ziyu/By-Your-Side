@@ -346,7 +346,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
-  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 本伴随进程的剪贴板服务端口（127.0.0.1）；没有服务时省略 */ clipboardPort?: number; /** 这个宿主有没有记忆存储；缺省按有处理 */ features?: HostFeatures }
+  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 这个宿主有没有记忆存储；缺省按有处理 */ features?: HostFeatures }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }

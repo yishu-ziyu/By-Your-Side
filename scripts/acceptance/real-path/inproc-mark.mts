@@ -86,7 +86,7 @@ interface MarkResult {
 
 const result: MarkResult = { case: "inproc-mark", startedAt: startedAt.toISOString(), model: modelArg, viaSettings: viaSettings ?? null, verdicts };
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 let panel: string | null = null;
 

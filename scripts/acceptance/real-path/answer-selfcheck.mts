@@ -85,7 +85,7 @@ const site = createServer((_req, res) => res.writeHead(200, { "content-type": "t
 
 await Promise.all([new Promise<void>(r => main.listen(0, "127.0.0.1", r)), new Promise<void>(r => site.listen(0, "127.0.0.1", r))]);
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 const checks: Array<{ id: string; pass: boolean; answer: string; ms: number; requests: unknown }> = [];
 

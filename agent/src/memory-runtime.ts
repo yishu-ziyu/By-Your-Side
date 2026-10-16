@@ -361,8 +361,7 @@ export class MemoryRuntime {
     private readonly conversationId: string,
     private readonly emit: (event: AgentUiEvent) => void,
     private readonly complete?: MemoryComplete,
-    /** 自动记忆：产品里打开；关闭时只在用户明确要求时修改记忆（旧行为）。 */
-    private readonly options: { auto?: boolean; history?: TaskHistoryStore; /** 补判队列存放处；不给时用 usePendingMemoryJudgments 登记的，再没有就只在进程内。 */ pending?: DocumentPersistence } = {},
+    private readonly options: { history?: TaskHistoryStore; /** 补判队列存放处；不给时用 usePendingMemoryJudgments 登记的，再没有就只在进程内。 */ pending?: DocumentPersistence } = {},
   ) {
     this.pending = pendingQueueFor(store, options.pending);
 
@@ -399,10 +398,10 @@ export class MemoryRuntime {
     turn.correctionHostname = memoryHostOfUrl(context?.url) ?? this.recentWebHost();
 
     // 纠正粗筛在自动记忆之前：像纠正的话，自动记忆只收用户自己的资料（做法留给询问）。
-    if (this.options.auto && this.complete) this.screenCorrection(turn);
+    if (this.complete) this.screenCorrection(turn);
 
     // 像密码验证码的话连自动记忆也跳过：不问模型，判断失败时也不会进补判队列。
-    if (this.options.auto && this.complete && !looksSecret(text) && mayStatePersonalFact(text, turn.recentTurns)) {
+    if (this.complete && !looksSecret(text) && mayStatePersonalFact(text, turn.recentTurns)) {
       const auto = this.autoRemember(turn);
       turn.auto = auto;
       this.autos.add(auto);
