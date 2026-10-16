@@ -519,6 +519,10 @@ export class ToolRpc {
   }
 
   private fireLateResult(info: Parameters<LateResultHandler>[0]): void {
+    if (info.name === 'fill' && info.data && typeof info.data === 'object' && 'copyProof' in info.data) {
+      const { copyProof: _copyProof, ...data } = info.data;
+      info = { ...info, data };
+    }
     try { this.onLateResult?.(info); } catch { /* 监听者异常不影响 RPC */ }
 
     for (const listener of [...this.lateListeners]) {
