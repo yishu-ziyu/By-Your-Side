@@ -4459,7 +4459,7 @@ function paintPlanCard(): void {
   if (answer && undo) handFillUndoToCard(answer, run.root);
   // 整轮结论说了算：中途某步没做成、后来换做法做完，卡仍按 completed 收成一行；没做成的那步只在展开的过程里标 ✕。
   paintPlanReceipt(run.root, {
-    filled: undo?.state === "ready" ? undo.count : undo?.state === "restored" ? undo.restored.length + undo.skipped.length : undo ? undo.fields.length || null : null,
+    filled: undo?.state === "ready" ? undo.count : undo?.state === "restored" ? new Set([...undo.restored, ...undo.skipped.map((s) => s.field)]).size : undo ? undo.fields.length || null : null,
     steps: run.receipt.steps - run.receipt.failed,
     total: run.receipt.total,
     ended: run.receipt.ended,
