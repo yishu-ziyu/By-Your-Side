@@ -230,11 +230,14 @@ const CURSOR_VERBS = new Map([
   ["hover", { verb: "看", unnamed: "查看" }],
 ]);
 
+/** 真实模型常只给读页编号（@2、e12），这不是给人看的名字：当作没有名字。 */
+const REF_ONLY = /^@?[a-z]?\d+$/i;
+
 export function actionCardLabel(name: string, params: Parameters<typeof describeTool>[1], plate?: string): string {
   const words = CURSOR_VERBS.get(name);
 
   if (!words) return describeTool(name, params).full;
-  const label = (plate || str(params.label) || "").trim();
+  const label = [plate, str(params.label)].map(v => (v ?? "").trim()).find(v => v && !REF_ONLY.test(v)) ?? "";
 
   return label ? `${words.verb}「${clip(label)}」` : words.unnamed;
 }
@@ -365,8 +368,8 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   stopped: "没发：你中止了任务",
   left: "没发：你离开了这个页面",
   timeout: "没发：2 分钟没确认",
-  declined: "你没让发，草稿还在",
-  repeat: "你没让发，草稿还在",
+  declined: "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
+  repeat: "你选择不发送：这次没再问，草稿留在页面上",
   busy: "没发：前一个确认还在等你",
   // 教学一步没完成（docs/evals/20261011-guided-teaching.md）：照实说，不画成失败。
   guide_stopped: "你中止了，这一步没做完",

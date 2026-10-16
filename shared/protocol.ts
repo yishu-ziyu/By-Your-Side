@@ -298,7 +298,7 @@ export type SendConfirmOutcome = "send" | "decline" | "stopped" | "left" | "time
  * 侧栏确认卡要显示的内容（docs/evals/20261015-panel-send-confirm.md）：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
  * id 是后台这次等待的身份，侧栏回答时带回；outcome 只在不等了时有，clicked 只在确认后点完时有。草稿只在开始等的那条里带。
  */
-export interface SendConfirmView { id: string; host: string; label: string; content?: string; outcome?: SendConfirmOutcome; /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */ clicked?: "yes" | "no" | "unknown" }
+export interface SendConfirmView { id: string; host: string; label: string; content?: string; /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */ recipient?: string; /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */ route?: "click" | "script" | "enter" | "request"; outcome?: SendConfirmOutcome; /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */ clicked?: "yes" | "no" | "unknown" }
 
 export interface ConversationEnvelope { conversationId?: string }
 
@@ -752,7 +752,7 @@ export interface ToolContract {
   type_text: { params: { tabId?: number; text: string; }; data: { typed: true; /** The focused field, read from the page after typing. */ readback?: FieldReadback } };
   press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
-  js: { params: { tabId?: number; code: string }; data: { value: unknown } };
+  js: { params: { tabId?: number; code: string }; data: { value: unknown; /** 脚本里的发送动作被拦下问过用户：发了没有（#290）。 */ sendNote?: string; sendConfirmed?: true } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
   screenshot: {
     params: {
