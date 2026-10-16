@@ -43,9 +43,51 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
   /** pending 那一轮已经正常结束：之后的写操作属于别的事，不再给它开章。 */
   let ended = false;
 
+  let drag: { pointer: number; x: number; scroll: number; moved: boolean } | null = null;
+  let suppressClick = false;
+
+  row.addEventListener("pointerdown", (event) => {
+    suppressClick = false;
+    if (event.pointerType !== "mouse" || event.button !== 0 || !event.isPrimary) return;
+    if (row.scrollWidth <= row.clientWidth) return;
+    drag = { pointer: event.pointerId, x: event.clientX, scroll: row.scrollLeft, moved: false };
+  });
+  row.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointer) return;
+    if (!(event.buttons & 1)) { endDrag(); return; }
+    const delta = event.clientX - drag.x;
+    if (!drag.moved && Math.abs(delta) < 8) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      suppressClick = true;
+      row.setPointerCapture(event.pointerId);
+      row.classList.add("dragging");
+    }
+    event.preventDefault();
+    row.scrollLeft = drag.scroll - delta;
+  });
+  function endDrag() {
+    const pointer = drag?.pointer;
+    drag = null;
+    row.classList.remove("dragging");
+    if (pointer !== undefined && row.hasPointerCapture(pointer)) row.releasePointerCapture(pointer);
+  }
+  row.addEventListener("pointerup", endDrag);
+  row.addEventListener("pointercancel", endDrag);
+  row.addEventListener("lostpointercapture", endDrag);
+  row.addEventListener("pointerleave", () => { if (!drag?.moved) endDrag(); });
+  row.addEventListener("click", (event) => {
+    // 拖动松手后的 click 不应跳章；键盘激活仍照常通过。
+    if (!suppressClick || event.detail === 0) return;
+    suppressClick = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+
   // 按钮放不下时可以横着滑：哪一侧还有按钮，哪一侧就渐隐。
   const syncFade = () => {
     const max = row.scrollWidth - row.clientWidth;
+    row.dataset.overflow = String(max > 1);
     row.dataset.fadeStart = String(row.scrollLeft > 1);
     row.dataset.fadeEnd = String(max - row.scrollLeft > 1);
   };
