@@ -1,3 +1,4 @@
+import { recordCircled } from "../located-names.js";
 import { activeTargetTabs } from "../target-window.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
@@ -2978,6 +2979,7 @@ export async function mark(
     }
 
     await callCursorAt(tabId, located, cid, "mark", [params.label ?? null, params.target, actions, { style, motion }], observedDocument, beforeDispatch);
+    if (backendNodeId !== undefined) recordCircled(tabId, backendNodeId);
 
     return { marked: true };
   } catch (error) {
@@ -3180,4 +3182,60 @@ export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: nu
   }
 
   return { cleared: true };
+}
+
+/**
+ * 回答里提到的控件这会儿还在不在页上：节点还连着、有大小、没被藏起来、没摆到页面之外。
+ * 不滚动页面，只在加虚线前看一眼。
+ */
+/**
+ * 读页拿到的控件在页面上看得见的那一块：本身看得见就是它；看不见的复选框/输入框（维基「119 languages」那种藏起来的 checkbox + label 按钮）换成它看得见的 label。
+ * 序列化进页面，必须自包含。返回视口坐标，看不见返回 null。
+ */
+const VISIBLE_RECT_OF_LOCATED = `function() {
+  const el = this.nodeType === 3 ? this.parentElement : this;
+  if (!el || !el.isConnected || typeof el.getBoundingClientRect !== "function") return null;
+  const doc = document.documentElement;
+  const seen = (node) => {
+    const r = node.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    const style = getComputedStyle(node);
+    if (style.visibility === "hidden" || Number(style.opacity) === 0) return null;
+    return r.right + scrollX > 0 && r.bottom + scrollY > 0 && r.left + scrollX < doc.scrollWidth && r.top + scrollY < doc.scrollHeight ? r : null;
+  };
+  let r = seen(el);
+  if (!r && el.labels) for (const label of el.labels) { r = seen(label); if (r) break; }
+  return r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null;
+}`;
+
+async function visibleRectOfLocated(tabId: number, backendNodeId: number): Promise<DomRect | null> {
+  try {
+    return await callOnBackendNode<DomRect | null>(tabId, backendNodeId, VISIBLE_RECT_OF_LOCATED) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function locatedStillThere(tabId: number, backendNodeId: number): Promise<boolean> {
+  return (await visibleRectOfLocated(tabId, backendNodeId)) !== null;
+}
+
+/** 用户点了回答里的虚线：工作光标飞到那个控件、画一圈墨蓝。返回 false 表示控件已不在。 */
+export async function pointAtLocated(tabId: number, backendNodeId: number, caption = ""): Promise<boolean> {
+  const rect = await visibleRectOfLocated(tabId, backendNodeId);
+
+  if (!rect) return false;
+
+  const cid = cursorId(LEAD_SESSION_ID);
+  await cursorMove(tabId, rect.x + rect.width / 2, rect.y + rect.height / 2, cid);
+
+  try {
+    await callDom(tabId, (x: number, y: number, w: number, h: number, id: string, cap: string) => {
+      window.__sideagent?.cursor?.for(id)?.inspect?.({ x, y, width: w, height: h }, cap, true);
+    }, [rect.x, rect.y, rect.width, rect.height, cid, caption]);
+  } catch {
+    return false;
+  }
+
+  return true;
 }

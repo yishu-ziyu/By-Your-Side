@@ -98,7 +98,7 @@ interface SideAgentCursor {
   /** 交还：重读完成后从侧栏边回到待命位置。 */
   returnFromPanel?(): Promise<void>;
   /** 步骤对照：持久描边，不自动消失。 */
-  inspect?(rect: SideAgentRect, caption?: string): void;
+  inspect?(rect: SideAgentRect, caption?: string, point?: boolean): void;
   clearInspect?(): Promise<void>;
   /** 「现在归你」：占右边缘胶囊，带继续键。接管确认后显示，交还或中止后收掉。 */
   showUserControl?(view?: {

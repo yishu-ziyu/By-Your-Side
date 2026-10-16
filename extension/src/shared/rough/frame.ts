@@ -66,7 +66,7 @@ export function sketchLabelPosition(frame: Box, label: { w: number; h: number },
   const right = { left: frame.x + frame.w + gap, top: frame.y + frame.h / 2 - label.h / 2 };
   const candidates = [right, { left: frame.x, top: above }, { left: frame.x, top: below }, { left: frame.x - gap - label.w, top: right.top }];
 
-  for (let dx = 16; dx <= 480; dx += 16) candidates.push({ left: frame.x + dx, top: above }, { left: frame.x + dx, top: below });
+  // 名牌只贴在圈的四周，不挪到远处；四周都不合适时取第一个在视口里的。
   const boxOf = (c: LabelPosition) => ({ x: c.left, y: c.top, w: label.w, h: label.h });
   const visible = candidates.filter((c) => room.inView(boxOf(c)));
 
