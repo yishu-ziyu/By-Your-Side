@@ -98,6 +98,10 @@ export type PanelToBg =
   | { kind: "ping" }
   /** 悬停/聚焦过程步骤：在网页上圈出当时点过的元素；target 空则收起。 */
   | { kind: "inspect_step"; target?: string; tabId?: number; url?: string; caption?: string }
+  /** 回答里「」括起的名字：哪些是读页时拿到过位置、现在还在页上的控件。 */
+  | { kind: "page_refs_check"; id: string; names: string[] }
+  /** 用户点了回答里的虚线：光标飞过去圈出来。 */
+  | { kind: "page_ref_point"; id: string; name: string }
   /** 还原填写：把助手这一轮填过、还没提交的格子写回它动手前的值。任务在跑时不做，回 fill_undo 带 refused。 */
   | { kind: "fill_undo"; conversationId?: string };
 
@@ -151,6 +155,8 @@ type BgToPanelPayload =
   | { kind: "synced" }
   /** 步骤对照：找到了就圈，找不到回 ok=false，侧栏写「页面已变」。 */
   | { kind: "inspect_step_result"; ok: boolean }
+  | { kind: "page_refs_found"; id: string; names: string[] }
+  | { kind: "page_ref_pointed"; id: string; ok: boolean }
   /** 接管/交还编排：离开 → 你在操作 → 重读 → 助手回来。由真实事件推进。 */
   | { kind: "handoff_phase"; phase: "leaving" | "user" | "rereading" | "agent" }
   /** 还原填写的现状：每次变化都发，面板重开时也补发；null 表示这一轮没有可还原的。refused=busy：任务在跑，没还原。 */

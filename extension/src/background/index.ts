@@ -58,7 +58,7 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, locatedStillThere, pointAtLocated, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
@@ -72,6 +72,7 @@ import { detachSoon } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
+import { circledNames, locatedRef } from "./located-names.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
 import { takeoverTab, handbackTab } from "./page-operation-queue.js";
 import { reportSendClick, type SendGuard } from "./send-confirm.js";
@@ -590,6 +591,7 @@ function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
 watchFillUndo(conversationId, undo => broadcast({ kind: "fill_undo", undo }));
 const getWorkingTabId = (sid: string = LEAD_SESSION_ID) => workingTabForKey(key(sid));
+const pageRefTab = async (): Promise<number | undefined> => await getWorkingTabId() ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id;
 const setSessionClaimBlocked = (sid: string, blocked: boolean) => blockKey(key(sid), blocked);
 
 /** 状态挂到哪一页：显式 tabId → 已认领的工作页 → 用户当前看的页。 */
@@ -2337,6 +2339,39 @@ function attachPanel(port: chrome.runtime.Port) {
         if (lastStatus !== "idle" || toolsInFlight > 0) broadcast({ kind: "fill_undo", undo: fillUndoView(conversationId), refused: "busy" });
         else void restoreFills(conversationId);
         break;
+      // 只看工作标签页（没有就看当前页）：虚线指的是助手读过的那一页。
+      case "page_refs_check": {
+        void (async () => {
+          const tabId = await pageRefTab();
+          const found: string[] = [];
+
+          if (tabId != null) {
+            for (const name of msg.names.slice(0, 20)) {
+              const ref = locatedRef(tabId, name);
+
+              if (ref !== undefined && await locatedStillThere(tabId, ref)) found.push(name);
+            }
+
+            // 助手圈过的控件也报回：回答里常把它写成平铺文字，侧栏按原字找。
+            for (const name of circledNames(tabId).slice(0, 10)) {
+              const ref = locatedRef(tabId, name);
+
+              if (!found.includes(name) && ref !== undefined && await locatedStillThere(tabId, ref)) found.push(name);
+            }
+          }
+          broadcast({ kind: "page_refs_found", id: msg.id, names: found } satisfies BgToPanel);
+        })();
+        break;
+      }
+      case "page_ref_point": {
+        void (async () => {
+          const tabId = await pageRefTab();
+          const ref = tabId == null ? undefined : locatedRef(tabId, msg.name);
+          const ok = tabId != null && ref !== undefined && await pointAtLocated(tabId, ref, `「${msg.name.trim().slice(0, 20)}」在这里`);
+          broadcast({ kind: "page_ref_pointed", id: msg.id, ok } satisfies BgToPanel);
+        })();
+        break;
+      }
       case "inspect_step": {
         void (async () => {
           if (!msg.target) {
