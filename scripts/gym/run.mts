@@ -46,7 +46,12 @@ const idleExpression = `document.querySelector('#send-btn')?.disabled===false &&
 
 
 async function run(task: string, seed: number, group: string) {
-  if (loadavg()[0] > 20) throw new Error(`Load ${loadavg()[0].toFixed(1)} exceeds 20; no episode started`);
+  const waitStarted=Date.now();
+  while(loadavg()[0]>20 && Date.now()-waitStarted<180_000){
+    console.log(`Waiting for load: ${loadavg()[0].toFixed(1)}; no episode started`);
+    await sleep(10_000);
+  }
+  if (loadavg()[0] > 20) throw new Error(`Load ${loadavg()[0].toFixed(1)} exceeds 20 after bounded wait; no episode started`);
   const id = `${task}-${seed}-${group}`;
   const dir = join(out,id); await mkdir(dir);
   const fixture = await startFixture(task, seed, fault);
