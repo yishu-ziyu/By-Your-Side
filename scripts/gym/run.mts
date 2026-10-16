@@ -44,6 +44,7 @@ await writeFile(join(out, 'manifest.json'), JSON.stringify({ version, sourceHash
 
 type RP = Awaited<ReturnType<typeof launchRealPath>>;
 type Row = Record<string, any>;
+const replies=(trace:Row[])=>trace.filter(e=>e.type==='message_end' && e.data.message?.role==='assistant').map(e=>({at:e.time,text:(e.data.message.content??[]).filter((p:Row)=>p.type==='text').map((p:Row)=>p.text).join('\n')})).filter(e=>e.text.trim());
 const traceExpression = `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return}const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>JSON.parse(x.line)));tx.oncomplete=()=>db.close()}})`;
 const idleExpression = `document.querySelector('#send-btn')?.disabled===false && !document.querySelector('#status-pill')?.classList.contains('running') && !document.querySelector('.msg.assistant.streaming,.msg.assistant[data-revealing]')`;
 
@@ -97,7 +98,7 @@ async function run(task: string, seed: number, group: string) {
       const verdict = evaluate(task,current,fixture.effects,audit,null,(await budget.read()).log);
       row.checkpoints ??= []; row.checkpoints.push({at:Date.now(),verdict,state:current});
       if (group==='A' || verdict.status==='success' || row.corrections.length>=2 || verdict.errors.includes('UNEXPECTED_SUBMISSION')) break;
-      const waiting = trace.findLast(e=>e.type==='goal_check')?.data?.status === 'needs_user' || await rp.evaluate(panel, `!!document.querySelector('.send-confirm,#takeover-btn[data-mode="handback"]')`);
+      const waiting = /等你(确认|回复|提供)|请(确认|回复|选择)|需要你(确认|提供)/.test((replies(trace).at(-1)?.text??'').slice(-160)) || trace.findLast(e=>e.type==='goal_check')?.data?.status === 'needs_user' || await rp.evaluate(panel, `!!document.querySelector('.send-confirm,#takeover-btn[data-mode="handback"]')`);
       if (waiting) { row.stopped='needs_user'; break; }
       const text = feedback(verdict);
       row.corrections.push({at:Date.now(),text}); await say(text); quietSince=0;
@@ -110,7 +111,7 @@ async function run(task: string, seed: number, group: string) {
     const agentTarget=(await rp.targets()).find(t=>t.url===`chrome-extension://${rp!.extensionId}/inproc.html`);
     if(agentTarget)await rp.cdp.send('Target.closeTarget',{targetId:agentTarget.targetId});
     row.finalState=current;
-    row.answers=trace.filter(e=>e.type==='message_end' && e.data.message?.role==='assistant').map(e=>({at:e.time,text:(e.data.message.content??[]).filter((p:Row)=>p.type==='text').map((p:Row)=>p.text).join('\n')})).filter(e=>e.text.trim());
+    row.answers=replies(trace);
     row.answer=row.answers.at(-1)?.text??'';
     await rp.screenshot(work,join(dir,'after.png')); await rp.screenshot(panel,join(dir,'sidebar.png'));
     row.video=await stopVideo?.()??null; stopVideo=undefined;
