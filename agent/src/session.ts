@@ -57,7 +57,7 @@ import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
-import { asksUser, checkGoal, defersWork, goalCheckBudgetMs, tracesSources, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -2577,8 +2577,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     // 或没用工具就说「还不能判断」「我会去查看」（defersWork）。
     // 只读任务也核对：10-01 读完 flomo 笔记后交付了上一个任务的 Drive 状态，旧规则（只看改页面、存文件）直接收尾了。
     // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒（docs/evals/20261001-offtopic-reply-diagnostics.md）。
-    // 查来源的任务没用工具也核对：读完开工前送来的页面就停（「作者名单在第 87 页」）也要催它翻过去。
-    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)) && !tracesSources([this.activeGoal]))) return false;
+    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
 
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
   }
@@ -2691,24 +2690,22 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (gaveUpWithoutChange({ reply: lastReply, partial, pageAtNudge: this.nudgePage?.runId === runId ? this.nudgePage.page : null, pageNow })) {
         verdict = { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
-      } else if (this.toolUseRun === runId && pageAwaitsEmailStep(pageText)) {
-        // 只在这一任务自己动过手时认：查来源的任务不用工具也核对，用户只是停在一张「确认邮件已发送」的页面上，不该被带去邮箱。
+      } else if (pageAwaitsEmailStep(pageText)) {
         // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去（09-27 Kimi 这样问了就停住）。
         // 点名是哪个网站的确认邮件：收件箱里常有别的网站的同类邮件（09-27 Kimi 点了另一个列表的确认链接）。
         const site = snapshot?.goalPage ? (snapshot.goalPage.title.split(/\s[—–|-]\s/)[0]!.trim() || new URL(snapshot.goalPage.url).hostname) : "";
         verdict = { status: "continue", remaining: site ? `去邮箱找「${site.slice(0, 40)}」的确认邮件，点里面的确认链接（别点其他网站的）` : "去邮箱打开确认邮件，点里面的确认链接" };
       } else if (model) {
         const sessionId = `${this.session!.sessionId}-goal-check`;
-        const goal = snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""];
         verdict = await checkGoal(this.sideHost()!, model, {
-          goal,
+          goal: snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""],
           goalPage: snapshot?.goalPage ?? null,
           files: this.runFiles(),
           observations: this.goalObservations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < this.requestStartedAt ? { earlier: true } : {}) })),
           lastReply,
           page: page ? { title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
           userTookOver: runId !== null && this.handbackRunId === runId,
-        }, AbortSignal.timeout(goalCheckBudgetMs(goal)), opencodeSessionHeaders(model, sessionId));
+        }, AbortSignal.timeout(20_000), opencodeSessionHeaders(model, sessionId));
       }
     } catch (error) {
       verdict = null;

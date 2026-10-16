@@ -71,8 +71,6 @@ export interface SideCallSpec<T> {
    * format = 格式不对时修复重试一次（默认）；any = 格式不对或请求失败/超时都可重试一次；none = 不重试。
    */
   retry?: "format" | "any" | "none";
-  /** 至少用这一档思考；模型没有这一档或被拒过时取更高一档，都没有就退回最低档。默认最低档，为了快。 */
-  minEffort?: ModelThinkingLevel;
   /** 每次尝试各自的时限（第 i 次取第 i 个，超出取最后一个）。 */
   attemptTimeoutsMs?: readonly number[];
   /** 重试时追加到系统提示词后的要求；默认要求只回 JSON。参数是上一次的解析错误（请求失败时为 undefined）。 */
@@ -138,17 +136,6 @@ export function lowestEffort(model: Model<Api>, rejected?: RejectedEfforts): Mod
   return levels.find(level => !skip?.has(level)) ?? levels.at(-1)!;
 }
 
-/** 档位从低到高；模型只列出其中几档，按这个顺序找不低于要求的那一档。 */
-const EFFORT_ORDER: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-
-function startingEffort(model: Model<Api>, floor: ModelThinkingLevel, rejected?: RejectedEfforts): ModelThinkingLevel | undefined {
-  const { levels } = thinkingProfile(model);
-  const skip = rejected?.get(modelKey(model));
-  const rank = (level: ModelThinkingLevel) => EFFORT_ORDER.indexOf(level);
-
-  return levels.filter(level => rank(level) >= rank(floor) && !skip?.has(level)).sort((a, b) => rank(a) - rank(b))[0];
-}
-
 function nextEffort(model: Model<Api>, current: ModelThinkingLevel, rejected?: RejectedEfforts): ModelThinkingLevel | undefined {
   const { levels } = thinkingProfile(model);
   const skip = rejected?.get(modelKey(model));
@@ -166,7 +153,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   const budget = AbortSignal.timeout(spec.timeoutMs);
   const total = spec.signal ? AbortSignal.any([spec.signal, budget]) : budget;
   const retry = spec.retry ?? "format";
-  let effort = (spec.minEffort && startingEffort(model, spec.minEffort, host.rejected)) || lowestEffort(model, host.rejected);
+  let effort = lowestEffort(model, host.rejected);
   let attempts = 0;
   let retried = false;
   let effortRetried = false;

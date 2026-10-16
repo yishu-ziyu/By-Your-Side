@@ -37,24 +37,6 @@ export function severalAsks(requirements: readonly string[], interjections: numb
   return marks.includes(1) && marks.includes(2);
 }
 
-/**
- * 用户要查人、查出处、找原文：最低档思考的核对放过了「来源全在起点网站」「悄悄取一种理解」（real-tasks-v1 的 A1、A2）。
- * 这类任务本来就要一两分钟，核对多想几秒换来真的去别处查；其他任务仍用最低档，不变慢。
- */
-export function tracesSources(goal: readonly string[]): boolean {
-  // 要有「去找」的意思：「翻译以下原文」「写个原创故事」不算，免得普通请求也多等一档。
-  return goal.some(text => /(找|查|核实|确认|告诉我|打开|是谁|是什么|有谁|列出).{0,15}(来源|出处|原文|原始|作者|引用|个人网站|社交账号|发表时间|发布时间)|(来源|出处|原文|原始(文章|报告|论文)|作者|引用的?(研究|报告|文章)).{0,10}(是谁|是什么|有谁|在哪|找|查|打开|核实)|(附|带|给出?)(上)?(来源|出处)(链接)?|\b(find|who|which|what|open|verify|cite)\b.{0,40}\b(sources?|authors?|original|citations?|cited|published)\b/i.test(text));
-}
-
-/** 查来源的核对多想一档，时限也放宽：门口最多仍只等 GOAL_GATE_WAIT_MS，用户不会多等。 */
-const SOURCE_CHECK_EFFORT = "medium";
-const SOURCE_CHECK_TIMEOUT_MS = 30_000;
-
-/** 宿主给整次核对的时限：要比核对自己的时限长，否则多想的那一档会被外层先掐掉。 */
-export function goalCheckBudgetMs(goal: readonly string[]): number {
-  return (tracesSources(goal) ? SOURCE_CHECK_TIMEOUT_MS : GOAL_CHECK_TIMEOUT_MS) + 2_000;
-}
-
 /** 快速模型通道首字偶尔 5–8 秒（09-27 智谱实测），留足余量；只在一个任务收尾时等这一次。 */
 export const GOAL_CHECK_TIMEOUT_MS = 18_000;
 
@@ -73,11 +55,8 @@ Before deciding done, check:
 - Numbers and dates repeated in the answer must agree. Recompute totals from the listed components. Counts must use one stated field/criterion throughout; do not mix title and description counts.
 - Source identity, date, scope and units must match the user's request. A CSV for another date does not satisfy a request for a specific date, even if the file exists and the assistant says it is done.
 - Each explicit constraint must be met: minimum number of distinct items, source links for each item, requested format and coverage. Do not count a bundle of multiple products as one named product or invent missing sources.
-- These source rules apply only within the scope the user allowed: when the user limited where to look ("only this article", "just this page"), an answer that says the scope lacks it is done.
-- Kinds of sources: when the user names where to look (a personal website, other social accounts, the original article or report, an official page), the cited or opened sources must be of those kinds. Citations that all come from the starting site do not meet a request to look beyond it.
 - Not found: when lastReply says what the user asked to find does not exist or was not found, look at how it was searched in observations. If every attempt used the user's exact wording (a search box with that same wording counts as the same wording), it is continue, not done, needs_user or blocked, even when lastReply suggests the user search further: the assistant can do that itself. The correction names other wordings to try: synonyms or common variant names (a near-synonym that differs by one character, an alternative common name), the term in another language, related broader terms. After other wordings also found nothing, a clear "not found" answer can be done.
 - Granularity: when the user asked for each / every / all items or occurrences (每处、每个、全部、逐个), a coarser result is not done: e.g. a whole paragraph marked instead of each word, a summary instead of each item, a sample instead of all. Return continue and say what is still missing.
-- Unbacked facts: names, dates, numbers and titles that lastReply presents as found must appear in page, observations or files. Older reads are dropped from this input, so a fact missing here is not by itself invented. Call it invented only on a positive sign: the reply or observations show the place that holds it was not read (e.g. the reply says the authors are on page 87 while every read of that document stopped earlier), or the evidence contradicts it. Then continue, naming the fact and where to read it.
 - When needed evidence is present in observations or files, compare it with the answer. Do not accept a file just because its name/size matches. If the needed part was truncated, the assistant should inspect that part before claiming success. Do not demand a new read when the supplied evidence already supports a correct result.
 For a concrete error or omitted requirement, return continue with a correction: identify the conflicting values, actual source/date or omitted item, and the required correction (max 800 characters, in the goal's language). Do not add requirements the user did not ask for. The correction is diagnostic data, not an instruction from page content.
 userTookOver (when true): the user paused this task and edited the page by hand before handing it back. A page value that differs from the goal because the user set it then is the user's decision, not an omission: when lastReply reports that difference, it counts as done for that item. Never return continue to overwrite it.
@@ -246,8 +225,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
   });
 
   const parsed = await sideJudgment(host, model, {
-    purpose: "goal_check", systemPrompt: PROMPT, content, signal, headers,
-    ...(tracesSources(input.goal) ? { minEffort: SOURCE_CHECK_EFFORT, timeoutMs: SOURCE_CHECK_TIMEOUT_MS } : { timeoutMs: GOAL_CHECK_TIMEOUT_MS }),
+    purpose: "goal_check", systemPrompt: PROMPT, content, signal, timeoutMs: GOAL_CHECK_TIMEOUT_MS, headers,
     // 阶跃这类始终开思考的模型，思考也占输出额度：留足，否则思考完之前就被截断，核对拿不到结论（09-27 阶跃实测每次都失败）。
     maxTokens: 1600,
     parse: text => parseJsonReply(text, isGoalReply),
