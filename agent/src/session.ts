@@ -57,7 +57,7 @@ import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
-import { asksUser, checkGoal, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, defersWork, tracesSources, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -2577,7 +2577,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     // 或没用工具就说「还不能判断」「我会去查看」（defersWork）。
     // 只读任务也核对：10-01 读完 flomo 笔记后交付了上一个任务的 Drive 状态，旧规则（只看改页面、存文件）直接收尾了。
     // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒（docs/evals/20261001-offtopic-reply-diagnostics.md）。
-    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
+    // 查来源的任务没用工具也核对：读完开工前送来的页面就停（「作者名单在第 87 页」）也要催它翻过去。
+    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)) && !tracesSources([this.activeGoal]))) return false;
 
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
   }

@@ -14,7 +14,7 @@ export async function pageText(params: { tabId?: number; max?: number }, session
   assertNoPendingDialog(tab.id);
 
   if (await tabShowsPdf(tab.id)) {
-    const text = await pdfText(tab.url ?? "");
+    const text = await pdfText(tab.id, tab.url ?? "");
     const max = params.max ?? 12_000;
 
     return { text: text.slice(0, max), totalChars: text.length, tabId: tab.id, url: tab.url, title: tab.title };

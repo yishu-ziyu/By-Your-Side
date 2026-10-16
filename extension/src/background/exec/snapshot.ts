@@ -232,7 +232,7 @@ export async function snapshotTab(
   }
 
   if (!decision && await tabShowsPdf(tabId)) {
-    const text = await pdfText((await chrome.tabs.get(tabId)).url ?? "");
+    const text = await pdfText(tabId, (await chrome.tabs.get(tabId)).url ?? "");
     clearAxSnapshot(tabId);
     forgetPage(tabId);
 

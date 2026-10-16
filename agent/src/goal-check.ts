@@ -37,6 +37,18 @@ export function severalAsks(requirements: readonly string[], interjections: numb
   return marks.includes(1) && marks.includes(2);
 }
 
+/**
+ * 用户要查人、查出处、找原文：最低档思考的核对放过了「来源全在起点网站」「悄悄取一种理解」（real-tasks-v1 的 A1、A2）。
+ * 这类任务本来就要一两分钟，核对多想几秒换来真的去别处查；其他任务仍用最低档，不变慢。
+ */
+export function tracesSources(goal: readonly string[]): boolean {
+  return goal.some(text => /来源|出处|原文|原始(文章|报告|论文|出处)|引用|作者|谁写的|发表|个人网站|社交账号|\bsources?\b|\bcit(e|ed|ation)s?\b|\boriginal\b|\bauthors?\b|who wrote|published/i.test(text));
+}
+
+/** 查来源的核对多想一档，时限也放宽：门口最多仍只等 GOAL_GATE_WAIT_MS，用户不会多等。 */
+const SOURCE_CHECK_EFFORT = "medium";
+const SOURCE_CHECK_TIMEOUT_MS = 30_000;
+
 /** 快速模型通道首字偶尔 5–8 秒（09-27 智谱实测），留足余量；只在一个任务收尾时等这一次。 */
 export const GOAL_CHECK_TIMEOUT_MS = 18_000;
 
@@ -55,6 +67,7 @@ Before deciding done, check:
 - Numbers and dates repeated in the answer must agree. Recompute totals from the listed components. Counts must use one stated field/criterion throughout; do not mix title and description counts.
 - Source identity, date, scope and units must match the user's request. A CSV for another date does not satisfy a request for a specific date, even if the file exists and the assistant says it is done.
 - Each explicit constraint must be met: minimum number of distinct items, source links for each item, requested format and coverage. Do not count a bundle of multiple products as one named product or invent missing sources.
+- These source rules apply only within the scope the user allowed: when the user limited where to look ("only this article", "just this page"), an answer that says the scope lacks it is done.
 - Kinds of sources: when the user names where to look (a personal website, other social accounts, the original article or report, an official page), the cited or opened sources must be of those kinds. Citations that all come from the starting site do not meet a request to look beyond it.
 - Readings: when a word in the goal that decides what to open or report can reasonably mean two different things on this page (e.g. "the original" as the material the post is based on, or as works it quotes), and lastReply acted on one reading without saying which, it is continue: the correction asks the reply to state its reading and to prefer the one the page supports most directly.
 - Cannot verify: when lastReply says a requested fact (an author, a date, an affiliation) could not be found or verified, look at which sources observations show. If they are all one site, or a document the assistant could not read, it is continue: the correction names other independent sources to try (the subject's other accounts or sites linked from what was read, the publisher's page, a web search, the document's own text). After two independent sources also lack it, a clear "not found" answer can be done.
@@ -228,7 +241,8 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { 
   });
 
   const parsed = await sideJudgment(host, model, {
-    purpose: "goal_check", systemPrompt: PROMPT, content, signal, timeoutMs: GOAL_CHECK_TIMEOUT_MS, headers,
+    purpose: "goal_check", systemPrompt: PROMPT, content, signal, headers,
+    ...(tracesSources(input.goal) ? { minEffort: SOURCE_CHECK_EFFORT, timeoutMs: SOURCE_CHECK_TIMEOUT_MS } : { timeoutMs: GOAL_CHECK_TIMEOUT_MS }),
     // 阶跃这类始终开思考的模型，思考也占输出额度：留足，否则思考完之前就被截断，核对拿不到结论（09-27 阶跃实测每次都失败）。
     maxTokens: 1600,
     parse: text => parseJsonReply(text, isGoalReply),
