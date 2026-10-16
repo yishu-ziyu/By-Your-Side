@@ -162,6 +162,10 @@ try {
       await rp.screenshot(panel, join(out, "injected-error.png"));
     } else if (pageContext) {
       const replies: Array<{ title: string; spoken: string }> = [];
+      const otherWindow = Number(await rp.evaluate(panel, `chrome.windows.create({ url: 'https://example.org/', focused: false }).then(window => window.id)`));
+      await rp.evaluate(panel, `chrome.sidePanel.open({ windowId: ${otherWindow} })`, { userGesture: true });
+      await until(async () => (await rp.targets()).filter(t => t.type === 'page' && t.url.endsWith('/sidepanel.html')).length >= 2 || undefined, 10_000, '两个窗口都有侧栏');
+      evidence.twoPanels = true;
       for (const [title, url, match] of [
         ['Wikipedia', 'https://www.wikipedia.org/', /维基百科|Wikipedia/i],
         ['Example Domain', 'https://example.com/', /Example\s*Domain|示例域名|示例域/i],
@@ -176,8 +180,11 @@ try {
         }, 30_000, '真实语音说出当前页面名');
         replies.push({ title, spoken });
         await rp.screenshot(panel, join(out, `${title.split(' ')[0]}-context.png`));
+        const pageUpdates = (await read()).out.filter(e => e.type === 'session.context.append').flatMap(e => e.content?.map(c => c.text) ?? []);
+        assert.ok(!pageUpdates.some(text => text.includes('example.org')), '另一窗口的页面不能进入这次通话背景');
         await sleep(2500);
       }
+      await rp.evaluate(panel, `chrome.windows.remove(${otherWindow})`);
       evidence.pageContextReplies = replies;
     } else {
       if (handoff) {
