@@ -42,12 +42,16 @@ class ExtensionBinaryDataFactory {
  */
 const cache = new Map<number, { url: string; task: PDFDocumentLoadingTask; doc: Promise<PDFDocumentProxy> }>();
 
+/** 每个标签页的页面版本：刷新或关闭就加一，等大小检查回来时用它判断这次读取是否已经作废。 */
+const generation = new Map<number, number>();
+
 function forget(tabId: number) {
+  generation.set(tabId, (generation.get(tabId) ?? 0) + 1);
   void cache.get(tabId)?.task.destroy();
   cache.delete(tabId);
 }
 
-chrome.tabs.onRemoved.addListener(forget);
+chrome.tabs.onRemoved.addListener(tabId => { forget(tabId); generation.delete(tabId); });
 chrome.tabs.onUpdated.addListener((tabId, change) => { if (change.status === "loading") forget(tabId); });
 
 async function openPdf(tabId: number, url: string): Promise<PDFDocumentProxy> {
@@ -55,8 +59,12 @@ async function openPdf(tabId: number, url: string): Promise<PDFDocumentProxy> {
 
   if (hit?.url === url) return hit.doc;
   forget(tabId);
-  const head = await fetch(url, { method: "HEAD", credentials: "include" }).catch(() => null);
-  const size = Number(head?.headers.get("content-length"));
+  const version = generation.get(tabId);
+  // 先问大小；对方不答大小或不支持 HEAD 时照常读（标签页里的阅读器已经下过这份文件），只挡住明确超大的。
+  const head = await fetch(url, { method: "HEAD", credentials: "include", signal: AbortSignal.timeout(5_000) }).catch(() => null);
+  const size = Number(head?.headers.get("content-length") ?? 0);
+
+  if (generation.get(tabId) !== version) throw new Error("读取期间页面已刷新或关闭，请重新读取当前页面");
 
   if (size > PDF_MAX_BYTES) throw new Error(`这份 PDF 有 ${Math.round(size / 1024 / 1024)} MB，超过 ${PDF_MAX_BYTES / 1024 / 1024} MB，没有解析`);
   // 大报告动辄几十兆：只按需取用到的那几段，不整份下载。

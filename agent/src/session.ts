@@ -57,7 +57,7 @@ import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
-import { asksUser, checkGoal, defersWork, tracesSources, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, defersWork, goalCheckBudgetMs, tracesSources, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -2698,15 +2698,16 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         verdict = { status: "continue", remaining: site ? `去邮箱找「${site.slice(0, 40)}」的确认邮件，点里面的确认链接（别点其他网站的）` : "去邮箱打开确认邮件，点里面的确认链接" };
       } else if (model) {
         const sessionId = `${this.session!.sessionId}-goal-check`;
+        const goal = snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""];
         verdict = await checkGoal(this.sideHost()!, model, {
-          goal: snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""],
+          goal,
           goalPage: snapshot?.goalPage ?? null,
           files: this.runFiles(),
           observations: this.goalObservations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < this.requestStartedAt ? { earlier: true } : {}) })),
           lastReply,
           page: page ? { title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
           userTookOver: runId !== null && this.handbackRunId === runId,
-        }, AbortSignal.timeout(20_000), opencodeSessionHeaders(model, sessionId));
+        }, AbortSignal.timeout(goalCheckBudgetMs(goal)), opencodeSessionHeaders(model, sessionId));
       }
     } catch (error) {
       verdict = null;

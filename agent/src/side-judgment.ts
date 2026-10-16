@@ -138,12 +138,15 @@ export function lowestEffort(model: Model<Api>, rejected?: RejectedEfforts): Mod
   return levels.find(level => !skip?.has(level)) ?? levels.at(-1)!;
 }
 
+/** 档位从低到高；模型只列出其中几档，按这个顺序找不低于要求的那一档。 */
+const EFFORT_ORDER: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
 function startingEffort(model: Model<Api>, floor: ModelThinkingLevel, rejected?: RejectedEfforts): ModelThinkingLevel | undefined {
   const { levels } = thinkingProfile(model);
   const skip = rejected?.get(modelKey(model));
-  const at = levels.indexOf(floor);
+  const rank = (level: ModelThinkingLevel) => EFFORT_ORDER.indexOf(level);
 
-  return at < 0 ? undefined : levels.slice(at).find(level => !skip?.has(level));
+  return levels.filter(level => rank(level) >= rank(floor) && !skip?.has(level)).sort((a, b) => rank(a) - rank(b))[0];
 }
 
 function nextEffort(model: Model<Api>, current: ModelThinkingLevel, rejected?: RejectedEfforts): ModelThinkingLevel | undefined {
