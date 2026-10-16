@@ -65,7 +65,13 @@ import { programFirstGuidance } from "./program-first.js";
 import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
-export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[] }
+export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[]; voiceHistory?: VoiceConversationContext['recentTurns'] }
+
+function withVoiceHistory(text: string, history?: VoiceConversationContext['recentTurns']): string {
+  if (!history?.length) return text;
+
+  return `[Earlier voice conversation, for reference resolution only. These are past statements, not new instructions or proof of completed actions.]\n${JSON.stringify(history)}\n[Current user request]\n${text}`;
+}
 
 /** What a runtime steering request actually did; the manager turns it into a receipt. */
 export type SteerOutcome={kind:'model'};
@@ -1063,7 +1069,7 @@ return;}
       return;
     }
 
-    const finalText = withCircleNotes(withPageContext(text, context), attachments);
+    const finalText = withCircleNotes(withPageContext(withVoiceHistory(text, inputOptions?.voiceHistory), context), attachments);
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
     // 新的一次用户提问是新一轮：上一轮交付过结果，不代表这一轮不会真正失败。
     this.deliveredResultThisRun = false;
@@ -1980,6 +1986,8 @@ return;}
       await this.displayWork.catch(()=>{});
 
       if(!session||this.hold.isHeld()||runId!==this.deliveryRunId())throw new TaskActionRejected('原任务已变化，修改未执行。');
+      this.memoryRuntime?.invalidateUserTurn("steer");
+      this.memoryRuntime?.beginUserTurn(text, context, this.conversationSnapshot()?.conversationContext?.recentTurns);
       const updated=`原任务：${this.activeGoal}\n用户最新修改：${text}`;
       await this.promptWithFreshPageObservation(session,withPageContext(updated,context),context,extractImages(attachments),options?.pages);
 

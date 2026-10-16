@@ -436,7 +436,10 @@ return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snaps
     if (willStart) {
       // 既有派发与页面预观察原样复用：observe/需要事实的追问交给主 Agent，由它读页面后回答；
       // 不再给主 Agent 塞"已批准的工具意图"续跑文案（那会丢掉预观察并让它多绕一轮）。
-      const inputOptions=single?.action==='chat'?{pageObservation:'on-demand' as const,conversationOnly:true}:undefined;
+      const inputOptions: UserInputOptions = {
+        ...(single?.action==='chat'?{pageObservation:'on-demand' as const,conversationOnly:true}:{}),
+        ...(route?.nativeChat && route.recentTurns?.length ? { voiceHistory: route.recentTurns } : {}),
+      };
       const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent,inputOptions);
 
       // 隐式派发也是真实发生的一步 start：写进计划，让回执反映事实，而不是留下空计划假装零步已知。
@@ -540,7 +543,8 @@ return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snaps
       if(['pause','resume','abort'].includes(step.action))route?.reportStage?.('controlling');
       journal[index]!.status='pending';save();
       const resumeCheckpoint=step.action==='resume'&&(['interrupted','idle','error'].includes(this.getTaskProgress(targetId)?.state??'')||this.taskQueue.get(targetId)?.state==='suspended');
-      const receipt=await this.dispatchTaskAction({expectedControlVersion:versions.get(targetId)??0,requestId:plan.steps.length===1?requestId:`${requestId}-${index}`,conversationId:targetId,...(targetId!==id?{originConversationId:id}:{}),source:'voice',action:step.action,expectedRunId:expected.get(targetId)??null,text:step.text,...(((step.action==='start'||step.action==='steer')&&sharesInput||resumeCheckpoint)?{...(route?.input?.context?{context:route.input.context}:{}),...(route?.input?.attachments?{attachments:route.input.attachments}:{})}:{})},stillCurrent);
+      const inputOptions = step.action === 'start' && targetId === id && route?.nativeChat && route.recentTurns?.length ? { voiceHistory: route.recentTurns } : undefined;
+      const receipt=await this.dispatchTaskAction({expectedControlVersion:versions.get(targetId)??0,requestId:plan.steps.length===1?requestId:`${requestId}-${index}`,conversationId:targetId,...(targetId!==id?{originConversationId:id}:{}),source:'voice',action:step.action,expectedRunId:expected.get(targetId)??null,text:step.text,...(((step.action==='start'||step.action==='steer')&&sharesInput||resumeCheckpoint)?{...(route?.input?.context?{context:route.input.context}:{}),...(route?.input?.attachments?{attachments:route.input.attachments}:{})}:{})},stillCurrent,inputOptions);
       receipts.push(receipt);journal[index]!.status='complete';journal[index]!.receipt=receipt;save();
 
       if(receipt.status!=='queued'&&receipt.status!=='accepted'&&receipt.status!=='applied') {
