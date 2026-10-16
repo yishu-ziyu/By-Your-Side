@@ -2814,11 +2814,18 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
   return Object.assign(result, confirmed ? { sendConfirmed: true as const } : {}) as typeof result & { sendConfirmed?: true };
 }
 
+/** 焦点是不是单行 <input>：多行框和可编辑区里回车只是换行，页面读数看不出来，只有单行框能说「回车没反应」。序列化进页面，必须自包含。 */
+function focusIsSingleLineInput(): boolean {
+  let el = document.activeElement as HTMLElement | null;
+  while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
+  return el?.tagName === "INPUT";
+}
+
 export async function pressKey(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: DispatchGuard,
-): Promise<{ pressed: true; dialog?: OpenedDialog; effect?: EffectReport; appeared?: PageAppeared } | { pressed: false; dialog: OpenedDialog }> {
+): Promise<{ pressed: true; dialog?: OpenedDialog; effect?: EffectReport; appeared?: PageAppeared; singleLineInput?: true } | { pressed: false; dialog: OpenedDialog }> {
   const info = resolveKey(params.key);
 
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
@@ -2883,6 +2890,9 @@ export async function pressKey(
 
   // 只有回车常提交表单、发请求，所以只给回车报页面变化；方向键、Tab 连按时每下多等 600 毫秒不值得。
   const effectToken = info.key === "Enter" ? await beginEffect(keyboardTabId) : null;
+  const singleLine = effectToken
+    ? (await sendCommand<{ result?: { value?: unknown } }>(keyboardTabId, "Runtime.evaluate", { expression: `(${focusIsSingleLineInput.toString()})()`, returnByValue: true }).catch(() => undefined))?.result?.value === true
+    : false;
 
   const pressing = (async () => {
     await sendCommand(keyboardTabId, "Input.dispatchKeyEvent", rawKeyDown,sequenceGuard);
@@ -2902,8 +2912,9 @@ export async function pressKey(
 
     if (!settled.effect) return { pressed: true };
     const appeared = await pageChangesAfter(keyboardTabId, sessionId, settled.effect);
+    const focus = singleLine ? { singleLineInput: true as const } : {};
 
-    return appeared ? { pressed: true, effect: settled.effect, appeared } : { pressed: true, effect: settled.effect };
+    return appeared ? { pressed: true, effect: settled.effect, appeared, ...focus } : { pressed: true, effect: settled.effect, ...focus };
   } finally {
     dialogWatch.stop();
   }

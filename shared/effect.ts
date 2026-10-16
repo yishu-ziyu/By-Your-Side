@@ -288,7 +288,7 @@ export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: 
   });
 }
 
-/** 给模型看的工具结果文字：有变化给清单，没变化明说并提示不要盲目重试。action 是动作的英文名（click、key press）。 */
+/** 给模型看的工具结果文字：有变化给清单，没变化明说，只许正常动作再试一次。action 是动作的英文名（click、key press）。 */
 export function formatEffectReport(report: EffectReport | undefined, action = "click"): string {
   if (!report) return "";
   const detail = [...report.evidence, ...report.weak].join("; ");
@@ -301,7 +301,7 @@ export function formatEffectReport(report: EffectReport | undefined, action = "c
 
   const weak = report.weak.length ? ` (${report.weak.join("; ")})` : "";
 
-  return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly ${action === "click" ? "click the same target" : `repeat the same ${action}`} again — observe the page first.`;
+  return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Observe the page, then retry the normal action once; if it still has no effect, stop and tell the user which step had no effect.`;
 }
 
 /**
