@@ -177,13 +177,22 @@ try {
         let replyAfter = userTurn.at;
         const delegated = (await read()).in.find(e => e.type === 'delegation.created' && e.item?.user_bidi_turn_id === userTurn.turn?.id);
         if (delegated) {
+          // 网页任务进行中让后台卡住 17 秒（机器满载时实测后台 13 秒不回消息；心跳 5 秒一次、10 秒没回才换端口，17 秒一定触发）：
+          // 侧栏会换端口，语音通话和任务结果都不能因此丢掉。
+          if (index === 3 && !process.env.NO_STALL) {
+            const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "service worker")).targetId);
+            const stallAt = Date.now();
+            await rp.evaluate(sw, `(() => { const end = Date.now() + 17000; while (Date.now() < end); return true; })()`, { timeoutMs: 30_000 });
+            evidence.backgroundStall = { at: stallAt, ms: Date.now() - stallAt };
+          }
           const delivery = await until(async () => (await read()).out.find(e => e.type === 'delegation.context.append' && e.delegation_item_id === delegated.item?.id && (e.channel === 'speakable' || e.channel === 'commentary' && e.content?.some(part => part.text?.includes('这句是闲聊')))), 120_000, '本轮正式回答，不能把开场应答当结果');
           const acknowledged=await until(async()=>(await read()).in.find(e=>e.type==='delegation.context.appended'&&e.delegation_item_id===delegated.item?.id&&e.at>=delivery.at),30_000,'服务确认收到本轮正式回答');
           replyAfter = acknowledged.at;
           if (index === 3) evidence.taskDelivery = delivery;
         }
-        const assistant = await until(async()=>(await read()).in.find(e=>e.type==='turn.created'&&e.turn?.role==='assistant'&&e.at>=replyAfter-100),60_000,'本轮回答开始');
-        const completed = await until(async()=>(await read()).in.find(e=>e.type==='turn.done'&&e.turn?.id===assistant.turn?.id),90_000,'本轮回答完整结束');
+        // 回答可能在结果送到前就开口、一口气说到结果之后：取送到之后才说完的第一轮，开场应答在那之前已说完。
+        const completed = await until(async()=>(await read()).in.find(e=>e.type==='turn.done'&&e.turn?.role==='assistant'&&e.at>=replyAfter-100),150_000,'本轮回答完整结束');
+        const assistant = (await read()).in.find(e=>e.type==='turn.created'&&e.turn?.id===completed.turn?.id)??completed;
         const spoken=completed.turn?.transcript??'';
         const firstAudio=(await read()).meter.find(([at,rms])=>at>replyAfter-500&&rms>0.01)??[assistant.at,0];
         await sleep(2500);
@@ -191,7 +200,15 @@ try {
         await rp.screenshot(panel, join(out, `followup-${index}.png`));
         console.log(JSON.stringify(replies.at(-1)));
         if(index===1)assert.match(spoken,/维基|Wikipedia/i,'认出当前网站');
-        if(index===3){assert.match(await answerText(),/逆向工程|reverse engineering/i,'前文主题交给真实网页任务');}
+        if(index===3){
+          assert.match(await answerText(),/逆向工程|reverse engineering/i,'前文主题交给真实网页任务');
+          // 选中的这一轮必须真把结果说出来：说出的话里至少三成两字词来自送回的结果，不能只是提前开口的闲聊。
+          const pairs=(t:string)=>{const c=t.replace(/[\s\p{P}]/gu,'');return new Set([...c].slice(1).map((ch,i)=>c[i]+ch));};
+          const said=pairs(spoken),result=pairs((evidence.taskDelivery as {content?:Array<{text?:string}>}|undefined)?.content?.map(p=>p.text??'').join('')??'');
+          const overlap=said.size?[...said].filter(p=>result.has(p)).length/said.size:0;
+          evidence.taskSpokenOverlap=overlap;
+          assert.ok(overlap>=0.3,`这一轮播报说出了任务结果（重合 ${overlap.toFixed(2)}）`);
+        }
       }
       await rp.click(panel,'.voice-start');
       const exported=await exportDiagnosticsViaSettings(rp,rp.extensionId,join(out,'downloads'));
@@ -208,6 +225,11 @@ try {
         assert.doesNotMatch(reply.spoken,/还有.{0,15}未完成|执行遇到阻碍|脚本.{0,8}没完成/,'成功后的追问不再被旧错误占据');
       }
       assert.ok(!traces.some(t=>t.type==='tool_execution_start'&&Date.parse(t.time)>=replies[4]!.at),'解释追问不能重新操作网页');
+      const stall = evidence.backgroundStall as { at: number } | undefined;
+      assert.ok(stall, '网页任务进行中确实让后台卡住过');
+      const after = hostDiagnostics.filter((d): d is { at: number; text: string } => (d as { at: number }).at >= stall.at).map(d => d.text);
+      assert.ok(after.some(t => t.includes('panel_port_replaced')) && after.some(t => t.includes('voice_host_reattached')), '后台卡住时侧栏换了端口，并用原来的语音会话接上');
+      assert.equal(calls.length, 1, '后台卡住后，语音沿用原来的通话，没有挂断重拨');
       console.log('真实对话复验完成');
     } else if (serverError) {
       const injected = { type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Context append text must not exceed 500 tokens." } };

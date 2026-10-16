@@ -6,6 +6,9 @@ import { Type, type Static } from 'typebox';
 import { Check } from 'typebox/value';
 import { clipUtf8, GPT_LIVE_CONTEXT_BYTES, utf8Bytes } from '../../../shared/gpt-live.js';
 
+/** 后台忙到换端口时，GPT-Live 通话照常；超过这段时间仍没认领回来，才按断线重连。中继那边多留 5 秒。 */
+const HOST_REATTACH_MS = 30_000;
+
 const LiveEventSchema = Type.Object({
   type: Type.String(),
   turn: Type.Optional(Type.Object({ id: Type.Optional(Type.String()), role: Type.Optional(Type.String()), transcript: Type.Optional(Type.String()) })),
@@ -154,6 +157,8 @@ export class VoiceClient {
   private recoveryAttempts = 0;
   private recoveryStartTime = 0;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** GPT-Live 通话直连 OpenAI，不经过后台端口。端口断开期间命令排进 pending；连回后用同一个 voiceId 认领，中继回 ready 才算接上。 */
+  private hold: { timer: ReturnType<typeof setTimeout>; pending: VoiceCommand[] | null } | null = null;
 
   constructor(private readonly send: (msg: VoiceClientMessage & {conversationId: string}) => boolean,
     private readonly change: (phase: VoicePhase, detail?: string) => void,
@@ -185,19 +190,25 @@ export class VoiceClient {
   }
   private setPhase(phase: VoicePhase, detail?: string): void { this.phase = phase; this.change(phase, detail); }
   private command(command: VoiceCommand): boolean {
-    if (this.id) {
-      const ok = this.send({type:'voice',voiceId:this.id,conversationId:this.conversationId,command});
+    if (!this.id) return false;
 
-      if (!ok) {
-        this.onTransportDisconnected();
-
-        return false;
-      }
+    if (this.hold?.pending) {
+      this.hold.pending.push(command);
 
       return true;
     }
 
-    return false;
+    if (this.send({type:'voice',voiceId:this.id,conversationId:this.conversationId,command})) return true;
+    this.onTransportDisconnected();
+
+    if (!this.hold?.pending) return false;
+    this.hold.pending.push(command);
+
+    return true;
+  }
+  private clearHold(): void {
+    if (this.hold) clearTimeout(this.hold.timer);
+    this.hold = null;
   }
   async start(conversationId: string, diagnostic = false): Promise<void> {
     if (this.id) return;
@@ -849,6 +860,8 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       return;
     }
 
+    this.clearHold();
+
     if (this.recoveryStartTime === 0) {
       this.recoveryStartTime = Date.now();
     }
@@ -904,10 +917,35 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
   onTransportDisconnected(): void {
     if (!this.userIntentActive) return;
+
+    if (this.hold) {
+      this.hold.pending ??= [];
+
+      return;
+    }
+
+    if (this.id && !this.recovering && this.live?.dc.readyState === 'open') {
+      this.diagnostic?.('voice_host_held', { turn: this.turn, at: performance.now() });
+      this.hold = { pending: [], timer: setTimeout(() => this.scheduleRecovery('后台没有响应，正在重新连接语音…'), HOST_REATTACH_MS) };
+
+      return;
+    }
+
     this.scheduleRecovery('语音连接已断开，正在恢复…');
   }
 
   onTransportReady(): void {
+    const queued = this.hold?.pending;
+
+    if (this.hold && queued && this.id) {
+      this.hold.pending = null;
+
+      // 认领命令总在最前；中途端口又断时，余下的命令会重新排队。
+      for (const command of [this.startCommand(), ...queued]) this.command(command);
+
+      return;
+    }
+
     if (this.userIntentActive && this.recovering) {
       // Guard against duplicate connected events consuming attempts while an attempt is in flight
       if (this.id !== null) return;
@@ -946,6 +984,20 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   receive(message: VoiceServerMessage & {conversationId?:string}): void {
     if(message.voiceId!==this.id||message.conversationId!==this.conversationId)return;
     const e=message.event;
+
+    if(this.hold&&!this.hold.pending&&e.kind==='state'&&e.state==='ready'){
+      this.clearHold();
+      this.diagnostic?.('voice_host_reattached', { turn: this.turn, at: performance.now() });
+
+      return;
+    }
+
+    // 后台重启过：中继没有这次会话，宿主按新会话发来令牌。旧通话没人接了，立即换新通话。
+    if(this.hold&&!this.hold.pending&&e.kind==='gpt_live_auth'){
+      this.scheduleRecovery('后台重启了，正在重新连接语音…');
+
+      return;
+    }
 
     if(e.kind==='diag'){this.onDiagRecord(e.record);
 
@@ -1075,6 +1127,7 @@ return;}
     this.setPhase('error',detail);
   }
   stop(notify=true): void {
+    this.clearHold();
     this.userIntentActive = false;
     this.recovering = false;
     this.recoveryAttempts = 0;
