@@ -10,18 +10,64 @@ import * as pdfWorker from "pdfjs-dist/build/pdf.worker.mjs";
 /** 一次交给模型的正文上限；与普通页面的读页预算同一量级。 */
 const PDF_TEXT_BUDGET = 14_000;
 const OUTLINE_MAX = 40;
+/** pdf.js 按文件长度一次分配内存：超过这个大小不解析，免得拖垮整个扩展后台。 */
+const PDF_MAX_BYTES = 150 * 1024 * 1024;
 
-/** 同一份 PDF 翻页时不重下：只留最近一份。 */
-let cached: { url: string; task: PDFDocumentLoadingTask; doc: Promise<PDFDocumentProxy> } | null = null;
+/**
+ * 中文、日文 PDF 的字符映射表随扩展打包。pdf.js 自带的取法要读 document.baseURI，服务工作线程里没有，所以自己取。
+ * 形状照 pdf.js 的 BinaryDataFactory：构造时收各类资源的地址前缀，fetch 按类别和文件名取字节。
+ */
+class ExtensionBinaryDataFactory {
+  private readonly bases: Record<string, string | null>;
 
-function openPdf(url: string): Promise<PDFDocumentProxy> {
-  if (cached?.url === url) return cached.doc;
-  void cached?.task.destroy();
+  constructor({ cMapUrl = null }: { cMapUrl?: string | null }) {
+    this.bases = { cMapUrl };
+  }
+
+  async fetch({ kind, filename }: { kind: string; filename: string }): Promise<Uint8Array> {
+    const base = this.bases[kind];
+
+    if (!base) throw new Error(`PDF 需要的 ${kind} 资源没有打包`);
+    const response = await fetch(`${base}${filename}`);
+
+    if (!response.ok) throw new Error(`读不到 PDF 资源 ${filename}`);
+
+    return new Uint8Array(await response.arrayBuffer());
+  }
+}
+
+/**
+ * 翻页时不重下同一份 PDF。按标签页存：别的标签页读另一份 PDF 不会中断这一份；
+ * 标签页重新加载（含换账号后刷新）或关闭就丢掉，不把一个登录身份读到的内容给下一次用。
+ */
+const cache = new Map<number, { url: string; task: PDFDocumentLoadingTask; doc: Promise<PDFDocumentProxy> }>();
+
+function forget(tabId: number) {
+  void cache.get(tabId)?.task.destroy();
+  cache.delete(tabId);
+}
+
+chrome.tabs.onRemoved.addListener(forget);
+chrome.tabs.onUpdated.addListener((tabId, change) => { if (change.status === "loading") forget(tabId); });
+
+async function openPdf(tabId: number, url: string): Promise<PDFDocumentProxy> {
+  const hit = cache.get(tabId);
+
+  if (hit?.url === url) return hit.doc;
+  forget(tabId);
+  const head = await fetch(url, { method: "HEAD", credentials: "include" }).catch(() => null);
+  const size = Number(head?.headers.get("content-length"));
+
+  if (size > PDF_MAX_BYTES) throw new Error(`这份 PDF 有 ${Math.round(size / 1024 / 1024)} MB，超过 ${PDF_MAX_BYTES / 1024 / 1024} MB，没有解析`);
   // 大报告动辄几十兆：只按需取用到的那几段，不整份下载。
-  const task = getDocument({ url, disableAutoFetch: true, disableStream: true, withCredentials: true });
+  // 传 URL 对象、关掉 useWorkerFetch：字符串地址和资源的默认取法都会去读 window / document，服务工作线程里没有。
+  const task = getDocument({
+    url: new URL(url), disableAutoFetch: true, disableStream: true, withCredentials: true, useWorkerFetch: false,
+    cMapUrl: chrome.runtime.getURL("pdfjs/cmaps/"), cMapPacked: true, BinaryDataFactory: ExtensionBinaryDataFactory,
+  });
   const doc = task.promise;
-  cached = { url, task, doc };
-  doc.catch(() => { if (cached?.doc === doc) cached = null; });
+  cache.set(tabId, { url, task, doc });
+  doc.catch(() => { if (cache.get(tabId)?.doc === doc) cache.delete(tabId); });
 
   return doc;
 }
@@ -63,8 +109,9 @@ async function outlineLines(doc: PDFDocumentProxy): Promise<string[]> {
  * 读 PDF 的正文：文档信息、目录（带页码）、从 #page=N 那页起的若干页文字。
  * 读不完时告诉模型怎么翻到后面：地址加 #page=N，这也是 Chrome 阅读器自己认的写法，用户看到的就是那一页。
  */
-export async function pdfText(url: string): Promise<string> {
-  const doc = await openPdf(url.replace(/#.*$/, ""));
+export async function pdfText(tabId: number, url: string): Promise<string> {
+  const file = url.replace(/#.*$/, "");
+  const doc = await openPdf(tabId, file);
   const start = Math.min(Math.max(Number(/#(?:.*&)?page=(\d+)/.exec(url)?.[1]) || 1, 1), doc.numPages);
   const meta = await doc.getMetadata().catch(() => null);
   const info = (meta?.info ?? {}) as Record<string, unknown>;
@@ -84,19 +131,25 @@ export async function pdfText(url: string): Promise<string> {
   const pages: string[] = [];
   let used = head.join("\n").length;
   let page = start;
+  let cutPage: number | null = null;
 
   for (; page <= doc.numPages && used < PDF_TEXT_BUDGET; page++) {
     const content = await (await doc.getPage(page)).getTextContent();
     const text = content.items.map(item => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "")).join("").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
     const block = `--- 第 ${page} 页 ---\n${text || "（这一页没有可提取的文字，可能是图片）"}`;
-    pages.push(block.slice(0, PDF_TEXT_BUDGET - used));
+    const room = PDF_TEXT_BUDGET - used;
+
+    if (block.length > room) cutPage = page;
+    pages.push(block.slice(0, room));
     used += block.length;
   }
 
   const shownEnd = page - 1;
-  const tail = shownEnd < doc.numPages
-    ? `[以上是第 ${start}–${shownEnd} 页。要读第 N 页起的文字，navigate 到 ${url.replace(/#.*$/, "")}#page=N 再读页。]`
-    : `[以上读到最后一页（第 ${doc.numPages} 页）。]`;
+  const tail = cutPage !== null
+    ? `[第 ${cutPage} 页太长，只给了前一部分。${cutPage < doc.numPages ? `要读第 N 页起的文字，navigate 到 ${file}#page=N 再读页。` : ""}]`
+    : shownEnd < doc.numPages
+      ? `[以上是第 ${start}–${shownEnd} 页。要读第 N 页起的文字，navigate 到 ${file}#page=N 再读页。]`
+      : `[以上读到最后一页（第 ${doc.numPages} 页）。]`;
 
   return [...head, ...pages, tail].join("\n");
 }
