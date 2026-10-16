@@ -78,7 +78,7 @@ function resultLine(view: FillUndoView): [string, string] | null {
       const by = (reason: string) => [...new Set(view.skipped.filter((s) => s.reason === reason).map((s) => s.field))];
       const parts = [
         by("user_changed").length ? `${quote(by("user_changed"))}你后来改过，没动。` : "",
-        by("gone").length ? `${quote(by("gone"))}已经不在页面上（例如弹窗已关），跳过了。` : "",
+        by("gone").length ? `${quote(by("gone"))}已经不在页面上（比如弹窗关了），${by("gone").length > 1 ? "这几处" : "这一处"}没法还原。如果它已经保存，请到网站里手动改回。` : "",
         by("failed").length ? `${quote(by("failed"))}网页没让改回去。` : "",
         notes(view.notes),
       ].join("");
