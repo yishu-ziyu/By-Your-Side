@@ -66,7 +66,7 @@ const result: Evidence & { verdicts: Record<string, Verdict> } = { case: `page-d
 
 const fixture = await startFixtureServer();
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 let panel: string | null = null;
 

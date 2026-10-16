@@ -136,7 +136,7 @@ const runs: Run[] = [];
 
 async function runOnce(action: string, round: number): Promise<Run> {
   const run: Run = { action, round, loadavg1: loadavg()[0] };
-  const rp = await launchRealPath({ withoutNativeHost: true });
+  const rp = await launchRealPath();
   let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
   let inprocStart = 0;
 

@@ -111,7 +111,7 @@ const paths: Record<string, JsonRecord> = {};
 
 const result: JsonRecord = { case: "offline-send-and-model-menu", startedAt, modelOrigin: origin, unknownModel: UNKNOWN_MODEL };
 
-const rp = await launchRealPath({ withoutNativeHost: true });
+const rp = await launchRealPath();
 
 result.browser = rp.browser;
 
