@@ -429,7 +429,7 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
 
     if(route?.resumeReadOnly==='status'){const targetId=route.resumeTargetId??id,target=this.getTaskProgress(targetId);
 
-return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snapshot:target,spokenText:(targetId===id?'':'指定会话：')+progressSpeech(target)}:{kind:'clarify',message:'原目标会话已不可用，请重新询问。'};}
+return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,text,target,stillCurrent,this.entries.get(targetId)!.runtime.session,route.turn,'status') : {kind:'clarify',message:'原目标会话已不可用，请重新询问。'};}
 
     // Idle conversational requests use the same capable session as typed input.
     // Classification still resolves controls, but cannot strip tools from ordinary content.
@@ -567,7 +567,12 @@ return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snaps
 
     if(!last)return {kind:'none'};
 
-    if(receipts.length===1&&last.action==='status')return {kind:'none',resumeReadOnly:'status',resumeTargetId:last.conversationId,snapshot:this.getTaskProgress(last.conversationId)!,spokenText:(last.originConversationId?'指定会话：':'')+last.message};
+    if(receipts.length===1&&last.action==='status') {
+      const target = this.getTaskProgress(last.conversationId);
+      const targetSession = this.entries.get(last.conversationId)?.runtime.session;
+      if (target && targetSession) return this.answerSourcedChat(last.conversationId,text,target,stillCurrent,targetSession,route?.turn,'status');
+      return {kind:'clarify',message:'原目标会话已不可用，请重新询问。'};
+    }
 
     return {kind:receipts.length===1&&last.action==='steer'?'steer':'action',ok:true,status:last.status,message:receipts.map(r=>r.message).join('；'),receipts,turn:{branch:'control',phase:'COMMITTED',protocol:'plan'}};
   }
@@ -722,10 +727,8 @@ return {kind:'none',resumeReadOnly:'chat'};}
 return true;
     },cancel:()=>{if(sent)this.emit({type:'agent_event',conversationId,event:{kind:'user_delivery_stream',stream:{id,runId,kind,text:'',phase:'cancelled'}}});}};
   }
-  private async answerSourcedChat(id: string, text: string, before: TaskProgressSnapshot, stillCurrent: () => boolean, session: Runtime["session"],voiceTurn?:number): Promise<VoiceRouteResult> {
-    const facts = before.conversationContext?.latestResult?.text;
-
-    if (!facts) return { kind: "none", resumeReadOnly: "chat" };
+  private async answerSourcedChat(id: string, text: string, before: TaskProgressSnapshot, stillCurrent: () => boolean, session: Runtime["session"],voiceTurn?:number,readOnly:'chat'|'status'='chat'): Promise<VoiceRouteResult> {
+    const facts = JSON.stringify({ currentStatus: progressSpeech(before), ...session.voiceTaskEvidence(before) });
 
     if (typeof session.composeUserDelivery !== "function") return { kind: "none", resumeReadOnly: "chat" };
     const originRun = before.runId ?? null;
@@ -746,7 +749,7 @@ return true;
 
 return { kind: "silent" };}
 
-      if (now.state === "error" || now.state === "aborted" || now.state === "paused") {streaming.cancel();
+      if (now.state !== before.state && ["error", "aborted", "paused"].includes(now.state)) {streaming.cancel();
 
 return { kind: "silent" };}
 
@@ -758,7 +761,7 @@ return { kind: "silent" };}
 
       const published = this.getTaskProgress(id);
 
-      return { kind: "none", resumeReadOnly: "chat", snapshot: published ?? now, spokenText: delivery.text };
+      return { kind: "none", resumeReadOnly: readOnly, snapshot: published ?? now, spokenText: delivery.text };
     } catch {
       streaming.cancel();
       const now = this.getTaskProgress(id);
@@ -815,8 +818,8 @@ return { kind: "silent" };}
   }
   /** 过往任务：宿主在 host-core 里接上；没有就不记。 */
   taskHistory?: TaskHistoryStore;
-  /** 输入框旁选的思考强度；没选过为 undefined（按模型登记的起始档）。 */
-  private thinkingDeep: boolean | undefined;
+  /** 各模型的手动起始档；自动升档只属于各自正在执行的会话。 */
+  private readonly thinkingPreferences = new Map<string, import('../../shared/protocol.js').ThinkingLevel | null>();
 
   /**
    * 任务一轮结束时留一条摘要。只记动手做过事的任务（列过目标或有执行记录），纯聊天和读页问答不记。
@@ -1527,7 +1530,8 @@ return receipt;
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
 
-      if (this.thinkingDeep !== undefined) runtime.session.mainEffort?.prefer(this.thinkingDeep);
+      for (const [model, level] of this.thinkingPreferences) runtime.session.setThinking(model, level);
+      runtime.session.emitThinkingLevel();
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
       runtime.session.bindVoiceTurnGate?.(this.voiceTurns);
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
@@ -1702,11 +1706,13 @@ return;}
       return;
     }
 
-    // 思考强度对所有会话生效，之后新开的会话也按它起步。
+    // 偏好只改指定模型；其他模型和会话的自动档位不受影响。
     if (message.type === "set_thinking") {
-      this.thinkingDeep = message.deep;
-
-      for (const entry of this.entries.values()) entry.runtime.session.mainEffort?.prefer(message.deep);
+      const current = this.entries.get(id)?.runtime.session;
+      if (!current) return;
+      current.setThinking(message.model, message.level, message.restore);
+      this.thinkingPreferences.set(message.model, message.level);
+      for (const entry of this.entries.values()) if (entry.runtime.session !== current) entry.runtime.session.setThinking(message.model,message.level,message.restore);
 
       return;
     }
@@ -1924,7 +1930,11 @@ return;
       for (const receipt of this.dispatcher.store.list(summary.id)) emit({type:'agent_event',conversationId:summary.id,event:{kind:'notice',message:receipt.message,receipt}});
       emit({ type: "status", conversationId: summary.id, epochs:this.epochs(runtime),state: runtime.session.isHeld() ? "user" : runtime.session.isStreaming() ? "running" : "idle" });
       this.emitTaskView(summary.id, true);
-      void runtime.session.availableModels().then((models) => emit({ type: "model_info", conversationId: summary.id, model: runtime.session.modelName(), models }));
+      void runtime.session.availableModels().then((models) => {
+        emit({ type: "model_info", conversationId: summary.id, model: runtime.session.modelName(), models });
+        const thinking = runtime.session.thinkingInfo();
+        if (thinking) emit({type:'agent_event',conversationId:summary.id,event:{kind:'thinking_level',...thinking}});
+      });
 
       const team = runtime.control.teamView();
 

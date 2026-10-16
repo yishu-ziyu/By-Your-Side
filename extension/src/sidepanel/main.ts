@@ -2500,7 +2500,7 @@ void refreshActiveTabPill();
 const modelMenu = mountModelMenu({
   composer: document.getElementById("composer")!,
   after: document.getElementById("attach-btn")!,
-  sendThinking: (deep) => { send({ type: "set_thinking", deep }); },
+  sendThinking: (model, level, restore) => { send({ type: "set_thinking", model, level, ...(restore ? {restore} : {}) }); },
   setModel: (model) => { send({ type: "set_model", model }); },
 });
 
@@ -2580,20 +2580,14 @@ let port: chrome.runtime.Port | null = null;
 
 let reconnectAttempt = 0;
 
-/**
- * service worker 被 Chrome 停掉（空闲、更新、崩溃）后，面板手里的端口不一定收到断开事件：
- * 状态仍显示已连接，发出的任务落进死端口、静默丢失。不做一次往返就无法知道端口是否活着，所以：
- * - 1 秒内收到过 pong 的端口直接发；否则消息先排队、发 ping，pong 回来再发出。
- * - ping 1.5 秒没有回应就换端口重连，连上后发出排队的消息（消息没离开面板，重发不会重复执行）。
- * - 每 5 秒也 ping 一次：空闲时提前发现死端口；面板开着时顺带让 service worker 保持存活。
- */
+/** 后台忙时回复可能延迟；只有持续没有消息才换端口，未发出的消息留在队列。 */
 const PORT_PING_MS = 5_000;
 
 const PORT_FRESH_MS = 1_000;
 
-const PORT_PONG_TIMEOUT_MS = 1_500;
+const PORT_PONG_TIMEOUT_MS = 10_000;
 
-let lastPong = 0;
+let lastPortMessage = 0;
 
 let pingSentAt: number | null = null;
 
@@ -5470,6 +5464,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
   if (progressRun && (ev.kind === "error" || ev.kind === "agent_end" || ev.kind === "run_stopped")) { progressRun.orbActivity.observe(ev); syncRunOrb(progressRun); }
 
   switch (ev.kind) {
+    case "thinking_level":
+      if (!replayingHistory) modelMenu.thinking(ev);
+      break;
     case "memory":
       if (ev.action === "used") noteMemoryUsed(ev);
       // 网站规则已有具体内容与删除入口，保存事件只用于版本同步，不重复画一行。
@@ -5866,7 +5863,7 @@ function send(msg: ClientMessage): boolean {
 function post(envelope: PanelToBg): boolean {
   if (!port || !transportConnected) return false;
 
-  if (queuedSends.length || performance.now() - lastPong > PORT_FRESH_MS) {
+  if (queuedSends.length || performance.now() - lastPortMessage > PORT_FRESH_MS) {
     queuedSends.push(envelope);
     pingPort();
 
@@ -6354,7 +6351,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
 
   if (envelope.kind === "pong") {
-    lastPong = performance.now();
+    lastPortMessage = performance.now();
     pingSentAt = null;
     reconnectAttempt = 0;
     flushQueuedSends();
@@ -6744,13 +6741,22 @@ function connect(): void {
   }
 
   port = p;
-  lastPong = performance.now();
+  lastPortMessage = performance.now();
   watchPort();
-  p.onMessage.addListener((msg: BgToPanel) => handleBgMessage(msg));
+  p.onMessage.addListener((msg: BgToPanel) => {
+    if (port !== p) return;
+    // Any reply proves this port is alive, even while a busy background delays pong.
+    lastPortMessage = performance.now();
+    pingSentAt = null;
+    handleBgMessage(msg);
+    flushQueuedSends();
+  });
   p.onDisconnect.addListener(() => {
+    if (port !== p) return;
+    port = null;
+    pingSentAt = null;
+    transportConnected = false;
     voiceUI.disconnect();
-
-    if (port === p) port = null;
     scheduleReconnect();
   });
   const sync: Extract<PanelToBg, { kind: "sync" }> = { kind: "sync", afterSeq: lastHistorySeq };
@@ -6816,10 +6822,13 @@ function flushQueuedSends(): void {
 
 /** 主动断开可疑端口并立即重连；对自己调用 disconnect 不会触发本端的 onDisconnect。 */
 function replaceDeadPort(): void {
+  console.info("[voice] panel_port_replaced", JSON.stringify({ lastMessageAgeMs: performance.now() - lastPortMessage, pingAgeMs: pingSentAt === null ? null : performance.now() - pingSentAt }));
   const dead = port;
   port = null;
   pingSentAt = null;
   transportConnected = false;
+  // Local disconnect does not fire onDisconnect on this side.
+  voiceUI.disconnect();
 
   try {
     dead?.disconnect();

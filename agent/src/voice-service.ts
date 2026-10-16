@@ -157,15 +157,13 @@ export class VoiceService {
     active.session.command(message.command);
 
     if (message.command.kind === "stop") {
+      this.diagnostic?.("voice_host_stopped",{voiceId:message.voiceId,conversationId});
       this.active = null;
     }
   }
   observe(message: ServerMessage): void {
     const active = this.active;
-
-    if (!active) {
-      return;
-    }
+    if (!active) return;
 
     const owner = message.conversationId ?? active.conversationId;
 
@@ -296,7 +294,8 @@ export class VoiceService {
       active.session.notify(snapshot);
     }
   }
-  close(): void {
+  close(reason = "closed"): void {
+    if (this.active) this.diagnostic?.("voice_host_closed",{voiceId:this.active.id,reason});
     this.active?.session.close();
     this.active = null;
     this.deliveryOwners.clear();
