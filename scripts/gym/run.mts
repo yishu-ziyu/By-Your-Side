@@ -1,14 +1,14 @@
 /**
  * Real BYS sidebar → existing agent → AX/CDP → local app. No scripted model.
  * npm run gym -- --headless [--tasks=todo,form,search] [--seeds=11,29,47] [--groups=A,B]
- *   [--seconds=180] [--commands=600] [--fault=none|drop|stale] [--out=absolute-directory]
+ *   [--seconds=180] [--commands=600] [--fault=none|drop|late-drop|stale|unknown|waiting] [--out=absolute-directory] [--no-video]
  * Uses one frozen build and a fresh profile per episode. Failed samples are append-only.
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile, appendFile, readdir } from 'node:fs/promises';
 import { loadavg } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { REPO, launchRealPath, requireHeadless, until, sleep, recordScreen } from '../acceptance/real-path/harness.mts';
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from '../acceptance/real-path/inproc-config.mts';
 import { startFixture, promptFor, tasks, seeds } from './fixture.mjs';
@@ -23,8 +23,11 @@ const selectedSeeds = arg('seeds')?.split(',').map(Number) ?? seeds;
 const groups = arg('groups')?.split(',') ?? ['A', 'B'];
 const seconds = Number(arg('seconds') ?? 180), commands = Number(arg('commands') ?? 600);
 const fault = arg('fault') ?? 'none';
+if(!['none','drop','late-drop','stale','unknown','waiting'].includes(fault))throw new Error('Invalid fault');
+if((fault==='unknown'&&selectedTasks.some(t=>t!=='todo'))||(['late-drop','waiting'].includes(fault)&&selectedTasks.some(t=>t!=='form')))throw new Error('Fault/task mismatch');
 if (!selectedTasks.every(x => tasks.includes(x)) || !selectedSeeds.every(x => seeds.includes(x)) || !groups.every(x => ['A','B'].includes(x)) || !Number.isFinite(seconds) || seconds < 30 || !Number.isInteger(commands) || commands < 1) throw new Error('Invalid experiment arguments');
 const out = resolve(arg('out') ?? join(REPO, 'out/gym', new Date().toISOString().replace(/[:.]/g, '-')));
+await mkdir(dirname(out), { recursive: true });
 await mkdir(out, { recursive: false });
 const model = DEFAULT_TEST_MODEL;
 const plan = await loadModelPlan(model);
@@ -71,11 +74,12 @@ async function run(task: string, seed: number, group: string) {
     await until(async () => await rp!.evaluate(panel,"document.querySelector('#status-dot')?.classList.contains('on') && document.querySelector('#send-btn')?.disabled===false") || undefined, 60_000,'sidebar ready');
     finishNetwork = await networkUsage(rp);
     await rp.screenshot(work,join(dir,'before.png'));
-    stopVideo = await recordScreen(rp.cdp,work,join(dir,'execution.mp4'));
+    if(!process.argv.includes('--no-video')) stopVideo = await recordScreen(rp.cdp,work,join(dir,'execution.mp4'));
     started = Date.now(); row.startedAt = new Date(started).toISOString();
-    budget = await installBudget(rp,started+seconds*1000,commands);
+    budget = await installBudget(rp,started+seconds*1000,commands,fault);
     const say = async (text: string) => { await rp!.click(panel,'#input'); await rp!.typeText(panel,text); await rp!.pressEnter(panel); };
-    await say(promptFor(task));
+    row.prompt=promptFor(task,fault);
+    await say(row.prompt);
     let quietSince = 0, previousTraceCount = 0;
     while (Date.now() < started+seconds*1000) {
       await sleep(500);
@@ -109,7 +113,7 @@ async function run(task: string, seed: number, group: string) {
     row.answers=trace.filter(e=>e.type==='message_end' && e.data.message?.role==='assistant').map(e=>({at:e.time,text:(e.data.message.content??[]).filter((p:Row)=>p.type==='text').map((p:Row)=>p.text).join('\n')})).filter(e=>e.text.trim());
     row.answer=row.answers.at(-1)?.text??'';
     await rp.screenshot(work,join(dir,'after.png')); await rp.screenshot(panel,join(dir,'sidebar.png'));
-    row.video=await stopVideo(); stopVideo=undefined;
+    row.video=await stopVideo?.()??null; stopVideo=undefined;
     if(task==='todo') {
       await rp.cdp.send('Emulation.setScriptExecutionDisabled',{value:false},work);
       await rp.cdp.send('Page.reload',{},work);
@@ -132,7 +136,7 @@ async function run(task: string, seed: number, group: string) {
       row.network ??= await finishNetwork?.().catch(()=>[]);
       row.budget=await budget?.read().catch(()=>null);
       if(panel) trace=await rp.evaluate(panel,traceExpression).catch(()=>trace);
-      row.effects=fixture.effects;
+      row.effects=fixture.effects; row.perturbations=fixture.events;
       row.claim=claimFrom(row.answer??'');
       row.falseSuccess=row.claim==='success'&&row.status==='failure';
       row.falseFailure=row.claim==='failure'&&row.status==='success';

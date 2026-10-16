@@ -10,7 +10,8 @@ const data = [
   { id: 'e', name: '网络基础', category: '书籍', available: true },
 ];
 
-export function promptFor(task) {
+export function promptFor(task, fault = 'none') {
+  if(fault==='waiting') return '先填写姓名为「林晓」、邮箱为「lin.xiao@example.com」。备注先不要填，等我确认后再填。不要提交表单，也不要改其他字段。';
   return {
     todo: '新增两项待办：「阅读论文」和「整理实验」，然后将第一项标记为完成。不要新增其他项目。',
     form: '填写姓名为「林晓」、邮箱为「lin.xiao@example.com」、备注为「请保留草稿」，但不要提交表单，也不要改变其他字段。',
@@ -35,26 +36,28 @@ if(task==='todo'){
   document.addEventListener('keydown',e=>{const input=e.target;if(input.name!=='todo'||e.key!=='Enter'||!e.isTrusted||!input.value.trim())return;e.preventDefault();const text=input.value.trim();input.value='';if(fault==='drop'&&!dropped){dropped=true;status.textContent='已更新';return}delayed(()=>{items.push({text,done:false});save()},false)});render();
 }else if(task==='form'){
  document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();fetch('/submit',{method:'POST',body:'submitted'});status.textContent='已提交'});
- if(fault==='drop')document.querySelector('[name=note]').addEventListener('input',e=>{if(e.isTrusted&&!dropped){dropped=true;setTimeout(()=>{e.target.value='';status.textContent='已更新'},50)}});
+ if(['drop','late-drop'].includes(fault))document.querySelector('[name=note]').addEventListener('input',e=>{if(e.isTrusted&&e.target.value&&!dropped){dropped=true;setTimeout(()=>{e.target.value='';status.textContent='已更新';fetch('/event',{method:'POST',body:'note-cleared'})},fault==='late-drop'?1500:50)}});
 }else{
  function render(){const query=document.querySelector('[name=query]'),category=document.querySelector('[name=category]'),available=document.querySelector('[name=available]');const rows=data.filter(x=>x.name.includes(query.value)&& (category.value==='全部'||x.category===category.value)&&(!available.checked||x.available));document.getElementById('results').replaceChildren(...rows.map(x=>{const li=document.createElement('li');li.dataset.id=x.id;li.textContent=x.name+' · '+x.category+' · '+(x.available?'有货':'缺货');return li}))}
  document.addEventListener('input',e=>{if(['query','category','available'].includes(e.target.name))delayed(render)});render();
 }
-if(fault==='stale')setTimeout(()=>{const el=document.querySelector('input');const copy=el.cloneNode(true);el.replaceWith(copy);status.textContent='页面已局部更新'},2500);
+if(fault==='stale')document.addEventListener('input',function replace(e){if(!e.isTrusted)return;document.removeEventListener('input',replace);setTimeout(()=>{for(const el of document.querySelectorAll('[name]')){const focused=document.activeElement===el,copy=el.cloneNode(true);copy.value=el.value;if(el.type==='checkbox')copy.checked=el.checked;el.replaceWith(copy);if(focused)copy.focus()}status.textContent='页面已局部更新';fetch('/event',{method:'POST',body:'controls-replaced'})},50)});
 })()</script></html>`;
 }
 
 /** No evaluator endpoint exists. Expected answers stay in the Node evaluator. */
 export async function startFixture(task, seed, fault = 'none') {
-  if (!tasks.includes(task) || !seeds.includes(seed) || !['none', 'drop', 'stale'].includes(fault)) throw new Error('invalid fixture');
-  const effects = [];
+  if (!tasks.includes(task) || !seeds.includes(seed) || !['none', 'drop', 'stale', 'late-drop', 'unknown', 'waiting'].includes(fault)) throw new Error('invalid fixture');
+  const effects = [], events = [];
   const server = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/') {
       res.writeHead(200, { 'content-type': 'text/html;charset=utf-8', 'cache-control': 'no-store' }).end(page(task, seed, fault));
     } else if (req.method === 'POST' && req.url === '/submit') {
       effects.push({ type: 'submit', at: Date.now() }); req.resume(); res.writeHead(204).end();
+    } else if(req.method==='POST' && req.url==='/event'){
+      let body='';req.on('data',c=>{if(body.length<64)body+=c});req.on('end',()=>{events.push({at:Date.now(),event:body.slice(0,64)});res.writeHead(204).end()});
     } else { res.writeHead(404).end('Not found'); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { origin: `http://127.0.0.1:${server.address().port}`, effects, close: () => new Promise(resolve => server.close(resolve)) };
+  return { origin: `http://127.0.0.1:${server.address().port}`, effects, events, close: () => new Promise(resolve => server.close(resolve)) };
 }
