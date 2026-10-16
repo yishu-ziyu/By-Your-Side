@@ -75,10 +75,10 @@ function resultLine(view: FillUndoView): [string, string] | null {
       ? ["页面已经换了", `，${quote(view.fields)}找不到了，扩展撤不回。`]
       : ["记录没了", "：扩展重启过，不知道动手前的值，扩展撤不回。"];
     case "restored": {
-      const by = (reason: string) => view.skipped.filter((s) => s.reason === reason).map((s) => s.field);
+      const by = (reason: string) => [...new Set(view.skipped.filter((s) => s.reason === reason).map((s) => s.field))];
       const parts = [
         by("user_changed").length ? `${quote(by("user_changed"))}你后来改过，没动。` : "",
-        by("gone").length ? `${quote(by("gone"))}已经不在页面上。` : "",
+        by("gone").length ? `${quote(by("gone"))}已经不在页面上（例如弹窗已关），跳过了。` : "",
         by("failed").length ? `${quote(by("failed"))}网页没让改回去。` : "",
         notes(view.notes),
       ].join("");
