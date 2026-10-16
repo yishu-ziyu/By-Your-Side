@@ -1,7 +1,15 @@
 name: E2E (isolated, no credentials)
-# Manual trigger until the first green run on Linux; then add pull_request/push.
+# Keep real-browser acceptance manually triggered.
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Acceptance cases to run
+        type: choice
+        default: core
+        options:
+          - core
+          - session-durability
 permissions:
   contents: read
 jobs:
@@ -19,8 +27,13 @@ jobs:
       - name: Locate Chrome for Testing
         run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
       # Real-path cases install only the extension and use a scripted model.
-      # The core set lives in run-all.mts (CORE). Not yet run on Linux.
-      - run: npm test
+      # The core set lives in run-all.mts (CORE).
+      - name: Core acceptance
+        if: inputs.suite == 'core'
+        run: npm test
+      - name: Session recovery acceptance
+        if: inputs.suite == 'session-durability'
+        run: npx tsx scripts/acceptance/real-path/session-durability.mts --headless
       - if: always()
         uses: actions/upload-artifact@v4
         with:
