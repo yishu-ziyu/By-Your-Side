@@ -2038,6 +2038,10 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
       memoryLoaded = true;
       memoryListError = "";
 
+      for (const [askId, card] of memoryAskCards) {
+        if (card.ask.learned) stepMemoryAsk(askId, { kind: "sync", entry: memoryState.get(card.ask.learned.id) });
+      }
+
       if (memoryEdit && !memoryState.get(memoryEdit.id)) memoryEdit = null;
 
       if (memoryForget && !memoryState.get(memoryForget.id)) memoryForget = null;
@@ -2064,6 +2068,12 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
 
       if (outcome.kind === "success") memoryForget = null;
       else memoryForget.error = `没有忘记这条记忆：${outcome.error}`;
+    }
+  }
+
+  if (outcome.kind === "success" && outcome.action === "update" && outcome.entry) {
+    for (const [askId, card] of memoryAskCards) {
+      if (card.ask.learned?.id === outcome.entry.id) stepMemoryAsk(askId, { kind: "sync", entry: outcome.entry });
     }
   }
 
@@ -3664,12 +3674,13 @@ function renderSiteNotesReceipt(event: Extract<AgentUiEvent, { kind: "site_notes
  * 没有本地状态的回放卡片直接停在结局；没有结局的照常可点。
  */
 function renderMemoryAsk(event: MemoryAskEvent): void {
-  if (!memoryAskCards.has(event.askId)) memoryAskCards.set(event.askId, createAskCard(event));
+  if (!memoryAskCards.has(event.askId)) memoryAskCards.set(event.askId, createAskCard(event, !replayingHistory));
 
   if (event.outcome) stepMemoryAsk(event.askId, { kind: "outcome", outcome: event.outcome });
 
   if (messagesEl.querySelector(`[data-memory-ask="${CSS.escape(event.askId)}"]`)) return;
   appendToMessages(buildMemoryAsk(event.askId));
+  if (event.learned && !memoryListRequestId) requestMemoryList();
   scrollToEnd();
 }
 
@@ -3789,9 +3800,20 @@ function buildMemoryAsk(askId: string): HTMLElement {
   } else if (card.phase === "once") {
     line.textContent = "好，这次就不记了。";
   } else if (card.phase === "noted") {
-    line.textContent = "好，记住了。可在「记忆」面板查看或撤销";
+    line.textContent = card.ask.learned ? `当时记下了：${card.ask.rule} 当前状态可在「记忆」中查看。` : "好，记住了。可在「记忆」面板查看或撤销";
   } else if (card.phase === "undone") {
-    line.textContent = "已撤销。";
+    line.textContent = card.ask.learned ? "已删除这条规则。" : "已撤销。";
+
+    if (card.ask.learned) {
+      const details = document.createElement("details");
+      details.className = "memory-ask-replaces";
+      const summary = document.createElement("summary");
+      summary.textContent = "删除影响";
+      details.append(summary, "后续任务不再加载这条保存的规则。当前对话、过往任务和站点笔记仍可能影响回答，已执行的网页操作不变。");
+      root.append(details);
+    }
+  } else if (card.phase === "inactive") {
+    line.textContent = "这条规则已被替换或停用。";
   } else if (card.phase === "already") {
     line.append("已经记着了。");
 
@@ -3808,9 +3830,25 @@ function buildMemoryAsk(askId: string): HTMLElement {
     scope.dataset.memoryAskScope = entry.scope.kind;
 
     if (!scope.disabled) scope.title = entry.scope.kind === "site" ? `只在 ${entry.scope.hostname} 照做，点一下改成所有网站` : "在所有网站照做，点一下改成只在这个网站";
-    const undo = memoryAskButton("memory-ask-undo", card.pending === "undo" ? "正在撤销…" : "撤销", { kind: "undo" }, card);
+    const undo = memoryAskButton("memory-ask-undo", card.pending === "undo" ? (card.ask.learned ? "正在删除…" : "正在撤销…") : (card.ask.learned ? "删除规则" : "撤销"), { kind: "undo" }, card);
     undo.dataset.memoryAskUndo = entry.id;
-    line.append("好，记住了。", scope, undo);
+    line.append(card.ask.learned ? `已记住：${entry.text.trim().replace(/[。.!！]+$/u, "")}。` : "好，记住了。", scope);
+
+    if (card.ask.learned) {
+      scope.textContent = entry.scope.kind === "site" ? `仅 ${entry.scope.hostname}` : "所有网站";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "memory-ask-undo";
+      edit.textContent = "编辑";
+      edit.onclick = () => {
+        openMemoryDrawer();
+        memoryEdit = { id: entry.id, text: entry.text, scopeKind: entry.scope.kind, hostname: entry.scope.kind === "site" ? entry.scope.hostname : currentMemoryHostname, pendingRequestId: null, error: "" };
+        renderMemoryDrawer();
+      };
+      line.append(edit);
+    }
+
+    line.append(undo);
   }
 
   if (card.error) {
@@ -5434,7 +5472,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
   switch (ev.kind) {
     case "memory":
       if (ev.action === "used") noteMemoryUsed(ev);
-      else renderMemoryReceipt(ev);
+      // 网站规则已有具体内容与删除入口，保存事件只用于版本同步，不重复画一行。
+      else if (!(ev.action === "saved" && ev.entries.some(entry => [...memoryAskCards.values()].some(card => card.ask.learned?.id === entry.id)))) renderMemoryReceipt(ev);
       refreshMemoryIfStale(ev.rev);
       break;
     case "memory_ask":
@@ -6056,7 +6095,8 @@ function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" 
 
 /** 面板开着时，记忆被别处写入（如智能体刚保存）→ 重读列表，避免下次修改撞「版本冲突」。关着时下次打开本来就会重读。 */
 function refreshMemoryIfStale(rev: number | undefined): void {
-  if (memoryDrawer.hidden || !memoryLoaded) return;
+  const hasLearnedRules = [...memoryAskCards.values()].some(card => card.ask.learned);
+  if ((memoryDrawer.hidden && !hasLearnedRules) || !memoryLoaded) return;
 
   if (memoryState.noteRev(rev, memoryEditorBusy())) requestMemoryList();
 }

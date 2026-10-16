@@ -1980,6 +1980,8 @@ return;}
       await this.displayWork.catch(()=>{});
 
       if(!session||this.hold.isHeld()||runId!==this.deliveryRunId())throw new TaskActionRejected('原任务已变化，修改未执行。');
+      this.memoryRuntime?.invalidateUserTurn("steer");
+      this.memoryRuntime?.beginUserTurn(text, context, this.conversationSnapshot()?.conversationContext?.recentTurns);
       const updated=`原任务：${this.activeGoal}\n用户最新修改：${text}`;
       await this.promptWithFreshPageObservation(session,withPageContext(updated,context),context,extractImages(attachments),options?.pages);
 
