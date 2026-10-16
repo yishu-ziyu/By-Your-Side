@@ -7,6 +7,7 @@ import { parseTarget as sharedParseTarget, resolveArgs, resolveTargetSelector } 
 import { sendCommand } from "../debugger.js";
 import { assertNoPendingDialog } from "../page-events.js";
 import { getWorkingTabId, resolveReadableTab, resolveTabForRead } from "../state.js";
+import type { CopiedFieldProof } from '../../../../shared/copied-field.js';
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 
 const MAX_ELEMENT_CHARS = 1_000_000;
@@ -47,7 +48,7 @@ export function typedReadElementError(error: unknown): Error {
 }
 
 /** Serialized unchanged into either CDP or executeScript; no closure or page-supplied code. */
-function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied: Element | null, readback: {deadline:number} | null, sensitiveName: string, layout = false): ReadReply {
+function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied: Element | null, readback: {deadline:number;originalNode?:boolean} | null, sensitiveName: string, layout = false): ReadReply {
   try {
     if(readback&&Date.now()>=readback.deadline)throw new Error('READBACK_TIMEOUT');
 
@@ -89,14 +90,7 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       || /one-time-code|cc-(number|csc|exp)/i.test(String(el.getAttribute?.('autocomplete') ?? ''))
       || new RegExp(sensitiveName, 'i').test([el.getAttribute('name'), el.id, label, el.getAttribute('placeholder'), el.getAttribute('aria-label'), el.getAttribute('title')].map((part) => normalize(String(part ?? ''))).join(' ')));
 
-    if(readback) {
-      if(secretField)throw new Error('READBACK_PROTECTED');
-
-      if(!hasValue)throw new Error('READBACK_UNSUPPORTED_FIELD');
-      const value=String(el.value??'');
-
-      return {ok:true,data:{tagName,textContent:'',value,properties:{value}}};
-    }
+    if (readback && secretField) throw new Error('READBACK_PROTECTED');
 
     const textContent = String(element.textContent ?? '');
 
@@ -129,6 +123,12 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
       return read(element);
     })() : undefined;
+
+    if (readback) {
+      if (!hasValue && (!readback.originalNode || editableText === undefined)) throw new Error('READBACK_UNSUPPORTED_FIELD');
+      const value = hasValue ? String(el.value ?? '') : readback.originalNode ? String(el.innerText) : editableText!;
+      return { ok: true, data: { tagName, textContent: '', value, properties: { value } } };
+    }
 
     const maskValue = (raw: string): string => (secretField ? (raw ? `<${raw.length} chars>` : '') : raw);
     const values: Partial<Record<ElementProperty, ElementValue | null>> = {};
@@ -356,6 +356,7 @@ async function readResolvedNode(
   properties: ElementProperty[],
   check: () => void,
   layout = false,
+  captureIdentity = false,
 ): Promise<ElementData> {
   check();
   const contextId = await isolatedReadContext(tabId);
@@ -394,7 +395,12 @@ async function readResolvedNode(
 
     if (!reply.ok) throw new Error(reply.error);
 
-    return assertComplete(reply.data);
+    const data = assertComplete(reply.data);
+    if (captureIdentity) {
+      const described = await sendCommand<{ node: { backendNodeId: number } }>(tabId, 'DOM.describeNode', { objectId });
+      data.nodeIdentity = { kind: 'ax', backendNodeId: described.node.backendNodeId };
+    }
+    return data;
   } finally {
     await sendCommand(tabId, "Runtime.releaseObject", { objectId }).catch(() => { /* 已释放 */ });
   }
@@ -416,10 +422,10 @@ function assertComplete(data: ElementData): ElementData {
   return data;
 }
 
-async function readAxRef(tabId: number, ref: number, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}, layout = false): Promise<ElementData> {
+async function readAxRef(tabId: number, ref: number, properties: ElementProperty[], readback?: {documentId:string;deadline:number;originalNode?:boolean}, check=()=>{}, layout = false): Promise<ElementData> {
   check();
   // 填写时被找回的 ref 指向页面换上的新节点，读它而不是已离开文档的旧节点。
-  const backendNodeId=axBackendNodeFor(tabId,ref)??ref;
+  const backendNodeId=readback?.originalNode ? ref : axBackendNodeFor(tabId,ref)??ref;
   const executionContextId=await isolatedReadContext(tabId);
   check();
   const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId,executionContextId });
@@ -454,7 +460,7 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
   } finally { await sendCommand(tabId, 'Runtime.releaseObject', {objectId}).catch(() => {}); }
 }
 
-async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}, layout = false): Promise<ElementRead> {
+async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number;originalNode?:boolean}, check=()=>{}, layout = false): Promise<ElementRead> {
   check();
 
   const args: Parameters<typeof readInPage> = [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null, SENSITIVE_FIELD_NAME.source, layout];
@@ -511,6 +517,12 @@ export async function readElement(
   }
 }
 
+export async function copyTargetIdentity(params: { tabId?: number; target: string }, executionKey: string): Promise<Omit<CopiedFieldProof, 'sha256' | 'chars'> | null> {
+  const data = await readElementInner(params, executionKey, undefined, false, true);
+  if (data.secret || !data.documentId || !data.nodeIdentity || !['input', 'textarea'].includes(data.tagName) && data.editableText === undefined) return null;
+  return { tabId: data.tabId, documentId: data.documentId, backendNodeId: data.nodeIdentity.backendNodeId };
+}
+
 /**
  * fill 的 from：读出要原样写进另一栏的文字，不经过模型。输入框、下拉框取 displayValue，富文本编辑器取 editableText（同 read_element），
  * 其余按渲染布局取 innerText：网页回答多是一段段 <p>、<li>，textContent 和 visibleText 会把段落挤成一行。快照里的 text 行是文字节点，取它自己的文字。去掉首尾空白。
@@ -546,8 +558,9 @@ async function readElementInner(
   checkCurrent:()=>void=()=>{},
   /** fill 的 from：多读布局文字和可见性，且读来源不改工作标签页。 */
   fillSource = false,
+  captureIdentity = false,
 ): Promise<ReadElementResult & { secret?: true; layoutText?: string; unrendered?: true }> {
-  const readback=params.readback;
+  const readback = params.copyRead ? { ...params.copyRead, originalNode: true } : params.readback ? { ...params.readback, originalNode: false } : undefined;
 
   const check=()=>{
     if(!readback)return;
@@ -592,7 +605,7 @@ async function readElementInner(
 
   if(readback && (readback.nodeIdentity?.kind!=='ax' || target.kind!=='ref'
     || !Number.isSafeInteger(readback.nodeIdentity.backendNodeId) || target.ref===undefined
-    || !isAxRef(tabId,target.ref) || readback.nodeIdentity.backendNodeId!==axBackendNodeFor(tabId,target.ref)))throw new Error('READBACK_NODE_IDENTITY_UNVERIFIABLE');
+    || (readback.originalNode ? readback.nodeIdentity.backendNodeId!==target.ref : !isAxRef(tabId,target.ref) || readback.nodeIdentity.backendNodeId!==axBackendNodeFor(tabId,target.ref))))throw new Error('READBACK_NODE_IDENTITY_UNVERIFIABLE');
 
   const read = async (): Promise<{data:ElementData;documentId?:string}> => {
     check();
@@ -600,7 +613,7 @@ async function readElementInner(
     if (target.kind === 'xpath' || target.kind === 'text' || target.kind === 'role' || target.kind === 'href') {
       const kind = target.kind;
       const selector = target.selector ?? "";
-      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind, selector }, properties, check, fillSource), check);
+      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind, selector }, properties, check, fillSource, captureIdentity), check);
 
       const read: ElementRead = {data:observed.value};
 
@@ -611,7 +624,7 @@ async function readElementInner(
 
     if (target.kind === 'css') {
       // CSS 也走统一 resolver（open shadow + 同源 frame），避免 readInPage 的浅 querySelectorAll。
-      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check, fillSource), check);
+      const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check, fillSource, captureIdentity), check);
 
       const read: ElementRead = {data:observed.value};
 
@@ -623,7 +636,7 @@ async function readElementInner(
     if (target.kind === 'ref') {
       const ref = target.ref!;
 
-      if (isAxRef(tabId, ref)) {
+      if (readback || isAxRef(tabId, ref)) {
         const observed=await withObservedDocumentIdentity(tabId,executionKey,()=>readAxRef(tabId,ref,properties,readback,check,fillSource),check);
         check();
 
