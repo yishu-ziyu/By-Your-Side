@@ -432,7 +432,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       facts.textContent = '依据当前任务状态 · ' + new Date(event.snapshot.observedAt).toLocaleTimeString('zh-CN', { hour12: false });
     }
   }, getInput, (event, fields) => {
-    if (event.startsWith('voice_recover') || event === 'voice_reconnect_attempt') {
+    if (event.startsWith('voice_recover') || event.startsWith('voice_host_') || event === 'voice_reconnect_attempt') {
       console.info(`[voice] ${event}`, { event, turn: fields.turn, attempt: fields.attempt, at: fields.at });
     }
 
