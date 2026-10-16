@@ -18,6 +18,7 @@
     "@sideagent/agent": "file:../agent",
     "dompurify": "3.4.16",
     "lucide": "1.39.0",
-    "marked": "18.0.11"
+    "marked": "18.0.11",
+    "pdfjs-dist": "6.4.299"
   }
 }
