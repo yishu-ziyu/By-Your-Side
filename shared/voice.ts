@@ -315,8 +315,10 @@ export type VoiceCommand =
   | { kind: "capture"; turn: number; data?: string; sampleRate?: number; serverText?: string; displayText?: string; mark?: true; note?: string }
   /** GPT-Live：侧栏与 OpenAI 的通话已建好，宿主据此宣布就绪。 */
   | { kind: "gpt_live_connected" }
+  /** 已完成的真实语音话轮，仅作同一通话的上下文，不触发任务。 */
+  | { kind: "gpt_live_transcript"; turnId: string; role: 'user' | 'assistant'; text: string }
   /** GPT-Live 委派的一句话（用户原话）；同一委派编号只开一次任务。 */
-  | { kind: "delegation"; delegationId: string; text: string };
+  | { kind: "delegation"; delegationId: string; text: string; userTurnId?: string };
 
 export interface VoiceClientMessage { type: "voice"; voiceId: string; command: VoiceCommand }
 
@@ -422,8 +424,9 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
     case "playback_done": return id(c.responseId);
     case "barge_in": return turn(c.turn);
     case "gpt_live_connected": return true;
+    case "gpt_live_transcript": return id(c.turnId) && (c.role === 'user' || c.role === 'assistant') && shortText(c.text, 4000);
     /** 委派编号要拼进任务请求编号，只收任务编号认的字符。 */
-    case "delegation": return id(c.delegationId) && c.delegationId.length <= 48 && shortText(c.text, 2000);
+    case "delegation": return id(c.delegationId) && c.delegationId.length <= 48 && shortText(c.text, 2000) && (c.userTurnId === undefined || id(c.userTurnId));
     /** A capture must carry at least one real fact; `note` alone is not evidence and is always optional. */
     case "capture": return turn(c.turn)
       && (c.data !== undefined || c.mark === true || c.serverText !== undefined || c.displayText !== undefined)
