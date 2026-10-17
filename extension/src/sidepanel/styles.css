@@ -2824,6 +2824,13 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .steer-chip:active { transform:scale(.96); }
 .steer-chip:focus-visible { outline:2px solid var(--apple-orange); outline-offset:1px; }
 .steer-received { align-self:flex-end; margin:-6px 4px 0; font-size:11px; color:var(--text-tertiary); }
+.separate-ask { display:flex; flex-direction:column; gap:6px; }
+.separate-ask-head { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-tertiary); }
+.separate-ask-tag { border:1px solid var(--border); border-radius:6px; padding:0 6px; color:var(--text-secondary); max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.separate-ask-actions { display:flex; gap:12px; }
+.separate-ask-actions button { background:none; border:0; padding:0; font:inherit; font-size:12px; color:var(--text-tertiary); cursor:pointer; }
+.separate-ask-actions button:hover { color:var(--text-secondary); }
+.separate-ask-actions button:disabled { opacity:.5; cursor:default; }
 .steer-tag { align-self:flex-start; display:inline-flex; align-items:center; gap:4px; margin:0 0 -10px; padding:2px 8px; border-radius:6px; background:color-mix(in srgb, var(--apple-orange) 12%, transparent); color:var(--apple-orange); font-size:11px; font-weight:600; }
 @keyframes steer-morph-in { from { opacity:0; filter:blur(3px); transform:translateY(4px); } to { opacity:1; filter:none; transform:none; } }
 .msg.steer-morph { animation:steer-morph-in var(--d-layout) var(--e-out); }

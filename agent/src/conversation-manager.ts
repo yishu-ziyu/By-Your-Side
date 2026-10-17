@@ -982,6 +982,47 @@ return;}
       }
     }
   }
+  /**
+   * 另开一件：放进独立要求队列，在自己的会话和后台标签页里做；做完的回答由 relaySeparateAnswer 带回这里。
+   * 只有说到「这页」时才带上当前页面，那时它排在占着这页的任务后面，不抢页面。
+   */
+  private async startSeparateAsk(id: string, request: TaskActionRequest): Promise<void> {
+    const text=request.text??'';
+    const target='text-'+createHash('sha256').update(id+':'+request.requestId).digest('hex').slice(0,32);
+    const sharesPage=/这页|这个页面|当前页|本页|这篇|这个网页|this page/i.test(text);
+    this.taskQueue.add({requestId:request.requestId,conversationId:target,originConversationId:id,source:'text',action:'start',expectedRunId:null,text,
+      ...(sharesPage&&request.context?{context:request.context}:{}),...(request.attachments?.length?{attachments:request.attachments}:{})},text.slice(0,36));
+    await this.taskQueue.pump();
+  }
+
+  /**
+   * 「改成补充上一件」：停掉另开的那件，原话插进发起它的会话（还在跑就是插话，已空闲就接着做）。
+   * 由宿主转发，不经侧栏再发一次，所以不会多出一个用户气泡。
+   */
+  private async mergeSeparateAsk(id: string): Promise<void> {
+    const job=this.taskQueue.get(id);
+
+    if(!job?.request.originConversationId||job.request.source!=='text'||job.receipt.result)return;
+    this.taskQueue.settleSeparate(id,{merged:true});
+    const origin=job.request.originConversationId;
+
+    if(['queued','suspended'].includes(job.state))this.taskQueue.cancel(id);
+    else if(this.entries.has(id))await this.dispatchTaskAction({requestId:`merge-abort-${randomUUID()}`,conversationId:id,source:'text',action:'abort',expectedRunId:this.getTaskProgress(id)?.runId??null}).catch(()=>undefined);
+    await this.dispatchTaskAction({requestId:`merge-${randomUUID()}`,conversationId:origin,source:'text',action:'steer',expectedRunId:this.getTaskProgress(origin)?.runId??null,text:job.request.text,
+      ...(job.request.context?{context:job.request.context}:{}),...(job.request.attachments?{attachments:job.request.attachments}:{})});
+  }
+
+  /** 另开的那件事结束后，回答或没做成的原因记进它的收条：发起的会话里显示「任务名 + 回答」，重开侧栏也在。 */
+  private relaySeparateAnswer(id: string): void {
+    const job=this.taskQueue.get(id),snapshot=this.getTaskProgress(id);
+    const delivery=snapshot?.conversationContext?.latestDelivery;
+
+    if(!job?.request.originConversationId||job.request.source!=='text')return;
+
+    if(delivery&&delivery.kind!=='ack'&&delivery.text.trim()&&delivery.runId===snapshot?.runId)this.taskQueue.settleSeparate(id,{text:delivery.text});
+    else if(snapshot?.state==='error'||snapshot?.state==='aborted')this.taskQueue.settleSeparate(id,{failed:snapshot.state==='aborted'?'已停下，没有做完。':'没做成，出错了。'});
+  }
+
   private emitReceipt(receipt: TaskReceipt): void {
     for(const id of new Set([receipt.conversationId,...(receipt.originConversationId?[receipt.originConversationId]:[])]))this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:receipt.message,
       ...(receipt.message.startsWith('同一请求编号')?{}:{receipt})}});
@@ -1441,7 +1482,7 @@ return receipt;
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_end') this.goalContinuing.delete(id);
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId)) {
-        void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); });
+        void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); this.relaySeparateAnswer(id); });
 
         try{this.taskQueue.finish(id,progress.snapshot().state==='aborted'?'cancelled':progress.snapshot().state==='error'?'failed':'completed');}catch{this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务结束状态未能保存，请核对已有结果。'}});}
 
@@ -1643,6 +1684,10 @@ return receipt;
 
     const id = normalizeConversationId(message.conversationId);
 
+    if(message.type==='task_action'&&message.request.action==='abort'&&message.request.supplement){await this.mergeSeparateAsk(message.request.conversationId);
+
+      return;}
+
     if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);
 
 return;}
@@ -1700,9 +1745,20 @@ return;}
       }
     }
 
-    if (message.type === 'task_action') { await this.dispatchTaskAction(message.request);
+    if (message.type === 'task_action') {
+      const request=message.request,session=entry.runtime.session;
 
- return; }
+      // 运行中打的一句是另一件事：另开一条线去做，不插进当前任务；判断不了照旧当插话。
+      if(request.source==='text'&&request.action==='steer'&&request.text?.trim()&&session.isStreaming()&&!session.isHeld()
+        &&await session.judgeInterjection(request.text)==='separate'&&session.isStreaming()&&!session.isHeld()){
+        await this.startSeparateAsk(id,request);
+
+        return;
+      }
+      await this.dispatchTaskAction(request);
+
+      return;
+    }
 
     if (message.type === 'task_view_query') { this.emitTaskView(id, true);
 

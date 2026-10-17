@@ -11,6 +11,8 @@ export interface QueuedTask {
   receipt: TaskReceipt;
 }
 
+const MERGED = '已并回上一件';
+
 /** Durable admission for independent requirements. Execution still belongs to TaskDispatcher. */
 export class TaskQueue {
   private readonly jobs = new Map<string, QueuedTask>();
@@ -199,6 +201,21 @@ export class TaskQueue {
 
     return job.receipt;
   }
+  /** 另开的那件事结束了：交出的回答或没做成的原因记进收条，发起它的会话据此显示（重放时也在）。 */
+  settleSeparate(id: string, outcome: { text: string } | { failed: string } | { merged: true }): void {
+    const job = this.get(id);
+
+    // 并回上一件以后，它停下时的结局不再改写这张卡。
+    if (!job?.request.originConversationId || job.receipt.message === MERGED) return;
+    const receipt: TaskReceipt = 'text' in outcome
+      ? { ...job.receipt, status: 'accepted', result: { text: outcome.text.slice(0, 14000), at: Date.now() }, updatedAt: Date.now() }
+      : 'merged' in outcome ? { ...job.receipt, status: 'applied', message: MERGED, updatedAt: Date.now() }
+        : { ...job.receipt, status: 'failed', message: outcome.failed, updatedAt: Date.now() };
+    if (receipt.status === job.receipt.status && receipt.message === job.receipt.message && receipt.result?.text === job.receipt.result?.text) return;
+    this.update(job, { receipt });
+    this.options.changed(job);
+  }
+
   finish(id: string, state: 'completed' | 'cancelled' | 'failed') {
     const job = this.get(id);
 
