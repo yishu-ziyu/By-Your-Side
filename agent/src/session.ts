@@ -58,7 +58,7 @@ import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, readWords, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, newReadIndex, pageAwaitsEmailStep, readWords, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -248,7 +248,7 @@ export class BrowserAgentSession {
    * 不只留这一次请求的：用户答完补一句时，人数、投影仪这些条件常常是上一次读到的；只给这一次的，核对看不到就叫助手回去再核实（10-11 实测 6 次续做里 4 次白跑）。
    */
   private goalObservations: Array<{ at: number; tool: string; text: string }> = [];
-  private seenWords = new Set<string>();
+  readonly seenWords = newReadIndex();
   private goalReadTargets: { scope: string; targets: GoalVerificationTarget[] } | null = null;
 
   /** 用户这一次请求从什么时候开始（开始任务、接着做、插话）：之前记的读数交给核对时标「更早」。 */
@@ -770,6 +770,12 @@ if(required.includes(key))candidates.set(key,attachment);
       // 记忆的两个决定点（记成哪种 / 这一轮带哪些）各写一条决定记录进诊断记录。
       if (memoryRuntime) memoryRuntime.onRecord = (type, data) => wrapper.runTrace.record(type, data);
       resultHost = wrapper;
+      // 恢复的会话里早先读过的内容也算读到过：否则用户接着问之前读过的报告，名单会被当成没读过。
+      for (const message of restored?.messages ?? []) if (message.role === "toolResult" || message.role === "user") {
+        const content: unknown = message.content;
+        const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((part: unknown) => part && typeof part === "object" && "text" in part && typeof part.text === "string" ? part.text : "").join("\n") : "";
+        if (text) readWords(redactCredentialText(text), wrapper.seenWords);
+      }
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.sendOptions = sendOptions;
       wrapper.artifactStore = artifactStore;
