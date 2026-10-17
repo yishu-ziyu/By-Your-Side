@@ -1,3 +1,4 @@
+import { matchesSavedOpen, parseSavedOpen, type SavedOpen } from "./saved-opens.js";
 import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
@@ -381,6 +382,19 @@ export class MemoryRuntime {
     const entry = this.usedThisTurn.find(e => e.status === "active" && !e.experience && e.kind === "profile" && e.text.includes(v));
 
     return entry && { id: entry.id, text: entry.text, createdAt: entry.createdAt };
+  }
+
+  /** 用户这句话命中的「说 X 就打开」：只看仍生效、本网站没停用、用户原话里写明了那句话和网址的记忆。 */
+  async savedOpenFor(text: string, url: string | undefined): Promise<(SavedOpen & { memoryId: string }) | null> {
+    const hostname = memoryHostOfUrl(url ?? "");
+    const now = Date.now();
+    for (const entry of (await this.store.list()).sort((a, b) => b.updatedAt - a.updatedAt)) {
+      if (entry.status !== "active" || entry.experience || !entry.sourceQuote || (entry.kind !== "profile" && entry.kind !== "method")) continue;
+      if (entry.scope.kind !== "all" || (hostname && !usableOnHost(entry, hostname)) || !withinValidity(entry.validity, now)) continue;
+      const saved = parseSavedOpen(entry.sourceQuote);
+      if (saved && matchesSavedOpen(text, saved)) return { ...saved, memoryId: entry.id };
+    }
+    return null;
   }
 
   private async confirmedNudgeMethods(url: string): Promise<MemoryEntry[]> {
