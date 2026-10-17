@@ -277,11 +277,12 @@ const transport = new Uplink({
 
  return; }
 
-   if (msg.type === "nudge_result") { nudge.receive(msg);
+   if (msg.type === "nudge_result" || msg.type === "nudge_validation") { nudge.receive(msg);
 
  return; }
 
    if (msg.type === "task_view") { edgePill.view(msg.view); nudge.view(msg.view); }
+   if (msg.type === "memory_result" && msg.ok && msg.action !== "list") void nudge.memoryChanged().catch(() => {});
 
    pttCapsule.server(msg);
 
