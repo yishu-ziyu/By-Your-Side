@@ -242,7 +242,7 @@ export function unreadNames(reply: string, seen: ReadIndex): string[] {
 
 /** 核对的说法是不是在说这些名字：点到其中的姓，或说到作者、姓名、人名。 */
 function aboutNames(names: readonly string[], text: string): boolean {
-  return names.length > 0 && (names.some(name => text.includes(name.split(" ").at(-1)!)) || /作者|姓名|人名|名字|名单|author|name/i.test(text));
+  return names.length > 0 && (names.some(name => text.includes(name.split(" ").at(-1)!)) || /作者|姓名|人名|名字|名单|\b(authors?|names?|people)\b/i.test(text));
 }
 
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
