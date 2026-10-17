@@ -4,10 +4,12 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {REPO,launchRealPath,requireHeadless,siteAddress,until,sleep} from './harness.mts';
 import {startScriptedModel,type Step} from './scripted-model.mts';
+import {installBudget} from '../../gym/instrumentation.mts';
 
 requireHeadless();
 const scenario=process.argv.find(a=>a.startsWith('--case='))?.slice(7)??'correct';
-if(!['correct','wrong','partial','repeat'].includes(scenario))throw new Error('Unknown case');
+if(!['correct','wrong','partial','repeat','budget-partial','budget-done'].includes(scenario))throw new Error('Unknown case');
+const budgetCase=scenario==='budget-partial'||scenario==='budget-done';
 const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().replace(/[:.]/g,'-')}-goal-check-reverify-${scenario}`);
 await mkdir(out,{recursive:true});
 const LONG=Array.from({length:400},(_,i)=>`第${i+1}段：“原文完整保留”，包括标点、空行与编号。`).join('\n\n')+'\n\n全文结束，尾部必须保留。';
@@ -15,12 +17,14 @@ const SECOND='第二项已经修正';
 const BAD='第二项仍是错误内容';
 const TASK=scenario==='partial'?'把完整长文填进正文，并把第二项改成指定文字。不要发送。':'把完整长文填进正文，保留尾部和空行。不要发送。';
 const PREFIX="You check whether a browser assistant has finished the user's goal";
-const initial:Step[]=[{tool:{name:'fill',args:{target:'#complete',value:scenario==='wrong'||scenario==='repeat'?BAD:LONG}}}];
+const initial:Step[]=[{tool:{name:'fill',args:{target:'#complete',value:scenario==='wrong'||scenario==='repeat'||budgetCase?BAD:LONG}}}];
 if(scenario==='correct')initial.unshift({tool:{name:'read_element',args:{target:'#source'}}});
 if(scenario==='partial')initial.push({tool:{name:'fill',args:{target:'#second',value:BAD}}});
-initial.push({text:'已完成填写，没有发送。'});
+const PARTIAL='没能完成完整正文填写：正文仍是错误内容，本轮可用操作次数已用完。';
+if(scenario==='budget-partial')initial.push({tool:{name:'send_user_message',args:{kind:'finding',outcome:'partial',content:PARTIAL,unfinished:['填入完整正文，保留尾部和空行']}}},{text:''});
+else initial.push({text:'已完成填写，没有发送。'});
 let retries=0;
-const follow:Step[]=scenario==='repeat'?[{text:'正文已经处理完成，没有发送。'}]:[
+const follow:Step[]=budgetCase?[{text:'预算已经用完，核对仍要求重复继续。'}]:scenario==='repeat'?[{text:'正文已经处理完成，没有发送。'}]:[
  {tool:{name:'fill',args:{target:scenario==='partial'?'#second':'#complete',value:scenario==='correct'?LONG.slice(0,80):scenario==='partial'?SECOND:LONG}}},
  {text:'已修正未完成项，没有发送。'},
 ];
@@ -30,12 +34,21 @@ const model=await startScriptedModel([
 ]);
 const messageText=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.map(p=>p.text??'').join(''):'';
 const checks:any[]=[];
-let work='',panel='',rp:Awaited<ReturnType<typeof launchRealPath>>|undefined;
+let work='',panel='',budget:Awaited<ReturnType<typeof installBudget>>|undefined,rp:Awaited<ReturnType<typeof launchRealPath>>|undefined;
 const pageState=()=>rp!.evaluate(work,'({complete:document.querySelector("#complete").value,second:document.querySelector("#second").value,events:window.events,counts:window.counts})');
 const proxy=createServer(async(req,res)=>{
  try{
   let body='';for await(const chunk of req)body+=String(chunk);
   let forward=body;
+  if(budgetCase&&!budget&&req.method==='POST'){
+   const payload=JSON.parse(body);
+   const messages=payload.messages??[];
+   const lastAssistant=[...messages].reverse().find((m:any)=>m.role==='assistant');
+   const fillCall=lastAssistant?.tool_calls?.find((call:any)=>call.function?.name==='fill');
+   if(payload.tools?.length&&fillCall&&messages.some((message:any)=>message.role==='tool'&&message.tool_call_id===fillCall.id)){
+    budget=await installBudget(rp!,Date.now()+120000,0,`http://127.0.0.1:${siteAddress(site).port}`);
+   }
+  }
   if(req.method==='POST'&&body.includes(PREFIX)){
    const payload=JSON.parse(body);
    const input=JSON.parse(messageText(payload.messages.filter((m:any)=>m.role==='user').at(-1)?.content));
@@ -86,7 +99,7 @@ try{
  await until(async()=>{
   trace=await rp!.evaluate(panel,traceExpr);
   const verdict=trace.filter(e=>e.type==='goal_check').at(-1)?.data;
-  return verdict&&['done','open','blocked','unavailable'].includes(verdict.status)&&checks.length>=2?true:undefined;
+  return verdict&&['done','open','blocked','unavailable'].includes(verdict.status)&&checks.length>=(budgetCase?1:2)?true:undefined;
  },60000,'reverification settled');
  await sleep(400);
  retries=trace.filter(e=>e.type==='message_end'&&e.data.message?.role==='user'&&messageText(e.data.message.content).startsWith('[GOAL CHECK]')).length;
@@ -96,12 +109,28 @@ try{
  const reread=checks.find(c=>c.verification);
  evidence.firstState=initialCheck?.state;
  await rp.screenshot(work,join(out,'after.png'));await rp.screenshot(panel,join(out,'sidebar.png'));
- assert.ok(reread,'continue must be independently verified before further writes');
- assert.ok(Array.isArray(reread.input.verification.reads)&&reread.input.verification.reads.length>0,'verification contains actual fresh reads');
- const data=JSON.stringify(reread.input.verification.reads);
- assert.ok(data.includes(scenario==='partial'||scenario==='wrong'||scenario==='repeat'?BAD:'全文结束，尾部必须保留。'),'verification contains the exact current target text');
+ if(!budgetCase){
+  assert.ok(reread,'continue must be independently verified before further writes');
+  assert.ok(Array.isArray(reread.input.verification.reads)&&reread.input.verification.reads.length>0,'verification contains actual fresh reads');
+  const data=JSON.stringify(reread.input.verification.reads);
+  assert.ok(data.includes(scenario==='partial'||scenario==='wrong'||scenario==='repeat'?BAD:'全文结束，尾部必须保留。'),'verification contains the exact current target text');
+ }
  assert.equal(submits,0);
- if(scenario==='correct'){
+ if(budgetCase){
+  evidence.budget=await budget?.read();
+  evidence.panel=await rp.evaluate(panel,`(()=>({idle:document.querySelector('#send-btn')?.disabled===false&&!document.querySelector('#status-pill')?.classList.contains('running'),answers:[...document.querySelectorAll('.msg.assistant[data-delivery-id]')].map(n=>n.textContent.trim()),text:document.querySelector('#messages')?.innerText??''}))()`);
+  assert.ok(budget&&evidence.budget.blocked>0,'the actual extension browser API budget must be exhausted');
+  assert.ok(initialCheck,'even an exhausted run must still be checked');
+  assert.equal(initialCheck.input.page,null,'the host snapshot must really be unavailable');
+  assert.ok(trace.some(e=>e.type==='goal_reverification'&&e.data.cause==='retry_read_unavailable'),'unavailable reread must prohibit continuation');
+  assert.equal(trace.filter(e=>e.type==='goal_check').at(-1)?.data.status,'open','unverified or partial completion stays open');
+  assert.equal(retries,0,'a blocked read must not produce a fresh GOAL CHECK main-model prompt');
+  assert.equal(evidence.final.complete,BAD);
+  assert.deepEqual(evidence.final.counts,initialCheck.state.counts,'no extra page writes after the budget ended');
+  assert.ok(evidence.panel.idle,'the sidebar must settle after delivering the result');
+  assert.ok(!evidence.panel.text.includes('预算已经用完，核对仍要求重复继续。'),'the user must not see a repeated continuation answer');
+  if(scenario==='budget-partial')assert.equal(evidence.panel.answers.filter((text:string)=>text.includes(PARTIAL)).length,1,'one truthful partial answer remains visible');
+ }else if(scenario==='correct'){
   const reads=reread.input.verification.reads;
   const sourceIndex=reads.findIndex((read:any)=>String(read.target).includes('#source'));
   const targetIndex=reads.findIndex((read:any)=>String(read.target).includes('#complete'));
