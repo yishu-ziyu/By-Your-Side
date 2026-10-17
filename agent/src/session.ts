@@ -247,7 +247,7 @@ export class BrowserAgentSession {
    * 交给目标核对的读数：这个会话里最近读过的页面和工具结果，带上读的时间。
    * 不只留这一次请求的：用户答完补一句时，人数、投影仪这些条件常常是上一次读到的；只给这一次的，核对看不到就叫助手回去再核实（10-11 实测 6 次续做里 4 次白跑）。
    */
-  private goalObservations: Array<{ at: number; tool: string; text: string }> = [];
+  private goalObservations: Array<{ at: number; tool: string; text: string; full: string }> = [];
   private goalReadTargets: { scope: string; targets: GoalVerificationTarget[] } | null = null;
 
   /** 用户这一次请求从什么时候开始（开始任务、接着做、插话）：之前记的读数交给核对时标「更早」。 */
@@ -260,7 +260,7 @@ export class BrowserAgentSession {
    */
   private noteGoalObservation(tool: string, text: string): void {
     if (tool.startsWith("page_") && text.includes("is unchanged since your earlier observation")) return;
-    const all = [...this.goalObservations, { at: Date.now(), tool, text: redactCredentialText(text.slice(0, 8_000)) + (text.length > 8_000 ? "\n[truncated tool result]" : "") }];
+    const all = [...this.goalObservations, { at: Date.now(), tool, text: redactCredentialText(text.slice(0, 8_000)) + (text.length > 8_000 ? "\n[truncated tool result]" : ""), full: redactCredentialText(text.slice(0, 200_000)) }];
     const pages = all.filter(item => item.tool.startsWith("page_")).slice(-2), tools = all.filter(item => !item.tool.startsWith("page_")).slice(-6);
     this.goalObservations = all.filter(item => pages.includes(item) || tools.includes(item));
   }
@@ -2666,6 +2666,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   }
 
   private goalContinueRun: string | null = null;
+  private namesNudgedRun: string | null = null;
   /** 最近一次用工具（GOAL_CHECK_BOOKKEEPING_TOOLS 除外）的任务；目标核对据此判断这一任务是否做过事。 */
   private toolUseRun: string | null = null;
   private goalContinues = 0;
@@ -2768,13 +2769,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           goal: snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""],
           goalPage: snapshot?.goalPage ?? null,
           files: this.runFiles(),
-          observations: this.goalObservations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < this.requestStartedAt ? { earlier: true } : {}) })),
+          observations: this.goalObservations.map(item => ({ tool: item.tool, text: item.text, full: item.full, ...(item.at < this.requestStartedAt ? { earlier: true } : {}) })),
+          namesNudged: runId !== null && this.namesNudgedRun === runId,
           lastReply,
           page: page ? { ...(tabId === null ? {} : { tabId }), title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
           userTookOver: runId !== null && this.handbackRunId === runId,
         };
         const headers = opencodeSessionHeaders(model, sessionId);
         verdict = await checkGoal(this.sideHost()!, model, checkInput, AbortSignal.timeout(20_000), headers);
+        if (verdict.cause === 'unread_names') this.namesNudgedRun = runId;
         if (verdict.status === 'continue') {
           const current = () => this.deliveryRunId() === runId && epoch === this.controlEpoch && !this.hold.isHeld();
           const original = verdict;
