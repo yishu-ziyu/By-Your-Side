@@ -230,18 +230,17 @@ async function syncNode(node: Node): Promise<boolean> {
       if (deps.code !== 0) { console.log(`${tag} npm ci 失败`); return false; }
     }
     // 真模型用例读 ~/.sideagent/providers.local.json（走 pi-auth 的 OAuth 条目不在此列）。
-    // 远端缺就从本机推过去；grokbox 这类快照节点同时存一份到 agent-data，睡醒后 symlink 回来。
-    const hasSecret = await sshRun(node, `[ -f ~/.sideagent/providers.local.json -o -f ~/agent-data/sideagent/providers.local.json ] && echo HAVE || echo NEED`);
-    if (hasSecret.out.includes("NEED")) {
-      const secretPath = join(homedir(), ".sideagent/providers.local.json");
-      if (!existsSync(secretPath)) { console.log(`${tag} 缺 providers.local.json，真模型用例会在该节点失败`); }
-      else {
+    // 内容与本机不一致就重推；grokbox 这类快照节点权威副本放 agent-data，睡醒后 symlink 回来。
+    const secretPath = join(homedir(), ".sideagent/providers.local.json");
+    if (!existsSync(secretPath)) { console.log(`${tag} 缺 providers.local.json，真模型用例会在该节点失败`); }
+    else {
+      const secretMd5 = execFileSync("md5", ["-q", secretPath], { encoding: "utf8" }).trim();
+      const remoteMd5 = await sshRun(node, `mkdir -p ~/.sideagent && [ -f ~/agent-data/sideagent/providers.local.json ] && ln -sf ~/agent-data/sideagent/providers.local.json ~/.sideagent/providers.local.json; md5sum ~/.sideagent/providers.local.json 2>/dev/null | cut -d' ' -f1 || echo NONE`);
+      if (remoteMd5.out.trim() !== secretMd5) {
         const pushed = await sh("bash", ["-lc",
           `ssh ${SSH_OPTS_STR} ${node.host} 'mkdir -p ~/agent-data/sideagent ~/.sideagent && cat > ~/agent-data/sideagent/providers.local.json && chmod 600 ~/agent-data/sideagent/providers.local.json && ln -sf ~/agent-data/sideagent/providers.local.json ~/.sideagent/providers.local.json' < ${JSON.stringify(secretPath)}`], tag);
         if (pushed.code !== 0) console.log(`${tag} providers.local.json 下发失败`);
       }
-    } else {
-      await sshRun(node, `mkdir -p ~/.sideagent && [ -f ~/agent-data/sideagent/providers.local.json ] && ln -sf ~/agent-data/sideagent/providers.local.json ~/.sideagent/providers.local.json || true`);
     }
     return true;
   }
@@ -254,10 +253,14 @@ async function syncNode(node: Node): Promise<boolean> {
   const r = await sh("devin", ["cloud", "drs", "run", "--devin-id", node.devinId!, "--command", cmd, "--timeout", "1200"], tag);
   if (!r.out.includes("prepared")) return false;
   // 真模型凭据：沙箱没有就从阿里云拉。私钥只在沙箱里，公钥经本机加到阿里云 authorized_keys——文件内容不经过命令行。
+  const localSecret = join(homedir(), ".sideagent/providers.local.json");
+  const secretMd5 = existsSync(localSecret) ? execFileSync("md5", ["-q", localSecret], { encoding: "utf8" }).trim() : "NONE";
   const probe = await sh("devin", ["cloud", "drs", "run", "--devin-id", node.devinId!, "--command",
-    `test -f ~/.sideagent/providers.local.json && echo HAVE || { ssh-keygen -t ed25519 -N "" -f ~/.ssh/devin_pull -q && cat ~/.ssh/devin_pull.pub; }`, "--timeout", "120"], tag);
-  if (!probe.out.includes("HAVE")) {
-    const pub = probe.out.match(/ssh-ed25519 \S+/);
+    `md5sum ~/.sideagent/providers.local.json 2>/dev/null | cut -d' ' -f1 || echo NONE`, "--timeout", "120"], tag);
+  if (probe.out.trim().split("\n").pop() !== secretMd5) {
+    const pubGen = await sh("devin", ["cloud", "drs", "run", "--devin-id", node.devinId!, "--command",
+      `test -f ~/.ssh/devin_pull.pub && cat ~/.ssh/devin_pull.pub || { ssh-keygen -t ed25519 -N "" -f ~/.ssh/devin_pull -q && cat ~/.ssh/devin_pull.pub; }`, "--timeout", "120"], tag);
+    const pub = pubGen.out.match(/ssh-ed25519 \S+/);
     const bridge = NODES.find((n) => n.name === "aliyun")?.host;
     if (pub && bridge) {
       await sh("ssh", [...SSH_OPTS, bridge, `grep -qF '${pub[0]}' ~/.ssh/authorized_keys || echo '${pub[0]} devin-pull' >> ~/.ssh/authorized_keys`], tag);
