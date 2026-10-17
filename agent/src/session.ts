@@ -40,7 +40,8 @@ import { MainEffort, restingEffort, thinkingChoice } from "./main-effort.js";
 import { userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
-import { PiAgentLoop } from "./pi-agent-loop.js";
+import { DurableAgentLoop } from "./durable-loop.js";
+import type { Storage } from "@earendil-works/pi-durable";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
@@ -99,8 +100,8 @@ export interface SessionCreateOptions {
   sessionManager?: SessionManager;
   /** 复用 Lead 的 runtime，工人不再 create/注册 cliproxy。 */
   modelRuntime?: ModelRuntime;
-  /** 给定时用 pi-agent-core 的循环（扩展里）代替 pi-coding-agent 的 AgentSession；modelPattern 此时必填。 */
-  loop?: { models: ModelPort; cwd: string; session?: SessionLogPort };
+  /** 扩展里的循环（pi-durable）。modelPattern 此时必填。openStorage 让运行在重载后还能接着做。 */
+  loop?: { models: ModelPort; cwd: string; session?: SessionLogPort; openStorage?: (conversationId: string) => Promise<Storage> };
   artifactPersistence?: ArtifactPersistence;
   customTools?: ToolDefinition[];
   systemPrompt?: string;
@@ -759,11 +760,12 @@ if(required.includes(key))candidates.set(key,attachment);
 
       const restored = options.loop.session ? await PiSessionPersistence.open(options.loop.session) : undefined;
 
-      let session: AgentLoop = new PiAgentLoop({
+      let session: AgentLoop = await DurableAgentLoop.open({
         persistence: restored?.persistence, messages: restored?.messages, sessionId: options.conversationId,
         models, model: loopModel(models, options.modelPattern), tools: customTools, systemPrompt,
         appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
         extensionFactories: extensionFactories.map(entry => entry.factory),
+        openStorage: options.loop.openStorage,
         onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
         onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() }),
         onModelResponse: status => resultHost?.modelRequestTrace.response(status),
@@ -961,6 +963,11 @@ if(required.includes(key))candidates.set(key,attachment);
   isStreaming(): boolean {
     return !!this.displayWork || (this.session?.isStreaming ?? false) || this.starting !== null;
   }
+
+  /** 存储里还有没做完的运行时，重开后接着做，不等用户说「继续」。 */
+  continueStoredRun(): void { this.session?.continueStored?.(); }
+
+  get keepsRunAfterDisconnect(): boolean { return this.session?.keepsRunAfterDisconnect === true; }
 
   private runningOrStarting(session: AgentLoop): boolean {
     return session.isStreaming || this.starting !== null;
