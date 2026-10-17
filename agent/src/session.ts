@@ -58,7 +58,7 @@ import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { Nudge, NudgeContext } from "../../shared/nudge.js";
-import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, pageAwaitsEmailStep, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -248,6 +248,7 @@ export class BrowserAgentSession {
    * 不只留这一次请求的：用户答完补一句时，人数、投影仪这些条件常常是上一次读到的；只给这一次的，核对看不到就叫助手回去再核实（10-11 实测 6 次续做里 4 次白跑）。
    */
   private goalObservations: Array<{ at: number; tool: string; text: string }> = [];
+  private goalReadTargets: { scope: string; targets: GoalVerificationTarget[] } | null = null;
 
   /** 用户这一次请求从什么时候开始（开始任务、接着做、插话）：之前记的读数交给核对时标「更早」。 */
   private requestStartedAt = 0;
@@ -2773,9 +2774,12 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           const current = () => this.deliveryRunId() === runId && epoch === this.controlEpoch && !this.hold.isHeld();
           const original = verdict;
           const reads: GoalVerification['reads'] = [];
+          const readContents: string[] = [];
           let readFailed = false;
+          const requested = original.verificationTargets?.length ? original.verificationTargets : [{ target: 'body' }];
+          const priorReads = this.goalReadTargets?.scope === this.copyScope() ? this.goalReadTargets.targets : [];
           const targets = original.verifiedByHost || original.verificationSubject === 'file' || original.verificationSubject === 'answer'
-            ? [] : original.verificationTargets?.length ? original.verificationTargets : [{ target: 'body' }];
+            ? [] : [...new Map([...requested, ...priorReads].map(probe => [`${probe.tabId ?? tabId}:${probe.target}`, probe])).values()];
           if (tabId !== null && this.rpc) {
             for (const probe of targets) {
               const { target } = probe;
@@ -2796,6 +2800,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
                 // A cut read must never turn uncertainty into permission to rewrite.
                 if (data.length + reads.reduce((sum, read) => sum + read.data.length, 0) > 64_000) { readFailed = true; break; }
                 reads.push({ target, tabId: readTabId, data });
+                readContents.push(value && typeof value === 'object' && 'value' in value && typeof value.value === 'string' ? value.value
+                  : value && typeof value === 'object' && 'text' in value && typeof value.text === 'string' ? value.text : '');
               } catch { readFailed = true; break; }
             }
           }
@@ -2812,7 +2818,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             if (this.goalRetryEvidence.seen.has(fingerprint)) {
               verdict = { ...original, status: 'open', cause: 'retry_evidence_unchanged' };
             } else {
-              verdict = original.verifiedByHost ? original : await checkGoal(this.sideHost()!, model, { ...checkInput, verification: { finding: original, reads } }, AbortSignal.timeout(20_000), headers);
+              const contentMatches = readContents.flatMap((text, left) => readContents.flatMap((other, right) => right > left && text && other ? [{ left, right, equal: text === other }] : []));
+              verdict = original.verifiedByHost ? original : await checkGoal(this.sideHost()!, model, { ...checkInput, verification: { finding: original, reads, contentMatches } }, AbortSignal.timeout(20_000), headers);
               if (verdict.status === 'continue') retryFingerprint = fingerprint;
             }
           }
@@ -3042,6 +3049,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (!read) return;
     const rawTarget = typeof params?.target === "string" && params.target.trim() ? params.target : read.target;
+    if (name === 'read_element' && rawTarget && read.tabId !== null) {
+      const scope = this.copyScope();
+      const previous = this.goalReadTargets?.scope === scope ? this.goalReadTargets.targets : [];
+      this.goalReadTargets = { scope, targets: [...previous.filter(probe => probe.tabId !== read.tabId || probe.target !== rawTarget), { target: rawTarget, tabId: read.tabId }].slice(-4) };
+    }
     const truncated = read.truncated || read.text.length > RESULT_OBSERVATION_TEXT_MAX;
     const visible=redactObservedText(read.text);
     this.callbacks.emit({

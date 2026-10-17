@@ -16,6 +16,7 @@ const BAD='第二项仍是错误内容';
 const TASK=scenario==='partial'?'把完整长文填进正文，并把第二项改成指定文字。不要发送。':'把完整长文填进正文，保留尾部和空行。不要发送。';
 const PREFIX="You check whether a browser assistant has finished the user's goal";
 const initial:Step[]=[{tool:{name:'fill',args:{target:'#complete',value:scenario==='wrong'||scenario==='repeat'?BAD:LONG}}}];
+if(scenario==='correct')initial.unshift({tool:{name:'read_element',args:{target:'#source'}}});
 if(scenario==='partial')initial.push({tool:{name:'fill',args:{target:'#second',value:BAD}}});
 initial.push({text:'已完成填写，没有发送。'});
 let retries=0;
@@ -68,7 +69,7 @@ const proxy=createServer(async(req,res)=>{
 let submits=0;
 const site=createServer((req,res)=>{
  if(req.method==='POST'){submits++;res.end('ok');return;}
- res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end(`<!doctype html><meta charset="utf-8"><title>核实后修正</title><style>body{font:17px/1.6 system-ui;max-width:900px;margin:30px auto}textarea{width:100%;height:260px}input{width:100%;padding:10px}</style><h1>核实后修正</h1><label>完整正文<textarea id="complete"></textarea></label><label>第二项<input id="second"></label><button onclick="fetch('/send',{method:'POST'})">发送</button><script>window.events=[];window.counts={complete:{input:0,change:0},second:{input:0,change:0}};for(const type of ['input','change'])document.addEventListener(type,e=>{if(window.counts[e.target.id]){window.counts[e.target.id][type]++;window.events.push({type,id:e.target.id,value:e.target.value,trusted:e.isTrusted});}});</script>`);
+ res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end(`<!doctype html><meta charset="utf-8"><title>核实后修正</title><style>body{font:17px/1.6 system-ui;max-width:900px;margin:30px auto}textarea{width:100%;height:260px}input{width:100%;padding:10px}</style><h1>核实后修正</h1>${scenario==='correct'?`<article id="source" style="white-space:pre-wrap">${LONG}</article>`:''}<label>完整正文<textarea id="complete"></textarea></label><label>第二项<input id="second"></label><button onclick="fetch('/send',{method:'POST'})">发送</button><script>window.events=[];window.counts={complete:{input:0,change:0},second:{input:0,change:0}};for(const type of ['input','change'])document.addEventListener(type,e=>{if(window.counts[e.target.id]){window.counts[e.target.id][type]++;window.events.push({type,id:e.target.id,value:e.target.value,trusted:e.isTrusted});}});</script>`);
 });
 await new Promise<void>(r=>proxy.listen(0,'127.0.0.1',r));
 await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));
@@ -101,6 +102,13 @@ try{
  assert.ok(data.includes(scenario==='partial'||scenario==='wrong'||scenario==='repeat'?BAD:'全文结束，尾部必须保留。'),'verification contains the exact current target text');
  assert.equal(submits,0);
  if(scenario==='correct'){
+  const reads=reread.input.verification.reads;
+  const sourceIndex=reads.findIndex((read:any)=>String(read.target).includes('#source'));
+  const targetIndex=reads.findIndex((read:any)=>String(read.target).includes('#complete'));
+  assert.ok(sourceIndex>=0&&targetIndex>=0,'reverification includes source and target even though the initial finding only requested target');
+  assert.ok(reads[sourceIndex].data.includes('全文结束，尾部必须保留。'),'fresh source includes its full tail');
+  assert.ok(reads[targetIndex].data.includes('全文结束，尾部必须保留。'),'fresh destination includes its full tail');
+  assert.ok(reread.input.verification.contentMatches?.some((match:any)=>match.equal===true&&((match.left===sourceIndex&&match.right===targetIndex)||(match.right===sourceIndex&&match.left===targetIndex))),'host confirms complete source and destination are equal');
   assert.equal(evidence.final.complete,LONG);assert.deepEqual(evidence.final.counts,initialCheck.state.counts,'false continue must cause zero extra writes');
   assert.equal(evidence.fillCalls.length,1);assert.equal(retries,0);
  }else if(scenario==='repeat'){
