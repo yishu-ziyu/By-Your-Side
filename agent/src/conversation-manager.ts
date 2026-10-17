@@ -1,6 +1,6 @@
 import { realtimeBrowserError, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
 import type { VoiceInputContext } from '../../shared/voice.js';
-import {TaskQueue} from "./task-queue.js";
+import {isMerged, TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
 import {answerSpeech} from '../../shared/answer-cards.js';
 import { ReadingRequests } from "./reading.js";
@@ -12,6 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
   type ClientMessage, type ConversationSummary, type ServerMessage,
+  type PageContext,
 } from "../../shared/protocol.js";
 import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
 import { deliveryTextWithNote } from "../../shared/voice.js";
@@ -76,6 +77,8 @@ const WARM_UP_INTERVAL_MS = 30_000;
 export class ConversationManager {
   private readonly taskQueue:TaskQueue;
   private readonly pendingStarts=new Set<string>();
+  /** 正在并回上一件的另开会话：并回要先送达再停，期间重复点击不再处理。 */
+  private readonly merging=new Set<string>();
   /** Narrow fence while an interrupted run re-reads the page before agent_start. */
   private readonly checkpointResumes=new Set<string>();
   private readonly taskPages=new Map<string,number>();
@@ -982,6 +985,67 @@ return;}
       }
     }
   }
+  /**
+   * 另开一件：放进独立要求队列，在自己的会话和后台标签页里做；做完的回答由 relaySeparateAnswer 带回这里。
+   * 只有说到「这页」时才带上当前页面，那时它排在占着这页的任务后面，不抢页面。
+   */
+  /** 返回 false：队列放不下，调用方照旧把这句插进当前任务。 */
+  private async startSeparateAsk(id: string, request: TaskActionRequest): Promise<boolean> {
+    const text=request.text??'';
+    const target='text-'+createHash('sha256').update(id+':'+request.requestId).digest('hex').slice(0,32);
+    const sharesPage=/这页|这个页面|当前页|本页|这篇|这个网页|this page/i.test(text);
+    const receipt=this.taskQueue.add({requestId:request.requestId,conversationId:target,originConversationId:id,source:'text',action:'start',expectedRunId:null,text,
+      ...(sharesPage&&request.context?{context:request.context}:{}),...(request.pages?.length?{pages:request.pages}:{}),...(request.attachments?.length?{attachments:request.attachments}:{})},text.slice(0,36));
+
+    if(receipt.status==='rejected')return false;
+    await this.taskQueue.pump();
+
+    return true;
+  }
+
+  /**
+   * 「改成补充上一件」：停掉另开的那件，原话插进发起它的会话（还在跑就是插话，已空闲就接着做）。
+   * 由宿主转发，不经侧栏再发一次，所以不会多出一个用户气泡。
+   */
+  private async mergeSeparateAsk(id: string, here?: PageContext): Promise<void> {
+    const job=this.taskQueue.get(id);
+
+    // 两个窗口同时点、或重复发来：只认第一次。
+    if(!job?.request.originConversationId||job.request.source!=='text'||job.receipt.result||isMerged(job)||this.merging.has(id))return;
+    this.merging.add(id);
+
+    try{
+      const origin=job.request.originConversationId,originSession=this.entries.get(origin)?.runtime.session;
+      // 上一件还在跑就插话；已经做完就在它的会话里接着做这一句。先送达，送不到就不停掉另开的那件。
+      const running=!!originSession?.isStreaming()&&!originSession.isHeld();
+      const sent=await this.dispatchTaskAction({requestId:`merge-${randomUUID()}`,conversationId:origin,source:'text',action:running?'steer':'start',
+        expectedRunId:this.getTaskProgress(origin)?.runId??null,text:job.request.text,...(job.request.context??here?{context:job.request.context??here}:{}),...(job.request.pages?{pages:job.request.pages}:{}),...(job.request.attachments?{attachments:job.request.attachments}:{})}).catch((error:unknown)=>({status:'rejected' as const,message:error instanceof Error?error.message:String(error)}));
+
+      if(!['accepted','applied','queued'].includes(sent.status)){
+        this.emit({type:'agent_event',conversationId:origin,event:{kind:'notice',message:`没能并回上一件：${sent.message.replace(/[。.]+$/,'')}。另开的那件照常在做。`}});
+        // 卡片回到并回之前的样子，「改成补充上一件」可以再点。
+        this.emitReceipt(job.receipt);
+
+        return;
+      }
+
+      if(['queued','suspended'].includes(job.state))this.taskQueue.cancel(id);
+      else if(this.entries.has(id))await this.dispatchTaskAction({requestId:`merge-abort-${randomUUID()}`,conversationId:id,source:'text',action:'abort',expectedRunId:this.getTaskProgress(id)?.runId??null}).catch(()=>undefined);
+      this.taskQueue.settleSeparate(id,{merged:true});
+    }finally{this.merging.delete(id);}
+  }
+
+  /** 另开的那件事结束后，回答或没做成的原因记进它的收条：发起的会话里显示「任务名 + 回答」，重开侧栏也在。 */
+  private relaySeparateAnswer(id: string): void {
+    const job=this.taskQueue.get(id),snapshot=this.getTaskProgress(id);
+    const delivery=snapshot?.conversationContext?.latestDelivery;
+
+    if(!job?.request.originConversationId||job.request.source!=='text')return;
+
+    if(delivery&&delivery.kind!=='ack'&&delivery.text.trim()&&delivery.runId===snapshot?.runId)this.taskQueue.settleSeparate(id,{text:delivery.text});
+    else if(snapshot?.state==='error'||snapshot?.state==='aborted')this.taskQueue.settleSeparate(id,{failed:snapshot.state==='aborted'?'已停下，没有做完。':'没做成，出错了。'});
+  }
+
   private emitReceipt(receipt: TaskReceipt): void {
     for(const id of new Set([receipt.conversationId,...(receipt.originConversationId?[receipt.originConversationId]:[])]))this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:receipt.message,
       ...(receipt.message.startsWith('同一请求编号')?{}:{receipt})}});
@@ -1441,7 +1505,7 @@ return receipt;
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_end') this.goalContinuing.delete(id);
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId)) {
-        void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); });
+        void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); this.relaySeparateAnswer(id); });
 
         try{this.taskQueue.finish(id,progress.snapshot().state==='aborted'?'cancelled':progress.snapshot().state==='error'?'failed':'completed');}catch{this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务结束状态未能保存，请核对已有结果。'}});}
 
@@ -1643,6 +1707,10 @@ return receipt;
 
     const id = normalizeConversationId(message.conversationId);
 
+    if(message.type==='task_action'&&message.request.action==='abort'&&message.request.supplement){await this.mergeSeparateAsk(message.request.conversationId,message.request.context);
+
+      return;}
+
     if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);
 
 return;}
@@ -1700,9 +1768,19 @@ return;}
       }
     }
 
-    if (message.type === 'task_action') { await this.dispatchTaskAction(message.request);
+    if (message.type === 'task_action') {
+      const request=message.request,session=entry.runtime.session;
 
- return; }
+      // 运行中打的一句是另一件事：另开一条线去做，不插进当前任务；判断不了照旧当插话。
+      // 判断要一两秒：前后都核对还是原来那个任务（没被停下、没换成新任务），否则交给原有路径按过期请求处理。
+      const runId=this.getTaskProgress(id)?.runId??null,control=this.controlVersions.get(id)??0;
+      const same=()=>session.isStreaming()&&!session.isHeld()&&(this.getTaskProgress(id)?.runId??null)===runId&&(this.controlVersions.get(id)??0)===control;
+      if(request.source==='text'&&request.action==='steer'&&request.text?.trim()&&request.expectedRunId===runId&&same()
+        &&await session.judgeInterjection(request.text)==='separate'&&same()&&await this.startSeparateAsk(id,request))return;
+      await this.dispatchTaskAction(request);
+
+      return;
+    }
 
     if (message.type === 'task_view_query') { this.emitTaskView(id, true);
 
