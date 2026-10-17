@@ -1,3 +1,4 @@
+import { matchesSavedOpen, parseSavedOpen, type SavedOpen } from "./saved-opens.js";
 import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
@@ -17,6 +18,8 @@ import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correcti
 interface ActiveUserTurn {
   epoch: number;
   text: string;
+  /** 这句话命中「说 X 就打开」、宿主已经打开了页面：这一轮不再动网页，只回一句。 */
+  savedOpen?: boolean;
   query: MemoryQuery;
   abort: AbortController;
   change?: Promise<MemoryToolResult>;
@@ -381,6 +384,24 @@ export class MemoryRuntime {
     const entry = this.usedThisTurn.find(e => e.status === "active" && !e.experience && e.kind === "profile" && e.text.includes(v));
 
     return entry && { id: entry.id, text: entry.text, createdAt: entry.createdAt };
+  }
+
+  /** 用户这句话命中的「说 X 就打开」：只看仍生效、本网站没停用、用户原话里写明了那句话和网址的记忆。 */
+  /**
+   * mark()：宿主要打开页面前调用，把这一轮标成只回一句、不再动网页；查记忆期间用户插了话（已是新一轮）就返回 false，不再打开。
+   */
+  async savedOpenFor(text: string, url: string | undefined): Promise<(SavedOpen & { memoryId: string; mark: () => boolean }) | null> {
+    const turn = this.active;
+    const mark = () => { if (!turn || !this.current(turn)) return false; turn.savedOpen = true; return true; };
+    const hostname = memoryHostOfUrl(url ?? "");
+    const now = Date.now();
+    for (const entry of (await this.store.list()).sort((a, b) => b.updatedAt - a.updatedAt)) {
+      if (entry.status !== "active" || entry.experience || !entry.sourceQuote || (entry.kind !== "profile" && entry.kind !== "method")) continue;
+      if (entry.scope.kind !== "all" || (hostname && !usableOnHost(entry, hostname)) || !withinValidity(entry.validity, now)) continue;
+      const saved = parseSavedOpen(entry.sourceQuote);
+      if (saved && matchesSavedOpen(text, saved)) return { ...saved, memoryId: entry.id, mark };
+    }
+    return null;
   }
 
   private async confirmedNudgeMethods(url: string): Promise<MemoryEntry[]> {
@@ -957,6 +978,10 @@ export class MemoryRuntime {
   extension(): ExtensionFactory {
     return pi => {
       pi.on("tool_call", event => {
+        // 模型常把「打开渠道」理解成「去查新闻」，读完页面写总结，又被核对当成没查完；用户要的只是打开。
+        if (this.active?.savedOpen && event.toolName !== "send_user_message") {
+          return { block: true, reason: "宿主已按用户记下的做法打开了这些页面；本轮不再读取或操作网页。用一句话告诉用户打开了哪些。" };
+        }
         if (this.active?.memoryOnly && event.toolName !== "user_memory" && event.toolName !== "send_user_message") {
           return { block: true, reason: "本轮用户仅要求修改记忆，未要求操作网页。请报告记忆结果，不要顺手填表、提交或派发助手。" };
         }
