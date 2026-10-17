@@ -35,7 +35,10 @@ export interface GoalCheckInput {
   lastReply: string;
   page: { title: string; url: string; text: string; tabId?: number } | null;
   files?: GoalCheckFile[];
-  observations?: Array<{ tool: string; text: string; earlier?: boolean }>;
+  /** full：未截断的读数，只给宿主查回答里的名字，不发给核对模型。 */
+  observations?: Array<{ tool: string; text: string; full?: string; earlier?: boolean }>;
+  /** 这个任务已因回答里的名字没读到催过一次：再催会和凭知识作答的助手来回打转。 */
+  namesNudged?: boolean;
   userTookOver?: boolean;
   copies?: CopyCheck[];
   verification?: GoalVerification;
@@ -201,6 +204,23 @@ function isGoalReply(value: unknown): value is { status: "done" | "needs_user" |
     && (reply.finding === undefined || reply.finding === null || typeof reply.finding === "string");
 }
 
+/**
+ * 回答里的西文人名，在这次对话读到的内容里找不到的那些。只在至少 3 个名字、过半找不到时返回：
+ * 核对模型只看得到截断后的读数，分辨不出名单是读来的还是编的（PDF 只读了前几页，作者在第 87 页，助手照样列出 25 个名字）。
+ * 姓单独出现也算读到：PDF 和名单常写成「DeBellis, Derek」或把名和姓断在两行。
+ */
+export function unreadNames(reply: string, corpus: string): string[] {
+  const plain = (text: string) => text.replace(/[​-‍⁠﻿]/g, "").replace(/[’‘]/g, "'").replace(/\s+/g, " ").toLowerCase();
+  const seen = plain(corpus);
+  const names = [...new Set([...reply.replace(/[​-‍⁠﻿]/g, "").matchAll(/(?<![\p{L}\p{N}])(?:Dr\. )?\p{Lu}[\p{Ll}'’-]+(?: \p{Lu}\.)?(?: \p{Lu}[\p{Ll}'’-]+){1,2}(?![\p{L}\p{N}])/gu)].map(match => match[0]))];
+  const missing = names.filter(name => {
+    const words = plain(name).replace(/^dr\. /, "").split(" ");
+    const surname = words.at(-1)!;
+    return !seen.includes(words.join(" ")) && !(surname.length >= 4 && new RegExp(`(?<![\\p{L}])${surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}])`, "u").test(seen));
+  });
+  return names.length >= 3 && missing.length * 2 > names.length ? missing : [];
+}
+
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
 export async function checkGoal(host: SideCallHost, model: Model<Api>, input: GoalCheckInput, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
   // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
@@ -224,6 +244,14 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   const deadClicks = (input.observations ?? []).filter(item => !item.earlier).reduce((count, item) => count + (item.text.match(NO_EFFECT)?.length ?? 0), 0);
 
   if (deadClicks >= 2 && claimsDeadControl(input.lastReply) && !asksUser(input.lastReply)) return { status: "blocked", remaining: plainBlockedReason("unresponsive"), cause: "unresponsive" };
+  const unread = input.namesNudged || asksUser(input.lastReply) ? [] : unreadNames(input.lastReply, [
+    ...input.goal, input.goalPage?.title ?? "", input.page?.title ?? "", input.page?.text ?? "",
+    ...(input.observations ?? []).map(item => item.full ?? item.text), ...(input.files ?? []).map(file => file.content ?? ""),
+  ].join("\n"));
+
+  if (unread.length) return { status: "continue", verifiedByHost: true, verificationSubject: 'answer', cause: "unread_names", remaining: "读到名字所在的原文",
+    finding: `回答里的 ${unread.length} 个名字（如 ${unread.slice(0, 3).join("、")}）在这次读到的内容里找不到`,
+    correction: `回答列出的这些名字在本次读到的页面、工具结果和文件里都找不到：${unread.slice(0, 12).join("、")}。如果它们应来自页面或文件，先读到名字所在的那一部分（PDF 用目录页码翻到那一页），再按原文改正回答；如果来自别处，说明出处。`.slice(0, 800) };
   let fileBudget = 12_000;
   let observationBudget = 16_000;
 
