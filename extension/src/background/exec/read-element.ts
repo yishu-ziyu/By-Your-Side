@@ -15,7 +15,9 @@ const MAX_ELEMENT_CHARS = 1_000_000;
 export type ReadElementResult = ToolContract["read_element"]["data"];
 
 /** secret、layoutText、unrendered 只在扩展内部用（fill 的 from 据它们拒读或取字），不出现在 read_element 的回执里。 */
-type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { secret?: true; layoutText?: string; unrendered?: true };
+type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { textContent: string; editable?: true; secret?: true; layoutText?: string; unrendered?: true };
+
+type InternalReadResult = ReadElementResult & ElementData;
 
 type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 
@@ -94,39 +96,9 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     const textContent = String(element.textContent ?? '');
 
-    // Rich editors store Enter as block elements and Shift+Enter as <br>.
-    // textContent loses both; serialize their text value without layout margins.
-    const editableText = el.isContentEditable ? (() => {
-      const blocks = new Set(['P','DIV','LI','H1','H2','H3','H4','H5','H6','PRE','BLOCKQUOTE']);
-
-      const read = (node: Node): string => {
-        if (node.nodeType === 3) return node.textContent ?? '';
-
-        if (node.nodeType !== 1) return '';
-        const element = node as HTMLElement;
-
-        if (element.tagName === 'BR') return element.classList.contains('ProseMirror-trailingBreak') ? '' : '\n';
-        const children = Array.from(element.childNodes);
-
-        if (children.length === 1 && children[0]!.nodeName === 'BR' && (blocks.has(element.tagName)||element===el)) return '';
-        let text = '', previousBlock = false;
-        children.forEach((child, index) => {
-          const block = blocks.has(child.nodeName);
-
-          if (index > 0 && (block || previousBlock)) text += '\n';
-          text += read(child);
-          previousBlock = block;
-        });
-
-        return text;
-      };
-
-      return read(element);
-    })() : undefined;
-
     if (readback) {
-      if (!hasValue && (!readback.originalNode || editableText === undefined)) throw new Error('READBACK_UNSUPPORTED_FIELD');
-      const value = hasValue ? String(el.value ?? '') : readback.originalNode ? String(el.innerText) : editableText!;
+      if (!hasValue && (!readback.originalNode || !el.isContentEditable)) throw new Error('READBACK_UNSUPPORTED_FIELD');
+      const value = hasValue ? String(el.value ?? '') : String(el.innerText);
       return { ok: true, data: { tagName, textContent: '', value, properties: { value } } };
     }
 
@@ -302,7 +274,7 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     if(inputRange)data.inputRange=inputRange;
 
-    if(editableText!==undefined)data.editableText=editableText;
+    if(el.isContentEditable)data.editable=true;
 
     if(scopeLabels.length)data.scopeLabels=scopeLabels;
 
@@ -310,11 +282,27 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     if(secretField)data.secret=true;
 
-    // 按渲染布局取字（innerText）：块元素之间有换行，隐藏的不取。会触发排版，所以只在 fill 的 from 要它时才算。
+    // Default reads and native copies share the browser-rendered text, including paragraph breaks.
     // 元素自己没渲染时 innerText 退回 textContent，会带上隐藏的字和脚本、样式，所以这时不取字。
-    if(layout){
+    if(layout || properties.length === 0){
       const box=element.nodeType===3?element.parentElement:el;
-      const rendered=!!box&&box.getClientRects().length>0&&(typeof box.checkVisibility!=='function'||box.checkVisibility({visibilityProperty:true}));
+      const visibleBox = (node: Element) => node.getClientRects().length > 0
+        && (typeof node.checkVisibility !== 'function' || node.checkVisibility({ visibilityProperty: true }));
+      let rendered = !!box && visibleBox(box);
+      // display:contents has no box of its own; its rendered descendants still contribute innerText.
+      if (box && !rendered && getComputedStyle(box).display === 'contents') {
+        for (const child of box.querySelectorAll('*')) {
+          if (visibleBox(child)) { rendered = true; break; }
+        }
+        if (!rendered && getComputedStyle(box).visibility === 'visible') {
+          const range = box.ownerDocument.createRange();
+          for (const child of box.childNodes) {
+            if (child.nodeType !== Node.TEXT_NODE) continue;
+            range.selectNode(child);
+            if (range.getClientRects().length) { rendered = true; break; }
+          }
+        }
+      }
 
       if(rendered)data.layoutText=element.nodeType===3?textContent:String(el.innerText??textContent);
       else data.unrendered=true;
@@ -411,8 +399,6 @@ function assertComplete(data: ElementData): ElementData {
 
   if (data.textContent.length > MAX_ELEMENT_CHARS) throw new Error(`元素文本超过安全上限 ${MAX_ELEMENT_CHARS} 字符，未返回部分内容`);
 
-  if (data.editableText !== undefined && (typeof data.editableText !== 'string' || data.editableText.length > MAX_ELEMENT_CHARS)) throw new Error('富文本字段未返回完整且有界的文本');
-
   if (data.layoutText !== undefined && (typeof data.layoutText !== 'string' || data.layoutText.length > MAX_ELEMENT_CHARS)) throw new Error('元素未返回完整且有界的布局文字');
 
   if (data.value !== undefined && typeof data.value !== "string") throw new Error("页面字段没有返回完整字符串 value");
@@ -507,11 +493,10 @@ export async function readElement(
 ): Promise<ReadElementResult> {
   try {
     const result = await readElementInner(params, executionKey, checkCurrent);
-    delete result.secret;
-    delete result.layoutText;
-    delete result.unrendered;
+    const { secret: _secret, layoutText, unrendered: _unrendered, editable: _editable, textContent: _rawText, ...data } = result;
+    return { ...data, ...(layoutText !== undefined ? { text: layoutText } : {}),
+      ...(_unrendered ? { note: [data.note, "元素当前未显示，未返回显示文字；需要原始 DOM 文字时请用 properties:['textContent']。"].filter(Boolean).join(' ') } : {}) };
 
-    return result;
   } catch (error) {
     throw typedReadElementError(error);
   }
@@ -519,12 +504,12 @@ export async function readElement(
 
 export async function copyTargetIdentity(params: { tabId?: number; target: string }, executionKey: string): Promise<Omit<CopiedFieldProof, 'sha256' | 'chars'> | null> {
   const data = await readElementInner(params, executionKey, undefined, false, true);
-  if (data.secret || !data.documentId || !data.nodeIdentity || !['input', 'textarea'].includes(data.tagName) && data.editableText === undefined) return null;
+  if (data.secret || !data.documentId || !data.nodeIdentity || !['input', 'textarea'].includes(data.tagName) && !data.editable) return null;
   return { tabId: data.tabId, documentId: data.documentId, backendNodeId: data.nodeIdentity.backendNodeId };
 }
 
 /**
- * fill 的 from：读出要原样写进另一栏的文字，不经过模型。输入框、下拉框取 displayValue，富文本编辑器取 editableText（同 read_element），
+ * fill 的 from：读出要原样写进另一栏的文字，不经过模型。输入框、下拉框取 displayValue，富文本编辑器取页面显示文字（同 read_element），
  * 其余按渲染布局取 innerText：网页回答多是一段段 <p>、<li>，textContent 和 visibleText 会把段落挤成一行。快照里的 text 行是文字节点，取它自己的文字。去掉首尾空白。
  * 来源元素本身没显示时拒读。读来源不改工作标签页（resolveTabForRead），写入仍落在原来要填的那一页。
  * 密码、验证码、卡号这类栏按 read_element 的同一条规则拒读：它们的值从不读出。
@@ -542,7 +527,7 @@ export async function readFillSource(source: {tabId?: number; target: string}, e
 
   if (data.unrendered) throw new Error('NOT_READY: 来源元素不可见（没有显示在页面上，或在收起的区域里），不读取它的文字；填写未执行。');
   const raw = ['input', 'textarea', 'select'].includes(data.tagName) ? data.properties?.displayValue
-    : data.editableText ?? data.layoutText;
+    : data.layoutText;
 
   if (typeof raw !== 'string') throw new Error('NOT_READY: from 指向的元素读不出文字；填写未执行。');
   const text = raw.trim();
@@ -559,7 +544,7 @@ async function readElementInner(
   /** fill 的 from：多读布局文字和可见性，且读来源不改工作标签页。 */
   fillSource = false,
   captureIdentity = false,
-): Promise<ReadElementResult & { secret?: true; layoutText?: string; unrendered?: true }> {
+): Promise<InternalReadResult> {
   const readback = params.copyRead ? { ...params.copyRead, originalNode: true } : params.readback ? { ...params.readback, originalNode: false } : undefined;
 
   const check=()=>{
@@ -574,7 +559,7 @@ async function readElementInner(
   check();
   const {properties, unsupported} = validateElementRead(params);
 
-  const withNote = (result: ReadElementResult): ReadElementResult => {
+  const withNote = <T extends ReadElementResult>(result: T): T => {
     if (!unsupported.length) return result;
 
     return {...result, note: [unsupportedPropertiesNote(unsupported), result.note].filter(Boolean).join(' ')};
@@ -663,7 +648,7 @@ async function readElementInner(
 
     await checkDocument();
 
-    const result: ReadElementResult = {tabId,target:target.normalized,...observed.data};
+    const result: InternalReadResult = {tabId,target:target.normalized,...observed.data};
 
     if(observed.documentId)result.documentId=observed.documentId;
 
@@ -696,7 +681,7 @@ async function readElementInner(
 
   const documentId=observed.documentId??finalDocumentId;
 
-  const result: ReadElementResult = {...observed.value};
+  const result: InternalReadResult = {...observed.value};
 
   if(documentId)result.documentId=documentId;
 

@@ -87,12 +87,11 @@ try {
   const value = await rp.evaluate(work, `document.querySelector('#draft').${name.startsWith('rich') ? 'innerText' : 'value'}`);
   const source = await rp.evaluate(work, `document.querySelector('#source').innerText`);
   const ui = await rp.evaluate(panel, `document.querySelector('#messages').innerText`);
-  evidence.actual = value; evidence.source = source; evidence.ui = ui;
+  evidence.actual = value; evidence.source = source; evidence.ui = ui; evidence.targetHtml = await rp.evaluate(work, `document.querySelector('#draft').outerHTML`);
   assert.equal(source, SOURCE);
-  if (name === 'rich-layout') { assert.notEqual(value, SOURCE); }
-  else assert.equal(value, name === 'stop' || name.startsWith('consume') ? '' : name === 'handback' ? '这是用户改过的文字' : broken && name !== 'continue' ? SOURCE.replace(/\n\n/g, '\n') : SOURCE);
+  assert.equal(value, name === 'stop' || name.startsWith('consume') ? '' : name === 'handback' ? '这是用户改过的文字' : broken && name !== 'continue' ? SOURCE.replace(/\n\n/g, '\n') : SOURCE);
   const verdict = trace.filter(e => e.type === 'goal_check').at(-1)?.data;
-  if (['corrupt', 'forged', 'rich', 'rich-layout', 'replaced'].includes(name)) {
+  if (['corrupt', 'forged', 'rich', 'replaced'].includes(name)) {
     assert.equal(verdict?.status, 'open', 'a done claim must not cover a changed or unverifiable copy');
     assert.match(ui, name === 'replaced' ? /复制结果暂时无法核对/ : /复制后的内容已变化/);
   } else if (name !== 'stop') assert.equal(verdict?.status, name === 'consume-unavailable' ? 'unavailable' : 'done', 'intact copies and explicitly requested changes remain valid');
