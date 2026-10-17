@@ -31,8 +31,10 @@ const D = "另外帮我打开 YouTube";
 
 const slow = (n: number) => Array.from({ length: n }, () => ({ tool: { name: "snapshot", args: {} }, delayMs: 2_000 }));
 
-/** 主模型收到的每次请求里，最后一条用户消息之后、本轮插进来的话（看插话有没有送到 A）。 */
+/** 主模型的每次请求（不含判断补充还是另一件、目标核对这类旁路判断），看插话有没有送到 A。 */
 const seen: string[] = [];
+
+const SIDE_CALL = /A browser assistant is working on the user's current task|You check whether a browser assistant/;
 
 const model = await startScriptedModel([
   // 判断「补充还是另一件」：内容里 message 是哪句就回哪种。
@@ -40,11 +42,12 @@ const model = await startScriptedModel([
   { match: `"message":"${D}"`, steps: [{ text: JSON.stringify({ kind: "separate" }) }] },
   { match: `"message":"${C}"`, steps: [{ text: JSON.stringify({ kind: "supplement" }) }] },
   { match: B, steps: [{ text: "明天北京晴，12–21 度。", delayMs: 1_000 }] },
-  { match: D, steps: [{ text: "已打开 YouTube。", delayMs: 15_000 }] },
+  // 分 7 步做完；每步不到模型等待上限，停不下来就会把 7 步都做完。
+  { match: D, steps: [...slow(6), { text: "已打开 YouTube。" }] },
   { match: C, steps: [...slow(2), { text: "作者名单（含单位）：张三 · 北大。" }] },
   { match: A2, steps: [...slow(12), { text: "作者名单：张三。" }] },
   { match: A, steps: [...slow(5), { text: "论文清单：1. 甲 2. 乙 3. 丙" }] },
-], undefined, payload => seen.push(JSON.stringify(payload.messages ?? [])));
+], undefined, payload => { const text = JSON.stringify(payload.messages ?? []); if (!SIDE_CALL.test(text)) seen.push(text); });
 
 const site = createServer((req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><title>论文</title><h1>论文列表</h1><p>甲 乙 丙 张三</p>`));
 
@@ -65,6 +68,8 @@ const STATE = `(() => {
     running: !!document.querySelector("#status-pill.running"),
     bubbles: [...m.querySelectorAll(".msg.user")].map(e => e.innerText.trim()),
     errors: [...m.querySelectorAll(".msg.error, .error-card")].map(e => e.innerText.trim()).concat(m.innerText.includes("已自动重试") ? ["已自动重试"] : []),
+    notices: [...m.querySelectorAll(".msg.notice")].map(e => e.innerText.trim()).slice(-3),
+    activeTab: null,
     banner: (() => { const b = document.querySelector("#conversation-background"); return b && !b.hidden ? b.textContent : ""; })(),
   };
 })()`;
@@ -133,12 +138,15 @@ try {
   assert.equal(merged.bubbles.filter(text => text.includes(D)).length, 1, `merging adds no second bubble: ${JSON.stringify(merged.bubbles)}`);
   assert.ok(merged.notes.includes("已收到 · 并回上一件处理"), `D's note says it was merged: ${JSON.stringify(merged.notes)}`);
   const e = await until(async () => { const s = await state(); return s.answers.length >= 1 && !s.running ? s : undefined; }, 60_000, "A2 做完");
-  await sleep(17_000);
+  await sleep(16_000);
   const after = await state();
-  evidence.e = { ...e, cardsLater: after.cards, dReachedA2: seen.some(text => text.includes(A2) && text.includes(D)) };
+  // 另开那件自己的请求里没有 A2；并回后上一件拿 D 接着做的请求里有。
+  const dOwn = seen.filter(text => text.includes(D) && !text.includes(A2)).length;
+  evidence.e = { ...e, cardsLater: after.cards, dReachedA2: seen.some(text => text.includes(A2) && text.includes(D)), dOwn };
   await rp.screenshot(panel, join(artifacts, "merged.png"));
   assert.ok(seen.some(text => text.includes(A2) && text.includes(D)), "A2's model receives D after merging");
   assert.ok(!after.cards.some(card => card.answer.includes("已打开 YouTube")), "the merged-back D does not deliver its own answer");
+  assert.ok(dOwn >= 1 && dOwn < 7, `D's own run was stopped before its 7 steps (${dOwn} requests)`);
   assert.equal(after.cards[0]?.state, "已并回上一件", `the merged card keeps its label: ${JSON.stringify(after.cards)}`);
   assert.deepEqual(after.errors, [], `no error after merging: ${JSON.stringify(after.errors)}`);
 } catch (caught) {

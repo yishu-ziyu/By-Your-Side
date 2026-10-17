@@ -3238,7 +3238,9 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   tag.textContent = receipt.targetTitle || receipt.text.slice(0, 36);
   const state = document.createElement("span");
   state.className = "separate-ask-state";
-  state.textContent = receipt.result ? "已完成" : receipt.status === "queued" ? "排队中" : receipt.status === "accepted" ? "正在做，不打断当前任务" : receipt.message;
+  // 重启后暂停的要求也是 queued，但不会自己开始：照宿主的原话说，并给「继续」。
+  const paused = receipt.status === "queued" && receipt.message.includes("连接已重启");
+  state.textContent = receipt.result ? "已完成" : paused ? receipt.message : receipt.status === "queued" ? "排队中" : receipt.status === "accepted" ? "正在做，不打断当前任务" : receipt.message;
   head.append(tag, state);
   root.append(head);
 
@@ -3256,13 +3258,23 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   view.onclick = () => selectConversation(receipt.conversationId);
   actions.append(view);
 
+  if (paused) {
+    const resume = document.createElement("button");
+    resume.type = "button";
+    resume.textContent = "继续";
+    resume.onclick = () => { resume.disabled = true; if (!send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: null } })) resume.disabled = false; };
+    actions.append(resume);
+  }
+
   if (!receipt.result && (receipt.status === "queued" || receipt.status === "accepted")) {
     const merge = document.createElement("button");
     merge.type = "button";
     merge.textContent = "改成补充上一件";
     merge.onclick = () => {
       merge.disabled = true;
-      if (send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "abort", expectedRunId: null, supplement: true } })) state.textContent = "正在并回上一件…";
+      // 上一件已做完时要在它的会话里接着做这一句，带上你正看着的页面。
+      const context = activeTabInfo?.id !== undefined && activeTabInfo.url ? { tabId: activeTabInfo.id, url: activeTabInfo.url, title: activeTabInfo.title ?? "" } : undefined;
+      if (send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "abort", expectedRunId: null, supplement: true, ...(context ? { context } : {}) } })) state.textContent = "正在并回上一件…";
       else merge.disabled = false;
     };
     actions.append(merge);
