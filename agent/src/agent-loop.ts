@@ -1,4 +1,4 @@
-import { isContextOverflow, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { isContextOverflow, type Api, type AssistantMessage, type Model, type Models } from "@earendil-works/pi-ai";
 import { isTransientModelError } from "../../shared/provider-busy.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AgentSession, AgentSessionEvent, AgentSessionEventListener, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -33,6 +33,13 @@ export interface AgentLoop extends Pick<
   /** 接着当前上下文再跑一轮，并带自动重试；没有时退回 agent.continue()（不带重试）。 */
   resume?(): Promise<void>;
   /**
+   * 打开存储里没做完的运行。不另发一条用户消息。
+   * 扩展重载或浏览器被杀掉之后，由它接着做，不等用户说「继续」。
+   */
+  continueStored?(): void;
+  /** 面板断开时不取消存储里的运行，进程死掉后才能从存储接着做。 */
+  readonly keepsRunAfterDisconnect?: boolean;
+  /**
    * 模型正在写正文（还没开始写工具调用）时，把已写的部分当成这次调用的完整回复收下，让循环立刻读排队的插话。
    * 模型还一个字没写（在思考或还没回话）时，丢掉这次调用，收下一条空回复，循环同样立刻读插话。
    * 截断了返回 true；已开始写工具调用、或没有正在进行的模型调用时返回 false，插话照旧等这一步结束。
@@ -56,6 +63,8 @@ export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "
    * purpose：流式请求（主任务、正式回答、阅读回答）和标了 userWaiting 的一次性调用记 main，其余一次性调用（记忆、核对、翻译、站点笔记）记 side。
    */
   observeQueue?: (onWait: (wait: { provider: string; purpose: "main" | "side"; waitedMs: number }) => void) => ModelPort;
+  /** 和这个端口同一份 pi-ai 目录。Harness 用它解析服务商；真正的流式调用仍走本端口。 */
+  pi?: Models;
 };
 
 /**
@@ -160,6 +169,8 @@ class FailoverLoop implements AgentLoop {
   }
 
   steer(...args: Parameters<AgentLoop["steer"]>) { return this.inner.steer(...args); }
+  continueStored() { this.inner.continueStored?.(); }
+  get keepsRunAfterDisconnect() { return this.inner.keepsRunAfterDisconnect === true; }
   interruptText() { return this.inner.interruptText?.() ?? false; }
   clearQueue() { return this.inner.clearQueue(); }
   getActiveToolNames() { return this.inner.getActiveToolNames(); }

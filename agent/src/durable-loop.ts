@@ -1,0 +1,525 @@
+/**
+ * 会话循环走 pi-durable 的 Harness：每一轮、每一次工具调用、插话和后续都先写入存储，再交给界面。
+ * 扩展重载或浏览器被杀掉时，没做完的运行留在存储里；重开后 continueStored() 从上次提交接着做。
+ * 会改页面的工具不标成可重做：执行到一半被打断时，模型只看到「被打断」，不会自动再点一次。
+ */
+import type { Context } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import type { Api, AssistantMessage, AssistantMessageEventStream, ImageContent, Message, Model, Models, TextContent, ToolResultMessage } from "@earendil-works/pi-ai";
+import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
+import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentLoop } from "./agent-loop.js";
+import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
+import type { ModelRequestObservation } from "./model-request-trace.js";
+import { streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
+import type { PiSessionPersistence } from "./pi-session-persistence.js";
+import { composeSystemPrompt } from "./system-prompt.js";
+
+const ctx: Context = BACKGROUND_CONTEXT;
+
+/** 只读工具可以重做：重开后页面没有被它们改过，再读一次结果仍然成立。 */
+const REPLAY_SAFE = new Set(["snapshot", "screenshot", "read_element", "read_elements", "scroll", "hover", "tabs", "fetch"]);
+
+const REPEAT_NOTE_AT = 3;
+const REPEAT_TRACKED_TOOLS = new Set(["tabs", "snapshot", "read_element", "read_elements", "browser_run"]);
+const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。之前消息前的同类段落只是历史，现状以这一段为准。";
+const CONTINUE_TEXT = `${RUN_CONTEXT_HEADER}\n\n上一次模型调用没有完成。接着做同一件事，已经做完的工具不要再执行。`;
+
+export interface DurableLoopOptions extends PiAgentLoopOptions {
+  /** 每个会话一个存储目录。不给时只放在内存里，重载后接不上。 */
+  openStorage?: (conversationId: string) => Promise<Storage>;
+}
+
+type CustomAppMessage = Extract<AgentMessage, { role: "custom" }>;
+
+class MemoryEntries {
+  private readonly entries: SessionEntry[] = [];
+  appendCustomEntry(customType: string, data?: Parameters<SessionManager["appendCustomEntry"]>[1]): string {
+    const entry: SessionEntry = { type: "custom", customType, data, id: crypto.randomUUID(), parentId: this.entries.at(-1)?.id ?? null, timestamp: new Date().toISOString() };
+    this.entries.push(entry);
+    return entry.id;
+  }
+  getBranch(): SessionEntry[] { return [...this.entries]; }
+}
+
+export class DurableAgentLoop implements AgentLoop {
+  readonly keepsRunAfterDisconnect = true;
+  readonly sessionManager: MemoryEntries | PiSessionPersistence;
+  systemPrompt = "";
+  retryGate: ((message: AssistantMessage) => boolean) | undefined;
+  private readonly listeners = new Set<AgentSessionEventListener>();
+  private readonly definitions: Map<string, ToolDefinition>;
+  private readonly hooks: ExtensionHost;
+  private readonly durableTools: ToolRegistration[];
+  private messages: AgentMessage[] = [];
+  private tools: AgentTool[] = [];
+  private active: string[];
+  private base = "";
+  private modelRef: Model<Api>;
+  private harness: Harness | undefined;
+  private conversation: Conversation | undefined;
+  private busy = false;
+  private prompts = 0;
+  private partial: AssistantMessage | undefined;
+  private lastAssistant: AssistantMessage | undefined;
+  /** 已经送到界面的正文。短回答往往一次写完，没有逐字增量，收尾时要把没送出的部分补上。 */
+  private streamedText = "";
+  private streamedThinking = "";
+  private hookChain: Promise<void> = Promise.resolve();
+  private pendingNext: CustomAppMessage[] = [];
+  private queued: Array<{ id: SubmissionId; kind: "steer" | "followUp"; text: string }> = [];
+  private repeat = { call: "", result: "", count: 0 };
+  private abortVersion = 0;
+  private ready: Promise<void>;
+  private markRunEnd: (() => void) | undefined;
+  private runEnd: Promise<void> = Promise.resolve();
+
+  readonly agent: AgentLoop["agent"];
+
+  constructor(private readonly options: DurableLoopOptions) {
+    const loop = this;
+    this.agent = {
+      state: {
+        get messages() { return loop.messages; },
+        set messages(value: AgentMessage[]) { loop.messages = value; },
+        get tools() { return loop.tools; },
+        set tools(value: AgentTool[]) { loop.tools = value; },
+      },
+      continue: () => loop.resume(),
+      waitForIdle: () => loop.waitForIdle(),
+    };
+    this.sessionManager = options.persistence ?? new MemoryEntries();
+    this.definitions = new Map(options.tools.map(tool => [tool.name, tool]));
+    this.active = options.tools.map(tool => tool.name);
+    this.modelRef = options.model;
+    this.hooks = new ExtensionHost({
+      factories: options.extensionFactories,
+      allTools: () => options.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, promptGuidelines: tool.promptGuidelines })),
+      activeToolNames: () => this.active,
+      abort: () => { void this.abort(); },
+      onError: options.onHookError,
+    });
+    this.durableTools = options.tools.map(tool => this.wrapTool(tool));
+    this.rebuildPrompt();
+    this.syncTools();
+    this.ready = this.open();
+  }
+
+  static async open(options: DurableLoopOptions): Promise<DurableAgentLoop> {
+    const loop = new DurableAgentLoop(options);
+    await loop.ready;
+    return loop;
+  }
+
+  get model(): Model<Api> | undefined { return this.modelRef; }
+  get isStreaming(): boolean { return this.busy; }
+  get sessionId(): string { return this.options.sessionId ?? ""; }
+
+  async setModel(model: Model<Api>): Promise<void> {
+    this.modelRef = model;
+    await this.ready;
+    await this.configure();
+  }
+
+  getActiveToolNames(): string[] { return [...this.active]; }
+  getToolDefinition(name: string): ToolDefinition | undefined { return this.definitions.get(name); }
+
+  setActiveToolsByName(toolNames: string[]): void {
+    this.active = toolNames.filter(name => this.definitions.has(name));
+    this.rebuildPrompt();
+    this.syncTools();
+    void this.ready.then(() => this.configure());
+  }
+
+  subscribe(listener: AgentSessionEventListener): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  async flushPersistence(): Promise<void> { await this.options.persistence?.flush(); }
+
+  interruptText(): boolean { return false; }
+
+  async prompt(text: string, options?: PromptOptions): Promise<void> {
+    await this.ready;
+    const version = this.abortVersion;
+    await this.flushPersistence();
+    if (version !== this.abortVersion) throw new Error("本轮已取消，没有启动模型或操作页面。");
+    if (this.busy) {
+      if (!options?.streamingBehavior) throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
+      await this.queue(options.streamingBehavior === "followUp" ? "followUp" : "steer", text, options.images);
+      return;
+    }
+    await this.submitInput(text, options?.images);
+  }
+
+  async steer(text: string, images?: ImageContent[]): Promise<"queued"> {
+    await this.queue("steer", text, images);
+    return "queued";
+  }
+
+  async sendCustomMessage(message: Pick<CustomAppMessage, "customType" | "content" | "display" | "details">, options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" }): Promise<void> {
+    await this.ready;
+    const appMessage: CustomAppMessage = { role: "custom", customType: message.customType, content: message.content ?? [], display: message.display, details: message.details, timestamp: Date.now() };
+    if (options?.deliverAs === "nextTurn") { this.pendingNext.push(appMessage); return; }
+    const text = customText(appMessage.content);
+    if (this.busy && options?.triggerTurn !== false && options?.triggerTurn !== undefined) {
+      await this.queue(options.deliverAs === "followUp" ? "followUp" : "steer", text);
+      return;
+    }
+    if (options?.triggerTurn) { await this.submitInput(text); return; }
+    this.messages.push(appMessage);
+    await this.writeUser(text);
+  }
+
+  clearQueue() {
+    const cleared = { steering: this.queued.filter(item => item.kind === "steer").map(item => item.text), followUp: this.queued.filter(item => item.kind === "followUp").map(item => item.text) };
+    const ids = this.queued.splice(0).map(item => item.id);
+    for (const id of ids) void this.harness?.abortSubmission(id, ctx);
+    return cleared;
+  }
+
+  async abort(): Promise<void> {
+    this.abortVersion += 1;
+    await this.conversation?.abort(ctx);
+    await this.conversation?.waitForIdle(ctx);
+    this.busy = false;
+  }
+
+  dispose(): void {
+    this.listeners.clear();
+    void this.harness?.close(ctx);
+  }
+
+  resume(): Promise<void> { return this.submitInput(CONTINUE_TEXT); }
+
+  continueStored(): void { this.harness?.resume(); }
+
+  private async waitForIdle(): Promise<void> {
+    await this.conversation?.waitForIdle(ctx);
+  }
+
+  private rebuildPrompt(): void {
+    this.base = composeSystemPrompt(this.options.systemPrompt, this.options.appendPrompt(), this.options.cwd);
+    this.systemPrompt = this.base;
+  }
+
+  private syncTools(): void {
+    this.tools = this.active.flatMap(name => {
+      const tool = this.definitions.get(name);
+      return tool ? [tool as unknown as AgentTool] : [];
+    });
+  }
+
+  private wrapTool(tool: ToolDefinition): ToolRegistration {
+    return defineTool({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      ...(REPLAY_SAFE.has(tool.name) ? { replay: "safe" as const } : {}),
+      execute: async (args, api, context) => {
+        await this.flushPersistence();
+        const blocked = this.hooks.has("tool_call") ? await this.hooks.toolCall(tool.name, api.callId, args as HookArgs) : undefined;
+        if (blocked?.block) return { content: [{ type: "text" as const, text: blocked.reason ?? "已阻止" }], isError: true };
+        const result = await tool.execute(api.callId, args as never, context.abortSignal, async (partial) => {
+          const details = (partial as { details?: unknown }).details;
+          if (details !== undefined) await api.details(details as never, context);
+        }, undefined as never);
+        const repeated = this.noteRepeat(tool.name, args, result.content);
+        const hooked = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: tool.name, toolCallId: api.callId, input: args as HookArgs, content: result.content, details: result.details as never, isError: result.isError === true }) : undefined;
+        const content = [...(hooked?.content ?? result.content), ...(repeated ? [{ type: "text" as const, text: repeated }] : [])];
+        return { content, details: (hooked?.details ?? result.details) as never, isError: hooked?.isError ?? result.isError === true };
+      },
+    });
+  }
+
+  private async open(): Promise<void> {
+    const pi = this.options.models.pi;
+    if (!pi) throw new Error("模型目录没有接上，pi-durable 无法调用模型。");
+    const stream = streamThrough(this.options.models, context => this.observe(context), this.options.onModelResponse, this.options.effort, this.options.firstEventTimeoutMs, () => {}, this.options.onModelHedge);
+    const models = withStream(pi, (model, context, streamOptions) => stream(model, { ...context, messages: forModel(context.messages) } as never, streamOptions) as AssistantMessageEventStream, () => this.modelRef);
+    const registry = createRegistry();
+    registry.install(defineExtension({
+      name: "sideagent",
+      tools: this.durableTools,
+      hooks: [hook(GenerationTask, { beforeRequest: async (request) => this.beforeRequest(request.messages) })],
+    }));
+    const storage = this.options.openStorage ? await this.options.openStorage(this.sessionId || "default") : new MemoryStorage();
+    this.harness = await Harness.open(storage, {
+      models,
+      registry,
+      settings: {
+        retry: { maxRetries: 0, baseDelayMs: 500 },
+        compaction: { enabled: false },
+        steeringMode: "all",
+        followUpMode: "all",
+      },
+    }, ctx);
+    this.conversation = await this.harness.root(ctx);
+    await this.configure();
+    await this.loadTranscript();
+    const watch = await watchEvents(this.harness, this.conversation.id, ctx);
+    watch.start(async (events) => { for (const event of events) await this.onDurable(event); });
+  }
+
+  private async beforeRequest(messages: readonly Message[]): Promise<{ messages: readonly Message[] } | undefined> {
+    if (!this.hooks.has("context")) return undefined;
+    const next = await this.hooks.context(messages as readonly HookMessage[]);
+    return { messages: [...next] as Message[] };
+  }
+
+  private async configure(): Promise<void> {
+    const level = this.options.effort?.(this.modelRef) ?? "off";
+    const offered = this.durableTools.filter(tool => this.active.includes(tool.name));
+    await this.conversation?.configure({
+      model: { provider: this.modelRef.provider, modelId: this.modelRef.id },
+      thinkingLevel: level,
+      instructions: this.systemPrompt,
+      tools: offered,
+    }, ctx);
+  }
+
+  private async loadTranscript(): Promise<void> {
+    const conversation = this.conversation;
+    if (!conversation) return;
+    const loaded: Array<{ id: number; message: AgentMessage }> = [];
+    let cursor: Parameters<Conversation["entries"]>[2];
+    for (let page = 0; page < 20; page += 1) {
+      const batch = await conversation.entries({}, 200, cursor, ctx);
+      for (const entry of batch.items) {
+        const message = entry.model?.[0];
+        if (message && message.role !== "system") loaded.push({ id: entry.id, message: message as AgentMessage });
+      }
+      if (!batch.next) break;
+      cursor = batch.next;
+    }
+    loaded.sort((a, b) => a.id - b.id);
+    if (loaded.length) this.messages = loaded.map(item => item.message);
+  }
+
+  private async submitInput(text: string, images?: ImageContent[]): Promise<void> {
+    await this.ready;
+    const conversation = this.conversation;
+    if (!conversation) return;
+    if (this.hooks.has("input")) await this.hooks.input(text);
+    if (this.hooks.has("before_agent_start")) {
+      const started = await this.hooks.beforeAgentStart(text, this.base);
+      this.systemPrompt = started.systemPrompt;
+      if (started.context.length) await this.writeUser([RUN_CONTEXT_HEADER, ...started.context].join("\n\n"));
+    }
+    for (const message of this.pendingNext.splice(0)) await this.writeUser(customText(message.content));
+    await this.configure();
+    const content = images?.length ? [{ type: "text" as const, text }, ...images] : text;
+    this.prompts += 1;
+    this.busy = true;
+    this.runEnd = new Promise(resolve => { this.markRunEnd = resolve; });
+    try {
+      const submission = await conversation.submit({ type: "input", content, requestId: crypto.randomUUID() }, ctx);
+      await submission.wait(ctx);
+      await this.runEnd;
+    } finally {
+      this.prompts -= 1;
+      this.markRunEnd?.();
+      this.markRunEnd = undefined;
+      if (this.prompts === 0 && !this.busy) this.emit({ type: "agent_settled" });
+    }
+  }
+
+  private async queue(kind: "steer" | "followUp", text: string, images?: ImageContent[]): Promise<void> {
+    await this.ready;
+    const conversation = this.conversation;
+    if (!conversation) return;
+    const content = images?.length ? [{ type: "text" as const, text }, ...images] : text;
+    const submission = await conversation.submit({ type: "input", content, requestId: crypto.randomUUID(), whenBusy: kind === "steer" ? "steer" : "followUp" }, ctx);
+    this.queued.push({ id: submission.id, kind, text });
+  }
+
+  private async writeUser(text: string): Promise<void> {
+    await this.conversation?.submit({ type: "write", entry: { kind: "pi.user", model: [{ role: "user", content: text, timestamp: Date.now() }] } }, ctx);
+  }
+
+  private async onDurable(event: DurableEvent): Promise<void> {
+    if (event.type === "run_start") { this.busy = true; this.emit({ type: "agent_start" }); return; }
+    if (event.type === "turn_start") { this.emit({ type: "turn_start" }); return; }
+    if (event.type === "turn_end") {
+      const message = this.lastAssistant ?? this.messages.at(-1);
+      if (message) this.emit({ type: "turn_end", message, toolResults: [] });
+      return;
+    }
+    if (event.type === "message_start") {
+      if (event.message.role === "assistant") {
+        this.partial = event.message;
+        this.streamedText = "";
+        this.streamedThinking = "";
+        this.emit({ type: "message_start", message: event.message as AgentMessage });
+        this.emitUnsent(event.message);
+      } else if (event.message.role !== "system") this.emit({ type: "message_start", message: event.message as AgentMessage });
+      return;
+    }
+    if (event.type === "message_update") { this.onUpdate(event); return; }
+    if (event.type === "message_end") { await this.onMessageEnd(event.entry); return; }
+    if (event.type === "tool_execution_start") {
+      this.emit({ type: "tool_execution_start", toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
+      return;
+    }
+    if (event.type === "tool_execution_update") {
+      this.emit({ type: "tool_execution_update", toolCallId: event.toolCallId, toolName: event.toolName, args: {}, partialResult: { details: event.details } });
+      return;
+    }
+    if (event.type === "tool_execution_end") { this.onToolEnd(event.toolCallId, event.toolName, event.entry); return; }
+    if (event.type === "auto_retry_start") {
+      this.emit({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: 2, delayMs: 0, errorMessage: event.errorMessage });
+      return;
+    }
+    if (event.type === "auto_retry_end") { this.emit({ type: "auto_retry_end", success: true, attempt: event.attempt }); return; }
+    if (event.type === "compaction_start") { this.emit({ type: "compaction_start", reason: event.reason === "overflow" ? "overflow" : event.reason === "manual" ? "manual" : "threshold" }); return; }
+    if (event.type === "run_end") await this.onRunEnd();
+  }
+
+  private onUpdate(event: Extract<DurableEvent, { type: "message_update" }>): void {
+    for (const change of event.changes) {
+      if (change.type === "message") this.partial = change.message;
+      else if (change.type === "text_delta" || change.type === "thinking_delta") this.appendDelta(change.type, change.contentIndex, change.delta);
+      else if (change.type === "text_start" || change.type === "thinking_start" || change.type === "toolcall_start" || change.type === "block") this.ensureBlock(change.contentIndex, change.block);
+      if (!this.partial) continue;
+      const assistantMessageEvent = change.type === "text_delta" || change.type === "thinking_delta"
+        ? { type: change.type, contentIndex: change.contentIndex, delta: change.delta, partial: this.partial }
+        : { type: "text_delta" as const, contentIndex: 0, delta: "", partial: this.partial };
+      if (change.type === "text_delta" || change.type === "thinking_delta" || change.type === "toolcall_delta" || change.type === "block") {
+        this.emit({ type: "message_update", message: this.partial, assistantMessageEvent: change.type === "toolcall_delta" || change.type === "block" ? { type: "toolcall_delta", contentIndex: "contentIndex" in change ? change.contentIndex : 0, delta: "", partial: this.partial } : assistantMessageEvent });
+      }
+    }
+  }
+
+  private appendDelta(kind: "text_delta" | "thinking_delta", index: number, delta: string): void {
+    const partial = this.partial ?? this.blankAssistant();
+    this.partial = partial;
+    const block = partial.content[index];
+    if (kind === "text_delta" && block?.type === "text") { block.text += delta; this.streamedText += delta; }
+    else if (kind === "thinking_delta" && block?.type === "thinking") { block.thinking += delta; this.streamedThinking += delta; }
+  }
+
+  private ensureBlock(index: number, block: AssistantMessage["content"][number]): void {
+    const partial = this.partial ?? this.blankAssistant();
+    this.partial = partial;
+    partial.content[index] = block;
+  }
+
+  private blankAssistant(): AssistantMessage {
+    return {
+      role: "assistant", content: [], api: this.modelRef.api, provider: this.modelRef.provider, model: this.modelRef.id,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+  }
+
+  /** 界面只认逐字增量。整段一次落盘时，把还没出现过的正文和思考补成一次增量。 */
+  private emitUnsent(message: AssistantMessage): void {
+    let text = "";
+    let thinking = "";
+    for (const block of message.content) {
+      if (block.type === "text") text += block.text;
+      else if (block.type === "thinking") thinking += block.thinking;
+    }
+    const textDelta = text.startsWith(this.streamedText) ? text.slice(this.streamedText.length) : text;
+    const thinkingDelta = thinking.startsWith(this.streamedThinking) ? thinking.slice(this.streamedThinking.length) : thinking;
+    this.streamedText = text;
+    this.streamedThinking = thinking;
+    if (thinkingDelta) this.emit({ type: "message_update", message, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: thinkingDelta, partial: message } });
+    if (textDelta) this.emit({ type: "message_update", message, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: textDelta, partial: message } });
+  }
+
+  private async onMessageEnd(entry: EntryRecord): Promise<void> {
+    const message = entry.model?.[0];
+    if (!message || message.role === "system") return;
+    this.messages.push(message as AgentMessage);
+    this.options.persistence?.appendMessage(message as AgentMessage);
+    if (message.role === "assistant") this.emitUnsent(message);
+    this.emit({ type: "message_end", message: message as AgentMessage });
+    if (message.role === "assistant") this.lastAssistant = message;
+  }
+
+  private onToolEnd(toolCallId: string, toolName: string, entry: EntryRecord | undefined): void {
+    const message = entry?.model?.[0];
+    const result = message?.role === "toolResult" ? message : interruptedResult(toolCallId, toolName);
+    this.emit({ type: "tool_execution_end", toolCallId, toolName, result, isError: result.isError });
+  }
+
+  private async onRunEnd(): Promise<void> {
+    await this.flushPersistence();
+    const end: AgentSessionEvent = { type: "agent_end", messages: [...this.messages], willRetry: false };
+    this.busy = false;
+    this.emit(end);
+    this.markRunEnd?.();
+    this.markRunEnd = undefined;
+    if (this.prompts === 0) this.emit({ type: "agent_settled" });
+  }
+
+  private noteRepeat(name: string, args: unknown, content: readonly (TextContent | ImageContent)[]): string | null {
+    const call = `${name} ${stableJson(args)}`;
+    const result = content.map(part => (part.type === "text" ? part.text : "")).join("\n").replace(/\s+/g, " ").trim();
+    if (!REPEAT_TRACKED_TOOLS.has(name) || !result) { this.repeat = { call: "", result: "", count: 0 }; return null; }
+    const same = call === this.repeat.call && result === this.repeat.result;
+    this.repeat = { call, result, count: same ? this.repeat.count + 1 : 1 };
+    return this.repeat.count >= REPEAT_NOTE_AT ? `[框架说明] 这是连续第 ${this.repeat.count} 次同样的调用，结果没有变化。如果在等页面变化，先等待再读（例如 browser.sleep 或 wait_for）；否则请换一种做法。` : null;
+  }
+
+  private observe(context: Parameters<Parameters<typeof streamThrough>[1]>[0]): void {
+    if (!this.options.onModelRequest) return;
+    try {
+      const system = context.messages.find(message => message.role === "system");
+      const observation: ModelRequestObservation = {
+        systemPrompt: this.systemPrompt,
+        tools: (system?.role === "system" ? system.toolsAdded ?? [] : []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
+        messages: context.messages.filter(message => message.role !== "system"),
+        injected: [],
+      };
+      this.options.onModelRequest(observation);
+    } catch { /* 诊断只观察。 */ }
+  }
+
+  private emit(event: AgentSessionEvent): void {
+    for (const listener of this.listeners) listener(event);
+    if (OBSERVED_EVENTS.has(event.type)) this.hookChain = this.hookChain.then(() => this.hooks.notify(event));
+  }
+}
+
+function customText(content: CustomAppMessage["content"]): string {
+  return typeof content === "string" ? content : content.map(part => part.type === "text" ? part.text : "").join("");
+}
+
+function interruptedResult(toolCallId: string, toolName: string): ToolResultMessage {
+  return { role: "toolResult", toolCallId, toolName, content: [{ type: "text", text: `Tool ${toolName} was interrupted before it finished. Read the page again before doing anything that changes it.` }], isError: true, timestamp: Date.now() };
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
+  return JSON.stringify(value) ?? "null";
+}
+
+function forModel(messages: readonly Message[]): Message[] {
+  // 宿主插进请求的 custom 消息（状态快照）要变成 user 文本。估算 token 时不认识 custom，会去读不存在的 name。
+  return messages.flatMap((message): Message[] => {
+    const loose = message as Message | { role: "custom"; content?: string | Array<{ type?: string; text?: string }>; timestamp: number };
+    if (loose.role === "custom") {
+      const content = loose.content;
+      const text = typeof content === "string" ? content : (content ?? []).map(part => part.type === "text" ? part.text ?? "" : "").join("");
+      return text ? [{ role: "user", content: text, timestamp: loose.timestamp }] : [];
+    }
+    return message.role === "system" || message.role === "user" || message.role === "assistant" || message.role === "toolResult" ? [message] : [];
+  });
+}
+
+function withStream(models: Models, streamSimple: Models["streamSimple"], current: () => Model<Api> | undefined): Models {
+  return new Proxy(models, {
+    get(target, prop, receiver) {
+      if (prop === "streamSimple") return streamSimple;
+      // 目录外的模型（自定义地址、服务商还没列进目录的 id）解析时就在手上，getModel 会找不到。
+      if (prop === "getModel") return (provider: string, id: string) => target.getModel(provider, id) ?? (current()?.provider === provider && current()?.id === id ? current() : undefined);
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+}
