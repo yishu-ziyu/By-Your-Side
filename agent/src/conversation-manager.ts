@@ -995,7 +995,7 @@ return;}
     const target='text-'+createHash('sha256').update(id+':'+request.requestId).digest('hex').slice(0,32);
     const sharesPage=/这页|这个页面|当前页|本页|这篇|这个网页|this page/i.test(text);
     const receipt=this.taskQueue.add({requestId:request.requestId,conversationId:target,originConversationId:id,source:'text',action:'start',expectedRunId:null,text,
-      ...(sharesPage&&request.context?{context:request.context}:{}),...(request.attachments?.length?{attachments:request.attachments}:{})},text.slice(0,36));
+      ...(sharesPage&&request.context?{context:request.context}:{}),...(request.pages?.length?{pages:request.pages}:{}),...(request.attachments?.length?{attachments:request.attachments}:{})},text.slice(0,36));
 
     if(receipt.status==='rejected')return false;
     await this.taskQueue.pump();
@@ -1018,8 +1018,8 @@ return;}
       const origin=job.request.originConversationId,originSession=this.entries.get(origin)?.runtime.session;
       // 上一件还在跑就插话；已经做完就在它的会话里接着做这一句。先送达，送不到就不停掉另开的那件。
       const running=!!originSession?.isStreaming()&&!originSession.isHeld();
-      const sent=await this.dispatchTaskAction({requestId:`merge-${createHash('sha256').update(id).digest('hex').slice(0,32)}`,conversationId:origin,source:'text',action:running?'steer':'start',
-        expectedRunId:this.getTaskProgress(origin)?.runId??null,text:job.request.text,...(job.request.context??here?{context:job.request.context??here}:{}),...(job.request.attachments?{attachments:job.request.attachments}:{})}).catch((error:unknown)=>({status:'rejected' as const,message:error instanceof Error?error.message:String(error)}));
+      const sent=await this.dispatchTaskAction({requestId:`merge-${randomUUID()}`,conversationId:origin,source:'text',action:running?'steer':'start',
+        expectedRunId:this.getTaskProgress(origin)?.runId??null,text:job.request.text,...(job.request.context??here?{context:job.request.context??here}:{}),...(job.request.pages?{pages:job.request.pages}:{}),...(job.request.attachments?{attachments:job.request.attachments}:{})}).catch((error:unknown)=>({status:'rejected' as const,message:error instanceof Error?error.message:String(error)}));
 
       if(!['accepted','applied','queued'].includes(sent.status)){
         this.emit({type:'agent_event',conversationId:origin,event:{kind:'notice',message:`没能并回上一件：${sent.message.replace(/[。.]+$/,'')}。另开的那件照常在做。`}});
