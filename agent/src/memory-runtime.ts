@@ -386,18 +386,20 @@ export class MemoryRuntime {
     return entry && { id: entry.id, text: entry.text, createdAt: entry.createdAt };
   }
 
-  /** 宿主已为这一轮打开了记住的页面：本轮其余工具调用一律拦下。 */
-  markSavedOpen(): void { if (this.active) this.active.savedOpen = true; }
-
   /** 用户这句话命中的「说 X 就打开」：只看仍生效、本网站没停用、用户原话里写明了那句话和网址的记忆。 */
-  async savedOpenFor(text: string, url: string | undefined): Promise<(SavedOpen & { memoryId: string }) | null> {
+  /**
+   * mark()：宿主要打开页面前调用，把这一轮标成只回一句、不再动网页；查记忆期间用户插了话（已是新一轮）就返回 false，不再打开。
+   */
+  async savedOpenFor(text: string, url: string | undefined): Promise<(SavedOpen & { memoryId: string; mark: () => boolean }) | null> {
+    const turn = this.active;
+    const mark = () => { if (!turn || !this.current(turn)) return false; turn.savedOpen = true; return true; };
     const hostname = memoryHostOfUrl(url ?? "");
     const now = Date.now();
     for (const entry of (await this.store.list()).sort((a, b) => b.updatedAt - a.updatedAt)) {
       if (entry.status !== "active" || entry.experience || !entry.sourceQuote || (entry.kind !== "profile" && entry.kind !== "method")) continue;
       if (entry.scope.kind !== "all" || (hostname && !usableOnHost(entry, hostname)) || !withinValidity(entry.validity, now)) continue;
       const saved = parseSavedOpen(entry.sourceQuote);
-      if (saved && matchesSavedOpen(text, saved)) return { ...saved, memoryId: entry.id };
+      if (saved && matchesSavedOpen(text, saved)) return { ...saved, memoryId: entry.id, mark };
     }
     return null;
   }
