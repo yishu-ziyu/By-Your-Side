@@ -89,6 +89,9 @@ const DROP_SUBTREE_ROLES = new Set(["InlineTextBox", "LineBreak"]);
 /** 自身不出行但子节点提升的角色。 */
 const COLLAPSE_ROLES = new Set(["generic", "none", "presentation", "Ignored"]);
 
+// These containers delimit complete source text even without accessible names.
+const CONTENT_SCOPE_ROLES = new Set(["article", "main", "region", "blockquote"]);
+
 function clip(text: string, max: number): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
 
@@ -122,7 +125,7 @@ function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: Read
 
   if (COLLAPSE_ROLES.has(role)) return null;
 
-  if (!name && !REF_ROLES.has(role) && role !== "img" && role !== "iframe") {
+  if (!name && !REF_ROLES.has(role) && !CONTENT_SCOPE_ROLES.has(role) && role !== "img" && role !== "iframe") {
     // 无名非交互节点没信息量（容器、装饰），折叠
     return null;
   }

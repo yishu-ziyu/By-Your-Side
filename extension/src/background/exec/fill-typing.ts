@@ -7,6 +7,9 @@
  */
 import { sendCommand } from "../debugger.js";
 
+/** An interrupted write must not enter the legacy retry path and reclaim focus. */
+export class TypingInterrupted extends Error {}
+
 /** 读回分级：一字不差、等价（只差空白或大小写）、网站改了格式、接在原内容后面、没变。 */
 export type TypingGrade = "exact" | "equivalent" | "transformed" | "appended" | "unchanged";
 
@@ -21,7 +24,7 @@ const READ_GAP_MS = 50;
 
 /** 键盘能写的框：聚焦、全选，返回原内容的长度；其余（日期、颜色、下拉框、不可写）返回 null，走旧写法。自包含。 */
 /** 原内容的指纹（32 位），只用来判断“没变”，值本身不出页面。自包含：页面函数里各写一份。 */
-function prepareInPage(this: unknown, target: string | null): { beforeLen: number; beforeHash: number } | null {
+function prepareInPage(this: unknown, target: string | null): { beforeLen: number; beforeHash: number; editor?: true } | null {
   const hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; };
   // 按名字找的目标（text=、loc=role:）由旧写法的 dom.fill 核对身份（页面重画后名字可能挪到别的元素上），键盘这一路不接。
   if (!(this instanceof Element) && target && /^(text=|loc=role:)/.test(target)) return null;
@@ -69,7 +72,7 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
 
   const before = host.innerText.replace(/\n$/, "");
 
-  return { beforeLen: before.length, beforeHash: hash(before) };
+  return { beforeLen: before.length, beforeHash: hash(before), editor: true };
 }
 
 /** 写完读一次，只交回分级、不交回值（密码这类栏的值不出页面）。自包含。 */
@@ -125,7 +128,51 @@ async function grade(run: PageRun, value: string, beforeLen: number, beforeHash:
 
 const written = (g: TypingGrade | null) => g === "exact" || g === "equivalent" || g === "transformed";
 
-async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<{ grade: TypingGrade | null; beforeLen: number; beforeHash: number } | "skip"> {
+/** Chunked editing must stop if the page moves focus or selection to another field. */
+function editorStillSelected(this: unknown, target: string | null): boolean {
+  let el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
+  if (!el || !(el as HTMLElement).isContentEditable) return false;
+  while (el.parentElement?.isContentEditable) el = el.parentElement;
+  let active = el.ownerDocument.activeElement;
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  const selection = el.ownerDocument.getSelection();
+  if (active !== el || !selection?.rangeCount) return false;
+  const shadowRoots: ShadowRoot[] = [];
+  let root = el.getRootNode();
+  while (root instanceof ShadowRoot) { shadowRoots.push(root); root = root.host.getRootNode(); }
+  // The document selection retargets shadow-editor endpoints to the host after native input.
+  const range = selection.getComposedRanges?.({ shadowRoots })[0] ?? selection.getRangeAt(0);
+  return !!range && el.contains(range.startContainer) && el.contains(range.endContainer);
+}
+
+/** One native edit transaction lets rich-editor DOM observers retain real paragraphs. */
+function repairParagraphsInPage(this: unknown, target: string | null, value: string): 'inserted' | 'focus_changed' | 'unsupported' {
+  let el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
+  if (!el || !(el as HTMLElement).isContentEditable) return 'focus_changed';
+  while (el.parentElement?.isContentEditable) el = el.parentElement;
+  const document = el.ownerDocument;
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  const selection = document.getSelection();
+  if (active !== el || !selection || !el.isConnected) return 'focus_changed';
+  const content = document.createElement('div');
+  for (const paragraph of value.split('\n\n')) {
+    const p = document.createElement('p');
+    paragraph.split('\n').forEach((line, index) => {
+      if (index) p.append(document.createElement('br'));
+      p.append(document.createTextNode(line));
+    });
+    content.append(p);
+  }
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  // HTML comes only from DOM-created paragraph/break nodes and escaped text nodes.
+  return document.execCommand('insertHTML', false, content.innerHTML) ? 'inserted' : 'unsupported';
+}
+
+async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<{ grade: TypingGrade | null; beforeLen: number; beforeHash: number; editor?: true } | "skip"> {
   const prepared = await run(prepareInPage, []);
 
   if (!prepared) return "skip";
@@ -139,7 +186,7 @@ async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guar
   }
   guard?.noteEffect?.();
 
-  return { grade: await grade(run, value, prepared.beforeLen, prepared.beforeHash), beforeLen: prepared.beforeLen, beforeHash: prepared.beforeHash };
+  return { grade: await grade(run, value, prepared.beforeLen, prepared.beforeHash), beforeLen: prepared.beforeLen, beforeHash: prepared.beforeHash, editor: prepared.editor };
 }
 
 /**
@@ -153,6 +200,18 @@ export async function typeIntoField(tabId: number, run: PageRun, value: string, 
 
   if (first === "skip") return "skip";
 
+  if (first.editor && value.includes('\n') && first.grade === 'equivalent') {
+    if (!await run(editorStillSelected, [])) throw new TypingInterrupted('填写期间焦点或选区已改变，已停止；请读取当前内容。');
+    await guard?.();
+    const repaired = await run(repairParagraphsInPage, [value]);
+    if (repaired === 'focus_changed') throw new TypingInterrupted('填写期间焦点或选区已改变，已停止；请读取当前内容。');
+    if (repaired === 'inserted') {
+      guard?.noteEffect?.();
+      const repairedGrade = await grade(run, value, first.beforeLen, first.beforeHash);
+      if (!written(repairedGrade)) throw new TypingInterrupted('段落修正后正文未保持完整，已停止；请读取当前内容。');
+      return { grade: repairedGrade };
+    }
+  }
   if (written(first.grade)) return { grade: first.grade };
   // 没写进去（接在后面了、没变）：先点一下这个框，再写一次。
   const point = await run(clickPointInPage, []).catch(() => null);

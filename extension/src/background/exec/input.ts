@@ -28,7 +28,7 @@ import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, beginWatch, collectEffect, endWatch, pageChangesAfter, watchChangesAfter } from "./effect.js";
-import { regrade, submitProbeInPage, typeIntoField, typingWritten, type PageRun } from "./fill-typing.js";
+import { regrade, submitProbeInPage, typeIntoField, typingWritten, TypingInterrupted, type PageRun } from "./fill-typing.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite } from "../fill-undo.js";
@@ -2252,7 +2252,10 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
 async function writeField<T extends { range?: InputRangeReadout | null; select?: true }>(tabId: number, run: PageRun, legacy: () => Promise<T>, value: string, guard?: DispatchGuard): Promise<T & { typing?: "keyboard" | "fallback" | "failed" }> {
   const started = Date.now();
   // 调试器不可用、页面中途换了：按没写处理，交给旧写法（旧写法是整栏替换，重写一次不会叠字）。
-  const typed = await typeIntoField(tabId, run, value, guard).catch(() => ({ grade: null, fallback: { beforeLen: -1, beforeHash: 0 } }));
+  const typed = await typeIntoField(tabId, run, value, guard).catch(error => {
+    if (error instanceof TypingInterrupted) throw error;
+    return { grade: null, fallback: { beforeLen: -1, beforeHash: 0 } };
+  });
   const log = (typing: string) => console.info("[fill-typing]", JSON.stringify({ ms: Date.now() - started, typing }));
 
   if (typed === "skip") return await legacy();

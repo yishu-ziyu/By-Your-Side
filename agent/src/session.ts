@@ -3011,8 +3011,9 @@ function readObservationOf(tool: string, result: unknown): { text: string; tabId
   // Media and boolean controls can have no text/value. Their real property read
   // is still evidence; don't force an unrelated extra page read after expect matched.
   if(!text&&tool==='read_element'&&data.properties&&typeof data.properties==='object')text=redactCredentialText(JSON.stringify(data.properties));
+  if(!text&&tool==='read_element'&&typeof data.note==='string')text=data.note;
 
-  if (!text && ![data.textContent,data.value].some(part=>typeof part==='string') && !(tool==='read_element'&&data.properties&&typeof data.properties==='object')) return null;
+  if (!text && ![data.text,data.textContent,data.value].some(part=>typeof part==='string') && !(tool==='read_element'&&data.properties&&typeof data.properties==='object')) return null;
 
   return {
     text,
