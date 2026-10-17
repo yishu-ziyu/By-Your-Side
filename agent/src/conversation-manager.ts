@@ -1577,6 +1577,17 @@ return receipt;
       return;
     }
 
+    if (message.type === 'nudge_validate') {
+      let valid = false;
+      try {
+        const id = normalizeConversationId(message.conversationId);
+        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        valid = await entry?.runtime.session.validateNudgeMemory(message.memory, message.url) ?? false;
+      } catch { valid = false; }
+      this.emit({ type: 'nudge_validation', requestId: message.requestId, valid });
+      return;
+    }
+
     if (message.type === 'nudge_request') {
       // 主动建议（#52）：失败、超时、没有模型都当作不建议，只回 nudge:null，不打扰会话。
       let nudge = null;
