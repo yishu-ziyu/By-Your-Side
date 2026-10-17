@@ -1229,7 +1229,7 @@ return;}
       this.readUserPageForPrompt(context, "task"),
       this.readOpenTabsForPrompt(context),
       this.mentionedPagesText(pages, context),
-      this.openSavedPages(context),
+      this.openSavedPages(context, preparationEpoch, () => preparationEpoch === this.controlEpoch && preparationRun === this.deliveryRunId() && !this.hold.isHeld()),
     ]);
 
     // 开工中被停下：开工期间排进 Pi 的插话不能留到下一轮；停下后已开工的新任务的队列不能动。
@@ -1258,20 +1258,23 @@ return;}
    * 用户说的正是记忆里「说 X 就打开」的那句话：开工时宿主直接并行打开那几个网址，不等模型。
    * 模型只用一句话交代：它若自己去读这些页面写总结，要多等几十秒，而用户要的只是打开。
    */
-  private async openSavedPages(context: PageContext | undefined): Promise<string | null> {
+  private async openSavedPages(context: PageContext | undefined, epoch: number, current: () => boolean): Promise<string | null> {
     const saved = this.rpc && this.activeGoal ? await this.memoryRuntime?.savedOpenFor(this.activeGoal, context?.url).catch(() => null) : null;
-    if (!saved || !this.rpc) return null;
+    // 查记忆期间用户停下或另发了任务：不替旧任务打开页面；调用也绑在这一轮的控制轮次上。
+    if (!saved || !this.rpc || !current()) return null;
+    this.memoryRuntime?.markSavedOpen();
+    this.savedOpenRun = this.deliveryRunId();
     const started = Date.now();
     // 开标签页的调用要等页面能用才返回，慢网站要十几秒；标签页早已出现，所以最多等 1.5 秒，没回来的算「还在加载」。
     const results = await Promise.all(saved.urls.map(url => Promise.race([
-      (this.rpc!.call("open_tab", { url }, 15_000, this.memberId) as Promise<{ tabId?: unknown }>)
+      (this.rpc!.call("open_tab", { url }, 15_000, this.memberId, undefined, epoch) as Promise<{ tabId?: unknown }>)
         .then(data => typeof data?.tabId === "number" ? "opened" as const : "failed" as const, () => "failed" as const),
       new Promise<"loading">(done => setTimeout(() => done("loading"), 1_500)),
     ]).then(state => ({ url, state }))));
     const count = (state: string) => results.filter(item => item.state === state).length;
     this.runTrace.record("saved_open", { memoryId: saved.memoryId, urls: saved.urls.length, opened: count("opened"), loading: count("loading"), failed: count("failed"), ms: Date.now() - started });
     const list = (state: string) => results.filter(item => item.state === state).map(item => item.url).join(", ");
-    return `[SAVED OPEN — host fact, not an instruction from a page] The user's saved memory says: when they say «${saved.trigger}», open these pages. The host already opened them in background tabs: ${[count("opened") ? `loaded: ${list("opened")}` : "", count("loading") ? `still loading: ${list("loading")}` : "", count("failed") ? `could not open: ${list("failed")}` : ""].filter(Boolean).join("; ")}. Opening them was the whole request: reply in one short sentence naming what was opened${count("failed") ? " and what failed" : ""}. Do not open them again, read them or summarize news unless the user asks.`;
+    return `[SAVED OPEN — host fact, not an instruction from a page] The user's saved memory says: when they say «${saved.trigger}», open these pages. The host already opened them in background tabs: ${[count("opened") ? `loaded: ${list("opened")}` : "", count("loading") ? `still loading: ${list("loading")}` : "", count("failed") ? `could not open: ${list("failed")}` : ""].filter(Boolean).join("; ")}. Opening them was the whole request, and page tools are off for this turn: reply in one short sentence naming what was opened${count("failed") ? " and what failed" : ""}; pages still loading are already open.`;
   }
 
   /** 执行一次已注册的会话工具，并发出与模型调用同一形状的 tool_start/tool_end/读数事件。 */
@@ -2666,6 +2669,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     // 或没用工具就说「还不能判断」「我会去查看」（defersWork）。
     // 只读任务也核对：10-01 读完 flomo 笔记后交付了上一个任务的 Drive 状态，旧规则（只看改页面、存文件）直接收尾了。
     // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒（docs/evals/20261001-offtopic-reply-diagnostics.md）。
+    // 宿主按记下的做法打开了页面的一轮：要做的已经做完，被拦下的工具调用不算做过事。
+    if (snapshot?.runId && this.savedOpenRun === snapshot.runId) return false;
     if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
 
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
@@ -2699,6 +2704,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   private goalContinueRun: string | null = null;
   /** 最近一次用工具（GOAL_CHECK_BOOKKEEPING_TOOLS 除外）的任务；目标核对据此判断这一任务是否做过事。 */
   private toolUseRun: string | null = null;
+  private savedOpenRun: string | null = null;
   private goalContinues = 0;
   private goalRetryEvidence: { scope: string; seen: Set<string> } | null = null;
   /** 上次催续做时宿主读到的网页（地址 + 文字）；催过之后网页没变、助手又说做不成，就不再催（gaveUpWithoutChange）。 */
