@@ -36,11 +36,11 @@ The result will be compared against `main` on quality, speed and recovery (see "
 - The product already has a checkpoint/resume path (`agent/src/conversation-manager.ts` `resumeInterruptedTask`, `task-progress.ts`, `pi-session-persistence.ts`). Decide what pi-durable replaces and what stays; write the reasoning in the report.
 - Model providers: the product resolves providers itself (`agent/src/` provider/model code, `pi-ai` providers). Keep using the same provider resolution; plug it into the Harness through `createModels()`/`setProvider`.
 
-## Acceptance (you run the first three; the user's agent runs the comparison)
+## Acceptance (you own and run checks 1–3 yourself; the user's agent runs the comparison)
 
 1. `npm run typecheck` passes after merging latest `origin/main` into the branch.
 2. `npm test` (core real-path cases, scripted model) passes, or every failure is listed in the report with cause. Before changing anything, run it once on the untouched branch and record the baseline, so pre-existing failures are not blamed on the swap.
 3. New case `scripts/acceptance/real-path/restart-resume.mts`: in the real side panel, a task calls a page-changing tool on a local practice page (e.g. clicks a submit button that the page counts), the extension reloads after the tool result is stored and before the model's next reply, and after reopen the task finishes without the user typing "继续", the submit count stays 1, and the side panel shows the finished answer. Break the product on purpose once (e.g. wipe storage before reopen) and confirm the case fails; say so in the report.
-4. Comparison (not yours to run, but do not break it): `npm run lab -- eval guardrail` (24 real-site tasks: pass rate, time, tokens), `npm run lab -- eval duplex` (interjections), and `npm test` on `main` vs this branch.
+4. Comparison (not yours to run, but do not break it). Both branches will use the Command Code provider (MiMo V2.6 Flash main, Claude Haiku 5.5 fast) in the real product; that provider is being added on another branch and will be merged into yours later, so keep provider resolution (`extension/src/inproc/model-runtime.ts`) pluggable: `npm run lab -- eval guardrail` (24 real-site tasks: pass rate, time, tokens), `npm run lab -- eval duplex` (interjections), and `npm test` on `main` vs this branch.
 
 Self-check before handing back (each one has broken past PRs here): reopen the side panel and replay from receipts; two windows with side panels open; the assistant waiting on the user (confirm send, takeover); reduced motion and dark mode; HTML written by the model into an answer; merge latest main then `npm run typecheck`.
