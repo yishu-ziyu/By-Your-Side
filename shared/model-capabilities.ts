@@ -55,6 +55,9 @@ const MEASURED = new Map<string, MeasuredCapability>([
   }],
   // reasoning_effort=minimal 回 400「Invalid request parameters」；none/low/medium 可用。看图未测。
   ["opencode-go/mimo-v2.6-flash", { reasoning: true, input: ["text"], thinkingLevelMap: { minimal: null } }],
+  // Command Code 的 reasoning_effort 只收 low–max：none、minimal 回 400，off 回「does not support reasoning off」。
+  // low 出字最快（约 3.5 秒，medium 7.5 秒、high 17 秒），所以起始档用低档；能看图（蓝色图答对）。
+  ["commandcode/xiaomi/mimo-v2.6-flash", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null, minimal: null }, start: "low" }],
   // 始终思考，接受 reasoning_effort minimal–high；developer 角色里的指令被忽略、直接和用户聊天，system 角色正常；能看图。
   ["stepfun/step-3.7-flash", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null }, systemRole: true }],
   // 能看图（同一张图实测答对）。10-11 实测：reasoning_effort 接受 low / medium / high，low 出字最快（2.7 秒，中档 6.0 秒），
