@@ -18,6 +18,8 @@ import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correcti
 interface ActiveUserTurn {
   epoch: number;
   text: string;
+  /** 这句话命中「说 X 就打开」、宿主已经打开了页面：这一轮不再动网页，只回一句。 */
+  savedOpen?: boolean;
   query: MemoryQuery;
   abort: AbortController;
   change?: Promise<MemoryToolResult>;
@@ -383,6 +385,9 @@ export class MemoryRuntime {
 
     return entry && { id: entry.id, text: entry.text, createdAt: entry.createdAt };
   }
+
+  /** 宿主已为这一轮打开了记住的页面：本轮其余工具调用一律拦下。 */
+  markSavedOpen(): void { if (this.active) this.active.savedOpen = true; }
 
   /** 用户这句话命中的「说 X 就打开」：只看仍生效、本网站没停用、用户原话里写明了那句话和网址的记忆。 */
   async savedOpenFor(text: string, url: string | undefined): Promise<(SavedOpen & { memoryId: string }) | null> {
@@ -971,6 +976,10 @@ export class MemoryRuntime {
   extension(): ExtensionFactory {
     return pi => {
       pi.on("tool_call", event => {
+        // 模型常把「打开渠道」理解成「去查新闻」，读完页面写总结，又被核对当成没查完；用户要的只是打开。
+        if (this.active?.savedOpen && event.toolName !== "send_user_message") {
+          return { block: true, reason: "宿主已按用户记下的做法打开了这些页面；本轮不再读取或操作网页。用一句话告诉用户打开了哪些。" };
+        }
         if (this.active?.memoryOnly && event.toolName !== "user_memory" && event.toolName !== "send_user_message") {
           return { block: true, reason: "本轮用户仅要求修改记忆，未要求操作网页。请报告记忆结果，不要顺手填表、提交或派发助手。" };
         }
