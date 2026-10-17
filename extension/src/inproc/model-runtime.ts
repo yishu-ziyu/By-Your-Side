@@ -204,6 +204,8 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     const known = models.getModel(config.provider, config.modelId);
 
     if (known) return withMeasuredCapability(known);
+    // Command Code 两个模型接口不同，沿用同服务商的连接参数会把 Claude 发到 OpenAI 兼容接口。
+    if (config.provider === COMMANDCODE_PROVIDER_ID) throw new Error(`Command Code 没有接入 ${config.modelId}：只支持 MiMo V2.6 Flash 和 Claude Haiku 5.5。`);
     // 目录滞后于服务商（如 MiniMax-M3.1-Flash-Preview、OpenCode Go 的 mimo-v2.6-flash）：连接参数沿用同服务商的模型，能力取实测登记或保守默认。
     const unlisted = unlistedModel(config.provider, config.modelId, models.getModels(config.provider));
 
