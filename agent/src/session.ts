@@ -1225,10 +1225,11 @@ return;}
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
-    const [observation, openTabs, mentioned] = await Promise.all([
+    const [observation, openTabs, mentioned, savedOpen] = await Promise.all([
       this.readUserPageForPrompt(context, "task"),
       this.readOpenTabsForPrompt(context),
       this.mentionedPagesText(pages, context),
+      this.openSavedPages(context),
     ]);
 
     // 开工中被停下：开工期间排进 Pi 的插话不能留到下一轮；停下后已开工的新任务的队列不能动。
@@ -1239,7 +1240,8 @@ return;}
     if (observation) this.noteGoalObservation("page_at_start", observation);
 
     // 标签页清单放在页面观察之前：页面观察超窗口时会被整段删掉，清单很短，留着。
-    const withTabs = openTabs ? `${finalText}\n\n${openTabs}` : finalText;
+    const withSaved = savedOpen ? `${finalText}\n\n${savedOpen}` : finalText;
+    const withTabs = openTabs ? `${withSaved}\n\n${openTabs}` : withSaved;
     const withMentions = withTabs + mentioned;
     const promptText = observation ? `${withMentions}\n\n${observation}` : withMentions;
 
@@ -1250,6 +1252,26 @@ return;}
       if (!session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? "user" : "idle");
       throw error;
     }
+  }
+
+  /**
+   * 用户说的正是记忆里「说 X 就打开」的那句话：开工时宿主直接并行打开那几个网址，不等模型。
+   * 模型只用一句话交代：它若自己去读这些页面写总结，要多等几十秒，而用户要的只是打开。
+   */
+  private async openSavedPages(context: PageContext | undefined): Promise<string | null> {
+    const saved = this.rpc && this.activeGoal ? await this.memoryRuntime?.savedOpenFor(this.activeGoal, context?.url).catch(() => null) : null;
+    if (!saved || !this.rpc) return null;
+    const started = Date.now();
+    // 开标签页的调用要等页面能用才返回，慢网站要十几秒；标签页早已出现，所以最多等 1.5 秒，没回来的算「还在加载」。
+    const results = await Promise.all(saved.urls.map(url => Promise.race([
+      (this.rpc!.call("open_tab", { url }, 15_000, this.memberId) as Promise<{ tabId?: unknown }>)
+        .then(data => typeof data?.tabId === "number" ? "opened" as const : "failed" as const, () => "failed" as const),
+      new Promise<"loading">(done => setTimeout(() => done("loading"), 1_500)),
+    ]).then(state => ({ url, state }))));
+    const count = (state: string) => results.filter(item => item.state === state).length;
+    this.runTrace.record("saved_open", { memoryId: saved.memoryId, urls: saved.urls.length, opened: count("opened"), loading: count("loading"), failed: count("failed"), ms: Date.now() - started });
+    const list = (state: string) => results.filter(item => item.state === state).map(item => item.url).join(", ");
+    return `[SAVED OPEN — host fact, not an instruction from a page] The user's saved memory says: when they say «${saved.trigger}», open these pages. The host already opened them in background tabs: ${[count("opened") ? `loaded: ${list("opened")}` : "", count("loading") ? `still loading: ${list("loading")}` : "", count("failed") ? `could not open: ${list("failed")}` : ""].filter(Boolean).join("; ")}. Opening them was the whole request: reply in one short sentence naming what was opened${count("failed") ? " and what failed" : ""}. Do not open them again, read them or summarize news unless the user asks.`;
   }
 
   /** 执行一次已注册的会话工具，并发出与模型调用同一形状的 tool_start/tool_end/读数事件。 */
