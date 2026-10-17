@@ -235,9 +235,14 @@ export function unreadNames(reply: string, seen: ReadIndex): string[] {
   const names = [...new Set([...reply.normalize("NFC").replace(/[\u200b-\u200d\u2060\ufeff]/g, "").matchAll(pattern)].map(match => match[0]))];
   const missing = names.filter(name => {
     const words = nameWords(name.replace(/^Dr\. /, ""));
-    return !seen.pairs.has(`${words[0]} ${words.at(-1)}`);
+    return !seen.pairs.has(`${words[0]} ${words.at(-1)}`) && !words.slice(1).every((word, i) => seen.pairs.has(`${words[i]} ${word}`));
   });
   return names.length >= 3 && missing.length * 2 > names.length ? missing.slice(0, 30) : [];
+}
+
+/** 核对的说法是不是在说这些名字：点到其中的姓，或说到作者、姓名、人名。 */
+function aboutNames(names: readonly string[], text: string): boolean {
+  return names.length > 0 && (names.some(name => text.includes(name.split(" ").at(-1)!)) || /作者|姓名|人名|名字|名单|author|name/i.test(text));
 }
 
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
@@ -363,8 +368,9 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     }).slice(0, 4);
     if (typeof parsed.evidence === 'string' && parsed.evidence.trim()) verdict.evidence = parsed.evidence.trim().slice(0, 800);
     // 名字没读到是宿主查过的事实，不再复核：复核要求证据引用回答原文，模型常引用页面上的目录，结论就被降成「未确认」。
-    // 纠正换成宿主自己的话、不带模型的清单，只为这件事背书；模型的纠正常不点名，别的修改也不该借此跳过复核，下一次核对还会再看。
-    if (!input.verification && verdict.verificationSubject === 'answer' && notInReads.length) Object.assign(verdict, { verifiedByHost: true, items: undefined, remaining: "读到名字所在的原文",
+    // 纠正换成宿主自己的话、不带模型的清单，只为这件事背书；别的修改不借此跳过复核，下一次核对还会再看。
+    // 模型的纠正常不点名，只说「作者」「姓名」，所以这些词也算在说名字；说年份、价格这类别的错时走原来的复核。
+    if (!input.verification && verdict.verificationSubject === 'answer' && aboutNames(notInReads, [correction, verdict.finding, remaining].join(" "))) Object.assign(verdict, { verifiedByHost: true, items: undefined, remaining: "读到名字所在的原文",
       correction: `回答列出的这些名字在本次读到的内容里都找不到：${notInReads.slice(0, 12).join("、")}。如果它们应来自页面或文件，先读到名字所在的那一部分（PDF 用目录页码翻到那一页），再按原文改正回答；如果来自别处，说明出处。` });
     if (input.verification) {
       if (verdict.verificationSubject !== (input.verification.finding.verificationSubject ?? 'page')) return { ...verdict, status: 'open', cause: 'retry_subject_changed' };

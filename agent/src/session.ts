@@ -774,7 +774,8 @@ if(required.includes(key))candidates.set(key,attachment);
       for (const message of restored?.messages ?? []) if (message.role === "toolResult" || message.role === "user") {
         const content: unknown = message.content;
         const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((part: unknown) => part && typeof part === "object" && "text" in part && typeof part.text === "string" ? part.text : "").join("\n") : "";
-        if (text) readWords(redactCredentialText(text), wrapper.seenWords);
+        // 宿主催续做的那条也存成用户消息，里面点了没读到的名字，不能反过来算读到过。
+        if (text && !text.startsWith("[GOAL CHECK]")) readWords(redactCredentialText(text), wrapper.seenWords);
       }
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.sendOptions = sendOptions;
