@@ -1,7 +1,8 @@
 import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
-import { endOfLocalDay, localDateOf, MEMORY_KIND_LABEL, memoryHostOfUrl, memoryTaskUrl, validLocalDate, validMemoryText, type MemoryEntry, type MemoryScope, type MemoryValidity } from "../../shared/memory.js";
+import { endOfLocalDay, localDateOf, MEMORY_KIND_LABEL, memoryHostOfUrl, memoryTaskUrl, usableOnHost, withinValidity, validLocalDate, validMemoryText, type MemoryEntry, type MemoryScope, type MemoryValidity } from "../../shared/memory.js";
+import type { NudgeMemory } from "../../shared/nudge.js";
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 import { validTaskLabel, type TaskHistoryEntry } from "../../shared/task-history.js";
 import { ReplaceTargetChanged, type MemoryQuery, type MemoryStore } from "./memory-store.js";
@@ -380,6 +381,33 @@ export class MemoryRuntime {
     const entry = this.usedThisTurn.find(e => e.status === "active" && !e.experience && e.kind === "profile" && e.text.includes(v));
 
     return entry && { id: entry.id, text: entry.text, createdAt: entry.createdAt };
+  }
+
+  private async confirmedNudgeMethods(url: string): Promise<MemoryEntry[]> {
+    const hostname = memoryHostOfUrl(url);
+    if (!hostname) return [];
+    const now = Date.now();
+    return (await this.store.list()).filter(entry => entry.status === "active" && entry.kind === "method"
+      && !entry.experience && !!entry.sourceQuote?.trim() && !looksSecret(entry.text)
+      && (entry.scope.kind === "all" || entry.scope.hostname === hostname)
+      && usableOnHost(entry, hostname) && withinValidity(entry.validity, now));
+  }
+
+  async nudgeMemories(url: string): Promise<NudgeMemory[]> {
+    const entries = (await this.confirmedNudgeMethods(url)).sort((a, b) => b.updatedAt - a.updatedAt);
+    const selected: NudgeMemory[] = [];
+    let chars = 0;
+    for (const entry of entries) {
+      if (selected.length === 5) break;
+      if (chars + entry.text.length > 3000) continue;
+      selected.push({ id: entry.id, version: entry.version, text: entry.text });
+      chars += entry.text.length;
+    }
+    return selected;
+  }
+
+  async validateNudgeMemory(memory: Pick<NudgeMemory, "id" | "version">, url: string): Promise<boolean> {
+    return (await this.confirmedNudgeMethods(url)).some(entry => entry.id === memory.id && entry.version === memory.version);
   }
 
   beginUserTurn(text: string, context?: PageContext, recentTurns: MemoryConversation = []): void {

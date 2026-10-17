@@ -730,6 +730,11 @@ const proactiveCard = installProactiveCard({
   mount: node => { appendToMessages(node); scrollToEnd(); },
   selected: () => selectedConversationId,
   ready: starterReady,
+  memory: text => {
+    memorySearch.value = text;
+    memoryQuery = text.toLowerCase();
+    openMemoryDrawer();
+  },
   ask: text => {
     inputEl.value = inputEl.value.trim() ? `${inputEl.value.trimEnd()}\n${text}` : text;
     inputEl.dispatchEvent(new Event("input"));
