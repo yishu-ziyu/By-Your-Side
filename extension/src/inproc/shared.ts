@@ -81,6 +81,7 @@ export const CUSTOM_PROVIDER_ID = "custom";
 
 /** 阶跃星辰：pi-ai 目录里没有，扩展自己注册；它的 key 同时可用于实时语音。 */
 export const STEPFUN_PROVIDER_ID = "stepfun";
+export const COMMANDCODE_PROVIDER_ID = "commandcode";
 
 /**
  * 每家服务商一条凭据，存在 `inproc_cred:<服务商>`：填的 key，或订阅登录拿到的令牌。
