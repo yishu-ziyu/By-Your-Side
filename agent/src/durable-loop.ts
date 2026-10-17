@@ -222,10 +222,15 @@ export class DurableAgentLoop implements AgentLoop {
         await this.flushPersistence();
         const blocked = this.hooks.has("tool_call") ? await this.hooks.toolCall(tool.name, api.callId, args as HookArgs) : undefined;
         if (blocked?.block) return { content: [{ type: "text" as const, text: blocked.reason ?? "已阻止" }], isError: true };
+        // 抛出的错误要留在结果正文里。pi-durable 会把异常收成诊断，模型看到的就变成带外壳的一段，认不出原来的那句。
         const result = await tool.execute(api.callId, args as never, context.abortSignal, async (partial) => {
           const details = (partial as { details?: unknown }).details;
           if (details !== undefined) await api.details(details as never, context);
-        }, undefined as never);
+        }, undefined as never).catch((error: unknown) => ({
+          content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }],
+          details: {},
+          isError: true as const,
+        }));
         const repeated = this.noteRepeat(tool.name, args, result.content);
         const hooked = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: tool.name, toolCallId: api.callId, input: args as HookArgs, content: result.content, details: result.details as never, isError: result.isError === true }) : undefined;
         const content = [...(hooked?.content ?? result.content), ...(repeated ? [{ type: "text" as const, text: repeated }] : [])];
