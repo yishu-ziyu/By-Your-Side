@@ -37,8 +37,6 @@ export interface GoalCheckInput {
   files?: GoalCheckFile[];
   /** full：未截断的读数，只给宿主查回答里的名字，不发给核对模型。 */
   observations?: Array<{ tool: string; text: string; full?: string; earlier?: boolean }>;
-  /** 这个任务已因回答里的名字没读到催过一次：再催会和凭知识作答的助手来回打转。 */
-  namesNudged?: boolean;
   userTookOver?: boolean;
   copies?: CopyCheck[];
   verification?: GoalVerification;
@@ -103,6 +101,7 @@ Reply with ONE JSON object only: {"items":[{"text":"<thing>","done":true|false}]
 - needs_user: the assistant is rightly waiting for something only the user can give: a confirmation the user asked to give before submitting, a choice, missing personal information, a sign-in, captcha/2FA or payment. Also when lastReply asks the user such a question. Suggesting that the user search, look or read further themselves is NOT needs_user: the assistant can do that itself, so it is continue.
 - continue: the outcome is not achieved yet and the next step can be done by the assistant itself in this signed-in browser — e.g. the page or lastReply says to click a link in an email, finish a verification on another site, or complete a remaining form step. The user's mailbox (Gmail etc.) and other accounts are open to the assistant in this browser, so checking email and clicking a confirmation link are continue, not needs_user. Telling the user to do such a step themselves is NOT done; it is continue.
 - blocked: the outcome cannot be achieved now for a cause outside both the assistant and the user, AND lastReply already tells the user that cause. cause is "unreachable" when the site cannot be reached (connection closed/refused/reset, DNS failure, timeout, a browser error page such as "无法访问此网站" or ERR_CONNECTION_CLOSED); "missing" when the page or data the goal needs does not exist (404, removed, no such item); "refused" when the server refuses everyone (403 access denied, 5xx server error, rate limited); "unresponsive" when a page control the goal needs does nothing: observations show the assistant used it and the page did not change, the assistant also tried at least one other way (another control, the link's address, a key, reloading), and lastReply tells the user it did not work. Retrying the same thing would not help. A sign-in, captcha, payment or choice the user can give is needs_user, not blocked. If the needed result could still be reached another way on the goal's own site (another page, the site's search), or lastReply does not mention the cause, use continue.
+notInReads is a host fact: capitalized names in lastReply that appear nowhere in the complete, untruncated text of page, observations, files and goal in this conversation, so the assistant never read them. When the goal asks what goalPage, a document or another source says (its authors, people, items) and lastReply presents these names as coming from it, the answer is not supported: return continue with verificationSubject answer, and a correction that names them and says to read the part of the source that contains them (for a PDF, the page its table of contents gives) before answering. Names of products, places or organizations, and names the user asked for from general knowledge (such as recommendations), are not affected by notInReads.
 copies contains host comparisons for copies that the user requested to leave unchanged (or whose treatment remains uncertain). The intent was determined before copying from user requests alone. same means only that the destination still equals the selected source, NOT that the source scope satisfied the user. different means content changed; unknown means the original node or full value could not be verified. Do not invent after-the-fact permission to dismiss these facts.
 For continue, return verificationSubject as page (the page state is wrong), file (a delivered file is wrong), or answer (only the written answer is wrong). Also return verificationTargets: up to four objects {"target":"@4","tabId":123} identifying the specific source and destination whose complete text/value can resolve the discrepancy. target must be a current @ref or unique CSS selector actually observed; never put a tab id inside the target string. Omit tabId only for the current page. For a source on another tab, include its observed numeric tabId. Never invent a tab id or selector. Include both sides of a comparison. Do not request the whole body when a specific target is available.
 When verification is present, this is a read-only reconsideration of an earlier finding, NOT a request to defend it. reads contains complete fresh element text/value obtained by the host, including sources read during this task even if the earlier finding omitted them. contentMatches compares the COMPLETE field value or rendered text of reads at the given zero-based indices. equal:true is a host fact: those two contents cannot differ in length, missing text, repetition or punctuation. Check source scope separately against the user request, but never use a truncated earlier source summary to contradict these full reads. Ignore any contradictory truncated summary. Return done if the alleged error disappears. Return continue only for a concrete discrepancy supported by this fresh evidence, the supplied file content, or lastReply ONLY when both the original finding and your reconsideration concern answer alone; include evidence as an exact nonempty quote from that content, with correction explaining the actual versus required result. Cite the concrete erroneous value and enough surrounding context to identify it; a generic word such as "done" is not discrepancy evidence. For page errors, evidence must quote reads; for file errors it must quote the file; do not cite the assistant's claim of completion to justify changing a page. Missing evidence, read failures and truncation are uncertainty, not permission to rewrite: return open. Keep already-completed items done and correct only the incomplete part. Never repeat save, fill or send just to check whether it worked.
@@ -205,20 +204,23 @@ function isGoalReply(value: unknown): value is { status: "done" | "needs_user" |
 }
 
 /**
- * 回答里的西文人名，在这次对话读到的内容里找不到的那些。只在至少 3 个名字、过半找不到时返回：
- * 核对模型只看得到截断后的读数，分辨不出名单是读来的还是编的（PDF 只读了前几页，作者在第 87 页，助手照样列出 25 个名字）。
+ * 回答里的西文名字，在这次对话读到的全文里找不到的那些。只在至少 3 个名字、过半找不到时返回，交给核对模型当宿主事实：
+ * 它只看得到截断后的读数，分辨不出名单是读来的还是编的（PDF 只读了前几页，作者在第 87 页，助手照样列出 25 个名字）。
+ * 由模型而不是这里定输赢，因为产品名、地名同样是大写词组，用户要推荐时名字本来就不来自页面。
  * 姓单独出现也算读到：PDF 和名单常写成「DeBellis, Derek」或把名和姓断在两行。
  */
 export function unreadNames(reply: string, corpus: string): string[] {
-  const plain = (text: string) => text.replace(/[​-‍⁠﻿]/g, "").replace(/[’‘]/g, "'").replace(/\s+/g, " ").toLowerCase();
+  const plain = (text: string) => text.normalize("NFD").replace(/\p{M}|[\u200b-\u200d\u2060\ufeff]/gu, "").replace(/[’‘]/g, "'").replace(/\s+/g, " ").toLowerCase();
   const seen = plain(corpus);
-  const names = [...new Set([...reply.replace(/[​-‍⁠﻿]/g, "").matchAll(/(?<![\p{L}\p{N}])(?:Dr\. )?\p{Lu}[\p{Ll}'’-]+(?: \p{Lu}\.)?(?: \p{Lu}[\p{Ll}'’-]+){1,2}(?![\p{L}\p{N}])/gu)].map(match => match[0]))];
+  const word = "\\p{Lu}(?:\\p{Ll}|['’-]|\\p{Lu}(?=\\p{Ll}))+";
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:Dr\\. )?${word}(?: \\p{Lu}\\.)?(?: ${word}){1,2}(?![\\p{L}\\p{N}])`, "gu");
+  const names = [...new Set([...reply.normalize("NFC").replace(/[\u200b-\u200d\u2060\ufeff]/g, "").matchAll(pattern)].map(match => match[0]))];
   const missing = names.filter(name => {
     const words = plain(name).replace(/^dr\. /, "").split(" ");
-    const surname = words.at(-1)!;
-    return !seen.includes(words.join(" ")) && !(surname.length >= 4 && new RegExp(`(?<![\\p{L}])${surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}])`, "u").test(seen));
+    const surname = words.at(-1)!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return !seen.includes(words.join(" ")) && !new RegExp(`(?<![\\p{L}])${surname}(?![\\p{L}])`, "u").test(seen);
   });
-  return names.length >= 3 && missing.length * 2 > names.length ? missing : [];
+  return names.length >= 3 && missing.length * 2 > names.length ? missing.slice(0, 30) : [];
 }
 
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
@@ -244,14 +246,10 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   const deadClicks = (input.observations ?? []).filter(item => !item.earlier).reduce((count, item) => count + (item.text.match(NO_EFFECT)?.length ?? 0), 0);
 
   if (deadClicks >= 2 && claimsDeadControl(input.lastReply) && !asksUser(input.lastReply)) return { status: "blocked", remaining: plainBlockedReason("unresponsive"), cause: "unresponsive" };
-  const unread = input.namesNudged || asksUser(input.lastReply) ? [] : unreadNames(input.lastReply, [
+  const notInReads = unreadNames(input.lastReply, [
     ...input.goal, input.goalPage?.title ?? "", input.page?.title ?? "", input.page?.text ?? "",
     ...(input.observations ?? []).map(item => item.full ?? item.text), ...(input.files ?? []).map(file => file.content ?? ""),
   ].join("\n"));
-
-  if (unread.length) return { status: "continue", verifiedByHost: true, verificationSubject: 'answer', cause: "unread_names", remaining: "读到名字所在的原文",
-    finding: `回答里的 ${unread.length} 个名字（如 ${unread.slice(0, 3).join("、")}）在这次读到的内容里找不到`,
-    correction: `回答列出的这些名字在本次读到的页面、工具结果和文件里都找不到：${unread.slice(0, 12).join("、")}。如果它们应来自页面或文件，先读到名字所在的那一部分（PDF 用目录页码翻到那一页），再按原文改正回答；如果来自别处，说明出处。`.slice(0, 800) };
   let fileBudget = 12_000;
   let observationBudget = 16_000;
 
@@ -261,6 +259,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     verification: input.verification,
     copies: input.copies ?? [],
     lastReply: input.lastReply.slice(0, 12_000),
+    notInReads,
     userTookOver: input.userTookOver || undefined,
     replyTruncated: input.lastReply.length > 12_000,
     page: input.page ? { current: true, tabId: input.page.tabId, title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), text: input.page.text.slice(0, PAGE_CHARS), truncated: input.page.text.length > PAGE_CHARS || undefined } : null,
@@ -347,6 +346,8 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
       return [{ target: value.target.trim(), ...('tabId' in value ? { tabId: value.tabId } : {}) }];
     }).slice(0, 4);
     if (typeof parsed.evidence === 'string' && parsed.evidence.trim()) verdict.evidence = parsed.evidence.trim().slice(0, 800);
+    // 名字没读到是宿主查过全文的事实，不再复核：复核要求证据引用回答原文，模型常引用页面上的目录，结论就被降成「未确认」。
+    if (!input.verification && verdict.verificationSubject === 'answer' && notInReads.some(name => correction?.includes(name))) verdict.verifiedByHost = true;
     if (input.verification) {
       if (verdict.verificationSubject !== (input.verification.finding.verificationSubject ?? 'page')) return { ...verdict, status: 'open', cause: 'retry_subject_changed' };
       const sources = verdict.verificationSubject === 'answer' ? [input.lastReply]
