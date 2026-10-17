@@ -13,6 +13,9 @@ export interface QueuedTask {
 
 const MERGED = '已并回上一件';
 
+/** 另开那件已经并回上一件：之后它停下的结局、重复的并回都不再改写它。 */
+export const isMerged = (job: QueuedTask): boolean => job.receipt.message === MERGED;
+
 /** Durable admission for independent requirements. Execution still belongs to TaskDispatcher. */
 export class TaskQueue {
   private readonly jobs = new Map<string, QueuedTask>();
@@ -206,10 +209,10 @@ export class TaskQueue {
     const job = this.get(id);
 
     // 并回上一件以后，它停下时的结局不再改写这张卡。
-    if (!job?.request.originConversationId || job.receipt.message === MERGED) return;
+    if (!job?.request.originConversationId || isMerged(job)) return;
     const receipt: TaskReceipt = 'text' in outcome
       ? { ...job.receipt, status: 'accepted', result: { text: outcome.text.slice(0, 14000), at: Date.now() }, updatedAt: Date.now() }
-      : 'merged' in outcome ? { ...job.receipt, status: 'applied', message: MERGED, updatedAt: Date.now() }
+      : 'merged' in outcome ? { ...job.receipt, action: 'start', status: 'applied', message: MERGED, updatedAt: Date.now() }
         : { ...job.receipt, status: 'failed', message: outcome.failed, updatedAt: Date.now() };
     if (receipt.status === job.receipt.status && receipt.message === job.receipt.message && receipt.result?.text === job.receipt.result?.text) return;
     this.update(job, { receipt });
