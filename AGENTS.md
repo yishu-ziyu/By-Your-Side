@@ -28,6 +28,16 @@
 - 超过 1 分钟的运行放后台，同一轮挂上进度监控，正常和异常都及时说。证据留在 `out/`，不复制截图进仓库。
 - 默认测试模型是 `openai-codex/gpt-6-luna`。StepFun 只走 Step Plan（实时语音除外）；OpenAI 只走 ChatGPT 登录，不要 API key。
 
+### 多机分片
+
+- `npm run accept:shard`（`scripts/acceptance/real-path/shard-run.mts`）：本机构建一次 `out/acceptance/shard-dist`，把跑测试必需的最小文件集（约 4MB）推到各节点，按权重切片并行跑，汇总每个用例的 pass/fail/missing 写进 `out/acceptance/shard-*.json`。有失败或未跑就非 0 退出，节点挂了绝不伪装成通过。
+- 节点表在 `NODES`：`local`、阿里云（ssh `root@121.89.90.68`，Chrome 在 `/opt/chrome-for-testing/chrome-linux64/chrome`）、Devin 云（`devin cloud drs run` 进蓝图沙箱 session）、`grokbox`（Grok Bot 云电脑，Tailscale SSH）。
+- Devin 节点用 `devin cloud drs sandbox-create --repo yishu-ziyu/By-Your-Side` 起沙箱，环境蓝图预装 node_modules 和 Chrome，换新 session 时把新 id 填进 `NODES`；蓝图过时就用 `devin cloud drs build` 重建。它只看得见 origin 上推送过的代码：本机 HEAD 未推送时自动退回 `origin/main` 并在输出里标明，要它测最新改动先 `git push`。
+- grokbox 的怪癖：VM 在 bot 空闲几分钟后休眠，睡醒从快照恢复——`/home/box` 下除 `agent-data` 外全清空，Tailscale、node_modules、浏览器都要重装（脚本全部幂等，重跑即可）。唤醒 = 给 sun 发任意消息（App 无 API；本机已装 LCU 且 Grok Bot 已批准，可驱动 Grok Bot.app 发送）。跑分片期间让它挂着长任务（如 `sleep 1200`）防中途睡死。Tailscale authkey 只存在 box 的 `agent-data/tailscale/`，不进仓库。
+- 不把不可用的 grokbox 当阻塞项：它缺席时用例记 missing，主力是本机 + 阿里云 + Devin。
+- 该调度器只管分发与汇总，真实结果判定仍全在 `run-all.mts` 与各用例里；远端跑的是同一份 `SIDEAGENT_ACCEPTANCE_DIST`，判定标准与本机一致。
+- 真模型凭据：脚本把 `~/.sideagent/providers.local.json` 自动同步到各节点（ssh 直推；Devin 沙箱用临时密钥对经阿里云 scp 桥拉取；grokbox 权威副本放 `agent-data` 防快照清空），内容不经过命令行。只下发 api_key 类套餐（minimax-cn、opencode-go、zai-coding-cn）——openai-codex、kimi-coding 这类 OAuth 订阅的刷新令牌用一次就轮换，外发会让本机掉登录，真模型用例里它们只在本机跑。`smoke --model=minimax-cn/MiniMax-M2.7` 已在三端各 PASS 一次。`commandcode` 精选项目前没有任何凭据来源，配好 key 和地址后按同样方式下发。
+
 ## 完成与汇报
 
 - 实现前写清可观察结果和谁来检查；故障先复现原路径。真实用户路径没通过就不算完成；检查通过而真实结果失败时，修检查方法。

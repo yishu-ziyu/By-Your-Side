@@ -137,9 +137,19 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   const page = await rp.attach(target.targetId);
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页渲染服务商");
 
-  // 「自定义地址」收在「更多服务商」里。
-  if (asCustom) await rp.evaluate(page, `(() => { const more = document.querySelector("#provider-more"); if (more) more.open = true; return true; })()`);
-  await rp.click(page, `.provider-option[data-provider="${asCustom ? "custom" : plan.providerId}"]`);
+  // 「自定义地址」和没连接的服务商都收在「更多服务商」里；先展开再找按钮。
+  const directSelector = `.provider-option[data-provider="${asCustom ? "custom" : plan.providerId}"]`;
+  const directVisible = await rp.evaluate(page, `!!document.querySelector('#provider-connected ${directSelector}')`);
+  if (asCustom || !directVisible) await rp.evaluate(page, `(() => { const more = document.querySelector("#provider-more"); if (more) more.open = true; return true; })()`);
+  if (asCustom || (await rp.evaluate(page, `!!document.querySelector(${JSON.stringify(directSelector)})`))) {
+    await rp.click(page, directSelector);
+  } else {
+    // 目标是家族的地区成员（如 minimax-cn）：行按钮挂的是家族代表 id，先搜索过滤到该行，再在地区行选成员。
+    await rp.evaluate(page, `(() => { const s = document.querySelector("#provider-search"); s.value = ${JSON.stringify(plan.providerId)}; s.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+    await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length === 1`)) || undefined, 5_000, `搜索出 ${plan.providerId}`);
+    await rp.click(page, `.provider-option`);
+    await rp.click(page, `button[data-region="${plan.providerId}"]`).catch(() => undefined);
+  }
   await until(async () => (await rp.evaluate(page, `!document.querySelector("#provider-form").hidden`)) || undefined, 5_000, "服务商表单展开");
 
   if (baseUrl) {

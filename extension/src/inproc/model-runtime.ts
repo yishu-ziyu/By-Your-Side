@@ -8,6 +8,7 @@ import {
   createProvider, InMemoryCredentialStore,
   type Api, type AuthOperationOptions, type Credential, type Model, type MutableModels, type Provider,
 } from "@earendil-works/pi-ai";
+import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { registerBundledOAuthFlowLoaders } from "@earendil-works/pi-ai/auth/oauth/load";
@@ -20,7 +21,7 @@ import { isTransientModelError, retryWhenBusy } from "../../../shared/provider-b
 import { isProviderBusyError } from "../../../shared/user-facing.js";
 import { measuredModelIds, providerConcurrency, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
 import { gatedCall, gatedStream, ProviderGate, type ModelQueueWait, type QueuePurpose } from "./provider-gate.js";
-import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
+import { COMMANDCODE_PROVIDER_ID, CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
 // 需要本机回调服务的（Claude 订阅、OpenRouter）浏览器里用不了，明确报错。
@@ -49,6 +50,7 @@ const RETIRED_JEV_PROVIDER = "typesafe";
 const omitCookies: typeof fetch = (input, init) => fetch(input, { ...init, credentials: "omit" });
 
 export const FEATURED_PROVIDERS: ReadonlyArray<{ id: string; label: string; defaultModel: string }> = [
+  { id: COMMANDCODE_PROVIDER_ID, label: "Command Code", defaultModel: "xiaomi/mimo-v2.6-flash" },
   // 阶跃星辰排第一：同一个 key 还能用于实时语音；step-3.7-flash 实测约 1 秒返回且工具调用正确。
   { id: STEPFUN_PROVIDER_ID, label: "阶跃星辰", defaultModel: "step-3.7-flash" },
   { id: "opencode-go", label: "OpenCode Go", defaultModel: "mimo-v2.6-flash" },
@@ -143,6 +145,35 @@ function openAICompatible(id: string, name: string, baseUrl: string, modelIds: r
   return { provider, models };
 }
 
+/**
+ * Command Code 的 GOAT 套餐里每个模型有单独的月度额度，用户只用这两个、互相切换（MiMo 便宜、可高频调用）。
+ * 同一个 key 两种接口：MiMo 走 OpenAI 兼容的 /chat/completions，Claude 只开放 Anthropic 的 /messages
+ * （SDK 自己拼 /v1/messages，所以它的地址不带 /v1）。pi-ai 目录里还没有 Haiku 5.5：它和 Sonnet 5.5 同代、只收自适应思考（沿用 Haiku 4.5 的接法会回 400「thinking.type.enabled is not supported」），所以沿用 Sonnet 5.5 的接法，编号、价格（≤10 万 token 档）和上下文按 Command Code 的模型页；缓存写入价页面没写，按 Anthropic 惯例取输入价的 1.25 倍。
+ */
+const COMMANDCODE_BASE_URL = "https://api.commandcode.ai/provider";
+
+function commandCodeProvider(haikuTemplate: Model<Api> | undefined): Provider {
+  const mimo = withMeasuredCapability<"openai-completions">({
+    id: "xiaomi/mimo-v2.6-flash", name: "MiMo V2.6 Flash", api: "openai-completions", provider: COMMANDCODE_PROVIDER_ID, baseUrl: `${COMMANDCODE_BASE_URL}/v1`,
+    reasoning: true, input: ["text", "image"], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_048_576, maxTokens: 32_768,
+  });
+  const haiku: Model<"anthropic-messages"> | undefined = haikuTemplate?.api === "anthropic-messages"
+    ? {
+      ...(haikuTemplate as Model<"anthropic-messages">), id: "claude-haiku-5-5", name: "Claude Haiku 5.5", provider: COMMANDCODE_PROVIDER_ID, baseUrl: COMMANDCODE_BASE_URL,
+      cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }, contextWindow: 1_000_000, maxTokens: 64_000,
+      // Command Code 的 /messages 不收对话中途的 system 消息（回 400「Invalid input at messages.1.role」），只保留自适应思考等其余兼容项。
+      compat: { forceAdaptiveThinking: true, supportsTemperature: false, supportsStrictTools: true },
+    }
+    : undefined;
+
+  return createProvider<"openai-completions" | "anthropic-messages">({
+    id: COMMANDCODE_PROVIDER_ID, name: "Command Code",
+    auth: { apiKey: { name: "Command Code API key", resolve: async ({ credential }) => credential?.key ? { auth: { apiKey: credential.key }, source: "设置" } : undefined } },
+    models: haiku ? [mimo, haiku] : [mimo],
+    api: { "openai-completions": openAICompletionsApi(), "anthropic-messages": anthropicMessagesApi() },
+  });
+}
+
 const STEPFUN_MODELS = ["step-3.7-flash", "step-3.5-flash-2603", "step-5-preview"];
 
 /**
@@ -155,6 +186,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   const credentials = new MirroredCredentialStore(persist);
   const models = builtinModels({ credentials });
   models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", STEPFUN_STEP_PLAN_BASE_URL, STEPFUN_MODELS).provider);
+  models.setProvider(commandCodeProvider(models.getModel("anthropic", "claude-sonnet-5-5")));
   /** OpenCode 按会话路由，缺 x-opencode-session 会直接 400；Pi 的 coding-agent 层会补，直接用 pi-ai 时要自己补。 */
   const sessionId = crypto.randomUUID();
 
@@ -172,6 +204,8 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     const known = models.getModel(config.provider, config.modelId);
 
     if (known) return withMeasuredCapability(known);
+    // Command Code 两个模型接口不同，沿用同服务商的连接参数会把 Claude 发到 OpenAI 兼容接口。
+    if (config.provider === COMMANDCODE_PROVIDER_ID) throw new Error(`Command Code 没有接入 ${config.modelId}：只支持 MiMo V2.6 Flash 和 Claude Haiku 5.5。`);
     // 目录滞后于服务商（如 MiniMax-M3.1-Flash-Preview、OpenCode Go 的 mimo-v2.6-flash）：连接参数沿用同服务商的模型，能力取实测登记或保守默认。
     const unlisted = unlistedModel(config.provider, config.modelId, models.getModels(config.provider));
 
