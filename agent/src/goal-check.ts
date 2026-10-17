@@ -363,8 +363,8 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     }).slice(0, 4);
     if (typeof parsed.evidence === 'string' && parsed.evidence.trim()) verdict.evidence = parsed.evidence.trim().slice(0, 800);
     // 名字没读到是宿主查过的事实，不再复核：复核要求证据引用回答原文，模型常引用页面上的目录，结论就被降成「未确认」。
-    // 纠正换成宿主自己的话、不带模型的清单，只为这件事背书；模型顺带提的其他修改不跳过复核，下一次核对还会再看。
-    if (!input.verification && verdict.verificationSubject === 'answer' && notInReads.some(name => correction?.includes(name))) Object.assign(verdict, { verifiedByHost: true, items: undefined, remaining: "读到名字所在的原文",
+    // 纠正换成宿主自己的话、不带模型的清单，只为这件事背书；模型的纠正常不点名，别的修改也不该借此跳过复核，下一次核对还会再看。
+    if (!input.verification && verdict.verificationSubject === 'answer' && notInReads.length) Object.assign(verdict, { verifiedByHost: true, items: undefined, remaining: "读到名字所在的原文",
       correction: `回答列出的这些名字在本次读到的内容里都找不到：${notInReads.slice(0, 12).join("、")}。如果它们应来自页面或文件，先读到名字所在的那一部分（PDF 用目录页码翻到那一页），再按原文改正回答；如果来自别处，说明出处。` });
     if (input.verification) {
       if (verdict.verificationSubject !== (input.verification.finding.verificationSubject ?? 'page')) return { ...verdict, status: 'open', cause: 'retry_subject_changed' };
