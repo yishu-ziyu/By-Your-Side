@@ -1158,7 +1158,7 @@ return;}
     const images = extractImages(attachments);
     this.rememberAttachments(attachments);
 
-    if (this.runningOrStarting(session)) this.runTrace.record("steer", { text, context, attachments });
+    if (this.runningOrStarting(session)) this.noteSteer(text, context, attachments);
     else {
       this.mainEffort.reset(session.model);
       this.activeGoal=text;
@@ -1261,8 +1261,8 @@ return;}
   private async openSavedPages(context: PageContext | undefined, epoch: number, current: () => boolean): Promise<string | null> {
     const saved = this.rpc && this.activeGoal ? await this.memoryRuntime?.savedOpenFor(this.activeGoal, context?.url).catch(() => null) : null;
     // 查记忆期间用户停下或另发了任务：不替旧任务打开页面；调用也绑在这一轮的控制轮次上。
-    if (!saved || !this.rpc || !current()) return null;
-    this.memoryRuntime?.markSavedOpen();
+    if (!saved || !this.rpc || !current() || !saved.mark()) return null;
+    const steers = this.steers;
     this.savedOpenRun = this.deliveryRunId();
     const started = Date.now();
     // 开标签页的调用要等页面能用才返回，慢网站要十几秒；标签页早已出现，所以最多等 1.5 秒，没回来的算「还在加载」。
@@ -1271,6 +1271,7 @@ return;}
         .then(data => typeof data?.tabId === "number" ? "opened" as const : "failed" as const, () => "failed" as const),
       new Promise<"loading">(done => setTimeout(() => done("loading"), 1_500)),
     ]).then(state => ({ url, state }))));
+    if (this.steers !== steers) this.savedOpenRun = null;
     const count = (state: string) => results.filter(item => item.state === state).length;
     this.runTrace.record("saved_open", { memoryId: saved.memoryId, urls: saved.urls.length, opened: count("opened"), loading: count("loading"), failed: count("failed"), ms: Date.now() - started });
     const list = (state: string) => results.filter(item => item.state === state).map(item => item.url).join(", ");
@@ -1406,7 +1407,7 @@ return;}
     if (session.isStreaming) {
       this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
       this.memoryRuntime?.invalidateUserTurn("steer");
-      this.runTrace.record("steer", { text, context, attachments });
+      this.noteSteer(text, context, attachments);
       void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
     } else {
       this.sendUserMessage(text, context, attachments);
@@ -2134,7 +2135,7 @@ return {kind:'model'};
     // 插话是新的用户要求：这一轮要重新判断有没有真正交付，不能沿用上一轮的结论。
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
-    this.runTrace.record("steer", { text, context, attachments });
+    this.noteSteer(text, context, attachments);
 
     // 只有真在纠正（「不对」「错了」…）才升思考档；补一个问题、补一条资料不是任务变难了。
     if (isUserCorrection(text)) this.mainEffort.raise(session.model, "user_correction");
@@ -2705,6 +2706,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   /** 最近一次用工具（GOAL_CHECK_BOOKKEEPING_TOOLS 除外）的任务；目标核对据此判断这一任务是否做过事。 */
   private toolUseRun: string | null = null;
   private savedOpenRun: string | null = null;
+  /** 插话次数：宿主打开页面期间来了插话，这一轮就不再算只打开页面。 */
+  private steers = 0;
+
+  /** 任务进行中的插话带来新要求：这一轮不再只是「打开记住的页面」，照常核对。 */
+  private noteSteer(text: string, context: unknown, attachments: unknown): void {
+    this.runTrace.record("steer", { text, context, attachments });
+    this.savedOpenRun = null;
+    this.steers += 1;
+  }
   private goalContinues = 0;
   private goalRetryEvidence: { scope: string; seen: Set<string> } | null = null;
   /** 上次催续做时宿主读到的网页（地址 + 文字）；催过之后网页没变、助手又说做不成，就不再催（gaveUpWithoutChange）。 */

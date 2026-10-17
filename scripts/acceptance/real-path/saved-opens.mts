@@ -7,6 +7,7 @@
  *      3 秒内就问模型，消息里带宿主已打开的事实；模型想再读网页被拦下；这一轮不做目标核对。
  *   b) 重开侧栏后重放：回答还在，不再多开标签页。
  *   c) 「新模型发布了，帮我总结一下这次各家的变化和区别」多了一件事：不由宿主打开。
+ *   e) 打开后、回答写完前插话：插话的网页工具不被拦，这一轮照常核对。
  *   d) 删掉这条记忆后再说同一句：不打开。
  * 失败方式：去掉宿主打开，a 里 3 秒内一个渠道也不出现；改成等页面加载完，模型要 8 秒后才被问到。
  */
@@ -14,7 +15,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 import { MEMORY_FORMAT_VERSION } from "../../../shared/memory.js";
 
@@ -27,6 +28,8 @@ await mkdir(artifacts, { recursive: true });
 const ASK = "听说新模型发布了";
 
 const MORE = "新模型发布了，帮我总结一下这次各家的变化和区别";
+
+const STEER = "顺便读一下 channel-a 的标题";
 
 const site = createServer(async (req, res) => {
   const name = (req.url ?? "/").slice(1) || "home";
@@ -42,18 +45,21 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 const CHANNELS = ["channel-a", "channel-b", "channel-c"].map(name => `${origin}/${name}`);
 
 /** 提到这几句话的每次主模型请求（整份消息和发出时间），看这一轮问了几次、何时问、带没带宿主事实。 */
-const asked: Array<{ text: string; at: number }> = [];
+const asked: Array<{ text: string; last: string; at: number }> = [];
 
 let goalChecks = 0;
 
+
+
 const model = await startScriptedModel([
+  { match: STEER, steps: [{ tool: { name: "snapshot", args: {} } }, { text: "channel-a 的标题是 channel-a。" }] },
   { match: MORE, steps: [{ text: "这句要总结，交给模型。" }] },
   // 模型想再去读页面：这一轮的网页工具应被拦下，拦下后照常回一句。
-  { match: ASK, steps: [{ tool: { name: "tabs", args: { action: "list" } } }, { text: "已在后台打开三个渠道。" }] },
+  { match: ASK, steps: [{ tool: { name: "tabs", args: { action: "list" } } }, { text: "已在后台打开三个渠道。", chunkDelayMs: 1_500 }] },
 ], undefined, payload => {
   const text = JSON.stringify(payload.messages ?? []);
   if (text.includes("You check whether a browser assistant has finished")) { goalChecks += 1; return; }
-  if (text.includes(ASK) || text.includes(MORE)) asked.push({ text, at: Date.now() });
+  if (text.includes(ASK) || text.includes(MORE)) asked.push({ text, last: JSON.stringify((payload.messages ?? []).at(-1) ?? null), at: Date.now() });
 });
 
 const rp = await launchRealPath();
@@ -126,16 +132,32 @@ try {
   evidence.more = { tabs: (await channelTabs()).length };
   assert.equal((await channelTabs()).length, 0, "a message with another request is left to the model");
 
+  // e：程序打开后、回答写完前插话，插话这一轮照常能动网页，也照常核对。
+  for (const tab of await channelTabs()) await rp.cdp.send("Target.closeTarget", { targetId: tab.targetId });
+  const checksBefore = goalChecks, askedBefore = asked.length;
+  await send(ASK);
+  await until(async () => (await channelTabs()).length === CHANNELS.length || undefined, 5_000, "e 打开渠道");
+  await send(STEER);
+  await answered(3, "e 插话交付");
+  await sleep(6_000);
+  // 插话那次 snapshot 的工具结果：被拦下时是宿主的拦截理由，没拦时是页面内容。
+  const afterSteer = asked.slice(askedBefore).filter(item => item.text.includes(STEER)).map(item => item.last).filter(last => last.includes('"tool"'));
+  evidence.steer = { results: afterSteer.map(last => last.slice(0, 160)), goalChecks: goalChecks - checksBefore };
+  assert.ok(afterSteer.length >= 1 && afterSteer.every(last => !last.includes("宿主已按用户记下的做法打开了这些页面")), `the interjection's page tool is not blocked: ${JSON.stringify(evidence.steer)}`);
+  assert.ok(goalChecks > checksBefore, `the turn with an interjection is goal-checked: ${JSON.stringify(evidence.steer)}`);
+
   // d
+  for (const tab of await channelTabs()) await rp.cdp.send("Target.closeTarget", { targetId: tab.targetId });
   await rp.evaluate(panel, memoryJs(`doc.entries=doc.entries.filter(e=>e.id!=='saved-open-test')`));
   await send(ASK);
-  await answered(3, "d 交付");
+  await answered(4, "d 交付");
   await sleep(1_000);
   evidence.deleted = { tabs: (await channelTabs()).length };
   assert.equal((await channelTabs()).length, 0, "after the memory is deleted, the phrase opens nothing");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
+  if (error) await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "diagnostics")).catch(() => undefined);
   await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, error }, null, 2));
   await rp.close();
   await rp.remove();
