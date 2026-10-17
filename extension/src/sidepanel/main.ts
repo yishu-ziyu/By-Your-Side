@@ -1080,10 +1080,12 @@ function renderConversations(): void {
     conversationMenu.append(...nodes);
   }
 
-  const other = list.find((c) => c.id !== selectedConversationId && c.state === "running")
-    ?? list.find((c) => c.id !== selectedConversationId && c.state === "user")
-    ?? list.find((c) => c.id !== selectedConversationId && c.checkpoint === "interrupted")
-    ?? list.find((c) => c.id !== selectedConversationId && completedConversations.has(c.id));
+  // 从当前会话另开出去的事已有自己的卡片，不再上顶部条。
+  const elsewhere = (c: ConversationSummary) => c.id !== selectedConversationId && separateAskOrigins.get(c.id) !== selectedConversationId;
+  const other = list.find((c) => elsewhere(c) && c.state === "running")
+    ?? list.find((c) => elsewhere(c) && c.state === "user")
+    ?? list.find((c) => elsewhere(c) && c.checkpoint === "interrupted")
+    ?? list.find((c) => elsewhere(c) && completedConversations.has(c.id));
 
   conversationBackground.hidden = !other;
 
@@ -3208,6 +3210,89 @@ function previousPageChipTitle(bubble: HTMLElement): string | null {
   }
 
   return null;
+}
+
+function activeTabContext(): PageContext | undefined {
+  return activeTabInfo?.url ? { tabId: activeTabInfo.id, url: activeTabInfo.url, title: activeTabInfo.title } : undefined;
+}
+
+/** 另开出去的会话 → 发起它的会话。 */
+const separateAskOrigins = new Map<string, string>();
+
+/** 当前会话里另开的一件事：在自己的会话和后台标签页里做，回答带回这里显示。 */
+function isSeparateAsk(receipt: TaskReceipt): boolean {
+  return receipt.source === "text" && receipt.action === "start" && receipt.originConversationId === selectedConversationId && receipt.conversationId !== selectedConversationId;
+}
+
+/**
+ * 另开那件事的一张卡：做着时一行状态和「改成补充上一件」，做完换成「任务名 + 回答」。
+ * 同一件事只占一张卡，收条更新时原地替换；你那句话下面的「接在当前任务里处理」改成「另开一件」。
+ */
+function renderSeparateAsk(receipt: TaskReceipt): void {
+  separateAskOrigins.set(receipt.conversationId, receipt.originConversationId!);
+  const key = `${receipt.conversationId}:${receipt.requestId}`;
+  const previous = receiptMessages.get(key);
+  const root = document.createElement("div");
+  root.className = "msg separate-ask";
+  root.dataset.requestId = receipt.requestId;
+  const head = document.createElement("div");
+  head.className = "separate-ask-head";
+  const tag = document.createElement("span");
+  tag.className = "separate-ask-tag";
+  tag.textContent = receipt.targetTitle || receipt.text.slice(0, 36);
+  const state = document.createElement("span");
+  state.className = "separate-ask-state";
+  // 重启后暂停的要求也是 queued，但不会自己开始：照宿主的原话说，并给「继续」。
+  const paused = receipt.status === "queued" && /连接(已重启|断开)/.test(receipt.message);
+  state.textContent = receipt.result ? "已完成" : paused ? receipt.message : receipt.status === "queued" ? "排队中" : receipt.status === "accepted" ? "正在做，不打断当前任务" : receipt.message;
+  head.append(tag, state);
+  root.append(head);
+
+  if (receipt.result) {
+    const body = document.createElement("div");
+    body.className = "separate-ask-answer";
+    body.innerHTML = renderMarkdown(receipt.result.text);
+    root.append(body);
+  }
+  const actions = document.createElement("div");
+  actions.className = "separate-ask-actions";
+  const view = document.createElement("button");
+  view.type = "button";
+  view.textContent = "看过程";
+  view.onclick = () => selectConversation(receipt.conversationId);
+  actions.append(view);
+
+  if (paused) {
+    const resume = document.createElement("button");
+    resume.type = "button";
+    resume.textContent = "继续";
+    // 带页面的待办要在原页面上继续，宿主会核对你现在看着的是不是那一页。
+    resume.onclick = () => { resume.disabled = true; const context = activeTabContext(); if (!send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: null, ...(context ? { context } : {}) } })) resume.disabled = false; };
+    actions.append(resume);
+  }
+
+  if (!receipt.result && (receipt.status === "queued" || receipt.status === "accepted")) {
+    const merge = document.createElement("button");
+    merge.type = "button";
+    merge.textContent = "改成补充上一件";
+    merge.onclick = () => {
+      merge.disabled = true;
+      // 上一件已做完时要在它的会话里接着做这一句，带上你正看着的页面。
+      const context = activeTabContext();
+      if (send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "abort", expectedRunId: null, supplement: true, ...(context ? { context } : {}) } })) state.textContent = "正在并回上一件…";
+      else merge.disabled = false;
+    };
+    actions.append(merge);
+  }
+  root.append(actions);
+
+  if (previous) previous.replaceWith(root);
+  else messagesEl.append(root);
+  receiptMessages.set(key, root);
+  // 收到提示紧跟在气泡（或它的页面标签）后面。
+  let note = lastUserBubbleFor(receipt.text)?.nextElementSibling;
+  if (note?.matches(".ctx-chips")) note = note.nextElementSibling;
+  if (note instanceof HTMLElement && note.matches(".steer-received")) note.textContent = receipt.status === "applied" ? "已收到 · 并回上一件处理" : "另开一件 · 不打断当前任务";
 }
 
 /** 任务进行中发出的话会交给正在做的这一轮：在气泡下说一声收到了，免得看不出它是在排队还是被忽略了。 */
@@ -5718,6 +5803,8 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         }
 
         resumeEntry.noteReceipt(ev.receipt);
+
+        if (isSeparateAsk(ev.receipt)) { renderSeparateAsk(ev.receipt); scrollToEnd(); break; }
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
         const previous = receiptMessages.get(key);
 
