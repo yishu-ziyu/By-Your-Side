@@ -850,7 +850,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "reading_request" || msg.type === "reading_cancel") return isReadingClientMessage(msg) ? msg : null;
 
-    if (msg.type === "nudge_request") return isNudgeClientMessage(msg) ? msg : null;
+    if (msg.type === "nudge_request" || msg.type === "nudge_validate") return isNudgeClientMessage(msg) ? msg : null;
 
     if (msg.type === "conversation_create" && msg.reading !== undefined && !isReadingTranscript(msg.reading)) return null;
 
@@ -1015,7 +1015,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
     if (msg.type === 'reading_event') return isReadingEvent(msg) ? msg : null;
 
-    if (msg.type === 'nudge_result') return isNudgeResult(msg) ? msg : null;
+    if (msg.type === 'nudge_result' || msg.type === 'nudge_validation') return isNudgeResult(msg) ? msg : null;
 
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)&&(msg.ask===undefined||typeof msg.ask==='string'&&msg.ask.length<=200)&&(msg.targets===undefined||Array.isArray(msg.targets)&&msg.targets.length<=6&&msg.targets.every(t=>typeof t==='string'&&t.length<=200))?msg:null;
 
