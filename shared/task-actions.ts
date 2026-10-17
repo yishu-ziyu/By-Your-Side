@@ -20,6 +20,8 @@ export interface TaskActionRequest {
   /** 用户用 @ 拉进来的其他标签页（不含当前页）。 */
   pages?: PageContext[];
   attachments?: Attachment[];
+  /** 用户点了「改成补充上一件」：发给另开的那件事（abort），宿主停掉它，把原话插进发起它的任务。 */
+  supplement?: true;
 }
 
 export interface TaskReceiptChange {
@@ -58,6 +60,8 @@ export interface TaskReceipt {
   diff?: TaskReceiptDiff;
   /** Rejected because no model is connected: the panel offers a 「连一个模型」 button. */
   needsModel?: true;
+  /** 另开的那件事交出的回答，带回发起它的会话显示（只在有 originConversationId 时）。 */
+  result?: { text: string; at: number };
 }
 
 export const taskId = (v: unknown): v is string => typeof v === 'string' && /^[\w-]{1,128}$/.test(v);
@@ -67,11 +71,12 @@ export function isTaskActionRequest(v: unknown): v is TaskActionRequest {
   const a = v as TaskActionRequest;
 
   return (a.forkedFrom === undefined || a.action === 'start' && taskId(a.forkedFrom.conversationId) && taskId(a.forkedFrom.requestId)) && taskId(a.requestId) && taskId(a.conversationId) && ['text','voice'].includes(a.source)
-    && (a.originConversationId===undefined||a.source==='voice'&&taskId(a.originConversationId))
+    && (a.originConversationId===undefined||taskId(a.originConversationId))
     && (a.expectedControlVersion===undefined||Number.isSafeInteger(a.expectedControlVersion)&&a.expectedControlVersion>=0)
     && TASK_ACTIONS.includes(a.action) && (a.expectedRunId === null || taskId(a.expectedRunId))
     && (a.scope===undefined||a.scope==='task'||a.scope==='page') && (a.tabId===undefined||Number.isSafeInteger(a.tabId)&&a.tabId>0)
     && (a.text === undefined || typeof a.text === 'string' && a.text.length <= 12000)
+    && (a.supplement === undefined || a.supplement === true && a.action === 'abort')
     && (!['start','steer'].includes(a.action) || typeof a.text === 'string' && !!a.text.trim() || Array.isArray(a.attachments)&&a.attachments.length>0);
 }
 
@@ -90,11 +95,12 @@ export function isTaskReceipt(v: unknown): v is TaskReceipt {
   const r = v as TaskReceipt;
 
   return (r.newConversationRequest === undefined || r.status === 'rejected' && r.action === 'start' && isTaskActionRequest(r.newConversationRequest) && r.newConversationRequest.action === 'start' && r.newConversationRequest.requestId === r.requestId && r.newConversationRequest.conversationId === r.conversationId) && taskId(r.requestId) && taskId(r.conversationId) && ['text','voice'].includes(r.source)
-    && (r.originConversationId===undefined||r.source==='voice'&&taskId(r.originConversationId))
+    && (r.originConversationId===undefined||taskId(r.originConversationId))
     && TASK_ACTIONS.includes(r.action) && (r.runId === null || taskId(r.runId))
     && ['queued','accepted','applied','rejected','failed','unknown'].includes(r.status)
     && typeof r.text === 'string' && r.text.length <= 12000 && typeof r.targetTitle === 'string' && r.targetTitle.length <= 120
     && typeof r.message === 'string' && r.message.length <= 14000 && Number.isFinite(r.updatedAt)
     && (r.diff === undefined || receiptDiff(r.diff))
-    && (r.needsModel === undefined || r.needsModel === true && r.status === 'rejected');
+    && (r.needsModel === undefined || r.needsModel === true && r.status === 'rejected')
+    && (r.result === undefined || !!r.result && typeof r.result.text === 'string' && r.result.text.length <= 14000 && Number.isFinite(r.result.at) && r.originConversationId !== undefined);
 }
