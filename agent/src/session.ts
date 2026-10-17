@@ -2666,7 +2666,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   }
 
   private goalContinueRun: string | null = null;
-  private namesNudgedRun: string | null = null;
   /** 最近一次用工具（GOAL_CHECK_BOOKKEEPING_TOOLS 除外）的任务；目标核对据此判断这一任务是否做过事。 */
   private toolUseRun: string | null = null;
   private goalContinues = 0;
@@ -2770,14 +2769,12 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           goalPage: snapshot?.goalPage ?? null,
           files: this.runFiles(),
           observations: this.goalObservations.map(item => ({ tool: item.tool, text: item.text, full: item.full, ...(item.at < this.requestStartedAt ? { earlier: true } : {}) })),
-          namesNudged: runId !== null && this.namesNudgedRun === runId,
           lastReply,
           page: page ? { ...(tabId === null ? {} : { tabId }), title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
           userTookOver: runId !== null && this.handbackRunId === runId,
         };
         const headers = opencodeSessionHeaders(model, sessionId);
         verdict = await checkGoal(this.sideHost()!, model, checkInput, AbortSignal.timeout(20_000), headers);
-        if (verdict.cause === 'unread_names') this.namesNudgedRun = runId;
         if (verdict.status === 'continue') {
           const current = () => this.deliveryRunId() === runId && epoch === this.controlEpoch && !this.hold.isHeld();
           const original = verdict;
