@@ -192,6 +192,13 @@ async function markPageRefs(answer: HTMLElement): Promise<void> {
 
 /** delivered：这是一次正式交付（本轮的最终回答），不是过渡文字；带上它这一轮读过或打开的页面。 */
 function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): void {
+  if ((currentRun ?? lastRun)?.sendDeclined) {
+    // 只在这一轮最后定稿的回答里留一个入口，正文和已经整理的资料照常显示。
+    for (let node: Element | null = answer; node && !node.matches(".msg.user"); node = node.previousElementSibling) {
+      node.querySelectorAll(".send-declined-card").forEach(card => card.remove());
+    }
+    answer.insertAdjacentHTML("beforeend", DECLINED_ANSWER);
+  }
   attachCopyActions(answer);
   linkifyCircleRefs(answer);
   adoptUsedLine(answer);
@@ -262,12 +269,10 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 /** 正文在 renderMarkdownHtml 里已按回答的规则消毒；整段（含我们画的卡片、代码块的条）再过一遍，挡住能改到回答外面的东西。 */
 const PANEL_HTML = { FORBID_TAGS: ["style", "link", "meta", "base", "form", "iframe", "object", "embed", "foreignObject", "dialog"], FORBID_ATTR: ["style"] };
 
-/** 用户在发送确认里选了「先不发」：回答只留一个「现在发送吧」，不再复述草稿、清单和「没有发送」（上面的灰字已经说了）。 */
+/** 拒绝发送后仍能再次提出发送请求；这个入口附在回答后面，保留已经交付的资料。 */
 const DECLINED_ANSWER = '<div class="gen-card send-declined-card"><div class="gc-actions"><button type="button" class="gc-btn primary" data-card-say="现在发送吧">现在发送吧</button></div></div>';
 
 function renderMarkdown(text: string): string {
-  if ((currentRun ?? lastRun)?.sendDeclined) return DECLINED_ANSWER;
-
   return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml), PANEL_HTML);
 }
 
@@ -5506,8 +5511,10 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       onToolStart(ev);
       break;
     case "send_confirm_wait": {
-      // 等用户确认发送：网页上和侧栏卡上都能答，标题写明在等你；不等了，回到「做了几件事」（docs/evals/20261009-send-confirm.md R2、20261015-panel-send-confirm.md）。
+      // 所有发送路径都以确认事件为准，脚本工具的结果格式不影响拒绝后的回答入口。
       const run = currentRun;
+      if (run && ev.confirm?.outcome === "decline") run.sendDeclined = true;
+      if (run && ev.confirm?.outcome === "send" && ev.confirm.clicked === "yes") run.sendDeclined = false;
       const card = sendConfirmCard(ev.confirm);
 
       if (card) {

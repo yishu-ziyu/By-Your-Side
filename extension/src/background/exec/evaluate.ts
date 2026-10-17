@@ -1,5 +1,5 @@
 import { sendCommand } from "../debugger.js";
-import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
+import { LEAD_SESSION_ID, type HeldReason } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
 import { confirmSend, readRecipientInPage, type SendGuard } from "../send-confirm.js";
@@ -32,7 +32,7 @@ async function assertCompiles(tabId: number, code: string): Promise<void> {
 }
 
 /**
- * #290：发不发看后果，不看路径。脚本运行期间，在页面里拦下会把东西发出去的动作，结束后走和点「发送」同一个确认：
+ * 脚本运行期间先留住发送动作，结束后走和点击「发送」同一个确认。
  * 点名字以「发送 / Send」开头的按钮（element.click、dispatchEvent）、提交带这种按钮的表单（requestSubmit、form.submit）、
  * 合成的回车（输入框里有字，或表单里有发送按钮）、脚本发起的、路径像发送接口的非 GET 网络请求（fetch、XHR、sendBeacon）。
  * 拦下的动作先不做；用户点「发送」后原样重做第一个，其余丢弃。序列化进页面，必须自包含。
@@ -83,8 +83,11 @@ function armSendBlock(marker: string): void {
     const method = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const url = input instanceof Request ? input.url : String(input);
     if (method !== "GET" && method !== "HEAD" && sendy(url) && fromScript()) {
-      record({ route: "request", label: `${method} ${where(url)}`.slice(0, 60), content: typeof init?.body === "string" ? init.body.replace(/\s+/g, " ").slice(0, 120) : draftNear(document.activeElement), rect: null }, () => origFetch.call(window, input, init));
-      return Promise.reject(new TypeError("这个请求要等用户确认后才会发出（By Your Side 发送确认）"));
+      record({ route: "request", label: `${method} ${where(url)}`.slice(0, 60), content: typeof init?.body === "string" ? init.body.replace(/\s+/g, " ").slice(0, 120) : draftNear(document.activeElement), rect: null }, async () => {
+        const response = await origFetch.call(window, input, init);
+        if (!response.ok) throw new Error(`发送请求返回 HTTP ${response.status}，请核对网页上的结果，不要重复发送。`);
+      });
+      return Promise.reject(new TypeError(`这个请求要等用户确认后才会发出（${marker}）`));
     }
     return origFetch.call(window, input, init);
   } as typeof fetch;
@@ -113,7 +116,7 @@ function armSendBlock(marker: string): void {
 type BlockedSend = { route: "script" | "enter" | "request"; label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null };
 
 const DISARM = `(() => window.__sideagentSendBlock ? window.__sideagentSendBlock.disarm() : [])()`;
-const REDO = `(() => { const h = window.__sideagentSendHeld; delete window.__sideagentSendHeld; if (!h?.[0]) return false; h[0](); return true; })()`;
+const REDO = `(async () => { const h = window.__sideagentSendHeld; delete window.__sideagentSendHeld; if (!h?.[0]) return false; if (await h[0]() === false) throw new Error("浏览器没有接受发送请求，请核对网页上的结果，不要重复发送。"); return true; })()`;
 const DROP = `(() => { delete window.__sideagentSendHeld; return true; })()`;
 
 /** js 工具只走 CDP Runtime.evaluate，避免 MAIN world eval 被页面 CSP 拦截。 */
@@ -122,7 +125,7 @@ export async function evaluateJs(
   sessionId: string = LEAD_SESSION_ID,
   beforeExecute?: (() => Promise<void>) & {checkNow?: () => void},
   sendGuard?: SendGuard,
-): Promise<{ value: unknown; sendConfirmed?: true; sendNote?: string }> {
+): Promise<{ value: unknown; sendConfirmed?: true; sendNote?: string; heldReason?: HeldReason }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -148,6 +151,8 @@ export async function evaluateJs(
   }
 
   let sendNote: string | undefined;
+  // 所有页面异常的堆栈都会带 sourceURL；只匹配错误首行，避免吞掉脚本自己的异常。
+  const interruptedByConfirmation = res.exceptionDetails?.exception?.description?.split("\n", 1)[0] === `TypeError: 这个请求要等用户确认后才会发出（${marker}）`;
 
   if (blocked.length) {
     const first = blocked[0]!;
@@ -169,17 +174,31 @@ export async function evaluateJs(
     } catch (error) {
       await sendCommand(tabId, "Runtime.evaluate", { expression: DROP }).catch(() => {});
       // 用户没让发（先不发、停、离开、超时）不是脚本出错：脚本照常算跑完，结果里写明没发，侧栏不标红。
-      if ((error as { heldReason?: unknown }).heldReason) return { value: res!.result?.value, sendNote: `脚本里的发送动作（${first.label}）没有发出：${(error as Error).message}${extra}` };
+      const heldReason = (error as { heldReason?: HeldReason }).heldReason;
+      if (heldReason) return { value: res.result?.value, heldReason, sendNote: `脚本里的发送动作（${first.label}）没有发出：${(error as Error).message}${extra}` };
       throw Object.assign(error as Error, { message: `脚本里的发送动作（${first.label}）先拦下，问了用户：${(error as Error).message}脚本其余部分可能已经运行。${extra}` });
     }
-    const redo = await sendCommand<{ result?: { value?: unknown } }>(tabId, "Runtime.evaluate", { expression: REDO, returnByValue: true });
+    let redo: CdpEvalResult;
+    try {
+      const check = async () => {
+        await beforeExecute?.();
+        if (sendGuard.cancelled()) throw Object.assign(new Error("用户已停下或接管：发送动作没有执行。"), { heldReason: "stopped" as const });
+      };
+      redo = await sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", { expression: REDO, awaitPromise: true, returnByValue: true }, check, 15_000);
+    } finally {
+      await sendCommand(tabId, "Runtime.evaluate", { expression: DROP }).catch(() => {});
+    }
 
-    if (redo.result?.value !== true) throw new Error(`用户确认了发送，但没能重做脚本里的发送动作（${first.label}），不知道发出去没有，请看网页。`);
+    if (redo.exceptionDetails) throw new Error(`发送请求未确认成功，请核对网页上的结果，不要重复发送。${oneLine(redo.exceptionDetails.exception?.description ?? redo.exceptionDetails.text ?? "请求失败")}`);
+    if (redo.result?.value !== true) throw new Error(`用户确认了发送，但没能重做脚本里的发送动作（${first.label}），不知道发出去没有，请看网页，不要重复发送。`);
     sendNote = `脚本里的发送动作（${first.label}）先拦下，用户确认后才发出。${extra}`;
+    if (interruptedByConfirmation) sendNote += "发送动作已执行；原脚本在等待确认时中断，后面的语句没有继续运行，不要重复发送。";
   }
 
-  if (res.exceptionDetails) {
-    throw new Error(oneLine(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text ?? "JS 执行异常"));
+  if (res.exceptionDetails && (!interruptedByConfirmation || !sendNote)) {
+    const reason = oneLine(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text ?? "JS 执行异常");
+    if (sendNote) throw Object.assign(new Error(`${sendNote}不要重复发送。脚本另有错误：${reason}`), { sendConfirmed: true as const });
+    throw new Error(reason);
   }
 
   if (res.result?.type === 'function') {

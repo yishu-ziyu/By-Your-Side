@@ -1,8 +1,7 @@
 /**
- * 点「发送」前停下，在网页上问用户（docs/evals/20261009-send-confirm.md R1）。
+ * 点「发送」前停下，在侧栏问用户（docs/evals/20261015-panel-send-confirm.md）。
  * 发出去的消息收不回来，所以只有用户点「发送」才放行；「不发」、停、接管、离开网页、2 分钟没理都不点。
- * 确认框画在网页的 closed shadow 里，带 overlay 标记：助手的点击落在上面会被 assertNotOwnOverlay 拒绝。
- * 侧栏同时出一张确认卡（docs/evals/20261015-panel-send-confirm.md），两边回答的是同一个等待。
+ * 网页只画出目标和去侧栏确认的提示；确认按钮只在扩展侧栏里。
  */
 import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
 import { isSendLabel } from "../shared/mark-actions.js";
@@ -124,7 +123,8 @@ export async function reportSendClick<T extends { sendConfirmed?: true }>(guard:
 
     return result;
   } catch (error) {
-    report((error as { executionFact?: unknown })?.executionFact === "not_executed" ? "no" : "unknown");
+    const fact = error as { sendConfirmed?: unknown; executionFact?: unknown };
+    report(fact?.sendConfirmed === true ? "yes" : fact?.executionFact === "not_executed" ? "no" : "unknown");
     throw error;
   }
 }
