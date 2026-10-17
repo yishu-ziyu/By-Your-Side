@@ -5,6 +5,7 @@
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=api-key      # 存的是 API key 而不是登录：同上
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=barge-result # 播报任务结果时插话
  *   加 --model=provider/model：选择执行任务的模型；语音仍独立使用 ChatGPT 登录。
+ *   加 --fast-model=provider/model：在隔离配置里选择快速模型；NO_STALL=1 只跳过后台阻塞，保留完整六句与结果检查。
  *   --case=long-result：真实维基长回答、完整开头与侧栏提示、真实结果音频。
  *   --case=current-page：真实 wikipedia.org 标题与英语、日语、西班牙语入口。
  *   --case=handoff：先约定“那个技术”指逆向工程，再用真实语音请求维基查询。
@@ -28,6 +29,8 @@ const caseName = process.argv.find((a) => a.startsWith("--case="))?.slice(7) ?? 
 assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup"].includes(caseName), `未知用例：${caseName}`);
 const model = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
 assert.match(model, /^[^/]+\/.+$/, "--model 需要 provider/model");
+const fastModel = process.argv.find((a) => a.startsWith("--fast-model="))?.slice(13);
+if (fastModel) assert.match(fastModel, /^[^/]+\/.+$/, "--fast-model 需要 provider/model");
 const longResult = caseName === "long-result", currentPage = caseName === "current-page", serverError = caseName === "server-error", handoff = caseName === "handoff";
 const pageContext = caseName === 'page-context';
 const followup = caseName === 'followup';
@@ -76,6 +79,7 @@ function stopAfter(g: { in: Ev[]; meter: Array<[number, number]> }, at: number) 
 
 const plan = await loadModelPlan(model);
 const voicePlan = model === DEFAULT_TEST_MODEL ? plan : await loadModelPlan(DEFAULT_TEST_MODEL);
+const fastPlan = fastModel ? await loadModelPlan(fastModel) : null;
 
 const site = createServer((_q, r) => r.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>语音练习页</title><h1>语音练习页</h1><p>这一页只用来放侧栏。</p>"));
 await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
@@ -122,6 +126,11 @@ try {
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   const items = { ...modelStorageItems(plan), "inproc_cred:openai-codex": voicePlan.credential, inproc_voice_model: VOICE_MODEL };
+  if (fastPlan) {
+    const { inproc_model_config: fastConfig, ...fastCredentials } = modelStorageItems(fastPlan);
+    Object.assign(items, fastCredentials, { inproc_fast_model_config: fastConfig });
+  }
+  evidence.modelSelection = { main: model, fast: fastModel ?? null };
   if (apiKey) (items as Record<string, unknown>)["inproc_cred:openai-codex"] = { type: "api_key", key: "sk-not-a-chatgpt-login" };
   else if (noLogin) delete (items as Record<string, unknown>)["inproc_cred:openai-codex"];
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)})`);
@@ -130,7 +139,7 @@ try {
   const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "离屏页");
   const worker=(await rp.targets()).find(t=>t.type==='service_worker'&&t.url.endsWith('/background.js'));
   for (const s of [panel, await rp.attach(offscreen.targetId), ...(worker?[await rp.attach(worker.targetId)]:[])]) { await rp.cdp.send("Network.enable", {}, s); await rp.cdp.send('Runtime.enable',{},s); }
-  rp.cdp.onEvent('Runtime.consoleAPICalled',(m:any)=>{const text=(m.params.args??[]).map((a:any)=>typeof a.value==='string'?a.value:'').join(' ');if(text.includes('[voice]')){const record={at:Date.now(),text};hostDiagnostics.push(record);void appendFile(join(out,'host-diagnostics.jsonl'),JSON.stringify(record)+'\n');}});
+  rp.cdp.onEvent('Runtime.consoleAPICalled',(m:any)=>{const text=(m.params.args??[]).map((a:any)=>typeof a.value==='string'?a.value:'').join(' ');if(/\[(?:voice|voice-turn|voice-classifier)\]/u.test(text)){const record={at:Date.now(),text};hostDiagnostics.push(record);void appendFile(join(out,'host-diagnostics.jsonl'),JSON.stringify(record)+'\n');}});
   rp.cdp.onEvent("Network.requestWillBeSent", (m: any) => { if (/chatgpt\.com\/backend-api\/codex\/realtime/.test(m.params.request.url)) calls.push({ url: m.params.request.url }); });
   rp.cdp.onEvent("Network.responseReceived", (m: any) => { const c = calls.find((x) => x.url === m.params.response.url && x.status === undefined); if (c) c.status = m.params.response.status; });
   rp.cdp.onEvent("Network.webSocketCreated", (m: any) => sockets.push(m.params.url));
@@ -199,6 +208,7 @@ try {
         replies.push({question,spoken,waitMs:firstAudio[0]-(input.at+input.ms),at:input.at});
         await rp.screenshot(panel, join(out, `followup-${index}.png`));
         console.log(JSON.stringify(replies.at(-1)));
+        assert.doesNotMatch(spoken, /请求超时|这句话?还没执行|分流.{0,8}(失败|没有完成)/u, '每一句都得到正式回答，不能把分类失败提示算作完成');
         if(index===1)assert.match(spoken,/维基|Wikipedia/i,'认出当前网站');
         if(index===3){
           assert.match(await answerText(),/逆向工程|reverse engineering/i,'前文主题交给真实网页任务');
@@ -225,11 +235,20 @@ try {
         assert.doesNotMatch(reply.spoken,/还有.{0,15}未完成|执行遇到阻碍|脚本.{0,8}没完成/,'成功后的追问不再被旧错误占据');
       }
       assert.ok(!traces.some(t=>t.type==='tool_execution_start'&&Date.parse(t.time)>=replies[4]!.at),'解释追问不能重新操作网页');
+      if (fastModel) {
+        const plans = traces.filter(t => t.type === 'side_call' && t.data?.purpose === 'voice_plan');
+        const observedModels = [...new Set(plans.map(t => t.data?.model))];
+        evidence.voicePlanRouting = { expected: fastModel, count: plans.length, observedModels };
+        assert.ok(plans.length > 0, '六句对话必须实际触发语音计划判断，零条记录不能算快速模型通过');
+        assert.ok(plans.every(t => t.data?.model === fastModel), `语音计划必须使用已配置快速模型 ${fastModel}；实际 ${observedModels.join(', ')}`);
+      }
       const stall = evidence.backgroundStall as { at: number } | undefined;
-      assert.ok(stall, '网页任务进行中确实让后台卡住过');
-      const after = hostDiagnostics.filter((d): d is { at: number; text: string } => (d as { at: number }).at >= stall.at).map(d => d.text);
-      assert.ok(after.some(t => t.includes('panel_port_replaced')) && after.some(t => t.includes('voice_host_reattached')), '后台卡住时侧栏换了端口，并用原来的语音会话接上');
-      assert.equal(calls.length, 1, '后台卡住后，语音沿用原来的通话，没有挂断重拨');
+      if (!process.env.NO_STALL) {
+        assert.ok(stall, '网页任务进行中确实让后台卡住过');
+        const after = hostDiagnostics.filter((d): d is { at: number; text: string } => (d as { at: number }).at >= stall.at).map(d => d.text);
+        assert.ok(after.some(t => t.includes('panel_port_replaced')) && after.some(t => t.includes('voice_host_reattached')), '后台卡住时侧栏换了端口，并用原来的语音会话接上');
+      }
+      assert.equal(calls.length, 1, '六句对话沿用原来的通话，没有挂断重拨');
       console.log('真实对话复验完成');
     } else if (serverError) {
       const injected = { type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Context append text must not exceed 500 tokens." } };
