@@ -91,6 +91,9 @@ export class DurableAgentLoop implements AgentLoop {
    * 中间不发 agent_end，否则半句会被当成最终回答交付。
    */
   private cutForSteer = false;
+  /** 截断后跳过了 run_end，还没等到下一轮；停下或超时时要补上这次收尾。 */
+  private endSkipped = false;
+  private skippedEndTimer: ReturnType<typeof setTimeout> | undefined;
   /** 正在执行的工具。停下时先当场取消它们，再等 pi-durable 把停下写进存储，免得填表之类的动作在这段时间里接着写页面。 */
   private readonly runningTools = new Set<AbortController>();
 
@@ -207,10 +210,19 @@ export class DurableAgentLoop implements AgentLoop {
   async abort(): Promise<void> {
     this.abortVersion += 1;
     for (const running of this.runningTools) running.abort();
-    this.cutForSteer = false;
+    const skipped = this.endSkipped;
+    this.clearSkippedEnd();
     await this.conversation?.abort(ctx);
     await this.conversation?.waitForIdle(ctx);
+    // 截断后跳过的收尾，在下一轮开始前被停下：底层已空闲，不会再有 run_end。
+    if (skipped && this.busy) await this.onRunEnd();
     this.busy = false;
+  }
+
+  private clearSkippedEnd(): void {
+    this.cutForSteer = false;
+    this.endSkipped = false;
+    clearTimeout(this.skippedEndTimer);
   }
 
   dispose(): void {
@@ -421,7 +433,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   private async onDurable(event: DurableEvent): Promise<void> {
     if (event.type === "run_start") {
-      if (this.cutForSteer) { this.cutForSteer = false; return; }
+      if (this.cutForSteer) { this.clearSkippedEnd(); return; }
       // 这一轮的输入在 run_start 之前已经写进 messages。
       let start = this.messages.length;
       while (start > 0 && (this.messages[start - 1]!.role === "user" || this.messages[start - 1]!.role === "custom")) start -= 1;
@@ -543,7 +555,9 @@ export class DurableAgentLoop implements AgentLoop {
     await this.flushPersistence();
     if (this.cutForSteer) {
       // 插话已先写进存储，正常情况下下一轮马上开始；没开始就按普通结束收尾，免得界面一直显示在做。
-      setTimeout(() => { if (this.cutForSteer) { this.cutForSteer = false; void this.onRunEnd(); } }, 3_000);
+      this.endSkipped = true;
+      clearTimeout(this.skippedEndTimer);
+      this.skippedEndTimer = setTimeout(() => { if (this.endSkipped) { this.clearSkippedEnd(); void this.onRunEnd(); } }, 3_000);
       return;
     }
     const end: AgentSessionEvent = { type: "agent_end", messages: this.messages.slice(this.runStart), willRetry: false };
