@@ -103,7 +103,15 @@ export class ConversationManager {
 return !!job&&job.request.originConversationId===origin&&job.receipt.runId===this.getTaskProgress(target)?.runId;}
   private queueClosed=false;
   private connected=true;
-  reconnect():void { this.connected=true; }
+  reconnect(): void {
+    this.connected = true;
+    for (const entry of this.entries.values()) {
+      const id = entry.summary.id;
+      // 存储里没做完的运行自己接着做。不登记的话，中断状态会把这一轮的正文丢掉。
+      if (this.progress.get(id)?.snapshot().state === "interrupted") this.checkpointResumes.add(id);
+      entry.runtime.session.continueStoredRun();
+    }
+  }
   private pumpTasks(){if(!this.queueClosed&&this.connected)void this.taskQueue.pump().catch(()=>this.emit({type:'agent_event',conversationId:DEFAULT_CONVERSATION_ID,event:{kind:'error',message:'待办调度未能保存状态，请核对任务记录；不会自动重做。'}}));}
   private runningTasks(){return new Set([...this.pendingStarts,...[...this.entries.values()].flatMap(e => e.runtime.session.isStreaming()||this.getTaskProgress(e.summary.id)?.state==='running' ? [e.summary.id] : [])]).size;}
   readonly controls:TaskControlBroker;
@@ -2053,7 +2061,8 @@ return;
       this.controlVersions.set(summary.id,(this.controlVersions.get(summary.id)??0)+1);
       this.voiceTurnAborts.get(summary.id)?.abort();
 
-      if(['running','interrupted'].includes(before.state)||this.pendingStarts.has(summary.id)){
+      // 运行已经写进 pi-durable。面板断开不取消它：扩展重载或进程被杀掉之后，重开从存储接着做。
+      if(!runtime.session.keepsRunAfterDisconnect && (['running','interrupted'].includes(before.state)||this.pendingStarts.has(summary.id))){
         progress.interrupt('connection_lost');
         summary.state='idle';summary.checkpoint='interrupted';
 
@@ -2064,7 +2073,7 @@ return;
       this.pendingStarts.delete(summary.id);this.checkpointResumes.delete(summary.id);
       runtime.rpc.rejectAll(new Error("Extension disconnected"));
 
-      if (!runtime.session.isHeld() && !runtime.control.isGroupHeld()) {
+      if (!runtime.session.keepsRunAfterDisconnect && !runtime.session.isHeld() && !runtime.control.isGroupHeld()) {
         runtime.session.abort();
         runtime.control.abortTeam();
       }

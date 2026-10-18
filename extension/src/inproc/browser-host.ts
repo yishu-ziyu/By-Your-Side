@@ -13,6 +13,7 @@ import { createVoiceCaptureSink } from "../shared/trace-store.js";
 import { openConversationStore } from "./conversation-store.js";
 import { listArtifacts, writeArtifact, deleteArtifact } from "../shared/durable-store.js";
 import { openPiSession } from "./pi-session-idb.js";
+import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
 
 type Inbound = ClientMessage
@@ -92,7 +93,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
         // 主模型挂起或暂时出错时换设置里的备用模型（withModelFailover）；没选备用就不换。
         return createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
-        loop: { models: modelPort, cwd: "/", session: data.session },
+        loop: { models: modelPort, cwd: "/", session: data.session, openStorage: openDurableStorage },
         artifactPersistence: data.files,
         memoryStore,
         taskHistory,
