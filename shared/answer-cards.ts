@@ -169,7 +169,8 @@ export function evaluate(expression: string, vars: ReadonlyMap<string, number>):
 
     if (v === undefined) unknown = true;
 
-    return String(v);
+    // 负数加括号：x^2 在 x = −2 时是 4，不是 -2^2 = −4。
+    return v !== undefined && v < 0 ? `(${v})` : String(v);
   });
 
   return unknown ? undefined : calc(s);
@@ -197,7 +198,7 @@ const plain = (n: string) => String(Number(n.replace(/,/g, "")));
 function withUnit(value: string, unit: string | undefined): string {
   if (!unit || !/^-?[\d,]+(?:\.\d+)?$/.test(value)) return value;
 
-  return CURRENCY.test(unit) ? `${unit}${value}` : `${value} ${unit}`;
+  return CURRENCY.test(unit) ? `${unit}${value}` : unit === "%" ? `${value}%` : `${value} ${unit}`;
 }
 
 const MAX_INPUTS = 2;
@@ -312,6 +313,8 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     if (input && !inputs.has(input.id) && inputs.size < MAX_INPUTS) inputs.set(input.id, input);
   }
   const vars = new Map([...inputs].map(([id, input]) => [id, input.value]));
+
+  for (const input of inputs.values()) card.values.set(input.id, withUnit(formatNumber(input.value), input.unit));
 
   for (const m of body.matchAll(component)) {
     const [, tag, rawAttrs, inner] = m;
@@ -464,7 +467,8 @@ const outsideCode = (text: string, edit: (prose: string) => string) => text.spli
  * 后面跟着 万/千/以内 这类字的、前面是“预算/低于/不超过”这类字的，是用户的条件或约数，不换。
  */
 export function resolveProse(prose: string, cards: Card[], mark = (value: string, _id: string) => value): string {
-  const values = new Map(cards.flatMap((c) => [...c.values]));
+  // 同名的数以第一张卡为准，侧栏重算时也只让这张卡改正文。
+  const values = new Map(cards.flatMap((c) => [...c.values]).reverse());
   const done = cards.some((c) => c.closed);
   const guard = done && cards.some((c) => c.formulas);
   const numbers = new Set(cards.flatMap((c) => [...c.numbers]));

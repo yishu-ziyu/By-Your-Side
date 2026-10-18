@@ -45,7 +45,7 @@ function inputHtml(v: CardInput): string {
   const range = `min="${v.min}" max="${v.max}" step="${v.step}" value="${v.value}" data-gc-var="${esc(v.id)}"`;
   const slider = (v.max - v.min) / v.step > SLIDER_STEPS ? `<input type="range" class="gc-range" ${range} aria-label="${esc(v.label)}">` : "";
 
-  return `<div class="gc-input"><span class="k">${esc(v.label)}</span><span class="gc-stepper"><button type="button" class="gc-step" data-gc-step="-1" aria-label="减少${esc(v.label)}">−</button><input type="number" class="gc-num" inputmode="decimal" ${range} aria-label="${esc(v.label)}">${v.unit ? `<span class="u">${esc(v.unit)}</span>` : ""}<button type="button" class="gc-step" data-gc-step="1" aria-label="增加${esc(v.label)}">+</button></span>${slider}</div>`;
+  return `<div class="gc-input"><span class="k">${esc(v.label)}</span><span class="gc-stepper"><button type="button" class="gc-bump" data-gc-bump="-1" aria-label="减少${esc(v.label)}">−</button><input type="number" class="gc-num" inputmode="decimal" ${range} data-gc-unit="${esc(v.unit ?? "")}" aria-label="${esc(v.label)}">${v.unit ? `<span class="u">${esc(v.unit)}</span>` : ""}<button type="button" class="gc-bump" data-gc-bump="1" aria-label="增加${esc(v.label)}">+</button></span>${slider}</div>`;
 }
 
 /** 写到一半的组件的空位：结构与写完时一样，字换成占位条；已写出的可选属性（备注、说明）多占一行。 */
@@ -302,20 +302,15 @@ function toggleCite(node: SVGElement): void {
 export function renderAnswerHtml(text: string, renderProse: (markdown: string) => string): string {
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
-  // 正文先按 Markdown 渲染、消毒，消毒会删掉属性；先用私用区字符标出 {=名字} 换成的数，渲染后再换成带名字的加粗，改数时能找到它。
-  const bold = (value: string, id: string) => `**${REF_OPEN}${id}${REF_MID}${value}${REF_CLOSE}**`;
-  const refs = (html: string) => html.replace(REF, (_all, id: string, value: string) => `<span data-gc-ref="${esc(id)}">${value}</span>`);
+  // 正文先按 Markdown 渲染、消毒，消毒会删掉属性；先用标记包住 {=名字} 换成的数，渲染后再换成带名字的加粗，改数时能找到它。
+  // 标记里带每次渲染新取的随机串：模型写的字（包括 &#xE000; 这类实体）猜不到它，仿造不出这个加粗。
+  const nonce = crypto.randomUUID().replace(/-/g, "");
+  const bold = (value: string, id: string) => `**\uE000${nonce}${id}\uE001${value}\uE002**`;
+  const ref = new RegExp(`\uE000${nonce}([A-Za-z_][\\w-]*)\uE001([^\uE002<]*)\uE002`, "g");
+  const refs = (html: string) => html.replace(ref, (_all, id: string, value: string) => `<span data-gc-ref="${esc(id)}">${value}</span>`);
 
-  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(renderProse(resolveProse(p.prose.replace(/[\uE000-\uE002]/g, ""), cards, bold))) : "") : p.card ? cardHtml(p.card) : "")).join("");
+  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(renderProse(resolveProse(p.prose, cards, bold))) : "") : p.card ? cardHtml(p.card) : "")).join("");
 }
-
-const REF_OPEN = "\uE000";
-
-const REF_MID = "\uE001";
-
-const REF_CLOSE = "\uE002";
-
-const REF = /\uE000([A-Za-z_][\w-]*)\uE001([^\uE002<]*)\uE002/g;
 
 /** 同一位置的同一个东西：标签相同、位置键相同；写完的组件还要内容摘要相同。 */
 function same(a: Node, b: Node): boolean {
@@ -447,41 +442,38 @@ export function patchAnswer(root: HTMLElement, html: string): void {
   }
 }
 
-/** 卡片上用户动过的东西：调过的数、勾过的清单项（按卡片里的顺序）。 */
-type CardState = { vars?: Record<string, number>; checks?: number[] };
+/** 卡片上用户动过的东西：调过的数、勾过的清单项（按卡片里的顺序）。at 用来丢掉最早的。 */
+type CardState = { vars?: Record<string, number>; checks?: number[]; at: number };
 
-const STATE_KEY = "answerCardState";
+/** 每张卡一个存储项（键带卡片原文摘要）：两个窗口同时存不同的卡片时互不覆盖。 */
+const STATE_PREFIX = "answerCard:";
 
 /** 最多记这么多张卡片，超出时丢掉最早动过的。 */
 const MAX_SAVED = 300;
 
 function isCardState(v: unknown): v is CardState {
   if (!v || typeof v !== "object") return false;
-  const { vars, checks } = v as Record<string, unknown>;
+  const { vars, checks, at } = v as Record<string, unknown>;
 
-  return (vars === undefined || (typeof vars === "object" && vars !== null && Object.values(vars).every((n) => typeof n === "number" && Number.isFinite(n))))
+  return typeof at === "number"
+    && (vars === undefined || (typeof vars === "object" && vars !== null && Object.values(vars).every((n) => typeof n === "number" && Number.isFinite(n))))
     && (checks === undefined || (Array.isArray(checks) && checks.every((n) => Number.isInteger(n))));
 }
 
-async function readStates(): Promise<Record<string, CardState>> {
-  const raw = (await chrome.storage.local.get(STATE_KEY).catch(() => ({})) as Record<string, unknown>)[STATE_KEY];
-  const out: Record<string, CardState> = {};
+async function readState(key: string): Promise<CardState | undefined> {
+  const raw = (await chrome.storage.local.get(STATE_PREFIX + key).catch(() => ({})) as Record<string, unknown>)[STATE_PREFIX + key];
 
-  if (raw && typeof raw === "object") for (const [key, v] of Object.entries(raw)) if (isCardState(v)) out[key] = v;
-
-  return out;
+  return isCardState(raw) ? raw : undefined;
 }
 
-/** 写之前重新读一次：另一个窗口的侧栏可能刚存过别的卡片。 */
-async function saveState(key: string, state: CardState): Promise<void> {
-  const all = await readStates();
-  delete all[key];
-  all[key] = state;
-  const keys = Object.keys(all);
+async function trimStates(): Promise<void> {
+  const keys = (await chrome.storage.local.getKeys().catch(() => [])).filter((k) => k.startsWith(STATE_PREFIX));
 
-  for (const old of keys.slice(0, Math.max(0, keys.length - MAX_SAVED))) delete all[old];
-  states = Promise.resolve(all);
-  await chrome.storage.local.set({ [STATE_KEY]: all }).catch(() => undefined);
+  if (keys.length <= MAX_SAVED) return;
+  const all = await chrome.storage.local.get(keys).catch(() => ({})) as Record<string, unknown>;
+  const at = (k: string) => { const v = all[k]; return isCardState(v) ? v.at : 0; };
+
+  await chrome.storage.local.remove(keys.sort((a, b) => at(a) - at(b)).slice(0, keys.length - MAX_SAVED)).catch(() => undefined);
 }
 
 function stateOf(card: HTMLElement): CardState {
@@ -490,18 +482,37 @@ function stateOf(card: HTMLElement): CardState {
   for (const el of card.querySelectorAll<HTMLInputElement>(".gc-num[data-gc-var]")) vars[el.dataset.gcVar!] = Number(el.value);
   const checks = [...card.querySelectorAll<HTMLInputElement>(".gc-check input[type=checkbox]")].flatMap((el, i) => (el.checked ? [i] : []));
 
-  return { vars, checks };
+  return { vars, checks, at: Date.now() };
 }
 
-/** 按输入框上的范围夹住，并对齐到档位（0.1 档不留下 0.30000000000000004）。 */
+/** 用户在写完前就动过的卡片：写完时存下现在的样子，不拿旧记录盖掉。 */
+const touched = new WeakSet<HTMLElement>();
+
+function save(card: HTMLElement): void {
+  const key = card.dataset.gcCard;
+
+  if (!key) { touched.add(card);
+
+ return; }
+  void chrome.storage.local.set({ [STATE_PREFIX + key]: stateOf(card) }).then(trimStates).catch(() => undefined);
+}
+
+/** 小数位数：0.05 是 2 位，1e-7 是 7 位。 */
+function decimals(n: number): number {
+  const [mantissa = "", exp] = String(n).split("e-");
+
+  return (mantissa.split(".")[1] ?? "").length + Number(exp ?? 0);
+}
+
+/** 对齐到档位后再夹进范围（0.1 档不留下 0.30000000000000004，夹到的上限不再被取整推出去）。 */
 function clampTo(el: HTMLInputElement, n: number): number {
   const min = Number(el.min);
   const max = Number(el.max);
   const step = Number(el.step) || 1;
-  const snapped = Math.round((n - min) / step) * step + min;
-  const digits = (String(step).split(".")[1] ?? "").length;
+  const digits = Math.min(10, Math.max(decimals(step), decimals(min), decimals(max)));
+  const snapped = Number((Math.round((n - min) / step) * step + min).toFixed(digits));
 
-  return Number(Math.min(max, Math.max(min, snapped)).toFixed(digits));
+  return Math.min(max, Math.max(min, snapped));
 }
 
 /** 卡片里的数按现在的可调值重算：数字格、选项、表格、依据面，和同一条回答正文里的 {=名字}。只在字变了时写，免得观察者来回触发。 */
@@ -509,17 +520,28 @@ function recompute(card: HTMLElement): void {
   const vars = new Map([...card.querySelectorAll<HTMLInputElement>(".gc-num[data-gc-var]")].map((el) => [el.dataset.gcVar!, Number(el.value)]));
   const set = (el: Element, text: string) => { if (el.textContent !== text) el.textContent = text; };
 
+  // 算不出（除以 0 这类）就显示「—」，不留上一次的结果。
   for (const el of card.querySelectorAll<HTMLElement>("[data-gc-expr]")) {
     const n = evaluate(el.dataset.gcExpr!, vars);
 
-    if (n !== undefined) set(el, showValue(n, el.dataset.gcUnit || undefined));
+    set(el, n === undefined ? "—" : showValue(n, el.dataset.gcUnit || undefined));
   }
 
   for (const el of card.querySelectorAll<HTMLElement>("[data-gc-formula]")) set(el, showFormula(el.dataset.gcFormula!, vars));
+  const answer = card.parentElement;
+  // 正文里的名字归回答中第一张定义它的卡：两张卡同名时不轮流改写同一处正文。
+  const refs = (id: string, text: string) => {
+    const escaped = CSS.escape(id);
+    const owner = answer?.querySelector(`[data-gc-id="${escaped}"], .gc-num[data-gc-var="${escaped}"]`)?.closest(".gen-card");
 
-  for (const v of card.querySelectorAll<HTMLElement>("[data-gc-id]")) {
-    for (const ref of card.parentElement?.querySelectorAll(`[data-gc-ref="${CSS.escape(v.dataset.gcId!)}"]`) ?? []) set(ref, v.textContent ?? "");
-  }
+    if (owner !== card) return;
+
+    for (const ref of answer?.querySelectorAll(`[data-gc-ref="${escaped}"]`) ?? []) set(ref, text);
+  };
+
+  for (const v of card.querySelectorAll<HTMLElement>("[data-gc-id]")) refs(v.dataset.gcId!, v.textContent ?? "");
+
+  for (const el of card.querySelectorAll<HTMLInputElement>(".gc-num[data-gc-var]")) refs(el.dataset.gcVar!, showValue(Number(el.value), el.dataset.gcUnit || undefined));
 }
 
 /** 一个可调的数换了值：两个输入框（数字、滑块）对齐，重算，存起来。 */
@@ -531,25 +553,22 @@ function setVar(el: HTMLInputElement, n: number): void {
 
   if (!card) return;
   recompute(card);
-
-  if (card.dataset.gcCard) void saveState(card.dataset.gcCard, stateOf(card));
+  save(card);
 }
 
 /** 已经还原过的卡片：patchAnswer 留着同一个节点，不重复还原。 */
 const restored = new WeakSet<HTMLElement>();
 
-let states: Promise<Record<string, CardState>> | undefined;
-
-/** 写完的卡片出现时（流式写完、重开侧栏、切会话），把存过的值放回去再重算。 */
+/** 写完的卡片出现时（流式写完、重开侧栏、切会话），把存过的值放回去再重算。写完前用户已经动过的，改为存下现在的样子。 */
 function restore(card: HTMLElement): void {
-  const key = card.dataset.gcCard;
-
-  if (!key || restored.has(card)) return;
+  if (!card.dataset.gcCard || restored.has(card)) return;
   restored.add(card);
-  void (states ??= readStates()).then((all) => {
-    const saved = all[key];
 
-    if (!saved || !card.isConnected) return;
+  if (touched.has(card)) { save(card);
+
+ return; }
+  void readState(card.dataset.gcCard).then((saved) => {
+    if (!saved || !card.isConnected || touched.has(card)) return;
 
     for (const el of card.querySelectorAll<HTMLInputElement>("[data-gc-var]")) {
       const n = saved.vars?.[el.dataset.gcVar!];
@@ -612,7 +631,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
     if (!card) return;
 
     if (el.dataset.gcVar !== undefined) setVar(el, Number.isFinite(Number(el.value)) && el.value.trim() !== "" ? Number(el.value) : Number(el.defaultValue));
-    else if (el.type === "checkbox" && el.closest(".gc-check") && card.dataset.gcCard) void saveState(card.dataset.gcCard, stateOf(card));
+    else if (el.type === "checkbox" && el.closest(".gc-check")) save(card);
   });
   root.addEventListener("click", async (event) => {
     // SAFETY: click 事件的 target 是 Element。
@@ -629,10 +648,10 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
 
  return; }
     // SAFETY: 同上。
-    const step = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-step");
+    const step = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-bump");
     const num = step?.closest(".gc-input")?.querySelector<HTMLInputElement>(".gc-num");
 
-    if (step && num) { setVar(num, Number(num.value) + Number(step.dataset.gcStep) * (Number(num.step) || 1));
+    if (step && num) { setVar(num, Number(num.value) + Number(step.dataset.gcBump) * (Number(num.step) || 1));
 
  return; }
     // SAFETY: 同上。

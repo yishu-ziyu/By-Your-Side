@@ -22,9 +22,9 @@
 .gc-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px var(--s-2); }
 .gc-input .k { color: var(--text-secondary); }
 .gc-stepper { display: inline-flex; align-items: center; border: 1px solid var(--content-border); border-radius: 8px; background: var(--content-bg); }
-.gc-step { width: 28px; height: 28px; border: 0; background: none; color: var(--text-primary); font: inherit; font-size: 16px; cursor: pointer; border-radius: 7px; }
-.gc-step:hover { background: var(--content-subtle); }
-.gc-step:focus-visible, .gc-num:focus-visible, .gc-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gc-bump { width: 28px; height: 28px; border: 0; background: none; color: var(--text-primary); font: inherit; font-size: 16px; cursor: pointer; border-radius: 7px; }
+.gc-bump:hover { background: var(--content-subtle); }
+.gc-bump:focus-visible, .gc-num:focus-visible, .gc-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .gc-num { field-sizing: content; min-width: 2ch; padding: 0 2px; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
 .gc-num::-webkit-inner-spin-button, .gc-num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .gc-stepper .u { padding-left: 3px; font-size: var(--fs-meta); color: var(--text-tertiary); white-space: nowrap; }

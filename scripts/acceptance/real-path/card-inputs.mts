@@ -19,7 +19,7 @@ await mkdir(artifacts, { recursive: true });
 
 const TASK = "订阅按月数算一共多少，几个人分";
 
-const ANSWER = `一共花 {=total}。
+const ANSWER = `按 {=months} 算，一共花 {=total}。
 <card title="订阅按月数算">
 <input id="months" label="月数" value="12" min="1" max="20" unit="个月" />
 <input id="people" label="人数" value="2" min="1" max="50" unit="人" />
@@ -101,7 +101,7 @@ try {
   assert.deepEqual(first.stats, ["¥816", "¥398", "¥1,214", "¥607"], "R1: initial values computed");
 
   // R2：点两下月数的加号 → 14 个月，所有引用它的地方都重算。
-  const plus = '.gen-card .gc-input:nth-child(1) .gc-step[data-gc-step="1"]';
+  const plus = '.gen-card .gc-input:nth-child(1) .gc-bump[data-gc-bump="1"]';
   await tap(plus);
   await tap(plus);
   await sleep(200);
@@ -114,7 +114,7 @@ try {
   assert.equal(after.option, "¥672", "R2: option value recomputed");
   assert.deepEqual(after.cells, ["Notion", "952", "Duolingo", "398"], "R2: table cell recomputed");
   assert.ok(after.evidence.includes("¥1,350"), `R2: evidence face recomputed: ${after.evidence}`);
-  assert.ok(after.prose.includes("一共花 ¥1,350"), `R2: prose {=total} recomputed: ${after.prose}`);
+  assert.ok(after.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R2: prose {=months} {=total} recomputed: ${after.prose}`);
 
   // R1：打字超出范围，失焦后夹回 20；在 20 上再点加号仍是 20；再打回 14。
   const months = '.gen-card .gc-num[data-gc-var="months"]';
@@ -155,7 +155,7 @@ try {
   assert.equal(replay.months, "14", "R3: months kept after reopening");
   assert.equal(replay.people, String(people), "R3: people kept after reopening");
   assert.equal(replay.stats[2], "¥1,350", "R3: total recomputed after reopening");
-  assert.ok(replay.prose.includes("一共花 ¥1,350"), `R3: prose recomputed after reopening: ${replay.prose}`);
+  assert.ok(replay.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R3: prose recomputed after reopening: ${replay.prose}`);
   assert.deepEqual(replay.checks, [true, false], "R3: tick kept after reopening");
   assert.deepEqual(replay.otherChecks, [false], "R3: the other card is untouched");
 } catch (caught) {

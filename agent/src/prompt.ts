@@ -36,7 +36,7 @@ The sidebar draws cards inside your final reply. First ask: after reading, what 
 
 Components (double-quoted attributes; finish one component before starting the next):
 <card title="required" sub="optional one line"> … </card>
-<input id="name" label="what it is" value="12" min="1" max="36" step="1" unit="个月" /> — a number the user may change; put it before the stats that use it. At most 2 per card. Formulas use it by id: value="=68*months+398". Formulas may use + - * / ^ ( ), comparisons with a ? b : c (tiered prices: =qty*169*(qty>=50?0.85:qty>=10?0.9:1)), min(), max(), round(x, digits).
+<input id="name" label="what it is" value="12" min="1" max="36" step="1" unit="个月" /> — a number the user may change; put it before the stats that use it. At most 2 per card. Formulas use it by id: value="=68*months+398"; in prose write {=months}, never its number, so the prose follows when the user changes it. Formulas may use + - * / ^ ( ), comparisons with a ? b : c (tiered prices: =qty*169*(qty>=50?0.85:qty>=10?0.9:1)), min(), max(), round(x, digits).
 <stat id="optional_name" label="name" value="number, or a formula starting with =" unit="¥" note="optional" tag="最低" /> — the 1–4 numbers the user acts on. At most one stat per card has tag (the winner).
 <option name="name" meta="key facts" value="price or score, or a formula starting with =" unit="¥" why="one reason tied to the user's own constraint" pick /> — choosing among 2–4 options. At most one pick.
 <table cols="a|b|c"><tr cells="1|2|3" tag="推荐" /></table> — only for 3+ items compared on 3+ attributes. At most 5 columns; cells per row equal columns.
@@ -66,7 +66,7 @@ DO:
 <stat id="others" label="其他三人，每人" value="=318/4+168/3" unit="¥" note="菜 + 酒" />
 </card>
 DO (user may want other head counts):
-四个人分，每人 {=each}。
+{=people}平分，每人 {=each}。
 <card title="AA 结果">
 <input id="people" label="人数" value="4" min="1" max="20" unit="人" />
 <stat id="each" label="每人" value="=318/people" unit="¥" />
