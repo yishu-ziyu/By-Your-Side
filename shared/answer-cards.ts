@@ -8,7 +8,10 @@
  */
 
 /** expr：引用了可调的数的算式原文（如 68*months+398），用户改数时侧栏按它重算；只有常数的算式没有 expr。 */
-export type Stat = { id?: string; label: string; value: string; formula?: string; note?: string; tag?: string; computed?: number; expr?: string; unit?: string };
+/** 这一行的数出自哪个标签页：tab 是标签页编号，find 是到那一页去找的那个数（页面上原样写的数，不是算出来的）。 */
+export type RowSource = { tab: string; find: string };
+
+export type Stat = { id?: string; label: string; value: string; formula?: string; note?: string; tag?: string; computed?: number; expr?: string; unit?: string; from?: RowSource };
 
 /** 用户能在卡片上调的数：算式用 id 引用它。 */
 export type CardInput = { id: string; label: string; value: number; min: number; max: number; step: number; unit?: string };
@@ -24,8 +27,8 @@ export type Block =
   | { kind: "fields"; items: CardField[] }
   | { kind: "stats"; items: Stat[] }
   | { kind: "steps"; items: Array<{ title: string; detail?: string }> }
-  | { kind: "options"; items: Array<{ name: string; meta?: string; value?: Cell; why: string; pick: boolean }> }
-  | { kind: "table"; cols: string[]; rows: Array<{ cells: Cell[]; tag?: string }> }
+  | { kind: "options"; items: Array<{ name: string; meta?: string; value?: Cell; why: string; pick: boolean; from?: RowSource }> }
+  | { kind: "table"; cols: string[]; rows: Array<{ cells: Cell[]; tag?: string; from?: RowSource }> }
   | { kind: "checks"; items: Array<{ text: string; note?: string }> }
   | { kind: "callout"; tone: "info" | "warn"; text: string }
   | { kind: "diagram"; source: string; cites: Record<string, { text: string; from?: string }> };
@@ -265,6 +268,25 @@ function cardInput(a: Attrs): CardInput | undefined {
 
 const cell = (v: { value: string; expr?: string; unit?: string }): Cell => ({ value: v.value, expr: v.expr, unit: v.unit });
 
+/**
+ * 一行的出处：写了数字 tab，并且这一行有数。算式取它的第一个数（=6199+15 取 6199）：比价时最要紧的那一行多半是“标价 + 运费”算出来的，
+ * 页面上没有算出的数，但第一个数就是页面上的标价，圈它就是这一行的出处。
+ */
+function rowSource(tab: string | true | undefined, raws: string[]): RowSource | undefined {
+  const id = typeof tab === "string" && /^\d+$/.test(tab.trim()) ? tab.trim() : undefined;
+
+  if (!id) return undefined;
+
+  for (const raw of raws) {
+    const body = raw.startsWith("=") ? raw.slice(1).replace(/[¥￥$€£\s]/g, "") : raw;
+    const n = /\d[\d,]*(?:\.\d+)?/.exec(body)?.[0];
+
+    if (n) return { tab: id, find: n };
+  }
+
+  return undefined;
+}
+
 function parseCard(source: string, closed: boolean): Card | undefined {
   const head = new RegExp(String.raw`^<card${ATTRS}\s*>`).exec(source);
 
@@ -377,7 +399,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       // 数字格的算式算不出就不画这一格：它就是给人照着做决定的数。
       if (raw.startsWith("=") && v.computed === undefined) continue;
       // 和可调的数同名的 id 不要：正文里的 {=名字} 只能有一个来源。
-      const stat: Stat = { id: inputs.has(str(a.id) ?? "") ? undefined : str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note), expr: v.expr, unit: v.unit };
+      const stat: Stat = { id: inputs.has(str(a.id) ?? "") ? undefined : str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note), expr: v.expr, unit: v.unit, from: rowSource(a.tab, [raw]) };
 
       if (str(a.tag) && !tagged) { stat.tag = str(a.tag); tagged = true; }
 
@@ -394,7 +416,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       if (!name || !why) continue;
       const pick: boolean = a.pick !== undefined && !picked;
       picked ||= pick;
-      group("options", () => ({ kind: "options", items: [] })).items.push({ name, meta: str(a.meta), value: a.value === undefined ? undefined : cell(resolve(str(a.value) ?? "", str(a.unit))), why, pick });
+      group("options", () => ({ kind: "options", items: [] })).items.push({ name, meta: str(a.meta), value: a.value === undefined ? undefined : cell(resolve(str(a.value) ?? "", str(a.unit))), why, pick, from: rowSource(a.tab, [str(a.value) ?? ""]) });
     } else if (tag === "table") {
       const cols = (str(a.cols) ?? "").split("|").map((c) => c.trim()).slice(0, MAX_COLS);
 
@@ -405,7 +427,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
       if (table?.kind !== "table" || cells.length < 2) continue;
       const rowTag = str(a.tag) && !table.rows.some((r) => r.tag) ? str(a.tag) : undefined;
-      table.rows.push({ cells: Array.from({ length: table.cols.length }, (_, i) => cell(resolve(cells[i] ?? ""))), tag: rowTag });
+      table.rows.push({ cells: Array.from({ length: table.cols.length }, (_, i) => cell(resolve(cells[i] ?? ""))), tag: rowTag, from: rowSource(a.tab, cells.slice(1)) });
     } else if (tag === "check") {
       const t = str(a.text);
 

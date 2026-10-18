@@ -115,5 +115,33 @@ export function findUniqueSource(query: string): PageElementSource | null {
   const matches = elements.filter(element => comparable(element.textContent ?? '').includes(needle) && element.checkVisibility() && numbers(sourceText(element)).includes(needle));
   const leaves = matches.filter(element => !matches.some(other => other !== element && element.contains(other)));
 
-  return leaves.length === 1 ? registerSource(leaves[0]!) : null;
+  if (leaves.length) return leaves.length === 1 ? registerSource(leaves[0]!) : null;
+
+  return uniqueNumberText(needle, numbers);
+}
+
+/** 文字节点最多看这么多个：大页面上找不到就算了，不卡住页面。 */
+const MAX_TEXT_NODES = 20_000;
+
+/**
+ * 段落、列表、表格里没有时，看整页的文字：购物站的价格多半写在普通的 div、span 里。
+ * 仍然要整页只有一处写着这个数（含不可见的不算），有两处就不认，不猜是哪一处。
+ */
+function uniqueNumberText(needle: string, numbers: (text: string) => string[]): PageElementSource | null {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let found: HTMLElement | null = null;
+  let seen = 0;
+
+  for (let node = walker.nextNode(); node && seen < MAX_TEXT_NODES; node = walker.nextNode(), seen += 1) {
+    const parent = node.parentElement;
+
+    if (!parent || parent.closest('[data-bys-translation],[data-bys-pending],script,style,noscript,input,textarea,[contenteditable]') || !numbers(node.textContent ?? '').includes(needle)) continue;
+
+    if (!parent.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+
+    if (found && found !== parent) return null;
+    found = parent;
+  }
+
+  return found ? registerSource(found) : null;
 }
