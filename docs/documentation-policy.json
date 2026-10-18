@@ -8,8 +8,7 @@
     "docs/STATUS.md": 5000
   },
   "historicalPrefixes": [
-    "docs/evals/",
-    "docs/evidence/"
+    "docs/evals/"
   ],
   "locationExceptions": {
     "README.md": "仓库概览与文档目录",
