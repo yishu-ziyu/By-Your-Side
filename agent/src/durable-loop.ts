@@ -32,6 +32,8 @@ const MAX_RETRIES = 2;
 /** 服务商的前缀缓存闲置几分钟就清掉（OpenAI、Anthropic 约 5 分钟）；这么久内发过请求，开头还在缓存里，不必再预热。 */
 const PROMPT_WARM_FRESH_MS = 4 * 60_000;
 const PROMPT_WARM_TEXT = "Reply with OK.";
+/** 预热挂住时不能一直占着服务商的并发位子（Kimi 只有 1 个）。 */
+const PROMPT_WARM_TIMEOUT_MS = 15_000;
 /** pi-durable 认得的说法，只在它判断要不要重试时用；进入记录和界面前去掉。 */
 const RETRY_MARK = " (network error)";
 
@@ -82,6 +84,7 @@ export class DurableAgentLoop implements AgentLoop {
   private abortVersion = 0;
   private warming: AbortController | undefined;
   private modelCalledAt = 0;
+  private lastWarm: { startedAt: number; endedAt?: number; outcome: string } | undefined;
   private ready: Promise<void>;
   private markRunEnd: (() => void) | undefined;
   private runEnd: Promise<void> = Promise.resolve();
@@ -215,6 +218,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   async abort(): Promise<void> {
     this.abortVersion += 1;
+    this.warming?.abort();
     for (const running of this.runningTools) running.abort();
     const skipped = this.endSkipped;
     this.clearSkippedEnd();
@@ -243,20 +247,23 @@ export class DurableAgentLoop implements AgentLoop {
     const harness = this.harness, conversation = this.conversation, model = this.modelRef;
     if (!harness || !conversation || !model || this.busy || this.warming || Date.now() - this.modelCalledAt < PROMPT_WARM_FRESH_MS) return "skipped";
     const warming = new AbortController();
+    const warm: { startedAt: number; endedAt?: number; outcome: string } = { startedAt: Date.now(), outcome: "running" };
     this.warming = warming;
-    this.modelCalledAt = Date.now();
+    this.lastWarm = warm;
+    this.modelCalledAt = warm.startedAt;
+    const settle = (outcome: "sent" | "aborted" | "error") => { warm.endedAt = Date.now(); warm.outcome = outcome; return outcome; };
     try {
       const sessionId = await harness.commit(async tx => (await tx.doc(ProviderDoc, conversation.id)).sessionId, ctx);
       const system = { role: "system" as const, content: "", sections: { instructions: `<instructions>\n${next.systemPrompt(this.base)}\n</instructions>` }, toolsAdded: this.durableTools.filter(tool => next.toolNames.includes(tool.name)).map(toToolDeclaration), timestamp: Date.now() };
       const level = this.options.effort?.(model) ?? "off";
       const stream = this.options.models.streamSimple(model, {
         messages: [system, { role: "user", content: PROMPT_WARM_TEXT, timestamp: Date.now() }],
-      }, { sessionId, maxTokens: 16, signal: warming.signal, ...(level === "off" ? {} : { reasoning: level }) });
+      }, { sessionId, maxTokens: 16, signal: AbortSignal.any([warming.signal, AbortSignal.timeout(PROMPT_WARM_TIMEOUT_MS)]), ...(level === "off" ? {} : { reasoning: level }) });
       let failed = false;
       for await (const event of stream) if (event.type === "error") failed = true;
-      return warming.signal.aborted ? "aborted" : failed ? "error" : "sent";
+      return settle(warming.signal.aborted ? "aborted" : failed ? "error" : "sent");
     } catch {
-      return warming.signal.aborted ? "aborted" : "error";
+      return settle(warming.signal.aborted ? "aborted" : "error");
     } finally {
       if (this.warming === warming) this.warming = undefined;
     }
@@ -429,6 +436,8 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private async submitInput(text: string, images?: ImageContent[]): Promise<void> {
+    // 准备阶段（钩子、记忆选择）还没到 busy，期间点进输入框也不该再起一次预热去挡真请求。
+    this.modelCalledAt = Date.now();
     this.warming?.abort();
     await this.ready;
     const conversation = this.conversation;
@@ -627,6 +636,7 @@ export class DurableAgentLoop implements AgentLoop {
         tools: (system?.role === "system" ? system.toolsAdded ?? [] : []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
         messages: context.messages.filter(message => message.role !== "system"),
         injected: [],
+        ...(this.lastWarm ? { promptWarm: { sinceMs: Date.now() - this.lastWarm.startedAt, ms: this.lastWarm.endedAt === undefined ? null : this.lastWarm.endedAt - this.lastWarm.startedAt, outcome: this.lastWarm.outcome } } : {}),
       };
       this.options.onModelRequest(observation);
     } catch { /* 诊断只观察。 */ }

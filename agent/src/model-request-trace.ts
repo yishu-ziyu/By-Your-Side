@@ -23,6 +23,8 @@ export interface ModelRequestObservation {
   injected: ReadonlyArray<{ customType: string; text: string }>;
   /** 这次调用用的思考档。 */
   effort?: string;
+  /** 这个对话最近一次预热前缀缓存（DurableAgentLoop.warmPromptCache）：发出到这次请求多少毫秒、用了多久、结果；没预热过时没有。 */
+  promptWarm?: { sinceMs: number; ms: number | null; outcome: string };
   /** 模型服务的 origin，用来对上提前建连接的记录；只写进诊断的是摘要，不写地址。 */
   origin?: string;
 }
@@ -78,6 +80,7 @@ export class ModelRequestTrace {
         injected: request.injected.map(item => ({ customType: item.customType, text: item.text })),
         images: this.images(request.messages),
         warmUp: warmUpSummary(request.origin, this.requestAt),
+        ...(request.promptWarm ? { promptWarm: request.promptWarm } : {}),
       });
     } catch { /* Diagnostics must never interrupt the model call. */ }
   }

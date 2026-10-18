@@ -39,7 +39,7 @@ import type {BrowseHabit} from '../../shared/browse-habits.js';
 import {asksUser} from './goal-check.js';
 import {endingFromResults,resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
-import { promptWarmSettled, warmUpStarted } from './warm-connection.js';
+import { warmUpStarted } from './warm-connection.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -173,7 +173,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     if (!session || !origin) return;
     const now = Date.now();
 
-    void session.warmPromptCache().then(outcome => { if (outcome !== "skipped") promptWarmSettled(origin, now, outcome, Date.now()); });
+    void session.warmPromptCache();
 
     if (now - (this.warmedAt.get(origin) ?? 0) < WARM_UP_INTERVAL_MS) return;
     this.warmedAt.set(origin, now);

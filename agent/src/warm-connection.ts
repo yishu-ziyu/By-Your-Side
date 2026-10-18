@@ -9,12 +9,6 @@ type WarmUp = { startedAt: number; settled?: { durationMs: number; outcome: "ok"
 const IN_FLIGHT_EXPIRES_MS = 15_000;
 
 const latest = new Map<string, WarmUp>();
-const latestPrompt = new Map<string, { startedAt: number; settled: { durationMs: number; outcome: string } }>();
-
-/** 预热前缀缓存（DurableAgentLoop.warmPromptCache）结束时调用；跳过的不记，免得盖掉上一次真发出的。 */
-export function promptWarmSettled(origin: string, startedAt: number, outcome: string, settledAt: number): void {
-  latestPrompt.set(origin, { startedAt, settled: { durationMs: settledAt - startedAt, outcome } });
-}
 
 /** HEAD 发出时调用；返回的函数在 HEAD 结束时调用，ok 表示服务端回了响应（连接已建好），不论状态码。 */
 export function warmUpStarted(origin: string, startedAt: number): (ok: boolean, settledAt: number) => void {
@@ -25,17 +19,13 @@ export function warmUpStarted(origin: string, startedAt: number): (ok: boolean, 
 }
 
 /** 模型请求发出时，这个 origin 最近一次提前建连接：从 HEAD 发出到现在多少毫秒、HEAD 用了多久、结果、是否还没结束。 */
-export function warmUpSummary(origin: string | undefined, now: number): { sinceWarmUpMs: number | null; warmUpMs: number | null; warmUpOutcome: "ok" | "error" | null; warmUpInFlight: boolean; sincePromptWarmMs: number | null; promptWarmMs: number | null; promptWarmOutcome: string | null } {
+export function warmUpSummary(origin: string | undefined, now: number): { sinceWarmUpMs: number | null; warmUpMs: number | null; warmUpOutcome: "ok" | "error" | null; warmUpInFlight: boolean } {
   const warmUp = origin ? latest.get(origin) : undefined;
-  const prompt = origin ? latestPrompt.get(origin) : undefined;
 
   return {
     sinceWarmUpMs: warmUp ? now - warmUp.startedAt : null,
     warmUpMs: warmUp?.settled?.durationMs ?? null,
     warmUpOutcome: warmUp?.settled?.outcome ?? null,
     warmUpInFlight: !!warmUp && !warmUp.settled && now - warmUp.startedAt < IN_FLIGHT_EXPIRES_MS,
-    sincePromptWarmMs: prompt ? now - prompt.startedAt : null,
-    promptWarmMs: prompt?.settled.durationMs ?? null,
-    promptWarmOutcome: prompt?.settled.outcome ?? null,
   };
 }

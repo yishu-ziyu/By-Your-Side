@@ -895,8 +895,14 @@ if(required.includes(key))candidates.set(key,attachment);
     );
   }
 
-  /** 下一次运行的工具组按 applyActiveTools 新运行的规则算：自动登记结果时不给 record_task_results。 */
+  /**
+   * 下一次运行的工具组按 applyActiveTools 新运行的规则算：自动登记结果时不给 record_task_results。
+   * 留着旧待办或在恢复重启前的运行时，下一轮会保留它，开头和这里算的对不上，就不预热。
+   */
   warmPromptCache(): Promise<"sent" | "skipped" | "aborted" | "error"> {
+    const snapshot = this.conversationSnapshot();
+
+    if (snapshot?.restartRecovery || snapshot?.results?.some(item => !item.id.startsWith(AUTO_RESULT_ID_PREFIX) && (item.status === 'pending' || item.status === 'blocked'))) return Promise.resolve("skipped");
     const permitted = this.permittedToolNames ?? this.session?.getActiveToolNames() ?? [];
     const toolNames = permitted.filter(name => name !== 'record_task_results');
 

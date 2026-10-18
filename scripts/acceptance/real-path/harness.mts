@@ -378,6 +378,16 @@ export async function exportDiagnosticsViaSettings(
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  * SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。
  */
+async function hideWindow(cdp: ReturnType<typeof createCdp>): Promise<void> {
+  const { targetInfos } = await cdp.send("Target.getTargets", {}) as { targetInfos: Array<{ targetId: string; type: string }> };
+  const page = targetInfos.find(t => t.type === "page");
+
+  if (!page) return;
+  const { windowId } = await cdp.send("Browser.getWindowForTarget", { targetId: page.targetId }) as { windowId: number };
+
+  await cdp.send("Browser.setWindowBounds", { windowId, bounds: { left: 100_000, top: 100_000 } });
+}
+
 export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
@@ -433,6 +443,8 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     "--no-first-run",
     "--no-default-browser-check",
     "--window-size=1280,900",
+    // 有窗口时启动后挪到屏幕外（见 hideWindow），屏幕外的窗口算被遮挡：不让 Chrome 因此停掉渲染和计时器。
+    ...(headed ? ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling"] : []),
     // macOS 上音频服务的沙箱不让它读任意路径，文件麦克风会变成一片静音。
     ...(microphoneWav ? ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${microphoneWav}%noloop`, "--disable-features=AudioServiceSandbox"] : []),
     ...chromeArgs,
@@ -491,6 +503,10 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     tempDir.release();
     throw error;
   }
+
+  // 有窗口时挪到屏幕右下角外，只露几个像素：测试窗口一个个弹出来会挡住用户正在用的窗口（10-19 用户反馈）。
+  // macOS 版 Chrome 不理 --window-position，只能连上后挪；系统会把坐标夹到仍露一角。要盯着看就设 BYS_TEST_BROWSER_FRONT=1。
+  if (headed && process.env.BYS_TEST_BROWSER_FRONT !== "1") await hideWindow(cdp).catch(() => {});
 
   const controls = browserControls(cdp, id);
 

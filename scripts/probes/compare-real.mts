@@ -255,6 +255,12 @@ async function writeStatus(id: string, state: string, detail?: string) {
 <table><tr><th>任务</th>${arms.map((a) => `<th>${a === "ext" ? "我们的扩展" : "Codex + ego"}</th>`).join("")}</tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${arms.map((a) => cell(id, all[a][id])).join("")}</tr>`).join("")}</table>`);
 }
 
+// Page.bringToFront 在 macOS 上会把测试 Chrome 推到最前、抢走用户的焦点；只在窗口内切到这个标签页。
+async function showUserTab(rp: any, user: string, sw: string) {
+  const url = String(await rp.evaluate(user, "location.href"));
+  await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => { const t = ts.filter(t => (t.url || t.pendingUrl) === ${JSON.stringify(url)}).at(-1); return t ? chrome.tabs.update(t.id, { active: true }).then(() => true) : false; })`);
+}
+
 // ---------- ext arm ----------
 async function runExt(task: Task, id: string, dir: string) {
   const cookies = task.login === "memos" ? [{ ...(await memosSignIn()).cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] : [];
@@ -269,7 +275,7 @@ async function runExt(task: Task, id: string, dir: string) {
     await sleep(300);
     if (!(await chip()).includes(think)) throw new Error(`没选上${think}：${await chip()}`);
     }
-    await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
+    await showUserTab(rp, user, sw); await sleep(600);
 
     const traceLines = () => readTrace(rp, panel);
     let seenLines = 0;
@@ -316,7 +322,7 @@ async function runExt(task: Task, id: string, dir: string) {
     await writeFile(join(dir, "trace-learn.jsonl"), (await traceLines()).split("\n").filter((l) => l.includes('"site_notes"')).join("\n") + "\n");
     await rp.click(panel, "#conversation-new"); await sleep(800);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#messages .msg.assistant")'), 30_000, "new conversation");
-    await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
+    await showUserTab(rp, user, sw); await sleep(600);
     const sib = task.second ?? { prompt: task.prompt, probe: task.probe, check: task.check };
     const second = await ask(sib.prompt, sib.probe ?? task.probe, "-2");
     return { ...first, second: { ...second, reason: sib.check({ answer: second.answer, tabs: second.tabs, probe: second.probe, truth: {} }) } };
