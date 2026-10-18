@@ -42,7 +42,7 @@ await esbuild.build({
 await esbuild.build({
   ...common,
   format: "iife",
-  entryPoints: { "artifact-sandbox": "src/sidepanel/artifact-sandbox.ts" },
+  entryPoints: { "artifact-sandbox": "src/sidepanel/artifact-sandbox.ts", "mini-app-sandbox": "src/sidepanel/mini-app-sandbox.ts" },
 });
 
 // 语音工具清单由正式工具定义导出成 JSON，扩展内构建直接读它。
@@ -113,6 +113,7 @@ for (const [from, to] of [
   ["voice-permission.html", "voice-permission.html"],
   ["artifact-viewer.html", "artifact-viewer.html"],
   ["artifact-sandbox.html", "artifact-sandbox.html"],
+  ["mini-app.html", "mini-app.html"],
   ["src/sidepanel/styles.css", "styles.css"],
   ["src/sidepanel/motion-tokens.css", "motion-tokens.css"],
   ["src/sidepanel/answer-cards.css", "answer-cards.css"],

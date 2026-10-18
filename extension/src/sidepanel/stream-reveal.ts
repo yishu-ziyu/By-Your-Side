@@ -10,7 +10,7 @@
  */
 
 import { Lexer } from "marked";
-import { codeRanges, splitAnswer } from "../../../shared/answer-cards.js";
+import { cardSpans, splitAnswer } from "../../../shared/answer-cards.js";
 import { D_READ } from "../shared/motion-tokens.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
@@ -93,19 +93,9 @@ function remend(md: string): string {
   return fenceOpen(md) ? fenced : remendLink(remendCode(remendBold(fenced)));
 }
 
-/** 原文里真正的卡片开头（代码里讲卡片写法的 <card 不算，同 splitAnswer）。 */
-function cardStarts(text: string): number[] {
-  const code = codeRanges(text);
-
-  return [...text.matchAll(/<card[\s>]/g)].map((m) => m.index).filter((i) => !code.some(([a, b]) => i >= a && i < b));
-}
-
-/** 从 at 起是卡片（at 在没写完的卡片里，或后面只隔空白就是卡片开头）时，返回卡片结尾或已到文字的结尾；否则返回 at。 */
+/** 从 at 起是卡片或小程序（at 在没写完的里面，或后面只隔空白就是开头）时，返回它的结尾或已到文字的结尾；否则返回 at。 */
 function cardEnd(text: string, at: number): number {
-  for (const start of cardStarts(text)) {
-    const close = text.indexOf("</card>", start);
-    const end = close < 0 ? text.length : close + "</card>".length;
-
+  for (const { start, end } of cardSpans(text)) {
     if (end <= at) continue;
 
     return start < at || !text.slice(at, start).trim() ? end : at;
@@ -122,12 +112,9 @@ function remendAfterCards(md: string): string {
   if ("card" in (splitAnswer(md).at(-1) ?? { card: undefined })) return md;
   let cut = 0;
 
-  for (const start of cardStarts(md)) {
-    if (start < cut) continue;
-    const close = md.indexOf("</card>", start);
-
-    if (close < 0) return md;
-    cut = close + "</card>".length;
+  for (const { end, closed } of cardSpans(md)) {
+    if (!closed) return md;
+    cut = end;
   }
 
   return md.slice(0, cut) + remend(md.slice(cut));
