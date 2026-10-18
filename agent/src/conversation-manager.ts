@@ -39,7 +39,7 @@ import type {BrowseHabit} from '../../shared/browse-habits.js';
 import {asksUser} from './goal-check.js';
 import {endingFromResults,resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
-import { warmUpStarted } from './warm-connection.js';
+import { promptWarmSettled, warmUpStarted } from './warm-connection.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -167,10 +167,13 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
    * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
    */
   private warmUp(id: string): void {
-    const origin = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session.modelOrigin();
+    const session = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session;
+    const origin = session?.modelOrigin();
 
-    if (!origin) return;
+    if (!session || !origin) return;
     const now = Date.now();
+
+    void session.warmPromptCache().then(outcome => { if (outcome !== "skipped") promptWarmSettled(origin, now, outcome, Date.now()); });
 
     if (now - (this.warmedAt.get(origin) ?? 0) < WARM_UP_INTERVAL_MS) return;
     this.warmedAt.set(origin, now);

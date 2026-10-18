@@ -1,4 +1,5 @@
 // npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn] [--record]
+// --compose-ms=N: click into the input and wait N ms before typing, like a user composing (daily median ~5 s); the task timer starts after it.
 // --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
 // --reply=可以 (ext only): when the assistant stops to ask (a partial delivery, or a reply ending in a question), send this reply in the same conversation once; rounds and calls add up.
 // --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md). --record (ext only): records the side panel and the starting tab of each ask as mp4.   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
@@ -18,6 +19,7 @@ const record = process.argv.includes("--record");
 const reply = process.argv.find((a) => a.startsWith("--reply="))?.slice(8);
 const MODEL = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? "openai-codex/gpt-6-luna";
 const think = process.argv.find((a) => a.startsWith("--think="))?.slice(8);
+const composeMs = Number(process.argv.find((a) => a.startsWith("--compose-ms="))?.slice(13) ?? 0);
 const splitArg = process.argv.find((a) => a.startsWith("--split="))?.slice(8);
 const START = "https://example.com/";
 const dec = (u: string) => { try { return decodeURIComponent(u); } catch { return u; } };
@@ -273,6 +275,7 @@ async function runExt(task: Task, id: string, dir: string) {
     let seenLines = 0;
     // One task in the current conversation; trace lines are cumulative, so each ask takes only the lines after the previous one.
     const ask = async (prompt: string, probeCode: string | undefined, tag: string) => {
+      if (composeMs) { await rp.click(panel, "#input"); await sleep(composeMs); }
       const t0 = Date.now();
       const stops = record ? [await recordScreen(rp.cdp, panel, join(dir, `panel${tag}.mp4`)), await recordScreen(rp.cdp, user, join(dir, `page${tag}.mp4`))] : [];
       await send(rp, panel, prompt);
