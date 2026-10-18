@@ -3,6 +3,7 @@ import { installGhostHud } from "./ghost-hud.js";
 import { installLinkPreview } from "./link-preview.js";
 import { installMarginaliaTracker } from "./marginalia-tracker.js";
 import { installNudge } from "./nudge.js";
+import { installBrowseLog } from "./browse-log.js";
 import { installSonarPinpoint } from "./sonar-pinpoint.js";
 import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
@@ -160,6 +161,7 @@ function boot(): void {
   installGhostHud();
   installLinkPreview();
   installNudge();
+  installBrowseLog();
   const previous = document.querySelector(`[${HOST}]`);
   previous?.setAttribute(RETIRED, '1');
   previous?.remove();
