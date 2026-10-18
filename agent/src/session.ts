@@ -58,6 +58,7 @@ import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
+import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
 import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, newReadIndex, pageAwaitsEmailStep, readWords, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
@@ -1621,6 +1622,16 @@ return;}
   /** 改过页面的任务结束时：计入习惯，3 个对话做过同一件事就问要不要记住；见 MemoryRuntime.noticeHabit。 */
   async noticeHabit(task: Pick<TaskHistoryEntry, "goal" | "revisions" | "hosts" | "summary">): Promise<void> {
     await this.memoryRuntime?.noticeHabit(task);
+  }
+
+  /** 用户自己的浏览：归纳反复做的事，够天数就问；见 MemoryRuntime.noticeBrowsing。 */
+  async noticeBrowsing(days: BrowseDay[], dismissed: string[]): Promise<BrowseHabit[]> {
+    return await this.memoryRuntime?.noticeBrowsing(days, dismissed) ?? [];
+  }
+
+  /** 扩展核对过没被删掉的浏览习惯：问一次；见 MemoryRuntime.askBrowsing。 */
+  async askBrowsing(key: string): Promise<void> {
+    await this.memoryRuntime?.askBrowsing(key);
   }
 
   /** 这个对话的任务碰过的网页（宿主的任务进度提供）：纠正询问的网站后备。 */
