@@ -3284,7 +3284,8 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
     const resume = document.createElement("button");
     resume.type = "button";
     resume.textContent = "继续";
-    resume.onclick = () => { resume.disabled = true; if (!resumeSeparateAsk(receipt)) resume.disabled = false; };
+    // 接上或被拒都会发回一张新卡片替换这张；一直没回音（例如转发途中断了连接）就让按钮恢复可点。
+    resume.onclick = () => { resume.disabled = true; if (!resumeSeparateAsk(receipt)) resume.disabled = false; else setTimeout(() => { resume.disabled = false; }, 15_000); };
     actions.append(resume);
   }
 

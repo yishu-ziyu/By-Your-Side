@@ -20,8 +20,17 @@ const READINGS_KEY = "readings";
 
 const QUEUE_KEY = "queue";
 
-/** 另开一件的旧记录只为重放卡片；留最近这些，不让记录无限长。 */
+/** 已结束的另开一件只为重放卡片；留最近这些，不让记录无限长。没结束的全留，重启后还要接着更新卡片。 */
 const QUEUE_LIMIT = 200;
+
+const ENDED: ReadonlyArray<QueuedTask["state"]> = ["completed", "cancelled", "failed"];
+
+function trimQueue(jobs: QueuedTask[]): QueuedTask[] {
+  const ended = jobs.filter((job) => ENDED.includes(job.state));
+  const keep = new Set(ended.slice(-QUEUE_LIMIT));
+
+  return jobs.filter((job) => !ENDED.includes(job.state) || keep.has(job));
+}
 
 type StoredValue = ConversationSummary[] | Record<string, ReadingTranscript> | QueuedTask[];
 
@@ -60,7 +69,7 @@ export async function openConversationStore(log: (message: string) => void): Pro
   try {
     db = await openDb();
     const store = db.transaction(STORE).objectStore(STORE);
-    // SAFETY: 这两个键只由下面的 save / saveReading 写入，形状见 StoredValue；读出后仍逐条校验。
+    // SAFETY: 这几个键只由下面的 save / saveReading / taskQueue.save 写入，形状见 StoredValue；读出后仍逐条校验。
     const [index, stored, queued] = await Promise.all([request(store.get(INDEX_KEY)) as Promise<ConversationSummary[] | undefined>, request(store.get(READINGS_KEY)) as Promise<Record<string, ReadingTranscript> | undefined>, request(store.get(QUEUE_KEY)) as Promise<unknown>]);
     summaries = validSummaries(index);
     // 逐条校验交给队列自己（TaskQueue 跳过坏记录）。
@@ -100,7 +109,7 @@ export async function openConversationStore(log: (message: string) => void): Pro
     readingFor: (id) => readings.get(id),
     taskQueue: {
       load: () => queue,
-      save: (jobs) => write(QUEUE_KEY, jobs.slice(-QUEUE_LIMIT)),
+      save: (jobs) => write(QUEUE_KEY, trimQueue(jobs)),
     },
   };
 }
