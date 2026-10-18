@@ -104,50 +104,58 @@ if (!dir) throw new Error("用法：time-breakdown.mts <everyday-baseline 产物
 const out = process.argv.find((a) => a.startsWith("--out="))?.slice(6);
 
 /** compare-real 产物目录：result-ext.json 记每条成败，ext/<编号>/trace.jsonl 是那条的诊断记录；分几路同时跑时每一路是一个子目录。 */
-async function guardrail(root: string): Promise<Array<Row & { pass: boolean }>> {
-  const subdirs = (await readdir(root, { withFileTypes: true }).catch(() => [])).filter((d) => d.isDirectory()).map((d) => join(root, d.name));
+async function guardrail(root: string): Promise<{ rows: Array<Row & { pass: boolean }>; missing: string[] }> {
+  const subdirs = (await readdir(root, { withFileTypes: true }).catch(() => [])).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => join(root, d.name));
   const rows: Array<Row & { pass: boolean }> = [];
+  const missing: string[] = [];
 
   for (const d of [root, ...subdirs]) {
     // SAFETY: result-ext.json 由 compare-real.mts 写出，每条带 id 与 outcome。
     const results = await readFile(join(d, "result-ext.json"), "utf8").then((t) => JSON.parse(t) as Array<{ id: string; outcome: string }>, () => []);
 
     for (const r of results) {
-      const [row] = breakdown(parse(await readFile(join(d, "ext", r.id, "trace.jsonl"), "utf8").catch(() => "")));
+      // 一条任务可能有几次运行（--reply 再答一句）：合成一行，耗时、轮数相加。
+      const runs = breakdown(parse(await readFile(join(d, "ext", r.id, "trace.jsonl"), "utf8").catch(() => "")));
 
-      if (row) rows.push({ ...row, id: r.id, pass: r.outcome === "pass" });
+      if (!runs.length) { missing.push(r.id); continue; }
+      const add = (f: (x: Row) => number) => runs.reduce((a, x) => a + f(x), 0);
+      rows.push({ ...runs[0]!, id: r.id, pass: r.outcome === "pass", totalMs: add((x) => x.totalMs), modelMs: add((x) => x.modelMs), toolMs: add((x) => x.toolMs), turns: add((x) => x.turns),
+        afterMs: runs.at(-1)!.afterMs, askedAfterFinding: add((x) => x.askedAfterFinding), firstTokenMs: runs.flatMap((x) => x.firstTokenMs), calls: runs.flatMap((x) => x.calls) });
     }
   }
 
-  return rows;
+  return { rows, missing };
 }
 
 const vs = process.argv.find((a) => a.startsWith("--vs="))?.slice(5);
-const guard = dir.endsWith(".jsonl") ? [] : await guardrail(dir);
+const guard = dir.endsWith(".jsonl") ? { rows: [], missing: [] } : await guardrail(dir);
 
-if (guard.length || vs) {
-  const mid = (xs: number[]) => { const v = [...xs].sort((a, b) => a - b); return v.length ? v[Math.floor((v.length - 1) / 2)]! : 0; };
+if (guard.rows.length || guard.missing.length || vs) {
+  const other = vs ? await guardrail(vs) : { rows: [], missing: [] };
+
+  for (const [name, g] of [[dir, guard], ...(vs ? [[vs, other] as const] : [])] as const) if (!g.rows.length && !g.missing.length) throw new Error(`${name} 里没有 compare-real 的 result-ext.json`);
+  const mid = (xs: number[]) => { const v = [...xs].sort((a, b) => a - b); const h = Math.floor(v.length / 2); return !v.length ? 0 : v.length % 2 ? v[h]! : (v[h - 1]! + v[h]!) / 2; };
   const sec = (n: number) => `${(n / 1000).toFixed(1)} s`;
   const share = (rs: Row[], f: (r: Row) => number) => `${Math.round((100 * rs.reduce((a, r) => a + f(r), 0)) / Math.max(1, rs.reduce((a, r) => a + r.totalMs, 0)))}%`;
   // 耗时只看做成的那几条：失败的多半是网站连不上，时间长短说明不了产品。
-  const line = (label: string, all: Array<Row & { pass: boolean }>) => { const rs = all.filter((r) => r.pass);
-    return `| ${label} | ${all.length} | ${rs.length} | ${sec(mid(rs.map((r) => r.totalMs)))} | ${mid(rs.map((r) => r.turns))} | ${share(rs, (r) => r.modelMs)} | ${share(rs, (r) => r.toolMs)} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(0, 1))))} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(1))))} | ${sec(mid(rs.flatMap((r) => r.firstTextMs === null ? [] : [r.firstTextMs])))} | ${sec(mid(rs.map((r) => r.afterMs)))} | ${all.reduce((a, r) => a + r.askedAfterFinding, 0)} |`; };
-  const other = vs ? await guardrail(vs) : [];
-
-  if (vs && !other.length) throw new Error(`${vs} 里没有 compare-real 的 result-ext.json`);
+  const line = (label: string, g: typeof guard) => { const rs = g.rows.filter((r) => r.pass);
+    return `| ${label} | ${g.rows.length + g.missing.length} | ${rs.length} | ${g.missing.length} | ${sec(mid(rs.map((r) => r.totalMs)))} | ${mid(rs.map((r) => r.turns))} | ${share(rs, (r) => r.modelMs)} | ${share(rs, (r) => r.toolMs)} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(0, 1))))} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(1))))} | ${sec(mid(rs.flatMap((r) => r.firstTextMs === null ? [] : [r.firstTextMs])))} | ${sec(mid(rs.map((r) => r.afterMs)))} | ${g.rows.reduce((a, r) => a + r.askedAfterFinding, 0)} |`; };
   const task = (id: string) => id.replace(/-\d+$/, "");
-  const tasks = [...new Set([...guard, ...other].map((r) => task(r.id)))].sort();
-  const cell = (rs: Array<Row & { pass: boolean }>, t: string) => { const mine = rs.filter((r) => task(r.id) === t);
-    return mine.length ? `${mine.filter((r) => r.pass).length}/${mine.length} · ${sec(mid(mine.map((r) => r.totalMs)))} · ${mid(mine.map((r) => r.turns))} 轮` : "—"; };
+  const tasks = [...new Set([...guard.rows, ...other.rows].map((r) => task(r.id)).concat([...guard.missing, ...other.missing].map(task)))].sort();
+  const cell = (g: typeof guard, t: string) => { const mine = g.rows.filter((r) => task(r.id) === t); const done = mine.filter((r) => r.pass); const lost = g.missing.filter((id) => task(id) === t).length;
+    if (!mine.length && !lost) return "—";
+    return `${done.length}/${mine.length + lost}${lost ? `（缺记录 ${lost}）` : ""}${done.length ? ` · ${sec(mid(done.map((r) => r.totalMs)))} · ${mid(done.map((r) => r.turns))} 轮` : ""}`; };
   const table = [
     `# 真实网站护栏：时间花在哪${vs ? "（两次对比）" : ""}`,
     "",
-    "耗时、轮数、首字都只算做成的那几条（失败多半是网站连不上）；等模型、动手是占做成那几条总耗时的比例。首字 = 发出请求到模型第一个流事件。",
+    "耗时、轮数、首字都只算做成的那几条（失败多半是网站连不上），取中位数；等模型、动手是占做成那几条总耗时的比例。首字 = 发出请求到模型第一个流事件。缺记录 = 结果里有、诊断记录读不到的条数。",
     "",
-    "| 运行 | 条数 | 做成 | 总耗时中位 | 轮数中位 | 等模型 | 动手 | 第一次请求首字 | 之后每次首字 | 首个正文字 | 回答后 | 交付后又问 |",
-    "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| 运行 | 条数 | 做成 | 缺记录 | 总耗时中位 | 轮数中位 | 等模型 | 动手 | 第一次请求首字 | 之后每次首字 | 首个正文字 | 回答后 | 交付后又问 |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     line(dir, guard),
     ...(vs ? [line(vs, other)] : []),
+    "",
+    "每格：做成/条数 · 做成那几条的耗时中位 · 轮数中位。",
     "",
     `| 任务 | ${vs ? `${dir} | ${vs}` : dir} |`,
     `|---|---|${vs ? "---|" : ""}`,
