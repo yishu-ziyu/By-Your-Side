@@ -18,6 +18,8 @@ const code=randomUUID(), csv=`代号,数量\n${code},7\n`, requests: Array<{mess
 const model=await startScriptedModel([
  {match:'保存恢复材料',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'resume.csv',content:csv,deliver:true}}},{tool:{name:'screenshot',args:{forUser:true}}},{text:'材料已保存。'}]},
  {match:'恢复核对',steps:[{tool:{name:'artifacts',args:{command:'get',filename:'resume.csv'}}},{text:'恢复核对完毕。'}]},
+ // 用户说继续时模型选择重做这一步：宿主照常执行，不拦。
+ {match:'继续原任务',steps:[{tool:{name:'browser_run',args:{code:"return await browser.js({code: `fetch('/commit',{method:'POST'}).then(r=>r.text())`});"}}},{text:'防重复核对结束。'}]},
  {match:'防重复验收',steps:[{tool:{name:'browser_run',args:{code:"return await browser.js({code: `fetch('/commit',{method:'POST'}).then(r=>r.text())`});"}}},{text:'防重复核对结束。'}]},
  {match:'保存故障验收',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'failure.csv',content:'item,count\nA,1\n',deliver:true}}},{text:'存储故障已核对。'}]},
  {match:'删除恢复文件',steps:[{tool:{name:'artifacts',args:{command:'delete',filename:'resume.csv'}}},{text:'已删除恢复文件。'}]},
@@ -119,11 +121,14 @@ try{
  const work2=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:work2.targetId});await sleep(300);
  await rp.click(panel,'#input');await rp.typeText(panel,'防重复验收：向当前页提交一次，完成后停止。');await rp.pressEnter(panel);
  await until(async()=>commits===1||undefined,20000,'真实提交已发生，回执挂起');
- await rp.restart({abrupt:true});await open();await sleep(500);assert.equal(commits,1,'重启不自动重放');
+ // 重启后存储里的这一轮自己接着做完：做到一半的提交不自动重放，模型看到它被打断、可能做了一部分。
+ const restartOffset=requests.length;await rp.restart({abrupt:true});await open();
+ await until(async()=>requests.slice(restartOffset).some(r=>r.tools?.length&&/interrupted and may have partially run/.test(JSON.stringify(r.messages)))||undefined,30000,'恢复材料进入模型');
+ await sleep(1500);assert.equal(commits,1,'重启不自动重放');
  const recoveryPage=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:recoveryPage.targetId});await sleep(300);
- // 10-10 起结果未知不再拦重做（docs/evals/20261010-drop-retry-locks.md）：用户说继续后，模型重做这一步，宿主照常执行。
- const resumeOffset=requests.length;await send('继续原任务。','防重复核对结束');assert.equal(commits,2,'继续后宿主不拦重做');
- assert.ok(requests.slice(resumeOffset).some(r=>JSON.stringify(r.messages).includes('[RESTART CONTINUATION]') && JSON.stringify(r.messages).includes('unknown')),'恢复材料进入模型');evidence.noReplay={commitsAfterRestart:1,commitsAfterContinue:commits,browserCrash:true};
+ // 结果未知不拦重做（docs/evals/20261010-drop-retry-locks.md）：用户说继续后，模型重做这一步，宿主照常执行。
+ await send('继续原任务。','防重复核对结束');await until(async()=>commits===2||undefined,10000,'继续后宿主不拦重做');
+ evidence.noReplay={commitsAfterRestart:1,commitsAfterContinue:commits,browserCrash:true};
  const inproc=await until(async()=>(await rp.targets()).find(t=>t.url.endsWith('/inproc.html')),10000,'恢复核心');const ips=await rp.attach(inproc.targetId);
  await rp.evaluate(ips,`(()=>{const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(value,key){if(this.transaction.db.name==='sideagent-session-data'&&String(key).startsWith('artifact:'))throw new Error('acceptance-disk-failure');return put.call(this,value,key);};return true;})()`);
  const errorOffset=requests.length;await send('保存故障验收：生成failure.csv。','存储故障已核对');
