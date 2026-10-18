@@ -34,6 +34,7 @@ await esbuild.build({
     sidepanel: "src/sidepanel/main.ts",
     "voice-permission": "src/sidepanel/voice-permission-page.ts",
     "artifact-viewer": "src/sidepanel/artifact-viewer-page.ts",
+    "diagram-engine": "src/sidepanel/diagram-engine.ts",
   },
 });
 
@@ -104,6 +105,7 @@ for (const [from, to] of [
   ["src/sidepanel/voice-worklet.js", "voice-worklet.js"],
   ["licenses/voiceorbs-MIT.txt", "voiceorbs-MIT.txt"],
   ["licenses/lobe-icons-MIT.txt", "lobe-icons-MIT.txt"],
+  ["licenses/pele-MIT.txt", "pele-MIT.txt"],
   ["sidepanel.html", "sidepanel.html"],
   ["inproc.html", "inproc.html"],
   ["settings.html", "settings.html"],

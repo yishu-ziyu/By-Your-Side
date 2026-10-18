@@ -4,7 +4,9 @@
  * 开了头没写完的组件先占一个尺寸接近的空位；写得慢时空位里浮出很淡的占位条，写完后内容在原位淡入。
  * 按钮只做两件事：把按钮上的话当作用户的下一句发出，或切到某个标签页。不直接动页面。
  * 写完的卡片若有算式或出处，右上角可翻到依据面：每个数的结果、算式、出处，同一张卡原位换面（学 Our World in Data 的图 / 表 / 出处）。
+ * 结构图：整张卡写完前只放空位；写完后由 Pele 画成 SVG，点方块在图下显示模型摘的原文（cite）。
  */
+import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
 import { type Block, type Card, type PendingComponent, cardEvidence, resolveProse, splitAnswer } from "../../../shared/answer-cards.js";
@@ -40,10 +42,14 @@ function placeholder(p: PendingComponent, key: string, cols: number): string {
     case "check": return `<li class="gc-check gc-ph" ${ph}><label><span></span><span><span class="t">${BAR}</span>${has("note") ? `<span class="d">${BAR}</span>` : ""}</span></label></li>`;
     case "callout": return `<div class="gc-callout gc-ph" ${ph}>${BAR}</div>`;
     case "table": return `<div class="gc-ph gc-ph-table" ${ph}>${BAR}</div>`;
+    case "diagram": return `<div class="gc-diagram gc-ph" ${ph}>${BAR.repeat(3)}</div>`;
   }
 }
 
-const KIND: Record<PendingComponent["tag"], Block["kind"]> = { stat: "stats", step: "steps", option: "options", table: "table", tr: "table", check: "checks", callout: "callout" };
+const KIND: Record<PendingComponent["tag"], Block["kind"]> = { stat: "stats", step: "steps", option: "options", table: "table", tr: "table", check: "checks", callout: "callout", diagram: "diagram" };
+
+/** 自己成一块、不和同类组件排在一起的组件：空位单独占一块。 */
+const STANDALONE = new Set<PendingComponent["tag"]>(["table", "callout", "diagram"]);
 
 /** 一个块的 HTML；extra 是排在这个块末尾的空位（写到一半的同类组件）。 */
 function blockHtml(b: Block, i: number, extra: string): string {
@@ -62,14 +68,21 @@ function blockHtml(b: Block, i: number, extra: string): string {
       return `<ul class="gc-checks" data-gc-key="b${i}">${b.items.map((c, j) => keyed(key(j), `<li class="gc-check"><label><input type="checkbox"><span><span class="t">${esc(c.text)}</span>${c.note ? `<span class="d">${esc(c.note)}</span>` : ""}</span></label></li>`)).join("")}${extra}</ul>`;
     case "callout":
       return keyed(`b${i}`, `<div class="gc-callout ${b.tone}">${esc(b.text)}</div>`);
+    case "diagram": {
+      const cites = Object.entries(b.cites);
+      const list = cites.length ? `<ul class="gc-cites" hidden>${cites.map(([node, c]) => `<li data-node="${esc(node)}" data-from="${esc(c.from ?? "")}">${esc(c.text)}</li>`).join("")}</ul><div class="gc-diagram-hint">点方块看原文</div><div class="gc-quote" hidden><div class="gc-quote-from"></div><q></q></div>` : "";
+
+      // 编码后再放进属性：DOMPurify 会删掉值里带「-->」的属性，而流程图的每条箭头都是 -->。
+      return keyed(`b${i}`, `<div class="gc-diagram" data-diagram="${encodeURIComponent(b.source)}"><div class="gc-diagram-canvas"></div>${list}</div>`);
+    }
   }
 }
 
 function cardHtml(card: Card): string {
   const blocks = card.blocks.map((b, i) => {
     const p = card.pending;
-    const joins = p && i === card.blocks.length - 1 && p.tag !== "table" && p.tag !== "callout" && KIND[p.tag] === b.kind;
-    const items = b.kind === "table" ? b.rows.length : b.kind === "callout" ? 0 : b.items.length;
+    const joins = p && i === card.blocks.length - 1 && !STANDALONE.has(p.tag) && KIND[p.tag] === b.kind;
+    const items = b.kind === "table" ? b.rows.length : b.kind === "callout" || b.kind === "diagram" ? 0 : b.items.length;
 
     return blockHtml(b, i, joins ? placeholder(p, `b${i}.${items}`, b.kind === "table" ? b.cols.length : 0) : "");
   });
@@ -77,10 +90,10 @@ function cardHtml(card: Card): string {
   const n = card.blocks.length;
 
   // 写到一半的组件和上一个块不同类：在末尾另起一块放空位（表格行只跟在表格后面）。
-  if (p && p.tag !== "tr" && (p.tag === "table" || p.tag === "callout" || card.blocks.at(-1)?.kind !== KIND[p.tag])) {
+  if (p && p.tag !== "tr" && (STANDALONE.has(p.tag) || card.blocks.at(-1)?.kind !== KIND[p.tag])) {
     const wrap = { stat: "div class=\"gc-stats\"", step: "ol class=\"gc-steps\"", option: "div class=\"gc-options\"", check: "ul class=\"gc-checks\"" } as const;
 
-    blocks.push(p.tag === "table" || p.tag === "callout" ? placeholder(p, `b${n}`, 0) : `<${wrap[p.tag]} data-gc-key="b${n}">${placeholder(p, `b${n}.0`, 0)}</${wrap[p.tag].split(" ")[0]}>`);
+    blocks.push(p.tag === "table" || p.tag === "callout" || p.tag === "diagram" ? placeholder(p, `b${n}`, 0) : `<${wrap[p.tag]} data-gc-key="b${n}">${placeholder(p, `b${n}.0`, 0)}</${wrap[p.tag].split(" ")[0]}>`);
   }
 
   const body = blocks.join("");
@@ -109,6 +122,159 @@ const svg = (node: Parameters<typeof icon>[0]) => {
 
 /** 两个小图标按钮：结论（卡片原样）/ 依据（每个数的结果、算式、出处）。 */
 const FACE_BUTTONS = `<button type="button" class="gc-face" data-face="answer" aria-pressed="true" title="结论" aria-label="结论">${svg(LayoutGrid)}</button><button type="button" class="gc-face" data-face="evidence" aria-pressed="false" title="依据" aria-label="依据">${svg(Table2)}</button>`;
+
+type Engine = typeof import("./diagram-engine.js");
+
+// 路径写成变量，esbuild 就不把 Pele 打进侧栏主包；构建产物里它是同目录下单独的 diagram-engine.js。
+const ENGINE_URL = "./diagram-engine.js";
+
+let engine: Promise<Engine> | undefined;
+
+// SAFETY: ENGINE_URL 就是 diagram-engine.ts 的构建产物。
+const loadEngine = () => (engine ??= import(ENGINE_URL) as Promise<Engine>);
+
+/**
+ * Pele 已转义图里的字、关掉了链接和图片；图的原文出自模型，可能被网页内容带偏，所以再按 SVG 白名单消毒一遍。
+ * 主题靠 SVG 上的 style 传 CSS 变量，style 留着，但能发出请求的 url() 不留。
+ */
+function cleanSvg(svg: string): Node {
+  const fragment = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true }, FORBID_TAGS: ["a", "image", "use", "foreignObject", "style"], RETURN_DOM_FRAGMENT: true });
+
+  for (const el of fragment.querySelectorAll("[style]")) if (/url\(|@import|expression/i.test(el.getAttribute("style") ?? "")) el.removeAttribute("style");
+
+  return fragment;
+}
+
+/** 图最多缩到这个比例（13px 的字不小于 11px）；还放不下就按这个比例显示、左右滑动看全。 */
+const MIN_SCALE = 0.85;
+
+/** 方块文字每行大约几个汉字宽。Pele 不给模型写的长文字自动断行，一行太长整张图就宽得放不进侧栏。 */
+const LINE_UNITS = 8;
+
+/** 引号里的方块文字按宽度断行：汉字算 1，其他字算 0.55；英文只在空格处断。 */
+function wrapLabels(source: string): string {
+  const wrapLine = (line: string) => {
+    let out = "";
+    let width = 0;
+
+    for (const ch of line) {
+      const wide = /[\u2e80-\uffef]/.test(ch);
+
+      if (width >= LINE_UNITS && (wide || ch === " ")) {
+        out += "<br/>";
+        width = 0;
+
+        if (ch === " ") continue;
+      }
+      out += ch;
+      width += wide ? 1 : 0.55;
+    }
+
+    return out;
+  };
+
+  return source.replace(/([[{(])"([^"\n]+)"([\]})])/g, (_all, open: string, text: string, close: string) => `${open}"${text.split(/<br\s*\/?>/i).map(wrapLine).join("<br/>")}"${close}`);
+}
+
+/** 上下排和左右排各排一次，取窄的那个：分支多的图左右排常常窄一半。 */
+function narrower(source: string, render: Engine["render"]): string {
+  const flipped = source.replace(/^(\s*(?:flowchart|graph)\s+)(TB|TD|LR)\b/, (_all, head: string, dir: string) => head + (dir === "LR" ? "TB" : "LR"));
+
+  try {
+    return flipped !== source && render(flipped, { fontSize: 13 }).width < render(source, { fontSize: 13 }).width ? flipped : source;
+  } catch {
+    return source;
+  }
+}
+
+/** 按图的原始宽度和现在的框宽决定缩还是滑。侧栏拖宽拖窄时 Pele 不重排流程图、也不回调，所以自己跟着框宽算。 */
+function fit(canvas: HTMLElement): void {
+  const natural = Number(canvas.dataset.natural);
+
+  if (!natural) return;
+  const wide = natural * MIN_SCALE > canvas.clientWidth;
+
+  canvas.classList.toggle("gc-diagram-wide", wide);
+  canvas.querySelector("svg")?.style.setProperty("width", wide ? `${Math.round(natural * MIN_SCALE)}px` : "");
+}
+
+const fitter = new ResizeObserver((entries) => {
+  // SAFETY: 只 observe 过 .gc-diagram-canvas 这个 HTMLElement。
+  for (const entry of entries) fit(entry.target as HTMLElement);
+});
+
+/** 画在页面上的图：Pele 每张图挂一个 ResizeObserver，图离开页面（切会话、清空）时要 destroy 掉。 */
+const mounted = new Map<HTMLElement, { destroy(): void }>();
+
+function releaseDiagrams(): void {
+  for (const [figure, m] of mounted) {
+    if (figure.isConnected) continue;
+    m.destroy();
+
+    for (const canvas of figure.querySelectorAll(".gc-diagram-canvas")) fitter.unobserve(canvas);
+    mounted.delete(figure);
+  }
+}
+
+/** 画一张写完的结构图。画不出（语法错、不是流程图）就原样显示图的文字，不留空框。 */
+async function drawDiagram(figure: HTMLElement): Promise<void> {
+  figure.dataset.drawn = "";
+  const canvas = figure.querySelector<HTMLElement>(":scope > .gc-diagram-canvas");
+  const source = decodeURIComponent(figure.dataset.diagram ?? "");
+
+  if (!canvas) return;
+  const fail = () => {
+    const pre = document.createElement("pre");
+    pre.className = "gc-diagram-source";
+    pre.textContent = source;
+    canvas.replaceChildren(pre);
+
+    for (const el of figure.querySelectorAll(":scope > .gc-diagram-hint, :scope > .gc-quote")) el.remove();
+  };
+  const cited = new Set([...figure.querySelectorAll<HTMLElement>(":scope > .gc-cites > li")].map((li) => li.dataset.node));
+
+  try {
+    const { mount, render } = await loadEngine();
+
+    // 等加载的这会儿图可能已经被换掉了。
+    if (!figure.isConnected) return;
+    mounted.set(figure, mount(canvas, narrower(wrapLabels(source), render), {
+      fontSize: 13, zoom: false, links: false, images: false, sanitize: cleanSvg, onError: fail,
+      onRender: (result) => {
+        canvas.dataset.natural = String(result.width);
+        fit(canvas);
+
+        for (const node of canvas.querySelectorAll<SVGElement>(".pele-node[data-id], .pele-cluster[data-id]")) {
+          if (!cited.has(node.dataset.id)) continue;
+          node.dataset.cited = "";
+          node.setAttribute("tabindex", "0");
+          node.setAttribute("role", "button");
+        }
+      },
+    }));
+    fitter.observe(canvas);
+  } catch {
+    fail();
+  }
+}
+
+/** 点方块：图下显示这个方块的原文；再点同一个就收起。 */
+function toggleCite(node: SVGElement): void {
+  const figure = node.closest<HTMLElement>(".gc-diagram");
+  const cite = figure && [...figure.querySelectorAll<HTMLElement>(":scope > .gc-cites > li")].find((li) => li.dataset.node === node.dataset.id);
+  const quote = figure?.querySelector<HTMLElement>(":scope > .gc-quote");
+
+  if (!figure || !cite || !quote) return;
+  const again = node.classList.contains("gc-sel");
+
+  for (const el of figure.querySelectorAll(".gc-sel")) el.classList.remove("gc-sel");
+  quote.hidden = again;
+
+  if (again) return;
+  node.classList.add("gc-sel");
+  quote.querySelector(".gc-quote-from")!.textContent = cite.dataset.from ? `原文 · ${cite.dataset.from}` : "原文";
+  quote.querySelector("q")!.textContent = cite.textContent;
+}
 
 /** 回答原文 → HTML。没有卡片时与原来的 Markdown 渲染一样；返回值仍需调用方消毒。 */
 export function renderAnswerHtml(text: string, renderProse: (markdown: string) => string): string {
@@ -254,7 +420,30 @@ export function patchAnswer(root: HTMLElement, html: string): void {
  * 只认显示的字和要发的字一样的按钮：正文里夹带的原始 HTML 做不出“看着是 A、发出去是 B”的按钮。
  */
 export function bindAnswerCards(root: HTMLElement, say: (text: string) => void): void {
+  // 写完的图不管从流式、重开侧栏还是切会话进来，都在出现时画一次。
+  const draw = () => {
+    releaseDiagrams();
+
+    for (const el of root.querySelectorAll<HTMLElement>(".gc-diagram:not(.gc-ph):not([data-drawn])")) void drawDiagram(el);
+  };
+
+  new MutationObserver(draw).observe(root, { childList: true, subtree: true });
+  draw();
+  root.addEventListener("keydown", (event) => {
+    // SAFETY: keydown 事件的 target 是 Element。
+    const node = (event.target as Element).closest<SVGElement>(".gc-diagram [data-cited]");
+
+    if (!node || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    toggleCite(node);
+  });
   root.addEventListener("click", async (event) => {
+    // SAFETY: click 事件的 target 是 Element。
+    const node = (event.target as Element).closest<SVGElement>(".gc-diagram [data-cited]");
+
+    if (node) { toggleCite(node);
+
+ return; }
     // SAFETY: click 事件的 target 是 Element。
     const face = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-face");
     const card = face?.closest<HTMLElement>(".gen-card");

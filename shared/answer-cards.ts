@@ -15,12 +15,13 @@ export type Block =
   | { kind: "options"; items: Array<{ name: string; meta?: string; value?: string; why: string; pick: boolean }> }
   | { kind: "table"; cols: string[]; rows: Array<{ cells: string[]; tag?: string }> }
   | { kind: "checks"; items: Array<{ text: string; note?: string }> }
-  | { kind: "callout"; tone: "info" | "warn"; text: string };
+  | { kind: "callout"; tone: "info" | "warn"; text: string }
+  | { kind: "diagram"; source: string; cites: Record<string, { text: string; from?: string }> };
 
 export type CardButton = { label: string; tab?: string; primary: boolean };
 
 /** 卡片末尾已经开了头、还没写完的组件：tag 是标签名，written 是已写出的属性原文（侧栏据此放尺寸接近的空位）。 */
-export type PendingComponent = { tag: "stat" | "step" | "option" | "table" | "tr" | "check" | "callout"; written: string };
+export type PendingComponent = { tag: "stat" | "step" | "option" | "table" | "tr" | "check" | "callout" | "diagram"; written: string };
 
 export type Card = { title: string; sub?: string; blocks: Block[]; buttons: CardButton[]; source?: string; closed: boolean; numbers: Set<string>; values: Map<string, string>; formulas: boolean; pending?: PendingComponent };
 
@@ -165,9 +166,37 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
     return fresh;
   };
-  const component = new RegExp(String.raw`<(stat|step|option|table|tr|check|callout|button|source)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
+  /**
+   * 图等整张卡写完才画：边写边画时每加一行整张图都会重排，图后面的原文（cite）也要写完才能点。
+   * 没写完时只放图前面的组件和图的空位，空位的位置就是图的位置，收尾时原位换成图。
+   * 图的原文里有 <br/>、-->，原文摘录里可能有网页上的任何字（包括像 <button> 的字），都不走下面的组件正则。
+   */
+  let body = source.slice(head[0].length);
+  const diagramAt = body.indexOf("<diagram>");
+  let diagram: Extract<Block, { kind: "diagram" }> | undefined;
+  const cites: Array<{ node: string; text: string; from?: string }> = [];
 
-  for (const m of source.slice(head[0].length).matchAll(component)) {
+  if (diagramAt >= 0 && !closed) {
+    body = body.slice(0, diagramAt);
+  } else if (diagramAt >= 0) {
+    const end = body.indexOf("</diagram>", diagramAt);
+    const text = body.slice(diagramAt + "<diagram>".length, end < 0 ? undefined : end).trim();
+
+    body = `${body.slice(0, diagramAt)}<diagram-at />${end < 0 ? "" : body.slice(end + "</diagram>".length)}`;
+
+    if (text) diagram = { kind: "diagram", source: text, cites: {} };
+    body = body.replace(new RegExp(String.raw`<cite\b${ATTRS}\s*>([\s\S]*?)<\/cite>`, "g"), (_all, rawAttrs: string, inner: string) => {
+      const a = attrsOf(rawAttrs);
+      const node = str(a.node);
+
+      if (node && inner.trim()) cites.push({ node, text: inner.trim(), from: str(a.from) });
+
+      return "";
+    });
+  }
+  const component = new RegExp(String.raw`<(stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
+
+  for (const m of body.matchAll(component)) {
     const [, tag, rawAttrs, inner] = m;
     const a = attrsOf(rawAttrs ?? "");
     const text = inner?.trim();
@@ -225,17 +254,21 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       else if (a.action === "say") card.buttons.push({ label: text, primary: isPrimary });
     } else if (tag === "source") {
       if (text) card.source = text;
+    } else if (tag === "diagram-at" && diagram) {
+      for (const c of cites) diagram.cites[c.node] = { text: c.text, from: c.from };
+      card.blocks.push(diagram);
     }
   }
 
   // 没写完的卡片：末尾开了头的组件记下来。只认真的开头（「<stat 」），不猜后面还有几个；
   // 只看最后一个开头标签，前面哪个属性少了引号也不会一路配到末尾。
-  const lastOpen = closed ? undefined : [...source.matchAll(/<(?:stat|step|option|table|tr|check|callout)\s/g)].at(-1)?.index;
-  const tail = lastOpen === undefined ? "" : source.slice(lastOpen);
+  const lastOpen = closed ? undefined : [...body.matchAll(/<(?:stat|step|option|table|tr|check|callout)\s/g)].at(-1)?.index;
+  const tail = lastOpen === undefined ? "" : body.slice(lastOpen);
   const open = /^<(stat|step|option|table|tr|check|callout)\s((?:[^<>"]|"[^"]*")*(?:"[^"]*)?)$/.exec(tail) ?? /^<(callout)\b([^<>]*)>[^<]*(?:<\/?[a-z]*)?$/.exec(tail);
 
+  if (diagramAt >= 0 && !closed) card.pending = { tag: "diagram", written: "" };
   // SAFETY: 两个正则的第一组只会是 PendingComponent 列出的标签名。
-  if (open) card.pending = { tag: open[1] as PendingComponent["tag"], written: open[2] ?? "" };
+  else if (open) card.pending = { tag: open[1] as PendingComponent["tag"], written: open[2] ?? "" };
 
   return card.title || card.blocks.length ? card : undefined;
 }
@@ -336,6 +369,13 @@ export function answerSpeech(text: string): string {
   return prose || cards.map((c) => c.title).filter(Boolean).join("；");
 }
 
+/** 图里某个方块上写的字（复制时给原文配上方块名）；找不到就用方块的 id。 */
+function diagramLabel(source: string, node: string): string {
+  const label = new RegExp(String.raw`(?:^|[\s&;>])${node.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\s*[[({>]+\s*"([^"]*)"`, "m").exec(source)?.[1];
+
+  return label ? label.replace(/<br\s*\/?>/gi, " ").trim() : node;
+}
+
 /** 复制为 Markdown：卡片换成等价的 Markdown（数字格、步骤、选项、表格、清单），按钮不复制。 */
 export function answerMarkdown(text: string): string {
   if (!/<card[\s>]|\{=/.test(text)) return text;
@@ -349,6 +389,7 @@ export function answerMarkdown(text: string): string {
       case "table": return [`| ${b.cols.join(" | ")} |`, `|${b.cols.map(() => " --- ").join("|")}|`, ...b.rows.map((r) => `| ${r.cells.join(" | ")}${r.tag ? `（${r.tag}）` : ""} |`)].join("\n");
       case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${c.note}）` : ""}`).join("\n");
       case "callout": return `> ${b.text}`;
+      case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, c]) => `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`)].join("\n");
     }
   }), c.source ? `来源：${c.source}` : ""].filter(Boolean).join("\n\n");
 
@@ -376,6 +417,7 @@ export function cardPreview(text: string, maxRows = 3): CardPreview | null {
       case "steps": return b.items.map((s, i) => ({ label: `${i + 1}. ${s.title}` }));
       case "checks": return b.items.map((c) => ({ label: c.text }));
       case "callout": return [{ label: b.text }];
+      case "diagram": return [];
     }
   };
   const block = card.blocks.find((b) => b.kind !== "callout" && rowsOf(b).length) ?? card.blocks.find((b) => rowsOf(b).length);
