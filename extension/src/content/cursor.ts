@@ -62,6 +62,7 @@ import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, isEdgePill, type EdgePil
 import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
 import { createEdgeTab, type EdgeTab, type EdgeTabOther, type EdgeTabView } from "./edge-tab.js";
 import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
+import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
 (function () {
   const ns = (window.__sideagent ??= {});
@@ -77,7 +78,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
   /** 状态文案与颜色是页面侧的唯一来源，background 只给状态名与目标标签页。 */
   const STATUS_COPY: Record<CursorStatusState, { text: string; sub?: string; color: string; autoHideMs?: number }> = {
-    waiting: { text: "处理中", color: "#f59e0b" },
+    waiting: { text: "正在思考", color: "#f59e0b" },
     reading: { text: "正在读这个页面", color: "#2d4a86" },
     done: { text: "本轮已结束", color: "#16a34a", autoHideMs: 1500 },
     failed: { text: "这一步没做成", sub: "可以让我重试", color: "#e2554f" },
@@ -273,6 +274,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
         box-shadow: 0 2px 5px rgba(20,20,19,.04);
       }
       .action-text { display: block; }
+      .think-orb { width: 16px; height: 16px; flex: none; margin-right: 6px; }
       .agent-name { display: none; }
       .cursor.rest.stating .label { opacity: 1; }
       /* 拿住：名牌保持成员色，内嵌确认红 / 取消灰双键（C 案） */
@@ -305,6 +307,9 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
       }
       /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」，做完淡出。 */
       .cursor:not(.holding):not(.acting) .label { display: none !important; }
+      /* 例外：两步之间光标旁挂「球 + 正在思考」，光标不动时也看得出助手还在想。 */
+      .cursor.stating.thinking:not(.acting) .label { display: inline-flex !important; opacity: 1; }
+      .cursor.rest.thinking { opacity: 1; }
       /* 主助手停靠时可见；多个协作光标闲置时仍收起，以免挡住正文。 */
       .cursor.rest:not(.holding):not([data-primary="true"]) { visibility: hidden; }
       .cursor.holding .label { display:flex; flex-wrap:wrap; gap:6px; width:170px; max-width:calc(100vw - 48px); background:#ffffff; color:#141413; border:1px solid #e3e1d9; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px #2928210d; }
@@ -864,6 +869,58 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
     inst.el.style.setProperty("--s", STATUS_COPY[status.state].color);
     inst.el.classList.toggle("flip", inst.pos.x > window.innerWidth * 0.6);
     paintLabel(inst, status.text, statusSub(inst));
+    inst.el.classList.toggle("thinking", status.state === "waiting");
+
+    if (status.state === "waiting") label.prepend(thinkOrb());
+  }
+
+  // 和侧栏过程行同一颗 rubik 球：两步之间光标不动，球在转，说明助手还在想。
+  // 名牌永远是浅底，所以墨色固定取正文黑，不跟系统深色反相。
+  const THINK_PRESET = resolvePreset("solving", 20);
+  const THINK_INK = "20,20,19";
+  const THINK_BOX = 16;
+
+  function thinkOrb(): HTMLCanvasElement {
+    const canvas = document.createElement("canvas");
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.className = "think-orb";
+    canvas.width = canvas.height = Math.round(THINK_BOX * dpr);
+    const ctx = canvas.getContext("2d");
+    const frameOf = MODE_FRAMES[THINK_PRESET.mode];
+
+    if (!ctx || !frameOf) return canvas;
+    const k = (dpr * THINK_BOX) / 20;
+    const draw = (t: number) => {
+      const frame = frameOf(20, t, THINK_PRESET.opts);
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      ctx.clearRect(0, 0, 20, 20);
+
+      for (const l of frame.lines) {
+        ctx.strokeStyle = `rgba(${THINK_INK},${Math.min(1, (l.a ?? 1) * 1.3) * (1 - l.white * 0.45)})`;
+        ctx.lineWidth = l.w * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(l.x1, l.y1);
+        ctx.lineTo(l.x2, l.y2);
+        ctx.stroke();
+      }
+
+      for (const d of frame.dots) {
+        ctx.fillStyle = `rgba(${THINK_INK},${Math.min(1, (d.a ?? 1) * 1.3) * (1 - d.white * 0.45)})`;
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.r * 1.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    if (reducedMotion.matches) { draw(0.6); return canvas; }
+    const tick = (now: number) => {
+      if (!canvas.isConnected) return;
+      draw((now / 1000) * THINK_PRESET.speed);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+
+    return canvas;
   }
 
   function clearStatusTimers(inst: Instance): void {
@@ -2455,7 +2512,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 
     if (status.state === "reading") return { tone: "work", a: "在读", b: "这个页面", end: "stop" };
 
-    return { tone: "work", a: "在想", b: "下一步", end: "stop" };
+    return { tone: "work", a: "正在思考", b: "", end: "stop" };
   }
 
   function controlView(c: ControlView): EdgeTabView {
