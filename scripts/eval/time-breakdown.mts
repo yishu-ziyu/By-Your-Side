@@ -1,19 +1,21 @@
 /**
  * 时间花在哪（YIS-93）：读日常全套导出的诊断记录，把每个任务拆成「等模型」「动手」「其他」。
- *   npx tsx scripts/eval/time-breakdown.mts <everyday-baseline 产物目录 或 日常导出的 .jsonl> [--out=<表格.md>]
+ *   npx tsx scripts/eval/time-breakdown.mts <everyday-baseline 产物目录 或 日常导出的 .jsonl 或 compare-real 产物目录> [--out=<表格.md>]
+ *   npx tsx scripts/eval/time-breakdown.mts <compare-real 产物目录 A> --vs=<B>   两次真实网站护栏并排比（改动前后、两个版本同时跑）
  * 等模型：每轮从发出请求到模型回完（含重试）；动手：有工具在跑的墙钟时间（并行的工具不重复算）；其他：总耗时减去前两项（准备上下文、记忆判断等），单独列出，不摊进前两项。
  * 首个正文字：发送到第一个正文 token（#264 的首字口径，不含思考）；
  * 每次调用：主循环每轮送进模型的 token 数 / 其中命中缓存的数（#258；论文对照第 0 项）；最大上下文取其中最大的；继续：目标核对判「继续」后真的多跑了一轮的次数。
  * 回答后：第一次 agent_end 到这次运行最后一条后台记录（核对目标、记忆判断）（#259）。
+ * 交付后又问：send_user_message 交付结论之后这次运行又发了几次模型请求（#546 换核心后丢了「交付即结束本轮」，每次多一轮）。
  */
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 type Usage = { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
 
-type Line = { time: string; runId: string | null; turn: number; type: string; data?: { text?: string; elapsedMs?: number; toolName?: string; usage?: Usage; status?: string; attempt?: number } };
+type Line = { time: string; runId: string | null; turn: number; type: string; data?: { text?: string; elapsedMs?: number; toolName?: string; usage?: Usage; status?: string; attempt?: number; args?: { kind?: string } } };
 
-type Row = { id: string; prompt: string; totalMs: number; modelMs: number; firstTokenMs: number[]; firstTextMs: number | null; calls: Array<{ context: number; cached: number }>; continues: number; afterMs: number; toolMs: number; turns: number; tools: Record<string, { n: number; ms: number }> };
+type Row = { id: string; prompt: string; totalMs: number; modelMs: number; firstTokenMs: number[]; firstTextMs: number | null; calls: Array<{ context: number; cached: number }>; continues: number; afterMs: number; toolMs: number; turns: number; tools: Record<string, { n: number; ms: number }>; askedAfterFinding: number };
 
 // 回答后还在跑的后台判断：核对目标、记忆判断。
 const AFTER = new Set(["goal_check", "memory_decision", "memory_ask_decision"]);
@@ -42,13 +44,15 @@ function breakdown(lines: Line[]): Array<Row & { runId: string; text: string }> 
     const text = String(start.data?.text ?? "");
     const row = { runId, text, id: "?", prompt: text.slice(0, 40), totalMs: ms(end) - ms(start), modelMs: 0, firstTokenMs: [] as number[],
       firstTextMs: firstText ? ms(firstText) - ms(start) : null,
-      calls: [] as Row["calls"], continues: 0, afterMs: lastAfter ? ms(lastAfter) - ms(answered) : 0, toolMs: 0, turns: 0, tools: {} as Row["tools"] };
+      calls: [] as Row["calls"], continues: 0, afterMs: lastAfter ? ms(lastAfter) - ms(answered) : 0, toolMs: 0, turns: 0, tools: {} as Row["tools"], askedAfterFinding: 0 };
     let asked: number | null = null;
     // 同一轮的工具会并行：「动手」按墙钟算（有任一工具在跑的时间），不把各工具耗时相加，否则「其他」变负。
-    let running = 0, busySince = 0;
+    let running = 0, busySince = 0, delivered = false;
 
     for (const l of run) {
-      if (l.type === "model_request") asked ??= ms(l);
+      if (l.type === "model_request") { asked ??= ms(l); if (delivered) row.askedAfterFinding++; }
+
+      if (l.type === "tool_execution_start" && l.data?.toolName === "send_user_message" && l.data.args?.kind === "finding") delivered = true;
 
       if (l.type === "first_response") row.firstTokenMs.push(Number(l.data?.elapsedMs ?? 0));
 
@@ -98,6 +102,63 @@ const dir = process.argv[2];
 if (!dir) throw new Error("用法：time-breakdown.mts <everyday-baseline 产物目录>");
 
 const out = process.argv.find((a) => a.startsWith("--out="))?.slice(6);
+
+/** compare-real 产物目录：result-ext.json 记每条成败，ext/<编号>/trace.jsonl 是那条的诊断记录；分几路同时跑时每一路是一个子目录。 */
+async function guardrail(root: string): Promise<Array<Row & { pass: boolean }>> {
+  const subdirs = (await readdir(root, { withFileTypes: true }).catch(() => [])).filter((d) => d.isDirectory()).map((d) => join(root, d.name));
+  const rows: Array<Row & { pass: boolean }> = [];
+
+  for (const d of [root, ...subdirs]) {
+    // SAFETY: result-ext.json 由 compare-real.mts 写出，每条带 id 与 outcome。
+    const results = await readFile(join(d, "result-ext.json"), "utf8").then((t) => JSON.parse(t) as Array<{ id: string; outcome: string }>, () => []);
+
+    for (const r of results) {
+      const [row] = breakdown(parse(await readFile(join(d, "ext", r.id, "trace.jsonl"), "utf8").catch(() => "")));
+
+      if (row) rows.push({ ...row, id: r.id, pass: r.outcome === "pass" });
+    }
+  }
+
+  return rows;
+}
+
+const vs = process.argv.find((a) => a.startsWith("--vs="))?.slice(5);
+const guard = dir.endsWith(".jsonl") ? [] : await guardrail(dir);
+
+if (guard.length || vs) {
+  const mid = (xs: number[]) => { const v = [...xs].sort((a, b) => a - b); return v.length ? v[Math.floor((v.length - 1) / 2)]! : 0; };
+  const sec = (n: number) => `${(n / 1000).toFixed(1)} s`;
+  const share = (rs: Row[], f: (r: Row) => number) => `${Math.round((100 * rs.reduce((a, r) => a + f(r), 0)) / Math.max(1, rs.reduce((a, r) => a + r.totalMs, 0)))}%`;
+  // 耗时只看做成的那几条：失败的多半是网站连不上，时间长短说明不了产品。
+  const line = (label: string, all: Array<Row & { pass: boolean }>) => { const rs = all.filter((r) => r.pass);
+    return `| ${label} | ${all.length} | ${rs.length} | ${sec(mid(rs.map((r) => r.totalMs)))} | ${mid(rs.map((r) => r.turns))} | ${share(rs, (r) => r.modelMs)} | ${share(rs, (r) => r.toolMs)} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(0, 1))))} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(1))))} | ${sec(mid(rs.flatMap((r) => r.firstTextMs === null ? [] : [r.firstTextMs])))} | ${sec(mid(rs.map((r) => r.afterMs)))} | ${all.reduce((a, r) => a + r.askedAfterFinding, 0)} |`; };
+  const other = vs ? await guardrail(vs) : [];
+
+  if (vs && !other.length) throw new Error(`${vs} 里没有 compare-real 的 result-ext.json`);
+  const task = (id: string) => id.replace(/-\d+$/, "");
+  const tasks = [...new Set([...guard, ...other].map((r) => task(r.id)))].sort();
+  const cell = (rs: Array<Row & { pass: boolean }>, t: string) => { const mine = rs.filter((r) => task(r.id) === t);
+    return mine.length ? `${mine.filter((r) => r.pass).length}/${mine.length} · ${sec(mid(mine.map((r) => r.totalMs)))} · ${mid(mine.map((r) => r.turns))} 轮` : "—"; };
+  const table = [
+    `# 真实网站护栏：时间花在哪${vs ? "（两次对比）" : ""}`,
+    "",
+    "耗时、轮数、首字都只算做成的那几条（失败多半是网站连不上）；等模型、动手是占做成那几条总耗时的比例。首字 = 发出请求到模型第一个流事件。",
+    "",
+    "| 运行 | 条数 | 做成 | 总耗时中位 | 轮数中位 | 等模型 | 动手 | 第一次请求首字 | 之后每次首字 | 首个正文字 | 回答后 | 交付后又问 |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    line(dir, guard),
+    ...(vs ? [line(vs, other)] : []),
+    "",
+    `| 任务 | ${vs ? `${dir} | ${vs}` : dir} |`,
+    `|---|---|${vs ? "---|" : ""}`,
+    ...tasks.map((t) => `| ${t} | ${cell(guard, t)} |${vs ? ` ${cell(other, t)} |` : ""}`),
+  ].join("\n");
+
+  console.log(table);
+
+  if (out) await writeFile(out, table + "\n");
+  process.exit(0);
+}
 
 // 参数是日常 Chrome 从设置页导出的 .jsonl 时，没有 summary.json：任务名用 runId 的前 8 位，原话取 run_start。
 const single = dir.endsWith(".jsonl");
