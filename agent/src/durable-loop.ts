@@ -6,13 +6,15 @@
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, AssistantMessage, AssistantMessageEventStream, ImageContent, Message, Model, Models, TextContent, ToolResultMessage } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type Models, type TextContent, type ToolResultMessage } from "@earendil-works/pi-ai";
+import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
+import { isTransientModelError } from "../../shared/provider-busy.js";
 import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
-import { streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
+import { ELIDE_MIN_CHARS, PAGE_OBSERVATION_MARK, streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
 import type { PiSessionPersistence } from "./pi-session-persistence.js";
 import { composeSystemPrompt } from "./system-prompt.js";
 
@@ -25,6 +27,7 @@ const REPEAT_NOTE_AT = 3;
 const REPEAT_TRACKED_TOOLS = new Set(["tabs", "snapshot", "read_element", "read_elements", "browser_run"]);
 const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。之前消息前的同类段落只是历史，现状以这一段为准。";
 const CONTINUE_TEXT = `${RUN_CONTEXT_HEADER}\n\n上一次模型调用没有完成。接着做同一件事，已经做完的工具不要再执行。`;
+const MAX_RETRIES = 2;
 
 export interface DurableLoopOptions extends PiAgentLoopOptions {
   /** 每个会话一个存储目录。不给时只放在内存里，重载后接不上。 */
@@ -74,6 +77,10 @@ export class DurableAgentLoop implements AgentLoop {
   private ready: Promise<void>;
   private markRunEnd: (() => void) | undefined;
   private runEnd: Promise<void> = Promise.resolve();
+  /** 这一轮用户输入的原文：模型请求里它和紧挨在前面的运行上下文之前，是可以省略的旧内容。 */
+  private runInput: string | undefined;
+  /** 超过一次窗口之后，后面的请求都先省略旧内容；没超过时不删，删会改历史前缀、丢掉缓存。 */
+  private elide = false;
 
   readonly agent: AgentLoop["agent"];
 
@@ -200,6 +207,42 @@ export class DurableAgentLoop implements AgentLoop {
     await this.conversation?.waitForIdle(ctx);
   }
 
+  /**
+   * 模型报超窗口：把这一轮之前的大段内容（读页结果、页面快照、运行上下文）各换成一行占位，同一次调用里再请求一次。
+   * 只改发出的请求，存储里的记录不变。pi-durable 认不出的暂时错误补上它认得的说法，交给它的自动重试。
+   */
+  private request(send: (messages: Message[]) => AssistantMessageEventStream, model: Model<Api>, messages: Message[]): AssistantMessageEventStream {
+    const earlier = elideBefore(messages, runFloor(messages, this.runInput));
+    if (this.elide) return retryable(send(earlier ?? messages));
+    const out = createAssistantMessageEventStream();
+    void (async () => {
+      const held: AssistantMessageEvent[] = [];
+      let first = true;
+      for await (const event of send(messages)) {
+        if (first && event.type === "start") { held.push(event); continue; }
+        if (first && earlier && event.type === "error" && isContextOverflow(event.error, model.contextWindow ?? 0)) {
+          this.elide = true;
+          this.emit({ type: "compaction_start", reason: "overflow" });
+          this.emit({ type: "compaction_end", reason: "overflow", result: undefined, aborted: false, willRetry: true });
+          for await (const retried of retryable(send(earlier))) out.push(retried);
+          out.end();
+          return;
+        }
+        first = false;
+        for (const start of held.splice(0)) out.push(start);
+        out.push(event);
+      }
+      for (const start of held) out.push(start);
+      out.end();
+    })();
+    return retryable(out);
+  }
+
+  /** 和外层换备用模型用同一个判断：拿一条典型的暂时错误问它这次能不能换。 */
+  private transientProbe(): AssistantMessage {
+    return { ...this.blankAssistant(), stopReason: "error", errorMessage: "timeout" };
+  }
+
   private rebuildPrompt(): void {
     this.base = composeSystemPrompt(this.options.systemPrompt, this.options.appendPrompt(), this.options.cwd);
     this.systemPrompt = this.base;
@@ -243,19 +286,21 @@ export class DurableAgentLoop implements AgentLoop {
     const pi = this.options.models.pi;
     if (!pi) throw new Error("模型目录没有接上，pi-durable 无法调用模型。");
     const stream = streamThrough(this.options.models, context => this.observe(context), this.options.onModelResponse, this.options.effort, this.options.firstEventTimeoutMs, () => {}, this.options.onModelHedge);
-    const models = withStream(pi, (model, context, streamOptions) => stream(model, { ...context, messages: forModel(context.messages) } as never, streamOptions) as AssistantMessageEventStream, () => this.modelRef);
+    const models = withStream(pi, (model, context, streamOptions) => this.request(messages => stream(model, { ...context, messages } as never, streamOptions) as AssistantMessageEventStream, model, forModel(context.messages)), () => this.modelRef);
     const registry = createRegistry();
     registry.install(defineExtension({
       name: "sideagent",
       tools: this.durableTools,
       hooks: [hook(GenerationTask, { beforeRequest: async (request) => this.beforeRequest(request.messages) })],
     }));
+    const loop = this;
     const storage = this.options.openStorage ? await this.options.openStorage(this.sessionId || "default") : new MemoryStorage();
     this.harness = await Harness.open(storage, {
       models,
       registry,
       settings: {
-        retry: { maxRetries: 0, baseDelayMs: 500 },
+        // 每次决定重试时现读：能换备用模型时不在原模型上重试，交给外层去换。
+        get retry() { return { maxRetries: loop.retryGate?.(loop.transientProbe()) === false ? 0 : MAX_RETRIES, baseDelayMs: 500 }; },
         compaction: { enabled: false },
         steeringMode: "all",
         followUpMode: "all",
@@ -315,6 +360,7 @@ export class DurableAgentLoop implements AgentLoop {
     }
     for (const message of this.pendingNext.splice(0)) await this.writeUser(customText(message.content));
     await this.configure();
+    this.runInput = text;
     const content = images?.length ? [{ type: "text" as const, text }, ...images] : text;
     this.prompts += 1;
     this.busy = true;
@@ -374,7 +420,7 @@ export class DurableAgentLoop implements AgentLoop {
     }
     if (event.type === "tool_execution_end") { this.onToolEnd(event.toolCallId, event.toolName, event.entry); return; }
     if (event.type === "auto_retry_start") {
-      this.emit({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: 2, delayMs: 0, errorMessage: event.errorMessage });
+      this.emit({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: MAX_RETRIES, delayMs: Math.max(0, event.at - Date.now()), errorMessage: event.errorMessage });
       return;
     }
     if (event.type === "auto_retry_end") { this.emit({ type: "auto_retry_end", success: true, attempt: event.attempt }); return; }
@@ -496,6 +542,75 @@ function customText(content: CustomAppMessage["content"]): string {
 
 function interruptedResult(toolCallId: string, toolName: string): ToolResultMessage {
   return { role: "toolResult", toolCallId, toolName, content: [{ type: "text", text: `Tool ${toolName} was interrupted before it finished. Read the page again before doing anything that changes it.` }], isError: true, timestamp: Date.now() };
+}
+
+function textOf(message: Message): string {
+  if (message.role !== "user" && message.role !== "toolResult") return "";
+  return typeof message.content === "string" ? message.content : message.content.map(part => part.type === "text" ? part.text : "").join("");
+}
+
+/** 这一轮在请求里从哪条开始：用户输入那条，前面紧挨着的运行上下文也算这一轮。找不到时为 -1，不省略。 */
+function runFloor(messages: readonly Message[], input: string | undefined): number {
+  if (input === undefined) return -1;
+  let at = messages.length - 1;
+  while (at >= 0 && !(messages[at]!.role === "user" && textOf(messages[at]!) === input)) at -= 1;
+  return at > 0 && textOf(messages[at - 1]!).startsWith(RUN_CONTEXT_HEADER) ? at - 1 : at;
+}
+
+/** floor 之前的大段内容换成占位后的请求；没有能删的就返回 null。 */
+function elideBefore(messages: readonly Message[], floor: number): Message[] | null {
+  let elided = 0;
+  const stub = (chars: number): TextContent => ({ type: "text", text: `[Earlier content elided to fit the context window: ${chars} chars. The page may have changed since; read it again if needed.]` });
+  const trim = (text: string): string | null => {
+    if (text.startsWith(RUN_CONTEXT_HEADER)) return text.length >= ELIDE_MIN_CHARS ? stub(text.length).text : null;
+    const at = text.indexOf(PAGE_OBSERVATION_MARK);
+    return at >= 0 && text.length - at >= ELIDE_MIN_CHARS ? `${text.slice(0, at)}${stub(text.length - at).text}` : null;
+  };
+  const result = messages.map((message, index): Message => {
+    if (index >= floor) return message;
+    if (message.role === "toolResult") {
+      const chars = message.content.reduce((sum, part) => sum + (part.type === "text" ? part.text.length : ELIDE_MIN_CHARS), 0);
+      if (chars < ELIDE_MIN_CHARS) return message;
+      elided += 1;
+      return { ...message, content: [stub(chars)] };
+    }
+    if (message.role !== "user") return message;
+    if (typeof message.content === "string") {
+      const text = trim(message.content);
+      if (text === null) return message;
+      elided += 1;
+      return { ...message, content: text };
+    }
+    let changed = false;
+    const content = message.content.map(part => {
+      if (part.type === "image") { changed = true; return stub(ELIDE_MIN_CHARS); }
+      const text = trim(part.text);
+      if (text === null) return part;
+      changed = true;
+      return { ...part, text };
+    });
+    if (!changed) return message;
+    elided += 1;
+    return { ...message, content };
+  });
+  return elided ? result : null;
+}
+
+/**
+ * pi-durable 只按 pi-ai 的说法判断能不能重试。扩展里断网报「Failed to fetch」、服务商用中文说并发满了、工具参数写跑了，
+ * 这些我们也当暂时错误，在错误后面补一个它认得的词。
+ */
+function retryable(stream: AssistantMessageEventStream): AssistantMessageEventStream {
+  const out = createAssistantMessageEventStream();
+  void (async () => {
+    for await (const event of stream) {
+      if (event.type === "error" && event.reason === "error" && isTransientModelError(event.error) && !isRetryableAssistantError(event.error)) {
+        out.push({ ...event, error: { ...event.error, errorMessage: `${event.error.errorMessage ?? ""} (network error)` } });
+      } else out.push(event);
+    }
+    out.end();
+  })();
+  return out;
 }
 
 function stableJson(value: unknown): string {
