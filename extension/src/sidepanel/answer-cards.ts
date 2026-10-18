@@ -546,26 +546,42 @@ function setFieldValue(field: HTMLElement, value: string): void {
 }
 
 /**
- * 这张表单已经答过：同一会话里它后面有一句用户的话是表单发出的格式（以某一栏的名字加“：”开头）。
- * 发出后两个窗口的侧栏都会出现这句话；消息没发出去、被收回时这句话不在，表单自然又能填。
+ * 这张表单已经答过：这条回答之后用户说的第一句话是表单发出的格式（某一栏的名字加“：”）。返回那句话里各栏的值。
+ * 发出后两个窗口的侧栏都会出现这句话；没送达（标了未送达）、被收回时不算，表单自然又能填。
+ * 只看紧接着的第一句：用户跳过这张表单说了别的，之后再填另一张同名栏的表单，这张不跟着锁。
  */
-function answered(card: HTMLElement): boolean {
-  const labels = [...card.querySelectorAll<HTMLElement>(".gc-field")].map((f) => `${f.dataset.gcLabel}：`);
+function answered(card: HTMLElement): Map<string, string> | null {
+  const labels = [...card.querySelectorAll<HTMLElement>(".gc-field")].map((f) => f.dataset.gcLabel ?? "");
 
   for (let el = card.closest(".msg")?.nextElementSibling; el; el = el.nextElementSibling) {
     if (!el.matches(".msg.user")) continue;
-    const text = (el.querySelector(".user-msg-text") ?? el).textContent?.trim() ?? "";
 
-    if (labels.some((l) => text.startsWith(l) || text.includes(`；${l}`))) return true;
+    if (el.matches(".undelivered")) return null;
+    const text = (el.querySelector(".user-msg-text") ?? el).textContent?.trim() ?? "";
+    const pairs = new Map(text.split("；").flatMap((part) => { const at = part.indexOf("："); return at > 0 ? [[part.slice(0, at), part.slice(at + 1)] as [string, string]] : []; }));
+
+    return [...pairs.keys()].some((k) => labels.includes(k)) ? pairs : null;
   }
 
-  return false;
+  return null;
 }
 
 /** 必填栏空着就标出来、发送按钮不能点；答过后整张表单只读，按钮写“已发送”。 */
 function refreshForm(card: HTMLElement): void {
-  const sent = answered(card);
+  const reply = answered(card);
+  const sent = !!reply;
   let missing = false;
+
+  // 答过的表单显示那句话里真正发出去的值：另一个窗口改了再发时，这边不留着旧值。
+  if (reply) {
+    clearTimeout(typing.get(card));
+
+    for (const field of card.querySelectorAll<HTMLElement>(".gc-field")) {
+      const value = reply.get(field.dataset.gcLabel ?? "") ?? "";
+
+      if (fieldValue(field) !== value) setFieldValue(field, value);
+    }
+  }
 
   for (const field of card.querySelectorAll<HTMLElement>(".gc-field")) {
     const empty = field.dataset.gcRequired !== undefined && !fieldValue(field);
