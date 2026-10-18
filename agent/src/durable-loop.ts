@@ -349,7 +349,10 @@ export class DurableAgentLoop implements AgentLoop {
       cursor = batch.next;
     }
     loaded.sort((a, b) => a.id - b.id);
-    if (loaded.length) this.messages = loaded.map(item => item.message);
+    if (!loaded.length) return;
+    this.messages = loaded.map(item => item.message);
+    // 重开后从存储接着做的那一轮不会再发 run_start：起点按最后一句用户自己的话算。
+    this.runStart = Math.max(0, runFloor(this.messages as Message[], undefined));
   }
 
   private async submitInput(text: string, images?: ImageContent[]): Promise<void> {
