@@ -86,6 +86,11 @@ export class DurableAgentLoop implements AgentLoop {
   /** 这一轮的消息从 messages 的哪一位开始；agent_end 只带这一轮的，和 pi-agent-core 一样。 */
   private runStart = 0;
   private cutText: (() => boolean) | null = null;
+  /**
+   * 截断后 pi-durable 把这一轮当作答完，排着的插话另起一轮。对界面它们是同一轮（旧核心就是这样）：
+   * 中间不发 agent_end，否则半句会被当成最终回答交付。
+   */
+  private cutForSteer = false;
   /** 正在执行的工具。停下时先当场取消它们，再等 pi-durable 把停下写进存储，免得填表之类的动作在这段时间里接着写页面。 */
   private readonly runningTools = new Set<AbortController>();
 
@@ -154,7 +159,11 @@ export class DurableAgentLoop implements AgentLoop {
   async flushPersistence(): Promise<void> { await this.options.persistence?.flush(); }
 
   /** 插话改方向时截断正在写的这次回答（见 AgentLoop.interruptText）；插话已经先排进队，截断后的结束点会接着读它。 */
-  interruptText(): boolean { return this.cutText?.() ?? false; }
+  interruptText(): boolean {
+    const cut = this.cutText?.() ?? false;
+    if (cut) this.cutForSteer = true;
+    return cut;
+  }
 
   async prompt(text: string, options?: PromptOptions): Promise<void> {
     await this.ready;
@@ -198,6 +207,7 @@ export class DurableAgentLoop implements AgentLoop {
   async abort(): Promise<void> {
     this.abortVersion += 1;
     for (const running of this.runningTools) running.abort();
+    this.cutForSteer = false;
     await this.conversation?.abort(ctx);
     await this.conversation?.waitForIdle(ctx);
     this.busy = false;
@@ -411,6 +421,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   private async onDurable(event: DurableEvent): Promise<void> {
     if (event.type === "run_start") {
+      if (this.cutForSteer) { this.cutForSteer = false; return; }
       // 这一轮的输入在 run_start 之前已经写进 messages。
       let start = this.messages.length;
       while (start > 0 && (this.messages[start - 1]!.role === "user" || this.messages[start - 1]!.role === "custom")) start -= 1;
@@ -530,6 +541,11 @@ export class DurableAgentLoop implements AgentLoop {
 
   private async onRunEnd(): Promise<void> {
     await this.flushPersistence();
+    if (this.cutForSteer) {
+      // 插话已先写进存储，正常情况下下一轮马上开始；没开始就按普通结束收尾，免得界面一直显示在做。
+      setTimeout(() => { if (this.cutForSteer) { this.cutForSteer = false; void this.onRunEnd(); } }, 3_000);
+      return;
+    }
     const end: AgentSessionEvent = { type: "agent_end", messages: this.messages.slice(this.runStart), willRetry: false };
     this.busy = false;
     this.emit(end);
