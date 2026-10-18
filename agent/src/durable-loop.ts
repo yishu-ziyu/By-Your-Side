@@ -85,6 +85,9 @@ export class DurableAgentLoop implements AgentLoop {
   private elide = false;
   /** 这一轮的消息从 messages 的哪一位开始；agent_end 只带这一轮的，和 pi-agent-core 一样。 */
   private runStart = 0;
+  private cutText: (() => boolean) | null = null;
+  /** 正在执行的工具。停下时先当场取消它们，再等 pi-durable 把停下写进存储，免得填表之类的动作在这段时间里接着写页面。 */
+  private readonly runningTools = new Set<AbortController>();
 
   readonly agent: AgentLoop["agent"];
 
@@ -150,7 +153,8 @@ export class DurableAgentLoop implements AgentLoop {
 
   async flushPersistence(): Promise<void> { await this.options.persistence?.flush(); }
 
-  interruptText(): boolean { return false; }
+  /** 插话改方向时截断正在写的这次回答（见 AgentLoop.interruptText）；插话已经先排进队，截断后的结束点会接着读它。 */
+  interruptText(): boolean { return this.cutText?.() ?? false; }
 
   async prompt(text: string, options?: PromptOptions): Promise<void> {
     await this.ready;
@@ -193,6 +197,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   async abort(): Promise<void> {
     this.abortVersion += 1;
+    for (const running of this.runningTools) running.abort();
     await this.conversation?.abort(ctx);
     await this.conversation?.waitForIdle(ctx);
     this.busy = false;
@@ -270,14 +275,21 @@ export class DurableAgentLoop implements AgentLoop {
         const blocked = this.hooks.has("tool_call") ? await this.hooks.toolCall(tool.name, api.callId, args as HookArgs) : undefined;
         if (blocked?.block) return { content: [{ type: "text" as const, text: blocked.reason ?? "已阻止" }], isError: true };
         // 抛出的错误要留在结果正文里。pi-durable 会把异常收成诊断，模型看到的就变成带外壳的一段，认不出原来的那句。
-        const result = await tool.execute(api.callId, args as never, context.abortSignal, async (partial) => {
+        const running = new AbortController();
+        const stop = () => running.abort();
+        if (context.abortSignal?.aborted) running.abort(); else context.abortSignal?.addEventListener("abort", stop, { once: true });
+        this.runningTools.add(running);
+        const result = await tool.execute(api.callId, args as never, running.signal, async (partial) => {
           const details = (partial as { details?: unknown }).details;
           if (details !== undefined) await api.details(details as never, context);
         }, undefined as never).catch((error: unknown) => ({
           content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }],
           details: {},
           isError: true as const,
-        }));
+        })).finally(() => {
+          this.runningTools.delete(running);
+          context.abortSignal?.removeEventListener("abort", stop);
+        });
         const repeated = this.noteRepeat(tool.name, args, result.content);
         const hooked = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: tool.name, toolCallId: api.callId, input: args as HookArgs, content: result.content, details: result.details as never, isError: result.isError === true }) : undefined;
         const content = [...(hooked?.content ?? result.content), ...(repeated ? [{ type: "text" as const, text: repeated }] : [])];
@@ -289,7 +301,7 @@ export class DurableAgentLoop implements AgentLoop {
   private async open(): Promise<void> {
     const pi = this.options.models.pi;
     if (!pi) throw new Error("模型目录没有接上，pi-durable 无法调用模型。");
-    const stream = streamThrough(this.options.models, context => this.observe(context), this.options.onModelResponse, this.options.effort, this.options.firstEventTimeoutMs, () => {}, this.options.onModelHedge);
+    const stream = streamThrough(this.options.models, context => this.observe(context), this.options.onModelResponse, this.options.effort, this.options.firstEventTimeoutMs, (cut, live) => { if (live) this.cutText = cut; else if (this.cutText === cut) this.cutText = null; }, this.options.onModelHedge);
     const models = withStream(pi, (model, context, streamOptions) => this.request(messages => stream(model, { ...context, messages } as never, streamOptions) as AssistantMessageEventStream, model, forModel(context.messages)), () => this.modelRef);
     const registry = createRegistry();
     registry.install(defineExtension({
