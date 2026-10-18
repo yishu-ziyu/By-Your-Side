@@ -76,7 +76,8 @@ try {
   const work = await rp.attach(blank.targetId);
   await rp.cdp.send("Page.enable", {}, work);
   await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, work);
-  const panel = await rp.attach(await rp.openSidePanel());
+  const panelTarget = await rp.openSidePanel();
+  const panel = await rp.attach(panelTarget);
   panelSession = panel;
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
@@ -134,6 +135,14 @@ try {
   assert.equal(reopened.people, "2 位成人", "R3: edited text kept after reopening");
   assert.deepEqual(reopened.chips.map(c => c.on), [true, false], "R3: picked option kept after reopening");
 
+  // 另一个窗口也开着侧栏（在后台，不抢前台）：发出表单不该串到那边。
+  const otherWindow = Number(await rp.evaluate(panel, `chrome.windows.create({ url: "about:blank", focused: false }).then(w => w.id)`));
+  await rp.evaluate(panel, `chrome.sidePanel.open({ windowId: ${otherWindow} }).then(() => true)`, { userGesture: true });
+  await sleep(1_500);
+  const panels = await until(async () => { const ts = (await rp.targets()).filter(t => t.type === "page" && t.url.includes("/sidepanel.html")); return ts.length >= 2 ? ts : undefined; }, 15_000, "第二个侧栏");
+  const otherPanel = await rp.attach(panels.find(t => t.targetId !== panelTarget)!.targetId);
+  await until(async () => await rp.evaluate(otherPanel, 'document.readyState === "complete" && !!document.querySelector("#messages")') || undefined, 15_000, "第二个侧栏就绪");
+
   // R2：点「按这个订」，侧栏出现那句话，模型收到它，表单变只读、按钮写已发送。
   await tap("[data-card-submit]");
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes(${JSON.stringify(SENT)}))`) || undefined, 10_000, "R2: user message shown");
@@ -145,6 +154,11 @@ try {
   assert.ok(asked.some(t => t.includes(SENT)), `R2: model received the form message: ${JSON.stringify(asked)}`);
   assert.deepEqual(sent.button, { text: "已发送", disabled: true }, `R2: button shows sent: ${JSON.stringify(sent.button)}`);
   assert.ok(sent.locked, "R2: fields read-only after sending");
+  // 两个窗口显示的是同一个会话：那边的同一张表单也要变成已发送、只读，不能再发一次。
+  const other = await until(async () => { const b = await rp.evaluate(otherPanel, SEEN) as Seen; return b.button?.text === "已发送" ? b : undefined; }, 10_000, "另一个窗口的表单变成已发送").catch(async () => await rp.evaluate(otherPanel, SEEN) as Seen);
+  evidence.other = other;
+  assert.deepEqual(other.button, { text: "已发送", disabled: true }, `two windows: the other panel's form shows sent: ${JSON.stringify(other.button)}`);
+  assert.ok(other.locked, "two windows: the other panel's form is read-only");
 
   // R3：发出后重开，仍是已发送、只读。
   await rp.cdp.send("Page.reload", {}, panel);

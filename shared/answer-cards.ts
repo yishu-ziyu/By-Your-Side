@@ -214,17 +214,25 @@ const MAX_FIELDS = 6;
  * 密码、卡号、验证码这类栏不画：这些值只由用户自己在网页上填（hand_to_user），不经过侧栏和模型。
  * 模型可能被网页内容带偏，写出一张“请填写银行卡号”的表单，所以按名字拦，不靠提示词。
  */
-const SECRET_FIELD = /密码|口令|卡号|信用卡|银行卡|储蓄卡|有效期|验证码|校验码|安全码|动态码|CVV|CVC|PIN|password|passcode|card\s*number|security\s*code|one[-\s]*time|OTP|身份证/i;
+const SECRET_FIELD_ZH = /密码|口令|卡号|信用卡|银行卡|储蓄卡|有效期|验证码|校验码|安全码|动态码|身份证/;
+
+/** 英文按整词比：shipping 里的 pin 不算。 */
+const SECRET_FIELD_EN = /\b(?:pin|cvv\d?|cvc\d?|otp\w*|password\w*|passcode|card\s*num(?:ber)?|security\s*code|one[-\s]*time\w*)\b/i;
 
 function cardField(a: Attrs): CardField | undefined {
   const id = str(a.id);
   const label = str(a.label);
 
-  if (!id || !/^[A-Za-z_]\w*$/.test(id) || !label || SECRET_FIELD.test(`${label} ${id}`)) return undefined;
+  // 先去掉看不见的字和空白再比：「密\u200b码」「验 证 码」看起来就是密码、验证码。显示的名字也去掉看不见的字。
+  const visible = (t: string) => t.normalize("NFKC").replace(/[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g, "");
+
+  const words = visible(`${label} ${id}`);
+
+  if (!id || !/^[A-Za-z_]\w*$/.test(id) || !label || SECRET_FIELD_ZH.test(words.replace(/\s+/g, "")) || SECRET_FIELD_EN.test(words)) return undefined;
   const options = str(a.options)?.split("|").map((o) => o.trim()).filter(Boolean).slice(0, 6);
   const value = str(a.value) ?? "";
 
-  return { id, label, value: options?.length && !options.includes(value) ? "" : value, options: options?.length ? options : undefined, from: str(a.from), required: a.optional === undefined };
+  return { id, label: visible(label), value: options?.length && !options.includes(value) ? "" : value, options: options?.length ? options : undefined, from: str(a.from), required: a.optional === undefined };
 }
 
 /** 卡片原文的摘要：同一张卡重开、重放时不变。 */
@@ -337,6 +345,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     if (input && !inputs.has(input.id) && inputs.size < MAX_INPUTS) inputs.set(input.id, input);
   }
   const vars = new Map([...inputs].map(([id, input]) => [id, input.value]));
+  const fieldIds = new Set<string>();
 
   for (const input of inputs.values()) card.values.set(input.id, withUnit(formatNumber(input.value), input.unit));
 
@@ -349,7 +358,8 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       const field = cardField(a);
       const block = group("fields", () => ({ kind: "fields", items: [] }));
 
-      if (field && block.items.length < MAX_FIELDS && !block.items.some((f) => f.id === field.id)) block.items.push(field);
+      // 同一个 id 在整张卡里只认第一个：存下来的值按 id 还原，两栏同名会互相盖掉。
+      if (field && !fieldIds.has(field.id) && fieldIds.size < MAX_FIELDS) { fieldIds.add(field.id); block.items.push(field); }
     } else if (tag === "input") {
       const id = str(a.id);
       const input = id ? inputs.get(id) : undefined;

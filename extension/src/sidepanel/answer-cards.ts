@@ -464,8 +464,30 @@ export function patchAnswer(root: HTMLElement, html: string): void {
 /** 卡片上用户动过的东西：调过的数、勾过的清单项（按卡片里的顺序）、表单各栏的值和发没发出。at 用来丢掉最早的。 */
 type CardState = { vars?: Record<string, number>; checks?: number[]; fields?: Record<string, string>; sent?: boolean; at: number };
 
-/** 每张卡一个存储项（键带卡片原文摘要）：两个窗口同时存不同的卡片时互不覆盖。 */
+/**
+ * 每张卡一个存储项：两个窗口同时存不同的卡片时互不覆盖。
+ * 键是「会话:卡片原文摘要:同一会话里第几张一样的卡」：模型在别的会话、或同一会话再问一遍一模一样的表单时，不沿用上一次的值和“已发送”。
+ */
 const STATE_PREFIX = "answerCard:";
+
+/** 侧栏现在显示的会话，由 bindAnswerCards 接上。 */
+let conversationOf = () => "default";
+
+const slots = new WeakMap<HTMLElement, string>();
+
+function slotOf(card: HTMLElement): string | undefined {
+  const known = slots.get(card);
+  const key = card.dataset.gcCard;
+
+  if (known || !key) return known;
+  const scope = card.closest("#messages") ?? card.parentElement?.parentElement ?? card;
+  const nth = [...scope.querySelectorAll(`.gen-card[data-gc-card="${CSS.escape(key)}"]`)].indexOf(card);
+  const slot = `${conversationOf()}:${key}:${Math.max(0, nth)}`;
+
+  slots.set(card, slot);
+
+  return slot;
+}
 
 /** 最多记这么多张卡片，超出时丢掉最早动过的。 */
 const MAX_SAVED = 300;
@@ -481,10 +503,22 @@ function isCardState(v: unknown): v is CardState {
     && (checks === undefined || (Array.isArray(checks) && checks.every((n) => Number.isInteger(n))));
 }
 
-async function readState(key: string): Promise<CardState | undefined> {
-  const raw = (await chrome.storage.local.get(STATE_PREFIX + key).catch(() => ({})) as Record<string, unknown>)[STATE_PREFIX + key];
+/** 10-19 第一版按卡片摘要存（answerCard:<摘要>）：读到就搬到新键下并删掉旧的。 */
+async function readState(card: HTMLElement): Promise<CardState | undefined> {
+  const slot = slotOf(card);
+  const legacy = STATE_PREFIX + (card.dataset.gcCard ?? "");
 
-  return isCardState(raw) ? raw : undefined;
+  if (!slot) return undefined;
+  const got = await chrome.storage.local.get([STATE_PREFIX + slot, legacy]).catch(() => ({})) as Record<string, unknown>;
+  const raw = got[STATE_PREFIX + slot];
+
+  if (isCardState(raw)) return raw;
+  const old = got[legacy];
+
+  if (!isCardState(old)) return undefined;
+  await chrome.storage.local.set({ [STATE_PREFIX + slot]: old }).then(() => chrome.storage.local.remove(legacy)).catch(() => undefined);
+
+  return old;
 }
 
 async function trimStates(): Promise<void> {
@@ -553,13 +587,55 @@ function formMessage(card: HTMLElement): string {
 /** 用户动过的卡片：写完前动过的，写完时存下现在的样子；还原读回来之前就动过的，不拿旧记录盖掉。 */
 const touched = new WeakSet<HTMLElement>();
 
-function save(card: HTMLElement): void {
-  const key = card.dataset.gcCard;
+/** 本窗口最后写下的样子：存储变化通知回到本窗口时认出是自己写的，不拿它回填正在打字的框。 */
+const written = new Map<string, string>();
+
+const signature = (s: CardState) => JSON.stringify({ ...s, at: 0 });
+
+/** 另一个窗口已经发出的表单，这边不再改回未发送：先读一次，已发送就照它显示，不写。 */
+async function save(card: HTMLElement): Promise<void> {
+  const slot = slotOf(card);
 
   touched.add(card);
 
-  if (!key) return;
-  void chrome.storage.local.set({ [STATE_PREFIX + key]: stateOf(card) }).then(trimStates).catch(() => undefined);
+  if (!slot) return;
+  const stored = await readState(card);
+
+  if (stored?.sent && card.dataset.gcSent === undefined) { apply(card, stored);
+
+ return; }
+  const state = stateOf(card);
+
+  written.set(slot, signature(state));
+  await chrome.storage.local.set({ [STATE_PREFIX + slot]: state }).then(trimStates).catch(() => undefined);
+}
+
+/** 文字框边打边存，停顿一下再写，不每个字写一次。 */
+const typing = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+function saveSoon(card: HTMLElement): void {
+  clearTimeout(typing.get(card));
+  typing.set(card, setTimeout(() => void save(card), 400));
+}
+
+/** 把存下的样子放回卡片：调过的数、勾选、表单各栏、已发送。 */
+function apply(card: HTMLElement, saved: CardState): void {
+  for (const el of card.querySelectorAll<HTMLInputElement>("[data-gc-var]")) {
+    const n = saved.vars?.[el.dataset.gcVar!];
+
+    if (n !== undefined) el.value = String(clampTo(el, n));
+  }
+  [...card.querySelectorAll<HTMLInputElement>(".gc-check input[type=checkbox]")].forEach((el, i) => { el.checked = saved.checks?.includes(i) ?? false; });
+
+  for (const field of card.querySelectorAll<HTMLElement>(".gc-field")) {
+    const v = saved.fields?.[field.dataset.gcField!];
+
+    if (v !== undefined) setFieldValue(field, v);
+  }
+
+  if (saved.sent) card.dataset.gcSent = "";
+  recompute(card);
+  refreshForm(card);
 }
 
 /** 小数位数：0.05 是 2 位，1e-7 是 7 位。 */
@@ -618,7 +694,7 @@ function setVar(el: HTMLInputElement, n: number): void {
 
   if (!card) return;
   recompute(card);
-  save(card);
+  void save(card);
 }
 
 /** 已经还原过的卡片：patchAnswer 留着同一个节点，不重复还原。 */
@@ -629,28 +705,11 @@ function restore(card: HTMLElement): void {
   if (!card.dataset.gcCard || restored.has(card)) return;
   restored.add(card);
 
-  if (touched.has(card)) { save(card);
+  if (touched.has(card)) { void save(card);
 
  return; }
-  void readState(card.dataset.gcCard).then((saved) => {
-    if (!saved || !card.isConnected || touched.has(card)) return;
-
-    for (const el of card.querySelectorAll<HTMLInputElement>("[data-gc-var]")) {
-      const n = saved.vars?.[el.dataset.gcVar!];
-
-      if (n !== undefined) el.value = String(clampTo(el, n));
-    }
-    [...card.querySelectorAll<HTMLInputElement>(".gc-check input[type=checkbox]")].forEach((el, i) => { el.checked = saved.checks?.includes(i) ?? false; });
-
-    for (const field of card.querySelectorAll<HTMLElement>(".gc-field")) {
-      const v = saved.fields?.[field.dataset.gcField!];
-
-      if (v !== undefined) setFieldValue(field, v);
-    }
-
-    if (saved.sent) card.dataset.gcSent = "";
-    recompute(card);
-    refreshForm(card);
+  void readState(card).then((saved) => {
+    if (saved && card.isConnected && !touched.has(card)) apply(card, saved);
   });
 }
 
@@ -658,7 +717,21 @@ function restore(card: HTMLElement): void {
  * 卡片按钮：say 把按钮上的话当作用户下一句发出；tab 切到那一页。用事件委托，流式重画后不用重新绑定。
  * 只认显示的字和要发的字一样的按钮：正文里夹带的原始 HTML 做不出“看着是 A、发出去是 B”的按钮。
  */
-export function bindAnswerCards(root: HTMLElement, say: (text: string) => void): void {
+export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolean | void, conversation: () => string = () => "default"): void {
+  conversationOf = conversation;
+  // 另一个窗口的侧栏改了同一张卡（多半是发出了表单）：这边跟着显示。自己刚写的不回填，免得打断正在打的字。
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+
+    for (const [name, change] of Object.entries(changes)) {
+      if (!name.startsWith(STATE_PREFIX) || !isCardState(change.newValue)) continue;
+      const slot = name.slice(STATE_PREFIX.length);
+
+      if (written.get(slot) === signature(change.newValue)) continue;
+
+      for (const card of root.querySelectorAll<HTMLElement>(".gen-card[data-gc-card]")) if (slotOf(card) === slot) apply(card, change.newValue);
+    }
+  });
   // 写完的图不管从流式、重开侧栏还是切会话进来，都在出现时画一次。
   const draw = () => {
     releaseDiagrams();
@@ -688,9 +761,14 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
 
     if (!(el instanceof HTMLInputElement) || !el.closest(".gen-card")) return;
 
-    if (el.classList.contains("gc-text")) { refreshForm(el.closest<HTMLElement>(".gen-card")!);
+    if (el.classList.contains("gc-text")) {
+      const card = el.closest<HTMLElement>(".gen-card")!;
 
- return; }
+      refreshForm(card);
+      saveSoon(card);
+
+      return;
+    }
 
     // 打字到一半（空、只有负号）先不动，失焦时再夹回范围。
     if (el.dataset.gcVar !== undefined && el.value.trim() !== "" && Number.isFinite(Number(el.value))) {
@@ -711,7 +789,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
     if (!card) return;
 
     if (el.dataset.gcVar !== undefined) setVar(el, Number.isFinite(Number(el.value)) && el.value.trim() !== "" ? Number(el.value) : Number(el.defaultValue));
-    else if ((el.type === "checkbox" && el.closest(".gc-check")) || el.classList.contains("gc-text")) save(card);
+    else if ((el.type === "checkbox" && el.closest(".gc-check")) || el.classList.contains("gc-text")) void save(card);
   });
   root.addEventListener("click", async (event) => {
     // SAFETY: click 事件的 target 是 Element。
@@ -741,7 +819,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
     if (chip && form && !chip.disabled) {
       setFieldValue(chip.closest<HTMLElement>(".gc-field")!, chip.dataset.gcOption ?? "");
       refreshForm(form);
-      save(form);
+      void save(form);
 
       return;
     }
@@ -755,11 +833,11 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
       const form = button.closest<HTMLElement>(".gen-card");
       const text = form ? formMessage(form) : "";
 
-      if (!form || !text || button.disabled) return;
+      // 没发出去（后台断开、会话没准备好）就不锁表单，用户还能再点。
+      if (!form || !text || button.disabled || say(text) === false) return;
       form.dataset.gcSent = "";
       refreshForm(form);
-      save(form);
-      say(text);
+      void save(form);
 
       return;
     }
