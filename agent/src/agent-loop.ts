@@ -37,6 +37,8 @@ export interface AgentLoop extends Pick<
    * 扩展重载或浏览器被杀掉之后，由它接着做，不等用户说「继续」。
    */
   continueStored?(): void;
+  /** 点进输入框时先把系统提示词和工具清单送进服务商的前缀缓存；只有扩展里的循环支持。 */
+  warmPromptCache?(next: { toolNames: readonly string[]; systemPrompt: (base: string) => string }): Promise<"sent" | "skipped" | "aborted" | "error">;
   /** 面板断开时不取消存储里的运行，进程死掉后才能从存储接着做。 */
   readonly keepsRunAfterDisconnect?: boolean;
   /**
@@ -170,6 +172,7 @@ class FailoverLoop implements AgentLoop {
 
   steer(...args: Parameters<AgentLoop["steer"]>) { return this.inner.steer(...args); }
   continueStored() { this.inner.continueStored?.(); }
+  warmPromptCache(...args: Parameters<NonNullable<AgentLoop["warmPromptCache"]>>) { return this.inner.warmPromptCache?.(...args) ?? Promise.resolve("skipped" as const); }
   get keepsRunAfterDisconnect() { return this.inner.keepsRunAfterDisconnect === true; }
   interruptText() { return this.inner.interruptText?.() ?? false; }
   clearQueue() { return this.inner.clearQueue(); }

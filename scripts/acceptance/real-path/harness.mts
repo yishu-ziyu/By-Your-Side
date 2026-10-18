@@ -436,10 +436,14 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     // macOS 上音频服务的沙箱不让它读任意路径，文件麦克风会变成一片静音。
     ...(microphoneWav ? ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${microphoneWav}%noloop`, "--disable-features=AudioServiceSandbox"] : []),
     ...chromeArgs,
-    "about:blank",
+    // 有窗口时不带启动窗口，连上后用 background 开窗口：Chrome 开第一个窗口时会把自己推到最前，抢走用户的前台（10-19 用户反馈）。
+    ...(headed && process.platform === "darwin" ? ["--no-startup-window"] : ["about:blank"]),
   ];
   // 有窗口时在 macOS 上用 open -g 在后台启动：直接启动的 GUI 应用会被推到最前面，抢走用户正在打字的焦点（10-13 用户反馈）。
   // open -W 一直等到 Chrome 退出，所以这个进程的退出就是 Chrome 的退出；kill 要按配置目录找到真正的 Chrome 进程。
+  const openBackgroundWindow = async (cdp: ReturnType<typeof createCdp>) => {
+    if (headed && process.platform === "darwin") await cdp.send("Target.createTarget", { url: "about:blank", newWindow: true, background: true });
+  };
   const spawnChrome = () => {
     if (!headed || process.platform !== "darwin") return spawn(resolveChrome(), chromeArgsFor(), { stdio: ["ignore", "ignore", "pipe"], env });
     const app = resolveChrome().replace(/(\.app)\/Contents\/MacOS\/.*$/, "$1");
@@ -486,6 +490,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
     cdp = createCdp(version.webSocketDebuggerUrl);
     await cdp.ready();
+    await openBackgroundWindow(cdp);
   } catch (error) {
     chrome.kill("SIGKILL");
     tempDir.release();
@@ -543,6 +548,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
       const next = await fetchJson(`http://127.0.0.1:${nextPort}/json/version`);
       cdp = createCdp(next.webSocketDebuggerUrl);
       await cdp.ready();
+      await openBackgroundWindow(cdp);
       Object.assign(result, { cdp, ...browserControls(cdp, id) });
     },
   };

@@ -8,8 +8,9 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, isContextOverflow, type Api, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type ImageContent, type Message, type Model, type Models, type TextContent, type ToolResultMessage } from "@earendil-works/pi-ai";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
+import { toToolDeclaration } from "@earendil-works/pi-ai/utils/transcript";
 import { isTransientModelError } from "../../shared/provider-busy.js";
-import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, ProviderDoc, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -28,6 +29,11 @@ const REPEAT_TRACKED_TOOLS = new Set(["tabs", "snapshot", "read_element", "read_
 const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。之前消息前的同类段落只是历史，现状以这一段为准。";
 const CONTINUE_TEXT = `${RUN_CONTEXT_HEADER}\n\n上一次模型调用没有完成。接着做同一件事，已经做完的工具不要再执行。`;
 const MAX_RETRIES = 2;
+/** 服务商的前缀缓存闲置几分钟就清掉（OpenAI、Anthropic 约 5 分钟）；这么久内发过请求，开头还在缓存里，不必再预热。 */
+const PROMPT_WARM_FRESH_MS = 4 * 60_000;
+const PROMPT_WARM_TEXT = "Reply with OK.";
+/** 预热挂住时不能一直占着服务商的并发位子（Kimi 只有 1 个）。 */
+const PROMPT_WARM_TIMEOUT_MS = 15_000;
 /** pi-durable 认得的说法，只在它判断要不要重试时用；进入记录和界面前去掉。 */
 const RETRY_MARK = " (network error)";
 
@@ -76,6 +82,9 @@ export class DurableAgentLoop implements AgentLoop {
   private queued: Array<{ id: SubmissionId; kind: "steer" | "followUp"; text: string }> = [];
   private repeat = { call: "", result: "", count: 0 };
   private abortVersion = 0;
+  private warming: AbortController | undefined;
+  private modelCalledAt = 0;
+  private lastWarm: { startedAt: number; endedAt?: number; outcome: string } | undefined;
   private ready: Promise<void>;
   private markRunEnd: (() => void) | undefined;
   private runEnd: Promise<void> = Promise.resolve();
@@ -209,6 +218,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   async abort(): Promise<void> {
     this.abortVersion += 1;
+    this.warming?.abort();
     for (const running of this.runningTools) running.abort();
     const skipped = this.endSkipped;
     this.clearSkippedEnd();
@@ -225,7 +235,42 @@ export class DurableAgentLoop implements AgentLoop {
     clearTimeout(this.skippedEndTimer);
   }
 
+  /**
+   * 新对话的第一次模型请求整段不命中服务商的前缀缓存，首字比之后的请求慢一两秒。用户点进输入框时，
+   * 用这个对话的服务商会话号、和 pi-durable 写法一样的系统消息（见 systemFirst）先发一个很短的请求，让服务商把这段开头缓存好。
+   * 系统提示词和工具要和下一次运行的一字不差，由会话层按运行开始时的规则给出（next）；对不上只是白发一次。
+   * 会话号必须和真请求一样：ChatGPT 登录的服务按它分配缓存，换了号就命中不了。
+   * 真任务一开始就取消它，有并发上限的服务商（Kimi）不能让它占着位子。
+   */
+  async warmPromptCache(next: { toolNames: readonly string[]; systemPrompt: (base: string) => string }): Promise<"sent" | "skipped" | "aborted" | "error"> {
+    await this.ready;
+    const harness = this.harness, conversation = this.conversation, model = this.modelRef;
+    if (!harness || !conversation || !model || this.busy || this.warming || Date.now() - this.modelCalledAt < PROMPT_WARM_FRESH_MS) return "skipped";
+    const warming = new AbortController();
+    const warm: { startedAt: number; endedAt?: number; outcome: string } = { startedAt: Date.now(), outcome: "running" };
+    this.warming = warming;
+    this.lastWarm = warm;
+    this.modelCalledAt = warm.startedAt;
+    const settle = (outcome: "sent" | "aborted" | "error") => { warm.endedAt = Date.now(); warm.outcome = outcome; return outcome; };
+    try {
+      const sessionId = await harness.commit(async tx => (await tx.doc(ProviderDoc, conversation.id)).sessionId, ctx);
+      const system = { role: "system" as const, content: "", sections: { instructions: `<instructions>\n${next.systemPrompt(this.base)}\n</instructions>` }, toolsAdded: this.durableTools.filter(tool => next.toolNames.includes(tool.name)).map(toToolDeclaration), timestamp: Date.now() };
+      const level = this.options.effort?.(model) ?? "off";
+      const stream = this.options.models.streamSimple(model, {
+        messages: [system, { role: "user", content: PROMPT_WARM_TEXT, timestamp: Date.now() }],
+      }, { sessionId, maxTokens: 16, signal: AbortSignal.any([warming.signal, AbortSignal.timeout(PROMPT_WARM_TIMEOUT_MS)]), ...(level === "off" ? {} : { reasoning: level }) });
+      let failed = false;
+      for await (const event of stream) if (event.type === "error") failed = true;
+      return settle(warming.signal.aborted ? "aborted" : failed ? "error" : "sent");
+    } catch {
+      return settle(warming.signal.aborted ? "aborted" : "error");
+    } finally {
+      if (this.warming === warming) this.warming = undefined;
+    }
+  }
+
   dispose(): void {
+    this.warming?.abort();
     this.listeners.clear();
     void this.harness?.close(ctx);
   }
@@ -354,9 +399,8 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private async beforeRequest(messages: readonly Message[]): Promise<{ messages: readonly Message[] } | undefined> {
-    if (!this.hooks.has("context")) return undefined;
-    const next = await this.hooks.context(messages as readonly HookMessage[]);
-    return { messages: [...next] as Message[] };
+    const next = this.hooks.has("context") ? [...await this.hooks.context(messages as readonly HookMessage[])] as Message[] : [...messages];
+    return { messages: systemFirst(next) };
   }
 
   private async configure(): Promise<void> {
@@ -392,6 +436,9 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private async submitInput(text: string, images?: ImageContent[]): Promise<void> {
+    // 准备阶段（钩子、记忆选择）还没到 busy，期间点进输入框也不该再起一次预热去挡真请求。
+    this.modelCalledAt = Date.now();
+    this.warming?.abort();
     await this.ready;
     const conversation = this.conversation;
     if (!conversation) return;
@@ -580,6 +627,7 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private observe(context: Parameters<Parameters<typeof streamThrough>[1]>[0]): void {
+    this.modelCalledAt = Date.now();
     if (!this.options.onModelRequest) return;
     try {
       const system = context.messages.find(message => message.role === "system");
@@ -588,6 +636,7 @@ export class DurableAgentLoop implements AgentLoop {
         tools: (system?.role === "system" ? system.toolsAdded ?? [] : []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
         messages: context.messages.filter(message => message.role !== "system"),
         injected: [],
+        ...(this.lastWarm ? { promptWarm: { sinceMs: Date.now() - this.lastWarm.startedAt, ms: this.lastWarm.endedAt === undefined ? null : this.lastWarm.endedAt - this.lastWarm.startedAt, outcome: this.lastWarm.outcome } } : {}),
       };
       this.options.onModelRequest(observation);
     } catch { /* 诊断只观察。 */ }
@@ -687,6 +736,16 @@ function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
   return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * pi-durable 在每次请求前才把系统提示词和工具清单写进对话，所以新对话里它们排在运行上下文和用户这句话后面，
+ * 整段请求从第二条起就和任何缓存过的开头对不上。只在发出的请求里把第一条系统消息挪到最前：
+ * pi-ai 把开头的系统消息当成 instructions 和 tools 发，固定的这段成了每次请求的共同开头。存储里的顺序不变。
+ */
+function systemFirst(messages: Message[]): Message[] {
+  const at = messages.findIndex(message => message.role === "system");
+  return at <= 0 ? messages : [messages[at]!, ...messages.slice(0, at), ...messages.slice(at + 1)];
 }
 
 function forModel(messages: readonly Message[]): Message[] {
