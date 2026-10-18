@@ -31,7 +31,9 @@ function isQueuedTask(value: unknown): value is QueuedTask {
   if (typeof value !== 'object' || value === null) return false;
   const job = value as Partial<QueuedTask>;
 
-  return isTaskActionRequest(job.request) && isTaskReceipt(job.receipt) && typeof job.title === 'string' && QUEUE_STATES.includes(job.state as QueuedTask['state']);
+  // 请求校验遇到个别畸形字段（如 forkedFrom: null）会抛错，坏记录一律当不合格。
+  try { return isTaskActionRequest(job.request) && isTaskReceipt(job.receipt) && typeof job.title === 'string' && QUEUE_STATES.includes(job.state as QueuedTask['state']); }
+  catch { return false; }
 }
 
 /** Durable admission for independent requirements. Execution still belongs to TaskDispatcher. */

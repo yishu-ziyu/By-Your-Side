@@ -1711,6 +1711,16 @@ return receipt;
 
       return;}
 
+    // 停下的另开那件点了「继续」：没接上就把原因写在它的卡片上发回去，按钮可以再点。
+    const stopped=message.type==='task_action'&&message.request.action==='resume'?this.taskQueue.get(message.request.conversationId):undefined;
+    if(message.type==='task_action'&&stopped?.state==='unknown'&&stopped.request.originConversationId){
+      const receipt=await this.dispatchTaskAction(message.request);
+
+      if(!['accepted','applied'].includes(receipt.status))this.emitReceipt({...stopped.receipt,message:`还没做完，没能接着做：${receipt.message}`,updatedAt:Date.now()});
+
+      return;
+    }
+
     if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);
 
 return;}
