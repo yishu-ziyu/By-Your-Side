@@ -17,6 +17,19 @@
 .gc-sub { font-size: var(--fs-meta); color: var(--text-tertiary); }
 .gc-body { padding: 10px 14px var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
 
+/* 可调的数：名字在左，减号、数值、加号在右；档位多时下面一条滑块。 */
+.gc-inputs { display: flex; flex-direction: column; gap: var(--s-2); }
+.gc-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px var(--s-2); }
+.gc-input .k { color: var(--text-secondary); }
+.gc-stepper { display: inline-flex; align-items: center; border: 1px solid var(--content-border); border-radius: 8px; background: var(--content-bg); }
+.gc-step { width: 28px; height: 28px; border: 0; background: none; color: var(--text-primary); font: inherit; font-size: 16px; cursor: pointer; border-radius: 7px; }
+.gc-step:hover { background: var(--content-subtle); }
+.gc-step:focus-visible, .gc-num:focus-visible, .gc-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gc-num { field-sizing: content; min-width: 2ch; padding: 0 2px; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.gc-num::-webkit-inner-spin-button, .gc-num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.gc-stepper .u { padding-left: 3px; font-size: var(--fs-meta); color: var(--text-tertiary); white-space: nowrap; }
+.gc-range { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--text-primary); }
+
 /* 数字格 */
 .gc-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; container-type: inline-size; }
 .gc-stat { display: flex; flex-direction: column; padding: var(--s-2) 10px 9px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline); }
