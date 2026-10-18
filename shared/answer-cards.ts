@@ -510,8 +510,11 @@ export function codeRanges(text: string): Array<[number, number]> {
  */
 export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean }> {
   let masked = text;
+  const plainCode = codeRanges(text);
 
+  // 代码里讲写法的 <app 不是小程序，不盖。
   for (const m of text.matchAll(/<app[\s>]/g)) {
+    if (plainCode.some(([a, b]) => m.index >= a && m.index < b) || masked.slice(m.index, m.index + 4) !== "<app") continue;
     const close = text.indexOf("</app>", m.index);
     const end = close < 0 ? text.length : close;
 

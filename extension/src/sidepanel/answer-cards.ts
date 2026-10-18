@@ -808,6 +808,8 @@ const appStates = new WeakMap<HTMLElement, string>();
 /** 已经放进 iframe 的小程序框，和收尾要摘掉的监听。 */
 const mountedApps = new Map<HTMLElement, () => void>();
 
+const mountTickets = new WeakMap<HTMLElement, symbol>();
+
 /** 小程序框的高度上下限：太矮看不全一行按钮，太高一个小程序就占满侧栏。 */
 const APP_MIN_HEIGHT = 60;
 
@@ -851,6 +853,11 @@ function appBar(box: HTMLElement, text: string, action?: { label: string; run: (
  * 报错时给「让助手修好」：用户点了才把错误发给助手，不自动发，免得用户没看就多花一轮。
  */
 async function mountApp(box: HTMLElement, say: (text: string) => boolean | void): Promise<void> {
+  // 每次挂载一张票：等开关、等存档的时候开关被关、框被换掉，旧的这次就作废，不再放进 iframe。
+  const ticket = Symbol("mount");
+  const current = () => box.isConnected && mountTickets.get(box) === ticket;
+
+  mountTickets.set(box, ticket);
   mountedApps.set(box, () => {});
   const card = box.closest<HTMLElement>(".gen-card");
   const holder = box.querySelector<HTMLElement>(":scope > .gc-app-frame");
@@ -858,7 +865,11 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
 
   if (!card || !holder) return;
 
-  if (!(await readMiniAppsOn())) {
+  const on = await readMiniAppsOn();
+
+  if (!current()) return;
+
+  if (!on) {
     const off = document.createElement("p");
     off.className = "gc-app-off";
     off.textContent = `这条回答里有一个小程序「${title}」。在「设置 → 实验功能」打开「回答里的小程序」后显示。`;
@@ -867,6 +878,8 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     return;
   }
   const saved = await readState(card);
+
+  if (!current()) return;
 
   if (saved?.app) appStates.set(card, saved.app);
   const frame = document.createElement("iframe");
@@ -970,6 +983,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
     for (const [box, release] of mountedApps) {
       release();
       mountedApps.delete(box);
+      mountTickets.delete(box);
       box.querySelector(":scope > .gc-app-frame")?.replaceChildren();
       box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", "");
     }

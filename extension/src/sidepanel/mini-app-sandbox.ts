@@ -25,7 +25,13 @@ const bridge = (state: string | null) => `<script>
   try { saved = ${JSON.stringify(state)} === null ? null : JSON.parse(${JSON.stringify(state)}); } catch { saved = null; }
   window.bys = Object.freeze({
     state: saved,
-    save(value) { try { post({ kind: "save", state: JSON.stringify(value ?? null).slice(0, 50000) }); } catch (e) { post({ kind: "error", message: "bys.save 存不下：" + e }); } },
+    save(value) {
+      let text;
+      try { text = JSON.stringify(value ?? null); } catch (e) { fail("bys.save 存不下：" + e); return; }
+      // 超过上限就不存，侧栏留着上一份；截断的 JSON 读不回来，会把好的那份也盖掉。
+      if (text.length > 50000) { fail("bys.save 存不下：超过 50KB"); return; }
+      post({ kind: "save", state: text });
+    },
     say(text) { post({ kind: "draft", text: String(text ?? "").slice(0, 500) }); },
   });
   const fail = (message) => post({ kind: "error", message: String(message).slice(0, 300) });
