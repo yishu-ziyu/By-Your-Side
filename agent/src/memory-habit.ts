@@ -33,6 +33,9 @@ export interface HabitAsk {
 
 const DISTINCT_CONVERSATIONS = 3;
 
+/** 用户自己浏览的那一天作为计数单位时的前缀。 */
+export const BROWSING_DAY = "day:";
+
 const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const MAX_KEYS = 200;
@@ -54,7 +57,9 @@ export function observe(state: HabitState, obs: HabitObservation, need = DISTINC
   // 过期的观察不再计数。
   for (const [id, at] of Object.entries(old?.seen ?? {})) if (obs.at - at <= EXPIRE_MS) seen[id] = at;
   seen[obs.conversationId] = obs.at;
-  const ask = !old?.closed && Object.keys(seen).length >= need;
+  // 对话和浏览的日子各数各的：混在一起会让 1 个对话 + 1 天浏览就够数。
+  const browsing = obs.conversationId.startsWith(BROWSING_DAY);
+  const ask = !old?.closed && Object.keys(seen).filter(id => id.startsWith(BROWSING_DAY) === browsing).length >= need;
   const habit: Habit = { text: obs.text, seen, last: obs.at };
 
   if (old?.closed || ask) habit.closed = true;

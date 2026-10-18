@@ -155,6 +155,11 @@ function noteDetachedFromTarget(sessionId: string): void {
   childSessionsByTab.get(child.parentTabId)?.delete(sessionId);
 }
 
+/** 扩展此刻是否在用调试器操作这个标签页：页面上这时的点击和输入可能是助手的。 */
+export function debuggerAttached(tabId: number): boolean {
+  return attached.has(tabId) || inFlight.has(tabId);
+}
+
 export async function ensureAttached(tabId: number): Promise<void> {
   if (attached.has(tabId)) {
     scheduleIdleDetach();

@@ -3,8 +3,8 @@
  * 同一件事出现在 BROWSE_HABIT_DAYS 个不同日子里，就用「要我记住吗」问一次。
  */
 
-/** 一天的记录：day 是本地日期 YYYY-MM-DD，lines 是这一天按时间排好的操作，一行一步。 */
-export interface BrowseDay { day: string; lines: string[] }
+/** 一天的记录：day 是本地日期 YYYY-MM-DD，lines 是这一天按时间排好的操作，一行一步；hosts 是这一天真正打开过的网站，核对模型说的网站只认它。 */
+export interface BrowseDay { day: string; lines: string[]; hosts: string[] }
 
 /** 归纳出的一件事。days 只留记录里确实有、而且这件事涉及的网站在那天出现过的日子。 */
 export interface BrowseHabit { key: string; habit: string; hosts: string[]; days: string[]; times: number }
@@ -41,7 +41,7 @@ export function isBrowseHabit(v: unknown): v is BrowseHabit {
 
 export function isBrowseHabitClientMessage(v: BrowseHabitClientMessage): boolean {
   return id(v.requestId) && Array.isArray(v.days) && v.days.length <= BROWSE_DAY_LIMIT
-    && v.days.every(d => !!d && typeof d.day === 'string' && DAY.test(d.day) && Array.isArray(d.lines) && d.lines.length <= BROWSE_LINE_LIMIT && d.lines.every(line => short(line, 400)))
+    && v.days.every(d => !!d && typeof d.day === 'string' && DAY.test(d.day) && Array.isArray(d.lines) && d.lines.length <= BROWSE_LINE_LIMIT && d.lines.every(line => short(line, 400)) && Array.isArray(d.hosts) && d.hosts.length <= 200 && d.hosts.every(host => short(host, 253)))
     && Array.isArray(v.dismissed) && v.dismissed.length <= 500 && v.dismissed.every(key => typeof key === 'string' && BROWSE_HABIT_KEY.test(key));
 }
 

@@ -1,7 +1,9 @@
 import { BROWSE_DAY_LIMIT, BROWSE_LINE_LIMIT, type BrowseDay, type BrowseHabitResult } from '../../../shared/browse-habits.js';
 import type { ClientMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
-import { BROWSE_DISMISSED_KEY, BROWSE_EVENT, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, isBrowseStep, localDay, readBrowseEvents, readDismissed, type BrowseEvent, type BrowseStep } from '../shared/browse-habits.js';
+import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_EVENT, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, isBrowseStep, localDay, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent, type BrowseStep } from '../shared/browse-habits.js';
+import { debuggerAttached } from './debugger.js';
+import { isPanelUrl } from './target-window.js';
 import { nudgeableUrl } from '../shared/nudge.js';
 
 type Deps = { send: (message: ClientMessage) => boolean; selected: () => string };
@@ -49,15 +51,21 @@ export function installBrowseHabits(deps: Deps) {
     return next;
   };
 
-  // 助手在这个标签页做事时，页面上的点击和输入是助手的，不是用户的。
-  const assistantOn = (tabId: number) => [...views.values()].some(view => view.state === 'running' && (!view.page || view.page.tabId === tabId));
+  // 助手在这个标签页做事时，页面上的点击和输入是助手的，不是用户的。助手经调试器操作页面，子任务在别的标签页也一样，所以先看调试器。
+  const assistantOn = (tabId: number) => debuggerAttached(tabId) || [...views.values()].some(view => view.state === 'running' && (!view.page || view.page.tabId === tabId));
 
   const induce = async (log: Log) => {
     const byDay = new Map<string, string[]>();
 
-    for (const event of log.events) byDay.set(event.day, [...byDay.get(event.day) ?? [], event.line]);
+    const hostsByDay = new Map<string, Set<string>>();
+
+    for (const event of log.events) {
+      byDay.set(event.day, [...byDay.get(event.day) ?? [], event.line]);
+      hostsByDay.set(event.day, (hostsByDay.get(event.day) ?? new Set()).add(event.host));
+    }
+
     const days: BrowseDay[] = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-BROWSE_DAY_LIMIT)
-      .map(([day, lines]) => ({ day, lines: lines.slice(-BROWSE_LINE_LIMIT).map(l => l.slice(0, 400)) }));
+      .map(([day, lines]) => ({ day, lines: lines.slice(-BROWSE_LINE_LIMIT).map(l => l.slice(0, 400)), hosts: [...hostsByDay.get(day) ?? []].slice(0, 200) }));
     const dismissed = readDismissed((await chrome.storage.local.get(BROWSE_DISMISSED_KEY))[BROWSE_DISMISSED_KEY]).slice(-500);
     const requestId = crypto.randomUUID();
 
@@ -80,7 +88,34 @@ export function installBrowseHabits(deps: Deps) {
     });
   };
 
-  chrome.runtime.onMessage.addListener((message, sender) => {
+  const control = (message: { action?: unknown; key?: unknown }) => withLog(async log => {
+    // 删除前发出的归纳作废：它的结果晚到也不再写回、不再问。
+    pending.clear();
+
+    if (message.action === 'clear') {
+      log.events = [];
+      log.since = 0;
+      await chrome.storage.local.remove(BROWSE_FOUND_KEY);
+
+      return;
+    }
+
+    if (message.action !== 'dismiss' || typeof message.key !== 'string') return;
+    const key = message.key;
+    const stored = await chrome.storage.local.get([BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY]);
+    await chrome.storage.local.set({
+      [BROWSE_DISMISSED_KEY]: [...readDismissed(stored[BROWSE_DISMISSED_KEY]).filter(k => k !== key), key].slice(-500),
+      [BROWSE_FOUND_KEY]: readBrowseFound(stored[BROWSE_FOUND_KEY]).filter(h => h.key !== key),
+    });
+  });
+
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message?.type === BROWSE_CONTROL && sender.id === chrome.runtime.id && isPanelUrl(sender.url)) {
+      void control(message).then(() => respond({ ok: true }), () => respond({ ok: false }));
+
+      return true;
+    }
+
     if (message?.type !== BROWSE_EVENT || sender.id !== chrome.runtime.id || !sender.tab?.id || sender.tab.incognito || sender.frameId !== 0 || !nudgeableUrl(sender.url) || !isBrowseStep(message.step)) return;
     void record(message.step, sender.tab.id, sender.url!).catch(() => {});
   });
@@ -90,9 +125,13 @@ export function installBrowseHabits(deps: Deps) {
     disconnected() { views.clear(); pending.clear(); },
     async receive(result: BrowseHabitResult) {
       // 模型没答或调用失败也是空列表：留着上一次的结果。
-      if (!pending.delete(result.requestId) || !result.habits.length) return;
-      const dismissed = readDismissed((await chrome.storage.local.get(BROWSE_DISMISSED_KEY))[BROWSE_DISMISSED_KEY]);
-      await chrome.storage.local.set({ [BROWSE_FOUND_KEY]: result.habits.filter(h => !dismissed.includes(h.key)) });
+      if (!pending.has(result.requestId) || !result.habits.length) return;
+      // 和删除排在同一队列里：删除先到就作废这次结果。
+      await withLog(async () => {
+        if (!pending.delete(result.requestId)) return;
+        const dismissed = readDismissed((await chrome.storage.local.get(BROWSE_DISMISSED_KEY))[BROWSE_DISMISSED_KEY]);
+        await chrome.storage.local.set({ [BROWSE_FOUND_KEY]: result.habits.filter(h => !dismissed.includes(h.key)) });
+      });
     },
   };
 }

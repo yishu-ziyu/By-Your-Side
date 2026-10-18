@@ -25,14 +25,32 @@ function send(step: BrowseStep): void {
 
 function fieldLabel(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string {
   const byFor = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent : '';
+  const byIds = (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).map(id => id && document.getElementById(id)?.textContent).filter(Boolean).join(' ');
 
-  return squash(el.getAttribute('aria-label') || byFor || el.closest('label')?.textContent || ('placeholder' in el ? el.placeholder : '') || el.name || el.type, 60);
+  return squash(el.getAttribute('aria-label') || byIds || byFor || el.closest('label')?.textContent || ('placeholder' in el ? el.placeholder : '') || el.name || el.type, 60);
+}
+
+/** 13–19 位数字且通过 Luhn 校验：不管栏叫什么，都当卡号。 */
+function looksLikeCard(value: string): boolean {
+  const digits = value.replace(/[\s-]/g, '');
+
+  if (!/^\d{13,19}$/.test(digits)) return false;
+  let sum = 0;
+
+  for (let i = 0; i < digits.length; i++) {
+    let d = Number(digits[digits.length - 1 - i]);
+
+    if (i % 2 === 1) d = d * 2 > 9 ? d * 2 - 9 : d * 2;
+    sum += d;
+  }
+
+  return sum % 10 === 0;
 }
 
 function secretField(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): boolean {
   if (el instanceof HTMLInputElement && el.type === 'password') return true;
 
-  return SECRET_FIELD.test(`${el.getAttribute('autocomplete') ?? ''} ${el.name} ${el.id} ${fieldLabel(el)}`);
+  return looksLikeCard(el.value) || SECRET_FIELD.test(`${el.getAttribute('autocomplete') ?? ''} ${el.name} ${el.id} ${fieldLabel(el)}`);
 }
 
 const typedField = (t: EventTarget | null): t is HTMLInputElement | HTMLTextAreaElement =>

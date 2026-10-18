@@ -13,7 +13,7 @@ import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
 import { isNamedForRequest, isRelevantMemory } from "./memory-relevance.js";
-import { dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
+import { BROWSING_DAY, dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
 import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
 interface ActiveUserTurn {
@@ -1222,7 +1222,7 @@ export class MemoryRuntime {
     }
 
     const list = reply && typeof reply === "object" && "habits" in reply && Array.isArray(reply.habits) ? reply.habits as unknown[] : [];
-    const byDay = new Map(days.map(d => [d.day, d.lines.join("\n").toLowerCase()]));
+    const hostsByDay = new Map(days.map(d => [d.day, new Set(d.hosts.map(host => host.toLowerCase()))]));
     const found: BrowseHabit[] = [];
 
     for (const item of list.slice(0, BROWSE_HABIT_LIMIT)) {
@@ -1234,8 +1234,11 @@ export class MemoryRuntime {
       const habit = h.habit.trim().replace(/[。.!！?？，,；;]+$/u, "");
 
       if (!habit || habit.length > 60 || looksSecret(habit) || found.some(f => f.key === key)) continue;
-      const hosts = (Array.isArray(h.hosts) ? h.hosts : []).filter((host): host is string => typeof host === "string" && /^[a-z0-9.-]{1,253}$/i.test(host)).map(host => host.toLowerCase()).slice(0, 16);
-      const proven = [...new Set(Array.isArray(h.days) ? h.days : [])].filter((day): day is string => typeof day === "string" && hosts.some(host => byDay.get(day)?.includes(host))).sort();
+      // 模型说的日子和网站都只认记录里真实打开过的：日子那天得开过这个网站，没开过的网站整个丢掉，免得放大记忆范围。
+      const claimed = [...new Set(Array.isArray(h.days) ? h.days : [])].filter((day): day is string => typeof day === "string" && hostsByDay.has(day));
+      const hosts = [...new Set((Array.isArray(h.hosts) ? h.hosts : []).filter((host): host is string => typeof host === "string").map(host => host.toLowerCase()))]
+        .filter(host => claimed.some(day => hostsByDay.get(day)!.has(host))).slice(0, 16);
+      const proven = claimed.filter(day => hosts.some(host => hostsByDay.get(day)!.has(host))).sort();
 
       if (!hosts.length || !proven.length) continue;
       const times = Math.max(proven.length, typeof h.times === "number" && Number.isSafeInteger(h.times) ? Math.min(h.times, 999) : 0);
@@ -1250,7 +1253,7 @@ export class MemoryRuntime {
         let ask = null;
 
         for (const day of item.days) {
-          const next = observeHabit(state, { key: item.key, text: item.habit, conversationId: `day:${day}`, at: Date.parse(`${day}T12:00:00`) || Date.now() }, BROWSE_HABIT_DAYS);
+          const next = observeHabit(state, { key: item.key, text: item.habit, conversationId: `${BROWSING_DAY}${day}`, at: Date.parse(`${day}T12:00:00`) || Date.now() }, BROWSE_HABIT_DAYS);
           state = next.state;
           ask ??= next.ask;
         }
