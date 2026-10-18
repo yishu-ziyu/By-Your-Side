@@ -2985,32 +2985,18 @@ details.run-steps summary { gap: 6px; font-size: var(--fs-ui); }
 .run-title { flex: 0 1 auto; font-size: var(--fs-read); line-height: 22px; font-weight: 400; }
 .run-title .act-verb { color: var(--text-primary); font-weight: 500; }
 .run-title .act-object { color: var(--text-tertiary); }
-/* 在想的标记：线圈小动画（run-heartbeat.ts 生成关键帧），主墨色压淡；不显示时动画自然停。 */
+/* 行首的球：在想、在看页面、在动手、在等你各一种转法，墨色用正文主色（orb.ts 的浓墨）。不显示时球自己停帧。 */
 .run-beat {
   display: none;
   width: 16px;
   height: 16px;
   flex: none;
-  color: var(--text-primary);
-  opacity: 0.55;
 }
-details.run-steps:not(.done)[data-phase="thinking"] .run-beat,
-details.run-steps:not(.done)[data-phase="waiting"] .run-beat { display: inline-flex; }
-.run-beat svg { display: block; overflow: hidden; }
-.run-beat path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transform: translate(12px, 8px);
-  stroke-dasharray: 21 200;
-  stroke-dashoffset: -23;
-  animation: runCoil var(--m-coil) linear infinite;
-}
-/* 进行中的字用正文次要色、常规字重，跟线圈一样轻；做完收成回执另有样式。 */
-details.run-steps:not(.done) .run-title .act-verb { color: var(--text-secondary); font-weight: 400; }
+details.run-steps:not(.done):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-beat { display: inline-flex; }
+.run-beat > canvas.orb-live, .run-beat > canvas.orb-settle { animation: none; }
+/* 进行中的字用正文次要色、常规字重；做完收成回执另有样式。 */
 @keyframes runBeat { to { transform: rotate(1turn); } }
+details.run-steps:not(.done) .run-title .act-verb { color: var(--text-secondary); font-weight: 400; }
 details.run-steps:not(.done)[data-phase="thinking"] .run-time,
 details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat calc(var(--d-emph) * 2) var(--e-glide) infinite;

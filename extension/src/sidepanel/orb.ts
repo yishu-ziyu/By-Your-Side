@@ -13,10 +13,10 @@ import type { RunOrbState } from "./run-orb.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
 /** 保留细节图标的三个预设，并提供主运行球的状态表现。 */
-export type OrbState = "composing" | "solving" | "connecting" | RunOrbState;
+export type OrbState = "composing" | "solving" | "connecting" | "reading" | RunOrbState;
 
 const STATE_PRESET: Partial<Record<OrbState, string>> = {
-  thinking: "solving", executing: "working", waiting: "breathing",
+  thinking: "solving", reading: "searching", executing: "working", waiting: "breathing",
 };
 
 const TERMINAL_STATES = new Set<OrbState>(["user", "completed", "failed", "stopped"]);
@@ -43,6 +43,7 @@ type OrbInstance = {
   requestedRunning: boolean;
   refreshMotion(): void;
   state: OrbState;
+  strong: boolean;
 };
 
 const instances = new Set<OrbInstance>();
@@ -69,11 +70,11 @@ function prefersDark(): boolean {
  * 取色：解析 --orb-ink 成 RGB，解析不了就退回 --text-secondary，再不行返回 null（灰色兜底）。
  * 球是细线，上色时还要乘 alpha——用次要文字色会被稀释到几乎看不见，所以单独留了 token。
  */
-function readInk(): Rgb | null {
+function readInk(token = "--orb-ink"): Rgb | null {
   const style = getComputedStyle(document.body);
 
   const raw = (
-    style.getPropertyValue("--orb-ink").trim() || style.getPropertyValue("--text-secondary").trim()
+    style.getPropertyValue(token).trim() || style.getPropertyValue("--text-secondary").trim()
   );
 
   if (!raw) return null;
@@ -91,6 +92,15 @@ function readInk(): Rgb | null {
   if (!r || !g || !b) return null;
 
   return [parseInt(r, 16), parseInt(g, 16), parseInt(b, 16)];
+}
+
+let cachedStrong: Rgb | null | undefined;
+
+/** 过程行的球只有 16px：用正文主色，--orb-ink 在这么小的尺寸下糊成一片浅灰。 */
+function strongInk(): Rgb | null {
+  if (cachedStrong === undefined) cachedStrong = readInk("--text-primary");
+
+  return cachedStrong;
 }
 
 function ink(): Rgb | null {
@@ -115,8 +125,12 @@ function shade(color: Rgb | null, white: number, alpha: number, dark: boolean): 
   return `rgba(${color[0]},${color[1]},${color[2]},${(alpha * (1 - v)).toFixed(3)})`;
 }
 
+/** 浓墨：白度压到一半以下、透明度和点线略加，16px 下每颗点仍分得清。 */
+const STRONG = { white: 0.45, alpha: 1.3, line: 1.2, dot: 1.15 };
+
 function paint(o: OrbInstance, engineT: number): void {
-  const color = ink();
+  const color = o.strong ? strongInk() : ink();
+  const weight = o.strong ? STRONG : { white: 1, alpha: 1, line: 1, dot: 1 };
   const dark = prefersDark();
   const frameOf = MODE_FRAMES[o.preset.mode];
 
@@ -128,8 +142,8 @@ function paint(o: OrbInstance, engineT: number): void {
   ctx.clearRect(0, 0, GEOM, GEOM);
 
   for (const line of frame.lines) {
-    ctx.strokeStyle = shade(color, line.white, line.a ?? 1, dark);
-    ctx.lineWidth = line.w;
+    ctx.strokeStyle = shade(color, line.white * weight.white, Math.min(1, (line.a ?? 1) * weight.alpha), dark);
+    ctx.lineWidth = line.w * weight.line;
     ctx.beginPath();
     ctx.moveTo(line.x1, line.y1);
     ctx.lineTo(line.x2, line.y2);
@@ -137,9 +151,9 @@ function paint(o: OrbInstance, engineT: number): void {
   }
 
   for (const dot of frame.dots) {
-    ctx.fillStyle = shade(color, dot.white, dot.a ?? 1, dark);
+    ctx.fillStyle = shade(color, dot.white * weight.white, Math.min(1, (dot.a ?? 1) * weight.alpha), dark);
     ctx.beginPath();
-    ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
+    ctx.arc(dot.x, dot.y, dot.r * weight.dot, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -176,6 +190,7 @@ function bindTheme(): void {
   });
   window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
     inkResolved = false;
+    cachedStrong = undefined;
 
     for (const o of instances) {
       if (!o.running) paintStill(o);
@@ -195,7 +210,7 @@ export type OrbHandle = {
  * 建一个球。state 决定形态，box 是 CSS 像素直径。
  * 返回的 canvas 直接塞进目标容器；不跑的时候它只是一张静止的画。
  */
-export function createOrb(state: OrbState, box = 20): OrbHandle {
+export function createOrb(state: OrbState, box = 20, strong = false): OrbHandle {
   bindTheme();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const canvas = document.createElement("canvas");
@@ -219,6 +234,7 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
     box,
     dpr,
     running: false,
+    strong,
   };
 
   canvas.dataset.orbState = state;
