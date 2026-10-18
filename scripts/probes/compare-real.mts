@@ -1,4 +1,5 @@
 // npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn] [--record]
+// --compose-ms=N: click into the input and wait N ms before typing, like a user composing (daily median ~5 s); the task timer starts after it.
 // --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
 // --reply=可以 (ext only): when the assistant stops to ask (a partial delivery, or a reply ending in a question), send this reply in the same conversation once; rounds and calls add up.
 // --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md). --record (ext only): records the side panel and the starting tab of each ask as mp4.   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
@@ -18,6 +19,7 @@ const record = process.argv.includes("--record");
 const reply = process.argv.find((a) => a.startsWith("--reply="))?.slice(8);
 const MODEL = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? "openai-codex/gpt-6-luna";
 const think = process.argv.find((a) => a.startsWith("--think="))?.slice(8);
+const composeMs = Number(process.argv.find((a) => a.startsWith("--compose-ms="))?.slice(13) ?? 0);
 const splitArg = process.argv.find((a) => a.startsWith("--split="))?.slice(8);
 const START = "https://example.com/";
 const dec = (u: string) => { try { return decodeURIComponent(u); } catch { return u; } };
@@ -253,6 +255,12 @@ async function writeStatus(id: string, state: string, detail?: string) {
 <table><tr><th>任务</th>${arms.map((a) => `<th>${a === "ext" ? "我们的扩展" : "Codex + ego"}</th>`).join("")}</tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${arms.map((a) => cell(id, all[a][id])).join("")}</tr>`).join("")}</table>`);
 }
 
+// Page.bringToFront 在 macOS 上会把测试 Chrome 推到最前、抢走用户的焦点；只在窗口内切到这个标签页。
+async function showUserTab(rp: any, user: string, sw: string) {
+  const url = String(await rp.evaluate(user, "location.href"));
+  await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => { const t = ts.filter(t => (t.url || t.pendingUrl) === ${JSON.stringify(url)}).at(-1); return t ? chrome.tabs.update(t.id, { active: true }).then(() => true) : false; })`);
+}
+
 // ---------- ext arm ----------
 async function runExt(task: Task, id: string, dir: string) {
   const cookies = task.login === "memos" ? [{ ...(await memosSignIn()).cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] : [];
@@ -267,12 +275,13 @@ async function runExt(task: Task, id: string, dir: string) {
     await sleep(300);
     if (!(await chip()).includes(think)) throw new Error(`没选上${think}：${await chip()}`);
     }
-    await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
+    await showUserTab(rp, user, sw); await sleep(600);
 
     const traceLines = () => readTrace(rp, panel);
     let seenLines = 0;
     // One task in the current conversation; trace lines are cumulative, so each ask takes only the lines after the previous one.
     const ask = async (prompt: string, probeCode: string | undefined, tag: string) => {
+      if (composeMs) { await rp.click(panel, "#input"); await sleep(composeMs); }
       const t0 = Date.now();
       const stops = record ? [await recordScreen(rp.cdp, panel, join(dir, `panel${tag}.mp4`)), await recordScreen(rp.cdp, user, join(dir, `page${tag}.mp4`))] : [];
       await send(rp, panel, prompt);
@@ -313,7 +322,7 @@ async function runExt(task: Task, id: string, dir: string) {
     await writeFile(join(dir, "trace-learn.jsonl"), (await traceLines()).split("\n").filter((l) => l.includes('"site_notes"')).join("\n") + "\n");
     await rp.click(panel, "#conversation-new"); await sleep(800);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#messages .msg.assistant")'), 30_000, "new conversation");
-    await rp.cdp.send("Page.bringToFront", {}, user); await sleep(600);
+    await showUserTab(rp, user, sw); await sleep(600);
     const sib = task.second ?? { prompt: task.prompt, probe: task.probe, check: task.check };
     const second = await ask(sib.prompt, sib.probe ?? task.probe, "-2");
     return { ...first, second: { ...second, reason: sib.check({ answer: second.answer, tabs: second.tabs, probe: second.probe, truth: {} }) } };
