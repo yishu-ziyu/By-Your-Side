@@ -23,6 +23,7 @@
 - Pi 自带 npm-shrinkwrap，所以项目级 override 盖不住 Pi 的依赖版本。要在干净 `npm ci` 后用 `npm ls` 核对。
 - 在 worktree 里不要把整个 `node_modules` 指回主树：`@sideagent` 的链接会解析回主树源码，扩展构建里的代理部分就成了主树的旧代码，而类型检查照样通过。
   要建真实的 `node_modules` 目录：其他包逐个链回主树，`@sideagent/agent` 和 `@sideagent/extension` 链到 worktree 自己（10-11 任务 2 踩过）。`npm run task` 开工作树时会这样建好。
+- 在 worktree 里不要直接 `npm install`：它会顺着链接改主树的 `node_modules`，把主树的包改名成隐藏目录后报错退出（10-18 踩过，主树 63 个包要手动改回）。加依赖用 `npm install --package-lock-only --save-exact <包>@<版本> -w <工作区>` 只改 package.json 和锁文件，本地构建要用的包按真实目录复制进 worktree 自己的 `node_modules`。
 
 ## 前提小实验
 
