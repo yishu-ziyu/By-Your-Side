@@ -3219,6 +3219,13 @@ function activeTabContext(): PageContext | undefined {
 /** 另开出去的会话 → 发起它的会话。 */
 const separateAskOrigins = new Map<string, string>();
 
+/** 停下的另开那件接着做：页面由后台按它自己保留的那页补上；那页已关才用你正看着的这页。 */
+function resumeSeparateAsk(receipt: TaskReceipt): boolean {
+  const context = activeTabContext();
+
+  return send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: receipt.runId, ...(context ? { context } : {}) } });
+}
+
 /** 当前会话里另开的一件事：在自己的会话和后台标签页里做，回答带回这里显示。 */
 function isSeparateAsk(receipt: TaskReceipt): boolean {
   return receipt.source === "text" && receipt.action === "start" && receipt.originConversationId === selectedConversationId && receipt.conversationId !== selectedConversationId;
@@ -3244,6 +3251,8 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   state.className = "separate-ask-state";
   // 重启后暂停的要求也是 queued，但不会自己开始：照宿主的原话说，并给「继续」。
   const paused = receipt.status === "queued" && /连接(已重启|断开)/.test(receipt.message);
+  // 做到一半扩展后台重启、没能自动接着做：照宿主的原话说停下了，并给「继续」。
+  const stopped = receipt.status === "unknown" && !receipt.result;
   state.textContent = receipt.result ? "已完成" : paused ? receipt.message : receipt.status === "queued" ? "排队中" : receipt.status === "accepted" ? "正在做，不打断当前任务" : receipt.message;
   head.append(tag, state);
   root.append(head);
@@ -3268,6 +3277,15 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
     resume.textContent = "继续";
     // 带页面的待办要在原页面上继续，宿主会核对你现在看着的是不是那一页。
     resume.onclick = () => { resume.disabled = true; const context = activeTabContext(); if (!send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: null, ...(context ? { context } : {}) } })) resume.disabled = false; };
+    actions.append(resume);
+  }
+
+  if (stopped) {
+    const resume = document.createElement("button");
+    resume.type = "button";
+    resume.textContent = "继续";
+    // 接上或被拒都会发回一张新卡片替换这张；一直没回音（例如转发途中断了连接）就让按钮恢复可点。
+    resume.onclick = () => { resume.disabled = true; if (!resumeSeparateAsk(receipt)) resume.disabled = false; else setTimeout(() => { resume.disabled = false; }, 15_000); };
     actions.append(resume);
   }
 

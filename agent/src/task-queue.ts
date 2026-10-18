@@ -16,6 +16,26 @@ const MERGED = '已并回上一件';
 /** 另开那件已经并回上一件：之后它停下的结局、重复的并回都不再改写它。 */
 export const isMerged = (job: QueuedTask): boolean => job.receipt.message === MERGED;
 
+/** 另开那件做到一半时扩展后台重启：它停在检查点，能安全接着做时由自动续做接上（见 resumeSeparate）。 */
+const STOPPED = '扩展后台重启，这件事停下了，还没做完。';
+
+/** 没有本机目录的宿主（扩展）用它存队列：启动前已读进内存，写入在后台。 */
+export interface TaskQueuePersistence {
+  load(): readonly unknown[];
+  save(jobs: QueuedTask[]): void;
+}
+
+const QUEUE_STATES: ReadonlyArray<QueuedTask['state']> = ['queued', 'suspended', 'starting', 'running', 'completed', 'cancelled', 'failed', 'unknown'];
+
+function isQueuedTask(value: unknown): value is QueuedTask {
+  if (typeof value !== 'object' || value === null) return false;
+  const job = value as Partial<QueuedTask>;
+
+  // 请求校验遇到个别畸形字段（如 forkedFrom: null）会抛错，坏记录一律当不合格。
+  try { return isTaskActionRequest(job.request) && isTaskReceipt(job.receipt) && typeof job.title === 'string' && QUEUE_STATES.includes(job.state as QueuedTask['state']); }
+  catch { return false; }
+}
+
 /** Durable admission for independent requirements. Execution still belongs to TaskDispatcher. */
 export class TaskQueue {
   private readonly jobs = new Map<string, QueuedTask>();
@@ -23,6 +43,7 @@ export class TaskQueue {
   private repump = false;
   constructor(private readonly options: {
     directory?: string;
+    persist?: TaskQueuePersistence;
     maxRunning: number;
     maxWaiting: number;
     enabled?: () => boolean;
@@ -31,6 +52,13 @@ export class TaskQueue {
     execute: (request: TaskActionRequest) => Promise<TaskReceipt>;
     changed: (job: QueuedTask) => void;
   }) {
+    if (options.persist) {
+      // 存储里读出的是外部数据：坏的那条跳过，不让整个宿主起不来。
+      for (const job of options.persist.load()) if (isQueuedTask(job)) this.restore(job);
+
+      return;
+    }
+
     if (!options.directory) {
       return;
     }
@@ -38,24 +66,14 @@ export class TaskQueue {
     mkdirSync(options.directory, { recursive: true, mode: 0o700 });
 
     try {
-      const records = readdirSync(options.directory).filter(f => f.endsWith('.json')).map(f => JSON.parse(readFileSync(join(options.directory!, f), 'utf8')) as QueuedTask);
+      const records = readdirSync(options.directory).filter(f => f.endsWith('.json')).map(f => JSON.parse(readFileSync(join(options.directory!, f), 'utf8')) as unknown);
 
       for (const job of records) {
-        if (!isTaskActionRequest(job?.request) || !isTaskReceipt(job?.receipt) || !['queued', 'suspended', 'starting', 'running', 'completed', 'cancelled', 'failed', 'unknown'].includes(job.state)) {
+        if (!isQueuedTask(job)) {
           throw Error('Invalid task queue entry');
         }
 
-        // A restarted host must not repeat an external action or silently resume an old page request.
-        if (job.state === 'queued') {
-          job.state = 'suspended';
-          job.receipt = { ...job.receipt, status: 'queued', message: '连接已重启，这项待办尚未启动；原要求已保留，明确继续后才重新安排。' };
-        }
-        else if (['starting', 'running'].includes(job.state)) {
-          job.state = 'unknown';
-          job.receipt = { ...job.receipt, status: 'unknown', message: '连接已重启，这项要求已保留；请核对后重新安排，不会自动重做。' };
-        }
-
-        this.jobs.set(job.request.conversationId, job);
+        this.restore(job);
       }
     }
     catch (error) {
@@ -64,6 +82,26 @@ export class TaskQueue {
       }
     }
   }
+  /**
+   * A restarted host must not repeat an external action or silently resume an old page request.
+   * 改写的收条带新的 updatedAt：后台按它去重，沿用旧时间会被当成旧消息丢掉，侧栏停在重启前的样子。
+   */
+  private restore(job: QueuedTask) {
+    const updatedAt = Date.now();
+
+    if (job.state === 'queued') {
+      job.state = 'suspended';
+      job.receipt = { ...job.receipt, status: 'queued', message: '连接已重启，这项待办尚未启动；原要求已保留，明确继续后才重新安排。', updatedAt };
+    }
+    else if (['starting', 'running'].includes(job.state)) {
+      job.state = 'unknown';
+      job.receipt = job.request.originConversationId && job.request.source === 'text'
+        ? { ...job.receipt, status: 'unknown', message: STOPPED, updatedAt }
+        : { ...job.receipt, status: 'unknown', message: '连接已重启，这项要求已保留；请核对后重新安排，不会自动重做。', updatedAt };
+    }
+
+    this.jobs.set(job.request.conversationId, job);
+  }
   get(id: string) {
     return this.jobs.get(id);
   }
@@ -71,6 +109,12 @@ export class TaskQueue {
     return [...this.jobs.values()].filter(j => !origin || j.request.originConversationId === origin);
   }
   private save(job: QueuedTask, claim = false) {
+    if (this.options.persist) {
+      this.options.persist.save([...this.jobs.values()].map(j => j.request.conversationId === job.request.conversationId ? job : j));
+
+      return;
+    }
+
     if (!this.options.directory) {
       return;
     }
@@ -216,6 +260,15 @@ export class TaskQueue {
         : { ...job.receipt, status: 'failed', message: outcome.failed, updatedAt: Date.now() };
     if (receipt.status === job.receipt.status && receipt.message === job.receipt.message && receipt.result?.text === job.receipt.result?.text) return;
     this.update(job, { receipt });
+    this.options.changed(job);
+  }
+
+  /** 重启后停下的另开那件又接着做了（自动续做或用户点了继续）：卡片回到「正在做」，做完照常带回回答。 */
+  resumeSeparate(id: string): void {
+    const job = this.get(id);
+
+    if (!job?.request.originConversationId || job.state !== 'unknown' || job.receipt.message !== STOPPED) return;
+    this.update(job, { state: 'running', receipt: { ...job.receipt, status: 'accepted', message: `正在做：${job.title}`, updatedAt: Date.now() } });
     this.options.changed(job);
   }
 

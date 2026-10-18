@@ -49,7 +49,7 @@ import { PANEL_PORT_NAME, parseRedeliver, type BgToPanel, type ConnState, type P
 import type { PanelHistoryEntry, PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
-import { autoResumeIfSafe } from "./auto-resume.js";
+import { autoResumeIfSafe, rememberTaskTab, taskPageContext } from "./auto-resume.js";
 import { VoiceRelay } from "./voice-relay.js";
 import {assertBrowserDecision} from './browser-observation.js';
 import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
@@ -1324,7 +1324,7 @@ const callbacks: UplinkHandlers = {
   onServerMessage(msg) {
     reconcileControlRun();
 
-    if (msg.type === "task_view") { lastTaskViews.set(msg.view.conversationId, msg.view); void autoResumeIfSafe(msg.view, (m) => uplink.sendClientMessage(m)); }
+    if (msg.type === "task_view") { lastTaskViews.set(msg.view.conversationId, msg.view); rememberTaskTab(msg.view); void autoResumeIfSafe(msg.view, (m) => uplink.sendClientMessage(m)); }
     const knownRun=conversationSummaries.find(c=>c.id===conversationId)?.runId;
 
     if (knownRun && msg.runId && knownRun !== msg.runId && ["team_status","control_result","status","agent_event"].includes(msg.type)) return;
@@ -2206,6 +2206,15 @@ function attachPanel(port: chrome.runtime.Port) {
     switch (msg.kind) {
       case "client": {
         const wireClient = msg.msg;
+
+        // 卡片上替另开那件发的继续：它属于另一个会话，不在当前会话里记一句用户没说过的话。
+        // 侧栏收不到别的会话的任务视图，这里按它自己保留的那页补上页面，不用你正看着的这页。
+        if (wireClient?.type === "task_action" && wireClient.request.conversationId !== conversationId) {
+          const { request } = wireClient;
+          void (request.action === "resume" ? taskPageContext(request.conversationId, lastTaskViews.get(request.conversationId)) : Promise.resolve(null))
+            .then((context) => uplink.sendClientMessage(context ? { ...wireClient, request: { ...request, context } } : wireClient));
+          break;
+        }
 
         const client = wireClient?.type==='task_action' && ['start','steer','resume'].includes(wireClient.request.action)
           ? {type:wireClient.request.action==='start'?'user_message' as const:'steer' as const,text:wireClient.request.text??'继续原任务',context:wireClient.request.context,attachments:wireClient.request.attachments,conversationId}
