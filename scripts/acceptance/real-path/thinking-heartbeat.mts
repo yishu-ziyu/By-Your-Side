@@ -1,9 +1,11 @@
 /**
- * 思考标记：进行中两行不变，思考时行首是 16px 线圈小动画（照 Agent Elements 的 spiral loader）。
+ * 过程行行首的球：16px，墨色是正文主色；在想、看页面、动手、等你各一种形态（thinking-orbs 的 rubik / globe / orbits / ring）。
  *   npx tsx scripts/acceptance/real-path/thinking-heartbeat.mts --headless
- * 脚本模型：想 4 秒 → 打开页 B → 点不存在的按钮 → 想 8 秒 → 点「作品」→ 回答。
+ * 脚本模型：想 4 秒 → 打开页 B → 看一眼页面 → 读标题 → 点不存在的按钮 → 想 8 秒 → 点「作品」→ 回答。
  *   a) 想的时候第一行一直写「正在思考」，不轮换别的动词；秒数从这段开始数，第二行仍是「已做 2 步 · 1 步换了做法」。
- *   b) `.run-beat` 是 16px 的线圈：一条主墨色细线在转（runCoil 动画在跑，450ms 后露出的那段变了）；字是正文次要色、常规字重。
+ *   b) `.run-beat` 里是 16px 的球：想的时候是 rubik 形态、450ms 后画面变了；最深的点接近正文主色、几乎不透明；字是正文次要色、常规字重。
+ *   g) 切到深色模式，球用深色的正文色，同样不透明。
+ *   f) 这一轮里球按真实步骤换过形态：看页面是 globe，打开页、点按钮是 orbits。
  *   c) 进行中标题不再扫光。
  *   d) 回执是一行「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式）；收尾后墨点不再显示。
  */
@@ -30,6 +32,7 @@ const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: ASK, steps: [
     { tool: { name: "navigate", args: { url: `http://127.0.0.1:${port}/b` } }, delayMs: 4_000 },
+    { tool: { name: "snapshot", args: {} } },
     { tool: { name: "js", args: { code: "(() => document.title)()", purpose: "读出标题", readonly: true } } },
     { tool: { name: "click", args: { target: "#gone", label: "不存在的按钮" } } },
     { tool: { name: "click", args: { target: "#ok", label: "作品" } }, delayMs: 8_000 },
@@ -45,12 +48,20 @@ const READ = `(() => {
   const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
   if (!d) return null;
   const beat = d.querySelector(".run-beat");
+  const orb = beat?.querySelector("canvas");
+  let darkest = null, painted = 0, frame = "";
+  if (orb) {
+    const px = orb.getContext("2d").getImageData(0, 0, orb.width, orb.height).data;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] > 8) painted += 1;
+      if (!darkest || px[i + 3] > darkest[3]) darkest = [px[i], px[i + 1], px[i + 2], px[i + 3]];
+    }
+    frame = orb.toDataURL();
+  }
   const title = d.querySelector(".run-title");
-  const dot = beat?.querySelector("path");
   const verb = title?.querySelector(".act-verb");
   const vs = verb ? getComputedStyle(verb) : null;
   const cs = beat ? getComputedStyle(beat) : null;
-  const ds = dot ? getComputedStyle(dot) : null;
   const ts = title ? getComputedStyle(title) : null;
   const seconds = (text) => {
     const first = String(text ?? "").split(",")[0].trim();
@@ -65,17 +76,14 @@ const READ = `(() => {
     meta: d.querySelector(".run-meta")?.hidden ? "" : d.querySelector(".run-meta")?.textContent ?? "",
     phase: d.dataset.phase ?? "",
     beatDisplay: cs?.display ?? "missing",
-    beatDots: beat?.querySelectorAll("svg path").length ?? 0,
+    orbWidth: orb ? parseFloat(getComputedStyle(orb).width) : 0,
+    orbMode: orb?.dataset.orbMode ?? "",
+    orbDarkest: darkest,
+    orbPainted: painted,
+    orbFrame: frame,
+    modesSeen: window.__orbModes ?? [],
     beatWidth: cs ? parseFloat(cs.width) : 0,
     beatHeight: cs ? parseFloat(cs.height) : 0,
-    beatInk: ds?.stroke ?? "",
-    beatDuration: seconds(ds?.animationDuration),
-    beatDurationRaw: ds?.animationDuration ?? "",
-    beatName: ds?.animationName ?? "",
-    beatFold: cs?.animationName ?? "",
-    beatTransform: ds?.transform ?? "",
-    beatLeft: ds?.strokeDashoffset ?? "",
-    beatTop: ds?.strokeDasharray ?? "",
     verbColor: vs?.color ?? "",
     verbWeight: vs?.fontWeight ?? "",
     shineDuration: seconds(ts?.animationDuration),
@@ -87,7 +95,7 @@ const READ = `(() => {
 
 type Read = {
   done: boolean; title: string; time: string; meta: string; phase: string;
-  beatDisplay: string; beatDots: number; beatWidth: number; beatHeight: number; beatInk: string; beatDuration: number; beatDurationRaw: string; beatName: string; beatFold: string; beatTransform: string; beatLeft: string; beatTop: string; verbColor: string; verbWeight: string;
+  beatDisplay: string; beatWidth: number; beatHeight: number; orbWidth: number; orbMode: string; orbDarkest: number[] | null; orbPainted: number; orbFrame: string; modesSeen: string[]; verbColor: string; verbWeight: string;
   shineDuration: number; shineDurationRaw: string; shineName: string; all: string;
 };
 
@@ -100,12 +108,13 @@ try {
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "侧栏就绪");
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 380, height: 760, deviceScaleFactor: 2, mobile: false }, panel);
   await rp.cdp.send("Page.bringToFront", {}, work);
+  await rp.evaluate(panel, `(() => { window.__orbModes = []; new MutationObserver(() => { const c = [...document.querySelectorAll("#messages details.run-steps .run-beat canvas")].at(-1); const m = c?.dataset.orbMode; if (m && window.__orbModes.at(-1) !== m) window.__orbModes.push(m); }).observe(document.querySelector("#messages"), { subtree: true, childList: true, attributes: true, attributeFilter: ["data-orb-mode"] }); return true; })()`);
   await rp.click(panel, "#input");
   await rp.typeText(panel, ASK);
   await rp.pressEnter(panel);
 
   const read = async () => (await rp.evaluate(panel, READ)) as Read | null;
-  await until(async () => model.requests.filter((q) => q.rule === ASK).length >= 4 ? true : undefined, 60_000, "第 3 步结束", 50);
+  await until(async () => model.requests.filter((q) => q.rule === ASK).length >= 5 ? true : undefined, 60_000, "第 3 步结束", 50);
   const thinkingSince = Date.now();
   await sleep(2_000);
   const first = await read();
@@ -116,10 +125,18 @@ try {
   await rp.screenshot(panel, join(out, "thinking.png"));
   const think = (title: string) => title === "正在思考";
   check("a 想的时候第一行一直是「正在思考」，第二行是步数，秒数从这段开始数", !!first && think(first.title) && think(second?.title ?? "") && second?.meta === "已做 2 步 · 1 步换了做法" && Math.abs(liveSecs - elapsed) <= 1.2, { title: second?.title ?? null, time: second?.time ?? null, elapsed, meta: second?.meta ?? null, phase: second?.phase ?? null });
-  const moved = first != null && (first.beatTransform !== second?.beatTransform || first.beatLeft !== second?.beatLeft || first.beatTop !== second?.beatTop);
-  const ink = /rgba?\(\s*20\s*,\s*20\s*,\s*19/.test(first?.beatInk ?? "");
+  const moved = first != null && !!first.orbFrame && first.orbFrame !== second?.orbFrame;
+  const d0 = first?.orbDarkest;
+  const ink = !!d0 && d0[3] >= 200 && d0.slice(0, 3).every((c, i) => Math.abs(c - [20, 20, 19][i]) <= 12);
   const secondary = /rgba?\(\s*95\s*,\s*94\s*,\s*88/.test(first?.verbColor ?? "");
-  check("b 16px 线圈在转，450ms 后露出的那段变了；字是次要色、常规字重", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatDots === 1 && first.beatWidth === 16 && first.beatHeight === 16 && ink && /runCoil/.test(first.beatName) && Math.abs(first.beatDuration - 4) <= 0.05 && moved && secondary && first.verbWeight === "400", { beatDisplay: first?.beatDisplay, beatDots: first?.beatDots, beatWidth: first?.beatWidth, beatInk: first?.beatInk, beatName: first?.beatName, beatDuration: first?.beatDuration, t0: first?.beatTransform, t1: second?.beatTransform, off0: first?.beatLeft, off1: second?.beatLeft, verbColor: first?.verbColor, verbWeight: first?.verbWeight });
+  check("b 16px 的球在转（rubik），最深的点接近正文主色；字是次要色、常规字重", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatWidth === 16 && first.orbWidth === 16 && first.orbMode === "rubik" && ink && first.orbPainted > 0 && moved && secondary && first.verbWeight === "400", { beatDisplay: first?.beatDisplay, beatWidth: first?.beatWidth, orbWidth: first?.orbWidth, orbMode: first?.orbMode, darkest: d0 ?? null, painted: first?.orbPainted, moved, verbColor: first?.verbColor, verbWeight: first?.verbWeight });
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
+  await sleep(400);
+  const night = await read();
+  await rp.screenshot(panel, join(out, "thinking-dark.png"));
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, panel);
+  const n0 = night?.orbDarkest;
+  check("g 深色模式下球同样浓：最亮的点接近深色正文色、几乎不透明", !!n0 && n0[3] >= 200 && n0.slice(0, 3).every((c, i) => Math.abs(c - [238, 233, 223][i]) <= 12), { strongest: n0 ?? null, mode: night?.orbMode });
   check("c 进行中标题不再扫光", first != null && (first.shineName === "none" || first.shineName === "" || !first.shineName.includes("runShine")), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
 
   await until(async () => { const r = await read(); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);
@@ -128,6 +145,7 @@ try {
   await rp.screenshot(panel, join(out, "receipt.png"));
   const checked = await until(async () => await rp.evaluate(panel, `(() => { const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1); const t = d?.querySelector(".run-title")?.textContent ?? ""; if (!t.includes("已核对页面")) return null; const m = d.querySelector(".run-done-mark"); const p = m?.querySelector("path"); return { title: t, mark: !!m, fresh: !!m?.classList.contains("fresh"), draw: p ? getComputedStyle(p).animationName : "", color: m ? getComputedStyle(m).color : "" }; })()`), 30_000, "核对完成", 100).catch(() => null);
   check("e 核对确认做完：回执前一个绿对勾，当场一笔画出", !!checked?.mark && checked.fresh && /doneMarkDraw/.test(checked.draw) && /rgba?\(\s*67\s*,\s*133\s*,\s*88/.test(checked.color), checked);
+  check("f 球按真实步骤换形态：看页面 globe，打开页、点按钮 orbits", done.modesSeen.includes("globe") && done.modesSeen.includes("orbits"), { modesSeen: done.modesSeen });
   check("d 回执是一行「做了 3 步 · 耗时 · 核对状态」；转圈收掉", /^做了 3 步 · \d[^·]*秒 · (核对中…|已核对页面)$/.test(done.title) && done.beatDisplay === "none", { title: done.title, beatDisplay: done.beatDisplay, done: done.done });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every((c) => c.pass) ? "PASS" : "FAIL", checks, modelRequests: model.requests }, null, 2));

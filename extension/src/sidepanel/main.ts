@@ -4,7 +4,7 @@ import { attachSourceCitations, captureCitationContext, type CitationContext } f
 import { attachAnswerSources } from "./answer-sources.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
-import { answerSkeleton, paintBeatMark } from "./run-heartbeat.js";
+import { answerSkeleton } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { observeForCue } from "./cue.js";
@@ -2749,8 +2749,8 @@ const ORB_BOX_CHIP = 16;
 
 const ORB_BOX_RECEIPT = 15;
 
-/** 运行状态行的球：比 chip 略大一点，它是整条状态行唯一的"在跑"指示。 */
-const ORB_BOX_STATUS = 24;
+/** 过程行行首的球，和标题一行高。 */
+const ORB_BOX_STATUS = 16;
 
 /** 球句柄按宿主元素找回：折叠、结束时要把对应那个定格。 */
 const orbByHost = new WeakMap<HTMLElement, OrbHandle>();
@@ -2818,6 +2818,8 @@ interface RunHost {
   /** 回答位置的骨架：回答或卡片一接上就由样式收起淡出。 */
   skeleton: HTMLElement;
   lastToolName: string | null;
+  /** 在途的每一步是不是只看页面、等页面：全是才换成扫视的形态，有一步在动手就按动手画。 */
+  readingTools: Map<string, boolean>;
 }
 
 const ACTION_ICONS = {
@@ -4113,14 +4115,13 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const summary = document.createElement("summary");
   const iconBox = document.createElement("span");
   iconBox.className = "run-icon";
-  const orb = createOrb("thinking", ORB_BOX_STATUS);
+  const orb = createOrb("thinking", ORB_BOX_STATUS, true);
 
   if (!applyingHistory) orb.setRunning(true);
   const orbMark = document.createElement("span");
   orbMark.className = "run-orb-mark";
   orbMark.hidden = true;
   orbMark.setAttribute("role", "img");
-  // 过程行不放光球（#58 C）：光球只属于起始区和语音。orb 对象仍跟踪状态，不挂进页面就不画帧。
   iconBox.append(orbMark);
   const actIcon = document.createElement("span");
   actIcon.className = "run-act-icon";
@@ -4128,7 +4129,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const beat = document.createElement("span");
   beat.className = "run-beat";
   beat.setAttribute("aria-hidden", "true");
-  paintBeatMark(beat);
+  beat.append(orb.el);
   const title = document.createElement("span");
   title.className = "run-title";
   paintAction(title, `正在${loaderSubtitle(null)}`);
@@ -4205,6 +4206,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     beatEl: beat,
     skeleton,
     lastToolName: null,
+    readingTools: new Map(),
   };
   startLiveSeconds(currentRun, start);
 
@@ -4602,7 +4604,8 @@ function syncRunOrb(run: RunHost): void {
 
   // 收尾后标题由 finishRun 定稿（做了几件事），迟到的 tool_end 不再改回状态词。
   if (mark && state !== "completed" && !run.root.classList.contains("done") && run.titleEl.textContent !== mark.label) setRunTitle(run, mark.label, true);
-  run.orb.setState(state);
+  const reading = run.readingTools.size > 0 && [...run.readingTools.values()].every(Boolean);
+  run.orb.setState(state === "executing" && reading ? "reading" : state);
   run.orb.setRunning(!applyingHistory && orbStateRuns(state));
 }
 
@@ -5449,13 +5452,14 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
   const group = run.chipGroup;
 
+  const prep = isPrepTool(ev.name, ev.params);
+  run.readingTools.set(ev.toolCallId, prep);
   run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
   syncRunOrb(run);
 
   // 教学的步骤行就是这一轮的结果（用户自己点过的每一步），收尾时要留下。
   if (ev.name === "guide_step" || changesPage(ev.name, typeof ev.params.action === "string" ? ev.params.action : undefined)) run.changedPage = true;
 
-  const prep = isPrepTool(ev.name, ev.params);
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
 
   run.lastToolName = ev.name;
@@ -5531,6 +5535,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   if (run && ev.sendConfirmed) run.sendDeclined = false;
 
   if (run) {
+    run.readingTools.delete(ev.toolCallId);
     run.orbActivity.observe({ kind: "tool_end", name: "", ...ev });
     syncRunOrb(run);
   }
