@@ -175,6 +175,28 @@ function commandCodeProvider(haikuTemplate: Model<Api> | undefined): Provider {
   });
 }
 
+/**
+ * Claude 5.5 只认在同一段对话里原样回传的思考块：我们每次都会重写系统提示、工具列表和历史里的上下文段，旧思考块一回传就是 400
+ * 「Invalid `signature` in `thinking` block」。官方的放宽开关要带 anthropic-beta 头，Command Code 收到这个头就回 403，
+ * 所以按官方的另一条路：每次请求都去掉全部思考块。只去掉整类块不留缺口，所以在一轮工具调用中途去掉也合法。
+ */
+function withoutThinkingBlocks(payload: unknown): unknown {
+  if (!isRecord(payload) || !Array.isArray(payload.messages)) return undefined;
+
+  const messages = payload.messages.map((message: unknown) => {
+    if (!isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content)) return message;
+
+    return { ...message, content: message.content.filter((block: unknown) => !isRecord(block) || (block.type !== "thinking" && block.type !== "redacted_thinking")) };
+  });
+
+  // 只有思考、没有正文的回合去掉后是空内容，接口不收空的 assistant 消息。
+  return { ...payload, messages: messages.filter((message: unknown) => !isRecord(message) || !Array.isArray(message.content) || message.content.length > 0) };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 const STEPFUN_MODELS = ["step-3.7-flash", "step-3.5-flash-2603", "step-5-preview"];
 
 /**
@@ -318,7 +340,10 @@ function createCoreModelPort(
     const headers = runtime.headersFor(model);
     // 模型请求只靠我们自己的凭据。扩展有网站权限，fetch 默认会带上用户在这个网站的 cookie（比如 chatgpt.com 网页版的登录），
     // 一律不带。提前建连接（conversation-manager 的 warmUp）也用 omit：Chrome 按凭据模式分连接池，两边不一致就复用不上。
-    const merged = { ...options, fetch: omitCookies, ...(headers ? { headers: { ...options?.headers, ...headers } } : {}) };
+    const merged = {
+      ...options, fetch: omitCookies, ...(headers ? { headers: { ...options?.headers, ...headers } } : {}),
+      ...(model.provider === COMMANDCODE_PROVIDER_ID && model.api === "anthropic-messages" ? { onPayload: withoutThinkingBlocks } : {}),
+    };
 
     // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型默认先试 WebSocket，必失败再退回 SSE，每次都留一条假的连接失败。直接用 SSE。
     return model.api === "openai-codex-responses" ? { ...merged, transport: "sse" as const } : merged;
