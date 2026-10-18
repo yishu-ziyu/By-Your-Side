@@ -158,6 +158,11 @@ try {
   assert.ok(replay.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R3: prose recomputed after reopening: ${replay.prose}`);
   assert.deepEqual(replay.checks, [true, false], "R3: tick kept after reopening");
   assert.deepEqual(replay.otherChecks, [false], "R3: the other card is untouched");
+  // 深色下的样子只留截图给人看。
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
+  await rp.evaluate(panel, `document.querySelector("#messages .gen-card .gc-inputs")?.scrollIntoView({ block: "start" }), true`);
+  await sleep(300);
+  await rp.screenshot(panel, join(artifacts, "4-dark.png"));
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {

@@ -485,15 +485,15 @@ function stateOf(card: HTMLElement): CardState {
   return { vars, checks, at: Date.now() };
 }
 
-/** 用户在写完前就动过的卡片：写完时存下现在的样子，不拿旧记录盖掉。 */
+/** 用户动过的卡片：写完前动过的，写完时存下现在的样子；还原读回来之前就动过的，不拿旧记录盖掉。 */
 const touched = new WeakSet<HTMLElement>();
 
 function save(card: HTMLElement): void {
   const key = card.dataset.gcCard;
 
-  if (!key) { touched.add(card);
+  touched.add(card);
 
- return; }
+  if (!key) return;
   void chrome.storage.local.set({ [STATE_PREFIX + key]: stateOf(card) }).then(trimStates).catch(() => undefined);
 }
 

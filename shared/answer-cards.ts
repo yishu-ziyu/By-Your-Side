@@ -336,7 +336,8 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
       // 数字格的算式算不出就不画这一格：它就是给人照着做决定的数。
       if (raw.startsWith("=") && v.computed === undefined) continue;
-      const stat: Stat = { id: str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note), expr: v.expr, unit: v.unit };
+      // 和可调的数同名的 id 不要：正文里的 {=名字} 只能有一个来源。
+      const stat: Stat = { id: inputs.has(str(a.id) ?? "") ? undefined : str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note), expr: v.expr, unit: v.unit };
 
       if (str(a.tag) && !tagged) { stat.tag = str(a.tag); tagged = true; }
 
