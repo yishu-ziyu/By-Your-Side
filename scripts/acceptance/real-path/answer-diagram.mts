@@ -5,7 +5,8 @@
  * 隔离的无窗口 Chrome，只装扩展；模型是本机脚本模型，按时间写出一段含结构图的回答（图和原文各停一下）。
  * 判据（只判用户看得见的）：
  * 1. 卡片没写完时只有图的空位、没有图；写完后图一次画全：第一帧出现的方块数就是最后的方块数，不边写边长。
- * 2. 图里是模型写的那几个方块；字显示出来不小于 11px；放不下的部分能左右滑动看到。
+ * 2. 图里是模型写的那几个方块；字显示出来不小于 11px；放不下的部分能左右滑动看到；
+ *    侧栏拖宽后图整张放得下、不用滑，再拖窄字仍不小于 11px。
  * 3. 点有原文的方块，图下出现那句原文和出处；再点收起；没有原文的方块点了不出东西；键盘 Enter 也能打开。
  * 4. 深色模式：同一张图的主结论方块和文字颜色跟着换，图不重画。
  * 5. 重开侧栏：回放出来的回答里图又画出来，点方块照样出原文。
@@ -163,6 +164,19 @@ try {
   ok(s1.labels.length === 5 && s1.labels.some((l) => l.includes("挨个招募用户")) && s1.labels.some((l) => l.includes("大发布通常没用")), `2 图里是写的 5 个方块：${JSON.stringify(s1.labels)}`);
   ok(s1.svgWidth > 150 && s1.reachable, `2 图放得下，或放不下的部分能左右滑动看到：图 ${s1.svgWidth}px，框 ${s1.boxWidth}px`);
   ok(s1.font >= 11, `2 方块里的字看得清（显示出来 ≥ 11px）：${s1.font}px`);
+  const WIDE = `(() => { const c = [...document.querySelectorAll("#messages .gc-diagram-canvas")].at(-1); return { scrolls: c.scrollWidth > c.clientWidth + 1, box: c.clientWidth }; })()`;
+  await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 640, height: 900, deviceScaleFactor: 1, mobile: false }, panel);
+  await sleep(500);
+  // SAFETY: WIDE 返回这个形状。
+  const widened = { ...(await rp.evaluate(panel, WIDE) as { scrolls: boolean; box: number }), font: (await state()).font };
+  await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 300, height: 900, deviceScaleFactor: 1, mobile: false }, panel);
+  await sleep(500);
+  const narrowed = await state();
+  await rp.cdp.send("Emulation.clearDeviceMetricsOverride", {}, panel);
+  await sleep(500);
+  evidence.resize = { widened, narrowed: { font: narrowed.font, reachable: narrowed.reachable } };
+  ok(!widened.scrolls && widened.font >= 11, `2 侧栏拖宽后整张放得下、不用滑：${JSON.stringify(widened)}`);
+  ok(narrowed.font >= 11 && narrowed.reachable, `2 侧栏拖窄后字仍不小于 11px、能滑动看全：${JSON.stringify(evidence.resize)}`);
   ok(JSON.stringify(s1.cited.sort()) === JSON.stringify(["T", "X"]), `3 只有写了原文的方块可点：${JSON.stringify(s1.cited)}`);
 
   // 三、点方块看原文。

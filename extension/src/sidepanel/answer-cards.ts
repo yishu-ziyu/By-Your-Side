@@ -160,9 +160,12 @@ function wrapLabels(source: string): string {
     for (const ch of line) {
       const wide = /[\u2e80-\uffef]/.test(ch);
 
-      if (width >= LINE_UNITS && (wide || ch === " ")) { out += "<br/>"; width = 0;
+      if (width >= LINE_UNITS && (wide || ch === " ")) {
+        out += "<br/>";
+        width = 0;
 
- if (ch === " ") continue; }
+        if (ch === " ") continue;
+      }
       out += ch;
       width += wide ? 1 : 0.55;
     }
@@ -184,6 +187,22 @@ function narrower(source: string, render: Engine["render"]): string {
   }
 }
 
+/** 按图的原始宽度和现在的框宽决定缩还是滑。侧栏拖宽拖窄时 Pele 不重排流程图、也不回调，所以自己跟着框宽算。 */
+function fit(canvas: HTMLElement): void {
+  const natural = Number(canvas.dataset.natural);
+
+  if (!natural) return;
+  const wide = natural * MIN_SCALE > canvas.clientWidth;
+
+  canvas.classList.toggle("gc-diagram-wide", wide);
+  canvas.querySelector("svg")?.style.setProperty("width", wide ? `${Math.round(natural * MIN_SCALE)}px` : "");
+}
+
+const fitter = new ResizeObserver((entries) => {
+  // SAFETY: 只 observe 过 .gc-diagram-canvas 这个 HTMLElement。
+  for (const entry of entries) fit(entry.target as HTMLElement);
+});
+
 /** 画在页面上的图：Pele 每张图挂一个 ResizeObserver，图离开页面（切会话、清空）时要 destroy 掉。 */
 const mounted = new Map<HTMLElement, { destroy(): void }>();
 
@@ -191,6 +210,8 @@ function releaseDiagrams(): void {
   for (const [figure, m] of mounted) {
     if (figure.isConnected) continue;
     m.destroy();
+
+    for (const canvas of figure.querySelectorAll(".gc-diagram-canvas")) fitter.unobserve(canvas);
     mounted.delete(figure);
   }
 }
@@ -220,10 +241,8 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
     mounted.set(figure, mount(canvas, narrower(wrapLabels(source), render), {
       fontSize: 13, zoom: false, links: false, images: false, sanitize: cleanSvg, onError: fail,
       onRender: (result) => {
-        const wide = result.width * MIN_SCALE > canvas.clientWidth;
-
-        canvas.classList.toggle("gc-diagram-wide", wide);
-        canvas.querySelector("svg")?.style.setProperty("width", wide ? `${Math.round(result.width * MIN_SCALE)}px` : "");
+        canvas.dataset.natural = String(result.width);
+        fit(canvas);
 
         for (const node of canvas.querySelectorAll<SVGElement>(".pele-node[data-id], .pele-cluster[data-id]")) {
           if (!cited.has(node.dataset.id)) continue;
@@ -233,6 +252,7 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
         }
       },
     }));
+    fitter.observe(canvas);
   } catch {
     fail();
   }
