@@ -1270,7 +1270,7 @@ export class MemoryRuntime {
       const saved = await loadHabits(doc);
 
       if (saved.state.habits[key]?.closed) return false;
-      await doc.write(JSON.stringify({ ...saved, state: dismissHabit(saved.state, key) }));
+      await doc.write(JSON.stringify({ ...saved, state: dismissHabit(saved.state, key, Date.now()) }));
 
       return true;
     }).catch(() => false);
