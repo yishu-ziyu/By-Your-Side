@@ -28,6 +28,8 @@ const REPEAT_TRACKED_TOOLS = new Set(["tabs", "snapshot", "read_element", "read_
 const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。之前消息前的同类段落只是历史，现状以这一段为准。";
 const CONTINUE_TEXT = `${RUN_CONTEXT_HEADER}\n\n上一次模型调用没有完成。接着做同一件事，已经做完的工具不要再执行。`;
 const MAX_RETRIES = 2;
+/** pi-durable 认得的说法，只在它判断要不要重试时用；进入记录和界面前去掉。 */
+const RETRY_MARK = " (network error)";
 
 export interface DurableLoopOptions extends PiAgentLoopOptions {
   /** 每个会话一个存储目录。不给时只放在内存里，重载后接不上。 */
@@ -77,10 +79,12 @@ export class DurableAgentLoop implements AgentLoop {
   private ready: Promise<void>;
   private markRunEnd: (() => void) | undefined;
   private runEnd: Promise<void> = Promise.resolve();
-  /** 这一轮用户输入的原文：模型请求里它和紧挨在前面的运行上下文之前，是可以省略的旧内容。 */
+  /** 这一轮用户输入的原文：模型请求里它和紧挨在前面的运行上下文之前，是可以省略的旧内容。接着做（CONTINUE_TEXT）不换起点。 */
   private runInput: string | undefined;
   /** 超过一次窗口之后，后面的请求都先省略旧内容；没超过时不删，删会改历史前缀、丢掉缓存。 */
   private elide = false;
+  /** 这一轮的消息从 messages 的哪一位开始；agent_end 只带这一轮的，和 pi-agent-core 一样。 */
+  private runStart = 0;
 
   readonly agent: AgentLoop["agent"];
 
@@ -339,7 +343,7 @@ export class DurableAgentLoop implements AgentLoop {
       const batch = await conversation.entries({}, 200, cursor, ctx);
       for (const entry of batch.items) {
         const message = entry.model?.[0];
-        if (message && message.role !== "system") loaded.push({ id: entry.id, message: message as AgentMessage });
+        if (message && message.role !== "system") loaded.push({ id: entry.id, message: withoutRetryMark(message) as AgentMessage });
       }
       if (!batch.next) break;
       cursor = batch.next;
@@ -360,7 +364,7 @@ export class DurableAgentLoop implements AgentLoop {
     }
     for (const message of this.pendingNext.splice(0)) await this.writeUser(customText(message.content));
     await this.configure();
-    this.runInput = text;
+    if (text !== CONTINUE_TEXT) this.runInput = text;
     const content = images?.length ? [{ type: "text" as const, text }, ...images] : text;
     this.prompts += 1;
     this.busy = true;
@@ -391,7 +395,15 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private async onDurable(event: DurableEvent): Promise<void> {
-    if (event.type === "run_start") { this.busy = true; this.emit({ type: "agent_start" }); return; }
+    if (event.type === "run_start") {
+      // 这一轮的输入在 run_start 之前已经写进 messages。
+      let start = this.messages.length;
+      while (start > 0 && (this.messages[start - 1]!.role === "user" || this.messages[start - 1]!.role === "custom")) start -= 1;
+      this.runStart = start;
+      this.busy = true;
+      this.emit({ type: "agent_start" });
+      return;
+    }
     if (event.type === "turn_start") { this.emit({ type: "turn_start" }); return; }
     if (event.type === "turn_end") {
       const message = this.lastAssistant ?? this.messages.at(-1);
@@ -420,7 +432,7 @@ export class DurableAgentLoop implements AgentLoop {
     }
     if (event.type === "tool_execution_end") { this.onToolEnd(event.toolCallId, event.toolName, event.entry); return; }
     if (event.type === "auto_retry_start") {
-      this.emit({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: MAX_RETRIES, delayMs: Math.max(0, event.at - Date.now()), errorMessage: event.errorMessage });
+      this.emit({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: MAX_RETRIES, delayMs: Math.max(0, event.at - Date.now()), errorMessage: event.errorMessage.replace(RETRY_MARK, "") });
       return;
     }
     if (event.type === "auto_retry_end") { this.emit({ type: "auto_retry_end", success: true, attempt: event.attempt }); return; }
@@ -482,8 +494,12 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private async onMessageEnd(entry: EntryRecord): Promise<void> {
-    const message = entry.model?.[0];
-    if (!message || message.role === "system") return;
+    const stored = entry.model?.[0];
+    if (!stored || stored.role === "system") return;
+    const message = withoutRetryMark(stored);
+    // 自动重试成功后，前一条出错的回复不再算这一轮的结果：旧核心重试前就把它从历史里拿掉了。
+    const previous = this.messages.at(-1);
+    if (message.role === "assistant" && previous?.role === "assistant" && previous.stopReason === "error") this.messages.pop();
     this.messages.push(message as AgentMessage);
     this.options.persistence?.appendMessage(message as AgentMessage);
     if (message.role === "assistant") this.emitUnsent(message);
@@ -499,7 +515,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   private async onRunEnd(): Promise<void> {
     await this.flushPersistence();
-    const end: AgentSessionEvent = { type: "agent_end", messages: [...this.messages], willRetry: false };
+    const end: AgentSessionEvent = { type: "agent_end", messages: this.messages.slice(this.runStart), willRetry: false };
     this.busy = false;
     this.emit(end);
     this.markRunEnd?.();
@@ -549,11 +565,14 @@ function textOf(message: Message): string {
   return typeof message.content === "string" ? message.content : message.content.map(part => part.type === "text" ? part.text : "").join("");
 }
 
-/** 这一轮在请求里从哪条开始：用户输入那条，前面紧挨着的运行上下文也算这一轮。找不到时为 -1，不省略。 */
+/**
+ * 这一轮在请求里从哪条开始：用户输入那条，前面紧挨着的运行上下文也算这一轮。
+ * 重开后从存储接着做时不知道原文，取最后一条用户自己的话（可能是一句插话，只会多省略这一轮更早的内容）。
+ */
 function runFloor(messages: readonly Message[], input: string | undefined): number {
-  if (input === undefined) return -1;
+  const isInput = (message: Message) => message.role === "user" && (input === undefined ? !textOf(message).startsWith(RUN_CONTEXT_HEADER) : textOf(message) === input);
   let at = messages.length - 1;
-  while (at >= 0 && !(messages[at]!.role === "user" && textOf(messages[at]!) === input)) at -= 1;
+  while (at >= 0 && !isInput(messages[at]!)) at -= 1;
   return at > 0 && textOf(messages[at - 1]!).startsWith(RUN_CONTEXT_HEADER) ? at - 1 : at;
 }
 
@@ -598,19 +617,23 @@ function elideBefore(messages: readonly Message[], floor: number): Message[] | n
 
 /**
  * pi-durable 只按 pi-ai 的说法判断能不能重试。扩展里断网报「Failed to fetch」、服务商用中文说并发满了、工具参数写跑了，
- * 这些我们也当暂时错误，在错误后面补一个它认得的词。
+ * 这些我们也当暂时错误，在错误后面补一个它认得的词（RETRY_MARK）。
  */
 function retryable(stream: AssistantMessageEventStream): AssistantMessageEventStream {
   const out = createAssistantMessageEventStream();
   void (async () => {
     for await (const event of stream) {
       if (event.type === "error" && event.reason === "error" && isTransientModelError(event.error) && !isRetryableAssistantError(event.error)) {
-        out.push({ ...event, error: { ...event.error, errorMessage: `${event.error.errorMessage ?? ""} (network error)` } });
+        out.push({ ...event, error: { ...event.error, errorMessage: `${event.error.errorMessage ?? ""}${RETRY_MARK}` } });
       } else out.push(event);
     }
     out.end();
   })();
   return out;
+}
+
+function withoutRetryMark<T extends Message>(message: T): T {
+  return message.role === "assistant" && message.errorMessage?.endsWith(RETRY_MARK) ? { ...message, errorMessage: message.errorMessage.slice(0, -RETRY_MARK.length) } : message;
 }
 
 function stableJson(value: unknown): string {
