@@ -1,5 +1,6 @@
 import type { ConversationSummary } from "../../shared/protocol.js";
 import type { ReadingTranscript } from "../../shared/reading.js";
+import type { TaskQueuePersistence } from "./task-queue.js";
 
 /**
  * 会话目录的持久化接口：本机伴随进程写文件（conversation-store.ts），扩展内 agent 写 IndexedDB。
@@ -14,4 +15,6 @@ export interface ConversationPersistence {
    * 本机由 sessionManager 从 reading.json 播种，不提供，避免交接内容重复。
    */
   readingFor?(id: string): ReadingTranscript | undefined;
+  /** 没有本机目录的宿主才提供：另开一件的记录随会话一起留下，重启后卡片和回答还能对上。 */
+  taskQueue?: TaskQueuePersistence;
 }
