@@ -7,13 +7,21 @@
  * - 卡片里有算式时，卡片写完后，正文里不在卡片里的金额换成「见下方卡片」，不让心算错的数留在结论句里。
  */
 
-export type Stat = { id?: string; label: string; value: string; formula?: string; note?: string; tag?: string; computed?: number };
+/** expr：引用了可调的数的算式原文（如 68*months+398），用户改数时侧栏按它重算；只有常数的算式没有 expr。 */
+export type Stat = { id?: string; label: string; value: string; formula?: string; note?: string; tag?: string; computed?: number; expr?: string; unit?: string };
+
+/** 用户能在卡片上调的数：算式用 id 引用它。 */
+export type CardInput = { id: string; label: string; value: number; min: number; max: number; step: number; unit?: string };
+
+/** 选项的价、表格格子：值和可重算的算式。 */
+export type Cell = { value: string; expr?: string; unit?: string };
 
 export type Block =
+  | { kind: "inputs"; items: CardInput[] }
   | { kind: "stats"; items: Stat[] }
   | { kind: "steps"; items: Array<{ title: string; detail?: string }> }
-  | { kind: "options"; items: Array<{ name: string; meta?: string; value?: string; why: string; pick: boolean }> }
-  | { kind: "table"; cols: string[]; rows: Array<{ cells: string[]; tag?: string }> }
+  | { kind: "options"; items: Array<{ name: string; meta?: string; value?: Cell; why: string; pick: boolean }> }
+  | { kind: "table"; cols: string[]; rows: Array<{ cells: Cell[]; tag?: string }> }
   | { kind: "checks"; items: Array<{ text: string; note?: string }> }
   | { kind: "callout"; tone: "info" | "warn"; text: string }
   | { kind: "diagram"; source: string; cites: Record<string, { text: string; from?: string }> };
@@ -23,7 +31,8 @@ export type CardButton = { label: string; tab?: string; primary: boolean };
 /** 卡片末尾已经开了头、还没写完的组件：tag 是标签名，written 是已写出的属性原文（侧栏据此放尺寸接近的空位）。 */
 export type PendingComponent = { tag: "stat" | "step" | "option" | "table" | "tr" | "check" | "callout" | "diagram"; written: string };
 
-export type Card = { title: string; sub?: string; blocks: Block[]; buttons: CardButton[]; source?: string; closed: boolean; numbers: Set<string>; values: Map<string, string>; formulas: boolean; pending?: PendingComponent };
+/** key：整张卡原文的摘要，用户在卡片上调过、勾过的状态按它存。 */
+export type Card = { key: string; title: string; sub?: string; blocks: Block[]; buttons: CardButton[]; source?: string; closed: boolean; numbers: Set<string>; values: Map<string, string>; formulas: boolean; pending?: PendingComponent };
 
 export type AnswerPart = { prose: string } | { card: Card | undefined };
 
@@ -47,72 +56,140 @@ function attrsOf(source: string): Attrs {
 
 const str = (v: string | true | undefined) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
-/** 只认数字、+ − × ÷ 和括号的小解析器：扩展页面的 CSP 不允许动态求值。 */
+/** 算式里能用的函数；可调的数不能用这些名字。 */
+const FUNCS: Record<string, (...a: number[]) => number> = {
+  min: Math.min, max: Math.max, abs: Math.abs, floor: Math.floor, ceil: Math.ceil,
+  round: (x, digits = 0) => Math.round(x * 10 ** digits) / 10 ** digits,
+};
+
+/**
+ * 算式的小解析器：扩展页面的 CSP 不允许动态求值。认数字、+ − × ÷、^、括号、比较（结果 1 或 0）、条件 a ? b : c、FUNCS 里的函数。
+ * 乘方和条件是给房贷月供、分档折扣这类算式用的：真模型想写，但写不出来就只能心算。
+ */
 export function calc(expression: string): number | undefined {
-  const s = expression.replace(/[−–]/g, "-").replace(/×/g, "*").replace(/÷/g, "/").replace(/,/g, "").replace(/\s+/g, "");
+  const s = expression.replace(/[−–]/g, "-").replace(/×/g, "*").replace(/÷/g, "/").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/\s+/g, "");
+  // 逗号：有函数时是参数分隔，没有时是千分位。
+  const t = /[a-z]\(/.test(s) ? s : s.replace(/,/g, "");
   let i = 0;
-  const number = (): number => {
-    const m = /^\d+(?:\.\d+)?/.exec(s.slice(i));
+  const eat = (token: string) => (t.startsWith(token, i) ? ((i += token.length), true) : false);
+  const expect = (token: string) => { if (!eat(token)) throw new Error(token); };
+  const atom = (): number => {
+    if (eat("(")) {
+      const v = ternary();
+
+      expect(")");
+
+      return v;
+    }
+    const name = /^[a-z]+(?=\()/.exec(t.slice(i))?.[0];
+
+    if (name) {
+      const fn = FUNCS[name];
+
+      if (!fn) throw new Error(name);
+      i += name.length + 1;
+      const args = [ternary()];
+
+      while (eat(",")) args.push(ternary());
+      expect(")");
+
+      return fn(...args);
+    }
+    const m = /^\d+(?:\.\d+)?|^\.\d+/.exec(t.slice(i));
 
     if (!m) throw new Error("number");
     i += m[0].length;
 
     return Number(m[0]);
   };
-  const factor = (): number => {
-    if (s[i] === "(") {
-      i += 1;
-      const v = sum();
+  const unary = (): number => (eat("-") ? -unary() : eat("+") ? unary() : power());
+  // 右结合：2^3^2 = 2^9；-2^2 = -(2^2)。
+  const power = (): number => {
+    const base = atom();
 
-      if (s[i] !== ")") throw new Error(")");
-      i += 1;
-
-      return v;
-    }
-
-    if (s[i] === "-") { i += 1;
-
- return -factor(); }
-
-    return number();
+    return eat("^") ? base ** unary() : base;
   };
   const product = (): number => {
-    let v = factor();
+    let v = unary();
 
-    while (s[i] === "*" || s[i] === "/") {
-      const op = s[i];
-      i += 1;
-      const r = factor();
-      v = op === "*" ? v * r : v / r;
+    for (;;) {
+      if (eat("*")) v *= unary();
+      else if (eat("/")) v /= unary();
+      else return v;
     }
-
-    return v;
   };
   const sum = (): number => {
     let v = product();
 
-    while (s[i] === "+" || s[i] === "-") {
-      const op = s[i];
-      i += 1;
-      const r = product();
-      v = op === "+" ? v + r : v - r;
+    for (;;) {
+      if (eat("+")) v += product();
+      else if (eat("-")) v -= product();
+      else return v;
+    }
+  };
+  const compare = (): number => {
+    const a = sum();
+
+    for (const [op, test] of [[">=", (x: number, y: number) => x >= y], ["<=", (x: number, y: number) => x <= y], ["==", (x: number, y: number) => x === y], ["!=", (x: number, y: number) => x !== y], [">", (x: number, y: number) => x > y], ["<", (x: number, y: number) => x < y]] as const) {
+      if (eat(op)) return test(a, sum()) ? 1 : 0;
     }
 
-    return v;
+    return a;
+  };
+  const ternary = (): number => {
+    const c = compare();
+
+    if (!eat("?")) return c;
+    const yes = ternary();
+
+    expect(":");
+    const no = ternary();
+
+    return c ? yes : no;
   };
 
   try {
-    const v = sum();
+    const v = ternary();
 
-    return i === s.length && Number.isFinite(v) ? Math.round(v * 100) / 100 : undefined;
+    return i === t.length && Number.isFinite(v) ? Math.round(v * 100) / 100 : undefined;
   } catch {
     return undefined;
   }
 }
 
+/** 可调的数的名字：字母或下划线开头。 */
+const NAME = /[A-Za-z_]\w*/g;
+
+/** 把算式里可调的数的名字换成当前值再算；有不认识的名字就算不出。 */
+export function evaluate(expression: string, vars: ReadonlyMap<string, number>): number | undefined {
+  let unknown = false;
+  const s = expression.replace(NAME, (name) => {
+    if (name in FUNCS) return name;
+    const v = vars.get(name);
+
+    if (v === undefined) unknown = true;
+
+    // 负数加括号：x^2 在 x = −2 时是 4，不是 -2^2 = −4。
+    return v !== undefined && v < 0 ? `(${v})` : String(v);
+  });
+
+  return unknown ? undefined : calc(s);
+}
+
+/** 算式里出现了哪个可调的数。 */
+const usesVars = (expression: string, vars: ReadonlyMap<string, number>) => [...expression.matchAll(NAME)].some((m) => vars.has(m[0]));
+
+/** 给人看的算式：名字换成当前值，运算符换成 × ÷。 */
+export function showFormula(expression: string, vars: ReadonlyMap<string, number>): string {
+  return prettyFormula(expression.replace(NAME, (name) => (name in FUNCS ? name : String(vars.get(name) ?? name))));
+}
+
+/** 算出的数加千分位和单位。 */
+export const showValue = (n: number, unit?: string) => withUnit(formatNumber(n), unit);
+
 const formatNumber = (n: number) => n.toLocaleString("zh-CN", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 
-const prettyFormula = (f: string) => f.replace(/\s+/g, "").replace(/\*/g, " × ").replace(/\//g, " ÷ ").replace(/\+/g, " + ").replace(/(\d|\))-/g, "$1 − ");
+const prettyFormula = (f: string) => f.replace(/\s+/g, "").replace(/\*/g, " × ").replace(/\//g, " ÷ ").replace(/\+/g, " + ").replace(/(\d|\))-/g, "$1 − ").replace(/>=/g, " ≥ ").replace(/<=/g, " ≤ ").replace(/([^ ≥≤])([<>])/g, "$1 $2 ").replace(/\?/g, " ? ").replace(/:/g, " : ").replace(/,/g, ", ");
 
 /** 比较用的数：去掉千分位和多余的小数零。 */
 const plain = (n: string) => String(Number(n.replace(/,/g, "")));
@@ -121,15 +198,46 @@ const plain = (n: string) => String(Number(n.replace(/,/g, "")));
 function withUnit(value: string, unit: string | undefined): string {
   if (!unit || !/^-?[\d,]+(?:\.\d+)?$/.test(value)) return value;
 
-  return CURRENCY.test(unit) ? `${unit}${value}` : `${value} ${unit}`;
+  return CURRENCY.test(unit) ? `${unit}${value}` : unit === "%" ? `${value}%` : `${value} ${unit}`;
 }
+
+const MAX_INPUTS = 2;
+
+/** 卡片原文的摘要：同一张卡重开、重放时不变。 */
+function digest(s: string): string {
+  let h = 5381;
+
+  for (let i = 0; i < s.length; i += 1) h = (h * 33 + s.charCodeAt(i)) | 0;
+
+  return (h >>> 0).toString(36);
+}
+
+const num = (v: string | true | undefined) => (typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : undefined);
+
+/** 不能用的可调的数不画：名字不合规、值不是数、范围反了。没写范围时按值给一个够用的范围。 */
+function cardInput(a: Attrs): CardInput | undefined {
+  const id = str(a.id);
+  const label = str(a.label);
+  const value = num(a.value);
+
+  if (!id || !/^[A-Za-z_]\w*$/.test(id) || id in FUNCS || !label || value === undefined || value < 0) return undefined;
+  const step = num(a.step) ?? (Number.isInteger(value) ? 1 : 0.1);
+  const min = num(a.min) ?? 0;
+  const max = num(a.max) ?? Math.max(value * 3, value + step * 10);
+
+  if (step <= 0 || min > max) return undefined;
+
+  return { id, label, value: Math.min(max, Math.max(min, value)), min, max, step, unit: str(a.unit) };
+}
+
+const cell = (v: { value: string; expr?: string; unit?: string }): Cell => ({ value: v.value, expr: v.expr, unit: v.unit });
 
 function parseCard(source: string, closed: boolean): Card | undefined {
   const head = new RegExp(String.raw`^<card${ATTRS}\s*>`).exec(source);
 
   if (!head) return undefined;
   const top = attrsOf(head[1]!);
-  const card: Card = { title: str(top.title) ?? "", sub: str(top.sub), blocks: [], buttons: [], closed, numbers: new Set(), values: new Map(), formulas: false };
+  const card: Card = { key: digest(source), title: str(top.title) ?? "", sub: str(top.sub), blocks: [], buttons: [], closed, numbers: new Set(), values: new Map(), formulas: false };
 
   for (const n of source.match(/\d[\d,]*(?:\.\d+)?/g) ?? []) card.numbers.add(plain(n));
   let tagged = false;
@@ -139,21 +247,22 @@ function parseCard(source: string, closed: boolean): Card | undefined {
    * 卡片里任何一处值（数字格、选项的价、表格格子）写成算式（= 开头）时都在这里算：模型会把算式也写进选项和表格，不只数字格。
    * 算不出就去掉 =，原样显示，不把「=1699-50」露给用户。
    */
-  const resolve = (raw: string, unit?: string): { value: string; computed?: number; formula?: string } => {
+  const resolve = (raw: string, unit?: string): { value: string; computed?: number; formula?: string; expr?: string; unit?: string } => {
     if (!raw.startsWith("=")) return { value: withUnit(raw, unit) };
     // 模型有时把货币符号或「元」也写进算式（=¥1699-50）：先拿掉再算，符号当单位用。
     const symbol = /[¥￥$€£]/.exec(raw)?.[0];
     const expression = raw.slice(1).replace(/[¥￥$€£]/g, "").replace(/\s*元\s*$/, "");
-    const n = calc(expression);
+    const live = usesVars(expression, vars);
+    const n = live ? evaluate(expression, vars) : calc(expression);
     unit ??= symbol ?? (/元\s*$/.test(raw) ? "元" : undefined);
 
     if (n === undefined) return { value: withUnit(raw.slice(1).trim(), unit === symbol ? undefined : unit) };
     card.numbers.add(String(n));
-    const formula = /[-+*/×÷−]/.test(expression.replace(/^\s*-/, "")) ? prettyFormula(expression) : undefined;
+    const formula = live ? showFormula(expression, vars) : /[-+*/×÷−^?(]/.test(expression.replace(/^\s*-/, "")) ? prettyFormula(expression) : undefined;
 
     if (formula) card.formulas = true;
 
-    return { value: withUnit(formatNumber(n), unit), computed: n, formula };
+    return { value: withUnit(formatNumber(n), unit), computed: n, formula, ...(live ? { expr: expression.replace(/\s+/g, ""), unit } : {}) };
   };
   const last = () => card.blocks.at(-1);
   const group = <K extends Block["kind"]>(kind: K, make: () => Extract<Block, { kind: K }>): Extract<Block, { kind: K }> => {
@@ -194,14 +303,31 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       return "";
     });
   }
-  const component = new RegExp(String.raw`<(stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
+  const component = new RegExp(String.raw`<(input|stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
+  // 可调的数先全部认出来：算式可能写在它前面。
+  const inputs = new Map<string, CardInput>();
+
+  for (const m of body.matchAll(new RegExp(String.raw`<input\b${ATTRS}\s*\/?>`, "g"))) {
+    const input = cardInput(attrsOf(m[1] ?? ""));
+
+    if (input && !inputs.has(input.id) && inputs.size < MAX_INPUTS) inputs.set(input.id, input);
+  }
+  const vars = new Map([...inputs].map(([id, input]) => [id, input.value]));
+
+  for (const input of inputs.values()) card.values.set(input.id, withUnit(formatNumber(input.value), input.unit));
 
   for (const m of body.matchAll(component)) {
     const [, tag, rawAttrs, inner] = m;
     const a = attrsOf(rawAttrs ?? "");
     const text = inner?.trim();
 
-    if (tag === "stat") {
+    if (tag === "input") {
+      const id = str(a.id);
+      const input = id ? inputs.get(id) : undefined;
+      const block = group("inputs", () => ({ kind: "inputs", items: [] }));
+
+      if (input && !block.items.includes(input)) block.items.push(input);
+    } else if (tag === "stat") {
       const label = str(a.label);
       const raw = str(a.value);
 
@@ -210,7 +336,8 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
       // 数字格的算式算不出就不画这一格：它就是给人照着做决定的数。
       if (raw.startsWith("=") && v.computed === undefined) continue;
-      const stat: Stat = { id: str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note) };
+      // 和可调的数同名的 id 不要：正文里的 {=名字} 只能有一个来源。
+      const stat: Stat = { id: inputs.has(str(a.id) ?? "") ? undefined : str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note), expr: v.expr, unit: v.unit };
 
       if (str(a.tag) && !tagged) { stat.tag = str(a.tag); tagged = true; }
 
@@ -227,7 +354,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       if (!name || !why) continue;
       const pick: boolean = a.pick !== undefined && !picked;
       picked ||= pick;
-      group("options", () => ({ kind: "options", items: [] })).items.push({ name, meta: str(a.meta), value: a.value === undefined ? undefined : str(resolve(str(a.value) ?? "", str(a.unit)).value), why, pick });
+      group("options", () => ({ kind: "options", items: [] })).items.push({ name, meta: str(a.meta), value: a.value === undefined ? undefined : cell(resolve(str(a.value) ?? "", str(a.unit))), why, pick });
     } else if (tag === "table") {
       const cols = (str(a.cols) ?? "").split("|").map((c) => c.trim()).slice(0, MAX_COLS);
 
@@ -238,7 +365,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
       if (table?.kind !== "table" || cells.length < 2) continue;
       const rowTag = str(a.tag) && !table.rows.some((r) => r.tag) ? str(a.tag) : undefined;
-      table.rows.push({ cells: Array.from({ length: table.cols.length }, (_, i) => resolve(cells[i] ?? "").value), tag: rowTag });
+      table.rows.push({ cells: Array.from({ length: table.cols.length }, (_, i) => cell(resolve(cells[i] ?? ""))), tag: rowTag });
     } else if (tag === "check") {
       const t = str(a.text);
 
@@ -274,7 +401,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 }
 
 /** 依据面的一行：卡片上的一个数字格。tab 是指向这一项的「切到…看」按钮的标签页。 */
-export type EvidenceRow = { label: string; value: string; formula?: string; source?: string; tab?: string };
+export type EvidenceRow = { label: string; value: string; formula?: string; source?: string; tab?: string; expr?: string; unit?: string };
 
 /**
  * 卡片的依据面：每个数字格一行，只用卡片已有的数据（算式、source、tab 按钮），不补写。
@@ -300,7 +427,7 @@ export function cardEvidence(card: Card): EvidenceRow[] {
     return own.length === 1 ? own[0] : undefined;
   });
 
-  return stats.map((s, i) => ({ label: s.label, value: s.value, formula: s.formula, source: card.source, tab: named[i] && named.filter((t) => t?.name === named[i]!.name).length === 1 ? named[i]!.tab : undefined }));
+  return stats.map((s, i) => ({ label: s.label, value: s.value, formula: s.formula, expr: s.expr, unit: s.unit, source: card.source, tab: named[i] && named.filter((t) => t?.name === named[i]!.name).length === 1 ? named[i]!.tab : undefined }));
 }
 
 /** 代码块和行内代码的范围：里面的 <card、{=…}、金额都按原文处理。 */
@@ -340,8 +467,9 @@ const outsideCode = (text: string, edit: (prose: string) => string) => text.spli
  * 卡片里有算式、且卡片已写完时，正文里不在卡片里的金额换成「见下方卡片」；
  * 后面跟着 万/千/以内 这类字的、前面是“预算/低于/不超过”这类字的，是用户的条件或约数，不换。
  */
-export function resolveProse(prose: string, cards: Card[], mark = (value: string) => value): string {
-  const values = new Map(cards.flatMap((c) => [...c.values]));
+export function resolveProse(prose: string, cards: Card[], mark = (value: string, _id: string) => value): string {
+  // 同名的数以第一张卡为准，侧栏重算时也只让这张卡改正文。
+  const values = new Map(cards.flatMap((c) => [...c.values]).reverse());
   const done = cards.some((c) => c.closed);
   const guard = done && cards.some((c) => c.formulas);
   const numbers = new Set(cards.flatMap((c) => [...c.numbers]));
@@ -350,7 +478,7 @@ export function resolveProse(prose: string, cards: Card[], mark = (value: string
     const out = part.replace(/\{=([A-Za-z_][\w-]*)\}/g, (_all, id: string) => {
       const v = values.get(id);
 
-      if (v) return mark(v);
+      if (v) return mark(v, id);
 
       return done ? "见下方卡片" : "…";
     });
@@ -385,10 +513,11 @@ export function answerMarkdown(text: string): string {
     switch (b.kind) {
       case "stats": return b.items.map((s) => `- ${s.label}：${s.value}${s.formula ? `（${s.formula}）` : ""}${s.note ? `，${s.note}` : ""}${s.tag ? ` · ${s.tag}` : ""}`).join("\n");
       case "steps": return b.items.map((s, i) => `${i + 1}. ${s.title}${s.detail ? `：${s.detail}` : ""}`).join("\n");
-      case "options": return b.items.map((o) => `- ${o.name}${o.pick ? "（推荐）" : ""}${o.value ? ` ${o.value}` : ""}${o.meta ? `，${o.meta}` : ""}：${o.why}`).join("\n");
-      case "table": return [`| ${b.cols.join(" | ")} |`, `|${b.cols.map(() => " --- ").join("|")}|`, ...b.rows.map((r) => `| ${r.cells.join(" | ")}${r.tag ? `（${r.tag}）` : ""} |`)].join("\n");
+      case "options": return b.items.map((o) => `- ${o.name}${o.pick ? "（推荐）" : ""}${o.value ? ` ${o.value.value}` : ""}${o.meta ? `，${o.meta}` : ""}：${o.why}`).join("\n");
+      case "table": return [`| ${b.cols.join(" | ")} |`, `|${b.cols.map(() => " --- ").join("|")}|`, ...b.rows.map((r) => `| ${r.cells.map((c) => c.value).join(" | ")}${r.tag ? `（${r.tag}）` : ""} |`)].join("\n");
       case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${c.note}）` : ""}`).join("\n");
       case "callout": return `> ${b.text}`;
+      case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
       case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, c]) => `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`)].join("\n");
     }
   }), c.source ? `来源：${c.source}` : ""].filter(Boolean).join("\n\n");
@@ -411,13 +540,14 @@ export function cardPreview(text: string, maxRows = 3): CardPreview | null {
   type Row = CardPreview["rows"][number];
   const rowsOf = (b: Block): Row[] => {
     switch (b.kind) {
-      case "options": return b.items.map((o) => ({ label: o.name, value: o.value ?? o.meta, tag: o.pick ? "推荐" : undefined }));
-      case "table": return b.rows.map((r) => ({ label: r.cells[0] ?? "", value: r.cells.slice(1).filter(Boolean).join(" · ") || undefined, tag: r.tag }));
+      case "options": return b.items.map((o) => ({ label: o.name, value: o.value?.value ?? o.meta, tag: o.pick ? "推荐" : undefined }));
+      case "table": return b.rows.map((r) => ({ label: r.cells[0]?.value ?? "", value: r.cells.slice(1).map((c) => c.value).filter(Boolean).join(" · ") || undefined, tag: r.tag }));
       case "stats": return b.items.map((s) => ({ label: s.label, value: s.value, tag: s.tag }));
       case "steps": return b.items.map((s, i) => ({ label: `${i + 1}. ${s.title}` }));
       case "checks": return b.items.map((c) => ({ label: c.text }));
       case "callout": return [{ label: b.text }];
-      case "diagram": return [];
+      case "diagram":
+      case "inputs": return [];
     }
   };
   const block = card.blocks.find((b) => b.kind !== "callout" && rowsOf(b).length) ?? card.blocks.find((b) => rowsOf(b).length);
