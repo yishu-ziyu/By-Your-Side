@@ -12,7 +12,7 @@
  * F3 宿主整轮结束交付同一段正文时又另起一个气泡：回答出现两次。
  * F4 第一次调工具前的那句（开场话）被当成回答，或收进折叠的执行过程看不见；回答出来后它还留在回答位置，或出现两份。
  * F5 过渡话之后的最终回答没出现，或出现两次。
- * F6 走交付工具的回答重复或丢失。
+ * F6 走交付工具的回答重复或丢失；交付之后这一轮没结束，又问了模型一次。
  * F7 停止时回答位置留下半截正文、执行过程里又有一份；或正文整个丢了。
  * F8 出错时多出空白回答气泡。
  * F9 运行中插话：前一段正文和最终回答重复，或最终回答丢失。
@@ -51,6 +51,9 @@ const AFTER_TOOL = "【丙】页面标题是 Writers，上面写着「慢就是�
 
 const DELIVERED = "【丁】这是交付工具送来的回答。";
 
+// 交付工具送出结论就该结束这一轮：脚本模型在下一步准备了这句，被问到就说明多问了一轮。
+const AFTER_DELIVERY = "【辛】交付之后又被问了一次。";
+
 const STOPPED = "【戊】这一段会在中途被停止。".repeat(12);
 
 const BEFORE_INTERJECT = "【己】这一段正在写的时候用户插话了。".repeat(10);
@@ -63,7 +66,7 @@ const RULES: Rule[] = [
     { text: BRIDGE, chunkDelayMs: 150, thenTool: { name: "get_active_tab", args: {} } },
     { text: AFTER_TOOL, delayMs: 2500, chunkDelayMs: 100 },
   ] },
-  { match: "交付演示", steps: [{ tool: { name: "send_user_message", args: { kind: "finding", content: DELIVERED } } }, { text: "" }] },
+  { match: "交付演示", steps: [{ tool: { name: "send_user_message", args: { kind: "finding", content: DELIVERED } } }, { text: AFTER_DELIVERY }] },
   { match: "停止演示", steps: [{ text: STOPPED, chunkDelayMs: 250 }] },
   { match: "报错演示", steps: [{ status: 400, body: JSON.stringify({ error: { message: "scripted bad request" } }) }] },
   // 插话规则放在前面：插话后的请求里最后一条匹配的用户消息是插话本身。
@@ -71,7 +74,7 @@ const RULES: Rule[] = [
   { match: "插话演示", steps: [{ text: BEFORE_INTERJECT, chunkDelayMs: 250 }] },
 ];
 
-const MARKS = ["【甲】", "【乙】", "【丙】", "【丁】", "【戊】", "【己】", "【庚】"];
+const MARKS = ["【甲】", "【乙】", "【丙】", "【丁】", "【戊】", "【己】", "【庚】", "【辛】"];
 
 /** 侧栏现状：回答位置（不在过程行里的助手气泡，开场话也算）与执行过程里各有哪些记号、各几次。 */
 const PANEL = `(() => {
@@ -260,6 +263,7 @@ try {
   await send("交付演示");
   const s3 = await settle("3a-delivery-tool");
   check(3, "交付工具的回答只出现一次", count(s3.answers, "【丁】") === 1, { answers: s3.answers });
+  check(3, "交付之后这一轮结束：没有再问模型，侧栏没有多出一句", !model.requests.some((r) => r.rule === "交付演示" && r.step === 1) && count(s3.answers, "【辛】") === 0, { askedAgain: model.requests.filter((r) => r.rule === "交付演示").length, answers: s3.answers });
 
   // 3b. 停止：半截正文按原样留在执行过程，回答位置不留副本。
   await send("停止演示");

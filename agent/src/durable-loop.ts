@@ -315,7 +315,9 @@ export class DurableAgentLoop implements AgentLoop {
         const repeated = this.noteRepeat(tool.name, args, result.content);
         const hooked = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: tool.name, toolCallId: api.callId, input: args as HookArgs, content: result.content, details: result.details as never, isError: result.isError === true }) : undefined;
         const content = [...(hooked?.content ?? result.content), ...(repeated ? [{ type: "text" as const, text: repeated }] : [])];
-        return { content, details: (hooked?.details ?? result.details) as never, isError: hooked?.isError ?? result.isError === true };
+        // pi-agent-core 的 terminate 在 pi-durable 里叫 control.terminate；不转过去，交付结论后会多问模型一轮、侧栏出现两遍。
+        const terminate = "terminate" in result && result.terminate === true;
+        return { content, details: (hooked?.details ?? result.details) as never, isError: hooked?.isError ?? result.isError === true, ...(terminate ? { control: { terminate: true as const } } : {}) };
       },
     });
   }
