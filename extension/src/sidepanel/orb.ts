@@ -113,8 +113,8 @@ function ink(): Rgb | null {
 }
 
 /** 引擎把每个笔画/点标成"白度"，这里换算成当前主题下的 alpha。 */
-function shade(color: Rgb | null, white: number, alpha: number, dark: boolean): string {
-  const v = dark ? 1 - white : white;
+function shade(color: Rgb | null, white: number, alpha: number, dark: boolean, fade = 1): string {
+  const v = (dark ? 1 - white : white) * fade;
 
   if (!color) {
     const l = Math.round((dark ? 1 - v : v) * 255);
@@ -125,12 +125,12 @@ function shade(color: Rgb | null, white: number, alpha: number, dark: boolean): 
   return `rgba(${color[0]},${color[1]},${color[2]},${(alpha * (1 - v)).toFixed(3)})`;
 }
 
-/** 浓墨：白度压到一半以下、透明度和点线略加，16px 下每颗点仍分得清。 */
-const STRONG = { white: 0.45, alpha: 1.3, line: 1.2, dot: 1.15 };
+/** 浓墨：褪色压到一半以下（按主题换算后再压，深浅两种主题都变浓）、透明度和点线略加，16px 下每颗点仍分得清。 */
+const STRONG = { fade: 0.45, alpha: 1.3, line: 1.2, dot: 1.15 };
 
 function paint(o: OrbInstance, engineT: number): void {
   const color = o.strong ? strongInk() : ink();
-  const weight = o.strong ? STRONG : { white: 1, alpha: 1, line: 1, dot: 1 };
+  const weight = o.strong ? STRONG : { fade: 1, alpha: 1, line: 1, dot: 1 };
   const dark = prefersDark();
   const frameOf = MODE_FRAMES[o.preset.mode];
 
@@ -142,7 +142,7 @@ function paint(o: OrbInstance, engineT: number): void {
   ctx.clearRect(0, 0, GEOM, GEOM);
 
   for (const line of frame.lines) {
-    ctx.strokeStyle = shade(color, line.white * weight.white, Math.min(1, (line.a ?? 1) * weight.alpha), dark);
+    ctx.strokeStyle = shade(color, line.white, Math.min(1, (line.a ?? 1) * weight.alpha), dark, weight.fade);
     ctx.lineWidth = line.w * weight.line;
     ctx.beginPath();
     ctx.moveTo(line.x1, line.y1);
@@ -151,7 +151,7 @@ function paint(o: OrbInstance, engineT: number): void {
   }
 
   for (const dot of frame.dots) {
-    ctx.fillStyle = shade(color, dot.white * weight.white, Math.min(1, (dot.a ?? 1) * weight.alpha), dark);
+    ctx.fillStyle = shade(color, dot.white, Math.min(1, (dot.a ?? 1) * weight.alpha), dark, weight.fade);
     ctx.beginPath();
     ctx.arc(dot.x, dot.y, dot.r * weight.dot, 0, Math.PI * 2);
     ctx.fill();

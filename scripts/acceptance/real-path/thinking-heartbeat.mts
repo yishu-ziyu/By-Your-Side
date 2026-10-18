@@ -4,6 +4,7 @@
  * 脚本模型：想 4 秒 → 打开页 B → 看一眼页面 → 读标题 → 点不存在的按钮 → 想 8 秒 → 点「作品」→ 回答。
  *   a) 想的时候第一行一直写「正在思考」，不轮换别的动词；秒数从这段开始数，第二行仍是「已做 2 步 · 1 步换了做法」。
  *   b) `.run-beat` 里是 16px 的球：想的时候是 rubik 形态、450ms 后画面变了；最深的点接近正文主色、几乎不透明；字是正文次要色、常规字重。
+ *   g) 切到深色模式，球用深色的正文色，同样不透明。
  *   f) 这一轮里球按真实步骤换过形态：看页面是 globe，打开页、点按钮是 orbits。
  *   c) 进行中标题不再扫光。
  *   d) 回执是一行「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式）；收尾后墨点不再显示。
@@ -129,6 +130,13 @@ try {
   const ink = !!d0 && d0[3] >= 200 && d0.slice(0, 3).every((c, i) => Math.abs(c - [20, 20, 19][i]) <= 12);
   const secondary = /rgba?\(\s*95\s*,\s*94\s*,\s*88/.test(first?.verbColor ?? "");
   check("b 16px 的球在转（rubik），最深的点接近正文主色；字是次要色、常规字重", first != null && first.beatDisplay !== "none" && first.beatDisplay !== "missing" && first.beatWidth === 16 && first.orbWidth === 16 && first.orbMode === "rubik" && ink && first.orbPainted > 0 && moved && secondary && first.verbWeight === "400", { beatDisplay: first?.beatDisplay, beatWidth: first?.beatWidth, orbWidth: first?.orbWidth, orbMode: first?.orbMode, darkest: d0 ?? null, painted: first?.orbPainted, moved, verbColor: first?.verbColor, verbWeight: first?.verbWeight });
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
+  await sleep(400);
+  const night = await read();
+  await rp.screenshot(panel, join(out, "thinking-dark.png"));
+  await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, panel);
+  const n0 = night?.orbDarkest;
+  check("g 深色模式下球同样浓：最亮的点接近深色正文色、几乎不透明", !!n0 && n0[3] >= 200 && n0.slice(0, 3).every((c, i) => Math.abs(c - [238, 233, 223][i]) <= 12), { strongest: n0 ?? null, mode: night?.orbMode });
   check("c 进行中标题不再扫光", first != null && (first.shineName === "none" || first.shineName === "" || !first.shineName.includes("runShine")), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
 
   await until(async () => { const r = await read(); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);

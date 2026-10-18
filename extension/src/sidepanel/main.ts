@@ -2818,8 +2818,8 @@ interface RunHost {
   /** 回答位置的骨架：回答或卡片一接上就由样式收起淡出。 */
   skeleton: HTMLElement;
   lastToolName: string | null;
-  /** 最近开始的一步只是看页面、等页面：球换成扫视的形态。 */
-  lastToolReads: boolean;
+  /** 在途的每一步是不是只看页面、等页面：全是才换成扫视的形态，有一步在动手就按动手画。 */
+  readingTools: Map<string, boolean>;
 }
 
 const ACTION_ICONS = {
@@ -4206,7 +4206,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     beatEl: beat,
     skeleton,
     lastToolName: null,
-    lastToolReads: false,
+    readingTools: new Map(),
   };
   startLiveSeconds(currentRun, start);
 
@@ -4604,7 +4604,8 @@ function syncRunOrb(run: RunHost): void {
 
   // 收尾后标题由 finishRun 定稿（做了几件事），迟到的 tool_end 不再改回状态词。
   if (mark && state !== "completed" && !run.root.classList.contains("done") && run.titleEl.textContent !== mark.label) setRunTitle(run, mark.label, true);
-  run.orb.setState(state === "executing" && run.lastToolReads ? "reading" : state);
+  const reading = run.readingTools.size > 0 && [...run.readingTools.values()].every(Boolean);
+  run.orb.setState(state === "executing" && reading ? "reading" : state);
   run.orb.setRunning(!applyingHistory && orbStateRuns(state));
 }
 
@@ -5452,7 +5453,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const group = run.chipGroup;
 
   const prep = isPrepTool(ev.name, ev.params);
-  run.lastToolReads = prep;
+  run.readingTools.set(ev.toolCallId, prep);
   run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
   syncRunOrb(run);
 
@@ -5534,6 +5535,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   if (run && ev.sendConfirmed) run.sendDeclined = false;
 
   if (run) {
+    run.readingTools.delete(ev.toolCallId);
     run.orbActivity.observe({ kind: "tool_end", name: "", ...ev });
     syncRunOrb(run);
   }
