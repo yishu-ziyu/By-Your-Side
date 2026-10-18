@@ -11,8 +11,8 @@ export interface BrowseHabit { key: string; habit: string; hosts: string[]; days
 
 export type BrowseHabitClientMessage =
   | { type: 'browse_habit_request'; requestId: string; days: BrowseDay[]; dismissed: string[] }
-  /** ask：问这一条要不要记住；forget：用户删了这条（key）或全部删除（key 为 null），清掉宿主记的浏览天数。 */
-  | { type: 'browse_habit_control'; requestId: string; action: 'ask' | 'forget'; key: string | null };
+  /** 扩展核对这条没被用户删掉后，请宿主问一次要不要记住。 */
+  | { type: 'browse_habit_ask'; requestId: string; key: string };
 
 export type BrowseHabitResult = { type: 'browse_habit_result'; requestId: string; habits: BrowseHabit[] };
 
@@ -43,7 +43,7 @@ export function isBrowseHabit(v: unknown): v is BrowseHabit {
 }
 
 export function isBrowseHabitClientMessage(v: BrowseHabitClientMessage): boolean {
-  if (v.type === 'browse_habit_control') return id(v.requestId) && (v.action === 'ask' || v.action === 'forget') && (v.key === null ? v.action === 'forget' : typeof v.key === 'string' && BROWSE_HABIT_KEY.test(v.key));
+  if (v.type === 'browse_habit_ask') return id(v.requestId) && typeof v.key === 'string' && BROWSE_HABIT_KEY.test(v.key);
 
   return id(v.requestId) && Array.isArray(v.days) && v.days.length <= BROWSE_DAY_LIMIT
     && v.days.every(d => !!d && typeof d.day === 'string' && DAY.test(d.day) && Array.isArray(d.lines) && d.lines.length <= BROWSE_LINE_LIMIT && d.lines.every(line => short(line, 400)) && Array.isArray(d.hosts) && d.hosts.length <= 200 && d.hosts.every(host => short(host, 253)))

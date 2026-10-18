@@ -1661,11 +1661,11 @@ return receipt;
       return;
     }
 
-    if (message.type === 'browse_habit_control') {
+    if (message.type === 'browse_habit_ask') {
       try {
         const id = normalizeConversationId(message.conversationId);
         const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
-        await entry?.runtime.session.controlBrowsing(message.action, message.key);
+        await entry?.runtime.session.askBrowsing(message.key);
       } catch { /* 后台发起的：失败不打扰会话。 */ }
 
       return;

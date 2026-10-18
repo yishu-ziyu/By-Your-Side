@@ -855,7 +855,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "nudge_request" || msg.type === "nudge_validate") return isNudgeClientMessage(msg) ? msg : null;
 
-    if (msg.type === "browse_habit_request" || msg.type === "browse_habit_control") return isBrowseHabitClientMessage(msg) ? msg : null;
+    if (msg.type === "browse_habit_request" || msg.type === "browse_habit_ask") return isBrowseHabitClientMessage(msg) ? msg : null;
 
     if (msg.type === "conversation_create" && msg.reading !== undefined && !isReadingTranscript(msg.reading)) return null;
 

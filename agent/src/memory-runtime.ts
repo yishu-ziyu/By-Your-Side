@@ -13,7 +13,7 @@ import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
 import { isNamedForRequest, isRelevantMemory } from "./memory-relevance.js";
-import { BROWSING_DAY, close as closeHabit, dismiss as dismissHabit, emptyHabitState, forgetBrowsing as forgetBrowsingDays, habitReady, observe as observeHabit, type HabitState } from "./memory-habit.js";
+import { dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
 import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
 interface ActiveUserTurn {
@@ -361,6 +361,9 @@ export class MemoryRuntime {
   private timerAt = Infinity;
   /** 发出去还没回答的询问（askId → 内容）。 */
   private readonly asks = new Map<string, OpenAsk>();
+
+  /** 上次归纳核对过的浏览习惯：扩展确认没被删后，按 key 从这里取来问。 */
+  private readonly browsed = new Map<string, BrowseHabit>();
   /** 这次对话里回过「这次就行」的做法与原话：同一条不再问。 */
   private readonly dismissed = new Set<string>();
   /** 这次对话里点过「记住」的原话：模型换个说法也不再问。 */
@@ -1205,8 +1208,8 @@ export class MemoryRuntime {
   }
 
   /**
-   * 用户自己的浏览：快速模型归纳反复做的事，按「不同日子」计入习惯计数，够 BROWSE_HABIT_DAYS 天就问一次。
-   * 模型说的日子要在记录里确实有、而且那天出现过它说的网站，否则不算。返回核对过的结果，侧栏「看到的操作」照此显示。
+   * 用户自己的浏览：快速模型归纳反复做的事，够 BROWSE_HABIT_DAYS 天的标成 ready，由扩展核对后再请宿主问。
+   * 模型说的日子和网站要在记录里确实有，否则不算。返回核对过的结果，侧栏「看到的操作」照此显示。
    */
   async noticeBrowsing(days: BrowseDay[], dismissed: string[]): Promise<BrowseHabit[]> {
     if (!this.complete || !days.length) return [];
@@ -1245,53 +1248,45 @@ export class MemoryRuntime {
       found.push({ key, habit, hosts, days: proven, times });
     }
 
+    // 天数只按这次交来的记录算，宿主不另记：用户删掉记录就真的不算了。宿主只记「问过」。
+    const asked = (await loadHabits(doc)).state.habits;
+
     for (const item of found) {
       if (dismissed.includes(item.key)) continue;
-      // 这里只记天数、标出够数的；问不问由扩展核对用户没删掉这条之后再发 browse_habit_control ask。
-      item.ready = await doc.exclusive(async () => {
-        const saved = await loadHabits(doc);
-        let state = saved.state;
-
-        for (const day of item.days) state = observeHabit(state, { key: item.key, text: item.habit, conversationId: `${BROWSING_DAY}${day}`, at: Date.parse(`${day}T12:00:00`) || Date.now() }, Infinity).state;
-        await doc.write(JSON.stringify({ state, hosts: { ...Object.fromEntries(Object.entries(saved.hosts).filter(([k]) => state.habits[k])), [item.key]: item.hosts } }));
-
-        return habitReady(state, item.key, true, BROWSE_HABIT_DAYS);
-      }).catch(() => false);
+      item.ready = item.days.length >= BROWSE_HABIT_DAYS && !asked[item.key]?.closed;
+      this.browsed.set(item.key, item);
     }
 
     return found;
   }
 
-  /** 扩展核对过这条没被删：天数仍够、还没问过，就问一次。依据只用宿主自己记的日子和网站，不用扩展传来的。 */
+  /** 扩展核对过这条没被删：用这个运行时上次核对过的结果问一次；问过就记成已问，不再问。 */
   async askBrowsing(key: string): Promise<void> {
+    const item = this.browsed.get(key);
+
+    if (!item?.ready) return;
     const doc = habitDocFor(this.store);
-    const step = await doc.exclusive(async () => {
+    const fresh = await doc.exclusive(async () => {
       const saved = await loadHabits(doc);
 
-      if (!habitReady(saved.state, key, true, BROWSE_HABIT_DAYS)) return null;
-      const habit = saved.state.habits[key]!;
-      await doc.write(JSON.stringify({ ...saved, state: closeHabit(saved.state, key) }));
+      if (saved.state.habits[key]?.closed) return false;
+      await doc.write(JSON.stringify({ ...saved, state: dismissHabit(saved.state, key) }));
 
-      return { text: habit.text, hosts: saved.hosts[key] ?? [], days: Object.keys(habit.seen).filter(id => id.startsWith(BROWSING_DAY)).map(id => id.slice(BROWSING_DAY.length)).sort() };
-    }).catch(() => null);
+      return true;
+    }).catch(() => false);
 
-    if (!step) return;
-    const scope: MemoryScope = step.hosts.length === 1 ? { kind: "site", hostname: step.hosts[0]! } : { kind: "all" };
+    if (!fresh) return;
+    this.browsed.delete(key);
+    const scope: MemoryScope = item.hosts.length === 1 ? { kind: "site", hostname: item.hosts[0]! } : { kind: "all" };
     const askId = globalThis.crypto.randomUUID();
-    const evidence = step.days.map(day => `${day} · ${step.hosts.join("、")}`);
-    const event: MemoryAskEvent = { kind: "memory_ask", askId, rule: step.text, scope, habit: true, evidence };
+    const evidence = item.days.map(day => `${day} · ${item.hosts.join("、")}`);
+    const event: MemoryAskEvent = { kind: "memory_ask", askId, rule: item.habit, scope, habit: true, evidence };
     const messageKey = `habit:${key}`;
 
     if (scope.kind === "site") event.hostname = scope.hostname;
-    this.asks.set(askId, { rule: step.text, scope, quote: `来自你自己的浏览：${evidence.join("；")}`.slice(0, 600), keys: [messageKey], messageKey, event, habitKey: key });
+    this.asks.set(askId, { rule: item.habit, scope, quote: `来自你自己的浏览：${evidence.join("；")}`.slice(0, 600), keys: [messageKey], messageKey, event, habitKey: key });
     this.emit(event);
     this.onRecord?.("memory_ask_decision", { source: "habit", status: "asked", reason: "browsing", askId, scope: scope.kind });
-  }
-
-  /** 用户删了浏览记录：清掉宿主记的浏览天数（key 为 null 时全部），对话的计数不动。 */
-  async forgetBrowsing(key: string | null): Promise<void> {
-    const doc = habitDocFor(this.store);
-    await doc.exclusive(async () => { const saved = await loadHabits(doc); await doc.write(JSON.stringify({ ...saved, state: forgetBrowsingDays(saved.state, key) })); }).catch(() => undefined);
   }
 
   /** 决定点 A 的决定记录：判为哪种、按哪条规则、改了哪些条目。不写用户原话（结论里的日期、是非除外）。 */
