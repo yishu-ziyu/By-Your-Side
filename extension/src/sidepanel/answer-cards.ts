@@ -729,16 +729,23 @@ const rowTried = new WeakSet<HTMLElement>();
 
 const rowSources = new WeakMap<HTMLElement, { source: PageElementSource; tabId: number }>();
 
+const withoutHash = (url: string) => url.split("#")[0]!;
+
 /**
  * 写了 tab 的一行：到那个标签页找这一行的数，整页恰好一处时这一行变成可点（同回答正文的“数字回原页”，sonar-citations.ts）。
- * 找不到、不止一处、那一页关了或跳走了，这一行保持原样。
+ * 只去这条回答的出处清单里那几页（这一轮真读过、打开过的页面，answer-sources.ts）：tab 编号是模型写的，模型可能被网页内容带偏，
+ * 写出用户别的标签页（比如登录着的邮箱）。那一页跳走了，网址就不在清单里，也不去。
+ * 出处清单在回答写完后才挂上：还没有清单时先不算找过，清单出现时再来。
  */
 async function linkRow(row: HTMLElement): Promise<void> {
+  const allowed = [...(row.closest(".msg")?.querySelectorAll<HTMLElement>(".answer-source[title]") ?? [])].map((b) => withoutHash(b.title));
+
+  if (!allowed.length) return;
   rowTried.add(row);
   const tabId = Number(row.dataset.gcTab);
   const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
 
-  if (!tab?.url) return;
+  if (!tab?.url || !allowed.includes(withoutHash(tab.url))) return;
   const context = await captureCitationContext({ tabId, url: tab.url });
 
   if (!context) return;

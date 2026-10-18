@@ -25,6 +25,7 @@ const PAGES: Record<string, string> = {
   "/jd": shop("京东", `<div class="price"><span class="sym">¥</span><span class="num">2,399</span></div><div>次日达</div>`),
   "/tmall": shop("天猫", `<div class="spacer" style="height:900px"></div><div class="price"><span>¥2,459</span><em>包邮</em></div>`),
   "/dup": shop("另一家", `<div class="price"><span>¥2,599</span></div><div class="side">到手价 ¥2,599</div>`),
+  "/mail": `<!doctype html><meta charset="utf-8"><title>邮箱</title><div class="inbox">账户余额 ¥8,888</div>`,
 };
 
 const site = createServer((req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGES[req.url ?? ""] ?? "<!doctype html><title>空</title>"));
@@ -34,6 +35,9 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const rules: Rule[] = [{ match: TASK, steps: [{ text: "", chunkDelayMs: 30 }] }];
+
+/** 真读过的页面才会进回答的出处清单，行只连得到清单里的页：脚本模型先把三页都读一遍。 */
+const readAll = (tabs: Record<string, number>) => Object.values(tabs).map(tabId => ({ tool: { name: "snapshot", args: { tabId } } }));
 
 const model = await startScriptedModel(rules);
 
@@ -54,18 +58,21 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
   // 另外两页在后台开，不抢前台。
-  await rp.evaluate(panel, `Promise.all(["/tmall", "/dup"].map(p => chrome.tabs.create({ url: ${JSON.stringify(origin)} + p, active: false }))).then(() => true)`);
+  await rp.evaluate(panel, `Promise.all(["/tmall", "/dup", "/mail"].map(p => chrome.tabs.create({ url: ${JSON.stringify(origin)} + p, active: false }))).then(() => true)`);
   // SAFETY: 表达式返回 {jd, tmall, dup} 三个标签页编号。
   const tabs = await until(async () => {
-    const ids = await rp.evaluate(panel, `chrome.tabs.query({}).then(ts => { const id = p => ts.find(t => (t.url || "").endsWith(p) && t.status === "complete")?.id; return { jd: id("/jd"), tmall: id("/tmall"), dup: id("/dup") }; })`) as Record<string, number | undefined>;
-    return ids.jd && ids.tmall && ids.dup ? ids as Record<string, number> : undefined;
+    const ids = await rp.evaluate(panel, `chrome.tabs.query({}).then(ts => { const id = p => ts.find(t => (t.url || "").endsWith(p) && t.status === "complete")?.id; return { jd: id("/jd"), tmall: id("/tmall"), dup: id("/dup"), mail: id("/mail") }; })`) as Record<string, number | undefined>;
+    return ids.jd && ids.tmall && ids.dup && ids.mail ? ids as Record<string, number> : undefined;
   }, 15_000, "三个商店页");
-  (rules[0]!.steps[0] as { text: string }).text = `京东最便宜。
+  // 邮箱页这一轮没读过：模型被带偏写了它的编号，侧栏也不该去那一页。
+  rules[0]!.steps.unshift(...readAll({ jd: tabs.jd!, tmall: tabs.tmall!, dup: tabs.dup! }));
+  (rules[0]!.steps.at(-1) as { text: string }).text = `京东最便宜。
 <card title="AirPods Pro 3 到手价">
 <stat label="京东" value="=2399+0" unit="¥" note="次日达，运费 0" tab="${tabs.jd}" tag="最低" />
 <stat label="天猫" value="2459" unit="¥" note="包邮" tab="${tabs.tmall}" />
 <stat label="另一家" value="2599" unit="¥" tab="${tabs.dup}" />
 <stat label="比天猫省" value="=2459-2399" unit="¥" />
+<stat label="邮箱" value="8888" unit="¥" tab="${tabs.mail}" />
 </card>`;
 
   await rp.click(panel, "#input");
@@ -78,7 +85,7 @@ try {
   evidence.rows = rows;
   await sleep(1_000);
   await rp.screenshot(panel, join(artifacts, "1-linked.png"));
-  assert.deepEqual(rows, [{ label: "京东", linked: true }, { label: "天猫", linked: true }, { label: "另一家", linked: false }, { label: "比天猫省", linked: false }], `R1: only rows with a unique page number are clickable, 天猫那一行不可点 if missing: ${JSON.stringify(rows)}`);
+  assert.deepEqual(rows, [{ label: "京东", linked: true }, { label: "天猫", linked: true }, { label: "另一家", linked: false }, { label: "比天猫省", linked: false }, { label: "邮箱", linked: false }], `R1: only rows with a unique page number are clickable, 天猫那一行不可点 if missing: ${JSON.stringify(rows)}`);
 
   // R2：前台是京东页，点天猫那一行 → 前台换成天猫页，天猫页上出现圈画。
   await until(async () => await rp.evaluate(panel, `chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t?.id === ${tabs.jd})`) || undefined, 5_000, "京东页在前台");

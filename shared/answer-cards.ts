@@ -279,7 +279,8 @@ function rowSource(tab: string | true | undefined, raws: string[]): RowSource | 
 
   for (const raw of raws) {
     const body = raw.startsWith("=") ? raw.slice(1).replace(/[¥￥$€£\s]/g, "") : raw;
-    const n = /\d[\d,]*(?:\.\d+)?/.exec(body)?.[0];
+    // 负号留着：页面上的 -50（优惠）和 50 是两个数。
+    const n = /[−-]?\d[\d,]*(?:\.\d+)?/.exec(body)?.[0]?.replace("−", "-");
 
     if (n) return { tab: id, find: n };
   }

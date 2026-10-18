@@ -132,14 +132,18 @@ function uniqueNumberText(needle: string, numbers: (text: string) => string[]): 
   let found: HTMLElement | null = null;
   let seen = 0;
 
-  for (let node = walker.nextNode(); node && seen < MAX_TEXT_NODES; node = walker.nextNode(), seen += 1) {
+  for (let node = walker.nextNode(); node; node = walker.nextNode(), seen += 1) {
+    // 没看完整页就不能说只有一处。
+    if (seen >= MAX_TEXT_NODES) return null;
     const parent = node.parentElement;
 
-    if (!parent || parent.closest('[data-bys-translation],[data-bys-pending],script,style,noscript,input,textarea,[contenteditable]') || !numbers(node.textContent ?? '').includes(needle)) continue;
+    if (!parent || parent.closest('[data-bys-translation],[data-bys-pending],script,style,noscript,input,textarea,[contenteditable]')) continue;
+    const hits = numbers(node.textContent ?? '').filter(n => n === needle).length;
 
-    if (!parent.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+    if (!hits || !parent.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
 
-    if (found && found !== parent) return null;
+    // 同一段字里写了两遍、或已经在别处见过，都不止一处。
+    if (found || hits > 1) return null;
     found = parent;
   }
 
