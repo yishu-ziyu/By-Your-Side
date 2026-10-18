@@ -35,6 +35,7 @@ import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
 import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
 import {memoryHostOfUrl} from '../../shared/memory.js';
+import type {BrowseHabit} from '../../shared/browse-habits.js';
 import {asksUser} from './goal-check.js';
 import {endingFromResults,resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
@@ -1657,6 +1658,31 @@ return receipt;
         valid = await entry?.runtime.session.validateNudgeMemory(message.memory, message.url) ?? false;
       } catch { valid = false; }
       this.emit({ type: 'nudge_validation', requestId: message.requestId, valid });
+      return;
+    }
+
+    if (message.type === 'browse_habit_ask') {
+      try {
+        const id = normalizeConversationId(message.conversationId);
+        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        await entry?.runtime.session.askBrowsing(message.key);
+      } catch { /* 后台发起的：失败不打扰会话。 */ }
+
+      return;
+    }
+
+    if (message.type === 'browse_habit_request') {
+      // 用户自己的浏览：后台发起，失败就回空列表，不在会话里报错。
+      let habits: BrowseHabit[] = [];
+
+      try {
+        const id = normalizeConversationId(message.conversationId);
+        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        habits = await entry?.runtime.session.noticeBrowsing(message.days, message.dismissed) ?? [];
+      } catch { habits = []; }
+
+      this.emit({ type: 'browse_habit_result', requestId: message.requestId, habits });
+
       return;
     }
 

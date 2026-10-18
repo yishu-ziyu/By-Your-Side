@@ -89,6 +89,8 @@ import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRu
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
 import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
+import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent } from "../shared/browse-habits.js";
+import type { BrowseHabit } from "../../../shared/browse-habits.js";
 import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
@@ -1910,6 +1912,114 @@ function renderMemoryHistory(history: MemoryEntry[]): HTMLElement {
 }
 
 /** 做事的方法单独成组：纠正后点「记住」的，和从纠正里总结的待验证做法；每条照常可看来源、修改、忘记。 */
+/** 「看到的操作」：从用户自己的浏览里归纳出的事，数据只在 chrome.storage.local，由后台写。 */
+let browseSeen: { on: boolean; found: BrowseHabit[]; recent: BrowseEvent[] } = { on: true, found: [], recent: [] };
+
+const browseControl = (message: { action: "dismiss"; key: string } | { action: "clear" }) => chrome.runtime.sendMessage({ type: BROWSE_CONTROL, ...message }).catch(() => undefined);
+
+let browseClearArmed = false;
+
+async function loadBrowseSeen(): Promise<void> {
+  const stored = await chrome.storage.local.get([BROWSE_ON_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_DISMISSED_KEY]);
+  const dismissed = readDismissed(stored[BROWSE_DISMISSED_KEY]);
+  browseSeen = { on: isBrowseOn(stored[BROWSE_ON_KEY]), found: readBrowseFound(stored[BROWSE_FOUND_KEY]).filter(h => !dismissed.includes(h.key)), recent: readBrowseEvents(stored[BROWSE_LOG_KEY]) };
+  memoryBody.querySelector('[data-memory-group="seen"]')?.replaceWith(renderSeenGroup());
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && [BROWSE_ON_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_DISMISSED_KEY].some(key => key in changes)) void loadBrowseSeen().catch(() => {});
+});
+
+void loadBrowseSeen().catch(() => {});
+
+function renderSeenGroup(): HTMLElement {
+  const group = document.createElement("section");
+  group.className = "memory-group";
+  group.dataset.memoryGroup = "seen";
+  const heading = document.createElement("h3");
+  heading.textContent = `看到的操作 · ${browseSeen.on ? "正在观察" : "已暂停"}`;
+  const intro = document.createElement("p");
+  intro.className = "memory-quiet";
+  intro.textContent = browseSeen.on
+    ? `已记下你自己做的 ${browseSeen.recent.length} 步。快速模型每半小时最多归纳一次，同一件事出现在 2 天里就问你要不要记住。`
+    : `已暂停，暂停期间什么都不记。已记下的 ${browseSeen.recent.length} 步保留。`;
+  group.append(heading, intro);
+  const list = document.createElement("div");
+  list.className = "memory-list";
+
+  for (const habit of [...browseSeen.found].sort((a, b) => (b.days.at(-1) ?? "").localeCompare(a.days.at(-1) ?? ""))) {
+    const row = document.createElement("div");
+    row.className = "memory-row";
+    row.dataset.browseHabit = habit.key;
+    const text = document.createElement("p");
+    text.className = "memory-row-text";
+    text.textContent = habit.habit;
+    const meta = document.createElement("div");
+    meta.className = "memory-row-meta";
+    const facts = document.createElement("div");
+    facts.className = "memory-facts";
+    const count = document.createElement("span");
+    count.className = "memory-scope";
+    count.textContent = `${habit.days.length} 天 · ${habit.times} 次`;
+    const hosts = document.createElement("span");
+    hosts.className = "memory-used";
+    hosts.textContent = habit.hosts.slice(0, 3).join("、");
+    facts.append(count, hosts);
+    const actions = document.createElement("div");
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "删除";
+    remove.onclick = () => void browseControl({ action: "dismiss", key: habit.key });
+    actions.append(remove);
+    meta.append(facts, actions);
+    row.append(text, meta);
+    list.append(row);
+  }
+
+  group.append(list);
+
+  if (browseSeen.recent.length) {
+    const raw = document.createElement("details");
+    raw.className = "memory-history";
+    raw.dataset.browseRaw = "";
+    const summary = document.createElement("summary");
+    summary.textContent = `看原始记录（最近 ${Math.min(50, browseSeen.recent.length)} 步）`;
+    const lines = document.createElement("p");
+    lines.className = "memory-quiet";
+    lines.style.whiteSpace = "pre-wrap";
+    lines.textContent = browseSeen.recent.slice(-50).reverse().map(event => `${event.day.slice(5)} ${event.line}`).join("\n");
+    raw.append(summary, lines);
+    group.append(raw);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+  const pause = document.createElement("button");
+  pause.type = "button";
+  pause.dataset.browsePause = "";
+  pause.textContent = browseSeen.on ? "暂停观察" : "继续观察";
+  pause.onclick = () => void chrome.storage.local.set({ [BROWSE_ON_KEY]: !browseSeen.on });
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "全部删除";
+  clear.onclick = async () => {
+    if (!browseClearArmed) {
+      browseClearArmed = true;
+      clear.textContent = "再点一次，全部删除";
+      setTimeout(() => { browseClearArmed = false; clear.textContent = "全部删除"; }, 4000);
+
+      return;
+    }
+
+    browseClearArmed = false;
+    await browseControl({ action: "clear" });
+  };
+  actions.append(pause, clear);
+  group.append(actions);
+
+  return group;
+}
+
 function renderMethodGroup(methods: MemoryEntry[]): HTMLElement {
   const group = document.createElement("section");
   group.className = "memory-group";
@@ -1989,6 +2099,7 @@ function renderMemoryFacts(): number {
     empty.append(heading, text);
 
     if (!methods.length && !memoryQuery) memoryBody.appendChild(empty);
+    if (!memoryQuery) memoryBody.appendChild(renderSeenGroup());
     memoryBody.appendChild(renderMethodGroup(methods));
 
     return matched;
@@ -1999,6 +2110,7 @@ function renderMemoryFacts(): number {
 
   for (const entry of entries) list.appendChild(renderMemoryEntry(entry));
   memoryBody.appendChild(list);
+  if (!memoryQuery) memoryBody.appendChild(renderSeenGroup());
   memoryBody.appendChild(renderMethodGroup(methods));
 
   if (history.length) memoryBody.appendChild(renderMemoryHistory(history));
@@ -3840,6 +3952,16 @@ function buildMemoryAsk(askId: string): HTMLElement {
     const rule = card.ask.rule.trim().replace(/[。.!！?？，,；;]+$/u, "");
     // 习惯是不带主语的短句（「在 B 站提取字幕并保存」）；纠正是助手第一人称的承诺（「以后我都…」），不加前缀。
     line.textContent = card.ask.habit ? `你好像每次都这样做：${rule}。要我记住吗？` : `${rule}，要我记住吗？`;
+
+    if (card.ask.evidence?.length) {
+      const why = document.createElement("details");
+      why.className = "memory-ask-replaces";
+      why.dataset.memoryAskEvidence = "";
+      const summary = document.createElement("summary");
+      summary.textContent = `依据：${card.ask.evidence.length} 天里做过，来自你自己的浏览`;
+      why.append(summary, ...card.ask.evidence.map(text => Object.assign(document.createElement("div"), { textContent: text })));
+      root.appendChild(why);
+    }
 
     if (card.ask.replaces) {
       const replaces = document.createElement("p");

@@ -3,6 +3,7 @@ import { installEdgePill } from "./edge-pill.js";
 import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
+import { installBrowseHabits } from "./browse-habits.js";
 import type { NudgeCard } from "../shared/nudge.js";
 import { installPageInteractions } from "./page-interactions.js";
 import { pageTranslation } from "./exec/page-translation.js";
@@ -253,6 +254,8 @@ const nudge = installNudge({
   act: (conversationId, text, card, context) => controller(conversationId).spoken(text, context, card),
 });
 
+const browseHabits = installBrowseHabits({ send: message => transport.sendClientMessage(message), selected: () => selectedConversationId });
+
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
 
 function broadcastConversations() { for (const port of connectedPanels) { const selected = panelConversation(port); try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId:selected,resumeReading:reading.resumeOnOpen(selected)}); } catch { /* 面板端口已断开 */ } } }
@@ -277,11 +280,15 @@ const transport = new Uplink({
 
  return; }
 
+   if (msg.type === "browse_habit_result") { void browseHabits.receive(msg).catch(() => {});
+
+ return; }
+
    if (msg.type === "nudge_result" || msg.type === "nudge_validation") { nudge.receive(msg);
 
  return; }
 
-   if (msg.type === "task_view") { edgePill.view(msg.view); nudge.view(msg.view); }
+   if (msg.type === "task_view") { edgePill.view(msg.view); nudge.view(msg.view); browseHabits.view(msg.view); }
    if (msg.type === "memory_result" && msg.ok && msg.action !== "list") void nudge.memoryChanged().catch(() => {});
 
    pttCapsule.server(msg);
@@ -323,7 +330,7 @@ const transport = new Uplink({
  },
  onConnState(...args) { connectionSnapshot = args;
 
- if (args[0] !== "connected") { voiceRelay.disconnected(); reading.disconnected(); edgePill.disconnected(); nudge.disconnected(); }
+ if (args[0] !== "connected") { voiceRelay.disconnected(); reading.disconnected(); edgePill.disconnected(); nudge.disconnected(); browseHabits.disconnected(); }
 
  if (args[0] === "connected") transport.sendClientMessage({type:"conversation_list"});
 
