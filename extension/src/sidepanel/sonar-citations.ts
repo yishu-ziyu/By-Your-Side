@@ -30,7 +30,8 @@ export function toast(text: string): void {
 /** 正文里第一处写着 value 的文字（不进链接、代码、界面文字、已标过的数字）。 */
 function findNumberText(answer: HTMLElement, value: string): { node: Text; at: number } | null {
   const walker = document.createTreeWalker(answer, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => node.parentElement?.closest("a,code,pre,button,.num-cite,.answer-actions,.answer-panel,.memory-used-line") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    // 卡片里写了出处标签页的行有自己的“回原页”（answer-cards.ts），不再按提问那一页挂一次，免得同一行点数字和点空白去两个地方。
+    acceptNode: node => node.parentElement?.closest("a,code,pre,button,.num-cite,.answer-actions,.answer-panel,.memory-used-line,.gen-card [data-gc-tab]") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
 
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
