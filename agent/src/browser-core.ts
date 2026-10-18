@@ -4,6 +4,7 @@ export { startHostCore } from "./host-core.js";
 export type { HostCore, HostCoreOptions, ClientConn } from "./host-core.js";
 
 export type { ConversationPersistence } from "./conversation-persistence.js";
+export type { QueuedTask } from "./task-queue.js";
 
 export { createConversationRuntime } from "./conversation-runtime.js";
 
