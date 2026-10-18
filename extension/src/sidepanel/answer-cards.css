@@ -53,6 +53,19 @@
 .gen-card .gc-linked:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .gc-stat.gc-linked .v::after, .gc-option.gc-linked .name::after, tr.gc-linked > td:first-child::after { content: " ↗"; font-size: var(--fs-micro); font-weight: 400; color: var(--text-tertiary); }
 
+/* 回答里的小程序（实验功能）：标题一行、沙箱框、下面一行提示；写完前一块淡淡的空位。 */
+.gen-app-card { padding: 0; }
+.gc-app-head { display: flex; align-items: baseline; gap: var(--s-2); padding: 10px 14px 6px; }
+.gc-app-title { font-weight: 600; color: var(--text-primary); }
+.gc-app-note { margin-left: auto; font-size: var(--fs-micro); color: var(--text-tertiary); white-space: nowrap; }
+.gc-app-iframe { display: block; width: 100%; border: 0; border-top: 1px solid var(--content-border); background: transparent; }
+.gc-app-wait { display: flex; align-items: center; gap: var(--s-2); padding: 14px; color: var(--text-tertiary); font-size: var(--fs-meta); }
+.gc-app-wait .gc-bar { flex: 0 0 64px; }
+.gc-app-off { margin: 0; padding: 10px 14px 14px; color: var(--text-secondary); font-size: var(--fs-meta); }
+.gc-app-bar { display: flex; align-items: center; gap: var(--s-2); padding: 8px 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-meta); color: var(--text-secondary); }
+.gc-app-bar[hidden] { display: none; }
+.gc-app-bar > span { flex: 1; min-width: 0; }
+
 /* 数字格 */
 .gc-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; container-type: inline-size; }
 .gc-stat { display: flex; flex-direction: column; padding: var(--s-2) 10px 9px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline); }

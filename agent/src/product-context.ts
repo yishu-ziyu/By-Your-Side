@@ -18,6 +18,19 @@ type Turn=VoiceConversationContext['recentTurns'][number];
  */
 const ANSWER_CARD_REMINDER = "\n\nAnswer format: if the user will decide or act on several numbers, options, steps or items, reply with one conclusion sentence plus an answer card (see # Answer cards); when they are unsure of or want to try several values of one condition (how many people or months, a rate that may change, a quantity), that condition is an <input> the formulas use; rows comparing things in several tabs carry tab=TAB_ID (that tab's numeric id); when you must ask the user two or more things (or a choice) before going on, ask with <field>s and a submit button, prefilled from what you know; if they ask how something with 5 or more related parts is structured (not a plain sequence), the card holds a diagram; otherwise plain text. When teaching with guide_step, follow the teaching rules instead.";
 
+/**
+ * 「回答里的小程序」打开时附在每次运行的上下文后（docs/evals/20261019-mini-apps.md）。侧栏把小程序放进不联网的沙箱（mini-app.html）：
+ * 外部脚本、图片、请求、跳转都会被拦，所以要求数据写进程序里；bys.* 是沙箱页注入的几个桥。
+ */
+const MINI_APP_GUIDE = `
+
+Mini apps (the user turned this experiment on): when the user needs to try things rather than read an answer — explore several conditions at once (a loan with rate, years and down payment), filter or sort many items you read from pages, a small simulation or game, an interactive chart — answer with one conclusion sentence plus <app title="short name">complete HTML</app>. If a card (stats, options, table, inputs, fields) already does it, use the card; one-sentence answers stay plain text.
+- Self-contained: inline <style> and <script>, plain JavaScript, no frameworks. External scripts, styles, fonts, images, requests and navigation are all blocked: put the data you read into the script as a JSON constant.
+- It sits in the sidebar, about 360px wide: design for 320-480px. Colors only from var(--bys-text), var(--bys-muted), var(--bys-border), var(--bys-subtle), var(--bys-accent), var(--bys-good); they follow light and dark mode. Background stays transparent; body already has padding.
+- Start from bys.state (null the first time) and call bys.save(state) whenever the user changes something, so reopening the sidebar restores it. bys.say(text) offers a follow-up the user can put into the input box with one click; it never sends.
+- It must work on first load; the sidebar shows script errors to the user. Keep it under about 8000 characters.
+- Never ask for passwords, card numbers, verification codes or ID numbers inside an app.`;
+
 /** 系统提示词只随启用的工具变：钩子和点进输入框时的预热（DurableAgentLoop.warmPromptCache）共用，两边才拼得一模一样。 */
 export function productSystemPrompt(systemPrompt: string, active: ReadonlySet<string>): string {
   const registration = active.has('record_task_results')
@@ -33,6 +46,8 @@ export class ProductContext {
   constructor(private readonly refreshTools:()=>void = ()=>{}, private readonly pageUrl:()=>string|null = ()=>null) {}
   /** 站点笔记：这一轮开始时的页面所在网站有笔记就返回要附上的一段（docs/evals/20261013-site-notes.md）；接线方限时约 1 秒。 */
   siteNotes?: (url: string | null) => Promise<string | null>;
+  /** 用户打开了「回答里的小程序」：系统提示词不变（前缀缓存），写法放在每次运行的上下文里。 */
+  miniApps?: () => Promise<boolean>;
   onProjection?: (data: {capabilityVersion:string;tools:string[];historyTurns:number;reportSource:string|null})=>void;
   private snapshot:()=>TaskProgressSnapshot|null=()=>null;
   /** 上一段本次运行的上下文给过的对话轮次：那段留在历史里，这次只给之后新增的（#271）。 */
@@ -75,6 +90,7 @@ export class ProductContext {
       pi.on('before_agent_start',async event=>{
         // 先读站点笔记（读不到 1 秒就不带），再动下面会改状态的 newTurns、onProjection：等待期间不留半截状态。
         const notes=await this.siteNotes?.(this.pageUrl()).catch(()=>null)??null;
+        const apps=await this.miniApps?.().catch(()=>false)??false;
         const current=this.snapshot();
         const active=new Set(pi.getActiveTools());
         const tools=pi.getAllTools().filter(tool=>active.has(tool.name));
@@ -93,7 +109,7 @@ export class ProductContext {
         // 系统提示词只放每次都一样的内容；日期、对话历史、任务状态、站点提示每次运行都变，作为本次上下文消息（#258）。
         return {
           systemPrompt:productSystemPrompt(event.systemPrompt,active),
-          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+ANSWER_CARD_REMINDER},
+          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+ANSWER_CARD_REMINDER+(apps?MINI_APP_GUIDE:'')},
         };
       });
     };

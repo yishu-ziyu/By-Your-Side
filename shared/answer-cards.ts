@@ -24,6 +24,8 @@ export type Cell = { value: string; expr?: string; unit?: string };
 
 export type Block =
   | { kind: "inputs"; items: CardInput[] }
+  /** 助手当场写的小程序（实验功能，docs/evals/20261019-mini-apps.md）：整段网页原文，侧栏放进不联网的沙箱里运行。 */
+  | { kind: "app"; title: string; html: string }
   | { kind: "fields"; items: CardField[] }
   | { kind: "stats"; items: Stat[] }
   | { kind: "steps"; items: Array<{ title: string; detail?: string }> }
@@ -502,23 +504,60 @@ export function codeRanges(text: string): Array<[number, number]> {
     .map((m) => [m.index, m.index + m[0].length]);
 }
 
-/** 回答原文切成正文与卡片。没写完的卡片 closed 为 false。 */
+/**
+ * 回答里的卡片和小程序各在哪：start 是开头，end 是收尾标签之后（没写完时是全文结尾）。代码块里讲写法的 <card 不算。
+ * 小程序里是整段网页，常有反引号（JS 模板字符串）：先把小程序的内容盖掉再找代码块，免得一个反引号把后面的卡片都算成代码。
+ */
+export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean }> {
+  let masked = text;
+
+  for (const m of text.matchAll(/<app[\s>]/g)) {
+    const close = text.indexOf("</app>", m.index);
+    const end = close < 0 ? text.length : close;
+
+    masked = masked.slice(0, m.index + 4) + " ".repeat(Math.max(0, end - m.index - 4)) + masked.slice(end);
+  }
+  const code = codeRanges(masked);
+  const spans: Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean }> = [];
+  let at = 0;
+
+  for (const m of masked.matchAll(/<(card|app)[\s>]/g)) {
+    if (m.index < at || code.some(([a, b]) => m.index >= a && m.index < b)) continue;
+    // SAFETY: 正则只认 card、app 两个名字。
+    const tag = m[1] as "card" | "app";
+    const close = text.indexOf(`</${tag}>`, m.index);
+
+    at = close < 0 ? text.length : close + tag.length + 3;
+    spans.push({ tag, start: m.index, end: at, closed: close >= 0 });
+  }
+
+  return spans;
+}
+
+function parseApp(source: string, closed: boolean): Card | undefined {
+  const head = new RegExp(String.raw`^<app${ATTRS}\s*>`).exec(source);
+
+  if (!head) return undefined;
+  const html = source.slice(head[0].length).replace(/<\/app>$/, "").trim();
+
+  return { key: digest(html), title: "", blocks: [{ kind: "app", title: str(attrsOf(head[1]!).title) ?? "小程序", html }], buttons: [], closed, numbers: new Set(), values: new Map(), formulas: false };
+}
+
+/** 回答原文切成正文与卡片（小程序也算一种卡片）。没写完的 closed 为 false。 */
 export function splitAnswer(text: string): AnswerPart[] {
-  const code = codeRanges(text);
-  const inCode = (at: number) => code.some(([a, b]) => at >= a && at < b);
   const parts: AnswerPart[] = [];
   let at = 0;
 
-  for (const m of text.matchAll(/<card[\s>]/g)) {
-    if (m.index < at || inCode(m.index)) continue;
-    parts.push({ prose: text.slice(at, m.index) });
-    const end = text.indexOf("</card>", m.index);
-    parts.push({ card: parseCard(end < 0 ? text.slice(m.index) : text.slice(m.index, end), end >= 0) });
-    at = end < 0 ? text.length : end + "</card>".length;
+  for (const span of cardSpans(text)) {
+    parts.push({ prose: text.slice(at, span.start) });
+    const body = text.slice(span.start, span.closed ? span.end - span.tag.length - 3 : span.end);
+
+    parts.push({ card: span.tag === "app" ? parseApp(body, span.closed) : parseCard(body, span.closed) });
+    at = span.end;
   }
 
-  // 结尾写到一半的「<car」「{=to」不露出来。
-  if (at < text.length) parts.push({ prose: text.slice(at).replace(/(?:<(?:c(?:a(?:r(?:d)?)?)?)?|\{=[\w-]*)$/, "") });
+  // 结尾写到一半的「<car」「<ap」「{=to」不露出来。
+  if (at < text.length) parts.push({ prose: text.slice(at).replace(/(?:<(?:c(?:a(?:r(?:d)?)?)?|a(?:p(?:p)?)?)?|\{=[\w-]*)$/, "") });
 
   return parts;
 }
@@ -582,6 +621,7 @@ export function answerMarkdown(text: string): string {
       case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${c.note}）` : ""}`).join("\n");
       case "callout": return `> ${b.text}`;
       case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
+      case "app": return `（小程序：${b.title}）`;
       case "fields": return b.items.map((f) => `- ${f.label}：${f.value || "（待填）"}${f.options ? `（可选：${f.options.join(" / ")}）` : ""}`).join("\n");
       case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, c]) => `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`)].join("\n");
     }
@@ -612,6 +652,7 @@ export function cardPreview(text: string, maxRows = 3): CardPreview | null {
       case "checks": return b.items.map((c) => ({ label: c.text }));
       case "callout": return [{ label: b.text }];
       case "diagram":
+      case "app":
       case "inputs": return [];
       case "fields": return b.items.map((f) => ({ label: f.label, value: f.value || undefined }));
     }
