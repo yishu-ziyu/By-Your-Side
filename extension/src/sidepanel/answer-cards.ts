@@ -145,6 +145,56 @@ function cleanSvg(svg: string): Node {
   return fragment;
 }
 
+/** 图最多缩到这个比例（13px 的字不小于 11px）；还放不下就按这个比例显示、左右滑动看全。 */
+const MIN_SCALE = 0.85;
+
+/** 方块文字每行大约几个汉字宽。Pele 不给模型写的长文字自动断行，一行太长整张图就宽得放不进侧栏。 */
+const LINE_UNITS = 8;
+
+/** 引号里的方块文字按宽度断行：汉字算 1，其他字算 0.55；英文只在空格处断。 */
+function wrapLabels(source: string): string {
+  const wrapLine = (line: string) => {
+    let out = "";
+    let width = 0;
+
+    for (const ch of line) {
+      const wide = /[\u2e80-\uffef]/.test(ch);
+
+      if (width >= LINE_UNITS && (wide || ch === " ")) { out += "<br/>"; width = 0;
+
+ if (ch === " ") continue; }
+      out += ch;
+      width += wide ? 1 : 0.55;
+    }
+
+    return out;
+  };
+
+  return source.replace(/([[{(])"([^"\n]+)"([\]})])/g, (_all, open: string, text: string, close: string) => `${open}"${text.split(/<br\s*\/?>/i).map(wrapLine).join("<br/>")}"${close}`);
+}
+
+/** 上下排和左右排各排一次，取窄的那个：分支多的图左右排常常窄一半。 */
+function narrower(source: string, render: Engine["render"]): string {
+  const flipped = source.replace(/^(\s*(?:flowchart|graph)\s+)(TB|TD|LR)\b/, (_all, head: string, dir: string) => head + (dir === "LR" ? "TB" : "LR"));
+
+  try {
+    return flipped !== source && render(flipped, { fontSize: 13 }).width < render(source, { fontSize: 13 }).width ? flipped : source;
+  } catch {
+    return source;
+  }
+}
+
+/** 画在页面上的图：Pele 每张图挂一个 ResizeObserver，图离开页面（切会话、清空）时要 destroy 掉。 */
+const mounted = new Map<HTMLElement, { destroy(): void }>();
+
+function releaseDiagrams(): void {
+  for (const [figure, m] of mounted) {
+    if (figure.isConnected) continue;
+    m.destroy();
+    mounted.delete(figure);
+  }
+}
+
 /** 画一张写完的结构图。画不出（语法错、不是流程图）就原样显示图的文字，不留空框。 */
 async function drawDiagram(figure: HTMLElement): Promise<void> {
   figure.dataset.drawn = "";
@@ -163,11 +213,18 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
   const cited = new Set([...figure.querySelectorAll<HTMLElement>(":scope > .gc-cites > li")].map((li) => li.dataset.node));
 
   try {
-    const { mount } = await loadEngine();
+    const { mount, render } = await loadEngine();
 
-    mount(canvas, source, {
+    // 等加载的这会儿图可能已经被换掉了。
+    if (!figure.isConnected) return;
+    mounted.set(figure, mount(canvas, narrower(wrapLabels(source), render), {
       fontSize: 13, zoom: false, links: false, images: false, sanitize: cleanSvg, onError: fail,
-      onRender: () => {
+      onRender: (result) => {
+        const wide = result.width * MIN_SCALE > canvas.clientWidth;
+
+        canvas.classList.toggle("gc-diagram-wide", wide);
+        canvas.querySelector("svg")?.style.setProperty("width", wide ? `${Math.round(result.width * MIN_SCALE)}px` : "");
+
         for (const node of canvas.querySelectorAll<SVGElement>(".pele-node[data-id], .pele-cluster[data-id]")) {
           if (!cited.has(node.dataset.id)) continue;
           node.dataset.cited = "";
@@ -175,7 +232,7 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
           node.setAttribute("role", "button");
         }
       },
-    });
+    }));
   } catch {
     fail();
   }
@@ -345,6 +402,8 @@ export function patchAnswer(root: HTMLElement, html: string): void {
 export function bindAnswerCards(root: HTMLElement, say: (text: string) => void): void {
   // 写完的图不管从流式、重开侧栏还是切会话进来，都在出现时画一次。
   const draw = () => {
+    releaseDiagrams();
+
     for (const el of root.querySelectorAll<HTMLElement>(".gc-diagram:not(.gc-ph):not([data-drawn])")) void drawDiagram(el);
   };
 

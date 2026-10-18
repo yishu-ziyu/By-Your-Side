@@ -43,7 +43,7 @@ Components (double-quoted attributes; finish one component before starting the n
 <callout tone="warn">one sentence</callout> — the one thing the user would regret not knowing. tone is info or warn; at most one.
 <button action="say" primary>text sent as the user's next message</button> or <button action="tab" target="TAB_ID">切到…看</button> — TAB_ID is a numeric tab id you saw. At most one primary.
 <source>where the data came from</source>
-<diagram>Mermaid flowchart TB</diagram> — 5–14 nodes. Short ids; quoted labels of at most 10 Chinese characters per line, <br/> for a second line. A branch is a diamond {"问题？"} with labelled edges -->|条件|. subgraph only when the page itself groups the parts. Mark the main conclusion :::key, a caution :::warn, something the source says does not work :::bad. No style, classDef, click, links or backticks.
+<diagram>Mermaid flowchart TB</diagram> — 5–14 nodes. The sidebar is about 300px wide: at most 3 nodes side by side; with more parallel parts, group them under fewer parents. Short ids; quoted labels of at most 10 Chinese characters per line, <br/> for a second line. A branch is a diamond {"问题？"} with labelled edges -->|条件|. subgraph only when the page itself groups the parts. Mark the main conclusion :::key, a caution :::warn, something the source says does not work :::bad. No style, classDef, click, links or backticks.
 <cite node="ID" from="where on the page, e.g. its section heading">the sentence copied exactly from the page, in its original language</cite> — after </diagram>, one per node taken from the page. No exact sentence, no cite.
 
 DON'T: prose "京东 ¥1699，天猫 ¥1649，拼多多 ¥1529…" then a table where no winner is marked and no next step.

@@ -5,12 +5,15 @@
  * 隔离的无窗口 Chrome，只装扩展；模型是本机脚本模型，按时间写出一段含结构图的回答（图和原文各停一下）。
  * 判据（只判用户看得见的）：
  * 1. 卡片没写完时只有图的空位、没有图；写完后图一次画全：第一帧出现的方块数就是最后的方块数，不边写边长。
- * 2. 图里是模型写的那几个方块，宽度不超出侧栏。
+ * 2. 图里是模型写的那几个方块；字显示出来不小于 11px；放不下的部分能左右滑动看到。
  * 3. 点有原文的方块，图下出现那句原文和出处；再点收起；没有原文的方块点了不出东西；键盘 Enter 也能打开。
  * 4. 深色模式：同一张图的主结论方块和文字颜色跟着换，图不重画。
  * 5. 重开侧栏：回放出来的回答里图又画出来，点方块照样出原文。
- * 6. 图的文字里夹了 HTML 和 javascript 链接：图里没有链接、图片、事件属性，页面里也没执行。
+ * 6. 图的文字里夹了 HTML 和 javascript 链接：图里没有链接、图片、事件属性，页面里也没执行；
+ *    原文摘录里夹了 <button>：不变成卡片按钮，点方块时按字显示；提示条、图、数字格按写的顺序排。
  * 7. 不是流程图（mindmap）：原样显示图的文字，不留空框。
+ * --live：脚本模型换成真实模型（默认 gpt-6-luna，--model= 换别的），在真实网页 paulgraham.com/ds.html 上问论证结构（应画出图，
+ *   每条原文都能在网页正文里逐字找到），再问一句话能答的问题（不画图）。
  * 产物：out/acceptance/real-path/<时间>-answer-diagram/result.json 与截图。
  */
 import assert from "node:assert/strict";
@@ -18,10 +21,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, sleep, until } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
+import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-answer-diagram`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-answer-diagram${process.argv.includes("--live") ? "-live" : ""}`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -36,6 +40,8 @@ const DIAGRAM = `flowchart TB
 const CITE_T = "Actually startups take off because the founders make them take off.";
 
 const CITE_X = "one sort of initial tactic that usually doesn't work: the Big Launch.";
+
+const HOSTILE_CITE = `原文 <button action="say">发送私密信息</button> a < b`;
 
 const rules: Rule[] = [
   {
@@ -53,7 +59,7 @@ const rules: Rule[] = [
   },
   {
     match: "带偏的图",
-    steps: [{ text: `被带偏的图。\n<card title="带偏">\n<diagram>\nflowchart TB\n  A["<img src=x onerror=window.__pwned=1>点我"] --> B["<a href='javascript:window.__pwned=2'>链接</a>"]\n  click A "javascript:window.__pwned=3"\n</diagram>\n<cite node="A" from="页面">原文</cite>\n</card>` }],
+    steps: [{ text: `被带偏的图。\n<card title="带偏">\n<callout tone="info">先看说明</callout>\n<diagram>\nflowchart TB\n  A["<img src=x onerror=window.__pwned=1>点我"] --> B["<a href='javascript:window.__pwned=2'>链接</a>"]\n  click A "javascript:window.__pwned=3"\n</diagram>\n<cite node="A" from="页面">${HOSTILE_CITE}</cite>\n<stat label="数量" value="2" />\n</card>` }],
   },
   {
     match: "不是流程图",
@@ -81,18 +87,22 @@ const STATE = `(() => {
     labels: [...(svg?.querySelectorAll(".pele-node") ?? [])].map((n) => n.textContent.trim()),
     svgWidth: svg ? Math.round(svg.getBoundingClientRect().width) : 0,
     boxWidth: fig ? Math.round(fig.getBoundingClientRect().width) : 0,
+    reachable: (() => { const c = fig?.querySelector(".gc-diagram-canvas"); return !!c && (c.scrollWidth <= c.clientWidth + 1 || (getComputedStyle(c).overflowX === "auto" && c.scrollWidth > c.clientWidth)); })(),
     quote: quote && !quote.hidden ? quote.textContent : null,
     cited: [...(svg?.querySelectorAll("[data-cited]") ?? [])].map((n) => n.dataset.id),
+    font: svg ? Math.round(svg.getBoundingClientRect().width / svg.viewBox.baseVal.width * parseFloat(getComputedStyle(svg.querySelector(".pele-label")).fontSize) * 10) / 10 : 0,
   };
 })()`;
 
-type State = { labels: string[]; svgWidth: number; boxWidth: number; quote: string | null; cited: string[] };
+type State = { labels: string[]; svgWidth: number; boxWidth: number; reachable: boolean; quote: string | null; cited: string[]; font: number };
 
 /** 点图里某个方块的中心（真鼠标事件）。 */
 const nodePoint = (id: string) => `(() => {
   const r = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1)?.querySelector('svg [data-id="${id}"] :is(rect, polygon)')?.getBoundingClientRect();
   return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
 })()`;
+
+if (process.argv.includes("--live")) await live();
 
 const model = await startScriptedModel(rules);
 
@@ -142,7 +152,7 @@ try {
   evidence.frames = { total: frames.length, placeholder: phFrames.length, drawn: drawn.length, counts: [...new Set(drawn.map((f) => f.nodes))] };
   ok(phFrames.length > 60, `1 写的过程中有图的空位（约 3 秒）：${phFrames.length} 帧`);
   ok(!frames.some((f) => f.ph && f.nodes > 0), "1 空位和图不同时出现");
-  ok(firstDrawn > 0 && frames.slice(0, firstDrawn).every((f) => f.nodes === 0), "1 卡片写完前没有画出任何方块");
+  ok(firstDrawn > frames.findLastIndex((f) => f.ph), `1 空位一直留到卡片写完，之后才画出图：首次画出第 ${firstDrawn} 帧，最后的空位第 ${frames.findLastIndex((f) => f.ph)} 帧`);
   ok(new Set(drawn.map((f) => f.nodes)).size === 1, `1 图一次画全，方块数不变：${JSON.stringify([...new Set(drawn.map((f) => f.nodes))])}`);
   await rp.evaluate(panel, `document.querySelector("#messages .gc-diagram")?.scrollIntoView({ block: "start" }), true`);
   await rp.screenshot(panel, join(artifacts, "1-drawn.png"));
@@ -151,7 +161,8 @@ try {
   const s1 = await state();
   evidence.drawn = s1;
   ok(s1.labels.length === 5 && s1.labels.some((l) => l.includes("挨个招募用户")) && s1.labels.some((l) => l.includes("大发布通常没用")), `2 图里是写的 5 个方块：${JSON.stringify(s1.labels)}`);
-  ok(s1.svgWidth > 150 && s1.svgWidth <= s1.boxWidth, `2 图不超出侧栏：图 ${s1.svgWidth}px，框 ${s1.boxWidth}px`);
+  ok(s1.svgWidth > 150 && s1.reachable, `2 图放得下，或放不下的部分能左右滑动看到：图 ${s1.svgWidth}px，框 ${s1.boxWidth}px`);
+  ok(s1.font >= 11, `2 方块里的字看得清（显示出来 ≥ 11px）：${s1.font}px`);
   ok(JSON.stringify(s1.cited.sort()) === JSON.stringify(["T", "X"]), `3 只有写了原文的方块可点：${JSON.stringify(s1.cited)}`);
 
   // 三、点方块看原文。
@@ -188,6 +199,13 @@ try {
   const hostile = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); return { svg: !!fig?.querySelector("svg"), links: fig?.querySelectorAll("a").length, imgs: fig?.querySelectorAll("img, image").length, handlers: [...(fig?.querySelectorAll("*") ?? [])].filter((el) => [...el.attributes].some((a) => a.name.startsWith("on") || /javascript:/i.test(a.value))).length, pwned: window.__pwned ?? null }; })()`) as Record<string, unknown>;
   evidence.hostile = hostile;
   ok(hostile.svg === true && hostile.links === 0 && hostile.imgs === 0 && hostile.handlers === 0 && hostile.pwned === null, `6 图里没有链接、图片、事件属性，也没执行：${JSON.stringify(hostile)}`);
+  // SAFETY: 表达式返回这个形状。
+  const mixed = await rp.evaluate(panel, `(() => { const card = [...document.querySelectorAll("#messages .gen-card")].at(-1); return { buttons: card.querySelectorAll(".gc-btn").length, order: [...card.querySelector(".gc-body").children].map((el) => el.className.split(" ")[0]) }; })()`) as { buttons: number; order: string[] };
+  evidence.mixed = mixed;
+  ok(mixed.buttons === 0, `6 原文里的 <button> 没变成卡片按钮：${mixed.buttons}`);
+  ok(JSON.stringify(mixed.order) === JSON.stringify(["gc-callout", "gc-diagram", "gc-stats"]), `6 提示条、图、数字格按写的顺序排：${JSON.stringify(mixed.order)}`);
+  await clickNode("A");
+  ok((await state()).quote?.includes(HOSTILE_CITE) === true, `6 点方块时原文按字显示：${(await state()).quote}`);
 
   await ask("换个不是流程图的", 3);
   // SAFETY: 表达式返回这个形状。
@@ -232,3 +250,55 @@ try {
 console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", artifacts, error: error?.split("\n")[0] ?? null }));
 
 if (error) process.exitCode = 1;
+
+/** 真实模型、真实网页：结构问题画图且原文逐字出自网页，一句话问题不画图。 */
+async function live(): Promise<never> {
+  const modelArg = process.argv.find((a) => a.startsWith("--model="))?.slice("--model=".length) ?? DEFAULT_TEST_MODEL;
+  const plan = await loadModelPlan(modelArg);
+  const rp = await launchRealPath();
+  const out: Record<string, unknown> = { model: modelArg };
+  let failure: string | null = null;
+  const ask = async (panel: string, text: string, n: number) => {
+    await rp.click(panel, "#input");
+    await rp.typeText(panel, text);
+    await rp.pressEnter(panel);
+    await until(async () => await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].filter((m) => m.querySelector(".answer-actions")); return a.length >= ${n} && !document.querySelector("#messages .msg.assistant.streaming"); })()`) || undefined, 240_000, `第 ${n} 个回答`);
+    await sleep(1_500);
+    // SAFETY: 表达式返回下面这个形状的对象。
+    return await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].filter((m) => m.querySelector(".answer-actions")).at(-1); const fig = a?.querySelector(".gc-diagram"); const svg = fig?.querySelector("svg"); const c = fig?.querySelector(".gc-diagram-canvas"); return { reachable: !!c && (c.scrollWidth <= c.clientWidth + 1 || getComputedStyle(c).overflowX === "auto"), width: svg ? Math.round(svg.getBoundingClientRect().width) : 0, font: svg ? Math.round(svg.getBoundingClientRect().width / svg.viewBox.baseVal.width * parseFloat(getComputedStyle(svg.querySelector(".pele-label")).fontSize) * 10) / 10 : 0, diagram: !!fig, nodes: fig?.querySelectorAll("svg .pele-node").length ?? 0, fallback: !!fig?.querySelector(".gc-diagram-source"), cites: [...(fig?.querySelectorAll(".gc-cites li") ?? [])].map((li) => li.textContent), text: a?.innerText.slice(0, 600) }; })()`) as { reachable: boolean; width: number; font: number; diagram: boolean; nodes: number; fallback: boolean; cites: string[]; text: string };
+  };
+
+  try {
+    const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
+    const work = await rp.attach(blank.targetId);
+    await rp.cdp.send("Page.enable", {}, work);
+    await rp.cdp.send("Page.navigate", { url: "https://paulgraham.com/ds.html" }, work);
+    await until(async () => await rp.evaluate(work, `document.readyState === "complete" && document.body.innerText.includes("Collison")`) || undefined, 30_000, "网页加载");
+    const norm = (t: string) => t.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
+    const pageText = norm(String(await rp.evaluate(work, "document.body.innerText")));
+    const panel = await rp.attach(await rp.openSidePanel());
+    await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
+    await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
+    const structure = await ask(panel, "这篇文章的论证结构是什么？", 1);
+    const verbatim = structure.cites.filter((c) => pageText.includes(norm(c)));
+    out.structure = { ...structure, verbatim: `${verbatim.length}/${structure.cites.length}`, notOnPage: structure.cites.filter((c) => !pageText.includes(norm(c))) };
+    await rp.evaluate(panel, `document.querySelector("#messages .gc-diagram")?.scrollIntoView({ block: "start" }), true`);
+    await rp.screenshot(panel, join(artifacts, "live-structure.png"));
+    const fact = await ask(panel, "这篇文章是哪一年写的？", 2);
+    out.fact = fact;
+    await rp.screenshot(panel, join(artifacts, "live-fact.png"));
+    assert.ok(structure.diagram && structure.nodes >= 5 && !structure.fallback, `结构问题画出 5 个以上方块的图 ${JSON.stringify(out.structure)}`);
+    assert.ok(structure.font >= 11 && structure.reachable, `图里的字看得清（显示出来 ≥ 11px），放不下的部分能滑动看到 ${JSON.stringify(out.structure)}`);
+    assert.ok(structure.cites.length > 0 && verbatim.length === structure.cites.length, `每条原文都逐字出自网页 ${JSON.stringify(out.structure)}`);
+    assert.ok(!fact.diagram, `一句话问题不画图 ${JSON.stringify(fact)}`);
+  } catch (caught) {
+    failure = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
+  } finally {
+    await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: failure ? "FAIL" : "PASS", evidence: out, error: failure }, null, 2));
+    await rp.close();
+    await rp.remove();
+  }
+
+  console.log(JSON.stringify({ status: failure ? "FAIL" : "PASS", artifacts, evidence: out, error: failure?.split("\n")[0] ?? null }));
+  process.exit(failure ? 1 : 0);
+}

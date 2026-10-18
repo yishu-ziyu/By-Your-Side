@@ -166,20 +166,35 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
     return fresh;
   };
-  // 图的原文里可以有 <br/>、-->，不走下面的组件正则；没写完的图整段先拿掉，它后面也不会再有组件。
-  // 图等整张卡写完才画：边写边画时每加一行整张图都会重排，图后面的出处（cite）也要写完才能点。
+  /**
+   * 图等整张卡写完才画：边写边画时每加一行整张图都会重排，图后面的原文（cite）也要写完才能点。
+   * 没写完时只放图前面的组件和图的空位，空位的位置就是图的位置，收尾时原位换成图。
+   * 图的原文里有 <br/>、-->，原文摘录里可能有网页上的任何字（包括像 <button> 的字），都不走下面的组件正则。
+   */
   let body = source.slice(head[0].length);
-  const diagram = /<diagram>([\s\S]*?)<\/diagram>/.exec(body);
-  const openDiagram = /<diagram>(?![\s\S]*<\/diagram>)/.exec(body);
+  const diagramAt = body.indexOf("<diagram>");
+  let diagram: Extract<Block, { kind: "diagram" }> | undefined;
+  const cites: Array<{ node: string; text: string; from?: string }> = [];
 
-  if (openDiagram) body = body.slice(0, openDiagram.index);
+  if (diagramAt >= 0 && !closed) {
+    body = body.slice(0, diagramAt);
+  } else if (diagramAt >= 0) {
+    const end = body.indexOf("</diagram>", diagramAt);
+    const text = body.slice(diagramAt + "<diagram>".length, end < 0 ? undefined : end).trim();
 
-  if (diagram) {
-    body = body.replace(diagram[0], "");
+    body = `${body.slice(0, diagramAt)}<diagram-at />${end < 0 ? "" : body.slice(end + "</diagram>".length)}`;
 
-    if (closed && diagram[1]?.trim()) card.blocks.push({ kind: "diagram", source: diagram[1].trim(), cites: {} });
+    if (text) diagram = { kind: "diagram", source: text, cites: {} };
+    body = body.replace(new RegExp(String.raw`<cite\b${ATTRS}\s*>([\s\S]*?)<\/cite>`, "g"), (_all, rawAttrs: string, inner: string) => {
+      const a = attrsOf(rawAttrs);
+      const node = str(a.node);
+
+      if (node && inner.trim()) cites.push({ node, text: inner.trim(), from: str(a.from) });
+
+      return "";
+    });
   }
-  const component = new RegExp(String.raw`<(stat|step|option|table|tr|check|callout|button|source|cite)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
+  const component = new RegExp(String.raw`<(stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
 
   for (const m of body.matchAll(component)) {
     const [, tag, rawAttrs, inner] = m;
@@ -239,11 +254,9 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       else if (a.action === "say") card.buttons.push({ label: text, primary: isPrimary });
     } else if (tag === "source") {
       if (text) card.source = text;
-    } else if (tag === "cite") {
-      const node = str(a.node);
-      const block = card.blocks.find((b) => b.kind === "diagram");
-
-      if (node && text && block?.kind === "diagram") block.cites[node] = { text, from: str(a.from) };
+    } else if (tag === "diagram-at" && diagram) {
+      for (const c of cites) diagram.cites[c.node] = { text: c.text, from: c.from };
+      card.blocks.push(diagram);
     }
   }
 
@@ -253,8 +266,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   const tail = lastOpen === undefined ? "" : body.slice(lastOpen);
   const open = /^<(stat|step|option|table|tr|check|callout)\s((?:[^<>"]|"[^"]*")*(?:"[^"]*)?)$/.exec(tail) ?? /^<(callout)\b([^<>]*)>[^<]*(?:<\/?[a-z]*)?$/.exec(tail);
 
-  // 有图的卡片没写完时空位一直是图的那块，不随后面写到一半的组件换来换去。
-  if ((openDiagram || diagram) && !closed) card.pending = { tag: "diagram", written: "" };
+  if (diagramAt >= 0 && !closed) card.pending = { tag: "diagram", written: "" };
   // SAFETY: 两个正则的第一组只会是 PendingComponent 列出的标签名。
   else if (open) card.pending = { tag: open[1] as PendingComponent["tag"], written: open[2] ?? "" };
 
@@ -357,6 +369,13 @@ export function answerSpeech(text: string): string {
   return prose || cards.map((c) => c.title).filter(Boolean).join("；");
 }
 
+/** 图里某个方块上写的字（复制时给原文配上方块名）；找不到就用方块的 id。 */
+function diagramLabel(source: string, node: string): string {
+  const label = new RegExp(String.raw`(?:^|[\s&;>])${node.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\s*[[({>]+\s*"([^"]*)"`, "m").exec(source)?.[1];
+
+  return label ? label.replace(/<br\s*\/?>/gi, " ").trim() : node;
+}
+
 /** 复制为 Markdown：卡片换成等价的 Markdown（数字格、步骤、选项、表格、清单），按钮不复制。 */
 export function answerMarkdown(text: string): string {
   if (!/<card[\s>]|\{=/.test(text)) return text;
@@ -370,7 +389,7 @@ export function answerMarkdown(text: string): string {
       case "table": return [`| ${b.cols.join(" | ")} |`, `|${b.cols.map(() => " --- ").join("|")}|`, ...b.rows.map((r) => `| ${r.cells.join(" | ")}${r.tag ? `（${r.tag}）` : ""} |`)].join("\n");
       case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${c.note}）` : ""}`).join("\n");
       case "callout": return `> ${b.text}`;
-      case "diagram": return `\`\`\`mermaid\n${b.source}\n\`\`\``;
+      case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, c]) => `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`)].join("\n");
     }
   }), c.source ? `来源：${c.source}` : ""].filter(Boolean).join("\n\n");
 

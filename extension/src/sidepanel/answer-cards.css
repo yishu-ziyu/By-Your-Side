@@ -113,6 +113,9 @@
   --pele-accent: var(--accent); --pele-font: var(--font); --pele-radius: 8px;
 }
 .gc-diagram-canvas svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.gc-diagram-canvas.gc-diagram-wide { overflow-x: auto; overscroll-behavior-x: contain; }
+/* Pele 把 max-width:100% 写在 SVG 的 style 上，只有 !important 盖得过。 */
+.gc-diagram-canvas.gc-diagram-wide svg { max-width: none !important; margin: 0; }
 .gc-diagram .key :is(rect, polygon) { fill: var(--accent-soft); stroke: var(--accent); }
 .gc-diagram .warn :is(rect, polygon) { fill: color-mix(in srgb, var(--warn) 9%, transparent); stroke: var(--warn); }
 .gc-diagram .bad :is(rect, polygon) { fill: var(--err-soft); stroke: var(--err); stroke-dasharray: 4 3; }
