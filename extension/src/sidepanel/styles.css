@@ -3764,7 +3764,6 @@ details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(-
 }
 @keyframes handoffBannerIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 #composer.you-operating { box-shadow: inset 0 0 0 1px var(--text-primary); }
-.run-body .chip.inspecting { box-shadow: inset 2px 0 0 var(--text-primary); }
 .run-body .chip-gone { margin-left: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 @media (prefers-reduced-motion: reduce) {
   #handoff-banner:not([hidden]) { animation-name: fadeOnlyIn; opacity: 1; transform: none; }
