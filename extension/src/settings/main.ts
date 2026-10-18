@@ -21,6 +21,7 @@ import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js
 import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
+import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
@@ -218,6 +219,13 @@ document.getElementById("settings")!.innerHTML = `
       ${toggleRow("browse-habits", "从我的浏览里学习习惯", "记下网页标题、网址、你点的按钮和链接、搜索词和填写的内容，交给快速模型找出你反复做的事。密码栏和卡号栏的值不记，助手替你做事时的操作也不记。同一件事在 2 天里出现过，就问你要不要记住。记录在侧栏「记忆」里能看、能删。")}
     </div>
     <p id="habits-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="sx" aria-labelledby="labs-title">
+    <div class="sx-head"><h2 id="labs-title">实验功能</h2></div>
+    <div class="surface rows">
+      ${toggleRow("mini-apps", "回答里的小程序", "要动手试的问题（调几个条件看结果、筛选比较一批东西、小模拟），助手当场写一个小程序放在回答里。小程序在侧栏的沙箱里运行，不能联网，碰不到你的网页和登录；你在里面改过的东西重开侧栏还在。写小程序比写文字慢几秒。")}
+    </div>
+    <p id="labs-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="open-threads-title">
     <div class="sx-head"><h2 id="open-threads-title">继续上次的事</h2></div>
@@ -1314,6 +1322,7 @@ async function reload(): Promise<void> {
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
+  $<HTMLInputElement>("mini-apps").checked = isMiniAppsOn(stored[MINI_APPS_KEY]);
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
   attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
   renderMainModel();
@@ -1529,6 +1538,7 @@ bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接
 bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
 
 bindToggle($<HTMLInputElement>("browse-habits"), BROWSE_ON_KEY, $("habits-status"), (on) => (on ? "已开启。" : "已暂停，已记的操作保留。"));
+bindToggle($<HTMLInputElement>("mini-apps"), MINI_APPS_KEY, $("labs-status"), (on) => (on ? "已打开，下一个问题起生效。" : "已关闭，已有的小程序不再显示。"));
 
 bindToggle(openThreads, OPEN_THREADS_KEY, $("open-threads-status"), (on) => (on ? "已开启，下次打开新对话时出现。" : "已关闭。"));
 

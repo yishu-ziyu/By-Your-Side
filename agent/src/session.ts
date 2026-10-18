@@ -113,6 +113,8 @@ export interface SessionCreateOptions {
   taskHistory?: TaskHistoryStore;
   /** 站点笔记（docs/evals/20261013-site-notes.md）：只给主会话；做成的任务写，打开这个网站时带上。 */
   siteNotes?: SiteNotesStore;
+  /** 用户打开了「回答里的小程序」实验功能（docs/evals/20261019-mini-apps.md）：打开时每次运行的上下文附上小程序写法。 */
+  miniApps?: () => Promise<boolean>;
   conversationId?: string;
   /** 共享同一 RPC 的成员身份；Lead 不传，worker 传自己的 sessionId。 */
   memberId?: string;
@@ -841,6 +843,8 @@ if(required.includes(key))candidates.set(key,attachment);
       wrapper.siteNotes = options?.memberId ? null : options?.siteNotes ?? null;
 
       if (productContext && wrapper.siteNotes) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
+
+      if (productContext && !options?.memberId && options?.miniApps) productContext.miniApps = options.miniApps;
       wrapper.bindDeliveryRun = (getRunId) => { runIdSlot.current = getRunId; wrapper.deliveryRunId = getRunId; };
 
       wrapper.subscribeEvents();

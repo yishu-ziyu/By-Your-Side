@@ -13,6 +13,7 @@ import { createElement as icon, LayoutGrid, Table2 } from "lucide";
 import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, evaluate, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, toast } from "./sonar-citations.js";
+import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -91,6 +92,8 @@ function blockHtml(b: Block, i: number, extra: string): string {
   switch (b.kind) {
     case "fields":
       return `<div class="gc-fields" data-gc-key="b${i}">${b.items.map((f, j) => keyed(key(j), fieldHtml(f))).join("")}${extra}</div>`;
+    case "app":
+      return "";
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
@@ -115,11 +118,26 @@ function blockHtml(b: Block, i: number, extra: string): string {
   }
 }
 
+/**
+ * 小程序卡：写完前只放一块“正在写小程序”的空位；写完后放一个空框，mountApp 再把沙箱 iframe 放进去（实验功能开着时）。
+ * 程序原文编码后放在属性上，和结构图同理：原文里什么字都可能有。
+ */
+function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
+  const head = `<div class="gc-app-head"><span class="gc-app-title">${esc(app.title)}</span><span class="gc-app-note">助手写的小程序 · 不联网</span></div>`;
+
+  if (!card.closed) return `<div class="gen-card gen-app-card">${keyed("app", `<div class="gc-app gc-ph" aria-hidden="true">${head}<div class="gc-app-wait">${BAR}<span>正在写小程序…</span></div></div>`)}</div>`;
+
+  return `<div class="gen-card gen-app-card" data-gc-card="${card.key}">${keyed("app", `<div class="gc-app" data-app="${encodeURIComponent(app.html)}" data-app-title="${esc(app.title)}">${head}<div class="gc-app-frame"></div><div class="gc-app-bar" hidden></div></div>`)}</div>`;
+}
+
 function cardHtml(card: Card): string {
+  const app = card.blocks[0]?.kind === "app" ? card.blocks[0] : undefined;
+
+  if (app) return appCardHtml(card, app);
   const blocks = card.blocks.map((b, i) => {
     const p = card.pending;
     const joins = p && i === card.blocks.length - 1 && !STANDALONE.has(p.tag) && KIND[p.tag] === b.kind;
-    const items = b.kind === "table" ? b.rows.length : b.kind === "callout" || b.kind === "diagram" ? 0 : b.items.length;
+    const items = b.kind === "table" ? b.rows.length : b.kind === "callout" || b.kind === "diagram" || b.kind === "app" ? 0 : b.items.length;
 
     return blockHtml(b, i, joins ? placeholder(p, `b${i}.${items}`, b.kind === "table" ? b.cols.length : 0) : "");
   });
@@ -462,7 +480,7 @@ export function patchAnswer(root: HTMLElement, html: string): void {
 }
 
 /** 卡片上用户还没发出的改动：调过的数、勾过的清单项（按卡片里的顺序）、表单各栏的值。at 用来丢掉最早的。 */
-type CardState = { vars?: Record<string, number>; checks?: number[]; fields?: Record<string, string>; at: number };
+type CardState = { vars?: Record<string, number>; checks?: number[]; fields?: Record<string, string>; app?: string; at: number };
 
 /**
  * 每张卡一个存储项：两个窗口同时存不同的卡片时互不覆盖。
@@ -498,9 +516,10 @@ const MAX_SAVED = 300;
 
 function isCardState(v: unknown): v is CardState {
   if (!v || typeof v !== "object") return false;
-  const { vars, checks, fields, at } = v as Record<string, unknown>;
+  const { vars, checks, fields, app, at } = v as Record<string, unknown>;
 
   return typeof at === "number"
+    && (app === undefined || typeof app === "string")
     && (fields === undefined || (typeof fields === "object" && fields !== null && Object.values(fields).every((t) => typeof t === "string")))
     && (vars === undefined || (typeof vars === "object" && vars !== null && Object.values(vars).every((n) => typeof n === "number" && Number.isFinite(n))))
     && (checks === undefined || (Array.isArray(checks) && checks.every((n) => Number.isInteger(n))));
@@ -532,7 +551,7 @@ function stateOf(card: HTMLElement): CardState {
   const checks = [...card.querySelectorAll<HTMLInputElement>(".gc-check input[type=checkbox]")].flatMap((el, i) => (el.checked ? [i] : []));
   const fields = Object.fromEntries([...card.querySelectorAll<HTMLElement>(".gc-field")].map((f) => [f.dataset.gcField!, fieldValue(f)]));
 
-  return { vars, checks, fields, at: Date.now() };
+  return { vars, checks, fields, app: appStates.get(card), at: Date.now() };
 }
 
 /** 一栏现在的值：选项取选中的那个，文字框取去掉首尾空白的字。 */
@@ -625,11 +644,20 @@ function save(card: HTMLElement): void {
 /** 文字框边打边存，停顿一下再写，不每个字写一次。 */
 const typing = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
 
+const pendingSaves = new Set<HTMLElement>();
+
 function saveSoon(card: HTMLElement): void {
   touched.add(card);
+  pendingSaves.add(card);
   clearTimeout(typing.get(card));
-  typing.set(card, setTimeout(() => save(card), 400));
+  typing.set(card, setTimeout(() => { pendingSaves.delete(card); save(card); }, 400));
 }
+
+// 打字停顿前就关掉侧栏：没写的那次当场写。
+addEventListener("pagehide", () => {
+  for (const card of pendingSaves) { clearTimeout(typing.get(card)); save(card); }
+  pendingSaves.clear();
+});
 
 /** 把存下的样子放回卡片：调过的数、勾选、表单各栏。 */
 function apply(card: HTMLElement, saved: CardState): void {
@@ -774,6 +802,152 @@ async function revealRow(row: HTMLElement): Promise<void> {
   if (tab && (tab.windowId !== await targetWindowId() || isPopout)) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
 }
 
+/** 小程序最后一次 bys.save 的内容（字符串化的 JSON），随卡片其他状态一起存。 */
+const appStates = new WeakMap<HTMLElement, string>();
+
+/** 已经放进 iframe 的小程序框，和收尾要摘掉的监听。 */
+const mountedApps = new Map<HTMLElement, () => void>();
+
+const mountTickets = new WeakMap<HTMLElement, symbol>();
+
+/** 小程序框的高度上下限：太矮看不全一行按钮，太高一个小程序就占满侧栏。 */
+const APP_MIN_HEIGHT = 60;
+
+const APP_MAX_HEIGHT = 720;
+
+let miniAppsOn: Promise<boolean> | undefined;
+
+const readMiniAppsOn = () => (miniAppsOn ??= chrome.storage.local.get(MINI_APPS_KEY).then((r) => isMiniAppsOn(r[MINI_APPS_KEY]), () => false));
+
+function releaseApps(): void {
+  for (const [box, release] of mountedApps) {
+    if (box.isConnected) continue;
+    release();
+    mountedApps.delete(box);
+  }
+}
+
+/** 小程序框下面的一行：报错、想放进输入框的话。 */
+function appBar(box: HTMLElement, text: string, action?: { label: string; run: () => void }): void {
+  const bar = box.querySelector<HTMLElement>(":scope > .gc-app-bar");
+
+  if (!bar) return;
+  const note = document.createElement("span");
+  note.textContent = text;
+  bar.replaceChildren(note);
+
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "gc-btn";
+    button.textContent = action.label;
+    button.addEventListener("click", () => { action.run(); button.disabled = true; });
+    bar.append(button);
+  }
+  bar.hidden = false;
+}
+
+/**
+ * 把写完的小程序放进沙箱 iframe（mini-app.html）。实验功能关着就只写一句怎么打开。
+ * 沙箱发回来的都是不可信的话：只认这个 iframe 发的、只做四件事——调高度、存状态、在下面提一句话等用户点、报错。
+ * 报错时给「让助手修好」：用户点了才把错误发给助手，不自动发，免得用户没看就多花一轮。
+ */
+async function mountApp(box: HTMLElement, say: (text: string) => boolean | void): Promise<void> {
+  // 每次挂载一张票：等开关、等存档的时候开关被关、框被换掉，旧的这次就作废，不再放进 iframe。
+  const ticket = Symbol("mount");
+  const current = () => box.isConnected && mountTickets.get(box) === ticket;
+
+  mountTickets.set(box, ticket);
+  mountedApps.set(box, () => {});
+  const card = box.closest<HTMLElement>(".gen-card");
+  const holder = box.querySelector<HTMLElement>(":scope > .gc-app-frame");
+  const title = box.dataset.appTitle ?? "小程序";
+
+  if (!card || !holder) return;
+
+  const on = await readMiniAppsOn();
+
+  if (!current()) return;
+
+  if (!on) {
+    const off = document.createElement("p");
+    off.className = "gc-app-off";
+    off.textContent = `这条回答里有一个小程序「${title}」。在「设置 → 实验功能」打开「回答里的小程序」后显示。`;
+    holder.replaceChildren(off);
+
+    return;
+  }
+  const saved = await readState(card);
+
+  if (!current()) return;
+
+  if (saved?.app) appStates.set(card, saved.app);
+  const frame = document.createElement("iframe");
+  frame.className = "gc-app-iframe";
+  frame.title = title;
+  frame.setAttribute("sandbox", "allow-scripts");
+  frame.setAttribute("referrerpolicy", "no-referrer");
+  frame.style.height = `${APP_MIN_HEIGHT * 2}px`;
+  let ready = false;
+  let failed = false;
+  let heardAt = 0;
+  const onMessage = (event: MessageEvent<unknown>) => {
+    if (event.source !== frame.contentWindow) return;
+    heardAt = performance.now();
+    const data = event.data;
+
+    if (!data || typeof data !== "object" || !("miniApp" in data)) return;
+    const kind = data.miniApp;
+
+    if (kind === "ready" && !ready) {
+      ready = true;
+      frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), state: appStates.get(card) ?? null }, "*");
+    } else if (kind === "height" && "h" in data && typeof data.h === "number") {
+      frame.style.height = `${Math.min(APP_MAX_HEIGHT, Math.max(APP_MIN_HEIGHT, data.h))}px`;
+    } else if (kind === "save" && "state" in data && typeof data.state === "string" && data.state.length <= 50_000) {
+      // 小程序自己决定什么时候存（多半是用户点了什么），马上写：等一会儿再写，用户这时关掉侧栏就丢了。
+      appStates.set(card, data.state);
+      save(card);
+    } else if (kind === "draft" && "text" in data && typeof data.text === "string" && data.text.trim()) {
+      const text = data.text.replace(/\s+/g, " ").trim().slice(0, 500);
+
+      appBar(box, `小程序想放进输入框：「${text}」`, { label: "放进输入框", run: () => fillInput(text) });
+    } else if (kind === "error" && "message" in data && typeof data.message === "string" && !failed) {
+      failed = true;
+      const message = data.message.slice(0, 300);
+
+      appBar(box, `小程序出错了：${message}`, { label: "让助手修好", run: () => { say(`小程序「${title}」出错了：${message}。请修好它。`); } });
+    }
+  };
+
+  window.addEventListener("message", onMessage);
+  mountedApps.set(box, () => window.removeEventListener("message", onMessage));
+  // 写入程序后每次 load 桥都会报一次高度；load 之后再没有桥的消息，就是小程序把自己换成了别的网页：
+  // 侧栏的 frame-src 已经拦下，框里只剩浏览器的错误页，收起来说一句。
+  frame.addEventListener("load", () => {
+    if (!ready) return;
+    const at = performance.now();
+
+    setTimeout(() => {
+      if (heardAt >= at - 200 || !frame.isConnected) return;
+      frame.remove();
+      appBar(box, "小程序想跳到外面的网页，已拦下。");
+    }, 800);
+  });
+  frame.src = chrome.runtime.getURL("mini-app.html");
+  holder.replaceChildren(frame);
+}
+
+/** 放进输入框，不发送；和文件卡片「填入输入框」一样由用户再按发送。 */
+function fillInput(text: string): void {
+  const input = document.querySelector<HTMLTextAreaElement>("#input");
+
+  if (!input) return;
+  input.value = [input.value.trim(), text].filter(Boolean).join("\n");
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.focus();
+}
+
 /**
  * 卡片按钮：say 把按钮上的话当作用户下一句发出；tab 切到那一页。用事件委托，流式重画后不用重新绑定。
  * 只认显示的字和要发的字一样的按钮：正文里夹带的原始 HTML 做不出“看着是 A、发出去是 B”的按钮。
@@ -788,6 +962,10 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
 
     for (const card of root.querySelectorAll<HTMLElement>(".gen-card[data-gc-card]")) restore(card);
 
+    releaseApps();
+
+    for (const box of root.querySelectorAll<HTMLElement>(".gc-app[data-app]")) if (!mountedApps.has(box)) void mountApp(box, say);
+
     for (const row of root.querySelectorAll<HTMLElement>(".gen-card[data-gc-card] [data-gc-tab]")) if (!rowTried.has(row)) void linkRow(row);
 
     // 写到一半时用户已经调过数：后面新写出的组件按调过的值算。
@@ -797,6 +975,20 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
   };
 
   new MutationObserver(draw).observe(root, { childList: true, subtree: true });
+  // 在设置里开关小程序：已显示的小程序框按新开关重放一次。
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !(MINI_APPS_KEY in changes)) return;
+    miniAppsOn = Promise.resolve(isMiniAppsOn(changes[MINI_APPS_KEY]!.newValue));
+
+    for (const [box, release] of mountedApps) {
+      release();
+      mountedApps.delete(box);
+      mountTickets.delete(box);
+      box.querySelector(":scope > .gc-app-frame")?.replaceChildren();
+      box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", "");
+    }
+    draw();
+  });
   draw();
   root.addEventListener("keydown", (event) => {
     // SAFETY: keydown 事件的 target 是 Element。

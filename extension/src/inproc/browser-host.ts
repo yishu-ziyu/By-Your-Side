@@ -15,6 +15,7 @@ import { listArtifacts, writeArtifact, deleteArtifact } from "../shared/durable-
 import { openPiSession } from "./pi-session-idb.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
+import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
 
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
@@ -98,6 +99,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         memoryStore,
         taskHistory,
         siteNotes,
+        miniApps: async () => isMiniAppsOn((await chrome.storage.local.get(MINI_APPS_KEY))[MINI_APPS_KEY]),
         });
       },
       voiceKey: async () => {
