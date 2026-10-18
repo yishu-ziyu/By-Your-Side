@@ -7397,7 +7397,7 @@ function stopCurrentTask(): void {
 }
 
 // 回答卡片上的「替我说一句」按钮：只发按钮上的话，不带草稿和附件。
-bindAnswerCards(messagesEl, (text) => sendInput(text));
+bindAnswerCards(messagesEl, (text) => sendInput(text), () => selectedConversationId);
 
 sendBtn.onclick = () => {
   if (sendBtn.classList.contains("stopping")) {

@@ -13,11 +13,15 @@ export type Stat = { id?: string; label: string; value: string; formula?: string
 /** 用户能在卡片上调的数：算式用 id 引用它。 */
 export type CardInput = { id: string; label: string; value: number; min: number; max: number; step: number; unit?: string };
 
+/** 助手问用户时的一栏：有 options 就从中挑，没有就填字；from 是预填值的出处。 */
+export type CardField = { id: string; label: string; value: string; options?: string[]; from?: string; required: boolean };
+
 /** 选项的价、表格格子：值和可重算的算式。 */
 export type Cell = { value: string; expr?: string; unit?: string };
 
 export type Block =
   | { kind: "inputs"; items: CardInput[] }
+  | { kind: "fields"; items: CardField[] }
   | { kind: "stats"; items: Stat[] }
   | { kind: "steps"; items: Array<{ title: string; detail?: string }> }
   | { kind: "options"; items: Array<{ name: string; meta?: string; value?: Cell; why: string; pick: boolean }> }
@@ -26,7 +30,8 @@ export type Block =
   | { kind: "callout"; tone: "info" | "warn"; text: string }
   | { kind: "diagram"; source: string; cites: Record<string, { text: string; from?: string }> };
 
-export type CardButton = { label: string; tab?: string; primary: boolean };
+/** submit：把卡片里各栏的名字和值合成一句用户的话发出。 */
+export type CardButton = { label: string; tab?: string; submit?: boolean; primary: boolean };
 
 /** 卡片末尾已经开了头、还没写完的组件：tag 是标签名，written 是已写出的属性原文（侧栏据此放尺寸接近的空位）。 */
 export type PendingComponent = { tag: "stat" | "step" | "option" | "table" | "tr" | "check" | "callout" | "diagram"; written: string };
@@ -203,6 +208,34 @@ function withUnit(value: string, unit: string | undefined): string {
 
 const MAX_INPUTS = 2;
 
+const MAX_FIELDS = 6;
+
+/**
+ * 密码、卡号、验证码这类栏不画：这些值只由用户自己在网页上填（hand_to_user），不经过侧栏和模型。
+ * 模型可能被网页内容带偏，写出一张“请填写银行卡号”的表单，所以按名字拦，不靠提示词。
+ */
+const SECRET_FIELD_ZH = /密码|口令|卡号|信用卡|银行卡|储蓄卡|有效期|验证码|校验码|安全码|动态码|身份证/;
+
+/** 英文按整词比：shipping 里的 pin 不算。 */
+const SECRET_FIELD_EN = /\b(?:pin|cvv\d?|cvc\d?|otp\w*|password\w*|passcode|card\s*num(?:ber)?|security\s*code|one[-\s]*time\w*)\b/i;
+
+function cardField(a: Attrs): CardField | undefined {
+  const id = str(a.id);
+  const label = str(a.label);
+
+  // 先去掉看不见的字和空白再比：「密\u200b码」「验 证 码」看起来就是密码、验证码。显示的名字也去掉看不见的字。
+  const visible = (t: string) => t.normalize("NFKC").replace(/[\p{Cf}\u00ad\u180e]/gu, "");
+
+  // id 拆成词再比：user_password、userPassword 里的 password 也算。
+  const words = visible(`${label} ${(id ?? "").replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")}`);
+
+  if (!id || !/^[A-Za-z_]\w*$/.test(id) || !label || SECRET_FIELD_ZH.test(words.replace(/\s+/g, "")) || SECRET_FIELD_EN.test(words)) return undefined;
+  const options = str(a.options)?.split("|").map((o) => o.trim()).filter(Boolean).slice(0, 6);
+  const value = str(a.value) ?? "";
+
+  return { id, label: visible(label), value: options?.length && !options.includes(value) ? "" : value, options: options?.length ? options : undefined, from: str(a.from), required: a.optional === undefined };
+}
+
 /** 卡片原文的摘要：同一张卡重开、重放时不变。 */
 function digest(s: string): string {
   let h = 5381;
@@ -303,7 +336,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       return "";
     });
   }
-  const component = new RegExp(String.raw`<(input|stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
+  const component = new RegExp(String.raw`<(input|field|stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
   // 可调的数先全部认出来：算式可能写在它前面。
   const inputs = new Map<string, CardInput>();
 
@@ -313,6 +346,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     if (input && !inputs.has(input.id) && inputs.size < MAX_INPUTS) inputs.set(input.id, input);
   }
   const vars = new Map([...inputs].map(([id, input]) => [id, input.value]));
+  const fieldIds = new Set<string>();
 
   for (const input of inputs.values()) card.values.set(input.id, withUnit(formatNumber(input.value), input.unit));
 
@@ -321,7 +355,13 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     const a = attrsOf(rawAttrs ?? "");
     const text = inner?.trim();
 
-    if (tag === "input") {
+    if (tag === "field") {
+      const field = cardField(a);
+      const block = group("fields", () => ({ kind: "fields", items: [] }));
+
+      // 同一个 id 在整张卡里只认第一个：存下来的值按 id 还原，两栏同名会互相盖掉。
+      if (field && !fieldIds.has(field.id) && fieldIds.size < MAX_FIELDS) { fieldIds.add(field.id); block.items.push(field); }
+    } else if (tag === "input") {
       const id = str(a.id);
       const input = id ? inputs.get(id) : undefined;
       const block = group("inputs", () => ({ kind: "inputs", items: [] }));
@@ -379,6 +419,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
       if (a.action === "tab" && /^\d+$/.test(str(a.target) ?? "")) card.buttons.push({ label: text, tab: str(a.target), primary: isPrimary });
       else if (a.action === "say") card.buttons.push({ label: text, primary: isPrimary });
+      else if (a.action === "submit" && !card.buttons.some((b) => b.submit)) card.buttons.push({ label: text, submit: true, primary: isPrimary });
     } else if (tag === "source") {
       if (text) card.source = text;
     } else if (tag === "diagram-at" && diagram) {
@@ -518,6 +559,7 @@ export function answerMarkdown(text: string): string {
       case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${c.note}）` : ""}`).join("\n");
       case "callout": return `> ${b.text}`;
       case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
+      case "fields": return b.items.map((f) => `- ${f.label}：${f.value || "（待填）"}${f.options ? `（可选：${f.options.join(" / ")}）` : ""}`).join("\n");
       case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, c]) => `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`)].join("\n");
     }
   }), c.source ? `来源：${c.source}` : ""].filter(Boolean).join("\n\n");
@@ -548,6 +590,7 @@ export function cardPreview(text: string, maxRows = 3): CardPreview | null {
       case "callout": return [{ label: b.text }];
       case "diagram":
       case "inputs": return [];
+      case "fields": return b.items.map((f) => ({ label: f.label, value: f.value || undefined }));
     }
   };
   const block = card.blocks.find((b) => b.kind !== "callout" && rowsOf(b).length) ?? card.blocks.find((b) => rowsOf(b).length);
