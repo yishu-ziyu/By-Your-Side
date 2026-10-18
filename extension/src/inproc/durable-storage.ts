@@ -4,7 +4,7 @@
  */
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { JsonlStorage } from "@earendil-works/pi-durable/storage/jsonl";
-import { createOpfsFileSystem } from "../../../experiments/pi-durable/opfs-fs.js";
+import { createOpfsFileSystem } from "./opfs-fs.js";
 
 const fs = createOpfsFileSystem();
 
