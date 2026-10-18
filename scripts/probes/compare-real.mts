@@ -271,7 +271,10 @@ async function runExt(task: Task, id: string, dir: string) {
     await rp.click(panel, "#input");
     await until(async () => (await chip()) || undefined, 60_000, "think chip");
     await rp.click(panel, "#think-chip"); await sleep(350);
-    await rp.evaluate(panel, `[...document.querySelectorAll("#think-menu [role=menuitemradio]")].find(b => b.querySelector("span").textContent === ${JSON.stringify(think)}).click(), true`);
+    // 思考档是滑块：逐格试到显示的档名等于要的那一档，再发 change，和用户拖到那一格松手一样。
+    await rp.evaluate(panel, `(() => { const input = document.querySelector("#think-menu .mm-power-slider input"); const label = () => document.querySelector("#think-menu .mm-power-level")?.textContent;
+      for (let i = 0; i <= Number(input.max); i++) { input.value = String(i); input.dispatchEvent(new Event("input")); if (label() === ${JSON.stringify(think)}) { input.dispatchEvent(new Event("change")); return true; } }
+      throw new Error("滑块上没有这一档：" + ${JSON.stringify(think)}); })()`);
     await sleep(300);
     if (!(await chip()).includes(think)) throw new Error(`没选上${think}：${await chip()}`);
     }
