@@ -122,7 +122,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     private readonly memoryStore?: MemoryStore,
     readonly dispatcher = new TaskDispatcher(),
   ) {this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);
-    this.taskQueue=new TaskQueue({directory:dispatcher.store.directory?join(dispatcher.store.directory,'requirements'):undefined,maxRunning:2,maxWaiting:8,
+    this.taskQueue=new TaskQueue({directory:dispatcher.store.directory?join(dispatcher.store.directory,'requirements'):undefined,persist:dispatcher.store.directory?undefined:store?.taskQueue,maxRunning:2,maxWaiting:8,
       enabled:()=>this.connected&&!this.queueClosed,
       running:()=>this.runningTasks(),
       blocked:request=>request.context?.tabId!==undefined&&[...this.taskPages].some(([id,tab])=>tab===request.context!.tabId&&(this.pendingStarts.has(id)||['running','paused'].includes(this.getTaskProgress(id)?.state??''))),
@@ -1503,7 +1503,7 @@ return receipt;
       this.emit(scoped);
 
       // 宿主说这一轮要核对（goal_check checking，先于 agent_end）：过往任务等核对结论再记，判继续时不记那句没核对过的回答。
-      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_start') this.goalCheckPending.delete(id);
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_start') { this.goalCheckPending.delete(id); this.taskQueue.resumeSeparate(id); }
 
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'checking') this.goalCheckPending.add(id);
 
@@ -1718,6 +1718,16 @@ return receipt;
     if(message.type==='task_action'&&message.request.action==='abort'&&message.request.supplement){await this.mergeSeparateAsk(message.request.conversationId,message.request.context);
 
       return;}
+
+    // 停下的另开那件点了「继续」：没接上就把原因写在它的卡片上发回去，按钮可以再点。
+    const stopped=message.type==='task_action'&&message.request.action==='resume'?this.taskQueue.get(message.request.conversationId):undefined;
+    if(message.type==='task_action'&&stopped?.state==='unknown'&&stopped.request.originConversationId){
+      const receipt=await this.dispatchTaskAction(message.request);
+
+      if(!['accepted','applied'].includes(receipt.status))this.emitReceipt({...stopped.receipt,message:`还没做完，没能接着做：${receipt.message}`,updatedAt:Date.now()});
+
+      return;
+    }
 
     if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);
 
