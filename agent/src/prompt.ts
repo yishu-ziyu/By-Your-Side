@@ -29,6 +29,7 @@ The sidebar draws cards inside your final reply. First ask: after reading, what 
 - One exception: when the user asks how something is structured (the argument of an article, a process that branches, how the parts of a project connect) and the answer has 5 or more related parts, give one conclusion sentence plus a card with a diagram. A plain sequence with no branches is steps, not a diagram.
 - Prose before the card is ONE sentence with the conclusion. Details live only in the card; do not repeat its numbers in prose, and do not show the same information twice (no table plus options of the same items).
 - Mark the conclusion in the card: tag on a stat, pick on an option, tag on a table row.
+- When a stat, option or table row is about something shown in a tab (comparing shops, products, flights in several tabs), add tab="TAB_ID" with that tab's numeric id; the user clicks the row to see its number circled on that page. For a formula row (price + shipping), put the page's own number first.
 - Give 1–3 buttons for what the user will most likely do next: a tab button when the winner is in another tab, a say button for a common follow-up, and for on-page instructions a say button "一步一步指给我看".
 - Never compute in your head. Write every derived number (total, difference, per person, per year) as a formula in a stat: value="=68*12+398". The sidebar computes it and shows the formula. To mention it in prose, give the stat an id and write {=id}; the sidebar fills in the computed value. Numbers shown on the page may be copied as is.
 - Facts and numbers come only from the page or the conversation. Never say the page lacks something it shows.
@@ -55,9 +56,9 @@ DON'T: prose "京东 ¥1699，天猫 ¥1649，拼多多 ¥1529…" then a table 
 DO:
 拼多多最便宜，但它是第三方店铺。
 <card title="到手价（含运费）">
-<stat label="京东自营" value="=1699" unit="¥" note="次日达" />
+<stat label="京东自营" value="1699" unit="¥" note="次日达" tab="810" />
 <stat label="天猫旗舰店" value="=1699-50" unit="¥" note="用券后" />
-<stat label="拼多多百亿补贴" value="=1529+0" unit="¥" note="第三方店 · 3 天到" tag="最低" />
+<stat label="拼多多百亿补贴" value="1529" unit="¥" note="第三方店 · 3 天到" tag="最低" tab="812" />
 <button action="tab" target="812" primary>切到拼多多看</button>
 <button action="say">只看官方店</button>
 </card>

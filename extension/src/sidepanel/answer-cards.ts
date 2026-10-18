@@ -10,9 +10,10 @@
 import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
-import { type Block, type Card, type CardField, type CardInput, type Cell, type PendingComponent, cardEvidence, evaluate, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
+import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, evaluate, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
-import { toast } from "./sonar-citations.js";
+import { captureCitationContext, toast } from "./sonar-citations.js";
+import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -35,6 +36,9 @@ const live = (c: { expr?: string; unit?: string }) => (c.expr ? ` data-gc-expr="
 
 /** 跟着可调的数重算的算式说明。 */
 const formulaHtml = (formula: string, expr?: string) => (expr ? `<span data-gc-formula="${esc(expr)}">${esc(formula)}</span>` : esc(formula));
+
+/** 这一行出自哪个标签页、去找哪个数：写完后侧栏到那一页去找，找到唯一一处才变成可点（linkRows）。 */
+const fromAttrs = (from?: RowSource) => (from ? ` data-gc-tab="${esc(from.tab)}" data-gc-find="${esc(from.find)}"` : "");
 
 const cellHtml = (c: Cell, tag: string, cls = "") => `<${tag}${cls}${live(c)}>${esc(c.value)}</${tag}>`;
 
@@ -90,13 +94,13 @@ function blockHtml(b: Block, i: number, extra: string): string {
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
-      return `<div class="gc-stats" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"><div class="k"><span>${esc(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(s.value)}</div><div class="n">${[s.note && esc(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-stats" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${esc(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(s.value)}</div><div class="n">${[s.note && esc(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
     case "steps":
       return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${esc(s.title)}</div>${s.detail ? `<div class="d">${esc(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
     case "options":
-      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"><div class="gc-row"><span class="name">${esc(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml(o.value, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${esc(o.meta)}</span>` : ""}</div><div class="gc-why">${esc(o.why)}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"${fromAttrs(o.from)}><div class="gc-row"><span class="name">${esc(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml(o.value, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${esc(o.meta)}</span>` : ""}</div><div class="gc-why">${esc(o.why)}</div></div>`)).join("")}${extra}</div>`;
     case "table":
-      return `<table class="gc-table" data-gc-key="b${i}"><thead><tr>${b.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${b.rows.map((r, j) => keyed(key(j), `<tr${r.tag ? ' class="best"' : ""}>${r.cells.map((c) => cellHtml(c, "td")).join("")}</tr>`)).join("")}${extra}</tbody></table>`;
+      return `<table class="gc-table" data-gc-key="b${i}"><thead><tr>${b.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${b.rows.map((r, j) => keyed(key(j), `<tr${r.tag ? ' class="best"' : ""}${fromAttrs(r.from)}>${r.cells.map((c) => cellHtml(c, "td")).join("")}</tr>`)).join("")}${extra}</tbody></table>`;
     case "checks":
       return `<ul class="gc-checks" data-gc-key="b${i}">${b.items.map((c, j) => keyed(key(j), `<li class="gc-check"><label><input type="checkbox"><span><span class="t">${esc(c.text)}</span>${c.note ? `<span class="d">${esc(c.note)}</span>` : ""}</span></label></li>`)).join("")}${extra}</ul>`;
     case "callout":
@@ -720,6 +724,56 @@ function restore(card: HTMLElement): void {
   });
 }
 
+/** 已经去找过出处的行（找到的记下出处）：patchAnswer 留着同一个节点，不重复去找。 */
+const rowTried = new WeakSet<HTMLElement>();
+
+const rowSources = new WeakMap<HTMLElement, { source: PageElementSource; tabId: number }>();
+
+const withoutHash = (url: string) => url.split("#")[0]!;
+
+/**
+ * 写了 tab 的一行：到那个标签页找这一行的数，整页恰好一处时这一行变成可点（同回答正文的“数字回原页”，sonar-citations.ts）。
+ * 只去这条回答的出处清单里那几页（这一轮真读过、打开过的页面，answer-sources.ts）：tab 编号是模型写的，模型可能被网页内容带偏，
+ * 写出用户别的标签页（比如登录着的邮箱）。那一页跳走了，网址就不在清单里，也不去。
+ * 出处清单在回答写完后才挂上：还没有清单时先不算找过，清单出现时再来。
+ */
+async function linkRow(row: HTMLElement): Promise<void> {
+  const allowed = [...(row.closest(".msg")?.querySelectorAll<HTMLElement>(".answer-source[title]") ?? [])].map((b) => withoutHash(b.title));
+
+  if (!allowed.length) return;
+  rowTried.add(row);
+  const tabId = Number(row.dataset.gcTab);
+  const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
+
+  if (!tab?.url || !allowed.includes(withoutHash(tab.url))) return;
+  const context = await captureCitationContext({ tabId, url: tab.url });
+
+  if (!context) return;
+  const result = await chrome.runtime.sendMessage({ type: "PINPOINT_DOM_TARGET", action: "resolve", query: row.dataset.gcFind, ...context }).catch(() => null);
+
+  if (!result?.ok || !isPageElementSource(result.source) || !row.isConnected) return;
+  rowSources.set(row, { source: result.source, tabId });
+  row.classList.add("gc-linked");
+  row.tabIndex = 0;
+  row.setAttribute("role", "button");
+  row.title = `到原页看：${result.source.title || tab.title || ""}`.trim();
+}
+
+/** 点可点的一行：切到那一页、圈出那个数；那一页在别的窗口时把那个窗口提到前面。 */
+async function revealRow(row: HTMLElement): Promise<void> {
+  const linked = rowSources.get(row);
+
+  if (!linked) return;
+  const reply = await chrome.runtime.sendMessage({ type: "PINPOINT_DOM_TARGET", action: "reveal", source: linked.source, tabId: linked.tabId }).catch(() => null);
+
+  if (!reply?.ok) { toast(reply?.error ?? "原文已变化，请重新核对。");
+
+ return; }
+  const tab = await chrome.tabs.get(linked.tabId).catch(() => null);
+
+  if (tab && (tab.windowId !== await targetWindowId() || isPopout)) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
+}
+
 /**
  * 卡片按钮：say 把按钮上的话当作用户下一句发出；tab 切到那一页。用事件委托，流式重画后不用重新绑定。
  * 只认显示的字和要发的字一样的按钮：正文里夹带的原始 HTML 做不出“看着是 A、发出去是 B”的按钮。
@@ -734,6 +788,8 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
 
     for (const card of root.querySelectorAll<HTMLElement>(".gen-card[data-gc-card]")) restore(card);
 
+    for (const row of root.querySelectorAll<HTMLElement>(".gen-card[data-gc-card] [data-gc-tab]")) if (!rowTried.has(row)) void linkRow(row);
+
     // 写到一半时用户已经调过数：后面新写出的组件按调过的值算。
     for (const card of root.querySelectorAll<HTMLElement>(".gen-card:has(.gc-num)")) recompute(card);
 
@@ -745,6 +801,13 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
   root.addEventListener("keydown", (event) => {
     // SAFETY: keydown 事件的 target 是 Element。
     const node = (event.target as Element).closest<SVGElement>(".gc-diagram [data-cited]");
+
+    // SAFETY: 同上。
+    const row = (event.target as Element).closest<HTMLElement>(".gen-card .gc-linked");
+
+    if (row && event.target === row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); void revealRow(row);
+
+ return; }
 
     if (!node || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
@@ -819,6 +882,13 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
     }
     // SAFETY: 同上。
     const button = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-btn");
+    // SAFETY: 同上。
+    const row = (event.target as Element).closest<HTMLElement>(".gen-card .gc-linked");
+
+    // 行里的数字若已经是正文那套“回原页”的入口（.num-cite），交给它，不重复。
+    if (!button && row && !(event.target as Element).closest(".num-cite")) { void revealRow(row);
+
+ return; }
 
     if (!button) return;
     const label = button.textContent?.trim() ?? "";
