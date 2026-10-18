@@ -4,8 +4,9 @@
  *   npx tsx scripts/acceptance/real-path/separate-restart.mts --headless
  * 判据：
  *   a) 能安全接着做：重启后另开那件自动接着做完，卡片换成「已完成 + 回答」；主任务也交出回答；卡片只有一张。
- *   b) 不能自动接着做（重启前那页换了网址，不是原页面）：卡片写「停下了」并有「继续」；回到原页点继续后做完，卡片换成「已完成 + 回答」，
- *      当前会话里不多出一句用户没打的话。
+ *   b) 不能自动接着做（重启前那页换了网址，不是原页面）：卡片写「停下了」或「没能接着做 + 原因」，并有「继续」。
+ *      你转去看别的网页后点继续：那页还没回到原网址时被拒，卡片上写明原因、按钮可再点；
+ *      那页回到原网址再点：用它自己的那页接着做完，卡片换成「已完成 + 回答」，当前会话里不多出一句用户没打的话。
  * 失败方式：另开一件的记录只在内存里，重启后 a) 的卡片停在「正在做，不打断当前任务」。
  */
 import assert from "node:assert/strict";
@@ -116,20 +117,31 @@ try {
   await sleep(3_000);
   await rp.cdp.send("Page.navigate", { url: `${papers}?moved=1` }, work);
   await restartAgent();
-  const stopped = await settle(s => /停下了/.test(card(s, B2)?.state ?? "") && !s.running, 60_000);
+  const stopped = await settle(s => /停下了|没能接着做/.test(card(s, B2)?.state ?? "") && !s.running, 60_000);
   evidence.bStopped = stopped;
   await rp.screenshot(panel, join(artifacts, "b-stopped.png"));
-  assert.match(card(stopped, B2)?.state ?? "", /停下了/, `b) B2 不能自动接着做时卡片应写停下了，实际：${card(stopped, B2)?.state}`);
+  assert.match(card(stopped, B2)?.state ?? "", /停下了|没能接着做/, `b) B2 不能自动接着做时卡片应写停下了，实际：${card(stopped, B2)?.state}`);
   assert.ok(card(stopped, B2)!.buttons.includes("继续"), "b) 停下的卡片有「继续」");
+  // 你已经转去看别的网页：继续仍用它自己的那页，不用你正看着的这页。
+  const elsewhere = (await rp.cdp.send("Target.createTarget", { url: `${papers.replace("/papers", "/elsewhere")}` })).targetId;
+  await sleep(1_500);
+  const clickResume = () => rp.evaluate(panel!, `(() => { const b = [...[...document.querySelectorAll(".separate-ask")].find(e => e.querySelector(".separate-ask-tag")?.textContent === ${JSON.stringify(B2)})?.querySelectorAll(".separate-ask-actions button") ?? []].find(b => b.textContent === "继续"); if (!b || b.disabled) return false; b.click(); return true; })()`);
+  // 它那页还没回到原网址：继续被拒，原会话说清原因，按钮可以再点。
+  assert.ok(await clickResume(), "b) 继续按钮可点");
+  const refused = await until(async () => { const c = card(await state(), B2); return c && /没能接着做/.test(c.state) ? c.state : undefined; }, 20_000, "继续被拒的原因写在卡片上");
+  evidence.bRefused = refused;
+  await until(async () => await rp.evaluate(panel!, `[...[...document.querySelectorAll(".separate-ask")].find(e => e.querySelector(".separate-ask-tag")?.textContent === ${JSON.stringify(B2)})?.querySelectorAll(".separate-ask-actions button") ?? []].some(b => b.textContent === "继续" && !b.disabled)`) || undefined, 10_000, "被拒后继续按钮恢复可点");
+  await rp.screenshot(panel, join(artifacts, "b-refused.png"));
   await rp.cdp.send("Page.navigate", { url: papers }, work);
   await sleep(1_500);
-  await rp.evaluate(panel, `[...document.querySelectorAll(".separate-ask")].find(e => e.querySelector(".separate-ask-tag")?.textContent === ${JSON.stringify(B2)})?.querySelectorAll(".separate-ask-actions button").forEach(b => { if (b.textContent === "继续") b.click(); })`);
+  assert.ok(await clickResume(), "b) 再点继续");
   const resumed = await settle(s => !!card(s, B2)?.answer, 60_000);
   evidence.bResumed = resumed;
   await rp.screenshot(panel, join(artifacts, "b-resumed.png"));
   assert.equal(card(resumed, B2)?.state, "已完成", `b) 点继续后 B2 应做完，实际：${card(resumed, B2)?.state}`);
   assert.match(card(resumed, B2)!.answer, /后天上海多云/);
   assert.deepEqual(resumed.bubbles, stopped.bubbles, `b) 点继续不应在当前会话多出用户气泡：${resumed.bubbles.join(" / ")}`);
+  await rp.cdp.send("Target.closeTarget", { targetId: elsewhere });
   console.log("PASS separate-restart");
 } catch (e) { error = String((e as Error)?.stack ?? e); console.error(e); process.exitCode = 1; }
 finally {

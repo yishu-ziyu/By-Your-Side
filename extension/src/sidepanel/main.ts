@@ -3219,17 +3219,11 @@ function activeTabContext(): PageContext | undefined {
 /** 另开出去的会话 → 发起它的会话。 */
 const separateAskOrigins = new Map<string, string>();
 
-/** 另开那件的最新任务视图：停下后点「继续」，要在它自己的后台标签页上接着做。 */
-const separateAskViews = new Map<string, TaskView>();
+/** 停下的另开那件接着做：页面由后台按它自己保留的那页补上；那页已关才用你正看着的这页。 */
+function resumeSeparateAsk(receipt: TaskReceipt): boolean {
+  const context = activeTabContext();
 
-/** 停下的另开那件接着做：用它自己的标签页；那页已关就用你正看着的这页。 */
-async function resumeSeparateAsk(receipt: TaskReceipt): Promise<boolean> {
-  const view = separateAskViews.get(receipt.conversationId);
-  const tab = view?.page ? await chrome.tabs.get(view.page.tabId).catch(() => null) : null;
-  const context = tab?.id !== undefined && tab.url ? { tabId: tab.id, url: tab.url, title: tab.title ?? "" } : activeTabContext();
-
-  return send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: view?.runId ?? receipt.runId,
-    ...(view ? { expectedControlVersion: view.controlVersion } : {}), ...(context ? { context } : {}) } });
+  return send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: receipt.runId, ...(context ? { context } : {}) } });
 }
 
 /** 当前会话里另开的一件事：在自己的会话和后台标签页里做，回答带回这里显示。 */
@@ -3290,7 +3284,7 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
     const resume = document.createElement("button");
     resume.type = "button";
     resume.textContent = "继续";
-    resume.onclick = () => { resume.disabled = true; void resumeSeparateAsk(receipt).then((sent) => { if (!sent) resume.disabled = false; }); };
+    resume.onclick = () => { resume.disabled = true; if (!resumeSeparateAsk(receipt)) resume.disabled = false; };
     actions.append(resume);
   }
 
@@ -6420,7 +6414,6 @@ function handleServerMessage(raw: string): void {
       if (msg.state === "running" && (msg.sessionId ?? LEAD_SESSION_ID) === LEAD_SESSION_ID && awaitingFirstStep()) ensureRun();
       break;
     case "task_view":
-      if (separateAskOrigins.has(msg.view.conversationId)) separateAskViews.set(msg.view.conversationId, msg.view);
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
 
