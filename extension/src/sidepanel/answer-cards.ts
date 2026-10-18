@@ -10,7 +10,7 @@
 import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
-import { type Block, type Card, type CardInput, type Cell, type PendingComponent, cardEvidence, evaluate, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
+import { type Block, type Card, type CardField, type CardInput, type Cell, type PendingComponent, cardEvidence, evaluate, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { toast } from "./sonar-citations.js";
 
@@ -40,6 +40,16 @@ const cellHtml = (c: Cell, tag: string, cls = "") => `<${tag}${cls}${live(c)}>${
 
 /** 档位多于这个数时，加减之外再给一条滑块。 */
 const SLIDER_STEPS = 20;
+
+/** 问用户的一栏：有选项就是一排可点的选项，没有就是文字框；预填值的出处写在名字旁。 */
+function fieldHtml(f: CardField): string {
+  const head = `<div class="gc-field-head"><span class="k">${esc(f.label)}</span>${f.from ? `<span class="from">· ${esc(f.from)}</span>` : ""}<span class="gc-missing-note">还没填</span></div>`;
+  const control = f.options
+    ? `<div class="gc-chips" role="radiogroup" aria-label="${esc(f.label)}">${f.options.map((o) => `<button type="button" class="gc-chip" role="radio" aria-checked="${o === f.value}" data-gc-option="${esc(o)}">${esc(o)}</button>`).join("")}</div>`
+    : `<input type="text" class="gc-text" value="${esc(f.value)}" aria-label="${esc(f.label)}">`;
+
+  return `<div class="gc-field" data-gc-field="${esc(f.id)}" data-gc-label="${esc(f.label)}"${f.required ? " data-gc-required" : ""}>${head}${control}</div>`;
+}
 
 function inputHtml(v: CardInput): string {
   const range = `min="${v.min}" max="${v.max}" step="${v.step}" value="${v.value}" data-gc-var="${esc(v.id)}"`;
@@ -75,6 +85,8 @@ function blockHtml(b: Block, i: number, extra: string): string {
   const key = (j: number) => `b${i}.${j}`;
 
   switch (b.kind) {
+    case "fields":
+      return `<div class="gc-fields" data-gc-key="b${i}">${b.items.map((f, j) => keyed(key(j), fieldHtml(f))).join("")}${extra}</div>`;
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
@@ -119,7 +131,7 @@ function cardHtml(card: Card): string {
 
   const body = blocks.join("");
   // 按钮等卡片写完再出现，免得用户点到写了一半的那张。
-  const buttons = card.closed ? card.buttons.map((b) => `<button type="button" class="gc-btn${b.primary ? " primary" : ""}" ${b.tab ? `data-card-tab="${esc(b.tab)}"` : `data-card-say="${esc(b.label)}"`}>${esc(b.label)}</button>`).join("") : "";
+  const buttons = card.closed ? card.buttons.map((b) => `<button type="button" class="gc-btn${b.primary ? " primary" : ""}" ${b.tab ? `data-card-tab="${esc(b.tab)}"` : b.submit ? `data-card-submit="${esc(b.label)}"` : `data-card-say="${esc(b.label)}"`}>${esc(b.label)}</button>`).join("") : "";
   // 依据面和开关也等卡片写完（cardEvidence 对没写完的卡片给空）；带位置键和摘要，流式重画不碰它们，翻开的状态和高度不丢。
   const rows = cardEvidence(card);
   // 出处多半是整张卡共用一句：合成一格，不逐行重复；「指给我看」挂在那一项的名字下面。
@@ -330,6 +342,7 @@ function enter(node: Node): void {
 function syncAttributes(to: Element, from: Element): void {
   const fading = to.classList.contains("gc-in");
   const face = to.getAttribute("data-face");
+  const sent = to.hasAttribute("data-gc-sent");
 
   for (const { name } of [...to.attributes]) if (!from.hasAttribute(name)) to.removeAttribute(name);
 
@@ -338,6 +351,9 @@ function syncAttributes(to: Element, from: Element): void {
   if (fading) to.classList.add("gc-in");
 
   if (face && to.classList.contains("gen-card")) to.setAttribute("data-face", face);
+
+  // 表单发出去了是用户做的事，重画不改回来。
+  if (sent && to.classList.contains("gen-card")) to.setAttribute("data-gc-sent", "");
 }
 
 /** 翻到结论或依据。依据面至少和结论面一样高，翻过去卡片不缩；翻回结论时按钮、数字都是原来的节点。 */
@@ -430,6 +446,9 @@ export function patchAnswer(root: HTMLElement, html: string): void {
     }
   }
 
+  // 重画会把发送按钮的字和能不能点抄回模型写的样子，按表单现在的状态再定一次。
+  for (const card of kept) if (card instanceof HTMLElement && card.querySelector(".gc-field")) refreshForm(card);
+
   // 先删掉不再要的，再按顺序插入新的：留下的卡片在文档里不移动。
   for (const node of [...root.childNodes]) if (!want.includes(node)) node.remove();
   let at = root.firstChild;
@@ -442,8 +461,8 @@ export function patchAnswer(root: HTMLElement, html: string): void {
   }
 }
 
-/** 卡片上用户动过的东西：调过的数、勾过的清单项（按卡片里的顺序）。at 用来丢掉最早的。 */
-type CardState = { vars?: Record<string, number>; checks?: number[]; at: number };
+/** 卡片上用户动过的东西：调过的数、勾过的清单项（按卡片里的顺序）、表单各栏的值和发没发出。at 用来丢掉最早的。 */
+type CardState = { vars?: Record<string, number>; checks?: number[]; fields?: Record<string, string>; sent?: boolean; at: number };
 
 /** 每张卡一个存储项（键带卡片原文摘要）：两个窗口同时存不同的卡片时互不覆盖。 */
 const STATE_PREFIX = "answerCard:";
@@ -453,9 +472,11 @@ const MAX_SAVED = 300;
 
 function isCardState(v: unknown): v is CardState {
   if (!v || typeof v !== "object") return false;
-  const { vars, checks, at } = v as Record<string, unknown>;
+  const { vars, checks, fields, sent, at } = v as Record<string, unknown>;
 
   return typeof at === "number"
+    && (sent === undefined || typeof sent === "boolean")
+    && (fields === undefined || (typeof fields === "object" && fields !== null && Object.values(fields).every((t) => typeof t === "string")))
     && (vars === undefined || (typeof vars === "object" && vars !== null && Object.values(vars).every((n) => typeof n === "number" && Number.isFinite(n))))
     && (checks === undefined || (Array.isArray(checks) && checks.every((n) => Number.isInteger(n))));
 }
@@ -481,8 +502,52 @@ function stateOf(card: HTMLElement): CardState {
 
   for (const el of card.querySelectorAll<HTMLInputElement>(".gc-num[data-gc-var]")) vars[el.dataset.gcVar!] = Number(el.value);
   const checks = [...card.querySelectorAll<HTMLInputElement>(".gc-check input[type=checkbox]")].flatMap((el, i) => (el.checked ? [i] : []));
+  const fields = Object.fromEntries([...card.querySelectorAll<HTMLElement>(".gc-field")].map((f) => [f.dataset.gcField!, fieldValue(f)]));
 
-  return { vars, checks, at: Date.now() };
+  return { vars, checks, fields, sent: card.dataset.gcSent !== undefined, at: Date.now() };
+}
+
+/** 一栏现在的值：选项取选中的那个，文字框取去掉首尾空白的字。 */
+function fieldValue(field: HTMLElement): string {
+  const chip = field.querySelector<HTMLElement>('.gc-chip[aria-checked="true"]');
+
+  return chip ? chip.dataset.gcOption ?? "" : field.querySelector<HTMLInputElement>(".gc-text")?.value.trim() ?? "";
+}
+
+function setFieldValue(field: HTMLElement, value: string): void {
+  for (const chip of field.querySelectorAll<HTMLElement>(".gc-chip")) chip.setAttribute("aria-checked", String(chip.dataset.gcOption === value));
+  const text = field.querySelector<HTMLInputElement>(".gc-text");
+
+  if (text) text.value = value;
+}
+
+/** 必填栏空着就标出来、发送按钮不能点；发出后整张表单只读，按钮写“已发送”。 */
+function refreshForm(card: HTMLElement): void {
+  const sent = card.dataset.gcSent !== undefined;
+  let missing = false;
+
+  for (const field of card.querySelectorAll<HTMLElement>(".gc-field")) {
+    const empty = field.dataset.gcRequired !== undefined && !fieldValue(field);
+
+    missing ||= empty;
+    field.classList.toggle("gc-missing", empty && !sent);
+
+    for (const control of field.querySelectorAll<HTMLInputElement | HTMLButtonElement>(".gc-text, .gc-chip")) if (control.disabled !== sent) control.disabled = sent;
+  }
+
+  for (const button of card.querySelectorAll<HTMLButtonElement>("[data-card-submit]")) {
+    const text = sent ? "已发送" : button.dataset.cardSubmit ?? "";
+
+    button.disabled = sent || missing;
+
+    // 只在字变了时写：写字会触发观察者，观察者又调到这里。
+    if (button.textContent !== text) button.textContent = text;
+  }
+}
+
+/** 各栏合成一句用户的话：“出发日期：10-25 周六；乘客：2 位成人”。没填的选填栏不写。 */
+function formMessage(card: HTMLElement): string {
+  return [...card.querySelectorAll<HTMLElement>(".gc-field")].flatMap((f) => { const v = fieldValue(f); return v ? [`${f.dataset.gcLabel}：${v}`] : []; }).join("；");
 }
 
 /** 用户动过的卡片：写完前动过的，写完时存下现在的样子；还原读回来之前就动过的，不拿旧记录盖掉。 */
@@ -576,7 +641,16 @@ function restore(card: HTMLElement): void {
       if (n !== undefined) el.value = String(clampTo(el, n));
     }
     [...card.querySelectorAll<HTMLInputElement>(".gc-check input[type=checkbox]")].forEach((el, i) => { el.checked = saved.checks?.includes(i) ?? false; });
+
+    for (const field of card.querySelectorAll<HTMLElement>(".gc-field")) {
+      const v = saved.fields?.[field.dataset.gcField!];
+
+      if (v !== undefined) setFieldValue(field, v);
+    }
+
+    if (saved.sent) card.dataset.gcSent = "";
     recompute(card);
+    refreshForm(card);
   });
 }
 
@@ -595,6 +669,8 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
 
     // 写到一半时用户已经调过数：后面新写出的组件按调过的值算。
     for (const card of root.querySelectorAll<HTMLElement>(".gen-card:has(.gc-num)")) recompute(card);
+
+    for (const card of root.querySelectorAll<HTMLElement>(".gen-card:has(.gc-field)")) refreshForm(card);
   };
 
   new MutationObserver(draw).observe(root, { childList: true, subtree: true });
@@ -611,6 +687,10 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
     const el = event.target;
 
     if (!(el instanceof HTMLInputElement) || !el.closest(".gen-card")) return;
+
+    if (el.classList.contains("gc-text")) { refreshForm(el.closest<HTMLElement>(".gen-card")!);
+
+ return; }
 
     // 打字到一半（空、只有负号）先不动，失焦时再夹回范围。
     if (el.dataset.gcVar !== undefined && el.value.trim() !== "" && Number.isFinite(Number(el.value))) {
@@ -631,7 +711,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
     if (!card) return;
 
     if (el.dataset.gcVar !== undefined) setVar(el, Number.isFinite(Number(el.value)) && el.value.trim() !== "" ? Number(el.value) : Number(el.defaultValue));
-    else if (el.type === "checkbox" && el.closest(".gc-check")) save(card);
+    else if ((el.type === "checkbox" && el.closest(".gc-check")) || el.classList.contains("gc-text")) save(card);
   });
   root.addEventListener("click", async (event) => {
     // SAFETY: click 事件的 target 是 Element。
@@ -655,10 +735,34 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => void):
 
  return; }
     // SAFETY: 同上。
+    const chip = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-chip");
+    const form = chip?.closest<HTMLElement>(".gen-card");
+
+    if (chip && form && !chip.disabled) {
+      setFieldValue(chip.closest<HTMLElement>(".gc-field")!, chip.dataset.gcOption ?? "");
+      refreshForm(form);
+      save(form);
+
+      return;
+    }
+    // SAFETY: 同上。
     const button = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-btn");
 
     if (!button) return;
     const label = button.textContent?.trim() ?? "";
+
+    if (button.dataset.cardSubmit !== undefined) {
+      const form = button.closest<HTMLElement>(".gen-card");
+      const text = form ? formMessage(form) : "";
+
+      if (!form || !text || button.disabled) return;
+      form.dataset.gcSent = "";
+      refreshForm(form);
+      save(form);
+      say(text);
+
+      return;
+    }
 
     if (button.dataset.cardSay !== undefined) {
       if (button.dataset.cardSay === label && label) say(label);
