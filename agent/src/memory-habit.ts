@@ -1,5 +1,5 @@
 /**
- * 习惯计数：同一偏好出现在 3 个不同对话里，才提出「你好像每次都这样做：…。要我记住吗」。
+ * 习惯计数：同一偏好出现在 3 个不同对话里（来自用户自己的浏览时是 2 个不同日子），才提出「你好像每次都这样做：…。要我记住吗」。
  * 纯逻辑，不读时钟（时间由调用方的 `at` 给出），状态是纯 JSON，可直接存取。
  * 习惯不会自动保存；问过或被拒绝的 key 不再问。
  */
@@ -7,6 +7,7 @@
 export interface HabitObservation {
   key: string;
   text: string;
+  /** 计数单位：对话 id，或用户自己浏览的那一天（`day:YYYY-MM-DD`）。 */
   conversationId: string;
   at: number;
 }
@@ -46,14 +47,14 @@ export interface HabitStep {
   ask: HabitAsk | null;
 }
 
-export function observe(state: HabitState, obs: HabitObservation): HabitStep {
+export function observe(state: HabitState, obs: HabitObservation, need = DISTINCT_CONVERSATIONS): HabitStep {
   const old = state.habits[obs.key];
   const seen: Record<string, number> = {};
 
   // 过期的观察不再计数。
   for (const [id, at] of Object.entries(old?.seen ?? {})) if (obs.at - at <= EXPIRE_MS) seen[id] = at;
   seen[obs.conversationId] = obs.at;
-  const ask = !old?.closed && Object.keys(seen).length >= DISTINCT_CONVERSATIONS;
+  const ask = !old?.closed && Object.keys(seen).length >= need;
   const habit: Habit = { text: obs.text, seen, last: obs.at };
 
   if (old?.closed || ask) habit.closed = true;

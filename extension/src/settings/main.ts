@@ -20,6 +20,7 @@ import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
 import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
+import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
@@ -210,6 +211,13 @@ document.getElementById("settings")!.innerHTML = `
       ${toggleRow("nudge", "主动建议", "如果助手能帮上忙，就在页面右下角显示一张小卡。点小卡，侧栏就开始做。每次判断会把当前页面和最近页面的摘录发给快速模型，没设快速模型时发给主模型。同一个页面只判断一次。")}
     </div>
     <p id="selection-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="sx" aria-labelledby="habits-title">
+    <div class="sx-head"><h2 id="habits-title">习惯</h2></div>
+    <div class="surface rows">
+      ${toggleRow("browse-habits", "从我的浏览里学习习惯", "记下网页标题、网址、你点的按钮和链接、搜索词和填写的内容，交给快速模型找出你反复做的事。密码栏和卡号栏的值不记，助手替你做事时的操作也不记。同一件事在 2 天里出现过，就问你要不要记住。记录在侧栏「记忆」里能看、能删。")}
+    </div>
+    <p id="habits-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="open-threads-title">
     <div class="sx-head"><h2 id="open-threads-title">继续上次的事</h2></div>
@@ -1305,6 +1313,7 @@ async function reload(): Promise<void> {
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
+  $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
   attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
   renderMainModel();
@@ -1518,6 +1527,8 @@ void chrome.commands.getAll().then((commands) => {
 bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接预览已开启。" : "链接预览已关闭。"));
 
 bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
+
+bindToggle($<HTMLInputElement>("browse-habits"), BROWSE_ON_KEY, $("habits-status"), (on) => (on ? "已开启。" : "已暂停，已记的操作保留。"));
 
 bindToggle(openThreads, OPEN_THREADS_KEY, $("open-threads-status"), (on) => (on ? "已开启，下次打开新对话时出现。" : "已关闭。"));
 

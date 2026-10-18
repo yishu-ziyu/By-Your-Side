@@ -1,5 +1,6 @@
 import { isReadingClientMessage, isReadingEvent, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingTranscript } from "./reading.js";
 import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type NudgeResult } from "./nudge.js";
+import { isBrowseHabitClientMessage, isBrowseHabitResult, type BrowseHabitClientMessage, type BrowseHabitResult } from "./browse-habits.js";
 import { isExecutionFeedback } from "./execution-feedback.js";
 /**
  * SideAgent 桥接协议（扩展 side panel ⇆ 本地伴随进程）。
@@ -232,6 +233,7 @@ export type ClientMessage = ConversationEnvelope & (
   | VoiceClientMessage
   | ReadingClientMessage
   | NudgeClientMessage
+  | BrowseHabitClientMessage
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
@@ -334,6 +336,7 @@ export interface HostFeatures { memory: boolean }
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | ReadingEvent
   | NudgeResult
+  | BrowseHabitResult
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number;ask?:string;/** hand_to_user 要用户填的栏和点的按钮：交给用户时在页面上圈出来。 */targets?:string[]}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   | VoiceServerMessage
@@ -381,7 +384,7 @@ export type AgentUiEvent =
    * outcome：询问有了结局时后台再发一条同 askId 的事件（进对话历史），侧栏按最后一条画——
    * remembered 已记下 / already 早已记着 / once 这次就行 / closed 已作废（同一句纠正又问了一次、替换目标被改过等）。没有 outcome 的是仍在等回答的询问。
    */
-  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; learned?: MemoryEntry; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true }
+  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; learned?: MemoryEntry; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true; /** 从用户自己的浏览里发现的习惯：哪几天、在哪些网站做过，卡片上折叠显示。 */ evidence?: string[] }
   /** 站点笔记：做成的任务结束后记下的这个网站的用法（只关于网站、不关于用户），侧栏在这一轮下面写一行「记下了…用法」。title 是那次打开这个网站时的页面标题。 */
   | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "text_delta"; delta: string }
@@ -852,6 +855,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "nudge_request" || msg.type === "nudge_validate") return isNudgeClientMessage(msg) ? msg : null;
 
+    if (msg.type === "browse_habit_request") return isBrowseHabitClientMessage(msg) ? msg : null;
+
     if (msg.type === "conversation_create" && msg.reading !== undefined && !isReadingTranscript(msg.reading)) return null;
 
     if (msg.type === "voice") {
@@ -1017,6 +1022,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
     if (msg.type === 'nudge_result' || msg.type === 'nudge_validation') return isNudgeResult(msg) ? msg : null;
 
+    if (msg.type === 'browse_habit_result') return isBrowseHabitResult(msg) ? msg : null;
+
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)&&(msg.ask===undefined||typeof msg.ask==='string'&&msg.ask.length<=200)&&(msg.targets===undefined||Array.isArray(msg.targets)&&msg.targets.length<=6&&msg.targets.every(t=>typeof t==='string'&&t.length<=200))?msg:null;
 
     if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
@@ -1122,6 +1129,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (event.outcome !== undefined && !["remembered", "already", "once", "closed"].includes(event.outcome)) return null;
 
       if (event.habit !== undefined && event.habit !== true) return null;
+
+      if (event.evidence !== undefined && !(Array.isArray(event.evidence) && event.evidence.length <= 14 && event.evidence.every(line => typeof line === "string" && line.length <= 300))) return null;
 
       if (event.learned !== undefined && (!isMemoryEntry(event.learned) || event.learned.kind !== "method" || event.learned.status !== "active")) return null;
     }
