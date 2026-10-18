@@ -62,19 +62,21 @@ const cards = async () => Number(await rp.evaluate(panel, "document.querySelecto
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
   const work = await rp.attach(blank.targetId);
+  await rp.cdp.send("Page.navigate", { url: `http://${HOST}/` }, work);
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   const configured = await configureViaSettings(rp, panel, { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-demo-no-secret" } }, { baseUrl: model.baseUrl });
   await rp.cdp.send("Target.closeTarget", { targetId: configured.settingsTargetId });
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled === false') || undefined, 60_000, "sidebar ready");
+  await rp.cdp.send("Page.bringToFront", {}, work);
+  await sleep(3000);
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.getAttribute("aria-busy") === "false" && document.querySelector("#send-btn")?.disabled === false') || undefined, 60_000, "sidebar ready");
   const ext = await rp.attach((await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId);
   await until(async () => (await rp.evaluate(ext, `document.readyState === "complete"`)) || undefined, 10_000, "extension page");
   const storage = (key: string) => rp.evaluate(ext, `chrome.storage.local.get(${JSON.stringify(key)}).then(s => s[${JSON.stringify(key)}] ?? null)`);
 
   // 今天：用户自己打开项目页 → 点 Docs → 搜 install 回车 → 在密码栏输入后点别处。
   evidence.stage = "today";
-  await rp.cdp.send("Page.bringToFront", {}, work);
-  await rp.cdp.send("Page.navigate", { url: `http://${HOST}/` }, work);
+  await rp.cdp.send("Page.navigate", { url: `http://${HOST}/?again` }, work);
   await until(async () => await rp.evaluate(work, `!!document.querySelector("#docs")`) || undefined, 10_000, "project page");
   await sleep(1500);
   await rp.click(work, "#docs");

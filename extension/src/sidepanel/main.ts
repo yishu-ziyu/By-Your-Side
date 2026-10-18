@@ -89,7 +89,7 @@ import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRu
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
 import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
-import { BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, readBrowseEvents, readBrowseFound, readDismissed } from "../shared/browse-habits.js";
+import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent } from "../shared/browse-habits.js";
 import type { BrowseHabit } from "../../../shared/browse-habits.js";
 import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
@@ -1913,14 +1913,16 @@ function renderMemoryHistory(history: MemoryEntry[]): HTMLElement {
 
 /** 做事的方法单独成组：纠正后点「记住」的，和从纠正里总结的待验证做法；每条照常可看来源、修改、忘记。 */
 /** 「看到的操作」：从用户自己的浏览里归纳出的事，数据只在 chrome.storage.local，由后台写。 */
-let browseSeen: { on: boolean; found: BrowseHabit[]; steps: number } = { on: true, found: [], steps: 0 };
+let browseSeen: { on: boolean; found: BrowseHabit[]; recent: BrowseEvent[] } = { on: true, found: [], recent: [] };
+
+const browseControl = (message: { action: "dismiss"; key: string } | { action: "clear" }) => chrome.runtime.sendMessage({ type: BROWSE_CONTROL, ...message }).catch(() => undefined);
 
 let browseClearArmed = false;
 
 async function loadBrowseSeen(): Promise<void> {
   const stored = await chrome.storage.local.get([BROWSE_ON_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_DISMISSED_KEY]);
   const dismissed = readDismissed(stored[BROWSE_DISMISSED_KEY]);
-  browseSeen = { on: isBrowseOn(stored[BROWSE_ON_KEY]), found: readBrowseFound(stored[BROWSE_FOUND_KEY]).filter(h => !dismissed.includes(h.key)), steps: readBrowseEvents(stored[BROWSE_LOG_KEY]).length };
+  browseSeen = { on: isBrowseOn(stored[BROWSE_ON_KEY]), found: readBrowseFound(stored[BROWSE_FOUND_KEY]).filter(h => !dismissed.includes(h.key)), recent: readBrowseEvents(stored[BROWSE_LOG_KEY]) };
   memoryBody.querySelector('[data-memory-group="seen"]')?.replaceWith(renderSeenGroup());
 }
 
@@ -1939,8 +1941,8 @@ function renderSeenGroup(): HTMLElement {
   const intro = document.createElement("p");
   intro.className = "memory-quiet";
   intro.textContent = browseSeen.on
-    ? `已记下你自己做的 ${browseSeen.steps} 步。快速模型每半小时最多归纳一次，同一件事出现在 2 天里就问你要不要记住。`
-    : `已暂停，暂停期间什么都不记。已记下的 ${browseSeen.steps} 步保留。`;
+    ? `已记下你自己做的 ${browseSeen.recent.length} 步。快速模型每半小时最多归纳一次，同一件事出现在 2 天里就问你要不要记住。`
+    : `已暂停，暂停期间什么都不记。已记下的 ${browseSeen.recent.length} 步保留。`;
   group.append(heading, intro);
   const list = document.createElement("div");
   list.className = "memory-list";
@@ -1967,13 +1969,7 @@ function renderSeenGroup(): HTMLElement {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "删除";
-    remove.onclick = async () => {
-      const stored = await chrome.storage.local.get([BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY]);
-      await chrome.storage.local.set({
-        [BROWSE_DISMISSED_KEY]: [...readDismissed(stored[BROWSE_DISMISSED_KEY]).filter(key => key !== habit.key), habit.key].slice(-500),
-        [BROWSE_FOUND_KEY]: readBrowseFound(stored[BROWSE_FOUND_KEY]).filter(h => h.key !== habit.key),
-      });
-    };
+    remove.onclick = () => void browseControl({ action: "dismiss", key: habit.key });
     actions.append(remove);
     meta.append(facts, actions);
     row.append(text, meta);
@@ -1981,6 +1977,21 @@ function renderSeenGroup(): HTMLElement {
   }
 
   group.append(list);
+
+  if (browseSeen.recent.length) {
+    const raw = document.createElement("details");
+    raw.className = "memory-history";
+    raw.dataset.browseRaw = "";
+    const summary = document.createElement("summary");
+    summary.textContent = `看原始记录（最近 ${Math.min(50, browseSeen.recent.length)} 步）`;
+    const lines = document.createElement("p");
+    lines.className = "memory-quiet";
+    lines.style.whiteSpace = "pre-wrap";
+    lines.textContent = browseSeen.recent.slice(-50).reverse().map(event => `${event.day.slice(5)} ${event.line}`).join("\n");
+    raw.append(summary, lines);
+    group.append(raw);
+  }
+
   const actions = document.createElement("div");
   actions.className = "memory-actions";
   const pause = document.createElement("button");
@@ -2001,7 +2012,7 @@ function renderSeenGroup(): HTMLElement {
     }
 
     browseClearArmed = false;
-    await chrome.storage.local.remove([BROWSE_LOG_KEY, BROWSE_FOUND_KEY]);
+    await browseControl({ action: "clear" });
   };
   actions.append(pause, clear);
   group.append(actions);
