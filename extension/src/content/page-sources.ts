@@ -104,7 +104,7 @@ export function registerSelection(range: Range): PageElementSource | null {
 }
 
 export function findUniqueSource(query: string): PageElementSource | null {
-  const comparable = (text: string) => normalizeSourceText(text).replace(/[,，]/g, '').replace('％', '%').replace(/^\+/, '');
+  const comparable = (text: string) => normalizeSourceText(text).replace(/[,，]/g, '').replace('％', '%').replace(/−/g, '-').replace(/^\+/, '');
   const numbers = (text: string) => (text.match(/[+−-]?\d[\d,]*(?:\.\d+)?(?:%|％|M|亿|万|元)?/g) ?? []).map(comparable);
   const needle = comparable(query);
 
@@ -115,7 +115,8 @@ export function findUniqueSource(query: string): PageElementSource | null {
   const matches = elements.filter(element => comparable(element.textContent ?? '').includes(needle) && element.checkVisibility() && numbers(sourceText(element)).includes(needle));
   const leaves = matches.filter(element => !matches.some(other => other !== element && element.contains(other)));
 
-  if (leaves.length) return leaves.length === 1 ? registerSource(leaves[0]!) : null;
+  // 同一段里写了两遍（“原价 2599，到手价 2599”）也不止一处。
+  if (leaves.length) return leaves.length === 1 && numbers(sourceText(leaves[0]!)).filter(n => n === needle).length === 1 ? registerSource(leaves[0]!) : null;
 
   return uniqueNumberText(needle, numbers);
 }
