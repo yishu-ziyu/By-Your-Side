@@ -308,7 +308,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」，做完淡出。 */
       .cursor:not(.holding):not(.acting) .label { display: none !important; }
       /* 例外：两步之间光标旁挂「球 + 正在思考」，光标不动时也看得出助手还在想。 */
-      .cursor.stating.thinking:not(.acting) .label { display: inline-flex !important; opacity: 1; }
+      .cursor.stating.thinking:not(.acting):not(.guiding):not(.holding) .label { display: inline-flex !important; opacity: 1; }
       .cursor.rest.thinking { opacity: 1; }
       /* 主助手停靠时可见；多个协作光标闲置时仍收起，以免挡住正文。 */
       .cursor.rest:not(.holding):not([data-primary="true"]) { visibility: hidden; }
@@ -867,11 +867,17 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     inst.labelSize = undefined;
     inst.el.classList.add("stating");
     inst.el.style.setProperty("--s", STATUS_COPY[status.state].color);
-    inst.el.classList.toggle("flip", inst.pos.x > window.innerWidth * 0.6);
+    const thinking = status.state === "waiting";
+    inst.el.classList.toggle("flip", !thinking && inst.pos.x > window.innerWidth * 0.6);
     paintLabel(inst, status.text, statusSub(inst));
-    inst.el.classList.toggle("thinking", status.state === "waiting");
+    inst.el.classList.toggle("thinking", thinking);
 
-    if (status.state === "waiting") label.prepend(thinkOrb());
+    if (!thinking) return;
+    label.prepend(thinkOrb());
+    // 光标常停在刚点过的底边按钮上：按实际尺寸把牌子收进视口，不让它落到屏幕外。
+    const p = cursorLabelPosition(inst.pos, { width: label.offsetWidth, height: label.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
+    label.style.left = `${p.x - inst.pos.x}px`;
+    label.style.top = `${p.y - inst.pos.y}px`;
   }
 
   // 和侧栏过程行同一颗 rubik 球：两步之间光标不动，球在转，说明助手还在想。
@@ -912,12 +918,20 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       }
     };
 
-    if (reducedMotion.matches) { draw(0.6); return canvas; }
     const tick = (now: number) => {
       if (!canvas.isConnected) return;
+
+      if (reducedMotion.matches) {
+        draw(0.6);
+        reducedMotion.addEventListener("change", () => requestAnimationFrame(tick), { once: true });
+
+        return;
+      }
       draw((now / 1000) * THINK_PRESET.speed);
       requestAnimationFrame(tick);
     };
+
+    if (reducedMotion.matches) draw(0.6);
     requestAnimationFrame(tick);
 
     return canvas;

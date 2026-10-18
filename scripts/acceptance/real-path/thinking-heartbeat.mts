@@ -119,15 +119,16 @@ try {
   type Node = { nodeType: number; nodeName: string; nodeValue?: string; backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
   const pageThinking = async () => {
     const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: Node };
-    let orbNode = 0; let label = false; let capsule = false; let stale = false;
+    let orbNode = 0; let label = false; let capsule = false; let stale = "";
     const walk = (n: Node, inLabel: boolean) => {
+      if (n.nodeName === "STYLE" || n.nodeName === "SCRIPT") return;
       const cls = n.attributes?.[n.attributes.indexOf("class") + 1] ?? "";
       const here = inLabel || (n.attributes?.includes("class") && /\blabel\b/.test(cls));
       if (n.nodeName === "CANVAS" && /think-orb/.test(cls)) orbNode = n.backendNodeId;
       if (n.nodeType === 3) {
         const t = n.nodeValue ?? "";
         if (t.includes("正在思考")) { if (here) label = true; else capsule = true; }
-        if (/在想|处理中/.test(t)) stale = true;
+        if (/在想|处理中/.test(t)) stale = t;
       }
       for (const c of [...(n.children ?? []), ...(n.shadowRoots ?? [])]) walk(c, !!here);
     };
