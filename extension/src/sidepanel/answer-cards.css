@@ -105,6 +105,28 @@
 .msg.assistant.markdown .gc-evidence td.s { padding-right: 0; border-bottom: 0; color: var(--text-tertiary); }
 .gc-btn.gc-point { display: flex; min-height: 0; margin-top: 2px; padding: 1px 6px; border-radius: 6px; font-size: var(--fs-micro); color: var(--accent); }
 
+/* 结构图：Pele 的颜色变量接到侧栏的纸面和墨色上，深色模式跟着 token 走，不用重画。
+   key 是主结论，warn 是要当心的事，bad 是作者说没用的做法（模型用 :::key 这类写法标）。 */
+.gc-diagram {
+  --pele-bg: var(--content-bg); --pele-fg: var(--text-primary); --pele-muted: var(--text-tertiary); --pele-line: var(--text-tertiary);
+  --pele-surface: var(--content-subtle); --pele-surface-alt: var(--content-bg); --pele-border: var(--content-border);
+  --pele-accent: var(--accent); --pele-font: var(--font); --pele-radius: 8px;
+}
+.gc-diagram-canvas svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.gc-diagram .key :is(rect, polygon) { fill: var(--accent-soft); stroke: var(--accent); }
+.gc-diagram .warn :is(rect, polygon) { fill: color-mix(in srgb, var(--warn) 9%, transparent); stroke: var(--warn); }
+.gc-diagram .bad :is(rect, polygon) { fill: var(--err-soft); stroke: var(--err); stroke-dasharray: 4 3; }
+.gc-diagram .bad text { fill: var(--text-secondary); }
+.gc-diagram [data-cited] { cursor: pointer; outline: none; }
+.gc-diagram [data-cited]:hover > :is(rect, polygon), .gc-diagram [data-cited]:focus-visible > :is(rect, polygon) { stroke: var(--text-tertiary); }
+.gc-diagram .gc-sel > :is(rect, polygon) { stroke: var(--accent) !important; stroke-width: 2px !important; }
+.gc-diagram-hint { margin-top: var(--s-2); font-size: var(--fs-meta); color: var(--text-tertiary); }
+.gc-quote { margin-top: var(--s-2); padding: var(--s-2) 10px; border-radius: var(--radius-inner); background: var(--well); font-size: var(--fs-ui); line-height: var(--lh-ui); color: var(--text-primary); animation: gcContentIn var(--d-state) var(--e-enter) both; }
+.gc-quote-from { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.msg.assistant.markdown .gc-diagram-source { margin: 0; white-space: pre-wrap; font: var(--fs-code)/1.5 var(--mono); color: var(--text-secondary); }
+.gc-diagram.gc-ph { display: flex; flex-direction: column; justify-content: center; gap: var(--s-3); min-height: 180px; padding: var(--s-3); border-radius: var(--radius-inner); background: var(--well); }
+.gc-diagram.gc-ph .gc-bar { justify-content: center; }
+
 /* 空位与淡入：空位先透明，过了 --d-micro 还没写完才浮出；占位条一行高，条本身比字矮 */
 .gc-ph { animation: gcPlaceholderIn var(--d-state) var(--e-enter) var(--d-micro) both; }
 .gc-stat.gc-ph { background: transparent; }
@@ -119,7 +141,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .gc-btn, .gc-face { transition: none; }
-  .gc-evidence, .gen-card[data-face] > .gc-body { animation: none; }
+  .gc-evidence, .gen-card[data-face] > .gc-body, .gc-quote { animation: none; }
   .gc-ph { animation-duration: 0s; }
   .gc-in { animation: none; }
   .gc-btn:active { transform: none; }
