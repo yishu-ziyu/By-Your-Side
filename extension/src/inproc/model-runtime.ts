@@ -168,7 +168,8 @@ function commandCodeProvider(haikuTemplate: Model<Api> | undefined): Provider {
 
   return createProvider<"openai-completions" | "anthropic-messages">({
     id: COMMANDCODE_PROVIDER_ID, name: "Command Code",
-    auth: { apiKey: { name: "Command Code API key", resolve: async ({ credential }) => credential?.key ? { auth: { apiKey: credential.key }, source: "设置" } : undefined } },
+    // 带 anthropic-beta 或浏览器直连头时，Command Code 的 /messages 一律回 403「Authentication failed」，看上去像 key 无效；null 让 SDK 不发这两类头。
+    auth: { apiKey: { name: "Command Code API key", resolve: async ({ credential }) => credential?.key ? { auth: { apiKey: credential.key, headers: { "anthropic-beta": null, "anthropic-dangerous-direct-browser-access": null } }, source: "设置" } : undefined } },
     models: haiku ? [mimo, haiku] : [mimo],
     api: { "openai-completions": openAICompletionsApi(), "anthropic-messages": anthropicMessagesApi() },
   });
