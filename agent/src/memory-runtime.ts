@@ -13,7 +13,7 @@ import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
 import { isNamedForRequest, isRelevantMemory } from "./memory-relevance.js";
-import { BROWSING_DAY, dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
+import { BROWSING_DAY, close as closeHabit, dismiss as dismissHabit, emptyHabitState, forgetBrowsing as forgetBrowsingDays, habitReady, observe as observeHabit, type HabitState } from "./memory-habit.js";
 import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
 interface ActiveUserTurn {
@@ -1247,36 +1247,51 @@ export class MemoryRuntime {
 
     for (const item of found) {
       if (dismissed.includes(item.key)) continue;
-      const step = await doc.exclusive(async () => {
+      // 这里只记天数、标出够数的；问不问由扩展核对用户没删掉这条之后再发 browse_habit_control ask。
+      item.ready = await doc.exclusive(async () => {
         const saved = await loadHabits(doc);
         let state = saved.state;
-        let ask = null;
 
-        for (const day of item.days) {
-          const next = observeHabit(state, { key: item.key, text: item.habit, conversationId: `${BROWSING_DAY}${day}`, at: Date.parse(`${day}T12:00:00`) || Date.now() }, BROWSE_HABIT_DAYS);
-          state = next.state;
-          ask ??= next.ask;
-        }
-
+        for (const day of item.days) state = observeHabit(state, { key: item.key, text: item.habit, conversationId: `${BROWSING_DAY}${day}`, at: Date.parse(`${day}T12:00:00`) || Date.now() }, Infinity).state;
         await doc.write(JSON.stringify({ state, hosts: { ...Object.fromEntries(Object.entries(saved.hosts).filter(([k]) => state.habits[k])), [item.key]: item.hosts } }));
 
-        return ask;
-      }).catch(() => null);
-
-      if (!step) continue;
-      const scope: MemoryScope = item.hosts.length === 1 ? { kind: "site", hostname: item.hosts[0]! } : { kind: "all" };
-      const askId = globalThis.crypto.randomUUID();
-      const evidence = item.days.map(day => `${day} · ${item.hosts.join("、")}`);
-      const event: MemoryAskEvent = { kind: "memory_ask", askId, rule: step.text, scope, habit: true, evidence };
-      const messageKey = `habit:${item.key}`;
-
-      if (scope.kind === "site") event.hostname = scope.hostname;
-      this.asks.set(askId, { rule: step.text, scope, quote: `来自你自己的浏览：${evidence.join("；")}`.slice(0, 600), keys: [messageKey], messageKey, event, habitKey: item.key });
-      this.emit(event);
-      this.onRecord?.("memory_ask_decision", { source: "habit", status: "asked", reason: "browsing", askId, scope: scope.kind });
+        return habitReady(state, item.key, true, BROWSE_HABIT_DAYS);
+      }).catch(() => false);
     }
 
     return found;
+  }
+
+  /** 扩展核对过这条没被删：天数仍够、还没问过，就问一次。依据只用宿主自己记的日子和网站，不用扩展传来的。 */
+  async askBrowsing(key: string): Promise<void> {
+    const doc = habitDocFor(this.store);
+    const step = await doc.exclusive(async () => {
+      const saved = await loadHabits(doc);
+
+      if (!habitReady(saved.state, key, true, BROWSE_HABIT_DAYS)) return null;
+      const habit = saved.state.habits[key]!;
+      await doc.write(JSON.stringify({ ...saved, state: closeHabit(saved.state, key) }));
+
+      return { text: habit.text, hosts: saved.hosts[key] ?? [], days: Object.keys(habit.seen).filter(id => id.startsWith(BROWSING_DAY)).map(id => id.slice(BROWSING_DAY.length)).sort() };
+    }).catch(() => null);
+
+    if (!step) return;
+    const scope: MemoryScope = step.hosts.length === 1 ? { kind: "site", hostname: step.hosts[0]! } : { kind: "all" };
+    const askId = globalThis.crypto.randomUUID();
+    const evidence = step.days.map(day => `${day} · ${step.hosts.join("、")}`);
+    const event: MemoryAskEvent = { kind: "memory_ask", askId, rule: step.text, scope, habit: true, evidence };
+    const messageKey = `habit:${key}`;
+
+    if (scope.kind === "site") event.hostname = scope.hostname;
+    this.asks.set(askId, { rule: step.text, scope, quote: `来自你自己的浏览：${evidence.join("；")}`.slice(0, 600), keys: [messageKey], messageKey, event, habitKey: key });
+    this.emit(event);
+    this.onRecord?.("memory_ask_decision", { source: "habit", status: "asked", reason: "browsing", askId, scope: scope.kind });
+  }
+
+  /** 用户删了浏览记录：清掉宿主记的浏览天数（key 为 null 时全部），对话的计数不动。 */
+  async forgetBrowsing(key: string | null): Promise<void> {
+    const doc = habitDocFor(this.store);
+    await doc.exclusive(async () => { const saved = await loadHabits(doc); await doc.write(JSON.stringify({ ...saved, state: forgetBrowsingDays(saved.state, key) })); }).catch(() => undefined);
   }
 
   /** 决定点 A 的决定记录：判为哪种、按哪条规则、改了哪些条目。不写用户原话（结论里的日期、是非除外）。 */

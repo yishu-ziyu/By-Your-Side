@@ -1629,6 +1629,12 @@ return;}
     return await this.memoryRuntime?.noticeBrowsing(days, dismissed) ?? [];
   }
 
+  /** 扩展核对过的浏览习惯：问一次，或清掉浏览天数；见 MemoryRuntime.askBrowsing / forgetBrowsing。 */
+  async controlBrowsing(action: "ask" | "forget", key: string | null): Promise<void> {
+    if (action === "ask" && key) await this.memoryRuntime?.askBrowsing(key);
+    else if (action === "forget") await this.memoryRuntime?.forgetBrowsing(key);
+  }
+
   /** 这个对话的任务碰过的网页（宿主的任务进度提供）：纠正询问的网站后备。 */
   bindVisitedUrls(urls: () => string[]): void {
     this.memoryRuntime?.bindVisitedUrls(urls);

@@ -67,6 +67,28 @@ export function observe(state: HabitState, obs: HabitObservation, need = DISTINC
   return { state: trim({ habits: { ...state.habits, [obs.key]: habit } }), ask: ask ? { key: obs.key, text: obs.text } : null };
 }
 
+/** 数够了、还没问过：只看和 unit 同一来源（对话或浏览的日子）的计数。 */
+export function habitReady(state: HabitState, key: string, browsing: boolean, need: number): boolean {
+  const habit = state.habits[key];
+
+  return !!habit && !habit.closed && Object.keys(habit.seen).filter(id => id.startsWith(BROWSING_DAY) === browsing).length >= need;
+}
+
+/** 问过了：之后不再问这个 key。 */
+export function close(state: HabitState, key: string): HabitState {
+  const habit = state.habits[key];
+
+  return habit ? { habits: { ...state.habits, [key]: { ...habit, closed: true } } } : state;
+}
+
+/** 用户删了浏览记录：去掉浏览的日子，对话的计数不动。key 为 null 时所有习惯都去掉。 */
+export function forgetBrowsing(state: HabitState, key: string | null): HabitState {
+  const habits = Object.fromEntries(Object.entries(state.habits).map(([k, habit]) => key !== null && k !== key ? [k, habit]
+    : [k, { ...habit, seen: Object.fromEntries(Object.entries(habit.seen).filter(([id]) => !id.startsWith(BROWSING_DAY))) }]));
+
+  return { habits };
+}
+
 /** 用户回答「不要」：之后不再问这个 key。 */
 export function dismiss(state: HabitState, key: string): HabitState {
   const old = state.habits[key];
