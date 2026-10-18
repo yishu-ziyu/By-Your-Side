@@ -96,6 +96,7 @@ export function installBrowseHabits(deps: Deps) {
       log.events = [];
       log.since = 0;
       await chrome.storage.local.remove(BROWSE_FOUND_KEY);
+      deps.send({ type: 'browse_habit_control', requestId: crypto.randomUUID(), conversationId: deps.selected(), action: 'forget', key: null });
 
       return;
     }
@@ -130,7 +131,10 @@ export function installBrowseHabits(deps: Deps) {
       await withLog(async () => {
         if (!pending.delete(result.requestId)) return;
         const dismissed = readDismissed((await chrome.storage.local.get(BROWSE_DISMISSED_KEY))[BROWSE_DISMISSED_KEY]);
-        await chrome.storage.local.set({ [BROWSE_FOUND_KEY]: result.habits.filter(h => !dismissed.includes(h.key)) });
+        const kept = result.habits.filter(h => !dismissed.includes(h.key));
+        await chrome.storage.local.set({ [BROWSE_FOUND_KEY]: kept });
+
+        for (const habit of kept) if (habit.ready) deps.send({ type: 'browse_habit_control', requestId: crypto.randomUUID(), conversationId: deps.selected(), action: 'ask', key: habit.key });
       });
     },
   };

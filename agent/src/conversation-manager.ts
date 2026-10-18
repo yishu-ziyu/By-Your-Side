@@ -1661,6 +1661,16 @@ return receipt;
       return;
     }
 
+    if (message.type === 'browse_habit_control') {
+      try {
+        const id = normalizeConversationId(message.conversationId);
+        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        await entry?.runtime.session.controlBrowsing(message.action, message.key);
+      } catch { /* 后台发起的：失败不打扰会话。 */ }
+
+      return;
+    }
+
     if (message.type === 'browse_habit_request') {
       // 用户自己的浏览：后台发起，失败就回空列表，不在会话里报错。
       let habits: BrowseHabit[] = [];

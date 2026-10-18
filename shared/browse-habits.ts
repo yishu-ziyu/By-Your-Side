@@ -6,10 +6,13 @@
 /** 一天的记录：day 是本地日期 YYYY-MM-DD，lines 是这一天按时间排好的操作，一行一步；hosts 是这一天真正打开过的网站，核对模型说的网站只认它。 */
 export interface BrowseDay { day: string; lines: string[]; hosts: string[] }
 
-/** 归纳出的一件事。days 只留记录里确实有、而且这件事涉及的网站在那天出现过的日子。 */
-export interface BrowseHabit { key: string; habit: string; hosts: string[]; days: string[]; times: number }
+/** 归纳出的一件事。days 只留记录里确实有、而且这件事涉及的网站在那天出现过的日子。ready：天数够了、还没问过，扩展核对没被删掉后再让宿主问。 */
+export interface BrowseHabit { key: string; habit: string; hosts: string[]; days: string[]; times: number; ready?: boolean }
 
-export type BrowseHabitClientMessage = { type: 'browse_habit_request'; requestId: string; days: BrowseDay[]; dismissed: string[] };
+export type BrowseHabitClientMessage =
+  | { type: 'browse_habit_request'; requestId: string; days: BrowseDay[]; dismissed: string[] }
+  /** ask：问这一条要不要记住；forget：用户删了这条（key）或全部删除（key 为 null），清掉宿主记的浏览天数。 */
+  | { type: 'browse_habit_control'; requestId: string; action: 'ask' | 'forget'; key: string | null };
 
 export type BrowseHabitResult = { type: 'browse_habit_result'; requestId: string; habits: BrowseHabit[] };
 
@@ -36,10 +39,12 @@ export function isBrowseHabit(v: unknown): v is BrowseHabit {
   return typeof h.key === 'string' && BROWSE_HABIT_KEY.test(h.key) && short(h.habit, 80)
     && Array.isArray(h.hosts) && h.hosts.length <= 16 && h.hosts.every(host => short(host, 253))
     && Array.isArray(h.days) && h.days.length <= BROWSE_DAY_LIMIT && h.days.every(day => typeof day === 'string' && DAY.test(day))
-    && typeof h.times === 'number' && Number.isSafeInteger(h.times) && h.times >= 0;
+    && typeof h.times === 'number' && Number.isSafeInteger(h.times) && h.times >= 0 && (h.ready === undefined || typeof h.ready === 'boolean');
 }
 
 export function isBrowseHabitClientMessage(v: BrowseHabitClientMessage): boolean {
+  if (v.type === 'browse_habit_control') return id(v.requestId) && (v.action === 'ask' || v.action === 'forget') && (v.key === null ? v.action === 'forget' : typeof v.key === 'string' && BROWSE_HABIT_KEY.test(v.key));
+
   return id(v.requestId) && Array.isArray(v.days) && v.days.length <= BROWSE_DAY_LIMIT
     && v.days.every(d => !!d && typeof d.day === 'string' && DAY.test(d.day) && Array.isArray(d.lines) && d.lines.length <= BROWSE_LINE_LIMIT && d.lines.every(line => short(line, 400)) && Array.isArray(d.hosts) && d.hosts.length <= 200 && d.hosts.every(host => short(host, 253)))
     && Array.isArray(v.dismissed) && v.dismissed.length <= 500 && v.dismissed.every(key => typeof key === 'string' && BROWSE_HABIT_KEY.test(key));
