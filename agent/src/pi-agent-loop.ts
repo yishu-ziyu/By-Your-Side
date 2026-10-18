@@ -61,10 +61,10 @@ const REPEAT_NOTE_AT = 3;
 const REPEAT_TRACKED_TOOLS: ReadonlySet<string> = new Set(["tabs", "snapshot", "read_element", "read_elements", "browser_run"]);
 
 /** 读页结果或页面快照短于这个字数就不删：省下的不够，还丢了信息。 */
-const ELIDE_MIN_CHARS = 1000;
+export const ELIDE_MIN_CHARS = 1000;
 
 /** 用户消息里页面快照的开头（session.ts 的 freshPageObservationText）；超窗口时从这里删到消息末尾。 */
-const PAGE_OBSERVATION_MARK = "[FRESH PAGE OBSERVATION";
+export const PAGE_OBSERVATION_MARK = "[FRESH PAGE OBSERVATION";
 
 /** 本次运行上下文消息的开头：告诉模型这是数据，不是用户说的话；历史里每条消息前都有一段，只有最后一段是现状。 */
 const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。之前消息前的同类段落只是历史，现状以这一段为准。";
@@ -638,7 +638,7 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, observeResponse: ((status: number) => void) | undefined, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void, onHedge: ((record: ModelHedgeRecord) => void) | undefined): StreamFn {
+export function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, observeResponse: ((status: number) => void) | undefined, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void, onHedge: ((record: ModelHedgeRecord) => void) | undefined): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);

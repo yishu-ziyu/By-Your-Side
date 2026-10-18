@@ -387,6 +387,7 @@ function createCoreModelPort(
       return complete(backup, context, { ...options, reasoning: lowest === "off" ? undefined : lowest }, onWait);
     },
     observeQueue: port,
+    pi: runtime.models,
   });
 
   return port(() => {});
