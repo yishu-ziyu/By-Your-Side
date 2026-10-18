@@ -36,7 +36,7 @@ export async function navigate(
   const {ready,retry}=await retryTransientErrorPage(tabId,url,await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })}),timeoutMs,cancelled);
 
   // 等页面把内容画完，宿主附带的快照才不是半张空页；多等的时间算进 waitMs。
-  if (settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tabId);
+  if (settlesContent(ready.readiness)) { ready.quietMs = await waitForQuietDom(tabId); ready.waitMs += ready.quietMs; }
 
   const after = await chrome.tabs.get(tab.id);
   const data = { url: after.url ?? url, title: after.title ?? "" };

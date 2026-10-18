@@ -7,6 +7,10 @@ export interface PageReadiness {
   readiness:PageReadinessValue;
   documentId?:string;
   waitMs:number;
+  /** waitMs 里等 DOM 安静的部分。 */
+  quietMs?:number;
+  /** waitMs 里错误页自动重试花掉的部分。 */
+  retryMs?:number;
   download?:NavigationDownload;
 }
 
@@ -104,6 +108,7 @@ export async function retryTransientErrorPage(tabId:number,url:string,ready:Page
   if(state==='reloading'){
     const reloaded=await waitForInteractive(tabId,budget,{requestedUrl:url});
 
+    reloaded.retryMs=reloaded.waitMs+RETRY_DELAY_MS;
     reloaded.waitMs+=ready.waitMs+RETRY_DELAY_MS;
 
     return {ready:reloaded,retry:reloaded.readiness==='interactive'||reloaded.readiness==='complete'?`${first}; the page then reloaded by itself and opened.`
@@ -114,6 +119,7 @@ export async function retryTransientErrorPage(tabId:number,url:string,ready:Page
   if(cancelled?.())return userTookOver;
   const again=await waitForInteractive(tabId,budget,{requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId,{url})});
 
+  again.retryMs=again.waitMs+RETRY_DELAY_MS;
   again.waitMs+=ready.waitMs+RETRY_DELAY_MS;
   const head=`${first}, so it was retried once automatically`;
 

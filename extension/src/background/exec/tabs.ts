@@ -68,7 +68,7 @@ export async function openTab(
   const retry=opened?.retry?{retry:opened.retry}:{};
 
   // 同 navigate：等页面画完再返回，多等的时间算进 waitMs。
-  if (ready && settlesContent(ready.readiness)) ready.waitMs += await waitForQuietDom(tab.id);
+  if (ready && settlesContent(ready.readiness)) { ready.quietMs = await waitForQuietDom(tab.id); ready.waitMs += ready.quietMs; }
   let after: chrome.tabs.Tab;
 
   try {

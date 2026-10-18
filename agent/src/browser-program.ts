@@ -734,7 +734,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           : await options.call(canonical as ToolName, params, id);
 
         guard();
-        let value = result;
+        // 加载分段计时只给运行记录看；程序的返回值会进模型文本和缓存前缀。
+        let value = (canonical === "navigate" || canonical === "open_tab") && result && typeof result === "object" ? withoutLoadTimings(result as Record<string, unknown>) : result;
 
         // read_element 去掉不支持的属性名、或某个属性读成 null 时写明原因；程序常只 return 属性值，说明不经宿主就到不了模型。
         const note = canonical === "read_element" && result && typeof result === "object" && "note" in result ? result.note : undefined;
@@ -746,7 +747,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           try {
             const page = await options.call("snapshot", {}, nextSubId(id)(), "readonly-poll") as { text?: unknown };
 
-            if (typeof page?.text === "string") value = { ...result, text: page.text };
+            if (typeof page?.text === "string") value = { ...(value as object), text: page.text };
           } catch { /* 补读失败只退回导航本身的结果。 */ }
 
           guard();
@@ -868,4 +869,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       vm.dispose();
     }
   }
+}
+
+function withoutLoadTimings({ quietMs: _quiet, retryMs: _retry, ...rest }: Record<string, unknown>): Record<string, unknown> {
+  return rest;
 }
