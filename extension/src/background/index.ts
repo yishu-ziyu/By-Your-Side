@@ -2207,6 +2207,12 @@ function attachPanel(port: chrome.runtime.Port) {
       case "client": {
         const wireClient = msg.msg;
 
+        // 卡片上替另开那件发的继续：它属于另一个会话，不在当前会话里记一句用户没说过的话。
+        if (wireClient?.type === "task_action" && wireClient.request.conversationId !== conversationId) {
+          uplink.sendClientMessage(wireClient);
+          break;
+        }
+
         const client = wireClient?.type==='task_action' && ['start','steer','resume'].includes(wireClient.request.action)
           ? {type:wireClient.request.action==='start'?'user_message' as const:'steer' as const,text:wireClient.request.text??'继续原任务',context:wireClient.request.context,attachments:wireClient.request.attachments,conversationId}
           : wireClient;

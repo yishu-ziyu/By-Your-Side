@@ -3219,6 +3219,19 @@ function activeTabContext(): PageContext | undefined {
 /** 另开出去的会话 → 发起它的会话。 */
 const separateAskOrigins = new Map<string, string>();
 
+/** 另开那件的最新任务视图：停下后点「继续」，要在它自己的后台标签页上接着做。 */
+const separateAskViews = new Map<string, TaskView>();
+
+/** 停下的另开那件接着做：用它自己的标签页；那页已关就用你正看着的这页。 */
+async function resumeSeparateAsk(receipt: TaskReceipt): Promise<boolean> {
+  const view = separateAskViews.get(receipt.conversationId);
+  const tab = view?.page ? await chrome.tabs.get(view.page.tabId).catch(() => null) : null;
+  const context = tab?.id !== undefined && tab.url ? { tabId: tab.id, url: tab.url, title: tab.title ?? "" } : activeTabContext();
+
+  return send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: view?.runId ?? receipt.runId,
+    ...(view ? { expectedControlVersion: view.controlVersion } : {}), ...(context ? { context } : {}) } });
+}
+
 /** 当前会话里另开的一件事：在自己的会话和后台标签页里做，回答带回这里显示。 */
 function isSeparateAsk(receipt: TaskReceipt): boolean {
   return receipt.source === "text" && receipt.action === "start" && receipt.originConversationId === selectedConversationId && receipt.conversationId !== selectedConversationId;
@@ -3244,6 +3257,8 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   state.className = "separate-ask-state";
   // 重启后暂停的要求也是 queued，但不会自己开始：照宿主的原话说，并给「继续」。
   const paused = receipt.status === "queued" && /连接(已重启|断开)/.test(receipt.message);
+  // 做到一半扩展后台重启、没能自动接着做：照宿主的原话说停下了，并给「继续」。
+  const stopped = receipt.status === "unknown" && !receipt.result;
   state.textContent = receipt.result ? "已完成" : paused ? receipt.message : receipt.status === "queued" ? "排队中" : receipt.status === "accepted" ? "正在做，不打断当前任务" : receipt.message;
   head.append(tag, state);
   root.append(head);
@@ -3268,6 +3283,14 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
     resume.textContent = "继续";
     // 带页面的待办要在原页面上继续，宿主会核对你现在看着的是不是那一页。
     resume.onclick = () => { resume.disabled = true; const context = activeTabContext(); if (!send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: null, ...(context ? { context } : {}) } })) resume.disabled = false; };
+    actions.append(resume);
+  }
+
+  if (stopped) {
+    const resume = document.createElement("button");
+    resume.type = "button";
+    resume.textContent = "继续";
+    resume.onclick = () => { resume.disabled = true; void resumeSeparateAsk(receipt).then((sent) => { if (!sent) resume.disabled = false; }); };
     actions.append(resume);
   }
 
@@ -6397,6 +6420,7 @@ function handleServerMessage(raw: string): void {
       if (msg.state === "running" && (msg.sessionId ?? LEAD_SESSION_ID) === LEAD_SESSION_ID && awaitingFirstStep()) ensureRun();
       break;
     case "task_view":
+      if (separateAskOrigins.has(msg.view.conversationId)) separateAskViews.set(msg.view.conversationId, msg.view);
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
 
