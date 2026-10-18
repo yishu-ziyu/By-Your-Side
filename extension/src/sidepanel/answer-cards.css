@@ -30,6 +30,23 @@
 .gc-stepper .u { padding-left: 3px; font-size: var(--fs-meta); color: var(--text-tertiary); white-space: nowrap; }
 .gc-range { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--text-primary); }
 
+/* 问用户的表单：一栏一行，名字在上；选项是一排可点的小块，文字框和加减框同一种边。 */
+.gc-fields { display: flex; flex-direction: column; gap: 10px; }
+.gc-field-head { display: flex; align-items: baseline; gap: var(--s-1); margin-bottom: 4px; }
+.gc-field-head .k { color: var(--text-secondary); }
+.gc-field-head .from { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.gc-missing-note { display: none; margin-left: auto; font-size: var(--fs-micro); color: var(--accent); }
+.gc-field.gc-missing .gc-missing-note { display: inline; }
+.gc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gc-chip { padding: 4px 10px; border: 1px solid var(--content-border); border-radius: 99px; background: var(--content-bg); color: var(--text-primary); font: inherit; font-size: var(--fs-meta); cursor: pointer; }
+.gc-chip:hover:not(:disabled) { background: var(--content-subtle); }
+.gc-chip[aria-checked="true"] { border-color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--text-primary); font-weight: 500; }
+.gc-text { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--content-border); border-radius: 8px; background: var(--content-bg); color: var(--text-primary); font: inherit; }
+.gc-field.gc-missing .gc-text, .gc-field.gc-missing .gc-chips { outline: 1px dashed var(--accent); outline-offset: 2px; border-radius: 8px; }
+.gc-chip:focus-visible, .gc-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gc-chip:disabled, .gc-text:disabled { cursor: default; color: var(--text-secondary); }
+.gc-btn:disabled { opacity: .5; cursor: default; }
+
 /* 数字格 */
 .gc-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; container-type: inline-size; }
 .gc-stat { display: flex; flex-direction: column; padding: var(--s-2) 10px 9px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline); }
