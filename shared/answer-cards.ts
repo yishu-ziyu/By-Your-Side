@@ -224,9 +224,10 @@ function cardField(a: Attrs): CardField | undefined {
   const label = str(a.label);
 
   // 先去掉看不见的字和空白再比：「密\u200b码」「验 证 码」看起来就是密码、验证码。显示的名字也去掉看不见的字。
-  const visible = (t: string) => t.normalize("NFKC").replace(/[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g, "");
+  const visible = (t: string) => t.normalize("NFKC").replace(/[\p{Cf}\u00ad\u180e]/gu, "");
 
-  const words = visible(`${label} ${id}`);
+  // id 拆成词再比：user_password、userPassword 里的 password 也算。
+  const words = visible(`${label} ${(id ?? "").replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")}`);
 
   if (!id || !/^[A-Za-z_]\w*$/.test(id) || !label || SECRET_FIELD_ZH.test(words.replace(/\s+/g, "")) || SECRET_FIELD_EN.test(words)) return undefined;
   const options = str(a.options)?.split("|").map((o) => o.trim()).filter(Boolean).slice(0, 6);
