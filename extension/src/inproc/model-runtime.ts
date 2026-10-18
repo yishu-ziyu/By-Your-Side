@@ -190,7 +190,7 @@ function withoutThinkingBlocks(payload: unknown): unknown {
   });
 
   // 只有思考、没有正文的回合去掉后是空内容，接口不收空的 assistant 消息。
-  return { ...payload, messages: messages.filter((message: unknown) => !isRecord(message) || !Array.isArray(message.content) || message.content.length > 0) };
+  return { ...payload, messages: messages.filter((message: unknown) => !isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content) || message.content.length > 0) };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
