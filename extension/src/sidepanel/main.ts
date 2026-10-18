@@ -6721,11 +6721,8 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "inspect_step_result") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
-    for (const el of messagesEl.querySelectorAll(".chip.inspecting")) el.classList.remove("inspecting");
-
     if (inspectChip) {
       markChipPageGone(inspectChip, !envelope.ok);
-      inspectChip.classList.toggle("inspecting", envelope.ok);
     }
 
     return;
