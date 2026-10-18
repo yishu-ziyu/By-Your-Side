@@ -6,6 +6,7 @@
  *   b) `.run-beat` 里是 16px 的球：想的时候是 rubik 形态、450ms 后画面变了；最深的点接近正文主色、几乎不透明；字是正文次要色、常规字重。
  *   g) 切到深色模式，球用深色的正文色，同样不透明。
  *   f) 这一轮里球按真实步骤换过形态：看页面是 globe，打开页、点按钮是 orbits。
+ *   h) 同一时刻网页上：光标旁挂一颗 16px 的球在转，旁边写「正在思考」；右边缘胶囊也写「正在思考」，不再有「在想」「处理中」。
  *   c) 进行中标题不再扫光。
  *   d) 回执是一行「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式）；收尾后墨点不再显示。
  */
@@ -114,12 +115,39 @@ try {
   await rp.pressEnter(panel);
 
   const read = async () => (await rp.evaluate(panel, READ)) as Read | null;
+  // 光标和胶囊挂在封闭的 shadow root 里，页面脚本读不到；走 DOM 域穿透读结构，球是否在转靠两次截同一块区域比对。
+  type Node = { nodeType: number; nodeName: string; nodeValue?: string; backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
+  const pageThinking = async () => {
+    const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: Node };
+    let orbNode = 0; let label = false; let capsule = false; let stale = "";
+    const walk = (n: Node, inLabel: boolean) => {
+      if (n.nodeName === "STYLE" || n.nodeName === "SCRIPT") return;
+      const cls = n.attributes?.[n.attributes.indexOf("class") + 1] ?? "";
+      const here = inLabel || (n.attributes?.includes("class") && /\blabel\b/.test(cls));
+      if (n.nodeName === "CANVAS" && /think-orb/.test(cls)) orbNode = n.backendNodeId;
+      if (n.nodeType === 3) {
+        const t = n.nodeValue ?? "";
+        if (t.includes("正在思考")) { if (here) label = true; else capsule = true; }
+        if (/在想|处理中/.test(t)) stale = t;
+      }
+      for (const c of [...(n.children ?? []), ...(n.shadowRoots ?? [])]) walk(c, !!here);
+    };
+    walk(root, false);
+    if (!orbNode) return { orb: null, label, capsule, stale };
+    const { model: box } = await rp.cdp.send("DOM.getBoxModel", { backendNodeId: orbNode }, work) as { model: { content: number[]; width: number } };
+    const [x, y] = box.content;
+    const shot = await rp.cdp.send("Page.captureScreenshot", { format: "png", clip: { x: x!, y: y!, width: 16, height: 16, scale: 2 } }, work) as { data: string };
+    return { orb: { width: box.width, pixels: shot.data }, label, capsule, stale };
+  };
   await until(async () => model.requests.filter((q) => q.rule === ASK).length >= 5 ? true : undefined, 60_000, "第 3 步结束", 50);
   const thinkingSince = Date.now();
   await sleep(2_000);
   const first = await read();
+  const pageNow = await pageThinking();
   await sleep(450);
   const second = await read();
+  const pageLater = await pageThinking();
+  await rp.screenshot(work, join(out, "page-thinking.png"));
   const elapsed = (Date.now() - thinkingSince) / 1000;
   const liveSecs = Number(/^(\d+) 秒$/.exec(second?.time ?? "")?.[1] ?? NaN);
   await rp.screenshot(panel, join(out, "thinking.png"));
@@ -137,6 +165,7 @@ try {
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, panel);
   const n0 = night?.orbDarkest;
   check("g 深色模式下球同样浓：最亮的点接近深色正文色、几乎不透明", !!n0 && n0[3] >= 200 && n0.slice(0, 3).every((c, i) => Math.abs(c - [238, 233, 223][i]) <= 12), { strongest: n0 ?? null, mode: night?.orbMode });
+  check("h 网页上光标旁的球在转、写「正在思考」；胶囊也叫「正在思考」", !!pageNow.orb && pageNow.orb.width === 16 && !!pageLater.orb && pageNow.orb.pixels !== pageLater.orb.pixels && pageNow.label && pageNow.capsule && !pageNow.stale, { now: { ...pageNow, orb: pageNow.orb && { width: pageNow.orb.width } }, moved: !!pageNow.orb && !!pageLater.orb && pageNow.orb.pixels !== pageLater.orb.pixels });
   check("c 进行中标题不再扫光", first != null && (first.shineName === "none" || first.shineName === "" || !first.shineName.includes("runShine")), { shineDuration: first?.shineDuration, shineDurationRaw: first?.shineDurationRaw, shineName: first?.shineName });
 
   await until(async () => { const r = await read(); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);
