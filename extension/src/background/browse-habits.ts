@@ -33,7 +33,8 @@ function line(step: BrowseStep, url: URL, at: number): string {
 
 export function installBrowseHabits(deps: Deps) {
   const views = new Map<string, TaskView>();
-  const pending = new Set<string>();
+  /** 进行中的归纳：请求 id → 发起时的对话。归纳结果缓存在那个对话的运行时里，提问也得发回那里。 */
+  const pending = new Map<string, string>();
   let queue: Promise<unknown> = Promise.resolve();
 
   const withLog = <T>(fn: (log: Log) => T | Promise<T>): Promise<T> => {
@@ -69,8 +70,10 @@ export function installBrowseHabits(deps: Deps) {
     const dismissed = readDismissed((await chrome.storage.local.get(BROWSE_DISMISSED_KEY))[BROWSE_DISMISSED_KEY]).slice(-500);
     const requestId = crypto.randomUUID();
 
-    if (!deps.send({ type: 'browse_habit_request', requestId, conversationId: deps.selected(), days, dismissed })) return;
-    pending.add(requestId);
+    const conversationId = deps.selected();
+
+    if (!deps.send({ type: 'browse_habit_request', requestId, conversationId, days, dismissed })) return;
+    pending.set(requestId, conversationId);
     log.since = 0;
     log.lastAt = Date.now();
   };
@@ -128,12 +131,14 @@ export function installBrowseHabits(deps: Deps) {
       if (!pending.has(result.requestId) || !result.habits.length) return;
       // 和删除排在同一队列里：删除先到就作废这次结果。
       await withLog(async () => {
-        if (!pending.delete(result.requestId)) return;
+        const conversationId = pending.get(result.requestId);
+
+        if (!conversationId || !pending.delete(result.requestId)) return;
         const dismissed = readDismissed((await chrome.storage.local.get(BROWSE_DISMISSED_KEY))[BROWSE_DISMISSED_KEY]);
         const kept = result.habits.filter(h => !dismissed.includes(h.key));
         await chrome.storage.local.set({ [BROWSE_FOUND_KEY]: kept });
 
-        for (const habit of kept) if (habit.ready) deps.send({ type: 'browse_habit_ask', requestId: crypto.randomUUID(), conversationId: deps.selected(), key: habit.key });
+        for (const habit of kept) if (habit.ready) deps.send({ type: 'browse_habit_ask', requestId: crypto.randomUUID(), conversationId, key: habit.key });
       });
     },
   };

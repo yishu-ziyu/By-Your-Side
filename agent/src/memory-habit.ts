@@ -62,9 +62,9 @@ export function observe(state: HabitState, obs: HabitObservation): HabitStep {
 }
 
 /** 用户回答「不要」：之后不再问这个 key。 */
-export function dismiss(state: HabitState, key: string): HabitState {
+export function dismiss(state: HabitState, key: string, at = 0): HabitState {
   const old = state.habits[key];
-  const habit: Habit = old ? { ...old, closed: true } : { text: "", seen: {}, closed: true, last: 0 };
+  const habit: Habit = old ? { ...old, closed: true } : { text: "", seen: {}, closed: true, last: at };
 
   return trim({ habits: { ...state.habits, [key]: habit } });
 }
