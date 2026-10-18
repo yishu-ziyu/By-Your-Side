@@ -9,7 +9,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { createRegistry, defineExtension, defineTool, Harness, type Conversation } from "@earendil-works/pi-durable";
 import { JsonlStorage } from "@earendil-works/pi-durable/storage/jsonl";
 import { createStorageConformance } from "@earendil-works/pi-durable/testing";
-import { createOpfsFileSystem } from "./opfs-fs.ts";
+import { createOpfsFileSystem } from "../../extension/src/inproc/opfs-fs.ts";
 
 const fs = createOpfsFileSystem();
 const STORE = "/pi/run";

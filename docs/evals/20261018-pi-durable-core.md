@@ -5,7 +5,7 @@
 ## 技术前提
 
 - 扩展里的循环现在是 `DurableAgentLoop`。侧栏、备用模型切换、目标核对、记忆、另开一件、插话、接管和确认发送仍走原来的 `AgentLoop` 事件。
-- 存储是每个会话一个 OPFS 目录（`/pi-durable/<会话 id>`），文件系统用实验里已经对过的 `experiments/pi-durable/opfs-fs.ts`。
+- 存储是每个会话一个 OPFS 目录（`/pi-durable/<会话 id>`），文件系统是实验里对过的那份 OPFS 实现，已挪进 `extension/src/inproc/opfs-fs.ts`。
 - 模型目录仍是现有的 `Models`（`ModelPort.pi`）。真正的流式请求仍走原来的端口：请求头、不带 cookie、排队、对冲、首包超时都还在。目录里没有的自定义模型，用这次会话已经解析好的模型对象。
 - 只读工具可以重做：snapshot、screenshot、read_element、read_elements、scroll、hover、tabs、fetch。会改页面或有副作用的工具不标成可重做。打断后模型看到的是「被打断，先重新读页面」，不会自动再点一次。
 - 短回答如果一次写完、没有逐字增量，收尾时把没送到界面的正文补上。否则侧栏只会看到消息开始和结束，看不到那句话。
