@@ -81,7 +81,7 @@ interface SideAgentCursor {
   expect?(x: number, y: number): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
-  /** 注视区：它读页面时看着哪。sweep 整页读；at 读到的具体元素；rest 读完变淡待命；off 收起。 */
+  /** 注视区：它读页面时看着哪。at 读到的具体元素；rest 读完变淡待命；off 收起。 */
   gaze?(view: { mode: "at"; rects: SideAgentRect[] } | { mode: "rest" } | { mode: "off" }): void;
   /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */
   arrive(x: number, y: number): void;

@@ -385,7 +385,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         font: 600 11px/16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
         color: var(--c, #2d4a86);
       }
-      /* 注视区：只画真实发生的读。整页读扫一遍视口，读具体元素落到元素上，动手前收拢到目标再交给箭头。 */
+      /* 注视区：只画真实发生的读：读具体元素落到元素上，动手前收拢到目标再交给箭头。 */
       .gaze {
         position: absolute; box-sizing: border-box; pointer-events: none; border-radius: 10px;
         background: color-mix(in srgb, var(--c, #2d4a86) 8%, transparent);
@@ -2237,7 +2237,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const el = inst.gazeEl;
 
     if (!el?.classList.contains("on")) return;
-    // 整页扫描让它走完；读具体元素的逐个停留也走完，读完只是变淡。
+    // 读具体元素的逐个停留走完，读完只是变淡。
     el.classList.add("rest");
     inst.gazeTimers = [...(inst.gazeTimers ?? []), setTimeout(() => gazeOff(inst), GAZE_REST_MS)];
   }
