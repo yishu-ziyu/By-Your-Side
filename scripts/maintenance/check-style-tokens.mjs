@@ -49,7 +49,7 @@ function countCss(css) {
     const bare = value.replace(/var\([^)]*\)/g, "");
 
     // font 简写里的字号也算：font: 600 24px/1.5 …
-    if ((name === "font-size" || name === "font") && /(^|\s)[\d.]+(px|rem|em)(\/|\s|$)/.test(bare)) fontSize++;
+    if ((name === "font-size" && /[\d.]+(px|rem|em)\b/.test(bare)) || (name === "font" && /(^|\s)[\d.]+(px|rem|em)(\/|\s|!|$)/.test(bare))) fontSize++;
     if (name === "border-radius" && bare.split(/[\s/]+/).some(part => /\d/.test(part) && !RADIUS_FREE.test(part))) radius++;
     color += (bare.match(COLOR) ?? []).length;
   }
@@ -57,22 +57,30 @@ function countCss(css) {
   return { fontSize, radius, color };
 }
 
-/** 一行里不在字符串内的 // 之后是注释（引号成对时才算在字符串外）。 */
-function stripLineComment(line) {
-  for (let at = line.indexOf("//"); at >= 0; at = line.indexOf("//", at + 2)) {
-    const before = line.slice(0, at).replace(/\\./g, "");
+/** 逐字扫一遍，取出字符串和模板字符串的内容；注释跳过。正则字面量里的引号会让它看错，界面代码里少见。 */
+function stringLiterals(ts) {
+  const out = [];
 
-    if ((before.match(/["'`]/g) ?? []).length % 2 === 0) return line.slice(0, at);
+  for (let i = 0; i < ts.length; i++) {
+    const ch = ts[i];
+
+    if (ch === "/" && ts[i + 1] === "/") i = ts.indexOf("\n", i) < 0 ? ts.length : ts.indexOf("\n", i);
+    else if (ch === "/" && ts[i + 1] === "*") i = ts.indexOf("*/", i + 2) < 0 ? ts.length : ts.indexOf("*/", i + 2) + 1;
+    else if (ch === '"' || ch === "'" || ch === "`") {
+      let j = i + 1;
+
+      while (j < ts.length && ts[j] !== ch && !(ch !== "`" && ts[j] === "\n")) j += ts[j] === "\\" ? 2 : 1;
+      out.push(ts.slice(i + 1, j));
+      i = j;
+    }
   }
 
-  return line;
+  return out;
 }
 
 /** 界面文字（字符串、模板字符串）里的 emoji；注释不算。 */
 function countEmoji(ts) {
-  const code = ts.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map(stripLineComment).join("\n");
-
-  return (code.match(/(["'`])(?:\\.|(?!\1)[\s\S])*?\1/g) ?? []).filter(literal => EMOJI.test(literal)).length;
+  return stringLiterals(ts).filter(literal => EMOJI.test(literal)).length;
 }
 
 const counts = {};

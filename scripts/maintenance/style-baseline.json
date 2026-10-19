@@ -1,6 +1,6 @@
 {
   "extension/src/sidepanel/answer-cards.css": {
-    "fontSize": 3,
+    "fontSize": 4,
     "radius": 7,
     "color": 0,
     "emoji": 0
@@ -33,7 +33,7 @@
     "fontSize": 0,
     "radius": 0,
     "color": 0,
-    "emoji": 1
+    "emoji": 2
   },
   "extension/src/sidepanel/slash-skills.ts": {
     "fontSize": 0,
