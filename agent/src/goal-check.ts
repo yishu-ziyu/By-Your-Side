@@ -124,7 +124,7 @@ export function asksUser(reply: string): boolean {
 
 /**
  * 助手没用工具就说「这页看不出、还不能判断」或「我会去查看」，然后停下：这一轮不交给核对，就没人叫它回去。
- * 10-12 笔记本题「哪款最轻」两组各 5 次都这样停住，测试脚本等了约 178 秒（docs/evals/20261012-finish-before-stopping.md）。
+ * 10-12 笔记本题「哪款最轻」两组各 5 次都这样停住，测试脚本等了约 178 秒。
  * 只看结尾约 160 字，而且要提到页面或「逐一」：「我无法确定明天股市」「我会核对一下格式」这类普通聊天不算，免得触发用户没要求的续做。
  */
 export function defersWork(reply: string): boolean {
@@ -150,7 +150,7 @@ export function claimsUnfinished(reply: string): boolean {
 
 /**
  * 宿主催过续做之后，助手又说做不成（交付标了部分完成，或回答自己说没做成），而且网页和催之前一样：不再催。
- * 10-09 空白画板上连催 5 次，侧栏留下 4 段几乎一样的「没能完成…」（docs/evals/20261010-panel-tidy.md）。
+ * 10-09 空白画板上连催 5 次，侧栏留下 4 段几乎一样的「没能完成…」。
  * 网页变没变只看宿主前后两次读到的地址和网页文字，不听模型的说法；读不到网页、还没催过、在问用户时都不算。
  */
 export function gaveUpWithoutChange(input: { reply: string; partial: boolean; pageAtNudge: string | null; pageNow: string | null }): boolean {

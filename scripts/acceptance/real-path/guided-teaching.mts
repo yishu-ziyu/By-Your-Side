@@ -1,5 +1,5 @@
 /**
- * 一步一步教我：圈出该点的地方，等用户自己点完再带下一步（docs/evals/20261011-guided-teaching.md）。
+ * 一步一步教我：圈出该点的地方，等用户自己点完再带下一步。
  * 只装扩展、隔离构建、本机三步练习页（Settings → Display → Dark theme）。默认用本机脚本模型按顺序调 guide_step；
  * 用户的点击和移动都是 CDP 派发的真实输入（isTrusted），按网页上圈出来的位置点。
  *   npx tsx scripts/acceptance/real-path/guided-teaching.mts --headless [--model=provider/id]

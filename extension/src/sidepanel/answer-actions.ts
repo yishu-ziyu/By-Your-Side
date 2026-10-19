@@ -205,7 +205,7 @@ onFillUndoChange(refreshPrimaryAction);
 const SECTION_TITLES = { sources: "读过的网页" } as const;
 
 /**
- * 文末一排在回答落定时添加：复制 · 来源 · 耗时（docs/evals/20261006-answer-receipt.md）。
+ * 文末一排在回答落定时添加：复制 · 来源 · 耗时。
  * 最新一条回答一直显示，旧回答悬停才出现（样式表按 .answer-latest 区分）。
  * 「来源」展开回答下方的面板：读过的网页，由 answer-sources 填进来；用到的记忆跟在首句后面（main.ts placeUsedLine）。
  */

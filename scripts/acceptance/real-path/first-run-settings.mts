@@ -1,6 +1,6 @@
 /** 设置页首启：一家没连时列表已展开、文字与实际状态一致；连上阶跃星辰后回到「已连接 + 其余」。
  * npx tsx scripts/acceptance/real-path/first-run-settings.mts --headless
- * 验收：docs/evals/20261011-first-run-settings.md。只读设置页上看得到的结果，不连真实模型。
+ * 验收。只读设置页上看得到的结果，不连真实模型。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";

@@ -1,5 +1,5 @@
 /**
- * 侧栏壳探针（docs/evals/20261006-sidepanel-shell-quiet.md）：只装扩展的无头 Chrome、真侧栏。
+ * 侧栏壳探针：只装扩展的无头 Chrome、真侧栏。
  * 读当前页标签是否在输入框外、边注能否从 ＋ 菜单切换（原在 ··· 菜单，见 20261006-composer-quiet.md）、顶栏图标，并截图。
  *
  *   npx tsx scripts/probes/shell/quiet-shell.mts --headless

@@ -1,5 +1,5 @@
 /**
- * 实验功能「回答里的小程序」（docs/evals/20261019-mini-apps.md R1–R4）。
+ * 实验功能「回答里的小程序」。
  *   npx tsx scripts/acceptance/real-path/mini-apps.mts --headless
  * 脚本模型写三个小程序：计数器（bys.save / bys.say）、往本机服务器偷数据的、一加载就报错的。
  * 先在开关关着时看只出一句说明；到设置页打开后原地换成小程序；点「加一」、放进输入框、重开侧栏接着算；

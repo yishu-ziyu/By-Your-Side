@@ -4,10 +4,10 @@ import type { TaskView } from '../../../shared/task-view.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '../shared/ptt.js';
 
 /**
- * 按住说话的网页底部胶囊（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）：后台只管松开以后。
+ * 按住说话的网页底部胶囊：后台只管松开以后。
  * 按住、听写中由网页自己画；话交给助手后，按这个会话的任务视图和交付换成 正在做 / 等你 / 结果 / 已中止。
  * 只读任务视图和交付，不是第二套任务状态；胶囊只在说话的那个标签页上。
- * 结果和等你同时念出来（docs/evals/20261007-ptt-speak.md）：念的时候胶囊带 speaking，念完再去掉。
+ * 结果和等你同时念出来：念的时候胶囊带 speaking，念完再去掉。
  * 交给助手的那一刻先念一句短确认（ackFor，取消或犹豫的话不念），免得用户等结果时半天没声音；结果、等你、停下一到就掐掉它。
  */
 

@@ -1,5 +1,5 @@
 /**
- * 读页面不能把卡号、安全码、PIN 交给模型（docs/evals/20261010-snapshot-privacy.md）。只装扩展、隔离构建、本机脚本模型、本机练习页。
+ * 读页面不能把卡号、安全码、PIN 交给模型。只装扩展、隔离构建、本机脚本模型、本机练习页。
  *   npx tsx scripts/acceptance/real-path/snapshot-privacy.mts --headless
  *   a) 页面上已填好 cc-number、cc-csc、name=card_number、name=pin、一个密码栏和一个普通栏。助手读页（snapshot），
  *      点「显示」把密码栏变成 type=text，再读一次页：模型收到的请求里没有任何敏感值，有普通值；卡号那一行仍写明「已填」。

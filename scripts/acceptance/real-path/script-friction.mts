@@ -1,6 +1,6 @@
 /**
  * 页面在 snapshot 之后刷新：js、CSS 点击照常在新页面执行；js 的 saveAs 把页面数据直接存成侧栏文件
- * （docs/evals/20261004-script-friction.md R1、R4）。只装扩展、隔离构建、本机脚本模型；只有模型回复是脚本。
+ * 。只装扩展、隔离构建、本机脚本模型；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/script-friction.mts --headless
  * 失败方式：刷新后 js / 点击回「页面文档已变化」；saveAs 的正文回到模型；卡片缺失或内容与页面不一致。
  */

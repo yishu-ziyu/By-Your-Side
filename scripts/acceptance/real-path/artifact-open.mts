@@ -1,5 +1,5 @@
 /**
- * 「生成的文件直接在新标签页打开」验收（docs/evals/20261002-open-artifact-in-browser.md 标准 1–3）。
+ * 「生成的文件直接在新标签页打开」验收。
  *
  * 只装扩展的隔离无头 Chrome、真侧栏；模型换成本机脚本模型（设置页「自定义地址」），按脚本调用产品的 artifacts 工具
  * 写 6 个文件：带越权探针的网页、Markdown、CSV、JSON、SVG、纯 ASCII 的 PDF。之后像用户一样点每张卡片的「打开」。
@@ -377,7 +377,7 @@ try {
 const pass = !fatal && Object.keys(checks).length > 0 && Object.values(checks).every(Boolean);
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify({
-  case: "artifact-open", contract: "docs/evals/20261002-open-artifact-in-browser.md", startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(),
+  case: "artifact-open", contract: ", startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(),
   status: pass ? "pass" : "fail", checks, evidence, fatal,
 }, null, 2));
 

@@ -1,5 +1,5 @@
 /**
- * 提交直接交给网站，回答直接显示，不挂拦截的标签（docs/evals/20261010-drop-blocking-labels.md）。只装扩展、隔离构建、本机脚本模型、本机预订页。
+ * 提交直接交给网站，回答直接显示，不挂拦截的标签。只装扩展、隔离构建、本机脚本模型、本机预订页。
  *   npx tsx scripts/acceptance/real-path/answer-straight.mts --headless
  * 用户说「下周四」，脚本模型先点一个不存在的按钮、fetch 一个 404 地址、POST 一个回 302 的地址、GET 一个 204 空回执、fetch 一个没人听的端口，
  * 再把日期填成 10 月 8 日，点「提交」，最后跑一段 browser_run（先取 204，最后一次 fetch 是 404，像翻页翻到头），然后不再调工具直接回答。

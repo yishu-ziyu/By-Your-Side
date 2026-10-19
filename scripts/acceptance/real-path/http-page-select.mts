@@ -1,5 +1,5 @@
 /**
- * 普通 http 网页上划词气泡照常出现（docs/evals/20261010-reading-companion-check.md T0）：只装扩展的隔离无头 Chrome，
+ * 普通 http 网页上划词气泡照常出现：只装扩展的隔离无头 Chrome，
  * 本机网页经一个非本机的 http 主机名打开（页面不是安全上下文），CDP 鼠标拖选一段正文。不需要模型。
  *
  *   npx tsx scripts/acceptance/real-path/http-page-select.mts --headless --run=final

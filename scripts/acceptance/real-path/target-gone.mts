@@ -1,6 +1,6 @@
 /**
  * text= 目标在点击那一刻再核对：定位之后、按下之前按钮文字变了，就不点、报 TARGET_GONE、记为没执行
- * （docs/evals/20261008-check-assert-referee.md R3）。只装扩展、隔离构建、本机脚本模型；只有模型回复是脚本。
+ * 。只装扩展、隔离构建、本机脚本模型；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/target-gone.mts --headless
  * 两轮同一条路：练习站的「已读」按钮在 pointerover 时改名成「已读中…」（真实点击流程先派发 CDP mouseMoved
  * 再做按下前核对，所以改名正好落在定位与按下之间）；对照轮不改名。

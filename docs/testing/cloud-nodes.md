@@ -1,14 +1,14 @@
 # 云电脑节点
 
-全量真实路径验收在一台机器上要 30–40 分钟，所以用 `npm run accept:shard` 分到几台机器并行跑。本页写每台机器怎么连、怎么救活、踩过什么坑。节点表本身在 `scripts/acceptance/real-path/shard-run.mts` 的 `NODES`。
+全量真实路径验收在一台机器上要 30–40 分钟，所以用 `npm run accept:shard` 分到几台机器并行跑。本页写每台机器怎么连、怎么救活、踩过什么坑。节点表本身在 `scripts/acceptance/nodes.mts` 的 `NODES`（主机地址与沙箱 ID 从本机 `~/.sideagent/nodes.local.json` 读取，不在公开仓库里写死服务器 IP）。
 
 ## 现有节点
 
 | 名字 | 系统 | 规格 | 怎么连 | Chrome | 适合 |
 |---|---|---|---|---|---|
 | `local` | macOS | 本机 | 直接跑 | Chrome for Testing（Playwright 装的） | 有窗口的测试、OAuth 套餐的真模型用例 |
-| `aliyun` | Linux | 2 核 3G | ssh `root@121.89.90.68` | Chrome for Testing（`/opt/chrome-for-testing/`） | 长任务；一直开机，最稳 |
-| `grokbox` | Linux | — | ssh `box@100.124.81.45`（Tailscale 地址，普通 sshd） | Playwright 的 Chromium | 长任务；会休眠，见下文 |
+| `aliyun` | Linux | 2 核 3G | ssh（地址见 `nodes.local.json`） | Chrome for Testing（`/opt/chrome-for-testing/`） | 长任务；一直开机，最稳 |
+| `grokbox` | Linux | — | ssh（Tailscale 地址见 `nodes.local.json`，普通 sshd） | Playwright 的 Chromium | 长任务；会休眠，见下文 |
 | `devin` | Linux | 8 核 31G | `devin cloud drs run --devin-id <id>` | 正式版 `google-chrome` | 只接几分钟能跑完的短任务 |
 
 动节点前先跑 `npm run nodes`：一次列出每台机器在不在线、开机多久、负载、可用内存、Chrome 在不在、残留的测试 Chrome，以及 grokbox 的保活还剩多久。不在线的节点用 `--skip=<名字>` 跳过，用例会重分给剩余节点；未跳过但准备失败或超时的节点，它分到的用例记为未跑，不算通过。

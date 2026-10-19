@@ -4,7 +4,7 @@ import type { TraceRecorder } from "../../shared/run-trace-core.js";
 import { warmUpSummary } from "./warm-connection.js";
 
 /**
- * 每次模型调用的请求指纹（docs/evals/20261001-offtopic-reply-diagnostics.md 标准 1–4）：
+ * 每次模型调用的请求指纹：
  * 系统提示词和工具说明记 sha256 与字数，同一诊断会话里第一次出现时分段写全文；
  * 宿主插入的上下文消息记原文（脱敏照常）；图片只记原始字节的 sha256、类型和字节数，不存像素。
  * 只观察：任何异常都吞掉，不影响模型调用。

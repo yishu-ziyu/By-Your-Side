@@ -1,5 +1,5 @@
 /**
- * 真实路径用例的运行流水，harness.mts 导入时生效（2026-10-12 复盘，docs/evals/20261012-test-runs-ledger.md）。
+ * 真实路径用例的运行流水，harness.mts 导入时生效。
  *
  * - 每次运行在 out/acceptance/real-path/runs.jsonl 记一行：用例、参数、代码状态、通过与否、耗时。`npm run runs` 汇总。
  * - 同一用例、同样参数、同样代码已经失败 2 次，就拒绝第 3 次：再跑只是在测模型的随机性。确实要跑时加 BYS_RERUN=1。

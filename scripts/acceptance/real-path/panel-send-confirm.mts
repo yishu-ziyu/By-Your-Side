@@ -1,16 +1,13 @@
 /**
- * 发送前在侧栏里确认（docs/evals/20261015-panel-send-confirm.md）。只装扩展、隔离构建、本机脚本模型、本机练习页。
+ * 发送前在侧栏里确认。只装扩展、隔离构建、本机脚本模型、本机练习页。
  *   npx tsx scripts/acceptance/real-path/panel-send-confirm.mts --headless
- * 开两个窗口、各开一个侧栏；判据只看侧栏上的卡、网页上的确认框、服务器收到的 POST 和网页上的草稿。
- *   p1) 助手点「发送」：两个侧栏都出卡，写网站、「发送」、表单里的草稿，不写表单外的备忘；脚本合成的点击不放行；
- *       用户在一号侧栏点「发送」：恰好 1 条，网页确认框收起，两个侧栏的卡都收成「你确认过，已发送」。
- *   p2) 用户在侧栏点「先不发」：0 条，草稿还在，网页确认框收起，卡收成「你没让发，草稿还在」。
- *   p3) 用户在网页确认框上点「发送」：1 条，侧栏的卡收成一行、没有按钮。
+ * 开两个窗口、各开一个侧栏；判据只看侧栏上的卡、网页上的圈选提示、服务器收到的 POST 和网页上的草稿。
+ *   p1) 助手点「发送」：网页圈出按钮并写「等你在侧栏确认」，两个侧栏都出卡，写网站、「发送」、表单里的草稿，不写表单外的备忘；脚本合成的点击不放行；
+ *       用户在一号侧栏点「发送」：恰好 1 条，网页圈选收起，两个侧栏的卡都收成「你确认过，已发送」。
+ *   p2) 用户在侧栏点「先不发」：0 条，草稿还在，网页圈选收起，卡收成「你选择不发送：草稿留在页面上，不会发出，要发时再跟我说」。
+ *   p3) 用户在网页上按 Esc 取消：0 条，网页圈选收起，两个侧栏的卡都收成一行、没有按钮。
  *   p4) 等确认时重开侧栏：卡还能点，点「发送」后 1 条；再重开，回放出来的卡都只有一行结果，没有按钮。
  *   p5) 卡上的「发送」露出来 300 毫秒内就点、聚焦后按回车和空格：都不发；1 秒后再点才发。点下去以前卡上只写「你确认了发送」。
- *   p6) 网页确认框的「发送」露出来 300 毫秒内就点：不发；1 秒后再点同一处才发。
- * 失败方式：卡上不出按钮或按钮不连后台，p1 等不到 POST；不验 isTrusted，合成点击就发了；回放不问后台还等不等，p4 重开后的旧卡还有按钮；
- * 只收起回答的那个侧栏，二号侧栏的卡还留着按钮；按钮一露出来就算数，p5、p6 的第一下就发了；不认 detail，键盘就发了。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -25,6 +22,8 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 await mkdir(out, { recursive: true });
 
 const DRAFT = "周五下午三点开会。";
+const DECLINED_LINE = "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说";
+const SENT_LINE = "你确认过，已发送";
 
 const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>留言练习页</title><body style="font:16px sans-serif;margin:40px">
 <div id="memo"><textarea id="note" rows="1" cols="40" aria-label="备忘">备忘：不要发出去。</textarea></div>
@@ -44,7 +43,7 @@ const sent = () => posts.filter(p => p === "/send").length;
 
 const clickSend = { tool: { name: "click", args: { target: "#send", label: "发送" } } };
 
-const ASK = { p1: "案例P1：把草稿发出去。", p2: "案例P2：把草稿发出去。", p3: "案例P3：把草稿发出去。", p4: "案例P4：把草稿发出去。", p5: "案例P5：把草稿发出去。", p6: "案例P6：把草稿发出去。" };
+const ASK = { p1: "案例P1：把草稿发出去。", p2: "案例P2：把草稿发出去。", p3: "案例P3：把草稿发出去。", p4: "案例P4：把草稿发出去。", p5: "案例P5：把草稿发出去。" };
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
@@ -82,27 +81,12 @@ try {
 
   const textOf = (n: DomNode): string => n.nodeName === "STYLE" ? "" : (n.nodeValue ?? "") + [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(textOf).join("");
 
-  /** 网页上的确认框在 closed shadow 里：用 CDP 穿透读出它和「发送」的位置。 */
+  /** 网页上的圈选提示（「等你在侧栏确认」）。 */
   const pageBox = async () => {
-    // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
     const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
-    const host = walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000send-confirm"));
-
+    const host = walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000send-confirm") && textOf(n).trim().length > 0);
     if (!host) return null;
-    const yes = walk(host, n => n.nodeName === "BUTTON" && textOf(n).trim() === "发送");
-
-    try {
-      // SAFETY: DOM.getBoxModel 的 model.border 是 8 个数的四边形（x1,y1,…,x4,y4）。
-      const q = yes ? (await rp.cdp.send("DOM.getBoxModel", { backendNodeId: yes.backendNodeId }, work)).model.border as number[] : null;
-
-      return { text: textOf(host).replace(/\s+/g, " ").trim(), yes: q ? { x: (q[0]! + q[2]!) / 2, y: (q[1]! + q[5]!) / 2 } : null };
-    } catch { return null; }
-  };
-
-  const pageClick = async (at: { x: number; y: number }) => {
-    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y }, work);
-
-    for (const type of ["mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 }, work);
+    return { text: textOf(host).replace(/\s+/g, " ").trim() };
   };
 
   /** 侧栏里最后一张发送确认卡：文字、状态、有哪些按钮。 */
@@ -126,8 +110,7 @@ try {
 
   // ── p1：侧栏上点「发送」 ──
   await ask(ASK.p1);
-  // 截图在判据前：旧版没有卡时，这张图就是「改前」。
-  await until(async () => await pageBox(), 30_000, "网页确认框", 100);
+  await until(async () => await pageBox(), 30_000, "网页圈选提示", 100);
   await sleep(1200);
   await rp.screenshot(panel, join(out, "p1-panel-waiting.png"));
   const c1 = await liveCard(panel);
@@ -138,13 +121,13 @@ try {
   // 脚本合成的点击（isTrusted 为 false）不算用户点的。
   await rp.evaluate(panel, '[...document.querySelectorAll(".send-confirm")].at(-1).querySelector(".send-confirm-yes").click(); true');
   await sleep(1500);
-  check("p1 脚本合成的点击不放行：0 条，卡和网页确认框都还在", sent() === 0 && !!(await pageBox()) && !!(await card(panel))?.buttons.includes("发送"), { sent: sent() });
+  check("p1 脚本合成的点击不放行：0 条，卡和网页圈选提示都还在", sent() === 0 && !!(await pageBox()) && !!(await card(panel))?.buttons.includes("发送"), { sent: sent() });
   await press(panel, c1.id, "yes");
   await until(async () => sent() >= 1, 10_000, "侧栏确认后服务器收到发送").catch(() => {});
-  const done1 = await settledCard(panel, "你确认过，已发送");
-  const done1b = await settledCard(panel2, "你确认过，已发送");
+  const done1 = await settledCard(panel, SENT_LINE);
+  const done1b = await settledCard(panel2, SENT_LINE);
   const box1 = await pageBox();
-  check("p1 侧栏点「发送」：恰好 1 条，网页确认框收起，两个侧栏的卡都收成「你确认过，已发送」", sent() === 1 && !box1 && !("timedOut" in done1) && !("timedOut" in done1b), { sent: sent(), pageBox: box1?.text ?? null, done1, done1b } as Json);
+  check("p1 侧栏点「发送」：恰好 1 条，网页圈选收起，两个侧栏的卡都收成「你确认过，已发送」", sent() === 1 && !box1 && !("timedOut" in done1) && !("timedOut" in done1b), { sent: sent(), pageBox: box1?.text ?? null, done1, done1b } as Json);
   await answered("P1 完成。");
   await rp.screenshot(panel, join(out, "p1-panel-done.png"));
 
@@ -153,22 +136,22 @@ try {
   const c2 = await liveCard(panel);
   await rp.screenshot(panel, join(out, "p2-panel-card.png"));
   await press(panel, c2.id, "no");
-  const done2 = await settledCard(panel, "你没让发，草稿还在");
+  const done2 = await settledCard(panel, DECLINED_LINE);
   await answered("P2 完成。");
   const box2 = await pageBox();
-  check("p2 侧栏点「先不发」：0 条，草稿还在，网页确认框收起，卡收成一行", sent() === 1 && (await draft()) === DRAFT && !box2 && !("timedOut" in done2), { sent: sent(), draft: await draft(), pageBox: box2?.text ?? null, done2 } as Json);
+  check("p2 侧栏点「先不发」：0 条，草稿还在，网页圈选收起，卡收成一行", sent() === 1 && (await draft()) === DRAFT && !box2 && !("timedOut" in done2), { sent: sent(), draft: await draft(), pageBox: box2?.text ?? null, done2 } as Json);
 
-  // ── p3：网页确认框上点「发送」 ──
+  // ── p3：网页上按 Esc 取消发送 ──
   await ask(ASK.p3);
   await liveCard(panel);
-  const box3 = await until(async () => { const b = await pageBox(); return b?.yes ? b : null; }, 30_000, "网页确认框", 100);
-  // 「发送」刚出现的那一会儿不算点击（p5、p6 专门测）：这里像用户一样先看一眼再点。
-  await sleep(1000);
-  await pageClick(box3.yes!);
-  await until(async () => sent() >= 2, 10_000, "网页确认后服务器收到发送").catch(() => {});
-  const done3 = await settledCard(panel, "你确认过，已发送");
-  const done3b = await settledCard(panel2, "你确认过，已发送");
-  check("p3 网页上点「发送」：1 条，两个侧栏的卡都收成一行、没有按钮", sent() === 2 && !("timedOut" in done3) && !("timedOut" in done3b), { sent: sent(), done3, done3b } as Json);
+  await until(async () => await pageBox(), 30_000, "网页圈选提示", 100);
+  const esc = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 };
+  await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...esc }, work);
+  await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...esc }, work);
+  const done3 = await settledCard(panel, DECLINED_LINE);
+  const done3b = await settledCard(panel2, DECLINED_LINE);
+  const box3 = await pageBox();
+  check("p3 网页上按 Esc：不发送，网页圈选收起，两个侧栏的卡都收成一行、没有按钮", sent() === 1 && !box3 && !("timedOut" in done3) && !("timedOut" in done3b), { sent: sent(), done3, done3b } as Json);
   await answered("P3 完成。");
 
   // ── p4：等确认时重开侧栏 ──
@@ -183,19 +166,18 @@ try {
   check("p4 重开侧栏：还在等的那张卡能点，之前答过的卡只有一行、没有按钮", !!c4 && before4.slice(0, -1).every(c => c.buttons === 0) && before4.length === 4, { c4, before4 });
 
   if (c4) { await sleep(1000); await press(panel, c4.id, "yes"); }
-  await until(async () => sent() >= 3, 10_000, "重开后确认，服务器收到发送").catch(() => {});
+  await until(async () => sent() >= 2, 10_000, "重开后确认，服务器收到发送").catch(() => {});
   await answered("P4 完成。").catch(() => {});
-  check("p4 重开后在侧栏点「发送」：恰好 1 条", sent() === 3, { sent: sent() });
+  check("p4 重开后在侧栏点「发送」：恰好 1 条", sent() === 2, { sent: sent() });
   await rp.cdp.send("Page.reload", {}, panel);
   await sleep(500);
   await ready(panel);
   const replay = await until(async () => { const all = await allCards(panel); return all.length === 4 ? all : null; }, 15_000, "回放出四张卡").catch(async () => allCards(panel));
-  const expected = ["你确认过，已发送", "你没让发，草稿还在", "你确认过，已发送", "你确认过，已发送"];
+  const expected = [SENT_LINE, DECLINED_LINE, DECLINED_LINE, SENT_LINE];
   check("p4 再重开：回放出来的卡都只有一行结果，没有按钮", replay.length === 4 && replay.every((c, i) => c.buttons === 0 && c.text === expected[i]), { replay });
   await rp.screenshot(panel, join(out, "p4-panel-replay.png"));
 
   // ── p5：卡上的「发送」刚露出来就点、键盘按：都不算 ──
-  // 侧栏里记下每张卡的「发送」第一次露出来的时刻、最后一次点它的时刻，和卡上先后出现过的结果行。
   await rp.evaluate(panel, `(() => { window.__arm = {}; window.__lines = {}; new MutationObserver(() => {
     for (const c of document.querySelectorAll(".send-confirm")) { const id = c.dataset.sendConfirm; if (c.querySelector(".send-confirm-yes")) window.__arm[id] ??= performance.now();
       const line = c.querySelector(".send-confirm-line")?.textContent; if (line) { const seen = (window.__lines[id] ??= []); if (seen.at(-1) !== line) seen.push(line); } }
@@ -217,27 +199,10 @@ try {
   check("p5 聚焦卡上的「发送」按回车、空格：不发，卡还能点", focused === true && sent() === before5 && !!(await card(panel))?.buttons.includes("发送"), { focused: focused as Json, sentDelta: sent() - before5 });
   await press(panel, c5.id, "yes");
   await until(async () => sent() > before5, 10_000, "p5 一秒后再点，服务器收到发送").catch(() => {});
-  const done5 = await settledCard(panel, "你确认过，已发送");
+  const done5 = await settledCard(panel, SENT_LINE);
   await answered("P5 完成。").catch(() => {});
   const lines5 = (await rp.evaluate(panel, `window.__lines[${JSON.stringify(c5.id)}] ?? []`)) as string[];
-  check("p5 一秒后再点：恰好 1 条；点下去以前卡上写「你确认了发送」，点下去以后才写「已发送」", sent() - before5 === 1 && !("timedOut" in done5) && lines5[0] === "你确认了发送" && lines5.at(-1) === "你确认过，已发送", { sentDelta: sent() - before5, lines5, done5 } as Json);
-
-  // ── p6：网页确认框的「发送」刚露出来就点 ──
-  // 网页里记下确认框插进来的时刻和最后一次点击的时刻；确认框的内容和 p3 一样，所以「发送」还在 p3 量到的位置。
-  await rp.evaluate(work, `(() => { window.__dlgAt = null; new MutationObserver(() => { if (window.__dlgAt === null && document.querySelector('[data-sideagent-overlay="send-confirm"]')) window.__dlgAt = performance.now(); }).observe(document.body, { childList: true });
-    window.addEventListener("click", () => { window.__clickAt = performance.now(); }, true); return true; })()`);
-  const before6 = sent();
-  await ask(ASK.p6);
-  await until(async () => (await rp.evaluate(work, "window.__dlgAt !== null")) as boolean, 30_000, "p6 网页确认框出现", 10);
-  await pageClick(box3.yes!);
-  const early6 = Number(await rp.evaluate(work, "window.__clickAt - window.__dlgAt"));
-  await sleep(1200);
-  const still6 = await pageBox();
-  check("p6 网页上「发送」露出来 300 毫秒内就点：不发，确认框还在", early6 < 300 && sent() === before6 && !!still6, { early6, sentDelta: sent() - before6, stillShown: !!still6 });
-  await pageClick(box3.yes!);
-  await until(async () => sent() > before6, 10_000, "p6 一秒后再点，服务器收到发送").catch(() => {});
-  await answered("P6 完成。").catch(() => {});
-  check("p6 一秒后再点同一处：恰好 1 条", sent() - before6 === 1, { sentDelta: sent() - before6 });
+  check("p5 一秒后再点：恰好 1 条；点下去以前卡上写「你确认了发送」，点下去以后才写「已发送」", sent() - before5 === 1 && !("timedOut" in done5) && lines5[0] === "你确认了发送" && lines5.at(-1) === SENT_LINE, { sentDelta: sent() - before5, lines5, done5 } as Json);
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts, notCovered: ["真实网站、真模型", "2 分钟没理（产品没有缩短等待的开关）", "扩展后台重启时卡收成「这次确认已经结束」"] }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));

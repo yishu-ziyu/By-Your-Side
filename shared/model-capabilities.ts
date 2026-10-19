@@ -32,11 +32,11 @@ interface MeasuredCapability {
   hedgeMs?: number;
 }
 
-/** 实测记录见 docs/evals/20261001-model-effort-and-side-judgments.md。 */
+/** */
 const MEASURED = new Map<string, MeasuredCapability>([
   // ChatGPT 账号的 gpt-6 系列（2026-10-06 实测）；pi-ai 1.0.4 目录已收录，上下文与连接参数取目录。
   // 起始档用低档（用户 10-07 定：默认低，难的事由升档信号或用户自己调高）。订会议室真实路径各 12 次：
-  // 高 12/12 中位 25 秒，中 11/12（一次没订却说订好了）21 秒，低 11/12（一次如实说没提交）22 秒，关 8/12 21 秒（docs/evals/20261007-effort-low.md）。
+  // 高 12/12 中位 25 秒，中 11/12（一次没订却说订好了）21 秒，低 11/12（一次如实说没提交）22 秒，关 8/12 21 秒。
   // 更早的 10-06 两道核对题（高 7/8、中 0/7、低 2/6）只测判断题，不是浏览器操作。
   // 首个事件等 30 秒：服务端偶尔排队，10-06 实测 12 次有 2 次 16–17 秒才出第一个事件、随后正常答完；15 秒会误判挂起重来。
   // gpt-6.1-sol 不能关闭思考：10-09 实测发 none 回「'none' is not supported … Supported values are: 'low', …」，最低 low。

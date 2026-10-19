@@ -1,5 +1,5 @@
 /**
- * Page readout rules shared by snapshot, read_element and fill (docs/page-readouts.md).
+ * Page readout rules shared by snapshot, read_element and fill (docs/web-actions.md).
  *
  * 1. Truncated text: when the text a page shows ends with an ellipsis ("…" or "..."), and the
  *    element carries a fuller value in title / aria-label / aria-description that starts with the

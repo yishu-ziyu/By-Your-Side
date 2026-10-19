@@ -1,4 +1,4 @@
-/** Page readouts: truncated names and input ranges (docs/evals/20261002-tier1-product-gaps.md, criteria 2–3).
+/** Page readouts: truncated names and input ranges .
  * Real isolated headless Chrome + the real extension executor built from the current tree into a temp dir;
  * the model-facing fill text comes from the real agent tool definition. No model requests, no daily Chrome,
  * no extension/dist writes. Oracles are independent: the fixture's own title/min/max attributes and the

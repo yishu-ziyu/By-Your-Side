@@ -51,8 +51,7 @@
 
 ## CI 与人工复核
 
-- [Quality](../../.github/workflows/quality.yml)：PR 上跑 `check` 的各项。
-- [Documentation](../../.github/workflows/docs.yml)：文档结构检查。
+- [Quality](../../.github/workflows/quality.yml)：PR 与 `main` 上跑 `npm run check`（含文档、用词、动效与样式 token、架构边界、类型与构建）及全量文档检查。
 - [E2E](../../.github/workflows/e2e.yml)：手动触发，在 Linux 上跑 `npm test` 的用例。
 
 维护者按 [PR 模板](../../.github/pull_request_template.md)复核。当前进度只在 [STATUS](../STATUS.md) 维护。评测环境分类见[站点不可用](../testing/acceptance.md#评测中的站点不可用)。

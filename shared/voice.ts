@@ -252,7 +252,7 @@ export function parseOrbStyle(value: {} | null | undefined): OrbStyle {
 
 /**
  * 语音人设：只改变语气和措辞，不改变行为规则（如实报结果、不反问、不客套仍然优先）。
- * 方向见 docs/voice-interaction.md。自定义内容由用户在设置页填写，长度有上限。
+ * 方向见 docs/voice-architecture.md。自定义内容由用户在设置页填写，长度有上限。
  */
 export const VOICE_PERSONAS = [
   { id: "default", label: "默认", summary: "简洁利落的搭子", text: "" },
@@ -519,7 +519,7 @@ export function isVoiceConversationContext(v: unknown): v is VoiceConversationCo
 
 /**
  * 核对「没保存 / 没提交」这类约束时，能否只凭执行账本：每次改动都记了账，而且每一笔都看得出改了什么。
- * 执行过页面 JS 或原始 CDP 后为否，核对须重读页面（用户 2026-09-25 裁决，见 docs/evals/20260925-unit-suite-failures.md）。
+ * 执行过页面 JS 或原始 CDP 后为否，核对须重读页面（用户 2026-09-25 裁决，
  * 写入闸门仍只看 executionAuditComplete（每次改动是否都记了账），不受此影响。
  */
 export function executionEffectsFullyKnown(s: Pick<TaskProgressSnapshot, 'executionAuditComplete' | 'untrackedWritePending' | 'opaqueEffectRan'>): boolean {

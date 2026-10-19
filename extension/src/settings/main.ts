@@ -1044,7 +1044,7 @@ function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGrou
   return groups;
 }
 
-/** 念结果只用 MiniMax 订阅 Key：MiniMax 按 Key 决定扣套餐还是按量（docs/evals/20261007-ptt-speak.md R2）。 */
+/** 念结果只用 MiniMax 订阅 Key：MiniMax 按 Key 决定扣套餐还是按量。 */
 async function saveSpeechKey(): Promise<void> {
   const key = speechInput.value.trim();
 

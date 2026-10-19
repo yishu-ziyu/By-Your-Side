@@ -917,7 +917,7 @@ return host?[host]:[];}))].slice(0,16);
     // 改过页面的任务计入习惯（打开页面也算，不跟着上面收紧）：同一件事在 3 个对话里做过，就问一次要不要记住。
     if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
 
-    // 站点笔记（docs/evals/20261013-site-notes.md R4）：只从核对判做成的任务里学；没核对、没做成、用户停下的都不学，
+    // 站点笔记：只从核对判做成的任务里学；没核对、没做成、用户停下的都不学，
     // 这一轮的回答自己说只做成一部分或列了没做完的事，也不学。宿主账本补的 hostNote 不算：核对判做成就以核对为准（#334）。
     const partialDelivery=delivery?.runId===snap.runId&&((delivery.facts?.outcome==='partial'&&!delivery.hostNote)||!!delivery.unfinished?.length);
 

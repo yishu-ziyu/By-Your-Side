@@ -1,6 +1,6 @@
 /**
  * 站点提示：某些网站用通用的点击、截图做不成事（例如画布白板），这里给模型一段该站点的做法。
- * 只在这一轮开始时的页面属于表里的站点时注入；其他网站不注入。依据见 docs/evals/20261010-site-hints-excalidraw.md。
+ * 只在这一轮开始时的页面属于表里的站点时注入；其他网站不注入。
  */
 
 const SITE_HINTS: Array<{host: string; hint: string}> = [

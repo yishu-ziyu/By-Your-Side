@@ -2,7 +2,7 @@ import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY, PTT_SPEECH_TARGET,
 import type { PttVoice } from './ptt-capsule.js';
 
 /**
- * 念结果的后台一侧（docs/evals/20261007-ptt-speak.md）：记着设置页的订阅 Key 和「做完念出来」开关，
+ * 念结果的后台一侧：记着设置页的订阅 Key 和「做完念出来」开关，
  * 让离屏文档去念。没 Key、Key 不是订阅 Key、或开关关了，就不念（speak 返回 null），也不报错。
  */
 export function createPttVoice(notice: (conversationId: string, message: string) => void): PttVoice {

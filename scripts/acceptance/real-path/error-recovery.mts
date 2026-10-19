@@ -1,5 +1,5 @@
 /**
- * 模型出错后，用户在错误卡上修掉原因，助手在原对话里接着做（docs/evals/20261006-error-states.md R1–R5）。
+ * 模型出错后，用户在错误卡上修掉原因，助手在原对话里接着做。
  * 只装扩展、隔离构建、本机脚本模型；前面挡一个本机服务，按场景回 401、429 或断开连接。
  *   npx tsx scripts/acceptance/real-path/error-recovery.mts --headless
  * 失败方式：错误卡只有一行字或只有「继续原任务」；换 key 要去设置页；限流时要用户点了才倒计时；修好后要用户重发；没有回执。
@@ -142,7 +142,7 @@ try {
   assert.equal(evidence.storedKey, "good-key", "the new key is saved for later tasks");
   await rp.screenshot(panel, join(artifacts, "auth-final.png"));
 
-  // 乙：限流 → 卡上不用点就倒计时，到点自动接着做（docs/evals/20261015-auto-retry-countdown.md）。
+  // 乙：限流 → 卡上不用点就倒计时，到点自动接着做。
   evidence.stage = "busy";
   failNext = { kind: "busy", count: 3 };
   await send(CASES.busy.ask);

@@ -57,7 +57,7 @@ export function isDestructiveLabel(text: string): boolean {
   return false;
 }
 
-/** 只取上面危险词里的「发送 / Send」：点这类按钮前先停下问用户（docs/evals/20261009-send-confirm.md）。 */
+/** 只取上面危险词里的「发送 / Send」：点这类按钮前先停下问用户。 */
 export function isSendLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
 
@@ -67,7 +67,7 @@ export function isSendLabel(text: string): boolean {
 /** 只是付款方式名字的按钮（选支付宝、微信支付这类选项）不算付款。 */
 const PAY_METHOD_ONLY = /^(支付宝|微信支付|银行卡|apple pay)$/i;
 
-/** 付款按钮：助手永远不点，留给用户自己点（docs/evals/20261009-pay-stop.md）。 */
+/** 付款按钮：助手永远不点，留给用户自己点。 */
 export function isPayLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
 
