@@ -55,4 +55,4 @@
 - [Documentation](../../.github/workflows/docs.yml)：文档结构检查。
 - [E2E](../../.github/workflows/e2e.yml)：手动触发，在 Linux 上跑 `npm test` 的用例。
 
-维护者按 [PR 模板](../../.github/pull_request_template.md)复核。当前进度只在 [STATUS](../STATUS.md) 维护。评测环境分类见[浏览器证据](../testing/eval-environment.md)。
+维护者按 [PR 模板](../../.github/pull_request_template.md)复核。当前进度只在 [STATUS](../STATUS.md) 维护。评测环境分类见[站点不可用](../testing/acceptance.md#评测中的站点不可用)。

@@ -21,8 +21,19 @@
 - **浏览器主链**：`npm run accept:browser`。
 - **单项**：在 [`scripts/acceptance/real-path/`](../../scripts/acceptance/real-path/) 找到对应脚本，先读文件头，再加 `--headless` 运行。
 - **技术前提**：`scripts/probes/` 下的[前提小实验](../development/checks.md#前提小实验)只证明前提，不代替功能验收。
-- **评测环境分类**：见[站点不可用](eval-environment.md)。
+- **真实网站护栏（24 题爬坡集）**：`npx tsx scripts/probes/compare-real.mts . out/hillclimb-<日期> ext --split=test`。训练集与独立测试集网站不重叠，分析者只看训练集过程记录；改前改后两份预构建扩展须在同一时段并排跑，再用 `npx tsx scripts/eval/time-breakdown.mts out/<这次> --vs=out/<上一次>` 对比耗时与模型来回次数。
 - **CI**：E2E 工作流跑 `npm test`，目前只能手动触发，还没在 Linux 上跑通过。
+
+## Ego 任务空间清理
+
+用 Ego 跑对比测试时，Ego 的 `finish()` 只把任务空间交还给用户，不会关闭空间；关掉最后一页后它还会自动补一个空白页。测试结束必须用 `Target.closeTarget` 逐个关掉自己开的任务空间里的每一页（脚本建空间时名字一律以 `bys` 开头，只关自己开的）。
+
+## 评测中的站点不可用
+
+评测把站点不可用的题单独列出（判定见 [`environment.mjs`](../../eval/harness/environment.mjs)）：
+
+- **怎样算不可用**：只有浏览器证据能把一题判为站点不可用，不按助手解释判断。网页正文提到断网或验证码、模型自称断网、任务超时、HTTP 404 或操作失败单独出现时都不排除；结束时只按最新页面判定。
+- **怎样计分**：已完成的结果不因后续页面不可用而排除；站点不可用的题单独显示数量，从通过率分母以及平均 token、调用次数、耗时与成本中排除；普通失败和无法确定的题仍计入分母。
 
 ## 脚本模型与真实模型
 
