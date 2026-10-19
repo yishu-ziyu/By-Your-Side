@@ -171,6 +171,8 @@ try {
   await until(async () => shownSecs(await read()) >= 16 ? true : undefined, 20_000, "思考时等满 16 秒", 100);
   const thinkingLong = await read();
   await rp.screenshot(panel, join(out, "thinking-long.png"));
+  const spine = await rp.evaluate(panel, '(()=>{const t=[...document.querySelectorAll("#messages details.thinking")].at(-1);return t?getComputedStyle(t,"::before").content:null})()');
+  check("f 思考块左侧没有竖线", spine === "none", spine);
   check("f 思考摘要在流、16 秒没出正文：标题仍是「正在思考」", thinkingLong.title === "正在思考" && thinkingLong.thinking && !thinkingLong.all.includes(ANSWER_THINK), { title: thinkingLong.title, time: thinkingLong.time, thinking: thinkingLong.thinking });
   await until(async () => (await read()).all.includes(ANSWER_THINK) ? true : undefined, 15_000, "思考之后的回答", 100);
 

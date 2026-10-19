@@ -808,36 +808,6 @@ details.thinking {
   flex-shrink: 0;
   color: var(--text-2);
   font-size: var(--fs-meta);
-  /* 2px 竖线 + 10px 缩进：竖线改成伪元素后仍占同样的位置 */
-  padding-left: 12px;
-}
-
-/* A：运行中的那一步有生命——竖线先长出来，再轻微呼吸；结束落回常态 */
-details.thinking::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border);
-  transform-origin: top center;
-  transition: background var(--m-move) var(--e-swift);
-}
-
-details.thinking.streaming::before {
-  background: var(--apple-blue);
-  animation: spineGrow var(--m-morph) var(--e-swift) both, spineBreathe 1.6s ease-in-out infinite;
-}
-
-@keyframes spineGrow {
-  from { transform: scaleY(0); }
-  to { transform: scaleY(1); }
-}
-
-@keyframes spineBreathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
 }
 
 /* A：运行中的光球放大呼吸（18 → 20px），结束一次性收束回原位；只动 transform/opacity */
@@ -2082,7 +2052,6 @@ details.run-steps.done .chip.error { background: transparent; }
   /* A+B 新增的持续/一次性动效：减少动态时只留状态色，不动位移与呼吸 */
   canvas.orb-live,
   canvas.orb-settle,
-  details.thinking.streaming::before,
   .settle-once {
     animation: none;
   }
@@ -2594,7 +2563,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 /* 回应和过程的边界：正文不包卡片，状态使用普通界面字体。 */
 .run-steps > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 .run-steps > summary > .run-icon { min-width: 24px; justify-content: center; }
-.run-steps .thinking::before { background: var(--content-border); animation: none; }
 .run-steps .thinking summary { font-size: var(--fs-micro); }
 .msg.assistant[data-delivery-kind="start_ack"] { font-family: var(--font); font-size: var(--fs-meta); color: var(--text-secondary); }
 /* 开场话是助手说要怎么做，不是回答：用小一号的说明字，回答才用正文大小。 */
@@ -2870,8 +2838,6 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .chip[aria-expanded="true"] .chip-more { transform: rotate(90deg); }
 details.thinking.narration > summary { display: none; }
 details.thinking.narration > pre { margin: 0; max-height: none; overflow: visible; mask-image: none; -webkit-mask-image: none; color: var(--text-primary); font-size: var(--fs-code); line-height: 1.55; }
-details.thinking.narration::before { display: none; }
-details.thinking.narration { padding-left: 0; }
 details.run-steps.done .run-body > details.thinking.narration { display: block; margin: 4px 0; }
 details.run-steps.done .run-body > details.thinking.narration > pre { color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) {
