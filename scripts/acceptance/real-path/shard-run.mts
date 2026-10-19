@@ -39,8 +39,6 @@ const NODES: Node[] = [
     chrome: "/opt/chrome-for-testing/chrome-linux64/chrome" },
   { name: "devin", kind: "drs", weight: 3, jobs: 4, devinId: "100916ca2fd74266b2080741d2952ca7",
     dir: "~/repos/By-Your-Side", chrome: "google-chrome" },
-  { name: "devin-mac", kind: "drs", weight: 3, jobs: 4, devinId: "9e409382c3cf4f709de662f933c2ff47",
-    dir: "~/repos/By-Your-Side", chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" },
   { name: "grokbox", kind: "ssh", weight: 2, jobs: 2, host: "box@100.124.81.45", dir: "/home/box/bys",
     chrome: "/home/box/.cache/ms-playwright/chromium-*/chrome-linux*/chrome" },
 ];

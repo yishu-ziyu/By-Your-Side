@@ -2,7 +2,7 @@
 
 全量真实路径验收在一台机器上要 30–40 分钟，所以用 `npm run accept:shard` 分到几台机器并行跑。本页写每台机器怎么连、怎么救活、踩过什么坑。节点表本身在 `scripts/acceptance/real-path/shard-run.mts` 的 `NODES`。
 
-## 现有节点（2026-10-19 实测都能连上）
+## 现有节点
 
 | 名字 | 系统 | 规格 | 怎么连 | Chrome | 适合 |
 |---|---|---|---|---|---|
@@ -10,13 +10,16 @@
 | `aliyun` | Linux | 2 核 3G | ssh `root@121.89.90.68` | Chrome for Testing（`/opt/chrome-for-testing/`） | 长任务；一直开机，最稳 |
 | `grokbox` | Linux | — | ssh `box@100.124.81.45`（Tailscale 地址，普通 sshd） | Playwright 的 Chromium | 长任务；会休眠，见下文 |
 | `devin` | Linux | 8 核 31G | `devin cloud drs run --devin-id <id>` | 正式版 `google-chrome` | 只接几分钟能跑完的短任务 |
-| `devin-mac` | macOS 26 | 8 核 | 同上 | 正式版 Google Chrome | 同上；唯一的云上 Mac |
 
 先看哪些节点在线：阿里云和 grokbox 用 `ssh -o ConnectTimeout=8 <host> echo ok`，Devin 用 `devin cloud drs run --devin-id <id> --timeout 60 --command 'uname -s'`。不在线的节点用 `--skip=<名字>` 跳过，它分到的用例记为未跑，不算通过。
 
+## 没接进分片的：Devin macOS 沙箱
+
+沙箱 `9e409382c3cf4f709de662f933c2ff47`（macOS 26，8 核，蓝图装好了 Node 和正式版 Chrome）单个短用例能跑通，但还不能当分片节点：它每次被 `drs run` 叫醒都要重新开机，开机后负载上百，`/tmp` 清空；命令只要跑几分钟，就会超过服务端时限也不返回（10-19 连续两次卡到 600 秒）。下一步可以试 Devin 设置里的 SSH 登录（Settings → Devin → SSH access），绕开 `drs run`；通了再把它加回 `NODES`。
+
 ## 正式版 Chrome 和 Chrome for Testing 都能跑
 
-用户用的是正式版 Chrome，所以验收必须在正式版上也能过。正式版 Chrome 会忽略 `--load-extension`，所以验收脚本在连上 Chrome 后用调试协议的 `Extensions.loadUnpacked` 装入扩展，两种 Chrome 走同一条路。不要加回 `--disable-extensions-except`：它会把这样装入的扩展也禁掉，扩展页面变成错误页，症状是“等待超时：辅助页加载”。
+用户用的是正式版 Chrome，所以验收必须在正式版上也能过。正式版 Chrome 会忽略 `--load-extension`，所以验收脚本启动时带 `--load-extension`（Chrome for Testing 和 Chromium 认它），连上后再用调试协议的 `Extensions.loadUnpacked` 装一次（正式版靠这一步）；旧版 Chrome for Testing 没有这个命令时就只靠启动参数。不要加回 `--disable-extensions-except`：它会把这样装入的扩展也禁掉，扩展页面变成错误页，症状是“等待超时：辅助页加载”。
 
 本机想用正式版跑：`EGO_ACCEPTANCE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npx tsx <用例> --headless`。
 
