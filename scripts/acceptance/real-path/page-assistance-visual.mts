@@ -1,5 +1,5 @@
 /**
- * 真扩展 + 隔离 Chrome + 本机脚本模型：点按钮后看小气泡，圈出段落后看细线轻标签。
+ * 真扩展 + 隔离 Chrome + 本机脚本模型：读整页不画扫视横带，点按钮后看小气泡，圈出段落后看细线轻标签。
  * 判定页面收到的点击、气泡几何、圈画相对目标的位置；不证明真实模型会选对目标。
  * npm run lab -- case page-assistance-visual
  */
@@ -50,7 +50,13 @@ try {
     return result.result.value;
   };
   await rp.click(panel, "#input"); await rp.typeText(panel, goal); await rp.pressEnter(panel);
-  await until(async () => await rp.evaluate(work, 'document.querySelector("#hours").dataset.clicks==="1"'), 30000, "真实按钮被点一次");
+  // 读整页（snapshot）不知道在看哪一块，页面上不该出现扫过视口的注视横带；从发出到点击一直采样。
+  let gaze = 0;
+  await until(async () => {
+    gaze = Math.max(gaze, await readOverlay<number>("cursor", "function(){return this.querySelectorAll('.gaze.on').length}") ?? 0);
+    return await rp.evaluate(work, 'document.querySelector("#hours").dataset.clicks==="1"');
+  }, 30000, "真实按钮被点一次", 50);
+  check("读整页不画扫视横带", gaze === 0, gaze);
   const bubble = await until(() => readOverlay<{height:number;width:number;font:number;radius:string;orb:boolean;text:string}>("cursor", `function(){const l=this.querySelector('.cursor.acting .label');if(!l)return null;const s=getComputedStyle(l),r=l.getBoundingClientRect();return {height:r.height,width:r.width,font:parseFloat(s.fontSize),radius:s.borderRadius,orb:!!l.querySelector('.orb-dot'),text:l.innerText}}`), 1500, "动作气泡");
   await rp.screenshot(work, join(out, "cursor.png"));
   check("小气泡保留原圆角，没有装饰光球", bubble.height <= 28 && bubble.width <= 200 && bubble.font === 12 && bubble.radius === "4px 12px 12px" && !bubble.orb && bubble.text.includes("营业时间"), bubble);

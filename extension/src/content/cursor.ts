@@ -111,7 +111,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     /** 注视区：它读页面时看着哪。和箭头分开，箭头只在要动手时出现。 */
     gazeEl?: HTMLDivElement;
     gazeTimers?: ReturnType<typeof setTimeout>[];
-    gazeAnim?: Animation;
     /** 注视区正收拢到要点的目标上，箭头等它收完再起飞。 */
     gazeConvergeUntil?: number;
     flyDelay?: ReturnType<typeof setTimeout>;
@@ -2171,10 +2170,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   // ── 注视区 ──────────────────────────────────────────────
-  // 只画真实发生的读：整页读（快照、截图、全文）只能老实地扫一遍视口，
-  // 不假装知道它在看哪一块；读具体元素时才落到那个元素上。
-  const GAZE_INSET = 16;
-  const GAZE_SWEEP_MS = 1400;
+  // 只画真实发生的读：读具体元素时落到那个元素上；整页读（快照、截图、全文）不知道在看哪一块，不画。
   const GAZE_DWELL_MS = 300;
   const GAZE_MAX_STOPS = 12;
   const GAZE_REST_MS = 10_000;
@@ -2211,39 +2207,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   function stopGazeMotion(inst: Instance): void {
     for (const t of inst.gazeTimers ?? []) clearTimeout(t);
     inst.gazeTimers = [];
-
-    if (inst.gazeAnim) {
-      try { inst.gazeAnim.commitStyles(); } catch { /* 已脱离文档 */ }
-      inst.gazeAnim.cancel();
-      inst.gazeAnim = undefined;
-    }
-  }
-
-  function gazeSweep(inst: Instance): void {
-    stopGazeMotion(inst);
-    inst.gazeConvergeUntil = undefined;
-    const el = ensureGaze(inst);
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const height = Math.round(Math.min(160, Math.max(72, vh * 0.18)));
-    const startTop = GAZE_INSET;
-    const endTop = Math.max(GAZE_INSET, vh - height - GAZE_INSET);
-    const fresh = !el.classList.contains("on");
-    el.classList.remove("rest", "converge");
-    placeGaze(el, { left: GAZE_INSET, top: startTop, width: Math.max(0, vw - GAZE_INSET * 2), height }, fresh);
-    el.classList.add("on");
-
-    if (reducedMotion.matches || endTop <= startTop) return;
-    const anim = el.animate([{ top: `${startTop}px` }, { top: `${endTop}px` }], {
-      duration: GAZE_SWEEP_MS, easing: "cubic-bezier(.45,.05,.55,.95)", fill: "forwards",
-    });
-    inst.gazeAnim = anim;
-    anim.finished.then(() => {
-      if (inst.gazeAnim !== anim) return;
-      anim.commitStyles();
-      anim.cancel();
-      inst.gazeAnim = undefined;
-    }).catch(() => { /* 被下一次注视打断 */ });
   }
 
   function gazeAt(inst: Instance, rects: SideAgentRect[]): void {
@@ -2891,8 +2854,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
         if (!inst) return;
 
-        if (view.mode === "sweep") gazeSweep(inst);
-        else if (view.mode === "at") gazeAt(inst, view.rects);
+        if (view.mode === "at") gazeAt(inst, view.rects);
         else if (view.mode === "rest") gazeRest(inst);
         else gazeOff(inst);
       },
