@@ -208,6 +208,7 @@ try {
     const down = await seen();
     evidence.keys = { up: up.level, down: down.level };
     assert.ok(up.level === "2" && down.level === "3", `上下键换层: ${JSON.stringify(evidence.keys)}`);
+    assert.ok(down.labelShown && down.label === "全文", `键盘选中把手时看得到层名: ${JSON.stringify({ label: down.label, shown: down.labelShown })}`);
     assert.equal(await rp.evaluate(panel, `${ANSWER_JS}[0].querySelector(".shorten-grip").getAttribute("aria-valuetext")`), "全文", "把手 aria 跟着层走");
 
     // 鼠标拖完不留焦点框（键盘刚把焦点放在把手上也一样）。
