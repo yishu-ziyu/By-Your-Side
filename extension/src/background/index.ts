@@ -427,8 +427,8 @@ function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
  return `听写没成功：${reply.message ?? "未知原因"}`;
 }
 
-// 按住说话（#125，docs/evals/20261007-ptt-dictation.md）：网页脚本报按下/松开/取消，离屏文档录音并听写；听写出的一句交给当前会话。
-// 胶囊（docs/evals/20261007-ptt-capsule.md）：松开以后的每个结局都显示在说话的那一页底部。
+// 按住说话：网页脚本报按下/松开/取消，离屏文档录音并听写；听写出的一句交给当前会话。
+// 胶囊：松开以后的每个结局都显示在说话的那一页底部。
 chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, sender, sendResponse) => {
  if (!isPttPageMessage(raw) || sender.id !== chrome.runtime.id || sender.tab?.id == null) return;
  const tab = sender.tab;
@@ -1498,7 +1498,7 @@ return;}
   },
 };
 
-/** 用户在这段对话里说到第几句：「不发」只管到用户再说话为止（docs/evals/20261009-send-confirm.md）。 */
+/** 用户在这段对话里说到第几句：「不发」只管到用户再说话为止。 */
 let userTurn = 0;
 
 /** 正在执行的工具调用数。语音直接操作网页时任务状态不一定是「在跑」，还原填写靠它判断忙不忙。 */
@@ -1589,7 +1589,7 @@ async function executeToolCall(
       dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeDispatch),
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
       fetch:p=>fetchUrl(p,{beforeDispatch}),
-      // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子（docs/evals/20261009-send-confirm.md）。
+      // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子。
       click:(p,s)=>reportSendClick(sendGuard, click(p,s,undefined,sendGuard)),
       // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
@@ -1668,7 +1668,7 @@ async function executeToolCall(
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
 
-    // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话（docs/evals/20261009-send-confirm.md）。
+    // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话。
     if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason };
   }
 

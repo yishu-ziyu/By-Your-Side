@@ -118,7 +118,7 @@ export function salvageTranslations(text: string, blocks: TranslationBlock[]): M
 
 /**
  * 同时在途的翻译请求数。109 段长文实测（阶跃 step-3.7-flash）：4 路约 70 s、8 路约 52 s，串行约 250 s；
- * 只测过阶跃，用户自配的服务商可能限并发，默认取 4。见 docs/evals/20260926-translate-fast.md。
+ * 只测过阶跃，用户自配的服务商可能限并发，默认取 4。
  */
 export const PAGE_TRANSLATION_CONCURRENCY = 4;
 

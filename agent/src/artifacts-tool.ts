@@ -1,10 +1,10 @@
 /**
  * 会话里的文件（产物）：模型写出 CSV、Markdown、HTML 等文本文件，侧栏显示成卡片，用户点一下下载。
  * 命令沿用 Pi web-ui 的 artifacts 工具约定（create / update / rewrite / get / delete），模型对它已熟悉；
- * 扩展可注入持久存储，事务完成后每次改动发 `artifact` 事件，侧栏据此画卡片。见 docs/evals/20260925-artifacts-files.md。
- * `browser_run` 的 `browser.saveFile` 写进同一文件区，工具拿到的大段数据不经模型重打（docs/evals/20261001-data-to-file.md）。
+ * 扩展可注入持久存储，事务完成后每次改动发 `artifact` 事件，侧栏据此画卡片。
+ * `browser_run` 的 `browser.saveFile` 写进同一文件区，工具拿到的大段数据不经模型重打。
  * 只有交给用户的文件才有卡片：模型存文件时标 deliver，没标的是助手自己用的中间文件（如要上传的文件），
- * 照样存、能读能改，但侧栏不显示（docs/evals/20261010-panel-tidy.md）。
+ * 照样存、能读能改，但侧栏不显示。
  */
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";

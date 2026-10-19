@@ -1,5 +1,5 @@
 /**
- * 输入框改版探针（docs/evals/20261006-composer-quiet.md）：只装扩展的无头 Chrome、真侧栏、本机脚本模型。
+ * 输入框改版探针：只装扩展的无头 Chrome、真侧栏、本机脚本模型。
  * 空闲、点开 ＋、运行中、运行中打字、点「接管」五个时刻：读按钮、颜色、菜单，并截图。
  *
  *   npx tsx scripts/probes/shell/composer-quiet.mts --headless

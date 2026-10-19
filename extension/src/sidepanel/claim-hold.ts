@@ -1,6 +1,6 @@
 /**
- * 改过网页的一轮：侧栏摆出填写后这一栏的实际内容（docs/evals/20261009-claim-after-check.md R1），核对判继续时说发现了什么。
- * 回答不再扣到核对出结论（10-10 起，docs/evals/20261010-drop-blocking-labels.md）。界面在 main.ts。
+ * 改过网页的一轮：侧栏摆出填写后这一栏的实际内容，核对判继续时说发现了什么。
+ * 回答不再扣到核对出结论。界面在 main.ts。
  */
 import type { FieldReadback } from "../../../shared/protocol.js";
 

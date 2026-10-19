@@ -1,5 +1,5 @@
 /**
- * 点击和回车之后，等网站的请求回来再告诉助手页面变没变（docs/evals/20261011-settle-after-requests.md）。
+ * 点击和回车之后，等网站的请求回来再告诉助手页面变没变。
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/settle-after-requests.mts --headless
  * 练习页：

@@ -1361,7 +1361,7 @@ const TOP_AT_JS = `function(point) {
 
 /**
  * 「被覆盖」改写成「被 @N 角色 挡住」并带上名字：模型据此先处理挡住的元素。
- * 从页面里的命中元素出发；按坐标问 CDP（DOM.getNodeForLocation）会命中扩展自己画的状态层（docs/evals/20261011-click-blocked-reason.md）。
+ * 从页面里的命中元素出发；按坐标问 CDP（DOM.getNodeForLocation）会命中扩展自己画的状态层。
  * 读不到就保留原说明。
  */
 async function explainRefusal(tabId: number, backendNodeId: number, error: unknown, point?: [number, number]): Promise<string> {
@@ -1546,7 +1546,7 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
 /**
  * 点击期间工作页自己打开的新窗口（CDP Page.windowOpen）和点击前该窗口的活动页。
  * 工作页在后台时，Chrome 把新页的打开者记成当时的活动页（多半是用户的页），不是工作页；
- * 所以只凭打开者认不出新页（docs/evals/20261010-keep-foreground.md）。
+ * 所以只凭打开者认不出新页。
  */
 type OpenWatch = { workingTabId: number; windowId: number; activeBefore?: number; windowOpens: number; stop: () => void };
 
@@ -1769,7 +1769,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
   const { plate: name, buttons } = await namesOfClickTarget(tabId, params, point);
-  // 付款按钮永远不点，用户在聊天里同意也不点（docs/evals/20261009-pay-stop.md）。
+  // 付款按钮永远不点，用户在聊天里同意也不点。
   const payName = buttons.find(isPayLabel);
 
   if (payName) await stopBeforePay(tabId, payName, point[0], point[1]);

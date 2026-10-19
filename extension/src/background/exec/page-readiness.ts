@@ -181,7 +181,7 @@ export function downloadNote(d:NavigationDownload,tab:'stays'|'closed'='stays'):
 
 /**
  * DOM readiness, not completion of images/ads. Confirm the current document twice.
- * 注入脚本问不到的情况由浏览器通知补上（docs/evals/20261010-navigate-wait.md）：地址变成下载时标签页一直是旧文档，
+ * 注入脚本问不到的情况由浏览器通知补上：地址变成下载时标签页一直是旧文档，
  * chrome:// 页不能注入，原来都要等到超时。dispatch 在监听装好之后才发出跳转，免得几毫秒内的通知漏掉。
  */
 export async function waitForInteractive(tabId:number,timeoutMs:number,options:{previousDocumentId?:string;requestedUrl?:string;dispatch?:()=>Promise<unknown>}={}):Promise<PageReadiness> {

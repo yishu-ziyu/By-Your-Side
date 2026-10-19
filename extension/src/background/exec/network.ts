@@ -2,7 +2,6 @@
  * `network` 工具：读当前工作标签页的被动请求记录（CDP Network 域环形缓冲）。
  * 只读，不改页面；attach 失败（如用户开着 DevTools）不伪造数据。
  * 回执含在途/捕获完整性，供 waitForNetworkIdle 判定（FIX-02）。
- * 依据 docs/evals/20260911-network.md。
  */
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { formatNetworkReport, selectNetworkEntries, type NetworkQuery } from "../../../../shared/network.js";

@@ -290,14 +290,14 @@ export type ClientMessage = ConversationEnvelope & (
   /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
   | { type: "model_key_test"; requestId: string; key: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact }
-  /** 点「发送」前在网页上等用户确认（docs/evals/20261009-send-confirm.md）：waiting 时宿主放宽这次调用的期限，结束时恢复普通期限。 */
+  /** 点「发送」前在网页上等用户确认：waiting 时宿主放宽这次调用的期限，结束时恢复普通期限。 */
   | { type: "tool_waiting_user"; id: string; waiting: boolean; /** 教学这一步在等用户点；没有它就是在等用户确认「发送」。 */ guide?: GuideWait; /** 等确认「发送」时网页上问的是什么；不等了时带结局。 */ send?: SendConfirmView });
 
 /** 确认「发送」的结局：只有 send 点了按钮。 */
 export type SendConfirmOutcome = "send" | "decline" | "stopped" | "left" | "timeout";
 
 /**
- * 侧栏确认卡要显示的内容（docs/evals/20261015-panel-send-confirm.md）：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
+ * 侧栏确认卡要显示的内容：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
  * id 是后台这次等待的身份，侧栏回答时带回；outcome 只在不等了时有，clicked 只在确认后点完时有。草稿只在开始等的那条里带。
  */
 export interface SendConfirmView { id: string; host: string; label: string; content?: string; /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */ recipient?: string; /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */ route?: "click" | "script" | "enter" | "request"; outcome?: SendConfirmOutcome; /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */ clicked?: "yes" | "no" | "unknown" }
@@ -465,7 +465,7 @@ export const TOOL_NAMES = [
   "observe_page",
   "mark",
   "clear_marks",
-  /** 教一步：圈出目标、光标停在旁边，等用户自己点（docs/evals/20261011-guided-teaching.md）。 */
+  /** 教一步：圈出目标、光标停在旁边，等用户自己点。 */
   "guide_step",
   "double_click",
   /** CAP-02A：宿主签发 token 的事件订阅（popup/download/filechooser）。 */

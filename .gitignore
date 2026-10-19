@@ -7,13 +7,20 @@ dist/
 /eval/runs/
 
 # Local tool state (not product source)
+/.claude/
+/.codex/
+/.cursor/
+/.kimi-code/
 /.omo/
+/.serena/
 /.statamcp/
 /.video_agent/
 /.pi/
 /.commandcode/
 /~/
 /.ship/
+/tmp/
+/references/
 
 # Local credentials and generated experiment/session artifacts
 .env

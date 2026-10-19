@@ -4415,7 +4415,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   // 想完了，开始动手（交付、交给用户也算）：这段思考到此为止（#263）。
   closeThink(run, eventTime());
 
-  // 助手把页面交给用户（docs/evals/20261010-hand-to-user.md R1）：不进步骤链，单独一张卡。
+  // 助手把页面交给用户：不进步骤链，单独一张卡。
   if (ev.name === "hand_to_user") {
     run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
     syncRunOrb(run);
@@ -4593,7 +4593,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (ev.repeatRefused && label) label.append("（已做过，没再重复）");
 
-  // 发送确认（docs/evals/20261009-send-confirm.md R2）：确认过的照常写点了，没让发的写结果。
+  // 发送确认：确认过的照常写点了，没让发的写结果。
   if (ev.sendConfirmed && label) {
     entry.chip.dataset.past = `${entry.chip.dataset.past ?? ""}（你确认过）`;
     label.append("（你确认过）");
@@ -4775,7 +4775,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     }
     case "guide_wait": {
-      // 教学一步在等用户自己点：标题写第几步在等你；点了没变化再加一行橙字；不等了回到「做了几件事」（docs/evals/20261011-guided-teaching.md R1、R3）。
+      // 教学一步在等用户自己点：标题写第几步在等你；点了没变化再加一行橙字；不等了回到「做了几件事」。
       const run = currentRun;
 
       if (!run) break;
@@ -5346,7 +5346,7 @@ const inputContext = (): VoiceInputContext => {
 };
 
 const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send, inputContext);
-// 话筒是说话输入（边说边出字，说完自己发）；声波按钮是语音对话。ChatGPT 的输入框也这样分（docs/evals/20261013-live-dictation.md）。
+// 话筒是说话输入（边说边出字，说完自己发）；声波按钮是语音对话。ChatGPT 的输入框也这样分。
 mountDictation({
   composer: composerEl,
   inputEl,

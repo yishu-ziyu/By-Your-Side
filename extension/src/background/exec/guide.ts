@@ -1,5 +1,5 @@
 /**
- * guide_step：教一步。圈出目标、光标停在旁边，在这次工具调用里等用户自己点（docs/evals/20261011-guided-teaching.md）。
+ * guide_step：教一步。圈出目标、光标停在旁边，在这次工具调用里等用户自己点。
  * 工具自己从不点击：页面里只听用户的真实点击，结果经 port 报回来。等待方式与发送确认相同（send-confirm.ts）。
  */
 import type { GuideStepResult, GuideWait, ToolContract } from "../../../../shared/protocol.js";

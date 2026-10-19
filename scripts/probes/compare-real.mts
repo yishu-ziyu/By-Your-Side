@@ -1,8 +1,8 @@
 // npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn] [--record]
 // --compose-ms=N: click into the input and wait N ms before typing, like a user composing (daily median ~5 s); the task timer starts after it.
-// --split: run only the training or the held-out test tasks (docs/evals/20261014-hillclimb.md). --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
+// --split: run only the training or the held-out test tasks . --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
 // --reply=可以 (ext only): when the assistant stops to ask (a partial delivery, or a reply ending in a question), send this reply in the same conversation once; rounds and calls add up.
-// --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds (site notes, docs/evals/20261013-site-notes.md). --record (ext only): records the side panel and the starting tab of each ask as mp4.   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
+// --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds . --record (ext only): records the side panel and the starting tab of each ask as mp4.   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
 // Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -78,7 +78,7 @@ const MEMO_SEEDS = ["买菜：牛奶、鸡蛋、西红柿", "读书笔记：《�
 const othersIntact = (c: Ctx, except: string) => { const ms = memosOf(c); if (ms.length !== MEMO_SEEDS.length) return `笔记数是 ${ms.length}（应为 ${MEMO_SEEDS.length}）`; const bad = MEMO_SEEDS.filter((s) => s.slice(0, 4) !== except).filter((s) => { const m = ms.find((x) => x.name === c.truth[s.slice(0, 4)]); return !m || m.content !== s || m.pinned; }); return bad.length ? `别的笔记被改了：${bad.map((s) => s.slice(0, 4)).join("、")}` : null; };
 
 // ── Two local pages for relaying text between tabs: an AI answer on the left, a chat box on the right whose 提交 reports what it received. ──
-// The button is not named 发送: clicking 发送 stops for the user's confirmation on the page (docs/evals/20261009-send-confirm.md), which is not what this task measures.
+// The button is not named 发送: clicking 发送 stops for the user's confirmation on the page , which is not what this task measures.
 // The answer is pre-wrap plain text, so textContent and innerText both read it exactly as written: curly quotes, blank lines, list markers.
 const RELAY_ANSWER = `好的，下面是一份“一周学习计划”的建议，你可以按自己的情况调整。
 
@@ -167,7 +167,7 @@ const TASKS: Task[] = [
     probeUrl: /todomvc\.com\/examples\/react/, probe: `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`,
     check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; const s = JSON.stringify(items); return items.length === 2 && items.some((i) => i.t === "买牛奶" && i.done) && items.some((i) => i.t === "交电费" && !i.done) ? null : `待办是 ${s}`; },
     second: { prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买面包、修自行车，然后把“修自行车”标记为已完成。", check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; return items.some((i) => i.t === "修自行车" && i.done) && items.some((i) => i.t === "买面包" && !i.done) ? null : `待办是 ${JSON.stringify(items)}`; } } },
-  // ── 10-14 additions (docs/evals/20261014-hillclimb.md): user task types rewritten onto public sites; X* are cross-site. ──
+  // ── 10-14 additions : user task types rewritten onto public sites; X* are cross-site. ──
   { id: "X2", split: "train", group: "跨站", name: "HN 第一条的原文", prompt: "打开 https://news.ycombinator.com ，打开排第一的帖子链接到的原文页面。",
     truth: async () => ({ before: (await hnItem(1)).link }),
     check: (c) => [c.truth.before, c.truth.after].some((l) => l && c.tabs.some((t) => bare(t.url) === bare(l))) ? null : `没有打开原文（应为 ${c.truth.before}）` },

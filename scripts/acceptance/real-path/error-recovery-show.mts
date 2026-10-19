@@ -1,5 +1,5 @@
 /**
- * 出错→恢复收成一行（docs/evals/20261012-error-recovery-line.md）：断网出错 → 再出错 → 恢复接着做 → 原位一行回执；
+ * 出错→恢复收成一行：断网出错 → 再出错 → 恢复接着做 → 原位一行回执；
  * 以及一轮「说做完了但有一步没做成」，「没做成」那行写人话原因，后台重启后原因还在。
  *   npx tsx scripts/acceptance/real-path/error-recovery-show.mts --headless        （OUT=/dir 可改产物目录）
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；目标核对拿到的是脚本模型的「好的。」，没有结论。

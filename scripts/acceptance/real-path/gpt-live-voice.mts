@@ -1,5 +1,5 @@
 /**
- * GPT-Live 免按键语音（docs/evals/20261009-gpt-live-voice.md）：真实隔离扩展 + 真实 GPT-Live + 真实主模型（ChatGPT 登录）。
+ * GPT-Live 免按键语音：真实隔离扩展 + 真实 GPT-Live + 真实主模型（ChatGPT 登录）。
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless                     # 闲聊、查维基、重复委派、插话
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=no-login     # 没用 ChatGPT 登录：说明原因、不连接
  *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=api-key      # 存的是 API key 而不是登录：同上

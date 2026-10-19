@@ -219,7 +219,7 @@ const MODEL_TOOL_OF: Record<string, string> = {
   close_tab: "tabs",
   clear_marks: "mark",
   // disarm_event 只在 browser_run 里组合使用，没有单独的模型工具；它和 arm_event 同属事件订阅，随 arm_event 启停。
-  // 缺这条映射时它永远算「未启用」，通用页面 JS 在所有模式下都被拒（docs/evals/20260925-sitegeist-parity.md）。
+  // 缺这条映射时它永远算「未启用」，通用页面 JS 在所有模式下都被拒。
   disarm_event: "arm_event",
   // worker_tabs 是扩展侧 RPC 名；模型可见的入口是常驻的 take_tab。
   worker_tabs: "take_tab",
@@ -235,7 +235,7 @@ export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未
 
 export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; beforeCopy?: () => Promise<(result: unknown) => void>;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 这个网址所在网站的站点笔记（这一轮还没带过时）；附在打开、跳转结果后面。 */ siteNotesFor?: (url: string) => Promise<string | null> }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
-  /** 站点笔记只给主会话（docs/evals/20261013-site-notes.md）；放在页面原文标记之外，取不到就不附。 */
+  /** 站点笔记只给主会话；放在页面原文标记之外，取不到就不附。 */
   const siteNotesAfter = async (url: string): Promise<string> => (sid ? null : await execution?.siteNotesFor?.(url).catch(() => null)) ?? "";
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
@@ -798,7 +798,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const appeared = appearedNote("appeared" in data ? data.appeared : undefined, !!effect && !effect.changed);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
-        // 用户点了「发送」后才点下去（docs/evals/20261009-send-confirm.md）。
+        // 用户点了「发送」后才点下去。
         const clicked = data.sendConfirmed ? `The user confirmed sending, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
 

@@ -1,5 +1,5 @@
 /**
- * 长会话分章节（docs/evals/20261015-conversation-chapters.md）：只装扩展的隔离无头 Chrome、真侧栏、本机脚本模型、本机练习页。
+ * 长会话分章节：只装扩展的隔离无头 Chrome、真侧栏、本机脚本模型、本机练习页。
  *   npx tsx scripts/acceptance/real-path/conversation-chapters.mts --headless
  * 路径：空闲时发第一件事 → 追问一句（只读一次页面再回答）→ 让它记住邮箱（只写记忆）→ 发第二件（模型慢慢答）→
  *   第二件还在做时插一句补充 → 发第三件 → 发第四件，第一次请求模型回 429，点「立即重试」后接着点按钮 →

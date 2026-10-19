@@ -1,7 +1,7 @@
 /**
- * 交给你（docs/evals/20261010-hand-to-user.md R1）：只装扩展的隔离无头 Chrome、真侧栏、本机账单页与本机脚本模型。
+ * 交给你：只装扩展的隔离无头 Chrome、真侧栏、本机账单页与本机脚本模型。
  * 助手填好账号名称后调用 hand_to_user 把页面交给用户；用例以用户身份填卡号并保存，点侧栏「做好了，交还」，看助手是否从这页接着领取。
- * 交给用户时圈出要填的栏和按钮（docs/evals/20261012-handoff-circle.md）：圈的读数取自扩展的隔离环境，页面脚本读不到。
+ * 交给用户时圈出要填的栏和按钮：圈的读数取自扩展的隔离环境，页面脚本读不到。
  * 第二段：再交给用户一次，用户在侧栏点停止，圈和胶囊上的「现在归你」都要收掉。
  *
  *   npx tsx scripts/acceptance/real-path/handoff.mts --headless --run=final
@@ -165,7 +165,7 @@ try {
   await until(async () => !!(await pageBar()), 10000, '胶囊出现「现在归你」');
   const shown = await card();
   check('侧栏卡写明这一步、承诺和「做好了，交还」', !!shown && String(shown.text).includes('需要你来这一步') && String(shown.text).includes(ASK) && String(shown.text).includes('交给你期间，我不读也不动这个页面。') && shown.button === '做好了，交还' && String(shown.text).includes('或点页面右边的「继续」'), shown);
-  // 光标先退场再交给用户（docs/evals/20261013-uiux-top3.md R3），胶囊会先写约 0.1 秒「正在停住」；最多等 2 秒。
+  // 光标先退场再交给用户，胶囊会先写约 0.1 秒「正在停住」；最多等 2 秒。
   const bar = await until(async () => { const v = await pageBar(); return v?.startsWith('现在归你') && v.endsWith('继续') ? v : undefined; }, 3000, '胶囊写现在归你').catch(async () => await pageBar());
   check('页面右边缘胶囊显示「现在归你 在左边填好…」和「继续」', !!bar && bar.includes(`现在归你 ${ASK}`) && bar.endsWith('继续'), bar);
   check('助手填了账号名称', (await rp.evaluate(work, 'acct.value')) === '测试账号', await rp.evaluate(work, 'acct.value'));
@@ -213,7 +213,7 @@ try {
   await until(async () => claims === 1, 30000, '助手领取了 $30');
   const first = payloads[sentBefore] ?? '';
   check('交还后第一次模型请求带重读的账单页（已保存）和原目标', first.includes('账单账号已保存') && first.includes(GOAL), { saved: first.includes('账单账号已保存'), goal: first.includes(GOAL) });
-  // R4：用户在交给期间填的卡号，交还后的读页面也不给模型（docs/evals/20261010-snapshot-privacy.md）。
+  // R4：用户在交给期间填的卡号，交还后的读页面也不给模型。
   check('交还后发给模型的内容里没有用户填的卡号', !payloads.some(p => p.includes('4242424242424242')), { leaked: payloads.filter(p => p.includes('4242424242424242')).length });
   check('网站收到一次领取', claims === 1, { claims, posts: posts.map(p => p.path) });
   await until(async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("|")')).includes('已领取 $30。'), 30000, '最终回答');

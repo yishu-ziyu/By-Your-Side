@@ -1,5 +1,5 @@
 /**
- * 按住说话在网页、后台、离屏文档之间传的消息（#125，docs/evals/20261007-ptt-dictation.md）。
+ * 按住说话在网页、后台、离屏文档之间传的消息。
  * 网页 → 后台：PttPageMessage；后台 → 离屏文档：PttCommand，回 PttReply。
  */
 import type { CardPreview } from "../../../shared/answer-cards.js";
@@ -21,8 +21,8 @@ export const isPttPageMessage = (raw: Partial<PttPageMessage> | null | undefined
   raw?.type === "ptt" && (raw.phase === "start" || raw.phase === "stop" || raw.phase === "cancel");
 
 /**
- * 网页底部胶囊现在显示什么（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）。heard 是听写出的那句话。
- * failed 带 heard：话没交给助手，可以重发；不带：没听到或听写失败。speaking：正在念这一条（docs/evals/20261007-ptt-speak.md）。
+ * 网页底部胶囊现在显示什么。heard 是听写出的那句话。
+ * failed 带 heard：话没交给助手，可以重发；不带：没听到或听写失败。speaking：正在念这一条。
  * done 的 card：回答里有卡片时，胶囊上方显示第一张的精简版（cardPreview）；没有就不显示。
  * doing 的 ack：松开后马上应的一句短确认（按原话本地取，不问模型；取消或犹豫的话为 null，不念），念的时候显示它，之后显示当前步骤。
  */

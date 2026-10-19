@@ -1,5 +1,5 @@
 /**
- * 卡片行回原页（docs/evals/20261019-card-row-source.md R1–R3）。
+ * 卡片行回原页。
  *   npx tsx scripts/acceptance/real-path/card-row-source.mts --headless
  * 开三个本机商店页（价格都写在普通 span 里；第三页同一个价写了两处），脚本模型写一张比价卡，三行各带 tab，另有一行算出来的差价。
  * 看前两行可点（京东那一行是“标价 + 运费”的算式，圈标价）、第三行和没写 tab 的差价不可点；点天猫那一行，前台换成天猫页、页面上出现圈画；重开侧栏后照样可点。

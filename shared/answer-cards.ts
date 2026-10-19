@@ -1,5 +1,5 @@
 /**
- * 回答里的卡片：解析与取数，侧栏、语音、复制共用（docs/evals/20261014-answer-cards.md）。
+ * 回答里的卡片：解析与取数，侧栏、语音、复制共用。
  * 侧栏怎么画在 extension/src/sidepanel/answer-cards.ts；模型怎么写在 agent/src/prompt.ts 的「Answer cards」一节。
  *
  * - 只认代码块以外的 <card>…</card>；写到一半的组件不算，只记下它开了头（pending），侧栏据此放空位。
@@ -24,7 +24,7 @@ export type Cell = { value: string; expr?: string; unit?: string };
 
 export type Block =
   | { kind: "inputs"; items: CardInput[] }
-  /** 助手当场写的小程序（实验功能，docs/evals/20261019-mini-apps.md）：整段网页原文，侧栏放进不联网的沙箱里运行。 */
+  /** 助手当场写的小程序：整段网页原文，侧栏放进不联网的沙箱里运行。 */
   | { kind: "app"; title: string; html: string }
   | { kind: "fields"; items: CardField[] }
   | { kind: "stats"; items: Stat[] }

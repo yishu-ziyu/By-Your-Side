@@ -1,5 +1,5 @@
 /**
- * 填写要像真人敲键盘：只认真实键盘输入的网站也收得到，填完回车能提交（docs/evals/20261014-fill-typing.md）。
+ * 填写要像真人敲键盘：只认真实键盘输入的网站也收得到，填完回车能提交。
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/fill-typing.mts --headless
  * 练习页三个框，判据只看网站自己收到的内容（服务器记下的 /hit）：

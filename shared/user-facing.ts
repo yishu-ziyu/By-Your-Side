@@ -80,7 +80,7 @@ export function describeModelError(raw: string): ModelErrorCopy | null {
   const text = raw.slice(head[0].length);
 
   const described = classifyModelError(text, model);
-  // 哪个模型出的错写在「技术详情」里（docs/evals/20261004-model-failover.md F3），正文不出现内部的模型名。
+  // 哪个模型出的错写在「技术详情」里，正文不出现内部的模型名。
   const result: ModelErrorCopy = { ...described, detail: model ? `${text} · ${model}` : text };
 
   if (model) result.model = model;

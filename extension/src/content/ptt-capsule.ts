@@ -5,10 +5,10 @@ import { OVERLAY_ATTR, OVERLAY_KIND_PTT_CAPSULE } from '../shared/overlay.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttCapsuleAction } from '../shared/ptt.js';
 
 /**
- * 按住说话的网页底部胶囊（#125 第 2 步，docs/evals/20261007-ptt-capsule.md）。
+ * 按住说话的网页底部胶囊。
  * 光球旁只放一个状态词：在听 / 听写中 / 正在做 / 等你 / 结果 / 已中止 / 没做成。按住、听写中由按键直接驱动；
  * 之后的内容都由后台按真实事件推来。shadow root 关着，网页读不到听写的话；data-phase / data-speaking 只给验收看现在是哪一步。
- * 念结果时（docs/evals/20261007-ptt-speak.md）光球是在说的样子，念完才开始倒计时收起；念的时候 Esc 只停声音。
+ * 念结果时光球是在说的样子，念完才开始倒计时收起；念的时候 Esc 只停声音。
  * 结果带卡片时，胶囊上方长出一张同材质、同宽的精简卡片（标题 + 最多 3 行），和胶囊一起出现、一起收起。
  */
 
