@@ -17,6 +17,7 @@ import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
 import { createReadAloud } from './read-aloud.js';
+import { syncColorTone } from '../shared/color-tone.js';
 
 const HOST = 'data-sideagent-ask';
 
@@ -168,6 +169,7 @@ function boot(): void {
   const host = document.createElement('div');
   host.setAttribute(HOST, '1');
   host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483645';
+  syncColorTone(host);
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <div class="link" hidden></div>

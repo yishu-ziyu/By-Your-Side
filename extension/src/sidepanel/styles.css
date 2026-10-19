@@ -27,32 +27,32 @@
   --gap-block: var(--s-3);
   --pad-x: var(--s-4);
 
-  /* 奶油同一色相（hue 88）。预览 wallpaper 彩度 0.010 偏黄，这里降到 0.0055。 */
-  --wallpaper: oklch(0.980 0.0055 88);
-  --chrome-frame: oklch(0.992 0.002 88);
+  /* 墨蓝同一色相（hue 255）：从 1% 极浅蓝白底到 90% 深蓝墨字全部带同一蓝调基底。 */
+  --wallpaper: #f3f6fb;
+  --chrome-frame: #f8fafe;
   --glass-surface: var(--wallpaper);
-  --glass-surface-elevated: oklch(0.996 0.0015 88);
-  --glass-border: rgb(20 20 19 / 0.10);
-  --glass-border-subtle: rgb(20 20 19 / 0.06);
+  --glass-surface-elevated: #fbfcfe;
+  --glass-border: rgb(15 23 42 / 0.10);
+  --glass-border-subtle: rgb(15 23 42 / 0.06);
   --glass-specular: 0 0 0 transparent;
-  --glass-shadow: 0 3px 14px rgba(20, 20, 19, .04);
+  --glass-shadow: 0 3px 14px rgba(15, 23, 42, .04);
   --glass-blur: none;
 
-  --content-bg: oklch(0.996 0.0015 88);
-  --content-subtle: oklch(0.962 0.0055 88);
-  --content-subtle-hover: oklch(0.950 0.0065 88);
-  --content-border: rgb(20 20 19 / 0.07);
+  --content-bg: #fbfcfe;
+  --content-subtle: #e9eef7;
+  --content-subtle-hover: #dfe6f2;
+  --content-border: rgb(15 23 42 / 0.08);
   --well: var(--content-subtle);
-  --well-outline: rgb(0 0 0 / 0.05);
+  --well-outline: rgb(15 23 42 / 0.06);
   --well-highlight: rgb(255 255 255 / 0.9);
 
-  /* 文字色彩层级 (Apple HIG) */
-  --text-primary: #141413;
-  --text-secondary: #5f5e58;
-  --text-tertiary: #77756d;
-  --text-quaternary: #b0aea5;
+  /* 文字色彩层级（50%–90% 蓝调色阶） */
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-quaternary: #94a3b8;
   /* 光球专用墨色：比 text-secondary 深一档。球是细线，用次要色会被 alpha 稀释到看不清。 */
-  --orb-ink: #454139;
+  --orb-ink: #334155;
 
   /* 兼容既有 token */
   --bg: var(--wallpaper);
@@ -82,16 +82,16 @@
 
   /* 思考标签与选择器 (亮色高对比度清晰紫/灰/蓝，杜绝泛白泥浆) */
   --chip-active-bg: var(--content-bg);
-  --btn-border-hover: rgba(0, 0, 0, 0.14);
-  --popover-shadow: 0 10px 28px rgba(20, 20, 19, .1);
+  --btn-border-hover: rgba(15, 23, 42, 0.15);
+  --popover-shadow: 0 10px 28px rgba(15, 23, 42, .10);
 
   /* 动效时长和曲线见 motion-tokens.css（--d-* / --e-*）。 */
   --radius-dock: var(--r-shape);
   --card-padding: var(--s-1);
   --radius-inner: var(--s-2);
   --radius-card: calc(var(--radius-inner) + var(--card-padding));
-  --sh-1: 0 2px 8px rgba(20, 20, 19, .03);
-  --sh-2: 0 3px 8px rgba(20, 20, 19, .04), 0 12px 32px rgba(20, 20, 19, .06);
+  --sh-1: 0 2px 8px rgba(15, 23, 42, .03);
+  --sh-2: 0 3px 8px rgba(15, 23, 42, .04), 0 12px 32px rgba(15, 23, 42, .06);
   --radius-pill: var(--r-pill);
   --radius: var(--r);
   --radius-sm: var(--r);
@@ -100,36 +100,59 @@
   --mono: "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* 暖纸色阶（hue 88）：用户在设置里选「暖纸」时切换整套 1%–90% 底色与墨色。 */
+:root[data-tone="warm"] {
+  --wallpaper: oklch(0.980 0.0055 88);
+  --chrome-frame: oklch(0.992 0.002 88);
+  --glass-surface-elevated: oklch(0.996 0.0015 88);
+  --glass-border: rgb(20 20 19 / 0.10);
+  --glass-border-subtle: rgb(20 20 19 / 0.06);
+  --glass-shadow: 0 3px 14px rgba(20, 20, 19, .04);
+  --content-bg: oklch(0.996 0.0015 88);
+  --content-subtle: oklch(0.962 0.0055 88);
+  --content-subtle-hover: oklch(0.950 0.0065 88);
+  --content-border: rgb(20 20 19 / 0.07);
+  --well-outline: rgb(0 0 0 / 0.05);
+  --text-primary: #141413;
+  --text-secondary: #5f5e58;
+  --text-tertiary: #77756d;
+  --text-quaternary: #b0aea5;
+  --orb-ink: #454139;
+  --popover-shadow: 0 10px 28px rgba(20, 20, 19, .1);
+  --sh-1: 0 2px 8px rgba(20, 20, 19, .03);
+  --sh-2: 0 3px 8px rgba(20, 20, 19, .04), 0 12px 32px rgba(20, 20, 19, .06);
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
-    --wallpaper: #211f1b;
+    --wallpaper: #131924;
 
-    --glass-surface: #211f1b;
-    --glass-surface-elevated: #2b2822;
-    --glass-border: #484237;
-    --glass-border-subtle: #3a352d;
+    --glass-surface: #131924;
+    --glass-surface-elevated: #1b2332;
+    --glass-border: #2e3b52;
+    --glass-border-subtle: #243044;
     --glass-specular: 0 0 0 transparent;
     --glass-shadow: 0 3px 14px rgba(0,0,0,.12);
     --glass-blur: none;
-    --chrome-frame: #1f1f1f;
+    --chrome-frame: #111722;
 
-    --content-bg: #2b2822;
-    --content-subtle: #353027;
-    --content-subtle-hover: #40392e;
-    --content-border: #484237;
+    --content-bg: #1b2332;
+    --content-subtle: #232d40;
+    --content-subtle-hover: #2b374f;
+    --content-border: #2e3b52;
     --well: var(--content-subtle);
     --well-outline: rgb(255 255 255 / 0.06);
     --well-highlight: rgb(255 255 255 / 0.06);
 
-    --text-primary: #eee9df;
-    --text-secondary: #bbb3a5;
-    --text-tertiary: #a69d8f;
-    --text-quaternary: #6e6659;
+    --text-primary: #e6ecf5;
+    --text-secondary: #a9b6ca;
+    --text-tertiary: #8896ab;
+    --text-quaternary: #58667a;
     /* 深色下同理往亮的一侧挪一档，否则球会糊进背景 */
-    --orb-ink: #d8cfc0;
+    --orb-ink: #c8d3e3;
 
-    --apple-blue: #d6aa83;
-    --apple-blue-soft: rgba(214,170,131,.1);
+    --apple-blue: #7aa2f7;
+    --apple-blue-soft: rgba(122,162,247,.12);
     --apple-green: #82b88e;
     --apple-red: #eb9284;
 
@@ -137,6 +160,32 @@
     --chip-active-bg: var(--content-bg);
     --btn-border-hover: rgba(255, 255, 255, 0.2);
     --popover-shadow: 0 10px 28px rgba(0,0,0,.24);
+  }
+
+  :root[data-tone="warm"] {
+    --wallpaper: #211f1b;
+    --glass-surface: #211f1b;
+    --glass-surface-elevated: #2b2822;
+    --glass-border: #484237;
+    --glass-border-subtle: #3a352d;
+    --glass-shadow: 0 3px 14px rgba(0,0,0,.12);
+    --chrome-frame: #1f1f1f;
+    --content-bg: #2b2822;
+    --content-subtle: #353027;
+    --content-subtle-hover: #40392e;
+    --content-border: #484237;
+    --well-outline: rgb(255 255 255 / 0.06);
+    --well-highlight: rgb(255 255 255 / 0.06);
+    --text-primary: #eee9df;
+    --text-secondary: #bbb3a5;
+    --text-tertiary: #a69d8f;
+    --text-quaternary: #6e6659;
+    --orb-ink: #d8cfc0;
+    --apple-blue: #d6aa83;
+    --apple-blue-soft: rgba(214,170,131,.1);
+    --popover-shadow: 0 10px 28px rgba(0,0,0,.24);
+    --sh-1: 0 2px 8px rgba(0, 0, 0, .14);
+    --sh-2: 0 3px 8px rgba(0, 0, 0, .18), 0 12px 32px rgba(0, 0, 0, .24);
   }
 }
 
