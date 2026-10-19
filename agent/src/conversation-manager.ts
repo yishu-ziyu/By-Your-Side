@@ -877,9 +877,10 @@ return { kind: "silent" };}
 
     if(!session?.nameTask||!snap.runId||!snap.goal)return;
     const runId=snap.runId,goal=snap.goal;
+    // 导航先到地址、后补标题：网站集合没变但标题刚补上时也要重起，所以键里带上「这个网站有没有标题」。
     const hosts=[...new Set(pages.flatMap(page=>{const host=memoryHostOfUrl(page.url);
 
-return host?[host]:[];}))].sort();
+return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)===host)?'+':''}`]:[];}))].sort();
     const key=`${runId}|${hosts.join(',')}`;
     const state=this.taskNames.get(id);
 
