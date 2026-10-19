@@ -2297,6 +2297,13 @@ function attachPanel(port: chrome.runtime.Port) {
           break;
         }
 
+        if (client.type === "warm_up") {
+          void attachPageContext({ type: "user_message", text: "", context: client.context }).then((enriched) => {
+            uplink.sendClientMessage({ ...client, ...(enriched.context ? { context: enriched.context } : {}) });
+          });
+          break;
+        }
+
         uplink.sendClientMessage(client);
         break;
       }
