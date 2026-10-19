@@ -10,8 +10,9 @@ requireHeadless();
 const fixtures = [
   { title: "供应商列表", html: '<h1>供应商列表</h1>' + Array.from({ length: 10 }, (_, i) => `<div><h2>供应商${i}</h2><span>北京 · 设备供应</span></div>`).join(""), expected: ["整理供应商", "对比供应商", "概括这一页"] },
   { title: "招聘职位", html: '<h1>招聘职位</h1>' + Array.from({ length: 8 }, (_, i) => `<div><h2>产品经理${i}</h2><span>上海 · 三年以上经验</span></div>`).join(""), expected: ["整理招聘职位", "比较职位要求", "概括这一页"] },
-  { title: "Why evaluations matter", html: '<h1>Why evaluations matter</h1>' + '<p>An evaluation connects expected outcomes with observed behavior. Define the expected outcome before measuring the result.</p>'.repeat(4), expected: ["翻译成中文", "提炼文章要点", "概括这一页"] },
+  { title: "Why evaluations matter", html: '<h1>Why evaluations matter</h1>' + '<p>An evaluation connects expected outcomes with observed behavior. Define the expected outcome before measuring the result.</p>'.repeat(4), expected: ["翻译成中文", "这篇在论证什么", "提炼文章要点"] },
 ];
+const DEFAULTS = ["概括这一页", "列出关键信息", "这页能帮我做什么"];
 let mutations = 0;
 const site = createServer((req, res) => {
   if (req.method !== "GET") mutations++;
@@ -36,16 +37,24 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   const config = await configureViaSettings(rp, panel, { providerId: "custom", modelId: "fixture", credential: { type: "api_key", key: "local-fixture" } }, { baseUrl: model.baseUrl });
   await rp.cdp.send("Target.closeTarget", { targetId: config.settingsTargetId });
-  // 按钮里还有「只读 / 会改页面」标签和悬停说明（#350），这里只比建议名。
-  const read = () => rp.evaluate(panel, '({labels:[...document.querySelectorAll("#starter-actions button")].map(b=>b.querySelector(".starter-chip-label")?.textContent??b.textContent),draft:document.querySelector("#input").value,users:document.querySelectorAll(".msg.user").length})');
-  const requestsBefore = model.requests.length;
+  // 按钮里还有「会改页面」标签和悬停说明（#350），建议名单独比；只读的不该挂任何标签。
+  const read = () => rp.evaluate(panel, `({labels:[...document.querySelectorAll("#starter-actions button")].map(b=>b.querySelector(".starter-chip-label")?.textContent??b.textContent),
+    tags:[...document.querySelectorAll("#starter-actions .starter-chip-tag")].map(t=>t.textContent),
+    title:document.querySelector("#starter-title").textContent,sub:document.querySelector("#starter-sub").textContent,
+    ways:[...document.querySelectorAll("#starter-ways .starter-way")].filter(w=>w.getClientRects().length).map(w=>w.textContent.replace(/\\s+/g," ").trim()),
+    draft:document.querySelector("#input").value,users:document.querySelectorAll(".msg.user").length})`);
   for (const [i, c] of fixtures.entries()) {
     await rp.cdp.send("Page.navigate", { url: `${origin}/${i}` }, work);
     await until(async () => await rp.evaluate(work, `document.title===${JSON.stringify(c.title)}`) || undefined, 10_000, "fixture loaded");
     await sleep(700);
     const state = await read(); evidence.push({ title: c.title, state });
     await rp.screenshot(panel, join(out, `${i}.png`));
-    assert.deepEqual(state.labels, c.expected, "page-specific suggestions match the approved preview, summary stays last");
+    assert.deepEqual(state.labels, c.expected, "page-specific suggestions first, filled to three");
+    assert.ok(!state.tags.includes("只读"), "read-only suggestions carry no 只读 tag");
+    assert.equal(state.title, "这一页能帮你做什么");
+    assert.equal(state.sub, `正在看：${c.title}`);
+    // 有草稿时整个起点区收起，只在空草稿那一页数看得见的提示。
+    if (!state.draft) assert.equal(state.ways.length, 3, "the three on-page ways to ask are visible");
     if (i === 0) {
       await rp.click(panel, "#starter-actions button:first-child");
       const drafted = await read();
@@ -62,15 +71,18 @@ try {
   // 真实页面主线程忙，结构探测排队；侧栏不能跟着等，也不能采用晚到的旧结果。
   const started = Date.now();
   const navigating = rp.cdp.send("Page.navigate", { url: `${origin}/slow` }, second);
-  await until(async () => { const s = await read(); return s.labels.length === 1 && s.labels[0] === "概括这一页" ? s : undefined; }, 1900, "slow renderer falls back within the page-probe budget", 30);
+  await until(async () => { const s = await read(); return s.labels.join() === DEFAULTS.join() ? s : undefined; }, 1900, "slow renderer falls back within the page-probe budget", 30);
   const fallbackMs = Date.now() - started; await navigating; await sleep(2400);
-  assert.deepEqual((await read()).labels, ["概括这一页"], "late probes do not restore old suggestions");
+  assert.deepEqual((await read()).labels, DEFAULTS, "late probes do not restore old suggestions");
   evidence.push({ slowRendererFallbackMs: fallbackMs });
   await rp.cdp.send("Page.navigate", { url: "chrome://version/" }, second);
-  await until(async () => { const s = await read(); return s.labels.length === 1 && s.labels[0] === "概括这一页" ? s : undefined; }, 3000, "restricted page falls back without waiting for a model");
-  assert.equal(model.requests.length, requestsBefore, "generating and drafting suggestions calls no model");
+  await until(async () => { const s = await read(); return s.labels.join() === DEFAULTS.join() ? s : undefined; }, 3000, "restricted page falls back without waiting for a model");
+  // 建议名和上一页（等待页的通用建议）一样，所以单独等标题退回通用的一句。
+  await until(async () => (await read()).title === "说说你想完成什么" || undefined, 3000, "without a readable page the heading goes generic");
+  // 点建议会让输入框获得焦点，焦点会预热一次提示缓存（真的发一次模型请求），所以不数请求，只看有没有开始任务。
+  assert.equal(await rp.evaluate(panel, 'document.querySelectorAll(".msg.user, .msg.assistant").length'), 0, "generating and drafting suggestions starts no task");
   assert.equal(mutations, 0, "no page writes or task requests");
-  evidence.push({ final: await read(), modelRequestsAdded: model.requests.length - requestsBefore, mutations });
+  evidence.push({ final: await read(), mutations });
 } catch (caught) { error = caught instanceof Error ? caught.stack ?? caught.message : String(caught); }
 finally {
   await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, error }, null, 2));

@@ -98,6 +98,9 @@ try {
   await sleep(600);
   const primary = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .answer-primary")].at(-1)?.textContent.trim() ?? ""`);
   check("表格回答的主动作是复制为表格", String(primary).replace("↵", "").trim() === "复制为表格", primary);
+  // 三轮都带上同一条过往任务：「按上次做过的…」只在第一处挂出；上一轮撤不回的恢复按钮不留灰字。
+  const tidy = await rp.evaluate(panel, `({ usedLines: [...document.querySelectorAll("#messages .memory-used-toggle")].filter(e => e.getClientRects().length).map(e => e.textContent.trim()), stale: document.querySelector("#messages").innerText.includes("恢复记录已失效") })`) as { usedLines: string[]; stale: boolean };
+  check("同样的「按上次做过的」只挂一次，不留「恢复记录已失效」", tidy.usedLines.length === 1 && !tidy.stale, tidy);
   await rp.click(panel, "#messages");
   await key("k", "KeyK", 75, 2);
   await sleep(300);
