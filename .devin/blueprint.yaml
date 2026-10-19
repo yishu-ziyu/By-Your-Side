@@ -32,5 +32,8 @@ initialize:
   - uses: github.com/actions/setup-node@v4
     with:
       node-version: "24"
+  # Same command name as the Linux image, so acceptance scripts need no per-platform Chrome path.
+  - name: google-chrome on PATH
+    run: ln -sf "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" /opt/homebrew/bin/google-chrome
 maintenance: |
   npm install

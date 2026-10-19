@@ -39,6 +39,8 @@ const NODES: Node[] = [
     chrome: "/opt/chrome-for-testing/chrome-linux64/chrome" },
   { name: "devin", kind: "drs", weight: 3, jobs: 4, devinId: "100916ca2fd74266b2080741d2952ca7",
     dir: "~/repos/By-Your-Side", chrome: "google-chrome" },
+  { name: "devin-mac", kind: "drs", weight: 3, jobs: 4, devinId: "9e409382c3cf4f709de662f933c2ff47",
+    dir: "~/repos/By-Your-Side", chrome: "google-chrome" },
   { name: "grokbox", kind: "ssh", weight: 2, jobs: 2, host: "box@100.124.81.45", dir: "/home/box/bys",
     chrome: "/home/box/.cache/ms-playwright/chromium-*/chrome-linux*/chrome" },
 ];
@@ -205,7 +207,7 @@ async function syncNode(node: Node): Promise<boolean> {
       // macOS tar 默认把扩展属性打成 ._* 文件，远端 run-all 会把它们当成用例名；顺手清掉以前推过去的。
       const pre = clean
         ? `mkdir -p ${dst} && rm -rf ${dst}/* ${dst}/.[!.]* ; `
-        : `mkdir -p ${dst} && find ${dst} -name '._*' -delete ; `;
+        : `mkdir -p ${dst} && find ${dst} -name "._*" -delete ; `;
       const pack = clean
         ? "tar -cz ."
         : "tar -cz --exclude=extension/dist scripts agent shared extension eval/harness package.json package-lock.json";
