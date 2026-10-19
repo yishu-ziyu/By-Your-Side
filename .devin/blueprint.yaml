@@ -26,13 +26,11 @@ knowledge:
     contents: |
       # google-chrome --user-data-dir=<profile> --load-extension=extension/dist --remote-debugging-port=<port>; open side panel with Ctrl+Shift+Y; settings at chrome-extension://<id>/settings.html
 ---
-# macOS: real-site evals run on Mac Chrome, closer to the user's daily setup.
+# macOS: acceptance runs on the image's branded Google Chrome, the same build users have.
 runs-on: macos
 initialize:
   - uses: github.com/actions/setup-node@v4
     with:
       node-version: "24"
-# Branded Chrome ignores --load-extension; the acceptance harness finds Playwright's Chrome for Testing on its own.
 maintenance: |
   npm install
-  npx playwright install chromium

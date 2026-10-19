@@ -428,8 +428,6 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     "--enable-unsafe-extension-debugging",
     `--user-data-dir=${dirs.profile}`,
     "--remote-debugging-port=0",
-    `--disable-extensions-except=${dirs.extension}`,
-    `--load-extension=${dirs.extension}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--window-size=1280,900",
@@ -443,6 +441,12 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
   // open -W 一直等到 Chrome 退出，所以这个进程的退出就是 Chrome 的退出；kill 要按配置目录找到真正的 Chrome 进程。
   const openBackgroundWindow = async (cdp: ReturnType<typeof createCdp>) => {
     if (headed && process.platform === "darwin") await cdp.send("Target.createTarget", { url: "about:blank", newWindow: true, background: true });
+  };
+  // 正式版 Chrome 忽略 --load-extension，只能经调试协议装入（需要 --enable-unsafe-extension-debugging）；
+  // --disable-extensions-except 会把这样装入的扩展也禁掉，所以不带。重启后再装一次，同一路径同一 id。
+  const loadExtension = async (cdp: ReturnType<typeof createCdp>) => {
+    const loaded = (await cdp.send("Extensions.loadUnpacked", { path: dirs.extension })).id;
+    if (loaded !== id) throw new Error(`扩展装入后 id 不符：${loaded} ≠ ${id}`);
   };
   const spawnChrome = () => {
     if (!headed || process.platform !== "darwin") return spawn(resolveChrome(), chromeArgsFor(), { stdio: ["ignore", "ignore", "pipe"], env });
@@ -490,6 +494,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
     cdp = createCdp(version.webSocketDebuggerUrl);
     await cdp.ready();
+    await loadExtension(cdp);
     await openBackgroundWindow(cdp);
   } catch (error) {
     chrome.kill("SIGKILL");
@@ -548,6 +553,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
       const next = await fetchJson(`http://127.0.0.1:${nextPort}/json/version`);
       cdp = createCdp(next.webSocketDebuggerUrl);
       await cdp.ready();
+      await loadExtension(cdp);
       await openBackgroundWindow(cdp);
       Object.assign(result, { cdp, ...browserControls(cdp, id) });
     },

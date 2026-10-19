@@ -39,9 +39,8 @@ const NODES: Node[] = [
     chrome: "/opt/chrome-for-testing/chrome-linux64/chrome" },
   { name: "devin", kind: "drs", weight: 3, jobs: 4, devinId: "100916ca2fd74266b2080741d2952ca7",
     dir: "~/repos/By-Your-Side", chrome: "google-chrome" },
-  // 不设 chrome：macOS 上由 harness 自己找 Playwright 装的 Chrome for Testing。
   { name: "devin-mac", kind: "drs", weight: 3, jobs: 4, devinId: "9e409382c3cf4f709de662f933c2ff47",
-    dir: "~/repos/By-Your-Side" },
+    dir: "~/repos/By-Your-Side", chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" },
   { name: "grokbox", kind: "ssh", weight: 2, jobs: 2, host: "box@100.124.81.45", dir: "/home/box/bys",
     chrome: "/home/box/.cache/ms-playwright/chromium-*/chrome-linux*/chrome" },
 ];
@@ -141,12 +140,12 @@ function sshRun(node: Node, cmd: string): Promise<{ code: number | null; out: st
 // 远端跑分片：定位 Chrome → 跑 run-all --only → 把当轮 summary JSON 打在标记后。
 function remoteCmd(node: Node, names: string[]): string {
   const dir = node.dir!;
-  const chromeExpr = !node.chrome ? undefined
-    : node.chrome.includes("*") ? `$(ls -d ${node.chrome} 2>/dev/null | head -1)`
-    : node.chrome.startsWith("/") ? node.chrome : `$(command -v ${node.chrome})`;
+  const chromeExpr = node.chrome!.includes("*")
+    ? `$(ls -d ${node.chrome} 2>/dev/null | head -1)`
+    : node.chrome!.startsWith("/") ? node.chrome! : `$(command -v ${node.chrome})`;
   return [
     `cd ${dir}`,
-    ...(chromeExpr ? [`export EGO_ACCEPTANCE_CHROME=${chromeExpr}`] : []),
+    `export EGO_ACCEPTANCE_CHROME="${chromeExpr}"`,
     `export SIDEAGENT_ACCEPTANCE_DIST=${dir}/.shard-dist`,
     // 先清掉旧 summary，避免 run-all 提前退出时误读上一轮结果。
     // run-all 有用例失败时 exit 1，summary 必须无条件打印，所以这一段用分号不用 &&。
