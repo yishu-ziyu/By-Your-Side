@@ -438,7 +438,10 @@ export function patchAnswer(root: HTMLElement, html: string): void {
   next.innerHTML = html;
   keepOpenedImages(next.content, root);
   const shown = root.childNodes.length > 0;
-  const kept = [...root.children].filter((el) => el.classList.contains("gen-card"));
+  const kept = [...root.children].filter((el) => el.classList.contains("gen-card") && !el.classList.contains("send-declined-card"));
+  const trailing = [...root.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el.matches(".answer-actions, .answer-panel, .send-declined-card"));
+  const memoryCite = root.querySelector<HTMLElement>(":scope > .memory-used-cite-row > .memory-used-toggle, :scope > * > .memory-used-toggle");
+  const memoryLine = root.querySelector<HTMLElement>(":scope > .memory-used-line");
   const want: Node[] = [];
   let k = 0;
 
@@ -467,15 +470,32 @@ export function patchAnswer(root: HTMLElement, html: string): void {
   // 重画会把发送按钮的字和能不能点抄回模型写的样子，按表单现在的状态再定一次。
   for (const card of kept) if (card instanceof HTMLElement && card.querySelector(".gc-field")) refreshForm(card);
 
-  // 先删掉不再要的，再按顺序插入新的：留下的卡片在文档里不移动。
-  for (const node of [...root.childNodes]) if (!want.includes(node)) node.remove();
-  let at = root.firstChild;
+  // 先删掉不再要的正文节点（保留尾部操作栏与拒绝发送卡），再按顺序插入新的：留下的卡片在文档里不移动。
+  for (const node of [...root.childNodes]) {
+    if (!want.includes(node) && !(node instanceof HTMLElement && trailing.includes(node))) node.remove();
+  }
+  const tailAnchor = trailing[0] ?? null;
+  let at: ChildNode | null = root.firstChild;
 
   for (const node of want) {
-    if (node === at) { at = at.nextSibling;
+    if (at && at instanceof HTMLElement && trailing.includes(at)) at = tailAnchor;
+    if (node === at) { at = at.nextSibling; continue; }
+    root.insertBefore(node, at ?? tailAnchor);
+  }
 
- continue; }
-    root.insertBefore(node, at);
+  // 若重画前挂着「用了 N 条记忆 ›」引用按钮与展开条，重画正文后原地保留在首段，无需外层再手动搬回。
+  if (memoryCite && memoryLine) {
+    const first = [...root.children].find(el => !trailing.includes(el as HTMLElement));
+    let head: HTMLElement;
+    if (first instanceof HTMLElement && /^(P|H[1-6])$/.test(first.tagName)) {
+      head = first;
+    } else {
+      head = document.createElement("p");
+      head.className = "memory-used-cite-row";
+      root.insertBefore(head, first ?? tailAnchor);
+    }
+    head.append(memoryCite);
+    head.after(memoryLine);
   }
 }
 

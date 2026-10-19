@@ -245,7 +245,7 @@ export class DurableAgentLoop implements AgentLoop {
   async warmPromptCache(next: { toolNames: readonly string[]; systemPrompt: (base: string) => string }): Promise<"sent" | "skipped" | "aborted" | "error"> {
     await this.ready;
     const harness = this.harness, conversation = this.conversation, model = this.modelRef;
-    if (!harness || !conversation || !model || this.busy || this.warming || Date.now() - this.modelCalledAt < PROMPT_WARM_FRESH_MS) return "skipped";
+    if (!harness || !conversation || !model || model.provider !== "openai-codex" || this.busy || this.warming || Date.now() - this.modelCalledAt < PROMPT_WARM_FRESH_MS) return "skipped";
     const warming = new AbortController();
     const warm: { startedAt: number; endedAt?: number; outcome: string } = { startedAt: Date.now(), outcome: "running" };
     this.warming = warming;
