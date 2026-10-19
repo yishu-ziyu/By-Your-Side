@@ -5,7 +5,7 @@
  * 规则先按用户自己的消息挑：从后往前第一条匹配关键词的那条；同一任务里它之后已收到几条工具结果，就走到第几步。
  * 产品插进对话的上下文段（开头是 agent/src/pi-agent-loop.ts 和 agent/src/product-context.ts 写的两种「不是用户消息」）
  * 只在用户的消息一条都不匹配时才参与挑选。
- * 不匹配的请求（产品内部的判断、翻译等）回一句「好的。」。每次请求记下相对启动的毫秒数，供耗时判据使用。
+ * 不匹配的请求（产品内部的判断、翻译等）回一句「好的。」；任务起名回「起名 N 站」。每次请求记下相对启动的毫秒数，供耗时判据使用。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { siteAddress, type JsonRecord } from "./harness.mts";
@@ -207,6 +207,18 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
       } finally {
         translating -= 1;
       }
+
+      return;
+    }
+
+    // 任务起名（agent/src/session.ts nameTask）：按碰过几个网站回名字，用例据此看标签组名跟着网站变；不计入 requests，不打乱各用例按规则数请求。
+    if (messages.some((m) => m.role === "system" && textOf(m.content).startsWith("Name a browser task"))) {
+      // SAFETY: 产品的起名请求体是 {task, pages:[{site, title}]}。
+      const input = JSON.parse(textOf(messages.find((m) => m.role === "user")?.content)) as { pages: Array<{ site: string }> };
+      const step = { text: JSON.stringify({ title: `起名 ${new Set(input.pages.map((p) => p.site)).size} 站` }) };
+
+      if (payload.stream === false) json(res, step, `call_${++calls}`);
+      else await stream(res, step, `call_${++calls}`);
 
       return;
     }
