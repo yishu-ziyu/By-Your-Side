@@ -3,11 +3,12 @@
  * writeFile、appendFile、truncateFile、flushFile、renameFile、remove）。这里用 OPFS（扩展自己的私有文件区）实现这部分，
  * 其余方法回 not_supported。
  *
- * OPFS 在文档里只有异步写入：createWritable() 写到临时副本，close() 时整体换上，所以每次 append 都会复制整个文件。
- * 同一路径的写入按顺序排队，否则两个并发 append 各自从旧副本开始，后关的会盖掉先关的。
+ * 写入交给 opfs-worker 原地写：页面里只有 createWritable()，它每次 close() 都复制整个文件，对话越长每次写越慢。
+ * 同一路径的读写按顺序排队，否则读到写了一半的文件，或 rename 撞上 Worker 还开着的句柄。
  */
 import type { Context } from "@earendil-works/chord";
 import { err, FileError, ok, type FileInfo, type FileSystem, type Result } from "@earendil-works/pi-durable/env";
+import type { OpfsWorkerRequest, OpfsWorkerResponse } from "./opfs-worker.js";
 
 type R<T> = Promise<Result<T, FileError>>;
 
@@ -39,18 +40,38 @@ export function createOpfsFileSystem(): FileSystem {
     const name = segments.pop()!;
     return (await dir(segments, create)).getFileHandle(name, { create });
   };
-  const write = (path: string, mutate: (w: FileSystemWritableFileStream, size: number) => Promise<void>, keep: boolean): R<void> =>
+  let worker: Worker | undefined;
+  let nextId = 0;
+  const pending = new Map<number, (response: OpfsWorkerResponse) => void>();
+  const write = (path: string, request: Omit<OpfsWorkerRequest, "id" | "path">): R<void> =>
     serial(path, async () => {
-      try {
-        const handle = await file(path, true);
-        const size = (await handle.getFile()).size;
-        const writable = await handle.createWritable({ keepExistingData: keep });
-        await mutate(writable, size);
-        await writable.close();
-        return ok(undefined);
-      } catch (error) {
-        return fromDom(error, path);
+      if (!worker) {
+        worker = new Worker(chrome.runtime.getURL("opfs-worker.js"), { type: "module" });
+        worker.onmessage = (event: MessageEvent<OpfsWorkerResponse>) => {
+          pending.get(event.data.id)?.(event.data);
+          pending.delete(event.data.id);
+        };
+        // Worker 加载失败时不会回消息；不收尾的话这一路径的保存和后面排队的读写都会一直挂着，整个对话卡住。
+        worker.onerror = (event) => {
+          for (const [id, resolve] of pending) resolve({ id, error: { name: "Error", message: `opfs worker: ${event.message}` } });
+          pending.clear();
+          worker?.terminate();
+          worker = undefined;
+        };
       }
+      const id = ++nextId;
+      const response = await new Promise<OpfsWorkerResponse>((resolve) => {
+        pending.set(id, resolve);
+        worker!.postMessage({ id, path, ...request } satisfies OpfsWorkerRequest);
+        // 只让这一次失败，不终止 Worker：它是所有会话共用的，别的会话可能正写到一半。
+        setTimeout(() => {
+          pending.get(id)?.({ id, error: { name: "Error", message: `opfs worker: no reply to ${request.op} ${path}` } });
+          pending.delete(id);
+        }, 15_000);
+      });
+      if (!response.error) return ok(undefined);
+      console.error("[sideagent] opfs", request.op, path, response.error.name, response.error.message);
+      return fromDom(response.error, path);
     });
   const bytes = (content: string | Uint8Array) => (typeof content === "string" ? new TextEncoder().encode(content) : content);
   const unsupported = async () => fail<never>("not_supported", "not supported by the OPFS experiment file system");
@@ -83,10 +104,10 @@ export function createOpfsFileSystem(): FileSystem {
     readTextFile: (path: string): R<string> => serial(path, async () => {
       try { return ok(await (await (await file(path, false)).getFile()).text()); } catch (error) { return fromDom(error, path); }
     }),
-    writeFile: (path: string, content: string | Uint8Array) => write(path, (w) => w.write(bytes(content) as BufferSource), false),
-    appendFile: (path: string, content: string | Uint8Array) => write(path, async (w, size) => { await w.seek(size); await w.write(bytes(content) as BufferSource); }, true),
-    truncateFile: (path: string, size: number) => write(path, (w) => w.truncate(size), true),
-    // close() 已把数据交给浏览器；OPFS 没有更强的落盘保证可要。
+    writeFile: (path: string, content: string | Uint8Array) => write(path, { op: "write", data: bytes(content) }),
+    appendFile: (path: string, content: string | Uint8Array) => write(path, { op: "append", data: bytes(content) }),
+    truncateFile: (path: string, size: number) => write(path, { op: "truncate", size }),
+    // Worker 每次操作完都 close()，数据已交给浏览器；OPFS 没有更强的落盘保证可要。
     flushFile: async () => ok(undefined),
     renameFile: (source: string, destination: string): R<void> => serial(source, async () => {
       try {
