@@ -24,7 +24,7 @@ const READ_GAP_MS = 50;
 
 /** 键盘能写的框：聚焦、全选，返回原内容的长度；其余（日期、颜色、下拉框、不可写）返回 null，走旧写法。自包含。 */
 /** 原内容的指纹（32 位），只用来判断“没变”，值本身不出页面。自包含：页面函数里各写一份。 */
-function prepareInPage(this: unknown, target: string | null): { beforeLen: number; beforeHash: number; editor?: true } | null {
+function prepareInPage(this: unknown, target: string | null, requested?: string): { beforeLen: number; beforeHash: number; sameRequest?: boolean; editor?: true } | null {
   const hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; };
   // 按名字找的目标（text=、loc=role:）由旧写法的 dom.fill 核对身份（页面重画后名字可能挪到别的元素上），键盘这一路不接。
   if (!(this instanceof Element) && target && /^(text=|loc=role:)/.test(target)) return null;
@@ -32,6 +32,9 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
 
   if (!el) return null;
   const tag = el.tagName.toLowerCase();
+  const prevReq = el.getAttribute("data-bys-last-requested");
+  if (typeof requested === "string") el.setAttribute("data-bys-last-requested", requested);
+  const sameRequest = typeof requested === "string" && prevReq === requested;
   // 聚焦后焦点必须真的在它身上（被禁用的 fieldset、inert、藏起来的框聚焦不了）：不然键盘输入会落进上一个有焦点的框。
   const holdsFocus = (node: Element) => {
     let active = node.ownerDocument.activeElement;
@@ -54,7 +57,7 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
 
     try { field.select(); } catch { field.ownerDocument.execCommand("selectAll"); }
 
-    return { beforeLen: field.value.length, beforeHash: hash(field.value) };
+    return { beforeLen: field.value.length, beforeHash: hash(field.value), sameRequest };
   }
 
   if (!(el as HTMLElement).isContentEditable) return null;
@@ -64,26 +67,27 @@ function prepareInPage(this: unknown, target: string | null): { beforeLen: numbe
   host.focus();
 
   if (!holdsFocus(host)) return null;
+  const scope = (el as HTMLElement).isConnected ? (el as HTMLElement) : host;
   const range = host.ownerDocument.createRange();
-  range.selectNodeContents(host);
+  range.selectNodeContents(scope);
   const selection = host.ownerDocument.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
 
-  const before = host.innerText.replace(/\n$/, "");
+  const before = scope.innerText.replace(/\n$/, "");
 
-  return { beforeLen: before.length, beforeHash: hash(before), editor: true };
+  return { beforeLen: before.length, beforeHash: hash(before), sameRequest, editor: true };
 }
 
 /** 写完读一次，只交回分级、不交回值（密码这类栏的值不出页面）。自包含。 */
-function gradeInPage(this: unknown, target: string | null, requested: string, beforeLen: number, beforeHash: number): TypingGrade | null {
+function gradeInPage(this: unknown, target: string | null, requested: string, beforeLen: number, beforeHash: number, sameRequest?: boolean): TypingGrade | null {
   const hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; };
   let el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
 
   if (!el) return null;
   const tag = el.tagName.toLowerCase();
 
-  if (tag !== "input" && tag !== "textarea") while (el.parentElement?.isContentEditable) el = el.parentElement;
+  if (tag !== "input" && tag !== "textarea" && !el.isConnected) while (el.parentElement?.isContentEditable) el = el.parentElement;
   // SAFETY: 上面按 tag 分开：输入框读 value，编辑器读 innerText。
   const now = tag === "input" || tag === "textarea" ? (el as HTMLInputElement).value : (el as HTMLElement).innerText.replace(/\n$/, "");
   const loose = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
@@ -93,6 +97,8 @@ function gradeInPage(this: unknown, target: string | null, requested: string, be
   if (loose(now) === loose(requested)) return "equivalent";
 
   if (requested && now.endsWith(requested) && now.length > requested.length) return "appended";
+
+  if (sameRequest && requested && now.replace(/\s+/g, "").toLowerCase() === requested.replace(/\s+/g, "").toLowerCase()) return "transformed";
 
   // 和动手前一模一样（按指纹比）：原值里恰好含着要填的字（原值 foobar、要填 foo）也认得出没变。
   if (beforeLen >= 0 && now.length === beforeLen && hash(now) === beforeHash) return "unchanged";
@@ -112,12 +118,12 @@ function clickPointInPage(this: unknown, target: string | null): [number, number
   return hit && (hit === el || el.contains(hit)) ? [Math.round(x), Math.round(y)] : null;
 }
 
-async function grade(run: PageRun, value: string, beforeLen: number, beforeHash: number): Promise<TypingGrade | null> {
+async function grade(run: PageRun, value: string, beforeLen: number, beforeHash: number, sameRequest?: boolean): Promise<TypingGrade | null> {
   let last: TypingGrade | null | undefined;
 
   for (let i = 0; i < READS; i++) {
     await new Promise(resolve => setTimeout(resolve, READ_GAP_MS));
-    const now = await run(gradeInPage, [value, beforeLen, beforeHash]).catch(() => null) ?? null;
+    const now = await run(gradeInPage, [value, beforeLen, beforeHash, sameRequest]).catch(() => null) ?? null;
 
     if (now !== null && now === last) return now;
     last = now;
@@ -149,12 +155,14 @@ function editorStillSelected(this: unknown, target: string | null): boolean {
 function repairParagraphsInPage(this: unknown, target: string | null, value: string): 'inserted' | 'focus_changed' | 'unsupported' {
   let el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
   if (!el || !(el as HTMLElement).isContentEditable) return 'focus_changed';
-  while (el.parentElement?.isContentEditable) el = el.parentElement;
-  const document = el.ownerDocument;
+  let host = el as HTMLElement;
+  while (host.parentElement?.isContentEditable) host = host.parentElement;
+  const scope = el.isConnected ? (el as HTMLElement) : host;
+  const document = host.ownerDocument;
   let active = document.activeElement;
   while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
   const selection = document.getSelection();
-  if (active !== el || !selection || !el.isConnected) return 'focus_changed';
+  if (active !== host || !selection || !host.isConnected) return 'focus_changed';
   const content = document.createElement('div');
   for (const paragraph of value.split('\n\n')) {
     const p = document.createElement('p');
@@ -165,15 +173,28 @@ function repairParagraphsInPage(this: unknown, target: string | null, value: str
     content.append(p);
   }
   const range = document.createRange();
-  range.selectNodeContents(el);
+  range.selectNodeContents(scope);
   selection.removeAllRanges();
   selection.addRange(range);
   // HTML comes only from DOM-created paragraph/break nodes and escaped text nodes.
-  return document.execCommand('insertHTML', false, content.innerHTML) ? 'inserted' : 'unsupported';
+  if (document.execCommand('insertHTML', false, content.innerHTML)) return 'inserted';
+  if (typeof DataTransfer === 'function' && typeof ClipboardEvent === 'function') {
+    const before = (scope.innerText ?? '').replace(/\n$/, '');
+    const dt = new DataTransfer();
+    dt.setData('text/plain', value);
+    dt.setData('text/html', content.innerHTML);
+    const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+    scope.dispatchEvent(pasteEvt);
+    if (pasteEvt.defaultPrevented || (scope.innerText ?? '').replace(/\n$/, '') !== before) return 'inserted';
+    const beforeEvt = new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertFromPaste', dataTransfer: dt });
+    scope.dispatchEvent(beforeEvt);
+    if (beforeEvt.defaultPrevented || (scope.innerText ?? '').replace(/\n$/, '') !== before) return 'inserted';
+  }
+  return 'unsupported';
 }
 
 async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guard): Promise<{ grade: TypingGrade | null; beforeLen: number; beforeHash: number; editor?: true } | "skip"> {
-  const prepared = await run(prepareInPage, []);
+  const prepared = await run(prepareInPage, [value]);
 
   if (!prepared) return "skip";
   await guard?.();
@@ -186,7 +207,7 @@ async function typeOnce(tabId: number, run: PageRun, value: string, guard?: Guar
   }
   guard?.noteEffect?.();
 
-  return { grade: await grade(run, value, prepared.beforeLen, prepared.beforeHash), beforeLen: prepared.beforeLen, beforeHash: prepared.beforeHash, editor: prepared.editor };
+  return { grade: await grade(run, value, prepared.beforeLen, prepared.beforeHash, prepared.sameRequest), beforeLen: prepared.beforeLen, beforeHash: prepared.beforeHash, editor: prepared.editor };
 }
 
 /**

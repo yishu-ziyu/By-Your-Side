@@ -57,7 +57,13 @@ function readMainText(max: number): { text: string; totalChars: number; url: str
     out.push(cell ? " " : block ? "\n" : "");
   };
 
-  if (root) walk(root, false);
+  if (root) {
+    walk(root, false);
+    if (!out.join("").trim()) {
+      SKIP.delete("FORM");
+      walk(root, false);
+    }
+  }
   const text = out.join("").replace(/[ \t ]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 
   return { text: text.slice(0, max), totalChars: text.length, url: location.href, title: document.title };

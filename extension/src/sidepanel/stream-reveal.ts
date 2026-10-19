@@ -277,7 +277,7 @@ function serialize(nodes: ChildNode[]): string {
 }
 
 function anchorBefore(el: HTMLElement): ChildNode | null {
-  return el.querySelector(":scope > .answer-actions, :scope > .answer-panel");
+  return el.querySelector(":scope > .answer-actions, :scope > .answer-panel, :scope > .send-declined-card");
 }
 
 class Reveal {
@@ -336,7 +336,7 @@ class Reveal {
     this.lastRelease = -1e9;
 
     for (const node of [...this.el.childNodes]) {
-      if (node instanceof HTMLElement && (node.classList.contains("answer-actions") || node.classList.contains("answer-panel"))) continue;
+      if (node instanceof HTMLElement && node.matches(".answer-actions, .answer-panel, .send-declined-card, .memory-used-line, .memory-used-cite-row")) continue;
       node.remove();
     }
 

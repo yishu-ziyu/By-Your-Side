@@ -465,6 +465,13 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
   // 旧版 Chrome for Testing 没有这个命令，靠 --load-extension 已经装好。
   // --disable-extensions-except 会把经调试协议装入的扩展也禁掉，所以不带。重启后再装一次，同一路径同一 id。
   const loadExtension = async (cdp: ReturnType<typeof createCdp>) => {
+    const alreadyLoaded = await until(
+      async () => ((await cdp.send("Target.getTargets")) as { targetInfos: TargetInfo[] }).targetInfos.some(t => t.url.startsWith(`chrome-extension://${id}/`)),
+      1_500,
+      "extension target",
+      100,
+    ).catch(() => false);
+    if (alreadyLoaded) return;
     const loaded = await cdp.send("Extensions.loadUnpacked", { path: dirs.extension }).catch((error: Error) => {
       if (/Method not available|wasn't found/.test(error.message)) return undefined;
       throw error;

@@ -70,16 +70,17 @@ export async function snapshot(
   if(params.decision&&params.scope==='viewport')throw new Error('DECISION_UNSUPPORTED: 决策观察需要完整控件树，不能退回 viewport DOM 身份。');
 
   const read = (seen: chrome.tabs.Tab) => withObservedDocumentIdentity(tabId, sessionId, async () => {
-    const result=await snapshotTab(tabId,params.scope,params.decision);
+    // 不等页面空闲：页面还在加载时默认注入会卡到加载完，与无障碍树读取并行执行。
+    const [result, translation, marks] = await Promise.all([
+      snapshotTab(tabId, params.scope, params.decision),
+      Promise.resolve().then(() => chrome.scripting.executeScript({ target: { tabId }, injectImmediately: true, world: 'ISOLATED', func: readTranslationDisplay })).then(r => r[0]?.result ?? null).catch(() => null),
+      Promise.resolve().then(() => chrome.scripting.executeScript({ target: { tabId }, injectImmediately: true, world: 'ISOLATED', func: readMarksDisplay })).then(r => r[0]?.result ?? []).catch(() => []),
+    ]);
     const current=await chrome.tabs.get(tabId);
 
     // SPA URL changes do not necessarily replace the document. Do not label the
     // new content with the address observed before the read began.
     if(current.id!==seen.id||current.url!==seen.url)throw new Error(URL_MOVED_DURING_READ);
-    // 不等页面空闲：页面还在加载时默认注入会卡到加载完（少数派冷启动实测 6.4 秒），开工前读页因此超时。
-    const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
-
-    const marks=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:readMarksDisplay})).then(r=>r[0]?.result??[]).catch(()=>[]);
 
     const snapshotValue: SnapshotRead = {...result,tabId};
 
@@ -258,8 +259,9 @@ export async function snapshotTab(
 
 /** 读整棵无障碍树并转成行：快照和“动作后新出现了什么”共用同一套去浮层、敏感栏、零尺寸规则。同名控件行尾写明在哪一项。 */
 async function readAxPage(tabId: number, decision = false, budget?: number) {
-  // 布局盒子与无障碍树同时去取，不多等一轮。
+  // 布局盒子、浮层宿主与无障碍树同时去取，不多等串行往返。
   const zeroSizeRead = readZeroSizeNodes(tabId);
+  const overlayRead = ownOverlayHosts(tabId);
   const result = decision?{nodes:await readDecisionTree(tabId)}:await withTimeout(
     sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.getFullAXTree"),
     8_000,
@@ -267,12 +269,15 @@ async function readAxPage(tabId: number, decision = false, budget?: number) {
   );
 
   if ((result.nodes ?? []).length === 0) throw new Error("Accessibility.getFullAXTree 返回空树");
-  const nodes = withoutSubtrees(result.nodes!, await ownOverlayHosts(tabId));
-  const secret = await readSecretFields(tabId, nodes);
-  const zeroSize = await zeroSizeRead;
+  const nodes = withoutSubtrees(result.nodes!, await overlayRead);
+  const [secret, ranges, zeroSize] = await Promise.all([
+    readSecretFields(tabId, nodes),
+    readInputRanges(tabId, nodes),
+    zeroSizeRead,
+  ]);
   const found = repeatedItems(nodes, zeroSize);
 
-  return { nodes, secret, zeroSize, found, ...axTreeToText(nodes, budget, await readInputRanges(tabId, nodes), secret, zeroSize, itemTexts(nodes, found, zeroSize)) };
+  return { nodes, secret, zeroSize, found, ...axTreeToText(nodes, budget, ranges, secret, zeroSize, itemTexts(nodes, found, zeroSize)) };
 }
 
 /** 一次最多读几处变化：每处是几次 CDP 往返。 */
@@ -530,13 +535,9 @@ async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Pro
   try {
     await withTimeout((async () => {
       const executionContextId=await isolatedReadContext(tabId);
-      const resolved: Array<{ id: number; objectId: string }> = [];
-
-      for (const id of ids) {
-        const node = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: id, objectGroup,executionContextId }).catch(() => undefined);
-
-        if (node?.object?.objectId) resolved.push({ id, objectId: node.object.objectId });
-      }
+      const resolved = (await Promise.all(ids.map(id => sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: id, objectGroup, executionContextId })
+        .then(node => node.object?.objectId ? { id, objectId: node.object.objectId } : null, () => null))))
+        .filter((r): r is { id: number; objectId: string } => r !== null);
 
       if (!resolved.length) return;
 

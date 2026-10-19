@@ -2776,6 +2776,22 @@ export async function typeText(
   await beforeDispatch?.();
   await beforeDispatch?.();
   const undo = await beforeWrite(sessionId, tab.id, { focused: true }, true);
+  // 富文本编辑器直接 focus() 时光标默认落在最开头（offset 0）：若选区折叠在根节点开头且已有文字，把光标移到末尾再追加。
+  await callDom(tab.id, function prepareEditableCaret() {
+    let active = document.activeElement as HTMLElement | null;
+    while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement as HTMLElement;
+    if (!active || !active.isContentEditable) return null;
+    const sel = active.ownerDocument.getSelection();
+    if (!sel) return null;
+    if (sel.rangeCount === 0 || (sel.isCollapsed && sel.anchorNode === active && sel.anchorOffset === 0 && (active.textContent?.length ?? 0) > 0)) {
+      const range = active.ownerDocument.createRange();
+      range.selectNodeContents(active);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    return (active.innerText ?? "").replace(/\n$/, "");
+  }, []).catch(() => null);
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
   await undo.done();
   // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
