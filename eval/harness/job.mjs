@@ -50,6 +50,8 @@ const PANEL_PROBE = `(() => {
     running: q("#status-pill")?.classList.contains("running") ?? false,
     abortVisible: q("#send-btn")?.classList.contains("stopping") ?? false,
     streaming: !!q(".msg.assistant.streaming, .msg.assistant[data-revealing], .thinking.streaming"),
+    // 回答后宿主还在核对：核对可能判继续再开一轮，此时收尾会把没做完的运行记成结束。
+    checking: [...document.querySelectorAll(".run-check")].some((el) => el.textContent.includes("核对中")),
     inputReady: !!q("#input") };
 })()`;
 
@@ -122,7 +124,7 @@ const centerOf = (selector) => `(() => { const e = document.querySelector(${JSON
 /** Each conversation in the panel menu with its state label (运行中 / 空闲 / …). */
 const CONVERSATIONS = `[...document.querySelectorAll("#conversation-menu [data-conversation-id]")].map((b) => ({ id: b.dataset.conversationId, title: b.title, state: b.lastElementChild?.textContent ?? "" }))`;
 
-export async function runJob({ task, model, outDir, capMs = 240000, log = () => {}, dryRun = false }) {
+export async function runJob({ task, model, outDir, capMs = 240000, log = () => {}, dryRun = false, dist }) {
   mkdirSync(outDir, { recursive: true });
   const { launchRealPath, until, exportDiagnosticsViaSettings } = await driver();
 
@@ -140,7 +142,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     secrets = cfg.secrets;
     rec.main_model = cfg.main; rec.fast_model = cfg.fast;
 
-    rp = await launchRealPath();
+    rp = await launchRealPath({ dist });
     LIVE.add(rp);
     rec.harness.browser = rp.browser; rec.harness.extension_id = rp.extensionId;
 
@@ -498,7 +500,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       if (sig !== lastSig) { lastSig = sig; lastChange = now; }
 
       const othersRunning = task.parallel && (await evalIn(ps, CONVERSATIONS).catch(() => [])).some((c) => c.state === "运行中");
-      const idle = !snap.abortVisible && !snap.running && !snap.streaming && !othersRunning;
+      const idle = !snap.abortVisible && !snap.running && !snap.streaming && !snap.checking && !othersRunning;
       const answered = afterUser.some((m) => /assistant/.test(m.cls) && m.text);
 
       if (idle && visible && ((settled && answered && now - lastChange > 4000) || (answered && now - lastChange > 8000) || (settled && now - lastChange > 12000))) { ended = lastChange; break; }
