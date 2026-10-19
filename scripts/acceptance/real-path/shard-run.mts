@@ -7,8 +7,7 @@
  *   --only=a,b        只跑指定用例
  *   --skip=aliyun     临时停用某节点
  *
- * 节点配置在 NODES：ssh 节点走 SSH（公网或 tailnet）；drs 节点走 `devin cloud drs`；
- * local 是本机。新增一台机器加一行即可。
+ * 节点表在 ../nodes.mts；各节点怎么连、怎么救活见 docs/testing/cloud-nodes.md。
  * 每个节点把当轮 summary JSON 打在 ===shard-summary=== 标记后，本脚本收集合并。
  * 节点中途挂掉时它分到的用例记为 missing，不算通过。
  */
@@ -18,30 +17,10 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { REPO } from "./harness.mts";
+import { NODES, SSH_OPTS, type Node } from "../nodes.mts";
 
 const HERE = join(REPO, "scripts/acceptance/real-path");
 const OUT = join(REPO, "out/acceptance/real-path");
-
-type Node = {
-  name: string;
-  kind: "local" | "ssh" | "drs";
-  weight: number; // 分片权重：快机器多分几个用例
-  jobs: number;
-  host?: string;      // ssh: user@host
-  dir?: string;       // 远端 repo 目录
-  devinId?: string;   // drs: sandbox session id
-  chrome?: string;    // 远端 Chrome 路径（可含 glob，远端展开）
-};
-
-const NODES: Node[] = [
-  { name: "local", kind: "local", weight: 2, jobs: 2 },
-  { name: "aliyun", kind: "ssh", weight: 1, jobs: 1, host: "root@121.89.90.68", dir: "/root/bys",
-    chrome: "/opt/chrome-for-testing/chrome-linux64/chrome" },
-  { name: "devin", kind: "drs", weight: 3, jobs: 4, devinId: "100916ca2fd74266b2080741d2952ca7",
-    dir: "~/repos/By-Your-Side", chrome: "google-chrome" },
-  { name: "grokbox", kind: "ssh", weight: 2, jobs: 2, host: "box@100.124.81.45", dir: "/home/box/bys",
-    chrome: "/home/box/.cache/ms-playwright/chromium-*/chrome-linux*/chrome" },
-];
 
 // 与 run-all.mts 的 SKIP 保持一致。
 const SKIP = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts"]);
@@ -94,17 +73,19 @@ execFileSync(process.execPath, [join(REPO, "extension/build.mjs")], {
   stdio: ["ignore", "ignore", "inherit"],
 });
 
-const SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ConnectionAttempts=2"];
 const SSH_OPTS_STR = SSH_OPTS.join(" ");
 
-function sh(cmd: string, args: string[], logPrefix: string): Promise<{ code: number | null; out: string }> {
+function sh(cmd: string, args: string[], logPrefix: string, timeoutMs?: number): Promise<{ code: number | null; out: string; timedOut?: boolean }> {
   return new Promise((done) => {
     const child = spawn(cmd, args);
     let out = "";
+    let timedOut = false;
+    // 云节点会卡住不返回（Devin 沙箱被暂停、grokbox 中途休眠）：到点就杀掉，记成超时而不是一直等。
+    const timer = timeoutMs ? setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutMs) : undefined;
     child.stdout.on("data", (d) => { out += d; });
     child.stderr.on("data", (d) => { out += d; });
-    child.on("close", (code) => done({ code, out }));
-    child.on("error", (e) => { out += String(e); done({ code: null, out }); });
+    child.on("close", (code) => { clearTimeout(timer); done({ code, out, timedOut }); });
+    child.on("error", (e) => { clearTimeout(timer); out += String(e); done({ code: null, out, timedOut }); });
     void logPrefix;
   });
 }
@@ -131,8 +112,8 @@ function findJson(s: string): string {
   return s.slice(start);
 }
 
-function sshRun(node: Node, cmd: string): Promise<{ code: number | null; out: string }> {
-  return sh("ssh", [...SSH_OPTS, node.host!, `bash -lc '${cmd.replace(/'/g, "'\\''")}'`], `[${node.name}]`);
+function sshRun(node: Node, cmd: string, timeoutMs?: number): Promise<{ code: number | null; out: string; timedOut?: boolean }> {
+  return sh("ssh", [...SSH_OPTS, node.host!, `bash -lc '${cmd.replace(/'/g, "'\\''")}'`], `[${node.name}]`, timeoutMs);
 }
 
 // 远端跑分片：定位 Chrome → 跑 run-all --only → 把当轮 summary JSON 打在标记后。
@@ -143,8 +124,10 @@ function remoteCmd(node: Node, names: string[]): string {
     : node.chrome!.startsWith("/") ? node.chrome! : `$(command -v ${node.chrome})`;
   return [
     `cd ${dir}`,
-    `export EGO_ACCEPTANCE_CHROME=${chromeExpr}`,
+    `export EGO_ACCEPTANCE_CHROME="${chromeExpr}"`,
     `export SIDEAGENT_ACCEPTANCE_DIST=${dir}/.shard-dist`,
+    // 本机设的“允许重跑”要带到远端，否则远端按“同一代码已失败两次”拒绝运行。
+    ...(process.env.BYS_RERUN === "1" ? ["export BYS_RERUN=1"] : []),
     // 先清掉旧 summary，避免 run-all 提前退出时误读上一轮结果。
     // run-all 有用例失败时 exit 1，summary 必须无条件打印，所以这一段用分号不用 &&。
     `rm -f out/acceptance/real-path/summary-*.json; npx tsx scripts/acceptance/real-path/run-all.mts --only=${names.join(",")} --jobs=${node.jobs}; echo "===shard-summary==="; cat "$(ls -t out/acceptance/real-path/summary-*.json | head -1)"`,
@@ -152,7 +135,7 @@ function remoteCmd(node: Node, names: string[]): string {
 }
 
 type Row = { name: string; status: string; exitCode: number | null; seconds: number };
-type NodeResult = { node: string; ran: Row[]; raw: string };
+type NodeResult = { node: string; ran: Row[]; raw: string; timedOut?: boolean };
 
 async function runNode(node: Node, names: string[]): Promise<NodeResult> {
   if (node.kind === "local") {
@@ -169,9 +152,11 @@ async function runNode(node: Node, names: string[]): Promise<NodeResult> {
     const summary = JSON.parse(await readFile(latest, "utf8"));
     return { node: node.name, ran: summary.results, raw: r.out };
   }
+  // 每个用例平均一两分钟；按“每轮同时跑 jobs 个、每轮最多 6 分钟”再加 5 分钟准备时间给上限。
+  const deadline = (5 + Math.ceil(names.length / node.jobs) * 6) * 60_000;
   const r = node.kind === "ssh"
-    ? await sshRun(node, remoteCmd(node, names))
-    : await sh("devin", ["cloud", "drs", "run", "--devin-id", node.devinId!, "--command", remoteCmd(node, names), "--timeout", "3600"], "[devin]");
+    ? await sshRun(node, remoteCmd(node, names), deadline)
+    : await sh("devin", ["cloud", "drs", "run", "--devin-id", node.devinId!, "--command", remoteCmd(node, names), "--timeout", String(Math.round(deadline / 1000))], "[devin]", deadline);
   // drs run 把远端 stdout 包在自己的 JSON 响应里，先剥掉外层。
   let payload = r.out;
   try {
@@ -181,9 +166,9 @@ async function runNode(node: Node, names: string[]): Promise<NodeResult> {
   const marked = payload.split("===shard-summary===").pop() ?? "";
   try {
     const summary = JSON.parse(findJson(marked));
-    return { node: node.name, ran: summary.results ?? [], raw: r.out };
+    return { node: node.name, ran: summary.results ?? [], raw: payload, timedOut: r.timedOut };
   } catch {
-    return { node: node.name, ran: [], raw: r.out };
+    return { node: node.name, ran: [], raw: payload, timedOut: r.timedOut };
   }
 }
 
@@ -202,13 +187,16 @@ async function syncNode(node: Node): Promise<boolean> {
     // 只同步跑测试需要的文件（约 4MB）：grokbox 这类节点可能中途休眠，全仓库传输来不及。
     // 用 tar 流而不是 rsync——远端可能没有 rsync，快照恢复后装的工具也会丢。
     const push = async (src: string, dst: string, clean: boolean) => {
-      const pre = clean ? `mkdir -p ${dst} && rm -rf ${dst}/* ${dst}/.[!.]* ; ` : `mkdir -p ${dst} && `;
+      // macOS tar 默认把扩展属性打成 ._* 文件，远端 run-all 会把它们当成用例名；顺手清掉以前推过去的。
+      const pre = clean
+        ? `mkdir -p ${dst} && rm -rf ${dst}/* ${dst}/.[!.]* ; `
+        : `mkdir -p ${dst} && find ${dst} -name "._*" -delete ; `;
       const pack = clean
         ? "tar -cz ."
         : "tar -cz --exclude=extension/dist scripts agent shared extension eval/harness package.json package-lock.json";
       for (let i = 0; i < 5; i++) {
         const r = await sh("bash", ["-lc",
-          `cd ${src} && ${pack} | ssh ${SSH_OPTS_STR} ${node.host} '${pre}tar -xz -C ${dst}'`], tag);
+          `cd ${src} && COPYFILE_DISABLE=1 ${pack} | ssh ${SSH_OPTS_STR} ${node.host} '${pre}tar -xz -C ${dst}'`], tag);
         if (r.code === 0) return true;
         await new Promise((d) => setTimeout(d, 4000));
       }
@@ -309,17 +297,33 @@ if (!ready.length) {
 const started = Date.now();
 const settled = await Promise.all(ready.map((n) => runNode(n, shards.get(n)!)));
 
-const rows: { node: string; name: string; status: string; seconds: number }[] = [];
+const rows: { node: string; name: string; status: string; seconds: number; reason?: string }[] = [];
 const seen = new Set<string>();
+// run-all 给每个失败用例打印“✘ 名字 (Ns)”加 15 行日志尾巴（每行以 │ 开头）；取其中最像原因的一行。
+const reasonOf = (raw: string, name: string): string | undefined => {
+  const lines = raw.split("\n");
+  const at = lines.findIndex((l) => l.startsWith(`✘ ${name} (`));
+  if (at < 0) return undefined;
+  // 只看紧跟在这一行后面、以 │ 开头的日志块，遇到别的行就停，不串到下一个用例。
+  const end = lines.findIndex((l, i) => i > at && !/^\s*(│|\/)/.test(l));
+  const tail = lines.slice(at + 1, end < 0 ? undefined : end).filter((l) => l.includes("│")).map((l) => l.replace(/^\s*│ ?/, "").trim()).filter(Boolean);
+  return (tail.find((l) => /Error|FAIL|超时|失败|断言|not ok/i.test(l)) ?? tail.at(-1))?.slice(0, 200);
+};
+const lastLines = (raw: string) => raw.trimEnd().split("\n").slice(-3).join(" ⏎ ").slice(0, 300);
 for (const r of settled) {
   for (const row of r.ran) {
     if (row.status === "not-run") continue;
     seen.add(row.name);
-    rows.push({ node: r.node, name: row.name, status: row.status, seconds: row.seconds });
+    rows.push({ node: r.node, name: row.name, status: row.status, seconds: row.seconds,
+      reason: row.status === "fail" ? reasonOf(r.raw, row.name) : undefined });
+  }
+  if (!r.ran.length) {
+    const why = r.timedOut ? `节点超时：${lastLines(r.raw)}` : `节点没交回结果：${lastLines(r.raw)}`;
+    for (const c of shards.get(nodes.find((n) => n.name === r.node)!)!) rows.push({ node: r.node, name: c, status: "missing", seconds: 0, reason: why });
   }
 }
 for (const n of nodes) {
-  if (!ready.includes(n)) for (const c of shards.get(n)!) rows.push({ node: n.name, name: c, status: "missing", seconds: 0 });
+  if (!ready.includes(n)) for (const c of shards.get(n)!) rows.push({ node: n.name, name: c, status: "missing", seconds: 0, reason: "节点不可用（连不上或准备失败）" });
 }
 for (const c of wanted) if (!seen.has(c) && !rows.some((r) => r.name === c)) rows.push({ node: "-", name: c, status: "missing", seconds: 0 });
 rows.sort((a, b) => a.name.localeCompare(b.name));
@@ -328,10 +332,18 @@ const failed = rows.filter((r) => r.status === "fail");
 const missing = rows.filter((r) => r.status === "missing");
 const wall = Math.round((Date.now() - started) / 1000);
 
-for (const r of rows) console.log(`${r.status === "pass" ? "✔" : r.status === "fail" ? "✘" : "?"} ${r.name}  ${r.node}  ${r.seconds}s`);
-console.log(`\n${rows.length} 例：过 ${rows.length - failed.length - missing.length}，败 ${failed.length}，未跑 ${missing.length}；整轮 ${wall}s`);
+// 每个节点的完整输出留在 out/，失败原因只看一行不够时去这里找。
+const logDir = join(OUT, `shard-${stamp}`);
+await mkdir(logDir, { recursive: true });
+for (const r of settled) await writeFile(join(logDir, `${r.node}.log`), r.raw);
 
-await mkdir(OUT, { recursive: true });
-await writeFile(join(OUT, `shard-${stamp}.json`), JSON.stringify({ wall, rows }, null, 2));
+for (const r of rows) {
+  console.log(`${r.status === "pass" ? "✔" : r.status === "fail" ? "✘" : "?"} ${r.name}  ${r.node}  ${r.seconds}s`);
+  if (r.reason) console.log(`    └ ${r.reason}`);
+}
+console.log(`\n${rows.length} 例：过 ${rows.length - failed.length - missing.length}，败 ${failed.length}，未跑 ${missing.length}；整轮 ${wall}s`);
+console.log(`各节点完整输出：${logDir}`);
+
+await writeFile(join(OUT, `shard-${stamp}.json`), JSON.stringify({ wall, rows, logDir }, null, 2));
 
 process.exit(failed.length || missing.length ? 1 : 0);
