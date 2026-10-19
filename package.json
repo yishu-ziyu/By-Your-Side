@@ -15,6 +15,7 @@
     "smoke": "tsx scripts/acceptance/real-path/smoke.mts --headless",
     "accept:real-path": "tsx scripts/acceptance/real-path/run-all.mts",
     "accept:shard": "tsx scripts/acceptance/real-path/shard-run.mts",
+    "nodes": "tsx scripts/acceptance/nodes-status.mts",
     "check:architecture": "node scripts/maintenance/check-boundaries.mjs",
     "check:docs": "node scripts/maintenance/check-docs.mjs",
     "check:copy": "node scripts/maintenance/check-copy.mjs",
