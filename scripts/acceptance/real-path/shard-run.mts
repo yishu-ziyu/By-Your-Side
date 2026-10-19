@@ -17,21 +17,10 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { REPO } from "./harness.mts";
-import { NODES, SSH_OPTS, type Node } from "../nodes.mts";
+import { CORE_CASES as CORE, NODES, SKIP_FILES as SKIP, SSH_OPTS, type Node } from "../nodes.mts";
 
 const HERE = join(REPO, "scripts/acceptance/real-path");
 const OUT = join(REPO, "out/acceptance/real-path");
-
-// 与 run-all.mts 的 SKIP 保持一致。
-const SKIP = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts"]);
-
-// 与 run-all.mts 的 CORE 保持一致。
-const CORE = [
-  "sidebar-interaction", "composer-expand", "script-friction", "target-gone", "pdf-download", "memory-used-line",
-  "session-durability", "error-recovery", "model-failover", "welcome-context", "claim-after-check", "refill-after-check", "readback-privacy", "snapshot-privacy",
-  "send-confirm", "panel-send-confirm", "pay-stop", "handoff", "answer-straight", "retry-after-unknown", "site-hint", "panel-tidy", "keep-foreground", "navigate-wait",
-  "double-click-new-tab", "reading-correction", "http-page-select", "reading-card-after-reinject", "click-blocked-reason", "settle-after-requests", "slot-yields-to-new-task", "history-prefix", "program-receipt", "process-block", "wait-inline-timer", "overflow-retry",
-];
 
 const argv = process.argv.slice(2);
 const prepare = argv.includes("--prepare");
@@ -177,6 +166,7 @@ async function syncNode(node: Node): Promise<boolean> {
   const tag = `[${node.name}]`;
   if (node.kind === "local") return true;
   if (node.kind === "ssh") {
+    if (!node.host) { console.log(`${tag} 未配置 host（见 ~/.sideagent/nodes.local.json）`); return false; }
     // 云节点可能刚被唤醒或休眠中，多试几次再判不可用。
     let up = await sshRun(node, "echo ok");
     for (let i = 0; !up.out.includes("ok") && i < 3; i++) {
@@ -233,6 +223,7 @@ async function syncNode(node: Node): Promise<boolean> {
     return true;
   }
   // drs：仓库由 Devin 克隆好，切到本地 HEAD 同一提交后装依赖、建 dist、拷到 .shard-dist。
+  if (!node.devinId) { console.log(`${tag} 未配置 devinId（见 ~/.sideagent/nodes.local.json）`); return false; }
   const sha = execFileSync("git", ["-C", REPO, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   const dirty = execFileSync("git", ["-C", REPO, "status", "--porcelain"], { encoding: "utf8" }).trim();
   if (dirty) console.log(`${tag} 注意：本机有未提交改动，此节点只跑已提交的 ${sha.slice(0, 8)}`);

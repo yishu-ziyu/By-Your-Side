@@ -1,5 +1,5 @@
 /**
- * 侧栏少些杂讯（docs/evals/20261010-panel-tidy.md R1–R3）。只装扩展、隔离无头 Chrome、真侧栏、本机脚本模型。
+ * 侧栏少些杂讯。只装扩展、隔离无头 Chrome、真侧栏、本机脚本模型。
  *   npx tsx scripts/acceptance/real-path/panel-tidy.mts --headless
  *   a) 同一网站有一条过往任务：问无关的事，发给模型的请求里没有过往任务，回答下没有「按上次做过的」；问相关的事，两者都有。
  *   b) 用户没要文件，助手在程序里存了中间文件：侧栏没有卡片；用户要 CSV：有卡片。

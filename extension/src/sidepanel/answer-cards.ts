@@ -1,11 +1,11 @@
 /**
- * 侧栏怎么画回答里的卡片（解析和取数在 shared/answer-cards.ts，验收见 docs/evals/20261014-answer-cards.md）。
+ * 侧栏怎么画回答里的卡片（解析和取数在 shared/answer-cards.ts，
  * 流式时按已放出的前缀算出整段 HTML，再由 patchAnswer 按组件对比：已画出的组件节点不动，只补新出现的、刚写完的。
  * 开了头没写完的组件先占一个尺寸接近的空位；写得慢时空位里浮出很淡的占位条，写完后内容在原位淡入。
  * 按钮只做两件事：把按钮上的话当作用户的下一句发出，或切到某个标签页。不直接动页面。
  * 写完的卡片若有算式或出处，右上角可翻到依据面：每个数的结果、算式、出处，同一张卡原位换面（学 Our World in Data 的图 / 表 / 出处）。
  * 结构图：整张卡写完前只放空位；写完后由 Pele 画成 SVG，点方块在图下显示模型摘的原文（cite）。
- * 可调的数（docs/evals/20261018-card-inputs.md）：用户改数时只在侧栏按 data-gc-expr 重算，不问模型；调过的数、勾过的项按卡片原文摘要存起来，重开侧栏还原。
+ * 可调的数：用户改数时只在侧栏按 data-gc-expr 重算，不问模型；调过的数、勾过的项按卡片原文摘要存起来，重开侧栏还原。
  */
 import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";

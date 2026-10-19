@@ -1,7 +1,6 @@
 /**
  * `network` 的纯逻辑：CDP Network 事件 → 条目、环形缓冲、筛选、模型可见文本。
  * 被动观测，不注入页面；只记真实网络请求；展示前隐去 URL 里的凭据。
- * 依据 docs/evals/20260911-network.md。
  */
 
 export const NETWORK_CAPACITY = 300;

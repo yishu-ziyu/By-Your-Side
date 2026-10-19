@@ -113,7 +113,7 @@ try{
  const originalId=String(await rp.evaluate(panel,'chrome.storage.local.get("selectedConversationId").then(v=>v.selectedConversationId ?? "default")'));
  const crossOffset=requests.length;
  await rp.click(panel,'#conversation-new');await until(async()=>String(await rp.evaluate(panel,'chrome.storage.local.get("selectedConversationId").then(v=>v.selectedConversationId)'))!==originalId,10000,'新会话就绪');
- // 不等侧栏换完就开口：新会话建好前发的这条，必须进新会话（docs/evals/20261009-new-conversation-send.md）。
+ // 不等侧栏换完就开口：新会话建好前发的这条，必须进新会话。
  await send('恢复核对：读取resume.csv。','恢复核对完毕');
  const cross=requests.slice(crossOffset).filter(r=>r.tools?.length);assert.ok(cross.some(r=>JSON.stringify(r.messages).includes('找不到 resume.csv')),'新会话不能读旧文件');assert.ok(cross.every(r=>!JSON.stringify(r.messages).includes(code)),'会话模型上下文不混用');evidence.crossConversation=true;
  await rp.click(panel,'#conversation-switcher');await rp.click(panel,`[data-conversation-id="${originalId}"]`);await until(async()=>(await state()).text?.includes(code),10000,'切回原会话');
@@ -126,7 +126,7 @@ try{
  await until(async()=>requests.slice(restartOffset).some(r=>r.tools?.length&&/interrupted and may have partially run/.test(JSON.stringify(r.messages)))||undefined,30000,'恢复材料进入模型');
  await sleep(1500);assert.equal(commits,1,'重启不自动重放');
  const recoveryPage=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:recoveryPage.targetId});await sleep(300);
- // 结果未知不拦重做（docs/evals/20261010-drop-retry-locks.md）：用户说继续后，模型重做这一步，宿主照常执行。
+ // 结果未知不拦重做：用户说继续后，模型重做这一步，宿主照常执行。
  await send('继续原任务。','防重复核对结束');await until(async()=>commits===2||undefined,10000,'继续后宿主不拦重做');
  evidence.noReplay={commitsAfterRestart:1,commitsAfterContinue:commits,browserCrash:true};
  const inproc=await until(async()=>(await rp.targets()).find(t=>t.url.endsWith('/inproc.html')),10000,'恢复核心');const ips=await rp.attach(inproc.targetId);

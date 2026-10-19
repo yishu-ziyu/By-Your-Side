@@ -1,5 +1,5 @@
 /**
- * 回答里的卡片（docs/evals/20261014-answer-cards.md R1–R3）。
+ * 回答里的卡片。
  *   npx tsx scripts/acceptance/real-path/answer-cards.mts --headless [--live] [--model=服务商/模型]
  * 脚本模型分段写出一张订阅卡：边写边看侧栏不露出标签原文；写完后看算式算出的数、正文 {total} 填数、
  * 心算的错金额换掉、不合格的组件不画；再点三个按钮：替我说一句、切到那一页、切到已关掉的页。

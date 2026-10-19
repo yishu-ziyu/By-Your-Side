@@ -1,5 +1,5 @@
 /**
- * 站点提示只在对应网站上交给模型（docs/evals/20261010-site-hints-excalidraw.md）。只装扩展、隔离构建、本机脚本模型；需要能上网打开 excalidraw.com。
+ * 站点提示只在对应网站上交给模型。只装扩展、隔离构建、本机脚本模型；需要能上网打开 excalidraw.com。
  *   npx tsx scripts/acceptance/real-path/site-hint.mts --headless
  * 同一个标签页先开真实的 excalidraw.com 发一句话，再换到本机练习页、新开对话发一句话。脚本模型记下每次请求的内容。
  *   a) 在 excalidraw.com 上，这一轮第一次带工具的模型请求里有 Excalidraw 的做法（粘贴 excalidraw/clipboard）。

@@ -18,7 +18,7 @@ export const NUDGE_SELECTION_LIMIT = 2000;
 
 /**
  * 句子、动词、对象名的上限按显示宽度算：汉字算 1，英文字母、数字、空格算半个（「AirPods Pro 3」算 6.5）。
- * 10-08 真实模型试跑：按字数算时，带英文型号的句子大多被拦下（docs/evals/20261008-nudge-trial.md）。
+ * 10-08 真实模型试跑：按字数算时，带英文型号的句子大多被拦下。
  */
 export const NUDGE_SENTENCE_LIMIT = 24;
 

@@ -23,7 +23,7 @@ export async function createConversationRuntime(
 
   const control = new TabControl(rpc);
   let toolSession: BrowserAgentSession | undefined;
-  // 交给用户（docs/evals/20261010-hand-to-user.md R1）：走与侧栏「接管」相同的暂停通道，宿主接线后才可用。
+  // 交给用户：走与侧栏「接管」相同的暂停通道，宿主接线后才可用。
   let handToUser: ((ask: string, targets?: string[]) => Promise<void>) | undefined;
 
   const handToUserTool = defineTool({
@@ -36,7 +36,7 @@ export async function createConversationRuntime(
     }),
     execute: async (_id, params) => {
       const ask = String(params.ask ?? "").trim().slice(0, 120);
-      // 圈不上不挡交还（docs/evals/20261012-handoff-circle.md R4）：格式不对的目标直接丢掉，不报错。
+      // 圈不上不挡交还：格式不对的目标直接丢掉，不报错。
       const targets = (Array.isArray(params.targets) ? params.targets : []).map(t => String(t ?? "").trim()).filter(t => t && t.length <= 200).slice(0, 6);
 
       if (!ask) throw new Error("ask 不能为空：写清用户要在页面上做什么。");
@@ -255,7 +255,7 @@ export async function createConversationRuntime(
         break;
       case "tool_waiting_user":
         rpc.waitingForUser(msg.id, msg.waiting);
-        // 侧栏据此写「第 N 步 · 等你操作」（docs/evals/20261011-guided-teaching.md R1），或出发送确认卡（docs/evals/20261015-panel-send-confirm.md）。
+        // 侧栏据此写「第 N 步 · 等你操作」，或出发送确认卡。
         sendCurrent({ type: "agent_event", event: msg.guide ? { kind: "guide_wait", waiting: msg.waiting, guide: msg.guide } : { kind: "send_confirm_wait", waiting: msg.waiting, ...(msg.send ? { confirm: msg.send } : {}) } });
         break;
       default:

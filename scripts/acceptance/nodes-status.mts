@@ -36,6 +36,8 @@ function chromeCheck(node: Node): string {
 }
 
 async function probe(node: Node, retried = false): Promise<Record<string, string>> {
+  if (node.kind === "ssh" && !node.host) return { error: "未配置 host（见 ~/.sideagent/nodes.local.json）" };
+  if (node.kind === "drs" && !node.devinId) return { error: "未配置 devinId（见 ~/.sideagent/nodes.local.json）" };
   const cmd = PROBE + chromeCheck(node)
     + (node.name === "grokbox" ? `; ps -o etime=,args= -C sleep | awk '$NF=="2700"{print "keepalive=已跑 "$1"，共 45 分钟"}'` : "");
   const raw = node.kind === "local"

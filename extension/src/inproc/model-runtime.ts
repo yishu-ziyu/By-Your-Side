@@ -16,7 +16,7 @@ import { githubCopilotOAuth } from "@earendil-works/pi-ai/auth/oauth/github-copi
 import { kimiCodingOAuth } from "@earendil-works/pi-ai/auth/oauth/kimi-coding";
 import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex";
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
-import type { ModelPort } from "../../../agent/src/agent-loop.js";
+import type { ModelPort } from "@sideagent/agent/browser-core";
 import { isTransientModelError, retryWhenBusy } from "../../../shared/provider-busy.js";
 import { isProviderBusyError } from "../../../shared/user-facing.js";
 import { measuredModelIds, providerConcurrency, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";

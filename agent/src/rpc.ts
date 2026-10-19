@@ -12,7 +12,7 @@ export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 export const SLOW_TOOL_TIMEOUT_MS = 60_000;
 
 /**
- * 扩展报告这次点击在网页上等用户确认「发送」时放宽到的期限（docs/evals/20261009-send-confirm.md）。
+ * 扩展报告这次点击在网页上等用户确认「发送」时放宽到的期限。
  * 比扩展自己的 2 分钟等待长，所以总是扩展先回「没点」，不会在这边记成结果未知。
  */
 export const USER_CONFIRM_TIMEOUT_MS = 130_000;

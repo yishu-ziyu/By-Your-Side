@@ -1,5 +1,5 @@
 /**
- * 减少动效探针（docs/evals/20261006-sidepanel-picks.md R5）：真侧栏里读计算样式，
+ * 减少动效探针：真侧栏里读计算样式，
  * 比较「正常」与「减少动效」下记忆灰字淡入、记忆小条、过程展开的动效时长。
  *
  *   npx tsx scripts/probes/shell/reduced-motion.mts --headless

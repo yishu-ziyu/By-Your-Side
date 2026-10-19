@@ -54,7 +54,7 @@ export async function openTab(
   const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
-  // 助手开的页留在后台，不换走用户正在看的标签页（docs/evals/20261010-keep-foreground.md）。
+  // 助手开的页留在后台，不换走用户正在看的标签页。
   const tab = await chrome.tabs.create({ url: params.url, active: false });
 
   if (tab.id == null) throw new Error("创建标签页失败");
@@ -92,11 +92,11 @@ export async function switchTab(
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ tabId: number; verification?: SwitchTabVerification }> {
   await resolveWorkingTab(params.tabId, sessionId);
-  // 平时只换工作目标，不切前台：助手在后台标签里做事（docs/evals/20261010-keep-foreground.md）。
+  // 平时只换工作目标，不切前台：助手在后台标签里做事。
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
 
-  // 用户要看这一页（tabs show）：切到它所在窗口的前台（docs/evals/20261011-show-page-to-user.md）。
+  // 用户要看这一页（tabs show）：切到它所在窗口的前台。
   if (params.show === true) await bringForwardForUser(params.tabId, "user_asked");
 
   return { tabId: params.tabId, verification: await readSwitchVerification(params.tabId, sessionId) };

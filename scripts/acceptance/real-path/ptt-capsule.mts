@@ -1,10 +1,10 @@
 /**
- * 按住说话第 2 步：网页底部胶囊（docs/evals/20261007-ptt-capsule.md R1–R4）。只装扩展、隔离构建、侧栏关着。
+ * 按住说话第 2 步：网页底部胶囊。只装扩展、隔离构建、侧栏关着。
  *   npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless
  * 麦克风是 say 合成的一句话；听写连真实的 Step Plan 套餐，助手用本机脚本模型。
  * 第 1 轮：按住（在听、声波）→ 松开（听写中）→ 在做 → 结果，点「在侧栏看」打开侧栏。
  * 第 2 轮：同一句话，脚本模型挂起不回；胶囊在做时按 Esc，任务停下，胶囊写「已停下」。
- * 念结果（docs/evals/20261007-ptt-speak.md）：设置页先拒绝一个按量格式的 key，再存 MiniMax 订阅 Key（~/.pi/agent/auth.json 的 minimax-cn）；
+ * 念结果：设置页先拒绝一个按量格式的 key，再存 MiniMax 订阅 Key（~/.pi/agent/auth.json 的 minimax-cn）；
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
@@ -226,7 +226,7 @@ async function holdAndSpeak(session: string, round: Evidence["rounds"][number], 
   return Date.now();
 }
 
-/** 听写最长可等：连上 15 秒 + 提交后 30 秒（docs/evals/20261008-ptt-timeout.md）。 */
+/** 听写最长可等：连上 15 秒 + 提交后 30 秒。 */
 const DICTATION_MS = 50_000;
 
 /** 等胶囊到某一步，顺路记下经过的步骤；中途变成「没成」就马上失败。 */

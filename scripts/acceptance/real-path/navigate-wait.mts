@@ -1,5 +1,5 @@
 /**
- * 打开的地址变成下载、或是不能注入脚本的页面时，navigate 几秒内如实返回，不再等到超时（docs/evals/20261010-navigate-wait.md R1）。
+ * 打开的地址变成下载、或是不能注入脚本的页面时，navigate 几秒内如实返回，不再等到超时。
  * 只装扩展、隔离构建、本机脚本模型、本机练习站；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/navigate-wait.mts --headless
  * 路径：同一任务里依次 navigate 到 (a) 服务器按附件回的导出地址，(b) chrome://downloads/，(c) 普通页面，(d) 连不上的本机端口；

@@ -2,7 +2,6 @@
  * CDP Network 事件的被动记录：按标签页环形缓冲 + 有界在途集合。
  * 只在扩展已经 attach 调试器时开启 Network 域；不额外 attach、不注入页面。
  * 展示 ring 的丢弃/clear 不抹掉仍在途请求；detach/晚接入/SW 重启记入捕获完整性。
- * 依据 docs/evals/20260911-network.md 与 FIX-02。
  */
 import {
   applyNetworkLifecycle,

@@ -119,7 +119,7 @@ const withoutHash = (url: string) => url.split("#")[0];
 
 /**
  * 动作让页面换了地址或换了文档（提交 GET 表单、点链接）时，最后读到的是旧文档在跳转前的读数，
- * 会把「换页了」说成「没变化」。这里改成明确的「加载了新文档」（docs/evals/20261011-settle-after-requests.md）。
+ * 会把「换页了」说成「没变化」。这里改成明确的「加载了新文档」。
  */
 async function withDocumentChange(tabId: number, token: string, report: EffectReport | undefined, startUrl: string, pageUrl: string): Promise<EffectReport | undefined> {
   const moved = !!startUrl && !!pageUrl && withoutHash(startUrl) !== withoutHash(pageUrl);

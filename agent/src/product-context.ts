@@ -13,13 +13,13 @@ function today(now = new Date()): string {
 type Turn=VoiceConversationContext['recentTurns'][number];
 
 /**
- * 每轮都附的卡片提醒（docs/evals/20261014-answer-cards.md）。完整说明在系统提示词的「Answer cards」一节；
+ * 每轮都附的卡片提醒。完整说明在系统提示词的「Answer cards」一节；
  * 只放在系统提示词里时，长的操作类提示词把它压住了（离线 15 次 0 次画卡片），每轮附这一句后 15 次 12 次。
  */
 const ANSWER_CARD_REMINDER = "\n\nAnswer format: if the user will decide or act on several numbers, options, steps or items, reply with one conclusion sentence plus an answer card (see # Answer cards); when they are unsure of or want to try several values of one condition (how many people or months, a rate that may change, a quantity), that condition is an <input> the formulas use; rows comparing things in several tabs carry tab=TAB_ID (that tab's numeric id); when you must ask the user two or more things (or a choice) before going on, ask with <field>s and a submit button, prefilled from what you know; if they ask how something with 5 or more related parts is structured (not a plain sequence), the card holds a diagram; otherwise plain text. When teaching with guide_step, follow the teaching rules instead.";
 
 /**
- * 「回答里的小程序」打开时附在每次运行的上下文后（docs/evals/20261019-mini-apps.md）。侧栏把小程序放进不联网的沙箱（mini-app.html）：
+ * 「回答里的小程序」打开时附在每次运行的上下文后。侧栏把小程序放进不联网的沙箱（mini-app.html）：
  * 外部脚本、图片、请求、跳转都会被拦，所以要求数据写进程序里；bys.* 是沙箱页注入的几个桥。
  */
 const MINI_APP_GUIDE = `
@@ -44,7 +44,7 @@ export function productSystemPrompt(systemPrompt: string, active: ReadonlySet<st
 export class ProductContext {
   /** pageUrl：这一轮开始时的页面（发送时用户所在、也是工作标签页）；用来挑站点提示。 */
   constructor(private readonly refreshTools:()=>void = ()=>{}, private readonly pageUrl:()=>string|null = ()=>null) {}
-  /** 站点笔记：这一轮开始时的页面所在网站有笔记就返回要附上的一段（docs/evals/20261013-site-notes.md）；接线方限时约 1 秒。 */
+  /** 站点笔记：这一轮开始时的页面所在网站有笔记就返回要附上的一段；接线方限时约 1 秒。 */
   siteNotes?: (url: string | null) => Promise<string | null>;
   /** 用户打开了「回答里的小程序」：系统提示词不变（前缀缓存），写法放在每次运行的上下文里。 */
   miniApps?: () => Promise<boolean>;

@@ -1,7 +1,12 @@
 name: Quality
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 permissions:
   contents: read
 jobs:
@@ -12,12 +17,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run check:architecture
-      - run: npm run check:docs
-      - run: npm run check:copy
-      - run: npm run check:motion
-      - run: npm run build
+      - run: npm run check
+      - run: npm run check:docs -- --all

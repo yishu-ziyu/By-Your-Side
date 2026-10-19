@@ -2256,7 +2256,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .site-notes-list { margin:-10px 0 14px; padding:8px 10px 8px 24px; border-radius:8px; background:var(--content-subtle); color:var(--text-secondary); font-size:var(--fs-micro); line-height:1.5; }
 .site-notes-list li + li { margin-top:4px; }
-/* 发送确认卡（docs/evals/20261015-panel-send-confirm.md）：网站、按钮、内容三行，「发送」是唯一的实心按钮。答过只剩一行结果。 */
+/* 发送确认卡：网站、按钮、内容三行，「发送」是唯一的实心按钮。答过只剩一行结果。 */
 .send-confirm { margin:0 0 16px; padding:12px 14px; border:1px solid var(--glass-border); border-radius:14px; background:var(--content-bg); font-size:var(--fs-ui); line-height:1.6; color:var(--text-primary); }
 .send-confirm:is([data-state=done],[data-state=ended]) { padding:0; border:0; background:transparent; }
 .send-confirm-line { margin:0; color:var(--text-tertiary); font-size:var(--fs-code); }
@@ -3199,7 +3199,7 @@ details.run-steps.done > summary > .run-meta { display: none; }
 /* 一次性的系统提示：灰字，不用琥珀色。 */
 .msg.notice { color: var(--text-tertiary); font-size: var(--fs-meta); }
 
-/* ── 回执改版（docs/evals/20261006-answer-receipt.md）─────────────
+/* ── 回执改版─────────────
    回执是「图标 + 一句话」；准备动作不列；耗时、来源、记忆挪到回答下面一排。 */
 .run-act-icon { display: inline-grid; place-items: center; flex: none; width: 17px; height: 17px; color: var(--text-secondary); }
 .run-act-icon svg { width: 17px; height: 17px; stroke-width: 1.8; }
@@ -3277,7 +3277,7 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 /* 思考摘要、旁白里的小标题（模型写的 **粗体**）：比正文深一档，不放大。 */
 details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 
-/* ── 输入框改版（docs/evals/20261006-composer-quiet.md）────────────
+/* ── 输入框改版────────────
    一个圆角框，框里最多一行工具：＋ … 话筒 接管 [↑] ■。只用黑白灰；运行中不换颜色、不加提示区。
    做法取自 Claude for Chrome、ChatGPT Atlas、Gemini in Chrome、Operator 的输入框。 */
 /* 框的材质沿用暖灰凹槽 + 顶边高光（用户 10-06 要回这种质感），只改内边距。 */
@@ -3598,13 +3598,13 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   .pc-face, .pc-face > *, .pc.gone, .pc.collapse { transition: none; }
   .msg.user.card-turn .pc-face > * { animation-name: fadeOnlyIn; }
 }
-/* 改过网页的一轮：程序读回的这一栏、核对发现（docs/evals/20261009-claim-after-check.md） */
+/* 改过网页的一轮：程序读回的这一栏、核对发现 */
 .fill-evidence { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--content-border); border-radius: var(--radius-sm); background: var(--content-bg); font-size: var(--fs-ui); }
 .fill-evidence-line { overflow-wrap: anywhere; }
 .fill-evidence-line b { font-weight: 600; }
 .run-superseded { margin: 2px 0; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-tertiary); overflow-wrap: anywhere; }
 
-/* 交给你（docs/evals/20261010-hand-to-user.md R1）：与错误卡同一种卡片，左边线用强调色。 */
+/* 交给你：与错误卡同一种卡片，左边线用强调色。 */
 .handoff-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); }
 .handoff-card strong { font-size: var(--fs-ui); font-weight: 600; }
 .handoff-card > p { margin: 0; color: var(--text-primary); }
@@ -3851,7 +3851,7 @@ button.starter-way:focus-visible { outline: 2px solid var(--apple-blue); outline
 /* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
 #messages { overflow-x: hidden; }
 
-/* 说话输入：边说边出字（docs/evals/20261013-live-dictation.md）。说的时候输入框换成实时文字，工具栏换成声波。 */
+/* 说话输入：边说边出字。说的时候输入框换成实时文字，工具栏换成声波。 */
 #composer.dictating { box-shadow: 0 0 0 1px var(--text-primary); }
 #composer.dictating #input, #composer.dictating #composer-bar { display: none; }
 #dictation-text { min-height: 22px; max-height: 160px; overflow-y: auto; font-size: 14px; line-height: 22px; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }

@@ -4,7 +4,6 @@
  * 判定只回答一个确定性问题：**页面动没动**，不猜成功失败。
  * 强证据 = 几乎不可能由页面自身产生的变化（目标自身状态、目标区块、body 顶层、页面提示）；
  * 弱证据 = 动态页面每时每刻都在产生的全局数字，只展示，不参与 changed。
- * 依据见 docs/evals/20260911-action-evidence.md。
  */
 
 /** 目标所在区块的候选；找不到时退回 body（按钮的兄弟节点里出现表单是最常见的交互形态）。 */
@@ -21,7 +20,7 @@ export const EFFECT_SETTLE_INTERVAL_MS = 100;
 
 export const EFFECT_SETTLE_TIMEOUT_MS = 600;
 
-/** 点击后网站的请求还没回来时，最多等这么久（docs/evals/20261011-settle-after-requests.md）。 */
+/** 点击后网站的请求还没回来时，最多等这么久。 */
 export const EFFECT_SETTLE_MAX_MS = 3000;
 
 /** 弱证据阈值：全局 DOM 节点数 / 全局正文长度。 */
@@ -185,7 +184,6 @@ function redactPath(pathname: string): string {
  * 点击后页面发出的写类请求算强证据（10-04 北极星：保存结果显示在表单外，DOM 判据漏判）。
  * 只认点击窗口 [since, until] 内开始、与当前页面同一网站的非 GET 请求；不认打点、预检、安全报告与第三方请求。
  * 只写方法、主机与隐去密钥段的路径，不写查询参数与正文。这只说明页面对点击有反应，不说明业务成功。
- * 依据见 docs/evals/20261004-honest-completion.md。
  */
 export function requestEvidence(requests: readonly EffectRequest[], since: number, until: number, pageUrl: string): string[] {
   let pageSite: string;
@@ -253,7 +251,7 @@ export interface EffectDownload {
 }
 
 /**
- * 点击触发的下载算强证据，并如实写出 Chrome 报告的结果（10-08，docs/evals/20261008-download-result.md）。
+ * 点击触发的下载算强证据，并如实写出 Chrome 报告的结果。
  * 没有先 arm_event 的下载原来不进任何回执：文件已存好，回执却说「页面没变化」，网络记录只剩一条 ERR_ABORTED 的跳转，
  * 模型和目标核对都读成「没导出」，于是一再重导。只认与当前页面同一网站发起的下载；完成与否只认 chrome.downloads。
  */
@@ -307,7 +305,7 @@ export function formatEffectReport(report: EffectReport | undefined, action = "c
 /**
  * 轮询：每 intervalMs 取一次报告，出现强证据就返回；否则到 timeoutMs 返回最后一次。
  * pending 报告动作后发出的请求还有几条没完成：有就接着等，完成后再看一次（结果常在请求回来后才画出），
- * 最多等到 maxMs。以前一看到「加载中」就返回、或在请求回来前判「没变化」（docs/evals/20261011-settle-after-requests.md）。
+ * 最多等到 maxMs。以前一看到「加载中」就返回、或在请求回来前判「没变化」。
  * 一次都没拿到报告（poll 一直返回 null/抛错，例如页面已经导航）时返回 undefined——
  * 不能把「拿不到证据」说成「没有变化」。
  */

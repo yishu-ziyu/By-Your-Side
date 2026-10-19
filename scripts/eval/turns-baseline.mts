@@ -1,5 +1,5 @@
 /**
- * 三种转折的读数（不是验收）：答完补一句、做到一半改方向、做到一半补信息（docs/evals/20261011-turns-baseline.md）。
+ * 三种转折的读数（不是验收）：答完补一句、做到一半改方向、做到一半补信息。
  *   npx tsx scripts/eval/turns-baseline.mts --headless [--model=provider/id] [--repeat=N] [--only=follow,redirect,addinfo] [--keep-memory]
  * 本机练习站：会议室一览、预订表单、我的预订（可取消）、5 款笔记本的列表和详情页；服务器记下每次预订、取消和页面访问。
  * 每题一个新会话。插话的时机由服务器触发：助手第一次打开预订表单或某个笔记本详情页时，像用户一样在侧栏打字回车。
@@ -165,7 +165,7 @@ try {
     await sleep(4000);
     const doneAt = Date.now();
     // 取回答文字：去掉侧栏附加的部分（出处面板、「按上次做过的…」按钮和展开条），按段落分行，再去掉只由链接组成的段落。
-    // 10-12 回答末尾带「晨风 E13 · 青羽 A14」一串链接，判分只读最后一行，正确回答被判错（docs/evals/20261012-finish-before-stopping.md）。
+    // 10-12 回答末尾带「晨风 E13 · 青羽 A14」一串链接，判分只读最后一行，正确回答被判错。
     const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => {
       const c = m.cloneNode(true);
       c.querySelectorAll(".answer-panel,.memory-used-line,.memory-used-toggle").forEach(e => e.remove());

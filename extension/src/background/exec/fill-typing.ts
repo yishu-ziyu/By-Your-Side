@@ -1,5 +1,5 @@
 /**
- * 填写像真人敲键盘（docs/evals/20261014-fill-typing.md）：先清空，再用 CDP Input.insertText 写进去，写完读回分级。
+ * 填写像真人敲键盘：先清空，再用 CDP Input.insertText 写进去，写完读回分级。
  * 原生 setter 加脚本派发的事件不算可信输入：只认可信 input 事件的搜索框、只按 beforeinput 更新的编辑器都收不到（10-14 复现）。
  * 做法参考 Ego lite 的 fill（MIT，github.com/citrolabs/ego-lite，package/ego-browser/src/driver/page-actions.ts）：
  * insertText 写入、清空用全选覆盖、空值发 Delete、连续两次读到一样才算数、五级结果、没写进去先点一下再试。

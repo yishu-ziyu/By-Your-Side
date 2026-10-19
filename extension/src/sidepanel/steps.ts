@@ -359,11 +359,11 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
 }
 
 /**
- * 因为用户没执行的那一步：按扩展给出的原因说一句人话，不当成失败（docs/evals/20261009-send-confirm.md R2）。
+ * 因为用户没执行的那一步：按扩展给出的原因说一句人话，不当成失败。
  * 只看原因，不读给助手的文字：改写给助手的话不会让侧栏说错。
  */
 export const HELD_TEXT: Record<HeldReason, string> = {
-  // 付款按钮：助手不点，留给用户（docs/evals/20261009-pay-stop.md）。
+  // 付款按钮：助手不点，留给用户。
   pay: "停在付款前，等你自己点",
   stopped: "没发：你中止了任务",
   left: "没发：你离开了这个页面",
@@ -371,7 +371,7 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   declined: "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
   repeat: "你选择不发送：这次没再问，草稿留在页面上",
   busy: "没发：前一个确认还在等你",
-  // 教学一步没完成（docs/evals/20261011-guided-teaching.md）：照实说，不画成失败。
+  // 教学一步没完成：照实说，不画成失败。
   guide_stopped: "你中止了，这一步没做完",
   guide_left: "你离开了这个页面，这一步没做完",
   guide_no_change: "点了两次，页面都没有变化",

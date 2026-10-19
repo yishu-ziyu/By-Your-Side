@@ -1307,7 +1307,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     flyTo(inst, { x, y });
   }
 
-  // ── 教学一步（guide_step，docs/evals/20261011-guided-teaching.md）────────────
+  // ── 教学一步────────────
   // 圈出目标、光标停在右下角，等用户自己点。点击只听不拦：捕获期先看到，不阻止网页自己处理。
   // 后台通过 port 等结果；port 断开（后台结束、停下、离开）就收场，所以每条结束路径都走 endGuide。
 
@@ -1883,7 +1883,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     renderAmbient();
   }
 
-  // ── 交给用户时的圈（docs/evals/20261012-handoff-circle.md）──────────────
+  // ── 交给用户时的圈──────────────
   // 橙色表示「轮到你」；用户自己填好的栏、点过的按钮，圈就淡出。名牌只挂在还空着的第一栏和按钮上。
 
   const HANDOFF_COLOR = "#d2602a";

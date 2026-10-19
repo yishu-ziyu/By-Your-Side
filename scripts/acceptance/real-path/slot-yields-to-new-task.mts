@@ -1,5 +1,5 @@
 /**
- * 两个会话在回答之后自己接着做、占满执行名额时，用户另开会话发的新任务照常开始（docs/evals/20261011-slot-held-by-goal-continue.md R2）。
+ * 两个会话在回答之后自己接着做、占满执行名额时，用户另开会话发的新任务照常开始。
  * 只装扩展、隔离构建、本机脚本模型；目标核对请求经本机转发服务改写成脚本结论。
  *   npx tsx scripts/acceptance/real-path/slot-yields-to-new-task.mts --headless
  * A、B 各发一条任务，核对都判「没做完」，续做挂在一次 60 秒的模型请求上。

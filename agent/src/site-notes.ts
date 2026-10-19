@@ -4,7 +4,7 @@ import type { DocumentPersistence } from "./document-persistence.js";
 import { looksSecret } from "./memory-decision.js";
 
 /**
- * 站点笔记（docs/evals/20261013-site-notes.md）：任务判做成后，从这一轮的操作里写出的这个网站的通用做法。
+ * 站点笔记：任务判做成后，从这一轮的操作里写出的这个网站的通用做法。
  * 只关于网站、不关于用户，所以不进记忆、不走「要记住吗」；只存本机，每个网站最多 5 条，新的替换最旧的；网站总数也有上限。
  */
 export const SITE_NOTES_PER_HOST = 5;

@@ -1,5 +1,5 @@
 /**
- * 程序结束时说清停在哪一页；选择器歧义时报错直接给候选（#257，docs/evals/20261011-program-receipt.md）。
+ * 程序结束时说清停在哪一页；选择器歧义时报错直接给候选。
  *   npx tsx scripts/acceptance/real-path/program-receipt.mts --headless
  * 本机页 A 有两个同 class 的链接，都通往页 B。脚本模型：
  *   第 1 个程序用 a.item 点击 → 歧义报错；第 2 个程序用报错里第 2 个候选的 loc=css 点击，再用 browser.pressKey；然后回答。

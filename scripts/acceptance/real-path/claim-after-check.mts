@@ -1,6 +1,6 @@
 /**
- * 改过网页的一轮：侧栏摆出填写后网页里的实际内容，核对判继续时说发现了什么（docs/evals/20261009-claim-after-check.md R1、R3）。
- * 10-10 起回答不再扣到核对出结论，也不标「结果还没确认」（docs/evals/20261010-drop-blocking-labels.md）。只装扩展、隔离构建、本机脚本模型。
+ * 改过网页的一轮：侧栏摆出填写后网页里的实际内容，核对判继续时说发现了什么。
+ * 10-10 起回答不再扣到核对出结论，也不标「结果还没确认」。只装扩展、隔离构建、本机脚本模型。
  *   npx tsx scripts/acceptance/real-path/claim-after-check.mts --headless
  * 做法：模型地址指向本机转发服务；目标核对请求（系统提示词以核对说明开头）在这里按用例扣住，再换成脚本结论。
  * 每 50 毫秒读一次侧栏，记下什么时候出现了什么。
@@ -18,7 +18,7 @@
  *   o) 判继续的结论没有 finding：过程行第二行写「还差：…」（remaining）。
  *   p) 同一页两栏都叫「地址」：读回显示两行。
  *   r) 只读的一轮（只读页、不改页面，收尾不留过程块）答错、核对判继续：那份回答同样被拿掉，新旧两份从不同时出现。
- * 失败方式：恢复侧栏扣住回答，a 的回答要等到核对结论之后才出现（反例结果见 docs/evals/20261010-drop-blocking-labels.md）。
+ * 失败方式：恢复侧栏扣住回答，a 的回答要等到核对结论之后才出现（反例结果
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";

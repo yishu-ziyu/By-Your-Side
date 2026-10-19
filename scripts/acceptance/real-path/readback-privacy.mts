@@ -1,5 +1,5 @@
 /**
- * 填写后的读回不能带出隐私（docs/evals/20261009-claim-after-check.md R1）。只装扩展、隔离构建、本机脚本模型、本机练习页。
+ * 填写后的读回不能带出隐私。只装扩展、隔离构建、本机脚本模型、本机练习页。
  *   npx tsx scripts/acceptance/real-path/readback-privacy.mts --headless
  *   1) 普通文本框：侧栏显示读回的值；助手收到它；诊断记录导出里没有它。
  *   2) 标签「验证码」、name=otp、没有 autocomplete 的栏：侧栏、助手收到的回执、导出里都没有值。

@@ -56,7 +56,7 @@ const MAX_HANDSHAKE_RETRIES = 2;
 const RESPONSE_WATCHDOG_MS = 12_000;
 
 // server_vad 在 speech_stopped 后会自行创建回复；事故日志显示 created/首个工具调用通常在个位数~8ms 内抵达
-// （docs/evals/20260921-1441-log-review.md 第4节，agent.log 14:42:52.233→.241）。留约两百倍余量防抖动；
+// 。留约两百倍余量防抖动；
 // 超时仍未到就当作这轮没有自动回复，按原逻辑正常 flush，避免工具结果被无限期扣住。
 const AUTO_RESPONSE_WATCHDOG_MS = 2_000;
 
@@ -622,7 +622,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
         if (!this.options.diagnostic) {
           // server_vad 多半会自动创建这一轮回复；created 抵达前不能抢发 response.create，
-          // 否则会和服务端自己的回复相撞（复现见 docs/evals/20260921-1441-log-review.md 第4节）。
+          // 否则会和服务端自己的回复相撞
           this.autoResponsePending = this.speechSeq;
           this.armTimer('auto-response-watchdog', AUTO_RESPONSE_WATCHDOG_MS, () => {
             this.log({type: 'auto_response_watchdog', speechSeq: this.autoResponsePending});

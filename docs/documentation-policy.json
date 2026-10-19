@@ -15,8 +15,6 @@
     "AGENTS.md": "编码代理自动读取的规则入口",
     "CLAUDE.md": "Claude Code 自动读取的入口，只导入 AGENTS.md",
     ".github/pull_request_template.md": "GitHub 自动读取的复核入口",
-    ".agents/skills/typesafe-ai/SKILL.md": "工具技能加载约定",
-    "agent/src/vendor/stagehand/PATCH.md": "随第三方源码保留的补丁来源",
     "eval/README.md": "浏览器任务评测包的入口，随脚本和结果一起放",
     "eval/harness/README.md": "评测脚本的用法说明，随脚本放",
     "eval/research/competitors.md": "评测任务的竞品调研来源，随任务集放",

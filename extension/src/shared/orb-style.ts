@@ -1,5 +1,5 @@
 /**
- * 语音光球按用户所选的样子挂到 canvas 上（#124，docs/evals/20261007-voice-orb-styles.md）。
+ * 语音光球按用户所选的样子挂到 canvas 上。
  * 粒子：原来的粒子球（voice-orb.ts）。暮色、晨光：自己渲染的循环视频（scripts/orb/render_fluid.py），逐帧画进同一个 canvas。
  * 设置页改了样子，已挂的光球立即换，不用重开侧栏。
  */

@@ -1,5 +1,5 @@
 /**
- * 卡片里可调的数（docs/evals/20261018-card-inputs.md R1–R3）。
+ * 卡片里可调的数。
  *   npx tsx scripts/acceptance/real-path/card-inputs.mts --headless
  * 脚本模型写一张订阅卡：月数（加减）、人数（加减 + 滑块）、引用它们的数字格 / 选项 / 表格 / 正文 {=total}，外加另一张只有清单的卡。
  * 点加号、打字超出范围、点滑块，看卡片和正文当场重算；勾一项后重开侧栏，看调过的数和勾选都还在、另一张卡不受影响。

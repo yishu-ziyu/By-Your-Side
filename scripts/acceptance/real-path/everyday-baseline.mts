@@ -117,7 +117,7 @@ const FD_ARTICLE = `<article><h1>全双工语音，为什么这么难做</h1><p>
 <p>我的判断是：全双工负责「聊」，后台助手负责「做」。你随口一句话，它分得清哪句是闲聊、哪句要动手；被打断时，只停嘴，不停手。回声，交给工程去磨。</p></article>`;
 
 const PAGES = {
-  // 10-11 对照 ax.ts 之后的三类页面（docs/evals/20261011-after-ax-compare.md）：结果晚到、回车搜索、填完才能点。
+  // 10-11 对照 ax.ts 之后的三类页面：结果晚到、回车搜索、填完才能点。
   "/slow-shop": page("杂货铺", `<main><h1>杂货铺</h1><ol id="goods"><li>竹编篮</li><li>粗陶杯</li><li>麻布袋</li><li>木汤勺</li><li>铜书签</li></ol><button id="more">加载更多</button></main>
 <script>more.onclick = async () => { const r = await fetch("/api/slow-goods"); for (const g of await r.json()) { const li = document.createElement("li"); li.textContent = g; goods.append(li); } };</script>`),
   "/enter-search": page("站内搜索", `<main><h1>站内搜索</h1><form id="f"><input id="q" aria-label="搜索" type="search"></form><ol id="hits"></ol></main>
@@ -187,7 +187,7 @@ const site = createServer((req, res) => {
     return;
   }
 
-  // 结果晚到：900 毫秒才回；回车搜索：300 毫秒才回（docs/evals/20261011-after-ax-compare.md）。
+  // 结果晚到：900 毫秒才回；回车搜索：300 毫秒才回。
   if (path === "/api/slow-goods") { setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(["青花瓷碗", "藤编扇"])), 900); return; }
   if (path === "/api/search") { setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(["猫咪护理入门", "猫砂怎么选"])), 300); return; }
 

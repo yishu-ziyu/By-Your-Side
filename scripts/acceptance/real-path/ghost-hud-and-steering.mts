@@ -1,5 +1,5 @@
 /**
- * 直连按钮与改方向（docs/evals/20261005-ghost-hud-and-steering.md R1–R4）：只装扩展的隔离无头 Chrome、真侧栏、
+ * 直连按钮与改方向：只装扩展的隔离无头 Chrome、真侧栏、
  * 本机网页与本机脚本模型。按钮必须不经模型；改方向必须截断正在写的长文、同一轮换成新回答。
  *
  *   npx tsx scripts/acceptance/real-path/ghost-hud-and-steering.mts --headless --run=final
@@ -124,7 +124,7 @@ try {
   await rp.evaluate(settings, 'document.querySelector("#model-save").scrollIntoView()'); await rp.click(settings, '#model-save');
   await until(async () => String(await rp.evaluate(settings, 'document.querySelector("#model-status").textContent')).startsWith('已保存'), 10000, 'saved');
   await rp.cdp.send('Target.closeTarget', { targetId: (await rp.targets()).find(t => t.url.endsWith('/settings.html'))!.targetId });
-  // 输入框改版（docs/evals/20261006-composer-quiet.md）去掉了运行中的「改方向」建议按钮：改方向就是在输入框里直接说。
+  // 输入框改版去掉了运行中的「改方向」建议按钮：改方向就是在输入框里直接说。
   check('空闲时不显示改方向提示区', await rp.evaluate(panel, '!document.querySelector("#steer-ribbon")?.getClientRects().length'), null);
   await rp.click(panel, '#input'); await rp.typeText(panel, '对比 Ingress 和 Gateway API'); await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn").classList.contains("stopping") && (document.querySelector(".msg.assistant.streaming")?.textContent.length ?? 0) > 20'), 20000, '长文写到一半');

@@ -80,7 +80,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const document = deps.document ?? ((name: string) => new IdbDocument(name));
     const memoryStore = useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(document("memories")), document("pending-memory")), document("habits"));
     const taskHistory = new TaskHistoryStore(document("tasks"));
-    // 站点笔记：关于网站的做法，不是关于用户的记忆，单独一份（docs/evals/20261013-site-notes.md）。
+    // 站点笔记：关于网站的做法，不是关于用户的记忆，单独一份。
     const siteNotes = new SiteNotesStore(document("site-notes"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
       store,

@@ -1,5 +1,5 @@
 /**
- * 助手在后台标签里做事，不换走用户正在看的标签页；只在需要用户时把自己的页切到前台（docs/evals/20261010-keep-foreground.md）。
+ * 助手在后台标签里做事，不换走用户正在看的标签页；只在需要用户时把自己的页切到前台。
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/keep-foreground.mts --headless
  * 同一个窗口里两个标签页：助手的工作页「表单页」和用户自己的「我的页面」。助手读过表单页（认领为工作页）后，用户切回「我的页面」。
@@ -10,7 +10,7 @@
  *   c) 助手点 target=_blank 的链接：Chrome 会把新页设成活动页，打开者记成用户的页。扩展仍跟到新页（点击结果写明新页已是工作页），
  *      并把「我的页面」放回活动页：点击结果回到模型时，活动标签是「我的页面」。
  *   e) 助手切回表单页再点付款按钮：切换后活动页仍是「我的页面」；网页上出现付款提示时，表单页已是活动页，网站没收到付款。
- *   f) 用户在「我的页面」说「给我看表单页」，助手用 tabs show：结果回到模型时表单页已是活动页，结果写明用户已在这一页（docs/evals/20261011-show-page-to-user.md）。
+ *   f) 用户在「我的页面」说「给我看表单页」，助手用 tabs show：结果回到模型时表单页已是活动页，结果写明用户已在这一页。
  *   无头 Chrome 只有一个窗口且一直聚焦，所以「不聚焦窗口」这一条本用例证伪不了，不设检查。
  * 判据只读 Chrome 自己的状态（扩展后台的 chrome.tabs.query）、网站收到的请求和页面读回。
  * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页；不认「打开者是用户的页」的新页，c 跟不上新页；
@@ -112,7 +112,7 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
     if (m.role !== "tool" || seenCalls.has(id)) continue;
     seenCalls.add(id);
     const name = names.get(id) ?? "?";
-    receipts.push({ name, text: (typeof m.content === "string" ? m.content : JSON.stringify(m.content)).slice(0, 600) });
+    receipts.push({ name, text: (typeof m.content === "string" ? m.content : JSON.stringify(m.content)).slice(0, 2000) });
     pending.push(sample(`${name} 结果`, seenCalls.size).then(s => samples.push(s)));
     onReceipt?.(name, seenCalls.size);
   }
@@ -165,29 +165,24 @@ try {
   part = "b";
   type DomNode = { nodeName: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[]; nodeValue?: string; backendNodeId: number };
   const walk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => walk(c, hit)).find(Boolean);
-  const textOf = (n: DomNode): string => n.nodeName === "STYLE" ? "" : (n.nodeValue ?? "") + [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(textOf).join("");
-  /** 确认框在 closed shadow 里：用 CDP 穿透找到「发送」按钮的位置。 */
-  const confirmYes = async () => {
-    // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
+  /** 网页上圈出发送按钮并提示去侧栏确认，侧栏同时出现发送确认卡。 */
+  const confirmReady = async () => {
     const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
     const host = walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000send-confirm"));
-    const yes = host && walk(host, n => n.nodeName === "BUTTON" && textOf(n).trim() === "发送");
-    if (!yes) return null;
-    // SAFETY: DOM.getBoxModel 的 model.border 是 8 个数的四边形。
-    const q = (await rp.cdp.send("DOM.getBoxModel", { backendNodeId: yes.backendNodeId }, work).catch(() => null))?.model.border as number[] | undefined;
-    return q ? { x: (q[0]! + q[2]!) / 2, y: (q[1]! + q[5]!) / 2 } : null;
+    const hasCard = (await rp.evaluate(panel, '!!document.querySelector(".send-confirm .send-confirm-yes")')) as boolean;
+    return host && hasCard ? true : null;
   };
   await ask(ASK.b);
-  const yes = await until(confirmYes, 45_000, "网页上出现确认框", 100);
-  const atConfirm = await sample("确认框出现");
+  await until(confirmReady, 45_000, "侧栏确认卡与网页圈选出现", 100);
+  const atConfirm = await sample("确认卡出现");
   samples.push(atConfirm);
   await rp.screenshot(work, join(out, "b-confirm.png"));
   // 「发送」刚出现的那一会儿不算点击（SEND_ARM_MS）。
   await sleep(1000);
   const afterSwitch = samples.find(s => s.part === "b" && s.after === "tabs 结果");
   check("b 助手切回表单页（tabs switch）后，活动标签仍是「我的页面」", afterSwitch?.activeId === userId, afterSwitch as unknown as Json);
-  check("b 确认框出现时，表单页已是活动标签", atConfirm.activeId === formId && count("/send") === 0, { ...atConfirm, formId, sent: count("/send") });
-  for (const type of ["mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, ...yes, button: "left", clickCount: 1 }, work);
+  check("b 确认卡出现时，表单页已是活动标签", atConfirm.activeId === formId && count("/send") === 0, { ...atConfirm, formId, sent: count("/send") });
+  await rp.click(panel, ".send-confirm-yes");
   await answered(FINAL.b);
   check("b 用户点「发送」后网站收到 1 条", count("/send") === 1, { sent: count("/send") });
 
@@ -195,7 +190,7 @@ try {
   part = "d";
   await rp.cdp.send("Page.bringToFront", {}, user);
   await ask(ASK.d);
-  await until(async () => await rp.evaluate(panel, '!!document.querySelector(".handoff-card")'), 45_000, "侧栏出现「需要你来这一步」");
+  await until(async () => await rp.evaluate(panel, '!!document.querySelector(".handoff-card") && document.querySelector("#takeover-btn")?.dataset.mode === "handback"'), 45_000, "侧栏出现「需要你来这一步」且页面归用户");
   await Promise.all(pending);
   const atHandoff = await sample("交给用户");
   samples.push(atHandoff);
@@ -241,7 +236,7 @@ try {
   const payReceipt = receipts.filter(r => r.name === "click").at(-1)?.text ?? "";
   check("e 助手切回表单页后活动页仍是「我的页面」；付款前停下时表单页已是活动标签，网站没收到付款", eSwitch?.activeId === userId && atPayStop.activeId === formId && count("/pay") === 0 && payReceipt.includes("Stopped before payment"), { afterSwitch: eSwitch as unknown as Json, atPayStop: atPayStop as unknown as Json, formId, paid: count("/pay"), payReceipt });
 
-  // ── f：用户要看表单页，助手用 tabs show 把它放到用户眼前（docs/evals/20261011-show-page-to-user.md） ──
+  // ── f：用户要看表单页，助手用 tabs show 把它放到用户眼前 ──
   part = "f";
   await rp.cdp.send("Page.bringToFront", {}, user);
   await sleep(300);

@@ -1,5 +1,5 @@
 /**
- * 记忆入口有名字、抽屉能搜（docs/evals/20261006-memory-management.md R1、R5）。
+ * 记忆入口有名字、抽屉能搜。
  * 只装扩展、隔离构建、本机脚本模型；记忆和过往任务直接写进扩展自己的 IndexedDB（库名、键与 memory-used-line.mts 相同）。
  *   npx tsx scripts/acceptance/real-path/memory-management.mts --headless
  * 失败方式：顶栏只有图标没有字；抽屉没有搜索框；搜索后组头还写过滤前的条数；没有匹配的组还占着位置；什么都搜不到时一片空白。

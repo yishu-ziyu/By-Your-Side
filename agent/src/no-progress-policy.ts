@@ -3,7 +3,7 @@ import {isWriteTool} from '../../shared/control.js';
 import {toolAction} from '../../shared/user-facing.js';
 
 /**
- * 原地转圈的自停（docs/evals/20261001-data-to-file.md 标准 7）。
+ * 原地转圈的自停。
  *
  * 一次任务里，每个工具结果归三类：
  * - 有进展（清零）：真实动作（写类工具、程序里的写类步骤；`js`/`cdp` 按结果判断，因为它们多半只是读）、
@@ -13,7 +13,7 @@ import {toolAction} from '../../shared/user-facing.js';
  * - 记半步：中间等待过（sleep/waitFor/waitForLoad 后）读到的同样内容：正常等待给加倍的余量，但不会无限等下去；
  * - 不计：第一次出现的错误（模型刚碰到环境限制）。
  * 累计满 NO_PROGRESS_LIMIT 步没进展就停下本轮。门槛最初按 10-01 B 站记录回放定（见验收文件的回放表）；
- * 10-10 用户裁决放宽，让助手多试几步再停（docs/evals/20261010-drop-retry-locks.md）。
+ * 10-10 用户裁决放宽，让助手多试几步再停。
  */
 export const NO_PROGRESS_LIMIT = 15;
 

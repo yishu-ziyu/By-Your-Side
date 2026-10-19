@@ -1,6 +1,6 @@
 /**
  * 一步写入的结果未知之后，助手重读页面、对同一个目标再做一次：网站收到，侧栏给出最终回答，没有放弃或「没有重复执行」的话
- * （docs/evals/20261010-drop-retry-locks.md R1）。只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
+ * 。只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/retry-after-unknown.mts --headless
  * 路径：snapshot 拿到「保存」按钮的 @ref → 页面重渲染，按钮 3 秒内不可见（模型用 js 模拟）→ click @ref：
  * 量不到元素位置，回执「结果未知」→ 等按钮回来再 snapshot → 对同一个 @ref 再 click → 回答。

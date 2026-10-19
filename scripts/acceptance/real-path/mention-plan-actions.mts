@@ -1,6 +1,6 @@
 /**
  * 输入 @ 拉进别的标签页；改页面时任务条上放一行计划，随这一轮结束收掉；
- * 每个回答一个主动作，其余在 Ctrl/⌘+Shift+K 动作列表（docs/evals/20261013-uiux-a2-a3-a8.md）。
+ * 每个回答一个主动作，其余在 Ctrl/⌘+Shift+K 动作列表。
  * 改页面的任务不等确认就开始，计划行的「不会做」不和用户的授权打架；任务运行中 @ 的页面模型读得到。
  *   npx tsx scripts/acceptance/real-path/mention-plan-actions.mts --headless
  */

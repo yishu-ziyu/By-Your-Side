@@ -1,5 +1,5 @@
 /**
- * 点不了时，回执说清是被谁挡住、还是按钮不可用（docs/evals/20261011-click-blocked-reason.md）。
+ * 点不了时，回执说清是被谁挡住、还是按钮不可用。
  * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/click-blocked-reason.mts --headless
  * 练习页有四个按钮，每次被点到都向服务器报一次：

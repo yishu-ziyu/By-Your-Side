@@ -3,7 +3,7 @@
  * 1. 不可信边界：页面文本一律包进 <page-content untrusted ...>，并声明它是数据不是指令；
  * 2. 凭据隐去：高熵串（恢复码、API key、私钥）只留标记。
  *
- * 依据 docs/evals/20260911-untrusted-and-snapshot.md。取舍与同类实现（huashu-chrome）一致：
+ *取舍与同类实现（huashu-chrome）一致：
  * 误报的代价是模型少看到几行乱码，漏报的代价是凭据进了留痕的对话上下文。
  */
 

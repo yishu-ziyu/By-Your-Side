@@ -16,20 +16,9 @@ import { mkdir, mkdtemp, open, readFile, readdir, writeFile } from "node:fs/prom
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO } from "./harness.mts";
+import { CORE_CASES as CORE, SKIP_FILES as SKIP } from "../nodes.mts";
 
 const HERE = join(REPO, "scripts/acceptance/real-path");
-
-// background-tab-input 和 attention-cues 要有窗口的 Chrome（会开窗口），不进整轮。
-const SKIP = new Set(["harness.mts", "run-all.mts", "background-tab-input.mts", "attention-cues.mts"]);
-
-// 核心用户路径（一批改动跑一遍）：只装扩展、脚本模型、无需凭据。选择依据见 docs/evals/20261008-e2e-only.md。
-const CORE = [
-  "sidebar-interaction", "composer-expand", "script-friction", "target-gone", "pdf-download", "memory-used-line",
-  "session-durability", "error-recovery", "model-failover", "welcome-context", "claim-after-check", "refill-after-check", "readback-privacy", "snapshot-privacy",
-  "send-confirm", "panel-send-confirm", "pay-stop", "handoff", "answer-straight", "retry-after-unknown", "site-hint", "panel-tidy", "keep-foreground", "navigate-wait",
-  "double-click-new-tab", "reading-correction", "http-page-select", "reading-card-after-reinject", "click-blocked-reason", "settle-after-requests", "slot-yields-to-new-task", "history-prefix", "program-receipt", "process-block", "wait-inline-timer", "overflow-retry",
-  "restart-resume",
-];
 
 const core = process.argv.includes("--core");
 

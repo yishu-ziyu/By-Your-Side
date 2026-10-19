@@ -10,6 +10,9 @@ on:
         options:
           - core
           - session-durability
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -17,17 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
       - run: npx --yes playwright install --with-deps chromium
       - name: Locate Chrome for Testing
         run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
       # Real-path cases install only the extension and use a scripted model.
-      # The core set lives in run-all.mts (CORE).
+      # The core set lives in nodes.mts (CORE_CASES).
       - name: Core acceptance
         if: inputs.suite == 'core'
         run: npm test
@@ -35,7 +38,7 @@ jobs:
         if: inputs.suite == 'session-durability'
         run: npx tsx scripts/acceptance/real-path/session-durability.mts --headless
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-isolated-evidence
           path: out/

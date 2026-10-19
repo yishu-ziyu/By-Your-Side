@@ -1,13 +1,11 @@
 /**
- * 回答首句末尾「按你说过的「…」等 N 条 ›」验收（docs/evals/20261006-memory-used-line.md 的 R1–R4）。
+ * 回答首句末尾「按你说过的「…」等 N 条 ›」验收。
  * 只装扩展的隔离无头 Chrome、真侧栏、本机脚本模型。证据只取用户看得到的结果和「发给模型的请求原文」
  * （代理在脚本模型前面记下），再加扩展自己的 IndexedDB（核对「这里别用」没有删记忆）。
  *
  *   npx tsx scripts/acceptance/real-path/memory-used-line.mts --headless [--scripted]
  *
  * 只有脚本模型一种模式（不花钱）；--scripted 可写可不写。产物：out/acceptance/memory-used-line/ 下截图与 result.json。
- *
- * 技术前提（预置记忆、读请求原文、点侧栏按钮）与 memory-foundation.mts 相同，已在那里跑通，这里不另做小实验。
  *
  * 各条「假通过」与堵法：
  * R1 只看界面有一行字，不管助手是否真带了记忆 → 同时读请求原文，N 必须等于请求里出现的预置条数。
@@ -55,7 +53,7 @@ const EMAIL = "邮箱：yishu.line@example.test";
 
 const LANG = "回复用中文";
 
-/** 和 ASK_EMAIL 共有「注册」：10-10 起同一网站的过往任务要和这句话对得上才带（docs/evals/20261010-panel-tidy.md）。 */
+/** 和 ASK_EMAIL 共有「注册」：10-10 起同一网站的过往任务要和这句话对得上才带。 */
 const TASK_GOAL = "在 A 店注册并订阅到货提醒";
 
 const TASK_SUMMARY = "已在 A 店订阅了到货提醒，确认邮件已点过。这款现价 299 元。";
@@ -504,7 +502,7 @@ try {
 
 const ok = !fatal && checks.length > 0 && checks.every((c) => c.pass);
 
-await writeFile(join(artifacts, "result.json"), JSON.stringify({ case: "memory-used-line", eval: "docs/evals/20261006-memory-used-line.md", finishedAt: new Date().toISOString(), ok, passed: checks.filter((c) => c.pass).length, total: checks.length, checks, fatal, mainRequests: mainRequests.length }, null, 2));
+await writeFile(join(artifacts, "result.json"), JSON.stringify.toISOString(), ok, passed: checks.filter((c) => c.pass).length, total: checks.length, checks, fatal, mainRequests: mainRequests.length }, null, 2));
 
 console.log(`${ok ? "PASS" : "FAIL"} memory-used-line ${checks.filter((c) => c.pass).length}/${checks.length} → ${join(artifacts, "result.json")}`);
 

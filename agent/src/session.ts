@@ -111,9 +111,9 @@ export interface SessionCreateOptions {
   memoryStore?: MemoryStore;
   /** 过往任务：开始时带上当前网站做过的事，并供 user_memory 查询。 */
   taskHistory?: TaskHistoryStore;
-  /** 站点笔记（docs/evals/20261013-site-notes.md）：只给主会话；做成的任务写，打开这个网站时带上。 */
+  /** 站点笔记：只给主会话；做成的任务写，打开这个网站时带上。 */
   siteNotes?: SiteNotesStore;
-  /** 用户打开了「回答里的小程序」实验功能（docs/evals/20261019-mini-apps.md）：打开时每次运行的上下文附上小程序写法。 */
+  /** 用户打开了「回答里的小程序」实验功能：打开时每次运行的上下文附上小程序写法。 */
   miniApps?: () => Promise<boolean>;
   conversationId?: string;
   /** 共享同一 RPC 的成员身份；Lead 不传，worker 传自己的 sessionId。 */
@@ -836,7 +836,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
       wrapper.noProgressPolicy = noProgressPolicy;
       wrapper.exploreLadder = exploreLadder;
-      // 原地转圈（docs/evals/20261001-data-to-file.md 标准 7）：停下本轮，说清卡在哪一步、已有什么、还差什么。
+      // 原地转圈：停下本轮，说清卡在哪一步、已有什么、还差什么。
       onNoProgress = stop => {
         // 本轮已有一段停下说明，不再重复。
         if (wrapper.pendingToolFailure) return;
@@ -1429,7 +1429,7 @@ return;}
       if (warmMain && this.warmedObservation) this.warmedObservation.main = undefined;
       const freshMain = () => (this.rpc!.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
       // 正文和 AX 树都给（10-11 用户定）：只给 AX 树时正文被导航和编号挤掉，模型不信、重读 2–3 轮（#255）；
-      // 只给正文时动作任务没有编号，中位从 3 轮变成 7 轮（docs/evals/20261011-read-main-text.md）。哪一样读失败就只给另一样。
+      // 只给正文时动作任务没有编号，中位从 3 轮变成 7 轮。哪一样读失败就只给另一样。
       const [warmedOrFreshMain, tree] = await Promise.all([
         (warmMain ?? freshMain()).then(res => res ?? freshMain()),
         (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown }>).catch(() => null),
@@ -2335,7 +2335,7 @@ return {kind:'model'};
     }
 
     const queued=this.deferredSteers.slice();
-    // 接管前没确认的写入作废：不让模型去核对用户已经改过的字段，再因核对失败停下（docs/evals/20261007-pi1-rebuild.md 步 2）。
+    // 接管前没确认的写入作废：不让模型去核对用户已经改过的字段，再因核对失败停下。
     const released = this.taskResultsHost?.releaseAfterHandback?.() ?? [];
 
     this.handbackRunId = this.deliveryRunId();
@@ -2762,7 +2762,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     // 这一任务用过浏览器或页面工具（读页、改页、跑程序、存文件都算），或这一轮最后在问用户（问邮箱、问要不要提交），
     // 或没用工具就说「还不能判断」「我会去查看」（defersWork）。
     // 只读任务也核对：10-01 读完 flomo 笔记后交付了上一个任务的 Drive 状态，旧规则（只看改页面、存文件）直接收尾了。
-    // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒（docs/evals/20261001-offtopic-reply-diagnostics.md）。
+    // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒。
     // 宿主按记下的做法打开了页面的一轮：要做的已经做完，被拦下的工具调用不算做过事。
     if (snapshot?.runId && this.savedOpenRun === snapshot.runId) return false;
     if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
@@ -3142,7 +3142,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const errText = lastAssistantError(event.messages);
 
       if (errText) {
-        // 写明哪个模型出的错（docs/evals/20261004-model-failover.md F3）；侧栏改成人话时保留模型名。
+        // 写明哪个模型出的错；侧栏改成人话时保留模型名。
         const failed = failedModel(event.messages);
         const head = failed ? `模型请求最终失败（${failed}）：` : "模型请求最终失败：";
         console.error(`[sideagent] ${head}${errText}`);

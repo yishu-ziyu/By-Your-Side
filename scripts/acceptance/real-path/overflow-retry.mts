@@ -1,5 +1,5 @@
 /**
- * 对话超出模型的上下文窗口时，删掉这一轮之前的旧网页内容再问一次，回答照常出来（docs/evals/20261011-overflow-retry.md）。
+ * 对话超出模型的上下文窗口时，删掉这一轮之前的旧网页内容再问一次，回答照常出来。
  *   npx tsx scripts/acceptance/real-path/overflow-retry.mts --headless
  * 本机三个长页面 A、B、C 上各问一句；脚本模型在一个主任务请求同时带着三页正文时回超窗口错误。
  *   a) 第三问照样答完，侧栏不显示超窗口的错误。

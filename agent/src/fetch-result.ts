@@ -1,6 +1,5 @@
 /**
  * `fetch` 回执的格式化：扩展里没有本机文件，响应正文有界内联，超出部分明确说截断。
- * 依据 docs/evals/20260911-fetch-tool.md。
  */
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { redactUrlCredentials } from "../../shared/network.js";

@@ -1,5 +1,5 @@
 /**
- * 主模型卡住或暂时出错时，换设置页「备用模型」里选的另一家接着做（docs/evals/20261009-model-backup.md R1）。
+ * 主模型卡住或暂时出错时，换设置页「备用模型」里选的另一家接着做。
  * 只装扩展、隔离构建、本机脚本模型：主模型是自定义地址，指向本机服务（挂起 / 回 503 / 回 401）；
  * 备用模型是阶跃星辰，发往 api.stepfun.com 的请求在 offscreen 文档里被 CDP 拦下，转给本机脚本模型回答。
  *   npx tsx scripts/acceptance/real-path/model-failover.mts --headless [--case=hang|503|401|quota|off|stop|return|side503|side401]
