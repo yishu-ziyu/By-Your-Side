@@ -484,7 +484,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     const text = await readFile(join(dirs.profile, "DevToolsActivePort"), "utf8").catch(() => "");
 
     return text.split("\n")[0] || undefined;
-  }, 20_000, "Chrome 调试端口").catch((error: Error) => {
+  }, 60_000, "Chrome 调试端口").catch((error: Error) => {
     const detail = `${error.message}\nChrome stderr (tail):\n${chromeStderr.slice(-8000)}`;
     chrome.kill("SIGKILL");
     tempDir.release();
@@ -553,7 +553,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
         if (chrome.exitCode !== null) throw new Error(`Chrome重启退出: ${chrome.exitCode}`);
 
         return (await readFile(join(dirs.profile, "DevToolsActivePort"), "utf8").catch(() => "")).split("\n")[0] || undefined;
-      }, 20_000, "同配置Chrome重启");
+      }, 60_000, "同配置Chrome重启");
 
       const next = await fetchJson(`http://127.0.0.1:${nextPort}/json/version`);
       cdp = createCdp(next.webSocketDebuggerUrl);
