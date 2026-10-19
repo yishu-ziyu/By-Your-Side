@@ -76,7 +76,7 @@ const browserSwaps = {
 await esbuild.build({
   ...common,
   format: "esm",
-  entryPoints: { inproc: "src/inproc/main.ts", settings: "src/settings/main.ts" },
+  entryPoints: { inproc: "src/inproc/main.ts", "opfs-worker": "src/inproc/opfs-worker.ts", settings: "src/settings/main.ts" },
   // 订阅登录模块里有 Node 环境才走的动态 import（回调服务），浏览器里不会执行。
   external: ["node:*"],
   plugins: [browserSwaps],
