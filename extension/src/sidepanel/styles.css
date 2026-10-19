@@ -1027,9 +1027,12 @@ details.run-steps:not(.done)[open] .run-body {
 }
 
 details.run-steps:not(.done)[open] .run-body.overflowing {
-  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+  --run-scroll-mask: linear-gradient(to bottom, transparent 0, #000 var(--run-fade-top, 0px), #000 calc(100% - var(--run-fade-bottom, 0px)), transparent 100%);
+  mask-image: var(--run-scroll-mask);
+  -webkit-mask-image: var(--run-scroll-mask);
 }
+.run-body[data-fade-top="true"] { --run-fade-top: 28px; }
+.run-body[data-fade-bottom="true"] { --run-fade-bottom: 28px; }
 
 .kn {
   width: 32px;
