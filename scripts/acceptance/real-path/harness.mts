@@ -167,9 +167,20 @@ function browserControls(cdp: ReturnType<typeof createCdp>, id: string) {
     await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }, sessionId);
   };
 
-  const screenshot = async (sessionId: string, file: string) => {
+  const capture = async (sessionId: string, file: string) => {
     const { data } = await cdp.send("Page.captureScreenshot", { format: "png" }, sessionId);
     await writeFile(file, Buffer.from(data, "base64"));
+  };
+
+  const screenshot = async (sessionId: string, file: string) => {
+    await capture(sessionId, file);
+
+    // 界面总览（npm run gallery）要同一屏的深色版；只给侧栏补拍，网页本身没有深色。
+    if (process.env.SIDEAGENT_GALLERY !== "1" || !/sidepanel\.html$/.test(String(await evaluate(sessionId, "location.pathname")))) return;
+    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, sessionId);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    await capture(sessionId, file.replace(/\.png$/, ".dark.png"));
+    await cdp.send("Emulation.setEmulatedMedia", { features: [] }, sessionId);
   };
 
   return {

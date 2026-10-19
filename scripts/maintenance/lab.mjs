@@ -8,10 +8,11 @@
  *   npm run lab -- logs [参数原样转给 logs.mjs]
  *   npm run lab -- sites start|stop|status
  *   npm run lab -- clean          （Ego 只关名字以 bys 开头的任务空间）
+ *   npm run lab -- gallery [用例…] [--compare=上次总览目录] [--dist=扩展]   （界面总览；也可 npm run gallery）
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, loadavg, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -278,6 +279,160 @@ function cases() {
   process.exit(outcomes.every(item => item.ok) ? 0 : 1);
 }
 
+// ── 界面总览 ─────────────────────────────────────────────
+
+/** 会截侧栏或网页样子的用例，按用户看到的地方分组。新加截图用例时补进来。 */
+const GALLERY = [
+  ["空会话", ["welcome-context", "memory-management"]],
+  ["输入与菜单", ["composer-expand", "model-menu", "conversation-menu", "mention-plan-actions"]],
+  ["工作中与回答", ["process-block", "answer-cards", "card-form", "card-inputs", "card-row-source", "answer-diagram", "answer-shorten", "mini-apps"]],
+  ["做完、确认与长会话", ["fill-undo-button", "panel-send-confirm", "guided-teaching", "conversation-chapters"]],
+  ["网页上", ["reading-card-gloss", "page-assistance-visual", "ptt-capsule", "edge-tab", "visual-ui-presence", "proactive-card"]],
+  ["出错", ["error-recovery-show"]],
+  ["设置页", ["first-run-settings"]],
+];
+
+function runCase(name, dist) {
+  return new Promise(done => {
+    const started = Date.now();
+    const child = spawn("npx", ["tsx", join(repo, "scripts/acceptance/real-path", `${name}.mts`), "--headless"], { cwd: repo, env: { ...process.env, SIDEAGENT_ACCEPTANCE_DIST: dist, SIDEAGENT_GALLERY: "1" } });
+    let output = "";
+
+    child.stdout.on("data", chunk => { output += chunk; });
+    child.stderr.on("data", chunk => { output += chunk; });
+    child.on("close", status => {
+      // 各用例把证据目录写在输出里，格式不统一：取最后一个指向 out/ 的路径；没打印的，找这次新建的「时间-用例名」目录。
+      const printed = [...output.matchAll(/(\/[^\s"']*\/out\/[^\s"']+)/g)].map(m => m[1].replace(/[),.;]+$/, "")).at(-1);
+      const runs = join(repo, "out/acceptance/real-path");
+      const fresh = existsSync(runs) ? readdirSync(runs).filter(entry => entry.endsWith(`-${name}`) && statSync(join(runs, entry)).mtimeMs >= started).sort().at(-1) : undefined;
+      const found = printed ?? (fresh && join(runs, fresh));
+      const dir = found && /\.\w+$/.test(found) ? dirname(found) : found;
+
+      done({ name, ok: status === 0, seconds: Math.round((Date.now() - started) / 1000), dir: dir && existsSync(dir) ? dir : null });
+    });
+  });
+}
+
+function pngsUnder(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const full = join(dir, entry.name);
+
+    if (entry.isDirectory()) return entry.name === "screenshots" ? [] : pngsUnder(full);
+
+    return entry.name.endsWith(".png") && !entry.name.endsWith(".dark.png") ? [full] : [];
+  });
+}
+
+/** gallery：冻结扩展跑截图用例（4 路并行），把截图和深色版拷进 out/gallery/<时间>/，拼成一页总览。 */
+async function gallery() {
+  const picked = rest.filter(arg => !arg.startsWith("--"));
+  const groups = picked.length ? [["选中的用例", picked]] : GALLERY;
+  const compare = option("compare");
+  loadGate();
+  const dist = distOption() ?? frozenDist();
+  const queue = groups.flatMap(([, names]) => names);
+  const results = new Map();
+  const lane = async () => {
+    for (let name = queue.shift(); name; name = queue.shift()) {
+      const result = await runCase(name, dist);
+      results.set(name, result);
+      console.log(`  ${result.ok ? "✓" : "✗"} ${name}（${result.seconds} 秒）`);
+    }
+  };
+
+  console.log(`界面总览：${queue.length} 个用例，4 路并行`);
+  await Promise.all([lane(), lane(), lane(), lane()]);
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const out = join(repo, "out/gallery", stamp);
+  const shots = [];
+
+  for (const [group, names] of groups) {
+    for (const name of names) {
+      const result = results.get(name);
+
+      for (const file of result?.dir ? pngsUnder(result.dir) : []) {
+        const key = `${name}/${file.slice(result.dir.length + 1)}`;
+        const target = join(out, key);
+        mkdirSync(dirname(target), { recursive: true });
+        copyFileSync(file, target);
+        const dark = file.replace(/\.png$/, ".dark.png");
+        if (existsSync(dark)) copyFileSync(dark, target.replace(/\.png$/, ".dark.png"));
+        shots.push({ group, name, key, dark: existsSync(dark), ok: result.ok });
+      }
+    }
+  }
+
+  const before = compare && existsSync(join(compare, "manifest.json")) ? JSON.parse(readFileSync(join(compare, "manifest.json"), "utf8")) : null;
+
+  if (before) {
+    const keys = new Set(before.shots.map(shot => shot.key));
+    const pairs = shots.filter(shot => keys.has(shot.key)).map(shot => [join(compare, shot.key), join(out, shot.key)]);
+    const diff = pixelDiff(pairs);
+
+    for (const shot of shots) if (diff.has(join(out, shot.key))) shot.changed = diff.get(join(out, shot.key));
+  }
+  const manifest = { stamp, head: execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repo, encoding: "utf8" }).trim(), dist, compare: compare ?? null, shots, cases: [...results.values()] };
+  writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 2));
+  writeFileSync(join(out, "index.html"), galleryPage(manifest, before ? { dir: compare, keys: new Set(before.shots.map(shot => shot.key)) } : null));
+  console.log(`\n${shots.length} 张截图（${shots.filter(shot => shot.dark).length} 张带深色版）→ ${join(out, "index.html")}`);
+  const missing = [...results.values()].filter(result => !result.dir);
+  if (missing.length) console.log(`没找到证据目录：${missing.map(result => result.name).join("、")}`);
+}
+
+/** 每对图里变了的像素占多少（0–1）；尺寸不同记 1。用 Python 的 PIL，本机没有就不标。 */
+function pixelDiff(pairs) {
+  const script = `
+import json, sys
+from PIL import Image, ImageChops
+out = {}
+for a, b in json.load(sys.stdin):
+    x, y = Image.open(a).convert("RGB"), Image.open(b).convert("RGB")
+    if x.size != y.size:
+        out[b] = 1
+        continue
+    d = ImageChops.difference(x, y).convert("L").point(lambda v: 255 if v > 16 else 0)
+    out[b] = d.histogram()[255] / (x.size[0] * x.size[1])
+print(json.dumps(out))`;
+  const result = spawnSync("python3", ["-c", script], { input: JSON.stringify(pairs), encoding: "utf8", maxBuffer: 16 << 20 });
+
+  if (result.status !== 0) {
+    console.log("没有算像素差异（需要 python3 和 PIL）");
+
+    return new Map();
+  }
+
+  return new Map(Object.entries(JSON.parse(result.stdout)));
+}
+
+function galleryPage(manifest, before) {
+  const esc = text => String(text).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+  const img = (src, label) => `<figure><img loading="lazy" src="${esc(src)}" alt="${esc(label)}"><figcaption>${esc(label)}</figcaption></figure>`;
+  const sections = [...new Set(manifest.shots.map(shot => shot.group))].map(group => {
+    const rows = manifest.shots.filter(shot => shot.group === group).map(shot => {
+      const cells = [];
+      if (before?.keys.has(shot.key)) cells.push(img(`file://${join(before.dir, shot.key)}`, "改前"));
+      cells.push(img(shot.key, before ? "改后" : "浅色"));
+      if (shot.dark) cells.push(img(shot.key.replace(/\.png$/, ".dark.png"), before ? "改后 · 深色" : "深色"));
+
+      // 像素差异：小于 0.5% 多半只是时间、端口号这类会变的字。
+      const change = shot.changed === undefined ? "" : shot.changed < 0.005 ? ' <span class="same">没变</span>' : ` <span class="diff">变了 ${(shot.changed * 100).toFixed(1)}%</span>`;
+
+      return `<div class="row" data-changed="${shot.changed ?? ""}"><h3>${esc(shot.key)}${change}${shot.ok ? "" : ' <span class="fail">用例没过</span>'}</h3><div class="cells">${cells.join("")}</div></div>`;
+    });
+
+    return `<section><h2>${esc(group)}</h2>${rows.join("")}</section>`;
+  });
+
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>界面总览</title><style>
+body{margin:0;background:#f4f3ef;color:#1d1d1f;font:14px/1.5 -apple-system,"PingFang SC",sans-serif}main{max-width:1400px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:32px 0 8px;padding-top:12px;border-top:1px solid #ddd}h3{font-size:12px;font-weight:500;color:#6b6b70;margin:12px 0 6px}
+.cells{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}figure{margin:0;max-width:360px}figure img{display:block;max-width:100%;max-height:640px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:zoom-in}
+figcaption{font-size:12px;color:#6b6b70;margin-top:2px}.fail{color:#b44}.same{color:#2f7d4f}.diff{color:#2c5fb3;font-weight:600}.zoom{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;cursor:zoom-out}.zoom img{max-width:94vw;max-height:94vh}
+</style></head><body><main><h1>界面总览</h1><p>${esc(manifest.head)} · ${manifest.shots.length} 张${before ? ` · 对照 ${esc(before.dir)}` : ""}</p>${sections.join("")}</main>
+<div class="zoom" id="z"><img alt=""></div><script>const z=document.getElementById("z");document.querySelectorAll("figure img").forEach(i=>i.onclick=()=>{z.firstChild.src=i.src;z.style.display="flex"});z.onclick=()=>z.style.display="none";</script></body></html>`;
+}
+
 /** eval guardrail|duplex：包装爬坡护栏（compare-real 的 24 个任务）和插话评测。默认用冻结扩展。 */
 function evaluate() {
   const kind = rest[0];
@@ -441,6 +596,7 @@ async function main() {
     case "case": return cases();
     case "eval": return evaluate();
     case "clean": return clean();
+    case "gallery": return gallery();
     case "logs": {
       const result = spawnSync(process.execPath, [join(here, "logs.mjs"), ...rest], { stdio: "inherit" });
 
