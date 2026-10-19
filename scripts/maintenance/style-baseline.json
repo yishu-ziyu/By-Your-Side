@@ -1,0 +1,56 @@
+{
+  "extension/src/sidepanel/answer-cards.css": {
+    "fontSize": 4,
+    "radius": 7,
+    "color": 0,
+    "emoji": 0
+  },
+  "extension/src/sidepanel/motion-tokens.css": {
+    "fontSize": 0,
+    "radius": 0,
+    "color": 0,
+    "emoji": 0
+  },
+  "extension/src/sidepanel/styles.css": {
+    "fontSize": 91,
+    "radius": 97,
+    "color": 66,
+    "emoji": 0
+  },
+  "extension/src/settings/settings.css": {
+    "fontSize": 8,
+    "radius": 11,
+    "color": 7,
+    "emoji": 0
+  },
+  "extension/src/sidepanel/ghost-bar.ts": {
+    "fontSize": 0,
+    "radius": 0,
+    "color": 0,
+    "emoji": 3
+  },
+  "extension/src/sidepanel/main.ts": {
+    "fontSize": 0,
+    "radius": 0,
+    "color": 0,
+    "emoji": 2
+  },
+  "extension/src/sidepanel/slash-skills.ts": {
+    "fontSize": 0,
+    "radius": 0,
+    "color": 0,
+    "emoji": 8
+  },
+  "extension/src/content/edge-tab.ts": {
+    "fontSize": 0,
+    "radius": 0,
+    "color": 0,
+    "emoji": 2
+  },
+  "extension/src/content/ghost-hud.ts": {
+    "fontSize": 0,
+    "radius": 0,
+    "color": 0,
+    "emoji": 6
+  }
+}
