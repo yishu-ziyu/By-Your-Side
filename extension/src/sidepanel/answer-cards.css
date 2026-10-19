@@ -135,7 +135,7 @@
 .gc-faces { position: absolute; top: 9px; right: 10px; display: flex; gap: 2px; padding: 2px; border-radius: var(--s-2); background: var(--well); }
 .gc-face {
   display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 22px; padding: 0;
-  border: 0; border-radius: 6px; background: transparent; color: var(--text-tertiary); cursor: pointer;
+  border: 0; border-radius: var(--r-tail); background: transparent; color: var(--text-tertiary); cursor: pointer;
   transition: background var(--m-quick) var(--e-swift), color var(--m-quick) var(--e-swift);
 }
 .gc-face:hover { color: var(--text-primary); }
@@ -152,7 +152,7 @@
 .msg.assistant.markdown .gc-evidence td.r { white-space: nowrap; font-weight: 600; color: var(--text-primary); }
 .msg.assistant.markdown .gc-evidence td.f { color: var(--text-primary); }
 .msg.assistant.markdown .gc-evidence td.s { padding-right: 0; border-bottom: 0; color: var(--text-tertiary); }
-.gc-btn.gc-point { display: flex; min-height: 0; margin-top: 2px; padding: 1px 6px; border-radius: 6px; font-size: var(--fs-micro); color: var(--accent); }
+.gc-btn.gc-point { display: flex; min-height: 0; margin-top: 2px; padding: 1px 6px; border-radius: var(--r-tail); font-size: var(--fs-micro); color: var(--accent); }
 
 /* 结构图：Pele 的颜色变量接到侧栏的纸面和墨色上，深色模式跟着 token 走，不用重画。
    key 是主结论，warn 是要当心的事，bad 是作者说没用的做法（模型用 :::key 这类写法标）。 */

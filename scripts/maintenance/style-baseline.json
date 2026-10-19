@@ -1,7 +1,7 @@
 {
   "extension/src/sidepanel/answer-cards.css": {
     "fontSize": 3,
-    "radius": 9,
+    "radius": 7,
     "color": 0,
     "emoji": 0
   },
@@ -12,8 +12,8 @@
     "emoji": 0
   },
   "extension/src/sidepanel/styles.css": {
-    "fontSize": 234,
-    "radius": 125,
+    "fontSize": 80,
+    "radius": 98,
     "color": 66,
     "emoji": 0
   },
