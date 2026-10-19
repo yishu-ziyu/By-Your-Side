@@ -630,9 +630,6 @@ function emitHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): vo
 /** 读页面的工具：光标显示「正在读这个页面」。 */
 const READ_TOOLS = new Set(["snapshot", "page_text", "read_element", "read_elements", "screenshot", "observe_page", "network"]);
 
-/** 整页一次性拿走的读：页面这边不知道它在看哪块，注视区只扫一遍视口。 */
-const WHOLE_PAGE_READS = new Set(["snapshot", "page_text", "screenshot", "observe_page"]);
-
 /** 每个成员的注视区画在哪个标签页，读完变淡、一轮结束收起时要找回去。 */
 const gazeTabs = new Map<string, number>();
 /** 同一成员的注视指令排队：读得很快时，"读完变淡"不能跑到"开始读"前面。 */
@@ -650,7 +647,6 @@ function gazeForRead(sid: string, name: string, params: Record<string, unknown> 
 
   if (name === "read_element" && typeof params?.target === "string") read = { kind: "element", target: params.target };
   else if (name === "read_elements" && typeof params?.selector === "string") read = { kind: "elements", selector: params.selector };
-  else if (WHOLE_PAGE_READS.has(name)) read = { kind: "page" };
 
   if (!read) return;
   const view = read;
