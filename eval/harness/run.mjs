@@ -88,6 +88,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const repoHead = (() => { try { return execFileSync("git", ["-C", REPO, "rev-parse", "HEAD"]).toString().trim(); } catch { return null; } })();
   const code = { repo: REPO, repo_head: repoHead, arms };
 
+  // resuming onto another build would mix code versions in one series
+  for (const [name, a] of Object.entries(prev?.arms ?? {})) if (arms?.[name]?.dist_sha !== a.dist_sha) throw new Error(`--resume: arm ${name} is now ${arms?.[name]?.dist_sha ?? "missing"}, the run used ${a.dist_sha}`);
+
   if (prev) writeFileSync(join(runDir, "run.json"), JSON.stringify({ ...prev, models: [...new Set([...(prev.models ?? []), ...models])], resumes: [...(prev.resumes ?? []), { at: new Date().toISOString(), concurrency, models, code }] }, null, 2));
   else writeFileSync(join(runDir, "run.json"), JSON.stringify({ runId, models, tasks: ids, concurrency, capMs, ...(arms ? { arms, repeats } : {}), code, started_at: new Date().toISOString() }, null, 2));
   // interleave models and arms so parallel slots compare them on the same task at the same time
@@ -165,7 +168,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 
   if (!process.argv.includes("--no-judge") && !process.argv.includes("--dry-run")) {
     log("judging...");
-    const res = await judgeRun(runDir, tasks, [...new Set(jobs.map((j) => j.spec))], { onlyExisting: true });
+    const specs = arms ? Array.from({ length: repeats }, (_, i) => armNames.flatMap((arm) => models.map((model) => specOf(arm, i + 1, model)))).flat() : models;
+    const res = await judgeRun(runDir, tasks, specs, { onlyExisting: true });
     writeSummary(runDir, res);
   }
 
