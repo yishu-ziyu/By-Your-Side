@@ -127,7 +127,7 @@ function remoteCmd(node: Node, names: string[]): string {
     `export EGO_ACCEPTANCE_CHROME="${chromeExpr}"`,
     `export SIDEAGENT_ACCEPTANCE_DIST=${dir}/.shard-dist`,
     // 本机设的“允许重跑”要带到远端，否则远端按“同一代码已失败两次”拒绝运行。
-    ...(process.env.BYS_RERUN ? [`export BYS_RERUN=${process.env.BYS_RERUN}`] : []),
+    ...(process.env.BYS_RERUN === "1" ? ["export BYS_RERUN=1"] : []),
     // 先清掉旧 summary，避免 run-all 提前退出时误读上一轮结果。
     // run-all 有用例失败时 exit 1，summary 必须无条件打印，所以这一段用分号不用 &&。
     `rm -f out/acceptance/real-path/summary-*.json; npx tsx scripts/acceptance/real-path/run-all.mts --only=${names.join(",")} --jobs=${node.jobs}; echo "===shard-summary==="; cat "$(ls -t out/acceptance/real-path/summary-*.json | head -1)"`,
@@ -304,7 +304,9 @@ const reasonOf = (raw: string, name: string): string | undefined => {
   const lines = raw.split("\n");
   const at = lines.findIndex((l) => l.startsWith(`✘ ${name} (`));
   if (at < 0) return undefined;
-  const tail = lines.slice(at + 1).filter((l) => l.includes("│")).map((l) => l.replace(/^\s*│ ?/, "").trim()).filter(Boolean);
+  // 只看紧跟在这一行后面、以 │ 开头的日志块，遇到别的行就停，不串到下一个用例。
+  const end = lines.findIndex((l, i) => i > at && !/^\s*(│|\/)/.test(l));
+  const tail = lines.slice(at + 1, end < 0 ? undefined : end).filter((l) => l.includes("│")).map((l) => l.replace(/^\s*│ ?/, "").trim()).filter(Boolean);
   return (tail.find((l) => /Error|FAIL|超时|失败|断言|not ok/i.test(l)) ?? tail.at(-1))?.slice(0, 200);
 };
 const lastLines = (raw: string) => raw.trimEnd().split("\n").slice(-3).join(" ⏎ ").slice(0, 300);
