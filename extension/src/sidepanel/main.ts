@@ -2091,22 +2091,25 @@ function followLive(el: HTMLElement | null, stick: boolean): void {
   }
 
   el.classList.toggle("overflowing", liveViewportOverflows(el.scrollHeight, el.clientHeight));
+  syncScrollFade(el, el);
 }
 
 function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): void {
   // 平滑滚动的头几帧还离底部很近，只看位置会被下一次跟随拉回去；往上滚的意图在滚轮事件里就定了。
   el.addEventListener("wheel", (e) => { if (e.deltaY < 0 && el.scrollTop > 0) setPinned(false); }, { passive: true });
   el.addEventListener("scroll", () => {
+    syncScrollFade(el, el);
     if (followingLive) return;
     setPinned(isLiveViewportPinned(el.scrollTop, el.scrollHeight, el.clientHeight));
   });
 }
 
-/** 对话区上下边缘：哪一侧还能继续滚，哪一侧就淡出去（不画分割线）。 */
-function syncScrollFade(): void {
-  const frame = messagesEl.parentElement!;
-  frame.dataset.fadeTop = String(messagesEl.scrollTop > 0);
-  frame.dataset.fadeBottom = String(messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight > 1);
+/** 哪一侧还有未显示的内容，哪一侧才渐隐。 */
+function syncScrollFade(el: HTMLElement = messagesEl, frame: HTMLElement = messagesEl.parentElement!): void {
+  const top = String(el.scrollTop > 0);
+  const bottom = String(el.scrollHeight - el.scrollTop - el.clientHeight > 1);
+  if (frame.dataset.fadeTop !== top) frame.dataset.fadeTop = top;
+  if (frame.dataset.fadeBottom !== bottom) frame.dataset.fadeBottom = bottom;
 }
 
 function markUserScroll(): void {
@@ -2168,11 +2171,13 @@ messagesEl.addEventListener("scroll", () => {
 new ResizeObserver(() => {
   if (pinned && !userScrolling()) followToEnd();
   syncScrollFade();
+  followLive(currentRun?.body ?? null, false);
 }).observe(messagesEl);
 
 new MutationObserver(() => {
   noteHeight();
   syncScrollFade();
+  followLive(currentRun?.body ?? null, false);
 
   // 往上翻着读时下面写出了新内容：按钮带个小点、轻跳一下，只在这一次离开底部期间跳一次。
   if (!pinned && !replayingHistory && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) toBottomBtn.classList.add("has-new");
@@ -3150,6 +3155,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   reveal.className = "run-reveal";
   reveal.append(body);
   root.append(summary, reveal);
+  root.addEventListener("toggle", () => followLive(body, false));
   // 恢复记录时任务卡不在记录里，接续入口一直留在消息流末尾：过程块和这一轮其他内容一样排在它前面，
   // 否则插在过程块前面的开场话会落到入口后面，收尾时收不进过程。实时时入口很快被任务卡收走，保持原样。
   if (replayingHistory) appendToMessages(root);
