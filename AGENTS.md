@@ -30,7 +30,7 @@
 
 ### 多机分片
 
-- 全量验收用 `npm run accept:shard` 分到本机、阿里云、grokbox、Devin（Linux 和 macOS）并行跑：本机构建一次扩展推到各节点，按权重切片，汇总写进 `out/acceptance/real-path/shard-*.json`。有失败或未跑就非 0 退出，节点不在线时用 `--skip=<名字>` 跳过，它的用例记未跑，绝不算通过。判定全在 `run-all.mts` 和各用例里，远端和本机标准一致。
+- 全量验收用 `npm run accept:shard` 分到本机、阿里云、grokbox、Devin 并行跑：本机构建一次扩展推到各节点，按权重切片，汇总写进 `out/acceptance/real-path/shard-*.json`。有失败或未跑就非 0 退出；节点已知不在线时用 `--skip=<名字>` 跳过，用例会重分给其余在线节点；未跳过但中途连不上或超时的节点，其用例记未跑，绝不算通过。判定全在 `run-all.mts` 和各用例里，远端和本机标准一致。
 - 每台机器怎么连、怎么唤醒、Devin 蓝图怎么改、踩过的坑，都在[云电脑节点](docs/testing/cloud-nodes.md)。动节点前先读它；发现新坑或状态变了，当场改那一页。
 
 ## 完成与汇报

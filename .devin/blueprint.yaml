@@ -12,7 +12,7 @@ maintenance: |
 knowledge:
   - name: test
     contents: |
-      # npm test (vitest unit + scale performance tests)
+      # npm test (runs core real-path end-to-end acceptance in headless Chrome)
   - name: typecheck
     contents: |
       # npm run typecheck (extension + agent workspaces)
@@ -21,10 +21,10 @@ knowledge:
       # npm run build -> extension/dist (load as unpacked Chrome extension)
   - name: check
     contents: |
-      # npm run check = check:docs + check:architecture + typecheck + test + build; check:docs alone for doc-only changes
+      # npm run check = check:docs + check:copy + check:motion + check:style + check:architecture + typecheck + build (acceptance tests run separately)
   - name: extension-tryout
     contents: |
-      # google-chrome --user-data-dir=<profile> --load-extension=extension/dist --remote-debugging-port=<port>; open side panel with Ctrl+Shift+Y; settings at chrome-extension://<id>/settings.html
+      # npx tsx scripts/acceptance/real-path/smoke.mts --headless (loads extension/dist via harness in Chrome for Testing or branded Chrome)
 ---
 # macOS: acceptance runs on the image's branded Google Chrome, the same build users have.
 runs-on: macos
