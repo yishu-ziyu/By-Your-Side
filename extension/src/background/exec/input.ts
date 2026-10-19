@@ -558,15 +558,14 @@ async function beginCursorAction(
 }
 
 export type GazeRead =
-  | { kind: "page" }
   | { kind: "element"; target: string }
   | { kind: "elements"; selector: string }
   | { kind: "rest" }
   | { kind: "off" };
 
 /**
- * 注视区：把它正在读的位置画到页面上。只画真实发生的读——整页读只扫一遍视口，
- * 读具体元素才落到那个元素上；旧 ref 找不到节点时不画，不凭选择器猜另一个元素。
+ * 注视区：把它正在读的位置画到页面上。只画真实发生的读——读具体元素才落到那个元素上，
+ * 整页读不画；旧 ref 找不到节点时不画，不凭选择器猜另一个元素。
  * 画不上不影响读本身，也不算执行证据。
  */
 export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Promise<void> {
@@ -581,12 +580,6 @@ export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Pr
 
     await ensureCursor(tabId);
 
-    if (read.kind === "page") {
-      await callDom(tabId, (c: string) => { window.__sideagent?.cursor?.for(c)?.gaze?.({ mode: "sweep" }); }, [cid]);
-
-      return;
-    }
-
     if (read.kind === "element") {
       const backendNodeId = axBackendNodeFor(tabId, parseRef(read.target));
 
@@ -594,7 +587,7 @@ export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Pr
         const contextId = await cursorContext(tabId);
         await callOnBackendNode(tabId, backendNodeId, `function(cid) {
           const cursor = window.__sideagent?.cursor?.for(cid);
-          if (this === document.body || this === document.documentElement) { cursor?.gaze?.({ mode: "sweep" }); return; }
+          if (this === document.body || this === document.documentElement) return;
           const r = this.getBoundingClientRect();
           cursor?.gaze?.({ mode: "at", rects: [{ x:r.x, y:r.y, width:r.width, height:r.height }] });
         }`, [cid], contextId);
@@ -608,13 +601,7 @@ export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Pr
         const cursor = window.__sideagent?.cursor?.for(c);
         const el = window.__sideagent?.dom?.resolve(t);
 
-        if (!el) return;
-
-        if (el === document.body || el === document.documentElement) {
-          cursor?.gaze?.({ mode: "sweep" });
-
-          return;
-        }
+        if (!el || el === document.body || el === document.documentElement) return;
         const r = el.getBoundingClientRect();
         cursor?.gaze?.({ mode: "at", rects: [{ x: r.x, y: r.y, width: r.width, height: r.height }] });
       }, [cid, read.target]);
