@@ -31,7 +31,12 @@ export interface StarterSuggestion {
 
 export const DEFAULT_SUGGESTIONS: StarterSuggestion[] = [
   { label: "概括这一页", prompt: "请概括当前页面的要点。", effect: "read", hint: "会读这一页的正文 → 写成摘要，不改页面" },
+  { label: "列出关键信息", prompt: "把这一页的关键信息列成几条，附上原文位置。", effect: "read", hint: "会读这一页 → 列成几条，不改页面" },
+  { label: "这页能帮我做什么", prompt: "我在这一页能做哪些事？列出最有用的几件。", effect: "read", hint: "会读这一页 → 列出能做的事，不改页面" },
 ];
+
+/** 和「提炼文章要点」说的是同一件事，有它就不再给。 */
+const SAME_AS_POINTS = "概括这一页";
 
 const MAX_SUGGESTIONS = 3;
 
@@ -68,12 +73,17 @@ export function suggestionsFor(profile: PageProfile | null): StarterSuggestion[]
 
     if (profile.paragraphs >= 3 && foreign) out.push({ label: "翻译成中文", prompt: "把这个页面翻译成中文。", effect: "mutate", hint: "会把这一页改成中文" });
 
+    if (profile.paragraphs >= 3) out.push({ label: "这篇在论证什么", prompt: "这篇文章的论证结构是什么？", effect: "read", hint: "会读这一页的文章 → 画出论证结构，不改页面" });
+
     if (profile.paragraphs >= 3) out.push({ label: "提炼文章要点", prompt: "提炼当前文章的关键观点，并附对应原文。", effect: "read", hint: "会读这一页的文章 → 提炼要点，不改页面" });
 
     if (list) out.push({ label: "整理成表格", prompt: "把这一页的主要条目整理成表格。", effect: "read", hint: "会读这一页的条目 → 整理成表，不改页面" });
   }
 
-  return [...out.slice(0, MAX_SUGGESTIONS - 1), ...DEFAULT_SUGGESTIONS];
+  const points = out.some(item => item.label === "提炼文章要点");
+  const rest = DEFAULT_SUGGESTIONS.filter(item => !(points && item.label === SAME_AS_POINTS));
+
+  return [...out, ...rest].slice(0, MAX_SUGGESTIONS);
 }
 
 /** 在页面里执行：只数结构，不读取输入框里的值。 */
