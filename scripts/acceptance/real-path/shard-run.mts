@@ -126,6 +126,8 @@ function remoteCmd(node: Node, names: string[]): string {
     `cd ${dir}`,
     `export EGO_ACCEPTANCE_CHROME="${chromeExpr}"`,
     `export SIDEAGENT_ACCEPTANCE_DIST=${dir}/.shard-dist`,
+    // 本机设的“允许重跑”要带到远端，否则远端按“同一代码已失败两次”拒绝运行。
+    ...(process.env.BYS_RERUN ? [`export BYS_RERUN=${process.env.BYS_RERUN}`] : []),
     // 先清掉旧 summary，避免 run-all 提前退出时误读上一轮结果。
     // run-all 有用例失败时 exit 1，summary 必须无条件打印，所以这一段用分号不用 &&。
     `rm -f out/acceptance/real-path/summary-*.json; npx tsx scripts/acceptance/real-path/run-all.mts --only=${names.join(",")} --jobs=${node.jobs}; echo "===shard-summary==="; cat "$(ls -t out/acceptance/real-path/summary-*.json | head -1)"`,

@@ -11,7 +11,11 @@
 | `grokbox` | Linux | — | ssh `box@100.124.81.45`（Tailscale 地址，普通 sshd） | Playwright 的 Chromium | 长任务；会休眠，见下文 |
 | `devin` | Linux | 8 核 31G | `devin cloud drs run --devin-id <id>` | 正式版 `google-chrome` | 只接几分钟能跑完的短任务 |
 
-先看哪些节点在线：阿里云和 grokbox 用 `ssh -o ConnectTimeout=8 <host> echo ok`，Devin 用 `devin cloud drs run --devin-id <id> --timeout 60 --command 'uname -s'`。不在线的节点用 `--skip=<名字>` 跳过，它分到的用例记为未跑，不算通过。
+动节点前先跑 `npm run nodes`：一次列出每台机器在不在线、开机多久、负载、可用内存、Chrome 在不在、残留的测试 Chrome，以及 grokbox 的保活还剩多久。不在线的节点用 `--skip=<名字>` 跳过，它分到的用例记为未跑，不算通过。
+
+分片跑完，每个失败或未跑的用例下面有一行原因（失败取自用例日志，未跑写明是节点连不上、超时还是没交回结果）；每个节点的完整输出在结果末尾给出的 `out/acceptance/real-path/shard-<时间>/` 里。每个节点有时限（准备 5 分钟，加上每轮 6 分钟），卡住的节点到点记为超时，不会让整轮一直等。
+
+残留测试 Chrome 不为 0 而又没在跑测试，说明之前有测试异常退出，它们会一直占内存和 CPU；确认没有测试在跑后再清理。
 
 ## 没接进分片的：Devin macOS 沙箱
 
@@ -39,6 +43,10 @@
 - 新建 Linux 沙箱：`devin cloud drs sandbox-create --repo yishu-ziyu/By-Your-Side`，把新 id 填进 `NODES`。
 - 新建 macOS 沙箱：`sandbox-create` 没有选系统的参数，只按组织默认系统起。要先在 Devin 网页 Settings → Devin → Default platform 改成 macOS，建完马上改回 Ubuntu。这是账号设置，要先问用户。沙箱建好后一直留在它开始时的系统上。
 - 不要在 Mac 沙箱里用软链或往软链写文件来给 Chrome 换名字：Chrome 按启动路径找自己的框架文件，软链启动会崩；往软链写转调用脚本会顺着软链覆盖掉 Chrome 本体（10-19 实际弄坏过一次，用 `brew install --cask --force google-chrome` 修好）。
+
+## 阿里云
+
+一直开机、不休眠，是最稳的节点；但机器小，分片只让它一次跑 1 个用例。它偶尔在 SSH 握手阶段直接断开（sshd 日志里没有记录，10-19 连 5 次断 1 次），所以 SSH 都复用同一条连接（`scripts/acceptance/nodes.mts` 的 `SSH_OPTS`），失败会重试。这台机器开着密码登录，日志里一直有陌生 IP 在猜密码（10-19 三小时 39 次）。
 
 ## 推送和凭据
 
