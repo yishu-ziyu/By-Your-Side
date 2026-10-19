@@ -13,7 +13,7 @@
 
 `npm run smoke` 用真实模型走一遍日常路径，需要凭据，不是合并门槛。
 
-`check` 会重建日常加载的 `extension/dist`。只想核对打包时，用 `SIDEAGENT_BUILD_DIST` 指向临时目录。
+`check` 会重建日常加载的 `extension/dist`。只想核对打包时，用 `SIDEAGENT_BUILD_DIST` 指向临时目录的绝对路径；npm 工作区会切换当前目录，相对路径会落进 `extension/`，导致验收找不到构建结果。
 
 真实模型、真实供应商和真人体验分开留证。缺凭据或预算时如实写「没跑」。
 
