@@ -202,13 +202,16 @@ async function syncNode(node: Node): Promise<boolean> {
     // 只同步跑测试需要的文件（约 4MB）：grokbox 这类节点可能中途休眠，全仓库传输来不及。
     // 用 tar 流而不是 rsync——远端可能没有 rsync，快照恢复后装的工具也会丢。
     const push = async (src: string, dst: string, clean: boolean) => {
-      const pre = clean ? `mkdir -p ${dst} && rm -rf ${dst}/* ${dst}/.[!.]* ; ` : `mkdir -p ${dst} && `;
+      // macOS tar 默认把扩展属性打成 ._* 文件，远端 run-all 会把它们当成用例名；顺手清掉以前推过去的。
+      const pre = clean
+        ? `mkdir -p ${dst} && rm -rf ${dst}/* ${dst}/.[!.]* ; `
+        : `mkdir -p ${dst} && find ${dst} -name '._*' -delete ; `;
       const pack = clean
         ? "tar -cz ."
         : "tar -cz --exclude=extension/dist scripts agent shared extension eval/harness package.json package-lock.json";
       for (let i = 0; i < 5; i++) {
         const r = await sh("bash", ["-lc",
-          `cd ${src} && ${pack} | ssh ${SSH_OPTS_STR} ${node.host} '${pre}tar -xz -C ${dst}'`], tag);
+          `cd ${src} && COPYFILE_DISABLE=1 ${pack} | ssh ${SSH_OPTS_STR} ${node.host} '${pre}tar -xz -C ${dst}'`], tag);
         if (r.code === 0) return true;
         await new Promise((d) => setTimeout(d, 4000));
       }
