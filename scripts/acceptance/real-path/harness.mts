@@ -167,9 +167,27 @@ function browserControls(cdp: ReturnType<typeof createCdp>, id: string) {
     await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }, sessionId);
   };
 
-  const screenshot = async (sessionId: string, file: string) => {
+  const capture = async (sessionId: string, file: string) => {
     const { data } = await cdp.send("Page.captureScreenshot", { format: "png" }, sessionId);
     await writeFile(file, Buffer.from(data, "base64"));
+  };
+
+  const screenshot = async (sessionId: string, file: string) => {
+    await capture(sessionId, file);
+
+    // 界面总览（npm run gallery）要同一屏的深色版；只给侧栏补拍，网页本身没有深色。
+    if (process.env.SIDEAGENT_GALLERY !== "1" || !/sidepanel\.html$/.test(String(await evaluate(sessionId, "location.pathname")))) return;
+    // 用例自己可能已经切了深色或减少动态效果：拍完按原样切回，后面的判定照旧。
+    const was = await evaluate(sessionId, '({ dark: matchMedia("(prefers-color-scheme: dark)").matches, reduce: matchMedia("(prefers-reduced-motion: reduce)").matches })') as { dark: boolean; reduce: boolean };
+    const media = (dark: boolean) => cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }, { name: "prefers-reduced-motion", value: was.reduce ? "reduce" : "no-preference" }] }, sessionId);
+
+    try {
+      await media(true);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      await capture(sessionId, file.replace(/\.png$/, ".dark.png"));
+    } finally {
+      await media(was.dark);
+    }
   };
 
   return {
