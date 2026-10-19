@@ -3196,9 +3196,10 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .shorten-grip i { display: block; width: 30px; height: 4px; border-radius: var(--r-pill); background: var(--text-quaternary); transition: background var(--d-micro) var(--e-enter), width var(--d-micro) var(--e-enter); }
 .shorten-grip:hover i, .shorten-grip.dragging i { width: 36px; background: var(--text-secondary); }
 .shorten-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.shorten-level { min-width: 96px; text-align: right; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.shorten-level { min-width: 96px; text-align: right; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); opacity: 0; transition: opacity var(--d-micro) var(--e-enter); }
+.shorten-grip.dragging + .shorten-level, .shorten-grip:focus-visible + .shorten-level { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
-  .shorten-grip i { transition: none; }
+  .shorten-grip i, .shorten-level { transition: none; }
 }
 .answer-actions .answer-show-tab { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: var(--fs-code); color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[aria-expanded=true] { background: var(--content-subtle); }

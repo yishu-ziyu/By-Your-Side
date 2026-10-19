@@ -27,8 +27,6 @@ const PROJECT_S = 0.15;
 const INTENT_PX = 24;
 /** 松手后的弹簧：临界阻尼，不过冲。 */
 const SPRING_K = 260;
-/** 阅读速度：每秒约读 9 个字（不算空白）。 */
-const CHARS_PER_SECOND = 9;
 
 const level = new WeakMap<HTMLElement, Level>();
 
@@ -109,7 +107,7 @@ function commit(answer: HTMLElement, next: Level): void {
   // 上键收短：aria 值按“短的程度”算，上键让值变大，合 slider 惯例。
   grip?.setAttribute("aria-valuenow", String(4 - next));
   grip?.setAttribute("aria-valuetext", LEVELS[next]);
-  if (label) label.textContent = `${LEVELS[next]} · 约 ${readSeconds(answer, next)} 秒读完`;
+  if (label) label.textContent = LEVELS[next];
   answer.dispatchEvent(new CustomEvent("answer-shorten"));
 }
 
@@ -125,10 +123,6 @@ function bodyAt(answer: HTMLElement, chrome: string, lv: Level): HTMLElement {
   if (lv < 2) body.querySelector(".shorten-rest")?.remove();
 
   return body;
-}
-
-function readSeconds(answer: HTMLElement, lv: Level): number {
-  return Math.max(1, Math.round((bodyAt(answer, CHROME, lv).textContent ?? "").replace(/\s/g, "").length / CHARS_PER_SECOND));
 }
 
 export function isShortened(answer: HTMLElement): boolean {
@@ -215,6 +209,8 @@ export function attachShorten(answer: HTMLElement): void {
   grip.append(document.createElement("i"));
   const label = document.createElement("span");
   label.className = "shorten-level";
+  // 层名只在拖动或键盘选中把手时露出来；读屏从把手的 aria-valuetext 听到层名，这里不重复读。
+  label.setAttribute("aria-hidden", "true");
   actions.classList.add("has-grip");
   actions.append(grip, label);
 
@@ -241,7 +237,6 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement, label: HTMLElement)
   // 卡片里的推荐项和卡片同层：跟着卡片一起收，不单独算一块。
   const nested = blocks.filter((el) => el.parentElement?.closest<HTMLElement>("[data-shorten]")?.dataset.shorten === el.dataset.shorten);
   const H: Record<Level, number> = { 1: 0, 2: 0, 3: 0 };
-  const secs: Record<Level, number> = { 1: 0, 2: 0, 3: 0 };
   let pieces: Piece[] = [];
   let p = 3;
   let raf = 0;
@@ -263,7 +258,6 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement, label: HTMLElement)
     for (const lv of [1, 2, 3] as const) {
       showLevel(answer, lv);
       H[lv] = answer.getBoundingClientRect().height;
-      secs[lv] = readSeconds(answer, lv);
       for (const el of blocks) {
         if (Number(el.dataset.shorten) !== lv || nested.includes(el)) continue;
         const cs = getComputedStyle(el);
@@ -365,7 +359,7 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement, label: HTMLElement)
     }
     grip.setAttribute("aria-valuenow", String(4 - near));
     grip.setAttribute("aria-valuetext", LEVELS[near]);
-    label.textContent = `${LEVELS[near]} · 约 ${secs[near]} 秒读完`;
+    label.textContent = LEVELS[near];
     holdScroll();
   };
 
