@@ -1,6 +1,7 @@
-/* 设置页：沿用侧栏 styles.css 的颜色与字体变量，只覆盖页面布局。一节一块面，行之间细线，不套卡片。 */
-:root { --hair: rgb(20 20 19 / .07); --line: rgb(20 20 19 / .12); --hover: rgb(20 20 19 / .035); --r-ctl: 8px; }
-@media (prefers-color-scheme: dark) { :root { --hair: rgb(255 255 255 / .07); --line: rgb(255 255 255 / .14); --hover: rgb(255 255 255 / .04); } }
+/* 设置页：沿用侧栏 styles.css 的蓝调色阶与字体变量，只覆盖页面布局。一节一块面，行之间细线，不套卡片。 */
+:root { --hair: rgb(15 23 42 / .07); --line: rgb(15 23 42 / .12); --hover: rgb(15 23 42 / .035); --r-ctl: 8px; }
+:root[data-tone="warm"] { --hair: rgb(20 20 19 / .07); --line: rgb(20 20 19 / .12); --hover: rgb(20 20 19 / .035); }
+@media (prefers-color-scheme: dark) { :root, :root[data-tone="warm"] { --hair: rgb(255 255 255 / .07); --line: rgb(255 255 255 / .14); --hover: rgb(255 255 255 / .04); } }
 
 /* 整页标签，字号比侧栏大一档：16 / 14 / 13 / 12。 */
 html, body.settings-page { height: auto; min-height: 100%; }

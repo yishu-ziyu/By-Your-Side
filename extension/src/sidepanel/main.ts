@@ -29,6 +29,7 @@ import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, DEFAULT_SUGGESTIONS, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile, type StarterSuggestion } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { mountVoiceOrb } from "../shared/orb-style.js";
+import { syncColorTone } from "../shared/color-tone.js";
 import { dropPendingMessage, holdPendingMessage, noteNeedsModelManual, playConnectArrival, renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
@@ -98,6 +99,8 @@ import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
+
+syncColorTone();
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
 

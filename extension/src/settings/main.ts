@@ -26,7 +26,10 @@ import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/p
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, GPT_LIVE_MODEL, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
+import { COLOR_TONE_KEY, COLOR_TONES, parseColorTone, syncColorTone, writeCachedTone, type ColorTone } from "../shared/color-tone.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
+
+syncColorTone();
 
 async function writeCredential(providerId: string, credential: Credential | StoredCredential | undefined): Promise<void> {
   const key = `${INPROC_CREDENTIAL_PREFIX}${providerId}`;
@@ -178,6 +181,10 @@ document.getElementById("settings")!.innerHTML = `
       <div class="row stack">
         <span class="row-main"><span id="orb-title" class="row-title">光球</span><span class="row-desc">侧栏首屏和语音里的光球。点一下就换。</span></span>
         <div id="orb-list" class="radio-rows" role="radiogroup" aria-labelledby="orb-title"></div>
+      </div>
+      <div class="row stack">
+        <span class="row-main"><span id="tone-title" class="row-title">界面底色</span><span class="row-desc">侧栏、设置页与网页卡片共用同一套底色色阶。点一下立即切换。</span></span>
+        <div id="tone-list" class="radio-rows" role="radiogroup" aria-labelledby="tone-title"></div>
       </div>
       <div class="row stack">
         <span class="row-main"><span id="persona-title" class="row-title">语音风格</span><span class="row-desc">只改语气和措辞，下次语音对话生效。</span></span>
@@ -1317,6 +1324,7 @@ async function reload(): Promise<void> {
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
   renderOrbStyles(parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]));
+  renderColorTones(parseColorTone(stored[COLOR_TONE_KEY]));
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
@@ -1419,6 +1427,25 @@ function renderTimbres(current: string): void {
 }
 
 const orbList = $("orb-list");
+const toneList = $("tone-list");
+
+function renderColorTones(current: ColorTone): void {
+  toneList.replaceChildren(...COLOR_TONES.map((tone) => {
+    const row = document.createElement("div");
+    row.className = "radio-row";
+    const pick = radioRow("tone-option", tone.label, tone.id === current, tone.summary);
+    pick.dataset.toneOption = tone.id;
+    pick.addEventListener("click", () => {
+      document.documentElement.dataset.tone = tone.id;
+      writeCachedTone(tone.id);
+      renderColorTones(tone.id);
+      void chrome.storage.local.set({ [COLOR_TONE_KEY]: tone.id });
+    });
+    row.append(pick);
+
+    return row;
+  }));
+}
 
 /** 光球样子：暮色、晨光带一个会动的小样（同一段视频），粒子用一个静态小圆示意。 */
 function renderOrbStyles(current: OrbStyle): void {
