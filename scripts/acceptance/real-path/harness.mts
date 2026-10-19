@@ -1,7 +1,7 @@
 /**
  * 真实路径验收驱动。
  *
- * 一次运行 = 一个隔离的无窗口 Chrome for Testing：扩展从当前源码构建到临时目录，换一把随机 key
+ * 一次运行 = 一个隔离的无窗口 Chrome（默认 Chrome for Testing，EGO_ACCEPTANCE_CHROME 可换正式版）：扩展从当前源码构建到临时目录，换一把随机 key
  * （扩展 ID 与日常不同），只装扩展：agent 跑在扩展的 offscreen 文档里，不注册本机伴随进程（本机模式已退役）。
  * 侧栏用 chrome.sidePanel.open 打开，是真侧栏，不是标签页里的 sidepanel.html。
  *
@@ -428,6 +428,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     "--enable-unsafe-extension-debugging",
     `--user-data-dir=${dirs.profile}`,
     "--remote-debugging-port=0",
+    `--load-extension=${dirs.extension}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--window-size=1280,900",
@@ -443,10 +444,14 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     if (headed && process.platform === "darwin") await cdp.send("Target.createTarget", { url: "about:blank", newWindow: true, background: true });
   };
   // 正式版 Chrome 忽略 --load-extension，只能经调试协议装入（需要 --enable-unsafe-extension-debugging）；
-  // --disable-extensions-except 会把这样装入的扩展也禁掉，所以不带。重启后再装一次，同一路径同一 id。
+  // 旧版 Chrome for Testing 没有这个命令，靠 --load-extension 已经装好。
+  // --disable-extensions-except 会把经调试协议装入的扩展也禁掉，所以不带。重启后再装一次，同一路径同一 id。
   const loadExtension = async (cdp: ReturnType<typeof createCdp>) => {
-    const loaded = (await cdp.send("Extensions.loadUnpacked", { path: dirs.extension })).id;
-    if (loaded !== id) throw new Error(`扩展装入后 id 不符：${loaded} ≠ ${id}`);
+    const loaded = await cdp.send("Extensions.loadUnpacked", { path: dirs.extension }).catch((error: Error) => {
+      if (/Method not available|wasn't found/.test(error.message)) return undefined;
+      throw error;
+    });
+    if (loaded && loaded.id !== id) throw new Error(`扩展装入后 id 不符：${loaded.id} ≠ ${id}`);
   };
   const spawnChrome = () => {
     if (!headed || process.platform !== "darwin") return spawn(resolveChrome(), chromeArgsFor(), { stdio: ["ignore", "ignore", "pipe"], env });
