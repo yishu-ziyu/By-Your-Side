@@ -3565,9 +3565,8 @@ function flushMemoryUsedLine(): void {
     return;
   }
 
-  floatingUsedLine = line;
-
   if (repeatsEarlierUsedLine(line, null)) return;
+  floatingUsedLine = line;
   messagesEl.appendChild(line.el);
   scrollToEnd();
 }
@@ -3581,16 +3580,17 @@ function adoptUsedLine(answer: HTMLElement): void {
 
 function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
   if (floatingUsedLine === line) floatingUsedLine = null;
-  line.answer = answer;
-  usedLineByAnswer.set(answer, line);
 
-  // 和前面看得到的那一行写的一样：不再每条回答都重复一遍，忘记、撤销留在第一处。
+  // 和上一行用的是同一组记忆：不再每条回答都重复一遍。也不登记到回答上，网页上点「忘记」时改的是看得到的那一行。
   if (repeatsEarlierUsedLine(line, answer)) {
     line.el.remove();
     line.cite.remove();
+    usedLineByAnswer.delete(answer);
 
     return;
   }
+  line.answer = answer;
+  usedLineByAnswer.set(answer, line);
   // #56 D + X1：「用了 N 条记忆 ›」跟在首句后面，点开在首段下面撑出小条；「来源」面板只放网页。
   const first = answer.firstElementChild;
   let head: HTMLElement;
@@ -3609,12 +3609,15 @@ function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
   renderUsedLine(line);
 }
 
-/** 对话里在 anchor 之前、看得到的最后一行「按…」和这一行写的一样（这一行挂在回答上，或还浮在回答后面）。 */
+/** 这一行实际用到的记忆（完整的一组，连同网站），摘要文字一样不代表用的是同几条。 */
+const usedLineKey = (line: MemoryUsedLine): string => `${line.hostname ?? ""}\n${[...line.items.keys()].sort().join("\n")}`;
+
+/** 对话里在 anchor 之前、看得到的最后一行用的是同一组记忆：只和紧挨着的上一行比，换过一组再换回来时重新显示。 */
 function repeatsEarlierUsedLine(line: MemoryUsedLine, anchor: Node | null): boolean {
   const earlier = Array.from(messagesEl.querySelectorAll<HTMLElement>(".memory-used-toggle")).filter(cite =>
     cite !== line.cite && (!anchor || !!(cite.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING)));
 
-  return earlier.at(-1)?.firstChild?.textContent === `${usedLineLabel(line)} `;
+  return earlier.at(-1)?.dataset.usedKey === usedLineKey(line);
 }
 
 const USED_GLYPHS: Record<"past" | "profile" | "method", string> = {
@@ -3638,6 +3641,7 @@ function renderUsedLine(line: MemoryUsedLine): void {
   const cite = line.cite;
   cite.type = "button";
   cite.className = "memory-used-toggle";
+  cite.dataset.usedKey = usedLineKey(line);
   cite.setAttribute("aria-expanded", String(line.open));
   const chevron = document.createElement("span");
   chevron.className = "memory-used-chevron";
@@ -4806,7 +4810,8 @@ function paintPlanCard(): void {
     steps: run.receipt.steps - run.receipt.failed,
     total: run.receipt.total,
     ended: run.receipt.ended,
-    undo: !undo || (undo.state === "ready" && undo.count === 0) ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
+    // 页面换了、记录没了：用户在这行没有可做的事，不留「恢复记录已失效」；「网站已收到」是结果，照常写。
+    undo: !undo || (undo.state === "ready" && undo.count === 0) || undo.state === "page_changed" ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
     undoLabel: undo ? fillUndoLabel(undo) : "",
     undoable: undo?.state === "restored" ? [...undo.restored, ...undo.skipped.map(s => s.field)] : undo?.fields ?? [],
     unavailable: undo?.unavailable ?? [],

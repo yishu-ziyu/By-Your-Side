@@ -153,8 +153,7 @@ export function paintPlanReceipt(root: HTMLDetailsElement, view: PlanReceiptView
   const head = view.ended === "failed" ? `没做完 · ${done}` : view.ended === "stopped" ? `已中止 · ${done}` : done;
   const parts: Array<string | HTMLElement> = [view.total ? `${head} · 用时 ${view.total}` : head];
 
-  // 撤不回（已提交、页面换了）时用户在这行没有可做的事，不留灰字；原因在展开的细节里。
-  if (view.undo !== "none" && view.undo !== "closed") {
+  if (view.undo !== "none") {
     const undo = document.createElement("button");
     undo.type = "button";
     undo.className = "plan-undo";

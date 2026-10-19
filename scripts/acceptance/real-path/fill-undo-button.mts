@@ -50,7 +50,7 @@ const rp = await launchRealPath();
 const evidence: Record<string, unknown> = {};
 let error: string | null = null;
 
-type Seen = { button: string; disabled: boolean; answerButton: string; receipt: string; result: string; faded: number; row: number; inView: boolean };
+type Seen = { hasUndo: boolean; button: string; disabled: boolean; answerButton: string; receipt: string; result: string; faded: number; row: number; inView: boolean };
 
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
@@ -66,7 +66,7 @@ try {
   const cardOf = (a: string) => `(() => { for (let n = ${a}?.previousElementSibling; n && !n.matches(".msg.user"); n = n.previousElementSibling) if (n.matches("details.plan-card")) return n; return null; })()`;
   const seen = async (done: string): Promise<Seen> => await rp.evaluate(panel, `(() => { const a = ${answerOf(done)}; const card = ${cardOf("a")}; const u = card?.querySelector(".plan-undo"); const b = a?.querySelector(".answer-primary");
     const line = card?.nextElementSibling?.matches(".fill-undo-result") ? card.nextElementSibling : a?.querySelector(".fill-undo-result");
-    return { button: u ? u.textContent : (b?.querySelector(".answer-face:not(.answer-face-done) > span") ?? b?.querySelector("span"))?.textContent ?? "", disabled: u ? u.disabled : !!b?.disabled, answerButton: (b?.querySelector(".answer-face:not(.answer-face-done) > span") ?? b?.querySelector("span"))?.textContent ?? "",
+    return { hasUndo: !!u, button: u ? u.textContent : (b?.querySelector(".answer-face:not(.answer-face-done) > span") ?? b?.querySelector("span"))?.textContent ?? "", disabled: u ? u.disabled : !!b?.disabled, answerButton: (b?.querySelector(".answer-face:not(.answer-face-done) > span") ?? b?.querySelector("span"))?.textContent ?? "",
       receipt: card?.querySelector(".plan-receipt-line")?.textContent ?? "", result: line?.textContent ?? "", faded: Number(getComputedStyle(a.querySelector("p")).opacity),
       row: Number(getComputedStyle(a.querySelector(".answer-actions")).opacity),
       // 结果行整行在对话区里、没被输入框挡住。
@@ -173,20 +173,21 @@ try {
   await run("reload");
   await waitButton(DONE.reload, "恢复这 1 处填写");
   await rp.cdp.send("Page.reload", {}, work);
-  const changed = await until(async () => { const s = await seen(DONE.reload); return s.button === "恢复记录已失效" && s.result ? s : undefined; }, 15_000, "page changed", 100);
+  // 撤不回了：卡上不留灰掉的「恢复记录已失效」，只在下面写原因。
+  const changed = await until(async () => { const s = await seen(DONE.reload); return !s.hasUndo && s.result ? s : undefined; }, 15_000, "page changed", 100);
   evidence.pageChanged = changed;
-  assert.ok(changed.disabled && changed.result.startsWith("页面已经换了") && changed.inView, `3: 页面变了时灰掉并写原因（在视野里） ${JSON.stringify(changed)}`);
+  assert.ok(changed.result.startsWith("页面已经换了") && changed.inView, `3: 页面变了时拿掉恢复按钮并写原因（在视野里） ${JSON.stringify(changed)}`);
   await rp.screenshot(panel, join(artifacts, "3-page-changed.png"));
 
   // 4) 填完没点还原就开始下一轮：可点的还原按钮换回复制；已定下来的状态留着。
   await run("left");
   await waitButton(DONE.left, "恢复这 1 处填写");
   await run("next", false);
-  const left = await until(async () => { const s = await seen(DONE.left); return s.button === "恢复记录已失效" ? s : undefined; }, 15_000, "old restore expired", 100);
-  const kept = { submitted: (await seen(DONE.submit)).button, changed: (await seen(DONE.reload)).button };
+  const left = await until(async () => { const s = await seen(DONE.left); return !s.hasUndo ? s : undefined; }, 15_000, "old restore expired", 100);
+  const kept = { submitted: (await seen(DONE.submit)).button, changed: (await seen(DONE.reload)).hasUndo };
   evidence.nextRound = { left, kept };
-  assert.ok(left.disabled && !left.result && left.answerButton === "复制", `4: 没点过的撤销收掉，回答下是复制 ${JSON.stringify(left)}`);
-  assert.deepEqual(kept, { submitted: "网站已收到，无法恢复", changed: "恢复记录已失效" }, "4: 已提交、页面变了的计划卡保留原状态");
+  assert.ok(!left.result && left.answerButton === "复制", `4: 没点过的撤销收掉，回答下是复制 ${JSON.stringify(left)}`);
+  assert.deepEqual(kept, { submitted: "网站已收到，无法恢复", changed: false }, "4: 已提交、页面变了的计划卡保留原状态");
 
   // 5) 只有说明、没有能还原的格子。
   await run("note");
