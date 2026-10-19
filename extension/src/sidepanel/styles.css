@@ -3813,6 +3813,14 @@ details.run-steps.run-quieting .run-time { animation: none; }
 #starter-actions { margin-top: auto; padding-top: 24px; flex-direction: column; flex-wrap: nowrap; align-self: stretch; align-items: stretch; gap: 2px; }
 #starter-actions button { text-align: left; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); font-size: 13.5px; padding: 9px 10px; }
 #starter-actions button:first-child { background: var(--content-bg); box-shadow: 0 0 0 1px var(--content-border); }
+/* 网页上的三种开口方式：选中、圈、按住说话。手势本身看不见，所以在空白页摆出来，只有「圈」能在侧栏里直接点。 */
+#starter-ways { display: flex; align-self: stretch; justify-content: space-between; gap: 6px; margin-top: 10px; padding: 0 4px; }
+.starter-way { all: unset; flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11.5px; line-height: 1.35; color: var(--text-tertiary); text-align: center; }
+.starter-way-key { font-size: 12px; color: var(--text-secondary); }
+button.starter-way { cursor: pointer; border-radius: 8px; }
+button.starter-way:hover .starter-way-key, button.starter-way:hover { color: var(--text-primary); }
+button.starter-way:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 2px; }
+#app.no-model #starter-ways { display: none; }
 
 /* 用到的记忆：不再接在回答句子后面，单独一行小字放在回答下面。 */
 .memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }

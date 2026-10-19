@@ -26,7 +26,7 @@ import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab,
 import { adoptFillUndo, fillUndoOf, fillUndoLabel, handFillUndoToCard, isFillUndoPending, noteFillUndo, requestFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
 import { attachShorten } from "./answer-shorten.js";
 import { revealText } from "./stream-reveal.js";
-import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
+import { beginStarterProbe, DEFAULT_SUGGESTIONS, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile, type StarterSuggestion } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { mountVoiceOrb } from "../shared/orb-style.js";
 import { dropPendingMessage, holdPendingMessage, noteNeedsModelManual, playConnectArrival, renderReceipt } from "./receipt-view.js";
@@ -330,12 +330,12 @@ app.innerHTML = `
   <section id="starter" aria-label="开始方式">
     <canvas id="starter-orb" aria-hidden="true"></canvas>
     <p id="starter-title">说说你想完成什么</p>
-    <p id="starter-sub">浏览器助手。可以读页面、整理信息、在页面上操作。</p>
-    <div id="starter-actions">
-      <button type="button" class="starter-chip" data-starter="请概括当前页面的要点。" data-effect="read">
-        <span class="starter-chip-main"><span class="starter-chip-label">概括这一页</span><span class="starter-chip-tag" data-effect="read">只读</span></span>
-        <span class="starter-chip-hint-wrap"><span class="starter-chip-hint">会读这一页的正文 → 写成摘要，不改页面</span></span>
-      </button>
+    <p id="starter-sub"></p>
+    <div id="starter-actions"></div>
+    <div id="starter-ways" aria-label="在网页上还可以这样问">
+      <span class="starter-way"><span class="starter-way-key">选中文字</span>直接问</span>
+      <button type="button" class="starter-way" id="starter-circle"><span class="starter-way-key" id="starter-circle-key">⌘⇧S</span>圈出来问</button>
+      <span class="starter-way"><span class="starter-way-key">按住右 ⌥</span>说话</span>
     </div>
     <button type="button" id="starter-connect">连接模型</button>
   </section>
@@ -455,7 +455,7 @@ const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 sendBtn.disabled = true;
 
 // 「圈出来问」的按键由侧栏自己处理（attachments.ts），不是 Chrome 快捷键：按系统写法显示（#236）。
-document.getElementById("region-key")!.textContent = /Mac/i.test(navigator.platform) ? "⌘⇧S" : "Ctrl+Shift+S";
+document.getElementById("region-key")!.textContent = document.getElementById("starter-circle-key")!.textContent = /Mac/i.test(navigator.platform) ? "⌘⇧S" : "Ctrl+Shift+S";
 
 const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
 
@@ -759,11 +759,14 @@ function updateStarterVisibility(): void {
 /** 有没有连模型：null 表示还没收到 hello_ok。只在确知没连时，起点引导换成「先连接模型」（#233）。 */
 let modelConnected: boolean | null = null;
 
+/** 起点探测读到的当前页标题；受限页、探测失败时为空，标题退回通用的一句。 */
+let starterPageTitle = "";
+
 function paintStarterModelState(): void {
   const none = modelConnected === false;
   app.classList.toggle("no-model", none);
-  document.getElementById("starter-title")!.textContent = none ? "先连接模型" : "说说你想完成什么";
-  document.getElementById("starter-sub")!.textContent = none ? "连接以后，助手就能读这个页面、整理信息、在页面上操作。" : "浏览器助手。可以读页面、整理信息、在页面上操作。";
+  document.getElementById("starter-title")!.textContent = none ? "先连接模型" : starterPageTitle ? "这一页能帮你做什么" : "说说你想完成什么";
+  document.getElementById("starter-sub")!.textContent = none ? "连接以后，助手就能读这个页面、整理信息、在页面上操作。" : starterPageTitle ? `正在看：${starterPageTitle}` : "";
 }
 
 document.getElementById("starter-connect")!.onclick = () => void chrome.runtime.openOptionsPage();
@@ -871,7 +874,8 @@ function bindStarterButton(button: HTMLButtonElement): void {
   };
 }
 
-document.querySelectorAll<HTMLButtonElement>("#starter button[data-starter]").forEach(bindStarterButton);
+document.getElementById("starter-circle")!.onclick = () => void attachments.captureRegion();
+renderStarterChips(DEFAULT_SUGGESTIONS);
 
 /** 会话里还没有任何回合：续做卡挂载点常驻在 #messages 里，它没内容时不算。 */
 function conversationEmpty(): boolean {
@@ -902,8 +906,13 @@ async function refreshStarterSuggestions(tabId: number): Promise<void> {
   }
 
   if (!isLatestStarterProbe(probe) || starterTab() !== tabId || !conversationEmpty()) return;
+  starterPageTitle = profile?.title?.trim() ?? "";
+  paintStarterModelState();
+  renderStarterChips(suggestionsFor(profile));
+}
+
+function renderStarterChips(suggestions: StarterSuggestion[]): void {
   const box = document.getElementById("starter-actions");
-  const suggestions = suggestionsFor(profile);
   if (box && [...box.querySelectorAll<HTMLButtonElement>("button")].map(b => b.dataset.starter).join("\n") === suggestions.map(s => s.prompt).join("\n")) return;
 
   box?.replaceChildren(...suggestions.map((item, index) => {
@@ -918,11 +927,16 @@ async function refreshStarterSuggestions(tabId: number): Promise<void> {
     const label = document.createElement("span");
     label.className = "starter-chip-label";
     label.textContent = item.label;
-    const tag = document.createElement("span");
-    tag.className = "starter-chip-tag";
-    tag.dataset.effect = item.effect;
-    tag.textContent = item.effect === "read" ? "只读" : item.effect === "fill" ? "会改页面 · 提交前问你" : "会改页面";
-    main.append(label, tag);
+    main.append(label);
+
+    // 只读的不挂标签：用户读不懂「只读」，会改页面的才值得提醒。
+    if (item.effect !== "read") {
+      const tag = document.createElement("span");
+      tag.className = "starter-chip-tag";
+      tag.dataset.effect = item.effect;
+      tag.textContent = item.effect === "fill" ? "会改页面 · 提交前问你" : "会改页面";
+      main.append(tag);
+    }
     const hintWrap = document.createElement("span");
     hintWrap.className = "starter-chip-hint-wrap";
     const hint = document.createElement("span");
@@ -3551,6 +3565,7 @@ function flushMemoryUsedLine(): void {
     return;
   }
 
+  if (repeatsEarlierUsedLine(line, null)) return;
   floatingUsedLine = line;
   messagesEl.appendChild(line.el);
   scrollToEnd();
@@ -3565,6 +3580,15 @@ function adoptUsedLine(answer: HTMLElement): void {
 
 function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
   if (floatingUsedLine === line) floatingUsedLine = null;
+
+  // 和上一行用的是同一组记忆：不再每条回答都重复一遍。也不登记到回答上，网页上点「忘记」时改的是看得到的那一行。
+  if (repeatsEarlierUsedLine(line, answer)) {
+    line.el.remove();
+    line.cite.remove();
+    usedLineByAnswer.delete(answer);
+
+    return;
+  }
   line.answer = answer;
   usedLineByAnswer.set(answer, line);
   // #56 D + X1：「用了 N 条记忆 ›」跟在首句后面，点开在首段下面撑出小条；「来源」面板只放网页。
@@ -3583,6 +3607,17 @@ function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
   head.append(line.cite);
   head.after(line.el);
   renderUsedLine(line);
+}
+
+/** 这一行实际用到的记忆（完整的一组，连同网站），摘要文字一样不代表用的是同几条。 */
+const usedLineKey = (line: MemoryUsedLine): string => `${line.hostname ?? ""}\n${[...line.items.keys()].sort().join("\n")}`;
+
+/** 对话里在 anchor 之前、看得到的最后一行用的是同一组记忆：只和紧挨着的上一行比，换过一组再换回来时重新显示。 */
+function repeatsEarlierUsedLine(line: MemoryUsedLine, anchor: Node | null): boolean {
+  const earlier = Array.from(messagesEl.querySelectorAll<HTMLElement>(".memory-used-toggle")).filter(cite =>
+    cite !== line.cite && (!anchor || !!(cite.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING)));
+
+  return earlier.at(-1)?.dataset.usedKey === usedLineKey(line);
 }
 
 const USED_GLYPHS: Record<"past" | "profile" | "method", string> = {
@@ -3606,6 +3641,7 @@ function renderUsedLine(line: MemoryUsedLine): void {
   const cite = line.cite;
   cite.type = "button";
   cite.className = "memory-used-toggle";
+  cite.dataset.usedKey = usedLineKey(line);
   cite.setAttribute("aria-expanded", String(line.open));
   const chevron = document.createElement("span");
   chevron.className = "memory-used-chevron";
@@ -4740,7 +4776,9 @@ function retirePlanCard(): void {
 
   if (planUndo?.state === "ready") {
     const button = planCardRun.root.querySelector<HTMLButtonElement>(".plan-undo");
-    if (button) { button.disabled = true; button.textContent = "恢复记录已失效"; }
+    // 用户已经没法恢复，就不在这一行留一个灰掉的按钮；连同前面的分隔点一起拿掉。
+    if (button?.previousSibling?.textContent === " · ") button.previousSibling.remove();
+    button?.remove();
     const scope = planCardRun.root.querySelector(".plan-fill-scope p");
     if (scope) scope.textContent = "新任务已开始，上一轮的填写记录不再用于恢复。";
   }
@@ -4772,7 +4810,8 @@ function paintPlanCard(): void {
     steps: run.receipt.steps - run.receipt.failed,
     total: run.receipt.total,
     ended: run.receipt.ended,
-    undo: !undo || (undo.state === "ready" && undo.count === 0) ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
+    // 页面换了、记录没了：用户在这行没有可做的事，不留「恢复记录已失效」；「网站已收到」是结果，照常写。
+    undo: !undo || (undo.state === "ready" && undo.count === 0) || undo.state === "page_changed" ? "none" : answer && isFillUndoPending(answer) ? "pending" : undo.state === "ready" ? "ready" : undo.state === "restored" ? "done" : "closed",
     undoLabel: undo ? fillUndoLabel(undo) : "",
     undoable: undo?.state === "restored" ? [...undo.restored, ...undo.skipped.map(s => s.field)] : undo?.fields ?? [],
     unavailable: undo?.unavailable ?? [],
