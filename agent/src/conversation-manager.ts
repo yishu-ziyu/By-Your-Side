@@ -83,6 +83,8 @@ export class ConversationManager {
   /** Narrow fence while an interrupted run re-reads the page before agent_start. */
   private readonly checkpointResumes=new Set<string>();
   private readonly taskPages=new Map<string,number>();
+  /** 任务起名：按「这一轮 + 碰过的网站」记起过的那一版，网站变了才重起，一轮最多起 4 次。 */
+  private readonly taskNames=new Map<string,{key:string;busy:boolean;count:number}>();
   private readonly reading = new ReadingRequests();
   private readonly entries = new Map<string, ConversationEntry>();
   private readonly pending = new Map<string, Promise<ConversationEntry>>();
@@ -869,6 +871,41 @@ return { kind: "silent" };}
     }
   }
 
+  /** 按任务原话和碰过的网站起一个短名，替换「原话前 36 个字」的标题；扩展收到更新后改 Chrome 标签组名。 */
+  private nameTask(id:string,snap:TaskProgressSnapshot,pages:Array<{url:string;title?:string}>):void{
+    const session=this.entries.get(id)?.runtime.session;
+
+    if(!session?.nameTask||!snap.runId||!snap.goal)return;
+    const runId=snap.runId,goal=snap.goal;
+    // 导航先到地址、后补标题：网站集合没变但标题刚补上时也要重起，所以键里带上「这个网站有没有标题」。
+    const hosts=[...new Set(pages.flatMap(page=>{const host=memoryHostOfUrl(page.url);
+
+return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)===host)?'+':''}`]:[];}))].sort();
+    const key=`${runId}|${hosts.join(',')}`;
+    const state=this.taskNames.get(id);
+
+    if(state?.busy||state?.key===key)return;
+    const count=state?.key.startsWith(`${runId}|`)?state.count:0;
+
+    if(count>=4)return;
+    this.taskNames.set(id,{key,busy:true,count:count+1});
+    void session.nameTask({goal,pages}).then(title=>{
+      const entry=this.entries.get(id),progress=this.progress.get(id);
+
+      // 起名期间换了任务：旧任务的名字不盖新任务。
+      if(!title||!entry||!progress||progress.snapshot().runId!==runId||entry.summary.title===title)return;
+      entry.summary.title=title;
+      this.store?.save(this.list());
+      this.emit({type:'conversation_updated',conversationId:id,conversation:{...entry.summary}});
+    }).catch(()=>{}).finally(()=>{
+      const latest=this.taskNames.get(id),progress=this.progress.get(id);
+
+      if(latest)latest.busy=false;
+      // 起名期间又碰到新网站：按最新的网页再起一次。
+      if(progress)this.nameTask(id,progress.snapshot(),progress.visitedPages());
+    });
+  }
+
   private recordTaskHistory(id: string): void {
     const history=this.taskHistory,progress=this.progress.get(id),snap=this.getTaskProgress(id);
 
@@ -1490,6 +1527,8 @@ return receipt;
 
       progress.observe(message);
       const progressSnapshot=progress.snapshot();
+
+      if(message.type==='agent_event')this.nameTask(id,progressSnapshot,progress.visitedPages());
 
       if(progressSnapshot.state==='interrupted')summary.checkpoint='interrupted';
       else delete summary.checkpoint;

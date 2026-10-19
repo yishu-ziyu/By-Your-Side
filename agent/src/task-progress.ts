@@ -318,6 +318,8 @@ return;}
   }
   /** 这个任务碰过的网页：发起时所在的页面，加上读过、打开过的页面（过往任务按它记网站）。 */
   visitedUrls(): string[] { return [...(this.startUrl ? [this.startUrl] : []), ...this.runSources.map(source => source.url)]; }
+  /** 同上，带网页标题：给任务起名用。 */
+  visitedPages(): Array<{ url: string; title?: string }> { return [...(this.goalPage ? [this.goalPage] : []), ...this.runSources].map(({ url, title }) => (title ? { url, title } : { url })); }
   abort(): void { this.aborted = true; this.interrupted = false; this.restartRecovery = false;
 
  for (const member of new Set([...this.tools.values()].map(t=>t.member))) this.results.abandonMember(member); this.tools.clear(); this.members.clear(); this.turnText = ""; }
