@@ -12,13 +12,13 @@
     "emoji": 0
   },
   "extension/src/sidepanel/styles.css": {
-    "fontSize": 80,
-    "radius": 98,
+    "fontSize": 91,
+    "radius": 97,
     "color": 66,
     "emoji": 0
   },
   "extension/src/settings/settings.css": {
-    "fontSize": 5,
+    "fontSize": 8,
     "radius": 11,
     "color": 7,
     "emoji": 0

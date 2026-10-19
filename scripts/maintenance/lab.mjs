@@ -292,6 +292,9 @@ const GALLERY = [
   ["设置页", ["first-run-settings"]],
 ];
 
+/** 证据写在固定目录、也不打印路径的用例。 */
+const GALLERY_DIRS = { "edge-tab": "out/edge-tab", "visual-ui-presence": "out/acceptance/visual-ui-production/real-extension" };
+
 function runCase(name, dist) {
   return new Promise(done => {
     const started = Date.now();
@@ -305,21 +308,22 @@ function runCase(name, dist) {
       const printed = [...output.matchAll(/(\/[^\s"']*\/out\/[^\s"']+)/g)].map(m => m[1].replace(/[),.;]+$/, "")).at(-1);
       const runs = join(repo, "out/acceptance/real-path");
       const fresh = existsSync(runs) ? readdirSync(runs).filter(entry => entry.endsWith(`-${name}`) && statSync(join(runs, entry)).mtimeMs >= started).sort().at(-1) : undefined;
-      const found = printed ?? (fresh && join(runs, fresh));
+      const found = GALLERY_DIRS[name] ? join(repo, GALLERY_DIRS[name]) : printed ?? (fresh && join(runs, fresh));
       const dir = found && /\.\w+$/.test(found) ? dirname(found) : found;
 
-      done({ name, ok: status === 0, seconds: Math.round((Date.now() - started) / 1000), dir: dir && existsSync(dir) ? dir : null });
+      done({ name, ok: status === 0, seconds: Math.round((Date.now() - started) / 1000), dir: dir && existsSync(dir) ? dir : null, started });
     });
   });
 }
 
-function pngsUnder(dir) {
+/** 这次运行拍的图：固定目录里留着旧图，按修改时间只取这次的。 */
+function pngsUnder(dir, since) {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
     const full = join(dir, entry.name);
 
-    if (entry.isDirectory()) return entry.name === "screenshots" ? [] : pngsUnder(full);
+    if (entry.isDirectory()) return entry.name === "screenshots" ? [] : pngsUnder(full, since);
 
-    return entry.name.endsWith(".png") && !entry.name.endsWith(".dark.png") ? [full] : [];
+    return entry.name.endsWith(".png") && !entry.name.endsWith(".dark.png") && statSync(full).mtimeMs >= since ? [full] : [];
   });
 }
 
@@ -327,7 +331,7 @@ function pngsUnder(dir) {
 async function gallery() {
   const picked = rest.filter(arg => !arg.startsWith("--"));
   const groups = picked.length ? [["选中的用例", picked]] : GALLERY;
-  const compare = option("compare");
+  const compare = option("compare") && resolve(option("compare"));
   loadGate();
   const dist = distOption() ?? frozenDist();
   const queue = groups.flatMap(([, names]) => names);
@@ -351,7 +355,7 @@ async function gallery() {
     for (const name of names) {
       const result = results.get(name);
 
-      for (const file of result?.dir ? pngsUnder(result.dir) : []) {
+      for (const file of result?.dir ? pngsUnder(result.dir, result.started) : []) {
         const key = `${name}/${file.slice(result.dir.length + 1)}`;
         const target = join(out, key);
         mkdirSync(dirname(target), { recursive: true });
@@ -367,10 +371,15 @@ async function gallery() {
 
   if (before) {
     const keys = new Set(before.shots.map(shot => shot.key));
-    const pairs = shots.filter(shot => keys.has(shot.key)).map(shot => [join(compare, shot.key), join(out, shot.key)]);
+    const darkOf = key => key.replace(/\.png$/, ".dark.png");
+    const pairs = shots.filter(shot => keys.has(shot.key)).flatMap(shot => [[join(compare, shot.key), join(out, shot.key)], ...(shot.dark && existsSync(join(compare, darkOf(shot.key))) ? [[join(compare, darkOf(shot.key)), join(out, darkOf(shot.key))]] : [])]);
     const diff = pixelDiff(pairs);
 
-    for (const shot of shots) if (diff.has(join(out, shot.key))) shot.changed = diff.get(join(out, shot.key));
+    // 浅色、深色取变得多的那张：只改深色样式时也要标出来。
+    for (const shot of shots) {
+      const values = [diff.get(join(out, shot.key)), diff.get(join(out, darkOf(shot.key)))].filter(value => value !== undefined);
+      if (values.length) shot.changed = Math.max(...values);
+    }
   }
   const manifest = { stamp, head: execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repo, encoding: "utf8" }).trim(), dist, compare: compare ?? null, shots, cases: [...results.values()] };
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 2));
@@ -411,9 +420,11 @@ function galleryPage(manifest, before) {
   const sections = [...new Set(manifest.shots.map(shot => shot.group))].map(group => {
     const rows = manifest.shots.filter(shot => shot.group === group).map(shot => {
       const cells = [];
+      const dark = shot.key.replace(/\.png$/, ".dark.png");
       if (before?.keys.has(shot.key)) cells.push(img(`file://${join(before.dir, shot.key)}`, "改前"));
       cells.push(img(shot.key, before ? "改后" : "浅色"));
-      if (shot.dark) cells.push(img(shot.key.replace(/\.png$/, ".dark.png"), before ? "改后 · 深色" : "深色"));
+      if (shot.dark && before?.keys.has(shot.key) && existsSync(join(before.dir, dark))) cells.push(img(`file://${join(before.dir, dark)}`, "改前 · 深色"));
+      if (shot.dark) cells.push(img(dark, before ? "改后 · 深色" : "深色"));
 
       // 像素差异：小于 0.5% 多半只是时间、端口号这类会变的字。
       const change = shot.changed === undefined ? "" : shot.changed < 0.005 ? ' <span class="same">没变</span>' : ` <span class="diff">变了 ${(shot.changed * 100).toFixed(1)}%</span>`;
@@ -424,12 +435,17 @@ function galleryPage(manifest, before) {
     return `<section><h2>${esc(group)}</h2>${rows.join("")}</section>`;
   });
 
+  // 没过或没截到图的用例放在最前面：它们那块界面这次看不到，不能当成没变。
+  const shotCount = name => manifest.shots.filter(shot => shot.name === name).length;
+  const gaps = manifest.cases.filter(item => !item.ok || !shotCount(item.name)).map(item => `<li>${esc(item.name)}：${[item.ok ? "" : "用例没过", shotCount(item.name) ? `截到 ${shotCount(item.name)} 张` : "没有截图"].filter(Boolean).join("，")}</li>`);
+  const gapList = gaps.length ? `<section class="gaps"><h2>这次看不全的地方</h2><ul>${gaps.join("")}</ul></section>` : "";
+
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>界面总览</title><style>
 body{margin:0;background:#f4f3ef;color:#1d1d1f;font:14px/1.5 -apple-system,"PingFang SC",sans-serif}main{max-width:1400px;margin:0 auto;padding:24px 16px 80px}
 h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:32px 0 8px;padding-top:12px;border-top:1px solid #ddd}h3{font-size:12px;font-weight:500;color:#6b6b70;margin:12px 0 6px}
 .cells{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}figure{margin:0;max-width:360px}figure img{display:block;max-width:100%;max-height:640px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:zoom-in}
 figcaption{font-size:12px;color:#6b6b70;margin-top:2px}.fail{color:#b44}.same{color:#2f7d4f}.diff{color:#2c5fb3;font-weight:600}.zoom{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;cursor:zoom-out}.zoom img{max-width:94vw;max-height:94vh}
-</style></head><body><main><h1>界面总览</h1><p>${esc(manifest.head)} · ${manifest.shots.length} 张${before ? ` · 对照 ${esc(before.dir)}` : ""}</p>${sections.join("")}</main>
+</style></head><body><main><h1>界面总览</h1><p>${esc(manifest.head)} · ${manifest.shots.length} 张${before ? ` · 对照 ${esc(before.dir)}` : ""}</p>${gapList}${sections.join("")}</main>
 <div class="zoom" id="z"><img alt=""></div><script>const z=document.getElementById("z");document.querySelectorAll("figure img").forEach(i=>i.onclick=()=>{z.firstChild.src=i.src;z.style.display="flex"});z.onclick=()=>z.style.display="none";</script></body></html>`;
 }
 

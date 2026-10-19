@@ -46,17 +46,31 @@ function countCss(css) {
     const value = rest.join(":").trim();
     const name = prop.trim().toLowerCase();
 
-    if (name === "font-size" && /\d(px|rem|em)\b/.test(value) && !value.startsWith("var(")) fontSize++;
-    if (name === "border-radius" && value.split(/\s+/).some(part => /\d/.test(part) && !RADIUS_FREE.test(part) && !part.startsWith("var("))) radius++;
-    color += (value.replace(/var\([^)]*\)/g, "").match(COLOR) ?? []).length;
+    const bare = value.replace(/var\([^)]*\)/g, "");
+
+    // font 简写里的字号也算：font: 600 24px/1.5 …
+    if ((name === "font-size" || name === "font") && /(^|\s)[\d.]+(px|rem|em)(\/|\s|$)/.test(bare)) fontSize++;
+    if (name === "border-radius" && bare.split(/[\s/]+/).some(part => /\d/.test(part) && !RADIUS_FREE.test(part))) radius++;
+    color += (bare.match(COLOR) ?? []).length;
   }
 
   return { fontSize, radius, color };
 }
 
+/** 一行里不在字符串内的 // 之后是注释（引号成对时才算在字符串外）。 */
+function stripLineComment(line) {
+  for (let at = line.indexOf("//"); at >= 0; at = line.indexOf("//", at + 2)) {
+    const before = line.slice(0, at).replace(/\\./g, "");
+
+    if ((before.match(/["'`]/g) ?? []).length % 2 === 0) return line.slice(0, at);
+  }
+
+  return line;
+}
+
 /** 界面文字（字符串、模板字符串）里的 emoji；注释不算。 */
 function countEmoji(ts) {
-  const code = ts.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const code = ts.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map(stripLineComment).join("\n");
 
   return (code.match(/(["'`])(?:\\.|(?!\1)[\s\S])*?\1/g) ?? []).filter(literal => EMOJI.test(literal)).length;
 }
