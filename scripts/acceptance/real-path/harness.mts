@@ -394,9 +394,9 @@ export async function exportDiagnosticsViaSettings(
 /**
  * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
- * SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。
+ * dist / SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。同一进程里交错跑两版代码时用 dist。
  */
-export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean } = {}) {
+export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false, dist }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean; dist?: string } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
   const tempDir = trackTempDir(root);
@@ -410,7 +410,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
 
   // build.mjs 会先清空输出目录；不带 SIDEAGENT_BUILD_DIST 就会清掉日常 Chrome 正在加载的 extension/dist。
   const distBefore = await dailyDistStamp();
-  const preparedDist = process.env.SIDEAGENT_ACCEPTANCE_DIST;
+  const preparedDist = dist ?? process.env.SIDEAGENT_ACCEPTANCE_DIST;
   if (preparedDist) {
     const source = resolve(preparedDist);
     await readFile(join(source, "manifest.json"), "utf8");

@@ -90,7 +90,7 @@ function codexJudge(prompt, images = []) {
     const dir = mkdtempSync(join(tmpdir(), "bys-judge-"));
     const out = join(dir, "last.txt");
 
-    const child = execFile("codex", ["exec", "--skip-git-repo-check", "-s", "read-only", "-m", JUDGE_MODEL, "--output-last-message", out, ...images.flatMap((i) => ["-i", i]), "-"], { cwd: dir, timeout: 300000, maxBuffer: 20 << 20 }, (err) => {
+    const child = execFile("codex", ["exec", "--skip-git-repo-check", "-s", "read-only", "-m", JUDGE_MODEL, "--output-last-message", out, ...images.flatMap((i) => ["-i", i]), "-"], { cwd: dir, timeout: 300000, maxBuffer: 20 << 20 }, (err, _stdout, stderr) => {
       const text = existsSync(out) ? readFileSync(out, "utf8") : "";
       const m = text.match(/\{[\s\S]*\}/);
 
@@ -99,7 +99,11 @@ function codexJudge(prompt, images = []) {
         const verdict = ["pass", "fail", "undeterminable"].includes(j.verdict) ? j.verdict : (j.pass === true ? "pass" : j.pass === false ? "fail" : "undeterminable");
         resolve({ verdict, pass: verdict === "pass" ? true : verdict === "fail" ? false : null, environment_cause: j.environment_cause === true, reason: String(j.reason ?? ""), method: images.length ? "codex+screenshots+text" : "codex+text", judgeModel: JUDGE_MODEL });
       }
-      catch { resolve({ verdict: "judge_error", pass: null, reason: `judge failed: ${err?.message ?? "unparseable"} :: ${text.slice(0, 300)}`, method: "codex" }); }
+      catch {
+        // codex 连不上服务时只在 stderr 里说，last.txt 为空：把最后一条 ERROR 带进原因，否则整批判分失败也看不出为什么
+        const cause = String(stderr ?? "").split("\n").filter((l) => /ERROR|error:/.test(l)).at(-1)?.slice(0, 300) ?? "";
+        resolve({ verdict: "judge_error", pass: null, reason: `judge failed: ${err?.message ?? "unparseable"} :: ${text.slice(0, 300)}${cause ? ` :: ${cause}` : ""}`, method: "codex" });
+      }
     });
 
     // prompt goes over stdin: long answers/CSVs overflowed argv (spawn E2BIG)

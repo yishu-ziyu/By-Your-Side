@@ -8,10 +8,21 @@ One command (2 model specs x 3 tasks, 2 at a time, then judge + summary):
 Model spec: `main[+fast]`, each `provider/modelId`; fast defaults to main. Output dir per spec = spec with
 non-alphanumerics replaced by `_`.
 Resume missing/invalid results of a run: node eval/harness/run.mjs --resume --run-id my-run --concurrency 2
+Compare two code versions (same harness, tasks, judge and model; only the prebuilt extension differs):
+    SIDEAGENT_BUILD_DIST=/abs/dist-base node extension/build.mjs   # in each version's worktree
+    node eval/harness/run.mjs --models openai-codex/gpt-6-luna --tasks ... --arms base=/abs/dist-base,cand=/abs/dist-cand --repeats 2 --no-judge --run-id X
+    eval/harness/finalize.sh eval/runs/X && node eval/harness/paired.mjs eval/runs/X   # -> paired.md / paired.json
+  Each (task, repeat) runs on both arms back to back, order alternating per repeat; run.json keeps each arm's dist hash and
+  --resume refuses a rebuilt dist. Run the same dist as both arms first (A/A): on 30 tasks x 2 repeats the pass rate of
+  identical code differed by 9 points, so a candidate that touches a few tasks is judged on those tasks, not the total.
+  paired.md drops a pair when either side is environment / judge_error / missing and counts the drops; "false complete" =
+  judged fail and the answer does not admit it (wording heuristic); tokens are main-model only (a lower bound).
+  Tasks on one host run one at a time, so mix hosts in one run to use all slots.
 Flags: --models a,b (default: zai-coding-cn/glm-5.3-flash) --tasks ids (default: all 141)
        --concurrency N (default min(2, jobs)) --cap-sec 240 --retries 2 --max-load N
        --no-judge  --dry-run (launch Chrome, configure models, open panel, check it connects; no prompt)
 Judge results whose verdict is missing, stale or judge_error, then rebuild report + charts: eval/harness/finalize.sh eval/runs/<run-id>
+  (3 judge_errors in a row stop it with the codex error: a broken judge does not silently turn a whole run into judge_error)
   (judge v3: screenshots + final page text + tool reads/log + answer; verdict pass|fail|undeterminable;
    each verdict stores judge_version + result_sha, so a judge bump or a rerun result is re-judged)
 Re-group failure reasons (codex):   python3 eval/harness/cluster.py eval/runs/<run-id>  (then finalize.sh again)
