@@ -151,6 +151,8 @@ let openKey: string | null = null;
 
 /** 已存 key 时，点了「更换」才露出输入框。 */
 let changingKey = false;
+/** 表单打开时自定义连接的地址；别的窗口之后改了地址，旧表单不能把新密钥带到旧地址。 */
+let openedBaseUrl = "";
 
 let login: AbortController | null = null;
 
@@ -405,6 +407,7 @@ function select(choice: ProviderChoice): void {
   if (!connectionDialog.open) connectionDialog.showModal();
   baseUrlRow.hidden = choice.id !== CUSTOM_PROVIDER_ID;
   baseUrlInput.value = choice.id === CUSTOM_PROVIDER_ID ? savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl ?? (config?.provider === CUSTOM_PROVIDER_ID ? config.baseUrl : "") ?? "" : "";
+  openedBaseUrl = baseUrlInput.value;
   keyInput.value = "";
   modelInput.value = defaultModel(choice);
   $("model-toggle").hidden = connectionModels().length === 0;
@@ -607,6 +610,9 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
   const value = draft();
 
   if (!value.ok) return { ok: false, local: value.error };
+  if (value.config.provider === CUSTOM_PROVIDER_ID && !value.key && (savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl ?? "") !== openedBaseUrl) {
+    return { ok: false, local: "这条连接刚在别的窗口改过。关掉再打开，确认地址后再试。" };
+  }
   const started = performance.now();
   hideKeyReason();
   setStatus(modelStatus, "正在测试…", "busy");
@@ -689,6 +695,7 @@ async function save(): Promise<void> {
 
   await saveConnection(value.config, value.key);
   savedConnections.set(value.config.provider, value.config);
+  if (value.config.provider === CUSTOM_PROVIDER_ID) openedBaseUrl = value.config.baseUrl ?? "";
   await reload();
   keyInput.value = "";
   changingKey = false;
@@ -704,19 +711,15 @@ async function disconnectProvider(): Promise<boolean> {
   const id = selected.id;
   const result = await withModelSettings(async () => {
     const stored = await chrome.storage.local.get([INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY]);
-    if (modelConfig(stored[INPROC_CONFIG_KEY])?.provider === id) return null;
     const keys = [CONNECTION_PREFIX + id];
     const notes: string[] = [];
+    if (modelConfig(stored[INPROC_CONFIG_KEY])?.provider === id) { keys.push(INPROC_CONFIG_KEY); notes.push("主模型已清空，到模型页重新选一个。"); }
     if (modelConfig(stored[INPROC_FAST_CONFIG_KEY])?.provider === id) { keys.push(INPROC_FAST_CONFIG_KEY); notes.push("快速模型已改回主模型。"); }
     if (modelConfig(stored[INPROC_BACKUP_CONFIG_KEY])?.provider === id) { keys.push(INPROC_BACKUP_CONFIG_KEY); notes.push("备用模型已关闭。"); }
     await chrome.storage.local.remove(keys);
     await runtime.credentials.delete(id);
     return notes.join("");
   });
-  if (result === null) {
-    setStatus(modelStatus, "请先更换主模型，再移除这条连接。", "err");
-    return false;
-  }
   await reload();
   setStatus(modelStatus, `连接已移除。${result}`, "ok");
   return true;
