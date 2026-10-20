@@ -219,11 +219,9 @@ try {
   await rp.detach(worker);
 
   const idle = await shot("1-idle", 400);
-  check("开始建议可见", idle.starterShown, { shown: idle.starterShown });
-  const suggestion = String(await rp.evaluate(panel, `document.querySelector('#starter button[data-starter]')?.dataset.starter ?? ''`));
-  await rp.click(panel, "#starter button[data-starter]");
-  const draft = await read();
-  check("开始建议只填草稿", !!suggestion && draft.input === suggestion && model.requests.length === afterSave, { input: draft.input, modelRequests: model.requests.length - afterSave });
+  check("空会话问候可见", idle.starterShown, { shown: idle.starterShown });
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, "上一段草稿");
   await rp.click(panel, "#conversation-new");
   await until(async () => (await read()).input === "" || undefined, 10_000, "新会话草稿为空");
   check("新会话不继承上一段草稿", (await read()).input === "", { input: (await read()).input });

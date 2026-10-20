@@ -785,7 +785,6 @@ try {
         input: document.getElementById("input").value,
         placeholderShown: document.getElementById("input").matches(":placeholder-shown"),
         running: !!document.querySelector("#status-pill.running"),
-        actions: document.getElementById("starter-actions").innerText,
       }))()`)));
     }
 
