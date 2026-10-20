@@ -2,7 +2,7 @@
 
 2026-10-19 起算新基线；此前单次验收与历史记录见 Git 历史。
 
-自用的 Chrome 扩展开发预览版。日常 Chrome 已于 10-20 重载到 main `e68a3cc9`：网页上的全大写型号、订单号（GL702VM-GC146T）不再被当成凭据隐去（上一版备份在 `out/daily-backup-20261020-before-582/dist`）。
+自用的 Chrome 扩展开发预览版。日常 Chrome 已于 10-20 重载到 main `01e90dd3`：设置页按栏目分页，选模型和连接服务商分开；错误卡改成淡红凹槽底（上一版备份在 `out/daily-backup-20261020-before-settings-panel/dist`）。
 
 ## 现在能用什么、还差什么
 
