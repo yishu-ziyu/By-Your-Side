@@ -21,7 +21,11 @@ const out=join(REPO,'out/acceptance/killer-interactions',run);
 await mkdir(out,{recursive:true});
 
 const html=`<!doctype html><meta charset="utf-8"><title>来源验收</title><style>body{margin:60px;font:18px/1.6 sans-serif}section{min-height:650px}table{width:600px}td{padding:16px}pre{padding:24px;background:#eee}</style>
-<section><h2>第一节</h2><p id="original">All webhook events are signed using a cryptographic signature with timestamp replay prevention.</p><div id="mixed">Parent text<p id="child">Child paragraph</p>Tail text</div><table aria-label="资产负债表 Q3"><tr><td>毛利率</td><td>62.4%</td></tr><tr><td>研发支出</td><td>4,120M</td></tr></table></section>
+<section><div id="dark-header" style="display:flex;align-items:center;gap:16px;padding:10px 16px;background:#24292f;color:#fff">
+  <strong>GitHub Gist</strong>
+  <a id="nav-all" href="#all" style="color:#fff;text-decoration:none">All gists</a>
+  <a id="nav-back" href="#back" style="color:#fff;text-decoration:none">Back to GitHub</a>
+</div><h2>第一节</h2><p id="original">All webhook events are signed using a cryptographic signature with timestamp replay prevention.</p><div id="mixed">Parent text<p id="child">Child paragraph</p>Tail text</div><table aria-label="资产负债表 Q3"><tr><td>毛利率</td><td>62.4%</td></tr><tr><td>研发支出</td><td>4,120M</td></tr></table></section>
 <section id="section-two"><h2>第二节</h2><p>第二节讨论流动比率与资本开支。</p><pre>const revenue = 8940;</pre></section><section><h2>第三节</h2><p>第三节讨论重复数字。未知值不得制造引用。</p></section>`;
 
 const site=createServer((_q,r)=>r.writeHead(200,{'content-type':'text/html;charset=utf-8'}).end(html));
@@ -54,41 +58,29 @@ try {
   const observationSource=await readFile(join(REPO,'extension/src/background/exec/snapshot.ts'),'utf8');
   const oracle=await transform(observationSource.slice(observationSource.indexOf('export function readTranslationDisplay()')),{loader:'ts',format:'iife',globalName:'DisplayAPI'});
   await rp.evaluate(worker,oracle.code+';globalThis.__translationDisplayAcceptance=DisplayAPI.readTranslationDisplay');
-  await rp.evaluate(work,'window.originalNode=document.querySelector("#original").firstChild;window.originalText=originalNode.data;window.originalClicks=0;document.querySelector("#original").onclick=()=>window.originalClicks++');
-  await rp.evaluate(worker,`chrome.scripting.executeScript({target:{tabId:${tabId}},world:'ISOLATED',files:['content-vellum.js']})`);
+  await rp.evaluate(work,'window.originalNode=document.querySelector("#original").firstChild;window.originalText=originalNode.data;window.originalClicks=0;document.querySelector("#original").onclick=()=>window.originalClicks++;window.headerHeightBefore=document.querySelector("#dark-header").offsetHeight');
   const command=async(value:TranslationCommand)=>rp.evaluate(worker,`chrome.scripting.executeScript({target:{tabId:${tabId}},world:'ISOLATED',func:globalThis.__translationAcceptance,args:[${JSON.stringify(value)}]}).then(rs=>rs[0].result)`);
-  await command({action:'begin',mode:'translated'});
+  await command({action:'begin',mode:'translated',fontFamily:'songti'});
   const collected=await command({action:'collect'});
   const originals=collected.blocks;
-  const translations=originals.flatMap((block:any)=>block.segments.map((segment:any)=>({id:segment.id,text:segment.text.includes('webhook')?'所有Webhook事件使用带时间戳的加密签名。':segment.text.includes('Parent')?'父级译文':segment.text.includes('Child')?'子段落译文':segment.text.includes('Tail')?'尾部译文':segment.text})));
-  await command({action:'apply',document:collected.document,translations});
+  const translations=originals.flatMap((block:any)=>block.segments.map((segment:any)=>({id:segment.id,text:segment.text.includes('webhook')?'所有Webhook事件使用带时间戳的加密签名。':segment.text.includes('All gists')?'所有 Gist':segment.text.includes('Back to GitHub')?'返回 GitHub':segment.text.includes('Parent')?'父级译文':segment.text.includes('Child')?'子段落译文':segment.text.includes('Tail')?'尾部译文':segment.text})));
+  const appliedReceipt=await command({action:'apply',document:collected.document,translations});
+  await command({action:'settle',document:collected.document});
   const displayed=await rp.evaluate(worker,`chrome.scripting.executeScript({target:{tabId:${tabId}},world:'ISOLATED',func:globalThis.__translationDisplayAcceptance}).then(rs=>rs[0].result)`);
-  check('生产显示核验观察真实覆盖层',displayed?.displayValid===true,displayed);
-  const preserved=await rp.evaluate(work,'originalNode.isConnected && originalNode.data===originalText');
-  check('原文字节点与文字保留',preserved,preserved);
-  const sheet=await rp.evaluate(work,'!!document.querySelector("#original .vellum-sheet")');
-  check('真实翻译生成覆盖层',sheet,sheet);
+  check('生产显示核验观察真实译文与字体',displayed?.displayValid===true&&displayed?.translated===8&&displayed?.mode==='translated'&&displayed?.fontFamily==='songti'&&appliedReceipt?.fontFamily==='songti',{displayed,fontFamily:appliedReceipt?.fontFamily});
+  const replacedInPlace=await rp.evaluate(work,'originalNode.isConnected && originalNode.data==="所有Webhook事件使用带时间戳的加密签名。" && !document.querySelector(".vellum-sheet") && !document.querySelector("[data-bys-vellum-host]")');
+  check('仅译文原地替换原节点文字且无硫酸纸层',replacedInPlace,replacedInPlace);
+  const darkHeaderIntact=await rp.evaluate(work,'(()=>{const h=document.querySelector("#dark-header"),a=document.querySelector("#nav-all");return{heightDelta:Math.abs(h.offsetHeight-window.headerHeightBefore),text:a.textContent,color:getComputedStyle(a).color,bg:getComputedStyle(h).backgroundColor}})()');
+  check('深色顶栏译文保持原高度与白字配色',darkHeaderIntact.heightDelta<=2&&darkHeaderIntact.text==='所有 Gist'&&darkHeaderIntact.color==='rgb(255, 255, 255)',darkHeaderIntact);
+  await rp.screenshot(work,join(out,'translated-in-place.png'));
 
-  if(sheet){
-    const point=await rp.evaluate(work,'(()=>{const r=document.querySelector("#original .vellum-sheet").getBoundingClientRect();return{x:r.x+40,y:r.y+20}})()');
-    await rp.cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1},work);
-    await sleep(340);
-    const peeled=await rp.evaluate(work,'document.querySelector("#original .vellum-sheet").classList.contains("peeled")');
-    check('按住掀开原文',peeled,peeled);
-    await rp.screenshot(work,join(out,'peel.png'));
-    await rp.cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1},work);
-    await sleep(350);
-    const reset=await rp.evaluate(work,'getComputedStyle(document.querySelector("#original .vellum-sheet")).transform');
-    check('350ms内复位',reset==='none'||reset==='matrix(1, 0, 0, 1, 0, 0)',reset);
-  }
-
-  const nested=await rp.evaluate(work,'(()=>{const c=document.querySelector("#child [data-bys-translation=true]");if(!c)return null;const r=c.getBoundingClientRect();const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{visible:!!hit&&c.contains(hit),text:c.textContent}})()');
-  check('嵌套子段落译文未被父层遮挡',nested?.visible&&nested.text.includes('子段落译文'),nested);
-  await rp.evaluate(work,'originalNode.data="Website updated source";document.querySelector("#original").style.paddingBottom="33px";const host=document.querySelector("#mixed [data-bys-vellum-host]");const raw=host.firstChild;raw.data="Parent updated";const extra=document.createElement("em");extra.id="site-new";extra.textContent="Site added";host.append(extra)');
+  const nested=await rp.evaluate(work,'(()=>{const c=document.querySelector("#child");if(!c)return null;const r=c.getBoundingClientRect();const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return{visible:!!hit&&(hit===c||c.contains(hit)),text:c.textContent,mixedText:document.querySelector("#mixed")?.textContent}})()');
+  check('嵌套子段落译文未被父层遮挡',nested?.visible&&nested.text==='子段落译文'&&nested.mixedText?.includes('父级译文')&&nested.mixedText?.includes('尾部译文'),nested);
+  await rp.evaluate(work,'originalNode.data="Website updated source";document.querySelector("#original").style.paddingBottom="33px";const extra=document.createElement("em");extra.id="site-new";extra.textContent="Site added";document.querySelector("#mixed").append(extra)');
   await sleep(100);
-  check('网页更新不被旧译文或清理覆盖',await rp.evaluate(work,'originalNode.data==="Website updated source" && !document.querySelector("#original .vellum-sheet") && document.querySelector("#original").style.paddingBottom==="33px" && !!document.querySelector("#mixed #site-new") && !document.querySelector("#mixed [data-bys-vellum-host]")'),null);
+  check('网页更新不被旧译文或清理覆盖',await rp.evaluate(work,'originalNode.data==="Website updated source" && document.querySelector("#original").style.paddingBottom==="33px" && !!document.querySelector("#mixed #site-new")'),null);
   await command({action:'restore'});
-  check('恢复不留覆盖层',await rp.evaluate(work,'!document.querySelector(".vellum-sheet") && originalNode.data==="Website updated source"'),null);
+  check('恢复原文且保留网站后续更新',await rp.evaluate(work,'!document.querySelector(".vellum-sheet") && originalNode.data==="Website updated source" && document.querySelector("#child").textContent==="Child paragraph" && !document.querySelector("#child").getAttribute("style")'),null);
   await rp.click(work,'#original');
   check('原节点事件仍可用',await rp.evaluate(work,'originalClicks===1'),null);
 
@@ -162,7 +154,7 @@ try {
   await rp.evaluate(work,'scrollTo(0,800)');await sleep(500);
   const second=await rp.evaluate(panel,'document.querySelector(".marginalia-card")?.textContent');
   check('滚动切换真实原文边注',!!first&&!!second&&first!==second,{first,second});
-  const alignment=await rp.evaluate(panel,'(()=>{const rail=document.querySelector("#marginalia-rail"),card=document.querySelector(".marginalia-card"),r=card.getBoundingClientRect();return {railHeight:rail.clientHeight,railTop:rail.getBoundingClientRect().top,cardHeight:card.offsetHeight,pageY:rail.dataset.pageY,pageHeight:rail.dataset.pageHeight,panelHeight:innerHeight,panelOuter:outerHeight,panelScreen:screenY,cardCenter:r.y+r.height/2,transform:getComputedStyle(card).transform,messagesHidden:getComputedStyle(document.querySelector("#messages")).display==="none"}})()');
+  const alignment=await rp.evaluate(panel,'(()=>{const rail=document.querySelector("#marginalia-rail"),card=document.querySelector(".marginalia-card"),r=card.getBoundingClientRect(),frame=document.querySelector("#messages-frame")??document.querySelector("#messages");return {railHeight:rail.clientHeight,railTop:rail.getBoundingClientRect().top,cardHeight:card.offsetHeight,pageY:rail.dataset.pageY,pageHeight:rail.dataset.pageHeight,panelHeight:innerHeight,panelOuter:outerHeight,panelScreen:screenY,cardCenter:r.y+r.height/2,transform:getComputedStyle(card).transform,messagesHidden:getComputedStyle(frame).display==="none"}})()');
   check('伴读使用阅读区导轨且对话保留',alignment.railHeight>172&&alignment.messagesHidden,alignment);
   const sourceLine=await rp.evaluate(work,'(()=>{const r=document.querySelector("#section-two").getBoundingClientRect();return screenY+outerHeight-innerHeight+(r.top+r.bottom)/2})()');
   const panelLine=await rp.evaluate(panel,'(()=>{const r=document.querySelector(".marginalia-card").getBoundingClientRect();return screenY+outerHeight-innerHeight+(r.top+r.bottom)/2})()');

@@ -33,7 +33,7 @@ export interface GoalCheckInput {
   goal: string[];
   goalPage?: { title: string; url: string } | null;
   lastReply: string;
-  page: { title: string; url: string; text: string; tabId?: number } | null;
+  page: { title: string; url: string; text: string; tabId?: number; translation?: unknown } | null;
   files?: GoalCheckFile[];
   observations?: Array<{ tool: string; text: string; earlier?: boolean }>;
   /** 这次对话读到过的相邻词对（readWords 写入），不随读数条数淘汰：只给宿主查回答里的名字，不发给核对模型。 */
@@ -283,7 +283,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     notInReads,
     userTookOver: input.userTookOver || undefined,
     replyTruncated: input.lastReply.length > 12_000,
-    page: input.page ? { current: true, tabId: input.page.tabId, title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), text: input.page.text.slice(0, PAGE_CHARS), truncated: input.page.text.length > PAGE_CHARS || undefined } : null,
+    page: input.page ? { current: true, tabId: input.page.tabId, title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), ...(input.page.translation ? { translation: input.page.translation } : {}), text: input.page.text.slice(0, PAGE_CHARS), truncated: input.page.text.length > PAGE_CHARS || undefined } : null,
     files: (input.files ?? []).slice(-16).reverse().map(file => {
       const text = file.content?.slice(0, fileBudget);
       fileBudget -= text?.length ?? 0;
