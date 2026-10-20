@@ -5,7 +5,7 @@
 @font-face { font-family: "Caveat"; font-weight: 600; font-display: block; src: url("fonts/caveat-600.woff2") format("woff2"); }
 
 /* 暖纸与墨色。沿用既有 token 名，避免设置、语音和模型选择各自维护配色。 */
-:root {
+:root, [data-tone-preview="blue"] {
   /* 字号 4 档、圆角 3 档、间距 5 步。预览 overlay 的数量收紧，写进生产变量。 */
   --fs-read: 15px;
   --lh-read: 1.7;
@@ -106,7 +106,7 @@
 }
 
 /* 暖纸色阶（hue 88）：用户在设置里选「暖纸」时切换整套 1%–90% 底色与墨色。 */
-:root[data-tone="warm"] {
+:root[data-tone="warm"], [data-tone-preview="warm"] {
   --wallpaper: oklch(0.980 0.0055 88);
   --chrome-frame: oklch(0.992 0.002 88);
   --glass-surface-elevated: oklch(0.996 0.0015 88);
@@ -129,7 +129,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root, [data-tone-preview="blue"] {
     --wallpaper: #131924;
 
     --glass-surface: #131924;
@@ -167,7 +167,7 @@
     --popover-shadow: 0 10px 28px rgba(0,0,0,.24);
   }
 
-  :root[data-tone="warm"] {
+  :root[data-tone="warm"], [data-tone-preview="warm"] {
     --wallpaper: #211f1b;
     --glass-surface: #211f1b;
     --glass-surface-elevated: #2b2822;

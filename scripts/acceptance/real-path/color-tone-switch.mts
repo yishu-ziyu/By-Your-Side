@@ -43,6 +43,7 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   const config = await configureViaSettings(rp, panel, { providerId: "custom", modelId: "fixture", credential: { type: "api_key", key: "local-fixture" } }, { baseUrl: model.baseUrl });
   const settings = await rp.attach(config.settingsTargetId);
+  await rp.click(settings, '[data-settings-page="appearance"]');
 
   // 打开网页上的划词解释卡
   await rp.evaluate(work, `(() => {

@@ -6,6 +6,7 @@
  *
  * --run= 只决定证据目录 out/acceptance/ghost-hud-and-steering/<run>/：不写时是 candidate（候选轮），最终验收用 final。
  */
+import { useSavedSettingsModel } from './inproc-config.mts';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -112,8 +113,9 @@ try {
 
   // ── R3/R4 改方向 ──
   await rp.click(panel, '#header-more'); await rp.click(panel, '#model-settings-open');
-  const settings = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.endsWith('/settings.html')), 10000, 'settings')).targetId);
+  const settings = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.split("#")[0]!.endsWith('/settings.html')), 10000, 'settings')).targetId);
   await until(async () => await rp.evaluate(settings, 'document.querySelectorAll(".provider-option").length>3'), 10000, 'providers');
+  await rp.click(settings, '[data-settings-page="connections"]');
   await rp.evaluate(settings, 'document.querySelector("#provider-more").open=true');
   await rp.click(settings, '.provider-option[data-provider="custom"]');
 
@@ -123,7 +125,8 @@ try {
 
   await rp.evaluate(settings, 'document.querySelector("#model-save").scrollIntoView()'); await rp.click(settings, '#model-save');
   await until(async () => String(await rp.evaluate(settings, 'document.querySelector("#model-status").textContent')).startsWith('已保存'), 10000, 'saved');
-  await rp.cdp.send('Target.closeTarget', { targetId: (await rp.targets()).find(t => t.url.endsWith('/settings.html'))!.targetId });
+  await useSavedSettingsModel(rp, settings, 'custom', 'fixture');
+  await rp.cdp.send('Target.closeTarget', { targetId: (await rp.targets()).find(t => t.url.split("#")[0]!.endsWith('/settings.html'))!.targetId });
   // 输入框改版去掉了运行中的「改方向」建议按钮：改方向就是在输入框里直接说。
   check('空闲时不显示改方向提示区', await rp.evaluate(panel, '!document.querySelector("#steer-ribbon")?.getClientRects().length'), null);
   await rp.click(panel, '#input'); await rp.typeText(panel, '对比 Ingress 和 Gateway API'); await rp.pressEnter(panel);

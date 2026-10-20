@@ -133,9 +133,13 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
 
   await rp.click(panel, "#model-settings-open");
   const menuToggles = await rp.evaluate(panel, "window.__menuToggles");
-  const target = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页打开");
+  const target = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url.split("#")[0]!.endsWith("/settings.html")), 10_000, "设置页打开");
   const page = await rp.attach(target.targetId);
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页渲染服务商");
+
+  await rp.click(page, '[data-settings-page="connections"]');
+  const add = await rp.evaluate(page, `document.querySelector('#provider-more').hidden`);
+  if (add) await rp.click(page, '#connection-add');
 
   // 「自定义地址」和没连接的服务商都收在「更多服务商」里；先展开再找按钮。
   const directSelector = `.provider-option[data-provider="${asCustom ? "custom" : plan.providerId}"]`;
@@ -174,11 +178,13 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
     // SAFETY: 这段页面脚本返回 [data-tone, textContent] 两个字符串。
     const [tone, text] = await rp.evaluate(page, `[document.querySelector("#model-status").dataset.tone, document.querySelector("#model-status").textContent]`) as [string, string];
 
+    const keyReason = await rp.evaluate(page, `document.querySelector('#key-reason').checkVisibility() ? document.querySelector('#key-reason-text').textContent : ''`);
+    if (keyReason) throw new Error(`设置页试连失败：${keyReason}`);
     return tone === "ok" || tone === "err" ? text : undefined;
   }, 45_000, "测试连接出结果", 300);
 
-  // asFast：点「用作快速模型」，只存这家的 key 并设为快速模型，主模型不动。
-  const saveButton = asFast ? "#model-fast" : "#model-save";
+  // 连接先保存，再从用途选择器选模型。
+  const saveButton = "#model-save";
   await rp.evaluate(page, `document.querySelector(${JSON.stringify(saveButton)}).scrollIntoView({ block: "center" }); true`);
   await rp.click(page, saveButton);
 
@@ -186,12 +192,30 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
     // SAFETY: textContent 是字符串。
     const text = await rp.evaluate(page, `document.querySelector("#model-status").textContent`) as string;
 
-    return text.startsWith(asFast ? "已设为快速模型" : "已保存") ? text : undefined;
+    return text.startsWith("已保存") ? text : undefined;
   }, 10_000, "保存完成", 200);
 
+  await useSavedSettingsModel(rp, page, asCustom ? 'custom' : plan.providerId, plan.modelId, asFast);
   const storageKey = asFast ? "inproc_fast_model_config" : "inproc_model_config";
-  // SAFETY: 这个键由设置页 save() / saveAsFast() 写入 InprocModelConfig 对象。
+  await until(async () => await rp.evaluate(page, `chrome.storage.local.get("${storageKey}").then(s => s["${storageKey}"]?.modelId === ${JSON.stringify(plan.modelId)})`) || undefined, 5000, '用途选择已保存');
+  // SAFETY: 返回本次通过设置页选择并已核对的配置。
   const stored = await rp.evaluate(page, `chrome.storage.local.get("${storageKey}").then((s) => s["${storageKey}"])`) as JsonRecord;
 
   return { testStatus, saveStatus, stored, settingsTargetId: target.targetId, menuClicks, menuToggles };
+}
+
+export async function useSavedSettingsModel(rp: RealPath, page: string, provider: string, modelId: string, asFast = false): Promise<void> {
+  await rp.click(page, '#model-fast');
+  const selectId = asFast ? 'fast-model' : 'main-model';
+  await rp.click(page, `#${selectId}-picker`);
+  await rp.evaluate(page, `(() => {
+    const choice = [...document.querySelectorAll('#${selectId}-options .model-picker-option')].find(o => {
+      try { const c = JSON.parse(o.dataset.value); return c.provider === ${JSON.stringify(provider)} && c.modelId === ${JSON.stringify(modelId)}; } catch { return false; }
+    });
+    if (!choice) throw new Error('模型选择器没有刚保存的模型');
+    choice.dataset.acceptanceChoice = 'true';
+  })()`);
+  await rp.click(page, `#${selectId}-options [data-acceptance-choice]`);
+  const key = asFast ? 'inproc_fast_model_config' : 'inproc_model_config';
+  await until(async () => await rp.evaluate(page, `chrome.storage.local.get('${key}').then(s=>s['${key}']?.modelId === ${JSON.stringify(modelId)} && s['${key}']?.provider === ${JSON.stringify(provider)})`) || undefined, 5000, '模型用途保存');
 }
