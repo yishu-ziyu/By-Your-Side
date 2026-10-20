@@ -40,6 +40,7 @@ let error: string | null = null;
 let recording = false;
 const frames: string[] = [];
 let frameDir = "";
+let recordStart = 0;
 let recorder: Promise<void> = Promise.resolve();
 
 try {
@@ -60,6 +61,7 @@ try {
   let shotOf = A.s;
   if (record) {
     recording = true;
+    recordStart = Date.now();
     frameDir = await mkdtemp(join(tmpdir(), "float-card-frames-"));
     recorder = (async () => {
       while (recording) {
@@ -163,7 +165,7 @@ try {
   recording = false;
   await recorder;
   if (record && frames.length > 1) {
-    try { execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "12", "-i", join(frameDir, "%05d.jpg"), "-vf", "format=yuv420p", join(out, "run.mp4")]); } catch { /* 没装 ffmpeg 只少录屏 */ }
+    try { execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", (frames.length / ((Date.now() - recordStart) / 1000)).toFixed(2), "-i", join(frameDir, "%05d.jpg"), "-vf", "format=yuv420p", join(out, "run.mp4")]); } catch { /* 没装 ffmpeg 只少录屏 */ }
   }
   await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", error, results }, null, 2));
   console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", out, error, checked: results.map(r => r.name) }));
