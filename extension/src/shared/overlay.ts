@@ -17,6 +17,8 @@ export const OVERLAY_KIND_SEND_CONFIRM = "send-confirm";
 
 export const OVERLAY_KIND_PAY_STOP = "pay-stop";
 
+export const OVERLAY_KIND_FLOAT_CARD = "float-card";
+
 export const HIGHLIGHT_PAD = 3;
 
 export const MARK_PAD = 6;
