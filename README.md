@@ -1,43 +1,53 @@
 # By Your Side
 
-陪你阅读、也帮你操作网页的 Chrome 扩展。助手复用当前浏览器的登录状态，在侧栏里对话、读页并执行任务。
+**在你的 Chrome 里，陪你读网页，也替你动手。**
 
-当前是开发预览版。源码安装只面向 macOS + Chrome；三系统成品分发还没完成。
+By Your Side 是一个 Chrome 侧栏扩展。助手直接用你当前浏览器的登录状态：你用一句话交代，它读页面、点击、填写、整理结果，每一步都给你看，关键动作等你点头。
 
-最新验证范围与已知问题只在[当前状态](docs/STATUS.md)维护。
+> 开发预览版。目前只支持 macOS + Chrome 源码安装。做到哪、还差什么，见[当前状态](docs/STATUS.md)。
 
-## 文档导航
+## 能帮你做什么
 
-| 要做什么 | 从这里开始 |
+| 你说 | 它做 |
 |---|---|
-| 找项目资料 | [文档总入口](docs/README.md) |
-| 安装与配置 | [源码安装](docs/guides/getting-started.md) |
-| 了解交互与权限 | [使用说明](docs/guides/usage.md) |
-| 找代码职责和调用链 | [架构](docs/architecture.md) · [协议](docs/protocol.md) |
-| 接着开发 | [当前状态](docs/STATUS.md) |
-| 修改与验证 | [开发检查](docs/development/checks.md) · [文档维护](docs/development/documentation.md) |
-| 新功能怎么推进 | [协作方式](docs/development/collaboration.md) |
+| “读一下这篇文章，总结主要观点。” | 读完整页（含 PDF），给出结论和依据 |
+| 选中一段文字，按 `⌘J` | 在页面里就地解释、翻译，可以接着追问 |
+| “把这页翻译成中文，只保留译文。” | 译文原地替换原文，可切双语、随时恢复 |
+| “把这几条结果的标题和链接整理给我。” | 搜索、点击、填写、跨页搬运，比价和清单画成卡片 |
+| “预算改成六百，其他条件不变。” | 任务跑到一半也能改要求，不用重来 |
+| 按住右 `⌥` 说一句话 | 不开侧栏也能交代任务，松手就开始做 |
 
-## 安装
+## 你始终掌握主动
 
-环境准备、模型凭据、扩展加载与可选语音设置见[安装步骤](docs/guides/getting-started.md)。
+- **看得见**：每次动过页面，回答上方写「做了 N 步 · 耗时」，展开看每一步。
+- **随时接手**：点「接管」助手立刻停手；你改完点「交还」，它先重读页面再接着做。
+- **关键动作要你确认**：发送、提交前在网页和侧栏同时确认；付款按钮永远由你自己点。
+- **数据去向清楚**：页面内容只发给你自己连接的模型服务；密钥只存在这个浏览器里；记下的个人资料可查看、修改、撤销。
 
-## 可以做什么
+> **注意**：普通点击和填写不逐次确认。在不信任的网页上让助手动手前，先看一眼页面，网页里藏的指令可能误导助手。详见[数据和权限](docs/guides/usage.md#数据和权限)。
 
-页面理解、划词追问、翻译、网页操作、会话与记忆见[使用说明](docs/guides/usage.md)。
+## 快速开始
 
-## 语音交互
+需要 Google Chrome 和 Node.js 22.19 以上。
 
-使用方式见[语音交互](docs/guides/usage.md#语音交互)，实现边界见[语音架构](docs/voice-architecture.md)。
+```bash
+git clone https://github.com/yishu-ziyu/By-Your-Side.git
+cd By-Your-Side
+npm ci && npm run build
+```
 
-## 数据和权限
+1. 打开 `chrome://extensions`，开启「开发者模式」。
+2. 点「加载已解压的扩展程序」，选 `extension/dist/`。
+3. 点工具栏的 By Your Side 图标打开侧栏，在「更多 → 模型与语音」填入模型密钥。
 
-见[数据和权限](docs/guides/usage.md#数据和权限)。
+模型选择、语音设置和常见问题见[源码安装](docs/guides/getting-started.md)。
 
-## 实现结构
+## 文档
 
-各目录的职责只在[架构](docs/architecture.md)维护。
-
-## 开发与验证
-
-先读 [AGENTS.md](AGENTS.md)，再按[开发检查](docs/development/checks.md)选择验证范围。
+| 想了解 | 看这里 |
+|---|---|
+| 全部交互和权限边界 | [使用说明](docs/guides/usage.md) |
+| 现在做到哪 | [当前状态](docs/STATUS.md) |
+| 代码结构和消息协议 | [架构](docs/architecture.md) · [协议](docs/protocol.md) |
+| 参与开发 | [AGENTS.md](AGENTS.md) · [开发检查](docs/development/checks.md) |
+| 所有文档 | [文档总入口](docs/README.md) |
