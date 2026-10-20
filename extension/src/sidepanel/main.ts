@@ -36,7 +36,7 @@ import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-action
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal, AppWindow } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
-import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, FileText, TextQuote, Keyboard, SquareTerminal, Workflow, Eye, ListChecks, Highlighter, ArrowLeftRight, X as XIcon, Languages, Download, Users, Bookmark, Wrench } from "lucide";
+import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, FileText, TextQuote, Keyboard, SquareTerminal, Workflow, Eye, ListChecks, Highlighter, ArrowLeftRight, X as XIcon, Languages, Download, Users, Bookmark, Wrench, Search } from "lucide";
 import {
   StepChain,
   chipState,
@@ -99,6 +99,7 @@ import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
+import { bindMotionIcon } from "./motion-icon.js";
 
 syncColorTone();
 
@@ -314,7 +315,10 @@ app.innerHTML = `
       </div>
       <button id="memory-close" type="button">关闭</button>
     </div>
-    <input id="memory-search" type="search" placeholder="搜索记忆和过往任务" aria-label="搜索记忆和过往任务" autocomplete="off">
+    <label id="memory-search-field" class="memory-search-field">
+      <span id="memory-search-icon" aria-hidden="true"></span>
+      <input id="memory-search" type="search" placeholder="搜索记忆和过往任务" aria-label="搜索记忆和过往任务" autocomplete="off">
+    </label>
     <div id="knowledge-body">
       <div id="memory-body"></div>
     </div>
@@ -1404,6 +1408,16 @@ for (const [key, node] of [["camera", Camera], ["region", SquareDashedMousePoint
   document.querySelector(`#attach-menu [data-icon="${key}"]`)?.replaceChildren(icon(node));
 }
 
+const screenshotAction = document.getElementById("menu-action-screenshot");
+if (screenshotAction) bindMotionIcon(screenshotAction, "camera");
+
+const memorySearchField = document.getElementById("memory-search-field");
+const memorySearchIcon = document.getElementById("memory-search-icon");
+if (memorySearchField && memorySearchIcon) {
+  memorySearchIcon.append(icon(Search));
+  bindMotionIcon(memorySearchField, "search");
+}
+
 /** 运行中：停止键一直在；输入框里有字时，它左边多一个发送键，发出的是插话。 */
 function syncSteerSend(): void {
   // 按 id 现取：切会话可能在这段模块代码跑到之前就调用。
@@ -1422,11 +1436,14 @@ function syncSteerSend(): void {
   }
 }
 
-document.getElementById("reading-settings-btn")!.prepend(icon(BookOpen));
+const readingSettingsButton = document.getElementById("reading-settings-btn")!;
+readingSettingsButton.prepend(icon(BookOpen));
+bindMotionIcon(readingSettingsButton, "book-open");
 
 const modelSettingsOpen = document.getElementById("model-settings-open")!;
 
 modelSettingsOpen.prepend(icon(SlidersHorizontal));
+bindMotionIcon(modelSettingsOpen, "sliders-horizontal");
 
 modelSettingsOpen.addEventListener("click", () => void chrome.runtime.openOptionsPage());
 

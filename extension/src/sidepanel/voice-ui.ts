@@ -5,6 +5,7 @@ import { VoiceClient, type VoicePhase } from './voice-client.js';
 import { mountVoiceOrb } from '../shared/orb-style.js';
 import { VoiceDiagnosticLog, type VoiceDiagCapture } from './voice-diagnostic.js';
 import { type StepVoice, type UserDelivery, type VoiceInputContext, type VoicePersona } from '../../../shared/voice.js';
+import { bindMotionIcon, setMotionActive } from './motion-icon.js';
 
 export function mountVoiceUI(composer: HTMLElement, getConversation: () => string, send: (m: ClientMessage) => boolean, getInput: () => VoiceInputContext = () => ({}), diagnostic?: (event: string, fields: Record<string, string | number | boolean | null | undefined>) => void) {
   const region = document.createElement('section');
@@ -21,6 +22,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   button.setAttribute('aria-expanded', 'false');
   // 语音对话用声波图标；话筒留给说话输入（dictation.ts），和 ChatGPT 输入框的分法一样。光球只在进入语音后的大界面里。
   button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>';
+  bindMotionIcon(button, 'audio-lines');
   composer.querySelector('#composer-spacer')!.after(button);
   const status = region.querySelector<HTMLElement>('.voice-state')!;
   const end = region.querySelector<HTMLButtonElement>('.voice-end')!;
@@ -359,6 +361,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
   const client = new VoiceClient(send, (next, detail) => {
     phase = next;
+    setMotionActive(button, !client.diagnosticMode && (next === 'listening' || next === 'speaking'));
 
     if (client.diagnosticMode) {
       region.hidden = true;

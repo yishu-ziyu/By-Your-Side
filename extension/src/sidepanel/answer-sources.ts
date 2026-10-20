@@ -14,6 +14,8 @@ import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../s
 import { sourceLabel } from "./delivery-facts-view.js";
 import { captureCitationContext, citationValues, toast } from "./sonar-citations.js";
 import { answerPanelSection, refreshAnswerPanel, siteGlyph } from "./answer-actions.js";
+import { createElement as icon, ExternalLink } from "lucide";
+import { bindMotionIcon } from "./motion-icon.js";
 
 /** 同一页面：忽略锚点和末尾斜杠，其余（含查询串）都要一致。 */
 function pageKey(url: string): string | null {
@@ -165,8 +167,12 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     const where = document.createElement("span");
     where.className = "answer-source-host";
     where.dataset.hover = "在旁边打开";
-    where.textContent = host;
+    where.append(host);
+    const external = icon(ExternalLink, { width: 12, height: 12, "stroke-width": 1.8, "aria-hidden": "true" });
+    external.classList.add("answer-source-external");
+    where.append(external);
     button.append(number, glyph, text, where);
+    bindMotionIcon(button, "external-link");
 
     // 没有标题时第三列已经是地址，右边不再重复一遍。
     if (!source.title?.trim()) { button.classList.add("untitled"); untitled.push({ key, text, where }); }

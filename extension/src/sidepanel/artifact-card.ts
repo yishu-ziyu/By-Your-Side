@@ -7,6 +7,7 @@
  */
 import { readArtifact } from "../shared/durable-store.js";
 import type { AgentUiEvent } from "../../../shared/protocol.js";
+import { bindMotionIcon } from "./motion-icon.js";
 
 type ArtifactEvent = Extract<AgentUiEvent, { kind: "artifact" }>;
 
@@ -187,6 +188,7 @@ export class ArtifactCards {
     button.textContent = "下载";
     button.title = "下载";
     button.title = `下载 ${filename}`;
+    bindMotionIcon(button, "download");
     const previewToggle = document.createElement("button");
     previewToggle.type = "button";
     previewToggle.className = "artifact-preview-toggle";
