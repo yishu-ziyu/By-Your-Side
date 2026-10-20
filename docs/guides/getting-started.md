@@ -2,11 +2,11 @@
 
 [文档导航](../README.md) · [使用说明](usage.md) · [开发检查](../development/checks.md)
 
-本产品是开发预览版。本页写 macOS + Chrome 上的源码安装方式；三系统的成品分发尚未完成。产品只有扩展一种形态，不用另装本机程序。
+本产品是开发预览版。Chrome 和其他基于 Chromium 的浏览器（Edge、Brave、Arc 等）都能装，系统不限；Firefox、Safari 缺侧栏和调试器接口，装不上。目前只在 macOS + Chrome 上完整测过，下面以它为例；成品分发尚未完成。产品只有扩展一种形态，不用另装本机程序。
 
 ## 1. 构建扩展
 
-需要 Google Chrome，以及用于构建的 Node.js **22.19 或更高版本**、npm、Git。
+需要 Chrome 或其他基于 Chromium 的浏览器，以及用于构建的 Node.js **22.19 或更高版本**、npm、Git。
 
 ```bash
 git clone https://github.com/yishu-ziyu/By-Your-Side.git

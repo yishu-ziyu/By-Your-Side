@@ -76,10 +76,14 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
       <h2 id="voice-title">语音对话</h2>
-      <p class="sx-sub">用声音和助手交谈。语音对话使用阶跃星辰的实时语音。<span id="voice-key-note"></span></p>
+      <p class="sx-sub">用声音和助手交谈。先选语音模型，下面的密钥和音色跟着它变。<span id="voice-key-note"></span></p>
     </div>
     <div class="surface rows">
-      <div class="row">
+      <div class="row stack">
+        <span class="row-main"><span id="voice-model-title" class="row-title">语音模型</span><span id="voice-model-state" class="row-desc"></span></span>
+        <div id="voice-model-list" class="radio-rows" role="radiogroup" aria-labelledby="voice-model-title"></div>
+      </div>
+      <div id="voice-key-row" class="row">
         <span class="row-main"><span class="row-title">阶跃星辰密钥（语音用）</span><span id="voice-state" class="row-desc"></span></span>
         <span class="row-ctl inline">
           <input id="voice-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="阶跃星辰密钥（语音用）" />
@@ -88,11 +92,7 @@ export function renderSettings(): void {
         </span>
       </div>
       <div class="row stack">
-        <span class="row-main"><span id="voice-model-title" class="row-title">语音模型</span><span id="voice-model-state" class="row-desc"></span></span>
-        <div id="voice-model-list" class="radio-rows" role="radiogroup" aria-labelledby="voice-model-title"></div>
-      </div>
-      <div class="row stack">
-        <span class="row-main"><span id="timbre-title" class="row-title">音色</span><span class="row-desc">点一下就换，下次开启语音时生效。</span></span>
+        <span class="row-main"><span id="timbre-title" class="row-title">音色</span><span id="timbre-desc" class="row-desc"></span></span>
         <div id="timbre-list" class="radio-rows" role="radiogroup" aria-labelledby="timbre-title"></div>
       </div>
       <div class="row stack">
@@ -107,6 +107,16 @@ export function renderSettings(): void {
           </div>
         </div>
       </div>
+    </div>
+    <p id="voice-status" class="settings-status" role="status" aria-live="polite"></p>
+    <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="sx" aria-labelledby="speech-title">
+    <div class="sx-head">
+      <h2 id="speech-title">朗读结果</h2>
+      <p class="sx-sub">按住说话交代的事做完后，念给你听。和上面的语音对话无关。</p>
+    </div>
+    <div class="surface rows">
       <div class="row">
         <span class="row-main"><span class="row-title">MiniMax 订阅密钥</span><span id="speech-state" class="row-desc"></span></span>
         <span class="row-ctl inline">
@@ -117,8 +127,7 @@ export function renderSettings(): void {
       </div>
       ${toggleRow("ptt-speak", "念出按住说话的结果", "念回答的第一句和「留给你的」。要用 MiniMax 订阅密钥（sk-cp- 开头）。")}
     </div>
-    <p id="voice-status" class="settings-status" role="status" aria-live="polite"></p>
-    <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
+    <p id="speech-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
     </div>
     <div class="settings-panel" data-settings-panel="appearance" hidden>
