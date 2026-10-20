@@ -100,6 +100,7 @@ import { mountAnswerCommand } from "./answer-command.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
 import { bindMotionIcon } from "./motion-icon.js";
+import { mountDottedGlow } from "./dotted-glow.js";
 
 syncColorTone();
 
@@ -333,6 +334,8 @@ app.innerHTML = `
   </div>
   <div id="team-card" hidden></div>
   <section id="starter" aria-label="开始方式">
+    <canvas id="starter-glow" aria-hidden="true"></canvas>
+    <p id="starter-brand"></p>
     <canvas id="starter-orb" aria-hidden="true"></canvas>
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub"></p>
@@ -5147,13 +5150,39 @@ function post(envelope: PanelToBg): boolean {
 // ── T05 接续入口：消费 task_view；「继续原任务」只提交现有 resume 动作 ──
 // #53 继续上次的事：空白会话起点区的「没做完的事」卡，逻辑在 open-threads.ts。
 // 起点区中央的光球：看得见时才转，起点区收起就停，不空耗。
+/** 装好后第一次看到空会话时才播产品名开场；记在本机，换会话、重开侧栏都不再播。 */
+const INTRO_SEEN_KEY = "starter_intro_seen";
 {
   const canvas = document.querySelector<HTMLCanvasElement>("#starter-orb")!;
+  const brand = document.getElementById("starter-brand")!;
+  brand.setAttribute("aria-label", "By Your Side");
+  brand.append(...Array.from("By Your Side", (ch, i) => {
+    const span = document.createElement("span");
+    span.textContent = ch;
+    span.setAttribute("aria-hidden", "true");
+    span.style.setProperty("--i", String(i));
+    return span;
+  }));
+  const glow = document.querySelector<HTMLCanvasElement>("#starter-glow")!;
   let stop: (() => void) | null = null;
-  new IntersectionObserver(([entry]) => {
-    if (entry?.isIntersecting && !stop) stop = mountVoiceOrb(canvas, 56, () => "idle");
-    else if (!entry?.isIntersecting && stop) { stop(); stop = null; }
-  }).observe(canvas);
+  let introPending = false;
+  const observer = new IntersectionObserver(([entry]) => {
+    if (entry?.isIntersecting && !stop) {
+      const stopOrb = mountVoiceOrb(canvas, 56, () => "idle");
+      const stopGlow = mountDottedGlow(glow, () => (brand.offsetParent ? brand : canvas));
+      stop = () => { stopOrb(); stopGlow(); };
+      const starter = document.getElementById("starter")!;
+      if (introPending) { introPending = false; starter.classList.add("starter-intro"); void chrome.storage.local.set({ [INTRO_SEEN_KEY]: true }); }
+      starter.classList.remove("starter-enter");
+      void starter.offsetWidth;
+      starter.classList.add("starter-enter");
+    } else if (!entry?.isIntersecting && stop) { stop(); stop = null; }
+  });
+  // 先读完有没有播过，再开始看光球：否则第一帧已经按普通入场播掉了。
+  void chrome.storage.local.get(INTRO_SEEN_KEY).then((stored) => {
+    introPending = stored[INTRO_SEEN_KEY] !== true;
+    observer.observe(canvas);
+  }, () => observer.observe(canvas));
 }
 
 configureOpenThreads({
