@@ -45,7 +45,9 @@ npm ci && npm run build
 
 1. 打开 `chrome://extensions`，开启「开发者模式」
 2. 点「加载已解压的扩展程序」，选 `extension/dist/`
-3. 点工具栏的 By Your Side 图标打开侧栏，在「更多 → 模型与语音」填入模型密钥
+3. 点工具栏的 By Your Side 图标打开侧栏，点「连接模型」填入模型密钥
+
+也可以让 AI 编程助手替你装，对它说：「请按 https://raw.githubusercontent.com/yishu-ziyu/By-Your-Side/main/docs/guides/install-for-agents.md 帮我安装 By Your Side。」
 
 模型选择和语音设置见[源码安装](docs/guides/getting-started.md)。
 
