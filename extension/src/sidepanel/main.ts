@@ -6142,6 +6142,14 @@ function autoResize(): void {
   composerEl.classList.toggle("has-text", Boolean(inputEl.value.trim()));
 }
 
+// 侧栏刚打开时宽度还没展开，那一刻算出的高度会按很窄的宽度折行，变宽后要重算。
+let inputWidth = 0;
+new ResizeObserver(() => {
+  if (inputEl.clientWidth === inputWidth) return;
+  inputWidth = inputEl.clientWidth;
+  autoResize();
+}).observe(inputEl);
+
 attachments = new AttachmentsManager({
   composerEl,
   stripEl: attachmentsStrip,
