@@ -340,7 +340,7 @@ export function mountDictation(opts: {
       const settings = await readDictationSettings();
       if (session !== mine) return;
       if (settings.provider !== "chrome" && !settings.key) {
-        opts.notice("请先在「模型与语音 → 语音 → 语音转文字」填写识别服务密钥并保存。");
+        opts.notice(settings.provider === "stepfun-realtime" && settings.keySource === "voice" ? "请先配置语音对话密钥，或在语音转文字中改为单独填写密钥。" : "请先在「模型与语音 → 语音 → 语音转文字」填写识别服务密钥并保存。");
         return;
       }
       if (await microphonePermissionState() === "denied") {
