@@ -105,7 +105,8 @@ export function redactCredentialText(text: string): string {
   // 词按空白、引号、括号、逗号和中文切；去掉开头的 `键名=`、`:` 和末尾标点后，整个词就是这一段才放行。
   // 全角只算标点（，：；！？（）等），全角字母数字不算边界，否则能拿它们把凭据拆开。
   if (structured) body = body.replace(/[^\s"'`{}[\](),\u3000-\u303f\u4e00-\u9fff\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]+/g, (word) => {
-    const head = word.replace(/^[A-Za-z_]{1,24}[:=]|^[:=]+/, "");
+    // 键名带小写字母时可以有数字、. -（model1=、product-id=），这种键名不会是全大写凭据的一半。
+    const head = word.replace(/^(?:[A-Za-z_]{1,24}|[a-z][A-Za-z0-9_.-]{0,24})[:=]|^[:=]+/, "");
     let end = head.length;
 
     while (end > 0 && ".,;:!?/".includes(head[end - 1]!)) end -= 1;
