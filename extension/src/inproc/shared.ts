@@ -78,6 +78,14 @@ export interface InprocModelConfig {
 
 /** 自定义 OpenAI 兼容服务在凭据与配置里使用的服务商编号。 */
 export const CUSTOM_PROVIDER_ID = "custom";
+export const CUSTOM_ENDPOINT_ENV = "SIDEAGENT_CUSTOM_ENDPOINT";
+
+/** A custom key travels with its endpoint, including calls holding an older model object. */
+export function modelCredential(config: InprocModelConfig, key: string): StoredCredential {
+  return config.provider === CUSTOM_PROVIDER_ID && config.baseUrl
+    ? { type: "api_key", key, env: { [CUSTOM_ENDPOINT_ENV]: config.baseUrl } }
+    : { type: "api_key", key };
+}
 
 /** 阶跃星辰：pi-ai 目录里没有，扩展自己注册；它的 key 同时可用于实时语音。 */
 export const STEPFUN_PROVIDER_ID = "stepfun";
@@ -91,7 +99,7 @@ export const INPROC_CREDENTIAL_PREFIX = "inproc_cred:";
 
 /** 与 pi-ai 的 Credential 同形；这里单独声明，background 不必引入 pi-ai。 */
 export type StoredCredential =
-  | { type: "api_key"; key?: string }
+  | { type: "api_key"; key?: string; env?: Record<string, string> }
   | { type: "oauth"; access: string; refresh: string; expires: number; [key: string]: string | number | boolean | null | undefined };
 
 /** 按服务商编号索引；要经 runtime 端口发给 offscreen 文档，所以是普通对象而不是 Map。 */
@@ -104,7 +112,11 @@ export type StorageEntries = ReadonlyArray<readonly [string, unknown]>;
 function isStoredCredential(value: unknown): value is StoredCredential {
   if (typeof value !== "object" || value === null || !("type" in value)) return false;
 
-  if (value.type === "api_key") return !("key" in value) || value.key === undefined || typeof value.key === "string";
+  if (value.type === "api_key") {
+    const keyOk = !("key" in value) || value.key === undefined || typeof value.key === "string";
+    const envOk = !("env" in value) || value.env === undefined || !!value.env && typeof value.env === "object" && !Array.isArray(value.env) && Object.values(value.env).every(item => typeof item === "string");
+    return keyOk && envOk;
+  }
 
   return value.type === "oauth" && "access" in value && typeof value.access === "string" && "refresh" in value && typeof value.refresh === "string" && "expires" in value && typeof value.expires === "number";
 }

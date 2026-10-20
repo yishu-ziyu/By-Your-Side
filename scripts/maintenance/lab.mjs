@@ -291,7 +291,7 @@ const GALLERY = [
   ["做完、确认与长会话", ["fill-undo-button", "panel-send-confirm", "guided-teaching", "conversation-chapters"]],
   ["网页上", ["reading-card-gloss", "page-assistance-visual", "ptt-capsule", "edge-tab", "visual-ui-presence", "proactive-card"]],
   ["出错", ["error-recovery-show"]],
-  ["设置页", ["first-run-settings"]],
+  ["设置页", ["first-run-settings", "settings-panel"]],
 ];
 
 /** 证据写在固定目录、也不打印路径的用例。 */

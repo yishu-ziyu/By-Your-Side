@@ -105,6 +105,7 @@ for (const [from, to] of [
   ["src/sidepanel/voice-worklet.js", "voice-worklet.js"],
   ["licenses/voiceorbs-MIT.txt", "voiceorbs-MIT.txt"],
   ["licenses/lobe-icons-MIT.txt", "lobe-icons-MIT.txt"],
+  ["licenses/magpie-MIT.txt", "magpie-MIT.txt"],
   ["licenses/pele-MIT.txt", "pele-MIT.txt"],
   ["licenses/caveat-OFL.txt", "caveat-OFL.txt"],
   ["sidepanel.html", "sidepanel.html"],
