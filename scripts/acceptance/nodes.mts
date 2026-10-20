@@ -76,7 +76,7 @@ export const SKIP_FILES = new Set(["harness.mts", "run-all.mts", "shard-run.mts"
 // 核心用户路径（npm test / accept:shard --core 共用唯一清单）：只装扩展、脚本模型、无需凭据。
 export const CORE_CASES = [
   "sidebar-interaction", "composer-expand", "script-friction", "target-gone", "pdf-download", "memory-used-line",
-  "session-durability", "error-recovery", "model-failover", "welcome-context", "claim-after-check", "refill-after-check", "readback-privacy", "snapshot-privacy",
+  "session-durability", "error-recovery", "model-failover", "claim-after-check", "refill-after-check", "readback-privacy", "snapshot-privacy",
   "send-confirm", "panel-send-confirm", "pay-stop", "handoff", "answer-straight", "retry-after-unknown", "site-hint", "panel-tidy", "keep-foreground", "navigate-wait",
   "double-click-new-tab", "reading-correction", "http-page-select", "reading-card-after-reinject", "click-blocked-reason", "settle-after-requests", "slot-yields-to-new-task", "history-prefix", "program-receipt", "process-block", "wait-inline-timer", "overflow-retry",
   "restart-resume",

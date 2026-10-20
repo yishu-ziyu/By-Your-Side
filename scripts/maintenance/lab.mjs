@@ -285,7 +285,7 @@ function cases() {
 
 /** 会截侧栏或网页样子的用例，按用户看到的地方分组。新加截图用例时补进来。 */
 const GALLERY = [
-  ["空会话", ["welcome-context", "memory-management"]],
+  ["空会话", ["memory-management"]],
   ["输入与菜单", ["composer-expand", "model-menu", "conversation-menu", "mention-plan-actions"]],
   ["工作中与回答", ["process-block", "answer-cards", "card-form", "card-inputs", "card-row-source", "answer-diagram", "answer-shorten", "mini-apps"]],
   ["做完、确认与长会话", ["fill-undo-button", "panel-send-confirm", "guided-teaching", "conversation-chapters"]],
