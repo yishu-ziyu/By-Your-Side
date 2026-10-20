@@ -49,7 +49,12 @@ function isCredentialToken(token: string): boolean {
 
   if (token.length >= 24) return true;
 
-  return !hasLower; // 全大写的恢复码/密钥
+  if (hasLower) return false;
+  // 全大写的型号、订单号（GL702VM-GC146T、ORD-20261019-ABCD）用连字符分成长短不一的段；
+  // 恢复码多是等长分段（ABCD-EF12-3456）或不分段，仍按凭据隐去。
+  const segments = token.split("-");
+
+  return segments.length < 2 || segments.some((s) => !s) || new Set(segments.map((s) => s.length)).size === 1;
 }
 
 const MASK = "[redacted]";
