@@ -128,6 +128,13 @@ try {
     await click('[data-voice="qingchunshaonv"]');
     await until(async () => await stored('step_voice') === 'qingchunshaonv' || undefined, 5000, '音色保存');
     await rp.screenshot(page, join(out, '05-voice.png'));
+    await click(`[data-model="gpt-live-1-codex"]`);
+    await until(async () => await rp.evaluate(page, `document.querySelector('#voice-key-row').hidden && document.querySelectorAll('#timbre-list .timbre-option').length === 1`) || undefined, 5000, 'GPT-Live 下只剩它自己的声音、不显示阶跃星辰密钥');
+    await rp.evaluate(page, `scrollTo(0, document.scrollingElement.scrollHeight)`);
+    const pinned = await rp.evaluate(page, `({ y: scrollY, top: document.querySelector('.settings-sidebar').getBoundingClientRect().top })`) as { y: number; top: number };
+    assert.ok(pinned.y > 0 && Math.abs(pinned.top) < 1, `滚到底时左栏仍贴在顶部：${JSON.stringify(pinned)}`);
+    await rp.screenshot(page, join(out, '05b-voice-gpt-live.png'));
+    checked.push('音色跟着语音模型变、左栏滚动时不动');
     await nav('appearance');
     await click('button[data-tone-option="warm"]');
     await until(async () => await stored('color_tone') === 'warm' || undefined, 5000, '暖纸底色保存');
