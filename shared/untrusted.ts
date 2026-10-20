@@ -60,7 +60,6 @@ function isCredentialToken(token: string, allowModelNumber = true): boolean {
 }
 
 const MASK = "[redacted]";
-const JOINED = /[A-Z0-9+/=_.:\\-]/;
 
 /**
  * 隐去文本里的凭据长相内容（`[redacted]`）。
@@ -98,19 +97,12 @@ export function redactCredentialText(text: string): string {
   // 把 `https://api.github.com/repos/…/issues/335552` 这类正常 URL 隐成 `https://api.github.[redacted]`。
   const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
-  // 末尾的 = 一并算进 token：base64 补位串（ABCD12-EFGH3454=）切掉 = 后会像型号一样被放行。
-  // 型号只在独立成词时放行：凭据被 / . : \\ = 等切开后，每一段单独看都像型号（ABCD12-EFGH3454/IJKL56-MNOP7890）。
-  // 往两边扩到大写字母、数字和这些连接符的整串，去掉首尾连接符后必须就是这一段。小写字母和中文算边界，
-  // 所以 /products/GL702VM-GC146T、GL702VM-GC146T/黑色 里的型号仍放行。
-  if (structured) body = body.replace(/[A-Za-z0-9+_-]{12,256}=*/g, (token, at: number, all: string) => {
-    let start = at, end = at + token.length;
+  // 型号只在独立成词时放行：凭据被 / . : \\ = 或夹入的字符切开后，每一段单独看都像型号（ABCD12-EFGH3454/IJKL56-MNOP7890）。
+  // 词按空白、引号、括号、逗号和中文切；去掉开头的 `键名=`、`:` 和末尾标点后，整个词就是这一段才放行。
+  if (structured) body = body.replace(/[^\s"'`{}[\](),\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]+/g, (word) => {
+    const core = word.replace(/^[A-Za-z_]{1,24}[:=]|^[:=]+/, "").replace(/[.,;:!?/]+$/, "");
 
-    while (start > 0 && JOINED.test(all[start - 1]!)) start -= 1;
-
-    while (end < all.length && JOINED.test(all[end]!)) end += 1;
-    const standalone = all.slice(start, end).replace(/^[+/=_.:\\-]+|[+/=_.:\\-]+$/g, "") === token;
-
-    return isCredentialToken(token, standalone) ? MASK : token;
+    return word.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token, token === core) ? MASK : token));
   });
 
   if (maskedLines > 0) body = `[${MASK}: ${maskedLines} credential-looking line(s) removed]\n${body}`;
