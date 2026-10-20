@@ -1,8 +1,14 @@
 # 源码安装
 
-[文档导航](../README.md) · [使用说明](usage.md) · [开发检查](../development/checks.md)
+[文档导航](../README.md) · [使用说明](usage.md) · [给 AI 助手的安装说明](install-for-agents.md)
 
 本产品是开发预览版。Chrome 和其他基于 Chromium 的浏览器（Edge、Brave、Arc 等）都能装，系统不限；Firefox、Safari 缺侧栏和调试器接口，装不上。目前只在 macOS + Chrome 上完整测过，下面以它为例；成品分发尚未完成。产品只有扩展一种形态，不用另装本机程序。
+
+想让 AI 编程助手（Claude Code、Codex、Cursor 等）替你装，对它说这一句就行：
+
+> 请按 https://raw.githubusercontent.com/yishu-ziyu/By-Your-Side/main/docs/guides/install-for-agents.md 帮我安装 By Your Side。
+
+助手会下载、构建，再告诉你要点哪两处。下面是自己动手的步骤。
 
 ## 1. 构建扩展
 
@@ -18,15 +24,15 @@ npm run build
 ## 2. 加载扩展
 
 1. 打开 `chrome://extensions`，开启「开发者模式」。
-2. 点击「加载已解压的扩展程序」，选择本仓库的 `extension/dist/`。
-3. 点击工具栏的 **By Your Side** 图标，打开侧栏。
+2. 点击「加载已解压的扩展程序」，选择本仓库的 `extension/dist/`（不是仓库根目录）。
+3. 点工具栏的拼图图标，把 **By Your Side** 固定到工具栏，再点它打开侧栏。
 4. 更新源码后，重新运行 `npm run build`，再在扩展页点「重新加载」。
 
 如果你已加载旧版，在扩展页点「重新加载」后，扩展才拿到新增的权限。
 
 ## 3. 连接模型
 
-打开侧栏「更多 → 模型与语音」，填写文字模型的密钥。密钥只存在这个浏览器里。
+第一次打开侧栏时点「连接模型」，以后从「更多 → 模型与语音」进入，都会打开设置页。在服务商列表里选一家，填写密钥；OpenAI 用 ChatGPT 账号登录。密钥只存在这个浏览器里。
 扩展不读取 `~/.pi/agent/` 或 `~/.sideagent/` 里的凭据；所以用过 Pi CLI 的用户也要在设置页重新填写。
 
 阶跃的同一个密钥能调用 Step Plan 套餐和开放平台按量两个通道。扣哪边的费用只由请求地址决定。

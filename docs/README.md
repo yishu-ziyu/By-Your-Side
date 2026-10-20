@@ -4,7 +4,7 @@
 
 | 问题 | 入口 |
 |---|---|
-| 怎么安装、怎么用？ | [源码安装](guides/getting-started.md) · [使用说明](guides/usage.md) |
+| 怎么安装、怎么用？ | [源码安装](guides/getting-started.md) · [让 AI 助手安装](guides/install-for-agents.md) · [使用说明](guides/usage.md) |
 | 现在做到哪、还差什么？ | [当前状态](STATUS.md) |
 | 怎么检查、怎么测？ | [开发检查](development/checks.md) · [验收入口](testing/acceptance.md) · [云电脑节点](testing/cloud-nodes.md) |
 | 怎么协作、文档怎么写？ | [协作方式](development/collaboration.md) · [文档维护](development/documentation.md) · [术语表](glossary.md) |
