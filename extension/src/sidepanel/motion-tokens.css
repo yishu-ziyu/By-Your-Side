@@ -24,6 +24,15 @@
   --m-sweep: 1.8s;
   --e-sweep: cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* 空会话起点入场：光带淡入，文字按固定间隔依次浮上；第一次打开时先逐字展开产品名，其余顺延到名字写完之后。 */
+  --m-starter-glow: 900ms;
+  --m-starter-glow-intro: 1200ms;
+  --m-starter-step: 60ms;
+  --m-starter-letter: 520ms;
+  --m-starter-letter-step: 34ms;
+  --m-starter-orb-after-name: 700ms;
+  --m-starter-text-after-name: 960ms;
+
   /* 旧名别名：已有 var() 引用继续有效，值收拢到上面四条曲线 / 五档时长。 */
   --m-quick: var(--d-micro);
   --m-move: var(--d-layout);

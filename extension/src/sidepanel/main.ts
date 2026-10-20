@@ -26,7 +26,6 @@ import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab,
 import { adoptFillUndo, fillUndoOf, fillUndoLabel, handFillUndoToCard, isFillUndoPending, noteFillUndo, requestFillUndo, resetFillUndo, setFillUndoHost } from "./fill-undo.js";
 import { attachShorten } from "./answer-shorten.js";
 import { revealText } from "./stream-reveal.js";
-import { beginStarterProbe, DEFAULT_SUGGESTIONS, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile, type StarterSuggestion } from "./starter-suggestions.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { mountVoiceOrb } from "../shared/orb-style.js";
 import { syncColorTone } from "../shared/color-tone.js";
@@ -339,12 +338,6 @@ app.innerHTML = `
     <canvas id="starter-orb" aria-hidden="true"></canvas>
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub"></p>
-    <div id="starter-actions"></div>
-    <div id="starter-ways" aria-label="在网页上还可以这样问">
-      <span class="starter-way"><span class="starter-way-key">选中文字</span>直接问</span>
-      <button type="button" class="starter-way" id="starter-circle"><span class="starter-way-key" id="starter-circle-key">⌘⇧S</span>圈出来问</button>
-      <span class="starter-way"><span class="starter-way-key">按住右 ⌥</span>说话</span>
-    </div>
     <button type="button" id="starter-connect">连接模型</button>
   </section>
   <div class="composer-dock-wrap">
@@ -463,7 +456,7 @@ const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 sendBtn.disabled = true;
 
 // 「圈出来问」的按键由侧栏自己处理（attachments.ts），不是 Chrome 快捷键：按系统写法显示（#236）。
-document.getElementById("region-key")!.textContent = document.getElementById("starter-circle-key")!.textContent = /Mac/i.test(navigator.platform) ? "⌘⇧S" : "Ctrl+Shift+S";
+document.getElementById("region-key")!.textContent = /Mac/i.test(navigator.platform) ? "⌘⇧S" : "Ctrl+Shift+S";
 
 const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
 
@@ -760,23 +753,16 @@ function updateStarterVisibility(): void {
   void takeNudgeDraft();
   void proactiveCard.refresh();
   refreshOpenThreads();
-
-  const tabId = starterTab();
-
-  if (starterReady() && tabId != null) void refreshStarterSuggestions(tabId);
 }
 
 /** 有没有连模型：null 表示还没收到 hello_ok。只在确知没连时，起点引导换成「先连接模型」（#233）。 */
 let modelConnected: boolean | null = null;
 
-/** 起点探测读到的当前页标题；受限页、探测失败时为空，标题退回通用的一句。 */
-let starterPageTitle = "";
-
 function paintStarterModelState(): void {
   const none = modelConnected === false;
   app.classList.toggle("no-model", none);
-  document.getElementById("starter-title")!.textContent = none ? "先连接模型" : starterPageTitle ? "这一页能帮你做什么" : "说说你想完成什么";
-  document.getElementById("starter-sub")!.textContent = none ? "连接以后，助手就能读这个页面、整理信息、在页面上操作。" : starterPageTitle ? `正在看：${starterPageTitle}` : "";
+  document.getElementById("starter-title")!.textContent = none ? "先连接模型" : "说说你想完成什么";
+  document.getElementById("starter-sub")!.textContent = none ? "连接以后，助手就能读这个页面、整理信息、在页面上操作。" : "";
 }
 
 document.getElementById("starter-connect")!.onclick = () => void chrome.runtime.openOptionsPage();
@@ -869,24 +855,6 @@ function lastUserBubbleFor(text: string): HTMLElement | null {
   return lastUserBubble();
 }
 
-function bindStarterButton(button: HTMLButtonElement): void {
-  button.onclick = () => {
-    // 还没恢复完就点（引导不可见时的键盘/事件竞态）：不写草稿，别覆盖正在恢复的原草稿。
-    if (!starterReady()) return;
-
-    if (!inputEl.value.trim()) {
-      inputEl.value = button.dataset.starter ?? "";
-      autoResize();
-      saveDraft();
-    }
-
-    inputEl.focus();
-  };
-}
-
-document.getElementById("starter-circle")!.onclick = () => void attachments.captureRegion();
-renderStarterChips(DEFAULT_SUGGESTIONS);
-
 /** 会话里还没有任何回合：续做卡挂载点常驻在 #messages 里，它没内容时不算。 */
 function conversationEmpty(): boolean {
   return !Array.from(messagesEl.children).some((child) => child.id !== "resume-entry-root" || child.childElementCount > 0);
@@ -895,70 +863,6 @@ function conversationEmpty(): boolean {
 new MutationObserver(() => app.classList.toggle("conversation-empty", conversationEmpty())).observe(messagesEl, { childList: true, subtree: true });
 
 app.classList.toggle("conversation-empty", conversationEmpty());
-
-/** 空白新对话时按当前页面结构换一组建议；探测失败（受限页等）沿用默认建议。 */
-async function refreshStarterSuggestions(tabId: number): Promise<void> {
-  if (!conversationEmpty() || typeof chrome === "undefined" || !chrome.scripting?.executeScript) return;
-  const probe = beginStarterProbe();
-  let profile: PageProfile | null = null;
-  let timer = 0;
-
-  try {
-    const [frame] = await Promise.race([
-      chrome.scripting.executeScript({ target: { tabId }, func: probePageProfile }),
-      new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error("页面起点探测超时")), 1500); }),
-    ]);
-    profile = frame?.result ?? null;
-  } catch {
-    profile = null;
-  } finally {
-    window.clearTimeout(timer);
-  }
-
-  if (!isLatestStarterProbe(probe) || starterTab() !== tabId || !conversationEmpty()) return;
-  starterPageTitle = profile?.title?.trim() ?? "";
-  paintStarterModelState();
-  renderStarterChips(suggestionsFor(profile));
-}
-
-function renderStarterChips(suggestions: StarterSuggestion[]): void {
-  const box = document.getElementById("starter-actions");
-  if (box && [...box.querySelectorAll<HTMLButtonElement>("button")].map(b => b.dataset.starter).join("\n") === suggestions.map(s => s.prompt).join("\n")) return;
-
-  box?.replaceChildren(...suggestions.map((item, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "starter-chip";
-    button.dataset.starter = item.prompt;
-    button.dataset.effect = item.effect;
-    button.style.setProperty("--starter-delay", `${index * 30}ms`);
-    const main = document.createElement("span");
-    main.className = "starter-chip-main";
-    const label = document.createElement("span");
-    label.className = "starter-chip-label";
-    label.textContent = item.label;
-    main.append(label);
-
-    // 只读的不挂标签：用户读不懂「只读」，会改页面的才值得提醒。
-    if (item.effect !== "read") {
-      const tag = document.createElement("span");
-      tag.className = "starter-chip-tag";
-      tag.dataset.effect = item.effect;
-      tag.textContent = item.effect === "fill" ? "会改页面 · 提交前问你" : "会改页面";
-      main.append(tag);
-    }
-    const hintWrap = document.createElement("span");
-    hintWrap.className = "starter-chip-hint-wrap";
-    const hint = document.createElement("span");
-    hint.className = "starter-chip-hint";
-    hint.textContent = item.hint;
-    hintWrap.append(hint);
-    button.append(main, hintWrap);
-    bindStarterButton(button);
-
-    return button;
-  }));
-}
 
 function upsertConversation(c: ConversationSummary): void {
   if (conversations.get(c.id)?.state === "running" && c.state === "idle" && !c.checkpoint && c.id !== selectedConversationId) completedConversations.add(c.id);
@@ -1538,8 +1442,6 @@ async function refreshActiveTabPill(): Promise<void> {
       activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
       ghostBar.setTab(activeTabInfo);
       marginalia.setPage(activeTabInfo);
-      noteStarterTab(tab.id);
-      void refreshStarterSuggestions(tab.id);
     }
 
     const title = tab.title || tab.url || "未知页面";

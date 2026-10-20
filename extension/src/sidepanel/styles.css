@@ -1320,96 +1320,37 @@ details.run-steps.done .chip.error { background: transparent; }
 #starter > :not(#starter-glow) { position: relative; }
 #starter-glow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 /* 打开空会话时：光带先淡入，光球从小变大，文字和按钮依次浮上来。 */
-#starter.starter-enter #starter-glow { animation: starterGlowIn 900ms var(--e-enter) both; }
+#starter.starter-enter #starter-glow { animation: starterGlowIn var(--m-starter-glow) var(--e-enter) both; }
 #starter.starter-enter #starter-orb { animation: starterOrbIn var(--d-emph) var(--e-spring) both; }
-#starter.starter-enter > :is(#starter-title, #starter-sub, #starter-connect, #starter-actions, #starter-ways) { animation: starterRise var(--d-emph) var(--e-enter) both; }
-#starter.starter-enter > #starter-title { animation-delay: 80ms; }
-#starter.starter-enter > #starter-sub { animation-delay: 140ms; }
-#starter.starter-enter > :is(#starter-connect, #starter-actions) { animation-delay: 200ms; }
-#starter.starter-enter > #starter-ways { animation-delay: 260ms; }
+#starter.starter-enter > :is(#starter-title, #starter-sub, #starter-connect) { animation: starterRise var(--d-emph) var(--e-enter) both; }
+#starter.starter-enter > #starter-title { animation-delay: var(--m-starter-step); }
+#starter.starter-enter > #starter-sub { animation-delay: calc(var(--m-starter-step) * 2); }
+#starter.starter-enter > #starter-connect { animation-delay: calc(var(--m-starter-step) * 3); }
 @keyframes starterGlowIn { from { opacity: 0; } }
 @keyframes starterOrbIn { from { opacity: 0; transform: scale(.82); } }
 @keyframes starterRise { from { opacity: 0; transform: translateY(6px); } }
-@media (prefers-reduced-motion: reduce) { #starter.starter-enter :is(#starter-glow, #starter-orb, #starter-title, #starter-sub, #starter-connect, #starter-actions, #starter-ways) { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #starter.starter-enter :is(#starter-glow, #starter-orb, #starter-title, #starter-sub, #starter-connect) { animation: none; } }
 /* 第一次打开：产品名逐字展开，之后光带、光球、文字依次出现。只播一次，播完名字留在光球上方。 */
 #starter-brand { display: none; margin: 0 0 var(--s-4); font-family: "Caveat", cursive; font-size: var(--fs-display); font-weight: 600; line-height: 1.2; color: var(--text-primary); white-space: pre; }
 #starter.starter-intro #starter-brand { display: block; }
-#starter.starter-intro #starter-brand { margin: auto 0 var(--s-5); }
-#starter.starter-intro #starter-orb { margin-top: 0; }
+#starter.starter-intro #starter-brand { margin: 0 0 var(--s-5); }
 #starter-brand span { display: inline-block; }
-#starter.starter-intro.starter-enter #starter-brand span { animation: starterLetter 520ms var(--e-enter) both; animation-delay: calc(var(--i) * 34ms); }
-#starter.starter-intro.starter-enter #starter-glow { animation-delay: 520ms; animation-duration: 1200ms; }
-#starter.starter-intro.starter-enter #starter-orb { animation-delay: 700ms; }
-#starter.starter-intro.starter-enter > #starter-title { animation-delay: 960ms; }
-#starter.starter-intro.starter-enter > #starter-sub { animation-delay: 1020ms; }
-#starter.starter-intro.starter-enter > :is(#starter-connect, #starter-actions) { animation-delay: 1080ms; }
-#starter.starter-intro.starter-enter > #starter-ways { animation-delay: 1140ms; }
+#starter.starter-intro.starter-enter #starter-brand span { animation: starterLetter var(--m-starter-letter) var(--e-enter) both; animation-delay: calc(var(--i) * var(--m-starter-letter-step)); }
+#starter.starter-intro.starter-enter #starter-glow { animation-delay: var(--m-starter-letter); animation-duration: var(--m-starter-glow-intro); }
+#starter.starter-intro.starter-enter #starter-orb { animation-delay: var(--m-starter-orb-after-name); }
+#starter.starter-intro.starter-enter > #starter-title { animation-delay: var(--m-starter-text-after-name); }
+#starter.starter-intro.starter-enter > #starter-sub { animation-delay: calc(var(--m-starter-text-after-name) + var(--m-starter-step)); }
+#starter.starter-intro.starter-enter > #starter-connect { animation-delay: calc(var(--m-starter-text-after-name) + var(--m-starter-step) * 2); }
 @keyframes starterLetter { from { opacity: 0; transform: translateY(.45em); filter: blur(6px); } }
 @media (prefers-reduced-motion: reduce) { #starter-brand span { animation: none !important; } }
 /* 收起条件比出现条件多一层 :has，保证这些情况下引导不占位 */
 #app.starter-ready.conversation-empty:has(#input:not(:placeholder-shown), #status-pill.running, #send-btn.stopping) #starter { display: none; }
 #starter-title { margin: 0 0 3px; font-size: var(--fs-read); font-weight: 600; color: var(--text-primary); }
 #starter-sub { margin: 0 0 8px; font-size: var(--fs-meta); line-height: 1.45; }
-#starter-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: min(100%, 320px); }
-#starter-actions button, #starter-actions .starter-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  border: 1px solid var(--glass-border-subtle);
-  border-radius: var(--r);
-  background: var(--glass-surface);
-  color: var(--text-secondary);
-  font-size: var(--fs-meta);
-  padding: 7px 10px;
-  cursor: pointer;
-  text-align: left;
-  animation: starterChipIn var(--d-micro) var(--e-enter) both;
-  animation-delay: var(--starter-delay, 0s);
-}
-#starter-actions .starter-chip-main { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-#starter-actions .starter-chip-label { color: var(--text-primary); }
-#starter-actions .starter-chip-tag {
-  flex: none;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: .04em;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-#starter-actions .starter-chip-tag[data-effect="fill"],
-#starter-actions .starter-chip-tag[data-effect="mutate"] { color: var(--text-secondary); }
-#starter-actions .starter-chip-tag[data-effect="fill"]::before,
-#starter-actions .starter-chip-tag[data-effect="mutate"]::before {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: 5px;
-  border-radius: 50%;
-  background: var(--text-secondary);
-  vertical-align: 1px;
-}
-#starter-actions .starter-chip-hint-wrap {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--d-micro) var(--e-enter);
-}
-#starter-actions .starter-chip:hover .starter-chip-hint-wrap,
-#starter-actions .starter-chip:focus-visible .starter-chip-hint-wrap { grid-template-rows: 1fr; }
-#starter-actions .starter-chip:not(:hover):not(:focus-visible) .starter-chip-hint-wrap { transition-duration: var(--d-tap); transition-timing-function: var(--e-exit); }
-#starter-actions .starter-chip-hint { overflow: hidden; padding-top: 4px; font-size: var(--fs-micro); line-height: 1.4; color: var(--text-tertiary); }
-@keyframes starterChipIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-#starter-actions button:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
-#starter-actions button:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
-@media (prefers-reduced-motion: reduce) {
-  #starter-actions .starter-chip { animation-name: starterChipFade; }
-}
-@keyframes starterChipFade { from { opacity: 0; } to { opacity: 1; } }
-/* 没连模型（#233）：建议收起，只留「连一个模型」 */
+/* 没连模型（#233）：问候下面只留「连接模型」 */
 #starter-connect { display: none; border: 0; border-radius: var(--r); background: var(--text-primary); color: var(--content-bg); font-size: var(--fs-meta); padding: 6px 12px; cursor: pointer; }
 #starter-connect:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
-#app.no-model #starter-actions { display: none; }
-#app.no-model #starter-connect { display: inline-flex; margin-bottom: auto; }
+#app.no-model #starter-connect { display: inline-flex; }
 
 /* ── 输入区：暖白纸面 ─────────────────────── */
 .composer-dock-wrap {
@@ -3854,20 +3795,6 @@ details.run-steps.run-quieting .run-time { animation: none; }
 #memory-open { width: 28px; padding: 0; font-size: 0; color: var(--text-secondary); }
 #memory-open::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; }
 
-/* 空白页：光球和问候留在正中（用户 10-13 定），建议贴到输入框上方，左对齐成一列。 */
-#app.starter-ready.conversation-empty #starter { justify-content: flex-start; padding-bottom: 4px; }
-#starter-orb { margin-top: auto; }
-#starter-actions { margin-top: auto; padding-top: 24px; flex-direction: column; flex-wrap: nowrap; align-self: stretch; align-items: stretch; gap: 2px; }
-#starter-actions button { text-align: left; border: 0; border-radius: 10px; background: transparent; color: var(--text-primary); font-size: 13.5px; padding: 9px 10px; }
-#starter-actions button:first-child { background: var(--content-bg); box-shadow: 0 0 0 1px var(--content-border); }
-/* 网页上的三种开口方式：选中、圈、按住说话。手势本身看不见，所以在空白页摆出来，只有「圈」能在侧栏里直接点。 */
-#starter-ways { display: flex; align-self: stretch; justify-content: space-between; gap: 6px; margin-top: 10px; padding: 0 4px; }
-.starter-way { all: unset; flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11.5px; line-height: 1.35; color: var(--text-tertiary); text-align: center; }
-.starter-way-key { font-size: var(--fs-meta); color: var(--text-secondary); }
-button.starter-way { cursor: pointer; border-radius: 8px; }
-button.starter-way:hover .starter-way-key, button.starter-way:hover { color: var(--text-primary); }
-button.starter-way:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 2px; }
-#app.no-model #starter-ways { display: none; }
 
 /* 用到的记忆：不再接在回答句子后面，单独一行小字放在回答下面。 */
 .memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }
@@ -4199,4 +4126,13 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
   [data-motion-icon] .answer-source-external {
     animation: none !important;
   }
+}
+
+/* 侧栏拉宽或整页打开：对话和输入框收成居中一栏；空会话时输入框跟着问候停在页面中间，打字时也不掉回底部。 */
+@media (min-width: 640px) {
+  .composer-dock-wrap { width: min(calc(100% - 2 * var(--s-3)), 720px); margin-inline: auto; }
+  #messages { padding-inline: max(var(--pad-x), calc((100% - 720px) / 2)); }
+  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden]))) #messages-frame { flex: 0 1 auto; }
+  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden]))) #starter { display: flex; flex: 1 1 0; justify-content: flex-end; padding-bottom: var(--s-5); }
+  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden])))::after { content: ""; flex: 1.3 1 0; }
 }
