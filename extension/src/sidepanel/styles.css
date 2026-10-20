@@ -1320,12 +1320,12 @@ details.run-steps.done .chip.error { background: transparent; }
 #starter > :not(#starter-glow) { position: relative; }
 #starter-glow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 /* 打开空会话时：光带先淡入，光球从小变大，文字和按钮依次浮上来。 */
-#starter.starter-enter #starter-glow { animation: starterGlowIn 900ms var(--e-enter) both; }
+#starter.starter-enter #starter-glow { animation: starterGlowIn var(--m-starter-glow) var(--e-enter) both; }
 #starter.starter-enter #starter-orb { animation: starterOrbIn var(--d-emph) var(--e-spring) both; }
 #starter.starter-enter > :is(#starter-title, #starter-sub, #starter-connect) { animation: starterRise var(--d-emph) var(--e-enter) both; }
-#starter.starter-enter > #starter-title { animation-delay: 80ms; }
-#starter.starter-enter > #starter-sub { animation-delay: 140ms; }
-#starter.starter-enter > #starter-connect { animation-delay: 200ms; }
+#starter.starter-enter > #starter-title { animation-delay: var(--m-starter-step); }
+#starter.starter-enter > #starter-sub { animation-delay: calc(var(--m-starter-step) * 2); }
+#starter.starter-enter > #starter-connect { animation-delay: calc(var(--m-starter-step) * 3); }
 @keyframes starterGlowIn { from { opacity: 0; } }
 @keyframes starterOrbIn { from { opacity: 0; transform: scale(.82); } }
 @keyframes starterRise { from { opacity: 0; transform: translateY(6px); } }
@@ -1335,12 +1335,12 @@ details.run-steps.done .chip.error { background: transparent; }
 #starter.starter-intro #starter-brand { display: block; }
 #starter.starter-intro #starter-brand { margin: 0 0 var(--s-5); }
 #starter-brand span { display: inline-block; }
-#starter.starter-intro.starter-enter #starter-brand span { animation: starterLetter 520ms var(--e-enter) both; animation-delay: calc(var(--i) * 34ms); }
-#starter.starter-intro.starter-enter #starter-glow { animation-delay: 520ms; animation-duration: 1200ms; }
-#starter.starter-intro.starter-enter #starter-orb { animation-delay: 700ms; }
-#starter.starter-intro.starter-enter > #starter-title { animation-delay: 960ms; }
-#starter.starter-intro.starter-enter > #starter-sub { animation-delay: 1020ms; }
-#starter.starter-intro.starter-enter > #starter-connect { animation-delay: 1080ms; }
+#starter.starter-intro.starter-enter #starter-brand span { animation: starterLetter var(--m-starter-letter) var(--e-enter) both; animation-delay: calc(var(--i) * var(--m-starter-letter-step)); }
+#starter.starter-intro.starter-enter #starter-glow { animation-delay: var(--m-starter-letter); animation-duration: var(--m-starter-glow-intro); }
+#starter.starter-intro.starter-enter #starter-orb { animation-delay: var(--m-starter-orb-after-name); }
+#starter.starter-intro.starter-enter > #starter-title { animation-delay: var(--m-starter-text-after-name); }
+#starter.starter-intro.starter-enter > #starter-sub { animation-delay: calc(var(--m-starter-text-after-name) + var(--m-starter-step)); }
+#starter.starter-intro.starter-enter > #starter-connect { animation-delay: calc(var(--m-starter-text-after-name) + var(--m-starter-step) * 2); }
 @keyframes starterLetter { from { opacity: 0; transform: translateY(.45em); filter: blur(6px); } }
 @media (prefers-reduced-motion: reduce) { #starter-brand span { animation: none !important; } }
 /* 收起条件比出现条件多一层 :has，保证这些情况下引导不占位 */
