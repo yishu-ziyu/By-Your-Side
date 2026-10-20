@@ -65,6 +65,7 @@ export async function mountDictationSettings(): Promise<void> {
         if (mine === revision) report("浏览器支持，麦克风已授权。请用左侧麦克风说一句话验证识别。", "ok");
       } else if (selected === "stepfun-realtime") {
         const credential = source.value === "voice" ? (await readVoiceDictationKey()).key : key.value;
+        if (!credential.trim() && source.value === "voice") throw new Error("请先配置语音对话密钥，或改为单独填写密钥。");
         const connection = await openRealtimeDictation(credential, controller.signal, () => {}, () => {});
         connection.cancel();
         if (mine === revision) report("Realtime 3 听写连接成功。请保存后用左侧麦克风试说一句。", "ok");
