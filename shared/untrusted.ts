@@ -34,7 +34,7 @@ export function wrapPageContent(text: string, meta: { tabId?: number; url?: stri
 }
 
 /** 随机/凭据长相的 token 判定。 */
-function isCredentialToken(token: string): boolean {
+function isCredentialToken(token: string, allowModelNumber = true): boolean {
   if (token.length < 12 || token.length > 256) return false;
 
   if (!/^[A-Za-z0-9+/=_-]+$/.test(token)) return false;
@@ -50,6 +50,8 @@ function isCredentialToken(token: string): boolean {
   if (token.length >= 24) return true;
 
   if (hasLower) return false;
+
+  if (!allowModelNumber) return true;
   // 全大写的型号、订单号（GL702VM-GC146T、ORD-20261019-ABCD）只有大写字母、数字，用连字符分成长短不一的段；
   // 恢复码多是等长分段（ABCD-EF12-3456）或不分段，带 _ = / + 的是编码串，仍按凭据隐去。
   const segments = token.split("-");
@@ -96,7 +98,9 @@ export function redactCredentialText(text: string): string {
   const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
   // 末尾的 = 一并算进 token：base64 补位串（ABCD12-EFGH3454=）切掉 = 后会像型号一样被放行。
-  if (structured) body = body.replace(/[A-Za-z0-9+_-]{12,256}=*/g, (token) => (isCredentialToken(token) ? MASK : token));
+  // 紧挨 `/` 的片段可能是被切开的编码串（ABCD12-EFGH3454/IJKL56-MNOP7890），两半各自像型号，所以不放行。
+  if (structured) body = body.replace(/[A-Za-z0-9+_-]{12,256}=*/g, (token, at: number, all: string) =>
+    (isCredentialToken(token, all[at - 1] !== "/" && all[at + token.length] !== "/") ? MASK : token));
 
   if (maskedLines > 0) body = `[${MASK}: ${maskedLines} credential-looking line(s) removed]\n${body}`;
 
