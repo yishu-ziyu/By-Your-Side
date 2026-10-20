@@ -50,11 +50,11 @@ function isCredentialToken(token: string): boolean {
   if (token.length >= 24) return true;
 
   if (hasLower) return false;
-  // 全大写的型号、订单号（GL702VM-GC146T、ORD-20261019-ABCD）用连字符分成长短不一的段；
-  // 恢复码多是等长分段（ABCD-EF12-3456）或不分段，仍按凭据隐去。
+  // 全大写的型号、订单号（GL702VM-GC146T、ORD-20261019-ABCD）只有大写字母、数字，用连字符分成长短不一的段；
+  // 恢复码多是等长分段（ABCD-EF12-3456）或不分段，带 _ = / + 的是编码串，仍按凭据隐去。
   const segments = token.split("-");
 
-  return segments.length < 2 || segments.some((s) => !s) || new Set(segments.map((s) => s.length)).size === 1;
+  return !/^[A-Z0-9-]+$/.test(token) || segments.length < 2 || segments.some((s) => !s) || new Set(segments.map((s) => s.length)).size === 1;
 }
 
 const MASK = "[redacted]";
@@ -80,6 +80,9 @@ export function redactCredentialText(text: string): string {
       continue;
     }
 
+    // 值已判定不是凭据（model=GL702VM-GC146T）：不再把键名连同值当成一个长串整行折叠。
+    if (asAssignment) { kept.push(line); continue; }
+
     if (isCredentialToken(trimmed)) { maskedLines += 1; continue; }
 
     kept.push(line);
@@ -92,7 +95,8 @@ export function redactCredentialText(text: string): string {
   // 把 `https://api.github.com/repos/…/issues/335552` 这类正常 URL 隐成 `https://api.github.[redacted]`。
   const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
-  if (structured) body = body.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token) ? MASK : token));
+  // 末尾的 = 一并算进 token：base64 补位串（ABCD12-EFGH3454=）切掉 = 后会像型号一样被放行。
+  if (structured) body = body.replace(/[A-Za-z0-9+_-]{12,256}=*/g, (token) => (isCredentialToken(token) ? MASK : token));
 
   if (maskedLines > 0) body = `[${MASK}: ${maskedLines} credential-looking line(s) removed]\n${body}`;
 
