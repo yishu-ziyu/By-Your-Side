@@ -1387,7 +1387,8 @@ function watchFullyVisible(target: Element, onChange: (visible: boolean) => void
 if (isFloat) {
   let visible = false;
   watchFullyVisible(document.body, v => { visible = v; });
-  for (const type of ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu"]) {
+  // 键盘也拦：输入框已有焦点时网页再盖上假界面，用户以为在网页里按回车，实际发的是这里的消息。
+  for (const type of ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "keydown"]) {
     addEventListener(type, ev => { if (!visible) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, true);
   }
 }
@@ -1404,6 +1405,15 @@ async function openFloat(): Promise<void> {
 
   await chrome.storage.local.set({ [FLOAT_CARD_KEY]: { open: true, collapsed: false, conversation: selectedConversationId, rect: stored?.rect ?? FLOAT_CARD_DEFAULT_RECT } });
   window.close();
+}
+
+// 别的窗口里的卡片（或侧栏点「浮在页面上」）换了会话：这张卡片也换过去，几张卡片看的总是同一个会话。
+if (isFloat) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !(FLOAT_CARD_KEY in changes)) return;
+    const next = readFloatCard(changes[FLOAT_CARD_KEY]!.newValue);
+    if (next && conversationReady && next.conversation !== selectedConversationId) selectConversation(next.conversation);
+  });
 }
 
 async function rememberFloatConversation(id: string): Promise<void> {

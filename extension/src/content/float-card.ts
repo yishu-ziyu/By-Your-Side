@@ -55,10 +55,6 @@ export function installFloatCard(): void {
   let card: HTMLElement | null = null;
   let bubble: HTMLButtonElement | null = null;
   let mounting: Promise<void> | null = null;
-  /** 卡片里的会话页现在显示的会话。 */
-  let frameConversation = "";
-  let frame: HTMLIFrameElement | null = null;
-  let windowId = 0;
   /** 助手正在点被卡片挡住的网页目标：这些点击做完前卡片藏起来。 */
   const yielding = new Set<string>();
 
@@ -90,8 +86,7 @@ export function installFloatCard(): void {
 
   const teardown = () => {
     host?.remove();
-    host = card = bubble = frame = null;
-    frameConversation = "";
+    host = card = bubble = null;
   };
 
   /** 拖动或拉边：pointer 抓在把手上，iframe 暂时不吃鼠标，不然一滑进去就丢了。 */
@@ -134,7 +129,6 @@ export function installFloatCard(): void {
     // 会话页要知道自己替哪个窗口看网页；内容脚本自己拿不到窗口号，问后台。
     const where = await chrome.runtime.sendMessage({ type: FLOAT_CARD_WHERE }).catch(() => null) as { windowId?: number } | null;
     if (typeof where?.windowId !== "number" || !state?.open || document.hidden) return;
-    windowId = where.windowId;
 
     host = document.createElement("div");
     host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_FLOAT_CARD);
@@ -163,7 +157,7 @@ export function installFloatCard(): void {
       button("收起", Minus, () => save({ collapsed: true })),
       button("关闭浮动卡片", X, () => save({ open: false })),
     );
-    frame = document.createElement("iframe");
+    const frame = document.createElement("iframe");
     frame.title = "By Your Side 会话";
     frame.allow = "clipboard-write";
     const edges = (["left", "bottom", "corner"] as const).map(kind => {
@@ -189,12 +183,7 @@ export function installFloatCard(): void {
 
     root.append(style, card, bubble);
     document.documentElement.append(host);
-    load(state.conversation);
-  };
-
-  const load = (conversation: string) => {
-    frameConversation = conversation;
-    frame!.src = chrome.runtime.getURL(`sidepanel.html?float=1&conversation=${encodeURIComponent(conversation)}&window=${windowId}`);
+    frame.src = chrome.runtime.getURL(`sidepanel.html?float=1&conversation=${encodeURIComponent(state.conversation)}&window=${where.windowId}`);
   };
 
   const render = () => {
@@ -203,12 +192,6 @@ export function installFloatCard(): void {
       // 扩展重载后旧脚本问不到后台，挂不上就停在这里，不原地反复重试。
       mounting ??= mount().finally(() => { mounting = null; if (host) render(); });
       return;
-    }
-    // 会话换了：用户正在这张卡片里操作（焦点在本页）说明是卡片自己换的，不用重载；
-    // 焦点不在本页（另一个窗口的卡片或侧栏换的），这张卡片还停在旧会话，换过去。
-    if (frameConversation !== state.conversation) {
-      if (document.hasFocus()) frameConversation = state.conversation;
-      else load(state.conversation);
     }
     host.style.visibility = yielding.size ? "hidden" : "";
     card!.togglePopover(!state.collapsed);
