@@ -7,7 +7,7 @@ export const dictationSettingsView = `
     <div class="sx-head"><h2 id="dictation-title">语音转文字</h2><p class="sx-sub">左侧麦克风用来输入文字，确认后留在输入框，由你发送。</p></div>
     <div class="surface rows">
       <label class="row"><span class="row-main"><span class="row-title">识别服务</span><span id="dictation-description" class="row-desc"></span></span><span class="row-ctl"><select id="dictation-provider" class="sel" aria-label="语音转文字识别服务">${Object.entries(DICTATION_PROVIDERS).map(([id, info]) => `<option value="${id}">${info.name}</option>`).join("")}</select></span></label>
-      <label id="dictation-source-row" class="row" hidden><span class="row-main"><span class="row-title">凭据来源</span><span id="dictation-key-source-note" class="row-desc"></span></span><span class="row-ctl"><select id="dictation-key-source" class="sel" aria-label="听写凭据来源"><option value="own">单独填写</option><option value="voice">沿用语音对话凭据</option></select></span></label>
+      <label id="dictation-source-row" class="row" hidden><span class="row-main"><span class="row-title">密钥来源</span><span id="dictation-key-source-note" class="row-desc"></span></span><span class="row-ctl"><select id="dictation-key-source" class="sel" aria-label="听写密钥来源"><option value="own">单独填写</option><option value="voice">沿用语音对话密钥</option></select></span></label>
       <label id="dictation-key-row" class="row" hidden><span class="row-main"><span id="dictation-key-label" class="row-title">识别服务密钥</span><span class="row-desc">仅用于左侧麦克风。留空并保存可清除已存密钥。</span></span><span class="row-ctl"><input id="dictation-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="语音转文字密钥" /></span></label>
       <div class="row"><span class="row-main"><span id="dictation-test-note" class="row-desc"></span></span><span class="row-ctl"><button id="dictation-test" type="button" class="btn">测试连接</button><button id="dictation-save" type="button" class="btn btn-primary">保存</button></span></div>
     </div>
@@ -88,7 +88,11 @@ export async function mountDictationSettings(): Promise<void> {
     } catch { report("保存失败，请重试。", "err"); }
     finally { save.disabled = false; saving = false; }
   });
+  const updateSourceNote = async () => {
+    document.getElementById("dictation-key-source-note")!.textContent = (await readVoiceDictationKey()).description;
+  };
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && ("inproc_voice_key" in changes || "inproc_cred:stepfun" in changes)) { cancel(); void updateSourceNote(); }
     if (area !== "local" || saving || !Object.keys(changes).some(name => name === DICTATION_CONFIG_KEY || name.startsWith(DICTATION_KEY_PREFIX))) return;
     cancel(); conflict = true;
     report("其他窗口修改了语音转文字设置，请重新打开此页查看。", "err");
@@ -96,5 +100,5 @@ export async function mountDictationSettings(): Promise<void> {
   addEventListener("pagehide", cancel);
   const initial = await readDictationSettings();
   if (revision === 0) { selected = initial.provider; provider.value = selected; source.value = initial.keySource; await loadKey(); render(); }
-  document.getElementById("dictation-key-source-note")!.textContent = (await readVoiceDictationKey()).description;
+  await updateSourceNote();
 }

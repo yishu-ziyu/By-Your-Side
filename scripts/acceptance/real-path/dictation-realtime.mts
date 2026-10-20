@@ -105,6 +105,9 @@ try {
   await until(async () => await rp.evaluate(panel, "document.querySelector('.dictation-interim').textContent.length > 0") || undefined, 15000, "边说边出字");
   await rp.screenshot(panel, join(out, "02-live-text.png"));
   await sleep(speechMs);
+  const liveText = await rp.evaluate(panel, "document.querySelector('.dictation-interim').textContent");
+  assert.ok(normalize(String(liveText)).length <= normalize(phrase).length + 2, "实时文字应是当前整句，不能拼接重复前缀");
+  await rp.screenshot(panel, join(out, "02-live-text.png"));
   assert.equal(await draft(), "原草稿：", "确认前不改变草稿");
   await click(panel, ".dictation-ok");
   await until(async () => await rp.evaluate(panel, "!document.querySelector('#dictate-btn').disabled") || undefined, 20000, "最终转写写入草稿");
@@ -128,7 +131,7 @@ try {
   assert.equal(await rp.evaluate(second, "document.querySelector('#composer').classList.contains('dictating')"), false);
   await click(panel, ".dictation-cancel");
   assert.equal(await draft(), confirmed);
-  await rp.evaluate(helper, `chrome.windows.remove(${windowId})`);
+  await rp.evaluate(settings, `chrome.windows.remove(${windowId})`);
   checked.push("两个真实窗口同时开侧栏，第二个不能抢录音，第一份草稿保留");
   await start();
   await sleep(600);
@@ -162,7 +165,7 @@ try {
   assert.ok(events.some(e => e.type === "conversation.item.input_audio_transcription.completed"));
   checked.push("服务器无 response.*、客户端无 response.create、鉴权规则清理");
 } catch (cause) {
-  error = clean(cause instanceof Error ? cause.message : String(cause));
+  error = clean(cause instanceof Error ? cause.stack ?? cause.message : String(cause));
   if (settings) await rp.screenshot(settings, join(out, "failure-settings.png")).catch(() => {});
   if (panel) await rp.screenshot(panel, join(out, "failure-panel.png")).catch(() => {});
 } finally {

@@ -23,7 +23,7 @@ export async function readVoiceDictationKey(): Promise<{ key: string; descriptio
   const stored = await chrome.storage.local.get([INPROC_VOICE_KEY, `${INPROC_CREDENTIAL_PREFIX}stepfun`]);
   const key = resolveVoiceKey(Object.entries(stored));
   const own: unknown = stored[INPROC_VOICE_KEY];
-  return { key, description: !key ? "尚未配置语音对话凭据" : typeof own === "string" && own.trim() ? "来自「语音对话」的阶跃星辰密钥" : "来自「连接」中的阶跃星辰模型密钥" };
+  return { key, description: !key ? "尚未配置语音对话密钥" : typeof own === "string" && own.trim() ? "来自「语音对话」的阶跃星辰密钥" : "来自「连接」中的阶跃星辰模型密钥" };
 }
 export async function readDictationSettings(): Promise<{ provider: DictationProvider; key: string; keySource: DictationKeySource }> {
   const stored = await chrome.storage.local.get([DICTATION_CONFIG_KEY, `${DICTATION_KEY_PREFIX}stepfun-realtime`, `${DICTATION_KEY_PREFIX}stepfun`, `${DICTATION_KEY_PREFIX}siliconflow`]);
