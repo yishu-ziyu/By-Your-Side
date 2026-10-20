@@ -3376,42 +3376,32 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 }
 
 /* 错误卡：按错误种类给能修掉原因的动作；原文收进「技术详情」。
-   出错多半不是用户的问题，所以用浅黄提醒色而不是红色；材质照 Untitled Toaster：浅色调外沿、白色内缘、左侧一个色块图标。 */
+   出错多半不是用户的问题，所以不用整片警示红：凹槽底带一点暖红，刚好跟普通消息分开又不跳。 */
 .error-card {
-  --t1: #fff8ee; --t3: #fff2da; --t4: #ffebc9; --t5: #fff7eb; --t6: #ffe9c8;
-  --rim: #fff;
-  --chip: #fff;
-  --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%232f2f2f' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M8 4.3V8.8M8 11.6V11.7'/%3E%3C/svg%3E");
-  align-self: stretch; display: flex; flex-direction: column; gap: 4px; padding: 13px 12px 13px 50px;
-  border: 1px solid transparent; border-radius: var(--r);
-  background:
-    linear-gradient(90deg, var(--rim) 0%, var(--t1) 40%, var(--rim) 100%) padding-box,
-    linear-gradient(180deg, var(--t4) 0%, var(--t4) 60%, var(--t3) 100%) border-box;
-  box-shadow: inset 0 0 0 1.5px var(--rim);
+  --err-tint: color-mix(in srgb, var(--err) 7%, var(--well));
+  --err-line: color-mix(in srgb, var(--err) 16%, var(--well-outline));
+  --err-hi: color-mix(in srgb, var(--err) 8%, var(--well-highlight));
+  align-self: stretch; display: flex; flex-direction: column; gap: 4px; padding: 12px 15px;
+  border: 0; border-radius: var(--r);
+  background: var(--err-tint);
+  box-shadow: inset 0 0 0 1px var(--err-line), inset 0 1px 0 var(--err-hi);
   font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--d-state) var(--e-spring);
 }
 @media (prefers-color-scheme: dark) {
   .error-card {
-    --t1: color-mix(in srgb, var(--warn) 5%, var(--content-bg));
-    --t3: color-mix(in srgb, var(--warn) 12%, var(--content-bg));
-    --t4: color-mix(in srgb, var(--warn) 16%, var(--content-bg));
-    --t5: color-mix(in srgb, var(--warn) 22%, var(--content-bg));
-    --t6: color-mix(in srgb, var(--warn) 34%, var(--content-bg));
-    --rim: var(--content-bg);
-    --chip: color-mix(in srgb, #fff 14%, var(--content-bg));
-    --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23eee9df' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M8 4.3V8.8M8 11.6V11.7'/%3E%3C/svg%3E");
+    --err-tint: color-mix(in srgb, var(--err) 14%, var(--well));
+    --err-line: color-mix(in srgb, var(--err) 30%, var(--well-outline));
+    --err-hi: color-mix(in srgb, var(--err) 14%, var(--well-highlight));
   }
 }
-.error-card::before { content: ""; position: absolute; left: 12px; top: 12px; width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(110deg, var(--t5), var(--t6)); }
-.error-card::after { content: ""; position: absolute; left: 19px; top: 19px; width: 14px; height: 14px; border-radius: 4.5px; background: var(--chip) var(--glyph) center / 14px no-repeat; }
-.error-card strong { display: block; font-size: var(--fs-ui); font-weight: 600; line-height: 1.35; padding-top: 4px; }
+.error-card strong { display: block; font-size: var(--fs-ui); font-weight: 600; line-height: 1.35; }
 .error-card > p { margin: 0; color: var(--text-secondary); text-wrap: pretty; }
 .error-card .error-card-note { font-size: var(--fs-meta); color: var(--text-tertiary); }
 .error-card-actions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
 .error-card .btn-primary, .error-card .btn-quiet, #key-sheet .btn-primary, #key-sheet .btn-quiet { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border-radius: var(--r-pill); cursor: pointer; }
 #key-sheet .btn-primary { border: 0; background: var(--text-primary); color: var(--content-bg); }
 #key-sheet .btn-quiet { border: 1px solid var(--content-border); background: transparent; color: var(--text-primary); }
-.error-card .btn-primary { padding: 6px 12px; border: 0; background: var(--chip); color: var(--text-primary); box-shadow: 0 0 0 1px var(--t6), 0 1px 2px rgb(0 0 0 / .04); }
+.error-card .btn-primary { padding: 6px 12px; border: 0; background: var(--text-primary); color: var(--content-bg); }
 .error-card .btn-quiet { padding: 6px 10px; font-weight: 500; border: 0; background: transparent; color: var(--text-secondary); }
 .error-card button:disabled, #key-sheet button:disabled { opacity: .45; cursor: default; }
 .error-card-menu { display: flex; flex-direction: column; border: 1px solid var(--content-border); border-radius: var(--r); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; }
@@ -3421,16 +3411,14 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .error-card-tech { font-size: var(--fs-micro); color: var(--text-tertiary); }
 .error-card-tech summary { cursor: pointer; width: fit-content; }
 .error-card-tech pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--content-subtle); white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); font-size: var(--fs-micro); }
-.error-card .error-card-tech pre { background: var(--t1); box-shadow: inset 0 0 0 1px var(--t4); }
-/* 已经在接着做了，不再是提醒，回到普通的凹槽底。 */
-.error-card.is-recovering { padding: 12px 14px; border: 0; background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
-.error-card.is-recovering::before, .error-card.is-recovering::after { content: none; }
+/* 已经在接着做了，回到普通凹槽底，不再带红。 */
+.error-card.is-recovering { background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
 .error-card-status { margin: 0; color: var(--text-secondary); }
 /* 自动重试倒计时：细条从满到空，时长由脚本按这次的等待写进 --wait。 */
 .error-card .error-card-countdown { font-variant-numeric: tabular-nums; }
 .error-card-announce { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.error-card-wait { height: 3px; margin-top: 4px; border-radius: 2px; background: var(--t4); overflow: hidden; }
-.error-card-wait > span { display: block; height: 100%; background: var(--warn); transform-origin: left; animation: error-card-drain var(--wait) linear forwards; }
+.error-card-wait { height: 3px; margin-top: 4px; border-radius: 2px; background: var(--err-line); overflow: hidden; }
+.error-card-wait > span { display: block; height: 100%; background: var(--err); transform-origin: left; animation: error-card-drain var(--wait) linear forwards; }
 @keyframes error-card-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 /* 错误卡已经给了修复动作：旧的「运行出错 · 继续原任务」入口说的是同一件事，不再重复。 */
 #messages:has(.error-card:not(.is-retired)) #resume-entry-root { display: none; }
