@@ -1,3 +1,4 @@
+import { useSavedSettingsModel } from './inproc-config.mts';
 import type { TranslationCommand } from '../../../shared/page-translation.js';
 /** Real extension, native page/panel renderer targets; no visible Chrome window.
  *   npx tsx scripts/acceptance/real-path/killer-interactions.mts --headless --run=final
@@ -92,8 +93,9 @@ try {
   check('原节点事件仍可用',await rp.evaluate(work,'originalClicks===1'),null);
 
   await rp.click(panel,'#header-more');await rp.click(panel,'#model-settings-open');
-  const settings=await rp.attach((await until(async()=>(await rp.targets()).find(t=>t.url.endsWith('/settings.html')),10000,'settings')).targetId);
+  const settings=await rp.attach((await until(async()=>(await rp.targets()).find(t=>t.url.split("#")[0]!.endsWith('/settings.html')),10000,'settings')).targetId);
   await until(async()=>await rp.evaluate(settings,'document.querySelectorAll(".provider-option").length>3'),10000,'providers');
+  await rp.click(settings, '[data-settings-page="connections"]');
   await rp.evaluate(settings,'document.querySelector("#provider-more").open=true');
   await rp.click(settings,'.provider-option[data-provider="custom"]');
 
@@ -103,7 +105,8 @@ try {
 
   await rp.evaluate(settings,'document.querySelector("#model-save").scrollIntoView()');await rp.click(settings,'#model-save');
   await until(async()=>String(await rp.evaluate(settings,'document.querySelector("#model-status").textContent')).startsWith('已保存'),10000,'saved');
-  await rp.cdp.send('Target.closeTarget',{targetId:(await rp.targets()).find(t=>t.url.endsWith('/settings.html'))!.targetId});
+  await useSavedSettingsModel(rp, settings, 'custom', 'fixture');
+  await rp.cdp.send('Target.closeTarget',{targetId:(await rp.targets()).find(t=>t.url.split("#")[0]!.endsWith('/settings.html'))!.targetId});
   await rp.click(panel,'#input');await rp.typeText(panel,'来源验收');await rp.pressEnter(panel);
   await until(async()=>await rp.evaluate(panel,'!!document.querySelector(".answer-actions")'),30000,'answer');await sleep(500);
   const citations=await rp.evaluate(panel,'Array.from(document.querySelectorAll(".num-cite")).map(b=>b.textContent)');

@@ -4,6 +4,7 @@
  * npx tsx scripts/acceptance/real-path/sidebar-interaction.mts --headless --run=baseline
  * 产物：out/acceptance/sidebar-interaction/<run>/ 下的截图与 summary.json。
  */
+import { useSavedSettingsModel } from './inproc-config.mts';
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -119,9 +120,10 @@ try {
 
   await rp.click(panel, "#header-more");
   await rp.click(panel, "#model-settings-open");
-  const settingsTarget = await until(async () => (await rp!.targets()).find((t) => t.type === "page" && t.url.endsWith("/settings.html")), 10_000, "设置页");
+  const settingsTarget = await until(async () => (await rp!.targets()).find((t) => t.type === "page" && t.url.split("#")[0]!.endsWith("/settings.html")), 10_000, "设置页");
   const settings = await rp.attach(settingsTarget.targetId);
   await until(async () => (await rp!.evaluate(settings, `document.querySelectorAll('.provider-option').length`)) > 3 || undefined, 15_000, "模型选项");
+  await rp.click(settings, '[data-settings-page="connections"]');
   await rp.evaluate(settings, `document.querySelector('#provider-more').open = true; true`);
   await rp.click(settings, `.provider-option[data-provider="custom"]`);
 
@@ -133,6 +135,7 @@ try {
   await rp.evaluate(settings, `document.querySelector('#model-save').scrollIntoView({ block: 'center' }); true`);
   await rp.click(settings, "#model-save");
   await until(async () => String(await rp!.evaluate(settings, `document.querySelector('#model-status').textContent`)).startsWith("已保存") || undefined, 10_000, "模型保存");
+  await useSavedSettingsModel(rp, settings, 'custom', 'demo-model');
   // 保存前会先试连一次（10-13）：之后的「不发模型请求」从这里数起。
   const afterSave = model.requests.length;
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId });
