@@ -1,3 +1,4 @@
+import { isPanelUrl } from '../shared/panel-url.js';
 import { isPageElementSource, type ClientMessage, type MarginaliaMode, type ViewportSectionUpdate } from '../../../shared/protocol.js';
 import type { ReadingEvent } from '../../../shared/reading.js';
 import type { BgToPanel } from '../relay.js';
@@ -46,7 +47,7 @@ export function installMarginalia(deps: Dependencies) {
 
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message?.type !== 'VIEWPORT_ACTIVE_SECTION') return;
-    const panel = sender.id === chrome.runtime.id && sender.url?.split('?')[0] === chrome.runtime.getURL('sidepanel.html');
+    const panel = sender.id === chrome.runtime.id && isPanelUrl(sender.url);
 
     if (message.action === 'track' && panel && Number.isInteger(message.tabId) && ['off', 'source', 'ai'].includes(message.mode)) {
       const previous = tracks.get(message.tabId);

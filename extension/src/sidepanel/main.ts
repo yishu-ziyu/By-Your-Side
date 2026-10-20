@@ -33,7 +33,7 @@ import { dropPendingMessage, holdPendingMessage, noteNeedsModelManual, playConne
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal, AppWindow } from "lucide";
+import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal, PictureInPicture2 } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
 import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, FileText, TextQuote, Keyboard, SquareTerminal, Workflow, Eye, ListChecks, Highlighter, ArrowLeftRight, X as XIcon, Languages, Download, Users, Bookmark, Wrench, Search } from "lucide";
 import {
@@ -97,7 +97,8 @@ import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 import { mountChapters } from "./chapters.js";
-import { activeTargetTab, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
+import { activeTargetTab, isFloat, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
+import { FLOAT_CARD_DEFAULT_RECT, FLOAT_CARD_KEY, readFloatCard } from "../shared/float-card.js";
 import { bindMotionIcon } from "./motion-icon.js";
 import { mountDottedGlow } from "./dotted-glow.js";
 
@@ -293,7 +294,7 @@ app.innerHTML = `
     <button id="memory-open" type="button" title="看、改、删助手记住的事" aria-haspopup="dialog" aria-expanded="false">记忆</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
-      <button id="popout-open" type="button"><span>在新窗口打开</span></button>
+      <button id="popout-open" type="button"><span>浮在页面上</span></button>
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
       <button id="reading-settings-btn" type="button"><span>字体字号</span></button>
     </div>
@@ -545,8 +546,9 @@ let selectedConversationId = "default";
 const PANEL_CONVERSATION_KEY = "sideagent-panel-conversation";
 
 // 单独窗口第一次打开时显示地址里的会话；之后刷新回到它自己最后看的那个。地址里的会话已经删了，开机时按「记着的会话不在了」新建一个。
+// 浮动卡片每换一次标签页就重挂一次，地址里的会话总是最新的，同一标签页里上次留下的不算。
 if (popoutConversation) {
-  try { if (!sessionStorage.getItem(PANEL_CONVERSATION_KEY)) sessionStorage.setItem(PANEL_CONVERSATION_KEY, popoutConversation); } catch { /* 记不住就跟最近操作的侧栏 */ }
+  try { if (isFloat || !sessionStorage.getItem(PANEL_CONVERSATION_KEY)) sessionStorage.setItem(PANEL_CONVERSATION_KEY, popoutConversation); } catch { /* 记不住就跟最近操作的侧栏 */ }
 }
 
 let conversationReady = false;
@@ -1095,6 +1097,7 @@ function selectConversation(id: string, notify = true): void {
     takeAutoRetryLock(id);
 
     try { sessionStorage.setItem(PANEL_CONVERSATION_KEY, id); } catch { /* 记不住只影响刷新后回到哪个会话 */ }
+    if (isFloat) void rememberFloatConversation(id);
     sendBtn.disabled = false;
 
     if (preserveInitialDraft) saveDraft();
@@ -1362,49 +1365,34 @@ modelSettingsOpen.addEventListener("click", () => void chrome.runtime.openOption
 
 const popoutOpen = document.getElementById("popout-open")!;
 
-popoutOpen.prepend(icon(AppWindow));
+popoutOpen.prepend(icon(PictureInPicture2));
 
-// 单独窗口里不再开单独窗口；语音和说话输入这一版不放进单独窗口（styles.css 按 data-popout 藏起）。
+// 浮动卡片里不再开浮动卡片；语音和说话输入这一版不放进卡片（styles.css 按 data-popout 藏起）。
 if (isPopout) {
   popoutOpen.remove();
   document.documentElement.dataset.popout = "";
 }
 
-popoutOpen.addEventListener("click", () => void openPopout());
+popoutOpen.addEventListener("click", () => void openFloat());
 
-const POPOUT_SIZE = { width: 420, height: 720 };
+/** 当前会话改成浮在网页上的卡片，侧栏随即关掉；卡片跟着用户换标签页，位置和大小沿用上次的。 */
+async function openFloat(): Promise<void> {
+  const tab = await activeTargetTab();
 
-/** 这块屏能放窗口的范围。Chrome 有 screen.availLeft / availTop（多屏时这块屏的位置），DOM 类型里没有。 */
-function screenArea(): { left: number; top: number; right: number; bottom: number } {
-  const left = "availLeft" in screen && typeof screen.availLeft === "number" ? screen.availLeft : 0;
-  const top = "availTop" in screen && typeof screen.availTop === "number" ? screen.availTop : 0;
+  if (!tab?.url || !/^https?:/.test(tab.url)) {
+    addMsg("msg notice", "这个页面放不了浮动卡片。换到一个普通网页再试。");
+    return;
+  }
+  const stored = readFloatCard((await chrome.storage.local.get(FLOAT_CARD_KEY))[FLOAT_CARD_KEY]);
 
-  return { left, top, right: left + screen.availWidth, bottom: top + screen.availHeight };
+  await chrome.storage.local.set({ [FLOAT_CARD_KEY]: { open: true, collapsed: false, conversation: selectedConversationId, rect: stored?.rect ?? FLOAT_CARD_DEFAULT_RECT } });
+  window.close();
 }
 
-/**
- * 当前会话单独开一个窗口，放在这个浏览器窗口右边；右边放不下，就压在它右侧边上。
- * 整个窗口要落在屏幕里：Chrome 拒绝一半以上在屏幕外的窗口。
- */
-async function openPopout(): Promise<void> {
-  const source = await chrome.windows.getCurrent().catch(() => null);
+async function rememberFloatConversation(id: string): Promise<void> {
+  const stored = readFloatCard((await chrome.storage.local.get(FLOAT_CARD_KEY))[FLOAT_CARD_KEY]);
 
-  if (source?.id == null) return;
-  const url = chrome.runtime.getURL(`sidepanel.html?conversation=${encodeURIComponent(selectedConversationId)}&window=${source.id}`);
-  const area = screenArea();
-  const width = Math.min(POPOUT_SIZE.width, area.right - area.left);
-  const height = Math.min(POPOUT_SIZE.height, area.bottom - area.top);
-  const create: chrome.windows.CreateData = { type: "popup", url, width, height };
-
-  if (source.left != null && source.top != null && source.width != null) {
-    const right = source.left + source.width;
-    const room = right + width <= area.right;
-    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
-    create.left = clamp(room ? right : right - width - 16, area.left, area.right - width);
-    create.top = clamp(room ? source.top : source.top + 48, area.top, area.bottom - height);
-  }
-
-  await chrome.windows.create(create).catch(() => { addMsg("msg notice", "没能打开新窗口，请重试。"); });
+  if (stored && stored.conversation !== id) await chrome.storage.local.set({ [FLOAT_CARD_KEY]: { ...stored, conversation: id } });
 }
 
 // 打开这个单独窗口的浏览器窗口关了：页面标牌和「按窗口找侧栏」都换到最近获得焦点的普通窗口。
