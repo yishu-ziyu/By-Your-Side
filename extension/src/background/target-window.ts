@@ -1,12 +1,11 @@
+import { isPanelUrl } from "../shared/panel-url.js";
+
 /**
  * 「用户正在看的页面」在哪个窗口。会话单独开在一个小窗口里时，用户在小窗口里打字，最后获得焦点的是小窗口本身，
  * 里面只有扩展页；它要读、要操作的是打开它的那个浏览器窗口。那个窗口关了，就用最近获得焦点的普通窗口。
  */
 
-/** 只认扩展自己的侧栏页（带不带参数都算）：内容脚本发来的 sender.url 是网页地址，路径一样也不算。 */
-export function isPanelUrl(url: string | undefined): boolean {
-  return url?.split(/[?#]/)[0] === chrome.runtime.getURL("sidepanel.html");
-}
+export { isPanelUrl };
 
 /** 会话小窗口的来源窗口号；侧栏和别的页面是 undefined。 */
 export function popoutSource(url: string | undefined): number | undefined {

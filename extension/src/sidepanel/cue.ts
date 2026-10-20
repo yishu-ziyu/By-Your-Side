@@ -1,3 +1,4 @@
+import { isPanelUrl } from "../shared/panel-url.js";
 /**
  * 提示音：用户没在看任何开着侧栏的窗口时，任务做完响一声，
  * 要用户出手（确认发送、教学一步、页面交给用户、目标核对判「等你」）时响另一声。用户在看就不响。
@@ -162,9 +163,8 @@ presence.onmessage = (event: MessageEvent<unknown>) => {
  * 所以用它定要等几个回答，窗口由各个侧栏自己报。单独窗口里的会话是标签页里的侧栏页，也算一个。
  */
 async function panelWindows(mine: number): Promise<number[]> {
-  const page = chrome.runtime.getURL("sidepanel.html");
   const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL, chrome.runtime.ContextType.TAB] }).catch(() => []);
-  const count = contexts.filter(c => c.contextType === chrome.runtime.ContextType.SIDE_PANEL || c.documentUrl?.split(/[?#]/)[0] === page).length;
+  const count = contexts.filter(c => c.contextType === chrome.runtime.ContextType.SIDE_PANEL || isPanelUrl(c.documentUrl)).length;
   const windows = new Set([mine]);
 
   if (count <= 1) return [...windows];

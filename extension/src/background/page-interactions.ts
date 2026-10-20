@@ -1,7 +1,8 @@
+import { isPanelUrl } from '../shared/panel-url.js';
 import { isPageInteractionMessage, type PageElementSource } from '../../../shared/protocol.js';
 
 export function installPageInteractions(): void {
-  const isPanel = (sender: chrome.runtime.MessageSender) => sender.id === chrome.runtime.id && sender.url?.split('?')[0] === chrome.runtime.getURL('sidepanel.html');
+  const isPanel = (sender: chrome.runtime.MessageSender) => sender.id === chrome.runtime.id && isPanelUrl(sender.url);
   const offers = new Map<string, { source: PageElementSource; tabId: number; documentId?: string; expires: number }>();
   chrome.tabs.onRemoved.addListener(tabId => { for (const [token, offer] of offers) if (offer.tabId === tabId) offers.delete(token); });
   chrome.runtime.onMessage.addListener((raw, sender, respond) => {

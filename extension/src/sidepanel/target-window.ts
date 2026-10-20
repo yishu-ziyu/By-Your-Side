@@ -1,3 +1,5 @@
+import { isPanelUrl } from "../shared/panel-url.js";
+
 /**
  * 这个页面要读、要操作的网页在哪个窗口。侧栏住在浏览器窗口里，就是自己的窗口；
  * 会话单独开的小窗口里只有扩展页，要看的是打开它的那个窗口（地址里的 window=），那个窗口关了就用最近获得焦点的普通窗口。
@@ -17,6 +19,9 @@ export const popoutSource = sourceWindow();
 
 export const isPopout = popoutSource !== undefined;
 
+/** 会话页挂在网页上的浮动卡片里（iframe），不是单独窗口。 */
+export const isFloat = isPopout && params.has("float");
+
 /** 单独窗口打开时要显示的会话。 */
 export const popoutConversation = isPopout ? params.get("conversation") ?? undefined : undefined;
 
@@ -28,8 +33,6 @@ export async function targetWindowId(): Promise<number | undefined> {
   return (await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null))?.id;
 }
 
-const panelPage = chrome.runtime.getURL("sidepanel.html");
-
 /**
  * 用户正在看的那个标签页。lastFocused：侧栏里按最近获得焦点的窗口找，和后台给模型带页面时的找法一致。
  * 会话小窗口里只看来源窗口；一个普通窗口都没开时没有可看的页，不拿小窗口自己顶替。
@@ -40,5 +43,5 @@ export async function activeTargetTab(opts: { lastFocused?: boolean } = {}): Pro
   if (isPopout && windowId == null) return undefined;
   const [tab] = await chrome.tabs.query(windowId == null ? { active: true, lastFocusedWindow: true } : { active: true, windowId });
 
-  return tab?.url?.split(/[?#]/)[0] === panelPage ? undefined : tab;
+  return isPanelUrl(tab?.url) ? undefined : tab;
 }

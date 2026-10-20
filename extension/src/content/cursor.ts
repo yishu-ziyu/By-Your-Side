@@ -3081,8 +3081,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   ns.edgeTab = () => edgeTab?.state() ?? null;
   ns.clickEdgeTab = (part) => edgeTab?.click(part) ?? false;
-  ns.uncoverPageTarget = (target, x, y, token) => edgeTab?.uncoverTarget(target, x, y, token) ?? false;
-  ns.restorePageTarget = (token) => edgeTab?.restoreTarget(token);
+  ns.uncoverPageTarget = (target, x, y, token) => (edgeTab?.uncoverTarget(target, x, y, token) ?? false) || (ns.floatCard?.uncover(target, x, y, token) ?? false);
+  ns.restorePageTarget = (token) => { edgeTab?.restoreTarget(token); ns.floatCard?.restore(token); };
 
   ns.holdActionLabels = () =>
     [...instances.values()]
