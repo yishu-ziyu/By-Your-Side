@@ -52,14 +52,14 @@ const wan = (tokens: number) => { const v = tokens / 10_000; return String(v >= 
 function usageText(usage: ContextUsage): { head: string; figures: string; line: string; fraction: number } {
   const fraction = Math.min(1, usage.used / usage.window);
   const percent = Math.round(fraction * 100);
-  const head = `这段对话占了 ${percent === 0 ? "不到 1" : percent}%`;
+  const head = `对话用量 ${percent === 0 ? "不到 1" : percent}%`;
   const figures = `（约 ${wan(usage.used)} 万 / ${wan(usage.window)} 万字）`;
 
   return { head, figures, line: head + figures, fraction };
 }
 
 /** 宿主平时不删历史，只在模型报装不下时收起一次早先的大段内容（agent/src/pi-agent-loop.ts）；没有可收的或收完还超，就是出错。 */
-const FULL_NOTE = "装不下时，会把早先读过的网页收成一行再试一次；没有可收的或还装不下，就会报错。";
+const FULL_NOTE = "对话太长时，会尝试精简网页内容；仍超限会提示。";
 
 export interface ModelMenu {
   /** hello_ok / model_info：缺省的字段保留现值。 */
