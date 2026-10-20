@@ -1,3 +1,4 @@
+import { mountDictationSettings } from "./dictation.js";
 /**
  * 模型与语音设置页：扩展的独立页面，侧栏「更多 → 模型与语音」打开。
  *
@@ -52,6 +53,7 @@ const entries = groupEntries(choices);
 const svg = (node: Parameters<typeof icon>[0], size = 14) => icon(node, { width: size, height: size, "stroke-width": 1.75, "aria-hidden": "true" });
 
 renderSettings();
+void mountDictationSettings();
 
 const isText = (value: unknown): value is string => typeof value === "string";
 
