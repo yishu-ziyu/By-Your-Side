@@ -122,6 +122,8 @@ const voiceClear = $<HTMLButtonElement>("voice-clear");
 
 const voiceStatus = $("voice-status");
 
+const speechStatus = $("speech-status");
+
 const speechInput = $<HTMLInputElement>("speech-key");
 
 const speechClear = $<HTMLButtonElement>("speech-clear");
@@ -904,19 +906,19 @@ function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGrou
 async function saveSpeechKey(): Promise<void> {
   const key = speechInput.value.trim();
 
-  if (!key) return setStatus(voiceStatus, "填 MiniMax 订阅密钥。", "err");
+  if (!key) return setStatus(speechStatus, "填 MiniMax 订阅密钥。", "err");
 
-  if (!isSubscriptionKey(key)) return setStatus(voiceStatus, "只能用 Token Plan 订阅密钥（sk-cp- 开头）。按量计费的密钥不能用。", "err");
+  if (!isSubscriptionKey(key)) return setStatus(speechStatus, "只能用 Token Plan 订阅密钥（sk-cp- 开头）。按量计费的密钥不能用。", "err");
   await chrome.storage.local.set({ [PTT_SPEECH_KEY]: key });
   speechInput.value = "";
   await reload();
-  setStatus(voiceStatus, "已保存。按住说话的任务做完后，会念出结果。", "ok");
+  setStatus(speechStatus, "已保存。按住说话的任务做完后，会念出结果。", "ok");
 }
 
 async function clearSpeechKey(): Promise<void> {
   await chrome.storage.local.remove(PTT_SPEECH_KEY);
   await reload();
-  setStatus(voiceStatus, "已清除，做完不再念。", "");
+  setStatus(speechStatus, "已清除，做完不再念。", "");
 }
 
 /** 主模型：只列已连接的，选了就换，不用再进服务商详情。 */
@@ -1229,10 +1231,16 @@ function radioRow(className: string, label: string, checked: boolean, meta = "")
   return pick;
 }
 
+/** 当前语音模型；音色和阶跃星辰密钥只对阶跃星辰的模型有意义。 */
+let voiceModel: string | null = null;
+
 function renderVoiceModels(raw: unknown): void {
   let current: string | null = null;
 
   try { current = resolveVoiceModel(raw); } catch { /* 无效值保持未选；由用户明确纠正，不写回默认。 */ }
+  voiceModel = current;
+  $("voice-key-row").hidden = current === GPT_LIVE_MODEL;
+  $("voice-key-note").hidden = current === GPT_LIVE_MODEL;
   $("voice-model-state").textContent = !current ? "没有读到语音模型。重新选一个，再开启语音。"
     : current === GPT_LIVE_MODEL ? "这个语音模型用 ChatGPT 账号，不用阶跃星辰密钥。先在服务商列表里用 ChatGPT 登录。下次开启语音时生效。"
     : voiceKeySource === "model" ? "用阶跃星辰模型的密钥。下次开启语音时生效。"
@@ -1243,6 +1251,8 @@ function renderVoiceModels(raw: unknown): void {
     { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊由语音模型回答。页面操作交给助手。" },
     { model: GPT_LIVE_MODEL, label: "GPT-Live（ChatGPT 登录）", note: "闲聊由语音模型回答。页面操作交给助手。" },
   ].map(option => {
+    const row = document.createElement("div");
+    row.className = "radio-row";
     const pick = radioRow("voice-model-option", option.label, option.model === current, option.note);
 
     pick.dataset.model = option.model;
@@ -1252,12 +1262,26 @@ function renderVoiceModels(raw: unknown): void {
         setStatus(voiceStatus, "已保存，下次开启语音时生效。", "ok");
       });
     });
+    row.append(pick);
 
-    return pick;
+    return row;
   }));
 }
 
 function renderTimbres(current: string): void {
+  // GPT-Live 的声音在建连时写死为 cove（voice-client.ts），没有可选项。
+  if (voiceModel === GPT_LIVE_MODEL) {
+    $("timbre-desc").textContent = "GPT-Live 只有一种声音。换成阶跃星辰的模型才能选音色。";
+    const row = document.createElement("div");
+    row.className = "radio-row";
+    const pick = radioRow("timbre-option", "Cove", true, "GPT-Live 自带");
+    pick.disabled = true;
+    row.append(pick);
+    timbreList.replaceChildren(row);
+
+    return;
+  }
+  $("timbre-desc").textContent = "阶跃星辰的声音。点一下就换，下次开启语音时生效。";
   timbreList.replaceChildren(...STEP_VOICES.map((voice) => {
     const row = document.createElement("div");
     row.className = "radio-row";
@@ -1467,7 +1491,7 @@ speechInput.addEventListener("keydown", (event) => { if (event.key === "Enter") 
 
 speechClear.addEventListener("click", () => void clearSpeechKey());
 
-bindToggle(speakToggle, PTT_SPEAK_RESULT, voiceStatus, (on) => (on ? "做完会念出结果。" : "做完不再念。"));
+bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => (on ? "做完会念出结果。" : "做完不再念。"));
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
