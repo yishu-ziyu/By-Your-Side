@@ -570,8 +570,8 @@ let draftAtNewRequest: string | null = null;
 let sendAfterCreate = false;
 
 /**
- * 面板打开时恢复上次会话；没有可用会话才新建。
- * 用户用＋明确新建，重启与重连不自动丢弃原任务。
+ * 面板打开时恢复上次会话；上次的事已经做完、又放了一阵子，就直接进新会话，让人从起点开始。
+ * 还在跑、等用户、中途被打断的会话总是回到原处，免得找不到进度；刷新与重连也不换会话。
  */
 let bootFreshSession = true;
 
@@ -583,6 +583,8 @@ let bootCreateTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** 会话清单迟迟不到时的兜底时限；新建请求迟迟没有回执时的回退时限。 */
 const BOOT_DECISION_TIMEOUT_MS = 6_000;
+
+const BOOT_IDLE_NEW_SESSION_MS = 30 * 60_000;
 
 const BOOT_CREATE_FALLBACK_MS = 4_000;
 
@@ -1234,7 +1236,11 @@ function resolveBootSession(inheritedId: string, listKnown: boolean): void {
 
   if (!inherited && !listKnown && !noModel) return;
 
-  if (inherited || (noModel && !goneRemembered)) {
+  // 侧栏自己刷新时 sessionStorage 还记着这段会话，那不是重新打开，留在原处。
+  const settled = inherited !== undefined && inheritedId !== rememberedConversation() && inherited.state === "idle" && !inherited.checkpoint
+    && inherited.title !== "新会话" && Date.now() - inherited.updatedAt > BOOT_IDLE_NEW_SESSION_MS;
+
+  if ((inherited && !settled) || (noModel && !goneRemembered)) {
     finishBootSession();
     selectConversation(inheritedId, false);
 
