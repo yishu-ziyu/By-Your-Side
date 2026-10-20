@@ -35,7 +35,7 @@
 
 ## 快速开始
 
-目前只支持 macOS + Chrome 源码安装，需要 Node.js 22.19 以上。
+支持 Chrome 和其他基于 Chromium 的浏览器（Edge、Brave、Arc 等），Windows、macOS、Linux 都能装；Firefox、Safari 不支持。目前只在 macOS + Chrome 上完整测过。源码安装需要 Node.js 22.19 以上。
 
 ```bash
 git clone https://github.com/yishu-ziyu/By-Your-Side.git
