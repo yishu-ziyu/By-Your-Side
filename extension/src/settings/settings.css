@@ -6,8 +6,9 @@
 /* Layout and compact controls adapted from Magpie (MIT, licenses/magpie-MIT.txt). */
 html, body.settings-page { height: auto; min-height: 100%; }
 .settings-page button { font: inherit; color: inherit; }
-#settings { max-width: 1040px; margin: 32px auto; display: grid; grid-template-columns: 176px minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--r); overflow: clip; background: var(--wallpaper); min-height: 640px; }
-.settings-sidebar { display: flex; flex-direction: column; padding: var(--s-5) var(--s-3) var(--s-3); background: var(--content-subtle); border-right: 1px solid var(--line); }
+/* 整页铺满：左栏贴边占满高度、滚动时不动，内容列居中限宽，同 Chrome 自己的设置页。 */
+#settings { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100dvh; background: var(--wallpaper); }
+.settings-sidebar { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; padding: var(--s-5) var(--s-3) var(--s-3); background: var(--content-subtle); border-right: 1px solid var(--line); }
 .settings-brand { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2) var(--s-5); font-size: var(--fs-read); font-weight: 600; }
 .settings-brand img { width: 20px; height: 20px; }
 #settings-nav { display: flex; flex-direction: column; gap: var(--s-1); }
@@ -17,7 +18,7 @@ html, body.settings-page { height: auto; min-height: 100%; }
 #settings-nav button.active { background: var(--content-bg); color: var(--text-primary); box-shadow: var(--sh-1); }
 #settings-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .settings-brand-note { margin-top: auto; padding: var(--s-5) var(--s-2) 0; font-size: var(--fs-micro); color: var(--text-tertiary); }
-.settings-pane { min-width: 0; padding: 0 var(--s-5) var(--s-5); }
+.settings-pane { width: 100%; max-width: 760px; min-width: 0; margin: 0 auto; padding: var(--s-3) var(--s-5) var(--s-5); }
 .settings-page-head { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
 .settings-page-head h1 { margin: 0; font-size: var(--fs-read); font-weight: 600; }
 .settings-panel { display: flex; flex-direction: column; gap: var(--s-5); }
@@ -253,8 +254,8 @@ details[open] #provider-more-names { padding-bottom: 0; }
 #orb-list .orb-thumb { width: 64px; height: 64px; margin: 0 0 var(--s-2); }
 #orb-list .radio-meta { display: none; }
 @media (max-width: 760px) {
-  #settings { margin: 0; min-height: 100dvh; grid-template-columns: minmax(0, 1fr); border: 0; border-radius: 0; }
-  .settings-sidebar { padding: var(--s-2) var(--s-3); border: 0; border-bottom: 1px solid var(--line); }
+  #settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .settings-sidebar { height: auto; z-index: 1; padding: var(--s-2) var(--s-3); border: 0; border-bottom: 1px solid var(--line); }
   .settings-brand, .settings-brand-note { display: none; }
   #settings-nav { flex-direction: row; overflow: auto; gap: var(--s-1); }
   #settings-nav button { flex: none; white-space: nowrap; font-size: var(--fs-meta); padding: var(--s-2); }
