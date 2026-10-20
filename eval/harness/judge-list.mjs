@@ -10,7 +10,7 @@ const all = readFileSync(TASKS_FILE, "utf8").split("\n").filter(Boolean).map((l)
 
 const files = readFileSync(listFile, "utf8").split("\n").filter(Boolean);
 
-let i = 0, done = 0;
+let i = 0, done = 0, failedInRow = 0;
 
 await Promise.all(Array.from({ length: Number(conc) }, async () => {
   while (i < files.length) {
@@ -24,5 +24,10 @@ await Promise.all(Array.from({ length: Number(conc) }, async () => {
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, JSON.stringify({ task: tr.id, model: tr.model, ...v, success_rule: task.success_rule, judge_version: JUDGE_VERSION, result_sha: resultSha(join(runDir, f)), judged_at: new Date().toISOString() }, null, 2));
     console.log(`${++done}/${files.length} ${tr.model} ${tr.id} ${v.verdict} ${v.method}`);
+
+    // 判分器本身坏了（服务连不上、额度用完）时不要把整批结果都写成 judge_error 再往下跑
+    failedInRow = v.verdict === "judge_error" ? failedInRow + 1 : 0;
+
+    if (failedInRow >= 3) { console.error(`judge broken: 3 judge_error in a row, stopping. last: ${v.reason}`); process.exit(2); }
   }
 }));
