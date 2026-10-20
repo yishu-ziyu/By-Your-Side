@@ -8,7 +8,9 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   try {
   type Segment = {id: string; node: Text; original: string; translation?: string};
 
-  type Block = {pendingMark?: HTMLElement; id: string; element: HTMLElement; segments: Segment[]; output?: HTMLElement; outputs?: HTMLElement[]; cleanup?: () => void};
+  type FontOverride = {element: HTMLElement; value: string; priority: string; hadStyle: boolean; applied: string};
+
+  type Block = {pendingMark?: HTMLElement; families?: FontOverride[]; hadStyles?: Map<HTMLElement, boolean>; id: string; element: HTMLElement; segments: Segment[]; output?: HTMLElement; font?: {value: string; priority: string; hadStyle: boolean; applied: string}};
 
   type State = {
     token: string; url: string; language: string; mode: TranslationMode; fontSize: number | null; fontFamily: TranslationFont;
@@ -21,7 +23,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
  return url.href; };
 
   // SAFETY: this private namespace is created only by our scripts in the extension ISOLATED world.
-  const world = globalThis as typeof globalThis & {__bysTranslation?: State; __bysMountVellum?: (element: HTMLElement, sheet: HTMLElement) => () => void};
+  const world = globalThis as typeof globalThis & {__bysTranslation?: State};
   let state = world.__bysTranslation;
 
   if (state && state.url !== documentUrl()) { mutated = true; state.restore(); delete world.__bysTranslation; state = undefined; }
@@ -29,24 +31,52 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   if (command.document && command.document !== state?.token) throw new Error('网页已变化，这批译文未写入。请在当前页面重新翻译。');
   const songti = '"Songti SC", "STSong", "SimSun", serif';
 
-  const unmark = (block: Block) => { if (block.pendingMark) { mutated = true; block.pendingMark.remove(); block.pendingMark = undefined; } };
+  const restoreFamily = (block: Block) => {
+    for (const saved of block.families ?? []) {
+      if (saved.element.style.fontFamily !== saved.applied) continue;
+      mutated = true;
 
-  const sourceValid = (block: Block) => block.element.isConnected && block.segments.every(s => s.node.isConnected && block.element.contains(s.node) && s.node.data === s.original);
+      if (saved.value) saved.element.style.setProperty('font-family', saved.value, saved.priority);
+      else saved.element.style.removeProperty('font-family');
+      const style = saved.element.getAttribute('style');
 
-  const removeOutput = (block: Block) => {
-    if (block.output || block.outputs?.length) mutated = true;
-    block.cleanup?.(); block.cleanup = undefined;
-    block.output?.remove(); block.output = undefined;
+      if (!saved.hadStyle && style !== null && !style.trim()) saved.element.removeAttribute('style');
+    }
 
-    for (const output of block.outputs ?? []) output.remove();
-    block.outputs = undefined;
+    block.families = undefined;
+    // Both font overrides are now released; the next cycle needs a fresh baseline.
+    block.hadStyles = undefined;
   };
+
+  const restoreFont = (block: Block) => {
+    if (!block.font) { restoreFamily(block);
+
+ return; }
+
+    const currentStyle = block.element.getAttribute('style');
+
+    if (block.element.style.fontSize === block.font.applied) {
+      mutated = true;
+
+      if (!block.font.hadStyle && currentStyle !== null && block.element.style.length === 1) block.element.removeAttribute('style');
+      else block.element.style.setProperty('font-size', block.font.value, block.font.priority);
+    }
+
+    block.font = undefined;
+    restoreFamily(block);
+  };
+
+  const unmark = (block: Block) => { if (block.pendingMark) { mutated = true; block.pendingMark.remove(); block.pendingMark = undefined; } };
 
   const undo = (block: Block) => {
     unmark(block);
 
-    // Original nodes are never rewritten. In particular, leave a website's new text alone.
-    removeOutput(block);
+    if (block.output || block.segments.some(s => s.translation !== undefined && s.node.data === s.translation)) mutated = true;
+
+    for (const s of block.segments) if (s.translation !== undefined && s.node.data === s.translation) s.node.data = s.original;
+    block.output?.remove();
+    block.output = undefined;
+    restoreFont(block);
   };
 
   const clear = () => { if (state?.blocks.size) mutated = true; state?.restore(); delete world.__bysTranslation; };
@@ -57,7 +87,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   if (command.action === 'restore') {
     clear(); dropManual();
 
-    return {document: '', language: '', mode: 'bilingual', fontSize: null, translated: 0, remaining: 0, unsupported: 0, blocks: []};
+    return {document: '', language: '', mode: 'bilingual', fontSize: null, fontFamily: 'original', translated: 0, remaining: 0, unsupported: 0, blocks: []};
   }
 
   if (command.action === 'settle') {
@@ -71,14 +101,12 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       else { for (const b of owned.blocks.values()) unmark(b); }
     }
 
-    return {document: state?.token ?? '', language: state?.language ?? '', mode: state?.mode ?? 'bilingual', fontSize: state?.fontSize ?? null, translated: 0, remaining: 0, unsupported: 0, blocks: []};
+    return {document: state?.token ?? '', language: state?.language ?? '', mode: state?.mode ?? 'bilingual', fontSize: state?.fontSize ?? null, fontFamily: state?.fontFamily ?? 'original', translated: 0, remaining: 0, unsupported: 0, blocks: []};
   }
 
   if (command.action === 'begin') dropManual();
 
   if (command.action === 'begin' && state && command.language && state.language !== command.language) { clear(); state = undefined; }
-
-  if ((command.mode ?? state?.mode) === 'translated' && !world.__bysMountVellum) throw new Error('原文覆盖层尚未准备好，这批译文未写入。');
 
   if (!state) {
     if (command.action !== 'begin') throw new Error('当前页面还没有译文，请先翻译页面。');
@@ -101,7 +129,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
  return; }
 
       for (const [element, block] of owned.blocks) {
-        if (!sourceValid(block) || (block.output && !block.output.isConnected) || block.outputs?.some((output, i) => !output.isConnected || !output.parentElement?.contains(block.segments[i]!.node))) {
+        if (!element.isConnected || block.segments.some(s => !s.node.isConnected || !element.contains(s.node) || s.node.data !== (owned.mode === 'translated' ? s.translation ?? s.original : s.original)) || (owned.mode === 'bilingual' && !!block.output && !block.output.isConnected)) {
           undo(block); owned.blocks.delete(element);
         }
       }
@@ -111,96 +139,69 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   const current = state;
 
-  const createOutput = () => {
-    const output = document.createElement('span');
-    output.dataset.bysTranslation = 'true';
-    output.lang = current.language === '简体中文' ? 'zh-CN' : current.language;
-    output.style.cssText = 'display:block;white-space:pre-wrap;line-height:1.6;margin-block:0.35em 0.65em;overflow-wrap:anywhere;text-align:inherit;';
+  const hadStyleBeforeTypography = (block: Block, element: HTMLElement) => {
+    block.hadStyles ??= new Map();
 
-    if (current.fontFamily === 'songti') output.style.fontFamily = songti;
+    if (!block.hadStyles.has(element)) block.hadStyles.set(element, element.hasAttribute('style'));
 
-    if (current.fontSize) output.style.fontSize = `${current.fontSize}px`;
-
-    return output;
+    return block.hadStyles.get(element)!;
   };
 
   const render = (block: Block) => {
-
-    if (!sourceValid(block)) { undo(block); current.blocks.delete(block.element);
-
-      return; }
-
-    if (!block.segments.every(s => s.translation !== undefined)) return;
     mutated = true;
-    unmark(block);
-    removeOutput(block);
 
-    // A mixed container owns only its direct/inline text, not the independent child
-    // paragraphs, images or controls between it. Cover each original Text node locally.
-    const mixed = block.element.querySelector('p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,figcaption,dt,dd,div,section,article,main,pre,code,img,button,input,textarea,select,iframe,canvas,svg');
+    if (block.segments.every(s => s.translation !== undefined)) unmark(block);
+    // Keep original nodes and listeners; translated-only changes their text, not innerHTML.
+    block.output?.remove(); block.output = undefined;
 
-    if (current.mode === 'translated' && mixed) {
-      const releases: Array<() => void> = [];
-      block.outputs = [];
-      block.cleanup = () => { for (const release of releases.reverse()) release(); };
+    for (const segment of block.segments) segment.node.data = current.mode === 'translated' ? segment.translation ?? segment.original : segment.original;
 
+    if (current.mode === 'bilingual') {
+      restoreFont(block);
+
+      if (!block.segments.every(s => s.translation !== undefined)) return;
+      const output = document.createElement('span');
+      output.dataset.bysTranslation = 'true';
+      output.lang = current.language === '简体中文' ? 'zh-CN' : current.language;
+      output.style.cssText = 'display:block;white-space:pre-wrap;line-height:1.6;margin-block:0.35em 0.65em;overflow-wrap:anywhere;text-align:inherit;';
+
+      if (current.fontFamily === 'songti') output.style.fontFamily = songti;
+
+      if (current.fontSize) output.style.fontSize = `${current.fontSize}px`;
 
       for (const segment of block.segments) {
-        const host = document.createElement('span');
-        host.dataset.bysVellumHost = 'true';
-        host.style.cssText = 'display:inline-block;position:relative;vertical-align:baseline;max-width:100%;white-space:pre-wrap;';
-        segment.node.before(host);
-        host.append(segment.node);
-        const output = createOutput();
-        output.textContent = segment.translation!;
-        host.append(output);
-        block.outputs.push(output);
-        let unmount: (() => void) | undefined;
-        releases.push(() => {
-          unmount?.();
-          output.remove();
-          // Unwrap the current contents, not a saved copy: preserve website edits,
-          // insertions and moves made after translation, even in a detached subtree.
-          const parent = host.parentNode;
+        const anchor = segment.node.parentElement?.closest('a');
 
-          if (!parent) return;
+        if (anchor && anchor !== block.element && /^(https?:|mailto:|tel:)/i.test(anchor.href)) {
+          const link = document.createElement('a'); link.href = anchor.href;
+          link.target = anchor.target; link.rel = anchor.rel;
 
-          while (host.firstChild) parent.insertBefore(host.firstChild, host);
-          host.remove();
-        });
-        unmount = world.__bysMountVellum!(host, output);
+          if (current.fontFamily === 'songti') link.style.setProperty('font-family', 'inherit', 'important');
+          link.textContent = segment.translation!; output.append(link);
+        } else output.append(document.createTextNode(segment.translation!));
       }
 
-      return;
+      block.element.append(output); block.output = output;
+    } else if (current.fontSize) {
+      block.font ??= {value: block.element.style.getPropertyValue('font-size'), priority: block.element.style.getPropertyPriority('font-size'), hadStyle: hadStyleBeforeTypography(block, block.element), applied: `${current.fontSize}px`};
+      block.element.style.setProperty('font-size', `${current.fontSize}px`);
     }
 
-    const output = createOutput();
+    if (current.mode === 'translated' && current.fontFamily === 'songti' && !block.families) {
+      const elements = new Set([block.element, ...block.segments.map(s => s.node.parentElement!).filter(Boolean)]);
+      block.families = [...elements].map(element => ({element, value: element.style.getPropertyValue('font-family'), priority: element.style.getPropertyPriority('font-family'), hadStyle: hadStyleBeforeTypography(block, element), applied: ''}));
 
-    for (const segment of block.segments) {
-      const anchor = segment.node.parentElement?.closest('a');
-
-      if (anchor && anchor !== block.element && /^(https?:|mailto:|tel:)/i.test(anchor.href)) {
-        const link = document.createElement('a'); link.href = anchor.href;
-        link.target = anchor.target; link.rel = anchor.rel;
-        // Normal clicks reach the original link, including the website's event handlers.
-        // Modified clicks retain the browser's usual open-in-new-tab behavior.
-
-        if (current.mode === 'translated') link.addEventListener('click', event => {
-          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-          event.preventDefault(); event.stopPropagation(); anchor.click();
-        });
-
-        if (current.fontFamily === 'songti') link.style.setProperty('font-family', 'inherit', 'important');
-        link.textContent = segment.translation!; output.append(link);
-      } else output.append(document.createTextNode(segment.translation!));
+      for (const saved of block.families) {
+        saved.element.style.setProperty('font-family', songti, 'important');
+        saved.applied = saved.element.style.fontFamily;
+      }
     }
-
-    block.element.append(output); block.output = output;
-
-    if (current.mode === 'translated') block.cleanup = world.__bysMountVellum!(block.element, output);
   };
 
   if (command.mode || command.fontSize !== undefined || command.fontFamily !== undefined) {
+    // Restore the prior font before replacing the desired size.
+    for (const block of current.blocks.values()) restoreFont(block);
+
     if (command.fontFamily) current.fontFamily = command.fontFamily;
 
     if (command.mode) current.mode = command.mode;
@@ -217,7 +218,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     if (translations.size !== command.translations!.length) throw new Error('译文段落标识重复，未写入页面。');
     // A live page can replace one paragraph while the model translates. Apply only
     // complete, unchanged paragraphs; collect will pick up new source text next.
-    const unchanged = affected.filter(b => sourceValid(b) && b.segments.every(s => translations.has(s.id)));
+    const unchanged = affected.filter(b => b.element.isConnected && b.segments.every(s => translations.has(s.id) && s.node.isConnected && b.element.contains(s.node) && s.node.data === (current.mode === 'translated' ? s.translation ?? s.original : s.original)));
 
     for (const block of unchanged) {
       for (const s of block.segments) s.translation = translations.get(s.id)!;
@@ -245,11 +246,11 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   let unsupported = 0;
 
   for (const [element, nodes] of groups) {
-    if (!nodes.some(node => node.data.trim())) { groups.delete(element); continue; }
+    if (!nodes.some(node => /\p{L}/u.test(node.data))) { groups.delete(element); continue; }
 
     let block = current.blocks.get(element);
 
-    if (block && (block.segments.length !== nodes.length || block.segments.some((s, i) => s.node !== nodes[i] || s.node.data !== s.original))) {
+    if (block && (block.segments.length !== nodes.length || block.segments.some((s, i) => s.node !== nodes[i] || s.node.data !== (current.mode === 'translated' ? s.translation ?? s.original : s.original)))) {
       undo(block); current.blocks.delete(element); block = undefined;
     }
 
@@ -312,7 +313,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     chars += size; segments += block.segments.length;
   }
 
-  const receipt: Omit<TranslationReceipt, 'tabId'> = {document: current.token, language: current.language, mode: current.mode, fontSize: current.fontSize,
+  const receipt: Omit<TranslationReceipt, 'tabId'> = {document: current.token, language: current.language, mode: current.mode, fontSize: current.fontSize, fontFamily: current.fontFamily,
     translated: current.blocks.size - pending.length, remaining: pending.length, unsupported, blocks};
 
   if (command.action === 'apply') receipt.applied = applied;

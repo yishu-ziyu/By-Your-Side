@@ -2897,9 +2897,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const model = this.modelRuntime!.fastModel?.() ?? this.session!.model;
 
       let readError: string | undefined;
-      // SAFETY: snapshot 工具回 { text, url, title? }；读不到就不带页面，只按回答判断。
+      // SAFETY: snapshot 工具回 { text, url, title?, translation? }；读不到就不带页面，只按回答判断。
       const page = tabId !== null && this.rpc
-        ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown; url?: unknown; title?: unknown }>).catch((error: unknown) => { readError = (error instanceof Error ? error.message : String(error)).slice(0, 160); return null; })
+        ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown; url?: unknown; title?: unknown; translation?: unknown }>).catch((error: unknown) => { readError = (error instanceof Error ? error.message : String(error)).slice(0, 160); return null; })
         : null;
 
       pageRead = page ? { ok: true, tabId, url: String(page.url ?? ""), chars: String(page.text ?? "").length } : { ok: false, tabId, ...(readError ? { error: readError } : {}) };
@@ -2936,7 +2936,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           observations: this.goalObservations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < this.requestStartedAt ? { earlier: true } : {}) })),
           readWords: this.seenWords,
           lastReply,
-          page: page ? { ...(tabId === null ? {} : { tabId }), title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
+          page: page ? { ...(tabId === null ? {} : { tabId }), title: String(page.title ?? ""), url: String(page.url ?? ""), ...(page.translation ? { translation: page.translation } : {}), text: redactCredentialText(String(page.text ?? "")) } : null,
           userTookOver: runId !== null && this.handbackRunId === runId,
         };
         const headers = opencodeSessionHeaders(model, sessionId);

@@ -96,7 +96,6 @@ await esbuild.build({
     "content-effect": "src/content/effect.ts",
     "content-cursor": "src/content/cursor.ts",
     "content-ask": "src/content/ask.ts",
-    "content-vellum": "src/content/page-translation/vellum-layer.ts",
   },
 });
 

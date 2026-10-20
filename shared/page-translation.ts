@@ -15,6 +15,7 @@ export interface TranslationReceipt {
   language: string;
   mode: TranslationMode;
   fontSize: number | null;
+  fontFamily?: TranslationFont;
   translated: number;
   remaining: number;
   unsupported: number;
