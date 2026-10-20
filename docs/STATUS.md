@@ -2,7 +2,7 @@
 
 2026-10-19 起算新基线；此前单次验收与历史记录见 Git 历史。
 
-自用的 Chrome 扩展开发预览版。日常 Chrome 已于 10-20 重载到 main `01e90dd3`：设置页按栏目分页，选模型和连接服务商分开；错误卡改成淡红凹槽底（上一版备份在 `out/daily-backup-20261020-before-settings-panel/dist`）。
+自用的 Chrome 扩展开发预览版。日常 Chrome 已于 10-20 重载到 main `2047dcd2`：侧栏菜单「浮在页面上」把会话变成网页上的浮动卡片，浏览器全屏时也不被盖住，取代原来的单独小窗口（上一版备份在 `out/daily-backup-20261020-before-float-card/dist`）。
 
 ## 现在能用什么、还差什么
 
