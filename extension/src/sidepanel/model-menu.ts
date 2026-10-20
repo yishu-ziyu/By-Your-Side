@@ -1,5 +1,6 @@
 import { isThinkingLevel, type ThinkingLevel, type ThinkingInfo, type ModelOption } from "../../../shared/protocol.js";
 import { displayName, filterModels, groupModelsByProvider, providerLabel } from "./models.js";
+import { bindMotionIcon } from "./motion-icon.js";
 
 /** 入口显示宿主实际档位；手动偏好与自动升档分开，重连不能把偏好误当成新选择。 */
 const LEVEL: Record<string, string> = { off: "关", minimal: "最低", low: "低", medium: "中", high: "高", xhigh: "更高", max: "最高" };
@@ -106,6 +107,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   const all = menu.querySelector<HTMLElement>(".mm-all")!;
   const list = menu.querySelector<HTMLElement>(".mm-list")!;
   const search = menu.querySelector<HTMLInputElement>(".mm-search input")!;
+  const searchField = menu.querySelector<HTMLElement>(".mm-search")!;
+  bindMotionIcon(searchField, "search");
 
   let chosen: Record<string, ThinkingLevel> = {};
   let actual: ThinkingInfo | null = null;

@@ -6,6 +6,7 @@ import { toast } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
 import { answerFillUndoOf as fillUndoOf, fillUndoLabel, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
 import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
+import { bindMotionIcon, setMotionIcon } from "./motion-icon.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
 const CHROME = ".gc-actions,.gc-faces,.gc-evidence,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
@@ -123,7 +124,12 @@ export function refreshPrimaryAction(answer: HTMLElement): void {
   primary.disabled = !!stuck;
   primary.replaceChildren();
   primary.classList.remove("copied");
-  if (undo) primary.append(icon(Undo2));
+  if (undo) {
+    primary.append(icon(Undo2));
+    bindMotionIcon(primary, "undo-2");
+  } else {
+    setMotionIcon(primary, null);
+  }
   const label = document.createElement("span");
   label.textContent = action?.label ?? (isFillUndoPending(answer) ? "正在还原…" : fillUndoLabel(undo!));
   const hint = document.createElement("span");

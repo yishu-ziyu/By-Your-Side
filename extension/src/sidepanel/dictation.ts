@@ -5,6 +5,7 @@
  */
 import { PTT_LEVEL, PTT_TARGET, type PttCommand, type PttLevelMessage, type PttReply } from "../shared/ptt.js";
 import { microphonePermissionState } from "./voice-permission.js";
+import { bindMotionIcon, setMotionActive } from "./motion-icon.js";
 
 type Engine = "chrome" | "stepfun";
 
@@ -56,6 +57,7 @@ export function mountDictation(opts: {
   button.title = "说话输入：边说边出字，说完确认再发";
   button.setAttribute("aria-label", "说话输入");
   button.innerHTML = MIC_ICON;
+  bindMotionIcon(button, "mic");
   opts.before.before(button);
 
   const live = document.createElement("div");
@@ -324,6 +326,7 @@ export function mountDictation(opts: {
     live.hidden = false;
     row.hidden = false;
     button.setAttribute("aria-pressed", "true");
+    setMotionActive(button, true);
     render();
     raf = requestAnimationFrame(draw);
     startChrome(session);
@@ -344,6 +347,7 @@ export function mountDictation(opts: {
     live.hidden = true;
     row.hidden = true;
     button.removeAttribute("aria-pressed");
+    setMotionActive(button, false);
     const settle = (text: string): void => {
       inputEl.value = text;
       inputEl.dispatchEvent(new Event("input", { bubbles: true }));

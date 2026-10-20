@@ -2179,8 +2179,11 @@ details.run-steps.done .chip.error { background: transparent; }
 #memory-drawer { position:absolute; inset:148px 0 0; z-index:35; display:flex; min-height:0; flex-direction:column; overflow:hidden; border:1px solid var(--glass-border-subtle); border-bottom:0; border-radius:20px 20px 0 0; background:var(--content-bg); box-shadow:0 -10px 34px rgba(31,42,60,.14),var(--glass-specular); animation:memoryDrawerIn var(--d-state) var(--spring-fluid); }
 @keyframes memoryDrawerIn { from { transform:translateY(18px); opacity:.7; } to { transform:none; opacity:1; } }
 .memory-drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:17px 18px 11px; border-bottom:1px solid var(--content-border); flex-shrink:0; }
-#memory-search { margin: 10px 18px 2px; padding: 7px 12px; border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-subtle); font: var(--fs-ui)/var(--lh-ui) var(--font); color: var(--text-primary); outline: none; flex-shrink: 0; }
-#memory-search:focus { border-color: var(--text-tertiary); background: var(--content-bg); }
+.memory-search-field { display: flex; align-items: center; gap: 7px; margin: 10px 18px 2px; padding: 0 12px; border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-subtle); flex-shrink: 0; transition: border-color var(--m-quick) var(--e-swift), background var(--m-quick) var(--e-swift); }
+.memory-search-field:focus-within { border-color: var(--text-tertiary); background: var(--content-bg); }
+.memory-search-field > span { display: grid; place-items: center; flex: none; color: var(--text-tertiary); }
+.memory-search-field > span svg { width: 14px; height: 14px; }
+#memory-search { min-width: 0; flex: 1; margin: 0; padding: 7px 0; border: 0; background: transparent; font: var(--fs-ui)/var(--lh-ui) var(--font); color: var(--text-primary); outline: none; }
 .memory-search-empty { margin: 16px 0; text-align: center; }
 .memory-drawer-head h2, .memory-drawer-head p { margin:0; }
 .memory-drawer-head h2 { font-size:16px; line-height:1.35; font-weight:620; letter-spacing:-.015em; }
@@ -2987,7 +2990,8 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.assistant .answer-source-glyph { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: var(--content-subtle); color: var(--text-secondary); font-size: 10px; font-weight: 600; }
 .msg.assistant .answer-source:hover .answer-source-glyph { background: var(--content-subtle-hover); }
 .msg.assistant .answer-source-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.msg.assistant .answer-source-host { font-size: var(--fs-micro); color: var(--text-quaternary); white-space: nowrap; }
+.msg.assistant .answer-source-host { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-micro); color: var(--text-quaternary); white-space: nowrap; }
+.msg.assistant .answer-source-external { width: 12px; height: 12px; flex: none; }
 .msg.assistant .answer-source.untitled .answer-source-host { visibility: hidden; }
 .msg.assistant .answer-source.untitled:hover .answer-source-host { visibility: visible; }
 .msg.assistant .answer-source:hover .answer-source-host { font-size: 0; }
@@ -4023,3 +4027,152 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 #think-menu .mm-power-slider.dragging .mm-power-fill { transition-duration:var(--m-effort-drag); }
 #think-menu .mm-power-note { padding:9px 10px 5px;font-size:var(--fs-micro);color:var(--text-tertiary);line-height:1.5; }
 @media(prefers-reduced-motion:reduce){#think-menu .mm-power-knob,#think-menu .mm-power-fill {transition:none;}}
+
+/* 动效图标：只在图标真的对应一个动作时动；同一时刻最多一个持续循环。 */
+[data-motion-icon] svg path,
+[data-motion-icon] svg rect,
+[data-motion-icon] svg circle,
+[data-motion-icon] svg line {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.voice-start[data-motion-icon="audio-lines"]:is(:hover, .motion-icon-pulse) svg path:nth-child(odd) {
+  animation: motionWaveA var(--m-rise) var(--e-move) 1;
+}
+.voice-start[data-motion-icon="audio-lines"]:is(:hover, .motion-icon-pulse) svg path:nth-child(even) {
+  animation: motionWaveB var(--m-rise) var(--e-move) 1;
+}
+.voice-start[data-motion-icon="audio-lines"][data-motion-active="true"] svg path:nth-child(odd) {
+  animation: motionWaveA var(--m-rise) var(--e-move) infinite;
+}
+.voice-start[data-motion-icon="audio-lines"][data-motion-active="true"] svg path:nth-child(even) {
+  animation: motionWaveB var(--m-rise) var(--e-move) infinite;
+}
+
+#dictate-btn[data-motion-icon="mic"]:is(:hover, .motion-icon-pulse) svg {
+  animation: motionMic var(--m-rise) var(--e-move) 1;
+}
+#dictate-btn[data-motion-icon="mic"][data-motion-active="true"] svg {
+  animation: motionMic var(--m-rise) var(--e-move) infinite;
+}
+#dictate-btn[data-motion-icon="mic"][data-motion-active="true"] svg rect {
+  animation: motionMicCore calc(var(--m-rise) / 2) var(--e-move) infinite;
+}
+
+#menu-action-screenshot[data-motion-icon="camera"]:is(:hover, .motion-icon-pulse) svg {
+  animation: motionCamera var(--d-emph) var(--e-spring) both;
+}
+#menu-action-screenshot[data-motion-icon="camera"]:is(:hover, .motion-icon-pulse) svg circle {
+  animation: motionCameraFlash var(--d-emph) var(--e-move) both;
+}
+
+#reading-settings-btn[data-motion-icon="book-open"]:is(:hover, .motion-icon-pulse) svg {
+  animation: motionBookOpen var(--d-emph) var(--e-move) both;
+}
+
+.memory-search-field[data-motion-icon="search"]:is(:hover, :focus-within, .motion-icon-pulse) svg,
+.mm-search[data-motion-icon="search"]:is(:hover, :focus-within, .motion-icon-pulse) svg {
+  animation: motionSearch var(--d-emph) var(--e-spring) both;
+}
+
+#model-settings-open[data-motion-icon="sliders-horizontal"]:is(:hover, .motion-icon-pulse) svg path:nth-child(odd) {
+  animation: motionSliderLeft var(--d-emph) var(--e-move) both;
+}
+#model-settings-open[data-motion-icon="sliders-horizontal"]:is(:hover, .motion-icon-pulse) svg path:nth-child(even) {
+  animation: motionSliderRight var(--d-emph) var(--e-move) both;
+}
+
+.artifact-download[data-motion-icon="download"]:is(:hover, .motion-icon-pulse)::before {
+  animation: motionDownload var(--d-emph) var(--e-spring) both;
+}
+
+.answer-primary[data-motion-icon="undo-2"]:is(:hover, .motion-icon-pulse) svg {
+  animation: motionUndo var(--d-emph) var(--e-move) both;
+}
+.answer-primary[data-motion-icon="undo-2"]:is(:hover, .motion-icon-pulse) svg path:first-child {
+  stroke-dasharray: 1;
+  animation: motionDraw var(--d-emph) var(--e-enter) both;
+}
+
+.answer-source[data-motion-icon="external-link"]:is(:hover, .motion-icon-pulse) .answer-source-external {
+  animation: motionExternalLink var(--d-emph) var(--e-spring) both;
+}
+
+@keyframes motionWaveA {
+  0%, 100% { transform: scaleY(.58); opacity: .58; }
+  50% { transform: scaleY(1.2); opacity: 1; }
+}
+@keyframes motionWaveB {
+  0%, 100% { transform: scaleY(1.16); opacity: 1; }
+  50% { transform: scaleY(.58); opacity: .58; }
+}
+@keyframes motionMic {
+  0%, 100% { transform: rotate(0); }
+  22% { transform: rotate(-7deg); }
+  45% { transform: rotate(7deg); }
+  68% { transform: rotate(-3deg); }
+}
+@keyframes motionMicCore {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(.88); }
+}
+@keyframes motionCamera {
+  0%, 100% { transform: scale(1); }
+  48% { transform: scale(.94); }
+}
+@keyframes motionCameraFlash {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  24% { transform: scale(.68); opacity: .28; }
+  48% { transform: scale(1.14); opacity: 1; }
+  70% { transform: scale(.78); opacity: .36; }
+}
+@keyframes motionBookOpen {
+  0%, 100% { transform: perspective(80px) rotateY(0) scale(1); }
+  48% { transform: perspective(80px) rotateY(-14deg) scaleX(.94); }
+  76% { transform: perspective(80px) rotateY(5deg) scaleX(1.02); }
+}
+@keyframes motionSearch {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  28% { transform: translate(-1.5px, 1px) rotate(-12deg); }
+  58% { transform: translate(1.5px, -1px) rotate(9deg); }
+  78% { transform: translate(-1px, 0) rotate(-4deg); }
+}
+@keyframes motionSliderLeft {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-2px); }
+}
+@keyframes motionSliderRight {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(2px); }
+}
+@keyframes motionDownload {
+  0%, 100% { transform: translateY(0); }
+  42% { transform: translateY(2px); }
+  68% { transform: translateY(-1px); }
+}
+@keyframes motionUndo {
+  0%, 100% { transform: rotate(0); }
+  38% { transform: rotate(-8deg); }
+  72% { transform: rotate(3deg); }
+}
+@keyframes motionDraw {
+  from { stroke-dashoffset: 1; opacity: .2; }
+  to { stroke-dashoffset: 0; opacity: 1; }
+}
+@keyframes motionExternalLink {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  48% { transform: translate(1.5px, -1.5px) scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-motion-icon] svg,
+  [data-motion-icon] svg path,
+  [data-motion-icon] svg rect,
+  [data-motion-icon] svg circle,
+  [data-motion-icon] svg line,
+  [data-motion-icon]::before,
+  [data-motion-icon] .answer-source-external {
+    animation: none !important;
+  }
+}
