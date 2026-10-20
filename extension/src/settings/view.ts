@@ -1,3 +1,4 @@
+import { dictationSettingsView } from "./dictation.js";
 import { TRACE_SESSIONS_KEPT } from '../../../shared/run-trace-core.js';
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from '../../../shared/voice-capture-core.js';
 import { CUSTOM_PERSONA_MAX_CHARS } from '../../../shared/voice.js';
@@ -71,6 +72,7 @@ export function renderSettings(): void {
   </section>
     </div>
     <div class="settings-panel" data-settings-panel="voice" hidden>
+  ${dictationSettingsView}
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
       <h2 id="voice-title">语音对话</h2>

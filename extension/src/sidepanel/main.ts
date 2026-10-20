@@ -540,6 +540,7 @@ const askCiteClose = document.getElementById("ask-cite-close") as HTMLButtonElem
 let pendingAsk: PendingAsk | null = null;
 
 let selectedConversationId = "default";
+let dictationUI: ReturnType<typeof mountDictation> | undefined;
 
 /** 这个侧栏页面自己看着的会话：刷新后回到它，不跟别的侧栏页面走。关掉侧栏再开是新页面，跟最近操作的那个侧栏。 */
 const PANEL_CONVERSATION_KEY = "sideagent-panel-conversation";
@@ -1077,7 +1078,7 @@ function resetConversationRender(): void {
 function selectConversation(id: string, notify = true): void {
   const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
 
-  if (id !== selectedConversationId) voiceUI.stop();
+  if (id !== selectedConversationId) { voiceUI.stop(); dictationUI?.cancel(); }
   completedConversations.delete(id);
   conversationMenu.hidden = true;
   conversationSwitcher.setAttribute("aria-expanded", "false");
@@ -5309,8 +5310,8 @@ const inputContext = (): VoiceInputContext => {
 };
 
 const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send, inputContext);
-// 话筒是说话输入（边说边出字，说完自己发）；声波按钮是语音对话。ChatGPT 的输入框也这样分。
-mountDictation({
+// 话筒输入文字，声波按钮开启语音对话。
+dictationUI = mountDictation({
   composer: composerEl,
   inputEl,
   before: composerEl.querySelector<HTMLElement>(".voice-start")!,
@@ -6238,6 +6239,10 @@ function restoreLostSend(): void {
  */
 function sendInput(quick?: string, quickPage?: PageContext): boolean {
   if (!conversationReady) return false;
+  if (!quick && dictationUI?.busy()) {
+    addMsg("msg notice", "请先结束说话输入，等文字出现后再发送。按 Esc 可以取消。");
+    return false;
+  }
 
   // 点「新会话」后、新会话建好前：选中的还是旧会话，现在发会落进旧会话。等建好再发。
   if (conversationRequest && !quick) { sendAfterCreate = true; return false; }
