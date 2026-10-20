@@ -25,7 +25,9 @@ const STYLES = `
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-.card { position: fixed; z-index: 2147483646; display: flex; flex-direction: column; background: var(--fc-bg); border: 1px solid var(--fc-line); border-radius: var(--fc-radius); box-shadow: var(--fc-shadow); overflow: hidden; }
+/* 卡片和圆钮放在浏览器的顶层（popover）：压在网页和我们自己别的浮层（光标、划词卡片）上面，会话页才完整露在外面。 */
+.card:not(:popover-open), .bubble:not(:popover-open) { display: none; }
+.card { position: fixed; inset: auto; margin: 0; padding: 0 ${EDGE}px ${EDGE}px; display: flex; flex-direction: column; background: var(--fc-bg); border: 1px solid var(--fc-line); border-radius: var(--fc-radius); box-shadow: var(--fc-shadow); overflow: hidden; }
 .bar { flex: none; height: 28px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 6px; cursor: grab; user-select: none; touch-action: none; position: relative; }
 .bar.dragging { cursor: grabbing; }
 .grip { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--fc-ink); opacity: .55; display: flex; pointer-events: none; }
@@ -35,10 +37,11 @@ const STYLES = `
 iframe { flex: 1; width: 100%; border: 0; display: block; background: var(--fc-bg); color-scheme: normal; }
 .card.moving iframe { pointer-events: none; }
 .edge { position: absolute; touch-action: none; }
-.edge.left { left: 0; top: 0; bottom: ${EDGE}px; width: ${EDGE}px; cursor: ew-resize; }
+/* 拉边的把手只放在卡片留出的边上，不压在会话页上：会话页有一点被盖住，就按“看不全”拦下点击。 */
+.edge.left { left: 0; top: 28px; bottom: ${EDGE}px; width: ${EDGE}px; cursor: ew-resize; }
 .edge.bottom { left: ${EDGE}px; right: 0; bottom: 0; height: ${EDGE}px; cursor: ns-resize; }
-.edge.corner { left: 0; bottom: 0; width: ${EDGE * 2}px; height: ${EDGE * 2}px; cursor: nesw-resize; }
-.bubble { all: unset; position: fixed; z-index: 2147483646; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--fc-bubble); color: var(--fc-bubble-ink); box-shadow: var(--fc-shadow); cursor: pointer; }
+.edge.corner { left: 0; bottom: 0; width: ${EDGE}px; height: ${EDGE}px; cursor: nesw-resize; }
+.bubble { all: unset; position: fixed; inset: auto; margin: 0; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--fc-bubble); color: var(--fc-bubble-ink); box-shadow: var(--fc-shadow); cursor: pointer; }
 .bubble:focus-visible { outline: 2px solid var(--fc-line); outline-offset: 2px; }
 `;
 
@@ -52,6 +55,12 @@ export function installFloatCard(): void {
   let card: HTMLElement | null = null;
   let bubble: HTMLButtonElement | null = null;
   let mounting: Promise<void> | null = null;
+  /** 卡片里的会话页现在显示的会话。 */
+  let frameConversation = "";
+  let frame: HTMLIFrameElement | null = null;
+  let windowId = 0;
+  /** 助手正在点被卡片挡住的网页目标：这些点击做完前卡片藏起来。 */
+  const yielding = new Set<string>();
 
   const save = (next: Partial<FloatCardState>) => {
     if (!state) return;
@@ -81,7 +90,8 @@ export function installFloatCard(): void {
 
   const teardown = () => {
     host?.remove();
-    host = card = bubble = null;
+    host = card = bubble = frame = null;
+    frameConversation = "";
   };
 
   /** 拖动或拉边：pointer 抓在把手上，iframe 暂时不吃鼠标，不然一滑进去就丢了。 */
@@ -124,6 +134,7 @@ export function installFloatCard(): void {
     // 会话页要知道自己替哪个窗口看网页；内容脚本自己拿不到窗口号，问后台。
     const where = await chrome.runtime.sendMessage({ type: FLOAT_CARD_WHERE }).catch(() => null) as { windowId?: number } | null;
     if (typeof where?.windowId !== "number" || !state?.open || document.hidden) return;
+    windowId = where.windowId;
 
     host = document.createElement("div");
     host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_FLOAT_CARD);
@@ -135,6 +146,7 @@ export function installFloatCard(): void {
 
     card = document.createElement("div");
     card.className = "card";
+    card.popover = "manual";
     card.setAttribute("role", "dialog");
     card.setAttribute("aria-label", "By Your Side");
     const bar = document.createElement("div");
@@ -151,7 +163,7 @@ export function installFloatCard(): void {
       button("收起", Minus, () => save({ collapsed: true })),
       button("关闭浮动卡片", X, () => save({ open: false })),
     );
-    const frame = document.createElement("iframe");
+    frame = document.createElement("iframe");
     frame.title = "By Your Side 会话";
     frame.allow = "clipboard-write";
     const edges = (["left", "bottom", "corner"] as const).map(kind => {
@@ -169,6 +181,7 @@ export function installFloatCard(): void {
 
     bubble = document.createElement("button");
     bubble.className = "bubble";
+    bubble.popover = "manual";
     bubble.type = "button";
     bubble.setAttribute("aria-label", "展开 By Your Side");
     bubble.append(icon(MessageSquare, { width: 20, height: 20, "aria-hidden": "true" }));
@@ -176,18 +189,50 @@ export function installFloatCard(): void {
 
     root.append(style, card, bubble);
     document.documentElement.append(host);
-    frame.src = chrome.runtime.getURL(`sidepanel.html?float=1&conversation=${encodeURIComponent(state.conversation)}&window=${where.windowId}`);
+    load(state.conversation);
+  };
+
+  const load = (conversation: string) => {
+    frameConversation = conversation;
+    frame!.src = chrome.runtime.getURL(`sidepanel.html?float=1&conversation=${encodeURIComponent(conversation)}&window=${windowId}`);
   };
 
   const render = () => {
     if (!state?.open || document.hidden) return teardown();
     if (!host) {
-      mounting ??= mount().finally(() => { mounting = null; render(); });
+      // 扩展重载后旧脚本问不到后台，挂不上就停在这里，不原地反复重试。
+      mounting ??= mount().finally(() => { mounting = null; if (host) render(); });
       return;
     }
-    card!.hidden = state.collapsed;
-    bubble!.hidden = !state.collapsed;
+    // 会话换了：用户正在这张卡片里操作（焦点在本页）说明是卡片自己换的，不用重载；
+    // 焦点不在本页（另一个窗口的卡片或侧栏换的），这张卡片还停在旧会话，换过去。
+    if (frameConversation !== state.conversation) {
+      if (document.hasFocus()) frameConversation = state.conversation;
+      else load(state.conversation);
+    }
+    host.style.visibility = yielding.size ? "hidden" : "";
+    card!.togglePopover(!state.collapsed);
+    bubble!.togglePopover(state.collapsed);
     place();
+  };
+
+  const ns = (window.__sideagent ??= {});
+  ns.floatCard = {
+    uncover(target, x, y, token) {
+      if (!host || !target.isConnected || document.elementFromPoint(x, y) !== host) return false;
+      // 目标必须是网页自己的：跨 closed shadow 往上查，不能借让位点到我们自己的界面。
+      for (let node: Element | null = target; node;) {
+        if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
+        const parent = node.getRootNode();
+        node = parent instanceof ShadowRoot ? parent.host : null;
+      }
+      yielding.add(token);
+      render();
+      return true;
+    },
+    restore(token) {
+      if (yielding.delete(token)) render();
+    },
   };
 
   chrome.storage.onChanged.addListener((changes, area) => {

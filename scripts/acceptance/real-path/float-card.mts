@@ -23,13 +23,17 @@ await mkdir(out, { recursive: true });
 
 const page = (title: string, body: string) => `<!doctype html><meta charset="utf-8"><title>${title}</title><style>body{margin:0;padding:40px 56px;font:16px/1.9 -apple-system,"PingFang SC",sans-serif;color:#222;background:#fff}h1{font-size:26px}</style><h1>${title}</h1>${body}`;
 const PAGES: Record<string, string> = {
-  "/a": page("降噪耳机怎么选", "<p>" + "主动降噪靠麦克风采集环境声，再生成反相声波抵消。通勤选入耳式，长时间办公选头戴式。".repeat(14) + "</p>"),
+  "/a": page("降噪耳机怎么选", "<p>" + "主动降噪靠麦克风采集环境声，再生成反相声波抵消。通勤选入耳式，长时间办公选头戴式。".repeat(14) + "</p>"
+    + `<button id="under" style="position:fixed;right:60px;top:300px;width:140px;height:36px" onclick="window.underHits=(window.underHits||0)+1">被卡片挡住的按钮</button>`),
   "/b": page("耳机评测汇总", "<p>" + "这一页是另一个标签页，用来看卡片会不会跟着用户换过来。".repeat(14) + "</p>"),
 };
 const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(PAGES[req.url ?? ""] ?? PAGES["/a"]); });
 await new Promise<void>(r => site.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
-const model = await startScriptedModel([{ match: "耳机", steps: [{ text: "通勤选入耳式主动降噪，办公选头戴式。要我对比具体型号吗？" }] }]);
+const model = await startScriptedModel([
+  { match: "卡片下面", steps: [{ tool: { name: "tabs", args: { action: "active" } } }, { tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: { target: "#under" } }, delayMs: 600 }, { text: "点好了。" }] },
+  { match: "耳机", steps: [{ text: "通勤选入耳式主动降噪，办公选头戴式。要我对比具体型号吗？" }] },
+]);
 const rp = await launchRealPath();
 
 type Rect = { right: number; top: number; width: number; height: number };
@@ -113,6 +117,31 @@ try {
   };
   const clickAt = async (s: string, x: number, y: number) => { await mouse(s, "mouseMoved", x, y); await mouse(s, "mousePressed", x, y); await mouse(s, "mouseReleased", x, y); await sleep(300); };
 
+  // 在卡片里用真鼠标点输入框、发一句话：卡片里的会话照常能用；助手要点的网页按钮被卡片挡着，点击时卡片让开
+  const frameBox = async (s: string, sel: string) => await rp.evaluate(s, `(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`) as { x: number; y: number };
+  const toPage = (p: { x: number; y: number }) => ({ x: vw - r.right - r.width + 1 + 8 + p.x, y: r.top + 1 + 28 + p.y });
+  const inputAt = toPage(await frameBox(inner, "#input"));
+  await clickAt(A.s, inputAt.x, inputAt.y);
+  check("真鼠标点卡片里的输入框能聚焦", await rp.evaluate(inner, `document.activeElement?.id === "input"`) === true);
+  await rp.typeText(inner, "帮我点一下卡片下面的按钮"); await rp.pressEnter(inner);
+  await until(async () => (await rp.evaluate(inner, "document.body.innerText")).includes("点好了") || undefined, 60000, "助手做完");
+  check("卡片挡住的网页按钮助手能点到", Number(await rp.evaluate(A.s, "window.underHits || 0")) === 1, String(await rp.evaluate(A.s, "window.underHits || 0")));
+  check("点完卡片回来", await hitsCard(A.s, vw - r.right - r.width / 2, r.top + r.height / 2) === true);
+
+  // 网页在卡片上面盖一层不接鼠标的假界面，骗用户点到下面卡片里的按钮：点击不生效；拿掉后照常
+  const before = (await card()).conversation;
+  const newAt = toPage(await frameBox(inner, "#conversation-new"));
+  await rp.evaluate(A.s, `(() => { const d = document.createElement("div"); d.id = "decoy"; d.popover = "manual"; d.textContent = "领取优惠券"; d.style.cssText = "margin:0;inset:auto;left:0;top:0;width:100vw;height:100vh;padding:0;border:0;background:rgba(255,255,255,.9);pointer-events:none"; document.body.append(d); d.showPopover(); return true; })()`);
+  await sleep(400);
+  await clickAt(A.s, newAt.x, newAt.y);
+  await sleep(800);
+  check("卡片被网页盖住时点击不生效", (await card()).conversation === before);
+  await rp.evaluate(A.s, `document.getElementById("decoy").remove()`);
+  await sleep(400);
+  await clickAt(A.s, newAt.x, newAt.y);
+  await until(async () => (await card()).conversation !== before || undefined, 5000, "恢复后点新会话生效");
+  check("拿掉遮挡后点击照常", true);
+
   // 拖标题条：从中间把手往左下拖
   const left = vw - r.right - r.width;
   await drag(A.s, left + r.width / 2, r.top + 14, left + r.width / 2 - 260, r.top + 14 + 60);
@@ -121,7 +150,7 @@ try {
   r = moved;
 
   // 拉左边改宽
-  const edgeX = vw - r.right - r.width + 3;
+  const edgeX = vw - r.right - r.width + 5;
   await drag(A.s, edgeX, r.top + r.height / 2, edgeX - 80, r.top + r.height / 2);
   const wider = (await card()).rect;
   check("拉左边能改宽", Math.abs(wider.width - (r.width + 80)) <= 2 && wider.right === r.right, JSON.stringify({ before: r, after: wider }));
@@ -148,9 +177,8 @@ try {
   await until(async () => (await hitsCard(B.s, vw - r.right - r.width / 2, r.top + r.height / 2)) || undefined, 10000, "B 页出现卡片");
   await until(async () => (await rp.evaluate(A.s, `!!document.querySelector('[data-sideagent-overlay="float-card"]')`)) === false || undefined, 5000, "A 页拆掉卡片");
   await until(async () => (await frameTarget()).length === 1 || undefined, 10000, "B 页卡片会话页出现");
-  const innerB = await workerish();
-  await until(async () => (await rp.evaluate(innerB, "document.body.innerText")).includes("通勤选入耳式") || undefined, 20000, "B 页卡片里是同一段对话");
-  check("换标签页后卡片跟过去、位置不变、对话还在", (await frameTarget()).length === 1);
+  const want = (await card()).conversation;
+  check("换标签页后卡片跟过去、位置不变、还是同一个会话", (await frameTarget())[0]!.url.includes(`conversation=${encodeURIComponent(want)}`), (await frameTarget())[0]!.url);
   await sleep(500);
   await rp.screenshot(B.s, join(out, "04-follows-tab.png"));
 

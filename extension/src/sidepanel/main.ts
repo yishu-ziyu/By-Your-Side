@@ -1375,6 +1375,23 @@ if (isPopout) {
 
 popoutOpen.addEventListener("click", () => void openFloat());
 
+/** 用 IntersectionObserver v2 看元素此刻是否完整、原样（不透明、没变形、没被盖住）地露在屏幕上。 */
+function watchFullyVisible(target: Element, onChange: (visible: boolean) => void): void {
+  // SAFETY: trackVisibility / delay 和回调条目上的 isVisible 是 IntersectionObserver v2 的，DOM 类型里还没有；没有 isVisible 就当看不全。
+  new IntersectionObserver(([entry]) => onChange((entry as (IntersectionObserverEntry & { isVisible?: boolean }) | undefined)?.isVisible === true),
+    { trackVisibility: true, delay: 100 } as IntersectionObserverInit).observe(target);
+}
+
+// 浮动卡片挂在网页上，网页能把宿主元素调透明、挪位置、盖东西，把这里的发送、确认按钮伪装成网页内容骗人点。
+// 这一页此刻没有完整、原样地露在屏幕上时，点击一律不生效。
+if (isFloat) {
+  let visible = false;
+  watchFullyVisible(document.body, v => { visible = v; });
+  for (const type of ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu"]) {
+    addEventListener(type, ev => { if (!visible) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, true);
+  }
+}
+
 /** 当前会话改成浮在网页上的卡片，侧栏随即关掉；卡片跟着用户换标签页，位置和大小沿用上次的。 */
 async function openFloat(): Promise<void> {
   const tab = await activeTargetTab();
