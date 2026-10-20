@@ -174,6 +174,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   }
 
   log(`done: ${runDir}`);
-  // the ladder server and stray sockets keep the event loop alive; exit so the caller's next step runs
-  process.exit(0);
+  // the ladder server and stray sockets keep the event loop alive; exit so the caller's next step runs,
+  // but only after piped stdout has flushed (an immediate exit truncates the summary table and this line)
+  process.stdout.write("", () => process.exit(0));
 }
