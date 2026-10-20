@@ -34,7 +34,7 @@ export function wrapPageContent(text: string, meta: { tabId?: number; url?: stri
 }
 
 /** 随机/凭据长相的 token 判定。 */
-function isCredentialToken(token: string): boolean {
+function isCredentialToken(token: string, allowModelNumber = true): boolean {
   if (token.length < 12 || token.length > 256) return false;
 
   if (!/^[A-Za-z0-9+/=_-]+$/.test(token)) return false;
@@ -49,7 +49,18 @@ function isCredentialToken(token: string): boolean {
 
   if (token.length >= 24) return true;
 
-  return !hasLower; // 全大写的恢复码/密钥
+  if (hasLower) return false;
+
+  return !(allowModelNumber && isModelNumber(token));
+}
+
+/** 全大写的型号、订单号（GL702VM-GC146T、ORD-20261019-ABCD）：只有大写字母、数字，用连字符分成长短不一的段。
+ * 恢复码多是等长分段（ABCD-EF12-3456）或不分段，带 _ = / + 的是编码串，都不算。 */
+function isModelNumber(token: string): boolean {
+  if (token.length < 12 || token.length >= 24 || !/^[A-Z0-9-]+$/.test(token) || !/[0-9]/.test(token) || !/[A-Z]/.test(token)) return false;
+  const segments = token.split("-");
+
+  return segments.length >= 2 && segments.every((s) => s) && new Set(segments.map((s) => s.length)).size > 1;
 }
 
 const MASK = "[redacted]";
@@ -75,6 +86,9 @@ export function redactCredentialText(text: string): string {
       continue;
     }
 
+    // 值是型号（model=GL702VM-GC146T）：不再把键名连同值当成一个长串整行折叠。
+    if (asAssignment && isModelNumber(asAssignment[2]!)) { kept.push(line); continue; }
+
     if (isCredentialToken(trimmed)) { maskedLines += 1; continue; }
 
     kept.push(line);
@@ -87,7 +101,19 @@ export function redactCredentialText(text: string): string {
   // 把 `https://api.github.com/repos/…/issues/335552` 这类正常 URL 隐成 `https://api.github.[redacted]`。
   const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
-  if (structured) body = body.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token) ? MASK : token));
+  // 型号只在独立成词时放行：凭据被 / . : \\ = 或夹入的字符切开后，每一段单独看都像型号（ABCD12-EFGH3454/IJKL56-MNOP7890）。
+  // 词按空白、引号、括号、逗号和中文切；去掉开头的 `键名=`、`:` 和末尾标点后，整个词就是这一段才放行。
+  // 全角只算标点（，：；！？（）等），全角字母数字不算边界，否则能拿它们把凭据拆开。
+  if (structured) body = body.replace(/[^\s"'`{}[\](),\u3000-\u303f\u4e00-\u9fff\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]+/g, (word) => {
+    // 键名带小写字母时可以有数字、. -（model1=、product-id=），这种键名不会是全大写凭据的一半。
+    const head = word.replace(/^(?:[A-Za-z_]{1,24}|[a-z][A-Za-z0-9_.-]{0,24})[:=]|^[:=]+/, "");
+    let end = head.length;
+
+    while (end > 0 && ".,;:!?/".includes(head[end - 1]!)) end -= 1;
+    const core = head.slice(0, end);
+
+    return word.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token, token === core) ? MASK : token));
+  });
 
   if (maskedLines > 0) body = `[${MASK}: ${maskedLines} credential-looking line(s) removed]\n${body}`;
 
