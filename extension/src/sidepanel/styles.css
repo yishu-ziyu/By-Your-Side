@@ -4144,7 +4144,7 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 @media (min-width: 640px) {
   .composer-dock-wrap { width: min(calc(100% - 2 * var(--s-3)), 720px); margin-inline: auto; }
   #messages { padding-inline: max(var(--pad-x), calc((100% - 720px) / 2)); }
-  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #messages-frame { flex: 0 1 auto; }
-  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #starter { display: flex; flex: 1 1 0; justify-content: flex-end; padding-bottom: var(--s-5); }
-  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping))::after { content: ""; flex: 1.3 1 0; }
+  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden]))) #messages-frame { flex: 0 1 auto; }
+  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden]))) #starter { display: flex; flex: 1 1 0; justify-content: flex-end; padding-bottom: var(--s-5); }
+  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden])))::after { content: ""; flex: 1.3 1 0; }
 }
