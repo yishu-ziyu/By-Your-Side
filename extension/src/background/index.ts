@@ -1,5 +1,6 @@
 import { activeTargetTabs, isPanelUrl, popoutSource } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
+import { installFloatCard } from "./float-card.js";
 import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
@@ -232,6 +233,7 @@ installCursorSpots();
 const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error")));
 
 const edgePill = installEdgePill(() => pttCapsule.tabId());
+installFloatCard();
 
 const marginalia = installMarginalia({
   send: message => transport.sendClientMessage(message),

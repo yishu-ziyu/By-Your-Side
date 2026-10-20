@@ -191,6 +191,8 @@ interface SideAgentNamespace {
   clickEdgeTab?: (part: "capsule" | "stop" | "action" | "bubble" | number) => boolean;
   uncoverPageTarget?: (target: Element, x: number, y: number, token: string) => boolean;
   restorePageTarget?: (token: string) => void;
+  /** 网页浮动卡片挡住助手要点的网页目标时，点击期间先藏起来。 */
+  floatCard?: { uncover(target: Element, x: number, y: number, token: string): boolean; restore(token: string): void };
   /** 手绘批注配置与动效偏好 */
   setMarkConfig?: (opts: MarkOptions) => void;
   getMarkConfig?: () => MarkOptions;
