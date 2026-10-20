@@ -106,6 +106,7 @@ for (const [from, to] of [
   ["licenses/voiceorbs-MIT.txt", "voiceorbs-MIT.txt"],
   ["licenses/lobe-icons-MIT.txt", "lobe-icons-MIT.txt"],
   ["licenses/pele-MIT.txt", "pele-MIT.txt"],
+  ["licenses/caveat-OFL.txt", "caveat-OFL.txt"],
   ["sidepanel.html", "sidepanel.html"],
   ["inproc.html", "inproc.html"],
   ["settings.html", "settings.html"],
@@ -137,5 +138,7 @@ await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: t
 await cp(path.join(root, "assets/voices"), path.join(dist, "voices"), { recursive: true });
 
 await cp(path.join(root, "assets/orbs"), path.join(dist, "orbs"), { recursive: true });
+
+await cp(path.join(root, "assets/fonts"), path.join(dist, "fonts"), { recursive: true });
 
 console.log("dist/ 构建完成");

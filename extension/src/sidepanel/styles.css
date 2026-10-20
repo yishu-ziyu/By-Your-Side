@@ -1,6 +1,9 @@
 @import url("./motion-tokens.css");
 @import url("./answer-cards.css");
 
+/* 产品名的手写体，只含拉丁字母；只用在首次打开的开场上。 */
+@font-face { font-family: "Caveat"; font-weight: 600; font-display: block; src: url("fonts/caveat-600.woff2") format("woff2"); }
+
 /* 暖纸与墨色。沿用既有 token 名，避免设置、语音和模型选择各自维护配色。 */
 :root {
   /* 字号 4 档、圆角 3 档、间距 5 步。预览 overlay 的数量收紧，写进生产变量。 */
@@ -12,6 +15,8 @@
   --lh-meta: 1.45;
   --fs-code: 12.5px;
   --fs-micro: 11px;
+  /* 只给首次打开时的产品名用。 */
+  --fs-display: 36px;
 
   --r: 12px;
   --r-shape: 20px;
@@ -1310,6 +1315,37 @@ details.run-steps.done .chip.error { background: transparent; }
 #app.starter-ready.conversation-empty #starter { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; }
 #app.starter-ready.conversation-empty:not(:has(#input:not(:placeholder-shown), #status-pill.running, #send-btn.stopping)) #messages-frame { flex: 0 1 auto; }
 #starter-orb { width: 56px; height: 56px; margin-bottom: var(--s-3); }
+/* 点阵光带铺满起点区，只在光球那一条里有点；文字和按钮压在它上面。 */
+#starter { position: relative; }
+#starter > :not(#starter-glow) { position: relative; }
+#starter-glow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* 打开空会话时：光带先淡入，光球从小变大，文字和按钮依次浮上来。 */
+#starter.starter-enter #starter-glow { animation: starterGlowIn 900ms var(--e-enter) both; }
+#starter.starter-enter #starter-orb { animation: starterOrbIn var(--d-emph) var(--e-spring) both; }
+#starter.starter-enter > :is(#starter-title, #starter-sub, #starter-connect, #starter-actions, #starter-ways) { animation: starterRise var(--d-emph) var(--e-enter) both; }
+#starter.starter-enter > #starter-title { animation-delay: 80ms; }
+#starter.starter-enter > #starter-sub { animation-delay: 140ms; }
+#starter.starter-enter > :is(#starter-connect, #starter-actions) { animation-delay: 200ms; }
+#starter.starter-enter > #starter-ways { animation-delay: 260ms; }
+@keyframes starterGlowIn { from { opacity: 0; } }
+@keyframes starterOrbIn { from { opacity: 0; transform: scale(.82); } }
+@keyframes starterRise { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { #starter.starter-enter :is(#starter-glow, #starter-orb, #starter-title, #starter-sub, #starter-connect, #starter-actions, #starter-ways) { animation: none; } }
+/* 第一次打开：产品名逐字展开，之后光带、光球、文字依次出现。只播一次，播完名字留在光球上方。 */
+#starter-brand { display: none; margin: 0 0 var(--s-4); font-family: "Caveat", cursive; font-size: var(--fs-display); font-weight: 600; line-height: 1.2; color: var(--text-primary); white-space: pre; }
+#starter.starter-intro #starter-brand { display: block; }
+#starter.starter-intro #starter-brand { margin: auto 0 var(--s-5); }
+#starter.starter-intro #starter-orb { margin-top: 0; }
+#starter-brand span { display: inline-block; }
+#starter.starter-intro.starter-enter #starter-brand span { animation: starterLetter 520ms var(--e-enter) both; animation-delay: calc(var(--i) * 34ms); }
+#starter.starter-intro.starter-enter #starter-glow { animation-delay: 520ms; animation-duration: 1200ms; }
+#starter.starter-intro.starter-enter #starter-orb { animation-delay: 700ms; }
+#starter.starter-intro.starter-enter > #starter-title { animation-delay: 960ms; }
+#starter.starter-intro.starter-enter > #starter-sub { animation-delay: 1020ms; }
+#starter.starter-intro.starter-enter > :is(#starter-connect, #starter-actions) { animation-delay: 1080ms; }
+#starter.starter-intro.starter-enter > #starter-ways { animation-delay: 1140ms; }
+@keyframes starterLetter { from { opacity: 0; transform: translateY(.45em); filter: blur(6px); } }
+@media (prefers-reduced-motion: reduce) { #starter-brand span { animation: none !important; } }
 /* 收起条件比出现条件多一层 :has，保证这些情况下引导不占位 */
 #app.starter-ready.conversation-empty:has(#input:not(:placeholder-shown), #status-pill.running, #send-btn.stopping) #starter { display: none; }
 #starter-title { margin: 0 0 3px; font-size: var(--fs-read); font-weight: 600; color: var(--text-primary); }
@@ -1373,7 +1409,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #starter-connect { display: none; border: 0; border-radius: var(--r); background: var(--text-primary); color: var(--content-bg); font-size: var(--fs-meta); padding: 6px 12px; cursor: pointer; }
 #starter-connect:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
 #app.no-model #starter-actions { display: none; }
-#app.no-model #starter-connect { display: inline-flex; }
+#app.no-model #starter-connect { display: inline-flex; margin-bottom: auto; }
 
 /* ── 输入区：暖白纸面 ─────────────────────── */
 .composer-dock-wrap {
