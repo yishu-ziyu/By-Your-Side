@@ -384,7 +384,7 @@ export type AgentUiEvent =
    * outcome：询问有了结局时后台再发一条同 askId 的事件（进对话历史），侧栏按最后一条画——
    * remembered 已记下 / already 早已记着 / once 这次就行 / closed 已作废（同一句纠正又问了一次、替换目标被改过等）。没有 outcome 的是仍在等回答的询问。
    */
-  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; learned?: MemoryEntry; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true; /** 从用户自己的浏览里发现的习惯：哪几天、在哪些网站做过，卡片上折叠显示。 */ evidence?: string[] }
+  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; learned?: MemoryEntry; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true; /** 从用户自己的浏览里发现的习惯：哪几天、在哪些网站做过，卡片上折叠显示。 */ evidence?: string[]; /** 对沟通方式的反馈攒够了才问：用户说过的原话，卡片上折叠显示。 */ quotes?: string[] }
   /** 站点笔记：做成的任务结束后记下的这个网站的用法（只关于网站、不关于用户），侧栏在这一轮下面写一行「记下了…用法」。title 是那次打开这个网站时的页面标题。 */
   | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "text_delta"; delta: string }

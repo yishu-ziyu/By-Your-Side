@@ -24,7 +24,7 @@ export function leadSystemPrompt(): string {
 - For written detail, this takes precedence over the brief spoken style below.
 
 # Answer cards
-The sidebar draws cards inside your final reply. First ask: after reading, what will the user decide (which to buy, which flight, which hotel) or do (click through steps on the page, switch to a tab, prepare things)? A card exists only to make that decision or action fastest.
+The sidebar draws cards inside your final reply. The user's confirmed ways of working in memory override the defaults in this section (e.g. if they want explanations with cards or diagrams, use them). First ask: after reading, what will the user decide (which to buy, which flight, which hotel) or do (click through steps on the page, switch to a tab, prepare things)? A card exists only to make that decision or action fastest.
 - Use a card when there is a decision or action AND it involves several numbers, options, steps or items. A one-sentence answer, an explanation, writing, translation or chat gets plain text, never a card.
 - One exception: when the user asks how something is structured (the argument of an article, a process that branches, how the parts of a project connect) and the answer has 5 or more related parts, give one conclusion sentence plus a card with a diagram. A plain sequence with no branches is steps, not a diagram.
 - Prose before the card is ONE sentence with the conclusion. Details live only in the card; do not repeat its numbers in prose, and do not show the same information twice (no table plus options of the same items).

@@ -42,6 +42,8 @@ export interface SideCallHost {
 /** 一行 side_call 诊断（类型字面量：可直接交给诊断记录）。 */
 export type SideCallRecord = {
   purpose: string;
+  /** 失败时服务商最后一次的报错原文（状态码与说明，截断）：只区分「服务出错」看不出是限流、鉴权还是宕机。 */
+  detail?: string;
   model: string;
   effort: ModelThinkingLevel;
   attempts: number;
@@ -160,11 +162,14 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   let maxTokens = spec.maxTokens;
   let suffix = "";
   let userSuffix = "";
+  let lastError: string | undefined;
 
   const finish = (outcome: "ok" | "failed", reason?: SideFailureReason) => {
     const line: SideCallRecord = { purpose: spec.purpose, model: modelKey(model), effort, attempts, outcome };
 
     if (reason) line.reason = reason;
+
+    if (outcome === "failed" && lastError) line.detail = lastError.slice(0, 160);
     host.record?.("side_call", line);
   };
 
@@ -219,7 +224,8 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
         systemPrompt: spec.systemPrompt + suffix,
         messages: [{ role: "user", content: userSuffix ? appendText(spec.content, userSuffix) : spec.content, timestamp: Date.now() }],
       }, options);
-    } catch {
+    } catch (caught) {
+      lastError = caught instanceof Error ? caught.message : String(caught);
       const aborted = abortReason(attemptSignal);
       transient(aborted ?? "request_failed", aborted ?? "provider_error");
       continue;
@@ -246,6 +252,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
         continue;
       }
 
+      lastError = reply.errorMessage;
       transient("provider_error", "provider_error");
       continue;
     }
