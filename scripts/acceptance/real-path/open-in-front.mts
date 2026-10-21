@@ -5,7 +5,9 @@
  *   npx tsx scripts/acceptance/real-path/open-in-front.mts --headless
  *   a) 「打开练习页」：模型调 tabs show + url 后，活动标签页就是练习页；工具结果写明用户正在看它。
  *   b) 「去练习页读一下标题」：模型调 tabs open，活动标签页仍是用户原来的页。
- * 失败方式：tabs show 不接受 url（旧行为，要求 tabId），a 失败。
+ *   c) 「打开练习页二」但模型选了 tabs open（后台）：这一轮结束时宿主把它切到眼前。
+ *   d) 「打开首页再打开条目」：开了新页、在那一页里接着走到条目：结束时条目页在眼前。
+ * 失败方式：tabs show 不接受 url（旧行为，要求 tabId），a 失败；只靠模型选 show，c、d 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -20,7 +22,7 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 await mkdir(out, { recursive: true });
 
 const site = createServer((req, res) => {
-  const title = req.url?.startsWith("/work") ? "做事页" : "练习页";
+  const title = req.url?.startsWith("/work") ? "做事页" : req.url?.startsWith("/practice2") ? "练习页二" : req.url?.startsWith("/home") ? "首页" : req.url?.startsWith("/entry") ? "条目页" : "练习页";
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>${title}</title><body><h1>${title}</h1></body></html>`);
 });
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
@@ -28,11 +30,15 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const SHOW = "前台测试：打开练习页";
 const WORK = "前台测试：去做事页读一下标题";
+const OPEN_BG = "前台测试：请打开第二个练习页";
+const ENTRY = "前台测试：打开首页再打开条目";
 let toolResult = "";
 
 const model = await startScriptedModel([
   { match: SHOW, steps: [{ tool: { name: "tabs", args: { action: "show", url: `${origin}/practice` } } }, { text: "练习页已经打开在你眼前。" }] },
   { match: WORK, steps: [{ tool: { name: "tabs", args: { action: "open", url: `${origin}/work` } } }, { text: "做事页的标题是「做事页」。" }] },
+  { match: OPEN_BG, steps: [{ tool: { name: "tabs", args: { action: "open", url: `${origin}/practice2` } } }, { text: "练习页二打开了。" }] },
+  { match: ENTRY, steps: [{ tool: { name: "tabs", args: { action: "open", url: `${origin}/home` } } }, { tool: { name: "navigate", args: { url: `${origin}/entry` } } }, { text: "条目打开了。" }] },
 ], undefined, payload => {
   const messages = (payload.messages ?? []) as Array<{ role: string; content?: unknown }>;
   const tool = messages.filter(m => m.role === "tool").at(-1);
@@ -68,6 +74,15 @@ try {
   await say(WORK, "做事页的标题是");
   const afterOpen = await activeTitle();
   check("b 做事时开的页仍在后台，用户眼前还是练习页", afterOpen === "练习页", { afterOpen });
+
+  await say(OPEN_BG, "练习页二打开了");
+  const afterBg = await until(async () => { const t = await activeTitle(); return t === "练习页二" ? t : undefined; }, 5_000, "练习页二到眼前").catch(activeTitle);
+  check("c 用户要打开、模型开在后台：结束时切到眼前", afterBg === "练习页二", { afterBg });
+
+  await say(ENTRY, "条目打开了");
+  const afterEntry = await until(async () => { const t = await activeTitle(); return t === "条目页" ? t : undefined; }, 5_000, "条目页到眼前").catch(activeTitle);
+  check("d 打开新页后在那一页走到条目：结束时条目页在眼前", afterEntry === "条目页", { afterEntry });
+  await rp.screenshot(panel, join(out, "d-panel.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.length > 0 && checks.every(c => c.pass) ? "PASS" : "FAIL", checks }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));

@@ -650,7 +650,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           if (front) {
             notes.push(front.id === data.tabId
               ? "The user is looking at this new tab."
-              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}». The user keeps their page; the reply will offer a 切过去看 button, so do not call show for it.`);
+              : `This new tab opened in the background; the user is still looking at tab ${front.id} «${(front.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}». If the user asked to open this page to look at it and you finish on it, it is put in front of them when you reply; otherwise they keep their page and the reply offers a 切过去看 button. Do not call show for it.`);
           }
 
           const head = notes.length > 0 ? `${text}\n${notes.join("\n")}` : text;
