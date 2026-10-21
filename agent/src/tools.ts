@@ -601,12 +601,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         sid
           ? 'One tool for browser tabs. action:"list" lists the tabs assigned to you; other members\' and user tabs are not available to workers.'
-          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them' + TABS_LIST_AT_START + '; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user explicitly asks to switch to a page right now ("切到…", "切过去", "给我看那一页"); action:"close" closes tabId or the working tab.' + TABS_RESULT_IN_BACKGROUND + ' Open returns when the document is interactive, not when all resources finish, and its result already contains a fresh snapshot of the new page; a readiness timeout is not confirmed success — check the URL in that result before acting.',
+          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them' + TABS_LIST_AT_START + '; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) in a NEW background tab and claims it as the working tab — the user keeps seeing their own page; action:"switch" makes tabId the working tab in the background — the user keeps seeing their own page; action:"show" makes tabId the working tab AND brings it in front of the user — use it only when the user explicitly asks to switch to a page right now ("切到…", "切过去", "给我看那一页"); action:"show" with url (no tabId) opens that page in a new tab right in front of the user — use it when the request is just to open or go to a page to look at it ("打开 YouTube", "打开维基百科", "go to github") and nothing else is asked; pages you open to read or work in still use action:"open"; action:"close" closes tabId or the working tab.' + TABS_RESULT_IN_BACKGROUND + ' Open returns when the document is interactive, not when all resources finish, and its result already contains a fresh snapshot of the new page; a readiness timeout is not confirmed success — check the URL in that result before acting.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("show"), Type.Literal("close")], {
           description: "list | active | open | switch | show | close",
         }),
-        tabId: Type.Optional(Type.Number({ description: 'Tab id (required for "switch" and "show"; optional for "close", which defaults to the working tab)' })),
+        tabId: Type.Optional(Type.Number({ description: 'Tab id (required for "switch", and for "show" unless url is given; optional for "close", which defaults to the working tab)' })),
         url: Type.Optional(Type.String({ description: 'URL to open for "open"; omit for a blank tab' })),
         decisionGuard: Type.Optional(Type.Object({
           observationId: Type.String(),
@@ -668,8 +668,18 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           }
         }
 
+        // 用户只是要打开一个网页来看：开新页并切到眼前（open 默认开在后台，是为了做事时不换走用户的页）。
+        if (params.action === "show" && typeof params.tabId !== "number" && params.url) {
+          const opened = (await call("open_tab", { url: params.url })) as ToolContract["open_tab"]["data"];
+
+          if (opened.tabClosed) return textResult(`Opened ${opened.url} in a new tab, which Chrome then closed`, opened);
+          const shown = (await call("switch_tab", { tabId: opened.tabId, show: true })) as ToolContract["switch_tab"]["data"];
+
+          return textResult(`Opened ${opened.url} in a new tab in front of the user (tab ${opened.tabId}): ${opened.title || "(loading)"}; document: ${opened.readiness ?? "not checked"}. The user is looking at it now.\n${switchResultText(shown)}`, { ...opened, shown });
+        }
+
         if (params.action === "switch" || params.action === "show") {
-          if (typeof params.tabId !== "number") throw new Error(`tabs action:"${params.action}" 需要 tabId。`);
+          if (typeof params.tabId !== "number") throw new Error(`tabs action:"${params.action}" 需要 tabId；要打开新网页给用户看，用 show 带 url。`);
 
           const show = params.action === "show" ? { show: true } : {};
           const switchParams = params.decisionGuard ? { tabId: params.tabId, decisionGuard: params.decisionGuard, ...show } : { tabId: params.tabId, ...show };
