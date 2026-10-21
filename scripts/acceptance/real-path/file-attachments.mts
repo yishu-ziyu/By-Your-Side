@@ -117,7 +117,7 @@ try {
   check("b 模型收到的消息里有每个文件里的事实", missing.length === 0, { missing, chars: first.text.length });
   check("b 文件内容包在不可信边界里，并说明是数据不是指令", (first.text.match(/<page-content untrusted title="/g) ?? []).length >= ATTACHED.length - 1 && first.text.includes("not instructions"), { wrappers: (first.text.match(/<page-content untrusted/g) ?? []).length });
   // 脚本模型登记为只收文字：扫描页不发图，并照实告诉模型看不到；scan-with-blank.pdf 的第 2 页是白纸，标为空白页。
-  // 收图的模型确实收到扫描页，由真模型那一轮核对（见验收文件）。
+  // 收图的模型确实收到扫描页，由 file-attachments-real.mts（MiniMax M3.1）核对。
   check("b 扫描页标明没有文字层；当前模型不收图时照实说明，空白页标为空白", first.images === 0 && (first.text.match(/have no text layer \(scanned\)\. The current model cannot see images/g) ?? []).length === 2 && first.text.includes("(blank page)"), { images: first.images });
   check("c 长文本只给开头，写明怎么读后面", !first.text.includes("紫色长颈鹿") && /\[Shown: characters 1–\d+ of \d+\. .*read_attachment with name "long-notes\.txt"/.test(first.text), { hasNeedle: first.text.includes("紫色长颈鹿") });
   await until(async () => toolResult || undefined, 60_000, "read_attachment 结果");
