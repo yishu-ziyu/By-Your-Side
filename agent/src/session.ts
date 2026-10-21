@@ -122,6 +122,9 @@ export interface SessionCreateOptions {
   memberId?: string;
 }
 
+/** 用户这一句是要打开一个网页来看。 */
+const OPEN_INTENT = /打开|开一下|\bopen\b|go to|带我去|给我看/i;
+
 const RESULT_TEXT_MAX = 500;
 
 /** 新任务发出前的当前页预观察：读失败/超时就降级为不注入，绝不阻塞用户消息。 */
@@ -655,6 +658,8 @@ if(required.includes(key))candidates.set(key,attachment);
   handbackFailureReason: string | null = null;
   /** 用户主动停止的那一轮仍会收到 agent_end；只吞掉这一轮的 abort/空响应尾声。 */
   private expectedStoppedAgentEnd = false;
+  /** 这一轮用 tabs open 开过的新页。 */
+  private openedTabs: { runId: string | null; ids: Set<number> } = { runId: null, ids: new Set() };
   /**
    * 本轮（一次用户提问/插话到头）是否已经把最终结果交付给用户。
    * Pi 的 content 里 toolCall 不产生 text，交付走 send_user_message 工具；只看 text 会把
@@ -2598,6 +2603,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (event.type === "tool_execution_start" && !GOAL_CHECK_BOOKKEEPING_TOOLS.has(event.toolName)) this.toolUseRun = this.deliveryRunId();
 
+      if (event.type === "tool_execution_end" && event.toolName === "tabs" && !event.isError && this.toolArgs.get(event.toolCallId)?.action === "open") {
+        const tabId = (event.result?.details as { tabId?: unknown } | undefined)?.tabId;
+        const runId = this.deliveryRunId();
+
+        if (this.openedTabs.runId !== runId) this.openedTabs = { runId, ids: new Set() };
+
+        if (typeof tabId === "number") this.openedTabs.ids.add(tabId);
+      }
+
       switch (event.type) {
         case "message_start": {
           if (event.message.role === "user") {
@@ -2759,6 +2773,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           // willRetry=true 时自动重试紧随其后，本轮并未结束：不下发 agent_end，
           // 避免进度状态与结果被误当作最终（状态保持 running）。
           if (event.willRetry) break;
+
+          void this.showOpenedPage();
 
           // 目标核对（不拖住回答）：回答先交付、状态回到空闲，快速模型随后核对用户要的结果达成没有。
           // 没做完且助手自己能做，就作为看得见的后续接着做（每个任务的次数上限见 GOAL_CONTINUE_MAX）；在等用户或做不到时只更新「还差」一行。
@@ -3142,6 +3158,24 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (verdict.cause === 'copy_changed' || verdict.cause === 'copy_unverified') emit({ kind: "notice", message: verdict.cause === 'copy_changed' ? "核对发现：复制后的内容已变化，尚未确认符合你的要求。" : "复制结果暂时无法核对，不能确认已完成。" });
       this.runTrace.record("goal_check", { ...verdict, ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(!withinBudget && verdict.status === "continue" ? { overBudget: true } : {}), ...(pageRead ? { pageRead } : {}) });
     }
+  }
+
+  /**
+   * 用户要打开一个网页来看（原话里有「打开」这类词），这一轮开了新页、最后停在那一页上，用户还在发起时那一页：
+   * 收尾时把它切到眼前。模型选 open 还是 show 不稳定，开出来的页留在后台时用户还得再点「切过去看」。
+   * 用户已经换到别的页，或这一页只是开来做事的，都不动。
+   */
+  private async showOpenedPage(): Promise<void> {
+    const runId = this.deliveryRunId();
+    const working = this.rpc?.getPageTarget?.(this.memberId) ?? null;
+
+    if (this.memberId || this.expectedStoppedAgentEnd || this.hold.isHeld() || this.openedTabs.runId !== runId || working === null || !this.openedTabs.ids.has(working) || !OPEN_INTENT.test(this.activeGoal ?? "")) return;
+    // SAFETY: get_active_tab 回 { tab: { id, ... } | null }；读不到就不切。
+    const front = await (this.rpc!.call("get_active_tab", {}, 2_000) as Promise<{ tab?: { id?: unknown } | null } | null>).then(data => (typeof data?.tab?.id === "number" ? data.tab.id : null), () => null);
+    const start = this.activeGoalPage?.tabId ?? null;
+
+    if (front === null || front === working || (start !== null && front !== start)) return;
+    await this.rpc!.call("switch_tab", { tabId: working, show: true }, 4_000).catch(() => {});
   }
 
   /** 标签页已换到别的网页时返回新地址；只差 #锚点 算同一页，读不到地址按没换处理。 */
