@@ -1,6 +1,6 @@
 import { SENSITIVE_FIELD_NAME } from "../../../shared/trace-sanitize.js";
 import { FILL_UNDO_SUBMIT, type FillUndoNote, type FillUndoView } from "../relay.js";
-import { callDom, callOnBackendNode, ensureDomOps } from "./exec/input.js";
+import { callDom, callOnBackendNode, ensureDomOps } from "./exec/page-call.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
 import { parseExecutionKey } from "./tab-bindings.js";
 

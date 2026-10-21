@@ -8,7 +8,7 @@ import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
 import { sanitizeTrace } from "../../shared/trace-sanitize.js";
 import { randomUUID } from "node:crypto";
-import {isWriteTool} from '../../shared/control.js';
+import { isWriteTool } from '../../shared/effect-policy.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';
 import {isResultMetaTool, MAX_TASK_RESULTS} from '../../shared/task-results.js';
 import {decideTaskNextStep} from '../../shared/task-next-step.js';

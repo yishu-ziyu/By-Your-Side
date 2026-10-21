@@ -33,7 +33,7 @@ import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite } from "../fill-undo.js";
 import type { EffectReport, PageAppeared } from "../../../../shared/effect.js";
-import type { ToolExecutionFact } from "../../../../shared/protocol.js";
+import { CdpObjectArg, callDom, callOnBackendNode, ensureCursor, ensureDomOps, notExecuted, type DispatchGuard } from "./page-call.js";
 import {
   pointInElementRect,
   pressedButtonsMask,
@@ -41,8 +41,7 @@ import {
   type MouseButton,
 } from "../../../../shared/pointer-input.js";
 
-/** 派发前的核对：checkNow 同步复查任务身份，noteEffect 记下页面输入已经发出。 */
-export type DispatchGuard = (() => Promise<void>) & {checkNow?: () => void; noteEffect?: () => void};
+
 
 
 
@@ -97,15 +96,6 @@ function buttonsMaskFor(sessionId: string): number {
   return mask;
 }
 
-export function notExecuted(error: unknown): Error {
-  const err = error instanceof Error ? error : new Error(String(error));
-  const reported = err as Error & { executionFact?: ToolExecutionFact };
-
-  if (reported.executionFact !== "unknown" && reported.executionFact !== "executed") reported.executionFact = "not_executed";
-
-  return err;
-}
-
 /** 页面里核对后拒绝填写（不可填、没有这个选项）：页面一点没动，确定没执行。 */
 class FillRefused extends Error {
   readonly executionFact = "not_executed" as const;
@@ -152,51 +142,6 @@ function parseRef(target: string): number | null {
   const n = Number(target.slice(1));
 
   return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-/** callOnBackendNode 参数里的页面对象：按 objectId 原样传入，不做 JSON 序列化。 */
-class CdpObjectArg {
-  constructor(readonly objectId: string) {}
-}
-
-/** 把 backendDOMNodeId 解析成页面内元素并执行函数（CDP Runtime.callFunctionOn）。 */
-export async function callOnBackendNode<T>(
-  tabId: number,
-  backendNodeId: number,
-  functionDeclaration: string,
-  args?: unknown[],
-  executionContextId?: number,
-  expectedDocumentId?: string,
-  beforeDispatch?: DispatchGuard,
-): Promise<T> {
-  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode",
-    executionContextId !== undefined ? { backendNodeId, executionContextId } : { backendNodeId });
-
-  const objectId = resolved.object?.objectId;
-
-  if (!objectId) throw new Error("节点无法解析（页面可能已变化）");
-
-  if(expectedDocumentId) {
-    try { await assertSameDocument(tabId,expectedDocumentId); }
-    catch(error) { throw notExecuted(error); }
-  }
-
-  const result = await sendCommand<{
-    result?: { value?: T };
-    exceptionDetails?: { exception?: { description?: string }; text?: string };
-  }>(tabId, "Runtime.callFunctionOn",
-    args
-      ? { objectId, functionDeclaration, arguments: args.map((value) => (value instanceof CdpObjectArg ? { objectId: value.objectId } : { value })), returnByValue: true }
-      : { objectId, functionDeclaration, returnByValue: true }, beforeDispatch);
-
-  beforeDispatch?.noteEffect?.();
-  if (result.exceptionDetails) {
-    throw Object.assign(new Error(
-      result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "页面内执行失败",
-    ), {executionFact: "unknown"});
-  }
-
-  return result.result?.value as T;
 }
 
 /** AX ref → 元素视口包围盒（scrollIntoView + getBoundingClientRect）。 */
@@ -451,52 +396,6 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
   if (outcome && "refused" in outcome) throw new FillRefused(outcome.refused);
 
   return { range: outcome?.range, ...(outcome && "select" in outcome && outcome.select ? { select: true as const } : {}) };
-}
-
-export async function ensureDomOps(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
-  await beforeDispatch?.();
-  beforeDispatch?.checkNow?.();
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ["content-domops.js"],
-    world: "ISOLATED",
-  });
-}
-
-export async function ensureCursor(tabId: number, beforeDispatch?: DispatchGuard): Promise<void> {
-  await beforeDispatch?.();
-  beforeDispatch?.checkNow?.();
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ["content-cursor.js"],
-    world: "ISOLATED",
-  });
-}
-
-/** 在页面 ISOLATED world 里执行 func 并取回结果。 */
-export async function callDom<Args extends unknown[], Result>(
-  tabId: number,
-  func: (...args: Args) => Result,
-  args: Args,
-  documentId?:string,
-  beforeDispatch?: DispatchGuard,
-): Promise<Awaited<Result>> {
-  await beforeDispatch?.();
-  beforeDispatch?.checkNow?.();
-  beforeDispatch?.noteEffect?.();
-  const results = await chrome.scripting.executeScript<Args, Result>({
-    target: documentId ? { tabId, documentIds: [documentId] } : { tabId },
-    world: "ISOLATED",
-    func,
-    args,
-  });
-
-  beforeDispatch?.noteEffect?.();
-  const first = results[0];
-
-  if (!first) throw new Error("页面脚本未返回结果");
-
-  return first.result as Awaited<Result>;
 }
 
 function cursorId(sessionId: string): string {

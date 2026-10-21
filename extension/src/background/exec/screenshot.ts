@@ -1,4 +1,4 @@
-import type { DispatchGuard } from "./input.js";
+import type { DispatchGuard } from "./page-call.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";

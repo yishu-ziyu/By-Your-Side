@@ -1,5 +1,5 @@
 import { taskId } from "./task-actions.js";
-import {isWriteTool} from './control.js';
+import { isWriteTool } from './effect-policy.js';
 import {classifyToolEffect} from './effect-policy.js';
 
 export const TASK_RESULT_STATES = ["unregistered", "pending", "satisfied", "blocked", "unknown"] as const;

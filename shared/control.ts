@@ -17,48 +17,14 @@ import {
   type TeamView,
   type ToolName,
 } from "./protocol.js";
-import { requiresControlGate } from "./effect-policy.js";
+import { requiresControlGate, WRITE_TOOL_SET } from "./effect-policy.js";
 
 type ControlOwner = "agent" | "user";
-
-/** 接管期间禁止落地的浏览器写操作。至少覆盖完成标准列出的那些。 */
-export const WRITE_TOOLS = [
-  "worker_tabs",
-  "page_translation",
-  "open_tab",
-  "switch_tab",
-  "close_tab",
-  "navigate",
-  "click",
-  "double_click",
-  "hover",
-  "fill",
-  "type_text",
-  "press_key",
-  "scroll",
-  "js",
-  "mark",
-  "clear_marks",
-  "arm_event",
-  "wait_event",
-  "disarm_event",
-  "accept_dialog",
-  "dismiss_dialog",
-  "download_url",
-  "select_option",
-  "upload_file",
-] as const satisfies readonly ToolName[];
-
-export const WRITE_TOOL_SET: ReadonlySet<ToolName> = new Set(WRITE_TOOLS);
 
 export const USER_BLOCKED_ERROR = "页面现在归你，操作未执行";
 
 /** 页归另一会话时的拦截文案前缀；宿主据此在对方空闲时自动接手。 */
 export const FOREIGN_TAB_ERROR = "该页正在由其他会话使用";
-
-export function isWriteTool(name: string): name is ToolName {
-  return WRITE_TOOL_SET.has(name as ToolName);
-}
 
 export function aggregateRunState(states: Iterable<AgentRunState>): AgentRunState {
   let sawUser = false;

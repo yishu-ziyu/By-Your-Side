@@ -1,4 +1,4 @@
-import {isWriteTool} from "../../shared/control.js";
+import { isWriteTool } from "../../shared/effect-policy.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";

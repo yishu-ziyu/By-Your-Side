@@ -1,5 +1,5 @@
 import type {ExtensionFactory} from '@earendil-works/pi-coding-agent';
-import {isWriteTool} from '../../shared/control.js';
+import { isWriteTool } from '../../shared/effect-policy.js';
 import {toolAction} from '../../shared/user-facing.js';
 
 /**

@@ -1,5 +1,5 @@
 import { goalsReadyForDelivery } from './task-goals.js';
-import { isWriteTool } from './control.js';
+import { isWriteTool } from './effect-policy.js';
 import { isHostPageProbe, requiresControlGate } from './effect-policy.js';
 import { extractResultTarget, isSupersededUnknown, selectResultBinding, MAX_TASK_RESULTS } from './task-results.js';
 import { taskId } from './task-actions.js';

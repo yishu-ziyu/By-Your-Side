@@ -2,7 +2,7 @@
  * 页面边缘光（background 侧）：某个成员这一轮动过哪一页，那一页四周就亮一圈它的颜色，
  * 这一轮结束、被停止或被接管时淡出。只是呈现，不是执行证据，画不上不影响任务。
  */
-import { callDom, ensureCursor } from "./exec/input.js";
+import { callDom, ensureCursor } from "./exec/page-call.js";
 import { parseExecutionKey } from "./tab-bindings.js";
 
 /** 执行键 → 这个成员正在操作的标签页。 */

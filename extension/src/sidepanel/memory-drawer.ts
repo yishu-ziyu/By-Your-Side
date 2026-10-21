@@ -5,7 +5,6 @@ import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY,
 import type { BrowseHabit } from "../../../shared/browse-habits.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
-import type { AskInput, MemoryAskCard } from "./memory-ask.js";
 import { uiEvent } from "./ui-trace.js";
 
 type MemoryInspection = {
@@ -39,10 +38,8 @@ interface MemoryDrawerDeps {
   selectedConversationId: () => string;
   conversationTitle: (id: string) => string | undefined;
   onPastTasksRendered: () => void;
-  usedLineHandlers: Map<string, (result: { ok: boolean; entry?: MemoryEntry; entries?: MemoryEntry[]; error?: string }) => void>;
-  memoryAskCards: Map<string, MemoryAskCard>;
-  memoryAskHandlers: Map<string, (result: AskInput) => void>;
-  stepMemoryAsk: (askId: string, input: AskInput) => void;
+  /** 对话里的记忆界面（回答下那一行、询问卡片）发出的请求，结果交回给它。 */
+  onOutcome: (outcome: MemoryApplyResult) => void;
 }
 
 export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
@@ -58,10 +55,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     selectedConversationId,
     conversationTitle,
     onPastTasksRendered,
-    usedLineHandlers,
-    memoryAskCards,
-    memoryAskHandlers,
-    stepMemoryAsk,
+    onOutcome,
   } = deps;
 
   const memoryState = new MemoryManagementState();
@@ -791,19 +785,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
       undo(outcome.kind === "success", outcome.kind === "failure" ? outcome.error : undefined);
     }
 
-    const lineHandler = usedLineHandlers.get(outcome.requestId);
-    if (lineHandler) {
-      usedLineHandlers.delete(outcome.requestId);
-      lineHandler(outcome.kind === "success" ? { ok: true, entry: outcome.entry, entries: outcome.entries } : { ok: false, error: outcome.error });
-    }
-
-    const askHandler = memoryAskHandlers.get(outcome.requestId);
-    if (askHandler) {
-      memoryAskHandlers.delete(outcome.requestId);
-      askHandler(outcome.kind === "success"
-        ? { kind: "result", ok: true, entry: outcome.entry, entries: outcome.entries, alreadySaved: outcome.alreadySaved }
-        : { kind: "result", ok: false, error: outcome.error, askClosed: outcome.askClosed });
-    }
+    onOutcome(outcome);
 
     const uiRequest = memoryUiRequests.get(outcome.requestId);
     memoryUiRequests.delete(outcome.requestId);
@@ -814,9 +796,6 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
       if (outcome.kind === "success") {
         memoryLoaded = true;
         memoryListError = "";
-        for (const [askId, card] of memoryAskCards) {
-          if (card.ask.learned) stepMemoryAsk(askId, { kind: "sync", entry: memoryState.get(card.ask.learned.id) });
-        }
         if (memoryEdit && !memoryState.get(memoryEdit.id)) memoryEdit = null;
         if (memoryForget && !memoryState.get(memoryForget.id)) memoryForget = null;
       } else {
@@ -839,12 +818,6 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
         memoryForget.pendingRequestId = null;
         if (outcome.kind === "success") memoryForget = null;
         else memoryForget.error = `没有忘记这条记忆：${outcome.error}`;
-      }
-    }
-
-    if (outcome.kind === "success" && outcome.action === "update" && outcome.entry) {
-      for (const [askId, card] of memoryAskCards) {
-        if (card.ask.learned?.id === outcome.entry.id) stepMemoryAsk(askId, { kind: "sync", entry: outcome.entry });
       }
     }
 

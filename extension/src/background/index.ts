@@ -27,26 +27,8 @@ import { createPttVoice } from "./ptt-voice.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
-import {
-  ControlGate,
-  TeamControl,
-  aggregateRunState,
-  acceptIncomingTeam,
-  applyControlSnapshot,
-  applyMemberGates,
-  mergeActiveMembersForTakeover,
-  onUplinkLostDuringControl,
-  prepareMemberHandback,
-  reconcileTeamProgress,
-  shouldRestoreUserControlBanner,
-  snapshotControl,
-  teamOwnerBanner,
-  type TeamMemberActivity,
-  toTeamMemberHandback,
-  uplinkLostWhileHeld,
-  isWriteTool,
-  WRITE_TOOL_SET,
-} from "../../../shared/control.js";
+import { ControlGate, TeamControl, aggregateRunState, acceptIncomingTeam, applyControlSnapshot, applyMemberGates, mergeActiveMembersForTakeover, onUplinkLostDuringControl, prepareMemberHandback, reconcileTeamProgress, shouldRestoreUserControlBanner, snapshotControl, teamOwnerBanner, type TeamMemberActivity, toTeamMemberHandback, uplinkLostWhileHeld } from "../../../shared/control.js";
+import { isWriteTool, WRITE_TOOL_SET } from "../../../shared/effect-policy.js";
 import { dimPage, glowPage } from "./page-glow.js";
 import { PANEL_PORT_NAME, parseRedeliver, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryEntry, PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
@@ -61,7 +43,8 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, locatedStillThere, pointAtLocated, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, locatedStillThere, pointAtLocated, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { notExecuted } from "./exec/page-call.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";

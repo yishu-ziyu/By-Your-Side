@@ -4,7 +4,7 @@ import { ROUTE_TEXT_ROLES, type RouteTarget } from "../../../shared/route.js";
 import type { AxNodeLite } from "./axtree.js";
 import { axBackendNodeFor } from "./axstate.js";
 import { sendCommand } from "./debugger.js";
-import { callDom, ensureDomOps } from "./exec/input.js";
+import { callDom, ensureDomOps } from "./exec/page-call.js";
 import { resolveWorkingTab } from "./state.js";
 
 /**
