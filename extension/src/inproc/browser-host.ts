@@ -1,5 +1,5 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, GptLiveSession, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePendingMemoryJudgments, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, GptLiveSession, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { SessionLogPort } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { describeModelError } from "../../../shared/user-facing.js";
@@ -16,9 +16,11 @@ import { openPiSession } from "./pi-session-idb.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
+import { pushedSelfUse, receiveSelfUse } from "../shared/self-use.js";
 
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
+  | { type: "inproc_self_use"; value: unknown }
   | { type: "inproc_voice"; configured: boolean; model?: unknown };
 
 interface InprocHostDeps {
@@ -30,7 +32,17 @@ interface InprocHostDeps {
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
 }
 
+/** 模拟用户模式下只读：每次写之前读一次开关，开着就不写（读照常）。 */
+function readOnlyWhileSelfUse(doc: DocumentPersistence): DocumentPersistence {
+  return {
+    read: () => doc.read(),
+    exclusive: fn => doc.exclusive(fn),
+    write: async (text, commitGuard) => { if (!pushedSelfUse()) await doc.write(text, commitGuard); },
+  };
+}
+
 export function startInprocHost(deps: InprocHostDeps): void {
+
   let port: chrome.runtime.Port | null = null;
   let connection: ClientConn | null = null;
   let core: HostCore | null = null;
@@ -79,8 +91,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
     // 个人记忆存在扩展本地（IndexedDB），和本机宿主同一套判断与读写规则。
     // 「要不要记」判断失败的话排在另一条记录里，一轮结束后补判；判完即删原话。
     const document = deps.document ?? ((name: string) => new IdbDocument(name));
-    const memoryStore = useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(document("memories")), document("pending-memory")), document("habits")), document("style-signals"));
-    const taskHistory = new TaskHistoryStore(document("tasks"));
+    // 关于用户本人的几份记录：模拟用户模式下只读，写入在这里丢掉（记忆运行时另外不判断、不问）。
+    const personal = (name: Parameters<typeof document>[0]) => readOnlyWhileSelfUse(document(name));
+    const memoryStore = usePausedMemory(useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(personal("memories")), personal("pending-memory")), personal("habits")), personal("style-signals")), pushedSelfUse);
+    const taskHistory = new TaskHistoryStore(personal("tasks"));
     // 站点笔记：关于网站的做法，不是关于用户的记忆，单独一份。
     const siteNotes = new SiteNotesStore(document("site-notes"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
@@ -222,6 +236,12 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (message.type === "inproc_voice") {
       voiceConfigured = message.configured;
       voiceModel = message.model;
+
+      return;
+    }
+
+    if (message.type === "inproc_self_use") {
+      receiveSelfUse(message.value);
 
       return;
     }

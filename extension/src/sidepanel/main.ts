@@ -89,6 +89,7 @@ import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
 import { installProactiveCard } from "./proactive-card.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { setUiRunSource, uiEvent } from "./ui-trace.js";
+import { watchSelfUse } from "../shared/self-use.js";
 import { mountMemoryDrawer } from "./memory-drawer.js";
 import { mountMemoryInline } from "./memory-inline.js";
 import { createGhostBar } from "./ghost-bar.js";
@@ -5808,6 +5809,14 @@ inputEl.addEventListener("input", () => { if (inputEl.value.length === 1) send({
 window.addEventListener("pagehide", saveDraft);
 
 setUiRunSource(() => conversations.get(selectedConversationId)?.runId ?? null);
+
+// 模拟用户在试用时，侧栏顶上一行字说明：这段时间的对话不进记忆和过往任务。用户回来看到就知道是谁发的。
+const selfUseBanner = document.createElement("div");
+selfUseBanner.id = "self-use-banner";
+selfUseBanner.hidden = true;
+selfUseBanner.textContent = "模拟用户正在试用：这段时间不写记忆，也不记过往任务和浏览习惯";
+messagesEl.before(selfUseBanner);
+watchSelfUse(active => { selfUseBanner.hidden = !active; });
 const panelOpenedAt = Date.now();
 uiEvent("ui_panel_open");
 document.addEventListener("visibilitychange", () => uiEvent(document.hidden ? "ui_panel_hidden" : "ui_panel_visible"));

@@ -33,6 +33,8 @@ for (const dir of readdirSync(root)) {
   }
 }
 
+// 模拟用户（self-use）的运行不是用户自己的使用：整次运行都不计入。
+const selfUseRuns = new Set(rows.filter(event => event.type === "run_start" && event.data?.selfUse && event.runId).map(event => event.runId));
 const since = Date.now() - weeks * 7 * 864e5;
 const pad = (n) => String(n).padStart(2, "0");
 /** 本地时间那周的周一。 */
@@ -44,7 +46,7 @@ const learned = new Set();
 const askAspect = new Map();
 
 for (const event of rows.sort((a, b) => a.time.localeCompare(b.time))) {
-  if (Date.parse(event.time) < since) continue;
+  if (Date.parse(event.time) < since || selfUseRuns.has(event.runId)) continue;
   const week = weekOf(event.time);
   const data = event.data ?? {};
 
