@@ -103,6 +103,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
   "read_element",
   "read_elements",
   "network",
+  "video_captions",
   "page_operation",
   "page_translation",
   "close_tab", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll",

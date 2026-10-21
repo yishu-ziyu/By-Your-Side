@@ -1124,6 +1124,21 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }),
 
     defineTool({
+      name: "video_captions",
+      label: "Video captions",
+      description:
+        "List the subtitles/captions the video on the working tab really has, read from the player itself: the <video> text tracks, YouTube's caption list, and the player API requests the page itself made (re-read unchanged with the user's login). Use it first when the user asks for a video's subtitles, captions, 字幕 or transcript. It returns the tracks and their URLs (read one with fetch), or says the video has none. Do not build subtitle API URLs yourself: some sites answer unsigned or guessed requests with another video's subtitles.",
+      parameters: Type.Object({
+        tabId: Type.Optional(Type.Number({ description: "Tab to read without claiming or switching it" })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("video_captions", params)) as ToolContract["video_captions"]["data"];
+
+        return textResult(wrapPageContent(redactCredentialText(data.text), { tabId: data.tabId }), data);
+      },
+    }),
+
+    defineTool({
       name: "js",
       label: "Run JavaScript",
       description:
