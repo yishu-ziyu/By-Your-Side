@@ -61,7 +61,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_GATE_WAIT_MS, newReadIndex, pageAwaitsEmailStep, readWords, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_CONTINUE_WITHIN_MS, GOAL_GATE_WAIT_MS, newReadIndex, pageAwaitsEmailStep, readWords, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -3060,7 +3060,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (!current()) { abandon(); return; }
 
-    if (verdict?.status === "continue" && this.goalContinues < GOAL_CONTINUE_MAX && this.session && !movedTo) {
+    const withinBudget = snapshot?.startedAt == null || Date.now() - snapshot.startedAt < GOAL_CONTINUE_WITHIN_MS;
+
+    if (verdict?.status === "continue" && this.goalContinues < GOAL_CONTINUE_MAX && withinBudget && this.session && !movedTo) {
       const session = this.session;
 
       // agent_end 回调返回后会话才真正空闲；稍等再发下一轮，最多等 3 秒。等的期间用户另有动作就作罢。
@@ -3124,7 +3126,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
 
     if (verdict) {
-      // 催满两次仍判「没做完」：留作「还差」，交给用户决定；不再自动接着做。
+      // 催满次数或跑得太久仍判「没做完」：留作「还差」，交给用户决定；不再自动接着做。
       const settled: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: verdict.status === "continue" ? "open" : verdict.status };
 
       if (verdict.remaining) settled.remaining = verdict.remaining;
@@ -3133,7 +3135,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       letGo();
       emit(settled);
       if (verdict.cause === 'copy_changed' || verdict.cause === 'copy_unverified') emit({ kind: "notice", message: verdict.cause === 'copy_changed' ? "核对发现：复制后的内容已变化，尚未确认符合你的要求。" : "复制结果暂时无法核对，不能确认已完成。" });
-      this.runTrace.record("goal_check", { ...verdict, ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(pageRead ? { pageRead } : {}) });
+      this.runTrace.record("goal_check", { ...verdict, ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(!withinBudget && verdict.status === "continue" ? { overBudget: true } : {}), ...(pageRead ? { pageRead } : {}) });
     }
   }
 
