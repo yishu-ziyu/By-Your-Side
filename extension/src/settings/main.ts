@@ -16,6 +16,7 @@ import {
 } from "../inproc/shared.js";
 import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
+import { BACKUP_FOLDER, BACKUP_LAST_KEY, MEMORY_CHANGED, countBackup, parseBackup, readMemoryDocuments, restoreBackup, type MemoryBackup } from "../shared/memory-backup.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
 import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
@@ -1575,3 +1576,81 @@ document.getElementById("trace-clear")!.addEventListener("click", async () => {
     traceStatus.textContent = `清空失败：${error instanceof Error ? error.message : String(error)}`;
   }
 });
+
+const backupDesc = document.getElementById("memory-backup-desc")!;
+const memoryBackupStatus = document.getElementById("memory-backup-status")!;
+const backupFile = $<HTMLInputElement>("memory-backup-file");
+const backupConfirm = $<HTMLButtonElement>("memory-backup-confirm");
+let backupPending: MemoryBackup | null = null;
+
+const setMemoryBackupStatus = (text: string, tone?: "ok" | "err") => {
+  memoryBackupStatus.textContent = text;
+
+  if (tone) memoryBackupStatus.dataset.tone = tone; else delete memoryBackupStatus.dataset.tone;
+};
+
+async function showBackupState(): Promise<void> {
+  const current = countBackup(await readMemoryDocuments().catch(() => ({})));
+  const last = (await chrome.storage.local.get(BACKUP_LAST_KEY))[BACKUP_LAST_KEY] as { at?: unknown; file?: unknown } | undefined;
+
+  if (!current.memories && !current.tasks) {
+    backupDesc.textContent = `重装过扩展？下载文件夹的 ${BACKUP_FOLDER} 里有「记忆备份-日期.json」，选最近的一份可以恢复之前的记忆。`;
+  } else if (typeof last?.at === "number" && typeof last.file === "string") {
+    backupDesc.textContent = `记忆每次变化都会自动另存到下载文件夹，不上传。上次备份：${new Date(last.at).toLocaleString()}，文件「${last.file}」。`;
+  } else {
+    backupDesc.textContent = `卸载扩展会删掉记忆，所以记忆每次变化都会自动另存到下载文件夹的 ${BACKUP_FOLDER} 里，不上传。重装后在这里选那份文件。`;
+  }
+}
+
+async function applyBackup(backup: MemoryBackup): Promise<void> {
+  await restoreBackup(backup);
+  // 恢复直接写库、不经宿主，这次安装的备份要另外排一次，否则恢复的内容要等下一次记忆变化才备份。
+  void chrome.runtime.sendMessage({ type: MEMORY_CHANGED }).catch(() => {});
+  backupPending = null;
+  backupConfirm.hidden = true;
+  const restored = countBackup(backup.documents);
+  setMemoryBackupStatus(`已恢复 ${restored.memories} 条记忆、${restored.tasks} 条过往任务。重新打开侧栏的「记忆」就能看到。`, "ok");
+  await showBackupState();
+}
+
+document.getElementById("memory-backup-pick")!.addEventListener("click", () => backupFile.click());
+
+backupFile.addEventListener("change", async () => {
+  const file = backupFile.files?.[0];
+  backupFile.value = "";
+
+  if (!file) return;
+
+  try {
+    const backup = parseBackup(await file.text());
+
+    if (typeof backup === "string") { setMemoryBackupStatus(backup, "err"); return; }
+
+    const current = countBackup(await readMemoryDocuments());
+
+    if (current.memories || current.tasks) {
+      const incoming = countBackup(backup.documents);
+      backupPending = backup;
+      backupConfirm.hidden = false;
+      setMemoryBackupStatus(`现在有 ${current.memories} 条记忆、${current.tasks} 条过往任务，恢复会用备份里的 ${incoming.memories} 条记忆、${incoming.tasks} 条过往任务替换它们。确认就点「覆盖并恢复」。`);
+
+      return;
+    }
+
+    await applyBackup(backup);
+  } catch (error) {
+    setMemoryBackupStatus(`恢复失败：${error instanceof Error ? error.message : String(error)}`, "err");
+  }
+});
+
+backupConfirm.addEventListener("click", async () => {
+  if (!backupPending) return;
+
+  try {
+    await applyBackup(backupPending);
+  } catch (error) {
+    setMemoryBackupStatus(`恢复失败：${error instanceof Error ? error.message : String(error)}`, "err");
+  }
+});
+
+void showBackupState();

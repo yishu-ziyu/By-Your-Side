@@ -184,6 +184,20 @@ export function renderSettings(): void {
     <details class="settings-detail"><summary>记录哪些内容，怎样删除？</summary><p>记下网页标题、网址、你点的按钮和链接、搜索词和填写的内容，交给快速模型找出你反复做的事。密码栏和卡号栏的值不记，助手替你做事时的操作也不记。同一件事在 2 天里出现过，就问你要不要记住。记录在侧栏「记忆」里能看、能删。</p></details>
     <p id="habits-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
+  <section class="sx" aria-labelledby="memory-backup-title">
+    <div class="sx-head"><h2 id="memory-backup-title">记忆备份</h2></div>
+    <div class="surface rows">
+      <div class="row">
+        <span class="row-main"><span class="row-title">从备份恢复记忆</span><span id="memory-backup-desc" class="row-desc">卸载扩展会删掉记忆，所以记忆每次变化都会自动另存到下载文件夹的 By-Your-Side 里，不上传。重装后在这里选那份文件。</span></span>
+        <span class="row-ctl inline">
+          <button id="memory-backup-pick" type="button" class="btn">选择文件</button>
+          <button id="memory-backup-confirm" type="button" class="btn" hidden>覆盖并恢复</button>
+          <input id="memory-backup-file" type="file" accept=".json,application/json" hidden />
+        </span>
+      </div>
+    </div>
+    <p id="memory-backup-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
   <section class="sx" aria-labelledby="trace-title">
     <div class="sx-head"><h2 id="trace-title">诊断记录</h2></div>
     <div class="surface rows">

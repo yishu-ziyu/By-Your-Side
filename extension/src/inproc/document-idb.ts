@@ -1,8 +1,9 @@
 /**
  * 扩展里的记忆与过往任务：整份 JSON 存在 IndexedDB 的一条记录里，格式与本机宿主的文件相同。
- * 只在这台电脑的这个扩展里，不同步、不上传；卸载扩展即删除。
+ * 只在这台电脑的这个扩展里，不同步、不上传；卸载扩展即删除，所以每次写入后通知后台另存一份到下载文件夹（shared/memory-backup.ts）。
  */
 import { InProcessLock, type DocumentPersistence } from "@sideagent/agent/browser-core";
+import { MEMORY_CHANGED } from "../shared/memory-backup.js";
 
 const DB_NAME = "sideagent-memory";
 
@@ -70,5 +71,7 @@ export class IdbDocument implements DocumentPersistence {
     const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
     tx.objectStore(STORE).put(text, this.key);
     await done(tx);
+    // Node 测试里没有 chrome；后台没醒或没装备份时只是少备份一次，不影响这次写入。
+    void globalThis.chrome?.runtime?.sendMessage?.({ type: MEMORY_CHANGED })?.catch(() => {});
   }
 }

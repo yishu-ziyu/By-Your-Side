@@ -9,6 +9,7 @@ import { networkRingFor } from "../network-log.js";
 import { withTimeout } from "../timeout.js";
 import { hasPageBaseline } from "../page-changes.js";
 import { readPageChanges } from "./snapshot.js";
+import { isOwnBackupDownload } from "../../shared/memory-backup.js";
 
 const CONTENT_FILE = "content-effect.js";
 
@@ -244,7 +245,8 @@ async function clickDownloads(tabId: number, since: number): Promise<EffectDownl
   let items: chrome.downloads.DownloadItem[] = [];
 
   for (;;) {
-    items = await Promise.resolve(chrome.downloads.search({ startedAfter })).catch(() => []);
+    // 扩展自己写的记忆备份不是点击引起的下载。
+    items = (await Promise.resolve(chrome.downloads.search({ startedAfter })).catch(() => [])).filter(i => !isOwnBackupDownload(i));
     const pendingDownload = items.some(i => i.state === "in_progress");
     const docs = (networkRingFor(tabId)?.entries ?? []).filter(e => e.startedAt >= since && e.resourceType === "document");
     const mayBecomeDownload = items.length === 0 && docs.some(e => e.failed !== undefined || e.canceled || e.endedTs === undefined);
