@@ -1,7 +1,7 @@
 /** 扩展内构建替换 agent/src/run-trace.ts：行格式与本机相同（shared/run-trace-core.ts），写进扩展的 IndexedDB。 */
 import { TraceRecorder } from "../../../../shared/run-trace-core.js";
 import { createTraceSink } from "../../shared/trace-store.js";
-import { pushedSelfUse } from "../../shared/self-use.js";
+import { pushedSelfUse } from "../../shared/core-settings.js";
 
 export { sanitizeTrace } from "../../../../shared/trace-sanitize.js";
 
