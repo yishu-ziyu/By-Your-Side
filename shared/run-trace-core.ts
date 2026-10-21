@@ -77,6 +77,11 @@ export class TraceRecorder {
     if (correlation.goalRevision) this.goalRevision = correlation.goalRevision;
   }
 
+  /** 侧栏一个会话里会切换对话：没有运行的对话要清掉上一次的 runId，不能沿用。 */
+  setRun(runId: string | null): void {
+    this.runId = runId;
+  }
+
   /** Process-local monotonic duration recorded in the existing trace stream. */
   stage(name: string, data: Record<string, unknown> = {}): { end: (outcome: string, details?: Record<string, unknown>) => void } {
     const stageId = crypto.randomUUID();

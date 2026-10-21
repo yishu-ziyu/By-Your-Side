@@ -18,9 +18,7 @@ export function setUiRunSource(source: () => string | null): void {
 export function uiEvent(type: `ui_${string}`, data: UiEventData = {}): void {
   try {
     recorder ??= new TraceRecorder(createTraceSink);
-    const runId = currentRunId();
-
-    if (runId) recorder.correlate({ runId });
+    recorder.setRun(currentRunId());
     recorder.record(type, data);
   } catch { /* 诊断永远不打断界面。 */ }
 }
