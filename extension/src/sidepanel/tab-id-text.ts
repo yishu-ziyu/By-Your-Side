@@ -23,13 +23,19 @@ const TAB_WORD = "(?:tab|Tab|TAB|标签页|标签)";
 /** 「· tab 29979739」这种接在后面的出处：连同分隔符一起去掉。 */
 const TRAILING = new RegExp(`\\s*[·•|｜]\\s*${TAB_WORD}\\s*#?\\s*\\d{6,}`, "g");
 
+/** 「（tab 29979731）」整个括号只说了编号：连括号一起去掉，不留「（tab）」。 */
+const PAREN = new RegExp(`\\s*[（(]\\s*${TAB_WORD}\\s*[:：#]?\\s*\\d{6,}\\s*[)）]`, "g");
+
+/** 「（29979731）」括号里只有一个开着的标签页编号：同样连括号去掉。 */
+const BARE_PAREN = /\s*[（(]\s*(\d{6,12})\s*[)）]/g;
+
 /** 「新标签页 29979731」「tab 29979739」：留下「新标签页」，去掉编号。 */
 const AFTER_WORD = new RegExp(`(${TAB_WORD})\\s*#?\\s*\\d{6,}`, "g");
 
 export function hideTabIdText(text: string): string {
-  const cleaned = text.replace(TRAILING, "").replace(AFTER_WORD, "$1");
+  const cleaned = text.replace(TRAILING, "").replace(PAREN, "").replace(AFTER_WORD, "$1");
 
-  return cleaned.replace(/\b\d{6,12}\b/g, n => (openTabIds.has(n) ? "" : n)).replace(/（\s*，/g, "（").replace(/[ \t]{2,}/g, " ");
+  return cleaned.replace(BARE_PAREN, (all: string, n: string) => (openTabIds.has(n) ? "" : all)).replace(/\b\d{6,12}\b/g, n => (openTabIds.has(n) ? "" : n)).replace(/（\s*，/g, "（").replace(/[ \t]{2,}/g, " ");
 }
 
 /** 渲染好的回答 HTML：逐个文字节点处理。 */
