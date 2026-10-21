@@ -67,6 +67,7 @@ import { chipLabel } from "./models.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { D_STATE, D_TAP } from "../shared/motion-tokens.js";
 import { AttachmentsManager } from "./attachments.js";
+import { hideTabIdsInHtml } from "./tab-id-text.js";
 import { fileChip, fileMeta } from "./file-chip.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
@@ -268,7 +269,7 @@ const PANEL_HTML = { FORBID_TAGS: ["style", "link", "meta", "base", "form", "ifr
 const DECLINED_ANSWER = '<div class="gen-card send-declined-card"><div class="gc-actions"><button type="button" class="gc-btn primary" data-card-say="现在发送吧">现在发送吧</button></div></div>';
 
 function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml), PANEL_HTML);
+  return hideTabIdsInHtml(DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml), PANEL_HTML));
 }
 
 const app = document.getElementById("app")!;
