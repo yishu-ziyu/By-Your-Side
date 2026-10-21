@@ -36,7 +36,7 @@ interface HookResult {
   /**
    * before_agent_start：只属于这一次运行的上下文（日期、记忆、任务状态），字段同 Pi。
    * 和 Pi 不同：宿主把它放在本次用户消息前，只在本次运行里带，不写进会话记录（过期的日期和任务状态不留在历史里）。
-   * 它不进系统提示词，免得打碎前缀缓存（#258）。
+   * 它不进系统提示词，免得打碎前缀缓存。
    */
   message?: { customType: string; content?: HookValue; display?: boolean };
   messages?: readonly HookMessage[];

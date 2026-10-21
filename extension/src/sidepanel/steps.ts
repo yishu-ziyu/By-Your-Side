@@ -320,7 +320,7 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
-/** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链（#263）。 */
+/** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed", failed = 1): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
 
@@ -384,7 +384,7 @@ export function isPrepTool(name: string, params: Parameters<typeof describeTool>
   return PREP_TOOLS.has(name);
 }
 
-/** 回执与步骤前的图标种类：每种动作都有自己的图标，认不出的工具用扳手（10-07 用户：不要有的有图标、有的只有一个点）。 */
+/** 回执与步骤前的图标种类：每种动作都有自己的图标，认不出的工具用扳手，不会有的有图标、有的只有一个点。 */
 export type ActionKind = "open" | "fill" | "click" | "key" | "script" | "run" | "look" | "pick" | "mark" | "tab" | "close" | "translate" | "download" | "team" | "remember" | "other";
 
 const KIND_OF_TOOL: Record<string, ActionKind> = {
@@ -430,7 +430,7 @@ export function pastAction(name: string, params: Parameters<typeof describeTool>
 }
 
 /**
- * 打开页面这一步的结果里取页面标题（#102：步骤名写「Lumen 光子 · 公司资料」，不写 127.0.0.1:53623）。
+ * 打开页面这一步的结果里取页面标题（步骤名写「Lumen 光子 · 公司资料」，不写 127.0.0.1:53623）。
  * 程序里的 navigate 结果是 JSON（可能被截断），单独的 navigate 是「Navigation result: 网址 — 标题; document: …」。
  * 取不到、是空白或就是网址时返回 null，调用方沿用域名。
  */
@@ -457,7 +457,7 @@ export function openedPageTitle(resultText: string): string | null {
 }
 
 /**
- * 回执里的短名，四五个字（#263）：「打开 Studio Gh…」「点作品」「圈出 11 处」。
+ * 回执里的短名，四五个字：「打开 Studio Gh…」「点作品」「圈出 11 处」。
  * 有中文时最多 6 个字（英文字母算半个），纯英文最多 14 个字符，超出加「…」。
  * pageTitle：打开页面这一步结束后取到的标题，没有时用域名。
  */

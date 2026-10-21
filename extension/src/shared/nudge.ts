@@ -1,6 +1,6 @@
 import { isNudgeLink, isNudgePreparation, type NudgeLink, type NudgePreparation } from "../../../shared/nudge.js";
 
-/** 主动建议卡（#52）：后台、内容脚本、设置页共用的消息与开关。 */
+/** 主动建议卡：后台、内容脚本、设置页共用的消息与开关。 */
 
 /** chrome.storage.local 键：是否开启主动建议。默认关，只有明确存了 true 才算开。 */
 export const NUDGE_KEY = 'sideagent_nudge';
@@ -39,7 +39,7 @@ export function isNudgeCard(v: unknown): v is NudgeCard {
 }
 
 /**
- * chrome.storage.session 键：侧栏开着时，建议卡不出在页角，而是放进侧栏对话流（YIS-106）。
+ * chrome.storage.session 键：侧栏开着时，建议卡不出在页角，而是放进侧栏对话流。
  * 值是 { conversationId, card, at }，另带只有后台读的指令和出处页；只有后台 nudge.ts 写，侧栏点 × 或按动词后由后台删。
  * 放在存储里而不是后台内存：后台重启后卡还能按、还能收。
  */
@@ -101,7 +101,7 @@ export const NUDGE_ACT = 'NUDGE_ACT';
 export const NUDGE_UNDO = 'NUDGE_UNDO';
 
 /**
- * chrome.storage.session 键：点了卡上的按钮后，后台把建议的话放在这里，侧栏取走填进输入框（YIS-74：只填草稿，由用户发送）。
+ * chrome.storage.session 键：点了卡上的按钮后，后台把建议的话放在这里，侧栏取走填进输入框（只填草稿，由用户发送）。
  * 侧栏可能还没打开，所以不用消息而用存储。
  */
 export const NUDGE_DRAFT_KEY = 'sideagent_nudge_draft';

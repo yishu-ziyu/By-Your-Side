@@ -294,7 +294,7 @@ export class BrowserAgentSession {
 
   /**
    * 交给目标核对的读数：这个会话里最近读过的页面和工具结果，带上读的时间。
-   * 不只留这一次请求的：用户答完补一句时，人数、投影仪这些条件常常是上一次读到的；只给这一次的，核对看不到就叫助手回去再核实（10-11 实测 6 次续做里 4 次白跑）。
+   * 不只留这一次请求的：用户答完补一句时，人数、投影仪这些条件常常是上一次读到的；只给这一次的，核对看不到就叫助手回去再核实，续做常常白跑。
    */
   private goalObservations: Array<{ at: number; tool: string; text: string }> = [];
   readonly seenWords = newReadIndex();
@@ -320,7 +320,7 @@ export class BrowserAgentSession {
     getSnapshot: () => TaskProgressSnapshot;
     register: (items: TaskResultRegistration[]) => void;
     stopAfterFailures?: () => void;
-    /** T06：交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
+    /** 交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
     deliveryFacts?: () => DeliveryFactInput;
     /** 这一轮读到或打开的页面（回答出处）。 */
     answerSources?: () => UserDeliverySourceRef[];
@@ -357,7 +357,7 @@ export class BrowserAgentSession {
     }
   }
   bindTaskResults(host: BrowserAgentSession["taskResultsHost"]): void { this.taskResultsHost = host; }
-  /** T06：当前事实链投影；outcome 由宿主 nextStep 决定，未接线时不附字段（旧记录形状）。 */
+  /** 当前事实链投影；outcome 由宿主 nextStep 决定，未接线时不附字段（旧记录形状）。 */
   deliveryFactsSnapshot(): UserDeliveryFacts | undefined {
     const hostFacts = this.taskResultsHost?.deliveryFacts?.();
 
@@ -454,7 +454,7 @@ if(required.includes(key))candidates.set(key,attachment);
   }
   /**
    * 写操作的执行闸门：只拦控制权与生命周期（取消、接管、重启检查点、运行错误、原地打转停下）。
-   * 结果未知与重做同一步不拦（10-10 用户裁决）。登记与目标绑定由账本在真实执行事实到达时完成
+   * 结果未知与重做同一步不拦。登记与目标绑定由账本在真实执行事实到达时完成
    * （见 TaskResultBook.resolveStartItem），不要求模型先登记。
    */
   assertTaskResultExecution(name: string, params: Record<string, unknown>, _toolCallId?: string): void {
@@ -517,7 +517,7 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   /**
-   * 交付前对清单（10-14）：用户说了不止一件事时，这一轮的回答先扣在这里，核对说做完了才放出，没做完就丢掉、接着做。
+   * 交付前对清单：用户说了不止一件事时，这一轮的回答先扣在这里，核对说做完了才放出，没做完就丢掉、接着做。
    * 只扣回答（结论、回复和它们的流），开场确认照常发。每次 agent_start 重新开始扣；放出或丢掉之后这一轮不再扣。
    * 扣着等核对时这一轮也不收尾（finish）：任务仍在跑，侧栏过程行不结束、状态不回空闲；放出时才收尾，判继续时不收尾、直接接着做。
    */
@@ -735,7 +735,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
       let resultHost: BrowserAgentSession | null = null;
       const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools(), () => resultHost?.activeGoalPage?.url ?? null) : null;
-      // 同一操作第二次出同样的错：调高思考档位，不停下本轮（10-10 去掉了「连续三次就停」）。
+      // 同一操作第二次出同样的错：调高思考档位，不停下本轮。
       const failurePolicy = new RepeatedToolFailurePolicy(() => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.heldReason?.(id) !== undefined);
 
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
@@ -1041,7 +1041,7 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   /**
-   * 模型出错、用户修好原因（换 key、换模型、网络恢复）后，从出错的那一轮接着做，不要用户重发（#74）。
+   * 模型出错、用户修好原因（换 key、换模型、网络恢复）后，从出错的那一轮接着做，不要用户重发。
    * 去掉记录末尾那条出错的回复再接着跑：已完成的工具步骤和结果都还在上下文里，不重做。
    * 只有空闲、没被接管、最后一条确实是出错的回复时才接着做；否则返回 false。
    */
@@ -1405,7 +1405,7 @@ return;}
   }
 
   /**
-   * 新任务开始前替主代理读一次全部标签页：10-13 真实网站 12 次里 10 次第一轮先花在 tabs list 上。
+   * 新任务开始前替主代理读一次全部标签页：不然模型第一轮多半先花在 tabs list 上。
    * 只给主代理；读失败就不写，不猜。不当作模型工具调用记账。
    */
   private async readOpenTabsForPrompt(context: PageContext | undefined): Promise<string | null> {
@@ -1452,7 +1452,7 @@ return;}
         : undefined;
       if (warmMain && this.warmedObservation) this.warmedObservation.main = undefined;
       const freshMain = () => (this.rpc!.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
-      // 正文和 AX 树都给（10-11 用户定）：只给 AX 树时正文被导航和编号挤掉，模型不信、重读 2–3 轮（#255）；
+      // 正文和 AX 树都给：只给 AX 树时正文被导航和编号挤掉，模型不信、重读 2–3 轮；
       // 只给正文时动作任务没有编号，中位从 3 轮变成 7 轮。哪一样读失败就只给另一样。
       const [warmedOrFreshMain, tree] = await Promise.all([
         (warmMain ?? freshMain()).then(res => res ?? freshMain()),
@@ -1478,7 +1478,7 @@ return;}
       ].filter(Boolean).join("\n\n");
 
       const observation = freshPageObservationText(context, body, text ? (ax ? "both" : "text") : "tree", role);
-      // 同一页没变时历史里已有一字不差的这一段：再带一份只会让历史变长，换成一行指回去（#271）。
+      // 同一页没变时历史里已有一字不差的这一段：再带一份只会让历史变长，换成一行指回去。
       const repeat = this.session?.agent.state.messages.some(m => (m.role === "user" || m.role === "custom") && (typeof m.content === "string" ? m.content : m.content.map(p => p.type === "text" ? p.text : "").join("")).includes(observation)) ?? false;
       this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: body.length, mainText: text.length, tree: ax.length, repeat });
 
@@ -1725,7 +1725,7 @@ return;}
     return this.memoryRuntime.answerAsk(askId, answer, text);
   }
 
-  /** 主动建议的判断（#52）：快速模型优先，独立会话 id，不进任务历史。 */
+  /** 主动建议的判断：快速模型优先，独立会话 id，不进任务历史。 */
   async judgeNudge(context: NudgeContext, signal?: AbortSignal): Promise<Nudge | null> {
     const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
 
@@ -2660,7 +2660,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && !this.rpc?.heldReason?.(event.toolCallId)) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
 
           const heldReason = event.isError ? this.rpc?.heldReason?.(event.toolCallId) : undefined;
-          // 失败的人话原因给侧栏：工具自己写在 details.reason（如 fetch），否则从错误原文取一句（#304）。
+          // 失败的人话原因给侧栏：工具自己写在 details.reason（如 fetch），否则从错误原文取一句。
           const detailReason = event.isError ? (event.result?.details as { reason?: unknown } | undefined)?.reason : undefined;
           const failureReason = event.isError && !heldReason
             ? (typeof detailReason === "string" && detailReason ? detailReason : plainToolError(firstResultText(event.result)))
@@ -2726,7 +2726,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           // 避免进度状态与结果被误当作最终（状态保持 running）。
           if (event.willRetry) break;
 
-          // 目标核对（2026-09-27；10-04 起不再拖住回答）：回答先交付、状态回到空闲，快速模型随后核对用户要的结果达成没有。
+          // 目标核对（不拖住回答）：回答先交付、状态回到空闲，快速模型随后核对用户要的结果达成没有。
           // 没做完且助手自己能做，就作为看得见的后续接着做（每个任务的次数上限见 GOAL_CONTINUE_MAX）；在等用户或做不到时只更新「还差」一行。
           {
             const checkGoal = this.goalCheckEligible(event.messages);
@@ -2785,8 +2785,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     // 这一任务用过浏览器或页面工具（读页、改页、跑程序、存文件都算），或这一轮最后在问用户（问邮箱、问要不要提交），
     // 或没用工具就说「还不能判断」「我会去查看」（defersWork）。
-    // 只读任务也核对：10-01 读完 flomo 笔记后交付了上一个任务的 Drive 状态，旧规则（只看改页面、存文件）直接收尾了。
-    // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒。
+    // 只读任务也核对：只读任务也会答非所问（交付了上一个任务的结果）却自称做完。快速模型核对约 2–8 秒。
     // 宿主按记下的做法打开了页面的一轮：要做的已经做完，被拦下的工具调用不算做过事。
     if (snapshot?.runId && this.savedOpenRun === snapshot.runId) return false;
     if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
@@ -2836,7 +2835,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   private goalRetryEvidence: { scope: string; seen: Set<string> } | null = null;
   /** 上次催续做时宿主读到的网页（地址 + 文字）；催过之后网页没变、助手又说做不成，就不再催（gaveUpWithoutChange）。 */
   private nudgePage: { runId: string | null; page: string } | null = null;
-  /** 本任务已尝试且失败的做法（工具名 + 失败原因摘要），催续做时带给模型，让它换做法（10-02 BYS-017 三次照原样重试）。 */
+  /** 本任务已尝试且失败的做法（工具名 + 失败原因摘要），催续做时带给模型，让它换做法（不带上时模型会照原样重试）。 */
   private failedAttempts: { runId: string | null; items: Array<{ tool: string; reason: string }> } = { runId: null, items: [] };
 
   /**
@@ -2903,7 +2902,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       pageRead = page ? { ok: true, tabId, url: String(page.url ?? ""), chars: String(page.text ?? "").length } : { ok: false, tabId, ...(readError ? { error: readError } : {}) };
 
-      // 只有读页要用调试器：读完就告诉扩展，横幅不用陪着等模型的几秒（#259）。
+      // 只有读页要用调试器：读完就告诉扩展，横幅不用陪着等模型的几秒。
       if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "checking", pageRead: true, ...(gate && this.answerHold === hold && !hold.settled ? { gate: true } : {}) });
 
       const lastReply = this.runReplyText(event.messages);
@@ -2916,8 +2915,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (gaveUpWithoutChange({ reply: lastReply, partial, pageAtNudge: this.nudgePage?.runId === runId ? this.nudgePage.page : null, pageNow })) {
         verdict = { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
       } else if (pageAwaitsEmailStep(pageText)) {
-        // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去（09-27 Kimi 这样问了就停住）。
-        // 点名是哪个网站的确认邮件：收件箱里常有别的网站的同类邮件（09-27 Kimi 点了另一个列表的确认链接）。
+        // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去，不停下等用户。
+        // 点名是哪个网站的确认邮件：收件箱里常有别的网站的同类邮件。
         const site = snapshot?.goalPage ? (snapshot.goalPage.title.split(/\s[—–|-]\s/)[0]!.trim() || new URL(snapshot.goalPage.url).hostname) : "";
         verdict = { status: "continue", remaining: site ? `去邮箱找「${site.slice(0, 40)}」的确认邮件，点里面的确认链接（别点其他网站的）` : "去邮箱打开确认邮件，点里面的确认链接" };
       } else if (model) {
@@ -3027,7 +3026,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (runId && this.goalContinueRun !== runId) { this.goalContinueRun = runId; this.goalContinues = 0; }
 
-    // 核对期间用户把标签页换到了别的网页：不在新网页上接着做，按「还差」收尾（10-07 翻译续做落到了下一个网页上）。
+    // 核对期间用户把标签页换到了别的网页：不在新网页上接着做，按「还差」收尾。
     const movedTo = verdict?.status === "continue" && endedOn && tabId !== null ? await this.tabMovedFrom(endedOn, tabId) : null;
 
     if (!current()) { abandon(); return; }
@@ -3069,7 +3068,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
       const where = snapshot?.goalPage ? ` The goal was said on page "${snapshot.goalPage.title}" (${snapshot.goalPage.url}); act only on items that belong to it, not on similar ones from other sites or earlier tasks.` : "";
-      // 带上用户这次的原话：答非所问时（10-01 交付了上一个任务的结果）助手要知道该回到哪件事上。
+      // 带上用户这次的原话：答非所问时（比如交付了上一个任务的结果）助手要知道该回到哪件事上。
       const asked = (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean).slice(-3).map(text => text.slice(0, 300));
       const request = asked.length ? ` The user's current request: ${JSON.stringify(asked.join(" / "))}; earlier tasks' results do not answer it.` : "";
       const failed = this.failedAttempts.runId === runId ? this.failedAttempts.items : [];
@@ -3382,7 +3381,7 @@ function unchangedPageObservationText(context: PageContext): string {
 const STEER_CONTRACT_NOTE = "[这条输入是对当前运行任务的补充或修改，不是替换原任务：除非用户在最新输入里明确取消或改变了原任务目标，先满足这条要求，然后继续完成并交付原任务尚未交付的结果。页面显示类修改只提交本次要求改变的字段，未提到的显示属性保持当前状态。最新输入里明确的修改要求优先于任务早期的限制（如“不要修改页面”），按其指明的属性执行；未指明的属性仍受早期限制约束。]";
 
 /**
- * 圈出来问的附件（YIS-89/90）：圈内的网页文字按编号接在用户的话后面，助手才说得准「圈 1 是哪个商品」；
+ * 圈出来问的附件：圈内的网页文字按编号接在用户的话后面，助手才说得准「圈 1 是哪个商品」；
  * 并要求回答用 ①②③ 指圈，侧栏把它们做成能点回页面的按钮。
  */
 function withCircleNotes(text: string, attachments?: Attachment[]): string {

@@ -1,5 +1,5 @@
 /**
- * #51 「/ 技能」：用户存下来的常用提示词，在输入框开头敲 `/` 唤起，选中后对当前标签页运行。
+ * 「/ 技能」：用户存下来的常用提示词，在输入框开头敲 `/` 唤起，选中后对当前标签页运行。
  *
  * - 只存在本机 chrome.storage.local，与记忆、旧的操作技能无关。
  * - 技能可带 1–2 个澄清问题：先在侧栏里问，答完把回答填进正文（`{1}`、`{2}`）再发；取消就什么都不发。
@@ -237,7 +237,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
   function start(skill: PromptSkill): void {
     const questions = skill.questions ?? [];
 
-    // 不用回答问题的技能：正文放进输入框，用户看过、改过再发（YIS-74）。
+    // 不用回答问题的技能：正文放进输入框，用户看过、改过再发。
     if (!questions.length) {
       setInput(fillSkillBody(skill, []));
       inputEl.focus({ preventScroll: true });

@@ -28,14 +28,14 @@ export interface TaskResultEvidence {
   observedAt?: number;
   /** Host-classified effects for aliases or parameter-dependent tools (tabs/fetch). */
   effectful?: true;
-  /** 旧版本存档字段（2026-10-04 起不再产生，也不再使用）：只为旧任务记录仍能读入。 */
+  /** 旧版本存档字段（不再产生，也不再使用）：只为旧任务记录仍能读入。 */
   awaitingConfirmation?: true;
 }
 
 export interface TaskResultItem extends TaskResultRegistration {
   status: TaskResultItemStatus;
   evidence: TaskResultEvidence | null;
-  /** 这一步没做成的人话原因（≤16 字，tool_end.reason，#304）；成功或未失败时缺省。 */
+  /** 这一步没做成的人话原因（≤16 字，tool_end.reason）；成功或未失败时缺省。 */
   reason?: string;
   /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再算作未完成。 */
   supersededBy?: string;
@@ -73,7 +73,7 @@ function commitsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[
 }
 
 /**
- * 账本项出错或超时时记成「结果未知」，而不是「失败」。这只是如实记账：不暂停写入，也不拦重做（10-10 用户裁决）。
+ * 账本项出错或超时时记成「结果未知」，而不是「失败」。这只是如实记账：不暂停写入，也不拦重做。
  * fetch 的副作用按参数判定：宿主把 POST/带 body 的 fetch 记在 evidence.effectful。
  */
 export function resultLocksWhenUnknown(item:{tool:string;evidence?:{effectful?:boolean}|null}):boolean {

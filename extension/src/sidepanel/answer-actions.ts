@@ -313,7 +313,7 @@ export function refreshAnswerPanel(answer: HTMLElement): void {
   button.replaceChildren(...squares, "来源");
 }
 
-/** 站点图标：浏览器缓存里的网站真图标（YIS-74）；取不到时退回首字母方块。 */
+/** 站点图标：浏览器缓存里的网站真图标；取不到时退回首字母方块。 */
 export function siteGlyph(url: string, host: string): HTMLElement {
   const glyph = document.createElement("span");
   glyph.className = "answer-source-glyph";
@@ -339,7 +339,7 @@ export function siteGlyph(url: string, host: string): HTMLElement {
 
 /** 后台把每个对话的工作标签页记在 storage.session 的这个键下（background/state.ts），侧栏只读。 */
 /**
- * 结果页在后台时，最新回答的文末一排加「切过去看」：助手不替用户切标签（10-13 用户决定），由用户点。
+ * 结果页在后台时，最新回答的文末一排加「切过去看」：助手不替用户切标签，由用户点。
  * 只给普通网页、这一轮读过或打开过它的网站、且侧栏所在窗口没在看它时出现：工作页跨任务保留，纯问答不该挂上一次的结果页。
  * 点过、页面关了、用户自己切过去就去掉（main.ts 监听标签事件）。
  */

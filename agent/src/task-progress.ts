@@ -57,7 +57,7 @@ export class TaskProgress {
   private lastBrowserFailed=false;
   private readonly results: TaskResultBook;
   readonly goals = new TaskGoalBook();
-  /** T06：本 run 真实打开或读到的页面（去重、有界）。只在内存；恢复后不猜测补齐，交付时按实际有的说。 */
+  /** 本 run 真实打开或读到的页面（去重、有界）。只在内存；恢复后不猜测补齐，交付时按实际有的说。 */
   private runSources: UserDeliverySourceRef[] = [];
   /** 这一轮（用户说了新的话之后）读到或打开的页面：回答出处只用它，不把上一轮读过的页面算到这一轮的回答上。 */
   private turnSources: UserDeliverySourceRef[] = [];
@@ -182,7 +182,7 @@ export class TaskProgress {
     if(interjected){
       this.interjections+=1;
       // 账本满了、用户在任务进行中又说了话：已完成的结果收起来，账本腾出位置给接下来的动作。
-      // 以前只有空闲时的新请求才清账，任务里做满 64 项之后再插话，所有动作都被拒（10-14 画图）。
+      // 只在空闲时清账的话，任务里做满 64 项之后再插话，所有动作都会被拒。
       // 没满时不收：侧栏任务卡和「已做完」的说法都照旧。
       const folded=this.results.list().length>=MAX_TASK_RESULTS?this.results.fold():[];
 
@@ -384,7 +384,7 @@ return;}
       if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;
     } else if (e.kind === "user_delivery") {
       if (lead && this.ledger.record(e.delivery)) {
-        // 旁路模型看到的对话原文仍带宿主补的一句，与 10-13 之前一致。
+        // 旁路模型看到的对话原文仍带宿主补的一句。
         this.pushTurn("assistant", deliveryTextWithNote(e.delivery));
 
         if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
@@ -425,7 +425,7 @@ return;}
     } else if (e.kind === "tool_start") {
       const target = extractResultTarget(e.params, e.name);
 
-      // T06：导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
+      // 导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
       if ((e.name === "navigate" || e.name === "open_tab" || e.name === "tabs" && e.params?.action === "open") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
       let tabAction: string | undefined;
 
@@ -463,7 +463,7 @@ return;}
       }
     } else if (e.kind === "tool_observation") {
       if (!this.aborted && this.runId) {
-        // T06：只记真实读到的页面地址；模型正文里的链接不算来源。
+        // 只记真实读到的页面地址；模型正文里的链接不算来源。
         if (typeof e.url === "string") this.noteRunSource(e.url, e.title);
         const key=`${member}:${e.toolCallId}`,read=this.completedReads.get(key);
 
@@ -493,7 +493,7 @@ if(page)this.recoveryInput.page=page;
         if (!e.isError && e.executionFact === "executed") this.noteRunSource(pendingNav);
       }
 
-      // 声明只读的页面脚本超时或结果未知：只是没拿到读数，按「失败、没有副作用」记（#22）。
+      // 声明只读的页面脚本超时或结果未知：只是没拿到读数，按「失败、没有副作用」记。
       const fact = started.readOnlyScript && e.executionFact === 'unknown' ? 'not_executed' as const : e.executionFact;
 
       if (!this.aborted) {

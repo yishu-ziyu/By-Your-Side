@@ -48,7 +48,7 @@ export class RunOrbActivity {
 
     if (this.tools.size) return "waiting";
 
-    // 一步没做成、模型还在想下一步：仍是在想，不是出错（#263：换了做法的那段思考要照常计时）。
+    // 一步没做成、模型还在想下一步：仍是在想，不是出错（换了做法的那段思考要照常计时）。
     if (this.errored) return "failed";
 
     return "thinking";

@@ -204,7 +204,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       /* 常驻的光标闲置时不长期占用独立合成层。 */
       .cursor:not(.rest) { will-change: transform; }
       .cursor.hidden { opacity: 0; }
-      /* 贴边柔光（10-13 用户选定 A）：墨蓝从视口边缘向内晕开，一段亮光沿边慢走；
+      /* 贴边柔光：墨蓝从视口边缘向内晕开，一段亮光沿边慢走；
          参照 Gemini in Chrome / ego 的边框光。用户动鼠标时整层让位到很淡。 */
       .edge {
         position: absolute; inset: 0; pointer-events: none;
@@ -325,7 +325,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         background: color-mix(in srgb, var(--c) 14%, transparent);
         mix-blend-mode: multiply;
         box-shadow: 0 0 0 1px rgba(255,255,255,0.4), 0 0 14px color-mix(in srgb, var(--c) 35%, transparent);
-        /* 三段：出现 ~125ms → 保持 → 消退 ~250ms。旧版 500ms 内连消失一起播完，看不清标了哪。 */
+        /* 三段：出现 ~125ms → 保持 → 消退 ~250ms。500ms 内连消失一起播完的话，看不清标了哪。 */
         animation: highlightTrace 1800ms cubic-bezier(.16,1,.3,1) forwards;
         will-change: opacity, transform;
       }

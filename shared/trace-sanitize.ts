@@ -1,4 +1,4 @@
-/** 诊断记录的脱敏：纯函数，本机伴随进程与扩展内 agent 共用。 */
+/** 诊断记录的脱敏：纯函数，扩展内 agent 与本机 node 脚本共用。 */
 const SECRET_KEY = /^(?:password|passwd|pwd|secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|cookie|set-cookie)$/i;
 
 const SENSITIVE_TARGET = /password|passwd|pwd|secret|token|api[_-]?key|密码|口令/i;

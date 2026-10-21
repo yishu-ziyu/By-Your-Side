@@ -294,7 +294,7 @@ export class AttachmentsManager {
   }
 
   /**
-   * 圈出来问（YIS-88）：进入圈画，每圈一处加一张带编号的附件；编号接着输入框上方已有的圈往下数。不发送。
+   * 圈出来问：进入圈画，每圈一处加一张带编号的附件；编号接着输入框上方已有的圈往下数。不发送。
    */
   public async captureRegion(): Promise<void> {
     if (isCircling()) return;

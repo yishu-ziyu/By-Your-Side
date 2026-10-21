@@ -49,7 +49,7 @@ const NOT_IN_PROGRAMS = new Set<string>(["worker_tabs", "guide_step", "page_text
 
 /**
  * browser.* 的 camelCase 别名：每个 snake_case 方法都认它的 camelCase 写法，账本仍记规范 RPC 名。
- * 模型按 JS 习惯写 pressKey、readElement，只认一部分时它猜错一次就多一轮（#257）。
+ * 模型按 JS 习惯写 pressKey、readElement，只认一部分时它猜错一次就多一轮。
  */
 const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
   .filter(name => name.includes("_") && !NOT_IN_PROGRAMS.has(name))
@@ -472,7 +472,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
   /**
    * waitForLoad：等当前这次文档到达 domcontentloaded/load；旧文档 complete 不能在文档替换后冒充就绪。
-   * 默认 domcontentloaded：模型几乎从不传 state，按 load 会陪图片和广告干等（10-13 必应结果页内容出来后又等了约 6 秒）。
+   * 默认 domcontentloaded：模型几乎从不传 state，按 load 会陪图片和广告干等。
    */
   async function waitForLoad(params: Record<string, unknown>, stepId: string): Promise<unknown> {
     const state = params.state === "load" ? "load"
@@ -772,7 +772,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         const handle = vm.newString(json);
         deferred.resolve(handle);
         handle.dispose();
-        // 与直调的 fetch 同一判定：没拿到内容这一步记为失败并带原因；程序照常拿到原始回执、继续往下跑（可以自己看 status），不因此停下（#304）。
+        // 与直调的 fetch 同一判定：没拿到内容这一步记为失败并带原因；程序照常拿到原始回执、继续往下跑（可以自己看 status），不因此停下。
         const fetchFailed = canonical === "fetch" && result && typeof result === "object" ? fetchFailureReason(result as FetchReply) : null;
         emit(fetchFailed
           ? { ...step, phase: "end", result, error: `HTTP ${(result as FetchReply).status} (not ok)`, reason: fetchFailed, elapsedMs: Date.now() - started }

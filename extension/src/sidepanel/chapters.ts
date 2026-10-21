@@ -8,7 +8,7 @@
  * 所以实时在第一步写操作出现时画的分隔线，重新打开时会画在同一处。编号和名字都从对话区里现有的分隔线读，
  * 换会话清空对话区时自然归零。
  */
-import { isWriteTool } from "../../../shared/control.js";
+import { isWriteTool } from "../../../shared/effect-policy.js";
 import { isLeadSession } from "../../../shared/protocol.js";
 import type { PanelHistoryItem, PanelHistoryServerMessage } from "../relay.js";
 

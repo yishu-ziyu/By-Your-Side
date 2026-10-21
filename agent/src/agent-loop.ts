@@ -50,7 +50,7 @@ export interface AgentLoop extends Pick<
 }
 
 /**
- * 任务核心对模型运行时的依赖（TS 检查器统计，2026-09-24）。本机实现是 pi-coding-agent 的 ModelRuntime；
+ * 任务核心对模型运行时的依赖。本机实现是 pi-coding-agent 的 ModelRuntime；
  * 扩展里用 pi-ai 的模型目录包一层。注册验收模型、cliproxy 这类本机专用能力不在这里。
  */
 export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "getModel" | "streamSimple"> & {
@@ -84,7 +84,7 @@ export function userWaiting<T extends object>(options: T): T & ModelQueueOptions
   return { ...options, userWaiting: true };
 }
 
-/** 换到备用模型多久之后，用户的下一条消息回主模型（用户 10-08 定的 5 分钟）。 */
+/** 换到备用模型多久之后，用户的下一条消息回主模型（用户定的 5 分钟）。 */
 const MODEL_SWITCH_BACK_AFTER_MS = 5 * 60_000;
 
 /**

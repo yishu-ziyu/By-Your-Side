@@ -52,7 +52,7 @@ export function redactTaskSecrets(entry: TaskHistoryEntry): TaskHistoryEntry {
   return redacted;
 }
 
-/** 旧版「照上次的做法」（YIS-105 已删）在条目里存的 route：存档里原样留着，读出时去掉，不给模型、侧栏或别处。 */
+/** 旧版「照上次的做法」（已删）在条目里存的 route：存档里原样留着，读出时去掉，不给模型、侧栏或别处。 */
 function withoutRoute(task: TaskHistoryEntry): TaskHistoryEntry {
   if (!("route" in task)) return task;
   // SAFETY: 只去掉旧字段 route；其余字段已由 isTaskHistoryEntry 核对。
@@ -203,7 +203,7 @@ export class TaskHistoryStore {
 /** 给模型看的过往任务，一行一条。 */
 /**
  * 带给助手的过往任务：只写做成了什么，不写当时的回答。回答里有当时页面上读到的结论，
- * 10-12 测评里助手 20 次有 16 次没看页面就照抄了上次的「最轻的是晨风 E13」（#305）。
+ * 否则助手常不看页面就照抄上次的结论（如「最轻的是晨风 E13」）。
  * 用户问起过往（user_memory history）时 withReply 附上当时的回答，标明是旧的。
  */
 export function formatTaskHistory(tasks: TaskHistoryEntry[], withReply = false): string {

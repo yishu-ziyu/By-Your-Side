@@ -131,7 +131,7 @@ export class VoiceService {
         if (this.active === active) {
           active.session.close(false);
           this.active = null;
-          // 取 key 的一方最清楚去哪儿配（扩展里是设置页，本机伴随进程是 ~/.sideagent）。
+          // 取 key 的一方最清楚去哪儿配（扩展里是设置页）。
           const detail = error instanceof Error && error.message ? error.message : "请先配置本机 StepFun 开放平台 API Key，再重试。";
           this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail } });
         }
@@ -289,7 +289,7 @@ export class VoiceService {
       active.session.notify(snapshot);
     }
     // 只有仍未确认或受阻的真实执行项才需要第二次开口；普通 running→idle 是内部状态，不补播。
-    // 已有结果文本不能呑掉未确认项（复核 2026-09-21：idle + 结果文本 + unknown 项仍需告知）。
+    // 已有结果文本不能呑掉未确认项（idle + 结果文本 + unknown 项仍需告知）。
     else if (!active.controls.size && snapshot.state === 'idle' && snapshot.runId && !delivery && hasUnresolvedObstacle(snapshot)) {
       active.session.notify(snapshot);
     }

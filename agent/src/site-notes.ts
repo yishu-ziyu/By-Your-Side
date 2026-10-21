@@ -18,7 +18,7 @@ type SiteNote = { text: string; runId: string; at: number };
 interface SiteNotesFile { format: 1; sites: Record<string, SiteNote[]> }
 
 /**
- * 网站的键：主域名。cn.bing.com 和 www.bing.com 是同一个网站（打开 cn.bing.com 会跳到 www.bing.com，10-13 实测按主机名对不上）；
+ * 网站的键：主域名。cn.bing.com 和 www.bing.com 是同一个网站（打开 cn.bing.com 会跳到 www.bing.com，按主机名对不上）；
  * sina.com.cn、bbc.co.uk 这类多留一级。IP 地址和 localhost 原样。
  */
 export function siteKey(host: string): string {

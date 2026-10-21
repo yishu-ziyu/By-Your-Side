@@ -342,7 +342,7 @@ async function readBackField(tabId: number, where: { backendNodeId: number } | {
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
 async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: DispatchGuard): Promise<{ range?: InputRangeReadout | null; select?: true }> {
-  // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报（#22/#27）。
+  // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报。
   const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null; select?: true }>(
     tabId,
     backendNodeId,
@@ -1192,7 +1192,7 @@ function assertUsable(el) {
   if (el.checkVisibility && !el.checkVisibility({ checkVisibilityCSS: true })) throw new Error("目标不可见，操作未执行。请重新 snapshot 确认当前目标。");
 }`;
 
-// 快照里的编号可能落在按钮里的文字节点上（BYS-143 弹窗的「Close」）：按包住它的元素来点。
+// 快照里的编号可能落在按钮里的文字节点上（弹窗的「Close」）：按包住它的元素来点。
 const CONFIRM_CLICK_JS = `function() {
   ${TARGET_OWNS_HIT_JS}
   const el = this && this.nodeType === 3 ? this.parentElement : this;
@@ -1506,7 +1506,7 @@ async function followOpenedTab(before: ReadonlySet<number>, watch: OpenWatch, se
 
 /**
  * 助手不能点我们自己画在页面上的界面（名牌上的「确认 / 提交」、控制条等）：那些是留给用户的。
- * 09-27 Kimi 实测去点名牌上自己起名为「提交订阅」的确认键：若没被别的检查挡住，就等于自己批准自己。
+ * 模型会去点名牌上自己起名为「提交订阅」的确认键：若没被别的检查挡住，就等于自己批准自己。
  * 看真正派发的落点：按编号、选择器、坐标点都一样。用户确认后由扩展重放的那一下不经过这里。
  */
 async function assertNotOwnOverlay(tabId: number, x: number, y: number): Promise<void> {
@@ -1738,7 +1738,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
       const [effectToken, undoMark] = await Promise.all([effectPending, undoPending]);
       undo = undoMark;
-      // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（#23 等满 30 秒）。
+      // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（等满 30 秒）。
       // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
       const dialogWatch = watchDialog(tabId);
 
@@ -2115,7 +2115,7 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
 
 
 /**
- * 按记忆填的那一格标「记得的」（YIS-87）：先给元素挂一个一次性记号属性，再让页面脚本找到它、画记号并摘掉属性。
+ * 按记忆填的那一格标「记得的」：先给元素挂一个一次性记号属性，再让页面脚本找到它、画记号并摘掉属性。
  * 只是画在页面上面，不改这一格的值；画不出来不影响填写结果。
  */
 async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["fill"]["params"]["memory"]>, backendNodeId: number | undefined, target: string): Promise<void> {
@@ -2700,7 +2700,7 @@ function enterWouldSendInPage(): { label: string; content: string; rect: { left:
   return { label: sendBtn ? (sendBtn.getAttribute("aria-label") || sendBtn.innerText || (sendBtn as HTMLInputElement).value || "发送").trim() : "回车发送", content: content.length > 120 ? content.slice(0, 120) + "…" : content, rect: { left: r.left, top: r.top, width: r.width, height: r.height }, send };
 }
 
-/** 任务里的 press_key：回车（含 Ctrl/Cmd+回车，不含 Shift+回车换行）可能把消息发出去，先走和点「发送」同一个确认（#290）。 */
+/** 任务里的 press_key：回车（含 Ctrl/Cmd+回车，不含 Shift+回车换行）可能把消息发出去，先走和点「发送」同一个确认。 */
 export async function pressKeyGuarded(params: { key: string; tabId?: number }, sessionId: string, sendGuard: SendGuard) {
   const info = resolveKey(params.key);
   const tab = await resolveWorkingTab(params.tabId, sessionId);

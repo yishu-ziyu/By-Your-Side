@@ -14,7 +14,7 @@ const MAX_SCALE = 1.04;
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /**
- * 视频光球在各状态下的样子。不低于 1 倍速：30 帧素材降到 0.35 倍时肉眼明显发卡（10-07 预览）。
+ * 视频光球在各状态下的样子。不低于 1 倍速：30 帧素材降到 0.35 倍时肉眼明显发卡。
  * 在想稍快；在听随音量轻微放大；在说更亮并有节奏地起伏。
  */
 function videoOrbLook(state: OrbState, level: number, t: number): VideoOrbLook {

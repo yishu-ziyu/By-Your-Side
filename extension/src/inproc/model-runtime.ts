@@ -43,7 +43,7 @@ const LOGIN_LABELS = new Map([["kimi-coding", "用 Kimi Code 账号登录"], ["x
 /** 需要额外账号参数（区域、网关编号、云凭据）的服务商，第一版设置页不提供。 */
 const NEEDS_EXTRA_CONFIG = new Set(["amazon-bedrock", "google-vertex", "azure-openai-responses", "cloudflare-ai-gateway", "cloudflare-workers-ai", "radius"]);
 
-/** TypeSafe 只提供给 Jev 用的分类接口，不能当对话模型；Jev 已于 2026-10-01 退役（docs/ROADMAP.md 第 9 条），设置页不列它。 */
+/** TypeSafe 只提供给 Jev 用的分类接口，不能当对话模型，设置页不列它。 */
 const RETIRED_JEV_PROVIDER = "typesafe";
 
 /** 设置页置顶的套餐，按用户实际在用的排序；默认模型是已在扩展内跑通「圈出保存按钮」的那个。 */
@@ -58,7 +58,7 @@ export const FEATURED_PROVIDERS: ReadonlyArray<{ id: string; label: string; defa
   { id: "kimi-coding", label: "Kimi For Coding", defaultModel: "kimi-for-coding" },
 ];
 
-/** ChatGPT 账号调用会被拒（「not supported when using Codex with a ChatGPT account」，2026-10-06 实测），设置页不列出。 */
+/** ChatGPT 账号调用会被拒（「not supported when using Codex with a ChatGPT account」），设置页不列出。 */
 const HIDDEN_MODELS = new Map<string, ReadonlySet<string>>([
   ["openai-codex", new Set(["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])],
 ]);

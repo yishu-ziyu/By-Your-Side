@@ -133,7 +133,7 @@ export type SendUserMessageOptions = {
   getSources?: () => readonly UserDeliverySourceRef[] | null;
 };
 
-/** 一轮里改页面的尝试次数与真正生效的次数（宿主按工具结果计）。10-10 起不再进交付，会话里的计数待合并后清理。 */
+/** 一轮里改页面的尝试次数与真正生效的次数（宿主按工具结果计）。不进交付，只留在会话里。 */
 export type PageChangeTally = { attempts: number; changes: number };
 
 /**

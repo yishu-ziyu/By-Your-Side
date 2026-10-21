@@ -140,7 +140,7 @@ export function plainDownloadError(code: string | null | undefined): string {
 /**
  * 工具失败 → 侧栏那一句人话原因（≤16 字）。
  * 错误原文是给模型看的：先认已知的说法，认不出就取第一小句、剥掉英文括注和不可信标记；
- * 整句没有一点中文就只说「没做成」，不照搬原文（#304）。
+ * 整句没有一点中文就只说「没做成」，不照搬原文。
  */
 // 按顺序认第一条：fetch 抛错时外面还包着一层「fetch 请求已发出，结果未知：…」，里面的具体原因（连不上、超时）要先认。
 const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [

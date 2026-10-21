@@ -24,7 +24,7 @@ type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 /** 一次元素读取的结果：页面返回的数据 + 本次读取到的文档身份。 */
 interface ElementRead { data: ElementData; documentId?: string }
 
-/** FIX-02：把定位/读取失败收成稳定错误码，等待 helper 禁止用中文文案分支。 */
+/** 把定位/读取失败收成稳定错误码，等待 helper 禁止用中文文案分支。 */
 function typedReadElementError(error: unknown): Error {
   const text = error instanceof Error ? error.message : String(error);
 

@@ -4,7 +4,7 @@ import { redactCredentialText } from "../../shared/untrusted.js";
 import { isJsonObject, parseJsonReply, sideJudgment, type SideCallHost } from "./side-judgment.js";
 
 /**
- * 主动建议（#52）的判断：一次无工具的后台判断，看用户正在读的页和这次会话最近看过的几页，
+ * 主动建议的判断：一次无工具的后台判断，看用户正在读的页和这次会话最近看过的几页，
  * 决定要不要递一张建议卡。默认不建议；场景只在提示词里举例，不在代码里列。
  */
 

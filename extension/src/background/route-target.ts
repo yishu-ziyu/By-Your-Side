@@ -84,7 +84,7 @@ function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
 type DomNode = { backendNodeId?: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[]; contentDocument?: DomNode };
 
 /**
- * 选择器（如 #date）指向的那一个元素的 backendDOMNodeId（YIS-103）：在页面里用动作同一套解析找到它（指向不唯一时解析就失败），临时打个记号，再从 CDP 文档树里找回记号。
+ * 选择器（如 #date）指向的那一个元素的 backendDOMNodeId：在页面里用动作同一套解析找到它（指向不唯一时解析就失败），临时打个记号，再从 CDP 文档树里找回记号。
  * 认不出返回 undefined。
  */
 async function backendOfSelector(tabId: number, target: string): Promise<number | undefined> {

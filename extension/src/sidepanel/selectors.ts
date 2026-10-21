@@ -73,7 +73,7 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
     return '现在归你';
   }
 
-  // 顶部条挂在当前对话上方，要说清这是另一个对话（#103）。
+  // 顶部条挂在当前对话上方，要说清这是另一个对话。
   return '另一个会话的任务结束了';
 }
 

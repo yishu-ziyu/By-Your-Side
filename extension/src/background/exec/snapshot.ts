@@ -419,7 +419,7 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
 
 /**
  * 助手自己挂在页面上的浮层（光标和名牌、中止按钮、圈注）不是网页内容：模型不该读到、点到它们。
- * 它们每次运行重新挂上、编号会变，留在树里同一页每次读出来都不一样，历史里就去不了重（#271）。
+ * 它们每次运行重新挂上、编号会变，留在树里同一页每次读出来都不一样，历史里就去不了重。
  */
 async function ownOverlayHosts(tabId: number): Promise<Set<number>> {
   const objectGroup = `bys-own-overlay-${crypto.randomUUID()}`;

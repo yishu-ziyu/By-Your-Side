@@ -276,7 +276,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
       if (!text) maxTokens = spec.maxTokens * EMPTY_REPLY_BUDGET_FACTOR;
       suffix = spec.retryPrompt ? spec.retryPrompt(error) : STRICT_JSON;
 
-      // 有的模型不太听系统提示词（10-01 阶跃实测），默认要求在用户消息末尾再说一次。
+      // 有的模型（如阶跃）不太听系统提示词，默认要求在用户消息末尾再说一次。
       if (!spec.retryPrompt) userSuffix = STRICT_JSON;
     }
   }

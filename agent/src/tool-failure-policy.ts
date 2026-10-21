@@ -18,7 +18,7 @@ function comparableError(error:string):string {
 
 /**
  * 同一操作第二次出同样的错：宿主调高主模型的思考档位。
- * 不停下本轮：连续出错三次就停的规则已于 10-10 按用户裁决去掉。
+ * 不停下本轮：用户不要「连续出错三次就停」。
  */
 export class RepeatedToolFailurePolicy {
   private failures=new Map<string,{toolName:string;error:string;attempts:number}>();

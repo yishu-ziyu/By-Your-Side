@@ -1,5 +1,5 @@
 /**
- * #49 回答出处：读过的页面列在回答下面「来源」面板里，每个来源一行；正文里引到的已读页面，链接前加站点图标
+ * 回答出处：读过的页面列在回答下面「来源」面板里，每个来源一行；正文里引到的已读页面，链接前加站点图标
  * 。
  * 点开出处 → 主窗口切到那一页（已开着就复用）、尽量定位并高亮段落。输入框旁的「当前页」标签随之换成这一页，不另挂第二个。
  *
@@ -214,7 +214,7 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     // 正文里指向已读页面的链接和它的角标做同一件事，不再一个开新标签、一个定位出处。
     link.onclick = (ev) => { ev.preventDefault(); void openAnswerSource(entry.source, claimOf(link)); };
 
-    // 站点图标长在链接文字前面（YIS-74 截图的做法），不在后面另挂胶囊；站名和标题放在悬停提示里。
+    // 站点图标长在链接文字前面，不在后面另挂胶囊；站名和标题放在悬停提示里。
     const glyph = siteGlyph(entry.source.url, entry.host);
     glyph.classList.add("source-fav");
     link.prepend(glyph);

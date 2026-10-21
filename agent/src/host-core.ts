@@ -1,7 +1,6 @@
 /**
  * 与传输方式无关的宿主核心：会话管理、语音接线、hello 回应与消息分发。
- * 本机伴随进程（main.ts，stdio / ws）与扩展 offscreen 文档（extension/src/inproc/main.ts，runtime 端口）共用这一份；
- * 两边只各自提供传输、存储与本机才有的能力（剪贴板服务、语音录制）。
+ * 扩展 offscreen 文档（extension/src/inproc/main.ts，runtime 端口）用它；传输和存储由调用方提供。
  */
 import { PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, HOST_VERSION, type ClientMessage, type ServerMessage } from "../../shared/protocol.js";
 import type { ConversationPersistence } from "./conversation-persistence.js";

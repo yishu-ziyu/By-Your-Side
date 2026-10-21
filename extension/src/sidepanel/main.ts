@@ -13,7 +13,7 @@ import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
  * side panel 入口：原生 TS + DOM，无框架。
- * 经 chrome.runtime Port 接入 background（background 持有到伴随进程的连接并执行工具）；
+ * 经 chrome.runtime Port 接入 background（background 持有到扩展内 agent 的连接并执行工具）；
  * 本层只负责渲染对话流与转发用户输入。token 设置 UI 仅在 ws 调试回退下出现。
  *
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
@@ -113,7 +113,7 @@ let replayingHistory = false;
 
 let citationRequestPending = false;
 
-/** 最近一次带圈发出的问题：回答里的 ①② 指向这一组圈（YIS-90）。换了对话就不认。 */
+/** 最近一次带圈发出的问题：回答里的 ①② 指向这一组圈。换了对话就不认。 */
 let circleRefs: { conversationId: string; target: { tabId: number; set: number }; max: number } | null = null;
 
 /** 回答里的 ①②…（不超过这次圈的个数）换成按钮：点一下页面滚回那一圈再指一下；那一圈不在了写「原处已变化」。 */
@@ -212,7 +212,7 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   if (source) void source.then(context => attachSourceCitations(answer, context));
 }
 
-/** 「还差… 继续原任务」放在本轮回答之后：先看结论，再决定要不要接着做（#58 C）。 */
+/** 「还差… 继续原任务」放在本轮回答之后：先看结论，再决定要不要接着做。 */
 function placeTaskCardAfter(answer: HTMLElement): void {
   const card = Array.from(messagesEl.querySelectorAll<HTMLElement>(".ai-task-card")).pop();
 
@@ -236,7 +236,7 @@ function syncAnswerTime(answer: HTMLElement): void {
   }
 }
 
-/** #49：本轮读过的页面 → 回答出处。新记录用独立的 sources，旧记录退回事实链里的 sources。 */
+/** 本轮读过的页面 → 回答出处。新记录用独立的 sources，旧记录退回事实链里的 sources。 */
 function attachDeliverySources(answer: HTMLElement, delivery: UserDelivery): void {
   attachAnswerSources(answer, delivery.sources ?? delivery.facts?.sources);
 }
@@ -444,7 +444,7 @@ const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 
 sendBtn.disabled = true;
 
-// 「圈出来问」的按键由侧栏自己处理（attachments.ts），不是 Chrome 快捷键：按系统写法显示（#236）。
+// 「圈出来问」的按键由侧栏自己处理（attachments.ts），不是 Chrome 快捷键：按系统写法显示。
 document.getElementById("region-key")!.textContent = /Mac/i.test(navigator.platform) ? "⌘⇧S" : "Ctrl+Shift+S";
 
 const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
@@ -459,7 +459,7 @@ installChromeQuiet({
 
 const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(text));
 
-// #51 「/ 技能」：选中后把正文放进输入框，走正常发送路径（带当前页面上下文）。
+// 「/ 技能」：选中后把正文放进输入框，走正常发送路径（带当前页面上下文）。
 const slashSkills = mountSlashSkills({
   composerEl, inputEl,
   run: (text) => { inputEl.value = text; inputEl.dispatchEvent(new Event("input")); sendInput(); },
@@ -693,7 +693,7 @@ function starterReady(): boolean {
 }
 
 /**
- * 页角建议卡（#52）点了按钮：后台把建议的话放进 session 存储，这里取走填进输入框，由用户自己发送（YIS-74）。
+ * 页角建议卡点了按钮：后台把建议的话放进 session 存储，这里取走填进输入框，由用户自己发送。
  * 等当前草稿恢复完再填，免得被恢复覆盖；输入框已有字时接在后面，不吞掉用户的草稿。
  */
 let takingNudgeDraft = false;
@@ -720,7 +720,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "session" && changes[NUDGE_DRAFT_KEY]?.newValue) void takeNudgeDraft();
 });
 
-/** 侧栏开着时的主动卡（YIS-106）：画在对话流最新处；点句子把这件事放进输入框，不发送。 */
+/** 侧栏开着时的主动卡：画在对话流最新处；点句子把这件事放进输入框，不发送。 */
 const proactiveCard = installProactiveCard({
   mount: node => { appendToMessages(node); scrollToEnd(); },
   selected: () => selectedConversationId,
@@ -745,7 +745,7 @@ function updateStarterVisibility(): void {
   refreshOpenThreads();
 }
 
-/** 有没有连模型：null 表示还没收到 hello_ok。只在确知没连时，起点引导换成「先连接模型」（#233）。 */
+/** 有没有连模型：null 表示还没收到 hello_ok。只在确知没连时，起点引导换成「先连接模型」。 */
 let modelConnected: boolean | null = null;
 
 function paintStarterModelState(): void {
@@ -758,7 +758,7 @@ function paintStarterModelState(): void {
 document.getElementById("starter-connect")!.onclick = () => void chrome.runtime.openOptionsPage();
 
 /**
- * 没连模型时发出的话（#233）：卡片承诺「连好以后，这句话会自动发出」。只存在内存里，按会话分开；
+ * 没连模型时发出的话：卡片承诺「连好以后，这句话会自动发出」。只存在内存里，按会话分开；
  * 用户自己再发任何话就作废。resending 是已交出、还没在历史里见到的那一次重发：它的历史不再画第二个用户气泡。
  */
 /** 用户最近一次自己发话的时刻：连好后的自动重发在动画期间被它抢先时，旧那句不再补发。 */
@@ -771,7 +771,7 @@ let lastSentPage: { requestId: string; page: Promise<PageContext | undefined> } 
 let resending: { conversationId: string; text: string; bubble: HTMLElement | null } | null = null;
 
 /**
- * 用户存过主模型。宿主列模型失败时 hello_ok 也会是空目录：存过就不当成「没连」（#244 审阅）。
+ * 用户存过主模型。宿主列模型失败时 hello_ok 也会是空目录：存过就不当成「没连」。
  * 只用来否决「没连」，不触发重发：刚存好时宿主可能还没就绪，重发要等它带着模型回 hello_ok。
  */
 let modelSaved: boolean | null = null;
@@ -1122,7 +1122,7 @@ function resolveBootSession(inheritedId: string, listKnown: boolean): void {
   if (!bootFreshSession) return;
   bootInheritedId = inheritedId;
   const inherited = conversations.get(inheritedId);
-  // 没连模型时宿主不建会话，空清单就是真的空：直接用后台选中的会话，不等两段兜底时限（#233）。
+  // 没连模型时宿主不建会话，空清单就是真的空：直接用后台选中的会话，不等两段兜底时限。
   const noModel = modelConnected === false;
 
   // 刷新前记着的会话已经不在清单里了：不能停在它上面（发什么都会被宿主拒），只能新建。
@@ -1329,7 +1329,7 @@ function syncSteerSend(): void {
 
   if (steer && send && input) steer.hidden = !send.classList.contains("stopping") || !input.value.trim();
 
-  // 没字也没附件时发送键看起来不能点（#236）。不动 disabled：它只表示会话是否就绪。
+  // 没字也没附件时发送键看起来不能点。不动 disabled：它只表示会话是否就绪。
   if (send && input) {
     const idle = !send.classList.contains("stopping") && !input.value.trim() && !attachments?.getAttachments().length;
 
@@ -1532,7 +1532,7 @@ const modelMenu = mountModelMenu({
   setModel: (model) => { send({ type: "set_model", model }); },
 });
 
-// ── 错误卡（#74）：模型出错时按种类给修复动作，修好后从出错处接着做 ──
+// ── 错误卡：模型出错时按种类给修复动作，修好后从出错处接着做 ──
 let knownModels: ModelOption[] = [];
 
 let currentModelId: string | undefined;
@@ -1691,17 +1691,17 @@ interface RunHost {
   titleTimer: number;
   /** 标题前的动作图标：跟着当前动作换，收尾后是那一件事或「多步」。 */
   actIcon: HTMLElement;
-  /** 进行中标题下方的说明行（调试提示条、教学没变化）；收尾时移除。做过的步骤只在 › 里（#263）。 */
+  /** 进行中标题下方的说明行（调试提示条、教学没变化）；收尾时移除。做过的步骤只在 › 里。 */
   trail: HTMLElement;
-  /** 进行中的第二行小字「已做 N 步 ›」（#263）；收尾后隐藏。 */
+  /** 进行中的第二行小字「已做 N 步 ›」；收尾后隐藏。 */
   metaEl: HTMLElement;
   /** 核对判继续后续做的这一轮：第二行开头写核对发现了什么（「核对发现：…」），代替单独一行橙字。 */
   checkNote: string | null;
   /** 正在算的这段思考从何时开始（上一步结束，或发送时刻）；不在想时为 NaN。 */
   thinkFrom: number;
-  /** 想过的每一段：记录里 ≥3 秒的单列「想了 N 秒」，末行合计全部（#263）。 */
+  /** 想过的每一段：记录里 ≥3 秒的单列「想了 N 秒」，末行合计全部。 */
   thinkSegments: Array<{ start: number; end: number }>;
-  /** 只对这一轮有用的说明（调试提示条，#103），跟在最近几步后面，随它收起。 */
+  /** 只对这一轮有用的说明（调试提示条），跟在最近几步后面，随它收起。 */
   aside: string | null;
   /** 教学这一步点了但页面没变化（橙色），跟在最近几步后面；不等了就清掉。 */
   guideHint: string | null;
@@ -1742,7 +1742,7 @@ function setActionIcon(box: HTMLElement, kind: IconKind): void {
 
 const RUN_TITLE_HOLD_MS = 1100;
 
-/** 过程灰字：动词墨色、对象浅灰，无图标（#58 C）。 */
+/** 过程灰字：动词墨色、对象浅灰，无图标。 */
 function paintAction(el: HTMLElement, text: string): void {
   const { verb, object } = splitAction(text);
   const v = document.createElement("span");
@@ -1787,7 +1787,7 @@ const deliveredBubbles = new Map<string, HTMLElement>();
 
 const resultByConversation = new Map<string, { summary: string | null; remaining: string[]; unknown: boolean; speechFailed: boolean }>();
 
-/** T06：正式交付 → 结果可见的下一帧采样；只在验收模式读取。 */
+/** 正式交付 → 结果可见的下一帧采样；只在验收模式读取。 */
 
 /** Lead 当前 run 是否启用了 explicit deliveryMode。 */
 let leadDeliveryMode: "explicit" | null = null;
@@ -2431,7 +2431,7 @@ function renderSiteNotesReceipt(event: Extract<AgentUiEvent, { kind: "site_notes
 
 // ── 执行步骤聚合块 ──────────────────────────────────────────
 // 一次 run（用户消息 → agent_end）只有一条状态行：[光球] 正在做什么 · 耗时（在 summary 上）。
-// 思考块、旁白与动作卡收进同一个 details 的 body；第一张动作卡出现时展开（#47），结束后收起成历史。
+// 思考块、旁白与动作卡收进同一个 details 的 body；第一张动作卡出现时展开，结束后收起成历史。
 
 /** 最后一轮是刚发出的用户消息，后面还没有过程行或回答。 */
 function awaitingFirstStep(): boolean {
@@ -2475,7 +2475,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const chevron = document.createElement("span");
   chevron.className = "run-chevron";
   chevron.appendChild(icon(ChevronRight));
-  // 第二行小字：已做几步（#263 A）。整行可点，和 › 一样展开记录。
+  // 第二行小字：已做几步。整行可点，和 › 一样展开记录。
   const meta = document.createElement("span");
   meta.className = "run-meta";
   meta.hidden = true;
@@ -2549,7 +2549,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   return currentRun;
 }
 
-/** 进行中标题下方的说明行（调试提示条、教学点了没变化）。做过的步骤不再列在这里，只在 › 里（#263）。 */
+/** 进行中标题下方的说明行（调试提示条、教学点了没变化）。做过的步骤不再列在这里，只在 › 里。 */
 function renderTrail(run: RunHost): void {
   const key = JSON.stringify([run.aside, run.guideHint]);
 
@@ -2578,7 +2578,7 @@ function renderTrail(run: RunHost): void {
   if (run.graph.el.nextElementSibling !== run.trail) run.graph.el.after(run.trail);
 }
 
-/** 记录里秒数的门槛：一步、一段思考不到 3 秒都不写秒数，思考段也不单列（#263）。 */
+/** 记录里秒数的门槛：一步、一段思考不到 3 秒都不写秒数，思考段也不单列。 */
 const SHOW_SECS_MS = 3_000;
 
 /** 两步之间短于这个就不算想过（工具连着调）。 */
@@ -2688,7 +2688,7 @@ function renderRunMeta(run: RunHost): void {
 }
 
 /**
- * 收尾回执：「做了 6 步：打开词条 → … → 圈出 11 部」（#263 C）。短名链放不下时从中间省略，头尾优先留；
+ * 收尾回执：「做了 6 步：打开词条 → … → 圈出 11 部」。短名链放不下时从中间省略，头尾优先留；
  * 头尾都放不下只留最后一个，再放不下只写步数。末尾「· N 步换了做法」从不省略。不写耗时。
  * 侧栏宽度会变（拖宽、切会话后才显示），所以每次尺寸变化重排一次。
  */
@@ -2957,7 +2957,7 @@ function finishRun(): void {
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   stopLiveSeconds(run);
   const endedAt = eventTime();
-  // 停下、出错、答完：正在算的那段思考在这一刻结束（#263 E6）。
+  // 停下、出错、答完：正在算的那段思考在这一刻结束。
   closeThink(run, endedAt);
   // 收尾后过程只留回执，进行中的说明行不再单列。
   run.trail.remove();
@@ -2971,7 +2971,7 @@ function finishRun(): void {
   run.orbActivity.finish();
   const outcome = run.orbActivity.state();
   const hasResumeReceipt = !!run.body.querySelector(".receipt-history");
-  // 按主动卡发起的一轮（YIS-106）：步骤就是卡上那件事的结果，即使只读也留着。
+  // 按主动卡发起的一轮：步骤就是卡上那件事的结果，即使只读也留着。
   const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped" || cardTurn(run.root);
 
   // 核对判继续后续做的这一轮：即使没有步骤也留着，「核对发现：…」只写在这一行上，拿掉用户就看不到为什么又动起来。
@@ -2983,7 +2983,7 @@ function finishRun(): void {
       if (lastRun === run) lastRun = null;
     };
 
-    // 首字刚到还在淡出：等 --d-state 再拿掉，避免收起被掐断（#311）。
+    // 首字刚到还在淡出：等 --d-state 再拿掉，避免收起被掐断。
     if (run.root.classList.contains("run-quieting") && !reducedMotion()) window.setTimeout(drop, D_STATE);
     else drop();
 
@@ -3015,13 +3015,13 @@ function finishRun(): void {
     if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, head, true);
     else if (only?.dataset.past) setRunTitle(run, head, true);
     else {
-      // 回执：「做了 6 步：打开词条 → … → 圈出 11 部 · 1 步换了做法」（#263 C）。出错结束只写步数和「有 1 步没做成」。
+      // 回执：「做了 6 步：打开词条 → … → 圈出 11 部 · 1 步换了做法」。出错结束只写步数和「有 1 步没做成」。
       const names = ended === "failed" ? [] : done.filter(chip => !chip.classList.contains("error")).map(chip => chip.dataset.short ?? "").filter(Boolean);
       paintReceipt(title, head, names, ended === "completed" && failed ? ` · ${failed} 步换了做法` : "");
     }
   }
 
-  // 回执不写耗时（10-06）；总时长和想了多久写在展开记录的末行。历史回放没有时钟时不写（#263 E1）。
+  // 回执不写耗时；总时长和想了多久写在展开记录的末行。历史回放没有时钟时不写。
   run.timeEl.textContent = "";
   run.metaEl.hidden = true;
   mergeRepeatedSteps(run);
@@ -3204,7 +3204,7 @@ function comparableText(text: string): string {
 }
 
 /**
- * 回答出现后，这一轮只留一个结论（#334）：开场话收进过程顶部（安静的一行计划）、读回收到步骤后面、
+ * 回答出现后，这一轮只留一个结论：开场话收进过程顶部（安静的一行计划）、读回收到步骤后面、
  * 与回答逐字相同的「执行过程」旁白删掉；过程行改写成「做了 N 步 · 耗时 · 核对状态」。进行中不调用。
  */
 function foldAnsweredRun(run: RunHost): void {
@@ -3423,7 +3423,7 @@ function quietRunForProse(): void {
 
   // 计划卡留到这一轮结束：计划是这一轮的承诺，不因先出字就收掉。
   if (!run || run.body.querySelector(".chip") || run.root.classList.contains("plan-card")) return;
-  // 首字到达立刻停表，不留 0 秒，也不再累加（#311）。
+  // 首字到达立刻停表，不留 0 秒，也不再累加。
   stopLiveSeconds(run);
   run.thinkFrom = Number.NaN;
   run.timeEl.textContent = "";
@@ -3531,7 +3531,7 @@ function appendLeadDelta(delta: string): void {
 
   if (!currentLeadDraft) {
     const details = document.createElement("details");
-    // #47：过程旁白直接露出，夹在前后动作卡之间；之后的动作另起一组卡。
+    // 过程旁白直接露出，夹在前后动作卡之间；之后的动作另起一组卡。
     details.className = "thinking narration streaming";
     details.open = true;
     run.chipGroup = null;
@@ -3595,7 +3595,7 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       details.className = "thinking streaming";
       details.open = true;
 
-      // 这段思考结束时（closeThink）把标题改成「想了 N 秒」，不再另加一行（#263）。
+      // 这段思考结束时（closeThink）把标题改成「想了 N 秒」，不再另加一行。
       if (currentRun && Number.isFinite(currentRun.thinkFrom)) details.dataset.thinkFrom = String(currentRun.thinkFrom);
       const summary = document.createElement("summary");
       const orb = createOrb("composing", ORB_BOX_THINKING);
@@ -3756,7 +3756,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const action = describeTool(ev.name, ev.params);
   const run = ensureRun();
   closeBlocks();
-  // 想完了，开始动手（交付、交给用户也算）：这段思考到此为止（#263）。
+  // 想完了，开始动手（交付、交给用户也算）：这段思考到此为止。
   closeThink(run, eventTime());
 
   // 助手把页面交给用户：不进步骤链，单独一张卡。
@@ -3786,7 +3786,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   addChainStep(action.short);
   run.lastToolShort = action.short;
 
-  // #58 C 取代 #47 的自动展开：进行中只有一行「正在…」，做过的步骤收在 › 里。
+  // 进行中只有一行「正在…」，做过的步骤收在 › 里。
 
   if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
   const group = run.chipGroup;
@@ -3866,7 +3866,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
 }
 
 function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string } }): void {
-  // 10-09/10-10 存下的侧栏历史只有旧标记 sendDeclined、没有原因：按「不发」画，不画成失败；那段历史不再要紧时删掉这一行。
+  // 旧的侧栏历史只有标记 sendDeclined、没有原因：按「不发」画，不画成失败。
   if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
 
@@ -3882,7 +3882,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
 
-  // 这一步做完、下一步还没开始：模型在想下一步。第一行只写「正在思考」并从这里开始数秒，做了几步在第二行（#263）。
+  // 这一步做完、下一步还没开始：模型在想下一步。第一行只写「正在思考」并从这里开始数秒，做了几步在第二行。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
     run.lastToolName = null;
     setRunTitle(run, "正在思考", false, "think");
@@ -3905,7 +3905,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   const end = eventTime();
-  // 记录里只给 ≥3 秒的一步写秒数（#263）；历史回放没有时钟就不写。
+  // 记录里只给 ≥3 秒的一步写秒数；历史回放没有时钟就不写。
   const slow = Number.isFinite(entry.start) && Number.isFinite(end) && end - entry.start >= SHOW_SECS_MS;
   entry.dur.hidden = !slow;
   entry.dur.textContent = slow ? spokenDuration(entry.start, end) ?? "" : "";
@@ -3919,7 +3919,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   const label = entry.chip.querySelector<HTMLElement>(".chip-label");
-  // 打开页面：拿到标题后用页面名，不用网址（#102）。页面标题来自网页，只作文字显示。
+  // 打开页面：拿到标题后用页面名，不用网址。页面标题来自网页，只作文字显示。
   const pageTitle = !failed && entry.chip.dataset.kind === "open" ? openedPageTitle(ev.resultText ?? "") : null;
 
   if (ev.pageTarget?.label && label && !pageTitle && !ev.heldReason) {
@@ -4059,7 +4059,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       renderSiteNotesReceipt(ev);
       break;
     case "text_delta":
-      // 回答开始出字：这段思考结束（#263）。
+      // 回答开始出字：这段思考结束。
       if (currentRun) closeThink(currentRun, eventTime());
 
       if (leadDeliveryMode === "explicit") {
@@ -4100,7 +4100,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if (ev.confirm?.clicked) break;
 
       // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
-      // 等你确认的时间不算「想了」（#263）。
+      // 等你确认的时间不算「想了」。
       if (run) {
         setRunTitle(run, ev.waiting ? "等你确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
         // 等你的时候过程行不扫光、回答位置不放骨架；这一步的工具还在途，所以 data-phase 仍是 executing。
@@ -4127,7 +4127,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : "正在思考", true, waiting ? undefined : "think");
       run.root.toggleAttribute("data-wait-user", !!waiting);
 
-      // 等你自己点的时间不算「想了」（#263）。
+      // 等你自己点的时间不算「想了」。
       if (waiting) closeThink(run, eventTime());
       else openThink(run, eventTime());
       run.guideHint = waiting && waiting.state === "no_change" ? (waiting.target ? `点了「${waiting.target}」，页面没有变化` : "点了，页面没有变化") : null;
@@ -4161,11 +4161,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       closeBlocks();
 
       errorCards.retire();
-      // #58 C：一开始就有一行「正在思考」，模型想很久时也看得到在做（任务条不再兜这段）。
+      // 一开始就有一行「正在思考」，模型想很久时也看得到在做（任务条不再兜这段）。
       // 新会话第一轮的开头经补放历史到达，所以补放时也建；补放到 agent_end 会照常收尾。
       ensureRun();
 
-      // 回答之后宿主自己接着做：标题说明为什么又动起来，第二行写核对发现了什么，直到这一轮结束（#105）。
+      // 回答之后宿主自己接着做：标题说明为什么又动起来，第二行写核对发现了什么，直到这一轮结束。
       if (goalNote !== null) {
         const run = ensureRun();
         setRunTitle(run, goalStep ? `还在做第 ${goalStep.at} 件（共 ${goalStep.of} 件）` : "还没做完，接着做", true, "think");
@@ -4450,8 +4450,8 @@ function post(envelope: PanelToBg): boolean {
   }
 }
 
-// ── T05 接续入口：消费 task_view；「继续原任务」只提交现有 resume 动作 ──
-// #53 继续上次的事：空白会话起点区的「没做完的事」卡，逻辑在 open-threads.ts。
+// ── 接续入口：消费 task_view；「继续原任务」只提交现有 resume 动作 ──
+// 继续上次的事：空白会话起点区的「没做完的事」卡，逻辑在 open-threads.ts。
 // 起点区中央的光球：看得见时才转，起点区收起就停，不空耗。
 /** 装好后第一次看到空会话时才播产品名开场；记在本机，换会话、重开侧栏都不再播。 */
 const INTRO_SEEN_KEY = "starter_intro_seen";
@@ -4845,7 +4845,7 @@ function handleServerMessage(raw: string): void {
     case "status":
       setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
 
-      // 页面归你的时间不算「想了」；交还后模型接着想，从交还那一刻数（#263 E12）。
+      // 页面归你的时间不算「想了」；交还后模型接着想，从交还那一刻数。
       if ((msg.sessionId ?? LEAD_SESSION_ID) === LEAD_SESSION_ID && currentRun) {
         if (msg.state === "user") closeThink(currentRun, eventTime());
         else if (msg.state === "running" && !toolChips.size) openThink(currentRun, eventTime());
@@ -4856,7 +4856,7 @@ function handleServerMessage(raw: string): void {
       if (msg.state === "running" && (msg.sessionId ?? LEAD_SESSION_ID) === LEAD_SESSION_ID && awaitingFirstStep()) ensureRun();
       break;
     case "task_view":
-      // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
+      // 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
 
       // 续做卡出现或消失后，上一轮过程行的核对状态跟着改：没做完只说一次。
@@ -4865,7 +4865,7 @@ function handleServerMessage(raw: string): void {
       if (msg.view.conversationId === selectedConversationId) renderStreamTaskCard(msg.view);
       renderTaskStrip();
 
-      // T03 任务条：只信视图自己的任务身份，跨会话/旧 run 的视图不改当下这一条。
+      // 任务条：只信视图自己的任务身份，跨会话/旧 run 的视图不改当下这一条。
       if (msg.view.conversationId === selectedConversationId) taskBar.updateView(msg.view);
       break;
     case "team_status":
@@ -5110,7 +5110,7 @@ let historyOccurredAt: number | undefined;
 
 function eventTime(): number { return historyEventTime(applyingHistory, historyOccurredAt); }
 
-/** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（issue #4 竞态边界）。 */
+/** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（竞态边界）。 */
 const userBubbles = new Map<number, HTMLElement>();
 
 /** 点了「重试」还在等回执的气泡：留着原文，后台说那条历史没了时另发一条；等不到回执就把「重试」还给用户。 */
@@ -5446,7 +5446,7 @@ attachments = new AttachmentsManager({
 
 attachmentsReady = true;
 
-// ── 任务条（T03）：消费 task_view，材料事实来自实际发出的请求与回执 ──
+// ── 任务条：消费 task_view，材料事实来自实际发出的请求与回执 ──
 function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string } | null> {
   if (typeof chrome === "undefined" || !chrome.tabs?.get) return Promise.resolve(null);
 
@@ -5677,7 +5677,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
 
   // 没有选区引用时，后台会附当前页面上下文：把这一页也补进材料，界面与实际上行一致。
-  // 同一页也记给这次请求：没连模型被退回时，连好后照这一页重发，而不是重发时开着的设置页（#233）。
+  // 同一页也记给这次请求：没连模型被退回时，连好后照这一页重发，而不是重发时开着的设置页。
   const page = context ? Promise.resolve(context) : (async () => {
     try {
       const id = await activeTabId();

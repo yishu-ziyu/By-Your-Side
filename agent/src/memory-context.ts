@@ -140,7 +140,7 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
       if (chosen.has(task.id) || expiredIds.has(task.id) || !task.hosts.includes(input.hostname)) continue;
 
       // 同一网站的过往任务要和这句话对得上（按用户原话比词，不比摘要：摘要会抄网页原文）。
-      // 10-09 实测不比就带，侧栏回答下挂着无关的旧任务「按上次做过的…」。
+      // 不比就带的话，侧栏回答下会挂着无关的旧任务「按上次做过的…」。
       if (!isRelevantMemory([task.goal, ...task.revisions].join("\n"), input.text)) { skipped.notRelevant++; continue; }
 
       if (take(taskContextChars(task), here, MEMORY_CONTEXT_CAPS.siteTasks)) { pickedTasks.push({ task, rule: "site" }); chosen.add(task.id); }

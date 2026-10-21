@@ -130,7 +130,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     }
     line.answer = answer;
     usedLineByAnswer.set(answer, line);
-    // #56 D + X1：「用了 N 条记忆 ›」跟在首句后面，点开在首段下面撑出小条；「来源」面板只放网页。
+    // 「用了 N 条记忆 ›」跟在首句后面，点开在首段下面撑出小条；「来源」面板只放网页。
     const first = answer.firstElementChild;
     let head: HTMLElement;
 
@@ -165,7 +165,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     method: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 2.5h6M2 5h4M2 7.5h5"/></svg>',
   };
 
-  /** 行内点名用上的第一条（带给助手时排第一），多条时加「等 N 条」（YIS-86）。太长的截断，全文在展开里。 */
+  /** 行内点名用上的第一条（带给助手时排第一），多条时加「等 N 条」。太长的截断，全文在展开里。 */
   function usedLineLabel(line: MemoryUsedLine): string {
     const first = line.items.values().next().value!;
     const text = first.kind === "entry" ? first.entry.text : first.task.done || first.task.goal;
@@ -282,7 +282,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     return null;
   }
 
-  // 网页上「记得的」小卡点「忘掉」（YIS-87）：用回答下面那一行同一套「忘掉」，展开那一行让你看到「已忘掉 · 撤销」。
+  // 网页上「记得的」小卡点「忘掉」：用回答下面那一行同一套「忘掉」，展开那一行让你看到「已忘掉 · 撤销」。
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (!isPageInteractionMessage(message) || message.type !== "MEMORY_FIELD_FORGET") return;
     const found = findUsedEntry(message.id);
@@ -370,7 +370,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     receipt.className = `memory-receipt memory-receipt-${event.action}`;
     const mark = document.createElement("span");
     mark.className = "memory-receipt-mark";
-    // 记忆的身份标记：connecting 球（星座接线），替代原来的文字勾。记录已落定，球定格不转。
+    // 记忆的身份标记：connecting 球（星座接线）。记录已落定，球定格不转。
     mark.appendChild(createOrb("connecting", ORB_BOX_RECEIPT).el);
     const button = document.createElement("button");
     button.type = "button";
@@ -387,11 +387,11 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     receipt.append(mark, button);
     const single = event.entries.length === 1 && !event.entries[0]!.experience ? event.entries[0]! : null;
     const saved = event.action === "saved" ? single : null;
-    // 改了一条资料：回执写出新值和旧值，「撤销」把旧值恢复回来（YIS-85）。
+    // 改了一条资料：回执写出新值和旧值，「撤销」把旧值恢复回来。
     const previous = event.action === "updated" && single && event.replaced?.length === 1 && !event.replaced[0]!.experience ? event.replaced[0]! : null;
     const quick = saved ?? (previous && single);
 
-    // 自动记下或改过的资料：回执直接写出记了什么，旁边给「撤销」（用户 2026-09-27 选择「自动记，给撤销」）。
+    // 自动记下或改过的资料：回执直接写出记了什么，旁边给「撤销」（用户选的「自动记，给撤销」）。
     if (quick) {
       const text = document.createElement("span");
       text.className = "memory-receipt-text";

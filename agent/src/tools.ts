@@ -491,7 +491,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 开始前记下各标签页的地址，结束时才知道程序有没有让工作页换了页。只读补读，不挂本次调用身份；读失败就不比较。
         const startUrls = sid ? null : await (readAfterNavigate("list_tabs", {}) as Promise<ToolContract["list_tabs"]["data"]>)
           .then(d => new Map(d.tabs.map(tab => [tab.id, tab.url])), () => null);
-        // 程序换了页（包括中途因文档变化失败）时顺手读一次新页：10-13 真实网站有 2 次程序跳转后专门花一轮 snapshot。
+        // 程序换了页（包括中途因文档变化失败）时顺手读一次新页，模型不用再专门花一轮 snapshot。
         // 没有现成的「等文档就绪」宿主接口（waitForLoad 在程序内部），读失败就隔 500ms 再试，最多 3 次，都失败只退回原回执。
         const pageAfter = async (tabId: number): Promise<ToolContract["snapshot"]["data"] | null> => {
           for (let attempt = 0; attempt < 3 && !signal?.aborted; attempt++) {
@@ -522,7 +522,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
           return false;
         };
-        // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」（#257）。
+        // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」。
         // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。page 放进 details，会话把它记成一次页面读数。
         const endedOn = async (): Promise<{ text: string; page?: ToolContract["snapshot"]["data"] }> => {
           try {
@@ -656,7 +656,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           if (data.readiness === "download" || data.readiness === "error_page") return textResult(head, data);
           const siteNotes = await siteNotesAfter(data.url);
 
-          // 和 navigate 一样顺手读一次新页：10-13 真实网站 12 次里 9 次 open 后专门花一轮 snapshot。读失败只退回原结果。
+          // 和 navigate 一样顺手读一次新页：不然 open 后模型多半专门花一轮 snapshot。读失败只退回原结果。
           try {
             const page = (await readAfterNavigate("snapshot", { tabId: data.tabId })) as ToolContract["snapshot"]["data"];
 
@@ -1083,7 +1083,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
         const text = formatFetchReply(data as FetchReply);
-        // 对方答了非 2xx 这一步算失败（判定见 fetchFailureReason）：isError + 给侧栏的人话原因；给模型的文字不变（#304）。
+        // 对方答了非 2xx 这一步算失败（判定见 fetchFailureReason）：isError + 给侧栏的人话原因；给模型的文字不变。
         const reason = fetchFailureReason(data as FetchReply);
 
         return reason
@@ -1126,7 +1126,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         // SAFETY: saveAs、deliver 只在有文件区时进入参数 schema，类型是可选字符串与可选布尔，Pi 已按 schema 校验。
-        // purpose 只给侧栏当步骤名（#263），不送进页面。
+        // purpose 只给侧栏当步骤名，不送进页面。
         const { saveAs, deliver, purpose: _purpose, ...pageParams } = params as typeof params & { saveAs?: string; deliver?: boolean };
 
         if (saveAs !== undefined) {
@@ -1267,7 +1267,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
   return execution ? definitions.map(tool => ({ ...tool, execute: async (...args: Parameters<ToolDefinition["execute"]>) => {
     rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);
-    // 本次执行用绑定了自己身份的一份工具定义；定义内部没有跨调用的状态（2026-09-24 核对）。
+    // 本次执行用绑定了自己身份的一份工具定义；定义内部没有跨调用的状态。
     const scope: ExecutionScope = {epoch: execution.epoch(), toolCallId: args[0], signal: args[2]};
     const scoped = makeDefinitions(makeCall(scope), scope).find(candidate => candidate.name === tool.name) ?? tool;
 

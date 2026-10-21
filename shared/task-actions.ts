@@ -33,7 +33,7 @@ export interface TaskReceiptChange {
   to: string;
 }
 
-/** T04: structured field-change facts for a steering receipt. Host-facts only;
+/** structured field-change facts for a steering receipt. Host-facts only;
  * absent whenever old/new/target/preserved cannot all be backed by observation. */
 export interface TaskReceiptDiff {
   /** Label of the object the change applied to (page title). */
