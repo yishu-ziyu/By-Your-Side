@@ -293,6 +293,9 @@ interface ResumeEntryOptions {
 
 const ELEMENT_TAG = "resume-entry";
 
+/** 目标核对自己限时 20 秒；再多等一点，没回音也照常出卡。 */
+const CHECK_HOLD_MS = 25_000;
+
 /** 一个任务视图一份摘要；不保存历史视图，不跨会话复用。 */
 export class ResumeEntry {
   private view: TaskView | null = null;
@@ -302,6 +305,8 @@ export class ResumeEntry {
   private pendingRequestId: string | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  /** 目标核对还没出结论：正常结束的这一轮先不出卡，等结论定了再看要不要（核对判做完时卡会消失，先出再收就是一闪）。 */
+  private checkHold: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly opts: ResumeEntryOptions) {}
 
@@ -316,12 +321,26 @@ export class ResumeEntry {
     if (this.pendingRequestId && view?.state === "running") this.clearPending();
 
     if (this.note && view && (view.runId !== this.noteRunId || view.state === "running")) this.note = null;
+    this.rerender();
+  }
+
+  /** 核对开始时 true、出结论（含没结论）时 false；核对超时没回音时最多等 CHECK_HOLD_MS。 */
+  holdForCheck(on: boolean): void {
+    if (this.checkHold) clearTimeout(this.checkHold);
+    this.checkHold = on ? setTimeout(() => { this.checkHold = null; this.rerender(); }, CHECK_HOLD_MS) : null;
+    this.rerender();
+  }
+
+  private rerender(): void {
+    if (this.disposed) return;
     const summary = buildResumeSummary(this.view, this.checkpointUnavailable, this.note);
-    this.render(summary);
+    this.render(this.checkHold && this.view?.state === "idle" ? { ...summary, visible: false } : summary);
   }
 
   clear(): void {
     this.clearPending();
+    if (this.checkHold) clearTimeout(this.checkHold);
+    this.checkHold = null;
     this.view = null;
     this.note = null;
     this.noteRunId = null;

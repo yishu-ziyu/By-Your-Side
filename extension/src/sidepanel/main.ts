@@ -4229,6 +4229,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       goalNote = ev.status === "continue" ? checkNoteForUser(ev.finding, ev.remaining) : null;
       goalStep = ev.status === "continue" ? ev.step ?? null : null;
 
+      resumeEntry.holdForCheck(ev.status === "checking");
       // 用户说了不止一件事：回答扣到核对之后，这几秒过程行写在对清单，不让屏幕停着。
       if (ev.status === "checking" && ev.gate && currentRun) setRunTitle(currentRun, "正在对一遍还有没有没做的", true, "think");
       // 核对结论写在这一轮的过程行上（核对中… → 已核对页面 / 有 N 步没做成）。checking 在 agent_end 之前到，结论在收尾之后到。
