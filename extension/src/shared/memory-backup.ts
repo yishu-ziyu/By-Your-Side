@@ -2,7 +2,7 @@
  * 记忆备份：卸载扩展时 Chrome 会删掉它的全部存储，记忆只在这里另存一份到下载文件夹，重装后从设置页选文件恢复。
  * 后台、离屏宿主、设置页共用的键、文件格式和读写。凭据（inproc_cred:*、settings_connection:*）从不进备份。
  */
-import { BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY } from "./browse-habits.js";
+import { BROWSE_ON_KEY } from "./browse-habits.js";
 
 /** 离屏宿主 → 后台：记忆库刚写过，排一次备份。 */
 export const MEMORY_CHANGED = "memory_backup_changed";
@@ -18,8 +18,17 @@ export const BACKUP_FOLDER = "By-Your-Side";
 /** 自定义类型只用来认出自己发起的下载：网页操作的下载记录要排除它。 */
 export const BACKUP_URL_PREFIX = "data:application/x-by-your-side-memory-backup+json;base64,";
 
-/** 浏览习惯放在 chrome.storage.local，也随记忆一起备份。 */
-export const BACKUP_STORAGE_KEYS = [BROWSE_ON_KEY, BROWSE_LOG_KEY, BROWSE_FOUND_KEY, BROWSE_DISMISSED_KEY] as const;
+/**
+ * 备份文件明文落在下载文件夹：浏览记录、习惯归纳和删除名单都由网页内容生成（网址查询串、输入框的值可能带 token），
+ * 只带开关；习惯在重装后重新从浏览里学。
+ */
+export const BACKUP_STORAGE_KEYS = [BROWSE_ON_KEY] as const;
+
+/**
+ * 只备份用户已经确认或做成的内容。pending-memory 存着还没判完的原话，habits 存着从浏览里数出来的计数，都不出这个扩展。
+ * 恢复时也只认这几份，别的键一律拒绝。
+ */
+const BACKUP_DOCUMENTS = ["memories", "tasks", "site-notes"] as const;
 
 const FORMAT = "by-your-side-memory-backup";
 const VERSION = 1;
@@ -46,7 +55,7 @@ export function backupFileName(installAt: number): string {
   const d = new Date(installAt);
   const pad = (n: number) => String(n).padStart(2, "0");
 
-  return `${BACKUP_FOLDER}/记忆备份-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  return `${BACKUP_FOLDER}/记忆备份-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -75,7 +84,7 @@ export async function readMemoryDocuments(): Promise<Record<string, string>> {
     const [keys, values] = await Promise.all([settle(store.getAllKeys()), settle(store.getAll())]);
     const out: Record<string, string> = {};
 
-    keys.forEach((key, i) => { if (typeof key === "string" && typeof values[i] === "string") out[key] = values[i]; });
+    keys.forEach((key, i) => { if (isBackupDocument(key) && typeof values[i] === "string") out[key] = values[i]; });
 
     return out;
   } finally {
@@ -114,6 +123,19 @@ export async function collectBackup(): Promise<MemoryBackup> {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
+function isBackupDocument(key: unknown): key is (typeof BACKUP_DOCUMENTS)[number] {
+  return typeof key === "string" && (BACKUP_DOCUMENTS as readonly string[]).includes(key);
+}
+
+/** 每份文档都必须是 JSON 对象；宿主读到不认识的版本会只读不写，但损坏的文本会让它报错。 */
+function isDocumentText(text: string): boolean {
+  try {
+    return isRecord(JSON.parse(text));
+  } catch {
+    return false;
+  }
+}
+
 /** 用户选的文件：形状不对就返回原因，不写任何东西。 */
 export function parseBackup(text: string): MemoryBackup | string {
   let raw: unknown;
@@ -132,13 +154,13 @@ export function parseBackup(text: string): MemoryBackup | string {
   const documents: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(raw.documents)) {
-    if (!/^[a-z0-9-]{1,64}$/.test(key) || typeof value !== "string") return "备份文件里有看不懂的内容。";
+    if (!isBackupDocument(key) || typeof value !== "string" || !isDocumentText(value)) return "备份文件里有看不懂的内容。";
     documents[key] = value;
   }
 
   const storage: MemoryBackup["storage"] = {};
 
-  for (const key of BACKUP_STORAGE_KEYS) if (raw.storage[key] !== undefined) storage[key] = raw.storage[key];
+  if (typeof raw.storage[BROWSE_ON_KEY] === "boolean") storage[BROWSE_ON_KEY] = raw.storage[BROWSE_ON_KEY];
 
   return {
     format: FORMAT, version: VERSION,
