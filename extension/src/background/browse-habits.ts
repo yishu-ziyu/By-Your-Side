@@ -2,6 +2,7 @@ import { BROWSE_DAY_LIMIT, BROWSE_LINE_LIMIT, type BrowseDay, type BrowseHabitRe
 import type { ClientMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
 import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_EVENT, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, isBrowseStep, localDay, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent, type BrowseStep } from '../shared/browse-habits.js';
+import { watchSelfUse } from '../shared/self-use.js';
 import { debuggerAttached } from './debugger.js';
 import { isPanelUrl } from './target-window.js';
 import { nudgeableUrl } from '../shared/nudge.js';
@@ -32,6 +33,8 @@ function line(step: BrowseStep, url: URL, at: number): string {
 }
 
 export function installBrowseHabits(deps: Deps) {
+  const selfUse = watchSelfUse();
+
   const views = new Map<string, TaskView>();
   /** 进行中的归纳：请求 id → 发起时的对话。归纳结果缓存在那个对话的运行时里，提问也得发回那里。 */
   const pending = new Map<string, string>();
@@ -120,6 +123,8 @@ export function installBrowseHabits(deps: Deps) {
     }
 
     if (message?.type !== BROWSE_EVENT || sender.id !== chrome.runtime.id || !sender.tab?.id || sender.tab.incognito || sender.frameId !== 0 || !nudgeableUrl(sender.url) || !isBrowseStep(message.step)) return;
+    // 模拟用户在试用时打开的网页不是用户自己的浏览，不进浏览记录。
+    if (selfUse()) return;
     void record(message.step, sender.tab.id, sender.url!).catch(() => {});
   });
 
