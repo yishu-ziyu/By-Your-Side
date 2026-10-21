@@ -7,6 +7,7 @@ import { answerMarkdown } from "../../../shared/answer-cards.js";
 import { answerFillUndoOf as fillUndoOf, fillUndoLabel, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
 import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
 import { bindMotionIcon, setMotionIcon } from "./motion-icon.js";
+import { uiEvent } from "./ui-trace.js";
 
 /** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
 const CHROME = ".gc-actions,.gc-faces,.gc-evidence,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
@@ -198,6 +199,7 @@ export async function runPrimaryAction(answer: HTMLElement, { keyboard = false }
 
   if (undo && (undo.state !== "ready" || isFillUndoPending(answer) || keyboard)) return;
   const action = listResultActions(answer).find((a) => a.primary);
+  if (action) uiEvent("ui_answer_action", { action: action.id, from: keyboard ? "enter" : "button" });
   try {
     await action?.run(answer);
     if (action?.id.startsWith("copy")) showCopied(answer);
@@ -248,6 +250,7 @@ export function attachAnswerActions(answer: HTMLElement): void {
 
   sources.onclick = () => {
     panel.hidden = !panel.hidden;
+    uiEvent("ui_answer_sources", { open: !panel.hidden });
     sources.setAttribute("aria-expanded", String(!panel.hidden));
 
     // 来源列表常在最后一条回答下面，展开时滚到看得见。
@@ -374,6 +377,7 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
   button.append(siteGlyph(tab.url, host), "切过去看");
 
   button.onclick = async () => {
+    uiEvent("ui_answer_show_tab");
     removeShowTab(button);
     const now = await chrome.tabs.get(tabId).catch(() => null);
 
