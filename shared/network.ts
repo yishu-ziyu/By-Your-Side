@@ -31,6 +31,10 @@ export interface NetworkEntry {
   startedTs?: number;
   endedTs?: number;
   startedAt: number;
+  /** 记录开始前页面自己发的请求，取自页面的资源计时：不知道请求方法。 */
+  beforeRecording?: boolean;
+  /** 资源计时给出的耗时；有 CDP 时间戳的条目不用它。 */
+  durationMs?: number;
 }
 
 export interface NetworkRing {
@@ -65,6 +69,46 @@ function normalizeType(value: unknown): string {
 /** 只记录真实网络请求；data:/blob: 这类伪 URL 既不是接口，也会把 base64 拖进上下文。 */
 function isRecordableUrl(raw: string): boolean {
   return /^https?:\/\//i.test(raw);
+}
+
+const TIMING_TYPES: Record<string, string> = { xmlhttprequest: "xhr", fetch: "fetch", beacon: "ping", script: "script", img: "image", image: "image", link: "stylesheet", css: "stylesheet", iframe: "document", video: "media", audio: "media" };
+
+/**
+ * 页面资源计时 → 条目。origin 是页面的 performance.timeOrigin，rows 每行 [url, initiatorType, status, bytes, durationMs, 发出时刻]。
+ * 扩展多半在页面加载完之后才开始记录，播放器、列表这类加载时就发出的接口请求只留在页面自己的计时里。
+ * 只收本页第一条已记录请求之前、notBefore（模型清空记录的时刻）之后发出的；记录里更早的条目属于之前的页面。
+ */
+export function pageTimingEntries(raw: unknown, recorded: readonly NetworkEntry[], notBefore = 0, now: number = Date.now()): NetworkEntry[] {
+  if (!raw || typeof raw !== "object") return [];
+  const { origin, rows } = raw as { origin?: unknown; rows?: unknown };
+  const pageStart = numeric(origin);
+
+  if (pageStart === undefined || !Array.isArray(rows)) return [];
+  const seen = new Set(recorded.map(entry => entry.url));
+  const recordingFrom = Math.min(...recorded.filter(entry => entry.startedAt >= pageStart).map(entry => entry.startedAt));
+  const entries: NetworkEntry[] = [];
+
+  for (const [index, row] of rows.entries()) {
+    if (!Array.isArray(row)) continue;
+    const [url, initiator, status, bytes, duration, sentAt] = row as unknown[];
+    const at = numeric(sentAt);
+
+    if (typeof url !== "string" || !isRecordableUrl(url) || seen.has(url) || at === undefined || at < notBefore || at >= recordingFrom) continue;
+    seen.add(url);
+    const entry: NetworkEntry = { requestId: `timing:${index}`, method: "?", url, resourceType: TIMING_TYPES[String(initiator)] ?? "other", startedAt: now, beforeRecording: true };
+    const code = numeric(status);
+
+    if (code) entry.status = code;
+    const size = numeric(bytes);
+
+    if (size) entry.encodedBytes = size;
+    const ms = numeric(duration);
+
+    if (ms !== undefined) entry.durationMs = Math.round(ms);
+    entries.push(entry);
+  }
+
+  return entries;
 }
 
 /** 单条 CDP Network 事件 → 缓冲更新；与条目无关的事件返回 null。 */
@@ -228,7 +272,7 @@ export function redactUrlCredentials(raw: string): string {
 }
 
 function entryDurationMs(entry: NetworkEntry): number | undefined {
-  if (entry.startedTs === undefined || entry.endedTs === undefined) return undefined;
+  if (entry.startedTs === undefined || entry.endedTs === undefined) return entry.durationMs;
   const ms = Math.round((entry.endedTs - entry.startedTs) * 1000);
 
   return ms >= 0 ? ms : undefined;
@@ -251,7 +295,7 @@ function clipUrl(url: string): string {
 
 /** 一行：`3. failed POST https://… — xhr (net::ERR_FAILED) (canceled)`。 */
 function formatNetworkEntryLine(entry: NetworkEntry, index: number): string {
-  const status = entry.failed ? "failed" : entry.status !== undefined ? String(entry.status) : "pending";
+  const status = entry.failed ? "failed" : entry.status !== undefined ? String(entry.status) : entry.beforeRecording ? "done" : "pending";
   const parts = [`${index}.`, status, entry.method, clipUrl(redactUrlCredentials(entry.url)), `— ${entry.resourceType}`];
 
   if (entry.failed) parts.push(`(${entry.failed})`);
@@ -268,6 +312,8 @@ function formatNetworkEntryLine(entry: NetworkEntry, index: number): string {
   if (entry.canceled) parts.push("(canceled)");
 
   if (entry.redirects) parts.push(`(${entry.redirects} redirect${entry.redirects > 1 ? "s" : ""})`);
+
+  if (entry.beforeRecording) parts.push("(before recording)");
 
   return parts.join(" ");
 }
@@ -306,8 +352,9 @@ export function formatNetworkReport(shown: readonly NetworkEntry[], info: Networ
   const dropped = info.dropped > 0 ? `, ${info.dropped} oldest dropped at capacity ${info.capacity ?? NETWORK_CAPACITY}` : "";
   const header = `Network requests observed on this tab: showing ${shown.length} of ${info.matched} matched (${info.total} recorded${dropped}${filters.length ? `, filter ${filters.join(", ")}` : ""}).`;
   const lines = shown.map((entry, index) => formatNetworkEntryLine(entry, index + 1));
+  const early = shown.some(entry => entry.beforeRecording) ? "\n(before recording) = the page made it before recording started, often while loading (players, lists, page data); taken from the page's own timing records, so the method is unknown (\"?\"). These are the URLs the site itself signed and used." : "";
 
-  return `${header}\n${lines.join("\n")}\nUse fetch with the browser's login state to read the data behind one of these URLs.`;
+  return `${header}\n${lines.join("\n")}${early}\nUse fetch with the browser's login state to read the data behind one of these URLs.`;
 }
 
 /**

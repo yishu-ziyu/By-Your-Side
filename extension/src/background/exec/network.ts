@@ -4,8 +4,8 @@
  * 回执含在途/捕获完整性，供 waitForNetworkIdle 判定。
  */
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
-import { formatNetworkReport, selectNetworkEntries, type NetworkQuery } from "../../../../shared/network.js";
-import { ensureAttached } from "../debugger.js";
+import { formatNetworkReport, pageTimingEntries, selectNetworkEntries, type NetworkEntry, type NetworkQuery } from "../../../../shared/network.js";
+import { ensureAttached, sendCommand } from "../debugger.js";
 import { clearNetworkRing, enableNetworkCapture, networkIdleFor, networkRingFor } from "../network-log.js";
 import { resolveReadableTab } from "../state.js";
 
@@ -32,6 +32,9 @@ interface NetworkResult {
   attached: boolean;
 }
 
+/** 模型清空过记录的标签页：清空之前的页面请求不再补回来。 */
+const clearedAt = new Map<number, number>();
+
 export async function network(params: NetworkParams, sessionId: string = LEAD_SESSION_ID): Promise<NetworkResult> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
@@ -46,6 +49,7 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
   }
 
   if (params.clear === true) {
+    clearedAt.set(tab.id, Date.now());
     const cleared = clearNetworkRing(tab.id);
 
     const idle = networkIdleFor(tab.id, 0) ?? {
@@ -69,16 +73,17 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
   }
 
   const ring = networkRingFor(tab.id) ?? { entries: [], dropped: 0 };
+  const entries = [...await requestsBeforeRecording(tab.id, ring.entries), ...ring.entries];
 
   const idle = networkIdleFor(tab.id, 0) ?? {
     inFlight: 0, excludedInFlight: 0, lastActivityAt: 0, generation: 0, integrity: "none" as const, attached: false,
   };
 
   const query: NetworkQuery = { urlContains: params.urlContains, types: params.types, limit: params.limit };
-  const { shown, matched } = selectNetworkEntries(ring.entries, query);
+  const { shown, matched } = selectNetworkEntries(entries, query);
 
   const text = formatNetworkReport(shown, {
-    total: ring.entries.length,
+    total: entries.length,
     matched,
     dropped: ring.dropped,
     types: params.types,
@@ -88,7 +93,7 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
   return {
     text,
     tabId: tab.id,
-    total: ring.entries.length,
+    total: entries.length,
     matched,
     shown: shown.length,
     dropped: ring.dropped,
@@ -99,4 +104,12 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
     integrity: idle.integrity,
     attached: idle.attached,
   };
+}
+
+/** 记录开始前页面已发出的请求：读页面自己的资源计时（只读）；读不到就只给已记录的。 */
+async function requestsBeforeRecording(tabId: number, recorded: readonly NetworkEntry[]): Promise<NetworkEntry[]> {
+  const expression = `({ origin: performance.timeOrigin, rows: performance.getEntriesByType("resource").map(e => [e.name, e.initiatorType, e.responseStatus || 0, e.encodedBodySize || 0, e.duration, performance.timeOrigin + e.startTime]) })`;
+  const reply = await sendCommand<{ result?: { value?: unknown } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true }, undefined, 1500).catch(() => undefined);
+
+  return pageTimingEntries(reply?.result?.value, recorded, clearedAt.get(tabId));
 }
