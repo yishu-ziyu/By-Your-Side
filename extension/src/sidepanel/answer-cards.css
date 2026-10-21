@@ -210,3 +210,5 @@
 .gen-card.send-declined-card .gc-actions { margin: 0; padding: 0; border: 0; }
 /* 回答按段落分块放出，每块都换成这个按钮：只留第一个。 */
 .send-declined-card ~ .send-declined-card { display: none; }
+.gc-diagram-code { margin-top: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
+.gc-diagram-code > summary { cursor: pointer; }
