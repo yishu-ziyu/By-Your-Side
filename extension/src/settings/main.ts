@@ -415,7 +415,7 @@ function select(choice: ProviderChoice): void {
   keyInput.value = "";
   modelInput.value = defaultModel(choice);
   $("model-toggle").hidden = connectionModels().length === 0;
-  modelMeta.textContent = choice.models.length ? `列表里有 ${choice.models.length} 个模型，也可以直接填模型名` : "填模型名";
+  modelMeta.textContent = modelCount(choice);
   closeModelList();
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
@@ -426,6 +426,24 @@ function select(choice: ProviderChoice): void {
   renderCredentialState();
   renderProviders();
 }
+
+const modelCount = (choice: ProviderChoice) => choice.models.length ? `列表里有 ${choice.models.length} 个模型，也可以直接填模型名` : "填模型名";
+
+/** 服务商公开清单到了就换上全量模型；拉不到时保留内置的几个，用户仍可直接填模型名。 */
+void runtime.loadProviderModels().then(() => {
+  for (const fresh of runtime.providerChoices()) {
+    const choice = choiceOf(fresh.id);
+
+    if (choice) choice.models = fresh.models;
+  }
+
+  if (selected) {
+    $("model-toggle").hidden = connectionModels().length === 0;
+    modelMeta.textContent = modelCount(selected);
+  }
+
+  renderProviders();
+}, (error: unknown) => console.debug("[sideagent]", "provider model list unavailable", error));
 
 /* 模型下拉：可搜索的列表，也能直接填目录外的名字（自定义地址必须能填）。 */
 
