@@ -6,6 +6,7 @@ import type { BrowseHabit } from "../../../shared/browse-habits.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
 import type { AskInput, MemoryAskCard } from "./memory-ask.js";
+import { uiEvent } from "./ui-trace.js";
 
 export type MemoryInspection = {
   action: Extract<AgentUiEvent, { kind: "memory" }>["action"];
@@ -86,7 +87,12 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
 
   const memoryEditorBusy = (): boolean => !!(memoryEdit || memoryForget || memoryRestore);
   const memoryMatches = (...texts: Array<string | undefined>) => !memoryQuery || texts.some(text => text?.toLowerCase().includes(memoryQuery));
-  const browseControl = (message: { action: "dismiss"; key: string } | { action: "clear" }) => chrome.runtime.sendMessage({ type: BROWSE_CONTROL, ...message }).catch(() => undefined);
+  // 习惯的 key 由浏览内容生成，不进诊断；只记动作。
+  const browseControl = (message: { action: "dismiss"; key: string } | { action: "clear" }) => {
+    uiEvent(message.action === "clear" ? "ui_browse_clear" : "ui_browse_habit_dismiss");
+
+    return chrome.runtime.sendMessage({ type: BROWSE_CONTROL, ...message }).catch(() => undefined);
+  };
 
   function memoryButton(label: string, action: string, id?: string): HTMLButtonElement {
     const button = document.createElement("button");
@@ -384,6 +390,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
   const PAST_TASK_OUTCOME: Record<TaskHistoryEntry["outcome"], string> = { complete: "做完了", partial: "还差一些", stopped: "你中止了", error: "出错" };
 
   function requestPastTasks(forget?: string | null): void {
+    if (forget !== undefined) uiEvent(forget === null ? "ui_past_tasks_clear" : "ui_past_task_delete", forget === null ? {} : { taskId: forget });
     pastTasksRequestId = crypto.randomUUID();
     pastTasksError = "";
     const conversationId = selectedConversationId();
@@ -398,6 +405,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
   }
 
   function requestPastTaskSite(id: string, hostname: string): void {
+    uiEvent("ui_past_task_site_restore", { taskId: id });
     pastTasksRequestId = crypto.randomUUID();
     pastTasksError = "";
     if (!send({ type: "task_history_site", requestId: pastTasksRequestId, conversationId: selectedConversationId(), id, hostname, off: false })) {
@@ -664,7 +672,10 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     pause.type = "button";
     pause.dataset.browsePause = "";
     pause.textContent = browseSeen.on ? "暂停观察" : "继续观察";
-    pause.onclick = () => void chrome.storage.local.set({ [BROWSE_ON_KEY]: !browseSeen.on });
+    pause.onclick = () => {
+      uiEvent("ui_browse_toggle", { on: !browseSeen.on });
+      void chrome.storage.local.set({ [BROWSE_ON_KEY]: !browseSeen.on });
+    };
     const clear = document.createElement("button");
     clear.type = "button";
     clear.textContent = "全部删除";
@@ -842,6 +853,11 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
   }
 
   function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" | "memory_site" | "memory_unforget" }>, ui: MemoryUiRequest): void {
+    // 「ask」由询问卡片自己记（带显示时长）；这里记面板里对一条记忆的处理。
+    if (ui.action !== "list" && ui.action !== "ask") {
+      const kind = ui.entryId ? memoryState.get(ui.entryId)?.kind : undefined;
+      uiEvent("ui_memory_entry_action", { action: ui.action, entryId: ui.entryId, kind, ...(message.type === "memory_site" ? { off: message.off } : {}) });
+    }
     memoryUiRequests.set(message.requestId, ui);
     if (send(message)) return;
     processMemoryOutcome(memoryState.rejectLocally(message.requestId, "侧栏和扩展后台断开了。稍后再试。"));
@@ -861,6 +877,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     memoryEdit = null;
     memoryForget = null;
     memoryHistoryOpen.reset();
+    if (memoryDrawer.hidden) uiEvent("ui_memory_drawer_open", { fromInspection: inspection !== null });
     memoryDrawer.hidden = false;
     memoryShade.hidden = false;
     memoryOpen.setAttribute("aria-expanded", "true");
@@ -870,6 +887,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
   }
 
   function closeMemoryDrawer(): void {
+    if (!memoryDrawer.hidden) uiEvent("ui_memory_drawer_close");
     memoryDrawer.hidden = true;
     memorySearch.value = "";
     memoryQuery = "";

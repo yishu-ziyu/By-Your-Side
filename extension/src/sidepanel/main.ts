@@ -88,6 +88,7 @@ import { installProactiveCard } from "./proactive-card.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { memoryScopeLabel, type MemoryApplyResult } from "./memory.js";
 import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
+import { setUiRunSource, uiEvent } from "./ui-trace.js";
 import { mountMemoryDrawer, type MemoryInspection } from "./memory-drawer.js";
 import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
@@ -1080,7 +1081,7 @@ function resetConversationRender(): void {
 function selectConversation(id: string, notify = true): void {
   const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
 
-  if (id !== selectedConversationId) { voiceUI.stop(); dictationUI?.cancel(); }
+  if (id !== selectedConversationId) { voiceUI.stop(); dictationUI?.cancel(); memoryAsksUnanswered("switched_conversation"); }
   completedConversations.delete(id);
   conversationMenu.hidden = true;
   conversationSwitcher.setAttribute("aria-expanded", "false");
@@ -2841,7 +2842,15 @@ function renderSiteNotesReceipt(event: Extract<AgentUiEvent, { kind: "site_notes
  * 没有本地状态的回放卡片直接停在结局；没有结局的照常可点。
  */
 function renderMemoryAsk(event: MemoryAskEvent): void {
-  if (!memoryAskCards.has(event.askId)) memoryAskCards.set(event.askId, createAskCard(event, !replayingHistory));
+  if (!memoryAskCards.has(event.askId)) {
+    const card = createAskCard(event, !replayingHistory);
+    memoryAskCards.set(event.askId, card);
+
+    if (!replayingHistory && card.phase === "open") {
+      openMemoryAsks.set(event.askId, Date.now());
+      uiEvent("ui_memory_ask_shown", { askId: event.askId, source: askSource(event) });
+    }
+  }
 
   if (event.outcome) stepMemoryAsk(event.askId, { kind: "outcome", outcome: event.outcome });
 
@@ -2851,12 +2860,40 @@ function renderMemoryAsk(event: MemoryAskEvent): void {
   scrollToEnd();
 }
 
+/** 显示过、用户还没回应的询问卡片 → 显示时刻；复盘要分清「点了不记」和「根本没理」。 */
+const openMemoryAsks = new Map<string, number>();
+
+function askSource(event: MemoryAskEvent): string {
+  return event.evidence ? "browsing" : event.habit ? "habit" : "correction";
+}
+
+/** 还开着的询问没被回应就离开了视线（换会话、关侧栏、后台作废）。 */
+function memoryAsksUnanswered(reason: string, only?: string): void {
+  for (const [askId, shownAt] of openMemoryAsks) {
+    if (only && askId !== only) continue;
+    openMemoryAsks.delete(askId);
+    uiEvent("ui_memory_ask_unanswered", { askId, reason, shownMs: Date.now() - shownAt });
+  }
+}
+
 /** 用户动作或后台结果交给询问卡片：重画，有请求就发出去，结果（含被忽略）再回到这里。 */
 function stepMemoryAsk(askId: string, input: AskInput): void {
   const current = memoryAskCards.get(askId);
 
   if (!current) return;
   const { card, request } = stepAsk(current, input);
+
+  if (input.kind === "outcome" && input.outcome === "closed" && card.phase === "closed") memoryAsksUnanswered("closed", askId);
+  else if (input.kind === "outcome") openMemoryAsks.delete(askId);
+
+  if (input.kind === "remember" || input.kind === "once" || input.kind === "scope" || input.kind === "undo" || input.kind === "edit") {
+    if (request || input.kind === "edit") {
+      const shownAt = openMemoryAsks.get(askId);
+      uiEvent("ui_memory_ask_action", { askId, action: input.kind, edited: "text" in input, ...(shownAt ? { shownMs: Date.now() - shownAt } : {}) });
+    }
+
+    if (request && (input.kind === "remember" || input.kind === "once")) openMemoryAsks.delete(askId);
+  }
   memoryAskCards.set(askId, card);
   messagesEl.querySelector(`[data-memory-ask="${CSS.escape(askId)}"]`)?.replaceWith(buildMemoryAsk(askId));
 
@@ -6394,6 +6431,15 @@ inputEl.addEventListener("focus", () => { send({ type: "warm_up" }); });
 inputEl.addEventListener("input", () => { if (inputEl.value.length === 1) send({ type: "warm_up" }); });
 
 window.addEventListener("pagehide", saveDraft);
+
+setUiRunSource(() => conversations.get(selectedConversationId)?.runId ?? null);
+const panelOpenedAt = Date.now();
+uiEvent("ui_panel_open");
+document.addEventListener("visibilitychange", () => uiEvent(document.hidden ? "ui_panel_hidden" : "ui_panel_visible"));
+window.addEventListener("pagehide", () => {
+  memoryAsksUnanswered("panel_closed");
+  uiEvent("ui_panel_close", { openMs: Date.now() - panelOpenedAt });
+});
 
 inputEl.addEventListener("keydown", (e) => {
   if (tabMentions.handleKeydown(e)) return;

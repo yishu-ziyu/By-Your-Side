@@ -3,6 +3,7 @@
  * Chrome 的 Ctrl/⌘K 会抢去地址栏搜索，所以用 Ctrl/⌘+Shift+K，和 / 技能菜单分开。
  */
 import { answerPlainText, listResultActions, runPrimaryAction, resultCommandShortcut, showCopied, showFailed, type ResultAction } from "./answer-actions.js";
+import { uiEvent } from "./ui-trace.js";
 import { reducedMotion } from "./branch-graph.js";
 
 export interface AnswerCommand {
@@ -89,6 +90,7 @@ export function mountAnswerCommand(opts: {
     const answer = target;
     close();
     if (!answer) return;
+    uiEvent("ui_answer_action", { action: action.id, from: "menu" });
       try {
       await action.run(answer);
       if (action.id.startsWith("copy")) showCopied(answer);

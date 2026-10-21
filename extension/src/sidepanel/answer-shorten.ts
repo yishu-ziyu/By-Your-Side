@@ -5,6 +5,7 @@
  * 拖的时候回答高度跟着手指走：两层之间被拖过的块从下往上逐个收起、淡出；松手后弹到最近的一层。
  */
 import { D_LAYOUT } from "../shared/motion-tokens.js";
+import { uiEvent } from "./ui-trace.js";
 
 const LEVELS = ["", "一句", "要点", "全文"] as const;
 type Level = 1 | 2 | 3;
@@ -99,6 +100,10 @@ function showLevel(answer: HTMLElement, next: Level): void {
 
 /** 记下层级：复制、层名、主动作都按它走。松手就记，不等回弹画完（侧栏藏起来时动画不跑）。 */
 function commit(answer: HTMLElement, next: Level): void {
+  const before = level.get(answer);
+
+  // 一次拖动会先后落定两次（起弹、停稳）：只在层级真的变了时记。
+  if (before !== undefined && before !== next) uiEvent("ui_answer_shorten", { from: before, to: next });
   level.set(answer, next);
   answer.dataset.shortenLevel = String(next);
   const grip = answer.querySelector<HTMLElement>(".shorten-grip");

@@ -1,5 +1,5 @@
 import { dictationSettingsView } from "./dictation.js";
-import { TRACE_SESSIONS_KEPT } from '../../../shared/run-trace-core.js';
+import { TRACE_MAX_AGE_DAYS } from '../../../shared/run-trace-core.js';
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from '../../../shared/voice-capture-core.js';
 import { CUSTOM_PERSONA_MAX_CHARS } from '../../../shared/voice.js';
 
@@ -188,7 +188,7 @@ export function renderSettings(): void {
     <div class="sx-head"><h2 id="trace-title">诊断记录</h2></div>
     <div class="surface rows">
       <div class="row">
-        <span class="row-main"><span class="row-title">任务步骤与语音识别记录</span><span class="row-desc">只存在这个浏览器里，不上传。导出前，我们去掉能识别出的密码和密钥。不存录音。任务保留最近 ${TRACE_SESSIONS_KEPT} 个会话，语音保留 ${VOICE_CAPTURE_MAX_AGE_DAYS} 天。排查问题时导出给开发者。</span></span>
+        <span class="row-main"><span class="row-title">任务步骤与语音识别记录</span><span class="row-desc">只存在这个浏览器里，不上传。导出前，我们去掉能识别出的密码和密钥。不存录音。任务保留 ${TRACE_MAX_AGE_DAYS} 天，语音保留 ${VOICE_CAPTURE_MAX_AGE_DAYS} 天。排查问题时导出给开发者。</span></span>
         <span class="row-ctl inline">
           <button id="trace-export" type="button" class="btn">导出</button>
           <button id="trace-clear" type="button" class="btn btn-quiet">清空</button>
