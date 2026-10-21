@@ -35,6 +35,8 @@ await esbuild.build({
     "voice-permission": "src/sidepanel/voice-permission-page.ts",
     "artifact-viewer": "src/sidepanel/artifact-viewer-page.ts",
     "diagram-engine": "src/sidepanel/diagram-engine.ts",
+    // 附件解析（pdf.js、Office 读取）：侧栏附上文件时才 import，不随侧栏加载。
+    "file-read": "src/sidepanel/file-read/index.ts",
   },
 });
 
@@ -131,6 +133,10 @@ await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true }
 
 // PDF 正文解析用的字符映射表（中文、日文 PDF 要它才读得出字）。
 await cp(path.join(root, "../node_modules/pdfjs-dist/cmaps"), path.join(dist, "pdfjs/cmaps"), { recursive: true });
+
+// 侧栏读附上的 PDF：pdf.js 的解析线程，和画扫描页要用的标准字体。
+await copyFile(path.join(root, "../node_modules/pdfjs-dist/build/pdf.worker.min.mjs"), path.join(dist, "pdf.worker.mjs"));
+await cp(path.join(root, "../node_modules/pdfjs-dist/standard_fonts"), path.join(dist, "pdfjs/standard_fonts"), { recursive: true });
 
 await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: true });
 
