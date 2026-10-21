@@ -48,6 +48,9 @@ const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
 /** 服务端已发出原始事件（如 response.created）后，等第一个内容事件的上限。排队发生在这之前，不受这条限制。 */
 const MODEL_STALL_AFTER_START_MS = 10_000;
 
+/** 流已开始出内容后，这么久一个事件都没有就算断流：取消，按可重试错误重来。正常流里思考分段之间也只停几秒。 */
+const MODEL_STALL_MID_STREAM_MS = 30_000;
+
 /** 能力表没有登记 hedgeMs 的模型：发出后这么久还没有第一个事件（且未受理），就再发一份相同的请求。 */
 const MODEL_HEDGE_MS = 8_000;
 
@@ -114,6 +117,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   /** 对冲那份被受理后的期限；没被受理为 null。 */
   let hedgeDeadline: number | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
   /** 已交出结局（超时错误或截断），之后两份的事件都丢弃。 */
   let closed = false;
   let finished = false;
@@ -131,6 +135,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     finished = true;
     clearTimeout(hedgeTimer);
     clearTimeout(timer);
+    clearTimeout(stallTimer);
     outer?.removeEventListener("abort", cancel);
     onCut?.(cutText, false);
     out.end();
@@ -167,6 +172,13 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     timer = setTimeout(() => fail(message), Math.max(0, at - Date.now()));
   };
 
+  /** 胜出那份每来一个事件（含服务端原始事件）就重新计时。 */
+  const alive = () => {
+    if (closed || finished) return;
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => fail(`stream idle timeout: ${name} sent nothing for ${MODEL_STALL_MID_STREAM_MS / 1000} s mid-response`), MODEL_STALL_MID_STREAM_MS);
+  };
+
   const win = (attempt: Attempt) => {
     winner = attempt;
     wonAt = Date.now();
@@ -184,6 +196,8 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
 
     // 服务端第一个原始事件到来时，若内容还没来：原请求改成受理后的短等待，对冲那份把期限放宽到受理后的短等待。
     const accepted = () => {
+      if (winner === attempt) alive();
+
       if (attempt.started || winner || closed) return;
       attempt.started = true;
 
@@ -256,6 +270,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
         }
 
         if ("partial" in event) partial = event.partial;
+        alive();
 
         if (event.type === "toolcall_delta") {
           const run = /^\s*$/.test(event.delta) ? (blanks.get(event.contentIndex) ?? 0) + event.delta.length : event.delta.length - event.delta.trimEnd().length;
