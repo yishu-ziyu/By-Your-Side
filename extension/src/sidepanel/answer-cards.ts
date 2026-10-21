@@ -343,7 +343,27 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
   const ref = new RegExp(`\uE000${nonce}([A-Za-z_][\\w-]*)\uE001([^\uE002<]*)\uE002`, "g");
   const refs = (html: string) => html.replace(ref, (_all, id: string, value: string) => `<span data-gc-ref="${esc(id)}">${value}</span>`);
 
-  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(renderProse(resolveProse(p.prose, cards, bold))) : "") : p.card ? cardHtml(p.card) : "")).join("");
+  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card) : "")).join("");
+}
+
+/** 写完的 ```mermaid 流程图代码块：只有侧栏画得出的流程图（flowchart / graph）才换。 */
+const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:flowchart|graph)\b[\s\S]*?)\n```[ \t]*$/gm;
+
+/**
+ * 模型把结构图写成 ```mermaid 代码块时，用户看到的是一段代码，不是图：照卡片里的结构图画出来，代码收在下面，要复制还在。
+ * 代码块先换成占位段落，正文按 Markdown 渲染后再换回图和折起来的代码。
+ */
+function withMermaidDiagrams(prose: string, renderProse: (markdown: string) => string): string {
+  const blocks: string[] = [];
+  const marked = prose.replace(MERMAID_FENCE, (fence: string, source: string) => {
+    blocks.push(`<div class="gc-diagram" data-diagram="${encodeURIComponent(source)}"><div class="gc-diagram-canvas"></div></div><details class="gc-diagram-code"><summary>Mermaid 代码</summary>${renderProse(fence)}</details>`);
+
+    return `\n\n\uE010${blocks.length - 1}\uE011\n\n`;
+  });
+
+  if (!blocks.length) return renderProse(prose);
+
+  return renderProse(marked).replace(/<p>\uE010(\d+)\uE011<\/p>/g, (_all, i: string) => blocks[Number(i)] ?? "");
 }
 
 /** 同一位置的同一个东西：标签相同、位置键相同；写完的组件还要内容摘要相同。 */
