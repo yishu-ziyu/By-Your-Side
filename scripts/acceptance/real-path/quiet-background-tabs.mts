@@ -3,15 +3,16 @@
  * 只装扩展、隔离构建、本机脚本模型；练习页一打开就用 WebAudio 出声（Chrome 带 --autoplay-policy=no-user-gesture-required）。
  *   npx tsx scripts/acceptance/real-path/quiet-background-tabs.mts --headless
  *   a) 助手用 tabs open 在后台开声音页：这一页是静音的。
+ *   d) 扩展重载后（更新时也一样），这一页仍是静音的。
  *   b) 用户切到这一页：静音取消。
  *   c) 助手用 tabs show 开的页在眼前：不静音。
  * 「后台的工作页开始出声就静音」靠 Chrome 的 audible 状态，无头 Chrome 没有声音输出、不会报 audible，这一条在日常 Chrome 里核对。
- * 失败方式：去掉 openTab 里的 quietOpenedTab，a 失败。
+ * 失败方式：去掉 openTab 里的 quietOpenedTab，a 失败；启动时不重新静音，d 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, until, type Json } from "./harness.mts";
+import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type Json } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
@@ -42,7 +43,7 @@ const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
 
 try {
-  const panel = await rp.attach(await rp.openSidePanel());
+  let panel = await rp.attach(await rp.openSidePanel());
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } })}).then(() => true)`);
   const ready = 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
@@ -58,6 +59,14 @@ try {
   await say(OPEN, "声音页已在后台打开");
   const opened = await until(async () => { const t = await tabState("/sound?a"); return t && t.muted ? t : null; }, 10_000, "后台声音页静音").catch(async () => await tabState("/sound?a"));
   check("a 助手在后台开的声音页是静音的", !!opened && !opened.active && opened.muted, opened as Json);
+
+  // Chrome 重载扩展时会撤销扩展做过的静音。
+  await rp.evaluate(panel, `setTimeout(() => chrome.runtime.reload(), 100), true`).catch(() => {});
+  await sleep(4_000);
+  panel = await rp.attach(await rp.openSidePanel());
+  await until(async () => await rp.evaluate(panel, ready), 60_000, "重载后侧栏就绪");
+  const reloaded = await until(async () => { const t = await tabState("/sound?a"); return t && t.muted ? t : null; }, 10_000, "重载后仍静音").catch(async () => await tabState("/sound?a"));
+  check("d 扩展重载后，后台声音页仍是静音的", !!reloaded && !reloaded.active && reloaded.muted, reloaded as Json);
 
   await rp.evaluate(panel, `chrome.tabs.update(${opened?.id ?? 0}, { active: true }).then(() => true)`);
   const switched = await until(async () => { const t = await tabState("/sound?a"); return t && !t.muted ? t : null; }, 10_000, "切过去后取消静音").catch(async () => await tabState("/sound?a"));
