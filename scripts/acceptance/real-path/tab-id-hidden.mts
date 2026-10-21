@@ -51,6 +51,8 @@ try {
   const leaked = ["29979731", "29979739", String(workTab)].filter(n => seen.text.includes(n));
   check("a 正文、卡片出处和表格里都看不到标签页编号", leaked.length === 0 && seen.foot.includes("维基百科"), { leaked, foot: seen.foot });
   check("c 普通的大数照常显示", seen.text.includes("1234567"), null);
+  const husks = seen.text.match(/[（(]\s*(?:tab|标签页|标签)?\s*[)）]/gi) ?? [];
+  check("d 去掉编号后不留「（tab）」「（）」这样的空括号", husks.length === 0, { husks });
   check("b 「切到…看」按钮仍带着那一页的编号", seen.button === String(workTab), { button: seen.button, workTab });
   await rp.evaluate(panel, `chrome.tabs.create({ url: "about:blank#other", active: true }).then(() => true)`);
   await rp.click(panel, ".msg.assistant [data-card-tab]");
