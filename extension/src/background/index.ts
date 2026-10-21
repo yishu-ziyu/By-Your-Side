@@ -5,6 +5,7 @@ import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
 import { installBrowseHabits } from "./browse-habits.js";
+import { installMemoryBackup } from "./memory-backup.js";
 import type { NudgeCard } from "../shared/nudge.js";
 import { installPageInteractions } from "./page-interactions.js";
 import { pageTranslation } from "./exec/page-translation.js";
@@ -256,6 +257,7 @@ const nudge = installNudge({
   act: (conversationId, text, card, context) => controller(conversationId).spoken(text, context, card),
 });
 
+installMemoryBackup();
 const browseHabits = installBrowseHabits({ send: message => transport.sendClientMessage(message), selected: () => selectedConversationId });
 
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
