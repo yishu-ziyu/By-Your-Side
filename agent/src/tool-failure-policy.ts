@@ -1,6 +1,6 @@
 import type {ExtensionFactory, ToolResultEvent} from '@earendil-works/pi-coding-agent';
 
-export interface RepeatedToolFailure {toolName:string;error:string;attempts:number}
+interface RepeatedToolFailure {toolName:string;error:string;attempts:number}
 
 /** Same tool + same input: a different target (e.g. three pages fetched in parallel) is not a retry. */
 function operationKey(event:Pick<ToolResultEvent,'toolName'|'input'>):string {
@@ -18,7 +18,7 @@ function comparableError(error:string):string {
 
 /**
  * 同一操作第二次出同样的错：宿主调高主模型的思考档位。
- * 不停下本轮：连续出错三次就停的规则已于 10-10 按用户裁决去掉。
+ * 不停下本轮：用户不要「连续出错三次就停」。
  */
 export class RepeatedToolFailurePolicy {
   private failures=new Map<string,{toolName:string;error:string;attempts:number}>();

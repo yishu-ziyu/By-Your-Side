@@ -12,17 +12,17 @@
  */
 import type { ToolExecutionFact } from './protocol.js';
 
-export const EXECUTION_FEEDBACK_CHANNELS = ['capsule', 'voice', 'none'] as const;
+const EXECUTION_FEEDBACK_CHANNELS = ['capsule', 'voice', 'none'] as const;
 
 export type ExecutionFeedbackChannel = (typeof EXECUTION_FEEDBACK_CHANNELS)[number];
 
-export const EXECUTION_FEEDBACK_KINDS = ['success', 'pending', 'unknown', 'failure'] as const;
+const EXECUTION_FEEDBACK_KINDS = ['success', 'pending', 'unknown', 'failure'] as const;
 
 export type ExecutionFeedbackKind = (typeof EXECUTION_FEEDBACK_KINDS)[number];
 
-export const EXECUTION_FEEDBACK_TEXT_MAX = 60;
+const EXECUTION_FEEDBACK_TEXT_MAX = 60;
 
-export const EXECUTION_FEEDBACK_DETAIL_MAX = 120;
+const EXECUTION_FEEDBACK_DETAIL_MAX = 120;
 
 /**
  * 有限、具体的胶囊短语：只描述这次动作本身，不声称用户整项要求完成。
@@ -70,7 +70,7 @@ export interface ExecutionFeedback {
   createdAt: number;
 }
 
-export interface ExecutionFeedbackInput {
+interface ExecutionFeedbackInput {
   tool: string;
   args?: Record<string, unknown>;
   executionFact: ToolExecutionFact;
@@ -88,7 +88,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /** `${工具}:${动作}` 作为短语表键；没有动作时就是工具名。 */
-export function executionFeedbackKey(tool: string, args?: Record<string, unknown>): string {
+function executionFeedbackKey(tool: string, args?: Record<string, unknown>): string {
   const action = asRecord(args ?? null)?.action;
 
   return typeof action === 'string' && action ? `${tool}:${action}` : tool;

@@ -6,16 +6,16 @@
 
 export const LEAD_COLOR = "#2d4a86";
 
-export const LEAD_NAME = "By Your Side";
+const LEAD_NAME = "By Your Side";
 
-export type CastShape = "blob" | "pebble" | "squircle" | "capsule" | "hex" | "triangle";
+type CastShape = "blob" | "pebble" | "squircle" | "capsule" | "hex" | "triangle";
 
-export interface KenneyFace {
+interface KenneyFace {
   body: string;
   face: string;
 }
 
-export interface Person {
+interface Person {
   key: "kim" | "mike" | "lalo" | "gus" | "kima" | "omar" | "bunk" | "lester";
   name: string;
   crew: "bcs" | "wire";
@@ -32,7 +32,7 @@ export interface Person {
 }
 
 /** 律师班 + 火线班。Grok Bot 形色眼；Mike 等待 / Omar 常驻用 Kenney。 */
-export const CAST: readonly Person[] = [
+const CAST: readonly Person[] = [
   {
     key: "kim",
     name: "Kim",
@@ -133,7 +133,7 @@ function hash(id: string): number {
   return h;
 }
 
-export function isLeadId(id: string | undefined | null): boolean {
+function isLeadId(id: string | undefined | null): boolean {
   return !id || id === "main";
 }
 
@@ -156,16 +156,3 @@ export function displayNameFor(id: string): string {
   return personFor(id)?.name ?? LEAD_NAME;
 }
 
-/** 创建时保留一个未被占用的角色，身份编码随 sessionId 回放并传到网页光标。 */
-export function assignedWorkerId(base: string, nonce: string, occupiedIds: Iterable<string>): string {
-  const occupied = new Set([...occupiedIds].map((id) => personFor(id)?.key));
-  const start = hash(base) % CAST.length;
-
-  for (let offset = 0; offset < CAST.length; offset++) {
-    const person = CAST[(start + offset) % CAST.length]!;
-
-    if (!occupied.has(person.key)) return `${base}-cast-${person.key}-${nonce}`;
-  }
-
-  throw new Error("没有可用的助手身份");
-}

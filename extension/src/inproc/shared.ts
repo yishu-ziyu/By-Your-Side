@@ -106,7 +106,7 @@ export type StoredCredential =
 export interface StoredCredentials { [providerId: string]: StoredCredential }
 
 /** chrome.storage.local.get 读出的整表，按 Object.entries 展开；值未经解析。 */
-export type StorageEntries = ReadonlyArray<readonly [string, unknown]>;
+type StorageEntries = ReadonlyArray<readonly [string, unknown]>;
 
 /** 凭据只由设置页和 background 写入；这里仍按形状核对，读到坏值就当没有。 */
 function isStoredCredential(value: unknown): value is StoredCredential {

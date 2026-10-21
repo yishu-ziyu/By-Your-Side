@@ -19,10 +19,10 @@ const targets = new Map<string, HTMLElement>();
 
 const ids = new WeakMap<HTMLElement, string>();
 
-export const normalizeSourceText = (text: string) => text.replace(/\s+/g, ' ').trim();
+const normalizeSourceText = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 /** Read original nodes, not our translation sheet or editable fields. */
-export function sourceText(element: HTMLElement): string {
+function sourceText(element: HTMLElement): string {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   const pieces: string[] = [];
   let node: Node | null;

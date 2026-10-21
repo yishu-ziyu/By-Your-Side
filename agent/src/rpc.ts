@@ -7,9 +7,9 @@ import { randomUUID } from "node:crypto";
 import { normalizeResultTarget } from '../../shared/task-results.js';
 import { LEAD_SESSION_ID, isHeldReason, isLeadSession, type HeldReason, type ToolExecutionFact, type ToolName, type ToolContract } from "../../shared/protocol.js";
 
-export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
+const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 
-export const SLOW_TOOL_TIMEOUT_MS = 60_000;
+const SLOW_TOOL_TIMEOUT_MS = 60_000;
 
 /**
  * 扩展报告这次点击在网页上等用户确认「发送」时放宽到的期限。
@@ -20,7 +20,7 @@ export const USER_CONFIRM_TIMEOUT_MS = 130_000;
 /** navigate/screenshot 涉及页面加载或渲染，放宽到 60s（见 docs/protocol.md）。 */
 const SLOW_TOOLS: ReadonlySet<string> = new Set(["navigate", "screenshot"]);
 
-export interface ToolCallFrame {
+interface ToolCallFrame {
   type: "tool_call";
   id: string;
   name: ToolName;
@@ -32,9 +32,9 @@ export interface ToolCallFrame {
   epochs?: Record<string, number>;
 }
 
-export type RpcSend = (frame: ToolCallFrame) => void;
+type RpcSend = (frame: ToolCallFrame) => void;
 
-export interface ToolExecutionError extends Error {
+interface ToolExecutionError extends Error {
   executionFact?: ToolExecutionFact;
 }
 
@@ -50,7 +50,7 @@ interface Pending {
   onTimeout: () => void;
 }
 
-export interface FillReadbackTarget {
+interface FillReadbackTarget {
   tabId: number;
   documentId: string;
   target: string;
@@ -79,7 +79,7 @@ interface DispatchedCall {
   heldReason?: HeldReason;
 }
 
-export type LateResultHandler = (info: {
+type LateResultHandler = (info: {
   id: string;
   /** SDK 调用身份；调用方按它关联任务结果账本。 */
   toolCallId?: string;

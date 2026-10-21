@@ -1,5 +1,5 @@
 /**
- * T05 接续入口：由 T02 只读任务视图驱动的「回来时知道发生了什么、下一步能做什么」摘要。
+ * 接续入口：由只读任务视图驱动的「回来时知道发生了什么、下一步能做什么」摘要。
  *
  * 诚实边界：
  * - 只消费 task_view 投影，不另造任务状态；不触发模型、页面或权限。
@@ -16,11 +16,10 @@ import { plainStep } from "../../../shared/user-facing.js";
 
 const STATUS_LABEL: Record<string, string> = { pending: "还没做", blocked: "没做成", unknown: "结果未知", satisfied: "做完了" };
 
-export const RESUME_TIMING_SAMPLE_MAX = 100;
 
-export const RESUME_PENDING_TIMEOUT_MS = 15_000;
+const RESUME_PENDING_TIMEOUT_MS = 15_000;
 
-export function resultStatusLabel(status: string): string {
+function resultStatusLabel(status: string): string {
   return STATUS_LABEL[status] ?? status;
 }
 
@@ -45,7 +44,7 @@ const INTERRUPTION_DETAIL: Record<string, string> = {
   manual_continuation: "你中止了任务",
 };
 
-export function waitingText(reason: string, detail: string | null): string {
+function waitingText(reason: string, detail: string | null): string {
   const base = WAITING_TEXT[reason] ?? reason;
 
   if (reason === "restart_checkpoint" && detail) {
@@ -57,13 +56,13 @@ export function waitingText(reason: string, detail: string | null): string {
   return base;
 }
 
-export interface ResumeAvailability {
+interface ResumeAvailability {
   available: boolean;
   reason: string | null;
 }
 
-/** 「继续」按钮的可用性：只以 T02 视图的 resumable（真实恢复依据）为准。 */
-export function resumeAvailability(view: TaskView | null, checkpointUnavailable: boolean): ResumeAvailability {
+/** 「继续」按钮的可用性：只以任务视图的 resumable（真实恢复依据）为准。 */
+function resumeAvailability(view: TaskView | null, checkpointUnavailable: boolean): ResumeAvailability {
   if (!view) return { available: false, reason: "还没有当前任务的状态" };
 
   if (checkpointUnavailable) return { available: false, reason: "原任务无法接着做。新任务要另开一个会话。" };
@@ -88,7 +87,7 @@ export function resumeAvailability(view: TaskView | null, checkpointUnavailable:
   return { available: false, reason: "当前没有需要接续的原任务" };
 }
 
-export interface ResumeSummary {
+interface ResumeSummary {
   visible: boolean;
   tone: "running" | "waiting" | "unknown" | "blocked" | "stopped";
   headline: string;
@@ -146,7 +145,7 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 中断或停下的任务不是「没做成」，只是还没做到。
   const verb = view.state === "interrupted" || view.state === "aborted" ? "还没做" : view.goalStatus?.status === "waiting" ? "等你决定" : "没做成";
   const phrase = (head: string, items: string[]) => `${head}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
-  // 失败的人话原因（「目标现在不可用」，#304）比只说步骤名更有用：说「没做成」时有它就顶替行内的步骤名；「还没做」时仍说是哪件事。
+  // 失败的人话原因（「目标现在不可用」）比只说步骤名更有用：说「没做成」时有它就顶替行内的步骤名；「还没做」时仍说是哪件事。
   const notDone = (items: string[], reason?: string) => phrase(verb, reason && verb === "没做成" ? [reason, ...items.slice(1)] : items);
 
   const told = checkedRemaining(view) ?? (declared.length ? declared : view.latestDelivery?.unfinished?.length ? view.latestDelivery.unfinished : null);
@@ -159,7 +158,7 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   const reason = view.failureReason;
   const left = told ? (told.length ? notDone(told) : null) : listed.length ? (unverifiedOnly && !reason ? phrase("还没确认完成", listed) : notDone(listed, reason)) : null;
 
-  // 停在一步中间（结果未知）不是「还没做」：页面上可能已经留下了部分结果（#103，整页翻译停下时已翻好几百段）。
+  // 停在一步中间（结果未知）不是「还没做」：页面上可能已经留下了部分结果（整页翻译停下时已翻好几百段）。
   const midway = !told && remaining.length > 0 && remaining.every((r) => r.status === "unknown");
 
   if (view.state === "aborted" && midway) return `已中止，${clipText(listed[0]!, 24)}${listed.length > 1 ? ` 等 ${listed.length} 件` : ""}停在中途，不会自己继续`;
@@ -195,7 +194,7 @@ function headlineFor(view: TaskView, checkpointUnavailable: boolean, remainingCo
  * 纯投影：视图 → 用户能读的摘要（目标、已完成、剩余、阻塞原因、合法下一步、缺口）。
  * 不推断视图里没有的事实；缺字段时如实少说。
  */
-export function buildResumeSummary(view: TaskView | null, checkpointUnavailable = false, resumeNote: string | null = null): ResumeSummary {
+function buildResumeSummary(view: TaskView | null, checkpointUnavailable = false, resumeNote: string | null = null): ResumeSummary {
   if (!view) {
     return { visible: false, tone: "running", headline: "", goal: null, revisions: [], done: [], remaining: [], blocking: null, interruptionDetail: null, nextStep: "", resume: { available: false, reason: null }, gaps: [], line: "", note: null };
   }
@@ -253,7 +252,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   if (blocked) gaps.push(`${blocked} 步没做成，助手要换个做法`);
 
   // 运行中和页面归你由任务条、输入框上方那一行负责；这张卡只在需要用户处理时出现（中断、出错、停止或结束后仍有剩余）。
-  // 结束后目标核对判做完（#334，主会话 10-13 定）：结果未知、受阻的执行项不再出卡，那一步的状态只留在展开的过程里
+  // 结束后目标核对判做完：结果未知、受阻的执行项不再出卡，那一步的状态只留在展开的过程里
   // （它的 chip 已写「没做成」）；发送类动作另有发送前确认把关。只是复述这些执行项的等待原因同样不出卡，其他等待照旧出卡。
   const coveredByCheck = checkedDone && view.state === "idle";
   const waitingShows = !!view.waiting && !(coveredByCheck && CHECK_COVERS_WAITING.has(view.waiting.reason));
@@ -261,7 +260,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   const visible = checkpointUnavailable
     || ["interrupted", "error"].includes(view.state)
     || (view.state === "aborted" && (remaining.length > 0 || !!view.waiting))
-    // 模型在回答里自己交代的没做完（declaredUnfinished）不另出卡：回答已经说了，「继续」也不提供（#103）。
+    // 模型在回答里自己交代的没做完（declaredUnfinished）不另出卡：回答已经说了，「继续」也不提供。
     || (view.state === "idle" && (remaining.some((r) => !(coveredByCheck && (r.status === "unknown" || r.status === "blocked"))) || waitingShows));
 
   return {
@@ -282,15 +281,13 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   };
 }
 
-export interface ResumeEntryOptions {
+interface ResumeEntryOptions {
   root: HTMLElement;
   /** 提交一次 resume 任务动作；返回是否真正交给了上行通道。 */
   sendResume: (request: TaskActionRequest) => boolean;
   /** 恢复前核对用：当前活动页；拿不到时不发送，交由用户打开原页面。 */
   getContext: () => Promise<PageContext | null>;
   newRequestId?: () => string;
-  now?: () => number;
-  scheduleFrame?: (callback: () => void) => void;
   pendingTimeoutMs?: number;
 }
 
@@ -304,20 +301,13 @@ export class ResumeEntry {
   private noteRunId: string | null = null;
   private pendingRequestId: string | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly samples: number[] = [];
-  private readonly now: () => number;
-  private readonly scheduleFrame: (callback: () => void) => void;
   private disposed = false;
 
-  constructor(private readonly opts: ResumeEntryOptions) {
-    this.now = opts.now ?? (() => performance.now());
-    this.scheduleFrame = opts.scheduleFrame ?? ((cb) => requestAnimationFrame(() => cb()));
-  }
+  constructor(private readonly opts: ResumeEntryOptions) {}
 
-  /** 收到权威 task_view（实时或重连补取）→ 重建摘要，并记录一帧呈现时序。 */
+  /** 收到权威 task_view（实时或重连补取）→ 重建摘要。 */
   apply(view: TaskView | null, options: { checkpointUnavailable?: boolean } = {}): void {
     if (this.disposed) return;
-    const started = this.now();
     this.view = view;
     this.checkpointUnavailable = options.checkpointUnavailable === true;
 
@@ -328,12 +318,6 @@ export class ResumeEntry {
     if (this.note && view && (view.runId !== this.noteRunId || view.state === "running")) this.note = null;
     const summary = buildResumeSummary(this.view, this.checkpointUnavailable, this.note);
     this.render(summary);
-    this.scheduleFrame(() => {
-      if (this.disposed) return;
-      this.samples.push(this.now() - started);
-
-      if (this.samples.length > RESUME_TIMING_SAMPLE_MAX) this.samples.shift();
-    });
   }
 
   clear(): void {
@@ -359,13 +343,6 @@ export class ResumeEntry {
     this.note = receipt.message?.trim() || (receipt.status === "rejected" ? "这次继续没有执行。" : "这次继续没有得到确认。");
     this.noteRunId = this.view?.runId ?? null;
     this.render(buildResumeSummary(this.view, this.checkpointUnavailable, this.note));
-  }
-
-  timing(): { count: number; p95: number | null; samples: number[] } {
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    const p95 = sorted.length ? sorted[Math.ceil(0.95 * sorted.length) - 1]! : null;
-
-    return { count: sorted.length, p95, samples: sorted };
   }
 
   dispose(): void {

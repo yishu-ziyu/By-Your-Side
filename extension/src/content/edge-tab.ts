@@ -31,7 +31,7 @@ export interface EdgeTabOther {
   detail?: string;
 }
 
-export interface EdgeTabHandlers {
+interface EdgeTabHandlers {
   capsule(): void;
   stop(): Promise<boolean>;
   action(): void;
@@ -125,8 +125,6 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.shim{animation:none;background:none;color:var(--ink2)}.rg,.ck{animation-duration:.01s;animation-delay:0s}}
 `;
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /** 欠阻尼弹簧，按帧积分：目标中途改了，从当前位置和速度接着走。 */
@@ -210,7 +208,7 @@ function avatar(other: EdgeTabOther): HTMLElement {
   return av;
 }
 
-export interface EdgeTabState {
+interface EdgeTabState {
   shown: boolean;
   tone: EdgeTabTone | null;
   a: string;

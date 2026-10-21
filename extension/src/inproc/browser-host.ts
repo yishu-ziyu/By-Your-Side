@@ -21,7 +21,7 @@ type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
   | { type: "inproc_voice"; configured: boolean; model?: unknown };
 
-export interface InprocHostDeps {
+interface InprocHostDeps {
   createRuntime: typeof createModelRuntime;
   /** Tests explicitly inject a session backend; production always uses IndexedDB. */
   sessionData?: (id: string) => Promise<{ session: SessionLogPort; files?: ArtifactPersistence }>;

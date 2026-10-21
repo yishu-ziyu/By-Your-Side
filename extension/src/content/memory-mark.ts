@@ -2,7 +2,7 @@ import { isPageInteractionMessage, type PageInteractionMessage } from '../../../
 import { OVERLAY_ATTR } from '../shared/overlay.js';
 
 /**
- * 按记忆填的那一格：淡蓝底、细边和「记得的」小标签（YIS-87，样子见 docs/previews/circle-and-memory）。
+ * 按记忆填的那一格：淡蓝底、细边和「记得的」小标签（样子见 docs/previews/circle-and-memory）。
  * 画在页面上面的一层里，不改这一格的值和网页结构；你动手改了这一格，或这一格不在了，记号就消失。
  * 点标签弹出小卡：改一下（选中这一格让你改）/ 这次不用（清空，记忆还在）/ 忘记（清空，并交给侧栏忘记这条）。
  */

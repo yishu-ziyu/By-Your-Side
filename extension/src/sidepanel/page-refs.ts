@@ -54,7 +54,7 @@ function textNodes(answer: HTMLElement): Text[] {
   return out;
 }
 
-export interface PageRefDeps {
+interface PageRefDeps {
   /** 光标飞过去圈出；false 表示页面上已经没有它。 */
   point: (name: string) => Promise<boolean>;
   /** 替用户发出一句话。 */

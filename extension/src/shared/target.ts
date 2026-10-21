@@ -9,7 +9,7 @@
  *   其他非空字符串               — 原始 CSS（穿 open shadow；同源 frame 有作用域）
  * 非法输入返回 null。`:has-text` 等 Playwright 伪类仍拒绝（未实现正式语义）。
  */
-export type ParsedTarget =
+type ParsedTarget =
   | { kind: "ref"; n: number }
   | { kind: "css"; sel: string }
   | { kind: "loc"; sel: string }
@@ -179,7 +179,7 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
 
   /**
    * 歧义时列出前 5 个候选，每个带只指向它的 loc=css 路径（唯一 id 优先，否则逐层 :nth-child）。
-   * 只说「请 snapshot」时模型要再花一轮读页、再一轮操作（#257）；有了路径下一步直接用。
+   * 只说「请 snapshot」时模型要再花一轮读页、再一轮操作；有了路径下一步直接用。
    */
   function choices(pool: Element[]): string {
     const lines = pool.slice(0, 5).map((el, i) => {

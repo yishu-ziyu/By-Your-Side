@@ -7,18 +7,18 @@ import { looksSecret } from "./memory-decision.js";
  * 站点笔记：任务判做成后，从这一轮的操作里写出的这个网站的通用做法。
  * 只关于网站、不关于用户，所以不进记忆、不走「要记住吗」；只存本机，每个网站最多 5 条，新的替换最旧的；网站总数也有上限。
  */
-export const SITE_NOTES_PER_HOST = 5;
+const SITE_NOTES_PER_HOST = 5;
 
-export const SITE_NOTE_MAX = 200;
+const SITE_NOTE_MAX = 200;
 
-export const SITE_NOTES_MAX_SITES = 200;
+const SITE_NOTES_MAX_SITES = 200;
 
 type SiteNote = { text: string; runId: string; at: number };
 
 interface SiteNotesFile { format: 1; sites: Record<string, SiteNote[]> }
 
 /**
- * 网站的键：主域名。cn.bing.com 和 www.bing.com 是同一个网站（打开 cn.bing.com 会跳到 www.bing.com，10-13 实测按主机名对不上）；
+ * 网站的键：主域名。cn.bing.com 和 www.bing.com 是同一个网站（打开 cn.bing.com 会跳到 www.bing.com，按主机名对不上）；
  * sina.com.cn、bbc.co.uk 这类多留一级。IP 地址和 localhost 原样。
  */
 export function siteKey(host: string): string {

@@ -11,7 +11,7 @@ import type {ExtensionFactory} from '@earendil-works/pi-coding-agent';
  * 死路不一定数得出来（菜单靠点里面的项关上、用 js 翻页面结构），模型常在阶梯没走完时就交「没能做到」。
  * 所以翻过几个菜单后第一次交半成品时先不发给用户，退回去附上阶梯：用户不该先看到放弃、再看到它接着做成。
  */
-export const LADDER_STEPS = [3, 5, 7] as const;
+const LADDER_STEPS = [3, 5, 7] as const;
 
 const NOT_FOUND = /未找到目标|未找到元素|无法获取元素位置|无法确认目标位置|下拉框没有匹配选项/;
 /** 点击后页面的反应（shared/effect.ts 的写法）：展开了，或顶层多了弹层。 */
@@ -29,7 +29,7 @@ const ANOTHER_WAY = 'Try another way: syntax typed into the content itself (#tag
 const HELP = "Read this site's official help without touching the user's page: in browser_run, const r = await browser.fetch({url: <its help or docs page>}); strip the HTML tags in the program and return only the lines about this feature. Then do it the documented way.";
 const ASK = 'Stop and ask the user in one short message: what you looked for and where, and the exact way you plan to do it, so they only have to reply 可以.';
 
-export function ladderHint(deadEnds:number, risky:boolean):string {
+function ladderHint(deadEnds:number, risky:boolean):string {
   if(risky)return `[Next step] This step pays, deletes or sends something: do not try other ways to do it yourself. ${ASK}`;
 
   if(deadEnds>=LADDER_STEPS[2])return `[Next step] ${deadEnds} places tried. ${ASK}`;

@@ -49,9 +49,6 @@ export interface MemoryQuery {
   url?: string;
 }
 
-/** 本机宿主的记忆文件名；扩展版存在 IndexedDB 里，内容格式相同。 */
-export const MEMORY_STORE_FILE = "memories.json";
-
 const randomUUID = () => globalThis.crypto.randomUUID();
 
 /** saveMethod：要替换的那条在询问之后被改过、撤下或不再生效。 */

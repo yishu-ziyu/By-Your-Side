@@ -8,7 +8,7 @@ type PageQueueState = {
 };
 
 /** 同一 tab 的完整短动作串行；思考和文案生成发生在调用本队列之前。 */
-export class PageOperationQueue {
+class PageOperationQueue {
   private readonly pages = new Map<number, PageQueueState>();
 
   private state(tabId: number): PageQueueState {
@@ -56,7 +56,7 @@ export class PageOperationQueue {
   isBlocked(tabId: number): boolean { return this.state(tabId).blocked; }
 }
 
-export const pageOperationQueue = new PageOperationQueue();
+const pageOperationQueue = new PageOperationQueue();
 
 export function takeoverTab(tabId: number): Promise<void> { return pageOperationQueue.takeover(tabId); }
 

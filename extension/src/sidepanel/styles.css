@@ -227,7 +227,7 @@ body {
 }
 #task-session-q { color: var(--text-primary); font-weight: 600; }
 
-/* ── 任务条（T03）：贴在输入框上方，一行说清「在做什么、多久了、作用在哪个网站」；目标与已送入材料点开再看 ── */
+/* ── 任务条：贴在输入框上方，一行说清「在做什么、多久了、作用在哪个网站」；目标与已送入材料点开再看 ── */
 #task-bar-root { min-width: 0; }
 #task-bar-root:empty { display: none; }
 .task-bar[hidden] { display: none; }
@@ -436,7 +436,7 @@ html, body {
 }
 #header-more svg, #conversation-new svg, #memory-open svg { width: 15px; height: 15px; stroke-width: 1.8; }
 #memory-open[hidden] { display: none; }
-/* 记忆入口写字（#75）：图标认不出是什么，文字一眼看懂。 */
+/* 记忆入口写字：图标认不出是什么，文字一眼看懂。 */
 #memory-open { width: auto; padding: 0 8px; font: 500 var(--fs-meta)/1 var(--font); color: var(--text-secondary); }
 #header-more:active, #conversation-new:active:not(:disabled), #memory-open:active { transform: scale(.95); }
 #header-more:focus-visible, #memory-open:focus-visible, #header-menu button:focus-visible {
@@ -591,7 +591,7 @@ html, body {
     inset 0 1px 0 var(--well-highlight);
 }
 
-/* 断线确定未送达的用户消息（issue #4）：弱化边框 + 原文重试，不隐藏内容 */
+/* 断线确定未送达的用户消息：弱化边框 + 原文重试，不隐藏内容 */
 .msg.user.undelivered {
   border-style: dashed;
   opacity: 0.88;
@@ -1347,7 +1347,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #app.starter-ready.conversation-empty:has(#input:not(:placeholder-shown), #status-pill.running, #send-btn.stopping) #starter { display: none; }
 #starter-title { margin: 0 0 3px; font-size: var(--fs-read); font-weight: 600; color: var(--text-primary); }
 #starter-sub { margin: 0 0 8px; font-size: var(--fs-meta); line-height: 1.45; }
-/* 没连模型（#233）：问候下面只留「连接模型」 */
+/* 没连模型：问候下面只留「连接模型」 */
 #starter-connect { display: none; border: 0; border-radius: var(--r); background: var(--text-primary); color: var(--content-bg); font-size: var(--fs-meta); padding: 6px 12px; cursor: pointer; }
 #starter-connect:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
 #app.no-model #starter-connect { display: inline-flex; }
@@ -2386,7 +2386,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .answer-actions button:disabled { opacity: .6; cursor: default; }
 .answer-action-feedback:empty { display: none; }
 
-/* 2026-09-13: 阅读外观面板（右上角齿轮展开）。只改回答排版，不改周边产品设计。 */
+/* 阅读外观面板（右上角齿轮展开）。只改回答排版，不改周边产品设计。 */
 .reading-settings { position: absolute; right: 14px; top: 40px; display: inline-flex; align-items: center; }
 .reading-settings #reading-settings-btn {
   display: inline-flex;
@@ -2475,7 +2475,7 @@ details.run-steps.done .chip.error { background: transparent; }
   .reading-settings-row { grid-template-columns: 30px minmax(0, 1fr); gap: 6px; }
 }
 
-/* Voice progress: approved Particles Orb composer, 2026-09-08. */
+/* Voice progress: approved Particles Orb composer. */
 .voice-start{display:inline-flex;align-items:center;gap:0;flex-shrink:0;border:1px solid var(--content-border);border-radius:18px;background:var(--content-bg);color:var(--text-secondary);padding:0 7px 0 0;font-size:10px;cursor:pointer}
 .voice-start canvas{width:30px;height:30px}.voice-start[aria-expanded="true"]{background:var(--content-subtle);border-color:var(--content-border)}
 .voice-progress{position:relative;text-align:center;padding:var(--s-2) 0 var(--s-3);margin-bottom:var(--s-2);flex-shrink:0}
@@ -2785,7 +2785,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 @keyframes sonar-wave { 0% { box-shadow:0 0 0 0 rgba(45,74,134,.7); } 60% { box-shadow:0 0 0 14px rgba(45,74,134,0); } 100% { box-shadow:0 0 0 0 rgba(45,74,134,0); } }
 .sonar-pulse { animation:sonar-wave 1.2s ease-out; }
 @media(prefers-reduced-motion:reduce) { .marginalia-card { transition:none; } .sonar-pulse { animation:none; } }
-/* 当前页：输入框外上方一行灰字，不占框内位置（#58 B）。 */
+/* 当前页：输入框外上方一行灰字，不占框内位置。 */
 #page-pill { display:flex; margin:0 0 var(--s-1); padding:2px var(--s-3); border:0; background:none; }
 /* 顶栏 B / chip C：这一轮带了哪页改由用户消息下面的 chip 说明，输入框上方不再常驻页面条。 */
 #page-pill[hidden] { display:none; }
@@ -2811,7 +2811,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 #ghost-bar .ghost-timing.failed { color:var(--warn); }
 #ghost-bar .ghost-timing[hidden] { display:none; }
 
-/* S11 改方向：运行中输入区换成暖色边，上方一行快捷按钮；新回答前挂金色标记并淡入替换原来那段。 */
+/* 改方向：运行中输入区换成暖色边，上方一行快捷按钮；新回答前挂金色标记并淡入替换原来那段。 */
 #composer.steering-active { border-color:color-mix(in srgb, var(--apple-orange) 55%, var(--glass-border)); box-shadow:0 0 0 2px color-mix(in srgb, var(--apple-orange) 14%, transparent); }
 #steer-ribbon { display:flex; flex-direction:column; gap:6px; }
 #steer-ribbon[hidden] { display:none; }
@@ -2836,7 +2836,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .msg.steer-morph { animation:steer-morph-in var(--d-layout) var(--e-out); }
 @media(prefers-reduced-motion:reduce) { .msg.steer-morph { animation-name:fadeOnlyIn; } #ghost-bar .ghost-action, .steer-chip { transition:none; } }
 
-/* #55 语音：光球居中、球下一个灰字、字幕卡里当前句墨色、说过的退成静默色；不加彩色胶囊。 */
+/* 语音：光球居中、球下一个灰字、字幕卡里当前句墨色、说过的退成静默色；不加彩色胶囊。 */
 .voice-progress .voice-state { margin-top: var(--s-1); font-size: var(--fs-meta); color: var(--text-tertiary); }
 .voice-progress[data-state="speaking"] .voice-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .voice-progress[data-state="error"] .voice-state { color: var(--err); }
@@ -2860,7 +2860,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .voice-progress .voice-actions button:hover { background: var(--content-subtle); }
 .voice-progress .voice-actions .voice-stop-speech[hidden] { display: none; }
 
-/* #47 动作卡 */
+/* 动作卡 */
 /* 运行中每步一行：图标 + 动词 + 目标，右侧 › 展开参数；旁白夹在卡片之间。 */
 .chip-row { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
 .chip { align-self: stretch; min-width: 0; text-align: left; }
@@ -2877,7 +2877,7 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
   .chip .dur { animation-name: fadeOnlyIn; transition: none; }
 }
 
-/* #51 技能 */
+/* 技能 */
 /* 输入框开头敲 / 弹出的技能列表、运行前的澄清卡、管理面板，以及用户消息上的「存成技能」。 */
 .pskill-menu, .pskill-clarify { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 26; background: var(--glass-surface-elevated); border: 1px solid var(--glass-border); border-radius: 14px; box-shadow: var(--popover-shadow); padding: 5px; }
 .pskill-menu { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
@@ -2915,7 +2915,7 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.user .pskill-save:hover { color: var(--text-primary); }
 @media (prefers-reduced-motion: reduce) { .msg.user .pskill-save { transition: none; } }
 
-/* #53 继续上次的事：光球下的一张无框清单。整行可点；× 只在指着时出现，占时间的位置。 */
+/* 继续上次的事：光球下的一张无框清单。整行可点；× 只在指着时出现，占时间的位置。 */
 #open-threads { align-self: stretch; margin-top: var(--s-5); display: flex; flex-direction: column; gap: 2px; text-align: left; }
 #open-threads[hidden] { display: none; }
 #open-threads .open-threads-head { margin: 0 0 var(--s-1); padding: 0 var(--s-2); font-size: var(--fs-meta); color: var(--text-tertiary); }
@@ -2947,7 +2947,7 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 #open-threads .open-thread-close:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
 #open-threads button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* #49 出处：回答前一行安静的署名（不是药丸按钮）；展开每个来源一行；正文角标是小号灰色数字。 */
+/* 出处：回答前一行安静的署名（不是药丸按钮）；展开每个来源一行；正文角标是小号灰色数字。 */
 .msg.assistant .answer-sources { margin: 0 0 var(--s-2); font-family: var(--font); font-size: var(--fs-meta); color: var(--text-tertiary); }
 .msg.assistant .answer-sources > summary { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; list-style: none; user-select: none; transition: color var(--m-quick) var(--e-swift); }
 .msg.assistant .answer-sources > summary::-webkit-details-marker { display: none; }
@@ -2976,7 +2976,7 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.assistant .answer-source:focus-visible, .msg.assistant .answer-sources > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .source-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 50; padding: 6px 12px; border-radius: 999px; background: var(--text-primary); color: var(--content-subtle); font-size: var(--fs-meta); box-shadow: 0 4px 14px rgba(0,0,0,.12); pointer-events: none; }
 
-/* ── #58 C 过程灰字：一轮只留一行 ─────────────────────────
+/* ── 过程灰字：一轮只留一行 ─────────────────────────
    进行中「正在 动词 对象」，秒数贴在动词后面；结束收成「做了 N 件事 · 9 秒 ›」。
    动词墨色、对象浅灰，无图标；展开是左边一条细线下的灰字步骤。 */
 details.run-steps .run-icon { display: none; }
@@ -3125,7 +3125,7 @@ details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer
 }
 details.run-steps:not(.done) .run-time { margin-left: auto; font-size: var(--fs-meta); color: var(--text-quaternary); }
 details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: hidden; }
-/* #102 进行中标题下方的最近几步：一条细线下的灰字，新的一步淡入；收尾时整块移除。 */
+/* 进行中标题下方的最近几步：一条细线下的灰字，新的一步淡入；收尾时整块移除。 */
 .run-trail { margin: -2px 0 10px 7px; padding-left: 12px; border-left: 1px solid var(--content-border); display: flex; flex-direction: column; gap: 2px; }
 .run-trail .trail-step, .run-trail .trail-more { display: flex; gap: 8px; align-items: baseline; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 .run-trail .trail-step::before { content: "✓"; color: var(--text-quaternary); font-size: var(--fs-micro); }
@@ -3166,7 +3166,7 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
   details.run-steps:not(.done)[data-phase="waiting"] .run-time { animation: none; }
 }
 
-/* #263 AC：进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
+/* 进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }
 details.run-steps > summary > .run-meta { flex-basis: 100%; overflow-wrap: anywhere; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 details.run-steps > summary > .run-meta::after { content: " ›"; color: var(--text-quaternary); }
@@ -3248,7 +3248,7 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .msg.assistant .answer-panel .memory-used-list { margin: 0; }
 .msg.assistant .answer-panel .memory-used-item { margin: 0; }
 
-/* 正文出处：站点图标长在链接文字前面（YIS-74），下划线淡到悬停才显；能回原页核对的数字带虚下划线。 */
+/* 正文出处：站点图标长在链接文字前面，下划线淡到悬停才显；能回原页核对的数字带虚下划线。 */
 .answer-source-glyph { overflow: hidden; }
 .answer-source-glyph > img { display: block; width: min(16px, 100%); height: min(16px, 100%); object-fit: contain; }
 .answer-source-glyph:has(> img) { background: transparent !important; }
@@ -3280,7 +3280,7 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 /* ── 输入框改版────────────
    一个圆角框，框里最多一行工具：＋ … 话筒 接管 [↑] ■。只用黑白灰；运行中不换颜色、不加提示区。
    做法取自 Claude for Chrome、ChatGPT Atlas、Gemini in Chrome、Operator 的输入框。 */
-/* 框的材质沿用暖灰凹槽 + 顶边高光（用户 10-06 要回这种质感），只改内边距。 */
+/* 框的材质沿用暖灰凹槽 + 顶边高光（用户要回这种质感），只改内边距。 */
 #composer { padding: 12px 10px 10px 14px; }
 #composer.steering-active { border-color: var(--well-outline); box-shadow: inset 0 1px 0 var(--well-highlight); }
 #steer-ribbon { display: none !important; }
@@ -3300,7 +3300,7 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 #send-btn.kinetic-morph-button { width: 32px; height: 32px; }
 #send-btn.kinetic-morph-button:hover { background: color-mix(in srgb, var(--text-primary) 82%, var(--content-bg)); color: var(--content-bg); }
 #send-btn.kinetic-morph-button.stopping { border-radius: 999px; background: var(--text-primary) !important; color: var(--content-bg) !important; }
-/* 没字也没附件：和 :disabled 同一个样子（#236）。放在 hover 规则后面，悬停也不变黑。 */
+/* 没字也没附件：和 :disabled 同一个样子。放在 hover 规则后面，悬停也不变黑。 */
 #send-btn.kinetic-morph-button[aria-disabled="true"]:not(.stopping) { background: var(--content-subtle); color: var(--text-quaternary); cursor: default; transform: none; }
 #send-btn.kinetic-morph-button.stopping .morph-icon-stop svg { width: 12px; height: 12px; fill: currentColor; }
 
@@ -3330,7 +3330,7 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .steer-tag { background: var(--content-subtle); color: var(--text-tertiary); font-weight: 500; }
 .msg.receipt.notice { color: var(--text-tertiary); }
 
-/* ── 侧栏选定版（#58 交接：顶栏 B / chip C / 过程行 A / 记忆展开 A） ── */
+/* ── 侧栏选定版（顶栏 B / chip C / 过程行 A / 记忆展开 A） ── */
 :root {
   /* 弹簧方程采样：过程行 stiffness 420 / damping 34；记忆 380 / 30。 */
   --e-spring-run: linear(0, 0.053, 0.171, 0.304, 0.438, 0.562, 0.676, 0.765, 0.835, 0.889, 0.932, 0.96, 0.98, 0.993, 1.001, 1.006, 1.008, 1.008, 1.008, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
@@ -3518,7 +3518,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #ctx-pop { transform: none; }
 }
 
-/* 主动卡（YIS-106）：一句话，第一个词是按钮，下面一行出处；悬停出 × */
+/* 主动卡：一句话，第一个词是按钮，下面一行出处；悬停出 × */
 .pc { position: relative; overflow: hidden; align-self: stretch; }
 .pc-face {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2);
@@ -3742,11 +3742,11 @@ details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(-
 @media (prefers-reduced-motion: reduce) {
   #handoff-banner:not([hidden]) { animation-name: fadeOnlyIn; opacity: 1; transform: none; }
 }
-/* ── 10-13 设计审视：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
+/* ── 设计收紧：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
    依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
    「Semantics are secondary」；NN/g「How to communicate errors」；Apple HIG Toolbars / Text fields。 */
 
-/* 间距分组：一轮之内 8，轮与轮之间 28。原来所有块一律 24，看不出哪些是一组。 */
+/* 间距分组：一轮之内 8，轮与轮之间 28：间距一样时看不出哪些是一组。 */
 #messages { gap: var(--s-2); }
 #messages > .msg.user:not(:first-child) { margin-top: 20px; }
 .ctx-chips { margin-top: -4px; }
@@ -3780,7 +3780,7 @@ details.run-steps.run-quieting .run-time { animation: none; }
   details.run-steps.run-quieting { transition: none; }
 }
 
-/* 系统说明（调试横幅）：不再挂在过程的竖线下面像引用的回答，改成一条浅底小提示。 */
+/* 系统说明（调试横幅）：一条浅底小提示，不挂在过程的竖线下面，免得像引用的回答。 */
 .run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
 .run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); color: var(--text-secondary); }
 

@@ -3,13 +3,13 @@
  * 被动观测，不注入页面；只记真实网络请求；展示前隐去 URL 里的凭据。
  */
 
-export const NETWORK_CAPACITY = 300;
+const NETWORK_CAPACITY = 300;
 
-export const NETWORK_DEFAULT_LIMIT = 40;
+const NETWORK_DEFAULT_LIMIT = 40;
 
-export const NETWORK_MAX_LIMIT = 200;
+const NETWORK_MAX_LIMIT = 200;
 
-export const NETWORK_DEFAULT_TYPES = ["xhr", "fetch"];
+const NETWORK_DEFAULT_TYPES = ["xhr", "fetch"];
 
 export type NetworkTypes = string[] | "all";
 
@@ -38,7 +38,7 @@ export interface NetworkRing {
   dropped: number;
 }
 
-export type NetworkEventUpdate =
+type NetworkEventUpdate =
   | { kind: "start"; entry: NetworkEntry }
   | { kind: "patch"; requestId: string; patch: Partial<NetworkEntry> };
 
@@ -63,7 +63,7 @@ function normalizeType(value: unknown): string {
 }
 
 /** 只记录真实网络请求；data:/blob: 这类伪 URL 既不是接口，也会把 base64 拖进上下文。 */
-export function isRecordableUrl(raw: string): boolean {
+function isRecordableUrl(raw: string): boolean {
   return /^https?:\/\//i.test(raw);
 }
 
@@ -138,7 +138,7 @@ export function networkEventToUpdate(method: string, params: Record<string, unkn
 }
 
 /** 追加一条；超容量丢最旧，并累计 dropped。返回被挤出的最旧条目（供在途集合保留）。 */
-export function appendNetworkEntry(
+function appendNetworkEntry(
   ring: NetworkRing,
   entry: NetworkEntry,
   capacity: number = NETWORK_CAPACITY,
@@ -158,7 +158,7 @@ export function appendNetworkEntry(
 }
 
 /** 应用一条 patch；条目不在缓冲里则原样返回。 */
-export function patchNetworkEntry(ring: NetworkRing, requestId: string, patch: Partial<NetworkEntry>): NetworkRing {
+function patchNetworkEntry(ring: NetworkRing, requestId: string, patch: Partial<NetworkEntry>): NetworkRing {
   const index = ring.entries.findIndex((entry) => entry.requestId === requestId);
 
   if (index < 0) return ring;
@@ -169,7 +169,7 @@ export function patchNetworkEntry(ring: NetworkRing, requestId: string, patch: P
 }
 
 /** 重定向：同一 requestId 再 start 时替换旧条目并记跳数。 */
-export function restartNetworkEntry(ring: NetworkRing, entry: NetworkEntry): NetworkRing {
+function restartNetworkEntry(ring: NetworkRing, entry: NetworkEntry): NetworkRing {
   const previous = ring.entries.find((candidate) => candidate.requestId === entry.requestId);
 
   if (!previous) return appendNetworkEntry(ring, entry);
@@ -227,14 +227,14 @@ export function redactUrlCredentials(raw: string): string {
   return url;
 }
 
-export function entryDurationMs(entry: NetworkEntry): number | undefined {
+function entryDurationMs(entry: NetworkEntry): number | undefined {
   if (entry.startedTs === undefined || entry.endedTs === undefined) return undefined;
   const ms = Math.round((entry.endedTs - entry.startedTs) * 1000);
 
   return ms >= 0 ? ms : undefined;
 }
 
-export function formatBytes(bytes: number): string {
+function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
 
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
@@ -243,14 +243,14 @@ export function formatBytes(bytes: number): string {
 }
 
 /** 展示用 URL 长度上限：跟踪类 URL 会很长，截断避免撑上下文。 */
-export const NETWORK_MAX_URL_CHARS = 240;
+const NETWORK_MAX_URL_CHARS = 240;
 
-export function clipUrl(url: string): string {
+function clipUrl(url: string): string {
   return url.length > NETWORK_MAX_URL_CHARS ? `${url.slice(0, NETWORK_MAX_URL_CHARS)}…` : url;
 }
 
 /** 一行：`3. failed POST https://… — xhr (net::ERR_FAILED) (canceled)`。 */
-export function formatNetworkEntryLine(entry: NetworkEntry, index: number): string {
+function formatNetworkEntryLine(entry: NetworkEntry, index: number): string {
   const status = entry.failed ? "failed" : entry.status !== undefined ? String(entry.status) : "pending";
   const parts = [`${index}.`, status, entry.method, clipUrl(redactUrlCredentials(entry.url)), `— ${entry.resourceType}`];
 
@@ -272,7 +272,7 @@ export function formatNetworkEntryLine(entry: NetworkEntry, index: number): stri
   return parts.join(" ");
 }
 
-export interface NetworkReportInfo {
+interface NetworkReportInfo {
   total: number;
   matched: number;
   dropped: number;
@@ -315,9 +315,9 @@ export function formatNetworkReport(shown: readonly NetworkEntry[], info: Networ
  * 长连接排除类别显式列出（可测）；慢 xhr/fetch 不得被偷偷忽略。
  * network-idle ≠ 页面业务完成。
  */
-export const NETWORK_IDLE_EXCLUDED_TYPES = ["websocket", "eventsource"] as const;
+const NETWORK_IDLE_EXCLUDED_TYPES = ["websocket", "eventsource"] as const;
 
-export const NETWORK_IN_FLIGHT_CAPACITY = 200;
+const NETWORK_IN_FLIGHT_CAPACITY = 200;
 
 export type NetworkCaptureIntegrity = "none" | "ok" | "late" | "detached" | "gap" | "restart";
 
@@ -339,7 +339,7 @@ export interface NetworkLifecycle {
   inFlight: Map<string, NetworkInFlightEntry>;
 }
 
-export function isIdleExcludedType(resourceType: string): boolean {
+function isIdleExcludedType(resourceType: string): boolean {
   const type = resourceType.toLowerCase();
 
   return (NETWORK_IDLE_EXCLUDED_TYPES as readonly string[]).includes(type);
@@ -417,19 +417,6 @@ export function markCaptureGap(life: NetworkLifecycle, now: number = Date.now())
     attached: life.attached,
     lastActivityAt: now,
     inFlight: cloneInFlight(life.inFlight),
-  };
-}
-
-/** SW 重启：内存态清空；没有记录 ≠ 没有请求。 */
-export function markCaptureRestart(life: NetworkLifecycle, now: number = Date.now()): NetworkLifecycle {
-  return {
-    ring: { entries: [], dropped: 0 },
-    capacity: life.capacity,
-    generation: life.generation + 1,
-    integrity: "restart",
-    attached: false,
-    lastActivityAt: now,
-    inFlight: new Map(),
   };
 }
 

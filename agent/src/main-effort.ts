@@ -10,7 +10,7 @@
 import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { thinkingProfile } from "../../shared/model-capabilities.js";
 
-export type EffortSignal = "tool_failures" | "no_progress" | "goal_unfinished" | "user_correction" | "new_task";
+type EffortSignal = "tool_failures" | "no_progress" | "goal_unfinished" | "user_correction" | "new_task";
 
 const START: ModelThinkingLevel = "medium";
 

@@ -59,11 +59,11 @@ function continuationInput(text:string):{amendment?:string}|null {
 
 function isInterruptedResumeText(text:string):boolean { return continuationInput(text)!==null; }
 
-export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
+interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
 
 /** Identity is captured by each runtime's emitter, never read from the selected panel. */
-/** 旧会话能否让出标签页：没有进行中/等待交还/中断的任务、没有在途浏览器调用。结果未知的写入不拦（10-10 用户裁决）。 */
-export function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | null }): boolean {
+/** 旧会话能否让出标签页：没有进行中/等待交还/中断的任务、没有在途浏览器调用。结果未知的写入不拦。 */
+function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | null }): boolean {
   if (input.busy) return false;
   const snapshot = input.snapshot;
 
@@ -193,7 +193,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
 
 return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:null; }
 
-  /** T02：投影当前真实状态为只读任务视图并下发；内容不变则不发（幂等）。 */
+  /** 投影当前真实状态为只读任务视图并下发；内容不变则不发（幂等）。 */
   private readonly lastTaskViews = new Map<string, string>();
   private readonly taskViewQueued = new Set<string>();
   private taskViewDisposed = false;
@@ -235,19 +235,6 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
 
     if (!updated) return;
     this.emit({ type: "agent_event", conversationId, event: { kind: "user_delivery", delivery: updated } });
-  }
-  recordSpokenAck(conversationId: string, text: string, runId: string | null): void {
-    const snap = this.getTaskProgress(conversationId);
-
-    if (!snap || snap.runId !== runId) return;
-
-    if (this.progress.get(conversationId)?.hasFinding()) return;
-    const latest = snap.conversationContext?.latestDelivery;
-
-    if (latest && latest.kind !== "ack") return;
-
-    if (latest?.kind === "ack") return;
-    this.publishDelivery(conversationId, "ack", text, undefined, { runId });
   }
   async routeVoiceInput(id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, route?: VoiceRouteContext):Promise<VoiceRouteResult> {
     if (this.entries.get(id)?.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
@@ -562,7 +549,7 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
       const sharesInput=targetId===id||/(当前页面|当前页|所选资料|所选图片|所选内容|所选文字|选中的)/.test(step.text);
 
-      // 普通修改与终止都直接送达（2026-09-24 用户决定不再读回）；具体危险网页动作仍由执行层确认。
+      // 普通修改与终止都直接送达，不再读回给用户确认；具体危险网页动作仍由执行层确认。
 
       if(['pause','resume','abort'].includes(step.action))route?.reportStage?.('controlling');
       journal[index]!.status='pending';save();
@@ -635,7 +622,7 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     const runId = expected && "runId" in expected ? expected.runId : snap.runId ?? null;
 
     try {
-      // T06：正式结果带上宿主事实链；补发路径与工具路径同一口径，自己写不进事实。
+      // 正式结果带上宿主事实链；补发路径与工具路径同一口径，自己写不进事实。
       const facts = kind === "finding" ? this.deliveryFactsOf(conversationId) : undefined;
       const delivery = createUserDelivery({ conversationId, runId, kind, text, replyTo, ...(deliveryId?{id:deliveryId}:{}), ...(facts ? { facts } : {}) });
       const message: ServerMessage = { type: "agent_event", conversationId, event: { kind: "user_delivery", delivery } };
@@ -837,7 +824,7 @@ return { kind: "silent" };}
     if(!session.available||session.isStreaming())return false;
     const lastReply=[...(snapshot.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
 
-    // 不另调模型判断：任务正等用户回话（核对说「等用户」或助手最后在问用户），这句就按接着做（09-27 回的邮箱被当成了新任务）。
+    // 不另调模型判断：任务正等用户回话（核对说「等用户」或助手最后在问用户），这句就按接着做，不然用户回的邮箱会被当成新任务。
     return view.goalStatus?.status==='waiting'||asksUser(lastReply);
   }
   /** 过往任务：宿主在 host-core 里接上；没有就不记。 */
@@ -851,7 +838,7 @@ return { kind: "silent" };}
    */
   /** 这一轮在等目标核对结论的会话：结论到之前不记过往任务。 */
   private readonly goalCheckPending = new Set<string>();
-  /** 回答已交付、目标核对判「没做完」后自己接着做的会话。用户另发新任务而名额已满时，先停这些（10-11 用户定：新任务优先）。 */
+  /** 回答已交付、目标核对判「没做完」后自己接着做的会话。用户另发新任务而名额已满时，先停这些（新任务优先）。 */
   private readonly goalContinuing = new Set<string>();
 
   /** 名额已满时停掉其他会话里回答后的自动续做，一次停一个，直到让出一个名额给用户刚发的新任务。 */
@@ -912,8 +899,8 @@ return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)
     if(!history||!progress||!snap?.runId||!snap.goal||!['idle','aborted','error'].includes(snap.state))return;
 
     // 只记做成了事的任务（提交、填写、点按钮这类会留下后果的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
-    // 09-27 阶跃实测「我的手机号是 …」被记成一条过往任务，撤销记忆后号码仍留在过往任务里。
-    // 打开页面、滚动不算：10-12 笔记本查询因打开了详情页被记下，回答里的旧结论被下一次照抄（#305）。
+    // 否则「我的手机号是 …」会记成一条过往任务，撤销记忆后号码仍留在过往任务里。
+    // 打开页面、滚动不算：只读查询记下后，回答里的旧结论会被下一次照抄。
     const acted=(snap.results??[]).some(item=>resultHasWriteEffect(item));
     const committed=(snap.results??[]).some(item=>resultLocksWhenUnknown(item));
     const view=projectTaskView(snap);
@@ -955,7 +942,7 @@ return host?[host]:[];}))].slice(0,16);
     if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
 
     // 站点笔记：只从核对判做成的任务里学；没核对、没做成、用户停下的都不学，
-    // 这一轮的回答自己说只做成一部分或列了没做完的事，也不学。宿主账本补的 hostNote 不算：核对判做成就以核对为准（#334）。
+    // 这一轮的回答自己说只做成一部分或列了没做完的事，也不学。宿主账本补的 hostNote 不算：核对判做成就以核对为准。
     const partialDelivery=delivery?.runId===snap.runId&&((delivery.facts?.outcome==='partial'&&!delivery.hostNote)||!!delivery.unfinished?.length);
 
     if(snap.goalCheck?.status==='done'&&snap.state==='idle'&&snap.startedAt!==null&&hosts.length&&!partialDelivery)void session?.learnSiteNotes?.({runId:snap.runId,startedAt:snap.startedAt,hosts,request:[entry.goal,...entry.revisions]}).catch(()=>{});
@@ -994,7 +981,7 @@ return host?[host]:[];}))].slice(0,16);
 
       // 一步都没做成（常见于模型报错）：出错原因已在侧栏，单独一句「没做完」只是账本的话。
       if(!count)return;
-      // 账本只有「填写 @4」这类步骤名，说不出用户的话；只说发生了什么，请用户看页面（10-09 用户定）。
+      // 账本只有「填写 @4」这类步骤名，说不出用户的话；只说发生了什么，请用户看页面。
       this.publishDelivery(id,'finding','助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。',
         undefined,{runId:snap.runId,controlVersion:snap.controlVersion,states:['idle']});
 
@@ -1492,7 +1479,7 @@ return receipt;
     const progress = new TaskProgress(id);
     this.progress.set(id, progress);
 
-    // T02：任何状态突变后投影并下发只读任务视图（微任务合并 + 去重，保证原始事件先到达）。包裹只加通知，不改原语义。
+    // 任何状态突变后投影并下发只读任务视图（微任务合并 + 去重，保证原始事件先到达）。包裹只加通知，不改原语义。
     for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "stopAfterFailures"] as const) {
       const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
       // SAFETY: 同名方法按原签名包装，参数与返回值形状不变；动态按方法名赋值 TypeScript 无法表达。
@@ -1736,7 +1723,7 @@ return receipt;
     }
 
     if (message.type === 'nudge_request') {
-      // 主动建议（#52）：失败、超时、没有模型都当作不建议，只回 nudge:null，不打扰会话。
+      // 主动建议：失败、超时、没有模型都当作不建议，只回 nudge:null，不打扰会话。
       let nudge = null;
 
       try {

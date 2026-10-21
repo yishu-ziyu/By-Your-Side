@@ -44,13 +44,13 @@ export type AskInput =
 
 type EntryRef = Pick<MemoryEntry, "id" | "version">;
 
-export type AskRequest =
+type AskRequest =
   | { type: "answer"; answer: "remember" | "once"; text?: string }
   | { type: "update"; entry: EntryRef; text: string; scope: MemoryScope }
   | { type: "restore" | "forget"; entry: EntryRef };
 
 /** stepAsk 的一步：新的卡片，以及这一步要发出的请求（若有）。 */
-export interface AskStep { card: MemoryAskCard; request?: AskRequest }
+interface AskStep { card: MemoryAskCard; request?: AskRequest }
 
 export function createAskCard(ask: MemoryAskEvent, live = true): MemoryAskCard {
   if (ask.learned) return { ask, phase: live ? "remembered" : "noted", pending: null, error: "", ...(live ? { entry: ask.learned } : {}) };

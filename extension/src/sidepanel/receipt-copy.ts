@@ -9,7 +9,7 @@ function diffLine(diff: TaskReceiptDiff): string {
 }
 
 /** 侧栏回执的展示文案；inProcess 表示归入执行过程记录。 */
-export type ReceiptCopy = { summary: string; detail: string; collapsed: boolean; inProcess?: boolean };
+type ReceiptCopy = { summary: string; detail: string; collapsed: boolean; inProcess?: boolean };
 
 /** 普通接收回执不复述整条输入；拒绝和不确定结果仍直接展示。阶段分层：accepted=送达，applied=已应用并核对。 */
 export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string): ReceiptCopy {
@@ -31,7 +31,7 @@ export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string
     return { summary: "修改已应用并核对", detail, collapsed: true };
   }
 
-  // 停下已由过程行「已停止」和接续那一行说过，不再另起一条「任务已终止」（#103）；停止失败照旧露出。
+  // 停下已由过程行「已停止」和接续那一行说过，不再另起一条「任务已终止」；停止失败照旧露出。
   if (local && receipt.action === "abort" && (receipt.status === "accepted" || receipt.status === "applied")) {
     return { summary: receipt.message, detail, collapsed: true };
   }

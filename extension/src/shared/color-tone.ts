@@ -9,7 +9,7 @@ export const COLOR_TONES = [
 
 export type ColorTone = typeof COLOR_TONES[number]["id"];
 
-export const DEFAULT_COLOR_TONE: ColorTone = "blue";
+const DEFAULT_COLOR_TONE: ColorTone = "blue";
 
 export const COLOR_TONE_KEY = "color_tone";
 

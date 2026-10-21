@@ -1,7 +1,7 @@
 /**
  * `network` 工具：读当前工作标签页的被动请求记录（CDP Network 域环形缓冲）。
  * 只读，不改页面；attach 失败（如用户开着 DevTools）不伪造数据。
- * 回执含在途/捕获完整性，供 waitForNetworkIdle 判定（FIX-02）。
+ * 回执含在途/捕获完整性，供 waitForNetworkIdle 判定。
  */
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { formatNetworkReport, selectNetworkEntries, type NetworkQuery } from "../../../../shared/network.js";
@@ -9,7 +9,7 @@ import { ensureAttached } from "../debugger.js";
 import { clearNetworkRing, enableNetworkCapture, networkIdleFor, networkRingFor } from "../network-log.js";
 import { resolveReadableTab } from "../state.js";
 
-export interface NetworkParams {
+interface NetworkParams {
   tabId?: number;
   urlContains?: string;
   types?: string[] | "all";
@@ -17,7 +17,7 @@ export interface NetworkParams {
   clear?: boolean;
 }
 
-export interface NetworkResult {
+interface NetworkResult {
   text: string;
   tabId: number;
   total: number;

@@ -32,7 +32,7 @@ function focusableGeneric(n: AxNodeLite, textName: (n: AxNodeLite) => string): b
   return own.length > 0 || textName(n).length > 0;
 }
 
-export function decisionControls(nodes: readonly AxNodeLite[], refs?: readonly number[]): BrowserControl[] {
+function decisionControls(nodes: readonly AxNodeLite[], refs?: readonly number[]): BrowserControl[] {
   const keep = refs ? new Set(refs) : null;
   const result: BrowserControl[] = [];
   const seen = new Set<number>();
@@ -195,7 +195,7 @@ export function decisionDialogs(nodes: readonly AxNodeLite[]): string[] {
   return nodes.flatMap(n => !n.ignored && ['dialog', 'alertdialog'].includes(n.role?.value ?? '') ? [`${scopeIdentity(n)}:${n.name?.value ?? ''}`] : []).sort();
 }
 
-export function decisionControlsTruncated(nodes: readonly AxNodeLite[], controls: readonly BrowserControl[]): boolean {
+function decisionControlsTruncated(nodes: readonly AxNodeLite[], controls: readonly BrowserControl[]): boolean {
   // Use the same admission rule as collection, including focusable generics.
   // Counting only allowedRoles made a fully collected three-control menu look
   // truncated as soon as its role-less trigger was correctly admitted.
@@ -209,15 +209,15 @@ export function decisionControlsTruncated(nodes: readonly AxNodeLite[], controls
     || new Set(observed.map(n => n.backendDOMNodeId)).size !== observed.length;
 }
 
-export const VIEW_CONTROL_BUDGET = 100;
+const VIEW_CONTROL_BUDGET = 100;
 
-export const VIEW_TAB_BUDGET = 64;
+const VIEW_TAB_BUDGET = 64;
 
-export const MAX_COLLECTED_CONTROLS = 2500;
+const MAX_COLLECTED_CONTROLS = 2500;
 
-export const SCOPE_SUMMARY_BUDGET = 32;
+const SCOPE_SUMMARY_BUDGET = 32;
 
-export type ObservationViewInput = {
+type ObservationViewInput = {
   collected: BrowserControl[];
   tabs?: import('../../../shared/protocol.js').TabInfo[];
   collectionComplete: boolean;
@@ -228,7 +228,7 @@ export type ObservationViewInput = {
   viewScopeId?: string;
 };
 
-export type ObservationView = {
+type ObservationView = {
   controls: BrowserControl[];
   tabs?: import('../../../shared/protocol.js').TabInfo[];
   truncated: boolean;
@@ -516,7 +516,7 @@ export async function readDecisionTree(tabId: number): Promise<AxNodeLite[]> {
 }
 
 /** One currently issued observation per execution member/tab. Consumed before any possible write. */
-export class BrowserObservationRegistry {
+class BrowserObservationRegistry {
   private pages = new Map<string, {
     member: string;
     page: BrowserObservation;

@@ -6,7 +6,7 @@
  *   只有刚发生的出错才倒计时：重开侧栏回放出来的旧卡只给手动按钮；几个窗口都开着侧栏时只由一个侧栏替用户重试。
  * - network：「重试」；网络恢复时自动重试一次。
  * 接着做之后卡片收成一行状态；答案送达时卡片在原地收成一行回执「出过错 · …，已从出错处继续」，
- * 行留在出错的位置，续写的答案跟在它下面。再出错不换新卡：同一张卡原地换内容、淡一下，不抖也不重新进场（#286）。
+ * 行留在出错的位置，续写的答案跟在它下面。再出错不换新卡：同一张卡原地换内容、淡一下，不抖也不重新进场。
  */
 import { createElement as icon, Check } from "lucide";
 import type { ModelOption } from "../../../shared/protocol.js";
@@ -26,7 +26,7 @@ const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: re
 
 export interface KeyTestResult { ok: boolean; ms?: number; reason?: string; detail?: string }
 
-export interface ErrorCardHost {
+interface ErrorCardHost {
   /** 把卡插进消息流的当前位置（接续锚点之前），让之后到达的答案自然跟在它下面。 */
   mount(el: HTMLElement): void;
   /** 底部换 key 面板挂在这里（侧栏根容器）。 */
@@ -349,7 +349,7 @@ export function mountErrorCards(host: ErrorCardHost) {
   }
 
   const api = {
-    /** 模型出错：没有卡就在消息流末尾出一张（rise 进场）。上一张还在就原地换内容、淡一下：位置不动，不抖也不重新进场（#286）。 */
+    /** 模型出错：没有卡就在消息流末尾出一张（rise 进场）。上一张还在就原地换内容、淡一下：位置不动，不抖也不重新进场。 */
     /** live：刚发生的出错；重开侧栏、切回会话时回放出来的是旧出错，只给手动按钮，不替用户重试。 */
     show(copy: ModelErrorCopy, live: boolean): void {
       clearTimers();

@@ -37,7 +37,7 @@ const PROMPT_WARM_TIMEOUT_MS = 15_000;
 /** pi-durable 认得的说法，只在它判断要不要重试时用；进入记录和界面前去掉。 */
 const RETRY_MARK = " (network error)";
 
-export interface DurableLoopOptions extends PiAgentLoopOptions {
+interface DurableLoopOptions extends PiAgentLoopOptions {
   /** 每个会话一个存储目录。不给时只放在内存里，重载后接不上。 */
   openStorage?: (conversationId: string) => Promise<Storage>;
 }

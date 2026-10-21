@@ -3,9 +3,9 @@ import { READING_SELECTION_LIMIT } from "../../../shared/reading.js";
 
 export const ASK_STORE = "pendingAsk";
 
-export const MIN_ASK_CHARS = 2;
+const MIN_ASK_CHARS = 2;
 
-export const MAX_ASK_CHARS = READING_SELECTION_LIMIT;
+const MAX_ASK_CHARS = READING_SELECTION_LIMIT;
 
 export const ASK_MENU_ID = "ask-sideagent";
 

@@ -1,9 +1,9 @@
 import {VOICE_DIAG_MAX_SECONDS,VOICE_DIAG_SAMPLE_RATE,type VoiceDiagRecord} from '../../../shared/voice.js';
 
 /** Kept per session: at most a few takes with audio, more entries as metadata only. */
-export const VOICE_DIAG_MAX_CAPTURES = 20;
+const VOICE_DIAG_MAX_CAPTURES = 20;
 
-export const VOICE_DIAG_AUDIO_KEEP = 3;
+const VOICE_DIAG_AUDIO_KEEP = 3;
 
 export interface VoiceDiagTrack {
   sampleRate: number;
@@ -54,7 +54,7 @@ export interface VoiceDiagCapture {
   notes: VoiceDiagNote[];
 }
 
-export interface VoiceDiagStatus { complete: boolean; reasons: string[] }
+interface VoiceDiagStatus { complete: boolean; reasons: string[] }
 
 /** 一次诊断里的备注：code 是事实，detail 只在有额外说明时才带上。 */
 export interface VoiceDiagNote {
@@ -63,7 +63,7 @@ export interface VoiceDiagNote {
   at: number;
 }
 
-export const decodePcm = (base64: string): Int16Array => {
+const decodePcm = (base64: string): Int16Array => {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
 
@@ -402,7 +402,7 @@ export class VoiceDiagnosticLog {
 }
 
 /** 16-bit mono PCM WAV container so both takes stay auditionable in the browser. */
-export function encodeWav(chunks: Int16Array[], sampleRate: number): Blob {
+function encodeWav(chunks: Int16Array[], sampleRate: number): Blob {
   const samples = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const buffer = new ArrayBuffer(44 + samples * 2);
   const view = new DataView(buffer);

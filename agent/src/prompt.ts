@@ -174,5 +174,3 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 - Reply to the user in the user's own language. Stop after the result: no closing offers or questions such as "需要我接着做什么吗"; ask only when the user must make a decision.`;
 }
 
-/** 默认主会话提示词。 */
-export const SYSTEM_PROMPT = leadSystemPrompt();
