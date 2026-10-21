@@ -1,3 +1,4 @@
+import { installQuietTabs } from "./quiet-tabs.js";
 import { activeTargetTabs, isPanelUrl, popoutSource } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
 import { installFloatCard } from "./float-card.js";
@@ -2461,6 +2462,8 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         if (lastView) port.postMessage({ kind: "server", msg: { type: "task_view", view: lastView } } satisfies BgToPanel);
         port.postMessage({ kind: "synced" } satisfies BgToPanel);
 }
+
+installQuietTabs();
 
 /** 光标名牌上的确认/取消键：点删除/取消 → 与侧栏打「确认」「取消」同一条 user_message。 */
 chrome.tabs.onActivated.addListener((info) => {
