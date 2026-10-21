@@ -240,6 +240,21 @@ export function useMemoryHabits(store: MemoryStore, doc: DocumentPersistence): M
 const styleDocs = new WeakMap<MemoryStore, DocumentPersistence>();
 
 /** 沟通方式证据的存放处（扩展里是 IndexedDB 的一条记录）；各对话共用一份，没指定时只在进程内保存。 */
+const pausedFlags = new WeakMap<MemoryStore, () => boolean>();
+
+/**
+ * 模拟用户模式：代理替用户试用产品期间，记忆照常读（带进回答），但不判断要不要记、不问、不学习惯。
+ * 它说的话不是用户的话，记下来就成了用户的偏好。宿主另把写入挡在存储那一层，这里管的是界面上不出现「已记住」。
+ */
+export function usePausedMemory(store: MemoryStore, paused: () => boolean): MemoryStore {
+  pausedFlags.set(store, paused);
+
+  return store;
+}
+
+/** 模拟用户模式下，改记忆的请求得到的回答。 */
+export const SELF_USE_MEMORY_PAUSED = "模拟用户模式：这段时间不写记忆，也不记过往任务。";
+
 export function useStyleSignals(store: MemoryStore, doc: DocumentPersistence): MemoryStore {
   styleDocs.set(store, doc);
 
@@ -420,6 +435,10 @@ export class MemoryRuntime {
    * 填进网页的值来自这一轮带上的哪条记忆：值是那条原文的一部分就算（「邮箱：a@b.com」与 a@b.com）。
    * 只比对本轮带上的、关于你的资料；单个字不算，免得误标。
    */
+  private paused(): boolean {
+    return pausedFlags.get(this.store)?.() ?? false;
+  }
+
   memoryForValue(value: string): { id: string; text: string; createdAt: number } | undefined {
     const v = value.trim();
 
@@ -487,6 +506,8 @@ export class MemoryRuntime {
     if (context?.url) turn.pageUrl = context.url;
     turn.duringRun = this.running;
     this.active = turn;
+
+    if (this.paused()) return;
     if (this.correctionBatch) turn.learning = this.correctionBatch;
     turn.correctionHostname = memoryHostOfUrl(context?.url) ?? this.recentWebHost();
 
@@ -674,6 +695,7 @@ export class MemoryRuntime {
    * text 是用户在卡片上「改一下」后的文字：就是用户自己的话，按它存；空白或像密码的不存，询问留着，用户改好可以再点。
    */
   async answerAsk(askId: string, answer: "remember" | "once", text?: string): Promise<MemoryAskAnswer> {
+    if (this.paused()) throw new Error(SELF_USE_MEMORY_PAUSED);
     const ask = this.asks.get(askId);
 
     if (!ask) throw new MemoryAskClosed(MEMORY_ASK_EXPIRED);
@@ -746,6 +768,8 @@ export class MemoryRuntime {
     this.running = false;
     this.lastWebHost = this.recentWebHost();
     const finished = this.active;
+
+    if (this.paused()) return;
 
     if (finished && this.complete && !finished.savedOpen && !this.reviewed.has(finished.key) && !looksSecret(finished.text)) {
       this.reviewed.add(finished.key);
@@ -1200,7 +1224,7 @@ export class MemoryRuntime {
    * 同一 key 出现在 3 个不同对话里时，用纠正询问那张卡问一次「你好像每次都这样做：…。要我记住吗」；只有点「记住」才保存。
    */
   async noticeHabit(task: Pick<TaskHistoryEntry, "goal" | "revisions" | "hosts" | "summary">): Promise<void> {
-    if (!this.complete || looksSecret(task.goal)) return;
+    if (!this.complete || looksSecret(task.goal) || this.paused()) return;
     let key: string;
     let habit: string;
 
@@ -1250,7 +1274,7 @@ export class MemoryRuntime {
    * 模型说的日子和网站要在记录里确实有，否则不算。返回核对过的结果，侧栏「看到的操作」照此显示。
    */
   async noticeBrowsing(days: BrowseDay[], dismissed: string[]): Promise<BrowseHabit[]> {
-    if (!this.complete || !days.length) return [];
+    if (!this.complete || !days.length || this.paused()) return [];
     const doc = habitDocFor(this.store);
     const known = Object.entries((await loadHabits(doc)).state.habits).slice(-50).map(([key, habit]) => ({ key, habit: habit.text }));
     let reply: unknown;
@@ -1362,7 +1386,7 @@ export class MemoryRuntime {
   async askBrowsing(key: string): Promise<void> {
     const item = this.browsed.get(key);
 
-    if (!item?.ready) return;
+    if (!item?.ready || this.paused()) return;
     const doc = habitDocFor(this.store);
     const fresh = await doc.exclusive(async () => {
       const saved = await loadHabits(doc);
@@ -1462,6 +1486,8 @@ export class MemoryRuntime {
         }
 
         if (params.action !== "change") throw new Error("记忆操作无效");
+
+        if (this.paused()) return result("none", [], SELF_USE_MEMORY_PAUSED);
 
         // Cache success AND failure for this turn: retries cannot repeatedly ask the judge until it agrees.
         if (!turn.change) turn.change = this.changeAfterAuto(turn, signal);
