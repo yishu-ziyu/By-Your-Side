@@ -123,7 +123,7 @@ Reply with ONLY JSON: {"notes":[{"host":"<host>","tip":"<tip>"}]} or {"notes":[]
 type RunMessage = { role: string; content?: unknown; toolName?: string; isError?: boolean };
 
 /** 只有浏览器工具进操作记录；记忆、账本、交付、文件、交还等工具与网站无关，常带用户的话。 */
-const BROWSER_TOOLS = new Set(["page_translation", "read_element", "read_elements", "browser_run", "tabs", "navigate", "snapshot", "hover", "click", "double_click", "select_option", "upload_file", "arm_event", "wait_event", "accept_dialog", "dismiss_dialog", "download_url", "fill", "type_text", "press_key", "scroll", "fetch", "network", "js", "mark", "guide_step", "screenshot"]);
+const BROWSER_TOOLS = new Set(["page_translation", "read_element", "read_elements", "browser_run", "tabs", "navigate", "snapshot", "hover", "click", "double_click", "select_option", "upload_file", "arm_event", "wait_event", "accept_dialog", "dismiss_dialog", "download_url", "fill", "type_text", "press_key", "scroll", "fetch", "network", "video_captions", "js", "mark", "guide_step", "screenshot"]);
 
 /** 改动当前页面的工具：在哪个网站上用过，才算在那个网站上动过手。 */
 const PAGE_ACTIONS = new Set(["click", "double_click", "fill", "type_text", "press_key", "select_option", "upload_file", "js", "browser_run", "accept_dialog", "dismiss_dialog"]);

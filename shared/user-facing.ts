@@ -10,7 +10,7 @@
 const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   tabs: "查看标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", open_tab: "打开标签页", switch_tab: "切换标签页", close_tab: "关闭标签页",
   navigate: "打开页面", snapshot: "读取页面", screenshot: "查看页面截图", read_page: "读取页面", read_element: "读取页面内容", read_elements: "读取页面内容",
-  observe_page: "查看页面", network: "查看网页请求", judge_browser_action: "判断页面操作", capture_page_material: "保存页面原文", browser_loop: "操作网页",
+  observe_page: "查看页面", network: "查看网页请求", video_captions: "读视频字幕", judge_browser_action: "判断页面操作", capture_page_material: "保存页面原文", browser_loop: "操作网页",
   click: "点击", double_click: "双击", drag: "拖动", html5_drag: "拖动", hover: "定位元素", fill: "填写", type_text: "输入文字", paste: "粘贴",
   press_key: "按键", key_down: "按键", key_up: "按键", mouse_down: "按住鼠标", mouse_up: "松开鼠标", release_held_inputs: "松开按住的键", wheel: "滚动页面",
   scroll: "滚动页面", select_option: "选择选项", upload_file: "上传文件", read_attachment: "读附件", page_operation: "填写并核对", page_translation: "翻译网页",

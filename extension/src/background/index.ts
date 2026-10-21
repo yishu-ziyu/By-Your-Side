@@ -53,6 +53,7 @@ import { downloadUrl } from "./exec/download.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
+import { videoCaptions } from "./exec/video-captions.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { detachSoon } from "./debugger.js";
@@ -90,6 +91,7 @@ type Handler = (params: any, sessionId: string) => Promise<unknown>;
 const handlers: Record<ToolName, Handler> = {
   fetch: (p) => fetchUrl(p),
   network: (p, sid) => network(p, sid),
+  video_captions: (p, sid) => videoCaptions(p, sid),
   worker_tabs: (p, sid) => workerTabControl.manage(p, sid, async keys => {
 
     for (const key of keys) { const who = parseExecutionKey(key); const owner = controller(who.conversationId); await owner.ready;
@@ -616,7 +618,7 @@ function emitHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): vo
 }
 
 /** 读页面的工具：光标显示「正在读这个页面」。 */
-const READ_TOOLS = new Set(["snapshot", "page_text", "read_element", "read_elements", "screenshot", "observe_page", "network"]);
+const READ_TOOLS = new Set(["snapshot", "page_text", "read_element", "read_elements", "screenshot", "observe_page", "network", "video_captions"]);
 
 /** 每个成员的注视区画在哪个标签页，读完变淡、一轮结束收起时要找回去。 */
 const gazeTabs = new Map<string, number>();

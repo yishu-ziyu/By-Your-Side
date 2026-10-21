@@ -54,6 +54,7 @@ const READ_TOOLS = new Set([
   "list_tabs",
   "get_active_tab",
   "network",
+  "video_captions",
   "screenshot",
   "observe_page",
   "consume_events",

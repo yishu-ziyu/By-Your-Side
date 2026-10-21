@@ -514,6 +514,7 @@ export type AgentUiEvent =
 export const TOOL_NAMES = [
   "fetch",
   "network",
+  "video_captions",
   "worker_tabs",
   "page_translation",
   "read_element",
@@ -676,6 +677,8 @@ export interface ToolContract {
       attached: boolean;
     };
   };
+  /** 这一页的视频播放器自己有哪些字幕（轨道、字幕清单、页面自己的播放器接口）；只读。 */
+  video_captions: { params: { tabId?: number }; data: { text: string; tabId: number; tracks: number; lists: number } };
   worker_tabs: { params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null; orActive?: boolean }; data: { tabId?: number; tabIds?: number[]; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] } };
   read_element: {
     params: { tabId?: number; target: string; /** Host-only adjunct read; never exposed in provider schemas. */ readback?: {documentId:string;deadline:number;nodeIdentity?: {kind:'ax';backendNodeId:number}}; /** Passive host copy verification also runs before handback resumes execution. */ copyRead?: {documentId:string;deadline:number;nodeIdentity:{kind:'ax';backendNodeId:number}} } & import('./element-state.js').ElementReadOptions;
