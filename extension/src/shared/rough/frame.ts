@@ -1,13 +1,13 @@
 import { ellipsePoints, jitter, sampleLine, toPath, boilPass, type Pt, type RoughOptions } from "./geometry.js";
 import { mulberry32 } from "./prng.js";
 
-export interface Box { x: number; y: number; w: number; h: number }
+interface Box { x: number; y: number; w: number; h: number }
 
 /** 手绘外框：SVG 路径和它实际占的范围（名牌据此摆放）。 */
-export interface SketchOutline { d: string; frame: Box }
+interface SketchOutline { d: string; frame: Box }
 
 /** 名牌相对标注外框的位置。 */
-export interface LabelPosition { left: number; top: number }
+interface LabelPosition { left: number; top: number }
 
 /** 宽高比超过它就画圆角框：宽而扁的目标（整行、长文字）用椭圆会切角、会压到相邻行。 */
 const WIDE_RATIO = 3.2;
@@ -53,7 +53,7 @@ export function sketchFrame(target: Box, o: RoughOptions): SketchOutline {
 }
 
 /** 候选名牌位置的判定：是否整块在可见区域内、底下是否没有页面内容（坐标与 frame 相同）。 */
-export interface LabelRoom { inView(b: Box): boolean; clear(b: Box): boolean }
+interface LabelRoom { inView(b: Box): boolean; clear(b: Box): boolean }
 
 /**
  * 名牌不压字：依次试框外右侧（垂直居中）、上方、下方、左侧；四处都压字时沿框的上沿、下沿往右找空白。

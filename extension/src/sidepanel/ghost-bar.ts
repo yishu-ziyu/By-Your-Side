@@ -27,7 +27,7 @@ async function ask(tabId: number, action: GhostQuickAction | 'probe'): Promise<G
   }
 }
 
-export interface GhostBar { setTab(tab: { id: number; url: string } | null): void }
+interface GhostBar { setTab(tab: { id: number; url: string } | null): void }
 
 export function createGhostBar(root: HTMLElement): GhostBar {
   let tabId: number | null = null;

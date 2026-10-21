@@ -5,7 +5,7 @@
 import { TraceRecorder } from "../../../shared/run-trace-core.js";
 import { createTraceSink } from "../shared/trace-store.js";
 
-export type UiEventData = Record<string, string | number | boolean | null | undefined>;
+type UiEventData = Record<string, string | number | boolean | null | undefined>;
 
 let recorder: TraceRecorder | null = null;
 let currentRunId: () => string | null = () => null;

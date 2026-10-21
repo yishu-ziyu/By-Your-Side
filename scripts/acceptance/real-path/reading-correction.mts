@@ -1,7 +1,6 @@
 /**
  * 阅读卡里中途改口：解释还在写时，用户在卡片输入框打一句改口并按回车。
  * 旧回答马上停在原处（折叠、可展开），新回答立刻开始，仍对着同一段。
- * 由诊断探针 scripts/probes/reading-correction.mts 的 A 段改成用例。
  *
  * 真扩展、隔离无头 Chrome、本机练习文章、本机脚本模型；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/reading-correction.mts --headless

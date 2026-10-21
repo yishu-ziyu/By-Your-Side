@@ -38,7 +38,7 @@ async function callPage<Args extends unknown[], Result>(
   return first.result as Awaited<Result>;
 }
 
-export async function ensureEffectScript(tabId: number): Promise<void> {
+async function ensureEffectScript(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_FILE], world: "ISOLATED" });
 }
 
@@ -120,7 +120,7 @@ const withoutHash = (url: string) => url.split("#")[0];
 
 /**
  * 动作让页面换了地址或换了文档（提交 GET 表单、点链接）时，最后读到的是旧文档在跳转前的读数，
- * 会把「换页了」说成「没变化」。这里改成明确的「加载了新文档」。
+ * 会把「换页了」说成「没变化」，所以这里明确写「加载了新文档」。
  */
 async function withDocumentChange(tabId: number, token: string, report: EffectReport | undefined, startUrl: string, pageUrl: string): Promise<EffectReport | undefined> {
   const moved = !!startUrl && !!pageUrl && withoutHash(startUrl) !== withoutHash(pageUrl);
@@ -129,7 +129,7 @@ async function withDocumentChange(tabId: number, token: string, report: EffectRe
 
   if (!moved && !replaced) return report;
   const base = report ?? EMPTY_EFFECT_REPORT;
-  // 写明换到了哪一页：只说「加载了新文档」时，模型会再跑一轮去确认是不是要的那页（#257）。地址不带查询参数。
+  // 写明换到了哪一页：只说「加载了新文档」时，模型会再跑一轮去确认是不是要的那页。地址不带查询参数。
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   const url = URL.canParse(tab?.url ?? pageUrl) ? new URL(tab?.url ?? pageUrl) : null;
   const where = [tab?.title ? `"${tab.title.slice(0, 120)}"` : "", url ? `${url.origin}${url.pathname}` : ""].filter(Boolean).join(" — ");

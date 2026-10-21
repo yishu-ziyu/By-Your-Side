@@ -5,7 +5,7 @@
  */
 import type { ModelOption } from "../../../shared/protocol.js";
 
-export interface ModelGroup {
+interface ModelGroup {
   provider: string;
   models: ModelOption[];
 }

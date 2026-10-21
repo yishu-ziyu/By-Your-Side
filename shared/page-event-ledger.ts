@@ -37,7 +37,7 @@ export type PageEventKind = "popup" | "download" | "filechooser";
 
 export type JsDialogType = "alert" | "confirm" | "prompt" | "beforeunload";
 
-export interface PendingJsDialog {
+interface PendingJsDialog {
   type: JsDialogType;
   message: string;
   tabId: number;
@@ -46,7 +46,7 @@ export interface PendingJsDialog {
   openedAt: number;
 }
 
-export interface BufferedPageEvent {
+interface BufferedPageEvent {
   kind: PageEventKind | "dialog";
   tabId: number;
   at: number;
@@ -86,7 +86,7 @@ export interface ArmedPageEvent {
 
 export type ChromeDownloadState = "in_progress" | "complete" | "interrupted";
 
-export interface DownloadRecord {
+interface DownloadRecord {
   downloadId: string;
   token: string;
   tabId: number;
@@ -109,7 +109,7 @@ export interface DownloadRecord {
   createdAt: number;
 }
 
-export interface PageEventLedger {
+interface PageEventLedger {
   arms: Map<string, ArmedPageEvent>;
   downloads: Map<string, DownloadRecord>;
   /** tabId → pending JS dialog (webpage only; never OS permission prompts). */
@@ -119,13 +119,13 @@ export interface PageEventLedger {
   seq: number;
 }
 
-export const DEFAULT_EVENT_TIMEOUT_MS = 10_000;
+const DEFAULT_EVENT_TIMEOUT_MS = 10_000;
 
-export const MAX_EVENT_TIMEOUT_MS = 120_000;
+const MAX_EVENT_TIMEOUT_MS = 120_000;
 
-export const MAX_BUFFER_PER_TAB = 32;
+const MAX_BUFFER_PER_TAB = 32;
 
-export const MAX_ARMS = 64;
+const MAX_ARMS = 64;
 
 export function createPageEventLedger(): PageEventLedger {
   return {
@@ -171,7 +171,7 @@ function pushBuffer(ledger: PageEventLedger, event: BufferedPageEvent): void {
 }
 
 /** Reject model-minted tokens: only host-issued `evt_*` shapes are valid. */
-export function isHostEventToken(token: unknown): token is string {
+function isHostEventToken(token: unknown): token is string {
   return typeof token === "string" && /^evt_(popup|download|filechooser)_\d+_\d+_[a-z0-9]+$/i.test(token);
 }
 
@@ -481,27 +481,6 @@ export function cancelArm(ledger: PageEventLedger, token: unknown, reason = "can
   return arm;
 }
 
-/** Late events after stop: dispose all arms for a session; subsequent matches must fail closed. */
-export function disposeSessionArms(
-  ledger: PageEventLedger,
-  sessionKey: string,
-  reason = "session stopped",
-): number {
-  let n = 0;
-
-  for (const arm of ledger.arms.values()) {
-    if (arm.sessionKey !== sessionKey) continue;
-
-    if (arm.status === "armed" || arm.status === "matched") {
-      arm.status = "disposed";
-      arm.disposedReason = reason;
-      n += 1;
-    }
-  }
-
-  return n;
-}
-
 export function disposeTabArms(
   ledger: PageEventLedger,
   tabId: number,
@@ -535,27 +514,6 @@ export function consumeBufferedEvents(
   if (clear) ledger.buffers.set(tabId, []);
 
   return list;
-}
-
-export function findDownload(ledger: PageEventLedger, downloadId: unknown): DownloadRecord {
-  if (typeof downloadId !== "string" || !downloadId.startsWith("dl_")) {
-    throw new Error("INVALID_ARGUMENT: unknown downloadId");
-  }
-
-  const download = ledger.downloads.get(downloadId);
-
-  if (!download) throw new Error("INVALID_ARGUMENT: unknown or expired downloadId");
-
-  if (download.deleted) throw new Error("INVALID_ARGUMENT: download artifact was deleted");
-
-  return download;
-}
-
-export function markDownloadDeleted(ledger: PageEventLedger, downloadId: string): void {
-  const download = ledger.downloads.get(downloadId);
-
-  if (!download) return;
-  download.deleted = true;
 }
 
 export function armPayload(arm: ArmedPageEvent, downloads?: PageEventLedger["downloads"]): Record<string, unknown> {

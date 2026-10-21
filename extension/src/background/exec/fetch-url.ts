@@ -15,7 +15,7 @@ import {
 } from "../../../../shared/fetch.js";
 import { oneLine } from "../util.js";
 
-export interface FetchResult {
+interface FetchResult {
   url: string;
   status: number;
   ok: boolean;

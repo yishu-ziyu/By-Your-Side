@@ -7,7 +7,8 @@ import { bringForwardForUser } from "../foreground.js";
 import { readCurrentDocument } from "./page-readiness.js";
 import type { SendGuard } from "../send-confirm.js";
 import { resolveWorkingTab } from "../state.js";
-import { notExecuted, showGuide } from "./input.js";
+import { showGuide } from "./input.js";
+import { notExecuted } from "./page-call.js";
 
 /** 用户多久没点中就结束这一步。宿主放宽的期限比这个长，所以总是这里先给出 timeout。 */
 const GUIDE_WAIT_MS = 120_000;

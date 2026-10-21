@@ -12,7 +12,7 @@ import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 
 const MAX_ELEMENT_CHARS = 1_000_000;
 
-export type ReadElementResult = ToolContract["read_element"]["data"];
+type ReadElementResult = ToolContract["read_element"]["data"];
 
 /** secret、layoutText、unrendered 只在扩展内部用（fill 的 from 据它们拒读或取字），不出现在 read_element 的回执里。 */
 type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { textContent: string; editable?: true; secret?: true; layoutText?: string; unrendered?: true };
@@ -24,8 +24,8 @@ type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 /** 一次元素读取的结果：页面返回的数据 + 本次读取到的文档身份。 */
 interface ElementRead { data: ElementData; documentId?: string }
 
-/** FIX-02：把定位/读取失败收成稳定错误码，等待 helper 禁止用中文文案分支。 */
-export function typedReadElementError(error: unknown): Error {
+/** 把定位/读取失败收成稳定错误码，等待 helper 禁止用中文文案分支。 */
+function typedReadElementError(error: unknown): Error {
   const text = error instanceof Error ? error.message : String(error);
 
   if (/^(NOT_FOUND|NOT_READY|AMBIGUOUS|PERMISSION_DENIED|IDENTITY_CHANGED|INVALID_ARGUMENT|TRANSPORT_ERROR|CANCELLED|CAPTURE_INCOMPLETE):/.test(text)) {

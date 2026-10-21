@@ -2,11 +2,11 @@
  * A8：对一条结果做什么。主动作留在回答末尾；其余收进动作列表。
  * Chrome 的 Ctrl/⌘K 会抢去地址栏搜索，所以用 Ctrl/⌘+Shift+K，和 / 技能菜单分开。
  */
-import { answerPlainText, listResultActions, runPrimaryAction, resultCommandShortcut, showCopied, showFailed, type ResultAction } from "./answer-actions.js";
+import { answerPlainText, listResultActions, runPrimaryAction, showCopied, showFailed, type ResultAction } from "./answer-actions.js";
 import { uiEvent } from "./ui-trace.js";
 import { reducedMotion } from "./branch-graph.js";
 
-export interface AnswerCommand {
+interface AnswerCommand {
   handleKeydown: (event: KeyboardEvent) => boolean;
   open: (answer?: HTMLElement | null) => void;
   close: () => void;
@@ -212,4 +212,3 @@ export function mountAnswerCommand(opts: {
   return { handleKeydown, open, close, isOpen, syncHint };
 }
 
-export { resultCommandShortcut };

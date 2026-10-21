@@ -1,6 +1,6 @@
 /**
  * 离屏文档里的按住说话录音。
- * 侧栏关着也能录：离屏文档声明了 USER_MEDIA，麦克风权限按扩展来源授一次即可（10-07 小实验）。
+ * 侧栏关着也能录：离屏文档声明了 USER_MEDIA，麦克风权限按扩展来源授一次即可。
  * 按下就连听写服务、开麦；松开停麦、提交，回听写结果。录音复用侧栏语音的 voice-worklet（24kHz、每帧 20ms）。
  */
 import { PTT_LEVEL, PTT_TARGET, type PttCommand, type PttLevelMessage, type PttReply } from "../shared/ptt.js";

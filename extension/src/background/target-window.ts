@@ -16,7 +16,7 @@ export function popoutSource(url: string | undefined): number | undefined {
   return Number.isInteger(id) ? id : undefined;
 }
 
-export async function targetWindowId(): Promise<number | undefined> {
+async function targetWindowId(): Promise<number | undefined> {
   const last = await chrome.windows.getLastFocused().catch(() => undefined);
 
   if (last?.id == null) return undefined;

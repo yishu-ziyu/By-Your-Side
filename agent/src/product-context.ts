@@ -5,7 +5,7 @@ import {nextStepIgnoringPlaceholder, nextStepInstruction} from '../../shared/tas
 import {localDateOf} from '../../shared/memory.js';
 import {siteHintFor} from './site-hints.js';
 
-/** 今天的本地日期和星期几：「下周四」「明天」要从这里算；只给日期时模型会把下周四算成明天（YIS-102，10-07 实测）。 */
+/** 今天的本地日期和星期几：「下周四」「明天」要从这里算；只给日期时模型会把下周四算成明天。 */
 function today(now = new Date()): string {
   return `${localDateOf(now.getTime())}, ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][now.getDay()]}`;
 }
@@ -50,11 +50,11 @@ export class ProductContext {
   miniApps?: () => Promise<boolean>;
   onProjection?: (data: {capabilityVersion:string;tools:string[];historyTurns:number;reportSource:string|null})=>void;
   private snapshot:()=>TaskProgressSnapshot|null=()=>null;
-  /** 上一段本次运行的上下文给过的对话轮次：那段留在历史里，这次只给之后新增的（#271）。 */
+  /** 上一段本次运行的上下文给过的对话轮次：那段留在历史里，这次只给之后新增的。 */
   private shownTurns:Turn[]=[];
   /**
    * 给过的状态快照和它插入时历史的长度。快照只放进请求、不写回历史，所以每次按原位置插回：
-   * 删掉旧的再追加新的，会让上一轮的请求不再是这一轮的前缀，后端缓存退回到系统提示词（10-13 实测 39% → 87%）。
+   * 删掉旧的再追加新的，会让上一轮的请求不再是这一轮的前缀，后端缓存退回到系统提示词，命中率大跌。
    */
   private projections:Array<{at:number;message:{role:'custom';customType:'sideagent-result-projection';display:false;timestamp:number;content:string}}>=[];
   bind(snapshot:()=>TaskProgressSnapshot|null):void { this.snapshot=snapshot; }
@@ -106,7 +106,7 @@ export class ProductContext {
 
         const hint=siteHintFor(this.pageUrl());
 
-        // 系统提示词只放每次都一样的内容；日期、对话历史、任务状态、站点提示每次运行都变，作为本次上下文消息（#258）。
+        // 系统提示词只放每次都一样的内容；日期、对话历史、任务状态、站点提示每次运行都变，作为本次上下文消息。
         return {
           systemPrompt:productSystemPrompt(event.systemPrompt,active),
           message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+ANSWER_CARD_REMINDER+(apps?MINI_APP_GUIDE:'')},

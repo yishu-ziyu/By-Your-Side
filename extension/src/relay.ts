@@ -1,6 +1,6 @@
 /**
  * 扩展内部通道：side panel ⇆ background service worker。
- * 与 shared/protocol.ts（扩展 ⇆ 伴随进程）不同，本文件只是 panel 与 background 之间的
+ * 与 shared/protocol.ts（扩展 ⇆ 扩展内 agent）不同，本文件只是 panel 与 background 之间的
  * 转发约定，走 chrome.runtime Port。
  */
 import { parseClientMessage, type Attachment, type ClientMessage, type ServerMessage, type ViewportSectionUpdate } from "../../shared/protocol.js";
@@ -44,18 +44,18 @@ export const SEND_CONFIRM_PANEL_PORT = "send-confirm-panel";
 /** 「发送」出现后这么久内的点击不算：本来就在路上的一下点击，不该落在刚冒出来的按钮上（浏览器的权限弹窗也这样做）。网页确认框和侧栏卡用同一个值。 */
 export const SEND_ARM_MS = 800;
 
-/** 伴随进程连接状态（background 维护，面板只展示）。 */
+/** 扩展内 agent 连接状态（background 维护，面板只展示）。 */
 export type ConnState = "connecting" | "connected" | "disconnected";
 
 /** 上行传输：只有扩展内 agent。 */
 export type TransportKind = "inproc";
 
-/** 侧栏能够回放的伴随进程消息；执行调用和握手/模型元数据不进入历史。 */
+/** 侧栏能够回放的 agent 消息；执行调用和握手/模型元数据不进入历史。 */
 export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" | "agent_event" | "team_status" }>;
 
 /** 关闭侧栏后仍需要恢复的可见内容。 */
 export type PanelHistoryItem =
-  /** card：这一轮是按主动卡的动词发起的（YIS-106），侧栏把这一轮画成按下的那张卡，不画成用户气泡。 */
+  /** card：这一轮是按主动卡的动词发起的，侧栏把这一轮画成按下的那张卡，不画成用户气泡。 */
   | { kind: "user"; text: string; attachments?: Attachment[]; undelivered?: { original: ClientMessage }; context?: UserTurnContext; card?: NudgeCard }
   | { kind: "server"; msg: PanelHistoryServerMessage };
 
@@ -77,7 +77,7 @@ export interface PanelHistoryEntry {
 
 export type PanelToBg =
   | { kind: "select_conversation"; conversationId: string }
-  /** 转发一条协议消息给伴随进程（user_message / steer / abort）。 */
+  /** 转发一条协议消息给扩展内 agent（user_message / steer / abort）。 */
   | { kind: "client"; msg: ClientMessage }
   /** 控制权动作由 background 补 requestId 与当前页面快照后再上行。 */
   | { kind: "control"; action: "takeover" | "handback"; conversationId?: string; tabId?: number }
@@ -134,7 +134,7 @@ type BgToPanelPayload =
   | { kind: "page_section"; update: ViewportSectionUpdate | null; tabId: number }
   | { kind: "marginalia"; update: ViewportSectionUpdate; state: import("../../shared/reading.js").ReadingEvent["state"]; text: string; error?: string }
   | { kind: "conversations"; conversations: import("../../shared/protocol.js").ConversationSummary[]; selectedConversationId: string; resumeReading?: boolean }
-  /** 来自伴随进程的协议消息（tool_call 不经面板，由 background 直接执行）。 */
+  /** 来自扩展内 agent 的协议消息（tool_call 不经面板，由 background 直接执行）。 */
   | { kind: "server"; msg: ServerMessage }
   /** ping 的回应，证明这条端口还连着活的 service worker。 */
   | { kind: "pong" }
@@ -145,12 +145,12 @@ type BgToPanelPayload =
   /** 选中即问：划词或右键把一段正文交给侧栏，不自动发送。 */
   | { kind: "ask_selection"; ask: PendingAsk }
   /**
-   * 送达回执（issue #4）：只覆盖 background→agent 上行传输层。
-   * ok=false 表示上行传输不可用，确定未发给伴随进程；original 为原始消息、text 为气泡上的原话，供面板重试。
+   * 送达回执：只覆盖 background→agent 上行传输层。
+   * ok=false 表示上行传输不可用，确定未发给扩展内 agent；original 为原始消息、text 为气泡上的原话，供面板重试。
    * ok=true 只在 redeliver 重发成功、或那条早已送达时出现，面板据此去掉未送达标记。
    * reason 只回给点「重试」的侧栏：gone = 后台已没有那条历史，由侧栏把原文当新消息再发；
    * resent = 另一个侧栏刚为同一条另发过，这个侧栏只拿掉旧气泡，不再发。
-   * 首次发送没有回执 = background 层已接受并已交给传输层，不表示伴随进程已处理或任务已完成。
+   * 首次发送没有回执 = background 层已接受并已交给传输层，不表示 agent 已处理或任务已完成。
    */
   | { kind: "delivery"; seq: number; ok: boolean; text?: string; original?: ClientMessage; reason?: DeliveryReason }
   /** 用户那一条历史补上了这一轮带的页面（见 UserTurnContext）。 */

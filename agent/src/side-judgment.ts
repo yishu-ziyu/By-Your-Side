@@ -12,10 +12,10 @@ import type { Api, AssistantMessage, ImageContent, Model, ModelThinkingLevel, Si
 import { thinkingProfile } from "../../shared/model-capabilities.js";
 import type { ModelPort } from "./agent-loop.js";
 
-export type SideFailureReason = "rejected_params" | "bad_format" | "timeout" | "provider_error" | "cancelled";
+type SideFailureReason = "rejected_params" | "bad_format" | "timeout" | "provider_error" | "cancelled";
 
 /** 给用户看的原因类别。 */
-export const SIDE_FAILURE_TEXT: Readonly<Record<SideFailureReason, string>> = {
+const SIDE_FAILURE_TEXT: Readonly<Record<SideFailureReason, string>> = {
   rejected_params: "模型拒绝了请求参数",
   bad_format: "模型回复格式不对",
   timeout: "超时",
@@ -53,7 +53,7 @@ export type SideCallRecord = {
 
 export type AttemptOutcome = "accepted" | "bad_format" | "rejected_params" | "provider_error" | "request_failed" | "timeout" | "cancelled";
 
-export interface SideCallSpec<T> {
+interface SideCallSpec<T> {
   /** 诊断里的用途名，例如 goal_check。 */
   purpose: string;
   systemPrompt: string;
@@ -81,7 +81,7 @@ export interface SideCallSpec<T> {
   onAttempt?: (attempt: AttemptReport) => void;
 }
 
-export interface AttemptReport { attempt: number; elapsedMs: number; outcome: AttemptOutcome; parseError?: Error }
+interface AttemptReport { attempt: number; elapsedMs: number; outcome: AttemptOutcome; parseError?: Error }
 
 const STRICT_JSON = "\n\nYour previous reply could not be used. Reply with ONLY the JSON object described above: no other text, no markdown fences, no questions.";
 
@@ -276,7 +276,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
       if (!text) maxTokens = spec.maxTokens * EMPTY_REPLY_BUDGET_FACTOR;
       suffix = spec.retryPrompt ? spec.retryPrompt(error) : STRICT_JSON;
 
-      // 有的模型不太听系统提示词（10-01 阶跃实测），默认要求在用户消息末尾再说一次。
+      // 有的模型（如阶跃）不太听系统提示词，默认要求在用户消息末尾再说一次。
       if (!spec.retryPrompt) userSuffix = STRICT_JSON;
     }
   }

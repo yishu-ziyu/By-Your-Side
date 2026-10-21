@@ -4,7 +4,7 @@
  * 习惯不会自动保存；问过或被拒绝的 key 不再问。
  */
 
-export interface HabitObservation {
+interface HabitObservation {
   key: string;
   text: string;
   conversationId: string;
@@ -25,7 +25,7 @@ export interface HabitState {
   habits: Record<string, Habit>;
 }
 
-export interface HabitAsk {
+interface HabitAsk {
   key: string;
   text: string;
 }
@@ -41,7 +41,7 @@ export function emptyHabitState(): HabitState {
 }
 
 /** 一次观察的结果：新状态，以及这次要不要问。 */
-export interface HabitStep {
+interface HabitStep {
   state: HabitState;
   ask: HabitAsk | null;
 }

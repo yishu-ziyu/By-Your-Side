@@ -2,9 +2,9 @@
  * 只核算完整、带唯一末尾合计行的非负整数数量表。
  * 有小计、平均、百分比、负数或不完整行时不推断加法关系。
  */
-export interface CsvTotalMismatch { column: string; reported: number; calculated: number }
+interface CsvTotalMismatch { column: string; reported: number; calculated: number }
 
-export function parseCsvRecords(content: string): string[][] | null {
+function parseCsvRecords(content: string): string[][] | null {
   const rows: string[][] = [];
   let row: string[] = [], field = "", quoted = false;
 

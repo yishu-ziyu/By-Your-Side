@@ -1,23 +1,20 @@
 /**
- * 语音日常记录的行格式：本机伴随进程写 `~/.sideagent/voice-capture/<日期>.jsonl`，扩展内 agent 写 IndexedDB，行内容相同。
+ * 语音日常记录的行格式：扩展内 agent 写 IndexedDB。
  * 一行一个观察到的事实；音频不内联，只在用户明确同意（诊断）时另存 WAV，并在行里记路径。
  * 所有公开方法自己吞掉失败、最多记一条 gap：这里的任何问题都不能影响语音链路。
  */
 import { base64Bytes } from "./bytes.js";
 import { VOICE_DIAG_SAMPLE_RATE, type VoiceCommand, type VoiceDiagRecord } from "./voice.js";
 
-/** Audio retention: whichever bound is reached first. */
-export const VOICE_CAPTURE_MAX_BYTES = 2 * 1024 ** 3;
-
 export const VOICE_CAPTURE_MAX_AGE_DAYS = 14;
 
 /** A turn never leaves more than this buffered in memory while waiting for its commit. */
 const VOICE_CAPTURE_PENDING_MAX_BYTES = 8 * 1024 ** 2;
 
-export type VoiceCaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
+type VoiceCaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
 /** Turn may be null for upstream ASR that cannot be attributed. */
-export interface VoiceCaptureLine {
+interface VoiceCaptureLine {
   at: number;
   voiceId: string;
   conversationId: string;
@@ -41,7 +38,7 @@ export const voiceCaptureDayKey = (at: number): string => {
 };
 
 /** 16-bit mono PCM WAV; the recorder writes the header itself so both takes stay auditionable. */
-export function wavBytes(pcm: Uint8Array, sampleRate = VOICE_DIAG_SAMPLE_RATE): Uint8Array {
+function wavBytes(pcm: Uint8Array, sampleRate = VOICE_DIAG_SAMPLE_RATE): Uint8Array {
   const length = pcm.length - (pcm.length % 2);
   const out = new Uint8Array(44 + length);
   const view = new DataView(out.buffer);

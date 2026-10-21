@@ -1,7 +1,6 @@
 // Adapted from VoiceOrbs ParticlesOrb, MIT, Copyright (c) 2026 Alexis Munoz.
 // License: extension/licenses/voiceorbs-MIT.txt
 
-
 export type OrbState =
   | 'idle'
   | 'connecting'
@@ -11,7 +10,7 @@ export type OrbState =
   | 'error'
   | 'disabled';
 
-export const ORB_STATES = [
+const ORB_STATES = [
   'idle',
   'connecting',
   'listening',
@@ -19,23 +18,11 @@ export const ORB_STATES = [
   'speaking',
 ] as const satisfies readonly OrbState[];
 
-export interface OrbProps {
-  state?: OrbState;
-  size?: number;
-  speed?: number;
-  colorFrom?: string;
-  colorTo?: string;
-  levelRef?: {current:number};
-  label?: string;
-  className?: string;
-  ref?: unknown;
-}
+const ERROR_COLOR_FROM = '#fb7185';
 
-export const ERROR_COLOR_FROM = '#fb7185';
+const ERROR_COLOR_TO = '#f43f5e';
 
-export const ERROR_COLOR_TO = '#f43f5e';
-
-export const hexToRgb = (hex: string): [number, number, number] => {
+const hexToRgb = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
 
   const full =
@@ -51,9 +38,9 @@ export const hexToRgb = (hex: string): [number, number, number] => {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
 
-export type OrbMotion = 'ripple' | 'pulse' | 'flow' | 'none';
+type OrbMotion = 'ripple' | 'pulse' | 'flow' | 'none';
 
-export const stateMotion = (state: OrbState): OrbMotion => {
+const stateMotion = (state: OrbState): OrbMotion => {
   switch (state) {
     case 'listening':
       return 'ripple';
@@ -66,7 +53,7 @@ export const stateMotion = (state: OrbState): OrbMotion => {
   }
 };
 
-export const stateEnergy = (state: OrbState, t: number): number => {
+const stateEnergy = (state: OrbState, t: number): number => {
   switch (state) {
     case 'listening':
       return 0.4 + 0.32 * Math.abs(Math.sin(t * 8.5)) + 0.18 * Math.abs(Math.sin(t * 4.1 + 1.5));
@@ -83,17 +70,17 @@ export const stateEnergy = (state: OrbState, t: number): number => {
   }
 };
 
-export const approach = (current: number, target: number, rate: number, dt: number): number =>
+const approach = (current: number, target: number, rate: number, dt: number): number =>
   current + (target - current) * (1 - Math.exp(-rate * dt));
 
-export type StateWeights = Record<OrbState, number>;
+type StateWeights = Record<OrbState, number>;
 
-export interface StateMix {
+interface StateMix {
   weights: StateWeights;
   update: (state: OrbState, dt: number, rate?: number) => StateWeights;
 }
 
-export const createStateMix = (initial: OrbState = 'idle'): StateMix => {
+const createStateMix = (initial: OrbState = 'idle'): StateMix => {
   const weights: StateWeights = {
     idle: 0,
     connecting: 0,
@@ -126,7 +113,6 @@ export const createStateMix = (initial: OrbState = 'idle'): StateMix => {
 
   return { weights, update };
 };
-
 
 const PARTICLE_COUNT = 720;
 
@@ -177,7 +163,6 @@ const buildSphere = (count: number): SpherePoint[] => {
   return points;
 };
 
-
 export function mountOrb(canvas: HTMLCanvasElement,size: number,getState: () => OrbState, getLevel: () => number = () => 0){
 const ctx=canvas.getContext('2d')!; const dpr=Math.min(devicePixelRatio||1,2);canvas.width=size*dpr;canvas.height=size*dpr;ctx.scale(dpr,dpr);
 const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from:'#f0abfc',to:'#818cf8'}};
@@ -192,9 +177,6 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
     let connectingPhase = 0;
     const angleX = 0.32;
     let levelS = 0;
-
-
-
 
     const render = (dt: number, isStatic = false) => {
       const st = stateRef.current;
@@ -338,7 +320,6 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
 
       ctx.globalCompositeOperation = 'source-over';
     };
-
 
 let last=0;let raf:number;
 

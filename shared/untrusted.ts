@@ -7,7 +7,7 @@
  * 误报的代价是模型少看到几行乱码，漏报的代价是凭据进了留痕的对话上下文。
  */
 
-export const PAGE_CONTENT_TAG = "page-content";
+const PAGE_CONTENT_TAG = "page-content";
 
 const MAX_META = 160;
 

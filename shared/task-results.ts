@@ -1,5 +1,5 @@
 import { taskId } from "./task-actions.js";
-import {isWriteTool} from './control.js';
+import { isWriteTool } from './effect-policy.js';
 import {classifyToolEffect} from './effect-policy.js';
 
 export const TASK_RESULT_STATES = ["unregistered", "pending", "satisfied", "blocked", "unknown"] as const;
@@ -28,14 +28,14 @@ export interface TaskResultEvidence {
   observedAt?: number;
   /** Host-classified effects for aliases or parameter-dependent tools (tabs/fetch). */
   effectful?: true;
-  /** 旧版本存档字段（2026-10-04 起不再产生，也不再使用）：只为旧任务记录仍能读入。 */
+  /** 旧版本存档字段（不再产生，也不再使用）：只为旧任务记录仍能读入。 */
   awaitingConfirmation?: true;
 }
 
 export interface TaskResultItem extends TaskResultRegistration {
   status: TaskResultItemStatus;
   evidence: TaskResultEvidence | null;
-  /** 这一步没做成的人话原因（≤16 字，tool_end.reason，#304）；成功或未失败时缺省。 */
+  /** 这一步没做成的人话原因（≤16 字，tool_end.reason）；成功或未失败时缺省。 */
   reason?: string;
   /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再算作未完成。 */
   supersededBy?: string;
@@ -66,14 +66,14 @@ const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
  * 这一步出错或超时时，后果可能已经发生（提交、付款、发送、删除、确认原生弹窗……）。
  * 按现有副作用分类：控制闸门的写类工具去掉上面那组，再加上确认弹窗与 POST/带 body 的 fetch。
  */
-export function commitsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
+function commitsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
   if (name === 'fetch') return classifyToolEffect(name, params).class === 'write';
 
   return name === 'accept_dialog' || isWriteTool(name) && !NO_REPEAT_HARM_WRITES.has(name);
 }
 
 /**
- * 账本项出错或超时时记成「结果未知」，而不是「失败」。这只是如实记账：不暂停写入，也不拦重做（10-10 用户裁决）。
+ * 账本项出错或超时时记成「结果未知」，而不是「失败」。这只是如实记账：不暂停写入，也不拦重做。
  * fetch 的副作用按参数判定：宿主把 POST/带 body 的 fetch 记在 evidence.effectful。
  */
 export function resultLocksWhenUnknown(item:{tool:string;evidence?:{effectful?:boolean}|null}):boolean {
@@ -104,7 +104,7 @@ export function endingFromResults(
   return "";
 }
 
-export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message"] as const;
+const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message"] as const;
 
 /** 算作页面读回的真实只读工具。read_elements 是宿主按选择器的有界多元素读回，与 read_element 同级。 */
 export const RESULT_VERIFY_READ_TOOLS = ["read_element", "read_elements", "snapshot"] as const;
@@ -115,11 +115,11 @@ export const RESULT_OBSERVATION_TEXT_MAX = 50_000;
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length >= 1 && v.length <= max;
 
 /** Opaque correlation data, not a task/file key. Preserve program suffixes and provider ids exactly. */
-export function isToolCallId(value: unknown): value is string {
+function isToolCallId(value: unknown): value is string {
   return text(value, 512) && !/[\s\u0000-\u001f\u007f-\u009f]/u.test(value);
 }
 
-export function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
+function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
   if (!v || typeof v !== "object") return false;
   const e = v as TaskResultEvidence;
 
@@ -212,7 +212,7 @@ export const AUTO_RESULT_ID_PREFIX = "auto-";
 /** 账本项上限；自动登记达到上限后不再新增，但已登记项的绑定与回执照常。 */
 export const MAX_TASK_RESULTS = 64;
 
-export type ResultBinding =
+type ResultBinding =
   /** 已有同工具同目标、尚无证据（或上次失败、结果未知）的待办项：直接绑定。 */
   | { kind: "exact"; itemId: string }
   /** 登记了意图但还没定位的同工具待办项（target=null，且尚无证据）：可把实际目标改绑到它。 */

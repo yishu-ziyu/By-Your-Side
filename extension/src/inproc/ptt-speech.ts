@@ -5,9 +5,9 @@
  */
 import { isSubscriptionKey, PTT_SPEECH_TARGET, type PttSpeechCommand, type PttSpeechReply } from "../shared/ptt.js";
 
-export const SPEECH_URL = "https://api.minimaxi.com/v1/t2a_v2";
+const SPEECH_URL = "https://api.minimaxi.com/v1/t2a_v2";
 
-export const SPEECH_MODEL = "speech-2.8-hd";
+const SPEECH_MODEL = "speech-2.8-hd";
 
 const SAMPLE_RATE = 24_000;
 
@@ -21,7 +21,7 @@ const SPEECH_TIMEOUT_MS = 45_000;
 interface SpeechChunk { data?: { audio?: string; status?: number } | null; base_resp?: { status_code?: number; status_msg?: string } }
 
 /** 十六进制的 16 位小端 PCM → [-1, 1] 的浮点样本。 */
-export function pcmFromHex(hex: string): Float32Array<ArrayBuffer> {
+function pcmFromHex(hex: string): Float32Array<ArrayBuffer> {
   const samples = new Float32Array(hex.length >> 2);
 
   for (let i = 0; i < samples.length; i++) {

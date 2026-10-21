@@ -20,8 +20,6 @@ export const BROWSE_EVENT = 'BROWSE_EVENT';
 /** 侧栏 → 后台：删一条归纳（key）或全部删除。由后台和记录写入排在一起做，免得被正在写的旧记录盖回去。 */
 export const BROWSE_CONTROL = 'BROWSE_CONTROL';
 
-export type BrowseControl = { type: typeof BROWSE_CONTROL; action: 'dismiss'; key: string } | { type: typeof BROWSE_CONTROL; action: 'clear' };
-
 export type BrowseStep =
   | { kind: 'visit'; title: string }
   | { kind: 'click'; label: string; href?: string }

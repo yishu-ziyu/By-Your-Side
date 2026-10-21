@@ -14,7 +14,8 @@ import { formatEffectReport } from "../../shared/effect.js";
 import { formatFetchReply, fetchFailureReason, type FetchReply } from "./fetch-result.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type Attachment, type TabInfo, type ToolContract, type ToolName, type UploadFilePayload } from "../../shared/protocol.js";
-import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
+import { FOREIGN_TAB_ERROR } from "../../shared/control.js";
+import { WRITE_TOOLS } from "../../shared/effect-policy.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
 import { requiresControlGate } from "../../shared/effect-policy.js";
 import { USER_CONFIRM_TIMEOUT_MS, type ToolRpc } from "./rpc.js";
@@ -149,12 +150,12 @@ function truncate(text: string, max: number): string {
 export const TABS_LIST_AT_START = "; the open tabs at task start are already in the task's first message, so call list only if tabs may have changed since";
 export const TABS_RESULT_IN_BACKGROUND = ' A result left in a background tab is expected: the reply automatically gives the user a "切过去看" button for the working tab, so never call show just to deliver a result.';
 /** 专用工具做不到时改用 js 的说明；语音没有 js 工具，导出语音工具表时整句换掉。 */
-export const TRANSLATION_JS_FALLBACK = " It always covers the whole page: when the user wants only some paragraphs translated on the page, translate those yourself and insert each translation right after its source paragraph with js: a display:block span with data-bys-translation=\"manual\", text set only through textContent, original kept (translate and restore remove these spans).";
-export const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page: for colored highlights, highlights limited to some paragraphs, or other changes to how the page looks, edit the page with js instead: split the text node and wrap the word in a styled span; never rewrite innerHTML.";
+const TRANSLATION_JS_FALLBACK = " It always covers the whole page: when the user wants only some paragraphs translated on the page, translate those yourself and insert each translation right after its source paragraph with js: a display:block span with data-bys-translation=\"manual\", text set only through textContent, original kept (translate and restore remove these spans).";
+const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page: for colored highlights, highlights limited to some paragraphs, or other changes to how the page looks, edit the page with js instead: split the text node and wrap the word in a styled span; never rewrite innerHTML.";
 export const JS_FALLBACK = new RegExp([TRANSLATION_JS_FALLBACK, MARK_JS_FALLBACK].map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
 
 /** browser_run 结束时附上的新页快照的标题行（tool-failure-policy 按它和 "\n[After this program" 截掉尾巴再比较错误）。 */
-export const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no separate snapshot needed):";
+const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no separate snapshot needed):";
 
 /** 程序里不会换页的步骤：等待、核对和宿主组合的只读帮手。其余按 effect-policy 判断，未声明只读的都当作可能换页。 */
 const PROGRAM_QUIET_STEPS: ReadonlySet<string> = new Set(["sleep", "wait_for", "check", "assert", "pageInfo", "waitForLoad", "waitForNetworkIdle", "saveFile"]);
@@ -225,7 +226,7 @@ const MODEL_TOOL_OF: Record<string, string> = {
   worker_tabs: "take_tab",
 };
 
-export const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
+const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
 
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
@@ -490,7 +491,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 开始前记下各标签页的地址，结束时才知道程序有没有让工作页换了页。只读补读，不挂本次调用身份；读失败就不比较。
         const startUrls = sid ? null : await (readAfterNavigate("list_tabs", {}) as Promise<ToolContract["list_tabs"]["data"]>)
           .then(d => new Map(d.tabs.map(tab => [tab.id, tab.url])), () => null);
-        // 程序换了页（包括中途因文档变化失败）时顺手读一次新页：10-13 真实网站有 2 次程序跳转后专门花一轮 snapshot。
+        // 程序换了页（包括中途因文档变化失败）时顺手读一次新页，模型不用再专门花一轮 snapshot。
         // 没有现成的「等文档就绪」宿主接口（waitForLoad 在程序内部），读失败就隔 500ms 再试，最多 3 次，都失败只退回原回执。
         const pageAfter = async (tabId: number): Promise<ToolContract["snapshot"]["data"] | null> => {
           for (let attempt = 0; attempt < 3 && !signal?.aborted; attempt++) {
@@ -521,7 +522,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
           return false;
         };
-        // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」（#257）。
+        // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」。
         // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。page 放进 details，会话把它记成一次页面读数。
         const endedOn = async (): Promise<{ text: string; page?: ToolContract["snapshot"]["data"] }> => {
           try {
@@ -655,7 +656,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           if (data.readiness === "download" || data.readiness === "error_page") return textResult(head, data);
           const siteNotes = await siteNotesAfter(data.url);
 
-          // 和 navigate 一样顺手读一次新页：10-13 真实网站 12 次里 9 次 open 后专门花一轮 snapshot。读失败只退回原结果。
+          // 和 navigate 一样顺手读一次新页：不然 open 后模型多半专门花一轮 snapshot。读失败只退回原结果。
           try {
             const page = (await readAfterNavigate("snapshot", { tabId: data.tabId })) as ToolContract["snapshot"]["data"];
 
@@ -1082,7 +1083,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
         const text = formatFetchReply(data as FetchReply);
-        // 对方答了非 2xx 这一步算失败（判定见 fetchFailureReason）：isError + 给侧栏的人话原因；给模型的文字不变（#304）。
+        // 对方答了非 2xx 这一步算失败（判定见 fetchFailureReason）：isError + 给侧栏的人话原因；给模型的文字不变。
         const reason = fetchFailureReason(data as FetchReply);
 
         return reason
@@ -1125,7 +1126,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         // SAFETY: saveAs、deliver 只在有文件区时进入参数 schema，类型是可选字符串与可选布尔，Pi 已按 schema 校验。
-        // purpose 只给侧栏当步骤名（#263），不送进页面。
+        // purpose 只给侧栏当步骤名，不送进页面。
         const { saveAs, deliver, purpose: _purpose, ...pageParams } = params as typeof params & { saveAs?: string; deliver?: boolean };
 
         if (saveAs !== undefined) {
@@ -1266,7 +1267,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
   return execution ? definitions.map(tool => ({ ...tool, execute: async (...args: Parameters<ToolDefinition["execute"]>) => {
     rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);
-    // 本次执行用绑定了自己身份的一份工具定义；定义内部没有跨调用的状态（2026-09-24 核对）。
+    // 本次执行用绑定了自己身份的一份工具定义；定义内部没有跨调用的状态。
     const scope: ExecutionScope = {epoch: execution.epoch(), toolCallId: args[0], signal: args[2]};
     const scoped = makeDefinitions(makeCall(scope), scope).find(candidate => candidate.name === tool.name) ?? tool;
 

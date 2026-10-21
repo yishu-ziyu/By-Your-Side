@@ -5,7 +5,7 @@ import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js
 import { redactUrlCredentials } from "../../shared/network.js";
 
 /** 内联给模型的正文上限；超出就截断并说明，不假装存了文件。 */
-export const FETCH_BROWSER_INLINE_LIMIT = 16_000;
+const FETCH_BROWSER_INLINE_LIMIT = 16_000;
 
 export interface FetchReply {
   url: string;

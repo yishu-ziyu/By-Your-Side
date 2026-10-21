@@ -34,12 +34,11 @@ interface MeasuredCapability {
 
 /** */
 const MEASURED = new Map<string, MeasuredCapability>([
-  // ChatGPT 账号的 gpt-6 系列（2026-10-06 实测）；pi-ai 1.0.4 目录已收录，上下文与连接参数取目录。
-  // 起始档用低档（用户 10-07 定：默认低，难的事由升档信号或用户自己调高）。订会议室真实路径各 12 次：
+  // ChatGPT 账号的 gpt-6 系列；pi-ai 1.0.4 目录已收录，上下文与连接参数取目录。
+  // 起始档用低档（默认低，难的事由升档信号或用户自己调高）。订会议室真实路径各 12 次：
   // 高 12/12 中位 25 秒，中 11/12（一次没订却说订好了）21 秒，低 11/12（一次如实说没提交）22 秒，关 8/12 21 秒。
-  // 更早的 10-06 两道核对题（高 7/8、中 0/7、低 2/6）只测判断题，不是浏览器操作。
-  // 首个事件等 30 秒：服务端偶尔排队，10-06 实测 12 次有 2 次 16–17 秒才出第一个事件、随后正常答完；15 秒会误判挂起重来。
-  // gpt-6.1-sol 不能关闭思考：10-09 实测发 none 回「'none' is not supported … Supported values are: 'low', …」，最低 low。
+  // 首个事件等 30 秒：服务端偶尔排队，16–17 秒才出第一个事件、随后正常答完；15 秒会误判挂起重来。
+  // gpt-6.1-sol 不能关闭思考：发 none 回「'none' is not supported … Supported values are: 'low', …」，最低 low。
   ...(["gpt-6-luna", "gpt-6-sol", "gpt-6-astra", "gpt-6.1-sol"] as const).map((id): [string, MeasuredCapability] => [
     `openai-codex/${id}`,
     {
@@ -60,10 +59,10 @@ const MEASURED = new Map<string, MeasuredCapability>([
   ["commandcode/xiaomi/mimo-v2.6-flash", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null, minimal: null }, start: "low" }],
   // 始终思考，接受 reasoning_effort minimal–high；developer 角色里的指令被忽略、直接和用户聊天，system 角色正常；能看图。
   ["stepfun/step-3.7-flash", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null }, systemRole: true }],
-  // 能看图（同一张图实测答对）。10-11 实测：reasoning_effort 接受 low / medium / high，low 出字最快（2.7 秒，中档 6.0 秒），
-  // 所以起始档用低档（用户 10-11 定）；developer 角色里「只回 JSON」5 次全被忽略，system 角色 5 次全守。
+  // 能看图（同一张图实测答对）。reasoning_effort 接受 low / medium / high，low 出字最快（2.7 秒，中档 6.0 秒），
+  // 所以起始档用低档；developer 角色里「只回 JSON」5 次全被忽略，system 角色 5 次全守。
   ["stepfun/step-5-preview", { reasoning: true, input: ["text", "image"], thinkingLevelMap: { off: null, minimal: null }, systemRole: true, start: "low", hedgeMs: 11_000 }],
-  // 10-11 用户定：取代 step-3.5-flash（旧的发图回 400，档位不起作用）。文档只写 low / high；developer 角色里「只回 JSON」被忽略，所以用 system 角色。
+  // 用户定：取代 step-3.5-flash（旧的发图回 400，档位不起作用）。文档只写 low / high；developer 角色里「只回 JSON」被忽略，所以用 system 角色。
   // 看图未测，按保守默认只收文字。
   ["stepfun/step-3.5-flash-2603", { reasoning: true, input: ["text"], thinkingLevelMap: { off: null, minimal: null, medium: null }, systemRole: true }],
   // Kimi 编程套餐同一时间只允许 1 个请求（同时发 2 个必有 1 个被拒 concurrent request limit），对冲那份必然被拒，所以不对冲。
@@ -126,7 +125,7 @@ export function hedgeAfter(model: Pick<Model<Api>, "provider" | "id">): number |
   return MEASURED.get(key(model))?.hedgeMs;
 }
 
-export interface ThinkingProfile {
+interface ThinkingProfile {
   /** 可请求的档位，从低到高；"off" 表示不发思考参数（目录标为不支持思考的模型只有这一档，由服务商默认）。 */
   levels: ModelThinkingLevel[];
   /** levels 里有 "off"。 */

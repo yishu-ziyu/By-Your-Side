@@ -16,20 +16,20 @@ export const EFFECT_VOLATILE_WINDOW_MS = 60;
 export const EFFECT_VOLATILE_DELTA = 3;
 
 /** 早停轮询：有强证据立即返回，否则最多等这么久。 */
-export const EFFECT_SETTLE_INTERVAL_MS = 100;
+const EFFECT_SETTLE_INTERVAL_MS = 100;
 
-export const EFFECT_SETTLE_TIMEOUT_MS = 600;
+const EFFECT_SETTLE_TIMEOUT_MS = 600;
 
 /** 点击后网站的请求还没回来时，最多等这么久。 */
 export const EFFECT_SETTLE_MAX_MS = 3000;
 
 /** 弱证据阈值：全局 DOM 节点数 / 全局正文长度。 */
-export const EFFECT_WEAK_DOM_DELTA = 3;
+const EFFECT_WEAK_DOM_DELTA = 3;
 
-export const EFFECT_WEAK_TEXT_DELTA = 4;
+const EFFECT_WEAK_TEXT_DELTA = 4;
 
 /** 目标区块文本阈值：这块地方几乎不会漂来别的噪声。 */
-export const EFFECT_SCOPE_TEXT_DELTA = 2;
+const EFFECT_SCOPE_TEXT_DELTA = 2;
 
 export interface EffectTargetState {
   gone: boolean;
@@ -151,7 +151,7 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
 }
 
 /** 点击窗口内页面发出的请求（来自被动网络记录）。 */
-export interface EffectRequest {
+interface EffectRequest {
   method: string;
   url: string;
   resourceType: string;
@@ -169,7 +169,7 @@ const QUIET_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const QUIET_TYPES = new Set(["ping", "preflight", "cspviolationreport"]);
 
 /** 粗略的“同一网站”：主机名最后两段相同（IP 与单段主机按主机名本身）。多段公共后缀（如 .co.uk）会放宽，只影响是否计入证据。 */
-export function siteOf(hostname: string): string {
+function siteOf(hostname: string): string {
   if (/^[\d.]+$/.test(hostname) || hostname.includes(":")) return hostname;
 
   return hostname.split(".").slice(-2).join(".");
@@ -181,7 +181,7 @@ function redactPath(pathname: string): string {
 }
 
 /**
- * 点击后页面发出的写类请求算强证据（10-04 北极星：保存结果显示在表单外，DOM 判据漏判）。
+ * 点击后页面发出的写类请求算强证据（保存结果可能显示在表单外，DOM 判据会漏判）。
  * 只认点击窗口 [since, until] 内开始、与当前页面同一网站的非 GET 请求；不认打点、预检、安全报告与第三方请求。
  * 只写方法、主机与隐去密钥段的路径，不写查询参数与正文。这只说明页面对点击有反应，不说明业务成功。
  */
@@ -252,7 +252,7 @@ export interface EffectDownload {
 
 /**
  * 点击触发的下载算强证据，并如实写出 Chrome 报告的结果。
- * 没有先 arm_event 的下载原来不进任何回执：文件已存好，回执却说「页面没变化」，网络记录只剩一条 ERR_ABORTED 的跳转，
+ * 没有先 arm_event 的下载也要进回执：不然文件已存好，回执却说「页面没变化」，网络记录只剩一条 ERR_ABORTED 的跳转，
  * 模型和目标核对都读成「没导出」，于是一再重导。只认与当前页面同一网站发起的下载；完成与否只认 chrome.downloads。
  */
 export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: string): string[] {
@@ -305,7 +305,7 @@ export function formatEffectReport(report: EffectReport | undefined, action = "c
 /**
  * 轮询：每 intervalMs 取一次报告，出现强证据就返回；否则到 timeoutMs 返回最后一次。
  * pending 报告动作后发出的请求还有几条没完成：有就接着等，完成后再看一次（结果常在请求回来后才画出），
- * 最多等到 maxMs。以前一看到「加载中」就返回、或在请求回来前判「没变化」。
+ * 最多等到 maxMs：一看到「加载中」就返回、或在请求回来前就判「没变化」都会判错。
  * 一次都没拿到报告（poll 一直返回 null/抛错，例如页面已经导航）时返回 undefined——
  * 不能把「拿不到证据」说成「没有变化」。
  */

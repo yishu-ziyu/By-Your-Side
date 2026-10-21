@@ -12,5 +12,5 @@ export interface RouteTarget {
   box: string;
 }
 
-/** 有名字的文字块（不是控件）：模型按文字点（text=青松 点到卡片标题）时也认得出（YIS-103）。 */
+/** 有名字的文字块（不是控件）：模型按文字点（text=青松 点到卡片标题）时也认得出。 */
 export const ROUTE_TEXT_ROLES: ReadonlySet<string> = new Set(["heading", "paragraph", "LabelText", "cell", "gridcell", "rowheader", "columnheader", "image"]);

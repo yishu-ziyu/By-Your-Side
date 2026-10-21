@@ -1,12 +1,12 @@
 /**
- * #51 「/ 技能」：用户存下来的常用提示词，在输入框开头敲 `/` 唤起，选中后对当前标签页运行。
+ * 「/ 技能」：用户存下来的常用提示词，在输入框开头敲 `/` 唤起，选中后对当前标签页运行。
  *
  * - 只存在本机 chrome.storage.local，与记忆、旧的操作技能无关。
  * - 技能可带 1–2 个澄清问题：先在侧栏里问，答完把回答填进正文（`{1}`、`{2}`）再发；取消就什么都不发。
  * - 发送走侧栏正常发送路径（由调用方传入），当前页面上下文照常附带。
  */
 
-export interface PromptSkill {
+interface PromptSkill {
   id: string;
   name: string;
   emoji?: string;
@@ -15,11 +15,11 @@ export interface PromptSkill {
   questions?: string[];
 }
 
-export const PROMPT_SKILLS_KEY = "sideagent_prompt_skills";
+const PROMPT_SKILLS_KEY = "sideagent_prompt_skills";
 
 const MAX_QUESTIONS = 2;
 
-export const DEFAULT_PROMPT_SKILLS: PromptSkill[] = [
+const DEFAULT_PROMPT_SKILLS: PromptSkill[] = [
   { id: "default-summary", emoji: "📝", name: "概括这页", body: "请概括当前页面的要点：先用一句话说结论，再列 3–5 条关键信息。" },
   {
     id: "default-key-data", emoji: "📊", name: "找出关键数据",
@@ -34,7 +34,7 @@ export const DEFAULT_PROMPT_SKILLS: PromptSkill[] = [
 ];
 
 /** 把澄清回答填进正文；空回答记作「不限」，正文里没有占位的回答附在末尾。 */
-export function fillSkillBody(skill: PromptSkill, answers: string[]): string {
+function fillSkillBody(skill: PromptSkill, answers: string[]): string {
   let body = skill.body;
   const extra: string[] = [];
 
@@ -83,14 +83,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return node;
 }
 
-export interface SlashSkillsOptions {
+interface SlashSkillsOptions {
   composerEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
   /** 用正常发送路径发出这段文字（会附带当前页面上下文）。 */
   run: (text: string) => void;
 }
 
-export interface SlashSkills {
+interface SlashSkills {
   /** 输入框 keydown 先交给技能列表/澄清；返回 true 表示已处理，调用方不要再发送。 */
   handleKeydown: (event: KeyboardEvent) => boolean;
   /** 给已发出的用户消息加「存成技能」。 */
@@ -237,7 +237,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
   function start(skill: PromptSkill): void {
     const questions = skill.questions ?? [];
 
-    // 不用回答问题的技能：正文放进输入框，用户看过、改过再发（YIS-74）。
+    // 不用回答问题的技能：正文放进输入框，用户看过、改过再发。
     if (!questions.length) {
       setInput(fillSkillBody(skill, []));
       inputEl.focus({ preventScroll: true });

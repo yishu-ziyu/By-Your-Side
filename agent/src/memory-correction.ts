@@ -47,7 +47,7 @@ export interface CorrectionVerdict {
 }
 
 /** 规则最长这么多字：一句话的做法，不是长段说明。 */
-export const CORRECTION_RULE_MAX = 200;
+const CORRECTION_RULE_MAX = 200;
 
 /** 回答看不懂：与服务出错、超时分开记。 */
 export class CorrectionParseError extends Error {}
@@ -87,7 +87,7 @@ export function correctionMessageKey(userMessage: string): string {
 /** 规则里出现的邮箱、网址、5 位以上数字：必须是用户原话里就有的，否则是模型编的或抄自别处。 */
 const CONCRETE_VALUE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+|https?:\/\/[^\s，。；！？）)】]+|\d{5,}/giu;
 
-export function ruleGrounded(rule: string, userMessage: string): boolean {
+function ruleGrounded(rule: string, userMessage: string): boolean {
   return [...rule.matchAll(CONCRETE_VALUE)].every(([value]) => userMessage.includes(value));
 }
 
@@ -96,7 +96,7 @@ export function correctionRuleKey(rule: string, scope: MemoryScope): string {
   return `${scope.kind === "all" ? "*" : scope.hostname}\n${rule.replace(/\s+/gu, " ").trim()}`;
 }
 
-export type CorrectionAskDecision =
+type CorrectionAskDecision =
   | { ask: true; rule: string; scope: MemoryScope; replaces?: MemoryEntry }
   | { ask: false; reason: "not-correction" | "not-reusable" | "evidence-not-quoted" | "invalid-rule" | "rule-not-grounded" | "no-site" | "duplicate" | "dismissed" | "already-asked" };
 
