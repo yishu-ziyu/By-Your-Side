@@ -143,8 +143,15 @@ export function pageAwaitsEmailStep(pageText: string): boolean {
 }
 
 /** 助手自己的回答说还有事没做成（「确认邮件还没送达」「没能点确认链接」）。 */
+/**
+ * 回答自己说这件事没做成。「没能 / 未能 / couldn't」后面要跟着做成这件事的动词才算：
+ * 「（另两个服务限流，未能交叉验证）」只是多核对一遍没做到，任务本身做完了，不能因此挂上「继续原任务」。
+ */
+const UNFINISHED_VERB = "(?:完成|做完|做成|做到|成功|拿到|找到|打开|提交|送达|收到|保存|下载|登录|进入|获取|获得|读到|读出|发出|发送)";
+const UNFINISHED = new RegExp(`还没(?:能|有)?(?:完成|点|收到|送达|到|确认|提交)|(?:没能|未能|没有能)${UNFINISHED_VERB}|尚未(?:完成|收到|送达|确认)|没有(?:完成|收到|送达)|not (?:yet )?(?:done|finished|arrived|received|confirmed)|(?:couldn'?t|could not|was unable to|unable to) (?:complete|finish|find|get|open|submit|access|load|save|download|send)|has(?:n'?t| not) arrived`, "i");
+
 function claimsUnfinished(reply: string): boolean {
-  return /还没(能|有)?(完成|点|收到|送达|到|确认|提交)|没能|未能|尚未(完成|收到|送达|确认)|没有(完成|收到|送达)|not (yet )?(done|finished|arrived|received|confirmed)|couldn'?t|could not|has(n'?t| not) arrived/i.test(reply);
+  return UNFINISHED.test(reply);
 }
 
 /**
