@@ -67,6 +67,7 @@ import { chipLabel } from "./models.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { D_STATE, D_TAP } from "../shared/motion-tokens.js";
 import { AttachmentsManager } from "./attachments.js";
+import { fileChip, fileMeta } from "./file-chip.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import { checkNoteForUser, evidenceLine, mergeEvidence, nextWorkingTab, readbackKey } from "./claim-hold.js";
@@ -350,9 +351,9 @@ app.innerHTML = `
         <span class="action-menu-item-icon" data-icon="region"></span>
         <span class="action-menu-item-label">圈出来问 <span class="action-menu-item-key" id="region-key">⌘⇧S</span></span>
       </div>
-      <div class="action-menu-item pressable" id="menu-action-upload">
+      <div class="action-menu-item pressable" id="menu-action-upload" title="PDF、Word、Excel、PPT、CSV、文本和代码文件，以及图片。文件在本机读成文字再交给助手。">
         <span class="action-menu-item-icon" data-icon="upload"></span>
-        <span class="action-menu-item-label">添加电脑里的图片</span>
+        <span class="action-menu-item-label">添加电脑里的文件或图片</span>
       </div>
       <hr />
       <p class="composer-menu-label" title="显示当前段落的原文或解释。">段落提示</p>
@@ -362,7 +363,7 @@ app.innerHTML = `
       <hr />
       <button id="voice-diagnostics-open" class="action-menu-radio" type="button">语音诊断</button>
     </div>
-    <input type="file" id="file-input" accept="image/*" multiple hidden />
+    <input type="file" id="file-input" multiple hidden />
     <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会发给模型</option></select>
     <div id="task-bar-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
@@ -641,17 +642,33 @@ let draftWrites = Promise.resolve();
 
 const DRAFT_KEY = "sideagent_conversation_draft:";
 
+/**
+ * 草稿里的附件单独存一份：文件附件带着读出的文字（最多 40 万字）和小于 5 MB 的原文件，
+ * 跟着每次按键重写会卡输入框。文字随按键存，附件只在增删时存。
+ */
+const DRAFT_ATTACHMENTS_KEY = "sideagent_conversation_draft_attachments:";
+
+/** 草稿的指纹只看附件的编号，不把文件内容整个序列化。 */
+const draftFingerprint = (draft: ConversationDraft): string => JSON.stringify({ ...draft, attachments: draft.attachments.map(a => a.id) });
+
+function writeDraft(id: string, draft: ConversationDraft, withAttachments: boolean): void {
+  const { attachments: atts, ...rest } = draft;
+  draftWrites = draftWrites.catch(() => {}).then(() => chrome.storage.local.set({ [DRAFT_KEY + id]: rest, ...(withAttachments ? { [DRAFT_ATTACHMENTS_KEY + id]: atts } : {}) }));
+}
+
 function saveDraft(): void {
   if (restoringDraft || !attachments) return;
   const id = selectedConversationId;
   const draft: ConversationDraft = { text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk, pages: tabMentions.items() };
-  const fingerprint = JSON.stringify(draft);
+  const fingerprint = draftFingerprint(draft);
+  const previous = draftFingerprints.get(id);
 
-  if (draftFingerprints.get(id) === fingerprint) return;
+  if (previous === fingerprint) return;
+  const attachmentsChanged = !previous || JSON.parse(previous).attachments.join() !== draft.attachments.map(a => a.id).join();
   draftRevision += 1;
   draftFingerprints.set(id, fingerprint);
   conversationDrafts.set(id, draft);
-  draftWrites = draftWrites.catch(() => {}).then(() => chrome.storage.local.set({ [DRAFT_KEY + id]: draft }));
+  writeDraft(id, draft, attachmentsChanged);
 }
 
 async function restoreDraft(id: string): Promise<void> {
@@ -659,10 +676,13 @@ async function restoreDraft(id: string): Promise<void> {
   let draft = conversationDrafts.get(id);
 
   if (!draft) {
-    const stored = await chrome.storage.local.get(DRAFT_KEY + id);
+    const stored = await chrome.storage.local.get([DRAFT_KEY + id, DRAFT_ATTACHMENTS_KEY + id]);
 
     if (revision !== draftRevision || selectedConversationId !== id) return;
-    draft = stored[DRAFT_KEY + id] as ConversationDraft | undefined;
+    const saved = stored[DRAFT_KEY + id] as Partial<ConversationDraft> | undefined;
+    // 旧草稿把附件放在同一份里。
+    const atts = stored[DRAFT_ATTACHMENTS_KEY + id] ?? saved?.attachments;
+    draft = saved || atts ? { text: "", ask: null, ...saved, attachments: Array.isArray(atts) ? atts : [] } : undefined;
   }
 
   if (selectedConversationId !== id) return;
@@ -677,7 +697,7 @@ async function restoreDraft(id: string): Promise<void> {
     if (pendingAsk) applyPendingAsk(pendingAsk);
     else if (askCiteEl) askCiteEl.hidden = true;
     autoResize();
-    draftFingerprints.set(id, JSON.stringify({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk, pages: tabMentions.items() }));
+    draftFingerprints.set(id, draftFingerprint({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk, pages: tabMentions.items() }));
     currentDraftReady = true;
     updateStarterVisibility();
   } finally { restoringDraft = false; }
@@ -2127,6 +2147,9 @@ toBottomBtn.onclick = () => {
   toBottomBtn.classList.remove("has-new");
 };
 
+/** 已发出的消息里最多直接摆几张文件卡。 */
+const USER_MSG_FILES_SHOWN = 4;
+
 function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   const div = document.createElement("div");
   div.className = "msg user";
@@ -2135,8 +2158,19 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
     const thumbs = document.createElement("div");
     thumbs.className = "user-msg-attachments";
 
+    const files = atts.filter(att => att.type === "file");
+    // 文件多时只摆前几张，其余收成「+N 个文件」，点开再看；消息不被一摞卡片占满。
+    const shownFiles = files.length > USER_MSG_FILES_SHOWN + 1 ? USER_MSG_FILES_SHOWN : files.length;
+
     for (const att of atts) {
-      if (att.type === "image") {
+      if (att.type === "file") {
+        const chip = fileChip(att.name, att.format, fileMeta(att)).el;
+        chip.classList.add("user-msg-file");
+        chip.hidden = files.indexOf(att) >= shownFiles;
+
+        if (att.note) chip.title = att.note;
+        thumbs.appendChild(chip);
+      } else if (att.type === "image") {
         const img = document.createElement("img");
         img.className = "user-msg-img-thumb";
         img.src = `data:${att.mimeType};base64,${att.dataBase64}`;
@@ -2149,6 +2183,19 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
 
         thumbs.appendChild(img);
       }
+    }
+
+    if (shownFiles < files.length) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "user-msg-files-more";
+      more.textContent = `+${files.length - shownFiles} 个文件`;
+      more.onclick = (e) => {
+        e.stopPropagation();
+        thumbs.querySelectorAll<HTMLElement>(".user-msg-file[hidden]").forEach(chip => { chip.hidden = false; });
+        more.remove();
+      };
+      thumbs.appendChild(more);
     }
 
     div.appendChild(thumbs);
@@ -5436,7 +5483,7 @@ attachments = new AttachmentsManager({
       const draft = conversationDrafts.get(scope) ?? { text: "", attachments: [], ask: null };
       draft.attachments = attachments.getAttachments(scope);
       conversationDrafts.set(scope, draft);
-      draftWrites = draftWrites.catch(() => {}).then(() => chrome.storage.local.set({ [DRAFT_KEY + scope]: draft }));
+      writeDraft(scope, draft, true);
     }
   },
   onError: (errMsg) => {
@@ -5597,6 +5644,9 @@ function restoreLostSend(): void {
  * quick：改方向快捷按钮的原话。只发这句话，不带输入框里的草稿、引用和附件，也不清掉它们。
  * quickPage：quick 这句话问的是哪一页（连好模型后重发时用原来那页）。返回是否交了出去。
  */
+/** 文件还没读完时按了发送：这一行提示还在，读完会自动发出。 */
+let sendAfterRead: HTMLElement | null = null;
+
 function sendInput(quick?: string, quickPage?: PageContext): boolean {
   if (!conversationReady) return false;
   if (!quick && dictationUI?.busy()) {
@@ -5614,6 +5664,23 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
     return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
   }).join("").trim();
+
+  // 文件还在读：先不发，读完自动发出（读失败的那个会撤下并说明原因，其余照发）。
+  if (!quick && attachments.reading()) {
+    const conversation = selectedConversationId;
+
+    if (!sendAfterRead) {
+      sendAfterRead = addMsg("msg notice", `文件还在读（${attachments.reading()} 个），读完就发送。`);
+      void attachments.whenRead(conversation).then(() => {
+        sendAfterRead?.remove();
+        sendAfterRead = null;
+
+        if (selectedConversationId === conversation) sendInput();
+      });
+    }
+
+    return false;
+  }
 
   const pendingAtts = quick ? [] : attachments.getAttachments();
 
@@ -5640,7 +5707,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
-  const circled = pendingAtts.flatMap(att => (att.circle ? [att.circle] : []));
+  const circled = pendingAtts.flatMap(att => (att.type === "image" && att.circle ? [att.circle] : []));
   const circleSet = currentCircleSet();
 
   if (circled.length && circleSet) circleRefs = { conversationId: conversation, target: circleSet, max: Math.max(...circled) };

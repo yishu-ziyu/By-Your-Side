@@ -49,5 +49,7 @@ export function pageRecoveryKey(tabId:number,url:string):NonNullable<TaskRecover
 }
 
 export function attachmentRecoveryKey(attachment:Attachment):string {
+  if(attachment.type==='file')return createHash('sha256').update('file\0').update(attachment.sha256).digest('hex');
+
   return createHash('sha256').update(attachment.mimeType).update('\0').update(base64Bytes(attachment.dataBase64)).digest('hex');
 }

@@ -106,13 +106,89 @@ export interface ImageAttachment {
   circle?: number;
 }
 
-export type Attachment = ImageAttachment;
+/** 一份文件里抽出来的文字最多留这么多字；更长的截断并标 truncated。 */
+export const FILE_TEXT_MAX = 400_000;
+
+/** 原文件不超过这么大才随附件带着字节，供 upload_file 把它原样传到网页上。 */
+export const FILE_BYTES_KEEP_MAX = 5 * 1024 * 1024;
+
+/** 没有文字层的 PDF（扫描件）最多把前几页画成图交给助手看。 */
+export const FILE_PAGE_IMAGES_MAX = 4;
+
+export const FILE_FORMATS = ["pdf", "docx", "xlsx", "pptx", "csv", "text", "html"] as const;
+
+export type FileFormat = (typeof FILE_FORMATS)[number];
+
+/**
+ * 用户在侧栏附上的文件：侧栏在本机解析出文字，助手读的是这些文字，原文件不出本机。
+ * text 里用 [Page N]、[Sheet: 名字]、[Slide N] 标出页、表、幻灯片的边界，助手引用时说得出在哪一页。
+ */
+export interface FileAttachment {
+  id: string;
+  type: "file";
+  name: string;
+  mimeType: string;
+  /** 原文件字节数。 */
+  size: number;
+  /** 原文件内容的 sha256：同一份文件的身份，恢复任务时据它找回附件。 */
+  sha256: string;
+  format: FileFormat;
+  text: string;
+  /** 页、工作表或幻灯片的数量。 */
+  parts?: { kind: "page" | "sheet" | "slide"; count: number };
+  /** 抽出的文字超过 FILE_TEXT_MAX，后面没留。 */
+  truncated?: true;
+  /** 扫描件（PDF 没有文字层）的前几页图像。 */
+  pageImages?: Array<{ page: number; mimeType: "image/jpeg"; dataBase64: string }>;
+  /** 原文件（base64），不超过 FILE_BYTES_KEEP_MAX 才有。 */
+  dataBase64?: string;
+  /** 解析时要让助手知道的情况，例如「第 3–5 页是扫描件，没有文字」。 */
+  note?: string;
+}
+
+export type Attachment = ImageAttachment | FileAttachment;
+
+function isFileAttachment(a: Record<string, unknown>): boolean {
+  if (typeof a.name !== "string" || !a.name || a.name.length > 256) return false;
+
+  if (typeof a.mimeType !== "string" || a.mimeType.length > 128) return false;
+
+  if (!Number.isSafeInteger(a.size) || Number(a.size) < 0) return false;
+
+  if (typeof a.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(a.sha256)) return false;
+
+  if (!FILE_FORMATS.includes(a.format as FileFormat)) return false;
+
+  if (typeof a.text !== "string" || a.text.length > FILE_TEXT_MAX) return false;
+
+  if (a.parts !== undefined) {
+    const parts = a.parts as Record<string, unknown> | null;
+
+    if (!parts || !["page", "sheet", "slide"].includes(parts.kind as string) || !Number.isSafeInteger(parts.count) || Number(parts.count) < 0) return false;
+  }
+
+  if (a.truncated !== undefined && a.truncated !== true) return false;
+
+  if (a.pageImages !== undefined) {
+    if (!Array.isArray(a.pageImages) || a.pageImages.length > FILE_PAGE_IMAGES_MAX) return false;
+
+    for (const image of a.pageImages as Array<Record<string, unknown> | null>) {
+      if (!image || !Number.isSafeInteger(image.page) || image.mimeType !== "image/jpeg" || typeof image.dataBase64 !== "string" || !image.dataBase64) return false;
+    }
+  }
+
+  if (a.dataBase64 !== undefined && (typeof a.dataBase64 !== "string" || a.dataBase64.length > Math.ceil(FILE_BYTES_KEEP_MAX / 3) * 4)) return false;
+
+  return a.note === undefined || (typeof a.note === "string" && a.note.length <= 600);
+}
 
 export function isAttachment(v: unknown): v is Attachment {
   if (!v || typeof v !== "object") return false;
   const a = v as Record<string, unknown>;
 
   if (typeof a.id !== "string" || !a.id || a.id.length > 128) return false;
+
+  if (a.type === "file") return isFileAttachment(a);
 
   if (a.type !== "image") return false;
 

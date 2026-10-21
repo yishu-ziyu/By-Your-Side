@@ -4,15 +4,40 @@
  * - 右上角 9px 百分比数字与关闭按钮 ✕ 原位 Blur Cross-Fade (Zero Layout Shift)
  * - 交互源支持：
  *   1. 📸 截取当前网页视口 (向 background 请求 sidepanel_capture_tab)
- *   2. 📁 上传本地图片 (文件选择器)
- *   3. 剪贴板 Cmd+V / Ctrl+V 粘贴图片
- *   4. 拖拽图片至输入区域
+ *   2. 📁 上传本地图片或文件（PDF、Word、Excel、PPT、CSV、文本）
+ *   3. 剪贴板 Cmd+V / Ctrl+V 粘贴图片或文件
+ *   4. 拖拽图片或文件至输入区域
+ * 文件在侧栏本机读成文字（file-read.js 用到时才加载）；瓷贴的进度环跟着真实的读取进度走。
  */
 
-import { isAttachment, type Attachment, type ImageAttachment } from "../../../shared/protocol.js";
+import { isAttachment, type Attachment, type FileAttachment, type ImageAttachment } from "../../../shared/protocol.js";
 import { isCircling, removeCircle, startCircling } from "./circle-select.js";
+import { fileChip, fileMeta } from "./file-chip.js";
+import { readableFormat, unsupportedReason } from "./file-read/formats.js";
+
+/** 一条消息最多带这么多个附件（与任务核心接收的上限一致）。 */
+const ATTACHMENTS_MAX = 16;
+
+type FileReadModule = typeof import("./file-read/index.js");
+
+let fileReadModule: Promise<FileReadModule> | null = null;
+
+/** 解析代码单独打包成 file-read.js：第一次附上文件时才加载。 */
+function loadFileRead(): Promise<FileReadModule> {
+  fileReadModule ??= import(chrome.runtime.getURL("file-read.js")) as Promise<FileReadModule>;
+  fileReadModule.catch(() => { fileReadModule = null; });
+
+  return fileReadModule;
+}
 
 const TILE_PERIMETER = 194;
+
+/** 文件瓷贴更宽，放得下文件名；进度环的周长随之变。 */
+const FILE_TILE_WIDTH = 176;
+const FILE_TILE_PERIMETER = Math.round(2 * (FILE_TILE_WIDTH - 3 + 53) - (8 - 2 * Math.PI) * 11);
+
+/** 走图片附件的类型：模型直接看图。 */
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 type SupportedImageMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 
@@ -27,7 +52,18 @@ interface AttachmentsManagerOptions {
   onError?: (errMessage: string) => void;
 }
 
+interface FileItem {
+  kind: "file";
+  id: string;
+  name: string;
+  /** 读好之前没有；发消息时只带读好的。 */
+  attachment: FileAttachment | null;
+  ready: Promise<void>;
+  dom: AttachmentItem["dom"];
+}
+
 interface AttachmentItem {
+  kind: "image";
   id: string;
   name: string;
   mimeType: SupportedImageMime;
@@ -83,11 +119,11 @@ async function getImageDimensions(dataUrl: string): Promise<{ width: number; hei
 }
 
 export class AttachmentsManager {
-  private readonly itemsByScope = new Map<string, AttachmentItem[]>();
+  private readonly itemsByScope = new Map<string, Array<AttachmentItem | FileItem>>();
   private scopeId = "default";
-  private get items(): AttachmentItem[] { return this.scopeItems(this.scopeId); }
-  private set items(items: AttachmentItem[]) { this.itemsByScope.set(this.scopeId, items); }
-  private scopeItems(scope: string): AttachmentItem[] {
+  private get items(): Array<AttachmentItem | FileItem> { return this.scopeItems(this.scopeId); }
+  private set items(items: Array<AttachmentItem | FileItem>) { this.itemsByScope.set(this.scopeId, items); }
+  private scopeItems(scope: string): Array<AttachmentItem | FileItem> {
     let items = this.itemsByScope.get(scope);
 
     if (!items) { items = []; this.itemsByScope.set(scope, items); }
@@ -99,7 +135,17 @@ export class AttachmentsManager {
     this.scopeId = scope;
     this.closeMenu();
     this.stripEl.replaceChildren();
-    this.items = (Array.isArray(attachments) ? attachments : []).filter(isAttachment).map((att) => {
+    this.items = (Array.isArray(attachments) ? attachments : []).filter(isAttachment).map((att): AttachmentItem | FileItem => {
+      if (att.type === "file") {
+        const dom = this.createFileTileDom(att.id, att, scope);
+        dom.tile.classList.add("complete");
+        dom.pText.textContent = "100%";
+        dom.path.style.strokeDashoffset = "0";
+        this.stripEl.appendChild(dom.tile);
+
+        return { kind: "file", id: att.id, name: att.name, attachment: att, ready: Promise.resolve(), dom };
+      }
+
       const dataUrl = `data:${att.mimeType};base64,${att.dataBase64}`;
       const dom = this.createTileDom(att.id, att.name, dataUrl, scope);
       dom.tile.classList.add("complete");
@@ -107,7 +153,7 @@ export class AttachmentsManager {
       dom.path.style.strokeDashoffset = "0";
       this.stripEl.appendChild(dom.tile);
 
-      return { ...att, dataUrl, dom };
+      return { ...att, kind: "image", dataUrl, dom };
     });
     this.updateVisibility();
   }
@@ -198,21 +244,22 @@ export class AttachmentsManager {
       const items = e.clipboardData?.items;
 
       if (!items || items.length === 0) return;
-      const imageFiles: File[] = [];
+      const files: File[] = [];
 
+      // 复制的文件（访达里 ⌘C）和截图一样出现在剪贴板的文件项里；纯文字粘贴照常进输入框。
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
 
-        if (item && item.type.startsWith("image/")) {
+        if (item?.kind === "file") {
           const file = item.getAsFile();
 
-          if (file) imageFiles.push(file);
+          if (file) files.push(file);
         }
       }
 
-      if (imageFiles.length > 0) {
+      if (files.length > 0) {
         e.preventDefault();
-        void this.addFiles(imageFiles);
+        void this.addFiles(files);
       }
     });
 
@@ -239,7 +286,7 @@ export class AttachmentsManager {
       e.preventDefault();
       dragCounter = 0;
       this.composerEl.classList.remove("drag-over");
-      const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/"));
+      const files = Array.from(e.dataTransfer?.files || []);
 
       if (files.length > 0) {
         void this.addFiles(files);
@@ -299,7 +346,7 @@ export class AttachmentsManager {
   public async captureRegion(): Promise<void> {
     if (isCircling()) return;
     const scope = this.scopeId;
-    const start = Math.max(0, ...this.scopeItems(scope).map(item => item.circle ?? 0)) + 1;
+    const start = Math.max(0, ...this.scopeItems(scope).map(item => (item.kind === "image" ? item.circle ?? 0 : 0))) + 1;
 
     try {
       await startCircling(start, async (dataUrl, n, text) => {
@@ -320,23 +367,95 @@ export class AttachmentsManager {
    */
   public async addFiles(files: File[], staggerMs = 80): Promise<void> {
     const scope = this.scopeId;
+    const rejected: string[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
       if (!file) continue;
 
+      if (this.scopeItems(scope).length >= ATTACHMENTS_MAX) {
+        rejected.push(`一条消息最多附 ${ATTACHMENTS_MAX} 个文件，${file.name} 没有附上。`);
+        continue;
+      }
+
       if (i > 0 && staggerMs > 0) {
         await new Promise((r) => setTimeout(r, staggerMs));
       }
 
-      try {
-        const dataUrl = await readFileAsDataUrl(file);
-        await this.addFromDataUrl(dataUrl, file.name, scope);
-      } catch (err) {
-        console.error("[sideagent-attachments] addFile failed:", file.name, err);
+      if (IMAGE_TYPES.has(file.type)) {
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          await this.addFromDataUrl(dataUrl, file.name, scope);
+        } catch (err) {
+          rejected.push(`${file.name} 没读出来：${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        continue;
       }
+
+      if (!readableFormat(file)) {
+        rejected.push(unsupportedReason(file));
+        continue;
+      }
+
+      this.addDocument(file, scope);
     }
+
+    if (rejected.length) this.onError?.(rejected.join("\n"));
+  }
+
+  /** 先摆出瓷贴，后台读文件：进度环跟着读取进度走，读不出来就撤下瓷贴并说明原因。 */
+  private addDocument(file: File, scope: string): void {
+    const id = "att_" + Math.random().toString(36).slice(2, 9);
+    const format = readableFormat(file)!;
+    const dom = this.createFileTileDom(id, { name: file.name, format, size: file.size }, scope, "正在读…");
+    let item!: FileItem;
+    const ready = (async () => {
+      const progress = (fraction: number) => this.paintProgress(dom, fraction);
+
+      try {
+        progress(0.04);
+        const read = await loadFileRead();
+        const attachment = await read.readAttachmentFile(file, id, progress);
+
+        item.attachment = attachment;
+        dom.tile.querySelector(".file-chip-meta")!.textContent = fileMeta(attachment);
+
+        if (attachment.note) dom.tile.title = attachment.note;
+        this.paintProgress(dom, 1);
+        dom.tile.classList.add("complete");
+        this.updateVisibility(scope);
+      } catch (error) {
+        this.removeItem(id, scope);
+        this.onError?.(error instanceof Error ? error.message : String(error));
+      }
+    })();
+
+    item = { kind: "file", id, name: file.name, attachment: null, ready, dom };
+    this.scopeItems(scope).push(item);
+
+    if (scope === this.scopeId) {
+      this.stripEl.appendChild(dom.tile);
+      this.stripEl.scrollTo({ left: this.stripEl.scrollWidth, behavior: "smooth" });
+    }
+
+    this.updateVisibility(scope);
+  }
+
+  private paintProgress(dom: AttachmentItem["dom"], fraction: number): void {
+    const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+    dom.pText.textContent = `${percent}%`;
+    dom.path.style.strokeDashoffset = String(FILE_TILE_PERIMETER - (FILE_TILE_PERIMETER * percent) / 100);
+  }
+
+  /** 还在读的文件：发送前要等它们读完。 */
+  public reading(scope = this.scopeId): number {
+    return this.scopeItems(scope).filter(item => item.kind === "file" && !item.attachment).length;
+  }
+
+  public whenRead(scope = this.scopeId): Promise<void> {
+    return Promise.all(this.scopeItems(scope).flatMap(item => (item.kind === "file" ? [item.ready] : []))).then(() => {});
   }
 
   /**
@@ -351,6 +470,7 @@ export class AttachmentsManager {
     const dom = this.createTileDom(id, safeName, dataUrl, scope, circle);
 
     const item: AttachmentItem = {
+      kind: "image",
       id,
       name: safeName,
       mimeType,
@@ -434,6 +554,49 @@ export class AttachmentsManager {
     return { tile, path: rect, pText, dismissBtn };
   }
 
+  private createFileTileDom(id: string, file: Pick<FileAttachment, "name" | "format" | "size"> & Partial<FileAttachment>, scope = this.scopeId, pending?: string): AttachmentItem["dom"] {
+    const tile = document.createElement("div");
+    tile.className = "tile-56 tile-file tile-landing";
+    tile.dataset.id = id;
+    tile.dataset.format = file.format;
+    const chip = fileChip(file.name, file.format, pending ?? fileMeta({ format: file.format, parts: file.parts, size: file.size }));
+    tile.appendChild(chip.el);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "tile-ring-svg");
+    svg.setAttribute("viewBox", `0 0 ${FILE_TILE_WIDTH} 56`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("class", "tile-ring-path");
+    rect.setAttribute("x", "1.5");
+    rect.setAttribute("y", "1.5");
+    rect.setAttribute("width", String(FILE_TILE_WIDTH - 3));
+    rect.setAttribute("height", "53");
+    rect.setAttribute("rx", "11");
+    rect.style.strokeDasharray = String(FILE_TILE_PERIMETER);
+    rect.style.strokeDashoffset = String(FILE_TILE_PERIMETER);
+    svg.appendChild(rect);
+    tile.appendChild(svg);
+
+    const pText = document.createElement("span");
+    pText.className = "tile-progress-text";
+    pText.textContent = "0%";
+    tile.appendChild(pText);
+
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.className = "tile-dismiss-btn";
+    dismissBtn.innerHTML = "✕";
+    dismissBtn.title = "移除这个文件";
+    dismissBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.removeItem(id, scope);
+    });
+    tile.appendChild(dismissBtn);
+
+    return { tile, path: rect, pText, dismissBtn };
+  }
+
   private animateTileProgress(item: AttachmentItem, durationMs = 380): void {
     const { tile, path, pText } = item.dom;
     const start = performance.now();
@@ -470,7 +633,7 @@ export class AttachmentsManager {
 
     if (!item) return;
 
-    if (item.circle) removeCircle(item.circle);
+    if (item.kind === "image" && item.circle) removeCircle(item.circle);
     item.dom.tile.classList.add("removing");
     this.updateVisibility(scope);
     setTimeout(() => { item.dom.tile.remove(); }, 250);
@@ -485,15 +648,17 @@ export class AttachmentsManager {
     this.updateVisibility();
   }
 
-  public getAttachments(scope = this.scopeId): ImageAttachment[] {
-    return this.scopeItems(scope).map((item) => {
+  /** 发消息要带的附件：图片和已读好的文件（还在读的不带，发送前先 whenRead）。 */
+  public getAttachments(scope = this.scopeId): Attachment[] {
+    return this.scopeItems(scope).flatMap((item): Attachment[] => {
+      if (item.kind === "file") return item.attachment ? [item.attachment] : [];
       const attachment: ImageAttachment = { type: "image", id: item.id, name: item.name, mimeType: item.mimeType, dataBase64: item.dataBase64 };
 
       if (item.note) attachment.note = item.note;
 
       if (item.circle) attachment.circle = item.circle;
 
-      return attachment;
+      return [attachment];
     });
   }
 

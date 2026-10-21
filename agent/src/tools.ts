@@ -250,7 +250,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     const attached = execution?.attachments?.() ?? [];
     const match = attached.filter(a => a.name === name).at(-1);
 
-    if (match) return { name, type: match.mimeType, base64: match.dataBase64 };
+    if (match?.dataBase64) return { name, type: match.mimeType, base64: match.dataBase64 };
+
+    if (match) throw new Error(`${name} 超过 5 MB，侧栏只留了读出的文字、没留原文件，所以传不上去，操作未执行。请用户在网页上自己选这个文件。`);
     const available = [...new Set([...(store?.names() ?? []), ...attached.map(a => a.name)])];
 
     throw new Error(`找不到文件 ${JSON.stringify(name)}，操作未执行。${available.length ? `可上传的文件：${available.join("、")}。` : "本会话还没有文件：先用 artifacts 创建，或请用户在侧栏附上。"}`);
