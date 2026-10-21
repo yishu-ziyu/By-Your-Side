@@ -44,7 +44,7 @@ export type PendingComponent = { tag: "stat" | "step" | "option" | "table" | "tr
 /** key：整张卡原文的摘要，用户在卡片上调过、勾过的状态按它存。 */
 export type Card = { key: string; title: string; sub?: string; blocks: Block[]; buttons: CardButton[]; source?: string; closed: boolean; numbers: Set<string>; values: Map<string, string>; formulas: boolean; pending?: PendingComponent };
 
-export type AnswerPart = { prose: string } | { card: Card | undefined };
+type AnswerPart = { prose: string } | { card: Card | undefined };
 
 type Attrs = Record<string, string | true>;
 
@@ -76,7 +76,7 @@ const FUNCS: Record<string, (...a: number[]) => number> = {
  * 算式的小解析器：扩展页面的 CSP 不允许动态求值。认数字、+ − × ÷、^、括号、比较（结果 1 或 0）、条件 a ? b : c、FUNCS 里的函数。
  * 乘方和条件是给房贷月供、分档折扣这类算式用的：真模型想写，但写不出来就只能心算。
  */
-export function calc(expression: string): number | undefined {
+function calc(expression: string): number | undefined {
   const s = expression.replace(/[−–]/g, "-").replace(/×/g, "*").replace(/÷/g, "/").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/\s+/g, "");
   // 逗号：有函数时是参数分隔，没有时是千分位。
   const t = /[a-z]\(/.test(s) ? s : s.replace(/,/g, "");
@@ -467,7 +467,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 }
 
 /** 依据面的一行：卡片上的一个数字格。tab 是指向这一项的「切到…看」按钮的标签页。 */
-export type EvidenceRow = { label: string; value: string; formula?: string; source?: string; tab?: string; expr?: string; unit?: string };
+type EvidenceRow = { label: string; value: string; formula?: string; source?: string; tab?: string; expr?: string; unit?: string };
 
 /**
  * 卡片的依据面：每个数字格一行，只用卡片已有的数据（算式、source、tab 按钮），不补写。
@@ -497,7 +497,7 @@ export function cardEvidence(card: Card): EvidenceRow[] {
 }
 
 /** 代码块和行内代码的范围：里面的 <card、{=…}、金额都按原文处理。 */
-export function codeRanges(text: string): Array<[number, number]> {
+function codeRanges(text: string): Array<[number, number]> {
   return [...text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*`/g)]
     // 一对反引号里有 <card、后面又有真的 </card>：是正文里落单的反引号碰上了卡片属性里的反引号，不当代码。
     .filter((m) => m[0].startsWith("```") || !/<card[\s>]/.test(m[0]) || m[0].includes("</card>") || text.indexOf("</card>", m.index + m[0].length) < 0)

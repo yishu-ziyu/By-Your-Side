@@ -6,7 +6,7 @@ import { utf8ByteLength } from "./bytes.js";
 import { sanitizeTraceForStore } from "./trace-sanitize.js";
 
 /** 至少保留最近多少个会话的记录；更早的会话在 TRACE_MAX_AGE_DAYS 天内也保留，复盘要看得到一晚上的全部使用。 */
-export const TRACE_SESSIONS_KEPT = 20;
+const TRACE_SESSIONS_KEPT = 20;
 
 export const TRACE_MAX_AGE_DAYS = 30;
 

@@ -9,7 +9,7 @@ import { ensureAttached } from "../debugger.js";
 import { clearNetworkRing, enableNetworkCapture, networkIdleFor, networkRingFor } from "../network-log.js";
 import { resolveReadableTab } from "../state.js";
 
-export interface NetworkParams {
+interface NetworkParams {
   tabId?: number;
   urlContains?: string;
   types?: string[] | "all";
@@ -17,7 +17,7 @@ export interface NetworkParams {
   clear?: boolean;
 }
 
-export interface NetworkResult {
+interface NetworkResult {
   text: string;
   tabId: number;
   total: number;

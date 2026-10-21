@@ -44,9 +44,7 @@ import {
 /** 派发前的核对：checkNow 同步复查任务身份，noteEffect 记下页面输入已经发出。 */
 export type DispatchGuard = (() => Promise<void>) & {checkNow?: () => void; noteEffect?: () => void};
 
-export type { ElementPosition, MouseButton } from "../../../../shared/pointer-input.js";
 
-export { pointInElementRect } from "../../../../shared/pointer-input.js";
 
 type HeldInputState = {
   tabId?: number;
@@ -557,7 +555,7 @@ async function beginCursorAction(
   return actionId;
 }
 
-export type GazeRead =
+type GazeRead =
   | { kind: "element"; target: string }
   | { kind: "elements"; selector: string }
   | { kind: "rest" }
@@ -772,7 +770,7 @@ async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   }
 }
 
-export type PageTarget = { target: string; label: string; tabId: number; url: string };
+type PageTarget = { target: string; label: string; tabId: number; url: string };
 
 let lastActionTarget: PageTarget | null = null;
 
@@ -783,7 +781,7 @@ export function takeLastActionTarget(): PageTarget | null {
   return next;
 }
 
-export async function rememberActionTarget(tabId: number, target: string | undefined, label: string): Promise<PageTarget> {
+async function rememberActionTarget(tabId: number, target: string | undefined, label: string): Promise<PageTarget> {
   let url = "";
 
   try { url = (await chrome.tabs.get(tabId)).url ?? ""; } catch { /* 标签没了就空着 */ }
@@ -792,7 +790,7 @@ export async function rememberActionTarget(tabId: number, target: string | undef
   return lastActionTarget;
 }
 
-export async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<void> {
+async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<void> {
   const cid = cursorId(sessionId);
   const tabId = await resolveOverlayTabId(sessionId);
 
@@ -813,7 +811,7 @@ export async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<
   }
 }
 
-export async function leaveCursorsTowardPanel(sessionId: string = LEAD_SESSION_ID): Promise<void> {
+async function leaveCursorsTowardPanel(sessionId: string = LEAD_SESSION_ID): Promise<void> {
   const cid = cursorId(sessionId);
   const tabId = await resolveOverlayTabId(sessionId);
 
@@ -835,7 +833,7 @@ export async function leaveCursorsTowardPanel(sessionId: string = LEAD_SESSION_I
   }
 }
 
-export async function returnCursorsFromPanel(sessionId: string = LEAD_SESSION_ID): Promise<void> {
+async function returnCursorsFromPanel(sessionId: string = LEAD_SESSION_ID): Promise<void> {
   const cid = cursorId(sessionId);
   const tabId = await resolveOverlayTabId(sessionId);
 
@@ -932,7 +930,7 @@ function stripHash(url: string): string {
   }
 }
 
-export type ControlBannerView = {
+type ControlBannerView = {
   status?: string;
   sub?: string;
   ask?: string;
@@ -2545,7 +2543,7 @@ async function fillField(
   }
 }
 
-export type SelectOptionValue =
+type SelectOptionValue =
   | string
   | { value?: string; label?: string; index?: number }
   | null;

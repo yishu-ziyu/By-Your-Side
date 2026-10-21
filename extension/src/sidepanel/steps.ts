@@ -6,7 +6,7 @@ import { displayNameFor, personFor } from "../../../shared/cast.js";
 import { toolAction } from "../../../shared/user-facing.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
-export interface ToolAction {
+interface ToolAction {
   /** 步骤链里用的短动作名，如 "读页"。 */
   short: string;
   /** 工具卡标题，带得上关键参数就带，如 "点击「结算服务」"。 */
@@ -267,7 +267,7 @@ export class StepChain {
 }
 
 /** chip 状态：tool_end 前运行中；结束后按 isError 分完成/失败。 */
-export type ChipState = "running" | "done" | "error";
+type ChipState = "running" | "done" | "error";
 
 export function chipState(ended: boolean, isError: boolean): ChipState {
   if (!ended) {
@@ -297,33 +297,6 @@ export function formatDuration(ms: number): string {
   const m = Math.floor(s / 60);
 
   return `${m}m ${Math.round(s % 60)}s`;
-}
-
-/**
- * 工人事件该进哪一块执行步骤。
- * 全员 idle 时 finishRun 会清掉 currentRun；Pi 的 agent_end 紧随 idle 到达，
- * 若再 ensureRun 就会留下一块没人关掉的「处理中」。
- */
-export type WorkerEventRunPolicy = "current" | "new" | "reuse-last" | "drop";
-
-export function workerEventRunPolicy(input: {
-  hasCurrentRun: boolean;
-  graphRunning: boolean;
-  hasLastRun: boolean;
-}): WorkerEventRunPolicy {
-  if (input.hasCurrentRun) {
-    return "current";
-  }
-
-  if (input.graphRunning) {
-    return "new";
-  }
-
-  if (input.hasLastRun) {
-    return "reuse-last";
-  }
-
-  return "drop";
 }
 
 /** Legacy history has no reliable clock; never use replay wall time for it. */
@@ -383,7 +356,7 @@ export function recordedDuration(start: number, end: number): string | null {
 }
 
 /** 执行中过程窗是否钉在底部；程序滚动不要走这条，只认人滚。 */
-export const LIVE_VIEWPORT_SLOP_PX = 12;
+const LIVE_VIEWPORT_SLOP_PX = 12;
 
 export function isLiveViewportPinned(scrollTop: number, scrollHeight: number, clientHeight: number, slop = LIVE_VIEWPORT_SLOP_PX): boolean {
   return scrollHeight - scrollTop - clientHeight < slop;

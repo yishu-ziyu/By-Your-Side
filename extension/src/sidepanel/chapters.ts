@@ -18,7 +18,7 @@ const RESUME_TEXT = "继续原任务";
 const NAME_MAX = 14;
 
 /** 名字取用户原话：去掉开头的 @ 页面和多余空白，超长截断。名字来自用户输入，只经 textContent 进入页面。 */
-export function chapterName(text: string): string {
+function chapterName(text: string): string {
   const plain = text.replace(/\s+/g, " ").trim().replace(/^(@\S+\s*)+/, "").trim();
   const chars = Array.from(plain);
 

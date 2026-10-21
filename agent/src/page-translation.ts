@@ -13,7 +13,7 @@ export const needsTranslation = (text: string) => /\p{L}/u.test(text);
 const isExemptToken = (text: string) => text.length <= 3 || /^(?:[a-z][\w+.-]*:\/\/|www\.)\S+$/i.test(text) || (!/\s/.test(text) && /[_@/\\.:()[\]{}<>=#$]|\d/.test(text));
 
 /** 原样返回却含有目标语言以外文字的段落，视为没翻译。目标是中日韩时看拉丁字母，否则看非拉丁字母。 */
-export function looksUntranslated(source: string, translated: string, language: string): boolean {
+function looksUntranslated(source: string, translated: string, language: string): boolean {
   const text = source.trim();
 
   if (text !== translated.trim() || isExemptToken(text)) return false;
@@ -41,32 +41,6 @@ export function restoreTranslationWhitespace(translations: TranslationSegment[],
 
     return {id:s.id,text:(s.text.match(/^\s*/)?.[0]??'')+text.trim()+(s.text.match(/\s*$/)?.[0]??'')};
   }));
-}
-
-export function parseTranslations(text: string, blocks: TranslationBlock[]): TranslationSegment[] {
-  const raw = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-  let result: unknown;
-
-  // 必须原样重抛：上层按 SyntaxError 区分“无效 JSON”与“段落不匹配”。
-  try { result = JSON.parse(raw); } catch (error) { throw error; }
-
-  const source = blocks.flatMap(b => b.segments);
-
-  if (!Array.isArray(result) || result.length !== source.length) throw new Error('译文段落不完整，已保留之前完成的内容。');
-  const byId = new Map<string, {id:string; text:string}>();
-
-  for (const value of result) {
-    if (!value || typeof value.id !== 'string' || byId.has(value.id)) throw new Error('译文段落标识重复或无效。');
-    byId.set(value.id, value);
-  }
-
-  return source.map(segment => {
-    const value = byId.get(segment.id);
-
-    if (!value || value.id !== segment.id || typeof value.text !== 'string' || (!value.text.trim() && !!segment.text.trim()) || value.text.length > 24000) throw new Error('译文与原文未能对应，已保留之前完成的内容。');
-
-    return {id: segment.id, text: value.text};
-  });
 }
 
 /**
@@ -120,24 +94,24 @@ export function salvageTranslations(text: string, blocks: TranslationBlock[]): M
  * 同时在途的翻译请求数。109 段长文实测（阶跃 step-3.7-flash）：4 路约 70 s、8 路约 52 s，串行约 250 s；
  * 只测过阶跃，用户自配的服务商可能限并发，默认取 4。
  */
-export const PAGE_TRANSLATION_CONCURRENCY = 4;
+const PAGE_TRANSLATION_CONCURRENCY = 4;
 
 /** 没有任何一批写进页面的最长时间；只要还在出译文就不停。单次请求自身 60 s 超时。 */
-export const PAGE_TRANSLATION_IDLE_MS = 180_000;
+const PAGE_TRANSLATION_IDLE_MS = 180_000;
 
 /** 整个工具调用的硬上限，防止持续变化的页面永远跑下去。 */
-export const PAGE_TRANSLATION_MAX_MS = 900_000;
+const PAGE_TRANSLATION_MAX_MS = 900_000;
 
 /** 最先并行发出的几批每批只装这么多段：当前一屏的段落分散到几路同时翻、各自先写进页面，而不是等一整批 8 段。 */
-export const PAGE_TRANSLATION_FIRST_BATCH_BLOCKS = 2;
+const PAGE_TRANSLATION_FIRST_BATCH_BLOCKS = 2;
 
 /** 可继续的失败之后，占位保留这么久等模型再次调用翻译。 */
-export const RESUME_GRACE_MS = 15_000;
+const RESUME_GRACE_MS = 15_000;
 
 /** 写满输出上限（length）时对半拆开重试，最多拆两层（8 → 4 → 2 段）。 */
 const MAX_SPLIT_DEPTH = 2;
 
-export interface PageTranslationOptions {
+interface PageTranslationOptions {
   concurrency?: number; idleMs?: number; maxMs?: number;
   /** Removes the pending placeholders when the run ends. A user stop refuses further page steps, so this must not depend on them. */
   settle?: (command: TranslationCommand) => Promise<void>;

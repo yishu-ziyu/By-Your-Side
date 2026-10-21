@@ -4,7 +4,7 @@ import type { DocumentPersistence } from "./document-persistence.js";
 import { isRelevantMemory } from "./memory-relevance.js";
 
 /** 过往任务里替代密码、验证码、卡号等具体值的文字。 */
-export const TASK_SECRET_PLACEHOLDER = "（已隐去）";
+const TASK_SECRET_PLACEHOLDER = "（已隐去）";
 
 /**
  * 密码类关键词后面跟着分隔（是 / 为 / 应该是 / 改成 / 冒号 / 空格）的那个值，例如「密码应该是 Abc12345」里的 Abc12345。
@@ -60,9 +60,6 @@ function withoutRoute(task: TaskHistoryEntry): TaskHistoryEntry {
 
   return rest;
 }
-
-/** 本机宿主的过往任务文件名；扩展版存在 IndexedDB 里，格式相同。 */
-export const TASK_HISTORY_FILE = "tasks.json";
 
 interface HistoryFile { format: 1; tasks: TaskHistoryEntry[] }
 

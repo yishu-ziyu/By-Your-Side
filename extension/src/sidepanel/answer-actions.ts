@@ -12,7 +12,7 @@ import { uiEvent } from "./ui-trace.js";
 /** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
 const CHROME = ".gc-actions,.gc-faces,.gc-evidence,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
-export function resultCommandShortcut(): string {
+function resultCommandShortcut(): string {
   return /Mac/i.test(navigator.platform) ? "⇧⌘K" : "Ctrl+Shift+K";
 }
 
@@ -52,11 +52,11 @@ async function writeClipboard(text: string): Promise<void> {
   await navigator.clipboard.writeText(text);
 }
 
-export async function copyAnswerText(answer: HTMLElement): Promise<void> {
+async function copyAnswerText(answer: HTMLElement): Promise<void> {
   await writeClipboard(answerPlainText(answerBody(answer)));
 }
 
-export async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
+async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
   if (isShortened(answer)) return writeClipboard(visibleMarkdown(answerBody(answer)));
   await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown).trim() : answerPlainText(answerBody(answer)));
 }
@@ -68,7 +68,7 @@ function removeShowTab(button: Element): void {
   if (answer) refreshPrimaryAction(answer);
 }
 
-export function tableTsv(answer: HTMLElement): string | null {
+function tableTsv(answer: HTMLElement): string | null {
   const table = answer.querySelector("table");
   if (!table) return null;
   return [...table.querySelectorAll("tr")].map((row) =>
@@ -76,7 +76,7 @@ export function tableTsv(answer: HTMLElement): string | null {
   ).join("\n");
 }
 
-export async function copyAnswerTable(answer: HTMLElement): Promise<void> {
+async function copyAnswerTable(answer: HTMLElement): Promise<void> {
   const tsv = tableTsv(answerBody(answer));
   if (!tsv) throw new Error("没有表格");
   await writeClipboard(tsv);
@@ -113,7 +113,7 @@ export function listResultActions(answer: HTMLElement): ResultAction[] {
   return actions;
 }
 
-export function refreshPrimaryAction(answer: HTMLElement): void {
+function refreshPrimaryAction(answer: HTMLElement): void {
   const primary = answer.querySelector<HTMLButtonElement>(".answer-primary");
   if (!primary) return;
   const undo = fillUndoOf(answer);

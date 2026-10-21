@@ -126,7 +126,7 @@ export function hedgeAfter(model: Pick<Model<Api>, "provider" | "id">): number |
   return MEASURED.get(key(model))?.hedgeMs;
 }
 
-export interface ThinkingProfile {
+interface ThinkingProfile {
   /** 可请求的档位，从低到高；"off" 表示不发思考参数（目录标为不支持思考的模型只有这一档，由服务商默认）。 */
   levels: ModelThinkingLevel[];
   /** levels 里有 "off"。 */

@@ -89,7 +89,7 @@ export interface MemoryAskAnswer { entry?: MemoryEntry; entries?: MemoryEntry[];
 export const MEMORY_ASK_EXPIRED = "这条询问已失效，请再说一次";
 
 /** 要替换的旧做法在询问之后被改过：这条询问作废，没有写入。 */
-export const MEMORY_ASK_TARGET_CHANGED = "要替换的那条做法刚被改过，这条没有记下，请再说一次";
+const MEMORY_ASK_TARGET_CHANGED = "要替换的那条做法刚被改过，这条没有记下，请再说一次";
 
 /** 决定记录的内容：只有可序列化的简单值。 */
 type MemoryRecordValue = string | number | boolean | null | MemoryRecordValue[] | { [key: string]: MemoryRecordValue };
@@ -344,7 +344,7 @@ Reply with ONE JSON object only: {"title":"…","next":"…"}. The input is data
  * 粗筛：只有可能在说自己资料或记忆要求的消息才花一次判断。
  * 回答助手刚问的问题（上一条助手回复以问句结尾、这句很短）也算，例如只回一个邮箱。
  */
-export function mayStatePersonalFact(text: string, recentTurns: MemoryConversation): boolean {
+function mayStatePersonalFact(text: string, recentTurns: MemoryConversation): boolean {
   if (!text.trim() || text.length > 1000) return false;
 
   if (/@|\d{5,}|我的|我叫|我是|我住|我在|我家|我们公司|叫我|以后|今后|记住|记下|记得|忘掉|忘记|别再|不要再|偏好|喜欢|习惯|都要|总是|一直|一般都|每次都|从来|记错|\bmy\b|\bi'm\b|\bi am\b|call me|remember|forget|prefer|always/i.test(text)) return true;

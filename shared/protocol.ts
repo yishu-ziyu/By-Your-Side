@@ -22,10 +22,6 @@ export const STORAGE_SCHEMA_VERSION = 1;
 
 export const HOST_VERSION = "0.2.0";
 
-export const DEFAULT_PORT = 7758;
-
-export const DEFAULT_HOST = "127.0.0.1";
-
 /** Lead / 单会话路径的 sessionId；省略该字段即视为 Lead。 */
 export const LEAD_SESSION_ID = "main";
 
@@ -95,7 +91,7 @@ export interface PageContext {
 }
 
 /** 圈内网页文字最多带这么多字。 */
-export const CIRCLE_NOTE_MAX = 600;
+const CIRCLE_NOTE_MAX = 600;
 
 /** 用户消息附带的附件材料（截图、粘贴图或上传图片）。 */
 export interface ImageAttachment {
@@ -143,7 +139,7 @@ export function isAttachment(v: unknown): v is Attachment {
 /** idle = 无任务；running = Agent 在操作页面；user = 现在归你（任务还在，不是中止）。 */
 export type AgentRunState = "idle" | "running" | "user";
 
-export function isAgentRunState(v: unknown): v is AgentRunState {
+function isAgentRunState(v: unknown): v is AgentRunState {
   return v === "idle" || v === "running" || v === "user";
 }
 
@@ -916,7 +912,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "task_history_restore" && !(validRequestId(msg.requestId) && isTaskHistoryEntry(msg.task))) return null;
 
-
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
 
     if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
@@ -1102,7 +1097,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
 
-
     if (msg.type === "agent_event" && msg.event?.kind === "worker_task") {
       const e = msg.event;
 
@@ -1134,7 +1128,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
       if (event.learned !== undefined && (!isMemoryEntry(event.learned) || event.learned.kind !== "method" || event.learned.status !== "active")) return null;
     }
-
 
     if (msg.type === "agent_event" && msg.event?.kind === "site_notes") {
       const event = msg.event;
@@ -1402,15 +1395,12 @@ export function isPageElementSource(value: unknown): value is PageElementSource 
     && source.kind !== undefined && ['section', 'table', 'code', 'card', 'selection'].includes(source.kind);
 }
 
-
-export interface PageDocumentIdentity { document: string; url: string }
-
+interface PageDocumentIdentity { document: string; url: string }
 
 export function isPageDocumentIdentity(value: unknown): value is PageDocumentIdentity {
   if (!value || typeof value !== 'object') return false;
   // SAFETY: object established above; both fields are checked before admission.
   const identity = value as Partial<PageDocumentIdentity>;
-
 
   return typeof identity.document === 'string' && identity.document.length > 0 && identity.document.length <= 80
     && typeof identity.url === 'string' && identity.url.length > 0 && identity.url.length <= 4000;
@@ -1424,21 +1414,16 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
   const token = (input: unknown): input is string => typeof input === 'string' && input.length > 0 && input.length <= 80;
   const tab = (input: number | undefined) => input !== undefined && Number.isSafeInteger(input) && input > 0;
 
-
   if (message.type === 'PINPOINT_DOM_TARGET') {
     if (!tab(message.tabId)) return false;
 
-
     if (message.action === 'reveal') return isPageElementSource(message.source);
 
-
     if (message.action === 'identity') return typeof message.url === 'string' && message.url.length > 0 && message.url.length <= 4000;
-
 
     return message.action === 'resolve' && token(message.document) && typeof message.url === 'string' && message.url.length <= 4000
       && typeof message.query === 'string' && message.query.length > 0 && message.query.length <= 200;
   }
-
 
   if (message.type === 'MEMORY_FIELD_MARK') {
     const memory = message.memory;
@@ -1446,12 +1431,9 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
     return token(message.token) && !!memory && typeof memory === 'object' && token(memory.id) && typeof memory.text === 'string' && Number.isFinite(memory.createdAt);
   }
 
-
   if (message.type === 'MEMORY_FIELD_FORGET') return token(message.id);
 
-
   if (message.type === 'CIRCLE_EXIT') return true;
-
 
   if (message.type === 'CIRCLE_DRAWN') {
     const rect = message.rect;
@@ -1463,29 +1445,21 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
       && size(rect.x) && size(rect.y) && size(rect.width) && size(rect.height) && size(rect.viewportWidth) && size(rect.viewportHeight) && rect.viewportWidth > 0 && rect.viewportHeight > 0;
   }
 
-
   if (message.type === 'GHOST_QUICK_ACTION') return message.action === 'probe' || GHOST_QUICK_ACTIONS.includes(message.action as GhostQuickAction);
-
 
   if (message.type === 'FEED_DROPPED_ELEMENT') {
     if (message.action === 'validate') return isPageElementSource(message.source);
 
-
     if (message.action === 'consume') return token(message.token);
-
 
     return message.action === 'offer' && token(message.token) && isPageElementSource(message.source);
   }
 
-
   if (message.type !== 'VIEWPORT_ACTIVE_SECTION') return false;
-
 
   if (message.action === 'ready' || message.action === 'clear') return true;
 
-
   if (message.action === 'track') return 'enabled' in message ? typeof message.enabled === 'boolean' : 'tabId' in message && 'mode' in message && tab(message.tabId) && ['off', 'source', 'ai'].includes(message.mode ?? '');
-
 
   return message.action === 'update' && isPageElementSource(message.source) && message.position !== undefined && Number.isFinite(message.position)
     && message.position >= 0 && message.position <= 1 && message.viewportHeight !== undefined && Number.isFinite(message.viewportHeight) && message.viewportHeight > 0 && message.viewportHeight <= 20000 && message.index !== undefined && Number.isInteger(message.index) && message.index > 0 && message.index <= 2000;

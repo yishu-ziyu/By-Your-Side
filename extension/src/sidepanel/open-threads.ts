@@ -21,18 +21,18 @@ const HIDDEN_KEY = "sideagent_open_threads_hidden";
 /** 与 background/reading.ts 的存储键一致（chrome.storage.session）。 */
 const READING_STORE = "readingRecords";
 
-export const OPEN_THREADS_MAX = 3;
+const OPEN_THREADS_MAX = 3;
 
-export const OPEN_THREADS_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
+const OPEN_THREADS_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** 过往任务清单的缓存时长：起点区反复刷新时不每次都去宿主读。 */
 const PAST_TASKS_FRESH_MS = 20_000;
 
-export type OpenThreadAction =
+type OpenThreadAction =
   | { kind: "conversation"; conversationId: string }
   | { kind: "tab"; tabId: number; url: string };
 
-export interface OpenThread {
+interface OpenThread {
   id: string;
   title: string;
   /** 记录里的处境（悬停时看）；行上只露主题、时间和下一步。 */
@@ -45,7 +45,7 @@ export interface OpenThread {
 }
 
 /** 面板里拿得到的阅读记录字段（background ReadingRecord 的子集）。 */
-export interface ReadingSnapshot {
+interface ReadingSnapshot {
   threadId: string;
   source: { title: string; url: string; text: string; tabId: number };
   turns: Pick<ReadingTurn, "question" | "state">[];
@@ -53,7 +53,7 @@ export interface ReadingSnapshot {
   updatedAt: number;
 }
 
-export interface OpenThreadInputs {
+interface OpenThreadInputs {
   conversations: ConversationSummary[];
   pastTasks: TaskHistoryEntry[];
   readings: ReadingSnapshot[];
@@ -67,7 +67,7 @@ function hostOf(url: string): string {
 }
 
 /** 「刚才 / 今天 / 昨天 / N 天前」：清单只需要大概多久以前。 */
-export function relativeDay(at: number, now: number): string {
+function relativeDay(at: number, now: number): string {
   const day = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0);
 
  return d.getTime(); };
@@ -93,7 +93,7 @@ const PAST_OUTCOME_LINE: Record<TaskHistoryEntry["outcome"], string> = {
 };
 
 /** 纯函数：记录 → 至多 3 张卡。只收有依据的线索，新的在前。 */
-export function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
+function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
   const out: OpenThread[] = [];
   const known = new Map(input.conversations.map((c) => [c.id, c]));
   const claimed = new Set<string>();
@@ -161,7 +161,7 @@ export function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
 
 // ── 面板挂载：模块级状态，面板启动早期也能安全调用 refreshOpenThreads ──
 
-export interface OpenThreadsDeps {
+interface OpenThreadsDeps {
   /** 起点区（#starter）；卡片容器挂在它里面。 */
   root: HTMLElement;
   send: (msg: ClientMessage) => boolean;

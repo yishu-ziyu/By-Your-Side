@@ -191,7 +191,7 @@ export function plainToolError(errorText: string): string {
 /** 目标核对判「受阻」的原因类别（goal-check.ts）：站点连不上、要的页面或数据不存在、服务端拒绝。 */
 export const BLOCKED_CAUSES = ["unreachable", "missing", "refused", "unresponsive"] as const;
 
-export type BlockedCause = typeof BLOCKED_CAUSES[number];
+type BlockedCause = typeof BLOCKED_CAUSES[number];
 
 const BLOCKED_REASONS: Record<BlockedCause, string> = {
   unreachable: "网站现在连不上，稍后可以让我再试",

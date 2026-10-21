@@ -76,12 +76,10 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     toClient,
     options.voiceKey,
     options.voiceSession,
-    undefined,
     (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context),
     (event, fields) => options.log(`[voice] ${event} ${JSON.stringify(fields)}`),
     () => conversations.voiceTargets(),
     (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status),
-    (id, text, runId) => conversations.recordSpokenAck(id, text, runId),
     (origin, target) => conversations.isVoiceTask(origin, target),
     async (id, input) => {
       const runtime = conversations.get(id)?.runtime;

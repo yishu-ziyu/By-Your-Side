@@ -3,7 +3,7 @@
  * 回放不是回退。纯函数。
  */
 
-export const TRAIL_CAP = 40;
+const TRAIL_CAP = 40;
 
 export type TrailPoint = {
   tabId: number;

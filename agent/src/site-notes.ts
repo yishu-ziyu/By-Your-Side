@@ -7,11 +7,11 @@ import { looksSecret } from "./memory-decision.js";
  * 站点笔记：任务判做成后，从这一轮的操作里写出的这个网站的通用做法。
  * 只关于网站、不关于用户，所以不进记忆、不走「要记住吗」；只存本机，每个网站最多 5 条，新的替换最旧的；网站总数也有上限。
  */
-export const SITE_NOTES_PER_HOST = 5;
+const SITE_NOTES_PER_HOST = 5;
 
-export const SITE_NOTE_MAX = 200;
+const SITE_NOTE_MAX = 200;
 
-export const SITE_NOTES_MAX_SITES = 200;
+const SITE_NOTES_MAX_SITES = 200;
 
 type SiteNote = { text: string; runId: string; at: number };
 

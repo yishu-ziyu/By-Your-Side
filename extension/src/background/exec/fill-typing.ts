@@ -11,7 +11,7 @@ import { sendCommand } from "../debugger.js";
 export class TypingInterrupted extends Error {}
 
 /** 读回分级：一字不差、等价（只差空白或大小写）、网站改了格式、接在原内容后面、没变。 */
-export type TypingGrade = "exact" | "equivalent" | "transformed" | "appended" | "unchanged";
+type TypingGrade = "exact" | "equivalent" | "transformed" | "appended" | "unchanged";
 
 /** 在页面里执行：this 是元素（按节点调用）或按 target 找（domops）。 */
 export type PageRun = <T>(fn: (this: unknown, target: string | null, ...args: never[]) => T, args: unknown[]) => Promise<T | undefined>;

@@ -27,7 +27,7 @@ const attachHolds = new Map<number, number>();
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** CAP-02C：父 tab → OOPIF child session（仅 flatten auto-attach 发现的已拥有页子目标）。 */
-export type ChildFrameSession = {
+type ChildFrameSession = {
   parentTabId: number;
   sessionId: string;
   targetId: string;
@@ -86,34 +86,6 @@ function clearChildSessions(tabId: number): void {
   if (map) for (const session of map.values()) childSessionsBySession.delete(session.sessionId);
   childSessionsByTab.delete(tabId);
   autoAttachReady.delete(tabId);
-}
-
-/** 只读：当前 tab 已登记的 OOPIF child session（无真实 attach 证据则为空）。 */
-export function listChildFrameSessions(tabId: number): ChildFrameSession[] {
-  return [...(childSessionsByTab.get(tabId)?.values() ?? [])];
-}
-
-/**
- * 在已拥有 tab 上启用 flatten auto-attach，登记跨进程 iframe 的 child session。
- * 不开放公共 raw CDP 的任意 Target.*；仅宿主为已拥有页面建立内部绑定。
- */
-export async function ensureChildFrameSessions(tabId: number): Promise<ChildFrameSession[]> {
-  await ensureAttached(tabId);
-
-  if (!autoAttachReady.has(tabId)) {
-    try {
-      await chrome.debugger.sendCommand({ tabId }, "Target.setAutoAttach", {
-        autoAttach: true,
-        waitForDebuggerOnStart: false,
-        flatten: true,
-      });
-      autoAttachReady.add(tabId);
-    } catch (e) {
-      throw new Error(`OOPIF auto-attach 失败：${oneLine(e)}`);
-    }
-  }
-
-  return listChildFrameSessions(tabId);
 }
 
 function noteAttachedToTarget(parentTabId: number, params: {
@@ -272,7 +244,7 @@ export async function sendCommand<T = unknown>(
   }
 }
 
-export async function detach(tabId: number): Promise<void> {
+async function detach(tabId: number): Promise<void> {
   clearChildSessions(tabId);
   attached.delete(tabId);
   inFlight.delete(tabId);
@@ -284,11 +256,6 @@ export async function detach(tabId: number): Promise<void> {
   } catch {
     /* 已分离则忽略 */
   }
-}
-
-export async function detachAll(): Promise<void> {
-  attachHolds.clear();
-  await Promise.all([...attached].map((id) => detach(id)));
 }
 
 // 用户打开 DevTools 或其他原因导致分离时，同步内部状态与网络捕获完整性；受限环境静默跳过。

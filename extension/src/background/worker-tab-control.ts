@@ -6,7 +6,7 @@ import { executionKey, parseExecutionKey } from "./tab-bindings.js";
 const STOPPED = "worker 已停止，页面已交回父 Agent；操作未执行";
 
 /** 注册整个调用（包括异步权限检查），移交前排空；停止标记跨 SW 重启保留。 */
-export class WorkerTabControl {
+class WorkerTabControl {
   private readonly stopped = new Set<string>();
   private readonly inflight = new Map<string, Set<Promise<unknown>>>();
 

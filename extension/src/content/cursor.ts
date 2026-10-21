@@ -1153,36 +1153,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return document.elementFromPoint(cx, cy);
   }
 
-  /** 视口里这块区域下面有没有页面内容（文字、图片、控件）；标注层和光标层不参与命中。 */
-  function coversPageContent(r: { x: number; y: number; w: number; h: number }): boolean {
-    const seen = new Set<Element>();
-
-    for (let i = 0; i <= 4; i++) {
-      for (let j = 0; j <= 2; j++) {
-        const px = r.x + 1 + ((r.w - 2) * i) / 4;
-        const py = r.y + 1 + ((r.h - 2) * j) / 2;
-        const hit = document.elementsFromPoint(px, py).find((e) => !e.closest(`[${OVERLAY_ATTR}]`));
-
-        if (!hit || seen.has(hit)) continue;
-        seen.add(hit);
-
-        if (hit.matches("img,svg,video,canvas,input,textarea,select,button,iframe")) return true;
-
-        for (const node of hit.childNodes) {
-          if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) continue;
-          const range = document.createRange();
-          range.selectNodeContents(node);
-
-          for (const t of range.getClientRects()) {
-            if (Math.min(t.right, r.x + r.w) > Math.max(t.left, r.x) && Math.min(t.bottom, r.y + r.h) > Math.max(t.top, r.y)) return true;
-          }
-        }
-      }
-    }
-
-    return false;
-  }
-
   function applyMarkBox(
     el: HTMLDivElement,
     rect: SideAgentRect,

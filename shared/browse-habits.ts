@@ -30,7 +30,7 @@ const id = (v: unknown): v is string => typeof v === 'string' && /^[a-zA-Z0-9_-]
 
 const short = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 
-export const BROWSE_HABIT_KEY = /^[a-z0-9][a-z0-9:.-]{1,63}$/;
+const BROWSE_HABIT_KEY = /^[a-z0-9][a-z0-9:.-]{1,63}$/;
 
 export function isBrowseHabit(v: unknown): v is BrowseHabit {
   if (!v || typeof v !== 'object') return false;

@@ -15,7 +15,7 @@ import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 export type MemoryContextRule = "always" | "site" | "in-validity" | "asked";
 
 /** 每层上限：条数与字数。「关于你」沿用升级前的 40 条 / 4000 字。 */
-export const MEMORY_CONTEXT_CAPS = {
+const MEMORY_CONTEXT_CAPS = {
   facts: { entries: 40, chars: 4000 },
   inValidity: { entries: 10, chars: 2000 },
   siteTasks: { entries: 3, chars: 2400 },
@@ -25,7 +25,7 @@ export const MEMORY_CONTEXT_CAPS = {
 /** 每轮带的记忆总字数上限（各层上限之和再收紧），保证不挤占任务上下文。 */
 export const MEMORY_CONTEXT_MAX_CHARS = 9000;
 
-export interface MemoryContextInput {
+interface MemoryContextInput {
   entries: MemoryEntry[];
   tasks: TaskHistoryEntry[];
   /** 当前网址的主机名；没有网页时为 null。 */

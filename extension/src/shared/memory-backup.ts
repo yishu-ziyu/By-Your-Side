@@ -16,7 +16,7 @@ export const BACKUP_LAST_KEY = "memory_backup_last";
 export const BACKUP_FOLDER = "By-Your-Side";
 
 /** 自定义类型只用来认出自己发起的下载：网页操作的下载记录要排除它。 */
-export const BACKUP_URL_PREFIX = "data:application/x-by-your-side-memory-backup+json;base64,";
+const BACKUP_URL_PREFIX = "data:application/x-by-your-side-memory-backup+json;base64,";
 
 /**
  * 备份文件明文落在下载文件夹：浏览记录、习惯归纳和删除名单都由网页内容生成（网址查询串、输入框的值可能带 token），

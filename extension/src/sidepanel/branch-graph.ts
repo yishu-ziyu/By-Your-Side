@@ -15,7 +15,6 @@ export const PROCESS_MAX_PX = 176;
 export const ROW_PX = 22;
 
 export type GraphKind = "b1" | "b3" | "you";
-export type LaneState = "running" | "done" | "dead";
 
 export type GraphTool = {
   id: string;
@@ -31,7 +30,7 @@ export type GraphTool = {
   user?: boolean;
 };
 
-export function isLocalHost(host: string): boolean {
+function isLocalHost(host: string): boolean {
   const name = host.replace(/:\d+$/, "").toLowerCase();
 
   return name === "localhost" || name === "0.0.0.0" || name === "::1" || name.startsWith("127.") || /^(\d{1,3}\.){3}\d{1,3}$/.test(name);
@@ -49,7 +48,7 @@ export function hostOfUrl(url: unknown): string | null {
   }
 }
 
-export function isTabFanTool(name: string, params: Record<string, unknown>): boolean {
+function isTabFanTool(name: string, params: Record<string, unknown>): boolean {
   if (name === "open_tab") return true;
   if (name === "tabs") return params.action === "open" || params.action === "switch";
   if (name === "snapshot" || name === "read_element" || name === "read_elements") return typeof params.tabId === "number";

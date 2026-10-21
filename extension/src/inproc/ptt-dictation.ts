@@ -7,7 +7,7 @@
  * 所以连不上和不回话分开判，服务端每回一个事件就重新等，不按一个固定时长丢掉慢而正常的听写。
  */
 
-export const DICTATION_URL = "wss://api.stepfun.com/step_plan/v1/realtime?model=stepaudio-2.5-realtime";
+const DICTATION_URL = "wss://api.stepfun.com/step_plan/v1/realtime?model=stepaudio-2.5-realtime";
 
 /** 浏览器 WebSocket 的最小子集。 */
 export interface DictationSocket {

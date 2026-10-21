@@ -4,14 +4,14 @@
  * 所以重开侧栏回放历史时同样出现。
  */
 
-export const STEER_CHIPS = [
+const STEER_CHIPS = [
   { label: '改成对比表格', text: '把正在写的回答改成对比表格。' },
   { label: '浓缩成 3 句话', text: '把正在写的回答浓缩成 3 句话。' },
 ] as const;
 
 const OWN_WORDS = '按你的补充';
 
-export function steerLabel(text: string): string {
+function steerLabel(text: string): string {
   return STEER_CHIPS.find(chip => chip.text === text.trim())?.label ?? OWN_WORDS;
 }
 

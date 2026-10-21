@@ -7,7 +7,7 @@ import { oneLine } from "../util.js";
 import { readCurrentDocument } from "./page-readiness.js";
 import { withTimeout } from "../timeout.js";
 
-export interface ScreenshotResult {
+interface ScreenshotResult {
   imageBase64: string;
   mediaType: "image/png";
   /** 图像像素宽/高（PNG 解码实测，恒大于 0；解码失败则整个调用明确失败）。点击用的 CSS 坐标见 cssWidth/cssHeight。 */

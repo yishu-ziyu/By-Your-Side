@@ -377,7 +377,7 @@ try {
 const pass = !fatal && Object.keys(checks).length > 0 && Object.values(checks).every(Boolean);
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify({
-  case: "artifact-open", contract: ", startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(),
+  case: "artifact-open", startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(),
   status: pass ? "pass" : "fail", checks, evidence, fatal,
 }, null, 2));
 

@@ -19,7 +19,7 @@ import {
 } from "./protocol.js";
 import { requiresControlGate } from "./effect-policy.js";
 
-export type ControlOwner = "agent" | "user";
+type ControlOwner = "agent" | "user";
 
 /** 接管期间禁止落地的浏览器写操作。至少覆盖完成标准列出的那些。 */
 export const WRITE_TOOLS = [
@@ -55,8 +55,6 @@ export const USER_BLOCKED_ERROR = "页面现在归你，操作未执行";
 
 /** 页归另一会话时的拦截文案前缀；宿主据此在对方空闲时自动接手。 */
 export const FOREIGN_TAB_ERROR = "该页正在由其他会话使用";
-
-export const HANDBACK_NO_PAGE = "取不到当前页面，控制权仍归你。没有回到之前的工作标签。";
 
 export function isWriteTool(name: string): name is ToolName {
   return WRITE_TOOL_SET.has(name as ToolName);
@@ -157,7 +155,7 @@ export function shouldRestoreUserControlBanner(opts: {
   return opts.owner === "user" && opts.changeInfo.status === "complete";
 }
 
-export type ControlSnapshot = {
+type ControlSnapshot = {
   owner: ControlOwner;
   generation: number;
   lastStatus: AgentRunState;
@@ -167,7 +165,7 @@ export type ControlSnapshot = {
   completed?: string[];
 };
 
-export function parseControlSnapshot(raw: unknown): ControlSnapshot | null {
+function parseControlSnapshot(raw: unknown): ControlSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as { owner?: unknown; generation?: unknown; lastStatus?: unknown; team?: unknown };
 
@@ -262,92 +260,8 @@ export function uplinkLostWhileHeld(owner: ControlOwner): {
   return { abortGate: true, hideBanner: true, lastStatus: "idle" };
 }
 
-/**
- * SW 启动后第一次 uplink 状态。hydrate 完成前不得按默认 agent 走 abortGate，
- * 否则会把存储里的 user 覆盖成 agent。
- */
-export function applyFirstUplinkState(opts: {
-  hydrateDone: boolean;
-  owner: ControlOwner;
-  connState: "connecting" | "connected" | "disconnected";
-}): { applyLost: boolean; abortGate: boolean; hideBanner: boolean; lastStatus: AgentRunState } {
-  if (!opts.hydrateDone) {
-    return { applyLost: false, abortGate: false, hideBanner: false, lastStatus: "idle" };
-  }
-
-  if (opts.connState === "connected") {
-    return {
-      applyLost: false,
-      abortGate: false,
-      hideBanner: false,
-      lastStatus: opts.owner === "user" ? "user" : "idle",
-    };
-  }
-
-  const lost = uplinkLostWhileHeld(opts.owner);
-
-  return { applyLost: true, ...lost };
-}
-
-/**
- * 正确启动顺序：先灌快照，再处理立即到来的 connecting。
- * 存储里的 user 必须还在，写操作仍被挡。
- */
-export function bootWithStoredControl(
-  stored: unknown,
-  firstConn: "connecting" | "disconnected",
-): { gate: ControlGate; lastStatus: AgentRunState; persisted: ControlSnapshot } {
-  const gate = new ControlGate();
-  const applied = applyControlSnapshot(gate, stored);
-
-  const first = applyFirstUplinkState({
-    hydrateDone: true,
-    owner: gate.control,
-    connState: firstConn,
-  });
-
-  let lastStatus: AgentRunState = applied.restoredUser ? "user" : applied.lastStatus;
-
-  if (first.applyLost && first.abortGate) {
-    gate.abort();
-    lastStatus = first.lastStatus;
-  }
-
-  return { gate, lastStatus, persisted: snapshotControl(gate, lastStatus) };
-}
-
-/** Agent 客户端断开：held 时不得清 hold（扩展可能只是 SW 重启）。 */
-export function clientGoneWhileHeld(held: boolean): { clearHold: boolean; abortStream: boolean } {
-  if (held) return { clearHold: false, abortStream: false };
-
-  return { clearHold: true, abortStream: true };
-}
-
 export function shouldFinishRunOnDisconnect(userHasPage: boolean): boolean {
   return !userHasPage;
-}
-
-export type HandbackPrep =
-  | { ok: true; context: PageContext }
-  | { ok: false; reason: string };
-
-/** 交还只认用户此刻的活动标签。取不到就停住，绝不回退到旧工作标签。 */
-export function prepareHandback(
-  active: { id: number; title: string; url: string } | null,
-  _previousWorkingTabId?: number | null,
-): HandbackPrep {
-  if (!active || typeof active.id !== "number" || !Number.isFinite(active.id)) {
-    return { ok: false, reason: HANDBACK_NO_PAGE };
-  }
-
-  return {
-    ok: true,
-    context: {
-      tabId: active.id,
-      title: active.title ?? "",
-      url: active.url ?? "",
-    },
-  };
 }
 
 export function handbackContinueText(context: PageContext, snapshot: string,originalGoal?:string): string {
@@ -375,7 +289,7 @@ function sessionKey(sessionId?: string | null): string {
 }
 
 /** 已完成写操作的保留上限；超出后按完成先后淘汰，SW 重启由持久快照补回。 */
-export const CONTROL_COMPLETED_MAX = 256;
+const CONTROL_COMPLETED_MAX = 256;
 
 type CompletedOutcome =
   | { status: "resolved"; name: ToolName; value: unknown }
@@ -666,11 +580,11 @@ export class SessionHold {
   }
 }
 
-export const TEAM_TAB_CLOSED = "绑定页已关闭，未续跑";
+const TEAM_TAB_CLOSED = "绑定页已关闭，未续跑";
 
-export const TEAM_SNAPSHOT_FAILED = "页面还在，但没读到新状态，未续跑";
+const TEAM_SNAPSHOT_FAILED = "页面还在，但没读到新状态，未续跑";
 
-export const TEAM_ALL_RESTORED = "全队已恢复";
+const TEAM_ALL_RESTORED = "全队已恢复";
 
 export const CLAIM_BLOCKED_ERROR = "绑定页已关闭，未认领其他标签";
 
@@ -898,14 +812,6 @@ export function fromTeamMemberHandback(m: TeamMemberHandback): MemberHandbackPag
   };
 }
 
-export function handbackPagesIndependent(pages: MemberHandbackPage[]): boolean {
-  const ok = pages.filter((p): p is Extract<MemberHandbackPage, { ok: true }> => p.ok);
-  const tabIds = new Set(ok.map((p) => p.context.tabId));
-  const snaps = new Set(ok.map((p) => p.snapshot));
-
-  return ok.length > 0 && tabIds.size === ok.length && snaps.size === ok.length;
-}
-
 function cloneTeam(view: TeamView): TeamView {
   return {
     ...view,
@@ -992,7 +898,7 @@ export function teamOwnerBanner(team: TeamView): {
   return { status: "Agent 在工作", sub: `${n}`, action: "接管", actionEnabled: true };
 }
 
-export function memberPhaseLabel(phase: TeamMemberPhase): string {
+function memberPhaseLabel(phase: TeamMemberPhase): string {
   switch (phase) {
     case "running":
     case "waiting_tool":

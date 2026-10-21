@@ -6,18 +6,15 @@
 import { base64Bytes } from "./bytes.js";
 import { VOICE_DIAG_SAMPLE_RATE, type VoiceCommand, type VoiceDiagRecord } from "./voice.js";
 
-/** Audio retention: whichever bound is reached first. */
-export const VOICE_CAPTURE_MAX_BYTES = 2 * 1024 ** 3;
-
 export const VOICE_CAPTURE_MAX_AGE_DAYS = 14;
 
 /** A turn never leaves more than this buffered in memory while waiting for its commit. */
 const VOICE_CAPTURE_PENDING_MAX_BYTES = 8 * 1024 ** 2;
 
-export type VoiceCaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
+type VoiceCaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
 /** Turn may be null for upstream ASR that cannot be attributed. */
-export interface VoiceCaptureLine {
+interface VoiceCaptureLine {
   at: number;
   voiceId: string;
   conversationId: string;
@@ -41,7 +38,7 @@ export const voiceCaptureDayKey = (at: number): string => {
 };
 
 /** 16-bit mono PCM WAV; the recorder writes the header itself so both takes stay auditionable. */
-export function wavBytes(pcm: Uint8Array, sampleRate = VOICE_DIAG_SAMPLE_RATE): Uint8Array {
+function wavBytes(pcm: Uint8Array, sampleRate = VOICE_DIAG_SAMPLE_RATE): Uint8Array {
   const length = pcm.length - (pcm.length % 2);
   const out = new Uint8Array(44 + length);
   const view = new DataView(out.buffer);

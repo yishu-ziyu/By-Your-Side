@@ -27,7 +27,7 @@ type UndoProbe = { token: string | null; name: string; kind: UndoKind; sensitive
 type UndoOutcome = "restored" | "user_changed" | "gone" | "failed";
 
 /** 页面里怎么找到这一栏：AX 引用的节点、定位串、点击落点，或者当前焦点。 */
-export type UndoWhere = { backendNodeId: number } | { target: string } | { point: [number, number] } | { focused: true };
+type UndoWhere = { backendNodeId: number } | { target: string } | { point: [number, number] } | { focused: true };
 
 interface Entry { token: string; name: string; kind: "text" | "select" | "check" | "radio"; sensitive: boolean; before: UndoState; after: UndoState }
 

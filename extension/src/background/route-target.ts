@@ -8,8 +8,7 @@ import { callDom, ensureDomOps } from "./exec/input.js";
 import { resolveWorkingTab } from "./state.js";
 
 /**
- * 怎么认一个控件（YIS-94，提交前核对用）：无障碍树里的角色 + 名字 + 所在区域，与模型看到的同源。
- * 前提小实验 scripts/probes/route-locator/ 在 7 个页面上找错 0 次。
+ * 怎么认一个控件（提交前核对用）：无障碍树里的角色 + 名字 + 所在区域，与模型看到的同源。
  * 产品原有的 loc=role: 自己算名字，和模型看到的不一致（预订页 11 个控件 6 个找不到），所以不用它。
  */
 // 文字块也能认（ROUTE_TEXT_ROLES）。
@@ -24,7 +23,7 @@ const MAX = 40;
 const clean = (text: string | undefined) => (text ?? "").replace(/\s+/g, " ").trim();
 
 /** 页面上每个可认的控件及其描述，按 backendDOMNodeId 索引。 */
-export function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
+function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]));
 
   const up = (n: AxNodeLite) => {

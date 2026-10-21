@@ -149,12 +149,12 @@ function truncate(text: string, max: number): string {
 export const TABS_LIST_AT_START = "; the open tabs at task start are already in the task's first message, so call list only if tabs may have changed since";
 export const TABS_RESULT_IN_BACKGROUND = ' A result left in a background tab is expected: the reply automatically gives the user a "切过去看" button for the working tab, so never call show just to deliver a result.';
 /** 专用工具做不到时改用 js 的说明；语音没有 js 工具，导出语音工具表时整句换掉。 */
-export const TRANSLATION_JS_FALLBACK = " It always covers the whole page: when the user wants only some paragraphs translated on the page, translate those yourself and insert each translation right after its source paragraph with js: a display:block span with data-bys-translation=\"manual\", text set only through textContent, original kept (translate and restore remove these spans).";
-export const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page: for colored highlights, highlights limited to some paragraphs, or other changes to how the page looks, edit the page with js instead: split the text node and wrap the word in a styled span; never rewrite innerHTML.";
+const TRANSLATION_JS_FALLBACK = " It always covers the whole page: when the user wants only some paragraphs translated on the page, translate those yourself and insert each translation right after its source paragraph with js: a display:block span with data-bys-translation=\"manual\", text set only through textContent, original kept (translate and restore remove these spans).";
+const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page: for colored highlights, highlights limited to some paragraphs, or other changes to how the page looks, edit the page with js instead: split the text node and wrap the word in a styled span; never rewrite innerHTML.";
 export const JS_FALLBACK = new RegExp([TRANSLATION_JS_FALLBACK, MARK_JS_FALLBACK].map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
 
 /** browser_run 结束时附上的新页快照的标题行（tool-failure-policy 按它和 "\n[After this program" 截掉尾巴再比较错误）。 */
-export const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no separate snapshot needed):";
+const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no separate snapshot needed):";
 
 /** 程序里不会换页的步骤：等待、核对和宿主组合的只读帮手。其余按 effect-policy 判断，未声明只读的都当作可能换页。 */
 const PROGRAM_QUIET_STEPS: ReadonlySet<string> = new Set(["sleep", "wait_for", "check", "assert", "pageInfo", "waitForLoad", "waitForNetworkIdle", "saveFile"]);
@@ -225,7 +225,7 @@ const MODEL_TOOL_OF: Record<string, string> = {
   worker_tabs: "take_tab",
 };
 
-export const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
+const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
 
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }

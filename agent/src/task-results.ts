@@ -22,10 +22,9 @@ import {
 } from "../../shared/task-results.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 
-export type { TaskResultItem, TaskResultRegistration, TaskResultState } from "../../shared/task-results.js";
 
 /** 协调、探针与位置类动作不产生用户可见结果，不自动建项；需要时模型仍可显式登记。 */
-export const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover", "ask_user_to_point"]);
+const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover", "ask_user_to_point"]);
 
 export class TaskResultBook {
   private items: TaskResultItem[] = [];

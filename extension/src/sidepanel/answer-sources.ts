@@ -3,7 +3,7 @@
  * 。
  * 点开出处 → 主窗口切到那一页（已开着就复用）、尽量定位并高亮段落。输入框旁的「当前页」标签随之换成这一页，不另挂第二个。
  *
- * 诚实边界（与 delivery-facts-view 一致）：
+ * 诚实边界（与 delivery-presentation 一致）：
  * - 只用交付事实链 `facts.sources`（本 run 真实读到/打开的页面）；旧记录没有这个字段就什么都不画。
  * - 图标只加在正文链接指向已读页面的地方；模型正文里没读过的链接不标成出处。
  * - 段落定位复用 PINPOINT_DOM_TARGET：找不到唯一位置就不假装高亮，回到页顶并提示「已打开来源页」。
@@ -11,7 +11,7 @@
 import { isPopout, targetWindowId } from "./target-window.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
-import { sourceLabel } from "./delivery-facts-view.js";
+import { sourceLabel } from "./delivery-presentation.js";
 import { captureCitationContext, citationValues, toast } from "./sonar-citations.js";
 import { answerPanelSection, refreshAnswerPanel, siteGlyph } from "./answer-actions.js";
 import { createElement as icon, ExternalLink } from "lucide";

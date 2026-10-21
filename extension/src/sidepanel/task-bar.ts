@@ -19,7 +19,7 @@ import { formatDuration } from "./steps.js";
 // ── 纯逻辑：文案与展示模型 ─────────────────────────────────────────
 
 /** 阻塞/等待原因 → 人话。直接取 task_view 的真实 reason，不合并成含糊「思考中」。 */
-export function waitingCopy(reason: string, detail: string | null): { text: string; detail: string | null } {
+function waitingCopy(reason: string, detail: string | null): { text: string; detail: string | null } {
   const map: Record<string, string> = {
     human_control: "页面现在归你，助手在等你交还",
     restart_checkpoint: "上次会话断开了，任务停在中途",
@@ -57,7 +57,7 @@ export function stateHeadline(state: TaskView["state"], resumable?: boolean): st
   }
 }
 
-export function clip(text: string, max: number): string {
+function clip(text: string, max: number): string {
   const t = text.trim();
 
   return t.length > max ? `${t.slice(0, Math.max(0, max - 1))}…` : t;
@@ -72,11 +72,11 @@ function hostOf(url: string): string {
 }
 
 /** 任务条摘要行上的网站名：只要主机名，标题留给展开后的「作用于」。 */
-export function pageHostOf(info: { url?: string }): string | null {
+function pageHostOf(info: { url?: string }): string | null {
   return info.url ? hostOf(info.url) || null : null;
 }
 
-export function pageLabelOf(info: { title?: string; url?: string }): string {
+function pageLabelOf(info: { title?: string; url?: string }): string {
   const host = info.url ? hostOf(info.url) : "";
   const title = clip(info.title ?? "", 24);
 
@@ -86,7 +86,7 @@ export function pageLabelOf(info: { title?: string; url?: string }): string {
 }
 
 /** 当前活动行：lead 不带名字，worker 带名字；无活动时为 null。 */
-export function activityText(view: TaskView): string | null {
+function activityText(view: TaskView): string | null {
   if (!view.active.length) return null;
 
   return view.active
@@ -95,14 +95,14 @@ export function activityText(view: TaskView): string | null {
 }
 
 /** 与 background 的 CONTROL_TIMEOUT_MS 同值：超过这个时间仍未见到权威结果，就如实说「还没得到确认」。 */
-export const CONTROL_PENDING_TIMEOUT_MS = 10_000;
+const CONTROL_PENDING_TIMEOUT_MS = 10_000;
 
-export interface ControlState {
+interface ControlState {
   takeover: { pending: boolean; since: number | null; failReason: string | null };
   stop: { pending: boolean; since: number | null; accepted: boolean; failReason: string | null };
 }
 
-export interface ControlNote {
+interface ControlNote {
   /** requested=请求中；unconfirmed=还没得到确认（可再试） */
   phase: "requested" | "unconfirmed";
   text: string;
@@ -111,7 +111,7 @@ export interface ControlNote {
 }
 
 /** 控制请求的文案：区分「请求中」与「已生效」（已生效由状态层表达），失败不宣布已停手。 */
-export function controlCopy(control: ControlState, state: TaskView["state"] | null, now: number): ControlNote | null {
+function controlCopy(control: ControlState, state: TaskView["state"] | null, now: number): ControlNote | null {
   if (control.takeover.failReason) {
     return { phase: "unconfirmed", tone: "fail", retry: "takeover", text: `接管未生效：${clip(control.takeover.failReason, 40)}` };
   }
@@ -147,13 +147,13 @@ export function controlCopy(control: ControlState, state: TaskView["state"] | nu
   return null;
 }
 
-export interface DraftMaterials {
+interface DraftMaterials {
   page: { tabId: number; title: string; url: string } | null;
   selection: string | null;
   attachments: Array<{ id: string; name: string }>;
 }
 
-export interface SentRequestMaterials {
+interface SentRequestMaterials {
   requestId: string;
   action: "start" | "steer";
   status: "sending" | "accepted" | "rejected" | "failed" | "unknown";
@@ -166,18 +166,18 @@ export interface SentRequestMaterials {
   note: string | null;
 }
 
-export interface TaskMaterialItem {
+interface TaskMaterialItem {
   key: string;
   kind: "page" | "selection" | "attachment";
   label: string;
 }
 
-export interface TaskMaterialSet {
+interface TaskMaterialSet {
   runId: string | null;
   items: TaskMaterialItem[];
 }
 
-export interface MaterialRow {
+interface MaterialRow {
   key: string;
   kind: TaskMaterialItem["kind"];
   kindLabel: string;
@@ -185,7 +185,7 @@ export interface MaterialRow {
   removable: boolean;
 }
 
-export interface TaskBarModel {
+interface TaskBarModel {
   visible: boolean;
   state: TaskView["state"] | "draft";
   /** 已结束的任务：open = 还差一些、接着说就行；done = 做完了。进行中和纯聊天为 null。 */
@@ -208,7 +208,7 @@ export interface TaskBarModel {
   control: ControlNote | null;
 }
 
-export interface TaskBarInputs {
+interface TaskBarInputs {
   view: TaskView | null;
   draft: DraftMaterials | null;
   /** 草稿里已写但还没发出的正文：有正文时才为一行「页面」材料（发送时后台一定会带上页面上下文）。 */
@@ -271,10 +271,10 @@ function taskRows(set: TaskMaterialSet, resolvedPageLabel: string | null): Mater
 }
 
 /** 发出后这么久还没回执，才在材料区写「正在发送」。用户的话已经立刻出现在对话里，回执快的时候不需要第二处反馈。 */
-export const SENDING_QUIET_MS = 800;
+const SENDING_QUIET_MS = 800;
 
 /** 组装展示模型：纯函数，同一输入必得同一输出。 */
-export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
+function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   const { view, draft, sending, taskMaterials, control, now } = input;
   const newest = sending.at(-1);
   // 刚发出的这一条还在安静期：连更早那条“没确认收到”也先不讲，免得先亮旧的那条、0.8 秒后又换成这一条。
@@ -392,7 +392,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
 
 // ── DOM 装配 ───────────────────────────────────────────────────────
 
-export interface TaskBarOptions {
+interface TaskBarOptions {
   /** 挂载点；TaskBar 拥有其内容（replaceChildren）。 */
   root: HTMLElement;
   resolvePage(tabId: number): Promise<{ title?: string; url?: string } | null>;

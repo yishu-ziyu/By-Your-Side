@@ -61,7 +61,7 @@ export function dimPage(key: string): Promise<void> {
   return paint(previous, key);
 }
 
-export function forgetGlowTab(tabId: number): void {
+function forgetGlowTab(tabId: number): void {
   for (const [key, litTab] of lit) if (litTab === tabId) lit.delete(key);
 }
 

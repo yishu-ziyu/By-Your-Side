@@ -85,7 +85,7 @@ export function userWaiting<T extends object>(options: T): T & ModelQueueOptions
 }
 
 /** 换到备用模型多久之后，用户的下一条消息回主模型（用户 10-08 定的 5 分钟）。 */
-export const MODEL_SWITCH_BACK_AFTER_MS = 5 * 60_000;
+const MODEL_SWITCH_BACK_AFTER_MS = 5 * 60_000;
 
 /**
  * 模型服务出错（挂起超时、连接错误、429、5xx、流提前结束）时，第一次失败就换备用模型接着做，每轮最多换一次。

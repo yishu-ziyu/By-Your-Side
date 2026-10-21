@@ -1,6 +1,6 @@
 import type {ExtensionFactory, ToolResultEvent} from '@earendil-works/pi-coding-agent';
 
-export interface RepeatedToolFailure {toolName:string;error:string;attempts:number}
+interface RepeatedToolFailure {toolName:string;error:string;attempts:number}
 
 /** Same tool + same input: a different target (e.g. three pages fetched in parallel) is not a retry. */
 function operationKey(event:Pick<ToolResultEvent,'toolName'|'input'>):string {

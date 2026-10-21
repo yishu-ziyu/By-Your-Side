@@ -9,7 +9,7 @@
  *   其他非空字符串               — 原始 CSS（穿 open shadow；同源 frame 有作用域）
  * 非法输入返回 null。`:has-text` 等 Playwright 伪类仍拒绝（未实现正式语义）。
  */
-export type ParsedTarget =
+type ParsedTarget =
   | { kind: "ref"; n: number }
   | { kind: "css"; sel: string }
   | { kind: "loc"; sel: string }

@@ -72,7 +72,7 @@ export function severalAsks(requirements: readonly string[], interjections: numb
 }
 
 /** 快速模型通道首字偶尔 5–8 秒（09-27 智谱实测），留足余量；只在一个任务收尾时等这一次。 */
-export const GOAL_CHECK_TIMEOUT_MS = 18_000;
+const GOAL_CHECK_TIMEOUT_MS = 18_000;
 
 /**
  * 不算「做过事」的工具：只交付回答、记个人记忆、记目标或执行账本，不读不改页面。
@@ -144,7 +144,7 @@ export function pageAwaitsEmailStep(pageText: string): boolean {
 }
 
 /** 助手自己的回答说还有事没做成（「确认邮件还没送达」「没能点确认链接」）。 */
-export function claimsUnfinished(reply: string): boolean {
+function claimsUnfinished(reply: string): boolean {
   return /还没(能|有)?(完成|点|收到|送达|到|确认|提交)|没能|未能|尚未(完成|收到|送达|确认)|没有(完成|收到|送达)|not (yet )?(done|finished|arrived|received|confirmed)|couldn'?t|could not|has(n'?t| not) arrived/i.test(reply);
 }
 
@@ -228,7 +228,7 @@ export function readWords(text: string, into: ReadIndex): void {
  * 由模型而不是这里定输赢，因为产品名、地名同样是大写词组，用户要推荐时名字本来就不来自页面。
  * 名和姓前后顺序都认，因为名单常写成「DeBellis, Derek」或把名和姓断在两行；只认姓不行，good、west 这类普通词会冒充读到过。
  */
-export function unreadNames(reply: string, seen: ReadIndex): string[] {
+function unreadNames(reply: string, seen: ReadIndex): string[] {
   if (!seen.complete) return [];
   const word = "\\p{Lu}(?:\\p{Ll}|['’-]|\\p{Lu}(?=\\p{Ll}))+";
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:Dr\\. )?${word}(?: \\p{Lu}\\.)?(?: ${word}){1,2}(?![\\p{L}\\p{N}])`, "gu");

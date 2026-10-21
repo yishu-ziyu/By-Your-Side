@@ -26,7 +26,7 @@ const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: re
 
 export interface KeyTestResult { ok: boolean; ms?: number; reason?: string; detail?: string }
 
-export interface ErrorCardHost {
+interface ErrorCardHost {
   /** 把卡插进消息流的当前位置（接续锚点之前），让之后到达的答案自然跟在它下面。 */
   mount(el: HTMLElement): void;
   /** 底部换 key 面板挂在这里（侧栏根容器）。 */

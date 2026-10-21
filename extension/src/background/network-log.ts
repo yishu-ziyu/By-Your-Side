@@ -42,7 +42,7 @@ function setLife(tabId: number, life: NetworkLifecycle): void {
   lifecycles.set(tabId, life);
 }
 
-export function listenNetworkEvents(): void {
+function listenNetworkEvents(): void {
   if (listening) return;
   const events = chrome.debugger?.onEvent;
 

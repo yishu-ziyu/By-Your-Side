@@ -13,10 +13,10 @@ import type { AgentUiEvent } from "../../shared/protocol.js";
 import { defineTool } from "./define-tool.js";
 
 /** 单个文本文件上限；图片另有独立上限。 */
-export const ARTIFACT_MAX_CHARS = 256_000;
+const ARTIFACT_MAX_CHARS = 256_000;
 
 /** 交给用户的截图（PNG 的 base64）上限：约 6 MB 图片；更大的整页长图请用户缩小范围。 */
-export const IMAGE_ARTIFACT_MAX_CHARS = 8_000_000;
+const IMAGE_ARTIFACT_MAX_CHARS = 8_000_000;
 
 /** 只接受一层文件名：不许带目录、不许以点开头，扩展名决定侧栏怎么显示与下载。 */
 const FILENAME = /^[^/\\:*?"<>|.][^/\\:*?"<>|]{0,99}\.[A-Za-z0-9]{1,8}$/;
@@ -169,7 +169,7 @@ export function saveFileFromProgram(store: ArtifactStore, params: SaveFileParams
   return { filename, chars: content.length, lines, overwritten, shown };
 }
 
-export type ArtifactsToolOptions = { emit: (event: AgentUiEvent) => void; /** 与 browser_run 共用时传入；不传则自建。 */ store?: ArtifactStore };
+type ArtifactsToolOptions = { emit: (event: AgentUiEvent) => void; /** 与 browser_run 共用时传入；不传则自建。 */ store?: ArtifactStore };
 
 type Command = "create" | "update" | "rewrite" | "get" | "delete";
 

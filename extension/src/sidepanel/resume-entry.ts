@@ -16,11 +16,10 @@ import { plainStep } from "../../../shared/user-facing.js";
 
 const STATUS_LABEL: Record<string, string> = { pending: "还没做", blocked: "没做成", unknown: "结果未知", satisfied: "做完了" };
 
-export const RESUME_TIMING_SAMPLE_MAX = 100;
 
-export const RESUME_PENDING_TIMEOUT_MS = 15_000;
+const RESUME_PENDING_TIMEOUT_MS = 15_000;
 
-export function resultStatusLabel(status: string): string {
+function resultStatusLabel(status: string): string {
   return STATUS_LABEL[status] ?? status;
 }
 
@@ -45,7 +44,7 @@ const INTERRUPTION_DETAIL: Record<string, string> = {
   manual_continuation: "你中止了任务",
 };
 
-export function waitingText(reason: string, detail: string | null): string {
+function waitingText(reason: string, detail: string | null): string {
   const base = WAITING_TEXT[reason] ?? reason;
 
   if (reason === "restart_checkpoint" && detail) {
@@ -57,13 +56,13 @@ export function waitingText(reason: string, detail: string | null): string {
   return base;
 }
 
-export interface ResumeAvailability {
+interface ResumeAvailability {
   available: boolean;
   reason: string | null;
 }
 
 /** 「继续」按钮的可用性：只以 T02 视图的 resumable（真实恢复依据）为准。 */
-export function resumeAvailability(view: TaskView | null, checkpointUnavailable: boolean): ResumeAvailability {
+function resumeAvailability(view: TaskView | null, checkpointUnavailable: boolean): ResumeAvailability {
   if (!view) return { available: false, reason: "还没有当前任务的状态" };
 
   if (checkpointUnavailable) return { available: false, reason: "原任务无法接着做。新任务要另开一个会话。" };
@@ -88,7 +87,7 @@ export function resumeAvailability(view: TaskView | null, checkpointUnavailable:
   return { available: false, reason: "当前没有需要接续的原任务" };
 }
 
-export interface ResumeSummary {
+interface ResumeSummary {
   visible: boolean;
   tone: "running" | "waiting" | "unknown" | "blocked" | "stopped";
   headline: string;
@@ -195,7 +194,7 @@ function headlineFor(view: TaskView, checkpointUnavailable: boolean, remainingCo
  * 纯投影：视图 → 用户能读的摘要（目标、已完成、剩余、阻塞原因、合法下一步、缺口）。
  * 不推断视图里没有的事实；缺字段时如实少说。
  */
-export function buildResumeSummary(view: TaskView | null, checkpointUnavailable = false, resumeNote: string | null = null): ResumeSummary {
+function buildResumeSummary(view: TaskView | null, checkpointUnavailable = false, resumeNote: string | null = null): ResumeSummary {
   if (!view) {
     return { visible: false, tone: "running", headline: "", goal: null, revisions: [], done: [], remaining: [], blocking: null, interruptionDetail: null, nextStep: "", resume: { available: false, reason: null }, gaps: [], line: "", note: null };
   }
@@ -282,15 +281,13 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   };
 }
 
-export interface ResumeEntryOptions {
+interface ResumeEntryOptions {
   root: HTMLElement;
   /** 提交一次 resume 任务动作；返回是否真正交给了上行通道。 */
   sendResume: (request: TaskActionRequest) => boolean;
   /** 恢复前核对用：当前活动页；拿不到时不发送，交由用户打开原页面。 */
   getContext: () => Promise<PageContext | null>;
   newRequestId?: () => string;
-  now?: () => number;
-  scheduleFrame?: (callback: () => void) => void;
   pendingTimeoutMs?: number;
 }
 
@@ -304,20 +301,13 @@ export class ResumeEntry {
   private noteRunId: string | null = null;
   private pendingRequestId: string | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly samples: number[] = [];
-  private readonly now: () => number;
-  private readonly scheduleFrame: (callback: () => void) => void;
   private disposed = false;
 
-  constructor(private readonly opts: ResumeEntryOptions) {
-    this.now = opts.now ?? (() => performance.now());
-    this.scheduleFrame = opts.scheduleFrame ?? ((cb) => requestAnimationFrame(() => cb()));
-  }
+  constructor(private readonly opts: ResumeEntryOptions) {}
 
-  /** 收到权威 task_view（实时或重连补取）→ 重建摘要，并记录一帧呈现时序。 */
+  /** 收到权威 task_view（实时或重连补取）→ 重建摘要。 */
   apply(view: TaskView | null, options: { checkpointUnavailable?: boolean } = {}): void {
     if (this.disposed) return;
-    const started = this.now();
     this.view = view;
     this.checkpointUnavailable = options.checkpointUnavailable === true;
 
@@ -328,12 +318,6 @@ export class ResumeEntry {
     if (this.note && view && (view.runId !== this.noteRunId || view.state === "running")) this.note = null;
     const summary = buildResumeSummary(this.view, this.checkpointUnavailable, this.note);
     this.render(summary);
-    this.scheduleFrame(() => {
-      if (this.disposed) return;
-      this.samples.push(this.now() - started);
-
-      if (this.samples.length > RESUME_TIMING_SAMPLE_MAX) this.samples.shift();
-    });
   }
 
   clear(): void {
@@ -359,13 +343,6 @@ export class ResumeEntry {
     this.note = receipt.message?.trim() || (receipt.status === "rejected" ? "这次继续没有执行。" : "这次继续没有得到确认。");
     this.noteRunId = this.view?.runId ?? null;
     this.render(buildResumeSummary(this.view, this.checkpointUnavailable, this.note));
-  }
-
-  timing(): { count: number; p95: number | null; samples: number[] } {
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    const p95 = sorted.length ? sorted[Math.ceil(0.95 * sorted.length) - 1]! : null;
-
-    return { count: sorted.length, p95, samples: sorted };
   }
 
   dispose(): void {

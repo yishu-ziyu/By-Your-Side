@@ -38,7 +38,7 @@ async function callPage<Args extends unknown[], Result>(
   return first.result as Awaited<Result>;
 }
 
-export async function ensureEffectScript(tabId: number): Promise<void> {
+async function ensureEffectScript(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_FILE], world: "ISOLATED" });
 }
 

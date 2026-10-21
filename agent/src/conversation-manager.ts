@@ -59,11 +59,11 @@ function continuationInput(text:string):{amendment?:string}|null {
 
 function isInterruptedResumeText(text:string):boolean { return continuationInput(text)!==null; }
 
-export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
+interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
 
 /** Identity is captured by each runtime's emitter, never read from the selected panel. */
 /** 旧会话能否让出标签页：没有进行中/等待交还/中断的任务、没有在途浏览器调用。结果未知的写入不拦（10-10 用户裁决）。 */
-export function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | null }): boolean {
+function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | null }): boolean {
   if (input.busy) return false;
   const snapshot = input.snapshot;
 
@@ -235,19 +235,6 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
 
     if (!updated) return;
     this.emit({ type: "agent_event", conversationId, event: { kind: "user_delivery", delivery: updated } });
-  }
-  recordSpokenAck(conversationId: string, text: string, runId: string | null): void {
-    const snap = this.getTaskProgress(conversationId);
-
-    if (!snap || snap.runId !== runId) return;
-
-    if (this.progress.get(conversationId)?.hasFinding()) return;
-    const latest = snap.conversationContext?.latestDelivery;
-
-    if (latest && latest.kind !== "ack") return;
-
-    if (latest?.kind === "ack") return;
-    this.publishDelivery(conversationId, "ack", text, undefined, { runId });
   }
   async routeVoiceInput(id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, route?: VoiceRouteContext):Promise<VoiceRouteResult> {
     if (this.entries.get(id)?.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);

@@ -15,7 +15,7 @@ import type { ModelOption } from "../../shared/protocol.js";
  * 注：历史注释曾记录 opencode-go 直连 v2.6-flash 被上游 400 拒绝、故必须走本地池；
  * 该结论写于 models.json 注册 v2.6-flash 之前，现已过期，不要据此剔除，以实测为准。
  */
-export const FEATURED_MODEL_IDS = new Set<string>([
+const FEATURED_MODEL_IDS = new Set<string>([
   "step-plan/step-5-preview",
   "cliproxy/mimo-v2.6-flash",
   "commandcode/xiaomi/mimo-v2.6-flash",

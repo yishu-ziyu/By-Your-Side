@@ -284,9 +284,6 @@ export async function revealCircle(target: { tabId: number; set: number }, n: nu
 
 export function isCircling(): boolean { return active !== null; }
 
-/** 从侧栏退出圈画（Esc、再次进入等）。 */
-export function exitCircling(): void { active?.stop(); }
-
 /** 去掉第 n 圈（附件被去掉时）。页面已经换了就什么都不做。 */
 export function removeCircle(n: number): void {
   if (circleTabId == null) return;

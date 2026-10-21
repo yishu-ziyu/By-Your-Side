@@ -188,7 +188,7 @@ function commandCodeListing(value: unknown): CommandCodeListing | undefined {
   };
 }
 
-export async function fetchCommandCodeModels(signal?: AbortSignal): Promise<CommandCodeListing[]> {
+async function fetchCommandCodeModels(signal?: AbortSignal): Promise<CommandCodeListing[]> {
   const response = await omitCookies(`${COMMANDCODE_BASE_URL}/v1/models`, { signal });
 
   if (!response.ok) throw new Error(`Command Code 模型清单返回 ${response.status}`);

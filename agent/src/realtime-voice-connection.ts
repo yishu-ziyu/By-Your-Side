@@ -29,7 +29,7 @@ export const MODEL = 'stepaudio-3-realtime-preview';
 /**
  * 人设紧跟在身份句之后（实测放在全部规则末尾时几乎不影响口吻），并写明它只管语气措辞、与规则冲突时以规则为准。
  */
-export function withPersona(persona: string | undefined, instructions: string): string {
+function withPersona(persona: string | undefined, instructions: string): string {
   const text = persona?.trim();
 
   if (!text) return instructions;
@@ -44,7 +44,7 @@ type ProviderEvent = Parameters<RealtimeVoiceConnection["handle"]>[0];
 
 const ENDPOINT = `wss://api.stepfun.com/v1/realtime?model=${MODEL}`;
 
-export const STEP_VOICE = DEFAULT_STEP_VOICE;
+const STEP_VOICE = DEFAULT_STEP_VOICE;
 
 const SAMPLE_RATE = 24_000;
 
@@ -120,7 +120,7 @@ const TOOL_DEFINITIONS = [
 
 export interface RealtimeTaskAction {action:'start'|'steer'|'pause'|'resume';targetId?:string;includePending?:boolean}
 
-export interface RealtimeVoiceTools {
+interface RealtimeVoiceTools {
   browserTool?: (call: RealtimeBrowserCall, signal: AbortSignal) => Promise<unknown>;
   task_action?: (text:string,action:RealtimeTaskAction,inputSequences?:number[])=>Promise<unknown>;
   browser_request: (text: string,inputSequences?:number[]) => Promise<unknown>;
@@ -128,7 +128,7 @@ export interface RealtimeVoiceTools {
   task_status: () => Promise<unknown>;
 }
 
-export interface RealtimeVoiceConnectionOptions {
+interface RealtimeVoiceConnectionOptions {
   key: string;
   model?: RealtimeVoiceModel;
   routeTranscript?: (text: string, current: () => boolean) => Promise<{ native: boolean; spokenText?: string }>;
@@ -150,7 +150,7 @@ export interface RealtimeVoiceConnectionOptions {
   runClaimed?: (text: string) => Promise<string | null>;
 }
 
-export interface VoiceRequestInput {
+interface VoiceRequestInput {
   voiceId: string;
   turn: number;
   itemId: string;
@@ -242,7 +242,7 @@ function serializeToolOutput(value: unknown, preserveExecution = false): string 
 }
 
 /** session.updated 的 echo 必须和请求一致才允许 ready。纯函数，便于离线用反例检查。 */
-export function configurationIssues(createdModel: string | null, session: Record<string, unknown>, serverVad = true, voice: string = STEP_VOICE, model: RealtimeVoiceModel = MODEL): string[] {
+function configurationIssues(createdModel: string | null, session: Record<string, unknown>, serverVad = true, voice: string = STEP_VOICE, model: RealtimeVoiceModel = MODEL): string[] {
   const issues: string[] = [];
 
   if (createdModel !== model) issues.push(`session.created 返回的模型是 ${createdModel ?? '缺失'}`);

@@ -70,8 +70,6 @@ export function setSessionClaimBlocked(key: string, blocked: boolean): void {
   else claimBlocked.delete(normalized);
 }
 
-export function isTabTransferring(tabId: number): boolean { return tabTransfers.has(tabId); }
-
 /**
  * 页面交接围栏。调用后该页立刻停止接受接手方以外的新操作，调用方再排空已进入的操作，
  * 然后才变更归属。返回的释放函数必须放在 finally 里，失败也要归还围栏。
@@ -90,7 +88,7 @@ export function beginTabTransfer(tabId: number, claimKey: string): () => void {
 }
 
 /** 旧工作指针离开页面不改变页资源归属；围栏按页而不是按工作指针判定。 */
-export function assertTabNotTransferring(tabId: number, key: string): void {
+function assertTabNotTransferring(tabId: number, key: string): void {
   const owner = tabTransfers.get(tabId);
 
   if (owner !== undefined && owner !== keyOf(key)) throw new Error("这个页面正在给另一个会话，操作未执行");
@@ -293,7 +291,7 @@ export async function resolveTabForRead(tabId: number | undefined, key: string):
   return chrome.tabs.get(tabId);
 }
 
-export function assertResourceAccess(resource: TabResource | undefined, key: string): void {
+function assertResourceAccess(resource: TabResource | undefined, key: string): void {
   if (resource) assertTabNotTransferring(resource.tabId, key);
 
   if (mayAccessResource(resource, key)) return;

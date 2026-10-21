@@ -32,7 +32,7 @@ export function isTaskNextStep(value: unknown): value is TaskNextStep {
     && Array.isArray(d.resultIds) && d.resultIds.length <= 64 && d.resultIds.every(taskId);
 }
 
-export interface NextStepFacts {
+interface NextStepFacts {
   inFlight?: boolean;
   readbackRequired?: boolean;
   /** 原地打转被宿主停下（no-progress）。 */

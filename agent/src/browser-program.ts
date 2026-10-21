@@ -51,7 +51,7 @@ const NOT_IN_PROGRAMS = new Set<string>(["worker_tabs", "guide_step", "page_text
  * browser.* 的 camelCase 别名：每个 snake_case 方法都认它的 camelCase 写法，账本仍记规范 RPC 名。
  * 模型按 JS 习惯写 pressKey、readElement，只认一部分时它猜错一次就多一轮（#257）。
  */
-export const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
+const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
   .filter(name => name.includes("_") && !NOT_IN_PROGRAMS.has(name))
   .map(name => [name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()), name]));
 
@@ -59,7 +59,7 @@ export const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
  * browser_run 组合 helper 的能力事实源：METHODS 白名单与 browser_run 描述文本都从这里取，
  * 防止文档与代码漂移（Issue §十）。它们在宿主内组合现有 RPC 完成，不新增 extension RPC。
  */
-export const BROWSER_PROGRAM_HELPERS = [
+const BROWSER_PROGRAM_HELPERS = [
   { name: "waitFor", summary: "等待唯一目标：state=visible|visible+enabled|attached|detached|hidden（统一 target：@ref / CSS / loc=role / loc=href / xpath= / text=）", composed: "read_element expect 轮询（只读）" },
   { name: "waitForElement", summary: "waitFor 的语义别名", composed: "waitFor" },
   { name: "check", summary: "check({text|selector,state=appears|disappears,timeoutMs=3000}) 等文字或目标出现/消失，不叫模型；返回 {ok,waitedMs,polls}，超时返回 ok:false 不抛错", composed: "read_element expect 轮询（只读）" },
@@ -90,7 +90,7 @@ const HELPER_SNAKE_ALIASES: Record<string, string> = Object.fromEntries(BROWSER_
   .filter(([snake, name]) => snake !== name && !(TOOL_NAMES as readonly string[]).includes(snake)));
 
 /** 程序里可用的 camelCase 别名。 */
-export function availableRpcAliases(): string[] {
+function availableRpcAliases(): string[] {
   return Object.keys(RPC_ALIASES);
 }
 

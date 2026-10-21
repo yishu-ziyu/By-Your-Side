@@ -35,7 +35,7 @@ import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-action
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal, PictureInPicture2 } from "lucide";
 import { Camera, SquareDashedMousePointer, ImagePlus } from "lucide";
-import { ChevronDown, ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, FileText, TextQuote, Keyboard, SquareTerminal, Workflow, Eye, ListChecks, Highlighter, ArrowLeftRight, X as XIcon, Languages, Download, Users, Bookmark, Wrench, Search } from "lucide";
+import { ChevronRight, ArrowDown, Globe, PenLine, MousePointerClick, List, Brain, FileText, TextQuote, Keyboard, SquareTerminal, Workflow, Eye, ListChecks, Highlighter, ArrowLeftRight, X as XIcon, Languages, Download, Users, Bookmark, Wrench, Search } from "lucide";
 import {
   StepChain,
   chipState,
@@ -72,7 +72,7 @@ import { LEAD_SESSION_ID, isLeadSession, isPageInteractionMessage, parseServerMe
 import { checkNoteForUser, evidenceLine, mergeEvidence, nextWorkingTab, readbackKey } from "./claim-hold.js";
 import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, HeldReason, ModelOption, PageContext, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
-import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
+import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { conversationBackgroundLabel, conversationDayGroup, conversationOutcome, conversationRelativeTime, resultCardCopy } from "./selectors.js";
@@ -80,16 +80,16 @@ import { TaskBar, stateHeadline } from "./task-bar.js";
 import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
 import { ResumeEntry } from "./resume-entry.js";
-import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
+import { deliveryPresentation } from "./delivery-presentation.js";
 import { PANEL_PORT_NAME, parseDeliveryReceipt, type BgToPanel, type DeliveryReceipt, type FillUndoView, type PanelHistoryEntry, type PanelToBg, type UserTurnContext } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { NUDGE_DRAFT_KEY } from "../shared/nudge.js";
 import { installProactiveCard } from "./proactive-card.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
-import { memoryScopeLabel, type MemoryApplyResult } from "./memory.js";
+import { memoryScopeLabel } from "./memory.js";
 import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
 import { setUiRunSource, uiEvent } from "./ui-trace.js";
-import { mountMemoryDrawer, type MemoryInspection } from "./memory-drawer.js";
+import { mountMemoryDrawer } from "./memory-drawer.js";
 import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
@@ -262,7 +262,6 @@ const PLACEHOLDER_USER = "补充要求，按 Enter 保存。点「交还」后�
 const PLACEHOLDER_DRAINING = "正在接管，助手不再做新的操作。";
 
 const PLACEHOLDER_PARTIAL = "部分页面已交还。其余页面仍归你。";
-
 
 // 渲染出的链接一律新开标签页
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -505,7 +504,6 @@ document.addEventListener("answer-command", (event) => {
 });
 
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
-
 
 // 附件瓷贴与动作菜单 DOM
 const attachmentsStrip = document.getElementById("attachments-strip") as HTMLElement;
@@ -1806,7 +1804,6 @@ const deliveredBubbles = new Map<string, HTMLElement>();
 const resultByConversation = new Map<string, { summary: string | null; remaining: string[]; unknown: boolean; speechFailed: boolean }>();
 
 /** T06：正式交付 → 结果可见的下一帧采样；只在验收模式读取。 */
-const deliveryTiming = new DeliveryPresentationTiming();
 
 /** Lead 当前 run 是否启用了 explicit deliveryMode。 */
 let leadDeliveryMode: "explicit" | null = null;
@@ -2184,7 +2181,6 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   }
 
   appendToMessages(div);
-
 
   // 用户发了新消息就回到底部重新跟随，之前往上翻过也一样。
   pinned = true;
@@ -3087,7 +3083,6 @@ function buildMemoryAsk(askId: string): HTMLElement {
 // ── 执行步骤聚合块 ──────────────────────────────────────────
 // 一次 run（用户消息 → agent_end）只有一条状态行：[光球] 正在做什么 · 耗时（在 summary 上）。
 // 思考块、旁白与动作卡收进同一个 details 的 body；第一张动作卡出现时展开（#47），结束后收起成历史。
-
 
 /** 最后一轮是刚发出的用户消息，后面还没有过程行或回答。 */
 function awaitingFirstStep(): boolean {
@@ -5011,7 +5006,6 @@ function handleUserDelivery(delivery: UserDelivery): void {
   const cid = delivery.conversationId;
 
   if (!cid || cid !== selectedConversationId) return;
-  const receivedAt = performance.now();
   const currentRunId = conversations.get(cid)?.runId ?? null;
   // 晚到的旧 run 交付只能归档到自己的历史位置，不能改写当前结果卡。
   const staleForStrip = delivery.kind !== "ack" && currentRunId !== null && delivery.runId !== null && delivery.runId !== currentRunId;
@@ -5060,7 +5054,6 @@ function handleUserDelivery(delivery: UserDelivery): void {
 
     noteRunAnswer(delivery, answer);
     scrollToEnd();
-    scheduleDeliveryVisible(existing!, receivedAt);
 
     return;
   }
@@ -5080,16 +5073,6 @@ function handleUserDelivery(delivery: UserDelivery): void {
 
   noteRunAnswer(delivery, bubble);
   scrollToEnd();
-  scheduleDeliveryVisible(bubble, receivedAt);
-}
-
-/** 收到正式交付 → 结果可见的下一帧；历史回放不算新的呈现。 */
-function scheduleDeliveryVisible(bubble: HTMLElement, receivedAt: number): void {
-  if (applyingHistory) return;
-  requestAnimationFrame(() => {
-    const visible = bubble.isConnected && (bubble.textContent ?? "").trim().length > 0;
-    deliveryTiming.record(receivedAt, visible);
-  });
 }
 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
@@ -5315,22 +5298,6 @@ function adoptPlanResume(): void {
 function queryTaskView(): void {
   if (!conversationReady || !transportConnected) return;
   send({ type: "task_view_query", requestId: crypto.randomUUID() });
-}
-
-// 验收测量入口（只读）：触发一次视图补取 / 读取「收到快照 → 摘要下一帧」的采样。
-// 不产生任务、权限或页面动作，供隔离浏览器验收脚本使用。
-// 验收钩子只在显式验收模式下暴露（acceptance 脚本打开 sidepanel.html?acceptance=t05）
-if (new URLSearchParams(location.search).get("acceptance") === "t05") {
-  (globalThis as { __t05QueryView?: () => void }).__t05QueryView = () => queryTaskView();
-  (globalThis as { __resumeEntryTiming?: () => unknown }).__resumeEntryTiming = () => resumeEntry.timing();
-}
-
-// T06 验收测量入口（只读）：把后台会转发的同一信封喂给真实接收路径，读取「收到交付 → 结果可见」采样。
-// 只渲染交付，不发送任何请求、不产生任务或页面动作；验收脚本从这里驱动 50 次事件更新。
-if (new URLSearchParams(location.search).get("acceptance") === "t06") {
-  (globalThis as { __t06AcceptDelivery?: (message: ServerMessage) => void }).__t06AcceptDelivery =
-    (message) => handleBgMessage({ kind: "server", conversationId: message.conversationId, msg: message });
-  (globalThis as { __t06DeliveryTiming?: () => unknown }).__t06DeliveryTiming = () => deliveryTiming.summary();
 }
 
 function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" }>): void {
@@ -6475,7 +6442,6 @@ takeoverBtn.onclick = () => {
   if (takeoverBtn.dataset.mode === "handback") port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
   else requestTakeover();
 };
-
 
 const marginalia = createMarginalia(document.querySelector<HTMLSelectElement>("#marginalia-mode")!, document.getElementById("marginalia-rail")!);
 

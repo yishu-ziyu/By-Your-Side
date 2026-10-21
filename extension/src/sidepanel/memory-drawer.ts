@@ -8,7 +8,7 @@ import { MemoryHistoryOpen } from "./memory-history-open.js";
 import type { AskInput, MemoryAskCard } from "./memory-ask.js";
 import { uiEvent } from "./ui-trace.js";
 
-export type MemoryInspection = {
+type MemoryInspection = {
   action: Extract<AgentUiEvent, { kind: "memory" }>["action"];
   entries: MemoryEntry[];
   message?: string;
@@ -25,9 +25,9 @@ type MemoryEdit = {
 
 type MemoryForget = { id: string; pendingRequestId: string | null; error: string };
 
-export type MemoryUiRequest = { action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; entryId?: string };
+type MemoryUiRequest = { action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; entryId?: string };
 
-export interface MemoryDrawerDeps {
+interface MemoryDrawerDeps {
   memoryDrawer: HTMLElement;
   memoryShade: HTMLElement;
   memoryOpen: HTMLButtonElement;

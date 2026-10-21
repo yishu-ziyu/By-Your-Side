@@ -4,7 +4,7 @@
  */
 
 /** pill 高约 20px + 与标注框的间距约 6px + 标注框 pad 6px ≈ 上方所需视口高度。 */
-export const MARK_LABEL_SPACE_NEEDED_PX = 34;
+const MARK_LABEL_SPACE_NEEDED_PX = 34;
 
 /** elementViewportTop = 元素包围盒的视口顶距（rect.y）。上方空间不足时返回 "below"。 */
 export function markLabelPlacement(elementViewportTop: number): "above" | "below" {

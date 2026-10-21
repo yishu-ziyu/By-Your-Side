@@ -22,7 +22,7 @@ export function emptyTeamRun(): TeamRunState {
 }
 
 /** 两个 run 身份是否冲突：都已知且不同。只知一边时不能判定，避免误清。 */
-export function conflictingRuns(a: string | null | undefined, b: string | null | undefined): boolean {
+function conflictingRuns(a: string | null | undefined, b: string | null | undefined): boolean {
   return isRunId(a) && isRunId(b) && a !== b;
 }
 
@@ -43,7 +43,7 @@ export function observeRunStarted(state: TeamRunState, runId: string | null | un
   return { team: state.team, runId };
 }
 
-export interface TeamStatusDecision {
+interface TeamStatusDecision {
   accept: boolean;
   state: TeamRunState;
 }

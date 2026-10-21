@@ -6,7 +6,7 @@
 import { ORB_STYLE_STORAGE_KEY, parseOrbStyle, type OrbStyle } from '../../../shared/voice.js';
 import { mountOrb, type OrbState } from './voice-orb.js';
 
-export interface VideoOrbLook { rate: number; brightness: number; scale: number }
+interface VideoOrbLook { rate: number; brightness: number; scale: number }
 
 /** 起伏的上限；画圆时按它留边，放大时不出 canvas。 */
 const MAX_SCALE = 1.04;
@@ -17,7 +17,7 @@ const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
  * 视频光球在各状态下的样子。不低于 1 倍速：30 帧素材降到 0.35 倍时肉眼明显发卡（10-07 预览）。
  * 在想稍快；在听随音量轻微放大；在说更亮并有节奏地起伏。
  */
-export function videoOrbLook(state: OrbState, level: number, t: number): VideoOrbLook {
+function videoOrbLook(state: OrbState, level: number, t: number): VideoOrbLook {
   if (state === 'thinking') return { rate: 1.45, brightness: 1, scale: 1 };
 
   if (state === 'listening') return { rate: 1.1, brightness: 1.08, scale: 1 + 0.03 * clamp01(level) };

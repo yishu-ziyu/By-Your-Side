@@ -79,7 +79,7 @@ export function isStoredNudgeOffer(v: unknown): v is StoredNudgeOffer {
     && 'tabId' in v && Number.isSafeInteger(v.tabId) && optional(v, 'documentId', 'string');
 }
 
-export type NudgeReceipt = StoredNudgeOffer & { result: NudgePreparationResult };
+type NudgeReceipt = StoredNudgeOffer & { result: NudgePreparationResult };
 export function nudgeReceipts(value: unknown): NudgeReceipt[] {
   if (!Array.isArray(value)) return [];
   return value.filter((offer): offer is NudgeReceipt => isStoredNudgeOffer(offer) && offer.result !== undefined);

@@ -4,7 +4,7 @@
  */
 import type { MarkAction, MarkActionId } from "../../../shared/protocol.js";
 
-export function parseMarkActions(raw: unknown): MarkAction[] | undefined {
+function parseMarkActions(raw: unknown): MarkAction[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
   const out: MarkAction[] = [];
   const seen = new Set<MarkActionId>();
@@ -45,7 +45,7 @@ const DESTRUCTIVE_ZH = /^(删除|清空|支付|发送|归档)/;
 const DESTRUCTIVE_EN = /^(delete|remove|pay|send|archive)(\s|$)/i;
 
 /** 要点的控件文案是否属于删除 / 清空 / 支付 / 发送 / 归档。普通「分享」「编辑」「更多」不是。 */
-export function isDestructiveLabel(text: string): boolean {
+function isDestructiveLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
 
   if (!t) return false;
@@ -82,7 +82,7 @@ export function isPayLabel(text: string): boolean {
   return /[¥￥$€£]\s?\d/.test(t) && /支付|付款|购买|下单|pay|buy|order/i.test(t);
 }
 
-export function confirmLabelForDestructive(text: string): string {
+function confirmLabelForDestructive(text: string): string {
   const t = text.trim();
 
   if (t.startsWith("清空") || /^clear/i.test(t)) return "清空";

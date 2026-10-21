@@ -42,7 +42,7 @@ export interface TaskHistoryEntry {
 }
 
 /** 短主题与下一步的长度上限（字符）。 */
-export const TASK_LABEL_MAX = 24;
+const TASK_LABEL_MAX = 24;
 
 export const TASK_HISTORY_MAX = 200;
 

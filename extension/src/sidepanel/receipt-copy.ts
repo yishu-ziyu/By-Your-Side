@@ -9,7 +9,7 @@ function diffLine(diff: TaskReceiptDiff): string {
 }
 
 /** 侧栏回执的展示文案；inProcess 表示归入执行过程记录。 */
-export type ReceiptCopy = { summary: string; detail: string; collapsed: boolean; inProcess?: boolean };
+type ReceiptCopy = { summary: string; detail: string; collapsed: boolean; inProcess?: boolean };
 
 /** 普通接收回执不复述整条输入；拒绝和不确定结果仍直接展示。阶段分层：accepted=送达，applied=已应用并核对。 */
 export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string): ReceiptCopy {

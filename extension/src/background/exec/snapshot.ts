@@ -667,7 +667,7 @@ async function domSnapshot(tabId: number, scope: "full_page" | "viewport"): Prom
 }
 
 /** Compact visible prose accompanies, but never replaces, native AX control identities. */
-export function readDecisionViewport():{x:number;y:number;width:number;height:number;text:string}{
+function readDecisionViewport():{x:number;y:number;width:number;height:number;text:string}{
  const pieces:string[]=[];let size=0,count=0;
  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
 
@@ -690,12 +690,12 @@ if(style.visibility==='hidden'||style.display==='none'||style.opacity==='0')cont
 }
 
 /** 标注层在内容脚本的隔离环境里；页面写的文字不能冒充这里的读数。 */
-export function readMarksDisplay():HostDrawnMark[] {
+function readMarksDisplay():HostDrawnMark[] {
   return window.__sideagent?.marksState?.() ?? [];
 }
 
 /** Serialized read-only observation; never trust page-written text as a completion flag. */
-export function readTranslationDisplay():TranslationDisplayState|null {
+function readTranslationDisplay():TranslationDisplayState|null {
   type Block={element:HTMLElement;output?:HTMLElement;segments:Array<{node:Text;original:string;translation?:string}>};
 
   const state=(globalThis as typeof globalThis & {__bysTranslation?:{token:string;url:string;mode:'bilingual'|'translated';fontFamily:'original'|'songti';blocks:Map<HTMLElement,Block>}}).__bysTranslation;

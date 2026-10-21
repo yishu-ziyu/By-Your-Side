@@ -12,11 +12,11 @@
 import { isAttachment, type Attachment, type ImageAttachment } from "../../../shared/protocol.js";
 import { isCircling, removeCircle, startCircling } from "./circle-select.js";
 
-export const TILE_PERIMETER = 194;
+const TILE_PERIMETER = 194;
 
-export type SupportedImageMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+type SupportedImageMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 
-export interface AttachmentsManagerOptions {
+interface AttachmentsManagerOptions {
   composerEl: HTMLElement;
   stripEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
@@ -27,7 +27,7 @@ export interface AttachmentsManagerOptions {
   onError?: (errMessage: string) => void;
 }
 
-export interface AttachmentItem {
+interface AttachmentItem {
   id: string;
   name: string;
   mimeType: SupportedImageMime;
@@ -47,7 +47,7 @@ export interface AttachmentItem {
   };
 }
 
-export function parseDataUrl(dataUrl: string): { mimeType: SupportedImageMime; dataBase64: string } {
+function parseDataUrl(dataUrl: string): { mimeType: SupportedImageMime; dataBase64: string } {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.*)$/);
 
   if (match && match[1] && match[2]) {
@@ -64,7 +64,7 @@ export function parseDataUrl(dataUrl: string): { mimeType: SupportedImageMime; d
   return { mimeType: "image/png", dataBase64: dataUrl.replace(/^data:[^;]+;base64,/, "") };
 }
 
-export function readFileAsDataUrl(file: File): Promise<string> {
+function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -73,7 +73,7 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export async function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+async function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });

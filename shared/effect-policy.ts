@@ -4,9 +4,9 @@
  * 不从 control.ts 导入，避免循环依赖。
  */
 
-export type EffectClass = "read" | "write" | "unknown";
+type EffectClass = "read" | "write" | "unknown";
 
-export interface EffectDecision {
+interface EffectDecision {
   class: EffectClass;
   requiresControlGate: boolean;
   reason: string;

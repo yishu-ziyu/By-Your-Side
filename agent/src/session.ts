@@ -34,7 +34,7 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
  * - subscribe SDK 事件并映射为协议 AgentUiEvent 吐出
  * - sendUserMessage / steer / abort 均异步不阻塞调用方，错误转成 error 事件
  */
-import type { AgentToolResult, DefaultResourceLoader, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallError, sideJudgment, type RejectedEfforts, type SideCallHost } from "./side-judgment.js";
 import { MainEffort, restingEffort, thinkingChoice } from "./main-effort.js";
 import { userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
@@ -76,7 +76,7 @@ function withVoiceHistory(text: string, history?: VoiceConversationContext['rece
 }
 
 /** What a runtime steering request actually did; the manager turns it into a receipt. */
-export type SteerOutcome={kind:'model'};
+type SteerOutcome={kind:'model'};
 
 type CorrectionRecord = {
   id:string;input:string|null;text:string;attachments?:Attachment[];
@@ -86,7 +86,7 @@ type CorrectionRecord = {
  * 交付流的语义轮次闸门：PREPARING 期间由它扣住前缀，终态之后不再放行。
  * 会话不认识轮次本身，只在真正对外发之前问一次（见 VoiceTurnGate）。
  */
-export interface VoiceTurnDeliveryGate {
+interface VoiceTurnDeliveryGate {
   holdDeliveryStream(stream: UserDeliveryStream, conversationId?: string): DeliveryStreamDecision;
   holdUserDelivery(delivery: UserDelivery, conversationId?: string): DeliveryStreamDecision;
 }
@@ -128,7 +128,7 @@ const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
 
 /** 交还 prompt 发出后等待同 epoch agent_start 的窗口；超时按恢复失败处理，hold 归还 user。 */
-export const HANDBACK_RESTORE_TIMEOUT_MS = 30_000;
+const HANDBACK_RESTORE_TIMEOUT_MS = 30_000;
 
 const HANDBACK_RESTORE_TIMEOUT_REASON = "恢复超时，原会话仍归你。";
 
@@ -154,7 +154,7 @@ function opencodeSessionHeaders(
   return isOpencode ? { "x-opencode-session": sessionId, "x-opencode-client": "pi" } : undefined;
 }
 
-export interface SessionCallbacks {
+interface SessionCallbacks {
   /** 映射后的 UI 事件（对应 WS agent_event 帧的 event 负载）。 */
   emit(event: AgentUiEvent): void;
   /** 运行状态变化（对应 WS status 帧）。idle / running / user（现在归你）。 */
@@ -467,7 +467,6 @@ if(required.includes(key))candidates.set(key,attachment);
     private readonly session: AgentLoop | null,
     private readonly initError: string | null,
     private readonly callbacks: SessionCallbacks,
-    private readonly resourceLoader: DefaultResourceLoader | null,
     private readonly modelRuntime: ModelPort | null,
     private readonly handbackRestoreTimeoutMs = HANDBACK_RESTORE_TIMEOUT_MS,
     private readonly memoryRuntime: MemoryRuntime | null = null,
@@ -839,7 +838,7 @@ if(required.includes(key))candidates.set(key,attachment);
       });
 
       memoryHost = session;
-      const wrapper = new BrowserAgentSession(session, null, callbacks, null, models, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
+      const wrapper = new BrowserAgentSession(session, null, callbacks, models, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
 
       // 记忆的两个决定点（记成哪种 / 这一轮带哪些）各写一条决定记录进诊断记录。
       if (memoryRuntime) memoryRuntime.onRecord = (type, data) => wrapper.runTrace.record(type, data);
@@ -900,7 +899,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
       return wrapper;
     } catch (err) {
-      return new BrowserAgentSession(null, err instanceof Error ? err.message : String(err), callbacks, null, null, undefined, null, rpc, options?.memberId);
+      return new BrowserAgentSession(null, err instanceof Error ? err.message : String(err), callbacks, null, undefined, null, rpc, options?.memberId);
     }
   }
 
@@ -3307,9 +3306,9 @@ export function extractImages(attachments?: Attachment[]): SessionImageContent[]
  */
 /** kind：发送前读的是正文加 AX 树（both）、只有正文（text），还是只有 AX 树（tree，重启续做时也是它）。 */
 /** current：用户正在看的页；mentioned：用户用 @ 拉进来的另一页，不是用户正在看的，也不该切过去。 */
-export type PageRole = "current" | "mentioned";
+type PageRole = "current" | "mentioned";
 
-export function freshPageObservationText(context: PageContext, snapshotText: string, kind: "both" | "text" | "tree" = "tree", role: PageRole = "current"): string {
+function freshPageObservationText(context: PageContext, snapshotText: string, kind: "both" | "text" | "tree" = "tree", role: PageRole = "current"): string {
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
   const which = role === "mentioned" ? "a page the user pulled in with @ (not the page they are looking at)" : "the page the user is looking at";
 
@@ -3342,7 +3341,7 @@ function tabAddress(url: string): string {
  * 任务开始时的全部标签页（格式同 tabs list）：最多 20 个，用户当前页一定在内，标题截到 80 字。
  * 标题来自网页，和页面正文一样放进不可信边界并遮掉凭据样式文本。
  */
-export function openTabsAtStartText(tabs: readonly TabInfo[], currentTabId?: number): string {
+function openTabsAtStartText(tabs: readonly TabInfo[], currentTabId?: number): string {
   const current = tabs.find(t => t.id === currentTabId);
   const shown = tabs.slice(0, OPEN_TABS_AT_START_MAX);
 
@@ -3361,7 +3360,7 @@ export function openTabsAtStartText(tabs: readonly TabInfo[], currentTabId?: num
 }
 
 /** 这一页和对话里之前读过的一字不差时，代替整段正文和 AX 树。 */
-export function unchangedPageObservationText(context: PageContext): string {
+function unchangedPageObservationText(context: PageContext): string {
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
 
   return [
@@ -3380,13 +3379,13 @@ export function unchangedPageObservationText(context: PageContext): string {
  * （实测反例：改宋体后只交付字体报告，原任务的段落数/概括再也不会被交付，run 就结束了）。
  * 契约只在模型载荷里，不进任何用户面回执。
  */
-export const STEER_CONTRACT_NOTE = "[这条输入是对当前运行任务的补充或修改，不是替换原任务：除非用户在最新输入里明确取消或改变了原任务目标，先满足这条要求，然后继续完成并交付原任务尚未交付的结果。页面显示类修改只提交本次要求改变的字段，未提到的显示属性保持当前状态。最新输入里明确的修改要求优先于任务早期的限制（如“不要修改页面”），按其指明的属性执行；未指明的属性仍受早期限制约束。]";
+const STEER_CONTRACT_NOTE = "[这条输入是对当前运行任务的补充或修改，不是替换原任务：除非用户在最新输入里明确取消或改变了原任务目标，先满足这条要求，然后继续完成并交付原任务尚未交付的结果。页面显示类修改只提交本次要求改变的字段，未提到的显示属性保持当前状态。最新输入里明确的修改要求优先于任务早期的限制（如“不要修改页面”），按其指明的属性执行；未指明的属性仍受早期限制约束。]";
 
 /**
  * 圈出来问的附件（YIS-89/90）：圈内的网页文字按编号接在用户的话后面，助手才说得准「圈 1 是哪个商品」；
  * 并要求回答用 ①②③ 指圈，侧栏把它们做成能点回页面的按钮。
  */
-export function withCircleNotes(text: string, attachments?: Attachment[]): string {
+function withCircleNotes(text: string, attachments?: Attachment[]): string {
   const circles = (attachments ?? []).filter(a => a.circle);
 
   if (!circles.length) return text;
@@ -3399,7 +3398,7 @@ export function withCircleNotes(text: string, attachments?: Attachment[]): strin
     : `${text}\n${guide}`;
 }
 
-export function withPageContext(text: string, context?: PageContext): string {
+function withPageContext(text: string, context?: PageContext): string {
   if (!context) return text;
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
   let out = `[User's current page: tab ${context.tabId} "${title}" — ${context.url}]\n`;
@@ -3420,7 +3419,7 @@ export function withPageContext(text: string, context?: PageContext): string {
  */
 const STEER_PAGE_REFERENCE = /(这|那|当前|刚才|上面|页面|标签|网页|屏幕|截图|不是|不对|其实|改看|别看)/;
 
-export function steerNeedsPageObservation(text: string): boolean {
+function steerNeedsPageObservation(text: string): boolean {
   return STEER_PAGE_REFERENCE.test(text ?? "");
 }
 
@@ -3464,7 +3463,7 @@ function failedModel(messages: ReadonlyArray<{ role: string; errorMessage?: stri
   return failed?.provider && failed.model ? `${failed.provider}/${failed.model}` : null;
 }
 
-export function lastAssistantError(messages: unknown): string | null {
+function lastAssistantError(messages: unknown): string | null {
   if (!Array.isArray(messages)) return null;
 
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -3479,7 +3478,7 @@ export function lastAssistantError(messages: unknown): string | null {
 }
 
 /** 接管/中止会主动 abort 当前生成；这不是模型失败，也不该在面板留下错误或空响应提示。 */
-export function shouldSurfaceAgentEndIssue(
+function shouldSurfaceAgentEndIssue(
   isHeld: boolean,
   willRetry: boolean,
   stoppedByUser = false,
@@ -3499,11 +3498,11 @@ function isAbortLike(err: unknown): boolean {
  * 交付走 send_user_message 工具时不产生 text；只认 text 会把正常交付误报成空响应。
  */
 /** 这一轮里记忆工具成功改过记忆。 */
-export function memoryChangedInRun(messages: readonly { role: string; toolName?: string; isError?: boolean }[]): boolean {
+function memoryChangedInRun(messages: readonly { role: string; toolName?: string; isError?: boolean }[]): boolean {
   return messages.some((m) => m.role === "toolResult" && m.toolName === "user_memory" && !m.isError);
 }
 
-export function runProducedNothing(messages: unknown): boolean {
+function runProducedNothing(messages: unknown): boolean {
   if (!Array.isArray(messages)) return false;
 
   for (const raw of messages) {

@@ -20,20 +20,20 @@ export const NUDGE_SELECTION_LIMIT = 2000;
  * 句子、动词、对象名的上限按显示宽度算：汉字算 1，英文字母、数字、空格算半个（「AirPods Pro 3」算 6.5）。
  * 10-08 真实模型试跑：按字数算时，带英文型号的句子大多被拦下。
  */
-export const NUDGE_SENTENCE_LIMIT = 24;
+const NUDGE_SENTENCE_LIMIT = 24;
 
-export const NUDGE_LABEL_LIMIT = 5;
+const NUDGE_LABEL_LIMIT = 5;
 
 /** 句子里对象是谁（商家、机构、网站名）的上限。 */
-export const NUDGE_PARTY_LIMIT = 16;
+const NUDGE_PARTY_LIMIT = 16;
 
 /** 卡上显示的出处引文上限；模型给的引文可以更长，核对原文后截到这么长。 */
-export const NUDGE_EVIDENCE_LIMIT = 60;
+const NUDGE_EVIDENCE_LIMIT = 60;
 
 /** 模型给的出处引文上限：超了才算不合格。 */
 const QUOTE_LIMIT = 300;
 
-export const NUDGE_PROMPT_LIMIT = 2000;
+const NUDGE_PROMPT_LIMIT = 2000;
 
 export interface NudgeLink { title: string; url: string }
 export interface NudgeMemory { id: string; version: number; text: string }
@@ -69,7 +69,7 @@ export function isNudgeLink(v: unknown): v is NudgeLink {
   try { const url = new URL(v.url); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; } catch { return false; }
 }
 
-export function isNudgeMemory(v: unknown): v is NudgeMemory {
+function isNudgeMemory(v: unknown): v is NudgeMemory {
   return !!v && typeof v === 'object' && 'id' in v && validMemoryId(v.id)
     && 'version' in v && validMemoryVersion(v.version) && 'text' in v && text(v.text, 2000) && !!v.text.trim();
 }
@@ -91,7 +91,7 @@ function isRecentPage(r: unknown): r is NudgeRecentPage {
     && 'title' in r && text(r.title, 500) && 'url' in r && text(r.url, 4000) && 'excerpt' in r && text(r.excerpt, NUDGE_EXCERPT_LIMIT);
 }
 
-export function isNudgeContext(v: unknown): v is NudgeContext {
+function isNudgeContext(v: unknown): v is NudgeContext {
   return !!v && typeof v === 'object'
     && 'page' in v && isNudgePage(v.page)
     && 'recent' in v && Array.isArray(v.recent) && v.recent.length <= NUDGE_RECENT_LIMIT && v.recent.every(isRecentPage);
@@ -107,7 +107,7 @@ export function isNudgeClientMessage(v: NudgeClientMessage): boolean {
 interface NudgeDraft { sentence: unknown; evidence: unknown; actionLabel: unknown; prompt: unknown; party?: unknown; kind?: unknown; memoryId?: unknown; links?: unknown; preparation?: unknown }
 
 /** 模型回复的原样 JSON 对象：字段都还没核对。 */
-export interface NudgeReply extends Partial<NudgeDraft> { offer?: unknown }
+interface NudgeReply extends Partial<NudgeDraft> { offer?: unknown }
 
 /** 显示宽度：汉字等全角字符算 1，英文字母、数字、空格、半角标点算半个。 */
 const width = (v: string) => [...v].reduce((sum, ch) => sum + (ch.codePointAt(0)! < 0x2e80 ? 0.5 : 1), 0);
