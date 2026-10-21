@@ -42,9 +42,10 @@ import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
 import { DurableAgentLoop } from "./durable-loop.js";
 import type { Storage } from "@earendil-works/pi-durable";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ImageAttachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
+import { attachedPageImages, createReadAttachmentTool, withAttachedFiles } from "./attached-files.js";
 import { createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, handbackContinueText } from "../../shared/control.js";
@@ -807,6 +808,7 @@ if(required.includes(key))candidates.set(key,attachment);
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
           ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
+          createReadAttachmentTool(() => resultHost?.userAttachments() ?? []),
         ];
 
       const restored = options.loop.session ? await PiSessionPersistence.open(options.loop.session) : undefined;
@@ -913,8 +915,37 @@ if(required.includes(key))candidates.set(key,attachment);
 
   private attachedFiles: Attachment[] = [];
 
-  /** 用户在本会话侧栏附上的文件（最近 16 个），upload_file 按文件名取用。 */
-  userAttachments(): readonly Attachment[] { return this.attachedFiles; }
+  /** 当前模型收不收图片：只收文字的模型，附上的图和扫描页都到不了它那里。 */
+  private modelSeesImages(): boolean {
+    return this.session?.model?.input?.includes("image") ?? true;
+  }
+
+  private savedAttachmentsRead = false;
+
+  /**
+   * 用户在本会话侧栏附上的文件（最近 16 个），upload_file 与 read_attachment 按文件名取用。
+   * 扩展重启后内存里是空的，而对话记录里还提着那些文件：第一次取用时从已存下的任务材料里找回。
+   */
+  userAttachments(): readonly Attachment[] {
+    const branch = this.session?.sessionManager?.getBranch?.();
+
+    if (!this.savedAttachmentsRead && branch) {
+      this.savedAttachmentsRead = true;
+      const saved: Attachment[] = [];
+
+      for (const entry of branch) {
+        if (entry.type !== 'custom' || !['sideagent-recovery-attachments-v1', 'sideagent-task-acceptance-v1'].includes(entry.customType)) continue;
+        const attachments = (entry.data as { attachments?: unknown } | undefined)?.attachments;
+
+        if (Array.isArray(attachments)) saved.push(...attachments.filter(isAttachment));
+      }
+
+      const byId = new Map([...saved, ...this.attachedFiles].map(a => [a.id, a] as const));
+      this.attachedFiles = [...byId.values()].slice(-16);
+    }
+
+    return this.attachedFiles;
+  }
 
   private rememberAttachments(attachments?: Attachment[]): void {
     if (attachments?.length) this.attachedFiles = [...this.attachedFiles.filter(a => !attachments.some(b => b.id === a.id)), ...attachments].slice(-16);
@@ -1244,7 +1275,7 @@ return;}
       return;
     }
 
-    const finalText = withCircleNotes(withPageContext(withVoiceHistory(text, inputOptions?.voiceHistory), context), attachments);
+    const finalText = withAttachments(withPageContext(withVoiceHistory(text, inputOptions?.voiceHistory), context), attachments, this.modelSeesImages());
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
     // 新的一次用户提问是新一轮：上一轮交付过结果，不代表这一轮不会真正失败。
     this.deliveredResultThisRun = false;
@@ -2240,7 +2271,7 @@ return;}
       this.memoryRuntime?.invalidateUserTurn("steer");
       this.memoryRuntime?.beginUserTurn(text, context, this.conversationSnapshot()?.conversationContext?.recentTurns);
       const updated=`原任务：${this.activeGoal}\n用户最新修改：${text}`;
-      await this.promptWithFreshPageObservation(session,withPageContext(updated,context),context,extractImages(attachments),options?.pages);
+      await this.promptWithFreshPageObservation(session,withAttachments(withPageContext(updated,context),attachments,this.modelSeesImages()),context,extractImages(attachments),options?.pages);
 
 return {kind:'model'};
     }
@@ -2284,7 +2315,7 @@ return {kind:'model'};
       this.requestStartedAt = Date.now();
 
       if (observation) this.noteGoalObservation("page_at_steer", observation);
-      const asked = withCircleNotes(withPageContext(text, context), attachments) + mentioned;
+      const asked = withAttachments(withPageContext(text, context), attachments, this.modelSeesImages()) + mentioned;
       const base = observation ? `${asked}\n\n${observation}` : asked;
       // 契约随整条载荷进 Pi（steeringMode "all" 的排队 drain 也走同一载荷）。销账只认 Pi 原样回显的
       // 精确文本（见 consumeCorrection），所以 record.input 必须与实际载荷完全一致。
@@ -2404,14 +2435,12 @@ return {kind:'model'};
     });
 
     this.pendingHandback = { epoch, promise: started, resolve: resolveStarted, timer: null };
-    const finalText = withPageContext(text, context);
+    const handbackAttachments = [...unconsumedRecords.flatMap(record=>record.attachments??[]), ...queued.flatMap(q=>q.attachments??[])];
+    const finalText = withAttachedFiles(withPageContext(text, context), handbackAttachments, this.modelSeesImages());
     // 交还 prompt 整段带上未读补充：按批次身份销账，等它真的作为 user 消息回到模型才放行写入。
     this.handbackDelivery = unconsumedRecords.length > 0 ? { text: finalText, ids: unconsumedRecords.map(record=>record.id) } : null;
     // 暂停时 Pi 队列被清掉，连图片一起没了：交还时按原样把已排队补充的附件和暂停期间的补充一起带回。
-    void this.promptHandbackAfterStop(epoch, finalText,extractImages([
-      ...unconsumedRecords.flatMap(record=>record.attachments??[]),
-      ...queued.flatMap(q=>q.attachments??[]),
-    ]),context,queued.flatMap(q=>q.pages??[]));
+    void this.promptHandbackAfterStop(epoch, finalText,extractImages(handbackAttachments),context,queued.flatMap(q=>q.pages??[]));
     void started.then(ok=>{if(ok)this.deferredSteers.splice(0,queued.length);});
 
     return started;
@@ -3296,7 +3325,7 @@ export function extractImages(attachments?: Attachment[]): SessionImageContent[]
     }
   }
 
-  return images;
+  return [...images, ...attachedPageImages(attachments)];
 }
 
 /**
@@ -3384,8 +3413,17 @@ const STEER_CONTRACT_NOTE = "[这条输入是对当前运行任务的补充或�
  * 圈出来问的附件：圈内的网页文字按编号接在用户的话后面，助手才说得准「圈 1 是哪个商品」；
  * 并要求回答用 ①②③ 指圈，侧栏把它们做成能点回页面的按钮。
  */
+/** 用户这条话带的附件里，模型要读的文字部分：圈内网页文字、文件内容。图片另走 extractImages。 */
+function withAttachments(text: string, attachments: Attachment[] | undefined, seesImages: boolean): string {
+  const images = (attachments ?? []).filter(a => a.type === "image").length;
+  // 只收文字的模型拿不到图：照实告诉它，免得它装作看过图。
+  const unseen = images && !seesImages ? `\n[The user attached ${images} image(s), but the current model cannot see images, so they were not sent. Tell the user you cannot see them and suggest switching to a model that reads images.]` : "";
+
+  return withAttachedFiles(withCircleNotes(text, attachments), attachments, seesImages) + unseen;
+}
+
 function withCircleNotes(text: string, attachments?: Attachment[]): string {
-  const circles = (attachments ?? []).filter(a => a.circle);
+  const circles = (attachments ?? []).filter((a): a is ImageAttachment => a.type === "image" && !!a.circle);
 
   if (!circles.length) return text;
   const notes = circles.flatMap(a => (a.note ? [`圈 ${a.circle}：${a.note.replace(/\s+/g, " ")}`] : []));

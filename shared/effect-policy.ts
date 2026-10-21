@@ -59,6 +59,7 @@ const READ_TOOLS = new Set([
   "consume_events",
   "dialog_info",
   "describe_target",
+  "read_attachment",
 ]);
 
 function methodOf(params?: Record<string, unknown>): string {

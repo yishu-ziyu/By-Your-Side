@@ -1608,7 +1608,8 @@ details.run-steps.done .chip.error { background: transparent; }
   align-items: center;
   gap: 8px;
   overflow-x: auto;
-  padding: 4px 2px 2px;
+  /* 横向滚动会连带裁掉竖向溢出：上下留出悬停上浮和阴影的地方。 */
+  padding: 6px 2px 6px;
   scrollbar-width: none;
   -ms-overflow-style: none;
   position: relative;
@@ -1741,6 +1742,79 @@ details.run-steps.done .chip.error { background: transparent; }
   display: block;
   pointer-events: none;
 }
+
+/* 文件附件：瓷贴加宽放文件名；类型图标的颜色按格式区分（PDF 红、表格绿、PPT 橙、其余蓝）。 */
+.tile-56.tile-file {
+  width: 176px;
+  cursor: default;
+}
+.tile-file .tile-ring-svg { width: 100%; }
+.tile-file .file-chip { height: 100%; padding: 0 22px 0 10px; }
+
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.file-chip-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-inner);
+  color: var(--apple-blue);
+  background: var(--apple-blue-soft);
+}
+.file-chip[data-format="pdf"] .file-chip-icon { color: var(--apple-red); background: var(--apple-red-soft); }
+.file-chip[data-format="xlsx"] .file-chip-icon,
+.file-chip[data-format="csv"] .file-chip-icon { color: var(--apple-green); background: var(--apple-green-soft); }
+.file-chip[data-format="pptx"] .file-chip-icon { color: var(--apple-orange); background: var(--content-subtle); }
+.file-chip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.file-chip-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.file-chip-meta {
+  color: var(--text-tertiary);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+/* 已发出的消息里：同一张卡缩小一号，两张一行，不带进度环。 */
+.file-chip.user-msg-file {
+  flex: 0 1 calc(50% - 3px);
+  min-width: 0;
+  max-width: 180px;
+  gap: 7px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  background: var(--content-bg);
+}
+.file-chip.user-msg-file[hidden] { display: none; }
+.user-msg-file .file-chip-icon { width: 26px; height: 26px; }
+.user-msg-file .file-chip-icon svg { width: 15px; height: 15px; }
+.user-msg-files-more {
+  padding: 0 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  background: var(--content-bg);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.user-msg-files-more:hover { color: var(--text-primary); }
 
 @keyframes tileLand {
   0% { opacity: 0; transform: scale(0.95) translateY(4px); }
