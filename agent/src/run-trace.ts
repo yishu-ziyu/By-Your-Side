@@ -1,6 +1,6 @@
 import { appendFile, chmod, mkdir, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { TRACE_SESSIONS_KEPT, TraceRecorder } from "../../shared/run-trace-core.js";
+import { expiredSessions, TraceRecorder } from "../../shared/run-trace-core.js";
 import { dataDir } from "./config.js";
 
 export { sanitizeTrace } from "../../shared/trace-sanitize.js";
@@ -20,7 +20,7 @@ export class RunTrace extends TraceRecorder {
           await mkdir(directory, { recursive: true, mode: 0o700 });
           await chmod(directory, 0o700);
           const files = (await readdir(directory)).filter((name) => /^\d+-[a-f0-9-]+\.jsonl$/.test(name)).sort();
-          await Promise.all(files.slice(0, Math.max(0, files.length - (TRACE_SESSIONS_KEPT - 1))).map((name) => unlink(join(directory, name)).catch(() => {})));
+          await Promise.all(expiredSessions(files).map((name) => unlink(join(directory, name)).catch(() => {})));
         },
         append: (line) => appendFile(path, line, { mode: 0o600 }),
       };

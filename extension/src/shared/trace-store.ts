@@ -1,12 +1,12 @@
 /**
  * 扩展内的诊断记录存储（IndexedDB，扩展源下 offscreen 与设置页共用）。
- * - 任务记录：行内容与本机 `~/.sideagent/traces/*.jsonl` 相同（shared/run-trace-core.ts），保留最近 TRACE_SESSIONS_KEPT 个会话。
+ * - 任务记录：行内容与本机 `~/.sideagent/traces/*.jsonl` 相同（shared/run-trace-core.ts），保留最近 TRACE_MAX_AGE_DAYS 天、且至少最近 TRACE_SESSIONS_KEPT 个会话。
  * - 语音记录：行内容与本机 `~/.sideagent/voice-capture/<日期>.jsonl` 相同（shared/voice-capture-core.ts），保留 VOICE_CAPTURE_MAX_AGE_DAYS 天；
  *   扩展不保存音频（本机也只在用户开启诊断时保存）。
  * 本机存的任务记录保留原文，只遮凭据（shared/trace-sanitize.ts sanitizeTraceForStore）；导出时每行再完整脱敏一次。
  * 设置页可以导出（任务、语音各一个 jsonl）或清空。
  */
-import { TRACE_SESSIONS_KEPT, type TraceSink } from "../../../shared/run-trace-core.js";
+import { expiredSessions, type TraceSink } from "../../../shared/run-trace-core.js";
 import { redactStoredTrace } from "../../../shared/trace-sanitize.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS, voiceCaptureDayKey, type VoiceCaptureSink } from "../../../shared/voice-capture-core.js";
 
@@ -96,7 +96,7 @@ export function createTraceSink(sessionName: string): TraceSink {
       const db = await openDb();
       const older = (await sessionNames(db)).filter((name) => name < sessionName);
       const tx = db.transaction([SESSIONS, LINES], "readwrite");
-      deleteSessions(tx, older.slice(0, Math.max(0, older.length - (TRACE_SESSIONS_KEPT - 1))));
+      deleteSessions(tx, expiredSessions(older));
       const row: SessionRow = { name: sessionName };
       tx.objectStore(SESSIONS).put(row);
       await done(tx);

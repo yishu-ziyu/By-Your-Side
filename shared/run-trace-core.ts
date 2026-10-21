@@ -5,8 +5,22 @@
 import { utf8ByteLength } from "./bytes.js";
 import { sanitizeTraceForStore } from "./trace-sanitize.js";
 
-/** 保留最近多少个会话的记录（新会话第一次写入时删掉更早的）。 */
+/** 至少保留最近多少个会话的记录；更早的会话在 TRACE_MAX_AGE_DAYS 天内也保留，复盘要看得到一晚上的全部使用。 */
 export const TRACE_SESSIONS_KEPT = 20;
+
+export const TRACE_MAX_AGE_DAYS = 30;
+
+/** 新会话开始前要删的旧会话：既不在最近 TRACE_SESSIONS_KEPT - 1 个里，也已超过保留天数。名字以开始毫秒开头，按名字排序即按时间排序。 */
+export function expiredSessions(older: readonly string[], now = Date.now()): string[] {
+  const sorted = [...older].sort();
+  const cutoff = now - TRACE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+
+  return sorted.slice(0, Math.max(0, sorted.length - (TRACE_SESSIONS_KEPT - 1))).filter((name) => {
+    const started = Number(/^(\d+)-/.exec(name)?.[1]);
+
+    return !Number.isFinite(started) || started < cutoff;
+  });
+}
 
 /** 单行上限；超过只留摘要。 */
 const LINE_MAX_BYTES = 256 * 1024;
