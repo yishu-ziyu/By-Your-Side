@@ -440,6 +440,7 @@ void runtime.loadProviderModels().then(() => {
   if (selected) {
     $("model-toggle").hidden = connectionModels().length === 0;
     modelMeta.textContent = modelCount(selected);
+    if (modelOptions.matches(":popover-open")) renderModelList();
   }
 
   renderProviders();
