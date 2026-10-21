@@ -14,7 +14,7 @@ import type { ConnState, TransportKind } from "../relay.js";
 import {
   INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
-import { SELF_USE_KEY } from "../shared/self-use.js";
+import { CORE_SETTING_KEYS } from "../shared/core-settings.js";
 
 export interface UplinkHandlers {
   onServerMessage(msg: ServerMessage): void;
@@ -43,7 +43,7 @@ export class Uplink {
 
       if (keys.some((key) => key === INPROC_CONFIG_KEY || key === INPROC_FAST_CONFIG_KEY || key === INPROC_BACKUP_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushModelConfig();
 
-      if (keys.includes(SELF_USE_KEY)) void this.pushSelfUse();
+      if (keys.some((key) => CORE_SETTING_KEYS.includes(key))) void this.pushCoreSettings();
 
       // 语音 key 可能沿用阶跃星辰模型的凭据，所以凭据变了也要重算。
       if (keys.some((key) => key === INPROC_VOICE_KEY || key === INPROC_VOICE_MODEL_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
@@ -176,7 +176,7 @@ export class Uplink {
       if (this.inprocPort !== port) return;
       this.handleDisconnect(chrome.runtime.lastError?.message ?? "助手断开了");
     });
-    await this.pushSelfUse();
+    await this.pushCoreSettings();
     await this.pushModelConfig();
     await this.pushVoiceKey();
     port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
@@ -189,11 +189,11 @@ export class Uplink {
     this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, fast: stored[INPROC_FAST_CONFIG_KEY] ?? null, backup: stored[INPROC_BACKUP_CONFIG_KEY] ?? null, credentials: pickCredentials(Object.entries(stored)) });
   }
 
-  /** 模拟用户模式的开关单独推：随模型设置推会让每个对话重设一次模型。 */
-  private async pushSelfUse(): Promise<void> {
+  /** 核心要读的开关单独推：随模型设置推会让每个对话重设一次模型。 */
+  private async pushCoreSettings(): Promise<void> {
     if (!this.inprocPort) return;
-    const stored = await chrome.storage.local.get(SELF_USE_KEY);
-    this.inprocPort?.postMessage({ type: "inproc_self_use", value: stored[SELF_USE_KEY] ?? null });
+    const values = await chrome.storage.local.get(CORE_SETTING_KEYS);
+    this.inprocPort?.postMessage({ type: "inproc_settings", values });
   }
 
   private async pushVoiceKey(): Promise<void> {
