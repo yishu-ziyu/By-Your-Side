@@ -154,10 +154,12 @@ if (!runPrefix) {
   const continued = new Set(traces.filter((e) => e.type === "restart_resume").map((e) => e.runId));
   const steers = new Map();
   for (const e of traces) if (e.type === "steer") steers.set(e.runId, (steers.get(e.runId) ?? 0) + 1);
+  const reactions = new Map();
+  for (const e of traces) if (e.type?.startsWith("ui_") && e.runId) reactions.set(e.runId, (reactions.get(e.runId) ?? 0) + 1);
   for (const e of traces) {
     if (e.type !== "run_start" || seen.has(e.runId)) continue;
     seen.add(e.runId);
-    const tags = [continued.has(e.runId) ? "接着原任务" : "", steers.get(e.runId) ? `中途插话 ${steers.get(e.runId)} 次` : ""].filter(Boolean).join("，");
+    const tags = [continued.has(e.runId) ? "接着原任务" : "", steers.get(e.runId) ? `中途插话 ${steers.get(e.runId)} 次` : "", reactions.get(e.runId) ? `侧栏操作 ${reactions.get(e.runId)} 次` : ""].filter(Boolean).join("，");
     console.log(`${local(e.time)}  ${modelName(e.data?.model)}  ${tags ? `[${tags}] ` : ""}${oneLine(e.data?.text, 60)}  ${e.runId}`);
   }
   if (!seen.size) console.log("这段时间没有运行。");
@@ -174,7 +176,8 @@ function pageTitle(result) {
 const run = traces.filter((e) => typeof e.runId === "string" && e.runId.startsWith(runPrefix));
 if (!run.length) fail(`没有以 ${runPrefix} 开头的运行。`);
 for (const runId of new Set(run.map((e) => e.runId))) {
-  const events = run.filter((e) => e.runId === runId);
+  // 侧栏操作（ui_*）记在侧栏自己的会话里，和任务记录按时间合在一起看。
+  const events = run.filter((e) => e.runId === runId).sort((a, b) => a.time.localeCompare(b.time));
   const t0 = new Date(events[0].time).getTime();
   const at = (time) => `+${((new Date(time).getTime() - t0) / 1000).toFixed(1).padStart(6)}s`;
   const starts = new Map();
@@ -197,6 +200,7 @@ for (const runId of new Set(run.map((e) => e.runId))) {
       const text = (Array.isArray(d.message.content) ? d.message.content : []).filter((part) => part?.type === "text").map((part) => part.text).join("");
       if (text.trim()) console.log(`${at(e.time)}  回复  ${oneLine(text, 400)}`);
     } else if (e.type === "agent_end") console.log(`${at(e.time)}  结束  ${((d.elapsedMs ?? 0) / 1000).toFixed(1)}s`);
+    else if (e.type.startsWith("ui_")) console.log(`${at(e.time)}  你在侧栏  ${e.type.slice(3)}  ${Object.entries(d).map(([k, v]) => `${k}=${v}`).join(" ")}`);
   }
   for (const e of starts.values()) console.log(`${at(e.time)}  工具  ${e.data.toolName}  没有结束记录`);
 }

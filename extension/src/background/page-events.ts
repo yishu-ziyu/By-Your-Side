@@ -25,6 +25,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+import { isOwnBackupDownload } from "../shared/memory-backup.js";
 import {
   applyChromeDownload,
   armPageEvent,
@@ -219,6 +220,7 @@ function listenDownloads(): void {
   if (!chrome.downloads?.onCreated?.addListener) return;
   downloadsListening = true;
   chrome.downloads.onCreated.addListener((item) => {
+    if (isOwnBackupDownload(item)) return;
     const now = Date.now();
 
     for (const [id, pending] of unboundChromeDownloads) if (now - pending.at > UNBOUND_TTL_MS) unboundChromeDownloads.delete(id);
