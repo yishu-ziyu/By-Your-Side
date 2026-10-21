@@ -32,6 +32,7 @@
     "kimi:keep": "NODE_USE_ENV_PROXY=1 node scripts/maintenance/kimi-login.mjs --install",
     "lines": "node scripts/maintenance/lines.mjs",
     "logs": "node scripts/maintenance/logs.mjs",
+    "memory:report": "node scripts/maintenance/memory-report.mjs",
     "lab": "node scripts/maintenance/lab.mjs",
     "gallery": "node scripts/maintenance/lab.mjs gallery",
     "gym": "tsx scripts/gym/run.mts",

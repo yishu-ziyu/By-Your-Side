@@ -2864,7 +2864,7 @@ function renderMemoryAsk(event: MemoryAskEvent): void {
 const openMemoryAsks = new Map<string, number>();
 
 function askSource(event: MemoryAskEvent): string {
-  return event.evidence ? "browsing" : event.habit ? "habit" : "correction";
+  return event.evidence ? "browsing" : event.quotes ? "style" : event.habit ? "habit" : "correction";
 }
 
 /** 还开着的询问没被回应就离开了视线（换会话、关侧栏、后台作废）。 */
@@ -2945,6 +2945,16 @@ function buildMemoryAsk(askId: string): HTMLElement {
       const summary = document.createElement("summary");
       summary.textContent = `依据：${card.ask.evidence.length} 天里做过，来自你自己的浏览`;
       why.append(summary, ...card.ask.evidence.map(text => Object.assign(document.createElement("div"), { textContent: text })));
+      root.appendChild(why);
+    }
+
+    if (card.ask.quotes?.length) {
+      const why = document.createElement("details");
+      why.className = "memory-ask-replaces";
+      why.dataset.memoryAskEvidence = "";
+      const summary = document.createElement("summary");
+      summary.textContent = "依据：你对回答方式说过的话";
+      why.append(summary, ...card.ask.quotes.map(text => Object.assign(document.createElement("div"), { textContent: text })));
       root.appendChild(why);
     }
 

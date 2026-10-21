@@ -17,7 +17,7 @@ export { MODEL as REALTIME_VOICE_MODEL } from "./realtime-voice-connection.js";
 
 export { MemoryStore } from "./memory-store.js";
 
-export { useMemoryHabits, usePendingMemoryJudgments } from "./memory-runtime.js";
+export { useMemoryHabits, usePendingMemoryJudgments, useStyleSignals } from "./memory-runtime.js";
 
 export { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 
