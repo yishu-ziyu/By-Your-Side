@@ -124,6 +124,8 @@ export interface ModelRuntime {
   createCoreModels(selectedConfig: () => InprocModelConfig | null, fastConfig?: () => InprocModelConfig | null, backupConfig?: () => InprocModelConfig | null): ModelPort;
   /** 设置页里能选的服务商，常用套餐在前。 */
   providerChoices(): ProviderChoice[];
+  /** 从服务商的公开清单补全模型列表（目前是 Command Code）；失败时保留内置的几个。 */
+  loadProviderModels(signal?: AbortSignal): Promise<void>;
 }
 
 /** OpenAI 兼容服务：自定义地址和 pi-ai 目录里没有的阶跃星辰都用它注册。能力（思考档、能否看图）取实测登记，没有登记按保守默认。 */
@@ -150,31 +152,84 @@ function openAICompatible(id: string, name: string, baseUrl: string, modelIds: r
 }
 
 /**
- * Command Code 的 GOAT 套餐里每个模型有单独的月度额度，用户只用这两个、互相切换（MiMo 便宜、可高频调用）。
- * 同一个 key 两种接口：MiMo 走 OpenAI 兼容的 /chat/completions，Claude 只开放 Anthropic 的 /messages
- * （SDK 自己拼 /v1/messages，所以它的地址不带 /v1）。pi-ai 目录里还没有 Haiku 5.5：它和 Sonnet 5.5 同代、只收自适应思考（沿用 Haiku 4.5 的接法会回 400「thinking.type.enabled is not supported」），所以沿用 Sonnet 5.5 的接法，编号、价格（≤10 万 token 档）和上下文按 Command Code 的模型页；缓存写入价页面没写，按 Anthropic 惯例取输入价的 1.25 倍。
+ * Command Code 一个 key 能用它清单里的所有模型（GOAT 套餐每个模型单独计月度额度），清单由它的公开接口给出，用户自己挑。
+ * 同一个 key 两种接口：清单标 /messages 的（Claude 系）只开放 Anthropic 接口（SDK 自己拼 /v1/messages，所以地址不带 /v1），
+ * 其余走 OpenAI 兼容的 /chat/completions。Claude 的连接参数取目录里同名模型，目录没有的（如 Haiku 5.5）沿用同代 Sonnet 5.5：
+ * 只收自适应思考，沿用 Haiku 4.5 的接法会回 400「thinking.type.enabled is not supported」。
  */
 const COMMANDCODE_BASE_URL = "https://api.commandcode.ai/provider";
 
-function commandCodeProvider(haikuTemplate: Model<Api> | undefined): Provider {
-  const mimo = withMeasuredCapability<"openai-completions">({
-    id: "xiaomi/mimo-v2.6-flash", name: "MiMo V2.6 Flash", api: "openai-completions", provider: COMMANDCODE_PROVIDER_ID, baseUrl: `${COMMANDCODE_BASE_URL}/v1`,
-    reasoning: true, input: ["text", "image"], cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }, contextWindow: 1_048_576, maxTokens: 32_768,
-  });
-  const haiku: Model<"anthropic-messages"> | undefined = haikuTemplate?.api === "anthropic-messages"
-    ? {
-      ...(haikuTemplate as Model<"anthropic-messages">), id: "claude-haiku-5-5", name: "Claude Haiku 5.5", provider: COMMANDCODE_PROVIDER_ID, baseUrl: COMMANDCODE_BASE_URL,
-      cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }, contextWindow: 1_000_000, maxTokens: 64_000,
+/** Command Code 公开清单里的一项；不需要 key。 */
+interface CommandCodeListing { id: string; name?: string; messages: boolean; contextWindow?: number }
+
+/** 清单拉不到时（离线、接口变了）仍可用的两个：价格和上下文按 Command Code 的模型页（Haiku 取 ≤10 万 token 档，缓存写入价页面没写，按 Anthropic 惯例取输入价的 1.25 倍）。 */
+const COMMANDCODE_FALLBACK: readonly CommandCodeListing[] = [
+  { id: "xiaomi/mimo-v2.6-flash", name: "MiMo V2.6 Flash", messages: false },
+  { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", messages: true },
+];
+
+const COMMANDCODE_PRICES = new Map<string, Model<Api>["cost"]>([
+  ["xiaomi/mimo-v2.6-flash", { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 }],
+  ["claude-haiku-5-5", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }],
+]);
+
+/** 读清单里的一项：外部数据，逐项核对，不认识的跳过。 */
+function commandCodeListing(value: unknown): CommandCodeListing | undefined {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id) return undefined;
+  const endpoints = Array.isArray(value.supported_endpoints) ? value.supported_endpoints : [];
+  const messages = endpoints.includes("/messages");
+
+  if (!messages && !endpoints.includes("/chat/completions")) return undefined;
+
+  return {
+    id: value.id, messages,
+    ...(typeof value.name === "string" ? { name: value.name } : {}),
+    ...(typeof value.context_length === "number" && value.context_length > 0 ? { contextWindow: value.context_length } : {}),
+  };
+}
+
+export async function fetchCommandCodeModels(signal?: AbortSignal): Promise<CommandCodeListing[]> {
+  const response = await omitCookies(`${COMMANDCODE_BASE_URL}/v1/models`, { signal });
+
+  if (!response.ok) throw new Error(`Command Code 模型清单返回 ${response.status}`);
+  const body: unknown = await response.json();
+  const data = isRecord(body) && Array.isArray(body.data) ? body.data : [];
+
+  return data.flatMap((item: unknown) => commandCodeListing(item) ?? []);
+}
+
+/**
+ * 不在清单里的名字（用户直接填、清单还没拉到）按名字分接口：Command Code 的 /messages 只开放给 Claude 系。
+ * 能力不按名字猜：OpenAI 兼容的取实测登记，没有就保守默认，由服务商自己定思考档。
+ */
+function commandCodeModel(listing: CommandCodeListing, anthropicCatalog: readonly Model<Api>[]): Model<"openai-completions" | "anthropic-messages"> | undefined {
+  const cost = COMMANDCODE_PRICES.get(listing.id) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  if (listing.messages) {
+    const template = anthropicCatalog.find((m) => m.id === listing.id) ?? anthropicCatalog.find((m) => m.id === "claude-sonnet-5-5");
+
+    if (template?.api !== "anthropic-messages") return undefined;
+
+    return {
+      ...(template as Model<"anthropic-messages">), id: listing.id, name: listing.name ?? listing.id, provider: COMMANDCODE_PROVIDER_ID, baseUrl: COMMANDCODE_BASE_URL,
+      cost, contextWindow: listing.contextWindow ?? template.contextWindow,
       // Command Code 的 /messages 不收对话中途的 system 消息（回 400「Invalid input at messages.1.role」），只保留自适应思考等其余兼容项。
       compat: { forceAdaptiveThinking: true, supportsTemperature: false, supportsStrictTools: true },
-    }
-    : undefined;
+    };
+  }
 
+  return withMeasuredCapability<"openai-completions">({
+    id: listing.id, name: listing.name ?? listing.id, api: "openai-completions", provider: COMMANDCODE_PROVIDER_ID, baseUrl: `${COMMANDCODE_BASE_URL}/v1`,
+    reasoning: false, input: ["text"], cost, contextWindow: listing.contextWindow ?? 128_000, maxTokens: 32_768,
+  });
+}
+
+function commandCodeProvider(listings: readonly CommandCodeListing[], anthropicCatalog: readonly Model<Api>[]): Provider {
   return createProvider<"openai-completions" | "anthropic-messages">({
     id: COMMANDCODE_PROVIDER_ID, name: "Command Code",
     // 带 anthropic-beta 或浏览器直连头时，Command Code 的 /messages 一律回 403「Authentication failed」，看上去像 key 无效；null 让 SDK 不发这两类头。
     auth: { apiKey: { name: "Command Code API key", resolve: async ({ credential }) => credential?.key ? { auth: { apiKey: credential.key, headers: { "anthropic-beta": null, "anthropic-dangerous-direct-browser-access": null } }, source: "设置" } : undefined } },
-    models: haiku ? [mimo, haiku] : [mimo],
+    models: listings.flatMap((l) => commandCodeModel(l, anthropicCatalog) ?? []),
     api: { "openai-completions": openAICompletionsApi(), "anthropic-messages": anthropicMessagesApi() },
   });
 }
@@ -213,7 +268,8 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   const credentials = new MirroredCredentialStore(persist);
   const models = builtinModels({ credentials });
   models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", STEPFUN_STEP_PLAN_BASE_URL, STEPFUN_MODELS).provider);
-  models.setProvider(commandCodeProvider(models.getModel("anthropic", "claude-sonnet-5-5")));
+  const anthropicCatalog = models.getModels("anthropic");
+  models.setProvider(commandCodeProvider(COMMANDCODE_FALLBACK, anthropicCatalog));
   /** OpenCode 按会话路由，缺 x-opencode-session 会直接 400；Pi 的 coding-agent 层会补，直接用 pi-ai 时要自己补。 */
   const sessionId = crypto.randomUUID();
 
@@ -231,8 +287,14 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     const known = models.getModel(config.provider, config.modelId);
 
     if (known) return withMeasuredCapability(known);
-    // Command Code 两个模型接口不同，沿用同服务商的连接参数会把 Claude 发到 OpenAI 兼容接口。
-    if (config.provider === COMMANDCODE_PROVIDER_ID) throw new Error(`Command Code 没有接入 ${config.modelId}：只支持 MiMo V2.6 Flash 和 Claude Haiku 5.5。`);
+    // Command Code 的模型接口不同，沿用同服务商的连接参数会把 Claude 发到 OpenAI 兼容接口。
+    if (config.provider === COMMANDCODE_PROVIDER_ID) {
+      const model = commandCodeModel({ id: config.modelId, messages: config.modelId.startsWith("claude-") }, anthropicCatalog);
+
+      if (!model) throw new Error(`找不到模型 ${config.provider}/${config.modelId}`);
+
+      return model;
+    }
     // 目录滞后于服务商（如 MiniMax-M3.1-Flash-Preview、OpenCode Go 的 mimo-v2.6-flash）：连接参数沿用同服务商的模型，能力取实测登记或保守默认。
     const unlisted = unlistedModel(config.provider, config.modelId, models.getModels(config.provider));
 
@@ -272,8 +334,14 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     return choices.sort((a, b) => (featured.get(a.id) ?? 99) - (featured.get(b.id) ?? 99) || a.name.localeCompare(b.name));
   }
 
+  async function loadProviderModels(signal?: AbortSignal): Promise<void> {
+    const listings = await fetchCommandCodeModels(signal);
+
+    if (listings.length) models.setProvider(commandCodeProvider(listings, anthropicCatalog));
+  }
+
   const runtime: ModelRuntime = {
-    sessionId, credentials, models, resolveModel, headersFor, providerChoices,
+    sessionId, credentials, models, resolveModel, headersFor, providerChoices, loadProviderModels,
     createCoreModels: (selectedConfig, fastConfig, backupConfig) => createCoreModelPort(runtime, selectedConfig, fastConfig, backupConfig),
   };
 

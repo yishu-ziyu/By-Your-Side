@@ -52,6 +52,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   const models: ModelRuntime = deps.createRuntime((providerId, credential) => {
     port?.postMessage({ type: "inproc_credential", providerId, credential: credential ?? null });
   });
+  void models.loadProviderModels().catch((error: unknown) => log(`provider model list unavailable: ${String(error)}`));
 
   async function ensureCore(): Promise<HostCore> {
     if (core) return core;
