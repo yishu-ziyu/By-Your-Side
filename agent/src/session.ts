@@ -19,6 +19,7 @@ import {FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback} from "../../sha
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import {NoProgressPolicy, noProgressMessage} from "./no-progress-policy.js";
 import {ExploreLadderPolicy} from "./explore-ladder.js";
+import {RunClock} from "./run-clock.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import { TaskActionRejected } from "./task-dispatcher.js";
 import {isAttachment} from '../../shared/protocol.js';
@@ -200,6 +201,7 @@ export class BrowserAgentSession {
   private pendingToolFailure: UserDelivery | null = null;
   private noProgressPolicy: NoProgressPolicy | null = null;
   private exploreLadder: ExploreLadderPolicy | null = null;
+  private runClock: RunClock | null = null;
   private savedFiles = new Map<string, { runId: string | null; chars: number; lines: number; savedAt: number }>();
   private readonly copiedFields = new CopiedFields();
   private copyScope(): string { return `${this.deliveryRunId() ?? this.requestStartedAt}`; }
@@ -743,12 +745,14 @@ if(required.includes(key))candidates.set(key,attachment);
 
       const noProgressPolicy = new NoProgressPolicy(stop => onNoProgress(stop));
       const exploreLadder = new ExploreLadderPolicy();
+      const runClock = new RunClock();
 
       const extensionFactories = [
         { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
         { name: "sideagent-no-progress-boundary", hidden: true, factory: noProgressPolicy.extension() },
         // 排在两条边界之后：它们比的是工具原本的结果，追加的下一步提示不能让重复的错误看起来像新内容。
         { name: "sideagent-explore-ladder", hidden: true, factory: exploreLadder.extension() },
+        { name: "sideagent-run-clock", hidden: true, factory: runClock.extension() },
         ...(memoryRuntime ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }] : []),
         ...(productContext ? [{ name: "sideagent-product-context", hidden: true, factory: productContext.extension() }] : []),
       ];
@@ -862,6 +866,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
       wrapper.noProgressPolicy = noProgressPolicy;
       wrapper.exploreLadder = exploreLadder;
+      wrapper.runClock = runClock;
       // 原地转圈：停下本轮，说清卡在哪一步、已有什么、还差什么。
       onNoProgress = stop => {
         // 本轮已有一段停下说明，不再重复。
@@ -1276,7 +1281,7 @@ return;}
     }
 
     const finalText = withAttachments(withPageContext(withVoiceHistory(text, inputOptions?.voiceHistory), context), attachments, this.modelSeesImages());
-    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
     // 新的一次用户提问是新一轮：上一轮交付过结果，不代表这一轮不会真正失败。
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
@@ -1543,7 +1548,7 @@ return;}
     }
 
     if (session.isStreaming) {
-      this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
+      this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
       this.memoryRuntime?.invalidateUserTurn("steer");
       this.noteSteer(text, context, attachments);
       void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
@@ -2047,7 +2052,7 @@ return;}
       throw new TaskActionRejected("未读补充尚未清理，原任务保持中断。请重试或重新连接。");
     }
 
-    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
     this.activeGoal = snapshot.goal;
@@ -2279,7 +2284,7 @@ return {kind:'model'};
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先用侧栏交还。");
 
     if (!session || !this.runningOrStarting(session)) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
-    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
     // 插话是新的用户要求：这一轮要重新判断有没有真正交付，不能沿用上一轮的结论。
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
