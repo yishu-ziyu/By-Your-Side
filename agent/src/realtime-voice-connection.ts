@@ -29,7 +29,7 @@ export const MODEL = 'stepaudio-3-realtime-preview';
 /**
  * 人设紧跟在身份句之后（实测放在全部规则末尾时几乎不影响口吻），并写明它只管语气措辞、与规则冲突时以规则为准。
  */
-export function withPersona(persona: string | undefined, instructions: string): string {
+function withPersona(persona: string | undefined, instructions: string): string {
   const text = persona?.trim();
 
   if (!text) return instructions;
@@ -44,7 +44,7 @@ type ProviderEvent = Parameters<RealtimeVoiceConnection["handle"]>[0];
 
 const ENDPOINT = `wss://api.stepfun.com/v1/realtime?model=${MODEL}`;
 
-export const STEP_VOICE = DEFAULT_STEP_VOICE;
+const STEP_VOICE = DEFAULT_STEP_VOICE;
 
 const SAMPLE_RATE = 24_000;
 
@@ -63,15 +63,15 @@ const AUTO_RESPONSE_WATCHDOG_MS = 2_000;
 const ASR_WAIT_MS = 3_000;
 
 /**
- * 会话挂住的判定（2026-09-25 实测 StepFun 偶发整体挂住：开口后不再回任何事件，对 commit 和 response.create 也不回应，
+ * 会话挂住的判定（StepFun 偶发整体挂住：开口后不再回任何事件，对 commit 和 response.create 也不回应，
  * 约 60 秒后才断线）。说了一段像样的话（累计 STALL_MIN_SPEECH_MS 以上人声）或服务端给了「开始说话」，却没给出「说完/附和/转写」，
  * 距最后一次人声和最后一个服务端事件又都过了 STALL_MS，就断开重连，请用户重说。服务端正常时断句最晚约比人声晚 8 秒。
  */
 const STALL_MS = 12_000;
 
 /**
- * 能直接操作页面时附在 read_page 结果上：2026-09-25 实测要圈按钮时模型先 read_page，
- * 说一句「我先获取快照找到它的 ref」就结束（同时段 5/7），通用指令又要求读页后直接回答。
+ * 能直接操作页面时附在 read_page 结果上：要圈按钮时模型常先 read_page，
+ * 说一句「我先获取快照找到它的 ref」就结束，因为通用指令要求读页后直接回答。
  */
 const READ_PAGE_ACTION_HINT = '这里只有页面文字，没有元素引用。若用户要操作或圈画页面元素，现在就调用 snapshot，拿到 ref 后直接调用对应工具；只是问页面内容就直接回答。';
 
@@ -83,7 +83,7 @@ const STALL_SPEECH_PEAK = 3_000;
 /** 调用发出后用户又开口（常见于 StepAudio 3 按语义把一句话切成两轮）：如实说明没执行，并让模型合起来重新调用。 */
 const SUPERSEDED_BY_SPEECH = '用户在你调用后又接着说了话，这次调用没有执行，也没有动页面。把前后几句合起来理解完整要求，然后直接重新调用需要的工具；不要只说要去做。';
 
-// 实测转写比首帧音频晚约 70ms（out/acceptance/real-path/2026-09-24T09-26-40-773Z-inproc-voice-stop-task）；
+// 转写通常比首帧音频晚几十毫秒；
 // 超过这个上限仍没有转写就按原样放行，不让可控任务期间的普通对话被卡住。
 const TRANSCRIPT_GATE_MS = 1_500;
 
@@ -120,7 +120,7 @@ const TOOL_DEFINITIONS = [
 
 export interface RealtimeTaskAction {action:'start'|'steer'|'pause'|'resume';targetId?:string;includePending?:boolean}
 
-export interface RealtimeVoiceTools {
+interface RealtimeVoiceTools {
   browserTool?: (call: RealtimeBrowserCall, signal: AbortSignal) => Promise<unknown>;
   task_action?: (text:string,action:RealtimeTaskAction,inputSequences?:number[])=>Promise<unknown>;
   browser_request: (text: string,inputSequences?:number[]) => Promise<unknown>;
@@ -128,7 +128,7 @@ export interface RealtimeVoiceTools {
   task_status: () => Promise<unknown>;
 }
 
-export interface RealtimeVoiceConnectionOptions {
+interface RealtimeVoiceConnectionOptions {
   key: string;
   model?: RealtimeVoiceModel;
   routeTranscript?: (text: string, current: () => boolean) => Promise<{ native: boolean; spokenText?: string }>;
@@ -150,7 +150,7 @@ export interface RealtimeVoiceConnectionOptions {
   runClaimed?: (text: string) => Promise<string | null>;
 }
 
-export interface VoiceRequestInput {
+interface VoiceRequestInput {
   voiceId: string;
   turn: number;
   itemId: string;
@@ -242,7 +242,7 @@ function serializeToolOutput(value: unknown, preserveExecution = false): string 
 }
 
 /** session.updated 的 echo 必须和请求一致才允许 ready。纯函数，便于离线用反例检查。 */
-export function configurationIssues(createdModel: string | null, session: Record<string, unknown>, serverVad = true, voice: string = STEP_VOICE, model: RealtimeVoiceModel = MODEL): string[] {
+function configurationIssues(createdModel: string | null, session: Record<string, unknown>, serverVad = true, voice: string = STEP_VOICE, model: RealtimeVoiceModel = MODEL): string[] {
   const issues: string[] = [];
 
   if (createdModel !== model) issues.push(`session.created 返回的模型是 ${createdModel ?? '缺失'}`);

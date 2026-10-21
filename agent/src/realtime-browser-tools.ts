@@ -15,7 +15,7 @@ export function validateRealtimeBrowserTool(name: string, args: Record<string, u
 }
 
 /** Host execution metadata, separate from the provider's function call_id. */
-export interface RealtimeBrowserExecution {
+interface RealtimeBrowserExecution {
   toolCallId?: string;
   transportId?: string;
   executionFact: ToolExecutionFact;

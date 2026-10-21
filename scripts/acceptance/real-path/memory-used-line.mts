@@ -502,7 +502,7 @@ try {
 
 const ok = !fatal && checks.length > 0 && checks.every((c) => c.pass);
 
-await writeFile(join(artifacts, "result.json"), JSON.stringify.toISOString(), ok, passed: checks.filter((c) => c.pass).length, total: checks.length, checks, fatal, mainRequests: mainRequests.length }, null, 2));
+await writeFile(join(artifacts, "result.json"), JSON.stringify({ case: "memory-used-line", finishedAt: new Date().toISOString(), ok, passed: checks.filter((c) => c.pass).length, total: checks.length, checks, fatal, mainRequests: mainRequests.length }, null, 2));
 
 console.log(`${ok ? "PASS" : "FAIL"} memory-used-line ${checks.filter((c) => c.pass).length}/${checks.length} → ${join(artifacts, "result.json")}`);
 

@@ -10,36 +10,36 @@
  */
 import { createElement as icon, Settings } from "lucide";
 
-export type ReadingFont = "song" | "hei" | "system";
+type ReadingFont = "song" | "hei" | "system";
 
-export type ReadingSize = "small" | "normal" | "large";
+type ReadingSize = "small" | "normal" | "large";
 
-export interface ReadingPrefs {
+interface ReadingPrefs {
   font: ReadingFont;
   size: ReadingSize;
 }
 
 /** 偏好默认值：解析旧存储、面板初始状态、恢复默认都引用这一处。 */
-export const READING_DEFAULT_PREFS: Readonly<ReadingPrefs> = Object.freeze({
+const READING_DEFAULT_PREFS: Readonly<ReadingPrefs> = Object.freeze({
   font: "system",
   size: "normal",
 });
 
 /** 面板选项文案。像素刻度是给用户看的；默认档位的真源头在 styles.css 的 :root。 */
-export const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: string }> = [
+const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: string }> = [
   { value: "song", label: "宋体" },
   { value: "hei", label: "黑体" },
   { value: "system", label: "系统默认" },
 ];
 
-export const READING_SIZE_OPTIONS: ReadonlyArray<{ value: ReadingSize; label: string }> = [
+const READING_SIZE_OPTIONS: ReadonlyArray<{ value: ReadingSize; label: string }> = [
   { value: "small", label: "小 13px" },
   { value: "normal", label: "标准 15px" },
   { value: "large", label: "大 17px" },
 ];
 
 /** chrome.storage.local 的键。 */
-export const READING_STORAGE_KEY = "sideagent_reading_appearance";
+const READING_STORAGE_KEY = "sideagent_reading_appearance";
 
 const READING_FONTS: readonly ReadingFont[] = ["song", "hei", "system"];
 
@@ -57,13 +57,13 @@ const READING_SIZE_OVERRIDES: Record<Exclude<ReadingSize, "normal">, string> = {
   large: "17px",
 };
 
-export interface ReadingStyleVars {
+interface ReadingStyleVars {
   "--reading-font": string | null;
   "--reading-size": string | null;
 }
 
 /** 偏好 → CSS 变量。null 表示回到 styles.css 的默认值。 */
-export function readingStyleVars(prefs: ReadingPrefs): ReadingStyleVars {
+function readingStyleVars(prefs: ReadingPrefs): ReadingStyleVars {
   const normalized = normalizeReadingPrefs(prefs);
 
   return {
@@ -72,12 +72,12 @@ export function readingStyleVars(prefs: ReadingPrefs): ReadingStyleVars {
   };
 }
 
-export function sameReadingPrefs(a: ReadingPrefs, b: ReadingPrefs): boolean {
+function sameReadingPrefs(a: ReadingPrefs, b: ReadingPrefs): boolean {
   return a.font === b.font && a.size === b.size;
 }
 
 /** 白名单解析：只接受已知档位，缺字段或旧/非法值一律回默认。 */
-export function normalizeReadingPrefs(raw: unknown): ReadingPrefs {
+function normalizeReadingPrefs(raw: unknown): ReadingPrefs {
   const source =
     raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
 
@@ -92,7 +92,7 @@ export function normalizeReadingPrefs(raw: unknown): ReadingPrefs {
 }
 
 /** 把偏好写到样式根上（默认 documentElement）；默认档位移除覆盖，交回 CSS。 */
-export function applyReadingPrefs(
+function applyReadingPrefs(
   prefs: ReadingPrefs,
   root: Pick<HTMLElement, "style"> | null | undefined,
 ): void {
@@ -104,7 +104,7 @@ export function applyReadingPrefs(
   }
 }
 
-export interface ReadingSettingsPort {
+interface ReadingSettingsPort {
   /** 读取已保存的偏好；没有记录时返回 undefined。 */
   load(): Promise<unknown>;
   /** 写入偏好；失败必须 reject，界面据此提示未保存。 */
@@ -136,7 +136,7 @@ function createMemoryPort(): ReadingSettingsPort {
 }
 
 /** 浏览器里的默认端口；缺 storage 事件时只退化为「无跨面板同步」，不报错。 */
-export function createChromeReadingPort(): ReadingSettingsPort {
+function createChromeReadingPort(): ReadingSettingsPort {
   const local = typeof chrome === "undefined" ? undefined : chrome.storage?.local;
 
   if (!local) return createMemoryPort();
@@ -169,15 +169,15 @@ export function createChromeReadingPort(): ReadingSettingsPort {
   };
 }
 
-export type ReadingSaveState = "idle" | "saving" | "saved" | "error";
+type ReadingSaveState = "idle" | "saving" | "saved" | "error";
 
-export interface ReadingStatus {
+interface ReadingStatus {
   state: ReadingSaveState;
   /** 出错时的可读原因（信息缺失时给兜底文案）；非错误态为空。 */
   message: string;
 }
 
-export interface ReadingSettingsDeps {
+interface ReadingSettingsDeps {
   port: ReadingSettingsPort;
   /** 偏好变化时应用（写 CSS 变量、同步面板控件）。 */
   apply: (prefs: ReadingPrefs) => void;
@@ -204,7 +204,7 @@ function errorMessage(error: unknown): string {
  * - 写入期间被忽略掉的远端事件不缓存、不盲目回放：等本地写队列清空后回读权威存储收敛，
  *   并用 revision 防止回读结果盖掉期间更新的本地修改或存储事件。
  */
-export class ReadingSettingsStore {
+class ReadingSettingsStore {
   private current: ReadingPrefs = { ...READING_DEFAULT_PREFS };
   private pending: ReadingPrefs | null = null;
   private writing = false;
@@ -360,7 +360,7 @@ const SAVE_STATUS_TEXT: Record<ReadingSaveState, string> = {
   error: "未保存",
 };
 
-export interface ReadingSettingsHost {
+interface ReadingSettingsHost {
   /** 顶部宿主：挂载外观面板，未传入口时附带默认按钮。 */
   topbar: HTMLElement;
   /** 复用更多菜单中的入口，关闭时回到可见的更多按钮。 */
@@ -376,7 +376,7 @@ export interface ReadingSettingsHost {
   doc?: Document;
 }
 
-export interface ReadingSettingsHandle {
+interface ReadingSettingsHandle {
   store: ReadingSettingsStore;
   open(): void;
   close(): void;

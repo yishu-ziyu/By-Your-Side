@@ -10,13 +10,13 @@ export type QueuePurpose = "main" | "side";
 export interface ModelQueueWait { provider: string; purpose: QueuePurpose; waitedMs: number }
 
 /** 排队超过这么久才记进诊断：更短的等待用户感觉不到，记了只添噪音。 */
-export const QUEUE_RECORD_MS = 200;
+const QUEUE_RECORD_MS = 200;
 
 /**
  * 后台请求遇到空名额也先让这么久：任务开头记忆判断比主任务请求早几十毫秒发出，先占了名额就要挡住用户等的回答。
  * 窗口内来了主任务请求就让它先走；窗口过后仍没有，后台请求照常发出。
  */
-export const MAIN_FIRST_MS = 200;
+const MAIN_FIRST_MS = 200;
 
 type Release = () => void;
 
@@ -166,7 +166,7 @@ export class ProviderGate {
 const NO_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 /** 没发出去就结束的一次调用：形状同服务商适配层的取消或出错结局，调用方按原路处理。 */
-export function unsentReply(model: Model<Api>, stopReason: "aborted" | "error", errorMessage: string): AssistantMessage {
+function unsentReply(model: Model<Api>, stopReason: "aborted" | "error", errorMessage: string): AssistantMessage {
   return { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: structuredClone(NO_USAGE), stopReason, errorMessage, timestamp: Date.now() };
 }
 
@@ -174,7 +174,7 @@ export function unsentReply(model: Model<Api>, stopReason: "aborted" | "error", 
  * 取消后最多等适配层这么久收尾：名额在被取消的请求真正结束后才放，免得下一个请求在服务端还没收掉上一个时就到；
  * 适配层卡住不结束也一定放，名额不会漏掉。
  */
-export const ABORT_RELEASE_MS = 2_000;
+const ABORT_RELEASE_MS = 2_000;
 
 /** 请求结束时释放名额；被取消后超过 ABORT_RELEASE_MS 仍没结束就强制释放。返回「已结束」的回调。 */
 function holdUntilDone(release: Release, signal: AbortSignal | undefined): () => void {

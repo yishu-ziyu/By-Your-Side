@@ -15,7 +15,7 @@ import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 export type MemoryContextRule = "always" | "site" | "in-validity" | "asked";
 
 /** 每层上限：条数与字数。「关于你」沿用升级前的 40 条 / 4000 字。 */
-export const MEMORY_CONTEXT_CAPS = {
+const MEMORY_CONTEXT_CAPS = {
   facts: { entries: 40, chars: 4000 },
   inValidity: { entries: 10, chars: 2000 },
   siteTasks: { entries: 3, chars: 2400 },
@@ -25,7 +25,7 @@ export const MEMORY_CONTEXT_CAPS = {
 /** 每轮带的记忆总字数上限（各层上限之和再收紧），保证不挤占任务上下文。 */
 export const MEMORY_CONTEXT_MAX_CHARS = 9000;
 
-export interface MemoryContextInput {
+interface MemoryContextInput {
   entries: MemoryEntry[];
   tasks: TaskHistoryEntry[];
   /** 当前网址的主机名；没有网页时为 null。 */
@@ -140,7 +140,7 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
       if (chosen.has(task.id) || expiredIds.has(task.id) || !task.hosts.includes(input.hostname)) continue;
 
       // 同一网站的过往任务要和这句话对得上（按用户原话比词，不比摘要：摘要会抄网页原文）。
-      // 10-09 实测不比就带，侧栏回答下挂着无关的旧任务「按上次做过的…」。
+      // 不比就带的话，侧栏回答下会挂着无关的旧任务「按上次做过的…」。
       if (!isRelevantMemory([task.goal, ...task.revisions].join("\n"), input.text)) { skipped.notRelevant++; continue; }
 
       if (take(taskContextChars(task), here, MEMORY_CONTEXT_CAPS.siteTasks)) { pickedTasks.push({ task, rule: "site" }); chosen.add(task.id); }

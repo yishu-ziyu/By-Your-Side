@@ -22,7 +22,7 @@ export class TaskReceiptError extends Error {
 }
 
 /** One private file per request. Never prune automatically: an old ID must not execute again. */
-export class TaskReceiptStore {
+class TaskReceiptStore {
   private readonly memory = new Map<string, RecordEntry>();
   private indexMem: Record<string, string[]> | null = null;
   private readonly membership = new Map<string, Set<string>>();

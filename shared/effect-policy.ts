@@ -1,12 +1,46 @@
 /**
  * 这次操作有什么副作用：按具体请求判定，不只看工具名。
  * ControlGate 仍是最终执行闸门；本模块只回答要不要走闸门。
- * 不从 control.ts 导入，避免循环依赖。
  */
+import type { ToolName } from "./protocol.js";
 
-export type EffectClass = "read" | "write" | "unknown";
+/** 接管期间禁止落地的浏览器写操作。至少覆盖完成标准列出的那些。 */
+export const WRITE_TOOLS = [
+  "worker_tabs",
+  "page_translation",
+  "open_tab",
+  "switch_tab",
+  "close_tab",
+  "navigate",
+  "click",
+  "double_click",
+  "hover",
+  "fill",
+  "type_text",
+  "press_key",
+  "scroll",
+  "js",
+  "mark",
+  "clear_marks",
+  "arm_event",
+  "wait_event",
+  "disarm_event",
+  "accept_dialog",
+  "dismiss_dialog",
+  "download_url",
+  "select_option",
+  "upload_file",
+] as const satisfies readonly ToolName[];
 
-export interface EffectDecision {
+export const WRITE_TOOL_SET: ReadonlySet<ToolName> = new Set(WRITE_TOOLS);
+
+export function isWriteTool(name: string): name is ToolName {
+  return WRITE_TOOL_SET.has(name as ToolName);
+}
+
+type EffectClass = "read" | "write" | "unknown";
+
+interface EffectDecision {
   class: EffectClass;
   requiresControlGate: boolean;
   reason: string;

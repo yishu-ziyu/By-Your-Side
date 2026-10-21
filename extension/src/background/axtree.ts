@@ -31,7 +31,7 @@ export interface AxNodeLite {
  * 我们要照顾 LLM 上下文：24K 字符约 6k token，已覆盖一页复杂站点的主要交互区。
  * 超预算时优先保留可交互/可引用行（ref），先丢纯文本行，见 renderBudgeted。
  */
-export const MAX_OUTPUT_CHARS = 24_000;
+const MAX_OUTPUT_CHARS = 24_000;
 
 const MAX_LINE_TEXT = 200;
 
@@ -170,7 +170,7 @@ function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: Read
   return parts.join(" ");
 }
 
-export interface AxTextResult {
+interface AxTextResult {
   text: string;
   /** 本次快照输出的全部 ref（backendDOMNodeId），调用方记录供 click/fill 校验。 */
   backendIds: number[];
@@ -595,7 +595,7 @@ export function itemTextOf(nodes: readonly AxNodeLite[], item: number, ref: numb
 }
 
 /** 整页快照里一个控件所在的那一项：哪个节点（同一项只写一次）、写什么字。 */
-export interface ItemNote {
+interface ItemNote {
   item: number;
   text: string;
 }

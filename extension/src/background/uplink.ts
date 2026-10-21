@@ -1,6 +1,6 @@
 /**
  * 上行连接管理：background service worker ⇆ 扩展内 agent（offscreen 文档，见 ../inproc/）。
- * 本机伴随进程与 WebSocket 调试通道都已删除；offscreen 文档建不起来时按退避重试。
+ * offscreen 文档建不起来时按退避重试。
  * 认证失败（hello_error）时停止自动重连，等面板触发 retry()。
  */
 import {
@@ -143,7 +143,7 @@ export class Uplink {
       const existing = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
 
       if (existing.length === 0) {
-        // USER_MEDIA：按住说话在侧栏关着时也要在这里录音（#125）。
+        // USER_MEDIA：按住说话在侧栏关着时也要在这里录音。
         await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS, chrome.offscreen.Reason.USER_MEDIA], justification: "Run the agent loop inside the extension and record push-to-talk speech" });
       }
     } catch (err) {

@@ -5,13 +5,13 @@
  */
 
 /** 按住多久才算开始说话：短于它的是轻点或组合键的开头。 */
-export const PTT_HOLD_MS = 150;
+const PTT_HOLD_MS = 150;
 
-export interface PttKeyEvent { type: "keydown" | "keyup"; code: string; repeat: boolean }
+interface PttKeyEvent { type: "keydown" | "keyup"; code: string; repeat: boolean }
 
-export interface PttKeyHandlers { onStart: () => void; onStop: () => void; onCancel: () => void }
+interface PttKeyHandlers { onStart: () => void; onStop: () => void; onCancel: () => void }
 
-export interface PttKeys {
+interface PttKeys {
   /** 交给它每个按键事件；返回 true 表示这一下属于按住说话（调用方可阻止默认行为）。 */
   handle: (event: PttKeyEvent) => boolean;
   /** 窗口失焦、页面隐藏：录音中则取消。 */

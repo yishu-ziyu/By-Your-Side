@@ -1,6 +1,6 @@
 import { SENSITIVE_FIELD_NAME } from "../../../shared/trace-sanitize.js";
 import { FILL_UNDO_SUBMIT, type FillUndoNote, type FillUndoView } from "../relay.js";
-import { callDom, callOnBackendNode, ensureDomOps } from "./exec/input.js";
+import { callDom, callOnBackendNode, ensureDomOps } from "./exec/page-call.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
 import { parseExecutionKey } from "./tab-bindings.js";
 
@@ -27,7 +27,7 @@ type UndoProbe = { token: string | null; name: string; kind: UndoKind; sensitive
 type UndoOutcome = "restored" | "user_changed" | "gone" | "failed";
 
 /** 页面里怎么找到这一栏：AX 引用的节点、定位串、点击落点，或者当前焦点。 */
-export type UndoWhere = { backendNodeId: number } | { target: string } | { point: [number, number] } | { focused: true };
+type UndoWhere = { backendNodeId: number } | { target: string } | { point: [number, number] } | { focused: true };
 
 interface Entry { token: string; name: string; kind: "text" | "select" | "check" | "radio"; sensitive: boolean; before: UndoState; after: UndoState }
 

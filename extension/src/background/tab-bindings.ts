@@ -53,20 +53,6 @@ export function bindExclusiveResource(map: TabResourceMap, tabId: number, key: s
   return { ...map, [String(tabId)]: { tabId, conversationId, mode: "exclusive", collaborators: [key] } };
 }
 
-export function shareResource(map: TabResourceMap, tabId: number, ownerKey: string, collaboratorKeys: string[]): TabResourceMap {
-  const owner = parseExecutionKey(ownerKey);
-  const current = resourceForTab(map, tabId);
-
-  if (current && current.conversationId !== owner.conversationId) throw new Error("标签页属于其他会话，不能跨会话共享");
-  const collaborators = [...new Set([ownerKey, ...(current?.collaborators ?? []), ...collaboratorKeys])];
-
-  for (const key of collaborators) {
-    if (parseExecutionKey(key).conversationId !== owner.conversationId) throw new Error("标签页只能和同一会话里的助手共享");
-  }
-
-  return { ...map, [String(tabId)]: { tabId, conversationId: owner.conversationId, mode: "shared", collaborators } };
-}
-
 export function mayAccessResource(resource: TabResource | undefined, key: string): boolean {
   if (!resource) return true;
   const { conversationId } = parseExecutionKey(key);

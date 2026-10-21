@@ -1,7 +1,7 @@
 import { D_EMPH } from "../shared/motion-tokens.js";
 import { reducedMotion } from "./branch-graph.js";
 
-export type MotionIconKind =
+type MotionIconKind =
   | "audio-lines"
   | "mic"
   | "camera"
@@ -26,7 +26,7 @@ export function setMotionIcon(el: HTMLElement, kind: MotionIconKind | null): voi
 }
 
 /** 只在当前交互里动一次。目标可以是包着图标的按钮，也可以是有伪元素图标的按钮。 */
-export function pulseMotionIcon(el: HTMLElement): void {
+function pulseMotionIcon(el: HTMLElement): void {
   if (reducedMotion() || !el.dataset.motionIcon) return;
   window.clearTimeout(timers.get(el));
   el.classList.remove("motion-icon-pulse");

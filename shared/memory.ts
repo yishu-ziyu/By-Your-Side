@@ -50,10 +50,10 @@ export interface MemoryEntry {
 }
 
 /** 升级前（format 1）的条目：只有下面这些字段。 */
-export type LegacyMemoryEntry = Pick<MemoryEntry, "id" | "version" | "text" | "scope" | "sourceConversationId" | "createdAt" | "updatedAt" | "experience">;
+type LegacyMemoryEntry = Pick<MemoryEntry, "id" | "version" | "text" | "scope" | "sourceConversationId" | "createdAt" | "updatedAt" | "experience">;
 
 /** format 2 的条目：还没有 factId。 */
-export type Format2MemoryEntry = Omit<MemoryEntry, "factId" | "formatVersion"> & { formatVersion: 2 };
+type Format2MemoryEntry = Omit<MemoryEntry, "factId" | "formatVersion"> & { formatVersion: 2 };
 
 export const MEMORY_QUOTE_MAX = 600;
 

@@ -1,5 +1,5 @@
 import type {ExtensionFactory} from '@earendil-works/pi-coding-agent';
-import {isWriteTool} from '../../shared/control.js';
+import { isWriteTool } from '../../shared/effect-policy.js';
 import {toolAction} from '../../shared/user-facing.js';
 
 /**
@@ -12,13 +12,12 @@ import {toolAction} from '../../shared/user-facing.js';
  *   或错误文字已经见过（换了参数也算同一个错误）；
  * - 记半步：中间等待过（sleep/waitFor/waitForLoad 后）读到的同样内容：正常等待给加倍的余量，但不会无限等下去；
  * - 不计：第一次出现的错误（模型刚碰到环境限制）。
- * 累计满 NO_PROGRESS_LIMIT 步没进展就停下本轮。门槛最初按 10-01 B 站记录回放定（见验收文件的回放表）；
- * 10-10 用户裁决放宽，让助手多试几步再停。
+ * 累计满 NO_PROGRESS_LIMIT 步没进展就停下本轮；门槛按用户要求放宽，让助手多试几步再停。
  */
-export const NO_PROGRESS_LIMIT = 15;
+const NO_PROGRESS_LIMIT = 15;
 
-/** 新片段至少占结果片段的这个比例才算新信息：同一份数据重切重读只多出 ≤0.51% 的边界碎片（10-01 记录）。 */
-export const NOVELTY_MIN_SHARE = 0.02;
+/** 新片段至少占结果片段的这个比例才算新信息：同一份数据重切重读只多出 ≤0.51% 的边界碎片。 */
+const NOVELTY_MIN_SHARE = 0.02;
 
 /** 一次任务最多记这么多不同片段，防止长任务把内存吃满；超过后不再记新片段（只会更不容易停）。 */
 const SEEN_MAX = 200_000;
@@ -32,7 +31,7 @@ const VOLATILE = [
 ];
 
 /** 结果文字 → 内容片段：去掉 JSON 转义层，抹掉易变字段，按换行与 JSON 标点切开。 */
-export function resultSegments(text:string):Set<string> {
+function resultSegments(text:string):Set<string> {
   let plain=text.replace(/\\+n/g,'\n').replace(/\\+(["\\/])/g,'$1').replace(/\\+/g,'');
 
   for(const pattern of VOLATILE)plain=plain.replace(pattern,'#');
@@ -54,7 +53,7 @@ function isEffectStep(name:string,error?:string):boolean {
   return !error&&isWriteTool(name)&&!READ_LIKE_WRITES.has(name);
 }
 
-export interface NoProgressStop {toolName:string;streak:number}
+interface NoProgressStop {toolName:string;streak:number}
 
 export class NoProgressPolicy {
   private seen=new Set<string>();
@@ -130,7 +129,7 @@ function mostFrequent(names:string[]):string {
   return [...counts].reduce((best,item)=>item[1]>=best[1]?item:best)[0];
 }
 
-export interface NoProgressFacts {
+interface NoProgressFacts {
   toolName:string;
   streak:number;
   files:Array<{filename:string;chars?:number;lines?:number}>;
@@ -142,7 +141,7 @@ export interface NoProgressFacts {
   unverified:string[];
 }
 
-export interface NoProgressMessage {text:string;unfinished:string[]}
+interface NoProgressMessage {text:string;unfinished:string[]}
 
 /** 停下时给用户的一段话：卡在哪一步、已有什么、还差什么。 */
 export function noProgressMessage(facts:NoProgressFacts):NoProgressMessage {

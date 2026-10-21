@@ -11,12 +11,12 @@ export const DICTATION_PROVIDERS: Record<DictationProvider, { name: string; desc
   siliconflow: { name: "硅基流动 · SenseVoice", description: "支持普通话和粤语，说完出字。录音发给硅基流动，按服务商规则计费。" },
 };
 export const isDictationProvider = (value: unknown): value is DictationProvider => value === "chrome" || value === "stepfun-realtime" || value === "stepfun" || value === "siliconflow";
-export function parseDictationProvider(value: unknown): DictationProvider {
+function parseDictationProvider(value: unknown): DictationProvider {
   if (typeof value === "object" && value !== null && "provider" in value && isDictationProvider(value.provider)) return value.provider;
   return "chrome";
 }
-export type DictationKeySource = "own" | "voice";
-export function parseDictationKeySource(value: unknown): DictationKeySource {
+type DictationKeySource = "own" | "voice";
+function parseDictationKeySource(value: unknown): DictationKeySource {
   return typeof value === "object" && value !== null && "keySource" in value && value.keySource === "voice" ? "voice" : "own";
 }
 export async function readVoiceDictationKey(): Promise<{ key: string; description: string }> {

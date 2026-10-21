@@ -44,7 +44,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   let answerText = '';
 
   /**
-   * #55 字幕：正在说时把当前句（累积文本的最后一句）单独标出来。
+   * 字幕：正在说时把当前句（累积文本的最后一句）单独标出来。
    * 降级说明：Realtime 只给累积的 audio_transcript 文本，没有词级时间戳（VoiceEvent 'text' 只有 text），
    * 所以不加粗当前词，只按句高亮；要做词级需另改语音后端协议。
    */
@@ -374,7 +374,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     region.hidden = next === 'idle';
     button.setAttribute('aria-expanded', String(next !== 'idle'));
     button.setAttribute('aria-label', next === 'idle' ? '开始语音对话' : '结束语音对话');
-    // #55 状态由光球自己的动法表达，球下只留一个灰字：在听 / 在想（有具体说明就写说明，如「在读这个页面」）/ 在说（字幕在说话，只给读屏）。
+    // 状态由光球自己的动法表达，球下只留一个灰字：在听 / 在想（有具体说明就写说明，如「在读这个页面」）/ 在说（字幕在说话，只给读屏）。
     const plainDetail = detail && detail !== '正在处理这句话' ? detail : '';
     const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '语音不可用' };
     status.textContent = stateText[next] ?? (next === 'idle' ? '' : detail ?? '');

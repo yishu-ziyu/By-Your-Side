@@ -1,7 +1,6 @@
 /**
  * 与传输方式无关的宿主核心：会话管理、语音接线、hello 回应与消息分发。
- * 本机伴随进程（main.ts，stdio / ws）与扩展 offscreen 文档（extension/src/inproc/main.ts，runtime 端口）共用这一份；
- * 两边只各自提供传输、存储与本机才有的能力（剪贴板服务、语音录制）。
+ * 扩展 offscreen 文档（extension/src/inproc/main.ts，runtime 端口）用它；传输和存储由调用方提供。
  */
 import { PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, HOST_VERSION, type ClientMessage, type ServerMessage } from "../../shared/protocol.js";
 import type { ConversationPersistence } from "./conversation-persistence.js";
@@ -76,12 +75,10 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     toClient,
     options.voiceKey,
     options.voiceSession,
-    undefined,
     (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context),
     (event, fields) => options.log(`[voice] ${event} ${JSON.stringify(fields)}`),
     () => conversations.voiceTargets(),
     (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status),
-    (id, text, runId) => conversations.recordSpokenAck(id, text, runId),
     (origin, target) => conversations.isVoiceTask(origin, target),
     async (id, input) => {
       const runtime = conversations.get(id)?.runtime;

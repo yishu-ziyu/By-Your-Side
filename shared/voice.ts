@@ -79,14 +79,14 @@ export interface UserDelivery {
   sources?: UserDeliverySourceRef[];
   /**
    * 模型说做完、宿主账本认为没做完时宿主补的一句（partialResultNote）。不进正文：侧栏只在过程行说一次完成情况；
-   * 念出来、给旁路模型看和记进过往任务时仍接在正文后面（deliveryTextWithNote），与 10-13 之前的正文一致。
+   * 念出来、给旁路模型看和记进过往任务时仍接在正文后面（deliveryTextWithNote）。
    */
   hostNote?: string;
 }
 
 export const USER_DELIVERY_HOST_NOTE_MAX = 200;
 
-/** 正文加宿主补的一句，超长时截掉正文尾部并标明：与 10-13 之前写进正文的样子逐字相同。 */
+/** 正文加宿主补的一句，超长时截掉正文尾部并标明。 */
 export function deliveryTextWithNote(delivery: Pick<UserDelivery, "text" | "hostNote">): string {
   if (!delivery.hostNote) return delivery.text;
   const text = `${delivery.text}\n\n${delivery.hostNote}`;
@@ -229,8 +229,8 @@ export function isStepVoice(value: unknown): value is StepVoice {
 }
 
 /**
- * 语音光球的样子（#124）：暮色、晨光是自己用流体模拟渲染的循环视频（scripts/orb/render_fluid.py），粒子是原来的粒子球。
- * 10-07 用户挑选后三种都保留，默认暮色。
+ * 语音光球的样子：暮色、晨光是自己用流体模拟渲染的循环视频（scripts/orb/render_fluid.py），粒子是原来的粒子球。
+ * 用户要求三种都保留，默认暮色。
  */
 export const ORB_STYLES = [
   { id: "dusk", label: "暮色" },
@@ -519,7 +519,7 @@ export function isVoiceConversationContext(v: unknown): v is VoiceConversationCo
 
 /**
  * 核对「没保存 / 没提交」这类约束时，能否只凭执行账本：每次改动都记了账，而且每一笔都看得出改了什么。
- * 执行过页面 JS 或原始 CDP 后为否，核对须重读页面（用户 2026-09-25 裁决，
+ * 执行过页面 JS 或原始 CDP 后为否，核对须重读页面（用户定，
  * 写入闸门仍只看 executionAuditComplete（每次改动是否都记了账），不受此影响。
  */
 export function executionEffectsFullyKnown(s: Pick<TaskProgressSnapshot, 'executionAuditComplete' | 'untrackedWritePending' | 'opaqueEffectRan'>): boolean {

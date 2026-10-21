@@ -4,29 +4,9 @@
 import type { ConversationSummary } from '../../../shared/protocol.js';
 import type { TaskHistoryEntry } from '../../../shared/task-history.js';
 
-export function conversationStateLabel(c: Pick<ConversationSummary, 'state' | 'checkpoint'>): string {
-  if (c.checkpoint === 'unavailable') {
-    return '恢复失败';
-  }
+type ConversationOutcomeKind = "done" | "waiting" | "stopped" | "error" | "running" | "new";
 
-  if (c.checkpoint === 'interrupted') {
-    return '已中断';
-  }
-
-  if (c.state === 'running') {
-    return '运行中';
-  }
-
-  if (c.state === 'user') {
-    return '现在归你';
-  }
-
-  return '空闲';
-}
-
-export type ConversationOutcomeKind = "done" | "waiting" | "stopped" | "error" | "running" | "new";
-
-export interface ConversationOutcome {
+interface ConversationOutcome {
   kind: ConversationOutcomeKind;
   icon: string;
   line: string;
@@ -93,7 +73,7 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
     return '现在归你';
   }
 
-  // 顶部条挂在当前对话上方，要说清这是另一个对话（#103）。
+  // 顶部条挂在当前对话上方，要说清这是另一个对话。
   return '另一个会话的任务结束了';
 }
 

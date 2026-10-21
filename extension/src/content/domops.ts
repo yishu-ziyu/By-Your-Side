@@ -284,7 +284,7 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
 
   /**
    * 文字/名字型目标在动作那一刻再核对一次：文字不在了、或同样的文字跑到别的元素上，都报 TARGET_GONE 停下，
-   * 不点别的东西（YIS-113 R3）。CSS/xpath/href 目标照旧按字符串重解析，不改既有语义。
+   * 不点别的东西。CSS/xpath/href 目标照旧按字符串重解析，不改既有语义。
    */
   function mustResolveNamed(target: string, verb: string): Element {
     const label = namedTargetLabel(target);
@@ -428,7 +428,7 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
 
       const tag = el.tagName.toLowerCase();
 
-      // 先核对能不能填，再聚焦写入：不能填时页面一点没动，背景侧按「没执行」上报（#22/#27）。
+      // 先核对能不能填，再聚焦写入：不能填时页面一点没动，背景侧按「没执行」上报。
       if (tag !== "select" && tag !== "input" && tag !== "textarea" && !el.isContentEditable) {
         return { refused: "元素不可填充（非 input/textarea/select/contenteditable），操作未执行" };
       }

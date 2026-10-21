@@ -5,7 +5,7 @@ export type ElementProperty = typeof ELEMENT_PROPERTIES[number];
 
 export type ElementValue = string | number | boolean;
 
-export type ElementExpectation = { property: ElementProperty; equals: ElementValue; contains?: never } | { property: 'textContent' | 'visibleText' | 'value' | 'displayValue'; contains: string; equals?: never };
+type ElementExpectation = { property: ElementProperty; equals: ElementValue; contains?: never } | { property: 'textContent' | 'visibleText' | 'value' | 'displayValue'; contains: string; equals?: never };
 
 export interface ElementReadOptions {
   properties?: ElementProperty[];

@@ -1,15 +1,6 @@
 import type {Attachment, PageContext} from '../../shared/protocol.js';
 import {normalizeSpeech} from './voice-receipt.js';
 
-/**
- * 终止任务的语音读回与已有待确认请求的身份快照。
- * 普通 steer 直接送达；不在语音入口重复确认每条修改。
- * 具体危险网页动作仍由执行层确认。
- */
-
-/** 确认窗口：超过这个时间没回应就作废，避免几天后一句"对"误触发。 */
-export const CONTROL_CONFIRM_TTL_MS = 90_000;
-
 /** 保存复述时的要求和执行身份，确认轮的新资料不能替换它们。 */
 export interface ControlConfirmSnapshot {
   voiceId: string;
@@ -61,9 +52,3 @@ export function isExplicitTaskAbort(text: string): boolean {
     && !/(?:不要|别|不用|先别|不想)(?:把)?(?:当前|这个|这项)?(?:任务)?(?:给我)?(?:终止|中止|取消|停止|结束|停掉)/.test(short);
 }
 
-/** 复述用用户自己的原话：转写错了才看得见，比"确认修改吗"有用。 */
-export function controlConfirmMessage(text: string): string {
-  const quoted = text.replace(/\s+/g, " ").trim().slice(0, 80);
-
-  return `你是说“${quoted}”，对吗？确认后我就照做。`;
-}

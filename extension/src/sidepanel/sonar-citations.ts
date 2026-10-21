@@ -12,7 +12,7 @@ export async function captureCitationContext(page: { id: number; url: string } |
   } catch { return null; }
 }
 
-/** 正文里可去原页核对位置的数字（同一套规则也给 #49 出处角标找段落用）。 */
+/** 正文里可去原页核对位置的数字（同一套规则也给出处角标找段落用）。 */
 export function citationValues(text: string): string[] {
   return [...new Set(text.match(/[+−-]?\d[\d,]*(?:\.\d+)?(?:%|％|M|亿|万|元)?/g) ?? [])].filter(value => value.length >= 2).slice(0, 8);
 }
@@ -78,7 +78,7 @@ export async function attachSourceCitations(answer: HTMLElement, context: Citati
     const found = findNumberText(answer, value);
 
     if (!found) continue;
-    // 回答正文里的数字本身就是入口：虚下划线，点它回原页定位（原来是文末一排「✦ 数字 ↗」）。
+    // 回答正文里的数字本身就是入口：虚下划线，点它回原页定位。
     const rest = found.node.splitText(found.at);
     rest.splitText(value.length);
     const mark = document.createElement('span');

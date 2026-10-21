@@ -6,7 +6,7 @@
  * 状态不是执行证据：画不上不改变任务判定，执行结果仍以 tool_result 为准。
  */
 import { activeTargetTabs } from "./target-window.js";
-import { callDom, ensureCursor } from "./exec/input.js";
+import { callDom, ensureCursor } from "./exec/page-call.js";
 import { parseExecutionKey } from "./tab-bindings.js";
 import { feedbackIsStale, type FeedbackPillView } from "../shared/feedback-pill.js";
 import type { ExecutionFeedback } from "../../../shared/execution-feedback.js";

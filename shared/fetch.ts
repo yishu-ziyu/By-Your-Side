@@ -10,24 +10,13 @@ export const FETCH_READ_DEADLINE_MS = 30_000;
 
 export const FETCH_MAX_REDIRECTS = 3;
 
-export const FETCH_ALLOWED_METHODS = ["GET", "POST"] as const;
+const FETCH_ALLOWED_METHODS = ["GET", "POST"] as const;
 
-export type FetchMethod = (typeof FETCH_ALLOWED_METHODS)[number];
+type FetchMethod = (typeof FETCH_ALLOWED_METHODS)[number];
 
 /** Refused before any request is sent: the extension reports it as not executed. */
 export class FetchRefused extends Error {
   readonly executionFact = "not_executed";
-}
-
-/** Tests may allow one exact origin (loopback fixture). Production never calls this. */
-let fetchTestOrigin: string | null = null;
-
-export function installFetchTestOrigin(origin: string): () => void {
-  fetchTestOrigin = origin;
-
-  return () => {
-    if (fetchTestOrigin === origin) fetchTestOrigin = null;
-  };
 }
 
 const PRIVATE_HOST = /^(localhost|.*\.local|.*\.internal|.*\.localhost)$/i;
@@ -41,7 +30,7 @@ const PRIVATE_V4 = [
   /^192\.168\./,
 ];
 
-export interface FetchRequest {
+interface FetchRequest {
   url: string;
   method: FetchMethod;
   headers: Record<string, string>;
@@ -71,9 +60,7 @@ export function normalizeFetchRequest(raw: {
   }
 
   const host = parsed.hostname.replace(/^\[|\]$/g, "");
-  const isTestOrigin = fetchTestOrigin !== null && parsed.origin === fetchTestOrigin;
-
-  if (!isTestOrigin && (PRIVATE_HOST.test(host) || PRIVATE_V4.some((re) => re.test(host)) || host === "::1" || /^f[cd][0-9a-f]{2}:/i.test(host))) {
+  if (PRIVATE_HOST.test(host) || PRIVATE_V4.some((re) => re.test(host)) || host === "::1" || /^f[cd][0-9a-f]{2}:/i.test(host)) {
     throw new FetchRefused(`fetch 拒绝本地/私网地址（${host}）：带着登录态的请求不能指向本机服务，没有发出请求。要读这个页面，请用 open_tab 或 navigate 打开它，再用 snapshot 阅读。`);
   }
 
@@ -101,9 +88,9 @@ export function normalizeFetchRequest(raw: {
   return { url: parsed.toString(), method: method as FetchMethod, headers, body };
 }
 
-export type CappedStopReason = "complete" | "limit" | "deadline" | "abort";
+type CappedStopReason = "complete" | "limit" | "deadline" | "abort";
 
-export interface CappedRead {
+interface CappedRead {
   text: string;
   /** Bytes kept for the caller. */
   retainedBytes: number;

@@ -6,7 +6,7 @@
  */
 import { REVIEW_ASPECTS, type ReviewAspect, type TurnReview } from "./memory-review.js";
 
-export interface StyleSignal {
+interface StyleSignal {
   aspect: ReviewAspect;
   feedback: TurnReview["feedback"];
   conversationId: string;
@@ -16,13 +16,13 @@ export interface StyleSignal {
   evidence: string;
 }
 
-export interface StyleState {
+interface StyleState {
   signals: StyleSignal[];
   /** 问过的方面 → 问的时间。 */
   asked: Partial<Record<ReviewAspect, number>>;
 }
 
-export interface StyleAsk {
+interface StyleAsk {
   aspect: ReviewAspect;
   rule: string;
   /** 依据：用户说过的原话，最早的在前。 */
@@ -34,7 +34,7 @@ const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const MAX_SIGNALS = 200;
 
-export function emptyStyleState(): StyleState {
+function emptyStyleState(): StyleState {
   return { signals: [], asked: {} };
 }
 

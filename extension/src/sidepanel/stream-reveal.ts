@@ -22,7 +22,7 @@ const CHUNK_MAX = 24;
 const CATCH_UP_MS = 1500;
 const STARVE_MIN = 6;
 const STARVE_WAIT = 350;
-export const FADE_MS = D_READ;
+const FADE_MS = D_READ;
 const FADE_SLACK_MS = 100;
 
 const PUNCT = /[，。；：、！？,.;:!?）」”]/;

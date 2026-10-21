@@ -9,7 +9,7 @@
 import { shouldActivateForKey } from "./state.js";
 
 /** 需要用户的时刻。回放轨迹带着会话 key：只有用户正在看的对话才切。guide：教学一步等用户自己点。 */
-export type UserNeeded = "hand_to_user" | "send_confirm" | "pay_stop" | "user_asked" | "guide" | { trailReplay: string };
+type UserNeeded = "hand_to_user" | "send_confirm" | "pay_stop" | "user_asked" | "guide" | { trailReplay: string };
 
 /** 因为需要用户，把工作页切到其窗口内前台。窗口没聚焦、页或窗口已关时什么都不做。 */
 export async function bringForwardForUser(tabId: number, reason: UserNeeded): Promise<void> {

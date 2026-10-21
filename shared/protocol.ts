@@ -3,9 +3,9 @@ import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type Nudg
 import { isBrowseHabitClientMessage, isBrowseHabitResult, type BrowseHabitClientMessage, type BrowseHabitResult } from "./browse-habits.js";
 import { isExecutionFeedback } from "./execution-feedback.js";
 /**
- * SideAgent 桥接协议（扩展 side panel ⇆ 本地伴随进程）。
- * 传输：WebSocket，JSON 文本帧，一帧一条消息。
- * 服务端 = 伴随进程（agent 包），客户端 = side panel 页面。
+ * SideAgent 桥接协议（扩展 side panel ⇆ 扩展内 agent）。
+ * 传输：chrome.runtime 端口，经 background 转发，一条消息一个对象。
+ * 服务端 = 扩展 offscreen 文档里的 agent（agent 包），客户端 = side panel 页面。
  * 本文件是两侧共用的唯一权威定义；修改需两侧同步。
  */
 
@@ -21,10 +21,6 @@ export const PROTOCOL_VERSION = 1;
 export const STORAGE_SCHEMA_VERSION = 1;
 
 export const HOST_VERSION = "0.2.0";
-
-export const DEFAULT_PORT = 7758;
-
-export const DEFAULT_HOST = "127.0.0.1";
 
 /** Lead / 单会话路径的 sessionId；省略该字段即视为 Lead。 */
 export const LEAD_SESSION_ID = "main";
@@ -83,7 +79,7 @@ export function normalizeSessionId(sessionId?: string | null): string {
 /** Agent 运行模式：只有 act（直接操作页面）；旧记录里的 teach 读入时按 act 处理。 */
 export type AgentMode = "act";
 
-// ── 客户端（扩展）→ 服务端（伴随进程） ──────────────────────────────
+// ── 客户端（侧栏）→ 服务端（agent） ──────────────────────────────
 
 /** 用户消息附带的页面上下文：发送那一刻用户正在看的标签页（"这页面"类指代的锚点）。 */
 export interface PageContext {
@@ -95,7 +91,7 @@ export interface PageContext {
 }
 
 /** 圈内网页文字最多带这么多字。 */
-export const CIRCLE_NOTE_MAX = 600;
+const CIRCLE_NOTE_MAX = 600;
 
 /** 用户消息附带的附件材料（截图、粘贴图或上传图片）。 */
 export interface ImageAttachment {
@@ -143,7 +139,7 @@ export function isAttachment(v: unknown): v is Attachment {
 /** idle = 无任务；running = Agent 在操作页面；user = 现在归你（任务还在，不是中止）。 */
 export type AgentRunState = "idle" | "running" | "user";
 
-export function isAgentRunState(v: unknown): v is AgentRunState {
+function isAgentRunState(v: unknown): v is AgentRunState {
   return v === "idle" || v === "running" || v === "user";
 }
 
@@ -285,7 +281,7 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "set_thinking"; model: string; level: ThinkingLevel | null; restore?: true }
   /** 用户点进输入框或开始打字：先把到当前模型服务的连接建好，并预取当前页正文与标签页列表，发出去的第一句不再等建连接和慢读页。 */
   | { type: "warm_up"; context?: PageContext }
-  /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做（#74）。key：刚换的 key，先用上再接着做。auto：错误卡倒计时到点自己发的。 */
+  /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做。key：刚换的 key，先用上再接着做。auto：错误卡倒计时到点自己发的。 */
   | { type: "retry_after_error"; key?: string; auto?: true }
   /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
   | { type: "model_key_test"; requestId: string; key: string }
@@ -353,7 +349,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }
-  /** 只读任务视图投影（T02）：由真实状态生成，不是可执行命令，不证明业务成功。 */
+  /** 只读任务视图投影：由真实状态生成，不是可执行命令，不证明业务成功。 */
   | { type: "task_view"; view: import('./task-view.js').TaskView }
   | {
       type: "control_result";
@@ -391,7 +387,7 @@ export type AgentUiEvent =
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
   | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback; /** 点/填/看过的页面元素：侧栏步骤对照用，模型看不见。 */ pageTarget?: { target: string; label: string; tabId: number; url: string } }
-  /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
+  /** 成功的只读页面读数，供结果账本建立写入前基线；只在 agent 内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
   /** 扩展在网页上等用户确认「发送」（true），或不等了（false）。同一页同时只等一个。 */
@@ -580,7 +576,7 @@ export interface SwitchTabVerification {
  */
 export interface ToolContract {
   page_translation: { params: import('./page-translation.js').TranslationCommand; data: import('./page-translation.js').TranslationReceipt };
-  /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回伴随进程，不回侧栏。 */
+  /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回 agent，不回侧栏。 */
   fetch: {
     params: { url: string; method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; savePath?: string; pages?: { from: number; to: number; step?: number } };
     data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string; readBytes?: number; totalBytes?: number | null; stoppedReason?: "complete" | "limit" | "deadline" | "abort" };
@@ -763,7 +759,7 @@ export interface ToolContract {
   type_text: { params: { tabId?: number; text: string; }; data: { typed: true; /** The focused field, read from the page after typing. */ readback?: FieldReadback } };
   press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; /** 回车时焦点在单行 <input> 上：这时没变化才算回车没反应。 */ singleLineInput?: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
-  js: { params: { tabId?: number; code: string }; data: { value: unknown; /** 脚本里的发送动作被拦下问过用户：发了没有（#290）。 */ sendNote?: string; sendConfirmed?: true } };
+  js: { params: { tabId?: number; code: string }; data: { value: unknown; /** 脚本里的发送动作被拦下问过用户：发了没有。 */ sendNote?: string; sendConfirmed?: true } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
   screenshot: {
     params: {
@@ -915,7 +911,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "task_history_site" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean")) return null;
 
     if (msg.type === "task_history_restore" && !(validRequestId(msg.requestId) && isTaskHistoryEntry(msg.task))) return null;
-
 
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
 
@@ -1102,7 +1097,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
 
-
     if (msg.type === "agent_event" && msg.event?.kind === "worker_task") {
       const e = msg.event;
 
@@ -1134,7 +1128,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
       if (event.learned !== undefined && (!isMemoryEntry(event.learned) || event.learned.kind !== "method" || event.learned.status !== "active")) return null;
     }
-
 
     if (msg.type === "agent_event" && msg.event?.kind === "site_notes") {
       const event = msg.event;
@@ -1402,15 +1395,12 @@ export function isPageElementSource(value: unknown): value is PageElementSource 
     && source.kind !== undefined && ['section', 'table', 'code', 'card', 'selection'].includes(source.kind);
 }
 
-
-export interface PageDocumentIdentity { document: string; url: string }
-
+interface PageDocumentIdentity { document: string; url: string }
 
 export function isPageDocumentIdentity(value: unknown): value is PageDocumentIdentity {
   if (!value || typeof value !== 'object') return false;
   // SAFETY: object established above; both fields are checked before admission.
   const identity = value as Partial<PageDocumentIdentity>;
-
 
   return typeof identity.document === 'string' && identity.document.length > 0 && identity.document.length <= 80
     && typeof identity.url === 'string' && identity.url.length > 0 && identity.url.length <= 4000;
@@ -1424,21 +1414,16 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
   const token = (input: unknown): input is string => typeof input === 'string' && input.length > 0 && input.length <= 80;
   const tab = (input: number | undefined) => input !== undefined && Number.isSafeInteger(input) && input > 0;
 
-
   if (message.type === 'PINPOINT_DOM_TARGET') {
     if (!tab(message.tabId)) return false;
 
-
     if (message.action === 'reveal') return isPageElementSource(message.source);
 
-
     if (message.action === 'identity') return typeof message.url === 'string' && message.url.length > 0 && message.url.length <= 4000;
-
 
     return message.action === 'resolve' && token(message.document) && typeof message.url === 'string' && message.url.length <= 4000
       && typeof message.query === 'string' && message.query.length > 0 && message.query.length <= 200;
   }
-
 
   if (message.type === 'MEMORY_FIELD_MARK') {
     const memory = message.memory;
@@ -1446,12 +1431,9 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
     return token(message.token) && !!memory && typeof memory === 'object' && token(memory.id) && typeof memory.text === 'string' && Number.isFinite(memory.createdAt);
   }
 
-
   if (message.type === 'MEMORY_FIELD_FORGET') return token(message.id);
 
-
   if (message.type === 'CIRCLE_EXIT') return true;
-
 
   if (message.type === 'CIRCLE_DRAWN') {
     const rect = message.rect;
@@ -1463,29 +1445,21 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
       && size(rect.x) && size(rect.y) && size(rect.width) && size(rect.height) && size(rect.viewportWidth) && size(rect.viewportHeight) && rect.viewportWidth > 0 && rect.viewportHeight > 0;
   }
 
-
   if (message.type === 'GHOST_QUICK_ACTION') return message.action === 'probe' || GHOST_QUICK_ACTIONS.includes(message.action as GhostQuickAction);
-
 
   if (message.type === 'FEED_DROPPED_ELEMENT') {
     if (message.action === 'validate') return isPageElementSource(message.source);
 
-
     if (message.action === 'consume') return token(message.token);
-
 
     return message.action === 'offer' && token(message.token) && isPageElementSource(message.source);
   }
 
-
   if (message.type !== 'VIEWPORT_ACTIVE_SECTION') return false;
-
 
   if (message.action === 'ready' || message.action === 'clear') return true;
 
-
   if (message.action === 'track') return 'enabled' in message ? typeof message.enabled === 'boolean' : 'tabId' in message && 'mode' in message && tab(message.tabId) && ['off', 'source', 'ai'].includes(message.mode ?? '');
-
 
   return message.action === 'update' && isPageElementSource(message.source) && message.position !== undefined && Number.isFinite(message.position)
     && message.position >= 0 && message.position <= 1 && message.viewportHeight !== undefined && Number.isFinite(message.viewportHeight) && message.viewportHeight > 0 && message.viewportHeight <= 20000 && message.index !== undefined && Number.isInteger(message.index) && message.index > 0 && message.index <= 2000;

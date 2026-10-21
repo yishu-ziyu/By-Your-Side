@@ -44,7 +44,7 @@ const CHECK = svg('<path d="M20 6 9 17l-5-5"/>', 16, 2.2);
 const RING_FROM = 0.5;
 
 /** 这段对话最近一次请求送进模型的量和模型的窗口，单位 token；model 是当时选着的模型。 */
-export interface ContextUsage { used: number; window: number; model: string }
+interface ContextUsage { used: number; window: number; model: string }
 
 /** token 按「约 N 万字」说：用户不认识 token；token 和字不是一比一，所以写「约」，准的是百分比。 */
 const wan = (tokens: number) => { const v = tokens / 10_000; return String(v >= 100 ? Math.round(v) : Math.round(v * 10) / 10); };
@@ -61,7 +61,7 @@ function usageText(usage: ContextUsage): { head: string; figures: string; line: 
 /** 宿主平时不删历史，只在模型报装不下时收起一次早先的大段内容（agent/src/pi-agent-loop.ts）；没有可收的或收完还超，就是出错。 */
 const FULL_NOTE = "对话太长时，会尝试精简网页内容；仍超限会提示。";
 
-export interface ModelMenu {
+interface ModelMenu {
   /** hello_ok / model_info：缺省的字段保留现值。 */
   update(model: string | undefined, models: ModelOption[] | undefined): void;
   thinking(value: ThinkingInfo): void;

@@ -23,13 +23,6 @@ export const deliveryMetrics = { composeCalls: 0, composeMs: [] as number[], too
 
 export const toolDeliveryId = (id: string) => `delivery-${createHash('sha256').update(id).digest('hex').slice(0,32)}`;
 
-export function resetDeliveryMetrics(): void {
-  deliveryMetrics.composeCalls = 0;
-  deliveryMetrics.composeMs = [];
-  deliveryMetrics.toolCalls = 0;
-  deliveryMetrics.toolRejected = 0;
-}
-
 const RECORD_KINDS = ["ack", "finding", "reply"] as const;
 
 const HOST_TOOL_KINDS = ["ack", "finding"] as const;
@@ -140,7 +133,7 @@ export type SendUserMessageOptions = {
   getSources?: () => readonly UserDeliverySourceRef[] | null;
 };
 
-/** 一轮里改页面的尝试次数与真正生效的次数（宿主按工具结果计）。10-10 起不再进交付，会话里的计数待合并后清理。 */
+/** 一轮里改页面的尝试次数与真正生效的次数（宿主按工具结果计）。不进交付，只留在会话里。 */
 export type PageChangeTally = { attempts: number; changes: number };
 
 /**
@@ -148,7 +141,7 @@ export type PageChangeTally = { attempts: number; changes: number };
  * 照常交付并改标为 partial、附上宿主的未完成说明，由用户判断，而不是扣下回答。
  */
 /** 交付结果与宿主实际判定的完成度（模型请求 complete 也可能被标成 partial）。 */
-export type DeliveredMessage = { delivery: UserDelivery; outcome: "complete" | "partial" };
+type DeliveredMessage = { delivery: UserDelivery; outcome: "complete" | "partial" };
 
 /** 模型列出的未完成项：去空、截长、限条数；格式不对的整体忽略，不因此拒绝交付。 */
 function cleanUnfinished(raw: string[] | undefined): string[] {

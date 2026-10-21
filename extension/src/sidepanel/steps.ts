@@ -6,7 +6,7 @@ import { displayNameFor, personFor } from "../../../shared/cast.js";
 import { toolAction } from "../../../shared/user-facing.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
-export interface ToolAction {
+interface ToolAction {
   /** 步骤链里用的短动作名，如 "读页"。 */
   short: string;
   /** 工具卡标题，带得上关键参数就带，如 "点击「结算服务」"。 */
@@ -267,7 +267,7 @@ export class StepChain {
 }
 
 /** chip 状态：tool_end 前运行中；结束后按 isError 分完成/失败。 */
-export type ChipState = "running" | "done" | "error";
+type ChipState = "running" | "done" | "error";
 
 export function chipState(ended: boolean, isError: boolean): ChipState {
   if (!ended) {
@@ -299,33 +299,6 @@ export function formatDuration(ms: number): string {
   return `${m}m ${Math.round(s % 60)}s`;
 }
 
-/**
- * 工人事件该进哪一块执行步骤。
- * 全员 idle 时 finishRun 会清掉 currentRun；Pi 的 agent_end 紧随 idle 到达，
- * 若再 ensureRun 就会留下一块没人关掉的「处理中」。
- */
-export type WorkerEventRunPolicy = "current" | "new" | "reuse-last" | "drop";
-
-export function workerEventRunPolicy(input: {
-  hasCurrentRun: boolean;
-  graphRunning: boolean;
-  hasLastRun: boolean;
-}): WorkerEventRunPolicy {
-  if (input.hasCurrentRun) {
-    return "current";
-  }
-
-  if (input.graphRunning) {
-    return "new";
-  }
-
-  if (input.hasLastRun) {
-    return "reuse-last";
-  }
-
-  return "drop";
-}
-
 /** Legacy history has no reliable clock; never use replay wall time for it. */
 export function historyEventTime(applyingHistory: boolean, occurredAt?: number): number {
   if (applyingHistory) {
@@ -347,7 +320,7 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
-/** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链（#263）。 */
+/** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed", failed = 1): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
 
@@ -383,7 +356,7 @@ export function recordedDuration(start: number, end: number): string | null {
 }
 
 /** 执行中过程窗是否钉在底部；程序滚动不要走这条，只认人滚。 */
-export const LIVE_VIEWPORT_SLOP_PX = 12;
+const LIVE_VIEWPORT_SLOP_PX = 12;
 
 export function isLiveViewportPinned(scrollTop: number, scrollHeight: number, clientHeight: number, slop = LIVE_VIEWPORT_SLOP_PX): boolean {
   return scrollHeight - scrollTop - clientHeight < slop;
@@ -411,7 +384,7 @@ export function isPrepTool(name: string, params: Parameters<typeof describeTool>
   return PREP_TOOLS.has(name);
 }
 
-/** 回执与步骤前的图标种类：每种动作都有自己的图标，认不出的工具用扳手（10-07 用户：不要有的有图标、有的只有一个点）。 */
+/** 回执与步骤前的图标种类：每种动作都有自己的图标，认不出的工具用扳手，不会有的有图标、有的只有一个点。 */
 export type ActionKind = "open" | "fill" | "click" | "key" | "script" | "run" | "look" | "pick" | "mark" | "tab" | "close" | "translate" | "download" | "team" | "remember" | "other";
 
 const KIND_OF_TOOL: Record<string, ActionKind> = {
@@ -457,7 +430,7 @@ export function pastAction(name: string, params: Parameters<typeof describeTool>
 }
 
 /**
- * 打开页面这一步的结果里取页面标题（#102：步骤名写「Lumen 光子 · 公司资料」，不写 127.0.0.1:53623）。
+ * 打开页面这一步的结果里取页面标题（步骤名写「Lumen 光子 · 公司资料」，不写 127.0.0.1:53623）。
  * 程序里的 navigate 结果是 JSON（可能被截断），单独的 navigate 是「Navigation result: 网址 — 标题; document: …」。
  * 取不到、是空白或就是网址时返回 null，调用方沿用域名。
  */
@@ -484,7 +457,7 @@ export function openedPageTitle(resultText: string): string | null {
 }
 
 /**
- * 回执里的短名，四五个字（#263）：「打开 Studio Gh…」「点作品」「圈出 11 处」。
+ * 回执里的短名，四五个字：「打开 Studio Gh…」「点作品」「圈出 11 处」。
  * 有中文时最多 6 个字（英文字母算半个），纯英文最多 14 个字符，超出加「…」。
  * pageTitle：打开页面这一步结束后取到的标题，没有时用域名。
  */

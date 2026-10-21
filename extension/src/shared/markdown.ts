@@ -6,7 +6,6 @@ import { Lexer, Marked, type Tokens, type TokenizerThis } from "marked";
  * 只有一处偏离 marked 默认行为：GFM 裸网址自动链接会在中文行文里吞掉后续正文。
  * 例如「已在新标签页打开 https://example.com，页面显示 …」会整段变成链接，
  * 浏览器再把 `example.com，页面显示` 当域名规范化成 `example.xn--com,-8k0i458g7d8b31b/`。
- * 真实案例证据：docs/evals/20260913-native-dogfood/07-open-page.{png,txt}。
  *
  * 这里用 inline tokenizer 扩展收紧裸网址边界，而不是改写文本（不做全局替换，
  * 代码块、行内代码、Markdown 链接、显式 <> 自动链接都走 marked 原路径）。

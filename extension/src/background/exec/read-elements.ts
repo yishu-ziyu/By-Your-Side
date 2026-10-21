@@ -12,7 +12,7 @@ const DEFAULT_LIMIT = 60;
 /** 单次返回的安全上限；超过即报错，不返回部分内容。 */
 const MAX_OUTPUT_CHARS = 200_000;
 
-export type ReadElementsResult = ToolContract["read_elements"]["data"];
+type ReadElementsResult = ToolContract["read_elements"]["data"];
 
 type ElementSummary = ReadElementsResult["elements"][number];
 

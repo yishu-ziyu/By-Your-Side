@@ -1,8 +1,8 @@
 /**
- * 圈出来问（YIS-88，样子见 docs/previews/circle-and-memory）：在当前网页上按住拖动画手绘圈，可以连圈几处。
+ * 圈出来问（样子见 docs/previews/circle-and-memory）：在当前网页上按住拖动画手绘圈，可以连圈几处。
  * 每圈一处：页面在圈旁标上编号 → 画圈层先藏起淡色底和提示 → 后台截当前视口 → 侧栏按圈的外框裁切，变成带编号的附件。
- * 圈内的网页文字（不含输入框里的值）随附件一起交给助手（YIS-89）；圈的是空白处就只有图。
- * 回答里的 ①②… 点一下，页面滚回那一圈，再用蓝色手绘圈指一下（YIS-90）；那一圈不在了就不圈。
+ * 圈内的网页文字（不含输入框里的值）随附件一起交给助手；圈的是空白处就只有图。
+ * 回答里的 ①②… 点一下，页面滚回那一圈，再用蓝色手绘圈指一下；那一圈不在了就不圈。
  * 圈留在页面上（随页面滚动）；去掉某张附件，页面上那一圈也去掉。Esc、换标签页、页面跳转退出圈画，已圈的保留。永不自动发送。
  */
 import { activeTargetTab } from "./target-window.js";
@@ -283,9 +283,6 @@ export async function revealCircle(target: { tabId: number; set: number }, n: nu
 }
 
 export function isCircling(): boolean { return active !== null; }
-
-/** 从侧栏退出圈画（Esc、再次进入等）。 */
-export function exitCircling(): void { active?.stop(); }
 
 /** 去掉第 n 圈（附件被去掉时）。页面已经换了就什么都不做。 */
 export function removeCircle(n: number): void {

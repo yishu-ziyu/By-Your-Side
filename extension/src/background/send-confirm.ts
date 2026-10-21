@@ -12,7 +12,7 @@ import type { GuideWait, HeldReason, SendConfirmView } from "../../../shared/pro
 import { isPanelUrl } from "./target-window.js";
 
 /** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
-export const SEND_CONFIRM_MS = 120_000;
+const SEND_CONFIRM_MS = 120_000;
 
 const PORT_PREFIX = "send-confirm:";
 
@@ -33,7 +33,7 @@ export interface SendGuard {
 }
 
 /** 页面上和侧栏里写同一句：发什么、发给谁、在哪个网站。 */
-export function sendSentence(host: string, label: string, content?: string, recipient?: string): string {
+function sendSentence(host: string, label: string, content?: string, recipient?: string): string {
   const to = recipient ? `发给 ${recipient}，` : "";
   return content ? `把这段 ${[...content.replace(/…$/, "")].length} 字的内容${to}在 ${host} 上` : `点「${label.trim()}」${to}在 ${host} 上`;
 }

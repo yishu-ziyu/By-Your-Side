@@ -1,10 +1,8 @@
 import { projectTaskView } from '../../shared/task-view.js';
-import {deliveryTextWithNote,type TaskProgressSnapshot,type VoiceConversationContext} from '../../shared/voice.js';
+import {deliveryTextWithNote,type TaskProgressSnapshot} from '../../shared/voice.js';
 
 import { answerSpeech } from '../../shared/answer-cards.js';
 export const normalizeSpeech=(text:string)=>text.replace(/[\p{P}\p{Z}\s]/gu,'');
-
-export type {VoiceConversationContext};
 
 export function progressSpeech(snapshot: TaskProgressSnapshot): string {
   const view=projectTaskView(snapshot);

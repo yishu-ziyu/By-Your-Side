@@ -49,9 +49,9 @@ const NOT_IN_PROGRAMS = new Set<string>(["worker_tabs", "guide_step", "page_text
 
 /**
  * browser.* 的 camelCase 别名：每个 snake_case 方法都认它的 camelCase 写法，账本仍记规范 RPC 名。
- * 模型按 JS 习惯写 pressKey、readElement，只认一部分时它猜错一次就多一轮（#257）。
+ * 模型按 JS 习惯写 pressKey、readElement，只认一部分时它猜错一次就多一轮。
  */
-export const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
+const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
   .filter(name => name.includes("_") && !NOT_IN_PROGRAMS.has(name))
   .map(name => [name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()), name]));
 
@@ -59,7 +59,7 @@ export const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
  * browser_run 组合 helper 的能力事实源：METHODS 白名单与 browser_run 描述文本都从这里取，
  * 防止文档与代码漂移（Issue §十）。它们在宿主内组合现有 RPC 完成，不新增 extension RPC。
  */
-export const BROWSER_PROGRAM_HELPERS = [
+const BROWSER_PROGRAM_HELPERS = [
   { name: "waitFor", summary: "等待唯一目标：state=visible|visible+enabled|attached|detached|hidden（统一 target：@ref / CSS / loc=role / loc=href / xpath= / text=）", composed: "read_element expect 轮询（只读）" },
   { name: "waitForElement", summary: "waitFor 的语义别名", composed: "waitFor" },
   { name: "check", summary: "check({text|selector,state=appears|disappears,timeoutMs=3000}) 等文字或目标出现/消失，不叫模型；返回 {ok,waitedMs,polls}，超时返回 ok:false 不抛错", composed: "read_element expect 轮询（只读）" },
@@ -90,7 +90,7 @@ const HELPER_SNAKE_ALIASES: Record<string, string> = Object.fromEntries(BROWSER_
   .filter(([snake, name]) => snake !== name && !(TOOL_NAMES as readonly string[]).includes(snake)));
 
 /** 程序里可用的 camelCase 别名。 */
-export function availableRpcAliases(): string[] {
+function availableRpcAliases(): string[] {
   return Object.keys(RPC_ALIASES);
 }
 
@@ -472,7 +472,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
   /**
    * waitForLoad：等当前这次文档到达 domcontentloaded/load；旧文档 complete 不能在文档替换后冒充就绪。
-   * 默认 domcontentloaded：模型几乎从不传 state，按 load 会陪图片和广告干等（10-13 必应结果页内容出来后又等了约 6 秒）。
+   * 默认 domcontentloaded：模型几乎从不传 state，按 load 会陪图片和广告干等。
    */
   async function waitForLoad(params: Record<string, unknown>, stepId: string): Promise<unknown> {
     const state = params.state === "load" ? "load"
@@ -772,7 +772,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         const handle = vm.newString(json);
         deferred.resolve(handle);
         handle.dispose();
-        // 与直调的 fetch 同一判定：没拿到内容这一步记为失败并带原因；程序照常拿到原始回执、继续往下跑（可以自己看 status），不因此停下（#304）。
+        // 与直调的 fetch 同一判定：没拿到内容这一步记为失败并带原因；程序照常拿到原始回执、继续往下跑（可以自己看 status），不因此停下。
         const fetchFailed = canonical === "fetch" && result && typeof result === "object" ? fetchFailureReason(result as FetchReply) : null;
         emit(fetchFailed
           ? { ...step, phase: "end", result, error: `HTTP ${(result as FetchReply).status} (not ok)`, reason: fetchFailed, elapsedMs: Date.now() - started }

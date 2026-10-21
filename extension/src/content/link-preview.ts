@@ -3,7 +3,7 @@ import { OVERLAY_ATTR } from '../shared/overlay.js';
 import { extensionAlive } from './alive.js';
 
 /**
- * Shift+悬停链接预览卡（#48）：按住 Shift 停在普通链接上约 300ms，链接下方出一张小卡，
+ * Shift+悬停链接预览卡：按住 Shift 停在普通链接上约 300ms，链接下方出一张小卡，
  * 写目标页标题和 2–3 行要点。松开 Shift 或移开链接就收起；不拦点击、不开新标签。
  */
 

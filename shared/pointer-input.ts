@@ -7,7 +7,7 @@ export type MouseButton = "left" | "middle" | "right";
 /** 相对元素左上角的 CSS 像素偏移（与 EGO `position: {x,y}` 同语义）。 */
 export type ElementPosition = { x: number; y: number };
 
-export type DomRectLike = { x: number; y: number; width: number; height: number };
+type DomRectLike = { x: number; y: number; width: number; height: number };
 
 /** 按下某键时 CDP `buttons` 位掩码：left=1, right=2, middle=4。 */
 export function pressedButtonsMask(button: MouseButton): number {

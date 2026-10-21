@@ -1,5 +1,5 @@
 /**
- * 统一任务视图（T02）：由真实状态生成的只读展示投影。
+ * 统一任务视图：由真实状态生成的只读展示投影。
  *
  * 规则：
  * - 只从 TaskProgressSnapshot 等正式事实投影，不是第二套任务状态机；
@@ -58,7 +58,7 @@ export interface TaskView {
    */
   goalStatus?: { status: "done" | "waiting" | "open" | "blocked"; remaining: string | null };
   /**
-   * 第一个没做成（受阻或结果未知）的执行步骤的人话原因（tool_end.reason，#304）。只取执行账本项：目标项的 reason 是核对台账，
+   * 第一个没做成（受阻或结果未知）的执行步骤的人话原因（tool_end.reason）。只取执行账本项：目标项的 reason 是核对台账，
    * 不给用户看。按计划列目标时受阻的执行项不成行（只有目标），原因也要从这里带到侧栏。没有就缺省。
    */
   failureReason?: string;

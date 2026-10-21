@@ -14,7 +14,7 @@ export async function navigate(
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
   cancelled?: () => boolean,
 ): Promise<{ url: string; title: string; note?: string; retry?: string } & PageReadiness> {
-  // 没有完整网址时 Chrome 不会打开新文档，下面会白等到超时（#256）：立刻报错，并点明程序里常见的取错值。
+  // 没有完整网址时 Chrome 不会打开新文档，下面会白等到超时：立刻报错，并点明程序里常见的取错值。
   const url = typeof params.url === "string" ? params.url.trim() : "";
 
   if (!url) throw new Error("navigate 需要 url。在 browser_run 里 browser.js 返回 {value}：网址在 .value 里，先取出来再传给 navigate。");

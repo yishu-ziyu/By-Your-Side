@@ -15,7 +15,7 @@ const FAMILIES: Array<{ name: string; members: Array<[string, string]> }> = [
 
 /**
  * 服务商 id → icons/providers/ 里的文件名（@lobehub/icons-static-svg 1.95.1，MIT）。没有的用首字，留给目录以后新增的服务商。
- * 小米用 simple-icons 的 MI 标（CC0）：lobehub 只有 MiMo 的文字标（xiaomimimo），18px 下看不清（10-11 核对过）。
+ * 小米用 simple-icons 的 MI 标（CC0）：lobehub 只有 MiMo 的文字标（xiaomimimo），18px 下看不清。
  */
 const ICONS = new Map(Object.entries({
   stepfun: "stepfun", "opencode-go": "opencode", opencode: "opencode", "zai-coding-cn": "zhipu", zai: "zai", "kimi-coding": "kimi",

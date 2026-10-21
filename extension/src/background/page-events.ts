@@ -36,7 +36,6 @@ import {
   consumeArm,
   consumeBufferedEvents,
   createPageEventLedger,
-  disposeSessionArms,
   disposeTabArms,
   downloadSettled,
   getArm,
@@ -49,7 +48,6 @@ import {
   setPendingDialog,
   type ArmedPageEvent,
   type ChromeDownloadState,
-  type DownloadRecord,
   type JsDialogType,
   type PageEventKind,
 } from "../../../shared/page-event-ledger.js";
@@ -499,7 +497,7 @@ export async function disarmArmedEvent(token: string): Promise<ArmedPageEvent> {
   return arm;
 }
 
-export interface DialogWatch { opened: Promise<OpenedDialog>; stop: () => void }
+interface DialogWatch { opened: Promise<OpenedDialog>; stop: () => void }
 
 /**
  * 等这一页弹出原生对话框（alert/confirm/prompt）。调用方在派发输入前开始等，结束时 stop。
@@ -586,19 +584,5 @@ export function consumeTabEvents(tabId: number, clear = true) {
       payload: e.payload,
     })),
   };
-}
-
-export function stopSessionPageEvents(sessionKey: string): number {
-  const n = disposeSessionArms(ledger, sessionKey, "session stopped");
-
-  for (const [token, arm] of ledger.arms) {
-    if (arm.sessionKey !== sessionKey || !heldArmTokens.has(token)) continue;
-    clearArmTimer(token);
-    release(arm);
-    rejectWaiters(token, new Error("session stopped"));
-    void resetArmSideEffects(arm);
-  }
-
-  return n;
 }
 

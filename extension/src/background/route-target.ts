@@ -4,12 +4,11 @@ import { ROUTE_TEXT_ROLES, type RouteTarget } from "../../../shared/route.js";
 import type { AxNodeLite } from "./axtree.js";
 import { axBackendNodeFor } from "./axstate.js";
 import { sendCommand } from "./debugger.js";
-import { callDom, ensureDomOps } from "./exec/input.js";
+import { callDom, ensureDomOps } from "./exec/page-call.js";
 import { resolveWorkingTab } from "./state.js";
 
 /**
- * 怎么认一个控件（YIS-94，提交前核对用）：无障碍树里的角色 + 名字 + 所在区域，与模型看到的同源。
- * 前提小实验 scripts/probes/route-locator/ 在 7 个页面上找错 0 次。
+ * 怎么认一个控件（提交前核对用）：无障碍树里的角色 + 名字 + 所在区域，与模型看到的同源。
  * 产品原有的 loc=role: 自己算名字，和模型看到的不一致（预订页 11 个控件 6 个找不到），所以不用它。
  */
 // 文字块也能认（ROUTE_TEXT_ROLES）。
@@ -24,7 +23,7 @@ const MAX = 40;
 const clean = (text: string | undefined) => (text ?? "").replace(/\s+/g, " ").trim();
 
 /** 页面上每个可认的控件及其描述，按 backendDOMNodeId 索引。 */
-export function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
+function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]));
 
   const up = (n: AxNodeLite) => {
@@ -85,7 +84,7 @@ export function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTar
 type DomNode = { backendNodeId?: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[]; contentDocument?: DomNode };
 
 /**
- * 选择器（如 #date）指向的那一个元素的 backendDOMNodeId（YIS-103）：在页面里用动作同一套解析找到它（指向不唯一时解析就失败），临时打个记号，再从 CDP 文档树里找回记号。
+ * 选择器（如 #date）指向的那一个元素的 backendDOMNodeId：在页面里用动作同一套解析找到它（指向不唯一时解析就失败），临时打个记号，再从 CDP 文档树里找回记号。
  * 认不出返回 undefined。
  */
 async function backendOfSelector(tabId: number, target: string): Promise<number | undefined> {

@@ -1,6 +1,6 @@
 import { isPageElementSource, type PageElementSource } from '../../../shared/protocol.js';
 
-export interface DropDraftState { ready: boolean; scope: string; revision: number }
+interface DropDraftState { ready: boolean; scope: string; revision: number }
 
 export function installDropzone(composer: HTMLElement, accept: (source: PageElementSource, tabId: number) => void, draft: () => DropDraftState): void {
   let generation = 0;

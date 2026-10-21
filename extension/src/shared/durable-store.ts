@@ -1,5 +1,5 @@
 /** 本扩展的会话日志与文件。事务完成后才报告保存成功；不访问用户文件系统。 */
-export const DURABLE_DB = 'sideagent-session-data';
+const DURABLE_DB = 'sideagent-session-data';
 
 const STORE = 'items';
 
@@ -44,7 +44,7 @@ export async function durableTransaction<T>(write: boolean, fn: (store: IDBObjec
   }
 }
 
-export type StoredArtifact = { filename: string; content: string; encoding?: 'base64' };
+type StoredArtifact = { filename: string; content: string; encoding?: 'base64' };
 
 const artifactKey = (conversationId: string, filename: string) => `artifact:${JSON.stringify([conversationId, filename])}`;
 

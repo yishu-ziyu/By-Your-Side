@@ -2,7 +2,7 @@ import { isPageElementSource, type PageElementSource } from '../../../shared/pro
 import { newId, registerSelection, registerSource, resolveSource } from './page-sources.js';
 import { extensionAlive } from './alive.js';
 
-export const FEED_PREFIX = 'by-your-side-feed:';
+const FEED_PREFIX = 'by-your-side-feed:';
 
 /**
  * 把网页内容拖进侧栏。页面元素一律不设成可拖动，所以在正文里按住拖动始终是选字。

@@ -1,12 +1,12 @@
 /**
- * 诊断记录（run trace）的行格式与限额：本机伴随进程写文件，扩展内 agent 写 IndexedDB，行内容完全相同。
+ * 诊断记录（run trace）的行格式与限额：扩展内 agent 写 IndexedDB，本机 node 脚本写文件，行内容完全相同。
  * 每个会话一份记录，一行一个事件；只观察，不参与任何控制决定。
  */
 import { utf8ByteLength } from "./bytes.js";
 import { sanitizeTraceForStore } from "./trace-sanitize.js";
 
 /** 至少保留最近多少个会话的记录；更早的会话在 TRACE_MAX_AGE_DAYS 天内也保留，复盘要看得到一晚上的全部使用。 */
-export const TRACE_SESSIONS_KEPT = 20;
+const TRACE_SESSIONS_KEPT = 20;
 
 export const TRACE_MAX_AGE_DAYS = 30;
 
@@ -122,7 +122,7 @@ export class TraceRecorder {
         this.record("first_response", { elapsedMs: now - this.turnStarted });
       }
 
-      // 首个正文字：first_response 含思考，用户看到的是正文（#264 的首字口径）。
+      // 首个正文字：first_response 含思考，用户看到的是正文。
       // SAFETY: pi-ai 的 message_update 带 assistantMessageEvent；没有时下面的判断落空。
       if (!this.firstText && (event.assistantMessageEvent as { type?: string } | undefined)?.type === "text_delta") {
         this.firstText = true;
@@ -161,7 +161,7 @@ export class TraceRecorder {
     }
 
     if (event.type === "turn_end") {
-      // 只留用量：缓存命中（cacheRead）要看得出提示词前缀有没有被打碎（#258）。
+      // 只留用量：缓存命中（cacheRead）要看得出提示词前缀有没有被打碎。
       // SAFETY: turn_end 的 message 是 pi-ai 的 AssistantMessage；没有 usage 时记 undefined。
       const usage = (event.message as { usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } } | undefined)?.usage;
       data.usage = usage && { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite };

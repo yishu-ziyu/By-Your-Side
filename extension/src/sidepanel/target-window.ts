@@ -15,7 +15,7 @@ function sourceWindow(): number | undefined {
 }
 
 /** 单独窗口里打开的会话；侧栏里是 undefined。 */
-export const popoutSource = sourceWindow();
+const popoutSource = sourceWindow();
 
 export const isPopout = popoutSource !== undefined;
 

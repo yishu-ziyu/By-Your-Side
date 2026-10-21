@@ -1,7 +1,7 @@
 import type { ReadingEvent, ReadingTranscript } from '../../shared/reading.js';
 import { SideCallError } from './side-judgment.js';
 
-export type ReadingGenerate = (transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void) => Promise<string>;
+type ReadingGenerate = (transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void) => Promise<string>;
 
 /** Owns cancellation before asynchronous model setup; never touches execution state. */
 export class ReadingRequests {

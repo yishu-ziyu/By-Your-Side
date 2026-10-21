@@ -2,7 +2,7 @@ import { NUDGE_ACT, NUDGE_AUTO_HIDE_MS, NUDGE_DISMISS, NUDGE_DWELL_MS, NUDGE_KEY
 import { OVERLAY_ATTR } from '../shared/overlay.js';
 
 /**
- * 主动建议卡（#52）的页面一半：开关打开时，这一页在前台停够 15 秒且用户滚动或选过文字，就把页面摘录报给后台；
+ * 主动建议卡的页面一半：开关打开时，这一页在前台停够 15 秒且用户滚动或选过文字，就把页面摘录报给后台；
  * 后台判断有建议时，页面右下角出一张小卡：一句话、一行出处、一个按钮、×。
  * 外观有意和右边缘的边缘胶囊不同（浅色卡、在右下角），免得把「建议」看成「任务进度」。
  */
@@ -74,7 +74,7 @@ export function installNudge(): void {
 
   const show = (next: NudgeCard) => {
     shown = next;
-    // 句子是动词后面的宾语（YIS-106）：页角卡的标题把动词接回去。
+    // 句子是动词后面的宾语：页角卡的标题把动词接回去。
     sentence.textContent = `${next.actionLabel}${next.sentence}`;
     const quote = `「${next.evidence}」`;
     evidence.textContent = next.source && next.source !== next.evidence ? `${quote} · ${next.source}` : quote;

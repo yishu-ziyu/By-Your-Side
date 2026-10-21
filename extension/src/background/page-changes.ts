@@ -8,7 +8,7 @@
 import { itemNote, renderLines, type AxLine, type RepeatedItems } from "./axtree.js";
 
 /** 摘要上限（字）：只带变化，绝不带整页。 */
-export const PAGE_CHANGES_MAX_CHARS = 2000;
+const PAGE_CHANGES_MAX_CHARS = 2000;
 
 /** 能填、能选的控件的行：同一个控件只是值或勾选状态变了，不算新出现（它自己的变化由效果证据报）。 */
 const FIELD_LINE = /^(textbox|searchbox|combobox|spinbutton|slider|Date|DateTime|InputTime|InputMonth|InputWeek|checkbox|radio|switch|listbox|option)\b/;

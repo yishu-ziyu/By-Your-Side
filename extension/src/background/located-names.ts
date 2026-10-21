@@ -18,7 +18,7 @@ const namesByTab = new Map<number, Map<number, string>>();
 const circledByTab = new Map<number, Map<string, number>>();
 
 /** 名字的比较口径：去掉空白，回答里写「导出」、页面上是「 导出 」也算同一个。 */
-export function nameKey(name: string): string {
+function nameKey(name: string): string {
   return name.replace(/\s+/g, "").trim();
 }
 

@@ -17,7 +17,7 @@ export interface MentionedTab {
   reason?: string;
 }
 
-export interface TabMentions {
+interface TabMentions {
   handleKeydown: (event: KeyboardEvent) => boolean;
   pages: () => Array<{ tabId: number; title: string; url: string }>;
   items: () => MentionedTab[];
@@ -48,7 +48,7 @@ function isBrowserPage(url: string): boolean {
 }
 
 /** 光标前最近一个独立的 @，后面直到光标的筛选字（不含空格）。 */
-export function mentionQuery(value: string, cursor: number): { start: number; query: string } | null {
+function mentionQuery(value: string, cursor: number): { start: number; query: string } | null {
   const before = value.slice(0, cursor);
   const at = before.lastIndexOf("@");
   if (at < 0) return null;

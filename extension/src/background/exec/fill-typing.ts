@@ -1,6 +1,6 @@
 /**
  * 填写像真人敲键盘：先清空，再用 CDP Input.insertText 写进去，写完读回分级。
- * 原生 setter 加脚本派发的事件不算可信输入：只认可信 input 事件的搜索框、只按 beforeinput 更新的编辑器都收不到（10-14 复现）。
+ * 原生 setter 加脚本派发的事件不算可信输入：只认可信 input 事件的搜索框、只按 beforeinput 更新的编辑器都收不到。
  * 做法参考 Ego lite 的 fill（MIT，github.com/citrolabs/ego-lite，package/ego-browser/src/driver/page-actions.ts）：
  * insertText 写入、清空用全选覆盖、空值发 Delete、连续两次读到一样才算数、五级结果、没写进去先点一下再试。
  * 日期、时间、颜色、滑块和下拉框不走这里（键盘写不进去），照旧直接设值。
@@ -11,7 +11,7 @@ import { sendCommand } from "../debugger.js";
 export class TypingInterrupted extends Error {}
 
 /** 读回分级：一字不差、等价（只差空白或大小写）、网站改了格式、接在原内容后面、没变。 */
-export type TypingGrade = "exact" | "equivalent" | "transformed" | "appended" | "unchanged";
+type TypingGrade = "exact" | "equivalent" | "transformed" | "appended" | "unchanged";
 
 /** 在页面里执行：this 是元素（按节点调用）或按 target 找（domops）。 */
 export type PageRun = <T>(fn: (this: unknown, target: string | null, ...args: never[]) => T, args: unknown[]) => Promise<T | undefined>;

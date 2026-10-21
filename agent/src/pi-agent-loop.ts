@@ -43,16 +43,16 @@ export const ELIDE_MIN_CHARS = 1000;
 export const PAGE_OBSERVATION_MARK = "[FRESH PAGE OBSERVATION";
 
 /** 模型调用发出后多久还没有第一个事件（文字、思考、工具调用或结束）就算挂起。 */
-export const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
+const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
 
 /** 服务端已发出原始事件（如 response.created）后，等第一个内容事件的上限。排队发生在这之前，不受这条限制。 */
-export const MODEL_STALL_AFTER_START_MS = 10_000;
+const MODEL_STALL_AFTER_START_MS = 10_000;
 
 /** 能力表没有登记 hedgeMs 的模型：发出后这么久还没有第一个事件（且未受理），就再发一份相同的请求。 */
-export const MODEL_HEDGE_MS = 8_000;
+const MODEL_HEDGE_MS = 8_000;
 
 /** 工具调用参数里连续这么多空白，就算模型写跑了：取消这次请求，按可重试错误重来。 */
-export const RUNAWAY_TOOL_ARGS_BLANKS = 512;
+const RUNAWAY_TOOL_ARGS_BLANKS = 512;
 
 export function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, observeResponse: ((status: number) => void) | undefined, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void, onHedge: ((record: ModelHedgeRecord) => void) | undefined): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。

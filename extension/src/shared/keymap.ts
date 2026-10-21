@@ -36,7 +36,7 @@ function hostPlatform(): string {
 }
 
 /** 把 ControlOrMeta 展开成当前平台的 Meta/Control。 */
-export function expandControlOrMeta(input: string, platform: string = hostPlatform()): string {
+function expandControlOrMeta(input: string, platform: string = hostPlatform()): string {
   return input.replace(/\bControlOrMeta\b/gi, controlOrMetaKey(platform));
 }
 

@@ -150,7 +150,7 @@ export function createVoiceCaptureSink(log: (message: string) => void): VoiceCap
   };
 }
 
-export interface DiagnosticsExport { traces: string; sessions: number; traceLines: number; voice: string; voiceLines: number }
+interface DiagnosticsExport { traces: string; sessions: number; traceLines: number; voice: string; voiceLines: number }
 
 /** 导出的一行任务记录：填写的值、读回的值、browser_run 的代码等在这里遮住，本机存储保留原文。 */
 function redactLine(line: string): string {

@@ -6,7 +6,7 @@ type Completion = { stopReason: string; errorMessage?: string };
 
 /**
  * 模型调用的暂时失败（服务忙、5xx、网络断）：主任务据此重试或换快速模型。
- * pi-ai 只认 Node 的「fetch failed」；扩展跑在 Chrome 里，断网报「Failed to fetch」（10-06 实测，代理断开连接时整轮直接报错）。
+ * pi-ai 只认 Node 的「fetch failed」；扩展跑在 Chrome 里，断网报「Failed to fetch」（代理断开连接时整轮直接报错）。
  * 工具参数写跑了（runaway tool call，见 pi-agent-loop）重来一次通常就好。
  */
 export function isTransientModelError(message: AssistantMessage): boolean {

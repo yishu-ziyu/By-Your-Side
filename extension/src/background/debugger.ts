@@ -1,7 +1,7 @@
 /**
  * chrome.debugger 封装：attach 状态跟踪、空闲 15s 自动 detach
  * （缩短页面顶部"正在调试"黄条的停留时间）。
- * FIX-02：detach / SW 重启后同步网络捕获完整性；不取消既有 15s 空闲 detach，不永久 attach。
+ * detach / SW 重启后同步网络捕获完整性；不取消既有 15s 空闲 detach，不永久 attach。
  * CAP-02A：arm 期间 holdAttach 阻止空闲 detach，避免订阅窗口被掐断。
  * CAP-02C：已拥有页面的 OOPIF child/flat session 登记（公共 raw CDP 仍禁止任意 Target.*）。
  */
@@ -14,7 +14,7 @@ const PROTOCOL_VERSION = "1.3";
 
 const IDLE_MS = 15_000;
 
-/** 所有对话都做完、回答后的核对也结束时的空闲断开等待（#260）。 */
+/** 所有对话都做完、回答后的核对也结束时的空闲断开等待。 */
 const SETTLED_IDLE_MS = 1_000;
 
 const attached = new Set<number>();
@@ -27,7 +27,7 @@ const attachHolds = new Map<number, number>();
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** CAP-02C：父 tab → OOPIF child session（仅 flatten auto-attach 发现的已拥有页子目标）。 */
-export type ChildFrameSession = {
+type ChildFrameSession = {
   parentTabId: number;
   sessionId: string;
   targetId: string;
@@ -86,34 +86,6 @@ function clearChildSessions(tabId: number): void {
   if (map) for (const session of map.values()) childSessionsBySession.delete(session.sessionId);
   childSessionsByTab.delete(tabId);
   autoAttachReady.delete(tabId);
-}
-
-/** 只读：当前 tab 已登记的 OOPIF child session（无真实 attach 证据则为空）。 */
-export function listChildFrameSessions(tabId: number): ChildFrameSession[] {
-  return [...(childSessionsByTab.get(tabId)?.values() ?? [])];
-}
-
-/**
- * 在已拥有 tab 上启用 flatten auto-attach，登记跨进程 iframe 的 child session。
- * 不开放公共 raw CDP 的任意 Target.*；仅宿主为已拥有页面建立内部绑定。
- */
-export async function ensureChildFrameSessions(tabId: number): Promise<ChildFrameSession[]> {
-  await ensureAttached(tabId);
-
-  if (!autoAttachReady.has(tabId)) {
-    try {
-      await chrome.debugger.sendCommand({ tabId }, "Target.setAutoAttach", {
-        autoAttach: true,
-        waitForDebuggerOnStart: false,
-        flatten: true,
-      });
-      autoAttachReady.add(tabId);
-    } catch (e) {
-      throw new Error(`OOPIF auto-attach 失败：${oneLine(e)}`);
-    }
-  }
-
-  return listChildFrameSessions(tabId);
 }
 
 function noteAttachedToTarget(parentTabId: number, params: {
@@ -201,7 +173,7 @@ export async function ensureAttached(tabId: number): Promise<void> {
       }
     }
 
-    // 从没显示过的后台标签页不渲染，CDP 的鼠标和键盘输入会丢，确认却照常返回（10-13 日常 Chrome 里新开百度点「百度一下」不动）。
+    // 从没显示过的后台标签页不渲染，CDP 的鼠标和键盘输入会丢，确认却照常返回。
     // 焦点模拟让页面按「正被看着」渲染和收输入；代价是连着调试器期间这一页的 visibilityState 恒为 visible，
     // 所以只给接手时在后台的页开（用户正在看的页已经渲染过）。必须在第一次输入前生效，所以等它；
     // 页面被对话框挡住时渲染进程可能不回，设超时。先解冻（浏览器进程处理），再开焦点模拟（要渲染进程回复）。
@@ -272,7 +244,7 @@ export async function sendCommand<T = unknown>(
   }
 }
 
-export async function detach(tabId: number): Promise<void> {
+async function detach(tabId: number): Promise<void> {
   clearChildSessions(tabId);
   attached.delete(tabId);
   inFlight.delete(tabId);
@@ -284,11 +256,6 @@ export async function detach(tabId: number): Promise<void> {
   } catch {
     /* 已分离则忽略 */
   }
-}
-
-export async function detachAll(): Promise<void> {
-  attachHolds.clear();
-  await Promise.all([...attached].map((id) => detach(id)));
 }
 
 // 用户打开 DevTools 或其他原因导致分离时，同步内部状态与网络捕获完整性；受限环境静默跳过。

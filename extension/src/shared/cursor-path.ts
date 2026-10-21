@@ -7,24 +7,18 @@
  * 飞行中途目标变了也不生硬。不是 WindMouse / 拖尾。
  */
 
-export type CursorPt = { x: number; y: number };
+type CursorPt = { x: number; y: number };
 
-export const CURSOR_REST_INSET = 24;
+const CURSOR_REST_INSET = 24;
 
-export const FITTS_MIN_MS = 220;
+const FITTS_MIN_MS = 220;
 
-export const FITTS_MAX_MS = 480;
+const FITTS_MAX_MS = 480;
 
 // 让刚发生的动作可读；这是非阻塞收起计时，新操作会取消它。
 export const PARK_AFTER_MS = 1200;
 
-export function easeInOutCubic(t: number): number {
-  const x = t < 0 ? 0 : t > 1 ? 1 : t;
-
-  return x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
-}
-
-export function fittsMs(dist: number, width = 44): number {
+function fittsMs(dist: number, width = 44): number {
   const d = Math.max(0, dist);
   const w = Math.max(1, width);
   const id = Math.log2(d / w + 1);
@@ -46,7 +40,7 @@ export function restPoint(index: number, viewportWidth: number): CursorPt {
   };
 }
 
-export function arcControl(from: CursorPt, to: CursorPt): CursorPt {
+function arcControl(from: CursorPt, to: CursorPt): CursorPt {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dist = Math.hypot(dx, dy);
@@ -60,7 +54,7 @@ export function arcControl(from: CursorPt, to: CursorPt): CursorPt {
   };
 }
 
-export function qbez(p0: CursorPt, p1: CursorPt, p2: CursorPt, t: number): CursorPt {
+function qbez(p0: CursorPt, p1: CursorPt, p2: CursorPt, t: number): CursorPt {
   const u = 1 - t;
 
   return {
@@ -78,7 +72,7 @@ export function flightMs(from: CursorPt, to: CursorPt): number {
 }
 
 /** 欠阻尼弹簧参数：k 刚度，c 阻尼。 */
-export interface Spring {
+interface Spring {
   k: number;
   c: number;
 }

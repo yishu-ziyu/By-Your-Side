@@ -7,12 +7,12 @@
  */
 import { hostOf } from "./tab-mentions.js";
 
-export interface TaskPlanLines {
+interface TaskPlanLines {
   go: string;
   dont: string;
 }
 
-export interface TaskPlan {
+interface TaskPlan {
   shouldAsk: (text: string, pages: Array<{ url: string }>, currentUrl: string) => boolean;
   /** 任务已经发出：放上这次的计划行，等这一轮的过程卡建好挪进去。 */
   announce: (text: string, pages: Array<{ title: string; url: string }>, currentUrl: string, currentTitle?: string) => void;
@@ -24,7 +24,7 @@ export interface TaskPlan {
 }
 
 /** 卡收成回执那一行要的材料。filled：这一轮填了几栏（还原填写的账本给的数）；没填过就写做了几步。 */
-export interface PlanReceiptView {
+interface PlanReceiptView {
   filled: number | null;
   steps: number;
   total: string | null;
@@ -67,7 +67,7 @@ export function siteName(url: string, title?: string): string {
   return host;
 }
 
-export function planLines(text: string, pages: Array<{ title: string; url: string }>, currentUrl: string, currentTitle?: string): TaskPlanLines {
+function planLines(text: string, pages: Array<{ title: string; url: string }>, currentUrl: string, currentTitle?: string): TaskPlanLines {
   const names: string[] = [];
   for (const item of [{ url: currentUrl, title: currentTitle ?? "" }, ...pages]) {
     const name = siteName(item.url, item.title);
@@ -93,7 +93,7 @@ function notAuthorized(text: string): string {
   return left.length ? left.join("、") : "你没说的事";
 }
 
-export function needsTaskPlan(text: string, pages: Array<{ url: string }>, currentUrl: string): boolean {
+function needsTaskPlan(text: string, pages: Array<{ url: string }>, currentUrl: string): boolean {
   const hosts = uniqueHosts([currentUrl, ...pages.map((p) => p.url)]);
   return hosts.length > 1 || WRITE.test(text);
 }

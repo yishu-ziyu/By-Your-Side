@@ -83,7 +83,7 @@ function allowedRange(range: InputRange): string {
 }
 
 /** Model-facing sentence for an out-of-range fill; names the value and the allowed range. */
-export function describeRangeIssue(issue: Omit<RangeIssue, "message">): string {
+function describeRangeIssue(issue: Omit<RangeIssue, "message">): string {
   const value = JSON.stringify(issue.value);
 
   const what = issue.problem === "rangeOverflow" ? `${value} is above the page's maximum ${issue.max}`

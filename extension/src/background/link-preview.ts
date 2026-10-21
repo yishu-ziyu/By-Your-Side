@@ -1,7 +1,7 @@
 import { LINK_PREVIEW_GET, previewableUrl, type LinkPreview } from '../shared/link-preview.js';
 
 /**
- * Shift+悬停链接预览（#48）的后台一半：只读 GET 目标页，取标题和 2–3 行要点。
+ * Shift+悬停链接预览的后台一半：只读 GET 目标页，取标题和 2–3 行要点。
  * 不带登录态（credentials: omit），不调模型；按网址缓存几分钟。
  */
 

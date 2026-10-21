@@ -11,14 +11,14 @@ import type {UserDelivery, UserDeliveryStream} from '../../shared/voice.js';
  * 正式交付（工具真的执行过的事实记录）也扣在缓冲区里，但终态丢弃时按原样放行：
  * 它是别轮的真实事实，不该跟着被丢弃的候选一起消失；被丢弃的是候选自己的前缀。
  */
-export const VOICE_TURN_PHASES = ['PREPARING', 'COMMITTED', 'COMPLETED', 'DISCARDED', 'INTERRUPTED'] as const;
+const VOICE_TURN_PHASES = ['PREPARING', 'COMMITTED', 'COMPLETED', 'DISCARDED', 'INTERRUPTED'] as const;
 
-export type VoiceTurnPhase = (typeof VOICE_TURN_PHASES)[number];
+type VoiceTurnPhase = (typeof VOICE_TURN_PHASES)[number];
 
 /** pass = 现在就能发；held = 被扣在缓冲区；dropped = 终态之后，永不复活。 */
 export type DeliveryStreamDecision = 'pass' | 'held' | 'dropped';
 
-export interface ReleasedVoiceOutput { streams: UserDeliveryStream[]; deliveries: UserDelivery[] }
+interface ReleasedVoiceOutput { streams: UserDeliveryStream[]; deliveries: UserDelivery[] }
 
 const EMPTY_OUTPUT = (): ReleasedVoiceOutput => ({streams: [], deliveries: []});
 

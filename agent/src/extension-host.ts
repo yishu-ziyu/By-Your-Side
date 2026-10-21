@@ -18,7 +18,7 @@ import type { TSchema } from "typebox";
 type Handler = (event: HookEvent, ctx: HookContext) => HookResult | void | Promise<HookResult | void>;
 
 /** 钩子收到的事件：各事件只用到这里列出的字段。 */
-export interface HookEvent {
+interface HookEvent {
   type: string;
   systemPrompt?: string;
   messages?: readonly HookMessage[];
@@ -31,12 +31,12 @@ export interface HookEvent {
   prompt?: string;
 }
 
-export interface HookResult {
+interface HookResult {
   systemPrompt?: string;
   /**
    * before_agent_start：只属于这一次运行的上下文（日期、记忆、任务状态），字段同 Pi。
    * 和 Pi 不同：宿主把它放在本次用户消息前，只在本次运行里带，不写进会话记录（过期的日期和任务状态不留在历史里）。
-   * 它不进系统提示词，免得打碎前缀缓存（#258）。
+   * 它不进系统提示词，免得打碎前缀缓存。
    */
   message?: { customType: string; content?: HookValue; display?: boolean };
   messages?: readonly HookMessage[];
@@ -53,20 +53,20 @@ export const OBSERVED_EVENTS: ReadonlySet<string> = new Set([
   "tool_execution_start", "tool_execution_update", "tool_execution_end",
 ]);
 
-export interface HookContext { abort(): void }
+interface HookContext { abort(): void }
 
 export type HookValue = string | number | boolean | null | undefined | readonly HookValue[] | { readonly [key: string]: HookValue };
 
 export interface HookArgs { readonly [key: string]: HookValue }
 
-export type HookContent = TextContent | ImageContent;
+type HookContent = TextContent | ImageContent;
 
 export interface HookMessage { role: string; customType?: string; content?: HookValue; timestamp?: number; display?: boolean }
 
 /** 钩子能看到的工具信息。 */
-export interface HookTool { name: string; description: string; parameters: TSchema; promptGuidelines?: readonly string[] }
+interface HookTool { name: string; description: string; parameters: TSchema; promptGuidelines?: readonly string[] }
 
-export interface ExtensionHostOptions {
+interface ExtensionHostOptions {
   factories: readonly ExtensionFactory[];
   allTools: () => readonly HookTool[];
   activeToolNames: () => readonly string[];

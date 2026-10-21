@@ -1,6 +1,6 @@
 import type {ServerMessage,ClientMessage} from '../../shared/protocol.js';
 
-export type TaskControlAction='pause'|'resume'|'abort';
+type TaskControlAction='pause'|'resume'|'abort';
 
 type Result=Extract<ClientMessage,{type:'task_control_result'}>;
 

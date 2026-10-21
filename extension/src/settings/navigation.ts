@@ -8,7 +8,7 @@ const pages = [
   { id: 'preferences', label: '使用偏好', icon: MousePointer2 },
   { id: 'data', label: '数据与诊断', icon: Database },
 ] as const;
-export type SettingsPage = typeof pages[number]['id'];
+type SettingsPage = typeof pages[number]['id'];
 
 export function mountSettingsNavigation(beforeLeave: () => void): (page: SettingsPage) => void {
   const nav = document.getElementById('settings-nav')!;

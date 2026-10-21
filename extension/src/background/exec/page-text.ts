@@ -4,7 +4,7 @@ import { resolveReadableTab } from "../state.js";
 import { pdfText, tabShowsPdf } from "./pdf-text.js";
 
 /**
- * 发送前读页（#255、#260）：在隔离环境里取页面正文，不挂调试器。
+ * 发送前读页：在隔离环境里取页面正文，不挂调试器。
  * 正文优先取 main / article，跳过导航、页眉页脚、侧栏和看不见的元素；没有元素编号，要动手时模型自己 snapshot。
  */
 export async function pageText(params: { tabId?: number; max?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; totalChars: number; tabId: number; url?: string; title?: string }> {

@@ -27,26 +27,8 @@ import { createPttVoice } from "./ptt-voice.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
-import {
-  ControlGate,
-  TeamControl,
-  aggregateRunState,
-  acceptIncomingTeam,
-  applyControlSnapshot,
-  applyMemberGates,
-  mergeActiveMembersForTakeover,
-  onUplinkLostDuringControl,
-  prepareMemberHandback,
-  reconcileTeamProgress,
-  shouldRestoreUserControlBanner,
-  snapshotControl,
-  teamOwnerBanner,
-  type TeamMemberActivity,
-  toTeamMemberHandback,
-  uplinkLostWhileHeld,
-  isWriteTool,
-  WRITE_TOOL_SET,
-} from "../../../shared/control.js";
+import { ControlGate, TeamControl, aggregateRunState, acceptIncomingTeam, applyControlSnapshot, applyMemberGates, mergeActiveMembersForTakeover, onUplinkLostDuringControl, prepareMemberHandback, reconcileTeamProgress, shouldRestoreUserControlBanner, snapshotControl, teamOwnerBanner, type TeamMemberActivity, toTeamMemberHandback, uplinkLostWhileHeld } from "../../../shared/control.js";
+import { isWriteTool, WRITE_TOOL_SET } from "../../../shared/effect-policy.js";
 import { dimPage, glowPage } from "./page-glow.js";
 import { PANEL_PORT_NAME, parseRedeliver, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryEntry, PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
@@ -61,7 +43,8 @@ import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, locatedStillThere, pointAtLocated, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, notExecuted, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, locatedStillThere, pointAtLocated, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { notExecuted } from "./exec/page-call.js";
 import { guideStep } from "./exec/guide.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
@@ -246,7 +229,7 @@ const nudge = installNudge({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
   // 侧栏可以按窗口开，也可以只给某个标签页开：只认这个标签页能看到的那一个。
-  // Chrome 不一定报出侧栏在哪个窗口（10-07 无头实测为 -1）：报不出就按「有侧栏开着」算。
+  // Chrome 不一定报出侧栏在哪个窗口（无头时为 -1）：报不出就按「有侧栏开着」算。
   panelOpen: async (windowId, tabId) => {
     const panels = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL] }).catch(() => null);
 
@@ -419,7 +402,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  return true;
 });
 
-/** 按住说话没成的那一行说明（#125 R4）。 */
+/** 按住说话没成的那一行说明。 */
 function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
  // 按住说话认的是右 Alt（macOS 上叫右 ⌥）：只有 macOS 写符号。
  if (reply.reason === "empty") return `按住${/Mac/i.test(navigator.userAgent) ? "右 ⌥" : "右 Alt"}说话时，没有听到声音。再说一次。`;
@@ -587,7 +570,7 @@ void (async () => {
  transport.start();
 })();
 
-/** 在跑任务的对话、回答后核对目标还在读页的对话。两者都空时，调试器很快断开，不等满 15 秒（#260、#259）。 */
+/** 在跑任务的对话、回答后核对目标还在读页的对话。两者都空时，调试器很快断开，不等满 15 秒。 */
 const busyConversations = new Set<string>();
 const checkingConversations = new Set<string>();
 
@@ -1114,9 +1097,9 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
   broadcastVisibleServer({ type: "agent_event", event: { kind, message } });
 }
 
-// 提示条只在助手操作页面时出现：说明跟着这一轮走，结束后不再压在回答上方（#103）。
+// 提示条只在助手操作页面时出现：说明跟着这一轮走，结束后不再压在回答上方。
 
-/** T03：每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
+/** 每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
 const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();
 
 function teamHeld(): boolean {
@@ -1593,7 +1576,7 @@ async function executeToolCall(
       click:(p,s)=>reportSendClick(sendGuard, click(p,s,undefined,sendGuard)),
       // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
-      // 回车、脚本也可能把东西发出去：和点「发送」走同一个确认（#290）。
+      // 回车、脚本也可能把东西发出去：和点「发送」走同一个确认。
       press_key:(p,s)=>reportSendClick(sendGuard, pressKeyGuarded(p,s,sendGuard)),
       js:(p,s)=>reportSendClick(sendGuard, evaluateJs(p,s,undefined,sendGuard)),
     };
@@ -2282,7 +2265,7 @@ function attachPanel(port: chrome.runtime.Port) {
               if (mentioned?.length) void readMentionedPages(entry, mentioned, enriched.context?.tabId);
             }
 
-            // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，
+            // 上行传输不可用 = 确定未发给扩展内 agent：回执面板标记未送达，
             // original 保留原始消息（含选区上下文）供用户明确重试。
             const original:ClientMessage = wireClient.type==='task_action'
               ? {...wireClient,conversationId,request:{...wireClient.request,context:enriched.context,attachments:enriched.attachments}}
@@ -2459,7 +2442,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
           }
         }
 
-        // 没有记录也要回一条：侧栏收到 history 才算回放完，起点引导等它才出现（#233）。
+        // 没有记录也要回一条：侧栏收到 history 才算回放完，起点引导等它才出现。
         port.postMessage({ kind: "history", entries: panelHistory.since(afterSeq ?? 0), replay: true } satisfies BgToPanel);
         port.postMessage({ kind: "server", msg: { type: "status", state: lastStatus } } satisfies BgToPanel);
 
@@ -2470,7 +2453,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
           port.postMessage({ kind: "server", msg: status } satisfies BgToPanel);
         }
 
-        // T03：任务视图只在真实状态变化时下发、不进历史。面板重开时把这一会话最近一次
+        // 任务视图只在真实状态变化时下发、不进历史。面板重开时把这一会话最近一次
         // 权威视图原样补上（缓存的就是收到的那一份，不重算、不改写），否则任务条会空着
         // 直到下一次状态变化。
         const lastView = lastTaskViews.get(conversationId);
@@ -2572,7 +2555,7 @@ async function importReading(record: ReadingRecord): Promise<void> {
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
 /**
- * 按住说话听写出的一句（#125）、按了主动卡的动词（YIS-106）：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。返回是否送出。
+ * 按住说话听写出的一句、按了主动卡的动词：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。返回是否送出。
  * card 只进侧栏历史，让这一轮画成那张卡。
  */
 spoken: async (text: string, context?: PageContext, card?: NudgeCard) => {
@@ -2583,7 +2566,7 @@ spoken: async (text: string, context?: PageContext, card?: NudgeCard) => {
 
   return sent;
 },
-/** 胶囊上的「停」（#125 第 2 步）：和侧栏「停止」同一条路。 */
+/** 胶囊上的「停」：和侧栏「停止」同一条路。 */
 stop: () => requestPanelControl("abort"),
 notice: emitNotice,
 // 页面右边缘胶囊上的停止键：只认本会话正在操作的那一页；和侧栏「接管」走同一条路。

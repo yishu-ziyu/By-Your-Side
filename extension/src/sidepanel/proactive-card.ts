@@ -1,7 +1,7 @@
 import { NUDGE_ACT, NUDGE_UNDO, NUDGE_DISMISS, NUDGE_PANEL_KEY, NUDGE_RESULTS_KEY, NUDGE_PANEL_TTL_MS, nudgeReceipts, isNudgePanelOffer, type NudgeCard, type NudgePanelOffer, type NudgePanelReply } from "../shared/nudge.js";
 
 /**
- * 侧栏里的主动卡（YIS-106）：一句话，第一个词是按钮，下面一行出处。
+ * 侧栏里的主动卡：一句话，第一个词是按钮，下面一行出处。
  * 点句子其余部分，这件事进输入框当草稿；悬停出 ×，点了收起。按动词交给后台。
  * 卡由后台写进 session 存储，这里只在它属于当前会话时画出来。
  */

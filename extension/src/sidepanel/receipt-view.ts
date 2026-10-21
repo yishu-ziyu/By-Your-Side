@@ -53,8 +53,8 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   return decision;
 }
 
-export const CONNECT_MORPH_MS = D_STATE;
-export const CONNECT_FLIP_MS = D_LAYOUT;
+const CONNECT_MORPH_MS = D_STATE;
+const CONNECT_FLIP_MS = D_LAYOUT;
 
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 

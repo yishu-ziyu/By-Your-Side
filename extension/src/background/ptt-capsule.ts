@@ -49,7 +49,7 @@ const ACK_UNSAFE = /[我你他她]|不要|别|就行|就好|就可以|即可|也
  * 只在有把握时复述：去掉口头语后正好一个分句、没有人称、含汉字、长短合适；否则说通用句，宁可笼统也不说错。
  * 取消或犹豫的话返回 null：不出声。
  */
-export function ackFor(heard: string): string | null {
+function ackFor(heard: string): string | null {
   if (ACK_HESITANT.test(heard)) return null;
 
   if (/[?？]|吗|什么|怎么|为什么|多少|哪/.test(heard)) return ACK_QUESTION;
@@ -81,7 +81,7 @@ const stepOf = (view: TaskView) => view.active.at(-1)?.action ?? view.lastAction
 export interface PttVoice { speak(text: string, conversationId: string, quiet?: boolean): Promise<PttSpeechReply> | null; hush(): void }
 
 /** 要念的那一句：结果 + 留给你的；等你时说需要你做什么。 */
-export function speechFor(capsule: PttCapsule): string | null {
+function speechFor(capsule: PttCapsule): string | null {
   if (capsule.phase === 'done') return capsule.left ? `${capsule.result} 留给你的：${capsule.left}` : capsule.result;
 
   if (capsule.phase === 'waiting') return `需要你：${capsule.reason}`;

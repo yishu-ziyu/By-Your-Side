@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { taskRequirementId, isTaskGoalPlan, type TaskGoal, type TaskGoalDefinition, type TaskGoalPlan } from '../../shared/task-goals.js';
 
-export function goalRevision(requirements: readonly string[]): string {
+function goalRevision(requirements: readonly string[]): string {
   return createHash('sha256').update(JSON.stringify(requirements)).digest('hex');
 }
 
