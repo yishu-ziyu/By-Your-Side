@@ -1,3 +1,4 @@
+import { quietOpenedTab } from "../quiet-tabs.js";
 import { activeTargetTabs, isPanelUrl } from "../target-window.js";
 import { LEAD_SESSION_ID, isLeadSession, type SwitchTabVerification, type TabInfo } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
@@ -58,6 +59,7 @@ export async function openTab(
   const tab = await chrome.tabs.create({ url: params.url, active: false });
 
   if (tab.id == null) throw new Error("创建标签页失败");
+  void quietOpenedTab(tab.id);
   await setWorkingTab(tab.id, sessionId);
 
   // 尽量在页面自己的请求发出前开始记录；attach 失败不影响打开。
