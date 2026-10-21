@@ -317,7 +317,7 @@ export type VoiceCommand =
   | { kind: "gpt_live_connected" }
   /** 已完成的真实语音话轮，仅作同一通话的上下文，不触发任务。 */
   | { kind: "gpt_live_transcript"; turnId: string; role: 'user' | 'assistant'; text: string }
-  /** GPT-Live 委派的一句话（用户原话）；同一委派编号只开一次任务。 */
+  /** GPT-Live 委派的一句：模型抄写的用户话，长句会被拆成多项、每项可能只有半截；同一 user_bidi_turn_id 的项归成一次请求，整句原话由 gpt_live_transcript 随后校正。 */
   | { kind: "delegation"; delegationId: string; text: string; userTurnId?: string };
 
 export interface VoiceClientMessage { type: "voice"; voiceId: string; command: VoiceCommand }

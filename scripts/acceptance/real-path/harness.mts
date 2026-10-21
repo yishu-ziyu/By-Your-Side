@@ -343,23 +343,44 @@ export async function exportDiagnosticsViaSettings(
 ) {
   await mkdir(downloads, { recursive: true });
   await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
-  const { targetId } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${extensionId}/settings.html` });
+  // 先开空白页挂上监听再进设置页：设置页启动时抛的错也要收得到，导出没反应时才看得出卡在哪。
+  const { targetId } = await rp.cdp.send("Target.createTarget", { url: "about:blank" });
   const settings = await rp.attach(targetId);
+  const pageErrors: string[] = [];
+  type PageEvent = { sessionId?: string; params?: { type?: string; args?: Array<{ value?: unknown; description?: string }>; exceptionDetails?: { text?: string; exception?: { description?: string } } } };
+  const offEvents = [
+    rp.cdp.onEvent("Runtime.exceptionThrown", (message: PageEvent) => {
+      if (message.sessionId === settings) pageErrors.push(String(message.params?.exceptionDetails?.exception?.description ?? message.params?.exceptionDetails?.text).slice(0, 400));
+    }),
+    rp.cdp.onEvent("Runtime.consoleAPICalled", (message: PageEvent) => {
+      if (message.sessionId === settings && message.params?.type === "error") pageErrors.push((message.params.args ?? []).map((arg) => String(arg.value ?? arg.description)).join(" ").slice(0, 400));
+    }),
+  ];
+  await rp.cdp.send("Runtime.enable", {}, settings);
+  await rp.cdp.send("Page.navigate", { url: `chrome-extension://${extensionId}/settings.html` }, settings);
   const status = async () => String(await rp.evaluate(settings, `document.querySelector("#trace-status")?.textContent ?? ""`));
 
   const exportOnce = async () => {
     await rp.evaluate(settings, `document.querySelector("#trace-status").textContent = ""; document.querySelector("#trace-export").scrollIntoView({ block: "center" }); true`);
     await rp.click(settings, "#trace-export");
 
-    return until(async () => {
-      const text = await status();
+    try {
+      return await until(async () => {
+        const text = await status();
 
-      return text.startsWith("已导出") || text.includes("失败") || text.startsWith("还没有") ? text : undefined;
-    }, 15_000, "导出结果");
+        return text.startsWith("已导出") || text.includes("失败") || text.startsWith("还没有") ? text : undefined;
+      }, 15_000, "导出结果");
+    } catch (error) {
+      const page = await rp.evaluate(settings, `JSON.stringify({ status: document.querySelector("#trace-status")?.textContent ?? null, buttonVisible: !!document.querySelector("#trace-export")?.getClientRects().length })`).catch((e) => `读不出页面：${e}`);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}；设置页 ${page}；页面报错 ${JSON.stringify(pageErrors)}`);
+    }
   };
 
   try {
-    await until(async () => (await rp.evaluate(settings, `!!document.querySelector("#trace-export")`)) || undefined, 15_000, "设置页诊断记录区");
+    // 诊断记录在「数据与诊断」分页里，没切过去时按钮是隐藏的、点不到。
+    await until(async () => (await rp.evaluate(settings, `!!document.querySelector('[data-settings-page="data"]')`)) || undefined, 15_000, "设置页导航");
+    await rp.click(settings, '[data-settings-page="data"]');
+    await until(async () => (await rp.evaluate(settings, `!!document.querySelector("#trace-export")?.getClientRects().length`)) || undefined, 15_000, "设置页诊断记录区");
     const exportStatus = await exportOnce();
     const expectFiles = (exportStatus.match(/(\d+) 条任务记录/)?.[1] !== "0" ? 1 : 0) + (exportStatus.match(/(\d+) 条语音记录/)?.[1] !== "0" ? 1 : 0);
 
@@ -387,6 +408,7 @@ export async function exportDiagnosticsViaSettings(
 
     return { exportStatus, traces, voice, clearedStatus };
   } finally {
+    for (const off of offEvents) off();
     await rp.cdp.send("Target.closeTarget", { targetId }).catch(() => {});
   }
 }

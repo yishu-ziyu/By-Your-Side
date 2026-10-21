@@ -57,10 +57,42 @@ function liveContextText(raw: string, channel: 'speakable' | 'commentary', hostN
   return channel === 'speakable' ? '回答较长，完整内容在侧栏。' : '结果较长，完整内容保留在客户端。';
 }
 
+/** 归一到只剩字词：判覆盖关系时忽略标点和空格，ASR 转写的空格不可靠（同句转写常带怪空格）。 */
+function normalizeWords(text: string): string {
+  return text.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** whole 是否已含 part 的全部内容：用来判“这段话任务是不是已经拿到过”。 */
+function covers(whole: string, part: string): boolean {
+  const needle = normalizeWords(part);
+
+  return !needle || normalizeWords(whole).includes(needle);
+}
+
 type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: VoiceTarget[]; input?: VoiceInputContext; error?: string; ready: boolean };
 
-/** 一次委派：任务接下后记住 runId，等这个任务交付给用户的结果。 */
-type Delegation = { id: string; runId?: string | null; done: boolean };
+/** 一个委派项：任务接下后记住 runId，等这个任务交付给用户的结果。 */
+type Delegation = { id: string; text: string; runId?: string | null; done: boolean };
+
+/**
+ * 同一句用户话（同一个 user_bidi_turn_id）的委派项归成一组：GPT-Live 会把长句拆成多项送来，
+ * 每项还可能只是半截话。一组只开一个任务、结果只念一次；整句原话随后到时再补进同一个任务。
+ */
+type DelegationGroup = {
+  key: string;
+  userTurnId?: string;
+  /** 各委派项的文字，按到达顺序拼进第一次请求。 */
+  texts: string[];
+  /** 已交给任务的全部文字（请求原文与后来补送的），用来判新内容是否已经覆盖。 */
+  usedText: string;
+  routing: boolean;
+  routed: boolean;
+  repaired: boolean;
+  runId?: string | null;
+  conversationId?: string;
+  /** 等路由结果期间到的委派项，结果出来后统一收尾。 */
+  late: Delegation[];
+};
 
 /**
  * GPT-Live 的宿主一侧：声音在侧栏与 OpenAI 之间直连，这里只接委派、开任务、送回结果。
@@ -71,6 +103,9 @@ export class GptLiveSession {
   private turn = 1;
   private readonly inputs = new Map<number, Input>();
   private readonly delegations = new Map<string, Delegation>();
+  /** 按 user_bidi_turn_id（没有就是委派项编号）归并的请求组。 */
+  private readonly groups = new Map<string, DelegationGroup>();
+  private fixSeq = 0;
   private readonly notices = new Set<string>();
   private readonly cancelled = new Set<string>();
   private readonly dialogue = new Map<string, { role: 'user' | 'assistant'; text: string }>();
@@ -115,6 +150,8 @@ export class GptLiveSession {
 
         while (this.dialogue.size > 12) this.dialogue.delete(this.dialogue.keys().next().value!);
 
+        if (command.role === 'user') this.repairWithUserWords(command.turnId, command.text);
+
         return;
       // 侧栏按委派编号报告：送回的结果之后那段回答已念完，且中途没被静音。
       case 'playback_done': {
@@ -151,23 +188,38 @@ export class GptLiveSession {
       default: return;
     }
   }
-  /** 每次委派开一轮：先经中转补齐页面资料（与套餐语音同一握手），再交给宿主分流。 */
+  /** 每次委派开一轮：同一句（同一 user_bidi_turn_id）的委派项归成一组、只开一个任务；先经中转补齐页面资料（与套餐语音同一握手），再交给宿主分流。 */
   private async delegate(id: string, text: string, userTurnId?: string): Promise<void> {
     if (this.delegations.has(id) || !this.deps.route) return;
-    const record: Delegation = { id, done: false };
+    const group = this.groupFor(id, userTurnId);
+    const record: Delegation = { id, text, done: false };
     this.delegations.set(id, record);
+    group.texts.push(text);
+
+    if (group.routed) { this.resolveJoiner(group, record); return; }
+
+    if (group.routing) { group.late.push(record); return; }
+    group.routing = true;
     const origin: Input = { turn: ++this.turn, snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.(), ready: false };
     this.inputs.set(origin.turn, origin);
     this.deps.emit({ kind: 'input_turn', turn: origin.turn });
-    const requestId = `gptlive-${this.deps.voiceId ?? 'voice'}-${id}`;
+    const requestId = `gptlive-${this.deps.voiceId ?? 'voice'}-${group.key}`;
     // 委派可能先于当前句的 turn.done；只按上游身份排除当前句，保留同句明确重试。
     const recentTurns = userTurnId ? [...this.dialogue].filter(([turnId]) => turnId !== userTurnId).map(([, turn]) => turn) : [];
     let result: VoiceRouteResult;
+    let userWords: string | undefined;
+    let delegated = '';
+    let requestText = '';
 
     try {
       await this.waitForInput(origin);
+      userWords = userTurnId ? this.dialogue.get(userTurnId)?.text : undefined;
+      delegated = group.texts.join('');
+      // 交接以用户整句原话为准；委派文字已覆盖原话时用委派文字（模型可能已解开“刚才那个”这类指代）。
+      requestText = userWords && !covers(delegated, userWords) ? userWords : delegated;
+      group.usedText = requestText;
       const snapshot = origin.snapshot;
-      result = await this.deps.route(text, snapshot?.startedAt ?? null, () => !this.closed, {
+      result = await this.deps.route(requestText, snapshot?.startedAt ?? null, () => !this.closed, {
         nativeChat: true, requestId, runId: snapshot?.runId ?? null, controlVersion: snapshot?.controlVersion,
         voiceId: this.deps.voiceId ?? 'gpt-live', turn: origin.turn, input: origin.input, targets: origin.targets, recentTurns,
       });
@@ -177,20 +229,35 @@ export class GptLiveSession {
           : '处理语音请求的服务暂时失败，这句话还没有执行，原任务没有改变。'
         : `这句没有执行：${error instanceof Error ? error.message : String(error)}`;
       this.answer(record, 'speakable', message);
+      group.routed = true;
+      this.resolveLate(group);
 
       return;
     } finally {
       this.inputs.delete(origin.turn);
     }
 
-    this.deps.diagnostic?.('gpt_live_delegation', { delegationId: id, requestId, kind: result.kind });
+    // 委派文字与整句原话并排记下来：长句被拆成多项、只抄到半截话时，diff 就是证据。
+    this.deps.diagnostic?.('gpt_live_delegation', {
+      delegationId: id, requestId, kind: result.kind,
+      source: requestText === userWords ? 'user_words' : 'delegated',
+      diverged: !!userWords && normalizeWords(userWords) !== normalizeWords(delegated),
+      delegatedChars: delegated.length, userWordsChars: userWords?.length ?? 0,
+      delegated: delegated.slice(0, 80), userWords: (userWords ?? '').slice(0, 80),
+    });
+    group.routed = true;
     const receipt = result.kind === 'action' || result.kind === 'steer' ? result.receipts?.[0] : undefined;
 
     // 任务已接下：回执只作静默背景，等这个任务交付给用户的结果再播报。
     if ((result.kind === 'action' || result.kind === 'steer') && result.ok && result.status === 'accepted' && receipt?.runId) {
       record.runId = receipt.runId;
+      group.runId = receipt.runId;
+      group.conversationId = receipt.conversationId;
       this.deps.diagnostic?.("gpt_live_task_bound", {delegationId:id,runId:record.runId});
       this.answer(record, 'commentary', result.message);
+      this.resolveLate(group);
+      // 整句原话可能恰在路由期间到：那时还没法补，这里再查一次。
+      if (userTurnId) this.repairWithUserWords(userTurnId, this.dialogue.get(userTurnId)?.text ?? '');
 
       return;
     }
@@ -203,7 +270,54 @@ export class GptLiveSession {
     else if (result.kind === 'silent') this.answer(record, 'commentary', '用户不需要回答，保持安静。');
     else this.answer(record, 'commentary', '客户端没有可交给用户的结果。请你直接简短回答用户，不要编造事实。');
 
+    this.resolveLate(group);
     if (record.runId === undefined) record.done = true;
+  }
+  private groupFor(id: string, userTurnId?: string): DelegationGroup {
+    const key = userTurnId ?? `item:${id}`;
+    let group = this.groups.get(key);
+
+    if (!group) {
+      group = { key, userTurnId, texts: [], usedText: '', routing: false, routed: false, repaired: false, late: [] };
+      this.groups.set(key, group);
+    }
+
+    return group;
+  }
+  /** 结果只念一次：同一句的其他委派项静默收尾，内容没交过的补进同一个任务。 */
+  private resolveLate(group: DelegationGroup): void {
+    for (const record of group.late.splice(0)) this.resolveJoiner(group, record);
+  }
+  private resolveJoiner(group: DelegationGroup, record: Delegation): void {
+    if (!covers(group.usedText, record.text)) void this.steerInto(group, record.text, 'item');
+
+    this.answer(record, 'commentary', '这句已并入同一句请求处理，不用另外回答。');
+    record.done = true;
+  }
+  /** 整句原话晚于委派到达：任务只拿到过半截话或转述时，把整句原话补进同一个任务。 */
+  private repairWithUserWords(turnId: string, userWords: string): void {
+    const group = this.groups.get(turnId);
+
+    if (!group?.runId || group.repaired || covers(group.usedText, userWords)) return;
+    group.repaired = true;
+    void this.steerInto(group, userWords, 'user_words');
+  }
+  /** 把没交过的内容补进同一个任务（宿主真实转写口径与套餐语音一致，不带转述）。 */
+  private async steerInto(group: DelegationGroup, text: string, why: string): Promise<void> {
+    group.usedText = `${group.usedText} ${text}`;
+
+    if (!this.deps.dispatchTask || !group.runId || !group.conversationId) {
+      this.deps.diagnostic?.('gpt_live_delegation_repair', { group: group.key, why, chars: text.length, status: 'unavailable' });
+
+      return;
+    }
+
+    try {
+      const outcome = await this.deps.dispatchTask({ requestId: `gptlive-${this.deps.voiceId ?? 'voice'}-${group.key}-fix${++this.fixSeq}`, conversationId: group.conversationId, source: 'voice', action: 'steer', expectedRunId: group.runId, text }, () => !this.closed) as { status?: string } | undefined;
+      this.deps.diagnostic?.('gpt_live_delegation_repair', { group: group.key, why, chars: text.length, status: outcome?.status ?? 'unknown' });
+    } catch (error) {
+      this.deps.diagnostic?.('gpt_live_delegation_repair', { group: group.key, why, chars: text.length, status: 'error', detail: error instanceof Error ? error.message.slice(0, 200) : 'unknown' });
+    }
   }
   /** 返回是否真的送出。 */
   private answer(record: Delegation, channel: 'speakable' | 'commentary', raw: string, hostNote?: string): boolean {

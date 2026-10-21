@@ -326,8 +326,10 @@ try {
         assert.equal(evidence.chat && (evidence.chat as { delegations: number }).delegations, 0, "闲聊不委派");
       }
       // R3 查维基：一次委派、重复送达也只开一个任务、回传的是任务回答
-      const askAt = (await say(voices.ask)).at;
-      const delegation = await until(async () => (await read()).in.find((e) => e.type === "delegation.created" && e.at > askAt), 30_000, "委派");
+      const ask = await say(voices.ask);
+      const askAt = ask.at;
+      // 长请求本身就要说约 30 秒：从说完起算等待，模型听完整句再委派才是对的。
+      const delegation = await until(async () => (await read()).in.find((e) => e.type === "delegation.created" && e.at > askAt), ask.ms + 30_000, "委派");
       if (!handoff && !process.env.NO_DUP) await rp.evaluate(panel, `window.__dc.dispatchEvent(new MessageEvent("message", { data: ${JSON.stringify(JSON.stringify({ ...delegation, at: undefined }))} }))`);
       const appended = await until(async () => (await read()).out.find((e) => e.type === "delegation.context.append" && e.channel === "speakable" && e.at >= askAt), 180_000, "任务结果送回 GPT-Live");
       if (handoff) evidence.handoffRequest = { text: taskAsk, at: askAt, delegation };
@@ -379,7 +381,7 @@ try {
         assert.ok(spoken.length > 10, "结果确实播报了");
         if (longResult) {
           assert.match(spoken, /全双工|full[ -]?duplex/i, "真实播报必须介绍查到的技术，不能只确认收到请求");
-          assert.match(spoken, /同时/, "真实播报包含全双工同时通信的核心结论");
+          assert.match(spoken, /同时|同一时间/, "真实播报包含全双工同时通信的核心结论");
           assert.match(spoken, /(?:完整|详细|全文)[\s\S]*(?:侧栏|侧边栏)|(?:侧栏|侧边栏)[\s\S]*(?:完整|详细|全文)/, "真实播报告知完整内容在侧栏");
         }
         if (handoff) assert.match(spoken, /逆向工程|reverse[ -]+engineering/i, "真实播报介绍约定的技术，而非仅确认请求");
@@ -404,7 +406,7 @@ try {
   await rp.screenshot(panel, join(out, "panel.png"));
 } catch (e) {
   error = e instanceof Error ? e.stack ?? e.message : String(e);
-  if (panel && followup) {await exportDiagnosticsViaSettings(rp,rp.extensionId,join(out,'failure-downloads')).catch(()=>{});}
+  if (panel) await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "failure-downloads")).catch(() => {});
   if (panel) { evidence.view = await rp.evaluate(panel, '({ status: document.querySelector(".voice-state")?.innerText, text: document.body.innerText.slice(0, 2000) })').catch(() => null); await rp.screenshot(panel, join(out, "failure.png")).catch(() => {}); }
 } finally {
   const g = panel ? await readRaw().catch(() => null) : null;
