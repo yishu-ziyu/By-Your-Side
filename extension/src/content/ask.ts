@@ -10,7 +10,7 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, Check, PanelRight, RotateCcw } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -66,13 +66,20 @@ export function selectionSnapshot(): SelectionSnapshot | null {
   return { source: { text, surrounding, truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
 
-/** 与样式宽度一致，用于判断正文旁是否放得下卡片。 */
-const CARD_WIDTH = 320;
+/** 与样式宽度一致，用于判断正文旁是否放得下回答。 */
+const CARD_WIDTH = 340;
 
 const PLACE_MARGIN = 12;
 
-/** 正文和卡片之间留出的缝，细线画在这道缝里，避开卡片的阴影。 */
-const BESIDE_GAP = 28;
+/** 正文和回答之间留出的缝。 */
+const BESIDE_GAP = 40;
+
+/** 工具条和选区之间的距离，小三角画在这段距离里。 */
+const LENS_GAP = 10;
+
+const QUICK_QUESTIONS = [['举个例子', '举个例子'], ['为什么重要？', '这段话为什么重要？'], ['证据是什么？', '作者的证据是什么？']] as const;
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, Math.max(min, max)));
 
 function contentBlockOf(range: Range | null): Element | null {
   if (!range?.startContainer.isConnected) return null;
@@ -174,30 +181,29 @@ function boot(): void {
   syncColorTone(host);
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${ASK_STYLES}</style>
-    <div class="link" hidden></div>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar"><button class="ask" data-act="ask"><span class="identity"></span>问助手</button><button class="explain" data-act="explain">解释</button><button data-act="read">朗读</button><button data-act="transfer">在侧栏继续</button></div>
-      <div class="header" hidden><span class="identity"></span><span class="site"></span><button class="icon" data-act="close" aria-label="收起阅读" title="收起阅读"></button></div>
-      <details class="quote" hidden><summary></summary><p></p><div class="limit" hidden>已截取前 8000 字</div></details>
+      <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button></div>
+      <div class="head" hidden><span class="q"></span><button class="icon small" data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续"></button><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
       <div class="error" role="status" hidden></div>
-      <form class="composer" hidden><div class="depth" role="radiogroup" aria-label="回答快慢"><button type="button" role="radio" data-depth="fast" aria-checked="true" title="用快速模型">快速</button><button type="button" role="radio" data-depth="deep" aria-checked="false" title="用主模型">深度</button></div><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问问这段文字…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
-      <div class="footer" hidden><button data-act="followup" aria-expanded="false">追问</button><button data-act="copy" aria-label="复制完整回答" title="复制完整回答">复制</button><button data-act="retry" hidden>重试</button><button data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续">在侧栏继续</button></div>
+      <form class="composer" hidden><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
+      <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(([label, question]) => `<button type="button" data-ask="${question}">${label}</button>`).join('')}</div>
+      <span class="tail" aria-hidden="true"></span>
     </section>
+    <div class="menu" role="menu" aria-label="更多" hidden><button role="menuitem" data-act="transfer">在侧栏继续</button><div class="rule" role="separator"></div><button role="menuitem" class="dim" data-act="mute-page">这一页不再弹出</button><button role="menuitem" class="dim" data-act="mute-all">关闭划词工具条</button></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
   const el = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
 
-  for (const item of root.querySelectorAll('.identity')) {
-    item.append(icon(Sparkles));
-  }
-
-  for (const [action, symbol] of [['close', X], ['copy', Copy], ['retry', RotateCcw], ['handoff', PanelRight]] as const) {
-    el(`[data-act="${action}"]`).prepend(icon(symbol));
-  }
+  el('[data-act="explain"]').prepend(icon(Lightbulb));
+  el('[data-act="read"]').prepend(icon(Volume2));
+  el('[data-act="more"]').append(icon(Ellipsis));
+  el('[data-act="handoff"]').append(icon(PanelRight));
+  el('[data-act="close"]').append(icon(X));
 
   const surface = el('.surface');
-  const link = el('.link');
+  const menu = el('.menu');
+  const more = el('[data-act="more"]');
   const messages = el('.messages');
   const input = el<HTMLTextAreaElement>('textarea');
   const submit = el<HTMLButtonElement>('.send');
@@ -206,10 +212,11 @@ function boot(): void {
   const reader = createReadAloud(root);
   let snapshot: SelectionSnapshot | null = null;
   let record: ReadingRecord | undefined;
+  let opening: Promise<void> | null = null;
   let expanded = false;
   let visible = false;
   let sending = false;
-  let followupOpen = false;
+  let pageMuted = false;
   let selectionVersion = 0;
   let lastFocus: HTMLElement | null = null;
   let pageUrl = location.href;
@@ -221,22 +228,22 @@ function boot(): void {
     question: HTMLElement;
     node: HTMLElement;
     summary: HTMLElement;
-    details: HTMLButtonElement;
+    meta: HTMLElement;
+    metaKey: string;
     detailed: boolean;
-    status: HTMLElement;
-    fold: HTMLButtonElement;
     text: string;
   }> = [];
 
   /** 被改口停下的旧回答默认折叠；这里记用户展开了哪几轮。 */
   const unfolded = new Set<number>();
 
+  /** 哪几轮是用深度模型答的；记录里只存最近一次的档位。 */
+  const deepTurns = new Set<number>();
+
   const drafts = new Map<string, string>();
   let pinned = false;
-  /** 卡片放在选区哪一边：打开时定一次，之后回答变长也不换边，免得卡片跳位。右侧空白够放时不用这一边。 */
+  /** 回答放在选区哪一边：打开时定一次，之后回答变长也不换边，免得跳位。右侧空白够放时不用这一边。 */
   let side: 'above' | 'below' | null = null;
-  /** 下一问用快速模型还是主模型。旧记录没有这个字段，按快速。 */
-  let depth: 'fast' | 'deep' = 'fast';
   const highlightName = `by-your-side-reading`;
 
   const highlights = (CSS as typeof CSS & {
@@ -248,7 +255,7 @@ function boot(): void {
   }).Highlight;
 
   const highlightStyle = document.createElement('style');
-  highlightStyle.textContent = `::highlight(${highlightName}) { background: #dfe8f8; color: inherit; }`;
+  highlightStyle.textContent = `::highlight(${highlightName}) { background: rgba(242, 196, 56, .46); color: inherit; }`;
   document.documentElement.append(highlightStyle);
 
   const report = (message = '', informational = false) => {
@@ -273,26 +280,64 @@ function boot(): void {
     }
   };
 
-  const syncDepth = () => {
-    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-depth]')) {
-      button.setAttribute('aria-checked', String(button.dataset.depth === depth));
-    }
-  };
+  function closeMenu(): void {
+    menu.hidden = true;
+    more.setAttribute('aria-expanded', 'false');
+  }
+
+  function openMenu(): void {
+    const anchor = more.getBoundingClientRect();
+    menu.hidden = false;
+    const box = menu.getBoundingClientRect();
+    const below = anchor.bottom + 8 + box.height <= innerHeight - PLACE_MARGIN;
+    menu.style.left = `${clamp(anchor.right - box.width, PLACE_MARGIN, innerWidth - box.width - PLACE_MARGIN)}px`;
+    menu.style.top = `${below ? anchor.bottom + 8 : Math.max(PLACE_MARGIN, anchor.top - 8 - box.height)}px`;
+    more.setAttribute('aria-expanded', 'true');
+  }
+
+  function animate(name: 'enter' | 'morph'): void {
+    surface.classList.remove('enter', 'morph');
+    void surface.offsetWidth;
+    surface.classList.add(name);
+  }
 
   function position(): void {
     if (!visible || !snapshot) {
-      link.hidden = true;
+      return;
+    }
+
+    const live = snapshot.range?.startContainer.isConnected ? snapshot.range : null;
+    const r = live ? live.getBoundingClientRect() : snapshot.rect;
+    const lines = live ? [...live.getClientRects()].filter(line => line.width > 0 && line.height > 0) : [];
+    const first = lines[0] ?? r;
+    const last = lines.at(-1) ?? r;
+    const margin = PLACE_MARGIN;
+
+    // 还没有回答时是一条贴着选区的胶囊：放在第一行上方，小三角指着它；上方放不下才放到最后一行下方。
+    if (!expanded || !record?.turns.length) {
+      surface.style.maxHeight = '';
+      const box = surface.getBoundingClientRect();
+      const above = first.top - LENS_GAP - box.height >= margin;
+      const anchor = above ? first : last;
+      const center = anchor.left + anchor.width / 2;
+      const left = clamp(center - box.width / 2, margin, innerWidth - box.width - margin);
+      const top = above ? first.top - LENS_GAP - box.height : clamp(last.bottom + LENS_GAP, margin, innerHeight - box.height - margin);
+      surface.style.left = `${left}px`;
+      surface.style.top = `${top}px`;
+      surface.dataset.place = 'lens';
+      surface.dataset.tail = above ? 'down' : 'up';
+      surface.style.setProperty('--tail-x', `${clamp(center - left, 18, box.width - 18)}px`);
+      surface.style.setProperty('--origin', `${clamp(center - left, 18, box.width - 18)}px ${above ? 'bottom' : 'top'}`);
 
       return;
     }
 
-    const r = snapshot.range?.startContainer.isConnected ? snapshot.range.getBoundingClientRect() : snapshot.rect;
+    delete surface.dataset.tail;
 
     if (r.bottom < 0 || r.top > innerHeight) {
       pinned = true;
     }
 
-    const margin = PLACE_MARGIN;
     const block = pinned ? null : contentBlockOf(snapshot.range);
     const blockRect = block?.getBoundingClientRect();
     const roomy = !!blockRect && innerWidth - blockRect.right >= CARD_WIDTH + BESIDE_GAP + margin;
@@ -302,39 +347,30 @@ function boot(): void {
       top: Math.max(0, Math.min(blockRect.top, r.top)),
       bottom: Math.min(innerHeight, Math.max(blockRect.bottom, r.top + Math.min(540, innerHeight - margin * 2))),
     } : null;
-    // 正文右侧到窗口右边缘真是空白、并且放得下卡片和两侧间距时，贴在正文旁边；否则仍上下浮着。
+    // 正文右侧到窗口右边缘真是空白、并且放得下回答和两侧间距时，写在正文旁边；否则浮在选区下方。
     const beside = !pinned && !!besideRegion && !!block && gutterBlank(host, block, besideRegion);
     const room = { above: r.top - margin - 8, below: innerHeight - r.bottom - margin - 8 };
-    // 默认放在选区下方：顺着阅读方向，不盖住上面的标题和正文；下方放不下一张展开卡片时才放上方。
     side ??= room.below >= 220 || room.below >= room.above ? 'below' : 'above';
     const cap = beside ? innerHeight - margin * 2 : pinned ? 540 : Math.max(220, room[side]);
-    surface.style.maxHeight = expanded ? `${Math.min(innerHeight - margin * 2, cap)}px` : '';
+    surface.style.maxHeight = `${Math.min(innerHeight - margin * 2, cap)}px`;
     const box = surface.getBoundingClientRect();
 
     if (beside && blockRect) {
-      const left = blockRect.right + BESIDE_GAP;
-      const top = Math.max(margin, Math.min(r.top, innerHeight - box.height - margin));
-      surface.style.left = `${left}px`;
-      surface.style.top = `${top}px`;
-      surface.style.transformOrigin = 'left center';
+      surface.style.left = `${blockRect.right + BESIDE_GAP}px`;
+      surface.style.top = `${clamp(first.top - 6, margin, innerHeight - box.height - margin)}px`;
+      surface.style.setProperty('--origin', 'left top');
       surface.dataset.place = 'beside';
-      const y1 = Math.min(Math.max(r.top + r.height / 2, 0), innerHeight);
-      link.style.left = `${blockRect.right}px`;
-      link.style.top = `${y1 - 0.5}px`;
-      link.style.width = `${Math.max(0, left - blockRect.right)}px`;
-      link.hidden = false;
 
       return;
     }
 
-    link.hidden = true;
     surface.dataset.place = 'float';
-    const left = Math.max(margin, Math.min(r.left + r.width / 2 - box.width / 2, innerWidth - box.width - margin));
+    const left = clamp(r.left + r.width / 2 - box.width / 2, margin, innerWidth - box.width - margin);
     const bottomLimit = innerHeight - box.height - margin;
-    const top = pinned ? margin : side === 'below' ? Math.max(margin, Math.min(r.bottom + 8, bottomLimit)) : Math.max(margin, Math.min(r.top - box.height - 8, bottomLimit));
+    const top = pinned ? margin : side === 'below' ? clamp(r.bottom + LENS_GAP, margin, bottomLimit) : clamp(r.top - box.height - LENS_GAP, margin, bottomLimit);
     surface.style.left = `${left}px`;
     surface.style.top = `${top}px`;
-    surface.style.transformOrigin = side === 'above' ? 'bottom center' : 'top center';
+    surface.style.setProperty('--origin', side === 'above' ? 'bottom center' : 'top center');
   }
 
   function highlight(): void {
@@ -347,17 +383,18 @@ function boot(): void {
     visible = true;
     surface.hidden = false;
     restore.hidden = true;
-    surface.classList.toggle('enter', !keyboard);
+
+    if (!keyboard) animate('enter');
     position();
   }
 
   function hide(): void {
     const restoreFocus = Boolean(root.activeElement);
     rememberDraft();
+    closeMenu();
     visible = false;
     surface.hidden = true;
-    link.hidden = true;
-    restore.hidden = !record;
+    restore.hidden = !record?.turns.length;
     highlights?.delete(highlightName);
 
     if (restoreFocus && lastFocus?.isConnected) {
@@ -384,101 +421,88 @@ function boot(): void {
     }
   }
 
+  const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : question;
+
+  function metaButton(label: string, act: string, turn: number): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.act = act;
+    button.dataset.turn = String(turn);
+    button.textContent = label;
+
+    return button;
+  }
+
   function render(): void {
-    const source = record?.source ?? snapshot?.source;
+    const turns = record?.turns ?? [];
+    const answering = expanded && turns.length > 0;
+    const composing = expanded && !turns.length;
     surface.classList.toggle('expanded', expanded);
+    surface.classList.toggle('composing', composing);
     el('.bar').hidden = expanded;
+    el('.head').hidden = !answering;
+    messages.hidden = !answering;
+    el('.composer').hidden = !expanded;
+    el('.chips').hidden = !composing;
 
-    for (const selector of ['.header', '.quote']) {
-      el(selector).hidden = !expanded;
-    }
-
-    messages.hidden = !expanded || !record?.turns.length;
-    el('.footer').hidden = !expanded;
-    const composing = expanded && (followupOpen || readingBusy(record) || !record?.turns.length || Boolean(input.value));
-    const hidingFocusedComposer = !composing && el('.composer').contains(root.activeElement);
-    el('.composer').hidden = !composing;
-    el('[data-act="followup"]').hidden = composing;
-    el('[data-act="followup"]').setAttribute('aria-expanded', String(composing));
-    if (hidingFocusedComposer && expanded) el('[data-act="followup"]').focus({ preventScroll: true });
-
-    if (!expanded || !source) {
+    if (!expanded) {
       position();
 
       return;
     }
 
-    el('.site').textContent = new URL(source.url).hostname;
-    el('.quote summary').textContent = `“${source.text.replace(/\s+/g, ' ').slice(0, 64)}${source.text.length > 64 ? '…' : ''}”`;
-    el('.quote p').textContent = source.text;
-    el('.limit').hidden = !source.truncated;
     const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 36;
 
-    if (renderedThread !== record?.threadId || renderedTurns > (record?.turns.length ?? 0)) {
+    if (renderedThread !== record?.threadId || renderedTurns > turns.length) {
       messages.replaceChildren();
       answers.length = 0;
       unfolded.clear();
+      deepTurns.clear();
       renderedThread = record?.threadId ?? '';
       renderedTurns = 0;
     }
 
-    for (const [index, turn] of (record?.turns ?? []).entries()) {
+    const corrected = record?.correctedTurns ?? [];
+    const lastIndex = turns.length - 1;
+
+    for (const [index, turn] of turns.entries()) {
       if (!answers[index]) {
         const wrapper = document.createElement('article');
         wrapper.className = 'turn';
         const question = document.createElement('div');
         question.className = 'question';
-        question.hidden = turn.question === EXPLAIN_PROMPT;
-        question.textContent = turn.question === EXPLAIN_PROMPT ? '解释这段文字' : turn.question;
         const node = document.createElement('div');
         node.className = 'answer';
         node.id = `reading-answer-${index}`;
         const summary = document.createElement('div');
         summary.className = 'answer-summary';
-        const details = document.createElement('button');
-        details.className = 'details';
-        details.dataset.act = 'details';
-        details.dataset.turn = String(index);
-        details.setAttribute('aria-controls', node.id);
-        const status = document.createElement('div');
-        status.className = 'status';
-        status.setAttribute('role', 'status');
-        // 展开键放在状态播报区外面，读屏不会把它念进状态；只建一次，点完焦点还在它上面。
-        const fold = document.createElement('button');
-        fold.className = 'fold';
-        fold.dataset.act = 'fold';
-        fold.dataset.turn = String(index);
-        fold.hidden = true;
-        const foot = document.createElement('div');
-        foot.className = 'foot';
-        foot.append(status, fold);
-        wrapper.append(question, summary, node, details, foot);
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        wrapper.append(question, summary, node, meta);
         messages.append(wrapper);
-        answers.push({ turn: wrapper, question, node, summary, details, detailed: false, status, fold, text: '' });
+        answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: false, text: '' });
       }
 
       const item = answers[index]!;
-      const corrected = record?.correctedTurns ?? [];
+      const fixed = corrected.includes(index);
+      item.question.textContent = questionLabel(turn.question);
 
-      if (corrected.includes(index) && !item.question.querySelector('.tag')) {
+      if (fixed) {
         const tag = document.createElement('span');
         tag.className = 'tag';
-        tag.textContent = '已按新问题重答';
+        tag.textContent = ' · 已按新问题重答';
         item.question.append(tag);
       }
 
+      // 最新一轮的问题已经写在顶部那一行，正文里不再重复。
+      item.question.hidden = index === lastIndex;
+
       const foldable = turn.state === 'stopped' && corrected.includes(index + 1) && Boolean(turn.answer.trim());
-      item.turn.classList.toggle('folded', foldable && !unfolded.has(index));
-      item.fold.hidden = !foldable;
-      item.fold.textContent = unfolded.has(index) ? '收起' : '展开';
-      item.fold.setAttribute('aria-expanded', String(unfolded.has(index)));
+      const folded = foldable && !unfolded.has(index);
+      item.turn.classList.toggle('folded', folded);
 
       if (item.text !== turn.answer) {
         item.node.innerHTML = sanitizeAnswerHtml(renderMarkdownHtml(turn.answer), { images: false });
-
-        const lead = item.node.firstElementChild;
-
-        if (lead instanceof HTMLParagraphElement) lead.classList.add('lead');
 
         for (const anchor of item.node.querySelectorAll('a')) {
           anchor.target = '_blank';
@@ -493,26 +517,63 @@ function boot(): void {
       const sentenceEnd = summaryText.search(/[。！？]|[.!?](?=\s|$)/u);
       const summaryLimit = sentenceEnd >= 0 && sentenceEnd < 100 ? sentenceEnd + 1 : 100;
       const hasMoreText = summaryText.length > summaryLimit;
-      const hasDetails = !foldable && (item.node.childElementCount > 1 || hasMoreText || Boolean(first && first.tagName !== 'P'));
-      const folded = foldable && !unfolded.has(index);
+      const done = turn.state === 'done';
+      const hasDetails = done && !foldable && (item.node.childElementCount > 1 || hasMoreText || Boolean(first && first.tagName !== 'P'));
       // 摘要只用纯文字；原回答保留完整结构，收起时也不留下不可见的可聚焦链接。
       item.summary.textContent = summaryText.slice(0, summaryLimit) + (hasMoreText && summaryLimit === 100 ? '…' : '');
-      item.summary.hidden = !hasDetails || item.detailed || folded;
-      item.node.hidden = hasDetails && !item.detailed && !folded;
-      item.details.hidden = !hasDetails || folded;
-      item.details.textContent = item.detailed ? '收起详情' : '展开详情';
-      item.details.setAttribute('aria-expanded', String(item.detailed));
-      item.status.textContent = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在回答…' : turn.state === 'stopped' ? '已停止回答，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
+      item.summary.hidden = !hasDetails || item.detailed;
+      item.node.hidden = hasDetails && !item.detailed;
+
+      const deep = deepTurns.has(index) || (index === lastIndex && record?.depth === 'deep');
+      const metaKey = [turn.state, turn.error ?? '', hasDetails, item.detailed, foldable, folded, deep, index === lastIndex, sending].join('|');
+
+      if (metaKey !== item.metaKey) {
+        item.metaKey = metaKey;
+        const parts: Node[] = [];
+        const say = (text: string, error = false) => {
+          const span = document.createElement('span');
+          span.className = error ? 'status err' : 'status';
+          span.setAttribute('role', 'status');
+          span.textContent = text;
+          parts.push(span);
+        };
+
+        if (turn.state === 'pending' || turn.state === 'streaming') say('正在回答…');
+        else if (turn.state === 'error') say(turn.error ?? '回答没有完成，可以重试。', true);
+        else if (turn.state === 'stopped') say('已中止，内容已保留');
+
+        if (foldable) parts.push(metaButton(folded ? '展开' : '收起', 'fold', index));
+
+        if (hasDetails) parts.push(metaButton(item.detailed ? '收起' : '展开全文', 'details', index));
+
+        if (index === lastIndex && (turn.state === 'error' || turn.state === 'stopped')) parts.push(metaButton('重试', 'retry', index));
+
+        if (index === lastIndex && done) {
+          const label = document.createElement('span');
+          label.textContent = deep ? '深度回答' : '快速回答';
+          parts.push(label);
+
+          if (!deep) {
+            const dot = document.createElement('span');
+            dot.className = 'dot';
+            dot.textContent = '·';
+            parts.push(dot, metaButton('用深度模型重答', 'deep', index));
+          }
+        }
+
+        item.meta.replaceChildren(...parts);
+      }
     }
 
-    renderedTurns = record?.turns.length ?? 0;
+    renderedTurns = turns.length;
 
     if (atBottom) {
       messages.scrollTop = messages.scrollHeight;
     }
 
+    const last = turns.at(-1);
+    el('.head .q').textContent = last ? questionLabel(last.question) : '';
     const busy = readingBusy(record);
-    const last = record?.turns.at(-1);
     // 生成中输入框有字时，按钮是改口；空着时才是停止。
     const stops = busy && !input.value.trim();
     const label = stops ? '停止回答' : busy ? '停止这条回答，按新问题重新回答' : '发送问题';
@@ -520,48 +581,63 @@ function boot(): void {
     submit.setAttribute('aria-label', label);
     submit.title = label;
     submit.disabled = sending || (!busy && !input.value.trim());
-    input.placeholder = record?.turns.length ? '继续问这段文字…' : '问问这段文字…';
-    el<HTMLButtonElement>('[data-act="handoff"]').disabled = busy || sending;
+    input.placeholder = turns.length ? '接着问…' : '问这段话…';
+    const handoff = el<HTMLButtonElement>('[data-act="handoff"]');
+    handoff.disabled = busy || sending;
     const handoffLabel = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
-    el('[data-act="handoff"]').lastChild!.textContent = handoffLabel;
-    el('[data-act="handoff"]').setAttribute('aria-label', handoffLabel);
-    el('[data-act="handoff"]').title = handoffLabel;
-    el('[data-act="copy"]').hidden = !record?.turns.length;
-    el<HTMLButtonElement>('[data-act="copy"]').disabled = !last?.answer;
-    el('[data-act="retry"]').hidden = !last || !['error', 'stopped'].includes(last.state);
+    handoff.setAttribute('aria-label', handoffLabel);
+    handoff.title = handoffLabel;
     position();
   }
 
-  async function enter(keyboard = false, compose = true): Promise<void> {
+  /** 先在原地把胶囊变成输入框、拿到焦点，再去后台开阅读记录：选中后直接打字的那个字不能丢。 */
+  function openReading(keyboard = false): Promise<void> {
     if (!snapshot) {
-      return;
+      return Promise.resolve();
     }
 
     const version = selectionVersion;
-    const result = await rpc('reading_open', { source: snapshot.source });
-
-    if (version !== selectionVersion) {
-      return;
-    }
-
+    const source = snapshot.source;
     rememberDraft();
-    record = result.record;
-    depth = record?.depth === 'deep' ? 'deep' : 'fast';
-    syncDepth();
-    input.value = drafts.get(record!.threadId) ?? '';
+    closeMenu();
+    report();
+    record = undefined;
     expanded = true;
-    followupOpen = compose;
     pinned = false;
     side = null;
-    lastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    lastFocus = document.activeElement instanceof HTMLElement && !host.contains(document.activeElement) ? document.activeElement : lastFocus;
+    input.value = '';
     render();
-    show(keyboard);
+
+    if (visible) animate('morph');
+    else show(keyboard);
     highlight();
     input.focus({ preventScroll: true });
+
+    const pending = rpc('reading_open', { source }).then(result => {
+      if (version !== selectionVersion) {
+        return;
+      }
+
+      record = result.record;
+      const draft = drafts.get(record!.threadId);
+
+      if (draft && !input.value) input.value = draft;
+      render();
+    });
+
+    const tracked: Promise<void> = pending.finally(() => {
+      if (opening === tracked) opening = null;
+    });
+    opening = tracked;
+
+    return tracked;
   }
 
   /** correction 只由输入框发出（打字后回车或点发送）：再点一次「解释」不算改口。 */
-  async function send(question: string, retry = false, correction = false): Promise<void> {
+  async function send(question: string, retry = false, correction = false, depth: 'fast' | 'deep' = 'fast'): Promise<void> {
+    if (opening) await opening.catch(() => {});
+
     if (!record || sending || !question.trim()) {
       return;
     }
@@ -579,6 +655,10 @@ function boot(): void {
       }
 
       update(result.record);
+      const index = (record?.turns.length ?? 1) - 1;
+
+      if (depth === 'deep') deepTurns.add(index);
+      else deepTurns.delete(index);
 
       if (record?.turns.at(-1)?.state !== 'error') {
         input.value = '';
@@ -595,22 +675,32 @@ function boot(): void {
   }
 
   root.addEventListener('click', event => {
-    const target = (event.target as Element).closest<HTMLElement>('[data-act]');
-    const action = target?.getAttribute('data-act');
+    const target = (event.target as Element).closest<HTMLElement>('[data-act],[data-ask]');
 
-    if (!action) {
+    if (!target) {
       return;
     }
+
+    const action = target.dataset.act;
+    const quick = target.dataset.ask;
 
     void (async () => {
       report();
 
-      if (action === 'ask') {
-        await enter();
+      if (quick) {
+        await send(quick);
+      }
+      else if (action === 'ask') {
+        await openReading();
       }
       else if (action === 'explain') {
-        await enter(false, false);
+        const opened = openReading();
+        await opened;
         await send(EXPLAIN_PROMPT);
+      }
+      else if (action === 'more') {
+        if (menu.hidden) openMenu();
+        else closeMenu();
       }
       else if (action === 'read') {
         // 朗读只在本页用浏览器声音出声，不发起任何阅读或页面任务。
@@ -624,6 +714,14 @@ function boot(): void {
       else if (action === 'close') {
         hide();
       }
+      else if (action === 'mute-page') {
+        pageMuted = true;
+        hide();
+      }
+      else if (action === 'mute-all') {
+        hide();
+        await chrome.storage.local.set({ [SELECTION_BAR_KEY]: false });
+      }
       else if (action === 'restore') {
         const restored = await rpc('reading_get');
 
@@ -632,27 +730,20 @@ function boot(): void {
         }
 
         record = restored.record;
-        depth = record?.depth === 'deep' ? 'deep' : 'fast';
-        syncDepth();
         snapshot ??= { source: record!.source, range: null, rect: new DOMRect(innerWidth - 400, 80, 0, 0) };
         expanded = true;
         render();
         show();
         highlight();
       }
-      else if (action === 'followup') {
-        followupOpen = true;
-        render();
-        input.focus({ preventScroll: true });
-      }
       else if (action === 'details') {
-        const item = answers[Number(target!.dataset.turn)];
+        const item = answers[Number(target.dataset.turn)];
 
         if (item) item.detailed = !item.detailed;
         render();
       }
       else if (action === 'fold') {
-        const index = Number(target!.dataset.turn);
+        const index = Number(target.dataset.turn);
 
         if (!unfolded.delete(index)) {
           unfolded.add(index);
@@ -660,16 +751,16 @@ function boot(): void {
 
         render();
       }
-      else if (action === 'copy') {
-        await navigator.clipboard.writeText(record?.turns.at(-1)?.answer ?? '');
-        el('[data-act="copy"]').replaceChildren(icon(Check), document.createTextNode('已复制'));
-        el('[data-act="copy"]').setAttribute('aria-label', '已复制完整回答');
-        el('[data-act="copy"]').title = '已复制完整回答';
-      }
       else if (action === 'retry') {
-        await send(record!.turns.at(-1)!.question, true);
+        const index = Number(target.dataset.turn);
+        await send(record!.turns.at(-1)!.question, true, false, deepTurns.has(index) ? 'deep' : 'fast');
+      }
+      else if (action === 'deep') {
+        await send(record!.turns.at(-1)!.question, false, false, 'deep');
       }
       else if (action === 'transfer' || action === 'handoff') {
+        closeMenu();
+
         if (action === 'transfer' || !record?.turns.length) {
           const source = snapshot?.source ?? record?.source;
 
@@ -696,16 +787,8 @@ function boot(): void {
       }
     });
   });
-  // Preserve native selection when activating the toolbar, without blocking input focus.
-  el('.bar').addEventListener('pointerdown', event => event.preventDefault());
-  el('.depth').addEventListener('click', event => {
-    const button = (event.target as Element).closest<HTMLButtonElement>('[data-depth]');
-
-    if (!button) return;
-    event.preventDefault();
-    depth = button.dataset.depth === 'deep' ? 'deep' : 'fast';
-    syncDepth();
-  });
+  // 点工具条和菜单不能清掉网页上的选区；输入框照常拿焦点。
+  for (const part of [el('.bar'), menu, el('.chips')]) part.addEventListener('pointerdown', event => event.preventDefault());
   el<HTMLFormElement>('.composer').addEventListener('submit', event => {
     event.preventDefault();
 
@@ -754,7 +837,7 @@ function boot(): void {
   });
 
   function changedSelection(keyboard = false): void {
-    if (!barEnabled) {
+    if (!barEnabled || pageMuted) {
       return;
     }
 
@@ -770,6 +853,7 @@ function boot(): void {
     expanded = false;
     pinned = false;
     side = null;
+    closeMenu();
     report();
     render();
     show(keyboard);
@@ -810,14 +894,37 @@ function boot(): void {
     }
   }, { signal });
   document.addEventListener('keydown', event => {
-    if (!retired() && event.key === 'Escape') {
-      hide();
+    if (retired()) {
+      return;
     }
-  }, { signal });
+
+    if (event.key === 'Escape') {
+      if (!menu.hidden) closeMenu();
+      else hide();
+
+      return;
+    }
+
+    if (!visible || expanded || event.metaKey || event.ctrlKey || event.altKey || event.composedPath().includes(host) || isEditableTarget(event.target)) {
+      return;
+    }
+
+    // 工具条开着时直接打字就是提问：先把焦点交给输入框，这个键的字（含输入法）随之落进去；网页自己的单键快捷键这一下不触发。
+    const typing = (event.key.length === 1 && event.key !== ' ') || event.key === 'Process' || event.keyCode === 229;
+
+    if (!typing) {
+      return;
+    }
+
+    event.stopPropagation();
+    void openReading(true).catch(err => report(err.message));
+  }, { capture: true, signal });
   window.addEventListener('scroll', () => {
     if (retired()) {
       return;
     }
+
+    closeMenu();
 
     if (expanded) {
       position();
@@ -828,6 +935,7 @@ function boot(): void {
   }, { capture: true, signal });
   window.addEventListener('resize', () => {
     if (!retired()) {
+      closeMenu();
       position();
     }
   }, { signal });
@@ -848,6 +956,7 @@ function boot(): void {
     void rpc('reading_leave').catch(() => {
     });
     pageUrl = location.href;
+    pageMuted = false;
     selectionVersion++;
     snapshot = null;
     record = undefined;
@@ -876,13 +985,10 @@ function boot(): void {
 
       if (snapshot) {
         selectionVersion++;
-        void enter(true).catch(err => report(err.message));
+        void openReading(true).catch(err => report(err.message));
       }
       else if (record) {
-        depth = record.depth === 'deep' ? 'deep' : 'fast';
-        syncDepth();
         expanded = true;
-        followupOpen = true;
         render();
         show(true);
         input.focus();
@@ -892,7 +998,7 @@ function boot(): void {
   void rpc('reading_get').then(result => {
     if (result.record && !record) {
       record = result.record;
-      restore.hidden = false;
+      restore.hidden = !record?.turns.length;
     }
   }).catch(() => {
   });
