@@ -15,12 +15,11 @@ import { listArtifacts, writeArtifact, deleteArtifact } from "../shared/durable-
 import { openPiSession } from "./pi-session-idb.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
-import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
-import { pushedSelfUse, receiveSelfUse } from "../shared/self-use.js";
+import { pushedMiniApps, pushedSelfUse, receiveCoreSettings } from "../shared/core-settings.js";
 
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
-  | { type: "inproc_self_use"; value: unknown }
+  | { type: "inproc_settings"; values: unknown }
   | { type: "inproc_voice"; configured: boolean; model?: unknown };
 
 interface InprocHostDeps {
@@ -114,7 +113,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         memoryStore,
         taskHistory,
         siteNotes,
-        miniApps: async () => isMiniAppsOn((await chrome.storage.local.get(MINI_APPS_KEY))[MINI_APPS_KEY]),
+        miniApps: async () => pushedMiniApps(),
         });
       },
       voiceKey: async () => {
@@ -240,8 +239,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
-    if (message.type === "inproc_self_use") {
-      receiveSelfUse(message.value);
+    if (message.type === "inproc_settings") {
+      receiveCoreSettings(message.values);
 
       return;
     }

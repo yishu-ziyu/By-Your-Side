@@ -9,15 +9,6 @@ export function selfUseActive(value: unknown, now = Date.now()): boolean {
   return !!value && typeof value === "object" && typeof (value as { until?: unknown }).until === "number" && (value as { until: number }).until > now;
 }
 
-/** offscreen 文档里没有 chrome.storage：开关由后台随模型设置一起推过来（inproc_config），存在这里。 */
-let pushed: unknown = null;
-
-export function receiveSelfUse(value: unknown): void {
-  pushed = value;
-}
-
-export const pushedSelfUse = (): boolean => selfUseActive(pushed);
-
 /** 同步判断：先读一次，之后跟着存储变化走。界面和记忆判断这类不能等的地方用它。 */
 export function watchSelfUse(onChange?: (active: boolean) => void): () => boolean {
   let value: unknown = null;
