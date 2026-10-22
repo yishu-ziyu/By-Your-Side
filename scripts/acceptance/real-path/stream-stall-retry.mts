@@ -65,6 +65,7 @@ try {
   console.log("已发出：服务每秒发空事件；等待侧栏在 60 秒内恢复完整回答。");
   const answered = await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(ANSWER)}))`) || undefined, 65_000, "回答出现").then(() => true, () => false);
   const waitedMs = Date.now() - sentAt;
+  await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].every(m => m.getAnimations({ subtree: true }).every(a => a.playState !== "running"))`) || undefined, 5_000, "回答淡入完成后留图");
   await rp.screenshot(panel, join(out, "answer.png"));
   check("a 断流后 60 秒内出现完整回答", answered && waitedMs < 60_000, { answered, waitedMs, stalled });
   const text = await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].map(m => m.textContent).join("\\n")`) as string;
