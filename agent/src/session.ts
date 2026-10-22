@@ -801,6 +801,7 @@ if(required.includes(key))candidates.set(key,attachment);
             attachments: () => resultHost?.userAttachments() ?? [],
             memoryForValue: value => memoryRuntime?.memoryForValue(value),
             siteNotesFor: url => resultHost?.siteNotesFor(url) ?? Promise.resolve(null),
+            openForUser: () => resultHost?.userAskedToOpen() ?? false,
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -3158,6 +3159,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (verdict.cause === 'copy_changed' || verdict.cause === 'copy_unverified') emit({ kind: "notice", message: verdict.cause === 'copy_changed' ? "核对发现：复制后的内容已变化，尚未确认符合你的要求。" : "复制结果暂时无法核对，不能确认已完成。" });
       this.runTrace.record("goal_check", { ...verdict, ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(!withinBudget && verdict.status === "continue" ? { overBudget: true } : {}), ...(pageRead ? { pageRead } : {}) });
     }
+  }
+
+  /** 用户这一句是要打开网页来看（成员会话不算）。 */
+  userAskedToOpen(): boolean {
+    return !this.memberId && OPEN_INTENT.test(this.activeGoal ?? "");
   }
 
   /**
