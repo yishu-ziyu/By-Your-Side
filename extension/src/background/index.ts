@@ -61,8 +61,8 @@ import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
 import { circledNames, locatedRef } from "./located-names.js";
-import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
-import { reportSendClick, type SendGuard } from "./send-confirm.js";
+import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen, resolveReadableTab } from "./state.js";
+import { confirmRequest, reportSendClick, type SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
 import { PendingControlTimeout } from "./control-pending.js";
@@ -1500,6 +1500,15 @@ const uplink = {
 /** 不作用在某个页面上的工具：目标页关掉后它们照常可用，模型靠它们换页。 */
 const TABLESS_TOOLS: ReadonlySet<string> = new Set(["open_tab", "list_tabs", "get_active_tab", "worker_tabs", "fetch", "observe_page"]);
 
+/** 请求工具不在某一页上执行，确认卡画在助手正在用的那页；找不到能画的页就不发。 */
+async function requestConfirmTab(key: string): Promise<number> {
+  const tab = await resolveReadableTab(undefined, key).catch(() => null);
+
+  if (tab?.id == null) throw Object.assign(new Error("没有能显示确认的网页，这个 POST 请求没有发出。先打开要提交的网站再试。"), { executionFact: "not_executed" as const });
+
+  return tab.id;
+}
+
 async function executeToolCall(
   id: string,
   name: ToolName,
@@ -1568,7 +1577,8 @@ async function executeToolCall(
       accept_dialog:(p,s)=>acceptDialog(p,s,beforeDispatch),
       dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeDispatch),
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
-      fetch:p=>fetchUrl(p,{beforeDispatch}),
+      // 带登录态的 POST 可能就是在发出或下单：先走和点「发送」同一张确认卡；GET 不问。
+      fetch:(p,s)=>reportSendClick(sendGuard, fetchUrl(p,{beforeDispatch, confirmPost: async request => confirmRequest(await requestConfirmTab(s), request, sendGuard)})),
       // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子。
       click:(p,s)=>reportSendClick(sendGuard, click(p,s,undefined,sendGuard)),
       // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
