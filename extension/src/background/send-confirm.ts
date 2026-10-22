@@ -224,13 +224,35 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
   } finally { pendingTabs.delete(tabId); }
 }
 
+/** 字段名按词拆开再认（cardTitle、passengers、keyboard 不算），值整个换成占位。 */
+function secretField(name: string): boolean {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+  return words.some((word, i) => /^(?:pass|passwd|password|passcode|pwd|token|secret|otp|cvv|cvc|cvn|pin|auth|authorization|session|sessionid|cookie|credentials?|signature|apikey|accesskey|privatekey|secretkey|cardnumber|cardno)$/.test(word)
+    || (word === "key" && /^(?:api|access|private|secret|client|app|signing)$/.test(words[i - 1] ?? ""))
+    || (word === "card" && /^(?:number|no|num|nr)$/.test(words[i + 1] ?? "")));
+}
+
+/** 确认卡上的内容随侧栏记录存进本机：JSON 和表单按字段遮住凭据；认不出格式就不写内容，只写去哪。 */
+function requestSummary(body: string | undefined): string | undefined {
+  if (!body?.trim()) return undefined;
+  const scrub = (value: unknown, hidden: boolean): unknown => hidden ? "••••"
+    : Array.isArray(value) ? value.map(item => scrub(item, false))
+      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item, secretField(key))])) : value;
+  let text: string | undefined;
+
+  try { text = JSON.stringify(scrub(JSON.parse(body), false)); } catch {
+    if (/^[^=&\s]+=[^&]*(?:&[^=&\s]+=[^&]*)*$/.test(body.trim())) text = [...new URLSearchParams(body.trim())].map(([key, value]) => `${key}=${secretField(key) ? "••••" : value}`).join("&");
+  }
+
+  return text?.replace(/\s+/g, " ").trim().slice(0, 120) || undefined;
+}
+
 /** 请求工具带着登录态发 POST：服务器那边可能就是发出、下单或付款，和点「发送」走同一张确认卡，卡上写请求去哪个网站、哪个路径和内容开头。 */
 export async function confirmRequest(tabId: number, request: { url: string; body?: string }, guard: SendGuard): Promise<void> {
   let host = "", path = request.url;
   try { const url = new URL(request.url); host = url.host; path = url.pathname; } catch { /* 原样显示 */ }
-  // 卡上的内容随侧栏记录存进本机：密码、令牌这类字段只写个占位。
-  const secret = String.raw`[\w.-]*(?:pass|pwd|token|secret|otp|cvv|cvc|card|auth|session|cookie|key)[\w.-]*`;
-  const content = request.body?.replace(new RegExp(String.raw`("${secret}"\s*:\s*)(?:"[^"]*"|[^,}\s]+)`, "gi"), '$1"••••"').replace(new RegExp(String.raw`(\b${secret}\s*[:=]\s*)[^"&,}\s]+`, "gi"), "$1••••").replace(/\s+/g, " ").trim().slice(0, 120);
+  const content = requestSummary(request.body);
   await confirmSend(tabId, `POST ${path}`.slice(0, 60), guard, async () => ({ ...(content ? { content } : {}), ...(host ? { host } : {}), route: "request" }));
 }
 

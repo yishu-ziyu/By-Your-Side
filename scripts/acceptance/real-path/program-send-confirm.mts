@@ -51,7 +51,7 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const siteUrl = `http://127.0.0.1:${siteAddress(site).port}/`;
 // fetch 拒抓本机地址（shared/fetch.ts）：用 host-resolver-rules 把一个公网名字映回本机测试站。
 const ORDERS_HOST = "orders-fixture.test";
-const order = (method: "GET" | "POST") => ({ tool: { name: "fetch", args: { url: `http://${ORDERS_HOST}:${siteAddress(site).port}/api/orders`, method, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ item: "季度报表打印", qty: 1, token: "tok-SECRET-42" }) } : {}) } } });
+const order = (method: "GET" | "POST") => ({ tool: { name: "fetch", args: { url: `http://${ORDERS_HOST}:${siteAddress(site).port}/api/orders`, method, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ item: "季度报表打印", passengers: 2, token: "tok-SECRET-42" }) } : {}) } } });
 const ALL_CASES: Case[] = [
   { id: "click", step: { tool: { name: "click", args: { target: "#send", label: "发送" } } }, answer: "decline" },
   { id: "script-click", step: js("document.querySelector('#send').click(); 'ok'"), answer: "decline" },
@@ -158,7 +158,7 @@ const pass = rows.length === CASES.length && rows.every(r => {
   if (r.id === "tool-fetch-get") return !r.confirmShown && r.postsAfter === 0 && r.reads === 1 && tool.includes("季度报表打印");
   // 卡上要写请求真正去的地方，不只写所在网页。
   // 卡上要写请求真正去的地方，不只写所在网页；令牌这类字段只写占位，因为卡的内容会存进侧栏记录。
-  if (r.id.startsWith("tool-fetch") && !(String(r.panelCard).includes("/api/orders") && String(r.panelCard).includes("网页请求") && !String(r.panelCard).includes("tok-SECRET-42"))) return false;
+  if (r.id.startsWith("tool-fetch") && !(String(r.panelCard).includes("/api/orders") && String(r.panelCard).includes("网页请求") && !String(r.panelCard).includes("tok-SECRET-42") && String(r.panelCard).includes('"passengers":2'))) return false;
   return r.confirmShown && r.pageButtons === 0 && String(r.pageNotice).includes("等你在侧栏确认") && r.postsBeforeDecision === 0 && r.postsAfter === (r.answer === "send" ? 1 : 0) && (r.answer === "send" ? String(r.cardAfter).includes("已发送") === r.expectedConfirmed : true);
 });
 for (const r of rows) console.log(r.id, r.confirmShown ? "确认框" : "无确认框", "决定前", r.postsBeforeDecision, "最终", r.postsAfter);
