@@ -473,6 +473,15 @@ export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
   return true;
 }
 
+/**
+ * 出处整理成合规的列表：地址超长或不合规的去掉，标题截短，最多 USER_DELIVERY_SOURCE_MAX 条。
+ * 出处只是附带的链接，一条不合规不能让整份回答校验失败（读过带长签名参数的接口地址时就会这样）。
+ */
+export function fitDeliverySources(list: readonly UserDeliverySourceRef[]): UserDeliverySourceRef[] {
+  return list.filter(source => deliveryUrl(source.url)).slice(0, USER_DELIVERY_SOURCE_MAX)
+    .map(source => (typeof source.title === "string" && source.title.length > USER_DELIVERY_SOURCE_TITLE_MAX ? { ...source, title: `${source.title.slice(0, USER_DELIVERY_SOURCE_TITLE_MAX - 1)}…` } : { ...source }));
+}
+
 /** 回答出处列表：有界、每条是 http(s) 地址加可选标题。 */
 function isDeliverySourceList(v: unknown): v is UserDeliverySourceRef[] {
   return Array.isArray(v) && v.length <= USER_DELIVERY_SOURCE_MAX
