@@ -9,7 +9,12 @@ const only = process.argv.find(arg => arg.startsWith("--case="))?.slice(7);
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-site-methods`);
 await mkdir(out, { recursive: true });
 const cases = [
-  { id: "yt-captions", url: "https://www.youtube.com/watch?v=video123", method: "youtube.captions", expected: "这段字幕属于当前视频。" },
+  { id: "yt-captions", url: "https://www.youtube.com/watch?v=video123", method: "youtube.captions", expected: "这段字幕属于当前视频。", also: ["that's right"], absent: "&#39;" },
+  // 方法成功后模型自己的代码出错：错误要指出哪一行，并带回已完成的方法结果，模型不必绕开方法重做。
+  { id: "yt-program-bug", url: "https://www.youtube.com/watch?v=video123", method: "youtube.captions", code: 'const r = await browser.siteMethod({id:"youtube.captions"});\nreturn r.slice(0, 10);', expected: "这段字幕属于当前视频。", also: ["program line 2", "already finished: siteMethod"] },
+  // 用户要的语言不在第一条轨：按 language 取到对应轨，而不是交回第一条。
+  { id: "yt-language", url: "https://www.youtube.com/watch?v=multi1", method: "youtube.captions", language: "zh", expected: "这段字幕属于当前视频。", also: ['"language":"zh-CN"'], absent: "ترجمة" },
+  { id: "yt-no-captions", url: "https://www.youtube.com/watch?v=nocap1", method: "youtube.captions", expected: '"status":"no_captions"' },
   { id: "yt-stale", url: "https://www.youtube.com/watch?v=video456&stale=1", method: "youtube.captions", expected: "unavailable", absent: "这是上一条视频" },
   { id: "bili-captions", url: "https://www.bilibili.com/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", absent: "其他分P字幕" },
   { id: "x-post", url: "https://x.com/example/status/1234567890", method: "x.read-post", expected: "这是指定的原帖正文。", absent: "这是推荐帖" },
@@ -23,9 +28,11 @@ const replies = new Map<string, TextStep>();
 const textOf = (value: unknown): string => typeof value === "string" ? value : Array.isArray(value) ? value.map(part => typeof part?.text === "string" ? part.text : "").join("") : "";
 const rules: Rule[] = cases.map(c => {
   const reply = { text: "等待真实工具结果" }; replies.set(c.id, reply);
-  return { match: `网站方法 ${c.id}`, steps: [{ tool: { name: "browser_run", args: { label: c.id, code: `return await browser.siteMethod(${JSON.stringify({ id: c.method, ...(c.query ? { query: c.query } : {}) })});` } } }, reply] };
+  return { match: `网站方法 ${c.id}`, steps: [{ tool: { name: "browser_run", args: { label: c.id, code: c.code ?? `return await browser.siteMethod(${JSON.stringify({ id: c.method, ...(c.query ? { query: c.query } : {}), ...(c.language ? { language: c.language } : {}) })});` } } }, reply] };
 });
+let languageOffered = false;
 const model = await startScriptedModel(rules, undefined, payload => {
+  if (/youtube\.captions v1[^\n]*inputs: language/.test(JSON.stringify(payload).replaceAll("\\n", "\n"))) languageOffered = true;
   const messages = payload.messages ?? [];
   const task = [...messages].reverse().find(message => message.role === "user" && textOf(message.content).includes("网站方法 "));
   const result = [...messages].reverse().find(message => message.role === "tool");
@@ -39,14 +46,15 @@ const observedRequests: string[] = [];
 let panel = "";
 const escape = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 function fixture(url: URL): { type: string; body: string } {
-  if (url.pathname === "/captions") return { type: "text/vtt", body: "WEBVTT\n\n00:00.000 --> 00:02.000\n这段字幕属于当前视频。\n" };
+  if (url.pathname === "/captions-ar") return { type: "text/vtt", body: "WEBVTT\n\n00:00.000 --> 00:02.000\nترجمة\n" };
+  if (url.pathname === "/captions") return { type: "text/vtt", body: "WEBVTT\n\n00:00.000 --> 00:02.000\n这段字幕属于当前视频。\n\n00:02.000 --> 00:04.000\nthat&amp;#39;s right\n" };
   if (url.pathname === "/bili-subs") return { type: "application/json", body: JSON.stringify({ body: [{ from: 0, to: 2, content: "当前分P的字幕。" }] }) };
   if (url.pathname.includes("/x/player/")) return { type: "application/json", body: JSON.stringify({ data: { subtitle: { subtitles: [{ lan: "zh", subtitle_url: url.searchParams.get("cid") === "222" ? "https://www.bilibili.com/bili-subs" : "https://www.bilibili.com/wrong-subs" }] } } }) };
   if (url.pathname === "/wrong-subs") return { type: "text/plain", body: "其他分P字幕" };
   const query = url.searchParams.get("search_query") ?? url.searchParams.get("keyword") ?? url.searchParams.get("q");
   let body = `<h1>搜索与阅读练习页</h1>${query ? `<h2 id="query">${escape(query)}</h2><p>这里是对应的实际搜索结果。</p>` : ""}`;
   if (url.hostname === "www.youtube.com" && url.pathname === "/watch") {
-    body += `<video></video><script>window.ytInitialPlayerResponse=${JSON.stringify({ videoDetails: { videoId: url.searchParams.has("stale") ? "oldvideo" : url.searchParams.get("v") }, captions: { playerCaptionsTracklistRenderer: { captionTracks: [{ languageCode: "zh", name: { simpleText: "中文" }, baseUrl: "https://www.youtube.com/captions" }] } } })};</script>`;
+    body += `<video></video><script>window.ytInitialPlayerResponse=${JSON.stringify({ videoDetails: { videoId: url.searchParams.has("stale") ? "oldvideo" : url.searchParams.get("v") }, ...(url.searchParams.get("v") === "nocap1" ? {} : { captions: { playerCaptionsTracklistRenderer: { captionTracks: url.searchParams.get("v") === "multi1" ? [{ languageCode: "ar", name: { simpleText: "Arabic" }, baseUrl: "https://www.youtube.com/captions-ar" }, { languageCode: "zh-CN", name: { simpleText: "Chinese (China)" }, baseUrl: "https://www.youtube.com/captions" }] : [{ languageCode: "zh", name: { simpleText: "中文" }, baseUrl: "https://www.youtube.com/captions" }] } } }) })};</script>`;
   }
   if (url.hostname === "www.bilibili.com" && url.pathname.startsWith("/video/")) {
     body += `<video></video><script>window.__INITIAL_STATE__={videoData:{bvid:'BV1TEST123',cid:222,pages:[{cid:222}]}};Promise.all([fetch('/x/player/wbi/v2?cid=111'),fetch('/x/player/wbi/v2?cid=222')]).then(()=>document.body.dataset.ready='1');</script>`;
@@ -80,13 +88,14 @@ try {
     await rp.click(panel, "#input"); await rp.typeText(panel, `网站方法 ${c.id}`); await rp.pressEnter(panel);
     await until(async () => await rp.evaluate(panel, `document.querySelector("#messages")?.textContent.includes("本次记录结束")`), 45_000, c.id + " 侧栏交付");
     const text = String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("\\n")'));
-    check(c.id + " 结果", text.includes(c.expected) && (!c.absent || !text.includes(c.absent)), { text: text.slice(0, 2200) });
+    check(c.id + " 结果", text.includes(c.expected) && (c.also ?? []).every(part => text.includes(part)) && (!c.absent || !text.includes(c.absent)), { text: text.slice(0, 2200) });
     const actualUrl = String(await rp.evaluate(work, "location.href"));
     if (c.unchanged) check(c.id + " 没有改页", actualUrl === c.url, actualUrl);
     if (c.query) check(c.id + " 查询一致", c.unchanged ? actualUrl === c.url : new URL(actualUrl).searchParams.get(c.method.startsWith("youtube") ? "search_query" : c.method.startsWith("bilibili") ? "keyword" : "q") === c.query, actualUrl);
     await rp.screenshot(panel, join(out, c.id + ".png"));
     await until(() => rp.evaluate(panel, ready), 25_000, c.id + " 收尾");
   }
+  check("字幕方法向模型写明可传 language", languageOffered, languageOffered);
   check("没有下载其他分P字幕", !observedRequests.some(url => url.includes("/wrong-subs")), observedRequests.filter(url => /subs|captions/.test(url)));
 } catch (error) {
   check("流程完成", false, String(error));
