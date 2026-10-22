@@ -2,7 +2,7 @@
 export type MemoryScope = { kind: "all" } | { kind: "site"; hostname: string };
 
 /**
- * 记忆的种类（docs/memory-model.md「四种记忆」）：② 做过的事、③ 关于你、④ 做事的方法。
+ * 记忆的种类：② 做过的事、③ 关于你、④ 做事的方法。
  * ① 这件事的要求只留在这次对话里，不落盘，所以这里没有。
  */
 export type MemoryKind = "profile" | "past" | "method";

@@ -17,7 +17,7 @@ const SLOW_TOOL_TIMEOUT_MS = 60_000;
  */
 export const USER_CONFIRM_TIMEOUT_MS = 130_000;
 
-/** navigate/screenshot 涉及页面加载或渲染，放宽到 60s（见 docs/protocol.md）。 */
+/** navigate/screenshot 涉及页面加载或渲染，放宽到 60s。 */
 const SLOW_TOOLS: ReadonlySet<string> = new Set(["navigate", "screenshot"]);
 
 interface ToolCallFrame {

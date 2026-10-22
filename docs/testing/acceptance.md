@@ -2,27 +2,16 @@
 
 [文档导航](../README.md) · [开发检查](../development/checks.md)
 
-本页说明怎样选验收入口，以及代码里看不出的边界。脚本的参数和前提写在各脚本的文件头，本页不复述。
+本页只写怎样选入口时代码里看不出的边界和坑。
 
 ## 先用这个入口
 
-`npm run lab` 是开发统一入口：查环境、跑用例、跑评测、读使用记录、管本机测试网站、清理残留。用法见 [`scripts/maintenance/lab.mjs`](../../scripts/maintenance/lab.mjs) 的文件头，不带参数运行也会打印。
-
-踩过的坑由它挡住，不靠记：负载超过 20 时 `case` 和 `eval` 不开跑；用例和评测默认用按当前代码冻结的一份扩展；清理只关确定没人在用的测试浏览器；Ego 任务空间只关名字以 `bys` 开头的，所以脚本建任务空间时名字一律以 `bys` 开头。开始测之前先跑 `npm run lab -- env`。
-
-下面是它底层调用的命令，要单独用或排查时再看。
+`npm run lab` 是开发统一入口，踩过的坑写在它的文件头里，由它挡住，不靠记。
 
 ## 怎样选入口
 
-- **合并前**：`npm run check` 和这次改到的用例。
-- **用户发现问题或要求时**：`npm test`。`npm test` 只跑核心用例：只装扩展、用脚本模型，不要凭据。
-  用户在等结果时，用 [进度页](../../scripts/acceptance/real-path/progress.html) 让用户看到每项测什么、测到哪。新加核心用例时，在进度页里补一句它测什么。
-- **全部真实路径用例**：`npm run accept:real-path`。加 `--only=` 是过滤轮：没选的用例记为未跑，过滤轮永远不算整轮通过。
-- **浏览器主链**：`npm run accept:browser`。
-- **单项**：在 [`scripts/acceptance/real-path/`](../../scripts/acceptance/real-path/) 找到对应脚本，先读文件头，再加 `--headless` 运行。
-- **技术前提**：`scripts/probes/` 下的[前提小实验](../development/checks.md#前提小实验)只证明前提，不代替功能验收。
-- **真实网站护栏（24 题爬坡集）**：`npx tsx scripts/probes/compare-real.mts . out/hillclimb-<日期> ext --split=test`。训练集与独立测试集网站不重叠，分析者只看训练集过程记录；改前改后两份预构建扩展须在同一时段并排跑，再用 `npx tsx scripts/eval/time-breakdown.mts out/<这次> --vs=out/<上一次>` 对比耗时与模型来回次数。
-- **CI**：E2E 工作流跑 `npm test`，目前只能手动触发，还没在 Linux 上跑通过。
+- **真实网站护栏**：训练集与独立测试集网站不重叠，分析者只看训练集过程记录；改前改后两份预构建扩展须在同一时段并排跑。
+- **CI**：E2E 工作流还没在 Linux 上跑通过。
 
 ## Ego 任务空间清理
 

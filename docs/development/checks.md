@@ -4,14 +4,13 @@
 
 ## 两道检查
 
-- `npm run check`：文档结构、界面用词、动效 token、模块边界、类型、构建。几分钟内跑完，只拦写坏的代码。界面用词只拦[术语表](../glossary.md)「不用」一栏里不会误伤的词，词表在[脚本](../../scripts/maintenance/check-copy.mjs)里。侧栏动效只许写在 token 文件里的时长和曲线，检查在[脚本](../../scripts/maintenance/check-motion-tokens.mjs)。
-- `npm test`：核心真实路径用例。用例只装扩展、用脚本模型，所以不要凭据。`npm test` 是唯一检查产品行为的地方。
+- `npm test` 是唯一检查产品行为的地方。
 
 每次合并前跑 `npm run check` 和这次改到的用例。`npm test` 不挡在更新日常扩展之前，只在用户发现问题或要求时跑，因为等它的时间多于它抓到的问题。纯文档修改只跑 `npm run check:docs`。
 
-每次运行真实路径用例都记进主目录的运行流水，`npm run runs` 看今天每个用例跑了几次、过了几次。同一用例、同样参数、同样代码失败 2 次后，第 3 次会被拦下，因为再跑只是在测模型的随机性；先看失败原因，确实要跑时加 `BYS_RERUN=1`。7 天前、没被文档引用的运行目录在下次运行时自动清理。
+同一用例、同样参数、同样代码失败 2 次后不再跑第 3 次：再跑只是在测模型的随机性。
 
-`npm run smoke` 用真实模型走一遍日常路径，需要凭据，不是合并门槛。
+`npm run smoke` 用真实模型，不是合并门槛。
 
 `check` 会重建日常加载的 `extension/dist`。只想核对打包时，用 `SIDEAGENT_BUILD_DIST` 指向临时目录的绝对路径；npm 工作区会切换当前目录，相对路径会落进 `extension/`，导致验收找不到构建结果。
 
@@ -19,7 +18,6 @@
 
 ## 依赖
 
-- 依赖审计用 `npm audit --registry=https://registry.npmjs.org`，不改全局源。
 - Pi 自带 npm-shrinkwrap，所以项目级 override 盖不住 Pi 的依赖版本。要在干净 `npm ci` 后用 `npm ls` 核对。
 - 在 worktree 里不要把整个 `node_modules` 指回主树：`@sideagent` 的链接会解析回主树源码，扩展构建里的代理部分就成了主树的旧代码，而类型检查照样通过。
   要建真实的 `node_modules` 目录：其他包逐个链回主树，`@sideagent/agent` 和 `@sideagent/extension` 链到 worktree 自己（10-11 任务 2 踩过）。`npm run task` 开工作树时会这样建好。
@@ -41,18 +39,6 @@
 
 ## 调试入口
 
-- `npm run reload:ext` 需要 Chrome 的远程调试入口，只在明确的加载范围内执行。
 - 配置和构建产物存在，不证明正在运行的扩展已经采用了它们。
-- `npm run logs`（[脚本](../../scripts/maintenance/logs.mjs)）直接读日常 Chrome 里 By Your Side 的诊断记录，不用在设置页导出，给代理查问题用。输出保留原文（凭据除外），所以不要提交或外传。第一次运行要从 GitHub 装 Python 解码库，比较慢。
-
-## 项目看板
-
-`npm run dashboard`（[脚本](../../scripts/maintenance/dashboard.mjs)）生成给产品负责人看的一页静态 HTML。看板脚本只读仓库，不改远端。看板只是汇总视图，不替代 STATUS 与验收记录。
-
-
-## CI 与人工复核
-
-- [Quality](../../.github/workflows/quality.yml)：PR 与 `main` 上跑 `npm run check`（含文档、用词、动效与样式 token、架构边界、类型与构建）及全量文档检查。
-- [E2E](../../.github/workflows/e2e.yml)：手动触发，在 Linux 上跑 `npm test` 的用例。
 
 维护者按 [PR 模板](../../.github/pull_request_template.md)复核。当前进度只在 [STATUS](../STATUS.md) 维护。评测环境分类见[站点不可用](../testing/acceptance.md#评测中的站点不可用)。
