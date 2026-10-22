@@ -62,7 +62,6 @@ import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
 import { circledNames, locatedRef } from "./located-names.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen } from "./state.js";
-import { takeoverTab, handbackTab } from "./page-operation-queue.js";
 import { reportSendClick, type SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
@@ -805,8 +804,6 @@ let pendingControl: PendingControl | null = null;
 function cancelTakeover(pending: Extract<PendingControl, {action:"takeover"}>) {
  if (pending.pageTabId != null) {
   for (const member of team.view()?.members ?? []) { gate.releaseSession(member.sessionId); setSessionClaimBlocked(member.sessionId, false); }
-
-  handbackTab(pending.pageTabId);
  } else gate.cancelTakeover(pending.generation);
  // 接管没成：侧栏收掉「你在操作」。
  emitHandoffPhase("agent");
@@ -955,10 +952,7 @@ async function hydrateControl(): Promise<void> {
       lastStatus = "user";
       statusBySession.set(LEAD_SESSION_ID, "user");
 
-      for (const m of team.view()?.members ?? []) {
-        if (m.phase !== "restored" && m.tabId != null) void takeoverTab(m.tabId);
-        statusBySession.set(m.sessionId, m.phase === "restored" ? "running" : "user");
-      }
+      for (const m of team.view()?.members ?? []) statusBySession.set(m.sessionId, m.phase === "restored" ? "running" : "user");
 
       void showUserControlGuarded();
     } else {
@@ -1265,7 +1259,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
     for (const m of view.members) {
       statusBySession.set(m.sessionId, m.phase === "restored" ? "running" : "user");
 
-      if (m.phase === "restored" && m.tabId != null) { handbackTab(m.tabId); setSessionClaimBlocked(m.sessionId, false); }
+      if (m.phase === "restored" && m.tabId != null) setSessionClaimBlocked(m.sessionId, false);
     }
 
     if (applied.globalHandback || allRestored) {
@@ -1371,7 +1365,7 @@ return;}
 
         for (const [sessionId, memberState] of progress.statuses) statusBySession.set(sessionId, memberState);
 
-        for (const member of msg.team.members) if (member.phase === "restored" && member.tabId != null) { handbackTab(member.tabId); setSessionClaimBlocked(member.sessionId, false); }
+        for (const member of msg.team.members) if (member.phase === "restored" && member.tabId != null) setSessionClaimBlocked(member.sessionId, false);
 
         lastStatus = aggregateRunState(statusBySession.values());
         persistControl();
@@ -1670,6 +1664,18 @@ function emitLocalStatus(state: AgentRunState): void {
   broadcastVisibleServer({ type: "status", state });
 }
 
+/**
+ * 按页接管：这页成员已开始的写操作结束后才显示「现在归你」。
+ * 卡住的那一步取消不了，只能不再等它；页面可能还会被它改，所以要如实告诉用户。它的结果由宿主的工具期限记成未知。
+ */
+async function drainPage(sessionIds: string[]): Promise<{ generation: number; superseded: boolean }> {
+  const generation = gate.gen;
+
+  if (!await gate.drainSessions(sessionIds, CONTROL_TIMEOUT_MS)) emitNotice("助手手上的一步超过 10 秒还没结束，这一页可能还会被它改动。");
+
+  return { generation, superseded: gate.gen !== generation };
+}
+
 async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false,ask?:string,targets?:string[]): Promise<void> {
   await controlReady;
 
@@ -1702,11 +1708,9 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
     for (const sid of collaborators) { gate.blockSession(sid); setSessionClaimBlocked(sid, true); }
 
-    const drained = takeoverTab(targetTabId);
     members = allMembers.filter(m => collaborators.includes(m.sessionId));
 
     for (const sid of collaborators) if (!members.some(m => m.sessionId === sid)) members.push({sessionId:sid,role:isLeadSession(sid)?"lead":"worker",activity:"running",tabId:targetTabId});
-    await drained;
   }
 
   if (members.length === 0) {
@@ -1734,10 +1738,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
     if (owner) void shown.then(() => showHandoffMarks(tabId, targets, key(owner.sessionId))).catch(() => {});
   }
-  const draining=targetTabId != null ? Promise.resolve({generation:gate.gen, superseded:false}) : gate.beginTakeover();
-
-  if(wholeTask)await Promise.all([...new Set(members.flatMap(m=>m.tabId==null?[]:[m.tabId]))].map(tabId=>takeoverTab(tabId)));
-  const result = await draining;
+  const result = targetTabId != null ? await drainPage(members.map(m => m.sessionId)) : await gate.beginTakeover();
 
   if (result.superseded) {
     team.clear();
@@ -1938,7 +1939,6 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
 
   const aborted = gate.abort();
   const sessions = [...new Set([LEAD_SESSION_ID, ...statusBySession.keys(), ...(team.view()?.members.map(member => member.sessionId) ?? [])])];
-  const abortedTabs = getWorkingTabMap().then(map => [...new Set(Object.values(map))]);
   team.abort();
 
   if (lastStatus !== "idle" || [...statusBySession.values()].some(state => state !== "idle")) {
@@ -1961,7 +1961,6 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   const completion=Promise.all([abortDrain,aborted.settled]).then(async () => {
     if (gate.gen !== aborted.generation) return;
 
-    for (const tabId of await abortedTabs) handbackTab(tabId);
     await hidePresence(sessions.map(key));
     await hideControlBannersForOwner(conversationId, await memberTabIds());
     await stopTrailReplay(key());
