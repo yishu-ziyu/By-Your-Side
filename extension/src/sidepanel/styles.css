@@ -1612,7 +1612,11 @@ details.run-steps.done .chip.error { background: transparent; }
   scrollbar-width: none;
   -ms-overflow-style: none;
   position: relative;
+  container-type: inline-size;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 2px;
 }
+.attachments-strip > * { scroll-snap-align: start; }
 .attachments-strip::-webkit-scrollbar { display: none; }
 .attachments-strip[hidden] { display: none !important; }
 
@@ -1742,10 +1746,14 @@ details.run-steps.done .chip.error { background: transparent; }
   pointer-events: none;
 }
 
-/* 文件附件：瓷贴加宽放文件名；类型图标的颜色按格式区分（PDF 红、表格绿、PPT 橙、其余蓝）。 */
+/* 文件附件：瓷贴加宽放文件名；类型图标的颜色按格式区分（PDF 红、表格绿、PPT 橙、其余蓝）。
+   宽度按输入框算，一屏正好放下整数张（窄侧栏两张、宽侧栏三张），配合按卡片对齐的滑动，不会露出被切掉一半的卡。 */
 .tile-56.tile-file {
-  width: 176px;
+  width: calc((100cqw - 8px) / 2);
   cursor: default;
+}
+@container (min-width: 480px) {
+  .tile-56.tile-file { width: calc((100cqw - 16px) / 3); }
 }
 .tile-file .tile-ring-svg { width: 100%; }
 .tile-file .file-chip { height: 100%; padding: 0 22px 0 10px; }
@@ -1785,9 +1793,11 @@ details.run-steps.done .chip.error { background: transparent; }
   text-overflow: ellipsis;
 }
 .file-chip-meta {
+  overflow: hidden;
   color: var(--text-tertiary);
   font-size: var(--fs-micro);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* 已发出的消息里：同一张卡缩小一号，两张一行，不带进度环。 */
