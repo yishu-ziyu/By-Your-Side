@@ -3,6 +3,7 @@ import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
 import { HOST_PAGE_PROBES } from "../../shared/effect-policy.js";
 import { isSaveFileParams, rejectSaveFileParams, type SaveFileParams, type SavedFileReceipt } from "./artifacts-tool.js";
 import { fetchFailureReason, type FetchReply } from "./fetch-result.js";
+import { runSiteMethod } from "./site-methods.js";
 
 export interface ProgramStep {
   parentId: string;
@@ -60,6 +61,7 @@ const RPC_ALIASES: Record<string, string> = Object.fromEntries(TOOL_NAMES
  * 防止文档与代码漂移（Issue §十）。它们在宿主内组合现有 RPC 完成，不新增 extension RPC。
  */
 const BROWSER_PROGRAM_HELPERS = [
+  { name: "siteMethod", summary: "siteMethod({id,query?,tabId?,language?}) 执行当前网站已收录的方法，返回来源和 observed/partial/unavailable/no_captions；只使用当前网站提供的方法编号", composed: "内置方法组合现有 RPC；每步保留权限、取消与目标核对" },
   { name: "waitFor", summary: "等待唯一目标：state=visible|visible+enabled|attached|detached|hidden（统一 target：@ref / CSS / loc=role / loc=href / xpath= / text=）", composed: "read_element expect 轮询（只读）" },
   { name: "waitForElement", summary: "waitFor 的语义别名", composed: "waitFor" },
   { name: "check", summary: "check({text|selector,state=appears|disappears,timeoutMs=3000}) 等文字或目标出现/消失，不叫模型；返回 {ok,waitedMs,polls}，超时返回 ok:false 不抛错", composed: "read_element expect 轮询（只读）" },
@@ -730,6 +732,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           : name === "waitForNetworkIdle" ? await waitForNetworkIdle(params, id)
           : name === "scrollToBottomUntil" ? await scrollToBottomUntil(params, id)
           : name === "armEvent" ? await armEvent(params, id)
+          : name === "siteMethod" ? await runSiteMethod(params, { check: guard, call: (() => { const sub = nextSubId(id); return (tool: ToolName, args: Record<string, unknown>) => options.call(tool, args, sub()); })() })
           : name === "saveFile" && options.saveFile ? (isSaveFileParams(params) ? await options.saveFile(params) : rejectSaveFileParams())
           : await options.call(canonical as ToolName, params, id);
 

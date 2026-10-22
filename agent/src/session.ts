@@ -67,6 +67,7 @@ import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
 import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
+import { siteMethodHint, siteMethodsFor } from "../../shared/site-methods.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[]; voiceHistory?: VoiceConversationContext['recentTurns'] }
@@ -1654,23 +1655,27 @@ return;}
    * 写一条 site_notes{phase:"used"} 诊断。
    */
   async siteNotesFor(url: string | null, timeoutMs?: number): Promise<string | null> {
-    if (!this.siteNotes || !url) return null;
+    if (!url) return null;
+    const methodHint = siteMethodHint(url);
     const empty = { host: "", notes: [] as string[] };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = this.siteNotes.notesFor(url).catch(() => empty);
+    const read = this.siteNotes?.notesFor(url).catch(() => empty) ?? Promise.resolve(empty);
     // 限时读（任务开始时用）：超时就当没有笔记，也不记成「这一轮带过」，之后打开这个网站时还能带上。
-    const { host, notes } = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<typeof empty>(resolve => { timer = setTimeout(() => resolve(empty), timeoutMs); })]).finally(() => clearTimeout(timer));
+    const stored = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<typeof empty>(resolve => { timer = setTimeout(() => resolve(empty), timeoutMs); })]).finally(() => clearTimeout(timer));
+    const { notes } = stored;
+    const host = stored.host || (methodHint ? new URL(url).hostname : "");
 
-    if (!host || !notes.length) return null;
+    if (!host || (!notes.length && !methodHint)) return null;
     const runId = this.deliveryRunId();
 
     if (this.siteNotesShown.runId !== runId) this.siteNotesShown = { runId, hosts: new Set() };
 
     if (this.siteNotesShown.hosts.has(siteKey(host))) return null;
     this.siteNotesShown.hosts.add(siteKey(host));
-    this.runTrace.record("site_notes", { phase: "used", host, count: notes.length });
+    if (notes.length) this.runTrace.record("site_notes", { phase: "used", host, count: notes.length });
+    if (methodHint) this.runTrace.record("site_methods", { phase: "offered", host, methods: siteMethodsFor(url).map(method => ({ id: method.id, version: method.version })) });
 
-    return formatSiteNotes(host, notes);
+    return [methodHint, notes.length ? formatSiteNotes(host, notes) : null].filter(Boolean).join("\n\n");
   }
 
   /**
