@@ -8,7 +8,8 @@
  *      所以服务器计数只作旁证。
  *   c) 网页选中一段字再派发松开指针或 Shift 松开：不弹划词工具条；工具条开着时网页派发字母键，焦点不被抢走。
  *   每项都用 CDP 派发的真实输入做对照，证明判据看得到扩展的反应。
- * 失败方式：去掉 content/ptt.ts、link-preview.ts、ask.ts 里任意一处 isTrusted 判断，对应的一项失败。
+ * 失败方式：去掉 content/ptt.ts、link-preview.ts 的 isTrusted 判断，或 ask.ts 里选字、按键的判断，对应的一项失败。
+ * 没覆盖：ask.ts 的 pagehide（要一段正在生成的阅读回答）、drag-feed.ts 的拖动（要真实拖放），ptt-capsule.ts 的 Esc 在 ptt-capsule 用例第 2 轮。
  */
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
