@@ -139,6 +139,8 @@ interface SideAgentNamespace {
   refs?: Map<number, Element>;
   snapshot?: (scope?: string) => string;
   dom?: SideAgentDomOps;
+  /** 上一次 dom 操作在页面里抛出的错误；executeScript 回不来错误，callDom 读完即清。 */
+  lastDomError?: string;
   /** 动作效果证据（按需注入 content-effect.js 后可用） */
   effect?: SideAgentEffect;
   cursor?: SideAgentCursor;

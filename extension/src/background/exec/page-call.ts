@@ -106,5 +106,15 @@ export async function callDom<Args extends unknown[], Result>(
 
   if (!first) throw new Error("页面脚本未返回结果");
 
+  if (first.result == null) {
+    const [thrown] = await chrome.scripting.executeScript({
+      target: documentId ? { tabId, documentIds: [documentId] } : { tabId },
+      world: "ISOLATED",
+      func: () => { const ns = window.__sideagent; const error = ns?.lastDomError; if (ns) ns.lastDomError = undefined; return error ?? null; },
+    });
+
+    if (typeof thrown?.result === "string") throw new Error(thrown.result);
+  }
+
   return first.result as Awaited<Result>;
 }
