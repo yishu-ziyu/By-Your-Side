@@ -7,7 +7,7 @@
  *   --case=opinion   闲聊："你觉得这个页面做得怎么样？"，同上，是人设示例之外的留出题
  *   --case=barge-in   插话：先请它讲个长故事，回答播到一半时问备注；旧回答要在开口后马上停声，新问题照常回答
  *   --case=stop-task  点选等待中：问候照常回答、停声不停任务；说“终止任务”直接终止原任务，回执前不宣称已停，旧要求不能复活
- *   --case=ask-status 点选等待中问「任务结束了吗？」：问句不是终止，原任务和点选层都留着，助手照常回答
+ *   --case=ask-status 任务在跑时问「任务结束了吗？」：问句不是终止，原任务照常在跑，助手照常回答（文字模型用本机脚本模型拖住任务）
  *
  * 麦克风是 macOS say 合成的中文 WAV（Chrome 假设备只放一遍）。语音密钥来自 ~/.sideagent/stepfun-api.key，
  * 文字模型来自 ~/.sideagent/providers.local.json（--model=provider/id，默认 kimi-coding/kimi-for-coding）。
@@ -31,6 +31,7 @@ import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import type { JsonRecord } from "./harness.mts";
 import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
+import { startScriptedModel } from "./scripted-model.mts";
 import { STEP_VOICES, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS } from "../../../shared/voice.ts";
 import { MODEL } from "../../../agent/src/realtime-voice-connection.ts";
 
@@ -129,7 +130,15 @@ const pageUrl = `http://127.0.0.1:${siteAddress(site).port}/note`;
 // 文字模型：用户选的套餐。Kimi 是订阅登录，只借用 Pi 里当前有效的令牌，不在测试里刷新。
 const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? "kimi-coding/kimi-for-coding";
 
-const plan = await loadModelPlan(modelArg);
+/**
+ * ask-status 的原任务只需要一直在跑：文字模型换成本机脚本模型，对这句任务拖着不回。
+ * 真模型可能直接用文字反问、任务当场结束，宿主的终止判断就不在场了。
+ */
+const ASK_STATUS_TASK = "帮我把这个页面上的备注整理一下";
+
+const holdingModel = caseName === "ask-status" ? await startScriptedModel([{ match: "备注整理", steps: [{ text: "好的，我整理一下。", delayMs: 180_000 }] }]) : null;
+
+const plan = holdingModel ? { providerId: "custom", modelId: "fixture", credential: { type: "api_key", key: "local-fixture" }, baseUrl: holdingModel.baseUrl } : await loadModelPlan(modelArg);
 
 const voiceKey = (await readFile(join(homedir(), planVoice ? ".sideagent/step-plan.key" : ".sideagent/stepfun-api.key"), "utf8")).trim();
 
@@ -420,12 +429,12 @@ try {
     })()`);
     // SAFETY: 探针脚本返回 window.__stopProbe.frames，写入时即为 StopFrame 数组。
     const protocol = async () => rp.evaluate(panel, "window.__stopProbe.frames") as Promise<StopFrame[]>;
-    const pendingText = "我指一个按钮给你，把我指的那个圈出来，不要点它。";
+    const pendingText = caseName === "ask-status" ? ASK_STATUS_TASK : "我指一个按钮给你，把我指的那个圈出来，不要点它。";
 
     await rp.click(panel, "#input");
     await rp.typeText(panel, pendingText);
     await rp.pressEnter(panel);
-    await until(async () => rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')"), 120_000, "原任务等待用户点选", 500);
+    if (caseName === "stop-task") await until(async () => rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')"), 120_000, "原任务等待用户点选", 500);
     const start = await until(async () => (await protocol()).find(frame => frame.kind === "receipt" && frame.action === "start" && frame.source === "text" && frame.status === "accepted" && frame.runId), 10_000, "原任务接收回执");
     const runId = start.runId!;
     // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
@@ -453,7 +462,7 @@ try {
     };
 
     if (caseName === "ask-status") {
-      // 问任务状态的句子也带「结束…任务」：宿主不能把它当成终止，要交给模型照常回答，原任务和点选层都留着。
+      // 问任务状态的句子也带「结束…任务」：宿主不能把它当成终止，要交给模型照常回答，原任务照常在跑。
       const askedAt = Date.now();
 
       await rp.click(panel, "#input");
@@ -473,16 +482,15 @@ try {
       const after = await sample();
       const frames = await protocol();
       const aborted = frames.filter(frame => frame.kind === "receipt" && frame.action === "abort" && frame.at >= askedAt).map(frame => ({ ...frame }));
-      // SAFETY: 表达式只返回布尔值。
-      const picker = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
+      const stopped = frames.some(frame => frame.at >= askedAt && ((frame.kind === "event" && frame.event === "run_stopped") || (frame.kind === "status" && frame.state === "aborted")));
 
       // 转写要带「结束/取消…任务」这种终止说法的短句才测到了：转成「任务完成了吗」时，宿主本来就不会当成终止。
       const heardShort = asked.heard.replace(/[\p{P}\p{Z}\s]/gu, "");
       const abortWording = heardShort.length <= 16 && /(?:终止|中止|取消|停止|结束|停掉)(?:掉)?(?:当前|这个|这项|刚才的?)?任务|任务(?:给我)?(?:终止|中止|取消|停止|结束|停掉)/.test(heardShort);
 
-      stopEvidence.askStatus = { heard: asked.heard, panel: after, aborted, picker };
+      stopEvidence.askStatus = { heard: asked.heard, panel: after, aborted, stopped };
       verdicts.heardStatusQuestion = verdict(abortWording, { heard: asked.heard, abortWording });
-      verdicts.statusQuestionKeepsTask = verdict(!aborted.length && picker && after.taskBusy, { runId, aborted, picker, taskBusy: after.taskBusy });
+      verdicts.statusQuestionKeepsTask = verdict(!aborted.length && !stopped && after.taskBusy, { runId, aborted, stopped, taskBusy: after.taskBusy });
       verdicts.statusQuestionAnswered = verdict(!!after.answer, { answer: after.answer });
       stopEvidence.protocol = frames.map(frame => ({ ...frame }));
       await rp.screenshot(panel, join(artifacts, "02-asked-status-panel.png"));
@@ -903,6 +911,9 @@ try {
   result.lastPanel = { states, voiceState: seen?.voiceState ?? null, voiceStatus: seen?.voiceStatus ?? "", heard: seen?.heard ?? "", answer: seen?.answer ?? "" };
 
   if ((caseName === "stop-task" || caseName === "ask-status") && panelSession) result.stopTaskProtocol = await rp.evaluate(panelSession, "window.__stopProbe?.frames ?? []").catch(() => []);
+
+  // 语音连不上、出错的底层原因只进诊断记录：失败时导出一份，留下出错的几行。
+  if (panelSession) result.voiceErrors = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).then(({ voice }) => voice.split("\n").filter((line) => /socket_error|fatal|"close|error/i.test(line)).slice(-10)).catch((error: unknown) => `诊断导出失败：${String(error)}`);
 
   if (panelSession) await rp.screenshot(panelSession, join(artifacts, "panel-failed.png")).catch(() => {});
 } finally {
