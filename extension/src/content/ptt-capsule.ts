@@ -215,8 +215,9 @@ export function createPttCapsule() {
   };
 
   // 任务在跑时 Esc 中止（念着确认句也是：听出理解错了就叫停）；念结果时 Esc 只停声音；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
+  // 只认用户真按的 Esc：网页脚本派发的 Esc 不能中止任务。
   addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || !shown) return;
+    if (!event.isTrusted || event.key !== 'Escape' || !shown) return;
 
     if (shown.phase === 'doing') { send('stop'); if (speaking()) send('hush'); }
     else if (speaking()) send('hush');

@@ -3,7 +3,7 @@
  *   npx tsx scripts/acceptance/real-path/ptt-capsule.mts --headless
  * 麦克风是 say 合成的一句话；听写连真实的 Step Plan 套餐，助手用本机脚本模型。
  * 第 1 轮：按住（在听、声波）→ 松开（听写中）→ 在做 → 结果，点「在侧栏看」打开侧栏。
- * 第 2 轮：同一句话，脚本模型挂起不回；胶囊在做时按 Esc，任务停下，胶囊写「已停下」。
+ * 第 2 轮：同一句话，脚本模型挂起不回；网页脚本先派发一个 Esc，任务不停；再真按 Esc，任务停下，胶囊写「已停下」。
  * 念结果：设置页先拒绝一个按量格式的 key，再存 MiniMax 订阅 Key（~/.pi/agent/auth.json 的 minimax-cn）；
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
  * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
@@ -356,6 +356,9 @@ try {
   const released2 = await holdAndSpeak(work, two, join(artifacts, "4-listening-again.png"));
   await waitPhase(work, two, "doing", DICTATION_MS);
   await sleep(1_000);
+  await rp.evaluate(work, `dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true })), true`);
+  await sleep(1_500);
+  assert.equal((await capsuleState(work))?.phase, "doing", "R2: an Esc dispatched by the page script does not stop the task");
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work);
   const escAt = Date.now();
