@@ -84,6 +84,14 @@ export function userWaiting<T extends object>(options: T): T & ModelQueueOptions
   return { ...options, userWaiting: true };
 }
 
+/** 这一轮还没提交给模型就被停下了：不会有 agent_end 来收尾，会话层按「停下、没开工」处理，不当成错误。 */
+export class RunNotStarted extends Error {
+  constructor() {
+    super("本轮已取消，没有启动模型或操作页面。");
+    this.name = "RunNotStarted";
+  }
+}
+
 /** 换到备用模型多久之后，用户的下一条消息回主模型（用户定的 5 分钟）。 */
 const MODEL_SWITCH_BACK_AFTER_MS = 5 * 60_000;
 
