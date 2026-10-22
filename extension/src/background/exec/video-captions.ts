@@ -27,6 +27,8 @@ interface PageCaptions {
   tracks: CaptionTrack[];
   /** 页面自己的播放器接口里明说的字幕清单（字段名、条数），空清单就是这个视频没有字幕。 */
   lists: Array<{ request: string; field: string; count: number }>;
+  /** 网站说要登录才给字幕（B站未登录时字幕清单为空并带 need_login_subtitle）：这时的空清单不能当作没有字幕。 */
+  loginRequired: boolean;
   failed: string[];
 }
 
@@ -35,7 +37,7 @@ const READ_CAPTIONS = `(async () => {
   const page = new URL(location.href);
   const youtube = /(^|\\.)youtube\\.com$/.test(page.hostname);
   const bilibili = /(^|\\.)bilibili\\.com$/.test(page.hostname);
-  const videoId = youtube ? (page.searchParams.get('v') || page.pathname.match(/^\\/(?:shorts|embed)\\/([^/]+)/)?.[1] || null) : bilibili ? (page.pathname.match(/^\\/video\\/(BV[^/]+)/)?.[1] || null) : null;
+  const videoId = youtube ? (page.searchParams.get('v') || page.pathname.match(/^\\/(?:shorts|embed)\\/([^/]+)/)?.[1] || null) : bilibili ? (page.pathname.match(/^\\/(?:[a-z]{2}(?:-[a-z]+)?\\/)?video\\/(BV[^/]+)/i)?.[1] || null) : null;
   let player = window.ytInitialPlayerResponse;
   try { player = document.getElementById('movie_player')?.getPlayerResponse?.() || player; } catch {}
   const videoData = window.__INITIAL_STATE__?.videoData;
@@ -45,7 +47,7 @@ const READ_CAPTIONS = `(async () => {
   const title = String((youtube ? player?.videoDetails?.title : videoData?.title) ?? "");
   const pages = Array.isArray(videoData?.pages) ? videoData.pages : [];
   const partInfo = bilibili && pages.length > 1 ? { index: part, title: String(pages[part - 1]?.part ?? ""), count: pages.length } : null;
-  const out = { pageUrl: location.href, videoId, title: identityVerified ? title : "", part: identityVerified ? partInfo : null, identityVerified, videos: document.querySelectorAll("video").length, tracks: [], lists: [], failed: [] };
+  const out = { pageUrl: location.href, videoId, title: identityVerified ? title : "", part: identityVerified ? partInfo : null, identityVerified, videos: document.querySelectorAll("video").length, tracks: [], lists: [], failed: [], loginRequired: false };
   if ((youtube || bilibili) && !identityVerified) {
     out.failed.push('The current video does not match the available player data. Old player tracks were discarded.');
     return out;
@@ -85,6 +87,7 @@ const READ_CAPTIONS = `(async () => {
         for (const [k, v] of Object.entries(x)) { if (LIST.test(k) && Array.isArray(v)) out.lists.push({ request, field: k, count: v.length }); walk(v, depth + 1); }
       };
       walk(json, 0);
+      if (json?.data?.need_login_subtitle === true) out.loginRequired = true;
     } catch (error) { out.failed.push(e.name.split("?")[0] + "：" + String(error).slice(0, 60)); }
   }
   return out;
@@ -108,7 +111,7 @@ function pageCaptions(value: unknown): PageCaptions {
     if (typeof t.cues === "number") track.cues = t.cues;
 
     return [track];
-  }).slice(0, 30);
+  }).slice(0, 200);
   const lists = array(record.lists).flatMap(item => {
     const l = item && typeof item === "object" ? item as Record<string, unknown> : null;
 
@@ -117,7 +120,7 @@ function pageCaptions(value: unknown): PageCaptions {
 
   const part = record.part && typeof record.part === "object" ? record.part as Record<string, unknown> : null;
 
-  return { pageUrl: typeof record.pageUrl === "string" ? record.pageUrl : "", videoId: typeof record.videoId === "string" ? record.videoId : null, title: text(record.title), part: part && Number.isSafeInteger(part.index) && Number.isSafeInteger(part.count) ? { index: Number(part.index), title: text(part.title), count: Number(part.count) } : null, identityVerified: record.identityVerified === true, videos: typeof record.videos === "number" ? record.videos : 0, tracks, lists, failed: array(record.failed).map(text).filter(Boolean).slice(0, 5) };
+  return { pageUrl: typeof record.pageUrl === "string" ? record.pageUrl : "", videoId: typeof record.videoId === "string" ? record.videoId : null, title: text(record.title), part: part && Number.isSafeInteger(part.index) && Number.isSafeInteger(part.count) ? { index: Number(part.index), title: text(part.title), count: Number(part.count) } : null, identityVerified: record.identityVerified === true, videos: typeof record.videos === "number" ? record.videos : 0, tracks, lists, failed: array(record.failed).map(text).filter(Boolean).slice(0, 5), loginRequired: record.loginRequired === true };
 }
 
 function report(found: PageCaptions): string {
@@ -129,19 +132,23 @@ function report(found: PageCaptions): string {
 
   for (const list of found.lists) lines.push(`- ${list.request} → ${list.field}: ${list.count} entr${list.count === 1 ? "y" : "ies"}`);
 
-  for (const track of found.tracks) lines.push(`- track [${track.source}] ${track.lang || "?"} ${track.label}${track.auto ? " (auto-generated)" : ""}${track.cues != null ? ` · ${track.cues} cues loaded` : ""}${track.url ? ` · ${track.url}` : ""}`);
+  // 带地址的轨道每条数百字：正文只列前 30 条，其余列出语言代码，按 language 仍能取到。
+  if (found.tracks.length > 30) lines.push(`- ${found.tracks.length - 30} more tracks not listed below: ${found.tracks.slice(30).map(track => `${track.lang || "?"}${track.auto ? " (auto-generated)" : ""}`).join(", ")}`);
+
+  for (const track of found.tracks.slice(0, 30)) lines.push(`- track [${track.source}] ${track.lang || "?"} ${track.label}${track.auto ? " (auto-generated)" : ""}${track.cues != null ? ` · ${track.cues} cues loaded` : ""}${track.url ? ` · ${track.url}` : ""}`);
 
   for (const failure of found.failed) lines.push(`- could not re-read ${failure}`);
   const listed = found.lists.length > 0;
 
   if (found.tracks.length > 0) lines.push("Result: the video has the tracks above. Read one with fetch on its URL (it is the player's own address).");
+  else if (found.loginRequired) lines.push("Result: the site only provides subtitles after sign-in, and this browser is not signed in to it. This is not proof that the video has no subtitles; tell the user to sign in and try again.");
   else if (listed) lines.push("Result: the player's own caption list for this video is empty — this video has no subtitles the player can load (not even auto-generated). Tell the user that; do not keep probing other endpoints.");
   else lines.push("Result: no caption tracks or verified caption list were read. This is unavailable evidence, not proof that the video has no captions. Inspect the current player before concluding.");
 
   return lines.join("\n");
 }
 
-export async function videoCaptions(params: { tabId?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; tabId: number; tracks: number; lists: number; sourceUrl: string; videoId: string | null; title: string; part: PageCaptions["part"]; identityVerified: boolean; captionTracks: CaptionTrack[] }> {
+export async function videoCaptions(params: { tabId?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; tabId: number; tracks: number; lists: number; loginRequired: boolean; sourceUrl: string; videoId: string | null; title: string; part: PageCaptions["part"]; identityVerified: boolean; captionTracks: CaptionTrack[] }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -154,8 +161,9 @@ export async function videoCaptions(params: { tabId?: number }, sessionId: strin
     found.part = null;
     found.tracks = [];
     found.lists = [];
+    found.loginRequired = false;
     found.failed.push("The page changed while reading captions; the old result was discarded.");
   }
 
-  return { text: report(found), tabId: tab.id, tracks: found.tracks.length, lists: found.lists.length, sourceUrl: found.pageUrl, videoId: found.videoId, title: found.title, part: found.part, identityVerified: found.identityVerified, captionTracks: found.tracks };
+  return { text: report(found), tabId: tab.id, tracks: found.tracks.length, lists: found.lists.length, loginRequired: found.loginRequired, sourceUrl: found.pageUrl, videoId: found.videoId, title: found.title, part: found.part, identityVerified: found.identityVerified, captionTracks: found.tracks };
 }
