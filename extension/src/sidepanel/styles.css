@@ -3383,6 +3383,8 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .action-menu-item { font-size: var(--fs-ui); }
 .action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
 .action-menu-item-key { margin-left: 6px; color: var(--text-tertiary); font-size: var(--fs-micro); }
+.action-menu-item-text { display: flex; flex-direction: column; min-width: 0; }
+.action-menu-item-sub { color: var(--text-tertiary); font-size: var(--fs-micro); }
 /* 回答里的 ①②：点一下页面滚回那一圈再指一下。靠编号对应页面上的圈；侧栏里用墨色，不另换色相。 */
 .circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: var(--text-primary); color: var(--content-bg); font: 600 11px/18px var(--font); vertical-align: 1px; cursor: pointer; }
 .circle-ref:hover { background: var(--text-secondary); }
