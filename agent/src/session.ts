@@ -38,7 +38,7 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
 import type { AgentToolResult, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallError, sideJudgment, type RejectedEfforts, type SideCallHost } from "./side-judgment.js";
 import { MainEffort, restingEffort, thinkingChoice } from "./main-effort.js";
-import { userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
+import { RunNotStarted, userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
 import { DurableAgentLoop } from "./durable-loop.js";
@@ -2469,6 +2469,9 @@ return {kind:'model'};
 
   private emitError(err: unknown): void {
     this.runTrace.record("session_error", { error: err });
+
+    // 停在开工准备里，这一轮没开工、不会有 agent_end：停止的标记留着会让下一轮被当成用户停下的来收尾。
+    if (err instanceof RunNotStarted) { this.expectedStoppedAgentEnd = false; return; }
 
     if ((this.hold.isHeld() || this.expectedStoppedAgentEnd) && isAbortLike(err)) return;
     this.callbacks.emit({ kind: "error", message: err instanceof Error ? err.message : String(err) });
