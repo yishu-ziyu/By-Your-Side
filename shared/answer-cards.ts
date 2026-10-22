@@ -591,16 +591,23 @@ export function resolveProse(prose: string, cards: Card[], mark = (value: string
  * {=名字} 换成卡片算出的数；正文和卡片里的说明文字共用。算出的数已带单位，模型常在后面再写一遍（「{=slow} 小时」），只留一个。
  */
 export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark: (value: string, id: string) => string, missing: string): string {
-  return text.replace(/\{=([A-Za-z_][\w-]*)\}([ \t]*)(\p{L}+|%)?/gu, (_all, id: string, space: string, after: string | undefined) => {
-    const v = values.get(id);
+  let out = "";
+  let at = 0;
 
-    if (!v) return `${missing}${space}${after ?? ""}`;
+  for (const m of text.matchAll(/\{=([A-Za-z_][\w-]*)\}/g)) {
+    out += text.slice(at, m.index);
+    at = m.index + m[0].length;
+    const v = values.get(m[1]!);
+
+    if (!v) { out += missing; continue; }
+    out += mark(v, m[1]!);
     const unit = /[\d.,]\s*(\S+)$/.exec(v)?.[1];
+    const repeated = unit ? /^[ \t]*/.exec(text.slice(at))![0].length : -1;
 
-    if (after && unit && after.startsWith(unit)) return `${mark(v, id)}${after.slice(unit.length)}`;
+    if (unit && text.startsWith(unit, at + repeated)) at += repeated + unit.length;
+  }
 
-    return `${mark(v, id)}${space}${after ?? ""}`;
-  });
+  return out + text.slice(at);
 }
 
 /** 念出来、写进结果摘要用的文字：只要卡片外的正文；正文为空时用卡片标题。 */

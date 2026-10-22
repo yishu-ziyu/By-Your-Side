@@ -19,7 +19,7 @@ await mkdir(artifacts, { recursive: true });
 
 const TASK = "订阅按月数算一共多少，几个人分";
 
-const ANSWER = `按 {=months} 算，一共花 {=total}。共 {=months} 个月。
+const ANSWER = `按 {=months} 算，一共花 {=total}。共 {=months} 个月，每人 {=pace} 次/月。
 <card title="订阅按月数算">
 <input id="months" label="月数" value="12" min="1" max="20" unit="个月" />
 <input id="people" label="人数" value="2" min="1" max="50" unit="人" />
@@ -32,7 +32,7 @@ const ANSWER = `按 {=months} 算，一共花 {=total}。共 {=months} 个月。
 <checklist><check text="取消 Calm" /><check text="Notion 改年付" /></checklist>
 </card>
 另外：
-<card title="别的清单"><checklist><check text="另一张卡的项" /></checklist></card>`;
+<card title="别的清单"><stat id="pace" label="每人每月" value="3" unit="次/月" /><checklist><check text="另一张卡的项" /></checklist></card>`;
 
 const site = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><title>订阅</title><h1>订阅</h1><p>Notion ¥68/月；Duolingo ¥398/年</p>`));
 
@@ -102,7 +102,7 @@ try {
   assert.deepEqual(first.stats, ["¥816", "¥398", "¥1,214", "¥607"], "R1: initial values computed");
   // 说明文字里的 {=名字} 也画成算出的数；{=months} 后面模型再写的「个月」只留一个。
   assert.ok(first.notes[3]?.startsWith("¥1,214 由 2 人分"), `R1: note refs filled: ${first.notes[3]}`);
-  assert.ok(first.prose.includes("共 12 个月。") && !first.prose.includes("个月 个月"), `R1: unit not doubled: ${first.prose}`);
+  assert.ok(first.prose.includes("共 12 个月，每人 3 次/月。"), `R1: unit not doubled: ${first.prose}`);
 
   // R2：点两下月数的加号 → 14 个月，所有引用它的地方都重算。
   const plus = '.gen-card .gc-input:nth-child(1) .gc-bump[data-gc-bump="1"]';
