@@ -25,8 +25,6 @@
 
 用户用的是正式版 Chrome，所以验收必须在正式版上也能过。正式版 Chrome 会忽略 `--load-extension`，所以验收脚本启动时带 `--load-extension`（Chrome for Testing 和 Chromium 认它），连上后再用调试协议的 `Extensions.loadUnpacked` 装一次（正式版靠这一步）；旧版 Chrome for Testing 没有这个命令时就只靠启动参数。不要加回 `--disable-extensions-except`：它会把这样装入的扩展也禁掉，扩展页面变成错误页，症状是“等待超时：辅助页加载”。
 
-本机想用正式版跑：`EGO_ACCEPTANCE_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npx tsx <用例> --headless`。
-
 ## grokbox（Grok Bot 云电脑）
 
 - 只有 sun 在工作时 VM 才醒着。sun 一空闲，SSH 就连不上；自己经 ssh 挂的 sleep 不算。
@@ -40,7 +38,6 @@
 - 环境蓝图的唯一来源是仓库里的 `.devin/blueprint.yaml`（Linux 和 macOS 两段）。改了以后用 `devin cloud drs blueprint-write --blueprint-id snapshot-blueprint-95d080e2a7a84431a8149c6f8cc5e714 --from-file .devin/blueprint.yaml` 写上去，再 `devin cloud drs build`。命令行读不出线上蓝图，所以不要只在网页上改。
 - 它只看得到 origin 上推送过的代码：本机 HEAD 没推送时，分片脚本退回 `origin/main` 并在输出里标明。
 - 沙箱只在一条 `drs run` 执行期间醒着；前台长命令十来分钟内会断开，后台进程跟着停。命令超时时 stdout 整个丢失，所以探测命令里每一步都要有时限。
-- 新建 Linux 沙箱：`devin cloud drs sandbox-create --repo yishu-ziyu/By-Your-Side`，把新 id 填进 `NODES`。
 - 新建 macOS 沙箱：`sandbox-create` 没有选系统的参数，只按组织默认系统起。要先在 Devin 网页 Settings → Devin → Default platform 改成 macOS，建完马上改回 Ubuntu。这是账号设置，要先问用户。沙箱建好后一直留在它开始时的系统上。
 - 不要在 Mac 沙箱里用软链或往软链写文件来给 Chrome 换名字：Chrome 按启动路径找自己的框架文件，软链启动会崩；往软链写转调用脚本会顺着软链覆盖掉 Chrome 本体（10-19 实际弄坏过一次，用 `brew install --cask --force google-chrome` 修好）。
 
@@ -50,7 +47,6 @@
 
 ## 推送和凭据
 
-- 从 Mac 用 tar 推文件要带 `COPYFILE_DISABLE=1`，否则 macOS 的 `._*` 附属文件会被远端当成用例名。分片脚本已经这样做，并会清掉以前留下的。
 - 真模型凭据 `~/.sideagent/providers.local.json` 由分片脚本自动同步（ssh 直推；Devin 沙箱经阿里云 scp 拉取），内容不经过命令行。只下发 api_key 类套餐（minimax-cn、opencode-go、zai-coding-cn）。openai-codex、kimi-coding 这类 OAuth 订阅的刷新令牌用一次就轮换，外发会让本机掉登录，所以它们的真模型用例只在本机跑。
 
 ## 本机 shell 的坑

@@ -14,7 +14,7 @@
 
 | 范围 | 文档 |
 |---|---|
-| 总体与协议 | [架构](architecture.md) · [协议](protocol.md) |
+| 总体 | [架构](architecture.md) |
 | 网页操作与核对 | [网页操作、安全边界与组合执行](web-actions.md) · [目标核对](goal-check.md) |
 | 记忆与恢复 | [记忆、过往任务与任务跨轮](memory-model.md) |
 | 模型 | [模型能力、思考档与后台判断](model-effort.md) |
