@@ -64,14 +64,15 @@ export function isSendLabel(text: string): boolean {
   return t.startsWith("发送") || /^send(\s|$)/i.test(t);
 }
 
-/** 只是付款方式名字的按钮（选支付宝、微信支付这类选项）不算付款。 */
-const PAY_METHOD_ONLY = /^(支付宝|微信支付|银行卡|apple pay)$/i;
-
-/** 付款按钮：助手永远不点，留给用户自己点。 */
+/**
+ * 付款按钮：助手永远不点，留给用户自己点。
+ * 页面里拦脚本点击和回车时也用这一份（按 toString 传进页面函数），所以函数必须自包含，不引用模块里的常量。
+ */
 export function isPayLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
 
-  if (!t || PAY_METHOD_ONLY.test(t)) return false;
+  // 只是付款方式名字的按钮（选支付宝、微信支付这类选项）不算付款。
+  if (!t || /^(支付宝|微信支付|银行卡|apple pay)$/i.test(t)) return false;
 
   if (/^(确认|立即|去|马上)?(支付|付款)(?!宝|方式)/.test(t)) return true;
 

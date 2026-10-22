@@ -39,22 +39,27 @@ button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
   (document.body ?? document.documentElement).appendChild(host);
 }
 
-const PAY_TEXT = (label: string) =>
+export const payStopText = (label: string) =>
   `Stopped before payment: the extension does not click payment buttons, so it did not click "${label.trim()}" and the site received nothing. ` +
   "The user must click this button themselves. Do not try another way: do not press Enter, do not click another button, do not use browser_run or a script. " +
   "If the page shows the amount, the merchant or the payment method, tell the user; then stop.";
 
-/**
- * 付款按钮：在网页上圈出按钮、留提示，然后抛「没执行」。
- * heldReason 沿用「用户没让发」那条路：宿主不把它当成出错、不连续计数、不算「页面没有变化」。
- */
-export async function stopBeforePay(tabId: number, label: string, x: number, y: number): Promise<never> {
+/** 在网页上圈出付款按钮、留「这一步要你自己点」的提示。 */
+export async function showPayStopOnPage(tabId: number, label: string, x: number, y: number): Promise<void> {
   // 工作页可能在后台：先按平常的规矩切到前台（不抢别的窗口），用户才看得到圈出的按钮。
   await bringForwardForUser(tabId, "pay_stop");
 
   try {
     await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showPayStop, args: [OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP, label, x, y] });
   } catch { /* 页面不让注入：照样不点，只是网页上没有提示 */ }
+}
 
-  throw Object.assign(new Error(PAY_TEXT(label)), { executionFact: "not_executed" as const, heldReason: "pay" satisfies HeldReason });
+/**
+ * 付款按钮：在网页上圈出按钮、留提示，然后抛「没执行」。
+ * heldReason 沿用「用户没让发」那条路：宿主不把它当成出错、不连续计数、不算「页面没有变化」。
+ */
+export async function stopBeforePay(tabId: number, label: string, x: number, y: number): Promise<never> {
+  await showPayStopOnPage(tabId, label, x, y);
+
+  throw Object.assign(new Error(payStopText(label)), { executionFact: "not_executed" as const, heldReason: "pay" satisfies HeldReason });
 }
