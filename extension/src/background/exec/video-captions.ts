@@ -17,6 +17,9 @@ interface CaptionTrack {
 }
 
 interface PageCaptions {
+  pageUrl: string;
+  videoId: string | null;
+  identityVerified: boolean;
   videos: number;
   tracks: CaptionTrack[];
   /** 页面自己的播放器接口里明说的字幕清单（字段名、条数），空清单就是这个视频没有字幕。 */
@@ -26,10 +29,24 @@ interface PageCaptions {
 
 /** 在页面里跑（主世界）：读轨道和清单，再用页面自己的登录状态重取它发过的播放器接口。 */
 const READ_CAPTIONS = `(async () => {
-  const out = { videos: document.querySelectorAll("video").length, tracks: [], lists: [], failed: [] };
+  const page = new URL(location.href);
+  const youtube = /(^|\\.)youtube\\.com$/.test(page.hostname);
+  const bilibili = /(^|\\.)bilibili\\.com$/.test(page.hostname);
+  const videoId = youtube ? (page.searchParams.get('v') || page.pathname.match(/^\\/(?:shorts|embed)\\/([^/]+)/)?.[1] || null) : bilibili ? (page.pathname.match(/^\\/video\\/(BV[^/]+)/)?.[1] || null) : null;
+  let player = window.ytInitialPlayerResponse;
+  try { player = document.getElementById('movie_player')?.getPlayerResponse?.() || player; } catch {}
+  const videoData = window.__INITIAL_STATE__?.videoData;
+  const part = Math.max(1, Number(page.searchParams.get('p') || 1));
+  const cid = videoData?.pages?.[part - 1]?.cid ?? (part === 1 ? videoData?.cid : null);
+  const identityVerified = !!videoId && (youtube ? player?.videoDetails?.videoId === videoId : bilibili && videoData?.bvid === videoId && cid != null);
+  const out = { pageUrl: location.href, videoId, identityVerified, videos: document.querySelectorAll("video").length, tracks: [], lists: [], failed: [] };
+  if ((youtube || bilibili) && !identityVerified) {
+    out.failed.push('The current video does not match the available player data. Old player tracks were discarded.');
+    return out;
+  }
   for (const v of document.querySelectorAll("video")) for (const t of v.textTracks) out.tracks.push({ source: "video", lang: t.language || "", label: t.label || "", auto: false, cues: t.cues ? t.cues.length : null });
   for (const el of document.querySelectorAll("video track[src]")) out.tracks.push({ source: "track", lang: el.srclang || "", label: el.label || "", auto: false, url: el.src });
-  const yt = window.ytInitialPlayerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  const yt = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (Array.isArray(yt)) {
     out.lists.push({ request: "ytInitialPlayerResponse", field: "captionTracks", count: yt.length });
     for (const c of yt) out.tracks.push({ source: "youtube", lang: c.languageCode || "", label: c.name?.simpleText ?? c.name?.runs?.[0]?.text ?? "", auto: c.kind === "asr", url: c.baseUrl });
@@ -37,9 +54,13 @@ const READ_CAPTIONS = `(async () => {
   const PLAYER = /\\/x\\/player\\/(wbi\\/)?v2|\\/player\\/v\\d|timedtext|subtitle|caption/i;
   const LIST = /^(subtitles|captionTracks|captions|subtitle_list)$/i;
   const seen = new Set();
-  for (const e of performance.getEntriesByType("resource")) {
+  for (const e of [...performance.getEntriesByType("resource")].reverse()) {
     if (seen.size >= 4) break;
     if (!PLAYER.test(e.name) || seen.has(e.name) || !["xmlhttprequest", "fetch"].includes(e.initiatorType)) continue;
+    const requestUrl = new URL(e.name, location.href);
+    if (bilibili && requestUrl.searchParams.get('cid') !== String(cid)) continue;
+    if (bilibili && requestUrl.searchParams.has('bvid') && requestUrl.searchParams.get('bvid') !== videoId) continue;
+    if (youtube && requestUrl.searchParams.get('v') !== videoId) continue;
     seen.add(e.name);
     try {
       const r = await fetch(e.name, { credentials: "include" });
@@ -72,7 +93,7 @@ function pageCaptions(value: unknown): PageCaptions {
     if (!source) return [];
     const track: CaptionTrack = { source, lang: text(t.lang), label: text(t.label), auto: t.auto === true };
 
-    if (typeof t.url === "string" && /^https?:\/\//.test(t.url)) track.url = t.url.slice(0, 600);
+    if (typeof t.url === "string" && t.url.length <= 8192 && /^https?:\/\//.test(t.url)) track.url = t.url;
 
     if (typeof t.cues === "number") track.cues = t.cues;
 
@@ -84,11 +105,12 @@ function pageCaptions(value: unknown): PageCaptions {
     return l && typeof l.count === "number" ? [{ request: text(l.request), field: text(l.field), count: l.count }] : [];
   }).slice(0, 10);
 
-  return { videos: typeof record.videos === "number" ? record.videos : 0, tracks, lists, failed: array(record.failed).map(text).filter(Boolean).slice(0, 5) };
+  return { pageUrl: typeof record.pageUrl === "string" ? record.pageUrl : "", videoId: typeof record.videoId === "string" ? record.videoId : null, identityVerified: record.identityVerified === true, videos: typeof record.videos === "number" ? record.videos : 0, tracks, lists, failed: array(record.failed).map(text).filter(Boolean).slice(0, 5) };
 }
 
 function report(found: PageCaptions): string {
   const lines = ["Video captions on this page, read from the player itself (do not build subtitle API URLs yourself: some sites answer unsigned or guessed requests with another video's subtitles):"];
+  if (found.videoId) lines.push(`- current video: ${found.videoId}; player identity ${found.identityVerified ? "matched" : "unverified"}`);
   lines.push(`- video elements: ${found.videos}`);
 
   for (const list of found.lists) lines.push(`- ${list.request} → ${list.field}: ${list.count} entr${list.count === 1 ? "y" : "ies"}`);
@@ -100,17 +122,24 @@ function report(found: PageCaptions): string {
 
   if (found.tracks.length > 0) lines.push("Result: the video has the tracks above. Read one with fetch on its URL (it is the player's own address).");
   else if (listed) lines.push("Result: the player's own caption list for this video is empty — this video has no subtitles the player can load (not even auto-generated). Tell the user that; do not keep probing other endpoints.");
-  else lines.push("Result: no caption tracks or caption list found on this page. If the video only shows captions after a button press, the player may load them then; otherwise it has none.");
+  else lines.push("Result: no caption tracks or verified caption list were read. This is unavailable evidence, not proof that the video has no captions. Inspect the current player before concluding.");
 
   return lines.join("\n");
 }
 
-export async function videoCaptions(params: { tabId?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; tabId: number; tracks: number; lists: number }> {
+export async function videoCaptions(params: { tabId?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; tabId: number; tracks: number; lists: number; sourceUrl: string; videoId: string | null; identityVerified: boolean; captionTracks: CaptionTrack[] }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   const reply = await sendCommand<{ result?: { value?: unknown }; exceptionDetails?: unknown }>(tab.id, "Runtime.evaluate", { expression: READ_CAPTIONS, awaitPromise: true, returnByValue: true }, undefined, 15_000);
-  const found = reply.result?.value ? pageCaptions(reply.result.value) : { videos: 0, tracks: [], lists: [], failed: ["页面脚本没有返回结果"] };
+  const found = reply.result?.value ? pageCaptions(reply.result.value) : pageCaptions({ failed: ["页面脚本没有返回结果"] });
+  const current = await resolveReadableTab(tab.id, sessionId);
+  if (current.url !== found.pageUrl) {
+    found.identityVerified = false;
+    found.tracks = [];
+    found.lists = [];
+    found.failed.push("The page changed while reading captions; the old result was discarded.");
+  }
 
-  return { text: report(found), tabId: tab.id, tracks: found.tracks.length, lists: found.lists.length };
+  return { text: report(found), tabId: tab.id, tracks: found.tracks.length, lists: found.lists.length, sourceUrl: found.pageUrl, videoId: found.videoId, identityVerified: found.identityVerified, captionTracks: found.tracks };
 }

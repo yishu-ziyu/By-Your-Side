@@ -678,7 +678,7 @@ export interface ToolContract {
     };
   };
   /** 这一页的视频播放器自己有哪些字幕（轨道、字幕清单、页面自己的播放器接口）；只读。 */
-  video_captions: { params: { tabId?: number }; data: { text: string; tabId: number; tracks: number; lists: number } };
+  video_captions: { params: { tabId?: number }; data: { text: string; tabId: number; tracks: number; lists: number; sourceUrl?: string; videoId?: string | null; identityVerified?: boolean; captionTracks?: Array<{ source: string; lang: string; label: string; auto: boolean; url?: string; cues?: number | null }> } };
   worker_tabs: { params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null; orActive?: boolean }; data: { tabId?: number; tabIds?: number[]; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] } };
   read_element: {
     params: { tabId?: number; target: string; /** Host-only adjunct read; never exposed in provider schemas. */ readback?: {documentId:string;deadline:number;nodeIdentity?: {kind:'ax';backendNodeId:number}}; /** Passive host copy verification also runs before handback resumes execution. */ copyRead?: {documentId:string;deadline:number;nodeIdentity:{kind:'ax';backendNodeId:number}} } & import('./element-state.js').ElementReadOptions;
