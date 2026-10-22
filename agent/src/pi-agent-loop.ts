@@ -48,7 +48,7 @@ const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
 /** 服务端已发出原始事件（如 response.created）后，等第一个内容事件的上限。排队发生在这之前，不受这条限制。 */
 const MODEL_STALL_AFTER_START_MS = 10_000;
 
-/** 流已开始出内容后，这么久一个事件都没有就算断流：取消，按可重试错误重来。正常流里思考分段之间也只停几秒。 */
+/** 流已开始出内容后，这么久没有内容进展就算断流：取消，按可重试错误重来。 */
 const MODEL_STALL_MID_STREAM_MS = 30_000;
 
 /** 能力表没有登记 hedgeMs 的模型：发出后这么久还没有第一个事件（且未受理），就再发一份相同的请求。 */
@@ -172,7 +172,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     timer = setTimeout(() => fail(message), Math.max(0, at - Date.now()));
   };
 
-  /** 胜出那份每来一个事件（含服务端原始事件）就重新计时。 */
+  /** 只按规范化后的内容进展续期；供应商的心跳或空 delta 不能证明回答还在推进。 */
   const alive = () => {
     if (closed || finished) return;
     clearTimeout(stallTimer);
@@ -196,8 +196,6 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
 
     // 服务端第一个原始事件到来时，若内容还没来：原请求改成受理后的短等待，对冲那份把期限放宽到受理后的短等待。
     const accepted = () => {
-      if (winner === attempt) alive();
-
       if (attempt.started || winner || closed) return;
       attempt.started = true;
 
@@ -270,7 +268,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
         }
 
         if ("partial" in event) partial = event.partial;
-        alive();
+        if (!("delta" in event) || event.delta.length > 0) alive();
 
         if (event.type === "toolcall_delta") {
           const run = /^\s*$/.test(event.delta) ? (blanks.get(event.contentIndex) ?? 0) + event.delta.length : event.delta.length - event.delta.trimEnd().length;
