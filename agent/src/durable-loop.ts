@@ -533,6 +533,9 @@ export class DurableAgentLoop implements AgentLoop {
       else if (change.type === "text_delta" || change.type === "thinking_delta") this.appendDelta(change.type, change.contentIndex, change.delta);
       else if (change.type === "text_start" || change.type === "thinking_start" || change.type === "toolcall_start" || change.type === "block") this.ensureBlock(change.contentIndex, change.block);
       if (!this.partial) continue;
+      // 整条或整块送来时，块里可能已经带着这一批里出的字（pi-durable：整块发送的块已含本批后续改动），这些字没走增量：
+      // 当场补发，界面收到的字始终是全文的开头；不然收尾补发时对不上，会把整句再发一遍（侧栏出现「后半句＋整句」）。
+      if (change.type === "message" || change.type === "text_start" || change.type === "thinking_start" || change.type === "block") this.emitUnsent(this.partial);
       const assistantMessageEvent = change.type === "text_delta" || change.type === "thinking_delta"
         ? { type: change.type, contentIndex: change.contentIndex, delta: change.delta, partial: this.partial }
         : { type: "text_delta" as const, contentIndex: 0, delta: "", partial: this.partial };
