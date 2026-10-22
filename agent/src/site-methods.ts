@@ -114,5 +114,5 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   await unchanged();
   if (body?.ok !== true || typeof body.text !== "string") return { ...base, status: "unavailable", reason: "The player's caption URL could not be read.", httpStatus: body?.status, evidence: result.text };
   const parsed = transcript(body.text);
-  return { ...base, status: body.truncated === true || !parsed ? "partial" : "observed", language: track.lang, trackSource: track.source, captionUrl: track.url, format: parsed?.format ?? "unparsed", text: parsed?.text ?? body.text, truncated: body.truncated === true, evidence: result.text, scope: "This video's selected caption track only. Automatic captions may contain transcription errors." };
+  return { ...base, status: body.truncated === true || !parsed ? "partial" : "observed", language: track.lang, automatic: track.auto === true, videoId: result.videoId, trackSource: track.source, format: parsed?.format ?? "unparsed", text: parsed?.text ?? body.text, truncated: body.truncated === true, scope: "Caption text has already been fetched from this video's selected player track. This is one source, not independent corroboration. Do not fetch the same track again. Automatic captions may contain transcription errors." };
 }
