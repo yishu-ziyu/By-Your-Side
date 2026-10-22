@@ -113,7 +113,17 @@ const PAGE_GLOBALS = new Set(["window", "document", "Blob", "File", "FileReader"
  * Turn the sandbox's bare errors into the next step the model can take: a page global names browser.js/saveFile/sleep,
  * an unknown browser.x names the real methods. Anything else (including the model's own typos) passes through unchanged.
  */
-function explainProgramError(text: string, code: string, methods: readonly string[]): string {
+function explainProgramError(error: { name?: unknown; message: string; stack?: unknown }, code: string, methods: readonly string[]): string {
+  const text = explainSandboxError(error.message, code, methods);
+  // QuickJS messages such as "not a function" name neither the expression nor the line; the model cannot fix what it cannot find.
+  if (!/^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(String(error.name))) return text;
+  const line = Number(/browser-program\.js:(\d+)/.exec(String(error.stack ?? ""))?.[1]) - 1;
+  const source = code.split("\n")[line - 1]?.trim();
+
+  return source ? `${error.name}: ${text} at program line ${line}: ${source.slice(0, 200)}` : text;
+}
+
+function explainSandboxError(text: string, code: string, methods: readonly string[]): string {
   const missing = /^'(\w+)' is not defined$/.exec(text)?.[1];
 
   if (missing && PAGE_GLOBALS.has(missing)) {
@@ -824,7 +834,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     if (evaluated.error) {
       const error = vm.dump(evaluated.error);
       evaluated.error.dispose();
-      throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, FACADE) : String(error));
+      throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
     }
 
     program = evaluated.value;
@@ -837,7 +847,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (jobs.error) {
         const error = vm.dump(jobs.error);
         jobs.error.dispose();
-        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, FACADE) : String(error));
+        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
       }
 
       const state = vm.getPromiseState(program);
@@ -856,7 +866,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (state.type === "rejected") {
         const error = vm.dump(state.error);
         state.error.dispose();
-        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error.message, options.code, FACADE) : String(error));
+        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
       }
 
       await pause(10);

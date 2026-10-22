@@ -49,6 +49,8 @@ const READ_CAPTIONS = `(async () => {
     for (const el of document.querySelectorAll("video track[src]")) out.tracks.push({ source: "track", lang: el.srclang || "", label: el.label || "", auto: false, url: el.src });
   }
   const yt = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  // A verified YouTube player response without a captions field is how YouTube says the video has none.
+  if (youtube && player?.videoDetails && !player.captions) out.lists.push({ request: "ytInitialPlayerResponse", field: "captions", count: 0 });
   if (Array.isArray(yt)) {
     out.lists.push({ request: "ytInitialPlayerResponse", field: "captionTracks", count: yt.length });
     for (const c of yt) out.tracks.push({ source: "youtube", lang: c.languageCode || "", label: c.name?.simpleText ?? c.name?.runs?.[0]?.text ?? "", auto: c.kind === "asr", url: c.baseUrl });

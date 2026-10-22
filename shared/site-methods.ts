@@ -13,9 +13,9 @@ export interface SiteMethod {
 /** Release-owned methods are separate from unverified notes learned from page content. */
 export const SITE_METHODS: readonly SiteMethod[] = [
   { id: "youtube.search", site: "youtube", version: 1, purpose: "Search YouTube videos", operation: "search", inputs: ["query"], outcome: "The results page contains the requested query; read actual results before choosing a video." },
-  { id: "youtube.captions", site: "youtube", version: 1, purpose: "Read the current YouTube video's caption tracks", operation: "captions", inputs: [], outcome: "Tracks belong to the current video; no captions and unavailable evidence are separate outcomes." },
+  { id: "youtube.captions", site: "youtube", version: 1, purpose: "Read the current YouTube video's caption tracks", operation: "captions", inputs: ["language (optional code such as en or zh-CN; pass the language the user asked for)"], outcome: "Tracks belong to the current video; no captions and unavailable evidence are separate outcomes." },
   { id: "bilibili.search", site: "bilibili", version: 1, purpose: "Search Bilibili videos", operation: "search", inputs: ["query"], outcome: "The results page contains the requested query; read actual results before choosing a video." },
-  { id: "bilibili.captions", site: "bilibili", version: 1, purpose: "Read the current Bilibili video's caption tracks", operation: "captions", inputs: [], outcome: "Only the current video's player data is used; do not guess unsigned player API addresses." },
+  { id: "bilibili.captions", site: "bilibili", version: 1, purpose: "Read the current Bilibili video's caption tracks", operation: "captions", inputs: ["language (optional code such as en or zh-CN; pass the language the user asked for)"], outcome: "Only the current video's player data is used; do not guess unsigned player API addresses." },
   { id: "x.search", site: "x", version: 1, purpose: "Search public posts on X", operation: "search", inputs: ["query"], outcome: "Read results or report a login/access barrier; opening the search URL alone is not success." },
   { id: "x.read-post", site: "x", version: 1, purpose: "Read the specific X post open in this tab", operation: "post", inputs: [], outcome: "The post permalink matches the page's status ID; recommendations and replies are not the requested post." },
 ];

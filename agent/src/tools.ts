@@ -548,6 +548,17 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           } catch { return { text: "" }; }
         };
 
+        // 程序自己的代码出错时，前面已经做完的调用结果别丢：模型不知道它们成功了，就会绕开内置方法重做一遍。
+        const finishedBefore = (): string => {
+          const done = endedSteps.filter(step => !step.error && step.result !== undefined && !PROGRAM_QUIET_STEPS.has(step.name));
+
+          if (!done.length) return "";
+          const json = JSON.stringify(done.slice(-3).map(step => ({ call: step.name, result: step.result })));
+          const shown = json.length > MAX_JS_RESULT_CHARS ? `${json.slice(0, MAX_JS_RESULT_CHARS)}… [truncated]` : json;
+
+          return `\n[Before this error the program had already finished: ${done.map(step => step.name).join(", ")}. Results of the last ${Math.min(done.length, 3)} follow; fix the program's own code rather than repeating them or switching approach.]\n${wrapPageContent(redactCredentialText(shown))}`;
+        };
+
         try {
           result = await runBrowserProgram({ code: params.code,
           call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
@@ -570,7 +581,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           });
         } catch (error) {
           // 抛错的结果没有 details（Pi 只留错误文字），这里附的新页只进模型看到的文字，不进页面读数。
-          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${(await endedOn()).text}`, { cause: error });
+          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${finishedBefore()}${(await endedOn()).text}`, { cause: error });
           // assert 停下不是工具失败：前面的步骤已经做了，结果带结构交给模型。
           // details.steps 保持是步数（侧栏按 Number(details.steps) 计数），步骤列表另放 programSteps。
           rpc.noteToolFact?.(id, "executed");

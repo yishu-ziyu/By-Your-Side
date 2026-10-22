@@ -37,10 +37,11 @@ function transcript(text: string): { text: string; format: string } | null {
     }
   } catch { /* Non-JSON tracks may use WebVTT or timed-text XML. */ }
 
-  const decode = (value: string) => value.replace(/<[^>]*>/g, "").replace(/&#(x[\da-f]+|\d+);/gi, (_, code: string) => {
+  // YouTube timed text double-encodes apostrophes as &amp;#39;: undo &amp; first so the numeric entity is decoded too.
+  const decode = (value: string) => value.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&#(x[\da-f]+|\d+);/gi, (_, code: string) => {
     const point = code[0]!.toLowerCase() === "x" ? parseInt(code.slice(1), 16) : Number(code);
     return point >= 0 && point <= 0x10ffff ? String.fromCodePoint(point) : "�";
-  }).replace(/&(amp|lt|gt|quot|apos);/g, (_, name: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" })[name] ?? "");
+  }).replace(/&(lt|gt|quot|apos);/g, (_, name: string) => ({ lt: "<", gt: ">", quot: '"', apos: "'" })[name] ?? "");
 
   if (/^\uFEFF?WEBVTT\b/.test(text)) {
     const lines = text.split(/\r?\n\r?\n/).flatMap(block => {
@@ -108,11 +109,17 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   const tracks = Array.isArray(result.captionTracks) ? result.captionTracks.map(fields).filter((item): item is Fields => !!item) : [];
   const language = params.language;
   if (language !== undefined && (typeof language !== "string" || language.length > 30)) throw new Error("INVALID_ARGUMENT: language must be a short caption language code");
-  const track = tracks.find(item => typeof item.url === "string" && (!language || item.lang === language));
-  if (!track) return { ...base, status: tracks.length ? "partial" : result.lists ? "no_captions" : "unavailable", reason: tracks.length ? "No readable track matches the requested language; inspect available tracks." : "No verified readable caption track was found.", evidence: result.text, tracks };
+  const readable = tracks.filter(item => typeof item.url === "string");
+  const lang = (item: Fields) => String(item.lang ?? "").toLowerCase();
+  const wanted = typeof language === "string" ? language.toLowerCase() : "";
+  // Players label one language several ways (en / en-US, zh-CN / zh-Hans); without a request, human tracks come before automatic ones.
+  const ranked = [...readable].sort((a, b) => Number(a.auto === true) - Number(b.auto === true));
+  const track = !wanted ? ranked[0] : ranked.find(item => lang(item) === wanted) ?? ranked.find(item => lang(item).split("-")[0] === wanted.split("-")[0]);
+  const available = tracks.map(item => ({ language: item.lang, label: item.label, automatic: item.auto === true }));
+  if (!track) return { ...base, status: tracks.length ? "partial" : result.lists ? "no_captions" : "unavailable", reason: tracks.length ? "No readable track matches the requested language; available lists the tracks this video has." : "No verified readable caption track was found.", evidence: result.text, available };
   const body = await call("fetch", { url: track.url, method: "GET" });
   await unchanged();
   if (body?.ok !== true || typeof body.text !== "string") return { ...base, status: "unavailable", reason: "The player's caption URL could not be read.", httpStatus: body?.status, evidence: result.text };
   const parsed = transcript(body.text);
-  return { ...base, status: body.truncated === true || !parsed ? "partial" : "observed", language: track.lang, automatic: track.auto === true, videoId: result.videoId, trackSource: track.source, format: parsed?.format ?? "unparsed", text: parsed?.text ?? body.text, truncated: body.truncated === true, scope: "Caption text has already been fetched from this video's selected player track. This is one source, not independent corroboration. Do not fetch the same track again. Automatic captions may contain transcription errors." };
+  return { ...base, status: body.truncated === true || !parsed ? "partial" : "observed", language: track.lang, automatic: track.auto === true, videoId: result.videoId, trackSource: track.source, available: available.slice(0, 30), format: parsed?.format ?? "unparsed", text: parsed?.text ?? body.text, truncated: body.truncated === true, scope: "Caption text has already been fetched from this video's selected player track. For another language, call this method again with language from available. This is one source, not independent corroboration. Do not fetch the same track again. Automatic captions may contain transcription errors." };
 }
