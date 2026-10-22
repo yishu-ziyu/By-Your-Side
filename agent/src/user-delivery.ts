@@ -10,6 +10,7 @@ import {
   USER_DELIVERY_FACT_ITEM_MAX,
   USER_DELIVERY_FACT_DESCRIPTION_MAX,
   deliveryTextWithNote,
+  fitDeliverySources,
   isUserDelivery,
   isUserDeliveryFacts,
   type UserDelivery,
@@ -93,7 +94,9 @@ export function createUserDelivery(input: {
 
   if (input.unfinished?.length) delivery.unfinished = input.unfinished;
 
-  if (input.sources?.length) delivery.sources = input.sources.map((source) => ({ ...source }));
+  const sources = input.sources?.length ? fitDeliverySources(input.sources) : [];
+
+  if (sources.length) delivery.sources = sources;
 
   if (input.hostNote) delivery.hostNote = input.hostNote;
 
