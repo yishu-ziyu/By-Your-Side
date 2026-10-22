@@ -22,10 +22,11 @@ export function installPushToTalkKeys(): void {
     onCancel: () => { capsule.hide(); report("cancel"); },
   });
 
+  // 只认用户真按的键：网页脚本派发的按键也会进到这里，不挡的话任何网页都能替用户按住说话、打开麦克风。
   for (const type of ["keydown", "keyup"] as const) {
-    addEventListener(type, event => { if (extensionAlive()) keys.handle({ type, code: event.code, repeat: event.repeat }); }, true);
+    addEventListener(type, event => { if (event.isTrusted && extensionAlive()) keys.handle({ type, code: event.code, repeat: event.repeat }); }, true);
   }
 
-  addEventListener("blur", () => keys.reset());
+  addEventListener("blur", event => { if (event.isTrusted) keys.reset(); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) keys.reset(); });
 }

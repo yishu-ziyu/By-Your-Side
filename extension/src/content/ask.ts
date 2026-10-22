@@ -883,18 +883,19 @@ function boot(): void {
       hide();
     }
   }, { capture: true, signal });
+  // 选字、按键只认用户真实输入：网页脚本伪造的事件不能弹出工具条、抢焦点、停掉本页的回答。
   document.addEventListener('pointerup', event => {
-    if (!retired() && !event.composedPath().includes(host)) {
+    if (event.isTrusted && !retired() && !event.composedPath().includes(host)) {
       setTimeout(() => changedSelection(), 0);
     }
   }, { signal });
   document.addEventListener('keyup', event => {
-    if (!retired() && (event.key === 'Shift' || event.key.startsWith('Arrow'))) {
+    if (event.isTrusted && !retired() && (event.key === 'Shift' || event.key.startsWith('Arrow'))) {
       changedSelection(true);
     }
   }, { signal });
   document.addEventListener('keydown', event => {
-    if (retired()) {
+    if (!event.isTrusted || retired()) {
       return;
     }
 
@@ -940,8 +941,8 @@ function boot(): void {
     }
   }, { signal });
   resizes.observe(surface);
-  window.addEventListener('pagehide', () => {
-    if (!retired()) {
+  window.addEventListener('pagehide', event => {
+    if (event.isTrusted && !retired()) {
       void rpc('reading_leave').catch(() => {
       });
     }

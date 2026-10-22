@@ -116,7 +116,9 @@ export function installLinkPreview(): void {
     showTimer = setTimeout(() => { if (shift && link === target) show(target); }, SHOW_DELAY_MS);
   };
 
+  // 悬停和 Shift 只认用户真实输入：网页脚本伪造的事件会让后台替网页去请求任意地址。
   document.addEventListener('pointerover', event => {
+    if (!event.isTrusted) return;
     const a = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
 
     if (a === link) return;
@@ -133,7 +135,7 @@ export function installLinkPreview(): void {
   card.addEventListener('pointerenter', () => clearTimeout(leaveTimer));
   card.addEventListener('pointerleave', () => { if (link !== shownFor) leaveTimer = setTimeout(hide, LEAVE_GRACE_MS); });
 
-  document.addEventListener('keydown', event => { if (event.key === 'Shift' && !shift && extensionAlive()) { shift = true; arm(); } }, true);
+  document.addEventListener('keydown', event => { if (event.isTrusted && event.key === 'Shift' && !shift && extensionAlive()) { shift = true; arm(); } }, true);
   document.addEventListener('keyup', event => { if (event.key === 'Shift') { shift = false; hide(); } }, true);
   // 点击照常导航，只把卡收起。
   document.addEventListener('pointerdown', event => { if (!event.composedPath().includes(card)) hide(); }, true);
