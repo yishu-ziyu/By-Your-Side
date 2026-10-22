@@ -1515,7 +1515,8 @@ return receipt;
       progress.observe(message);
       const progressSnapshot=progress.snapshot();
 
-      if(message.type==='agent_event')this.nameTask(id,progressSnapshot,progress.visitedPages());
+      // 只按任务进展起名：会话恢复时发的思考档位等事件不是新进展，否则侧栏一连上就给上百个旧会话同时起名，打爆快速模型。
+      if(message.type==='agent_event'&&['agent_start','tool_end','agent_end'].includes(message.event.kind))this.nameTask(id,progressSnapshot,progress.visitedPages());
 
       if(progressSnapshot.state==='interrupted')summary.checkpoint='interrupted';
       else delete summary.checkpoint;
