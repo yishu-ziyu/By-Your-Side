@@ -252,7 +252,7 @@ export function parseOrbStyle(value: {} | null | undefined): OrbStyle {
 
 /**
  * 语音人设：只改变语气和措辞，不改变行为规则（如实报结果、不反问、不客套仍然优先）。
- * 方向见 docs/voice-architecture.md。自定义内容由用户在设置页填写，长度有上限。
+ * 自定义内容由用户在设置页填写，长度有上限。
  */
 export const VOICE_PERSONAS = [
   { id: "default", label: "默认", summary: "简洁利落的搭子", text: "" },
