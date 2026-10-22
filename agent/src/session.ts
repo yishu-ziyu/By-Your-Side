@@ -1645,6 +1645,7 @@ return;}
   private siteNotes: SiteNotesStore | null = null;
   /** 这一轮已经带过笔记的网站：每个网站每轮只带一次。 */
   private siteNotesShown: { runId: string | null; hosts: Set<string> } = { runId: null, hosts: new Set() };
+  private siteMethodsShown: { runId: string | null; hosts: Set<string> } = { runId: null, hosts: new Set() };
   /** 已经为它写过笔记的任务：同一任务结束时可能被记两次，只问一次模型。 */
   private readonly siteNotesLearned = new Set<string>();
   /** 这一轮 browser_run 里填过的值。 */
@@ -1669,13 +1670,20 @@ return;}
     const runId = this.deliveryRunId();
 
     if (this.siteNotesShown.runId !== runId) this.siteNotesShown = { runId, hosts: new Set() };
-
-    if (this.siteNotesShown.hosts.has(siteKey(host))) return null;
-    this.siteNotesShown.hosts.add(siteKey(host));
-    if (notes.length) this.runTrace.record("site_notes", { phase: "used", host, count: notes.length });
-    if (methodHint) this.runTrace.record("site_methods", { phase: "offered", host, methods: siteMethodsFor(url).map(method => ({ id: method.id, version: method.version })) });
-
-    return [methodHint, notes.length ? formatSiteNotes(host, notes) : null].filter(Boolean).join("\n\n");
+    if (this.siteMethodsShown.runId !== runId) this.siteMethodsShown = { runId, hosts: new Set() };
+    const key = siteKey(host);
+    const parts: string[] = [];
+    if (methodHint && !this.siteMethodsShown.hosts.has(key)) {
+      this.siteMethodsShown.hosts.add(key);
+      this.runTrace.record("site_methods", { phase: "offered", host, methods: siteMethodsFor(url).map(method => ({ id: method.id, version: method.version })) });
+      parts.push(methodHint);
+    }
+    if (notes.length && !this.siteNotesShown.hosts.has(key)) {
+      this.siteNotesShown.hosts.add(key);
+      this.runTrace.record("site_notes", { phase: "used", host, count: notes.length });
+      parts.push(formatSiteNotes(host, notes));
+    }
+    return parts.length ? parts.join("\n\n") : null;
   }
 
   /**

@@ -512,9 +512,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const programAlreadyRead = (finalUrl: string): boolean => {
           for (let i = endedSteps.length - 1; i >= 0; i--) {
             const step = endedSteps[i]!;
-            const data = (step.result ?? {}) as { url?: unknown; readiness?: unknown };
+            const data = (step.result ?? {}) as { url?: unknown; readiness?: unknown; text?: unknown };
 
             if (!step.error && step.name === "snapshot" && data.url === finalUrl) return true;
+            if (!step.error && step.name === "siteMethod" && data.url === finalUrl && typeof data.text === "string") return true;
 
             // 程序里的 navigate 就绪后已经顺手读了新页（browser-program.ts）。
             if (!step.error && step.name === "navigate" && (data.readiness === "interactive" || data.readiness === "complete") && data.url === finalUrl) return true;

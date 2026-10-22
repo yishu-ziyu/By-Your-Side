@@ -44,8 +44,10 @@ const READ_CAPTIONS = `(async () => {
     out.failed.push('The current video does not match the available player data. Old player tracks were discarded.');
     return out;
   }
-  for (const v of document.querySelectorAll("video")) for (const t of v.textTracks) out.tracks.push({ source: "video", lang: t.language || "", label: t.label || "", auto: false, cues: t.cues ? t.cues.length : null });
-  for (const el of document.querySelectorAll("video track[src]")) out.tracks.push({ source: "track", lang: el.srclang || "", label: el.label || "", auto: false, url: el.src });
+  if (!youtube && !bilibili) {
+    for (const v of document.querySelectorAll("video")) for (const t of v.textTracks) out.tracks.push({ source: "video", lang: t.language || "", label: t.label || "", auto: false, cues: t.cues ? t.cues.length : null });
+    for (const el of document.querySelectorAll("video track[src]")) out.tracks.push({ source: "track", lang: el.srclang || "", label: el.label || "", auto: false, url: el.src });
+  }
   const yt = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (Array.isArray(yt)) {
     out.lists.push({ request: "ytInitialPlayerResponse", field: "captionTracks", count: yt.length });
