@@ -28,8 +28,13 @@ interface FetchResult {
   text: string;
 }
 
-export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void} }): Promise<FetchResult> {
+export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}; confirmPost?: (request: { url: string; body?: string }) => Promise<void> }): Promise<FetchResult & { sendConfirmed?: true }> {
   const request = normalizeFetchRequest(params);
+  // 读取时限要从用户点「发送」之后算：等确认最长 2 分钟，先起计时会让确认过的请求直接超时。
+  const confirmed = request.method === "POST" && opts?.confirmPost ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
+    // 还没发出：确认这一步出什么错都是没执行，不能让宿主当成结果未知去重读。
+    throw error && typeof error === "object" && "executionFact" in error ? error : Object.assign(new Error(`POST 请求没能先问用户，没有发出：${oneLine(error)}`), { executionFact: "not_executed" as const });
+  }) : false;
   let dispatched = false;
   const controller = new AbortController();
   const onAbort = (): void => controller.abort();
@@ -82,6 +87,7 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
       });
 
       return {
+        ...(confirmed ? { sendConfirmed: true as const } : {}),
         url: response.url || request.url,
         status: response.status,
         ok: response.ok,
