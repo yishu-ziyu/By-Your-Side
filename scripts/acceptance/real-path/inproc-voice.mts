@@ -476,8 +476,12 @@ try {
       // SAFETY: 表达式只返回布尔值。
       const picker = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
 
+      // 转写要带「结束/取消…任务」这种终止说法的短句才测到了：转成「任务完成了吗」时，宿主本来就不会当成终止。
+      const heardShort = asked.heard.replace(/[\p{P}\p{Z}\s]/gu, "");
+      const abortWording = heardShort.length <= 16 && /(?:终止|中止|取消|停止|结束|停掉)(?:掉)?(?:当前|这个|这项|刚才的?)?任务|任务(?:给我)?(?:终止|中止|取消|停止|结束|停掉)/.test(heardShort);
+
       stopEvidence.askStatus = { heard: asked.heard, panel: after, aborted, picker };
-      verdicts.heardStatusQuestion = verdict(/结束|完/.test(asked.heard), { heard: asked.heard });
+      verdicts.heardStatusQuestion = verdict(abortWording, { heard: asked.heard, abortWording });
       verdicts.statusQuestionKeepsTask = verdict(!aborted.length && picker && after.taskBusy, { runId, aborted, picker, taskBusy: after.taskBusy });
       verdicts.statusQuestionAnswered = verdict(!!after.answer, { answer: after.answer });
       stopEvidence.protocol = frames.map(frame => ({ ...frame }));
