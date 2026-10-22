@@ -315,7 +315,7 @@ body {
   line-height: 16px;
 }
 .tb-mat-label { min-width: 0; color: var(--text-secondary); }
-.tb-remove, .tb-control-retry {
+.tb-control-retry {
   flex: none;
   padding: 0 8px;
   border: 1px solid var(--content-border);
@@ -326,10 +326,9 @@ body {
   line-height: 18px;
   cursor: pointer;
 }
-.tb-remove:hover, .tb-control-retry:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
-.tb-remove:focus-visible, .tb-control-retry:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
+.tb-control-retry:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
+.tb-control-retry:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
 .tb-mat-status { color: var(--apple-orange); font-size: var(--fs-micro); }
-.tb-mat-note { color: var(--text-tertiary); font-size: var(--fs-micro); }
 .tb-control {
   display: flex;
   flex-wrap: wrap;
@@ -1613,7 +1612,11 @@ details.run-steps.done .chip.error { background: transparent; }
   scrollbar-width: none;
   -ms-overflow-style: none;
   position: relative;
+  container-type: inline-size;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 2px;
 }
+.attachments-strip > * { scroll-snap-align: start; }
 .attachments-strip::-webkit-scrollbar { display: none; }
 .attachments-strip[hidden] { display: none !important; }
 
@@ -1743,10 +1746,14 @@ details.run-steps.done .chip.error { background: transparent; }
   pointer-events: none;
 }
 
-/* 文件附件：瓷贴加宽放文件名；类型图标的颜色按格式区分（PDF 红、表格绿、PPT 橙、其余蓝）。 */
+/* 文件附件：瓷贴加宽放文件名；类型图标的颜色按格式区分（PDF 红、表格绿、PPT 橙、其余蓝）。
+   宽度按输入框算，一屏正好放下整数张（窄侧栏两张、宽侧栏三张），配合按卡片对齐的滑动，不会露出被切掉一半的卡。 */
 .tile-56.tile-file {
-  width: 176px;
+  width: calc((100cqw - 8px) / 2);
   cursor: default;
+}
+@container (min-width: 480px) {
+  .tile-56.tile-file { width: calc((100cqw - 16px) / 3); }
 }
 .tile-file .tile-ring-svg { width: 100%; }
 .tile-file .file-chip { height: 100%; padding: 0 22px 0 10px; }
@@ -1786,9 +1793,11 @@ details.run-steps.done .chip.error { background: transparent; }
   text-overflow: ellipsis;
 }
 .file-chip-meta {
+  overflow: hidden;
   color: var(--text-tertiary);
   font-size: var(--fs-micro);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* 已发出的消息里：同一张卡缩小一号，两张一行，不带进度环。 */
@@ -3383,6 +3392,8 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .action-menu-item { font-size: var(--fs-ui); }
 .action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
 .action-menu-item-key { margin-left: 6px; color: var(--text-tertiary); font-size: var(--fs-micro); }
+.action-menu-item-text { display: flex; flex-direction: column; min-width: 0; }
+.action-menu-item-sub { color: var(--text-tertiary); font-size: var(--fs-micro); }
 /* 回答里的 ①②：点一下页面滚回那一圈再指一下。靠编号对应页面上的圈；侧栏里用墨色，不另换色相。 */
 .circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: var(--text-primary); color: var(--content-bg); font: 600 11px/18px var(--font); vertical-align: 1px; cursor: pointer; }
 .circle-ref:hover { background: var(--text-secondary); }
