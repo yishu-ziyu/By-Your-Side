@@ -104,6 +104,8 @@ try {
   await rp.screenshot(panel, join(out, "a-composer.png"));
   const meta = Object.fromEntries(shown.map(t => [t.name, t.meta]));
   check("a 每个文件一张卡，写着格式和页数", meta["contract.pdf"] === "PDF · 3 页" && meta["receipt-scan.pdf"] === "PDF · 1 页" && meta["scan-with-blank.pdf"] === "PDF · 2 页" && meta["sales.xlsx"] === "Excel · 3 张表" && meta["review.pptx"] === "PPT · 3 张幻灯片" && /^Word · /.test(meta["weekly-report.docx"] ?? "") && /^CSV · /.test(meta["cities-gbk.csv"] ?? ""), meta);
+  const listedTwice = await rp.evaluate(panel, `[...document.querySelectorAll("#task-bar-root .tb-mat-label")].filter(e => e.offsetParent !== null).map(e => e.textContent)`) as string[];
+  check("a 发送前每个文件只在输入框上方有一张卡，上面不再另列一遍", listedTwice.length === 0, listedTwice);
   const errors = await rp.evaluate(panel, `[...document.querySelectorAll(".msg.error")].map(e => e.textContent)`) as string[];
   check("a 旧版 .doc 没附上，并说明要另存为 .docx", !shown.some(t => t.name === "legacy.doc") && errors.some(e => e.includes("legacy.doc") && e.includes(".docx")), errors);
 
