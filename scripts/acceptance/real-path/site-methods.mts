@@ -17,6 +17,15 @@ const cases = [
   { id: "yt-no-captions", url: "https://www.youtube.com/watch?v=nocap1", method: "youtube.captions", expected: '"status":"no_captions"' },
   { id: "yt-stale", url: "https://www.youtube.com/watch?v=video456&stale=1", method: "youtube.captions", expected: "unavailable", absent: "这是上一条视频" },
   { id: "bili-captions", url: "https://www.bilibili.com/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", also: ['"title":"练习合集"', '"part":{"index":1,"title":"第一讲","count":2}'], absent: "其他分P字幕" },
+  // 未登录时 B站把视频页转到带语言前缀的地址。
+  { id: "bili-locale-path", url: "https://www.bilibili.com/zh-Hans/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", absent: "其他分P字幕" },
+  // 未登录时 B站给空字幕清单并注明要登录：不能说成这个视频没有字幕。
+  { id: "bili-login", url: "https://www.bilibili.com/video/BV1LOGIN00", method: "bilibili.captions", expected: '"status":"login_required"', absent: "no_captions" },
+  // 轨道很多时要的语言排在 30 条之后也要取得到。
+  { id: "yt-many-tracks", url: "https://www.youtube.com/watch?v=many01", method: "youtube.captions", language: "zh", expected: "这段字幕属于当前视频。", also: ['"language":"zh-CN"'] },
+  // 轨道地址回空正文：改用播放器自己带令牌的那次请求；没有就明说要先开字幕，而不是交回空的「部分结果」。
+  { id: "yt-empty-body", url: "https://www.youtube.com/watch?v=empty1", method: "youtube.captions", expected: "这段字幕属于当前视频。", also: ['"status":"observed"'] },
+  { id: "yt-empty-no-token", url: "https://www.youtube.com/watch?v=empty2", method: "youtube.captions", expected: '"status":"unavailable"', also: ["turned on in the player"] },
   { id: "x-post", url: "https://x.com/example/status/1234567890", method: "x.read-post", expected: "这是指定的原帖正文。", absent: "这是推荐帖" },
   { id: "yt-search", url: "https://www.youtube.com/", method: "youtube.search", query: "猫 & 自然", expected: "猫 & 自然" },
   { id: "bili-search", url: "https://www.bilibili.com/", method: "bilibili.search", query: "故宫 建筑", expected: "故宫 建筑" },
@@ -46,23 +55,29 @@ const observedRequests: string[] = [];
 let panel = "";
 const escape = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 function fixture(url: URL): { type: string; body: string } {
+  if (url.pathname === "/captions-empty") return { type: "text/xml", body: "" };
+  if (url.pathname === "/api/timedtext") return { type: "text/vtt", body: "WEBVTT\n\n00:00.000 --> 00:02.000\n这段字幕属于当前视频。\n" };
   if (url.pathname === "/captions-ar") return { type: "text/vtt", body: "WEBVTT\n\n00:00.000 --> 00:02.000\nترجمة\n" };
   if (url.pathname === "/captions") return { type: "text/vtt", body: "WEBVTT\n\n00:00.000 --> 00:02.000\n这段字幕属于当前视频。\n\n00:02.000 --> 00:04.000\nthat&amp;#39;s right\n" };
   if (url.pathname === "/bili-subs") return { type: "application/json", body: JSON.stringify({ body: [{ from: 0, to: 2, content: "当前分P的字幕。" }] }) };
+  if (url.pathname.includes("/x/player/") && url.searchParams.get("cid") === "444") return { type: "application/json", body: JSON.stringify({ data: { need_login_subtitle: true, subtitle: { subtitles: [] } } }) };
   if (url.pathname.includes("/x/player/")) return { type: "application/json", body: JSON.stringify({ data: { subtitle: { subtitles: [{ lan: "zh", subtitle_url: url.searchParams.get("cid") === "222" ? "https://www.bilibili.com/bili-subs" : "https://www.bilibili.com/wrong-subs" }] } } }) };
   if (url.pathname === "/wrong-subs") return { type: "text/plain", body: "其他分P字幕" };
   const query = url.searchParams.get("search_query") ?? url.searchParams.get("keyword") ?? url.searchParams.get("q");
   let body = `<h1>搜索与阅读练习页</h1>${query ? `<h2 id="query">${escape(query)}</h2><p>这里是对应的实际搜索结果。</p>` : ""}`;
   if (url.hostname === "www.youtube.com" && url.pathname === "/watch") {
-    body += `<video></video><script>window.ytInitialPlayerResponse=${JSON.stringify({ videoDetails: { videoId: url.searchParams.has("stale") ? "oldvideo" : url.searchParams.get("v") }, ...(url.searchParams.get("v") === "nocap1" ? {} : { captions: { playerCaptionsTracklistRenderer: { captionTracks: url.searchParams.get("v") === "multi1" ? [{ languageCode: "ar", name: { simpleText: "Arabic" }, baseUrl: "https://www.youtube.com/captions-ar" }, { languageCode: "zh-CN", name: { simpleText: "Chinese (China)" }, baseUrl: "https://www.youtube.com/captions" }] : [{ languageCode: "zh", name: { simpleText: "中文" }, baseUrl: "https://www.youtube.com/captions" }] } } }) })};</script>`;
+    body += `<video></video><script>window.ytInitialPlayerResponse=${JSON.stringify({ videoDetails: { videoId: url.searchParams.has("stale") ? "oldvideo" : url.searchParams.get("v") }, ...(url.searchParams.get("v") === "nocap1" ? {} : { captions: { playerCaptionsTracklistRenderer: { captionTracks: ["empty1", "empty2"].includes(url.searchParams.get("v") ?? "") ? [{ languageCode: "zh", name: { simpleText: "中文" }, baseUrl: "https://www.youtube.com/captions-empty" }] : url.searchParams.get("v") === "many01" ? [...Array.from({ length: 34 }, (_, i) => ({ languageCode: `x${i}`, name: { simpleText: `语言${i}` }, baseUrl: "https://www.youtube.com/captions-ar" })), { languageCode: "zh-CN", name: { simpleText: "中文（中国）" }, baseUrl: "https://www.youtube.com/captions" }] : url.searchParams.get("v") === "multi1" ? [{ languageCode: "ar", name: { simpleText: "Arabic" }, baseUrl: "https://www.youtube.com/captions-ar" }, { languageCode: "zh-CN", name: { simpleText: "Chinese (China)" }, baseUrl: "https://www.youtube.com/captions" }] : [{ languageCode: "zh", name: { simpleText: "中文" }, baseUrl: "https://www.youtube.com/captions" }] } } }) })};</script>`;
   }
-  if (url.hostname === "www.bilibili.com" && url.pathname.startsWith("/video/")) {
-    body += `<video></video><script>window.__INITIAL_STATE__={videoData:{bvid:'BV1TEST123',title:'练习合集',cid:222,pages:[{cid:222,part:'第一讲'},{cid:333,part:'第二讲'}]}};Promise.all([fetch('/x/player/wbi/v2?cid=111'),fetch('/x/player/wbi/v2?cid=222')]).then(()=>document.body.dataset.ready='1');</script>`;
+  if (url.hostname === "www.youtube.com" && url.searchParams.get("v") === "empty1") body += `<script>fetch('https://www.youtube.com/api/timedtext?v=empty1&lang=zh&pot=token1').then(()=>document.body.dataset.ready='1');</script>`;
+  if (url.hostname === "www.bilibili.com" && url.pathname.includes("/video/")) {
+    body += url.pathname.includes("BV1LOGIN00")
+      ? `<video></video><script>window.__INITIAL_STATE__={videoData:{bvid:'BV1LOGIN00',title:'要登录的视频',cid:444,pages:[{cid:444,part:'正片'}]}};fetch('/x/player/wbi/v2?cid=444').then(()=>document.body.dataset.ready='1');</script>`
+      : `<video></video><script>window.__INITIAL_STATE__={videoData:{bvid:'BV1TEST123',title:'练习合集',cid:222,pages:[{cid:222,part:'第一讲'},{cid:333,part:'第二讲'}]}};Promise.all([fetch('/x/player/wbi/v2?cid=111'),fetch('/x/player/wbi/v2?cid=222')]).then(()=>document.body.dataset.ready='1');</script>`;
   }
   if (url.hostname === "x.com" && url.pathname.includes("/status/")) {
     body += `<article data-testid="tweet"><div data-testid="User-Name">推荐作者</div><a href="/other/status/9876543210"><time datetime="2026-01-01"></time></a><div data-testid="tweetText">这是推荐帖</div></article><article data-testid="tweet"><div data-testid="User-Name">原帖作者</div><a href="/example/status/1234567890"><time datetime="2026-01-02"></time></a><div data-testid="tweetText">这是指定的原帖正文。</div></article>`;
   }
-  return { type: "text/html; charset=utf-8", body: `<!doctype html><html lang="zh"><meta charset="utf-8"><title>网站方法验收</title><body ${url.hostname === "www.bilibili.com" && url.pathname.startsWith("/video/") ? "" : 'data-ready="1"'}>${body}</body></html>` };
+  return { type: "text/html; charset=utf-8", body: `<!doctype html><html lang="zh"><meta charset="utf-8"><title>网站方法验收</title><body ${(url.hostname === "www.bilibili.com" && url.pathname.includes("/video/")) || url.searchParams.get("v") === "empty1" ? "" : 'data-ready="1"'}>${body}</body></html>` };
 }
 try {
   const work = await rp.attach((await rp.targets()).find(target => target.url === "about:blank")!.targetId);

@@ -116,10 +116,21 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   const ranked = [...readable].sort((a, b) => Number(a.auto === true) - Number(b.auto === true));
   const track = !wanted ? ranked[0] : ranked.find(item => lang(item) === wanted) ?? ranked.find(item => lang(item).split("-")[0] === wanted.split("-")[0]);
   const available = tracks.map(item => ({ language: item.lang, label: item.label, automatic: item.auto === true }));
+  if (!track && !tracks.length && result.loginRequired === true) return { ...base, status: "login_required", reason: "The site only provides subtitles after sign-in and this browser is not signed in. This does not mean the video has no subtitles.", evidence: result.text };
   if (!track) return { ...base, status: tracks.length ? "partial" : result.lists ? "no_captions" : "unavailable", reason: tracks.length ? "No readable track matches the requested language; available lists the tracks this video has." : "No verified readable caption track was found.", evidence: result.text, available };
-  const body = await call("fetch", { url: track.url, method: "GET" });
+  let body = await call("fetch", { url: track.url, method: "GET" });
   await unchanged();
   if (body?.ok !== true || typeof body.text !== "string") return { ...base, status: "unavailable", reason: "The player's caption URL could not be read.", httpStatus: body?.status, evidence: result.text };
+  // YouTube may answer the listed track address with an empty body unless the request carries the player's own token;
+  // the player's own timed-text request for the same video and language carries it.
+  if (method.site === "youtube" && !String(body.text).trim()) {
+    const own = await call("js", { tabId, code: `(() => [...performance.getEntriesByType("resource")].map(e => e.name).filter(u => { try { const q = new URL(u).searchParams; return new URL(u).pathname === "/api/timedtext" && q.get("v") === ${JSON.stringify(String(result.videoId))} && q.get("lang") === ${JSON.stringify(String(track.lang))} && q.has("pot"); } catch { return false; } }).pop() ?? null)()` });
+    const ownUrl = typeof own?.value === "string" && /^https:\/\/www\.youtube\.com\/api\/timedtext\?/.test(own.value) ? own.value : null;
+    if (!ownUrl) return { ...base, status: "unavailable", language: track.lang, automatic: track.auto === true, videoId: result.videoId, available, reason: "YouTube returned an empty caption body for this track. It loads once this track's captions (CC) have been turned on in the player; ask the user to turn them on, or turn them on only if the user asked you to operate the player." };
+    body = await call("fetch", { url: ownUrl, method: "GET" });
+    await unchanged();
+    if (body?.ok !== true || typeof body.text !== "string") return { ...base, status: "unavailable", reason: "The player's caption URL could not be read.", httpStatus: body?.status, evidence: result.text };
+  }
   const parsed = transcript(body.text);
-  return { ...base, status: body.truncated === true || !parsed ? "partial" : "observed", language: track.lang, automatic: track.auto === true, videoId: result.videoId, ...(result.title ? { title: result.title } : {}), ...(result.part ? { part: result.part } : {}), trackSource: track.source, available: available.slice(0, 30), format: parsed?.format ?? "unparsed", text: parsed?.text ?? body.text, truncated: body.truncated === true, scope: "Caption text has already been fetched from this video's selected player track. For another language, call this method again with language from available. This is one source, not independent corroboration. Do not fetch the same track again. Automatic captions may contain transcription errors." };
+  return { ...base, status: body.truncated === true || !parsed ? "partial" : "observed", language: track.lang, automatic: track.auto === true, videoId: result.videoId, ...(result.title ? { title: result.title } : {}), ...(result.part ? { part: result.part } : {}), trackSource: track.source, available, format: parsed?.format ?? "unparsed", text: parsed?.text ?? body.text, truncated: body.truncated === true, scope: "Caption text has already been fetched from this video's selected player track. For another language, call this method again with language from available. This is one source, not independent corroboration. Do not fetch the same track again. Automatic captions may contain transcription errors." };
 }
