@@ -140,9 +140,28 @@ export function defersWork(reply: string): boolean {
  * 助手停在「确认邮件已发出、请点邮件里的链接」这类页面上：下一步明确在邮箱里，助手自己能做。
  * 这种页面在注册、订阅、找回密码里很常见，不等模型判断（阶跃核对总判成「等用户」、或思考超时）。
  * 只看助手停下时所在的页面：去过邮箱之后页面变了，就交回模型判断，不会来回打转。
+ * 页面文字必须说邮件已经发出、或叫人去邮箱：「发送验证码」「发送验证邮件」按钮还没发，「验证码已发送至手机」「发送后请确认」不是邮件，
+ * 泛泛的「发送…验证/确认」会把手机号登录页当成去邮箱。「确认电子邮件（地址）」是表单栏。
+ * 中间的空隙不跨标点：「邮箱登录！验证码已发送」「Code sent to your phone; Email login」是登录标签挨着短信状态，不是邮件。
+ * 只认验证、激活这类邮件或发到「你的邮箱」：发信任务里的「邮件已发送」「Your email has been sent」是发出去的信，不是等你确认的邮件。
+ * 漏判只是交回模型判断，误判会让助手丢下问话去翻邮箱，所以宁可少认。
  */
 export function pageAwaitsEmailStep(pageText: string): boolean {
-  return /(sent|emailed|发送|发到|发至)[^.。\n]{0,60}(confirmation|verification|确认|验证)|(confirmation|verification) (email|link|code) (has been |was )?sent|check your (email|inbox)|click the (link|button) in (that|the|your) email|查收(邮件|邮箱)|去邮箱|确认邮件已发送|验证邮件已发送/i.test(pageText);
+  return /(确认|验证|激活|注册|重置|找回|登录)[^\s。，,：:；;！!？?、]{0,6}(邮件|链接)[^\s。，,：:；;！!？?、]{0,12}\s*已(经)?(成功)?(发送|发出|寄出|发至|发到)(?![^。，,；;！!\n]{0,6}(手机|短信|号码))|(邮件|邮箱)(确认|验证|激活)[^\s。，,：:；;！!？?、]{0,8}已(经)?(成功)?(发送|发出|寄出|发至|发到)(?![^。，,；;！!\n]{0,6}(手机|短信|号码))|已(经)?(成功)?(发送|发出|寄出|发)(了)?(至|到)?(你|您)的?(注册)?(电子)?(邮箱|邮件)|已(经)?(成功)?(发送|发出|寄出|发)(了)?(一封)?(确认|验证|激活|注册)[^\s。，,]{0,4}(邮件|链接)|已(经)?(向|给|往)[^。；;！!？?\n]{0,40}(邮箱|@)[^。；;！!？?\n]{0,30}(发送|发出|寄出|发)(了)?[^。；;\n]{0,6}(确认|验证|激活|注册)|(给|向)(你|您)(发|寄)(送)?了一封|查收[^\s。，,；;！!]{0,6}(邮件|邮箱)|(?<!(勿|别|不要|无法|不能|未能|没法|不用)[^。，,；;！!\s]{0,3})((去|前往|打开)邮箱|(登录|查看)(你|您)的邮箱|(点击?|打开)邮件(中|里)的?[^\s。，,；;！!]{0,4}(链接|按钮))|(sent|emailed)(?![^.;!?\n]{0,40}\b(phone|sms|mobile)\b)[^.;!?\n]{0,40}\b(e-?mail|inbox)\b|\bemailed you\b|\be-?mail (has been|was) sent to you\b|(confirmation|verification|activation) e-?mail (has been |was )?sent|(magic|sign-?in|confirmation|verification|activation) link (has been |was |is )?(sent|on its way)(?![^.;!?\n]{0,20}\b(phone|sms|text|mobile)\b)|check your (e-?mail|inbox|mail)\b|(?<!(do not|don't|never) )click (on )?the (link|button) in (that|the|your|this) e-?mail/i.test(pageText);
+}
+
+/**
+ * 回答在问用户别的事（「要提交吗？」「要改用另一个邮箱重新注册吗？」）时，邮箱这一步交回模型判断，问话照常交给用户。
+ * 用户已定：为目标去已登录的邮箱不问，所以回答里问的、请用户做的每一个分句都是去看邮件或点邮件里的链接时
+ * （「要我打开邮箱吗？」「请确认邮件中的链接」），照样直接去；夹着别的问题、在邮箱和别的做法之间让用户选、或向用户要验证码这类输入时不去，免得那句问话被丢掉。
+ * 按逗号分句：「接下来可以打开邮箱，要换个备注吗？」问的是备注。网址到中文标点为止，
+ * 「说明见 https://x.com。要提交吗？」后面的问句不能跟网址一起被去掉；只在这里这样切，其他地方的 asksUser 不变。
+ */
+export function emailStepIsNext(pageText: string, reply: string): boolean {
+  if (!pageAwaitsEmailStep(pageText)) return false;
+  const asks = reply.replace(/https?:\/\/[^\s)）\]」"'<>。，！？；、]+/g, "").trimEnd().slice(-160).split(/(?<=[。！？!?；;，,\n])|(?<=\.)\s+/).filter(clause => asksUser(clause));
+
+  return asks.every(clause => !/还是|或者|或是|\bor\b|提供|告诉|发给?我|输入|填写|验证码|密码|\bcode\b|password|provide|tell me|send me/i.test(clause) && /(打开|去|前往|查看|登录|进入|查收)[^，,。？?]{0,6}(邮箱|收件箱|邮件|gmail|outlook|mail)|(点击?|确认)[^，,。？?]{0,4}邮件(中|里)?的?[^，,。？?]{0,4}(链接|按钮)|open (your |the )?(gmail|outlook|inbox|mailbox|e-?mail)|check (your )?(inbox|e-?mail|mail)|click the (confirmation |verification )?link/i.test(clause));
 }
 
 /** 助手自己的回答说还有事没做成（「确认邮件还没送达」「没能点确认链接」）。 */
