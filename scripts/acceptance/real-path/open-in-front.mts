@@ -5,7 +5,7 @@
  *   npx tsx scripts/acceptance/real-path/open-in-front.mts --headless
  *   a) 「打开练习页」：模型调 tabs show + url 后，活动标签页就是练习页；工具结果写明用户正在看它。
  *   b) 「去练习页读一下标题」：模型调 tabs open，活动标签页仍是用户原来的页。
- *   c) 「打开练习页二」但模型选了 tabs open（后台）：这一轮结束时宿主把它切到眼前。
+ *   c) 「打开练习页二」但模型选了 tabs open：开出来就在眼前，工具结果写明用户正在看它（回答就不会说「在后台」）。
  *   d) 「打开首页再打开条目」：开了新页、在那一页里接着走到条目：结束时条目页在眼前。
  * 失败方式：tabs show 不接受 url（旧行为，要求 tabId），a 失败；只靠模型选 show，c、d 失败。
  */
@@ -78,6 +78,7 @@ try {
   await say(OPEN_BG, "练习页二打开了");
   const afterBg = await until(async () => { const t = await activeTitle(); return t === "练习页二" ? t : undefined; }, 5_000, "练习页二到眼前").catch(activeTitle);
   check("c 用户要打开、模型开在后台：结束时切到眼前", afterBg === "练习页二", { afterBg });
+  check("c 工具结果写明用户正在看这一页", toolResult.includes("The user is looking at this new tab"), toolResult.slice(0, 200));
 
   await say(ENTRY, "条目打开了");
   const afterEntry = await until(async () => { const t = await activeTitle(); return t === "条目页" ? t : undefined; }, 5_000, "条目页到眼前").catch(activeTitle);
