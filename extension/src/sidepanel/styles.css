@@ -315,7 +315,7 @@ body {
   line-height: 16px;
 }
 .tb-mat-label { min-width: 0; color: var(--text-secondary); }
-.tb-remove, .tb-control-retry {
+.tb-control-retry {
   flex: none;
   padding: 0 8px;
   border: 1px solid var(--content-border);
@@ -326,10 +326,9 @@ body {
   line-height: 18px;
   cursor: pointer;
 }
-.tb-remove:hover, .tb-control-retry:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
-.tb-remove:focus-visible, .tb-control-retry:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
+.tb-control-retry:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
+.tb-control-retry:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
 .tb-mat-status { color: var(--apple-orange); font-size: var(--fs-micro); }
-.tb-mat-note { color: var(--text-tertiary); font-size: var(--fs-micro); }
 .tb-control {
   display: flex;
   flex-wrap: wrap;
