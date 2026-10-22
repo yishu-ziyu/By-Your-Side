@@ -152,7 +152,7 @@ export function pageAwaitsEmailStep(pageText: string): boolean {
 /**
  * 回答在问用户别的事（「要提交吗？」「要改用另一个邮箱重新注册吗？」）时，邮箱这一步交回模型判断，问话照常交给用户。
  * 用户已定：为目标去已登录的邮箱不问，所以回答里问的、请用户做的每一个分句都是去看邮件或点邮件里的链接时
- * （「要我打开邮箱吗？」「请确认邮件中的链接」），照样直接去；其中夹着一句别的问题、或在邮箱和别的做法之间让用户选，就不去，免得那句问话被丢掉。
+ * （「要我打开邮箱吗？」「请确认邮件中的链接」），照样直接去；夹着别的问题、在邮箱和别的做法之间让用户选、或向用户要验证码这类输入时不去，免得那句问话被丢掉。
  * 按逗号分句：「接下来可以打开邮箱，要换个备注吗？」问的是备注。网址到中文标点为止，
  * 「说明见 https://x.com。要提交吗？」后面的问句不能跟网址一起被去掉；只在这里这样切，其他地方的 asksUser 不变。
  */
@@ -160,7 +160,7 @@ export function emailStepIsNext(pageText: string, reply: string): boolean {
   if (!pageAwaitsEmailStep(pageText)) return false;
   const asks = reply.replace(/https?:\/\/[^\s)）\]」"'<>。，！？；、]+/g, "").trimEnd().slice(-160).split(/(?<=[。！？!?；;，,\n])|(?<=\.)\s+/).filter(clause => asksUser(clause));
 
-  return asks.every(clause => !/还是|或者|或是|\bor\b/i.test(clause) && /(打开|去|前往|查看|登录|进入|查收)[^，,。？?]{0,6}(邮箱|收件箱|邮件|gmail|outlook|mail)|(点击?|确认)[^，,。？?]{0,4}邮件(中|里)?的?[^，,。？?]{0,4}(链接|按钮)|open (your |the )?(gmail|outlook|inbox|mailbox|e-?mail)|check (your )?(inbox|e-?mail|mail)|click the (confirmation |verification )?link/i.test(clause));
+  return asks.every(clause => !/还是|或者|或是|\bor\b|提供|告诉|发给?我|输入|填写|验证码|密码|\bcode\b|password|provide|tell me|send me/i.test(clause) && /(打开|去|前往|查看|登录|进入|查收)[^，,。？?]{0,6}(邮箱|收件箱|邮件|gmail|outlook|mail)|(点击?|确认)[^，,。？?]{0,4}邮件(中|里)?的?[^，,。？?]{0,4}(链接|按钮)|open (your |the )?(gmail|outlook|inbox|mailbox|e-?mail)|check (your )?(inbox|e-?mail|mail)|click the (confirmation |verification )?link/i.test(clause));
 }
 
 /** 助手自己的回答说还有事没做成（「确认邮件还没送达」「没能点确认链接」）。 */
