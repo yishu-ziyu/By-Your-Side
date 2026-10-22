@@ -12,7 +12,7 @@ import { toToolDeclaration } from "@earendil-works/pi-ai/utils/transcript";
 import { isTransientModelError } from "../../shared/provider-busy.js";
 import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, ProviderDoc, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { AgentLoop } from "./agent-loop.js";
+import { RunNotStarted, type AgentLoop } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
 import { ELIDE_MIN_CHARS, PAGE_OBSERVATION_MARK, streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
@@ -178,16 +178,16 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   async prompt(text: string, options?: PromptOptions): Promise<void> {
-    await this.ready;
     const version = this.abortVersion;
+    await this.ready;
     await this.flushPersistence();
-    if (version !== this.abortVersion) throw new Error("本轮已取消，没有启动模型或操作页面。");
+    if (version !== this.abortVersion) throw new RunNotStarted();
     if (this.busy) {
       if (!options?.streamingBehavior) throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
       await this.queue(options.streamingBehavior === "followUp" ? "followUp" : "steer", text, options.images);
       return;
     }
-    await this.submitInput(text, options?.images);
+    await this.submitInput(text, options?.images, version);
   }
 
   async steer(text: string, images?: ImageContent[]): Promise<"queued"> {
@@ -435,21 +435,25 @@ export class DurableAgentLoop implements AgentLoop {
     this.runStart = Math.max(0, runFloor(this.messages as Message[], undefined));
   }
 
-  private async submitInput(text: string, images?: ImageContent[]): Promise<void> {
+  private async submitInput(text: string, images?: ImageContent[], version = this.abortVersion): Promise<void> {
     // 准备阶段（钩子、记忆选择）还没到 busy，期间点进输入框也不该再起一次预热去挡真请求。
     this.modelCalledAt = Date.now();
     this.warming?.abort();
     await this.ready;
     const conversation = this.conversation;
     if (!conversation) return;
+    // 准备阶段还没有运行可取消，停止只记在 abortVersion 上：每段等待之后都要看一眼，停了就不再提交。
+    const stopped = () => version !== this.abortVersion;
     if (this.hooks.has("input")) await this.hooks.input(text);
     if (this.hooks.has("before_agent_start")) {
       const started = await this.hooks.beforeAgentStart(text, this.base);
+      if (stopped()) throw new RunNotStarted();
       this.systemPrompt = started.systemPrompt;
       if (started.context.length) await this.writeUser([RUN_CONTEXT_HEADER, ...started.context].join("\n\n"));
     }
     for (const message of this.pendingNext.splice(0)) await this.writeUser(customText(message.content));
     await this.configure();
+    if (stopped()) throw new RunNotStarted();
     if (text !== CONTINUE_TEXT) this.runInput = text;
     const content = images?.length ? [{ type: "text" as const, text }, ...images] : text;
     this.prompts += 1;
