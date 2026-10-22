@@ -143,10 +143,11 @@ export function defersWork(reply: string): boolean {
  * 页面文字必须说邮件已经发出、或叫人去邮箱：「发送验证码」「发送验证邮件」按钮还没发，「验证码已发送至手机」「发送后请确认」不是邮件，
  * 泛泛的「发送…验证/确认」会把手机号登录页当成去邮箱。「确认电子邮件（地址）」是表单栏。
  * 中间的空隙不跨标点：「邮箱登录！验证码已发送」「Code sent to your phone; Email login」是登录标签挨着短信状态，不是邮件。
+ * 只认验证、激活这类邮件或发到「你的邮箱」：发信任务里的「邮件已发送」「Your email has been sent」是发出去的信，不是等你确认的邮件。
  * 漏判只是交回模型判断，误判会让助手丢下问话去翻邮箱，所以宁可少认。
  */
 export function pageAwaitsEmailStep(pageText: string): boolean {
-  return /(邮件|邮箱)[^\s。，,：:；;！!？?、]{0,12}\s*已(经)?(成功)?(发送|发出|寄出|发至|发到)(?![^。，,；;！!\n]{0,6}(手机|短信|号码))|已(经)?(成功)?(发送|发出|寄出|发)(了)?[^\s。，,：:；;！!？?、]{0,12}(邮件|邮箱)|已(经)?(向|给|往)[^。；;！!？?\n]{0,40}(邮箱|@)[^。；;！!？?\n]{0,30}(发送|发出|寄出|发了)|(发|寄)(了|出)一封[^\s。，,；;！!]{0,8}邮件|查收[^\s。，,；;！!]{0,6}(邮件|邮箱)|(?<!(勿|别|不要|无法|不能|未能|没法|不用)[^。，,；;！!\s]{0,3})((去|前往|打开)邮箱|(登录|查看)(你|您)的邮箱|(点击?|打开)邮件(中|里)的?[^\s。，,；;！!]{0,4}(链接|按钮))|(sent|emailed)(?![^.;!?\n]{0,40}\b(phone|sms|mobile)\b)[^.;!?\n]{0,40}\b(e-?mail|inbox)\b|\bemailed (you|a|an|the)\b|\be-?mail (has been|was|is being) sent\b|(confirmation|verification|activation) e-?mail (has been |was )?sent|(magic|sign-?in|confirmation|verification|activation) link (has been |was |is )?(sent|on its way)(?![^.;!?\n]{0,20}\b(phone|sms|text|mobile)\b)|check your (e-?mail|inbox|mail)\b|(?<!(do not|don't|never) )click (on )?the (link|button) in (that|the|your|this) e-?mail/i.test(pageText);
+  return /(确认|验证|激活|注册|重置|找回|登录)[^\s。，,：:；;！!？?、]{0,6}(邮件|链接)[^\s。，,：:；;！!？?、]{0,12}\s*已(经)?(成功)?(发送|发出|寄出|发至|发到)(?![^。，,；;！!\n]{0,6}(手机|短信|号码))|(邮件|邮箱)(确认|验证|激活)[^\s。，,：:；;！!？?、]{0,8}已(经)?(成功)?(发送|发出|寄出|发至|发到)(?![^。，,；;！!\n]{0,6}(手机|短信|号码))|已(经)?(成功)?(发送|发出|寄出|发)(了)?(至|到)?(你|您)的?(注册)?(电子)?(邮箱|邮件)|已(经)?(成功)?(发送|发出|寄出|发)(了)?(一封)?(确认|验证|激活|注册)[^\s。，,]{0,4}(邮件|链接)|已(经)?(向|给|往)[^。；;！!？?\n]{0,40}(邮箱|@)[^。；;！!？?\n]{0,30}(发送|发出|寄出|发)(了)?[^。；;\n]{0,6}(确认|验证|激活|注册)|(给|向)(你|您)(发|寄)(送)?了一封|查收[^\s。，,；;！!]{0,6}(邮件|邮箱)|(?<!(勿|别|不要|无法|不能|未能|没法|不用)[^。，,；;！!\s]{0,3})((去|前往|打开)邮箱|(登录|查看)(你|您)的邮箱|(点击?|打开)邮件(中|里)的?[^\s。，,；;！!]{0,4}(链接|按钮))|(sent|emailed)(?![^.;!?\n]{0,40}\b(phone|sms|mobile)\b)[^.;!?\n]{0,40}\b(e-?mail|inbox)\b|\bemailed you\b|\be-?mail (has been|was) sent to you\b|(confirmation|verification|activation) e-?mail (has been |was )?sent|(magic|sign-?in|confirmation|verification|activation) link (has been |was |is )?(sent|on its way)(?![^.;!?\n]{0,20}\b(phone|sms|text|mobile)\b)|check your (e-?mail|inbox|mail)\b|(?<!(do not|don't|never) )click (on )?the (link|button) in (that|the|your|this) e-?mail/i.test(pageText);
 }
 
 /**

@@ -1,11 +1,12 @@
 /**
  * 交付后核对什么时候让助手接着去邮箱：只有页面明说邮件已发出时才去；回答在问用户别的事时问话照常交给用户。
  *
- *   npx tsx scripts/acceptance/real-path/email-step.mts --headless [--case=sms|sms-done|email-question|email|email-ask]
+ *   npx tsx scripts/acceptance/real-path/email-step.mts --headless [--case=sms|sms-done|mail-sent|email-question|email|email-ask]
  *
- * 不带 --case 依次跑五种：
+ * 不带 --case 依次跑六种：
  * - sms：手机号登录页有「发送验证码」和挨着短信状态的「邮箱登录」标签，助手填好手机号后问「要提交吗？」。侧栏留着这句问话，不出现「去邮箱」的接着做，也没有提交。
  * - sms-done：同一页，助手说填好了、没提交（不是问句）。只看页面文字：「发送验证码」不算邮件，不出现「去邮箱」。
+ * - mail-sent：写信页显示「邮件已发送」「Your email has been sent.」，助手说信已发出。发出去的信不是等你确认的邮件，不出现「去邮箱」。
  * - email-question：页面写着确认邮件已发送，助手提了一句邮箱、问的却是别的事（「要换个备注吗？」）。问话交给用户，不直接去邮箱。
  * - email：同一页，助手说已提交、请用户确认邮件里的链接。请用户做的是邮件这一步，所以核对照旧让助手接着去邮箱。
  * - email-ask：同一页，助手问「要我帮你打开邮箱点确认链接吗？」。用户定过为目标去邮箱不问，所以照样接着去。
@@ -19,7 +20,7 @@ import {REPO,launchRealPath,requireHeadless,siteAddress,until,sleep} from './har
 import {startScriptedModel} from './scripted-model.mts';
 
 requireHeadless();
-const SCENARIOS=['sms','sms-done','email-question','email','email-ask'] as const;
+const SCENARIOS=['sms','sms-done','mail-sent','email-question','email','email-ask'] as const;
 type Scenario=typeof SCENARIOS[number];
 const picked=process.argv.find(a=>a.startsWith('--case='))?.slice(7);
 if(picked&&!(SCENARIOS as readonly string[]).includes(picked))throw new Error('Unknown case');
@@ -27,7 +28,8 @@ const PREFIX="You check whether a browser assistant has finished the user's goal
 const messageText=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.map(p=>p.text??'').join(''):'';
 const traceExpr=`new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return;}const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>JSON.parse(x.line)));tx.oncomplete=()=>db.close()}})`;
 
-const PAGES:Record<'sms'|'email',string>={
+const PAGES:Record<'sms'|'sent'|'email',string>={
+ sent:`<!doctype html><meta charset="utf-8"><title>写邮件</title><style>body{font:17px/1.6 system-ui;max-width:520px;margin:40px auto}input{width:100%;padding:10px}</style><h1>写邮件</h1><label>备注<input id="note"></label><p>邮件已发送</p><p lang="en">Your email has been sent.</p>`,
  sms:`<!doctype html><meta charset="utf-8"><title>手机号登录</title><style>body{font:17px/1.6 system-ui;max-width:520px;margin:40px auto}input{width:100%;padding:10px}</style><h1>手机号登录</h1><label>手机号<input id="phone" inputmode="tel"></label><label>验证码<input id="code"></label><button type="button" id="send-code">发送验证码</button><p><button type="button" onclick="fetch('/submit',{method:'POST'})">登录</button></p><p>手机号登录 · 邮箱登录 · 密码登录</p><p>邮箱登录！验证码已发送</p><p lang="en">Code sent to your phone; Email login</p>`,
  email:`<!doctype html><meta charset="utf-8"><title>注册 — 示例网站</title><style>body{font:17px/1.6 system-ui;max-width:520px;margin:40px auto}input{width:100%;padding:10px}</style><h1>注册</h1><label>备注<input id="note"></label><p id="sent">确认邮件已发送到 a@example.com，请查收邮箱，点击邮件中的链接完成注册。</p>`,
 };
@@ -37,9 +39,9 @@ async function run(scenario:Scenario){
  await mkdir(out,{recursive:true});
  const sms=scenario.startsWith('sms');
  /** 这一轮不该接着去邮箱：问话或「没提交」交回给用户。 */
- const staysPut=sms||scenario==='email-question';
- const TASK=sms?'填好手机号 13800000000，提交前问我。':'帮我把备注填成「来自邀请」，注册的事接着办完。';
- const REPLY={sms:'已填好手机号 13800000000，要提交吗？','sms-done':'已填好手机号 13800000000，没有提交。','email-question':'备注已填好，接下来可以打开邮箱，要换个备注吗？',email:'备注已填好，注册已提交。确认邮件已发出，请确认邮件中的链接以完成注册。','email-ask':'备注已填好。要我帮你打开邮箱点确认链接吗？'}[scenario];
+ const staysPut=sms||scenario==='mail-sent'||scenario==='email-question';
+ const TASK=sms?'填好手机号 13800000000，提交前问我。':scenario==='mail-sent'?'把备注填成「来自邀请」，信发出去就行。':'帮我把备注填成「来自邀请」，注册的事接着办完。';
+ const REPLY={sms:'已填好手机号 13800000000，要提交吗？','sms-done':'已填好手机号 13800000000，没有提交。','mail-sent':'备注已填好，邮件已经发送给对方。','email-question':'备注已填好，接下来可以打开邮箱，要换个备注吗？',email:'备注已填好，注册已提交。确认邮件已发出，请确认邮件中的链接以完成注册。','email-ask':'备注已填好。要我帮你打开邮箱点确认链接吗？'}[scenario];
  const model=await startScriptedModel([
   {match:'[GOAL CHECK]',steps:[{text:'已经去邮箱看过了。'}]},
   {match:TASK,steps:[{tool:{name:'fill',args:sms?{target:'#phone',value:'13800000000'}:{target:'#note',value:'来自邀请'}}},{text:REPLY}]},
@@ -51,7 +53,7 @@ async function run(scenario:Scenario){
    if(req.method==='POST'&&body.includes(PREFIX)){
     const payload=JSON.parse(body);
     checks.push(JSON.parse(messageText(payload.messages.filter((m:any)=>m.role==='user').at(-1)?.content)));
-    const verdict=scenario==='sms-done'?{status:'done',remaining:'',items:[{text:'填手机号',done:true}]}:{status:'continue',remaining:'点登录提交',verificationSubject:'page',items:[{text:'填手机号',done:true},{text:'提交',done:false}]};
+    const verdict=scenario==='sms-done'||scenario==='mail-sent'?{status:'done',remaining:'',items:[{text:'填手机号',done:true}]}:{status:'continue',remaining:'点登录提交',verificationSubject:'page',items:[{text:'填手机号',done:true},{text:'提交',done:false}]};
     const reply={id:'check-local',object:'chat.completion',created:0,model:'demo-model',choices:[{index:0,message:{role:'assistant',content:JSON.stringify(verdict)},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}};
     if(payload.stream===false){res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(reply));return;}
     res.writeHead(200,{'content-type':'text/event-stream'});
@@ -66,7 +68,7 @@ async function run(scenario:Scenario){
  let submits=0;
  const site=createServer((req,res)=>{
   if(req.method==='POST'){submits++;res.end('ok');return;}
-  res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end(PAGES[sms?'sms':'email']);
+  res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end(PAGES[sms?'sms':scenario==='mail-sent'?'sent':'email']);
  });
  await new Promise<void>(r=>proxy.listen(0,'127.0.0.1',r));
  await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));
@@ -104,7 +106,7 @@ async function run(scenario:Scenario){
   if(staysPut){
    assert.equal(evidence.goalPrompts.length,0,'no continuation: the reply goes to the user');
    assert.ok(!evidence.goalChecks.some((c:any)=>c.status==='continue'),'the check must not end as continue');
-   const shown={sms:'要提交吗','sms-done':'没有提交','email-question':'要换个备注吗'}[scenario as 'sms'|'sms-done'|'email-question'];
+   const shown={sms:'要提交吗','sms-done':'没有提交','mail-sent':'邮件已经发送给对方','email-question':'要换个备注吗'}[scenario as 'sms'|'sms-done'|'mail-sent'|'email-question'];
    assert.ok(evidence.answers.some((t:string)=>t.includes(shown)),'the reply stays visible in the sidebar');
    assert.equal(submits,0,'nothing was submitted');
    assert.equal(evidence.pageUrl,siteUrl,'the assistant stayed on the login page');
