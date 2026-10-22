@@ -10,7 +10,7 @@ interface MethodRuntime {
 }
 
 /** This code is bundled with the extension. Websites and model arguments cannot supply its implementation. */
-const READ_X_POST = `(() => {
+const READ_X_POST = String.raw`(() => {
   const id = location.pathname.match(/^\/[^/]+\/status\/(\d+)(?:\/|$)/)?.[1];
   if (!id) return { status: 'unavailable', reason: 'Open a specific post first.', url: location.href };
   const articles = [...document.querySelectorAll('article[data-testid="tweet"]')];

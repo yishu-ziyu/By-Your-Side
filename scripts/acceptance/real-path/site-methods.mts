@@ -5,6 +5,7 @@ import { REPO, launchRealPath, requireHeadless, until, type Json } from "./harne
 import { startScriptedModel, type Rule, type TextStep } from "./scripted-model.mts";
 
 requireHeadless();
+const only = process.argv.find(arg => arg.startsWith("--case="))?.slice(7);
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-site-methods`);
 await mkdir(out, { recursive: true });
 const cases = [
@@ -17,7 +18,7 @@ const cases = [
   { id: "x-search", url: "https://x.com/", method: "x.search", query: "agent browser", expected: "agent browser" },
   { id: "wrong-site", url: "https://www.youtube.com/", method: "x.read-post", expected: "does not apply", unchanged: true },
   { id: "spoof-host", url: "https://youtube.com.evil.test/", method: "youtube.search", query: "不会执行", expected: "does not apply", unchanged: true },
-];
+].filter(c => !only || c.id === only);
 const replies = new Map<string, TextStep>();
 const textOf = (value: unknown): string => typeof value === "string" ? value : Array.isArray(value) ? value.map(part => typeof part?.text === "string" ? part.text : "").join("") : "";
 const rules: Rule[] = cases.map(c => {
