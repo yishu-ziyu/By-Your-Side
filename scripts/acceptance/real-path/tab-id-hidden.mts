@@ -21,7 +21,7 @@ await mkdir(out, { recursive: true });
 const ASK = "编号测试：把结果给我";
 let workTab = 0;
 
-const answer = () => `已在新标签页 ${workTab} 打开（tab 29979731），视频共 1234567 次播放。
+const answer = () => `已在新标签页 ${workTab} 打开（tab 29979731），视频共 1234567 次播放。页面在新标签页 ${workTab} 里（编号 ${workTab}）。
 <card title="打开的标签页">
 <table cols="编号|网址"><tr cells="${workTab}|https://example.com/" /></table>
 <button action="tab" target="${workTab}">切到练习页看</button>
@@ -53,6 +53,7 @@ try {
   check("c 普通的大数照常显示", seen.text.includes("1234567"), null);
   const husks = seen.text.match(/[（(]\s*(?:tab|标签页|标签)?\s*[)）]/gi) ?? [];
   check("d 去掉编号后不留「（tab）」「（）」这样的空括号", husks.length === 0, { husks });
+  check("e 去掉编号后不留空格和「（编号 ）」", seen.text.includes("页面在新标签页里") && !/（编号\s*）/.test(seen.text), { text: seen.text.slice(0, 160) });
   check("b 「切到…看」按钮仍带着那一页的编号", seen.button === String(workTab), { button: seen.button, workTab });
   await rp.evaluate(panel, `chrome.tabs.create({ url: "about:blank#other", active: true }).then(() => true)`);
   await rp.click(panel, ".msg.assistant [data-card-tab]");

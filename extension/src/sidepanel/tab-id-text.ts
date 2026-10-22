@@ -26,11 +26,11 @@ const TRAILING = new RegExp(`\\s*[·•|｜]\\s*${TAB_WORD}\\s*#?\\s*\\d{6,}`, "
 /** 「（tab 29979731）」整个括号只说了编号：连括号一起去掉，不留「（tab）」。 */
 const PAREN = new RegExp(`\\s*[（(]\\s*${TAB_WORD}\\s*[:：#]?\\s*\\d{6,}\\s*[)）]`, "g");
 
-/** 「（29979731）」括号里只有一个开着的标签页编号：同样连括号去掉。 */
-const BARE_PAREN = /\s*[（(]\s*(\d{6,12})\s*[)）]/g;
+/** 「（29979731）」「（编号 29979731）」括号里只有一个开着的标签页编号：同样连括号去掉。 */
+const BARE_PAREN = /\s*[（(]\s*(?:编号\s*[:：]?\s*)?(\d{6,12})\s*[)）]/g;
 
 /** 「新标签页 29979731」「tab 29979739」：留下「新标签页」，去掉编号。 */
-const AFTER_WORD = new RegExp(`(${TAB_WORD})\\s*#?\\s*\\d{6,}`, "g");
+const AFTER_WORD = new RegExp(`(${TAB_WORD})\\s*#?\\s*\\d{6,}(?:\\s+(?=[\\u4e00-\\u9fff，。、；：）]))?`, "g");
 
 export function hideTabIdText(text: string): string {
   const cleaned = text.replace(TRAILING, "").replace(PAREN, "").replace(AFTER_WORD, "$1");
