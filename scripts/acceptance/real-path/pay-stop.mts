@@ -209,6 +209,11 @@ try {
   await rp.screenshot(work, join(out, "f-page.png"));
 
   // ── g：js 工具里的脚本点付款按钮、提交结账表单 ──
+  // 先收起 d 留下的提示，g 看到的提示只能来自这次脚本。
+  const noteD = await payNote();
+  if (noteD?.ok) await userClick(noteD.ok);
+  await sleep(500);
+  const clearBeforeG = !(await payNote());
   from = toolTexts.length;
   await ask(ASK.g);
   await answered("G 完成。");
@@ -216,7 +221,7 @@ try {
   await sleep(1000);
   const toolG = toolTexts.slice(from);
   const noteG = await payNote();
-  check("g 脚本 click() 付款按钮、requestSubmit() 结账表单、click() shadow DOM 里的付款按钮：/pay、/checkout、/shadow-pay 不增加，网页圈出按钮，助手收到「不点付款按钮」", count("/pay") === 1 && count("/checkout") === 0 && count("/shadow-pay") === 0 && !!noteG?.ring && toolG.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), checkout: count("/checkout"), shadowPay: count("/shadow-pay"), note: noteG, tool: toolG });
+  check("g 脚本 click() 付款按钮、requestSubmit() 结账表单、click() shadow DOM 里的付款按钮：/pay、/checkout、/shadow-pay 不增加，网页圈出按钮，助手收到「不点付款按钮」", count("/pay") === 1 && count("/checkout") === 0 && count("/shadow-pay") === 0 && clearBeforeG && !!noteG?.ring && toolG.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), checkout: count("/checkout"), shadowPay: count("/shadow-pay"), clearBeforeG, note: noteG, tool: toolG });
   await rp.screenshot(work, join(out, "g-page.png"));
   await panelShot("g-panel.png");
 } catch (error) { check("流程完成", false, String(error)); } finally {
