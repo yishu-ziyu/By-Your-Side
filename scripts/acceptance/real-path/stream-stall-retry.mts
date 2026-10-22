@@ -1,5 +1,5 @@
 /**
- * 模型回复写了几个字就断流（连接还开着、不再出字）：助手很快自己重发，用户不用干等到连接被服务端掐断。
+ * 模型回复写了几个字就不再推进（连接仍发空事件）：助手很快自己重发，用户不用干等到连接被服务端掐断。
  * 只装扩展、隔离构建、本机脚本模型；前面一层代理让第一次主任务回复写出几个字后挂住 120 秒再掐断。
  *   npx tsx scripts/acceptance/real-path/stream-stall-retry.mts --headless
  *   a) 发出后 60 秒内出现完整回答。
@@ -30,14 +30,15 @@ const proxy = createServer(async (req, res) => {
 
   for await (const chunk of req) body += String(chunk);
 
-  // 第一次带工具表的主任务请求：写出半句后不再出字，到时掐断连接。
+  // 空 delta 经过供应商原始事件钩子，但没有推进正文；连接活着不等于回答在推进。
   if (!stalled && req.method === "POST" && body.includes(TASK) && body.includes('"tools"')) {
     stalled = true;
     res.writeHead(200, { "content-type": "text/event-stream" });
     const chunk = (delta: Json) => `data: ${JSON.stringify({ id: "stall", object: "chat.completion.chunk", created: 0, model: "fixture", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`;
     res.write(chunk({ role: "assistant", content: HALF }));
+    const heartbeat = setInterval(() => res.write(chunk({})), 1_000);
     const timer = setTimeout(() => res.destroy(), HOLD_MS);
-    res.on("close", () => clearTimeout(timer));
+    res.on("close", () => { clearTimeout(timer); clearInterval(heartbeat); });
 
     return;
   }
@@ -61,7 +62,8 @@ try {
   await rp.typeText(panel, TASK);
   const sentAt = Date.now();
   await rp.pressEnter(panel);
-  const answered = await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(ANSWER)}))`) || undefined, HOLD_MS + 30_000, "回答出现").then(() => true, () => false);
+  console.log("已发出：服务每秒发空事件；等待侧栏在 60 秒内恢复完整回答。");
+  const answered = await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(ANSWER)}))`) || undefined, 65_000, "回答出现").then(() => true, () => false);
   const waitedMs = Date.now() - sentAt;
   await rp.screenshot(panel, join(out, "answer.png"));
   check("a 断流后 60 秒内出现完整回答", answered && waitedMs < 60_000, { answered, waitedMs, stalled });
