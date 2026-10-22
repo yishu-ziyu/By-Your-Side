@@ -202,7 +202,7 @@ async function runCase(c: Case) {
     evidence.settingsRowBefore = row;
     assert.equal(row.value, "", "备用模型默认是「不用备用」");
     assert.equal(row.selectedText, "不用备用");
-    assert.ok(row.groups.every(label => /阶跃星辰/.test(label)), `只列已填 key 的服务商（看到 ${row.groups.join("、")}）`);
+    assert.deepEqual(row.groups.toSorted(), ["阶跃星辰", "自定义地址"].toSorted(), "只列本用例已配置的两个服务商");
 
     if (c.backup) {
       await rp.evaluate(settings, `(() => { const s = document.querySelector("#backup-model"); s.value = ${JSON.stringify(optionValue)}; s.dispatchEvent(new Event("change")); return true; })()`);
