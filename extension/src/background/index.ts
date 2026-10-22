@@ -1664,11 +1664,14 @@ function emitLocalStatus(state: AgentRunState): void {
   broadcastVisibleServer({ type: "status", state });
 }
 
-/** 按页接管：这页成员已开始的写操作结束后才显示「现在归你」；卡住的那一步不再等，它的结果按未知报给宿主。 */
+/**
+ * 按页接管：这页成员已开始的写操作结束后才显示「现在归你」。
+ * 卡住的那一步取消不了，只能不再等它；页面可能还会被它改，所以要如实告诉用户。它的结果由宿主的工具期限记成未知。
+ */
 async function drainPage(sessionIds: string[]): Promise<{ generation: number; superseded: boolean }> {
   const generation = gate.gen;
 
-  if (!await gate.drainSessions(sessionIds, CONTROL_TIMEOUT_MS)) console.error("[sideagent] 按页接管时有一步写操作没在限时内结束，先交给用户");
+  if (!await gate.drainSessions(sessionIds, CONTROL_TIMEOUT_MS)) emitNotice("助手手上的一步超过 10 秒还没结束，这一页可能还会被它改动。");
 
   return { generation, superseded: gate.gen !== generation };
 }

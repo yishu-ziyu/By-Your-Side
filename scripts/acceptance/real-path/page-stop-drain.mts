@@ -5,6 +5,7 @@
  *
  * 助手跑一段约 4 秒的脚本：分 8 次往备注框里写字，最后向本机测试站点发一次保存。写到一半时用真鼠标点页面右边缘胶囊上的停止键。
  * 判据只看用户看得到的：「现在归你」出现以后，备注框不再被改、站点不再收到保存；点「继续」后助手接着做完。
+ * 第二段跑一段约 25 秒的脚本再点停：那一步取消不了，停止只等 10 秒左右就交给用户，不卡在「正在停住」，侧栏如实说页面可能还会变。
  * 页面和测试脚本在同一台机器上，所以页面里的 Date.now() 和这里的可以直接比先后。
  * 证据在 out/acceptance/page-stop-drain/result.json。
  */
@@ -36,15 +37,17 @@ await new Promise<void>(r => site.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const GOAL = "把备注慢慢写完再保存";
-const SCRIPT = `(async () => {
+const LONG_GOAL = "把长备注慢慢写完再保存";
+const script = (parts: number) => `(async () => {
   const note = document.querySelector("#note");
-  for (let i = 1; i <= 8; i++) { note.value += "第" + i + "段；"; window.writeLog.push(Date.now()); await new Promise(r => setTimeout(r, 500)); }
+  for (let i = 1; i <= ${parts}; i++) { note.value += "第" + i + "段；"; window.writeLog.push(Date.now()); await new Promise(r => setTimeout(r, 500)); }
   await fetch("/save");
   return "saved";
 })()`;
 
 const model = await startScriptedModel([
-  { match: GOAL, steps: [{ tool: { name: "js", args: { code: SCRIPT } }, delayMs: 300 }, { text: "备注写好并保存了。" }] },
+  { match: GOAL, steps: [{ tool: { name: "js", args: { code: script(8) } }, delayMs: 300 }, { text: "备注写好并保存了。" }] },
+  { match: LONG_GOAL, steps: [{ tool: { name: "js", args: { code: script(50) } }, delayMs: 300 }, { text: "长备注写好了。" }] },
 ]);
 
 const rp = await launchRealPath();
@@ -100,28 +103,36 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60000, "侧栏就绪");
   await rp.cdp.send("Page.bringToFront", {}, work);
-  await rp.click(panel, "#input"); await rp.typeText(panel, GOAL); await rp.pressEnter(panel);
+  const ask = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); };
 
-  await until(async () => Number(await rp.evaluate(work, "window.writeLog.length")) >= 2 || null, 30000, "脚本开始往备注里写");
-  const stopTab = await until(async () => { const t = await tab(); return t?.shown && t.end === "stop" && t.button ? t : null; }, 5000, "胶囊上有停止键").catch(() => null);
-  check("脚本在写时胶囊上有停止键", !!stopTab, asJson(stopTab));
+  /** 脚本写到第二段时点胶囊上的停止键，等到「现在归你」，返回点击和出现的时刻。 */
+  const stopMidway = async (label: string, waitMs: number) => {
+    const before = Number(await rp.evaluate(work, "window.writeLog.length"));
+    await until(async () => Number(await rp.evaluate(work, "window.writeLog.length")) >= before + 2 || null, 30000, `${label}：脚本开始往备注里写`);
+    const stopTab = await until(async () => { const t = await tab(); return t?.shown && t.end === "stop" && t.button ? t : null; }, 5000, "胶囊上有停止键").catch(() => null);
+    check(`${label}：脚本在写时胶囊上有停止键`, !!stopTab, asJson(stopTab));
 
-  if (!stopTab) throw new Error("没有停止键可点");
-  const clickedAt = Date.now();
-  await mouseClick(stopTab.button!);
+    if (!stopTab) throw new Error("没有停止键可点");
+    const clickedAt = Date.now();
+    await mouseClick(stopTab.button!);
+    let handAt: number | null = null;
 
-  let handAt: number | null = null;
+    while (Date.now() - clickedAt < waitMs) {
+      const t = await tab();
 
-  while (Date.now() - clickedAt < 15000) {
-    const t = await tab();
+      if (t) timeline.push({ at: Date.now() - clickedAt, tone: t.tone, a: t.a, end: t.end });
 
-    if (t) timeline.push({ at: Date.now() - clickedAt, tone: t.tone, a: t.a, end: t.end });
+      if (t?.a === "现在归你") { handAt = Date.now(); break; }
+      await sleep(40);
+    }
 
-    if (t?.a === "现在归你") { handAt = Date.now(); break; }
-    await sleep(40);
-  }
+    check(`${label}：点停后出现「现在归你」`, handAt !== null, asJson({ ms: handAt === null ? null : handAt - clickedAt }));
 
-  check("点停后出现「现在归你」", handAt !== null, asJson({ ms: handAt === null ? null : handAt - clickedAt }));
+    return { clickedAt, handAt };
+  };
+
+  await ask(GOAL);
+  const { handAt } = await stopMidway("4 秒的脚本", 15000);
 
   if (handAt === null) throw new Error("没等到现在归你");
   // 留足时间：没修时脚本还要再写约 3 秒、再发保存。
@@ -141,10 +152,20 @@ try {
     const done = await until(async () => (await rp.evaluate(panel, '!!document.querySelector("#messages")?.innerText.includes("备注写好并保存了")')) || null, 30000, "交还后接着做完").catch(() => null);
     check("点「继续」交还后，助手接着做完", !!done, asJson({ done: !!done }));
   }
+
+  // ── 那一步一直不结束：等到上限就交给用户，并如实说页面可能还会变 ──
+  timeline.push({ at: -1, tone: null, a: "第二段", end: null });
+  await ask(LONG_GOAL);
+  const long = await stopMidway("25 秒的脚本", 30000);
+  const waited = long.handAt === null ? null : long.handAt - long.clickedAt;
+  // 上限 10 秒；负载高时页面上的显示会晚一些，但远早于脚本写完的约 24 秒。
+  check("那一步一直不结束时，停止等到上限就交给用户，不卡在「正在停住」", waited !== null && waited >= 8000 && waited <= 18000, asJson({ waitedMs: waited }));
+  const said = await until(async () => (await rp.evaluate(panel, '!!document.body.innerText.includes("这一页可能还会被它改动")')) || null, 8000, "侧栏提示").catch(() => null);
+  check("侧栏如实说「这一页可能还会被它改动」", !!said, asJson({ said: !!said }));
 } catch (error) {
   check("流程完成", false, String(error));
 } finally {
-  await writeFile(join(out, "result.json"), JSON.stringify({ checks, timeline, saves, notCovered: ["真实网站", "真实模型", "两个窗口同时开侧栏", "写操作超过 10 秒仍不结束时的处理"], modelRequests: model.requests }, null, 2));
+  await writeFile(join(out, "result.json"), JSON.stringify({ checks, timeline, saves, notCovered: ["真实网站", "真实模型", "两个窗口同时开侧栏", "超时后那一步仍会继续改页面（取消不了，只如实提示）"], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(r => site.close(() => r()));
 }
 
