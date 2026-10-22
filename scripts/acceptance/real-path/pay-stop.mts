@@ -8,7 +8,7 @@
  *   c) 「下一步」「提交评论」照常点到（服务器各 1 条），「支付宝」单选项照常选中。
  *   d) 网页脚本程序（browser_run）去点付款按钮：被拒绝，/pay 不增加。
  *   f) 结账表单里点进优惠码框再按回车（回车会提交带「立即支付」的表单）：没有按，/checkout 0 条，助手收到「可能直接付款」。
- *   g) js 工具里的脚本直接 click() 付款按钮、requestSubmit() 结账表单：都被拦下，/pay、/checkout 不增加；网页圈出按钮；助手收到「不点付款按钮」。
+ *   g) js 工具里的脚本直接 click() 付款按钮、requestSubmit() 结账表单、click() 开放 shadow DOM 里的「立即支付」：都被拦下，/pay、/checkout、/shadow-pay 不增加；网页圈出按钮；助手收到「不点付款按钮」。
  * 失败方式：让 isPayLabel 永远返回 false，a 的服务器收到 /pay（反例结果见验收文件）；f、g 在修复前的构建上服务器各收到请求。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -33,8 +33,10 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>报
 <p><button id="pay" type="button" data-post="/pay">${PAY_LABEL}</button></p>
 <p><button id="next" type="button" data-post="/next">下一步</button> <button id="comment" type="button" data-post="/comment">提交评论</button></p>
 <form id="checkout"><input id="coupon" name="coupon" placeholder="优惠码"> <button id="checkout-pay" type="submit">立即支付 ¥98.00</button></form>
+<div id="shadow-host"></div>
 <output id="status"></output>
-<script>document.querySelector('#checkout').addEventListener('submit', e => { e.preventDefault(); fetch('/checkout', { method: 'POST', body: 'x' }); });
+<script>{ const b = document.createElement('button'); b.textContent = '立即支付'; b.addEventListener('click', () => fetch('/shadow-pay', { method: 'POST', body: 'x' })); document.querySelector('#shadow-host').attachShadow({ mode: 'open' }).append(b); }
+document.querySelector('#checkout').addEventListener('submit', e => { e.preventDefault(); fetch('/checkout', { method: 'POST', body: 'x' }); });
 document.querySelectorAll('[data-post]').forEach(b => b.addEventListener('click', async () => { await fetch(b.dataset.post, { method: 'POST', body: 'x' }); document.querySelector('#status').textContent = b.textContent; }));</script></body></html>`;
 
 const posts: Array<{ path: string; at: number }> = [];
@@ -75,7 +77,7 @@ const model = await startScriptedModel([
     { tool: { name: "press_key", args: { key: "Enter" } } },
     { text: "F 完成。" },
   ] },
-  { match: ASK.g, steps: [{ tool: { name: "js", args: { code: "(() => { document.querySelector('#pay').click(); document.querySelector('#checkout').requestSubmit(); return 'ran'; })()" } } }, { text: "G 完成。" }] },
+  { match: ASK.g, steps: [{ tool: { name: "js", args: { code: "(() => { document.querySelector('#pay').click(); document.querySelector('#checkout').requestSubmit(); document.querySelector('#shadow-host').shadowRoot.querySelector('button').click(); return 'ran'; })()" } } }, { text: "G 完成。" }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -214,7 +216,7 @@ try {
   await sleep(1000);
   const toolG = toolTexts.slice(from);
   const noteG = await payNote();
-  check("g 脚本 click() 付款按钮、requestSubmit() 结账表单：/pay、/checkout 不增加，网页圈出按钮，助手收到「不点付款按钮」", count("/pay") === 1 && count("/checkout") === 0 && !!noteG?.ring && toolG.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), checkout: count("/checkout"), note: noteG, tool: toolG });
+  check("g 脚本 click() 付款按钮、requestSubmit() 结账表单、click() shadow DOM 里的付款按钮：/pay、/checkout、/shadow-pay 不增加，网页圈出按钮，助手收到「不点付款按钮」", count("/pay") === 1 && count("/checkout") === 0 && count("/shadow-pay") === 0 && !!noteG?.ring && toolG.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), checkout: count("/checkout"), shadowPay: count("/shadow-pay"), note: noteG, tool: toolG });
   await rp.screenshot(work, join(out, "g-page.png"));
   await panelShot("g-panel.png");
 } catch (error) { check("流程完成", false, String(error)); } finally {

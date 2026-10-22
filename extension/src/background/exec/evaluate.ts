@@ -64,19 +64,24 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
   const label = (el: Element) => btnName(el).trim().replace(/\s+/g, " ");
   // 不是按钮标签的付款控件（写成 div 的「立即支付」）按它自己的短文字认；大块容器的整段文字不算按钮名。
   const payTarget = (el: Element | null | undefined) => { if (!el) return null; const b = actionable(el); if (b) return isPay(label(b)) ? b : null; const own = label(el); return own.length <= 40 && isPay(own) ? el : null; };
-  // 表单外用 form 属性关联的按钮在 elements 里。
-  const payIn = (form: HTMLFormElement | null | undefined) => form ? [...form.elements, ...form.querySelectorAll("button,[role=button],input[type=submit],input[type=button],input[type=image]")].find(b => isPay(label(b))) ?? null : null;
+  // 只看能提交的控件：输入框里的字（「付款失败，请帮我处理」）不是按钮名。表单外用 form 属性关联的按钮在 elements 里。
+  const SUBMITS = "button,[role=button],input[type=submit],input[type=button],input[type=image]";
+  const payIn = (form: HTMLFormElement | null | undefined) => form ? [...[...form.elements].filter(el => el.matches(SUBMITS)), ...form.querySelectorAll(SUBMITS)].find(b => isPay(label(b))) ?? null : null;
+  // 事件到 window 时，开放 shadow DOM 里的目标被换成宿主；真正的目标在 composedPath 的第一项。
+  const real = (e: Event) => { const first = e.composedPath()[0]; return (first instanceof Element ? first : (first as Node | undefined)?.parentElement ?? e.target) as Element; };
   const paid = new WeakSet<Element>();
+  const PRESS = ["pointerdown", "mousedown", "touchstart", "pointerup", "mouseup", "touchend"];
   const holdPay = (e: Event | null, el: Element) => { if (e) stop(e); if (paid.has(el)) return; paid.add(el); blocked.push({ route: "pay", label: label(el).slice(0, 40), content: "", rect: rectOf(el) }); };
   // 有的网站在按下而不是点击时就提交：脚本合成的按下、抬起落在付款控件上也拦。
-  const onPress = (e: Event) => { if (e.isTrusted) return; const p = payTarget(e.target as Element); if (p) holdPay(e, p); };
-  const onClick = (e: MouseEvent) => { if (e.isTrusted) return; const p = payTarget(e.target as Element); if (p) { holdPay(e, p); return; } const b = actionable(e.target as Element); if (b && isSend(btnName(b))) { stop(e); record({ route: "script", label: btnName(b).trim().slice(0, 40), content: draftNear(b), rect: rectOf(b) }, () => (b as HTMLElement).click()); } };
+  const onPress = (e: Event) => { if (e.isTrusted) return; const p = payTarget(real(e)); if (p) holdPay(e, p); };
+  const onClick = (e: MouseEvent) => { if (e.isTrusted) return; const p = payTarget(real(e)); if (p) { holdPay(e, p); return; } const b = actionable(e.target as Element); if (b && isSend(btnName(b))) { stop(e); record({ route: "script", label: btnName(b).trim().slice(0, 40), content: draftNear(b), rect: rectOf(b) }, () => (b as HTMLElement).click()); } };
   const onSubmit = (e: SubmitEvent) => { if (e.isTrusted && !fromScript()) return; const form = e.target as HTMLFormElement; const pay = e.submitter ? payTarget(e.submitter) : payIn(form); if (pay) { holdPay(e, pay); return; } const sub = e.submitter && isSend(btnName(e.submitter)) ? e.submitter : !e.submitter ? sendIn(form) : null; if (sub) { stop(e); record({ route: "script", label: btnName(sub).trim().slice(0, 40), content: draftNear(sub), rect: rectOf(sub) }, () => form.requestSubmit(e.submitter as HTMLElement ?? undefined)); } };
+  const enterPays = (t: Element | null) => t ? payTarget(t) ?? (t.tagName === "TEXTAREA" || (t as HTMLElement).isContentEditable ? null : payIn((t as HTMLInputElement).form ?? t.closest("form"))) : null;
   const onKey = (e: KeyboardEvent) => {
     if (e.isTrusted || e.key !== "Enter" || e.shiftKey) return;
-    const t = e.target as HTMLElement;
-    const pay = payTarget(t) ?? (t?.tagName === "TEXTAREA" || t?.isContentEditable ? null : payIn((t as HTMLInputElement)?.form ?? t?.closest?.("form")));
+    const pay = enterPays(real(e));
     if (pay) { holdPay(e, pay); return; }
+    const t = e.target as HTMLElement;
     const multi = t?.tagName === "TEXTAREA" || t?.isContentEditable; const sb = sendIn(t?.closest?.("form"));
     if (!((multi && draftNear(t)) || sb)) return;
     stop(e);
@@ -85,6 +90,21 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
     record({ route: "enter", label: sb ? btnName(sb).trim().slice(0, 40) : "回车发送", content: draftNear(t), rect: rectOf(sb ?? t) }, () => { for (const type of ["keydown", "keypress", "keyup"]) t.dispatchEvent(new KeyboardEvent(type, init)); });
   };
   const origSubmit = HTMLFormElement.prototype.submit;
+  const origRequestSubmit = HTMLFormElement.prototype.requestSubmit;
+  const origClick = HTMLElement.prototype.click;
+  const origDispatch = EventTarget.prototype.dispatchEvent;
+  // shadow DOM 里的点击、不冒泡出来的合成事件和表单提交到不了 window 上的监听：在脚本调用的入口上就认付款。
+  HTMLElement.prototype.click = function (this: HTMLElement) { const p = fromScript() ? payTarget(this) : null; if (p) { holdPay(null, p); return; } return origClick.call(this); };
+  HTMLFormElement.prototype.requestSubmit = function (this: HTMLFormElement, submitter?: HTMLElement | null) { const p = fromScript() ? (submitter ? payTarget(submitter) : payIn(this)) : null; if (p) { holdPay(null, p); return; } return origRequestSubmit.call(this, submitter); };
+  EventTarget.prototype.dispatchEvent = function (this: EventTarget, ev: Event) {
+    if (this instanceof Element && !ev.isTrusted && fromScript()) {
+      const p = ev.type === "click" || PRESS.includes(ev.type) ? payTarget(this)
+        : ev.type === "submit" ? payIn(this as HTMLFormElement)
+        : (ev as KeyboardEvent).key === "Enter" && !(ev as KeyboardEvent).shiftKey && /^key/.test(ev.type) ? enterPays(this) : null;
+      if (p) { holdPay(null, p); return false; }
+    }
+    return origDispatch.call(this, ev);
+  };
   const origFetch = window.fetch;
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
@@ -113,7 +133,6 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
     return origSend.call(this, body);
   };
   navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null) { if (sendy(String(url)) && fromScript()) { record({ route: "request", label: `POST ${where(String(url))}`.slice(0, 60), content: typeof data === "string" ? data.slice(0, 120) : "", rect: null }, () => origBeacon.call(navigator, url, data)); return false; } return origBeacon.call(navigator, url, data); };
-  const PRESS = ["pointerdown", "mousedown", "touchstart", "pointerup", "mouseup", "touchend"];
   for (const t of PRESS) window.addEventListener(t, onPress, true);
   window.addEventListener("click", onClick, true);
   window.addEventListener("submit", onSubmit, true);
@@ -123,7 +142,7 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
     window.removeEventListener("click", onClick, true);
     window.removeEventListener("submit", onSubmit, true);
     for (const t of ["keydown", "keypress", "keyup"]) window.removeEventListener(t, onKey as EventListener, true);
-    HTMLFormElement.prototype.submit = origSubmit; window.fetch = origFetch; XMLHttpRequest.prototype.open = origOpen; XMLHttpRequest.prototype.send = origSend; navigator.sendBeacon = origBeacon;
+    HTMLFormElement.prototype.submit = origSubmit; HTMLFormElement.prototype.requestSubmit = origRequestSubmit; HTMLElement.prototype.click = origClick; EventTarget.prototype.dispatchEvent = origDispatch; window.fetch = origFetch; XMLHttpRequest.prototype.open = origOpen; XMLHttpRequest.prototype.send = origSend; navigator.sendBeacon = origBeacon;
     delete w.__sideagentSendBlock;
     Object.defineProperty(w, "__sideagentSendHeld", { value: held.slice(0, 1), configurable: true, enumerable: false });
     return blocked;

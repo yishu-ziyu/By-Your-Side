@@ -2702,12 +2702,16 @@ function keyWouldPayInPage(isPay: (text: string) => boolean, enter: boolean): st
     region = el.parentElement;
     for (let n = 1; n < 3 && region?.parentElement && region.parentElement !== el.ownerDocument.body; n++) region = region.parentElement;
   }
-  const nodes = [...(form ? [...form.elements] : []), ...(region && region !== el.ownerDocument.body && region !== el.ownerDocument.documentElement ? region.querySelectorAll("*") : [])];
+  // 只看能点的控件：标题、说明文字（「付款记录」）和输入框里的字都不是按钮。
+  const BUTTONS = 'button,[role="button"],input[type="submit"],input[type="button"],input[type="image"]';
+  const nodes = [...(form ? [...form.elements] : []), ...(region && region !== el.ownerDocument.body && region !== el.ownerDocument.documentElement ? region.querySelectorAll(`${BUTTONS},a,[onclick]`) : [])];
   for (const node of nodes) {
     if (node === el) continue;
-    // 大块容器的整段文字不是按钮名：和「填完再回车」一样只看 40 字以内的名字。
+    const button = node.matches(BUTTONS);
+    if (!button && !node.matches("a,[onclick]")) continue;
+    // 真按钮按完整名字判（长的「立即支付 …商品说明」也是付款）；链接和带点击的块可能包着整张商品卡，只看 40 字以内的名字。
     const name = nameOf(node);
-    if (name && name.length <= 40 && isPay(name)) return name;
+    if (name && (button || name.length <= 40) && isPay(name)) return name.slice(0, 40);
   }
   return null;
 }
