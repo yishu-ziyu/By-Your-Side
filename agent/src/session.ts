@@ -62,7 +62,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { asksUser, checkGoal, goalReadEvidence, defersWork, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_CONTINUE_WITHIN_MS, GOAL_GATE_WAIT_MS, newReadIndex, pageAwaitsEmailStep, readWords, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, goalReadEvidence, defersWork, emailStepIsNext, gaveUpWithoutChange, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, GOAL_CONTINUE_WITHIN_MS, GOAL_GATE_WAIT_MS, newReadIndex, readWords, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerificationTarget, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -2965,8 +2965,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (gaveUpWithoutChange({ reply: lastReply, partial, pageAtNudge: this.nudgePage?.runId === runId ? this.nudgePage.page : null, pageNow })) {
         verdict = { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
-      } else if (pageAwaitsEmailStep(pageText)) {
-        // 用户已定：为目标去已登录的邮箱不问。助手顺口问「要我帮你打开 Gmail 吗？」也照样去，不停下等用户。
+      } else if (emailStepIsNext(pageText, lastReply)) {
         // 点名是哪个网站的确认邮件：收件箱里常有别的网站的同类邮件。
         const site = snapshot?.goalPage ? (snapshot.goalPage.title.split(/\s[—–|-]\s/)[0]!.trim() || new URL(snapshot.goalPage.url).hostname) : "";
         verdict = { status: "continue", remaining: site ? `去邮箱找「${site.slice(0, 40)}」的确认邮件，点里面的确认链接（别点其他网站的）` : "去邮箱打开确认邮件，点里面的确认链接" };
