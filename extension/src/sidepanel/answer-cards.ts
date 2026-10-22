@@ -101,15 +101,15 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
-      return `<div class="gc-stats" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${esc(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(s.value)}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-stats" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(s.value)}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
     case "steps":
-      return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${esc(s.title)}</div>${s.detail ? `<div class="d">${t(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
+      return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${t(s.title)}</div>${s.detail ? `<div class="d">${t(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
     case "options":
-      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"${fromAttrs(o.from)}><div class="gc-row"><span class="name">${esc(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml(o.value, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${t(o.meta)}</span>` : ""}</div><div class="gc-why">${t(o.why)}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"${fromAttrs(o.from)}><div class="gc-row"><span class="name">${t(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml(o.value, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${t(o.meta)}</span>` : ""}</div><div class="gc-why">${t(o.why)}</div></div>`)).join("")}${extra}</div>`;
     case "table":
       return `<table class="gc-table" data-gc-key="b${i}"><thead><tr>${b.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${b.rows.map((r, j) => keyed(key(j), `<tr${r.tag ? ' class="best"' : ""}${fromAttrs(r.from)}>${r.cells.map((c) => cellHtml(c, "td")).join("")}</tr>`)).join("")}${extra}</tbody></table>`;
     case "checks":
-      return `<ul class="gc-checks" data-gc-key="b${i}">${b.items.map((c, j) => keyed(key(j), `<li class="gc-check"><label><input type="checkbox"><span><span class="t">${esc(c.text)}</span>${c.note ? `<span class="d">${t(c.note)}</span>` : ""}</span></label></li>`)).join("")}${extra}</ul>`;
+      return `<ul class="gc-checks" data-gc-key="b${i}">${b.items.map((c, j) => keyed(key(j), `<li class="gc-check"><label><input type="checkbox"><span><span class="t">${t(c.text)}</span>${c.note ? `<span class="d">${t(c.note)}</span>` : ""}</span></label></li>`)).join("")}${extra}</ul>`;
     case "callout":
       return keyed(`b${i}`, `<div class="gc-callout ${b.tone}">${t(b.text)}</div>`);
     case "diagram": {
@@ -163,9 +163,9 @@ function cardHtml(card: Card): string {
   // 出处多半是整张卡共用一句：合成一格，不逐行重复；「指给我看」挂在那一项的名字下面。
   const shared = rows.every((r) => r.source === rows[0]?.source);
   const sourceCell = (r: (typeof rows)[number], i: number) => (shared && i > 0 ? "" : `<td class="s"${shared ? ` rowspan="${rows.length}"` : ""}>${r.source ? esc(r.source) : "—"}</td>`);
-  const evidence = rows.length ? keyed("ev", `<div class="gc-evidence" hidden><table><thead><tr><th>项</th><th>结果</th><th>怎么算</th><th>出处</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${esc(r.label)}${r.tab ? `<button type="button" class="gc-btn gc-point" data-card-tab="${esc(r.tab)}">指给我看</button>` : ""}</td>${cellHtml(r, "td", ' class="r"')}<td class="f">${r.formula ? formulaHtml(r.formula, r.expr) : "—"}</td>${sourceCell(r, i)}</tr>`).join("")}</tbody></table></div>`) : "";
+  const evidence = rows.length ? keyed("ev", `<div class="gc-evidence" hidden><table><thead><tr><th>项</th><th>结果</th><th>怎么算</th><th>出处</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${textHtml(r.label, card.values)}${r.tab ? `<button type="button" class="gc-btn gc-point" data-card-tab="${esc(r.tab)}">指给我看</button>` : ""}</td>${cellHtml(r, "td", ' class="r"')}<td class="f">${r.formula ? formulaHtml(r.formula, r.expr) : "—"}</td>${sourceCell(r, i)}</tr>`).join("")}</tbody></table></div>`) : "";
   const faces = rows.length ? keyed("faces", `<div class="gc-faces" role="group" aria-label="结论 / 依据">${FACE_BUTTONS}</div>`) : "";
-  const head = card.title ? `<div class="gc-head${faces ? " has-faces" : ""}"><div class="gc-title">${esc(card.title)}</div>${card.sub ? `<div class="gc-sub">${textHtml(card.sub, card.values)}</div>` : ""}</div>` : faces ? '<div class="gc-head has-faces" data-gc-key="head"></div>' : "";
+  const head = card.title ? `<div class="gc-head${faces ? " has-faces" : ""}"><div class="gc-title">${textHtml(card.title, card.values)}</div>${card.sub ? `<div class="gc-sub">${textHtml(card.sub, card.values)}</div>` : ""}</div>` : faces ? '<div class="gc-head has-faces" data-gc-key="head"></div>' : "";
 
   // 只有写完的卡片带状态键：写到一半时原文还在变，摘要也跟着变。
   return `<div class="gen-card"${card.closed ? ` data-gc-card="${card.key}"` : ""}>${head}${body ? `<div class="gc-body" data-gc-key="body">${body}</div>` : ""}${evidence}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}${faces}</div>`;

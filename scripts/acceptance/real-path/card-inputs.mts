@@ -26,7 +26,7 @@ const ANSWER = `按 {=months} 算，一共花 {=total}。共 {=months} 个月，
 <stat label="Notion" value="=68*months" unit="¥" note="月付" />
 <stat label="Duolingo" value="398" unit="¥" />
 <stat id="total" label="合计" value="=68*months+398" unit="¥" />
-<stat label="每人" value="=(68*months+398)/people" unit="¥" note="{=total} 由 {=people}分" />
+<stat label="每人（{=people}）" value="=(68*months+398)/people" unit="¥" note="{=total} 由 {=people}分" />
 <option name="Notion 年付" value="=48*months" unit="¥" why="折合每月 48" />
 <table cols="订阅|费用"><tr cells="Notion|=68*months" /><tr cells="Duolingo|398" /></table>
 <checklist><check text="取消 Calm" /><check text="Notion 改年付" /></checklist>
@@ -46,7 +46,7 @@ let error: string | null = null;
 
 const evidence: Record<string, unknown> = {};
 
-type Seen = { months: string; people: string; slider: string | null; monthsSlider: boolean; stats: string[]; notes: string[]; formula: string; option: string; cells: string[]; evidence: string[]; prose: string; checks: boolean[]; otherChecks: boolean[] };
+type Seen = { months: string; people: string; slider: string | null; monthsSlider: boolean; stats: string[]; notes: string[]; labels: string[]; formula: string; option: string; cells: string[]; evidence: string[]; prose: string; checks: boolean[]; otherChecks: boolean[] };
 
 /** 第一张卡和它所在回答的现状。 */
 const SEEN = `(() => {
@@ -60,6 +60,7 @@ const SEEN = `(() => {
     stats: [...card.querySelectorAll(".gc-stat .v")].map(v => v.textContent),
     formula: card.querySelectorAll(".gc-stat .n")[2]?.textContent ?? "",
     notes: [...card.querySelectorAll(".gc-stat .n")].map(n => n.textContent),
+    labels: [...card.querySelectorAll(".gc-stat .k")].map(n => n.textContent),
     option: card.querySelector(".gc-option .price")?.textContent,
     cells: [...card.querySelectorAll(".gc-table td")].map(td => td.textContent),
     evidence: [...card.querySelectorAll(".gc-evidence td.r")].map(td => td.textContent),
@@ -147,6 +148,7 @@ try {
   assert.ok(people > 2 && slid.slider === slid.people, `R2: slider moves the number: ${JSON.stringify(slid)}`);
   assert.equal(slid.stats[3], yuan(Math.round(1350 / people * 100) / 100), "R2: per person follows the slider");
   assert.ok(slid.notes[3]?.startsWith(`¥1,350 由 ${people} 人分`), `R2: note follows the slider: ${slid.notes[3]}`);
+  assert.equal(slid.labels[3], `每人（${people} 人）`, `R2: label follows the slider: ${slid.labels[3]}`);
 
   // R3：勾第一项，重开侧栏，调过的数和勾选都还在；另一张卡不受影响。
   await tap(".gen-card .gc-check:first-child label");

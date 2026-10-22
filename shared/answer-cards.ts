@@ -634,13 +634,13 @@ export function answerMarkdown(text: string): string {
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
   const values = new Map(cards.flatMap((c) => [...c.values]).reverse());
   const t = (text: string) => fillRefs(text, values, (v) => v, "…");
-  const md = (c: Card) => [c.title ? `**${c.title}**${c.sub ? `（${t(c.sub)}）` : ""}` : "", ...c.blocks.map((b) => {
+  const md = (c: Card) => [c.title ? `**${t(c.title)}**${c.sub ? `（${t(c.sub)}）` : ""}` : "", ...c.blocks.map((b) => {
     switch (b.kind) {
-      case "stats": return b.items.map((s) => `- ${s.label}：${s.value}${s.formula ? `（${s.formula}）` : ""}${s.note ? `，${t(s.note)}` : ""}${s.tag ? ` · ${s.tag}` : ""}`).join("\n");
-      case "steps": return b.items.map((s, i) => `${i + 1}. ${s.title}${s.detail ? `：${t(s.detail)}` : ""}`).join("\n");
-      case "options": return b.items.map((o) => `- ${o.name}${o.pick ? "（推荐）" : ""}${o.value ? ` ${o.value.value}` : ""}${o.meta ? `，${t(o.meta)}` : ""}：${t(o.why)}`).join("\n");
+      case "stats": return b.items.map((s) => `- ${t(s.label)}：${s.value}${s.formula ? `（${s.formula}）` : ""}${s.note ? `，${t(s.note)}` : ""}${s.tag ? ` · ${s.tag}` : ""}`).join("\n");
+      case "steps": return b.items.map((s, i) => `${i + 1}. ${t(s.title)}${s.detail ? `：${t(s.detail)}` : ""}`).join("\n");
+      case "options": return b.items.map((o) => `- ${t(o.name)}${o.pick ? "（推荐）" : ""}${o.value ? ` ${o.value.value}` : ""}${o.meta ? `，${t(o.meta)}` : ""}：${t(o.why)}`).join("\n");
       case "table": return [`| ${b.cols.join(" | ")} |`, `|${b.cols.map(() => " --- ").join("|")}|`, ...b.rows.map((r) => `| ${r.cells.map((c) => c.value).join(" | ")}${r.tag ? `（${r.tag}）` : ""} |`)].join("\n");
-      case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${t(c.note)}）` : ""}`).join("\n");
+      case "checks": return b.items.map((c) => `- [ ] ${t(c.text)}${c.note ? `（${t(c.note)}）` : ""}`).join("\n");
       case "callout": return `> ${t(b.text)}`;
       case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
       case "app": return `（小程序：${b.title}）`;
@@ -687,5 +687,7 @@ export function cardPreview(text: string, maxRows = 3): CardPreview | null {
   const tagged = block?.kind === "steps" ? -1 : all.findIndex((r) => r.tag);
   const ordered = tagged > 0 ? [all[tagged]!, ...all.slice(0, tagged), ...all.slice(tagged + 1)] : all;
 
-  return { title: card.title, rows: ordered.slice(0, maxRows), more: Math.max(0, ordered.length - maxRows) };
+  const f = (value: string) => fillRefs(value, card.values, (v) => v, "…");
+
+  return { title: f(card.title), rows: ordered.slice(0, maxRows).map((r) => ({ ...r, label: f(r.label), ...(r.value ? { value: f(r.value) } : {}) })), more: Math.max(0, ordered.length - maxRows) };
 }
