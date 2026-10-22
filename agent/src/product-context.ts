@@ -14,9 +14,9 @@ type Turn=VoiceConversationContext['recentTurns'][number];
 
 /**
  * 每轮都附的卡片提醒。完整说明在系统提示词的「Answer cards」一节；
- * 只放在系统提示词里时，长的操作类提示词把它压住了（离线 15 次 0 次画卡片），每轮附这一句后 15 次 12 次。
+ * 长的操作类提示词会压住系统提示词里的格式说明，因此在当前轮的上下文中提醒。
  */
-const ANSWER_CARD_REMINDER = "\n\nAnswer format: if the user will decide or act on several numbers, options, steps or items, reply with one conclusion sentence plus an answer card (see # Answer cards); when they are unsure of or want to try several values of one condition (how many people or months, a rate that may change, a quantity), that condition is an <input> the formulas use; rows comparing things in several tabs carry tab=TAB_ID (that tab's numeric id); when you must ask the user two or more things (or a choice) before going on, ask with <field>s and a submit button, prefilled from what you know; if they ask how something with 5 or more related parts is structured (not a plain sequence), the card holds a diagram; otherwise plain text. When teaching with guide_step, follow the teaching rules instead.";
+const ANSWER_CARD_REMINDER = "\n\nAnswer format (see # Answer cards): follow the user's requested format; for factual extraction or source quotations, answer directly in concise plain text with the required quotes and citations; for comparisons or decisions/actions involving several numbers, options, steps or items, reply with one conclusion sentence plus an answer card; when they are unsure of or want to try several values of one condition (how many people or months, a rate that may change, a quantity), that condition is an <input> the formulas use; rows comparing things in several tabs carry tab=TAB_ID (that tab's numeric id); when you must ask the user two or more things (or a choice) before going on, ask with <field>s and a submit button, prefilled from what you know; if they ask how something with 5 or more related parts is structured (not a plain sequence), the card holds a diagram; otherwise plain text. When teaching with guide_step, follow the teaching rules instead.";
 
 /**
  * 「回答里的小程序」打开时附在每次运行的上下文后。侧栏把小程序放进不联网的沙箱（mini-app.html）：
