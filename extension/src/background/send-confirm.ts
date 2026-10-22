@@ -228,7 +228,9 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
 export async function confirmRequest(tabId: number, request: { url: string; body?: string }, guard: SendGuard): Promise<void> {
   let host = "", path = request.url;
   try { const url = new URL(request.url); host = url.host; path = url.pathname; } catch { /* 原样显示 */ }
-  const content = request.body?.replace(/\s+/g, " ").trim().slice(0, 120);
+  // 卡上的内容随侧栏记录存进本机：密码、令牌这类字段只写个占位。
+  const secret = String.raw`[\w.-]*(?:pass|pwd|token|secret|otp|cvv|cvc|card|auth|session|cookie|key)[\w.-]*`;
+  const content = request.body?.replace(new RegExp(String.raw`("${secret}"\s*:\s*)(?:"[^"]*"|[^,}\s]+)`, "gi"), '$1"••••"').replace(new RegExp(String.raw`(\b${secret}\s*[:=]\s*)[^"&,}\s]+`, "gi"), "$1••••").replace(/\s+/g, " ").trim().slice(0, 120);
   await confirmSend(tabId, `POST ${path}`.slice(0, 60), guard, async () => ({ ...(content ? { content } : {}), ...(host ? { host } : {}), route: "request" }));
 }
 

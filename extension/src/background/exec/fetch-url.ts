@@ -101,6 +101,9 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
       };
     }
   } catch (error) {
+    // 还没发出就停了（任务停下、控制轮次变了）：是没执行，不是结果未知。
+    if (!dispatched && error && typeof error === "object" && !("executionFact" in error)) throw Object.assign(error, { executionFact: "not_executed" as const });
+
     if (dispatched) {
       const detail = oneLine(error).replace(/操作未执行/g, "后续请求未执行");
       throw Object.assign(new Error(`fetch 请求已发出，结果未知：${detail}`), {executionFact: "unknown"});

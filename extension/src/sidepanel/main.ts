@@ -3791,9 +3791,12 @@ function collapseHandoffCard(text = "你已交还 · 我从你所在的页面接
   handoffCard = null;
 }
 
-function changesPage(name: string, tabsAction: string | undefined): boolean {
+function changesPage(name: string, tabsAction: string | undefined, method: unknown): boolean {
   // 开、关标签页也是用户看得见的后果；tabs 的其余动作只是查看。
   if (name === "tabs") return tabsAction === "open" || tabsAction === "close";
+
+  // 带登录态的 POST 可能已经改了网站上的数据：和点按钮一样留着过程，拒绝发送后的入口也挂得上。
+  if (name === "fetch") return String(method ?? "GET").toUpperCase() === "POST";
 
   return isWriteTool(name) && !PAGE_VIEWING_TOOLS.has(name);
 }
@@ -3843,7 +3846,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   syncRunOrb(run);
 
   // 教学的步骤行就是这一轮的结果（用户自己点过的每一步），收尾时要留下。
-  if (ev.name === "guide_step" || changesPage(ev.name, typeof ev.params.action === "string" ? ev.params.action : undefined)) run.changedPage = true;
+  if (ev.name === "guide_step" || changesPage(ev.name, typeof ev.params.action === "string" ? ev.params.action : undefined, ev.params.method)) run.changedPage = true;
 
   const kind: IconKind = prep ? "read" : actionKind(ev.name, ev.params);
 
