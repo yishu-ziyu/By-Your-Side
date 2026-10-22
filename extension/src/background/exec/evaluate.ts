@@ -3,6 +3,8 @@ import { LEAD_SESSION_ID, type HeldReason } from "../../../../shared/protocol.js
 import { resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
 import { confirmSend, readRecipientInPage, type SendGuard } from "../send-confirm.js";
+import { payStopText, showPayStopOnPage } from "../pay-stop.js";
+import { isPayLabel } from "../../shared/mark-actions.js";
 
 interface CdpEvalResult {
   result?: { type?: string; value?: unknown; description?: string };
@@ -36,10 +38,11 @@ async function assertCompiles(tabId: number, code: string): Promise<void> {
  * 点名字以「发送 / Send」开头的按钮（element.click、dispatchEvent）、提交带这种按钮的表单（requestSubmit、form.submit）、
  * 合成的回车（输入框里有字，或表单里有发送按钮）、脚本发起的、路径像发送接口的非 GET 网络请求（fetch、XHR、sendBeacon）。
  * 拦下的动作先不做；用户点「发送」后原样重做第一个，其余丢弃。序列化进页面，必须自包含。
+ * 付款按钮另算：脚本点它、提交带它的表单、在这种表单里合成回车，一律拦下且永不重做，付款留给用户自己点。isPay 是 isPayLabel 本身，按源码传进来。
  */
-function armSendBlock(marker: string): void {
+function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
   type Rect = { left: number; top: number; width: number; height: number };
-  type Blocked = { route: "script" | "enter" | "request"; label: string; content: string; rect: Rect | null };
+  type Blocked = { route: "script" | "enter" | "request" | "pay"; label: string; content: string; rect: Rect | null };
   const w = window as unknown as Record<string, any>;
   if (w.__sideagentSendBlock) w.__sideagentSendBlock.disarm();
   const isSend = (t: string) => { const s = (t ?? "").trim().replace(/\s+/g, " "); return s.startsWith("发送") || /^send(\s|$)/i.test(s); };
@@ -58,11 +61,23 @@ function armSendBlock(marker: string): void {
   const held: Array<() => unknown> = [];
   const record = (b: Blocked, redo: () => unknown) => { blocked.push(b); held.push(redo); };
   const stop = (e: Event) => { e.preventDefault(); e.stopImmediatePropagation(); };
-  const onClick = (e: MouseEvent) => { if (e.isTrusted) return; const b = actionable(e.target as Element); if (b && isSend(btnName(b))) { stop(e); record({ route: "script", label: btnName(b).trim().slice(0, 40), content: draftNear(b), rect: rectOf(b) }, () => (b as HTMLElement).click()); } };
-  const onSubmit = (e: SubmitEvent) => { if (e.isTrusted && !fromScript()) return; const form = e.target as HTMLFormElement; const sub = e.submitter && isSend(btnName(e.submitter)) ? e.submitter : !e.submitter ? sendIn(form) : null; if (sub) { stop(e); record({ route: "script", label: btnName(sub).trim().slice(0, 40), content: draftNear(sub), rect: rectOf(sub) }, () => form.requestSubmit(e.submitter as HTMLElement ?? undefined)); } };
+  const label = (el: Element) => btnName(el).trim().replace(/\s+/g, " ");
+  // 不是按钮标签的付款控件（写成 div 的「立即支付」）按它自己的短文字认；大块容器的整段文字不算按钮名。
+  const payTarget = (el: Element | null | undefined) => { if (!el) return null; const b = actionable(el); if (b) return isPay(label(b)) ? b : null; const own = label(el); return own.length <= 40 && isPay(own) ? el : null; };
+  // 表单外用 form 属性关联的按钮在 elements 里。
+  const payIn = (form: HTMLFormElement | null | undefined) => form ? [...form.elements, ...form.querySelectorAll("button,[role=button],input[type=submit],input[type=button],input[type=image]")].find(b => isPay(label(b))) ?? null : null;
+  const paid = new WeakSet<Element>();
+  const holdPay = (e: Event | null, el: Element) => { if (e) stop(e); if (paid.has(el)) return; paid.add(el); blocked.push({ route: "pay", label: label(el).slice(0, 40), content: "", rect: rectOf(el) }); };
+  // 有的网站在按下而不是点击时就提交：脚本合成的按下、抬起落在付款控件上也拦。
+  const onPress = (e: Event) => { if (e.isTrusted) return; const p = payTarget(e.target as Element); if (p) holdPay(e, p); };
+  const onClick = (e: MouseEvent) => { if (e.isTrusted) return; const p = payTarget(e.target as Element); if (p) { holdPay(e, p); return; } const b = actionable(e.target as Element); if (b && isSend(btnName(b))) { stop(e); record({ route: "script", label: btnName(b).trim().slice(0, 40), content: draftNear(b), rect: rectOf(b) }, () => (b as HTMLElement).click()); } };
+  const onSubmit = (e: SubmitEvent) => { if (e.isTrusted && !fromScript()) return; const form = e.target as HTMLFormElement; const pay = e.submitter ? payTarget(e.submitter) : payIn(form); if (pay) { holdPay(e, pay); return; } const sub = e.submitter && isSend(btnName(e.submitter)) ? e.submitter : !e.submitter ? sendIn(form) : null; if (sub) { stop(e); record({ route: "script", label: btnName(sub).trim().slice(0, 40), content: draftNear(sub), rect: rectOf(sub) }, () => form.requestSubmit(e.submitter as HTMLElement ?? undefined)); } };
   const onKey = (e: KeyboardEvent) => {
     if (e.isTrusted || e.key !== "Enter" || e.shiftKey) return;
-    const t = e.target as HTMLElement; const multi = t?.tagName === "TEXTAREA" || t?.isContentEditable; const sb = sendIn(t?.closest?.("form"));
+    const t = e.target as HTMLElement;
+    const pay = payTarget(t) ?? (t?.tagName === "TEXTAREA" || t?.isContentEditable ? null : payIn((t as HTMLInputElement)?.form ?? t?.closest?.("form")));
+    if (pay) { holdPay(e, pay); return; }
+    const multi = t?.tagName === "TEXTAREA" || t?.isContentEditable; const sb = sendIn(t?.closest?.("form"));
     if (!((multi && draftNear(t)) || sb)) return;
     stop(e);
     if (e.type !== "keydown") return;
@@ -78,7 +93,7 @@ function armSendBlock(marker: string): void {
   // 只拦像发送接口的请求（路径里有 send、message、comment、reply、post 等词）：保存、搜索、读数据的请求照常发。这是按名字猜，名字不像的发送接口拦不到。
   const sendy = (url: string) => { try { return /(send|message|msg|chat|comment|reply|post|tweet|mail|publish|share|submit|发送)/i.test(new URL(url, location.href).pathname); } catch { return false; } };
   const where = (url: string) => { try { const u = new URL(url, location.href); return u.host === location.host ? u.pathname : u.host + u.pathname; } catch { return String(url).slice(0, 60); } };
-  HTMLFormElement.prototype.submit = function (this: HTMLFormElement) { const sb = sendIn(this); if (sb && fromScript()) { record({ route: "script", label: btnName(sb).trim().slice(0, 40), content: draftNear(sb), rect: rectOf(sb) }, () => origSubmit.call(this)); return; } return origSubmit.call(this); };
+  HTMLFormElement.prototype.submit = function (this: HTMLFormElement) { const pay = fromScript() ? payIn(this) : null; if (pay) { holdPay(null, pay); return; } const sb = sendIn(this); if (sb && fromScript()) { record({ route: "script", label: btnName(sb).trim().slice(0, 40), content: draftNear(sb), rect: rectOf(sb) }, () => origSubmit.call(this)); return; } return origSubmit.call(this); };
   window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
     const method = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const url = input instanceof Request ? input.url : String(input);
@@ -98,10 +113,13 @@ function armSendBlock(marker: string): void {
     return origSend.call(this, body);
   };
   navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null) { if (sendy(String(url)) && fromScript()) { record({ route: "request", label: `POST ${where(String(url))}`.slice(0, 60), content: typeof data === "string" ? data.slice(0, 120) : "", rect: null }, () => origBeacon.call(navigator, url, data)); return false; } return origBeacon.call(navigator, url, data); };
+  const PRESS = ["pointerdown", "mousedown", "touchstart", "pointerup", "mouseup", "touchend"];
+  for (const t of PRESS) window.addEventListener(t, onPress, true);
   window.addEventListener("click", onClick, true);
   window.addEventListener("submit", onSubmit, true);
   for (const t of ["keydown", "keypress", "keyup"]) window.addEventListener(t, onKey as EventListener, true);
   const disarm = () => {
+    for (const t of PRESS) window.removeEventListener(t, onPress, true);
     window.removeEventListener("click", onClick, true);
     window.removeEventListener("submit", onSubmit, true);
     for (const t of ["keydown", "keypress", "keyup"]) window.removeEventListener(t, onKey as EventListener, true);
@@ -114,6 +132,7 @@ function armSendBlock(marker: string): void {
 }
 
 type BlockedSend = { route: "script" | "enter" | "request"; label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null };
+type BlockedPay = Omit<BlockedSend, "route"> & { route: "pay" };
 
 const DISARM = `(() => window.__sideagentSendBlock ? window.__sideagentSendBlock.disarm() : [])()`;
 const REDO = `(async () => { const h = window.__sideagentSendHeld; delete window.__sideagentSendHeld; if (!h?.[0]) return false; if (await h[0]() === false) throw new Error("浏览器没有接受发送请求，请核对网页上的结果，不要重复发送。"); return true; })()`;
@@ -135,9 +154,9 @@ export async function evaluateJs(
 
   const tabId = tab.id;
   const marker = `sideagent-script-${crypto.randomUUID()}`;
-  await sendCommand(tabId, "Runtime.evaluate", { expression: `(${armSendBlock.toString()})(${JSON.stringify(marker)})`, returnByValue: true });
+  await sendCommand(tabId, "Runtime.evaluate", { expression: `(${armSendBlock.toString()})(${JSON.stringify(marker)}, ${isPayLabel.toString()})`, returnByValue: true });
   let res: CdpEvalResult;
-  let blocked: BlockedSend[] = [];
+  let held: Array<BlockedSend | BlockedPay> = [];
 
   try {
     res = await sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", {
@@ -147,7 +166,22 @@ export async function evaluateJs(
     },beforeExecute);
   } finally {
     const read = await sendCommand<{ result?: { value?: unknown } }>(tabId, "Runtime.evaluate", { expression: DISARM, returnByValue: true }).catch(() => undefined);
-    blocked = Array.isArray(read?.result?.value) ? read.result.value as BlockedSend[] : [];
+    held = Array.isArray(read?.result?.value) ? read.result.value as Array<BlockedSend | BlockedPay> : [];
+  }
+
+  const pay = held.find((b): b is BlockedPay => b.route === "pay");
+  const blocked = held.filter((b): b is BlockedSend => b.route !== "pay");
+
+  // 付款不问、不重做：圈出按钮交给用户；同一脚本里拦下的发送动作也一并丢掉，不再去问。
+  if (pay) {
+    await sendCommand(tabId, "Runtime.evaluate", { expression: DROP }).catch(() => {});
+    const x = pay.rect ? pay.rect.left + pay.rect.width / 2 : -1;
+    const y = pay.rect ? pay.rect.top + pay.rect.height / 2 : -1;
+    await showPayStopOnPage(tabId, pay.label, x, y);
+    const note = `${payStopText(pay.label)} The rest of the script may already have run.${blocked.length ? ` ${blocked.length} send action(s) in the same script were dropped, not sent.` : ""}`;
+    const failed = res.exceptionDetails ? oneLine(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text ?? "JS 执行异常") : "";
+
+    return { value: res.result?.value, heldReason: "pay", sendNote: failed ? `${note} The script also threw: ${failed}` : note };
   }
 
   let sendNote: string | undefined;

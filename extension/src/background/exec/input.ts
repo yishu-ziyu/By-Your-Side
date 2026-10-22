@@ -2682,6 +2682,36 @@ export async function typeText(
   return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }
 
+/**
+ * 回车或空格落在付款上：焦点本身是付款按钮，或回车时焦点所在的表单、附近区域里有付款按钮（单行框回车会提交表单）。
+ * isPay 是 isPayLabel 本身，按源码传进来。序列化进页面，必须自包含。
+ */
+function keyWouldPayInPage(isPay: (text: string) => boolean, enter: boolean): string | null {
+  let el = document.activeElement as HTMLElement | null;
+  while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
+  if (!el) return null;
+  const nameOf = (node: Element) => (node.getAttribute("aria-label") || (node.tagName === "INPUT" ? (node as HTMLInputElement).value : (node as HTMLElement).innerText ?? node.textContent ?? "") || node.getAttribute("title") || "").trim().replace(/\s+/g, " ");
+  const own = el.closest('button,[role="button"],input[type="submit"],input[type="button"],input[type="image"],a');
+  if (own && isPay(nameOf(own))) return nameOf(own).slice(0, 40);
+  // 空格只按下焦点上的控件；多行框和编辑器里回车只是换行。
+  if (!enter || el.tagName === "TEXTAREA" || el.isContentEditable) return null;
+  // 输入框用 form 属性关联到别处的表单时，form 指向真正会被提交的那个；表单外用 form 属性关联的按钮在 elements 里。
+  const form = (el as HTMLInputElement).form ?? el.closest("form");
+  let region: Element | null = form ?? el.closest('[role="dialog"],[role="form"]');
+  if (!region) {
+    region = el.parentElement;
+    for (let n = 1; n < 3 && region?.parentElement && region.parentElement !== el.ownerDocument.body; n++) region = region.parentElement;
+  }
+  const nodes = [...(form ? [...form.elements] : []), ...(region && region !== el.ownerDocument.body && region !== el.ownerDocument.documentElement ? region.querySelectorAll("*") : [])];
+  for (const node of nodes) {
+    if (node === el) continue;
+    // 大块容器的整段文字不是按钮名：和「填完再回车」一样只看 40 字以内的名字。
+    const name = nameOf(node);
+    if (name && name.length <= 40 && isPay(name)) return name;
+  }
+  return null;
+}
+
 /** 回车会不会把东西发出去：焦点在有字的多行输入框、可编辑区，或焦点所在表单里有「发送」按钮。序列化进页面，必须自包含。 */
 function enterWouldSendInPage(): { label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null; send: boolean } | null {
   let el = document.activeElement as HTMLElement | null;
@@ -2705,8 +2735,17 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
   const info = resolveKey(params.key);
   const tab = await resolveWorkingTab(params.tabId, sessionId);
   let confirmed = false;
+  const shift = info && tab.id != null ? ((info.modifiers | modifierMaskFor(sessionId, tab.id)) & 8) !== 0 : false;
 
-  if (info && tab.id != null && info.key === "Enter" && ((info.modifiers | modifierMaskFor(sessionId, tab.id)) & 8) === 0) {
+  // 付款永远用户自己点：回车提交表单、空格按下焦点上的按钮都等于点了它，所以和点击一样不做。
+  if (info && tab.id != null && ((info.key === "Enter" && !shift) || info.key === " ")) {
+    const read = await sendCommand<{ result?: { value?: string | null } }>(tab.id, "Runtime.evaluate", { expression: `(${keyWouldPayInPage.toString()})(${isPayLabel.toString()}, ${info.key === "Enter"})`, returnByValue: true }).catch(() => undefined);
+    const pay = read?.result?.value;
+
+    if (pay) throw notExecuted(new Error(`焦点所在的表单里有「${pay}」，按${info.key === "Enter" ? "回车" : "空格"}可能直接付款：没有按。要做别的事请点对应的按钮；付款按钮要用户自己点，点它会停下交给用户。`));
+  }
+
+  if (info && tab.id != null && info.key === "Enter" && !shift) {
     const tabId = tab.id;
     const read = await sendCommand<{ result?: { value?: ReturnType<typeof enterWouldSendInPage> } }>(tabId, "Runtime.evaluate", { expression: `(${enterWouldSendInPage.toString()})()`, returnByValue: true }).catch(() => undefined);
     const hit = read?.result?.value;

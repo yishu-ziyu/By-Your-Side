@@ -7,7 +7,9 @@
  *   e) 提示还在时，用户自己点付款按钮：/pay 恰好 1 条；用户点「知道了」，提示收起。
  *   c) 「下一步」「提交评论」照常点到（服务器各 1 条），「支付宝」单选项照常选中。
  *   d) 网页脚本程序（browser_run）去点付款按钮：被拒绝，/pay 不增加。
- * 失败方式：让 isPayLabel 永远返回 false，a 的服务器收到 /pay（反例结果见验收文件）。
+ *   f) 结账表单里点进优惠码框再按回车（回车会提交带「立即支付」的表单）：没有按，/checkout 0 条，助手收到「可能直接付款」。
+ *   g) js 工具里的脚本直接 click() 付款按钮、requestSubmit() 结账表单：都被拦下，/pay、/checkout 不增加；网页圈出按钮；助手收到「不点付款按钮」。
+ * 失败方式：让 isPayLabel 永远返回 false，a 的服务器收到 /pay（反例结果见验收文件）；f、g 在修复前的构建上服务器各收到请求。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -30,8 +32,10 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>报
 <label id="alipay-label"><input type="radio" id="alipay" name="m" value="alipay"> 支付宝</label></fieldset>
 <p><button id="pay" type="button" data-post="/pay">${PAY_LABEL}</button></p>
 <p><button id="next" type="button" data-post="/next">下一步</button> <button id="comment" type="button" data-post="/comment">提交评论</button></p>
+<form id="checkout"><input id="coupon" name="coupon" placeholder="优惠码"> <button id="checkout-pay" type="submit">立即支付 ¥98.00</button></form>
 <output id="status"></output>
-<script>document.querySelectorAll('[data-post]').forEach(b => b.addEventListener('click', async () => { await fetch(b.dataset.post, { method: 'POST', body: 'x' }); document.querySelector('#status').textContent = b.textContent; }));</script></body></html>`;
+<script>document.querySelector('#checkout').addEventListener('submit', e => { e.preventDefault(); fetch('/checkout', { method: 'POST', body: 'x' }); });
+document.querySelectorAll('[data-post]').forEach(b => b.addEventListener('click', async () => { await fetch(b.dataset.post, { method: 'POST', body: 'x' }); document.querySelector('#status').textContent = b.textContent; }));</script></body></html>`;
 
 const posts: Array<{ path: string; at: number }> = [];
 
@@ -46,7 +50,7 @@ const count = (path: string) => posts.filter(p => p.path === path).length;
 
 const clickPay = { tool: { name: "click", args: { target: "#pay", label: PAY_LABEL } } };
 
-const ASK = { a: "案例A：帮我报名并付款。", c: "案例C：下一步、提交评论，再选支付宝。", d: "案例D：用程序帮我付款。" };
+const ASK = { a: "案例A：帮我报名并付款。", c: "案例C：下一步、提交评论，再选支付宝。", d: "案例D：用程序帮我付款。", f: "案例F：在优惠码框里按回车。", g: "案例G：用脚本帮我付款。" };
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
 
@@ -66,6 +70,12 @@ const model = await startScriptedModel([
     { text: "C 完成。" },
   ] },
   { match: ASK.d, steps: [{ tool: { name: "browser_run", args: { label: "付款", code: 'return await browser.click({ target: "#pay" });' } } }, { text: "D 完成。" }] },
+  { match: ASK.f, steps: [
+    { tool: { name: "click", args: { target: "#coupon", label: "优惠码" } } },
+    { tool: { name: "press_key", args: { key: "Enter" } } },
+    { text: "F 完成。" },
+  ] },
+  { match: ASK.g, steps: [{ tool: { name: "js", args: { code: "(() => { document.querySelector('#pay').click(); document.querySelector('#checkout').requestSubmit(); return 'ran'; })()" } } }, { text: "G 完成。" }] },
 ], undefined, payload => {
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
@@ -185,8 +195,30 @@ try {
   const toolD = toolTexts.slice(from);
   check("d browser_run 点付款按钮：被拒绝，/pay 不增加", count("/pay") === 1 && toolD.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), tool: toolD });
   await panelShot("d-panel.png");
+
+  // ── f：结账表单里按回车 ──
+  from = toolTexts.length;
+  await ask(ASK.f);
+  await answered("F 完成。");
+  await idle();
+  await sleep(1000);
+  const toolF = toolTexts.slice(from);
+  check("f 优惠码框里按回车：没有按，/checkout 0 条，助手收到「可能直接付款」", count("/checkout") === 0 && toolF.some(t => t.includes("可能直接付款")), { checkout: count("/checkout"), tool: toolF });
+  await rp.screenshot(work, join(out, "f-page.png"));
+
+  // ── g：js 工具里的脚本点付款按钮、提交结账表单 ──
+  from = toolTexts.length;
+  await ask(ASK.g);
+  await answered("G 完成。");
+  await idle();
+  await sleep(1000);
+  const toolG = toolTexts.slice(from);
+  const noteG = await payNote();
+  check("g 脚本 click() 付款按钮、requestSubmit() 结账表单：/pay、/checkout 不增加，网页圈出按钮，助手收到「不点付款按钮」", count("/pay") === 1 && count("/checkout") === 0 && !!noteG?.ring && toolG.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), checkout: count("/checkout"), note: noteG, tool: toolG });
+  await rp.screenshot(work, join(out, "g-page.png"));
+  await panelShot("g-panel.png");
 } catch (error) { check("流程完成", false, String(error)); } finally {
-  await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts, toolTexts, notCovered: ["按回车提交付款表单", "iframe 里的付款按钮", "没有可读名字的付款按钮", "browser.js 里的脚本直接调用元素的 click()", "真实网站"], modelRequests: model.requests }, null, 2));
+  await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts, toolTexts, notCovered: ["iframe 里的付款按钮", "没有可读名字的付款按钮", "脚本直接向付款接口发请求（fetch 工具、脚本里的 fetch）", "真实网站"], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
 }
 
